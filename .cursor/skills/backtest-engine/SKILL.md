@@ -15,11 +15,12 @@ as possible given L1-only data. Optimize for realism over speed — but quantify
 
 ## Core Invariants
 
+Inherits platform invariants 5 (deterministic replay), 6 (causality), 9 (backtest/live parity).
+Causality is enforced in three specific forms:
+
 1. **No future leakage** — event processing sees only past and present
 2. **No lookahead bias** — features computed causally; no peeking at future quotes/trades
 3. **No synchronous feature cheating** — features from event at time T not available until T + processing_latency
-4. **Deterministic replay** — same event log + parameters → identical fills, PnL, positions
-5. **Dual-mode equivalence** — backtest and live execution share core logic paths
 
 ---
 

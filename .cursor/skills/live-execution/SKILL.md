@@ -16,11 +16,12 @@ between simulated and live execution is a system failure.
 
 ## Core Invariants
 
-1. **Backtest/live parity** — live execution shares core logic with backtest; divergence is a flaggable event
-2. **Idempotent order submission** — duplicate signals never produce duplicate orders
-3. **Explicit state transitions** — every order follows a defined state machine; no implicit states
-4. **Fail-safe default** — unknown states, unhandled errors, and timeout expiry all resolve to safe positions
-5. **Reconciliation as ground truth** — broker position is authoritative; internal state reconciles to it
+Inherits platform invariants 9 (backtest/live parity), 11 (fail-safe default).
+Additionally:
+
+1. **Idempotent order submission** — duplicate signals never produce duplicate orders
+2. **Explicit state transitions** — every order follows a defined state machine; no implicit states
+3. **Reconciliation as ground truth** — broker position is authoritative; internal state reconciles to it
 
 ---
 

@@ -33,12 +33,11 @@ All code must belong to exactly one of these layers:
 
 ## Hard Rules
 
-1. **No cross-layer leakage** — strategy logic never in ingestion; execution logic never in notebooks; no hidden global state.
-2. **Event-driven, not polling** — all data flow through typed events on the bus.
-3. **Clock abstraction** — all timestamps via an injectable clock (wall clock live, simulated clock backtest). No raw `datetime.now()` in core logic.
-4. **Deterministic replay** — given the same event log + parameters, produce identical signals, orders, and PnL.
-5. **Explicit latency modeling** — annotate every path with expected latency; measure actual vs expected in production.
-6. **Canonical message formats** — define typed schemas for every event crossing a layer boundary.
+Inherits platform invariants 5 (deterministic replay), 7 (event-driven typed schemas),
+8 (layer separation), 10 (clock abstraction). Additionally:
+
+1. **Explicit latency modeling** — annotate every path with expected latency; measure actual vs expected in production.
+2. **Canonical message formats** — define typed schemas for every event crossing a layer boundary.
 
 ## Tradeoff Documentation
 

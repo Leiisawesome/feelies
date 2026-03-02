@@ -18,11 +18,12 @@ auditable path — no exceptions.
 
 ## Core Invariants
 
-1. **Reproducible** — every experiment is re-runnable from versioned inputs and produces identical outputs
-2. **Auditable** — every hypothesis, experiment, and conclusion has a traceable record
-3. **Separated** — research environment never imports production execution code; production never imports notebook utilities
-4. **Promotable** — clear, gated path from notebook exploration to backtest-ready artifact
-5. **Disposable** — failed experiments are preserved (for learning) but never promoted
+Inherits platform invariants 5 (deterministic replay → experiment reproducibility),
+8 (layer separation → research/production boundary), 13 (provenance → audit trail).
+Additionally:
+
+1. **Promotable** — clear, gated path from notebook exploration to backtest-ready artifact
+2. **Disposable** — failed experiments are preserved (for learning) but never promoted
 
 ---
 

@@ -22,12 +22,13 @@ reproducible validation pipeline. The default posture is **deny deployment**
 
 ## Core Invariants
 
-1. **No deployment without reproducibility** — every artifact deployed to live trading must be reproducible from versioned inputs
-2. **Tests are first-class code** — test infrastructure receives the same design rigor as production code
-3. **Failure injection is mandatory** — components that have not been tested under failure are assumed to fail in production
-4. **Promotion is gated** — advancement through the pipeline requires explicit acceptance criteria, not elapsed time
-5. **Configuration is auditable** — every parameter change is versioned, attributed, and reversible
-6. **Regression is unacceptable** — passing tests never regress; new failures block the pipeline
+Inherits platform invariants 3 (evidence over intuition → gated promotion),
+5 (deterministic replay → reproducibility), 13 (provenance → auditable configuration).
+Additionally:
+
+1. **Tests are first-class code** — test infrastructure receives the same design rigor as production code
+2. **Failure injection is mandatory** — components that have not been tested under failure are assumed to fail in production
+3. **Regression is unacceptable** — passing tests never regress; new failures block the pipeline
 
 ---
 

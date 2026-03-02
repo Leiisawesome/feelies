@@ -18,12 +18,12 @@ position reduction or trading halt, never to increased exposure.
 
 ## Core Invariants
 
+Inherits platform invariants 5 (deterministic replay), 11 (fail-safe default + monotonic safety).
+Additionally:
+
 1. **No bypass** — every order intent transits the risk engine; no direct signal-to-execution path exists
-2. **Fail-safe default** — ambiguity resolves to reduced exposure, never increased
-3. **Monotonic safety** — safety controls can only tighten autonomously; loosening requires explicit re-authorization
-4. **Pre-trade and post-trade** — constraints enforced before order submission and validated after fill
-5. **Deterministic in replay** — given the same event stream, risk decisions are identical (backtest/live parity)
-6. **Independent authority** — risk engine can halt trading unilaterally; no other layer can override
+2. **Pre-trade and post-trade** — constraints enforced before order submission and validated after fill
+3. **Independent authority** — risk engine can halt trading unilaterally; no other layer can override
 
 ---
 

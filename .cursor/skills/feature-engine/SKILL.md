@@ -24,12 +24,12 @@ engine: order state).
 
 ## Core Invariants
 
+Inherits platform invariants 5 (deterministic replay), 6 (causality), 13 (versioned provenance).
+Additionally:
+
 1. **Incremental by default** — features update incrementally on each event; full recomputation only on state reset or recovery
-2. **Causal** — a feature at time T depends only on events with timestamp ≤ T; no lookahead
-3. **Deterministic** — same event sequence + parameters → identical feature values (bit-identical in replay)
-4. **Isolated per symbol** — per-symbol feature state is independent; no cross-symbol leakage within the feature engine
-5. **Versioned** — every feature definition is versioned; feature values are traceable to a definition version
-6. **Bounded** — per-symbol memory footprint is bounded and configurable; no unbounded accumulation
+2. **Isolated per symbol** — per-symbol feature state is independent; no cross-symbol leakage within the feature engine
+3. **Bounded** — per-symbol memory footprint is bounded and configurable; no unbounded accumulation
 
 ---
 

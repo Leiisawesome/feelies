@@ -22,11 +22,12 @@ until proven otherwise.
 
 ## Core Invariants
 
+Inherits platform invariants 3 (evidence over intuition), 4 (decay is the default).
+Additionally:
+
 1. **No autopilot** — every strategy under continuous forensic audit; silence is not health
 2. **Expected vs realized** — all metrics compared against backtest/model predictions, not absolute thresholds alone
-3. **Decay is the default** — edges erode; the burden of proof is on continued viability
-4. **Evidence before intervention** — quarantine and scaling decisions backed by statistical tests, not intuition
-5. **Feedback loop closure** — forensic findings feed back into backtest calibration, fill models, and research hypotheses
+3. **Feedback loop closure** — forensic findings feed back into backtest calibration, fill models, and research hypotheses
 
 ---
 

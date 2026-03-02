@@ -18,11 +18,12 @@ always.
 
 ## Core Invariants
 
-1. **Profile before optimizing** — no speculative optimization; every change justified by measurement
-2. **Determinism is non-negotiable** — optimizations must not break replay determinism or backtest/live parity
-3. **Budget-driven** — every module has a latency and memory budget; violations are defects
-4. **Regression-gated** — performance benchmarks run in CI; regressions block merge
-5. **Readability default** — micro-optimization only in measured hot paths; everywhere else, clarity wins
+Inherits platform invariants 3 (evidence over intuition → profile before optimizing),
+5 (deterministic replay — optimizations must not break it). Additionally:
+
+1. **Budget-driven** — every module has a latency and memory budget; violations are defects
+2. **Regression-gated** — performance benchmarks run in CI; regressions block merge
+3. **Readability default** — micro-optimization only in measured hot paths; everywhere else, clarity wins
 
 ---
 
