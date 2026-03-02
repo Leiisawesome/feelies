@@ -133,6 +133,11 @@ Design around identifiable regimes:
 
 Model transition probabilities between states. Do not use naive fixed thresholds.
 
+**Ownership boundary**: This skill defines the regime taxonomy (what regimes
+exist and how signals behave across them). The risk-engine skill owns
+operational regime detection and sizing response. The post-trade-forensics
+skill audits regime stability and decay across regimes over time.
+
 ---
 
 ## Uncertainty Quantification
@@ -170,6 +175,10 @@ Data Ingestion (real-time + replay)
             -> Monitoring & Logging
 ```
 
+The Feature Computation Engine is owned by the feature-engine skill, which
+defines incremental computation patterns, state lifecycle, versioning, and
+the contract between features and the signal layer.
+
 ### Critical Separations
 
 | Separate | From |
@@ -186,11 +195,18 @@ Data Ingestion (real-time + replay)
 - Factor exposure monitoring (beta, sector, volatility)
 - Correlation clustering control
 
+These are design requirements. The risk-engine skill owns implementation,
+enforcement, and real-time constraint checking. The live-execution skill
+owns the kill-switch and circuit-breaker mechanisms.
+
 ### Portfolio Construction
 
 - Cross-sectional neutrality when required
 - Capital allocation via marginal risk contribution
 - Risk-neutral or beta-hedged overlays
+
+The risk-engine skill implements the portfolio governor and PnL attribution.
+This skill defines the construction objectives; risk-engine enforces them.
 
 For detailed architecture reference, see [system-architecture.md](system-architecture.md).
 
