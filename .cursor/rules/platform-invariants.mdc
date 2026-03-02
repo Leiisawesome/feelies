@@ -1,0 +1,40 @@
+---
+description: Core platform invariants for the intraday trading system. These 13 rules are the structural contract across all skills — every component, signal, and deployment must satisfy them.
+alwaysApply: true
+---
+
+# Platform Invariants
+
+## Epistemological
+
+1. **Structural mechanism required** — every signal and entry must name the causal force being exploited. No mechanism, no trade.
+
+2. **Falsifiability before testing** — define what disproves the hypothesis before looking at data. No retrospective narratives.
+
+3. **Evidence over intuition** — scaling, quarantine, optimization, and promotion decisions require statistical evidence. Measure first, act second.
+
+4. **Decay is the default** — every edge is assumed to be eroding. Burden of proof is on continued viability.
+
+## Architectural
+
+5. **Deterministic replay** — same event log + parameters → bit-identical signals, orders, PnL. No exceptions.
+
+6. **Causality enforced** — features/signals at time T use only events with timestamp ≤ T. Processing delay modeled explicitly. No lookahead.
+
+7. **Event-driven, typed schemas** — all data flows through typed events on the bus. No polling. No untyped messages crossing layer boundaries.
+
+8. **Layer separation** — every piece of code belongs to exactly one layer. No cross-layer leakage. No hidden global state.
+
+9. **Backtest/live parity** — shared core logic; mode-specific code only behind `ExecutionBackend`. Divergence is a flaggable defect.
+
+10. **Clock abstraction** — all timestamps via injectable clock. No raw `datetime.now()` in core logic.
+
+## Safety
+
+11. **Fail-safe default** — unknown states, missing data, and errors resolve to reduced exposure, never increased. Safety controls only tighten autonomously; loosening requires human re-authorization.
+
+12. **Transaction cost realism** — `expected_edge > 1.5× round_trip_cost`. Must survive 1.5× cost and 2× latency stress. If alpha vanishes under stress, it wasn't real.
+
+## Provenance
+
+13. **Full provenance, versioned and auditable** — every decision traceable to an event. Every feature to a version. Every strategy to a hypothesis. Every config change to an author and rollback path. Nothing reaches capital without a reproducible chain.
