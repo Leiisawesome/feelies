@@ -55,9 +55,10 @@ _MICRO_TRANSITIONS: dict[MicroState, frozenset[MicroState]] = {
         MicroState.ORDER_DECISION,   # risk pass, order warranted
         MicroState.LOG_AND_METRICS,  # risk pass, no order (flat / reject)
     }),
-    # M6 is only reached when an order WILL be submitted — no branch here.
+    # M6 branches: check_order pass → M7, check_order reject → M10.
     MicroState.ORDER_DECISION: frozenset({
-        MicroState.ORDER_SUBMIT,
+        MicroState.ORDER_SUBMIT,    # check_order pass
+        MicroState.LOG_AND_METRICS,  # check_order reject (pre-submission veto)
     }),
     MicroState.ORDER_SUBMIT: frozenset({
         MicroState.ORDER_ACK,

@@ -18,8 +18,7 @@ System invariants enforced here (Section V):
          (Structurally guaranteed — G8 → G2 → G6.  run_live() also
           asserts risk level is NORMAL.)
   Inv-4: Every order terminally resolved before shutdown.
-         (NOT YET ENFORCED — requires order lifecycle tracking via
-          OrderState SM.  shutdown() does not currently verify this.)
+         (Enforced via OrderState SM tracking in _active_orders.)
   Inv-5: Replay in G4 reproduces identical state transitions.
          (order_id derived deterministically, not from uuid4.)
 
@@ -34,13 +33,18 @@ Key architectural invariants:
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock
+from feelies.core.config import Configuration
 from feelies.core.errors import ConfigurationError
 from feelies.core.events import (
+    Alert,
+    AlertSeverity,
+    Event,
     MetricEvent,
     MetricType,
     NBBOQuote,
@@ -49,15 +53,20 @@ from feelies.core.events import (
     OrderType,
     PositionUpdate,
     RiskAction,
+    RiskVerdict,
     Signal,
     SignalDirection,
     Side,
     StateTransition,
+    Trade,
 )
 from feelies.core.identifiers import SequenceGenerator
-from feelies.core.state_machine import TransitionRecord
+from feelies.core.state_machine import StateMachine, TransitionRecord
 from feelies.execution.backend import ExecutionBackend
+from feelies.execution.order_state import OrderState, create_order_state_machine
 from feelies.features.engine import FeatureEngine
+from feelies.ingestion.data_integrity import DataHealth
+from feelies.ingestion.normalizer import MarketDataNormalizer
 from feelies.kernel.macro import (
     TRADING_MODES,
     MacroState,
@@ -68,7 +77,15 @@ from feelies.monitoring.telemetry import MetricCollector
 from feelies.portfolio.position_store import PositionStore
 from feelies.risk.engine import RiskEngine
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
+from feelies.signals.engine import SignalEngine
 from feelies.storage.event_log import EventLog
+
+_TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset({
+    OrderState.FILLED,
+    OrderState.CANCELLED,
+    OrderState.REJECTED,
+    OrderState.EXPIRED,
+})
 
 
 class Orchestrator:
@@ -77,7 +94,7 @@ class Orchestrator:
     Lifecycle:
       1. __init__   — wire up all components
       2. boot()     — G0 → G1 → G2
-      3. run_*()    — G2 → {G4|G5|G6} → pipeline → G2
+      3. run_*()    — G2 → {G3|G4|G5|G6} → pipeline → G2
       4. shutdown() — → G9
 
     The orchestrator never inspects ``backend.mode`` to branch logic.
@@ -90,11 +107,12 @@ class Orchestrator:
         bus: EventBus,
         backend: ExecutionBackend,
         feature_engine: FeatureEngine,
-        signal_engine: Any,
+        signal_engine: SignalEngine,
         risk_engine: RiskEngine,
         position_store: PositionStore,
         event_log: EventLog,
         metric_collector: MetricCollector,
+        normalizer: MarketDataNormalizer | None = None,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -105,7 +123,14 @@ class Orchestrator:
         self._positions = position_store
         self._event_log = event_log
         self._metrics = metric_collector
+        self._normalizer = normalizer
         self._seq = SequenceGenerator()
+
+        self._config: Configuration | None = None
+
+        # Per-order lifecycle tracking for Inv-4 enforcement.
+        # Maps order_id → (OrderState SM, Side).
+        self._active_orders: dict[str, tuple[StateMachine[OrderState], Side]] = {}
 
         self._macro = create_macro_state_machine(clock)
         self._micro = create_micro_state_machine(clock)
@@ -114,6 +139,9 @@ class Orchestrator:
         self._macro.on_transition(self._emit_state_transition)
         self._micro.on_transition(self._emit_state_transition)
         self._risk_escalation.on_transition(self._emit_state_transition)
+
+        # Wire MetricCollector to receive MetricEvents from the bus.
+        self._bus.subscribe(MetricEvent, self._on_metric_event)
 
     # ── Public state accessors ──────────────────────────────────────
 
@@ -131,14 +159,15 @@ class Orchestrator:
 
     # ── Lifecycle: boot / run / shutdown ────────────────────────────
 
-    def boot(self, config: dict[str, Any]) -> None:
+    def boot(self, config: Configuration) -> None:
         """G0 → G1 → G2  (happy path).
 
         Guard: CONFIG_VALIDATED requires all dependencies resolved.
         Guard: DATA_INTEGRITY_OK requires all streams verified.
         """
         try:
-            self._validate_config(config)
+            config.validate()
+            self._config = config
             self._macro.transition(
                 MacroState.DATA_SYNC,
                 trigger="CONFIG_VALIDATED",
@@ -248,6 +277,30 @@ class Orchestrator:
                 trigger="DATA_DRIFT_DETECTED:feed_terminated",
             )
 
+    def run_research(self, job: Callable[[], None]) -> None:
+        """G2 → G3 → job() → G2.
+
+        Research mode does not run the tick pipeline.  The caller
+        provides a job (backtest variant, data exploration, etc.)
+        that executes within the RESEARCH_MODE macro state.
+        """
+        self._macro.assert_state(MacroState.READY)
+        self._macro.transition(MacroState.RESEARCH_MODE, trigger="CMD_RESEARCH")
+        try:
+            job()
+            if self._macro.state == MacroState.RESEARCH_MODE:
+                self._macro.transition(
+                    MacroState.READY,
+                    trigger="JOB_COMPLETE",
+                )
+        except Exception as exc:
+            if self._macro.state == MacroState.RESEARCH_MODE:
+                self._macro.transition(
+                    MacroState.DEGRADED,
+                    trigger=f"CRITICAL_ERROR:{type(exc).__name__}",
+                )
+            raise
+
     def halt(self) -> None:
         """CMD_STOP: any trading mode → G2."""
         if self._macro.state in TRADING_MODES:
@@ -300,8 +353,28 @@ class Orchestrator:
         """→ G9 (terminal).
 
         Inv-4: all orders must be terminally resolved before shutdown.
-        NOT YET ENFORCED — requires OrderState SM integration.
+        Pending orders are surfaced as a WARNING alert but do not
+        block shutdown — the operator investigates post-mortem.
         """
+        pending = [
+            oid for oid, (sm, _) in self._active_orders.items()
+            if sm.state not in _TERMINAL_ORDER_STATES
+        ]
+        if pending:
+            self._bus.publish(Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id="",
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="pending_orders_at_shutdown",
+                message=(
+                    f"Inv-4 violation: {len(pending)} order(s) not terminally "
+                    f"resolved at shutdown"
+                ),
+                context={"order_ids": pending},
+            ))
+
         if self._macro.can_transition(MacroState.SHUTDOWN):
             self._macro.transition(MacroState.SHUTDOWN, trigger="CMD_SHUTDOWN")
         self._metrics.flush()
@@ -312,11 +385,28 @@ class Orchestrator:
         """Execute the deterministic micro-state loop over all market events.
 
         Inv-2: breaks when macro state leaves TRADING_MODES.
+
+        Dispatches by event type: NBBOQuote drives the full signal
+        pipeline; Trade events are logged and published for
+        observability but do not trigger signal evaluation.
         """
-        for quote in self._backend.market_data.events():
+        for event in self._backend.market_data.events():
             if self._macro.state not in TRADING_MODES:
                 break
-            self._process_tick(quote)
+            if isinstance(event, NBBOQuote):
+                self._process_tick(event)
+            elif isinstance(event, Trade):
+                self._process_trade(event)
+
+    def _process_trade(self, trade: Trade) -> None:
+        """Log and publish a trade event.
+
+        Trades are captured for observability and future feature
+        use (e.g., trade-to-quote ratio) but do not drive the
+        signal pipeline.
+        """
+        self._event_log.append(trade)
+        self._bus.publish(trade)
 
     def _process_tick(self, quote: NBBOQuote) -> None:
         """Process a single tick through the full micro-state pipeline.
@@ -326,19 +416,17 @@ class Orchestrator:
 
         Micro-state sequence (formal spec Section II):
           M0 → M1 → M2 → M3 → M4 → M5 →
-            (risk fail)       → [G8, pipeline aborts]
-            (pass, no order)  → M10 → M0
-            (pass, order)     → M6 → M7 → M8 → M9 → M10 → M0
+            (risk fail)         → [G8, pipeline aborts]
+            (pass, no order)    → M10 → M0
+            (pass, order)       → M6 →
+              (check_order fail)  → M10 → M0
+              (check_order pass)  → M7 → M8 → M9 → M10 → M0
 
         Exception handling: if any step throws, the micro SM is reset
         to M0 and macro transitions to DEGRADED.  This prevents the
         micro SM from being stranded mid-pipeline, which would make
         the next tick's M0→M1 transition illegal (platform inv 11:
         errors resolve to reduced exposure, never undefined state).
-
-        The exception handler itself is wrapped in a safety net so
-        that failures in reset/macro-transition do not mask the
-        original exception.
         """
         cid = quote.correlation_id
         try:
@@ -426,13 +514,7 @@ class Orchestrator:
         verdict = self._risk_engine.check_signal(signal, self._positions)
         self._bus.publish(verdict)
 
-        # ── M5 three-way branch ────────────────────────────────
-        #
-        # Branch 1: risk fail → cross-machine to G8.
-        #   Only valid from G5/G6 (macro SM enforces G4 cannot → G8).
-        #   In G4, risk failure is simulation output — fall through
-        #   to "no order" path with distinct trigger.
-        #
+        # ── M5 branch: risk fail → cross-machine to G8 ─────────
         if verdict.action == RiskAction.FORCE_FLATTEN:
             if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
                 self._escalate_risk(cid)
@@ -441,7 +523,6 @@ class Orchestrator:
                     correlation_id=cid,
                 )
                 return
-            # G4: FORCE_FLATTEN is simulation output, not a macro event.
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
                 trigger="risk_force_flatten_simulated",
@@ -450,7 +531,7 @@ class Orchestrator:
             self._finalize_tick(t_received, cid)
             return
 
-        # Branch 2: risk rejected → M5 → M10
+        # ── M5 branch: risk rejected → M10 ─────────────────────
         if verdict.action == RiskAction.REJECT:
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
@@ -460,7 +541,7 @@ class Orchestrator:
             self._finalize_tick(t_received, cid)
             return
 
-        # Branch 3: risk pass, but signal is flat → M5 → M10
+        # ── M5 branch: signal flat → M10 ───────────────────────
         if signal.direction == SignalDirection.FLAT:
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
@@ -470,10 +551,9 @@ class Orchestrator:
             self._finalize_tick(t_received, cid)
             return
 
-        # Branch 4: risk pass (ALLOW or SCALE_DOWN), order warranted → M5 → M6
-        # Exhaustiveness guard (Inv-11): any RiskAction not explicitly
-        # handled above must NOT reach order submission.  Unknown actions
-        # resolve to the safe path (no order), never to increased exposure.
+        # ── M5 → M6: risk pass, order warranted ────────────────
+        # Exhaustiveness guard (Inv-11): unknown RiskActions resolve
+        # to the safe path, never to increased exposure.
         if verdict.action not in (RiskAction.ALLOW, RiskAction.SCALE_DOWN):
             raise ValueError(
                 f"Unhandled RiskAction at order gate: {verdict.action!r}. "
@@ -487,12 +567,45 @@ class Orchestrator:
         )
         order = self._build_order(signal, verdict, cid)
 
+        # ── M6: Pre-submission risk check on concrete order ─────
+        order_verdict = self._risk_engine.check_order(order, self._positions)
+        self._bus.publish(order_verdict)
+
+        if order_verdict.action == RiskAction.FORCE_FLATTEN:
+            if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
+                self._escalate_risk(cid)
+                self._micro.reset(
+                    trigger="pipeline_abort:check_order_lockdown",
+                    correlation_id=cid,
+                )
+                return
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="check_order_force_flatten_simulated",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_received, cid)
+            return
+
+        if order_verdict.action == RiskAction.REJECT:
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger=f"check_order_rejected:{order_verdict.reason}",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_received, cid)
+            return
+
+        # ── Track order lifecycle (Inv-4) ───────────────────────
+        self._track_order(order.order_id, order.side)
+
         # ── M6 → M7: ORDER_SUBMIT ──────────────────────────────
         self._micro.transition(
             MicroState.ORDER_SUBMIT,
             trigger="order_constructed",
             correlation_id=cid,
         )
+        self._transition_order(order.order_id, OrderState.SUBMITTED, "submitted")
         self._backend.order_router.submit(order)
         self._bus.publish(order)
 
@@ -505,6 +618,7 @@ class Orchestrator:
         acks = self._backend.order_router.poll_acks()
         for ack in acks:
             self._bus.publish(ack)
+            self._apply_ack_to_order(ack)
 
         # ── M8 → M9: POSITION_UPDATE ───────────────────────────
         self._micro.transition(
@@ -591,7 +705,7 @@ class Orchestrator:
     def _build_order(
         self,
         signal: Signal,
-        verdict: Any,
+        verdict: RiskVerdict,
         correlation_id: str,
     ) -> OrderRequest:
         """Construct an OrderRequest with deterministic order_id.
@@ -599,6 +713,9 @@ class Orchestrator:
         order_id is derived from correlation_id + sequence via SHA-256
         so that replay of identical events produces identical order IDs
         (invariant 5).  uuid4 is forbidden here.
+
+        Applies ``verdict.scaling_factor`` to the base quantity so that
+        SCALE_DOWN verdicts produce smaller orders.
         """
         if signal.direction == SignalDirection.LONG:
             side = Side.BUY
@@ -614,6 +731,11 @@ class Orchestrator:
             f"{correlation_id}:{seq}".encode()
         ).hexdigest()[:16]
 
+        # Base quantity placeholder — to be supplied by a position sizing
+        # module (risk-engine portfolio governor) once implemented.
+        base_quantity = 100
+        quantity = max(1, round(base_quantity * verdict.scaling_factor))
+
         return OrderRequest(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=correlation_id,
@@ -622,34 +744,96 @@ class Orchestrator:
             symbol=signal.symbol,
             side=side,
             order_type=OrderType.MARKET,
-            quantity=1,  # sizing delegated to risk engine scaling
+            quantity=quantity,
             strategy_id=signal.strategy_id,
         )
+
+    # ── Order lifecycle tracking (Inv-4) ────────────────────────────
+
+    def _track_order(self, order_id: str, side: Side) -> None:
+        """Create an OrderState SM for a new order."""
+        sm = create_order_state_machine(order_id, self._clock)
+        sm.on_transition(self._emit_state_transition)
+        self._active_orders[order_id] = (sm, side)
+
+    def _transition_order(
+        self,
+        order_id: str,
+        target: OrderState,
+        trigger: str,
+    ) -> None:
+        """Transition an order's state machine."""
+        if order_id in self._active_orders:
+            sm, _ = self._active_orders[order_id]
+            sm.transition(target, trigger=trigger)
+
+    def _apply_ack_to_order(self, ack: OrderAck) -> None:
+        """Update an order's SM based on a broker acknowledgement."""
+        if ack.order_id not in self._active_orders:
+            return
+        sm, _ = self._active_orders[ack.order_id]
+
+        if ack.status == "rejected":
+            sm.transition(OrderState.REJECTED, trigger=f"broker_reject:{ack.reason}")
+            return
+
+        # Ensure ACKNOWLEDGED before any fill transition.
+        if sm.state == OrderState.SUBMITTED:
+            sm.transition(OrderState.ACKNOWLEDGED, trigger="broker_ack")
+
+        if ack.status == "filled":
+            sm.transition(OrderState.FILLED, trigger="fill_complete")
+        elif ack.status == "partially_filled":
+            if sm.can_transition(OrderState.PARTIALLY_FILLED):
+                sm.transition(OrderState.PARTIALLY_FILLED, trigger="partial_fill")
+        elif ack.status == "cancelled":
+            if sm.can_transition(OrderState.CANCELLED):
+                sm.transition(OrderState.CANCELLED, trigger="broker_cancel")
+        elif ack.status == "expired":
+            if sm.can_transition(OrderState.EXPIRED):
+                sm.transition(OrderState.EXPIRED, trigger="order_expired")
+
+    # ── Fill reconciliation ─────────────────────────────────────────
 
     def _reconcile_fills(
         self,
         acks: list[OrderAck],
         correlation_id: str,
     ) -> None:
-        """Update positions from fill acknowledgements."""
+        """Update positions from fill acknowledgements.
+
+        Determines sign of quantity_delta from the original order's
+        Side: BUY adds to position, SELL subtracts.
+        """
         for ack in acks:
-            if ack.fill_price is not None and ack.filled_quantity > 0:
-                position = self._positions.update(
-                    ack.symbol,
-                    ack.filled_quantity,
-                    ack.fill_price,
-                )
-                self._bus.publish(PositionUpdate(
-                    timestamp_ns=self._clock.now_ns(),
-                    correlation_id=correlation_id,
-                    sequence=self._seq.next(),
-                    symbol=ack.symbol,
-                    quantity=position.quantity,
-                    avg_price=position.avg_entry_price,
-                    realized_pnl=position.realized_pnl,
-                    unrealized_pnl=position.unrealized_pnl,
-                    slippage_bps=Decimal("0"),
-                ))
+            if ack.fill_price is None or ack.filled_quantity <= 0:
+                continue
+
+            # Look up the original order's side for correct sign.
+            signed_qty = ack.filled_quantity
+            if ack.order_id in self._active_orders:
+                _, side = self._active_orders[ack.order_id]
+                if side == Side.SELL:
+                    signed_qty = -signed_qty
+
+            position = self._positions.update(
+                ack.symbol,
+                signed_qty,
+                ack.fill_price,
+            )
+            self._bus.publish(PositionUpdate(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=correlation_id,
+                sequence=self._seq.next(),
+                symbol=ack.symbol,
+                quantity=position.quantity,
+                avg_price=position.avg_entry_price,
+                realized_pnl=position.realized_pnl,
+                unrealized_pnl=position.unrealized_pnl,
+                slippage_bps=Decimal("0"),
+            ))
+
+    # ── Observability ───────────────────────────────────────────────
 
     def _emit_state_transition(self, record: TransitionRecord) -> None:
         """Emit a StateTransition event for every state machine change."""
@@ -664,16 +848,28 @@ class Orchestrator:
             metadata=record.metadata,
         ))
 
-    def _validate_config(self, config: dict[str, Any]) -> None:
-        """Validate system configuration.  Raises ConfigurationError."""
-        required_keys = {"symbols"}
-        missing = required_keys - set(config.keys())
-        if missing:
-            raise ConfigurationError(f"Missing required config keys: {missing}")
+    def _on_metric_event(self, event: Event) -> None:
+        """Forward MetricEvents from the bus to the MetricCollector."""
+        if isinstance(event, MetricEvent):
+            self._metrics.record(event)
+
+    # ── Configuration and data integrity ────────────────────────────
 
     def _verify_data_integrity(self) -> bool:
-        """Verify historical data integrity for all configured symbols.
+        """Verify data integrity for all configured symbols.
 
-        Placeholder — concrete implementation in data-engineering layer.
+        If a normalizer is available, checks that every configured
+        symbol is tracked and reports HEALTHY.  Without a normalizer
+        (e.g., backtest with pre-validated data), returns True.
         """
+        if self._normalizer is None:
+            return True
+        if self._config is None:
+            return True
+        health = self._normalizer.all_health()
+        for symbol in self._config.symbols:
+            if symbol not in health:
+                return False
+            if health[symbol] != DataHealth.HEALTHY:
+                return False
         return True

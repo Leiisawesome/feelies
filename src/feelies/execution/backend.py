@@ -16,13 +16,19 @@ from __future__ import annotations
 
 from typing import Iterator, Protocol
 
-from feelies.core.events import NBBOQuote, OrderAck, OrderRequest
+from feelies.core.events import NBBOQuote, OrderAck, OrderRequest, Trade
 
 
 class MarketDataSource(Protocol):
-    """Provides market events — historical replay or live feed."""
+    """Provides market events — historical replay or live feed.
 
-    def events(self) -> Iterator[NBBOQuote]:
+    Yields both NBBO quotes and trade prints in timestamp order.
+    The orchestrator dispatches by type: quotes drive the full
+    signal pipeline; trades are logged and published for
+    observability and feature computation.
+    """
+
+    def events(self) -> Iterator[NBBOQuote | Trade]:
         """Yield market events in timestamp order."""
         ...
 

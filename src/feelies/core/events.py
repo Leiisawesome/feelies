@@ -203,3 +203,52 @@ class MetricEvent(Event):
     value: float
     metric_type: MetricType
     tags: dict[str, str] = field(default_factory=dict)
+
+
+# ── Alert Events ────────────────────────────────────────────────────
+
+
+class AlertSeverity(Enum):
+    """Alert severity levels mapped to response SLAs.
+
+    INFO      — async review, log only
+    WARNING   — < 15 min response, log + dashboard
+    CRITICAL  — < 1 min response, activates safety controls
+    EMERGENCY — immediate automated response + notification
+    """
+
+    INFO = auto()
+    WARNING = auto()
+    CRITICAL = auto()
+    EMERGENCY = auto()
+
+
+@dataclass(frozen=True, kw_only=True)
+class Alert(Event):
+    """Typed alert emitted by any layer, routed by the central alert manager.
+
+    Critical and Emergency alerts activate safety controls autonomously.
+    Human review follows but does not gate the safety response (invariant 11).
+    """
+
+    severity: AlertSeverity
+    layer: str
+    alert_name: str
+    message: str
+    context: dict[str, Any] = field(default_factory=dict)
+
+
+# ── Safety Events ───────────────────────────────────────────────────
+
+
+@dataclass(frozen=True, kw_only=True)
+class KillSwitchActivation(Event):
+    """Emitted when the kill switch is activated.
+
+    Kill switch is irreversible without human re-authorization.
+    This event is published on the bus so all layers can react
+    (cancel orders, freeze state, cease submissions).
+    """
+
+    reason: str
+    activated_by: str
