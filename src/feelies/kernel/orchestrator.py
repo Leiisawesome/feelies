@@ -45,6 +45,7 @@ from feelies.core.events import (
     Alert,
     AlertSeverity,
     Event,
+    KillSwitchActivation,
     MetricEvent,
     MetricType,
     NBBOQuote,
@@ -73,12 +74,16 @@ from feelies.kernel.macro import (
     create_macro_state_machine,
 )
 from feelies.kernel.micro import MicroState, create_micro_state_machine
+from feelies.monitoring.alerting import AlertManager
+from feelies.monitoring.kill_switch import KillSwitch
 from feelies.monitoring.telemetry import MetricCollector
 from feelies.portfolio.position_store import PositionStore
 from feelies.risk.engine import RiskEngine
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
 from feelies.signals.engine import SignalEngine
 from feelies.storage.event_log import EventLog
+from feelies.storage.feature_snapshot import FeatureSnapshotMeta, FeatureSnapshotStore
+from feelies.storage.trade_journal import TradeJournal, TradeRecord
 
 _TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset({
     OrderState.FILLED,
@@ -113,6 +118,10 @@ class Orchestrator:
         event_log: EventLog,
         metric_collector: MetricCollector,
         normalizer: MarketDataNormalizer | None = None,
+        alert_manager: AlertManager | None = None,
+        kill_switch: KillSwitch | None = None,
+        trade_journal: TradeJournal | None = None,
+        feature_snapshots: FeatureSnapshotStore | None = None,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -124,13 +133,17 @@ class Orchestrator:
         self._event_log = event_log
         self._metrics = metric_collector
         self._normalizer = normalizer
+        self._alert_manager = alert_manager
+        self._kill_switch = kill_switch
+        self._trade_journal = trade_journal
+        self._feature_snapshots = feature_snapshots
         self._seq = SequenceGenerator()
 
         self._config: Configuration | None = None
 
         # Per-order lifecycle tracking for Inv-4 enforcement.
-        # Maps order_id → (OrderState SM, Side).
-        self._active_orders: dict[str, tuple[StateMachine[OrderState], Side]] = {}
+        # Maps order_id → (OrderState SM, Side, OrderRequest).
+        self._active_orders: dict[str, tuple[StateMachine[OrderState], Side, OrderRequest]] = {}
 
         self._macro = create_macro_state_machine(clock)
         self._micro = create_micro_state_machine(clock)
@@ -142,6 +155,10 @@ class Orchestrator:
 
         # Wire MetricCollector to receive MetricEvents from the bus.
         self._bus.subscribe(MetricEvent, self._on_metric_event)
+
+        # Wire AlertManager to receive Alert events from the bus.
+        if self._alert_manager is not None:
+            self._bus.subscribe(Alert, self._on_alert_event)
 
     # ── Public state accessors ──────────────────────────────────────
 
@@ -184,6 +201,7 @@ class Orchestrator:
                 MacroState.READY,
                 trigger="DATA_INTEGRITY_OK",
             )
+            self._restore_feature_snapshots()
         else:
             self._macro.transition(
                 MacroState.DEGRADED,
@@ -349,6 +367,30 @@ class Orchestrator:
             trigger=f"human_override_audit:{audit_token}",
         )
 
+    def reset_risk_escalation(self, *, audit_token: str) -> None:
+        """Human-authorized reset of risk escalation from any intermediate level.
+
+        Used when _escalate_risk() was interrupted (callback exception)
+        and the risk SM is stranded at WARNING, BREACH_DETECTED, or
+        FORCED_FLATTEN while macro has recovered to DEGRADED or READY.
+
+        Invariant 11: loosening safety controls requires human
+        re-authorization — enforced via mandatory audit_token.
+        """
+        if self._risk_escalation.state == RiskLevel.NORMAL:
+            return
+        if self._risk_escalation.state == RiskLevel.LOCKED:
+            raise RuntimeError(
+                "Risk is LOCKED — use unlock_from_lockdown() instead"
+            )
+        if self._macro.state in TRADING_MODES:
+            raise RuntimeError(
+                "Cannot reset risk during active trading — halt first"
+            )
+        self._risk_escalation.reset(
+            trigger=f"human_risk_reset:{audit_token}",
+        )
+
     def shutdown(self) -> None:
         """→ G9 (terminal).
 
@@ -356,8 +398,9 @@ class Orchestrator:
         Pending orders are surfaced as a WARNING alert but do not
         block shutdown — the operator investigates post-mortem.
         """
+        self._checkpoint_feature_snapshots()
         pending = [
-            oid for oid, (sm, _) in self._active_orders.items()
+            oid for oid, (sm, _, _) in self._active_orders.items()
             if sm.state not in _TERMINAL_ORDER_STATES
         ]
         if pending:
@@ -471,6 +514,29 @@ class Orchestrator:
         """
         cid = quote.correlation_id
         t_received = self._clock.now_ns()
+
+        # ── Kill switch gate (W-2) ─────────────────────────────
+        if self._kill_switch is not None and self._kill_switch.is_active:
+            if self._macro.state in TRADING_MODES:
+                if self._macro.can_transition(MacroState.DEGRADED):
+                    self._macro.transition(
+                        MacroState.DEGRADED,
+                        trigger="KILL_SWITCH_ACTIVE",
+                        correlation_id=cid,
+                    )
+            return
+
+        # ── Runtime data integrity check (W-6) ─────────────────
+        if self._normalizer is not None:
+            symbol_health = self._normalizer.health(quote.symbol)
+            if symbol_health == DataHealth.CORRUPTED:
+                if self._macro.can_transition(MacroState.DEGRADED):
+                    self._macro.transition(
+                        MacroState.DEGRADED,
+                        trigger=f"DATA_CORRUPTED:{quote.symbol}",
+                        correlation_id=cid,
+                    )
+                return
 
         # ── M0 → M1: MARKET_EVENT_RECEIVED ─────────────────────
         self._micro.transition(
@@ -597,7 +663,7 @@ class Orchestrator:
             return
 
         # ── Track order lifecycle (Inv-4) ───────────────────────
-        self._track_order(order.order_id, order.side)
+        self._track_order(order.order_id, order.side, order)
 
         # ── M6 → M7: ORDER_SUBMIT ──────────────────────────────
         self._micro.transition(
@@ -696,6 +762,19 @@ class Orchestrator:
                 correlation_id=correlation_id,
             )
 
+        if self._kill_switch is not None:
+            self._kill_switch.activate(
+                reason="risk_escalation_lockdown",
+                activated_by="orchestrator",
+            )
+            self._bus.publish(KillSwitchActivation(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=correlation_id,
+                sequence=self._seq.next(),
+                reason="risk_escalation_lockdown",
+                activated_by="orchestrator",
+            ))
+
         self._macro.transition(
             MacroState.RISK_LOCKDOWN,
             trigger="RISK_BREACH",
@@ -750,11 +829,11 @@ class Orchestrator:
 
     # ── Order lifecycle tracking (Inv-4) ────────────────────────────
 
-    def _track_order(self, order_id: str, side: Side) -> None:
+    def _track_order(self, order_id: str, side: Side, order: OrderRequest) -> None:
         """Create an OrderState SM for a new order."""
         sm = create_order_state_machine(order_id, self._clock)
         sm.on_transition(self._emit_state_transition)
-        self._active_orders[order_id] = (sm, side)
+        self._active_orders[order_id] = (sm, side, order)
 
     def _transition_order(
         self,
@@ -764,14 +843,14 @@ class Orchestrator:
     ) -> None:
         """Transition an order's state machine."""
         if order_id in self._active_orders:
-            sm, _ = self._active_orders[order_id]
+            sm = self._active_orders[order_id][0]
             sm.transition(target, trigger=trigger)
 
     def _apply_ack_to_order(self, ack: OrderAck) -> None:
         """Update an order's SM based on a broker acknowledgement."""
         if ack.order_id not in self._active_orders:
             return
-        sm, _ = self._active_orders[ack.order_id]
+        sm = self._active_orders[ack.order_id][0]
 
         if ack.status == "rejected":
             sm.transition(OrderState.REJECTED, trigger=f"broker_reject:{ack.reason}")
@@ -804,18 +883,21 @@ class Orchestrator:
 
         Determines sign of quantity_delta from the original order's
         Side: BUY adds to position, SELL subtracts.
+        Writes TradeRecords to the trade journal for post-trade forensics.
         """
         for ack in acks:
             if ack.fill_price is None or ack.filled_quantity <= 0:
                 continue
 
-            # Look up the original order's side for correct sign.
             signed_qty = ack.filled_quantity
+            side = Side.BUY
+            order: OrderRequest | None = None
             if ack.order_id in self._active_orders:
-                _, side = self._active_orders[ack.order_id]
+                _, side, order = self._active_orders[ack.order_id]
                 if side == Side.SELL:
                     signed_qty = -signed_qty
 
+            prev_realized = self._positions.get(ack.symbol).realized_pnl
             position = self._positions.update(
                 ack.symbol,
                 signed_qty,
@@ -832,6 +914,24 @@ class Orchestrator:
                 unrealized_pnl=position.unrealized_pnl,
                 slippage_bps=Decimal("0"),
             ))
+
+            if self._trade_journal is not None and order is not None:
+                self._trade_journal.record(TradeRecord(
+                    order_id=ack.order_id,
+                    symbol=ack.symbol,
+                    strategy_id=order.strategy_id,
+                    side=side,
+                    requested_quantity=order.quantity,
+                    filled_quantity=ack.filled_quantity,
+                    fill_price=ack.fill_price,
+                    signal_timestamp_ns=order.timestamp_ns,
+                    submit_timestamp_ns=order.timestamp_ns,
+                    fill_timestamp_ns=ack.timestamp_ns,
+                    slippage_bps=Decimal("0"),
+                    fees=Decimal("0"),
+                    realized_pnl=position.realized_pnl - prev_realized,
+                    correlation_id=order.correlation_id,
+                ))
 
     # ── Observability ───────────────────────────────────────────────
 
@@ -853,6 +953,11 @@ class Orchestrator:
         if isinstance(event, MetricEvent):
             self._metrics.record(event)
 
+    def _on_alert_event(self, event: Event) -> None:
+        """Forward Alert events from the bus to the AlertManager."""
+        if isinstance(event, Alert) and self._alert_manager is not None:
+            self._alert_manager.emit(event)
+
     # ── Configuration and data integrity ────────────────────────────
 
     def _verify_data_integrity(self) -> bool:
@@ -873,3 +978,49 @@ class Orchestrator:
             if health[symbol] != DataHealth.HEALTHY:
                 return False
         return True
+
+    # ── Feature snapshot management ─────────────────────────────────
+
+    def _restore_feature_snapshots(self) -> None:
+        """Restore feature engine state from snapshots for warm-start.
+
+        Best-effort: if a snapshot is missing, corrupt, or version-
+        incompatible, the feature engine cold-starts for that symbol.
+        Snapshot failures never block boot.
+        """
+        if self._feature_snapshots is None or self._config is None:
+            return
+        version = self._feature_engine.version
+        for symbol in self._config.symbols:
+            result = self._feature_snapshots.load(symbol, version)
+            if result is None:
+                continue
+            _, state = result
+            try:
+                self._feature_engine.restore(symbol, state)
+            except Exception:
+                self._feature_engine.reset(symbol)
+
+    def _checkpoint_feature_snapshots(self) -> None:
+        """Checkpoint feature engine state for all configured symbols.
+
+        Best-effort: snapshot failures do not block shutdown.
+        """
+        if self._feature_snapshots is None or self._config is None:
+            return
+        version = self._feature_engine.version
+        for symbol in self._config.symbols:
+            try:
+                state, event_count = self._feature_engine.checkpoint(symbol)
+                checksum = hashlib.sha256(state).hexdigest()
+                meta = FeatureSnapshotMeta(
+                    symbol=symbol,
+                    feature_version=version,
+                    event_count=event_count,
+                    last_sequence=0,
+                    last_timestamp_ns=self._clock.now_ns(),
+                    checksum=checksum,
+                )
+                self._feature_snapshots.save(meta, state)
+            except Exception:
+                pass

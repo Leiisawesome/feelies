@@ -25,6 +25,7 @@ class DataHealth(Enum):
 _DATA_TRANSITIONS: dict[DataHealth, frozenset[DataHealth]] = {
     DataHealth.HEALTHY: frozenset({
         DataHealth.GAP_DETECTED,
+        DataHealth.CORRUPTED,
     }),
     DataHealth.GAP_DETECTED: frozenset({
         DataHealth.HEALTHY,     # gap resolved

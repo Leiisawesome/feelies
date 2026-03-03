@@ -36,3 +36,28 @@ class FeatureEngine(Protocol):
     def reset(self, symbol: str) -> None:
         """Clear all state for a symbol — re-enters cold-start."""
         ...
+
+    @property
+    def version(self) -> str:
+        """Feature definition version identifier.
+
+        Snapshots are tied to this version — incompatible snapshots
+        are rejected on restore (invariant 13).
+        """
+        ...
+
+    def checkpoint(self, symbol: str) -> tuple[bytes, int]:
+        """Serialize current state for a symbol to an opaque blob.
+
+        Returns (state_bytes, event_count).  The caller pairs this
+        with sequence/timestamp metadata for the snapshot store.
+        """
+        ...
+
+    def restore(self, symbol: str, state: bytes) -> None:
+        """Restore state from a previously serialized checkpoint.
+
+        Must validate the blob; corrupt state raises ValueError,
+        triggering cold-start fallback.
+        """
+        ...
