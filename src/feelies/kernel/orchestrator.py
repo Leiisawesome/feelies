@@ -10,22 +10,30 @@ micro-state machine.
 
 System invariants enforced here (Section V):
   Inv-1: No order submission outside G5/G6.
+         (Structurally guaranteed — micro loop only runs in TRADING_MODES,
+          and ExecutionBackend determines what "submit" means per mode.)
   Inv-2: Micro loop must not advance past M0 outside {G4, G5, G6}.
+         (Enforced by _run_pipeline gating on TRADING_MODES.)
   Inv-3: R4 (LOCKED) forbids transitions to G6 without passing G2.
-          (Structurally guaranteed — G8 → G2 → G6.)
+         (Structurally guaranteed — G8 → G2 → G6.  run_live() also
+          asserts risk level is NORMAL.)
   Inv-4: Every order terminally resolved before shutdown.
+         (NOT YET ENFORCED — requires order lifecycle tracking via
+          OrderState SM.  shutdown() does not currently verify this.)
   Inv-5: Replay in G4 reproduces identical state transitions.
+         (order_id derived deterministically, not from uuid4.)
 
 Key architectural invariants:
   - Backtest/live parity (platform inv 9): same _process_tick() in all modes
   - Deterministic replay (platform inv 5): micro-state transitions identical
   - No silent transitions: every state change logged via the bus
-  - Fail-safe default (platform inv 11): risk breach → lockdown
+  - Fail-safe default (platform inv 11): risk breach → lockdown,
+    mid-tick exception → DEGRADED
 """
 
 from __future__ import annotations
 
-import uuid
+import hashlib
 from decimal import Decimal
 from typing import Any
 
@@ -61,14 +69,6 @@ from feelies.portfolio.position_store import PositionStore
 from feelies.risk.engine import RiskEngine
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
 from feelies.storage.event_log import EventLog
-
-# Macro states where live/simulated order submission is permitted (Inv-1).
-# G4 submits to the simulated fill model; G5/G6 to broker sandbox / real broker.
-_ORDER_SUBMIT_MODES: frozenset[MacroState] = frozenset({
-    MacroState.BACKTEST_MODE,
-    MacroState.PAPER_TRADING_MODE,
-    MacroState.LIVE_TRADING_MODE,
-})
 
 
 class Orchestrator:
@@ -167,7 +167,7 @@ class Orchestrator:
         Guard: backtest config valid.
         """
         self._macro.assert_state(MacroState.READY)
-        self._micro.reset()
+        self._micro.reset(trigger="session_start:backtest")
         self._macro.transition(MacroState.BACKTEST_MODE, trigger="CMD_BACKTEST")
 
         try:
@@ -181,7 +181,7 @@ class Orchestrator:
             if self._macro.state == MacroState.BACKTEST_MODE:
                 self._macro.transition(
                     MacroState.DEGRADED,
-                    trigger=f"BACKTEST_INTEGRITY_FAIL:{exc}",
+                    trigger=f"BACKTEST_INTEGRITY_FAIL:{type(exc).__name__}",
                 )
             raise
 
@@ -189,14 +189,29 @@ class Orchestrator:
         """G2 → G5 → pipeline.
 
         Guard: broker sim connected.
+        Post-pipeline: if macro is still G5, the data feed terminated
+        unexpectedly — transition to DEGRADED.
         """
         self._macro.assert_state(MacroState.READY)
-        self._micro.reset()
+        self._micro.reset(trigger="session_start:paper")
         self._macro.transition(
             MacroState.PAPER_TRADING_MODE,
             trigger="CMD_PAPER_DEPLOY",
         )
-        self._run_pipeline()
+        try:
+            self._run_pipeline()
+        except Exception as exc:
+            if self._macro.state == MacroState.PAPER_TRADING_MODE:
+                self._macro.transition(
+                    MacroState.DEGRADED,
+                    trigger=f"PAPER_PIPELINE_FAIL:{type(exc).__name__}",
+                )
+            raise
+        if self._macro.state == MacroState.PAPER_TRADING_MODE:
+            self._macro.transition(
+                MacroState.DEGRADED,
+                trigger="DATA_DRIFT_DETECTED:feed_terminated",
+            )
 
     def run_live(self) -> None:
         """G2 → G6 → pipeline.
@@ -204,6 +219,8 @@ class Orchestrator:
         Guard: human approval + risk audit pass.
         Inv-3: R4 (LOCKED) forbids this — must pass through G2 first,
         which is structurally guaranteed (G8 → G2 → G6).
+        Post-pipeline: if macro is still G6, the data feed terminated
+        unexpectedly — transition to DEGRADED.
         """
         self._macro.assert_state(MacroState.READY)
         if self._risk_escalation.state != RiskLevel.NORMAL:
@@ -211,12 +228,25 @@ class Orchestrator:
                 f"Cannot enter LIVE: risk level is {self._risk_escalation.state.name}, "
                 f"must be NORMAL"
             )
-        self._micro.reset()
+        self._micro.reset(trigger="session_start:live")
         self._macro.transition(
             MacroState.LIVE_TRADING_MODE,
             trigger="CMD_LIVE_DEPLOY",
         )
-        self._run_pipeline()
+        try:
+            self._run_pipeline()
+        except Exception as exc:
+            if self._macro.state == MacroState.LIVE_TRADING_MODE:
+                self._macro.transition(
+                    MacroState.DEGRADED,
+                    trigger=f"LIVE_PIPELINE_FAIL:{type(exc).__name__}",
+                )
+            raise
+        if self._macro.state == MacroState.LIVE_TRADING_MODE:
+            self._macro.transition(
+                MacroState.DEGRADED,
+                trigger="DATA_DRIFT_DETECTED:feed_terminated",
+            )
 
     def halt(self) -> None:
         """CMD_STOP: any trading mode → G2."""
@@ -238,7 +268,15 @@ class Orchestrator:
         """G8 → G2.  Human-authorized only.
 
         Guard: positions = 0, audit logged (Inv-4 for lockdown recovery).
-        Risk escalation R4 → R0 (human override + audit pass).
+
+        Transition ordering: macro first, then risk.  If the macro
+        transition succeeded but risk failed (both are structurally
+        valid, so failure is near-impossible), macro at READY with
+        risk at LOCKED is fail-safe — run_live() guard blocks entry,
+        and paper would re-lock on first FORCE_FLATTEN.  The reverse
+        (risk at NORMAL, macro at RISK_LOCKDOWN) would break the
+        retry path because the next unlock_from_lockdown attempt
+        would try R4→R0 from R0, raising IllegalTransition.
         """
         self._macro.assert_state(MacroState.RISK_LOCKDOWN)
 
@@ -249,19 +287,20 @@ class Orchestrator:
                 f"(FORCED_FLATTEN_COMPLETE guard)"
             )
 
-        self._risk_escalation.transition(
-            RiskLevel.NORMAL,
-            trigger=f"human_override_audit:{audit_token}",
-        )
         self._macro.transition(
             MacroState.READY,
             trigger=f"FORCED_FLATTEN_COMPLETE:audit:{audit_token}",
+        )
+        self._risk_escalation.transition(
+            RiskLevel.NORMAL,
+            trigger=f"human_override_audit:{audit_token}",
         )
 
     def shutdown(self) -> None:
         """→ G9 (terminal).
 
         Inv-4: all orders must be terminally resolved before shutdown.
+        NOT YET ENFORCED — requires OrderState SM integration.
         """
         if self._macro.can_transition(MacroState.SHUTDOWN):
             self._macro.transition(MacroState.SHUTDOWN, trigger="CMD_SHUTDOWN")
@@ -290,6 +329,57 @@ class Orchestrator:
             (risk fail)       → [G8, pipeline aborts]
             (pass, no order)  → M10 → M0
             (pass, order)     → M6 → M7 → M8 → M9 → M10 → M0
+
+        Exception handling: if any step throws, the micro SM is reset
+        to M0 and macro transitions to DEGRADED.  This prevents the
+        micro SM from being stranded mid-pipeline, which would make
+        the next tick's M0→M1 transition illegal (platform inv 11:
+        errors resolve to reduced exposure, never undefined state).
+
+        The exception handler itself is wrapped in a safety net so
+        that failures in reset/macro-transition do not mask the
+        original exception.
+        """
+        cid = quote.correlation_id
+        try:
+            self._process_tick_inner(quote)
+        except Exception as exc:
+            self._handle_tick_failure(cid, exc)
+
+    def _handle_tick_failure(self, cid: str, original: Exception) -> None:
+        """Recover micro SM and degrade macro after a tick-processing failure.
+
+        The handler itself must not throw — if reset() or the macro
+        transition fails, we still degrade to the safest reachable
+        state.  The original exception's type name is captured in the
+        trigger for provenance (invariant 13).
+        """
+        exc_name = type(original).__name__
+
+        try:
+            self._micro.reset(
+                trigger=f"pipeline_abort:{exc_name}",
+                correlation_id=cid,
+            )
+        except Exception:
+            pass
+
+        try:
+            if (
+                self._macro.state in TRADING_MODES
+                and self._macro.can_transition(MacroState.DEGRADED)
+            ):
+                self._macro.transition(
+                    MacroState.DEGRADED,
+                    trigger=f"EXECUTION_DRIFT_DETECTED:{exc_name}",
+                    correlation_id=cid,
+                )
+        except Exception:
+            pass
+
+    def _process_tick_inner(self, quote: NBBOQuote) -> None:
+        """Core tick-processing logic.  Separated from _process_tick
+        so the exception handler has a clean boundary.
         """
         cid = quote.correlation_id
         t_received = self._clock.now_ns()
@@ -340,32 +430,56 @@ class Orchestrator:
         #
         # Branch 1: risk fail → cross-machine to G8.
         #   Only valid from G5/G6 (macro SM enforces G4 cannot → G8).
-        #   In G4, risk failure is logged and the tick ends at M10.
+        #   In G4, risk failure is simulation output — fall through
+        #   to "no order" path with distinct trigger.
         #
         if verdict.action == RiskAction.FORCE_FLATTEN:
             if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
                 self._escalate_risk(cid)
-                self._micro.reset()
+                self._micro.reset(
+                    trigger="pipeline_abort:risk_lockdown",
+                    correlation_id=cid,
+                )
                 return
-            # G4 (backtest): risk failure is simulation output, not a macro event.
-            # Fall through to "no order" path.
-
-        # Branch 2: risk pass, no order → M5 → M10
-        needs_order = (
-            verdict.action in (RiskAction.ALLOW, RiskAction.SCALE_DOWN)
-            and signal.direction != SignalDirection.FLAT
-        )
-
-        if not needs_order:
+            # G4: FORCE_FLATTEN is simulation output, not a macro event.
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
-                trigger="risk_pass_no_order",
+                trigger="risk_force_flatten_simulated",
                 correlation_id=cid,
             )
             self._finalize_tick(t_received, cid)
             return
 
-        # Branch 3: risk pass, order warranted → M5 → M6
+        # Branch 2: risk rejected → M5 → M10
+        if verdict.action == RiskAction.REJECT:
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="risk_reject_no_order",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_received, cid)
+            return
+
+        # Branch 3: risk pass, but signal is flat → M5 → M10
+        if signal.direction == SignalDirection.FLAT:
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="signal_flat_no_order",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_received, cid)
+            return
+
+        # Branch 4: risk pass (ALLOW or SCALE_DOWN), order warranted → M5 → M6
+        # Exhaustiveness guard (Inv-11): any RiskAction not explicitly
+        # handled above must NOT reach order submission.  Unknown actions
+        # resolve to the safe path (no order), never to increased exposure.
+        if verdict.action not in (RiskAction.ALLOW, RiskAction.SCALE_DOWN):
+            raise ValueError(
+                f"Unhandled RiskAction at order gate: {verdict.action!r}. "
+                f"Fail-safe: aborting order path."
+            )
+
         self._micro.transition(
             MicroState.ORDER_DECISION,
             trigger="risk_pass_order_warranted",
@@ -480,14 +594,31 @@ class Orchestrator:
         verdict: Any,
         correlation_id: str,
     ) -> OrderRequest:
-        """Construct an OrderRequest.  Only called when order IS warranted."""
-        side = Side.BUY if signal.direction == SignalDirection.LONG else Side.SELL
+        """Construct an OrderRequest with deterministic order_id.
+
+        order_id is derived from correlation_id + sequence via SHA-256
+        so that replay of identical events produces identical order IDs
+        (invariant 5).  uuid4 is forbidden here.
+        """
+        if signal.direction == SignalDirection.LONG:
+            side = Side.BUY
+        elif signal.direction == SignalDirection.SHORT:
+            side = Side.SELL
+        else:
+            raise ValueError(
+                f"_build_order called with invalid direction: "
+                f"{signal.direction!r}. Only LONG/SHORT are valid here."
+            )
+        seq = self._seq.next()
+        order_id = hashlib.sha256(
+            f"{correlation_id}:{seq}".encode()
+        ).hexdigest()[:16]
 
         return OrderRequest(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=correlation_id,
-            sequence=self._seq.next(),
-            order_id=uuid.uuid4().hex[:16],
+            sequence=seq,
+            order_id=order_id,
             symbol=signal.symbol,
             side=side,
             order_type=OrderType.MARKET,
