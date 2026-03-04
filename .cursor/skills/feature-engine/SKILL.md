@@ -37,17 +37,24 @@ Additionally:
 
 ### Incremental Update
 
-Every feature must implement an incremental update path. On each inbound
-event, the feature updates its internal state and emits a new value without
-re-scanning history.
+Every feature engine must implement the `FeatureEngine` protocol
+(`features/engine.py`):
 
+```python
+class FeatureEngine(Protocol):
+    def update(self, quote: NBBOQuote) -> FeatureVector: ...
+    def is_warm(self, symbol: str) -> bool: ...
+    def reset(self, symbol: str) -> None: ...
+    @property
+    def version(self) -> str: ...
+    def checkpoint(self, symbol: str) -> tuple[bytes, int]: ...
+    def restore(self, symbol: str, state: bytes) -> None: ...
 ```
-FeatureComputer:
-  on_quote(event: QuoteEvent) -> None    # update internal state
-  on_trade(event: TradeEvent) -> None    # update internal state
-  snapshot() -> FeatureSnapshot          # emit current values
-  reset() -> None                       # clear state to initial
-```
+
+`update()` processes a single `NBBOQuote` event and returns the updated
+`FeatureVector` — advancing internal state exactly once per event.
+The orchestrator calls this at micro-state M2 (FEATURE_COMPUTE) and
+publishes the result on the bus.
 
 Full recomputation from raw events is used only for:
 - Cold start (no prior state)
@@ -144,19 +151,22 @@ contract. Features produce; signals consume. No negotiation.
 
 ### Feature Snapshot Schema
 
-Every feature emission conforms to:
+The `FeatureVector` event (`core/events.py`) is the output type:
 
+```python
+@dataclass(frozen=True, kw_only=True)
+class FeatureVector(Event):
+    symbol: str
+    feature_version: str
+    values: dict[str, float]
+    warm: bool = True
+    stale: bool = False
+    event_count: int = 0
 ```
-FeatureSnapshot:
-  symbol: str
-  timestamp: int (nanoseconds UTC, from injectable clock)
-  feature_version: str (semantic version of feature definition)
-  values: dict[FeatureId, FeatureValue]
-  metadata:
-    warm: bool (all features past warm-up)
-    stale: bool (no recent events)
-    event_count: int (total events processed for this symbol)
-```
+
+It inherits `timestamp_ns`, `correlation_id`, and `sequence` from `Event`.
+Feature vectors are frozen dataclasses — immutable after creation, safe to
+share without copying.
 
 ### Contract Rules
 
@@ -240,13 +250,22 @@ tested via the replay reproducibility tests in the testing-validation skill.
 
 ### Snapshot Persistence
 
-Feature state can be checkpointed for:
-- Faster warm-start on restart (skip re-processing history)
-- Debugging (inspect feature state at a specific point in time)
-- Audit (verify feature values that led to a specific trade)
+This skill owns the `FeatureSnapshotStore` protocol and `FeatureSnapshotMeta`
+dataclass (`storage/feature_snapshot.py`) for checkpoint persistence:
 
-Snapshots are keyed by `(symbol, timestamp, feature_version_set)` and
-stored in the storage layer.
+- `checkpoint(symbol) -> (bytes, event_count)` serializes engine state
+- `restore(symbol, state: bytes)` deserializes and validates
+- `FeatureSnapshotMeta` carries `symbol`, `feature_version`, `event_count`,
+  `last_sequence`, `last_timestamp_ns`, `checksum` (SHA-256 of state blob)
+
+The orchestrator manages the warm-start lifecycle:
+- `_restore_feature_snapshots()` at boot: loads snapshots per symbol,
+  falls back to cold-start on version mismatch or corruption
+- `_checkpoint_feature_snapshots()` at shutdown: persists state for all
+  configured symbols (best-effort, does not block shutdown)
+
+Snapshots are keyed by `(symbol, feature_version)` and stored in the
+storage layer.
 
 ### Validation: Incremental vs Full Recompute
 
@@ -288,16 +307,22 @@ pre-allocated buffers. Never sacrifice determinism or correctness for speed.
 
 ## Event Interface
 
-| Event | Direction | Payload |
+| Event | Direction | Type (`core/events.py`) |
 |-------|-----------|---------|
-| `QUOTE_UPDATE` | Inbound | symbol, bid, ask, bid_size, ask_size, timestamp |
-| `TRADE_PRINT` | Inbound | symbol, price, size, side, timestamp |
-| `FEATURE_SNAPSHOT` | Outbound | symbol, timestamp, feature_version, values, metadata |
-| `FEATURES_READY` | Outbound | symbol, timestamp (all features past warm-up) |
-| `FEATURE_STALE` | Outbound | symbol, timestamp, last_event_timestamp |
-| `FEATURE_ERROR` | Outbound | symbol, feature_id, error_type, details |
+| Quote update | Inbound | `NBBOQuote` — symbol, bid, ask, bid_size, ask_size, exchange_timestamp_ns |
+| Trade print | Inbound | `Trade` — symbol, price, size, exchange_timestamp_ns |
+| Feature output | Outbound | `FeatureVector` — symbol, feature_version, values, warm, stale, event_count |
 
-All events carry timestamps from the injectable clock.
+The following signals are NOT YET IMPLEMENTED as typed events but should
+extend `Event` when built:
+
+| Future Event | Purpose |
+|-------|---------|
+| `FEATURES_READY` | All features for a symbol past warm-up |
+| `FEATURE_STALE` | No event for symbol beyond staleness threshold |
+| `FEATURE_ERROR` | NaN/Inf or state corruption detected |
+
+All events carry timestamps from the injectable `Clock` protocol.
 
 ---
 
@@ -305,12 +330,13 @@ All events carry timestamps from the injectable clock.
 
 | Dependency | Interface |
 |------------|-----------|
-| Data Engineering (data-engineering skill) | Canonical event stream (quotes, trades) |
-| System Architect (system-architect skill) | Clock abstraction, event bus, layer boundaries |
-| Microstructure Alpha (microstructure-alpha skill) | Signal taxonomy defines what features to compute; research protocol validates them |
-| Signal Engine | Consumes `FeatureSnapshot`; never calls feature internals directly |
+| Data Engineering (data-engineering skill) | `NBBOQuote` / `Trade` events from `MarketDataSource` |
+| System Architect (system-architect skill) | `Clock`, `EventBus`, micro-state M2 (FEATURE_COMPUTE) |
+| Microstructure Alpha (microstructure-alpha skill) | Signal taxonomy defines what features to compute |
+| Signal Engine | Consumes `FeatureVector`; calls `SignalEngine.evaluate(features)` at M4 |
 | Backtest Engine (backtest-engine skill) | Replays events through feature engine; snapshot comparison for determinism |
-| Performance Engineering (performance-engineering skill) | Latency budget, memory budget, profiling protocol |
+| Storage Layer | `FeatureSnapshotStore` for checkpoint persistence |
+| Performance Engineering (performance-engineering skill) | M2→M3 latency budget (1ms target, 5ms ceiling) |
 | Testing & Validation (testing-validation skill) | Incremental vs full-recompute validation; property-based invariant tests |
 
 The feature engine is the stateful core of the data pipeline. It is

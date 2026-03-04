@@ -569,7 +569,17 @@ class Orchestrator:
             trigger="features_computed",
             correlation_id=cid,
         )
-        signal: Signal = self._signal_engine.evaluate(features)
+        signal = self._signal_engine.evaluate(features)
+
+        if signal is None:
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="no_signal_this_tick",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_received, cid)
+            return
+
         self._bus.publish(signal)
 
         # ── M4 → M5: RISK_CHECK ────────────────────────────────

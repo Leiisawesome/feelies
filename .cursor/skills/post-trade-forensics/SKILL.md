@@ -325,9 +325,35 @@ This timeline is the primary artifact for strategy lifecycle decisions
 
 ---
 
+## Data Sources
+
+Forensic analysis consumes data from existing typed artifacts:
+
+| Source | Type | Location |
+|--------|------|----------|
+| Trade lifecycle records | `TradeRecord` | `storage/trade_journal.py` — `TradeJournal.query()` |
+| Position changes | `PositionUpdate` event | `core/events.py` — published on bus at M9 |
+| Execution acks | `OrderAck` with `OrderAckStatus` | `core/events.py` — fill_price, filled_quantity |
+| Risk decisions | `RiskVerdict` with `RiskAction` | `core/events.py` — published at M5 and M6 |
+| System state changes | `StateTransition` event | `core/events.py` — SM audit trail |
+
+`TradeRecord` carries the full decision chain: `order_id`, `symbol`,
+`strategy_id`, `side`, `requested_quantity`, `filled_quantity`,
+`fill_price`, `signal_timestamp_ns`, `submit_timestamp_ns`,
+`fill_timestamp_ns`, `slippage_bps`, `fees`, `realized_pnl`,
+and `correlation_id` — linking each trade to the signal that caused it.
+
 ## Event Interface
 
-| Event | Payload |
+Forensic findings are delivered via `Alert` events (`core/events.py`)
+with `AlertSeverity` levels. The `AlertManager` protocol
+(`monitoring/alerting.py`) routes them based on severity.
+
+The following forensic-specific event types are NOT YET IMPLEMENTED.
+When built, they must extend the `Event` base class (`core/events.py`)
+to inherit `timestamp_ns`, `correlation_id`, and `sequence` provenance:
+
+| Future Event | Payload |
 |-------|---------|
 | `FORENSIC_ALERT` | strategy_id, metric, category, current_value, threshold, severity |
 | `DECAY_DETECTED` | strategy_id, decay_type, evidence, confidence, recommended_action |
@@ -338,7 +364,8 @@ This timeline is the primary artifact for strategy lifecycle decisions
 | `HEALTH_REPORT` | strategy_id, full_report_payload |
 | `STRATEGY_RETIRED` | strategy_id, retirement_reason, forensic_record_id |
 
-Every event carries a timestamp from the injectable clock.
+Every event carries a timestamp from the injectable `Clock` protocol
+(never raw `datetime.now()`).
 
 ---
 
@@ -359,14 +386,15 @@ Every event carries a timestamp from the injectable clock.
 
 | Dependency | Interface |
 |------------|-----------|
-| Live Execution (live-execution skill) | Slippage, latency, fill rate metrics; execution quality stream |
-| Risk Engine (risk-engine skill) | Capital allocation adjustments; regime classification; drawdown context |
-| Backtest Engine (backtest-engine skill) | Expected baselines for slippage, fill rate, hit rate, PnL |
-| Microstructure Alpha (microstructure-alpha skill) | Research protocol for hypothesis revalidation; signal definitions |
+| Live Execution (live-execution skill) | `OrderAck` with `OrderAckStatus` for fill analysis; `MetricEvent` for latency |
+| Risk Engine (risk-engine skill) | `RiskVerdict`/`RiskAction` for constraint context; `RiskLevel` SM state |
+| Backtest Engine (backtest-engine skill) | `TradeRecord` baselines from `TradeJournal.query()` |
+| Microstructure Alpha (microstructure-alpha skill) | `Signal` schema for hypothesis revalidation; `FeatureVector` quality flags |
 | Testing & Validation (testing-validation skill) | Sim-vs-live divergence metrics; promotion/demotion pipeline |
-| Data Engineering (data-engineering skill) | Historical NBBO for microstructure change detection |
+| Data Engineering (data-engineering skill) | `NBBOQuote` events via `EventLog.replay()` for historical analysis |
 
 The forensic layer sits downstream of execution and upstream of strategy
-lifecycle decisions. It consumes execution telemetry, compares against
-backtest baselines, and emits decay signals that feed into risk scaling
-and strategy promotion/demotion decisions.
+lifecycle decisions. It consumes `TradeRecord` entries and `Alert` events,
+compares against backtest baselines, and emits forensic alerts via the
+`Alert`/`AlertSeverity` mechanism that feed into risk scaling and strategy
+promotion/demotion decisions.

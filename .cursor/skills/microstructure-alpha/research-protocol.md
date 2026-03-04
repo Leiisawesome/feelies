@@ -1,5 +1,21 @@
 # Research Protocol — Detailed Methodology
 
+## Codebase Alignment
+
+Research features defined below feed into the `FeatureEngine` protocol
+(`features/engine.py`), which produces `FeatureVector` events
+(`core/events.py`). Signal logic feeds into the `SignalEngine` protocol
+(`signals/engine.py`), which produces `Signal` events with
+`SignalDirection` (`LONG`/`SHORT`/`FLAT`) and `edge_estimate_bps`.
+
+The formalization path from research prototype to engine component is
+governed by the research-workflow skill. Features must implement
+incremental `update(NBBOQuote) -> FeatureVector` semantics; batch
+pandas/numpy prototypes must be re-implemented incrementally before
+backtesting via `Orchestrator.run_backtest()`.
+
+---
+
 ## Hypothesis-Driven Research Framework
 
 ### Phase 1: Hypothesis Formation
@@ -94,12 +110,14 @@ Reject hypotheses that:
 
 ```
 BACKTEST REQUIREMENTS:
-- Latency model: minimum 10ms processing + network delay
-- Fill model: no immediate fills at NBBO; model queue position
+- Entry point: `Orchestrator.run_backtest()` with `SimulatedClock` (core/clock.py)
+- Latency model: minimum 10ms processing + network delay (injected via SimulatedClock)
+- Fill model: no immediate fills at NBBO; model queue position (OrderRouter protocol)
 - Slippage model: function of size relative to displayed liquidity
 - Market impact: even for small orders, model temporary impact
 - Cost model: explicit commission + SEC/FINRA fees
-- Timestamp alignment: use exchange timestamps, not receipt timestamps
+- Timestamp alignment: use exchange timestamps via NBBOQuote.exchange_timestamp_ns
+- Determinism: SHA-256 order IDs from correlation_id:sequence (core/identifiers.py)
 ```
 
 ### Phase 4: Robustness Checks
@@ -191,3 +209,19 @@ OFI_n = sum_{trades in bucket n} sign_i * volume_i
 
 Use volume time to normalize for intraday seasonality.
 Test predictive power of OFI on next-bucket return.
+
+---
+
+## Implementation Mapping
+
+| Research Concept | Codebase Type | Location |
+|-----------------|---------------|----------|
+| Feature prototype | `FeatureEngine` protocol | `features/engine.py` |
+| Feature output | `FeatureVector` (with `warm`, `stale` flags) | `core/events.py` |
+| Signal output | `Signal` (with `SignalDirection`, `edge_estimate_bps`) | `core/events.py` |
+| L1 quote input | `NBBOQuote` event | `core/events.py` |
+| Trade input | `Trade` event | `core/events.py` |
+| Backtest execution | `Orchestrator.run_backtest()` | `kernel/orchestrator.py` |
+| Research execution | `Orchestrator.run_research(job)` | `kernel/orchestrator.py` |
+| Deterministic time | `SimulatedClock` | `core/clock.py` |
+| Config provenance | `Configuration.snapshot()` | `core/config.py` |

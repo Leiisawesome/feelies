@@ -22,8 +22,48 @@ Inherits platform invariants 5 (deterministic replay), 11 (fail-safe default + m
 Additionally:
 
 1. **No bypass** — every order intent transits the risk engine; no direct signal-to-execution path exists
-2. **Pre-trade and post-trade** — constraints enforced before order submission and validated after fill
+2. **Two-phase check** — `check_signal()` at micro-state M5 (signal-level), `check_order()` at M6 (concrete order); both must pass before submission
 3. **Independent authority** — risk engine can halt trading unilaterally; no other layer can override
+
+## Risk Escalation State Machine
+
+The `RiskLevel` SM (`risk/escalation.py`) enforces monotonic safety
+tightening. Once escalation begins, de-escalation is forbidden — only
+the full cycle through LOCKED and human-authorized unlock can return
+to NORMAL (invariant 11).
+
+| State | ID | Transitions To |
+|-------|----|---------------|
+| `NORMAL` | R0 | WARNING |
+| `WARNING` | R1 | BREACH_DETECTED |
+| `BREACH_DETECTED` | R2 | FORCED_FLATTEN |
+| `FORCED_FLATTEN` | R3 | LOCKED |
+| `LOCKED` | R4 | NORMAL (human override + audit only) |
+
+The orchestrator's `_escalate_risk()` walks R0 → R1 → R2 → R3 → R4
+atomically, then activates `KillSwitch` and transitions macro to
+RISK_LOCKDOWN. Recovery requires `unlock_from_lockdown(audit_token)`
+with a zero-exposure guard.
+
+For intermediate stranding (callback exception during escalation),
+`reset_risk_escalation(audit_token)` resets from WARNING, BREACH_DETECTED,
+or FORCED_FLATTEN — but not from LOCKED.
+
+## Risk Decision Types
+
+This skill owns the `RiskEngine` protocol (`risk/engine.py`). It returns
+`RiskVerdict` events (`core/events.py`) with a typed `RiskAction` enum:
+
+| `RiskAction` | Meaning | Pipeline Response |
+|-------------|---------|-------------------|
+| `ALLOW` | No constraints violated | Proceed to order construction/submission |
+| `SCALE_DOWN` | Within limits after scaling | Apply `verdict.scaling_factor` to order quantity |
+| `REJECT` | Constraint violated | Skip order; transition to M10 (LOG_AND_METRICS) |
+| `FORCE_FLATTEN` | Critical breach | Trigger `_escalate_risk()` cascade; abort pipeline |
+
+Exhaustiveness guards at both M5 and M6 raise `ValueError` for any
+`RiskAction` not explicitly handled — preventing new enum members from
+silently falling through to order submission.
 
 ---
 
@@ -204,6 +244,13 @@ Track continuously, updated on every fill and quote:
 
 ### Attribution
 
+**Ownership boundary**: This skill computes real-time PnL attribution
+(updated per-fill and per-quote) for operational risk management. The
+post-trade-forensics skill performs deeper forensic attribution over
+longer windows (5–10 day rolling), comparing realized attribution against
+backtest baselines to detect structural edge decay. Same decomposition
+framework, different timeframes and purposes.
+
 Decompose returns into sources:
 
 | Attribution | Calculation | Purpose |
@@ -261,18 +308,30 @@ order first (LIFO priority for risk reduction).
 
 ## Event Interface
 
-All risk decisions emit typed events onto the event bus:
+Risk decisions are communicated via `RiskVerdict` events (`core/events.py`)
+carrying `RiskAction`, `reason`, `scaling_factor`, and `constraints`.
+The orchestrator publishes each verdict on the bus at both M5 and M6.
 
-| Event | Payload |
+Regime transitions, drawdown alerts, and other risk signals should be
+emitted as typed events extending the `Event` base class. Currently
+implemented events relevant to risk:
+
+| Event | Source | Key Fields |
+|-------|--------|------------|
+| `RiskVerdict` | Risk engine | `action: RiskAction`, `reason`, `scaling_factor`, `constraints` |
+| `StateTransition` | Risk escalation SM | `machine_name="risk_escalation"`, from/to state, trigger |
+| `Alert` | Orchestrator/risk | `severity: AlertSeverity`, `alert_name`, context |
+| `KillSwitchActivation` | Orchestrator | `reason`, `activated_by` |
+
+The following events are NOT YET IMPLEMENTED as typed events but should
+extend `Event` when built:
+
+| Future Event | Payload |
 |-------|---------|
-| `RISK_CHECK_PASSED` | order_id, checks_performed, margins_remaining |
-| `RISK_CHECK_REJECTED` | order_id, violated_constraint, current_value, limit_value |
-| `REGIME_TRANSITION` | old_regime, new_regime, detection_method, timestamp |
+| `REGIME_TRANSITION` | old_regime, new_regime, detection_method |
 | `DRAWDOWN_ALERT` | level, current_pnl, threshold, response_taken |
 | `EXPOSURE_BREACH` | metric, current_value, limit, action_taken |
-| `DELEVERAGE_INITIATED` | phase, trigger_reasons, target_exposure |
 | `PNL_SNAPSHOT` | gross, net, alpha, beta, slippage, by_strategy |
-| `HEDGE_REBALANCE` | current_beta, target_beta, hedge_size, instrument |
 
 Every event carries a timestamp from the injectable clock (never raw `datetime.now()`).
 
@@ -306,4 +365,8 @@ the system cannot trade. This is by design.
 The risk engine sits between signal and execution in both backtest and live modes.
 Same risk logic, same constraints, same fail-safe behavior. Mode-specific
 differences (e.g., broker reconciliation in live vs simulated reconciliation in
-backtest) are behind the `ExecutionBackend` interface.
+backtest) are behind the `ExecutionBackend` interface (`execution/backend.py`).
+
+The `RiskEngine` protocol (`risk/engine.py`) exposes two methods:
+- `check_signal(signal: Signal, positions: PositionStore) -> RiskVerdict`
+- `check_order(order: OrderRequest, positions: PositionStore) -> RiskVerdict`

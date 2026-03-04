@@ -38,3 +38,24 @@ alwaysApply: true
 ## Provenance
 
 13. **Full provenance, versioned and auditable** — every decision traceable to an event. Every feature to a version. Every strategy to a hypothesis. Every config change to an author and rollback path. Nothing reaches capital without a reproducible chain.
+
+## Glossary
+
+Canonical definitions for terms used across all skills. When a skill uses
+one of these terms, it means exactly this — no local redefinition.
+
+| Term | Definition |
+|------|-----------|
+| **strategy** | A deployable unit comprising signal logic, feature definitions, risk parameters, and configuration — versioned as an immutable artifact. A strategy is the atomic unit of promotion, quarantine, and capital allocation. |
+| **signal** | A typed `Signal` event emitted by the signal engine: direction (`SignalDirection`), strength, edge estimate. Signals are stateless evaluations of features — they carry no position or order awareness. |
+| **feature** | A typed `FeatureVector` event emitted by the feature engine: a set of named numeric values computed incrementally from L1 events. Features are stateful per-symbol; signals are stateless over features. |
+| **edge** | The structural microstructure phenomenon being exploited — the causal mechanism that generates predictable price behavior. An edge exists independently of whether it is being traded. Edge decays when exploited or when market structure shifts. |
+| **alpha** | The measured residual return after removing systematic factors (beta, costs, slippage). Alpha is the empirical evidence that an edge converts to PnL. An edge can exist without producing alpha (if costs exceed the phenomenon), and measured alpha can appear without a real edge (overfitting). |
+| **replay** | The mechanical process of re-feeding historical events through the pipeline in timestamp order. Replay is the mechanism; it makes no claim about fill realism or PnL validity. Deterministic replay (Inv-5) means identical inputs produce identical outputs. |
+| **backtest** | Replay combined with a fill model, cost model, and latency profile to produce simulated PnL. A backtest is a replay that also simulates execution. All backtests are replays; not all replays are backtests (e.g., feature validation replays). |
+| **simulation** | Any operating mode that is not live trading — includes backtest, paper trading, stress testing, and research. Distinguished from live by the absence of real capital at risk. |
+| **regime** | A classifiable market microstructure state (spread regime, volatility regime, liquidity regime, information regime). The microstructure-alpha skill defines the taxonomy; the risk-engine detects transitions in real time; post-trade-forensics audits classification accuracy. |
+| **warm-up** | The initial phase after feature engine activation where insufficient history has accumulated for reliable feature values. Features emit `warm=False` during this phase; signal engines must suppress entry signals from cold features. |
+| **staleness** | The condition where no market data has arrived for a symbol beyond a configurable threshold. Features emit `stale=True`; entry signals are suppressed; exit signals are permitted (conservative). |
+| **quarantine** | Temporary removal of a strategy from live capital due to forensic evidence of edge decay, cost drift, or execution degradation. The strategy continues generating paper signals for comparison. Requires explicit revalidation to lift. |
+| **promotion** | The gated process of moving a strategy from research through paper trading to live capital. Each gate requires affirmative evidence of correctness. Governed by the testing-validation skill. |

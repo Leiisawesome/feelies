@@ -12,15 +12,69 @@ description: >
 
 High-fidelity ingestion and storage of L1 NBBO and trades.
 
+## Core Invariants
+
+Inherits platform invariants 5 (deterministic replay), 6 (causality),
+7 (event-driven typed schemas), 13 (full provenance). Additionally:
+
+1. **Immutable raw log** — original messages are append-only and never mutated; all downstream representations derive from this log
+2. **Gaps are visible** — missing data is surfaced via `DataHealth` SM transitions, never silently skipped or interpolated
+3. **Schema as contract** — every event crossing the ingestion boundary conforms to a typed schema (`NBBOQuote`, `Trade`); untyped or malformed data is rejected at the boundary
+
+---
+
+## Canonical Event Types
+
+The ingestion layer produces two canonical event types from `core/events.py`:
+
+- `NBBOQuote` — L1 quote with symbol, bid, ask, bid_size, ask_size,
+  exchange_timestamp_ns, conditions
+- `Trade` — trade print with symbol, price, size, exchange_timestamp_ns,
+  conditions
+
+Both inherit from `Event`, carrying `timestamp_ns` (from injectable clock),
+`correlation_id`, and `sequence` for provenance.
+
+## Normalizer Protocol
+
+This skill owns the `MarketDataNormalizer` protocol (`ingestion/normalizer.py`) —
+the system boundary. All market data enters through it:
+
+```python
+class MarketDataNormalizer(Protocol):
+    def on_message(self, raw: bytes, received_ns: int, source: str) -> Sequence[NBBOQuote | Trade]: ...
+    def health(self, symbol: str) -> DataHealth: ...
+    def all_health(self) -> dict[str, DataHealth]: ...
+```
+
+Correlation IDs are assigned at the ingestion boundary via
+`make_correlation_id(symbol, exchange_timestamp_ns, sequence)` from
+`core/identifiers.py`.
+
 ## Ingestion Pipeline
 
 | Capability | Requirement |
 |---|---|
-| Real-time streaming | Polygon WebSocket → canonical event format |
+| Real-time streaming | Polygon WebSocket → `MarketDataNormalizer.on_message()` → `NBBOQuote` / `Trade` |
 | Historical backfill | Idempotent; resumable from last checkpoint |
-| Gap detection | Sequence breaks surfaced immediately, never silently skipped |
+| Gap detection | Sequence breaks surfaced via `DataHealth` SM transitions, never silently skipped |
 | Deduplication | Exact-duplicate and logical-duplicate elimination |
 | Timestamp normalization | All times UTC nanoseconds; exchange time and receipt time tracked separately |
+
+## Data Integrity State Machine
+
+Per-symbol data integrity is tracked by the `DataHealth` SM
+(`ingestion/data_integrity.py`) with 4 states:
+
+| State | Transitions To | Meaning |
+|-------|---------------|---------|
+| `HEALTHY` | GAP_DETECTED, CORRUPTED | Normal operation |
+| `GAP_DETECTED` | HEALTHY, CORRUPTED | Sequence gap found; gap-fill in progress |
+| `CORRUPTED` | RECOVERING | Unresolvable data corruption |
+| `RECOVERING` | HEALTHY, CORRUPTED | Recovery attempt in progress |
+
+The orchestrator checks `normalizer.health(symbol)` at the top of each
+tick. If CORRUPTED during a trading mode, macro transitions to DEGRADED.
 
 ## Validation & Integrity
 
@@ -29,13 +83,75 @@ High-fidelity ingestion and storage of L1 NBBO and trades.
 - **Clock reconciliation**: maintain offset between exchange timestamp and receipt timestamp; alert on drift > threshold
 - **Latency measurement**: annotate every event with ingestion latency (receipt − exchange time)
 
+## Storage Protocols
+
+The storage layer exposes two key protocols:
+
+### EventLog (`storage/event_log.py`)
+
+Append-only, sequence-based event store for replay and audit:
+
+```python
+class EventLog(Protocol):
+    def append(self, event: Event) -> None: ...
+    def replay(self, start_sequence: int = 0, end_sequence: int | None = None) -> Iterator[Event]: ...
+    def last_sequence(self) -> int: ...
+```
+
+The orchestrator calls `event_log.append()` at M1 (STATE_UPDATE) for every
+inbound quote and in `_process_trade()` for every trade. Replay by sequence
+range enables deterministic backtest replay (invariant 5).
+
+### TradeJournal (`storage/trade_journal.py`)
+
+Structured, queryable trade lifecycle store — distinct from EventLog:
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class TradeRecord:
+    order_id: str
+    symbol: str
+    strategy_id: str
+    side: Side
+    requested_quantity: int
+    filled_quantity: int
+    fill_price: Decimal | None
+    signal_timestamp_ns: int
+    submit_timestamp_ns: int
+    fill_timestamp_ns: int | None
+    slippage_bps: Decimal
+    fees: Decimal
+    realized_pnl: Decimal
+    correlation_id: str
+    metadata: dict[str, str]
+
+class TradeJournal(Protocol):
+    def record(self, trade: TradeRecord) -> None: ...
+    def query(self, *, symbol: str | None = None, strategy_id: str | None = None,
+              start_ns: int | None = None, end_ns: int | None = None) -> Iterator[TradeRecord]: ...
+```
+
+Failure mode: degrade. If journal write fails, EventLog still has raw events —
+the journal can be rebuilt. Journal unavailability does not halt trading.
+
+**Ownership boundary**: this skill owns the storage implementation. The
+post-trade-forensics skill consumes `TradeJournal.query()` for analysis.
+The live-execution skill produces `TradeRecord` entries from fill events.
+
+### EventSerializer (NOT YET IMPLEMENTED)
+
+Round-trip serialization for event persistence. When implemented, must
+guarantee bit-deterministic output — the same event serialized twice
+produces identical bytes.
+
 ## Storage Design
 
-| Layer | Description |
-|---|---|
-| Raw immutable | Append-only log of original messages — never mutated |
-| Normalized events | Schema-conformed, deduplicated, gap-annotated event stream |
-| Feature snapshots | Optional; versioned and reproducible from normalized events |
+| Layer | Description | Protocol |
+|---|---|---|
+| Raw immutable | Append-only log of original messages — never mutated | `EventLog` |
+| Normalized events | Schema-conformed, deduplicated, gap-annotated event stream | `EventLog.replay()` |
+| Feature snapshots | Versioned and reproducible from normalized events | `FeatureSnapshotStore` |
+| Trade journal | Structured trade lifecycle records | `TradeJournal` |
 
 ## Design Decisions
 
@@ -56,3 +172,22 @@ High-fidelity ingestion and storage of L1 NBBO and trades.
 - Define recovery protocol for every failure mode (feed drop, schema change, storage fault)
 - Replay from raw immutable log must reproduce identical normalized output (replay invariant)
 - All backfills tagged with provenance metadata (source, timestamp, version)
+
+---
+
+## Integration Points
+
+| Dependency | Interface |
+|------------|-----------|
+| System Architect (system-architect skill) | `Clock`, `EventBus`, layer boundaries; `Event` base class for all typed events |
+| Feature Engine (feature-engine skill) | Produces `NBBOQuote`/`Trade` consumed by `FeatureEngine.update()` at M2 |
+| Backtest Engine (backtest-engine skill) | `EventLog.replay()` drives backtest via `MarketDataSource`; `SimulatedClock` for deterministic time |
+| Live Execution (live-execution skill) | Real-time `NBBOQuote`/`Trade` feed for live pipeline; reference pricing for slippage |
+| Risk Engine (risk-engine skill) | Real-time NBBO for mark-to-market, volatility estimation, regime detection |
+| Post-Trade Forensics (post-trade-forensics skill) | `EventLog.replay()` for historical forensic analysis |
+| Testing & Validation (testing-validation skill) | `DataHealth` SM transitions; schema validation; gap injection for fault tests |
+
+The data engineering layer is the system's first contact with the external
+world. Every downstream layer depends on the fidelity of the events it
+produces. No other layer ingests raw market data — all access is through
+`MarketDataNormalizer` and `EventLog`.

@@ -29,20 +29,25 @@ Additionally:
 
 ### Broker Abstraction
 
-All broker interaction behind a single interface:
+All broker interaction is behind the `OrderRouter` protocol
+(`execution/backend.py`), composed into `ExecutionBackend`:
 
-```
-BrokerGateway:
-  submit_order(order: Order) -> OrderAck | OrderReject
-  cancel_order(order_id: str) -> CancelAck | CancelReject
-  modify_order(order_id: str, changes: Modification) -> ModifyAck | ModifyReject
-  query_position(symbol: str) -> Position
-  query_order_status(order_id: str) -> OrderStatus
-  subscribe_executions() -> Stream[ExecutionReport]
+```python
+class OrderRouter(Protocol):
+    def submit(self, request: OrderRequest) -> None: ...
+    def poll_acks(self) -> list[OrderAck]: ...
 ```
 
-The gateway emits typed events onto the event bus. Strategy and risk logic
-never call broker methods directly — they emit order-intent events.
+Orders are submitted as `OrderRequest` events (`core/events.py`) with
+deterministic `order_id` derived from `hashlib.sha256(correlation_id:sequence)`.
+Fill responses arrive as `OrderAck` events carrying typed `OrderAckStatus`
+(ACKNOWLEDGED, PARTIALLY_FILLED, FILLED, CANCELLED, REJECTED, EXPIRED).
+
+Cancellation is initiated via `Orchestrator.cancel_order(order_id, reason=...)`
+which transitions the order SM: ACKNOWLEDGED → CANCEL_REQUESTED.
+
+Strategy and risk logic never call broker methods directly — they emit
+order-intent events. The orchestrator mediates all order routing.
 
 ### Routing Rules
 
@@ -78,55 +83,74 @@ never call broker methods directly — they emit order-intent events.
 
 ### Idempotency
 
-Every order carries a client-generated idempotency key:
+Every order carries a deterministic `order_id` derived via SHA-256:
 
-```
-idempotency_key = hash(signal_id, symbol, side, size, timestamp_bucket)
+```python
+order_id = hashlib.sha256(f"{correlation_id}:{seq}".encode()).hexdigest()[:16]
 ```
 
-- The gateway deduplicates on this key within a configurable window (default: 60s)
-- If a submission times out and is retried, the same key prevents double-fill
-- Idempotency keys are persisted in the order journal for audit
+This ensures replay of identical events produces identical order IDs
+(invariant 5). The `SequenceGenerator` (`core/identifiers.py`) provides
+the monotonic `seq`. uuid4 is forbidden in order ID generation.
+
+- The deterministic ID serves as the idempotency key
+- Duplicate submissions with the same order_id are detectable at the router level
+- Order IDs are recorded in `TradeRecord` for audit
 
 ---
 
 ## Order State Machine
 
-Every order follows an explicit finite state machine. No order exists outside
-these states. See [order-lifecycle.md](order-lifecycle.md) for transition
-diagrams, edge cases, and timeout escalation paths.
+Every order follows the `OrderState` SM (`execution/order_state.py`).
+No order exists outside these states. Each order gets its own
+`StateMachine[OrderState]` instance tracked in the orchestrator's
+`_active_orders` dict.
 
-### States
+### States (9-state)
 
-| State | Description |
-|-------|-------------|
-| `CREATED` | Order constructed, pending risk check |
-| `RISK_APPROVED` | Passed risk engine; queued for submission |
-| `RISK_REJECTED` | Rejected by risk engine; terminal |
-| `SUBMITTED` | Sent to broker; awaiting acknowledgment |
-| `ACKNOWLEDGED` | Broker accepted; order is live |
-| `PARTIALLY_FILLED` | One or more fills received; order still open |
-| `FILLED` | Fully filled; terminal |
-| `CANCEL_PENDING` | Cancel request sent; awaiting confirmation |
-| `CANCELLED` | Confirmed cancelled; terminal |
-| `REJECTED` | Broker rejected; terminal |
-| `EXPIRED` | TTL exceeded without fill; terminal |
-| `ERROR` | Unrecoverable error; requires manual review |
+| State | Description | Terminal? |
+|-------|-------------|-----------|
+| `CREATED` | Order constructed, pending submission | No |
+| `SUBMITTED` | Sent to broker via `OrderRouter.submit()` | No |
+| `ACKNOWLEDGED` | Broker accepted; order is live | No |
+| `PARTIALLY_FILLED` | One or more fills received; order still open | No |
+| `FILLED` | Fully filled | Yes |
+| `CANCEL_REQUESTED` | Cancel request via `Orchestrator.cancel_order()` | No |
+| `CANCELLED` | Confirmed cancelled | Yes |
+| `REJECTED` | Broker rejected | Yes |
+| `EXPIRED` | TTL exceeded without fill | Yes |
 
-### Transition Rules
+Risk approval/rejection happens **before** order construction (at M5
+`check_signal` and M6 `check_order`), not as order states. This keeps
+the order SM focused on the broker lifecycle.
 
-- Only forward transitions allowed (no `FILLED` -> `SUBMITTED`)
-- `SUBMITTED` without `ACKNOWLEDGED` within timeout -> `CANCEL_PENDING`
-- `CANCEL_PENDING` without `CANCELLED` within timeout -> `ERROR` + reconcile
-- Every transition emits an event on the bus with timestamp and reason
-- `ERROR` state triggers monitoring alert and position reconciliation
+### Transition Table (`_ORDER_TRANSITIONS`)
+
+```
+CREATED         → {SUBMITTED}
+SUBMITTED       → {ACKNOWLEDGED, REJECTED}
+ACKNOWLEDGED    → {PARTIALLY_FILLED, FILLED, CANCEL_REQUESTED, EXPIRED}
+PARTIALLY_FILLED → {PARTIALLY_FILLED, FILLED}
+CANCEL_REQUESTED → {CANCELLED, FILLED}
+FILLED / CANCELLED / REJECTED / EXPIRED → {} (terminal)
+```
 
 ### Acknowledgment Handling
 
-- **Ack received**: transition `SUBMITTED` -> `ACKNOWLEDGED`, record broker order ID
-- **Ack not received within timeout**: assume submission may have succeeded; query order status before retrying
-- **Late ack** (after timeout-triggered cancel): reconcile — if order is live, re-enter cancel flow
-- **Duplicate ack**: idempotent; log but do not re-process
+`_apply_ack_to_order()` maps typed `OrderAckStatus` enum members to
+order SM transitions with exhaustive matching:
+
+- **ACKNOWLEDGED**: SUBMITTED → ACKNOWLEDGED
+- **REJECTED**: any → REJECTED (direct terminal)
+- **FILLED**: ACKNOWLEDGED → FILLED (auto-acks SUBMITTED first if needed)
+- **PARTIALLY_FILLED**: ACKNOWLEDGED → PARTIALLY_FILLED (emits alert if inapplicable)
+- **CANCELLED**: CANCEL_REQUESTED → CANCELLED (emits alert if inapplicable)
+- **EXPIRED**: ACKNOWLEDGED → EXPIRED (emits alert if inapplicable)
+- **Unknown status**: raises `ValueError` (exhaustiveness guard)
+
+Acks for unknown `order_id`s emit `ack_for_unknown_order` alert.
+Fills for untracked orders are rejected with `fill_for_unknown_order` alert
+(invariant 11: fail-safe prevents exposure increase from unknown orders).
 
 ---
 
@@ -224,17 +248,40 @@ risk engine emits events; this layer enforces them.
 
 ### Kill Switch
 
-Immediate cessation of all trading activity.
+The `KillSwitch` protocol (`monitoring/kill_switch.py`) provides:
+
+```python
+class KillSwitch(Protocol):
+    @property
+    def is_active(self) -> bool: ...
+    def activate(self, reason: str, *, activated_by: str = "automated") -> None: ...
+    def reset(self, *, operator: str, audit_token: str) -> None: ...
+```
+
+`reset()` re-enables trading after kill switch activation. Requires human
+authorization; audit token is logged for provenance (invariant 13). Called
+via `Orchestrator.unlock_from_lockdown(audit_token=...)` which additionally
+enforces the zero-exposure guard before allowing `reset()`.
+
+When activated:
+
+1. `KillSwitchActivation` event is published on the bus
+2. The orchestrator's tick-processing gate checks `is_active` at the
+   top of every tick — if active, macro transitions to DEGRADED and
+   the tick is skipped
+3. The `_escalate_risk()` cascade activates the kill switch as part
+   of the R0→R4 escalation sequence
+
+Kill switch activation is **irreversible without manual intervention**.
+Recovery requires `Orchestrator.unlock_from_lockdown(audit_token=...)`
+with a zero-exposure guard.
 
 | Trigger | Response |
 |---------|----------|
+| `_escalate_risk()` cascade (FORCE_FLATTEN) | R0→R4 escalation + kill switch + macro RISK_LOCKDOWN |
 | Manual activation | Cancel all open orders; flatten positions |
 | Unrecoverable system error | Cancel all open orders; freeze state |
-| Position reconciliation emergency | Cancel all open orders; freeze for manual review |
 | External signal (ops team) | Cancel all open orders; await manual re-enable |
-
-Kill switch activation is **irreversible without manual intervention**.
-The system cannot self-recover from a kill switch.
 
 ### Circuit Breaker
 
@@ -294,18 +341,23 @@ first-class failure mode.
 
 ### Shared Logic Enforcement
 
+The micro-state pipeline (`MicroState` M0-M10 in `kernel/micro.py`) is
+identical across all trading modes. The orchestrator's `_process_tick()`
+method is the single code path — it never inspects `backend.mode`.
+
 | Component | Shared Between Modes | Mode-Specific |
 |-----------|---------------------|---------------|
 | Signal generation | Yes | — |
 | Feature computation | Yes | — |
-| Risk checks | Yes | — |
-| Order construction | Yes | — |
-| Order routing | — | Backtest: fill simulator / Live: broker gateway |
-| Clock | — | Backtest: simulated / Live: wall clock |
-| Position tracking | Yes (interface) | State source differs |
+| Risk checks (`check_signal`, `check_order`) | Yes | — |
+| Order construction (`_build_order`) | Yes | — |
+| Order routing | — | `OrderRouter`: fill simulator (backtest) / broker API (live) |
+| Market data | — | `MarketDataSource`: replay (backtest) / live feed |
+| Clock | — | `SimulatedClock` (backtest) / `WallClock` (live) |
+| Position tracking | Yes (`PositionStore` protocol) | Implementation differs |
 
-Code that diverges between modes must be behind the `ExecutionBackend`
-interface and nowhere else. Any logic duplication is a bug.
+Code that diverges between modes must be behind `ExecutionBackend`
+(`execution/backend.py`) and nowhere else. Any logic duplication is a bug.
 
 ---
 
@@ -333,11 +385,13 @@ Live execution produces a continuous stream of:
 
 | Dependency | Interface |
 |------------|-----------|
-| Backtest Engine (backtest-engine skill) | Shared order construction, fill model assumptions, cost framework |
-| System Architect (system-architect skill) | Clock abstraction, event bus, layer boundaries, `ExecutionBackend` interface |
-| Microstructure Alpha (microstructure-alpha skill) | Signal definitions, entry/exit logic, regime awareness |
-| Data Engineering (data-engineering skill) | Real-time NBBO feed for reference pricing and spread regime detection |
+| Backtest Engine (backtest-engine skill) | Shared `OrderRouter` protocol; fill model behind same interface |
+| System Architect (system-architect skill) | `Clock`, `EventBus`, `ExecutionBackend`, `PositionStore` protocols |
+| Risk Engine (risk-engine skill) | `RiskVerdict` with `RiskAction`; `_escalate_risk()` cascade |
+| Microstructure Alpha (microstructure-alpha skill) | `Signal` events with `SignalDirection`; entry/exit logic |
+| Data Engineering (data-engineering skill) | `NBBOQuote` / `Trade` events for reference pricing |
 
-The live execution engine is the execution layer in live mode.
-It swaps in for the backtest fill simulator with no changes to signal,
-feature, or risk logic.
+The live execution engine is a concrete `OrderRouter` implementation
+(broker API adapter). It swaps in for the backtest fill simulator with
+no changes to signal, feature, or risk logic — the orchestrator's
+`_process_tick()` is identical in all modes.

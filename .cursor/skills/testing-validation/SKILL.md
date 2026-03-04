@@ -60,16 +60,45 @@ Coverage requirements:
 Invariants that must hold for all valid inputs. Use hypothesis-style
 generators to explore the input space.
 
+#### State Machine Targets
+
+The 5 state machines are primary property-based test targets. Each uses
+the generic `StateMachine[S]` framework (`core/state_machine.py`) with:
+- `IllegalTransition` exception for forbidden transitions
+- `TransitionRecord` (frozen dataclass) as the audit trail
+- Construction-time enum completeness check — every enum member must
+  have an entry in the transition table
+
+| State Machine | Enum | Key Properties |
+|---------------|------|----------------|
+| `MacroState` (10 states) | `kernel/macro.py` | SHUTDOWN is terminal (no outbound); TRADING_MODES are the only states that run the tick pipeline |
+| `MicroState` (11 states) | `kernel/micro.py` | Strictly sequential M0→M10→M0; no skipping; shared across all trading modes |
+| `OrderState` (9 states) | `execution/order_state.py` | FILLED/CANCELLED/REJECTED/EXPIRED are terminal; PARTIALLY_FILLED cannot cancel |
+| `RiskLevel` (5 states) | `risk/escalation.py` | Monotonic forward-only (R0→R4); only R4→R0 via human unlock |
+| `DataHealth` (4 states) | `ingestion/data_integrity.py` | CORRUPTED can only reach RECOVERING; no direct CORRUPTED→HEALTHY |
+
+#### Determinism Building Blocks
+
+- `SimulatedClock` (`core/clock.py`): `set_time(ns)` raises `ValueError`
+  on backward movement — test with random timestamp sequences
+- SHA-256 order IDs: `hashlib.sha256(f"{correlation_id}:{seq}")` —
+  verify identical inputs produce identical IDs across runs
+- `SequenceGenerator` (`core/identifiers.py`): monotonic counter —
+  verify strict monotonicity under concurrent access
+
+#### Core Invariants
+
 | Invariant | Generator | Property |
 |-----------|-----------|----------|
 | Causal ordering | Random event streams with shuffled timestamps | Features never depend on future events |
 | Deterministic replay | Same event log + config, two independent runs | Signals, orders, PnL are bit-identical |
 | Position conservation | Random fill sequences | Sum of fills = final position; no phantom shares |
-| Risk monotonic safety | Random constraint-tightening sequences | Safety level never decreases without explicit re-auth |
+| Risk monotonic safety | Random `RiskLevel` transition sequences | Safety level never decreases without explicit re-auth |
 | PnL decomposition | Random trade sequences with known prices | Alpha + beta + costs = total return (to floating-point tolerance) |
-| Clock monotonicity | Arbitrary event replay with latency injection | Simulated clock never moves backward |
-| Idempotent submission | Duplicate signal sequences | No duplicate orders produced |
-| State machine validity | Random state transition attempts | No illegal transitions accepted; terminal states are absorbing |
+| Clock monotonicity | Arbitrary `SimulatedClock.set_time()` sequences | Clock never moves backward; backward attempt raises `ValueError` |
+| Idempotent submission | Duplicate signal sequences | SHA-256 order IDs prevent duplicate orders |
+| State machine validity | Random state transition attempts on all 5 SMs | `IllegalTransition` raised for forbidden transitions; terminal states have empty target sets |
+| Enum completeness | Construct SM with missing entries | `ValueError` raised at construction for incomplete tables |
 
 Run property-based tests with at least 1000 examples per property.
 Failures are shrunk to minimal reproducible cases and persisted as
@@ -78,13 +107,19 @@ regression tests.
 ### Replay Reproducibility Tests
 
 Verify that backtest replay is deterministic across environments.
+Determinism is structurally supported by:
+- `SimulatedClock` (no wall-clock dependency)
+- SHA-256 order IDs (deterministic from `correlation_id:sequence`)
+- `StateMachine` frozen transition tables (identical state sequences)
+- `TransitionRecord` audit trail (every SM change logged with timestamp,
+  trigger, and correlation_id for diff comparison)
 
 | Test | Method | Pass Criteria |
 |------|--------|---------------|
-| Same-machine determinism | Run identical config twice on same machine | Bit-identical PnL curve, trade log, position series |
+| Same-machine determinism | Run identical config twice on same machine | Bit-identical `StateTransition` event stream, trade log, position series |
 | Cross-machine determinism | Run identical config on two different machines | Bit-identical outputs (requires fixed seeds, no hardware-dependent floats) |
 | Version upgrade determinism | Run same config on old and new code versions | Identical outputs, or documented and justified divergence |
-| Checkpoint resume | Interrupt replay mid-stream; resume from checkpoint | Final output identical to uninterrupted run |
+| Checkpoint resume | Interrupt replay mid-stream; resume from `FeatureSnapshotStore` checkpoint | Final output identical to uninterrupted run |
 | Seed sensitivity | Vary random seed for stochastic components | PnL distribution matches expected envelope; no seed produces degenerate results |
 
 Reproducibility tests run on every code change that touches replay logic,
@@ -324,12 +359,12 @@ include cross-machine reproducibility and extended property-based testing
 
 | Dependency | Interface |
 |------------|-----------|
-| Backtest Engine (backtest-engine skill) | Replay determinism, fill model validation, integrity checks |
-| Live Execution (live-execution skill) | Sim-vs-live divergence metrics, execution quality monitoring |
-| Risk Engine (risk-engine skill) | Constraint enforcement tests, drawdown gate validation, regime transition testing |
-| Data Engineering (data-engineering skill) | Data corruption simulation, gap injection, schema validation tests |
-| System Architect (system-architect skill) | Layer isolation tests, event bus contract tests, clock abstraction verification |
-| Performance Engineering (performance-engineering skill) | Latency budget tests, throughput regression tests |
+| Backtest Engine (backtest-engine skill) | `SimulatedClock` + `MarketDataSource` for deterministic replay; `OrderRouter` for fill model validation |
+| Live Execution (live-execution skill) | Sim-vs-live divergence metrics; `OrderAckStatus` exhaustiveness verification |
+| Risk Engine (risk-engine skill) | `RiskLevel` SM monotonicity; `RiskAction` exhaustiveness guards; `RiskVerdict` schema validation |
+| Data Engineering (data-engineering skill) | `DataHealth` SM transitions; `NBBOQuote`/`Trade` schema validation; gap injection |
+| System Architect (system-architect skill) | `StateMachine` framework; `TransitionRecord` audit trail; `EventBus` contract tests; `Clock` abstraction |
+| Performance Engineering (performance-engineering skill) | `MetricEvent` latency budget tests; throughput regression tests |
 
 The testing framework validates every other layer but does not contain
 business logic itself. It is the gatekeeper — independent, comprehensive,

@@ -1,5 +1,13 @@
 # Fill Model — Calibration & Assumptions
 
+> **NOT YET IMPLEMENTED** — The fill model is a design target. The
+> implementation hook is the `OrderRouter` protocol (`execution/backend.py`).
+> A backtest-mode `OrderRouter` receives `Order` events and returns
+> `OrderAck` events with typed `OrderAckStatus` (ACKNOWLEDGED,
+> PARTIALLY_FILLED, FILLED, REJECTED). Fill model logic lives inside
+> the `OrderRouter` implementation, keeping it decoupled from the
+> core pipeline.
+
 ## Model Hierarchy
 
 Three tiers of fill realism. Default to Tier 2 unless explicitly choosing otherwise.

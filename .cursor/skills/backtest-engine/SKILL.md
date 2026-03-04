@@ -15,12 +15,34 @@ as possible given L1-only data. Optimize for realism over speed — but quantify
 
 ## Core Invariants
 
-Inherits platform invariants 5 (deterministic replay), 6 (causality), 9 (backtest/live parity).
-Causality is enforced in three specific forms:
+Inherits platform invariants 5 (deterministic replay), 6 (causality), 9 (backtest/live parity),
+12 (transaction cost realism). Causality is enforced in three specific forms:
 
 1. **No future leakage** — event processing sees only past and present
 2. **No lookahead bias** — features computed causally; no peeking at future quotes/trades
 3. **No synchronous feature cheating** — features from event at time T not available until T + processing_latency
+
+---
+
+## Backtest Lifecycle
+
+Backtest execution is driven by `Orchestrator.run_backtest()`:
+
+1. Assert macro state is READY
+2. Reset micro SM to M0 (`session_start:backtest`)
+3. Transition macro: READY → BACKTEST_MODE (`CMD_BACKTEST`)
+4. Run `_run_pipeline()` — iterates `backend.market_data.events()`
+5. On success: BACKTEST_MODE → READY (`BACKTEST_COMPLETE`)
+6. On exception: BACKTEST_MODE → DEGRADED (`BACKTEST_INTEGRITY_FAIL`)
+
+The pipeline dispatches by event type: `NBBOQuote` drives the full
+signal pipeline via `_process_tick()`; `Trade` events are logged and
+published via `_process_trade()`.
+
+Order IDs are deterministic — derived from
+`hashlib.sha256(f"{correlation_id}:{seq}")`. This ensures two runs
+with the same event log and parameters produce bit-identical signals,
+orders, and PnL (invariant 5).
 
 ---
 
@@ -47,9 +69,20 @@ Events within the same exchange-timestamp nanosecond form a **micro-batch**:
 
 ### Clock & Latency Injection
 
-```
-simulated_clock = exchange_timestamp + injected_latency
+Backtest mode uses `SimulatedClock` (`core/clock.py`) — a deterministic clock
+whose time only advances via explicit `set_time(ns)` calls. The clock
+enforces monotonicity: `set_time(ns)` raises `ValueError` if `ns` is less
+than the current time, preventing accidental backward movement.
 
+```python
+simulated_clock = exchange_timestamp + injected_latency
+```
+
+Latency injection is achieved by calling `set_time()` with the exchange
+timestamp plus modeled delays between events — not by inserting explicit
+sleeps into the pipeline.
+
+```
 injected_latency = data_feed_delay + processing_delay + broker_delay
 
 data_feed_delay  ~ LogNormal(mu=3.0, sigma=0.5) [ms]
@@ -67,8 +100,8 @@ Configurable latency profiles:
 | Pessimistic | Stress testing | ~100ms+ |
 | Stochastic | Monte Carlo runs | Sampled per-event |
 
-All latency injection uses the injectable clock from the system-architect layer.
-Raw `datetime.now()` is forbidden in simulation code.
+Raw `datetime.now()` is forbidden in simulation code. All timestamps
+flow through the `Clock` protocol (invariant 10).
 
 ---
 
@@ -87,13 +120,27 @@ Raw `datetime.now()` is forbidden in simulation code.
 
 ### Order Lifecycle
 
+Orders follow the same 9-state `OrderState` SM (`execution/order_state.py`)
+as live trading. The orchestrator's `_process_tick()` is identical in
+backtest and live modes — fill responses arrive as `OrderAck` events with
+typed `OrderAckStatus` enum members.
+
 ```
-Signal emitted (T)
-  → Order created (T + processing_delay)
-    → Order submitted (T + processing_delay + broker_delay)
-      → Order acknowledged (T + total_latency)
-        → Fill / partial fill / timeout / cancel
+Signal evaluated (M4)
+  → Risk check (M5: check_signal → RiskVerdict)
+    → Order constructed (M6: _build_order → OrderRequest)
+      → Second risk check (M6: check_order → RiskVerdict)
+        → Order submitted (M7: OrderRouter.submit())
+          → Ack polled (M8: OrderRouter.poll_acks() → OrderAck[])
+            → Position updated (M9: _reconcile_fills())
 ```
+
+The backtest fill simulator is a concrete `OrderRouter` implementation
+(NOT YET IMPLEMENTED). It must return `OrderAck` events with
+`OrderAckStatus.FILLED`/`PARTIALLY_FILLED`/`REJECTED` plus `fill_price`
+and `filled_quantity`. The orchestrator's `_apply_ack_to_order()` handles
+the order SM transitions and `_reconcile_fills()` produces `PositionUpdate`
+events and `TradeRecord` entries.
 
 Between signal and acknowledgment, the NBBO may have moved.
 The fill model uses the NBBO at acknowledgment time, not signal time.
@@ -108,6 +155,11 @@ When a limit order price crosses the opposite side of NBBO at submission:
 ---
 
 ## Fill Model
+
+**NOT YET IMPLEMENTED** — the `OrderRouter` protocol (`execution/backend.py`)
+is the implementation hook. A backtest fill simulator must implement
+`OrderRouter.submit()` and `poll_acks()`, returning `OrderAck` events
+with typed `OrderAckStatus` members.
 
 Three-tier model with increasing realism. See [fill-model.md](fill-model.md) for
 calibration methodology, parameter estimation, and adverse selection adjustment.
@@ -164,15 +216,28 @@ Alpha must exceed round-trip cost by a margin. Minimum threshold:
 
 ## Integrity Enforcement
 
+### Structural Safeguards (Built Into Architecture)
+
+Several integrity properties are enforced structurally rather than via
+post-hoc validation:
+
+| Property | Enforcement Mechanism |
+|----------|----------------------|
+| Timestamp monotonicity | `SimulatedClock.set_time()` raises `ValueError` on backward movement |
+| No illegal state transitions | `StateMachine` frozen transition table + `IllegalTransition` exception |
+| Deterministic order IDs | SHA-256 from `correlation_id:sequence` (no uuid4) |
+| No silent transitions | Every SM change emits `StateTransition` via `TransitionRecord` callback |
+| Enum completeness | `StateMachine.__init__` validates every enum member has a transition entry |
+
 ### Anti-Leakage Checks
 
 | Check | Enforcement |
 |-------|------------|
-| Causal ordering | Feature at time T uses only events with timestamp ≤ T |
+| Causal ordering | Feature at time T uses only events with timestamp ≤ T (invariant 6) |
 | Processing delay | Features not available until T + compute_time |
 | No future NBBO | Order decisions use last-known NBBO, not next |
 | No batch peeking | Within micro-batch, no cross-event dependencies |
-| Timestamp monotonicity | Simulated clock never moves backward |
+| Timestamp monotonicity | `SimulatedClock` backward-movement guard |
 
 ### Automated Validation
 
@@ -180,7 +245,7 @@ Run these checks on every backtest:
 1. **Timestamp audit** — verify no feature depends on future timestamps
 2. **Fill audit** — verify no fill occurs before order acknowledgment time
 3. **PnL reconciliation** — verify position changes match fill records exactly
-4. **Determinism check** — two runs with same seed produce identical output
+4. **Determinism check** — two runs with same seed produce identical output (SHA-256 IDs guarantee this structurally)
 5. **Latency budget check** — log if any event processing exceeds pipeline budget
 
 ---
@@ -241,18 +306,29 @@ Never sacrifice fill model fidelity for replay speed.
 
 ## Output Specification
 
-Every backtest run produces:
+Backtest output flows through the existing event and storage types:
+
+| Output | Type | Source |
+|--------|------|--------|
+| Trade lifecycle records | `TradeRecord` (`storage/trade_journal.py`) | `_reconcile_fills()` writes to `TradeJournal` |
+| Position changes | `PositionUpdate` (`core/events.py`) | Published on bus at M9 |
+| State machine audit trail | `StateTransition` (`core/events.py`) | Every SM transition emitted via bus |
+| Tick latency | `MetricEvent` (`core/events.py`) | `tick_to_decision_latency_ns` histogram per tick |
+| Alerts | `Alert` (`core/events.py`) | Safety events, fill anomalies |
+
+Aggregated run summaries (PnL curve, integrity checks, realism metrics)
+are NOT YET IMPLEMENTED as a structured output format. When built, they
+should aggregate from the typed events above:
 
 ```
 {
   "run_id": str (deterministic hash of config + data),
   "config": { latency_profile, fill_model, cost_model, ... },
-  "trades": [ { timestamp, ticker, side, size, fill_price, slippage, fees, latency } ],
-  "positions": [ { timestamp, ticker, quantity, avg_price, unrealized_pnl } ],
-  "pnl_curve": [ { timestamp, realized, unrealized, gross, net } ],
+  "trades": [ TradeRecord... ],
+  "positions": [ PositionUpdate... ],
+  "state_transitions": [ StateTransition... ],
   "integrity_checks": { causal_ok, determinism_ok, reconciliation_ok },
-  "realism_metrics": { fill_rate, slippage_dist, pnl_compression },
-  "sensitivity": { param: impact_bps for each varied parameter }
+  "realism_metrics": { fill_rate, slippage_dist, pnl_compression }
 }
 ```
 
@@ -262,11 +338,13 @@ Every backtest run produces:
 
 | Upstream Dependency | Interface |
 |--------------------|-----------|
-| Data Engineering (data-engineering skill) | Normalized event stream, partitioned Parquet |
-| System Architect (system-architect skill) | Clock abstraction, event bus, layer boundaries |
-| Feature Engine (feature-engine skill) | Stateful feature computation; deterministic replay of feature snapshots |
-| Microstructure Alpha (microstructure-alpha skill) | Signal definitions, research protocol |
+| Data Engineering (data-engineering skill) | `NBBOQuote` / `Trade` events from `MarketDataSource.events()` |
+| System Architect (system-architect skill) | `SimulatedClock`, `EventBus`, `ExecutionBackend`, micro-state pipeline |
+| Feature Engine (feature-engine skill) | `FeatureEngine.update(quote) -> FeatureVector`; snapshot persistence via `FeatureSnapshotStore` |
+| Risk Engine (risk-engine skill) | `RiskEngine.check_signal()` / `check_order()` returning `RiskVerdict` |
+| Microstructure Alpha (microstructure-alpha skill) | `Signal` events with `SignalDirection`; research protocol |
 
-The backtest engine is the execution layer in backtest mode.
-It must be swappable with the live execution layer with no changes to
-signal, feature, or risk logic.
+The backtest engine is a concrete `MarketDataSource` + `OrderRouter`
+implementation composed into `ExecutionBackend`. It swaps in for the
+live execution layer with no changes to signal, feature, or risk logic
+— the orchestrator's `_process_tick()` is identical in all modes.

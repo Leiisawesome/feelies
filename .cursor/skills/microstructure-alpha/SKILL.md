@@ -103,9 +103,46 @@ For detailed research methodology, see [research-protocol.md](research-protocol.
 
 ## Entry/Exit Design
 
+### Signal Output Schema
+
+Signal evaluation produces a `Signal` event (`core/events.py`):
+
+```python
+class SignalDirection(Enum):
+    LONG = auto()
+    SHORT = auto()
+    FLAT = auto()
+
+@dataclass(frozen=True, kw_only=True)
+class Signal(Event):
+    symbol: str
+    strategy_id: str
+    direction: SignalDirection    # LONG, SHORT, or FLAT
+    strength: float              # signal confidence [0, 1]
+    edge_estimate_bps: float     # expected edge after costs
+    metadata: dict[str, Any]     # strategy-specific context
+```
+
+`FLAT` signals skip order construction — the micro-state pipeline
+transitions directly from M5 (RISK_CHECK) to M10 (LOG_AND_METRICS).
+Only `LONG` and `SHORT` proceed to `_build_order()`, which maps
+direction to `Side.BUY` / `Side.SELL`.
+
+### Feature Quality Gates
+
+Signal evaluation receives a `FeatureVector` (`core/events.py`) at M4:
+
+- `warm: bool` — False during warm-up; signal engine should suppress
+  entry signals from cold features
+- `stale: bool` — True when no quote arrived within staleness threshold;
+  exit signals allowed (conservative), entry signals suppressed
+- `feature_version: str` — ensures signal logic operates on compatible
+  feature definitions
+
 ### Entry Conditions
 
 Enter only when:
+- `FeatureVector.warm == True` and `FeatureVector.stale == False`
 - Posterior probability of drift > transaction cost + risk premium
 - A structural force is identified (not a threshold trigger)
 - The causal chain is specified (e.g., imbalance -> spread shift -> price drift)
@@ -122,6 +159,9 @@ Exit based on:
 - Hazard rate of reversal exceeds threshold
 - Structural invalidation (the causal premise breaks)
 - Time decay of edge (alpha half-life exceeded)
+
+Exit signals are permitted even when `FeatureVector.stale == True`
+(conservative: exit is safer than hold when data is missing).
 
 ### Regime Awareness
 
@@ -163,21 +203,56 @@ Markets are stochastic, non-stationary, partially observed systems.
 
 ## System Architecture
 
-Design with institutional separation of concerns:
+The system follows the micro-state pipeline defined in the system-architect
+skill. The actual tick-processing sequence (invariant 9 — identical in
+backtest and live):
 
 ```
-Data Ingestion (real-time + replay)
-  -> Feature Computation Engine
-    -> Signal Layer
-      -> Execution Simulator (latency + queue model)
-        -> Risk Engine
-          -> Portfolio Allocator
-            -> Monitoring & Logging
+MarketDataSource.events() → NBBOQuote
+  → M2: FeatureEngine.update(quote) → FeatureVector
+    → M4: SignalEngine.evaluate(features) → Signal | None
+      ├─ None → M10 (LOG_AND_METRICS, skip rest of pipeline)
+      └─ Signal →
+        → M5: RiskEngine.check_signal(signal) → RiskVerdict
+          → M6: _build_order() → OrderRequest
+            → M6: RiskEngine.check_order(order) → RiskVerdict
+              → M7: OrderRouter.submit(order)
+                → M8: OrderRouter.poll_acks() → OrderAck[]
+                  → M9: _reconcile_fills() → PositionUpdate
 ```
 
-The Feature Computation Engine is owned by the feature-engine skill, which
-defines incremental computation patterns, state lifecycle, versioning, and
-the contract between features and the signal layer.
+The `FeatureEngine` protocol (`features/engine.py`) is owned by the
+feature-engine skill, which defines incremental computation patterns,
+state lifecycle, versioning, and the contract between features and the
+signal layer. The supplementary `system-architecture.md` provides
+additional detail but should be read alongside the actual layer structure
+above.
+
+### SignalEngine Protocol Ownership
+
+This skill owns the `SignalEngine` protocol (`signals/engine.py`):
+
+```python
+class SignalEngine(Protocol):
+    def evaluate(self, features: FeatureVector) -> Signal | None: ...
+```
+
+`evaluate()` is a **pure function**: deterministic, no side effects, no
+state mutation, no I/O (invariant 5). Given identical `FeatureVector`
+inputs, it must produce identical outputs.
+
+Returns `Signal` when a tradeable condition is detected, `None` when no
+action is warranted (no signal this tick). `None` causes the micro-state
+pipeline to skip order construction — transitioning directly from M4
+(SIGNAL_GEN) to M10 (LOG_AND_METRICS).
+
+This skill defines:
+- **What** `evaluate()` computes (signal taxonomy, entry/exit logic, regime awareness)
+- **Signal semantics** (`SignalDirection`, `strength`, `edge_estimate_bps`)
+- **Feature quality gates** (warm/stale suppression rules)
+- **Falsifiability criteria** for every signal hypothesis
+
+Other skills consume `Signal` events but never define signal logic.
 
 ### Critical Separations
 
@@ -275,3 +350,18 @@ Before any final recommendation, validate across all three layers
 raises a structural objection, resolve it before proceeding. If convergence
 is impossible, declare the strategy non-viable. Do not compromise robustness
 to force agreement.
+
+---
+
+## Integration Points
+
+| Dependency | Interface |
+|------------|-----------|
+| System Architect (system-architect skill) | `Clock`, `EventBus`, micro-state pipeline (M4: SIGNAL_GEN); `Event` base class |
+| Feature Engine (feature-engine skill) | `FeatureVector` input to `SignalEngine.evaluate()` at M4; warm/stale quality gates |
+| Risk Engine (risk-engine skill) | Consumes `Signal` at M5 via `RiskEngine.check_signal()`; regime detection policy |
+| Live Execution (live-execution skill) | `Signal.direction` mapped to `Side` in `_build_order()`; execution quality feedback |
+| Backtest Engine (backtest-engine skill) | Shared `SignalEngine.evaluate()` in replay; fill model validates signal survivability |
+| Data Engineering (data-engineering skill) | `NBBOQuote` / `Trade` events feed `FeatureEngine` upstream of signal evaluation |
+| Post-Trade Forensics (post-trade-forensics skill) | `Signal` schema for hypothesis revalidation; regime stability audit |
+| Research Workflow (research-workflow skill) | Research protocol; experiment tracking; notebook-to-production handoff |

@@ -4,6 +4,23 @@ Three independent safety mechanisms that operate at different severity levels.
 Any mechanism can halt trading independently. They compose but never override
 each other — the most restrictive state wins.
 
+## Mapping to Implemented Infrastructure
+
+The `RiskLevel` SM (`risk/escalation.py`) and `KillSwitch` protocol
+(`monitoring/kill_switch.py`) provide the structural backbone. The three
+mechanisms below describe **operational behavior**; each maps onto the
+implemented primitives:
+
+| Mechanism | RiskLevel mapping | Protocol hook |
+|-----------|------------------|---------------|
+| Kill Switch | `LOCKED` (R4) | `KillSwitch.activate()` → `KillSwitchActivation` event |
+| Circuit Breaker | `BREACH_DETECTED` / `FORCED_FLATTEN` (R2/R3) | `RiskEngine.check_signal()` returns `REJECT` or `FORCE_FLATTEN` |
+| Capital Throttle | `WARNING` (R1) | `RiskEngine.check_order()` returns `SCALE_DOWN` |
+
+Safety controls only tighten autonomously (monotonic `RiskLevel` transitions);
+loosening requires `Orchestrator.unlock_from_lockdown()` with zero-exposure
+guard (invariant 11).
+
 ## Kill Switch
 
 ### Activation Triggers
@@ -18,34 +35,35 @@ each other — the most restrictive state wins.
 
 ### Activation Sequence
 
+Implemented in `Orchestrator._escalate_risk()`:
+
 ```
-1. Set global kill_switch_active = true (atomic)
-2. Reject all new order-intent events at the bus
-3. Cancel all open orders (best-effort, parallel)
-4. Log all cancel results (success / failed / unknown)
-5. If flatten_on_kill = true:
-   a. Query broker positions
-   b. Submit market orders to flatten all positions
-   c. Wait for fill confirmation
-6. Emit KILL_SWITCH_ACTIVATED event with full state snapshot
-7. Persist kill switch state to durable storage
-8. Block all further trading until manual re-enable
+1. RiskLevel SM walks R0→R1→R2→R3→R4 (monotonic, forward-only):
+   NORMAL → WARNING → BREACH_DETECTED → FORCED_FLATTEN → LOCKED
+2. KillSwitch.activate(reason, activated_by) called
+3. KillSwitchActivation event emitted on the bus with:
+   - correlation_id, timestamp_ns, reason, activated_by, sequence
+4. MacroState transitions to RISK_LOCKDOWN
+5. All new ticks: kill switch gate at top of _process_tick_inner()
+   detects is_active, transitions macro to DEGRADED, returns
+6. Cancel open orders via OrderRouter (best-effort)
+7. Block all further trading until manual unlock_from_lockdown()
 ```
 
 ### Recovery
 
-1. Ops team reviews cause of activation
-2. Full position reconciliation performed
-3. Order journal audited for consistency
-4. Kill switch manually deactivated via authenticated API call
-5. System enters `RECOVERING` mode:
-   - Capital throttle set to 25%
-   - Circuit breaker thresholds tightened 2x
-   - Elevated monitoring for 30 minutes
-6. Gradual return to normal operation
+Implemented via `Orchestrator.unlock_from_lockdown()`:
 
-Kill switch state survives process restart. On startup, the system checks
-for persisted kill switch state before accepting any orders.
+1. **Guard**: `PositionStore.total_exposure()` must equal `Decimal("0")`
+   (fail-safe invariant 11 — cannot unlock with open exposure)
+2. `MacroState` transitions: `RISK_LOCKDOWN → READY`
+3. `RiskLevel` SM resets to `NORMAL` (only transition that loosens)
+4. System re-enters `READY`; operator must explicitly call
+   `run_live()` / `run_paper()` to resume trading
+
+> **NOT YET IMPLEMENTED**: graduated recovery (25% throttle, tightened
+> circuit breakers, 30-minute elevated monitoring). Currently recovery
+> is binary: locked-down or unlocked.
 
 ---
 
@@ -187,9 +205,21 @@ State transitions between mechanisms:
 | Normal | Throttled | Any health signal degrades |
 | Throttled | Circuit breaker | Throttle at 0% or explicit trigger |
 | Circuit breaker | Kill switch | 3x cooldown extensions or explicit trigger |
-| Kill switch | Recovering | Manual re-enable |
-| Recovering | Normal | 30 min stable operation |
+| Kill switch | Ready | `unlock_from_lockdown()` with zero exposure |
 
-All safety state is persisted to durable storage and survives restarts.
-On startup, the system resumes from persisted safety state — it never
-assumes a clean start.
+These map to `RiskLevel` SM transitions (`risk/escalation.py`):
+
+| `RiskLevel` | Mechanism |
+|-----------|-----------|
+| `NORMAL` (R0) | Full trading capacity |
+| `WARNING` (R1) | Capital throttle active |
+| `BREACH_DETECTED` (R2) | Circuit breaker evaluation |
+| `FORCED_FLATTEN` (R3) | Emergency de-leveraging |
+| `LOCKED` (R4) | Kill switch active; no trading |
+
+Transitions are monotonic (R0 → R1 → R2 → R3 → R4).
+Only `unlock_from_lockdown(audit_token)` resets back to NORMAL, and
+only when `PositionStore.total_exposure() == Decimal("0")` (invariant 11).
+
+> **NOT YET IMPLEMENTED**: persisted safety state across restarts.
+> Currently the system starts with `RiskLevel.NORMAL`.

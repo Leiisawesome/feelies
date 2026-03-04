@@ -27,6 +27,26 @@ Additionally:
 
 ---
 
+## Infrastructure Entry Point
+
+Research execution is supported by the orchestrator's
+`Orchestrator.run_research(job: Callable[[], None])`:
+
+1. Assert macro state is READY
+2. Transition macro: READY → RESEARCH_MODE (`CMD_RESEARCH`)
+3. Execute the caller-supplied `job()` callable
+4. On success: RESEARCH_MODE → READY (`JOB_COMPLETE`)
+5. On exception: RESEARCH_MODE → DEGRADED (`CRITICAL_ERROR`)
+
+Research mode does **not** run the micro-state tick pipeline. The `job`
+callable has full access to the feature engine, event log, and other
+components but does not submit orders or interact with `OrderRouter`.
+
+For deterministic experiment replay, use `SimulatedClock` (`core/clock.py`).
+For configuration provenance, use `Configuration.snapshot()`
+(`core/config.py`) to capture a frozen copy of all parameters at
+experiment time.
+
 ## Experiment Lifecycle
 
 ```
@@ -149,10 +169,10 @@ re-implemented as a proper module before backtesting:
 
 | Notebook Artifact | Formalized As | Destination |
 |------------------|--------------|-------------|
-| Feature prototype (pandas/numpy) | `FeatureDefinition` with incremental update | Feature engine (feature-engine skill) |
-| Signal logic (threshold + condition) | Pure function in signal module | Signal engine |
-| Entry/exit rules | Typed strategy config + logic | Strategy module |
-| Parameter values | Config file with valid ranges | Strategy artifact |
+| Feature prototype (pandas/numpy) | `FeatureEngine` protocol implementation with `update(NBBOQuote) -> FeatureVector` | Feature engine (`features/engine.py`) |
+| Signal logic (threshold + condition) | `SignalEngine` protocol implementation with `evaluate(FeatureVector) -> Signal | None` | Signal engine (`signals/engine.py`) |
+| Entry/exit rules | `Signal.direction` (`SignalDirection.LONG`/`SHORT`/`FLAT`) + `Signal.edge_estimate_bps` | Strategy module |
+| Parameter values | `Configuration` with valid ranges and `snapshot()` for provenance | Strategy artifact |
 
 ### Handoff Checklist
 
@@ -247,12 +267,12 @@ Reject or flag experiments that exhibit:
 
 | Dependency | Interface |
 |------------|-----------|
-| Microstructure Alpha (microstructure-alpha skill) | Research protocol (hypothesis → features → tests → validation → failure criteria) |
-| Feature Engine (feature-engine skill) | Formalized feature definitions; versioning; incremental computation contract |
-| Backtest Engine (backtest-engine skill) | Backtest execution of formalized strategies; integrity checks |
+| Microstructure Alpha (microstructure-alpha skill) | Research protocol; `Signal` schema (`SignalDirection`, `edge_estimate_bps`) |
+| Feature Engine (feature-engine skill) | `FeatureEngine` protocol; `FeatureVector` output type; `version` property |
+| Backtest Engine (backtest-engine skill) | `Orchestrator.run_backtest()` for formalized strategy validation |
 | Testing & Validation (testing-validation skill) | Acceptance criteria, promotion pipeline, artifact management |
-| Data Engineering (data-engineering skill) | Versioned data snapshots for experiment reproducibility |
-| System Architect (system-architect skill) | Layer boundaries (research vs production separation) |
+| Data Engineering (data-engineering skill) | `EventLog.replay()` for versioned data snapshots |
+| System Architect (system-architect skill) | `MacroState.RESEARCH_MODE`; `Configuration.snapshot()`; `SimulatedClock` |
 
 The research workflow skill governs the left side of the pipeline — from
 idea to backtest-ready artifact. The testing-validation skill governs the

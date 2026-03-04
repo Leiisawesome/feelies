@@ -19,6 +19,10 @@ class SignalEngine(Protocol):
     no state mutation, no I/O.
     """
 
-    def evaluate(self, features: FeatureVector) -> Signal:
-        """Compute signal from feature vector."""
+    def evaluate(self, features: FeatureVector) -> Signal | None:
+        """Compute signal from feature vector.
+
+        Returns Signal when a tradeable condition is detected,
+        None when no action is warranted this tick.
+        """
         ...

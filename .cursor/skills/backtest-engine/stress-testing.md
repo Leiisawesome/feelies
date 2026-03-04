@@ -1,5 +1,24 @@
 # Stress Testing & Sensitivity Analysis
 
+## Implementation Anchors
+
+Stress tests run through `Orchestrator.run_backtest()` with
+`SimulatedClock` (`core/clock.py`). Perturbations are injected at the
+`MarketDataSource` boundary (`execution/backend.py`) — the same protocol
+used for clean replay, ensuring identical pipeline coverage.
+
+Key infrastructure:
+
+| Component | File | Role in Stress Tests |
+|-----------|------|---------------------|
+| `SimulatedClock` | `core/clock.py` | Deterministic time; `set_time()` with backward-movement guard |
+| `DataHealth` SM | `ingestion/data_integrity.py` | Detects STALE / GAP / CORRUPTED states from perturbations |
+| `StateMachine[OrderState]` | `execution/order_state.py` | Validates order lifecycle under stress |
+| `_handle_tick_failure()` | `kernel/orchestrator.py` | Fail-safe cascade: micro reset + macro DEGRADED |
+| `MetricEvent` | `core/events.py` | Captures latency/throughput metrics during stress runs |
+
+---
+
 ## Data Perturbation Protocol
 
 Inject controlled anomalies into the replay stream to validate engine robustness.
@@ -50,6 +69,7 @@ Remove events randomly to simulate feed gaps.
 
 **Validation**:
 - Engine must detect gaps (sequence break or timestamp discontinuity)
+- `DataHealth` SM must transition to `GAP` state; `_handle_tick_failure()` triggers micro reset
 - Features must handle missing data (interpolate, hold, or invalidate)
 - Orders in flight during gap must be flagged as uncertain
 - PnL should degrade proportionally, not diverge
@@ -171,15 +191,20 @@ Report per-regime PnL contribution and flag regime concentration.
 
 ## Validation Checklist
 
+This checklist validates a single backtest run. For deployment-readiness
+criteria (cost sensitivity, latency sensitivity, fault resilience, promotion
+gates), see the testing-validation skill's acceptance criteria and
+promotion pipeline.
+
 Run before accepting any backtest result:
 
 ```
 INTEGRITY
-- [ ] Determinism: two runs produce identical output
-- [ ] Causality: no feature uses future data
-- [ ] Fill timing: no fill before order acknowledgment
-- [ ] PnL reconciliation: positions × prices = reported PnL
-- [ ] Clock monotonicity: simulated time never decreases
+- [ ] Determinism: two runs with same `SimulatedClock` sequence produce bit-identical `TradeRecord` output
+- [ ] Causality: no feature uses future data (`SimulatedClock.now_ns()` enforces wall)
+- [ ] Fill timing: no fill before order acknowledgment (`OrderState` SM transition ordering)
+- [ ] PnL reconciliation: positions × prices = reported PnL (`TradeRecord` vs `PositionUpdate`)
+- [ ] Clock monotonicity: `SimulatedClock.set_time()` rejects backward movement
 
 REALISM
 - [ ] Fill rate: within 20% of historical realized rate

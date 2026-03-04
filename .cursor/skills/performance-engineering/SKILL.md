@@ -29,29 +29,40 @@ Inherits platform invariants 3 (evidence over intuition → profile before optim
 
 ## Critical Path
 
-The tick-to-trade pipeline defines the system's latency floor:
+The tick-to-trade pipeline maps directly to micro-state transitions
+(`MicroState` in `kernel/micro.py`). Each segment corresponds to a
+measurable state transition:
 
 ```
-Market data arrives (T₀)
-  → Ingestion + normalization (T₁)
-    → Event bus routing (T₂)
-      → Feature computation (T₃)
-        → Signal evaluation (T₄)
-          → Risk check (T₅)
-            → Order submission (T₆)
+Market data arrives (M0: WAITING_FOR_MARKET_EVENT)
+  → M0→M1: Ingestion + normalization
+    → M1→M2: Event bus routing + event log append
+      → M2→M3: Feature computation (FeatureEngine.update())
+        → M3→M4: Signal evaluation (SignalEngine.evaluate())
+          → M4→M5: Risk check (RiskEngine.check_signal())
+            → M5→M6: Order construction (_build_order())
+              → M6→M7: Second risk check + order submission
+                → M7→M8: Ack polling (OrderRouter.poll_acks())
+                  → M8→M9: Position update (_reconcile_fills())
+                    → M9→M10: Logging + metrics
+                      → M10→M0: Ready for next tick
 ```
 
 ### Latency Budget
 
-| Segment | Budget | Hard Ceiling | Notes |
-|---------|--------|-------------|-------|
-| Ingestion + normalization | 500 μs | 2 ms | Polygon WS parse + canonical format |
-| Event bus routing | 50 μs | 200 μs | Single-process: direct dispatch |
-| Feature computation | 1 ms | 5 ms | Per-tick incremental update, not full recompute |
-| Signal evaluation | 200 μs | 1 ms | Pure function; no I/O |
-| Risk check | 100 μs | 500 μs | Lookup-heavy; must be pre-computed |
-| Order construction + submission | 500 μs | 2 ms | Serialize + network |
-| **End-to-end (T₀ → T₆)** | **< 3 ms** | **< 10 ms** | Total tick-to-order |
+| Segment | Micro-State Span | Budget | Hard Ceiling | Notes |
+|---------|-----------------|--------|-------------|-------|
+| Ingestion + normalization | M0→M1 | 500 μs | 2 ms | Polygon WS parse + canonical format |
+| Event bus routing + log | M1→M2 | 50 μs | 200 μs | Single-process: direct dispatch |
+| Feature computation | M2→M3 | 1 ms | 5 ms | `FeatureEngine.update()` incremental |
+| Signal evaluation | M3→M4 | 200 μs | 1 ms | Pure function; no I/O |
+| Risk check (signal) | M4→M5 | 100 μs | 500 μs | `RiskEngine.check_signal()` |
+| Order construction + risk | M5→M7 | 500 μs | 2 ms | `_build_order()` + `check_order()` |
+| Submission + ack | M7→M9 | — | — | Network-bound in live; instant in backtest |
+| **End-to-end (M0 → M10)** | Full pipeline | **< 3 ms** | **< 10 ms** | `tick_to_decision_latency_ns` metric |
+
+The orchestrator emits `tick_to_decision_latency_ns` as a `MetricEvent`
+(type: HISTOGRAM) at M10 for every tick.
 
 Budgets are p99 targets. Measure at p50, p95, p99, p99.9.
 If any segment exceeds its hard ceiling, treat as a production incident.
@@ -72,9 +83,14 @@ Replay speed must not regress. Track events-per-second as a first-class metric.
 
 ### What to Measure
 
+Metrics are emitted as `MetricEvent` events (`core/events.py`) with
+`MetricType` (COUNTER, GAUGE, HISTOGRAM) and collected by the
+`MetricCollector` protocol (`monitoring/telemetry.py`). The orchestrator
+subscribes `MetricCollector.record()` to `MetricEvent` on the bus.
+
 | Metric | Granularity | Collection Method |
 |--------|------------|-------------------|
-| End-to-end latency | Per-tick | Timestamped event annotations |
+| End-to-end latency | Per-tick | `tick_to_decision_latency_ns` MetricEvent (HISTOGRAM) at M10 |
 | Per-module wall time | Per-tick | Scoped timers around each pipeline stage |
 | CPU time per module | Per-session | `cProfile` / `perf` / sampling profiler |
 | Memory footprint | Per-module | `tracemalloc` snapshots at steady state |
@@ -82,6 +98,10 @@ Replay speed must not regress. Track events-per-second as a first-class metric.
 | GC pause duration | Per-collection | `gc` callback hooks |
 | Cache miss rate | On-demand | `perf stat` / `cachegrind` for critical sections |
 | Throughput | Per-session | Events processed per second (sustained) |
+
+Note: `SequenceGenerator` (`core/identifiers.py`) uses `threading.Lock`
+for thread safety. In the current single-threaded pipeline this is harmless
+overhead but should be monitored if parallelization is introduced.
 
 ### Profiling Protocol
 
@@ -147,9 +167,11 @@ Apply in order. Stop when the budget is met.
 | CPU-bound batch | `multiprocessing` or `concurrent.futures.ProcessPoolExecutor` |
 | Within-tick pipeline | **Do not parallelize** — sequential for determinism |
 
-**Hard rule**: the within-tick pipeline (ingestion → feature → signal → risk → order)
-is strictly sequential per symbol. Parallelism is across symbols or across
-independent batch operations, never within the causal chain.
+**Hard rule**: the within-tick pipeline (M0→M10 micro-state sequence in
+`kernel/micro.py`) is strictly sequential per symbol. Parallelism is
+across symbols or across independent batch operations, never within the
+causal chain. The `MicroState` SM enforces this — each transition is
+validated against the frozen transition table.
 
 ### 5. Lock-Free / Low-Lock Patterns
 

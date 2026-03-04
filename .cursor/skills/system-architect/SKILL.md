@@ -31,6 +31,72 @@ All code must belong to exactly one of these layers:
 | Storage Layer | Event log, feature snapshots, trade journal |
 | Monitoring | Latency histograms, throughput, health checks, kill-switch |
 
+## Kernel & Orchestration
+
+The Kernel layer is the coordination center. The `Orchestrator`
+(`kernel/orchestrator.py`) owns all five state machines and drives
+layers through the deterministic micro-state pipeline. It contains
+**no business logic** — only coordination, state management, and
+fail-safe enforcement.
+
+### State Machines
+
+Five state machines govern all system behavior. Each uses the generic
+`StateMachine[S]` framework (`core/state_machine.py`) with a frozen
+transition table validated for enum completeness at construction.
+
+| Machine | Enum | File | States | Scope |
+|---------|------|------|--------|-------|
+| Global Stack | `MacroState` | `kernel/macro.py` | 10 | System-wide lifecycle (INIT through SHUTDOWN) |
+| Tick Pipeline | `MicroState` | `kernel/micro.py` | 11 | Per-tick processing sequence (M0 through M10) |
+| Order Lifecycle | `OrderState` | `execution/order_state.py` | 9 | Per-order (CREATED through terminal) |
+| Risk Escalation | `RiskLevel` | `risk/escalation.py` | 5 | Monotonic safety tightening (NORMAL through LOCKED) |
+| Data Integrity | `DataHealth` | `ingestion/data_integrity.py` | 4 | Per-symbol stream health |
+
+Every transition emits a `StateTransition` event on the bus via
+`TransitionRecord` callbacks — no silent transitions (invariant 13).
+Illegal transitions raise `IllegalTransition`.
+
+### ExecutionBackend (Invariant 9)
+
+This skill owns the `ExecutionBackend` abstraction and its two composed
+protocols (`execution/backend.py`):
+
+- `MarketDataSource` — historical replay (backtest) or live feed
+- `OrderRouter` — simulated fills (backtest) or broker API (live)
+
+`ExecutionBackend` is the **sole** mode-specific abstraction.
+
+The orchestrator never inspects `backend.mode`. The micro-state pipeline
+is identical across BACKTEST_MODE, PAPER_TRADING_MODE, and
+LIVE_TRADING_MODE. Any logic that branches on mode outside
+`ExecutionBackend` implementations is a defect.
+
+### Fail-Safe Cascade (Invariant 11)
+
+When any tick-processing step throws an exception:
+
+1. Micro SM resets to M0 (`_handle_tick_failure`)
+2. Macro transitions to DEGRADED
+3. The original exception type is captured in the trigger for provenance
+
+When risk escalation fires (`_escalate_risk`):
+
+1. Risk SM walks R0 → R1 → R2 → R3 → R4 (monotonic, forward-only)
+2. Kill switch activates (irreversible without human intervention)
+3. Macro transitions to RISK_LOCKDOWN
+4. Recovery requires `unlock_from_lockdown(audit_token)` with zero exposure
+
+### Exhaustiveness Guards
+
+At every enum-driven decision point, an explicit guard raises `ValueError`
+for unhandled enum members. This pattern prevents new enum additions from
+silently falling through to unsafe paths. Applied at:
+
+- `RiskAction` gate (M5 and M6)
+- `SignalDirection` in `_build_order`
+- `OrderAckStatus` in `_apply_ack_to_order`
+
 ## Hard Rules
 
 Inherits platform invariants 5 (deterministic replay), 7 (event-driven typed schemas),
@@ -38,6 +104,27 @@ Inherits platform invariants 5 (deterministic replay), 7 (event-driven typed sch
 
 1. **Explicit latency modeling** — annotate every path with expected latency; measure actual vs expected in production.
 2. **Canonical message formats** — define typed schemas for every event crossing a layer boundary.
+
+## Typed Event Catalog
+
+All inter-layer communication uses frozen dataclasses from `core/events.py`.
+Every event inherits from `Event` which carries `timestamp_ns`,
+`correlation_id`, and `sequence` for provenance.
+
+| Event | Layer Boundary | Key Fields |
+|-------|---------------|------------|
+| `NBBOQuote` | Ingestion → Feature/Signal | symbol, bid, ask, bid_size, ask_size |
+| `Trade` | Ingestion → Feature/Storage | symbol, price, size |
+| `FeatureVector` | Feature → Signal | symbol, feature_version, values, warm, stale |
+| `Signal` | Signal → Risk | symbol, direction (`SignalDirection`), strength, edge_estimate_bps |
+| `RiskVerdict` | Risk → Kernel | action (`RiskAction`), reason, scaling_factor |
+| `OrderRequest` | Kernel → Execution | order_id, symbol, side, order_type, quantity |
+| `OrderAck` | Execution → Kernel | order_id, status (`OrderAckStatus`), fill_price, filled_quantity |
+| `PositionUpdate` | Kernel → Portfolio | symbol, quantity, avg_price, realized_pnl |
+| `StateTransition` | Any SM → Bus | machine_name, from_state, to_state, trigger |
+| `MetricEvent` | Any → Monitoring | layer, name, value, metric_type (`MetricType`) |
+| `Alert` | Any → Monitoring | severity (`AlertSeverity`), alert_name, message |
+| `KillSwitchActivation` | Kernel → All | reason, activated_by |
 
 ## Tradeoff Documentation
 
@@ -73,18 +160,24 @@ alerting or dashboarding in isolation.
 ### Correlation ID
 
 Every inbound market data event receives a unique `correlation_id` at
-ingestion. This ID propagates through feature computation, signal
-generation, risk check, and order submission. A single correlation ID
-links a quote update to the trade it ultimately caused — enabling
-end-to-end latency measurement and root-cause investigation.
+ingestion via `make_correlation_id()` (`core/identifiers.py`). This ID
+propagates through feature computation, signal generation, risk check,
+and order submission. A single correlation ID links a quote update to
+the trade it ultimately caused — enabling end-to-end latency measurement
+and root-cause investigation.
 
 ```
 correlation_id = f"{symbol}:{exchange_timestamp_ns}:{sequence}"
 ```
 
+Sequence numbers are produced by `SequenceGenerator` (`core/identifiers.py`),
+a thread-safe monotonic counter.
+
 ### Metric Collection
 
-Each layer emits metrics onto the event bus as typed `METRIC` events:
+Each layer emits metrics onto the event bus as typed `MetricEvent` events
+(`core/events.py`). The orchestrator forwards these to the `MetricCollector`
+protocol (`monitoring/telemetry.py`) via bus subscription.
 
 | Layer | Key Metrics |
 |-------|------------|
@@ -99,12 +192,16 @@ Metrics are collected at p50, p95, p99, p99.9 where applicable.
 
 ### Alert Routing
 
-| Severity | Response Time | Channel | Examples |
+Alerts are typed `Alert` events carrying `AlertSeverity` (`core/events.py`),
+routed to the `AlertManager` protocol (`monitoring/alerting.py`) via bus
+subscription. Kill switch activations emit `KillSwitchActivation` events.
+
+| Severity (`AlertSeverity`) | Response Time | Channel | Examples |
 |----------|--------------|---------|----------|
-| Info | Async review | Log only | Feature warm-up complete, regime transition |
-| Warning | < 15 min | Log + dashboard highlight | Elevated slippage, latency approaching ceiling |
-| Critical | < 1 min | Log + push notification | Kill switch fired, position reconciliation failure |
-| Emergency | Immediate (automated) | Automated safety response + notification | Unrecoverable state, broker disconnect |
+| INFO | Async review | Log only | Feature warm-up complete, regime transition |
+| WARNING | < 15 min | Log + dashboard highlight | Elevated slippage, latency approaching ceiling |
+| CRITICAL | < 1 min | Log + push notification | Kill switch fired, position reconciliation failure |
+| EMERGENCY | Immediate (automated) | Automated safety response + notification | Unrecoverable state, broker disconnect |
 
 Critical and emergency alerts activate safety controls autonomously.
 Human review follows but does not gate the safety response.
@@ -121,6 +218,40 @@ Operational dashboards must surface at minimum:
 
 Dashboards read from the metric stream. They never query production
 databases or add load to the critical path.
+
+### Monitoring Protocol Ownership
+
+This skill owns the `MetricCollector` and `AlertManager` protocols.
+
+#### MetricCollector (`monitoring/telemetry.py`)
+
+```python
+class MetricCollector(Protocol):
+    def record(self, metric: MetricEvent) -> None: ...
+    def flush(self) -> None: ...
+```
+
+`record()` accepts typed `MetricEvent` from all layers via bus subscription.
+`flush()` writes buffered metrics to persistent storage — called at end of
+each tick (M10) and on graceful shutdown.
+
+#### AlertManager (`monitoring/alerting.py`)
+
+```python
+class AlertManager(Protocol):
+    def emit(self, alert: Alert) -> None: ...
+    def active_alerts(self) -> list[Alert]: ...
+    def acknowledge(self, alert_name: str, *, operator: str) -> None: ...
+```
+
+`emit()` routes alerts by `AlertSeverity`. CRITICAL and EMERGENCY trigger
+safety controls synchronously before returning (invariant 11).
+`acknowledge()` records human acknowledgment but does not deactivate
+safety controls — those require explicit re-authorization (e.g.,
+`KillSwitch.reset`, `Orchestrator.unlock_from_lockdown`).
+
+Failure mode: crash. If AlertManager is unavailable, the system cannot
+guarantee safety responses — it is a hard dependency.
 
 ### Ownership Boundaries
 
@@ -145,11 +276,27 @@ separate skill. Its responsibilities are distributed:
 | Position tracking and reconciliation | live-execution (live) / backtest-engine (replay) |
 | PnL decomposition and attribution | risk-engine |
 | Capital allocation and risk budgets | risk-engine (portfolio governor) |
-| Position state interface | system-architect (`PositionStore` interface behind `ExecutionBackend`) |
+| Position state interface | system-architect (`PositionStore` protocol, injected independently) |
 
-All three skills share the `PositionStore` interface defined here. Mode-specific
-implementations (broker-backed live, simulated backtest) are behind the
-`ExecutionBackend` abstraction.
+All three skills share the `PositionStore` protocol (`portfolio/position_store.py`),
+injected as a separate dependency into the orchestrator (not composed into
+`ExecutionBackend`). Mode-specific `PositionStore` implementations (broker-backed
+live, simulated backtest) are selected at composition time alongside `ExecutionBackend`.
+
+### PositionStore Protocol
+
+```python
+class PositionStore(Protocol):
+    def get(self, symbol: str) -> Position: ...
+    def update(self, symbol: str, quantity_delta: int, fill_price: Decimal) -> Position: ...
+    def all_positions(self) -> dict[str, Position]: ...
+    def total_exposure(self) -> Decimal: ...
+```
+
+- `get()` — returns current position for a symbol (zero-position `Position` if none)
+- `update()` — atomically applies a fill delta and returns updated position; called in `_reconcile_fills()` at M9
+- `all_positions()` — snapshot for risk checks, PnL attribution, and reconciliation
+- `total_exposure()` — aggregate absolute exposure; used by risk engine for limit checks and by `unlock_from_lockdown()` zero-exposure guard
 
 ---
 

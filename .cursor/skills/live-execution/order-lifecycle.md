@@ -1,87 +1,90 @@
 # Order Lifecycle — State Machine Detail
 
-Complete state transition reference for the live execution order state machine.
+Complete state transition reference for the `OrderState` SM
+(`execution/order_state.py`). Each order gets its own `StateMachine[OrderState]`
+instance, tracked in `Orchestrator._active_orders`.
 
-## State Transition Diagram
+## State Transition Diagram (9-state)
 
 ```
 CREATED
-  ├─ risk_approved ──> RISK_APPROVED
-  └─ risk_rejected ──> RISK_REJECTED (terminal)
-
-RISK_APPROVED
-  └─ submit ──> SUBMITTED
+  └─ submitted ──> SUBMITTED
 
 SUBMITTED
-  ├─ ack_received ──────> ACKNOWLEDGED
-  ├─ rejected ──────────> REJECTED (terminal)
-  ├─ timeout_expired ───> CANCEL_PENDING
-  └─ fill_before_ack ──> PARTIALLY_FILLED or FILLED (reconcile ack later)
+  ├─ broker_ack ─────> ACKNOWLEDGED
+  └─ broker_reject ──> REJECTED (terminal)
 
 ACKNOWLEDGED
-  ├─ partial_fill ──> PARTIALLY_FILLED
-  ├─ full_fill ─────> FILLED (terminal)
-  ├─ cancel_request ─> CANCEL_PENDING
-  ├─ expired ────────> EXPIRED (terminal)
-  └─ error ──────────> ERROR (terminal)
+  ├─ partial_fill ──────> PARTIALLY_FILLED
+  ├─ fill_complete ─────> FILLED (terminal)
+  ├─ cancel_requested ──> CANCEL_REQUESTED
+  └─ order_expired ─────> EXPIRED (terminal)
 
 PARTIALLY_FILLED
-  ├─ additional_fill ──> PARTIALLY_FILLED (self-loop; update fill qty)
-  ├─ final_fill ───────> FILLED (terminal)
-  ├─ cancel_request ───> CANCEL_PENDING (cancel remaining)
-  └─ expired ──────────> EXPIRED (terminal; partial fill stands)
+  ├─ partial_fill ──> PARTIALLY_FILLED (self-loop)
+  └─ fill_complete ─> FILLED (terminal)
 
-CANCEL_PENDING
-  ├─ cancel_confirmed ──> CANCELLED (terminal)
-  ├─ cancel_rejected ───> ACKNOWLEDGED (re-enter; cancel failed)
-  ├─ fill_during_cancel ─> FILLED or PARTIALLY_FILLED (race condition)
-  └─ timeout_expired ───> ERROR (terminal; escalate)
+CANCEL_REQUESTED
+  ├─ broker_cancel ──> CANCELLED (terminal)
+  └─ fill_complete ──> FILLED (terminal; fill beats cancel)
 
-Terminal states: RISK_REJECTED, FILLED, CANCELLED, REJECTED, EXPIRED, ERROR
+Terminal states: FILLED, CANCELLED, REJECTED, EXPIRED
 ```
+
+Note: risk approval/rejection happens **before** order construction
+(at M5 `check_signal` and M6 `check_order` in the micro-state pipeline),
+not as order states. RISK_APPROVED and RISK_REJECTED from the original
+spec were removed — risk is a pre-construction gate, not an order lifecycle
+phase. The ERROR state was also removed — errors are handled via the
+fail-safe cascade (micro reset + macro DEGRADED).
 
 ## Transition Event Schema
 
-Every state transition emits:
+Every state transition emits a `StateTransition` event (`core/events.py`)
+via `TransitionRecord` callback on the order's `StateMachine[OrderState]`:
 
-```
-{
-  "order_id": str,
-  "idempotency_key": str,
-  "from_state": OrderState,
-  "to_state": OrderState,
-  "trigger": str,
-  "timestamp": int (UTC nanoseconds),
-  "metadata": {
-    "fill_price": float | null,
-    "fill_qty": int | null,
-    "reject_reason": str | null,
-    "broker_order_id": str | null
-  }
-}
+```python
+@dataclass(frozen=True)
+class TransitionRecord:
+    machine_name: str       # "order:{order_id}"
+    from_state: str
+    to_state: str
+    trigger: str            # e.g., "broker_ack", "fill_complete", "cancel_requested:operator"
+    timestamp_ns: int
+    correlation_id: str
+    metadata: dict[str, Any]
 ```
 
-All transitions are persisted to the order journal append-only log.
+The orchestrator converts each `TransitionRecord` to a `StateTransition`
+event on the bus, ensuring no silent transitions (invariant 13).
+
+Fill details are communicated via `OrderAck` events with typed
+`OrderAckStatus` (ACKNOWLEDGED, PARTIALLY_FILLED, FILLED, CANCELLED,
+REJECTED, EXPIRED). The `_apply_ack_to_order()` method maps each status
+to the appropriate order SM transition.
 
 ## Edge Cases
 
 ### Fill-Before-Ack
 
-Broker sends an execution report before the acknowledgment message.
+Broker sends a fill `OrderAck` before an ACKNOWLEDGED ack. The
+`_apply_ack_to_order()` method handles this by auto-acknowledging first:
 
-1. Accept the fill; create an internal ack
-2. Transition: `SUBMITTED` -> `PARTIALLY_FILLED` or `FILLED`
-3. If a late ack arrives, log and ignore (idempotent)
-4. If a late reject arrives after a fill, this is a broker error — escalate
+1. If SM is SUBMITTED and ack status is FILLED/PARTIALLY_FILLED/CANCELLED/EXPIRED:
+   auto-transition SUBMITTED → ACKNOWLEDGED via implicit `broker_ack`
+2. Then apply the fill/cancel/expiry transition from ACKNOWLEDGED
+3. If a late ACKNOWLEDGED ack arrives afterward, it's a no-op (SM already past that state)
 
 ### Race: Fill During Cancel
 
-Cancel request crosses with a fill in flight.
+Cancel request crosses with a fill in flight. The `OrderState` SM
+handles this structurally:
 
-1. If fill arrives before cancel-ack: accept fill, update quantities
-2. If fill is partial and cancel-ack also arrives: order is cancelled with partial fill
-3. If fill is full and cancel-ack also arrives: ignore cancel-ack; order is filled
-4. The fill always wins — never discard a confirmed fill
+- `CANCEL_REQUESTED → FILLED` is a legal transition (fill beats cancel)
+- `CANCEL_REQUESTED → CANCELLED` is a legal transition (cancel confirmed)
+- If a CANCELLED ack arrives but the SM is already FILLED, `can_transition`
+  returns False and an `ack_inapplicable_to_order_state` alert is emitted
+- The fill always wins — never discard a confirmed fill
 
 ### Timeout Escalation
 
@@ -102,44 +105,57 @@ SUBMITTED, no ack within 5s:
 
 ### Stale State Detection
 
+> **NOT YET IMPLEMENTED** — The background reaper described below is a
+> design target; the hook point is `Orchestrator._active_orders`.
+
 An order in a non-terminal state for longer than its expected lifetime is stale:
 
 | State | Max Lifetime | Action |
 |-------|-------------|--------|
-| SUBMITTED | 10s | Force cancel; reconcile |
+| SUBMITTED | 10s | Cancel via `cancel_order()` |
 | ACKNOWLEDGED | Strategy-defined TTL | Cancel if TTL exceeded |
 | PARTIALLY_FILLED | Strategy-defined TTL | Cancel remaining if TTL exceeded |
-| CANCEL_PENDING | 10s | Query broker; escalate to ERROR |
+| CANCEL_REQUESTED | 10s | Escalate via `_escalate_risk()` |
 
 A background reaper process scans for stale orders every 5s.
+The `cancel_order()` method on `Orchestrator` transitions the order SM
+to `CANCEL_REQUESTED` and submits a cancel to the `OrderRouter`.
 
 ## Order Journal
 
-The order journal is an append-only log of all state transitions. It supports:
+The `TradeJournal` protocol (`storage/trade_journal.py`) provides the
+append-only log for completed trades as `TradeRecord` dataclasses. For
+full order state transition history, every SM transition is emitted as
+a `StateTransition` event and persisted by the `EventLog` protocol
+(`storage/event_log.py`). Together they support:
 
-- **Audit**: reconstruct the full history of any order
-- **Replay**: reproduce order flow for debugging
-- **Reconciliation**: compare journal against broker records
-- **Analytics**: compute execution quality metrics post-session
+- **Audit**: reconstruct the full history of any order via `StateTransition` events
+- **Replay**: reproduce order flow for debugging (deterministic replay invariant)
+- **Reconciliation**: compare journal against broker records via `_reconcile_fills()`
+- **Analytics**: compute execution quality metrics from `TradeRecord`s post-session
 
-Journal entries are flushed synchronously before the transition is applied
-internally. If the system crashes mid-transition, recovery replays from the
-journal to reconstruct consistent state.
+## Deterministic Order ID Generation
 
-## Idempotency Key Generation
+Order IDs are generated via SHA-256 in `Orchestrator._build_order()`:
 
+```python
+seq = self._seq.next()
+order_id = hashlib.sha256(
+    f"{correlation_id}:{seq}".encode()
+).hexdigest()[:16]
 ```
-idempotency_key = SHA256(
-  signal_id       +  # unique per signal emission
-  symbol          +  # instrument
-  side            +  # BUY or SELL
-  size            +  # order quantity
-  floor(timestamp / bucket_size)  # time bucket (default: 1s)
-)
-```
 
-The time bucket prevents replay of old signals while allowing retry within
-the same logical decision window. Bucket size is configurable per strategy.
+The input is `correlation_id` (which ties back to the originating tick
+via `make_correlation_id(symbol, exchange_timestamp_ns, sequence)` from
+`core/identifiers.py`) concatenated with a monotonic sequence number
+from `SequenceGenerator`. This produces deterministic IDs for backtest
+replay (invariant 5). The same event log replayed with the same
+parameters always generates the same order IDs.
 
-Keys are stored in a bounded LRU cache (default: 10,000 entries, 5-minute TTL).
-Expired keys are also persisted in the journal for audit.
+An exhaustiveness guard in `_build_order()` ensures only
+`SignalDirection.LONG` and `SignalDirection.SHORT` produce orders;
+`FLAT` signals never reach `_build_order()` — they exit the pipeline
+at M5 (RISK_CHECK → LOG_AND_METRICS).
+
+> **Future**: LRU-based deduplication cache for live mode, keyed by
+> order ID, to prevent accidental double-submission.

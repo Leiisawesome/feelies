@@ -46,8 +46,10 @@ _MICRO_TRANSITIONS: dict[MicroState, frozenset[MicroState]] = {
     MicroState.FEATURE_COMPUTE: frozenset({
         MicroState.SIGNAL_EVALUATE,
     }),
+    # M4 branches: signal produced → M5 (risk check), no signal → M10.
     MicroState.SIGNAL_EVALUATE: frozenset({
-        MicroState.RISK_CHECK,
+        MicroState.RISK_CHECK,       # signal produced, proceed to risk
+        MicroState.LOG_AND_METRICS,  # no signal this tick (evaluate returned None)
     }),
     # M5 branches: risk pass + order needed → M6, risk pass + no order → M10.
     # Risk fail → cross-machine to G8 (handled by orchestrator, not in this table).
