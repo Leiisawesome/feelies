@@ -126,6 +126,23 @@ class OrderType(Enum):
     LIMIT = auto()
 
 
+class OrderAckStatus(Enum):
+    """Typed acknowledgement statuses from the execution backend.
+
+    Maps 1:1 to the order lifecycle states that a broker can report.
+    Using an enum (not a raw string) ensures type safety at the layer
+    boundary and prevents silent drops from typos or case mismatches
+    (invariant 7, hard rule 2).
+    """
+
+    ACKNOWLEDGED = auto()
+    PARTIALLY_FILLED = auto()
+    FILLED = auto()
+    CANCELLED = auto()
+    REJECTED = auto()
+    EXPIRED = auto()
+
+
 @dataclass(frozen=True, kw_only=True)
 class OrderRequest(Event):
     """Request to place an order — output of ORDER_DECISION micro-state."""
@@ -150,7 +167,7 @@ class OrderAck(Event):
 
     order_id: str
     symbol: str
-    status: str
+    status: OrderAckStatus
     filled_quantity: int = 0
     fill_price: Decimal | None = None
     reason: str = ""

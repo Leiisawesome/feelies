@@ -50,6 +50,7 @@ from feelies.core.events import (
     MetricType,
     NBBOQuote,
     OrderAck,
+    OrderAckStatus,
     OrderRequest,
     OrderType,
     PositionUpdate,
@@ -662,6 +663,16 @@ class Orchestrator:
             self._finalize_tick(t_received, cid)
             return
 
+        # Exhaustiveness guard (Inv-11): mirror M5's guard.
+        # Unknown RiskActions at the check_order gate must never
+        # fall through to order submission.
+        if order_verdict.action not in (RiskAction.ALLOW, RiskAction.SCALE_DOWN):
+            raise ValueError(
+                f"Unhandled RiskAction at check_order gate: "
+                f"{order_verdict.action!r}. "
+                f"Fail-safe: aborting order path."
+            )
+
         # ── Track order lifecycle (Inv-4) ───────────────────────
         self._track_order(order.order_id, order.side, order)
 
@@ -829,6 +840,31 @@ class Orchestrator:
 
     # ── Order lifecycle tracking (Inv-4) ────────────────────────────
 
+    def cancel_order(self, order_id: str, *, reason: str = "operator") -> bool:
+        """Request cancellation of an active order.
+
+        Transitions the order SM: ACKNOWLEDGED → CANCEL_REQUESTED.
+        Only orders in ACKNOWLEDGED state can be cancel-requested;
+        SUBMITTED orders have not yet been confirmed by the broker
+        so cancellation is premature, and PARTIALLY_FILLED orders
+        have restricted transitions per the order SM spec.
+
+        Returns True if the cancel request was accepted, False if the
+        order is in a state that doesn't allow cancel requests.
+        Terminal orders (FILLED, CANCELLED, REJECTED, EXPIRED) are
+        no-ops that return False.
+        """
+        if order_id not in self._active_orders:
+            return False
+        sm = self._active_orders[order_id][0]
+        if not sm.can_transition(OrderState.CANCEL_REQUESTED):
+            return False
+        sm.transition(
+            OrderState.CANCEL_REQUESTED,
+            trigger=f"cancel_requested:{reason}",
+        )
+        return True
+
     def _track_order(self, order_id: str, side: Side, order: OrderRequest) -> None:
         """Create an OrderState SM for a new order."""
         sm = create_order_state_machine(order_id, self._clock)
@@ -847,30 +883,83 @@ class Orchestrator:
             sm.transition(target, trigger=trigger)
 
     def _apply_ack_to_order(self, ack: OrderAck) -> None:
-        """Update an order's SM based on a broker acknowledgement."""
+        """Update an order's SM based on a broker acknowledgement.
+
+        Uses typed ``OrderAckStatus`` enum — exhaustive matching ensures
+        every status is handled explicitly (invariant 7, hard rule 2).
+        When a valid status cannot be applied because the order SM is
+        in an incompatible state, an alert is emitted instead of
+        silently dropping the ack (invariant 13: full provenance).
+        """
         if ack.order_id not in self._active_orders:
+            self._bus.publish(Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=ack.correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="ack_for_unknown_order",
+                message=f"Ack for unknown order_id={ack.order_id}, status={ack.status.name}",
+                context={"order_id": ack.order_id, "status": ack.status.name},
+            ))
             return
         sm = self._active_orders[ack.order_id][0]
 
-        if ack.status == "rejected":
+        if ack.status == OrderAckStatus.REJECTED:
             sm.transition(OrderState.REJECTED, trigger=f"broker_reject:{ack.reason}")
             return
 
-        # Ensure ACKNOWLEDGED before any fill transition.
+        if ack.status == OrderAckStatus.ACKNOWLEDGED:
+            if sm.state == OrderState.SUBMITTED:
+                sm.transition(OrderState.ACKNOWLEDGED, trigger="broker_ack")
+            return
+
+        # Ensure ACKNOWLEDGED before any fill/cancel/expiry transition.
         if sm.state == OrderState.SUBMITTED:
             sm.transition(OrderState.ACKNOWLEDGED, trigger="broker_ack")
 
-        if ack.status == "filled":
+        if ack.status == OrderAckStatus.FILLED:
             sm.transition(OrderState.FILLED, trigger="fill_complete")
-        elif ack.status == "partially_filled":
+        elif ack.status == OrderAckStatus.PARTIALLY_FILLED:
             if sm.can_transition(OrderState.PARTIALLY_FILLED):
                 sm.transition(OrderState.PARTIALLY_FILLED, trigger="partial_fill")
-        elif ack.status == "cancelled":
+            else:
+                self._emit_ack_drop_alert(ack, sm)
+        elif ack.status == OrderAckStatus.CANCELLED:
             if sm.can_transition(OrderState.CANCELLED):
                 sm.transition(OrderState.CANCELLED, trigger="broker_cancel")
-        elif ack.status == "expired":
+            else:
+                self._emit_ack_drop_alert(ack, sm)
+        elif ack.status == OrderAckStatus.EXPIRED:
             if sm.can_transition(OrderState.EXPIRED):
                 sm.transition(OrderState.EXPIRED, trigger="order_expired")
+            else:
+                self._emit_ack_drop_alert(ack, sm)
+        else:
+            raise ValueError(
+                f"Unhandled OrderAckStatus: {ack.status!r}. "
+                f"Fail-safe: all enum members must be explicitly handled."
+            )
+
+    def _emit_ack_drop_alert(self, ack: OrderAck, sm: StateMachine[OrderState]) -> None:
+        """Emit an alert when a valid broker ack cannot be applied to the order SM."""
+        self._bus.publish(Alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=ack.correlation_id,
+            sequence=self._seq.next(),
+            severity=AlertSeverity.WARNING,
+            layer="kernel",
+            alert_name="ack_inapplicable_to_order_state",
+            message=(
+                f"Ack status={ack.status.name} cannot be applied to order "
+                f"{ack.order_id} in state {sm.state.name}"
+            ),
+            context={
+                "order_id": ack.order_id,
+                "ack_status": ack.status.name,
+                "order_state": sm.state.name,
+            },
+        ))
 
     # ── Fill reconciliation ─────────────────────────────────────────
 
@@ -884,18 +973,42 @@ class Orchestrator:
         Determines sign of quantity_delta from the original order's
         Side: BUY adds to position, SELL subtracts.
         Writes TradeRecords to the trade journal for post-trade forensics.
+
+        Inv-11 fail-safe: fills for unknown order IDs are rejected
+        (not applied) and surfaced via alert.  Defaulting to BUY
+        would risk increasing exposure from an untracked sell order.
         """
         for ack in acks:
             if ack.fill_price is None or ack.filled_quantity <= 0:
                 continue
 
+            if ack.order_id not in self._active_orders:
+                self._bus.publish(Alert(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=correlation_id,
+                    sequence=self._seq.next(),
+                    severity=AlertSeverity.WARNING,
+                    layer="kernel",
+                    alert_name="fill_for_unknown_order",
+                    message=(
+                        f"Fill for unknown order_id={ack.order_id}, "
+                        f"symbol={ack.symbol}, qty={ack.filled_quantity}, "
+                        f"price={ack.fill_price}. "
+                        f"Rejected: cannot determine side (Inv-11 fail-safe)."
+                    ),
+                    context={
+                        "order_id": ack.order_id,
+                        "symbol": ack.symbol,
+                        "filled_quantity": ack.filled_quantity,
+                        "fill_price": str(ack.fill_price),
+                    },
+                ))
+                continue
+
+            _, side, order = self._active_orders[ack.order_id]
             signed_qty = ack.filled_quantity
-            side = Side.BUY
-            order: OrderRequest | None = None
-            if ack.order_id in self._active_orders:
-                _, side, order = self._active_orders[ack.order_id]
-                if side == Side.SELL:
-                    signed_qty = -signed_qty
+            if side == Side.SELL:
+                signed_qty = -signed_qty
 
             prev_realized = self._positions.get(ack.symbol).realized_pnl
             position = self._positions.update(
@@ -915,7 +1028,7 @@ class Orchestrator:
                 slippage_bps=Decimal("0"),
             ))
 
-            if self._trade_journal is not None and order is not None:
+            if self._trade_journal is not None:
                 self._trade_journal.record(TradeRecord(
                     order_id=ack.order_id,
                     symbol=ack.symbol,
