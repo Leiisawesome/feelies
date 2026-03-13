@@ -30,26 +30,52 @@ class Event:
 
 @dataclass(frozen=True, kw_only=True)
 class NBBOQuote(Event):
-    """L1 NBBO quote update from Polygon.io."""
+    """L1 NBBO quote update from Polygon.io.
+
+    Captures all fields from both WebSocket (ev=Q) and REST (/v3/quotes)
+    wire formats.  New optional fields use defaults so existing code is
+    unaffected.
+    """
 
     symbol: str
     bid: Decimal
     ask: Decimal
     bid_size: int
     ask_size: int
+    bid_exchange: int = 0
+    ask_exchange: int = 0
     exchange_timestamp_ns: int
     conditions: tuple[int, ...] = ()
+    indicators: tuple[int, ...] = ()
+    sequence_number: int = 0
+    tape: int = 0
+    participant_timestamp_ns: int | None = None
+    trf_timestamp_ns: int | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
 class Trade(Event):
-    """Trade print from exchange."""
+    """Trade print from exchange.
+
+    Captures all fields from both WebSocket (ev=T) and REST (/v3/trades)
+    wire formats.  New optional fields use defaults so existing code is
+    unaffected.
+    """
 
     symbol: str
     price: Decimal
     size: int
+    exchange: int = 0
+    trade_id: str = ""
     exchange_timestamp_ns: int
     conditions: tuple[int, ...] = ()
+    decimal_size: str | None = None
+    sequence_number: int = 0
+    tape: int = 0
+    trf_id: int | None = None
+    trf_timestamp_ns: int | None = None
+    participant_timestamp_ns: int | None = None
+    correction: int | None = None
 
 
 # ── Feature Events ──────────────────────────────────────────────────────

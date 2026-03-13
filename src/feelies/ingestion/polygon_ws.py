@@ -1,0 +1,217 @@
+"""Polygon.io live WebSocket feed — real-time L1 quote and trade streaming.
+
+Implements the ``MarketDataSource`` protocol for live and paper trading.
+Uses the ``websockets`` library directly (not the Polygon client) so that
+raw bytes are available for the ``MarketDataNormalizer`` protocol contract.
+
+Architecture:
+  - Background thread runs an asyncio event loop with the WS connection
+  - Raw frames → ``PolygonNormalizer.on_message()`` → canonical events
+  - Events buffered in a ``queue.Queue`` (thread-safe, bounded)
+  - ``events()`` yields from the queue, blocking when empty
+  - Reconnection with exponential backoff on disconnect
+  - Graceful shutdown via ``stop()``
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import queue
+import threading
+import time
+from collections.abc import Iterator, Sequence
+
+from feelies.core.clock import Clock
+from feelies.core.events import NBBOQuote, Trade
+from feelies.ingestion.polygon_normalizer import PolygonNormalizer
+
+logger = logging.getLogger(__name__)
+
+_SENTINEL = object()
+_DEFAULT_WS_URL = "wss://socket.polygon.io/stocks"
+_MAX_QUEUE_SIZE = 100_000
+_INITIAL_BACKOFF_S = 1.0
+_MAX_BACKOFF_S = 60.0
+_BACKOFF_MULTIPLIER = 2.0
+
+
+class PolygonLiveFeed:
+    """Real-time market data source via Polygon.io WebSocket.
+
+    Lifecycle:
+      1. Construct with API key, symbols, normalizer, clock
+      2. Call ``start()`` to begin the background WS connection
+      3. Iterate ``events()`` in the main thread (orchestrator pipeline)
+      4. Call ``stop()`` for graceful shutdown
+    """
+
+    __slots__ = (
+        "_api_key",
+        "_symbols",
+        "_normalizer",
+        "_clock",
+        "_ws_url",
+        "_queue",
+        "_thread",
+        "_stop_event",
+        "_loop",
+    )
+
+    def __init__(
+        self,
+        api_key: str,
+        symbols: Sequence[str],
+        normalizer: PolygonNormalizer,
+        clock: Clock,
+        ws_url: str = _DEFAULT_WS_URL,
+    ) -> None:
+        self._api_key = api_key
+        self._symbols = list(symbols)
+        self._normalizer = normalizer
+        self._clock = clock
+        self._ws_url = ws_url
+        self._queue: queue.Queue[NBBOQuote | Trade | object] = queue.Queue(
+            maxsize=_MAX_QUEUE_SIZE,
+        )
+        self._thread: threading.Thread | None = None
+        self._stop_event = threading.Event()
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    # ── MarketDataSource protocol ────────────────────────────────────
+
+    def events(self) -> Iterator[NBBOQuote | Trade]:
+        """Yield market events as they arrive from the WebSocket.
+
+        Blocks when the queue is empty.  Terminates when ``stop()`` is
+        called and the sentinel is received.
+        """
+        while True:
+            try:
+                item = self._queue.get(timeout=1.0)
+            except queue.Empty:
+                if self._stop_event.is_set():
+                    return
+                continue
+            if item is _SENTINEL:
+                return
+            yield item  # type: ignore[misc]
+
+    # ── Lifecycle ────────────────────────────────────────────────────
+
+    def start(self) -> None:
+        """Start the background WebSocket connection thread."""
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop_event.clear()
+        self._thread = threading.Thread(
+            target=self._run_loop,
+            name="polygon-ws-feed",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        """Signal shutdown and wait for the background thread to exit."""
+        self._stop_event.set()
+        if self._loop is not None:
+            self._loop.call_soon_threadsafe(self._loop.stop)
+        self._queue.put(_SENTINEL)
+        if self._thread is not None:
+            self._thread.join(timeout=10.0)
+            self._thread = None
+
+    # ── Background event loop ────────────────────────────────────────
+
+    def _run_loop(self) -> None:
+        """Entry point for the background thread."""
+        self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
+        try:
+            self._loop.run_until_complete(self._connect_with_retry())
+        except Exception:
+            logger.exception("polygon_ws: event loop terminated unexpectedly")
+        finally:
+            self._loop.close()
+            self._loop = None
+            self._queue.put(_SENTINEL)
+
+    async def _connect_with_retry(self) -> None:
+        """Connect to the WebSocket with exponential backoff on failure."""
+        try:
+            import websockets  # pyright: ignore[reportMissingImports]
+        except ImportError as exc:
+            raise ImportError(
+                "websockets is required for PolygonLiveFeed. "
+                "Install it with: pip install 'feelies[polygon]'"
+            ) from exc
+
+        backoff = _INITIAL_BACKOFF_S
+
+        while not self._stop_event.is_set():
+            try:
+                async with websockets.connect(self._ws_url) as ws:
+                    backoff = _INITIAL_BACKOFF_S
+                    await self._authenticate(ws)
+                    await self._subscribe(ws)
+                    await self._consume(ws)
+            except asyncio.CancelledError:
+                return
+            except Exception:
+                if self._stop_event.is_set():
+                    return
+                logger.warning(
+                    "polygon_ws: connection lost, retrying in %.1fs",
+                    backoff,
+                    exc_info=True,
+                )
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * _BACKOFF_MULTIPLIER, _MAX_BACKOFF_S)
+
+    async def _authenticate(self, ws: object) -> None:
+        """Send auth message and wait for confirmation."""
+        auth_msg = json.dumps({"action": "auth", "params": self._api_key})
+        await ws.send(auth_msg)  # type: ignore[union-attr]
+        response = await ws.recv()  # type: ignore[union-attr]
+        logger.info("polygon_ws: auth response: %s", response)
+
+    async def _subscribe(self, ws: object) -> None:
+        """Subscribe to quote and trade channels for all symbols."""
+        channels = []
+        for sym in self._symbols:
+            channels.append(f"Q.{sym}")
+            channels.append(f"T.{sym}")
+        sub_msg = json.dumps({
+            "action": "subscribe",
+            "params": ",".join(channels),
+        })
+        await ws.send(sub_msg)  # type: ignore[union-attr]
+        response = await ws.recv()  # type: ignore[union-attr]
+        logger.info("polygon_ws: subscribe response: %s", response)
+
+    async def _consume(self, ws: object) -> None:
+        """Read messages from the WebSocket and enqueue normalized events."""
+        async for raw_msg in ws:  # type: ignore[union-attr]
+            if self._stop_event.is_set():
+                return
+
+            raw_bytes = (
+                raw_msg.encode("utf-8")
+                if isinstance(raw_msg, str)
+                else raw_msg
+            )
+            received_ns = self._clock.now_ns()
+            events = self._normalizer.on_message(
+                raw_bytes,
+                received_ns,
+                "polygon_ws",
+            )
+            for event in events:
+                try:
+                    self._queue.put_nowait(event)
+                except queue.Full:
+                    logger.warning(
+                        "polygon_ws: queue full, dropping event for %s",
+                        event.symbol,
+                    )

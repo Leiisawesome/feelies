@@ -11,6 +11,10 @@ dev = [
     "mypy>=1.8",
     "ruff>=0.3",
 ]
+polygon = [
+    "websockets>=13.0",
+    "polygon-api-client>=1.14",
+]
 
 [build-system]
 requires = ["hatchling"]
