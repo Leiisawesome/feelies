@@ -1,0 +1,33 @@
+"""Pluggable alpha module system.
+
+An AlphaModule is the atomic unit of plug/unplug.  It bundles
+hypothesis metadata, feature definitions, signal logic, and risk
+budget into a standardized template that the system can load, validate,
+and execute without modification to the orchestrator or core pipeline.
+
+Assembly flow:
+  1. Create AlphaModule implementations
+  2. Register them with AlphaRegistry
+  3. Build CompositeFeatureEngine and CompositeSignalEngine from the registry
+  4. Inject composites into the Orchestrator as FeatureEngine / SignalEngine
+  5. The orchestrator runs identically to the single-alpha case
+"""
+
+from feelies.alpha.arbitration import EdgeWeightedArbitrator, SignalArbitrator
+from feelies.alpha.composite import CompositeFeatureEngine, CompositeSignalEngine
+from feelies.alpha.module import AlphaManifest, AlphaModule, AlphaRiskBudget
+from feelies.alpha.registry import AlphaRegistry, AlphaRegistryError
+from feelies.alpha.validation import validate_alpha_set
+
+__all__ = [
+    "AlphaManifest",
+    "AlphaModule",
+    "AlphaRegistry",
+    "AlphaRegistryError",
+    "AlphaRiskBudget",
+    "CompositeFeatureEngine",
+    "CompositeSignalEngine",
+    "EdgeWeightedArbitrator",
+    "SignalArbitrator",
+    "validate_alpha_set",
+]
