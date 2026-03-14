@@ -33,3 +33,6 @@ line-length = 99
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "functional: network-backed tests against live external services",
+]
