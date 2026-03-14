@@ -51,6 +51,7 @@ class PolygonNormalizer:
         "_seq",
         "_health_machines",
         "_last_seen",
+        "_duplicates_filtered",
     )
 
     def __init__(self, clock: Clock) -> None:
@@ -59,6 +60,7 @@ class PolygonNormalizer:
         self._health_machines: dict[str, StateMachine[DataHealth]] = {}
         # Per-symbol dedup + gap state: (last_sequence_number, last_exchange_ts_ns)
         self._last_seen: dict[str, tuple[int, int]] = {}
+        self._duplicates_filtered: int = 0
 
     # ── MarketDataNormalizer protocol ────────────────────────────────
 
@@ -329,11 +331,19 @@ class PolygonNormalizer:
             self._health_machines[symbol] = sm
         return sm
 
+    @property
+    def duplicates_filtered(self) -> int:
+        """Total number of exact-duplicate messages filtered across all symbols."""
+        return self._duplicates_filtered
+
     def _is_duplicate(self, symbol: str, seq_num: int, exchange_ts_ns: int) -> bool:
         prev = self._last_seen.get(symbol)
         if prev is None:
             return False
-        return prev == (seq_num, exchange_ts_ns)
+        if prev == (seq_num, exchange_ts_ns):
+            self._duplicates_filtered += 1
+            return True
+        return False
 
     def _check_gap(self, symbol: str, seq_num: int) -> None:
         if seq_num == 0:
@@ -344,17 +354,28 @@ class PolygonNormalizer:
         prev_seq = prev[0]
         if prev_seq == 0:
             return
+
+        sm = self._ensure_health_machine(symbol)
+
         if seq_num > prev_seq + 1:
-            sm = self._ensure_health_machine(symbol)
             if sm.state == DataHealth.HEALTHY:
                 sm.transition(
                     DataHealth.GAP_DETECTED,
                     trigger=f"seq_gap:{prev_seq}->{seq_num}",
                 )
-                logger.info(
-                    "polygon_normalizer: gap detected for %s: %d -> %d",
-                    symbol, prev_seq, seq_num,
-                )
+            logger.info(
+                "polygon_normalizer: gap detected for %s: %d -> %d",
+                symbol, prev_seq, seq_num,
+            )
+        elif seq_num == prev_seq + 1 and sm.state == DataHealth.GAP_DETECTED:
+            sm.transition(
+                DataHealth.HEALTHY,
+                trigger=f"seq_continuity_resumed:{seq_num}",
+            )
+            logger.info(
+                "polygon_normalizer: gap resolved for %s at seq %d",
+                symbol, seq_num,
+            )
 
     def _update_last_seen(self, symbol: str, seq_num: int, exchange_ts_ns: int) -> None:
         self._last_seen[symbol] = (seq_num, exchange_ts_ns)

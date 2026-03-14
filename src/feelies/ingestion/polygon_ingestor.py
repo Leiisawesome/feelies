@@ -9,6 +9,10 @@ an ``EventLog`` that is later replayed tick-by-tick through ``ReplayFeed``.
 
 Uses the ``polygon-api-client`` (``polygon`` package) ``RESTClient`` for
 paginated access to ``/v3/quotes/{ticker}`` and ``/v3/trades/{ticker}``.
+
+Supports checkpoint-based resumability: if a ``BackfillCheckpoint`` store
+is provided, completed (symbol, feed_type) pairs are skipped on retry,
+making large backfills safe to interrupt and resume.
 """
 
 from __future__ import annotations
@@ -17,7 +21,7 @@ import json
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from feelies.core.clock import Clock
 from feelies.core.events import NBBOQuote, Trade
@@ -44,6 +48,38 @@ class IngestResult:
     symbols_completed: frozenset[str]
 
 
+class BackfillCheckpoint(Protocol):
+    """Tracks completed (symbol, feed_type) pairs for resumable backfill.
+
+    Implementations may persist to disk, database, or remain in-memory.
+    The key is ``(symbol, feed_type)`` where feed_type is ``"quotes"``
+    or ``"trades"``.
+    """
+
+    def is_done(self, symbol: str, feed_type: str) -> bool:
+        """Return True if this (symbol, feed_type) was already completed."""
+        ...
+
+    def mark_done(self, symbol: str, feed_type: str) -> None:
+        """Record that this (symbol, feed_type) has been fully ingested."""
+        ...
+
+
+class InMemoryCheckpoint:
+    """Volatile checkpoint — useful for single-run dedup within one call."""
+
+    __slots__ = ("_done",)
+
+    def __init__(self) -> None:
+        self._done: set[tuple[str, str]] = set()
+
+    def is_done(self, symbol: str, feed_type: str) -> bool:
+        return (symbol, feed_type) in self._done
+
+    def mark_done(self, symbol: str, feed_type: str) -> None:
+        self._done.add((symbol, feed_type))
+
+
 class PolygonHistoricalIngestor:
     """Batch ETL pipeline: Polygon REST API -> normalize -> EventLog.
 
@@ -55,9 +91,13 @@ class PolygonHistoricalIngestor:
     Each REST page is normalized as a chunk and persisted via
     ``EventLog.append_batch()``.  The normalizer tracks gap detection
     and dedup across pages.
+
+    If a ``BackfillCheckpoint`` is provided, completed (symbol, feed_type)
+    pairs are skipped on retry — making the ingest call idempotent and
+    safe to resume after interruption.
     """
 
-    __slots__ = ("_api_key", "_normalizer", "_event_log", "_clock")
+    __slots__ = ("_api_key", "_normalizer", "_event_log", "_clock", "_checkpoint")
 
     def __init__(
         self,
@@ -65,11 +105,13 @@ class PolygonHistoricalIngestor:
         normalizer: PolygonNormalizer,
         event_log: EventLog,
         clock: Clock,
+        checkpoint: BackfillCheckpoint | None = None,
     ) -> None:
         self._api_key = api_key
         self._normalizer = normalizer
         self._event_log = event_log
         self._clock = clock
+        self._checkpoint = checkpoint or InMemoryCheckpoint()
 
     def ingest(
         self,
@@ -86,6 +128,9 @@ class PolygonHistoricalIngestor:
 
         Returns:
             Summary of the ingestion run.
+
+        Completed (symbol, feed_type) pairs are recorded in the checkpoint
+        store.  On retry, already-completed pairs are skipped.
         """
         try:
             from polygon import RESTClient as _RESTClient  # pyright: ignore[reportMissingImports]
@@ -107,17 +152,25 @@ class PolygonHistoricalIngestor:
                 symbol, start_date, end_date,
             )
 
-            ev_count, pg_count = self._ingest_quotes(
-                client, symbol, start_date, end_date,
-            )
-            total_events += ev_count
-            total_pages += pg_count
+            if self._checkpoint.is_done(symbol, "quotes"):
+                logger.info("polygon_ingestor: skipping quotes for %s (checkpoint)", symbol)
+            else:
+                ev_count, pg_count = self._ingest_quotes(
+                    client, symbol, start_date, end_date,
+                )
+                total_events += ev_count
+                total_pages += pg_count
+                self._checkpoint.mark_done(symbol, "quotes")
 
-            ev_count, pg_count = self._ingest_trades(
-                client, symbol, start_date, end_date,
-            )
-            total_events += ev_count
-            total_pages += pg_count
+            if self._checkpoint.is_done(symbol, "trades"):
+                logger.info("polygon_ingestor: skipping trades for %s (checkpoint)", symbol)
+            else:
+                ev_count, pg_count = self._ingest_trades(
+                    client, symbol, start_date, end_date,
+                )
+                total_events += ev_count
+                total_pages += pg_count
+                self._checkpoint.mark_done(symbol, "trades")
 
             completed_symbols.add(symbol)
             logger.info(
@@ -135,7 +188,7 @@ class PolygonHistoricalIngestor:
             events_ingested=total_events,
             pages_processed=total_pages,
             gaps_detected=gaps,
-            duplicates_filtered=0,
+            duplicates_filtered=self._normalizer.duplicates_filtered,
             symbols_completed=frozenset(completed_symbols),
         )
 

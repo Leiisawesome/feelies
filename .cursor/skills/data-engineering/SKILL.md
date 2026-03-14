@@ -51,15 +51,67 @@ Correlation IDs are assigned at the ingestion boundary via
 `make_correlation_id(symbol, exchange_timestamp_ns, sequence)` from
 `core/identifiers.py`.
 
+## Ingestion Sources
+
+Three paths bring market data into the platform. The first two converge
+through `PolygonNormalizer.on_message()` — the single ingestion boundary.
+The third reads already-normalized events from `EventLog`.
+
+| Source | Polygon API | Implementation | Feeds Into | Used By Mode |
+|--------|-------------|----------------|------------|--------------|
+| Historical backfill | REST `/v3/quotes`, `/v3/trades` | `PolygonHistoricalIngestor` (`ingestion/polygon_ingestor.py`) | `EventLog` (for later replay) | None directly — populates storage |
+| Live stream | WebSocket (`Q.*`, `T.*`) | `PolygonLiveFeed` (`ingestion/polygon_ws.py`) | Orchestrator tick pipeline via `MarketDataSource.events()` | `PAPER_TRADING_MODE`, `LIVE_TRADING_MODE` |
+| Replay | `EventLog.replay()` | `ReplayFeed` (`ingestion/replay_feed.py`) | Orchestrator tick pipeline via `MarketDataSource.events()` | `BACKTEST_MODE`, `RESEARCH_MODE` |
+
+**Key invariant**: backfill and live both normalize through
+`PolygonNormalizer` (source tags `"polygon_rest"` and `"polygon_ws"`
+respectively). Replay reads already-normalized events from `EventLog`.
+The orchestrator receives identical `NBBOQuote`/`Trade` types regardless
+of source — it never knows or cares which path produced them (invariant 9).
+
+### Historical Backfill (`PolygonHistoricalIngestor`)
+
+Batch ETL pipeline: Polygon REST API → `PolygonNormalizer` → `EventLog`.
+Runs offline to populate an `EventLog` that is later replayed via
+`ReplayFeed`. This is NOT a `MarketDataSource` — it does not feed the
+orchestrator directly.
+
+- **Checkpoint-based resumability**: accepts an optional `BackfillCheckpoint`
+  protocol (`ingestion/polygon_ingestor.py`). Completed `(symbol, feed_type)`
+  pairs are skipped on retry. `InMemoryCheckpoint` provides volatile
+  dedup within a single run; persistent implementations can be injected
+  for cross-run resumability.
+- **Duplicate tracking**: `IngestResult.duplicates_filtered` reports the
+  total exact-duplicates filtered by the normalizer during the run.
+
+### Live Stream (`PolygonLiveFeed`)
+
+Real-time WebSocket feed implementing `MarketDataSource`:
+
+- Background thread runs an asyncio event loop with the WS connection
+- Auth and subscription responses are validated — failed auth raises
+  `ConnectionError`, triggering the reconnect-with-backoff loop
+- Reconnection with exponential backoff (1s → 60s) on disconnect
+- Events buffered in a bounded `queue.Queue` (100k capacity); overflow
+  drops events with a warning (fail-safe: never block the WS reader)
+
+### Replay (`ReplayFeed`)
+
+Generic `MarketDataSource` adapter over `EventLog.replay()`. Polygon-
+agnostic — works with any `EventLog` populated through any ingestor.
+When a `SimulatedClock` is provided, advances the clock to each event's
+`exchange_timestamp_ns` before yielding (deterministic time progression).
+
 ## Ingestion Pipeline
 
-| Capability | Requirement |
-|---|---|
-| Real-time streaming | Polygon WebSocket → `MarketDataNormalizer.on_message()` → `NBBOQuote` / `Trade` |
-| Historical backfill | Idempotent; resumable from last checkpoint |
-| Gap detection | Sequence breaks surfaced via `DataHealth` SM transitions, never silently skipped |
-| Deduplication | Exact-duplicate and logical-duplicate elimination |
-| Timestamp normalization | All times UTC nanoseconds; exchange time and receipt time tracked separately |
+| Capability | Requirement | Implementation Status |
+|---|---|---|
+| Real-time streaming | Polygon WebSocket → `PolygonNormalizer.on_message()` → `NBBOQuote` / `Trade` | Implemented (`PolygonLiveFeed`) |
+| Historical backfill | Idempotent; resumable from last checkpoint via `BackfillCheckpoint` | Implemented (`PolygonHistoricalIngestor`) |
+| Gap detection | Sequence breaks surfaced via `DataHealth` SM transitions; auto-recovers to `HEALTHY` when continuity resumes | Implemented (`PolygonNormalizer._check_gap`) |
+| Deduplication | Exact-duplicate elimination with count tracking (`PolygonNormalizer.duplicates_filtered`) | Implemented |
+| Timestamp normalization | All times UTC nanoseconds; exchange time and receipt time tracked separately | Implemented |
+| WS auth validation | Auth and subscribe responses validated; failure triggers reconnect | Implemented (`PolygonLiveFeed._validate_status_response`) |
 
 ## Data Integrity State Machine
 

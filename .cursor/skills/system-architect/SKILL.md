@@ -72,6 +72,27 @@ is identical across BACKTEST_MODE, PAPER_TRADING_MODE, and
 LIVE_TRADING_MODE. Any logic that branches on mode outside
 `ExecutionBackend` implementations is a defect.
 
+#### Composition by Mode
+
+Mode selection determines which concrete implementations are composed
+into `ExecutionBackend` at startup. The orchestrator receives a fully
+composed backend and never inspects `backend.mode`.
+
+| Mode | `MarketDataSource` | `OrderRouter` | `Clock` |
+|------|-------------------|---------------|---------|
+| `BACKTEST_MODE` | `ReplayFeed(EventLog)` | Fill simulator (NOT YET IMPLEMENTED) | `SimulatedClock` |
+| `PAPER_TRADING_MODE` | `PolygonLiveFeed` | Paper router (NOT YET IMPLEMENTED) | `WallClock` |
+| `LIVE_TRADING_MODE` | `PolygonLiveFeed` | Broker router (NOT YET IMPLEMENTED) | `WallClock` |
+
+Historical backfill (`PolygonHistoricalIngestor`) is a batch process
+that populates `EventLog` — it runs outside the orchestrator lifecycle
+and is not an operating mode. See the data-engineering skill for
+backfill details (REST API, checkpointing, resumability).
+
+Composition happens at startup, not at runtime. No composition layer
+or bootstrap module exists yet — the caller must build `ExecutionBackend`
+manually by selecting implementations for the desired mode.
+
 ### Fail-Safe Cascade (Invariant 11)
 
 When any tick-processing step throws an exception:

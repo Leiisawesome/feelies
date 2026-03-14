@@ -170,14 +170,23 @@ class PolygonLiveFeed:
                 backoff = min(backoff * _BACKOFF_MULTIPLIER, _MAX_BACKOFF_S)
 
     async def _authenticate(self, ws: object) -> None:
-        """Send auth message and wait for confirmation."""
+        """Send auth message and validate the response.
+
+        Polygon responds with a JSON array; a successful auth contains
+        ``{"ev": "status", "status": "auth_success", ...}``.
+        """
         auth_msg = json.dumps({"action": "auth", "params": self._api_key})
         await ws.send(auth_msg)  # type: ignore[union-attr]
-        response = await ws.recv()  # type: ignore[union-attr]
-        logger.info("polygon_ws: auth response: %s", response)
+        raw = await ws.recv()  # type: ignore[union-attr]
+        logger.info("polygon_ws: auth response: %s", raw)
+        self._validate_status_response(raw, "auth_success", "authentication")
 
     async def _subscribe(self, ws: object) -> None:
-        """Subscribe to quote and trade channels for all symbols."""
+        """Subscribe to quote and trade channels and validate the response.
+
+        Polygon responds with ``{"ev": "status", "status": "success", ...}``
+        for each successfully subscribed channel.
+        """
         channels = []
         for sym in self._symbols:
             channels.append(f"Q.{sym}")
@@ -187,8 +196,39 @@ class PolygonLiveFeed:
             "params": ",".join(channels),
         })
         await ws.send(sub_msg)  # type: ignore[union-attr]
-        response = await ws.recv()  # type: ignore[union-attr]
-        logger.info("polygon_ws: subscribe response: %s", response)
+        raw = await ws.recv()  # type: ignore[union-attr]
+        logger.info("polygon_ws: subscribe response: %s", raw)
+        self._validate_status_response(raw, "success", "subscription")
+
+    @staticmethod
+    def _validate_status_response(
+        raw: str | bytes,
+        expected_status: str,
+        action_name: str,
+    ) -> None:
+        """Check that a Polygon status response indicates success.
+
+        Polygon sends JSON arrays of status messages.  At least one
+        element must carry the expected status string.  Raises
+        ``ConnectionError`` on failure so the reconnect-with-backoff
+        loop handles it like any other connection problem.
+        """
+        try:
+            payload = json.loads(raw)
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise ConnectionError(
+                f"polygon_ws: {action_name} response not valid JSON: {raw!r}"
+            ) from exc
+
+        messages = payload if isinstance(payload, list) else [payload]
+        for msg in messages:
+            if isinstance(msg, dict) and msg.get("status") == expected_status:
+                return
+
+        raise ConnectionError(
+            f"polygon_ws: {action_name} failed — expected status "
+            f"'{expected_status}', got: {raw!r}"
+        )
 
     async def _consume(self, ws: object) -> None:
         """Read messages from the WebSocket and enqueue normalized events."""

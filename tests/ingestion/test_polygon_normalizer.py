@@ -1,4 +1,4 @@
-"""Unit tests for PolygonNormalizer."""
+"""Unit tests for PolygonNormalizer and PolygonLiveFeed validation."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from feelies.core.clock import SimulatedClock
 from feelies.core.events import NBBOQuote, Trade
 from feelies.ingestion.data_integrity import DataHealth
 from feelies.ingestion.polygon_normalizer import PolygonNormalizer
+from feelies.ingestion.polygon_ws import PolygonLiveFeed
 
 
 class TestPolygonNormalizerWebSocket:
@@ -181,3 +182,87 @@ class TestPolygonNormalizerHealth:
         health = normalizer.all_health()
         assert set(health.keys()) == {"AAPL", "MSFT"}
         assert all(h == DataHealth.HEALTHY for h in health.values())
+
+
+class TestPolygonNormalizerDuplicateCounting:
+    """Tests for duplicate counting."""
+
+    def test_duplicates_filtered_starts_at_zero(
+        self, normalizer: PolygonNormalizer
+    ) -> None:
+        assert normalizer.duplicates_filtered == 0
+
+    def test_counts_exact_duplicates(
+        self, normalizer: PolygonNormalizer, clock: SimulatedClock
+    ) -> None:
+        msg = {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1000, "q": 1}
+        raw = json.dumps(msg).encode("utf-8")
+        normalizer.on_message(raw, clock.now_ns(), "polygon_ws")
+        normalizer.on_message(raw, clock.now_ns(), "polygon_ws")
+        normalizer.on_message(raw, clock.now_ns(), "polygon_ws")
+        assert normalizer.duplicates_filtered == 2
+
+    def test_non_duplicates_do_not_increment(
+        self, normalizer: PolygonNormalizer, clock: SimulatedClock
+    ) -> None:
+        for q in (1, 2, 3):
+            msg = {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1000 + q, "q": q}
+            normalizer.on_message(json.dumps(msg).encode("utf-8"), clock.now_ns(), "polygon_ws")
+        assert normalizer.duplicates_filtered == 0
+
+
+class TestPolygonNormalizerGapRecovery:
+    """Tests for gap detection and automatic recovery."""
+
+    def test_gap_triggers_gap_detected(
+        self, normalizer: PolygonNormalizer, clock: SimulatedClock
+    ) -> None:
+        msgs = [
+            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1000, "q": 1},
+            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1005, "q": 5},
+        ]
+        for msg in msgs:
+            normalizer.on_message(json.dumps(msg).encode("utf-8"), clock.now_ns(), "polygon_ws")
+        assert normalizer.health("AAPL") == DataHealth.GAP_DETECTED
+
+    def test_continuity_after_gap_recovers_to_healthy(
+        self, normalizer: PolygonNormalizer, clock: SimulatedClock
+    ) -> None:
+        msgs = [
+            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1000, "q": 1},
+            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1005, "q": 5},
+            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1006, "q": 6},
+        ]
+        for msg in msgs:
+            normalizer.on_message(json.dumps(msg).encode("utf-8"), clock.now_ns(), "polygon_ws")
+        assert normalizer.health("AAPL") == DataHealth.HEALTHY
+
+
+class TestPolygonLiveFeedValidation:
+    """Tests for _validate_status_response (WebSocket auth/subscribe checks)."""
+
+    def test_accepts_auth_success_array(self) -> None:
+        raw = json.dumps([{"ev": "status", "status": "auth_success", "message": "authenticated"}])
+        PolygonLiveFeed._validate_status_response(raw, "auth_success", "authentication")
+
+    def test_accepts_subscribe_success(self) -> None:
+        raw = json.dumps([{"ev": "status", "status": "success", "message": "subscribed to Q.AAPL"}])
+        PolygonLiveFeed._validate_status_response(raw, "success", "subscription")
+
+    def test_accepts_single_object(self) -> None:
+        raw = json.dumps({"ev": "status", "status": "auth_success"})
+        PolygonLiveFeed._validate_status_response(raw, "auth_success", "authentication")
+
+    def test_rejects_auth_failure(self) -> None:
+        raw = json.dumps([{"ev": "status", "status": "auth_failed", "message": "bad key"}])
+        with pytest.raises(ConnectionError, match="authentication failed"):
+            PolygonLiveFeed._validate_status_response(raw, "auth_success", "authentication")
+
+    def test_rejects_invalid_json(self) -> None:
+        with pytest.raises(ConnectionError, match="not valid JSON"):
+            PolygonLiveFeed._validate_status_response(b"not json", "auth_success", "authentication")
+
+    def test_rejects_empty_array(self) -> None:
+        raw = json.dumps([])
+        with pytest.raises(ConnectionError, match="authentication failed"):
+            PolygonLiveFeed._validate_status_response(raw, "auth_success", "authentication")

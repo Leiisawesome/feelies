@@ -9,7 +9,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from feelies.core.clock import SimulatedClock
-from feelies.ingestion.polygon_ingestor import PolygonHistoricalIngestor, _model_to_dict
+from feelies.ingestion.polygon_ingestor import (
+    InMemoryCheckpoint,
+    PolygonHistoricalIngestor,
+    _model_to_dict,
+)
 from feelies.ingestion.polygon_normalizer import PolygonNormalizer
 from feelies.storage.memory_event_log import InMemoryEventLog
 
@@ -166,3 +170,124 @@ class TestPolygonHistoricalIngestor:
         assert result.events_ingested >= 2  # at least 1 quote + 1 trade
         assert result.symbols_completed == frozenset({"AAPL"})
         assert len(event_log) >= 2
+
+
+class TestCheckpointResumability:
+    """Tests for checkpoint-based resumable backfill."""
+
+    def test_checkpoint_skips_completed_feeds(self) -> None:
+        """When checkpoint says quotes are done, only trades are ingested."""
+        clock = SimulatedClock(1700000000000000000)
+        normalizer = PolygonNormalizer(clock)
+        event_log = InMemoryEventLog()
+        checkpoint = InMemoryCheckpoint()
+        checkpoint.mark_done("AAPL", "quotes")
+
+        mock_client = MagicMock()
+        mock_client.list_quotes = MagicMock(return_value=iter([]))
+        mock_client.list_trades = MagicMock(return_value=iter([_make_mock_trade()]))
+
+        ingestor = PolygonHistoricalIngestor(
+            api_key="test",
+            normalizer=normalizer,
+            event_log=event_log,
+            clock=clock,
+            checkpoint=checkpoint,
+        )
+
+        with patch("polygon.RESTClient", return_value=mock_client):
+            result = ingestor.ingest(["AAPL"], "2024-01-01", "2024-01-02")
+
+        mock_client.list_quotes.assert_not_called()
+        mock_client.list_trades.assert_called_once()
+        assert result.events_ingested >= 1
+        assert result.symbols_completed == frozenset({"AAPL"})
+
+    def test_checkpoint_marks_done_after_ingest(self) -> None:
+        """After successful ingest, checkpoint records completion."""
+        clock = SimulatedClock(1700000000000000000)
+        normalizer = PolygonNormalizer(clock)
+        event_log = InMemoryEventLog()
+        checkpoint = InMemoryCheckpoint()
+
+        mock_client = MagicMock()
+        mock_client.list_quotes = MagicMock(return_value=iter([_make_mock_quote()]))
+        mock_client.list_trades = MagicMock(return_value=iter([_make_mock_trade()]))
+
+        ingestor = PolygonHistoricalIngestor(
+            api_key="test",
+            normalizer=normalizer,
+            event_log=event_log,
+            clock=clock,
+            checkpoint=checkpoint,
+        )
+
+        with patch("polygon.RESTClient", return_value=mock_client):
+            ingestor.ingest(["AAPL"], "2024-01-01", "2024-01-02")
+
+        assert checkpoint.is_done("AAPL", "quotes")
+        assert checkpoint.is_done("AAPL", "trades")
+        assert not checkpoint.is_done("MSFT", "quotes")
+
+    def test_second_ingest_skips_all_completed(self) -> None:
+        """A re-run with the same checkpoint skips everything."""
+        clock = SimulatedClock(1700000000000000000)
+        normalizer = PolygonNormalizer(clock)
+        event_log = InMemoryEventLog()
+        checkpoint = InMemoryCheckpoint()
+
+        mock_client = MagicMock()
+        mock_client.list_quotes = MagicMock(return_value=iter([_make_mock_quote()]))
+        mock_client.list_trades = MagicMock(return_value=iter([_make_mock_trade()]))
+
+        ingestor = PolygonHistoricalIngestor(
+            api_key="test",
+            normalizer=normalizer,
+            event_log=event_log,
+            clock=clock,
+            checkpoint=checkpoint,
+        )
+
+        with patch("polygon.RESTClient", return_value=mock_client):
+            ingestor.ingest(["AAPL"], "2024-01-01", "2024-01-02")
+
+        mock_client.reset_mock()
+        mock_client.list_quotes = MagicMock(return_value=iter([]))
+        mock_client.list_trades = MagicMock(return_value=iter([]))
+
+        with patch("polygon.RESTClient", return_value=mock_client):
+            result2 = ingestor.ingest(["AAPL"], "2024-01-01", "2024-01-02")
+
+        mock_client.list_quotes.assert_not_called()
+        mock_client.list_trades.assert_not_called()
+        assert result2.events_ingested == 0
+
+
+class TestDuplicateCountingInIngestor:
+    """Tests that IngestResult.duplicates_filtered reflects normalizer counts."""
+
+    def test_reports_duplicates_from_normalizer(self) -> None:
+        clock = SimulatedClock(1700000000000000000)
+        normalizer = PolygonNormalizer(clock)
+        event_log = InMemoryEventLog()
+
+        same_quote = _make_mock_quote(seq=1, ts_ns=1700000000000000000)
+
+        mock_client = MagicMock()
+        mock_client.list_quotes = MagicMock(
+            return_value=iter([same_quote, same_quote, same_quote]),
+        )
+        mock_client.list_trades = MagicMock(return_value=iter([]))
+
+        ingestor = PolygonHistoricalIngestor(
+            api_key="test",
+            normalizer=normalizer,
+            event_log=event_log,
+            clock=clock,
+        )
+
+        with patch("polygon.RESTClient", return_value=mock_client):
+            result = ingestor.ingest(["AAPL"], "2024-01-01", "2024-01-02")
+
+        assert result.duplicates_filtered == 2
+        assert result.events_ingested == 1
