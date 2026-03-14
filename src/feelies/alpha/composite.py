@@ -196,7 +196,10 @@ class CompositeFeatureEngine:
             if fid not in symbol_state:
                 continue
 
-            result = fdef.compute.update_trade(trade, symbol_state[fid])
+            update_trade_fn = getattr(fdef.compute, "update_trade", None)
+            if update_trade_fn is None:
+                continue
+            result = update_trade_fn(trade, symbol_state[fid])
             if result is not None:
                 values[fid] = result
                 updated = True

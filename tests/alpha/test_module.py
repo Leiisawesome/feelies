@@ -1,10 +1,10 @@
-"""Unit tests for AlphaManifest, AlphaRiskBudget, AlphaModule protocol."""
+"""Unit tests for AlphaManifest, AlphaRiskBudget, AlphaModule protocol, ParameterDef."""
 
 from __future__ import annotations
 
 import pytest
 
-from feelies.alpha.module import AlphaManifest, AlphaRiskBudget
+from feelies.alpha.module import AlphaManifest, AlphaRiskBudget, ParameterDef
 
 from tests.alpha.conftest import MockAlpha
 
@@ -81,3 +81,59 @@ class TestAlphaModuleProtocol:
 
     def test_mock_alpha_validate_returns_empty(self, mock_alpha: MockAlpha) -> None:
         assert mock_alpha.validate() == []
+
+
+class TestParameterDef:
+    """Tests for ParameterDef typed parameter validation."""
+
+    def test_validate_value_correct_type_int(self) -> None:
+        pdef = ParameterDef(name="x", param_type="int", default=5)
+        assert pdef.validate_value(10) == []
+
+    def test_validate_value_correct_type_float(self) -> None:
+        pdef = ParameterDef(name="x", param_type="float", default=1.5)
+        assert pdef.validate_value(2.5) == []
+
+    def test_validate_value_int_acceptable_for_float(self) -> None:
+        pdef = ParameterDef(name="x", param_type="float", default=1.0)
+        assert pdef.validate_value(5) == []
+
+    def test_validate_value_wrong_type(self) -> None:
+        pdef = ParameterDef(name="x", param_type="int", default=5)
+        errs = pdef.validate_value("hello")
+        assert len(errs) == 1
+        assert "expected int" in errs[0]
+
+    def test_validate_value_unknown_type(self) -> None:
+        pdef = ParameterDef(name="x", param_type="unknown_type", default=1)
+        errs = pdef.validate_value(1)
+        assert len(errs) == 1
+        assert "unknown type" in errs[0]
+
+    def test_validate_value_range_within(self) -> None:
+        pdef = ParameterDef(
+            name="x", param_type="float", default=2.0, range=(1.0, 10.0)
+        )
+        assert pdef.validate_value(5.0) == []
+
+    def test_validate_value_range_below(self) -> None:
+        pdef = ParameterDef(
+            name="x", param_type="float", default=2.0, range=(1.0, 10.0)
+        )
+        errs = pdef.validate_value(0.5)
+        assert len(errs) == 1
+        assert "outside range" in errs[0]
+
+    def test_validate_value_range_above(self) -> None:
+        pdef = ParameterDef(
+            name="x", param_type="int", default=5, range=(1, 10)
+        )
+        errs = pdef.validate_value(15)
+        assert len(errs) == 1
+        assert "outside range" in errs[0]
+
+    def test_validate_value_range_ignored_for_str(self) -> None:
+        pdef = ParameterDef(
+            name="x", param_type="str", default="a", range=(0, 1)
+        )
+        assert pdef.validate_value("hello") == []
