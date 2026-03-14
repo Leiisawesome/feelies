@@ -25,7 +25,7 @@ from typing import Any
 from feelies.alpha.arbitration import EdgeWeightedArbitrator, SignalArbitrator
 from feelies.alpha.registry import AlphaRegistry
 from feelies.core.clock import Clock
-from feelies.core.events import FeatureVector, NBBOQuote, Signal
+from feelies.core.events import FeatureVector, NBBOQuote, Signal, Trade
 from feelies.features.definition import FeatureDefinition
 
 logger = logging.getLogger(__name__)
@@ -58,6 +58,7 @@ class CompositeFeatureEngine:
         self._per_symbol_state: dict[str, dict[str, dict[str, Any]]] = {}
         self._per_symbol_event_count: dict[str, int] = {}
         self._per_symbol_first_ns: dict[str, int] = {}
+        self._last_values: dict[str, dict[str, float]] = {}
 
         self._rebuild(registry)
 
@@ -105,6 +106,7 @@ class CompositeFeatureEngine:
             value = fdef.compute.update(quote, symbol_state[fid])
             values[fid] = value
 
+        self._last_values[symbol] = values
         warm = self._is_warm_for_symbol(symbol)
 
         return FeatureVector(
@@ -127,6 +129,7 @@ class CompositeFeatureEngine:
         self._per_symbol_state.pop(symbol, None)
         self._per_symbol_event_count.pop(symbol, None)
         self._per_symbol_first_ns.pop(symbol, None)
+        self._last_values.pop(symbol, None)
 
     @property
     def version(self) -> str:
@@ -165,6 +168,55 @@ class CompositeFeatureEngine:
         self._per_symbol_state[symbol] = payload["feature_state"]
         self._per_symbol_event_count[symbol] = payload.get("event_count", 0)
         self._per_symbol_first_ns[symbol] = payload.get("first_ns", 0)
+
+    # ── Trade event processing ──────────────────────────────────
+
+    def process_trade(self, trade: Trade) -> FeatureVector | None:
+        """Update features that consume trade events.
+
+        Calls ``update_trade()`` on each feature computation.  Features
+        that do not implement trade processing return ``None`` and their
+        values are carried forward from the last quote update.
+
+        Returns a new ``FeatureVector`` only if at least one feature
+        produced an updated value; otherwise returns ``None`` (no
+        downstream signal evaluation needed).
+        """
+        symbol = trade.symbol
+        symbol_state = self._per_symbol_state.get(symbol)
+        if symbol_state is None:
+            return None
+
+        last_values = self._last_values.get(symbol, {})
+        updated = False
+        values = dict(last_values)
+
+        for fid in self._computation_order:
+            fdef = self._def_by_id[fid]
+            if fid not in symbol_state:
+                continue
+
+            result = fdef.compute.update_trade(trade, symbol_state[fid])
+            if result is not None:
+                values[fid] = result
+                updated = True
+
+        if not updated:
+            return None
+
+        event_count = self._per_symbol_event_count.get(symbol, 0)
+        warm = self._is_warm_for_symbol(symbol)
+
+        return FeatureVector(
+            timestamp_ns=trade.timestamp_ns,
+            correlation_id=trade.correlation_id,
+            sequence=trade.sequence,
+            symbol=symbol,
+            feature_version=self._version_hash,
+            values=values,
+            warm=warm,
+            event_count=event_count,
+        )
 
     # ── Internal ─────────────────────────────────────────────────
 

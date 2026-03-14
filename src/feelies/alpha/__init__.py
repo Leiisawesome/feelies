@@ -15,11 +15,27 @@ Assembly flow:
 
 from feelies.alpha.arbitration import EdgeWeightedArbitrator, SignalArbitrator
 from feelies.alpha.composite import CompositeFeatureEngine, CompositeSignalEngine
-from feelies.alpha.module import AlphaManifest, AlphaModule, AlphaRiskBudget
+from feelies.alpha.lifecycle import (
+    AlphaLifecycle,
+    AlphaLifecycleState,
+    GateRequirements,
+    PromotionEvidence,
+)
+from feelies.alpha.loader import AlphaLoadError, AlphaLoader, LoadedAlphaModule
+from feelies.alpha.module import (
+    AlphaManifest,
+    AlphaModule,
+    AlphaRiskBudget,
+    ParameterDef,
+)
 from feelies.alpha.registry import AlphaRegistry, AlphaRegistryError
 from feelies.alpha.validation import validate_alpha_set
 
 __all__ = [
+    "AlphaLifecycle",
+    "AlphaLifecycleState",
+    "AlphaLoadError",
+    "AlphaLoader",
     "AlphaManifest",
     "AlphaModule",
     "AlphaRegistry",
@@ -28,6 +44,10 @@ __all__ = [
     "CompositeFeatureEngine",
     "CompositeSignalEngine",
     "EdgeWeightedArbitrator",
+    "GateRequirements",
+    "LoadedAlphaModule",
+    "ParameterDef",
+    "PromotionEvidence",
     "SignalArbitrator",
     "validate_alpha_set",
 ]

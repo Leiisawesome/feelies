@@ -24,6 +24,63 @@ from typing import Any, Protocol
 from feelies.core.events import FeatureVector, Signal
 from feelies.features.definition import FeatureDefinition
 
+_TYPE_MAP: dict[str, type] = {
+    "int": int,
+    "float": float,
+    "bool": bool,
+    "str": str,
+}
+
+
+# ── Typed parameter schema ──────────────────────────────────────────
+
+
+@dataclass(frozen=True, kw_only=True)
+class ParameterDef:
+    """Typed definition for a single alpha parameter.
+
+    Used by the AlphaLoader to validate parameter values from YAML specs
+    against declared types and ranges before registration.
+    """
+
+    name: str
+    param_type: str  # "int", "float", "bool", "str"
+    default: int | float | bool | str
+    range: tuple[float, float] | None = None
+    description: str = ""
+
+    def validate_value(self, value: Any) -> list[str]:
+        """Check *value* against this definition's type and range.
+
+        Returns a list of error strings (empty = valid).
+        """
+        errors: list[str] = []
+        expected_type = _TYPE_MAP.get(self.param_type)
+        if expected_type is None:
+            errors.append(
+                f"parameter '{self.name}': unknown type '{self.param_type}'"
+            )
+            return errors
+
+        if not isinstance(value, expected_type):
+            # int is acceptable where float is expected
+            if not (self.param_type == "float" and isinstance(value, int)):
+                errors.append(
+                    f"parameter '{self.name}': expected {self.param_type}, "
+                    f"got {type(value).__name__}"
+                )
+                return errors
+
+        if self.range is not None and isinstance(value, (int, float)):
+            lo, hi = self.range
+            if value < lo or value > hi:
+                errors.append(
+                    f"parameter '{self.name}': value {value} "
+                    f"outside range [{lo}, {hi}]"
+                )
+
+        return errors
+
 
 # ── Per-alpha risk budget ────────────────────────────────────────────
 
@@ -63,6 +120,7 @@ class AlphaManifest:
     required_features: frozenset[str]
     symbols: frozenset[str] | None = None
     parameters: dict[str, Any] = field(default_factory=dict)
+    parameter_schema: tuple[ParameterDef, ...] = ()
     risk_budget: AlphaRiskBudget = AlphaRiskBudget(
         max_position_per_symbol=100,
         max_gross_exposure_pct=5.0,

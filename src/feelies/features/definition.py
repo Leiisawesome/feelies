@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from feelies.core.events import NBBOQuote
+from feelies.core.events import NBBOQuote, Trade
 
 
 # ── Warm-up specification ────────────────────────────────────────────
@@ -63,6 +63,15 @@ class FeatureComputation(Protocol):
         mutates it in-place via ``update()``.
         """
         ...
+
+    def update_trade(self, trade: Trade, state: dict[str, Any]) -> float | None:
+        """Optionally update state on trade events.
+
+        Returns the updated feature value, or ``None`` if this feature
+        does not consume trade events.  The default is no-op (``None``),
+        preserving backward compatibility for quote-only features.
+        """
+        return None
 
 
 # ── Feature definition ──────────────────────────────────────────────
