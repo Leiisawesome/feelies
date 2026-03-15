@@ -25,7 +25,7 @@ from typing import Any
 from feelies.alpha.arbitration import EdgeWeightedArbitrator, SignalArbitrator
 from feelies.alpha.registry import AlphaRegistry
 from feelies.core.clock import Clock
-from feelies.core.events import FeatureVector, NBBOQuote, Signal, Trade
+from feelies.core.events import FeatureVector, NBBOQuote, Signal, SignalDirection, Trade
 from feelies.features.definition import FeatureDefinition
 
 logger = logging.getLogger(__name__)
@@ -270,10 +270,19 @@ class CompositeSignalEngine:
     def evaluate(self, features: FeatureVector) -> Signal | None:
         """Evaluate all active alphas and arbitrate the result.
 
+        Warm/stale gate (Inv-11, feature-engine and microstructure-alpha
+        skill contracts):
+          - ``warm=False``: suppress all signals (features unreliable)
+          - ``stale=True``: suppress entry signals; only FLAT (exit)
+            signals pass through (conservative)
+
         Each alpha is called independently.  Errors in individual
         alphas do not propagate — they are logged and the alpha is
         skipped for this tick.
         """
+        if not features.warm:
+            return None
+
         signals: list[Signal] = []
         symbol = features.symbol
 
@@ -295,6 +304,9 @@ class CompositeSignalEngine:
 
             if signal is not None:
                 signals.append(signal)
+
+        if features.stale:
+            signals = [s for s in signals if s.direction == SignalDirection.FLAT]
 
         if not signals:
             return None

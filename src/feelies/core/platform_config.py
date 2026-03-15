@@ -62,6 +62,7 @@ class PlatformConfig:
     risk_max_drawdown_pct: float = 5.0
 
     account_equity: float = 1_000_000.0
+    backtest_fill_latency_ns: int = 0
 
     def validate(self) -> None:
         if not self.symbols:

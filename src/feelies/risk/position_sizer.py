@@ -101,7 +101,7 @@ class BudgetBasedSizer:
             return 1.0
 
         posteriors = self._regime_engine.current_state(symbol)
-        if posteriors is None:
+        if not posteriors:
             return 1.0
 
         state_names = list(self._regime_engine.state_names)

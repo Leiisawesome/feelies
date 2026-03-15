@@ -1,0 +1,167 @@
+"""Tests for BasicRiskEngine — position limits, exposure caps, regime scaling."""
+
+from __future__ import annotations
+
+from decimal import Decimal
+
+import pytest
+
+from feelies.core.events import (
+    OrderRequest,
+    OrderType,
+    RiskAction,
+    Side,
+    Signal,
+    SignalDirection,
+)
+from feelies.portfolio.memory_position_store import MemoryPositionStore
+from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
+from feelies.services.regime_engine import HMM3StateFractional
+
+
+def _make_signal(
+    symbol: str = "AAPL",
+    direction: SignalDirection = SignalDirection.LONG,
+    strength: float = 0.8,
+    edge_bps: float = 2.0,
+) -> Signal:
+    return Signal(
+        timestamp_ns=1_000_000_000,
+        correlation_id="corr-1",
+        sequence=1,
+        symbol=symbol,
+        strategy_id="test_alpha",
+        direction=direction,
+        strength=strength,
+        edge_estimate_bps=edge_bps,
+    )
+
+
+def _make_order(
+    symbol: str = "AAPL",
+    side: Side = Side.BUY,
+    quantity: int = 100,
+) -> OrderRequest:
+    return OrderRequest(
+        timestamp_ns=1_000_000_000,
+        correlation_id="corr-1",
+        sequence=1,
+        order_id="ord-1",
+        symbol=symbol,
+        side=side,
+        order_type=OrderType.MARKET,
+        quantity=quantity,
+    )
+
+
+@pytest.fixture
+def config() -> RiskConfig:
+    return RiskConfig(
+        max_position_per_symbol=1000,
+        max_gross_exposure_pct=20.0,
+        account_equity=Decimal("1000000"),
+    )
+
+
+@pytest.fixture
+def store() -> MemoryPositionStore:
+    return MemoryPositionStore()
+
+
+class TestCheckSignal:
+    def test_position_limit_exceeded_scale_down_or_reject(
+        self, config: RiskConfig, store: MemoryPositionStore
+    ) -> None:
+        engine = BasicRiskEngine(config)
+        store.update("AAPL", 1000, Decimal("150"))
+        verdict = engine.check_signal(_make_signal(), store)
+        assert verdict.action == RiskAction.REJECT
+        assert "position limit" in verdict.reason
+
+    def test_within_limits_allows(
+        self, config: RiskConfig, store: MemoryPositionStore
+    ) -> None:
+        engine = BasicRiskEngine(config)
+        store.update("AAPL", 100, Decimal("10"))
+        verdict = engine.check_signal(_make_signal(), store)
+        assert verdict.action == RiskAction.ALLOW
+
+    def test_exposure_exceeded_rejects(self, store: MemoryPositionStore) -> None:
+        cfg = RiskConfig(
+            max_position_per_symbol=100_000,
+            max_gross_exposure_pct=1.0,
+            account_equity=Decimal("100000"),
+        )
+        engine = BasicRiskEngine(cfg)
+        # exposure = 10000 * 10 = 100_000, limit = 100000 * 1% = 1000
+        store.update("AAPL", 10000, Decimal("10"))
+        verdict = engine.check_signal(_make_signal(), store)
+        assert verdict.action == RiskAction.REJECT
+        assert "gross exposure" in verdict.reason
+
+    def test_no_position_allows(
+        self, config: RiskConfig, store: MemoryPositionStore
+    ) -> None:
+        engine = BasicRiskEngine(config)
+        verdict = engine.check_signal(_make_signal(), store)
+        assert verdict.action == RiskAction.ALLOW
+
+
+class TestCheckOrder:
+    def test_buy_within_limits_allows(
+        self, config: RiskConfig, store: MemoryPositionStore
+    ) -> None:
+        engine = BasicRiskEngine(config)
+        order = _make_order(side=Side.BUY, quantity=100)
+        verdict = engine.check_order(order, store)
+        assert verdict.action == RiskAction.ALLOW
+
+    def test_sell_side_signed_delta(
+        self, config: RiskConfig, store: MemoryPositionStore
+    ) -> None:
+        """Selling 100 from a 200 long position leaves |100| < 1000 limit."""
+        engine = BasicRiskEngine(config)
+        store.update("AAPL", 200, Decimal("150"))
+        order = _make_order(side=Side.SELL, quantity=100)
+        verdict = engine.check_order(order, store)
+        assert verdict.action == RiskAction.ALLOW
+
+    def test_post_fill_exceeds_limit_rejects(
+        self, config: RiskConfig, store: MemoryPositionStore
+    ) -> None:
+        engine = BasicRiskEngine(config)
+        store.update("AAPL", 950, Decimal("150"))
+        order = _make_order(side=Side.BUY, quantity=100)
+        verdict = engine.check_order(order, store)
+        assert verdict.action == RiskAction.REJECT
+        assert "post-fill" in verdict.reason
+
+
+class TestRegimeScaling:
+    def test_vol_breakout_reduces_position_limit(
+        self, store: MemoryPositionStore
+    ) -> None:
+        """In vol_breakout regime, position limit is halved (0.5x scale)."""
+        regime = HMM3StateFractional()
+        cfg = RiskConfig(
+            max_position_per_symbol=1000,
+            max_gross_exposure_pct=50.0,
+            account_equity=Decimal("10000000"),
+        )
+        engine = BasicRiskEngine(cfg, regime_engine=regime)
+
+        # Force vol_breakout posterior: make state 2 dominant
+        regime._posteriors["AAPL"] = [0.05, 0.05, 0.90]
+
+        # 500 shares is AT the halved limit (1000 * 0.5 = 500), so REJECT
+        store.update("AAPL", 500, Decimal("10"))
+        verdict = engine.check_signal(_make_signal(), store)
+        assert verdict.action == RiskAction.REJECT
+
+    def test_no_regime_engine_uses_full_limits(
+        self, config: RiskConfig, store: MemoryPositionStore
+    ) -> None:
+        engine = BasicRiskEngine(config, regime_engine=None)
+        store.update("AAPL", 999, Decimal("10"))
+        verdict = engine.check_signal(_make_signal(), store)
+        assert verdict.action in (RiskAction.ALLOW, RiskAction.SCALE_DOWN)

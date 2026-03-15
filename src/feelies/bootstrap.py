@@ -32,6 +32,8 @@ from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
 from feelies.risk.position_sizer import BudgetBasedSizer
 from feelies.services.regime_engine import RegimeEngine, get_regime_engine
 from feelies.storage.memory_event_log import InMemoryEventLog
+from feelies.storage.memory_feature_snapshot import InMemoryFeatureSnapshotStore
+from feelies.storage.memory_trade_journal import InMemoryTradeJournal
 
 logger = logging.getLogger(__name__)
 
@@ -93,13 +95,18 @@ def build_platform(
     if event_log is None:
         event_log = InMemoryEventLog()
 
-    backend, backtest_router = _create_backend(config.mode, event_log, clock)
+    backend, backtest_router = _create_backend(
+        config.mode, event_log, clock,
+        fill_latency_ns=config.backtest_fill_latency_ns,
+    )
 
     if backtest_router is not None:
         bus.subscribe(NBBOQuote, lambda e: backtest_router.on_quote(e))  # type: ignore[arg-type]
 
     position_store = MemoryPositionStore()
     metric_collector: MetricCollector = _NoOpMetricCollector()  # type: ignore[assignment]
+    trade_journal = InMemoryTradeJournal()
+    feature_snapshots = InMemoryFeatureSnapshotStore()
 
     position_sizer = BudgetBasedSizer(regime_engine=regime_engine)
 
@@ -117,6 +124,8 @@ def build_platform(
         position_sizer=position_sizer,
         alpha_registry=registry,
         account_equity=_decimal(config.account_equity),
+        trade_journal=trade_journal,
+        feature_snapshots=feature_snapshots,
     )
 
     logger.info(
@@ -173,9 +182,13 @@ def _create_backend(
     mode: OperatingMode,
     event_log: InMemoryEventLog,
     clock: Clock,
+    *,
+    fill_latency_ns: int = 0,
 ) -> tuple[ExecutionBackend, BacktestOrderRouter | None]:
     if mode == OperatingMode.BACKTEST:
-        backend, router = build_backtest_backend(event_log, clock)
+        backend, router = build_backtest_backend(
+            event_log, clock, latency_ns=fill_latency_ns,
+        )
         return backend, router
 
     raise NotImplementedError(

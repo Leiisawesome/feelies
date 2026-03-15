@@ -33,6 +33,7 @@ Key architectural invariants:
 from __future__ import annotations
 
 import hashlib
+import time
 from collections.abc import Callable
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -547,6 +548,8 @@ class Orchestrator:
         """
         cid = quote.correlation_id
         t_received = self._clock.now_ns()
+        t_wall_start = time.perf_counter_ns()
+        self._tick_timings: dict[str, int] = {}
 
         # ── Kill switch gate (W-2) ─────────────────────────────
         if self._kill_switch is not None and self._kill_switch.is_active:
@@ -578,6 +581,7 @@ class Orchestrator:
             correlation_id=cid,
         )
         self._event_log.append(quote)
+        self._bus.publish(quote)
 
         # ── M1 → M2: STATE_UPDATE ──────────────────────────────
         self._micro.transition(
@@ -593,7 +597,9 @@ class Orchestrator:
             trigger="state_updated",
             correlation_id=cid,
         )
+        t0 = time.perf_counter_ns()
         features = self._feature_engine.update(quote)
+        self._tick_timings["feature_compute_ns"] = time.perf_counter_ns() - t0
         self._bus.publish(features)
 
         # ── M3 → M4: SIGNAL_EVALUATE ───────────────────────────
@@ -602,7 +608,9 @@ class Orchestrator:
             trigger="features_computed",
             correlation_id=cid,
         )
+        t0 = time.perf_counter_ns()
         signal = self._signal_engine.evaluate(features)
+        self._tick_timings["signal_evaluate_ns"] = time.perf_counter_ns() - t0
 
         if signal is None:
             self._micro.transition(
@@ -637,7 +645,9 @@ class Orchestrator:
             trigger="signal_evaluated",
             correlation_id=cid,
         )
+        t0 = time.perf_counter_ns()
         verdict = self._risk_engine.check_signal(signal, self._positions)
+        self._tick_timings["risk_check_ns"] = time.perf_counter_ns() - t0
         self._bus.publish(verdict)
 
         # ── M5 branch: risk fail → cross-machine to G8 ─────────
@@ -763,10 +773,12 @@ class Orchestrator:
     # ── Helpers ─────────────────────────────────────────────────────
 
     def _finalize_tick(self, t_received: int, correlation_id: str) -> None:
-        """Emit tick latency metric and return micro state M10 → M0."""
+        """Emit tick latency and per-segment timing metrics, then M10 → M0."""
         latency_ns = self._clock.now_ns() - t_received
+        now_ns = self._clock.now_ns()
+
         self._bus.publish(MetricEvent(
-            timestamp_ns=self._clock.now_ns(),
+            timestamp_ns=now_ns,
             correlation_id=correlation_id,
             sequence=self._seq.next(),
             layer="kernel",
@@ -774,6 +786,18 @@ class Orchestrator:
             value=float(latency_ns),
             metric_type=MetricType.HISTOGRAM,
         ))
+
+        timings = getattr(self, "_tick_timings", {})
+        for name, value in timings.items():
+            self._bus.publish(MetricEvent(
+                timestamp_ns=now_ns,
+                correlation_id=correlation_id,
+                sequence=self._seq.next(),
+                layer="kernel",
+                name=name,
+                value=float(value),
+                metric_type=MetricType.HISTOGRAM,
+            ))
         self._micro.transition(
             MicroState.WAITING_FOR_MARKET_EVENT,
             trigger="tick_complete",

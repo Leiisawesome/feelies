@@ -44,6 +44,13 @@ class RegimeEngine(Protocol):
         """Update state and return posterior probabilities for the symbol.
 
         Returns a list of length ``n_states`` summing to ~1.0.
+
+        Must be idempotent per ``(symbol, timestamp_ns)``: if called
+        multiple times for the same symbol and timestamp, the Bayesian
+        update is applied only once and subsequent calls return the
+        cached result.  This prevents double-update corruption when
+        both the orchestrator (M2) and downstream consumers process
+        the same quote.
         """
         ...
 
@@ -107,6 +114,7 @@ class HMM3StateFractional:
             emission_params or self._DEFAULT_EMISSION
         )
         self._posteriors: dict[str, list[float]] = {}
+        self._last_update_ts: dict[str, int] = {}
 
     @property
     def state_names(self) -> Sequence[str]:
@@ -118,6 +126,13 @@ class HMM3StateFractional:
 
     def posterior(self, quote: NBBOQuote) -> list[float]:
         symbol = quote.symbol
+        ts = quote.timestamp_ns
+
+        if self._last_update_ts.get(symbol) == ts:
+            return list(self._posteriors[symbol])
+
+        self._last_update_ts[symbol] = ts
+
         prior = self._posteriors.get(symbol)
         if prior is None:
             prior = [1.0 / self._n_states] * self._n_states
@@ -140,6 +155,7 @@ class HMM3StateFractional:
 
     def reset(self, symbol: str) -> None:
         self._posteriors.pop(symbol, None)
+        self._last_update_ts.pop(symbol, None)
 
     def _predict(self, prior: list[float]) -> list[float]:
         predicted = [0.0] * self._n_states

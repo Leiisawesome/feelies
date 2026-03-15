@@ -461,7 +461,7 @@ class TestAlphaLoaderValidation:
         assert alpha.manifest.alpha_id == "test_alpha"
 
     def test_load_with_regime_engine_injects_into_namespace(self) -> None:
-        """Spec with regimes.engine and feature using regime_engine loads and runs."""
+        """Spec with regimes.engine injects read-only regime accessors."""
         from feelies.services.regime_engine import HMM3StateFractional
 
         loader = AlphaLoader(regime_engine=HMM3StateFractional())
@@ -480,8 +480,8 @@ class TestAlphaLoaderValidation:
 def initial_state():
     return {}
 def update(quote, state, params):
-    p = regime_engine.posterior(quote)
-    return p
+    p = regime_posteriors(quote.symbol)
+    return p if p is not None else [0.33, 0.33, 0.34]
 """,
                 }
             ],
@@ -618,9 +618,13 @@ def evaluate(features, params):
     def test_load_with_regime_engine_in_namespace(
         self, sample_quote: NBBOQuote, clock: SimulatedClock
     ) -> None:
-        """Load spec with regimes.engine so regime_engine is injected into feature ns."""
+        """Load spec with regimes.engine so read-only regime accessors are in feature ns."""
         from feelies.alpha.composite import CompositeFeatureEngine
         from feelies.alpha.registry import AlphaRegistry
+        from feelies.services.regime_engine import HMM3StateFractional
+
+        engine = HMM3StateFractional()
+        engine.posterior(sample_quote)
 
         spec = {
             **MINIMAL_SPEC,
@@ -634,14 +638,16 @@ def evaluate(features, params):
 def initial_state():
     return {"posterior": [0.33, 0.33, 0.34]}
 def update(quote, state, params):
-    p = regime_engine.posterior(quote)
+    p = regime_posteriors(quote.symbol)
+    if p is None:
+        p = [0.33, 0.33, 0.34]
     state["posterior"] = p
     return p
 """,
                 }
             ],
         }
-        loader = AlphaLoader()
+        loader = AlphaLoader(regime_engine=engine)
         alpha = loader.load_from_dict(spec)
         reg = AlphaRegistry()
         reg.register(alpha)

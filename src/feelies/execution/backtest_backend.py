@@ -19,6 +19,7 @@ def build_backtest_backend(
     clock: Clock,
     start_sequence: int = 0,
     end_sequence: int | None = None,
+    latency_ns: int = 0,
 ) -> tuple[ExecutionBackend, BacktestOrderRouter]:
     """Build a backtest ExecutionBackend from an event log.
 
@@ -31,7 +32,7 @@ def build_backtest_backend(
         start_sequence=start_sequence,
         end_sequence=end_sequence,
     )
-    router = BacktestOrderRouter(clock=clock)
+    router = BacktestOrderRouter(clock=clock, latency_ns=latency_ns)
 
     backend = ExecutionBackend(
         market_data=feed,

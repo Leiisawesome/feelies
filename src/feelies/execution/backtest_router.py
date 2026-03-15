@@ -40,8 +40,9 @@ class BacktestOrderRouter:
     price context for fills.
     """
 
-    def __init__(self, clock: Clock) -> None:
+    def __init__(self, clock: Clock, latency_ns: int = 0) -> None:
         self._clock = clock
+        self._latency_ns = latency_ns
         self._last_quotes: dict[str, NBBOQuote] = {}
         self._pending_acks: list[OrderAck] = []
 
@@ -68,9 +69,10 @@ class BacktestOrderRouter:
             return
 
         fill_price = (quote.bid + quote.ask) / Decimal("2")
+        fill_ts = self._clock.now_ns() + self._latency_ns
 
         self._pending_acks.append(OrderAck(
-            timestamp_ns=self._clock.now_ns(),
+            timestamp_ns=fill_ts,
             correlation_id=request.correlation_id,
             sequence=request.sequence,
             order_id=request.order_id,

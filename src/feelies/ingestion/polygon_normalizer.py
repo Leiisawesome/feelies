@@ -17,13 +17,13 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from decimal import Decimal
 
 from feelies.core.clock import Clock
 from feelies.core.events import NBBOQuote, Trade
 from feelies.core.identifiers import SequenceGenerator, make_correlation_id
-from feelies.core.state_machine import StateMachine
+from feelies.core.state_machine import StateMachine, TransitionRecord
 from feelies.ingestion.data_integrity import (
     DataHealth,
     create_data_integrity_machine,
@@ -50,14 +50,20 @@ class PolygonNormalizer:
         "_clock",
         "_seq",
         "_health_machines",
+        "_transition_callback",
         "_last_seen",
         "_duplicates_filtered",
     )
 
-    def __init__(self, clock: Clock) -> None:
+    def __init__(
+        self,
+        clock: Clock,
+        transition_callback: Callable[[TransitionRecord], None] | None = None,
+    ) -> None:
         self._clock = clock
         self._seq = SequenceGenerator()
         self._health_machines: dict[str, StateMachine[DataHealth]] = {}
+        self._transition_callback = transition_callback
         # Per-symbol dedup + gap state: (last_sequence_number, last_exchange_ts_ns)
         self._last_seen: dict[str, tuple[int, int]] = {}
         self._duplicates_filtered: int = 0
@@ -328,6 +334,8 @@ class PolygonNormalizer:
         sm = self._health_machines.get(symbol)
         if sm is None:
             sm = create_data_integrity_machine(symbol, self._clock)
+            if self._transition_callback is not None:
+                sm.on_transition(self._transition_callback)
             self._health_machines[symbol] = sm
         return sm
 

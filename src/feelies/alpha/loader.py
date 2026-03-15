@@ -459,7 +459,8 @@ class AlphaLoader:
             "alpha_id": alpha_id,
         }
         if regime_engine is not None:
-            ns["regime_engine"] = regime_engine
+            ns["regime_posteriors"] = regime_engine.current_state
+            ns["regime_state_names"] = regime_engine.state_names
         return ns
 
     # ── Feature normalization (list or dict) ──────────────────

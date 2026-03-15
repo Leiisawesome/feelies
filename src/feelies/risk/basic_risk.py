@@ -20,6 +20,7 @@ from feelies.core.events import (
     OrderRequest,
     RiskAction,
     RiskVerdict,
+    Side,
     Signal,
 )
 from feelies.portfolio.position_store import PositionStore
@@ -136,7 +137,8 @@ class BasicRiskEngine:
         adjusted_max = int(self._config.max_position_per_symbol * regime_scale)
 
         current = positions.get(order.symbol)
-        post_fill_qty = abs(current.quantity + order.quantity)
+        signed_qty = order.quantity if order.side == Side.BUY else -order.quantity
+        post_fill_qty = abs(current.quantity + signed_qty)
         if post_fill_qty > adjusted_max:
             return RiskVerdict(
                 timestamp_ns=order.timestamp_ns,
