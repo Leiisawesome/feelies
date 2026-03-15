@@ -97,6 +97,26 @@ class FeatureVector(Event):
     event_count: int = 0
 
 
+# ── Regime Events ───────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True, kw_only=True)
+class RegimeState(Event):
+    """Regime detection output published once per tick at M2.
+
+    Emitted by the orchestrator after updating the platform-level
+    RegimeEngine.  Consumed by dashboards, risk engine (via cached
+    engine state), and logged for provenance.
+    """
+
+    symbol: str
+    engine_name: str
+    state_names: tuple[str, ...]
+    posteriors: tuple[float, ...]
+    dominant_state: int
+    dominant_name: str
+
+
 # ── Signal Events ───────────────────────────────────────────────────────
 
 

@@ -35,7 +35,10 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from feelies.alpha.registry import AlphaRegistry
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock
@@ -54,6 +57,7 @@ from feelies.core.events import (
     OrderRequest,
     OrderType,
     PositionUpdate,
+    RegimeState,
     RiskAction,
     RiskVerdict,
     Signal,
@@ -65,6 +69,12 @@ from feelies.core.events import (
 from feelies.core.identifiers import SequenceGenerator
 from feelies.core.state_machine import StateMachine, TransitionRecord
 from feelies.execution.backend import ExecutionBackend
+from feelies.execution.intent import (
+    IntentTranslator,
+    OrderIntent,
+    SignalPositionTranslator,
+    TradingIntent,
+)
 from feelies.execution.order_state import OrderState, create_order_state_machine
 from feelies.features.engine import FeatureEngine
 from feelies.ingestion.data_integrity import DataHealth
@@ -81,6 +91,8 @@ from feelies.monitoring.telemetry import MetricCollector
 from feelies.portfolio.position_store import PositionStore
 from feelies.risk.engine import RiskEngine
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
+from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
+from feelies.services.regime_engine import RegimeEngine
 from feelies.signals.engine import SignalEngine
 from feelies.storage.event_log import EventLog
 from feelies.storage.feature_snapshot import FeatureSnapshotMeta, FeatureSnapshotStore
@@ -123,6 +135,11 @@ class Orchestrator:
         kill_switch: KillSwitch | None = None,
         trade_journal: TradeJournal | None = None,
         feature_snapshots: FeatureSnapshotStore | None = None,
+        regime_engine: RegimeEngine | None = None,
+        intent_translator: IntentTranslator | None = None,
+        position_sizer: PositionSizer | None = None,
+        alpha_registry: "AlphaRegistry | None" = None,
+        account_equity: Decimal = Decimal("100000"),
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -138,6 +155,17 @@ class Orchestrator:
         self._kill_switch = kill_switch
         self._trade_journal = trade_journal
         self._feature_snapshots = feature_snapshots
+        self._regime_engine = regime_engine
+        self._intent_translator: IntentTranslator = (
+            intent_translator if intent_translator is not None
+            else SignalPositionTranslator()
+        )
+        self._position_sizer: PositionSizer = (
+            position_sizer if position_sizer is not None
+            else BudgetBasedSizer(regime_engine=regime_engine)
+        )
+        self._alpha_registry = alpha_registry
+        self._account_equity = account_equity
         self._seq = SequenceGenerator()
 
         self._config: Configuration | None = None
@@ -443,14 +471,18 @@ class Orchestrator:
                 self._process_trade(event)
 
     def _process_trade(self, trade: Trade) -> None:
-        """Log and publish a trade event.
+        """Log, publish, and forward a trade event to the feature engine.
 
-        Trades are captured for observability and future feature
-        use (e.g., trade-to-quote ratio) but do not drive the
-        signal pipeline.
+        Trades update feature state (e.g., volume clustering, trade
+        arrival rate) but do not trigger signal evaluation.  Updated
+        feature values feed into the next quote-driven tick.
         """
         self._event_log.append(trade)
         self._bus.publish(trade)
+
+        process_trade_fn = getattr(self._feature_engine, "process_trade", None)
+        if process_trade_fn is not None:
+            process_trade_fn(trade)
 
     def _process_tick(self, quote: NBBOQuote) -> None:
         """Process a single tick through the full micro-state pipeline.
@@ -553,6 +585,7 @@ class Orchestrator:
             trigger="event_logged",
             correlation_id=cid,
         )
+        self._update_regime(quote, cid)
 
         # ── M2 → M3: FEATURE_COMPUTE ───────────────────────────
         self._micro.transition(
@@ -581,6 +614,22 @@ class Orchestrator:
             return
 
         self._bus.publish(signal)
+
+        # ── Position sizing: compute target quantity from risk budget ──
+        target_qty = self._compute_target_quantity(signal, quote)
+
+        # ── Intent translation: Signal x Position → OrderIntent ──
+        current_position = self._positions.get(signal.symbol)
+        intent = self._intent_translator.translate(signal, current_position, target_qty)
+
+        if intent.intent == TradingIntent.NO_ACTION:
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="intent_no_action",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_received, cid)
+            return
 
         # ── M4 → M5: RISK_CHECK ────────────────────────────────
         self._micro.transition(
@@ -618,19 +667,7 @@ class Orchestrator:
             self._finalize_tick(t_received, cid)
             return
 
-        # ── M5 branch: signal flat → M10 ───────────────────────
-        if signal.direction == SignalDirection.FLAT:
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="signal_flat_no_order",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_received, cid)
-            return
-
         # ── M5 → M6: risk pass, order warranted ────────────────
-        # Exhaustiveness guard (Inv-11): unknown RiskActions resolve
-        # to the safe path, never to increased exposure.
         if verdict.action not in (RiskAction.ALLOW, RiskAction.SCALE_DOWN):
             raise ValueError(
                 f"Unhandled RiskAction at order gate: {verdict.action!r}. "
@@ -642,7 +679,7 @@ class Orchestrator:
             trigger="risk_pass_order_warranted",
             correlation_id=cid,
         )
-        order = self._build_order(signal, verdict, cid)
+        order = self._build_order_from_intent(intent, verdict, cid)
 
         # ── M6: Pre-submission risk check on concrete order ─────
         order_verdict = self._risk_engine.check_order(order, self._positions)
@@ -743,6 +780,30 @@ class Orchestrator:
             correlation_id=correlation_id,
         )
 
+    def _update_regime(self, quote: NBBOQuote, correlation_id: str) -> None:
+        """Update platform-level RegimeEngine and publish RegimeState event.
+
+        Called at M2 (STATE_UPDATE) — single-writer point for regime
+        state.  Downstream consumers (feature code, risk engine,
+        position sizer) read cached state; they never update.
+        """
+        if self._regime_engine is None:
+            return
+        posteriors = self._regime_engine.posterior(quote)
+        dominant_idx = max(range(len(posteriors)), key=lambda i: posteriors[i])
+        state_names = tuple(self._regime_engine.state_names)
+        self._bus.publish(RegimeState(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            sequence=self._seq.next(),
+            symbol=quote.symbol,
+            engine_name=type(self._regime_engine).__name__,
+            state_names=state_names,
+            posteriors=tuple(posteriors),
+            dominant_state=dominant_idx,
+            dominant_name=state_names[dominant_idx] if dominant_idx < len(state_names) else "unknown",
+        ))
+
     def _escalate_risk(self, correlation_id: str) -> None:
         """Escalate through R0 → R1 → R2 → R3 → R4 → macro G8.
 
@@ -802,50 +863,97 @@ class Orchestrator:
             correlation_id=correlation_id,
         )
 
-    def _build_order(
+    def _compute_target_quantity(
         self,
         signal: Signal,
+        quote: NBBOQuote,
+    ) -> int | None:
+        """Use PositionSizer + AlphaRegistry to compute target quantity.
+
+        Returns None if the registry is not available, letting the
+        IntentTranslator fall back to its default.
+        """
+        if self._alpha_registry is None:
+            return None
+
+        try:
+            alpha = self._alpha_registry.get(signal.strategy_id)
+        except KeyError:
+            return None
+
+        risk_budget = alpha.manifest.risk_budget
+        mid_price = (quote.bid + quote.ask) / Decimal(2)
+        if mid_price <= 0:
+            return 0
+
+        return self._position_sizer.compute_target_quantity(
+            signal=signal,
+            risk_budget=risk_budget,
+            symbol_price=mid_price,
+            account_equity=self._account_equity,
+        )
+
+    def _build_order_from_intent(
+        self,
+        intent: OrderIntent,
         verdict: RiskVerdict,
         correlation_id: str,
     ) -> OrderRequest:
-        """Construct an OrderRequest with deterministic order_id.
+        """Construct an OrderRequest from an OrderIntent.
 
         order_id is derived from correlation_id + sequence via SHA-256
         so that replay of identical events produces identical order IDs
         (invariant 5).  uuid4 is forbidden here.
 
-        Applies ``verdict.scaling_factor`` to the base quantity so that
-        SCALE_DOWN verdicts produce smaller orders.
+        The intent's ``target_quantity`` is the pre-computed quantity
+        from the IntentTranslator (which may include position sizer
+        output).  ``verdict.scaling_factor`` is applied on top for
+        risk-driven scaling.
         """
-        if signal.direction == SignalDirection.LONG:
-            side = Side.BUY
-        elif signal.direction == SignalDirection.SHORT:
-            side = Side.SELL
-        else:
-            raise ValueError(
-                f"_build_order called with invalid direction: "
-                f"{signal.direction!r}. Only LONG/SHORT are valid here."
-            )
+        side = self._side_from_intent(intent)
         seq = self._seq.next()
         order_id = hashlib.sha256(
             f"{correlation_id}:{seq}".encode()
         ).hexdigest()[:16]
 
-        # Base quantity placeholder — to be supplied by a position sizing
-        # module (risk-engine portfolio governor) once implemented.
-        base_quantity = 100
-        quantity = max(1, round(base_quantity * verdict.scaling_factor))
+        quantity = max(1, round(intent.target_quantity * verdict.scaling_factor))
 
         return OrderRequest(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=correlation_id,
             sequence=seq,
             order_id=order_id,
-            symbol=signal.symbol,
+            symbol=intent.symbol,
             side=side,
             order_type=OrderType.MARKET,
             quantity=quantity,
-            strategy_id=signal.strategy_id,
+            strategy_id=intent.strategy_id,
+        )
+
+    @staticmethod
+    def _side_from_intent(intent: OrderIntent) -> Side:
+        """Derive order Side from TradingIntent."""
+        if intent.intent in (
+            TradingIntent.ENTRY_LONG,
+            TradingIntent.REVERSE_SHORT_TO_LONG,
+        ):
+            return Side.BUY
+
+        if intent.intent in (
+            TradingIntent.ENTRY_SHORT,
+            TradingIntent.REVERSE_LONG_TO_SHORT,
+        ):
+            return Side.SELL
+
+        if intent.intent == TradingIntent.EXIT:
+            return Side.SELL if intent.current_quantity > 0 else Side.BUY
+
+        if intent.intent == TradingIntent.SCALE_UP:
+            return Side.BUY if intent.current_quantity >= 0 else Side.SELL
+
+        raise ValueError(
+            f"Cannot determine Side for intent {intent.intent!r}. "
+            f"Fail-safe: aborting order construction."
         )
 
     # ── Order lifecycle tracking (Inv-4) ────────────────────────────

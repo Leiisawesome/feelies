@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from feelies.core.events import FeatureVector, NBBOQuote
+from feelies.core.events import FeatureVector, NBBOQuote, Trade
 
 
 class FeatureEngine(Protocol):
@@ -28,6 +28,18 @@ class FeatureEngine(Protocol):
         Calling update() advances internal state exactly once per event.
         """
         ...
+
+    def process_trade(self, trade: Trade) -> FeatureVector | None:
+        """Update feature state from a trade event.
+
+        Returns an updated FeatureVector if any feature consumed the
+        trade, None otherwise.  Trade-triggered updates modify state
+        but do not drive signal evaluation — the updated values feed
+        into the next quote-driven FeatureVector.
+
+        Default: no-op (backward compatible for quote-only engines).
+        """
+        return None
 
     def is_warm(self, symbol: str) -> bool:
         """Whether the engine has enough history for reliable features."""

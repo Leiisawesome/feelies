@@ -47,6 +47,15 @@ class RegimeEngine(Protocol):
         """
         ...
 
+    def current_state(self, symbol: str) -> list[float] | None:
+        """Return cached posteriors for a symbol without updating.
+
+        Returns None if the symbol has never been updated.  Used by
+        risk engine and position sizer as a read-only query — they
+        never call ``posterior()`` themselves.
+        """
+        ...
+
     def reset(self, symbol: str) -> None:
         """Clear accumulated state for a symbol."""
         ...
@@ -124,6 +133,10 @@ class HMM3StateFractional:
         updated = self._bayes_update(predicted, likelihoods)
         self._posteriors[symbol] = updated
         return list(updated)
+
+    def current_state(self, symbol: str) -> list[float] | None:
+        cached = self._posteriors.get(symbol)
+        return list(cached) if cached is not None else None
 
     def reset(self, symbol: str) -> None:
         self._posteriors.pop(symbol, None)

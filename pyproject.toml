@@ -3,13 +3,16 @@ name = "feelies"
 version = "0.1.0"
 description = "Deterministic intraday trading platform"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pyyaml>=6.0",
+]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "mypy>=1.8",
     "ruff>=0.3",
+    "types-PyYAML>=6.0",
 ]
 polygon = [
     "websockets>=13.0",
