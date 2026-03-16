@@ -2,6 +2,11 @@
 
 from feelies.monitoring.alerting import AlertManager
 from feelies.monitoring.health import ComponentHealth, HealthCheck, HealthRegistry, HealthStatus
+from feelies.monitoring.in_memory import (
+    InMemoryAlertManager,
+    InMemoryKillSwitch,
+    InMemoryMetricCollector,
+)
 from feelies.monitoring.kill_switch import KillSwitch
 from feelies.monitoring.structured_logging import LogLevel, StructuredLogger
 from feelies.monitoring.telemetry import MetricCollector
@@ -12,6 +17,9 @@ __all__ = [
     "HealthCheck",
     "HealthRegistry",
     "HealthStatus",
+    "InMemoryAlertManager",
+    "InMemoryKillSwitch",
+    "InMemoryMetricCollector",
     "KillSwitch",
     "LogLevel",
     "MetricCollector",

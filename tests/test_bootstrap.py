@@ -11,6 +11,12 @@ from feelies.core.clock import SimulatedClock
 from feelies.core.errors import ConfigurationError
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.kernel.orchestrator import Orchestrator
+from feelies.core.config import ConfigSnapshot
+from feelies.monitoring.in_memory import (
+    InMemoryAlertManager,
+    InMemoryKillSwitch,
+    InMemoryMetricCollector,
+)
 
 ALPHA_SPEC_YAML = """\
 alpha_id: test_alpha
@@ -100,3 +106,52 @@ class TestBuildPlatform:
         config = _make_config(tmp_path, regime_engine="nonexistent_engine")
         orchestrator, _ = build_platform(config)
         assert orchestrator._regime_engine is None
+
+    def test_metric_collector_is_real(self, tmp_path: Path) -> None:
+        _write_alpha_spec(tmp_path)
+        config = _make_config(tmp_path, regime_engine=None)
+        orchestrator, _ = build_platform(config)
+        assert isinstance(orchestrator._metrics, InMemoryMetricCollector)
+
+    def test_alert_manager_wired(self, tmp_path: Path) -> None:
+        _write_alpha_spec(tmp_path)
+        config = _make_config(tmp_path, regime_engine=None)
+        orchestrator, _ = build_platform(config)
+        assert isinstance(orchestrator._alert_manager, InMemoryAlertManager)
+
+    def test_kill_switch_wired(self, tmp_path: Path) -> None:
+        _write_alpha_spec(tmp_path)
+        config = _make_config(tmp_path, regime_engine=None)
+        orchestrator, _ = build_platform(config)
+        assert isinstance(orchestrator._kill_switch, InMemoryKillSwitch)
+
+    def test_kill_switch_starts_inactive(self, tmp_path: Path) -> None:
+        _write_alpha_spec(tmp_path)
+        config = _make_config(tmp_path, regime_engine=None)
+        orchestrator, _ = build_platform(config)
+        assert orchestrator._kill_switch.is_active is False
+
+    def test_alert_manager_linked_to_kill_switch(self, tmp_path: Path) -> None:
+        _write_alpha_spec(tmp_path)
+        config = _make_config(tmp_path, regime_engine=None)
+        orchestrator, _ = build_platform(config)
+        am = orchestrator._alert_manager
+        ks = orchestrator._kill_switch
+        assert isinstance(am, InMemoryAlertManager)
+        assert am._kill_switch is ks
+
+    def test_config_snapshot_captured(self, tmp_path: Path) -> None:
+        _write_alpha_spec(tmp_path)
+        config = _make_config(tmp_path, regime_engine=None)
+        orchestrator, _ = build_platform(config)
+        snap = orchestrator.config_snapshot  # type: ignore[attr-defined]
+        assert isinstance(snap, ConfigSnapshot)
+        assert snap.checksum
+        assert snap.data["mode"] == "BACKTEST"
+
+    def test_config_snapshot_checksum_is_deterministic(self, tmp_path: Path) -> None:
+        _write_alpha_spec(tmp_path)
+        config = _make_config(tmp_path, regime_engine=None)
+        orch1, _ = build_platform(config)
+        orch2, _ = build_platform(config)
+        assert orch1.config_snapshot.checksum == orch2.config_snapshot.checksum  # type: ignore[attr-defined]

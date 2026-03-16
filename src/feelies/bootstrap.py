@@ -12,6 +12,7 @@ interact only through protocols.
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 from pathlib import Path
 
 from feelies.alpha.composite import CompositeFeatureEngine, CompositeSignalEngine
@@ -22,11 +23,16 @@ from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock, SimulatedClock, WallClock
 from feelies.core.events import NBBOQuote
 from feelies.core.platform_config import OperatingMode, PlatformConfig
+from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_backend import build_backtest_backend
 from feelies.execution.backtest_router import BacktestOrderRouter
-from feelies.execution.backend import ExecutionBackend
+from feelies.execution.intent import SignalPositionTranslator
 from feelies.kernel.orchestrator import Orchestrator
-from feelies.monitoring.telemetry import MetricCollector
+from feelies.monitoring.in_memory import (
+    InMemoryAlertManager,
+    InMemoryKillSwitch,
+    InMemoryMetricCollector,
+)
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
 from feelies.risk.position_sizer import BudgetBasedSizer
@@ -36,16 +42,6 @@ from feelies.storage.memory_feature_snapshot import InMemoryFeatureSnapshotStore
 from feelies.storage.memory_trade_journal import InMemoryTradeJournal
 
 logger = logging.getLogger(__name__)
-
-
-class _NoOpMetricCollector:
-    """Minimal MetricCollector for when no real collector is configured."""
-
-    def record(self, metric: object) -> None:
-        pass
-
-    def flush(self) -> None:
-        pass
 
 
 def build_platform(
@@ -73,7 +69,8 @@ def build_platform(
 
     regime_engine = _create_regime_engine(config.regime_engine)
 
-    registry = AlphaRegistry(clock=clock)
+    registry_clock = None if config.mode == OperatingMode.BACKTEST else clock
+    registry = AlphaRegistry(clock=registry_clock)
     loader = AlphaLoader(regime_engine=regime_engine)
 
     _load_alphas(config, registry, loader)
@@ -104,11 +101,14 @@ def build_platform(
         bus.subscribe(NBBOQuote, lambda e: backtest_router.on_quote(e))  # type: ignore[arg-type]
 
     position_store = MemoryPositionStore()
-    metric_collector: MetricCollector = _NoOpMetricCollector()  # type: ignore[assignment]
     trade_journal = InMemoryTradeJournal()
     feature_snapshots = InMemoryFeatureSnapshotStore()
-
     position_sizer = BudgetBasedSizer(regime_engine=regime_engine)
+    intent_translator = SignalPositionTranslator()
+
+    kill_switch = InMemoryKillSwitch()
+    alert_manager = InMemoryAlertManager(kill_switch=kill_switch)
+    metric_collector = InMemoryMetricCollector()
 
     orchestrator = Orchestrator(
         clock=clock,
@@ -120,20 +120,28 @@ def build_platform(
         position_store=position_store,
         event_log=event_log,
         metric_collector=metric_collector,
+        alert_manager=alert_manager,
+        kill_switch=kill_switch,
         regime_engine=regime_engine,
         position_sizer=position_sizer,
+        intent_translator=intent_translator,
         alpha_registry=registry,
         account_equity=_decimal(config.account_equity),
         trade_journal=trade_journal,
         feature_snapshots=feature_snapshots,
     )
 
+    config_snapshot = config.snapshot()
+    orchestrator.config_snapshot = config_snapshot  # type: ignore[attr-defined]
+
     logger.info(
-        "Platform composed: mode=%s, symbols=%s, alphas=%d, regime=%s",
+        "Platform composed: mode=%s, symbols=%s, alphas=%d, regime=%s, "
+        "config_checksum=%s",
         config.mode.name,
         sorted(config.symbols),
         len(registry),
         config.regime_engine or "none",
+        config_snapshot.checksum[:12],
     )
 
     return orchestrator, config
@@ -197,5 +205,5 @@ def _create_backend(
     )
 
 
-def _decimal(value: float) -> __import__("decimal").Decimal:
-    return __import__("decimal").Decimal(str(value))
+def _decimal(value: float) -> Decimal:
+    return Decimal(str(value))

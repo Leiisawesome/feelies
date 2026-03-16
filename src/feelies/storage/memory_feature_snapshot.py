@@ -18,10 +18,11 @@ class InMemoryFeatureSnapshotStore:
         self._snapshots: dict[tuple[str, str], list[tuple[FeatureSnapshotMeta, bytes]]] = {}
 
     def save(self, meta: FeatureSnapshotMeta, state: bytes) -> None:
-        actual = hashlib.sha256(state).hexdigest()[:16]
-        if meta.checksum and meta.checksum != actual:
+        actual_full = hashlib.sha256(state).hexdigest()
+        if meta.checksum and not self._checksums_match(meta.checksum, actual_full):
             raise ValueError(
-                f"Checksum mismatch on save: expected {meta.checksum}, got {actual}"
+                f"Checksum mismatch on save: expected {meta.checksum}, "
+                f"got {actual_full}"
             )
         key = (meta.symbol, meta.feature_version)
         self._snapshots.setdefault(key, []).append((meta, bytes(state)))
@@ -36,10 +37,16 @@ class InMemoryFeatureSnapshotStore:
         if not entries:
             return None
         meta, state = entries[-1]
-        actual = hashlib.sha256(state).hexdigest()[:16]
-        if meta.checksum and meta.checksum != actual:
+        actual_full = hashlib.sha256(state).hexdigest()
+        if meta.checksum and not self._checksums_match(meta.checksum, actual_full):
             return None
         return meta, state
+
+    @staticmethod
+    def _checksums_match(stored: str, computed: str) -> bool:
+        """Compare checksums allowing either full or prefix form."""
+        min_len = min(len(stored), len(computed))
+        return stored[:min_len] == computed[:min_len]
 
     def list_snapshots(self, symbol: str) -> list[FeatureSnapshotMeta]:
         result: list[FeatureSnapshotMeta] = []
