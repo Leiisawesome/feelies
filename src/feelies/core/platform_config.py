@@ -23,7 +23,7 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Any
 
-import yaml
+import yaml  # pyright: ignore[reportMissingModuleSource]
 
 from feelies.core.config import ConfigSnapshot
 from feelies.core.errors import ConfigurationError
@@ -115,6 +115,7 @@ class PlatformConfig:
             "risk_max_gross_exposure_pct": self.risk_max_gross_exposure_pct,
             "risk_max_drawdown_pct": self.risk_max_drawdown_pct,
             "account_equity": self.account_equity,
+            "backtest_fill_latency_ns": self.backtest_fill_latency_ns,
         }
 
     @classmethod
@@ -175,4 +176,7 @@ class PlatformConfig:
                 data.get("risk_max_drawdown_pct", 5.0)
             ),
             account_equity=float(data.get("account_equity", 1_000_000.0)),
+            backtest_fill_latency_ns=int(
+                data.get("backtest_fill_latency_ns", 0)
+            ),
         )

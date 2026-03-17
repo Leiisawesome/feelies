@@ -213,6 +213,45 @@ parameter_overrides:
         assert cfg.parameter_overrides["my_alpha"]["window"] == 20
         assert cfg.parameter_overrides["my_alpha"]["threshold"] == 0.5
 
+    def test_backtest_fill_latency_ns_from_yaml(self, tmp_path: Path) -> None:
+        yaml_content = """\
+symbols: [AAPL]
+alpha_specs: [x.yaml]
+backtest_fill_latency_ns: 5000
+"""
+        (tmp_path / "config.yaml").write_text(yaml_content)
+        cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
+        assert cfg.backtest_fill_latency_ns == 5000
+
+    def test_backtest_fill_latency_ns_defaults_to_zero(self, tmp_path: Path) -> None:
+        yaml_content = """\
+symbols: [AAPL]
+alpha_specs: [x.yaml]
+"""
+        (tmp_path / "config.yaml").write_text(yaml_content)
+        cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
+        assert cfg.backtest_fill_latency_ns == 0
+
+    def test_backtest_fill_latency_ns_in_snapshot(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            backtest_fill_latency_ns=1234,
+        )
+        snap = cfg.snapshot()
+        assert snap.data["backtest_fill_latency_ns"] == 1234
+
+    def test_backtest_fill_latency_ns_yaml_roundtrip(self, tmp_path: Path) -> None:
+        yaml_content = """\
+symbols: [AAPL]
+alpha_specs: [x.yaml]
+backtest_fill_latency_ns: 9999
+"""
+        (tmp_path / "config.yaml").write_text(yaml_content)
+        cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
+        snap = cfg.snapshot()
+        assert snap.data["backtest_fill_latency_ns"] == 9999
+
 
 # ── Configuration protocol compliance ──────────────────────────────
 

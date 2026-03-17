@@ -1,0 +1,51 @@
+# ═══════════════════════════════════════════════════════════
+# PLATFORM CONFIGURATION — Reference Config
+# Version: 0.1.0
+# ═══════════════════════════════════════════════════════════
+
+# ── Provenance (Invariant 13) ─────────────────────────────
+version: "0.1.0"
+author: "system"
+
+# ── Operating Mode ────────────────────────────────────────
+# BACKTEST | PAPER | LIVE
+mode: BACKTEST
+
+# ── Trading Universe ─────────────────────────────────────
+symbols:
+  - AAPL
+  - MSFT
+  - NVDA
+
+# ── Alpha Discovery ──────────────────────────────────────
+# Directory scanned for *.alpha.yaml files at boot time.
+alpha_spec_dir: alphas/
+
+# Explicit alpha spec paths (in addition to directory scan).
+alpha_specs: []
+
+# Per-alpha parameter overrides keyed by alpha_id.
+# Example:
+#   parameter_overrides:
+#     spread_mean_reversion:
+#       ewma_span: 100
+parameter_overrides: {}
+
+# ── Regime Engine ─────────────────────────────────────────
+# Name of the shared regime engine, or null to disable.
+regime_engine: hmm_3state_fractional
+
+# ── Data Paths ────────────────────────────────────────────
+# data_dir: data/
+# event_log_path: data/event_log.jsonl
+
+# ── Account & Risk ────────────────────────────────────────
+account_equity: 100000.0
+
+risk_max_position_per_symbol: 1000
+risk_max_gross_exposure_pct: 20.0
+risk_max_drawdown_pct: 5.0
+
+# ── Backtest Settings ─────────────────────────────────────
+# Simulated fill latency in nanoseconds (0 = instant fills).
+backtest_fill_latency_ns: 0

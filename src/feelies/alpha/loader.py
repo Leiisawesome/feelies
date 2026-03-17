@@ -30,7 +30,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable
 
-import yaml
+import yaml  # pyright: ignore[reportMissingModuleSource]
 
 from feelies.alpha.module import (
     AlphaManifest,
@@ -90,18 +90,20 @@ class AlphaLoadError(Exception):
 
 
 class _YAMLFeatureComputation:
-    """Wraps compiled initial_state/update callables into FeatureComputation."""
+    """Wraps compiled initial_state/update/update_trade callables into FeatureComputation."""
 
-    __slots__ = ("_initial_state_fn", "_update_fn", "_params")
+    __slots__ = ("_initial_state_fn", "_update_fn", "_update_trade_fn", "_params")
 
     def __init__(
         self,
         initial_state_fn: Callable[[], dict[str, Any]],
         update_fn: Callable[..., Any],
         params: dict[str, Any],
+        update_trade_fn: Callable[..., Any] | None = None,
     ) -> None:
         self._initial_state_fn = initial_state_fn
         self._update_fn = update_fn
+        self._update_trade_fn = update_trade_fn
         self._params = params
 
     def initial_state(self) -> dict[str, Any]:
@@ -110,6 +112,12 @@ class _YAMLFeatureComputation:
     def update(self, quote: NBBOQuote, state: dict[str, Any]) -> float:
         result = self._update_fn(quote, state, self._params)
         return float(result)
+
+    def update_trade(self, trade: Trade, state: dict[str, Any]) -> float | None:
+        if self._update_trade_fn is None:
+            return None
+        result = self._update_trade_fn(trade, state, self._params)
+        return float(result) if result is not None else None
 
 
 class _CompoundElementComputation:
@@ -534,6 +542,7 @@ class AlphaLoader:
                     f"{source}: feature '{fid}' must define "
                     f"initial_state() and update(quote, state, params)"
                 )
+            update_trade_fn = ns.get("update_trade")
 
             warm_up = self._resolve_warm_up(
                 fspec.get("warm_up", {}), params, source, fid
@@ -560,7 +569,10 @@ class AlphaLoader:
                         compute=comp,
                     ))
             else:
-                comp = _YAMLFeatureComputation(init_fn, update_fn, params)
+                comp = _YAMLFeatureComputation(
+                    init_fn, update_fn, params,
+                    update_trade_fn=update_trade_fn,
+                )
                 all_defs.append(FeatureDefinition(
                     feature_id=fid,
                     version=version,
