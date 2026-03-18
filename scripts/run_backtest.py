@@ -323,9 +323,11 @@ def generate_report(
         elif rec.realized_pnl < 0:
             losing_pnls.append(rec.realized_pnl)
 
-    round_trips = len(records)
+    total_fills = len(records)
     win_count = len(winning_pnls)
-    win_rate = (win_count / round_trips * 100.0) if round_trips else 0.0
+    loss_count = len(losing_pnls)
+    resolved_count = win_count + loss_count
+    win_rate = (win_count / resolved_count * 100.0) if resolved_count else 0.0
     avg_win = sum(winning_pnls, Decimal("0")) / len(winning_pnls) if winning_pnls else Decimal("0")
     avg_loss = sum(losing_pnls, Decimal("0")) / len(losing_pnls) if losing_pnls else Decimal("0")
     largest_win = max(winning_pnls) if winning_pnls else Decimal("0")
@@ -333,23 +335,28 @@ def generate_report(
     pnl_per_share = float(realized_pnl) / total_shares if total_shares else 0.0
 
     # ── Risk ─────────────────────────────────────────────────────
+    # Track per-symbol exposure and sum for portfolio-wide max.
     max_exposure = Decimal("0")
-    running_exposure = Decimal("0")
+    per_symbol_exposure: dict[str, Decimal] = {}
     for pu in pos_updates:
-        running_exposure = abs(Decimal(str(pu.quantity)) * pu.avg_price)
-        if running_exposure > max_exposure:
-            max_exposure = running_exposure
+        per_symbol_exposure[pu.symbol] = abs(Decimal(str(pu.quantity)) * pu.avg_price)
+        total_exposure = sum(per_symbol_exposure.values())
+        if total_exposure > max_exposure:
+            max_exposure = total_exposure
     max_exposure_pct = float(max_exposure) / starting_equity * 100.0 if starting_equity else 0.0
 
-    # Drawdown: track equity curve from position updates
+    # Drawdown: track equity curve from position updates.
+    # pu.realized_pnl is CUMULATIVE per-symbol (from PositionStore),
+    # so equity = starting + sum of per-symbol cumulative values.
     peak_equity = Decimal(str(starting_equity))
     max_drawdown = Decimal("0")
-    running_equity = Decimal(str(starting_equity))
+    per_symbol_pnl: dict[str, Decimal] = {}
     for pu in pos_updates:
-        running_equity += pu.realized_pnl
-        if running_equity > peak_equity:
-            peak_equity = running_equity
-        dd = running_equity - peak_equity
+        per_symbol_pnl[pu.symbol] = pu.realized_pnl
+        current_equity = Decimal(str(starting_equity)) + sum(per_symbol_pnl.values())
+        if current_equity > peak_equity:
+            peak_equity = current_equity
+        dd = current_equity - peak_equity
         if dd < max_drawdown:
             max_drawdown = dd
     max_dd_pct = float(max_drawdown) / starting_equity * 100.0 if starting_equity else 0.0
@@ -360,12 +367,12 @@ def generate_report(
     # ── Performance metrics ──────────────────────────────────────
     metrics: InMemoryMetricCollector = orchestrator._metrics  # type: ignore[attr-defined]
 
-    tick_summary = metrics.get_summary("tick", "tick_to_decision_latency_ns")
-    feat_summary = metrics.get_summary("feature", "feature_compute_ns")
-    sig_summary = metrics.get_summary("signal", "signal_evaluate_ns")
+    tick_summary = metrics.get_summary("kernel", "tick_to_decision_latency_ns")
+    feat_summary = metrics.get_summary("kernel", "feature_compute_ns")
+    sig_summary = metrics.get_summary("kernel", "signal_evaluate_ns")
 
     avg_tick_ns = tick_summary.mean if tick_summary else 0.0
-    p99_tick_ns = tick_summary.max_value if tick_summary else 0.0
+    max_tick_ns = tick_summary.max_value if tick_summary else 0.0
     avg_feat_ns = feat_summary.mean if feat_summary else 0.0
     avg_sig_ns = sig_summary.mean if sig_summary else 0.0
 
@@ -415,9 +422,10 @@ def generate_report(
 
     # Trade summary
     lines.append(_section("Trade Summary"))
-    lines.append(_kv("Round trips closed", f"{round_trips}"))
+    lines.append(_kv("Total fills", f"{total_fills}"))
+    lines.append(_kv("Closing fills", f"{resolved_count}"))
     lines.append(_kv("Open positions", f"{open_positions}"))
-    win_rate_str = f"{win_rate:.1f}% ({win_count}/{round_trips})" if round_trips else "N/A"
+    win_rate_str = f"{win_rate:.1f}% ({win_count}/{resolved_count})" if resolved_count else "N/A"
     lines.append(_kv("Win rate", win_rate_str))
     lines.append(_kv("Avg winning trade", _money(avg_win)))
     lines.append(_kv("Avg losing trade", _money(avg_loss)))
@@ -437,7 +445,7 @@ def generate_report(
     # Performance
     lines.append(_section("Performance"))
     lines.append(_kv("Avg tick latency", _ns_to_ms(avg_tick_ns)))
-    lines.append(_kv("p99 tick latency", _ns_to_ms(p99_tick_ns)))
+    lines.append(_kv("Max tick latency", _ns_to_ms(max_tick_ns)))
     lines.append(_kv("Feature compute", f"{_ns_to_ms(avg_feat_ns)} avg"))
     lines.append(_kv("Signal evaluate", f"{_ns_to_ms(avg_sig_ns)} avg"))
     lines.append("")
