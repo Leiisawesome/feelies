@@ -13,6 +13,7 @@ dev = [
     "mypy>=1.8",
     "ruff>=0.3",
     "types-PyYAML>=6.0",
+    "python-dotenv>=1.0",
 ]
 polygon = [
     "websockets>=13.0",

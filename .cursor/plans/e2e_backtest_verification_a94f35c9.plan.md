@@ -1,25 +1,25 @@
 ---
 name: E2E Backtest Verification
-overview: Build a comprehensive end-to-end backtest verification test module that systematically traces every event through every layer boundary of the pipeline, using the real mean_reversion alpha with a carefully designed synthetic dataset that exercises warm-up suppression, signal generation, risk gating, fills, position reversal, and deterministic replay.
+overview: Build a comprehensive end-to-end backtest verification test module that systematically traces every event through every layer boundary of the pipeline, using the real spread_mean_reversion alpha (mean_reversion.alpha.yaml) with a carefully designed synthetic dataset that exercises warm-up suppression, signal generation, risk gating, fills, position reversal, and deterministic replay.
 todos:
   - id: bus-recorder
-    content: Implement BusRecorder helper class and the shared class-scoped fixture that runs the 8-tick scenario with real mean_reversion alpha + parameter_overrides
-    status: pending
+    content: Implement BusRecorder helper class and the shared class-scoped fixture that runs the 8-tick scenario with real spread_mean_reversion alpha + parameter_overrides (regime_engine=None)
+    status: completed
   - id: layer-assertions
     content: "Implement layer-by-layer assertions: ingestion (8 quotes), features (warm-up gate, 4 values), signals (2: SHORT+LONG), risk (ALLOW), execution (2 fills at mid), portfolio (short then reversal to long, positive PnL)"
-    status: pending
+    status: completed
   - id: provenance-metrics-sm
     content: Implement provenance chain test (correlation_id tracing quote->signal->order->fill), metrics assertions (latency histograms present), state machine transition verification, config snapshot check
-    status: pending
+    status: completed
   - id: determinism-boundaries
     content: Implement deterministic replay test (3 runs identical) and boundary condition tests (spread gate suppression, empty event log, all-warmup-only dataset)
-    status: pending
+    status: completed
   - id: pnl-performance
-    content: "Implement Layer 12 assertions: final P&L statement (realized=560, unrealized=0, net=560, final equity=100560, return=0.56%), trade statistics (84 shares, 1 round trip, 100% win rate), capital utilization (exposure 3920.14, 3.90%)"
-    status: pending
+    content: "Implement Layer 12 assertions: final P&L statement (realized=420, unrealized=0, net=420, final equity=100420, return=0.42%), trade statistics (63 shares, 1 round trip, 100% win rate), capital utilization (exposure 2940.105, 2.93%)"
+    status: completed
   - id: runner-script
     content: "Build scripts/run_backtest.py: CLI args (--symbol, --date, --config), dotenv loading, PolygonHistoricalIngestor -> EventLog -> build_platform -> run_backtest, formatted P&L report output, moderate verification checks (signals>0, fills>=1, P&L computable)"
-    status: pending
+    status: completed
 isProject: false
 ---
 
@@ -67,34 +67,37 @@ flowchart LR
 
 ## Synthetic Dataset Design
 
-Uses the real `mean_reversion.alpha.yaml` with `parameter_overrides` to make the scenario tractable:
+Uses the real `mean_reversion.alpha.yaml` (alpha_id: `spread_mean_reversion`) with `parameter_overrides` to make the scenario tractable:
 
 - **ewma_span: 5** (warm-up completes at tick 5)
 - **zscore_entry: 1.0** (lower threshold for test)
 - **max_spread_bps: 5.0** (default, $0.01 spread passes at ~0.67 bps)
 - **account_equity: 100,000**
+- **regime_engine: None** (disabled — eliminates regime-dependent double-scaling from BudgetBasedSizer and BasicRiskEngine, which would both apply 0.75× compression_clustering factor due to the synthetic $0.01 spread falling outside all HMM emission ranges)
 
-All quotes use AAPL with $0.01 spread (realistic for large-cap):
+The alpha declares `capital_allocation_pct: 15.0` in its risk_budget section (not overridable via parameter_overrides). All sizing uses this 15% allocation.
+
+All quotes use AAPL with $0.01 spread (realistic for large-cap). Each quote sets `exchange_timestamp_ns = timestamp_ns` so `ReplayFeed` advances the `SimulatedClock` correctly:
 
 
-| Tick | Bid    | Ask    | Mid     | warm  | zscore (approx) | Expected  |
-| ---- | ------ | ------ | ------- | ----- | --------------- | --------- |
-| 1    | 150.00 | 150.01 | 150.005 | False | 0.0             | warm-up   |
-| 2    | 150.00 | 150.01 | 150.005 | False | 0.0             | warm-up   |
-| 3    | 150.00 | 150.01 | 150.005 | False | 0.0             | warm-up   |
-| 4    | 150.00 | 150.01 | 150.005 | False | 0.0             | warm-up   |
-| 5    | 150.00 | 150.01 | 150.005 | True  | 0.0             | no signal |
-| 6    | 160.00 | 160.01 | 160.005 | True  | +1.15           | SHORT     |
-| 7    | 160.00 | 160.01 | 160.005 | True  | +0.73           | no signal |
-| 8    | 140.00 | 140.01 | 140.005 | True  | -1.01           | LONG      |
+| Tick | Bid    | Ask    | Mid     | timestamp_ns  | exchange_timestamp_ns | warm  | zscore (approx) | Expected  |
+| ---- | ------ | ------ | ------- | ------------- | --------------------- | ----- | --------------- | --------- |
+| 1    | 150.00 | 150.01 | 150.005 | 1_000_000_000 | 1_000_000_000         | False | 0.0             | warm-up   |
+| 2    | 150.00 | 150.01 | 150.005 | 2_000_000_000 | 2_000_000_000         | False | 0.0             | warm-up   |
+| 3    | 150.00 | 150.01 | 150.005 | 3_000_000_000 | 3_000_000_000         | False | 0.0             | warm-up   |
+| 4    | 150.00 | 150.01 | 150.005 | 4_000_000_000 | 4_000_000_000         | False | 0.0             | warm-up   |
+| 5    | 150.00 | 150.01 | 150.005 | 5_000_000_000 | 5_000_000_000         | True  | 0.0             | no signal |
+| 6    | 160.00 | 160.01 | 160.005 | 6_000_000_000 | 6_000_000_000         | True  | +1.15           | SHORT     |
+| 7    | 160.00 | 160.01 | 160.005 | 7_000_000_000 | 7_000_000_000         | True  | +0.73           | no signal |
+| 8    | 140.00 | 140.01 | 140.005 | 8_000_000_000 | 8_000_000_000         | True  | -1.01           | LONG      |
 
 
 **Why these values work:** With `ewma_span=5` (`alpha=1/3`), a single jump from a stable series produces zscore = `(1-alpha)/sqrt(alpha)` = `0.667/0.577` = 1.155, which exceeds the 1.0 threshold. The reversal at tick 8 produces zscore approx -1.01 from accumulated variance.
 
-**Expected execution flow (exact values):**
+**Expected execution flow (exact values, capital_allocation_pct=15%, regime_engine=None):**
 
-- Tick 6 SHORT: strength=0.23094. BudgetBasedSizer: `floor(100000 * 0.20 * 0.23094 / 160.005)` = **28 shares**. Intent: ENTRY_SHORT. Order: SELL 28. Fill: 28 @ Decimal("160.005"). Position: **-28 shares, realized_pnl=0**.
-- Tick 8 LONG: strength=0.20207. BudgetBasedSizer: `floor(100000 * 0.20 * 0.20207 / 140.005)` = **28 shares**. Intent: REVERSE_SHORT_TO_LONG (28+28=56). Order: BUY 56. Fill: 56 @ Decimal("140.005"). Position: **+28 shares, realized_pnl=Decimal("560")**.
+- Tick 6 SHORT: strength=0.23094. BudgetBasedSizer: `floor(100000 * 0.15 * 0.23094 / 160.005)` = **21 shares**. Intent: ENTRY_SHORT. Order: SELL 21. Fill: 21 @ Decimal("160.005"). Position: **-21 shares, realized_pnl=0**.
+- Tick 8 LONG: strength=0.20207. BudgetBasedSizer: `floor(100000 * 0.15 * 0.20207 / 140.005)` = **21 shares**. Intent: REVERSE_SHORT_TO_LONG (21+21=42). Order: BUY 42. Fill: 42 @ Decimal("140.005"). Position: **+21 shares, realized_pnl=Decimal("420")**.
 
 ## BusRecorder — The Tracing Mechanism
 
@@ -196,10 +199,10 @@ Assertions:
 Expected bus output: **exactly 2 `Signal` events**
 
 
-| idx | direction | strength | edge_estimate_bps | strategy_id    | correlation_id    |
-| --- | --------- | -------- | ----------------- | -------------- | ----------------- |
-| 0   | SHORT     | 0.23094  | 2.5               | mean_reversion | AAPL:6000000000:6 |
-| 1   | LONG      | 0.20207  | 2.5               | mean_reversion | AAPL:8000000000:8 |
+| idx | direction | strength | edge_estimate_bps | strategy_id           | correlation_id    |
+| --- | --------- | -------- | ----------------- | --------------------- | ----------------- |
+| 0   | SHORT     | 0.23094  | 2.5               | spread_mean_reversion | AAPL:6000000000:6 |
+| 1   | LONG      | 0.20207  | 2.5               | spread_mean_reversion | AAPL:8000000000:8 |
 
 
 Derivation:
@@ -222,7 +225,7 @@ Assertions:
 - `signals[1].direction == SignalDirection.LONG`
 - `signals[1].strength == pytest.approx(0.20207, abs=1e-4)`
 - `signals[1].correlation_id == "AAPL:8000000000:8"`
-- Both: `strategy_id == "mean_reversion"`, `edge_estimate_bps == 2.5`
+- Both: `strategy_id == "spread_mean_reversion"`, `edge_estimate_bps == 2.5`
 
 ---
 
@@ -231,20 +234,20 @@ Assertions:
 Expected bus output: **4 `RiskVerdict` events** (2 from `check_signal` + 2 from `check_order`)
 
 
-| idx | source                | action | scaling_factor | reason        |
-| --- | --------------------- | ------ | -------------- | ------------- |
-| 0   | check_signal (tick 6) | ALLOW  | 1.0            | within limits |
-| 1   | check_order (tick 6)  | ALLOW  | 1.0            | post-fill OK  |
-| 2   | check_signal (tick 8) | ALLOW  | 1.0            | within limits |
-| 3   | check_order (tick 8)  | ALLOW  | 1.0            | post-fill OK  |
+| idx | source                | action | scaling_factor | reason              |
+| --- | --------------------- | ------ | -------------- | ------------------- |
+| 0   | check_signal (tick 6) | ALLOW  | 1.0            | within limits       |
+| 1   | check_order (tick 6)  | ALLOW  | 1.0            | order within limits |
+| 2   | check_signal (tick 8) | ALLOW  | 1.0            | within limits       |
+| 3   | check_order (tick 8)  | ALLOW  | 1.0            | order within limits |
 
 
 Derivation:
 
 - Account equity = 100,000. Platform limits: max_position=1000, max_exposure=20%, max_drawdown=5%.
-- Tick 6: position=0, requesting 28 shares. 28 << 1000. Exposure = 28*160.005 = 4480.14 << 20,000. → ALLOW.
-- Tick 8: position=-28, requesting 56 shares. Post-fill = +28. 28 << 1000. → ALLOW.
-- No regime engine → `scaling_factor = 1.0` (no regime-based reduction).
+- Tick 6: position=0, requesting 21 shares. 21 << 1000. Exposure = 21*160.005 = 3360.105 << 20,000. → ALLOW.
+- Tick 8: position=-21, requesting 42 shares. Post-fill = +21. 21 << 1000. → ALLOW.
+- `regime_engine=None` in test config → `_regime_scaling()` returns 1.0, `scaling_factor = 1.0`.
 
 Assertions:
 
@@ -264,8 +267,8 @@ Expected bus output: **2 `OrderRequest` events** and **2 `OrderAck` events**
 
 | idx | side | quantity | symbol | correlation_id    |
 | --- | ---- | -------- | ------ | ----------------- |
-| 0   | SELL | 28       | AAPL   | AAPL:6000000000:6 |
-| 1   | BUY  | 56       | AAPL   | AAPL:8000000000:8 |
+| 0   | SELL | 21       | AAPL   | AAPL:6000000000:6 |
+| 1   | BUY  | 42       | AAPL   | AAPL:8000000000:8 |
 
 
 **OrderAcks:**
@@ -273,24 +276,24 @@ Expected bus output: **2 `OrderRequest` events** and **2 `OrderAck` events**
 
 | idx | status | filled_quantity | fill_price         | symbol |
 | --- | ------ | --------------- | ------------------ | ------ |
-| 0   | FILLED | 28              | Decimal("160.005") | AAPL   |
-| 1   | FILLED | 56              | Decimal("140.005") | AAPL   |
+| 0   | FILLED | 21              | Decimal("160.005") | AAPL   |
+| 1   | FILLED | 42              | Decimal("140.005") | AAPL   |
 
 
-Derivation — Sizing (BudgetBasedSizer, regime_factor=1.0):
+Derivation — Sizing (BudgetBasedSizer, capital_allocation_pct=15%, regime_engine=None → regime_factor=1.0):
 
-- Tick 6: `allocated = 100000 * 20/100 = 20000`. `conviction = 20000 * 0.23094 = 4618.8`. `shares = floor(4618.8 / 160.005) = 28`.
-- Tick 8: `conviction = 20000 * 0.20207 = 4041.4`. `shares = floor(4041.4 / 140.005) = 28`.
+- Tick 6: `allocated = 100000 * 15/100 = 15000`. `conviction = 15000 * 0.23094 = 3464.1`. `shares = floor(3464.1 / 160.005) = 21`.
+- Tick 8: `conviction = 15000 * 0.20207 = 3031.05`. `shares = floor(3031.05 / 140.005) = 21`.
 
 Derivation — Intent (SignalPositionTranslator):
 
-- Tick 6: signal=SHORT, position=0 → `ENTRY_SHORT`, quantity=28
-- Tick 8: signal=LONG, position=-28 → `REVERSE_SHORT_TO_LONG`, quantity=abs(-28)+28=56
+- Tick 6: signal=SHORT, position=0 → `ENTRY_SHORT`, quantity=21
+- Tick 8: signal=LONG, position=-21 → `REVERSE_SHORT_TO_LONG`, quantity=abs(-21)+21=42
 
 Derivation — Order construction:
 
 - `quantity = max(1, round(intent.target_quantity * verdict.scaling_factor))`
-- Tick 6: `round(28 * 1.0) = 28`; tick 8: `round(56 * 1.0) = 56`
+- Tick 6: `round(21 * 1.0) = 21`; tick 8: `round(42 * 1.0) = 42`
 
 Derivation — Fills (BacktestOrderRouter):
 
@@ -299,12 +302,12 @@ Derivation — Fills (BacktestOrderRouter):
 Assertions:
 
 - `len(recorder.of_type(OrderRequest)) == 2`
-- `orders[0].side == Side.SELL`, `orders[0].quantity == 28`
-- `orders[1].side == Side.BUY`, `orders[1].quantity == 56`
+- `orders[0].side == Side.SELL`, `orders[0].quantity == 21`
+- `orders[1].side == Side.BUY`, `orders[1].quantity == 42`
 - `len(recorder.of_type(OrderAck)) == 2`
 - Both: `status == OrderAckStatus.FILLED`
-- `acks[0].fill_price == Decimal("160.005")`, `acks[0].filled_quantity == 28`
-- `acks[1].fill_price == Decimal("140.005")`, `acks[1].filled_quantity == 56`
+- `acks[0].fill_price == Decimal("160.005")`, `acks[0].filled_quantity == 21`
+- `acks[1].fill_price == Decimal("140.005")`, `acks[1].filled_quantity == 42`
 
 ---
 
@@ -315,26 +318,26 @@ Expected bus output: **2 `PositionUpdate` events**
 
 | idx | quantity | avg_price          | realized_pnl (cumulative) |
 | --- | -------- | ------------------ | ------------------------- |
-| 0   | -28      | Decimal("160.005") | Decimal("0")              |
-| 1   | +28      | Decimal("140.005") | Decimal("560")            |
+| 0   | -21      | Decimal("160.005") | Decimal("0")              |
+| 1   | +21      | Decimal("140.005") | Decimal("420")            |
 
 
 Derivation — MemoryPositionStore.update():
 
-- Fill 1: `old_qty=0, delta=-28`. New entry. `avg_entry = 160.005`. `realized_pnl = 0`.
-- Fill 2: `old_qty=-28, delta=+56`. Opposite sign. `closed_qty = min(56, 28) = 28`. `pnl = (160.005 - 140.005) * 28 = 20 * 28 = 560`. Remainder opens long at 140.005.
+- Fill 1: `old_qty=0, delta=-21`. New entry. `avg_entry = 160.005`. `realized_pnl = 0`.
+- Fill 2: `old_qty=-21, delta=+42`. Opposite sign. `closed_qty = min(42, 21) = 21`. `pnl = (160.005 - 140.005) * 21 = 20 * 21 = 420`. Remainder opens long at 140.005.
 
 End-state position store:
 
-- `orchestrator._positions.get("AAPL").quantity == 28`
+- `orchestrator._positions.get("AAPL").quantity == 21`
 - `orchestrator._positions.get("AAPL").avg_entry_price == Decimal("140.005")`
-- `orchestrator._positions.get("AAPL").realized_pnl == Decimal("560")`
+- `orchestrator._positions.get("AAPL").realized_pnl == Decimal("420")`
 
 Assertions:
 
 - `len(recorder.of_type(PositionUpdate)) == 2`
-- `pu[0].quantity == -28`, `pu[0].realized_pnl == Decimal("0")`
-- `pu[1].quantity == 28`, `pu[1].realized_pnl == Decimal("560")`
+- `pu[0].quantity == -21`, `pu[0].realized_pnl == Decimal("0")`
+- `pu[1].quantity == 21`, `pu[1].realized_pnl == Decimal("420")`
 - Position store end-state matches pu[1]
 
 ---
@@ -344,26 +347,26 @@ Assertions:
 Expected: **2 `TradeRecord` entries** from `orchestrator._trade_journal.query(symbol="AAPL")`
 
 
-| idx | side | requested_qty | filled_qty | fill_price         | realized_pnl (per-trade) | strategy_id    |
-| --- | ---- | ------------- | ---------- | ------------------ | ------------------------ | -------------- |
-| 0   | SELL | 28            | 28         | Decimal("160.005") | Decimal("0")             | mean_reversion |
-| 1   | BUY  | 56            | 56         | Decimal("140.005") | Decimal("560")           | mean_reversion |
+| idx | side | requested_qty | filled_qty | fill_price         | realized_pnl (per-trade) | strategy_id           |
+| --- | ---- | ------------- | ---------- | ------------------ | ------------------------ | --------------------- |
+| 0   | SELL | 21            | 21         | Decimal("160.005") | Decimal("0")             | spread_mean_reversion |
+| 1   | BUY  | 42            | 42         | Decimal("140.005") | Decimal("420")           | spread_mean_reversion |
 
 
 Derivation:
 
 - `realized_pnl = position.realized_pnl - prev_realized`
 - Record 0: `0 - 0 = 0`
-- Record 1: `560 - 0 = 560`
+- Record 1: `420 - 0 = 420`
 - `slippage_bps = Decimal("0")`, `fees = Decimal("0")` (backtest defaults)
 
 Assertions:
 
 - `records = list(orchestrator._trade_journal.query(symbol="AAPL"))`
 - `len(records) == 2`
-- `records[0].side == Side.SELL`, `records[0].filled_quantity == 28`, `records[0].fill_price == Decimal("160.005")`
-- `records[1].side == Side.BUY`, `records[1].filled_quantity == 56`, `records[1].fill_price == Decimal("140.005")`
-- `records[1].realized_pnl == Decimal("560")`
+- `records[0].side == Side.SELL`, `records[0].filled_quantity == 21`, `records[0].fill_price == Decimal("160.005")`
+- `records[1].side == Side.BUY`, `records[1].filled_quantity == 42`, `records[1].fill_price == Decimal("140.005")`
+- `records[1].realized_pnl == Decimal("420")`
 
 ---
 
@@ -392,25 +395,29 @@ Assertions:
 Expected: `InMemoryMetricCollector` contains timing histogram entries.
 
 
-| metric_name                 | count | layer  |
-| --------------------------- | ----- | ------ |
-| tick_to_decision_latency_ns | 8     | kernel |
-| feature_compute_ns          | >=2   | kernel |
-| signal_evaluate_ns          | >=2   | kernel |
-| risk_check_ns               | >=2   | kernel |
+| metric_name                 | exact count | layer  | reason                                             |
+| --------------------------- | ----------- | ------ | -------------------------------------------------- |
+| tick_to_decision_latency_ns | 8           | kernel | emitted by `_finalize_tick` for every tick         |
+| feature_compute_ns          | 8           | kernel | `_tick_timings` recorded for every tick            |
+| signal_evaluate_ns          | 8           | kernel | `_tick_timings` recorded for every tick            |
+| risk_check_ns               | 2           | kernel | only recorded when signal is not None (ticks 6, 8) |
 
 
 Derivation:
 
 - `_finalize_tick` emits `tick_to_decision_latency_ns` for every tick (8 total)
-- `_tick_timings` entries emit per-segment metrics for signal-producing ticks
+- `_tick_timings["feature_compute_ns"]` and `_tick_timings["signal_evaluate_ns"]` are set on every tick (lines 601-613 in orchestrator), so their MetricEvents are emitted for all 8 ticks
+- `_tick_timings["risk_check_ns"]` is only set when a signal is produced and reaches M5 (line 651), so it fires exactly 2 times (ticks 6 and 8)
+- `tick_to_decision_latency_ns` uses `SimulatedClock.now_ns()` which does not advance during processing — all values are exactly 0 in backtest mode. The per-segment timings (`feature_compute_ns`, `signal_evaluate_ns`, `risk_check_ns`) use `time.perf_counter_ns()` (wall clock) and will have non-zero values.
 
 Assertions:
 
 - `mc = orchestrator._metrics` (InMemoryMetricCollector)
 - `len(mc.events) >= 8`
-- `"kernel.tick_to_decision_latency_ns" in mc._summaries`
-- `mc._summaries["kernel.tick_to_decision_latency_ns"].count == 8`
+- `mc.get_summary("kernel", "tick_to_decision_latency_ns").count == 8`
+- `mc.get_summary("kernel", "feature_compute_ns").count == 8`
+- `mc.get_summary("kernel", "signal_evaluate_ns").count == 8`
+- `mc.get_summary("kernel", "risk_check_ns").count == 2`
 - All latency values `>= 0`
 
 ---
@@ -422,8 +429,8 @@ Expected macro lifecycle `StateTransition` events on bus:
 
 | from_state    | to_state      | trigger           |
 | ------------- | ------------- | ----------------- |
-| INIT          | DATA_SYNC     | CMD_BOOT          |
-| DATA_SYNC     | READY         | DATA_SYNC_OK      |
+| INIT          | DATA_SYNC     | CONFIG_VALIDATED  |
+| DATA_SYNC     | READY         | DATA_INTEGRITY_OK |
 | READY         | BACKTEST_MODE | CMD_BACKTEST      |
 | BACKTEST_MODE | READY         | BACKTEST_COMPLETE |
 
@@ -432,11 +439,11 @@ Expected micro transitions per tick: each tick ends with `LOG_AND_METRICS → WA
 
 Assertions:
 
-- Filter `StateTransition` events where `machine_name == "macro"`
+- Filter `StateTransition` events where `machine_name == "global_stack"` (the macro SM name; micro SM is `"tick_pipeline"`, risk is `"risk_escalation"`, orders are `"order:{order_id}"`)
 - Verify the 4 transitions above appear in order
 - `orchestrator.macro_state == MacroState.READY` after run
 - `orchestrator._kill_switch.is_active == False`
-- Micro transitions for signal-producing ticks include M5/M6/M7/M8/M9
+- Filter `StateTransition` events where `machine_name == "tick_pipeline"` for signal-producing ticks: verify M5 (RISK_CHECK) / M6 (ORDER_DECISION) / M7 (ORDER_SUBMIT) / M8 (ORDER_ACK) / M9 (POSITION_UPDATE) appear
 
 ---
 
@@ -450,12 +457,15 @@ Expected:
 - `snapshot.data["parameter_overrides"]["mean_reversion"]["zscore_entry"] == 1.0`
 - `snapshot.data["account_equity"] == 100000.0`
 
+Note: the parameter_overrides key is `"mean_reversion"` (filename-based, via `_guess_alpha_id` stripping `.alpha.yaml` from `mean_reversion.alpha.yaml`), NOT the alpha_id `"spread_mean_reversion"`. The PlatformConfig stores overrides keyed by the user-provided key. The test must use `alpha_spec_dir` loading (not `alpha_specs`) so discovery's `_guess_alpha_id` matches the key to the spec file.
+
 Assertions:
 
 - `snap = orchestrator.config_snapshot`
 - `len(snap.checksum) > 0`
 - `snap.data["mode"] == "BACKTEST"`
 - `snap.data["parameter_overrides"] == {"mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0}}`
+- `snap.data["regime_engine"] is None`
 
 ---
 
@@ -469,19 +479,19 @@ The bottom-line backtest output. All values computed from position store, trade 
 | Metric           | Value             | Source                                            |
 | ---------------- | ----------------- | ------------------------------------------------- |
 | Starting equity  | Decimal("100000") | PlatformConfig.account_equity                     |
-| Realized PnL     | Decimal("560")    | PositionStore.get("AAPL").realized_pnl            |
-| Unrealized PnL   | Decimal("0")      | 28 shares @ avg_entry 140.005, last mid = 140.005 |
-| Gross PnL        | Decimal("560")    | realized + unrealized                             |
+| Realized PnL     | Decimal("420")    | PositionStore.get("AAPL").realized_pnl            |
+| Unrealized PnL   | Decimal("0")      | 21 shares @ avg_entry 140.005, last mid = 140.005 |
+| Gross PnL        | Decimal("420")    | realized + unrealized                             |
 | Total fees       | Decimal("0")      | sum of TradeRecord.fees                           |
 | Total slippage   | Decimal("0")      | sum of TradeRecord.slippage_bps                   |
-| Net PnL          | Decimal("560")    | gross - fees                                      |
-| Final equity     | Decimal("100560") | starting + net PnL                                |
-| Return on equity | 0.56%             | 560 / 100000                                      |
+| Net PnL          | Decimal("420")    | gross - fees                                      |
+| Final equity     | Decimal("100420") | starting + net PnL                                |
+| Return on equity | 0.42%             | 420 / 100000                                      |
 
 
 Derivation:
 
-- Unrealized PnL: position is +28 shares at avg_entry=140.005. Last traded mid = `(140.00 + 140.01) / 2 = 140.005`. Mark-to-market: `28 * (140.005 - 140.005) = 0`.
+- Unrealized PnL: position is +21 shares at avg_entry=140.005. Last traded mid = `(140.00 + 140.01) / 2 = 140.005`. `MemoryPositionStore` does not compute mark-to-market — `Position.unrealized_pnl` is always `Decimal("0")`. The coincidence that last mid equals avg_entry makes this correct for both accounting methods.
 - Fees and slippage are Decimal("0") in backtest mode (BacktestOrderRouter defaults).
 
 **Trade Statistics:**
@@ -491,49 +501,49 @@ Derivation:
 | ---------------------- | -------------- | ---------------------------------------------------- |
 | Total orders submitted | 2              | len(recorder.of_type(OrderRequest))                  |
 | Total fills            | 2              | len(recorder.of_type(OrderAck) where status==FILLED) |
-| Total shares traded    | 84             | 28 (SELL) + 56 (BUY)                                 |
-| Round trips closed     | 1              | short 28 opened tick 6, closed tick 8                |
-| Open positions         | 1              | +28 AAPL                                             |
-| Winning round trips    | 1              | closed short PnL = +$560                             |
+| Total shares traded    | 63             | 21 (SELL) + 42 (BUY)                                 |
+| Round trips closed     | 1              | short 21 opened tick 6, closed tick 8                |
+| Open positions         | 1              | +21 AAPL                                             |
+| Winning round trips    | 1              | closed short PnL = +$420                             |
 | Losing round trips     | 0              | —                                                    |
 | Win rate               | 100%           | 1/1                                                  |
-| Average win            | Decimal("560") | $560 / 1                                             |
-| PnL per share (closed) | Decimal("20")  | $560 / 28 closed shares                              |
+| Average win            | Decimal("420") | $420 / 1                                             |
+| PnL per share (closed) | Decimal("20")  | $420 / 21 closed shares                              |
 
 
 **Capital Utilization:**
 
 
-| Metric                  | Value              | Derivation                                                                                                                                        |
-| ----------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Max notional exposure   | Decimal("8960.28") | max(28*160.005, 56*140.005) = max(4480.14, 7840.28) — but after reversal, position is +28 @ 140.005 = 3920.14. Peak was during fill 2 processing. |
-| Final notional exposure | Decimal("3920.14") | 28 * 140.005                                                                                                                                      |
-| Exposure % of equity    | 3.90%              | 3920.14 / 100560                                                                                                                                  |
-| Capital allocation used | ~4.62%             | max conviction_capital / equity = 4618.8 / 100000                                                                                                 |
+| Metric                  | Value               | Derivation                                                                                                                 |
+| ----------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Max notional exposure   | Decimal("3360.105") | 21 * 160.005 (after first fill at tick 6). MemoryPositionStore.update() is atomic — no intermediate 42-share state exists. |
+| Final notional exposure | Decimal("2940.105") | 21 * 140.005                                                                                                               |
+| Exposure % of equity    | 2.93%               | 2940.105 / 100420                                                                                                          |
+| Capital allocation used | ~3.46%              | max conviction_capital / equity = 3464.1 / 100000                                                                          |
 
 
 **Tick-Level Performance (from MetricCollector):**
 
 
-| Metric                      | Expected count | Value constraint |
-| --------------------------- | -------------- | ---------------- |
-| tick_to_decision_latency_ns | 8              | all >= 0         |
-| feature_compute_ns          | >= 2           | all >= 0         |
-| signal_evaluate_ns          | >= 2           | all >= 0         |
-| risk_check_ns               | >= 2           | all >= 0         |
+| Metric                      | Exact count | Value constraint                                    |
+| --------------------------- | ----------- | --------------------------------------------------- |
+| tick_to_decision_latency_ns | 8           | all == 0 (SimulatedClock does not advance mid-tick) |
+| feature_compute_ns          | 8           | all >= 0 (wall-clock via perf_counter_ns)           |
+| signal_evaluate_ns          | 8           | all >= 0 (wall-clock via perf_counter_ns)           |
+| risk_check_ns               | 2           | all >= 0 (wall-clock via perf_counter_ns)           |
 
 
 Assertions:
 
 - `pos = orchestrator._positions.get("AAPL")`
-- `pos.realized_pnl == Decimal("560")`
-- `final_equity = Decimal("100000") + pos.realized_pnl` → `== Decimal("100560")`
+- `pos.realized_pnl == Decimal("420")`
+- `final_equity = Decimal("100000") + pos.realized_pnl` → `== Decimal("100420")`
 - `unrealized = pos.quantity * (last_mid - pos.avg_entry_price)` → `== Decimal("0")`
 - `records = list(orchestrator._trade_journal.query(symbol="AAPL"))`
 - `sum(r.fees for r in records) == Decimal("0")`
-- `sum(r.filled_quantity for r in records) == 84`
-- `total_exposure = orchestrator._positions.total_exposure()` → `== Decimal("3920.14")` (28 * 140.005)
-- `return_pct = float(pos.realized_pnl) / 100000` → `== pytest.approx(0.0056)`
+- `sum(r.filled_quantity for r in records) == 63`
+- `total_exposure = orchestrator._positions.total_exposure()` → `== Decimal("2940.105")` (21 * 140.005)
+- `return_pct = float(pos.realized_pnl) / 100000` → `== pytest.approx(0.0042)`
 - Win rate: filter records where `realized_pnl > 0` → 1 winner out of 1 closed trade
 
 ---
@@ -549,8 +559,8 @@ Assertions across all 3 runs (values compared pairwise):
 - `signals[0].strength` identical across runs (not just approx — exact float equality)
 - `acks[0].fill_price` == Decimal("160.005") for all 3 runs
 - `acks[1].fill_price` == Decimal("140.005") for all 3 runs
-- `position.quantity` == 28 for all 3 runs
-- `position.realized_pnl` == Decimal("560") for all 3 runs
+- `position.quantity` == 21 for all 3 runs
+- `position.realized_pnl` == Decimal("420") for all 3 runs
 - `len(trade_records)` == 2 for all 3 runs
 - `trade_records[i].filled_quantity` identical across runs for each i
 - Total bus event count identical across runs
@@ -634,7 +644,7 @@ python scripts/run_backtest.py --config platform.yaml  # uses symbols from confi
 
 ```
 ═══════════════════════════════════════════════════════════
-  BACKTEST REPORT — mean_reversion
+  BACKTEST REPORT — spread_mean_reversion
   Symbol: AAPL | Date: 2024-01-15
 ═══════════════════════════════════════════════════════════
 
@@ -735,6 +745,8 @@ Polygon API expects `YYYY-MM-DD` dates. The ingestor converts them to `YYYY-MM-D
 ## Tradeoffs
 
 - **Real alpha vs embedded spec:** Using the real `mean_reversion.alpha.yaml` couples the test to the file. This is intentional — the test IS a regression guard for the deployed alpha. If the alpha changes, the test should break and be updated.
+- **Regime engine disabled (`regime_engine=None`):** The default `hmm_3state_fractional` engine introduces non-deterministic-feeling regime state (equal posteriors [1/3, 1/3, 1/3] due to synthetic $0.01 spreads falling outside all emission ranges, selecting `compression_clustering` at index 0 with 0.75× factor). Both `BudgetBasedSizer` and `BasicRiskEngine.check_signal` apply regime scaling independently (double-scaling), making expected values depend on HMM internal state evolution rather than the alpha logic under test. Disabling the regime engine isolates the E2E pipeline test from regime engine behavior, which should be tested independently.
+- **Alpha risk_budget not overridable:** The alpha's `capital_allocation_pct: 15.0` is fixed in the YAML `risk_budget:` section — not configurable via `parameter_overrides` (which only applies to `parameters:`). All sizing derivations use 15%, not the platform's `risk_max_gross_exposure_pct` (20%), which is a separate concept governing the risk engine's exposure cap.
 - **Class-scoped fixture:** Runs the scenario once instead of 15+ times. Trades test isolation for speed. Each test method is a read-only assertion on shared results.
 - **Exact value assertions vs range assertions:** For feature values and zscore, use approximate assertions (`pytest.approx`) since floating-point arithmetic may vary. For event counts and directions, use exact assertions.
 - **Runner vs pytest functional test:** The runner script is for interactive use (not CI). It prints a human-readable report rather than asserting pass/fail. This avoids network-dependent test flakiness in CI while giving the operator a tool for real-data verification.

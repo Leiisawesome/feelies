@@ -32,7 +32,7 @@ parameters:
   ewma_span:
     type: int
     default: 50
-    range: [10, 500]
+    range: [2, 500]
     description: "EWMA lookback in ticks"
   zscore_entry:
     type: float
