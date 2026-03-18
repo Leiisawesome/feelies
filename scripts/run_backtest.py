@@ -552,7 +552,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # 1. Load .env
     try:
-        from dotenv import load_dotenv
+        from dotenv import load_dotenv  # pyright: ignore[reportMissingImports]
         load_dotenv()
     except ImportError:
         pass  # dotenv is optional; env vars can be set directly
