@@ -23,6 +23,8 @@ from typing import TypeVar
 
 import pytest
 
+pytestmark = pytest.mark.backtest_validation
+
 from feelies.bootstrap import build_platform
 from feelies.core.events import (
     Event,

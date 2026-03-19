@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.backtest_validation
+
 from feelies.bootstrap import build_platform
 from feelies.core.events import NBBOQuote, Trade
 from feelies.core.platform_config import OperatingMode, PlatformConfig

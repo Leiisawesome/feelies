@@ -4,6 +4,8 @@ from decimal import Decimal
 
 import pytest
 
+pytestmark = pytest.mark.backtest_validation
+
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
     NBBOQuote,

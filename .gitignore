@@ -6,6 +6,9 @@ __pycache__/
 .env.local
 .coverage
 .pytest_cache/
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
 *.egg-info/
 dist/
 build/

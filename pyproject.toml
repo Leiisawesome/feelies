@@ -39,4 +39,6 @@ line-length = 99
 testpaths = ["tests"]
 markers = [
     "functional: network-backed tests against live external services",
+    "backtest_validation: full backtest pipe validation suite",
+    "slow: performance benchmarks and long-running tests",
 ]

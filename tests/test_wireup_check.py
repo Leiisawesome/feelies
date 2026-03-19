@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.backtest_validation
+
 from feelies.alpha.composite import CompositeFeatureEngine, CompositeSignalEngine
 from feelies.alpha.registry import AlphaRegistry
 from feelies.bootstrap import build_platform

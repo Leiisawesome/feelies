@@ -4,37 +4,37 @@ overview: Design and implement a comprehensive backtest pipe validation suite ru
 todos:
   - id: marker-setup
     content: Add backtest_validation and slow markers to pyproject.toml; add pytestmark to 5 existing test files
-    status: pending
+    status: completed
   - id: conftest
     content: Create tests/validation/conftest.py with shared scenario fixtures (single, multi-symbol, regime, fault factory, trade-mixed, latency-injection, drawdown, all-suppressed)
-    status: pending
+    status: completed
   - id: invariants
     content: Create tests/validation/test_invariants.py — platform invariants 5-13 validation (16 tests, including trade event path, sequential re-entry, structural parity, cost realism placeholder, append_batch integrity)
-    status: pending
+    status: completed
   - id: multi-symbol
     content: Create tests/validation/test_multi_symbol.py — multi-symbol ordering and independence (5 tests)
-    status: pending
+    status: completed
   - id: intent-sizing
     content: Create tests/validation/test_intent_sizing.py — IntentTranslator + PositionSizer pipeline (9 tests)
-    status: pending
+    status: completed
   - id: regime
     content: Create tests/validation/test_regime_backtest.py — regime engine integration in backtest (5 tests)
-    status: pending
+    status: completed
   - id: fault-tolerance
     content: Create tests/validation/test_fault_tolerance.py — fault injection, degraded mode, drawdown/FORCE_FLATTEN, all-signals-suppressed (12 tests)
-    status: pending
+    status: completed
   - id: reconciliation
     content: Create tests/validation/test_reconciliation.py — PnL/provenance audit, two-phase risk enforcement, latency injection e2e (11 tests)
-    status: pending
+    status: completed
   - id: determinism-props
     content: Create tests/validation/test_determinism_props.py — property-based SM/replay tests, checkpoint-restore roundtrip (8 tests)
-    status: pending
+    status: completed
   - id: performance
     content: Create tests/validation/test_replay_performance.py — speed and memory benchmarks (4 tests)
-    status: pending
+    status: completed
   - id: verify-suite
     content: "Run full suite: pytest -m backtest_validation -v — verify all tests pass"
-    status: pending
+    status: completed
 isProject: false
 ---
 
