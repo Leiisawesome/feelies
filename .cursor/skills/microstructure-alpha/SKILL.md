@@ -123,10 +123,16 @@ class Signal(Event):
     metadata: dict[str, Any]     # strategy-specific context
 ```
 
-`FLAT` signals skip order construction — the micro-state pipeline
-transitions directly from M5 (RISK_CHECK) to M10 (LOG_AND_METRICS).
-Only `LONG` and `SHORT` proceed to `_build_order()`, which maps
-direction to `Side.BUY` / `Side.SELL`.
+`FLAT` signals are handled by the `IntentTranslator`: when the signal
+direction is FLAT and there is no position to exit, the translator
+returns `NO_ACTION`, causing the pipeline to skip from M4 directly to
+M10 (LOG_AND_METRICS) — before the risk check at M5. When a FLAT
+signal has an existing position, the translator returns `EXIT`.
+`LONG` and `SHORT` signals proceed through the intent translator,
+which maps them to `ENTRY_LONG`/`ENTRY_SHORT`/`SCALE_UP`/`REVERSE`
+based on current position. Orders are constructed via
+`_build_order_from_intent()`, which derives `Side` from the
+`TradingIntent` enum.
 
 ### Feature Quality Gates
 
@@ -209,16 +215,22 @@ backtest and live):
 
 ```
 MarketDataSource.events() → NBBOQuote
-  → M2: FeatureEngine.update(quote) → FeatureVector
-    → M4: SignalEngine.evaluate(features) → Signal | None
-      ├─ None → M10 (LOG_AND_METRICS, skip rest of pipeline)
-      └─ Signal →
-        → M5: RiskEngine.check_signal(signal) → RiskVerdict
-          → M6: _build_order() → OrderRequest
-            → M6: RiskEngine.check_order(order) → RiskVerdict
-              → M7: OrderRouter.submit(order)
-                → M8: OrderRouter.poll_acks() → OrderAck[]
-                  → M9: _reconcile_fills() → PositionUpdate
+  → M1: event logged + published on bus
+    → M2: RegimeEngine.posterior(quote) → RegimeState
+      → M3: FeatureEngine.update(quote) → FeatureVector
+        → M4: SignalEngine.evaluate(features) → Signal | None
+          ├─ None → M10 (LOG_AND_METRICS, skip rest of pipeline)
+          └─ Signal →
+            → PositionSizer.compute_target_quantity(signal, ...)
+              → IntentTranslator.translate(signal, position, target_qty) → OrderIntent
+                ├─ NO_ACTION → M10 (skip risk + order path)
+                └─ actionable intent →
+                  → M5: RiskEngine.check_signal(signal) → RiskVerdict
+                    → M6: _build_order_from_intent(intent, verdict) → OrderRequest
+                      → M6: RiskEngine.check_order(order) → RiskVerdict
+                        → M7: OrderRouter.submit(order)
+                          → M8: OrderRouter.poll_acks() → OrderAck[]
+                            → M9: _reconcile_fills() → PositionUpdate
 ```
 
 The `FeatureEngine` protocol (`features/engine.py`) is owned by the
@@ -360,7 +372,7 @@ to force agreement.
 | System Architect (system-architect skill) | `Clock`, `EventBus`, micro-state pipeline (M4: SIGNAL_GEN); `Event` base class |
 | Feature Engine (feature-engine skill) | `FeatureVector` input to `SignalEngine.evaluate()` at M4; warm/stale quality gates |
 | Risk Engine (risk-engine skill) | Consumes `Signal` at M5 via `RiskEngine.check_signal()`; regime detection policy |
-| Live Execution (live-execution skill) | `Signal.direction` mapped to `Side` in `_build_order()`; execution quality feedback |
+| Live Execution (live-execution skill) | `Signal.direction` mapped to `TradingIntent` via `IntentTranslator`, then to `Side` in `_build_order_from_intent()`; execution quality feedback |
 | Backtest Engine (backtest-engine skill) | Shared `SignalEngine.evaluate()` in replay; fill model validates signal survivability |
 | Data Engineering (data-engineering skill) | `NBBOQuote` / `Trade` events feed `FeatureEngine` upstream of signal evaluation |
 | Post-Trade Forensics (post-trade-forensics skill) | `Signal` schema for hypothesis revalidation; regime stability audit |

@@ -43,6 +43,7 @@ Every feature engine must implement the `FeatureEngine` protocol
 ```python
 class FeatureEngine(Protocol):
     def update(self, quote: NBBOQuote) -> FeatureVector: ...
+    def process_trade(self, trade: Trade) -> FeatureVector | None: ...
     def is_warm(self, symbol: str) -> bool: ...
     def reset(self, symbol: str) -> None: ...
     @property
@@ -53,8 +54,15 @@ class FeatureEngine(Protocol):
 
 `update()` processes a single `NBBOQuote` event and returns the updated
 `FeatureVector` — advancing internal state exactly once per event.
-The orchestrator calls this at micro-state M2 (FEATURE_COMPUTE) and
+The orchestrator calls this at micro-state M3 (FEATURE_COMPUTE) and
 publishes the result on the bus.
+
+`process_trade()` updates feature state from a `Trade` event (e.g.,
+volume clustering, trade arrival rate). Returns a `FeatureVector` if
+any feature consumed the trade, `None` otherwise. Trade-triggered
+updates modify state but do not drive signal evaluation — the updated
+values feed into the next quote-driven `FeatureVector`. Called by
+`_process_trade()` in the orchestrator outside the micro-state pipeline.
 
 Full recomputation from raw events is used only for:
 - Cold start (no prior state)
@@ -170,7 +178,7 @@ share without copying.
 
 ### Contract Rules
 
-1. The signal engine receives `FeatureSnapshot` objects — never raw events
+1. The signal engine receives `FeatureVector` objects — never raw events
 2. Feature IDs are stable across versions; renamed features get new IDs
 3. Adding a feature is non-breaking; removing or changing semantics requires a version bump
 4. The signal engine must not modify feature state or call feature internals
@@ -289,6 +297,29 @@ the full-recompute path.
 
 ---
 
+## Multi-Alpha Composition
+
+In multi-strategy deployments, the `CompositeFeatureEngine`
+(`alpha/composite.py`) aggregates feature definitions from all
+registered alpha modules (`AlphaRegistry`). It implements the
+`FeatureEngine` protocol so the orchestrator is unaware of the
+multi-alpha structure.
+
+- Features are computed in topological dependency order (stable
+  tie-breaking by `feature_id` for determinism)
+- Per-symbol state is maintained per feature definition
+- The composite `version` is a SHA-256 hash of all constituent
+  feature versions
+- `checkpoint()` / `restore()` serialize/deserialize the full
+  multi-alpha state
+
+Individual alpha modules declare their feature definitions via
+`AlphaModule.feature_definitions` and are loaded from `.alpha.yaml`
+specs by the `AlphaLoader`. See the system-architect skill for the
+full alpha module system.
+
+---
+
 ## Performance Constraints
 
 Feature computation is on the critical path (tick-to-trade pipeline).
@@ -331,12 +362,12 @@ All events carry timestamps from the injectable `Clock` protocol.
 | Dependency | Interface |
 |------------|-----------|
 | Data Engineering (data-engineering skill) | `NBBOQuote` / `Trade` events from `MarketDataSource` |
-| System Architect (system-architect skill) | `Clock`, `EventBus`, micro-state M2 (FEATURE_COMPUTE) |
+| System Architect (system-architect skill) | `Clock`, `EventBus`, micro-state M3 (FEATURE_COMPUTE) |
 | Microstructure Alpha (microstructure-alpha skill) | Signal taxonomy defines what features to compute |
 | Signal Engine | Consumes `FeatureVector`; calls `SignalEngine.evaluate(features)` at M4 |
 | Backtest Engine (backtest-engine skill) | Replays events through feature engine; snapshot comparison for determinism |
 | Storage Layer | `FeatureSnapshotStore` for checkpoint persistence |
-| Performance Engineering (performance-engineering skill) | M2→M3 latency budget (1ms target, 5ms ceiling) |
+| Performance Engineering (performance-engineering skill) | M3 feature compute latency budget (1ms target, 5ms ceiling) |
 | Testing & Validation (testing-validation skill) | Incremental vs full-recompute validation; property-based invariant tests |
 
 The feature engine is the stateful core of the data pipeline. It is

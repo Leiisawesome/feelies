@@ -50,14 +50,21 @@ orders, and PnL (invariant 5).
 
 ### Deterministic Ordering
 
-All events merged into a single stream ordered by exchange timestamp.
-Ties broken deterministically:
+All events should be merged into a single stream ordered by exchange
+timestamp. Ties broken deterministically:
 
 | Priority | Event Type | Rationale |
 |----------|-----------|-----------|
 | 1 | NBBO quote updates | Quotes establish available liquidity before trades print |
 | 2 | Trades | Trades consume liquidity established by quotes |
 | 3 | Internal events (signals, orders) | Reactions to market data, never ahead of it |
+
+**Current limitation**: `scripts/run_backtest.py` concatenates events
+per `(symbol, day)` and resequences without a global timestamp sort.
+For single-symbol runs events are time-ordered; for multi-symbol runs
+events are interleaved by symbol then by day, not by global exchange
+timestamp. A global `sort(key=exchange_timestamp_ns)` before
+resequencing is required for multi-symbol correctness.
 
 ### Micro-Batching Rules
 
@@ -127,20 +134,26 @@ typed `OrderAckStatus` enum members.
 
 ```
 Signal evaluated (M4)
+  → Position sizing (PositionSizer.compute_target_quantity())
+    → Intent translation (IntentTranslator.translate() → OrderIntent)
+      → if NO_ACTION → M10 (skip risk + order path)
   → Risk check (M5: check_signal → RiskVerdict)
-    → Order constructed (M6: _build_order → OrderRequest)
+    → Order constructed (M6: _build_order_from_intent → OrderRequest)
       → Second risk check (M6: check_order → RiskVerdict)
         → Order submitted (M7: OrderRouter.submit())
           → Ack polled (M8: OrderRouter.poll_acks() → OrderAck[])
             → Position updated (M9: _reconcile_fills())
 ```
 
-The backtest fill simulator is a concrete `OrderRouter` implementation
-(NOT YET IMPLEMENTED). It must return `OrderAck` events with
-`OrderAckStatus.FILLED`/`PARTIALLY_FILLED`/`REJECTED` plus `fill_price`
-and `filled_quantity`. The orchestrator's `_apply_ack_to_order()` handles
-the order SM transitions and `_reconcile_fills()` produces `PositionUpdate`
-events and `TradeRecord` entries.
+The backtest fill simulator is `BacktestOrderRouter`
+(`execution/backtest_router.py`), a concrete `OrderRouter`
+implementation. The v1 implementation fills at mid-price of the most
+recent quote; the full 3-tier fill model specified below is future
+work. The router returns `OrderAck` events with
+`OrderAckStatus.FILLED`/`REJECTED` plus `fill_price` and
+`filled_quantity`. The orchestrator's `_apply_ack_to_order()` handles
+the order SM transitions and `_reconcile_fills()` produces
+`PositionUpdate` events and `TradeRecord` entries.
 
 Between signal and acknowledgment, the NBBO may have moved.
 The fill model uses the NBBO at acknowledgment time, not signal time.
@@ -156,13 +169,16 @@ When a limit order price crosses the opposite side of NBBO at submission:
 
 ## Fill Model
 
-**NOT YET IMPLEMENTED** — the `OrderRouter` protocol (`execution/backend.py`)
-is the implementation hook. A backtest fill simulator must implement
-`OrderRouter.submit()` and `poll_acks()`, returning `OrderAck` events
-with typed `OrderAckStatus` members.
+**v1 implemented** — `BacktestOrderRouter` (`execution/backtest_router.py`)
+implements the `OrderRouter` protocol with immediate mid-price fills. It
+maintains last-seen quotes per symbol (updated via bus subscription) and
+fills at `(bid + ask) / 2` with configurable latency
+(`backtest_fill_latency_ns`). No slippage, queue model, or partial
+fills. Orders for symbols with no quote are rejected.
 
-Three-tier model with increasing realism. See [fill-model.md](fill-model.md) for
-calibration methodology, parameter estimation, and adverse selection adjustment.
+The full three-tier model below is future work. See
+[fill-model.md](fill-model.md) for calibration methodology, parameter
+estimation, and adverse selection adjustment.
 
 ### Market Orders
 

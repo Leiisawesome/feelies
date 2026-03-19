@@ -146,13 +146,20 @@ Append-only, sequence-based event store for replay and audit:
 ```python
 class EventLog(Protocol):
     def append(self, event: Event) -> None: ...
+    def append_batch(self, events: Sequence[Event]) -> None: ...
     def replay(self, start_sequence: int = 0, end_sequence: int | None = None) -> Iterator[Event]: ...
     def last_sequence(self) -> int: ...
 ```
 
-The orchestrator calls `event_log.append()` at M1 (STATE_UPDATE) for every
-inbound quote and in `_process_trade()` for every trade. Replay by sequence
-range enables deterministic backtest replay (invariant 5).
+- `append()` — persist a single event; called by the orchestrator at
+  M1 (MARKET_EVENT_RECEIVED) for every inbound quote and in
+  `_process_trade()` for every trade.
+- `append_batch()` — persist a chunk of events atomically; used by
+  `PolygonHistoricalIngestor` for chunk-aware ingestion and by
+  `scripts/run_backtest.py` for loading resequenced event streams.
+- `replay()` — replay by sequence range for deterministic backtest
+  replay (invariant 5).
+- `last_sequence()` — sequence number of the most recent event.
 
 ### TradeJournal (`storage/trade_journal.py`)
 

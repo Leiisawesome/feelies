@@ -22,7 +22,7 @@ Inherits platform invariants 5 (deterministic replay), 11 (fail-safe default + m
 Additionally:
 
 1. **No bypass** — every order intent transits the risk engine; no direct signal-to-execution path exists
-2. **Two-phase check** — `check_signal()` at micro-state M5 (signal-level), `check_order()` at M6 (concrete order); both must pass before submission
+2. **Two-phase check** — `check_signal()` at micro-state M5 (signal-level), `check_order()` at M6 (concrete order); both must pass before submission. The `IntentTranslator` and `PositionSizer` run between M4 and M5 to compute the target quantity and trading intent; `NO_ACTION` intents skip the risk check entirely (no order means no risk to check)
 3. **Independent authority** — risk engine can halt trading unilaterally; no other layer can override
 
 ## Risk Escalation State Machine
@@ -370,3 +370,11 @@ backtest) are behind the `ExecutionBackend` interface (`execution/backend.py`).
 The `RiskEngine` protocol (`risk/engine.py`) exposes two methods:
 - `check_signal(signal: Signal, positions: PositionStore) -> RiskVerdict`
 - `check_order(order: OrderRequest, positions: PositionStore) -> RiskVerdict`
+
+The `PositionSizer` protocol (`risk/position_sizer.py`) is co-located
+with the risk engine layer and consumes regime state for scaling:
+- `compute_target_quantity(signal, risk_budget, symbol_price, account_equity) -> int`
+
+The default `BudgetBasedSizer` applies regime-dependent scaling
+(e.g., `vol_breakout` → 0.5×, `normal` → 1.0×) and caps at the
+alpha's declared `max_position_per_symbol`.

@@ -46,8 +46,10 @@ Fill responses arrive as `OrderAck` events carrying typed `OrderAckStatus`
 Cancellation is initiated via `Orchestrator.cancel_order(order_id, reason=...)`
 which transitions the order SM: ACKNOWLEDGED → CANCEL_REQUESTED.
 
-Strategy and risk logic never call broker methods directly — they emit
-order-intent events. The orchestrator mediates all order routing.
+Strategy and risk logic never call broker methods directly. Signals are
+translated into `OrderIntent` via the `IntentTranslator` (see below),
+then constructed into `OrderRequest` via `_build_order_from_intent()`.
+The orchestrator mediates all order routing.
 
 ### Routing Rules
 
@@ -339,6 +341,29 @@ first-class failure mode.
 4. **Adapt** — if regime change: update backtest parameters. If model error: fix model.
 5. **Halt** — if drift is unexplained or large: activate circuit breaker until resolved
 
+### Intent Translation Layer
+
+Between signal evaluation (M4) and risk check (M5), the orchestrator
+runs two injectable components:
+
+1. **`PositionSizer`** (`risk/position_sizer.py`) — computes target
+   quantity from the alpha's risk budget, account equity, mid-price,
+   signal strength, and regime state.
+2. **`IntentTranslator`** (`execution/intent.py`) — maps
+   `(signal direction × current position × target_quantity)` to a
+   `TradingIntent` enum (`ENTRY_LONG`, `ENTRY_SHORT`, `EXIT`,
+   `REVERSE_*`, `SCALE_UP`, `NO_ACTION`).
+
+`NO_ACTION` causes the pipeline to skip from M4 directly to M10
+(LOG_AND_METRICS) — before the risk check at M5. This is the path
+taken for `FLAT` signals with no position, or when the signal agrees
+with the current position and no scaling is needed.
+
+Orders are constructed via `_build_order_from_intent(intent, verdict, cid)`
+which derives `Side` from the `TradingIntent` enum, applies the risk
+verdict's `scaling_factor`, and generates a deterministic `order_id`
+via SHA-256.
+
 ### Shared Logic Enforcement
 
 The micro-state pipeline (`MicroState` M0-M10 in `kernel/micro.py`) is
@@ -349,8 +374,9 @@ method is the single code path — it never inspects `backend.mode`.
 |-----------|---------------------|---------------|
 | Signal generation | Yes | — |
 | Feature computation | Yes | — |
+| Intent translation + position sizing | Yes | — |
 | Risk checks (`check_signal`, `check_order`) | Yes | — |
-| Order construction (`_build_order`) | Yes | — |
+| Order construction (`_build_order_from_intent`) | Yes | — |
 | Order routing | — | `OrderRouter`: fill simulator (backtest) / broker API (live) |
 | Market data | — | `MarketDataSource`: replay (backtest) / live feed |
 | Clock | — | `SimulatedClock` (backtest) / `WallClock` (live) |

@@ -136,7 +136,7 @@ a `StateTransition` event and persisted by the `EventLog` protocol
 
 ## Deterministic Order ID Generation
 
-Order IDs are generated via SHA-256 in `Orchestrator._build_order()`:
+Order IDs are generated via SHA-256 in `Orchestrator._build_order_from_intent()`:
 
 ```python
 seq = self._seq.next()
@@ -152,10 +152,11 @@ from `SequenceGenerator`. This produces deterministic IDs for backtest
 replay (invariant 5). The same event log replayed with the same
 parameters always generates the same order IDs.
 
-An exhaustiveness guard in `_build_order()` ensures only
-`SignalDirection.LONG` and `SignalDirection.SHORT` produce orders;
-`FLAT` signals never reach `_build_order()` — they exit the pipeline
-at M5 (RISK_CHECK → LOG_AND_METRICS).
+An exhaustiveness guard in `_side_from_intent()` ensures every
+`TradingIntent` enum member is explicitly handled. `FLAT` signals
+are handled by the `IntentTranslator` which returns `NO_ACTION`,
+causing the pipeline to skip from M4 directly to M10 — before the
+risk check at M5.
 
 > **Future**: LRU-based deduplication cache for live mode, keyed by
 > order ID, to prevent accidental double-submission.

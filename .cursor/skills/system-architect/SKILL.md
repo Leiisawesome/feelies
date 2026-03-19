@@ -25,8 +25,10 @@ All code must belong to exactly one of these layers:
 | Event Bus | Route typed events with deterministic ordering |
 | Feature Engine | Stateful feature computation from event streams (see feature-engine skill) |
 | Signal Engine | Pure functions: features → signals (no side effects) |
+| Intent & Sizing | Position-aware intent translation and risk-budget position sizing |
 | Risk Engine | Position limits, exposure checks, drawdown gates |
 | Execution Engine | Order routing, fill simulation (backtest) / broker API (live) |
+| Alpha Module System | Discovery, registration, and lifecycle of strategy modules |
 | Portfolio Layer | Position tracking, PnL, capital allocation |
 | Storage Layer | Event log, feature snapshots, trade journal |
 | Monitoring | Latency histograms, throughput, health checks, kill-switch |
@@ -80,7 +82,7 @@ composed backend and never inspects `backend.mode`.
 
 | Mode | `MarketDataSource` | `OrderRouter` | `Clock` |
 |------|-------------------|---------------|---------|
-| `BACKTEST_MODE` | `ReplayFeed(EventLog)` | Fill simulator (NOT YET IMPLEMENTED) | `SimulatedClock` |
+| `BACKTEST_MODE` | `ReplayFeed(EventLog)` | `BacktestOrderRouter` (v1 mid-price fills) | `SimulatedClock` |
 | `PAPER_TRADING_MODE` | `PolygonLiveFeed` | Paper router (NOT YET IMPLEMENTED) | `WallClock` |
 | `LIVE_TRADING_MODE` | `PolygonLiveFeed` | Broker router (NOT YET IMPLEMENTED) | `WallClock` |
 
@@ -89,9 +91,13 @@ that populates `EventLog` — it runs outside the orchestrator lifecycle
 and is not an operating mode. See the data-engineering skill for
 backfill details (REST API, checkpointing, resumability).
 
-Composition happens at startup, not at runtime. No composition layer
-or bootstrap module exists yet — the caller must build `ExecutionBackend`
-manually by selecting implementations for the desired mode.
+Composition happens at startup via `bootstrap.build_platform(config)`,
+which selects concrete implementations for the desired mode:
+`build_backtest_backend()` composes `ReplayFeed` + `BacktestOrderRouter`
+into `ExecutionBackend`; it also wires `NBBOQuote` bus subscriptions so
+the `BacktestOrderRouter` tracks last-seen quotes for fill pricing.
+The orchestrator receives a fully composed backend and never inspects
+`backend.mode`.
 
 ### Fail-Safe Cascade (Invariant 11)
 
@@ -115,7 +121,7 @@ for unhandled enum members. This pattern prevents new enum additions from
 silently falling through to unsafe paths. Applied at:
 
 - `RiskAction` gate (M5 and M6)
-- `SignalDirection` in `_build_order`
+- `TradingIntent` in `_side_from_intent`
 - `OrderAckStatus` in `_apply_ack_to_order`
 
 ## Hard Rules
@@ -146,6 +152,94 @@ Every event inherits from `Event` which carries `timestamp_ns`,
 | `MetricEvent` | Any → Monitoring | layer, name, value, metric_type (`MetricType`) |
 | `Alert` | Any → Monitoring | severity (`AlertSeverity`), alert_name, message |
 | `KillSwitchActivation` | Kernel → All | reason, activated_by |
+
+## Intent & Sizing Layer
+
+Between signal evaluation (M4) and risk check (M5), the orchestrator
+runs two injectable components that bridge the stateless signal to a
+position-aware trading action:
+
+### PositionSizer (`risk/position_sizer.py`)
+
+```python
+class PositionSizer(Protocol):
+    def compute_target_quantity(
+        self, signal: Signal, risk_budget: AlphaRiskBudget,
+        symbol_price: Decimal, account_equity: Decimal,
+    ) -> int: ...
+```
+
+Computes unsigned target share count from the alpha's declared risk
+budget, account equity, mid-price, signal strength, and regime state.
+The default `BudgetBasedSizer` applies regime-dependent scaling factors
+(e.g., `vol_breakout` → 0.5×).
+
+### IntentTranslator (`execution/intent.py`)
+
+```python
+class IntentTranslator(Protocol):
+    def translate(
+        self, signal: Signal, position: Position,
+        target_quantity: int | None = None,
+    ) -> OrderIntent: ...
+```
+
+Maps `(signal direction × current position)` to a `TradingIntent` enum:
+`ENTRY_LONG`, `ENTRY_SHORT`, `EXIT`, `REVERSE_LONG_TO_SHORT`,
+`REVERSE_SHORT_TO_LONG`, `SCALE_UP`, or `NO_ACTION`. The default
+`SignalPositionTranslator` encodes the full signal×position matrix.
+
+`NO_ACTION` causes the micro-state pipeline to skip M5–M9 entirely,
+transitioning directly from M4 to M10 (LOG_AND_METRICS). This is the
+path taken when the signal agrees with the current position and no
+scaling is needed, or when a `FLAT` signal has no position to exit.
+
+### Pipeline Position
+
+```
+M4: signal = signal_engine.evaluate(features)
+    → target_qty = position_sizer.compute_target_quantity(signal, ...)
+    → intent = intent_translator.translate(signal, position, target_qty)
+    → if intent.intent == NO_ACTION → M10 (skip risk + order path)
+M5: verdict = risk_engine.check_signal(signal, positions)
+M6: order = _build_order_from_intent(intent, verdict, cid)
+```
+
+---
+
+## Alpha Module System
+
+The alpha module system provides multi-strategy support behind the
+single-engine protocol interfaces. It is composed at startup via
+`bootstrap.build_platform()`.
+
+### Components
+
+| Component | File | Responsibility |
+|-----------|------|---------------|
+| `AlphaModule` | `alpha/module.py` | Bundled strategy unit: manifest, feature defs, signal evaluator, risk budget |
+| `AlphaRegistry` | `alpha/registry.py` | Tracks registered modules with lifecycle (active/suspended/quarantined) |
+| `AlphaLoader` | `alpha/loader.py` | Discovers and loads `.alpha.yaml` spec files into `AlphaModule` instances |
+| `CompositeFeatureEngine` | `alpha/composite.py` | Aggregates feature definitions from all registered alphas; computes in topological order |
+| `CompositeSignalEngine` | `alpha/composite.py` | Fans out `evaluate()` to each active alpha; applies signal arbitration |
+| `SignalArbitrator` | `alpha/arbitration.py` | Resolves conflicts when multiple alphas emit signals for the same symbol |
+| `load_and_register()` | `alpha/discovery.py` | Discovers `.alpha.yaml` files in a directory and registers them |
+
+### Composition Flow
+
+```
+PlatformConfig.alpha_spec_dir / alpha_specs
+  → AlphaLoader.load(spec_path) → AlphaModule
+    → AlphaRegistry.register(module)
+      → CompositeFeatureEngine(registry)  # implements FeatureEngine protocol
+      → CompositeSignalEngine(registry)   # implements SignalEngine protocol
+```
+
+The orchestrator receives `CompositeFeatureEngine` and
+`CompositeSignalEngine` as its `FeatureEngine` and `SignalEngine`
+dependencies — it never knows about the multi-alpha structure.
+
+---
 
 ## Tradeoff Documentation
 
@@ -307,6 +401,14 @@ live, simulated backtest) are selected at composition time alongside `ExecutionB
 ### PositionStore Protocol
 
 ```python
+@dataclass
+class Position:
+    symbol: str
+    quantity: int              # signed: +long, -short
+    avg_entry_price: Decimal
+    realized_pnl: Decimal
+    unrealized_pnl: Decimal
+
 class PositionStore(Protocol):
     def get(self, symbol: str) -> Position: ...
     def update(self, symbol: str, quantity_delta: int, fill_price: Decimal) -> Position: ...
@@ -315,7 +417,7 @@ class PositionStore(Protocol):
 ```
 
 - `get()` — returns current position for a symbol (zero-position `Position` if none)
-- `update()` — atomically applies a fill delta and returns updated position; called in `_reconcile_fills()` at M9
+- `update()` — atomically applies a fill delta and returns updated position with recalculated `realized_pnl`; called in `_reconcile_fills()` at M9
 - `all_positions()` — snapshot for risk checks, PnL attribution, and reconciliation
 - `total_exposure()` — aggregate absolute exposure; used by risk engine for limit checks and by `unlock_from_lockdown()` zero-exposure guard
 

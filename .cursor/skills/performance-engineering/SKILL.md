@@ -35,29 +35,36 @@ measurable state transition:
 
 ```
 Market data arrives (M0: WAITING_FOR_MARKET_EVENT)
-  → M0→M1: Ingestion + normalization
-    → M1→M2: Event bus routing + event log append
+  → M0→M1: Event receipt, event log append, bus publish
+    → M1→M2: Regime engine update (STATE_UPDATE)
       → M2→M3: Feature computation (FeatureEngine.update())
         → M3→M4: Signal evaluation (SignalEngine.evaluate())
-          → M4→M5: Risk check (RiskEngine.check_signal())
-            → M5→M6: Order construction (_build_order())
-              → M6→M7: Second risk check + order submission
-                → M7→M8: Ack polling (OrderRouter.poll_acks())
-                  → M8→M9: Position update (_reconcile_fills())
-                    → M9→M10: Logging + metrics
-                      → M10→M0: Ready for next tick
+          → M4(pre-M5): Position sizing + intent translation
+            → M4→M5: Risk check (RiskEngine.check_signal())
+              → M5→M6: Order construction (_build_order_from_intent())
+                → M6→M7: Second risk check + order submission
+                  → M7→M8: Ack polling (OrderRouter.poll_acks())
+                    → M8→M9: Position update (_reconcile_fills())
+                      → M9→M10: Logging + metrics
+                        → M10→M0: Ready for next tick
 ```
+
+Note: Normalization happens outside the tick pipeline — at the
+ingestion boundary (live: `PolygonNormalizer.on_message()`) or
+before replay (historical: `PolygonHistoricalIngestor`). The tick
+pipeline receives already-normalized `NBBOQuote` / `Trade` events.
 
 ### Latency Budget
 
 | Segment | Micro-State Span | Budget | Hard Ceiling | Notes |
 |---------|-----------------|--------|-------------|-------|
-| Ingestion + normalization | M0→M1 | 500 μs | 2 ms | Polygon WS parse + canonical format |
-| Event bus routing + log | M1→M2 | 50 μs | 200 μs | Single-process: direct dispatch |
+| Event receipt + log + publish | M0→M1 | 100 μs | 500 μs | Append to event log, bus dispatch |
+| Regime engine update | M1→M2 | 50 μs | 200 μs | `RegimeEngine.posterior()` (Bayesian update) |
 | Feature computation | M2→M3 | 1 ms | 5 ms | `FeatureEngine.update()` incremental |
 | Signal evaluation | M3→M4 | 200 μs | 1 ms | Pure function; no I/O |
+| Position sizing + intent | M4 (pre-M5) | 50 μs | 200 μs | `PositionSizer` + `IntentTranslator` |
 | Risk check (signal) | M4→M5 | 100 μs | 500 μs | `RiskEngine.check_signal()` |
-| Order construction + risk | M5→M7 | 500 μs | 2 ms | `_build_order()` + `check_order()` |
+| Order construction + risk | M5→M7 | 500 μs | 2 ms | `_build_order_from_intent()` + `check_order()` |
 | Submission + ack | M7→M9 | — | — | Network-bound in live; instant in backtest |
 | **End-to-end (M0 → M10)** | Full pipeline | **< 3 ms** | **< 10 ms** | `tick_to_decision_latency_ns` metric |
 

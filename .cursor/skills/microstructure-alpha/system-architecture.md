@@ -121,7 +121,8 @@ For backtesting, replay historical data through `MarketDataSource`
 
 > Implemented as the `FeatureEngine` protocol (`features/engine.py`).
 > The orchestrator calls `FeatureEngine.update(NBBOQuote) -> FeatureVector`
-> at micro-state M2 (FEATURE_COMPUTE).
+> at micro-state M3 (FEATURE_COMPUTE). In multi-alpha deployments, the
+> concrete implementation is `CompositeFeatureEngine` (`alpha/composite.py`).
 
 ### Design Principles
 
@@ -224,8 +225,10 @@ Fill events arrive as `OrderAck` events with typed `OrderAckStatus`
 
 ### Fill Model for Backtesting
 
-> **NOT YET IMPLEMENTED** — see `fill-model.md` (backtest-engine skill).
-> The hook point is the backtest-mode `OrderRouter`.
+> **v1 implemented** — `BacktestOrderRouter` fills at mid-price with
+> configurable latency. The full 3-tier fill model (slippage, queue,
+> adverse selection) is future work — see `fill-model.md`
+> (backtest-engine skill).
 
 **Market orders:**
 ```
