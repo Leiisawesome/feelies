@@ -55,6 +55,9 @@ class PolygonNormalizer:
         "_duplicates_filtered",
     )
 
+    _FEED_QUOTE = "quote"
+    _FEED_TRADE = "trade"
+
     def __init__(
         self,
         clock: Clock,
@@ -64,8 +67,10 @@ class PolygonNormalizer:
         self._seq = SequenceGenerator()
         self._health_machines: dict[str, StateMachine[DataHealth]] = {}
         self._transition_callback = transition_callback
-        # Per-symbol dedup + gap state: (last_sequence_number, last_exchange_ts_ns)
-        self._last_seen: dict[str, tuple[int, int]] = {}
+        # Keyed by (symbol, feed_type) — quotes and trades have independent
+        # Polygon sequence_number spaces and must be tracked separately to
+        # avoid false dedup and spurious gap detection when interleaved.
+        self._last_seen: dict[tuple[str, str], tuple[int, int]] = {}
         self._duplicates_filtered: int = 0
 
     # ── MarketDataNormalizer protocol ────────────────────────────────
@@ -130,10 +135,10 @@ class PolygonNormalizer:
             exchange_ts_ns = int(msg["t"]) * _MS_TO_NS
             seq_num = int(msg.get("q", 0))
 
-            if self._is_duplicate(symbol, seq_num, exchange_ts_ns):
+            if self._is_duplicate(symbol, self._FEED_QUOTE, seq_num, exchange_ts_ns):
                 return None
-            self._check_gap(symbol, seq_num)
-            self._update_last_seen(symbol, seq_num, exchange_ts_ns)
+            self._check_gap(symbol, self._FEED_QUOTE, seq_num)
+            self._update_last_seen(symbol, self._FEED_QUOTE, seq_num, exchange_ts_ns)
 
             internal_seq = self._seq.next()
             cid = make_correlation_id(symbol, exchange_ts_ns, internal_seq)
@@ -177,10 +182,10 @@ class PolygonNormalizer:
             exchange_ts_ns = int(msg["t"]) * _MS_TO_NS
             seq_num = int(msg.get("q", 0))
 
-            if self._is_duplicate(symbol, seq_num, exchange_ts_ns):
+            if self._is_duplicate(symbol, self._FEED_TRADE, seq_num, exchange_ts_ns):
                 return None
-            self._check_gap(symbol, seq_num)
-            self._update_last_seen(symbol, seq_num, exchange_ts_ns)
+            self._check_gap(symbol, self._FEED_TRADE, seq_num)
+            self._update_last_seen(symbol, self._FEED_TRADE, seq_num, exchange_ts_ns)
 
             internal_seq = self._seq.next()
             cid = make_correlation_id(symbol, exchange_ts_ns, internal_seq)
@@ -240,10 +245,10 @@ class PolygonNormalizer:
             sip_ts = int(rec["sip_timestamp"])
             seq_num = int(rec.get("sequence_number", 0))
 
-            if self._is_duplicate(symbol, seq_num, sip_ts):
+            if self._is_duplicate(symbol, self._FEED_QUOTE, seq_num, sip_ts):
                 return None
-            self._check_gap(symbol, seq_num)
-            self._update_last_seen(symbol, seq_num, sip_ts)
+            self._check_gap(symbol, self._FEED_QUOTE, seq_num)
+            self._update_last_seen(symbol, self._FEED_QUOTE, seq_num, sip_ts)
 
             internal_seq = self._seq.next()
             cid = make_correlation_id(symbol, sip_ts, internal_seq)
@@ -290,10 +295,10 @@ class PolygonNormalizer:
             sip_ts = int(rec["sip_timestamp"])
             seq_num = int(rec.get("sequence_number", 0))
 
-            if self._is_duplicate(symbol, seq_num, sip_ts):
+            if self._is_duplicate(symbol, self._FEED_TRADE, seq_num, sip_ts):
                 return None
-            self._check_gap(symbol, seq_num)
-            self._update_last_seen(symbol, seq_num, sip_ts)
+            self._check_gap(symbol, self._FEED_TRADE, seq_num)
+            self._update_last_seen(symbol, self._FEED_TRADE, seq_num, sip_ts)
 
             internal_seq = self._seq.next()
             cid = make_correlation_id(symbol, sip_ts, internal_seq)
@@ -344,8 +349,8 @@ class PolygonNormalizer:
         """Total number of exact-duplicate messages filtered across all symbols."""
         return self._duplicates_filtered
 
-    def _is_duplicate(self, symbol: str, seq_num: int, exchange_ts_ns: int) -> bool:
-        prev = self._last_seen.get(symbol)
+    def _is_duplicate(self, symbol: str, feed_type: str, seq_num: int, exchange_ts_ns: int) -> bool:
+        prev = self._last_seen.get((symbol, feed_type))
         if prev is None:
             return False
         if prev == (seq_num, exchange_ts_ns):
@@ -353,10 +358,10 @@ class PolygonNormalizer:
             return True
         return False
 
-    def _check_gap(self, symbol: str, seq_num: int) -> None:
+    def _check_gap(self, symbol: str, feed_type: str, seq_num: int) -> None:
         if seq_num == 0:
             return
-        prev = self._last_seen.get(symbol)
+        prev = self._last_seen.get((symbol, feed_type))
         if prev is None:
             return
         prev_seq = prev[0]
@@ -369,24 +374,24 @@ class PolygonNormalizer:
             if sm.state == DataHealth.HEALTHY:
                 sm.transition(
                     DataHealth.GAP_DETECTED,
-                    trigger=f"seq_gap:{prev_seq}->{seq_num}",
+                    trigger=f"seq_gap:{feed_type}:{prev_seq}->{seq_num}",
                 )
             logger.info(
-                "polygon_normalizer: gap detected for %s: %d -> %d",
-                symbol, prev_seq, seq_num,
+                "polygon_normalizer: gap detected for %s/%s: %d -> %d",
+                symbol, feed_type, prev_seq, seq_num,
             )
         elif seq_num == prev_seq + 1 and sm.state == DataHealth.GAP_DETECTED:
             sm.transition(
                 DataHealth.HEALTHY,
-                trigger=f"seq_continuity_resumed:{seq_num}",
+                trigger=f"seq_continuity_resumed:{feed_type}:{seq_num}",
             )
             logger.info(
-                "polygon_normalizer: gap resolved for %s at seq %d",
-                symbol, seq_num,
+                "polygon_normalizer: gap resolved for %s/%s at seq %d",
+                symbol, feed_type, seq_num,
             )
 
-    def _update_last_seen(self, symbol: str, seq_num: int, exchange_ts_ns: int) -> None:
-        self._last_seen[symbol] = (seq_num, exchange_ts_ns)
+    def _update_last_seen(self, symbol: str, feed_type: str, seq_num: int, exchange_ts_ns: int) -> None:
+        self._last_seen[(symbol, feed_type)] = (seq_num, exchange_ts_ns)
         self._ensure_health_machine(symbol)
 
     def _mark_corrupted(self, symbol: str) -> None:

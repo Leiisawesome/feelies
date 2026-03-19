@@ -16,7 +16,8 @@ import shutil
 import sys
 import tempfile
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import TypeVar
@@ -38,20 +39,23 @@ from feelies.core.events import (
     PositionUpdate,
     Signal,
     SignalDirection,
+    Trade,
 )
+from feelies.core.identifiers import SequenceGenerator, make_correlation_id
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.ingestion.polygon_ingestor import IngestResult
 from feelies.kernel.macro import MacroState
 from feelies.monitoring.in_memory import InMemoryMetricCollector
+from feelies.storage.disk_event_cache import DiskEventCache
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 T = TypeVar("T", bound=Event)
 
-# ── Box-drawing constants ────────────────────────────────────────────
+# ── Report layout constants ──────────────────────────────────────────
 
-_W = 57  # inner width of the report box
-_DOUBLE = "═"
-_SINGLE = "─"
+_W = 62
+_RULE_HEAVY = "=" * _W
+_RULE_LIGHT = "-" * _W
 
 
 # ── BusRecorder (same pattern as test_backtest_e2e.py) ───────────────
@@ -106,10 +110,57 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Run with synthetic 8-tick data (no Polygon API key required)",
     )
+    p.add_argument(
+        "--cache-dir",
+        type=str,
+        default=None,
+        help="Disk cache directory (default: ~/.feelies/cache/)",
+    )
+    p.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Force re-download, skip disk cache",
+    )
     return p.parse_args(argv)
 
 
 # ── Ingestion ────────────────────────────────────────────────────────
+
+
+def _iter_dates(start_date: str, end_date: str) -> list[str]:
+    """Generate YYYY-MM-DD strings for each calendar date in [start, end]."""
+    start = date.fromisoformat(start_date)
+    end = date.fromisoformat(end_date)
+    dates: list[str] = []
+    current = start
+    while current <= end:
+        dates.append(current.isoformat())
+        current += timedelta(days=1)
+    return dates
+
+
+def _resequence(
+    events: list[NBBOQuote | Trade],
+) -> list[NBBOQuote | Trade]:
+    """Assign globally monotonic sequences and rebuild correlation IDs."""
+    seq = SequenceGenerator()
+    result: list[NBBOQuote | Trade] = []
+    for event in events:
+        new_seq = seq.next()
+        new_cid = make_correlation_id(
+            event.symbol, event.exchange_timestamp_ns, new_seq,
+        )
+        result.append(replace(event, sequence=new_seq, correlation_id=new_cid))
+    return result
+
+
+@dataclass(frozen=True)
+class DaySource:
+    """Provenance for a single (symbol, date) ingestion."""
+    symbol: str
+    date: str
+    source: str
+    event_count: int
 
 
 def ingest_data(
@@ -117,24 +168,90 @@ def ingest_data(
     symbols: list[str],
     start_date: str,
     end_date: str,
-) -> tuple[InMemoryEventLog, IngestResult]:
-    """Download historical data from Polygon and return a populated event log."""
+    *,
+    cache_dir: Path | None = None,
+    no_cache: bool = False,
+) -> tuple[InMemoryEventLog, IngestResult, list[DaySource]]:
+    """Download historical data with per-day cache and parallel download."""
     from feelies.ingestion.polygon_ingestor import PolygonHistoricalIngestor
     from feelies.ingestion.polygon_normalizer import PolygonNormalizer
 
-    clock = SimulatedClock(start_ns=1_000_000_000)
-    normalizer = PolygonNormalizer(clock)
-    event_log = InMemoryEventLog()
+    cache: DiskEventCache | None = None
+    if not no_cache:
+        resolved_dir = cache_dir or Path.home() / ".feelies" / "cache"
+        cache = DiskEventCache(resolved_dir)
 
-    ingestor = PolygonHistoricalIngestor(
-        api_key=api_key,
-        normalizer=normalizer,
-        event_log=event_log,
-        clock=clock,
+    dates = _iter_dates(start_date, end_date)
+    all_events: list[NBBOQuote | Trade] = []
+    day_sources: list[DaySource] = []
+
+    total_events_from_api = 0
+    total_pages = 0
+    total_gaps = 0
+    total_dupes = 0
+
+    for symbol in symbols:
+        for day in dates:
+            if cache is not None and cache.exists(symbol, day):
+                loaded = cache.load(symbol, day)
+                if loaded is not None:
+                    all_events.extend(loaded)
+                    day_sources.append(DaySource(
+                        symbol=symbol, date=day,
+                        source="cache", event_count=len(loaded),
+                    ))
+                    print(f"  {symbol} {day}: {len(loaded):,} events (cache)", flush=True)
+                    continue
+
+            clock = SimulatedClock(start_ns=1_000_000_000)
+            normalizer = PolygonNormalizer(clock)
+            day_log = InMemoryEventLog()
+
+            ingestor = PolygonHistoricalIngestor(
+                api_key=api_key,
+                normalizer=normalizer,
+                event_log=day_log,
+                clock=clock,
+            )
+
+            result = ingestor.ingest([symbol], day, day)
+            total_events_from_api += result.events_ingested
+            total_pages += result.pages_processed
+            total_gaps += result.gaps_detected
+            total_dupes += result.duplicates_filtered
+
+            day_events: list[NBBOQuote | Trade] = list(day_log.replay())  # type: ignore[arg-type]
+
+            if cache is not None:
+                cache.save(symbol, day, day_events)
+
+            all_events.extend(day_events)
+            day_sources.append(DaySource(
+                symbol=symbol, date=day,
+                source="api", event_count=len(day_events),
+            ))
+            print(
+                f"  {symbol} {day}: {len(day_events):,} events (api, {result.pages_processed} pages)",
+                flush=True,
+            )
+
+    resequenced = _resequence(all_events)
+
+    event_log = InMemoryEventLog()
+    event_log.append_batch(resequenced)
+
+    total_event_count = len(resequenced)
+    completed = frozenset(symbols)
+
+    ingest_result = IngestResult(
+        events_ingested=total_event_count,
+        pages_processed=total_pages,
+        gaps_detected=total_gaps,
+        duplicates_filtered=total_dupes,
+        symbols_completed=completed,
     )
 
-    result = ingestor.ingest(symbols, start_date, end_date)
-    return event_log, result
+    return event_log, ingest_result, day_sources
 
 
 # ── Demo mode (synthetic 8-tick data) ────────────────────────────────
@@ -218,28 +335,31 @@ def run_demo() -> tuple[object, BusRecorder, IngestResult, PlatformConfig, str, 
 
 def _header(title: str, symbol: str, date_range: str) -> str:
     lines = [
-        _DOUBLE * _W,
-        f"  BACKTEST REPORT — {title}",
-        f"  Symbol: {symbol} | Date: {date_range}",
-        _DOUBLE * _W,
+        "",
+        _RULE_HEAVY,
+        f"  BACKTEST REPORT  |  {title}",
+        f"  Symbol: {symbol}  |  Date: {date_range}",
+        _RULE_HEAVY,
     ]
     return "\n".join(lines)
 
 
 def _section(name: str) -> str:
-    padding = _W - len(name) - 4
-    return f"── {name} " + _SINGLE * max(padding, 1)
+    return f"\n  [{name.upper()}]"
 
 
-def _kv(key: str, value: str, indent: int = 2) -> str:
-    label = f"{key}:"
-    return f"{' ' * indent}{label:<21s}{value}"
+def _kv(key: str, value: str, indent: int = 4) -> str:
+    label = f"{key}"
+    return f"{' ' * indent}{label:<24s}{value}"
 
 
 def _sub_kv(key: str, value: str) -> str:
-    """Indented sub-item (e.g. LONG/SHORT under Signals emitted)."""
-    label = f"{key}:"
-    return f"    {label:<19s}{value}"
+    label = f"{key}"
+    return f"{'':6s}{label:<22s}{value}"
+
+
+def _divider() -> str:
+    return f"  {'- ' * 29}-"
 
 
 def _money(v: Decimal) -> str:
@@ -252,7 +372,7 @@ def _pct(v: float) -> str:
 
 
 def _ns_to_ms(ns: float) -> str:
-    return f"{ns / 1_000_000:.3f}ms"
+    return f"{ns / 1_000_000:.3f} ms"
 
 
 # ── Report generation ────────────────────────────────────────────────
@@ -266,6 +386,7 @@ def generate_report(
     orchestrator: object,
     symbol_str: str,
     date_range: str,
+    day_sources: list[DaySource] | None = None,
 ) -> str:
     """Build the full backtest report string."""
     from feelies.storage.trade_journal import TradeRecord
@@ -378,78 +499,87 @@ def generate_report(
 
     # ── Assemble report ──────────────────────────────────────────
     lines: list[str] = []
-    lines.append("")
     lines.append(_header(strategy_id, symbol_str, date_range))
-    lines.append("")
 
     # Ingestion
-    lines.append(_section("Ingestion"))
+    lines.append(_section("Data Ingestion"))
     lines.append(_kv("Events ingested", f"{ingest_result.events_ingested:,}"))
     lines.append(_kv("Pages processed", f"{ingest_result.pages_processed}"))
     lines.append(_kv("Gaps detected", f"{ingest_result.gaps_detected}"))
     lines.append(_kv("Duplicates filtered", f"{ingest_result.duplicates_filtered}"))
-    lines.append("")
+    if day_sources:
+        lines.append("")
+        for ds in day_sources:
+            lines.append(_sub_kv(f"{ds.symbol} {ds.date}", f"{ds.event_count:,} ({ds.source})"))
+
+    lines.append(_divider())
 
     # Pipeline
-    lines.append(_section("Pipeline"))
+    lines.append(_section("Signal Pipeline"))
     lines.append(_kv("Quotes processed", f"{len(quotes):,}"))
     lines.append(_kv("Feature vectors", f"{len(features):,}"))
     lines.append(_kv("Warm-up ticks", f"{len(warmup_features)}"))
-    lines.append(_kv("Signals emitted", f"{len(signals)}"))
-    lines.append(_sub_kv("LONG", f"{len(long_signals)}"))
-    lines.append(_sub_kv("SHORT", f"{len(short_signals)}"))
-    lines.append("")
+    lines.append(_kv("Signals emitted", f"{len(signals):,}"))
+    lines.append(_sub_kv("Long", f"{len(long_signals):,}"))
+    lines.append(_sub_kv("Short", f"{len(short_signals):,}"))
+
+    lines.append(_divider())
 
     # Execution
     lines.append(_section("Execution"))
-    lines.append(_kv("Orders submitted", f"{len(orders)}"))
-    lines.append(_kv("Orders filled", f"{len(filled_acks)}"))
-    lines.append(_kv("Orders rejected", f"{len(rejected_acks)}"))
+    lines.append(_kv("Orders submitted", f"{len(orders):,}"))
+    lines.append(_kv("Orders filled", f"{len(filled_acks):,}"))
+    lines.append(_kv("Orders rejected", f"{len(rejected_acks):,}"))
     lines.append(_kv("Total shares traded", f"{total_shares:,}"))
-    lines.append("")
+
+    lines.append(_divider())
 
     # P&L
-    lines.append(_section("P&L Statement"))
+    lines.append(_section("P&L"))
     lines.append(_kv("Starting equity", _money(Decimal(str(starting_equity)))))
-    lines.append(_kv("Realized P&L", _money(realized_pnl)))
-    lines.append(_kv("Unrealized P&L", _money(unrealized_pnl)))
     lines.append(_kv("Gross P&L", _money(gross_pnl)))
+    lines.append(_sub_kv("Realized", _money(realized_pnl)))
+    lines.append(_sub_kv("Unrealized", _money(unrealized_pnl)))
     lines.append(_kv("Fees", _money(fees)))
     lines.append(_kv("Net P&L", _money(net_pnl)))
     lines.append(_kv("Final equity", _money(final_equity)))
     lines.append(_kv("Return", _pct(return_pct)))
-    lines.append("")
+
+    lines.append(_divider())
 
     # Trade summary
-    lines.append(_section("Trade Summary"))
-    lines.append(_kv("Total fills", f"{total_fills}"))
-    lines.append(_kv("Closing fills", f"{resolved_count}"))
+    lines.append(_section("Trade Analysis"))
+    lines.append(_kv("Total fills", f"{total_fills:,}"))
+    lines.append(_kv("Closing fills", f"{resolved_count:,}"))
     lines.append(_kv("Open positions", f"{open_positions}"))
     win_rate_str = f"{win_rate:.1f}% ({win_count}/{resolved_count})" if resolved_count else "N/A"
     lines.append(_kv("Win rate", win_rate_str))
-    lines.append(_kv("Avg winning trade", _money(avg_win)))
-    lines.append(_kv("Avg losing trade", _money(avg_loss)))
+    lines.append(_kv("Avg winner", _money(avg_win)))
+    lines.append(_kv("Avg loser", _money(avg_loss)))
     lines.append(_kv("Largest win", _money(largest_win)))
     lines.append(_kv("Largest loss", _money(largest_loss)))
-    lines.append(_kv("P&L per share", f"${pnl_per_share:.2f}"))
-    lines.append("")
+    lines.append(_kv("P&L per share", f"${pnl_per_share:.4f}"))
+
+    lines.append(_divider())
 
     # Risk
     lines.append(_section("Risk"))
-    lines.append(_kv("Max exposure", _money(max_exposure)))
-    lines.append(_kv("Max exposure %", _pct(max_exposure_pct)))
+    lines.append(_kv("Max exposure", f"{_money(max_exposure)} ({_pct(max_exposure_pct)})"))
     lines.append(_kv("Max drawdown", f"{_money(max_drawdown)} ({_pct(max_dd_pct)})"))
     lines.append(_kv("Kill switch", ks_status))
-    lines.append("")
+
+    lines.append(_divider())
 
     # Performance
-    lines.append(_section("Performance"))
-    lines.append(_kv("Avg tick latency", _ns_to_ms(avg_tick_ns)))
-    lines.append(_kv("Max tick latency", _ns_to_ms(max_tick_ns)))
-    lines.append(_kv("Feature compute", f"{_ns_to_ms(avg_feat_ns)} avg"))
-    lines.append(_kv("Signal evaluate", f"{_ns_to_ms(avg_sig_ns)} avg"))
+    lines.append(_section("Latency"))
+    lines.append(_kv("Avg tick-to-decision", _ns_to_ms(avg_tick_ns)))
+    lines.append(_kv("Max tick-to-decision", _ns_to_ms(max_tick_ns)))
+    lines.append(_kv("Avg feature compute", _ns_to_ms(avg_feat_ns)))
+    lines.append(_kv("Avg signal evaluate", _ns_to_ms(avg_sig_ns)))
+
     lines.append("")
-    lines.append(_DOUBLE * _W)
+    lines.append(_RULE_HEAVY)
+    lines.append("")
 
     return "\n".join(lines)
 
@@ -506,20 +636,20 @@ def run_verification(
 
 def print_verification(results: list[tuple[str, bool, str]]) -> bool:
     """Print verification table. Returns True if all passed."""
-    print()
     print(_section("Verification"))
     all_passed = True
     for name, passed, detail in results:
-        status = "PASS" if passed else "FAIL"
-        marker = "✓" if passed else "✗"
-        print(f"  {marker} [{status}] {name:<20s} {detail}")
+        tag = "PASS" if passed else "FAIL"
+        print(f"    [{tag}]  {name:<22s}{detail}")
         if not passed:
             all_passed = False
     print()
+    passed_count = sum(1 for _, p, _ in results if p)
+    total = len(results)
     if all_passed:
-        print("  All checks PASSED.")
+        print(f"    Result: {passed_count}/{total} checks passed.")
     else:
-        print("  Some checks FAILED — review the report above.")
+        print(f"    Result: {passed_count}/{total} checks passed. Review failures above.")
     print()
     return all_passed
 
@@ -598,9 +728,15 @@ def main(argv: list[str] | None = None) -> int:
     symbol_str = ", ".join(symbols)
 
     # 3–5. Ingest data
+    cache_dir = Path(args.cache_dir) if args.cache_dir else None
+    no_cache: bool = args.no_cache
+
     print(f"Ingesting {symbol_str} from {date_range} ...", flush=True)
     try:
-        event_log, ingest_result = ingest_data(api_key, symbols, start_date, end_date)
+        event_log, ingest_result, day_sources = ingest_data(
+            api_key, symbols, start_date, end_date,
+            cache_dir=cache_dir, no_cache=no_cache,
+        )
     except ImportError as exc:
         print(
             f"ERROR: {exc}\n"
@@ -612,8 +748,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: Ingestion failed: {exc}", file=sys.stderr)
         return 1
 
+    cache_days = sum(1 for ds in day_sources if ds.source == "cache")
+    api_days = sum(1 for ds in day_sources if ds.source == "api")
     print(f"  Ingested {ingest_result.events_ingested:,} events "
-          f"({ingest_result.pages_processed} pages, "
+          f"({api_days} days from API, {cache_days} days from cache, "
           f"{ingest_result.duplicates_filtered} duplicates filtered)")
 
     # 6. Build platform
@@ -636,6 +774,7 @@ def main(argv: list[str] | None = None) -> int:
         orchestrator=orchestrator,
         symbol_str=symbol_str,
         date_range=date_range,
+        day_sources=day_sources,
     )
     print(report)
 

@@ -4,22 +4,22 @@ overview: Add parallel download (quotes + trades concurrently per symbol) with s
 todos:
   - id: disk-cache
     content: "Implement DiskEventCache in src/feelies/storage/disk_event_cache.py: save/load/exists with JSONL.gz + manifest + checksum + schema hash. Corrupt cache falls through to API (Inv-11)."
-    status: pending
+    status: completed
   - id: parallel-download
     content: "Add parallel raw download to PolygonHistoricalIngestor: ThreadPoolExecutor downloads quotes+trades raw dicts concurrently, merge-sort by (sip_timestamp, sequence_number, type), normalize sequentially with single PolygonNormalizer."
-    status: pending
+    status: completed
   - id: per-day-loop
-    content: Refactor ingest_data() to loop over each calendar date in the range, check cache per day, download only missing days, merge all days into one EventLog.
-    status: pending
+    content: "Refactor ingest_data() to loop over each calendar date in the range, check cache per day, download only missing days. After all days: re-sequence the merged event list with a fresh SequenceGenerator to guarantee globally monotonic sequences, then populate InMemoryEventLog."
+    status: completed
   - id: script-integration
     content: Integrate cache + parallel download into scripts/run_backtest.py with --cache-dir and --no-cache CLI flags. Report shows cache vs API source.
-    status: pending
+    status: completed
   - id: config-update
     content: Add cache_dir field to PlatformConfig and from_yaml().
-    status: pending
+    status: completed
   - id: test-verify
     content: "Run demo + live backtest to verify: cache round-trip, parallel download correctness, per-day cache reuse, deterministic replay from cache."
-    status: pending
+    status: completed
 isProject: false
 ---
 
@@ -89,6 +89,29 @@ This intentionally changes replay order from the current (incorrect) behavior. E
 
 Once cached, events are replayed identically — the cache IS the canonical event sequence. No re-normalization on load. The `sequence` and `correlation_id` fields in the cached events are the source of truth.
 
+### Multi-day re-sequencing (Inv-5 + Inv-13)
+
+Each cached day was normalized by an independent `PolygonNormalizer` (from a prior run), producing `event.sequence` values starting from 0. When multiple days are loaded and merged into a single `InMemoryEventLog`, overlapping sequence numbers would break `EventLog.replay()` range filtering.
+
+**Fix**: after assembling the complete event list from all days (cache hits + fresh downloads), a single re-sequencing pass assigns globally monotonic `event.sequence` values and rebuilds `correlation_id` to match. This is an O(N) pass using `dataclasses.replace()` on frozen events.
+
+```python
+seq = SequenceGenerator()
+resequenced = []
+for event in all_day_events:
+    new_seq = seq.next()
+    new_cid = make_correlation_id(event.symbol, event.exchange_timestamp_ns, new_seq)
+    resequenced.append(replace(event, sequence=new_seq, correlation_id=new_cid))
+```
+
+Cache files retain their original per-day sequences (they are internally consistent). The re-sequencing is a load-time concern only — it does not modify cached data.
+
+### Per-feed dedup and gap detection (prerequisite fix — DONE)
+
+Polygon `sequence_number` is per-feed: quotes and trades have independent counters. The normalizer's `_last_seen` state was previously keyed by symbol alone, which would cause silent data loss (false dedup) and spurious gap detection when quotes and trades interleave after the chronological merge-sort.
+
+**Fixed**: `_last_seen`, `_is_duplicate`, `_check_gap`, and `_update_last_seen` now key on `(symbol, feed_type)`. The `DataHealth` SM remains per-symbol (a gap in either feed is still a data integrity event). Gap trigger messages include feed type for diagnostics.
+
 ### Multi-symbol
 
 Symbols processed sequentially to respect Polygon API rate limits. Each symbol's quotes + trades download in parallel (2 threads).
@@ -101,7 +124,7 @@ Symbols processed sequentially to respect Polygon API rate limits. Each symbol's
 
 - `__init__(cache_dir: Path)` — creates directory structure on first use
 - `exists(symbol: str, date: str) -> bool` — checks manifest + data file exist and schema hash matches current event definitions
-- `load(symbol: str, date: str) -> list[NBBOQuote | Trade]` — decompress, deserialize, verify checksum. On any failure, log warning, return `None` (Inv-11 fail-safe)
+- `load(symbol: str, date: str) -> list[NBBOQuote | Trade] | None` — decompress, deserialize, verify checksum. On any failure, log warning, return `None` (Inv-11 fail-safe)
 - `save(symbol: str, date: str, events: Sequence[NBBOQuote | Trade]) -> None` — serialize to JSONL.gz, compute SHA-256, write manifest atomically (write to `.tmp` then rename)
 
 Helper: `_compute_schema_hash() -> str` — SHA-256 of sorted field names + type annotations from `NBBOQuote.__dataclass_fields__` and `Trade.__dataclass_fields__`. Included in manifest; checked on load to auto-invalidate when event schemas evolve.
@@ -135,7 +158,7 @@ Manifest schema:
   - Check `DiskEventCache.exists(symbol, date)` for each symbol
   - On hit: `cache.load()` and extend the event list
   - On miss: call ingestor for that single day, then `cache.save()`
-  - After all days: populate `InMemoryEventLog` with merged events
+  - After all days: re-sequence the merged event list with a fresh `SequenceGenerator` + `make_correlation_id()` to produce globally monotonic sequences, then populate `InMemoryEventLog`
 - Add `--cache-dir` CLI argument (default: `~/.feelies/cache/`)
 - Add `--no-cache` flag to force re-download
 - Ingestion section of report shows source per day (cache / API)

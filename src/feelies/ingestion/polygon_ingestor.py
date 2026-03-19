@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -35,6 +36,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _CHUNK_SIZE = 5_000
+_TYPE_RANK_QUOTE = 0
+_TYPE_RANK_TRADE = 1
 
 
 @dataclass(frozen=True)
@@ -152,25 +155,11 @@ class PolygonHistoricalIngestor:
                 symbol, start_date, end_date,
             )
 
-            if self._checkpoint.is_done(symbol, "quotes"):
-                logger.info("polygon_ingestor: skipping quotes for %s (checkpoint)", symbol)
-            else:
-                ev_count, pg_count = self._ingest_quotes(
-                    client, symbol, start_date, end_date,
-                )
-                total_events += ev_count
-                total_pages += pg_count
-                self._checkpoint.mark_done(symbol, "quotes")
-
-            if self._checkpoint.is_done(symbol, "trades"):
-                logger.info("polygon_ingestor: skipping trades for %s (checkpoint)", symbol)
-            else:
-                ev_count, pg_count = self._ingest_trades(
-                    client, symbol, start_date, end_date,
-                )
-                total_events += ev_count
-                total_pages += pg_count
-                self._checkpoint.mark_done(symbol, "trades")
+            ev_count, pg_count = self.ingest_symbol_parallel(
+                client, symbol, start_date, end_date,
+            )
+            total_events += ev_count
+            total_pages += pg_count
 
             completed_symbols.add(symbol)
             logger.info(
@@ -308,6 +297,154 @@ class PolygonHistoricalIngestor:
         if all_events:
             self._event_log.append_batch(all_events)
         return len(all_events)
+
+
+    # ── Parallel download + merge-sort ─────────────────────────────
+
+    def ingest_symbol_parallel(
+        self,
+        client: RESTClient,
+        symbol: str,
+        start_date: str,
+        end_date: str,
+    ) -> tuple[int, int]:
+        """Download quotes + trades in parallel, merge-sort, normalize sequentially.
+
+        Returns (events_ingested, pages_processed).
+        """
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            quotes_future = pool.submit(
+                _download_quotes_raw, client, symbol, start_date, end_date,
+            )
+            trades_future = pool.submit(
+                _download_trades_raw, client, symbol, start_date, end_date,
+            )
+            raw_quotes, q_pages = quotes_future.result()
+            raw_trades, t_pages = trades_future.result()
+
+        total_pages = q_pages + t_pages
+        logger.info(
+            "polygon_ingestor: downloaded %d raw quotes + %d raw trades for %s (%d pages)",
+            len(raw_quotes), len(raw_trades), symbol, total_pages,
+        )
+
+        for d in raw_quotes:
+            d["__type_rank__"] = _TYPE_RANK_QUOTE
+        for d in raw_trades:
+            d["__type_rank__"] = _TYPE_RANK_TRADE
+
+        merged = raw_quotes + raw_trades
+        merged.sort(key=lambda d: (
+            d.get("sip_timestamp", 0),
+            d.get("sequence_number", 0),
+            d.get("__type_rank__", 0),
+        ))
+
+        all_events: list[NBBOQuote | Trade] = []
+        received_ns = self._clock.now_ns()
+
+        for rec_dict in merged:
+            rec_dict.pop("__type_rank__", None)
+            raw = json.dumps(rec_dict).encode("utf-8")
+            events = self._normalizer.on_message(raw, received_ns, "polygon_rest")
+            all_events.extend(events)
+
+        if all_events:
+            self._event_log.append_batch(all_events)
+
+        return len(all_events), total_pages
+
+
+def _download_quotes_raw(
+    client: RESTClient,
+    symbol: str,
+    start_date: str,
+    end_date: str,
+) -> tuple[list[dict[str, Any]], int]:
+    """Paginate through list_quotes(), collecting raw dicts. Pure download."""
+    raw_dicts: list[dict[str, Any]] = []
+    pages = 0
+
+    try:
+        quotes_iter = client.list_quotes(
+            symbol,
+            timestamp_gte=f"{start_date}T00:00:00Z",
+            timestamp_lte=f"{end_date}T23:59:59Z",
+            order="asc",
+            sort="timestamp",
+            limit=50000,
+        )
+    except Exception:
+        logger.exception(
+            "polygon_ingestor: failed to start quotes iteration for %s", symbol,
+        )
+        return [], 0
+
+    buf: list[Any] = []
+    for obj in quotes_iter:
+        buf.append(obj)
+        if len(buf) >= _CHUNK_SIZE:
+            for record in buf:
+                d = _model_to_dict(record, symbol)
+                if d:
+                    raw_dicts.append(d)
+            pages += 1
+            buf = []
+
+    if buf:
+        for record in buf:
+            d = _model_to_dict(record, symbol)
+            if d:
+                raw_dicts.append(d)
+        pages += 1
+
+    return raw_dicts, pages
+
+
+def _download_trades_raw(
+    client: RESTClient,
+    symbol: str,
+    start_date: str,
+    end_date: str,
+) -> tuple[list[dict[str, Any]], int]:
+    """Paginate through list_trades(), collecting raw dicts. Pure download."""
+    raw_dicts: list[dict[str, Any]] = []
+    pages = 0
+
+    try:
+        trades_iter = client.list_trades(
+            symbol,
+            timestamp_gte=f"{start_date}T00:00:00Z",
+            timestamp_lte=f"{end_date}T23:59:59Z",
+            order="asc",
+            sort="timestamp",
+            limit=50000,
+        )
+    except Exception:
+        logger.exception(
+            "polygon_ingestor: failed to start trades iteration for %s", symbol,
+        )
+        return [], 0
+
+    buf: list[Any] = []
+    for obj in trades_iter:
+        buf.append(obj)
+        if len(buf) >= _CHUNK_SIZE:
+            for record in buf:
+                d = _model_to_dict(record, symbol)
+                if d:
+                    raw_dicts.append(d)
+            pages += 1
+            buf = []
+
+    if buf:
+        for record in buf:
+            d = _model_to_dict(record, symbol)
+            if d:
+                raw_dicts.append(d)
+        pages += 1
+
+    return raw_dicts, pages
 
 
 def _model_to_dict(record: Any, symbol: str) -> dict[str, Any]:

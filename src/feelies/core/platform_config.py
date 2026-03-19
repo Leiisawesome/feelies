@@ -64,6 +64,8 @@ class PlatformConfig:
     account_equity: float = 1_000_000.0
     backtest_fill_latency_ns: int = 0
 
+    cache_dir: Path | None = None
+
     def validate(self) -> None:
         if not self.symbols:
             raise ConfigurationError("symbols must be non-empty")
@@ -154,6 +156,7 @@ class PlatformConfig:
 
         data_dir_raw = data.get("data_dir")
         event_log_raw = data.get("event_log_path")
+        cache_dir_raw = data.get("cache_dir")
 
         return cls(
             version=str(data.get("version", "0.1.0")),
@@ -179,4 +182,5 @@ class PlatformConfig:
             backtest_fill_latency_ns=int(
                 data.get("backtest_fill_latency_ns", 0)
             ),
+            cache_dir=Path(cache_dir_raw) if cache_dir_raw else None,
         )

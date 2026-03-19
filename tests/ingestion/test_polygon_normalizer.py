@@ -210,6 +210,43 @@ class TestPolygonNormalizerDuplicateCounting:
             normalizer.on_message(json.dumps(msg).encode("utf-8"), clock.now_ns(), "polygon_ws")
         assert normalizer.duplicates_filtered == 0
 
+    def test_quote_and_trade_with_same_seq_ts_not_deduped(
+        self, normalizer: PolygonNormalizer, clock: SimulatedClock
+    ) -> None:
+        """Quote and trade feeds have independent sequence_number spaces.
+
+        A quote and trade sharing (sequence_number, timestamp) must both
+        survive — dedup is per (symbol, feed_type), not per symbol alone.
+        """
+        quote = {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1000, "q": 5}
+        trade = {"ev": "T", "sym": "AAPL", "p": 150.02, "s": 100, "t": 1000, "q": 5}
+        q_events = normalizer.on_message(json.dumps(quote).encode(), clock.now_ns(), "polygon_ws")
+        t_events = normalizer.on_message(json.dumps(trade).encode(), clock.now_ns(), "polygon_ws")
+        assert len(q_events) == 1
+        assert len(t_events) == 1
+        assert isinstance(q_events[0], NBBOQuote)
+        assert isinstance(t_events[0], Trade)
+        assert normalizer.duplicates_filtered == 0
+
+    def test_rest_quote_and_trade_with_same_seq_ts_not_deduped(
+        self, normalizer: PolygonNormalizer, clock: SimulatedClock
+    ) -> None:
+        """Same cross-feed dedup safety for the REST path."""
+        quote = {
+            "ticker": "AAPL", "bid_price": 150.0, "ask_price": 150.05,
+            "bid_size": 10, "ask_size": 20,
+            "sip_timestamp": 1_700_000_000_000_000_000, "sequence_number": 42,
+        }
+        trade = {
+            "ticker": "AAPL", "price": 150.02, "size": 100,
+            "sip_timestamp": 1_700_000_000_000_000_000, "sequence_number": 42,
+        }
+        q_events = normalizer.on_message(json.dumps(quote).encode(), clock.now_ns(), "polygon_rest")
+        t_events = normalizer.on_message(json.dumps(trade).encode(), clock.now_ns(), "polygon_rest")
+        assert len(q_events) == 1
+        assert len(t_events) == 1
+        assert normalizer.duplicates_filtered == 0
+
 
 class TestPolygonNormalizerGapRecovery:
     """Tests for gap detection and automatic recovery."""
@@ -236,6 +273,38 @@ class TestPolygonNormalizerGapRecovery:
         for msg in msgs:
             normalizer.on_message(json.dumps(msg).encode("utf-8"), clock.now_ns(), "polygon_ws")
         assert normalizer.health("AAPL") == DataHealth.HEALTHY
+
+    def test_interleaved_feeds_no_spurious_gap(
+        self, normalizer: PolygonNormalizer, clock: SimulatedClock
+    ) -> None:
+        """Interleaving quotes (seq 1,2,3) with trades (seq 100,101,102)
+        must not fire gap detection — sequences are tracked per feed type.
+        """
+        msgs = [
+            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1000, "q": 1},
+            {"ev": "T", "sym": "AAPL", "p": 150.02, "s": 50, "t": 1001, "q": 100},
+            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1002, "q": 2},
+            {"ev": "T", "sym": "AAPL", "p": 150.03, "s": 50, "t": 1003, "q": 101},
+            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1004, "q": 3},
+            {"ev": "T", "sym": "AAPL", "p": 150.04, "s": 50, "t": 1005, "q": 102},
+        ]
+        for msg in msgs:
+            normalizer.on_message(json.dumps(msg).encode("utf-8"), clock.now_ns(), "polygon_ws")
+        assert normalizer.health("AAPL") == DataHealth.HEALTHY
+
+    def test_gap_in_one_feed_does_not_mask_other(
+        self, normalizer: PolygonNormalizer, clock: SimulatedClock
+    ) -> None:
+        """A gap in trades still fires even when quote sequences are contiguous."""
+        msgs = [
+            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1000, "q": 1},
+            {"ev": "T", "sym": "AAPL", "p": 150.02, "s": 50, "t": 1001, "q": 1},
+            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1002, "q": 2},
+            {"ev": "T", "sym": "AAPL", "p": 150.03, "s": 50, "t": 1003, "q": 10},
+        ]
+        for msg in msgs:
+            normalizer.on_message(json.dumps(msg).encode("utf-8"), clock.now_ns(), "polygon_ws")
+        assert normalizer.health("AAPL") == DataHealth.GAP_DETECTED
 
 
 class TestPolygonLiveFeedValidation:
