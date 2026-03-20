@@ -25,7 +25,7 @@ todos:
     status: completed
   - id: verify
     content: "Phase 7: Run pytest, mypy, ruff — all green"
-    status: in_progress
+    status: completed
 isProject: false
 ---
 
