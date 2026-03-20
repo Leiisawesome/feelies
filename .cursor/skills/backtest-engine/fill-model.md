@@ -193,7 +193,7 @@ Explicitly document every assumption. Review quarterly.
 | Assumption | Basis | Risk if Wrong | Monitoring |
 |-----------|-------|---------------|------------|
 | Queue depth = 1.5–3x displayed | Academic literature + estimation | Underestimate queue → overstate fills | Compare backtest fill rate to paper trade |
-| LogNormal latency distribution | Empirical fit to Polygon data | Tail events underestimated | QQ plot monthly |
+| LogNormal latency distribution | Empirical fit to Massive data | Tail events underestimated | QQ plot monthly |
 | Linear temporary impact | Almgren-Chriss framework | Understates impact for large orders | Track slippage vs predicted |
 | Adverse selection ~ VPIN | Easley et al. | Misclassification of informed flow | Monitor fill-conditional returns |
 | Iceberg order prevalence | Exchange-dependent; estimated | Hidden liquidity distorts queue model | Track fills > displayed size |

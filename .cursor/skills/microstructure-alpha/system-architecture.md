@@ -16,8 +16,8 @@ mode-specific behavior is confined to `ExecutionBackend`
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    DATA LAYER                           │
-│  Polygon.io WebSocket ──> MarketDataNormalizer          │
-│  Polygon.io REST API ──> MarketDataSource (replay)      │
+│  Massive WebSocket ──> MarketDataNormalizer              │
+│  Massive REST API ──> MarketDataSource (replay)         │
 │  Output: NBBOQuote, Trade (core/events.py)              │
 └──────────────────────┬──────────────────────────────────┘
                        │ M0→M1→M2
@@ -67,7 +67,7 @@ mode-specific behavior is confined to `ExecutionBackend`
 
 ## Data Layer
 
-### Polygon.io Integration
+### Massive API Integration
 
 **Real-time feeds (WebSocket):**
 - `T.*` — Trade messages
@@ -88,15 +88,15 @@ mode-specific behavior is confined to `ExecutionBackend`
 
 | Field | Normalization |
 |-------|--------------|
-| Timestamps | Convert to exchange time; track Polygon receipt delay |
-| Prices | Adjust for splits (use Polygon adjustment factors) |
+| Timestamps | Convert to exchange time; track Massive receipt delay |
+| Prices | Adjust for splits (use Massive adjustment factors) |
 | Sizes | Normalize to shares (not lots) |
 | Conditions | Parse trade condition codes; filter irregular trades |
 | Exchanges | Map exchange codes; flag SIP consolidated vs direct |
 
 ### Canonical Event Types
 
-Raw Polygon data is normalized into typed events (`core/events.py`):
+Raw Massive data is normalized into typed events (`core/events.py`):
 
 - `NBBOQuote`: bid/ask price+size, exchange timestamp, SIP timestamp
 - `Trade`: price, size, conditions, aggressor side
@@ -156,7 +156,7 @@ LEVEL 3 — Regime indicators
 | Signal evaluation | < 1 ms | < 5 ms |
 | Full pipeline (message -> order decision) | < 5 ms | < 20 ms |
 
-These targets reflect Polygon.io websocket latency (~10-50ms) — no point
+These targets reflect Massive websocket latency (~10-50ms) — no point
 optimizing compute below the data delivery latency floor.
 
 ---
@@ -243,9 +243,9 @@ fill_probability = f(queue_position, time_in_queue, flow_direction)
 ### Latency Model
 
 ```
-total_latency = polygon_delay + network_jitter + compute_time + broker_delay
+total_latency = massive_delay + network_jitter + compute_time + broker_delay
 
-polygon_delay ~ LogNormal(mu=3.0, sigma=0.5) [ms]
+massive_delay ~ LogNormal(mu=3.0, sigma=0.5) [ms]
 network_jitter ~ Uniform(1, 5) [ms]
 compute_time ~ deterministic (measured via MetricEvent.tick_to_decision_latency_ns)
 broker_delay ~ LogNormal(mu=2.0, sigma=0.8) [ms]

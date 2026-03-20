@@ -26,7 +26,7 @@ Every perturbation has a known ground truth so you can verify correct handling.
 
 ### Timestamp Jitter
 
-Simulate clock uncertainty between exchange, SIP, and Polygon receipt.
+Simulate clock uncertainty between exchange, SIP, and Massive receipt.
 
 ```
 perturbed_timestamp = original_timestamp + jitter
@@ -37,7 +37,7 @@ jitter ~ Uniform(-max_jitter, +max_jitter)
 | Test Level | Max Jitter | Purpose |
 |-----------|-----------|---------|
 | Mild | ±1ms | Normal SIP variation |
-| Moderate | ±5ms | Polygon websocket delay variance |
+| Moderate | ±5ms | Massive websocket delay variance |
 | Severe | ±50ms | Network congestion / reconnection |
 | Adversarial | ±500ms | Simulated feed failure recovery |
 
