@@ -1,4 +1,4 @@
-"""Unit tests for PolygonHistoricalIngestor."""
+"""Unit tests for MassiveHistoricalIngestor."""
 
 from __future__ import annotations
 
@@ -9,17 +9,17 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from feelies.core.clock import SimulatedClock
-from feelies.ingestion.polygon_ingestor import (
+from feelies.ingestion.massive_ingestor import (
     InMemoryCheckpoint,
-    PolygonHistoricalIngestor,
+    MassiveHistoricalIngestor,
     _model_to_dict,
 )
-from feelies.ingestion.polygon_normalizer import PolygonNormalizer
+from feelies.ingestion.massive_normalizer import MassiveNormalizer
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 
 def _make_mock_quote(seq: int = 1, ts_ns: int = 1700000000000000000) -> Any:
-    """Create a mock object resembling polygon Quote model with __annotations__ on class."""
+    """Create a mock object resembling massive Quote model with __annotations__ on class."""
 
     class MockQuote:
         __annotations__ = {
@@ -60,7 +60,7 @@ def _make_mock_quote(seq: int = 1, ts_ns: int = 1700000000000000000) -> Any:
 
 
 def _make_mock_trade(seq: int = 1, ts_ns: int = 1700000000001000000) -> Any:
-    """Create a mock object resembling polygon Trade model."""
+    """Create a mock object resembling massive Trade model."""
 
     class MockTrade:
         __annotations__ = {
@@ -129,42 +129,42 @@ class TestModelToDict:
         assert out == {"ticker": "AAPL", "bid_price": 100.0, "sip_timestamp": 123}
 
 
-class TestPolygonHistoricalIngestor:
-    """Tests for PolygonHistoricalIngestor with mocked REST client."""
+class TestMassiveHistoricalIngestor:
+    """Tests for MassiveHistoricalIngestor with mocked REST client."""
 
     @pytest.mark.skipif(
-        importlib.util.find_spec("polygon") is not None,
-        reason="polygon installed; ImportError path only testable when package absent",
+        importlib.util.find_spec("massive") is not None,
+        reason="massive installed; ImportError path only testable when package absent",
     )
-    def test_ingest_raises_without_polygon_package(self) -> None:
-        """When polygon is not installed, ingest raises ImportError."""
-        ingestor = PolygonHistoricalIngestor(
+    def test_ingest_raises_without_massive_package(self) -> None:
+        """When massive is not installed, ingest raises ImportError."""
+        ingestor = MassiveHistoricalIngestor(
             api_key="test-key",
-            normalizer=PolygonNormalizer(SimulatedClock()),
+            normalizer=MassiveNormalizer(SimulatedClock()),
             event_log=InMemoryEventLog(),
             clock=SimulatedClock(),
         )
-        with pytest.raises(ImportError, match="polygon-api-client"):
+        with pytest.raises(ImportError, match="massive"):
             ingestor.ingest(["AAPL"], "2024-01-01", "2024-01-01")
 
     def test_ingest_with_mocked_rest_client(self) -> None:
         """Ingest uses REST client and persists normalized events."""
         clock = SimulatedClock(1700000000000000000)
-        normalizer = PolygonNormalizer(clock)
+        normalizer = MassiveNormalizer(clock)
         event_log = InMemoryEventLog()
 
         mock_client = MagicMock()
         mock_client.list_quotes = MagicMock(return_value=iter([_make_mock_quote()]))
         mock_client.list_trades = MagicMock(return_value=iter([_make_mock_trade()]))
 
-        ingestor = PolygonHistoricalIngestor(
+        ingestor = MassiveHistoricalIngestor(
             api_key="test",
             normalizer=normalizer,
             event_log=event_log,
             clock=clock,
         )
 
-        with patch("polygon.RESTClient", return_value=mock_client):
+        with patch("massive.RESTClient", return_value=mock_client):
             result = ingestor.ingest(["AAPL"], "2024-01-01", "2024-01-02")
 
         assert result.events_ingested >= 2  # at least 1 quote + 1 trade
@@ -178,14 +178,14 @@ class TestParallelDownload:
     def test_parallel_downloads_both_feeds(self) -> None:
         """ingest_symbol_parallel calls list_quotes and list_trades."""
         clock = SimulatedClock(1700000000000000000)
-        normalizer = PolygonNormalizer(clock)
+        normalizer = MassiveNormalizer(clock)
         event_log = InMemoryEventLog()
 
         mock_client = MagicMock()
         mock_client.list_quotes = MagicMock(return_value=iter([_make_mock_quote()]))
         mock_client.list_trades = MagicMock(return_value=iter([_make_mock_trade()]))
 
-        ingestor = PolygonHistoricalIngestor(
+        ingestor = MassiveHistoricalIngestor(
             api_key="test",
             normalizer=normalizer,
             event_log=event_log,
@@ -205,7 +205,7 @@ class TestParallelDownload:
     def test_parallel_produces_chronological_order(self) -> None:
         """Events are merge-sorted by sip_timestamp across feeds."""
         clock = SimulatedClock(1700000000000000000)
-        normalizer = PolygonNormalizer(clock)
+        normalizer = MassiveNormalizer(clock)
         event_log = InMemoryEventLog()
 
         q1 = _make_mock_quote(seq=1, ts_ns=1700000000000000000)
@@ -217,7 +217,7 @@ class TestParallelDownload:
         mock_client.list_quotes = MagicMock(return_value=iter([q1, q2]))
         mock_client.list_trades = MagicMock(return_value=iter([t1, t2]))
 
-        ingestor = PolygonHistoricalIngestor(
+        ingestor = MassiveHistoricalIngestor(
             api_key="test",
             normalizer=normalizer,
             event_log=event_log,
@@ -235,21 +235,21 @@ class TestParallelDownload:
     def test_ingest_delegates_to_parallel(self) -> None:
         """ingest() routes through ingest_symbol_parallel."""
         clock = SimulatedClock(1700000000000000000)
-        normalizer = PolygonNormalizer(clock)
+        normalizer = MassiveNormalizer(clock)
         event_log = InMemoryEventLog()
 
         mock_client = MagicMock()
         mock_client.list_quotes = MagicMock(return_value=iter([_make_mock_quote()]))
         mock_client.list_trades = MagicMock(return_value=iter([_make_mock_trade()]))
 
-        ingestor = PolygonHistoricalIngestor(
+        ingestor = MassiveHistoricalIngestor(
             api_key="test",
             normalizer=normalizer,
             event_log=event_log,
             clock=clock,
         )
 
-        with patch("polygon.RESTClient", return_value=mock_client):
+        with patch("massive.RESTClient", return_value=mock_client):
             result = ingestor.ingest(["AAPL"], "2024-01-01", "2024-01-02")
 
         mock_client.list_quotes.assert_called_once()
@@ -263,13 +263,13 @@ class TestLegacySequentialPath:
 
     def test_sequential_ingest_quotes(self) -> None:
         clock = SimulatedClock(1700000000000000000)
-        normalizer = PolygonNormalizer(clock)
+        normalizer = MassiveNormalizer(clock)
         event_log = InMemoryEventLog()
 
         mock_client = MagicMock()
         mock_client.list_quotes = MagicMock(return_value=iter([_make_mock_quote()]))
 
-        ingestor = PolygonHistoricalIngestor(
+        ingestor = MassiveHistoricalIngestor(
             api_key="test",
             normalizer=normalizer,
             event_log=event_log,
@@ -285,13 +285,13 @@ class TestLegacySequentialPath:
 
     def test_sequential_ingest_trades(self) -> None:
         clock = SimulatedClock(1700000000000000000)
-        normalizer = PolygonNormalizer(clock)
+        normalizer = MassiveNormalizer(clock)
         event_log = InMemoryEventLog()
 
         mock_client = MagicMock()
         mock_client.list_trades = MagicMock(return_value=iter([_make_mock_trade()]))
 
-        ingestor = PolygonHistoricalIngestor(
+        ingestor = MassiveHistoricalIngestor(
             api_key="test",
             normalizer=normalizer,
             event_log=event_log,
@@ -311,7 +311,7 @@ class TestDuplicateCountingInIngestor:
 
     def test_reports_duplicates_from_normalizer(self) -> None:
         clock = SimulatedClock(1700000000000000000)
-        normalizer = PolygonNormalizer(clock)
+        normalizer = MassiveNormalizer(clock)
         event_log = InMemoryEventLog()
 
         same_quote = _make_mock_quote(seq=1, ts_ns=1700000000000000000)
@@ -322,14 +322,14 @@ class TestDuplicateCountingInIngestor:
         )
         mock_client.list_trades = MagicMock(return_value=iter([]))
 
-        ingestor = PolygonHistoricalIngestor(
+        ingestor = MassiveHistoricalIngestor(
             api_key="test",
             normalizer=normalizer,
             event_log=event_log,
             clock=clock,
         )
 
-        with patch("polygon.RESTClient", return_value=mock_client):
+        with patch("massive.RESTClient", return_value=mock_client):
             result = ingestor.ingest(["AAPL"], "2024-01-01", "2024-01-02")
 
         assert result.duplicates_filtered == 2

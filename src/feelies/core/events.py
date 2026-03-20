@@ -30,7 +30,7 @@ class Event:
 
 @dataclass(frozen=True, kw_only=True)
 class NBBOQuote(Event):
-    """L1 NBBO quote update from Polygon.io.
+    """L1 NBBO quote update from Massive (formerly Polygon.io).
 
     Captures all fields from both WebSocket (ev=Q) and REST (/v3/quotes)
     wire formats.  New optional fields use defaults so existing code is

@@ -1,12 +1,13 @@
-"""Polygon.io live WebSocket feed — real-time L1 quote and trade streaming.
+"""Massive live WebSocket feed (formerly Polygon.io) — real-time L1 quote and
+trade streaming.
 
 Implements the ``MarketDataSource`` protocol for live and paper trading.
-Uses the ``websockets`` library directly (not the Polygon client) so that
+Uses the ``websockets`` library directly (not the Massive SDK client) so that
 raw bytes are available for the ``MarketDataNormalizer`` protocol contract.
 
 Architecture:
   - Background thread runs an asyncio event loop with the WS connection
-  - Raw frames → ``PolygonNormalizer.on_message()`` → canonical events
+  - Raw frames → ``MassiveNormalizer.on_message()`` → canonical events
   - Events buffered in a ``queue.Queue`` (thread-safe, bounded)
   - ``events()`` yields from the queue, blocking when empty
   - Reconnection with exponential backoff on disconnect
@@ -25,20 +26,20 @@ from collections.abc import Iterator, Sequence
 
 from feelies.core.clock import Clock
 from feelies.core.events import NBBOQuote, Trade
-from feelies.ingestion.polygon_normalizer import PolygonNormalizer
+from feelies.ingestion.massive_normalizer import MassiveNormalizer
 
 logger = logging.getLogger(__name__)
 
 _SENTINEL = object()
-_DEFAULT_WS_URL = "wss://socket.polygon.io/stocks"
+_DEFAULT_WS_URL = "wss://socket.massive.com/stocks"
 _MAX_QUEUE_SIZE = 100_000
 _INITIAL_BACKOFF_S = 1.0
 _MAX_BACKOFF_S = 60.0
 _BACKOFF_MULTIPLIER = 2.0
 
 
-class PolygonLiveFeed:
-    """Real-time market data source via Polygon.io WebSocket.
+class MassiveLiveFeed:
+    """Real-time market data source via Massive WebSocket.
 
     Lifecycle:
       1. Construct with API key, symbols, normalizer, clock
@@ -63,7 +64,7 @@ class PolygonLiveFeed:
         self,
         api_key: str,
         symbols: Sequence[str],
-        normalizer: PolygonNormalizer,
+        normalizer: MassiveNormalizer,
         clock: Clock,
         ws_url: str = _DEFAULT_WS_URL,
     ) -> None:
@@ -107,7 +108,7 @@ class PolygonLiveFeed:
         self._stop_event.clear()
         self._thread = threading.Thread(
             target=self._run_loop,
-            name="polygon-ws-feed",
+            name="massive-ws-feed",
             daemon=True,
         )
         self._thread.start()
@@ -131,7 +132,7 @@ class PolygonLiveFeed:
         try:
             self._loop.run_until_complete(self._connect_with_retry())
         except Exception:
-            logger.exception("polygon_ws: event loop terminated unexpectedly")
+            logger.exception("massive_ws: event loop terminated unexpectedly")
         finally:
             self._loop.close()
             self._loop = None
@@ -143,8 +144,8 @@ class PolygonLiveFeed:
             import websockets  # pyright: ignore[reportMissingImports]
         except ImportError as exc:
             raise ImportError(
-                "websockets is required for PolygonLiveFeed. "
-                "Install it with: pip install 'feelies[polygon]'"
+                "websockets is required for MassiveLiveFeed. "
+                "Install it with: pip install 'feelies[massive]'"
             ) from exc
 
         backoff = _INITIAL_BACKOFF_S
@@ -162,7 +163,7 @@ class PolygonLiveFeed:
                 if self._stop_event.is_set():
                     return
                 logger.warning(
-                    "polygon_ws: connection lost, retrying in %.1fs",
+                    "massive_ws: connection lost, retrying in %.1fs",
                     backoff,
                     exc_info=True,
                 )
@@ -172,19 +173,19 @@ class PolygonLiveFeed:
     async def _authenticate(self, ws: object) -> None:
         """Send auth message and validate the response.
 
-        Polygon responds with a JSON array; a successful auth contains
+        Massive responds with a JSON array; a successful auth contains
         ``{"ev": "status", "status": "auth_success", ...}``.
         """
         auth_msg = json.dumps({"action": "auth", "params": self._api_key})
         await ws.send(auth_msg)  # type: ignore[union-attr]
         raw = await ws.recv()  # type: ignore[union-attr]
-        logger.info("polygon_ws: auth response: %s", raw)
+        logger.info("massive_ws: auth response: %s", raw)
         self._validate_status_response(raw, "auth_success", "authentication")
 
     async def _subscribe(self, ws: object) -> None:
         """Subscribe to quote and trade channels and validate the response.
 
-        Polygon responds with ``{"ev": "status", "status": "success", ...}``
+        Massive responds with ``{"ev": "status", "status": "success", ...}``
         for each successfully subscribed channel.
         """
         channels = []
@@ -197,7 +198,7 @@ class PolygonLiveFeed:
         })
         await ws.send(sub_msg)  # type: ignore[union-attr]
         raw = await ws.recv()  # type: ignore[union-attr]
-        logger.info("polygon_ws: subscribe response: %s", raw)
+        logger.info("massive_ws: subscribe response: %s", raw)
         self._validate_status_response(raw, "success", "subscription")
 
     @staticmethod
@@ -206,9 +207,9 @@ class PolygonLiveFeed:
         expected_status: str,
         action_name: str,
     ) -> None:
-        """Check that a Polygon status response indicates success.
+        """Check that a Massive status response indicates success.
 
-        Polygon sends JSON arrays of status messages.  At least one
+        Massive sends JSON arrays of status messages.  At least one
         element must carry the expected status string.  Raises
         ``ConnectionError`` on failure so the reconnect-with-backoff
         loop handles it like any other connection problem.
@@ -217,7 +218,7 @@ class PolygonLiveFeed:
             payload = json.loads(raw)
         except (json.JSONDecodeError, TypeError) as exc:
             raise ConnectionError(
-                f"polygon_ws: {action_name} response not valid JSON: {raw!r}"
+                f"massive_ws: {action_name} response not valid JSON: {raw!r}"
             ) from exc
 
         messages = payload if isinstance(payload, list) else [payload]
@@ -226,7 +227,7 @@ class PolygonLiveFeed:
                 return
 
         raise ConnectionError(
-            f"polygon_ws: {action_name} failed — expected status "
+            f"massive_ws: {action_name} failed — expected status "
             f"'{expected_status}', got: {raw!r}"
         )
 
@@ -245,13 +246,13 @@ class PolygonLiveFeed:
             events = self._normalizer.on_message(
                 raw_bytes,
                 received_ns,
-                "polygon_ws",
+                "massive_ws",
             )
             for event in events:
                 try:
                     self._queue.put_nowait(event)
                 except queue.Full:
                     logger.warning(
-                        "polygon_ws: queue full, dropping event for %s",
+                        "massive_ws: queue full, dropping event for %s",
                         event.symbol,
                     )

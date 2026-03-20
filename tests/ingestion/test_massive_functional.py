@@ -1,6 +1,6 @@
-"""Functional Polygon ingestion tests against live REST and WebSocket APIs.
+"""Functional Massive ingestion tests against live REST and WebSocket APIs.
 
-These tests are intentionally opt-in and require a real Polygon API key.
+These tests are intentionally opt-in and require a real Massive API key.
 They also skip automatically when the market is not producing live stock
 quote/trade traffic within the configured timeout window.
 """
@@ -19,9 +19,9 @@ import pytest
 
 from feelies.core.clock import SimulatedClock, WallClock
 from feelies.core.events import NBBOQuote, Trade
-from feelies.ingestion.polygon_ingestor import PolygonHistoricalIngestor
-from feelies.ingestion.polygon_normalizer import PolygonNormalizer
-from feelies.ingestion.polygon_ws import PolygonLiveFeed
+from feelies.ingestion.massive_ingestor import MassiveHistoricalIngestor
+from feelies.ingestion.massive_normalizer import MassiveNormalizer
+from feelies.ingestion.massive_ws import MassiveLiveFeed
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 pytestmark = pytest.mark.functional
@@ -33,33 +33,33 @@ _WS_TIMEOUT_S = 20
 
 
 def _require_api_key() -> str:
-    api_key = os.getenv("POLYGON_API_KEY")
+    api_key = os.getenv("MASSIVE_API_KEY")
     if not api_key:
-        pytest.skip("Set POLYGON_API_KEY to run live Polygon functional tests.")
+        pytest.skip("Set MASSIVE_API_KEY to run live Massive functional tests.")
     return api_key
 
 
 def _symbol() -> str:
-    return os.getenv("POLYGON_FUNCTIONAL_SYMBOL", _DEFAULT_SYMBOL).upper()
+    return os.getenv("MASSIVE_FUNCTIONAL_SYMBOL", _DEFAULT_SYMBOL).upper()
 
 
 def _rest_record_limit() -> int:
-    value = os.getenv("POLYGON_FUNCTIONAL_REST_RECORD_LIMIT")
+    value = os.getenv("MASSIVE_FUNCTIONAL_REST_RECORD_LIMIT")
     if value is None:
         return _REST_RECORD_LIMIT
     parsed = int(value)
     if parsed <= 0:
-        raise ValueError("POLYGON_FUNCTIONAL_REST_RECORD_LIMIT must be positive.")
+        raise ValueError("MASSIVE_FUNCTIONAL_REST_RECORD_LIMIT must be positive.")
     return parsed
 
 
 def _ws_timeout_s() -> int:
-    value = os.getenv("POLYGON_FUNCTIONAL_WS_TIMEOUT_S")
+    value = os.getenv("MASSIVE_FUNCTIONAL_WS_TIMEOUT_S")
     if value is None:
         return _WS_TIMEOUT_S
     parsed = int(value)
     if parsed <= 0:
-        raise ValueError("POLYGON_FUNCTIONAL_WS_TIMEOUT_S must be positive.")
+        raise ValueError("MASSIVE_FUNCTIONAL_WS_TIMEOUT_S must be positive.")
     return parsed
 
 
@@ -106,7 +106,7 @@ def _find_recent_session_with_data(client: Any, symbol: str) -> str:
             return session_date.isoformat()
 
     pytest.skip(
-        f"No recent Polygon quote/trade data found for {symbol} in the last "
+        f"No recent Massive quote/trade data found for {symbol} in the last "
         f"{_REST_LOOKBACK_DAYS} calendar days."
     )
 
@@ -127,7 +127,7 @@ class _LimitedRESTClient:
         return itertools.islice(self._client.list_trades(*args, **kwargs), self._max_records)
 
 
-def _next_live_event(feed: PolygonLiveFeed, timeout_s: int) -> NBBOQuote | Trade:
+def _next_live_event(feed: MassiveLiveFeed, timeout_s: int) -> NBBOQuote | Trade:
     def _read_one() -> NBBOQuote | Trade:
         return next(feed.events())
 
@@ -138,36 +138,36 @@ def _next_live_event(feed: PolygonLiveFeed, timeout_s: int) -> NBBOQuote | Trade
         except TimeoutError:
             feed.stop()
             pytest.skip(
-                f"No live Polygon stock quote/trade arrived for {_symbol()} within "
+                f"No live Massive stock quote/trade arrived for {_symbol()} within "
                 f"{timeout_s}s. The market may be closed or inactive."
             )
 
 
-def test_rest_ingest_uses_live_polygon_data() -> None:
-    polygon = pytest.importorskip("polygon")
+def test_rest_ingest_uses_live_massive_data() -> None:
+    massive = pytest.importorskip("massive")
 
     api_key = _require_api_key()
     symbol = _symbol()
     record_limit = _rest_record_limit()
 
-    discovery_client = polygon.RESTClient(api_key=api_key)
+    discovery_client = massive.RESTClient(api_key=api_key)
     session_date = _find_recent_session_with_data(discovery_client, symbol)
 
     limited_client = _LimitedRESTClient(
-        client=polygon.RESTClient(api_key=api_key),
+        client=massive.RESTClient(api_key=api_key),
         max_records=record_limit,
     )
     clock = SimulatedClock(start_ns=1_700_000_000_000_000_000)
-    normalizer = PolygonNormalizer(clock)
+    normalizer = MassiveNormalizer(clock)
     event_log = InMemoryEventLog()
-    ingestor = PolygonHistoricalIngestor(
+    ingestor = MassiveHistoricalIngestor(
         api_key=api_key,
         normalizer=normalizer,
         event_log=event_log,
         clock=clock,
     )
 
-    with patch("polygon.RESTClient", return_value=limited_client):
+    with patch("massive.RESTClient", return_value=limited_client):
         result = ingestor.ingest([symbol], session_date, session_date)
 
     events = list(event_log.replay())
@@ -180,16 +180,16 @@ def test_rest_ingest_uses_live_polygon_data() -> None:
     assert any(isinstance(event, Trade) for event in events)
 
 
-def test_websocket_feed_emits_live_polygon_event() -> None:
+def test_websocket_feed_emits_live_massive_event() -> None:
     pytest.importorskip("websockets")
 
     api_key = _require_api_key()
     symbol = _symbol()
     timeout_s = _ws_timeout_s()
-    feed = PolygonLiveFeed(
+    feed = MassiveLiveFeed(
         api_key=api_key,
         symbols=[symbol],
-        normalizer=PolygonNormalizer(WallClock()),
+        normalizer=MassiveNormalizer(WallClock()),
         clock=WallClock(),
     )
 

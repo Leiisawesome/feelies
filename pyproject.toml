@@ -15,9 +15,9 @@ dev = [
     "types-PyYAML>=6.0",
     "python-dotenv>=1.0",
 ]
-polygon = [
+massive = [
     "websockets>=13.0",
-    "polygon-api-client>=1.14",
+    "massive>=2.3",
 ]
 
 [build-system]

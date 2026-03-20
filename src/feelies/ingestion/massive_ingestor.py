@@ -1,14 +1,15 @@
-"""Polygon.io historical data ingestor — batch ETL for backtest datasets.
+"""Massive historical data ingestor (formerly Polygon.io) — batch ETL for
+backtest datasets.
 
-Downloads historical quotes and trades from the Polygon.io REST API,
-normalizes them in page-sized chunks via ``PolygonNormalizer``, and
+Downloads historical quotes and trades from the Massive REST API,
+normalizes them in page-sized chunks via ``MassiveNormalizer``, and
 persists via ``EventLog.append_batch()``.
 
 This is NOT a ``MarketDataSource``.  It runs once (offline) to populate
 an ``EventLog`` that is later replayed tick-by-tick through ``ReplayFeed``.
 
-Uses the ``polygon-api-client`` (``polygon`` package) ``RESTClient`` for
-paginated access to ``/v3/quotes/{ticker}`` and ``/v3/trades/{ticker}``.
+Uses the ``massive`` package ``RESTClient`` for paginated access to
+``/v3/quotes/{ticker}`` and ``/v3/trades/{ticker}``.
 
 Supports checkpoint-based resumability: if a ``BackfillCheckpoint`` store
 is provided, completed (symbol, feed_type) pairs are skipped on retry,
@@ -27,11 +28,11 @@ from typing import TYPE_CHECKING, Any, Protocol
 from feelies.core.clock import Clock
 from feelies.core.events import NBBOQuote, Trade
 from feelies.ingestion.data_integrity import DataHealth
-from feelies.ingestion.polygon_normalizer import PolygonNormalizer
+from feelies.ingestion.massive_normalizer import MassiveNormalizer
 from feelies.storage.event_log import EventLog
 
 if TYPE_CHECKING:
-    from polygon import RESTClient  # pyright: ignore[reportMissingImports]
+    from massive import RESTClient  # pyright: ignore[reportMissingImports]
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +84,8 @@ class InMemoryCheckpoint:
         self._done.add((symbol, feed_type))
 
 
-class PolygonHistoricalIngestor:
-    """Batch ETL pipeline: Polygon REST API -> normalize -> EventLog.
+class MassiveHistoricalIngestor:
+    """Batch ETL pipeline: Massive REST API -> normalize -> EventLog.
 
     Lifecycle:
       1. Construct with API key, normalizer, event_log, clock
@@ -105,7 +106,7 @@ class PolygonHistoricalIngestor:
     def __init__(
         self,
         api_key: str,
-        normalizer: PolygonNormalizer,
+        normalizer: MassiveNormalizer,
         event_log: EventLog,
         clock: Clock,
         checkpoint: BackfillCheckpoint | None = None,
@@ -136,11 +137,11 @@ class PolygonHistoricalIngestor:
         store.  On retry, already-completed pairs are skipped.
         """
         try:
-            from polygon import RESTClient as _RESTClient  # pyright: ignore[reportMissingImports]
+            from massive import RESTClient as _RESTClient  # pyright: ignore[reportMissingImports]
         except ImportError as exc:
             raise ImportError(
-                "polygon-api-client is required for PolygonHistoricalIngestor. "
-                "Install it with: pip install 'feelies[polygon]'"
+                "massive package is required for MassiveHistoricalIngestor. "
+                "Install it with: pip install 'feelies[massive]'"
             ) from exc
 
         client: RESTClient = _RESTClient(api_key=self._api_key)
@@ -151,7 +152,7 @@ class PolygonHistoricalIngestor:
 
         for symbol in symbols:
             logger.info(
-                "polygon_ingestor: ingesting %s from %s to %s",
+                "massive_ingestor: ingesting %s from %s to %s",
                 symbol, start_date, end_date,
             )
 
@@ -163,7 +164,7 @@ class PolygonHistoricalIngestor:
 
             completed_symbols.add(symbol)
             logger.info(
-                "polygon_ingestor: completed %s, cumulative events: %d",
+                "massive_ingestor: completed %s, cumulative events: %d",
                 symbol, total_events,
             )
 
@@ -206,7 +207,7 @@ class PolygonHistoricalIngestor:
             )
         except Exception:
             logger.exception(
-                "polygon_ingestor: failed to start quotes iteration for %s",
+                "massive_ingestor: failed to start quotes iteration for %s",
                 symbol,
             )
             return 0, 0
@@ -252,7 +253,7 @@ class PolygonHistoricalIngestor:
             )
         except Exception:
             logger.exception(
-                "polygon_ingestor: failed to start trades iteration for %s",
+                "massive_ingestor: failed to start trades iteration for %s",
                 symbol,
             )
             return 0, 0
@@ -291,7 +292,7 @@ class PolygonHistoricalIngestor:
                 continue
 
             raw = json.dumps(rec_dict).encode("utf-8")
-            events = self._normalizer.on_message(raw, received_ns, "polygon_rest")
+            events = self._normalizer.on_message(raw, received_ns, "massive_rest")
             all_events.extend(events)
 
         if all_events:
@@ -324,7 +325,7 @@ class PolygonHistoricalIngestor:
 
         total_pages = q_pages + t_pages
         logger.info(
-            "polygon_ingestor: downloaded %d raw quotes + %d raw trades for %s (%d pages)",
+            "massive_ingestor: downloaded %d raw quotes + %d raw trades for %s (%d pages)",
             len(raw_quotes), len(raw_trades), symbol, total_pages,
         )
 
@@ -346,7 +347,7 @@ class PolygonHistoricalIngestor:
         for rec_dict in merged:
             rec_dict.pop("__type_rank__", None)
             raw = json.dumps(rec_dict).encode("utf-8")
-            events = self._normalizer.on_message(raw, received_ns, "polygon_rest")
+            events = self._normalizer.on_message(raw, received_ns, "massive_rest")
             all_events.extend(events)
 
         if all_events:
@@ -376,7 +377,7 @@ def _download_quotes_raw(
         )
     except Exception:
         logger.exception(
-            "polygon_ingestor: failed to start quotes iteration for %s", symbol,
+            "massive_ingestor: failed to start quotes iteration for %s", symbol,
         )
         return [], 0
 
@@ -422,7 +423,7 @@ def _download_trades_raw(
         )
     except Exception:
         logger.exception(
-            "polygon_ingestor: failed to start trades iteration for %s", symbol,
+            "massive_ingestor: failed to start trades iteration for %s", symbol,
         )
         return [], 0
 
@@ -448,9 +449,9 @@ def _download_trades_raw(
 
 
 def _model_to_dict(record: Any, symbol: str) -> dict[str, Any]:
-    """Convert a polygon-api-client model object to a dict.
+    """Convert a massive model object to a dict.
 
-    The polygon ``@modelclass`` decorator stores only explicitly-set
+    The massive ``@modelclass`` decorator stores only explicitly-set
     fields in ``__dict__``; class-level ``None`` defaults are invisible.
     We iterate through ``__annotations__`` on the model class to capture
     all declared fields, including those left at their default ``None``.

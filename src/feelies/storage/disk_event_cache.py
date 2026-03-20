@@ -1,7 +1,7 @@
 """Per-day disk cache for normalized market events.
 
 Stores JSONL.gz files with companion manifests per (symbol, date) pair.
-Enables repeat backtests to skip the Polygon API entirely.  Corrupt or
+Enables repeat backtests to skip the Massive API entirely.  Corrupt or
 stale caches fall through to API download (invariant 11 — fail-safe).
 
 Cache layout::

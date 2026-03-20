@@ -1,12 +1,12 @@
-"""Polygon.io normalizer — transforms raw WebSocket and REST wire formats
-into canonical NBBOQuote / Trade events.
+"""Massive normalizer (formerly Polygon.io) — transforms raw WebSocket and REST
+wire formats into canonical NBBOQuote / Trade events.
 
 Implements the MarketDataNormalizer protocol.  Single entry point for all
-Polygon market data.  Detects wire format via the ``source`` parameter
-(``"polygon_ws"`` vs ``"polygon_rest"``).
+Massive market data.  Detects wire format via the ``source`` parameter
+(``"massive_ws"`` vs ``"massive_rest"``).
 
 Responsibilities (per data-engineering skill):
-  - Parse raw JSON into typed events with full Polygon.io field coverage
+  - Parse raw JSON into typed events with full Massive field coverage
   - Assign correlation IDs at the ingestion boundary (invariant 13)
   - Track per-symbol sequence numbers for gap detection
   - Eliminate exact duplicates
@@ -31,18 +31,18 @@ from feelies.ingestion.data_integrity import (
 
 logger = logging.getLogger(__name__)
 
-_WS_SOURCE = "polygon_ws"
-_REST_SOURCE = "polygon_rest"
+_WS_SOURCE = "massive_ws"
+_REST_SOURCE = "massive_rest"
 _MS_TO_NS = 1_000_000
 
 
-class PolygonNormalizer:
-    """Transforms raw Polygon.io messages into canonical market events.
+class MassiveNormalizer:
+    """Transforms raw Massive messages into canonical market events.
 
     Wire-format routing:
-      ``polygon_ws``   — JSON array, each element has ``ev`` (Q or T).
+      ``massive_ws``   — JSON array, each element has ``ev`` (Q or T).
                          Timestamps in milliseconds.
-      ``polygon_rest`` — Single JSON object with verbose field names.
+      ``massive_rest`` — Single JSON object with verbose field names.
                          Timestamps in nanoseconds.
     """
 
@@ -68,7 +68,7 @@ class PolygonNormalizer:
         self._health_machines: dict[str, StateMachine[DataHealth]] = {}
         self._transition_callback = transition_callback
         # Keyed by (symbol, feed_type) — quotes and trades have independent
-        # Polygon sequence_number spaces and must be tracked separately to
+        # Massive sequence_number spaces and must be tracked separately to
         # avoid false dedup and spurious gap detection when interleaved.
         self._last_seen: dict[tuple[str, str], tuple[int, int]] = {}
         self._duplicates_filtered: int = 0
@@ -84,7 +84,7 @@ class PolygonNormalizer:
         try:
             data = json.loads(raw)
         except (json.JSONDecodeError, UnicodeDecodeError):
-            logger.warning("polygon_normalizer: unparseable message from %s", source)
+            logger.warning("massive_normalizer: unparseable message from %s", source)
             return []
 
         if source == _WS_SOURCE:
@@ -92,7 +92,7 @@ class PolygonNormalizer:
         if source == _REST_SOURCE:
             return self._parse_rest(data, received_ns)
 
-        logger.warning("polygon_normalizer: unknown source %r", source)
+        logger.warning("massive_normalizer: unknown source %r", source)
         return []
 
     def health(self, symbol: str) -> DataHealth:
@@ -172,7 +172,7 @@ class PolygonNormalizer:
                 tape=int(msg.get("z", 0)),
             )
         except (KeyError, ValueError, TypeError) as exc:
-            logger.warning("polygon_normalizer: bad WS quote: %s", exc)
+            logger.warning("massive_normalizer: bad WS quote: %s", exc)
             self._mark_corrupted(msg.get("sym", "UNKNOWN"))
             return None
 
@@ -214,7 +214,7 @@ class PolygonNormalizer:
                 trf_timestamp_ns=trf_ts,
             )
         except (KeyError, ValueError, TypeError) as exc:
-            logger.warning("polygon_normalizer: bad WS trade: %s", exc)
+            logger.warning("massive_normalizer: bad WS trade: %s", exc)
             self._mark_corrupted(msg.get("sym", "UNKNOWN"))
             return None
 
@@ -285,7 +285,7 @@ class PolygonNormalizer:
                 trf_timestamp_ns=trf_ts,
             )
         except (KeyError, ValueError, TypeError) as exc:
-            logger.warning("polygon_normalizer: bad REST quote: %s", exc)
+            logger.warning("massive_normalizer: bad REST quote: %s", exc)
             self._mark_corrupted(rec.get("ticker", "UNKNOWN"))
             return None
 
@@ -329,7 +329,7 @@ class PolygonNormalizer:
                 correction=int(rec["correction"]) if "correction" in rec else None,
             )
         except (KeyError, ValueError, TypeError) as exc:
-            logger.warning("polygon_normalizer: bad REST trade: %s", exc)
+            logger.warning("massive_normalizer: bad REST trade: %s", exc)
             self._mark_corrupted(rec.get("ticker", "UNKNOWN"))
             return None
 
@@ -377,7 +377,7 @@ class PolygonNormalizer:
                     trigger=f"seq_gap:{feed_type}:{prev_seq}->{seq_num}",
                 )
             logger.info(
-                "polygon_normalizer: gap detected for %s/%s: %d -> %d",
+                "massive_normalizer: gap detected for %s/%s: %d -> %d",
                 symbol, feed_type, prev_seq, seq_num,
             )
         elif seq_num == prev_seq + 1 and sm.state == DataHealth.GAP_DETECTED:
@@ -386,7 +386,7 @@ class PolygonNormalizer:
                 trigger=f"seq_continuity_resumed:{feed_type}:{seq_num}",
             )
             logger.info(
-                "polygon_normalizer: gap resolved for %s/%s at seq %d",
+                "massive_normalizer: gap resolved for %s/%s at seq %d",
                 symbol, feed_type, seq_num,
             )
 

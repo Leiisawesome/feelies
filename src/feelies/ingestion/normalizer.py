@@ -1,6 +1,6 @@
 """Market data normalizer protocol — the ingestion layer's core contract.
 
-Transforms raw feed data from external sources (Polygon.io WebSocket,
+Transforms raw feed data from external sources (Massive WebSocket, formerly Polygon.io;
 REST) into validated canonical events (NBBOQuote, Trade).  Assigns
 correlation IDs at the system boundary.  Validates data integrity:
 detects gaps, duplicates, and schema violations.  Drives per-symbol
@@ -50,7 +50,7 @@ class MarketDataNormalizer(Protocol):
             raw: Raw message bytes from the feed.
             received_ns: Nanosecond timestamp when the message was
                 received (from injectable clock, not wall time).
-            source: Feed identifier (e.g., ``"polygon_ws"``).
+            source: Feed identifier (e.g., ``"massive_ws"``).
 
         Returns:
             Zero or more canonical events.  Empty if the message is

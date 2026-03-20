@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Backtest runner — connects real Polygon data to the platform pipeline.
+"""Backtest runner — connects real Massive data to the platform pipeline.
 
 Usage:
     python scripts/run_backtest.py --symbol AAPL --date 2024-01-15
@@ -43,7 +43,7 @@ from feelies.core.events import (
 )
 from feelies.core.identifiers import SequenceGenerator, make_correlation_id
 from feelies.core.platform_config import OperatingMode, PlatformConfig
-from feelies.ingestion.polygon_ingestor import IngestResult
+from feelies.ingestion.massive_ingestor import IngestResult
 from feelies.kernel.macro import MacroState
 from feelies.monitoring.in_memory import InMemoryMetricCollector
 from feelies.storage.disk_event_cache import DiskEventCache
@@ -79,7 +79,7 @@ class BusRecorder:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Run a historical backtest with real Polygon L1 data.",
+        description="Run a historical backtest with real Massive L1 data.",
     )
     p.add_argument(
         "--symbol",
@@ -108,7 +108,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--demo",
         action="store_true",
-        help="Run with synthetic 8-tick data (no Polygon API key required)",
+        help="Run with synthetic 8-tick data (no Massive API key required)",
     )
     p.add_argument(
         "--cache-dir",
@@ -173,8 +173,8 @@ def ingest_data(
     no_cache: bool = False,
 ) -> tuple[InMemoryEventLog, IngestResult, list[DaySource]]:
     """Download historical data with per-day cache and parallel download."""
-    from feelies.ingestion.polygon_ingestor import PolygonHistoricalIngestor
-    from feelies.ingestion.polygon_normalizer import PolygonNormalizer
+    from feelies.ingestion.massive_ingestor import MassiveHistoricalIngestor
+    from feelies.ingestion.massive_normalizer import MassiveNormalizer
 
     cache: DiskEventCache | None = None
     if not no_cache:
@@ -204,10 +204,10 @@ def ingest_data(
                     continue
 
             clock = SimulatedClock(start_ns=1_000_000_000)
-            normalizer = PolygonNormalizer(clock)
+            normalizer = MassiveNormalizer(clock)
             day_log = InMemoryEventLog()
 
-            ingestor = PolygonHistoricalIngestor(
+            ingestor = MassiveHistoricalIngestor(
                 api_key=api_key,
                 normalizer=normalizer,
                 event_log=day_log,
@@ -288,7 +288,7 @@ def _make_demo_quotes() -> list[NBBOQuote]:
 
 
 def run_demo() -> tuple[object, BusRecorder, IngestResult, PlatformConfig, str, str]:
-    """Run the backtest with synthetic 8-tick data (no Polygon needed)."""
+    """Run the backtest with synthetic 8-tick data (no Massive API needed)."""
     tmp_dir = tempfile.mkdtemp(prefix="feelies_demo_")
     try:
         alpha_dst = Path(tmp_dir) / "mean_reversion.alpha.yaml"
@@ -660,7 +660,7 @@ def print_verification(results: list[tuple[str, bool, str]]) -> bool:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
-    # ── Demo mode: synthetic data, no Polygon needed ─────────────
+    # ── Demo mode: synthetic data, no Massive API needed ─────────
     if args.demo:
         print("Running demo backtest with synthetic 8-tick data ...", flush=True)
         orchestrator, recorder, ingest_result, config, symbol_str, date_range = run_demo()
@@ -683,7 +683,7 @@ def main(argv: list[str] | None = None) -> int:
         all_passed = print_verification(results)
         return 0 if all_passed else 2
 
-    # ── Live mode: requires Polygon API key ──────────────────────
+    # ── Live mode: requires Massive API key ──────────────────────
     if not args.date:
         print("ERROR: --date is required (or use --demo for synthetic data)", file=sys.stderr)
         return 1
@@ -695,12 +695,12 @@ def main(argv: list[str] | None = None) -> int:
     except ImportError:
         pass  # dotenv is optional; env vars can be set directly
 
-    api_key = os.getenv("POLYGON_API_KEY")
+    api_key = os.getenv("MASSIVE_API_KEY")
     if not api_key:
         print(
-            "ERROR: POLYGON_API_KEY not set.\n"
+            "ERROR: MASSIVE_API_KEY not set.\n"
             "Set it in your environment or in a .env file.\n"
-            "  export POLYGON_API_KEY=your_key_here",
+            "  export MASSIVE_API_KEY=your_key_here",
             file=sys.stderr,
         )
         return 1
@@ -740,7 +740,7 @@ def main(argv: list[str] | None = None) -> int:
     except ImportError as exc:
         print(
             f"ERROR: {exc}\n"
-            "Install the polygon extra: pip install 'feelies[polygon]'",
+            "Install the massive extra: pip install 'feelies[massive]'",
             file=sys.stderr,
         )
         return 1

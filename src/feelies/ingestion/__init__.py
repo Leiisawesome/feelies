@@ -1,15 +1,15 @@
-"""Market data ingestion layer — normalize Polygon L1 NBBO into canonical events."""
+"""Market data ingestion layer — normalize Massive L1 NBBO into canonical events."""
 
 from feelies.ingestion.data_integrity import DataHealth, create_data_integrity_machine
-from feelies.ingestion.normalizer import MarketDataNormalizer
-from feelies.ingestion.polygon_ingestor import (
+from feelies.ingestion.massive_ingestor import (
     BackfillCheckpoint,
     IngestResult,
     InMemoryCheckpoint,
-    PolygonHistoricalIngestor,
+    MassiveHistoricalIngestor,
 )
-from feelies.ingestion.polygon_normalizer import PolygonNormalizer
-from feelies.ingestion.polygon_ws import PolygonLiveFeed
+from feelies.ingestion.massive_normalizer import MassiveNormalizer
+from feelies.ingestion.massive_ws import MassiveLiveFeed
+from feelies.ingestion.normalizer import MarketDataNormalizer
 from feelies.ingestion.replay_feed import ReplayFeed
 
 __all__ = [
@@ -18,9 +18,9 @@ __all__ = [
     "IngestResult",
     "InMemoryCheckpoint",
     "MarketDataNormalizer",
-    "PolygonHistoricalIngestor",
-    "PolygonLiveFeed",
-    "PolygonNormalizer",
+    "MassiveHistoricalIngestor",
+    "MassiveLiveFeed",
+    "MassiveNormalizer",
     "ReplayFeed",
     "create_data_integrity_machine",
 ]

@@ -1,9 +1,9 @@
 """Integration tests for parallel ingestion + disk cache pipeline.
 
-Tests the full pipeline against the live Polygon API:
+Tests the full pipeline against the live Massive API:
   parallel download → merge-sort → sequential normalize → disk cache → reload
 
-Requires POLYGON_API_KEY.  Uses a small record limit to keep API calls fast.
+Requires MASSIVE_API_KEY.  Uses a small record limit to keep API calls fast.
 Skips automatically when the key is absent or no recent data is found.
 """
 
@@ -28,12 +28,12 @@ sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import NBBOQuote, Trade
 from feelies.core.identifiers import SequenceGenerator, make_correlation_id
-from feelies.ingestion.polygon_ingestor import (
-    PolygonHistoricalIngestor,
+from feelies.ingestion.massive_ingestor import (
+    MassiveHistoricalIngestor,
     _download_quotes_raw,
     _download_trades_raw,
 )
-from feelies.ingestion.polygon_normalizer import PolygonNormalizer
+from feelies.ingestion.massive_normalizer import MassiveNormalizer
 from feelies.storage.disk_event_cache import DiskEventCache
 from feelies.storage.memory_event_log import InMemoryEventLog
 
@@ -43,9 +43,9 @@ _RECORD_LIMIT = 200
 
 
 def _require_api_key() -> str:
-    api_key = os.getenv("POLYGON_API_KEY")
+    api_key = os.getenv("MASSIVE_API_KEY")
     if not api_key:
-        pytest.skip("Set POLYGON_API_KEY to run live Polygon integration tests.")
+        pytest.skip("Set MASSIVE_API_KEY to run live Massive integration tests.")
     return api_key
 
 
@@ -102,22 +102,22 @@ def _resequence(events: list[NBBOQuote | Trade]) -> list[NBBOQuote | Trade]:
 
 
 @pytest.fixture(scope="module")
-def polygon_client() -> Any:
-    polygon = pytest.importorskip("polygon")
+def massive_client() -> Any:
+    massive = pytest.importorskip("massive")
     api_key = _require_api_key()
-    return polygon.RESTClient(api_key=api_key)
+    return massive.RESTClient(api_key=api_key)
 
 
 @pytest.fixture(scope="module")
-def trading_day(polygon_client: Any) -> str:
-    return _find_recent_trading_day(polygon_client, "AAPL")
+def trading_day(massive_client: Any) -> str:
+    return _find_recent_trading_day(massive_client, "AAPL")
 
 
 @pytest.fixture(scope="module")
-def limited_client(polygon_client: Any) -> _LimitedClient:
-    polygon = pytest.importorskip("polygon")
+def limited_client(massive_client: Any) -> _LimitedClient:
+    massive = pytest.importorskip("massive")
     api_key = _require_api_key()
-    return _LimitedClient(polygon.RESTClient(api_key=api_key), _RECORD_LIMIT)
+    return _LimitedClient(massive.RESTClient(api_key=api_key), _RECORD_LIMIT)
 
 
 # ── Test 1: Raw download returns data ────────────────────────────────
@@ -153,10 +153,10 @@ class TestParallelIngestChronological:
         self, limited_client: _LimitedClient, trading_day: str,
     ) -> None:
         clock = SimulatedClock(start_ns=1_000_000_000)
-        normalizer = PolygonNormalizer(clock)
+        normalizer = MassiveNormalizer(clock)
         event_log = InMemoryEventLog()
 
-        ingestor = PolygonHistoricalIngestor(
+        ingestor = MassiveHistoricalIngestor(
             api_key="unused",
             normalizer=normalizer,
             event_log=event_log,
@@ -180,10 +180,10 @@ class TestParallelIngestChronological:
         self, limited_client: _LimitedClient, trading_day: str,
     ) -> None:
         clock = SimulatedClock(start_ns=1_000_000_000)
-        normalizer = PolygonNormalizer(clock)
+        normalizer = MassiveNormalizer(clock)
         event_log = InMemoryEventLog()
 
-        ingestor = PolygonHistoricalIngestor(
+        ingestor = MassiveHistoricalIngestor(
             api_key="unused",
             normalizer=normalizer,
             event_log=event_log,
@@ -202,10 +202,10 @@ class TestParallelIngestChronological:
         self, limited_client: _LimitedClient, trading_day: str,
     ) -> None:
         clock = SimulatedClock(start_ns=1_000_000_000)
-        normalizer = PolygonNormalizer(clock)
+        normalizer = MassiveNormalizer(clock)
         event_log = InMemoryEventLog()
 
-        ingestor = PolygonHistoricalIngestor(
+        ingestor = MassiveHistoricalIngestor(
             api_key="unused",
             normalizer=normalizer,
             event_log=event_log,
@@ -223,10 +223,10 @@ class TestParallelIngestChronological:
         self, limited_client: _LimitedClient, trading_day: str,
     ) -> None:
         clock = SimulatedClock(start_ns=1_000_000_000)
-        normalizer = PolygonNormalizer(clock)
+        normalizer = MassiveNormalizer(clock)
         event_log = InMemoryEventLog()
 
-        ingestor = PolygonHistoricalIngestor(
+        ingestor = MassiveHistoricalIngestor(
             api_key="unused",
             normalizer=normalizer,
             event_log=event_log,
@@ -250,10 +250,10 @@ class TestDiskCacheIntegration:
         self, limited_client: _LimitedClient, trading_day: str, tmp_path: Path,
     ) -> None:
         clock = SimulatedClock(start_ns=1_000_000_000)
-        normalizer = PolygonNormalizer(clock)
+        normalizer = MassiveNormalizer(clock)
         event_log = InMemoryEventLog()
 
-        ingestor = PolygonHistoricalIngestor(
+        ingestor = MassiveHistoricalIngestor(
             api_key="unused",
             normalizer=normalizer,
             event_log=event_log,
@@ -300,10 +300,10 @@ class TestDiskCacheIntegration:
     ) -> None:
         """Second load from cache doesn't need the API client at all."""
         clock = SimulatedClock(start_ns=1_000_000_000)
-        normalizer = PolygonNormalizer(clock)
+        normalizer = MassiveNormalizer(clock)
         event_log = InMemoryEventLog()
 
-        ingestor = PolygonHistoricalIngestor(
+        ingestor = MassiveHistoricalIngestor(
             api_key="unused",
             normalizer=normalizer,
             event_log=event_log,
@@ -338,10 +338,10 @@ class TestResequencing:
         self, limited_client: _LimitedClient, trading_day: str, tmp_path: Path,
     ) -> None:
         clock = SimulatedClock(start_ns=1_000_000_000)
-        normalizer = PolygonNormalizer(clock)
+        normalizer = MassiveNormalizer(clock)
         event_log = InMemoryEventLog()
 
-        ingestor = PolygonHistoricalIngestor(
+        ingestor = MassiveHistoricalIngestor(
             api_key="unused",
             normalizer=normalizer,
             event_log=event_log,
@@ -363,10 +363,10 @@ class TestResequencing:
         self, limited_client: _LimitedClient, trading_day: str,
     ) -> None:
         clock = SimulatedClock(start_ns=1_000_000_000)
-        normalizer = PolygonNormalizer(clock)
+        normalizer = MassiveNormalizer(clock)
         event_log = InMemoryEventLog()
 
-        ingestor = PolygonHistoricalIngestor(
+        ingestor = MassiveHistoricalIngestor(
             api_key="unused",
             normalizer=normalizer,
             event_log=event_log,
@@ -390,10 +390,10 @@ class TestResequencing:
         self, limited_client: _LimitedClient, trading_day: str,
     ) -> None:
         clock = SimulatedClock(start_ns=1_000_000_000)
-        normalizer = PolygonNormalizer(clock)
+        normalizer = MassiveNormalizer(clock)
         event_log = InMemoryEventLog()
 
-        ingestor = PolygonHistoricalIngestor(
+        ingestor = MassiveHistoricalIngestor(
             api_key="unused",
             normalizer=normalizer,
             event_log=event_log,
@@ -423,9 +423,9 @@ class TestMultiDayCacheResequence:
         cache = DiskEventCache(tmp_path)
 
         clock1 = SimulatedClock(start_ns=1_000_000_000)
-        norm1 = PolygonNormalizer(clock1)
+        norm1 = MassiveNormalizer(clock1)
         log1 = InMemoryEventLog()
-        ing1 = PolygonHistoricalIngestor(
+        ing1 = MassiveHistoricalIngestor(
             api_key="unused", normalizer=norm1, event_log=log1, clock=clock1,
         )
         ing1.ingest_symbol_parallel(limited_client, "AAPL", trading_day, trading_day)
@@ -468,10 +468,10 @@ class TestFieldFidelity:
         self, limited_client: _LimitedClient, trading_day: str, tmp_path: Path,
     ) -> None:
         clock = SimulatedClock(start_ns=1_000_000_000)
-        normalizer = PolygonNormalizer(clock)
+        normalizer = MassiveNormalizer(clock)
         event_log = InMemoryEventLog()
 
-        ingestor = PolygonHistoricalIngestor(
+        ingestor = MassiveHistoricalIngestor(
             api_key="unused",
             normalizer=normalizer,
             event_log=event_log,
@@ -509,10 +509,10 @@ class TestFieldFidelity:
         self, limited_client: _LimitedClient, trading_day: str, tmp_path: Path,
     ) -> None:
         clock = SimulatedClock(start_ns=1_000_000_000)
-        normalizer = PolygonNormalizer(clock)
+        normalizer = MassiveNormalizer(clock)
         event_log = InMemoryEventLog()
 
-        ingestor = PolygonHistoricalIngestor(
+        ingestor = MassiveHistoricalIngestor(
             api_key="unused",
             normalizer=normalizer,
             event_log=event_log,

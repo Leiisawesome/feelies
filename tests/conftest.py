@@ -6,7 +6,7 @@ import os
 
 
 def pytest_configure() -> None:
-    """Load .env before test collection so POLYGON_API_KEY is available."""
+    """Load .env before test collection so MASSIVE_API_KEY is available."""
     try:
         from dotenv import load_dotenv
         load_dotenv()

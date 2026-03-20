@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from feelies.core.clock import SimulatedClock
-from feelies.ingestion.polygon_normalizer import PolygonNormalizer
+from feelies.ingestion.massive_normalizer import MassiveNormalizer
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 
@@ -16,9 +16,9 @@ def clock() -> SimulatedClock:
 
 
 @pytest.fixture
-def normalizer(clock: SimulatedClock) -> PolygonNormalizer:
-    """Polygon normalizer with deterministic clock."""
-    return PolygonNormalizer(clock=clock)
+def normalizer(clock: SimulatedClock) -> MassiveNormalizer:
+    """Massive normalizer with deterministic clock."""
+    return MassiveNormalizer(clock=clock)
 
 
 @pytest.fixture

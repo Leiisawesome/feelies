@@ -1,7 +1,7 @@
 """Replay feed — generic MarketDataSource adapter over EventLog.
 
 Reads from any ``EventLog.replay()`` and yields ``NBBOQuote`` / ``Trade``
-events tick-by-tick.  Polygon-agnostic — works with any EventLog that was
+events tick-by-tick.  Provider-agnostic — works with any EventLog that was
 populated through any ingestor.
 
 When a ``SimulatedClock`` is provided, advances the clock to each event's
