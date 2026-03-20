@@ -2,15 +2,34 @@
 name: data-engineering
 description: >
   Data engineering standards for high-fidelity ingestion, validation, and storage
-  of L1 NBBO and trade data from Polygon.io. Use when building data pipelines,
-  designing storage schemas, implementing gap detection or deduplication, working
-  on historical backfill, or reasoning about data integrity, replay invariants,
-  or recovery protocols.
+  of L1 NBBO and trade data from Massive (formerly Polygon.io). Use when building
+  data pipelines, designing storage schemas, implementing gap detection or
+  deduplication, working on historical backfill, or reasoning about data integrity,
+  replay invariants, or recovery protocols.
 ---
 
 # Data Engineering — Market Data & Storage
 
-High-fidelity ingestion and storage of L1 NBBO and trades.
+High-fidelity ingestion and storage of L1 NBBO and trades via the
+Massive API (formerly Polygon.io, rebranded Oct 2025).
+
+## Upstream SDK
+
+| Item | Value |
+|------|-------|
+| Package | `massive` (PyPI: `pip install massive`) |
+| REST client | `from massive import RESTClient` |
+| WebSocket client | `from massive import WebSocketClient` |
+| REST base | `https://api.massive.com` |
+| WS base (real-time) | `wss://socket.massive.com/stocks` |
+| Env var | `MASSIVE_API_KEY` |
+| REST endpoints | `/v3/quotes/{ticker}`, `/v3/trades/{ticker}` (unchanged from legacy) |
+| WS wire format | JSON array, `ev: "Q"` / `ev: "T"` with same field abbreviations as legacy |
+
+The SDK is a direct successor to `polygon-api-client`. REST and WebSocket
+wire formats are identical — only the package name, base URLs, and env var
+changed. The `massive` SDK additionally provides a built-in `WebSocketClient`
+with auth, reconnection, and parsed model objects (see Live Stream section).
 
 ## Core Invariants
 
@@ -54,50 +73,76 @@ Correlation IDs are assigned at the ingestion boundary via
 ## Ingestion Sources
 
 Three paths bring market data into the platform. The first two converge
-through `PolygonNormalizer.on_message()` — the single ingestion boundary.
+through `MassiveNormalizer.on_message()` — the single ingestion boundary.
 The third reads already-normalized events from `EventLog`.
 
-| Source | Polygon API | Implementation | Feeds Into | Used By Mode |
+| Source | Massive API | Implementation | Feeds Into | Used By Mode |
 |--------|-------------|----------------|------------|--------------|
-| Historical backfill | REST `/v3/quotes`, `/v3/trades` | `PolygonHistoricalIngestor` (`ingestion/polygon_ingestor.py`) | `EventLog` (for later replay) | None directly — populates storage |
-| Live stream | WebSocket (`Q.*`, `T.*`) | `PolygonLiveFeed` (`ingestion/polygon_ws.py`) | Orchestrator tick pipeline via `MarketDataSource.events()` | `PAPER_TRADING_MODE`, `LIVE_TRADING_MODE` |
+| Historical backfill | REST `/v3/quotes`, `/v3/trades` | `MassiveHistoricalIngestor` (`ingestion/massive_ingestor.py`) | `EventLog` (for later replay) | None directly — populates storage |
+| Live stream | WebSocket (`Q.*`, `T.*`) | `MassiveLiveFeed` (`ingestion/massive_ws.py`) | Orchestrator tick pipeline via `MarketDataSource.events()` | `PAPER_TRADING_MODE`, `LIVE_TRADING_MODE` |
 | Replay | `EventLog.replay()` | `ReplayFeed` (`ingestion/replay_feed.py`) | Orchestrator tick pipeline via `MarketDataSource.events()` | `BACKTEST_MODE`, `RESEARCH_MODE` |
 
 **Key invariant**: backfill and live both normalize through
-`PolygonNormalizer` (source tags `"polygon_rest"` and `"polygon_ws"`
+`MassiveNormalizer` (source tags `"massive_rest"` and `"massive_ws"`
 respectively). Replay reads already-normalized events from `EventLog`.
 The orchestrator receives identical `NBBOQuote`/`Trade` types regardless
 of source — it never knows or cares which path produced them (invariant 9).
 
-### Historical Backfill (`PolygonHistoricalIngestor`)
+### Historical Backfill (`MassiveHistoricalIngestor`)
 
-Batch ETL pipeline: Polygon REST API → `PolygonNormalizer` → `EventLog`.
+Batch ETL pipeline: Massive REST API → `MassiveNormalizer` → `EventLog`.
 Runs offline to populate an `EventLog` that is later replayed via
 `ReplayFeed`. This is NOT a `MarketDataSource` — it does not feed the
 orchestrator directly.
 
+Uses `from massive import RESTClient` for paginated access to
+`/v3/quotes/{ticker}` and `/v3/trades/{ticker}`. The `RESTClient`
+handles pagination, retries with exponential backoff, and Bearer auth
+automatically.
+
 - **Checkpoint-based resumability**: accepts an optional `BackfillCheckpoint`
-  protocol (`ingestion/polygon_ingestor.py`). Completed `(symbol, feed_type)`
+  protocol (`ingestion/massive_ingestor.py`). Completed `(symbol, feed_type)`
   pairs are skipped on retry. `InMemoryCheckpoint` provides volatile
   dedup within a single run; persistent implementations can be injected
   for cross-run resumability.
 - **Duplicate tracking**: `IngestResult.duplicates_filtered` reports the
   total exact-duplicates filtered by the normalizer during the run.
+- **Performance tip**: always use `limit=50000` (API maximum) to minimize
+  round-trips. The `RESTClient` paginates transparently when
+  `pagination=True` (default).
 
-### Live Stream (`PolygonLiveFeed`)
+### Live Stream (`MassiveLiveFeed`)
 
 Real-time WebSocket feed implementing `MarketDataSource`:
 
 - Background thread runs an asyncio event loop with the WS connection
+  to `wss://socket.massive.com/stocks`
 - Auth and subscription responses are validated — failed auth raises
   `ConnectionError`, triggering the reconnect-with-backoff loop
 - Reconnection with exponential backoff (1s → 60s) on disconnect
 - Events buffered in a bounded `queue.Queue` (100k capacity); overflow
   drops events with a warning (fail-safe: never block the WS reader)
 
+**Massive SDK WebSocketClient option**: the `massive` package provides a
+built-in `WebSocketClient` (`from massive import WebSocketClient`) with
+auth lifecycle, automatic reconnection (`max_reconnects`), and parsed
+model objects (`EquityQuote`, `EquityTrade`). Two integration strategies:
+
+1. **`raw=True` mode** — the client passes raw `str|bytes` to the callback,
+   which can feed directly into `MassiveNormalizer.on_message()`. This
+   preserves our normalizer-boundary contract while gaining the SDK's
+   auth and reconnection logic.
+2. **Parsed model mode** — the client returns `EquityQuote`/`EquityTrade`
+   model objects. This bypasses the normalizer's JSON parsing but requires
+   a new adapter to convert SDK models to canonical `NBBOQuote`/`Trade`.
+
+Current implementation uses `websockets` directly for maximum control
+over raw bytes. Migration to the SDK's `WebSocketClient` (option 1) is
+recommended when the live feed is production-hardened.
+
 ### Replay (`ReplayFeed`)
 
-Generic `MarketDataSource` adapter over `EventLog.replay()`. Polygon-
+Generic `MarketDataSource` adapter over `EventLog.replay()`. Feed-
 agnostic — works with any `EventLog` populated through any ingestor.
 When a `SimulatedClock` is provided, advances the clock to each event's
 `exchange_timestamp_ns` before yielding (deterministic time progression).
@@ -106,12 +151,12 @@ When a `SimulatedClock` is provided, advances the clock to each event's
 
 | Capability | Requirement | Implementation Status |
 |---|---|---|
-| Real-time streaming | Polygon WebSocket → `PolygonNormalizer.on_message()` → `NBBOQuote` / `Trade` | Implemented (`PolygonLiveFeed`) |
-| Historical backfill | Idempotent; resumable from last checkpoint via `BackfillCheckpoint` | Implemented (`PolygonHistoricalIngestor`) |
-| Gap detection | Sequence breaks surfaced via `DataHealth` SM transitions; auto-recovers to `HEALTHY` when continuity resumes | Implemented (`PolygonNormalizer._check_gap`) |
-| Deduplication | Exact-duplicate elimination with count tracking (`PolygonNormalizer.duplicates_filtered`) | Implemented |
+| Real-time streaming | Massive WebSocket → `MassiveNormalizer.on_message()` → `NBBOQuote` / `Trade` | Implemented (`MassiveLiveFeed`) |
+| Historical backfill | Idempotent; resumable from last checkpoint via `BackfillCheckpoint` | Implemented (`MassiveHistoricalIngestor`) |
+| Gap detection | Sequence breaks surfaced via `DataHealth` SM transitions; auto-recovers to `HEALTHY` when continuity resumes | Implemented (`MassiveNormalizer._check_gap`) |
+| Deduplication | Exact-duplicate elimination with count tracking (`MassiveNormalizer.duplicates_filtered`) | Implemented |
 | Timestamp normalization | All times UTC nanoseconds; exchange time and receipt time tracked separately | Implemented |
-| WS auth validation | Auth and subscribe responses validated; failure triggers reconnect | Implemented (`PolygonLiveFeed._validate_status_response`) |
+| WS auth validation | Auth and subscribe responses validated; failure triggers reconnect | Implemented (`MassiveLiveFeed._validate_status_response`) |
 
 ## Data Integrity State Machine
 
@@ -155,7 +200,7 @@ class EventLog(Protocol):
   M1 (MARKET_EVENT_RECEIVED) for every inbound quote and in
   `_process_trade()` for every trade.
 - `append_batch()` — persist a chunk of events atomically; used by
-  `PolygonHistoricalIngestor` for chunk-aware ingestion and by
+  `MassiveHistoricalIngestor` for chunk-aware ingestion and by
   `scripts/run_backtest.py` for loading resequenced event streams.
 - `replay()` — replay by sequence range for deterministic backtest
   replay (invariant 5).

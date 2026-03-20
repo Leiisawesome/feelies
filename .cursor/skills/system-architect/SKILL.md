@@ -3,8 +3,8 @@ name: system-architect
 description: >
   Foundational system architecture for a unified intraday trading platform.
   Enforces layer separation, determinism, event-driven design, and dual-mode
-  (research/live) behavioral equivalence under L1 NBBO constraints (Polygon.io
-  Advanced). Use when designing system components, defining layer boundaries,
+  (research/live) behavioral equivalence under L1 NBBO constraints (Massive
+  Advanced, formerly Polygon.io). Use when designing system components, defining layer boundaries,
   making architectural decisions, or reasoning about cross-layer interactions,
   failure modes, or deterministic replay.
 ---
@@ -21,7 +21,7 @@ All code must belong to exactly one of these layers:
 
 | Layer | Responsibility |
 |-------|---------------|
-| Market Data Ingestion | Normalize Polygon L1 NBBO into canonical events |
+| Market Data Ingestion | Normalize Massive L1 NBBO into canonical events |
 | Event Bus | Route typed events with deterministic ordering |
 | Feature Engine | Stateful feature computation from event streams (see feature-engine skill) |
 | Signal Engine | Pure functions: features → signals (no side effects) |
@@ -83,10 +83,10 @@ composed backend and never inspects `backend.mode`.
 | Mode | `MarketDataSource` | `OrderRouter` | `Clock` |
 |------|-------------------|---------------|---------|
 | `BACKTEST_MODE` | `ReplayFeed(EventLog)` | `BacktestOrderRouter` (v1 mid-price fills) | `SimulatedClock` |
-| `PAPER_TRADING_MODE` | `PolygonLiveFeed` | Paper router (NOT YET IMPLEMENTED) | `WallClock` |
-| `LIVE_TRADING_MODE` | `PolygonLiveFeed` | Broker router (NOT YET IMPLEMENTED) | `WallClock` |
+| `PAPER_TRADING_MODE` | `MassiveLiveFeed` | Paper router (NOT YET IMPLEMENTED) | `WallClock` |
+| `LIVE_TRADING_MODE` | `MassiveLiveFeed` | Broker router (NOT YET IMPLEMENTED) | `WallClock` |
 
-Historical backfill (`PolygonHistoricalIngestor`) is a batch process
+Historical backfill (`MassiveHistoricalIngestor`) is a batch process
 that populates `EventLog` — it runs outside the orchestrator lifecycle
 and is not an operating mode. See the data-engineering skill for
 backfill details (REST API, checkpointing, resumability).

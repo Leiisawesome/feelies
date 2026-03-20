@@ -151,7 +151,7 @@ Explicitly acknowledge these blind spots:
 | Hidden/dark orders | Underestimate true liquidity | Track trade-to-displayed-size ratios |
 | Cancel-to-trade ratio | Cannot directly observe full cancellation flow | Proxy via quote flicker rate |
 | Queue position | Cannot know where your order sits | Model probabilistically |
-| Cross-venue dynamics | Polygon aggregates; you lose venue granularity | Accept as systematic noise |
+| Cross-venue dynamics | Massive aggregates; you lose venue granularity | Accept as systematic noise |
 | True latency | Variable websocket delay | Model as stochastic latency; add buffer |
 
 Every model must include a section: "What breaks if the L2 reality diverges

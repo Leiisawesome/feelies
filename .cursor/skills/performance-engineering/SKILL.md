@@ -50,8 +50,8 @@ Market data arrives (M0: WAITING_FOR_MARKET_EVENT)
 ```
 
 Note: Normalization happens outside the tick pipeline — at the
-ingestion boundary (live: `PolygonNormalizer.on_message()`) or
-before replay (historical: `PolygonHistoricalIngestor`). The tick
+ingestion boundary (live: `MassiveNormalizer.on_message()`) or
+before replay (historical: `MassiveHistoricalIngestor`). The tick
 pipeline receives already-normalized `NBBOQuote` / `Trade` events.
 
 ### Latency Budget
