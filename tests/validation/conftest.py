@@ -87,6 +87,8 @@ def _run_scenario(
     account_equity: float = 100_000.0,
     backtest_fill_latency_ns: int = 0,
     risk_max_drawdown_pct: float = 5.0,
+    risk_max_position_per_symbol: int = 1000,
+    risk_max_gross_exposure_pct: float = 20.0,
 ) -> tuple:
     alpha_dir = tmp_path / "alphas"
     alpha_dir.mkdir(exist_ok=True)
@@ -104,6 +106,8 @@ def _run_scenario(
         parameter_overrides=parameter_overrides,
         backtest_fill_latency_ns=backtest_fill_latency_ns,
         risk_max_drawdown_pct=risk_max_drawdown_pct,
+        risk_max_position_per_symbol=risk_max_position_per_symbol,
+        risk_max_gross_exposure_pct=risk_max_gross_exposure_pct,
     )
 
     event_log = InMemoryEventLog()
@@ -399,6 +403,13 @@ def fault_scenario_factory(tmp_path: Path):
                 {"bid": "150.00", "ask": "150.01", "ts": 1_000},
                 {"bid": "150.02", "ask": "150.03", "ts": 1_000},
             ]
+        elif fault_type == "negative_spread":
+            ticks = [
+                {"bid": "150.05", "ask": "150.00", "ts": 1_000},
+                {"bid": "150.00", "ask": "150.01", "ts": 2_000},
+            ]
+        elif fault_type == "empty_event_log":
+            ticks = []
         else:
             ticks = TICK_DATA
 

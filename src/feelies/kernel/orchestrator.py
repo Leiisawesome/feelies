@@ -35,6 +35,7 @@ from __future__ import annotations
 import hashlib
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -547,7 +548,6 @@ class Orchestrator:
         so the exception handler has a clean boundary.
         """
         cid = quote.correlation_id
-        t_received = self._clock.now_ns()
         t_wall_start = time.perf_counter_ns()
         self._tick_timings: dict[str, int] = {}
 
@@ -618,7 +618,7 @@ class Orchestrator:
                 trigger="no_signal_this_tick",
                 correlation_id=cid,
             )
-            self._finalize_tick(t_received, cid)
+            self._finalize_tick(t_wall_start, cid)
             return
 
         self._bus.publish(signal)
@@ -636,7 +636,7 @@ class Orchestrator:
                 trigger="intent_no_action",
                 correlation_id=cid,
             )
-            self._finalize_tick(t_received, cid)
+            self._finalize_tick(t_wall_start, cid)
             return
 
         # ── M4 → M5: RISK_CHECK ────────────────────────────────
@@ -664,7 +664,7 @@ class Orchestrator:
                 trigger="risk_force_flatten_simulated",
                 correlation_id=cid,
             )
-            self._finalize_tick(t_received, cid)
+            self._finalize_tick(t_wall_start, cid)
             return
 
         # ── M5 branch: risk rejected → M10 ─────────────────────
@@ -674,7 +674,7 @@ class Orchestrator:
                 trigger="risk_reject_no_order",
                 correlation_id=cid,
             )
-            self._finalize_tick(t_received, cid)
+            self._finalize_tick(t_wall_start, cid)
             return
 
         # ── M5 → M6: risk pass, order warranted ────────────────
@@ -708,7 +708,7 @@ class Orchestrator:
                 trigger="check_order_force_flatten_simulated",
                 correlation_id=cid,
             )
-            self._finalize_tick(t_received, cid)
+            self._finalize_tick(t_wall_start, cid)
             return
 
         if order_verdict.action == RiskAction.REJECT:
@@ -717,8 +717,13 @@ class Orchestrator:
                 trigger=f"check_order_rejected:{order_verdict.reason}",
                 correlation_id=cid,
             )
-            self._finalize_tick(t_received, cid)
+            self._finalize_tick(t_wall_start, cid)
             return
+
+        if order_verdict.action == RiskAction.SCALE_DOWN:
+            scaled_qty = max(1, round(order.quantity * order_verdict.scaling_factor))
+            if scaled_qty != order.quantity:
+                order = replace(order, quantity=scaled_qty)
 
         # Exhaustiveness guard (Inv-11): mirror M5's guard.
         # Unknown RiskActions at the check_order gate must never
@@ -768,13 +773,13 @@ class Orchestrator:
             trigger="position_updated",
             correlation_id=cid,
         )
-        self._finalize_tick(t_received, cid)
+        self._finalize_tick(t_wall_start, cid)
 
     # ── Helpers ─────────────────────────────────────────────────────
 
-    def _finalize_tick(self, t_received: int, correlation_id: str) -> None:
+    def _finalize_tick(self, t_wall_start_ns: int, correlation_id: str) -> None:
         """Emit tick latency and per-segment timing metrics, then M10 → M0."""
-        latency_ns = self._clock.now_ns() - t_received
+        latency_ns = time.perf_counter_ns() - t_wall_start_ns
         now_ns = self._clock.now_ns()
 
         self._bus.publish(MetricEvent(
@@ -1167,7 +1172,7 @@ class Orchestrator:
                 avg_price=position.avg_entry_price,
                 realized_pnl=position.realized_pnl,
                 unrealized_pnl=position.unrealized_pnl,
-                slippage_bps=Decimal("0"),
+                slippage_bps=ack.slippage_bps,
             ))
 
             if self._trade_journal is not None:
@@ -1182,8 +1187,8 @@ class Orchestrator:
                     signal_timestamp_ns=order.timestamp_ns,
                     submit_timestamp_ns=order.timestamp_ns,
                     fill_timestamp_ns=ack.timestamp_ns,
-                    slippage_bps=Decimal("0"),
-                    fees=Decimal("0"),
+                    slippage_bps=ack.slippage_bps,
+                    fees=ack.fees,
                     realized_pnl=position.realized_pnl - prev_realized,
                     correlation_id=order.correlation_id,
                 ))

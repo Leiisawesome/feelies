@@ -136,6 +136,55 @@ class TestCheckOrder:
         assert verdict.action == RiskAction.REJECT
         assert "post-fill" in verdict.reason
 
+    def test_gross_exposure_exceeded_rejects(
+        self, store: MemoryPositionStore
+    ) -> None:
+        cfg = RiskConfig(
+            max_position_per_symbol=100_000,
+            max_gross_exposure_pct=1.0,
+            account_equity=Decimal("100000"),
+        )
+        engine = BasicRiskEngine(cfg)
+        store.update("AAPL", 10_000, Decimal("10"))
+        order = _make_order(side=Side.BUY, quantity=10)
+        verdict = engine.check_order(order, store)
+        assert verdict.action == RiskAction.REJECT
+        assert "gross exposure" in verdict.reason
+
+    def test_drawdown_breached_force_flattens(
+        self, store: MemoryPositionStore
+    ) -> None:
+        cfg = RiskConfig(
+            max_position_per_symbol=100_000,
+            max_gross_exposure_pct=100.0,
+            max_drawdown_pct=1.0,
+            account_equity=Decimal("100000"),
+        )
+        engine = BasicRiskEngine(cfg)
+        store.update("AAPL", 100, Decimal("100"))
+        store.update("AAPL", -100, Decimal("90"))
+        order = _make_order(side=Side.BUY, quantity=10)
+        verdict = engine.check_order(order, store)
+        assert verdict.action == RiskAction.FORCE_FLATTEN
+        assert "drawdown" in verdict.reason
+
+    def test_approaching_exposure_scales_down(
+        self, store: MemoryPositionStore
+    ) -> None:
+        cfg = RiskConfig(
+            max_position_per_symbol=100_000,
+            max_gross_exposure_pct=10.0,
+            account_equity=Decimal("100000"),
+            scale_down_threshold_pct=0.8,
+        )
+        engine = BasicRiskEngine(cfg)
+        store.update("AAPL", 900, Decimal("10"))
+        order = _make_order(side=Side.BUY, quantity=50)
+        verdict = engine.check_order(order, store)
+        assert verdict.action == RiskAction.SCALE_DOWN
+        assert "approaching exposure" in verdict.reason
+        assert 0.0 < verdict.scaling_factor < 1.0
+
 
 class TestRegimeScaling:
     def test_vol_breakout_reduces_position_limit(

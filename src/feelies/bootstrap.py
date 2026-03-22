@@ -26,6 +26,7 @@ from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_backend import build_backtest_backend
 from feelies.execution.backtest_router import BacktestOrderRouter
+from feelies.execution.cost_model import DefaultCostModel, DefaultCostModelConfig
 from feelies.execution.intent import SignalPositionTranslator
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.monitoring.in_memory import (
@@ -92,9 +93,11 @@ def build_platform(
     if event_log is None:
         event_log = InMemoryEventLog()
 
+    cost_model = DefaultCostModel(DefaultCostModelConfig())
     backend, backtest_router = _create_backend(
         config.mode, event_log, clock,
         fill_latency_ns=config.backtest_fill_latency_ns,
+        cost_model=cost_model,
     )
 
     if backtest_router is not None:
@@ -192,10 +195,13 @@ def _create_backend(
     clock: Clock,
     *,
     fill_latency_ns: int = 0,
+    cost_model: DefaultCostModel | None = None,
 ) -> tuple[ExecutionBackend, BacktestOrderRouter | None]:
     if mode == OperatingMode.BACKTEST:
         backend, router = build_backtest_backend(
-            event_log, clock, latency_ns=fill_latency_ns,
+            event_log, clock,
+            latency_ns=fill_latency_ns,
+            cost_model=cost_model,
         )
         return backend, router
 

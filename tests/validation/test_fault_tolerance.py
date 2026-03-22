@@ -14,6 +14,7 @@ import pytest
 
 from feelies.bootstrap import build_platform
 from feelies.core.events import (
+    FeatureVector,
     NBBOQuote,
     OrderAck,
     OrderRequest,
@@ -236,6 +237,139 @@ class TestDrawdownAndLockdown:
 
         breached = engine._is_drawdown_breached(store)
         assert isinstance(breached, bool)
+
+
+class TestNegativeSpread:
+    """Fault: bid > ask (invalid NBBO)."""
+
+    def test_negative_spread_does_not_crash(self, fault_scenario_factory) -> None:
+        orch, rec, _, _ = fault_scenario_factory("negative_spread")
+        assert orch.macro_state in (MacroState.READY, MacroState.DEGRADED)
+
+    def test_negative_spread_does_not_produce_corrupt_features(
+        self, fault_scenario_factory
+    ) -> None:
+        orch, rec, _, _ = fault_scenario_factory("negative_spread")
+        features = rec.of_type(FeatureVector)
+        for fv in features:
+            for name, value in fv.values.items():
+                assert not (isinstance(value, float) and (
+                    value != value or abs(value) == float("inf")
+                )), f"NaN/Inf in feature {name} after negative spread"
+
+
+class TestNaNInfFeatureInjection:
+    """Fault: feature engine returns NaN or Inf values."""
+
+    def test_nan_feature_does_not_propagate_to_signal(
+        self, tmp_path: Path
+    ) -> None:
+        quotes = _make_quotes()
+        orch, rec, _ = _setup_platform(tmp_path, quotes)
+
+        original = orch._feature_engine.update
+        call_count = 0
+
+        def nan_injecting(quote):
+            nonlocal call_count
+            call_count += 1
+            result = original(quote)
+            if call_count == 3 and result is not None:
+                poisoned_values = {
+                    k: float("nan") for k in result.values
+                }
+                return FeatureVector(
+                    timestamp_ns=result.timestamp_ns,
+                    correlation_id=result.correlation_id,
+                    sequence=result.sequence,
+                    symbol=result.symbol,
+                    feature_version=result.feature_version,
+                    values=poisoned_values,
+                    warm=result.warm,
+                    stale=result.stale,
+                )
+            return result
+
+        orch._feature_engine.update = nan_injecting
+        orch.run_backtest()
+        assert orch.macro_state in (MacroState.READY, MacroState.DEGRADED)
+
+    def test_inf_feature_does_not_propagate_to_signal(
+        self, tmp_path: Path
+    ) -> None:
+        quotes = _make_quotes()
+        orch, rec, _ = _setup_platform(tmp_path, quotes)
+
+        original = orch._feature_engine.update
+        call_count = 0
+
+        def inf_injecting(quote):
+            nonlocal call_count
+            call_count += 1
+            result = original(quote)
+            if call_count == 3 and result is not None:
+                poisoned_values = {
+                    k: float("inf") for k in result.values
+                }
+                return FeatureVector(
+                    timestamp_ns=result.timestamp_ns,
+                    correlation_id=result.correlation_id,
+                    sequence=result.sequence,
+                    symbol=result.symbol,
+                    feature_version=result.feature_version,
+                    values=poisoned_values,
+                    warm=result.warm,
+                    stale=result.stale,
+                )
+            return result
+
+        orch._feature_engine.update = inf_injecting
+        orch.run_backtest()
+        assert orch.macro_state in (MacroState.READY, MacroState.DEGRADED)
+
+
+class TestStaleQuoteFault:
+    """Fault: frozen NBBO — same quote repeated many times."""
+
+    def test_stale_repeated_quotes_complete_without_crash(
+        self, tmp_path: Path
+    ) -> None:
+        stale_ticks = [
+            {"bid": "150.00", "ask": "150.01", "ts": i * 1_000_000}
+            for i in range(1, 21)
+        ]
+        quotes = _make_quotes("AAPL", stale_ticks)
+        orch, rec, _ = _setup_platform(tmp_path, quotes)
+        orch.run_backtest()
+        assert orch.macro_state in (MacroState.READY, MacroState.DEGRADED)
+
+    def test_stale_quotes_do_not_generate_spurious_signals(
+        self, tmp_path: Path
+    ) -> None:
+        stale_ticks = [
+            {"bid": "150.00", "ask": "150.01", "ts": i * 1_000_000}
+            for i in range(1, 21)
+        ]
+        quotes = _make_quotes("AAPL", stale_ticks)
+        orch, rec, _ = _setup_platform(tmp_path, quotes)
+        orch.run_backtest()
+        signals = rec.of_type(Signal)
+        for sig in signals:
+            assert sig.strength is not None
+
+
+class TestEmptyEventLog:
+    """Fault: backtest with zero events."""
+
+    def test_empty_event_log_completes_without_crash(
+        self, tmp_path: Path
+    ) -> None:
+        orch, rec, _ = _setup_platform(tmp_path, [])
+        orch.run_backtest()
+        assert orch.macro_state == MacroState.READY
+
+        signals = rec.of_type(Signal)
+        assert len(signals) == 0
 
 
 class TestAllSignalsSuppressed:

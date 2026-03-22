@@ -440,7 +440,10 @@ def generate_report(
         Decimal("0"),
     )
     gross_pnl = realized_pnl + unrealized_pnl
-    fees = Decimal("0")
+    fees = sum(
+        (a.fees for a in filled_acks),
+        Decimal("0"),
+    )
     net_pnl = gross_pnl - fees
     final_equity = Decimal(str(starting_equity)) + net_pnl
     return_pct = float(net_pnl) / starting_equity * 100.0 if starting_equity else 0.0

@@ -216,6 +216,8 @@ class OrderAck(Event):
     status: OrderAckStatus
     filled_quantity: int = 0
     fill_price: Decimal | None = None
+    fees: Decimal = Decimal("0")
+    slippage_bps: Decimal = Decimal("0")
     reason: str = ""
 
 

@@ -16,7 +16,7 @@ from feelies.alpha.registry import AlphaRegistry
 from feelies.core.events import FeatureVector, NBBOQuote, SignalDirection, Trade
 from feelies.features.definition import FeatureDefinition, WarmUpSpec
 
-from tests.alpha.conftest import MockAlpha, _make_spread_feature, clock, mock_alpha, sample_quote
+from tests.alpha.conftest import MockAlpha, _SimpleSpreadCompute, _make_spread_feature, clock, mock_alpha, sample_quote
 
 
 class TestCompositeFeatureEngine:
@@ -352,6 +352,165 @@ class TestCompositeFeatureEngineRestore:
         payload = b'{"event_count": 1, "first_ns": 0}'
         with pytest.raises(ValueError, match="Missing feature_state"):
             engine.restore("AAPL", payload)
+
+
+class TestWarmUpCausality:
+    """Warm-up check uses event timestamps, not ambient clock state."""
+
+    def test_warmup_independent_of_clock_state(self, clock) -> None:
+        """Clock set far in the future must not prematurely satisfy
+        duration-based warm-up.  Only actual event elapsed time counts.
+        """
+        feat = FeatureDefinition(
+            feature_id="slow",
+            version="1.0",
+            description="needs 10s of data",
+            depends_on=frozenset(),
+            warm_up=WarmUpSpec(min_events=1, min_duration_ns=10_000_000_000),
+            compute=_SimpleSpreadCompute(),
+        )
+        alpha = MockAlpha(alpha_id="slow_alpha", feature_defs=[feat])
+        registry = AlphaRegistry()
+        registry.register(alpha)
+        engine = CompositeFeatureEngine(registry=registry, clock=clock)
+
+        q1 = NBBOQuote(
+            timestamp_ns=1_000_000_000,
+            correlation_id="AAPL:1:1",
+            sequence=1,
+            symbol="AAPL",
+            bid=Decimal("150.00"),
+            ask=Decimal("150.02"),
+            bid_size=100,
+            ask_size=100,
+            exchange_timestamp_ns=1_000_000_000,
+        )
+        fv1 = engine.update(q1)
+        assert fv1.warm is False
+
+        clock.set_time(999_000_000_000)
+
+        q2 = NBBOQuote(
+            timestamp_ns=2_000_000_000,
+            correlation_id="AAPL:2:2",
+            sequence=2,
+            symbol="AAPL",
+            bid=Decimal("150.01"),
+            ask=Decimal("150.03"),
+            bid_size=100,
+            ask_size=100,
+            exchange_timestamp_ns=2_000_000_000,
+        )
+        fv2 = engine.update(q2)
+        assert fv2.warm is False, (
+            "clock is far ahead but only 1s of event data elapsed — "
+            "warm-up must not use clock"
+        )
+
+        q3 = NBBOQuote(
+            timestamp_ns=11_000_000_001,
+            correlation_id="AAPL:11:3",
+            sequence=3,
+            symbol="AAPL",
+            bid=Decimal("150.02"),
+            ask=Decimal("150.04"),
+            bid_size=100,
+            ask_size=100,
+            exchange_timestamp_ns=11_000_000_001,
+        )
+        fv3 = engine.update(q3)
+        assert fv3.warm is True
+
+    def test_is_warm_uses_last_event_not_clock(self, clock) -> None:
+        """Public is_warm() returns correct result without clock advancement."""
+        feat = FeatureDefinition(
+            feature_id="timed",
+            version="1.0",
+            description="needs 5s",
+            depends_on=frozenset(),
+            warm_up=WarmUpSpec(min_events=1, min_duration_ns=5_000_000_000),
+            compute=_SimpleSpreadCompute(),
+        )
+        alpha = MockAlpha(alpha_id="timed_alpha", feature_defs=[feat])
+        registry = AlphaRegistry()
+        registry.register(alpha)
+        engine = CompositeFeatureEngine(registry=registry, clock=clock)
+
+        q1 = NBBOQuote(
+            timestamp_ns=1_000_000_000,
+            correlation_id="X:1:1",
+            sequence=1,
+            symbol="AAPL",
+            bid=Decimal("100.00"),
+            ask=Decimal("100.01"),
+            bid_size=100,
+            ask_size=100,
+            exchange_timestamp_ns=1_000_000_000,
+        )
+        engine.update(q1)
+        assert engine.is_warm("AAPL") is False
+
+        q2 = NBBOQuote(
+            timestamp_ns=6_000_000_001,
+            correlation_id="X:6:2",
+            sequence=2,
+            symbol="AAPL",
+            bid=Decimal("100.00"),
+            ask=Decimal("100.01"),
+            bid_size=100,
+            ask_size=100,
+            exchange_timestamp_ns=6_000_000_001,
+        )
+        engine.update(q2)
+        assert engine.is_warm("AAPL") is True
+
+    def test_checkpoint_restore_preserves_last_ns(self, clock) -> None:
+        """Restored engine retains last_ns for correct warm-up after restore."""
+        feat = FeatureDefinition(
+            feature_id="dur",
+            version="1.0",
+            description="needs 2s",
+            depends_on=frozenset(),
+            warm_up=WarmUpSpec(min_events=1, min_duration_ns=2_000_000_000),
+            compute=_SimpleSpreadCompute(),
+        )
+        alpha = MockAlpha(alpha_id="dur_alpha", feature_defs=[feat])
+        registry = AlphaRegistry()
+        registry.register(alpha)
+        engine = CompositeFeatureEngine(registry=registry, clock=clock)
+
+        q1 = NBBOQuote(
+            timestamp_ns=1_000_000_000,
+            correlation_id="R:1:1",
+            sequence=1,
+            symbol="AAPL",
+            bid=Decimal("100.00"),
+            ask=Decimal("100.01"),
+            bid_size=100,
+            ask_size=100,
+            exchange_timestamp_ns=1_000_000_000,
+        )
+        q2 = NBBOQuote(
+            timestamp_ns=4_000_000_000,
+            correlation_id="R:4:2",
+            sequence=2,
+            symbol="AAPL",
+            bid=Decimal("100.01"),
+            ask=Decimal("100.02"),
+            bid_size=100,
+            ask_size=100,
+            exchange_timestamp_ns=4_000_000_000,
+        )
+        engine.update(q1)
+        engine.update(q2)
+        assert engine.is_warm("AAPL") is True
+
+        state, _ = engine.checkpoint("AAPL")
+        engine.reset("AAPL")
+        assert engine.is_warm("AAPL") is False
+
+        engine.restore("AAPL", state)
+        assert engine.is_warm("AAPL") is True
 
 
 class TestCompositeFeatureEngineDependencies:

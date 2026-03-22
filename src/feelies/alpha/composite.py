@@ -58,6 +58,7 @@ class CompositeFeatureEngine:
         self._per_symbol_state: dict[str, dict[str, dict[str, Any]]] = {}
         self._per_symbol_event_count: dict[str, int] = {}
         self._per_symbol_first_ns: dict[str, int] = {}
+        self._per_symbol_last_ns: dict[str, int] = {}
         self._last_values: dict[str, dict[str, float]] = {}
 
         self._rebuild(registry)
@@ -95,6 +96,7 @@ class CompositeFeatureEngine:
 
         if symbol not in self._per_symbol_first_ns:
             self._per_symbol_first_ns[symbol] = quote.timestamp_ns
+        self._per_symbol_last_ns[symbol] = quote.timestamp_ns
 
         values: dict[str, float] = {}
 
@@ -129,6 +131,7 @@ class CompositeFeatureEngine:
         self._per_symbol_state.pop(symbol, None)
         self._per_symbol_event_count.pop(symbol, None)
         self._per_symbol_first_ns.pop(symbol, None)
+        self._per_symbol_last_ns.pop(symbol, None)
         self._last_values.pop(symbol, None)
 
     @property
@@ -149,6 +152,7 @@ class CompositeFeatureEngine:
             "feature_state": state,
             "event_count": event_count,
             "first_ns": self._per_symbol_first_ns.get(symbol, 0),
+            "last_ns": self._per_symbol_last_ns.get(symbol, 0),
         }
         return json.dumps(payload, default=str).encode(), event_count
 
@@ -168,6 +172,7 @@ class CompositeFeatureEngine:
         self._per_symbol_state[symbol] = payload["feature_state"]
         self._per_symbol_event_count[symbol] = payload.get("event_count", 0)
         self._per_symbol_first_ns[symbol] = payload.get("first_ns", 0)
+        self._per_symbol_last_ns[symbol] = payload.get("last_ns", 0)
 
     # ── Trade event processing ──────────────────────────────────
 
@@ -186,6 +191,8 @@ class CompositeFeatureEngine:
         symbol_state = self._per_symbol_state.get(symbol)
         if symbol_state is None:
             return None
+
+        self._per_symbol_last_ns[symbol] = trade.timestamp_ns
 
         last_values = self._last_values.get(symbol, {})
         updated = False
@@ -224,11 +231,15 @@ class CompositeFeatureEngine:
     # ── Internal ─────────────────────────────────────────────────
 
     def _is_warm_for_symbol(self, symbol: str) -> bool:
-        """Check whether all features meet their warm-up requirements."""
+        """Check whether all features meet their warm-up requirements.
+
+        Uses the last event timestamp for this symbol (not the clock)
+        so the check is causally correct regardless of call-site timing.
+        """
         event_count = self._per_symbol_event_count.get(symbol, 0)
         first_ns = self._per_symbol_first_ns.get(symbol, 0)
-        now_ns = self._clock.now_ns()
-        elapsed_ns = now_ns - first_ns if first_ns > 0 else 0
+        last_ns = self._per_symbol_last_ns.get(symbol, 0)
+        elapsed_ns = last_ns - first_ns if first_ns > 0 else 0
 
         for fdef in self._definitions:
             if event_count < fdef.warm_up.min_events:

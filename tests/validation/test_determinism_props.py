@@ -18,6 +18,7 @@ from hypothesis import strategies as st
 from feelies.core.clock import SimulatedClock
 from feelies.core.state_machine import IllegalTransition, StateMachine
 from feelies.execution.order_state import OrderState, create_order_state_machine
+from feelies.ingestion.data_integrity import DataHealth, create_data_integrity_machine
 from feelies.kernel.macro import MacroState, create_macro_state_machine
 from feelies.kernel.micro import MicroState, create_micro_state_machine
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
@@ -32,11 +33,14 @@ _TERMINAL_ORDER_STATES = frozenset({
 })
 
 
+# ── SimulatedClock ───────────────────────────────────────────────────
+
+
 class TestSimulatedClockProperties:
     """Property-based tests for SimulatedClock."""
 
     @given(times=st.lists(st.integers(min_value=0, max_value=10**18), min_size=2, max_size=20))
-    @settings(max_examples=100, suppress_health_check=[HealthCheck.too_slow])
+    @settings(max_examples=1000, suppress_health_check=[HealthCheck.too_slow])
     def test_simulated_clock_never_moves_backward(self, times: list[int]) -> None:
         clock = SimulatedClock()
         prev = 0
@@ -57,12 +61,15 @@ class TestSimulatedClockProperties:
                 max_seen = t
 
 
+# ── State Machine Random Walk Properties ─────────────────────────────
+
+
 class TestStateMachineProperties:
     """Property-based tests for state machine invariants."""
 
     @given(target_idx=st.integers(min_value=0, max_value=len(OrderState) - 1))
-    @settings(max_examples=50, suppress_health_check=[HealthCheck.too_slow])
-    def test_state_machine_illegal_transition_raises(self, target_idx: int) -> None:
+    @settings(max_examples=1000, suppress_health_check=[HealthCheck.too_slow])
+    def test_order_sm_illegal_transition_raises(self, target_idx: int) -> None:
         clock = SimulatedClock()
         sm = create_order_state_machine("test_order", clock)
 
@@ -74,7 +81,6 @@ class TestStateMachineProperties:
                 sm.transition(target, trigger="test")
 
     def test_state_machine_terminal_states_have_no_outbound(self) -> None:
-        clock = SimulatedClock()
         from feelies.execution.order_state import _ORDER_TRANSITIONS
 
         terminal = {OrderState.FILLED, OrderState.CANCELLED, OrderState.REJECTED, OrderState.EXPIRED}
@@ -83,6 +89,73 @@ class TestStateMachineProperties:
 
         from feelies.kernel.macro import _MACRO_TRANSITIONS
         assert _MACRO_TRANSITIONS[MacroState.SHUTDOWN] == frozenset()
+
+    @given(steps=st.lists(
+        st.sampled_from(list(OrderState)),
+        min_size=1, max_size=30,
+    ))
+    @settings(max_examples=1000, suppress_health_check=[HealthCheck.too_slow])
+    def test_order_sm_random_walk_never_corrupts(self, steps: list[OrderState]) -> None:
+        clock = SimulatedClock()
+        sm = create_order_state_machine("walk", clock)
+        for target in steps:
+            if sm.can_transition(target):
+                sm.transition(target, trigger="walk")
+            else:
+                with pytest.raises(IllegalTransition):
+                    sm.transition(target, trigger="walk")
+            assert sm.state in OrderState
+
+    @given(steps=st.lists(
+        st.sampled_from(list(MacroState)),
+        min_size=1, max_size=30,
+    ))
+    @settings(max_examples=1000, suppress_health_check=[HealthCheck.too_slow])
+    def test_macro_sm_random_walk_never_corrupts(self, steps: list[MacroState]) -> None:
+        clock = SimulatedClock()
+        sm = create_macro_state_machine(clock)
+        for target in steps:
+            if sm.can_transition(target):
+                sm.transition(target, trigger="walk")
+            else:
+                with pytest.raises(IllegalTransition):
+                    sm.transition(target, trigger="walk")
+            assert sm.state in MacroState
+
+    @given(steps=st.lists(
+        st.sampled_from(list(DataHealth)),
+        min_size=1, max_size=30,
+    ))
+    @settings(max_examples=1000, suppress_health_check=[HealthCheck.too_slow])
+    def test_data_health_sm_random_walk_never_corrupts(self, steps: list[DataHealth]) -> None:
+        clock = SimulatedClock()
+        sm = create_data_integrity_machine("AAPL", clock)
+        for target in steps:
+            if sm.can_transition(target):
+                sm.transition(target, trigger="walk")
+            else:
+                with pytest.raises(IllegalTransition):
+                    sm.transition(target, trigger="walk")
+            assert sm.state in DataHealth
+
+    @given(steps=st.lists(
+        st.sampled_from(list(MicroState)),
+        min_size=1, max_size=30,
+    ))
+    @settings(max_examples=1000, suppress_health_check=[HealthCheck.too_slow])
+    def test_micro_sm_random_walk_never_corrupts(self, steps: list[MicroState]) -> None:
+        clock = SimulatedClock()
+        sm = create_micro_state_machine(clock)
+        for target in steps:
+            if sm.can_transition(target):
+                sm.transition(target, trigger="walk")
+            else:
+                with pytest.raises(IllegalTransition):
+                    sm.transition(target, trigger="walk")
+            assert sm.state in MicroState
+
+
+# ── Risk Escalation ──────────────────────────────────────────────────
 
 
 class TestRiskEscalation:
@@ -108,16 +181,63 @@ class TestRiskEscalation:
             with pytest.raises(IllegalTransition):
                 sm.transition(level, trigger="attempted_de_escalation")
 
+    @given(steps=st.lists(
+        st.sampled_from(list(RiskLevel)),
+        min_size=1, max_size=20,
+    ))
+    @settings(max_examples=1000, suppress_health_check=[HealthCheck.too_slow])
+    def test_risk_sm_never_de_escalates_without_reset(self, steps: list[RiskLevel]) -> None:
+        """Risk level only decreases via LOCKED → NORMAL (human unlock).
+        Any other de-escalation is forbidden."""
+        clock = SimulatedClock()
+        sm = create_risk_escalation_machine(clock)
+        level_order = {
+            RiskLevel.NORMAL: 0,
+            RiskLevel.WARNING: 1,
+            RiskLevel.BREACH_DETECTED: 2,
+            RiskLevel.FORCED_FLATTEN: 3,
+            RiskLevel.LOCKED: 4,
+        }
+        high_water = level_order[RiskLevel.NORMAL]
+
+        for target in steps:
+            prev = sm.state
+            if sm.can_transition(target):
+                sm.transition(target, trigger="walk")
+                new_level = level_order[sm.state]
+                is_human_unlock = (prev == RiskLevel.LOCKED and target == RiskLevel.NORMAL)
+                if not is_human_unlock and sm.state != RiskLevel.NORMAL:
+                    assert new_level >= high_water, (
+                        f"De-escalation detected: {high_water} -> {new_level}"
+                    )
+                if is_human_unlock:
+                    high_water = 0
+                else:
+                    high_water = max(high_water, new_level)
+            else:
+                with pytest.raises(IllegalTransition):
+                    sm.transition(target, trigger="walk")
+
+
+# ── Deterministic Order ID ───────────────────────────────────────────
+
 
 class TestOrderIdDeterminism:
     """Same inputs produce same order ID."""
 
-    def test_order_id_deterministic_from_inputs(self) -> None:
-        results = set()
-        for _ in range(100):
-            oid = hashlib.sha256("AAPL:1000:42".encode()).hexdigest()[:16]
-            results.add(oid)
-        assert len(results) == 1
+    @given(
+        cid=st.text(min_size=1, max_size=50),
+        seq=st.integers(min_value=0, max_value=10**9),
+    )
+    @settings(max_examples=1000, suppress_health_check=[HealthCheck.too_slow])
+    def test_order_id_deterministic_from_inputs(self, cid: str, seq: int) -> None:
+        oid1 = hashlib.sha256(f"{cid}:{seq}".encode()).hexdigest()[:16]
+        oid2 = hashlib.sha256(f"{cid}:{seq}".encode()).hexdigest()[:16]
+        assert oid1 == oid2
+        assert len(oid1) == 16
+
+
+# ── Micro Pipeline ───────────────────────────────────────────────────
 
 
 class TestMicroPipelineReturn:
@@ -147,6 +267,75 @@ class TestMicroPipelineReturn:
         sm.transition(MicroState.LOG_AND_METRICS, trigger="updated")
         sm.transition(MicroState.WAITING_FOR_MARKET_EVENT, trigger="done")
         assert sm.state == MicroState.WAITING_FOR_MARKET_EVENT
+
+
+# ── Position Conservation ────────────────────────────────────────────
+
+
+class TestPositionConservation:
+    """Property: sum of signed fills = final position quantity."""
+
+    @given(
+        fills=st.lists(
+            st.tuples(
+                st.sampled_from(["BUY", "SELL"]),
+                st.integers(min_value=1, max_value=500),
+            ),
+            min_size=1, max_size=20,
+        )
+    )
+    @settings(max_examples=1000, suppress_health_check=[HealthCheck.too_slow])
+    def test_position_conservation(self, fills: list[tuple[str, int]]) -> None:
+        from feelies.portfolio.memory_position_store import MemoryPositionStore
+
+        store = MemoryPositionStore()
+        expected_qty = 0
+        for side_str, qty in fills:
+            signed = qty if side_str == "BUY" else -qty
+            store.update("AAPL", signed, Decimal("150.00"))
+            expected_qty += signed
+
+        pos = store.get("AAPL")
+        assert pos.quantity == expected_qty
+
+
+# ── Enum Completeness ────────────────────────────────────────────────
+
+
+class TestEnumCompleteness:
+    """Construction of SM with missing entries raises ValueError."""
+
+    def test_incomplete_order_table_raises(self) -> None:
+        clock = SimulatedClock()
+        incomplete = {
+            OrderState.CREATED: frozenset({OrderState.SUBMITTED}),
+        }
+        with pytest.raises(ValueError, match="Transition table incomplete"):
+            StateMachine(
+                name="bad_order", initial_state=OrderState.CREATED,
+                transitions=incomplete, clock=clock,
+            )
+
+    def test_incomplete_macro_table_raises(self) -> None:
+        clock = SimulatedClock()
+        incomplete = {MacroState.INIT: frozenset({MacroState.DATA_SYNC})}
+        with pytest.raises(ValueError, match="Transition table incomplete"):
+            StateMachine(
+                name="bad_macro", initial_state=MacroState.INIT,
+                transitions=incomplete, clock=clock,
+            )
+
+    def test_incomplete_data_health_table_raises(self) -> None:
+        clock = SimulatedClock()
+        incomplete = {DataHealth.HEALTHY: frozenset({DataHealth.GAP_DETECTED})}
+        with pytest.raises(ValueError, match="Transition table incomplete"):
+            StateMachine(
+                name="bad_health", initial_state=DataHealth.HEALTHY,
+                transitions=incomplete, clock=clock,
+            )
+
+
+# ── Checkpoint Restore ───────────────────────────────────────────────
 
 
 class TestCheckpointRestore:

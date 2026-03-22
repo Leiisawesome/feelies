@@ -10,6 +10,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "hypothesis>=6.0",
     "mypy>=1.8",
     "ruff>=0.3",
     "types-PyYAML>=6.0",
@@ -41,4 +43,18 @@ markers = [
     "functional: network-backed tests against live external services",
     "backtest_validation: full backtest pipe validation suite",
     "slow: performance benchmarks and long-running tests",
+]
+
+[tool.coverage.run]
+source = ["feelies"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "\\.\\.\\.",
 ]

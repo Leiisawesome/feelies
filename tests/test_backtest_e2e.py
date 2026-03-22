@@ -536,10 +536,13 @@ class TestLayerPnLPerformance:
         pos = orchestrator._positions.get("AAPL")
         assert pos.unrealized_pnl == Decimal("0")
 
-    def test_total_fees_zero(self, scenario) -> None:
+    def test_total_fees_positive(self, scenario) -> None:
         orchestrator, _, _ = scenario
         records = list(orchestrator._trade_journal.query(symbol="AAPL"))
-        assert sum(r.fees for r in records) == Decimal("0")
+        total_fees = sum(r.fees for r in records)
+        assert total_fees > Decimal("0"), "Cost model should produce positive fees"
+        for r in records:
+            assert r.fees >= Decimal("0"), "Individual fees must be non-negative"
 
     def test_total_shares_traded(self, scenario) -> None:
         orchestrator, _, _ = scenario
@@ -564,14 +567,14 @@ class TestLayerPnLPerformance:
         assert len(winners) == 1
         assert len(closed) == 1
 
-    def test_tick_to_decision_all_zero_simulated_clock(self, scenario) -> None:
+    def test_tick_to_decision_uses_wall_clock(self, scenario) -> None:
         orchestrator, _, _ = scenario
         mc = orchestrator._metrics
         summary = mc.get_summary("kernel", "tick_to_decision_latency_ns")
         assert summary is not None
         for evt in mc.events:
             if evt.name == "tick_to_decision_latency_ns":
-                assert evt.value == 0.0
+                assert evt.value >= 0.0, "Wall-clock latency must be non-negative"
 
 
 # ── Deterministic Replay Test ────────────────────────────────────────

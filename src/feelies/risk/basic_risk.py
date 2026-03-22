@@ -152,6 +152,46 @@ class BasicRiskEngine:
                 ),
             )
 
+        exposure = positions.total_exposure()
+        max_exposure = self._config.account_equity * Decimal(
+            str(self._config.max_gross_exposure_pct)
+        ) / Decimal("100")
+        if exposure >= max_exposure:
+            return RiskVerdict(
+                timestamp_ns=order.timestamp_ns,
+                correlation_id=order.correlation_id,
+                sequence=order.sequence,
+                symbol=order.symbol,
+                action=RiskAction.REJECT,
+                reason=f"gross exposure limit: {exposure} >= {max_exposure}",
+            )
+
+        if self._is_drawdown_breached(positions):
+            return RiskVerdict(
+                timestamp_ns=order.timestamp_ns,
+                correlation_id=order.correlation_id,
+                sequence=order.sequence,
+                symbol=order.symbol,
+                action=RiskAction.FORCE_FLATTEN,
+                reason="drawdown limit breached",
+            )
+
+        threshold = Decimal(str(self._config.scale_down_threshold_pct))
+        if exposure >= max_exposure * threshold:
+            scaling = float(
+                (max_exposure - exposure) / (max_exposure * (1 - threshold))
+            )
+            scaling = max(0.1, min(1.0, scaling))
+            return RiskVerdict(
+                timestamp_ns=order.timestamp_ns,
+                correlation_id=order.correlation_id,
+                sequence=order.sequence,
+                symbol=order.symbol,
+                action=RiskAction.SCALE_DOWN,
+                reason="approaching exposure limit at order gate",
+                scaling_factor=scaling * regime_scale,
+            )
+
         return RiskVerdict(
             timestamp_ns=order.timestamp_ns,
             correlation_id=order.correlation_id,

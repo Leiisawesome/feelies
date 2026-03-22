@@ -30,6 +30,7 @@ from feelies.core.events import (
     OrderRequest,
     Side,
 )
+from feelies.execution.cost_model import CostModel, ZeroCostModel
 
 
 class BacktestOrderRouter:
@@ -40,9 +41,15 @@ class BacktestOrderRouter:
     price context for fills.
     """
 
-    def __init__(self, clock: Clock, latency_ns: int = 0) -> None:
+    def __init__(
+        self,
+        clock: Clock,
+        latency_ns: int = 0,
+        cost_model: CostModel | None = None,
+    ) -> None:
         self._clock = clock
         self._latency_ns = latency_ns
+        self._cost_model: CostModel = cost_model or ZeroCostModel()
         self._last_quotes: dict[str, NBBOQuote] = {}
         self._pending_acks: list[OrderAck] = []
 
@@ -71,6 +78,13 @@ class BacktestOrderRouter:
         fill_price = (quote.bid + quote.ask) / Decimal("2")
         fill_ts = self._clock.now_ns() + self._latency_ns
 
+        costs = self._cost_model.compute(
+            symbol=request.symbol,
+            side=request.side,
+            quantity=request.quantity,
+            fill_price=fill_price,
+        )
+
         self._pending_acks.append(OrderAck(
             timestamp_ns=fill_ts,
             correlation_id=request.correlation_id,
@@ -80,6 +94,8 @@ class BacktestOrderRouter:
             status=OrderAckStatus.FILLED,
             filled_quantity=request.quantity,
             fill_price=fill_price,
+            fees=costs.total_fees,
+            slippage_bps=costs.slippage_bps,
         ))
 
     def poll_acks(self) -> list[OrderAck]:
