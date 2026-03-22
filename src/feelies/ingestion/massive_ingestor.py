@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Sequence
+import threading
+import time
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
@@ -122,6 +124,8 @@ class MassiveHistoricalIngestor:
         symbols: Sequence[str],
         start_date: str,
         end_date: str,
+        *,
+        on_page: Callable[[str, int, int, float], None] | None = None,
     ) -> IngestResult:
         """Download and persist historical quotes and trades.
 
@@ -129,6 +133,9 @@ class MassiveHistoricalIngestor:
             symbols: Ticker symbols to ingest.
             start_date: Start date in ``YYYY-MM-DD`` format.
             end_date: End date in ``YYYY-MM-DD`` format.
+            on_page: Optional callback invoked after each downloaded page.
+                Signature: ``(feed_type, page_num, running_total, elapsed_secs)``.
+                ``feed_type`` is ``"quotes"`` or ``"trades"``.
 
         Returns:
             Summary of the ingestion run.
@@ -158,6 +165,7 @@ class MassiveHistoricalIngestor:
 
             ev_count, pg_count = self.ingest_symbol_parallel(
                 client, symbol, start_date, end_date,
+                on_page=on_page,
             )
             total_events += ev_count
             total_pages += pg_count
@@ -308,17 +316,32 @@ class MassiveHistoricalIngestor:
         symbol: str,
         start_date: str,
         end_date: str,
+        *,
+        on_page: Callable[[str, int, int, float], None] | None = None,
     ) -> tuple[int, int]:
         """Download quotes + trades in parallel, merge-sort, normalize sequentially.
 
         Returns (events_ingested, pages_processed).
         """
+        _lock: threading.Lock = threading.Lock()
+        _t0: float = time.monotonic()
+
+        def _q_on_page(page_num: int, total: int) -> None:
+            if on_page is not None:
+                with _lock:
+                    on_page("quotes", page_num, total, time.monotonic() - _t0)
+
+        def _t_on_page(page_num: int, total: int) -> None:
+            if on_page is not None:
+                with _lock:
+                    on_page("trades", page_num, total, time.monotonic() - _t0)
+
         with ThreadPoolExecutor(max_workers=2) as pool:
             quotes_future = pool.submit(
-                _download_quotes_raw, client, symbol, start_date, end_date,
+                _download_quotes_raw, client, symbol, start_date, end_date, _q_on_page,
             )
             trades_future = pool.submit(
-                _download_trades_raw, client, symbol, start_date, end_date,
+                _download_trades_raw, client, symbol, start_date, end_date, _t_on_page,
             )
             raw_quotes, q_pages = quotes_future.result()
             raw_trades, t_pages = trades_future.result()
@@ -361,6 +384,7 @@ def _download_quotes_raw(
     symbol: str,
     start_date: str,
     end_date: str,
+    _on_page: Callable[[int, int], None] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Paginate through list_quotes(), collecting raw dicts. Pure download."""
     raw_dicts: list[dict[str, Any]] = []
@@ -390,6 +414,8 @@ def _download_quotes_raw(
                 if d:
                     raw_dicts.append(d)
             pages += 1
+            if _on_page is not None:
+                _on_page(pages, len(raw_dicts))
             buf = []
 
     if buf:
@@ -398,6 +424,8 @@ def _download_quotes_raw(
             if d:
                 raw_dicts.append(d)
         pages += 1
+        if _on_page is not None:
+            _on_page(pages, len(raw_dicts))
 
     return raw_dicts, pages
 
@@ -407,6 +435,7 @@ def _download_trades_raw(
     symbol: str,
     start_date: str,
     end_date: str,
+    _on_page: Callable[[int, int], None] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Paginate through list_trades(), collecting raw dicts. Pure download."""
     raw_dicts: list[dict[str, Any]] = []
@@ -436,6 +465,8 @@ def _download_trades_raw(
                 if d:
                     raw_dicts.append(d)
             pages += 1
+            if _on_page is not None:
+                _on_page(pages, len(raw_dicts))
             buf = []
 
     if buf:
@@ -444,6 +475,8 @@ def _download_trades_raw(
             if d:
                 raw_dicts.append(d)
         pages += 1
+        if _on_page is not None:
+            _on_page(pages, len(raw_dicts))
 
     return raw_dicts, pages
 

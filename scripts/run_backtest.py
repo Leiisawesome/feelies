@@ -15,6 +15,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 from collections import defaultdict
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
@@ -214,7 +215,21 @@ def ingest_data(
                 clock=clock,
             )
 
-            result = ingestor.ingest([symbol], day, day)
+            print(f"  {symbol} {day}: fetching from API ...", flush=True)
+            _fetch_t0 = time.monotonic()
+
+            def _on_page(
+                feed_type: str, page_num: int, total: int, elapsed: float,
+                _sym: str = symbol, _day: str = day,
+            ) -> None:
+                if page_num == 1 or page_num % 25 == 0:
+                    print(
+                        f"    {feed_type:6s}  p{page_num:<4d}  {total:>9,} records"
+                        f"  ({elapsed:.1f}s)",
+                        flush=True,
+                    )
+
+            result = ingestor.ingest([symbol], day, day, on_page=_on_page)
             total_events_from_api += result.events_ingested
             total_pages += result.pages_processed
             total_gaps += result.gaps_detected
