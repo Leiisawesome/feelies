@@ -46,20 +46,30 @@ class CompositeFeatureEngine:
     state is maintained internally for each registered feature.
     """
 
+    # Default: 60 seconds of silence marks a symbol stale.
+    DEFAULT_STALENESS_THRESHOLD_NS = 60_000_000_000
+
     def __init__(
         self,
         registry: AlphaRegistry,
         clock: Clock,
+        staleness_threshold_ns: int | None = None,
     ) -> None:
         self._clock = clock
         self._definitions: list[FeatureDefinition] = []
         self._computation_order: list[str] = []
         self._version_hash: str = ""
+        self._staleness_threshold_ns = (
+            staleness_threshold_ns
+            if staleness_threshold_ns is not None
+            else self.DEFAULT_STALENESS_THRESHOLD_NS
+        )
 
         self._per_symbol_state: dict[str, dict[str, dict[str, Any]]] = {}
         self._per_symbol_event_count: dict[str, int] = {}
         self._per_symbol_first_ns: dict[str, int] = {}
         self._per_symbol_last_ns: dict[str, int] = {}
+        self._per_symbol_last_exchange_ns: dict[str, int] = {}
         self._last_values: dict[str, dict[str, float]] = {}
 
         self._rebuild(registry)
@@ -99,6 +109,21 @@ class CompositeFeatureEngine:
             self._per_symbol_first_ns[symbol] = quote.timestamp_ns
         self._per_symbol_last_ns[symbol] = quote.timestamp_ns
 
+        prev_exchange_ns = self._per_symbol_last_exchange_ns.get(symbol)
+        cur_exchange_ns = quote.exchange_timestamp_ns
+        self._per_symbol_last_exchange_ns[symbol] = cur_exchange_ns
+
+        stale = False
+        if prev_exchange_ns is not None:
+            gap_ns = cur_exchange_ns - prev_exchange_ns
+            if gap_ns > self._staleness_threshold_ns:
+                stale = True
+                logger.debug(
+                    "Symbol %s stale: %.1fs since last quote -- "
+                    "entry signals suppressed this tick",
+                    symbol, gap_ns / 1e9,
+                )
+
         values: dict[str, float] = {}
 
         for fid in self._computation_order:
@@ -126,6 +151,7 @@ class CompositeFeatureEngine:
             feature_version=self._version_hash,
             values=values,
             warm=warm,
+            stale=stale,
             event_count=event_count,
         )
 
@@ -143,6 +169,7 @@ class CompositeFeatureEngine:
         self._per_symbol_event_count.pop(symbol, None)
         self._per_symbol_first_ns.pop(symbol, None)
         self._per_symbol_last_ns.pop(symbol, None)
+        self._per_symbol_last_exchange_ns.pop(symbol, None)
         self._last_values.pop(symbol, None)
 
         for fdef in self._definitions:
@@ -169,6 +196,7 @@ class CompositeFeatureEngine:
             "event_count": event_count,
             "first_ns": self._per_symbol_first_ns.get(symbol, 0),
             "last_ns": self._per_symbol_last_ns.get(symbol, 0),
+            "last_exchange_ns": self._per_symbol_last_exchange_ns.get(symbol, 0),
         }
         return json.dumps(payload, default=str).encode(), event_count
 
@@ -189,6 +217,7 @@ class CompositeFeatureEngine:
         self._per_symbol_event_count[symbol] = payload.get("event_count", 0)
         self._per_symbol_first_ns[symbol] = payload.get("first_ns", 0)
         self._per_symbol_last_ns[symbol] = payload.get("last_ns", 0)
+        self._per_symbol_last_exchange_ns[symbol] = payload.get("last_exchange_ns", 0)
 
     # ── Trade event processing ──────────────────────────────────
 
