@@ -182,7 +182,8 @@ def _load_alphas(
         )
 
     for spec_path in config.alpha_specs:
-        alpha_id_guess = spec_path.stem
+        name = spec_path.name
+        alpha_id_guess = name[:-len(".alpha.yaml")] if name.endswith(".alpha.yaml") else spec_path.stem
         overrides = config.parameter_overrides.get(alpha_id_guess)
         module = loader.load(spec_path, param_overrides=overrides)
         registry.register(module)

@@ -124,9 +124,10 @@ class _CompoundElementComputation:
     """Wraps one element of a compound (list-returning) feature.
 
     A shared computation is called once per tick; this wrapper extracts
-    element [index] from the cached result.  The tick counter in state
-    prevents recomputation when the engine calls each sub-feature
-    sequentially within the same tick.
+    element [index] from the cached result.  The quote's unique
+    ``sequence`` number is used as the cache key so that the shared
+    computation runs exactly once per symbol per tick regardless of
+    how many element wrappers exist.
     """
 
     __slots__ = ("_shared", "_index", "_params")
@@ -142,24 +143,23 @@ class _CompoundElementComputation:
         self._params = params
 
     def initial_state(self) -> dict[str, Any]:
-        return {"_tick": -1, "_cached": self._shared.default_value()}
+        return {}
 
     def update(self, quote: NBBOQuote, state: dict[str, Any]) -> float:
-        tick = state.get("_tick", -1)
-        result = self._shared.compute_once(quote, tick, self._params)
-        state["_tick"] = self._shared.current_tick
-        state["_cached"] = result
+        result = self._shared.compute_once(quote, self._params)
         return float(result[self._index])
 
 
 class _SharedCompoundComputation:
     """Shared computation for a compound feature that returns list[N].
 
-    Called once per tick regardless of how many element wrappers exist.
+    Called once per symbol per tick regardless of how many element
+    wrappers exist.  Uses the quote's monotonic ``sequence`` number
+    as a per-symbol cache key to guarantee exactly-once execution.
     """
 
     __slots__ = ("_initial_state_fn", "_update_fn", "_n_elements",
-                 "_states", "_tick_counter", "_last_results")
+                 "_states", "_last_computed_seq", "_last_results")
 
     def __init__(
         self,
@@ -171,38 +171,26 @@ class _SharedCompoundComputation:
         self._update_fn = update_fn
         self._n_elements = n_elements
         self._states: dict[str, dict[str, Any]] = {}
-        self._tick_counter: int = 0
+        self._last_computed_seq: dict[str, int] = {}
         self._last_results: dict[str, list[float]] = {}
-
-    @property
-    def current_tick(self) -> int:
-        return self._tick_counter
 
     def default_value(self) -> list[float]:
         return [0.0] * self._n_elements
 
     def compute_once(
-        self, quote: NBBOQuote, caller_tick: int, params: dict[str, Any]
+        self, quote: NBBOQuote, params: dict[str, Any],
     ) -> list[float]:
         symbol = quote.symbol
         if symbol not in self._states:
             self._states[symbol] = self._initial_state_fn()
 
-        if caller_tick < self._tick_counter:
-            self._tick_counter += 1
-            result = self._update_fn(quote, self._states[symbol], params)
-            result_list = [float(v) for v in result]
-            self._last_results[symbol] = result_list
-            return result_list
+        if self._last_computed_seq.get(symbol) == quote.sequence:
+            return self._last_results[symbol]
 
-        cached = self._last_results.get(symbol)
-        if cached is not None:
-            return cached
-
-        self._tick_counter += 1
         result = self._update_fn(quote, self._states[symbol], params)
         result_list = [float(v) for v in result]
         self._last_results[symbol] = result_list
+        self._last_computed_seq[symbol] = quote.sequence
         return result_list
 
 

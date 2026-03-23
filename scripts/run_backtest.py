@@ -75,6 +75,51 @@ class BusRecorder:
         return self.by_type[t]  # type: ignore[return-value]
 
 
+# ── Progress reporter ────────────────────────────────────────────────
+
+
+class _ProgressReporter:
+    """Subscribes to the bus and prints periodic progress during replay."""
+
+    def __init__(self, total_events: int, interval: int = 100_000) -> None:
+        self._total = total_events
+        self._interval = interval
+        self._count = 0
+        self._t0 = time.monotonic()
+        self._last_print = self._t0
+
+    def __call__(self, event: Event) -> None:
+        if not isinstance(event, NBBOQuote):
+            return
+        self._count += 1
+        if self._count % self._interval == 0:
+            elapsed = time.monotonic() - self._t0
+            pct = self._count / self._total * 100.0 if self._total else 0.0
+            rate = self._count / elapsed if elapsed > 0 else 0.0
+            remaining = (self._total - self._count) / rate if rate > 0 else 0.0
+            print(
+                f"  [{pct:5.1f}%]  {self._count:>10,} / {self._total:,} quotes  "
+                f"({rate:,.0f} q/s, ~{remaining:.0f}s remaining)",
+                flush=True,
+            )
+            self._last_print = time.monotonic()
+
+    def summary(self) -> str:
+        elapsed = time.monotonic() - self._t0
+        rate = self._count / elapsed if elapsed > 0 else 0.0
+        return f"{self._count:,} quotes in {elapsed:.1f}s ({rate:,.0f} q/s)"
+
+
+def _step(msg: str, t0: float | None = None) -> float:
+    """Print a progress step with optional elapsed time from a prior step."""
+    now = time.monotonic()
+    if t0 is not None:
+        dt = now - t0
+        print(f"  OK ({dt:.1f}s)", flush=True)
+    print(f"  {msg} ...", end="", flush=True)
+    return now
+
+
 # ── CLI ──────────────────────────────────────────────────────────────
 
 
@@ -742,14 +787,20 @@ def main(argv: list[str] | None = None) -> int:
 
     start_date = args.date
     end_date = args.end_date or start_date
-    date_range = start_date if start_date == end_date else f"{start_date} → {end_date}"
+    date_range = start_date if start_date == end_date else f"{start_date} to {end_date}"
     symbol_str = ", ".join(symbols)
+    run_t0 = time.monotonic()
 
-    # 3–5. Ingest data
+    print(f"\n  Backtest: {symbol_str}  |  {date_range}", flush=True)
+    print(f"  {_RULE_LIGHT}", flush=True)
+
+    # ── Phase 1: Data ingestion ───────────────────────────────
+    step_t = _step("Loading market data")
+    print(flush=True)
+
     cache_dir = Path(args.cache_dir) if args.cache_dir else None
     no_cache: bool = args.no_cache
 
-    print(f"Ingesting {symbol_str} from {date_range} ...", flush=True)
     try:
         event_log, ingest_result, day_sources = ingest_data(
             api_key, symbols, start_date, end_date,
@@ -757,34 +808,65 @@ def main(argv: list[str] | None = None) -> int:
         )
     except ImportError as exc:
         print(
-            f"ERROR: {exc}\n"
-            "Install the massive extra: pip install 'feelies[massive]'",
+            f"\n  ERROR: {exc}\n"
+            "  Install the massive extra: pip install 'feelies[massive]'",
             file=sys.stderr,
         )
         return 1
     except Exception as exc:
-        print(f"ERROR: Ingestion failed: {exc}", file=sys.stderr)
+        print(f"\n  ERROR: Ingestion failed: {exc}", file=sys.stderr)
         return 1
 
     cache_days = sum(1 for ds in day_sources if ds.source == "cache")
     api_days = sum(1 for ds in day_sources if ds.source == "api")
-    print(f"  Ingested {ingest_result.events_ingested:,} events "
-          f"({api_days} days from API, {cache_days} days from cache, "
-          f"{ingest_result.duplicates_filtered} duplicates filtered)")
+    dt = time.monotonic() - step_t
+    src = []
+    if api_days:
+        src.append(f"{api_days}d API")
+    if cache_days:
+        src.append(f"{cache_days}d cache")
+    src_str = ", ".join(src)
+    print(
+        f"  OK - {ingest_result.events_ingested:,} events ({src_str}) [{dt:.1f}s]",
+        flush=True,
+    )
 
-    # 6. Build platform
+    # ── Phase 2: Platform bootstrap ───────────────────────────
+    step_t = _step("Composing platform (alphas, engines, risk)")
     orchestrator, config = build_platform(config, event_log=event_log)
+    alpha_count = len(orchestrator._alpha_registry) if orchestrator._alpha_registry else 0  # type: ignore[attr-defined]
+    dt = time.monotonic() - step_t
+    print(f"  OK - {alpha_count} alpha(s) registered [{dt:.1f}s]", flush=True)
 
-    # 7. Attach BusRecorder
+    # ── Phase 3: Attach recorder ──────────────────────────────
     recorder = BusRecorder()
     orchestrator._bus.subscribe_all(recorder)  # type: ignore[attr-defined]
 
-    # 8. Boot + run
-    print("Running backtest ...", flush=True)
+    # ── Phase 4: Boot ─────────────────────────────────────────
+    step_t = _step("Booting orchestrator (integrity checks, warm-start)")
     orchestrator.boot(config)
-    orchestrator.run_backtest()
+    macro = orchestrator.macro_state
+    dt = time.monotonic() - step_t
+    print(f"  OK - macro state: {macro.name} [{dt:.1f}s]", flush=True)
 
-    # 9. Report
+    if macro != MacroState.READY:
+        print(f"  ERROR: Boot failed — macro state is {macro.name}, expected READY",
+              file=sys.stderr)
+        return 1
+
+    # ── Phase 5: Run pipeline ─────────────────────────────────
+    n_quotes = sum(1 for e in event_log.replay() if isinstance(e, NBBOQuote))
+    progress = _ProgressReporter(total_events=n_quotes, interval=100_000)
+    orchestrator._bus.subscribe(NBBOQuote, progress)  # type: ignore[attr-defined]
+
+    step_t = _step(f"Replaying {n_quotes:,} quotes through pipeline")
+    print(flush=True)
+    orchestrator.run_backtest()
+    dt = time.monotonic() - step_t
+    print(f"  Pipeline complete - {progress.summary()}", flush=True)
+
+    # ── Phase 6: Report ───────────────────────────────────────
+    step_t = _step("Generating report")
     report = generate_report(
         recorder=recorder,
         ingest_result=ingest_result,
@@ -794,15 +876,20 @@ def main(argv: list[str] | None = None) -> int:
         date_range=date_range,
         day_sources=day_sources,
     )
+    dt = time.monotonic() - step_t
+    print(f"  OK [{dt:.1f}s]", flush=True)
     print(report)
 
-    # 10. Verification
+    # ── Phase 7: Verification ─────────────────────────────────
     results = run_verification(
         recorder=recorder,
         ingest_result=ingest_result,
         orchestrator=orchestrator,
     )
     all_passed = print_verification(results)
+
+    total_elapsed = time.monotonic() - run_t0
+    print(f"  Total elapsed: {total_elapsed:.1f}s\n", flush=True)
 
     return 0 if all_passed else 2
 
