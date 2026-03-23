@@ -123,11 +123,15 @@ class _YAMLFeatureComputation:
 class _CompoundElementComputation:
     """Wraps one element of a compound (list-returning) feature.
 
-    A shared computation is called once per tick; this wrapper extracts
-    element [index] from the cached result.  The quote's unique
-    ``sequence`` number is used as the cache key so that the shared
-    computation runs exactly once per symbol per tick regardless of
-    how many element wrappers exist.
+    Element 0 is the "state owner": its ``initial_state()`` returns
+    the shared computation's initial state, and its ``update()`` drives
+    the actual computation.  Elements 1..N-1 are "cache readers" that
+    read the cached result from the same tick.
+
+    This design ensures the composite engine's ``checkpoint()``,
+    ``restore()``, and ``reset()`` capture compound feature state via
+    element 0's state dict — no shadow state outside the engine's
+    control (invariant 5).
     """
 
     __slots__ = ("_shared", "_index", "_params")
@@ -143,23 +147,34 @@ class _CompoundElementComputation:
         self._params = params
 
     def initial_state(self) -> dict[str, Any]:
+        if self._index == 0:
+            return self._shared.create_initial_state()
         return {}
 
     def update(self, quote: NBBOQuote, state: dict[str, Any]) -> float:
-        result = self._shared.compute_once(quote, self._params)
+        if self._index == 0:
+            result = self._shared.compute_once(quote, state, self._params)
+        else:
+            result = self._shared.get_cached(quote.symbol)
         return float(result[self._index])
+
+    def reset_symbol(self, symbol: str) -> None:
+        """Clear per-tick cache for this symbol (called by composite reset)."""
+        if self._index == 0:
+            self._shared.reset_symbol(symbol)
 
 
 class _SharedCompoundComputation:
     """Shared computation for a compound feature that returns list[N].
 
-    Called once per symbol per tick regardless of how many element
-    wrappers exist.  Uses the quote's monotonic ``sequence`` number
-    as a per-symbol cache key to guarantee exactly-once execution.
+    State is owned externally by the composite engine (passed in via
+    element 0's state dict).  This class only manages per-tick caching
+    keyed on the quote's monotonic ``sequence`` number to guarantee
+    exactly-once execution per symbol per tick.
     """
 
     __slots__ = ("_initial_state_fn", "_update_fn", "_n_elements",
-                 "_states", "_last_computed_seq", "_last_results")
+                 "_last_computed_seq", "_last_results")
 
     def __init__(
         self,
@@ -170,28 +185,43 @@ class _SharedCompoundComputation:
         self._initial_state_fn = initial_state_fn
         self._update_fn = update_fn
         self._n_elements = n_elements
-        self._states: dict[str, dict[str, Any]] = {}
         self._last_computed_seq: dict[str, int] = {}
         self._last_results: dict[str, list[float]] = {}
+
+    def create_initial_state(self) -> dict[str, Any]:
+        """Return fresh state from the YAML-compiled initial_state()."""
+        return self._initial_state_fn()
 
     def default_value(self) -> list[float]:
         return [0.0] * self._n_elements
 
     def compute_once(
-        self, quote: NBBOQuote, params: dict[str, Any],
+        self, quote: NBBOQuote, state: dict[str, Any],
+        params: dict[str, Any],
     ) -> list[float]:
-        symbol = quote.symbol
-        if symbol not in self._states:
-            self._states[symbol] = self._initial_state_fn()
+        """Run the shared computation using externally-owned state.
 
+        Called by element 0 only.  Per-tick caching prevents
+        re-execution when subsequent elements read their values.
+        """
+        symbol = quote.symbol
         if self._last_computed_seq.get(symbol) == quote.sequence:
             return self._last_results[symbol]
 
-        result = self._update_fn(quote, self._states[symbol], params)
+        result = self._update_fn(quote, state, params)
         result_list = [float(v) for v in result]
         self._last_results[symbol] = result_list
         self._last_computed_seq[symbol] = quote.sequence
         return result_list
+
+    def get_cached(self, symbol: str) -> list[float]:
+        """Return cached result for elements 1..N-1 (must follow element 0)."""
+        return self._last_results.get(symbol, self.default_value())
+
+    def reset_symbol(self, symbol: str) -> None:
+        """Clear per-tick cache for a symbol (called on engine reset)."""
+        self._last_computed_seq.pop(symbol, None)
+        self._last_results.pop(symbol, None)
 
 
 # ── Loaded alpha module ──────────────────────────────────────────────
@@ -544,6 +574,12 @@ class AlphaLoader:
 
             if m:
                 n_elements = int(m.group(1))
+                if update_trade_fn is not None:
+                    raise AlphaLoadError(
+                        f"{source}: compound feature '{fid}' (return_type: "
+                        f"list[{n_elements}]) does not support update_trade "
+                        f"-- use separate scalar features instead"
+                    )
                 shared = _SharedCompoundComputation(init_fn, update_fn, n_elements)
                 for idx in range(n_elements):
                     sub_id = f"{fid}_{idx}"
@@ -584,7 +620,10 @@ class AlphaLoader:
 
         if isinstance(min_events_raw, str):
             try:
-                min_events = int(eval(min_events_raw, {"params": params}))  # noqa: S307
+                min_events = int(eval(  # noqa: S307
+                    min_events_raw,
+                    {"__builtins__": {}, "params": params},
+                ))
             except Exception as exc:
                 raise AlphaLoadError(
                     f"{source}: feature '{feature_id}' warm_up.min_events "

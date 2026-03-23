@@ -33,11 +33,14 @@ Key architectural invariants:
 from __future__ import annotations
 
 import hashlib
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import replace
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from feelies.alpha.registry import AlphaRegistry
@@ -173,8 +176,13 @@ class Orchestrator:
         self._config: Configuration | None = None
 
         # Per-order lifecycle tracking for Inv-4 enforcement.
-        # Maps order_id → (OrderState SM, Side, OrderRequest).
+        # Maps order_id -> (OrderState SM, Side, OrderRequest).
         self._active_orders: dict[str, tuple[StateMachine[OrderState], Side, OrderRequest]] = {}
+
+        # When True, market events arriving from the data source are
+        # already present in the event log (replay mode).  Prevents
+        # re-appending identical events during backtest replay.
+        self._events_prelogged = False
 
         self._macro = create_macro_state_machine(clock)
         self._micro = create_micro_state_machine(clock)
@@ -248,6 +256,7 @@ class Orchestrator:
         self._micro.reset(trigger="session_start:backtest")
         self._macro.transition(MacroState.BACKTEST_MODE, trigger="CMD_BACKTEST")
 
+        self._events_prelogged = True
         try:
             self._run_pipeline()
             if self._macro.state == MacroState.BACKTEST_MODE:
@@ -262,6 +271,8 @@ class Orchestrator:
                     trigger=f"BACKTEST_INTEGRITY_FAIL:{type(exc).__name__}",
                 )
             raise
+        finally:
+            self._events_prelogged = False
 
     def run_paper(self) -> None:
         """G2 → G5 → pipeline.
@@ -479,7 +490,8 @@ class Orchestrator:
         arrival rate) but do not trigger signal evaluation.  Updated
         feature values feed into the next quote-driven tick.
         """
-        self._event_log.append(trade)
+        if not self._events_prelogged:
+            self._event_log.append(trade)
         self._bus.publish(trade)
 
         process_trade_fn = getattr(self._feature_engine, "process_trade", None)
@@ -580,7 +592,8 @@ class Orchestrator:
             trigger="tick_arrived",
             correlation_id=cid,
         )
-        self._event_log.append(quote)
+        if not self._events_prelogged:
+            self._event_log.append(quote)
         self._bus.publish(quote)
 
         # ── M1 → M2: STATE_UPDATE ──────────────────────────────
@@ -839,6 +852,10 @@ class Orchestrator:
         Monotonically tightens safety (platform inv 11).  Once R1
         (WARNING) is entered, de-escalation is impossible without
         completing the full cycle to R4 and human unlock.
+
+        At R3 (FORCED_FLATTEN) we attempt to close all non-zero
+        positions via emergency market orders before transitioning
+        to R4 (LOCKED).
         """
         level = self._risk_escalation.state
 
@@ -867,6 +884,7 @@ class Orchestrator:
             level = RiskLevel.FORCED_FLATTEN
 
         if level == RiskLevel.FORCED_FLATTEN:
+            self._emergency_flatten_all(correlation_id)
             self._risk_escalation.transition(
                 RiskLevel.LOCKED,
                 trigger="positions_zero_flatten_complete",
@@ -891,6 +909,53 @@ class Orchestrator:
             trigger="RISK_BREACH",
             correlation_id=correlation_id,
         )
+
+    def _emergency_flatten_all(self, correlation_id: str) -> None:
+        """Submit market orders to flatten all non-zero positions.
+
+        Emergency path -- bypasses the micro SM (which will be reset
+        immediately after).  Individual order failures are logged but
+        do not prevent the escalation to LOCKED (Inv-11: fail-safe).
+        """
+        positions = self._positions.all_positions()
+        for symbol, pos in positions.items():
+            if pos.quantity == 0:
+                continue
+            side = Side.SELL if pos.quantity > 0 else Side.BUY
+            qty = abs(pos.quantity)
+            seq = self._seq.next()
+            order_id = hashlib.sha256(
+                f"emergency_flatten:{correlation_id}:{symbol}:{seq}".encode()
+            ).hexdigest()[:16]
+
+            order = OrderRequest(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=correlation_id,
+                sequence=seq,
+                order_id=order_id,
+                symbol=symbol,
+                side=side,
+                order_type=OrderType.MARKET,
+                quantity=qty,
+                strategy_id="emergency_flatten",
+            )
+
+            try:
+                self._track_order(order_id, side, order)
+                self._transition_order(order_id, OrderState.SUBMITTED, "emergency_flatten")
+                self._backend.order_router.submit(order)
+                self._bus.publish(order)
+                acks = self._backend.order_router.poll_acks()
+                for ack in acks:
+                    self._bus.publish(ack)
+                    self._apply_ack_to_order(ack)
+                self._reconcile_fills(acks, correlation_id)
+            except Exception:
+                logger.exception(
+                    "Emergency flatten failed for %s (qty=%d) -- "
+                    "position may remain open at LOCKED",
+                    symbol, pos.quantity,
+                )
 
     def _compute_target_quantity(
         self,
@@ -1193,6 +1258,22 @@ class Orchestrator:
                     correlation_id=order.correlation_id,
                 ))
 
+        self._prune_terminal_orders()
+
+    def _prune_terminal_orders(self) -> None:
+        """Remove terminally-resolved orders from _active_orders.
+
+        Prevents unbounded memory growth in long-running live sessions.
+        Orders in FILLED, CANCELLED, REJECTED, or EXPIRED states have
+        completed their lifecycle and can be safely discarded.
+        """
+        terminal_ids = [
+            oid for oid, (sm, _, _) in self._active_orders.items()
+            if sm.state in _TERMINAL_ORDER_STATES
+        ]
+        for oid in terminal_ids:
+            del self._active_orders[oid]
+
     # ── Observability ───────────────────────────────────────────────
 
     def _emit_state_transition(self, record: TransitionRecord) -> None:
@@ -1283,4 +1364,9 @@ class Orchestrator:
                 )
                 self._feature_snapshots.save(meta, state)
             except Exception:
-                pass
+                logger.warning(
+                    "Feature snapshot checkpoint failed for %s -- "
+                    "next boot will cold-start this symbol",
+                    symbol,
+                    exc_info=True,
+                )

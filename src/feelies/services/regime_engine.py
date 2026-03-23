@@ -113,8 +113,41 @@ class HMM3StateFractional:
         self._emission = tuple(
             emission_params or self._DEFAULT_EMISSION
         )
+        self._validate_params()
         self._posteriors: dict[str, list[float]] = {}
         self._last_update_ts: dict[str, int] = {}
+
+    def _validate_params(self) -> None:
+        n = self._n_states
+        if n < 2:
+            raise ValueError(f"Need at least 2 states, got {n}")
+
+        if len(self._transition) != n:
+            raise ValueError(
+                f"Transition matrix has {len(self._transition)} rows, "
+                f"expected {n}"
+            )
+        for i, row in enumerate(self._transition):
+            if len(row) != n:
+                raise ValueError(
+                    f"Transition row {i} has {len(row)} columns, expected {n}"
+                )
+            row_sum = sum(row)
+            if abs(row_sum - 1.0) > 1e-6:
+                raise ValueError(
+                    f"Transition row {i} sums to {row_sum}, expected ~1.0"
+                )
+
+        if len(self._emission) != n:
+            raise ValueError(
+                f"Emission params has {len(self._emission)} entries, "
+                f"expected {n}"
+            )
+        for i, (mu, sigma) in enumerate(self._emission):
+            if sigma <= 0:
+                raise ValueError(
+                    f"Emission sigma for state {i} is {sigma}, must be > 0"
+                )
 
     @property
     def state_names(self) -> Sequence[str]:
@@ -139,13 +172,23 @@ class HMM3StateFractional:
             self._posteriors[symbol] = prior
 
         predicted = self._predict(prior)
+
         spread = float(quote.ask - quote.bid)
         mid = float(quote.ask + quote.bid) / 2.0
-        rel_spread = spread / mid if mid > 0 else 1e-6
+
+        if spread <= 0 or mid <= 0:
+            self._posteriors[symbol] = predicted
+            return list(predicted)
+
+        rel_spread = spread / mid
         log_spread = math.log(max(rel_spread, 1e-12))
 
         likelihoods = self._emission_likelihood(log_spread)
         updated = self._bayes_update(predicted, likelihoods)
+
+        if any(math.isnan(v) or math.isinf(v) for v in updated):
+            updated = [1.0 / self._n_states] * self._n_states
+
         self._posteriors[symbol] = updated
         return list(updated)
 

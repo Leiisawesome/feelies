@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 from typing import Any
 
 from feelies.alpha.arbitration import EdgeWeightedArbitrator, SignalArbitrator
@@ -106,6 +107,12 @@ class CompositeFeatureEngine:
                 symbol_state[fid] = fdef.compute.initial_state()
 
             value = fdef.compute.update(quote, symbol_state[fid])
+            if math.isnan(value) or math.isinf(value):
+                logger.warning(
+                    "Feature '%s' produced %s for %s -- suppressed to 0.0",
+                    fid, value, symbol,
+                )
+                value = 0.0
             values[fid] = value
 
         self._last_values[symbol] = values
@@ -127,12 +134,21 @@ class CompositeFeatureEngine:
         return self._is_warm_for_symbol(symbol)
 
     def reset(self, symbol: str) -> None:
-        """Clear all feature state for a symbol."""
+        """Clear all feature state for a symbol.
+
+        Also notifies compound feature computations to clear their
+        per-tick caches so stale cached results don't survive a reset.
+        """
         self._per_symbol_state.pop(symbol, None)
         self._per_symbol_event_count.pop(symbol, None)
         self._per_symbol_first_ns.pop(symbol, None)
         self._per_symbol_last_ns.pop(symbol, None)
         self._last_values.pop(symbol, None)
+
+        for fdef in self._definitions:
+            reset_fn = getattr(fdef.compute, "reset_symbol", None)
+            if reset_fn is not None:
+                reset_fn(symbol)
 
     @property
     def version(self) -> str:
@@ -208,6 +224,13 @@ class CompositeFeatureEngine:
                 continue
             result = update_trade_fn(trade, symbol_state[fid])
             if result is not None:
+                if math.isnan(result) or math.isinf(result):
+                    logger.warning(
+                        "Feature '%s' update_trade produced %s for %s "
+                        "-- suppressed to 0.0",
+                        fid, result, symbol,
+                    )
+                    result = 0.0
                 values[fid] = result
                 updated = True
 
