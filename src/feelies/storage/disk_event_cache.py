@@ -189,7 +189,14 @@ class DiskEventCache:
         return events
 
     def save(self, symbol: str, date: str, events: Sequence[NBBOQuote | Trade]) -> None:
-        """Persist events to gzipped JSONL with an atomic manifest write."""
+        """Persist events to gzipped JSONL with atomic writes.
+
+        Both the data file and manifest are written to temporary files
+        first, then atomically renamed.  Data is written before the
+        manifest so that a crash between the two leaves exists()
+        returning False (no manifest) and the stale .tmp is
+        overwritten on the next successful save.
+        """
         sym_dir = self._symbol_dir(symbol)
         sym_dir.mkdir(parents=True, exist_ok=True)
 
@@ -209,7 +216,9 @@ class DiskEventCache:
         raw_jsonl = "\n".join(lines).encode("utf-8")
         compressed = gzip.compress(raw_jsonl)
 
-        data_path.write_bytes(compressed)
+        data_tmp = data_path.with_suffix(".tmp")
+        data_tmp.write_bytes(compressed)
+        os.replace(str(data_tmp), str(data_path))
 
         checksum = f"sha256:{hashlib.sha256(compressed).hexdigest()}"
 
@@ -224,9 +233,9 @@ class DiskEventCache:
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
 
-        tmp_path = manifest_path.with_suffix(".tmp")
-        tmp_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-        os.replace(str(tmp_path), str(manifest_path))
+        manifest_tmp = manifest_path.with_suffix(".tmp")
+        manifest_tmp.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        os.replace(str(manifest_tmp), str(manifest_path))
 
         logger.info(
             "disk_cache: saved %d events (%d quotes, %d trades) for %s/%s (%.1f MB)",
