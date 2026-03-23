@@ -155,7 +155,7 @@ class MassiveNormalizer:
             indicators = tuple(int(x) for x in raw_i) if isinstance(raw_i, list) else ()
 
             return NBBOQuote(
-                timestamp_ns=received_ns,
+                timestamp_ns=exchange_ts_ns,
                 correlation_id=cid,
                 sequence=internal_seq,
                 symbol=symbol,
@@ -197,7 +197,7 @@ class MassiveNormalizer:
             trf_ts = int(raw_trft) * _MS_TO_NS if raw_trft is not None else None
 
             return Trade(
-                timestamp_ns=received_ns,
+                timestamp_ns=exchange_ts_ns,
                 correlation_id=cid,
                 sequence=internal_seq,
                 symbol=symbol,
@@ -266,7 +266,7 @@ class MassiveNormalizer:
             trf_ts = int(raw_trf) if raw_trf is not None else None
 
             return NBBOQuote(
-                timestamp_ns=received_ns,
+                timestamp_ns=sip_ts,
                 correlation_id=cid,
                 sequence=internal_seq,
                 symbol=symbol,
@@ -310,7 +310,7 @@ class MassiveNormalizer:
             part_ts = int(raw_part) if raw_part is not None else None
 
             return Trade(
-                timestamp_ns=received_ns,
+                timestamp_ns=sip_ts,
                 correlation_id=cid,
                 sequence=internal_seq,
                 symbol=symbol,

@@ -29,14 +29,18 @@ logger = logging.getLogger(__name__)
 _TYPE_QUOTE = "NBBOQuote"
 _TYPE_TRADE = "Trade"
 
+# Bump when the semantic meaning of existing fields changes without
+# altering the dataclass schema.  Forces re-ingestion from the API.
+_CACHE_SEMANTIC_VERSION = "2"
+
 
 def _compute_schema_hash() -> str:
     """SHA-256 of sorted field names + types from NBBOQuote and Trade.
 
-    Changes when the dataclass schema evolves, auto-invalidating stale
-    caches that would fail deserialization.
+    Changes when the dataclass schema evolves or when the semantic
+    version is bumped, auto-invalidating stale caches.
     """
-    parts: list[str] = []
+    parts: list[str] = [f"__semantic_version__:{_CACHE_SEMANTIC_VERSION}"]
     for cls in (NBBOQuote, Trade):
         for name, f in sorted(cls.__dataclass_fields__.items()):
             parts.append(f"{cls.__name__}.{name}:{f.type}")
