@@ -11,10 +11,26 @@ unnecessary.
 
 from __future__ import annotations
 
+import bisect
 import threading
 from collections.abc import Iterator, Sequence
 
 from feelies.core.events import Event
+
+
+class _SequenceKey:
+    """Adapter for bisect on a list of Events keyed by sequence."""
+
+    __slots__ = ("_events",)
+
+    def __init__(self, events: list[Event]) -> None:
+        self._events = events
+
+    def __len__(self) -> int:
+        return len(self._events)
+
+    def __getitem__(self, idx: int) -> int:
+        return self._events[idx].sequence
 
 
 class InMemoryEventLog:
@@ -40,14 +56,18 @@ class InMemoryEventLog:
         end_sequence: int | None = None,
     ) -> Iterator[Event]:
         with self._lock:
-            snapshot = list(self._events)
+            start_idx = bisect.bisect_left(
+                _SequenceKey(self._events), start_sequence,
+            )
+            if end_sequence is not None:
+                end_idx = bisect.bisect_right(
+                    _SequenceKey(self._events), end_sequence,
+                )
+                snapshot = self._events[start_idx:end_idx]
+            else:
+                snapshot = self._events[start_idx:]
 
-        for event in snapshot:
-            if event.sequence < start_sequence:
-                continue
-            if end_sequence is not None and event.sequence > end_sequence:
-                continue
-            yield event
+        yield from snapshot
 
     def last_sequence(self) -> int:
         with self._lock:
