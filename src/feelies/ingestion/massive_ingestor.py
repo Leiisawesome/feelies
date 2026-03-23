@@ -49,7 +49,7 @@ class IngestResult:
 
     events_ingested: int
     pages_processed: int
-    gaps_detected: int
+    symbols_with_gaps: int
     duplicates_filtered: int
     symbols_completed: frozenset[str]
 
@@ -185,128 +185,10 @@ class MassiveHistoricalIngestor:
         return IngestResult(
             events_ingested=total_events,
             pages_processed=total_pages,
-            gaps_detected=gaps,
+            symbols_with_gaps=gaps,
             duplicates_filtered=self._normalizer.duplicates_filtered,
             symbols_completed=frozenset(completed_symbols),
         )
-
-    def _ingest_quotes(
-        self,
-        client: RESTClient,
-        symbol: str,
-        start_date: str,
-        end_date: str,
-    ) -> tuple[int, int]:
-        """Ingest historical quotes for a single symbol.
-
-        Returns (events_ingested, pages_processed).
-        """
-        total_events = 0
-        pages = 0
-
-        try:
-            quotes_iter = client.list_quotes(
-                symbol,
-                timestamp_gte=f"{start_date}T00:00:00Z",
-                timestamp_lte=f"{end_date}T23:59:59Z",
-                order="asc",
-                sort="timestamp",
-                limit=50000,
-            )
-        except Exception:
-            logger.exception(
-                "massive_ingestor: failed to start quotes iteration for %s",
-                symbol,
-            )
-            return 0, 0
-
-        page_buffer: list[Any] = []
-        for quote_obj in quotes_iter:
-            page_buffer.append(quote_obj)
-            if len(page_buffer) >= _CHUNK_SIZE:
-                ingested = self._flush_chunk(page_buffer, symbol)
-                total_events += ingested
-                pages += 1
-                page_buffer = []
-
-        if page_buffer:
-            ingested = self._flush_chunk(page_buffer, symbol)
-            total_events += ingested
-            pages += 1
-
-        return total_events, pages
-
-    def _ingest_trades(
-        self,
-        client: RESTClient,
-        symbol: str,
-        start_date: str,
-        end_date: str,
-    ) -> tuple[int, int]:
-        """Ingest historical trades for a single symbol.
-
-        Returns (events_ingested, pages_processed).
-        """
-        total_events = 0
-        pages = 0
-
-        try:
-            trades_iter = client.list_trades(
-                symbol,
-                timestamp_gte=f"{start_date}T00:00:00Z",
-                timestamp_lte=f"{end_date}T23:59:59Z",
-                order="asc",
-                sort="timestamp",
-                limit=50000,
-            )
-        except Exception:
-            logger.exception(
-                "massive_ingestor: failed to start trades iteration for %s",
-                symbol,
-            )
-            return 0, 0
-
-        page_buffer: list[Any] = []
-        for trade_obj in trades_iter:
-            page_buffer.append(trade_obj)
-            if len(page_buffer) >= _CHUNK_SIZE:
-                ingested = self._flush_chunk(page_buffer, symbol)
-                total_events += ingested
-                pages += 1
-                page_buffer = []
-
-        if page_buffer:
-            ingested = self._flush_chunk(page_buffer, symbol)
-            total_events += ingested
-            pages += 1
-
-        return total_events, pages
-
-    def _flush_chunk(
-        self,
-        records: list[Any],
-        symbol: str,
-    ) -> int:
-        """Normalize a chunk of REST records and persist to EventLog.
-
-        Returns the number of canonical events persisted.
-        """
-        all_events: list[NBBOQuote | Trade] = []
-        received_ns = self._clock.now_ns()
-
-        for record in records:
-            rec_dict = _model_to_dict(record, symbol)
-            if not rec_dict:
-                continue
-
-            raw = json.dumps(rec_dict).encode("utf-8")
-            events = self._normalizer.on_message(raw, received_ns, "massive_rest")
-            all_events.extend(events)
-
-        if all_events:
-            self._event_log.append_batch(all_events)
-        return len(all_events)
-
 
     # ── Parallel download + merge-sort ─────────────────────────────
 

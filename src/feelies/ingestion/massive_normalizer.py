@@ -237,6 +237,10 @@ class MassiveNormalizer:
             event = self._rest_trade(data, received_ns)
             return [event] if event is not None else []
 
+        logger.warning(
+            "massive_normalizer: unrecognized REST record (keys: %s)",
+            sorted(data.keys()),
+        )
         return []
 
     def _rest_quote(self, rec: dict, received_ns: int) -> NBBOQuote | None:  # type: ignore[type-arg]

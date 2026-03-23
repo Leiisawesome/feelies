@@ -258,54 +258,6 @@ class TestParallelDownload:
         assert result.symbols_completed == frozenset({"AAPL"})
 
 
-class TestLegacySequentialPath:
-    """Tests that the legacy _ingest_quotes/_ingest_trades methods still work."""
-
-    def test_sequential_ingest_quotes(self) -> None:
-        clock = SimulatedClock(1700000000000000000)
-        normalizer = MassiveNormalizer(clock)
-        event_log = InMemoryEventLog()
-
-        mock_client = MagicMock()
-        mock_client.list_quotes = MagicMock(return_value=iter([_make_mock_quote()]))
-
-        ingestor = MassiveHistoricalIngestor(
-            api_key="test",
-            normalizer=normalizer,
-            event_log=event_log,
-            clock=clock,
-        )
-
-        ev_count, pg_count = ingestor._ingest_quotes(
-            mock_client, "AAPL", "2024-01-01", "2024-01-02",
-        )
-
-        assert ev_count >= 1
-        assert pg_count >= 1
-
-    def test_sequential_ingest_trades(self) -> None:
-        clock = SimulatedClock(1700000000000000000)
-        normalizer = MassiveNormalizer(clock)
-        event_log = InMemoryEventLog()
-
-        mock_client = MagicMock()
-        mock_client.list_trades = MagicMock(return_value=iter([_make_mock_trade()]))
-
-        ingestor = MassiveHistoricalIngestor(
-            api_key="test",
-            normalizer=normalizer,
-            event_log=event_log,
-            clock=clock,
-        )
-
-        ev_count, pg_count = ingestor._ingest_trades(
-            mock_client, "AAPL", "2024-01-01", "2024-01-02",
-        )
-
-        assert ev_count >= 1
-        assert pg_count >= 1
-
-
 class TestDuplicateCountingInIngestor:
     """Tests that IngestResult.duplicates_filtered reflects normalizer counts."""
 

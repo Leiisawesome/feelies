@@ -277,7 +277,7 @@ def ingest_data(
             result = ingestor.ingest([symbol], day, day, on_page=_on_page)
             total_events_from_api += result.events_ingested
             total_pages += result.pages_processed
-            total_gaps += result.gaps_detected
+            total_gaps += result.symbols_with_gaps
             total_dupes += result.duplicates_filtered
 
             day_events: list[NBBOQuote | Trade] = list(day_log.replay())  # type: ignore[arg-type]
@@ -306,7 +306,7 @@ def ingest_data(
     ingest_result = IngestResult(
         events_ingested=total_event_count,
         pages_processed=total_pages,
-        gaps_detected=total_gaps,
+        symbols_with_gaps=total_gaps,
         duplicates_filtered=total_dupes,
         symbols_completed=completed,
     )
@@ -380,7 +380,7 @@ def run_demo() -> tuple[object, BusRecorder, IngestResult, PlatformConfig, str, 
         ingest_result = IngestResult(
             events_ingested=len(_DEMO_TICKS),
             pages_processed=1,
-            gaps_detected=0,
+            symbols_with_gaps=0,
             duplicates_filtered=0,
             symbols_completed=frozenset(["AAPL"]),
         )
@@ -568,7 +568,7 @@ def generate_report(
     lines.append(_section("Data Ingestion"))
     lines.append(_kv("Events ingested", f"{ingest_result.events_ingested:,}"))
     lines.append(_kv("Pages processed", f"{ingest_result.pages_processed}"))
-    lines.append(_kv("Gaps detected", f"{ingest_result.gaps_detected}"))
+    lines.append(_kv("Symbols with gaps", f"{ingest_result.symbols_with_gaps}"))
     lines.append(_kv("Duplicates filtered", f"{ingest_result.duplicates_filtered}"))
     if day_sources:
         lines.append("")
