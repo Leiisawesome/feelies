@@ -130,8 +130,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--symbol",
         type=str,
+        nargs="+",
         default=None,
-        help="Override trading symbol (default: from platform.yaml)",
+        help="Trading symbol(s), space-separated (default: from platform.yaml)",
     )
     p.add_argument(
         "--date",
@@ -188,7 +189,13 @@ def _iter_dates(start_date: str, end_date: str) -> list[str]:
 def _resequence(
     events: list[NBBOQuote | Trade],
 ) -> list[NBBOQuote | Trade]:
-    """Assign globally monotonic sequences and rebuild correlation IDs."""
+    """Sort by exchange time and assign globally monotonic sequences.
+
+    Multi-symbol events may arrive concatenated (all AAPL then all MSFT).
+    Sorting by exchange_timestamp_ns ensures the SimulatedClock advances
+    correctly and all components see chronologically ordered ticks.
+    """
+    events.sort(key=lambda e: e.exchange_timestamp_ns)
     seq = SequenceGenerator()
     result: list[NBBOQuote | Trade] = []
     for event in events:
@@ -776,9 +783,9 @@ def main(argv: list[str] | None = None) -> int:
 
     config = PlatformConfig.from_yaml(config_path)
 
-    # Override symbol if provided via CLI
+    # Override symbols if provided via CLI
     if args.symbol:
-        config.symbols = frozenset([args.symbol.upper()])
+        config.symbols = frozenset(s.upper() for s in args.symbol)
 
     symbols = sorted(config.symbols)
     if not symbols:
