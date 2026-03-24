@@ -21,6 +21,7 @@ import hashlib
 import json
 import logging
 import math
+from collections import deque
 from typing import Any
 
 from feelies.alpha.arbitration import EdgeWeightedArbitrator, SignalArbitrator
@@ -75,14 +76,17 @@ class CompositeFeatureEngine:
     state is maintained internally for each registered feature.
     """
 
-    # Default: 60 seconds of silence marks a symbol stale.
     DEFAULT_STALENESS_THRESHOLD_NS = 60_000_000_000
+    DEFAULT_NAN_ALERT_WINDOW = 1000
+    DEFAULT_NAN_ALERT_THRESHOLD = 0.05
 
     def __init__(
         self,
         registry: AlphaRegistry,
         clock: Clock,
         staleness_threshold_ns: int | None = None,
+        nan_alert_window: int | None = None,
+        nan_alert_threshold: float | None = None,
     ) -> None:
         self._clock = clock
         self._definitions: list[FeatureDefinition] = []
@@ -93,6 +97,16 @@ class CompositeFeatureEngine:
             if staleness_threshold_ns is not None
             else self.DEFAULT_STALENESS_THRESHOLD_NS
         )
+        self._nan_alert_window = (
+            nan_alert_window
+            if nan_alert_window is not None
+            else self.DEFAULT_NAN_ALERT_WINDOW
+        )
+        self._nan_alert_threshold = (
+            nan_alert_threshold
+            if nan_alert_threshold is not None
+            else self.DEFAULT_NAN_ALERT_THRESHOLD
+        )
 
         self._per_symbol_state: dict[str, dict[str, dict[str, Any]]] = {}
         self._per_symbol_event_count: dict[str, int] = {}
@@ -100,6 +114,10 @@ class CompositeFeatureEngine:
         self._per_symbol_last_ns: dict[str, int] = {}
         self._per_symbol_last_exchange_ns: dict[str, int] = {}
         self._last_values: dict[str, dict[str, float]] = {}
+
+        self._nan_windows: dict[tuple[str, str], deque[bool]] = {}
+        self._nan_alerted: set[tuple[str, str]] = set()
+        self._nan_degraded: set[tuple[str, str]] = set()
 
         self._rebuild(registry)
 
@@ -164,11 +182,16 @@ class CompositeFeatureEngine:
 
             value = fdef.compute.update(quote, symbol_state[fid])
             if math.isnan(value) or math.isinf(value):
-                logger.warning(
-                    "Feature '%s' produced %s for %s -- suppressed to 0.0",
-                    fid, value, symbol,
-                )
+                if self._record_nan(fid, symbol):
+                    logger.error(
+                        "Feature '%s' NaN rate exceeded %.0f%% for %s "
+                        "over %d ticks -- suppressed to 0.0",
+                        fid, self._nan_alert_threshold * 100,
+                        symbol, self._nan_alert_window,
+                    )
                 value = 0.0
+            else:
+                self._record_ok(fid, symbol)
             values[fid] = value
 
         self._last_values[symbol] = values
@@ -286,12 +309,16 @@ class CompositeFeatureEngine:
             result = update_trade_fn(trade, symbol_state[fid])
             if result is not None:
                 if math.isnan(result) or math.isinf(result):
-                    logger.warning(
-                        "Feature '%s' update_trade produced %s for %s "
-                        "-- suppressed to 0.0",
-                        fid, result, symbol,
-                    )
+                    if self._record_nan(fid, symbol):
+                        logger.error(
+                            "Feature '%s' NaN rate exceeded %.0f%% for %s "
+                            "over %d ticks -- suppressed to 0.0",
+                            fid, self._nan_alert_threshold * 100,
+                            symbol, self._nan_alert_window,
+                        )
                     result = 0.0
+                else:
+                    self._record_ok(fid, symbol)
                 values[fid] = result
                 updated = True
 
@@ -311,6 +338,47 @@ class CompositeFeatureEngine:
             warm=warm,
             event_count=event_count,
         )
+
+    # ── NaN rate tracking ──────────────────────────────────────
+
+    @property
+    def nan_degraded_features(self) -> set[tuple[str, str]]:
+        """Feature/symbol pairs whose NaN rate has crossed the threshold.
+
+        The orchestrator reads this after each tick to publish alerts.
+        Entries are added when the rate crosses ``nan_alert_threshold``
+        and removed when the rate drops back below.
+        """
+        return set(self._nan_degraded)
+
+    def _record_nan(self, feature_id: str, symbol: str) -> bool:
+        """Track a NaN/Inf occurrence. Returns True if the rate threshold was just crossed."""
+        key = (feature_id, symbol)
+        window = self._nan_windows.get(key)
+        if window is None:
+            window = deque(maxlen=self._nan_alert_window)
+            self._nan_windows[key] = window
+        window.append(True)
+        if len(window) < self._nan_alert_window:
+            return False
+        rate = sum(window) / len(window)
+        if rate >= self._nan_alert_threshold and key not in self._nan_alerted:
+            self._nan_alerted.add(key)
+            self._nan_degraded.add(key)
+            return True
+        return False
+
+    def _record_ok(self, feature_id: str, symbol: str) -> None:
+        """Track a clean computation. Clears the alert flag if the rate recovers."""
+        key = (feature_id, symbol)
+        window = self._nan_windows.get(key)
+        if window is not None:
+            window.append(False)
+            if key in self._nan_alerted:
+                rate = sum(window) / len(window)
+                if rate < self._nan_alert_threshold:
+                    self._nan_alerted.discard(key)
+                    self._nan_degraded.discard(key)
 
     # ── Internal ─────────────────────────────────────────────────
 

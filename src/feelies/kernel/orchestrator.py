@@ -615,6 +615,23 @@ class Orchestrator:
         self._tick_timings["feature_compute_ns"] = time.perf_counter_ns() - t0
         self._bus.publish(features)
 
+        degraded = getattr(self._feature_engine, "nan_degraded_features", None)
+        if degraded:
+            for fid, sym in degraded:
+                self._bus.publish(Alert(
+                    timestamp_ns=quote.timestamp_ns,
+                    correlation_id=cid,
+                    sequence=quote.sequence,
+                    symbol=sym,
+                    severity=AlertSeverity.CRITICAL,
+                    layer="feature_engine",
+                    alert_name="feature_nan_rate_exceeded",
+                    message=(
+                        f"Feature '{fid}' NaN rate exceeded threshold for {sym}"
+                    ),
+                    context={"feature_id": fid, "symbol": sym},
+                ))
+
         # ── M3 → M4: SIGNAL_EVALUATE ───────────────────────────
         self._micro.transition(
             MicroState.SIGNAL_EVALUATE,
