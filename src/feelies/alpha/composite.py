@@ -417,18 +417,27 @@ class CompositeSignalEngine:
     Fail-safe (invariant 11): if an alpha's evaluate() raises an
     exception, the error is logged and that alpha is skipped for this
     tick.  No signal = no order = safe.
+
+    Entry cooldown: when ``entry_cooldown_ticks > 0``, directional
+    entry signals are suppressed if fewer than that many ticks have
+    elapsed since the last entry signal for the same (symbol, strategy)
+    pair.  FLAT (exit) signals are never subject to cooldown.
     """
 
     def __init__(
         self,
         registry: AlphaRegistry,
         arbitrator: SignalArbitrator | None = None,
+        entry_cooldown_ticks: int = 0,
     ) -> None:
         self._registry = registry
         self._arbitrator: SignalArbitrator = (
             arbitrator if arbitrator is not None
             else EdgeWeightedArbitrator()
         )
+        self._entry_cooldown_ticks = entry_cooldown_ticks
+        self._last_entry_tick: dict[tuple[str, str], int] = {}
+        self._tick_counter: int = 0
 
     def evaluate(self, features: FeatureVector) -> Signal | None:
         """Evaluate all active alphas and arbitrate the result.
@@ -443,6 +452,8 @@ class CompositeSignalEngine:
         alphas do not propagate — they are logged and the alpha is
         skipped for this tick.
         """
+        self._tick_counter += 1
+
         if not features.warm:
             return None
 
@@ -475,9 +486,21 @@ class CompositeSignalEngine:
             return None
 
         if len(signals) == 1:
-            return signals[0]
+            winner = signals[0]
+        else:
+            winner = self._arbitrator.arbitrate(signals)
 
-        return self._arbitrator.arbitrate(signals)
+        if winner is None:
+            return None
+
+        if winner.direction != SignalDirection.FLAT and self._entry_cooldown_ticks > 0:
+            key = (winner.symbol, winner.strategy_id)
+            last_tick = self._last_entry_tick.get(key, -self._entry_cooldown_ticks)
+            if (self._tick_counter - last_tick) < self._entry_cooldown_ticks:
+                return None
+            self._last_entry_tick[key] = self._tick_counter
+
+        return winner
 
 
 # ── Topological sort ─────────────────────────────────────────────────

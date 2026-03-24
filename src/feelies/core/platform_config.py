@@ -63,6 +63,7 @@ class PlatformConfig:
 
     account_equity: float = 1_000_000.0
     backtest_fill_latency_ns: int = 0
+    signal_entry_cooldown_ticks: int = 0
 
     cache_dir: Path | None = None
 
@@ -118,6 +119,7 @@ class PlatformConfig:
             "risk_max_drawdown_pct": self.risk_max_drawdown_pct,
             "account_equity": self.account_equity,
             "backtest_fill_latency_ns": self.backtest_fill_latency_ns,
+            "signal_entry_cooldown_ticks": self.signal_entry_cooldown_ticks,
         }
 
     @classmethod
@@ -181,6 +183,9 @@ class PlatformConfig:
             account_equity=float(data.get("account_equity", 1_000_000.0)),
             backtest_fill_latency_ns=int(
                 data.get("backtest_fill_latency_ns", 0)
+            ),
+            signal_entry_cooldown_ticks=int(
+                data.get("signal_entry_cooldown_ticks", 0)
             ),
             cache_dir=Path(cache_dir_raw) if cache_dir_raw else None,
         )

@@ -77,7 +77,10 @@ def build_platform(
     _load_alphas(config, registry, loader)
 
     feature_engine = CompositeFeatureEngine(registry, clock)
-    signal_engine = CompositeSignalEngine(registry)
+    signal_engine = CompositeSignalEngine(
+        registry,
+        entry_cooldown_ticks=config.signal_entry_cooldown_ticks,
+    )
 
     risk_config = RiskConfig(
         max_position_per_symbol=config.risk_max_position_per_symbol,
