@@ -48,15 +48,17 @@ class BudgetBasedSizer:
     Sizing formula:
       1. allocated_capital = account_equity * capital_allocation_pct / 100
       2. conviction_capital = allocated_capital * signal.strength
-      3. regime_factor = lookup from dominant regime state
+      3. regime_factor = EV over posterior: sum(p_i * scale_i)
       4. target_value = conviction_capital * regime_factor
       5. target_shares = floor(target_value / symbol_price)
       6. capped = min(target_shares, max_position_per_symbol)
 
     Regime scaling factors (configurable):
-      - vol_breakout         → 0.5x  (halve in high-vol)
-      - compression_clustering → 0.75x (reduced edge)
-      - normal               → 1.0x
+      - vol_breakout           -> 0.5x  (halve in high-vol)
+      - compression_clustering -> 0.75x (reduced edge)
+      - normal                 -> 1.0x
+
+    Unknown state names default to min(all factors) (fail-safe).
     """
 
     _DEFAULT_REGIME_FACTORS: dict[str, float] = {
@@ -72,6 +74,7 @@ class BudgetBasedSizer:
     ) -> None:
         self._regime_engine = regime_engine
         self._regime_factors = regime_factors or dict(self._DEFAULT_REGIME_FACTORS)
+        self._regime_factor_default = min(self._regime_factors.values()) if self._regime_factors else 1.0
 
     def compute_target_quantity(
         self,
@@ -105,7 +108,8 @@ class BudgetBasedSizer:
             return 1.0
 
         state_names = list(self._regime_engine.state_names)
-        dominant_idx = max(range(len(posteriors)), key=lambda i: posteriors[i])
-        dominant_name = state_names[dominant_idx] if dominant_idx < len(state_names) else ""
-
-        return self._regime_factors.get(dominant_name, 1.0)
+        default = self._regime_factor_default
+        return sum(
+            posteriors[i] * self._regime_factors.get(state_names[i], default)
+            for i in range(len(posteriors))
+        )

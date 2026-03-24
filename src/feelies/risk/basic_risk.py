@@ -58,6 +58,12 @@ class BasicRiskEngine:
         self._regime_engine = regime_engine
         self._high_water_mark = config.account_equity
         self._realized_pnl = Decimal("0")
+        self._regime_scale_map: dict[str, float] = {
+            "vol_breakout": config.regime_vol_breakout_scale,
+            "compression_clustering": config.regime_compression_scale,
+            "normal": config.regime_normal_scale,
+        }
+        self._regime_scale_default = min(self._regime_scale_map.values())
 
     def check_signal(
         self,
@@ -202,7 +208,10 @@ class BasicRiskEngine:
         )
 
     def _regime_scaling(self, symbol: str) -> float:
-        """Determine position scaling based on current regime state."""
+        """EV over posterior distribution: sum(p_i * scale_i).
+
+        Unknown state names default to min(all scales) (fail-safe).
+        """
         if self._regime_engine is None:
             return 1.0
 
@@ -211,14 +220,11 @@ class BasicRiskEngine:
             return 1.0
 
         state_names = list(self._regime_engine.state_names)
-        dominant_idx = max(range(len(posteriors)), key=lambda i: posteriors[i])
-        dominant_name = state_names[dominant_idx] if dominant_idx < len(state_names) else ""
-
-        if dominant_name == "vol_breakout":
-            return self._config.regime_vol_breakout_scale
-        if dominant_name == "compression_clustering":
-            return self._config.regime_compression_scale
-        return self._config.regime_normal_scale
+        default = self._regime_scale_default
+        return sum(
+            posteriors[i] * self._regime_scale_map.get(state_names[i], default)
+            for i in range(len(posteriors))
+        )
 
     def _is_drawdown_breached(self, positions: PositionStore) -> bool:
         total_realized = Decimal("0")
