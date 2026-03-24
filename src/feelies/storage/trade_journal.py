@@ -25,6 +25,11 @@ class TradeRecord:
 
     Captures the full decision chain from signal through fill,
     with computed execution quality fields.
+
+    ``realized_pnl`` is **per-trade differential** — the PnL realized
+    by this specific fill only.  Computed as the change in the
+    position's cumulative realized PnL across this fill.  Contrast
+    with ``PositionUpdate.realized_pnl``, which is cumulative.
     """
 
     order_id: str

@@ -60,6 +60,12 @@ def _validate_state(obj: object, path: str = "root") -> None:
             f"(value: {obj!r}) which does not round-trip through JSON. "
             f"Alpha initial_state() must return only float/int/str/bool/None/list/dict."
         )
+    elif isinstance(obj, float) and not math.isfinite(obj):
+        raise TypeError(
+            f"Feature state at '{path}' contains non-finite float "
+            f"(value: {obj!r}). Inf/NaN are not valid JSON and indicate "
+            f"a computation error in the feature state."
+        )
 
 
 # ── Composite Feature Engine ────────────────────────────────────────
@@ -437,7 +443,7 @@ class CompositeSignalEngine:
         )
         self._entry_cooldown_ticks = entry_cooldown_ticks
         self._last_entry_tick: dict[tuple[str, str], int] = {}
-        self._tick_counter: int = 0
+        self._tick_counter: dict[str, int] = {}
 
     def evaluate(self, features: FeatureVector) -> Signal | None:
         """Evaluate all active alphas and arbitrate the result.
@@ -452,13 +458,14 @@ class CompositeSignalEngine:
         alphas do not propagate — they are logged and the alpha is
         skipped for this tick.
         """
-        self._tick_counter += 1
+        symbol = features.symbol
+        symbol_tick = self._tick_counter.get(symbol, 0) + 1
+        self._tick_counter[symbol] = symbol_tick
 
         if not features.warm:
             return None
 
         signals: list[Signal] = []
-        symbol = features.symbol
 
         for alpha in self._registry.active_alphas():
             manifest = alpha.manifest
@@ -496,9 +503,9 @@ class CompositeSignalEngine:
         if winner.direction != SignalDirection.FLAT and self._entry_cooldown_ticks > 0:
             key = (winner.symbol, winner.strategy_id)
             last_tick = self._last_entry_tick.get(key, -self._entry_cooldown_ticks)
-            if (self._tick_counter - last_tick) < self._entry_cooldown_ticks:
+            if (symbol_tick - last_tick) < self._entry_cooldown_ticks:
                 return None
-            self._last_entry_tick[key] = self._tick_counter
+            self._last_entry_tick[key] = symbol_tick
 
         return winner
 

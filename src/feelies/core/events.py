@@ -226,7 +226,12 @@ class OrderAck(Event):
 
 @dataclass(frozen=True, kw_only=True)
 class PositionUpdate(Event):
-    """Position change after fill reconciliation."""
+    """Position change after fill reconciliation.
+
+    ``realized_pnl`` is **cumulative** for this symbol — the running
+    total of all realized PnL since the position was opened.  Contrast
+    with ``TradeRecord.realized_pnl``, which is per-trade differential.
+    """
 
     symbol: str
     quantity: int

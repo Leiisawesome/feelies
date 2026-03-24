@@ -210,7 +210,24 @@ class BasicRiskEngine:
         )
 
     def _regime_scaling(self, symbol: str) -> float:
-        """EV over posterior distribution: sum(p_i * scale_i).
+        """Expected value over posterior distribution: sum(p_i * scale_i).
+
+        Uses EV rather than dominant-state (argmax) point estimates
+        to avoid discontinuous limit jumps at regime transitions.
+        With noisy HMM posteriors, argmax can oscillate rapidly
+        between states, causing position limits to thrash.  EV
+        smooths this at the cost of weaker response to regime
+        extremes: full vol_breakout scaling (0.5×) requires 100%
+        posterior certainty, which real HMMs rarely produce.
+
+        This is acceptable because the risk engine's regime scaling
+        is a secondary limit tightening, not the primary sizing
+        mechanism.  The position sizer independently scales quantity
+        by regime, providing the primary response.  The risk engine
+        only applies regime factors to hard position *limits*, never
+        to ``scaling_factor``, preventing double-scaling (see module
+        docstring).  The two operate in series (sizer proposes, risk
+        caps), not in parallel.
 
         Unknown state names default to min(all scales) (fail-safe).
         """

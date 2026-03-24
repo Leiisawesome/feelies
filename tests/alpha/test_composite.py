@@ -201,6 +201,89 @@ class TestCompositeSignalEngine:
         assert signal.strategy_id == "mock_alpha"
 
 
+def _make_features(symbol: str, seq: int = 1) -> FeatureVector:
+    """Helper to create warm FeatureVector that triggers a signal from MockAlpha."""
+    return FeatureVector(
+        timestamp_ns=1_700_000_000_000_000_000,
+        correlation_id=f"test:{seq}:{seq}",
+        sequence=seq,
+        symbol=symbol,
+        feature_version="hash",
+        values={"spread": 150.01},
+        warm=True,
+    )
+
+
+class TestEntryCooldown:
+    """Entry cooldown is per-symbol, not global across the universe."""
+
+    def test_cooldown_suppresses_within_window(self, mock_alpha) -> None:
+        registry = AlphaRegistry()
+        registry.register(mock_alpha)
+        engine = CompositeSignalEngine(
+            registry=registry, entry_cooldown_ticks=3,
+        )
+
+        s1 = engine.evaluate(_make_features("AAPL", seq=1))
+        assert s1 is not None
+
+        s2 = engine.evaluate(_make_features("AAPL", seq=2))
+        assert s2 is None, "should be suppressed (1 tick elapsed, need 3)"
+
+        s3 = engine.evaluate(_make_features("AAPL", seq=3))
+        assert s3 is None, "should be suppressed (2 ticks elapsed, need 3)"
+
+        s4 = engine.evaluate(_make_features("AAPL", seq=4))
+        assert s4 is not None, "cooldown expired (3 ticks elapsed)"
+
+    def test_cooldown_is_per_symbol(self, mock_alpha) -> None:
+        """MSFT ticks must not consume AAPL's cooldown budget."""
+        registry = AlphaRegistry()
+        registry.register(mock_alpha)
+        engine = CompositeSignalEngine(
+            registry=registry, entry_cooldown_ticks=3,
+        )
+
+        s1 = engine.evaluate(_make_features("AAPL", seq=1))
+        assert s1 is not None
+
+        engine.evaluate(_make_features("MSFT", seq=2))
+        engine.evaluate(_make_features("MSFT", seq=3))
+        engine.evaluate(_make_features("MSFT", seq=4))
+
+        s_aapl = engine.evaluate(_make_features("AAPL", seq=5))
+        assert s_aapl is None, (
+            "only 1 AAPL tick elapsed since entry — MSFT ticks must "
+            "not count toward AAPL cooldown"
+        )
+
+    def test_cooldown_independent_symbols_fire_immediately(self, mock_alpha) -> None:
+        """Each symbol's cooldown is independent — MSFT can fire while AAPL is cooling."""
+        registry = AlphaRegistry()
+        registry.register(mock_alpha)
+        engine = CompositeSignalEngine(
+            registry=registry, entry_cooldown_ticks=5,
+        )
+
+        s_aapl = engine.evaluate(_make_features("AAPL", seq=1))
+        assert s_aapl is not None
+
+        s_msft = engine.evaluate(_make_features("MSFT", seq=2))
+        assert s_msft is not None, "MSFT has no prior entry — should fire immediately"
+
+    def test_cooldown_zero_means_no_suppression(self, mock_alpha) -> None:
+        registry = AlphaRegistry()
+        registry.register(mock_alpha)
+        engine = CompositeSignalEngine(
+            registry=registry, entry_cooldown_ticks=0,
+        )
+
+        s1 = engine.evaluate(_make_features("AAPL", seq=1))
+        s2 = engine.evaluate(_make_features("AAPL", seq=2))
+        assert s1 is not None
+        assert s2 is not None
+
+
 class _TradeCountCompute:
     """Feature that updates on trades; returns cumulative trade count."""
 
@@ -511,6 +594,124 @@ class TestWarmUpCausality:
 
         engine.restore("AAPL", state)
         assert engine.is_warm("AAPL") is True
+
+
+class TestValidateStateNonFiniteFloat:
+    """_validate_state rejects inf/nan in feature state at checkpoint and init."""
+
+    def test_checkpoint_rejects_inf_in_state(self, clock, sample_quote) -> None:
+        """State containing float('inf') is caught at checkpoint time."""
+        class _InfCompute:
+            def initial_state(self) -> dict:
+                return {"val": 0.0}
+
+            def update(self, quote, state: dict) -> float:
+                state["val"] = float("inf")
+                return 0.0
+
+        feat = FeatureDefinition(
+            feature_id="inf_feat",
+            version="1.0",
+            description="produces inf state",
+            depends_on=frozenset(),
+            warm_up=WarmUpSpec(min_events=0),
+            compute=_InfCompute(),
+        )
+        alpha = MockAlpha(alpha_id="inf_alpha", feature_defs=[feat])
+        registry = AlphaRegistry()
+        registry.register(alpha)
+        engine = CompositeFeatureEngine(registry=registry, clock=clock)
+        engine.update(sample_quote)
+
+        with pytest.raises(TypeError, match="non-finite float"):
+            engine.checkpoint("AAPL")
+
+    def test_checkpoint_rejects_nan_in_state(self, clock, sample_quote) -> None:
+        class _NanCompute:
+            def initial_state(self) -> dict:
+                return {"val": 0.0}
+
+            def update(self, quote, state: dict) -> float:
+                state["val"] = float("nan")
+                return 0.0
+
+        feat = FeatureDefinition(
+            feature_id="nan_feat",
+            version="1.0",
+            description="produces nan state",
+            depends_on=frozenset(),
+            warm_up=WarmUpSpec(min_events=0),
+            compute=_NanCompute(),
+        )
+        alpha = MockAlpha(alpha_id="nan_alpha", feature_defs=[feat])
+        registry = AlphaRegistry()
+        registry.register(alpha)
+        engine = CompositeFeatureEngine(registry=registry, clock=clock)
+        engine.update(sample_quote)
+
+        with pytest.raises(TypeError, match="non-finite float"):
+            engine.checkpoint("AAPL")
+
+    def test_checkpoint_rejects_neg_inf_in_state(self, clock, sample_quote) -> None:
+        class _NegInfCompute:
+            def initial_state(self) -> dict:
+                return {"val": 0.0}
+
+            def update(self, quote, state: dict) -> float:
+                state["val"] = float("-inf")
+                return 0.0
+
+        feat = FeatureDefinition(
+            feature_id="neginf_feat",
+            version="1.0",
+            description="produces -inf state",
+            depends_on=frozenset(),
+            warm_up=WarmUpSpec(min_events=0),
+            compute=_NegInfCompute(),
+        )
+        alpha = MockAlpha(alpha_id="neginf_alpha", feature_defs=[feat])
+        registry = AlphaRegistry()
+        registry.register(alpha)
+        engine = CompositeFeatureEngine(registry=registry, clock=clock)
+        engine.update(sample_quote)
+
+        with pytest.raises(TypeError, match="non-finite float"):
+            engine.checkpoint("AAPL")
+
+    def test_initial_state_rejects_inf(self, clock, sample_quote) -> None:
+        """Inf in initial_state() is caught on first update(), before any checkpoint."""
+        class _InfInitCompute:
+            def initial_state(self) -> dict:
+                return {"val": float("inf")}
+
+            def update(self, quote, state: dict) -> float:
+                return 0.0
+
+        feat = FeatureDefinition(
+            feature_id="inf_init",
+            version="1.0",
+            description="inf in initial state",
+            depends_on=frozenset(),
+            warm_up=WarmUpSpec(min_events=0),
+            compute=_InfInitCompute(),
+        )
+        alpha = MockAlpha(alpha_id="inf_init_alpha", feature_defs=[feat])
+        registry = AlphaRegistry()
+        registry.register(alpha)
+        engine = CompositeFeatureEngine(registry=registry, clock=clock)
+
+        with pytest.raises(TypeError, match="non-finite float"):
+            engine.update(sample_quote)
+
+    def test_finite_floats_accepted(self, clock, mock_alpha, sample_quote) -> None:
+        """Normal finite floats pass validation without error."""
+        registry = AlphaRegistry()
+        registry.register(mock_alpha)
+        engine = CompositeFeatureEngine(registry=registry, clock=clock)
+        engine.update(sample_quote)
+
+        state, count = engine.checkpoint("AAPL")
+        assert count == 1
 
 
 class TestCompositeFeatureEngineDependencies:
