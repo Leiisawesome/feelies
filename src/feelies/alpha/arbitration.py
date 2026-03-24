@@ -38,7 +38,10 @@ class EdgeWeightedArbitrator:
     composite scores.  If the winning score falls below the dead-zone
     threshold, no signal is emitted (returns None).
 
-    FLAT signals are passed through only if they are the sole signal.
+    FLAT is privileged: any alpha emitting FLAT triggers an immediate
+    exit regardless of competing directional signals.  FLAT is a
+    constraint (exit), not a preference — it must not be outvoted
+    by directional hypotheses (invariant 11: fail-safe default).
     """
 
     __slots__ = ("_dead_zone_bps",)
@@ -61,14 +64,12 @@ class EdgeWeightedArbitrator:
         if len(signals) == 1:
             return signals[0]
 
-        directional = [
-            s for s in signals if s.direction != SignalDirection.FLAT
-        ]
-        if not directional:
-            return signals[0]
+        flats = [s for s in signals if s.direction == SignalDirection.FLAT]
+        if flats:
+            return max(flats, key=lambda s: s.strength)
 
         best = max(
-            directional,
+            signals,
             key=lambda s: s.edge_estimate_bps * s.strength,
         )
 
