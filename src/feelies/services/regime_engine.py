@@ -12,6 +12,7 @@ sizing and drawdown gating.
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Sequence
 from typing import Protocol
@@ -65,6 +66,22 @@ class RegimeEngine(Protocol):
 
     def reset(self, symbol: str) -> None:
         """Clear accumulated state for a symbol."""
+        ...
+
+    def checkpoint(self) -> bytes:
+        """Serialize all per-symbol state to an opaque blob.
+
+        The blob must be sufficient to fully restore internal state
+        via ``restore()``.  Format is implementation-defined.
+        """
+        ...
+
+    def restore(self, data: bytes) -> None:
+        """Restore internal state from a blob produced by ``checkpoint()``.
+
+        Replaces all per-symbol state.  On failure, the implementation
+        must leave itself in a clean cold-start state (empty posteriors).
+        """
         ...
 
 
@@ -199,6 +216,33 @@ class HMM3StateFractional:
     def reset(self, symbol: str) -> None:
         self._posteriors.pop(symbol, None)
         self._last_update_seq.pop(symbol, None)
+
+    def checkpoint(self) -> bytes:
+        payload = {
+            "posteriors": self._posteriors,
+            "last_update_seq": self._last_update_seq,
+        }
+        return json.dumps(payload, separators=(",", ":")).encode("utf-8")
+
+    def restore(self, data: bytes) -> None:
+        try:
+            payload = json.loads(data)
+            posteriors = payload["posteriors"]
+            last_seq = payload["last_update_seq"]
+            if not isinstance(posteriors, dict) or not isinstance(last_seq, dict):
+                raise ValueError("Invalid checkpoint structure")
+            for sym, post in posteriors.items():
+                if len(post) != self._n_states:
+                    raise ValueError(
+                        f"Posterior length mismatch for {sym}: "
+                        f"{len(post)} vs {self._n_states}"
+                    )
+            self._posteriors = {k: list(v) for k, v in posteriors.items()}
+            self._last_update_seq = {k: int(v) for k, v in last_seq.items()}
+        except Exception:
+            self._posteriors = {}
+            self._last_update_seq = {}
+            raise
 
     def _predict(self, prior: list[float]) -> list[float]:
         predicted = [0.0] * self._n_states

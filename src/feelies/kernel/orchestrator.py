@@ -1322,6 +1322,9 @@ class Orchestrator:
 
     # ── Feature snapshot management ─────────────────────────────────
 
+    _REGIME_SNAPSHOT_KEY = "__regime__"
+    _REGIME_VERSION_PREFIX = "regime:"
+
     def _restore_feature_snapshots(self) -> None:
         """Restore feature engine state from snapshots for warm-start.
 
@@ -1341,6 +1344,31 @@ class Orchestrator:
                 self._feature_engine.restore(symbol, state)
             except Exception:
                 self._feature_engine.reset(symbol)
+                if self._regime_engine is not None:
+                    self._regime_engine.reset(symbol)
+
+        self._restore_regime_snapshot()
+
+    def _restore_regime_snapshot(self) -> None:
+        if self._feature_snapshots is None or self._regime_engine is None:
+            return
+        regime_version = (
+            self._REGIME_VERSION_PREFIX
+            + type(self._regime_engine).__name__
+        )
+        result = self._feature_snapshots.load(
+            self._REGIME_SNAPSHOT_KEY, regime_version,
+        )
+        if result is None:
+            return
+        _, data = result
+        try:
+            self._regime_engine.restore(data)
+        except Exception:
+            logger.warning(
+                "Regime snapshot restore failed -- cold-starting regime engine",
+                exc_info=True,
+            )
 
     def _checkpoint_feature_snapshots(self) -> None:
         """Checkpoint feature engine state for all configured symbols.
@@ -1370,3 +1398,31 @@ class Orchestrator:
                     symbol,
                     exc_info=True,
                 )
+
+        self._checkpoint_regime_snapshot()
+
+    def _checkpoint_regime_snapshot(self) -> None:
+        if self._feature_snapshots is None or self._regime_engine is None:
+            return
+        regime_version = (
+            self._REGIME_VERSION_PREFIX
+            + type(self._regime_engine).__name__
+        )
+        try:
+            data = self._regime_engine.checkpoint()
+            checksum = hashlib.sha256(data).hexdigest()
+            meta = FeatureSnapshotMeta(
+                symbol=self._REGIME_SNAPSHOT_KEY,
+                feature_version=regime_version,
+                event_count=0,
+                last_sequence=0,
+                last_timestamp_ns=self._clock.now_ns(),
+                checksum=checksum,
+            )
+            self._feature_snapshots.save(meta, data)
+        except Exception:
+            logger.warning(
+                "Regime snapshot checkpoint failed -- "
+                "next boot will cold-start regime engine",
+                exc_info=True,
+            )
