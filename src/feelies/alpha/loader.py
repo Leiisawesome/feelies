@@ -78,6 +78,80 @@ _SAFE_BUILTINS = {
 
 _LIST_RETURN_RE = re.compile(r"^list\[(\d+)]$")
 
+_PARAM_REF_RE = re.compile(r"params\[['\"](\w+)['\"]\]")
+_PARAM_MUL_RE = re.compile(r"params\[['\"](\w+)['\"]\]\s*\*\s*(\d+)")
+_MUL_PARAM_RE = re.compile(r"(\d+)\s*\*\s*params\[['\"](\w+)['\"]\]")
+_PARAM_ADDSUB_RE = re.compile(r"params\[['\"](\w+)['\"]\]\s*([+\-])\s*(\d+)")
+
+
+def _resolve_min_events(
+    expr: str,
+    params: dict[str, Any],
+    source: str,
+    feature_id: str,
+) -> int:
+    """Parse a warm_up.min_events expression without eval().
+
+    Supported patterns:
+      - Integer literal: ``"50"``
+      - Parameter reference: ``"params['ewma_span']"``
+      - Arithmetic: ``"params['span'] * 2"``, ``"2 * params['span']"``,
+        ``"params['span'] + 10"``, ``"params['span'] - 5"``
+
+    Raises ``AlphaLoadError`` for anything outside this grammar.
+    """
+    expr = expr.strip()
+
+    if re.fullmatch(r"\d+", expr):
+        return int(expr)
+
+    m = re.fullmatch(_PARAM_MUL_RE.pattern, expr)
+    if m:
+        key, multiplier = m.group(1), int(m.group(2))
+        return _param_int(key, params, source, feature_id) * multiplier
+
+    m = re.fullmatch(_MUL_PARAM_RE.pattern, expr)
+    if m:
+        multiplier, key = int(m.group(1)), m.group(2)
+        return multiplier * _param_int(key, params, source, feature_id)
+
+    m = re.fullmatch(_PARAM_ADDSUB_RE.pattern, expr)
+    if m:
+        key, op, operand = m.group(1), m.group(2), int(m.group(3))
+        base = _param_int(key, params, source, feature_id)
+        return base + operand if op == "+" else base - operand
+
+    m = re.fullmatch(_PARAM_REF_RE.pattern, expr)
+    if m:
+        return _param_int(m.group(1), params, source, feature_id)
+
+    raise AlphaLoadError(
+        f"{source}: feature '{feature_id}' warm_up.min_events "
+        f"expression {expr!r} uses unsupported syntax. "
+        f"Only integer literals and params['key'] arithmetic are permitted."
+    )
+
+
+def _param_int(
+    key: str,
+    params: dict[str, Any],
+    source: str,
+    feature_id: str,
+) -> int:
+    """Look up a parameter by key and convert to int."""
+    if key not in params:
+        raise AlphaLoadError(
+            f"{source}: feature '{feature_id}' warm_up.min_events "
+            f"references unknown parameter '{key}'"
+        )
+    try:
+        return int(params[key])
+    except (TypeError, ValueError) as exc:
+        raise AlphaLoadError(
+            f"{source}: feature '{feature_id}' warm_up.min_events "
+            f"parameter '{key}' = {params[key]!r} is not convertible to int"
+        ) from exc
+
 
 # ── Loader errors ────────────────────────────────────────────────────
 
@@ -619,16 +693,9 @@ class AlphaLoader:
         min_duration_ns = int(warm_up_raw.get("min_duration_ns", 0))
 
         if isinstance(min_events_raw, str):
-            try:
-                min_events = int(eval(  # noqa: S307
-                    min_events_raw,
-                    {"__builtins__": {}, "params": params},
-                ))
-            except Exception as exc:
-                raise AlphaLoadError(
-                    f"{source}: feature '{feature_id}' warm_up.min_events "
-                    f"expression failed: {exc}"
-                ) from exc
+            min_events = _resolve_min_events(
+                min_events_raw, params, source, feature_id,
+            )
         else:
             min_events = int(min_events_raw)
 
