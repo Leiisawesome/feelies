@@ -31,6 +31,35 @@ from feelies.features.definition import FeatureDefinition
 
 logger = logging.getLogger(__name__)
 
+_JSON_SAFE = (float, int, bool, str, type(None))
+
+
+def _validate_state(obj: object, path: str = "root") -> None:
+    """Verify feature state contains only JSON-round-trippable types.
+
+    Raises ``TypeError`` with the exact path to the offending value.
+    This catches Decimal, tuple, set, and custom objects at write time
+    rather than letting ``json.dumps(default=str)`` silently corrupt
+    them into strings that detonate after restore.
+    """
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if not isinstance(k, str):
+                raise TypeError(
+                    f"Feature state key at '{path}' is {type(k).__name__!r}, "
+                    f"expected str. Dict keys must be strings for JSON."
+                )
+            _validate_state(v, f"{path}.{k}")
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            _validate_state(v, f"{path}[{i}]")
+    elif not isinstance(obj, _JSON_SAFE):
+        raise TypeError(
+            f"Feature state at '{path}' contains {type(obj).__name__!r} "
+            f"(value: {obj!r}) which does not round-trip through JSON. "
+            f"Alpha initial_state() must return only float/int/str/bool/None/list/dict."
+        )
+
 
 # ── Composite Feature Engine ────────────────────────────────────────
 
@@ -129,7 +158,9 @@ class CompositeFeatureEngine:
         for fid in self._computation_order:
             fdef = self._def_by_id[fid]
             if fid not in symbol_state:
-                symbol_state[fid] = fdef.compute.initial_state()
+                init = fdef.compute.initial_state()
+                _validate_state(init, f"initial_state[{fid}]")
+                symbol_state[fid] = init
 
             value = fdef.compute.update(quote, symbol_state[fid])
             if math.isnan(value) or math.isinf(value):
@@ -185,12 +216,13 @@ class CompositeFeatureEngine:
     def checkpoint(self, symbol: str) -> tuple[bytes, int]:
         """Serialize per-symbol state for all features.
 
-        Returns (state_bytes, event_count).  State is JSON-encoded
-        for simplicity; a production system would use a more compact
-        binary format.
+        Returns (state_bytes, event_count).  State is JSON-encoded.
+        Raises ``TypeError`` at checkpoint time if any feature state
+        contains non-JSON-safe types (Decimal, tuple, set, etc.).
         """
         state = self._per_symbol_state.get(symbol, {})
         event_count = self._per_symbol_event_count.get(symbol, 0)
+        _validate_state(state, f"feature_state[{symbol}]")
         payload = {
             "feature_state": state,
             "event_count": event_count,
@@ -198,7 +230,7 @@ class CompositeFeatureEngine:
             "last_ns": self._per_symbol_last_ns.get(symbol, 0),
             "last_exchange_ns": self._per_symbol_last_exchange_ns.get(symbol, 0),
         }
-        return json.dumps(payload, default=str).encode(), event_count
+        return json.dumps(payload).encode(), event_count
 
     def restore(self, symbol: str, state: bytes) -> None:
         """Restore per-symbol state from a checkpoint.
