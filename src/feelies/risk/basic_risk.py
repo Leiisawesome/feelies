@@ -2,8 +2,11 @@
 
 Enforces per-symbol position limits, gross portfolio exposure caps,
 drawdown guard, and regime-aware gating.  When the platform-level
-RegimeEngine is available, limits are tightened in high-volatility
-regimes and loosened (to baseline) in normal regimes.
+RegimeEngine is available, position *limits* are tightened in
+high-volatility regimes.  Regime scaling of *quantity* is the
+exclusive responsibility of the position sizer — the risk engine
+never injects regime factors into ``scaling_factor`` to avoid
+double-scaling through the orchestrator pipeline.
 
 Invariants preserved:
   - Inv 11 (fail-safe): unknown states resolve to REJECT, never ALLOW.
@@ -121,7 +124,7 @@ class BasicRiskEngine:
                 symbol=signal.symbol,
                 action=RiskAction.SCALE_DOWN,
                 reason="approaching exposure limit",
-                scaling_factor=scaling * regime_scale,
+                scaling_factor=scaling,
             )
 
         return RiskVerdict(
@@ -131,7 +134,6 @@ class BasicRiskEngine:
             symbol=signal.symbol,
             action=RiskAction.ALLOW,
             reason="within limits",
-            scaling_factor=regime_scale,
         )
 
     def check_order(
@@ -195,7 +197,7 @@ class BasicRiskEngine:
                 symbol=order.symbol,
                 action=RiskAction.SCALE_DOWN,
                 reason="approaching exposure limit at order gate",
-                scaling_factor=scaling * regime_scale,
+                scaling_factor=scaling,
             )
 
         return RiskVerdict(

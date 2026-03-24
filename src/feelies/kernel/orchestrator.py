@@ -933,6 +933,10 @@ class Orchestrator:
         Emergency path -- bypasses the micro SM (which will be reset
         immediately after).  Individual order failures are logged but
         do not prevent the escalation to LOCKED (Inv-11: fail-safe).
+
+        After the flatten loop, residual exposure is checked.  If any
+        positions remain open, a CRITICAL alert is emitted so the
+        operator knows the flatten was incomplete.
         """
         positions = self._positions.all_positions()
         for symbol, pos in positions.items():
@@ -973,6 +977,27 @@ class Orchestrator:
                     "position may remain open at LOCKED",
                     symbol, pos.quantity,
                 )
+
+        residual = {
+            sym: p.quantity
+            for sym, p in self._positions.all_positions().items()
+            if p.quantity != 0
+        }
+        if residual:
+            msg = (
+                f"Emergency flatten incomplete — residual positions: "
+                f"{residual}, total_exposure={self._positions.total_exposure()}"
+            )
+            logger.critical(msg)
+            self._bus.publish(Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.CRITICAL,
+                layer="kernel",
+                alert_name="emergency_flatten_incomplete",
+                message=msg,
+            ))
 
     def _compute_target_quantity(
         self,
