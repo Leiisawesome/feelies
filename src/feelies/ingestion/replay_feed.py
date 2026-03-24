@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 from feelies.core.clock import Clock, SimulatedClock
+from feelies.core.errors import CausalityViolation
 from feelies.core.events import NBBOQuote, Trade
 from feelies.storage.event_log import EventLog
 
@@ -41,23 +42,38 @@ class ReplayFeed:
         self._end_sequence = end_sequence
 
     def events(self) -> Iterator[NBBOQuote | Trade]:
-        """Yield market events in sequence order from the EventLog.
+        """Yield market events in exchange-timestamp order from the EventLog.
 
         Filters for ``NBBOQuote`` and ``Trade`` events only — other
         event types (signals, risk verdicts, state transitions) are
         skipped since they are not market data inputs.
 
+        Validates that ``exchange_timestamp_ns`` is monotonically
+        non-decreasing across yielded events.  Raises
+        ``CausalityViolation`` if a backward timestamp is detected,
+        indicating the EventLog was not properly sorted before replay
+        (invariant 6).
+
         If a ``SimulatedClock`` was provided, sets its time to the
         event's ``exchange_timestamp_ns`` before yielding, so that
         downstream components see deterministic time progression.
         """
+        last_exchange_ts: int = 0
         for event in self._event_log.replay(
             self._start_sequence,
             self._end_sequence,
         ):
             if isinstance(event, (NBBOQuote, Trade)):
+                ts = event.exchange_timestamp_ns
+                if ts < last_exchange_ts:
+                    raise CausalityViolation(
+                        f"ReplayFeed: exchange_timestamp_ns={ts} "
+                        f"at sequence={event.sequence} < previous "
+                        f"{last_exchange_ts} — EventLog not sorted by "
+                        f"exchange time (invariant 6)"
+                    )
+                last_exchange_ts = ts
                 if isinstance(self._clock, SimulatedClock):
-                    ts = event.exchange_timestamp_ns
                     if ts > self._clock.now_ns():
                         self._clock.set_time(ts)
                 yield event

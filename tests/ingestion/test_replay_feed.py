@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
 from decimal import Decimal
 
 import pytest
 
 from feelies.core.clock import SimulatedClock
-from feelies.core.events import NBBOQuote, Trade
+from feelies.core.errors import CausalityViolation
+from feelies.core.events import Event, NBBOQuote, Trade
 from feelies.ingestion.replay_feed import ReplayFeed
 from feelies.storage.memory_event_log import InMemoryEventLog
 
@@ -36,6 +38,27 @@ def _make_trade(seq: int, symbol: str = "AAPL", exchange_ts_ns: int = 1_700_000_
         size=100,
         exchange_timestamp_ns=exchange_ts_ns,
     )
+
+
+class _UnsortedEventLog:
+    """EventLog without causality enforcement, for testing ReplayFeed's guard."""
+
+    def __init__(self, events: list[Event]) -> None:
+        self._events = events
+
+    def append(self, event: Event) -> None:
+        self._events.append(event)
+
+    def append_batch(self, events: Sequence[Event]) -> None:
+        self._events.extend(events)
+
+    def replay(
+        self, start_sequence: int = 0, end_sequence: int | None = None,
+    ) -> Iterator[Event]:
+        yield from self._events
+
+    def last_sequence(self) -> int:
+        return self._events[-1].sequence if self._events else -1
 
 
 class TestReplayFeed:
@@ -67,9 +90,9 @@ class TestReplayFeed:
     def test_replays_in_sequence_order(self) -> None:
         """Events yielded in sequence order."""
         log = InMemoryEventLog()
-        log.append(_make_quote(0))
-        log.append(_make_trade(1))
-        log.append(_make_quote(2))
+        log.append(_make_quote(0, exchange_ts_ns=100))
+        log.append(_make_trade(1, exchange_ts_ns=200))
+        log.append(_make_quote(2, exchange_ts_ns=300))
 
         feed = ReplayFeed(log, clock=None)
         events = list(feed.events())
@@ -89,24 +112,54 @@ class TestReplayFeed:
         assert events[0].sequence == 1
         assert events[1].sequence == 2
 
-    def test_advances_simulated_clock_forward_only(self) -> None:
-        """SimulatedClock only advances, never backward."""
+    def test_advances_simulated_clock(self) -> None:
+        """SimulatedClock advances to each event's exchange_timestamp_ns."""
         log = InMemoryEventLog()
         log.append(_make_quote(0, exchange_ts_ns=100))
-        log.append(_make_trade(1, symbol="MSFT", exchange_ts_ns=50))  # earlier ts
-        log.append(_make_quote(2, exchange_ts_ns=200))
+        log.append(_make_trade(1, exchange_ts_ns=200))
+        log.append(_make_quote(2, exchange_ts_ns=300))
 
         clock = SimulatedClock(start_ns=0)
         feed = ReplayFeed(log, clock=clock)
         events = list(feed.events())
 
         assert len(events) == 3
-        # First event: 100
-        assert clock.now_ns() == 200  # advanced to 200 at end
-        # Clock should not have gone backward for event with ts=50
+        assert clock.now_ns() == 300
 
     def test_empty_log_yields_nothing(self) -> None:
         """Empty EventLog yields no events."""
         log = InMemoryEventLog()
         feed = ReplayFeed(log, clock=None)
         assert list(feed.events()) == []
+
+
+class TestReplayFeedCausalityEnforcement:
+    """ReplayFeed raises CausalityViolation on out-of-order timestamps (invariant 6)."""
+
+    def test_raises_on_backward_exchange_timestamp(self) -> None:
+        """Defense-in-depth: catches unsorted EventLog implementations."""
+        log = _UnsortedEventLog([
+            _make_quote(0, exchange_ts_ns=100),
+            _make_trade(1, symbol="MSFT", exchange_ts_ns=50),
+            _make_quote(2, exchange_ts_ns=200),
+        ])
+        feed = ReplayFeed(log, clock=None)
+
+        with pytest.raises(CausalityViolation, match="exchange_timestamp_ns=50"):
+            list(feed.events())
+
+    def test_accepts_equal_timestamps(self) -> None:
+        log = _UnsortedEventLog([
+            _make_quote(0, exchange_ts_ns=100),
+            _make_trade(1, symbol="MSFT", exchange_ts_ns=100),
+        ])
+        feed = ReplayFeed(log, clock=None)
+        assert len(list(feed.events())) == 2
+
+    def test_inmemory_log_also_rejects_at_insert_time(self) -> None:
+        """Primary guard: InMemoryEventLog catches backward timestamps on append."""
+        log = InMemoryEventLog()
+        log.append(_make_quote(0, exchange_ts_ns=100))
+
+        with pytest.raises(CausalityViolation):
+            log.append(_make_trade(1, exchange_ts_ns=50))

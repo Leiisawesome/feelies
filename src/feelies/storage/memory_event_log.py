@@ -15,6 +15,7 @@ import bisect
 import threading
 from collections.abc import Iterator, Sequence
 
+from feelies.core.errors import CausalityViolation
 from feelies.core.events import Event
 
 
@@ -36,19 +37,46 @@ class _SequenceKey:
 class InMemoryEventLog:
     """Volatile, list-backed event store implementing ``EventLog``."""
 
-    __slots__ = ("_events", "_lock")
+    __slots__ = ("_events", "_lock", "_last_exchange_ts")
 
     def __init__(self) -> None:
         self._events: list[Event] = []
         self._lock = threading.Lock()
+        self._last_exchange_ts: int = 0
 
     def append(self, event: Event) -> None:
         with self._lock:
+            self._enforce_causality(event)
             self._events.append(event)
 
     def append_batch(self, events: Sequence[Event]) -> None:
         with self._lock:
+            prev_ts = self._last_exchange_ts
+            for event in events:
+                ts: int | None = getattr(event, "exchange_timestamp_ns", None)
+                if ts is not None:
+                    if ts < prev_ts:
+                        raise CausalityViolation(
+                            f"append_batch: exchange_timestamp_ns={ts} "
+                            f"at sequence={event.sequence} < previous {prev_ts} "
+                            f"— events must be sorted by exchange time before "
+                            f"insertion (invariant 6)"
+                        )
+                    prev_ts = ts
+            self._last_exchange_ts = prev_ts
             self._events.extend(events)
+
+    def _enforce_causality(self, event: Event) -> None:
+        ts: int | None = getattr(event, "exchange_timestamp_ns", None)
+        if ts is not None:
+            if ts < self._last_exchange_ts:
+                raise CausalityViolation(
+                    f"append: exchange_timestamp_ns={ts} "
+                    f"at sequence={event.sequence} < previous "
+                    f"{self._last_exchange_ts} — multi-symbol events must be "
+                    f"sorted by exchange time before insertion (invariant 6)"
+                )
+            self._last_exchange_ts = ts
 
     def replay(
         self,
