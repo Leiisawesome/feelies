@@ -1,6 +1,7 @@
 """Research infrastructure — experiment tracking and hypothesis management.
 
-Stub package.  See research-workflow skill for specification.
+Protocol definitions; concrete implementations are future work.
+See research-workflow skill for specification.
 """
 
 from feelies.research.experiment import ExperimentTracker

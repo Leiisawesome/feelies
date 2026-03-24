@@ -1,6 +1,5 @@
 """Position sizer — compute target quantity from risk budget and regime.
 
-Replaces the hardcoded ``base_quantity = 100`` in the old orchestrator.
 The sizer is called by the IntentTranslator to determine how many
 shares to target for a given signal, considering the alpha's declared
 risk budget, account equity, current price, and regime state.

@@ -73,7 +73,7 @@ class TestConvictionScaling:
 class TestRegimeFactor:
     def test_vol_breakout_halves_size(self, budget: AlphaRiskBudget) -> None:
         regime = HMM3StateFractional()
-        regime._posteriors["AAPL"] = [0.05, 0.05, 0.90]
+        regime._posteriors["AAPL"] = [0.0, 0.0, 1.0]
 
         sizer = BudgetBasedSizer(regime_engine=regime)
         qty = sizer.compute_target_quantity(
@@ -82,7 +82,7 @@ class TestRegimeFactor:
             symbol_price=Decimal("100"),
             account_equity=Decimal("100000"),
         )
-        # 10000 * 0.5 / 100 = 50
+        # EV = 1.0*0.5 = 0.5, so 10000 * 0.5 / 100 = 50
         assert qty == 50
 
 

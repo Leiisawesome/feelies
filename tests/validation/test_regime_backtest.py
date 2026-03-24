@@ -6,8 +6,6 @@ Invariants: 5 (determinism), 11 (fail-safe)
 
 from __future__ import annotations
 
-from decimal import Decimal
-
 import pytest
 
 from feelies.core.events import (

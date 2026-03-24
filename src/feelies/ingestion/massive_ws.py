@@ -21,7 +21,6 @@ import json
 import logging
 import queue
 import threading
-import time
 from collections.abc import Iterator, Sequence
 
 from feelies.core.clock import Clock

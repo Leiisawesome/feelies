@@ -16,7 +16,7 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from feelies.core.events import Alert, AlertSeverity, MetricEvent, MetricType
+from feelies.core.events import Alert, AlertSeverity, MetricEvent
 
 logger = logging.getLogger(__name__)
 

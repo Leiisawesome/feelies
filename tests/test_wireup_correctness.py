@@ -238,7 +238,13 @@ class TestMicroState:
 
 
 class TestEventLogAppend:
-    def test_quotes_appended_to_event_log_during_pipeline(self, tmp_path: Path) -> None:
+    def test_quotes_preserved_in_event_log_after_replay(self, tmp_path: Path) -> None:
+        """Pre-loaded quotes survive backtest replay without duplication.
+
+        In backtest mode the orchestrator sets ``_events_prelogged = True``
+        so quotes are *not* re-appended.  The event log should contain
+        exactly the original quotes — no fewer (lost), no more (duplicated).
+        """
         quotes = [
             _q(140, 141, 1, 1_000_000_000),
             _q(142, 143, 2, 2_000_000_000),
@@ -246,13 +252,14 @@ class TestEventLogAppend:
         ]
         orch, config, _ = _build(tmp_path, quotes)
         initial_count = len(list(orch._event_log.replay()))
+        assert initial_count == 3
         orch.boot(config)
         orch.run_backtest()
         all_events = list(orch._event_log.replay())
-        appended_quotes = [e for e in all_events if isinstance(e, NBBOQuote)]
-        assert len(appended_quotes) >= initial_count + 3, (
-            f"Expected at least {initial_count + 3} quotes in event log after pipeline, "
-            f"got {len(appended_quotes)}"
+        replayed_quotes = [e for e in all_events if isinstance(e, NBBOQuote)]
+        assert len(replayed_quotes) == initial_count, (
+            f"Expected exactly {initial_count} quotes in event log after replay "
+            f"(no duplication, no loss), got {len(replayed_quotes)}"
         )
 
 

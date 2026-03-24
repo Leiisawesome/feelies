@@ -190,7 +190,7 @@ class TestRegimeScaling:
     def test_vol_breakout_reduces_position_limit(
         self, store: MemoryPositionStore
     ) -> None:
-        """In vol_breakout regime, position limit is halved (0.5x scale)."""
+        """In pure vol_breakout regime, EV scale = 0.5, limit = 500."""
         regime = HMM3StateFractional()
         cfg = RiskConfig(
             max_position_per_symbol=1000,
@@ -199,10 +199,9 @@ class TestRegimeScaling:
         )
         engine = BasicRiskEngine(cfg, regime_engine=regime)
 
-        # Force vol_breakout posterior: make state 2 dominant
-        regime._posteriors["AAPL"] = [0.05, 0.05, 0.90]
+        regime._posteriors["AAPL"] = [0.0, 0.0, 1.0]
 
-        # 500 shares is AT the halved limit (1000 * 0.5 = 500), so REJECT
+        # EV = 1.0*0.5 = 0.5, adjusted_max = 500, so 500 shares hits limit
         store.update("AAPL", 500, Decimal("10"))
         verdict = engine.check_signal(_make_signal(), store)
         assert verdict.action == RiskAction.REJECT

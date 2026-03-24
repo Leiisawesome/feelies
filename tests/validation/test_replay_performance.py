@@ -9,7 +9,7 @@ exhaustion under constrained environments (IDE terminals, CI runners).
 from __future__ import annotations
 
 import gc
-import resource
+import platform as _plat
 import shutil
 import signal
 import time
@@ -25,13 +25,24 @@ from feelies.storage.memory_event_log import InMemoryEventLog
 
 from .conftest import ALPHA_SRC
 
+_IS_WINDOWS = _plat.system() == "Windows"
+
+try:
+    import resource as _resource
+except ImportError:  # Windows
+    _resource = None  # type: ignore[assignment]
+
 pytestmark = [pytest.mark.backtest_validation, pytest.mark.slow]
 
 TIMEOUT_SEC = 45
 
 
 class _Timeout:
-    """Context manager that raises TimeoutError after *seconds* on Unix."""
+    """Context manager that raises TimeoutError after *seconds* on Unix.
+
+    On Windows (no SIGALRM), acts as a no-op — tests rely on pytest-timeout
+    or the CI job-level ceiling instead.
+    """
 
     def __init__(self, seconds: int) -> None:
         self._seconds = seconds
@@ -40,11 +51,13 @@ class _Timeout:
         raise TimeoutError(f"Test exceeded {self._seconds}s hard limit")
 
     def __enter__(self) -> None:
-        signal.signal(signal.SIGALRM, self._handler)
-        signal.alarm(self._seconds)
+        if not _IS_WINDOWS:
+            signal.signal(signal.SIGALRM, self._handler)
+            signal.alarm(self._seconds)
 
     def __exit__(self, *exc: object) -> None:
-        signal.alarm(0)
+        if not _IS_WINDOWS:
+            signal.alarm(0)
 
 
 def _synthetic_quotes(n: int, symbol: str = "AAPL") -> list[NBBOQuote]:
@@ -150,19 +163,19 @@ class TestEventsPerSecondRegression:
 class TestMemoryFootprint:
     """RSS delta bounded after processing events."""
 
+    @pytest.mark.skipif(_resource is None, reason="resource module unavailable on Windows")
     def test_memory_footprint_bounded(self, tmp_path: Path) -> None:
         with _Timeout(TIMEOUT_SEC):
             n = 10_000
             quotes = _synthetic_quotes(n)
 
-            rss_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            rss_before = _resource.getrusage(_resource.RUSAGE_SELF).ru_maxrss
 
             _build_and_run(tmp_path, quotes)
 
-            rss_after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            rss_after = _resource.getrusage(_resource.RUSAGE_SELF).ru_maxrss
 
-            import platform as plat
-            if plat.system() == "Darwin":
+            if _plat.system() == "Darwin":
                 delta_mb = (rss_after - rss_before) / (1024 * 1024)
             else:
                 delta_mb = (rss_after - rss_before) / 1024

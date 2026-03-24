@@ -416,12 +416,3 @@ def fault_scenario_factory(tmp_path: Path):
         return _run_scenario(tmp_path, quotes=_make_quotes("AAPL", ticks))
 
     return _create
-
-
-@pytest.fixture
-def alpha_spec_dir(tmp_path: Path) -> Path:
-    """Temporary directory with mean_reversion.alpha.yaml."""
-    alpha_dir = tmp_path / "alphas"
-    alpha_dir.mkdir(exist_ok=True)
-    shutil.copy2(ALPHA_SRC, alpha_dir / "mean_reversion.alpha.yaml")
-    return alpha_dir
