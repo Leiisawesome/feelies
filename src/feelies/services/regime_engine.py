@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import math
+import statistics
 from collections.abc import Sequence
 from typing import Protocol
 
@@ -116,6 +117,9 @@ class HMM3StateFractional:
         (-2.5, 0.7),  # vol_breakout: wide spreads
     )
 
+    _MIN_CALIBRATION_SAMPLES = 30
+    _MIN_SIGMA = 0.01
+
     def __init__(
         self,
         state_names: Sequence[str] | None = None,
@@ -130,6 +134,7 @@ class HMM3StateFractional:
         self._emission = tuple(
             emission_params or self._DEFAULT_EMISSION
         )
+        self._calibrated = emission_params is not None
         self._validate_params()
         self._posteriors: dict[str, list[float]] = {}
         self._last_update_seq: dict[str, int] = {}
@@ -173,6 +178,56 @@ class HMM3StateFractional:
     @property
     def n_states(self) -> int:
         return self._n_states
+
+    @property
+    def calibrated(self) -> bool:
+        """Whether emission parameters have been calibrated from data."""
+        return self._calibrated
+
+    def calibrate(self, quotes: Sequence[NBBOQuote]) -> bool:
+        """Fit emission parameters from historical spread distribution.
+
+        Partitions ``log(relative_spread)`` values into terciles and
+        computes per-bucket mean and standard deviation.  Parameters
+        are frozen after calibration — call before the first
+        ``posterior()`` update.
+
+        Returns True if calibration succeeded (enough valid samples),
+        False if insufficient data (defaults are retained).
+        """
+        log_spreads: list[float] = []
+        for q in quotes:
+            spread = float(q.ask - q.bid)
+            mid = float(q.ask + q.bid) / 2.0
+            if spread > 0 and mid > 0:
+                log_spreads.append(math.log(spread / mid))
+
+        if len(log_spreads) < self._MIN_CALIBRATION_SAMPLES:
+            return False
+
+        log_spreads.sort()
+        n = len(log_spreads)
+        boundaries = [n // 3, 2 * n // 3]
+        buckets = [
+            log_spreads[:boundaries[0]],
+            log_spreads[boundaries[0]:boundaries[1]],
+            log_spreads[boundaries[1]:],
+        ]
+
+        fitted: list[tuple[float, float]] = []
+        for bucket in buckets:
+            mu = statistics.mean(bucket)
+            sigma = max(
+                statistics.stdev(bucket) if len(bucket) >= 2 else self._MIN_SIGMA,
+                self._MIN_SIGMA,
+            )
+            fitted.append((mu, sigma))
+
+        self._emission = tuple(fitted)
+        self._calibrated = True
+        self._posteriors.clear()
+        self._last_update_seq.clear()
+        return True
 
     def posterior(self, quote: NBBOQuote) -> list[float]:
         symbol = quote.symbol
@@ -218,10 +273,12 @@ class HMM3StateFractional:
         self._last_update_seq.pop(symbol, None)
 
     def checkpoint(self) -> bytes:
-        payload = {
+        payload: dict[str, object] = {
             "posteriors": self._posteriors,
             "last_update_seq": self._last_update_seq,
         }
+        if self._calibrated:
+            payload["emission"] = [list(pair) for pair in self._emission]
         return json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
     def restore(self, data: bytes) -> None:
@@ -239,6 +296,18 @@ class HMM3StateFractional:
                     )
             self._posteriors = {k: list(v) for k, v in posteriors.items()}
             self._last_update_seq = {k: int(v) for k, v in last_seq.items()}
+
+            emission_data = payload.get("emission")
+            if emission_data is not None:
+                if len(emission_data) != self._n_states:
+                    raise ValueError(
+                        f"Emission params length mismatch: "
+                        f"{len(emission_data)} vs {self._n_states}"
+                    )
+                self._emission = tuple(
+                    (float(pair[0]), float(pair[1])) for pair in emission_data
+                )
+                self._calibrated = True
         except Exception:
             self._posteriors = {}
             self._last_update_seq = {}

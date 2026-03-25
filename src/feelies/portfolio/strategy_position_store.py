@@ -53,7 +53,12 @@ class StrategyPositionStore:
         return self._get_store(strategy_id).update(symbol, quantity_delta, fill_price)
 
     def get_aggregate(self, symbol: str) -> Position:
-        """Net position across all strategies for a symbol."""
+        """Net position across all strategies for a symbol.
+
+        ``avg_entry_price`` is a position-size-weighted average across
+        strategies, not a true cost basis.  For multi-strategy
+        reconciliation, use per-strategy positions via ``get()``.
+        """
         total_qty = 0
         total_cost = Decimal("0")
         total_realized = Decimal("0")
@@ -61,11 +66,11 @@ class StrategyPositionStore:
 
         for store in self._stores.values():
             pos = store.get(symbol)
+            total_realized += pos.realized_pnl
+            total_unrealized += pos.unrealized_pnl
             if pos.quantity != 0:
                 total_qty += pos.quantity
                 total_cost += pos.avg_entry_price * abs(pos.quantity)
-                total_realized += pos.realized_pnl
-                total_unrealized += pos.unrealized_pnl
 
         avg_price = total_cost / abs(total_qty) if total_qty != 0 else Decimal("0")
 

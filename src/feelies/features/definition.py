@@ -34,6 +34,16 @@ class WarmUpSpec:
     min_events: int = 0
     min_duration_ns: int = 0
 
+    def __post_init__(self) -> None:
+        if self.min_events < 0:
+            raise ValueError(
+                f"WarmUpSpec.min_events must be >= 0, got {self.min_events}"
+            )
+        if self.min_duration_ns < 0:
+            raise ValueError(
+                f"WarmUpSpec.min_duration_ns must be >= 0, got {self.min_duration_ns}"
+            )
+
 
 # ── Feature computation protocol ────────────────────────────────────
 

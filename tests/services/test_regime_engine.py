@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import math
 from decimal import Decimal
 
 import pytest
@@ -18,11 +20,12 @@ def _make_quote(
     bid: str = "149.99",
     ask: str = "150.01",
     timestamp_ns: int = 1_000_000_000,
+    sequence: int = 1,
 ) -> NBBOQuote:
     return NBBOQuote(
         timestamp_ns=timestamp_ns,
         correlation_id="corr-1",
-        sequence=1,
+        sequence=sequence,
         symbol=symbol,
         bid=Decimal(bid),
         ask=Decimal(ask),
@@ -108,3 +111,137 @@ class TestRegistry:
     def test_unknown_engine_raises_key_error(self) -> None:
         with pytest.raises(KeyError, match="Unknown regime engine"):
             get_regime_engine("nonexistent_engine")
+
+
+def _make_calibration_quotes(
+    n: int = 100,
+    bid_base: float = 150.0,
+    spread: float = 0.01,
+) -> list[NBBOQuote]:
+    """Generate n quotes with a tight spread typical of large-cap equities."""
+    quotes = []
+    for i in range(n):
+        ts = (i + 1) * 1_000_000
+        quotes.append(_make_quote(
+            bid=f"{bid_base:.2f}",
+            ask=f"{bid_base + spread:.4f}",
+            timestamp_ns=ts,
+            sequence=i + 1,
+        ))
+    return quotes
+
+
+class TestCalibrate:
+    def test_uncalibrated_by_default(self) -> None:
+        engine = HMM3StateFractional()
+        assert engine.calibrated is False
+
+    def test_calibrated_when_emission_params_provided(self) -> None:
+        engine = HMM3StateFractional(
+            emission_params=[(-9.6, 0.3), (-9.0, 0.5), (-8.0, 0.7)],
+        )
+        assert engine.calibrated is True
+
+    def test_calibrate_succeeds_with_enough_quotes(self) -> None:
+        engine = HMM3StateFractional()
+        quotes = _make_calibration_quotes(n=100)
+        ok = engine.calibrate(quotes)
+        assert ok is True
+        assert engine.calibrated is True
+
+    def test_calibrate_fails_with_insufficient_data(self) -> None:
+        engine = HMM3StateFractional()
+        quotes = _make_calibration_quotes(n=5)
+        ok = engine.calibrate(quotes)
+        assert ok is False
+        assert engine.calibrated is False
+
+    def test_calibrated_emission_means_match_data_scale(self) -> None:
+        engine = HMM3StateFractional()
+        quotes = _make_calibration_quotes(n=300, bid_base=150.0, spread=0.01)
+        engine.calibrate(quotes)
+
+        expected_log_spread = math.log(0.01 / (150.0 + 0.005))
+        for mu, _ in engine._emission:
+            assert abs(mu - expected_log_spread) < 1.0, (
+                f"Calibrated mu={mu:.2f} should be near "
+                f"log(0.01/150)={expected_log_spread:.2f}"
+            )
+
+    def test_posteriors_discriminate_after_calibration(self) -> None:
+        """After calibration on varied-spread data, a wide spread should
+        shift posterior toward vol_breakout (state 2)."""
+        engine = HMM3StateFractional()
+        # Build calibration data with three distinct spread regimes
+        # so tercile split produces meaningfully different emission params.
+        cal_quotes: list[NBBOQuote] = []
+        spreads = (
+            [0.01] * 100   # tight (compression tercile)
+            + [0.05] * 100  # medium (normal tercile)
+            + [0.50] * 100  # wide (vol_breakout tercile)
+        )
+        for i, sp in enumerate(spreads):
+            cal_quotes.append(_make_quote(
+                bid="150.00",
+                ask=f"{150.0 + sp:.4f}",
+                timestamp_ns=(i + 1) * 1_000_000,
+                sequence=i + 1,
+            ))
+        engine.calibrate(cal_quotes)
+
+        # Feed tight-spread quotes to push posteriors toward compression
+        seq = 1
+        for i in range(20):
+            seq += 1
+            engine.posterior(_make_quote(
+                bid="150.00", ask="150.01",
+                timestamp_ns=seq * 1_000_000, sequence=seq,
+            ))
+        seq += 1
+        tight_post = engine.posterior(_make_quote(
+            bid="150.00", ask="150.01",
+            timestamp_ns=seq * 1_000_000, sequence=seq,
+        ))
+
+        # Feed a wide-spread quote
+        seq += 1
+        wide_post = engine.posterior(_make_quote(
+            bid="150.00", ask="151.00",
+            timestamp_ns=seq * 1_000_000, sequence=seq,
+        ))
+
+        assert wide_post[2] > tight_post[2], (
+            f"Wide spread should increase vol_breakout posterior: "
+            f"tight={tight_post[2]:.6f}, wide={wide_post[2]:.6f}"
+        )
+
+    def test_calibrate_clears_prior_state(self) -> None:
+        engine = HMM3StateFractional()
+        engine.posterior(_make_quote(sequence=1))
+        assert engine.current_state("AAPL") is not None
+
+        quotes = _make_calibration_quotes(n=100)
+        engine.calibrate(quotes)
+        assert engine.current_state("AAPL") is None
+
+    def test_checkpoint_includes_calibrated_emission(self) -> None:
+        engine = HMM3StateFractional()
+        quotes = _make_calibration_quotes(n=100)
+        engine.calibrate(quotes)
+        emission_before = engine._emission
+
+        blob = engine.checkpoint()
+        payload = json.loads(blob)
+        assert "emission" in payload
+
+        engine2 = HMM3StateFractional()
+        assert engine2.calibrated is False
+        engine2.restore(blob)
+        assert engine2.calibrated is True
+        assert engine2._emission == emission_before
+
+    def test_checkpoint_without_calibration_omits_emission(self) -> None:
+        engine = HMM3StateFractional()
+        blob = engine.checkpoint()
+        payload = json.loads(blob)
+        assert "emission" not in payload

@@ -240,6 +240,7 @@ class Orchestrator:
                 MacroState.READY,
                 trigger="DATA_INTEGRITY_OK",
             )
+            self._calibrate_regime_engine()
             self._restore_feature_snapshots()
         else:
             self._macro.transition(
@@ -838,6 +839,44 @@ class Orchestrator:
             trigger="tick_complete",
             correlation_id=correlation_id,
         )
+
+    def _calibrate_regime_engine(self) -> None:
+        """Calibrate regime engine emission parameters from event log data.
+
+        Pre-scans quotes in the event log and calls ``calibrate()`` if
+        the engine supports it and hasn't already been calibrated (e.g.,
+        via restored checkpoint).  Backtest mode has the full dataset
+        available; live/paper would use previous-day data.
+        """
+        if self._regime_engine is None:
+            return
+        calibrate_fn = getattr(self._regime_engine, "calibrate", None)
+        if calibrate_fn is None:
+            return
+        if getattr(self._regime_engine, "calibrated", False):
+            return
+
+        quotes = [
+            event for event in self._event_log.replay()
+            if isinstance(event, NBBOQuote)
+        ]
+        if not quotes:
+            logger.info(
+                "Regime calibration skipped — no quotes in event log"
+            )
+            return
+
+        ok = calibrate_fn(quotes)
+        if ok:
+            logger.info(
+                "Regime engine calibrated from %d quotes", len(quotes),
+            )
+        else:
+            logger.warning(
+                "Regime calibration failed (insufficient data: %d quotes) "
+                "— using default emission parameters",
+                len(quotes),
+            )
 
     def _update_regime(self, quote: NBBOQuote, correlation_id: str) -> None:
         """Update platform-level RegimeEngine and publish RegimeState event.

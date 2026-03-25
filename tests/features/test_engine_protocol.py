@@ -175,3 +175,22 @@ class TestCompositeFeatureEngineProtocol:
         engine2.restore("AAPL", state_bytes)
         fv = engine2.update(_make_quote(ts=3, seq=3))
         assert fv.values["counter"] == 3.0
+
+
+class TestWarmUpSpecValidation:
+    def test_zero_values_allowed(self) -> None:
+        spec = WarmUpSpec(min_events=0, min_duration_ns=0)
+        assert spec.min_events == 0
+        assert spec.min_duration_ns == 0
+
+    def test_positive_values_allowed(self) -> None:
+        spec = WarmUpSpec(min_events=50, min_duration_ns=1_000_000)
+        assert spec.min_events == 50
+
+    def test_negative_min_events_raises(self) -> None:
+        with pytest.raises(ValueError, match="min_events must be >= 0"):
+            WarmUpSpec(min_events=-2)
+
+    def test_negative_min_duration_raises(self) -> None:
+        with pytest.raises(ValueError, match="min_duration_ns must be >= 0"):
+            WarmUpSpec(min_duration_ns=-1)
