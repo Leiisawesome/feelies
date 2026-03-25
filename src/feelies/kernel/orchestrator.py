@@ -240,8 +240,8 @@ class Orchestrator:
                 MacroState.READY,
                 trigger="DATA_INTEGRITY_OK",
             )
-            self._calibrate_regime_engine()
             self._restore_feature_snapshots()
+            self._calibrate_regime_engine()
         else:
             self._macro.transition(
                 MacroState.DEGRADED,
