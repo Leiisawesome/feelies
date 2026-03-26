@@ -103,10 +103,6 @@ class MultiAlphaEvaluator:
         if not features.warm:
             return empty
 
-        # ── Suppressed features gate (v2.1) ───────────────
-        if features.suppressed_features:
-            return empty
-
         collected_intents: list[OrderIntent] = []
         collected_signals: list[Signal] = []
         collected_verdicts: dict[str, RiskVerdict] = {}
@@ -118,8 +114,14 @@ class MultiAlphaEvaluator:
             if manifest.symbols is not None and symbol not in manifest.symbols:
                 continue
 
-            # ── Per-alpha feature scoping ─────────────────
+            # ── Per-alpha feature scoping (includes suppressed intersection) ──
             scoped = self._scoped_features(features, alpha)
+
+            # ── Per-alpha suppressed features gate (v2.3) ──
+            # Only block this alpha if *its own* required features
+            # are suppressed — not unrelated features from other alphas.
+            if scoped.suppressed_features:
+                continue
 
             # ── Per-alpha signal evaluation with error handling ──
             try:
@@ -192,8 +194,20 @@ class MultiAlphaEvaluator:
                     force_flatten_verdict=verdict,
                 )
 
-            # ── Per-alpha REJECT: skip this alpha, continue loop ──
+            # ── Per-alpha REJECT: quarantine on drawdown breach, then skip ──
             if verdict.action == RiskAction.REJECT:
+                if "drawdown" in verdict.reason.lower():
+                    try:
+                        self._registry.quarantine(
+                            manifest.alpha_id, verdict.reason,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Failed to quarantine alpha '%s' after "
+                            "drawdown breach — lifecycle tracking may "
+                            "be disabled",
+                            manifest.alpha_id,
+                        )
                 continue
 
             if verdict.action == RiskAction.SCALE_DOWN:
@@ -225,13 +239,18 @@ class MultiAlphaEvaluator:
         features: FeatureVector,
         alpha: object,
     ) -> FeatureVector:
-        """Filter feature values to only those declared by this alpha."""
+        """Filter feature values and suppressed set to this alpha's scope."""
         manifest = alpha.manifest  # type: ignore[union-attr]
         allowed = manifest.required_features
         scoped_values = {
             k: v for k, v in features.values.items() if k in allowed
         }
-        return replace(features, values=scoped_values)
+        scoped_suppressed = features.suppressed_features & allowed
+        return replace(
+            features,
+            values=scoped_values,
+            suppressed_features=scoped_suppressed,
+        )
 
     def _compute_target_quantity(
         self,

@@ -164,3 +164,25 @@ class AlphaBudgetRiskWrapper:
         positions: PositionStore,
     ) -> RiskVerdict:
         return self._inner.check_order(order, positions)
+
+    # ── Persistence ──────────────────────────────────────────
+
+    def checkpoint_risk_state(self) -> dict[str, str]:
+        """Serialize per-alpha HWM state for persistence.
+
+        Returns a dict of ``{strategy_id: hwm_as_string}`` suitable
+        for JSON serialization.  Stored alongside lifecycle and feature
+        snapshots so drawdown enforcement survives restarts.
+        """
+        return {
+            sid: str(hwm) for sid, hwm in self._alpha_hwm.items()
+        }
+
+    def restore_risk_state(self, state: dict[str, str]) -> None:
+        """Restore per-alpha HWM state from a checkpoint.
+
+        Accepts the dict produced by ``checkpoint_risk_state()``.
+        """
+        self._alpha_hwm = {
+            sid: Decimal(val) for sid, val in state.items()
+        }

@@ -881,18 +881,6 @@ class Orchestrator:
         for signal in intent_set.signals:
             self._bus.publish(signal)
 
-        # ── Quarantine trigger: per-alpha drawdown REJECT ──
-        if self._alpha_registry is not None:
-            for strategy_id, verdict in intent_set.verdicts.items():
-                if (
-                    verdict.action == RiskAction.REJECT
-                    and "drawdown" in verdict.reason.lower()
-                    and "quarantine" in verdict.reason.lower()
-                ):
-                    self._alpha_registry.quarantine(
-                        strategy_id, verdict.reason,
-                    )
-
         # ── M4 → ORDER_AGGREGATION ──
         self._micro.transition(
             MicroState.ORDER_AGGREGATION,
