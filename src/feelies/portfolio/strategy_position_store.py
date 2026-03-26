@@ -96,6 +96,28 @@ class StrategyPositionStore:
             total += store.total_exposure()
         return total
 
+    def get_strategy_exposure(self, strategy_id: str) -> Decimal:
+        """Gross notional exposure for a single strategy across all symbols."""
+        store = self._stores.get(strategy_id)
+        if store is None:
+            return Decimal("0")
+        return store.total_exposure()
+
+    def get_strategy_realized_pnl(self, strategy_id: str) -> Decimal:
+        """Total realized PnL for a single strategy across all symbols.
+
+        Used by AlphaBudgetRiskWrapper for per-alpha drawdown
+        enforcement.  Returns Decimal("0") if the strategy has no
+        positions.
+        """
+        store = self._stores.get(strategy_id)
+        if store is None:
+            return Decimal("0")
+        return sum(
+            (pos.realized_pnl for pos in store.all_positions().values()),
+            Decimal("0"),
+        )
+
     def strategy_ids(self) -> frozenset[str]:
         """Set of all strategy IDs with positions."""
         return frozenset(self._stores.keys())

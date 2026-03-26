@@ -43,7 +43,15 @@ from typing import TYPE_CHECKING, Any
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from feelies.alpha.aggregation import AggregatedOrders, aggregate_intents
+    from feelies.alpha.fill_attribution import (
+        AlphaContribution,
+        AttributionRecord,
+        FillAttributionLedger,
+    )
+    from feelies.alpha.multi_alpha_evaluator import MultiAlphaEvaluator
     from feelies.alpha.registry import AlphaRegistry
+    from feelies.portfolio.strategy_position_store import StrategyPositionStore
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock
@@ -145,6 +153,9 @@ class Orchestrator:
         position_sizer: PositionSizer | None = None,
         alpha_registry: "AlphaRegistry | None" = None,
         account_equity: Decimal = Decimal("100000"),
+        multi_alpha_evaluator: "MultiAlphaEvaluator | None" = None,
+        fill_ledger: "FillAttributionLedger | None" = None,
+        strategy_positions: "StrategyPositionStore | None" = None,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -171,6 +182,9 @@ class Orchestrator:
         )
         self._alpha_registry = alpha_registry
         self._account_equity = account_equity
+        self._multi_alpha_evaluator = multi_alpha_evaluator
+        self._fill_ledger = fill_ledger
+        self._strategy_positions = strategy_positions
         self._seq = SequenceGenerator()
 
         self._config: Configuration | None = None
@@ -639,6 +653,12 @@ class Orchestrator:
             trigger="features_computed",
             correlation_id=cid,
         )
+
+        # ── Multi-alpha path: branch to _process_tick_multi_alpha ──
+        if self._multi_alpha_evaluator is not None:
+            self._process_tick_multi_alpha(features, quote, cid, t_wall_start)
+            return
+
         t0 = time.perf_counter_ns()
         signal = self._signal_engine.evaluate(features)
         self._tick_timings["signal_evaluate_ns"] = time.perf_counter_ns() - t0
@@ -805,6 +825,294 @@ class Orchestrator:
             correlation_id=cid,
         )
         self._finalize_tick(t_wall_start, cid)
+
+    # ── Multi-alpha pipeline ─────────────────────────────────────
+
+    def _process_tick_multi_alpha(
+        self,
+        features: FeatureVector,
+        quote: NBBOQuote,
+        cid: str,
+        t_wall_start: int,
+    ) -> None:
+        """Full multi-alpha pipeline from M4 through M10.
+
+        Replaces the single-signal path when multi_alpha_evaluator is
+        set.  See architecture doc section 4.9 and the plan's Step 8.
+        """
+        from feelies.alpha.aggregation import aggregate_intents
+        from feelies.alpha.fill_attribution import (
+            AlphaContribution,
+            AttributionRecord,
+        )
+
+        t0 = time.perf_counter_ns()
+        intent_set = self._multi_alpha_evaluator.evaluate_tick(features, quote)
+        self._tick_timings["signal_evaluate_ns"] = time.perf_counter_ns() - t0
+
+        # ── FORCE_FLATTEN: short-circuit, fire safety cascade ──
+        if intent_set.force_flatten:
+            if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
+                self._escalate_risk(cid)
+                self._micro.reset(
+                    trigger="pipeline_abort:multi_alpha_force_flatten",
+                    correlation_id=cid,
+                )
+                return
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="multi_alpha_force_flatten_simulated",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
+        # ── Empty check ──
+        if intent_set.is_empty:
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="multi_alpha_no_intents",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
+        # ── Publish per-alpha signals for observability ──
+        for signal in intent_set.signals:
+            self._bus.publish(signal)
+
+        # ── Quarantine trigger: per-alpha drawdown REJECT ──
+        if self._alpha_registry is not None:
+            for strategy_id, verdict in intent_set.verdicts.items():
+                if (
+                    verdict.action == RiskAction.REJECT
+                    and "drawdown" in verdict.reason.lower()
+                    and "quarantine" in verdict.reason.lower()
+                ):
+                    self._alpha_registry.quarantine(
+                        strategy_id, verdict.reason,
+                    )
+
+        # ── M4 → ORDER_AGGREGATION ──
+        self._micro.transition(
+            MicroState.ORDER_AGGREGATION,
+            trigger="multi_alpha_intents_collected",
+            correlation_id=cid,
+        )
+
+        aggregated_by_symbol = aggregate_intents(intent_set.intents)
+
+        # ── Build orders_to_submit: exits first, then entries ──
+        orders_to_submit: list[OrderRequest] = []
+        for symbol, agg in aggregated_by_symbol.items():
+            if agg.exit_order is not None:
+                side, qty = agg.exit_order
+                order = self._build_net_order(symbol, side, qty, cid)
+                orders_to_submit.append(order)
+                if self._fill_ledger is not None:
+                    contribs = self._compute_contributions(
+                        agg, "exit",
+                    )
+                    self._fill_ledger.record(AttributionRecord(
+                        order_id=order.order_id,
+                        symbol=symbol,
+                        net_side=side,
+                        net_quantity=qty,
+                        contributions=contribs,
+                    ))
+            if agg.entry_order is not None:
+                side, qty = agg.entry_order
+                order = self._build_net_order(symbol, side, qty, cid)
+                orders_to_submit.append(order)
+                if self._fill_ledger is not None:
+                    contribs = self._compute_contributions(
+                        agg, "entry",
+                    )
+                    self._fill_ledger.record(AttributionRecord(
+                        order_id=order.order_id,
+                        symbol=symbol,
+                        net_side=side,
+                        net_quantity=qty,
+                        contributions=contribs,
+                    ))
+
+        if not orders_to_submit:
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="multi_alpha_empty_aggregation",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
+        # ── ORDER_AGGREGATION → M6: ORDER_DECISION ──
+        self._micro.transition(
+            MicroState.ORDER_DECISION,
+            trigger="multi_alpha_orders_aggregated",
+            correlation_id=cid,
+        )
+
+        # ── Pre-submission risk check on each aggregate order ──
+        approved_orders: list[OrderRequest] = []
+        for order in orders_to_submit:
+            order_verdict = self._risk_engine.check_order(
+                order, self._positions,
+            )
+            self._bus.publish(order_verdict)
+
+            if order_verdict.action == RiskAction.FORCE_FLATTEN:
+                if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
+                    self._escalate_risk(cid)
+                    self._micro.reset(
+                        trigger="pipeline_abort:check_order_lockdown",
+                        correlation_id=cid,
+                    )
+                    return
+                continue
+
+            if order_verdict.action == RiskAction.REJECT:
+                continue
+
+            if order_verdict.action == RiskAction.SCALE_DOWN:
+                scaled_qty = max(
+                    1,
+                    round(order.quantity * order_verdict.scaling_factor),
+                )
+                if scaled_qty != order.quantity:
+                    order = replace(order, quantity=scaled_qty)
+
+            if order_verdict.action not in (
+                RiskAction.ALLOW, RiskAction.SCALE_DOWN,
+            ):
+                raise ValueError(
+                    f"Unhandled RiskAction at check_order gate: "
+                    f"{order_verdict.action!r}. "
+                    f"Fail-safe: aborting order path."
+                )
+
+            approved_orders.append(order)
+
+        if not approved_orders:
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="multi_alpha_all_orders_rejected",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
+        # ── M6 → M7: ORDER_SUBMIT ──
+        self._micro.transition(
+            MicroState.ORDER_SUBMIT,
+            trigger="multi_alpha_orders_approved",
+            correlation_id=cid,
+        )
+        for order in approved_orders:
+            self._track_order(order.order_id, order.side, order)
+            self._transition_order(
+                order.order_id, OrderState.SUBMITTED, "submitted",
+            )
+            self._backend.order_router.submit(order)
+            self._bus.publish(order)
+
+        # ── M7 → M8: ORDER_ACK ──
+        self._micro.transition(
+            MicroState.ORDER_ACK,
+            trigger="multi_alpha_orders_submitted",
+            correlation_id=cid,
+        )
+        acks = self._backend.order_router.poll_acks()
+        for ack in acks:
+            self._bus.publish(ack)
+            self._apply_ack_to_order(ack)
+
+        # ── M8 → M9: POSITION_UPDATE ──
+        self._micro.transition(
+            MicroState.POSITION_UPDATE,
+            trigger="multi_alpha_order_acked",
+            correlation_id=cid,
+        )
+        self._reconcile_fills(acks, cid)
+
+        # ── M9 → M10: LOG_AND_METRICS ──
+        self._micro.transition(
+            MicroState.LOG_AND_METRICS,
+            trigger="multi_alpha_position_updated",
+            correlation_id=cid,
+        )
+        self._finalize_tick(t_wall_start, cid)
+
+    def _build_net_order(
+        self,
+        symbol: str,
+        side: Side,
+        quantity: int,
+        correlation_id: str,
+    ) -> OrderRequest:
+        """Construct an OrderRequest for a net multi-alpha aggregate.
+
+        Deterministic order_id via SHA-256 of correlation_id:sequence
+        (Inv-5).
+        """
+        seq = self._seq.next()
+        order_id = hashlib.sha256(
+            f"{correlation_id}:{seq}".encode()
+        ).hexdigest()[:16]
+        return OrderRequest(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            sequence=seq,
+            order_id=order_id,
+            symbol=symbol,
+            side=side,
+            order_type=OrderType.MARKET,
+            quantity=quantity,
+            strategy_id="multi_alpha_net",
+        )
+
+    @staticmethod
+    def _compute_contributions(
+        agg: "AggregatedOrders",
+        bucket: str,
+    ) -> "tuple[AlphaContribution, ...]":
+        """Map contributing intents for a bucket to AlphaContribution tuples."""
+        from feelies.alpha.fill_attribution import AlphaContribution
+        from feelies.execution.intent import TradingIntent
+
+        contribs: list[AlphaContribution] = []
+        total_abs = 0
+
+        for intent in agg.contributing_intents:
+            if bucket == "exit":
+                if intent.intent not in (
+                    TradingIntent.EXIT,
+                    TradingIntent.REVERSE_LONG_TO_SHORT,
+                    TradingIntent.REVERSE_SHORT_TO_LONG,
+                ):
+                    continue
+            else:
+                if intent.intent in (TradingIntent.EXIT,):
+                    continue
+
+            signed = intent.target_quantity
+            total_abs += abs(signed)
+            contribs.append(AlphaContribution(
+                strategy_id=intent.strategy_id,
+                signed_quantity=signed,
+                proportion=0.0,
+            ))
+
+        if total_abs > 0:
+            contribs = [
+                AlphaContribution(
+                    strategy_id=c.strategy_id,
+                    signed_quantity=c.signed_quantity,
+                    proportion=abs(c.signed_quantity) / total_abs,
+                )
+                for c in contribs
+            ]
+
+        return tuple(contribs)
 
     # ── Helpers ─────────────────────────────────────────────────────
 
@@ -1309,6 +1617,23 @@ class Orchestrator:
                 signed_qty,
                 ack.fill_price,
             )
+
+            # ── Per-alpha fill attribution (multi-alpha mode) ──
+            if (
+                self._fill_ledger is not None
+                and self._strategy_positions is not None
+            ):
+                alpha_allocs = self._fill_ledger.allocate_fill(
+                    ack.order_id,
+                    ack.filled_quantity,
+                    ack.fill_price,
+                )
+                for (
+                    strat_id, sym, alpha_signed, price
+                ) in alpha_allocs:
+                    self._strategy_positions.update(
+                        strat_id, sym, alpha_signed, price,
+                    )
             self._bus.publish(PositionUpdate(
                 timestamp_ns=self._clock.now_ns(),
                 correlation_id=correlation_id,

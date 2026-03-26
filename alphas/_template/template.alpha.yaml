@@ -1,0 +1,90 @@
+# ── Identity & Provenance ─────────────────────────────────
+schema_version: "1.0"
+alpha_id: my_alpha_name           # ^[a-z][a-z0-9_]*$ — lowercase, underscores
+version: "1.0.0"                  # semver: MAJOR.MINOR.PATCH
+description: "Short description of the alpha's edge hypothesis."
+hypothesis: |
+  Describe the structural mechanism exploited by this alpha.
+  Must name a causal force (Inv-1).
+falsification_criteria:
+  - "Criterion 1: what disproves this hypothesis (Inv-2)"
+  - "Criterion 2: additional falsification condition"
+
+# ── Universe ──────────────────────────────────────────────
+# Optional: restrict to specific symbols.  Omit for all symbols.
+# symbols:
+#   - AAPL
+#   - MSFT
+
+# ── Parameters ────────────────────────────────────────────
+parameters:
+  lookback:
+    type: int
+    default: 20
+    min: 5
+    max: 200
+    description: "Number of ticks for the lookback window."
+  threshold:
+    type: float
+    default: 1.5
+    min: 0.1
+    max: 10.0
+    description: "Z-score threshold for signal generation."
+
+# ── Risk Budget ───────────────────────────────────────────
+risk_budget:
+  max_position_per_symbol: 100      # > 0
+  max_gross_exposure_pct: 5.0       # (0, 100]
+  max_drawdown_pct: 1.0             # (0, 100]
+  capital_allocation_pct: 10.0      # (0, 100]
+
+# ── Features ──────────────────────────────────────────────
+features:
+  my_feature:
+    computation: |
+      def initial_state():
+          return {"values": []}
+
+      def update(quote, state, params):
+          # quote: NBBOQuote, state: dict, params: dict
+          mid = (quote.bid + quote.ask) / 2
+          state["values"].append(float(mid))
+          if len(state["values"]) > params["lookback"]:
+              state["values"].pop(0)
+          if len(state["values"]) < params["lookback"]:
+              return 0.0
+          avg = sum(state["values"]) / len(state["values"])
+          return float(mid - avg)
+    warm_up:
+      min_events: 20      # matches lookback default
+      min_duration_ns: 0
+    # depends_on: []       # list of upstream feature_ids
+
+# ── Signal ────────────────────────────────────────────────
+signal: |
+  def evaluate(features, params):
+      val = features.values.get("my_feature", 0.0)
+      threshold = params["threshold"]
+      if val > threshold:
+          return Signal(
+              timestamp_ns=features.timestamp_ns,
+              correlation_id=features.correlation_id,
+              sequence=features.sequence,
+              symbol=features.symbol,
+              strategy_id=alpha_id,
+              direction=SHORT,
+              strength=min(abs(val) / (threshold * 2), 1.0),
+              edge_estimate=abs(val),
+          )
+      if val < -threshold:
+          return Signal(
+              timestamp_ns=features.timestamp_ns,
+              correlation_id=features.correlation_id,
+              sequence=features.sequence,
+              symbol=features.symbol,
+              strategy_id=alpha_id,
+              direction=LONG,
+              strength=min(abs(val) / (threshold * 2), 1.0),
+              edge_estimate=abs(val),
+          )
+      return None

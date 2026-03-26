@@ -11,8 +11,9 @@ from feelies.alpha.loader import AlphaLoader
 from feelies.alpha.registry import AlphaRegistry
 
 ALPHA_SPEC_TEMPLATE = """\
+schema_version: "1.0"
 alpha_id: {alpha_id}
-version: "1.0"
+version: "1.0.0"
 author: test
 description: test alpha
 hypothesis: test
@@ -151,8 +152,9 @@ class TestLoadAndRegister:
 
     def test_applies_parameter_overrides(self, tmp_path: Path) -> None:
         spec_yaml = """\
+schema_version: "1.0"
 alpha_id: my_alpha
-version: "1.0"
+version: "1.0.0"
 author: test
 description: test alpha
 hypothesis: test

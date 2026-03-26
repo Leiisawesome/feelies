@@ -22,6 +22,7 @@ Invariants preserved:
 
 from __future__ import annotations
 
+import inspect
 import logging
 import math
 import re
@@ -53,6 +54,10 @@ logger = logging.getLogger(__name__)
 _REQUIRED_TOP_KEYS = {"alpha_id", "version", "description", "hypothesis",
                       "falsification_criteria", "features", "signal"}
 
+_SUPPORTED_SCHEMA_VERSIONS = {"1.0"}
+_ALPHA_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+_SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
+
 _REQUIRED_FEATURE_KEYS = {"version", "description", "computation"}
 
 _SAFE_BUILTINS = {
@@ -77,6 +82,27 @@ _SAFE_BUILTINS = {
 }
 
 _LIST_RETURN_RE = re.compile(r"^list\[(\d+)]$")
+
+
+def _check_arity(
+    fn: Callable[..., Any],
+    expected: int,
+    name: str,
+    source: str,
+    context: str,
+) -> None:
+    """Validate that *fn* accepts exactly *expected* required positional args."""
+    sig = inspect.signature(fn)
+    n_required = sum(
+        1 for p in sig.parameters.values()
+        if p.default is inspect.Parameter.empty
+        and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+    )
+    if n_required != expected:
+        raise AlphaLoadError(
+            f"{source}: {name} in '{context}' requires {expected} "
+            f"positional arg(s), got {n_required}"
+        )
 
 _PARAM_REF_RE = re.compile(r"params\[['\"](\w+)['\"]\]")
 _PARAM_MUL_RE = re.compile(r"params\[['\"](\w+)['\"]\]\s*\*\s*(\d+)")
@@ -429,6 +455,7 @@ class AlphaLoader:
             max_drawdown_pct=risk_budget_raw.get("max_drawdown_pct", 1.0),
             capital_allocation_pct=risk_budget_raw.get("capital_allocation_pct", 10.0),
         )
+        self._validate_risk_budget(risk_budget, source)
 
         manifest = AlphaManifest(
             alpha_id=alpha_id,
@@ -461,6 +488,51 @@ class AlphaLoader:
             raise AlphaLoadError(
                 f"{source}: missing required top-level keys: "
                 + ", ".join(sorted(missing))
+            )
+
+        schema_version = spec.get("schema_version")
+        if schema_version is None:
+            logger.warning(
+                "%s: missing 'schema_version' — defaulting to '1.0'. "
+                "Add schema_version: \"1.0\" to suppress this warning.",
+                source,
+            )
+            spec["schema_version"] = "1.0"
+        elif str(schema_version) not in _SUPPORTED_SCHEMA_VERSIONS:
+            raise AlphaLoadError(
+                f"{source}: unsupported schema_version '{schema_version}', "
+                f"supported: {sorted(_SUPPORTED_SCHEMA_VERSIONS)}"
+            )
+
+        alpha_id = spec.get("alpha_id", "")
+        if not _ALPHA_ID_RE.match(str(alpha_id)):
+            raise AlphaLoadError(
+                f"{source}: alpha_id '{alpha_id}' must match "
+                f"'^[a-z][a-z0-9_]*$' (lowercase, underscores only)"
+            )
+
+        version = spec.get("version", "")
+        if not _SEMVER_RE.match(str(version)):
+            raise AlphaLoadError(
+                f"{source}: version '{version}' must be semver "
+                f"(e.g. '1.0.0')"
+            )
+
+    @staticmethod
+    def _validate_risk_budget(budget: AlphaRiskBudget, source: str) -> None:
+        errors: list[str] = []
+        if budget.max_position_per_symbol <= 0:
+            errors.append("max_position_per_symbol must be > 0")
+        if not (0 < budget.max_gross_exposure_pct <= 100):
+            errors.append("max_gross_exposure_pct must be in (0, 100]")
+        if not (0 < budget.max_drawdown_pct <= 100):
+            errors.append("max_drawdown_pct must be in (0, 100]")
+        if not (0 < budget.capital_allocation_pct <= 100):
+            errors.append("capital_allocation_pct must be in (0, 100]")
+        if errors:
+            raise AlphaLoadError(
+                f"{source}: risk_budget validation failed: "
+                + "; ".join(errors)
             )
 
     # ── Parameter resolution ──────────────────────────────────
@@ -610,14 +682,37 @@ class AlphaLoader:
 
         for fspec in feature_list:
             fid = fspec["feature_id"]
-            missing = _REQUIRED_FEATURE_KEYS - set(fspec.keys())
-            if missing:
+
+            has_computation = "computation" in fspec
+            has_module = "computation_module" in fspec
+
+            if not has_computation and not has_module:
                 raise AlphaLoadError(
-                    f"{source}: feature '{fid}' missing keys: "
-                    + ", ".join(sorted(missing))
+                    f"{source}: feature '{fid}' must define "
+                    f"'computation' or 'computation_module'"
                 )
 
-            code = fspec["computation"]
+            if has_module:
+                module_path = Path(fspec["computation_module"])
+                alpha_dir = Path(source).parent.resolve()
+                resolved = (alpha_dir / module_path).resolve()
+                try:
+                    resolved.relative_to(alpha_dir)
+                except ValueError:
+                    raise AlphaLoadError(
+                        f"{source}: computation_module '{module_path}' "
+                        f"escapes alpha directory"
+                    )
+                code = resolved.read_text(encoding="utf-8")
+            else:
+                missing = _REQUIRED_FEATURE_KEYS - set(fspec.keys())
+                if missing:
+                    raise AlphaLoadError(
+                        f"{source}: feature '{fid}' missing keys: "
+                        + ", ".join(sorted(missing))
+                    )
+                code = fspec["computation"]
+
             ns = dict(namespace)
             try:
                 compiled = compile(code, f"<{source}:{fid}>", "exec")
@@ -634,7 +729,12 @@ class AlphaLoader:
                     f"{source}: feature '{fid}' must define "
                     f"initial_state() and update(quote, state, params)"
                 )
+            _check_arity(init_fn, 0, "initial_state", source, fid)
+            _check_arity(update_fn, 3, "update", source, fid)
+
             update_trade_fn = ns.get("update_trade")
+            if update_trade_fn is not None:
+                _check_arity(update_trade_fn, 3, "update_trade", source, fid)
 
             warm_up = self._resolve_warm_up(
                 fspec.get("warm_up", {}), params, source, fid
@@ -699,6 +799,22 @@ class AlphaLoader:
         else:
             min_events = int(min_events_raw)
 
+        if min_events > 0 and min_duration_ns > 0:
+            # Advisory: 1 event per millisecond is a generous upper bound
+            # for NBBO data.  If the duration requires more time than
+            # the event count implies at this rate, the configuration may
+            # be inconsistent.
+            implied_min_ns = min_events * 1_000_000
+            if min_duration_ns > implied_min_ns * 100:
+                logger.warning(
+                    "%s: feature '%s' warm-up looks inconsistent: "
+                    "min_events=%d implies ~%dms, but min_duration_ns=%d "
+                    "(~%dms). Check configuration.",
+                    source, feature_id, min_events,
+                    implied_min_ns // 1_000_000, min_duration_ns,
+                    min_duration_ns // 1_000_000,
+                )
+
         return WarmUpSpec(min_events=min_events, min_duration_ns=min_duration_ns)
 
     # ── Signal compilation ────────────────────────────────────
@@ -724,5 +840,6 @@ class AlphaLoader:
             raise AlphaLoadError(
                 f"{source}: signal code must define evaluate(features, params)"
             )
+        _check_arity(evaluate_fn, 2, "evaluate", source, alpha_id)
 
         return evaluate_fn

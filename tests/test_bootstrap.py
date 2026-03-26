@@ -22,8 +22,9 @@ from feelies.monitoring.in_memory import (
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 ALPHA_SPEC_YAML = """\
+schema_version: "1.0"
 alpha_id: test_alpha
-version: "1.0"
+version: "1.0.0"
 author: test
 description: test alpha
 hypothesis: test

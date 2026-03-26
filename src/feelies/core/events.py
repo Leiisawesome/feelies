@@ -95,6 +95,7 @@ class FeatureVector(Event):
     warm: bool = True
     stale: bool = False
     event_count: int = 0
+    suppressed_features: frozenset[str] = frozenset()
 
 
 # ── Regime Events ───────────────────────────────────────────────────────

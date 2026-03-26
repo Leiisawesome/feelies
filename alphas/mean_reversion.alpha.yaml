@@ -4,6 +4,7 @@
 # ═══════════════════════════════════════════════════════════
 
 # ── Identity & Provenance ─────────────────────────────────
+schema_version: "1.0"
 alpha_id: spread_mean_reversion
 version: "1.0.0"
 author: "lab-genome-2026"

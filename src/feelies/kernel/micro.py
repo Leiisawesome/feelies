@@ -25,6 +25,7 @@ class MicroState(Enum):
     STATE_UPDATE = auto()
     FEATURE_COMPUTE = auto()
     SIGNAL_EVALUATE = auto()
+    ORDER_AGGREGATION = auto()
     RISK_CHECK = auto()
     ORDER_DECISION = auto()
     ORDER_SUBMIT = auto()
@@ -46,10 +47,19 @@ _MICRO_TRANSITIONS: dict[MicroState, frozenset[MicroState]] = {
     MicroState.FEATURE_COMPUTE: frozenset({
         MicroState.SIGNAL_EVALUATE,
     }),
-    # M4 branches: signal produced → M5 (risk check), no signal → M10.
+    # M4 branches:
+    #   single-alpha: signal → RISK_CHECK
+    #   multi-alpha:  intents → ORDER_AGGREGATION
+    #   no signal / force_flatten: → LOG_AND_METRICS
     MicroState.SIGNAL_EVALUATE: frozenset({
-        MicroState.RISK_CHECK,       # signal produced, proceed to risk
-        MicroState.LOG_AND_METRICS,  # no signal this tick (evaluate returned None)
+        MicroState.RISK_CHECK,          # single-alpha path
+        MicroState.ORDER_AGGREGATION,   # multi-alpha path
+        MicroState.LOG_AND_METRICS,     # no signal / force_flatten
+    }),
+    # Multi-alpha: aggregated orders ready → ORDER_DECISION, or empty → M10.
+    MicroState.ORDER_AGGREGATION: frozenset({
+        MicroState.ORDER_DECISION,
+        MicroState.LOG_AND_METRICS,
     }),
     # M5 branches: risk pass + order needed → M6, risk pass + no order → M10.
     # Risk fail → cross-machine to G8 (handled by orchestrator, not in this table).

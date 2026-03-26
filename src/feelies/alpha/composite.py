@@ -86,6 +86,8 @@ class CompositeFeatureEngine:
     DEFAULT_NAN_ALERT_WINDOW = 1000
     DEFAULT_NAN_ALERT_THRESHOLD = 0.05
 
+    DEFAULT_MAX_SUPPRESSION_TICKS = 100
+
     def __init__(
         self,
         registry: AlphaRegistry,
@@ -93,6 +95,7 @@ class CompositeFeatureEngine:
         staleness_threshold_ns: int | None = None,
         nan_alert_window: int | None = None,
         nan_alert_threshold: float | None = None,
+        max_suppression_ticks: int | None = None,
     ) -> None:
         self._clock = clock
         self._definitions: list[FeatureDefinition] = []
@@ -113,6 +116,11 @@ class CompositeFeatureEngine:
             if nan_alert_threshold is not None
             else self.DEFAULT_NAN_ALERT_THRESHOLD
         )
+        self._max_suppression_ticks = (
+            max_suppression_ticks
+            if max_suppression_ticks is not None
+            else self.DEFAULT_MAX_SUPPRESSION_TICKS
+        )
 
         self._per_symbol_state: dict[str, dict[str, dict[str, Any]]] = {}
         self._per_symbol_event_count: dict[str, int] = {}
@@ -124,6 +132,9 @@ class CompositeFeatureEngine:
         self._nan_windows: dict[tuple[str, str], deque[bool]] = {}
         self._nan_alerted: set[tuple[str, str]] = set()
         self._nan_degraded: set[tuple[str, str]] = set()
+
+        self._suppression_runs: dict[tuple[str, str], int] = {}
+        self._per_feature_event_count: dict[tuple[str, str], int] = {}
 
         self._rebuild(registry)
 
@@ -178,13 +189,36 @@ class CompositeFeatureEngine:
                 )
 
         values: dict[str, float] = {}
+        suppressed: set[str] = set()
 
         for fid in self._computation_order:
             fdef = self._def_by_id[fid]
+            sup_key = (fid, symbol)
+
             if fid not in symbol_state:
                 init = fdef.compute.initial_state()
                 _validate_state(init, f"initial_state[{fid}]")
                 symbol_state[fid] = init
+
+            # Dependency-based suppression: if any upstream is suppressed
+            # this tick, suppress this feature too without calling update().
+            if fdef.depends_on & suppressed:
+                values[fid] = 0.0
+                suppressed.add(fid)
+                run = self._suppression_runs.get(sup_key, 0) + 1
+                self._suppression_runs[sup_key] = run
+                if run >= self._max_suppression_ticks:
+                    init = fdef.compute.initial_state()
+                    _validate_state(init, f"initial_state[{fid}]")
+                    symbol_state[fid] = init
+                    self._per_feature_event_count[sup_key] = 0
+                    self._suppression_runs[sup_key] = 0
+                    logger.warning(
+                        "Feature '%s' suppressed for %d consecutive ticks "
+                        "on %s — state and warm-up counter reset",
+                        fid, run, symbol,
+                    )
+                continue
 
             value = fdef.compute.update(quote, symbol_state[fid])
             if math.isnan(value) or math.isinf(value):
@@ -196,8 +230,27 @@ class CompositeFeatureEngine:
                         symbol, self._nan_alert_window,
                     )
                 value = 0.0
+                suppressed.add(fid)
+                run = self._suppression_runs.get(sup_key, 0) + 1
+                self._suppression_runs[sup_key] = run
+                if run >= self._max_suppression_ticks:
+                    init = fdef.compute.initial_state()
+                    _validate_state(init, f"initial_state[{fid}]")
+                    symbol_state[fid] = init
+                    self._per_feature_event_count[sup_key] = 0
+                    self._suppression_runs[sup_key] = 0
+                    logger.warning(
+                        "Feature '%s' NaN for %d consecutive ticks on %s "
+                        "— state and warm-up counter reset",
+                        fid, run, symbol,
+                    )
             else:
                 self._record_ok(fid, symbol)
+                self._per_feature_event_count[sup_key] = (
+                    self._per_feature_event_count.get(sup_key, 0) + 1
+                )
+                self._suppression_runs.pop(sup_key, None)
+
             values[fid] = value
 
         self._last_values[symbol] = values
@@ -213,6 +266,7 @@ class CompositeFeatureEngine:
             warm=warm,
             stale=stale,
             event_count=event_count,
+            suppressed_features=frozenset(suppressed),
         )
 
     def is_warm(self, symbol: str) -> bool:
@@ -231,6 +285,19 @@ class CompositeFeatureEngine:
         self._per_symbol_last_ns.pop(symbol, None)
         self._per_symbol_last_exchange_ns.pop(symbol, None)
         self._last_values.pop(symbol, None)
+
+        # Clear per-feature event counts and suppression runs for this symbol
+        stale_keys = [
+            k for k in self._per_feature_event_count if k[1] == symbol
+        ]
+        for k in stale_keys:
+            del self._per_feature_event_count[k]
+
+        stale_sups = [
+            k for k in self._suppression_runs if k[1] == symbol
+        ]
+        for k in stale_sups:
+            del self._suppression_runs[k]
 
         for fdef in self._definitions:
             reset_fn = getattr(fdef.compute, "reset_symbol", None)
@@ -252,12 +319,19 @@ class CompositeFeatureEngine:
         state = self._per_symbol_state.get(symbol, {})
         event_count = self._per_symbol_event_count.get(symbol, 0)
         _validate_state(state, f"feature_state[{symbol}]")
+
+        per_feature_counts = {
+            fid: self._per_feature_event_count.get((fid, symbol), 0)
+            for fid in self._computation_order
+        }
+
         payload = {
             "feature_state": state,
             "event_count": event_count,
             "first_ns": self._per_symbol_first_ns.get(symbol, 0),
             "last_ns": self._per_symbol_last_ns.get(symbol, 0),
             "last_exchange_ns": self._per_symbol_last_exchange_ns.get(symbol, 0),
+            "per_feature_event_count": per_feature_counts,
         }
         return json.dumps(payload).encode(), event_count
 
@@ -279,6 +353,10 @@ class CompositeFeatureEngine:
         self._per_symbol_first_ns[symbol] = payload.get("first_ns", 0)
         self._per_symbol_last_ns[symbol] = payload.get("last_ns", 0)
         self._per_symbol_last_exchange_ns[symbol] = payload.get("last_exchange_ns", 0)
+
+        per_feature_counts = payload.get("per_feature_event_count", {})
+        for fid, count in per_feature_counts.items():
+            self._per_feature_event_count[(fid, symbol)] = count
 
     # ── Trade event processing ──────────────────────────────────
 
@@ -303,9 +381,12 @@ class CompositeFeatureEngine:
         last_values = self._last_values.get(symbol, {})
         updated = False
         values = dict(last_values)
+        suppressed: set[str] = set()
 
         for fid in self._computation_order:
             fdef = self._def_by_id[fid]
+            sup_key = (fid, symbol)
+
             if fid not in symbol_state:
                 continue
 
@@ -323,8 +404,15 @@ class CompositeFeatureEngine:
                             symbol, self._nan_alert_window,
                         )
                     result = 0.0
+                    suppressed.add(fid)
+                    run = self._suppression_runs.get(sup_key, 0) + 1
+                    self._suppression_runs[sup_key] = run
                 else:
                     self._record_ok(fid, symbol)
+                    self._per_feature_event_count[sup_key] = (
+                        self._per_feature_event_count.get(sup_key, 0) + 1
+                    )
+                    self._suppression_runs.pop(sup_key, None)
                 values[fid] = result
                 updated = True
 
@@ -343,6 +431,7 @@ class CompositeFeatureEngine:
             values=values,
             warm=warm,
             event_count=event_count,
+            suppressed_features=frozenset(suppressed),
         )
 
     # ── NaN rate tracking ──────────────────────────────────────
@@ -391,16 +480,19 @@ class CompositeFeatureEngine:
     def _is_warm_for_symbol(self, symbol: str) -> bool:
         """Check whether all features meet their warm-up requirements.
 
-        Uses the last event timestamp for this symbol (not the clock)
-        so the check is causally correct regardless of call-site timing.
+        Uses per-feature event counts (not the global symbol event count)
+        so that features with long suppression runs don't count towards
+        warm-up.  Duration check uses the global per-symbol timing.
         """
-        event_count = self._per_symbol_event_count.get(symbol, 0)
         first_ns = self._per_symbol_first_ns.get(symbol, 0)
         last_ns = self._per_symbol_last_ns.get(symbol, 0)
         elapsed_ns = last_ns - first_ns if first_ns > 0 else 0
 
         for fdef in self._definitions:
-            if event_count < fdef.warm_up.min_events:
+            feat_events = self._per_feature_event_count.get(
+                (fdef.feature_id, symbol), 0,
+            )
+            if feat_events < fdef.warm_up.min_events:
                 return False
             if elapsed_ns < fdef.warm_up.min_duration_ns:
                 return False

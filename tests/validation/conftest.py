@@ -186,8 +186,9 @@ def multi_symbol_scenario(tmp_path_factory: pytest.TempPathFactory):
 
 
 TRADE_ALPHA_SPEC = """\
+schema_version: "1.0"
 alpha_id: trade_aware
-version: "1.0"
+version: "1.0.0"
 author: validation_test
 description: Feature that updates on both quotes and trades
 hypothesis: Trade events affect feature state

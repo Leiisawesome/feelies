@@ -24,13 +24,17 @@ logger = logging.getLogger(__name__)
 def discover_alpha_specs(spec_dir: Path) -> list[Path]:
     """Find all ``.alpha.yaml`` files in a directory.
 
+    Supports both flat layout (``alphas/*.alpha.yaml``) and nested
+    per-alpha directories (``alphas/{alpha_id}/{alpha_id}.alpha.yaml``).
+
     Returns paths sorted alphabetically for deterministic load order.
-    Does not recurse into subdirectories.
     """
     if not spec_dir.is_dir():
         raise FileNotFoundError(f"Alpha spec directory not found: {spec_dir}")
 
-    specs = sorted(spec_dir.glob("*.alpha.yaml"))
+    flat = set(spec_dir.glob("*.alpha.yaml"))
+    nested = set(spec_dir.glob("*/*.alpha.yaml"))
+    specs = sorted(flat | nested)
     return specs
 
 

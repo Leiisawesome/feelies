@@ -36,8 +36,9 @@ from feelies.storage.memory_event_log import InMemoryEventLog
 
 
 LONG_ALPHA = """\
+schema_version: "1.0"
 alpha_id: correctness_alpha
-version: "1.0"
+version: "1.0.0"
 author: test
 description: Fires LONG when mid > 150
 hypothesis: test

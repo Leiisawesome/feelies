@@ -28,8 +28,9 @@ from feelies.storage.memory_event_log import InMemoryEventLog
 # ── Alpha spec that produces a BUY signal when mid > 150 ────────────
 
 LONG_ALPHA_SPEC = """\
+schema_version: "1.0"
 alpha_id: spread_momentum
-version: "1.0"
+version: "1.0.0"
 author: integration_test
 description: Buy when mid price exceeds threshold
 hypothesis: Momentum continuation above 150
@@ -95,8 +96,9 @@ signal: |
 # ── Alpha spec that never fires (null signal) ───────────────────────
 
 NULL_ALPHA_SPEC = """\
+schema_version: "1.0"
 alpha_id: null_signal
-version: "1.0"
+version: "1.0.0"
 author: integration_test
 description: Never produces a signal
 hypothesis: Baseline control

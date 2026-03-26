@@ -46,8 +46,9 @@ from feelies.storage.memory_feature_snapshot import InMemoryFeatureSnapshotStore
 from feelies.storage.memory_trade_journal import InMemoryTradeJournal
 
 ALPHA_SPEC = """\
+schema_version: "1.0"
 alpha_id: wirecheck_alpha
-version: "1.0"
+version: "1.0.0"
 author: test
 description: wireup check alpha
 hypothesis: test

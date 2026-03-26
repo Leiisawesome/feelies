@@ -17,8 +17,11 @@ from pathlib import Path
 
 from feelies.alpha.composite import CompositeFeatureEngine, CompositeSignalEngine
 from feelies.alpha.discovery import load_and_register
+from feelies.alpha.fill_attribution import FillAttributionLedger
 from feelies.alpha.loader import AlphaLoader
+from feelies.alpha.multi_alpha_evaluator import MultiAlphaEvaluator
 from feelies.alpha.registry import AlphaRegistry
+from feelies.alpha.risk_wrapper import AlphaBudgetRiskWrapper
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock, SimulatedClock, WallClock
 from feelies.core.events import NBBOQuote
@@ -35,6 +38,7 @@ from feelies.monitoring.in_memory import (
     InMemoryMetricCollector,
 )
 from feelies.portfolio.memory_position_store import MemoryPositionStore
+from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
 from feelies.risk.position_sizer import BudgetBasedSizer
 from feelies.services.regime_engine import RegimeEngine, get_regime_engine
@@ -107,6 +111,7 @@ def build_platform(
         bus.subscribe(NBBOQuote, lambda e: backtest_router.on_quote(e))  # type: ignore[arg-type]
 
     position_store = MemoryPositionStore()
+    strategy_positions = StrategyPositionStore()
     trade_journal = InMemoryTradeJournal()
     feature_snapshots = InMemoryFeatureSnapshotStore()
     position_sizer = BudgetBasedSizer(regime_engine=regime_engine)
@@ -115,6 +120,27 @@ def build_platform(
     kill_switch = InMemoryKillSwitch()
     alert_manager = InMemoryAlertManager(kill_switch=kill_switch)
     metric_collector = InMemoryMetricCollector()
+
+    # ── Multi-alpha execution components ──
+    risk_wrapper = AlphaBudgetRiskWrapper(
+        inner=risk_engine,
+        registry=registry,
+        strategy_positions=strategy_positions,
+        platform_config=risk_config,
+        account_equity=_decimal(config.account_equity),
+    )
+    fill_ledger = FillAttributionLedger()
+    multi_alpha_evaluator: MultiAlphaEvaluator | None = None
+    if len(registry) > 1:
+        multi_alpha_evaluator = MultiAlphaEvaluator(
+            registry=registry,
+            intent_translator=intent_translator,
+            risk_wrapper=risk_wrapper,
+            strategy_positions=strategy_positions,
+            position_sizer=position_sizer,
+            account_equity=_decimal(config.account_equity),
+            entry_cooldown_ticks=config.signal_entry_cooldown_ticks,
+        )
 
     orchestrator = Orchestrator(
         clock=clock,
@@ -135,6 +161,9 @@ def build_platform(
         account_equity=_decimal(config.account_equity),
         trade_journal=trade_journal,
         feature_snapshots=feature_snapshots,
+        multi_alpha_evaluator=multi_alpha_evaluator,
+        fill_ledger=fill_ledger,
+        strategy_positions=strategy_positions,
     )
 
     config_snapshot = config.snapshot()

@@ -13,9 +13,16 @@ Assembly flow:
   5. The orchestrator runs identically to the single-alpha case
 """
 
+from feelies.alpha.aggregation import AggregatedOrders, aggregate_intents
 from feelies.alpha.arbitration import EdgeWeightedArbitrator, SignalArbitrator
 from feelies.alpha.composite import CompositeFeatureEngine, CompositeSignalEngine
 from feelies.alpha.discovery import discover_alpha_specs, load_and_register
+from feelies.alpha.fill_attribution import (
+    AlphaContribution,
+    AttributionRecord,
+    FillAttributionLedger,
+)
+from feelies.alpha.intent_set import IntentSet
 from feelies.alpha.lifecycle import (
     AlphaLifecycle,
     AlphaLifecycleState,
@@ -29,10 +36,16 @@ from feelies.alpha.module import (
     AlphaRiskBudget,
     ParameterDef,
 )
+from feelies.alpha.multi_alpha_evaluator import MultiAlphaEvaluator
 from feelies.alpha.registry import AlphaRegistry, AlphaRegistryError
+from feelies.alpha.risk_wrapper import AlphaBudgetRiskWrapper
 from feelies.alpha.validation import validate_alpha_set
 
 __all__ = [
+    "AggregatedOrders",
+    "aggregate_intents",
+    "AlphaBudgetRiskWrapper",
+    "AlphaContribution",
     "AlphaLifecycle",
     "AlphaLifecycleState",
     "AlphaLoadError",
@@ -42,13 +55,17 @@ __all__ = [
     "AlphaRegistry",
     "AlphaRegistryError",
     "AlphaRiskBudget",
+    "AttributionRecord",
     "CompositeFeatureEngine",
     "CompositeSignalEngine",
     "discover_alpha_specs",
     "EdgeWeightedArbitrator",
+    "FillAttributionLedger",
     "GateRequirements",
+    "IntentSet",
     "load_and_register",
     "LoadedAlphaModule",
+    "MultiAlphaEvaluator",
     "ParameterDef",
     "PromotionEvidence",
     "SignalArbitrator",

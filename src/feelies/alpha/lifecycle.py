@@ -20,12 +20,15 @@ Invariants preserved:
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
 
 from feelies.core.clock import Clock
 from feelies.core.state_machine import StateMachine
+
+_RESTORE_TOKEN: object = object()
 
 
 class AlphaLifecycleState(Enum):
@@ -300,6 +303,63 @@ class AlphaLifecycle:
     def is_live(self) -> bool:
         """Whether the alpha is deployed with real capital."""
         return self._sm.state == AlphaLifecycleState.LIVE
+
+    # ── Persistence ──────────────────────────────────────────
+
+    def checkpoint(self) -> bytes:
+        """Serialize lifecycle state for persistence.
+
+        Returns a JSON-encoded blob containing the current state name.
+        """
+        payload = {
+            "alpha_id": self._alpha_id,
+            "state": self._sm.state.name,
+        }
+        return json.dumps(payload).encode()
+
+    def restore(self, data: bytes) -> None:
+        """Restore lifecycle state from a checkpoint.
+
+        Raises ``ValueError`` if the data is corrupt or references an
+        unknown state.
+        """
+        try:
+            payload = json.loads(data.decode())
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ValueError(
+                f"Corrupt lifecycle checkpoint for '{self._alpha_id}'"
+            ) from exc
+
+        state_name = payload.get("state")
+        if state_name is None:
+            raise ValueError(
+                f"Missing 'state' in lifecycle checkpoint for '{self._alpha_id}'"
+            )
+
+        try:
+            target = AlphaLifecycleState[state_name]
+        except KeyError:
+            raise ValueError(
+                f"Unknown lifecycle state '{state_name}' in checkpoint "
+                f"for '{self._alpha_id}'"
+            )
+
+        self._restore_to_checkpoint(target, _RESTORE_TOKEN)
+
+    def _restore_to_checkpoint(
+        self,
+        target: AlphaLifecycleState,
+        token: object,
+    ) -> None:
+        """Set lifecycle state directly — restricted to holders of the
+        sentinel token (i.e. this module and the registry).
+        """
+        if token is not _RESTORE_TOKEN:
+            raise PermissionError(
+                "Direct state restoration requires the internal token. "
+                "Use restore(data) instead."
+            )
+        self._sm._state = target  # noqa: SLF001
 
 
 def _evidence_to_dict(evidence: PromotionEvidence) -> dict[str, Any]:

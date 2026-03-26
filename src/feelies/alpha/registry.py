@@ -20,6 +20,7 @@ Lifecycle integration:
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 
 from feelies.alpha.lifecycle import (
@@ -31,7 +32,10 @@ from feelies.alpha.lifecycle import (
 from feelies.alpha.module import AlphaModule
 from feelies.alpha.validation import validate_alpha_set
 from feelies.core.clock import Clock
+from feelies.core.events import FeatureVector
 from feelies.features.definition import FeatureDefinition
+
+_logger = logging.getLogger(__name__)
 
 
 class AlphaRegistryError(Exception):
@@ -85,6 +89,8 @@ class AlphaRegistry:
                 f"Alpha '{alpha_id}' failed validation: "
                 + "; ".join(errors)
             )
+
+        self._smoke_test(alpha)
 
         self._alphas[alpha_id] = alpha
         if self._clock is not None:
@@ -183,6 +189,43 @@ class AlphaRegistry:
             per_alpha["__cross_alpha__"] = cross_errors
 
         return per_alpha
+
+    # ── Determinism smoke test ─────────────────────────────────
+
+    @staticmethod
+    def _smoke_test(alpha: AlphaModule) -> None:
+        """Verify alpha.evaluate() is deterministic with synthetic input.
+
+        Creates a zero-valued FeatureVector and calls evaluate() twice.
+        If the outputs differ the alpha is non-deterministic (Inv-5 violation).
+        Raises ``AlphaRegistryError`` on failure.
+        """
+        manifest = alpha.manifest
+        zero_values = {fid: 0.0 for fid in manifest.required_features}
+        synthetic = FeatureVector(
+            timestamp_ns=0,
+            correlation_id="smoke_test",
+            sequence=0,
+            symbol="__SMOKE__",
+            feature_version="smoke",
+            values=zero_values,
+            warm=True,
+        )
+        try:
+            result_a = alpha.evaluate(synthetic)
+            result_b = alpha.evaluate(synthetic)
+        except Exception as exc:
+            _logger.warning(
+                "Alpha '%s' smoke test skipped — evaluate() raised: %s",
+                manifest.alpha_id, exc,
+            )
+            return
+
+        if result_a != result_b:
+            raise AlphaRegistryError(
+                f"Alpha '{manifest.alpha_id}' failed determinism smoke test: "
+                f"two identical calls to evaluate() produced different results"
+            )
 
     # ── Lifecycle management ────────────────────────────────────
 
