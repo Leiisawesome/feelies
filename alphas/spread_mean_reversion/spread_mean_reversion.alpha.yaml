@@ -1,0 +1,143 @@
+# ═══════════════════════════════════════════════════════════
+# ALPHA SPECIFICATION — Spread-Gated Mean Reversion (v2.3)
+# Migrated from legacy flat layout to nested per-alpha directory
+# with computation_module references.
+# ═══════════════════════════════════════════════════════════
+
+# ── Identity & Provenance ─────────────────────────────────
+schema_version: "1.0"
+alpha_id: spread_mean_reversion
+version: "2.0.0"
+description: >
+  Short-horizon mean reversion on mid-price z-score deviation
+  from EWMA, gated on bid-ask spread staying below a
+  cost-feasibility threshold.  Exploits transient liquidity
+  imbalances in large-cap equities that revert within tens
+  of ticks.
+
+# ── Epistemological (Platform Invariant 2) ─────────────────
+hypothesis: >
+  Mid-price z-score deviation from an exponential moving average
+  in liquid large-caps produces mean-reverting edge that exceeds
+  1.5x round-trip costs, provided the bid-ask spread does not
+  exceed a configurable basis-point threshold.
+falsification_criteria:
+  - "Forward 10-tick return conditioned on z-score signal shows no edge (bootstrap p > 0.05)"
+  - "Net Sharpe < 1.0 after realistic execution on OOS data across 3 regimes"
+
+# ── Symbol Scope ──────────────────────────────────────────
+symbols: null
+
+# ── Typed Parameters ──────────────────────────────────────
+parameters:
+  ewma_span:
+    type: int
+    default: 50
+    min: 2
+    max: 500
+    description: "EWMA lookback in ticks"
+  zscore_entry:
+    type: float
+    default: 2.0
+    min: 0.5
+    max: 5.0
+    description: "Absolute z-score threshold for entry"
+  edge_estimate_bps:
+    type: float
+    default: 2.5
+    min: 0.5
+    max: 10.0
+    description: "Declared edge per signal in basis points"
+  max_spread_bps:
+    type: float
+    default: 5.0
+    min: 1.0
+    max: 20.0
+    description: "Spread gate — suppress signal when spread exceeds this (bps of mid)"
+
+# ── Risk Budget ───────────────────────────────────────────
+risk_budget:
+  max_position_per_symbol: 100
+  max_gross_exposure_pct: 8.0
+  max_drawdown_pct: 1.5
+  capital_allocation_pct: 15.0
+
+# ── Regimes (Lab-Specific Extension) ───────────────────────
+regimes:
+  engine: hmm_3state_fractional
+  state_names: [compression_clustering, normal, vol_breakout]
+  active_state_for_momentum: 0
+
+# ── Feature Declarations (computation_module) ─────────────
+features:
+  - feature_id: mid_price
+    version: "1.0.0"
+    description: "Mid-price: (bid + ask) / 2"
+    depends_on: []
+    warm_up:
+      min_events: 1
+    computation_module: mid_price.py
+
+  - feature_id: spread
+    version: "1.0.0"
+    description: "Bid-ask spread: ask - bid"
+    depends_on: []
+    warm_up:
+      min_events: 1
+    computation_module: spread.py
+
+  - feature_id: mid_ewma
+    version: "1.0.0"
+    description: "Exponentially weighted moving average of mid-price"
+    depends_on: [mid_price]
+    warm_up:
+      min_events: "params['ewma_span']"
+    computation_module: mid_ewma.py
+
+  - feature_id: mid_zscore
+    version: "1.0.0"
+    description: "Z-score of mid-price relative to EWMA and rolling std"
+    depends_on: [mid_price, mid_ewma]
+    warm_up:
+      min_events: "params['ewma_span']"
+    computation_module: mid_zscore.py
+
+# ── Signal Logic ──────────────────────────────────────────
+signal: |
+  def evaluate(features, params):
+      if not features.warm or features.stale:
+          return None
+
+      vals = features.values
+      zscore = vals.get("mid_zscore", 0.0)
+      mid = vals.get("mid_price", 0.0)
+      spread_val = vals.get("spread", 0.0)
+
+      if mid <= 0:
+          return None
+
+      spread_bps = (spread_val / mid) * 10000.0
+      if spread_bps > params["max_spread_bps"]:
+          return None
+
+      threshold = params["zscore_entry"]
+
+      if zscore < -threshold:
+          direction = LONG
+      elif zscore > threshold:
+          direction = SHORT
+      else:
+          return None
+
+      strength = min(abs(zscore) / 5.0, 1.0)
+
+      return Signal(
+          timestamp_ns=features.timestamp_ns,
+          correlation_id=features.correlation_id,
+          sequence=features.sequence,
+          symbol=features.symbol,
+          strategy_id=alpha_id,
+          direction=direction,
+          strength=strength,
+          edge_estimate_bps=params["edge_estimate_bps"],
+      )
