@@ -334,7 +334,7 @@ _DEMO_TICKS: list[dict] = [
     {"bid": "140.00", "ask": "140.01", "ts": 8_000_000_000},
 ]
 
-_ALPHA_SRC = _PROJECT_ROOT / "alphas" / "mean_reversion.alpha.yaml"
+_ALPHA_SRC_DIR = _PROJECT_ROOT / "alphas" / "spread_mean_reversion"
 
 
 def _make_demo_quotes() -> list[NBBOQuote]:
@@ -358,8 +358,8 @@ def run_demo() -> tuple[object, BusRecorder, IngestResult, PlatformConfig, str, 
     """Run the backtest with synthetic 8-tick data (no Massive API needed)."""
     tmp_dir = tempfile.mkdtemp(prefix="feelies_demo_")
     try:
-        alpha_dst = Path(tmp_dir) / "mean_reversion.alpha.yaml"
-        shutil.copy2(_ALPHA_SRC, alpha_dst)
+        alpha_dst = Path(tmp_dir) / "spread_mean_reversion"
+        shutil.copytree(_ALPHA_SRC_DIR, alpha_dst)
 
         config = PlatformConfig(
             symbols=frozenset(["AAPL"]),
@@ -368,7 +368,7 @@ def run_demo() -> tuple[object, BusRecorder, IngestResult, PlatformConfig, str, 
             regime_engine=None,
             account_equity=100_000.0,
             parameter_overrides={
-                "mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0},
+                "spread_mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0},
             },
         )
 

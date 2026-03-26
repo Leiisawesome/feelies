@@ -24,7 +24,7 @@ from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.kernel.macro import MacroState
 from feelies.storage.memory_event_log import InMemoryEventLog
 
-from .conftest import ALPHA_SRC, BusRecorder, _make_quotes, _run_scenario
+from .conftest import ALPHA_SRC_DIR, BusRecorder, _make_quotes, _run_scenario
 
 pytestmark = pytest.mark.backtest_validation
 
@@ -32,7 +32,7 @@ pytestmark = pytest.mark.backtest_validation
 def _setup_platform(tmp_path: Path, quotes, **kwargs):
     alpha_dir = tmp_path / "alphas"
     alpha_dir.mkdir(exist_ok=True)
-    shutil.copy2(ALPHA_SRC, alpha_dir / "mean_reversion.alpha.yaml")
+    shutil.copytree(ALPHA_SRC_DIR, alpha_dir / "spread_mean_reversion")
 
     defaults = dict(
         symbols=frozenset({"AAPL"}),
@@ -40,7 +40,7 @@ def _setup_platform(tmp_path: Path, quotes, **kwargs):
         alpha_spec_dir=alpha_dir,
         account_equity=100_000.0,
         regime_engine=None,
-        parameter_overrides={"mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0}},
+        parameter_overrides={"spread_mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0}},
     )
     defaults.update(kwargs)
 

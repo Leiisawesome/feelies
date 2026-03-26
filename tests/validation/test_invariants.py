@@ -173,8 +173,8 @@ class TestInvariant11FailSafe:
     ) -> None:
         alpha_dir = tmp_path / "alphas"
         alpha_dir.mkdir(exist_ok=True)
-        alpha_src = Path(__file__).resolve().parent.parent.parent / "alphas" / "mean_reversion.alpha.yaml"
-        shutil.copy2(alpha_src, alpha_dir / "mean_reversion.alpha.yaml")
+        alpha_src_dir = Path(__file__).resolve().parent.parent.parent / "alphas" / "spread_mean_reversion"
+        shutil.copytree(alpha_src_dir, alpha_dir / "spread_mean_reversion")
 
         config = PlatformConfig(
             symbols=frozenset({"AAPL"}),
@@ -182,7 +182,7 @@ class TestInvariant11FailSafe:
             alpha_spec_dir=alpha_dir,
             account_equity=100_000.0,
             regime_engine=None,
-            parameter_overrides={"mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0}},
+            parameter_overrides={"spread_mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0}},
         )
         event_log = InMemoryEventLog()
         event_log.append_batch(_make_quotes())
@@ -212,8 +212,8 @@ class TestInvariant11FailSafe:
 
         alpha_dir = tmp_path / "alphas"
         alpha_dir.mkdir(exist_ok=True)
-        alpha_src = Path(__file__).resolve().parent.parent.parent / "alphas" / "mean_reversion.alpha.yaml"
-        shutil.copy2(alpha_src, alpha_dir / "mean_reversion.alpha.yaml")
+        alpha_src_dir = Path(__file__).resolve().parent.parent.parent / "alphas" / "spread_mean_reversion"
+        shutil.copytree(alpha_src_dir, alpha_dir / "spread_mean_reversion")
 
         config = PlatformConfig(
             symbols=frozenset({"AAPL"}),
@@ -221,7 +221,7 @@ class TestInvariant11FailSafe:
             alpha_spec_dir=alpha_dir,
             account_equity=100_000.0,
             regime_engine=None,
-            parameter_overrides={"mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0}},
+            parameter_overrides={"spread_mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0}},
         )
         event_log = InMemoryEventLog()
         event_log.append_batch(_make_quotes())

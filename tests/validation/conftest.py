@@ -29,7 +29,7 @@ from feelies.storage.memory_event_log import InMemoryEventLog
 
 T = TypeVar("T", bound=Event)
 
-ALPHA_SRC = Path(__file__).resolve().parent.parent.parent / "alphas" / "mean_reversion.alpha.yaml"
+ALPHA_SRC_DIR = Path(__file__).resolve().parent.parent.parent / "alphas" / "spread_mean_reversion"
 
 TICK_DATA: list[dict] = [
     {"bid": "150.00", "ask": "150.01", "ts": 1_000_000_000},
@@ -92,10 +92,10 @@ def _run_scenario(
 ) -> tuple:
     alpha_dir = tmp_path / "alphas"
     alpha_dir.mkdir(exist_ok=True)
-    shutil.copy2(ALPHA_SRC, alpha_dir / "mean_reversion.alpha.yaml")
+    shutil.copytree(ALPHA_SRC_DIR, alpha_dir / "spread_mean_reversion")
 
     if parameter_overrides is None:
-        parameter_overrides = {"mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0}}
+        parameter_overrides = {"spread_mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0}}
 
     config = PlatformConfig(
         symbols=symbols,

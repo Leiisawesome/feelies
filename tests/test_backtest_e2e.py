@@ -1,7 +1,7 @@
 """End-to-end backtest verification — full layer-by-layer assertion suite.
 
 Exercises the complete backtest pipe using the real
-``alphas/mean_reversion.alpha.yaml`` alpha (alpha_id: spread_mean_reversion)
+``alphas/spread_mean_reversion/`` alpha (alpha_id: spread_mean_reversion)
 with a synthetic 8-tick dataset designed to exercise warm-up suppression,
 signal generation, risk gating, fills, position reversal, and deterministic
 replay.
@@ -48,7 +48,7 @@ from feelies.storage.memory_event_log import InMemoryEventLog
 
 T = TypeVar("T", bound=Event)
 
-ALPHA_SRC = Path(__file__).resolve().parent.parent / "alphas" / "mean_reversion.alpha.yaml"
+ALPHA_SRC_DIR = Path(__file__).resolve().parent.parent / "alphas" / "spread_mean_reversion"
 
 # ── Synthetic quote data (plan §Synthetic Dataset Design) ────────────
 
@@ -109,10 +109,10 @@ def _run_scenario(
     """Build platform, wire recorder, boot, run backtest, return results."""
     alpha_dir = tmp_path / "alphas"
     alpha_dir.mkdir(exist_ok=True)
-    shutil.copy2(ALPHA_SRC, alpha_dir / "mean_reversion.alpha.yaml")
+    shutil.copytree(ALPHA_SRC_DIR, alpha_dir / "spread_mean_reversion")
 
     if parameter_overrides is None:
-        parameter_overrides = {"mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0}}
+        parameter_overrides = {"spread_mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0}}
 
     config = PlatformConfig(
         symbols=frozenset({"AAPL"}),
@@ -508,7 +508,7 @@ class TestLayerConfigSnapshot:
         orchestrator, _, _ = scenario
         snap = orchestrator.config_snapshot  # type: ignore[attr-defined]
         assert snap.data["parameter_overrides"] == {
-            "mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0},
+            "spread_mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0},
         }
 
     def test_regime_engine_none(self, scenario) -> None:
