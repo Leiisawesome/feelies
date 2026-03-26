@@ -41,6 +41,8 @@ risk_budget:
 # ── Features ──────────────────────────────────────────────
 features:
   my_feature:
+    version: "1.0.0"
+    description: "Example feature: deviation of mid-price from its rolling average."
     computation: |
       def initial_state():
           return {"values": []}

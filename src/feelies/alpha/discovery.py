@@ -34,7 +34,10 @@ def discover_alpha_specs(spec_dir: Path) -> list[Path]:
 
     flat = set(spec_dir.glob("*.alpha.yaml"))
     nested = set(spec_dir.glob("*/*.alpha.yaml"))
-    specs = sorted(flat | nested)
+    all_specs = flat | nested
+    specs = sorted(
+        p for p in all_specs if not any(part.startswith("_") for part in p.relative_to(spec_dir).parts)
+    )
     return specs
 
 
