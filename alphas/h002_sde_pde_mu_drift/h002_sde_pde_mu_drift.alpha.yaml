@@ -1,16 +1,26 @@
 # ── Identity & Provenance ─────────────────────────────────
 schema_version: "1.0"
 alpha_id: h002_sde_pde_mu_drift
-version: "1.0.0"
-description: "SDE/PDE-derived L1 microstructure alpha: product of spread_velocity and microprice_velocity as instantaneous drift μ(t)."
+version: "3.0.0"
+description: >
+  SDE/PDE-derived L1 microstructure alpha.  Smoothed (EWMA) vol-normalized
+  drift mu with LP imbalance confirmation.  LONG-only in tight-spread regime.
+  Designed for 20-50 round-trips/day with 500-2000 tick holds.
 hypothesis: |
-  The microprice S(t) follows the SDE dS(t) = [spread_velocity(t) × microprice_velocity(t)] dt + σ(t) dW(t).
-  Positive μ(t) causally signals liquidity provider inventory pressure that leads to short-term upward microprice drift in tight-spread regimes (Fokker-Planck PDE moment matching).
+  The microprice S(t) follows dS = mu(t) dt + sigma(t) dW.
+  The Fokker-Planck first moment E[dS] = integral mu dt predicts forward
+  returns only when drift is *persistent*, not instantaneous.  Smoothed mu
+  (EWMA) captures this integral.  Positive persistent mu, confirmed by LP
+  order-size imbalance, causally signals inventory pressure leading to
+  upward microprice drift in tight-spread regimes.
+  SHORT signals have no causal basis — LONG-only.
 falsification_criteria:
-  - "OOS Sharpe < 0.80 net of costs and latency"
-  - "Bootstrap p-value > 0.05 or μ regression coefficient insignificant (p > 0.01)"
+  - "OOS Sharpe < 0.80 net of all fees and latency"
+  - "Bootstrap p-value > 0.05 on forward 500-tick returns conditioned on entry"
   - "Latency decay > 40% (0→200 ms)"
-  - "Edge sign-flips or disappears outside tight-spread regime"
+  - "Edge vanishes outside tight-spread regime"
+  - "Net P&L negative after fees at 1.5× cost stress"
+  - "Imbalance confirmation adds no lift vs mu_ema alone"
 
 # ── Universe ──────────────────────────────────────────────
 symbols:
@@ -18,74 +28,145 @@ symbols:
 
 # ── Parameters ────────────────────────────────────────────
 parameters:
-  mu_threshold:
+  entry_threshold:
     type: float
-    default: 0.0005
-    range: [0.0001, 0.01]
-    description: "Minimum μ(t) for signal trigger (LONG on positive)."
+    default: 0.003
+    range: [0.001, 0.02]
+    description: "mu_ema level for entry — higher means fewer, higher-conviction trades."
+  exit_threshold:
+    type: float
+    default: -0.001
+    range: [-0.01, 0.0]
+    description: "mu_ema level for exit — less aggressive than zero to avoid hair-trigger exits."
+  imbalance_threshold:
+    type: float
+    default: 0.05
+    range: [0.01, 0.3]
+    description: "Minimum smoothed imbalance for LP inventory confirmation."
   max_spread_bp:
     type: float
     default: 3.0
     range: [1.0, 10.0]
-    description: "Tight-spread regime filter (basis points; extend with current_spread feature if needed)."
-  velocity_event_lookback:
+    description: "Spread gate — suppress entry when spread exceeds this (bps of mid)."
+  mu_ema_alpha:
+    type: float
+    default: 0.99
+    range: [0.95, 0.999]
+    description: "EWMA decay for drift smoothing.  0.99 ~ 70-tick half-life."
+  imbalance_ema_alpha:
+    type: float
+    default: 0.98
+    range: [0.9, 0.999]
+    description: "EWMA decay for imbalance smoothing."
+  ewma_vol_alpha:
+    type: float
+    default: 0.94
+    range: [0.8, 0.99]
+    description: "EWMA decay for local volatility normalization."
+  min_hold_ticks:
     type: int
-    default: 1
-    range: [1, 10]
-    description: "Event steps between velocity calculations (1 = per-quote)."
+    default: 500
+    range: [100, 2000]
+    description: "Minimum ticks before exit conditions are evaluated."
+  max_hold_ticks:
+    type: int
+    default: 3000
+    range: [1000, 10000]
+    description: "Forced exit timeout (safety)."
+  cooldown_ticks:
+    type: int
+    default: 1000
+    range: [200, 5000]
+    description: "Minimum gap between round-trips."
 
 # ── Risk Budget ───────────────────────────────────────────
 risk_budget:
-  max_position_per_symbol: 50000
-  max_gross_exposure_pct: 100.0
+  max_position_per_symbol: 500
+  max_gross_exposure_pct: 15.0
   max_drawdown_pct: 1.0
-  capital_allocation_pct: 100.0
+  capital_allocation_pct: 15.0
 
-# ── Features ──────────────────────────────────────────────
+# ── Features (computation_module) ────────────────────────
 features:
-  mu_drift:
+  - feature_id: current_spread_bp
     version: "1.0.0"
-    description: "Core SDE drift term μ(t) = spread_velocity × microprice_velocity (event-time)."
-    computation: |
-      def initial_state():
-          return {
-              "prev_microprice": None,
-              "prev_spread": None
-          }
-
-      def update(quote, state, params):
-          bid = float(quote.bid)
-          ask = float(quote.ask)
-          bid_size = float(quote.bid_size)
-          ask_size = float(quote.ask_size)
-
-          current_spread = ask - bid
-          total_size = bid_size + ask_size
-          current_microprice = (bid * ask_size + ask * bid_size) / total_size if total_size > 0 else (bid + ask) / 2.0
-
-          if state["prev_microprice"] is None:
-              state["prev_microprice"] = current_microprice
-              state["prev_spread"] = current_spread
-              return 0.0
-
-          spread_vel = current_spread - state["prev_spread"]
-          micro_vel = current_microprice - state["prev_microprice"]
-          mu = spread_vel * micro_vel
-
-          state["prev_microprice"] = current_microprice
-          state["prev_spread"] = current_spread
-
-          return float(mu)
+    description: "Current bid-ask spread in basis points of mid-price, for regime gating."
+    depends_on: []
     warm_up:
-      min_events: 5
-      min_duration_ns: 0
+      min_events: 1
+    computation_module: current_spread_bp.py
+
+  - feature_id: mu_ema
+    version: "1.0.0"
+    description: "EWMA of vol-normalized drift mu.  Approximates Fokker-Planck first moment integral."
+    depends_on: []
+    warm_up:
+      min_events: 100
+    computation_module: mu_ema.py
+
+  - feature_id: imbalance_pressure
+    version: "1.0.0"
+    description: "EWMA of signed order imbalance (bid_size - ask_size) / total.  LP inventory confirmation."
+    depends_on: []
+    warm_up:
+      min_events: 50
+    computation_module: imbalance_pressure.py
 
 # ── Signal ────────────────────────────────────────────────
 signal: |
+  _state = {"last_entry_seq": -999999, "in_position": False}
+
   def evaluate(features, params):
-      mu = features.values.get("mu_drift", 0.0)
-      threshold = params["mu_threshold"]
-      if mu > threshold:
+      if not features.warm or features.stale:
+          return None
+
+      mu = features.values.get("mu_ema", 0.0)
+      imbalance = features.values.get("imbalance_pressure", 0.0)
+      spread_bp = features.values.get("current_spread_bp", 9999.0)
+
+      entry_thr = params["entry_threshold"]
+      exit_thr = params["exit_threshold"]
+      imb_thr = params["imbalance_threshold"]
+      max_spread = params["max_spread_bp"]
+      min_hold = params["min_hold_ticks"]
+      max_hold = params["max_hold_ticks"]
+      cooldown = params["cooldown_ticks"]
+
+      seq = features.sequence
+
+      if _state["in_position"]:
+          held = seq - _state["last_entry_seq"]
+          if held < min_hold:
+              return None
+
+          drift_reversed = mu < exit_thr
+          timed_out = held >= max_hold
+          spread_blowout = spread_bp > max_spread * 2.0
+
+          if drift_reversed or timed_out or spread_blowout:
+              _state["in_position"] = False
+              return Signal(
+                  timestamp_ns=features.timestamp_ns,
+                  correlation_id=features.correlation_id,
+                  sequence=features.sequence,
+                  symbol=features.symbol,
+                  strategy_id=alpha_id,
+                  direction=FLAT,
+                  strength=1.0,
+                  edge_estimate_bps=0.0,
+              )
+          return None
+
+      if spread_bp > max_spread:
+          return None
+
+      ticks_since = seq - _state["last_entry_seq"]
+      if ticks_since < cooldown:
+          return None
+
+      if mu > entry_thr and imbalance > imb_thr:
+          _state["last_entry_seq"] = seq
+          _state["in_position"] = True
           return Signal(
               timestamp_ns=features.timestamp_ns,
               correlation_id=features.correlation_id,
@@ -93,18 +174,7 @@ signal: |
               symbol=features.symbol,
               strategy_id=alpha_id,
               direction=LONG,
-              strength=min(mu / (threshold * 3.0), 1.0),
-              edge_estimate_bps=abs(float(mu)) * 10000.0,
-          )
-      elif mu < -threshold:
-          return Signal(
-              timestamp_ns=features.timestamp_ns,
-              correlation_id=features.correlation_id,
-              sequence=features.sequence,
-              symbol=features.symbol,
-              strategy_id=alpha_id,
-              direction=SHORT,
-              strength=min(abs(mu) / (threshold * 3.0), 1.0),
+              strength=min(mu / (entry_thr * 3.0), 1.0),
               edge_estimate_bps=abs(float(mu)) * 10000.0,
           )
       return None
