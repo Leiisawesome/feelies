@@ -19,21 +19,19 @@ symbols:
 
 # ── Alpha Discovery ──────────────────────────────────────
 # Directory scanned for *.alpha.yaml files at boot time.
-alpha_spec_dir: alphas/
+alpha_spec_dir: alphas/h002_sde_pde_mu_drift
 
 # Explicit alpha spec paths (in addition to directory scan).
 alpha_specs: []
 
 # Per-alpha parameter overrides keyed by alpha_id.
-# Example:
-#   parameter_overrides:
-#     spread_mean_reversion:
-#       ewma_span: 100
-parameter_overrides: {}
+parameter_overrides:
+  h002_sde_pde_mu_drift:
+    mu_threshold: 0.0005
 
 # ── Regime Engine ─────────────────────────────────────────
 # Name of the shared regime engine, or null to disable.
-regime_engine: hmm_3state_fractional
+regime_engine: null
 
 # ── Data Paths ────────────────────────────────────────────
 # data_dir: data/
@@ -42,8 +40,8 @@ regime_engine: hmm_3state_fractional
 # ── Account & Risk ────────────────────────────────────────
 account_equity: 100000.0
 
-risk_max_position_per_symbol: 1000
-risk_max_gross_exposure_pct: 20.0
+risk_max_position_per_symbol: 50000
+risk_max_gross_exposure_pct: 200.0
 risk_max_drawdown_pct: 5.0
 
 # ── Backtest Settings ─────────────────────────────────────

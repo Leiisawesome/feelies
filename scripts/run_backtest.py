@@ -324,17 +324,17 @@ def ingest_data(
 # ── Demo mode (synthetic 8-tick data) ────────────────────────────────
 
 _DEMO_TICKS: list[dict] = [
-    {"bid": "150.00", "ask": "150.01", "ts": 1_000_000_000},
-    {"bid": "150.00", "ask": "150.01", "ts": 2_000_000_000},
-    {"bid": "150.00", "ask": "150.01", "ts": 3_000_000_000},
-    {"bid": "150.00", "ask": "150.01", "ts": 4_000_000_000},
-    {"bid": "150.00", "ask": "150.01", "ts": 5_000_000_000},
-    {"bid": "160.00", "ask": "160.01", "ts": 6_000_000_000},
-    {"bid": "160.00", "ask": "160.01", "ts": 7_000_000_000},
-    {"bid": "140.00", "ask": "140.01", "ts": 8_000_000_000},
+    {"bid": "150.00", "ask": "150.02", "ts": 1_000_000_000},
+    {"bid": "150.00", "ask": "150.02", "ts": 2_000_000_000},
+    {"bid": "150.00", "ask": "150.02", "ts": 3_000_000_000},
+    {"bid": "150.00", "ask": "150.02", "ts": 4_000_000_000},
+    {"bid": "150.00", "ask": "150.02", "ts": 5_000_000_000},
+    {"bid": "150.10", "ask": "150.20", "ts": 6_000_000_000},
+    {"bid": "149.80", "ask": "150.00", "ts": 7_000_000_000},
+    {"bid": "149.80", "ask": "150.00", "ts": 8_000_000_000},
 ]
 
-_ALPHA_SRC_DIR = _PROJECT_ROOT / "alphas" / "spread_mean_reversion"
+_ALPHA_SRC_DIR = _PROJECT_ROOT / "alphas" / "h002_sde_pde_mu_drift"
 
 
 def _make_demo_quotes() -> list[NBBOQuote]:
@@ -358,7 +358,7 @@ def run_demo() -> tuple[object, BusRecorder, IngestResult, PlatformConfig, str, 
     """Run the backtest with synthetic 8-tick data (no Massive API needed)."""
     tmp_dir = tempfile.mkdtemp(prefix="feelies_demo_")
     try:
-        alpha_dst = Path(tmp_dir) / "spread_mean_reversion"
+        alpha_dst = Path(tmp_dir) / "h002_sde_pde_mu_drift"
         shutil.copytree(_ALPHA_SRC_DIR, alpha_dst)
 
         config = PlatformConfig(
@@ -367,8 +367,10 @@ def run_demo() -> tuple[object, BusRecorder, IngestResult, PlatformConfig, str, 
             alpha_spec_dir=Path(tmp_dir),
             regime_engine=None,
             account_equity=100_000.0,
+            risk_max_position_per_symbol=50_000,
+            risk_max_gross_exposure_pct=200.0,
             parameter_overrides={
-                "spread_mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0},
+                "h002_sde_pde_mu_drift": {"mu_threshold": 0.0005},
             },
         )
 

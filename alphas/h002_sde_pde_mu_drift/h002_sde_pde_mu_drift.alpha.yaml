@@ -1,0 +1,110 @@
+# ── Identity & Provenance ─────────────────────────────────
+schema_version: "1.0"
+alpha_id: h002_sde_pde_mu_drift
+version: "1.0.0"
+description: "SDE/PDE-derived L1 microstructure alpha: product of spread_velocity and microprice_velocity as instantaneous drift μ(t)."
+hypothesis: |
+  The microprice S(t) follows the SDE dS(t) = [spread_velocity(t) × microprice_velocity(t)] dt + σ(t) dW(t).
+  Positive μ(t) causally signals liquidity provider inventory pressure that leads to short-term upward microprice drift in tight-spread regimes (Fokker-Planck PDE moment matching).
+falsification_criteria:
+  - "OOS Sharpe < 0.80 net of costs and latency"
+  - "Bootstrap p-value > 0.05 or μ regression coefficient insignificant (p > 0.01)"
+  - "Latency decay > 40% (0→200 ms)"
+  - "Edge sign-flips or disappears outside tight-spread regime"
+
+# ── Universe ──────────────────────────────────────────────
+symbols:
+  - AAPL
+
+# ── Parameters ────────────────────────────────────────────
+parameters:
+  mu_threshold:
+    type: float
+    default: 0.0005
+    range: [0.0001, 0.01]
+    description: "Minimum μ(t) for signal trigger (LONG on positive)."
+  max_spread_bp:
+    type: float
+    default: 3.0
+    range: [1.0, 10.0]
+    description: "Tight-spread regime filter (basis points; extend with current_spread feature if needed)."
+  velocity_event_lookback:
+    type: int
+    default: 1
+    range: [1, 10]
+    description: "Event steps between velocity calculations (1 = per-quote)."
+
+# ── Risk Budget ───────────────────────────────────────────
+risk_budget:
+  max_position_per_symbol: 50000
+  max_gross_exposure_pct: 100.0
+  max_drawdown_pct: 1.0
+  capital_allocation_pct: 100.0
+
+# ── Features ──────────────────────────────────────────────
+features:
+  mu_drift:
+    version: "1.0.0"
+    description: "Core SDE drift term μ(t) = spread_velocity × microprice_velocity (event-time)."
+    computation: |
+      def initial_state():
+          return {
+              "prev_microprice": None,
+              "prev_spread": None
+          }
+
+      def update(quote, state, params):
+          bid = float(quote.bid)
+          ask = float(quote.ask)
+          bid_size = float(quote.bid_size)
+          ask_size = float(quote.ask_size)
+
+          current_spread = ask - bid
+          total_size = bid_size + ask_size
+          current_microprice = (bid * ask_size + ask * bid_size) / total_size if total_size > 0 else (bid + ask) / 2.0
+
+          if state["prev_microprice"] is None:
+              state["prev_microprice"] = current_microprice
+              state["prev_spread"] = current_spread
+              return 0.0
+
+          spread_vel = current_spread - state["prev_spread"]
+          micro_vel = current_microprice - state["prev_microprice"]
+          mu = spread_vel * micro_vel
+
+          state["prev_microprice"] = current_microprice
+          state["prev_spread"] = current_spread
+
+          return float(mu)
+    warm_up:
+      min_events: 5
+      min_duration_ns: 0
+
+# ── Signal ────────────────────────────────────────────────
+signal: |
+  def evaluate(features, params):
+      mu = features.values.get("mu_drift", 0.0)
+      threshold = params["mu_threshold"]
+      if mu > threshold:
+          return Signal(
+              timestamp_ns=features.timestamp_ns,
+              correlation_id=features.correlation_id,
+              sequence=features.sequence,
+              symbol=features.symbol,
+              strategy_id=alpha_id,
+              direction=LONG,
+              strength=min(mu / (threshold * 3.0), 1.0),
+              edge_estimate_bps=abs(float(mu)) * 10000.0,
+          )
+      elif mu < -threshold:
+          return Signal(
+              timestamp_ns=features.timestamp_ns,
+              correlation_id=features.correlation_id,
+              sequence=features.sequence,
+              symbol=features.symbol,
+              strategy_id=alpha_id,
+              direction=SHORT,
+              strength=min(abs(mu) / (threshold * 3.0), 1.0),
+              edge_estimate_bps=abs(float(mu)) * 10000.0,
+          )
+      return None
