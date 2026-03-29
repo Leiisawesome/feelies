@@ -76,6 +76,7 @@ class BacktestOrderRouter:
             return
 
         fill_price = (quote.bid + quote.ask) / Decimal("2")
+        half_spread = (quote.ask - quote.bid) / Decimal("2")
         fill_ts = self._clock.now_ns() + self._latency_ns
 
         costs = self._cost_model.compute(
@@ -83,6 +84,7 @@ class BacktestOrderRouter:
             side=request.side,
             quantity=request.quantity,
             fill_price=fill_price,
+            half_spread=half_spread,
         )
 
         self._pending_acks.append(OrderAck(
@@ -95,7 +97,7 @@ class BacktestOrderRouter:
             filled_quantity=request.quantity,
             fill_price=fill_price,
             fees=costs.total_fees,
-            slippage_bps=costs.slippage_bps,
+            cost_bps=costs.cost_bps,
         ))
 
     def poll_acks(self) -> list[OrderAck]:

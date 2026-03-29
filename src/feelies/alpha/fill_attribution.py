@@ -63,11 +63,13 @@ class FillAttributionLedger:
         order_id: str,
         filled_quantity: int,
         fill_price: Decimal,
-    ) -> list[tuple[str, str, int, Decimal]]:
+        total_fees: Decimal = Decimal("0"),
+    ) -> list[tuple[str, str, int, Decimal, Decimal]]:
         """Distribute a fill across contributing alphas.
 
-        Returns list of ``(strategy_id, symbol, signed_qty, fill_price)``
+        Returns list of ``(strategy_id, symbol, signed_qty, fill_price, fees)``
         tuples.  Uses largest-remainder method for integer rounding.
+        Fees are allocated proportionally to each alpha's share of the fill.
 
         If the order_id is unknown (e.g. emergency flatten), returns
         an empty list — the caller handles aggregate position updates.
@@ -84,20 +86,32 @@ class FillAttributionLedger:
             filled_quantity, record.contributions,
         )
 
-        result: list[tuple[str, str, int, Decimal]] = []
-        for contrib, alloc_qty in zip(
+        total_allocated = sum(a for a in allocations if a > 0)
+        result: list[tuple[str, str, int, Decimal, Decimal]] = []
+        fee_remainder = total_fees
+        for idx, (contrib, alloc_qty) in enumerate(zip(
             record.contributions, allocations, strict=True,
-        ):
+        )):
             if alloc_qty == 0:
                 continue
             contrib_sign = 1 if contrib.signed_quantity >= 0 else -1
             effective_sign = sign if contrib_sign >= 0 else -sign
+            if total_allocated > 0:
+                alloc_fee = (total_fees * alloc_qty / total_allocated).quantize(Decimal("0.01"))
+            else:
+                alloc_fee = Decimal("0")
+            fee_remainder -= alloc_fee
             result.append((
                 contrib.strategy_id,
                 record.symbol,
                 effective_sign * alloc_qty,
                 fill_price,
+                alloc_fee,
             ))
+
+        if result and fee_remainder != Decimal("0"):
+            last = result[-1]
+            result[-1] = (last[0], last[1], last[2], last[3], last[4] + fee_remainder)
 
         return result
 

@@ -27,7 +27,7 @@ def make_trade_record(
         signal_timestamp_ns=1_700_000_000_000_000_000,
         submit_timestamp_ns=1_700_000_000_000_100_000,
         fill_timestamp_ns=1_700_000_000_000_200_000,
-        slippage_bps=Decimal("0.5"),
+        cost_bps=Decimal("0.5"),
         fees=Decimal("0"),
         realized_pnl=Decimal("10.50"),
         correlation_id="AAPL:1700000000000000000:1",
@@ -69,7 +69,7 @@ class TestInMemoryTradeJournal:
             fill_price=Decimal("150.01"),
             signal_timestamp_ns=1_000_000_000, submit_timestamp_ns=1_000_100_000,
             fill_timestamp_ns=1_000_200_000,
-            slippage_bps=Decimal("0.5"), fees=Decimal("0"),
+            cost_bps=Decimal("0.5"), fees=Decimal("0"),
             realized_pnl=Decimal("10.50"),
             correlation_id="AAPL:1000000000:1",
         ))
@@ -79,7 +79,7 @@ class TestInMemoryTradeJournal:
             fill_price=Decimal("350.00"),
             signal_timestamp_ns=2_000_000_000, submit_timestamp_ns=2_000_100_000,
             fill_timestamp_ns=2_000_200_000,
-            slippage_bps=Decimal("0.3"), fees=Decimal("1.00"),
+            cost_bps=Decimal("0.3"), fees=Decimal("1.00"),
             realized_pnl=Decimal("-5.00"),
             correlation_id="MSFT:2000000000:2",
         ))
@@ -89,7 +89,7 @@ class TestInMemoryTradeJournal:
             fill_price=Decimal("151.00"),
             signal_timestamp_ns=3_000_000_000, submit_timestamp_ns=3_000_100_000,
             fill_timestamp_ns=3_000_200_000,
-            slippage_bps=Decimal("0.2"), fees=Decimal("0.50"),
+            cost_bps=Decimal("0.2"), fees=Decimal("0.50"),
             realized_pnl=Decimal("7.25"),
             correlation_id="AAPL:3000000000:3",
         ))

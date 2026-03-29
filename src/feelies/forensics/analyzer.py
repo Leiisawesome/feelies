@@ -20,8 +20,8 @@ class SlippageReport:
     symbol: str | None
     strategy_id: str | None
     trade_count: int
-    mean_slippage_bps: float
-    p95_slippage_bps: float
+    mean_cost_bps: float
+    p95_cost_bps: float
     total_fees: float
 
 

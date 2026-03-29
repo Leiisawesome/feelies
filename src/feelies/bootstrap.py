@@ -100,7 +100,11 @@ def build_platform(
     if event_log is None:
         event_log = InMemoryEventLog()
 
-    cost_model = DefaultCostModel(DefaultCostModelConfig())
+    cost_model = DefaultCostModel(DefaultCostModelConfig(
+        min_spread_cost_bps=_decimal(config.cost_min_spread_bps),
+        commission_per_share=_decimal(config.cost_commission_per_share),
+        min_commission=_decimal(config.cost_min_commission),
+    ))
     backend, backtest_router = _create_backend(
         config.mode, event_log, clock,
         fill_latency_ns=config.backtest_fill_latency_ns,

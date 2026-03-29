@@ -247,10 +247,12 @@ class BasicRiskEngine:
 
     def _is_drawdown_breached(self, positions: PositionStore) -> bool:
         total_realized = Decimal("0")
+        total_fees = Decimal("0")
         for pos in positions.all_positions().values():
             total_realized += pos.realized_pnl
+            total_fees += pos.cumulative_fees
 
-        current_equity = self._config.account_equity + total_realized
+        current_equity = self._config.account_equity + total_realized - total_fees
         if current_equity > self._high_water_mark:
             self._high_water_mark = current_equity
 

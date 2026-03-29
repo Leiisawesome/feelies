@@ -1604,6 +1604,7 @@ class Orchestrator:
                 ack.symbol,
                 signed_qty,
                 ack.fill_price,
+                fees=ack.fees,
             )
 
             # ── Per-alpha fill attribution (multi-alpha mode) ──
@@ -1615,12 +1616,14 @@ class Orchestrator:
                     ack.order_id,
                     ack.filled_quantity,
                     ack.fill_price,
+                    total_fees=ack.fees,
                 )
                 for (
-                    strat_id, sym, alpha_signed, price
+                    strat_id, sym, alpha_signed, price, alloc_fees
                 ) in alpha_allocs:
                     self._strategy_positions.update(
                         strat_id, sym, alpha_signed, price,
+                        fees=alloc_fees,
                     )
             self._bus.publish(PositionUpdate(
                 timestamp_ns=self._clock.now_ns(),
@@ -1631,7 +1634,8 @@ class Orchestrator:
                 avg_price=position.avg_entry_price,
                 realized_pnl=position.realized_pnl,
                 unrealized_pnl=position.unrealized_pnl,
-                slippage_bps=ack.slippage_bps,
+                cumulative_fees=position.cumulative_fees,
+                cost_bps=ack.cost_bps,
             ))
 
             if self._trade_journal is not None:
@@ -1646,7 +1650,7 @@ class Orchestrator:
                     signal_timestamp_ns=order.timestamp_ns,
                     submit_timestamp_ns=order.timestamp_ns,
                     fill_timestamp_ns=ack.timestamp_ns,
-                    slippage_bps=ack.slippage_bps,
+                    cost_bps=ack.cost_bps,
                     fees=ack.fees,
                     realized_pnl=position.realized_pnl - prev_realized,
                     correlation_id=order.correlation_id,

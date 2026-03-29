@@ -538,15 +538,20 @@ def generate_report(
             max_exposure = total_exposure
     max_exposure_pct = float(max_exposure) / starting_equity * 100.0 if starting_equity else 0.0
 
-    # Drawdown: track equity curve from position updates.
-    # pu.realized_pnl is CUMULATIVE per-symbol (from PositionStore),
-    # so equity = starting + sum of per-symbol cumulative values.
+    # Drawdown: track net equity curve from position updates.
+    # Net equity = starting + gross_pnl - cumulative_fees.
     peak_equity = Decimal(str(starting_equity))
     max_drawdown = Decimal("0")
     per_symbol_pnl: dict[str, Decimal] = {}
+    per_symbol_fees: dict[str, Decimal] = {}
     for pu in pos_updates:
         per_symbol_pnl[pu.symbol] = pu.realized_pnl
-        current_equity = Decimal(str(starting_equity)) + sum(per_symbol_pnl.values())
+        per_symbol_fees[pu.symbol] = pu.cumulative_fees
+        current_equity = (
+            Decimal(str(starting_equity))
+            + sum(per_symbol_pnl.values())
+            - sum(per_symbol_fees.values())
+        )
         if current_equity > peak_equity:
             peak_equity = current_equity
         dd = current_equity - peak_equity

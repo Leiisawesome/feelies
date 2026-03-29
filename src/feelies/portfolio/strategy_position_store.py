@@ -48,9 +48,10 @@ class StrategyPositionStore:
         symbol: str,
         quantity_delta: int,
         fill_price: Decimal,
+        fees: Decimal = Decimal("0"),
     ) -> Position:
         """Update position for a specific strategy."""
-        return self._get_store(strategy_id).update(symbol, quantity_delta, fill_price)
+        return self._get_store(strategy_id).update(symbol, quantity_delta, fill_price, fees=fees)
 
     def get_aggregate(self, symbol: str) -> Position:
         """Net position across all strategies for a symbol.
@@ -63,11 +64,13 @@ class StrategyPositionStore:
         total_cost = Decimal("0")
         total_realized = Decimal("0")
         total_unrealized = Decimal("0")
+        total_fees = Decimal("0")
 
         for store in self._stores.values():
             pos = store.get(symbol)
             total_realized += pos.realized_pnl
             total_unrealized += pos.unrealized_pnl
+            total_fees += pos.cumulative_fees
             if pos.quantity != 0:
                 total_qty += pos.quantity
                 total_cost += pos.avg_entry_price * abs(pos.quantity)
@@ -80,6 +83,7 @@ class StrategyPositionStore:
             avg_entry_price=avg_price,
             realized_pnl=total_realized,
             unrealized_pnl=total_unrealized,
+            cumulative_fees=total_fees,
         )
 
     def all_aggregate_positions(self) -> dict[str, Position]:
@@ -118,6 +122,20 @@ class StrategyPositionStore:
             Decimal("0"),
         )
 
+    def get_strategy_cumulative_fees(self, strategy_id: str) -> Decimal:
+        """Total cumulative fees for a single strategy across all symbols.
+
+        Used by AlphaBudgetRiskWrapper for per-alpha drawdown
+        enforcement (net equity = budget + pnl - fees).
+        """
+        store = self._stores.get(strategy_id)
+        if store is None:
+            return Decimal("0")
+        return sum(
+            (pos.cumulative_fees for pos in store.all_positions().values()),
+            Decimal("0"),
+        )
+
     def strategy_ids(self) -> frozenset[str]:
         """Set of all strategy IDs with positions."""
         return frozenset(self._stores.keys())
@@ -147,6 +165,7 @@ class _AggregateView:
         symbol: str,
         quantity_delta: int,
         fill_price: Decimal,
+        fees: Decimal = Decimal("0"),
     ) -> Position:
         raise RuntimeError(
             "Cannot update aggregate view directly — use "

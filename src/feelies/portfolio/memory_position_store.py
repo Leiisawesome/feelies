@@ -31,6 +31,7 @@ class MemoryPositionStore:
         symbol: str,
         quantity_delta: int,
         fill_price: Decimal,
+        fees: Decimal = Decimal("0"),
     ) -> Position:
         pos = self._positions.get(symbol)
         if pos is None:
@@ -57,6 +58,7 @@ class MemoryPositionStore:
                 pos.avg_entry_price = fill_price
 
         pos.quantity = new_qty
+        pos.cumulative_fees += fees
         if new_qty == 0:
             pos.avg_entry_price = Decimal("0")
 
