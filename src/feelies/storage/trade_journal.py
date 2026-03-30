@@ -42,7 +42,7 @@ class TradeRecord:
     signal_timestamp_ns: int
     submit_timestamp_ns: int
     fill_timestamp_ns: int | None
-    slippage_bps: Decimal
+    cost_bps: Decimal
     fees: Decimal
     realized_pnl: Decimal
     correlation_id: str

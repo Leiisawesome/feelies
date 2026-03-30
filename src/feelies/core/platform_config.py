@@ -65,6 +65,10 @@ class PlatformConfig:
     backtest_fill_latency_ns: int = 0
     signal_entry_cooldown_ticks: int = 0
 
+    cost_min_spread_bps: float = 0.5
+    cost_commission_per_share: float = 0.005
+    cost_min_commission: float = 1.00
+
     cache_dir: Path | None = None
 
     def validate(self) -> None:
@@ -120,6 +124,9 @@ class PlatformConfig:
             "account_equity": self.account_equity,
             "backtest_fill_latency_ns": self.backtest_fill_latency_ns,
             "signal_entry_cooldown_ticks": self.signal_entry_cooldown_ticks,
+            "cost_min_spread_bps": self.cost_min_spread_bps,
+            "cost_commission_per_share": self.cost_commission_per_share,
+            "cost_min_commission": self.cost_min_commission,
         }
 
     @classmethod
@@ -186,6 +193,15 @@ class PlatformConfig:
             ),
             signal_entry_cooldown_ticks=int(
                 data.get("signal_entry_cooldown_ticks", 0)
+            ),
+            cost_min_spread_bps=float(
+                data.get("cost_min_spread_bps", 0.5)
+            ),
+            cost_commission_per_share=float(
+                data.get("cost_commission_per_share", 0.005)
+            ),
+            cost_min_commission=float(
+                data.get("cost_min_commission", 1.00)
             ),
             cache_dir=Path(cache_dir_raw) if cache_dir_raw else None,
         )

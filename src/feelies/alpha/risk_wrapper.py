@@ -127,13 +127,16 @@ class AlphaBudgetRiskWrapper:
         budget: object,
         alpha_equity: Decimal,
     ) -> RiskVerdict | None:
-        """Per-alpha drawdown via high-water mark (realized PnL only)."""
+        """Per-alpha drawdown via high-water mark (net of fees)."""
         strategy_id = signal.strategy_id
 
         realized_pnl = self._strategy_positions.get_strategy_realized_pnl(
             strategy_id,
         )
-        current_equity = alpha_equity + realized_pnl
+        fees = self._strategy_positions.get_strategy_cumulative_fees(
+            strategy_id,
+        )
+        current_equity = alpha_equity + realized_pnl - fees
 
         hwm = self._alpha_hwm.get(strategy_id, alpha_equity)
         if current_equity > hwm:

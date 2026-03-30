@@ -14,7 +14,7 @@ from feelies.core.events import Side
 
 
 class CostModel(Protocol):
-    """Computes fees and slippage for a simulated fill."""
+    """Computes fees and cost breakdown for a simulated fill."""
 
     def compute(
         self,
@@ -22,6 +22,7 @@ class CostModel(Protocol):
         side: Side,
         quantity: int,
         fill_price: Decimal,
+        half_spread: Decimal,
     ) -> CostBreakdown:
         """Return cost components for a single fill."""
         ...
@@ -34,27 +35,27 @@ class CostBreakdown:
     spread_cost: Decimal
     commission: Decimal
     total_fees: Decimal
-    slippage_bps: Decimal
+    cost_bps: Decimal
 
 
 @dataclass(frozen=True)
 class DefaultCostModelConfig:
     """Tunable cost parameters for the default model.
 
-    ``spread_cost_bps``: half-spread crossing cost in basis points.
-        The backtest router fills at midpoint; this re-introduces
-        the cost of crossing to the bid or ask.
+    ``min_spread_cost_bps``: minimum half-spread crossing cost in basis
+        points.  Acts as a floor when the actual quote spread is narrower
+        (e.g. locked/crossed markets or sub-penny spreads).
     ``commission_per_share``: flat per-share commission.
     ``min_commission``: minimum commission per order.
     """
 
-    spread_cost_bps: Decimal = Decimal("0.5")
+    min_spread_cost_bps: Decimal = Decimal("0.5")
     commission_per_share: Decimal = Decimal("0.005")
     min_commission: Decimal = Decimal("1.00")
 
 
 class DefaultCostModel:
-    """Simple cost model: half-spread + per-share commission."""
+    """Cost model: actual half-spread (with floor) + per-share commission."""
 
     def __init__(self, config: DefaultCostModelConfig | None = None) -> None:
         self._cfg = config or DefaultCostModelConfig()
@@ -65,15 +66,19 @@ class DefaultCostModel:
         side: Side,
         quantity: int,
         fill_price: Decimal,
+        half_spread: Decimal,
     ) -> CostBreakdown:
         notional = fill_price * quantity
-        spread_cost = notional * self._cfg.spread_cost_bps / Decimal("10000")
+
+        actual_spread_cost = half_spread * quantity
+        floor_spread_cost = notional * self._cfg.min_spread_cost_bps / Decimal("10000")
+        spread_cost = max(actual_spread_cost, floor_spread_cost)
 
         raw_commission = self._cfg.commission_per_share * quantity
         commission = max(raw_commission, self._cfg.min_commission)
 
         total_fees = spread_cost + commission
-        slippage_bps = (
+        cost_bps = (
             total_fees / notional * Decimal("10000")
             if notional > 0 else Decimal("0")
         )
@@ -82,7 +87,7 @@ class DefaultCostModel:
             spread_cost=spread_cost.quantize(Decimal("0.01")),
             commission=commission.quantize(Decimal("0.01")),
             total_fees=total_fees.quantize(Decimal("0.01")),
-            slippage_bps=slippage_bps.quantize(Decimal("0.01")),
+            cost_bps=cost_bps.quantize(Decimal("0.01")),
         )
 
 
@@ -96,10 +101,11 @@ class ZeroCostModel:
         side: Side,
         quantity: int,
         fill_price: Decimal,
+        half_spread: Decimal,
     ) -> CostBreakdown:
         return CostBreakdown(
             spread_cost=Decimal("0"),
             commission=Decimal("0"),
             total_fees=Decimal("0"),
-            slippage_bps=Decimal("0"),
+            cost_bps=Decimal("0"),
         )

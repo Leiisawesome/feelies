@@ -125,7 +125,7 @@ class TestFeesAndSlippage:
         records = list(orchestrator._trade_journal.query(symbol="AAPL"))
         for rec in records:
             assert rec.fees >= 0, f"Negative fees: {rec.fees}"
-            assert rec.slippage_bps >= 0, f"Negative slippage: {rec.slippage_bps}"
+            assert rec.cost_bps >= 0, f"Negative cost_bps: {rec.cost_bps}"
 
     def test_pnl_decomposition_sums_correctly(
         self, single_symbol_scenario

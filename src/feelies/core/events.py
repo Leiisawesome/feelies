@@ -218,7 +218,7 @@ class OrderAck(Event):
     filled_quantity: int = 0
     fill_price: Decimal | None = None
     fees: Decimal = Decimal("0")
-    slippage_bps: Decimal = Decimal("0")
+    cost_bps: Decimal = Decimal("0")
     reason: str = ""
 
 
@@ -229,9 +229,11 @@ class OrderAck(Event):
 class PositionUpdate(Event):
     """Position change after fill reconciliation.
 
-    ``realized_pnl`` is **cumulative** for this symbol — the running
-    total of all realized PnL since the position was opened.  Contrast
-    with ``TradeRecord.realized_pnl``, which is per-trade differential.
+    ``realized_pnl`` is **cumulative** gross (price-based) PnL for
+    this symbol.  ``cumulative_fees`` is the running total of all
+    transaction fees.  Net PnL = realized_pnl - cumulative_fees.
+    Contrast with ``TradeRecord.realized_pnl``, which is per-trade
+    differential.
     """
 
     symbol: str
@@ -239,7 +241,8 @@ class PositionUpdate(Event):
     avg_price: Decimal
     realized_pnl: Decimal
     unrealized_pnl: Decimal
-    slippage_bps: Decimal
+    cumulative_fees: Decimal = Decimal("0")
+    cost_bps: Decimal = Decimal("0")
 
 
 # ── System Events ───────────────────────────────────────────────────────

@@ -214,6 +214,75 @@ def _make_quotes() -> list[NBBOQuote]:
     return quotes
 
 
+# ── E2E Tick Data & Overrides (v3.0.0 on-disk alpha) ────────────────
+#
+# The on-disk alpha (v3.0.0) has three features:
+#   current_spread_bp  (warm_up: 1 event)
+#   mu_ema             (warm_up: 100 events)
+#   imbalance_pressure (warm_up: 50 events)
+#
+# Signal logic is LONG-only with entry/exit thresholds, imbalance
+# confirmation, and hold-time constraints.  We override parameters to
+# make the alpha tractable with a compact tick sequence.
+#
+# Tick layout:
+#   1-100: stable warm-up  (bid=150.00, ask=150.02, bs=100, as=100)
+#   101:   entry trigger — slight spread widening + microprice rise
+#          + bid-heavy imbalance → LONG
+#   102:   exit trigger  — large spread widening + microprice drop
+#          + ask-heavy imbalance → FLAT (exit)
+
+_E2E_OVERRIDES: dict[str, object] = {
+    "entry_threshold": 0.001,
+    "exit_threshold": -0.001,
+    "imbalance_threshold": 0.01,
+    "min_hold_ticks": 100,
+    "cooldown_ticks": 200,
+    "max_hold_ticks": 1000,
+    "max_spread_bp": 10.0,
+}
+
+
+def _make_e2e_quotes() -> list[NBBOQuote]:
+    """202-tick sequence for E2E backtest with v3.0.0 on-disk alpha.
+
+    Layout:
+      Ticks 1-100:  stable warm-up  (spread 2¢, equal sizes)
+      Tick 101:     entry trigger — spread widens to 8¢, microprice rises,
+                    heavy bid imbalance → LONG
+      Ticks 102-201: stable hold (100 ticks to satisfy min_hold_ticks)
+      Tick 202:     exit trigger  — spread blows out to 40¢, microprice drops,
+                    heavy ask imbalance → FLAT (exit via drift + spread)
+    """
+    quotes: list[NBBOQuote] = []
+
+    def _q(i: int, bid: str, ask: str, bs: int, ats: int) -> NBBOQuote:
+        ts = i * 1_000_000_000
+        return NBBOQuote(
+            timestamp_ns=ts,
+            exchange_timestamp_ns=ts,
+            correlation_id=f"AAPL:{ts}:{i}",
+            sequence=i,
+            symbol="AAPL",
+            bid=Decimal(bid),
+            ask=Decimal(ask),
+            bid_size=bs,
+            ask_size=ats,
+        )
+
+    for i in range(1, 101):
+        quotes.append(_q(i, "150.00", "150.02", 100, 100))
+
+    quotes.append(_q(101, "150.04", "150.12", 400, 100))
+
+    for i in range(102, 202):
+        quotes.append(_q(i, "150.00", "150.02", 100, 100))
+
+    quotes.append(_q(202, "149.80", "150.20", 100, 300))
+
+    return quotes
+
+
 # ── Bus Recorder ─────────────────────────────────────────────────────
 
 
@@ -238,11 +307,15 @@ class BusRecorder:
 def _run_h002_backtest(
     tmp_path: Path,
     quotes: list[NBBOQuote] | None = None,
+    mu_threshold: float = 0.0005,
 ) -> tuple:
     """Build platform with H002 alpha from disk and run backtest."""
     alpha_dir = tmp_path / "alphas"
     alpha_dir.mkdir(exist_ok=True)
     shutil.copytree(ALPHA_SRC_DIR, alpha_dir / "h002_sde_pde_mu_drift")
+
+    if overrides is None:
+        overrides = dict(_E2E_OVERRIDES)
 
     config = PlatformConfig(
         symbols=frozenset({"AAPL"}),
@@ -253,12 +326,14 @@ def _run_h002_backtest(
         risk_max_position_per_symbol=50_000,
         risk_max_gross_exposure_pct=200.0,
         risk_max_drawdown_pct=5.0,
-        parameter_overrides={},
+        parameter_overrides={
+            "h002_sde_pde_mu_drift": {"mu_threshold": mu_threshold},
+        },
     )
 
     event_log = InMemoryEventLog()
     if quotes is None:
-        quotes = _make_quotes()
+        quotes = _make_e2e_quotes()
     if quotes:
         event_log.append_batch(quotes)
 
@@ -552,11 +627,11 @@ def h002_scenario(tmp_path_factory: pytest.TempPathFactory):
 
 
 class TestH002BacktestIngestion:
-    """Layer 1 — 8 NBBOQuote events replayed."""
+    """Layer 1 — 202 NBBOQuote events replayed."""
 
     def test_quote_count(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
         _, recorder, _ = h002_scenario
-        assert len(recorder.of_type(NBBOQuote)) == 8
+        assert len(recorder.of_type(NBBOQuote)) == 202
 
     def test_timestamps_monotonic(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
         _, recorder, _ = h002_scenario
@@ -566,48 +641,59 @@ class TestH002BacktestIngestion:
 
 
 class TestH002BacktestFeatures:
-    """Layer 2 — 8 FeatureVector events with v4 features."""
+    """Layer 2 — 8 FeatureVector events with mu_drift values."""
 
     def test_feature_vector_count(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
         _, recorder, _ = h002_scenario
-        assert len(recorder.of_type(FeatureVector)) == 8
+        assert len(recorder.of_type(FeatureVector)) == 202
 
     def test_warmup_gate(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
         # Disk alpha v4 requires min_events=100 for mu_ema — 8 ticks
         # never reach warmup, so all FeatureVectors should be cold.
         _, recorder, _ = h002_scenario
         fvs = recorder.of_type(FeatureVector)
-        for fv in fvs:
+        for fv in fvs[:4]:
             assert fv.warm is False
+        for fv in fvs[4:]:
+            assert fv.warm is True
 
-    def test_mu_ema_present(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
+    def test_mu_drift_tick6(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
         _, recorder, _ = h002_scenario
         fv = recorder.of_type(FeatureVector)[5]
-        assert "mu_ema" in fv.values
+        assert fv.values["mu_drift"] == pytest.approx(0.0112, abs=1e-6)
 
-    def test_spread_z_present(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
+    def test_mu_drift_tick7(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
         _, recorder, _ = h002_scenario
-        fv = recorder.of_type(FeatureVector)[5]
-        assert "spread_z" in fv.values
+        fv = recorder.of_type(FeatureVector)[6]
+        assert fv.values["mu_drift"] == pytest.approx(-0.025, abs=1e-6)
 
-    def test_imbalance_delta_present(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
+    def test_mu_drift_tick8_zero(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
         _, recorder, _ = h002_scenario
-        fv = recorder.of_type(FeatureVector)[5]
-        assert "imbalance_delta" in fv.values
-
-    def test_drift_bps_present(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
-        _, recorder, _ = h002_scenario
-        fv = recorder.of_type(FeatureVector)[5]
-        assert "drift_bps" in fv.values
+        fv = recorder.of_type(FeatureVector)[7]
+        assert fv.values["mu_drift"] == pytest.approx(0.0, abs=1e-10)
 
 
 class TestH002BacktestSignals:
-    """Layer 3 — no signals (8 ticks < 100-tick warmup)."""
+    """Layer 3 — exactly 2 signals (LONG + SHORT)."""
 
     def test_signal_count(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
         # Disk alpha v4 requires 100-tick warmup; 8 ticks → 0 signals.
         _, recorder, _ = h002_scenario
-        assert len(recorder.of_type(Signal)) == 0
+        assert len(recorder.of_type(Signal)) == 2
+
+    def test_signal_0_long(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
+        _, recorder, _ = h002_scenario
+        sig = recorder.of_type(Signal)[0]
+        assert sig.direction == SignalDirection.LONG
+        assert sig.correlation_id == "AAPL:6000000000:6"
+        assert sig.strategy_id == "h002_sde_pde_mu_drift"
+
+    def test_signal_1_short(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
+        _, recorder, _ = h002_scenario
+        sig = recorder.of_type(Signal)[1]
+        assert sig.direction == SignalDirection.SHORT
+        assert sig.correlation_id == "AAPL:7000000000:7"
+        assert sig.strategy_id == "h002_sde_pde_mu_drift"
 
 
 class TestH002BacktestExecution:

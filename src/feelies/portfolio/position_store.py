@@ -24,6 +24,7 @@ class Position:
     avg_entry_price: Decimal = Decimal("0")
     realized_pnl: Decimal = Decimal("0")
     unrealized_pnl: Decimal = Decimal("0")
+    cumulative_fees: Decimal = Decimal("0")
 
 
 class PositionStore(Protocol):
@@ -38,6 +39,7 @@ class PositionStore(Protocol):
         symbol: str,
         quantity_delta: int,
         fill_price: Decimal,
+        fees: Decimal = Decimal("0"),
     ) -> Position:
         """Update position after a fill.  Returns updated position."""
         ...

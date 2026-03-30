@@ -45,3 +45,12 @@ risk_max_drawdown_pct: 5.0
 # ── Backtest Settings ─────────────────────────────────────
 # Simulated fill latency in nanoseconds (0 = instant fills).
 backtest_fill_latency_ns: 0
+
+# ── Cost Model ────────────────────────────────────────────
+# Minimum half-spread cost floor in basis points.
+# Actual half-spread from each quote is used when larger.
+cost_min_spread_bps: 0.5
+# Flat per-share commission.
+cost_commission_per_share: 0.005
+# Minimum commission per order (floor).
+cost_min_commission: 1.00
