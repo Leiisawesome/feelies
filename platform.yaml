@@ -25,9 +25,7 @@ alpha_spec_dir: alphas/h002_sde_pde_mu_drift
 alpha_specs: []
 
 # Per-alpha parameter overrides keyed by alpha_id.
-parameter_overrides:
-  h002_sde_pde_mu_drift:
-    mu_threshold: 0.0005
+parameter_overrides: {}
 
 # ── Regime Engine ─────────────────────────────────────────
 # Name of the shared regime engine, or null to disable.

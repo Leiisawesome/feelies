@@ -369,9 +369,7 @@ def run_demo() -> tuple[object, BusRecorder, IngestResult, PlatformConfig, str, 
             account_equity=100_000.0,
             risk_max_position_per_symbol=50_000,
             risk_max_gross_exposure_pct=200.0,
-            parameter_overrides={
-                "h002_sde_pde_mu_drift": {"mu_threshold": 0.0005},
-            },
+            parameter_overrides={},
         )
 
         event_log = InMemoryEventLog()

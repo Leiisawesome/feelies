@@ -1,26 +1,30 @@
 # ── Identity & Provenance ─────────────────────────────────
 schema_version: "1.0"
 alpha_id: h002_sde_pde_mu_drift
-version: "3.0.0"
+version: "5.0.0"
 description: >
-  SDE/PDE-derived L1 microstructure alpha.  Smoothed (EWMA) vol-normalized
-  drift mu with LP imbalance confirmation.  LONG-only in tight-spread regime.
-  Designed for 20-50 round-trips/day with 500-2000 tick holds.
+  L1 microstructure alpha.  Mean-reversion on extreme microprice drift.
+  Enters AGAINST extreme drift episodes (fading overshoot), exits when
+  drift normalizes toward zero.  Cost-aware positioning ensures each
+  trade’s expected reversion exceeds round-trip costs.
 hypothesis: |
-  The microprice S(t) follows dS = mu(t) dt + sigma(t) dW.
-  The Fokker-Planck first moment E[dS] = integral mu dt predicts forward
-  returns only when drift is *persistent*, not instantaneous.  Smoothed mu
-  (EWMA) captures this integral.  Positive persistent mu, confirmed by LP
-  order-size imbalance, causally signals inventory pressure leading to
-  upward microprice drift in tight-spread regimes.
-  SHORT signals have no causal basis — LONG-only.
+  At L1 tick horizons, microprice follows dS = mu(t) dt + sigma(t) dW
+  where mu is *locally* mean-reverting.  Extreme normalized drift
+  (|mu_ema| >> entry threshold) signals transient price overshoot
+  that reverts as resting liquidity absorbs aggressor flow.
+  We FADE the drift: sell when mu is extremely positive (overbought),
+  buy when extremely negative (oversold).  The reversion magnitude
+  (drift_bps × hold time) must exceed the cost hurdle for entry.
+  Imbalance-delta OPPOSING the drift confirms reversion is starting.
+  Spread compression indicates market-maker confidence in the level.
 falsification_criteria:
   - "OOS Sharpe < 0.80 net of all fees and latency"
   - "Bootstrap p-value > 0.05 on forward 500-tick returns conditioned on entry"
   - "Latency decay > 40% (0→200 ms)"
-  - "Edge vanishes outside tight-spread regime"
+  - "Edge vanishes outside spread-compression regime (spread_z > 0)"
   - "Net P&L negative after fees at 1.5× cost stress"
-  - "Imbalance confirmation adds no lift vs mu_ema alone"
+  - "Imbalance-delta confirmation adds no lift vs drift alone"
+  - "Short-side edge absent or significantly weaker than long-side"
 
 # ── Universe ──────────────────────────────────────────────
 symbols:
@@ -28,63 +32,73 @@ symbols:
 
 # ── Parameters ────────────────────────────────────────────
 parameters:
-  entry_threshold:
+  entry_drift_z:
     type: float
-    default: 0.003
-    range: [0.001, 0.02]
-    description: "mu_ema level for entry — higher means fewer, higher-conviction trades."
-  exit_threshold:
-    type: float
-    default: -0.001
-    range: [-0.01, 0.0]
-    description: "mu_ema level for exit — less aggressive than zero to avoid hair-trigger exits."
-  imbalance_threshold:
+    default: 0.15
+    range: [0.05, 0.9]
+    description: "Normalized drift extreme for mean-reversion entry.  Fade when |mu| exceeds this."
+  exit_drift_z:
     type: float
     default: 0.05
-    range: [0.01, 0.3]
-    description: "Minimum smoothed imbalance for LP inventory confirmation."
+    range: [0.0, 0.3]
+    description: "Exit when drift reverts below this (moderate = capture most of reversion)."
+  cost_hurdle_mult:
+    type: float
+    default: 1.5
+    range: [1.0, 10.0]
+    description: "Only enter when |drift_bps| × min_hold exceeds this multiple of round-trip spread."
+  imbalance_delta_threshold:
+    type: float
+    default: 0.0001
+    range: [0.00001, 0.05]
+    description: "Minimum imbalance_delta opposing the drift for mean-reversion confirmation."
   max_spread_bp:
     type: float
     default: 3.0
     range: [1.0, 10.0]
-    description: "Spread gate — suppress entry when spread exceeds this (bps of mid)."
+    description: "Hard spread gate — suppress entry when spread exceeds this (bps of mid)."
+  max_spread_z:
+    type: float
+    default: 1.0
+    range: [-2.0, 3.0]
+    description: "Spread z-score gate — relaxed for mean-reversion (spread can be slightly elevated)."
   mu_ema_alpha:
     type: float
-    default: 0.99
-    range: [0.95, 0.999]
-    description: "EWMA decay for drift smoothing.  0.99 ~ 70-tick half-life."
-  imbalance_ema_alpha:
+    default: 0.995
+    range: [0.80, 0.9999]
+    description: "EWMA decay for drift smoothing.  0.995 ~ 140-tick half-life."
+  imbalance_delta_alpha:
     type: float
     default: 0.98
     range: [0.9, 0.999]
-    description: "EWMA decay for imbalance smoothing."
-  ewma_vol_alpha:
+    description: "EWMA decay for imbalance delta smoothing."
+  spread_z_alpha:
     type: float
-    default: 0.94
-    range: [0.8, 0.99]
-    description: "EWMA decay for local volatility normalization."
+    default: 0.99
+    range: [0.95, 0.999]
+    description: "EWMA decay for spread z-score computation."
   min_hold_ticks:
     type: int
-    default: 500
-    range: [100, 2000]
-    description: "Minimum ticks before exit conditions are evaluated."
+    default: 50
+    range: [10, 10000]
+    description: "Quick exit allowed after brief anti-whipsaw period."
   max_hold_ticks:
     type: int
-    default: 3000
-    range: [1000, 10000]
-    description: "Forced exit timeout (safety)."
+    default: 5000
+    range: [500, 50000]
+    description: "Forced exit timeout."
   cooldown_ticks:
     type: int
-    default: 1000
-    range: [200, 5000]
+    default: 100
+    range: [20, 5000]
     description: "Minimum gap between round-trips."
 
 # ── Risk Budget ───────────────────────────────────────────
 risk_budget:
-  max_position_per_symbol: 500
-  max_gross_exposure_pct: 15.0
-  max_drawdown_pct: 1.0
-  capital_allocation_pct: 15.0
+  max_position_per_symbol: 3000
+  max_gross_exposure_pct: 70.0
+  max_drawdown_pct: 3.0
+  capital_allocation_pct: 70.0
 
 # ── Features (computation_module) ────────────────────────
 features:
@@ -97,54 +111,86 @@ features:
     computation_module: current_spread_bp.py
 
   - feature_id: mu_ema
-    version: "1.0.0"
-    description: "EWMA of vol-normalized drift mu.  Approximates Fokker-Planck first moment integral."
+    version: "2.0.0"
+    description: "EWMA of microprice drift dS, normalized by EWMA(|dS|).  Proper Fokker-Planck first moment."
     depends_on: []
     warm_up:
       min_events: 100
     computation_module: mu_ema.py
 
   - feature_id: imbalance_pressure
+    version: "2.0.0"
+    description: "Instantaneous L1 order imbalance (bid_size - ask_size) / total.  No smoothing."
+    depends_on: []
+    warm_up:
+      min_events: 1
+    computation_module: imbalance_pressure.py
+
+  - feature_id: imbalance_delta
     version: "1.0.0"
-    description: "EWMA of signed order imbalance (bid_size - ask_size) / total.  LP inventory confirmation."
+    description: "EWMA of tick-by-tick imbalance change.  Captures flow acceleration."
     depends_on: []
     warm_up:
       min_events: 50
-    computation_module: imbalance_pressure.py
+    computation_module: imbalance_delta.py
+
+  - feature_id: spread_z
+    version: "1.0.0"
+    description: "Z-score of spread vs its EWMA.  Negative = compressing (favorable entry)."
+    depends_on: []
+    warm_up:
+      min_events: 50
+    computation_module: spread_z.py
+
+  - feature_id: drift_bps
+    version: "1.0.0"
+    description: "EWMA of microprice change in basis points per tick.  Properly scaled for cost comparison."
+    depends_on: []
+    warm_up:
+      min_events: 100
+    computation_module: drift_bps.py
 
 # ── Signal ────────────────────────────────────────────────
 signal: |
-  _state = {"last_entry_seq": -999999, "in_position": False}
+  _state = {"last_entry_seq": -999999, "in_position": False, "direction": None}
 
   def evaluate(features, params):
       if not features.warm or features.stale:
           return None
 
       mu = features.values.get("mu_ema", 0.0)
-      imbalance = features.values.get("imbalance_pressure", 0.0)
+      drift_bps_val = features.values.get("drift_bps", 0.0)
+      imb_delta = features.values.get("imbalance_delta", 0.0)
       spread_bp = features.values.get("current_spread_bp", 9999.0)
+      spread_z_val = features.values.get("spread_z", 0.0)
 
-      entry_thr = params["entry_threshold"]
-      exit_thr = params["exit_threshold"]
-      imb_thr = params["imbalance_threshold"]
+      entry_drift = params["entry_drift_z"]
+      exit_drift = params["exit_drift_z"]
+      cost_mult = params["cost_hurdle_mult"]
+      imb_delta_thr = params["imbalance_delta_threshold"]
       max_spread = params["max_spread_bp"]
+      max_sz = params["max_spread_z"]
       min_hold = params["min_hold_ticks"]
       max_hold = params["max_hold_ticks"]
       cooldown = params["cooldown_ticks"]
 
       seq = features.sequence
 
+      # ── Exit logic (when in position) ──
       if _state["in_position"]:
           held = seq - _state["last_entry_seq"]
           if held < min_hold:
               return None
 
-          drift_reversed = mu < exit_thr
+          # Exit: drift reverted toward zero, or timeout, or spread blowout
+          abs_mu = abs(mu)
+          reverted = abs_mu < exit_drift
           timed_out = held >= max_hold
           spread_blowout = spread_bp > max_spread * 2.0
 
-          if drift_reversed or timed_out or spread_blowout:
+          if reverted or timed_out or spread_blowout:
               _state["in_position"] = False
+              _state["direction"] = None
               return Signal(
                   timestamp_ns=features.timestamp_ns,
                   correlation_id=features.correlation_id,
@@ -157,16 +203,54 @@ signal: |
               )
           return None
 
+      # ── Entry gates ──
+
+      # Hard spread gate
       if spread_bp > max_spread:
           return None
 
+      # Spread compression gate
+      if spread_z_val > max_sz:
+          return None
+
+      # Cooldown
       ticks_since = seq - _state["last_entry_seq"]
       if ticks_since < cooldown:
           return None
 
-      if mu > entry_thr and imbalance > imb_thr:
+      # Cost-aware edge gate
+      expected_edge_bp = abs(drift_bps_val) * min_hold
+      cost_threshold_bp = cost_mult * spread_bp
+      if expected_edge_bp < cost_threshold_bp:
+          return None
+
+      # Full-size positions to dilute fixed costs
+      strength = 1.0
+
+      # MEAN REVERSION: fade extreme drift
+      # Drift is extremely positive → price overshot UP → SHORT to fade
+      # Confirmation: imbalance_delta turning NEGATIVE (flow reversing)
+      if mu > entry_drift and imb_delta < -imb_delta_thr:
           _state["last_entry_seq"] = seq
           _state["in_position"] = True
+          _state["direction"] = "short"
+          return Signal(
+              timestamp_ns=features.timestamp_ns,
+              correlation_id=features.correlation_id,
+              sequence=features.sequence,
+              symbol=features.symbol,
+              strategy_id=alpha_id,
+              direction=SHORT,
+              strength=strength,
+              edge_estimate_bps=expected_edge_bp,
+          )
+
+      # Drift is extremely negative → price overshot DOWN → LONG to fade
+      # Confirmation: imbalance_delta turning POSITIVE (flow reversing)
+      if mu < -entry_drift and imb_delta > imb_delta_thr:
+          _state["last_entry_seq"] = seq
+          _state["in_position"] = True
+          _state["direction"] = "long"
           return Signal(
               timestamp_ns=features.timestamp_ns,
               correlation_id=features.correlation_id,
@@ -174,7 +258,8 @@ signal: |
               symbol=features.symbol,
               strategy_id=alpha_id,
               direction=LONG,
-              strength=min(mu / (entry_thr * 3.0), 1.0),
-              edge_estimate_bps=abs(float(mu)) * 10000.0,
+              strength=strength,
+              edge_estimate_bps=expected_edge_bp,
           )
+
       return None

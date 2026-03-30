@@ -1,7 +1,5 @@
 def initial_state():
-    return {
-        "imbalance_ema": 0.0,
-    }
+    return {}
 
 
 def update(quote, state, params):
@@ -10,11 +8,8 @@ def update(quote, state, params):
 
     total_size = bid_size + ask_size
     if total_size <= 0:
-        return state["imbalance_ema"]
+        return 0.0
 
-    raw_imbalance = (bid_size - ask_size) / total_size
-
-    alpha = params["imbalance_ema_alpha"]
-    state["imbalance_ema"] = alpha * state["imbalance_ema"] + (1.0 - alpha) * raw_imbalance
-
-    return float(state["imbalance_ema"])
+    # Raw instantaneous imbalance — no smoothing.
+    # Positive = more resting bids (buy pressure), negative = more asks.
+    return float((bid_size - ask_size) / total_size)
