@@ -46,11 +46,14 @@ risk_max_drawdown_pct: 5.0
 # Simulated fill latency in nanoseconds (0 = instant fills).
 backtest_fill_latency_ns: 0
 
-# ── Cost Model ────────────────────────────────────────────
-# Minimum half-spread cost floor in basis points.
-# Actual half-spread from each quote is used when larger.
-cost_min_spread_bps: 0.5
-# Flat per-share commission.
-cost_commission_per_share: 0.005
-# Minimum commission per order (floor).
-cost_min_commission: 1.00
+# ── Cost Model (IB US Equity Tiered) ─────────────────────
+# Spread floor in basis points (0 = use actual half-spread only).
+cost_min_spread_bps: 0.0
+# IB Tiered commission component per share.
+cost_commission_per_share: 0.0035
+# IB exchange, clearing, and regulatory pass-through per share.
+cost_exchange_per_share: 0.0005
+# IB Tiered minimum commission per order.
+cost_min_commission: 0.35
+# IB Tiered maximum commission as % of trade value.
+cost_max_commission_pct: 1.0

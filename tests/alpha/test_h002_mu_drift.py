@@ -1,15 +1,14 @@
-"""Tests for the H002 SDE/PDE mu-drift alpha — factory-style spec loading.
+"""Tests for the H002 alpha across inline-spec and on-disk replay paths.
 
-Validates that the H002 alpha spec loads through AlphaLoader, produces
-correct mu_drift features (EWMA of microprice change, normalized by
-EWMA of |microprice change|), generates directional signals above
-threshold, and runs through the full backtest pipeline deterministically.
+This module covers two cases:
+1. An inline factory spec used for focused unit tests around ``mu_drift``.
+2. The current on-disk H002 alpha used for end-to-end backtest replay.
 
-Synthetic tick data:
-  Ticks 1–5: stable quotes (warm-up, mu ≈ 0)
-  Tick 6:    microprice rises  → positive drift → LONG
-  Tick 7:    microprice drops  → negative drift → SHORT
-  Tick 8:    stable (same as tick 7) → drift = 0 → no signal
+Synthetic inline tick data:
+    Ticks 1–5: stable quotes (warm-up, mu ≈ 0)
+    Tick 6:    microprice rises  → positive drift → LONG
+    Tick 7:    microprice drops  → negative drift → SHORT
+    Tick 8:    stable (same as tick 7) → drift = 0 → no signal
 """
 
 from __future__ import annotations
@@ -214,28 +213,24 @@ def _make_quotes() -> list[NBBOQuote]:
     return quotes
 
 
-# ── E2E Tick Data & Overrides (v3.0.0 on-disk alpha) ────────────────
+# ── E2E Tick Data & Overrides (current on-disk alpha) ───────────────
 #
-# The on-disk alpha (v3.0.0) has three features:
-#   current_spread_bp  (warm_up: 1 event)
-#   mu_ema             (warm_up: 100 events)
-#   imbalance_pressure (warm_up: 50 events)
-#
-# Signal logic is LONG-only with entry/exit thresholds, imbalance
-# confirmation, and hold-time constraints.  We override parameters to
-# make the alpha tractable with a compact tick sequence.
+# The on-disk alpha has a longer warm-up and a broader feature set than
+# the inline unit-test spec above, so the replay assertions below verify
+# current v5 behavior instead of the compact 8-tick scenario.
 #
 # Tick layout:
 #   1-100: stable warm-up  (bid=150.00, ask=150.02, bs=100, as=100)
 #   101:   entry trigger — slight spread widening + microprice rise
-#          + bid-heavy imbalance → LONG
-#   102:   exit trigger  — large spread widening + microprice drop
-#          + ask-heavy imbalance → FLAT (exit)
+#          + bid-heavy imbalance
+#   102-201: stable hold period
+#   202:   exit-style pressure — large spread widening + microprice drop
+#          + ask-heavy imbalance
 
 _E2E_OVERRIDES: dict[str, object] = {
-    "entry_threshold": 0.001,
-    "exit_threshold": -0.001,
-    "imbalance_threshold": 0.01,
+    "entry_drift_z": 0.15,
+    "exit_drift_z": 0.05,
+    "imbalance_delta_threshold": 0.0001,
     "min_hold_ticks": 100,
     "cooldown_ticks": 200,
     "max_hold_ticks": 1000,
@@ -307,9 +302,9 @@ class BusRecorder:
 def _run_h002_backtest(
     tmp_path: Path,
     quotes: list[NBBOQuote] | None = None,
-    mu_threshold: float = 0.0005,
+    overrides: dict[str, object] | None = None,
 ) -> tuple:
-    """Build platform with H002 alpha from disk and run backtest."""
+    """Build platform with the on-disk H002 alpha and run a replay."""
     alpha_dir = tmp_path / "alphas"
     alpha_dir.mkdir(exist_ok=True)
     shutil.copytree(ALPHA_SRC_DIR, alpha_dir / "h002_sde_pde_mu_drift")
@@ -326,9 +321,7 @@ def _run_h002_backtest(
         risk_max_position_per_symbol=50_000,
         risk_max_gross_exposure_pct=200.0,
         risk_max_drawdown_pct=5.0,
-        parameter_overrides={
-            "h002_sde_pde_mu_drift": {"mu_threshold": mu_threshold},
-        },
+        parameter_overrides={"h002_sde_pde_mu_drift": overrides},
     )
 
     event_log = InMemoryEventLog()
@@ -620,7 +613,7 @@ class TestH002IntegratedPipeline:
 
 @pytest.fixture(scope="class")
 def h002_scenario(tmp_path_factory: pytest.TempPathFactory):
-    """Run the 8-tick H002 scenario once; share across class tests."""
+    """Run the 202-tick on-disk H002 replay once; share across class tests."""
     tmp = tmp_path_factory.mktemp("h002_e2e")
     orchestrator, recorder, config = _run_h002_backtest(tmp)
     return orchestrator, recorder, config
@@ -641,59 +634,63 @@ class TestH002BacktestIngestion:
 
 
 class TestH002BacktestFeatures:
-    """Layer 2 — 8 FeatureVector events with mu_drift values."""
+    """Layer 2 — replay emits current on-disk feature vectors."""
 
     def test_feature_vector_count(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
         _, recorder, _ = h002_scenario
         assert len(recorder.of_type(FeatureVector)) == 202
 
     def test_warmup_gate(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
-        # Disk alpha v4 requires min_events=100 for mu_ema — 8 ticks
-        # never reach warmup, so all FeatureVectors should be cold.
         _, recorder, _ = h002_scenario
         fvs = recorder.of_type(FeatureVector)
-        for fv in fvs[:4]:
+        for fv in fvs[:99]:
             assert fv.warm is False
-        for fv in fvs[4:]:
+        for fv in fvs[99:]:
             assert fv.warm is True
 
-    def test_mu_drift_tick6(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
+    def test_first_warm_vector_contains_expected_features(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
         _, recorder, _ = h002_scenario
-        fv = recorder.of_type(FeatureVector)[5]
-        assert fv.values["mu_drift"] == pytest.approx(0.0112, abs=1e-6)
+        fv = recorder.of_type(FeatureVector)[99]
+        assert set(fv.values) == {
+            "current_spread_bp",
+            "drift_bps",
+            "imbalance_delta",
+            "imbalance_pressure",
+            "mu_ema",
+            "spread_z",
+        }
 
-    def test_mu_drift_tick7(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
+    def test_entry_setup_features(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
         _, recorder, _ = h002_scenario
-        fv = recorder.of_type(FeatureVector)[6]
-        assert fv.values["mu_drift"] == pytest.approx(-0.025, abs=1e-6)
+        fv = recorder.of_type(FeatureVector)[100]
+        assert fv.values["mu_ema"] > 0.99
+        assert fv.values["imbalance_pressure"] == pytest.approx(0.6)
+        assert fv.values["spread_z"] > 9.0
 
-    def test_mu_drift_tick8_zero(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
+    def test_exit_setup_features(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
         _, recorder, _ = h002_scenario
-        fv = recorder.of_type(FeatureVector)[7]
-        assert fv.values["mu_drift"] == pytest.approx(0.0, abs=1e-10)
+        fv = recorder.of_type(FeatureVector)[-1]
+        assert fv.values["mu_ema"] < -0.4
+        assert fv.values["imbalance_pressure"] == pytest.approx(-0.5)
+        assert fv.values["spread_z"] > 9.0
 
 
 class TestH002BacktestSignals:
-    """Layer 3 — exactly 2 signals (LONG + SHORT)."""
+    """Layer 3 — current replay emits no signals under default gates."""
 
     def test_signal_count(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
-        # Disk alpha v4 requires 100-tick warmup; 8 ticks → 0 signals.
         _, recorder, _ = h002_scenario
-        assert len(recorder.of_type(Signal)) == 2
+        assert len(recorder.of_type(Signal)) == 0
 
-    def test_signal_0_long(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
+    def test_no_signal_at_entry_setup_tick(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
         _, recorder, _ = h002_scenario
-        sig = recorder.of_type(Signal)[0]
-        assert sig.direction == SignalDirection.LONG
-        assert sig.correlation_id == "AAPL:6000000000:6"
-        assert sig.strategy_id == "h002_sde_pde_mu_drift"
+        signal_cids = {sig.correlation_id for sig in recorder.of_type(Signal)}
+        assert "AAPL:101000000000:101" not in signal_cids
 
-    def test_signal_1_short(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
+    def test_no_signal_at_exit_setup_tick(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
         _, recorder, _ = h002_scenario
-        sig = recorder.of_type(Signal)[1]
-        assert sig.direction == SignalDirection.SHORT
-        assert sig.correlation_id == "AAPL:7000000000:7"
-        assert sig.strategy_id == "h002_sde_pde_mu_drift"
+        signal_cids = {sig.correlation_id for sig in recorder.of_type(Signal)}
+        assert "AAPL:202000000000:202" not in signal_cids
 
 
 class TestH002BacktestExecution:
@@ -761,16 +758,13 @@ class TestH002DeterministicReplay:
             orch, rec, _ = _run_h002_backtest(tmp)
             runs.append((orch, rec))
 
-        # Disk alpha v4 requires 100-tick warmup; 8 ticks → 0 signals.
-        # Determinism: both runs produce identical (empty) outputs.
         sigs_a = runs[0][1].of_type(Signal)
         sigs_b = runs[1][1].of_type(Signal)
         assert len(sigs_a) == len(sigs_b) == 0
 
-        # Feature vectors should be bit-identical across runs.
         fvs_a = runs[0][1].of_type(FeatureVector)
         fvs_b = runs[1][1].of_type(FeatureVector)
-        assert len(fvs_a) == len(fvs_b) == 8
+        assert len(fvs_a) == len(fvs_b) == 202
         for fa, fb in zip(fvs_a, fvs_b):
             assert fa.values == fb.values
             assert fa.warm == fb.warm

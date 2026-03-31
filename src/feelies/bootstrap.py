@@ -103,7 +103,9 @@ def build_platform(
     cost_model = DefaultCostModel(DefaultCostModelConfig(
         min_spread_cost_bps=_decimal(config.cost_min_spread_bps),
         commission_per_share=_decimal(config.cost_commission_per_share),
+        exchange_per_share=_decimal(config.cost_exchange_per_share),
         min_commission=_decimal(config.cost_min_commission),
+        max_commission_pct=_decimal(config.cost_max_commission_pct),
     ))
     backend, backtest_router = _create_backend(
         config.mode, event_log, clock,
