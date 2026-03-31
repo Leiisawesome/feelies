@@ -1,7 +1,7 @@
 # ── Identity & Provenance ─────────────────────────────────
 schema_version: "1.0"
 alpha_id: h002_drift_fade
-version: "6.0.0"
+version: "7.0.0"
 description: >
   L1 microstructure alpha.  Mean-reversion on extreme microprice drift.
   Enters AGAINST extreme drift episodes (fading overshoot), exits when
@@ -17,7 +17,7 @@ hypothesis: |
     ∂p/∂t = -∂(μp)/∂S + ½ ∂²(σ²p)/∂S²
 
   When the rolling z-score of the smoothed drift exceeds 2σ:
-    |Z_μ| = |EWMA(dS) / σ_noise| > 2.0
+    |Z_μ| = |EWMA(dS) / σ_noise| > 2.3
   this signals transient price overshoot that reverts as resting
   liquidity absorbs aggressor flow.
 
@@ -25,7 +25,7 @@ hypothesis: |
   buy when extremely negative (oversold).
 
   Entry requires ALL of:
-    1. |normalized_drift| > 2.0σ        (drift z-score extreme)
+    1. |normalized_drift| > 2.3σ        (drift z-score extreme)
     2. Opposing imbalance_delta          (flow reversal confirmation)
     3. Spread compression (spread_z ≤ 0) (market-maker confidence)
     4. tradability_score > 0.5           (regime gate)
@@ -33,9 +33,9 @@ hypothesis: |
 
   Exit triggers (any of):
     1. Drift normalizes: |Z_μ| < exit_drift_z
-    2. Time limit: 25 seconds (max_hold_ns)
+    2. Time limit: 10 seconds (max_hold_ns)
     3. Tick limit: max_hold_ticks
-    4. Structural break: spread blowout or spread_z > 3.0
+    4. Spread blowout: spread > 2× max_spread_bp
 falsification_criteria:
   - "Daily Sharpe Ratio (DSR) < 1.0"
   - "OOS Sharpe < 0.80 net of all fees and latency"
@@ -57,7 +57,7 @@ symbols:
 parameters:
   entry_drift_z:
     type: float
-    default: 2.0
+    default: 2.3
     range: [0.5, 5.0]
     description: "Normalized drift z-score threshold for entry (σ units).  Fade when |Z_μ| exceeds this."
   exit_drift_z:
@@ -107,14 +107,14 @@ parameters:
     description: "Quick exit allowed after brief anti-whipsaw period."
   max_hold_ticks:
     type: int
-    default: 5000
-    range: [500, 50000]
+    default: 400
+    range: [100, 50000]
     description: "Forced exit timeout (tick-based)."
   max_hold_ns:
     type: int
-    default: 25000000000
+    default: 10000000000
     range: [1000000000, 60000000000]
-    description: "Forced exit timeout (time-based, 25s = 25e9 ns)."
+    description: "Forced exit timeout (time-based, 10s = 1e10 ns)."
   cooldown_ticks:
     type: int
     default: 100
@@ -218,9 +218,8 @@ signal: |
           timed_out_ticks = held >= max_hold
           timed_out_time = (features.timestamp_ns - _state["entry_ts"]) >= max_hold_ns
           spread_blowout = spread_bp > max_spread * 2.0
-          structural_break = spread_z_val > 3.0
 
-          if reverted or timed_out_ticks or timed_out_time or spread_blowout or structural_break:
+          if reverted or timed_out_ticks or timed_out_time or spread_blowout:
               _state["in_position"] = False
               _state["direction"] = None
               return Signal(
