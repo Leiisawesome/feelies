@@ -50,7 +50,7 @@ T = TypeVar("T", bound=Event)
 
 H002_SPEC: dict = {
     "schema_version": "1.0",
-    "alpha_id": "h002_sde_pde_mu_drift",
+    "alpha_id": "h002_drift_fade",
     "version": "4.0.0",
     "description": (
         "L1 microstructure alpha: EWMA microprice drift, "
@@ -189,7 +189,7 @@ TICK_DATA: list[dict] = [
 ALPHA_SRC_DIR = (
     Path(__file__).resolve().parent.parent.parent
     / "alphas"
-    / "h002_sde_pde_mu_drift"
+    / "h002_drift_fade"
 )
 
 
@@ -228,12 +228,13 @@ def _make_quotes() -> list[NBBOQuote]:
 #          + ask-heavy imbalance
 
 _E2E_OVERRIDES: dict[str, object] = {
-    "entry_drift_z": 0.15,
-    "exit_drift_z": 0.05,
+    "entry_drift_z": 0.5,
+    "exit_drift_z": 0.1,
     "imbalance_delta_threshold": 0.0001,
     "min_hold_ticks": 100,
     "cooldown_ticks": 200,
     "max_hold_ticks": 1000,
+    "max_hold_ns": 25000000000,
     "max_spread_bp": 10.0,
 }
 
@@ -307,7 +308,7 @@ def _run_h002_backtest(
     """Build platform with the on-disk H002 alpha and run a replay."""
     alpha_dir = tmp_path / "alphas"
     alpha_dir.mkdir(exist_ok=True)
-    shutil.copytree(ALPHA_SRC_DIR, alpha_dir / "h002_sde_pde_mu_drift")
+    shutil.copytree(ALPHA_SRC_DIR, alpha_dir / "h002_drift_fade")
 
     if overrides is None:
         overrides = dict(_E2E_OVERRIDES)
@@ -321,7 +322,7 @@ def _run_h002_backtest(
         risk_max_position_per_symbol=50_000,
         risk_max_gross_exposure_pct=200.0,
         risk_max_drawdown_pct=5.0,
-        parameter_overrides={"h002_sde_pde_mu_drift": overrides},
+        parameter_overrides={"h002_drift_fade": overrides},
     )
 
     event_log = InMemoryEventLog()
@@ -351,7 +352,7 @@ class TestH002SpecLoading:
 
     def test_load_from_dict(self) -> None:
         alpha = AlphaLoader().load_from_dict(H002_SPEC)
-        assert alpha.manifest.alpha_id == "h002_sde_pde_mu_drift"
+        assert alpha.manifest.alpha_id == "h002_drift_fade"
         assert alpha.manifest.version == "4.0.0"
 
     def test_feature_definitions(self) -> None:
@@ -497,7 +498,7 @@ class TestH002SignalEvaluation:
         signal = self._alpha().evaluate(self._fv(1.0))
         assert signal is not None
         assert signal.direction == SignalDirection.LONG
-        assert signal.strategy_id == "h002_sde_pde_mu_drift"
+        assert signal.strategy_id == "h002_drift_fade"
         expected_strength = min(1.0 / (0.0005 * 3.0), 1.0)
         assert signal.strength == pytest.approx(expected_strength, abs=1e-4)
 
@@ -655,23 +656,25 @@ class TestH002BacktestFeatures:
             "current_spread_bp",
             "drift_bps",
             "imbalance_delta",
-            "imbalance_pressure",
             "mu_ema",
             "spread_z",
+            "tradability_score",
         }
 
     def test_entry_setup_features(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
         _, recorder, _ = h002_scenario
         fv = recorder.of_type(FeatureVector)[100]
-        assert fv.values["mu_ema"] > 0.99
-        assert fv.values["imbalance_pressure"] == pytest.approx(0.6)
+        # mu_ema is now a rolling z-score (unbounded σ units)
+        assert fv.values["mu_ema"] > 0.0  # positive drift after microprice rise
+        assert fv.values["tradability_score"] < 0.5  # poor tradability (spread widened)
         assert fv.values["spread_z"] > 9.0
 
     def test_exit_setup_features(self, h002_scenario) -> None:  # type: ignore[no-untyped-def]
         _, recorder, _ = h002_scenario
         fv = recorder.of_type(FeatureVector)[-1]
-        assert fv.values["mu_ema"] < -0.4
-        assert fv.values["imbalance_pressure"] == pytest.approx(-0.5)
+        # mu_ema is now a rolling z-score (unbounded σ units)
+        assert fv.values["mu_ema"] < 0.0  # negative drift after microprice drop
+        assert fv.values["tradability_score"] < 0.5  # poor tradability (spread widened)
         assert fv.values["spread_z"] > 9.0
 
 

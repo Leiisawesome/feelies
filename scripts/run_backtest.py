@@ -334,7 +334,7 @@ _DEMO_TICKS: list[dict] = [
     {"bid": "149.80", "ask": "150.00", "ts": 8_000_000_000},
 ]
 
-_ALPHA_SRC_DIR = _PROJECT_ROOT / "alphas" / "h002_sde_pde_mu_drift"
+_ALPHA_SRC_DIR = _PROJECT_ROOT / "alphas" / "h002_drift_fade"
 
 
 def _make_demo_quotes() -> list[NBBOQuote]:
@@ -358,7 +358,7 @@ def run_demo() -> tuple[object, BusRecorder, IngestResult, PlatformConfig, str, 
     """Run the backtest with synthetic 8-tick data (no Massive API needed)."""
     tmp_dir = tempfile.mkdtemp(prefix="feelies_demo_")
     try:
-        alpha_dst = Path(tmp_dir) / "h002_sde_pde_mu_drift"
+        alpha_dst = Path(tmp_dir) / "h002_drift_fade"
         shutil.copytree(_ALPHA_SRC_DIR, alpha_dst)
 
         config = PlatformConfig(

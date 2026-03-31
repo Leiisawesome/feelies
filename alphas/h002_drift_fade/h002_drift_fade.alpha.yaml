@@ -1,30 +1,53 @@
 # ── Identity & Provenance ─────────────────────────────────
 schema_version: "1.0"
-alpha_id: h002_sde_pde_mu_drift
-version: "5.0.0"
+alpha_id: h002_drift_fade
+version: "6.0.0"
 description: >
   L1 microstructure alpha.  Mean-reversion on extreme microprice drift.
   Enters AGAINST extreme drift episodes (fading overshoot), exits when
   drift normalizes toward zero.  Cost-aware positioning ensures each
   trade’s expected reversion exceeds round-trip costs.
 hypothesis: |
-  At L1 tick horizons, microprice follows dS = mu(t) dt + sigma(t) dW
-  where mu is *locally* mean-reverting.  Extreme normalized drift
-  (|mu_ema| >> entry threshold) signals transient price overshoot
-  that reverts as resting liquidity absorbs aggressor flow.
-  We FADE the drift: sell when mu is extremely positive (overbought),
-  buy when extremely negative (oversold).  The reversion magnitude
-  (drift_bps × hold time) must exceed the cost hurdle for entry.
-  Imbalance-delta OPPOSING the drift confirms reversion is starting.
-  Spread compression indicates market-maker confidence in the level.
+  At L1 tick horizons, microprice follows the SDE:
+    dS = μ(t) dt + σ(t) dW
+  where μ(t) is locally mean-reverting with Ornstein-Uhlenbeck dynamics:
+    dμ = -κ(μ - μ̄) dt + η dW_μ     (κ > 0, mean-reversion speed)
+
+  The corresponding Fokker-Planck PDE for the transition density p(S,t):
+    ∂p/∂t = -∂(μp)/∂S + ½ ∂²(σ²p)/∂S²
+
+  When the rolling z-score of the smoothed drift exceeds 2σ:
+    |Z_μ| = |EWMA(dS) / σ_noise| > 2.0
+  this signals transient price overshoot that reverts as resting
+  liquidity absorbs aggressor flow.
+
+  We FADE the drift: sell when μ is extremely positive (overbought),
+  buy when extremely negative (oversold).
+
+  Entry requires ALL of:
+    1. |normalized_drift| > 2.0σ        (drift z-score extreme)
+    2. Opposing imbalance_delta          (flow reversal confirmation)
+    3. Spread compression (spread_z ≤ 0) (market-maker confidence)
+    4. tradability_score > 0.5           (regime gate)
+    5. Expected reversion > cost hurdle
+
+  Exit triggers (any of):
+    1. Drift normalizes: |Z_μ| < exit_drift_z
+    2. Time limit: 25 seconds (max_hold_ns)
+    3. Tick limit: max_hold_ticks
+    4. Structural break: spread blowout or spread_z > 3.0
 falsification_criteria:
+  - "Daily Sharpe Ratio (DSR) < 1.0"
   - "OOS Sharpe < 0.80 net of all fees and latency"
+  - "IC t-statistic < 2.5"
   - "Bootstrap p-value > 0.05 on forward 500-tick returns conditioned on entry"
-  - "Latency decay > 40% (0→200 ms)"
+  - "Regime coefficient of variation (CV) > 1.5"
+  - "Latency decay > 20% (0→200 ms)"
   - "Edge vanishes outside spread-compression regime (spread_z > 0)"
   - "Net P&L negative after fees at 1.5× cost stress"
   - "Imbalance-delta confirmation adds no lift vs drift alone"
   - "Short-side edge absent or significantly weaker than long-side"
+  - "Net edge ≤ 0 after transaction costs"
 
 # ── Universe ──────────────────────────────────────────────
 symbols:
@@ -34,14 +57,14 @@ symbols:
 parameters:
   entry_drift_z:
     type: float
-    default: 0.15
-    range: [0.05, 0.9]
-    description: "Normalized drift extreme for mean-reversion entry.  Fade when |mu| exceeds this."
+    default: 2.0
+    range: [0.5, 5.0]
+    description: "Normalized drift z-score threshold for entry (σ units).  Fade when |Z_μ| exceeds this."
   exit_drift_z:
     type: float
-    default: 0.05
-    range: [0.0, 0.3]
-    description: "Exit when drift reverts below this (moderate = capture most of reversion)."
+    default: 0.5
+    range: [0.0, 1.5]
+    description: "Exit when drift z-score reverts below this (moderate = capture most of reversion)."
   cost_hurdle_mult:
     type: float
     default: 1.5
@@ -59,9 +82,9 @@ parameters:
     description: "Hard spread gate — suppress entry when spread exceeds this (bps of mid)."
   max_spread_z:
     type: float
-    default: 1.0
-    range: [-2.0, 3.0]
-    description: "Spread z-score gate — relaxed for mean-reversion (spread can be slightly elevated)."
+    default: 0.0
+    range: [-2.0, 1.0]
+    description: "Spread z-score gate — entry requires spread_z ≤ this (0.0 = must be compressing or neutral)."
   mu_ema_alpha:
     type: float
     default: 0.995
@@ -86,7 +109,12 @@ parameters:
     type: int
     default: 5000
     range: [500, 50000]
-    description: "Forced exit timeout."
+    description: "Forced exit timeout (tick-based)."
+  max_hold_ns:
+    type: int
+    default: 25000000000
+    range: [1000000000, 60000000000]
+    description: "Forced exit timeout (time-based, 25s = 25e9 ns)."
   cooldown_ticks:
     type: int
     default: 100
@@ -111,20 +139,12 @@ features:
     computation_module: current_spread_bp.py
 
   - feature_id: mu_ema
-    version: "2.0.0"
-    description: "EWMA of microprice drift dS, normalized by EWMA(|dS|).  Proper Fokker-Planck first moment."
+    version: "3.0.0"
+    description: "Rolling z-score of EWMA microprice drift: Z_μ = EWMA(dS) / σ_noise.  Unbounded, in σ units."
     depends_on: []
     warm_up:
       min_events: 100
     computation_module: mu_ema.py
-
-  - feature_id: imbalance_pressure
-    version: "2.0.0"
-    description: "Instantaneous L1 order imbalance (bid_size - ask_size) / total.  No smoothing."
-    depends_on: []
-    warm_up:
-      min_events: 1
-    computation_module: imbalance_pressure.py
 
   - feature_id: imbalance_delta
     version: "1.0.0"
@@ -150,9 +170,17 @@ features:
       min_events: 100
     computation_module: drift_bps.py
 
+  - feature_id: tradability_score
+    version: "1.0.0"
+    description: "Composite tradability gate: spread health + size health.  Score > 0.5 = tradable regime."
+    depends_on: []
+    warm_up:
+      min_events: 50
+    computation_module: tradability_score.py
+
 # ── Signal ────────────────────────────────────────────────
 signal: |
-  _state = {"last_entry_seq": -999999, "in_position": False, "direction": None}
+  _state = {"last_entry_seq": -999999, "in_position": False, "direction": None, "entry_ts": 0}
 
   def evaluate(features, params):
       if not features.warm or features.stale:
@@ -163,6 +191,7 @@ signal: |
       imb_delta = features.values.get("imbalance_delta", 0.0)
       spread_bp = features.values.get("current_spread_bp", 9999.0)
       spread_z_val = features.values.get("spread_z", 0.0)
+      tradability = features.values.get("tradability_score", 0.0)
 
       entry_drift = params["entry_drift_z"]
       exit_drift = params["exit_drift_z"]
@@ -172,6 +201,7 @@ signal: |
       max_sz = params["max_spread_z"]
       min_hold = params["min_hold_ticks"]
       max_hold = params["max_hold_ticks"]
+      max_hold_ns = params["max_hold_ns"]
       cooldown = params["cooldown_ticks"]
 
       seq = features.sequence
@@ -182,13 +212,15 @@ signal: |
           if held < min_hold:
               return None
 
-          # Exit: drift reverted toward zero, or timeout, or spread blowout
+          # Exit conditions (any triggers exit)
           abs_mu = abs(mu)
           reverted = abs_mu < exit_drift
-          timed_out = held >= max_hold
+          timed_out_ticks = held >= max_hold
+          timed_out_time = (features.timestamp_ns - _state["entry_ts"]) >= max_hold_ns
           spread_blowout = spread_bp > max_spread * 2.0
+          structural_break = spread_z_val > 3.0
 
-          if reverted or timed_out or spread_blowout:
+          if reverted or timed_out_ticks or timed_out_time or spread_blowout or structural_break:
               _state["in_position"] = False
               _state["direction"] = None
               return Signal(
@@ -209,8 +241,12 @@ signal: |
       if spread_bp > max_spread:
           return None
 
-      # Spread compression gate
+      # Spread compression gate (spread_z ≤ max_sz, default 0.0 = must be compressing)
       if spread_z_val > max_sz:
+          return None
+
+      # Tradability regime gate
+      if tradability < 0.5:
           return None
 
       # Cooldown
@@ -224,16 +260,17 @@ signal: |
       if expected_edge_bp < cost_threshold_bp:
           return None
 
-      # Full-size positions to dilute fixed costs
-      strength = 1.0
+      # Vol-scaled strength: proportional to z-score magnitude
+      strength = min(abs(mu) / entry_drift, 1.0)
 
-      # MEAN REVERSION: fade extreme drift
-      # Drift is extremely positive → price overshot UP → SHORT to fade
+      # MEAN REVERSION: fade extreme drift (z-score > entry threshold)
+      # Drift z-score extremely positive → price overshot UP → SHORT to fade
       # Confirmation: imbalance_delta turning NEGATIVE (flow reversing)
       if mu > entry_drift and imb_delta < -imb_delta_thr:
           _state["last_entry_seq"] = seq
           _state["in_position"] = True
           _state["direction"] = "short"
+          _state["entry_ts"] = features.timestamp_ns
           return Signal(
               timestamp_ns=features.timestamp_ns,
               correlation_id=features.correlation_id,
@@ -245,12 +282,13 @@ signal: |
               edge_estimate_bps=expected_edge_bp,
           )
 
-      # Drift is extremely negative → price overshot DOWN → LONG to fade
+      # Drift z-score extremely negative → price overshot DOWN → LONG to fade
       # Confirmation: imbalance_delta turning POSITIVE (flow reversing)
       if mu < -entry_drift and imb_delta > imb_delta_thr:
           _state["last_entry_seq"] = seq
           _state["in_position"] = True
           _state["direction"] = "long"
+          _state["entry_ts"] = features.timestamp_ns
           return Signal(
               timestamp_ns=features.timestamp_ns,
               correlation_id=features.correlation_id,

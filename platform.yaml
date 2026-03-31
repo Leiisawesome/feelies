@@ -19,7 +19,7 @@ symbols:
 
 # ── Alpha Discovery ──────────────────────────────────────
 # Directory scanned for *.alpha.yaml files at boot time.
-alpha_spec_dir: alphas/h002_sde_pde_mu_drift
+alpha_spec_dir: alphas/h002_drift_fade
 
 # Explicit alpha spec paths (in addition to directory scan).
 alpha_specs: []
