@@ -1,12 +1,14 @@
 # ── Identity & Provenance ─────────────────────────────────
 schema_version: "1.0"
 alpha_id: h002_drift_fade
-version: "7.0.0"
+version: "8.0.0"
 description: >
   L1 microstructure alpha.  Mean-reversion on extreme microprice drift.
   Enters AGAINST extreme drift episodes (fading overshoot), exits when
   drift normalizes toward zero.  Cost-aware positioning ensures each
-  trade’s expected reversion exceeds round-trip costs.
+  trade's expected reversion exceeds round-trip costs.  Timeout horizons
+  are regime-aware: shortened in vol-breakout (faster adverse selection),
+  extended in compression (slower but more reliable reversion).
 hypothesis: |
   At L1 tick horizons, microprice follows the SDE:
     dS = μ(t) dt + σ(t) dW
@@ -33,9 +35,14 @@ hypothesis: |
 
   Exit triggers (any of):
     1. Drift normalizes: |Z_μ| < exit_drift_z
-    2. Time limit: 10 seconds (max_hold_ns)
-    3. Tick limit: max_hold_ticks
+    2. Time limit: max_hold_ns × regime_timeout_scale  (regime-adaptive)
+    3. Tick limit: max_hold_ticks × regime_timeout_scale (regime-adaptive)
     4. Spread blowout: spread > 2× max_spread_bp
+
+  Timeout regime scaling (Bayesian posterior-weighted):
+    - vol_breakout:           0.5×  (halve — fast adverse selection)
+    - normal:                 1.0×  (baseline)
+    - compression_clustering: 1.25× (patient — slower but surer reversion)
 falsification_criteria:
   - "Daily Sharpe Ratio (DSR) < 1.0"
   - "OOS Sharpe < 0.80 net of all fees and latency"
@@ -120,6 +127,21 @@ parameters:
     default: 100
     range: [20, 5000]
     description: "Minimum gap between round-trips."
+  timeout_scale_vol_breakout:
+    type: float
+    default: 0.5
+    range: [0.2, 1.0]
+    description: "Timeout multiplier in vol-breakout regime.  <1 = shorten hold (faster adverse selection erodes edge)."
+  timeout_scale_normal:
+    type: float
+    default: 1.0
+    range: [0.5, 2.0]
+    description: "Timeout multiplier in normal regime.  1.0 = use base max_hold_ticks / max_hold_ns unchanged."
+  timeout_scale_compression:
+    type: float
+    default: 1.25
+    range: [0.5, 2.0]
+    description: "Timeout multiplier in compression-clustering regime.  >1 = more patience (slower but surer reversion)."
 
 # ── Risk Budget ───────────────────────────────────────────
 risk_budget:
@@ -182,6 +204,39 @@ features:
 signal: |
   _state = {"last_entry_seq": -999999, "in_position": False, "direction": None, "entry_ts": 0}
 
+  # Regime-state index mapping (matches HMM3StateFractional ordering).
+  _REGIME_IDX = {"compression_clustering": 0, "normal": 1, "vol_breakout": 2}
+
+  def _regime_timeout_scale(symbol, params):
+      """Bayesian posterior-weighted timeout multiplier.
+
+      Returns EV of timeout scale over the regime posterior:
+        scale = Σ_i  p_i × scale_i
+      Falls back to the most conservative (shortest) scale when the
+      regime engine is unavailable or un-calibrated.
+      """
+      factors = {
+          "compression_clustering": params["timeout_scale_compression"],
+          "normal":                 params["timeout_scale_normal"],
+          "vol_breakout":           params["timeout_scale_vol_breakout"],
+      }
+      # When regime engine is absent → normal baseline (no vol info ≠ vol confirmed).
+      # When regime engine returns unknown state → conservative (shortest timeout).
+      fail_safe = min(factors.values())
+
+      try:
+          posteriors = regime_posteriors(symbol)
+      except Exception:
+          return factors["normal"]
+      if posteriors is None:
+          return factors["normal"]
+
+      names = list(regime_state_names)
+      return sum(
+          posteriors[i] * factors.get(names[i], fail_safe)
+          for i in range(len(posteriors))
+      )
+
   def evaluate(features, params):
       if not features.warm or features.stale:
           return None
@@ -200,11 +255,18 @@ signal: |
       max_spread = params["max_spread_bp"]
       max_sz = params["max_spread_z"]
       min_hold = params["min_hold_ticks"]
-      max_hold = params["max_hold_ticks"]
-      max_hold_ns = params["max_hold_ns"]
+      max_hold_base = params["max_hold_ticks"]
+      max_hold_ns_base = params["max_hold_ns"]
       cooldown = params["cooldown_ticks"]
 
       seq = features.sequence
+
+      # ── Regime-adaptive timeouts ──
+      regime_scale = _regime_timeout_scale(features.symbol, params)
+      max_hold = int(max_hold_base * regime_scale)
+      max_hold_ns = int(max_hold_ns_base * regime_scale)
+      # Floor: never shorter than min_hold (anti-whipsaw dominates)
+      max_hold = max(max_hold, min_hold + 1)
 
       # ── Exit logic (when in position) ──
       if _state["in_position"]:

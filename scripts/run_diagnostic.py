@@ -13,7 +13,9 @@ import statistics
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -248,6 +250,16 @@ def _stdev(vals: list) -> float:
     return statistics.stdev(vals) if len(vals) >= 2 else 0.0
 
 
+_ET = ZoneInfo("America/New_York")
+
+
+def _fmt_ts_ns(ts_ns: int) -> str:
+    if ts_ns <= 0:
+        return "-"
+    dt = datetime.fromtimestamp(ts_ns / 1e9, tz=timezone.utc).astimezone(_ET)
+    return dt.strftime("%H:%M:%S.%f")[:-3]
+
+
 def print_diagnostic(rts: list[RoundTrip]) -> None:
     """Print comprehensive trade diagnostic."""
     if not rts:
@@ -420,12 +432,16 @@ def print_diagnostic(rts: list[RoundTrip]) -> None:
 
     # ── 10. Concise round-trip table ──────────────────────────
     print(_section("ALL ROUND-TRIPS (CONCISE)"))
-    print(f"    {'#':>3s} {'Dir':>5s} {'Entry Z':>8s} {'ExitRsn':>12s} {'Hold':>6s} "
+    print(f"    {'#':>3s} {'Dir':>5s} {'Entry (ET)':>12s} {'Exit (ET)':>12s} {'Qty':>5s} "
+          f"{'EntryPx':>8s} {'ExitPx':>8s} {'Entry Z':>8s} {'ExitRsn':>12s} {'Hold':>6s} "
           f"{'Gross':>9s} {'Fees':>8s} {'Net':>9s} {'Spread':>7s}")
-    print(f"    {'-'*3} {'-'*5} {'-'*8} {'-'*12} {'-'*6} {'-'*9} {'-'*8} {'-'*9} {'-'*7}")
+    print(f"    {'-'*3} {'-'*5} {'-'*12} {'-'*12} {'-'*5} {'-'*8} {'-'*8} {'-'*8} {'-'*12} {'-'*6} "
+          f"{'-'*9} {'-'*8} {'-'*9} {'-'*7}")
     for rt in rts:
         fees = rt.entry_fees + rt.exit_fees
-        print(f"    {rt.trade_num:3d} {rt.direction:>5s} {rt.entry_z:8.2f} {rt.exit_reason:>12s} "
+        print(f"    {rt.trade_num:3d} {rt.direction:>5s} {_fmt_ts_ns(rt.entry_ts_ns):>12s} "
+              f"{_fmt_ts_ns(rt.exit_ts_ns):>12s} {rt.entry_quantity:5d} {float(rt.entry_price):8.3f} "
+              f"{float(rt.exit_price):8.3f} {rt.entry_z:8.2f} {rt.exit_reason:>12s} "
               f"{rt.hold_ticks:6d} {float(rt.gross_pnl):9.2f} {float(fees):8.2f} "
               f"{float(rt.net_pnl):9.2f} {rt.entry_spread_bp:7.2f}")
 

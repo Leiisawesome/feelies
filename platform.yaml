@@ -29,7 +29,7 @@ parameter_overrides: {}
 
 # ── Regime Engine ─────────────────────────────────────────
 # Name of the shared regime engine, or null to disable.
-regime_engine: null
+regime_engine: hmm_3state_fractional
 
 # ── Data Paths ────────────────────────────────────────────
 # data_dir: data/
