@@ -79,6 +79,20 @@ _SAFE_BUILTINS = {
     "False": False,
     "None": None,
     "math": math,
+    # Exception hierarchy — needed for try/except in sandboxed signal code.
+    "Exception": Exception,
+    "BaseException": BaseException,
+    "ValueError": ValueError,
+    "TypeError": TypeError,
+    "KeyError": KeyError,
+    "IndexError": IndexError,
+    "ZeroDivisionError": ZeroDivisionError,
+    "ArithmeticError": ArithmeticError,
+    "NameError": NameError,
+    "AttributeError": AttributeError,
+    "RuntimeError": RuntimeError,
+    "StopIteration": StopIteration,
+    "OverflowError": OverflowError,
 }
 
 _LIST_RETURN_RE = re.compile(r"^list\[(\d+)]$")

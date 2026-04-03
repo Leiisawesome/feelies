@@ -65,9 +65,11 @@ class PlatformConfig:
     backtest_fill_latency_ns: int = 0
     signal_entry_cooldown_ticks: int = 0
 
-    cost_min_spread_bps: float = 0.5
-    cost_commission_per_share: float = 0.005
-    cost_min_commission: float = 1.00
+    cost_min_spread_bps: float = 0.0
+    cost_commission_per_share: float = 0.0035
+    cost_exchange_per_share: float = 0.0005
+    cost_min_commission: float = 0.35
+    cost_max_commission_pct: float = 1.0
 
     cache_dir: Path | None = None
 
@@ -126,7 +128,9 @@ class PlatformConfig:
             "signal_entry_cooldown_ticks": self.signal_entry_cooldown_ticks,
             "cost_min_spread_bps": self.cost_min_spread_bps,
             "cost_commission_per_share": self.cost_commission_per_share,
+            "cost_exchange_per_share": self.cost_exchange_per_share,
             "cost_min_commission": self.cost_min_commission,
+            "cost_max_commission_pct": self.cost_max_commission_pct,
         }
 
     @classmethod
@@ -195,13 +199,19 @@ class PlatformConfig:
                 data.get("signal_entry_cooldown_ticks", 0)
             ),
             cost_min_spread_bps=float(
-                data.get("cost_min_spread_bps", 0.5)
+                data.get("cost_min_spread_bps", 0.0)
             ),
             cost_commission_per_share=float(
-                data.get("cost_commission_per_share", 0.005)
+                data.get("cost_commission_per_share", 0.0035)
+            ),
+            cost_exchange_per_share=float(
+                data.get("cost_exchange_per_share", 0.0005)
             ),
             cost_min_commission=float(
-                data.get("cost_min_commission", 1.00)
+                data.get("cost_min_commission", 0.35)
+            ),
+            cost_max_commission_pct=float(
+                data.get("cost_max_commission_pct", 1.0)
             ),
             cache_dir=Path(cache_dir_raw) if cache_dir_raw else None,
         )
