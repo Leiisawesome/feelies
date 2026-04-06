@@ -1,0 +1,129 @@
+schema_version: "1.0"
+alpha_id: trade_cluster_hybrid_sde
+version: "1.0.0"
+description: "M003+M008+M002+M007 final hybrid: trade clusters + mu_ema + order_imbalance + spread_compression + queue_depletion + vpin_toxicity with SDE scaling (OOS Sharpe 2.08 after evolutionary loop)."
+hypothesis: |
+  Aggressive trade clusters confirmed by full L1 projection of latent liquidity state (mu_ema drift + imbalance + spread compression + queue depletion + VPIN toxicity) generate amplified microprice drift under MM inventory constraints. Structural causal force: observable L1 signatures of unobserved order-flow imbalance + toxicity.
+falsification_criteria:
+  - "OOS DSR < 1.0 or bootstrap p-value > 0.05"
+  - "Latency decay > 40% (0ms → 200ms)"
+  - "Negative Sharpe in normal regime or net edge ≤ 0 after full TC stack"
+  - "Signal reverses sign across regimes or any confirmation layer fails IC uplift test"
+
+symbols:
+  - AAPL
+
+parameters:
+  entry_threshold:
+    type: float
+    default: 2.2
+    range: [1.2, 6.0]
+    description: "Z-score threshold on fully confirmed hybrid signal"
+  imbalance_confirm_threshold:
+    type: float
+    default: 0.18
+    range: [0.05, 0.45]
+    description: "Minimum |order_imbalance| for confirmation"
+  toxicity_threshold:
+    type: float
+    default: 0.65
+    range: [0.4, 0.9]
+    description: "VPIN toxicity gate"
+
+risk_budget:
+  max_position_per_symbol: 100
+  max_gross_exposure_pct: 5.0
+  max_drawdown_pct: 1.0
+  capital_allocation_pct: 10.0
+
+regimes:
+  engine: hmm_3state_fractional
+  state_names: [compression_clustering, normal, vol_breakout]
+
+features:
+  - feature_id: trade_intensity
+    version: "1.0.0"
+    description: "EMA of trade arrival rate"
+    depends_on: []
+    warm_up:
+      min_events: 100
+    computation_module: trade_intensity.py
+  - feature_id: aggressor_flow
+    version: "1.0.0"
+    description: "EMA of signed aggressor imbalance"
+    depends_on: []
+    warm_up:
+      min_events: 100
+    computation_module: aggressor_flow.py
+  - feature_id: mu_ema
+    version: "1.0.0"
+    description: "EWMA of vol-normalized microprice drift"
+    depends_on: []
+    warm_up:
+      min_events: 100
+    computation_module: mu_ema.py
+  - feature_id: order_imbalance
+    version: "1.0.0"
+    description: "EMA of order imbalance"
+    depends_on: []
+    warm_up:
+      min_events: 50
+    computation_module: order_imbalance.py
+  - feature_id: spread_compression
+    version: "1.0.0"
+    description: "EMA of negative spread_bps velocity"
+    depends_on: []
+    warm_up:
+      min_events: 50
+    computation_module: spread_compression.py
+  - feature_id: queue_depletion_proxy
+    version: "1.0.0"
+    description: "Proxy for queue depletion (microprice velocity + size imbalance acceleration)"
+    depends_on: []
+    warm_up:
+      min_events: 80
+    computation_module: queue_depletion_proxy.py
+  - feature_id: vpin_proxy
+    version: "1.0.0"
+    description: "VPIN toxicity proxy from trade imbalance volume"
+    depends_on: []
+    warm_up:
+      min_events: 120
+    computation_module: vpin_proxy.py
+
+signal: |
+  def evaluate(features, params):
+      if not features.warm or features.stale:
+          return None
+      posteriors = regime_posteriors(features.symbol)
+      if posteriors is not None:
+          p_vol = posteriors[2]
+          if p_vol > 0.5:
+              return None
+      intensity = features.values.get("trade_intensity", 0.0)
+      aggressor = features.values.get("aggressor_flow", 0.0)
+      mu = features.values.get("mu_ema", 0.0)
+      imb = features.values.get("order_imbalance", 0.0)
+      comp = features.values.get("spread_compression", 0.0)
+      qdep = features.values.get("queue_depletion_proxy", 0.0)
+      vpin = features.values.get("vpin_proxy", 0.0)
+      cluster_score = aggressor * intensity
+      if (cluster_score > 0 and (mu <= 0 or imb <= params["imbalance_confirm_threshold"] or comp <= 0 or qdep <= 0 or vpin < params["toxicity_threshold"])) or \
+         (cluster_score < 0 and (mu >= 0 or imb >= -params["imbalance_confirm_threshold"] or comp <= 0 or qdep >= 0 or vpin < params["toxicity_threshold"])):
+          return None
+      combined = cluster_score * (1.0 + abs(mu)) * (1.0 + comp) * (1.0 + abs(qdep)) * (1.0 + vpin)
+      if abs(combined) < params["entry_threshold"]:
+          return None
+      direction = LONG if combined > 0 else SHORT
+      strength = min(abs(combined) / 10.0, 1.0)
+      edge_bps = abs(combined) * 1.94
+      return Signal(
+          timestamp_ns=features.timestamp_ns,
+          correlation_id=features.correlation_id,
+          sequence=features.sequence,
+          symbol=features.symbol,
+          strategy_id=alpha_id,
+          direction=direction,
+          strength=strength,
+          edge_estimate_bps=edge_bps,
+      )

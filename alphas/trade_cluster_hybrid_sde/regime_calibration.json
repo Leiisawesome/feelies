@@ -1,0 +1,9 @@
+{
+    "emission_params": [
+      [-4.51, 0.29],
+      [-3.48, 0.49],
+      [-2.47, 0.71]
+    ],
+    "calibrated_on": "TRAIN window",
+    "state_names": ["compression_clustering", "normal", "vol_breakout"]
+  }

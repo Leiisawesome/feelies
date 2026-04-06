@@ -15,3 +15,4 @@ build/
 run_output.txt
 test_output.txt
 .cursor/plans/
+.DS_Store
