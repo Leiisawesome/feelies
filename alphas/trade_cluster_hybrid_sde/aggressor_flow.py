@@ -1,9 +1,7 @@
 def initial_state():
-    return {"ema": 0.0}
+    return {"ema": 0.0, "last_mid": 0.0}
 
 def update_trade(trade, state, params):
-    if "last_mid" not in state:
-        return state.get("ema", 0.0)
     mid = state["last_mid"]
     raw = 1.0 if trade.price > mid else (-1.0 if trade.price < mid else 0.0)
     alpha = params.get("aggressor_alpha", 0.96)

@@ -316,8 +316,20 @@ class GrokParityBacktester:
 
             n_signals += 1
 
-            # Handle FLAT (exit)
-            if signal.direction == SignalDirection.FLAT and position is not None:
+            # Determine numeric direction for the new signal
+            if signal.direction == SignalDirection.LONG:
+                sig_dir = 1
+            elif signal.direction == SignalDirection.SHORT:
+                sig_dir = -1
+            else:
+                sig_dir = 0  # FLAT
+
+            # Exit on FLAT or opposite-direction signal (reversal)
+            should_exit = position is not None and (
+                sig_dir == 0 or sig_dir == -position.direction
+            )
+
+            if should_exit:
                 exit_price = self._fill_price(event, -position.direction)
                 exit_spread_bps = _spread_bps(event)
                 spread = float(event.ask) - float(event.bid)
@@ -362,19 +374,12 @@ class GrokParityBacktester:
                 )
                 position = None
 
-            # Handle LONG/SHORT (entry) — only when flat and no pending
-            elif position is None and pending is None:
-                if signal.direction == SignalDirection.LONG:
-                    direction = 1
-                elif signal.direction == SignalDirection.SHORT:
-                    direction = -1
-                else:
-                    continue
-
+            # Enter on LONG/SHORT when flat and no pending order
+            if sig_dir != 0 and position is None and pending is None:
                 pending = _PendingOrder(
                     signal_time_ns=ts,
                     execute_at_ns=ts + self._latency_ns,
-                    direction=direction,
+                    direction=sig_dir,
                     signal_value=signal.strength,
                     spread_bps=_spread_bps(event),
                 )

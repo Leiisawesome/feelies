@@ -1,12 +1,10 @@
 {
-    "n_trades": 149,
-    "total_pnl": 631.2,
-    "sharpe": 2.08,
-    "hit_rate": 0.69,
-    "pnl_hash": "4f8a2c9d7e1b3f6g",
-    "config_hash": "a1b2c3d4e5f67890",
-    "generated_in": "grok_repl",
-    "first_trade_entry_ns": 1738729800000000000,
-    "last_trade_exit_ns": 1740003600000000000,
-    "oos_window": "2026-03-24 to 2026-03-28"
-  }
+  "n_trades": 0,
+  "total_pnl": 0.0,
+  "sharpe": 0.0,
+  "hit_rate": 0.0,
+  "pnl_hash": "pending_local",
+  "config_hash": "a1b2c3d4e5f67890",
+  "generated_in": "grok_repl_v2",
+  "oos_window": "2026-03-23 to 2026-03-27"
+}

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from dataclasses import asdict
@@ -26,6 +27,7 @@ sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import NBBOQuote, Trade
+from feelies.storage.disk_event_cache import DiskEventCache
 from feelies.storage.memory_event_log import InMemoryEventLog
 from feelies.research.grok_parity_backtester import (
     GrokParityBacktester,
@@ -57,15 +59,39 @@ def _ingest_data(
     symbols: list[str],
     start_date: str,
     end_date: str,
+    *,
+    cache_dir: Path | None = None,
+    no_cache: bool = False,
 ) -> InMemoryEventLog:
-    """Download historical data via Massive API and return an event log."""
+    """Download historical data via Massive API and return an event log.
+
+    Uses DiskEventCache to avoid re-downloading data that has already been
+    fetched.  Pass ``no_cache=True`` to force a fresh download.
+    """
     from feelies.ingestion.massive_normalizer import MassiveNormalizer
     from feelies.ingestion.massive_ingestor import MassiveHistoricalIngestor
+
+    cache: DiskEventCache | None = None
+    if not no_cache:
+        resolved_dir = cache_dir or Path.home() / ".feelies" / "cache"
+        cache = DiskEventCache(resolved_dir)
 
     all_events: list[NBBOQuote | Trade] = []
 
     for symbol in symbols:
         for day in _iter_dates(start_date, end_date):
+            # ── Try disk cache first ──
+            if cache is not None and cache.exists(symbol, day):
+                loaded = cache.load(symbol, day)
+                if loaded is not None:
+                    all_events.extend(loaded)
+                    print(
+                        f"  {symbol} {day}: {len(loaded):,} events (cache)",
+                        flush=True,
+                    )
+                    continue
+
+            # ── Cache miss — download from API ──
             clock = SimulatedClock(start_ns=1_000_000_000)
             normalizer = MassiveNormalizer(clock)
             day_log = InMemoryEventLog()
@@ -78,20 +104,33 @@ def _ingest_data(
             )
 
             print(f"  {symbol} {day}: fetching from API ...", flush=True)
-            result = ingestor.ingest(symbol=symbol, date=day)
-            events = list(day_log.replay())
-            all_events.extend(events)
+
+            def _progress(feed_type: str, page: int, total: int, elapsed: float) -> None:
+                print(
+                    f"    [{feed_type}] page {page}: {total:,} records ({elapsed:.1f}s)",
+                    flush=True,
+                )
+
+            result = ingestor.ingest(
+                symbols=[symbol], start_date=day, end_date=day,
+                on_page=_progress,
+            )
+            day_events: list[NBBOQuote | Trade] = list(day_log.replay())
+
+            if cache is not None:
+                cache.save(symbol, day, day_events)
+
+            all_events.extend(day_events)
             print(
-                f"  {symbol} {day}: {len(events):,} events "
-                f"({result.quotes:,} quotes, {result.trades:,} trades)",
+                f"  {symbol} {day}: {result.events_ingested:,} events "
+                f"({result.pages_processed:,} pages, saved to cache)",
                 flush=True,
             )
 
     # Sort by exchange timestamp and load into a single event log
     all_events.sort(key=lambda e: e.exchange_timestamp_ns)
     event_log = InMemoryEventLog()
-    for i, ev in enumerate(all_events):
-        event_log.append(ev, sequence=i)
+    event_log.append_batch(all_events)
 
     return event_log
 
@@ -166,12 +205,19 @@ def main() -> None:
         "--param-overrides", default=None,
         help="JSON string of parameter overrides",
     )
+    parser.add_argument(
+        "--cache-dir", default=None,
+        help="Disk cache directory (default: ~/.feelies/cache/)",
+    )
+    parser.add_argument(
+        "--no-cache", action="store_true",
+        help="Force re-download, skip disk cache",
+    )
 
     args = parser.parse_args()
 
     api_key = args.api_key
     if api_key is None:
-        import os
         api_key = os.environ.get("POLYGON_API_KEY", "")
     if not api_key:
         print("ERROR: --api-key or POLYGON_API_KEY env var required", file=sys.stderr)
@@ -182,9 +228,13 @@ def main() -> None:
         param_overrides = json.loads(args.param_overrides)
 
     # Ingest data
+    cache_dir = Path(args.cache_dir) if args.cache_dir else None
     print(f"\n  Ingesting data for {args.symbols} ...", flush=True)
     t0 = time.monotonic()
-    event_log = _ingest_data(api_key, args.symbols, args.start, args.end)
+    event_log = _ingest_data(
+        api_key, args.symbols, args.start, args.end,
+        cache_dir=cache_dir, no_cache=args.no_cache,
+    )
     print(f"  Ingestion complete in {time.monotonic() - t0:.1f}s\n", flush=True)
 
     # Run backtest
