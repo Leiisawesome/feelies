@@ -16,6 +16,7 @@ import json
 import math
 import random
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from feelies.alpha.loader import AlphaLoader
@@ -239,24 +240,38 @@ class GrokParityBacktester:
         event_log: Any,
         start_sequence: int = 0,
         end_sequence: int | None = None,
+        regime_engine: Any | None = None,
+        trace_file: Any | None = None,
     ) -> tuple[list[GrokTradeRecord], GrokBacktestMetrics]:
         """Run parity backtest over an event log.
 
         Returns (trades, metrics).
+
+        When called via ``run_from_spec()``, the regime engine is already
+        created and shared with the ``AlphaLoader`` so the signal
+        namespace's ``regime_posteriors`` reads from the same instance
+        that receives ``posterior()`` updates here.
+
+        If *trace_file* is a writable file object, a JSONL parity trace
+        is emitted for every signal, fill, reject, and trade — enabling
+        tick-level diff against a Grok reference trace.
         """
         clock = SimulatedClock()
-        registry = AlphaRegistry()  # NO clock -> all alphas active
+        registry = AlphaRegistry()
         registry.register(alpha_module)
-        feature_engine = CompositeFeatureEngine(registry, clock)
+        feature_engine = CompositeFeatureEngine(registry, clock, parity_mode=True)
 
-        # Regime engine: needed if alpha uses regime_posteriors.
-        regime_engine = None
-        try:
-            from feelies.services.regime_engine import get_regime_engine
+        if regime_engine is None:
+            try:
+                from feelies.services.regime_engine import get_regime_engine
 
-            regime_engine = get_regime_engine("hmm_3state_fractional")
-        except Exception:
-            pass
+                regime_engine = get_regime_engine("hmm_3state_fractional")
+            except Exception:
+                pass
+
+        def _trace(record: dict[str, Any]) -> None:
+            if trace_file is not None:
+                trace_file.write(json.dumps(record, default=str) + "\n")
 
         trades: list[GrokTradeRecord] = []
         pending: _PendingOrder | None = None
@@ -264,9 +279,9 @@ class GrokParityBacktester:
         n_signals = 0
         n_fills = 0
         n_rejected = 0
+        tick_idx = 0
 
         for event in event_log.replay(start_sequence, end_sequence):
-            # Process trade events for feature updates (e.g. imbalance_pressure)
             if isinstance(event, Trade):
                 if event.exchange_timestamp_ns > clock.now_ns():
                     clock.set_time(event.exchange_timestamp_ns)
@@ -279,8 +294,8 @@ class GrokParityBacktester:
             ts = event.exchange_timestamp_ns
             if ts > clock.now_ns():
                 clock.set_time(ts)
+            tick_idx += 1
 
-            # Update regime engine BEFORE feature/signal computation
             if regime_engine is not None:
                 try:
                     regime_engine.posterior(event)
@@ -289,7 +304,8 @@ class GrokParityBacktester:
 
             # Check pending order (latency execution)
             if pending is not None and ts >= pending.execute_at_ns:
-                if self._rng.random() <= self._fill_probability:
+                rng_val = self._rng.random()
+                if rng_val <= self._fill_probability:
                     fill_price = self._fill_price(event, pending.direction)
                     position = _OpenPosition(
                         entry_time_ns=ts,
@@ -300,31 +316,37 @@ class GrokParityBacktester:
                         entry_spread_bps=pending.spread_bps,
                     )
                     n_fills += 1
+                    _trace({"type": "fill", "tick": tick_idx, "ts": ts,
+                            "direction": pending.direction, "price": fill_price,
+                            "rng": round(rng_val, 10)})
                 else:
                     n_rejected += 1
+                    _trace({"type": "reject", "tick": tick_idx, "ts": ts,
+                            "rng": round(rng_val, 10)})
                 pending = None
 
-            # Compute features
             features = feature_engine.update(event)
             if not features.warm:
                 continue
 
-            # Evaluate signal
             signal = alpha_module.evaluate(features)
             if signal is None:
                 continue
 
             n_signals += 1
 
-            # Determine numeric direction for the new signal
             if signal.direction == SignalDirection.LONG:
                 sig_dir = 1
             elif signal.direction == SignalDirection.SHORT:
                 sig_dir = -1
             else:
-                sig_dir = 0  # FLAT
+                sig_dir = 0
 
-            # Exit on FLAT or opposite-direction signal (reversal)
+            _trace({"type": "signal", "tick": tick_idx, "ts": ts,
+                    "direction": sig_dir, "strength": round(signal.strength, 8),
+                    "edge_bps": round(signal.edge_estimate_bps, 8),
+                    "features": {k: round(v, 10) for k, v in features.values.items()}})
+
             should_exit = position is not None and (
                 sig_dir == 0 or sig_dir == -position.direction
             )
@@ -355,26 +377,31 @@ class GrokParityBacktester:
                 net = gross - total_tc
 
                 holding_ns = ts - position.entry_time_ns
-                trades.append(
-                    GrokTradeRecord(
-                        entry_time_ns=position.entry_time_ns,
-                        exit_time_ns=ts,
-                        direction=position.direction,
-                        entry_price=position.entry_price,
-                        exit_price=exit_price,
-                        quantity=position.quantity,
-                        gross_pnl=gross,
-                        tc=total_tc,
-                        net_pnl=net,
-                        holding_seconds=holding_ns / 1e9,
-                        signal_value=position.signal_value,
-                        entry_spread_bps=position.entry_spread_bps,
-                        exit_spread_bps=exit_spread_bps,
-                    )
+                trade_rec = GrokTradeRecord(
+                    entry_time_ns=position.entry_time_ns,
+                    exit_time_ns=ts,
+                    direction=position.direction,
+                    entry_price=position.entry_price,
+                    exit_price=exit_price,
+                    quantity=position.quantity,
+                    gross_pnl=gross,
+                    tc=total_tc,
+                    net_pnl=net,
+                    holding_seconds=holding_ns / 1e9,
+                    signal_value=position.signal_value,
+                    entry_spread_bps=position.entry_spread_bps,
+                    exit_spread_bps=exit_spread_bps,
                 )
+                trades.append(trade_rec)
+                _trace({"type": "trade", "tick": tick_idx, "ts": ts,
+                        "dir": trade_rec.direction,
+                        "entry": trade_rec.entry_price,
+                        "exit": trade_rec.exit_price,
+                        "gross": round(trade_rec.gross_pnl, 8),
+                        "tc": round(trade_rec.tc, 8),
+                        "net": round(trade_rec.net_pnl, 8)})
                 position = None
 
-            # Enter on LONG/SHORT when flat and no pending order
             if sig_dir != 0 and position is None and pending is None:
                 pending = _PendingOrder(
                     signal_time_ns=ts,
@@ -383,6 +410,9 @@ class GrokParityBacktester:
                     signal_value=signal.strength,
                     spread_bps=_spread_bps(event),
                 )
+                _trace({"type": "pending", "tick": tick_idx, "ts": ts,
+                        "direction": sig_dir,
+                        "execute_at": pending.execute_at_ns})
 
         metrics = _compute_metrics(
             trades, n_signals, n_fills, n_rejected,
@@ -395,11 +425,62 @@ class GrokParityBacktester:
         spec_path: str,
         event_log: Any,
         param_overrides: dict[str, Any] | None = None,
+        trace_file: Any | None = None,
     ) -> tuple[list[GrokTradeRecord], GrokBacktestMetrics]:
-        """Load an alpha from a .alpha.yaml spec and run the parity backtest."""
-        loader = AlphaLoader()
+        """Load an alpha from a .alpha.yaml spec and run the parity backtest.
+
+        Loads ``parity_config.json`` (TC/fill/latency/seed) and
+        ``regime_calibration.json`` (HMM emission params) from the
+        alpha directory when present, ensuring the backtester matches
+        the exact Grok environment that produced the alpha.
+        """
+        alpha_dir = Path(spec_path).parent.resolve()
+
+        # D3: Load parity_config.json — Grok's exact TC/fill parameters.
+        parity_cfg = alpha_dir / "parity_config.json"
+        if parity_cfg.exists():
+            cfg = json.loads(parity_cfg.read_text(encoding="utf-8"))
+            self._latency_ns = int(cfg.get("latency_ms", self._latency_ns / 1_000_000) * 1_000_000)
+            self._fill_probability = cfg.get("fill_probability", self._fill_probability)
+            self._default_quantity = cfg.get("default_quantity", self._default_quantity)
+            seed = cfg.get("random_seed")
+            if seed is not None:
+                self._rng = random.Random(seed)
+            self._tc_config = GrokTCConfig(
+                exchange_fee_per_share=cfg.get("exchange_fee_per_share", self._tc_config.exchange_fee_per_share),
+                sec_fee_per_dollar=cfg.get("sec_fee_per_dollar", self._tc_config.sec_fee_per_dollar),
+                finra_taf_per_share=cfg.get("finra_taf_per_share", self._tc_config.finra_taf_per_share),
+                impact_eta=cfg.get("impact_eta", self._tc_config.impact_eta),
+                daily_adv_shares=cfg.get("daily_adv_shares", self._tc_config.daily_adv_shares),
+            )
+
+        # D2: Load regime_calibration.json — calibrated HMM emission params.
+        regime_engine = None
+        try:
+            from feelies.services.regime_engine import get_regime_engine
+
+            cal_path = alpha_dir / "regime_calibration.json"
+            kwargs: dict[str, Any] = {}
+            if cal_path.exists():
+                cal = json.loads(cal_path.read_text(encoding="utf-8"))
+                emission = cal.get("emission_params")
+                if emission is not None:
+                    kwargs["emission_params"] = [tuple(p) for p in emission]
+                state_names = cal.get("state_names")
+                if state_names is not None:
+                    kwargs["state_names"] = state_names
+
+            regime_engine = get_regime_engine("hmm_3state_fractional", **kwargs)
+        except Exception:
+            pass
+
+        # D1: Share the regime engine with AlphaLoader so signal
+        # namespace's regime_posteriors reads from the same instance
+        # that receives posterior() updates in run().
+        loader = AlphaLoader(regime_engine=regime_engine)
         alpha_module = loader.load(spec_path, param_overrides=param_overrides)
-        return self.run(alpha_module, event_log)
+        return self.run(alpha_module, event_log, regime_engine=regime_engine,
+                        trace_file=trace_file)
 
 
 # ── Utility functions ───────────────────────────────────────────────

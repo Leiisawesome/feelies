@@ -213,6 +213,10 @@ def main() -> None:
         "--no-cache", action="store_true",
         help="Force re-download, skip disk cache",
     )
+    parser.add_argument(
+        "--parity-trace", default=None,
+        help="Write JSONL parity trace to this file for tick-level diff",
+    )
 
     args = parser.parse_args()
 
@@ -244,13 +248,22 @@ def main() -> None:
         random_seed=args.seed,
     )
 
+    trace_fh = None
+    if args.parity_trace:
+        trace_fh = open(args.parity_trace, "w", encoding="utf-8")
+
     print(f"  Running parity backtest on {args.spec} ...", flush=True)
     t0 = time.monotonic()
     trades, metrics = bt.run_from_spec(
         args.spec, event_log, param_overrides=param_overrides,
+        trace_file=trace_fh,
     )
     elapsed = time.monotonic() - t0
     print(f"  Backtest complete in {elapsed:.1f}s", flush=True)
+
+    if trace_fh is not None:
+        trace_fh.close()
+        print(f"  Parity trace written to {args.parity_trace}", flush=True)
 
     _print_metrics(metrics)
 

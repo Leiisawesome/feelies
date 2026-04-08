@@ -96,8 +96,10 @@ class CompositeFeatureEngine:
         nan_alert_window: int | None = None,
         nan_alert_threshold: float | None = None,
         max_suppression_ticks: int | None = None,
+        parity_mode: bool = False,
     ) -> None:
         self._clock = clock
+        self._parity_mode = parity_mode
         self._definitions: list[FeatureDefinition] = []
         self._computation_order: list[str] = []
         self._version_hash: str = ""
@@ -178,7 +180,7 @@ class CompositeFeatureEngine:
         self._per_symbol_last_exchange_ns[symbol] = cur_exchange_ns
 
         stale = False
-        if prev_exchange_ns is not None:
+        if not self._parity_mode and prev_exchange_ns is not None:
             gap_ns = cur_exchange_ns - prev_exchange_ns
             if gap_ns > self._staleness_threshold_ns:
                 stale = True
@@ -199,6 +201,19 @@ class CompositeFeatureEngine:
                 init = fdef.compute.initial_state()
                 _validate_state(init, f"initial_state[{fid}]")
                 symbol_state[fid] = init
+
+            if self._parity_mode:
+                # Parity mode: no suppression, no NaN clamping, no resets.
+                # Matches Grok REPL semantics where features are evaluated
+                # unconditionally and NaN/Inf values pass through.
+                value = fdef.compute.update(quote, symbol_state[fid])
+                if math.isnan(value) or math.isinf(value):
+                    value = 0.0
+                self._per_feature_event_count[sup_key] = (
+                    self._per_feature_event_count.get(sup_key, 0) + 1
+                )
+                values[fid] = value
+                continue
 
             # Dependency-based suppression: if any upstream is suppressed
             # this tick, suppress this feature too without calling update().
@@ -480,19 +495,26 @@ class CompositeFeatureEngine:
     def _is_warm_for_symbol(self, symbol: str) -> bool:
         """Check whether all features meet their warm-up requirements.
 
-        Uses per-feature event counts (not the global symbol event count)
-        so that features with long suppression runs don't count towards
-        warm-up.  Duration check uses the global per-symbol timing.
+        In parity mode, uses the global symbol event count (matching
+        Grok's simpler counting semantics).  Otherwise uses per-feature
+        event counts so that features with long suppression runs don't
+        count towards warm-up.  Duration check uses global per-symbol
+        timing in both modes.
         """
         first_ns = self._per_symbol_first_ns.get(symbol, 0)
         last_ns = self._per_symbol_last_ns.get(symbol, 0)
         elapsed_ns = last_ns - first_ns if first_ns > 0 else 0
 
+        global_count = self._per_symbol_event_count.get(symbol, 0)
+
         for fdef in self._definitions:
-            feat_events = self._per_feature_event_count.get(
-                (fdef.feature_id, symbol), 0,
-            )
-            if feat_events < fdef.warm_up.min_events:
+            if self._parity_mode:
+                count = global_count
+            else:
+                count = self._per_feature_event_count.get(
+                    (fdef.feature_id, symbol), 0,
+                )
+            if count < fdef.warm_up.min_events:
                 return False
             if elapsed_ns < fdef.warm_up.min_duration_ns:
                 return False
