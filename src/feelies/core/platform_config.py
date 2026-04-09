@@ -65,11 +65,25 @@ class PlatformConfig:
     backtest_fill_latency_ns: int = 0
     signal_entry_cooldown_ticks: int = 0
 
+    stop_loss_per_share: float = 0.0
+    trail_activate_per_share: float = 0.0
+    trail_pct: float = 0.5
+
     cost_min_spread_bps: float = 0.0
     cost_commission_per_share: float = 0.0035
     cost_exchange_per_share: float = 0.0005
     cost_min_commission: float = 0.35
     cost_max_commission_pct: float = 1.0
+
+    # Execution mode: "market" (immediate mid-price fill, spread cost charged)
+    # or "passive_limit" (limit orders at BBO, queue-position fill model).
+    execution_mode: str = "market"
+    # Ticks at our level before queue-drain fill triggers.
+    passive_fill_delay_ticks: int = 3
+    # Cancel unfilled resting orders after this many ticks.
+    passive_max_resting_ticks: int = 50
+    # Maker rebate per share (IB Tiered US equity adding liquidity).
+    passive_rebate_per_share: float = 0.002
 
     cache_dir: Path | None = None
 
@@ -95,6 +109,13 @@ class PlatformConfig:
             raise ConfigurationError("risk_max_drawdown_pct must be positive")
         if self.account_equity <= 0:
             raise ConfigurationError("account_equity must be positive")
+
+        valid_modes = ("market", "passive_limit")
+        if self.execution_mode not in valid_modes:
+            raise ConfigurationError(
+                f"execution_mode must be one of {valid_modes}, "
+                f"got '{self.execution_mode}'"
+            )
 
     def snapshot(self) -> ConfigSnapshot:
         data = self._to_dict()
@@ -126,11 +147,18 @@ class PlatformConfig:
             "account_equity": self.account_equity,
             "backtest_fill_latency_ns": self.backtest_fill_latency_ns,
             "signal_entry_cooldown_ticks": self.signal_entry_cooldown_ticks,
+            "stop_loss_per_share": self.stop_loss_per_share,
+            "trail_activate_per_share": self.trail_activate_per_share,
+            "trail_pct": self.trail_pct,
             "cost_min_spread_bps": self.cost_min_spread_bps,
             "cost_commission_per_share": self.cost_commission_per_share,
             "cost_exchange_per_share": self.cost_exchange_per_share,
             "cost_min_commission": self.cost_min_commission,
             "cost_max_commission_pct": self.cost_max_commission_pct,
+            "execution_mode": self.execution_mode,
+            "passive_fill_delay_ticks": self.passive_fill_delay_ticks,
+            "passive_max_resting_ticks": self.passive_max_resting_ticks,
+            "passive_rebate_per_share": self.passive_rebate_per_share,
         }
 
     @classmethod
@@ -198,6 +226,15 @@ class PlatformConfig:
             signal_entry_cooldown_ticks=int(
                 data.get("signal_entry_cooldown_ticks", 0)
             ),
+            stop_loss_per_share=float(
+                data.get("stop_loss_per_share", 0.0)
+            ),
+            trail_activate_per_share=float(
+                data.get("trail_activate_per_share", 0.0)
+            ),
+            trail_pct=float(
+                data.get("trail_pct", 0.5)
+            ),
             cost_min_spread_bps=float(
                 data.get("cost_min_spread_bps", 0.0)
             ),
@@ -212,6 +249,16 @@ class PlatformConfig:
             ),
             cost_max_commission_pct=float(
                 data.get("cost_max_commission_pct", 1.0)
+            ),
+            execution_mode=str(data.get("execution_mode", "market")),
+            passive_fill_delay_ticks=int(
+                data.get("passive_fill_delay_ticks", 3)
+            ),
+            passive_max_resting_ticks=int(
+                data.get("passive_max_resting_ticks", 50)
+            ),
+            passive_rebate_per_share=float(
+                data.get("passive_rebate_per_share", 0.002)
             ),
             cache_dir=Path(cache_dir_raw) if cache_dir_raw else None,
         )

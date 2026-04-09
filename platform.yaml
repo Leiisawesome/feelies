@@ -19,7 +19,7 @@ symbols:
 
 # ── Alpha Discovery ──────────────────────────────────────
 # Directory scanned for *.alpha.yaml files at boot time.
-alpha_spec_dir: alphas/trade_cluster_hybrid_sde
+alpha_spec_dir: alphas/trade_cluster_drift
 
 # Explicit alpha spec paths (in addition to directory scan).
 alpha_specs: []
@@ -45,6 +45,16 @@ risk_max_drawdown_pct: 5.0
 # ── Backtest Settings ─────────────────────────────────────
 # Simulated fill latency in nanoseconds (0 = instant fills).
 backtest_fill_latency_ns: 0
+# Suppress directional entry signals for N ticks after the last entry.
+signal_entry_cooldown_ticks: 5000
+
+# ── Stop-Loss & Trailing Stop ────────────────────────────
+# Exit if unrealized P&L drops below -X per share (0 = disabled).
+stop_loss_per_share: 0.005
+# Trailing stop activates when unrealized P&L exceeds X per share.
+trail_activate_per_share: 0.01
+# Once trailing active, exit when unrealized drops to this fraction of peak.
+trail_pct: 0.50
 
 # ── Cost Model (IB US Equity Tiered) ─────────────────────
 # Spread floor in basis points (0 = use actual half-spread only).
@@ -57,3 +67,14 @@ cost_exchange_per_share: 0.0005
 cost_min_commission: 0.35
 # IB Tiered maximum commission as % of trade value.
 cost_max_commission_pct: 1.0
+
+# ── Execution Mode ───────────────────────────────────────
+# "market": immediate mid-price fill, charges spread cost.
+# "passive_limit": limit orders at BBO, queue-position fill model.
+execution_mode: passive_limit
+# Ticks the quote must remain at our level before queue-drain fill.
+passive_fill_delay_ticks: 3
+# Maximum ticks before cancelling an unfilled resting order.
+passive_max_resting_ticks: 50
+# Maker rebate per share (IB Tiered US equity adding liquidity).
+passive_rebate_per_share: 0.002

@@ -61,6 +61,7 @@ from feelies.core.events import (
     Alert,
     AlertSeverity,
     Event,
+    FeatureVector,
     KillSwitchActivation,
     MetricEvent,
     MetricType,
@@ -187,6 +188,11 @@ class Orchestrator:
         self._strategy_positions = strategy_positions
         self._seq = SequenceGenerator()
 
+        self._stop_loss_per_share: float = 0.0
+        self._trail_activate_per_share: float = 0.0
+        self._trail_pct: float = 0.5
+        self._peak_pnl_per_share: dict[str, float] = {}
+
         self._config: Configuration | None = None
 
         # Per-order lifecycle tracking for Inv-4 enforcement.
@@ -197,6 +203,11 @@ class Orchestrator:
         # already present in the event log (replay mode).  Prevents
         # re-appending identical events during backtest replay.
         self._events_prelogged = False
+
+        # When True, entry/exit orders use LIMIT at BBO instead of
+        # MARKET.  Stop-loss exits always use MARKET (fail-safe).
+        # Set from config via boot().
+        self._use_passive_entries = False
 
         self._macro = create_macro_state_machine(clock)
         self._micro = create_micro_state_machine(clock)
@@ -238,6 +249,16 @@ class Orchestrator:
         try:
             config.validate()
             self._config = config
+            if hasattr(config, "stop_loss_per_share"):
+                self._stop_loss_per_share = config.stop_loss_per_share
+            if hasattr(config, "trail_activate_per_share"):
+                self._trail_activate_per_share = config.trail_activate_per_share
+            if hasattr(config, "trail_pct"):
+                self._trail_pct = config.trail_pct
+            if hasattr(config, "execution_mode"):
+                self._use_passive_entries = (
+                    config.execution_mode == "passive_limit"
+                )
             self._macro.transition(
                 MacroState.DATA_SYNC,
                 trigger="CONFIG_VALIDATED",
@@ -611,6 +632,14 @@ class Orchestrator:
             self._event_log.append(quote)
         self._bus.publish(quote)
 
+        # ── Resting order fill check ─────────────────────────────
+        # bus.publish(quote) triggered on_quote() on the router,
+        # which evaluated fill conditions for any resting limit
+        # orders.  Pick up those fills before evaluating signals so
+        # the position store is current.
+        if self._use_passive_entries:
+            self._reconcile_resting_fills(cid)
+
         # ── M1 → M2: STATE_UPDATE ──────────────────────────────
         self._micro.transition(
             MicroState.STATE_UPDATE,
@@ -663,6 +692,10 @@ class Orchestrator:
         signal = self._signal_engine.evaluate(features)
         self._tick_timings["signal_evaluate_ns"] = time.perf_counter_ns() - t0
 
+        stop_signal = self._check_stop_exit(quote)
+        if stop_signal is not None:
+            signal = stop_signal
+
         if signal is None:
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
@@ -681,10 +714,23 @@ class Orchestrator:
         current_position = self._positions.get(signal.symbol)
         intent = self._intent_translator.translate(signal, current_position, target_qty)
 
-        if intent.intent == TradingIntent.NO_ACTION:
+        if intent.intent in (TradingIntent.NO_ACTION, TradingIntent.SCALE_UP):
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
                 trigger="intent_no_action",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
+        # ── Guard: suppress new orders while a resting order exists ──
+        if (
+            self._use_passive_entries
+            and self._has_pending_order_for_symbol(signal.symbol)
+        ):
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="resting_order_pending",
                 correlation_id=cid,
             )
             self._finalize_tick(t_wall_start, cid)
@@ -740,7 +786,7 @@ class Orchestrator:
             trigger="risk_pass_order_warranted",
             correlation_id=cid,
         )
-        order = self._build_order_from_intent(intent, verdict, cid)
+        order = self._build_order_from_intent(intent, verdict, cid, quote)
 
         # ── M6: Pre-submission risk check on concrete order ─────
         order_verdict = self._risk_engine.check_order(order, self._positions)
@@ -1334,6 +1380,57 @@ class Orchestrator:
                 message=msg,
             ))
 
+    def _check_stop_exit(self, quote: NBBOQuote) -> Signal | None:
+        """Check stop-loss and trailing stop for open positions.
+
+        Returns a synthetic FLAT Signal if a stop triggers, None otherwise.
+        Also updates peak unrealized P&L tracking for trailing stops.
+        """
+        if self._stop_loss_per_share <= 0 and self._trail_activate_per_share <= 0:
+            return None
+
+        pos = self._positions.get(quote.symbol)
+        if pos.quantity == 0:
+            self._peak_pnl_per_share.pop(quote.symbol, None)
+            return None
+
+        mid = float((quote.bid + quote.ask) / Decimal(2))
+        entry = float(pos.avg_entry_price)
+        if entry <= 0:
+            return None
+
+        sign = 1.0 if pos.quantity > 0 else -1.0
+        unrealized_per_share = (mid - entry) * sign
+
+        peak = self._peak_pnl_per_share.get(quote.symbol, unrealized_per_share)
+        if unrealized_per_share > peak:
+            peak = unrealized_per_share
+        self._peak_pnl_per_share[quote.symbol] = peak
+
+        triggered = False
+
+        if self._stop_loss_per_share > 0 and unrealized_per_share < -self._stop_loss_per_share:
+            triggered = True
+
+        if (self._trail_activate_per_share > 0
+                and peak >= self._trail_activate_per_share
+                and unrealized_per_share < peak * self._trail_pct):
+            triggered = True
+
+        if not triggered:
+            return None
+
+        return Signal(
+            timestamp_ns=quote.timestamp_ns,
+            correlation_id=quote.correlation_id,
+            sequence=quote.sequence,
+            symbol=quote.symbol,
+            strategy_id="__stop_exit__",
+            direction=SignalDirection.FLAT,
+            strength=0.0,
+            edge_estimate_bps=0.0,
+        )
+
     def _compute_target_quantity(
         self,
         signal: Signal,
@@ -1369,6 +1466,7 @@ class Orchestrator:
         intent: OrderIntent,
         verdict: RiskVerdict,
         correlation_id: str,
+        quote: NBBOQuote | None = None,
     ) -> OrderRequest:
         """Construct an OrderRequest from an OrderIntent.
 
@@ -1380,6 +1478,10 @@ class Orchestrator:
         from the IntentTranslator (which may include position sizer
         output).  ``verdict.scaling_factor`` is applied on top for
         risk-driven scaling.
+
+        When ``_use_passive_entries`` is set and ``quote`` is provided,
+        entry/exit orders use LIMIT at the near BBO.  Stop-loss exits
+        always use MARKET (invariant 11: fail-safe).
         """
         side = self._side_from_intent(intent)
         seq = self._seq.next()
@@ -1389,6 +1491,15 @@ class Orchestrator:
 
         quantity = max(1, round(intent.target_quantity * verdict.scaling_factor))
 
+        order_type = OrderType.MARKET
+        limit_price: Decimal | None = None
+
+        if self._use_passive_entries and quote is not None:
+            is_stop_exit = intent.signal.strategy_id == "__stop_exit__"
+            if not is_stop_exit:
+                order_type = OrderType.LIMIT
+                limit_price = quote.bid if side == Side.BUY else quote.ask
+
         return OrderRequest(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=correlation_id,
@@ -1396,8 +1507,9 @@ class Orchestrator:
             order_id=order_id,
             symbol=intent.symbol,
             side=side,
-            order_type=OrderType.MARKET,
+            order_type=order_type,
             quantity=quantity,
+            limit_price=limit_price,
             strategy_id=intent.strategy_id,
         )
 
@@ -1453,6 +1565,28 @@ class Orchestrator:
             trigger=f"cancel_requested:{reason}",
         )
         return True
+
+    def _has_pending_order_for_symbol(self, symbol: str) -> bool:
+        """True if any non-terminal order exists for this symbol."""
+        return any(
+            order.symbol == symbol and sm.state not in _TERMINAL_ORDER_STATES
+            for sm, _, order in self._active_orders.values()
+        )
+
+    def _reconcile_resting_fills(self, cid: str) -> None:
+        """Poll and reconcile fills from resting orders.
+
+        Called at tick start (after the quote triggers on_quote on the
+        router) to process fills from limit orders posted on previous
+        ticks.  Uses the same reconciliation path as normal fills.
+        """
+        acks = self._backend.order_router.poll_acks()
+        if not acks:
+            return
+        for ack in acks:
+            self._bus.publish(ack)
+            self._apply_ack_to_order(ack)
+        self._reconcile_fills(acks, cid)
 
     def _track_order(self, order_id: str, side: Side, order: OrderRequest) -> None:
         """Create an OrderState SM for a new order."""
@@ -1606,6 +1740,9 @@ class Orchestrator:
                 ack.fill_price,
                 fees=ack.fees,
             )
+
+            if position.quantity == 0:
+                self._peak_pnl_per_share.pop(ack.symbol, None)
 
             # ── Per-alpha fill attribution (multi-alpha mode) ──
             if (

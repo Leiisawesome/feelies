@@ -27,10 +27,14 @@ from feelies.core.clock import Clock, SimulatedClock, WallClock
 from feelies.core.events import NBBOQuote
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.execution.backend import ExecutionBackend
-from feelies.execution.backtest_backend import build_backtest_backend
+from feelies.execution.backtest_backend import (
+    build_backtest_backend,
+    build_passive_limit_backend,
+)
 from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.execution.cost_model import DefaultCostModel, DefaultCostModelConfig
 from feelies.execution.intent import SignalPositionTranslator
+from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.monitoring.in_memory import (
     InMemoryAlertManager,
@@ -111,6 +115,10 @@ def build_platform(
         config.mode, event_log, clock,
         fill_latency_ns=config.backtest_fill_latency_ns,
         cost_model=cost_model,
+        execution_mode=config.execution_mode,
+        passive_fill_delay_ticks=config.passive_fill_delay_ticks,
+        passive_max_resting_ticks=config.passive_max_resting_ticks,
+        passive_rebate_per_share=config.passive_rebate_per_share,
     )
 
     if backtest_router is not None:
@@ -235,8 +243,23 @@ def _create_backend(
     *,
     fill_latency_ns: int = 0,
     cost_model: DefaultCostModel | None = None,
-) -> tuple[ExecutionBackend, BacktestOrderRouter | None]:
+    execution_mode: str = "market",
+    passive_fill_delay_ticks: int = 3,
+    passive_max_resting_ticks: int = 50,
+    passive_rebate_per_share: float = 0.002,
+) -> tuple[ExecutionBackend, BacktestOrderRouter | PassiveLimitOrderRouter | None]:
     if mode == OperatingMode.BACKTEST:
+        if execution_mode == "passive_limit":
+            backend, router = build_passive_limit_backend(
+                event_log, clock,
+                latency_ns=fill_latency_ns,
+                cost_model=cost_model,
+                fill_delay_ticks=passive_fill_delay_ticks,
+                max_resting_ticks=passive_max_resting_ticks,
+                rebate_per_share=_decimal(passive_rebate_per_share),
+            )
+            return backend, router
+
         backend, router = build_backtest_backend(
             event_log, clock,
             latency_ns=fill_latency_ns,

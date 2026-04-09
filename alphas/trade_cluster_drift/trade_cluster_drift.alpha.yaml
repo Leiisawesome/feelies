@@ -1,0 +1,140 @@
+schema_version: "1.0"
+alpha_id: trade_cluster_drift_v8
+version: "1.2.0"
+description: "M003+M008 v8: FLAT exit signal with hysteresis — clean exits without reversal."
+hypothesis: |
+  Trade clusters confirmed by mu_ema drift persistence. v8 adds three-zone signal
+  logic (entry/hold/exit) so positions exit cleanly via FLAT when edge decays,
+  eliminating forced reversals and their double TC cost.
+falsification_criteria:
+  - "OOS DSR < 1.0 or bootstrap p-value > 0.05"
+  - "Net edge ≤ 0 after full TC stack"
+  - "Latency decay > 40% (0ms → 200ms)"
+
+symbols:
+  - AAPL
+
+parameters:
+  entry_threshold:
+    type: float
+    default: 2.0
+    range: [0.5, 10.0]
+    description: "Minimum |cluster_score| to emit a signal"
+  mu_min_threshold:
+    type: float
+    default: 0.005
+    range: [0.0, 0.1]
+    description: "Minimum |mu_ema| for drift confirmation (filters noise-level drift)"
+  exit_threshold:
+    type: float
+    default: 0.10
+    range: [0.05, 1.0]
+    description: "Exit when |cluster_score| drops below this (wide hysteresis band)"
+  exit_mu_threshold:
+    type: float
+    default: 0.0005
+    range: [0.0, 0.05]
+    description: "Exit when |mu_ema| drops below this (lower than entry mu_min)"
+  intensity_alpha:
+    type: float
+    default: 0.91
+    range: [0.85, 0.99]
+    description: "EMA alpha for trade_intensity (lower = more responsive, requires denser clustering)"
+  aggressor_alpha:
+    type: float
+    default: 0.93
+    range: [0.90, 0.99]
+    description: "EMA alpha for aggressor_flow (lower = more responsive to recent flow)"
+
+  vol_suppress_threshold:
+    type: float
+    default: 0.5
+    range: [0.3, 0.9]
+    description: "Suppress entries when p(vol_breakout) exceeds this"
+
+risk_budget:
+  max_position_per_symbol: 100
+  max_gross_exposure_pct: 5.0
+  max_drawdown_pct: 1.0
+  capital_allocation_pct: 40.0
+
+regimes:
+  engine: hmm_3state_fractional
+  state_names: [compression_clustering, normal, vol_breakout]
+
+features:
+  - feature_id: trade_intensity
+    version: "1.0.0"
+    computation_module: trade_intensity.py
+    warm_up: {min_events: 100}
+  - feature_id: aggressor_flow
+    version: "1.0.0"
+    computation_module: aggressor_flow.py
+    warm_up: {min_events: 100}
+  - feature_id: mu_ema
+    version: "1.0.0"
+    computation_module: mu_ema.py
+    warm_up: {min_events: 100}
+
+signal: |
+  _prev_score = {}
+
+  def evaluate(features, params):
+      if not features.warm or features.stale:
+          return None
+
+      def _flat():
+          return Signal(
+              timestamp_ns=features.timestamp_ns,
+              correlation_id=features.correlation_id,
+              sequence=features.sequence,
+              symbol=features.symbol,
+              strategy_id=alpha_id,
+              direction=FLAT,
+              strength=0.0,
+              edge_estimate_bps=0.0,
+          )
+
+      posteriors = regime_posteriors(features.symbol)
+      in_vol_breakout = False
+      if posteriors is not None:
+          p_vol = posteriors[2]
+          if p_vol > params["vol_suppress_threshold"]:
+              in_vol_breakout = True
+
+      intensity = features.values.get("trade_intensity", 0.0)
+      aggressor = features.values.get("aggressor_flow", 0.0)
+      mu = features.values.get("mu_ema", 0.0)
+      cluster_score = aggressor * intensity
+      signs_agree = (cluster_score > 0 and mu > 0) or (cluster_score < 0 and mu < 0)
+
+      prev = _prev_score.get(features.symbol, 0.0)
+      _prev_score[features.symbol] = abs(cluster_score)
+      crossing = prev < params["entry_threshold"] and abs(cluster_score) >= params["entry_threshold"]
+
+      if in_vol_breakout:
+          return _flat()
+
+      if (crossing
+              and abs(mu) >= params["mu_min_threshold"]
+              and signs_agree):
+          direction = LONG if cluster_score > 0 else SHORT
+          strength = min(abs(cluster_score) / 1.5, 1.0)
+          edge_bps = abs(cluster_score) * 3.5
+          return Signal(
+              timestamp_ns=features.timestamp_ns,
+              correlation_id=features.correlation_id,
+              sequence=features.sequence,
+              symbol=features.symbol,
+              strategy_id=alpha_id,
+              direction=direction,
+              strength=strength,
+              edge_estimate_bps=edge_bps,
+          )
+
+      if (abs(cluster_score) < params["exit_threshold"]
+              or abs(mu) < params["exit_mu_threshold"]
+              or not signs_agree):
+          return _flat()
+
+      return None
