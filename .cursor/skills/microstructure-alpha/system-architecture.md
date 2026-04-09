@@ -225,10 +225,14 @@ Fill events arrive as `OrderAck` events with typed `OrderAckStatus`
 
 ### Fill Model for Backtesting
 
-> **v1 implemented** — `BacktestOrderRouter` fills at mid-price with
-> configurable latency. The full 3-tier fill model (slippage, queue,
-> adverse selection) is future work — see `fill-model.md`
-> (backtest-engine skill).
+> Two backtest routers are available, selected via `execution_mode`:
+> `BacktestOrderRouter` fills at mid-price with configurable latency
+> (`execution_mode: market`); `PassiveLimitOrderRouter` provides a
+> deterministic queue-position fill model with through-fill, level-fill,
+> and timeout cancellation (`execution_mode: passive_limit`). Passive
+> fills charge zero spread cost and apply maker rebates. The stochastic
+> 3-tier fill model (slippage, adverse selection) remains a design
+> target — see `fill-model.md` (backtest-engine skill).
 
 **Market orders:**
 ```

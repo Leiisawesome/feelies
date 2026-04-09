@@ -82,7 +82,8 @@ composed backend and never inspects `backend.mode`.
 
 | Mode | `MarketDataSource` | `OrderRouter` | `Clock` |
 |------|-------------------|---------------|---------|
-| `BACKTEST_MODE` | `ReplayFeed(EventLog)` | `BacktestOrderRouter` (v1 mid-price fills) | `SimulatedClock` |
+| `BACKTEST_MODE` (`execution_mode: market`) | `ReplayFeed(EventLog)` | `BacktestOrderRouter` (mid-price fills) | `SimulatedClock` |
+| `BACKTEST_MODE` (`execution_mode: passive_limit`) | `ReplayFeed(EventLog)` | `PassiveLimitOrderRouter` (queue-position fills) | `SimulatedClock` |
 | `PAPER_TRADING_MODE` | `MassiveLiveFeed` | Paper router (NOT YET IMPLEMENTED) | `WallClock` |
 | `LIVE_TRADING_MODE` | `MassiveLiveFeed` | Broker router (NOT YET IMPLEMENTED) | `WallClock` |
 
@@ -94,10 +95,12 @@ backfill details (REST API, checkpointing, resumability).
 Composition happens at startup via `bootstrap.build_platform(config)`,
 which selects concrete implementations for the desired mode:
 `build_backtest_backend()` composes `ReplayFeed` + `BacktestOrderRouter`
-into `ExecutionBackend`; it also wires `NBBOQuote` bus subscriptions so
-the `BacktestOrderRouter` tracks last-seen quotes for fill pricing.
-The orchestrator receives a fully composed backend and never inspects
-`backend.mode`.
+(mid-price fills) and `build_passive_limit_backend()` composes
+`ReplayFeed` + `PassiveLimitOrderRouter` (queue-position fills).
+The `execution_mode` config field (`"market"` or `"passive_limit"`)
+selects which factory is called. Both wire `NBBOQuote` bus subscriptions
+so the router tracks last-seen quotes for fill pricing. The orchestrator
+receives a fully composed backend and never inspects `backend.mode`.
 
 ### Fail-Safe Cascade (Invariant 11)
 

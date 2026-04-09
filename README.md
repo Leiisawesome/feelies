@@ -55,7 +55,8 @@ which concrete `MarketDataSource` and `OrderRouter` are composed at startup:
 
 | Mode | MarketDataSource | OrderRouter | Clock |
 |------|-----------------|-------------|-------|
-| Backtest | `ReplayFeed(EventLog)` | `BacktestOrderRouter` | `SimulatedClock` |
+| Backtest (`execution_mode: market`) | `ReplayFeed(EventLog)` | `BacktestOrderRouter` (mid-price fills) | `SimulatedClock` |
+| Backtest (`execution_mode: passive_limit`) | `ReplayFeed(EventLog)` | `PassiveLimitOrderRouter` (queue-position fills) | `SimulatedClock` |
 | Paper | `MassiveLiveFeed` | *(not yet implemented)* | `WallClock` |
 | Live | `MassiveLiveFeed` | *(not yet implemented)* | `WallClock` |
 
@@ -63,7 +64,7 @@ which concrete `MarketDataSource` and `OrderRouter` are composed at startup:
 
 ```
 feelies/
-├── src/feelies/             # Core platform package (87 modules)
+├── src/feelies/             # Core platform package (88 modules)
 │   ├── core/                # Events, clock, state machine, identifiers, config
 │   ├── kernel/              # Orchestrator, macro/micro state machines
 │   ├── bus/                 # Synchronous deterministic event bus
@@ -83,12 +84,12 @@ feelies/
 ├── alphas/                  # Alpha strategy specs
 │   ├── SCHEMA.md            # YAML schema reference
 │   ├── _template/           # Starter template
-│   └── trade_cluster_hybrid_sde/  # Example: hybrid L1 microstructure alpha
+│   └── trade_cluster_drift/      # Example: cluster drift microstructure alpha
 ├── scripts/                 # CLI entry points
 │   ├── run_backtest.py      # Full pipeline backtest
 │   ├── run_parity_backtest.py  # Grok-parity research backtest
 │   └── run_validation.py    # Validation suite runner
-├── tests/                   # Pytest suite (82 files, mirrors src/ structure)
+├── tests/                   # Pytest suite (83 files, mirrors src/ structure)
 ├── platform.yaml            # Reference platform configuration
 ├── pyproject.toml           # Build, deps, tooling
 └── .env.example             # Environment variable template
@@ -130,7 +131,7 @@ spread-crossing fills, seeded RNG, latency queuing, and a full fee stack:
 
 ```bash
 python scripts/run_parity_backtest.py \
-    --spec alphas/trade_cluster_hybrid_sde/trade_cluster_hybrid_sde.alpha.yaml \
+    --spec alphas/trade_cluster_drift/trade_cluster_drift.alpha.yaml \
     --symbols AAPL \
     --start 2026-03-23 --end 2026-03-27 \
     --api-key $MASSIVE_API_KEY
@@ -256,6 +257,12 @@ cost_commission_per_share: 0.0035
 cost_exchange_per_share: 0.0005
 cost_min_commission: 0.35
 cost_max_commission_pct: 1.0
+
+# Execution mode: "market" (mid-price fill) or "passive_limit" (queue model)
+execution_mode: passive_limit
+passive_fill_delay_ticks: 3      # Ticks at level before queue-drain fill
+passive_max_resting_ticks: 50    # Cancel unfilled orders after N ticks
+passive_rebate_per_share: 0.002  # Maker rebate (IB Tiered adding liquidity)
 ```
 
 ## Design Invariants

@@ -1,12 +1,14 @@
 # Fill Model — Calibration & Assumptions
 
-> **NOT YET IMPLEMENTED** — The fill model is a design target. The
-> implementation hook is the `OrderRouter` protocol (`execution/backend.py`).
-> A backtest-mode `OrderRouter` receives `Order` events and returns
-> `OrderAck` events with typed `OrderAckStatus` (ACKNOWLEDGED,
-> PARTIALLY_FILLED, FILLED, REJECTED). Fill model logic lives inside
-> the `OrderRouter` implementation, keeping it decoupled from the
-> core pipeline.
+> **PARTIALLY IMPLEMENTED** — A deterministic queue-position fill model
+> is implemented in `PassiveLimitOrderRouter` (`execution/passive_limit_router.py`),
+> providing through-fill, level-fill, and timeout cancellation without
+> stochastic elements. The stochastic probability-based models described
+> below (slippage functions, adverse selection, partial fills) remain
+> design targets for Tier 2/3 realism. The implementation hook is the
+> `OrderRouter` protocol (`execution/backend.py`). Fill model logic
+> lives inside the `OrderRouter` implementation, keeping it decoupled
+> from the core pipeline.
 
 ## Model Hierarchy
 

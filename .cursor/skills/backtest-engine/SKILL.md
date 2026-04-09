@@ -145,13 +145,18 @@ Signal evaluated (M4)
             → Position updated (M9: _reconcile_fills())
 ```
 
-The backtest fill simulator is `BacktestOrderRouter`
-(`execution/backtest_router.py`), a concrete `OrderRouter`
-implementation. The v1 implementation fills at mid-price of the most
-recent quote; the full 3-tier fill model specified below is future
-work. The router returns `OrderAck` events with
-`OrderAckStatus.FILLED`/`REJECTED` plus `fill_price` and
-`filled_quantity`. The orchestrator's `_apply_ack_to_order()` handles
+Two backtest order routers are available, selected via
+`PlatformConfig.execution_mode`:
+
+- **`BacktestOrderRouter`** (`execution/backtest_router.py`) —
+  immediate mid-price fills. Selected by `execution_mode: market`.
+- **`PassiveLimitOrderRouter`** (`execution/passive_limit_router.py`) —
+  passive limit order queue-position fill model. Selected by
+  `execution_mode: passive_limit`.
+
+Both implement the `OrderRouter` protocol and return `OrderAck` events
+with `OrderAckStatus.FILLED`/`REJECTED`/`CANCELLED` plus `fill_price`
+and `filled_quantity`. The orchestrator's `_apply_ack_to_order()` handles
 the order SM transitions and `_reconcile_fills()` produces
 `PositionUpdate` events and `TradeRecord` entries.
 
@@ -169,16 +174,36 @@ When a limit order price crosses the opposite side of NBBO at submission:
 
 ## Fill Model
 
-**v1 implemented** — `BacktestOrderRouter` (`execution/backtest_router.py`)
-implements the `OrderRouter` protocol with immediate mid-price fills. It
-maintains last-seen quotes per symbol (updated via bus subscription) and
-fills at `(bid + ask) / 2` with configurable latency
+Two concrete `OrderRouter` implementations exist for backtest mode,
+selected via `PlatformConfig.execution_mode`:
+
+**`BacktestOrderRouter`** (`execution_mode: market`) — immediate
+mid-price fills. Fills at `(bid + ask) / 2` with configurable latency
 (`backtest_fill_latency_ns`). No slippage, queue model, or partial
 fills. Orders for symbols with no quote are rejected.
 
-The full three-tier model below is future work. See
-[fill-model.md](fill-model.md) for calibration methodology, parameter
-estimation, and adverse selection adjustment.
+**`PassiveLimitOrderRouter`** (`execution_mode: passive_limit`) —
+deterministic queue-position fill model for passive limit orders.
+Entry and signal-driven exit orders post at the near BBO (bid for BUY,
+ask for SELL). Two fill triggers:
+
+1. **Through fill** — opposite BBO crosses the limit price
+   (ask ≤ limit for BUY, bid ≥ limit for SELL). Immediate fill at
+   limit price.
+2. **Level fill** — BBO stays at the limit price for
+   `passive_fill_delay_ticks` consecutive quotes, modeling queue drain.
+   Counter resets if BBO moves away.
+
+Unfilled orders are cancelled after `passive_max_resting_ticks` quotes.
+Stop-loss and emergency exits always use MARKET orders for immediate
+fill (invariant 11). Passive fills charge zero spread cost and apply
+a configurable maker rebate (`passive_rebate_per_share`).
+
+The stochastic probability-based fill model (slippage functions,
+adverse selection adjustment, partial fills) described below and in
+[fill-model.md](fill-model.md) remains a design target for Tier 2/3
+realism. The `PassiveLimitOrderRouter` provides deterministic Tier 1.5
+fills suitable for research validation.
 
 ### Market Orders
 
@@ -361,6 +386,9 @@ should aggregate from the typed events above:
 | Microstructure Alpha (microstructure-alpha skill) | `Signal` events with `SignalDirection`; research protocol |
 
 The backtest engine is a concrete `MarketDataSource` + `OrderRouter`
-implementation composed into `ExecutionBackend`. It swaps in for the
-live execution layer with no changes to signal, feature, or risk logic
+implementation composed into `ExecutionBackend`. Two router variants
+exist: `BacktestOrderRouter` (mid-price fills) and
+`PassiveLimitOrderRouter` (queue-position fills), selected via
+`execution_mode` in `PlatformConfig`. Both swap in for the live
+execution layer with no changes to signal, feature, or risk logic
 — the orchestrator's `_process_tick()` is identical in all modes.
