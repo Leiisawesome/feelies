@@ -7,7 +7,6 @@ Invariant: 5 (deterministic replay)
 from __future__ import annotations
 
 import hashlib
-import shutil
 from decimal import Decimal
 from pathlib import Path
 
@@ -348,12 +347,11 @@ class TestCheckpointRestore:
         from feelies.core.events import NBBOQuote
         from feelies.core.platform_config import OperatingMode, PlatformConfig
         from feelies.storage.memory_event_log import InMemoryEventLog
-        from .conftest import ALPHA_SRC_DIR, _make_quotes, BusRecorder
+        from .conftest import PIPELINE_TEST_ALPHA_ID, _make_quotes, _write_test_alpha, BusRecorder
 
         tmp = tmp_path_factory.mktemp("checkpoint_a")
         alpha_dir = tmp / "alphas"
-        alpha_dir.mkdir()
-        shutil.copytree(ALPHA_SRC_DIR, alpha_dir / "spread_mean_reversion")
+        _write_test_alpha(alpha_dir)
 
         config = PlatformConfig(
             symbols=frozenset({"AAPL"}),
@@ -361,7 +359,7 @@ class TestCheckpointRestore:
             alpha_spec_dir=alpha_dir,
             account_equity=100_000.0,
             regime_engine=None,
-            parameter_overrides={"spread_mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0}},
+            parameter_overrides={PIPELINE_TEST_ALPHA_ID: {"ewma_span": 5, "zscore_entry": 1.0}},
         )
 
         quotes = _make_quotes()

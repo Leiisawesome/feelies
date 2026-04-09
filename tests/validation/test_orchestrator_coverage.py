@@ -7,7 +7,6 @@ Hotspot: H2 (orchestrator at 64% coverage)
 
 from __future__ import annotations
 
-import shutil
 from decimal import Decimal
 from pathlib import Path
 from typing import Iterator
@@ -38,15 +37,14 @@ from feelies.kernel.orchestrator import Orchestrator
 from feelies.risk.escalation import RiskLevel
 from feelies.storage.memory_event_log import InMemoryEventLog
 
-from .conftest import ALPHA_SRC_DIR, BusRecorder, _make_quotes, _run_scenario
+from .conftest import PIPELINE_TEST_ALPHA_ID, BusRecorder, _make_quotes, _run_scenario, _write_test_alpha
 
 pytestmark = pytest.mark.backtest_validation
 
 
 def _build_orchestrator(tmp_path: Path, quotes=None, **kwargs):
     alpha_dir = tmp_path / "alphas"
-    alpha_dir.mkdir(exist_ok=True)
-    shutil.copytree(ALPHA_SRC_DIR, alpha_dir / "spread_mean_reversion")
+    _write_test_alpha(alpha_dir)
 
     defaults = dict(
         symbols=frozenset({"AAPL"}),
@@ -54,7 +52,7 @@ def _build_orchestrator(tmp_path: Path, quotes=None, **kwargs):
         alpha_spec_dir=alpha_dir,
         account_equity=100_000.0,
         regime_engine=None,
-        parameter_overrides={"spread_mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0}},
+        parameter_overrides={PIPELINE_TEST_ALPHA_ID: {"ewma_span": 5, "zscore_entry": 1.0}},
     )
     defaults.update(kwargs)
 

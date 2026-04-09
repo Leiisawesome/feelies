@@ -1,10 +1,9 @@
 """End-to-end backtest verification — full layer-by-layer assertion suite.
 
-Exercises the complete backtest pipe using the real
-``alphas/spread_mean_reversion/`` alpha (alpha_id: spread_mean_reversion)
-with a synthetic 8-tick dataset designed to exercise warm-up suppression,
-signal generation, risk gating, fills, position reversal, and deterministic
-replay.
+Exercises the complete backtest pipe using a synthetic inline alpha
+(pipeline_test_smr) with a synthetic 8-tick dataset designed to exercise
+warm-up suppression, signal generation, risk gating, fills, position
+reversal, and deterministic replay.
 
 Observation mechanism: a BusRecorder subscribes to all events via
 ``bus.subscribe_all()``, capturing the full causal tape.  Every assertion
@@ -14,7 +13,6 @@ modified.
 
 from __future__ import annotations
 
-import shutil
 from collections import defaultdict
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -48,7 +46,126 @@ from feelies.storage.memory_event_log import InMemoryEventLog
 
 T = TypeVar("T", bound=Event)
 
-ALPHA_SRC_DIR = Path(__file__).resolve().parent.parent / "alphas" / "spread_mean_reversion"
+PIPELINE_TEST_ALPHA_ID = "pipeline_test_smr"
+
+PIPELINE_TEST_ALPHA_SPEC = """\
+schema_version: "1.0"
+alpha_id: pipeline_test_smr
+version: "1.0.0"
+description: "Minimal EWMA z-score alpha for pipeline integration testing"
+hypothesis: "Mid-price deviation from EWMA generates mean reversion signals"
+falsification_criteria:
+  - "Test fixture only"
+symbols:
+  - AAPL
+  - MSFT
+parameters:
+  ewma_span:
+    type: float
+    default: 5.0
+  zscore_entry:
+    type: float
+    default: 1.0
+risk_budget:
+  max_position_per_symbol: 100
+  max_gross_exposure_pct: 10.0
+  max_drawdown_pct: 2.0
+  capital_allocation_pct: 20.0
+features:
+  - feature_id: mid_price
+    version: "1.0"
+    description: Mid price from NBBO
+    depends_on: []
+    warm_up:
+      min_events: 5
+    computation: |
+      def initial_state():
+          return {}
+      def update(quote, state, params):
+          return float((quote.bid + quote.ask) / 2)
+  - feature_id: ewma_mid
+    version: "1.0"
+    description: EWMA of mid price
+    depends_on: [mid_price]
+    warm_up:
+      min_events: 5
+    computation: |
+      def initial_state():
+          return {"ema": None}
+      def update(quote, state, params):
+          mid = float((quote.bid + quote.ask) / 2)
+          span = params.get("ewma_span", 5.0)
+          a = 2.0 / (span + 1.0)
+          if state["ema"] is None:
+              state["ema"] = mid
+          else:
+              state["ema"] = a * mid + (1 - a) * state["ema"]
+          return state["ema"]
+  - feature_id: spread
+    version: "1.0"
+    description: Bid-ask spread
+    depends_on: []
+    warm_up:
+      min_events: 5
+    computation: |
+      def initial_state():
+          return {}
+      def update(quote, state, params):
+          return float(quote.ask - quote.bid)
+  - feature_id: mid_zscore
+    version: "1.0"
+    description: Z-score of mid relative to EWMA
+    depends_on: [mid_price, ewma_mid]
+    warm_up:
+      min_events: 5
+    computation: |
+      def initial_state():
+          return {"ema": None, "var": 0.0}
+      def update(quote, state, params):
+          mid = float((quote.bid + quote.ask) / 2)
+          span = params.get("ewma_span", 5.0)
+          a = 2.0 / (span + 1.0)
+          if state["ema"] is None:
+              state["ema"] = mid
+              return 0.0
+          dev = mid - state["ema"]
+          state["ema"] = a * mid + (1 - a) * state["ema"]
+          state["var"] = a * dev * dev + (1 - a) * state["var"]
+          if state["var"] < 1e-20:
+              return 0.0
+          return (mid - state["ema"]) / (state["var"] ** 0.5)
+signal: |
+  def evaluate(features, params):
+      if not features.warm or features.stale:
+          return None
+      zscore = features.values.get("mid_zscore", 0.0)
+      spread = features.values.get("spread", 0.0)
+      threshold = params.get("zscore_entry", 1.0)
+      if spread > 0.5:
+          return None
+      if abs(zscore) < threshold:
+          return None
+      direction = SHORT if zscore > 0 else LONG
+      strength = min(abs(zscore) / 5.0, 1.0)
+      return Signal(
+          timestamp_ns=features.timestamp_ns,
+          correlation_id=features.correlation_id,
+          sequence=features.sequence,
+          symbol=features.symbol,
+          strategy_id=alpha_id,
+          direction=direction,
+          strength=strength,
+          edge_estimate_bps=2.5,
+      )
+"""
+
+
+def _write_test_alpha(alpha_dir: Path) -> None:
+    """Write the pipeline test alpha spec to the given directory."""
+    alpha_dir.mkdir(parents=True, exist_ok=True)
+    (alpha_dir / f"{PIPELINE_TEST_ALPHA_ID}.alpha.yaml").write_text(
+        PIPELINE_TEST_ALPHA_SPEC
+    )
 
 # ── Synthetic quote data (plan §Synthetic Dataset Design) ────────────
 
@@ -108,11 +225,10 @@ def _run_scenario(
 ) -> tuple:
     """Build platform, wire recorder, boot, run backtest, return results."""
     alpha_dir = tmp_path / "alphas"
-    alpha_dir.mkdir(exist_ok=True)
-    shutil.copytree(ALPHA_SRC_DIR, alpha_dir / "spread_mean_reversion")
+    _write_test_alpha(alpha_dir)
 
     if parameter_overrides is None:
-        parameter_overrides = {"spread_mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0}}
+        parameter_overrides = {PIPELINE_TEST_ALPHA_ID: {"ewma_span": 5, "zscore_entry": 1.0}}
 
     config = PlatformConfig(
         symbols=frozenset({"AAPL"}),
@@ -229,7 +345,7 @@ class TestLayerSignals:
         assert sig.direction == SignalDirection.SHORT
         assert sig.strength == pytest.approx(0.23094, abs=1e-4)
         assert sig.correlation_id == "AAPL:6000000000:6"
-        assert sig.strategy_id == "spread_mean_reversion"
+        assert sig.strategy_id == PIPELINE_TEST_ALPHA_ID
         assert sig.edge_estimate_bps == 2.5
 
     def test_signal_1_long(self, scenario) -> None:
@@ -238,7 +354,7 @@ class TestLayerSignals:
         assert sig.direction == SignalDirection.LONG
         assert sig.strength == pytest.approx(0.20207, abs=1e-4)
         assert sig.correlation_id == "AAPL:8000000000:8"
-        assert sig.strategy_id == "spread_mean_reversion"
+        assert sig.strategy_id == PIPELINE_TEST_ALPHA_ID
         assert sig.edge_estimate_bps == 2.5
 
 
@@ -272,17 +388,17 @@ class TestLayerExecution:
         _, recorder, _ = scenario
         assert len(recorder.of_type(OrderRequest)) == 2
 
-    def test_order_0_sell_21(self, scenario) -> None:
+    def test_order_0_sell_28(self, scenario) -> None:
         _, recorder, _ = scenario
         order = recorder.of_type(OrderRequest)[0]
         assert order.side == Side.SELL
-        assert order.quantity == 21
+        assert order.quantity == 28
 
-    def test_order_1_buy_42(self, scenario) -> None:
+    def test_order_1_buy_56(self, scenario) -> None:
         _, recorder, _ = scenario
         order = recorder.of_type(OrderRequest)[1]
         assert order.side == Side.BUY
-        assert order.quantity == 42
+        assert order.quantity == 56
 
     def test_ack_count(self, scenario) -> None:
         _, recorder, _ = scenario
@@ -292,42 +408,42 @@ class TestLayerExecution:
         _, recorder, _ = scenario
         ack = recorder.of_type(OrderAck)[0]
         assert ack.status == OrderAckStatus.FILLED
-        assert ack.filled_quantity == 21
+        assert ack.filled_quantity == 28
         assert ack.fill_price == Decimal("160.005")
 
     def test_ack_1_filled_at_mid(self, scenario) -> None:
         _, recorder, _ = scenario
         ack = recorder.of_type(OrderAck)[1]
         assert ack.status == OrderAckStatus.FILLED
-        assert ack.filled_quantity == 42
+        assert ack.filled_quantity == 56
         assert ack.fill_price == Decimal("140.005")
 
 
 class TestLayerPortfolio:
-    """Layer 6 — Portfolio: 2 PositionUpdate events, reversal to +21."""
+    """Layer 6 — Portfolio: 2 PositionUpdate events, reversal to +28."""
 
     def test_position_update_count(self, scenario) -> None:
         _, recorder, _ = scenario
         assert len(recorder.of_type(PositionUpdate)) == 2
 
-    def test_pu_0_short_21(self, scenario) -> None:
+    def test_pu_0_short_28(self, scenario) -> None:
         _, recorder, _ = scenario
         pu = recorder.of_type(PositionUpdate)[0]
-        assert pu.quantity == -21
+        assert pu.quantity == -28
         assert pu.realized_pnl == Decimal("0")
 
-    def test_pu_1_long_21_with_pnl(self, scenario) -> None:
+    def test_pu_1_long_28_with_pnl(self, scenario) -> None:
         _, recorder, _ = scenario
         pu = recorder.of_type(PositionUpdate)[1]
-        assert pu.quantity == 21
-        assert pu.realized_pnl == Decimal("420")
+        assert pu.quantity == 28
+        assert pu.realized_pnl == Decimal("560.000")
 
     def test_end_state_position_store(self, scenario) -> None:
         orchestrator, _, _ = scenario
         pos = orchestrator._positions.get("AAPL")
-        assert pos.quantity == 21
+        assert pos.quantity == 28
         assert pos.avg_entry_price == Decimal("140.005")
-        assert pos.realized_pnl == Decimal("420")
+        assert pos.realized_pnl == Decimal("560.000")
 
 
 class TestLayerTradeJournal:
@@ -338,22 +454,22 @@ class TestLayerTradeJournal:
         records = list(orchestrator._trade_journal.query(symbol="AAPL"))
         assert len(records) == 2
 
-    def test_record_0_sell_21(self, scenario) -> None:
+    def test_record_0_sell_28(self, scenario) -> None:
         orchestrator, _, _ = scenario
         rec = list(orchestrator._trade_journal.query(symbol="AAPL"))[0]
         assert rec.side == Side.SELL
-        assert rec.filled_quantity == 21
+        assert rec.filled_quantity == 28
         assert rec.fill_price == Decimal("160.005")
-        assert rec.strategy_id == "spread_mean_reversion"
+        assert rec.strategy_id == PIPELINE_TEST_ALPHA_ID
 
-    def test_record_1_buy_42_with_pnl(self, scenario) -> None:
+    def test_record_1_buy_56_with_pnl(self, scenario) -> None:
         orchestrator, _, _ = scenario
         rec = list(orchestrator._trade_journal.query(symbol="AAPL"))[1]
         assert rec.side == Side.BUY
-        assert rec.filled_quantity == 42
+        assert rec.filled_quantity == 56
         assert rec.fill_price == Decimal("140.005")
-        assert rec.realized_pnl == Decimal("420")
-        assert rec.strategy_id == "spread_mean_reversion"
+        assert rec.realized_pnl == Decimal("560.000")
+        assert rec.strategy_id == PIPELINE_TEST_ALPHA_ID
 
 
 class TestLayerProvenance:
@@ -508,7 +624,7 @@ class TestLayerConfigSnapshot:
         orchestrator, _, _ = scenario
         snap = orchestrator.config_snapshot  # type: ignore[attr-defined]
         assert snap.data["parameter_overrides"] == {
-            "spread_mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0},
+            PIPELINE_TEST_ALPHA_ID: {"ewma_span": 5, "zscore_entry": 1.0},
         }
 
     def test_regime_engine_none(self, scenario) -> None:
@@ -523,13 +639,13 @@ class TestLayerPnLPerformance:
     def test_realized_pnl(self, scenario) -> None:
         orchestrator, _, _ = scenario
         pos = orchestrator._positions.get("AAPL")
-        assert pos.realized_pnl == Decimal("420")
+        assert pos.realized_pnl == Decimal("560.000")
 
     def test_final_equity(self, scenario) -> None:
         orchestrator, _, _ = scenario
         pos = orchestrator._positions.get("AAPL")
         final_equity = Decimal("100000") + pos.realized_pnl
-        assert final_equity == Decimal("100420")
+        assert final_equity == Decimal("100560.000")
 
     def test_unrealized_pnl_zero(self, scenario) -> None:
         orchestrator, _, _ = scenario
@@ -547,17 +663,17 @@ class TestLayerPnLPerformance:
     def test_total_shares_traded(self, scenario) -> None:
         orchestrator, _, _ = scenario
         records = list(orchestrator._trade_journal.query(symbol="AAPL"))
-        assert sum(r.filled_quantity for r in records) == 63
+        assert sum(r.filled_quantity for r in records) == 84
 
     def test_total_exposure(self, scenario) -> None:
         orchestrator, _, _ = scenario
-        assert orchestrator._positions.total_exposure() == Decimal("2940.105")
+        assert orchestrator._positions.total_exposure() == Decimal("3920.140")
 
     def test_return_pct(self, scenario) -> None:
         orchestrator, _, _ = scenario
         pos = orchestrator._positions.get("AAPL")
         return_pct = float(pos.realized_pnl) / 100_000
-        assert return_pct == pytest.approx(0.0042)
+        assert return_pct == pytest.approx(0.0056)
 
     def test_win_rate(self, scenario) -> None:
         orchestrator, _, _ = scenario
@@ -610,8 +726,8 @@ class TestDeterministicReplay:
 
             pos_a = orch_a._positions.get("AAPL")
             pos_b = orch_b._positions.get("AAPL")
-            assert pos_a.quantity == pos_b.quantity == 21
-            assert pos_a.realized_pnl == pos_b.realized_pnl == Decimal("420")
+            assert pos_a.quantity == pos_b.quantity == 28
+            assert pos_a.realized_pnl == pos_b.realized_pnl == Decimal("560.000")
 
             records_a = list(orch_a._trade_journal.query(symbol="AAPL"))
             records_b = list(orch_b._trade_journal.query(symbol="AAPL"))

@@ -43,10 +43,9 @@ from typing import TYPE_CHECKING, Any
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from feelies.alpha.aggregation import AggregatedOrders, aggregate_intents
+    from feelies.alpha.aggregation import AggregatedOrders
     from feelies.alpha.fill_attribution import (
         AlphaContribution,
-        AttributionRecord,
         FillAttributionLedger,
     )
     from feelies.alpha.multi_alpha_evaluator import MultiAlphaEvaluator

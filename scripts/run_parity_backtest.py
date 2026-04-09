@@ -2,8 +2,8 @@
 """CLI entry point for the Grok-parity backtest harness.
 
 Usage:
-    python scripts/run_parity_backtest.py --spec alphas/spread_mean_reversion/spread_mean_reversion.alpha.yaml \
-        --symbols AAPL --start 2024-01-15 --end 2024-01-15 --api-key $POLYGON_API_KEY
+    python scripts/run_parity_backtest.py --spec alphas/trade_cluster_drift/trade_cluster_drift.alpha.yaml \
+        --symbols AAPL --start 2026-03-23 --end 2026-03-27 --api-key $MASSIVE_API_KEY
 
     python scripts/run_parity_backtest.py --spec alphas/h002.alpha.yaml \
         --symbols MSFT --start 2024-03-01 --end 2024-03-01 \

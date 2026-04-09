@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from collections import defaultdict
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -29,7 +28,126 @@ from feelies.storage.memory_event_log import InMemoryEventLog
 
 T = TypeVar("T", bound=Event)
 
-ALPHA_SRC_DIR = Path(__file__).resolve().parent.parent.parent / "alphas" / "spread_mean_reversion"
+PIPELINE_TEST_ALPHA_ID = "pipeline_test_smr"
+
+PIPELINE_TEST_ALPHA_SPEC = """\
+schema_version: "1.0"
+alpha_id: pipeline_test_smr
+version: "1.0.0"
+description: "Minimal EWMA z-score alpha for pipeline integration testing"
+hypothesis: "Mid-price deviation from EWMA generates mean reversion signals"
+falsification_criteria:
+  - "Test fixture only"
+symbols:
+  - AAPL
+  - MSFT
+parameters:
+  ewma_span:
+    type: float
+    default: 5.0
+  zscore_entry:
+    type: float
+    default: 1.0
+risk_budget:
+  max_position_per_symbol: 100
+  max_gross_exposure_pct: 10.0
+  max_drawdown_pct: 2.0
+  capital_allocation_pct: 20.0
+features:
+  - feature_id: mid_price
+    version: "1.0"
+    description: Mid price from NBBO
+    depends_on: []
+    warm_up:
+      min_events: 5
+    computation: |
+      def initial_state():
+          return {}
+      def update(quote, state, params):
+          return float((quote.bid + quote.ask) / 2)
+  - feature_id: ewma_mid
+    version: "1.0"
+    description: EWMA of mid price
+    depends_on: [mid_price]
+    warm_up:
+      min_events: 5
+    computation: |
+      def initial_state():
+          return {"ema": None}
+      def update(quote, state, params):
+          mid = float((quote.bid + quote.ask) / 2)
+          span = params.get("ewma_span", 5.0)
+          a = 2.0 / (span + 1.0)
+          if state["ema"] is None:
+              state["ema"] = mid
+          else:
+              state["ema"] = a * mid + (1 - a) * state["ema"]
+          return state["ema"]
+  - feature_id: spread
+    version: "1.0"
+    description: Bid-ask spread
+    depends_on: []
+    warm_up:
+      min_events: 5
+    computation: |
+      def initial_state():
+          return {}
+      def update(quote, state, params):
+          return float(quote.ask - quote.bid)
+  - feature_id: mid_zscore
+    version: "1.0"
+    description: Z-score of mid relative to EWMA
+    depends_on: [mid_price, ewma_mid]
+    warm_up:
+      min_events: 5
+    computation: |
+      def initial_state():
+          return {"ema": None, "var": 0.0}
+      def update(quote, state, params):
+          mid = float((quote.bid + quote.ask) / 2)
+          span = params.get("ewma_span", 5.0)
+          a = 2.0 / (span + 1.0)
+          if state["ema"] is None:
+              state["ema"] = mid
+              return 0.0
+          dev = mid - state["ema"]
+          state["ema"] = a * mid + (1 - a) * state["ema"]
+          state["var"] = a * dev * dev + (1 - a) * state["var"]
+          if state["var"] < 1e-20:
+              return 0.0
+          return (mid - state["ema"]) / (state["var"] ** 0.5)
+signal: |
+  def evaluate(features, params):
+      if not features.warm or features.stale:
+          return None
+      zscore = features.values.get("mid_zscore", 0.0)
+      spread = features.values.get("spread", 0.0)
+      threshold = params.get("zscore_entry", 1.0)
+      if spread > 0.5:
+          return None
+      if abs(zscore) < threshold:
+          return None
+      direction = SHORT if zscore > 0 else LONG
+      strength = min(abs(zscore) / 5.0, 1.0)
+      return Signal(
+          timestamp_ns=features.timestamp_ns,
+          correlation_id=features.correlation_id,
+          sequence=features.sequence,
+          symbol=features.symbol,
+          strategy_id=alpha_id,
+          direction=direction,
+          strength=strength,
+          edge_estimate_bps=2.5,
+      )
+"""
+
+
+def _write_test_alpha(alpha_dir: Path) -> None:
+    """Write the pipeline test alpha spec to the given directory."""
+    alpha_dir.mkdir(parents=True, exist_ok=True)
+    (alpha_dir / f"{PIPELINE_TEST_ALPHA_ID}.alpha.yaml").write_text(
+        PIPELINE_TEST_ALPHA_SPEC
+    )
 
 TICK_DATA: list[dict] = [
     {"bid": "150.00", "ask": "150.01", "ts": 1_000_000_000},
@@ -91,11 +209,10 @@ def _run_scenario(
     risk_max_gross_exposure_pct: float = 20.0,
 ) -> tuple:
     alpha_dir = tmp_path / "alphas"
-    alpha_dir.mkdir(exist_ok=True)
-    shutil.copytree(ALPHA_SRC_DIR, alpha_dir / "spread_mean_reversion")
+    _write_test_alpha(alpha_dir)
 
     if parameter_overrides is None:
-        parameter_overrides = {"spread_mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0}}
+        parameter_overrides = {PIPELINE_TEST_ALPHA_ID: {"ewma_span": 5, "zscore_entry": 1.0}}
 
     config = PlatformConfig(
         symbols=symbols,

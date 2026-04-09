@@ -8,7 +8,6 @@ from __future__ import annotations
 import ast
 import inspect
 import re
-import shutil
 from dataclasses import fields
 from decimal import Decimal
 from pathlib import Path
@@ -32,7 +31,7 @@ from feelies.kernel.macro import MacroState
 from feelies.storage.memory_event_log import InMemoryEventLog
 from feelies.storage.trade_journal import TradeRecord
 
-from .conftest import BusRecorder, _make_quotes, _run_scenario, TICK_DATA
+from .conftest import BusRecorder, PIPELINE_TEST_ALPHA_ID, _make_quotes, _run_scenario, _write_test_alpha, TICK_DATA
 
 pytestmark = pytest.mark.backtest_validation
 
@@ -172,9 +171,7 @@ class TestInvariant11FailSafe:
         self, tmp_path: Path
     ) -> None:
         alpha_dir = tmp_path / "alphas"
-        alpha_dir.mkdir(exist_ok=True)
-        alpha_src_dir = Path(__file__).resolve().parent.parent.parent / "alphas" / "spread_mean_reversion"
-        shutil.copytree(alpha_src_dir, alpha_dir / "spread_mean_reversion")
+        _write_test_alpha(alpha_dir)
 
         config = PlatformConfig(
             symbols=frozenset({"AAPL"}),
@@ -182,7 +179,7 @@ class TestInvariant11FailSafe:
             alpha_spec_dir=alpha_dir,
             account_equity=100_000.0,
             regime_engine=None,
-            parameter_overrides={"spread_mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0}},
+            parameter_overrides={PIPELINE_TEST_ALPHA_ID: {"ewma_span": 5, "zscore_entry": 1.0}},
         )
         event_log = InMemoryEventLog()
         event_log.append_batch(_make_quotes())
@@ -211,9 +208,7 @@ class TestInvariant11FailSafe:
         from feelies.risk.escalation import RiskLevel
 
         alpha_dir = tmp_path / "alphas"
-        alpha_dir.mkdir(exist_ok=True)
-        alpha_src_dir = Path(__file__).resolve().parent.parent.parent / "alphas" / "spread_mean_reversion"
-        shutil.copytree(alpha_src_dir, alpha_dir / "spread_mean_reversion")
+        _write_test_alpha(alpha_dir)
 
         config = PlatformConfig(
             symbols=frozenset({"AAPL"}),
@@ -221,7 +216,7 @@ class TestInvariant11FailSafe:
             alpha_spec_dir=alpha_dir,
             account_equity=100_000.0,
             regime_engine=None,
-            parameter_overrides={"spread_mean_reversion": {"ewma_span": 5, "zscore_entry": 1.0}},
+            parameter_overrides={PIPELINE_TEST_ALPHA_ID: {"ewma_span": 5, "zscore_entry": 1.0}},
         )
         event_log = InMemoryEventLog()
         event_log.append_batch(_make_quotes())
