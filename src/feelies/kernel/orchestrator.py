@@ -713,7 +713,7 @@ class Orchestrator:
         current_position = self._positions.get(signal.symbol)
         intent = self._intent_translator.translate(signal, current_position, target_qty)
 
-        if intent.intent in (TradingIntent.NO_ACTION, TradingIntent.SCALE_UP):
+        if intent.intent == TradingIntent.NO_ACTION:
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
                 trigger="intent_no_action",
