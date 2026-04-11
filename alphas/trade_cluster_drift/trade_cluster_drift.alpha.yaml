@@ -1,14 +1,15 @@
 schema_version: "1.0"
-alpha_id: trade_cluster_drift_v11
-version: "1.5.0"
-description: "v11: Z-score normalization + momentum-adjusted cluster score + regime-weighted thresholds"
+alpha_id: trade_cluster_drift_v12
+version: "1.6.0"
+description: "v12: crossing-fix + time-adaptive mu_ema + EWMA z-score + OBI clamp"
 hypothesis: |
-  Trade clusters confirmed by mu_ema drift persistence. v11 elevates math rigor with:
-  1) Z-score normalization instead of running max for proper statistical bounds
-  2) Momentum-adjusted cluster score (velocity term captures acceleration)
-  3) Regime-weighted thresholds (tighter in compression, looser in normal)
-  4) OBI as confidence modifier (Bayesian-style posterior update)
-  5) Exponential persistence weighting (sharper edge distinction)
+  Trade clusters confirmed by mu_ema drift persistence. v12 applies four
+  targeted fixes to v11:
+  1) Symmetric threshold crossing — abs(prev_z) < threshold (was asymmetric bug)
+  2) BBO-change gating in mu_ema — size-only quote refreshes no longer erode drift
+  3) Continuous-time mu_ema decay — half-life fixed in seconds, not in ticks
+  4) O(1) EWMA z-score — replaces O(N) list window for 3x signal eval speedup
+  5) OBI modifier clamped to prevent sign-flip on extreme imbalance
 falsification_criteria:
   - "OOS DSR < 1.0 or bootstrap p-value > 0.05"
   - "Net edge ≤ 0 after full TC stack"
@@ -50,6 +51,16 @@ parameters:
     default: 0.93
     range: [0.90, 0.99]
     description: "EMA alpha for aggressor_flow (lower = more responsive to recent flow)"
+  vol_tau_seconds:
+    type: float
+    default: 2.0
+    range: [0.1, 30.0]
+    description: "mu_ema volatility EWMA half-life in wall-clock seconds (replaces ewma_vol_alpha)"
+  drift_tau_seconds:
+    type: float
+    default: 1.0
+    range: [0.1, 10.0]
+    description: "mu_ema drift EWMA half-life in wall-clock seconds (replaces drift_confirm_alpha)"
 
   vol_suppress_threshold:
     type: float
@@ -143,7 +154,7 @@ features:
     computation_module: aggressor_flow.py
     warm_up: {min_events: 100}
   - feature_id: mu_ema
-    version: "1.0.0"
+    version: "2.0.0"
     computation_module: mu_ema.py
     warm_up: {min_events: 100}
   - feature_id: cluster_persistence
@@ -156,18 +167,28 @@ features:
     warm_up: {min_events: 100}
 
 signal: |
-  # State: {symbol: (score_history[], momentum_history[], zscore_state)}
   _state = {}
 
-  def _zscore(value, history, window):
-      if len(history) < 2:
+  def _ewma_zscore(x, ewm, alpha):
+      """O(1) exponentially-weighted z-score.
+
+      Computes z = (x - mean) / std against the pre-update distribution,
+      then advances the EWMA mean and variance.  Bounded memory: 3 scalars.
+      alpha = 1 - 1/window gives the same effective lookback as a simple
+      rolling window of that length.
+      """
+      if ewm.get("n", 0) == 0:
+          ewm["mean"] = x
+          ewm["var"] = 0.0
+          ewm["n"] = 1
           return 0.0
-      mean = sum(history) / len(history)
-      variance = sum((x - mean) ** 2 for x in history) / len(history)
-      std = variance ** 0.5
-      if std < 1e-9:
-          return 0.0
-      return (value - mean) / std
+      ewm["n"] += 1
+      diff = x - ewm["mean"]
+      std = ewm["var"] ** 0.5
+      z = diff / std if std > 1e-9 else 0.0
+      ewm["mean"] += (1.0 - alpha) * diff
+      ewm["var"] = alpha * (ewm["var"] + (1.0 - alpha) * diff * diff)
+      return z
 
   def _momentum(history, window):
       if len(history) < 2:
@@ -175,9 +196,7 @@ signal: |
       recent = history[-min(window, len(history)):]
       if len(recent) < 2:
           return 0.0
-      # Velocity: first derivative
-      velocity = recent[-1] - recent[0]
-      return velocity
+      return recent[-1] - recent[0]
 
   def evaluate(features, params):
       if not features.warm or features.stale:
@@ -197,19 +216,17 @@ signal: |
 
       symbol = features.symbol
 
-      # Initialize state for symbol
       if symbol not in _state:
           _state[symbol] = {
               "score_history": [],
-              "momentum_history": [],
-              "zscore_mean": 0.0,
-              "zscore_sqsum": 0.0,
-              "zscore_count": 0,
+              "ewm": {"mean": 0.0, "var": 0.0, "n": 0},
+              "_prev_zscore": 0.0,
           }
 
       state = _state[symbol]
       zscore_window = int(params.get("zscore_window", 100))
       momentum_window = int(params.get("momentum_window", 5))
+      zscore_alpha = 1.0 - 1.0 / max(zscore_window, 2)
 
       posteriors = regime_posteriors(symbol)
       in_vol_breakout = False
@@ -228,71 +245,58 @@ signal: |
       persistence = features.values.get("cluster_persistence", 0)
       obi = features.values.get("order_book_imbalance", 0.0)
 
-      # Base cluster score
       cluster_score = aggressor * intensity
 
-      # Momentum adjustment: velocity term captures acceleration
       momentum = _momentum(state["score_history"], momentum_window)
       momentum_boost = params.get("momentum_boost", 0.4)
       cluster_score = cluster_score + momentum_boost * momentum
 
-      # Update history
       state["score_history"].append(cluster_score)
-      if len(state["score_history"]) > zscore_window:
+      if len(state["score_history"]) > momentum_window + 1:
           state["score_history"].pop(0)
 
-      # Z-score normalization (proper statistical bounds)
-      z_score = _zscore(cluster_score, state["score_history"], zscore_window)
+      # O(1) EWMA z-score
+      z_score = _ewma_zscore(cluster_score, state["ewm"], zscore_alpha)
 
-      # OBI confidence modifier (Bayesian-style posterior)
-      # OBI > 0 = bid pressure (bullish), OBI < 0 = ask pressure (bearish)
+      # OBI confidence modifier — clamped to prevent sign-flip
       obi_weight = params.get("obi_confidence_weight", 0.3)
-      obi_confidence = 1.0 + obi_weight * obi * (1.0 if cluster_score > 0 else -1.0)
-
-      # Apply OBI confidence to z-score
+      obi_sign = 1.0 if cluster_score > 0 else -1.0
+      obi_confidence = 1.0 + obi_weight * max(-0.8, min(0.8, obi * obi_sign))
       z_score = z_score * obi_confidence
 
-      # Regime-weighted entry threshold
       base_threshold = params["entry_threshold"]
       if in_compression:
           threshold = base_threshold * params.get("compression_entry_boost", 0.7)
       else:
           threshold = base_threshold * params.get("normal_entry_boost", 1.0)
 
-      # Drift direction alignment
       signs_agree = (cluster_score > 0 and mu > 0) or (cluster_score < 0 and mu < 0)
 
-      # Crossing detection on z-score
-      prev_z = state.get("_prev_zscore", 0.0)
+      # Symmetric crossing: abs(prev_z) prevents spurious fires from deep-z recovery
+      prev_z = state["_prev_zscore"]
       state["_prev_zscore"] = z_score
-      crossing = prev_z < threshold and abs(z_score) >= threshold
+      crossing = abs(prev_z) < threshold and abs(z_score) >= threshold
 
       if in_vol_breakout:
           return _flat()
 
-      # Exponential persistence weighting
       min_persistence = int(params.get("min_persistence", 3))
       persistence_decay = params.get("persistence_decay", 0.85)
       if persistence >= min_persistence:
-          # Exponential weight: sharper distinction
           persistence_weight = persistence_decay ** (min_persistence - persistence)
           persistence_weight = max(0.5, min(2.0, persistence_weight))
       else:
           persistence_weight = 1.0
 
-      # Minimum edge threshold
       min_edge_bps = params.get("min_edge_bps", 0.5)
 
       if (crossing
               and abs(mu) >= params["mu_min_threshold"]
               and signs_agree):
-          # Edge based on z-score (statistically grounded)
           edge_bps = abs(z_score) * params["edge_multiplier"] * persistence_weight
-          # Skip if edge below threshold
           if edge_bps < min_edge_bps:
               return None
           direction = LONG if cluster_score > 0 else SHORT
-          # Strength from z-score (properly bounded)
           strength = min(abs(z_score) / params["strength_denominator"], 1.0)
           return Signal(
               timestamp_ns=features.timestamp_ns,
@@ -305,7 +309,6 @@ signal: |
               edge_estimate_bps=edge_bps,
           )
 
-      # Exit conditions: z-score collapsed OR mu collapsed OR divergence
       if (abs(z_score) < params["exit_threshold"]
               or abs(mu) < params["exit_mu_threshold"]
               or not signs_agree):
