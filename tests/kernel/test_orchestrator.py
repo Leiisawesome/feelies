@@ -159,7 +159,7 @@ class _ScaleDownToZeroRiskEngine:
             symbol=order.symbol,
             action=RiskAction.SCALE_DOWN,
             reason="scale to zero test",
-            scaling_factor=0.01,
+            scaling_factor=0.001,
         )
 
 

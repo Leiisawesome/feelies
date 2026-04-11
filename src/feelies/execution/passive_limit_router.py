@@ -106,15 +106,7 @@ class PassiveLimitOrderRouter:
     def submit(self, request: OrderRequest) -> None:
         quote = self._last_quotes.get(request.symbol)
         if quote is None:
-            self._pending_acks.append(OrderAck(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id=request.correlation_id,
-                sequence=request.sequence,
-                order_id=request.order_id,
-                symbol=request.symbol,
-                status=OrderAckStatus.REJECTED,
-                reason="no quote available for symbol",
-            ))
+            self._reject(request, "no quote available for symbol")
             return
 
         if request.order_type == OrderType.MARKET:
@@ -122,15 +114,7 @@ class PassiveLimitOrderRouter:
         elif request.order_type == OrderType.LIMIT:
             self._post_passive(request, quote)
         else:
-            self._pending_acks.append(OrderAck(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id=request.correlation_id,
-                sequence=request.sequence,
-                order_id=request.order_id,
-                symbol=request.symbol,
-                status=OrderAckStatus.REJECTED,
-                reason=f"unsupported order type: {request.order_type}",
-            ))
+            self._reject(request, f"unsupported order type: {request.order_type}")
 
     def poll_acks(self) -> list[OrderAck]:
         acks = list(self._pending_acks)
@@ -243,7 +227,17 @@ class PassiveLimitOrderRouter:
         return "wait"
 
     # ── Ack emission helpers ─────────────────────────────────────
-
+    def _reject(self, request: OrderRequest, reason: str) -> None:
+        """Emit a REJECTED ack for the given order request."""
+        self._pending_acks.append(OrderAck(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=request.correlation_id,
+            sequence=request.sequence,
+            order_id=request.order_id,
+            symbol=request.symbol,
+            status=OrderAckStatus.REJECTED,
+            reason=reason,
+        ))
     def _emit_passive_fill(self, pending: _PendingOrder) -> None:
         """Emit a FILLED ack for a passive limit order."""
         fill_price = pending.limit_price
@@ -259,11 +253,9 @@ class PassiveLimitOrderRouter:
 
         rebate = self._rebate_per_share * pending.request.quantity
         total_fees = max(costs.total_fees - rebate, Decimal("0"))
-
-        notional = fill_price * pending.request.quantity
         cost_bps = (
-            total_fees / notional * Decimal("10000")
-            if notional > 0 else Decimal("0")
+            total_fees / costs.notional * Decimal("10000")
+            if costs.notional > 0 else Decimal("0")
         )
 
         self._pending_acks.append(OrderAck(

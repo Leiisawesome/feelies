@@ -25,6 +25,7 @@ from feelies.core.events import (
     RiskVerdict,
     Side,
     Signal,
+    SignalDirection,
 )
 from feelies.portfolio.position_store import PositionStore
 from feelies.services.regime_engine import RegimeEngine
@@ -77,7 +78,11 @@ class BasicRiskEngine:
         adjusted_max = int(self._config.max_position_per_symbol * regime_scale)
 
         current = positions.get(signal.symbol)
-        if abs(current.quantity) >= adjusted_max:
+        signal_reduces = (
+            (current.quantity > 0 and signal.direction in (SignalDirection.SHORT, SignalDirection.FLAT))
+            or (current.quantity < 0 and signal.direction in (SignalDirection.LONG, SignalDirection.FLAT))
+        )
+        if abs(current.quantity) >= adjusted_max and not signal_reduces:
             return RiskVerdict(
                 timestamp_ns=signal.timestamp_ns,
                 correlation_id=signal.correlation_id,
@@ -87,45 +92,12 @@ class BasicRiskEngine:
                 reason=f"position limit reached: |{current.quantity}| >= {adjusted_max}",
             )
 
-        exposure = positions.total_exposure()
-        max_exposure = self._config.account_equity * Decimal(
-            str(self._config.max_gross_exposure_pct)
-        ) / Decimal("100")
-        if exposure >= max_exposure:
-            return RiskVerdict(
-                timestamp_ns=signal.timestamp_ns,
-                correlation_id=signal.correlation_id,
-                sequence=signal.sequence,
-                symbol=signal.symbol,
-                action=RiskAction.REJECT,
-                reason=f"gross exposure limit: {exposure} >= {max_exposure}",
-            )
-
-        if self._is_drawdown_breached(positions):
-            return RiskVerdict(
-                timestamp_ns=signal.timestamp_ns,
-                correlation_id=signal.correlation_id,
-                sequence=signal.sequence,
-                symbol=signal.symbol,
-                action=RiskAction.FORCE_FLATTEN,
-                reason="drawdown limit breached",
-            )
-
-        threshold = Decimal(str(self._config.scale_down_threshold_pct))
-        if exposure >= max_exposure * threshold:
-            scaling = float(
-                (max_exposure - exposure) / (max_exposure * (1 - threshold))
-            )
-            scaling = max(0.1, min(1.0, scaling))
-            return RiskVerdict(
-                timestamp_ns=signal.timestamp_ns,
-                correlation_id=signal.correlation_id,
-                sequence=signal.sequence,
-                symbol=signal.symbol,
-                action=RiskAction.SCALE_DOWN,
-                reason="approaching exposure limit",
-                scaling_factor=scaling,
-            )
+        shared = self._check_exposure_and_drawdown(
+            signal.timestamp_ns, signal.correlation_id, signal.sequence, signal.symbol,
+            positions, scale_down_reason="approaching exposure limit",
+        )
+        if shared is not None:
+            return shared
 
         return RiskVerdict(
             timestamp_ns=signal.timestamp_ns,
@@ -160,45 +132,12 @@ class BasicRiskEngine:
                 ),
             )
 
-        exposure = positions.total_exposure()
-        max_exposure = self._config.account_equity * Decimal(
-            str(self._config.max_gross_exposure_pct)
-        ) / Decimal("100")
-        if exposure >= max_exposure:
-            return RiskVerdict(
-                timestamp_ns=order.timestamp_ns,
-                correlation_id=order.correlation_id,
-                sequence=order.sequence,
-                symbol=order.symbol,
-                action=RiskAction.REJECT,
-                reason=f"gross exposure limit: {exposure} >= {max_exposure}",
-            )
-
-        if self._is_drawdown_breached(positions):
-            return RiskVerdict(
-                timestamp_ns=order.timestamp_ns,
-                correlation_id=order.correlation_id,
-                sequence=order.sequence,
-                symbol=order.symbol,
-                action=RiskAction.FORCE_FLATTEN,
-                reason="drawdown limit breached",
-            )
-
-        threshold = Decimal(str(self._config.scale_down_threshold_pct))
-        if exposure >= max_exposure * threshold:
-            scaling = float(
-                (max_exposure - exposure) / (max_exposure * (1 - threshold))
-            )
-            scaling = max(0.1, min(1.0, scaling))
-            return RiskVerdict(
-                timestamp_ns=order.timestamp_ns,
-                correlation_id=order.correlation_id,
-                sequence=order.sequence,
-                symbol=order.symbol,
-                action=RiskAction.SCALE_DOWN,
-                reason="approaching exposure limit at order gate",
-                scaling_factor=scaling,
-            )
+        shared = self._check_exposure_and_drawdown(
+            order.timestamp_ns, order.correlation_id, order.sequence, order.symbol,
+            positions, scale_down_reason="approaching exposure limit at order gate",
+        )
+        if shared is not None:
+            return shared
 
         return RiskVerdict(
             timestamp_ns=order.timestamp_ns,
@@ -208,6 +147,72 @@ class BasicRiskEngine:
             action=RiskAction.ALLOW,
             reason="order within limits",
         )
+
+    def _check_exposure_and_drawdown(
+        self,
+        timestamp_ns: int,
+        correlation_id: str,
+        sequence: int,
+        symbol: str,
+        positions: PositionStore,
+        *,
+        scale_down_reason: str,
+    ) -> RiskVerdict | None:
+        """Check exposure cap, drawdown guard, and scale-down threshold.
+
+        Returns a verdict (REJECT, FORCE_FLATTEN, or SCALE_DOWN) if any
+        shared limit is breached, or None if all checks pass.
+        """
+        exposure = positions.total_exposure()
+        max_exposure = self._config.account_equity * Decimal(
+            str(self._config.max_gross_exposure_pct)
+        ) / Decimal("100")
+        if exposure >= max_exposure:
+            return RiskVerdict(
+                timestamp_ns=timestamp_ns,
+                correlation_id=correlation_id,
+                sequence=sequence,
+                symbol=symbol,
+                action=RiskAction.REJECT,
+                reason=f"gross exposure limit: {exposure} >= {max_exposure}",
+            )
+
+        if self._is_drawdown_breached(positions):
+            return RiskVerdict(
+                timestamp_ns=timestamp_ns,
+                correlation_id=correlation_id,
+                sequence=sequence,
+                symbol=symbol,
+                action=RiskAction.FORCE_FLATTEN,
+                reason="drawdown limit breached",
+            )
+
+        threshold = Decimal(str(self._config.scale_down_threshold_pct))
+        if threshold >= Decimal("1"):
+            return RiskVerdict(
+                timestamp_ns=timestamp_ns,
+                correlation_id=correlation_id,
+                sequence=sequence,
+                symbol=symbol,
+                action=RiskAction.REJECT,
+                reason="scale_down_threshold_pct >= 1.0 is invalid (would divide by zero)",
+            )
+        if exposure >= max_exposure * threshold:
+            scaling = float(
+                (max_exposure - exposure) / (max_exposure * (1 - threshold))
+            )
+            scaling = max(0.1, min(1.0, scaling))
+            return RiskVerdict(
+                timestamp_ns=timestamp_ns,
+                correlation_id=correlation_id,
+                sequence=sequence,
+                symbol=symbol,
+                action=RiskAction.SCALE_DOWN,
+                reason=scale_down_reason,
+                scaling_factor=scaling,
+            )
+
+        return None
 
     def _regime_scaling(self, symbol: str) -> float:
         """Expected value over posterior distribution: sum(p_i * scale_i).

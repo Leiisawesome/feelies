@@ -13,10 +13,13 @@ sizing and drawdown gating.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import statistics
 from collections.abc import Sequence
 from typing import Protocol
+
+logger = logging.getLogger(__name__)
 
 from feelies.core.events import NBBOQuote
 
@@ -259,6 +262,11 @@ class HMM3StateFractional:
         updated = self._bayes_update(predicted, likelihoods)
 
         if any(math.isnan(v) or math.isinf(v) for v in updated):
+            logger.warning(
+                "regime_engine: NaN/inf in Bayesian update for symbol=%s; "
+                "posteriors=%s likelihoods=%s — resetting to uniform prior",
+                symbol, updated, likelihoods,
+            )
             updated = [1.0 / self._n_states] * self._n_states
 
         self._posteriors[symbol] = updated

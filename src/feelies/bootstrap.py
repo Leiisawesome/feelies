@@ -25,6 +25,7 @@ from feelies.alpha.risk_wrapper import AlphaBudgetRiskWrapper
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock, SimulatedClock, WallClock
 from feelies.core.events import NBBOQuote
+from feelies.core.errors import ConfigurationError
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_backend import (
@@ -210,8 +211,10 @@ def _create_regime_engine(engine_name: str | None) -> RegimeEngine | None:
         logger.info("Created shared RegimeEngine: %s", engine_name)
         return engine
     except KeyError:
-        logger.warning("Unknown regime engine '%s', proceeding without", engine_name)
-        return None
+        raise ConfigurationError(
+            f"Unknown regime engine '{engine_name}': not found in registry. "
+            "Check the 'regime_engine' field in your platform configuration."
+        ) from None
 
 
 def _load_alphas(

@@ -10,6 +10,8 @@ import hashlib
 
 from feelies.storage.feature_snapshot import FeatureSnapshotMeta
 
+_CHECKSUM_MIN_LEN = 8  # minimum hex chars stored checksum must supply (32-bit coverage)
+
 
 class InMemoryFeatureSnapshotStore:
     """In-memory FeatureSnapshotStore implementation."""
@@ -44,9 +46,17 @@ class InMemoryFeatureSnapshotStore:
 
     @staticmethod
     def _checksums_match(stored: str, computed: str) -> bool:
-        """Compare checksums allowing either full or prefix form."""
-        min_len = min(len(stored), len(computed))
-        return stored[:min_len] == computed[:min_len]
+        """Compare checksums: stored must be at least _CHECKSUM_MIN_LEN hex chars.
+
+        A stored value shorter than _CHECKSUM_MIN_LEN has too few collision-
+        resistance bits to be meaningful and indicates a data/config bug.
+        """
+        if len(stored) < _CHECKSUM_MIN_LEN:
+            raise ValueError(
+                f"Stored checksum too short ({len(stored)} chars); "
+                f"minimum is {_CHECKSUM_MIN_LEN} hex characters"
+            )
+        return computed.startswith(stored)
 
     def list_snapshots(self, symbol: str) -> list[FeatureSnapshotMeta]:
         result: list[FeatureSnapshotMeta] = []

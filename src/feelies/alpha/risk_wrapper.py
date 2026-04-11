@@ -87,14 +87,8 @@ class AlphaBudgetRiskWrapper:
             )
 
         # 2. Per-alpha exposure limit
-        alpha_equity = self._account_equity * Decimal(
-            str(budget.capital_allocation_pct),
-        ) / Decimal("100")
-        alpha_max_exposure = alpha_equity * Decimal(
-            str(budget.max_gross_exposure_pct),
-        ) / Decimal("100")
-        alpha_exposure = self._strategy_positions.get_strategy_exposure(
-            signal.strategy_id,
+        alpha_equity, alpha_max_exposure, alpha_exposure = (
+            self._alpha_equity_and_exposure(signal.strategy_id, budget)
         )
         if alpha_exposure >= alpha_max_exposure:
             return RiskVerdict(
@@ -203,16 +197,8 @@ class AlphaBudgetRiskWrapper:
                     )
 
                 # 2. Per-alpha exposure limit
-                alpha_equity = self._account_equity * Decimal(
-                    str(budget.capital_allocation_pct),
-                ) / Decimal("100")
-                alpha_max_exposure = alpha_equity * Decimal(
-                    str(budget.max_gross_exposure_pct),
-                ) / Decimal("100")
-                alpha_exposure = (
-                    self._strategy_positions.get_strategy_exposure(
-                        strategy_id,
-                    )
+                _, alpha_max_exposure, alpha_exposure = (
+                    self._alpha_equity_and_exposure(strategy_id, budget)
                 )
                 if alpha_exposure >= alpha_max_exposure:
                     return RiskVerdict(
@@ -228,6 +214,25 @@ class AlphaBudgetRiskWrapper:
                     )
 
         return self._inner.check_order(order, positions)
+
+    def _alpha_equity_and_exposure(
+        self,
+        strategy_id: str,
+        budget: object,
+    ) -> tuple[Decimal, Decimal, Decimal]:
+        """Compute (alpha_equity, alpha_max_exposure, alpha_exposure).
+
+        Centralises the repeated budget arithmetic shared by check_signal,
+        check_order, and _check_alpha_drawdown.
+        """
+        alpha_equity = self._account_equity * Decimal(
+            str(budget.capital_allocation_pct),  # type: ignore[union-attr]
+        ) / Decimal("100")
+        alpha_max_exposure = alpha_equity * Decimal(
+            str(budget.max_gross_exposure_pct),  # type: ignore[union-attr]
+        ) / Decimal("100")
+        alpha_exposure = self._strategy_positions.get_strategy_exposure(strategy_id)
+        return alpha_equity, alpha_max_exposure, alpha_exposure
 
     # ── Persistence ──────────────────────────────────────────
 

@@ -575,7 +575,11 @@ class Orchestrator:
                 correlation_id=cid,
             )
         except Exception:
-            pass
+            logger.critical(
+                "orchestrator: micro SM reset failed during tick-failure recovery "
+                "— orchestrator state is unknown",
+                exc_info=True,
+            )
 
         try:
             if (
@@ -588,7 +592,11 @@ class Orchestrator:
                     correlation_id=cid,
                 )
         except Exception:
-            pass
+            logger.critical(
+                "orchestrator: macro SM DEGRADED transition failed during tick-failure recovery "
+                "— orchestrator state is unknown",
+                exc_info=True,
+            )
 
     def _process_tick_inner(self, quote: NBBOQuote) -> None:
         """Core tick-processing logic.  Separated from _process_tick
@@ -1896,6 +1904,12 @@ class Orchestrator:
             try:
                 self._feature_engine.restore(symbol, state)
             except Exception:
+                logger.warning(
+                    "orchestrator: feature snapshot restore failed for symbol=%s "
+                    "— cold-starting feature engine for this symbol",
+                    symbol,
+                    exc_info=True,
+                )
                 self._feature_engine.reset(symbol)
                 if self._regime_engine is not None:
                     self._regime_engine.reset(symbol)

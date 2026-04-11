@@ -108,9 +108,7 @@ class StrategyPositionStore:
     def get_strategy_exposure(self, strategy_id: str) -> Decimal:
         """Gross notional exposure for a single strategy across all symbols."""
         store = self._stores.get(strategy_id)
-        if store is None:
-            return Decimal("0")
-        return store.total_exposure()
+        return store.total_exposure() if store is not None else Decimal("0")
 
     def get_strategy_realized_pnl(self, strategy_id: str) -> Decimal:
         """Total realized PnL for a single strategy across all symbols.
@@ -120,11 +118,12 @@ class StrategyPositionStore:
         positions.
         """
         store = self._stores.get(strategy_id)
-        if store is None:
-            return Decimal("0")
-        return sum(
-            (pos.realized_pnl for pos in store.all_positions().values()),
-            Decimal("0"),
+        return (
+            sum(
+                (pos.realized_pnl for pos in store.all_positions().values()),
+                Decimal("0"),
+            )
+            if store is not None else Decimal("0")
         )
 
     def get_strategy_cumulative_fees(self, strategy_id: str) -> Decimal:
@@ -134,11 +133,12 @@ class StrategyPositionStore:
         enforcement (net equity = budget + pnl - fees).
         """
         store = self._stores.get(strategy_id)
-        if store is None:
-            return Decimal("0")
-        return sum(
-            (pos.cumulative_fees for pos in store.all_positions().values()),
-            Decimal("0"),
+        return (
+            sum(
+                (pos.cumulative_fees for pos in store.all_positions().values()),
+                Decimal("0"),
+            )
+            if store is not None else Decimal("0")
         )
 
     def strategy_ids(self) -> frozenset[str]:

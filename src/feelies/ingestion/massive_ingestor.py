@@ -220,13 +220,16 @@ class MassiveHistoricalIngestor:
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             quotes_future = pool.submit(
-                _download_quotes_raw, client, symbol, start_date, end_date, _q_on_page,
+                _download_raw, client, symbol, start_date, end_date,
+                client.list_quotes, "quotes", _q_on_page,
             )
             trades_future = pool.submit(
-                _download_trades_raw, client, symbol, start_date, end_date, _t_on_page,
+                _download_raw, client, symbol, start_date, end_date,
+                client.list_trades, "trades", _t_on_page,
             )
-            raw_quotes, q_pages = quotes_future.result()
-            raw_trades, t_pages = trades_future.result()
+            _DOWNLOAD_TIMEOUT_S = 300
+            raw_quotes, q_pages = quotes_future.result(timeout=_DOWNLOAD_TIMEOUT_S)
+            raw_trades, t_pages = trades_future.result(timeout=_DOWNLOAD_TIMEOUT_S)
 
         total_pages = q_pages + t_pages
         logger.info(
@@ -261,19 +264,25 @@ class MassiveHistoricalIngestor:
         return len(all_events), total_pages
 
 
-def _download_quotes_raw(
+def _download_raw(
     client: RESTClient,
     symbol: str,
     start_date: str,
     end_date: str,
+    list_fn: Callable[..., Any],
+    data_label: str,
     _on_page: Callable[[int, int], None] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
-    """Paginate through list_quotes(), collecting raw dicts. Pure download."""
+    """Paginate through a client list method, collecting raw dicts.
+
+    ``list_fn`` is either ``client.list_quotes`` or ``client.list_trades``.
+    ``data_label`` is used only for log messages.
+    """
     raw_dicts: list[dict[str, Any]] = []
     pages = 0
 
     try:
-        quotes_iter = client.list_quotes(
+        records_iter = list_fn(
             symbol,
             timestamp_gte=f"{start_date}T00:00:00Z",
             timestamp_lte=f"{end_date}T23:59:59Z",
@@ -283,63 +292,12 @@ def _download_quotes_raw(
         )
     except Exception:
         logger.exception(
-            "massive_ingestor: failed to start quotes iteration for %s", symbol,
+            "massive_ingestor: failed to start %s iteration for %s", data_label, symbol,
         )
         return [], 0
 
     buf: list[Any] = []
-    for obj in quotes_iter:
-        buf.append(obj)
-        if len(buf) >= _CHUNK_SIZE:
-            for record in buf:
-                d = _model_to_dict(record, symbol)
-                if d:
-                    raw_dicts.append(d)
-            pages += 1
-            if _on_page is not None:
-                _on_page(pages, len(raw_dicts))
-            buf = []
-
-    if buf:
-        for record in buf:
-            d = _model_to_dict(record, symbol)
-            if d:
-                raw_dicts.append(d)
-        pages += 1
-        if _on_page is not None:
-            _on_page(pages, len(raw_dicts))
-
-    return raw_dicts, pages
-
-
-def _download_trades_raw(
-    client: RESTClient,
-    symbol: str,
-    start_date: str,
-    end_date: str,
-    _on_page: Callable[[int, int], None] | None = None,
-) -> tuple[list[dict[str, Any]], int]:
-    """Paginate through list_trades(), collecting raw dicts. Pure download."""
-    raw_dicts: list[dict[str, Any]] = []
-    pages = 0
-
-    try:
-        trades_iter = client.list_trades(
-            symbol,
-            timestamp_gte=f"{start_date}T00:00:00Z",
-            timestamp_lte=f"{end_date}T23:59:59Z",
-            order="asc",
-            sort="timestamp",
-            limit=50000,
-        )
-    except Exception:
-        logger.exception(
-            "massive_ingestor: failed to start trades iteration for %s", symbol,
-        )
-        return [], 0
-
-    buf: list[Any] = []
-    for obj in trades_iter:
+    for obj in records_iter:
         buf.append(obj)
         if len(buf) >= _CHUNK_SIZE:
             for record in buf:

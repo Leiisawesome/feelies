@@ -105,11 +105,11 @@ class TestBuildPlatform:
         with pytest.raises(ConfigurationError, match="symbols must be non-empty"):
             build_platform(config)
 
-    def test_unknown_regime_engine_treated_as_none(self, tmp_path: Path) -> None:
+    def test_unknown_regime_engine_raises_configuration_error(self, tmp_path: Path) -> None:
         _write_alpha_spec(tmp_path)
         config = _make_config(tmp_path, regime_engine="nonexistent_engine")
-        orchestrator, _ = build_platform(config)
-        assert orchestrator._regime_engine is None
+        with pytest.raises(ConfigurationError, match="Unknown regime engine 'nonexistent_engine'"):
+            build_platform(config)
 
     def test_metric_collector_is_real(self, tmp_path: Path) -> None:
         _write_alpha_spec(tmp_path)

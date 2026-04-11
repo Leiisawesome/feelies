@@ -29,12 +29,13 @@ class InMemoryTradeJournal:
         start_ns: int | None = None,
         end_ns: int | None = None,
     ) -> Iterator[TradeRecord]:
-        for rec in sorted(self._records, key=lambda r: r.fill_timestamp_ns or 0):
+        _ts = lambda r: r.fill_timestamp_ns if r.fill_timestamp_ns is not None else float("inf")
+        for rec in sorted(self._records, key=_ts):
             if symbol is not None and rec.symbol != symbol:
                 continue
             if strategy_id is not None and rec.strategy_id != strategy_id:
                 continue
-            ts = rec.fill_timestamp_ns or 0
+            ts = _ts(rec)
             if start_ns is not None and ts < start_ns:
                 continue
             if end_ns is not None and ts > end_ns:

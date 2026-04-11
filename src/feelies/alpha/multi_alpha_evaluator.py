@@ -215,6 +215,14 @@ class MultiAlphaEvaluator:
                     intent.target_quantity * verdict.scaling_factor,
                 )
                 if scaled_qty <= 0:
+                    logger.warning(
+                        "multi_alpha: alpha '%s' intent for %s scaled to zero "
+                        "(target_qty=%d, scaling_factor=%.4f) — intent dropped",
+                        manifest.alpha_id,
+                        signal.symbol,
+                        intent.target_quantity,
+                        verdict.scaling_factor,
+                    )
                     continue
                 intent = replace(intent, target_quantity=scaled_qty)
 

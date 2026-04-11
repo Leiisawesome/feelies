@@ -152,4 +152,7 @@ class ZScoreComputation:
 
         state["count"] = count + 1
         std = math.sqrt(max(state["var"], 1e-24))
-        return diff / std
+        # Clamp z-score: near-zero variance early in the session (few ticks)
+        # can produce arbitrarily large values that poison downstream signals.
+        _MAX_ZSCORE = 10.0
+        return max(-_MAX_ZSCORE, min(_MAX_ZSCORE, diff / std))

@@ -36,6 +36,7 @@ class CostBreakdown:
     commission: Decimal
     total_fees: Decimal
     cost_bps: Decimal
+    notional: Decimal
 
 
 @dataclass(frozen=True)
@@ -102,6 +103,7 @@ class DefaultCostModel:
             commission=commission.quantize(Decimal("0.01")),
             total_fees=total_fees.quantize(Decimal("0.01")),
             cost_bps=cost_bps.quantize(Decimal("0.01")),
+            notional=notional,
         )
 
 
@@ -117,9 +119,11 @@ class ZeroCostModel:
         fill_price: Decimal,
         half_spread: Decimal,
     ) -> CostBreakdown:
+        notional = fill_price * quantity
         return CostBreakdown(
             spread_cost=Decimal("0"),
             commission=Decimal("0"),
             total_fees=Decimal("0"),
             cost_bps=Decimal("0"),
+            notional=notional,
         )

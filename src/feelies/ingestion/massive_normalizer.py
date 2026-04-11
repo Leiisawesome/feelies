@@ -88,9 +88,9 @@ class MassiveNormalizer:
             return []
 
         if source == _WS_SOURCE:
-            return self._parse_ws(data, received_ns)
+            return self._parse_ws(data)
         if source == _REST_SOURCE:
-            return self._parse_rest(data, received_ns)
+            return self._parse_rest(data)
 
         logger.warning("massive_normalizer: unknown source %r", source)
         return []
@@ -109,7 +109,6 @@ class MassiveNormalizer:
     def _parse_ws(
         self,
         data: object,
-        received_ns: int,
     ) -> list[NBBOQuote | Trade]:
         messages = data if isinstance(data, list) else [data]
         results: list[NBBOQuote | Trade] = []
@@ -119,17 +118,17 @@ class MassiveNormalizer:
                 continue
             ev = msg.get("ev")
             if ev == "Q":
-                event = self._ws_quote(msg, received_ns)
+                event = self._ws_quote(msg)
                 if event is not None:
                     results.append(event)
             elif ev == "T":
-                event = self._ws_trade(msg, received_ns)
+                event = self._ws_trade(msg)
                 if event is not None:
                     results.append(event)
 
         return results
 
-    def _ws_quote(self, msg: dict, received_ns: int) -> NBBOQuote | None:  # type: ignore[type-arg]
+    def _ws_quote(self, msg: dict) -> NBBOQuote | None:  # type: ignore[type-arg]
         try:
             symbol: str = msg["sym"]
             exchange_ts_ns = int(msg["t"]) * _MS_TO_NS
@@ -176,7 +175,7 @@ class MassiveNormalizer:
             self._mark_corrupted(msg.get("sym", "UNKNOWN"))
             return None
 
-    def _ws_trade(self, msg: dict, received_ns: int) -> Trade | None:  # type: ignore[type-arg]
+    def _ws_trade(self, msg: dict) -> Trade | None:  # type: ignore[type-arg]
         try:
             symbol: str = msg["sym"]
             exchange_ts_ns = int(msg["t"]) * _MS_TO_NS
@@ -223,7 +222,6 @@ class MassiveNormalizer:
     def _parse_rest(
         self,
         data: object,
-        received_ns: int,
     ) -> list[NBBOQuote | Trade]:
         if not isinstance(data, dict):
             return []
@@ -231,10 +229,10 @@ class MassiveNormalizer:
         # REST records are passed individually by the ingestor.
         # Detect type by field presence.
         if "bid_price" in data or "ask_price" in data:
-            event = self._rest_quote(data, received_ns)
+            event = self._rest_quote(data)
             return [event] if event is not None else []
         if "price" in data:
-            event = self._rest_trade(data, received_ns)
+            event = self._rest_trade(data)
             return [event] if event is not None else []
 
         logger.warning(
@@ -243,7 +241,7 @@ class MassiveNormalizer:
         )
         return []
 
-    def _rest_quote(self, rec: dict, received_ns: int) -> NBBOQuote | None:  # type: ignore[type-arg]
+    def _rest_quote(self, rec: dict) -> NBBOQuote | None:  # type: ignore[type-arg]
         try:
             symbol: str = rec["ticker"]
             sip_ts = int(rec["sip_timestamp"])
@@ -293,7 +291,7 @@ class MassiveNormalizer:
             self._mark_corrupted(rec.get("ticker", "UNKNOWN"))
             return None
 
-    def _rest_trade(self, rec: dict, received_ns: int) -> Trade | None:  # type: ignore[type-arg]
+    def _rest_trade(self, rec: dict) -> Trade | None:  # type: ignore[type-arg]
         try:
             symbol: str = rec["ticker"]
             sip_ts = int(rec["sip_timestamp"])
@@ -357,7 +355,11 @@ class MassiveNormalizer:
         prev = self._last_seen.get((symbol, feed_type))
         if prev is None:
             return False
-        if prev == (seq_num, exchange_ts_ns):
+        # Match on seq_num alone: REST retransmissions reuse the same
+        # sequence number but may carry a different exchange timestamp,
+        # so including exchange_ts_ns in the key would let retransmissions
+        # pass dedup as new events.
+        if prev[0] == seq_num:
             self._duplicates_filtered += 1
             return True
         return False
