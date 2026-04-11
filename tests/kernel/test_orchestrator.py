@@ -134,6 +134,35 @@ class _StubRiskEngine:
         )
 
 
+class _ScaleDownToZeroRiskEngine:
+    """Risk engine: ALLOW at signal, SCALE_DOWN with near-zero factor at order.
+
+    Used to verify that scale-down to zero suppresses the order
+    rather than forcing a min-lot of 1 (Finding 3).
+    """
+
+    def check_signal(self, signal: Signal, positions: PositionStore) -> RiskVerdict:
+        return RiskVerdict(
+            timestamp_ns=signal.timestamp_ns,
+            correlation_id=signal.correlation_id,
+            sequence=signal.sequence,
+            symbol=signal.symbol,
+            action=RiskAction.ALLOW,
+            reason="test",
+        )
+
+    def check_order(self, order: OrderRequest, positions: PositionStore) -> RiskVerdict:
+        return RiskVerdict(
+            timestamp_ns=order.timestamp_ns,
+            correlation_id=order.correlation_id,
+            sequence=order.sequence,
+            symbol=order.symbol,
+            action=RiskAction.SCALE_DOWN,
+            reason="scale to zero test",
+            scaling_factor=0.01,
+        )
+
+
 class _MinimalConfig:
     """Minimal Configuration implementation for testing."""
 
@@ -582,3 +611,46 @@ class TestOrchestratorMultipleTicks:
         orch._process_tick(_make_quote(ts=2000, seq=2))
         assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
         assert orch.macro_state == MacroState.BACKTEST_MODE
+
+
+# ── Tests: Scale-down to zero suppression (Finding 3) ────────────────
+
+
+class TestScaleDownToZeroSuppression:
+    """When SCALE_DOWN yields quantity 0, the order must be suppressed.
+
+    Before the fix, max(1, round(...)) forced a min-lot of 1 share,
+    violating Inv-11 (fail-safe: safety controls only tighten).
+    """
+
+    def test_m6_scale_down_to_zero_suppresses_order(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        quote = _make_quote()
+        signal = _make_signal(quote)
+
+        position_store = MemoryPositionStore()
+        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router.on_quote(quote)
+
+        orch = Orchestrator(
+            clock=clock,
+            bus=EventBus(),
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            feature_engine=_StubFeatureEngine(),
+            signal_engine=_StubSignalEngine(signal=signal),
+            risk_engine=_ScaleDownToZeroRiskEngine(),
+            position_store=position_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+
+        _boot_to_backtest(orch)
+        orch._process_tick(quote)
+
+        assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
+        assert orch.macro_state == MacroState.BACKTEST_MODE
+        assert position_store.get("AAPL").quantity == 0

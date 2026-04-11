@@ -56,12 +56,15 @@ class StrategyPositionStore:
     def get_aggregate(self, symbol: str) -> Position:
         """Net position across all strategies for a symbol.
 
-        ``avg_entry_price`` is a position-size-weighted average across
-        strategies, not a true cost basis.  For multi-strategy
-        reconciliation, use per-strategy positions via ``get()``.
+        ``avg_entry_price`` is computed as signed-notional / net-quantity,
+        giving the break-even price for the net position.  When strategies
+        have mixed directions, this may be lower (or even negative) relative
+        to any individual fill price — that is correct and reflects the
+        offsetting economics.  For multi-strategy cost-basis analysis, use
+        per-strategy positions via ``get()``.
         """
         total_qty = 0
-        total_cost = Decimal("0")
+        total_signed_cost = Decimal("0")
         total_realized = Decimal("0")
         total_unrealized = Decimal("0")
         total_fees = Decimal("0")
@@ -73,9 +76,11 @@ class StrategyPositionStore:
             total_fees += pos.cumulative_fees
             if pos.quantity != 0:
                 total_qty += pos.quantity
-                total_cost += pos.avg_entry_price * abs(pos.quantity)
+                total_signed_cost += pos.avg_entry_price * pos.quantity
 
-        avg_price = total_cost / abs(total_qty) if total_qty != 0 else Decimal("0")
+        avg_price = (
+            total_signed_cost / total_qty if total_qty != 0 else Decimal("0")
+        )
 
         return Position(
             symbol=symbol,

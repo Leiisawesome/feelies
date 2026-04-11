@@ -211,10 +211,11 @@ class MultiAlphaEvaluator:
                 continue
 
             if verdict.action == RiskAction.SCALE_DOWN:
-                scaled_qty = max(
-                    1,
-                    round(intent.target_quantity * verdict.scaling_factor),
+                scaled_qty = round(
+                    intent.target_quantity * verdict.scaling_factor,
                 )
+                if scaled_qty <= 0:
+                    continue
                 intent = replace(intent, target_quantity=scaled_qty)
 
             # ── All gates passed — consume cooldown timer (v2.3) ──

@@ -786,6 +786,14 @@ class Orchestrator:
             correlation_id=cid,
         )
         order = self._build_order_from_intent(intent, verdict, cid, quote)
+        if order is None:
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="risk_scale_down_to_zero",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
 
         # ── M6: Pre-submission risk check on concrete order ─────
         order_verdict = self._risk_engine.check_order(order, self._positions)
@@ -817,7 +825,15 @@ class Orchestrator:
             return
 
         if order_verdict.action == RiskAction.SCALE_DOWN:
-            scaled_qty = max(1, round(order.quantity * order_verdict.scaling_factor))
+            scaled_qty = round(order.quantity * order_verdict.scaling_factor)
+            if scaled_qty <= 0:
+                self._micro.transition(
+                    MicroState.LOG_AND_METRICS,
+                    trigger="check_order_scale_down_to_zero",
+                    correlation_id=cid,
+                )
+                self._finalize_tick(t_wall_start, cid)
+                return
             if scaled_qty != order.quantity:
                 order = replace(order, quantity=scaled_qty)
 
@@ -1007,10 +1023,11 @@ class Orchestrator:
                 continue
 
             if order_verdict.action == RiskAction.SCALE_DOWN:
-                scaled_qty = max(
-                    1,
-                    round(order.quantity * order_verdict.scaling_factor),
+                scaled_qty = round(
+                    order.quantity * order_verdict.scaling_factor,
                 )
+                if scaled_qty <= 0:
+                    continue
                 if scaled_qty != order.quantity:
                     order = replace(order, quantity=scaled_qty)
 
@@ -1466,7 +1483,7 @@ class Orchestrator:
         verdict: RiskVerdict,
         correlation_id: str,
         quote: NBBOQuote | None = None,
-    ) -> OrderRequest:
+    ) -> OrderRequest | None:
         """Construct an OrderRequest from an OrderIntent.
 
         order_id is derived from correlation_id + sequence via SHA-256
@@ -1488,7 +1505,9 @@ class Orchestrator:
             f"{correlation_id}:{seq}".encode()
         ).hexdigest()[:16]
 
-        quantity = max(1, round(intent.target_quantity * verdict.scaling_factor))
+        quantity = round(intent.target_quantity * verdict.scaling_factor)
+        if quantity <= 0:
+            return None
 
         order_type = OrderType.MARKET
         limit_price: Decimal | None = None

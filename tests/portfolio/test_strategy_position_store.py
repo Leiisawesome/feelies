@@ -61,6 +61,58 @@ class TestGetAggregate:
         agg = store.get_aggregate("AAPL")
         assert agg.avg_entry_price == Decimal("15")
 
+    def test_mixed_direction_avg_price_not_inflated(
+        self, store: StrategyPositionStore,
+    ) -> None:
+        """Long + short across strategies must not inflate avg_entry_price.
+
+        Before the fix, +100@10 / -50@20 produced avg=40 (impossible).
+        Signed-notional / net-qty gives avg=0: the short's proceeds
+        fully offset the long's cost for the net 50 shares.
+        """
+        store.update("long_alpha", "AAPL", 100, Decimal("10"))
+        store.update("short_alpha", "AAPL", -50, Decimal("20"))
+
+        agg = store.get_aggregate("AAPL")
+        assert agg.quantity == 50
+        expected = (Decimal("10") * 100 + Decimal("20") * (-50)) / 50
+        assert agg.avg_entry_price == expected  # Decimal("0")
+
+    def test_near_full_offset_avg_price(
+        self, store: StrategyPositionStore,
+    ) -> None:
+        """Near-complete offset: net 1 share should not show inflated price."""
+        store.update("a", "AAPL", 100, Decimal("10"))
+        store.update("b", "AAPL", -99, Decimal("20"))
+
+        agg = store.get_aggregate("AAPL")
+        assert agg.quantity == 1
+        expected = (Decimal("10") * 100 + Decimal("20") * (-99)) / 1
+        assert agg.avg_entry_price == expected  # Decimal("-980")
+
+    def test_full_offset_avg_price_zero(
+        self, store: StrategyPositionStore,
+    ) -> None:
+        """Fully offsetting positions yield zero avg_entry_price."""
+        store.update("a", "AAPL", 100, Decimal("10"))
+        store.update("b", "AAPL", -100, Decimal("20"))
+
+        agg = store.get_aggregate("AAPL")
+        assert agg.quantity == 0
+        assert agg.avg_entry_price == Decimal("0")
+
+    def test_same_direction_unaffected(
+        self, store: StrategyPositionStore,
+    ) -> None:
+        """Same-direction aggregation still works correctly after the fix."""
+        store.update("a", "AAPL", 100, Decimal("10"))
+        store.update("b", "AAPL", 200, Decimal("25"))
+
+        agg = store.get_aggregate("AAPL")
+        assert agg.quantity == 300
+        expected = (Decimal("10") * 100 + Decimal("25") * 200) / 300
+        assert agg.avg_entry_price == expected  # Decimal("20")
+
 
 class TestTotalExposure:
     def test_aggregates_across_strategies(self, store: StrategyPositionStore) -> None:

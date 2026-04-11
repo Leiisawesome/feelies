@@ -26,6 +26,7 @@ from feelies.core.events import (
     OrderRequest,
     RiskAction,
     RiskVerdict,
+    Side,
     Signal,
 )
 from feelies.portfolio.position_store import PositionStore
@@ -166,6 +167,66 @@ class AlphaBudgetRiskWrapper:
         order: OrderRequest,
         positions: PositionStore,
     ) -> RiskVerdict:
+        strategy_id = order.strategy_id
+        if strategy_id:
+            try:
+                alpha = self._registry.get(strategy_id)
+            except KeyError:
+                pass
+            else:
+                budget = alpha.manifest.risk_budget
+
+                # 1. Per-alpha position limit (post-fill)
+                effective_max = min(
+                    budget.max_position_per_symbol,
+                    self._platform_config.max_position_per_symbol,
+                )
+                strategy_pos = self._strategy_positions.get(
+                    strategy_id, order.symbol,
+                )
+                signed_qty = (
+                    order.quantity if order.side == Side.BUY
+                    else -order.quantity
+                )
+                post_fill = abs(strategy_pos.quantity + signed_qty)
+                if post_fill > effective_max:
+                    return RiskVerdict(
+                        timestamp_ns=order.timestamp_ns,
+                        correlation_id=order.correlation_id,
+                        sequence=order.sequence,
+                        symbol=order.symbol,
+                        action=RiskAction.REJECT,
+                        reason=(
+                            f"per-alpha position limit at order gate: "
+                            f"post-fill |{post_fill}| > {effective_max}"
+                        ),
+                    )
+
+                # 2. Per-alpha exposure limit
+                alpha_equity = self._account_equity * Decimal(
+                    str(budget.capital_allocation_pct),
+                ) / Decimal("100")
+                alpha_max_exposure = alpha_equity * Decimal(
+                    str(budget.max_gross_exposure_pct),
+                ) / Decimal("100")
+                alpha_exposure = (
+                    self._strategy_positions.get_strategy_exposure(
+                        strategy_id,
+                    )
+                )
+                if alpha_exposure >= alpha_max_exposure:
+                    return RiskVerdict(
+                        timestamp_ns=order.timestamp_ns,
+                        correlation_id=order.correlation_id,
+                        sequence=order.sequence,
+                        symbol=order.symbol,
+                        action=RiskAction.REJECT,
+                        reason=(
+                            f"per-alpha exposure limit at order gate: "
+                            f"{alpha_exposure} >= {alpha_max_exposure}"
+                        ),
+                    )
+
         return self._inner.check_order(order, positions)
 
     # ── Persistence ──────────────────────────────────────────
