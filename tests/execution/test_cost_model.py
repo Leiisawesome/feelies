@@ -51,26 +51,28 @@ class TestDefaultCostModel:
 
     def test_commission_per_share(self) -> None:
         model = DefaultCostModel()
-        # 1000 shares * ($0.0035 + $0.0005) = $4.00 (above min $0.35)
+        # 1000 shares * ($0.0035 + $0.003 taker fee) = $6.50 (above min $0.35)
         result = model.compute("AAPL", Side.BUY, 1000, Decimal("150"), Decimal("0.01"))
-        assert result.commission == Decimal("4.00")
+        assert result.commission == Decimal("6.50")
 
     def test_min_commission_floor(self) -> None:
         model = DefaultCostModel()
-        # 10 shares * ($0.0035 + $0.0005) = $0.04 (below min $0.35)
+        # 10 shares * ($0.0035 + $0.003 taker fee) = $0.065 (below min $0.35)
         result = model.compute("AAPL", Side.BUY, 10, Decimal("150"), Decimal("0.01"))
         assert result.commission == Decimal("0.35")
 
     def test_max_commission_cap(self) -> None:
         model = DefaultCostModel()
         # 100 shares at $0.01 → notional = $1.00
-        # raw commission = 100 * 0.004 = $0.40
-        # max cap = 1.0% of $1.00 = $0.01
+        # raw commission = 100 * (0.0035 + 0.003) = $0.65, but max cap = 1.0% of $1.00 = $0.01
         result = model.compute("PENNY", Side.BUY, 100, Decimal("0.01"), Decimal("0"))
         assert result.commission == Decimal("0.01")
 
     def test_total_fees_is_sum(self) -> None:
-        model = DefaultCostModel()
+        model = DefaultCostModel(DefaultCostModelConfig(
+            passive_adverse_selection_bps=Decimal("0"),
+            sell_regulatory_bps=Decimal("0"),
+        ))
         result = model.compute("AAPL", Side.BUY, 1000, Decimal("100"), Decimal("0.005"))
         expected_total = result.spread_cost + result.commission
         assert result.total_fees == expected_total
@@ -92,7 +94,7 @@ class TestDefaultCostModel:
         config = DefaultCostModelConfig(
             min_spread_cost_bps=Decimal("1.0"),
             commission_per_share=Decimal("0.01"),
-            exchange_per_share=Decimal("0.002"),
+            taker_exchange_per_share=Decimal("0.002"),
             min_commission=Decimal("2.00"),
             max_commission_pct=Decimal("1.0"),
         )
@@ -159,7 +161,8 @@ class TestStressCostMultiplier:
         stress_config = DefaultCostModelConfig(
             min_spread_cost_bps=base_config.min_spread_cost_bps * Decimal("1.5"),
             commission_per_share=base_config.commission_per_share * Decimal("1.5"),
-            exchange_per_share=base_config.exchange_per_share * Decimal("1.5"),
+            taker_exchange_per_share=base_config.taker_exchange_per_share * Decimal("1.5"),
+            maker_exchange_per_share=base_config.maker_exchange_per_share,  # rebate not stressed
             min_commission=base_config.min_commission * Decimal("1.5"),
             max_commission_pct=Decimal("100"),  # disable cap for this test
         )
@@ -169,10 +172,10 @@ class TestStressCostMultiplier:
         stress_model = DefaultCostModel(stress_config)
 
         hs = Decimal("0.005")
-        # 10000 shares at $100, half_spread $0.005
+        # 10000 shares at $100, half_spread $0.005 (taker path)
         # spread cost = 0.005 * 10000 = $50 (actual > floor since floor=0)
-        # base commission = 10000 * (0.0035+0.0005) = $40
-        # stress commission = 10000 * (0.00525+0.00075) = $60
+        # base commission = 10000 * (0.0035 + 0.003) = $65.00
+        # stress commission = 10000 * (0.00525 + 0.0045) = $97.50 = $65.00 * 1.5
         base = base_model.compute("AAPL", Side.BUY, 10000, Decimal("100"), hs)
         stress = stress_model.compute("AAPL", Side.BUY, 10000, Decimal("100"), hs)
 

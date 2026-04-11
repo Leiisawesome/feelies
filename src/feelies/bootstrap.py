@@ -108,7 +108,11 @@ def build_platform(
     cost_model = DefaultCostModel(DefaultCostModelConfig(
         min_spread_cost_bps=_decimal(config.cost_min_spread_bps),
         commission_per_share=_decimal(config.cost_commission_per_share),
-        exchange_per_share=_decimal(config.cost_exchange_per_share),
+        taker_exchange_per_share=_decimal(config.cost_taker_exchange_per_share),
+        maker_exchange_per_share=_decimal(config.cost_maker_exchange_per_share),
+        passive_adverse_selection_bps=_decimal(config.cost_passive_adverse_selection_bps),
+        sell_regulatory_bps=_decimal(config.cost_sell_regulatory_bps),
+        stress_multiplier=_decimal(config.cost_stress_multiplier),
         min_commission=_decimal(config.cost_min_commission),
         max_commission_pct=_decimal(config.cost_max_commission_pct),
     ))
@@ -119,7 +123,8 @@ def build_platform(
         execution_mode=config.execution_mode,
         passive_fill_delay_ticks=config.passive_fill_delay_ticks,
         passive_max_resting_ticks=config.passive_max_resting_ticks,
-        passive_rebate_per_share=config.passive_rebate_per_share,
+        passive_queue_position_shares=config.passive_queue_position_shares,
+        passive_cancel_fee_per_share=config.passive_cancel_fee_per_share,
     )
 
     if backtest_router is not None:
@@ -249,7 +254,8 @@ def _create_backend(
     execution_mode: str = "market",
     passive_fill_delay_ticks: int = 3,
     passive_max_resting_ticks: int = 50,
-    passive_rebate_per_share: float = 0.002,
+    passive_queue_position_shares: int = 0,
+    passive_cancel_fee_per_share: float = 0.0,
 ) -> tuple[ExecutionBackend, BacktestOrderRouter | PassiveLimitOrderRouter | None]:
     if mode == OperatingMode.BACKTEST:
         if execution_mode == "passive_limit":
@@ -259,7 +265,8 @@ def _create_backend(
                 cost_model=cost_model,
                 fill_delay_ticks=passive_fill_delay_ticks,
                 max_resting_ticks=passive_max_resting_ticks,
-                rebate_per_share=_decimal(passive_rebate_per_share),
+                queue_position_shares=passive_queue_position_shares,
+                cancel_fee_per_share=_decimal(passive_cancel_fee_per_share),
             )
             return backend, router
 

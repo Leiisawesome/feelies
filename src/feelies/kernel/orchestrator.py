@@ -191,6 +191,7 @@ class Orchestrator:
         self._trail_activate_per_share: float = 0.0
         self._trail_pct: float = 0.5
         self._peak_pnl_per_share: dict[str, float] = {}
+        self._min_order_shares: int = 1
 
         self._config: Configuration | None = None
 
@@ -258,6 +259,8 @@ class Orchestrator:
                 self._use_passive_entries = (
                     config.execution_mode == "passive_limit"
                 )
+            if hasattr(config, "platform_min_order_shares"):
+                self._min_order_shares = config.platform_min_order_shares
             self._macro.transition(
                 MacroState.DATA_SYNC,
                 trigger="CONFIG_VALIDATED",
@@ -524,6 +527,10 @@ class Orchestrator:
         Trades update feature state (e.g., volume clustering, trade
         arrival rate) but do not trigger signal evaluation.  Updated
         feature values feed into the next quote-driven tick.
+
+        Also forwarded to the order router (D10) when the router
+        supports ``on_trade()`` — enables volume-based queue aging
+        for passive limit order fills.
         """
         if not self._events_prelogged:
             self._event_log.append(trade)
@@ -532,6 +539,10 @@ class Orchestrator:
         process_trade_fn = getattr(self._feature_engine, "process_trade", None)
         if process_trade_fn is not None:
             process_trade_fn(trade)
+
+        router_on_trade = getattr(self._backend.order_router, "on_trade", None)
+        if router_on_trade is not None:
+            router_on_trade(trade)
 
     def _process_tick(self, quote: NBBOQuote) -> None:
         """Process a single tick through the full micro-state pipeline.
@@ -1515,6 +1526,8 @@ class Orchestrator:
 
         quantity = round(intent.target_quantity * verdict.scaling_factor)
         if quantity <= 0:
+            return None
+        if quantity < self._min_order_shares:
             return None
 
         order_type = OrderType.MARKET

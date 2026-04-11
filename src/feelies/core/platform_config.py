@@ -71,19 +71,32 @@ class PlatformConfig:
 
     cost_min_spread_bps: float = 0.0
     cost_commission_per_share: float = 0.0035
-    cost_exchange_per_share: float = 0.0005
+    cost_exchange_per_share: float = 0.0005  # deprecated; use taker/maker fields below
+    cost_taker_exchange_per_share: float = 0.003
+    cost_maker_exchange_per_share: float = -0.002
+    cost_passive_adverse_selection_bps: float = 0.5
+    cost_sell_regulatory_bps: float = 0.0
+    cost_stress_multiplier: float = 1.0
     cost_min_commission: float = 0.35
     cost_max_commission_pct: float = 1.0
 
     # Execution mode: "market" (immediate mid-price fill, spread cost charged)
     # or "passive_limit" (limit orders at BBO, queue-position fill model).
     execution_mode: str = "market"
-    # Ticks at our level before queue-drain fill triggers.
+    # Ticks at our level before queue-drain fill triggers (legacy tick-based mode).
     passive_fill_delay_ticks: int = 3
     # Cancel unfilled resting orders after this many ticks.
     passive_max_resting_ticks: int = 50
-    # Maker rebate per share (IB Tiered US equity adding liquidity).
+    # Maker rebate per share — deprecated; maker fee now in cost model.
     passive_rebate_per_share: float = 0.002
+    # Shares traded at our level before queue-drain fill triggers (D10 mode).
+    # 0 = disabled, use tick-based fill_delay_ticks instead.
+    passive_queue_position_shares: int = 0
+    # Cancel fee charged per share when a resting order times out (default 0).
+    passive_cancel_fee_per_share: float = 0.0
+
+    # Minimum order size gate: orders below this number of shares are suppressed.
+    platform_min_order_shares: int = 1
 
     cache_dir: Path | None = None
 
@@ -152,13 +165,19 @@ class PlatformConfig:
             "trail_pct": self.trail_pct,
             "cost_min_spread_bps": self.cost_min_spread_bps,
             "cost_commission_per_share": self.cost_commission_per_share,
-            "cost_exchange_per_share": self.cost_exchange_per_share,
+            "cost_taker_exchange_per_share": self.cost_taker_exchange_per_share,
+            "cost_maker_exchange_per_share": self.cost_maker_exchange_per_share,
+            "cost_passive_adverse_selection_bps": self.cost_passive_adverse_selection_bps,
+            "cost_sell_regulatory_bps": self.cost_sell_regulatory_bps,
+            "cost_stress_multiplier": self.cost_stress_multiplier,
             "cost_min_commission": self.cost_min_commission,
             "cost_max_commission_pct": self.cost_max_commission_pct,
             "execution_mode": self.execution_mode,
             "passive_fill_delay_ticks": self.passive_fill_delay_ticks,
             "passive_max_resting_ticks": self.passive_max_resting_ticks,
-            "passive_rebate_per_share": self.passive_rebate_per_share,
+            "passive_queue_position_shares": self.passive_queue_position_shares,
+            "passive_cancel_fee_per_share": self.passive_cancel_fee_per_share,
+            "platform_min_order_shares": self.platform_min_order_shares,
         }
 
     @classmethod
@@ -244,6 +263,21 @@ class PlatformConfig:
             cost_exchange_per_share=float(
                 data.get("cost_exchange_per_share", 0.0005)
             ),
+            cost_taker_exchange_per_share=float(
+                data.get("cost_taker_exchange_per_share", 0.003)
+            ),
+            cost_maker_exchange_per_share=float(
+                data.get("cost_maker_exchange_per_share", -0.002)
+            ),
+            cost_passive_adverse_selection_bps=float(
+                data.get("cost_passive_adverse_selection_bps", 0.5)
+            ),
+            cost_sell_regulatory_bps=float(
+                data.get("cost_sell_regulatory_bps", 0.0)
+            ),
+            cost_stress_multiplier=float(
+                data.get("cost_stress_multiplier", 1.0)
+            ),
             cost_min_commission=float(
                 data.get("cost_min_commission", 0.35)
             ),
@@ -259,6 +293,15 @@ class PlatformConfig:
             ),
             passive_rebate_per_share=float(
                 data.get("passive_rebate_per_share", 0.002)
+            ),
+            passive_queue_position_shares=int(
+                data.get("passive_queue_position_shares", 0)
+            ),
+            passive_cancel_fee_per_share=float(
+                data.get("passive_cancel_fee_per_share", 0.0)
+            ),
+            platform_min_order_shares=int(
+                data.get("platform_min_order_shares", 1)
             ),
             cache_dir=Path(cache_dir_raw) if cache_dir_raw else None,
         )

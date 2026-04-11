@@ -43,8 +43,8 @@ risk_max_gross_exposure_pct: 200.0
 risk_max_drawdown_pct: 5.0
 
 # ── Backtest Settings ─────────────────────────────────────
-# Simulated fill latency in nanoseconds (0 = instant fills).
-backtest_fill_latency_ns: 0
+# Simulated fill latency in nanoseconds (30ms = realistic IB order round-trip).
+backtest_fill_latency_ns: 30000000
 # Suppress directional entry signals for N ticks after the last entry.
 signal_entry_cooldown_ticks: 5000
 
@@ -61,8 +61,16 @@ trail_pct: 0.50
 cost_min_spread_bps: 0.0
 # IB Tiered commission component per share.
 cost_commission_per_share: 0.0035
-# IB exchange, clearing, and regulatory pass-through per share.
-cost_exchange_per_share: 0.0005
+# IB taker exchange fee per share (removing liquidity).
+cost_taker_exchange_per_share: 0.003
+# IB maker exchange rebate per share (adding liquidity, negative = credit).
+cost_maker_exchange_per_share: -0.002
+# Adverse selection penalty on passive fills in basis points.
+cost_passive_adverse_selection_bps: 0.5
+# Sell-side regulatory fee in basis points (0 = disabled; ~0.0022 for SEC fee).
+cost_sell_regulatory_bps: 0.0
+# Cost stress multiplier (1.0 = baseline; 1.5 = 50% stress scenario).
+cost_stress_multiplier: 1.0
 # IB Tiered minimum commission per order.
 cost_min_commission: 0.35
 # IB Tiered maximum commission as % of trade value.
@@ -72,9 +80,17 @@ cost_max_commission_pct: 1.0
 # "market": immediate mid-price fill, charges spread cost.
 # "passive_limit": limit orders at BBO, queue-position fill model.
 execution_mode: passive_limit
-# Ticks the quote must remain at our level before queue-drain fill.
+# Ticks the quote must remain at our level before queue-drain fill (legacy mode).
 passive_fill_delay_ticks: 3
 # Maximum ticks before cancelling an unfilled resting order.
 passive_max_resting_ticks: 50
-# Maker rebate per share (IB Tiered US equity adding liquidity).
-passive_rebate_per_share: 0.002
+# Shares traded at our level before queue-drain fill triggers (D10 mode).
+# 0 = disabled (use tick-based fill_delay_ticks); 500 = approximately
+# 1 lot of queue drains before we fill.
+passive_queue_position_shares: 500
+# Cancel fee per share when a resting order times out (0 = no cancel fee).
+passive_cancel_fee_per_share: 0.0
+
+# ── Minimum Order Size ────────────────────────────────────
+# Orders below this share count are suppressed before routing.
+platform_min_order_shares: 50

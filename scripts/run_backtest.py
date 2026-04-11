@@ -168,6 +168,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Force re-download, skip disk cache",
     )
+    p.add_argument(
+        "--stress-cost",
+        type=float,
+        default=1.0,
+        metavar="MULT",
+        help="Cost stress multiplier (e.g. 1.5 = 50%% higher fees, default: 1.0)",
+    )
     return p.parse_args(argv)
 
 
@@ -787,6 +794,11 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     config = PlatformConfig.from_yaml(config_path)
+
+    # Apply CLI cost stress multiplier if provided
+    if args.stress_cost != 1.0:
+        from dataclasses import replace as _replace
+        config = _replace(config, cost_stress_multiplier=args.stress_cost)
 
     # Override symbols if provided via CLI
     if args.symbol:
