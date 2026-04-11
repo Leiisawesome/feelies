@@ -1,0 +1,20 @@
+# Normalize all text files to LF in the repo, native on checkout
+* text=auto eol=lf
+
+# Explicitly mark binary formats
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.parquet binary
+*.pkl binary
+*.pickle binary
+*.h5 binary
+*.hdf5 binary
+*.feather binary
+*.arrow binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.whl binary
