@@ -257,6 +257,7 @@ class PassiveLimitOrderRouter:
                         return "fill"
             else:
                 pending.ticks_at_level = 0
+                pending.shares_traded_at_level = 0
         else:
             if quote.bid >= pending.limit_price:
                 return "fill"
@@ -270,6 +271,7 @@ class PassiveLimitOrderRouter:
                         return "fill"
             else:
                 pending.ticks_at_level = 0
+                pending.shares_traded_at_level = 0
 
         if pending.total_ticks >= self._max_resting_ticks:
             return "cancel"

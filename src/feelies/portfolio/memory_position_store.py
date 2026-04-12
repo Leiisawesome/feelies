@@ -64,6 +64,14 @@ class MemoryPositionStore:
 
         return pos
 
+    def debit_fees(self, symbol: str, fees: Decimal) -> None:
+        """Record fees without a fill (e.g. cancel fees)."""
+        pos = self._positions.get(symbol)
+        if pos is None:
+            pos = Position(symbol=symbol)
+            self._positions[symbol] = pos
+        pos.cumulative_fees += fees
+
     def all_positions(self) -> dict[str, Position]:
         return dict(self._positions)
 

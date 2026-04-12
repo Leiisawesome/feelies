@@ -44,6 +44,10 @@ class PositionStore(Protocol):
         """Update position after a fill.  Returns updated position."""
         ...
 
+    def debit_fees(self, symbol: str, fees: Decimal) -> None:
+        """Record fees without a fill (e.g. cancel fees)."""
+        ...
+
     def all_positions(self) -> dict[str, Position]:
         """Snapshot of all current positions."""
         ...
