@@ -359,11 +359,15 @@ class TestLayerSignals:
 
 
 class TestLayerRisk:
-    """Layer 4 — Risk Engine: 4 RiskVerdict events, all ALLOW."""
+    """Layer 4 — Risk Engine: 5 RiskVerdict events, all ALLOW.
+
+    REVERSE decomposition (H2/H3/H7) produces two check_order calls
+    (exit + entry legs) instead of one combined call.
+    """
 
     def test_verdict_count(self, scenario) -> None:
         _, recorder, _ = scenario
-        assert len(recorder.of_type(RiskVerdict)) == 4
+        assert len(recorder.of_type(RiskVerdict)) == 5
 
     def test_all_allow(self, scenario) -> None:
         _, recorder, _ = scenario
@@ -382,11 +386,16 @@ class TestLayerRisk:
 
 
 class TestLayerExecution:
-    """Layer 5 — Execution: 2 OrderRequest + 2 OrderAck (FILLED at mid)."""
+    """Layer 5 — Execution: 3 OrderRequest + 3 OrderAck (FILLED at mid).
+
+    REVERSE decomposition (H2/H3/H7) splits the reversal into an
+    EXIT leg (BUY 28 MARKET) + ENTRY leg (BUY 28 MARKET), producing
+    3 orders instead of 2.
+    """
 
     def test_order_request_count(self, scenario) -> None:
         _, recorder, _ = scenario
-        assert len(recorder.of_type(OrderRequest)) == 2
+        assert len(recorder.of_type(OrderRequest)) == 3
 
     def test_order_0_sell_28(self, scenario) -> None:
         _, recorder, _ = scenario
@@ -394,15 +403,23 @@ class TestLayerExecution:
         assert order.side == Side.SELL
         assert order.quantity == 28
 
-    def test_order_1_buy_56(self, scenario) -> None:
+    def test_order_1_exit_buy_28(self, scenario) -> None:
+        """EXIT leg of REVERSE: close the -28 short position."""
         _, recorder, _ = scenario
         order = recorder.of_type(OrderRequest)[1]
         assert order.side == Side.BUY
-        assert order.quantity == 56
+        assert order.quantity == 28
+
+    def test_order_2_entry_buy_28(self, scenario) -> None:
+        """ENTRY leg of REVERSE: open +28 long position."""
+        _, recorder, _ = scenario
+        order = recorder.of_type(OrderRequest)[2]
+        assert order.side == Side.BUY
+        assert order.quantity == 28
 
     def test_ack_count(self, scenario) -> None:
         _, recorder, _ = scenario
-        assert len(recorder.of_type(OrderAck)) == 2
+        assert len(recorder.of_type(OrderAck)) == 3
 
     def test_ack_0_filled_at_mid(self, scenario) -> None:
         _, recorder, _ = scenario
@@ -411,20 +428,31 @@ class TestLayerExecution:
         assert ack.filled_quantity == 28
         assert ack.fill_price == Decimal("160.005")
 
-    def test_ack_1_filled_at_mid(self, scenario) -> None:
+    def test_ack_1_exit_filled_at_mid(self, scenario) -> None:
         _, recorder, _ = scenario
         ack = recorder.of_type(OrderAck)[1]
         assert ack.status == OrderAckStatus.FILLED
-        assert ack.filled_quantity == 56
+        assert ack.filled_quantity == 28
+        assert ack.fill_price == Decimal("140.005")
+
+    def test_ack_2_entry_filled_at_mid(self, scenario) -> None:
+        _, recorder, _ = scenario
+        ack = recorder.of_type(OrderAck)[2]
+        assert ack.status == OrderAckStatus.FILLED
+        assert ack.filled_quantity == 28
         assert ack.fill_price == Decimal("140.005")
 
 
 class TestLayerPortfolio:
-    """Layer 6 — Portfolio: 2 PositionUpdate events, reversal to +28."""
+    """Layer 6 — Portfolio: 3 PositionUpdate events.
+
+    REVERSE decomposition produces separate updates for the exit
+    (close to flat) and entry (open new direction) legs.
+    """
 
     def test_position_update_count(self, scenario) -> None:
         _, recorder, _ = scenario
-        assert len(recorder.of_type(PositionUpdate)) == 2
+        assert len(recorder.of_type(PositionUpdate)) == 3
 
     def test_pu_0_short_28(self, scenario) -> None:
         _, recorder, _ = scenario
@@ -432,9 +460,17 @@ class TestLayerPortfolio:
         assert pu.quantity == -28
         assert pu.realized_pnl == Decimal("0")
 
-    def test_pu_1_long_28_with_pnl(self, scenario) -> None:
+    def test_pu_1_flat_with_pnl(self, scenario) -> None:
+        """EXIT leg closes -28 short → flat, realizing PnL."""
         _, recorder, _ = scenario
         pu = recorder.of_type(PositionUpdate)[1]
+        assert pu.quantity == 0
+        assert pu.realized_pnl == Decimal("560.000")
+
+    def test_pu_2_long_28(self, scenario) -> None:
+        """ENTRY leg opens +28 long from flat."""
+        _, recorder, _ = scenario
+        pu = recorder.of_type(PositionUpdate)[2]
         assert pu.quantity == 28
         assert pu.realized_pnl == Decimal("560.000")
 
@@ -447,12 +483,16 @@ class TestLayerPortfolio:
 
 
 class TestLayerTradeJournal:
-    """Layer 7 — Trade Journal: 2 TradeRecord entries."""
+    """Layer 7 — Trade Journal: 3 TradeRecord entries.
+
+    REVERSE decomposition produces separate records for exit and
+    entry legs.
+    """
 
     def test_record_count(self, scenario) -> None:
         orchestrator, _, _ = scenario
         records = list(orchestrator._trade_journal.query(symbol="AAPL"))
-        assert len(records) == 2
+        assert len(records) == 3
 
     def test_record_0_sell_28(self, scenario) -> None:
         orchestrator, _, _ = scenario
@@ -462,13 +502,24 @@ class TestLayerTradeJournal:
         assert rec.fill_price == Decimal("160.005")
         assert rec.strategy_id == PIPELINE_TEST_ALPHA_ID
 
-    def test_record_1_buy_56_with_pnl(self, scenario) -> None:
+    def test_record_1_exit_buy_28_with_pnl(self, scenario) -> None:
+        """EXIT leg: close short, realizes PnL."""
         orchestrator, _, _ = scenario
         rec = list(orchestrator._trade_journal.query(symbol="AAPL"))[1]
         assert rec.side == Side.BUY
-        assert rec.filled_quantity == 56
+        assert rec.filled_quantity == 28
         assert rec.fill_price == Decimal("140.005")
         assert rec.realized_pnl == Decimal("560.000")
+        assert rec.strategy_id == PIPELINE_TEST_ALPHA_ID
+
+    def test_record_2_entry_buy_28(self, scenario) -> None:
+        """ENTRY leg: open long, no PnL."""
+        orchestrator, _, _ = scenario
+        rec = list(orchestrator._trade_journal.query(symbol="AAPL"))[2]
+        assert rec.side == Side.BUY
+        assert rec.filled_quantity == 28
+        assert rec.fill_price == Decimal("140.005")
+        assert rec.realized_pnl == Decimal("0.000")
         assert rec.strategy_id == PIPELINE_TEST_ALPHA_ID
 
 
@@ -722,7 +773,9 @@ class TestDeterministicReplay:
             acks_a = rec_a.of_type(OrderAck)
             acks_b = rec_b.of_type(OrderAck)
             assert acks_a[0].fill_price == acks_b[0].fill_price == Decimal("160.005")
+            # REVERSE decomposition: exit leg at 140.005, entry leg at 140.005
             assert acks_a[1].fill_price == acks_b[1].fill_price == Decimal("140.005")
+            assert acks_a[2].fill_price == acks_b[2].fill_price == Decimal("140.005")
 
             pos_a = orch_a._positions.get("AAPL")
             pos_b = orch_b._positions.get("AAPL")
@@ -731,7 +784,7 @@ class TestDeterministicReplay:
 
             records_a = list(orch_a._trade_journal.query(symbol="AAPL"))
             records_b = list(orch_b._trade_journal.query(symbol="AAPL"))
-            assert len(records_a) == len(records_b) == 2
+            assert len(records_a) == len(records_b) == 3
             for ra, rb in zip(records_a, records_b):
                 assert ra.filled_quantity == rb.filled_quantity
 

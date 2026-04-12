@@ -802,6 +802,17 @@ class Orchestrator:
             trigger="risk_pass_order_warranted",
             correlation_id=cid,
         )
+
+        # H2/H3/H7: REVERSE intents decompose into EXIT(MARKET) +
+        # ENTRY(LIMIT) — aggressive close guarantees fill, passive
+        # entry saves spread.
+        if intent.intent in (
+            TradingIntent.REVERSE_LONG_TO_SHORT,
+            TradingIntent.REVERSE_SHORT_TO_LONG,
+        ):
+            self._execute_reverse(intent, verdict, cid, quote, t_wall_start)
+            return
+
         order = self._build_order_from_intent(intent, verdict, cid, quote)
         if order is None:
             self._micro.transition(
@@ -864,23 +875,24 @@ class Orchestrator:
                 f"Fail-safe: aborting order path."
             )
 
-        # ── Guard: suppress new ENTRY orders while a resting order
-        #    exists.  Placed after risk check so signal evaluation,
-        #    intent, and risk always execute — only submission is gated.
-        #    EXIT and stop-loss orders bypass the guard (Inv-11).
+        # ── Guard: suppress duplicate orders while a resting order
+        #    exists.  EXIT allowed only when no exit already resting
+        #    (prevents the duplicate-exit pile-up bug).  Stop-loss
+        #    always passes.  REVERSE intents handled by
+        #    _execute_reverse() and never reach this guard.
         if (
             self._use_passive_entries
-            and intent.intent not in (TradingIntent.EXIT,)
             and intent.signal.strategy_id != "__stop_exit__"
             and self._has_pending_order_for_symbol(order.symbol)
         ):
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="resting_order_pending",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
-            return
+            if intent.intent != TradingIntent.EXIT or self._has_pending_exit_for_symbol(order.symbol):
+                self._micro.transition(
+                    MicroState.LOG_AND_METRICS,
+                    trigger="resting_order_pending",
+                    correlation_id=cid,
+                )
+                self._finalize_tick(t_wall_start, cid)
+                return
 
         # ── Track order lifecycle (Inv-4) ───────────────────────
         self._track_order(order.order_id, order.side, order)
@@ -1523,12 +1535,211 @@ class Orchestrator:
         if mid_price <= 0:
             return 0
 
-        return self._position_sizer.compute_target_quantity(
+        target = self._position_sizer.compute_target_quantity(
             signal=signal,
             risk_budget=risk_budget,
             symbol_price=mid_price,
             account_equity=self._account_equity,
         )
+
+        # H1: Clamp up to min_order_shares to avoid the dead zone where
+        # the sizer produces a positive quantity below the gate threshold.
+        # "Trade the minimum viable size, or don't trade at all."
+        # The risk engine will reject or scale down if the clamped size
+        # exceeds the alpha's budget.
+        if 0 < target < self._min_order_shares:
+            target = self._min_order_shares
+
+        return target
+
+    def _execute_reverse(
+        self,
+        intent: OrderIntent,
+        verdict: RiskVerdict,
+        cid: str,
+        quote: NBBOQuote,
+        t_wall_start: int,
+    ) -> None:
+        """Execute a REVERSE intent as EXIT(MARKET) + ENTRY(LIMIT).
+
+        H2/H3/H7: Decomposes reversals so the closing leg is aggressive
+        (guaranteed fill) and the entry leg is passive (spread savings).
+        Prevents position-trapping where a combined passive order sits
+        in the queue while the position is stuck in the wrong direction.
+
+        The EXIT leg is always MARKET and bypasses min_order_shares
+        (you must be able to close any position).  The ENTRY leg uses
+        the normal passive/active mode and is subject to all gates.
+        """
+        close_qty = abs(intent.current_quantity)
+        entry_qty_raw = intent.target_quantity - close_qty
+
+        # ── Cancel any resting orders for this symbol ──────────────
+        self._cancel_resting_for_symbol(intent.symbol, cid)
+
+        # ── EXIT leg: aggressive MARKET close ──────────────────────
+        exit_side = Side.SELL if intent.current_quantity > 0 else Side.BUY
+        seq_exit = self._seq.next()
+        exit_order_id = hashlib.sha256(
+            f"{cid}:{seq_exit}:exit".encode()
+        ).hexdigest()[:16]
+
+        exit_order = OrderRequest(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=cid,
+            sequence=seq_exit,
+            order_id=exit_order_id,
+            symbol=intent.symbol,
+            side=exit_side,
+            order_type=OrderType.MARKET,
+            quantity=close_qty,
+            strategy_id=intent.strategy_id,
+            is_short=False,
+        )
+
+        # Risk check exit (should always pass — reduces exposure).
+        exit_verdict = self._risk_engine.check_order(
+            exit_order, self._positions,
+        )
+        self._bus.publish(exit_verdict)
+        if exit_verdict.action in (RiskAction.REJECT, RiskAction.FORCE_FLATTEN):
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="reverse_exit_rejected",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
+        # ── ENTRY leg: passive LIMIT (or MARKET if passive disabled) ─
+        entry_order: OrderRequest | None = None
+        entry_qty = round(entry_qty_raw * verdict.scaling_factor)
+
+        if entry_qty >= self._min_order_shares:
+            entry_side = exit_side  # same direction for both legs
+            is_short = (
+                intent.intent == TradingIntent.REVERSE_LONG_TO_SHORT
+            )
+
+            # B4: edge vs cost gate for the entry leg.
+            entry_passes_edge_gate = True
+            if (
+                self._signal_min_edge_cost_ratio > 0
+                and self._cost_model is not None
+            ):
+                gate_price = (quote.bid + quote.ask) / Decimal("2")
+                gate_spread = (quote.ask - quote.bid) / Decimal("2")
+                is_taker_gate = not self._use_passive_entries
+                cost = self._cost_model.compute(
+                    intent.symbol, entry_side, entry_qty, gate_price,
+                    gate_spread, is_taker=is_taker_gate,
+                )
+                round_trip_cost_bps = float(cost.cost_bps) * 2
+                if intent.signal.edge_estimate_bps < (
+                    self._signal_min_edge_cost_ratio * round_trip_cost_bps
+                ):
+                    entry_passes_edge_gate = False
+
+            if entry_passes_edge_gate:
+                seq_entry = self._seq.next()
+                entry_order_id = hashlib.sha256(
+                    f"{cid}:{seq_entry}:entry".encode()
+                ).hexdigest()[:16]
+
+                order_type = OrderType.MARKET
+                limit_price: Decimal | None = None
+                if self._use_passive_entries:
+                    order_type = OrderType.LIMIT
+                    limit_price = (
+                        quote.bid if entry_side == Side.BUY else quote.ask
+                    )
+
+                entry_order = OrderRequest(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=cid,
+                    sequence=seq_entry,
+                    order_id=entry_order_id,
+                    symbol=intent.symbol,
+                    side=entry_side,
+                    order_type=order_type,
+                    quantity=entry_qty,
+                    limit_price=limit_price,
+                    strategy_id=intent.strategy_id,
+                    is_short=is_short,
+                )
+
+                # Risk check entry leg.
+                entry_rv = self._risk_engine.check_order(
+                    entry_order, self._positions,
+                )
+                self._bus.publish(entry_rv)
+                if entry_rv.action in (
+                    RiskAction.REJECT, RiskAction.FORCE_FLATTEN,
+                ):
+                    entry_order = None
+                elif entry_rv.action == RiskAction.SCALE_DOWN:
+                    scaled = round(
+                        entry_order.quantity * entry_rv.scaling_factor,
+                    )
+                    if scaled < self._min_order_shares:
+                        entry_order = None
+                    elif scaled != entry_order.quantity:
+                        entry_order = replace(
+                            entry_order, quantity=scaled,
+                        )
+
+        # ── M6 → M7: ORDER_SUBMIT ─────────────────────────────────
+        self._micro.transition(
+            MicroState.ORDER_SUBMIT,
+            trigger="reverse_orders_constructed",
+            correlation_id=cid,
+        )
+
+        # Submit EXIT leg.
+        self._track_order(exit_order.order_id, exit_order.side, exit_order)
+        self._transition_order(
+            exit_order.order_id, OrderState.SUBMITTED, "submitted",
+        )
+        self._backend.order_router.submit(exit_order)
+        self._bus.publish(exit_order)
+
+        # Submit ENTRY leg (if valid).
+        if entry_order is not None:
+            self._track_order(
+                entry_order.order_id, entry_order.side, entry_order,
+            )
+            self._transition_order(
+                entry_order.order_id, OrderState.SUBMITTED, "submitted",
+            )
+            self._backend.order_router.submit(entry_order)
+            self._bus.publish(entry_order)
+
+        # ── M7 → M8: ORDER_ACK ────────────────────────────────────
+        self._micro.transition(
+            MicroState.ORDER_ACK,
+            trigger="reverse_orders_submitted",
+            correlation_id=cid,
+        )
+        acks = self._backend.order_router.poll_acks()
+        for ack in acks:
+            self._bus.publish(ack)
+            self._apply_ack_to_order(ack)
+
+        # ── M8 → M9: POSITION_UPDATE ──────────────────────────────
+        self._micro.transition(
+            MicroState.POSITION_UPDATE,
+            trigger="reverse_acks_received",
+            correlation_id=cid,
+        )
+        self._reconcile_fills(acks, cid)
+
+        # ── M9 → M10: LOG_AND_METRICS ─────────────────────────────
+        self._micro.transition(
+            MicroState.LOG_AND_METRICS,
+            trigger="reverse_position_updated",
+            correlation_id=cid,
+        )
+        self._finalize_tick(t_wall_start, cid)
 
     def _build_order_from_intent(
         self,
@@ -1686,6 +1897,43 @@ class Orchestrator:
             order.symbol == symbol and sm.state not in _TERMINAL_ORDER_STATES
             for sm, _, order in self._active_orders.values()
         )
+
+    def _has_pending_exit_for_symbol(self, symbol: str) -> bool:
+        """True if a non-terminal order would close the current position.
+
+        Prevents duplicate exit orders from piling up when the alpha
+        keeps emitting FLAT while a prior EXIT is still resting.
+        """
+        pos = self._positions.get(symbol)
+        if pos.quantity == 0:
+            return False
+        exit_side = Side.SELL if pos.quantity > 0 else Side.BUY
+        return any(
+            order.symbol == symbol
+            and sm.state not in _TERMINAL_ORDER_STATES
+            and side == exit_side
+            for sm, side, order in self._active_orders.values()
+        )
+
+    def _cancel_resting_for_symbol(self, symbol: str, cid: str) -> None:
+        """Cancel all non-terminal resting orders for a symbol.
+
+        Calls the router's cancel_order (if available), then polls and
+        reconciles the resulting cancel acks so the position store and
+        order SMs are current before new legs are submitted.
+        """
+        cancel_fn = getattr(self._backend.order_router, "cancel_order", None)
+        if cancel_fn is None:
+            return
+        for order_id, (sm, _, order) in list(self._active_orders.items()):
+            if order.symbol == symbol and sm.state not in _TERMINAL_ORDER_STATES:
+                cancel_fn(order_id)
+        cancel_acks = self._backend.order_router.poll_acks()
+        if cancel_acks:
+            for ack in cancel_acks:
+                self._bus.publish(ack)
+                self._apply_ack_to_order(ack)
+            self._reconcile_fills(cancel_acks, cid)
 
     def _reconcile_resting_fills(self, cid: str) -> None:
         """Poll and reconcile fills from resting orders.
