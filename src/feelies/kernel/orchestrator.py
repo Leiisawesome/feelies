@@ -946,6 +946,16 @@ class Orchestrator:
         intent_set = self._multi_alpha_evaluator.evaluate_tick(features, quote)
         self._tick_timings["signal_evaluate_ns"] = time.perf_counter_ns() - t0
 
+        # ── Publish per-alpha signals for observability ──────────────
+        # Signals are published immediately after evaluation, before any
+        # execution-layer guards (is_empty, force_flatten branching).
+        # Signal emission must be pure: it records what each alpha evaluated
+        # based on market data and position state only.  Whether actionable
+        # intents result, or whether orders are later built/approved, must
+        # not change which signals are recorded.
+        for signal in intent_set.signals:
+            self._bus.publish(signal)
+
         # ── FORCE_FLATTEN: short-circuit, fire safety cascade ──
         if intent_set.force_flatten:
             if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
@@ -972,10 +982,6 @@ class Orchestrator:
             )
             self._finalize_tick(t_wall_start, cid)
             return
-
-        # ── Publish per-alpha signals for observability ──
-        for signal in intent_set.signals:
-            self._bus.publish(signal)
 
         # ── M4 → ORDER_AGGREGATION ──
         self._micro.transition(
