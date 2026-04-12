@@ -157,6 +157,7 @@ class PassiveLimitOrderRouter:
             quantity=request.quantity,
             fill_price=fill_price,
             half_spread=half_spread,
+            is_short=request.is_short,
         )
 
         self._pending_acks.append(OrderAck(
@@ -304,6 +305,7 @@ class PassiveLimitOrderRouter:
             fill_price=fill_price,
             half_spread=Decimal("0"),
             is_taker=False,
+            is_short=pending.request.is_short,
         )
 
         self._pending_acks.append(OrderAck(

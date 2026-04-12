@@ -654,3 +654,98 @@ class TestScaleDownToZeroSuppression:
         assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
         assert orch.macro_state == MacroState.BACKTEST_MODE
         assert position_store.get("AAPL").quantity == 0
+
+
+# ── B4: edge-cost gate ────────────────────────────────────────────────
+
+
+def _make_signal_with_edge(quote: NBBOQuote, edge_bps: float) -> Signal:
+    """Signal with explicit edge_estimate_bps for B4 gate testing."""
+    return Signal(
+        timestamp_ns=quote.timestamp_ns,
+        correlation_id=quote.correlation_id,
+        sequence=quote.sequence,
+        symbol=quote.symbol,
+        strategy_id="test_strat",
+        direction=SignalDirection.LONG,
+        strength=0.8,
+        edge_estimate_bps=edge_bps,
+    )
+
+
+class TestEdgeCostGate:
+    """B4: orders suppressed when edge < ratio × round-trip cost."""
+
+    def _build_gated_orchestrator(
+        self,
+        clock: SimulatedClock,
+        signal: Signal,
+        edge_cost_ratio: float = 2.0,
+    ) -> Orchestrator:
+        from feelies.execution.cost_model import DefaultCostModel, DefaultCostModelConfig
+        bus = EventBus()
+        event_log = InMemoryEventLog()
+        pos_store = MemoryPositionStore()
+        bt_router = BacktestOrderRouter(clock=clock)
+        backend = ExecutionBackend(
+            market_data=_StubMarketData(),
+            order_router=bt_router,
+            mode="BACKTEST",
+        )
+        cost_model = DefaultCostModel(DefaultCostModelConfig())
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=backend,
+            feature_engine=_StubFeatureEngine(),
+            signal_engine=_StubSignalEngine(signal=signal),
+            risk_engine=_StubRiskEngine(),
+            position_store=pos_store,
+            event_log=event_log,
+            metric_collector=_NoOpMetricCollector(),
+            cost_model=cost_model,
+        )
+        # Set ratio directly (mimics what boot() would do from config)
+        orch._signal_min_edge_cost_ratio = edge_cost_ratio
+        _boot_to_backtest(orch)
+        return orch
+
+    def test_order_suppressed_when_edge_below_threshold(self) -> None:
+        """Edge ≈ 0 bps with ratio 2.0 → order should be gated out."""
+        clock = SimulatedClock(start_ns=1000)
+        quote = _make_quote(bid="99.00", ask="101.00")  # wide spread → high cost bps
+        signal = _make_signal_with_edge(quote, edge_bps=0.0)
+
+        orch = self._build_gated_orchestrator(clock, signal, edge_cost_ratio=2.0)
+        orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
+        orch._process_tick(quote)
+
+        # No order should have been placed — position stays zero
+        pos = orch._positions.get("AAPL")
+        assert pos.quantity == 0
+
+    def test_order_passes_when_edge_above_threshold(self) -> None:
+        """Edge >> round-trip cost → order not suppressed."""
+        clock = SimulatedClock(start_ns=1000)
+        quote = _make_quote(bid="99.80", ask="100.20")  # tight spread
+        signal = _make_signal_with_edge(quote, edge_bps=10_000.0)
+
+        orch = self._build_gated_orchestrator(clock, signal, edge_cost_ratio=2.0)
+        orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
+        orch._process_tick(quote)
+
+        pos = orch._positions.get("AAPL")
+        assert pos.quantity != 0  # order was placed and filled
+
+    def test_gate_disabled_when_ratio_is_zero(self) -> None:
+        """ratio=0.0 disables the gate — even zero-edge signals produce orders."""
+        clock = SimulatedClock(start_ns=1000)
+        quote = _make_quote(bid="99.00", ask="101.00")
+        signal = _make_signal_with_edge(quote, edge_bps=0.0)
+
+        orch = self._build_gated_orchestrator(clock, signal, edge_cost_ratio=0.0)
+        orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
+        orch._process_tick(quote)
+
+        pos = orch._positions.get("AAPL")
+        assert pos.quantity != 0  # gate disabled, order allowed

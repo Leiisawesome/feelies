@@ -36,10 +36,9 @@ from feelies.core.events import (
 )
 from feelies.execution.intent import IntentTranslator, OrderIntent, TradingIntent
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
-from feelies.risk.position_sizer import PositionSizer
-
 if TYPE_CHECKING:
     from feelies.alpha.risk_wrapper import AlphaBudgetRiskWrapper
+    from feelies.risk.position_sizer import PositionSizer
 
 logger = logging.getLogger(__name__)
 

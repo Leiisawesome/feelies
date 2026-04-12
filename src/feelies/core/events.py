@@ -201,6 +201,7 @@ class OrderRequest(Event):
     quantity: int
     limit_price: Decimal | None = None
     strategy_id: str = ""
+    is_short: bool = False  # True for short-entry sells (HTB fee applies)
 
 
 @dataclass(frozen=True, kw_only=True)

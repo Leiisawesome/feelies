@@ -24,12 +24,15 @@ class CostModel(Protocol):
         fill_price: Decimal,
         half_spread: Decimal,
         is_taker: bool = True,
+        is_short: bool = False,
     ) -> CostBreakdown:
         """Return cost components for a single fill.
 
         ``is_taker=True`` applies taker exchange fees (removing liquidity).
         ``is_taker=False`` applies maker exchange fees / rebates (adding
         liquidity) and the passive adverse-selection penalty.
+        ``is_short=True`` applies the hard-to-borrow (HTB) daily fee
+        on SELL-side fills when ``htb_borrow_annual_bps > 0``.
         """
         ...
 
@@ -65,6 +68,10 @@ class DefaultCostModelConfig:
         fills in basis points (0 = disabled by default).
     ``stress_multiplier``: scalar applied to all variable costs for
         stress-testing (1.0 = baseline, 1.5 = 50% cost stress).
+    ``htb_borrow_annual_bps``: annualised hard-to-borrow fee in basis
+        points applied on SELL-side fills when ``is_short=True``.
+        Daily cost = notional × annual_bps / 252 / 10 000.
+        Default 0 = disabled.  Set only for short-selling strategies.
     """
 
     min_spread_cost_bps: Decimal = Decimal("0")
@@ -76,6 +83,7 @@ class DefaultCostModelConfig:
     passive_adverse_selection_bps: Decimal = Decimal("0.5")
     sell_regulatory_bps: Decimal = Decimal("0.0")
     stress_multiplier: Decimal = Decimal("1.0")
+    htb_borrow_annual_bps: Decimal = Decimal("0.0")
 
 
 class DefaultCostModel:
@@ -103,6 +111,7 @@ class DefaultCostModel:
         fill_price: Decimal,
         half_spread: Decimal,
         is_taker: bool = True,
+        is_short: bool = False,
     ) -> CostBreakdown:
         notional = fill_price * quantity
         stress = self._cfg.stress_multiplier
@@ -138,7 +147,16 @@ class DefaultCostModel:
         if side == Side.SELL:
             regulatory_cost = notional * self._cfg.sell_regulatory_bps * stress / Decimal("10000")
 
-        total_fees = spread_cost + commission + adverse_cost + regulatory_cost
+        # Hard-to-borrow (HTB) daily borrow cost for short-side sells (2g).
+        # Applied only when is_short=True and htb_borrow_annual_bps > 0.
+        # Daily cost = notional × annual_bps / 252 / 10 000 (one trading day).
+        htb_cost = Decimal("0")
+        if is_short and side == Side.SELL and self._cfg.htb_borrow_annual_bps > 0:
+            htb_cost = (
+                notional * self._cfg.htb_borrow_annual_bps / Decimal("252") / Decimal("10000")
+            )
+
+        total_fees = spread_cost + commission + adverse_cost + regulatory_cost + htb_cost
         cost_bps = (
             total_fees / notional * Decimal("10000")
             if notional > 0 else Decimal("0")
@@ -165,6 +183,7 @@ class ZeroCostModel:
         fill_price: Decimal,
         half_spread: Decimal,
         is_taker: bool = True,
+        is_short: bool = False,
     ) -> CostBreakdown:
         notional = fill_price * quantity
         return CostBreakdown(

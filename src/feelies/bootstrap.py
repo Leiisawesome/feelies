@@ -115,6 +115,7 @@ def build_platform(
         stress_multiplier=_decimal(config.cost_stress_multiplier),
         min_commission=_decimal(config.cost_min_commission),
         max_commission_pct=_decimal(config.cost_max_commission_pct),
+        htb_borrow_annual_bps=_decimal(config.cost_htb_borrow_annual_bps),
     ))
     backend, backtest_router = _create_backend(
         config.mode, event_log, clock,
@@ -125,6 +126,7 @@ def build_platform(
         passive_max_resting_ticks=config.passive_max_resting_ticks,
         passive_queue_position_shares=config.passive_queue_position_shares,
         passive_cancel_fee_per_share=config.passive_cancel_fee_per_share,
+        market_impact_factor=config.cost_market_impact_factor,
     )
 
     if backtest_router is not None:
@@ -184,6 +186,7 @@ def build_platform(
         multi_alpha_evaluator=multi_alpha_evaluator,
         fill_ledger=fill_ledger,
         strategy_positions=strategy_positions,
+        cost_model=cost_model,
     )
 
     config_snapshot = config.snapshot()
@@ -256,6 +259,7 @@ def _create_backend(
     passive_max_resting_ticks: int = 50,
     passive_queue_position_shares: int = 0,
     passive_cancel_fee_per_share: float = 0.0,
+    market_impact_factor: float = 0.5,
 ) -> tuple[ExecutionBackend, BacktestOrderRouter | PassiveLimitOrderRouter | None]:
     if mode == OperatingMode.BACKTEST:
         if execution_mode == "passive_limit":
@@ -274,6 +278,7 @@ def _create_backend(
             event_log, clock,
             latency_ns=fill_latency_ns,
             cost_model=cost_model,
+            market_impact_factor=market_impact_factor,
         )
         return backend, router
 

@@ -659,6 +659,42 @@ def generate_report(
     lines.append(_kv("Avg feature compute", _ns_to_ms(avg_feat_ns)))
     lines.append(_kv("Avg signal evaluate", _ns_to_ms(avg_sig_ns)))
 
+    # TCA (transaction cost analysis)
+    if records:
+        from feelies.forensics.decay_detector import DecayDetector
+        tca = DecayDetector().analyze_fills(records)
+
+        lines.append(_divider())
+        lines.append(_section("TCA (Transaction Cost Analysis)"))
+        lines.append(_kv("Trades analysed", f"{tca.trade_count:,}"))
+        lines.append(_kv("Mean cost", f"{tca.mean_cost_bps:.2f} bps"))
+        lines.append(_kv("p95 cost", f"{tca.p95_cost_bps:.2f} bps"))
+        lines.append(_kv("Mean edge", f"{tca.mean_edge_bps:.2f} bps"))
+        lines.append(_kv("p95 edge", f"{tca.p95_edge_bps:.2f} bps"))
+        lines.append(_kv("Positive-edge trades", f"{tca.pct_positive_edge:.1f}%"))
+        lines.append(_kv("Edge covers 2× cost", f"{tca.pct_edge_covers_cost:.1f}%"))
+        if tca.trade_count >= 50:
+            lines.append(_kv("Rolling-50 mean edge", f"{tca.rolling_50_mean_edge_bps:.2f} bps"))
+        if tca.trade_count >= 200:
+            lines.append(_kv("Rolling-200 mean edge", f"{tca.rolling_200_mean_edge_bps:.2f} bps"))
+        lines.append("")
+        hist = tca.size_histogram
+        lines.append(_kv("Order-size histogram", ""))
+        for bucket, count in hist.items():
+            pct = count / tca.trade_count * 100.0 if tca.trade_count else 0.0
+            lines.append(_sub_kv(f"  {bucket} shares", f"{count} ({pct:.1f}%)"))
+
+        # Edge-decay check
+        decay_signals = DecayDetector().detect_edge_decay(strategy_id, records)
+        if decay_signals:
+            lines.append("")
+            lines.append(_kv("EDGE DECAY DETECTED", f"{len(decay_signals)} signal(s)"))
+            for ds in decay_signals:
+                lines.append(_sub_kv("  Strategy", ds.strategy_id))
+                lines.append(_sub_kv("  Hist edge", f"{ds.expected:.2f} bps"))
+                lines.append(_sub_kv("  Recent edge", f"{ds.realized:.2f} bps"))
+                lines.append(_sub_kv("  Z-score", f"{ds.z_score:.2f}"))
+
     lines.append("")
     lines.append(_RULE_HEAVY)
     lines.append("")

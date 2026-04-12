@@ -98,6 +98,22 @@ class PlatformConfig:
     # Minimum order size gate: orders below this number of shares are suppressed.
     platform_min_order_shares: int = 1
 
+    # B4: signal edge vs round-trip cost gate.
+    # Orders are suppressed when signal.edge_estimate_bps < ratio × 2 × cost_bps.
+    # Set to 0 to disable the gate (no filtering).  Default 2.0.
+    signal_min_edge_cost_ratio: float = 0.0
+
+    # 2d: market-impact factor for walk-the-book slippage on large orders.
+    # Excess beyond L1 available depth is priced at
+    #   fill_price ± impact_factor × (excess / depth) × half_spread.
+    # Default 0.5 (half a spread per full-depth multiple of excess).
+    cost_market_impact_factor: float = 0.5
+
+    # 2g: annualised hard-to-borrow fee in basis points for short-side fills.
+    # Applied as a daily cost (annual_bps / 252) on SELL fills flagged as_short.
+    # Default 0 = disabled.  Set for short-selling strategies only.
+    cost_htb_borrow_annual_bps: float = 0.0
+
     cache_dir: Path | None = None
 
     def validate(self) -> None:
@@ -178,6 +194,9 @@ class PlatformConfig:
             "passive_queue_position_shares": self.passive_queue_position_shares,
             "passive_cancel_fee_per_share": self.passive_cancel_fee_per_share,
             "platform_min_order_shares": self.platform_min_order_shares,
+            "signal_min_edge_cost_ratio": self.signal_min_edge_cost_ratio,
+            "cost_market_impact_factor": self.cost_market_impact_factor,
+            "cost_htb_borrow_annual_bps": self.cost_htb_borrow_annual_bps,
         }
 
     @classmethod

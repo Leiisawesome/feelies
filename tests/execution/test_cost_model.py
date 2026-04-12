@@ -180,3 +180,45 @@ class TestStressCostMultiplier:
         stress = stress_model.compute("AAPL", Side.BUY, 10000, Decimal("100"), hs)
 
         assert stress.commission == (base.commission * Decimal("1.5")).quantize(Decimal("0.01"))
+
+
+class TestHTBBorrowFee:
+    """2g: hard-to-borrow daily fee for short-side sells."""
+
+    def test_htb_added_for_short_sell(self) -> None:
+        """is_short=True + side=SELL + htb_borrow_annual_bps>0 → extra fee."""
+        config = DefaultCostModelConfig(htb_borrow_annual_bps=Decimal("252"))
+        model = DefaultCostModel(config)
+
+        # notional = 100 * $100 = $10 000
+        # daily htb = 10 000 * 252 / 252 / 10 000 = $1.00
+        result = model.compute("AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=True)
+        baseline = model.compute("AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=False)
+        assert result.total_fees - baseline.total_fees == pytest.approx(Decimal("1.00"), abs=Decimal("0.01"))
+
+    def test_htb_not_applied_to_long_sell(self) -> None:
+        """is_short=False → no HTB fee even if config has htb_borrow_annual_bps set."""
+        config = DefaultCostModelConfig(htb_borrow_annual_bps=Decimal("252"))
+        model = DefaultCostModel(config)
+        no_htb_config = DefaultCostModelConfig()
+        baseline = DefaultCostModel(no_htb_config)
+
+        result = model.compute("AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=False)
+        base = baseline.compute("AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"))
+        assert result.total_fees == base.total_fees
+
+    def test_htb_zero_when_disabled(self) -> None:
+        """Default htb_borrow_annual_bps=0 → no HTB fee even for short sells."""
+        model = DefaultCostModel()
+        with_htb = model.compute("AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=True)
+        without_htb = model.compute("AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=False)
+        assert with_htb.total_fees == without_htb.total_fees
+
+    def test_htb_not_applied_to_buys(self) -> None:
+        """BUY orders never receive HTB fee, even if is_short flag is set."""
+        config = DefaultCostModelConfig(htb_borrow_annual_bps=Decimal("252"))
+        model = DefaultCostModel(config)
+
+        buy_with_flag = model.compute("AAPL", Side.BUY, 100, Decimal("100"), Decimal("0"), is_short=True)
+        buy_without = model.compute("AAPL", Side.BUY, 100, Decimal("100"), Decimal("0"))
+        assert buy_with_flag.total_fees == buy_without.total_fees

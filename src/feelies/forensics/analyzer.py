@@ -26,6 +26,43 @@ class SlippageReport:
 
 
 @dataclass(frozen=True, kw_only=True)
+class TCAReport:
+    """Full transaction cost analysis across a set of trade records.
+
+    Extends execution quality metrics with edge-vs-cost comparison
+    and order-size distribution (histogram buckets).
+
+    ``mean_edge_bps``: realized P&L per notional in basis points,
+        averaged across all trades.
+    ``p95_edge_bps``: 95th-percentile edge (best trades).
+    ``pct_positive_edge``: share of trades where realized edge > 0.
+    ``pct_edge_covers_cost``: share of trades where edge > 2× cost
+        (the B4 threshold applied retroactively).
+    ``size_histogram``: order-size distribution by bucket label.
+    ``rolling_50_mean_edge_bps``: mean edge over most recent 50 trades.
+    ``rolling_200_mean_edge_bps``: mean edge over most recent 200 trades.
+    """
+
+    trade_count: int
+    mean_cost_bps: float
+    p95_cost_bps: float
+    total_fees: float
+
+    # Edge metrics (realized_pnl / notional in bps)
+    mean_edge_bps: float
+    p95_edge_bps: float
+    pct_positive_edge: float
+    pct_edge_covers_cost: float
+
+    # Order-size histogram: bucket label → count
+    size_histogram: dict[str, int]
+
+    # Rolling window edge means
+    rolling_50_mean_edge_bps: float
+    rolling_200_mean_edge_bps: float
+
+
+@dataclass(frozen=True, kw_only=True)
 class DecaySignal:
     """Evidence of edge decay for a strategy."""
 
@@ -43,8 +80,8 @@ class ForensicAnalyzer(Protocol):
     def analyze_fills(
         self,
         trades: list[TradeRecord],
-    ) -> SlippageReport:
-        """Compute execution quality metrics from trade records."""
+    ) -> TCAReport:
+        """Compute TCA metrics from trade records."""
         ...
 
     def detect_edge_decay(

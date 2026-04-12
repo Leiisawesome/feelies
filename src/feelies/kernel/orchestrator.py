@@ -111,6 +111,12 @@ from feelies.storage.event_log import EventLog
 from feelies.storage.feature_snapshot import FeatureSnapshotMeta, FeatureSnapshotStore
 from feelies.storage.trade_journal import TradeJournal, TradeRecord
 
+# Avoid a hard execution-layer import at module level: imported lazily in boot()
+# or via TYPE_CHECKING to preserve the layer boundary.
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from feelies.execution.cost_model import CostModel
+
 _TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset({
     OrderState.FILLED,
     OrderState.CANCELLED,
@@ -156,6 +162,7 @@ class Orchestrator:
         multi_alpha_evaluator: "MultiAlphaEvaluator | None" = None,
         fill_ledger: "FillAttributionLedger | None" = None,
         strategy_positions: "StrategyPositionStore | None" = None,
+        cost_model: "CostModel | None" = None,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -185,6 +192,7 @@ class Orchestrator:
         self._multi_alpha_evaluator = multi_alpha_evaluator
         self._fill_ledger = fill_ledger
         self._strategy_positions = strategy_positions
+        self._cost_model: "CostModel | None" = cost_model
         self._seq = SequenceGenerator()
 
         self._stop_loss_per_share: float = 0.0
@@ -192,6 +200,7 @@ class Orchestrator:
         self._trail_pct: float = 0.5
         self._peak_pnl_per_share: dict[str, float] = {}
         self._min_order_shares: int = 1
+        self._signal_min_edge_cost_ratio: float = 0.0  # 0 = gate disabled
 
         self._config: Configuration | None = None
 
@@ -261,6 +270,8 @@ class Orchestrator:
                 )
             if hasattr(config, "platform_min_order_shares"):
                 self._min_order_shares = config.platform_min_order_shares
+            if hasattr(config, "signal_min_edge_cost_ratio"):
+                self._signal_min_edge_cost_ratio = config.signal_min_edge_cost_ratio
             self._macro.transition(
                 MacroState.DATA_SYNC,
                 trigger="CONFIG_VALIDATED",
@@ -1530,6 +1541,36 @@ class Orchestrator:
         if quantity < self._min_order_shares:
             return None
 
+        # B4: signal edge vs round-trip cost gate.
+        # Skip stop-loss exits (always allow for safety) and when the gate
+        # is disabled (ratio == 0) or no cost model / quote is available.
+        is_stop_exit = intent.signal.strategy_id == "__stop_exit__"
+        if (
+            not is_stop_exit
+            and self._signal_min_edge_cost_ratio > 0
+            and self._cost_model is not None
+            and quote is not None
+        ):
+            gate_price = (quote.bid + quote.ask) / Decimal("2")
+            gate_spread = (quote.ask - quote.bid) / Decimal("2")
+            cost = self._cost_model.compute(
+                intent.symbol, side, quantity, gate_price, gate_spread,
+            )
+            round_trip_cost_bps = float(cost.cost_bps) * 2
+            if intent.signal.edge_estimate_bps < (
+                self._signal_min_edge_cost_ratio * round_trip_cost_bps
+            ):
+                return None
+
+        # Determine if this is a short-entry sell (for HTB fee routing).
+        is_short = intent.intent in (
+            TradingIntent.ENTRY_SHORT,
+            TradingIntent.REVERSE_LONG_TO_SHORT,
+        ) or (
+            intent.intent == TradingIntent.SCALE_UP
+            and intent.current_quantity < 0
+        )
+
         order_type = OrderType.MARKET
         limit_price: Decimal | None = None
 
@@ -1550,6 +1591,7 @@ class Orchestrator:
             quantity=quantity,
             limit_price=limit_price,
             strategy_id=intent.strategy_id,
+            is_short=is_short,
         )
 
     @staticmethod
