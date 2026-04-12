@@ -752,19 +752,6 @@ class Orchestrator:
             self._finalize_tick(t_wall_start, cid)
             return
 
-        # ── Guard: suppress new orders while a resting order exists ──
-        if (
-            self._use_passive_entries
-            and self._has_pending_order_for_symbol(signal.symbol)
-        ):
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="resting_order_pending",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
-            return
-
         # ── M4 → M5: RISK_CHECK ────────────────────────────────
         self._micro.transition(
             MicroState.RISK_CHECK,
@@ -877,6 +864,24 @@ class Orchestrator:
                 f"Fail-safe: aborting order path."
             )
 
+        # ── Guard: suppress new ENTRY orders while a resting order
+        #    exists.  Placed after risk check so signal evaluation,
+        #    intent, and risk always execute — only submission is gated.
+        #    EXIT and stop-loss orders bypass the guard (Inv-11).
+        if (
+            self._use_passive_entries
+            and intent.intent not in (TradingIntent.EXIT,)
+            and intent.signal.strategy_id != "__stop_exit__"
+            and self._has_pending_order_for_symbol(order.symbol)
+        ):
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="resting_order_pending",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
         # ── Track order lifecycle (Inv-4) ───────────────────────
         self._track_order(order.order_id, order.side, order)
 
@@ -986,34 +991,40 @@ class Orchestrator:
         for symbol, agg in aggregated_by_symbol.items():
             if agg.exit_order is not None:
                 side, qty = agg.exit_order
-                order = self._build_net_order(symbol, side, qty, cid)
-                orders_to_submit.append(order)
-                if self._fill_ledger is not None:
-                    contribs = self._compute_contributions(
-                        agg, "exit",
-                    )
-                    self._fill_ledger.record(AttributionRecord(
-                        order_id=order.order_id,
-                        symbol=symbol,
-                        net_side=side,
-                        net_quantity=qty,
-                        contributions=contribs,
-                    ))
+                order = self._build_net_order(
+                    symbol, side, qty, cid, is_exit=True,
+                )
+                if order is not None:
+                    orders_to_submit.append(order)
+                    if self._fill_ledger is not None:
+                        contribs = self._compute_contributions(
+                            agg, "exit",
+                        )
+                        self._fill_ledger.record(AttributionRecord(
+                            order_id=order.order_id,
+                            symbol=symbol,
+                            net_side=side,
+                            net_quantity=qty,
+                            contributions=contribs,
+                        ))
             if agg.entry_order is not None:
                 side, qty = agg.entry_order
-                order = self._build_net_order(symbol, side, qty, cid)
-                orders_to_submit.append(order)
-                if self._fill_ledger is not None:
-                    contribs = self._compute_contributions(
-                        agg, "entry",
-                    )
-                    self._fill_ledger.record(AttributionRecord(
-                        order_id=order.order_id,
-                        symbol=symbol,
-                        net_side=side,
-                        net_quantity=qty,
-                        contributions=contribs,
-                    ))
+                order = self._build_net_order(
+                    symbol, side, qty, cid, is_exit=False,
+                )
+                if order is not None:
+                    orders_to_submit.append(order)
+                    if self._fill_ledger is not None:
+                        contribs = self._compute_contributions(
+                            agg, "entry",
+                        )
+                        self._fill_ledger.record(AttributionRecord(
+                            order_id=order.order_id,
+                            symbol=symbol,
+                            net_side=side,
+                            net_quantity=qty,
+                            contributions=contribs,
+                        ))
 
         if not orders_to_submit:
             self._micro.transition(
@@ -1128,12 +1139,24 @@ class Orchestrator:
         side: Side,
         quantity: int,
         correlation_id: str,
-    ) -> OrderRequest:
+        *,
+        is_exit: bool = False,
+    ) -> OrderRequest | None:
         """Construct an OrderRequest for a net multi-alpha aggregate.
 
         Deterministic order_id via SHA-256 of correlation_id:sequence
         (Inv-5).
+
+        F5: min_order_shares gate applied to entries only — exits must
+        always be able to close positions (Inv-11).  B4 edge-cost gate
+        is not applied here: multi-alpha aggregates lack a single
+        edge_estimate_bps, so the per-alpha risk wrapper handles
+        edge filtering upstream.
         """
+        # F5: min_order_shares gate (entries only).
+        if not is_exit and quantity < self._min_order_shares:
+            return None
+
         seq = self._seq.next()
         order_id = hashlib.sha256(
             f"{correlation_id}:{seq}".encode()
@@ -1538,23 +1561,33 @@ class Orchestrator:
         quantity = round(intent.target_quantity * verdict.scaling_factor)
         if quantity <= 0:
             return None
-        if quantity < self._min_order_shares:
+
+        # F2: Exits and stop-losses bypass min_order_shares — you must be
+        # able to close any position regardless of size (Inv-11 fail-safe).
+        is_exit_or_stop = (
+            intent.intent == TradingIntent.EXIT
+            or intent.signal.strategy_id == "__stop_exit__"
+        )
+        if not is_exit_or_stop and quantity < self._min_order_shares:
             return None
 
         # B4: signal edge vs round-trip cost gate.
-        # Skip stop-loss exits (always allow for safety) and when the gate
-        # is disabled (ratio == 0) or no cost model / quote is available.
-        is_stop_exit = intent.signal.strategy_id == "__stop_exit__"
+        # Skip exits and stop-losses (always allow for safety) and when
+        # the gate is disabled (ratio == 0) or no cost model / quote.
         if (
-            not is_stop_exit
+            not is_exit_or_stop
             and self._signal_min_edge_cost_ratio > 0
             and self._cost_model is not None
             and quote is not None
         ):
             gate_price = (quote.bid + quote.ask) / Decimal("2")
             gate_spread = (quote.ask - quote.bid) / Decimal("2")
+            # F4: Use maker cost when passive entries are enabled —
+            # taker assumption overestimates cost for passive strategies.
+            is_taker_gate = not self._use_passive_entries
             cost = self._cost_model.compute(
                 intent.symbol, side, quantity, gate_price, gate_spread,
+                is_taker=is_taker_gate,
             )
             round_trip_cost_bps = float(cost.cost_bps) * 2
             if intent.signal.edge_estimate_bps < (
@@ -1783,6 +1816,12 @@ class Orchestrator:
         would risk increasing exposure from an untracked sell order.
         """
         for ack in acks:
+            # F7: debit cancel/expiry fees even when there is no fill.
+            if ack.status in (
+                OrderAckStatus.CANCELLED, OrderAckStatus.EXPIRED,
+            ) and ack.fees and ack.fees > 0:
+                self._positions.debit_fees(ack.symbol, ack.fees)
+
             if ack.fill_price is None or ack.filled_quantity <= 0:
                 continue
 
