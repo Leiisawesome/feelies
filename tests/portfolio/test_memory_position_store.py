@@ -94,3 +94,41 @@ class TestCostBasisPnl:
         pos = store.update("AAPL", -100, Decimal("15"))
         assert pos.realized_pnl == Decimal("500")
         assert pos.quantity == 0
+
+
+class TestDebitFees:
+    """F7: debit_fees — cancel/expiry fees without a fill."""
+
+    def test_debits_fees_when_position_exists(self, store: MemoryPositionStore) -> None:
+        """Cancel fee accumulates against an existing filled position."""
+        store.update("AAPL", 100, Decimal("150"))
+        store.debit_fees("AAPL", Decimal("1.50"))
+        assert store.get("AAPL").cumulative_fees == Decimal("1.50")
+
+    def test_no_ghost_position_when_no_fill(self, store: MemoryPositionStore) -> None:
+        """Cancel fee on a never-filled symbol must not create a ghost entry."""
+        store.debit_fees("AAPL", Decimal("0.50"))
+        # all_positions() should remain empty — no zero-qty ghost
+        assert store.all_positions() == {}
+
+    def test_fully_closed_position_visible_in_all_positions(
+        self, store: MemoryPositionStore
+    ) -> None:
+        """Fully-closed positions remain in all_positions() for realized-PnL aggregation."""
+        store.update("AAPL", 100, Decimal("150"))
+        store.update("AAPL", -100, Decimal("155"))  # full close → qty=0, PnL=$500
+        result = store.all_positions()
+        # Position is retained so that realized_pnl is visible to the risk engine.
+        assert "AAPL" in result
+        assert result["AAPL"].quantity == 0
+        assert result["AAPL"].realized_pnl == Decimal("500")
+
+    def test_debit_fees_accumulate_on_closed_position(
+        self, store: MemoryPositionStore
+    ) -> None:
+        """Cancel fees arriving after a full close accumulate on the existing entry."""
+        store.update("AAPL", 100, Decimal("150"))
+        store.update("AAPL", -100, Decimal("155"))  # qty → 0
+        store.debit_fees("AAPL", Decimal("0.10"))
+        pos = store.all_positions()["AAPL"]
+        assert pos.cumulative_fees == Decimal("0.10")

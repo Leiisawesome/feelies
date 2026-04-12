@@ -617,6 +617,79 @@ class TestVolumeBasedQueueDrain:
         assert len(acks) == 1
         assert acks[0].status == OrderAckStatus.FILLED
 
+    def test_shares_traded_at_level_resets_on_price_away_buy(self):
+        """F6: BUY — accumulated volume resets when BBO moves away from limit price.
+
+        Without the fix, volume accumulated before price-away persists and can
+        trigger an early fill when the price returns to the level.
+        """
+        from feelies.core.events import Trade
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(
+            clock, queue_position_shares=200, fill_delay_ticks=9999,
+        )
+
+        router.on_quote(_quote("AAPL", "150.00", "150.02"))
+        router.submit(_limit_buy("AAPL", qty=100, limit_price="150.00"))
+        router.poll_acks()
+
+        # Accumulate 190 shares — not enough to fill yet
+        router.on_trade(Trade(
+            timestamp_ns=5100, exchange_timestamp_ns=5100,
+            correlation_id="t1", sequence=2,
+            symbol="AAPL", price=Decimal("150.00"), size=190,
+        ))
+
+        # BBO moves up — bid is now above our limit, so we're off the level
+        clock.set_time(5200)
+        router.on_quote(_quote("AAPL", "150.05", "150.07", ts=5200))
+        assert router.poll_acks() == []  # no fill yet
+
+        # BBO returns to level — shares_traded_at_level must be 0 (was reset)
+        # So 50 new shares should not be enough to fill (need 200)
+        router.on_trade(Trade(
+            timestamp_ns=5300, exchange_timestamp_ns=5300,
+            correlation_id="t2", sequence=3,
+            symbol="AAPL", price=Decimal("150.00"), size=50,
+        ))
+        clock.set_time(5400)
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=5400))
+        assert router.poll_acks() == []  # 50 < 200, must not fill
+
+    def test_shares_traded_at_level_resets_on_price_away_sell(self):
+        """F6: SELL — accumulated volume resets when BBO moves away from limit price."""
+        from feelies.core.events import Trade
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(
+            clock, queue_position_shares=200, fill_delay_ticks=9999,
+        )
+
+        router.on_quote(_quote("AAPL", "150.00", "150.02"))
+        router.submit(_limit_sell("AAPL", qty=100, limit_price="150.02"))
+        router.poll_acks()
+
+        # Accumulate 190 shares at the ask level
+        router.on_trade(Trade(
+            timestamp_ns=5100, exchange_timestamp_ns=5100,
+            correlation_id="t1", sequence=2,
+            symbol="AAPL", price=Decimal("150.02"), size=190,
+        ))
+
+        # BBO moves down — ask is now below our limit, we lose queue position
+        clock.set_time(5200)
+        router.on_quote(_quote("AAPL", "149.95", "149.97", ts=5200))
+        assert router.poll_acks() == []
+
+        # BBO returns — accumulated volume was reset, 50 new shares not enough
+        router.on_trade(Trade(
+            timestamp_ns=5300, exchange_timestamp_ns=5300,
+            correlation_id="t2", sequence=3,
+            symbol="AAPL", price=Decimal("150.02"), size=50,
+        ))
+        clock.set_time(5400)
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=5400))
+        assert router.poll_acks() == []  # 50 < 200, must not fill
+
 
 class TestMultipleOrders:
     """Test multiple resting orders and symbol isolation."""

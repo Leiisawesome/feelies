@@ -65,14 +65,28 @@ class MemoryPositionStore:
         return pos
 
     def debit_fees(self, symbol: str, fees: Decimal) -> None:
-        """Record fees without a fill (e.g. cancel fees)."""
+        """Record fees without a fill (e.g. cancel fees).
+
+        Only updates positions that already exist (non-zero quantity).
+        A cancel on a never-filled order produces no position entry —
+        creating a ghost zero-qty position would pollute all_positions()
+        and miscount open positions in downstream consumers.
+        """
         pos = self._positions.get(symbol)
-        if pos is None:
-            pos = Position(symbol=symbol)
-            self._positions[symbol] = pos
-        pos.cumulative_fees += fees
+        if pos is not None:
+            pos.cumulative_fees += fees
 
     def all_positions(self) -> dict[str, Position]:
+        """Return all tracked positions, including fully-closed ones.
+
+        Closed positions (qty=0) are included so that realized PnL and
+        cumulative fees remain visible to downstream consumers (e.g. the
+        drawdown guard in the risk engine).  Callers that care only about
+        open positions must filter by ``pos.quantity != 0`` themselves.
+
+        Ghost positions are prevented at the ``debit_fees`` level — a
+        cancel fee on a symbol that was never filled produces no entry.
+        """
         return dict(self._positions)
 
     def total_exposure(self) -> Decimal:

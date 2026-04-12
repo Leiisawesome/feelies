@@ -992,7 +992,10 @@ class Orchestrator:
             if agg.exit_order is not None:
                 side, qty = agg.exit_order
                 order = self._build_net_order(
-                    symbol, side, qty, cid, is_exit=True,
+                    symbol, side, qty, cid,
+                    is_exit=True,
+                    contributing_intents=agg.contributing_intents,
+                    quote=quote,
                 )
                 if order is not None:
                     orders_to_submit.append(order)
@@ -1010,7 +1013,10 @@ class Orchestrator:
             if agg.entry_order is not None:
                 side, qty = agg.entry_order
                 order = self._build_net_order(
-                    symbol, side, qty, cid, is_exit=False,
+                    symbol, side, qty, cid,
+                    is_exit=False,
+                    contributing_intents=agg.contributing_intents,
+                    quote=quote,
                 )
                 if order is not None:
                     orders_to_submit.append(order)
@@ -1141,6 +1147,8 @@ class Orchestrator:
         correlation_id: str,
         *,
         is_exit: bool = False,
+        contributing_intents: "tuple[OrderIntent, ...] | None" = None,
+        quote: NBBOQuote | None = None,
     ) -> OrderRequest | None:
         """Construct an OrderRequest for a net multi-alpha aggregate.
 
@@ -1149,13 +1157,43 @@ class Orchestrator:
 
         F5: min_order_shares gate applied to entries only — exits must
         always be able to close positions (Inv-11).  B4 edge-cost gate
-        is not applied here: multi-alpha aggregates lack a single
-        edge_estimate_bps, so the per-alpha risk wrapper handles
-        edge filtering upstream.
+        applied to entries using the minimum edge_estimate_bps across
+        contributing entry intents (conservative: worst-case alpha edge).
         """
         # F5: min_order_shares gate (entries only).
         if not is_exit and quantity < self._min_order_shares:
             return None
+
+        # F5: B4 edge-cost gate for entry net orders.
+        if (
+            not is_exit
+            and self._signal_min_edge_cost_ratio > 0
+            and self._cost_model is not None
+            and quote is not None
+            and contributing_intents
+        ):
+            entry_intents = [
+                i for i in contributing_intents
+                if i.intent not in (
+                    TradingIntent.EXIT,
+                    TradingIntent.REVERSE_LONG_TO_SHORT,
+                    TradingIntent.REVERSE_SHORT_TO_LONG,
+                )
+            ]
+            if entry_intents:
+                min_edge_bps = min(
+                    i.signal.edge_estimate_bps for i in entry_intents
+                )
+                gate_price = (quote.bid + quote.ask) / Decimal("2")
+                gate_spread = (quote.ask - quote.bid) / Decimal("2")
+                is_taker_gate = not self._use_passive_entries
+                cost = self._cost_model.compute(
+                    symbol, side, quantity, gate_price, gate_spread,
+                    is_taker=is_taker_gate,
+                )
+                round_trip_cost_bps = float(cost.cost_bps) * 2
+                if min_edge_bps < self._signal_min_edge_cost_ratio * round_trip_cost_bps:
+                    return None
 
         seq = self._seq.next()
         order_id = hashlib.sha256(

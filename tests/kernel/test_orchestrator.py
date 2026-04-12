@@ -749,3 +749,316 @@ class TestEdgeCostGate:
 
         pos = orch._positions.get("AAPL")
         assert pos.quantity != 0  # gate disabled, order allowed
+
+
+# ── F1: Resting-order guard placed AFTER signal/risk evaluation ───────────
+
+
+class TestRestingOrderGuardAfterRisk:
+    """F1: Signal + risk always run even with a pending limit order resting.
+
+    Only order *submission* is suppressed by the guard; EXIT intent bypasses it.
+    """
+
+    def _build_passive_orch(
+        self,
+        clock: SimulatedClock,
+        signal: Signal,
+        position_store: MemoryPositionStore | None = None,
+    ) -> tuple[Orchestrator, EventBus]:
+        bus = EventBus()
+        pos_store = position_store or MemoryPositionStore()
+        bt_router = BacktestOrderRouter(clock=clock)
+        backend = ExecutionBackend(
+            market_data=_StubMarketData(),
+            order_router=bt_router,
+            mode="BACKTEST",
+        )
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=backend,
+            feature_engine=_StubFeatureEngine(),
+            signal_engine=_StubSignalEngine(signal=signal),
+            risk_engine=_StubRiskEngine(action=RiskAction.ALLOW),
+            position_store=pos_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+        orch._use_passive_entries = True
+        return orch, bus
+
+    def _seed_pending_order(
+        self,
+        orch: Orchestrator,
+        order_id: str,
+        clock: SimulatedClock,
+    ) -> None:
+        """Inject a non-terminal AAPL limit order into the orchestrator's tracker."""
+        from feelies.core.events import OrderType, Side
+
+        fake_order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="fake-cid",
+            sequence=999,
+            order_id=order_id,
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=50,
+            limit_price=Decimal("149.50"),
+            strategy_id="test_strat",
+        )
+        from feelies.core.events import Side as _Side
+        orch._track_order(fake_order.order_id, _Side.BUY, fake_order)
+
+    def test_risk_verdict_published_despite_resting_entry_order(self) -> None:
+        """RiskVerdict appears on the bus even when the resting-order guard fires."""
+        clock = SimulatedClock(start_ns=1000)
+        quote = _make_quote()
+        signal = _make_signal(quote, direction=SignalDirection.LONG)
+        orch, bus = self._build_passive_orch(clock, signal)
+        _boot_to_backtest(orch)
+        self._seed_pending_order(orch, "fake-order-001", clock)
+
+        verdicts: list[RiskVerdict] = []
+        new_orders: list[OrderRequest] = []
+        bus.subscribe(RiskVerdict, verdicts.append)
+        bus.subscribe(OrderRequest, new_orders.append)
+
+        orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
+        orch._process_tick(quote)
+
+        # Signal evaluation ran → signal-level risk verdict was published.
+        assert len(verdicts) >= 1
+        assert verdicts[0].action == RiskAction.ALLOW
+        # Guard suppressed ALL new order submission.
+        assert not new_orders
+
+    def test_exit_bypasses_resting_order_guard(self) -> None:
+        """EXIT intent ignores the resting-order guard and closes the position."""
+        clock = SimulatedClock(start_ns=1000)
+        quote = _make_quote()
+        flat_signal = _make_signal(quote, direction=SignalDirection.FLAT)
+
+        position_store = MemoryPositionStore()
+        position_store.update("AAPL", 50, Decimal("150.00"))
+        orch, _ = self._build_passive_orch(clock, flat_signal, position_store)
+        _boot_to_backtest(orch)
+        self._seed_pending_order(orch, "fake-order-002", clock)
+
+        orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
+        orch._process_tick(quote)
+
+        # EXIT bypasses guard → position is fully closed.
+        assert position_store.get("AAPL").quantity == 0
+
+
+# ── F2: EXIT bypasses min_order_shares gate ──────────────────────────────
+
+
+class TestExitBypassesMinOrderShares:
+    """F2: EXIT intent is never gated by the min_order_shares threshold."""
+
+    def test_exit_below_min_shares_still_executes(self) -> None:
+        """50-share EXIT proceeds even when min_order_shares is set to 1000."""
+        clock = SimulatedClock(start_ns=1000)
+        quote = _make_quote()
+        flat_signal = _make_signal(quote, direction=SignalDirection.FLAT)
+
+        position_store = MemoryPositionStore()
+        position_store.update("AAPL", 50, Decimal("150.00"))
+
+        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router.on_quote(quote)
+        orch = Orchestrator(
+            clock=clock,
+            bus=EventBus(),
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            feature_engine=_StubFeatureEngine(),
+            signal_engine=_StubSignalEngine(signal=flat_signal),
+            risk_engine=_StubRiskEngine(action=RiskAction.ALLOW),
+            position_store=position_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+        _boot_to_backtest(orch)
+        orch._min_order_shares = 1000  # threshold far above exit qty of 50
+
+        orch._process_tick(quote)
+
+        assert position_store.get("AAPL").quantity == 0
+
+
+# ── F3: EXIT bypasses B4 edge-cost gate ──────────────────────────────────
+
+
+class TestExitBypassesEdgeCostGate:
+    """F3: EXIT with zero edge_estimate_bps still executes when B4 is active."""
+
+    def test_exit_with_zero_edge_closes_position(self) -> None:
+        """FLAT signal with edge=0 closes a long position despite B4 ratio=2."""
+        from feelies.execution.cost_model import DefaultCostModel, DefaultCostModelConfig
+
+        clock = SimulatedClock(start_ns=1000)
+        # Wide spread → any ENTRY with low edge would be gated out.
+        quote = _make_quote(bid="99.00", ask="101.00")
+        flat_signal = Signal(
+            timestamp_ns=quote.timestamp_ns,
+            correlation_id=quote.correlation_id,
+            sequence=quote.sequence,
+            symbol=quote.symbol,
+            strategy_id="test_strat",
+            direction=SignalDirection.FLAT,
+            strength=0.8,
+            edge_estimate_bps=0.0,  # zero edge — would gate an ENTRY
+        )
+
+        position_store = MemoryPositionStore()
+        position_store.update("AAPL", 50, Decimal("150.00"))
+
+        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router.on_quote(quote)
+        cost_model = DefaultCostModel(DefaultCostModelConfig())
+        orch = Orchestrator(
+            clock=clock,
+            bus=EventBus(),
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            feature_engine=_StubFeatureEngine(),
+            signal_engine=_StubSignalEngine(signal=flat_signal),
+            risk_engine=_StubRiskEngine(action=RiskAction.ALLOW),
+            position_store=position_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+            cost_model=cost_model,
+        )
+        orch._signal_min_edge_cost_ratio = 2.0
+        _boot_to_backtest(orch)
+
+        orch._process_tick(quote)
+
+        # EXIT must bypass B4 gate → position fully closed.
+        assert position_store.get("AAPL").quantity == 0
+
+
+# ── F5: Multi-alpha B4 gate in _build_net_order ──────────────────────────
+
+
+class TestMultiAlphaB4Gate:
+    """F5: _build_net_order gates entries when min edge across contributing
+    intents falls below the B4 threshold; exits always pass (Inv-11).
+    """
+
+    def _build_gated_orch(self, clock: SimulatedClock) -> Orchestrator:
+        from feelies.execution.cost_model import DefaultCostModel, DefaultCostModelConfig
+
+        cost_model = DefaultCostModel(DefaultCostModelConfig())
+        orch = _build_orchestrator(clock)
+        orch._cost_model = cost_model
+        orch._signal_min_edge_cost_ratio = 2.0
+        _boot_to_backtest(orch)
+        return orch
+
+    def _make_entry_intent(
+        self,
+        quote: NBBOQuote,
+        edge_bps: float,
+        strategy_id: str = "alpha_a",
+    ):
+        from feelies.execution.intent import OrderIntent, TradingIntent
+
+        signal = _make_signal_with_edge(quote, edge_bps=edge_bps)
+        return OrderIntent(
+            intent=TradingIntent.ENTRY_LONG,
+            symbol=quote.symbol,
+            strategy_id=strategy_id,
+            target_quantity=100,
+            current_quantity=0,
+            signal=signal,
+        )
+
+    def test_entry_suppressed_when_min_edge_below_threshold(self) -> None:
+        """Single low-edge alpha → entry net order is gated out."""
+        from feelies.core.events import Side
+
+        clock = SimulatedClock(start_ns=1000)
+        quote = _make_quote(bid="99.00", ask="101.00")  # wide spread → high cost bps
+        orch = self._build_gated_orch(clock)
+
+        intent_low = self._make_entry_intent(quote, edge_bps=0.0)
+        result = orch._build_net_order(
+            "AAPL", Side.BUY, 100, "test-cid",
+            is_exit=False,
+            contributing_intents=(intent_low,),
+            quote=quote,
+        )
+        assert result is None
+
+    def test_entry_passes_when_min_edge_above_threshold(self) -> None:
+        """Single high-edge alpha above threshold → entry net order allowed."""
+        from feelies.core.events import Side
+
+        clock = SimulatedClock(start_ns=1000)
+        quote = _make_quote(bid="99.80", ask="100.20")  # tight spread → low cost bps
+        orch = self._build_gated_orch(clock)
+
+        intent_high = self._make_entry_intent(quote, edge_bps=10_000.0)
+        result = orch._build_net_order(
+            "AAPL", Side.BUY, 100, "test-cid",
+            is_exit=False,
+            contributing_intents=(intent_high,),
+            quote=quote,
+        )
+        assert result is not None
+
+    def test_min_edge_computed_across_multiple_intents(self) -> None:
+        """One low-edge alpha among high-edge peers drags min below threshold."""
+        from feelies.core.events import Side
+
+        clock = SimulatedClock(start_ns=1000)
+        quote = _make_quote(bid="99.80", ask="100.20")
+        orch = self._build_gated_orch(clock)
+
+        intent_high = self._make_entry_intent(quote, edge_bps=10_000.0, strategy_id="alpha_a")
+        intent_low = self._make_entry_intent(quote, edge_bps=0.0, strategy_id="alpha_b")
+        result = orch._build_net_order(
+            "AAPL", Side.BUY, 100, "test-cid",
+            is_exit=False,
+            contributing_intents=(intent_high, intent_low),
+            quote=quote,
+        )
+        assert result is None  # min edge (0.0) is below threshold
+
+    def test_exit_not_gated_by_b4(self) -> None:
+        """is_exit=True bypasses B4 entirely — exits always produce an OrderRequest."""
+        from feelies.core.events import Side
+        from feelies.execution.intent import OrderIntent, TradingIntent
+
+        clock = SimulatedClock(start_ns=1000)
+        quote = _make_quote(bid="99.00", ask="101.00")  # wide spread
+        orch = self._build_gated_orch(clock)
+
+        zero_edge_signal = _make_signal_with_edge(quote, edge_bps=0.0)
+        exit_intent = OrderIntent(
+            intent=TradingIntent.EXIT,
+            symbol=quote.symbol,
+            strategy_id="alpha_a",
+            target_quantity=100,
+            current_quantity=100,
+            signal=zero_edge_signal,
+        )
+        result = orch._build_net_order(
+            "AAPL", Side.SELL, 100, "test-cid",
+            is_exit=True,
+            contributing_intents=(exit_intent,),
+            quote=quote,
+        )
+        assert result is not None  # exits bypass B4 (Inv-11)
