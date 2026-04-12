@@ -341,6 +341,32 @@ class PassiveLimitOrderRouter:
             fees=cancel_fees if cancel_fees > 0 else None,
         ))
 
+    # ── Explicit cancellation ───────────────────────────────────
+
+    def cancel_order(self, order_id: str) -> bool:
+        """Cancel a specific resting order.
+
+        Returns True if the order was found and cancelled.  The
+        cancellation ack is queued for the next ``poll_acks()`` call.
+        """
+        pending = self._resting_orders.pop(order_id, None)
+        if pending is None:
+            return False
+        cancel_fees = (
+            self._cancel_fee_per_share * pending.request.quantity
+        ).quantize(Decimal("0.01"))
+        self._pending_acks.append(OrderAck(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=pending.request.correlation_id,
+            sequence=pending.request.sequence,
+            order_id=order_id,
+            symbol=pending.request.symbol,
+            status=OrderAckStatus.CANCELLED,
+            reason="client_cancel",
+            fees=cancel_fees if cancel_fees > 0 else None,
+        ))
+        return True
+
     # ── Diagnostics ──────────────────────────────────────────────
 
     @property

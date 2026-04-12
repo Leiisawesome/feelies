@@ -322,5 +322,14 @@ class PlatformConfig:
             platform_min_order_shares=int(
                 data.get("platform_min_order_shares", 1)
             ),
+            signal_min_edge_cost_ratio=float(
+                data.get("signal_min_edge_cost_ratio", 0.0)
+            ),
+            cost_market_impact_factor=float(
+                data.get("cost_market_impact_factor", 0.5)
+            ),
+            cost_htb_borrow_annual_bps=float(
+                data.get("cost_htb_borrow_annual_bps", 0.0)
+            ),
             cache_dir=Path(cache_dir_raw) if cache_dir_raw else None,
         )
