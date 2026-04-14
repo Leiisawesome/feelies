@@ -74,6 +74,22 @@ class BasicRiskEngine:
         signal: Signal,
         positions: PositionStore,
     ) -> RiskVerdict:
+        """Gate 1 (signal-level): directional position-limit check.
+
+        Complementary to ``check_order`` (gate 2).  This gate runs
+        BEFORE the concrete order is sized, so it cannot compute
+        post-fill quantity.  Instead it checks whether the current
+        position is already at the limit and the signal would INCREASE
+        exposure (``signal_reduces`` exception allows exits/reversals).
+
+        The exposure and drawdown sub-checks via
+        ``_check_exposure_and_drawdown`` are shared with gate 2.
+        In the single-alpha path these see the same position snapshot
+        (no mutation between gates).  This partial redundancy is
+        acceptable: gate 1 provides an early-exit before order
+        construction, and removing either gate would lose the unique
+        check that only that gate performs.
+        """
         regime_scale = self._regime_scaling(signal.symbol)
         adjusted_max = int(self._config.max_position_per_symbol * regime_scale)
 
@@ -113,6 +129,19 @@ class BasicRiskEngine:
         order: OrderRequest,
         positions: PositionStore,
     ) -> RiskVerdict:
+        """Gate 2 (order-level): post-fill position quantity check.
+
+        Complementary to ``check_signal`` (gate 1).  This gate runs
+        AFTER the order has been sized (intent translation + scaling),
+        so it can compute the exact ``post_fill_qty`` that would result
+        from this order.  Gate 1 cannot do this because the concrete
+        order does not exist yet at signal time.
+
+        Removing this gate would lose the post-fill position limit
+        validation — gate 1's directional check does not catch cases
+        where the sized order would overshoot the limit (e.g. SCALE_UP
+        by more than the remaining headroom).
+        """
         regime_scale = self._regime_scaling(order.symbol)
         adjusted_max = int(self._config.max_position_per_symbol * regime_scale)
 

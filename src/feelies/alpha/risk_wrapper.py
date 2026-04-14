@@ -166,6 +166,12 @@ class AlphaBudgetRiskWrapper:
             try:
                 alpha = self._registry.get(strategy_id)
             except KeyError:
+                # Unregistered strategy_id (e.g. "multi_alpha_net",
+                # "emergency_flatten", "__stop_exit__").  Per-alpha
+                # budget checks are skipped — only aggregate-level
+                # checks via the inner engine apply.  For multi-alpha
+                # net orders this is by design: per-alpha budgets were
+                # already enforced at signal time in the evaluator.
                 pass
             else:
                 budget = alpha.manifest.risk_budget

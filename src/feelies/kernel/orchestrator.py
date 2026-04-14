@@ -117,6 +117,68 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from feelies.execution.cost_model import CostModel
 
+class _PostExitPositionView:
+    """Position view that simulates a pending exit fill for risk checking.
+
+    Used by ``_execute_reverse()`` so the entry leg's ``check_order()``
+    sees the post-exit position rather than the stale pre-exit snapshot.
+    Without this, the risk engine computes an incorrectly favorable
+    ``post_fill_qty`` for the entry leg (e.g. 0 instead of the actual
+    new-entry quantity), allowing entries that should be rejected.
+
+    Only ``get``, ``all_positions``, and ``total_exposure`` are needed
+    by the risk engine — mutating methods raise ``RuntimeError``.
+    """
+
+    __slots__ = ("_inner", "_symbol", "_adj")
+
+    def __init__(
+        self,
+        inner: PositionStore,
+        symbol: str,
+        quantity_adjustment: int,
+    ) -> None:
+        self._inner = inner
+        self._symbol = symbol
+        self._adj = quantity_adjustment
+
+    def _adjusted(self, pos: "Position") -> "Position":
+        from feelies.portfolio.position_store import Position
+        return Position(
+            symbol=pos.symbol,
+            quantity=pos.quantity + self._adj,
+            avg_entry_price=pos.avg_entry_price,
+            realized_pnl=pos.realized_pnl,
+            unrealized_pnl=pos.unrealized_pnl,
+            cumulative_fees=pos.cumulative_fees,
+        )
+
+    def get(self, symbol: str) -> "Position":
+        pos = self._inner.get(symbol)
+        if symbol == self._symbol:
+            return self._adjusted(pos)
+        return pos
+
+    def all_positions(self) -> "dict[str, Position]":
+        result = dict(self._inner.all_positions())
+        if self._symbol in result:
+            result[self._symbol] = self._adjusted(result[self._symbol])
+        return result
+
+    def total_exposure(self) -> Decimal:
+        total = self._inner.total_exposure()
+        pos = self._inner.get(self._symbol)
+        old_contrib = abs(pos.quantity) * pos.avg_entry_price
+        new_contrib = abs(pos.quantity + self._adj) * pos.avg_entry_price
+        return total - old_contrib + new_contrib
+
+    def update(self, *args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("_PostExitPositionView is read-only")
+
+    def debit_fees(self, *args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("_PostExitPositionView is read-only")
+
+
 _TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset({
     OrderState.FILLED,
     OrderState.CANCELLED,
@@ -954,6 +1016,120 @@ class Orchestrator:
             AttributionRecord,
         )
 
+        # ── Stop-loss / trailing-stop check ────────────────────────
+        # Stop-loss is position-level protection, not alpha-level.
+        # When triggered it overrides all alpha intents: we skip the
+        # multi-alpha evaluator entirely and route the EXIT through
+        # the single-alpha RISK_CHECK → ORDER path (a valid M4→M5
+        # transition).  Strategy positions are reconciled via
+        # _distribute_fill_to_strategies() during fill processing.
+        stop_signal = self._check_stop_exit(quote)
+        if stop_signal is not None:
+            self._bus.publish(stop_signal)
+            current_position = self._positions.get(stop_signal.symbol)
+            stop_intent = self._intent_translator.translate(
+                stop_signal, current_position,
+            )
+            if stop_intent.intent != TradingIntent.NO_ACTION:
+                self._micro.transition(
+                    MicroState.RISK_CHECK,
+                    trigger="multi_alpha_stop_exit",
+                    correlation_id=cid,
+                )
+                stop_verdict = self._risk_engine.check_signal(
+                    stop_signal, self._positions,
+                )
+                self._bus.publish(stop_verdict)
+                if stop_verdict.action == RiskAction.FORCE_FLATTEN:
+                    if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
+                        self._escalate_risk(cid)
+                        self._micro.reset(
+                            trigger="pipeline_abort:stop_exit_lockdown",
+                            correlation_id=cid,
+                        )
+                        return
+                if stop_verdict.action == RiskAction.REJECT:
+                    self._micro.transition(
+                        MicroState.LOG_AND_METRICS,
+                        trigger="stop_exit_risk_reject",
+                        correlation_id=cid,
+                    )
+                    self._finalize_tick(t_wall_start, cid)
+                    return
+                order = self._build_order_from_intent(
+                    stop_intent, stop_verdict, cid, quote,
+                )
+                if order is not None:
+                    order_verdict = self._risk_engine.check_order(
+                        order, self._positions,
+                    )
+                    self._bus.publish(order_verdict)
+                    if order_verdict.action not in (
+                        RiskAction.REJECT, RiskAction.FORCE_FLATTEN,
+                    ):
+                        if order_verdict.action == RiskAction.SCALE_DOWN:
+                            scaled = round(
+                                order.quantity * order_verdict.scaling_factor,
+                            )
+                            if scaled > 0 and scaled != order.quantity:
+                                order = replace(order, quantity=scaled)
+                            elif scaled <= 0:
+                                order = None
+                        if order is not None:
+                            self._micro.transition(
+                                MicroState.ORDER_DECISION,
+                                trigger="stop_exit_risk_pass",
+                                correlation_id=cid,
+                            )
+                            self._track_order(
+                                order.order_id, order.side, order,
+                            )
+                            self._micro.transition(
+                                MicroState.ORDER_SUBMIT,
+                                trigger="stop_exit_order_constructed",
+                                correlation_id=cid,
+                            )
+                            self._transition_order(
+                                order.order_id,
+                                OrderState.SUBMITTED,
+                                "submitted",
+                            )
+                            self._backend.order_router.submit(order)
+                            self._bus.publish(order)
+                            self._micro.transition(
+                                MicroState.ORDER_ACK,
+                                trigger="stop_exit_submitted",
+                                correlation_id=cid,
+                            )
+                            acks = self._backend.order_router.poll_acks()
+                            for ack in acks:
+                                self._bus.publish(ack)
+                                self._apply_ack_to_order(ack)
+                            self._micro.transition(
+                                MicroState.POSITION_UPDATE,
+                                trigger="stop_exit_acked",
+                                correlation_id=cid,
+                            )
+                            self._reconcile_fills(acks, cid)
+                            self._micro.transition(
+                                MicroState.LOG_AND_METRICS,
+                                trigger="stop_exit_position_updated",
+                                correlation_id=cid,
+                            )
+                            self._finalize_tick(t_wall_start, cid)
+                            return
+                # Order construction failed or risk rejected — fall through to M10.
+                self._micro.transition(
+                    MicroState.LOG_AND_METRICS,
+                    trigger="stop_exit_no_order",
+                    correlation_id=cid,
+                )
+                self._finalize_tick(t_wall_start, cid)
+                return
+            # stop_intent was NO_ACTION (position already 0), fall through
+            # to normal multi-alpha evaluation in case other symbols
+            # have actionable intents.
+
         t0 = time.perf_counter_ns()
         intent_set = self._multi_alpha_evaluator.evaluate_tick(features, quote)
         self._tick_timings["signal_evaluate_ns"] = time.perf_counter_ns() - t0
@@ -1067,6 +1243,17 @@ class Orchestrator:
         )
 
         # ── Pre-submission risk check on each aggregate order ──
+        #
+        # Design note: net orders carry strategy_id="multi_alpha_net",
+        # which is not a registered alpha.  This is intentional —
+        # per-alpha budget enforcement already happened in the
+        # MultiAlphaEvaluator at signal time (via AlphaBudgetRiskWrapper).
+        # At the order gate, only platform-aggregate risk checks apply
+        # (position limits, gross exposure, drawdown) via the inner
+        # BasicRiskEngine.  Re-applying per-alpha budgets to a net
+        # aggregate would be semantically incorrect: the net order is
+        # the composition of individually-budgeted intents, not a
+        # single alpha's position request.
         approved_orders: list[OrderRequest] = []
         for order in orders_to_submit:
             order_verdict = self._risk_engine.check_order(
@@ -1226,6 +1413,11 @@ class Orchestrator:
             side=side,
             order_type=OrderType.MARKET,
             quantity=quantity,
+            # Intentionally NOT a registered alpha — per-alpha budget
+            # checks happened at signal time in MultiAlphaEvaluator.
+            # The order-gate check_order sees this as unregistered and
+            # falls through to aggregate-only risk checks (see design
+            # note in _process_tick_multi_alpha).
             strategy_id="multi_alpha_net",
         )
 
@@ -1656,8 +1848,21 @@ class Orchestrator:
             return
 
         # ── ENTRY leg: passive LIMIT (or MARKET if passive disabled) ─
+        #
+        # Risk-check the entry leg against a POST-EXIT position view.
+        # The exit hasn't filled yet (both legs submit in the same tick),
+        # so self._positions still reflects the pre-exit state.  Without
+        # the adjustment, check_order computes post_fill_qty from the
+        # stale position, producing an incorrectly favorable result
+        # (e.g. 0 instead of the actual new-entry quantity).
         entry_order: OrderRequest | None = None
         entry_qty = round(entry_qty_raw * verdict.scaling_factor)
+
+        # Signed adjustment: the exit leg removes close_qty from position.
+        exit_signed_adj = -close_qty if exit_side == Side.SELL else close_qty
+        post_exit_positions = _PostExitPositionView(
+            self._positions, intent.symbol, exit_signed_adj,
+        )
 
         if entry_qty >= self._min_order_shares:
             entry_side = exit_side  # same direction for both legs
@@ -1712,9 +1917,9 @@ class Orchestrator:
                     is_short=is_short,
                 )
 
-                # Risk check entry leg.
+                # Risk check entry leg against post-exit position view.
                 entry_rv = self._risk_engine.check_order(
-                    entry_order, self._positions,
+                    entry_order, post_exit_positions,
                 )
                 self._bus.publish(entry_rv)
                 if entry_rv.action in (
@@ -2161,18 +2366,37 @@ class Orchestrator:
                 self._fill_ledger is not None
                 and self._strategy_positions is not None
             ):
-                alpha_allocs = self._fill_ledger.allocate_fill(
-                    ack.order_id,
-                    ack.filled_quantity,
-                    ack.fill_price,
-                    total_fees=ack.fees,
-                )
-                for (
-                    strat_id, sym, alpha_signed, price, alloc_fees
-                ) in alpha_allocs:
-                    self._strategy_positions.update(
-                        strat_id, sym, alpha_signed, price,
-                        fees=alloc_fees,
+                try:
+                    alpha_allocs = self._fill_ledger.allocate_fill(
+                        ack.order_id,
+                        ack.filled_quantity,
+                        ack.fill_price,
+                        total_fees=ack.fees,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Fill attribution failed for order %s — "
+                        "falling back to proportional distribution",
+                        ack.order_id,
+                    )
+                    alpha_allocs = []
+
+                if alpha_allocs:
+                    for (
+                        strat_id, sym, alpha_signed, price, alloc_fees
+                    ) in alpha_allocs:
+                        self._strategy_positions.update(
+                            strat_id, sym, alpha_signed, price,
+                            fees=alloc_fees,
+                        )
+                else:
+                    # No attribution record (emergency flatten, stop
+                    # exit, or attribution failure).  Distribute the
+                    # fill proportionally across all strategy positions
+                    # for this symbol to keep strategy and global stores
+                    # in sync.
+                    self._distribute_fill_to_strategies(
+                        ack.symbol, signed_qty, ack.fill_price, ack.fees,
                     )
             self._bus.publish(PositionUpdate(
                 timestamp_ns=self._clock.now_ns(),
@@ -2206,6 +2430,78 @@ class Orchestrator:
                 ))
 
         self._prune_terminal_orders()
+
+    def _distribute_fill_to_strategies(
+        self,
+        symbol: str,
+        signed_qty: int,
+        fill_price: Decimal,
+        fees: Decimal,
+    ) -> None:
+        """Distribute a fill proportionally across per-alpha strategy positions.
+
+        Used when no fill-attribution record exists (emergency flatten,
+        stop exit, or attribution failure).  Distributes ``signed_qty``
+        proportionally to each strategy's current quantity for this
+        symbol, keeping global and strategy position stores in sync.
+
+        Uses largest-remainder rounding so the sum of per-alpha deltas
+        equals ``signed_qty`` exactly.
+        """
+        if self._strategy_positions is None:
+            return
+
+        strategy_ids = list(self._strategy_positions.strategy_ids())
+        if not strategy_ids:
+            return
+
+        # Collect each strategy's current quantity for this symbol.
+        strategy_qtys: list[tuple[str, int]] = []
+        total_abs = 0
+        for sid in strategy_ids:
+            q = self._strategy_positions.get(sid, symbol).quantity
+            if q != 0:
+                strategy_qtys.append((sid, q))
+                total_abs += abs(q)
+
+        if total_abs == 0:
+            return
+
+        # Proportional allocation via largest-remainder.
+        abs_fill = abs(signed_qty)
+        exact = [abs_fill * abs(q) / total_abs for _, q in strategy_qtys]
+        floors = [int(e) for e in exact]
+        remainders = [e - f for e, f in zip(exact, floors)]
+        deficit = abs_fill - sum(floors)
+        indices = sorted(range(len(remainders)), key=lambda i: -remainders[i])
+        for i in range(deficit):
+            floors[indices[i]] += 1
+
+        # Apply each allocation with the sign matching the fill direction.
+        fee_remainder = fees
+        for idx, ((sid, q), alloc_qty) in enumerate(
+            zip(strategy_qtys, floors, strict=True),
+        ):
+            if alloc_qty == 0:
+                continue
+            # Sign: same as the overall fill direction.
+            alloc_sign = 1 if signed_qty > 0 else -1
+            alloc_fees = Decimal("0")
+            if total_abs > 0:
+                alloc_fees = (fees * alloc_qty / abs_fill).quantize(
+                    Decimal("0.01"),
+                )
+            fee_remainder -= alloc_fees
+            self._strategy_positions.update(
+                sid, symbol, alloc_sign * alloc_qty, fill_price,
+                fees=alloc_fees,
+            )
+
+        # Assign any rounding remainder to the last allocation.
+        if fee_remainder != Decimal("0") and strategy_qtys:
+            last_sid = strategy_qtys[-1][0]
+            last_pos = self._strategy_positions.get(last_sid, symbol)
+            last_pos.cumulative_fees += fee_remainder
 
     def _prune_terminal_orders(self) -> None:
         """Remove terminally-resolved orders from _active_orders.
