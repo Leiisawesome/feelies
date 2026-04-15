@@ -11,17 +11,25 @@ import urllib.request, zipfile, io, os, sys
 
 FEELIES_SRC = "/home/user/feelies_src"
 
-print("Downloading feelies source zip from GitHub...")
-url = "https://github.com/Leiisawesome/feelies/archive/refs/heads/main.zip"
+# Pin to a specific commit SHA so every Grok session uses identical source
+# (archive/refs/heads/main.zip floats with HEAD and breaks reproducibility).
+# Update this SHA deliberately when you want to upgrade.
+_COMMIT_SHA = "e9a1614e4561c7edeab2b24112e7eb900c76ea8d"
+
+print(f"Downloading feelies source zip from GitHub (commit {_COMMIT_SHA[:12]})...")
+url = f"https://github.com/Leiisawesome/feelies/archive/{_COMMIT_SHA}.zip"
 resp = urllib.request.urlopen(url, timeout=60)
 zf = zipfile.ZipFile(io.BytesIO(resp.read()))
 print(f"Downloaded. Zip contains {len(zf.namelist())} entries.")
 
-# Extract only src/feelies/**/*.py
-prefix = "feelies-main/src/"
+# GitHub names the top-level folder "{repo}-{ref}" for branch zips
+# and "{repo}-{sha}" for commit-SHA zips.
+# Detect it dynamically rather than hardcoding "feelies-main".
+_top = next(n for n in zf.namelist() if n.endswith("/") and n.count("/") == 1)
+prefix = _top + "src/"   # e.g. "feelies-e9a1614e45.../src/"
 extracted = 0
 for name in zf.namelist():
-    if name.startswith("feelies-main/src/feelies/") and name.endswith(".py"):
+    if name.startswith(_top + "src/feelies/") and name.endswith(".py"):
         rel = name[len(prefix):]               # e.g. "feelies/core/events.py"
         out = os.path.join(FEELIES_SRC, rel)
         os.makedirs(os.path.dirname(out), exist_ok=True)
