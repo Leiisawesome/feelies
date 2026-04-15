@@ -1,5 +1,7 @@
 # PROMPT 5 — EXPORT & LIFECYCLE: PARITY VERIFICATION, REGISTRY & ARCHIVE
 
+> **Paste this entire file as one block. Wait for `Export & Lifecycle module: ACTIVE`, then call `INITIALIZE("your_api_key")`.**
+
 ## ACTIVATION DIRECTIVE
 
 The Export & Lifecycle module is now active. This module:

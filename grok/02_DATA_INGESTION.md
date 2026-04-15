@@ -1,5 +1,7 @@
 # PROMPT 2 — DATA INGESTION: POLYGON RTH FETCHER
 
+> **Paste this entire file as one block. Wait for `Data Ingestion module: ACTIVE` before pasting Prompt 3.**
+
 ## ACTIVATION DIRECTIVE
 
 The Data Ingestion module is now active. This is the **single allowed substitution**

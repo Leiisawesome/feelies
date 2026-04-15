@@ -1,5 +1,7 @@
 # PROMPT 4 — BACKTEST EXECUTION: PIPELINE, STATISTICS & REGIME ANALYSIS
 
+> **Paste this entire file as one block. Wait for `Backtest Execution module: ACTIVE` before pasting Prompt 5.**
+
 ## ACTIVATION DIRECTIVE
 
 The Backtest Execution module is now active. This module runs every backtest

@@ -1,5 +1,7 @@
 # PROMPT 3 — ALPHA DEVELOPMENT: SCHEMA, FEATURES & HYPOTHESES
 
+> **Paste this entire file as one block. Wait for `Alpha Development module: ACTIVE` before pasting Prompt 4.**
+
 ## ACTIVATION DIRECTIVE
 
 The Alpha Development module is now active. This module defines:

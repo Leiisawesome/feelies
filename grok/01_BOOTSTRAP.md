@@ -1,6 +1,28 @@
 # PROMPT 1 — BOOTSTRAP: SOURCE DOWNLOAD & SYSTEM IDENTITY
 
-## PASTE THIS FIRST. RUN EVERY CELL IN ORDER. DO NOT SKIP THE SMOKE TEST.
+## HOW TO USE THESE PROMPTS
+
+**Paste each prompt as a complete block — do not extract individual cells.**
+
+Grok reads the narrative text as instructions and executes the Python code fences
+sequentially in its persistent kernel. Variables defined in Cell 1 are in scope for
+Cell 2, and so on. You never need to isolate cells manually.
+
+**Recommended workflow (all 5 prompts, in order):**
+
+| Step | Action | Success signal to wait for |
+|---|---|---|
+| 1 | Paste Prompt 1 (this file) in full | `SOURCE BOOTSTRAP: OK` |
+| 2 | Paste Prompt 2 in full | `Data Ingestion module: ACTIVE` |
+| 3 | Paste Prompt 3 in full | `Alpha Development module: ACTIVE` |
+| 4 | Paste Prompt 4 in full | `Backtest Execution module: ACTIVE` |
+| 5 | Paste Prompt 5 in full | `Export & Lifecycle module: ACTIVE` |
+| 6 | Call `INITIALIZE("your_polygon_api_key")` | All 5 modules: ACTIVE |
+
+> **Cell 1 of this prompt fetches a ~3MB ZIP over HTTPS. It may take 10–30 seconds.
+> Wait for `SOURCE BOOTSTRAP: OK` before pasting Prompt 2.**
+
+If any cell fails, fix the error before continuing — later prompts depend on this one.
 
 ---
 
