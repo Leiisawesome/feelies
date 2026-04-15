@@ -1,19 +1,23 @@
 schema_version: "1.0"
 alpha_id: trade_cluster_drift_v12
-version: "1.6.0"
-description: "v12: crossing-fix + time-adaptive mu_ema + EWMA z-score + OBI clamp"
+version: "2.0.0"
+description: "Continuous-time SDE rewrite: one latent drift state drives entry, exit, and edge"
 hypothesis: |
-  Trade clusters confirmed by mu_ema drift persistence. v12 applies four
-  targeted fixes to v11:
-  1) Symmetric threshold crossing — abs(prev_z) < threshold (was asymmetric bug)
-  2) BBO-change gating in mu_ema — size-only quote refreshes no longer erode drift
-  3) Continuous-time mu_ema decay — half-life fixed in seconds, not in ticks
-  4) O(1) EWMA z-score — replaces O(N) list window for 3x signal eval speedup
-  5) OBI modifier clamped to prevent sign-flip on extreme imbalance
+  The alpha estimates a latent microprice drift process directly from NBBO
+  observations under a continuous-time state-space model:
+
+      dmu_t = -kappa * mu_t dt + q_t dW_t
+      dM_t  = mu_t dt + sigma_t dB_t
+
+  where M_t is the microprice and mu_t is the short-horizon directional edge.
+  A position is taken only when the posterior drift z-score is materially away
+  from zero and is flattened when that same posterior mean reverts toward zero.
+  Entry, exit, and edge_estimate_bps are all derived from this single latent
+  state rather than auxiliary heuristic confirmations.
 falsification_criteria:
-  - "OOS DSR < 1.0 or bootstrap p-value > 0.05"
-  - "Net edge ≤ 0 after full TC stack"
-  - "Latency decay > 40% (0ms → 200ms)"
+  - "Posterior drift z-score shows no stable relation to next-horizon realized returns"
+  - "Model-implied edge_estimate_bps is not positive after transaction costs"
+  - "Out-of-sample calibration degrades materially across symbols or quote-rate regimes"
 
 symbols:
   - AAPL
@@ -21,118 +25,36 @@ symbols:
   - NVDA
 
 parameters:
-  entry_threshold:
+  drift_half_life_seconds:
     type: float
     default: 1.5
-    range: [0.5, 10.0]
-    description: "Minimum |z_score| to emit a signal (z-score normalized)"
-  mu_min_threshold:
-    type: float
-    default: 0.005
-    range: [0.0, 0.1]
-    description: "Minimum |mu_ema| for drift confirmation (filters noise-level drift)"
-  exit_threshold:
-    type: float
-    default: 0.10
-    range: [0.05, 1.0]
-    description: "Exit when |cluster_score| drops below this (wide hysteresis band)"
-  exit_mu_threshold:
-    type: float
-    default: 0.0005
-    range: [0.0, 0.05]
-    description: "Exit when |mu_ema| drops below this (lower than entry mu_min)"
-  intensity_alpha:
-    type: float
-    default: 0.91
-    range: [0.85, 0.99]
-    description: "EMA alpha for trade_intensity (lower = more responsive, requires denser clustering)"
-  aggressor_alpha:
-    type: float
-    default: 0.93
-    range: [0.90, 0.99]
-    description: "EMA alpha for aggressor_flow (lower = more responsive to recent flow)"
-  vol_tau_seconds:
-    type: float
-    default: 2.0
-    range: [0.1, 30.0]
-    description: "mu_ema volatility EWMA half-life in wall-clock seconds (replaces ewma_vol_alpha)"
-  drift_tau_seconds:
-    type: float
-    default: 1.0
     range: [0.1, 10.0]
-    description: "mu_ema drift EWMA half-life in wall-clock seconds (replaces drift_confirm_alpha)"
-
-  vol_suppress_threshold:
+    description: "Half-life of latent drift mean reversion in seconds"
+  vol_half_life_seconds:
     type: float
-    default: 0.5
-    range: [0.3, 0.9]
-    description: "Suppress entries when p(vol_breakout) exceeds this"
-
-  compression_entry_boost:
-    type: float
-    default: 0.7
-    range: [0.3, 1.5]
-    description: "Entry threshold multiplier in compression regime (tighter = more sensitive)"
-
-  normal_entry_boost:
-    type: float
-    default: 1.0
-    range: [0.5, 2.0]
-    description: "Entry threshold multiplier in normal regime"
-
-  min_persistence:
-    type: int
-    default: 3
-    range: [1, 20]
-    description: "Minimum cluster_persistence streak required for entry (structural drift confirmation)"
-
-  persistence_decay:
-    type: float
-    default: 0.85
-    range: [0.5, 0.99]
-    description: "Exponential decay for persistence weight: weight = persistence_decay ^ (min_persistence - persistence)"
-
-  obi_confidence_weight:
-    type: float
-    default: 0.3
-    range: [0.0, 0.8]
-    description: "OBI confidence weight (Bayesian-style posterior modifier)"
-
-  momentum_window:
-    type: int
-    default: 5
-    range: [1, 20]
-    description: "Window for momentum (velocity) calculation"
-
-  momentum_boost:
-    type: float
-    default: 0.4
-    range: [0.0, 1.0]
-    description: "Momentum contribution to cluster_score: score + momentum_boost * velocity"
-
-  zscore_window:
-    type: int
-    default: 100
-    range: [20, 500]
-    description: "Window for z-score mean/std calculation"
-
-  min_edge_bps:
-    type: float
-    default: 0.5
-    range: [0.1, 2.0]
-    description: "Minimum edge in bps to emit signal"
-
-  edge_multiplier:
-    type: float
-    default: 3.5
-    range: [1.0, 10.0]
-    description: "Multiplies cluster_score to produce edge_estimate_bps"
-
-  strength_denominator:
+    default: 5.0
+    range: [0.5, 30.0]
+    description: "Half-life of observation-noise variance EWMA in seconds"
+  entry_z:
     type: float
     default: 1.5
     range: [0.5, 5.0]
-    description: "Divides cluster_score to produce signal strength (capped at 1.0)"
+    description: "Enter when |posterior drift z-score| reaches this level"
+  edge_confidence_z:
+    type: float
+    default: 0.5
+    range: [0.0, 3.5]
+    description: "One-sided confidence multiplier on edge uncertainty for lower-bound gating"
+  exit_threshold:
+    type: float
+    default: 0.5
+    range: [0.0, 2.0]
+    description: "Flatten when |posterior drift z-score| falls back inside this band"
+  cost_floor_bps:
+    type: float
+    default: 0.2
+    range: [0.0, 10.0]
+    description: "Conservative round-trip cost floor used in net-edge filtering"
 
 risk_budget:
   max_position_per_symbol: 500
@@ -140,178 +62,67 @@ risk_budget:
   max_drawdown_pct: 5.0
   capital_allocation_pct: 100.0
 
-regimes:
-  engine: hmm_3state_fractional
-  state_names: [compression_clustering, normal, vol_breakout]
-
 features:
-  - feature_id: trade_intensity
+  - feature_id: sde_drift_state
     version: "1.0.0"
-    computation_module: trade_intensity.py
-    warm_up: {min_events: 100}
-  - feature_id: aggressor_flow
-    version: "1.0.0"
-    computation_module: aggressor_flow.py
-    warm_up: {min_events: 100}
-  - feature_id: mu_ema
-    version: "2.0.0"
-    computation_module: mu_ema.py
-    warm_up: {min_events: 100}
-  - feature_id: cluster_persistence
-    version: "1.0.0"
-    computation_module: cluster_persistence.py
-    warm_up: {min_events: 100}
-  - feature_id: order_book_imbalance
-    version: "1.0.0"
-    computation_module: order_book_imbalance.py
+    description: "Latent drift posterior from a continuous-time OU-plus-observation SDE"
+    computation_module: sde_drift_state.py
+    return_type: list[4]
     warm_up: {min_events: 100}
 
 signal: |
   _state = {}
 
-  def _ewma_zscore(x, ewm, alpha):
-      """O(1) exponentially-weighted z-score.
-
-      Computes z = (x - mean) / std against the pre-update distribution,
-      then advances the EWMA mean and variance.  Bounded memory: 3 scalars.
-      alpha = 1 - 1/window gives the same effective lookback as a simple
-      rolling window of that length.
-      """
-      if ewm.get("n", 0) == 0:
-          ewm["mean"] = x
-          ewm["var"] = 0.0
-          ewm["n"] = 1
-          return 0.0
-      ewm["n"] += 1
-      diff = x - ewm["mean"]
-      std = ewm["var"] ** 0.5
-      z = diff / std if std > 1e-9 else 0.0
-      ewm["mean"] += (1.0 - alpha) * diff
-      ewm["var"] = alpha * (ewm["var"] + (1.0 - alpha) * diff * diff)
-      return z
-
-  def _momentum(history, window):
-      if len(history) < 2:
-          return 0.0
-      recent = history[-min(window, len(history)):]
-      if len(recent) < 2:
-          return 0.0
-      return recent[-1] - recent[0]
-
   def evaluate(features, params):
-      if not features.warm or features.stale:
-          return None
-
-      def _flat():
-          return Signal(
-              timestamp_ns=features.timestamp_ns,
-              correlation_id=features.correlation_id,
-              sequence=features.sequence,
-              symbol=features.symbol,
-              strategy_id=alpha_id,
-              direction=FLAT,
-              strength=0.0,
-              edge_estimate_bps=0.0,
-          )
-
-      symbol = features.symbol
-
-      if symbol not in _state:
-          _state[symbol] = {
-              "score_history": [],
-              "ewm": {"mean": 0.0, "var": 0.0, "n": 0},
-              "_prev_zscore": 0.0,
-          }
-
-      state = _state[symbol]
-      zscore_window = int(params.get("zscore_window", 100))
-      momentum_window = int(params.get("momentum_window", 5))
-      zscore_alpha = 1.0 - 1.0 / max(zscore_window, 2)
-
-      posteriors = regime_posteriors(symbol)
-      in_vol_breakout = False
-      in_compression = False
-      if posteriors is not None:
-          p_vol = posteriors[2]
-          p_comp = posteriors[0]
-          if p_vol > params["vol_suppress_threshold"]:
-              in_vol_breakout = True
-          if p_comp > 0.5:
-              in_compression = True
-
-      intensity = features.values.get("trade_intensity", 0.0)
-      aggressor = features.values.get("aggressor_flow", 0.0)
-      mu = features.values.get("mu_ema", 0.0)
-      persistence = features.values.get("cluster_persistence", 0)
-      obi = features.values.get("order_book_imbalance", 0.0)
-
-      cluster_score = aggressor * intensity
-
-      momentum = _momentum(state["score_history"], momentum_window)
-      momentum_boost = params.get("momentum_boost", 0.4)
-      cluster_score = cluster_score + momentum_boost * momentum
-
-      state["score_history"].append(cluster_score)
-      if len(state["score_history"]) > momentum_window + 1:
-          state["score_history"].pop(0)
-
-      # O(1) EWMA z-score
-      z_score = _ewma_zscore(cluster_score, state["ewm"], zscore_alpha)
-
-      # OBI confidence modifier — clamped to prevent sign-flip
-      obi_weight = params.get("obi_confidence_weight", 0.3)
-      obi_sign = 1.0 if cluster_score > 0 else -1.0
-      obi_confidence = 1.0 + obi_weight * max(-0.8, min(0.8, obi * obi_sign))
-      z_score = z_score * obi_confidence
-
-      base_threshold = params["entry_threshold"]
-      if in_compression:
-          threshold = base_threshold * params.get("compression_entry_boost", 0.7)
-      else:
-          threshold = base_threshold * params.get("normal_entry_boost", 1.0)
-
-      signs_agree = (cluster_score > 0 and mu > 0) or (cluster_score < 0 and mu < 0)
-
-      # Symmetric crossing: abs(prev_z) prevents spurious fires from deep-z recovery
-      prev_z = state["_prev_zscore"]
-      state["_prev_zscore"] = z_score
-      crossing = abs(prev_z) < threshold and abs(z_score) >= threshold
-
-      if in_vol_breakout:
-          return _flat()
-
-      min_persistence = int(params.get("min_persistence", 3))
-      persistence_decay = params.get("persistence_decay", 0.85)
-      if persistence >= min_persistence:
-          persistence_weight = persistence_decay ** (min_persistence - persistence)
-          persistence_weight = max(0.5, min(2.0, persistence_weight))
-      else:
-          persistence_weight = 1.0
-
-      min_edge_bps = params.get("min_edge_bps", 0.5)
-
-      if (crossing
-              and abs(mu) >= params["mu_min_threshold"]
-              and signs_agree):
-          edge_bps = abs(z_score) * params["edge_multiplier"] * persistence_weight
-          if edge_bps < min_edge_bps:
-              return None
-          direction = LONG if cluster_score > 0 else SHORT
-          strength = min(abs(z_score) / params["strength_denominator"], 1.0)
-          return Signal(
-              timestamp_ns=features.timestamp_ns,
-              correlation_id=features.correlation_id,
-              sequence=features.sequence,
-              symbol=features.symbol,
-              strategy_id=alpha_id,
-              direction=direction,
-              strength=strength,
-              edge_estimate_bps=edge_bps,
-          )
-
-      if (abs(z_score) < params["exit_threshold"]
-              or abs(mu) < params["exit_mu_threshold"]
-              or not signs_agree):
-          return _flat()
-
+    if not features.warm or features.stale:
       return None
+
+    def _flat():
+      return Signal(
+        timestamp_ns=features.timestamp_ns,
+        correlation_id=features.correlation_id,
+        sequence=features.sequence,
+        symbol=features.symbol,
+        strategy_id=alpha_id,
+        direction=FLAT,
+        strength=0.0,
+        edge_estimate_bps=0.0,
+      )
+
+    symbol = features.symbol
+    if symbol not in _state:
+      _state[symbol] = {"prev_abs_z": 0.0}
+
+    drift = features.values.get("sde_drift_state_0", 0.0)
+    drift_z = features.values.get("sde_drift_state_1", 0.0)
+    edge_mean_bps = features.values.get("sde_drift_state_2", 0.0)
+    edge_std_bps = max(features.values.get("sde_drift_state_3", 0.0), 0.0)
+
+    # One-sided lower confidence bound on directional edge after cost floor.
+    edge_conf_z = params["edge_confidence_z"]
+    directional_lcb_bps = abs(edge_mean_bps) - edge_conf_z * edge_std_bps - params["cost_floor_bps"]
+    net_edge_bps = max(directional_lcb_bps, 0.0)
+
+    prev_abs_z = _state[symbol]["prev_abs_z"]
+    curr_abs_z = abs(drift_z)
+    _state[symbol]["prev_abs_z"] = curr_abs_z
+    crossing = prev_abs_z < params["entry_z"] and curr_abs_z >= params["entry_z"]
+
+    if crossing and drift != 0.0 and directional_lcb_bps > 0.0:
+      direction = LONG if edge_mean_bps > 0.0 else SHORT
+      strength = min(net_edge_bps / (params["cost_floor_bps"] + net_edge_bps), 1.0)
+      return Signal(
+        timestamp_ns=features.timestamp_ns,
+        correlation_id=features.correlation_id,
+        sequence=features.sequence,
+        symbol=features.symbol,
+        strategy_id=alpha_id,
+        direction=direction,
+        strength=strength,
+        edge_estimate_bps=net_edge_bps,
+      )
+
+    if curr_abs_z <= params["exit_threshold"] or directional_lcb_bps <= 0.0:
+      return _flat()
+
+    return None
