@@ -1,72 +1,117 @@
-# MASTER PROMPT SYSTEM — REVISION ARCHITECTURE
+# GROK MICROSTRUCTURE RESEARCH LAB — V2 ARCHITECTURE
 
-## What Changed and Why
+## This document is NOT pasted into Grok. It is a reference for the PI.
 
-### The Core Problem with the Draft Prompts
+---
 
-The draft prompts (1-7) built a capable research lab inside Grok REPL,
-but the alphas it produced were in a **Grok-native format** — Python
-dicts, ad-hoc signal functions, custom backtest loops. These could not
-be directly loaded by the feelies platform without manual translation.
+## Why V1 Failed
 
-The translation step introduces errors. Errors destroy parity.
+V1 invented a second source of truth: a `PARITY_CONFIG` dict (spread-crossing fills, 70%
+fill rate, seed=42, 100ms latency) and a `GrokParityBacktester` class conforming to it.
+Neither Grok nor the local `GrokParityBacktester` ran the repo's actual pipeline.
+Parity between two wrong implementations is still wrong.
 
-### The Core Insight of This Revision
+The root cause: V1 guessed at repo behavior rather than executing repo code.
 
-**Grok REPL must output alphas in feelies-native `.alpha.yaml` format.**
+---
 
-The `.alpha.yaml` schema is the canonical contract between discovery
-(Grok REPL) and deployment (feelies). If Grok produces a valid
-`.alpha.yaml` file, feelies' `AlphaLoader` will parse it, compile it,
-validate it, and execute it — identically.
+## V2 Governing Principle
 
-This means every prompt must be aware of:
+**The `feelies` repo is the single source of truth.**
 
-1. **The `.alpha.yaml` schema** — field names, types, constraints
-2. **The feature computation protocol** — `initial_state()`, `update(quote, state, params)`
-3. **The signal evaluation protocol** — `evaluate(features, params)` → `Signal | None`
-4. **The NBBOQuote interface** — `quote.bid`, `quote.ask` (Decimal), `quote.bid_size`, `quote.ask_size` (int)
-5. **The regime engine** — HMM3StateFractional with states: compression_clustering, normal, vol_breakout
-6. **The parity backtest config** — spread-crossing fills, 70% fill probability, 100ms latency
+Grok executes the repo's actual Python code — 87 source files downloaded from GitHub
+at session start. There is no reimplemented fill model, no reimplemented cost formula,
+no reimplemented risk engine. One substitution is allowed and explicitly named.
 
-### What Changed Per Prompt
+---
 
-| Prompt | Draft Status | Revision |
-|--------|-------------|----------|
-| **1 — Governance** | Generic lab rules | Added `.alpha.yaml` as CANONICAL output format. Added NBBOQuote field mapping. Added feelies AlphaLoader compatibility as a hard constraint. |
-| **2 — Data** | OK but disconnected from feelies data layer | Aligned cache format. Added Massive (Polygon) REST/WS field mapping matching `MassiveNormalizer`. |
-| **3 — Market State** | Custom HMM, different state names | **Rewired** to match `HMM3StateFractional` exactly: 3 states (compression_clustering, normal, vol_breakout), log-spread emission model, Bayesian posterior updates. |
-| **4 — Alpha Factory** | Feature graphs → ad-hoc Python | **Rewired** to output `.alpha.yaml` specs. Feature computation code uses `initial_state()`/`update()` protocol. Signal code uses `evaluate(features, params)` protocol. |
-| **5 — Hypothesis Testing** | Good pipeline, custom output | Added parity backtest as Step 13. Report now includes `.alpha.yaml` export. |
-| **6 — Portfolio/Risk/Archive** | Good architecture | Aligned lifecycle states with feelies: RESEARCH→PAPER→LIVE→QUARANTINED→DECOMMISSIONED. Risk budget matches `AlphaRiskBudget` schema. |
-| **7 — Parity Bridge** | Standalone, weakly connected | Integrated into Prompts 4-6. Canonical backtest parameters locked. Export produces feelies-loadable files. |
-
-### The Copy-Paste Contract
-
-After this revision, the workflow is:
+## The One Allowed Substitution
 
 ```
-Grok REPL                           feelies local repo
-─────────                           ──────────────────
-1. Discover alpha                   
-2. TEST hypothesis                  
-3. EXPORT signal_id                 
-   ↓                                
-   alpha_spec.alpha.yaml    ──────→  alphas/my_alpha/my_alpha.alpha.yaml
-   feature_module.py        ──────→  alphas/my_alpha/feature_module.py
-   parity_fingerprint.json  ──────→  (verification)
-                                     
-                                    4. python scripts/run_parity_backtest.py
-                                    5. VERIFY pnl_hash matches
-                                    6. feelies paper → live pipeline
+REPO:  MassiveHistoricalIngestor  →  GROK:  PolygonFetcher
 ```
 
-No translation step. No manual rewriting. Copy the files, run the test.
+The local repo uses a `massive` SDK client (`MassiveHistoricalIngestor`) to pull
+L1 NBBO data. Grok's sandbox cannot install that SDK. Instead Prompt 2 provides a
+`PolygonFetcher` that calls the Polygon REST API directly and emits **identical**
+`NBBOQuote` / `Trade` dataclasses — same field types, same nanosecond timestamps,
+same resequencing logic.
 
-### Prompt Execution Order (unchanged)
+Everything downstream (feature engine, signal engine, backtest router, cost model,
+risk engine, orchestrator) runs from repo source unchanged.
+
+---
+
+## Session Flow
 
 ```
-Prompt 1 → 2 → 3 → 4 → 5 → 6 → 7
+Prompt 1: Paste once at session start (downloads repo zip, sets sys.path, smoke-tests)
+Prompt 2: Paste once to activate data layer (PolygonFetcher + RTH logic)
+Prompt 3: Paste once to activate alpha development (schema, feature library, AlphaLoader)
+Prompt 4: Paste once to activate backtest execution (build_platform, stats, regime)
+Prompt 5: Paste once to activate export and lifecycle (registry, parity contract)
+
+After setup, the PI issues commands:
+  INITIALIZE                    → set API key, bootstrap workspace dirs
+  LOAD "AAPL" "2026-01-15"     → fetch RTH data, populate InMemoryEventLog
+  TEST <hypothesis>             → run directed hypothesis test (all 5 steps)
+  BACKTEST <alpha_id>           → run full backtest via build_platform()
+  EXPORT <signal_id>            → produce .alpha.yaml + .py + parity_fingerprint.json
+  VERIFY <signal_id> <hash>     → compare Grok hash vs local scripts/run_backtest.py hash
 ```
 
-Each prompt activates one module and declares dependencies on prior modules.
+---
+
+## Parity Contract
+
+Running the same `.alpha.yaml` on the same date range through:
+
+- **Grok REPL** (Prompt 4's `build_platform()` pipeline)
+- **Local repo** (`python scripts/run_backtest.py ...`)
+
+must produce:
+- Identical trade count
+- Total PnL within ±0.01%
+- Identical trade-sequence SHA-256 hash
+
+Any divergence is a defect. The only permitted divergence source is the data layer
+substitution (e.g., minor timestamp field differences between `sip_timestamp` and
+`participant_timestamp`).
+
+---
+
+## File Map
+
+| File | Role | Paste into Grok? |
+|------|------|-----------------|
+| `00_ARCHITECTURE.md` | This document — PI reference | No |
+| `01_BOOTSTRAP.md` | Prompt 1: source download, system identity | Yes (first) |
+| `02_DATA_INGESTION.md` | Prompt 2: Polygon RTH fetcher | Yes (second) |
+| `03_ALPHA_DEVELOPMENT.md` | Prompt 3: .alpha.yaml, features, hypotheses | Yes (third) |
+| `04_BACKTEST_EXECUTION.md` | Prompt 4: build_platform, stats, regime | Yes (fourth) |
+| `05_EXPORT_LIFECYCLE.md` | Prompt 5: export, parity, registry | Yes (fifth) |
+
+---
+
+## What Was Removed vs V1
+
+| V1 Element | Reason Removed |
+|---|---|
+| `PARITY_CONFIG` dict | Invented constants not in repo |
+| `ParityBacktester` class | Wrong fill model (spread-crossing, 70% fill probability) |
+| `GrokParityBacktester` local harness | Repo's `scripts/run_backtest.py` is the verifier |
+| Phase A / Phase B Prompt 7 | No separate harness needed |
+| Custom HMM Python code | Imported from `HMM3StateFractional` source |
+| 87 individual GitHub file fetches | Replaced with single ZIP download |
+
+## What Was Preserved from V1
+
+| V1 Element | Reason Preserved |
+|---|---|
+| `.alpha.yaml` schema + AlphaLoader validation | Was correct — these match repo source |
+| Feature/signal protocols (`initial_state`, `update`, `evaluate`) | Was correct |
+| Feature library (6 reusable modules) | Was correct |
+| Mechanism catalog (10 entries) | Research guidance, independent of fill model |
+| Statistical validation (CPCV, DSR, bootstrap, IC) | Research-layer logic, correct |
+| Signal registry, lifecycle states, artifact storage | Was correct |
+| Hypothesis formalization workflow | Was correct |
