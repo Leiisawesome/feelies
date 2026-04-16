@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 from decimal import Decimal
 
@@ -405,3 +406,85 @@ class TestRestoreValidation:
 
         # Engine should be in clean cold-start state
         assert engine.current_state("AAPL") is None
+
+
+class TestTransitionMatrixValidation:
+    """Transition matrix must be a proper stochastic matrix."""
+
+    def test_rejects_negative_transition_entries(self) -> None:
+        with pytest.raises(ValueError, match="negative entries"):
+            HMM3StateFractional(
+                transition_matrix=[
+                    (1.5, -0.3, -0.2),
+                    (0.005, 0.990, 0.005),
+                    (0.002, 0.008, 0.990),
+                ],
+            )
+
+    def test_accepts_valid_stochastic_matrix(self) -> None:
+        engine = HMM3StateFractional(
+            transition_matrix=[
+                (0.8, 0.1, 0.1),
+                (0.1, 0.8, 0.1),
+                (0.1, 0.1, 0.8),
+            ],
+        )
+        assert engine.n_states == 3
+
+
+class TestPredictionNormalization:
+    """Prediction step must preserve unit sum even across many steps."""
+
+    def test_posteriors_sum_to_one_after_many_locked_market_quotes(self) -> None:
+        """Consecutive locked-market quotes use the prediction-only path.
+        Without renormalization, float drift would accumulate."""
+        engine = HMM3StateFractional()
+        # First update with a normal quote to shift away from uniform
+        engine.posterior(_make_quote(bid="149.99", ask="150.01", sequence=1))
+
+        # Feed 10,000 locked-market quotes (prediction-only path)
+        for i in range(10_000):
+            q = _make_quote(bid="150.00", ask="150.00", sequence=i + 2)
+            posteriors = engine.posterior(q)
+
+        total = sum(posteriors)
+        assert abs(total - 1.0) < 1e-12, (
+            f"After 10k prediction-only steps, posteriors sum to "
+            f"{total}, expected ~1.0 within 1e-12"
+        )
+        assert all(p >= 0 for p in posteriors)
+
+
+class TestEmissionSeparationDiagnostic:
+    """Calibration warns when emissions overlap too heavily."""
+
+    def test_overlapping_emissions_log_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Uniform-spread data produces near-identical emission params."""
+        engine = HMM3StateFractional()
+        # All quotes with same spread → all terciles are identical
+        quotes = _make_calibration_quotes(n=100, spread=0.01)
+        with caplog.at_level(logging.WARNING, logger="feelies.services.regime_engine"):
+            engine.calibrate(quotes)
+
+        assert any("weak emission separation" in r.message for r in caplog.records), (
+            "Expected warning about weak emission separation"
+        )
+
+    def test_well_separated_emissions_no_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Varied-spread data produces well-separated emission params."""
+        engine = HMM3StateFractional()
+        cal_quotes: list[NBBOQuote] = []
+        spreads = [0.01] * 100 + [0.10] * 100 + [1.00] * 100
+        for i, sp in enumerate(spreads):
+            cal_quotes.append(_make_quote(
+                bid="150.00",
+                ask=f"{150.0 + sp:.4f}",
+                timestamp_ns=(i + 1) * 1_000_000,
+                sequence=i + 1,
+            ))
+        with caplog.at_level(logging.WARNING, logger="feelies.services.regime_engine"):
+            engine.calibrate(cal_quotes)
+
+        assert not any("weak emission separation" in r.message for r in caplog.records), (
+            "Should not warn when emissions are well separated"
+        )

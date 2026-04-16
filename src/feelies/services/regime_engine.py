@@ -157,6 +157,10 @@ class HMM3StateFractional:
                 raise ValueError(
                     f"Transition row {i} has {len(row)} columns, expected {n}"
                 )
+            if any(v < 0 for v in row):
+                raise ValueError(
+                    f"Transition row {i} contains negative entries: {row}"
+                )
             row_sum = sum(row)
             if abs(row_sum - 1.0) > 1e-6:
                 raise ValueError(
@@ -231,7 +235,35 @@ class HMM3StateFractional:
         self._calibrated = True
         self._posteriors.clear()
         self._last_update_seq.clear()
+
+        self._check_emission_separation()
         return True
+
+    def _check_emission_separation(self) -> None:
+        """Log a warning when adjacent emission distributions overlap heavily.
+
+        Uses the Gaussian separability index d = |mu_i - mu_j| / sqrt(s_i^2 + s_j^2)
+        between each adjacent pair.  d < 0.5 means substantial overlap —
+        the engine will update posteriors but provide weak discrimination
+        between those two states.
+        """
+        for i in range(self._n_states - 1):
+            mu_a, sigma_a = self._emission[i]
+            mu_b, sigma_b = self._emission[i + 1]
+            denom = math.sqrt(sigma_a ** 2 + sigma_b ** 2)
+            if denom < 1e-12:
+                continue
+            separation = abs(mu_b - mu_a) / denom
+            if separation < 0.5:
+                logger.warning(
+                    "regime_engine: weak emission separation between "
+                    "state %d (%s) and state %d (%s): d=%.3f "
+                    "(mu=%.3f,%.3f sigma=%.3f,%.3f) — posteriors will "
+                    "have limited discriminative power",
+                    i, self._state_names[i],
+                    i + 1, self._state_names[i + 1],
+                    separation, mu_a, mu_b, sigma_a, sigma_b,
+                )
 
     def posterior(self, quote: NBBOQuote) -> list[float]:
         symbol = quote.symbol
@@ -339,11 +371,23 @@ class HMM3StateFractional:
             raise
 
     def _predict(self, prior: list[float]) -> list[float]:
+        """Compute predicted state via transition matrix, then renormalize.
+
+        The matrix-vector product preserves unit sum in exact arithmetic
+        but accumulates ~7e-16 float drift per step.  In the normal path
+        ``_bayes_update`` renormalizes, but the locked-market path
+        (spread <= 0) stores the prediction directly.  Renormalizing here
+        prevents drift from accumulating across consecutive prediction-only
+        steps (common in illiquid names or pre-market).
+        """
         predicted = [0.0] * self._n_states
         for j in range(self._n_states):
             for i in range(self._n_states):
                 predicted[j] += self._transition[i][j] * prior[i]
-        return predicted
+        total = sum(predicted)
+        if total > 0:
+            return [p / total for p in predicted]
+        return [1.0 / self._n_states] * self._n_states
 
     def _emission_likelihood(self, log_spread: float) -> list[float]:
         likelihoods = []
