@@ -11,6 +11,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import shutil
 import sys
@@ -695,11 +697,47 @@ def generate_report(
                 lines.append(_sub_kv("  Recent edge", f"{ds.realized:.2f} bps"))
                 lines.append(_sub_kv("  Z-score", f"{ds.z_score:.2f}"))
 
+    # Parity hash
+    parity_hash = compute_parity_hash(orchestrator)
+    lines.append(_divider())
+    lines.append(_section("Parity"))
+    lines.append(_kv("Trade count", f"{len(records)}"))
+    lines.append(_kv("Parity hash (SHA-256)", parity_hash[:32] + "..."))
+    lines.append(_kv("Full hash", parity_hash))
+
     lines.append("")
     lines.append(_RULE_HEAVY)
     lines.append("")
 
     return "\n".join(lines)
+
+
+# ── Parity hash ──────────────────────────────────────────────────────
+
+
+def compute_parity_hash(orchestrator: object) -> str:
+    """Compute a deterministic SHA-256 hash over the trade sequence.
+
+    Canonical format shared with the Grok REPL (grok/04_BACKTEST_EXECUTION.md).
+    Both sides must produce identical hashes for the same alpha + date range.
+    """
+    from feelies.storage.trade_journal import TradeRecord
+
+    journal = orchestrator._trade_journal  # type: ignore[attr-defined]
+    records: list[TradeRecord] = list(journal.query())
+    trade_seq = [
+        {
+            "order_id": str(r.order_id),
+            "symbol": str(r.symbol),
+            "side": str(r.side).split(".")[-1],
+            "quantity": int(r.filled_quantity),
+            "fill_price": str(r.fill_price),
+            "realized_pnl": str(r.realized_pnl),
+        }
+        for r in records
+    ]
+    payload = json.dumps(trade_seq, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 # ── Verification checks ─────────────────────────────────────────────

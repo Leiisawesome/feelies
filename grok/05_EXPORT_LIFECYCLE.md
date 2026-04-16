@@ -159,8 +159,10 @@ Compute the local parity hash using the same function:
     import hashlib, json
     records = list(orchestrator._trade_journal.query())
     trade_seq = [{{"order_id": str(r.order_id), "symbol": r.symbol,
-                   "side": r.side.name, "quantity": r.quantity,
-                   "fill_price": str(r.fill_price), "realized_pnl": str(r.realized_pnl)}}
+                   "side": str(r.side).split(".")[-1],
+                   "quantity": int(r.filled_quantity),
+                   "fill_price": str(r.fill_price),
+                   "realized_pnl": str(r.realized_pnl)}}
                  for r in records]
     pnl_hash = hashlib.sha256(json.dumps(trade_seq, sort_keys=True,
                separators=(",",":")).encode()).hexdigest()
@@ -531,7 +533,8 @@ Same .alpha.yaml + same date range + same execution_mode:
 Parity hash function (canonical — both sides must use this exactly):
   records = list(orchestrator._trade_journal.query())
   trade_seq = [{"order_id": str(r.order_id), "symbol": r.symbol,
-                "side": r.side.name, "quantity": r.quantity,
+                "side": str(r.side).split(".")[-1],
+                "quantity": int(r.filled_quantity),
                 "fill_price": str(r.fill_price),
                 "realized_pnl": str(r.realized_pnl)}
                for r in records]

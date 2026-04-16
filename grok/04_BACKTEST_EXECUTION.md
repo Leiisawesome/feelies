@@ -34,6 +34,16 @@ from feelies.core.events import Signal
 # There is no shared mutable state between runs.
 # -------------------------------------------------------------------
 
+def _symbols_from_event_log(event_log: InMemoryEventLog) -> frozenset[str]:
+    """Extract unique symbols from the event log for PlatformConfig."""
+    symbols: set[str] = set()
+    for event in event_log.replay():
+        sym = getattr(event, "symbol", None)
+        if sym is not None:
+            symbols.add(sym)
+    return frozenset(symbols)
+
+
 def run_backtest(
     spec_path: str | Path,
     event_log: InMemoryEventLog,
@@ -55,7 +65,9 @@ def run_backtest(
         spec_path:                 Path to .alpha.yaml file (saved by save_alpha())
         event_log:                 Pre-populated InMemoryEventLog from LOAD()
         regime_engine:             "hmm_3state_fractional" (default) or None
-        account_equity:            Starting capital in USD (default 100_000)
+        account_equity:            Starting capital in USD (default 100_000;
+                                       PlatformConfig defaults to 1_000_000 — use the
+                                       same value on both sides for parity)
         execution_mode:            "market" (mid-price fill) or "passive_limit"
         backtest_fill_latency_ns:  Fill latency in ns (default 0; platform.yaml uses 30_000_000)
         signal_entry_cooldown_ticks: Ticks between directional entries (default 0)
@@ -69,25 +81,20 @@ def run_backtest(
     assert spec_path.exists(), f"Alpha spec not found: {spec_path}"
     assert event_log is not None, "event_log is None — run LOAD() first"
 
+    symbols = _symbols_from_event_log(event_log)
+    assert symbols, "event_log contains no events with symbols — run LOAD() first"
+
     # Build PlatformConfig from source defaults.
     # DO NOT add invented fill probability, cost multipliers, or RNG seeds here.
     config = PlatformConfig(
         mode                          = OperatingMode.BACKTEST,
+        symbols                       = symbols,
         alpha_specs                   = [spec_path],
         regime_engine                 = regime_engine,
         account_equity                = account_equity,
         execution_mode                = execution_mode,
         backtest_fill_latency_ns      = backtest_fill_latency_ns,
         signal_entry_cooldown_ticks   = signal_entry_cooldown_ticks,
-        # All cost, risk, and fill parameters: PlatformConfig source defaults
-        # cost_commission_per_share: 0.0035
-        # cost_taker_exchange_per_share: 0.003
-        # cost_maker_exchange_per_share: -0.002
-        # cost_min_commission: 0.35
-        # cost_market_impact_factor: 0.5
-        # risk_max_position_per_symbol: 1000
-        # risk_max_gross_exposure_pct: 20.0
-        # risk_max_drawdown_pct: 5.0
     )
 
     # Fresh platform instance — all engines created new for this run
@@ -423,10 +430,8 @@ def regime_sensitivity(
     hmm = HMM3StateFractional()
     for event in event_log.replay():
         if isinstance(event, NBBOQuote):
-            hmm.update(event)
-            post = hmm.posteriors(event.symbol)
-            if post is not None:
-                posteriors_by_ts[event.exchange_timestamp_ns] = list(post)
+            post = hmm.posterior(event)
+            posteriors_by_ts[event.exchange_timestamp_ns] = list(post)
 
     # Match each trade to the regime at its entry timestamp.
     # TradeRecord uses signal_timestamp_ns (not timestamp_ns).
@@ -522,11 +527,14 @@ def tc_sensitivity(
     spec_path = Path(spec_path)   # resolve once before the loop
     results = {}
 
+    symbols = _symbols_from_event_log(event_log)
+
     for mult in stress_multipliers:
         # Construct a custom PlatformConfig with only the stress multiplier changed.
         # All other cost params: source defaults.
         config = PlatformConfig(
             mode                    = OperatingMode.BACKTEST,
+            symbols                 = symbols,
             alpha_specs             = [spec_path],
             cost_stress_multiplier  = mult,
             **{k: v for k, v in backtest_kwargs.items()

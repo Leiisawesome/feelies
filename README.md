@@ -64,7 +64,7 @@ which concrete `MarketDataSource` and `OrderRouter` are composed at startup:
 
 ```
 feelies/
-├── src/feelies/             # Core platform package (88 modules)
+├── src/feelies/             # Core platform package (87 modules)
 │   ├── core/                # Events, clock, state machine, identifiers, config
 │   ├── kernel/              # Orchestrator, macro/micro state machines
 │   ├── bus/                 # Synchronous deterministic event bus
@@ -78,7 +78,7 @@ feelies/
 │   ├── storage/             # Event log, disk cache, feature snapshots, trade journal
 │   ├── monitoring/          # Metrics, alerting, kill switch, health checks
 │   ├── forensics/           # Post-trade analysis, edge decay detection
-│   ├── research/            # Grok-parity backtester, experiment tracking
+│   ├── research/            # Experiment tracking, hypothesis management
 │   ├── services/            # Regime engine (HMM-based)
 │   └── bootstrap.py         # One-call platform composition from config
 ├── alphas/                  # Alpha strategy specs
@@ -86,10 +86,9 @@ feelies/
 │   ├── _template/           # Starter template
 │   └── trade_cluster_drift/      # Example: cluster drift microstructure alpha
 ├── scripts/                 # CLI entry points
-│   ├── run_backtest.py      # Full pipeline backtest
-│   ├── run_parity_backtest.py  # Grok-parity research backtest
+│   ├── run_backtest.py      # Full pipeline backtest (includes parity hash)
 │   └── run_validation.py    # Validation suite runner
-├── tests/                   # Pytest suite (83 files, mirrors src/ structure)
+├── tests/                   # Pytest suite (mirrors src/ structure)
 ├── platform.yaml            # Reference platform configuration
 ├── pyproject.toml           # Build, deps, tooling
 └── .env.example             # Environment variable template
@@ -124,43 +123,27 @@ cp .env.example .env
 
 ## Running a Backtest
 
-### Parity Backtest (Research)
-
-The parity backtester replicates external Grok REPL semantics with
-spread-crossing fills, seeded RNG, latency queuing, and a full fee stack:
-
-```bash
-python scripts/run_parity_backtest.py \
-    --spec alphas/trade_cluster_drift/trade_cluster_drift.alpha.yaml \
-    --symbols AAPL \
-    --start 2026-03-23 --end 2026-03-27 \
-    --api-key $MASSIVE_API_KEY
-```
-
-Options:
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--spec` | *(required)* | Path to `.alpha.yaml` spec |
-| `--symbols` | *(required)* | One or more ticker symbols |
-| `--start` / `--end` | *(required)* | Date range (YYYY-MM-DD) |
-| `--api-key` | `$POLYGON_API_KEY` | Massive API key |
-| `--latency-ms` | 100.0 | Simulated fill latency |
-| `--fill-prob` | 0.7 | Probabilistic fill rate |
-| `--seed` | 42 | RNG seed for deterministic replay |
-| `--latency-sweep` | off | Run 5-point latency sensitivity (0/50/100/200/500 ms) |
-| `--cache-dir` | `~/.feelies/cache/` | Disk cache for downloaded data |
-| `--no-cache` | off | Force re-download |
-| `--output` | none | Write JSON results to file |
-
-### Full Pipeline Backtest
-
 ```bash
 python scripts/run_backtest.py \
     --symbol AAPL --date 2026-03-24 \
-    --config platform.yaml \
-    --api-key $MASSIVE_API_KEY
+    --config platform.yaml
+
+# Or with explicit API key (otherwise reads MASSIVE_API_KEY from .env)
+python scripts/run_backtest.py \
+    --symbol AAPL --date 2026-03-24 \
+    --config platform.yaml
+
+# Demo mode (no API key required, synthetic 8-tick data)
+python scripts/run_backtest.py --demo
+
+# TC stress test (1.5× cost multiplier)
+python scripts/run_backtest.py \
+    --symbol AAPL --date 2026-03-24 \
+    --stress-cost 1.5
 ```
+
+The report includes a **parity hash** (SHA-256 over the ordered trade sequence)
+for verifying backtest reproducibility across environments.
 
 ## Writing an Alpha
 
