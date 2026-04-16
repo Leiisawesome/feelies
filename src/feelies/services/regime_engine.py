@@ -210,11 +210,12 @@ class HMM3StateFractional:
 
         log_spreads.sort()
         n = len(log_spreads)
-        boundaries = [n // 3, 2 * n // 3]
+        k = self._n_states
+        boundaries = [i * n // k for i in range(1, k)]
+        bucket_edges = [0] + boundaries + [n]
         buckets = [
-            log_spreads[:boundaries[0]],
-            log_spreads[boundaries[0]:boundaries[1]],
-            log_spreads[boundaries[1]:],
+            log_spreads[bucket_edges[i]:bucket_edges[i + 1]]
+            for i in range(k)
         ]
 
         fitted: list[tuple[float, float]] = []
@@ -302,6 +303,15 @@ class HMM3StateFractional:
                         f"Posterior length mismatch for {sym}: "
                         f"{len(post)} vs {self._n_states}"
                     )
+                if any(v < 0 for v in post):
+                    raise ValueError(
+                        f"Negative posterior value for {sym}: {post}"
+                    )
+                if abs(sum(post) - 1.0) > 1e-6:
+                    raise ValueError(
+                        f"Posteriors for {sym} sum to {sum(post)}, "
+                        f"expected ~1.0"
+                    )
             self._posteriors = {k: list(v) for k, v in posteriors.items()}
             self._last_update_seq = {k: int(v) for k, v in last_seq.items()}
 
@@ -312,9 +322,16 @@ class HMM3StateFractional:
                         f"Emission params length mismatch: "
                         f"{len(emission_data)} vs {self._n_states}"
                     )
-                self._emission = tuple(
-                    (float(pair[0]), float(pair[1])) for pair in emission_data
-                )
+                parsed_emission = []
+                for i, pair in enumerate(emission_data):
+                    mu, sigma = float(pair[0]), float(pair[1])
+                    if sigma <= 0:
+                        raise ValueError(
+                            f"Restored emission sigma for state {i} "
+                            f"is {sigma}, must be > 0"
+                        )
+                    parsed_emission.append((mu, sigma))
+                self._emission = tuple(parsed_emission)
                 self._calibrated = True
         except Exception:
             self._posteriors = {}
