@@ -1,23 +1,35 @@
 schema_version: "1.0"
 alpha_id: trade_cluster_drift_v12
-version: "2.0.0"
-description: "Continuous-time SDE rewrite: one latent drift state drives entry, exit, and edge"
+version: "3.0.0"
+description: >
+  Regime-adaptive latent drift filter with trade-flow confirmation,
+  Huberized innovations, self-correcting process noise, and dynamic
+  holding-horizon edge estimation.
 hypothesis: |
-  The alpha estimates a latent microprice drift process directly from NBBO
+  The alpha estimates a latent microprice drift process from NBBO
   observations under a continuous-time state-space model:
 
-      dmu_t = -kappa * mu_t dt + q_t dW_t
+      dmu_t = -kappa(regime) * mu_t dt + q_t dW_t
       dM_t  = mu_t dt + sigma_t dB_t
 
-  where M_t is the microprice and mu_t is the short-horizon directional edge.
-  A position is taken only when the posterior drift z-score is materially away
-  from zero and is flattened when that same posterior mean reverts toward zero.
-  Entry, exit, and edge_estimate_bps are all derived from this single latent
-  state rather than auxiliary heuristic confirmations.
+  where kappa adapts to the prevailing microstructure regime (faster
+  mean-reversion during compression, slower during vol_breakout).
+  Innovations are Huberized to bound the influence of heavy-tailed
+  microprice jumps, and process noise self-corrects via innovation
+  variance tracking.  A separate trade-flow imbalance feature provides
+  directional confirmation: entries are suppressed when aggressive
+  trade flow opposes the inferred drift.  Edge is estimated over a
+  dynamic horizon derived from the expected first-passage time of the
+  drift z-score to the exit boundary, not a fixed half-life.
 falsification_criteria:
   - "Posterior drift z-score shows no stable relation to next-horizon realized returns"
   - "Model-implied edge_estimate_bps is not positive after transaction costs"
   - "Out-of-sample calibration degrades materially across symbols or quote-rate regimes"
+  - "Regime-adaptive kappa shows no OOS Sharpe improvement vs fixed kappa over 3-month rolling windows"
+  - "Trade-flow confirmation reduces signal count >50% without proportional hit-rate improvement"
+
+regimes:
+  engine: hmm_3state_fractional
 
 symbols:
   - AAPL
@@ -29,32 +41,37 @@ parameters:
     type: float
     default: 1.5
     range: [0.1, 10.0]
-    description: "Half-life of latent drift mean reversion in seconds"
-  vol_half_life_seconds:
+    description: "Primary: half-life of latent drift mean reversion in seconds"
+  vol_drift_ratio:
     type: float
-    default: 5.0
-    range: [0.5, 30.0]
-    description: "Half-life of observation-noise variance EWMA in seconds"
+    default: 3.33
+    range: [2.0, 5.0]
+    description: "Derived: vol_half_life = drift_half_life * ratio (narrow range, structural prior)"
   entry_z:
     type: float
     default: 1.5
     range: [0.5, 5.0]
-    description: "Enter when |posterior drift z-score| reaches this level"
-  edge_confidence_z:
+    description: "Primary: enter when |posterior drift z-score| reaches this level"
+  exit_fraction:
     type: float
-    default: 0.5
-    range: [0.0, 3.5]
-    description: "One-sided confidence multiplier on edge uncertainty for lower-bound gating"
-  exit_threshold:
-    type: float
-    default: 0.5
-    range: [0.0, 2.0]
-    description: "Flatten when |posterior drift z-score| falls back inside this band"
-  cost_floor_bps:
+    default: 0.33
+    range: [0.2, 0.5]
+    description: "Derived: exit_threshold = entry_z * exit_fraction (structural prior: exit band < entry)"
+  min_net_edge_bps:
     type: float
     default: 0.2
-    range: [0.0, 10.0]
-    description: "Conservative round-trip cost floor used in net-edge filtering"
+    range: [0.05, 2.0]
+    description: "Primary: minimum net edge (bps) after 1-sigma deduction for entry"
+  huber_threshold:
+    type: float
+    default: 3.0
+    range: [2.0, 5.0]
+    description: "Robustness: clip innovation influence beyond this many sigmas"
+  regime_suppress_threshold:
+    type: float
+    default: 0.7
+    range: [0.5, 0.95]
+    description: "Suppress new entries when vol_breakout posterior exceeds this level"
 
 risk_budget:
   max_position_per_symbol: 500
@@ -64,14 +81,24 @@ risk_budget:
 
 features:
   - feature_id: sde_drift_state
-    version: "1.0.0"
-    description: "Latent drift posterior from a continuous-time OU-plus-observation SDE"
+    version: "2.0.0"
+    description: "Regime-adaptive latent drift posterior with Huberized Kalman filter"
     computation_module: sde_drift_state.py
-    return_type: list[4]
+    return_type: list[5]
     warm_up: {min_events: 100}
 
+  - feature_id: trade_flow_imbalance
+    version: "1.0.0"
+    description: "EWMA-decayed signed trade flow imbalance for directional confirmation"
+    computation_module: trade_flow.py
+    return_type: float
+    warm_up: {min_events: 20}
+
 signal: |
-  _state = {}
+  try:
+      _regime_fn = regime_posteriors
+  except NameError:
+      _regime_fn = None
 
   def evaluate(features, params):
     if not features.warm or features.stale:
@@ -89,28 +116,47 @@ signal: |
         edge_estimate_bps=0.0,
       )
 
-    symbol = features.symbol
-    if symbol not in _state:
-      _state[symbol] = {"prev_abs_z": 0.0}
-
     drift = features.values.get("sde_drift_state_0", 0.0)
     drift_z = features.values.get("sde_drift_state_1", 0.0)
     edge_mean_bps = features.values.get("sde_drift_state_2", 0.0)
     edge_std_bps = max(features.values.get("sde_drift_state_3", 0.0), 0.0)
+    prev_abs_z = features.values.get("sde_drift_state_4", 0.0)
 
-    # One-sided lower confidence bound on directional edge after cost floor.
-    edge_conf_z = params["edge_confidence_z"]
-    directional_lcb_bps = abs(edge_mean_bps) - edge_conf_z * edge_std_bps - params["cost_floor_bps"]
+    exit_z = params["entry_z"] * params["exit_fraction"]
+
+    # Regime gating: suppress new entries during high-confidence
+    # vol_breakout — the OU stationarity assumption is most violated
+    # in this regime. Exits always allowed (invariant 11).
+    # Guard: skip gating when posteriors are degenerate (max > 0.99),
+    # which indicates the HMM has locked into a single state due to
+    # calibration artifacts rather than genuine regime transitions.
+    if _regime_fn is not None:
+      posteriors = _regime_fn(features.symbol)
+      if posteriors is not None and len(posteriors) >= 3:
+        max_p = max(posteriors[0], posteriors[1], posteriors[2])
+        if max_p < 0.99 and posteriors[2] > params["regime_suppress_threshold"]:
+          if abs(drift_z) <= exit_z:
+            return _flat()
+          return None
+
+    # Edge: 1-sigma deduction (structural prior) + min_net_edge hurdle
+    directional_lcb_bps = abs(edge_mean_bps) - edge_std_bps - params["min_net_edge_bps"]
     net_edge_bps = max(directional_lcb_bps, 0.0)
 
-    prev_abs_z = _state[symbol]["prev_abs_z"]
+    # Crossing detection from feature-emitted prev_abs_z (pure, no hidden state)
     curr_abs_z = abs(drift_z)
-    _state[symbol]["prev_abs_z"] = curr_abs_z
     crossing = prev_abs_z < params["entry_z"] and curr_abs_z >= params["entry_z"]
 
     if crossing and drift != 0.0 and directional_lcb_bps > 0.0:
+      # Trade-flow opposition gate: suppress entry when aggressive
+      # flow actively opposes the inferred drift direction.
+      drift_sign = 1.0 if edge_mean_bps > 0.0 else -1.0
+      trade_imbalance = features.values.get("trade_flow_imbalance", 0.0)
+      if trade_imbalance * drift_sign < -0.2:
+        return None
+
       direction = LONG if edge_mean_bps > 0.0 else SHORT
-      strength = min(net_edge_bps / (params["cost_floor_bps"] + net_edge_bps), 1.0)
+      strength = min(net_edge_bps / (params["min_net_edge_bps"] + net_edge_bps), 1.0)
       return Signal(
         timestamp_ns=features.timestamp_ns,
         correlation_id=features.correlation_id,
@@ -122,7 +168,7 @@ signal: |
         edge_estimate_bps=net_edge_bps,
       )
 
-    if curr_abs_z <= params["exit_threshold"] or directional_lcb_bps <= 0.0:
+    if curr_abs_z <= exit_z or directional_lcb_bps <= 0.0:
       return _flat()
 
     return None
