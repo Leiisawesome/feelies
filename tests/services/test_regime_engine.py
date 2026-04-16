@@ -60,15 +60,17 @@ class TestIdempotency:
         second = engine.posterior(quote)
         assert first == second
 
-    def test_different_timestamp_updates(
+    def test_different_sequence_updates(
         self, engine: HMM3StateFractional
     ) -> None:
-        q1 = _make_quote(timestamp_ns=1_000_000_000)
-        q2 = _make_quote(timestamp_ns=2_000_000_000)
+        q1 = _make_quote(timestamp_ns=1_000_000_000, sequence=1)
+        q2 = _make_quote(timestamp_ns=2_000_000_000, sequence=2)
         first = engine.posterior(q1)
         second = engine.posterior(q2)
-        # After a second update, posteriors may shift
         assert len(second) == engine.n_states
+        # Second update applies a fresh prediction+observation step,
+        # so posteriors must differ from the first (transition shifts mass).
+        assert first != second
 
 
 class TestCurrentState:
@@ -245,3 +247,161 @@ class TestCalibrate:
         blob = engine.checkpoint()
         payload = json.loads(blob)
         assert "emission" not in payload
+
+
+class TestNaNInfRecovery:
+    """Fail-safe: NaN/inf in Bayesian update resets to uniform prior."""
+
+    def test_nan_emission_resets_to_uniform(self) -> None:
+        engine = HMM3StateFractional(
+            emission_params=[(-4.5, 0.3), (-3.5, 0.5), (-2.5, 0.7)],
+        )
+        # First update to establish non-uniform posteriors
+        engine.posterior(_make_quote(sequence=1))
+
+        # Monkey-patch emission to produce NaN likelihoods
+        original_emission = engine._emission_likelihood
+
+        def _nan_likelihoods(log_spread: float) -> list[float]:
+            return [float("nan")] * engine.n_states
+
+        engine._emission_likelihood = _nan_likelihoods  # type: ignore[assignment]
+        posteriors = engine.posterior(_make_quote(sequence=2))
+        engine._emission_likelihood = original_emission  # type: ignore[assignment]
+
+        # Should reset to uniform prior
+        expected = 1.0 / engine.n_states
+        assert all(abs(p - expected) < 1e-10 for p in posteriors)
+
+    def test_inf_emission_resets_to_uniform(self) -> None:
+        engine = HMM3StateFractional(
+            emission_params=[(-4.5, 0.3), (-3.5, 0.5), (-2.5, 0.7)],
+        )
+        engine.posterior(_make_quote(sequence=1))
+
+        original_emission = engine._emission_likelihood
+
+        def _inf_likelihoods(log_spread: float) -> list[float]:
+            return [float("inf")] * engine.n_states
+
+        engine._emission_likelihood = _inf_likelihoods  # type: ignore[assignment]
+        posteriors = engine.posterior(_make_quote(sequence=2))
+        engine._emission_likelihood = original_emission  # type: ignore[assignment]
+
+        expected = 1.0 / engine.n_states
+        assert all(abs(p - expected) < 1e-10 for p in posteriors)
+
+
+class TestLockedAndCrossedMarket:
+    """Edge case: spread <= 0 skips observation, applies prediction only."""
+
+    def test_locked_market_skips_observation(self) -> None:
+        engine = HMM3StateFractional()
+        # Locked market: bid == ask
+        q = _make_quote(bid="150.00", ask="150.00", sequence=1)
+        posteriors = engine.posterior(q)
+        assert len(posteriors) == engine.n_states
+        assert abs(sum(posteriors) - 1.0) < 1e-10
+
+    def test_crossed_market_skips_observation(self) -> None:
+        engine = HMM3StateFractional()
+        # Crossed market: bid > ask
+        q = _make_quote(bid="150.10", ask="149.90", sequence=1)
+        posteriors = engine.posterior(q)
+        assert len(posteriors) == engine.n_states
+        assert abs(sum(posteriors) - 1.0) < 1e-10
+
+    def test_locked_market_still_applies_prediction_step(self) -> None:
+        engine = HMM3StateFractional()
+        # First: normal update to shift posteriors away from uniform
+        engine.posterior(_make_quote(bid="149.99", ask="150.01", sequence=1))
+        post_after_normal = engine.current_state("AAPL")
+
+        # Second: locked market — prediction step still shifts posteriors
+        q_locked = _make_quote(bid="150.00", ask="150.00", sequence=2)
+        post_after_locked = engine.posterior(q_locked)
+
+        # Posteriors should change due to prediction step (transition matrix)
+        assert post_after_normal != post_after_locked
+
+
+class TestMultiSymbolIsolation:
+    """Updates for one symbol must not affect another."""
+
+    def test_symbols_independent(self) -> None:
+        engine = HMM3StateFractional()
+        q_aapl = _make_quote(symbol="AAPL", bid="149.99", ask="150.01", sequence=1)
+        q_msft = _make_quote(symbol="MSFT", bid="299.90", ask="300.10", sequence=1)
+
+        post_aapl = engine.posterior(q_aapl)
+        post_msft = engine.posterior(q_msft)
+
+        # AAPL posteriors should not have changed after MSFT update
+        assert engine.current_state("AAPL") == post_aapl
+
+    def test_reset_one_symbol_preserves_other(self) -> None:
+        engine = HMM3StateFractional()
+        engine.posterior(_make_quote(symbol="AAPL", sequence=1))
+        engine.posterior(_make_quote(symbol="MSFT", sequence=1))
+
+        engine.reset("AAPL")
+        assert engine.current_state("AAPL") is None
+        assert engine.current_state("MSFT") is not None
+
+
+class TestRestoreValidation:
+    """Restore must reject corrupted checkpoint data."""
+
+    def test_restore_rejects_negative_posteriors(self) -> None:
+        engine = HMM3StateFractional()
+        payload = json.dumps({
+            "posteriors": {"AAPL": [0.5, -0.3, 0.8]},
+            "last_update_seq": {"AAPL": 1},
+        }).encode()
+        with pytest.raises(ValueError, match="Negative posterior"):
+            engine.restore(payload)
+
+    def test_restore_rejects_posteriors_not_summing_to_one(self) -> None:
+        engine = HMM3StateFractional()
+        payload = json.dumps({
+            "posteriors": {"AAPL": [0.9, 0.9, 0.9]},
+            "last_update_seq": {"AAPL": 1},
+        }).encode()
+        with pytest.raises(ValueError, match="sum to"):
+            engine.restore(payload)
+
+    def test_restore_rejects_zero_emission_sigma(self) -> None:
+        engine = HMM3StateFractional()
+        payload = json.dumps({
+            "posteriors": {},
+            "last_update_seq": {},
+            "emission": [[-4.5, 0.3], [-3.5, 0.0], [-2.5, 0.7]],
+        }).encode()
+        with pytest.raises(ValueError, match="sigma.*must be > 0"):
+            engine.restore(payload)
+
+    def test_restore_rejects_negative_emission_sigma(self) -> None:
+        engine = HMM3StateFractional()
+        payload = json.dumps({
+            "posteriors": {},
+            "last_update_seq": {},
+            "emission": [[-4.5, 0.3], [-3.5, -0.1], [-2.5, 0.7]],
+        }).encode()
+        with pytest.raises(ValueError, match="sigma.*must be > 0"):
+            engine.restore(payload)
+
+    def test_restore_failure_leaves_clean_state(self) -> None:
+        engine = HMM3StateFractional()
+        # Establish some state first
+        engine.posterior(_make_quote(sequence=1))
+        assert engine.current_state("AAPL") is not None
+
+        bad_payload = json.dumps({
+            "posteriors": {"AAPL": [0.5, -0.3, 0.8]},
+            "last_update_seq": {"AAPL": 1},
+        }).encode()
+        with pytest.raises(ValueError):
+            engine.restore(bad_payload)
+
+        # Engine should be in clean cold-start state
+        assert engine.current_state("AAPL") is None
