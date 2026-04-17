@@ -44,6 +44,11 @@ def _order(symbol: str, order_id: str = "ord1") -> OrderRequest:
     )
 
 
+def _fills(acks):
+    """Return only non-ACKNOWLEDGED (fill/reject/cancel) acks."""
+    return [a for a in acks if a.status != OrderAckStatus.ACKNOWLEDGED]
+
+
 class TestBacktestOrderRouter:
     def test_fill_at_mid_price(self):
         clock = SimulatedClock(start_ns=5000)
@@ -53,13 +58,16 @@ class TestBacktestOrderRouter:
         router.submit(_order("AAPL"))
 
         acks = router.poll_acks()
-        assert len(acks) == 1
-        ack = acks[0]
-        assert ack.status == OrderAckStatus.FILLED
-        assert ack.fill_price == Decimal("150.00")
-        assert ack.filled_quantity == 50
-        assert ack.order_id == "ord1"
-        assert ack.symbol == "AAPL"
+        # ACKNOWLEDGED ack + FILLED ack (Inv 9 parity with live mode).
+        assert [a.status for a in acks] == [
+            OrderAckStatus.ACKNOWLEDGED,
+            OrderAckStatus.FILLED,
+        ]
+        fill = acks[1]
+        assert fill.fill_price == Decimal("150.00")
+        assert fill.filled_quantity == 50
+        assert fill.order_id == "ord1"
+        assert fill.symbol == "AAPL"
 
     def test_reject_on_missing_quote(self):
         clock = SimulatedClock(start_ns=5000)
@@ -72,6 +80,33 @@ class TestBacktestOrderRouter:
         assert acks[0].status == OrderAckStatus.REJECTED
         assert "no quote" in acks[0].reason.lower()
 
+    def test_reject_on_duplicate_order_id(self):
+        """Submitting the same order_id twice yields a REJECTED ack on the second."""
+        clock = SimulatedClock(start_ns=5000)
+        router = BacktestOrderRouter(clock)
+
+        router.on_quote(_quote("AAPL", "100.00", "100.10"))
+        router.submit(_order("AAPL"))
+        router.poll_acks()
+
+        router.submit(_order("AAPL"))
+        acks = router.poll_acks()
+        assert len(acks) == 1
+        assert acks[0].status == OrderAckStatus.REJECTED
+        assert "duplicate" in acks[0].reason.lower()
+
+    def test_reject_on_crossed_quote(self):
+        """Bid >= ask produces a REJECTED ack rather than a dubious mid fill."""
+        clock = SimulatedClock(start_ns=5000)
+        router = BacktestOrderRouter(clock)
+
+        router.on_quote(_quote("AAPL", "100.05", "100.00"))  # crossed
+        router.submit(_order("AAPL"))
+
+        acks = router.poll_acks()
+        assert [a.status for a in acks] == [OrderAckStatus.REJECTED]
+        assert "crossed" in acks[0].reason.lower() or "locked" in acks[0].reason.lower()
+
     def test_poll_acks_clears(self):
         clock = SimulatedClock(start_ns=5000)
         router = BacktestOrderRouter(clock)
@@ -80,7 +115,7 @@ class TestBacktestOrderRouter:
         router.submit(_order("AAPL"))
 
         first_poll = router.poll_acks()
-        assert len(first_poll) == 1
+        assert len(first_poll) == 2  # ACK + FILLED
 
         second_poll = router.poll_acks()
         assert second_poll == []
@@ -93,7 +128,9 @@ class TestBacktestOrderRouter:
         router.submit(_order("AAPL"))
 
         acks = router.poll_acks()
-        assert acks[0].timestamp_ns == 6000  # 5000 + 1000
+        # ACK and FILL both carry now + latency.
+        assert acks[0].timestamp_ns == 6000
+        assert acks[1].timestamp_ns == 6000
 
     def test_multiple_symbols_independent(self):
         clock = SimulatedClock(start_ns=5000)
@@ -105,10 +142,9 @@ class TestBacktestOrderRouter:
         router.submit(_order("AAPL", order_id="o1"))
         router.submit(_order("MSFT", order_id="o2"))
 
-        acks = router.poll_acks()
-        assert len(acks) == 2
-
-        by_id = {a.order_id: a for a in acks}
+        fills = [a for a in router.poll_acks() if a.status == OrderAckStatus.FILLED]
+        assert len(fills) == 2
+        by_id = {a.order_id: a for a in fills}
         assert by_id["o1"].fill_price == Decimal("150.00")
         assert by_id["o2"].fill_price == Decimal("301.00")
 
@@ -121,8 +157,8 @@ class TestBacktestOrderRouter:
 
         router.submit(_order("AAPL"))
 
-        acks = router.poll_acks()
-        assert acks[0].fill_price == Decimal("200.10")
+        fills = [a for a in router.poll_acks() if a.status == OrderAckStatus.FILLED]
+        assert fills[0].fill_price == Decimal("200.10")
 
     def test_fill_timestamp_without_latency(self):
         clock = SimulatedClock(start_ns=3000)
@@ -133,6 +169,7 @@ class TestBacktestOrderRouter:
 
         acks = router.poll_acks()
         assert acks[0].timestamp_ns == 3000
+        assert acks[1].timestamp_ns == 3000
 
 
 def _quote_with_depth(
@@ -171,7 +208,7 @@ class TestPartialFillAndSlippage:
     """D14: partial fill model. 2d: walk-the-book slippage for excess."""
 
     def test_full_fill_when_qty_within_depth(self) -> None:
-        """Order qty ≤ available depth → single FILLED ack, no slippage."""
+        """Order qty ≤ available depth → ACKNOWLEDGED + FILLED, no slippage."""
         clock = SimulatedClock(start_ns=5000)
         router = BacktestOrderRouter(clock)
 
@@ -179,13 +216,16 @@ class TestPartialFillAndSlippage:
         router.submit(_order_qty(100, side=Side.BUY))
 
         acks = router.poll_acks()
-        assert len(acks) == 1
-        assert acks[0].status == OrderAckStatus.FILLED
-        assert acks[0].filled_quantity == 100
-        assert acks[0].fill_price == Decimal("100.00")  # mid
+        assert [a.status for a in acks] == [
+            OrderAckStatus.ACKNOWLEDGED,
+            OrderAckStatus.FILLED,
+        ]
+        fill = acks[1]
+        assert fill.filled_quantity == 100
+        assert fill.fill_price == Decimal("100.00")  # mid
 
-    def test_partial_fill_emits_two_acks(self) -> None:
-        """Order qty > ask_size → PARTIALLY_FILLED + FILLED acks."""
+    def test_partial_fill_emits_ack_partial_filled(self) -> None:
+        """Order qty > ask_size → ACKNOWLEDGED + PARTIALLY_FILLED + FILLED acks."""
         clock = SimulatedClock(start_ns=5000)
         router = BacktestOrderRouter(clock)
 
@@ -193,14 +233,15 @@ class TestPartialFillAndSlippage:
         router.submit(_order_qty(150, side=Side.BUY))
 
         acks = router.poll_acks()
-        assert len(acks) == 2
-
-        partial, filled = acks
-        assert partial.status == OrderAckStatus.PARTIALLY_FILLED
+        assert [a.status for a in acks] == [
+            OrderAckStatus.ACKNOWLEDGED,
+            OrderAckStatus.PARTIALLY_FILLED,
+            OrderAckStatus.FILLED,
+        ]
+        _, partial, filled = acks
         assert partial.filled_quantity == 50
         assert partial.fill_price == Decimal("100.00")  # mid-price for L1 depth
 
-        assert filled.status == OrderAckStatus.FILLED
         assert filled.filled_quantity == 100  # excess = 150 - 50
         assert filled.order_id == partial.order_id
 
@@ -208,13 +249,12 @@ class TestPartialFillAndSlippage:
         """Excess qty for a BUY is filled above mid (market-impact premium)."""
         clock = SimulatedClock(start_ns=5000)
         # impact = 0.5 * (excess/depth) * half_spread = 0.5 * (100/50) * 1 = 1.0
-        router = BacktestOrderRouter(clock, market_impact_factor=0.5)
+        router = BacktestOrderRouter(clock, market_impact_factor=Decimal("0.5"))
 
         router.on_quote(_quote_with_depth("98.00", "102.00", bid_size=200, ask_size=50))
         router.submit(_order_qty(150, side=Side.BUY))
 
-        acks = router.poll_acks()
-        partial, filled = acks
+        _, _, filled = router.poll_acks()
         mid = Decimal("100.00")
         half_spread = Decimal("2.00")
         expected_impact = Decimal("0.5") * (Decimal("100") / Decimal("50")) * half_spread
@@ -223,20 +263,39 @@ class TestPartialFillAndSlippage:
     def test_excess_price_lowered_for_sell(self) -> None:
         """Excess qty for a SELL is filled below mid (receiver gets less)."""
         clock = SimulatedClock(start_ns=5000)
-        router = BacktestOrderRouter(clock, market_impact_factor=0.5)
+        router = BacktestOrderRouter(clock, market_impact_factor=Decimal("0.5"))
 
         router.on_quote(_quote_with_depth("98.00", "102.00", bid_size=50, ask_size=200))
         router.submit(_order_qty(150, side=Side.SELL))
 
-        acks = router.poll_acks()
-        _, filled = acks
+        _, _, filled = router.poll_acks()
         mid = Decimal("100.00")
         half_spread = Decimal("2.00")
         expected_impact = Decimal("0.5") * (Decimal("100") / Decimal("50")) * half_spread
         assert filled.fill_price == mid - expected_impact
 
-    def test_zero_depth_falls_through_to_full_fill(self) -> None:
-        """quote with zero depth to not trigger partial model (edge case)."""
+    def test_impact_is_capped(self) -> None:
+        """Market-impact premium is capped at max_impact_half_spreads × half_spread."""
+        clock = SimulatedClock(start_ns=5000)
+        # excess/depth = 1000/1 = 1000; factor=0.5 → raw = 500 half-spreads.
+        # Cap defaults to 10 half-spreads.
+        router = BacktestOrderRouter(
+            clock,
+            market_impact_factor=Decimal("0.5"),
+            max_impact_half_spreads=Decimal("10"),
+        )
+
+        router.on_quote(_quote_with_depth("98.00", "102.00", bid_size=200, ask_size=1))
+        router.submit(_order_qty(1001, side=Side.BUY))
+
+        _, _, filled = router.poll_acks()
+        mid = Decimal("100.00")
+        half_spread = Decimal("2.00")
+        # Cap: 10 × 2 = 20
+        assert filled.fill_price == mid + Decimal("10") * half_spread
+
+    def test_zero_depth_rejects_order(self) -> None:
+        """Zero L1 depth on the relevant side → REJECTED (no vacuum fills)."""
         clock = SimulatedClock(start_ns=5000)
         router = BacktestOrderRouter(clock)
 
@@ -244,12 +303,15 @@ class TestPartialFillAndSlippage:
         router.submit(_order_qty(100, side=Side.BUY))
 
         acks = router.poll_acks()
-        # available_depth==0 → single FILLED at mid
-        assert len(acks) == 1
-        assert acks[0].status == OrderAckStatus.FILLED
+        # ACKNOWLEDGED + REJECTED
+        statuses = [a.status for a in acks]
+        assert OrderAckStatus.REJECTED in statuses
+        assert OrderAckStatus.FILLED not in statuses
+        reject = next(a for a in acks if a.status == OrderAckStatus.REJECTED)
+        assert "depth" in reject.reason.lower()
 
-    def test_two_acks_share_same_order_id(self) -> None:
-        """Partial + final fill acks must reference the same order_id."""
+    def test_all_acks_share_same_order_id(self) -> None:
+        """ACK + partial + final fill acks must reference the same order_id."""
         clock = SimulatedClock(start_ns=5000)
         router = BacktestOrderRouter(clock)
 

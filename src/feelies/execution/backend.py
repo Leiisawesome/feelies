@@ -14,9 +14,20 @@ Only the source of MARKET_EVENT and ORDER_ACK differs.
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Iterator, Protocol
 
 from feelies.core.events import NBBOQuote, OrderAck, OrderRequest, Trade
+
+
+class ExecutionMode(StrEnum):
+    """Typed execution mode.  Subclasses ``str`` so legacy callers that
+    compare against ``"BACKTEST"``/``"PAPER"``/``"LIVE"`` continue to work.
+    """
+
+    BACKTEST = "BACKTEST"
+    PAPER = "PAPER"
+    LIVE = "LIVE"
 
 
 class MarketDataSource(Protocol):
@@ -63,8 +74,8 @@ class ExecutionBackend:
         self,
         market_data: MarketDataSource,
         order_router: OrderRouter,
-        mode: str,
+        mode: ExecutionMode | str,
     ) -> None:
         self.market_data = market_data
         self.order_router = order_router
-        self.mode = mode
+        self.mode = ExecutionMode(mode) if not isinstance(mode, ExecutionMode) else mode

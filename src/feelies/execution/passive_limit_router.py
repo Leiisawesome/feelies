@@ -29,7 +29,8 @@ Invariants preserved:
   - Inv 9 (backtest/live parity): implements the same OrderRouter
     protocol used by live and paper routers.
   - Inv 11 (fail-safe): MARKET orders always fill immediately;
-    passive orders that timeout are CANCELLED, not silently dropped.
+    passive orders that timeout are CANCELLED, not silently dropped;
+    duplicate order_ids are rejected.
   - Inv 12 (transaction cost realism): passive fills charge zero
     spread cost and optionally model maker rebates.
 """
@@ -37,7 +38,7 @@ Invariants preserved:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from feelies.core.clock import Clock
 from feelies.core.events import (
@@ -60,6 +61,10 @@ class _PendingOrder:
     side: Side
     limit_price: Decimal
     submit_time_ns: int
+    # Per-order queue threshold captured at post time.  Allows callers
+    # to override the default via ``set_queue_ahead`` if they need a
+    # per-order sampled position rather than a global assumption.
+    queue_ahead_shares: int = 0
     ticks_at_level: int = 0
     total_ticks: int = 0
     shares_traded_at_level: int = 0
@@ -99,6 +104,11 @@ class PassiveLimitOrderRouter:
         self._last_quotes: dict[str, NBBOQuote] = {}
         self._pending_acks: list[OrderAck] = []
         self._resting_orders: dict[str, _PendingOrder] = {}
+        # Symbol → order_ids index so on_quote() is O(k) in the number
+        # of orders for that symbol rather than O(n) across all orders.
+        self._resting_by_symbol: dict[str, set[str]] = {}
+        # Full set of order_ids ever submitted — used for idempotent reject.
+        self._submitted_order_ids: set[str] = set()
 
     # ── Public interface (OrderRouter protocol) ──────────────────
 
@@ -110,15 +120,18 @@ class PassiveLimitOrderRouter:
     def on_trade(self, trade: Trade) -> None:
         """Accumulate traded volume for the queue-position fill model.
 
-        Only active when ``queue_position_shares > 0`` (D10 mode).
-        For each resting order at the traded symbol, adds the trade
+        For each resting order at the traded symbol with a non-zero
+        per-order ``queue_ahead_shares`` (or any resting order when
+        the global ``queue_position_shares`` is set), adds the trade
         size to ``shares_traded_at_level`` if the trade price is at or
         through our limit price (i.e. the order queue is draining).
         """
-        if self._queue_position_shares <= 0:
+        order_ids = self._resting_by_symbol.get(trade.symbol)
+        if not order_ids:
             return
-        for pending in self._resting_orders.values():
-            if pending.request.symbol != trade.symbol:
+        for order_id in order_ids:
+            pending = self._resting_orders[order_id]
+            if pending.queue_ahead_shares <= 0:
                 continue
             if pending.side == Side.BUY and trade.price <= pending.limit_price:
                 pending.shares_traded_at_level += trade.size
@@ -126,9 +139,23 @@ class PassiveLimitOrderRouter:
                 pending.shares_traded_at_level += trade.size
 
     def submit(self, request: OrderRequest) -> None:
+        if request.order_id in self._submitted_order_ids:
+            self._reject(request, f"duplicate order_id: {request.order_id}")
+            return
+        self._submitted_order_ids.add(request.order_id)
+
         quote = self._last_quotes.get(request.symbol)
         if quote is None:
             self._reject(request, "no quote available for symbol")
+            return
+
+        # Crossed (bid > ask) quotes are data errors; locked (bid == ask)
+        # leaves no passive side and breaks the marketability guard.
+        if quote.bid >= quote.ask:
+            self._reject(
+                request,
+                f"crossed or locked quote bid={quote.bid} ask={quote.ask}",
+            )
             return
 
         if request.order_type == OrderType.MARKET:
@@ -146,7 +173,11 @@ class PassiveLimitOrderRouter:
     # ── Aggressive (market) fills ────────────────────────────────
 
     def _fill_aggressive(self, request: OrderRequest, quote: NBBOQuote) -> None:
-        """Immediate fill at mid-price — same economics as BacktestOrderRouter."""
+        """Immediate fill at mid-price — same economics as BacktestOrderRouter.
+
+        ``submit()`` is the only caller and has already validated that the
+        quote is non-crossed, so we do not re-check here.
+        """
         fill_price = (quote.bid + quote.ask) / Decimal("2")
         half_spread = (quote.ask - quote.bid) / Decimal("2")
         fill_ts = self._clock.now_ns() + self._latency_ns
@@ -191,11 +222,16 @@ class PassiveLimitOrderRouter:
             self._fill_aggressive(request, quote)
             return
 
-        self._resting_orders[request.order_id] = _PendingOrder(
+        pending = _PendingOrder(
             request=request,
             side=request.side,
             limit_price=limit_price,
             submit_time_ns=self._clock.now_ns(),
+            queue_ahead_shares=self._queue_position_shares,
+        )
+        self._resting_orders[request.order_id] = pending
+        self._resting_by_symbol.setdefault(request.symbol, set()).add(
+            request.order_id
         )
 
         self._pending_acks.append(OrderAck(
@@ -207,16 +243,31 @@ class PassiveLimitOrderRouter:
             status=OrderAckStatus.ACKNOWLEDGED,
         ))
 
+    def set_queue_ahead(self, order_id: str, shares: int) -> bool:
+        """Override the queue-ahead threshold for a specific resting order.
+
+        Allows per-order queue-position sampling (e.g. drawn from an
+        exchange-specific distribution) rather than the global default.
+        Returns True if the order was found.
+        """
+        pending = self._resting_orders.get(order_id)
+        if pending is None:
+            return False
+        pending.queue_ahead_shares = shares
+        return True
+
     # ── Resting order fill checking ──────────────────────────────
 
     def _check_resting_orders(self, quote: NBBOQuote) -> None:
         """Evaluate all resting orders for the quoted symbol."""
+        order_ids = self._resting_by_symbol.get(quote.symbol)
+        if not order_ids:
+            return
+
         to_remove: list[str] = []
 
-        for order_id, pending in self._resting_orders.items():
-            if pending.request.symbol != quote.symbol:
-                continue
-
+        for order_id in order_ids:
+            pending = self._resting_orders[order_id]
             pending.total_ticks += 1
             action = self._evaluate_fill(pending, quote)
 
@@ -228,7 +279,7 @@ class PassiveLimitOrderRouter:
                 to_remove.append(order_id)
 
         for oid in to_remove:
-            del self._resting_orders[oid]
+            self._remove_resting(oid)
 
     def _evaluate_fill(self, pending: _PendingOrder, quote: NBBOQuote) -> str:
         """Determine whether a resting order fills, cancels, or continues.
@@ -236,11 +287,11 @@ class PassiveLimitOrderRouter:
         Returns "fill", "cancel", or "wait".
 
         Two fill trigger modes:
-          - Queue-position (D10): if ``queue_position_shares > 0``, the
-            level-fill triggers when accumulated trade volume at our level
-            reaches ``queue_position_shares``.  More realistic than tick
-            counting on high-frequency quote streams.
-          - Tick-based (legacy): if ``queue_position_shares == 0``, the
+          - Queue-position: if the order's ``queue_ahead_shares > 0``,
+            the level-fill triggers when accumulated trade volume at
+            our level reaches that threshold.  More realistic than
+            tick counting on high-frequency quote streams.
+          - Tick-based (legacy): if ``queue_ahead_shares == 0``, the
             original counter fires after ``fill_delay_ticks`` consecutive
             quotes at our level.
         """
@@ -248,8 +299,8 @@ class PassiveLimitOrderRouter:
             if quote.ask <= pending.limit_price:
                 return "fill"
             if quote.bid <= pending.limit_price:
-                if self._queue_position_shares > 0:
-                    if pending.shares_traded_at_level >= self._queue_position_shares:
+                if pending.queue_ahead_shares > 0:
+                    if pending.shares_traded_at_level >= pending.queue_ahead_shares:
                         return "fill"
                 else:
                     pending.ticks_at_level += 1
@@ -262,8 +313,8 @@ class PassiveLimitOrderRouter:
             if quote.bid >= pending.limit_price:
                 return "fill"
             if quote.ask >= pending.limit_price:
-                if self._queue_position_shares > 0:
-                    if pending.shares_traded_at_level >= self._queue_position_shares:
+                if pending.queue_ahead_shares > 0:
+                    if pending.shares_traded_at_level >= pending.queue_ahead_shares:
                         return "fill"
                 else:
                     pending.ticks_at_level += 1
@@ -290,6 +341,7 @@ class PassiveLimitOrderRouter:
             status=OrderAckStatus.REJECTED,
             reason=reason,
         ))
+
     def _emit_passive_fill(self, pending: _PendingOrder) -> None:
         """Emit a FILLED ack for a passive limit order.
 
@@ -323,11 +375,15 @@ class PassiveLimitOrderRouter:
             cost_bps=costs.cost_bps,
         ))
 
+    def _cancel_fees(self, quantity: int) -> Decimal:
+        """Deterministically quantized cancel-fee computation."""
+        return (self._cancel_fee_per_share * quantity).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+
     def _emit_timeout_cancel(self, pending: _PendingOrder) -> None:
         """Emit a CANCELLED ack for a timed-out resting order."""
-        cancel_fees = (self._cancel_fee_per_share * pending.request.quantity).quantize(
-            Decimal("0.01")
-        )
+        cancel_fees = self._cancel_fees(pending.request.quantity)
         self._pending_acks.append(OrderAck(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=pending.request.correlation_id,
@@ -349,12 +405,10 @@ class PassiveLimitOrderRouter:
         Returns True if the order was found and cancelled.  The
         cancellation ack is queued for the next ``poll_acks()`` call.
         """
-        pending = self._resting_orders.pop(order_id, None)
+        pending = self._resting_orders.get(order_id)
         if pending is None:
             return False
-        cancel_fees = (
-            self._cancel_fee_per_share * pending.request.quantity
-        ).quantize(Decimal("0.01"))
+        cancel_fees = self._cancel_fees(pending.request.quantity)
         self._pending_acks.append(OrderAck(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=pending.request.correlation_id,
@@ -365,7 +419,18 @@ class PassiveLimitOrderRouter:
             reason="client_cancel",
             fees=cancel_fees if cancel_fees > 0 else None,
         ))
+        self._remove_resting(order_id)
         return True
+
+    def _remove_resting(self, order_id: str) -> None:
+        pending = self._resting_orders.pop(order_id, None)
+        if pending is None:
+            return
+        symbol_set = self._resting_by_symbol.get(pending.request.symbol)
+        if symbol_set is not None:
+            symbol_set.discard(order_id)
+            if not symbol_set:
+                del self._resting_by_symbol[pending.request.symbol]
 
     # ── Diagnostics ──────────────────────────────────────────────
 
@@ -376,6 +441,17 @@ class PassiveLimitOrderRouter:
 
     def resting_symbols(self) -> frozenset[str]:
         """Symbols with at least one resting limit order."""
-        return frozenset(
-            p.request.symbol for p in self._resting_orders.values()
-        )
+        return frozenset(self._resting_by_symbol.keys())
+
+    @property
+    def requires_trade_feed(self) -> bool:
+        """True when ``on_trade()`` must be wired for correct fills.
+
+        When the queue-position mode is enabled (``queue_position_shares > 0``
+        at construction, or any order has a non-zero per-order threshold),
+        level fills only fire when accumulated trade volume reaches the
+        threshold.  Without a trade feed subscription those orders never
+        fill by queue drain and silently degrade — callers should wire
+        ``on_trade`` when this is True.
+        """
+        return self._queue_position_shares > 0

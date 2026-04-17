@@ -44,10 +44,15 @@ _ORDER_TRANSITIONS: dict[OrderState, frozenset[OrderState]] = {
         OrderState.CANCEL_REQUESTED,
         OrderState.EXPIRED,
     }),
-    # O3: cancel and expiry only from ACKNOWLEDGED, not from partial fills.
+    # Real brokers permit cancel-the-remainder and TIF expiry on a
+    # partially-filled order.  Omitting these edges would silently drop
+    # valid broker acks in live mode (kernel emits ack_inapplicable_to_order_state).
     OrderState.PARTIALLY_FILLED: frozenset({
-        OrderState.PARTIALLY_FILLED,  # O3 → O3  additional partial
-        OrderState.FILLED,            # O3 → O4  fully filled
+        OrderState.PARTIALLY_FILLED,   # additional partial
+        OrderState.FILLED,             # fully filled
+        OrderState.CANCEL_REQUESTED,   # client cancels remainder
+        OrderState.CANCELLED,          # broker-initiated cancel of remainder
+        OrderState.EXPIRED,            # TIF timeout with partial fills booked
     }),
     OrderState.CANCEL_REQUESTED: frozenset({
         OrderState.CANCELLED,         # O5 → O6  cancel confirmed

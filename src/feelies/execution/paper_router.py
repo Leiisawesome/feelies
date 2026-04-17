@@ -14,12 +14,19 @@ class PaperOrderRouter:
 
     Will simulate fills using live market data without placing
     real orders.  Tracks virtual positions and PnL.
+
+    Construction fails fast: there is no silent degradation path.
     """
 
-    def submit(self, request: OrderRequest) -> None:
+    def __init__(self) -> None:
         raise NotImplementedError(
             "PaperOrderRouter is not yet implemented. "
             "See live-execution skill for the specification."
+        )
+
+    def submit(self, request: OrderRequest) -> None:
+        raise NotImplementedError(
+            "PaperOrderRouter is not yet implemented."
         )
 
     def poll_acks(self) -> list[OrderAck]:

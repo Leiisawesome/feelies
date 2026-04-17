@@ -98,6 +98,10 @@ class SignalPositionTranslator:
         target_quantity: int | None = None,
     ) -> OrderIntent:
         tgt = target_quantity if target_quantity is not None else self._default_target
+        if tgt < 0:
+            raise ValueError(
+                f"target_quantity must be non-negative, got {tgt}"
+            )
         qty = position.quantity
 
         if signal.direction == SignalDirection.FLAT:

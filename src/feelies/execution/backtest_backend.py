@@ -74,6 +74,13 @@ def build_passive_limit_backend(
 
     Returns ``(backend, router)`` so the caller can wire
     ``router.on_quote()`` to the event bus for price tracking.
+
+    When ``queue_position_shares > 0`` (or callers later set per-order
+    thresholds via ``router.set_queue_ahead()``), level fills require
+    accumulated trade volume.  In that case the caller MUST also wire
+    ``router.on_trade()`` to the trade event stream or orders will
+    never fill by queue drain.  Check ``router.requires_trade_feed``
+    to detect this requirement at wiring time.
     """
     feed = ReplayFeed(
         event_log=event_log,

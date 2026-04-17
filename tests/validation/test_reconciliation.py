@@ -12,6 +12,7 @@ import pytest
 
 from feelies.core.events import (
     OrderAck,
+    OrderAckStatus,
     OrderRequest,
     RiskAction,
     RiskVerdict,
@@ -93,15 +94,30 @@ class TestTradeRecordIntegrity:
 
 
 class TestOrderRequestAckParity:
-    """Every submitted OrderRequest has exactly one OrderAck."""
+    """Every submitted OrderRequest reaches a terminal ack, and every ack
+    traces back to a submitted order.
 
-    def test_order_request_count_equals_ack_count(
+    An order may produce multiple acks (ACKNOWLEDGED, PARTIALLY_FILLED,
+    FILLED, etc.) so the invariant is a set-equality on order_ids, not a
+    count parity."""
+
+    def test_every_order_has_at_least_one_terminal_ack(
         self, single_symbol_scenario
     ) -> None:
         _, recorder, _, _ = single_symbol_scenario
         orders = recorder.of_type(OrderRequest)
         acks = recorder.of_type(OrderAck)
-        assert len(orders) == len(acks)
+        terminal = {
+            OrderAckStatus.FILLED,
+            OrderAckStatus.CANCELLED,
+            OrderAckStatus.REJECTED,
+            OrderAckStatus.EXPIRED,
+        }
+        terminal_order_ids = {a.order_id for a in acks if a.status in terminal}
+        for order in orders:
+            assert order.order_id in terminal_order_ids, (
+                f"Order {order.order_id} has no terminal ack"
+            )
 
     def test_no_orphaned_fills(self, single_symbol_scenario) -> None:
         orchestrator, recorder, _, _ = single_symbol_scenario
