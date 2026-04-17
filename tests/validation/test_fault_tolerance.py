@@ -233,7 +233,8 @@ class TestDrawdownAndLockdown:
         store.update("AAPL", 100, Decimal("150.00"))
         store.update("AAPL", -100, Decimal("145.00"))
 
-        breached = engine._is_drawdown_breached(store)
+        current_equity = engine._compute_current_equity(store)
+        breached = engine._is_drawdown_breached(current_equity)
         assert isinstance(breached, bool)
 
 

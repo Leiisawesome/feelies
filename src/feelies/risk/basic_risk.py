@@ -191,9 +191,17 @@ class BasicRiskEngine:
 
         Returns a verdict (REJECT, FORCE_FLATTEN, or SCALE_DOWN) if any
         shared limit is breached, or None if all checks pass.
+
+        ``max_exposure`` compounds against the live NAV (initial equity
+        + realized − fees + unrealized).  Static initial capital would
+        let the book silently over- or under-lever as PnL moves.  The
+        HWM tracked inside ``_is_drawdown_breached`` uses the same
+        definition so the two checks stay internally consistent.
         """
+        current_equity = self._compute_current_equity(positions)
         exposure = positions.total_exposure()
-        max_exposure = self._config.account_equity * Decimal(
+        equity_for_cap = current_equity if current_equity > 0 else self._config.account_equity
+        max_exposure = equity_for_cap * Decimal(
             str(self._config.max_gross_exposure_pct)
         ) / Decimal("100")
         if exposure >= max_exposure:
@@ -206,7 +214,7 @@ class BasicRiskEngine:
                 reason=f"gross exposure limit: {exposure} >= {max_exposure}",
             )
 
-        if self._is_drawdown_breached(positions):
+        if self._is_drawdown_breached(current_equity):
             return RiskVerdict(
                 timestamp_ns=timestamp_ns,
                 correlation_id=correlation_id,
@@ -279,14 +287,29 @@ class BasicRiskEngine:
             for i in range(len(posteriors))
         )
 
-    def _is_drawdown_breached(self, positions: PositionStore) -> bool:
+    def _compute_current_equity(self, positions: PositionStore) -> Decimal:
+        """Live NAV: initial equity + realized − fees + unrealized.
+
+        Including ``unrealized_pnl`` lets the drawdown guard fire while
+        losses are still on-book — waiting for them to realize defeats
+        the purpose of a stop.  Per-symbol ``unrealized_pnl`` is kept
+        current by the position store's mark feed.
+        """
         total_realized = Decimal("0")
         total_fees = Decimal("0")
+        total_unrealized = Decimal("0")
         for pos in positions.all_positions().values():
             total_realized += pos.realized_pnl
             total_fees += pos.cumulative_fees
+            total_unrealized += pos.unrealized_pnl
+        return (
+            self._config.account_equity
+            + total_realized
+            - total_fees
+            + total_unrealized
+        )
 
-        current_equity = self._config.account_equity + total_realized - total_fees
+    def _is_drawdown_breached(self, current_equity: Decimal) -> bool:
         if current_equity > self._high_water_mark:
             self._high_water_mark = current_equity
 

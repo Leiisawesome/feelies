@@ -28,6 +28,7 @@ from feelies.core.events import (
     RiskVerdict,
     Side,
     Signal,
+    SignalDirection,
 )
 from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
@@ -65,7 +66,11 @@ class AlphaBudgetRiskWrapper:
 
         budget = alpha.manifest.risk_budget
 
-        # 1. Per-alpha position limit
+        # 1. Per-alpha position limit.
+        # Signals that reduce the position (exits, reversals, FLATs from
+        # a non-zero book) must never be rejected by a position-limit
+        # check — otherwise an alpha at its cap becomes trapped and
+        # cannot unwind.  Mirrors BasicRiskEngine.check_signal.
         effective_max = min(
             budget.max_position_per_symbol,
             self._platform_config.max_position_per_symbol,
@@ -73,7 +78,10 @@ class AlphaBudgetRiskWrapper:
         strategy_pos = self._strategy_positions.get(
             signal.strategy_id, signal.symbol,
         )
-        if abs(strategy_pos.quantity) >= effective_max:
+        signal_reduces = _signal_reduces_position(
+            strategy_pos.quantity, signal.direction,
+        )
+        if abs(strategy_pos.quantity) >= effective_max and not signal_reduces:
             return RiskVerdict(
                 timestamp_ns=signal.timestamp_ns,
                 correlation_id=signal.correlation_id,
@@ -86,11 +94,12 @@ class AlphaBudgetRiskWrapper:
                 ),
             )
 
-        # 2. Per-alpha exposure limit
+        # 2. Per-alpha exposure limit.  Exempt reducing signals for the
+        # same reason as the position-limit gate.
         alpha_equity, alpha_max_exposure, alpha_exposure = (
             self._alpha_equity_and_exposure(signal.strategy_id, budget)
         )
-        if alpha_exposure >= alpha_max_exposure:
+        if alpha_exposure >= alpha_max_exposure and not signal_reduces:
             return RiskVerdict(
                 timestamp_ns=signal.timestamp_ns,
                 correlation_id=signal.correlation_id,
@@ -131,7 +140,13 @@ class AlphaBudgetRiskWrapper:
         fees = self._strategy_positions.get_strategy_cumulative_fees(
             strategy_id,
         )
-        current_equity = alpha_equity + realized_pnl - fees
+        unrealized_pnl = self._strategy_positions.get_strategy_unrealized_pnl(
+            strategy_id,
+        )
+        # Include unrealized so open losses count against the alpha's
+        # HWM before they realize — otherwise an alpha can hold a loss
+        # indefinitely without tripping its drawdown budget.
+        current_equity = alpha_equity + realized_pnl - fees + unrealized_pnl
 
         hwm = self._alpha_hwm.get(strategy_id, alpha_equity)
         if current_equity > hwm:
@@ -261,3 +276,25 @@ class AlphaBudgetRiskWrapper:
         self._alpha_hwm = {
             sid: Decimal(val) for sid, val in state.items()
         }
+
+
+def _signal_reduces_position(
+    current_qty: int,
+    direction: SignalDirection,
+) -> bool:
+    """Return True if a signal would close or offset an open position.
+
+    A FLAT signal against any non-zero position is a pure exit.  A
+    SHORT against a long (or LONG against a short) unwinds at least
+    partially before any new exposure is added.  Both are always
+    permissible regardless of position / exposure caps.
+    """
+    if current_qty == 0:
+        return False
+    if direction == SignalDirection.FLAT:
+        return True
+    if current_qty > 0 and direction == SignalDirection.SHORT:
+        return True
+    if current_qty < 0 and direction == SignalDirection.LONG:
+        return True
+    return False

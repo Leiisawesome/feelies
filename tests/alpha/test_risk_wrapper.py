@@ -171,6 +171,73 @@ class TestCheckOrderPerAlphaExposureLimit:
         assert "per-alpha exposure limit at order gate" in verdict.reason
 
 
+class TestCheckSignalReducingExemption:
+    """An alpha at its cap must still be allowed to exit or reduce."""
+
+    def _make_signal(
+        self,
+        direction: SignalDirection,
+        symbol: str = "AAPL",
+        strategy_id: str = "test_alpha",
+    ) -> Signal:
+        return Signal(
+            timestamp_ns=1_000_000_000,
+            correlation_id="corr-1",
+            sequence=1,
+            symbol=symbol,
+            strategy_id=strategy_id,
+            direction=direction,
+            strength=0.8,
+            edge_estimate_bps=2.0,
+        )
+
+    def test_flat_signal_allowed_at_position_cap(self) -> None:
+        """FLAT exit must not be rejected by the per-alpha position cap."""
+        alpha = _make_alpha(max_position=50, max_exposure_pct=100.0, capital_pct=100.0)
+        positions = StrategyPositionStore()
+        positions.update("test_alpha", "AAPL", 50, Decimal("150"))
+
+        wrapper = _build_wrapper(alpha, strategy_positions=positions)
+        sig = self._make_signal(SignalDirection.FLAT)
+        verdict = wrapper.check_signal(sig, positions.as_aggregate())
+        assert verdict.action != RiskAction.REJECT
+
+    def test_opposite_signal_allowed_at_position_cap(self) -> None:
+        """A short signal against a long at cap unwinds — never reject."""
+        alpha = _make_alpha(max_position=50, max_exposure_pct=100.0, capital_pct=100.0)
+        positions = StrategyPositionStore()
+        positions.update("test_alpha", "AAPL", 50, Decimal("150"))
+
+        wrapper = _build_wrapper(alpha, strategy_positions=positions)
+        sig = self._make_signal(SignalDirection.SHORT)
+        verdict = wrapper.check_signal(sig, positions.as_aggregate())
+        assert verdict.action != RiskAction.REJECT
+
+    def test_same_side_signal_still_rejected_at_cap(self) -> None:
+        """The exemption must NOT let same-side signals grow past the cap."""
+        alpha = _make_alpha(max_position=50, max_exposure_pct=100.0, capital_pct=100.0)
+        positions = StrategyPositionStore()
+        positions.update("test_alpha", "AAPL", 50, Decimal("150"))
+
+        wrapper = _build_wrapper(alpha, strategy_positions=positions)
+        sig = self._make_signal(SignalDirection.LONG)
+        verdict = wrapper.check_signal(sig, positions.as_aggregate())
+        assert verdict.action == RiskAction.REJECT
+
+    def test_flat_signal_allowed_at_exposure_cap(self) -> None:
+        """Exit must bypass the per-alpha exposure cap too."""
+        alpha = _make_alpha(max_position=1_000_000, max_exposure_pct=5.0, capital_pct=10.0)
+        positions = StrategyPositionStore()
+        # equity=100k, capital=10% -> alpha_equity=10k; 5% exposure = $500.
+        # 4 shares × $150 = $600 exposure (over).
+        positions.update("test_alpha", "AAPL", 4, Decimal("150"))
+
+        wrapper = _build_wrapper(alpha, strategy_positions=positions)
+        sig = self._make_signal(SignalDirection.FLAT)
+        verdict = wrapper.check_signal(sig, positions.as_aggregate())
+        assert verdict.action != RiskAction.REJECT
+
+
 class TestCheckOrderDelegatesToInner:
     """check_order still delegates to inner engine for aggregate checks."""
 

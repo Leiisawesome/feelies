@@ -19,6 +19,7 @@ class MemoryPositionStore:
 
     def __init__(self) -> None:
         self._positions: dict[str, Position] = {}
+        self._marks: dict[str, Decimal] = {}
 
     def get(self, symbol: str) -> Position:
         pos = self._positions.get(symbol)
@@ -62,7 +63,26 @@ class MemoryPositionStore:
         if new_qty == 0:
             pos.avg_entry_price = Decimal("0")
 
+        # Keep unrealized PnL current against the latest mark so the
+        # drawdown guard and any MTM consumer read a fresh value.
+        self._recompute_unrealized(pos)
+
         return pos
+
+    def update_mark(self, symbol: str, mark_price: Decimal) -> None:
+        if mark_price <= 0:
+            return
+        self._marks[symbol] = mark_price
+        pos = self._positions.get(symbol)
+        if pos is not None:
+            self._recompute_unrealized(pos)
+
+    def _recompute_unrealized(self, pos: Position) -> None:
+        mark = self._marks.get(pos.symbol)
+        if mark is None or pos.quantity == 0:
+            pos.unrealized_pnl = Decimal("0")
+            return
+        pos.unrealized_pnl = (mark - pos.avg_entry_price) * pos.quantity
 
     def debit_fees(self, symbol: str, fees: Decimal) -> None:
         """Record fees without a fill (e.g. cancel fees).
@@ -90,9 +110,20 @@ class MemoryPositionStore:
         return dict(self._positions)
 
     def total_exposure(self) -> Decimal:
+        """Gross notional using the latest mark per symbol.
+
+        Falls back to ``avg_entry_price`` only when no mark has been
+        recorded for the symbol — this is the boot-time case, before any
+        quote has flowed through.  Once marks are present, exposure
+        responds to price moves (a long that rallies tightens against
+        the gross-exposure cap, as it should).
+        """
         total = Decimal("0")
         for pos in self._positions.values():
-            total += abs(pos.quantity) * pos.avg_entry_price
+            if pos.quantity == 0:
+                continue
+            price = self._marks.get(pos.symbol, pos.avg_entry_price)
+            total += abs(pos.quantity) * price
         return total
 
 

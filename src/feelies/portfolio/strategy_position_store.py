@@ -53,6 +53,19 @@ class StrategyPositionStore:
         """Update position for a specific strategy."""
         return self._get_store(strategy_id).update(symbol, quantity_delta, fill_price, fees=fees)
 
+    def update_mark(self, symbol: str, mark_price: Decimal) -> None:
+        """Propagate a mark price to every per-strategy book.
+
+        Marks are a symbol-level concept — they do not depend on which
+        strategy holds the position.  Pushing to each sub-store keeps
+        per-strategy ``unrealized_pnl`` and ``total_exposure`` coherent
+        with the aggregate view consumed by the risk engine.
+        """
+        if mark_price <= 0:
+            return
+        for store in self._stores.values():
+            store.update_mark(symbol, mark_price)
+
     def get_aggregate(self, symbol: str) -> Position:
         """Net position across all strategies for a symbol.
 
@@ -141,6 +154,23 @@ class StrategyPositionStore:
             if store is not None else Decimal("0")
         )
 
+    def get_strategy_unrealized_pnl(self, strategy_id: str) -> Decimal:
+        """Total unrealized PnL for a strategy across all symbols.
+
+        Depends on ``update_mark`` having been called for each symbol;
+        returns ``Decimal("0")`` if no marks have flowed yet.  Used by
+        the per-alpha drawdown guard so open losses count against the
+        alpha's high-water mark before they realize.
+        """
+        store = self._stores.get(strategy_id)
+        return (
+            sum(
+                (pos.unrealized_pnl for pos in store.all_positions().values()),
+                Decimal("0"),
+            )
+            if store is not None else Decimal("0")
+        )
+
     def strategy_ids(self) -> frozenset[str]:
         """Set of all strategy IDs with positions."""
         return frozenset(self._stores.keys())
@@ -176,6 +206,9 @@ class _AggregateView:
             "Cannot update aggregate view directly — use "
             "StrategyPositionStore.update(strategy_id, symbol, ...) instead"
         )
+
+    def update_mark(self, symbol: str, mark_price: Decimal) -> None:
+        self._parent.update_mark(symbol, mark_price)
 
     def all_positions(self) -> dict[str, Position]:
         return self._parent.all_aggregate_positions()

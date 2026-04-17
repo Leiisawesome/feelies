@@ -213,3 +213,85 @@ class TestRegimeScaling:
         store.update("AAPL", 999, Decimal("10"))
         verdict = engine.check_signal(_make_signal(), store)
         assert verdict.action in (RiskAction.ALLOW, RiskAction.SCALE_DOWN)
+
+
+class TestMarkToMarketExposureAndDrawdown:
+    """Exposure caps and drawdown must use live marks, not cost basis."""
+
+    def test_mark_raises_exposure_above_cap(
+        self, store: MemoryPositionStore
+    ) -> None:
+        """A long that rallies hard must show up against the gross cap.
+
+        Before marks: exposure = 500 × $10 = $5000 (under 10% of $100k).
+        After mark to $30: exposure = 500 × $30 = $15000 (over cap).
+        """
+        cfg = RiskConfig(
+            max_position_per_symbol=100_000,
+            max_gross_exposure_pct=10.0,
+            account_equity=Decimal("100000"),
+        )
+        engine = BasicRiskEngine(cfg)
+        store.update("AAPL", 500, Decimal("10"))
+
+        # Pre-mark: exposure at cost basis, well under cap.
+        verdict = engine.check_signal(_make_signal(), store)
+        assert verdict.action == RiskAction.ALLOW
+
+        # After price triples, MTM exposure exceeds cap.
+        store.update_mark("AAPL", Decimal("30"))
+        verdict = engine.check_signal(_make_signal(), store)
+        assert verdict.action == RiskAction.REJECT
+        assert "gross exposure" in verdict.reason
+
+    def test_unrealized_loss_triggers_drawdown_force_flatten(
+        self, store: MemoryPositionStore
+    ) -> None:
+        """Open losses must be visible to the drawdown guard.
+
+        Realized PnL is zero; only unrealized moves.  Pre-fix this
+        would have silently passed because ``_is_drawdown_breached``
+        used realized-only equity.
+        """
+        cfg = RiskConfig(
+            max_position_per_symbol=100_000,
+            max_gross_exposure_pct=100.0,
+            max_drawdown_pct=1.0,
+            account_equity=Decimal("100000"),
+        )
+        engine = BasicRiskEngine(cfg)
+        # Small position so exposure stays well under cap; the 20%
+        # adverse mark gives a $2k unrealized loss = 2% drawdown.
+        store.update("AAPL", 100, Decimal("100"))
+        store.update_mark("AAPL", Decimal("80"))
+
+        order = _make_order(side=Side.BUY, quantity=10)
+        verdict = engine.check_order(order, store)
+        assert verdict.action == RiskAction.FORCE_FLATTEN
+        assert "drawdown" in verdict.reason
+
+    def test_dynamic_equity_compounds_exposure_cap(
+        self, store: MemoryPositionStore
+    ) -> None:
+        """Exposure cap compounds with equity.
+
+        After realizing a $50k gain on a $100k book, the 10% cap
+        should apply against $150k, not stay pinned to $100k.
+        """
+        cfg = RiskConfig(
+            max_position_per_symbol=100_000,
+            max_gross_exposure_pct=10.0,
+            max_drawdown_pct=99.0,
+            account_equity=Decimal("100000"),
+        )
+        engine = BasicRiskEngine(cfg)
+        # Book +$50k realized; then open a new 1200-share long at $10
+        # (exposure $12k).  Static cap would reject at 10% of $100k =
+        # $10k; dynamic cap allows up to $15k.
+        store.update("AAPL", 100, Decimal("100"))
+        store.update("AAPL", -100, Decimal("600"))  # realize +$50k
+        store.update("MSFT", 1200, Decimal("10"))
+        store.update_mark("MSFT", Decimal("10"))
+
+        verdict = engine.check_signal(_make_signal(symbol="MSFT"), store)
+        assert verdict.action in (RiskAction.ALLOW, RiskAction.SCALE_DOWN)

@@ -48,10 +48,26 @@ class PositionStore(Protocol):
         """Record fees without a fill (e.g. cancel fees)."""
         ...
 
+    def update_mark(self, symbol: str, mark_price: Decimal) -> None:
+        """Record the latest mark price for a symbol.
+
+        The mark price is used to compute unrealized PnL and a
+        mark-to-market view of ``total_exposure``.  Callers should feed
+        a mark on every quote so risk checks see live exposure rather
+        than cost-basis exposure.  Implementations must be cheap — this
+        is called on the hot quote path.
+        """
+        ...
+
     def all_positions(self) -> dict[str, Position]:
         """Snapshot of all current positions."""
         ...
 
     def total_exposure(self) -> Decimal:
-        """Gross notional exposure across all positions."""
+        """Gross notional exposure across all positions.
+
+        Implementations should use the latest mark price when available
+        (see ``update_mark``) and fall back to ``avg_entry_price`` only
+        when no mark has been recorded for the symbol.
+        """
         ...

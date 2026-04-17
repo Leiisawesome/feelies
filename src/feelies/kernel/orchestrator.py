@@ -178,6 +178,9 @@ class _PostExitPositionView:
     def debit_fees(self, *args: Any, **kwargs: Any) -> None:
         raise RuntimeError("_PostExitPositionView is read-only")
 
+    def update_mark(self, *args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("_PostExitPositionView is read-only")
+
 
 _TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset({
     OrderState.FILLED,
@@ -722,6 +725,17 @@ class Orchestrator:
         if not self._events_prelogged:
             self._event_log.append(quote)
         self._bus.publish(quote)
+
+        # ── Mark-to-market feed ─────────────────────────────────
+        # Push the latest mid to both the aggregate and per-strategy
+        # position books so ``total_exposure`` and ``unrealized_pnl``
+        # reflect live prices, not cost basis.  The risk engine uses
+        # these for the gross-exposure cap and drawdown guard.
+        mid = (quote.bid + quote.ask) / Decimal("2")
+        if mid > 0:
+            self._positions.update_mark(quote.symbol, mid)
+            if self._strategy_positions is not None:
+                self._strategy_positions.update_mark(quote.symbol, mid)
 
         # ── Resting order fill check ─────────────────────────────
         # bus.publish(quote) triggered on_quote() on the router,
@@ -1629,14 +1643,19 @@ class Orchestrator:
         """Submit market orders to flatten all non-zero positions.
 
         Emergency path -- bypasses the micro SM (which will be reset
-        immediately after).  Individual order failures are logged but
-        do not prevent the escalation to LOCKED (Inv-11: fail-safe).
+        immediately after).  Individual order failures are captured
+        rather than silently swallowed; we still proceed through the
+        loop so one broken symbol can't block flattening the rest
+        (Inv-11: fail-safe).
 
         After the flatten loop, residual exposure is checked.  If any
-        positions remain open, a CRITICAL alert is emitted so the
-        operator knows the flatten was incomplete.
+        positions remain open — whether from submit exceptions, partial
+        fills, or rejected acks — a CRITICAL alert is emitted listing
+        every failed symbol so the operator sees exactly which legs
+        need manual intervention before LOCKED traps them.
         """
         positions = self._positions.all_positions()
+        failures: dict[str, str] = {}
         for symbol, pos in positions.items():
             if pos.quantity == 0:
                 continue
@@ -1669,22 +1688,37 @@ class Orchestrator:
                     self._bus.publish(ack)
                     self._apply_ack_to_order(ack)
                 self._reconcile_fills(acks, correlation_id)
-            except Exception:
+                # A reject / zero-fill ack still leaves the position open.
+                # Surface it as a failure so the residual alert sees it.
+                non_fill_acks = [
+                    a for a in acks
+                    if a.order_id == order_id
+                    and (a.filled_quantity or 0) == 0
+                    and a.status in (OrderAckStatus.REJECTED, OrderAckStatus.CANCELLED)
+                ]
+                if non_fill_acks:
+                    failures[symbol] = (
+                        f"{non_fill_acks[0].status.name}: "
+                        f"{non_fill_acks[0].reason or 'no reason'}"
+                    )
+            except Exception as exc:
                 logger.exception(
                     "Emergency flatten failed for %s (qty=%d) -- "
                     "position may remain open at LOCKED",
                     symbol, pos.quantity,
                 )
+                failures[symbol] = f"submit_exception: {exc!r}"
 
         residual = {
             sym: p.quantity
             for sym, p in self._positions.all_positions().items()
             if p.quantity != 0
         }
-        if residual:
+        if residual or failures:
             msg = (
                 f"Emergency flatten incomplete — residual positions: "
-                f"{residual}, total_exposure={self._positions.total_exposure()}"
+                f"{residual}, total_exposure={self._positions.total_exposure()}, "
+                f"failures={failures}"
             )
             logger.critical(msg)
             self._bus.publish(Alert(
