@@ -72,6 +72,13 @@ class DefaultCostModelConfig:
         points applied on SELL-side fills when ``is_short=True``.
         Daily cost = notional × annual_bps / 252 / 10 000.
         Default 0 = disabled.  Set only for short-selling strategies.
+    ``min_commission_applies_to_per_share_only``: when True, the
+        ``min_commission`` floor applies only to the per-share
+        component before the exchange pass-through/rebate is added.
+        Default False matches IB Tiered behavior (min applies to
+        the total, so rebates don't show on small orders).  Set to
+        True for advanced passive strategies that need to model the
+        rebate net of commission on small orders.
     """
 
     min_spread_cost_bps: Decimal = Decimal("0")
@@ -84,6 +91,7 @@ class DefaultCostModelConfig:
     sell_regulatory_bps: Decimal = Decimal("0.0")
     stress_multiplier: Decimal = Decimal("1.0")
     htb_borrow_annual_bps: Decimal = Decimal("0.0")
+    min_commission_applies_to_per_share_only: bool = False
 
 
 class DefaultCostModel:
@@ -116,8 +124,9 @@ class DefaultCostModel:
         notional = fill_price * quantity
         stress = self._cfg.stress_multiplier
 
-        # Spread cost: actual half-spread with optional BPS floor
-        actual_spread_cost = half_spread * quantity
+        # Spread cost: actual half-spread (stressed — spreads widen under
+        # stress) with optional BPS floor (also stressed).
+        actual_spread_cost = half_spread * quantity * stress
         floor_spread_cost = notional * self._cfg.min_spread_cost_bps * stress / Decimal("10000")
         spread_cost = max(actual_spread_cost, floor_spread_cost)
 
@@ -131,8 +140,21 @@ class DefaultCostModel:
         else:
             exchange_per_share = self._cfg.maker_exchange_per_share  # rebate, not stressed
 
-        raw_commission = (stressed_commission + exchange_per_share) * quantity
-        commission = max(raw_commission, self._cfg.min_commission * stress)
+        per_share_commission = stressed_commission * quantity
+        exchange_fees = exchange_per_share * quantity
+        if self._cfg.min_commission_applies_to_per_share_only:
+            # Advanced mode: floor the per-share part only; rebates can
+            # produce a net credit on small maker orders.
+            per_share_commission = max(
+                per_share_commission, self._cfg.min_commission * stress
+            )
+            commission = per_share_commission + exchange_fees
+        else:
+            # IB Tiered default: floor the total (commission + exchange).
+            commission = max(
+                per_share_commission + exchange_fees,
+                self._cfg.min_commission * stress,
+            )
         if notional > 0:
             max_commission = notional * self._cfg.max_commission_pct / Decimal("100")
             commission = min(commission, max_commission)
@@ -150,10 +172,12 @@ class DefaultCostModel:
         # Hard-to-borrow (HTB) daily borrow cost for short-side sells (2g).
         # Applied only when is_short=True and htb_borrow_annual_bps > 0.
         # Daily cost = notional × annual_bps / 252 / 10 000 (one trading day).
+        # Stressed to model borrow-fee spikes in risk-off regimes.
         htb_cost = Decimal("0")
         if is_short and side == Side.SELL and self._cfg.htb_borrow_annual_bps > 0:
             htb_cost = (
-                notional * self._cfg.htb_borrow_annual_bps / Decimal("252") / Decimal("10000")
+                notional * self._cfg.htb_borrow_annual_bps * stress
+                / Decimal("252") / Decimal("10000")
             )
 
         total_fees = spread_cost + commission + adverse_cost + regulatory_cost + htb_cost

@@ -15,12 +15,21 @@ class LiveOrderRouter:
     Will submit orders to a real broker API and reconcile fills.
     Requires idempotent order submission (deterministic order_id
     via SHA-256) and full OrderState SM tracking.
+
+    Construction fails fast: wiring this in any mode before the
+    live broker gateway exists is always a bug, not a runtime
+    condition to handle later.
     """
 
-    def submit(self, request: OrderRequest) -> None:
+    def __init__(self) -> None:
         raise NotImplementedError(
             "LiveOrderRouter is not yet implemented. "
             "See live-execution skill for the specification."
+        )
+
+    def submit(self, request: OrderRequest) -> None:
+        raise NotImplementedError(
+            "LiveOrderRouter is not yet implemented."
         )
 
     def poll_acks(self) -> list[OrderAck]:

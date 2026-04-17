@@ -126,3 +126,31 @@ class TestOrderStateMachine:
         sm.transition(OrderState.ACKNOWLEDGED, trigger="ack")
         sm.transition(OrderState.EXPIRED, trigger="timeout")
         assert sm.state == OrderState.EXPIRED
+
+    def test_partially_filled_to_cancel_requested(self, clock: SimulatedClock):
+        """Cancel-the-remainder: client cancels after a partial fill."""
+        sm = create_order_state_machine("o10", clock)
+        sm.transition(OrderState.SUBMITTED, trigger="send")
+        sm.transition(OrderState.ACKNOWLEDGED, trigger="ack")
+        sm.transition(OrderState.PARTIALLY_FILLED, trigger="partial1")
+        sm.transition(OrderState.CANCEL_REQUESTED, trigger="cancel_remainder")
+        sm.transition(OrderState.CANCELLED, trigger="cancel_confirmed")
+        assert sm.state == OrderState.CANCELLED
+
+    def test_partially_filled_direct_to_cancelled(self, clock: SimulatedClock):
+        """Broker-initiated cancel after partial fill (no CANCEL_REQUESTED)."""
+        sm = create_order_state_machine("o11", clock)
+        sm.transition(OrderState.SUBMITTED, trigger="send")
+        sm.transition(OrderState.ACKNOWLEDGED, trigger="ack")
+        sm.transition(OrderState.PARTIALLY_FILLED, trigger="partial1")
+        sm.transition(OrderState.CANCELLED, trigger="broker_cancel")
+        assert sm.state == OrderState.CANCELLED
+
+    def test_partially_filled_to_expired(self, clock: SimulatedClock):
+        """TIF expiry on a partially-filled order."""
+        sm = create_order_state_machine("o12", clock)
+        sm.transition(OrderState.SUBMITTED, trigger="send")
+        sm.transition(OrderState.ACKNOWLEDGED, trigger="ack")
+        sm.transition(OrderState.PARTIALLY_FILLED, trigger="partial1")
+        sm.transition(OrderState.EXPIRED, trigger="tif_timeout")
+        assert sm.state == OrderState.EXPIRED

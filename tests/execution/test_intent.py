@@ -131,3 +131,8 @@ class TestSignalPositionTranslator:
         assert result.strategy_id == "alpha1"
         assert result.signal is sig
         assert result.current_quantity == 0
+
+    def test_negative_target_raises(self, translator: SignalPositionTranslator):
+        """Negative target_quantity produces nonsense sizing — reject at entry."""
+        with pytest.raises(ValueError, match="non-negative"):
+            translator.translate(_signal(SignalDirection.LONG), _position(0), -10)

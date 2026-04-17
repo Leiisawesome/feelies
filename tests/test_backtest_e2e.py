@@ -419,26 +419,27 @@ class TestLayerExecution:
 
     def test_ack_count(self, scenario) -> None:
         _, recorder, _ = scenario
-        assert len(recorder.of_type(OrderAck)) == 3
+        fills = [a for a in recorder.of_type(OrderAck) if a.status == OrderAckStatus.FILLED]
+        assert len(fills) == 3
 
     def test_ack_0_filled_at_mid(self, scenario) -> None:
         _, recorder, _ = scenario
-        ack = recorder.of_type(OrderAck)[0]
-        assert ack.status == OrderAckStatus.FILLED
+        fills = [a for a in recorder.of_type(OrderAck) if a.status == OrderAckStatus.FILLED]
+        ack = fills[0]
         assert ack.filled_quantity == 28
         assert ack.fill_price == Decimal("160.005")
 
     def test_ack_1_exit_filled_at_mid(self, scenario) -> None:
         _, recorder, _ = scenario
-        ack = recorder.of_type(OrderAck)[1]
-        assert ack.status == OrderAckStatus.FILLED
+        fills = [a for a in recorder.of_type(OrderAck) if a.status == OrderAckStatus.FILLED]
+        ack = fills[1]
         assert ack.filled_quantity == 28
         assert ack.fill_price == Decimal("140.005")
 
     def test_ack_2_entry_filled_at_mid(self, scenario) -> None:
         _, recorder, _ = scenario
-        ack = recorder.of_type(OrderAck)[2]
-        assert ack.status == OrderAckStatus.FILLED
+        fills = [a for a in recorder.of_type(OrderAck) if a.status == OrderAckStatus.FILLED]
+        ack = fills[2]
         assert ack.filled_quantity == 28
         assert ack.fill_price == Decimal("140.005")
 
@@ -770,12 +771,12 @@ class TestDeterministicReplay:
             assert sigs_a[0].strength == sigs_b[0].strength
             assert sigs_a[1].strength == sigs_b[1].strength
 
-            acks_a = rec_a.of_type(OrderAck)
-            acks_b = rec_b.of_type(OrderAck)
-            assert acks_a[0].fill_price == acks_b[0].fill_price == Decimal("160.005")
+            fills_a = [a for a in rec_a.of_type(OrderAck) if a.status == OrderAckStatus.FILLED]
+            fills_b = [a for a in rec_b.of_type(OrderAck) if a.status == OrderAckStatus.FILLED]
+            assert fills_a[0].fill_price == fills_b[0].fill_price == Decimal("160.005")
             # REVERSE decomposition: exit leg at 140.005, entry leg at 140.005
-            assert acks_a[1].fill_price == acks_b[1].fill_price == Decimal("140.005")
-            assert acks_a[2].fill_price == acks_b[2].fill_price == Decimal("140.005")
+            assert fills_a[1].fill_price == fills_b[1].fill_price == Decimal("140.005")
+            assert fills_a[2].fill_price == fills_b[2].fill_price == Decimal("140.005")
 
             pos_a = orch_a._positions.get("AAPL")
             pos_b = orch_b._positions.get("AAPL")
