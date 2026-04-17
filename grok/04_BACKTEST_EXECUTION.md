@@ -19,8 +19,9 @@ a populated `InMemoryEventLog` (from Prompt 2) and a valid `.alpha.yaml` spec
 ## CELL 1 — Core backtest runner (uses build_platform from repo source)
 
 ```python
-import yaml, hashlib, json, os, pathlib, math, statistics
+import yaml, hashlib, json, os, pathlib, math, statistics, datetime
 from pathlib import Path
+from dataclasses import replace as _dc_replace
 from feelies.bootstrap import build_platform
 from feelies.core.platform_config import PlatformConfig, OperatingMode
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -44,58 +45,108 @@ def _symbols_from_event_log(event_log: InMemoryEventLog) -> frozenset[str]:
     return frozenset(symbols)
 
 
+# -------------------------------------------------------------------
+# Canonical config loader.
+#
+# CRITICAL FOR PARITY:
+#   scripts/run_backtest.py loads platform.yaml from the repo root.
+#   Grok MUST do the same — otherwise PlatformConfig dataclass defaults
+#   (latency=0, cooldown=0, no stop-loss, account_equity=1_000_000) will
+#   silently override platform.yaml values (latency=30ms, cooldown=5000,
+#   stop-loss=0.005, account_equity=100_000) and break parity hashes.
+#
+# The PLATFORM_YAML_PATH global is set in Prompt 1 from the same commit
+# SHA the source ZIP was extracted from. Single source of truth.
+# -------------------------------------------------------------------
+def _load_platform_config(
+    spec_path: Path,
+    event_log: InMemoryEventLog,
+    overrides: dict | None = None,
+) -> PlatformConfig:
+    """
+    Build a backtest PlatformConfig identical to what scripts/run_backtest.py uses.
+
+    Steps:
+      1. Load PLATFORM_YAML_PATH via PlatformConfig.from_yaml — captures every
+         execution-control field defined in platform.yaml.
+      2. Replace mode=BACKTEST, symbols=<from event_log>, alpha_specs=[spec_path],
+         alpha_spec_dir=None (we point at a single spec, not a discovery directory).
+      3. Apply caller overrides last (e.g. cost_stress_multiplier for sweeps).
+
+    Any other field — backtest_fill_latency_ns, signal_entry_cooldown_ticks,
+    stop_loss_per_share, trail_*, cost_*, passive_*, platform_min_order_shares,
+    signal_min_edge_cost_ratio — comes verbatim from platform.yaml.
+    """
+    assert "PLATFORM_YAML_PATH" in globals(), (
+        "PLATFORM_YAML_PATH not set — re-paste Prompt 1. "
+        "Bootstrap must extract platform.yaml from the same SHA as the source."
+    )
+    base = PlatformConfig.from_yaml(PLATFORM_YAML_PATH)
+
+    symbols = _symbols_from_event_log(event_log)
+    assert symbols, "event_log contains no events with symbols — run LOAD() first"
+
+    config = _dc_replace(
+        base,
+        mode           = OperatingMode.BACKTEST,
+        symbols        = symbols,
+        alpha_spec_dir = None,
+        alpha_specs    = [Path(spec_path)],
+    )
+
+    if overrides:
+        invalid = set(overrides) - set(PlatformConfig.__dataclass_fields__)
+        assert not invalid, f"Unknown PlatformConfig overrides: {sorted(invalid)}"
+        config = _dc_replace(config, **overrides)
+
+    config.validate()
+    return config
+
+
 def run_backtest(
     spec_path: str | Path,
     event_log: InMemoryEventLog,
-    regime_engine: str | None = "hmm_3state_fractional",
-    account_equity: float = 100_000.0,
-    execution_mode: str = "market",
-    backtest_fill_latency_ns: int = 0,
-    signal_entry_cooldown_ticks: int = 0,
+    regime_engine: str | None = None,   # None → use platform.yaml value
+    config_overrides: dict | None = None,
     verbose: bool = True,
 ) -> dict:
     """
     Run a backtest through the repo's actual pipeline.
 
     This is the ONLY backtest path. No custom fill logic. No invented constants.
-    All execution behavior comes from BacktestOrderRouter, DefaultCostModel,
-    BasicRiskEngine — as configured by PlatformConfig and its defaults.
+    All execution behavior is loaded from platform.yaml (the same file the local
+    `python scripts/run_backtest.py` consumes by default), so a Grok backtest is
+    a faithful mirror of the local one.
 
     Args:
-        spec_path:                 Path to .alpha.yaml file (saved by save_alpha())
-        event_log:                 Pre-populated InMemoryEventLog from LOAD()
-        regime_engine:             "hmm_3state_fractional" (default) or None
-        account_equity:            Starting capital in USD (default 100_000;
-                                       PlatformConfig defaults to 1_000_000 — use the
-                                       same value on both sides for parity)
-        execution_mode:            "market" (mid-price fill) or "passive_limit"
-        backtest_fill_latency_ns:  Fill latency in ns (default 0; platform.yaml uses 30_000_000)
-        signal_entry_cooldown_ticks: Ticks between directional entries (default 0)
-        verbose:                   Print summary after run
+        spec_path:        Path to .alpha.yaml file (from save_alpha())
+        event_log:        Pre-populated InMemoryEventLog from LOAD()
+        regime_engine:    Override the regime_engine field of platform.yaml
+                          (None = use whatever platform.yaml specifies, which is
+                           "hmm_3state_fractional" by default)
+        config_overrides: Dict of PlatformConfig field → value, applied AFTER
+                          loading platform.yaml. Use sparingly and ONLY for
+                          deliberate stress sweeps (e.g. {"cost_stress_multiplier": 2.0}
+                          or {"backtest_fill_latency_ns": 100_000_000}).
+        verbose:          Print summary after run
 
     Returns:
-        dict with keys: trade_count, total_pnl, net_pnl, total_fees,
-                        gross_pnl, pnl_hash, trades, positions, config_snapshot
+        dict with keys:
+            trade_count, total_pnl, net_pnl, total_fees, gross_pnl,
+            pnl_hash       — SHA-256 over trade sequence (matches local script)
+            config_hash    — SHA-256 of resolved PlatformConfig snapshot
+            parity_hash    — SHA-256(pnl_hash || config_hash) — single comparator
+            trades, positions, config_snapshot, orchestrator
     """
     spec_path = Path(spec_path)
     assert spec_path.exists(), f"Alpha spec not found: {spec_path}"
     assert event_log is not None, "event_log is None — run LOAD() first"
 
-    symbols = _symbols_from_event_log(event_log)
-    assert symbols, "event_log contains no events with symbols — run LOAD() first"
+    overrides = dict(config_overrides or {})
+    if regime_engine is not None:
+        overrides.setdefault("regime_engine", regime_engine)
 
-    # Build PlatformConfig from source defaults.
-    # DO NOT add invented fill probability, cost multipliers, or RNG seeds here.
-    config = PlatformConfig(
-        mode                          = OperatingMode.BACKTEST,
-        symbols                       = symbols,
-        alpha_specs                   = [spec_path],
-        regime_engine                 = regime_engine,
-        account_equity                = account_equity,
-        execution_mode                = execution_mode,
-        backtest_fill_latency_ns      = backtest_fill_latency_ns,
-        signal_entry_cooldown_ticks   = signal_entry_cooldown_ticks,
-    )
+    config = _load_platform_config(spec_path, event_log, overrides)
 
     # Fresh platform instance — all engines created new for this run
     orchestrator, resolved_config = build_platform(config, event_log=event_log)
@@ -103,9 +154,9 @@ def run_backtest(
     orchestrator.run_backtest()
 
     # --- Extract results ---
-    journal  = orchestrator._trade_journal
+    journal   = orchestrator._trade_journal
     positions = orchestrator._positions.all_positions()
-    records  = list(journal.query())
+    records   = list(journal.query())
 
     total_realized = sum(
         float(p.realized_pnl or 0) for p in positions.values()
@@ -119,21 +170,25 @@ def run_backtest(
     gross_pnl  = total_realized
     net_pnl    = gross_pnl - total_fees
 
-    # Parity hash — deterministic over ordered trade sequence
-    pnl_hash = _compute_parity_hash(records)
+    # Three hashes — see CANONICAL HASH CONTRACT below.
+    pnl_hash    = _compute_parity_hash(records)
+    config_hash = _compute_config_hash(resolved_config)
+    parity_hash = _compute_combined_parity_hash(pnl_hash, config_hash)
 
     result = {
-        "trade_count":       len(records),
-        "total_pnl":         total_realized,
-        "gross_pnl":         gross_pnl,
-        "total_fees":        total_fees,
-        "net_pnl":           net_pnl,
-        "unrealized_pnl":    total_unrealized,
-        "pnl_hash":          pnl_hash,
-        "trades":            records,
-        "positions":         positions,
-        "config_snapshot":   resolved_config.snapshot() if hasattr(resolved_config, "snapshot") else None,
-        "orchestrator":      orchestrator,
+        "trade_count":     len(records),
+        "total_pnl":       total_realized,
+        "gross_pnl":       gross_pnl,
+        "total_fees":      total_fees,
+        "net_pnl":         net_pnl,
+        "unrealized_pnl":  total_unrealized,
+        "pnl_hash":        pnl_hash,
+        "config_hash":     config_hash,
+        "parity_hash":     parity_hash,
+        "trades":          records,
+        "positions":       positions,
+        "config_snapshot": resolved_config.snapshot() if hasattr(resolved_config, "snapshot") else None,
+        "orchestrator":    orchestrator,
     }
 
     if verbose:
@@ -142,22 +197,30 @@ def run_backtest(
     return result
 
 
+# -------------------------------------------------------------------
+# CANONICAL HASH CONTRACT
+#
+# Both Grok and scripts/run_backtest.py MUST emit identical strings for
+# the same alpha + same date range + same platform.yaml.
+#
+# pnl_hash    = SHA256(JSON([{order_id, symbol, side, quantity,
+#                             fill_price, realized_pnl}]))
+# config_hash = PlatformConfig.snapshot().checksum  (already SHA-256)
+# parity_hash = SHA256(pnl_hash + ":" + config_hash)
+#
+# pnl_hash answers "did we produce the same trades?"
+# config_hash answers "were we configured the same way?"
+# parity_hash is the single comparator that answers both at once.
+# -------------------------------------------------------------------
+
 def _compute_parity_hash(records: list) -> str:
-    """
-    Compute a deterministic SHA-256 hash over the trade sequence.
-
-    Both Grok and scripts/run_backtest.py must use the same hash function
-    for parity verification. This function defines the canonical format.
-
-    Hash input: JSON array of trade records, fields in sort_keys order:
-      order_id, realized_pnl, side, fill_price, quantity, symbol
-    """
+    """SHA-256 over ordered trade sequence — matches scripts/run_backtest.py."""
     trade_seq = [
         {
             "order_id":     str(getattr(r, "order_id",         "")),
             "symbol":       str(getattr(r, "symbol",            "")),
-            "side":         str(getattr(r, "side",              "")).split(".")[-1],  # enum name
-            "quantity":     int(getattr(r, "filled_quantity",   0)),  # TradeRecord field is filled_quantity
+            "side":         str(getattr(r, "side",              "")).split(".")[-1],
+            "quantity":     int(getattr(r, "filled_quantity",   0)),
             "fill_price":   str(getattr(r, "fill_price",       "0")),
             "realized_pnl": str(getattr(r, "realized_pnl",     "0")),
         }
@@ -165,6 +228,17 @@ def _compute_parity_hash(records: list) -> str:
     ]
     payload = json.dumps(trade_seq, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _compute_config_hash(config) -> str:
+    """SHA-256 of the resolved PlatformConfig snapshot (excluding non-deterministic fields)."""
+    snap = config.snapshot()
+    return snap.checksum
+
+
+def _compute_combined_parity_hash(pnl_hash: str, config_hash: str) -> str:
+    """SHA-256(pnl_hash + ':' + config_hash). Single comparator binding trades to config."""
+    return hashlib.sha256(f"{pnl_hash}:{config_hash}".encode("utf-8")).hexdigest()
 
 
 def _print_backtest_summary(result: dict, spec_path) -> None:
@@ -176,7 +250,9 @@ def _print_backtest_summary(result: dict, spec_path) -> None:
     print(f"  Fees:         ${result['total_fees']:,.4f}")
     print(f"  Net PnL:      ${result['net_pnl']:,.4f}")
     print(f"  Unrealized:   ${result['unrealized_pnl']:,.4f}")
-    print(f"  Parity hash:  {result['pnl_hash'][:16]}...")
+    print(f"  pnl_hash:     {result['pnl_hash'][:16]}...")
+    print(f"  config_hash:  {result['config_hash'][:16]}...")
+    print(f"  parity_hash:  {result['parity_hash'][:16]}...")
     print(f"{'='*60}\n")
 
 
@@ -188,6 +264,7 @@ def BACKTEST(alpha_id: str, event_log: InMemoryEventLog | None = None, **kwargs)
     Usage:
         result = BACKTEST("my_alpha")
         result = BACKTEST("my_alpha", event_log=LOAD("AAPL","2026-01-15"))
+        result = BACKTEST("my_alpha", config_overrides={"cost_stress_multiplier": 1.5})
     """
     event_log = event_log or SESSION.get("event_log")
     assert event_log is not None, "No event_log in session. Call LOAD() first."
@@ -195,67 +272,210 @@ def BACKTEST(alpha_id: str, event_log: InMemoryEventLog | None = None, **kwargs)
     assert os.path.exists(spec_path), f"Alpha not found: {spec_path}"
     return run_backtest(spec_path, event_log, **kwargs)
 
+
+# -------------------------------------------------------------------
+# SELFCHECK — Inv-5 (deterministic replay) enforcement.
+#
+# Same alpha + same event_log + same config MUST produce identical trades.
+# Run this immediately after defining a new alpha, BEFORE trusting any of
+# its statistics.
+# -------------------------------------------------------------------
+def SELFCHECK(alpha_id: str, event_log: InMemoryEventLog | None = None,
+              n_replays: int = 2, **kwargs) -> dict:
+    """
+    Run the same backtest n_replays times and assert identical pnl_hash + config_hash.
+
+    Returns the diagnostic dict. Raises AssertionError on any divergence.
+    A failure here means the system has hidden state, RNG, or wall-clock
+    dependence — Inv-5 is broken and no statistical claims are valid.
+    """
+    event_log = event_log or SESSION.get("event_log")
+    assert event_log is not None, "No event_log in session. Call LOAD() first."
+    assert n_replays >= 2, "n_replays must be >= 2"
+
+    print(f"\n{'='*60}")
+    print(f"SELFCHECK: {alpha_id}  (n_replays={n_replays})")
+    print(f"{'='*60}")
+
+    hashes = []
+    for i in range(n_replays):
+        r = BACKTEST(alpha_id, event_log=event_log, verbose=False, **kwargs)
+        hashes.append((r["pnl_hash"], r["config_hash"], r["parity_hash"], r["trade_count"]))
+        print(f"  Replay {i+1}: trades={r['trade_count']:5d}  "
+              f"pnl={r['pnl_hash'][:12]}  cfg={r['config_hash'][:12]}  "
+              f"parity={r['parity_hash'][:12]}")
+
+    pnl_set    = {h[0] for h in hashes}
+    config_set = {h[1] for h in hashes}
+    parity_set = {h[2] for h in hashes}
+    trades_set = {h[3] for h in hashes}
+
+    ok = (len(pnl_set) == 1 and len(config_set) == 1 and len(parity_set) == 1)
+
+    print(f"  unique pnl_hash:    {len(pnl_set)}  {'OK' if len(pnl_set)==1 else 'FAIL'}")
+    print(f"  unique config_hash: {len(config_set)}  {'OK' if len(config_set)==1 else 'FAIL'}")
+    print(f"  unique trade_count: {len(trades_set)}  {'OK' if len(trades_set)==1 else 'FAIL'}")
+    print(f"  Inv-5 (deterministic replay): {'PASS' if ok else 'FAIL'}")
+    print(f"{'='*60}")
+
+    assert ok, (
+        f"SELFCHECK FAILED for {alpha_id} — Inv-5 (deterministic replay) is broken.\n"
+        f"  pnl_hashes:    {pnl_set}\n"
+        f"  config_hashes: {config_set}\n"
+        f"Statistical results from this alpha cannot be trusted until this is fixed."
+    )
+    # Record pass in SESSION so EXPORT can stamp the registry's
+    # `selfcheck_passed` column without re-running the backtests.
+    SESSION.setdefault("selfcheck", {})[alpha_id] = {
+        "passed":     True,
+        "n_replays":  n_replays,
+        "pnl_hash":   hashes[0][0],
+        "config_hash":hashes[0][1],
+        "parity_hash":hashes[0][2],
+        "verified_at": datetime.datetime.utcnow().isoformat(),
+    }
+    return {
+        "alpha_id":    alpha_id,
+        "n_replays":   n_replays,
+        "deterministic": True,
+        "pnl_hash":    hashes[0][0],
+        "config_hash": hashes[0][1],
+        "parity_hash": hashes[0][2],
+    }
+
 print("Backtest Execution module: ACTIVE")
 print("BACKTEST('alpha_id') runs the full repo pipeline via build_platform()")
+print("SELFCHECK('alpha_id') asserts deterministic replay (Inv-5)")
+print("Config loaded from: PLATFORM_YAML_PATH (set in Prompt 1)")
 ```
 
 ---
 
-## CELL 2 — Walk-forward and CPCV backtesting
+## CELL 2 — CPCV backtesting (combinatorial purged cross-validation)
 
 ```python
 import numpy as np
+import itertools
 
-def walk_forward_backtest(
+def cpcv_backtest(
     spec_path: str | Path,
-    dates_by_partition: dict,
     symbols: list[str],
-    n_folds: int = 5,
+    all_dates: list[str],
+    n_groups: int = 6,
+    k_test: int = 2,
+    embargo_days: int = 1,
     **backtest_kwargs,
 ) -> dict:
     """
-    Rolling walk-forward backtest over the train window.
+    Combinatorial Purged Cross-Validation (López de Prado, 2018, Ch. 12).
 
-    Each fold tests on the next segment after training on preceding data.
-    Returns per-fold metrics and the distribution of OOS Sharpe ratios.
+    Splits `all_dates` into `n_groups` contiguous groups; every C(n_groups, k_test)
+    combination of `k_test` groups becomes one test fold. Train groups adjacent
+    to a test group are EMBARGOED (dropped) by `embargo_days` to prevent
+    information leakage from autocorrelated features.
+
+    Returns per-fold metrics + the distribution of OOS Sharpe ratios across
+    the C(n_groups, k_test) folds. With n_groups=6, k_test=2 → 15 folds.
+
+    Why CPCV vs walk-forward:
+      - Walk-forward gives n_folds-1 ~independent OOS estimates and is biased
+        toward the most recent regime.
+      - CPCV uses every (n_groups choose k_test) combination, dramatically
+        increasing the number of OOS observations and decoupling the
+        estimate from time-direction.
+      - Embargo enforces that no train sample shares feature-window overlap
+        with any test sample.
     """
-    train_dates = dates_by_partition["train"]
-    fold_size   = max(1, len(train_dates) // n_folds)
+    assert len(all_dates) >= n_groups * 2, (
+        f"Need >= {n_groups*2} trading days for CPCV with n_groups={n_groups}; "
+        f"got {len(all_dates)}"
+    )
+    assert 1 <= k_test < n_groups, "k_test must be in [1, n_groups-1]"
+
+    # Partition dates into n_groups contiguous groups.
+    group_size = len(all_dates) // n_groups
+    groups: list[list[str]] = [
+        all_dates[i * group_size : (i + 1) * group_size]
+        for i in range(n_groups - 1)
+    ]
+    groups.append(all_dates[(n_groups - 1) * group_size :])   # tail catches remainder
+
+    fold_combinations = list(itertools.combinations(range(n_groups), k_test))
+    print(f"CPCV: {n_groups} groups, k_test={k_test}, embargo={embargo_days}d "
+          f"→ {len(fold_combinations)} folds")
+
     fold_results = []
+    for fold_idx, test_group_ids in enumerate(fold_combinations):
+        test_dates = []
+        for gid in test_group_ids:
+            test_dates.extend(groups[gid])
 
-    for i in range(n_folds - 1):
-        train_fold = train_dates[: (i + 1) * fold_size]
-        test_fold  = train_dates[(i + 1) * fold_size : (i + 2) * fold_size]
-        if not test_fold:
+        # Embargo: drop the first/last `embargo_days` of each train segment
+        # adjacent to a test group. We don't actually train on dates here
+        # (the alpha is fixed), but embargo still matters because feature
+        # state warmed by trailing train data would otherwise leak into the
+        # test segment evaluation if both shared a date.
+        # Simplest correct behaviour: skip embargo dates entirely.
+        embargo_set: set[str] = set()
+        for gid in test_group_ids:
+            if gid > 0:
+                embargo_set.update(groups[gid - 1][-embargo_days:])
+            if gid < n_groups - 1:
+                embargo_set.update(groups[gid + 1][:embargo_days])
+
+        # Test fold = test groups - any embargoed dates (defensive).
+        test_dates = [d for d in test_dates if d not in embargo_set]
+        if not test_dates:
             continue
 
-        print(f"Fold {i+1}/{n_folds-1}: train={train_fold[0]}…{train_fold[-1]}  "
-              f"test={test_fold[0]}…{test_fold[-1]}")
+        print(f"  Fold {fold_idx+1:2d}/{len(fold_combinations)}: "
+              f"test={test_dates[0]}…{test_dates[-1]}  ({len(test_dates)} days)")
 
-        # Fetch test fold data
-        elog = LOAD(symbols, test_fold[0], test_fold[-1])
-        if elog is None:
-            continue
-
+        elog = LOAD(symbols, test_dates[0], test_dates[-1])
         result = run_backtest(spec_path, elog, verbose=False, **backtest_kwargs)
-        trades = result["trades"]
-
-        pnls = [float(getattr(t, "realized_pnl", 0) or 0) for t in trades]
-        metrics = _compute_metrics(pnls, label=f"fold_{i+1}")
-        fold_results.append(metrics)
+        pnls = [float(getattr(t, "realized_pnl", 0) or 0) for t in result["trades"]]
+        m    = _compute_metrics(pnls, label=f"fold_{fold_idx+1}")
+        fold_results.append({
+            **m,
+            "test_groups": list(test_group_ids),
+            "test_start":  test_dates[0],
+            "test_end":    test_dates[-1],
+            "pnl_hash":    result["pnl_hash"],
+            "config_hash": result["config_hash"],
+        })
 
     if not fold_results:
         return {"error": "No fold results — insufficient data"}
 
     sharpes = [f["sharpe"] for f in fold_results if f["sharpe"] is not None]
     return {
-        "folds":          fold_results,
-        "sharpe_mean":    float(np.mean(sharpes)) if sharpes else None,
-        "sharpe_std":     float(np.std(sharpes))  if sharpes else None,
-        "sharpe_min":     float(min(sharpes))      if sharpes else None,
+        "n_groups":         n_groups,
+        "k_test":           k_test,
+        "embargo_days":     embargo_days,
+        "n_folds":          len(fold_results),
+        "folds":            fold_results,
+        "sharpe_mean":      float(np.mean(sharpes)) if sharpes else None,
+        "sharpe_std":       float(np.std(sharpes))  if sharpes else None,
+        "sharpe_min":       float(min(sharpes))      if sharpes else None,
+        "sharpe_p10":       float(np.percentile(sharpes, 10)) if sharpes else None,
         "n_positive_folds": sum(s > 0 for s in sharpes),
-        "n_folds":        len(fold_results),
+        "fraction_positive": sum(s > 0 for s in sharpes) / len(sharpes) if sharpes else 0,
     }
+
+
+# Deprecated rolling walk-forward — preserved for backward compat only.
+# Prefer cpcv_backtest() for any decision that gates promotion.
+def walk_forward_backtest(*args, **kwargs):
+    """DEPRECATED: prefer cpcv_backtest(). Calls it with k_test=1 for compatibility."""
+    print("DEPRECATED: walk_forward_backtest → use cpcv_backtest(k_test>=2) for proper MHT statistics.")
+    spec_path = args[0] if args else kwargs.pop("spec_path")
+    symbols   = args[2] if len(args) > 2 else kwargs.pop("symbols")
+    dbp       = args[1] if len(args) > 1 else kwargs.pop("dates_by_partition")
+    all_dates = list(dbp.get("train", [])) + list(dbp.get("validation", [])) + list(dbp.get("oos", []))
+    n_folds   = kwargs.pop("n_folds", 5)
+    return cpcv_backtest(spec_path, symbols, all_dates,
+                         n_groups=n_folds, k_test=1,
+                         embargo_days=1, **kwargs)
 
 
 def _compute_metrics(pnls: list[float], label: str = "") -> dict:
@@ -309,7 +529,8 @@ def _excess_kurtosis(data: list[float]) -> float:
         return 0.0
     return (sum((x - mu) ** 4 for x in data) / n) / s ** 4 - 3.0
 
-print("Walk-forward and metrics functions: ACTIVE")
+print("CPCV backtest + metrics functions: ACTIVE")
+print("cpcv_backtest(spec_path, symbols, all_dates, n_groups=6, k_test=2)")
 ```
 
 ---
@@ -324,6 +545,7 @@ def falsification_battery(
     n_bootstrap: int = 5000,
     n_permutation: int = 5000,
     seed: int = 0,
+    n_trials: int = 1,
 ) -> dict:
     """
     Full statistical falsification for a candidate signal.
@@ -331,13 +553,17 @@ def falsification_battery(
     Tests:
     1. Bootstrap: is mean return significantly > 0?
     2. Permutation: is signal Sharpe better than random?
-    3. DSR: deflated Sharpe accounting for skew, kurtosis, n_trials
-    4. IC proxy: correlation between signal rank and next-tick return (if available)
+    3. DSR: deflated Sharpe accounting for skew, kurtosis, n_trials.
+       Pass `n_trials` = total candidates evaluated in the same family
+       (e.g. EXPLORE(n=8) → n_trials=8) so DSR penalizes selection bias.
 
     Acceptance criteria (all must pass):
       bootstrap_pvalue < 0.05
       permutation_pvalue < 0.05
       dsr > 1.0
+
+    For multi-hypothesis families, ALSO apply holm_correction() over the
+    set of bootstrap p-values returned by this function across all candidates.
 
     Returns:
       dict with all test statistics and a 'pass' boolean
@@ -369,13 +595,28 @@ def falsification_battery(
         perm_sharpes.append(perm_sr)
     permutation_pvalue = sum(s >= sr for s in perm_sharpes) / n_permutation
 
-    # DSR
+    # DSR (deflated Sharpe ratio, López de Prado 2014).
+    # The trial-count deflation is applied inside the variance term:
+    # SR_max under the null with n_trials independent estimates grows like
+    # sqrt(2*log(n_trials)). We approximate by inflating the variance term.
     try:
         sk  = _skewness(trade_pnls)
         ku  = _excess_kurtosis(trade_pnls)
-        dsr = sr * math.sqrt(n) / math.sqrt(max(1 - sk * sr + (ku / 4) * sr ** 2, 1e-10))
+        # base DSR (single-trial form)
+        dsr_single = sr * math.sqrt(n) / math.sqrt(
+            max(1 - sk * sr + (ku / 4) * sr ** 2, 1e-10)
+        )
+        # multiple-trial penalty
+        if n_trials > 1:
+            sr_max_null = math.sqrt(2 * math.log(max(n_trials, 2)))
+            dsr = (sr - sr_max_null / math.sqrt(n)) * math.sqrt(n) / math.sqrt(
+                max(1 - sk * sr + (ku / 4) * sr ** 2, 1e-10)
+            )
+        else:
+            dsr = dsr_single
     except Exception:
         dsr = None
+        dsr_single = None
 
     passed = (
         bootstrap_pvalue   < 0.05 and
@@ -385,9 +626,11 @@ def falsification_battery(
 
     return {
         "n_trades":           n,
+        "n_trials":           n_trials,
         "mean_pnl":           mu,
         "sharpe":             sr,
         "dsr":                dsr,
+        "dsr_single_trial":   dsr_single,
         "bootstrap_pvalue":   bootstrap_pvalue,
         "permutation_pvalue": permutation_pvalue,
         "hit_rate":           len([p for p in trade_pnls if p > 0]) / n,
@@ -395,7 +638,239 @@ def falsification_battery(
         "verdict":            "PASS" if passed else "FAIL",
     }
 
-print("falsification_battery() available.")
+
+# -------------------------------------------------------------------
+# Multiple-Hypothesis Testing (MHT) correction.
+#
+# When a family of candidates is evaluated together (EXPLORE, EVOLVE),
+# the per-candidate p-values must be adjusted for selection bias before
+# any "this candidate is significant" claim is made.
+#
+# Holm step-down is the default: uniformly more powerful than Bonferroni
+# while preserving FWER ≤ alpha.  Benjamini-Hochberg (FDR) is offered as
+# an alternative for large families where some false positives are
+# acceptable.
+# -------------------------------------------------------------------
+def holm_correction(p_values: list[float], alpha: float = 0.05) -> dict:
+    """
+    Holm-Bonferroni step-down correction.
+
+    Args:
+        p_values: list of p-values from independent tests in the same family
+        alpha:    family-wise error rate
+
+    Returns:
+        dict with:
+          'q_values':    adjusted p-values (same order as input)
+          'rejected':    list[bool] — True if H0 rejected at family alpha
+          'n_rejected':  count of survivors
+    """
+    n = len(p_values)
+    if n == 0:
+        return {"q_values": [], "rejected": [], "n_rejected": 0}
+
+    # Sort with original indices
+    order = sorted(range(n), key=lambda i: p_values[i])
+    sorted_p = [p_values[i] for i in order]
+
+    # Step-down: q_i = max over j<=i of (n-j) * p_(j)
+    q_sorted = [0.0] * n
+    running_max = 0.0
+    for i, p in enumerate(sorted_p):
+        adj = (n - i) * p
+        running_max = max(running_max, adj)
+        q_sorted[i] = min(running_max, 1.0)
+
+    # Restore original order
+    q_values = [0.0] * n
+    rejected = [False] * n
+    for sorted_idx, orig_idx in enumerate(order):
+        q_values[orig_idx] = q_sorted[sorted_idx]
+        rejected[orig_idx] = q_sorted[sorted_idx] < alpha
+
+    return {
+        "q_values":   q_values,
+        "rejected":   rejected,
+        "n_rejected": sum(rejected),
+        "method":     "holm",
+        "alpha":      alpha,
+    }
+
+
+def benjamini_hochberg(p_values: list[float], alpha: float = 0.10) -> dict:
+    """Benjamini-Hochberg FDR control. Use when families are large (>20)."""
+    n = len(p_values)
+    if n == 0:
+        return {"q_values": [], "rejected": [], "n_rejected": 0}
+
+    order = sorted(range(n), key=lambda i: p_values[i])
+    sorted_p = [p_values[i] for i in order]
+
+    # q_(i) = min over j>=i of (n / (j+1)) * p_(j) [step-up form]
+    q_sorted = [0.0] * n
+    running_min = 1.0
+    for i in range(n - 1, -1, -1):
+        adj = (n / (i + 1)) * sorted_p[i]
+        running_min = min(running_min, adj)
+        q_sorted[i] = min(running_min, 1.0)
+
+    q_values = [0.0] * n
+    rejected = [False] * n
+    for sorted_idx, orig_idx in enumerate(order):
+        q_values[orig_idx] = q_sorted[sorted_idx]
+        rejected[orig_idx] = q_sorted[sorted_idx] < alpha
+
+    return {
+        "q_values":   q_values,
+        "rejected":   rejected,
+        "n_rejected": sum(rejected),
+        "method":     "benjamini_hochberg",
+        "alpha":      alpha,
+    }
+
+
+# -------------------------------------------------------------------
+# Information Coefficient (IC) — predictive correlation between the
+# alpha's signal strength at time T and realized returns over T+1..T+H.
+#
+# IC complements PnL-based tests by measuring whether the signal carries
+# information regardless of execution. A signal with strong PnL but
+# IC ≈ 0 typically owes its return to a small number of fortunate fills,
+# not a real predictive edge.
+# -------------------------------------------------------------------
+def compute_ic(
+    spec_path: str | Path,
+    event_log: InMemoryEventLog,
+    horizon_ticks: int = 100,
+    regime_engine: str | None = None,
+) -> dict:
+    """
+    Compute the Spearman Information Coefficient for an alpha over an event log.
+
+    Procedure:
+      1. Replay the event log via build_platform() (same pipeline as backtest).
+      2. Capture every Signal emitted by the alpha (signal_strength, timestamp).
+      3. Compute realized log-return over the next `horizon_ticks` quote events.
+      4. IC = corr(rank(signal), rank(forward_return)) over all (signal,return) pairs.
+      5. Newey-West-adjusted t-stat with lag = horizon_ticks (handles overlap).
+
+    Returns:
+        ic_mean, ic_tstat, n_pairs, horizon_ticks, hit_rate (sign agreement).
+    """
+    from feelies.core.events import Signal as _SignalEvt, NBBOQuote as _NBBO
+
+    # Capture signals via a bus subscriber. We rebuild the platform with a
+    # tap on the bus to record Signal events as they fire. Use the SAME
+    # _load_platform_config() path as run_backtest() so the IC is computed
+    # against the exact same execution config a backtest would use.
+    overrides = {}
+    if regime_engine is not None:
+        overrides["regime_engine"] = regime_engine
+    config = _load_platform_config(Path(spec_path), event_log, overrides)
+    orchestrator, resolved = build_platform(config, event_log=event_log)
+
+    captured_signals: list = []
+    bus = getattr(orchestrator, "_bus", None)
+    if bus is not None and hasattr(bus, "subscribe"):
+        bus.subscribe(_SignalEvt, lambda e: captured_signals.append(e))
+
+    orchestrator.boot(resolved)
+    orchestrator.run_backtest()
+
+    if not captured_signals:
+        return {"ic_mean": 0.0, "ic_tstat": 0.0, "n_pairs": 0,
+                "horizon_ticks": horizon_ticks,
+                "error": "no signals emitted"}
+
+    # Build per-symbol mid-price index keyed by sequence
+    quotes_by_symbol: dict[str, list] = {}
+    for evt in event_log.replay():
+        if isinstance(evt, _NBBO):
+            quotes_by_symbol.setdefault(evt.symbol, []).append(evt)
+
+    pairs: list[tuple[float, float]] = []
+    for sig in captured_signals:
+        quotes = quotes_by_symbol.get(sig.symbol, [])
+        if not quotes:
+            continue
+        # Find the quote at or after the signal time
+        i0 = next((i for i, q in enumerate(quotes)
+                   if q.exchange_timestamp_ns >= sig.timestamp_ns), None)
+        if i0 is None or i0 + horizon_ticks >= len(quotes):
+            continue
+        q0  = quotes[i0]
+        q1  = quotes[i0 + horizon_ticks]
+        mp0 = float(q0.bid + q0.ask) / 2.0
+        mp1 = float(q1.bid + q1.ask) / 2.0
+        if mp0 <= 0:
+            continue
+        ret = math.log(mp1 / mp0)
+        # Sign-aware signal magnitude: LONG positive, SHORT negative
+        from feelies.core.events import SignalDirection
+        sign = (1.0 if sig.direction == SignalDirection.LONG
+                else -1.0 if sig.direction == SignalDirection.SHORT
+                else 0.0)
+        pairs.append((sign * float(getattr(sig, "strength", 1.0) or 1.0), ret))
+
+    n = len(pairs)
+    if n < 30:
+        return {"ic_mean": 0.0, "ic_tstat": 0.0, "n_pairs": n,
+                "horizon_ticks": horizon_ticks,
+                "error": f"too few signal/return pairs: {n} < 30"}
+
+    # Spearman = Pearson on ranks
+    sigs = [p[0] for p in pairs]
+    rets = [p[1] for p in pairs]
+    rs = _spearman(sigs, rets)
+    # Newey-West t-stat: t = IC * sqrt((n-2)/(1 - IC^2)) inflated by overlap
+    overlap_factor = max(1.0, horizon_ticks ** 0.5)   # rough HAC adjustment
+    if abs(rs) >= 1.0:
+        t = float("inf")
+    else:
+        t = rs * math.sqrt((n - 2) / (1 - rs * rs)) / overlap_factor
+    hit = sum(1 for s, r in pairs if (s > 0 and r > 0) or (s < 0 and r < 0))
+    return {
+        "ic_mean":       rs,
+        "ic_tstat":      t,
+        "n_pairs":       n,
+        "horizon_ticks": horizon_ticks,
+        "hit_rate":      hit / n,
+        "method":        "spearman + Newey-West (heuristic HAC adj.)",
+    }
+
+
+def _spearman(x: list[float], y: list[float]) -> float:
+    """Spearman rank correlation."""
+    rx = _ranks(x)
+    ry = _ranks(y)
+    n  = len(x)
+    mean_rx = sum(rx) / n
+    mean_ry = sum(ry) / n
+    num = sum((rx[i] - mean_rx) * (ry[i] - mean_ry) for i in range(n))
+    den_x = math.sqrt(sum((rx[i] - mean_rx) ** 2 for i in range(n)))
+    den_y = math.sqrt(sum((ry[i] - mean_ry) ** 2 for i in range(n)))
+    if den_x < 1e-12 or den_y < 1e-12:
+        return 0.0
+    return num / (den_x * den_y)
+
+
+def _ranks(values: list[float]) -> list[float]:
+    """Average-rank (handles ties)."""
+    indexed = sorted(enumerate(values), key=lambda p: p[1])
+    ranks = [0.0] * len(values)
+    i = 0
+    while i < len(indexed):
+        j = i
+        while j + 1 < len(indexed) and indexed[j + 1][1] == indexed[i][1]:
+            j += 1
+        avg = (i + j) / 2.0 + 1.0
+        for k in range(i, j + 1):
+            ranks[indexed[k][0]] = avg
+        i = j + 1
+    return ranks
+
+
+print("falsification_battery() / holm_correction() / benjamini_hochberg() / compute_ic(): ACTIVE")
 ```
 
 ---
@@ -491,8 +966,15 @@ def latency_sweep(
 
     for ms in latency_ms_values:
         ns = ms * 1_000_000
-        r  = run_backtest(spec_path, event_log, verbose=False,
-                          backtest_fill_latency_ns=ns, **backtest_kwargs)
+        # platform.yaml's latency is the baseline; we override per-step.
+        # All other execution params (cooldown, costs, stops) remain canonical.
+        overrides = {
+            "backtest_fill_latency_ns": ns,
+            **{k: v for k, v in backtest_kwargs.items()
+               if k in PlatformConfig.__dataclass_fields__},
+        }
+        r = run_backtest(spec_path, event_log, verbose=False,
+                         config_overrides=overrides)
         trades = r["trades"]
         pnls   = [float(getattr(t, "realized_pnl", 0) or 0) for t in trades]
         m      = _compute_metrics(pnls, label=f"{ms}ms")
@@ -527,29 +1009,25 @@ def tc_sensitivity(
     spec_path = Path(spec_path)   # resolve once before the loop
     results = {}
 
-    symbols = _symbols_from_event_log(event_log)
-
     for mult in stress_multipliers:
-        # Construct a custom PlatformConfig with only the stress multiplier changed.
-        # All other cost params: source defaults.
-        config = PlatformConfig(
-            mode                    = OperatingMode.BACKTEST,
-            symbols                 = symbols,
-            alpha_specs             = [spec_path],
-            cost_stress_multiplier  = mult,
+        # platform.yaml is loaded as the base; we override ONLY the stress
+        # multiplier (plus any deliberate caller overrides). Every other
+        # field — cost constants, latency, cooldown, stops — stays canonical.
+        overrides = {
+            "cost_stress_multiplier": mult,
             **{k: v for k, v in backtest_kwargs.items()
                if k in PlatformConfig.__dataclass_fields__},
+        }
+        r = run_backtest(
+            spec_path, event_log,
+            config_overrides=overrides, verbose=False,
         )
-        orchestrator, resolved = build_platform(config, event_log=event_log)
-        orchestrator.boot(resolved)
-        orchestrator.run_backtest()
-
-        trades = list(orchestrator._trade_journal.query())
+        trades = r["trades"]
         pnls   = [float(getattr(t, "realized_pnl", 0) or 0) for t in trades]
-        fees   = sum(float(getattr(t, "fees", 0) or 0) for t in trades)
+        fees   = r["total_fees"]
         m      = _compute_metrics(pnls, label=f"{mult}x")
         results[mult] = {**m, "total_fees": fees, "net_pnl": sum(pnls) - fees}
-        print(f"  TC stress {mult:.1f}x: trades={len(trades):5d}  "
+        print(f"  TC stress {mult:.1f}x: trades={r['trade_count']:5d}  "
               f"sharpe={m['sharpe'] or 0:+.3f}  net_pnl=${results[mult]['net_pnl']:,.2f}")
 
     # Find breakeven multiplier (where net_pnl crosses zero)
@@ -579,15 +1057,25 @@ def TEST(
     oos_dates: list[str],
     regime_engine: str | None = "hmm_3state_fractional",
     n_walk_forward_folds: int = 5,
+    n_trials: int = 1,
+    cpcv_groups: int = 6,
+    cpcv_k_test: int = 2,
+    embargo_days: int = 1,
+    ic_horizon_ticks: int = 100,
 ) -> dict:
     """
-    Full directed hypothesis test — 5 steps.
+    Full directed hypothesis test — 7 steps.
 
     Step 1: Validate spec via AlphaLoader from repo source
     Step 2: In-sample (train) backtest via build_platform()
     Step 3: OOS backtest via build_platform()
-    Step 4: Statistical falsification (bootstrap, permutation, DSR)
+    Step 4: Statistical falsification (bootstrap, permutation, DSR with n_trials)
     Step 5: Regime sensitivity + latency sweep
+    Step 6: Information Coefficient (IC) on OOS quotes
+    Step 7: CPCV across (train + oos) — embargoed combinatorial folds
+
+    n_trials: total candidates evaluated in this family (use sibling count from
+              EXPLORE/EVOLVE) so DSR penalizes selection bias correctly.
 
     Args:
         hypothesis:   Formalized hypothesis dict (from formalize_hypothesis())
@@ -623,7 +1111,12 @@ def TEST(
                                 verbose=True)
     train_pnls = [float(getattr(t, "realized_pnl", 0) or 0) for t in train_result["trades"]]
     train_metrics = _compute_metrics(train_pnls, label="train")
-    report["steps"]["train"] = {**train_metrics, "pnl_hash": train_result["pnl_hash"]}
+    report["steps"]["train"] = {
+        **train_metrics,
+        "pnl_hash":    train_result["pnl_hash"],
+        "config_hash": train_result["config_hash"],
+        "parity_hash": train_result["parity_hash"],
+    }
 
     # Step 3: OOS backtest
     print("\n[Step 3/5] OOS backtest (sealed evaluation)...")
@@ -632,11 +1125,16 @@ def TEST(
                               verbose=True)
     oos_pnls = [float(getattr(t, "realized_pnl", 0) or 0) for t in oos_result["trades"]]
     oos_metrics = _compute_metrics(oos_pnls, label="oos")
-    report["steps"]["oos"] = {**oos_metrics, "pnl_hash": oos_result["pnl_hash"]}
+    report["steps"]["oos"] = {
+        **oos_metrics,
+        "pnl_hash":    oos_result["pnl_hash"],
+        "config_hash": oos_result["config_hash"],
+        "parity_hash": oos_result["parity_hash"],
+    }
 
-    # Step 4: Statistical falsification
-    print("\n[Step 4/5] Statistical falsification (bootstrap + permutation + DSR)...")
-    falsification = falsification_battery(oos_pnls)
+    # Step 4: Statistical falsification (DSR with n_trials penalty)
+    print(f"\n[Step 4/7] Statistical falsification (bootstrap + permutation + DSR, n_trials={n_trials})...")
+    falsification = falsification_battery(oos_pnls, n_trials=n_trials)
     report["steps"]["falsification"] = falsification
     print(f"  Bootstrap p: {falsification['bootstrap_pvalue']:.4f}  "
           f"Permutation p: {falsification['permutation_pvalue']:.4f}  "
@@ -644,11 +1142,52 @@ def TEST(
           f"→ {falsification['verdict']}")
 
     # Step 5: Regime sensitivity + latency sweep
-    print("\n[Step 5/5] Regime sensitivity + latency sweep...")
+    print("\n[Step 5/7] Regime sensitivity + latency sweep...")
     regime_result  = regime_sensitivity(oos_result["trades"], oos_log)
     latency_result = latency_sweep(spec_path, oos_log, regime_engine=regime_engine)
     report["steps"]["regime"]  = regime_result
     report["steps"]["latency"] = latency_result
+
+    # Step 6: Information Coefficient — predictive correlation regardless of fills
+    print(f"\n[Step 6/7] Information Coefficient on OOS (horizon={ic_horizon_ticks} ticks)...")
+    try:
+        ic_result = compute_ic(spec_path, oos_log,
+                               horizon_ticks=ic_horizon_ticks,
+                               regime_engine=regime_engine)
+        report["steps"]["ic"] = ic_result
+        ic_mean  = ic_result.get("ic_mean") or 0
+        ic_t     = ic_result.get("ic_tstat") or 0
+        print(f"  IC: {ic_mean:+.4f}  t-stat: {ic_t:+.2f}  "
+              f"n={ic_result.get('n_pairs',0)}  "
+              f"hit={ic_result.get('hit_rate',0):.1%}")
+    except Exception as e:
+        ic_result = {"ic_mean": 0.0, "ic_tstat": 0.0, "error": str(e)}
+        report["steps"]["ic"] = ic_result
+        print(f"  IC computation failed: {e}")
+
+    # Step 7: CPCV — combinatorial purged cross-validation
+    all_dates = list(train_dates) + list(oos_dates)
+    if len(all_dates) >= cpcv_groups * 2:
+        print(f"\n[Step 7/7] CPCV (n_groups={cpcv_groups}, k_test={cpcv_k_test}, embargo={embargo_days}d)...")
+        try:
+            cpcv_result = cpcv_backtest(
+                spec_path, symbols, all_dates,
+                n_groups=cpcv_groups, k_test=cpcv_k_test,
+                embargo_days=embargo_days, regime_engine=regime_engine,
+            )
+            report["steps"]["cpcv"] = cpcv_result
+            print(f"  CPCV folds={cpcv_result.get('n_folds')}  "
+                  f"sharpe_mean={cpcv_result.get('sharpe_mean') or 0:+.3f}  "
+                  f"sharpe_p10={cpcv_result.get('sharpe_p10') or 0:+.3f}  "
+                  f"frac_positive={cpcv_result.get('fraction_positive',0):.1%}")
+        except Exception as e:
+            cpcv_result = {"error": str(e)}
+            report["steps"]["cpcv"] = cpcv_result
+            print(f"  CPCV failed: {e}")
+    else:
+        cpcv_result = {"error": f"insufficient days for CPCV (need >= {cpcv_groups*2})"}
+        report["steps"]["cpcv"] = cpcv_result
+        print(f"\n[Step 7/7] CPCV skipped — {cpcv_result['error']}")
 
     # Recommendation
     oos_sharpe  = oos_metrics.get("sharpe") or 0
@@ -656,10 +1195,12 @@ def TEST(
     regime_ok   = regime_result.get("stable", False)
     latency_ok  = latency_result.get("latency_pass", True)
     stat_ok     = falsification.get("pass", False)
+    ic_ok       = abs(ic_result.get("ic_tstat") or 0) >= 2.0
+    cpcv_ok     = (cpcv_result.get("fraction_positive") or 0) >= 0.60
 
-    if oos_sharpe > 1.5 and oos_dsr > 1.5 and regime_ok and latency_ok and stat_ok:
+    if oos_sharpe > 1.5 and oos_dsr > 1.5 and regime_ok and latency_ok and stat_ok and ic_ok and cpcv_ok:
         recommendation = "DEPLOY"
-    elif oos_sharpe > 0.8 and oos_dsr > 1.0 and stat_ok:
+    elif oos_sharpe > 0.8 and oos_dsr > 1.0 and stat_ok and (ic_ok or cpcv_ok):
         recommendation = "VALIDATE"
     elif oos_sharpe > 0.5:
         recommendation = "MUTATE"
@@ -668,14 +1209,27 @@ def TEST(
     else:
         recommendation = "REJECT"
 
-    report["verdict"] = recommendation
-    report["oos_pnl_hash"] = oos_result["pnl_hash"]
+    report["verdict"]         = recommendation
+    report["oos_pnl_hash"]    = oos_result["pnl_hash"]
+    report["oos_config_hash"] = oos_result["config_hash"]
+    report["oos_parity_hash"] = oos_result["parity_hash"]
+    # Holm q-value placeholder: TEST evaluates one candidate at a time, so
+    # the per-candidate q-value equals its bootstrap p (n_trials=1 in Holm).
+    # EXPLORE/EVOLVE will overwrite this with the family-corrected q-value.
+    report["holm_qvalue"]     = falsification.get("bootstrap_pvalue")
+    # Determinism evidence — populated by SELFCHECK() if the user runs it
+    # before EXPORT. Default to None so EXPORT records "unverified".
+    report.setdefault("selfcheck_passed", None)
 
     print(f"\n{'='*60}")
     print(f"VERDICT: {recommendation}")
-    print(f"  OOS Sharpe: {oos_sharpe:+.3f}  DSR: {oos_dsr:.3f}  "
+    print(f"  OOS Sharpe: {oos_sharpe:+.3f}  DSR(n_trials={n_trials}): {oos_dsr:.3f}  "
           f"Regime-stable: {regime_ok}  Latency-ok: {latency_ok}")
-    print(f"  OOS parity hash: {oos_result['pnl_hash'][:16]}...")
+    print(f"  IC: {ic_result.get('ic_mean') or 0:+.4f} (t={ic_result.get('ic_tstat') or 0:+.2f}) "
+          f"|  CPCV frac_positive: {cpcv_result.get('fraction_positive',0):.1%}")
+    print(f"  OOS pnl_hash:    {oos_result['pnl_hash'][:16]}...")
+    print(f"  OOS config_hash: {oos_result['config_hash'][:16]}...")
+    print(f"  OOS parity_hash: {oos_result['parity_hash'][:16]}...")
     print(f"{'='*60}")
 
     # Auto-save to experiments directory
@@ -756,12 +1310,18 @@ two independent pipelines with zero shared state.
 ```
 Backtest Execution Module: ACTIVE
 Pipeline:          build_platform() from feelies.bootstrap (repo source)
+Config source:     platform.yaml from same commit SHA as source ZIP
+                    (loaded via PlatformConfig.from_yaml(PLATFORM_YAML_PATH))
 Fill model:        BacktestOrderRouter (mid-price, depth-based partial fills)
-Cost model:        DefaultCostModel (IB Tiered defaults)
+Cost model:        DefaultCostModel (IB Tiered defaults from platform.yaml)
 Risk engine:       BasicRiskEngine / AlphaBudgetRiskWrapper (from source)
 Regime engine:     HMM3StateFractional — states: compression_clustering, normal, vol_breakout
 State clearing:    Guaranteed — fresh instances per run
-Parity hash:       SHA-256 over ordered trade sequence (canonical definition above)
+Determinism:       SELFCHECK() asserts Inv-5 by re-running and comparing hashes
+Hashes:
+  pnl_hash         SHA-256 over ordered trade sequence
+  config_hash      PlatformConfig.snapshot().checksum
+  parity_hash      SHA-256(pnl_hash + ":" + config_hash) — single comparator
 
 Awaiting Export & Lifecycle activation (Prompt 5).
 ```

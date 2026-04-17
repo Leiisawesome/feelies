@@ -17,7 +17,8 @@ Cell 2, and so on. You never need to isolate cells manually.
 | 3 | Paste Prompt 3 in full | `Alpha Development module: ACTIVE` |
 | 4 | Paste Prompt 4 in full | `Backtest Execution module: ACTIVE` |
 | 5 | Paste Prompt 5 in full | `Export & Lifecycle module: ACTIVE` |
-| 6 | Call `INITIALIZE("your_polygon_api_key")` | All 5 modules: ACTIVE |
+| 6 | Paste Prompt 6 in full | `Evolution module: ACTIVE` |
+| 7 | Call `INITIALIZE("your_polygon_api_key")` | All 6 modules: ACTIVE |
 
 > **Cell 1 of this prompt fetches a ~3MB ZIP over HTTPS. It may take 10–30 seconds.
 > Wait for `SOURCE BOOTSTRAP: OK` before pasting Prompt 2.**
@@ -31,7 +32,9 @@ If any cell fails, fix the error before continuing — later prompts depend on t
 ```python
 import urllib.request, zipfile, io, os, sys
 
-FEELIES_SRC = "/home/user/feelies_src"
+FEELIES_SRC  = "/home/user/feelies_src"
+FEELIES_REPO = "/home/user/feelies_repo"   # holds platform.yaml + alphas/ from same SHA
+PLATFORM_YAML_PATH = os.path.join(FEELIES_REPO, "platform.yaml")
 
 # Pin to a specific commit SHA so every Grok session uses identical source
 # (archive/refs/heads/main.zip floats with HEAD and breaks reproducibility).
@@ -48,11 +51,14 @@ print(f"Downloaded. Zip contains {len(zf.namelist())} entries.")
 # and "{repo}-{sha}" for commit-SHA zips.
 # Detect it dynamically rather than hardcoding "feelies-main".
 _top = next(n for n in zf.namelist() if n.endswith("/") and n.count("/") == 1)
-prefix = _top + "src/"   # e.g. "feelies-e9a1614e45.../src/"
+src_prefix  = _top + "src/"      # e.g. "feelies-e9a1614e45.../src/"
+repo_prefix = _top                # full repo root (for platform.yaml etc.)
+
+# 1) Extract Python source under FEELIES_SRC.
 extracted = 0
 for name in zf.namelist():
     if name.startswith(_top + "src/feelies/") and name.endswith(".py"):
-        rel = name[len(prefix):]               # e.g. "feelies/core/events.py"
+        rel = name[len(src_prefix):]           # e.g. "feelies/core/events.py"
         out = os.path.join(FEELIES_SRC, rel)
         os.makedirs(os.path.dirname(out), exist_ok=True)
         with open(out, "wb") as f:
@@ -61,6 +67,32 @@ for name in zf.namelist():
 
 print(f"Extracted {extracted} Python files to {FEELIES_SRC}/feelies/")
 assert extracted >= 80, f"Expected ≥80 files, got {extracted} — check repo structure"
+
+# 2) Extract repo-root config + alpha specs under FEELIES_REPO.
+#    These are the SAME files scripts/run_backtest.py loads on the local side.
+#    Without this, Grok runs with PlatformConfig dataclass defaults (latency=0,
+#    cooldown=0, no stop-loss) while the local repo runs with platform.yaml
+#    (latency=30ms, cooldown=5000, stop-loss=0.005) — silently breaking parity.
+_repo_extracted = 0
+_repo_targets = ("platform.yaml", "alphas/", "pyproject.toml")
+for name in zf.namelist():
+    if name == _top or name.endswith("/"):
+        continue
+    rel = name[len(repo_prefix):]
+    if not any(rel == t or rel.startswith(t) for t in _repo_targets):
+        continue
+    out = os.path.join(FEELIES_REPO, rel)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with open(out, "wb") as f:
+        f.write(zf.read(name))
+    _repo_extracted += 1
+
+print(f"Extracted {_repo_extracted} repo-root files to {FEELIES_REPO}/")
+assert os.path.exists(PLATFORM_YAML_PATH), (
+    f"platform.yaml missing at {PLATFORM_YAML_PATH} — parity will break. "
+    f"Check that the pinned commit SHA tracks platform.yaml at the repo root."
+)
+print(f"Canonical platform.yaml: {PLATFORM_YAML_PATH}")
 ```
 
 ---
@@ -145,8 +177,12 @@ REGISTRY_COLS = [
     "generation", "signal_id", "alpha_id", "hypothesis",
     "oos_sharpe", "dsr", "ic_mean", "ic_tstat",
     "tc_drag_pct", "latency_decay_pct", "regime_stability_cv", "regime_all_positive",
-    "status", "recommendation", "parent_id", "mutation_type",
-    "parity_n_trades", "parity_total_pnl", "parity_pnl_hash",
+    "status", "recommendation", "parent_id", "co_parent_id", "mutation_type",
+    "parity_n_trades", "parity_total_pnl",
+    "parity_pnl_hash", "parity_config_hash", "parity_combined_hash",
+    "selfcheck_passed", "holm_qvalue",
+    "cpcv_fraction_positive", "cpcv_sharpe_p10",
+    "audit_status", "audit_last_run", "audit_sharpe_decay_pct", "audit_ic_decay",
     "created_at", "updated_at", "exported_at", "retired_at", "notes",
 ]
 if not os.path.exists(REGISTRY_PATH):
@@ -180,10 +216,11 @@ def INITIALIZE(polygon_api_key: str) -> None:
     SESSION["api_key"] = polygon_api_key
 
     # Detect which modules are loaded by checking for their sentinel names
-    _m2 = "LOAD" in dir()          or "LOAD" in globals()
+    _m2 = "LOAD" in dir()           or "LOAD" in globals()
     _m3 = "validate_alpha" in dir() or "validate_alpha" in globals()
     _m4 = "run_backtest" in dir()   or "run_backtest" in globals()
     _m5 = "EXPORT" in dir()         or "EXPORT" in globals()
+    _m6 = "EVOLVE" in dir()         or "EVOLVE" in globals()
 
     def _status(loaded: bool) -> str:
         return "ACTIVE" if loaded else "NOT YET LOADED — paste that prompt"
@@ -201,26 +238,32 @@ def INITIALIZE(polygon_api_key: str) -> None:
     print(f"  Module 3 (Alpha Development): {_status(_m3)}")
     print(f"  Module 4 (Backtest Exec):     {_status(_m4)}")
     print(f"  Module 5 (Export/Lifecycle):  {_status(_m5)}")
+    print(f"  Module 6 (Evolution):         {_status(_m6)}")
     print()
     print("  Single source of truth: https://github.com/Leiisawesome/feelies")
     print("  Parity verifier:        python scripts/run_backtest.py")
     print("  One allowed deviation:  MassiveHistoricalIngestor → PolygonFetcher")
     print("=" * 60)
-    if not all([_m2, _m3, _m4, _m5]):
+    if not all([_m2, _m3, _m4, _m5, _m6]):
         print("\n  ACTION REQUIRED: paste the remaining prompts, then call INITIALIZE() again.")
     else:
-        print("\n  All modules active. Run: LOAD('AAPL', '2026-01-15') to begin.")
+        print("\n  All modules active. Suggested first steps:")
+        print("    LOAD(['AAPL'], '2026-01-15', '2026-01-15')        # fetch RTH data")
+        print("    spec = assemble_alpha(...)                          # write your hypothesis")
+        print("    TEST(hypothesis, spec, ['AAPL'], train_dates, oos_dates)")
+        print("    EXPLORE(spec, n=8)                                  # autonomous sibling sweep")
+        print("    EVOLVE(spec, n_generations=3, children_per_gen=6)   # multi-gen evolution")
 ```
 
 ---
 
 ## 1. SYSTEM IDENTITY
 
-This laboratory operates as 5 cooperating research modules:
+This laboratory operates as 6 cooperating research modules:
 
 ```
 Source Bootstrap → Data Ingestion → Alpha Development →
-Backtest Execution → Export & Lifecycle
+Backtest Execution → Export & Lifecycle → Evolution
 ```
 
 You are operating as a quantitative microstructure research laboratory inside Grok's
@@ -282,11 +325,19 @@ for why the phenomenon persists are not pursued.
 | `INITIALIZE(api_key)` | Set API key; reports which modules are loaded |
 | `STATUS()` | Full system status — modules, session variables, registry summary |
 | `LOAD(symbols, start, end)` | Fetch RTH data via PolygonFetcher; populates session event log |
-| `TEST(hypothesis, spec, symbols, train_dates, oos_dates)` | Directed 5-step hypothesis test |
+| `TEST(hypothesis, spec, symbols, train_dates, oos_dates, n_trials=1)` | Directed 7-step hypothesis test (validation, train, OOS, falsification, regime+latency, IC, CPCV) |
 | `BACKTEST(alpha_id)` | Single full backtest on session event log via `build_platform()` |
+| `SELFCHECK(alpha_id, event_log, n_replays=2)` | Run alpha n times on same event_log; assert identical pnl_hash + config_hash + parity_hash (Inv-5) |
 | `PRIORITIZE(mechanism_id)` | Print mechanism details from catalog (e.g. `"M001"`) |
-| `EXPORT(signal_id, report, spec)` | Produce `.alpha.yaml` + `.py` + parity fingerprint |
-| `VERIFY(signal_id, local_hash)` | Compare Grok parity hash vs local `run_backtest.py` hash |
+| `MUTATE(parent_spec, operator, seed=0, **kw)` | Apply one named, deterministic mutation operator |
+| `SELFCHECK_MUTATION(parent_spec, operator, seed=0)` | Assert MUTATE is bit-identical across reruns (Inv-5 in mutation layer) |
+| `EXPLORE(parent_spec, n=8, alpha=0.05)` | Generate n siblings, run TEST on each, Holm-correct over the family |
+| `EVOLVE(seed_spec, n_generations=3, children_per_gen=6)` | Multi-generation hypothesis → mutation → selection loop |
+| `RECOMBINE(parent_a_spec, parent_b_spec, signal_from='a')` | Binary splice: union features/params from both parents, signal from one |
+| `AUDIT(signal_id)` | Post-promotion CPCV+IC re-run on a fresh window; stamps `audit_status` into the registry |
+| `LINEAGE(signal_id, depth=10)` | Walk the registry's parent_id chain, print ancestry + IC stability summary |
+| `EXPORT(signal_id, report, spec)` | Produce `.alpha.yaml` + `.py` + parity fingerprint (also stamps SELFCHECK pass) |
+| `VERIFY(signal_id, local_pnl_hash, local_config_hash=None)` | Three-hash parity check vs `scripts/run_backtest.py` |
 | `REGISTRY()` | Display signal registry table |
 | `REPORT(generation)` | Research summary for a generation (or all) |
 | `RETIRE(signal_id, reason)` | Mark signal as retired |
@@ -357,4 +408,5 @@ Module 2 (Data Ingestion):    AWAITING PROMPT 2
 Module 3 (Alpha Development): AWAITING PROMPT 3
 Module 4 (Backtest):          AWAITING PROMPT 4
 Module 5 (Export/Lifecycle):  AWAITING PROMPT 5
+Module 6 (Evolution):         AWAITING PROMPT 6
 ```

@@ -35,6 +35,7 @@ from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
     Event,
     FeatureVector,
+    MetricEvent,
     NBBOQuote,
     OrderAck,
     OrderAckStatus,
@@ -581,6 +582,46 @@ def generate_report(
     avg_feat_ns = feat_summary.mean if feat_summary else 0.0
     avg_sig_ns = sig_summary.mean if sig_summary else 0.0
 
+    # Locate the originating quote for the max tick-to-decision spike.
+    # Why this matters: a single 1.3-second outlier in a 974K-quote run is
+    # almost always (a) the first post-warmup tick, (b) a GC pause, or
+    # (c) a real microstructure event (auction/halt/cross). Knowing which
+    # quote caused it converts an "alarming number" into an actionable line
+    # in the data. Cheap because we already have every MetricEvent in
+    # `recorder` and every quote in `quotes`.
+    max_tick_meta: dict[str, object] | None = None
+    p95_tick_ns: float | None = None
+    p99_tick_ns: float | None = None
+    if tick_summary:
+        tick_metrics = [
+            e for e in recorder.of_type(MetricEvent)
+            if e.name == "tick_to_decision_latency_ns"
+        ]
+        if tick_metrics:
+            values = sorted(e.value for e in tick_metrics)
+            p95_tick_ns = values[min(len(values) - 1, int(0.95 * len(values)))]
+            p99_tick_ns = values[min(len(values) - 1, int(0.99 * len(values)))]
+
+            spike = max(tick_metrics, key=lambda e: e.value)
+            quote_by_cid = {q.correlation_id: q for q in quotes}
+            originating = quote_by_cid.get(spike.correlation_id)
+            tick_index_by_cid = {
+                q.correlation_id: i for i, q in enumerate(quotes, start=1)
+            }
+            tick_idx = tick_index_by_cid.get(spike.correlation_id)
+            max_tick_meta = {
+                "value_ns":          spike.value,
+                "correlation_id":    spike.correlation_id,
+                "kernel_sequence":   spike.sequence,
+                "tick_index":        tick_idx,
+                "n_total_ticks":     len(quotes),
+                "symbol":            originating.symbol if originating else "?",
+                "exchange_ts_ns":    (originating.exchange_timestamp_ns
+                                      if originating else None),
+                "is_first_5_pct":    (tick_idx is not None
+                                      and tick_idx <= max(1, len(quotes) // 20)),
+            }
+
     # ── Assemble report ──────────────────────────────────────────
     lines: list[str] = []
     lines.append(_header(strategy_id, symbol_str, date_range))
@@ -657,7 +698,30 @@ def generate_report(
     # Performance
     lines.append(_section("Latency"))
     lines.append(_kv("Avg tick-to-decision", _ns_to_ms(avg_tick_ns)))
+    if p95_tick_ns is not None:
+        lines.append(_kv("p95 tick-to-decision", _ns_to_ms(p95_tick_ns)))
+    if p99_tick_ns is not None:
+        lines.append(_kv("p99 tick-to-decision", _ns_to_ms(p99_tick_ns)))
     lines.append(_kv("Max tick-to-decision", _ns_to_ms(max_tick_ns)))
+    if max_tick_meta is not None:
+        ts_ns = max_tick_meta.get("exchange_ts_ns")
+        ts_str = ""
+        if isinstance(ts_ns, int):
+            from datetime import datetime, timezone
+            dt = datetime.fromtimestamp(ts_ns / 1e9, tz=timezone.utc)
+            ts_str = dt.strftime("%H:%M:%S.%f")[:-3] + " UTC"
+        warmup_flag = "  [warm-up]" if max_tick_meta.get("is_first_5_pct") else ""
+        lines.append(_sub_kv(
+            "spike origin",
+            f"{max_tick_meta['symbol']} tick "
+            f"#{max_tick_meta['tick_index']}/{max_tick_meta['n_total_ticks']:,}"
+            + (f" @ {ts_str}" if ts_str else "")
+            + warmup_flag,
+        ))
+        lines.append(_sub_kv(
+            "correlation_id",
+            str(max_tick_meta["correlation_id"]),
+        ))
     lines.append(_kv("Avg feature compute", _ns_to_ms(avg_feat_ns)))
     lines.append(_kv("Avg signal evaluate", _ns_to_ms(avg_sig_ns)))
 
@@ -697,13 +761,17 @@ def generate_report(
                 lines.append(_sub_kv("  Recent edge", f"{ds.realized:.2f} bps"))
                 lines.append(_sub_kv("  Z-score", f"{ds.z_score:.2f}"))
 
-    # Parity hash
-    parity_hash = compute_parity_hash(orchestrator)
+    # Three-hash parity contract — pnl_hash, config_hash, parity_hash.
+    # Grok's VERIFY(signal_id, local_pnl_hash, local_config_hash) consumes both.
+    pnl_hash = compute_parity_hash(orchestrator)
+    config_hash = compute_config_hash(config)
+    parity_hash = compute_combined_parity_hash(pnl_hash, config_hash)
     lines.append(_divider())
     lines.append(_section("Parity"))
     lines.append(_kv("Trade count", f"{len(records)}"))
-    lines.append(_kv("Parity hash (SHA-256)", parity_hash[:32] + "..."))
-    lines.append(_kv("Full hash", parity_hash))
+    lines.append(_kv("pnl_hash    (trades)", pnl_hash))
+    lines.append(_kv("config_hash (cfg)",    config_hash))
+    lines.append(_kv("parity_hash (both)",   parity_hash))
 
     lines.append("")
     lines.append(_RULE_HEAVY)
@@ -712,14 +780,15 @@ def generate_report(
     return "\n".join(lines)
 
 
-# ── Parity hash ──────────────────────────────────────────────────────
+# ── Parity hashes (three-hash contract — see grok/05_EXPORT_LIFECYCLE.md) ──
 
 
 def compute_parity_hash(orchestrator: object) -> str:
-    """Compute a deterministic SHA-256 hash over the trade sequence.
+    """SHA-256 over the ordered trade sequence.
 
     Canonical format shared with the Grok REPL (grok/04_BACKTEST_EXECUTION.md).
-    Both sides must produce identical hashes for the same alpha + date range.
+    Both sides MUST produce identical hashes for the same alpha + date range
+    + same platform.yaml.
     """
     from feelies.storage.trade_journal import TradeRecord
 
@@ -738,6 +807,25 @@ def compute_parity_hash(orchestrator: object) -> str:
     ]
     payload = json.dumps(trade_seq, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def compute_config_hash(config: PlatformConfig) -> str:
+    """SHA-256 of the resolved PlatformConfig snapshot.
+
+    Identical to ``PlatformConfig.snapshot().checksum``. Re-exposed here so
+    callers don't need to import ``ConfigSnapshot`` to obtain it.
+    """
+    return config.snapshot().checksum
+
+
+def compute_combined_parity_hash(pnl_hash: str, config_hash: str) -> str:
+    """SHA-256(pnl_hash + ":" + config_hash).
+
+    Single comparator that binds the trade sequence to the configuration
+    that produced it. Mirrors the Grok REPL's ``_compute_combined_parity_hash``
+    in ``grok/04_BACKTEST_EXECUTION.md``.
+    """
+    return hashlib.sha256(f"{pnl_hash}:{config_hash}".encode("utf-8")).hexdigest()
 
 
 # ── Verification checks ─────────────────────────────────────────────
@@ -813,7 +901,25 @@ def print_verification(results: list[tuple[str, bool, str]]) -> bool:
 # ── Main ─────────────────────────────────────────────────────────────
 
 
+def _force_utf8_console() -> None:
+    """Make stdout/stderr emit UTF-8 so unicode glyphs (×, σ, →, …) print
+    correctly on Windows consoles whose default code page is cp1252.
+
+    Best-effort: silently no-op on streams that don't support reconfigure
+    (e.g. when redirected through a non-text wrapper, or on Python < 3.7).
+    """
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _force_utf8_console()
     args = parse_args(argv)
 
     # ── Demo mode: synthetic data, no Massive API needed ─────────

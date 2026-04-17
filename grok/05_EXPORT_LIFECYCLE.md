@@ -82,11 +82,10 @@ def EXPORT(
         print(f"  Written: {py_path}")
 
     # --- Compute parity fingerprint ---
-    oos_pnl_hash = report.get("oos_pnl_hash") or report.get("steps", {}).get("oos", {}).get("pnl_hash")
-    oos_metrics  = report.get("steps", {}).get("oos", {})
-    config_snap  = None
-    if "config_snapshot" in report.get("steps", {}).get("train", {}):
-        config_snap = report["steps"]["train"]["config_snapshot"]
+    oos_pnl_hash    = report.get("oos_pnl_hash")    or report.get("steps", {}).get("oos", {}).get("pnl_hash")
+    oos_config_hash = report.get("oos_config_hash") or report.get("steps", {}).get("oos", {}).get("config_hash")
+    oos_parity_hash = report.get("oos_parity_hash") or report.get("steps", {}).get("oos", {}).get("parity_hash")
+    oos_metrics     = report.get("steps", {}).get("oos", {})
 
     fingerprint = {
         "signal_id":       signal_id,
@@ -95,17 +94,25 @@ def EXPORT(
         "total_pnl":       oos_metrics.get("mean_pnl"),
         "oos_sharpe":      oos_metrics.get("sharpe"),
         "oos_dsr":         report.get("steps", {}).get("falsification", {}).get("dsr"),
+        # Three-hash parity contract — matches scripts/run_backtest.py exactly.
         "pnl_hash":        oos_pnl_hash,
-        "hash_function":   "SHA256(JSON([{order_id,symbol,side,quantity,fill_price,realized_pnl}]))",
-        "config_snapshot": str(config_snap) if config_snap else None,
+        "config_hash":     oos_config_hash,
+        "parity_hash":     oos_parity_hash,
+        "hash_function": {
+            "pnl_hash":    "SHA256(JSON([{order_id,symbol,side,quantity,fill_price,realized_pnl}]))",
+            "config_hash": "PlatformConfig.snapshot().checksum",
+            "parity_hash": "SHA256(pnl_hash + ':' + config_hash)",
+        },
+        "platform_yaml_source": "Same commit SHA as source ZIP — loaded via PlatformConfig.from_yaml",
         "generated_in":    "grok_repl_v2",
         "generated_at":    datetime.datetime.utcnow().isoformat(),
         "repo_source":     "github.com/Leiisawesome/feelies (ZIP bootstrap)",
         "data_source":     "Polygon REST API (RTH substitution)",
         "parity_contract": (
             "Running same .alpha.yaml on same date range through Grok REPL "
-            "and through python scripts/run_backtest.py must produce: "
-            "same trade count, same total PnL ±0.01%, same pnl_hash."
+            "and through python scripts/run_backtest.py (with the same platform.yaml) "
+            "must produce: identical trade count, identical pnl_hash, identical "
+            "config_hash, identical parity_hash."
         ),
     }
 
@@ -119,11 +126,30 @@ def EXPORT(
     with open(os.path.join(export_dir, "README_deploy.txt"), "w") as f:
         f.write(readme)
 
+    # --- Stamp determinism evidence from any prior SELFCHECK on this alpha ---
+    selfcheck = SESSION.get("selfcheck", {}).get(alpha_id)
+    if selfcheck and selfcheck.get("passed"):
+        report["selfcheck_passed"] = True
+        # Cross-check: the SELFCHECK hashes must equal the OOS hashes,
+        # otherwise the determinism proof is for a different config.
+        if (selfcheck.get("pnl_hash") != oos_pnl_hash or
+            selfcheck.get("config_hash") != oos_config_hash):
+            print("  WARN: SELFCHECK hashes do NOT match OOS hashes — "
+                  "Inv-5 was verified for a different run. Re-run SELFCHECK "
+                  "against the OOS event_log before claiming determinism.")
+            report["selfcheck_passed"] = False
+    else:
+        report["selfcheck_passed"] = False
+        print("  WARN: no SELFCHECK on record for this alpha. "
+              "Run SELFCHECK(alpha_id, oos_event_log) before deploying.")
+
     # --- Update signal registry ---
     _registry_upsert(signal_id, alpha_id, report, fingerprint)
 
     print(f"\nEXPORT COMPLETE: {export_dir}")
-    print(f"  Parity hash: {(oos_pnl_hash or 'none')[:16]}...")
+    print(f"  pnl_hash:    {(oos_pnl_hash or 'none')[:16]}...")
+    print(f"  config_hash: {(oos_config_hash or 'none')[:16]}...")
+    print(f"  parity_hash: {(oos_parity_hash or 'none')[:16]}...")
     print(f"  Recommendation: {report.get('verdict','?')}")
     print(f"\n  Next step: copy files to local repo and run parity verification.")
     print(f"  See: {export_dir}/README_deploy.txt")
@@ -148,35 +174,38 @@ cp {export_dir}/*.py                    feelies/alphas/{alpha_id}/   (if any)
 
 STEP 2 — Run parity verification locally
 ------------------------------------------
-python scripts/run_backtest.py \\
-    --spec alphas/{alpha_id}/{alpha_id}.alpha.yaml \\
-    --symbols AAPL \\
-    --start <same_start_date> \\
-    --end   <same_end_date>   \\
-    --api-key $POLYGON_API_KEY
+python scripts/run_backtest.py --config platform.yaml \\
+    --symbol <same_symbol> \\
+    --date  <same_start_date> \\
+    --end-date <same_end_date>
 
-Compute the local parity hash using the same function:
-    import hashlib, json
-    records = list(orchestrator._trade_journal.query())
-    trade_seq = [{{"order_id": str(r.order_id), "symbol": r.symbol,
-                   "side": str(r.side).split(".")[-1],
-                   "quantity": int(r.filled_quantity),
-                   "fill_price": str(r.fill_price),
-                   "realized_pnl": str(r.realized_pnl)}}
-                 for r in records]
-    pnl_hash = hashlib.sha256(json.dumps(trade_seq, sort_keys=True,
-               separators=(",",":")).encode()).hexdigest()
-    print(pnl_hash)
+  IMPORTANT: scripts/run_backtest.py reads platform.yaml by default.
+  It MUST be the same platform.yaml that Grok extracted from the
+  pinned commit SHA — otherwise the config_hash will diverge and
+  parity will fail.
+
+The script prints three hashes at the end of the report:
+    pnl_hash     <hex>      ← over the trade sequence
+    config_hash  <hex>      ← PlatformConfig.snapshot().checksum
+    parity_hash  <hex>      ← SHA256(pnl_hash + ":" + config_hash)
 
 STEP 3 — Verify parity in Grok
 --------------------------------
-VERIFY("{alpha_id}", "<local_pnl_hash>")
+VERIFY("{alpha_id}", "<local_pnl_hash>", "<local_config_hash>")
 
 PARITY CONTRACT
 ---------------
-Grok hash:   {(fingerprint.get('pnl_hash') or 'not_computed')[:32]}
-Expected:    same trade count, same total PnL ±0.01%, same pnl_hash
-Deviation:   Any divergence is a defect unless caused by Polygon data substitution.
+Grok pnl_hash:    {(fingerprint.get('pnl_hash')    or 'not_computed')[:32]}
+Grok config_hash: {(fingerprint.get('config_hash') or 'not_computed')[:32]}
+Grok parity_hash: {(fingerprint.get('parity_hash') or 'not_computed')[:32]}
+
+Verdicts:
+  PARITY_VERIFIED              — both hashes match
+  PARITY_VERIFIED_TRADES_ONLY  — pnl_hash matches; config_hash differs/missing
+  PARITY_FAILED                — trade sequence differs
+
+Any non-PARITY_VERIFIED outcome is a defect unless caused by the
+documented Polygon data substitution.
 
 STEP 4 — Promote to paper trading
 -----------------------------------
@@ -192,50 +221,85 @@ alpha_spec_dir: alphas/{alpha_id}
 ## CELL 2 — VERIFY command
 
 ```python
-def VERIFY(signal_id: str, local_pnl_hash: str) -> bool:
+def VERIFY(signal_id: str, local_pnl_hash: str,
+           local_config_hash: str | None = None) -> bool:
     """
-    Compare Grok's parity hash against the hash produced by scripts/run_backtest.py locally.
+    Three-hash parity verification against scripts/run_backtest.py.
+
+    Args:
+        signal_id:          Identifier registered via EXPORT()
+        local_pnl_hash:     pnl_hash printed by scripts/run_backtest.py
+        local_config_hash:  config_hash printed by scripts/run_backtest.py
+                            (optional but RECOMMENDED — proves the local side
+                             ran with the same platform.yaml as Grok)
+
+    Verdicts:
+        PARITY_VERIFIED              both hashes match
+        PARITY_VERIFIED_TRADES_ONLY  pnl_hash matches; config_hash differs or
+                                     was not provided (config drift possible)
+        PARITY_FAILED                pnl_hash differs (real divergence)
 
     Usage:
-        VERIFY("my_alpha", "a3f8b2c1d9e04567f2c3d4e5a6b7c8d9...")
+        VERIFY("my_alpha", "<local_pnl_hash>", "<local_config_hash>")
     """
-    # Look up stored hash from most recent EXPORT
-    stored_hash = _registry_get_pnl_hash(signal_id)
+    grok_pnl    = _registry_get_field(signal_id, "parity_pnl_hash")
+    grok_config = _registry_get_field(signal_id, "parity_config_hash")
 
     print(f"\nPARITY VERIFICATION: {signal_id}")
-    print(f"  Grok hash:  {(stored_hash or 'not found')[:32]}...")
-    print(f"  Local hash: {local_pnl_hash[:32]}...")
+    print(f"  pnl_hash    Grok: {(grok_pnl or 'not found')[:32]}...")
+    print(f"  pnl_hash    Local:{local_pnl_hash[:32]}...")
+    if local_config_hash is not None:
+        print(f"  config_hash Grok: {(grok_config or 'not found')[:32]}...")
+        print(f"  config_hash Local:{local_config_hash[:32]}...")
 
-    if stored_hash is None:
+    if grok_pnl is None:
         print(f"  STATUS: NO FINGERPRINT — run EXPORT({signal_id!r}, ...) first")
         return False
 
-    if local_pnl_hash == stored_hash:
-        print(f"  STATUS: PARITY VERIFIED ✓")
-        print(f"  The Grok REPL and scripts/run_backtest.py produced identical trade sequences.")
+    pnl_ok    = (local_pnl_hash == grok_pnl)
+    config_ok = (local_config_hash is not None and grok_config is not None
+                 and local_config_hash == grok_config)
+
+    if pnl_ok and config_ok:
+        print(f"  STATUS: PARITY_VERIFIED")
+        print(f"  Trade sequence and platform.yaml configuration both match.")
         _registry_set_status(signal_id, "parity_verified")
         return True
-    else:
-        print(f"  STATUS: PARITY FAILED ✗")
-        print(f"  Divergence detected. Check:")
-        print(f"    1. Same .alpha.yaml file used on both sides?")
-        print(f"    2. Same date range?")
-        print(f"    3. Same execution_mode (market vs passive_limit)?")
-        print(f"    4. Polygon API returning same data on both sides?")
-        print(f"    5. Hash function identical? (see README_deploy.txt)")
-        print(f"  If divergence is NOT caused by the Polygon substitution, this is a defect.")
-        return False
+
+    if pnl_ok and not config_ok:
+        print(f"  STATUS: PARITY_VERIFIED_TRADES_ONLY")
+        print(f"  Trades match, but config_hash differs or was not provided.")
+        print(f"  This is FRAGILE — the next platform.yaml change may break parity")
+        print(f"  silently. Re-run with local_config_hash to fully verify.")
+        _registry_set_status(signal_id, "parity_verified_trades_only")
+        return True
+
+    print(f"  STATUS: PARITY_FAILED")
+    print(f"  Trade sequence differs. Diagnostic checklist:")
+    print(f"    1. Did the local script use the SAME platform.yaml that Grok extracted")
+    print(f"       from the pinned commit SHA? (config_hash mismatch is the smoking gun)")
+    print(f"    2. Same .alpha.yaml file on both sides?")
+    print(f"    3. Same date range and same symbols?")
+    print(f"    4. Polygon API returning same data on both sides?")
+    print(f"    5. Hash function identical? (see README_deploy.txt)")
+    print(f"  If config_hashes differ, the gap is in platform.yaml — NOT data.")
+    return False
 
 
-def _registry_get_pnl_hash(signal_id: str) -> str | None:
-    """Look up parity hash from registry CSV."""
+def _registry_get_field(signal_id: str, field: str) -> str | None:
+    """Look up an arbitrary registry field for a given signal_id."""
     if not os.path.exists(REGISTRY_PATH):
         return None
     with open(REGISTRY_PATH, "r") as f:
         for row in csv.DictReader(f):
             if row.get("signal_id") == signal_id:
-                return row.get("parity_pnl_hash") or None
+                return row.get(field) or None
     return None
+
+
+# Backward-compat alias used by older code paths.
+def _registry_get_pnl_hash(signal_id: str) -> str | None:
+    return _registry_get_field(signal_id, "parity_pnl_hash")
 
 
 def _registry_set_status(signal_id: str, status: str) -> None:
@@ -263,11 +327,18 @@ print("EXPORT() and VERIFY() commands: ACTIVE")
 
 ```python
 def _registry_upsert(signal_id: str, alpha_id: str, report: dict, fingerprint: dict) -> None:
-    """Insert or update a signal in the registry CSV."""
+    """Insert or update a signal in the registry CSV.
+
+    All hash fields and IC / Holm fields are wired through here. The columns
+    are declared in REGISTRY_COLS (Prompt 1, CELL 4) — keep them in sync.
+    """
     oos     = report.get("steps", {}).get("oos", {})
     falsif  = report.get("steps", {}).get("falsification", {})
     latency = report.get("steps", {}).get("latency", {})
     regime  = report.get("steps", {}).get("regime", {})
+    ic      = report.get("steps", {}).get("ic", {})
+    cpcv    = report.get("steps", {}).get("cpcv", {})
+    lineage = report.get("lineage", {})
 
     row = {
         "generation":           SESSION.get("generation", 1),
@@ -276,19 +347,34 @@ def _registry_upsert(signal_id: str, alpha_id: str, report: dict, fingerprint: d
         "hypothesis":           report.get("hypothesis", {}).get("statement", "")[:120],
         "oos_sharpe":           round(oos.get("sharpe") or 0, 4),
         "dsr":                  round(falsif.get("dsr") or 0, 4),
-        "ic_mean":              "",   # populated by IC analysis if available
-        "ic_tstat":             "",
+        "ic_mean":              round(ic.get("ic_mean")   or 0, 6) if ic else "",
+        "ic_tstat":             round(ic.get("ic_tstat")  or 0, 4) if ic else "",
         "tc_drag_pct":          "",
         "latency_decay_pct":    round((latency.get("latency_decay") or 0) * 100, 2),
         "regime_stability_cv":  round(regime.get("regime_cv") or 0, 4),
         "regime_all_positive":  regime.get("all_positive", False),
         "status":               "candidate",
         "recommendation":       report.get("verdict", "UNKNOWN"),
-        "parent_id":            "",
-        "mutation_type":        "",
+        # Lineage — populated by MUTATE() / EXPLORE() / EVOLVE() / RECOMBINE() in Prompt 6.
+        "parent_id":            lineage.get("parent_id", ""),
+        "co_parent_id":         lineage.get("co_parent_id", ""),
+        "mutation_type":        lineage.get("mutation_type", ""),
         "parity_n_trades":      fingerprint.get("n_trades", ""),
         "parity_total_pnl":     round(fingerprint.get("total_pnl") or 0, 6),
+        # Three-hash parity contract.
         "parity_pnl_hash":      fingerprint.get("pnl_hash", ""),
+        "parity_config_hash":   fingerprint.get("config_hash", ""),
+        "parity_combined_hash": fingerprint.get("parity_hash", ""),
+        # Statistical / determinism evidence.
+        "selfcheck_passed":     report.get("selfcheck_passed", ""),
+        "holm_qvalue":          round(report.get("holm_qvalue") or 0, 6) if report.get("holm_qvalue") is not None else "",
+        "cpcv_fraction_positive": round(cpcv.get("fraction_positive") or 0, 4) if cpcv else "",
+        "cpcv_sharpe_p10":      round(cpcv.get("sharpe_p10") or 0, 4) if cpcv and cpcv.get("sharpe_p10") is not None else "",
+        # Post-promotion audit fields — populated only by AUDIT() (Prompt 6).
+        "audit_status":         "",
+        "audit_last_run":       "",
+        "audit_sharpe_decay_pct": "",
+        "audit_ic_decay":       "",
         "created_at":           datetime.datetime.utcnow().isoformat(),
         "updated_at":           datetime.datetime.utcnow().isoformat(),
         "exported_at":          datetime.datetime.utcnow().isoformat(),
@@ -516,36 +602,42 @@ print("  STATUS()                    — system status")
 ## 1. PARITY VERIFICATION CONTRACT
 
 ```
-CANONICAL PARITY CONTRACT (V2)
+CANONICAL PARITY CONTRACT (V3 — three-hash)
 ────────────────────────────────────────────────────────────
-Same .alpha.yaml + same date range + same execution_mode:
+Same .alpha.yaml + same date range + same platform.yaml:
 
   Grok REPL (Prompt 4)              scripts/run_backtest.py (local)
   ──────────────────────            ──────────────────────────────
-  build_platform()                  scripts/run_backtest.py
+  PlatformConfig.from_yaml(         PlatformConfig.from_yaml(
+    PLATFORM_YAML_PATH)               "platform.yaml")
+  build_platform()                  build_platform()
   BacktestOrderRouter               BacktestOrderRouter (same source)
   DefaultCostModel                  DefaultCostModel (same source)
   BasicRiskEngine                   BasicRiskEngine (same source)
   PolygonFetcher (substitution)     MassiveHistoricalIngestor
       ↓                                     ↓
-  pnl_hash  ─────── must match ──────  pnl_hash
+  pnl_hash    ─── must match ───   pnl_hash      (same trades)
+  config_hash ─── must match ───   config_hash   (same config)
+  parity_hash ─── must match ───   parity_hash   (binds both)
 
-Parity hash function (canonical — both sides must use this exactly):
-  records = list(orchestrator._trade_journal.query())
-  trade_seq = [{"order_id": str(r.order_id), "symbol": r.symbol,
-                "side": str(r.side).split(".")[-1],
-                "quantity": int(r.filled_quantity),
-                "fill_price": str(r.fill_price),
-                "realized_pnl": str(r.realized_pnl)}
-               for r in records]
-  pnl_hash = SHA256(JSON(trade_seq, sort_keys=True, separators=(",",":"))).hexdigest()
+Hash functions (canonical — both sides emit these EXACTLY):
+
+  pnl_hash    = SHA256(JSON([{order_id, symbol, side, quantity,
+                              fill_price, realized_pnl}],
+                            sort_keys=True, separators=(",",":")))
+  config_hash = PlatformConfig.snapshot().checksum   # already SHA-256
+  parity_hash = SHA256(pnl_hash + ":" + config_hash)
 
 Pass criteria:
   ✓ Same trade count
-  ✓ Same total PnL ± 0.01%
-  ✓ Same pnl_hash
+  ✓ Same pnl_hash    (same trades)
+  ✓ Same config_hash (same execution config — proves platform.yaml parity)
+  ✓ Same parity_hash (single comparator binding both)
 
 Any divergence is a defect unless caused by the Polygon substitution.
+A pnl_hash match with a config_hash mismatch is FRAGILE: trade-level
+parity happens to coincide despite divergent configuration, and the
+next config change will silently break parity.
 ────────────────────────────────────────────────────────────
 ```
 
@@ -577,13 +669,17 @@ EXPORT(signal_id, report, spec):
   Writes .alpha.yaml + .py files + parity_fingerprint.json + README_deploy.txt
   Updates registry CSV
 
-VERIFY(signal_id, local_hash):
-  Compares Grok hash vs local scripts/run_backtest.py hash
-  Sets status = "parity_verified" on match
+VERIFY(signal_id, local_pnl_hash, local_config_hash=None):
+  Compares Grok pnl_hash + config_hash vs scripts/run_backtest.py output
+  Three verdicts: PARITY_VERIFIED, PARITY_VERIFIED_TRADES_ONLY, PARITY_FAILED
+  Sets registry status accordingly
 
 Registry: /home/user/registry/signal_registry.csv
 Archive:  /home/user/experiments/generation_XXX_{alpha_id}/
 
 Lifecycle: RESEARCH → PAPER → LIVE → QUARANTINED → DECOMMISSIONED
-Parity:    SHA-256 over ordered trade sequence (canonical definition in Section 1)
+Parity:    Three-hash contract — pnl_hash, config_hash, parity_hash
+           (canonical definition in Section 1)
+
+Awaiting Evolution activation (Prompt 6).
 ```

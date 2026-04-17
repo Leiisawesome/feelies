@@ -45,34 +45,58 @@ risk engine, orchestrator) runs from repo source unchanged.
 ## Session Flow
 
 ```
-Prompt 1: Paste once at session start (downloads repo zip, sets sys.path, smoke-tests)
+Prompt 1: Paste once at session start (downloads repo ZIP at pinned commit SHA,
+                                       extracts BOTH src/feelies/ AND repo-root files
+                                       — including platform.yaml — sets sys.path)
 Prompt 2: Paste once to activate data layer (PolygonFetcher + RTH logic)
 Prompt 3: Paste once to activate alpha development (schema, feature library, AlphaLoader)
-Prompt 4: Paste once to activate backtest execution (build_platform, stats, regime)
-Prompt 5: Paste once to activate export and lifecycle (registry, parity contract)
+Prompt 4: Paste once to activate backtest execution (build_platform, CPCV, IC, MHT,
+                                                     SELFCHECK, three-hash parity)
+Prompt 5: Paste once to activate export and lifecycle (registry, parity verify)
+Prompt 6: Paste once to activate evolution (MUTATE, EXPLORE, EVOLVE, LINEAGE)
 
 After setup, the PI issues commands:
-  INITIALIZE                    → set API key, bootstrap workspace dirs
-  LOAD "AAPL" "2026-01-15"     → fetch RTH data, populate InMemoryEventLog
-  TEST <hypothesis>             → run directed hypothesis test (all 5 steps)
-  BACKTEST <alpha_id>           → run full backtest via build_platform()
-  EXPORT <signal_id>            → produce .alpha.yaml + .py + parity_fingerprint.json
-  VERIFY <signal_id> <hash>     → compare Grok hash vs local scripts/run_backtest.py hash
+  INITIALIZE                       → set API key, bootstrap workspace dirs
+  LOAD "AAPL" "2026-01-15"         → fetch RTH data, populate InMemoryEventLog
+  TEST <hypothesis>                → run directed hypothesis test (7 steps)
+  BACKTEST <alpha_id>              → run full backtest via build_platform()
+  SELFCHECK <alpha_id>             → assert Inv-5 (deterministic replay) on this alpha
+  MUTATE <parent_spec> <op>        → produce one typed, deterministic child (unary)
+  RECOMBINE <a_spec> <b_spec>      → binary splice (union features/params, signal from one)
+  EXPLORE <parent_spec> n=8        → Holm-corrected family of mutated siblings
+  EVOLVE <seed_spec> n_generations → multi-generation hypothesis → mutation → selection loop
+  AUDIT <signal_id>                → post-promotion CPCV+IC re-run; stamp audit_status in registry
+  LINEAGE <signal_id>              → walk the registry's parent_id chain + IC stability summary
+  EXPORT <signal_id>               → produce .alpha.yaml + .py + parity_fingerprint.json
+  VERIFY <signal_id> <pnl_hash>    → compare Grok vs scripts/run_backtest.py (3-hash contract)
+                <config_hash>
 ```
 
 ---
 
-## Parity Contract
+## Parity Contract (V3 — three-hash)
 
 Running the same `.alpha.yaml` on the same date range through:
 
-- **Grok REPL** (Prompt 4's `build_platform()` pipeline)
-- **Local repo** (`python scripts/run_backtest.py ...`)
+- **Grok REPL** (Prompt 4's `build_platform()` pipeline, config loaded from
+  the platform.yaml that Prompt 1 extracted from the pinned ZIP)
+- **Local repo** (`python scripts/run_backtest.py --config platform.yaml ...`)
 
-must produce:
-- Identical trade count
-- Total PnL within ±0.01%
-- Identical trade-sequence SHA-256 hash
+must produce three identical hashes:
+
+| Hash | Definition | What it locks down |
+|------|------------|--------------------|
+| `pnl_hash`    | `SHA256(JSON([{order_id, symbol, side, quantity, fill_price, realized_pnl}]))` ordered by sequence | Trade-by-trade fill outcome |
+| `config_hash` | `PlatformConfig.snapshot().checksum` | Every dataclass field used by `build_platform()` |
+| `parity_hash` | `SHA256(pnl_hash + ":" + config_hash)` | Single rollup of trades **and** config |
+
+Verdicts produced by `VERIFY()`:
+
+- `PARITY_VERIFIED` — both hashes match
+- `PARITY_VERIFIED_TRADES_ONLY` — `pnl_hash` matches, `config_hash` differs (or local
+  hash not supplied) → trade sequence is reproduced but the `platform.yaml` differs;
+  treat as warning, not pass
+- `PARITY_FAILED` — `pnl_hash` differs → defect; investigate before any deployment
 
 Any divergence is a defect. The only permitted divergence source is the data layer
 substitution (e.g., minor timestamp field differences between `sip_timestamp` and
@@ -85,11 +109,12 @@ substitution (e.g., minor timestamp field differences between `sip_timestamp` an
 | File | Role | Paste into Grok? |
 |------|------|-----------------|
 | `00_ARCHITECTURE.md` | This document — PI reference | No |
-| `01_BOOTSTRAP.md` | Prompt 1: source download, system identity | Yes (first) |
-| `02_DATA_INGESTION.md` | Prompt 2: Polygon RTH fetcher | Yes (second) |
-| `03_ALPHA_DEVELOPMENT.md` | Prompt 3: .alpha.yaml, features, hypotheses | Yes (third) |
-| `04_BACKTEST_EXECUTION.md` | Prompt 4: build_platform, stats, regime | Yes (fourth) |
-| `05_EXPORT_LIFECYCLE.md` | Prompt 5: export, parity, registry | Yes (fifth) |
+| `01_BOOTSTRAP.md` | Prompt 1: source + platform.yaml download, system identity, registry schema | Yes (first) |
+| `02_DATA_INGESTION.md` | Prompt 2: Polygon RTH fetcher (the one allowed substitution) | Yes (second) |
+| `03_ALPHA_DEVELOPMENT.md` | Prompt 3: `.alpha.yaml`, FEATURE_LIBRARY, MECHANISM_CATALOG, hypothesis formalization | Yes (third) |
+| `04_BACKTEST_EXECUTION.md` | Prompt 4: `build_platform`, CPCV, IC, Holm/BH, SELFCHECK, three-hash parity, TEST | Yes (fourth) |
+| `05_EXPORT_LIFECYCLE.md` | Prompt 5: EXPORT, VERIFY (three-hash), registry upsert, lifecycle | Yes (fifth) |
+| `06_EVOLUTION.md` | Prompt 6: MUTATION_OPERATORS, MUTATE, EXPLORE (Holm family), EVOLVE, LINEAGE | Yes (sixth) |
 
 ---
 
