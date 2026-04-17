@@ -59,15 +59,24 @@ After setup, the PI issues commands:
   INITIALIZE                       → set API key, bootstrap workspace dirs
   LOAD "AAPL" "2026-01-15"         → fetch RTH data, populate InMemoryEventLog
   TEST <hypothesis>                → run directed hypothesis test (7 steps)
-  BACKTEST <alpha_id>              → run full backtest via build_platform()
+  BACKTEST <alpha_id>              → run full backtest (explicit-spec ingress)
+  RUN_ACTIVE                       → backtest the currently ADOPTed alpha via the
+                                     production discovery path (alpha_spec_dir)
   SELFCHECK <alpha_id>             → assert Inv-5 (deterministic replay) on this alpha
-  MUTATE <parent_spec> <op>        → produce one typed, deterministic child (unary)
-  RECOMBINE <a_spec> <b_spec>      → binary splice (union features/params, signal from one)
+  SELFCHECK_ADOPTION <spec_path>   → assert explicit-spec ≡ alpha_spec_dir ingress
+                                     (Grok ↔ scripts/run_backtest.py path equivalence)
+  MUTATE <parent_spec> <op>        → produce one typed, deterministic child (auto-ADOPTs)
+  RECOMBINE <a_spec> <b_spec>      → binary splice (auto-ADOPTs the validated child)
   EXPLORE <parent_spec> n=8        → Holm-corrected family of mutated siblings
-  EVOLVE <seed_spec> n_generations → multi-generation hypothesis → mutation → selection loop
+  EVOLVE <seed_spec> n_generations → multi-generation loop (auto-ADOPTs each champion)
+  ADOPT <spec> <source='manual'>   → write spec to ALPHA_ACTIVE_DIR/<id>/<id>.alpha.yaml
+                                     and flip SESSION["active_alpha_id"] (the platform's
+                                     view of "which alpha is live")
+  LIST_ACTIVE                      → show currently adopted alpha + adoption history
   AUDIT <signal_id>                → post-promotion CPCV+IC re-run; stamp audit_status in registry
   LINEAGE <signal_id>              → walk the registry's parent_id chain + IC stability summary
   EXPORT <signal_id>               → produce .alpha.yaml + .py + parity_fingerprint.json
+                                     (also auto-ADOPTs the exported alpha as the live spec)
   VERIFY <signal_id> <pnl_hash>    → compare Grok vs scripts/run_backtest.py (3-hash contract)
                 <config_hash>
 ```
@@ -101,6 +110,47 @@ Verdicts produced by `VERIFY()`:
 Any divergence is a defect. The only permitted divergence source is the data layer
 substitution (e.g., minor timestamp field differences between `sip_timestamp` and
 `participant_timestamp`).
+
+---
+
+## Adoption Flow (autonomy ↔ production-discovery handoff)
+
+**Goal.** Make a freshly generated or mutated alpha *live to the platform* without
+manual file copying — so the next backtest exercises the same `alpha_spec_dir`
+discovery code path `scripts/run_backtest.py` uses with `platform.yaml`.
+
+```
+┌─────────────────┐   validated   ┌─────────────────────────────┐   discovery    ┌──────────────────┐
+│ MUTATE / RECOMB │ ───────────► │ ADOPT(spec) writes:          │ ─────────────► │ build_platform() │
+│ EXPLORE / EVOLVE│   spec dict   │ ALPHA_ACTIVE_DIR/<id>/<id>   │  via           │ scans alpha_spec │
+│ EXPORT          │              │     .alpha.yaml              │  alpha_spec_   │ _dir, registers  │
+└─────────────────┘              │ + SESSION["active_alpha_id"] │  dir = above   │ via AlphaLoader  │
+                                  └─────────────────────────────┘                └──────────────────┘
+                                                                                          │
+                                  ┌─────────────────────────────┐                         ▼
+                                  │ RUN_ACTIVE() runs the        │ ◄─────── identical hashes to ───────
+                                  │ backtest via this path       │          BACKTEST(spec_path) — proven
+                                  └─────────────────────────────┘          by SELFCHECK_ADOPTION
+```
+
+**Auto-adoption policy.** Every validated `MUTATE` / `RECOMBINE` child and every
+`EVOLVE` strict-improvement winner flips the live spec automatically. `EXPORT`
+also re-adopts so the post-export world is observable. Manual `ADOPT(spec)` is
+available for hand-crafted specs.
+
+**Directory of one.** `ALPHA_ACTIVE_DIR` holds exactly one alpha at a time
+(atomic swap on every `ADOPT`). Lineage lives in `WORKSPACE["alphas"]` (the dev
+tree) and the registry — never here. This mirrors how a human edits
+`platform.yaml`: only one alpha is live in production at any moment.
+
+**Equivalence proof.** The local platform's `bootstrap._load_alphas` has two
+ingress branches: explicit-spec (`alpha_specs=[...]`, used by Grok's
+`TEST`/`EXPLORE`/`EVOLVE`) and directory-scan (`alpha_spec_dir`, used by
+production and `RUN_ACTIVE`). They *should* produce identical results because
+both end at `AlphaLoader.load()`, but "should" is not "verified".
+`SELFCHECK_ADOPTION(spec_path)` asserts bit-identical `pnl_hash` + `config_hash`
+across both ingresses. Run it once after any change to `_load_platform_config`
+or to `bootstrap._load_alphas`.
 
 ---
 

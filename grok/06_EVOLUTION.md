@@ -14,6 +14,16 @@
 >   • assemble_alpha / FEATURE_LIBRARY / MECHANISM_CATALOG / formalize_hypothesis  (Prompt 3)
 >   • TEST / SELFCHECK / falsification_battery / holm_correction / compute_ic     (Prompt 4)
 >   • EXPORT / _registry_upsert                                                    (Prompt 5)
+>   • ALPHA_ACTIVE_DIR / SESSION["active_alpha_id"]                                (Prompt 1)
+>
+> **Adoption loop.** Every validated child (MUTATE, RECOMBINE, EVOLVE champion) is
+> automatically `ADOPT`ed: the spec is written to
+> `ALPHA_ACTIVE_DIR/<alpha_id>/<alpha_id>.alpha.yaml` and `SESSION["active_alpha_id"]`
+> is flipped. The next `RUN_ACTIVE()` (or any backtest with `use_active_dir=True`)
+> discovers the freshly generated alpha through the production `alpha_spec_dir`
+> code path — the same path `scripts/run_backtest.py` uses when `platform.yaml`
+> points at `alphas/<id>/`. This closes the autonomy loop: a generated alpha
+> becomes "what the platform sees" without manual file copying.
 >
 > No new dependency. No invented features. Only operators that compose existing repo primitives.
 
@@ -372,10 +382,177 @@ def RECOMBINE(
         )
     print(f"RECOMBINE: {parent_a_spec['alpha_id']}  x  {parent_b_spec['alpha_id']}  "
           f"--[{child['lineage']['mutation_type']}]-->  {child['alpha_id']}")
+
+    # Auto-adopt validated splice children (same contract as MUTATE).
+    try:
+        ADOPT(child, source=f"RECOMBINE:{signal_from}")
+    except Exception as e:
+        print(f"  WARN: ADOPT failed for spliced child '{child['alpha_id']}': {e}")
+
     return child
 
 
 print("Recombination operator registered: op_splice (binary, via RECOMBINE)")
+```
+
+---
+
+## CELL 1c — `ADOPT` / `LIST_ACTIVE` (production-discovery handoff)
+
+```python
+import shutil, yaml as _yaml
+
+# -------------------------------------------------------------------
+# ADOPT — flip the platform's "currently live" alpha.
+#
+# The local platform discovers alphas by scanning `platform.yaml`'s
+# `alpha_spec_dir`. Grok mirrors that contract by writing the freshly
+# generated/mutated spec into ALPHA_ACTIVE_DIR/<alpha_id>/<alpha_id>.alpha.yaml
+# and flipping SESSION["active_alpha_id"]. The next RUN_ACTIVE() (or any
+# backtest with use_active_dir=True) loads through bootstrap._load_alphas
+# exactly as scripts/run_backtest.py would.
+#
+# Directory of one (atomic swap):
+#   ALPHA_ACTIVE_DIR is wiped on every ADOPT before writing the new spec.
+#   This mirrors how a human edits platform.yaml: only one alpha is live
+#   at any moment. Lineage is preserved in WORKSPACE["alphas"] and the
+#   registry — never in ALPHA_ACTIVE_DIR.
+#
+# Validation gate:
+#   ADOPT calls validate_alpha (Prompt 3) before writing. An invalid spec
+#   never reaches the active dir, so RUN_ACTIVE() can never run a malformed
+#   alpha. This matches EXPORT()'s gate.
+#
+# computation_module handling:
+#   FEATURE_LIBRARY entries (Prompt 3) ship inline `code` strings, so
+#   children produced by MUTATION_OPERATORS / op_splice carry no external
+#   .py dependencies. If the spec does reference computation_module files
+#   we resolve them relative to ALPHA_DEV_DIR/<alpha_id>/ first (the
+#   save_alpha home), then warn if any file is missing — at which point
+#   the user must save_alpha() the spec before adopting.
+# -------------------------------------------------------------------
+def ADOPT(
+    spec: dict,
+    alpha_id: str | None = None,
+    source: str = "manual",
+) -> str:
+    """
+    Promote `spec` to the active alpha directory the platform will scan.
+
+    Returns the path of the written .alpha.yaml. After ADOPT:
+      SESSION["active_alpha_id"]  == alpha_id
+      RUN_ACTIVE()                runs this alpha via the production
+                                  discovery path (alpha_spec_dir).
+
+    Args:
+        spec:     .alpha.yaml dict (output of assemble_alpha / MUTATE / RECOMBINE)
+        alpha_id: defaults to spec["alpha_id"]; explicit value lets you alias
+                  e.g. for a quick "active" handle independent of the lineage id.
+        source:   free-form provenance tag stored in adoption_history. Suggested
+                  values: "manual", "MUTATE", "RECOMBINE", "EVOLVE", "EXPORT".
+
+    Raises:
+        ValueError if validate_alpha rejects the spec.
+    """
+    assert isinstance(spec, dict), f"ADOPT expects a spec dict, got {type(spec).__name__}"
+    alpha_id = alpha_id or spec.get("alpha_id")
+    assert alpha_id, "spec is missing 'alpha_id' and no override provided"
+
+    if not validate_alpha(spec):
+        raise ValueError(
+            f"ADOPT BLOCKED: spec '{alpha_id}' failed AlphaLoader validation. "
+            f"Fix the spec before adopting — RUN_ACTIVE() must never run a "
+            f"malformed alpha."
+        )
+
+    # ---- Atomic swap: wipe then write ----
+    for entry in os.listdir(ALPHA_ACTIVE_DIR):
+        path = os.path.join(ALPHA_ACTIVE_DIR, entry)
+        (shutil.rmtree if os.path.isdir(path) else os.remove)(path)
+
+    target_dir = os.path.join(ALPHA_ACTIVE_DIR, alpha_id)
+    os.makedirs(target_dir, exist_ok=True)
+    target_yaml = os.path.join(target_dir, f"{alpha_id}.alpha.yaml")
+    with open(target_yaml, "w") as f:
+        _yaml.dump(spec, f, default_flow_style=False, sort_keys=False)
+
+    # ---- Resolve any external computation_module files ----
+    # FEATURE_LIBRARY entries are inline so this is usually a no-op.
+    missing_modules = []
+    for feat in spec.get("features") or []:
+        mod = feat.get("computation_module")
+        if not mod:
+            continue
+        candidates = [
+            os.path.join(ALPHA_DEV_DIR, alpha_id, os.path.basename(mod)),
+            os.path.join(ALPHA_DEV_DIR, spec.get("lineage", {}).get("parent_id", ""),
+                         os.path.basename(mod)),
+            mod if os.path.isabs(mod) else None,
+        ]
+        src = next((c for c in candidates if c and os.path.exists(c)), None)
+        if src is None:
+            missing_modules.append(mod)
+            continue
+        shutil.copy2(src, os.path.join(target_dir, os.path.basename(mod)))
+
+    if missing_modules:
+        print(f"  WARN: ADOPT could not resolve {len(missing_modules)} "
+              f"computation_module file(s): {missing_modules}. "
+              f"RUN_ACTIVE() will fail at AlphaLoader time. "
+              f"Run save_alpha(spec) with the .py files in the same dir first.")
+
+    # ---- Update session state ----
+    SESSION["active_alpha_id"] = alpha_id
+    SESSION.setdefault("adoption_history", []).append({
+        "alpha_id":   alpha_id,
+        "source":     source,
+        "ts":         datetime.datetime.utcnow().isoformat(),
+        "lineage":    spec.get("lineage", {}),
+    })
+
+    print(f"ADOPT: '{alpha_id}' is now the active alpha "
+          f"(source={source}, dir={target_dir})")
+    return target_yaml
+
+
+def LIST_ACTIVE() -> dict:
+    """
+    Show the currently adopted alpha and the recent adoption history.
+
+    Returns the dict for programmatic use; also prints a human-readable view.
+    The platform's discovery path (build_platform with use_active_dir=True)
+    will load whatever is reported under 'active_alpha_id'.
+    """
+    aid = SESSION.get("active_alpha_id")
+    history = SESSION.get("adoption_history") or []
+
+    print(f"\n{'='*60}")
+    print(f"ACTIVE ALPHA")
+    print(f"{'='*60}")
+    if not aid:
+        print("  (none — call ADOPT(spec) or any MUTATE/RECOMBINE/EVOLVE)")
+        print(f"{'='*60}\n")
+        return {"active_alpha_id": None, "history": []}
+
+    target_yaml = os.path.join(ALPHA_ACTIVE_DIR, aid, f"{aid}.alpha.yaml")
+    on_disk = os.path.exists(target_yaml)
+    print(f"  active_alpha_id : {aid}")
+    print(f"  spec path       : {target_yaml}")
+    print(f"  on disk         : {'YES' if on_disk else 'MISSING — re-ADOPT'}")
+    print(f"\n  Recent adoptions ({len(history)} total, last 5 shown):")
+    for h in history[-5:]:
+        print(f"    {h['ts']}  {h['source']:10s}  {h['alpha_id']}")
+    print(f"{'='*60}\n")
+
+    return {
+        "active_alpha_id": aid,
+        "spec_path":       target_yaml,
+        "on_disk":         on_disk,
+        "history":         history,
+    }
+
+
+print("ADOPT(spec) / LIST_ACTIVE(): ACTIVE — production discovery handoff online.")
 ```
 
 ---
@@ -419,6 +596,18 @@ def MUTATE(
         )
 
     print(f"MUTATE: {parent_spec['alpha_id']} --[{operator}]--> {child['alpha_id']}")
+
+    # Adopt every validated child — closes the autonomy loop. The next
+    # RUN_ACTIVE() will discover this spec via alpha_spec_dir, exactly as
+    # scripts/run_backtest.py would. Per architecture decision: every
+    # validated MUTATE/RECOMBINE child + every EVOLVE strict-improvement
+    # winner flips the live spec.
+    try:
+        ADOPT(child, source=f"MUTATE:{operator}")
+    except Exception as e:
+        print(f"  WARN: ADOPT failed for child '{child['alpha_id']}': {e}. "
+              f"Spec is valid but not promoted; RUN_ACTIVE() will use prior active.")
+
     return child
 
 
@@ -734,6 +923,17 @@ def EVOLVE(
               f"sharpe={best_sr:+.3f} (Δ={best_sr - chain[-2]['oos_sharpe']:+.3f}) "
               f"via {best['operator']}")
 
+        # Re-adopt the champion at the END of the generation. EXPLORE's
+        # MUTATE calls auto-adopted each child as it was generated, so the
+        # active alpha at this point is whichever child happened to be
+        # MUTATEd LAST — not necessarily the survivor we just promoted.
+        # Re-adopt explicitly so RUN_ACTIVE() reflects EVOLVE's verdict,
+        # not EXPLORE's last sample.
+        try:
+            ADOPT(champion, source=f"EVOLVE:gen{gen}")
+        except Exception as e:
+            print(f"  WARN: EVOLVE could not adopt champion '{champion['alpha_id']}': {e}")
+
     # ---- Persist full chain ----
     run_id = hashlib.sha1(f"{seed_spec['alpha_id']}|{seed}".encode()).hexdigest()[:8]
     out_dir = os.path.join(WORKSPACE["experiments"], f"evolution_{run_id}")
@@ -1038,6 +1238,7 @@ def LINEAGE(signal_id: str, depth: int = 10) -> list[dict]:
 
 
 print("EVOLVE / EXPLORE / MUTATE / RECOMBINE / SELFCHECK_MUTATION / AUDIT / LINEAGE: ACTIVE")
+print("ADOPT / LIST_ACTIVE: ACTIVE — production discovery handoff online")
 print("Evolution module: ACTIVE")
 ```
 
@@ -1052,15 +1253,24 @@ Determinism:           SELFCHECK_MUTATION asserts seeded reproducibility (Inv-5 
 MHT correction:        Holm-Bonferroni over each EXPLORE family (alpha=0.05 default)
 DSR n_trials:          EXPLORE passes len(children) → falsification_battery deflates by trial count
 Provenance:            child.lineage → report.lineage → registry.parent_id + co_parent_id + mutation_type
+Adoption loop:         every validated MUTATE/RECOMBINE child + every EVOLVE strict-improvement
+                       winner is ADOPTed → ALPHA_ACTIVE_DIR/<alpha_id>/<alpha_id>.alpha.yaml.
+                       SESSION["active_alpha_id"] flips, RUN_ACTIVE() picks it up via the same
+                       alpha_spec_dir discovery code path scripts/run_backtest.py uses.
 Promotion:             EVOLVE picks champions in research; user calls EXPORT to deploy
+                       (EXPORT also re-ADOPTs the exported alpha as the live spec).
 Post-promotion:        AUDIT(signal_id) re-runs CPCV+IC on a fresh window, stamps audit_status
                        (HEALTHY / DEGRADED / DEAD) into the registry
 Lineage view:          LINEAGE(signal_id) prints the chain root→leaf with IC stability summary
-Persistence:           every EXPLORE → family_summary.json; every EVOLVE → evolution_run.json
+Persistence:           every EXPLORE → family_summary.json; every EVOLVE → evolution_run.json;
+                       ALPHA_ACTIVE_DIR is ephemeral (directory of one) — lineage lives in
+                       WORKSPACE["alphas"] + the registry, never here
 
 Ready: EXPLORE(parent_spec, n=8)                     — Holm-corrected family of mutated siblings
        EVOLVE(seed_spec, n_generations=3)            — full hypothesis → mutation → selection loop
        RECOMBINE(parent_a, parent_b)                 — cross-mechanism splice
+       ADOPT(spec, source='manual')                  — promote any spec to the live alpha dir
+       LIST_ACTIVE()                                 — show currently adopted alpha + history
        AUDIT(signal_id)                              — post-promotion edge-decay monitor
        LINEAGE(signal_id)                            — ancestry walk with IC stability classification
 ```

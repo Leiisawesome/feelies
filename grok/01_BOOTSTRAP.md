@@ -162,14 +162,34 @@ import json, hashlib, csv, datetime
 
 # Workspace layout
 WORKSPACE = {
-    "data_cache":   "/home/user/data_cache",
-    "experiments":  "/home/user/experiments",
-    "registry":     "/home/user/registry",
-    "portfolios":   "/home/user/portfolios",
-    "alphas":       "/home/user/alphas",
+    "data_cache":    "/home/user/data_cache",
+    "experiments":   "/home/user/experiments",
+    "registry":      "/home/user/registry",
+    "portfolios":    "/home/user/portfolios",
+    "alphas":        "/home/user/alphas",         # research/dev tree (save_alpha lands here)
+    "alphas_active": "/home/user/alphas_active",  # production-discovery tree (alpha_spec_dir target)
 }
 for path in WORKSPACE.values():
     os.makedirs(path, exist_ok=True)
+
+# Canonical "currently adopted" alpha directory.
+#
+# Mirrors the production layout the local platform uses: platform.yaml's
+# `alpha_spec_dir` points at a directory containing exactly the alphas that
+# are LIVE for the next backtest. ADOPT() (Prompt 6) writes the freshly
+# generated/mutated spec here as `<alpha_id>/<alpha_id>.alpha.yaml`, and
+# run_backtest(use_active_dir=True) (Prompt 4) loads from it via the same
+# `_load_alphas` discovery code path scripts/run_backtest.py exercises.
+#
+# Wiped on every fresh INITIALIZE so a session never inherits stale state
+# from a prior run. Lineage is preserved in WORKSPACE["alphas"] and the
+# registry — ALPHA_ACTIVE_DIR is intentionally a "directory of one":
+# only the currently adopted alpha lives here at any moment.
+ALPHA_ACTIVE_DIR = WORKSPACE["alphas_active"]
+import shutil as _shutil
+for _entry in os.listdir(ALPHA_ACTIVE_DIR):
+    _p = os.path.join(ALPHA_ACTIVE_DIR, _entry)
+    (_shutil.rmtree if os.path.isdir(_p) else os.remove)(_p)
 
 # Initialize registry CSV if absent
 REGISTRY_PATH = os.path.join(WORKSPACE["registry"], "signal_registry.csv")
@@ -191,12 +211,18 @@ if not os.path.exists(REGISTRY_PATH):
 
 # Session state — mutable; refreshed per command
 SESSION = {
-    "api_key":         None,
-    "event_log":       None,   # InMemoryEventLog — populated by LOAD command
-    "loaded_symbols":  [],
-    "loaded_dates":    [],
-    "generation":      0,
-    "active_alpha":    None,
+    "api_key":          None,
+    "event_log":        None,   # InMemoryEventLog — populated by LOAD command
+    "loaded_symbols":   [],
+    "loaded_dates":     [],
+    "generation":       0,
+    "active_alpha":     None,   # legacy: free-form working alpha (research dev only)
+    # Adoption state (closes the autonomy loop — see ADOPT in Prompt 6).
+    # Set by ADOPT()/EXPORT(); read by RUN_ACTIVE() and any backtest call
+    # with use_active_dir=True. Always equals the alpha_id whose .alpha.yaml
+    # currently lives at ALPHA_ACTIVE_DIR/<alpha_id>/<alpha_id>.alpha.yaml.
+    "active_alpha_id":  None,
+    "adoption_history": [],     # append-only list of {alpha_id, ts, source}
 }
 
 print("Workspace ready:", WORKSPACE)
@@ -326,14 +352,18 @@ for why the phenomenon persists are not pursued.
 | `STATUS()` | Full system status — modules, session variables, registry summary |
 | `LOAD(symbols, start, end)` | Fetch RTH data via PolygonFetcher; populates session event log |
 | `TEST(hypothesis, spec, symbols, train_dates, oos_dates, n_trials=1)` | Directed 7-step hypothesis test (validation, train, OOS, falsification, regime+latency, IC, CPCV) |
-| `BACKTEST(alpha_id)` | Single full backtest on session event log via `build_platform()` |
+| `BACKTEST(alpha_id)` | Single full backtest on session event log via `build_platform()` (explicit-spec ingress) |
+| `RUN_ACTIVE()` | Backtest the currently adopted alpha via the production discovery path (`alpha_spec_dir = ALPHA_ACTIVE_DIR/<active_alpha_id>`) |
 | `SELFCHECK(alpha_id, event_log, n_replays=2)` | Run alpha n times on same event_log; assert identical pnl_hash + config_hash + parity_hash (Inv-5) |
+| `SELFCHECK_ADOPTION(spec_path, event_log)` | Assert explicit-spec ingress and `alpha_spec_dir` discovery produce identical pnl_hash + config_hash for the same spec (closes Grok/local ingress asymmetry) |
 | `PRIORITIZE(mechanism_id)` | Print mechanism details from catalog (e.g. `"M001"`) |
-| `MUTATE(parent_spec, operator, seed=0, **kw)` | Apply one named, deterministic mutation operator |
+| `MUTATE(parent_spec, operator, seed=0, **kw)` | Apply one named, deterministic mutation operator (auto-ADOPTs the validated child) |
 | `SELFCHECK_MUTATION(parent_spec, operator, seed=0)` | Assert MUTATE is bit-identical across reruns (Inv-5 in mutation layer) |
 | `EXPLORE(parent_spec, n=8, alpha=0.05)` | Generate n siblings, run TEST on each, Holm-correct over the family |
-| `EVOLVE(seed_spec, n_generations=3, children_per_gen=6)` | Multi-generation hypothesis → mutation → selection loop |
-| `RECOMBINE(parent_a_spec, parent_b_spec, signal_from='a')` | Binary splice: union features/params from both parents, signal from one |
+| `EVOLVE(seed_spec, n_generations=3, children_per_gen=6)` | Multi-generation hypothesis → mutation → selection loop (auto-ADOPTs each generation's champion) |
+| `RECOMBINE(parent_a_spec, parent_b_spec, signal_from='a')` | Binary splice: union features/params from both parents, signal from one (auto-ADOPTs the validated child) |
+| `ADOPT(spec, alpha_id=None, source='manual')` | Write `spec` to `ALPHA_ACTIVE_DIR/<alpha_id>/<alpha_id>.alpha.yaml`; flips `SESSION['active_alpha_id']` so the next `RUN_ACTIVE()` (and any `use_active_dir=True` backtest) discovers it |
+| `LIST_ACTIVE()` | Show the currently adopted alpha + recent adoption history (the platform's view of "what alpha is live") |
 | `AUDIT(signal_id)` | Post-promotion CPCV+IC re-run on a fresh window; stamps `audit_status` into the registry |
 | `LINEAGE(signal_id, depth=10)` | Walk the registry's parent_id chain, print ancestry + IC stability summary |
 | `EXPORT(signal_id, report, spec)` | Produce `.alpha.yaml` + `.py` + parity fingerprint (also stamps SELFCHECK pass) |

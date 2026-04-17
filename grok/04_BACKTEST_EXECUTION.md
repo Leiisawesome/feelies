@@ -59,9 +59,10 @@ def _symbols_from_event_log(event_log: InMemoryEventLog) -> frozenset[str]:
 # SHA the source ZIP was extracted from. Single source of truth.
 # -------------------------------------------------------------------
 def _load_platform_config(
-    spec_path: Path,
+    spec_path: Path | None,
     event_log: InMemoryEventLog,
     overrides: dict | None = None,
+    use_active_dir: bool = False,
 ) -> PlatformConfig:
     """
     Build a backtest PlatformConfig identical to what scripts/run_backtest.py uses.
@@ -69,13 +70,29 @@ def _load_platform_config(
     Steps:
       1. Load PLATFORM_YAML_PATH via PlatformConfig.from_yaml — captures every
          execution-control field defined in platform.yaml.
-      2. Replace mode=BACKTEST, symbols=<from event_log>, alpha_specs=[spec_path],
-         alpha_spec_dir=None (we point at a single spec, not a discovery directory).
+      2. Replace mode=BACKTEST, symbols=<from event_log>, and the alpha
+         ingress fields per `use_active_dir`:
+           - False (default): explicit-spec ingress —
+               alpha_spec_dir = None
+               alpha_specs    = [spec_path]
+             Used by TEST/EXPLORE/EVOLVE because they iterate over many
+             specs that don't belong in a "live" directory.
+           - True: production-discovery ingress —
+               alpha_spec_dir = ALPHA_ACTIVE_DIR/<active_alpha_id>
+               alpha_specs    = []
+             Mirrors `python scripts/run_backtest.py` exactly: the platform
+             scans the same directory layout the local repo uses for live
+             trading. Requires SESSION["active_alpha_id"] to be set (via
+             ADOPT — Prompt 6 — or EXPORT — Prompt 5).
       3. Apply caller overrides last (e.g. cost_stress_multiplier for sweeps).
 
     Any other field — backtest_fill_latency_ns, signal_entry_cooldown_ticks,
     stop_loss_per_share, trail_*, cost_*, passive_*, platform_min_order_shares,
     signal_min_edge_cost_ratio — comes verbatim from platform.yaml.
+
+    SELFCHECK_ADOPTION (below) asserts the two ingress paths produce
+    bit-identical pnl_hash + config_hash for the same spec, so this branch
+    is observably equivalence-preserving.
     """
     assert "PLATFORM_YAML_PATH" in globals(), (
         "PLATFORM_YAML_PATH not set — re-paste Prompt 1. "
@@ -86,13 +103,36 @@ def _load_platform_config(
     symbols = _symbols_from_event_log(event_log)
     assert symbols, "event_log contains no events with symbols — run LOAD() first"
 
-    config = _dc_replace(
-        base,
-        mode           = OperatingMode.BACKTEST,
-        symbols        = symbols,
-        alpha_spec_dir = None,
-        alpha_specs    = [Path(spec_path)],
-    )
+    if use_active_dir:
+        active_id = SESSION.get("active_alpha_id")
+        assert active_id, (
+            "use_active_dir=True but SESSION['active_alpha_id'] is None. "
+            "Call ADOPT(spec) first (Prompt 6) or run any MUTATE/RECOMBINE/EVOLVE."
+        )
+        active_dir = Path(ALPHA_ACTIVE_DIR) / active_id
+        assert active_dir.is_dir(), (
+            f"Active alpha directory missing: {active_dir}. "
+            f"SESSION says active_alpha_id={active_id!r} but the dir was wiped. "
+            f"Re-call ADOPT(spec) to repopulate."
+        )
+        config = _dc_replace(
+            base,
+            mode           = OperatingMode.BACKTEST,
+            symbols        = symbols,
+            alpha_spec_dir = active_dir,
+            alpha_specs    = [],
+        )
+    else:
+        assert spec_path is not None, (
+            "use_active_dir=False requires an explicit spec_path."
+        )
+        config = _dc_replace(
+            base,
+            mode           = OperatingMode.BACKTEST,
+            symbols        = symbols,
+            alpha_spec_dir = None,
+            alpha_specs    = [Path(spec_path)],
+        )
 
     if overrides:
         invalid = set(overrides) - set(PlatformConfig.__dataclass_fields__)
@@ -104,11 +144,12 @@ def _load_platform_config(
 
 
 def run_backtest(
-    spec_path: str | Path,
+    spec_path: str | Path | None,
     event_log: InMemoryEventLog,
     regime_engine: str | None = None,   # None → use platform.yaml value
     config_overrides: dict | None = None,
     verbose: bool = True,
+    use_active_dir: bool = False,
 ) -> dict:
     """
     Run a backtest through the repo's actual pipeline.
@@ -119,7 +160,9 @@ def run_backtest(
     a faithful mirror of the local one.
 
     Args:
-        spec_path:        Path to .alpha.yaml file (from save_alpha())
+        spec_path:        Path to .alpha.yaml file (from save_alpha()). Required
+                          unless use_active_dir=True, in which case it is ignored
+                          and the spec is discovered through alpha_spec_dir.
         event_log:        Pre-populated InMemoryEventLog from LOAD()
         regime_engine:    Override the regime_engine field of platform.yaml
                           (None = use whatever platform.yaml specifies, which is
@@ -129,6 +172,12 @@ def run_backtest(
                           deliberate stress sweeps (e.g. {"cost_stress_multiplier": 2.0}
                           or {"backtest_fill_latency_ns": 100_000_000}).
         verbose:          Print summary after run
+        use_active_dir:   If True, ignore spec_path and load via the production
+                          discovery path (alpha_spec_dir = ALPHA_ACTIVE_DIR/<active_alpha_id>).
+                          Requires SESSION["active_alpha_id"] (set by ADOPT/EXPORT).
+                          This is the path scripts/run_backtest.py uses; verifies
+                          end-to-end that the adopted spec is what the platform
+                          would scan in production.
 
     Returns:
         dict with keys:
@@ -138,15 +187,17 @@ def run_backtest(
             parity_hash    — SHA-256(pnl_hash || config_hash) — single comparator
             trades, positions, config_snapshot, orchestrator
     """
-    spec_path = Path(spec_path)
-    assert spec_path.exists(), f"Alpha spec not found: {spec_path}"
+    if not use_active_dir:
+        spec_path = Path(spec_path)
+        assert spec_path.exists(), f"Alpha spec not found: {spec_path}"
     assert event_log is not None, "event_log is None — run LOAD() first"
 
     overrides = dict(config_overrides or {})
     if regime_engine is not None:
         overrides.setdefault("regime_engine", regime_engine)
 
-    config = _load_platform_config(spec_path, event_log, overrides)
+    config = _load_platform_config(spec_path, event_log, overrides,
+                                   use_active_dir=use_active_dir)
 
     # Fresh platform instance — all engines created new for this run
     orchestrator, resolved_config = build_platform(config, event_log=event_log)
@@ -192,7 +243,10 @@ def run_backtest(
     }
 
     if verbose:
-        _print_backtest_summary(result, spec_path)
+        # When use_active_dir=True we have no spec_path; surface the active id instead.
+        display = (Path(ALPHA_ACTIVE_DIR) / SESSION["active_alpha_id"]
+                   if use_active_dir else spec_path)
+        _print_backtest_summary(result, display)
 
     return result
 
@@ -259,18 +313,49 @@ def _print_backtest_summary(result: dict, spec_path) -> None:
 # Convenience command
 def BACKTEST(alpha_id: str, event_log: InMemoryEventLog | None = None, **kwargs) -> dict:
     """
-    Run a full backtest for a saved alpha.
+    Run a full backtest for a saved alpha (explicit-spec ingress).
 
     Usage:
         result = BACKTEST("my_alpha")
         result = BACKTEST("my_alpha", event_log=LOAD("AAPL","2026-01-15"))
         result = BACKTEST("my_alpha", config_overrides={"cost_stress_multiplier": 1.5})
+
+    See RUN_ACTIVE() to backtest the currently adopted alpha via the
+    production discovery path (alpha_spec_dir).
     """
     event_log = event_log or SESSION.get("event_log")
     assert event_log is not None, "No event_log in session. Call LOAD() first."
     spec_path = os.path.join(ALPHA_DEV_DIR, alpha_id, f"{alpha_id}.alpha.yaml")
     assert os.path.exists(spec_path), f"Alpha not found: {spec_path}"
     return run_backtest(spec_path, event_log, **kwargs)
+
+
+def RUN_ACTIVE(event_log: InMemoryEventLog | None = None, **kwargs) -> dict:
+    """
+    Backtest the currently adopted alpha via the PRODUCTION discovery path.
+
+    Configures alpha_spec_dir = ALPHA_ACTIVE_DIR/<active_alpha_id> and lets
+    bootstrap._load_alphas scan it — exactly what scripts/run_backtest.py
+    does with `platform.yaml`'s alpha_spec_dir field on the local side.
+
+    This is the closing edge of the autonomy loop:
+        MUTATE → ADOPT (auto) → RUN_ACTIVE → backtest the live spec
+
+    Usage:
+        spec   = MUTATE(parent, "perturb_param", seed=1)   # auto-ADOPTs
+        result = RUN_ACTIVE()                              # via alpha_spec_dir
+
+    Returns the same dict run_backtest() does, including all three hashes.
+    """
+    event_log = event_log or SESSION.get("event_log")
+    assert event_log is not None, "No event_log in session. Call LOAD() first."
+    aid = SESSION.get("active_alpha_id")
+    assert aid, (
+        "No active alpha. Call ADOPT(spec) first (Prompt 6) — or any "
+        "MUTATE/RECOMBINE/EVOLVE auto-ADOPTs."
+    )
+    return run_backtest(spec_path=None, event_log=event_log,
+                        use_active_dir=True, **kwargs)
 
 
 # -------------------------------------------------------------------
@@ -343,9 +428,111 @@ def SELFCHECK(alpha_id: str, event_log: InMemoryEventLog | None = None,
         "parity_hash": hashes[0][2],
     }
 
+# -------------------------------------------------------------------
+# SELFCHECK_ADOPTION — ingress-path equivalence enforcement.
+#
+# Without this, Grok's backtest path (alpha_specs=[spec_path]) and the
+# local platform's path (alpha_spec_dir scan) are observably distinct
+# code branches inside bootstrap._load_alphas. They SHOULD produce
+# identical results because they both end at AlphaLoader.load(), but
+# "should" is not "verified". This check converts the assertion into
+# evidence on every adoption.
+#
+# Procedure:
+#   1. Run backtest via explicit-spec ingress on the supplied spec.
+#   2. Run backtest via alpha_spec_dir ingress on the SAME spec
+#      (after a transient ADOPT).
+#   3. Assert pnl_hash and config_hash are bit-identical.
+#
+# A failure here is a defect — most likely cause is a config field that
+# differs between the two _dc_replace branches in _load_platform_config.
+# -------------------------------------------------------------------
+def SELFCHECK_ADOPTION(spec_path: str | Path,
+                       event_log: InMemoryEventLog | None = None,
+                       **kwargs) -> dict:
+    """
+    Prove that explicit-spec ingress and alpha_spec_dir ingress yield
+    bit-identical pnl_hash + config_hash for the same spec.
+
+    Closes the parity asymmetry between Grok's TEST/EXPLORE path and the
+    local platform's `alpha_spec_dir` discovery path. Run once after any
+    change to _load_platform_config or to bootstrap._load_alphas.
+    """
+    event_log = event_log or SESSION.get("event_log")
+    assert event_log is not None, "No event_log in session. Call LOAD() first."
+    spec_path = Path(spec_path)
+    assert spec_path.exists(), f"Spec not found: {spec_path}"
+
+    # Need ADOPT (Prompt 6) to populate ALPHA_ACTIVE_DIR.
+    assert "ADOPT" in globals(), (
+        "ADOPT not loaded — paste Prompt 6 first. SELFCHECK_ADOPTION needs "
+        "ADOPT to populate ALPHA_ACTIVE_DIR for the discovery-path leg."
+    )
+
+    print(f"\n{'='*60}")
+    print(f"SELFCHECK_ADOPTION: {spec_path.name}")
+    print(f"{'='*60}")
+
+    # Snapshot pre-existing active state so we can restore it afterwards.
+    prior_active = SESSION.get("active_alpha_id")
+
+    # Leg A — explicit-spec ingress (TEST/BACKTEST default).
+    a = run_backtest(spec_path, event_log, verbose=False, **kwargs)
+    print(f"  explicit-spec   trades={a['trade_count']:5d}  "
+          f"pnl={a['pnl_hash'][:12]}  cfg={a['config_hash'][:12]}")
+
+    # Leg B — alpha_spec_dir ingress (RUN_ACTIVE / scripts/run_backtest.py).
+    spec_dict = _yaml_safe_load_path(spec_path)
+    ADOPT(spec_dict, source="SELFCHECK_ADOPTION")
+    b = run_backtest(spec_path=None, event_log=event_log, verbose=False,
+                     use_active_dir=True, **kwargs)
+    print(f"  alpha_spec_dir  trades={b['trade_count']:5d}  "
+          f"pnl={b['pnl_hash'][:12]}  cfg={b['config_hash'][:12]}")
+
+    # Restore prior active state — SELFCHECK_ADOPTION must not leak.
+    if prior_active is None:
+        SESSION["active_alpha_id"] = None
+    # (We deliberately do NOT remove the new active dir; ADOPT's atomic-swap
+    #  semantics already replaced whatever was there, and the user can ADOPT
+    #  again to re-pin their intended live spec.)
+
+    pnl_ok    = (a["pnl_hash"]    == b["pnl_hash"])
+    config_ok = (a["config_hash"] == b["config_hash"])
+    trades_ok = (a["trade_count"] == b["trade_count"])
+
+    print(f"  pnl_hash    match: {'OK' if pnl_ok    else 'FAIL'}")
+    print(f"  config_hash match: {'OK' if config_ok else 'FAIL'}")
+    print(f"  trade_count match: {'OK' if trades_ok else 'FAIL'}")
+    print(f"  Ingress-path equivalence: {'PASS' if (pnl_ok and config_ok) else 'FAIL'}")
+    print(f"{'='*60}")
+
+    assert pnl_ok and config_ok, (
+        f"SELFCHECK_ADOPTION FAILED — Grok's ingress paths diverge for the same spec.\n"
+        f"  explicit-spec:   pnl={a['pnl_hash']}  cfg={a['config_hash']}\n"
+        f"  alpha_spec_dir:  pnl={b['pnl_hash']}  cfg={b['config_hash']}\n"
+        f"Most likely cause: _load_platform_config branches differ in a config "
+        f"field. Diff `a['config_snapshot']` vs `b['config_snapshot']`."
+    )
+    return {
+        "explicit_pnl_hash":    a["pnl_hash"],
+        "active_pnl_hash":      b["pnl_hash"],
+        "explicit_config_hash": a["config_hash"],
+        "active_config_hash":   b["config_hash"],
+        "match":                True,
+    }
+
+
+def _yaml_safe_load_path(path: Path) -> dict:
+    """Load a YAML file as a dict (helper for SELFCHECK_ADOPTION)."""
+    with open(path, "r") as f:
+        return yaml.safe_load(f)
+
+
 print("Backtest Execution module: ACTIVE")
-print("BACKTEST('alpha_id') runs the full repo pipeline via build_platform()")
+print("BACKTEST('alpha_id') runs the full repo pipeline via build_platform() (explicit-spec ingress)")
+print("RUN_ACTIVE() runs the currently ADOPTed alpha via alpha_spec_dir (production-discovery ingress)")
 print("SELFCHECK('alpha_id') asserts deterministic replay (Inv-5)")
+print("SELFCHECK_ADOPTION(spec_path) asserts explicit-spec ≡ alpha_spec_dir ingress paths")
 print("Config loaded from: PLATFORM_YAML_PATH (set in Prompt 1)")
 ```
 

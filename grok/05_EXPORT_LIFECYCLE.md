@@ -146,11 +146,32 @@ def EXPORT(
     # --- Update signal registry ---
     _registry_upsert(signal_id, alpha_id, report, fingerprint)
 
+    # --- Promote to live spec via the production-discovery ingress ---
+    # EXPORT semantically means "this alpha is the new champion". Mirror
+    # that on the platform side by writing the spec to ALPHA_ACTIVE_DIR
+    # so RUN_ACTIVE() (Prompt 4) immediately discovers it through the
+    # same alpha_spec_dir code path scripts/run_backtest.py uses.
+    # If ADOPT is not loaded (Prompt 6 not pasted yet) we no-op with a
+    # warning rather than failing — EXPORT must remain useful even when
+    # the autonomy module is absent.
+    if "ADOPT" in globals():
+        try:
+            ADOPT(spec_dict, alpha_id=alpha_id, source="EXPORT")
+        except Exception as e:
+            print(f"  WARN: post-EXPORT ADOPT failed: {e}. "
+                  f"RUN_ACTIVE() will use the prior live alpha until you re-ADOPT.")
+    else:
+        print(f"  NOTE: ADOPT not loaded (paste Prompt 6) — exported alpha is "
+              f"NOT promoted to ALPHA_ACTIVE_DIR; the platform's discovery path "
+              f"won't see it until you ADOPT(spec) manually.")
+
     print(f"\nEXPORT COMPLETE: {export_dir}")
     print(f"  pnl_hash:    {(oos_pnl_hash or 'none')[:16]}...")
     print(f"  config_hash: {(oos_config_hash or 'none')[:16]}...")
     print(f"  parity_hash: {(oos_parity_hash or 'none')[:16]}...")
     print(f"  Recommendation: {report.get('verdict','?')}")
+    if SESSION.get("active_alpha_id") == alpha_id:
+        print(f"  Live spec:   ALPHA_ACTIVE_DIR/{alpha_id}/ (RUN_ACTIVE() picks this up)")
     print(f"\n  Next step: copy files to local repo and run parity verification.")
     print(f"  See: {export_dir}/README_deploy.txt")
     return export_dir
@@ -209,10 +230,17 @@ documented Polygon data substitution.
 
 STEP 4 — Promote to paper trading
 -----------------------------------
-# Add to platform.yaml:
-alpha_spec_dir: alphas/{alpha_id}
-# Then run: python scripts/run_backtest.py ...
-# After 30 days paper: evaluate for LIVE promotion
+# In Grok this exact alpha was already auto-ADOPTed at EXPORT time:
+#     ALPHA_ACTIVE_DIR/{alpha_id}/{alpha_id}.alpha.yaml
+# Calling RUN_ACTIVE() in the REPL will now backtest it through the
+# same alpha_spec_dir discovery path the local platform uses.
+#
+# To make the same alpha live in the LOCAL repo, edit platform.yaml:
+#     alpha_spec_dir: alphas/{alpha_id}
+# Then run:
+#     python scripts/run_backtest.py --config platform.yaml ...
+#
+# After 30 days paper: evaluate for LIVE promotion (mode: PAPER → LIVE).
 """
 ```
 
