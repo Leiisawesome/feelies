@@ -1,31 +1,34 @@
-# Prompt 6 — EVOLUTION MODULE (autonomous mutation, exploration, evolution)
+# MODULE 6 — EVOLUTION (autonomous mutation, exploration, evolution)
 
-> Paste this *after* Prompt 5 (Export & Lifecycle).
->
-> This module is what makes the Grok REPL a *system* rather than a manual research notebook.
-> It closes the autonomy loop required by design goal 3:
->
->     hypothesis → alpha → backtest → mutation → next-generation alpha
->
-> Every mutation is **typed** (named operator), **provenance-tagged** (parent_id + mutation_type),
-> **MHT-corrected** (Holm over the family), and **promotion-gated** (TEST verdict + selfcheck).
->
-> The module relies on:
->   • assemble_alpha / FEATURE_LIBRARY / MECHANISM_CATALOG / formalize_hypothesis  (Prompt 3)
->   • TEST / SELFCHECK / falsification_battery / holm_correction / compute_ic     (Prompt 4)
->   • EXPORT / _registry_upsert                                                    (Prompt 5)
->   • ALPHA_ACTIVE_DIR / SESSION["active_alpha_id"]                                (Prompt 1)
->
-> **Adoption loop.** Every validated child (MUTATE, RECOMBINE, EVOLVE champion) is
-> automatically `ADOPT`ed: the spec is written to
-> `ALPHA_ACTIVE_DIR/<alpha_id>/<alpha_id>.alpha.yaml` and `SESSION["active_alpha_id"]`
-> is flipped. The next `RUN_ACTIVE()` (or any backtest with `use_active_dir=True`)
-> discovers the freshly generated alpha through the production `alpha_spec_dir`
-> code path — the same path `scripts/run_backtest.py` uses when `platform.yaml`
-> points at `alphas/<id>/`. This closes the autonomy loop: a generated alpha
-> becomes "what the platform sees" without manual file copying.
->
-> No new dependency. No invented features. Only operators that compose existing repo primitives.
+## ACTIVATION DIRECTIVE
+
+The Evolution module activates with this block. It closes the autonomy loop:
+
+    hypothesis → alpha → backtest → mutation → next-generation alpha
+
+Every mutation is **typed** (named operator), **provenance-tagged**
+(`parent_id` + `mutation_type`), **MHT-corrected** (Holm over the family),
+and **promotion-gated** (TEST verdict + selfcheck).
+
+This module composes symbols defined in earlier modules:
+
+- `assemble_alpha` / `FEATURE_LIBRARY` / `MECHANISM_CATALOG` / `formalize_hypothesis`  (Module 3)
+- `TEST` / `SELFCHECK` / `falsification_battery` / `holm_correction` / `compute_ic`  (Module 4)
+- `EXPORT` / `_registry_upsert`  (Module 5)
+- `ALPHA_ACTIVE_DIR` / `SESSION["active_alpha_id"]`  (Module 1)
+
+**Adoption loop.** Every validated child (MUTATE, RECOMBINE, EVOLVE
+champion) is automatically `ADOPT`ed: the spec is written to
+`ALPHA_ACTIVE_DIR/<alpha_id>/<alpha_id>.alpha.yaml` and
+`SESSION["active_alpha_id"]` is flipped. The next `RUN_ACTIVE()` (or any
+backtest with `use_active_dir=True`) discovers the freshly generated alpha
+through the production `alpha_spec_dir` code path — the same path
+`scripts/run_backtest.py` uses when `platform.yaml` points at `alphas/<id>/`.
+A generated alpha becomes "what the platform sees" without manual file
+copying.
+
+No new dependency. No invented features. Only operators that compose
+existing repo primitives.
 
 ---
 

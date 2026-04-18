@@ -1,17 +1,18 @@
-# PROMPT 5 — EXPORT & LIFECYCLE: PARITY VERIFICATION, REGISTRY & ARCHIVE
-
-> **Paste this entire file as one block. Wait for `Export & Lifecycle module: ACTIVE`, then call `INITIALIZE("your_api_key")`.**
+# MODULE 5 — EXPORT & LIFECYCLE: PARITY VERIFICATION, REGISTRY & ARCHIVE
 
 ## ACTIVATION DIRECTIVE
 
-The Export & Lifecycle module is now active. This module:
+The Export & Lifecycle module activates with this block. This module:
 
 1. Exports validated alphas as copy-paste-ready packages for the local repo
 2. Defines the parity verification contract (Grok hash vs `scripts/run_backtest.py` hash)
 3. Manages the signal registry and alpha lifecycle
 4. Maintains the research archive
 
-**Prerequisites: Prompts 1–4 must have been executed successfully.**
+`EXPORT()` auto-promotes the exported alpha to `ALPHA_ACTIVE_DIR` only when
+Module 6 is loaded (`ADOPT` is defined there). Without Module 6, `EXPORT()`
+still produces the deployment package and warns that the active-directory
+promotion was skipped.
 
 ---
 
@@ -571,6 +572,8 @@ print("REPORT(), alpha lifecycle state machine: ACTIVE")
 ```python
 def STATUS() -> None:
     """Report all module states and current session variables."""
+    # Module sentinels — loaded by checking for a function each module exports.
+    _m6 = "EVOLVE" in globals()
     print(f"\n{'='*60}")
     print("MICROSTRUCTURE RESEARCH LABORATORY V2 — STATUS")
     print(f"{'='*60}")
@@ -579,6 +582,7 @@ def STATUS() -> None:
     print(f"  Module 3 (Alpha Development): ACTIVE")
     print(f"  Module 4 (Backtest Exec):     ACTIVE")
     print(f"  Module 5 (Export/Lifecycle):  ACTIVE")
+    print(f"  Module 6 (Evolution):         {'ACTIVE' if _m6 else 'NOT YET LOADED — paste Prompt 6'}")
     print()
     print(f"  API key set:      {'YES' if SESSION.get('api_key') else 'NO — run INITIALIZE()'}")
     print(f"  Loaded symbols:   {SESSION.get('loaded_symbols', [])}")
@@ -586,7 +590,8 @@ def STATUS() -> None:
     n_events = len(list(SESSION["event_log"].replay())) if SESSION.get("event_log") else 0
     print(f"  Event log:        {n_events} events")
     print(f"  Generation:       {SESSION.get('generation', 0)}")
-    print(f"  Active alpha:     {SESSION.get('active_alpha', 'none')}")
+    print(f"  Active alpha id:  {SESSION.get('active_alpha_id') or 'none'}")
+    print(f"  Active alpha:     {SESSION.get('active_alpha', 'none')}  (legacy dev handle)")
     print()
 
     # Registry summary
@@ -609,20 +614,26 @@ def STATUS() -> None:
 print("STATUS() command: ACTIVE — full system status")
 print()
 print("=" * 60)
-print("ALL 5 MODULES ACTIVE — LABORATORY READY")
+print("Export & Lifecycle module: ACTIVE")
+print("Modules 1–5 loaded. Paste Prompt 6 (Evolution) next, then INITIALIZE().")
 print("=" * 60)
 print()
-print("Commands available:")
-print("  INITIALIZE(api_key)        — set API key")
-print("  LOAD(symbols, start, end)  — fetch RTH data")
-print("  TEST(hypothesis, spec, ...) — directed hypothesis test")
-print("  BACKTEST(alpha_id)          — single full backtest")
-print("  EXPORT(signal_id, report, spec) — produce deployable package")
-print("  VERIFY(signal_id, local_hash)   — parity verification")
-print("  REGISTRY()                  — display signal registry")
-print("  REPORT(generation)          — research summary")
-print("  RETIRE(signal_id, reason)   — mark retired")
-print("  STATUS()                    — system status")
+print("Commands available so far:")
+print("  INITIALIZE(api_key)              — set API key")
+print("  STATUS()                         — full system status")
+print("  LOAD(symbols, start, end)        — fetch RTH data via PolygonFetcher")
+print("  TEST(hypothesis, spec, ...)      — 7-step directed hypothesis test")
+print("  BACKTEST(alpha_id)               — single full backtest (explicit-spec)")
+print("  RUN_ACTIVE()                     — backtest the currently ADOPTed alpha")
+print("                                     (requires Prompt 6)")
+print("  SELFCHECK(alpha_id)              — Inv-5 deterministic-replay check")
+print("  SELFCHECK_ADOPTION(spec_path)    — explicit-spec ≡ alpha_spec_dir ingress")
+print("                                     (requires Prompt 6)")
+print("  EXPORT(signal_id, report, spec)  — produce deployable package")
+print("  VERIFY(signal_id, pnl_hash, cfg) — three-hash parity verification")
+print("  REGISTRY()                       — display signal registry")
+print("  REPORT(generation)               — research summary")
+print("  RETIRE(signal_id, reason)        — mark retired")
 ```
 
 ---
@@ -708,6 +719,4 @@ Archive:  /home/user/experiments/generation_XXX_{alpha_id}/
 Lifecycle: RESEARCH → PAPER → LIVE → QUARANTINED → DECOMMISSIONED
 Parity:    Three-hash contract — pnl_hash, config_hash, parity_hash
            (canonical definition in Section 1)
-
-Awaiting Evolution activation (Prompt 6).
 ```

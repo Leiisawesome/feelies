@@ -1,18 +1,14 @@
-# PROMPT 3 — ALPHA DEVELOPMENT: SCHEMA, FEATURES & HYPOTHESES
-
-> **Paste this entire file as one block. Wait for `Alpha Development module: ACTIVE` before pasting Prompt 4.**
+# MODULE 3 — ALPHA DEVELOPMENT: SCHEMA, FEATURES & HYPOTHESES
 
 ## ACTIVATION DIRECTIVE
 
-The Alpha Development module is now active. This module defines:
+The Alpha Development module activates with this block. This module defines:
 
 1. The `.alpha.yaml` schema as enforced by `AlphaLoader` from repo source
 2. The feature computation and signal evaluation protocols
 3. A library of reusable feature modules
 4. A mechanism catalog and hypothesis workflow
 5. Validation using the repo's actual `AlphaLoader`
-
-**Prerequisite: Prompts 1 and 2 must have been executed successfully.**
 
 ---
 
@@ -418,6 +414,7 @@ def PRIORITIZE(mechanism_id: str) -> None:
 
 print("Mechanism catalog: 10 entries (M001–M010)")
 print("PRIORITIZE('M001') to direct the factory")
+print("Alpha Development module: ACTIVE")
 ```
 
 ---
@@ -628,6 +625,4 @@ Feature library:   6 modules (spread_bps, microprice, order_imbalance,
 Mechanism catalog: 10 entries (M001–M010)
 Schema version:    1.0 (enforced by AlphaLoader)
 Parameter format:  range: [lo, hi]  (NOT min/max — AlphaLoader reads only 'range')
-
-Awaiting Backtest Execution activation (Prompt 4).
 ```

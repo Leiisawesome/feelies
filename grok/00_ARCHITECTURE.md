@@ -76,10 +76,35 @@ After setup, the PI issues commands:
   AUDIT <signal_id>                → post-promotion CPCV+IC re-run; stamp audit_status in registry
   LINEAGE <signal_id>              → walk the registry's parent_id chain + IC stability summary
   EXPORT <signal_id>               → produce .alpha.yaml + .py + parity_fingerprint.json
-                                     (also auto-ADOPTs the exported alpha as the live spec)
+                                     (also auto-ADOPTs the exported alpha as the live spec
+                                     when Prompt 6 is loaded; warns and continues otherwise)
   VERIFY <signal_id> <pnl_hash>    → compare Grok vs scripts/run_backtest.py (3-hash contract)
                 <config_hash>
 ```
+
+---
+
+## PI Workflow (paste order + success signals)
+
+The prompts are pasted once each, in numeric order, into a single Grok REPL
+session. After each paste, wait for the listed sentinel string in Grok's
+output before pasting the next file. If a cell fails, fix the error before
+continuing — every later prompt depends on symbols defined earlier.
+
+| Step | Action                       | Sentinel to wait for                  |
+|------|------------------------------|---------------------------------------|
+| 1    | Paste `01_BOOTSTRAP.md`      | `SOURCE BOOTSTRAP: OK`                |
+| 2    | Paste `02_DATA_INGESTION.md` | `Data Ingestion module: ACTIVE`       |
+| 3    | Paste `03_ALPHA_DEVELOPMENT.md` | `Alpha Development module: ACTIVE` |
+| 4    | Paste `04_BACKTEST_EXECUTION.md` | `Backtest Execution module: ACTIVE` |
+| 5    | Paste `05_EXPORT_LIFECYCLE.md` | `Export & Lifecycle module: ACTIVE` |
+| 6    | Paste `06_EVOLUTION.md`      | `Evolution module: ACTIVE`            |
+| 7    | Call `INITIALIZE("<polygon_api_key>")` | All 6 modules report `ACTIVE` |
+
+Cell 1 of Prompt 1 fetches a ~3 MB ZIP over HTTPS; expect 10–30 seconds.
+`RUN_ACTIVE()` and `SELFCHECK_ADOPTION()` from Prompt 4 require Prompt 6 to
+be pasted (they call `ADOPT`, defined in Prompt 6). Every other Prompt 4
+command works standalone.
 
 ---
 

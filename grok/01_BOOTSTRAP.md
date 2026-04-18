@@ -1,29 +1,9 @@
-# PROMPT 1 — BOOTSTRAP: SOURCE DOWNLOAD & SYSTEM IDENTITY
+# MODULE 1 — BOOTSTRAP: SOURCE DOWNLOAD & SYSTEM IDENTITY
 
-## HOW TO USE THESE PROMPTS
-
-**Paste each prompt as a complete block — do not extract individual cells.**
-
-Grok reads the narrative text as instructions and executes the Python code fences
-sequentially in its persistent kernel. Variables defined in Cell 1 are in scope for
-Cell 2, and so on. You never need to isolate cells manually.
-
-**Recommended workflow (all 5 prompts, in order):**
-
-| Step | Action | Success signal to wait for |
-|---|---|---|
-| 1 | Paste Prompt 1 (this file) in full | `SOURCE BOOTSTRAP: OK` |
-| 2 | Paste Prompt 2 in full | `Data Ingestion module: ACTIVE` |
-| 3 | Paste Prompt 3 in full | `Alpha Development module: ACTIVE` |
-| 4 | Paste Prompt 4 in full | `Backtest Execution module: ACTIVE` |
-| 5 | Paste Prompt 5 in full | `Export & Lifecycle module: ACTIVE` |
-| 6 | Paste Prompt 6 in full | `Evolution module: ACTIVE` |
-| 7 | Call `INITIALIZE("your_polygon_api_key")` | All 6 modules: ACTIVE |
-
-> **Cell 1 of this prompt fetches a ~3MB ZIP over HTTPS. It may take 10–30 seconds.
-> Wait for `SOURCE BOOTSTRAP: OK` before pasting Prompt 2.**
-
-If any cell fails, fix the error before continuing — later prompts depend on this one.
+This is the first activation block of the Microstructure Research Laboratory.
+Execute every code cell in this file sequentially in the persistent Python
+kernel. Variables defined in Cell 1 remain in scope for Cells 2–5 and for
+every subsequent module.
 
 ---
 
@@ -140,7 +120,6 @@ from feelies.services.regime_engine import HMM3StateFractional, get_regime_engin
 from feelies.alpha.loader import AlphaLoader
 from feelies.alpha.registry import AlphaRegistry
 from feelies.storage.memory_event_log import InMemoryEventLog
-from feelies.kernel.orchestrator import Orchestrator
 import dataclasses
 
 # Verify it is repo source, not a local reimplementation
@@ -231,14 +210,15 @@ print("Registry:", REGISTRY_PATH)
 
 ---
 
-## CELL 5 — INITIALIZE command definition (call it AFTER pasting all 5 prompts)
+## CELL 5 — INITIALIZE command definition
 
-Paste and run this cell now — it only *defines* the function.
-Call `INITIALIZE("your_polygon_api_key")` after you have pasted Prompts 1–5.
+This cell only *defines* the `INITIALIZE` function. The PI calls it once,
+after all six prompts have been pasted, to bind the Polygon API key and
+confirm every module reports `ACTIVE`.
 
 ```python
 def INITIALIZE(polygon_api_key: str) -> None:
-    """Set API key and confirm all modules are active. Call after pasting all 5 prompts."""
+    """Set API key and confirm all modules are active. Call after pasting all 6 prompts."""
     SESSION["api_key"] = polygon_api_key
 
     # Detect which modules are loaded by checking for their sentinel names
@@ -422,21 +402,3 @@ for why the phenomenon persists are not pursued.
 - Use vague TA language without formal definition
 - Report raw Sharpe without DSR adjustment
 - Use look-ahead information of any kind
-
----
-
-## LAB STATUS
-
-```
-Microstructure Research Laboratory V2: INITIALIZED
-Source: github.com/Leiisawesome/feelies (ZIP bootstrap)
-Single source of truth: repo code
-Allowed deviation: MassiveHistoricalIngestor → PolygonFetcher
-
-Module 1 (Bootstrap):         ACTIVE
-Module 2 (Data Ingestion):    AWAITING PROMPT 2
-Module 3 (Alpha Development): AWAITING PROMPT 3
-Module 4 (Backtest):          AWAITING PROMPT 4
-Module 5 (Export/Lifecycle):  AWAITING PROMPT 5
-Module 6 (Evolution):         AWAITING PROMPT 6
-```

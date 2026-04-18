@@ -1,17 +1,15 @@
-# PROMPT 2 — DATA INGESTION: POLYGON RTH FETCHER
-
-> **Paste this entire file as one block. Wait for `Data Ingestion module: ACTIVE` before pasting Prompt 3.**
+# MODULE 2 — DATA INGESTION: POLYGON RTH FETCHER
 
 ## ACTIVATION DIRECTIVE
 
-The Data Ingestion module is now active. This is the **single allowed substitution**
-from the repo pipeline. It replaces `MassiveHistoricalIngestor` with a Grok-native
-Polygon REST fetcher that emits **identical** `NBBOQuote` / `Trade` dataclasses.
+The Data Ingestion module activates with this block. This is the **single
+allowed substitution** from the repo pipeline. It replaces
+`MassiveHistoricalIngestor` with a Grok-native Polygon REST fetcher that
+emits **identical** `NBBOQuote` / `Trade` dataclasses.
 
-Everything downstream (feature engine, backtest router, cost model, orchestrator)
-sees the same canonical events it would see from the repo's ingestor.
-
-**Prerequisite: Prompt 1 must have been executed successfully.**
+Everything downstream (feature engine, backtest router, cost model,
+orchestrator) sees the same canonical events it would see from the repo's
+ingestor.
 
 ---
 
@@ -505,6 +503,4 @@ RTH filtering:        Handled by orchestrator internally (not at ingest layer)
 Cache:                /home/user/data_cache/{symbol}_{date}_{quotes|trades}.parquet
 Resequencing:         Matches scripts/run_backtest.py _resequence() logic
 Output:               InMemoryEventLog (from repo source)
-
-Awaiting Alpha Development activation (Prompt 3).
 ```

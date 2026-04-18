@@ -1,18 +1,19 @@
-# PROMPT 4 — BACKTEST EXECUTION: PIPELINE, STATISTICS & REGIME ANALYSIS
-
-> **Paste this entire file as one block. Wait for `Backtest Execution module: ACTIVE` before pasting Prompt 5.**
+# MODULE 4 — BACKTEST EXECUTION: PIPELINE, STATISTICS & REGIME ANALYSIS
 
 ## ACTIVATION DIRECTIVE
 
-The Backtest Execution module is now active. This module runs every backtest
-through the repo's actual pipeline — `build_platform()` from `feelies.bootstrap`
-— with no invented fill model, no invented cost constants, no invented risk limits.
+The Backtest Execution module activates with this block. This module runs
+every backtest through the repo's actual pipeline — `build_platform()` from
+`feelies.bootstrap` — with no invented fill model, no invented cost
+constants, no invented risk limits.
 
-All execution behavior comes from repo source. The only input Grok provides is:
-a populated `InMemoryEventLog` (from Prompt 2) and a valid `.alpha.yaml` spec
-(from Prompt 3).
+All execution behavior comes from repo source. The only input the kernel
+provides is a populated `InMemoryEventLog` (from Module 2) and a valid
+`.alpha.yaml` spec (from Module 3).
 
-**Prerequisites: Prompts 1, 2, and 3 must have been executed successfully.**
+`RUN_ACTIVE()` and `SELFCHECK_ADOPTION()` defined here both call `ADOPT`,
+which is defined in Module 6. They will raise `NameError` until Module 6 is
+loaded; every other command in this module is fully standalone.
 
 ---
 
@@ -1233,7 +1234,7 @@ print("Regime sensitivity, latency sweep, TC sensitivity: ACTIVE")
 
 ---
 
-## CELL 5 — Full TEST command (5-step directed hypothesis test)
+## CELL 5 — Full TEST command (7-step directed hypothesis test)
 
 ```python
 def TEST(
@@ -1284,7 +1285,7 @@ def TEST(
     report = {"hypothesis": hypothesis, "alpha_id": alpha_id, "steps": {}}
 
     # Step 1: Validate spec
-    print("\n[Step 1/5] Validating alpha spec via AlphaLoader...")
+    print("\n[Step 1/7] Validating alpha spec via AlphaLoader...")
     if not validate_alpha(spec, regime_engine):
         report["verdict"] = "INVALID_SPEC"
         return report
@@ -1292,7 +1293,7 @@ def TEST(
     report["steps"]["validation"] = {"passed": True, "spec_path": spec_path}
 
     # Step 2: In-sample backtest
-    print("\n[Step 2/5] In-sample backtest (train window)...")
+    print("\n[Step 2/7] In-sample backtest (train window)...")
     train_log = LOAD(symbols, train_dates[0], train_dates[-1])
     train_result = run_backtest(spec_path, train_log, regime_engine=regime_engine,
                                 verbose=True)
@@ -1306,7 +1307,7 @@ def TEST(
     }
 
     # Step 3: OOS backtest
-    print("\n[Step 3/5] OOS backtest (sealed evaluation)...")
+    print("\n[Step 3/7] OOS backtest (sealed evaluation)...")
     oos_log    = LOAD(symbols, oos_dates[0], oos_dates[-1])
     oos_result = run_backtest(spec_path, oos_log, regime_engine=regime_engine,
                               verbose=True)
@@ -1437,7 +1438,7 @@ def _save_experiment(report: dict, alpha_id: str) -> str:
     print(f"  Saved: {path}")
     return exp_dir
 
-print("TEST() command: ACTIVE — runs 5-step directed hypothesis test")
+print("TEST() command: ACTIVE — runs 7-step directed hypothesis test")
 print("BACKTEST() command: ACTIVE — runs single full backtest")
 ```
 
@@ -1509,6 +1510,4 @@ Hashes:
   pnl_hash         SHA-256 over ordered trade sequence
   config_hash      PlatformConfig.snapshot().checksum
   parity_hash      SHA-256(pnl_hash + ":" + config_hash) — single comparator
-
-Awaiting Export & Lifecycle activation (Prompt 5).
 ```
