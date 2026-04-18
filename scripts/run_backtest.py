@@ -366,15 +366,27 @@ def _make_demo_quotes() -> list[NBBOQuote]:
 
 def run_demo() -> tuple[object, BusRecorder, IngestResult, PlatformConfig, str, str]:
     """Run the backtest with synthetic 8-tick data (no Massive API needed)."""
-    tmp_dir = tempfile.mkdtemp(prefix="feelies_demo_")
+    # Use a stable workspace name so consecutive --demo runs produce a
+    # bit-identical config snapshot. A randomised ``tempfile.mkdtemp()``
+    # path would leak into ``PlatformConfig.snapshot().checksum`` and
+    # break the parity-hash contract (audit A-DET-02 / B-PROMO-04).
+    # Combined with basename normalisation in ``PlatformConfig._to_dict``
+    # the absolute path is irrelevant; only the basename feeds the hash.
+    # The system temp dir is preferred over an in-repo location so that
+    # filesystem agents (e.g. OneDrive sync) cannot hold a lock on the
+    # workspace between back-to-back runs.
+    workspace = Path(tempfile.gettempdir()) / "feelies_demo_workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
     try:
-        alpha_dst = Path(tmp_dir) / "trade_cluster_drift"
-        shutil.copytree(_ALPHA_SRC_DIR, alpha_dst)
+        alpha_dst = workspace / "trade_cluster_drift"
+        if alpha_dst.exists():
+            shutil.rmtree(alpha_dst, ignore_errors=True)
+        shutil.copytree(_ALPHA_SRC_DIR, alpha_dst, dirs_exist_ok=True)
 
         config = PlatformConfig(
             symbols=frozenset(["AAPL"]),
             mode=OperatingMode.BACKTEST,
-            alpha_spec_dir=Path(tmp_dir),
+            alpha_spec_dir=workspace,
             regime_engine=None,
             account_equity=100_000.0,
             risk_max_position_per_symbol=50_000,
@@ -404,7 +416,9 @@ def run_demo() -> tuple[object, BusRecorder, IngestResult, PlatformConfig, str, 
 
         return orchestrator, recorder, ingest_result, config, "AAPL", "DEMO (synthetic)"
     finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+        # Best-effort cleanup. Leftover state is harmless: the next
+        # run wipes ``alpha_dst`` before recopying.
+        shutil.rmtree(workspace, ignore_errors=True)
 
 
 # ── Report formatting helpers ────────────────────────────────────────
@@ -464,6 +478,7 @@ def generate_report(
     symbol_str: str,
     date_range: str,
     day_sources: list[DaySource] | None = None,
+    data_version: str | None = None,
 ) -> str:
     """Build the full backtest report string."""
     from feelies.storage.trade_journal import TradeRecord
@@ -766,12 +781,19 @@ def generate_report(
     pnl_hash = compute_parity_hash(orchestrator)
     config_hash = compute_config_hash(config)
     parity_hash = compute_combined_parity_hash(pnl_hash, config_hash)
+    resolved_data_version = data_version if data_version is not None else "unknown"
+    artifact_id = compute_artifact_id(
+        orchestrator, config, data_version=resolved_data_version,
+    )
     lines.append(_divider())
     lines.append(_section("Parity"))
     lines.append(_kv("Trade count", f"{len(records)}"))
     lines.append(_kv("pnl_hash    (trades)", pnl_hash))
     lines.append(_kv("config_hash (cfg)",    config_hash))
     lines.append(_kv("parity_hash (both)",   parity_hash))
+    lines.append(_kv("engine_version",       ENGINE_VERSION))
+    lines.append(_kv("data_version",         resolved_data_version))
+    lines.append(_kv("artifact_id (B-PROMO-04)", artifact_id))
 
     lines.append("")
     lines.append(_RULE_HEAVY)
@@ -826,6 +848,74 @@ def compute_combined_parity_hash(pnl_hash: str, config_hash: str) -> str:
     in ``grok/04_BACKTEST_EXECUTION.md``.
     """
     return hashlib.sha256(f"{pnl_hash}:{config_hash}".encode("utf-8")).hexdigest()
+
+
+# Bumped whenever the engine's externally-observable contract changes
+# (event schema, fill semantics, hash format). Promotion artifacts produced
+# under different ``ENGINE_VERSION`` strings are not directly comparable.
+ENGINE_VERSION = "0.1.0"
+
+
+def compute_artifact_id(
+    orchestrator: object,
+    config: PlatformConfig,
+    *,
+    data_version: str,
+) -> str:
+    """Deterministic artifact id for the run (audit B-PROMO-04).
+
+    Combines four orthogonal axes that together identify a backtest run:
+
+      - ``strategy_version``: ``alpha_id@manifest.version`` for every
+        active alpha, sorted. Picks up code-level alpha changes.
+      - ``config_version``: the resolved ``PlatformConfig.version``
+        (the ``version:`` field of ``platform.yaml``).
+      - ``data_version``: caller-supplied identifier of the input
+        dataset. Demo mode hashes the static tick payload; live mode
+        encodes ``symbols + date range``.
+      - ``engine_version``: the ``ENGINE_VERSION`` constant above.
+
+    Same inputs produce the same id; any drift across consecutive
+    audits flags an unintentional change in the artifact contract.
+    """
+    registry = getattr(orchestrator, "_alpha_registry", None)
+    strategy_payload: list[str] = []
+    if registry is not None:
+        for aid in sorted(registry.alpha_ids()):
+            alpha = registry.get(aid)
+            strategy_payload.append(f"{aid}@{alpha.manifest.version}")
+
+    payload = json.dumps(
+        {
+            "strategy_version": strategy_payload,
+            "config_version": config.version,
+            "data_version": data_version,
+            "engine_version": ENGINE_VERSION,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _demo_data_version() -> str:
+    """Stable hash of the static demo tick payload."""
+    payload = json.dumps(_DEMO_TICKS, sort_keys=True, separators=(",", ":"))
+    return "demo:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def _live_data_version(symbols: list[str], date_range: str) -> str:
+    """Stable identifier for a live backtest's input dataset.
+
+    Encodes the (symbol set, date range) pair. Two runs over the same
+    universe and dates collide; a different universe or window does not.
+    """
+    payload = json.dumps(
+        {"symbols": sorted(symbols), "date_range": date_range},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return "live:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 # ── Verification checks ─────────────────────────────────────────────
@@ -934,6 +1024,7 @@ def main(argv: list[str] | None = None) -> int:
             orchestrator=orchestrator,
             symbol_str=symbol_str,
             date_range=date_range,
+            data_version=_demo_data_version(),
         )
         print(report)
 
@@ -1079,6 +1170,7 @@ def main(argv: list[str] | None = None) -> int:
         symbol_str=symbol_str,
         date_range=date_range,
         day_sources=day_sources,
+        data_version=_live_data_version(symbols, date_range),
     )
     dt = time.monotonic() - step_t
     print(f"  OK [{dt:.1f}s]", flush=True)

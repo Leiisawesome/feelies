@@ -159,17 +159,24 @@ class PlatformConfig:
         )
 
     def _to_dict(self) -> dict[str, Any]:
+        # Path-based fields are normalised to their basename before being
+        # folded into the snapshot. Absolute filesystem paths are
+        # environment metadata (per machine, per tempdir, per checkout
+        # location) and would otherwise leak into ``checksum``, breaking
+        # both two-run determinism (audit A-DET-02) and cross-machine
+        # reproducibility (audit B-PROMO-04). The basename still
+        # discriminates between distinct alpha bundles by name.
         return {
             "version": self.version,
             "author": self.author,
             "symbols": sorted(self.symbols),
             "mode": self.mode.name,
-            "alpha_spec_dir": str(self.alpha_spec_dir) if self.alpha_spec_dir else None,
-            "alpha_specs": [str(p) for p in self.alpha_specs],
+            "alpha_spec_dir": self.alpha_spec_dir.name if self.alpha_spec_dir else None,
+            "alpha_specs": sorted(p.name for p in self.alpha_specs),
             "parameter_overrides": self.parameter_overrides,
             "regime_engine": self.regime_engine,
-            "data_dir": str(self.data_dir) if self.data_dir else None,
-            "event_log_path": str(self.event_log_path) if self.event_log_path else None,
+            "data_dir": self.data_dir.name if self.data_dir else None,
+            "event_log_path": self.event_log_path.name if self.event_log_path else None,
             "risk_max_position_per_symbol": self.risk_max_position_per_symbol,
             "risk_max_gross_exposure_pct": self.risk_max_gross_exposure_pct,
             "risk_max_drawdown_pct": self.risk_max_drawdown_pct,

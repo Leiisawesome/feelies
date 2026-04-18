@@ -298,6 +298,89 @@ class TestPositionConservation:
         assert pos.quantity == expected_qty
 
 
+# ── PnL Decomposition ────────────────────────────────────────────────
+
+
+class TestPnLDecomposition:
+    """Property: cumulative realized PnL = sum of per-fill realized PnL deltas.
+
+    Closes the audit gap A-TEST-02 (testing-validation skill — PnL
+    decomposition invariant). For any sequence of buy/sell fills the
+    cumulative ``Position.realized_pnl`` reported by the position store
+    must equal the sum of the per-fill PnL deltas observed across that
+    sequence. Deltas use ``Decimal`` arithmetic so the invariant is
+    exact, not approximate.
+
+    Also asserts the per-fill semantics that opening a flat position or
+    scaling further into the prevailing side contributes zero realized
+    PnL — only sign-crossing (closing) fills realise PnL.
+    """
+
+    @given(
+        fills=st.lists(
+            st.tuples(
+                st.sampled_from(["BUY", "SELL"]),
+                st.integers(min_value=1, max_value=500),
+                st.integers(min_value=10_000, max_value=20_000),
+            ),
+            min_size=1, max_size=30,
+        )
+    )
+    @settings(max_examples=500, suppress_health_check=[HealthCheck.too_slow])
+    def test_pnl_decomposition_invariant(
+        self, fills: list[tuple[str, int, int]]
+    ) -> None:
+        from feelies.portfolio.memory_position_store import (
+            MemoryPositionStore,
+            _same_sign,
+        )
+
+        store = MemoryPositionStore()
+        prev_realized = Decimal("0")
+        per_fill_deltas: list[Decimal] = []
+        prev_qty = 0
+
+        for side_str, qty, price_cents in fills:
+            signed = qty if side_str == "BUY" else -qty
+            price = Decimal(price_cents) / Decimal("100")
+
+            store.update("AAPL", signed, price)
+            pos = store.get("AAPL")
+
+            delta = pos.realized_pnl - prev_realized
+            per_fill_deltas.append(delta)
+
+            opens_or_scales = (prev_qty == 0) or _same_sign(prev_qty, signed)
+            if opens_or_scales:
+                assert delta == Decimal("0"), (
+                    f"opening / scale-in fill realised PnL ({delta}) "
+                    f"prev_qty={prev_qty} signed={signed}"
+                )
+
+            prev_realized = pos.realized_pnl
+            prev_qty = pos.quantity
+
+        final = store.get("AAPL").realized_pnl
+        assert sum(per_fill_deltas, Decimal("0")) == final
+
+    def test_pnl_decomposition_round_trip_matches_textbook(self) -> None:
+        from feelies.portfolio.memory_position_store import MemoryPositionStore
+
+        store = MemoryPositionStore()
+        store.update("AAPL", +100, Decimal("150.00"))
+        store.update("AAPL", +100, Decimal("152.00"))
+        store.update("AAPL", -150, Decimal("155.00"))
+        store.update("AAPL", -50, Decimal("160.00"))
+
+        pos = store.get("AAPL")
+        expected = (
+            (Decimal("155.00") - Decimal("151.00")) * 150
+            + (Decimal("160.00") - Decimal("151.00")) * 50
+        )
+        assert pos.quantity == 0
+        assert pos.realized_pnl == expected
+
+
 # ── Enum Completeness ────────────────────────────────────────────────
 
 
