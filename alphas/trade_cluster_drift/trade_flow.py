@@ -17,6 +17,7 @@ def initial_state():
         "sell_flow": 0.0,
         "last_ts_ns": None,
         "last_mid": None,
+        "prev_trade_price": None,
     }
 
 
@@ -51,11 +52,20 @@ def update_trade(trade, state, params):
     state["buy_flow"] *= decay
     state["sell_flow"] *= decay
 
-    if price >= mid:
+    if price > mid:
         state["buy_flow"] += size
-    else:
+    elif price < mid:
         state["sell_flow"] += size
+    else:
+        # Tick test (Lee-Ready): at-mid trades classified by prior trade
+        # direction. Prevents buy-bias from internalized at-mid flow.
+        prev = state["prev_trade_price"]
+        if prev is not None and price < prev:
+            state["sell_flow"] += size
+        elif prev is not None:
+            state["buy_flow"] += size
 
+    state["prev_trade_price"] = price
     state["last_ts_ns"] = ts_ns
 
     total = state["buy_flow"] + state["sell_flow"]

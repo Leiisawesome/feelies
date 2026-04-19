@@ -46,7 +46,7 @@ risk_max_drawdown_pct: 5.0
 # Simulated fill latency in nanoseconds (30ms = realistic IB order round-trip).
 backtest_fill_latency_ns: 30000000
 # Suppress directional entry signals for N ticks after the last entry.
-signal_entry_cooldown_ticks: 5000
+signal_entry_cooldown_ticks: 100
 
 # ── Stop-Loss & Trailing Stop ────────────────────────────
 # Exit if unrealized P&L drops below -X per share (0 = disabled).
@@ -83,7 +83,7 @@ execution_mode: passive_limit
 # Ticks the quote must remain at our level before queue-drain fill (legacy mode).
 passive_fill_delay_ticks: 3
 # Maximum ticks before cancelling an unfilled resting order.
-passive_max_resting_ticks: 50
+passive_max_resting_ticks: 1000
 # Shares traded at our level before queue-drain fill triggers (D10 mode).
 # 0 = disabled (use tick-based fill_delay_ticks); 500 = approximately
 # 1 lot of queue drains before we fill.

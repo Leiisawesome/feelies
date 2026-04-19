@@ -56,7 +56,8 @@ def update(quote, state, params):
         state["prev_microprice"] = microprice
         state["prev_ts_ns"] = ts_ns
         state["last_mid"] = mid
-        return [0.0, 0.0, 0.0, 0.0, prev_abs_z]
+        spread_bps = (ask - bid) / max(mid, 1e-9) * 1e4
+        return [0.0, 0.0, 0.0, 0.0, prev_abs_z, float(spread_bps)]
 
     dt = max((ts_ns - state["prev_ts_ns"]) / 1e9, 1e-6)
 
@@ -163,10 +164,12 @@ def update(quote, state, params):
     state["prev_ts_ns"] = ts_ns
     state["last_mid"] = mid
 
+    spread_bps = (ask - bid) / max(mid, 1e-9) * 1e4
     return [
         float(state["mu"]),
         float(drift_z),
         float(edge_bps),
         float(edge_uncertainty_bps),
         float(prev_abs_z),
+        float(spread_bps),
     ]

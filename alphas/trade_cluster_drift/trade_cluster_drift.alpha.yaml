@@ -46,12 +46,12 @@ parameters:
     type: float
     default: 3.33
     range: [2.0, 5.0]
-    description: "Derived: vol_half_life = drift_half_life * ratio (narrow range, structural prior)"
+    description: "Derived: vol_half_life = drift_half_life * ratio. Structural prior: realized microprice vol decorrelates 3–5× slower than latent drift at 1-sec frequency. Falsify by measuring realized-vol autocorrelation half-life on target symbols; re-calibrate if OOS innov_var drifts persistently from 1.0."
   entry_z:
     type: float
-    default: 1.5
-    range: [0.5, 5.0]
-    description: "Primary: enter when |posterior drift z-score| reaches this level"
+    default: 0.4
+    range: [0.1, 5.0]
+    description: "Direction gate: enter when |posterior drift z-score| reaches this level. For a passive maker, direction confidence only needs to be modest — the economic gate (passive_edge_bps) controls whether we quote at all."
   exit_fraction:
     type: float
     default: 0.33
@@ -59,9 +59,9 @@ parameters:
     description: "Derived: exit_threshold = entry_z * exit_fraction (structural prior: exit band < entry)"
   min_net_edge_bps:
     type: float
-    default: 0.2
-    range: [0.05, 2.0]
-    description: "Primary: minimum net edge (bps) after 1-sigma deduction for entry"
+    default: 0.05
+    range: [0.01, 2.0]
+    description: "Floor residual edge (bps) required after the passive-maker economic gate: half_spread - toxicity*k_adverse - min_net_edge > 0. Prevents near-zero-edge entries when the economics are marginally viable."
   huber_threshold:
     type: float
     default: 3.0
@@ -72,6 +72,26 @@ parameters:
     default: 0.7
     range: [0.5, 0.95]
     description: "Suppress new entries when vol_breakout posterior exceeds this level"
+  max_toxicity_threshold:
+    type: float
+    default: 0.75
+    range: [0.3, 0.9]
+    description: "Primary: suppress entries when unsigned flow imbalance |buy-sell|/(buy+sell) exceeds this level (VPIN-analog). Above this threshold informed flow likely dominates and adverse-selection loss will exceed the earned half-spread."
+  max_entry_spread_bps:
+    type: float
+    default: 2.0
+    range: [0.5, 10.0]
+    description: "Upper spread gate: suppress entries when quoted spread (ask-bid)/mid in basis points exceeds this threshold. Wide spreads signal elevated adverse-selection risk or fragile quote depth."
+  min_entry_spread_bps:
+    type: float
+    default: 0.3
+    range: [0.05, 5.0]
+    description: "Lower spread gate: suppress entries when quoted spread is below this threshold. A spread below the floor means the half-spread earned is too thin to justify the queue risk, even at zero toxicity."
+  k_adverse_bps:
+    type: float
+    default: 0.4
+    range: [0.1, 2.0]
+    description: "Adverse-selection sensitivity (bps per unit toxicity). Scales the adverse-selection cost in the passive-maker economic gate: passive_edge = half_spread - toxicity*k_adverse - min_net_edge. Calibrate empirically as the observed per-fill loss rate vs. toxicity level."
 
 risk_budget:
   max_position_per_symbol: 500
@@ -84,7 +104,7 @@ features:
     version: "2.0.0"
     description: "Regime-adaptive latent drift posterior with Huberized Kalman filter"
     computation_module: sde_drift_state.py
-    return_type: list[5]
+    return_type: list[6]
     warm_up: {min_events: 100}
 
   - feature_id: trade_flow_imbalance
@@ -119,8 +139,7 @@ signal: |
     drift = features.values.get("sde_drift_state_0", 0.0)
     drift_z = features.values.get("sde_drift_state_1", 0.0)
     edge_mean_bps = features.values.get("sde_drift_state_2", 0.0)
-    edge_std_bps = max(features.values.get("sde_drift_state_3", 0.0), 0.0)
-    prev_abs_z = features.values.get("sde_drift_state_4", 0.0)
+    spread_bps = features.values.get("sde_drift_state_5", 0.0)
 
     exit_z = params["entry_z"] * params["exit_fraction"]
 
@@ -139,24 +158,65 @@ signal: |
             return _flat()
           return None
 
-    # Edge: 1-sigma deduction (structural prior) + min_net_edge hurdle
-    directional_lcb_bps = abs(edge_mean_bps) - edge_std_bps - params["min_net_edge_bps"]
-    net_edge_bps = max(directional_lcb_bps, 0.0)
+    # Spread upper gate: suppress entries when quoted spread is too wide.
+    # Wide spread = fragile quote depth or elevated adverse-selection risk.
+    if spread_bps > 0.0 and spread_bps > params["max_entry_spread_bps"]:
+      if abs(drift_z) <= exit_z:
+        return _flat()
+      return None
 
-    # Crossing detection from feature-emitted prev_abs_z (pure, no hidden state)
+    # Toxicity (VPIN-analog) gate: absolute cap on informed flow.
+    # High |imbalance| means informed flow dominates; adverse selection
+    # will exceed the earned half-spread regardless of other conditions.
+    trade_imbalance = features.values.get("trade_flow_imbalance", 0.0)
+    toxicity = abs(trade_imbalance)
+    if toxicity > params["max_toxicity_threshold"]:
+      if abs(drift_z) <= exit_z:
+        return _flat()
+      return None
+
+    # Passive maker economic gate (Stoikov-Avellaneda):
+    #   passive_edge = half_spread_earned - adverse_selection_cost - floor
+    # This is the primary economic gating mechanism for a passive market-
+    # making strategy.  The alpha earns the half-spread on a filled limit
+    # order; adverse selection (scaled by current toxicity) is the main
+    # cost. Entry is only viable when the net passive edge is positive.
+    # This decouples the entry decision from the drift z-score magnitude,
+    # fixing the taker-vs-maker architectural mismatch: a strong drift
+    # signal (high z) is used only to determine DIRECTION, never to
+    # justify QUOTING in the face of poor spread/toxicity economics.
+    if spread_bps <= 0.0:
+      return None
+    half_spread_bps = spread_bps / 2.0
+    adverse_sel_bps = toxicity * params["k_adverse_bps"]
+    passive_edge_bps = half_spread_bps - adverse_sel_bps - params["min_net_edge_bps"]
+
+    if passive_edge_bps <= 0.0:
+      if abs(drift_z) <= exit_z:
+        return _flat()
+      return None
+
+    # Spread lower gate: too-thin spread means we earn less than the floor
+    # even in zero-toxicity regimes; don't chase queue risk for nothing.
+    if spread_bps < params["min_entry_spread_bps"]:
+      if abs(drift_z) <= exit_z:
+        return _flat()
+      return None
+
+    # Direction gate: drift z-score determines which side to post.
+    # A passive maker needs only modest direction confidence (entry_z = 0.4)
+    # because the economic gate (passive_edge > 0) is the structural guard.
     curr_abs_z = abs(drift_z)
-    crossing = prev_abs_z < params["entry_z"] and curr_abs_z >= params["entry_z"]
-
-    if crossing and drift != 0.0 and directional_lcb_bps > 0.0:
-      # Trade-flow opposition gate: suppress entry when aggressive
-      # flow actively opposes the inferred drift direction.
+    if curr_abs_z >= params["entry_z"] and drift != 0.0:
+      # Directional flow opposition gate: suppress when aggressive flow
+      # is already running against the inferred drift direction.
       drift_sign = 1.0 if edge_mean_bps > 0.0 else -1.0
-      trade_imbalance = features.values.get("trade_flow_imbalance", 0.0)
       if trade_imbalance * drift_sign < -0.2:
         return None
 
       direction = LONG if edge_mean_bps > 0.0 else SHORT
-      strength = min(net_edge_bps / (params["min_net_edge_bps"] + net_edge_bps), 1.0)
+      net_passive = max(passive_edge_bps, 0.0)
+      strength = min(net_passive / (params["min_net_edge_bps"] + net_passive + 1e-9), 1.0)
       return Signal(
         timestamp_ns=features.timestamp_ns,
         correlation_id=features.correlation_id,
@@ -165,10 +225,10 @@ signal: |
         strategy_id=alpha_id,
         direction=direction,
         strength=strength,
-        edge_estimate_bps=net_edge_bps,
+        edge_estimate_bps=net_passive,
       )
 
-    if curr_abs_z <= exit_z or directional_lcb_bps <= 0.0:
+    if curr_abs_z <= exit_z:
       return _flat()
 
     return None
