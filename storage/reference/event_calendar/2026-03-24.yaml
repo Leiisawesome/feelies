@@ -1,0 +1,60 @@
+# Reference scheduled-flow window calendar for 2026-03-24 (regular RTH).
+#
+# Consumed by feelies.sensors.impl.scheduled_flow_window via
+# feelies.storage.reference.event_calendar.load_event_calendar().  This
+# file is content-addressed: any edit changes EventCalendar.hash() and
+# must be rationalised in the commit message that bumps it.
+#
+# Window kinds (v0.3 §20.4.2): MOC_IMBALANCE, OPENING_AUCTION,
+# INDEX_REBALANCE, EARNINGS_DRIFT, FOMC_BLACKOUT.
+#
+# Times are ET clock strings; the loader resolves them to integer
+# nanoseconds via ZoneInfo("America/New_York").
+
+session_date: 2026-03-24
+windows:
+  - window_id: nyse_open_2026_03_24
+    kind: OPENING_AUCTION
+    symbol: null
+    start_et: "09:30"
+    end_et: "09:35"
+    flow_direction_prior: 0.0
+    meta:
+      description: First 5 min of RTH; opening-auction tape printing.
+
+  - window_id: aapl_earnings_drift_2026_03_24
+    kind: EARNINGS_DRIFT
+    symbol: AAPL
+    start_et: "09:30"
+    end_et: "10:00"
+    flow_direction_prior: 1.0
+    meta:
+      announcement: 2026-03-23 AMC
+      direction_source: bullish_pre_print
+
+  - window_id: fomc_blackout_2026_03_24_pre
+    kind: FOMC_BLACKOUT
+    symbol: null
+    start_et: "13:30"
+    end_et: "14:00"
+    flow_direction_prior: 0.0
+    meta:
+      event: FOMC statement release; 30-min pre-window.
+
+  - window_id: fomc_blackout_2026_03_24_post
+    kind: FOMC_BLACKOUT
+    symbol: null
+    start_et: "14:00"
+    end_et: "14:30"
+    flow_direction_prior: 0.0
+    meta:
+      event: FOMC statement release; 30-min post-window.
+
+  - window_id: nyse_moc_2026_03_24
+    kind: MOC_IMBALANCE
+    symbol: null
+    start_et: "15:50"
+    end_et: "16:00"
+    flow_direction_prior: 0.0
+    meta:
+      description: Last 10 min of RTH; MOC imbalance feed window.

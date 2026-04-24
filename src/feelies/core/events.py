@@ -3,6 +3,17 @@
 Every event crossing a layer boundary must use one of these schemas.
 No untyped messages.  No polling.  All events are frozen dataclasses
 — immutable after creation, safe to share without copying.
+
+Three-layer architecture additions (§5, §20.3 of design_docs/three_layer_architecture.md):
+  - ``source_layer`` on the base ``Event`` — full-provenance tag (Inv-13).
+  - Layer-1 ``SensorReading`` (event-time state estimator output).
+  - ``HorizonTick`` cross-cutting scheduler event.
+  - Layer-2 ``HorizonFeatureSnapshot`` (horizon-bucketed feature aggregate).
+  - Layer-3 ``CrossSectionalContext`` and ``SizedPositionIntent``.
+  - v0.3 ``TrendMechanism`` taxonomy + ``RegimeHazardSpike`` exit event.
+
+All new types are strictly additive.  Existing events keep their schema;
+existing producers/consumers are unaffected (Inv-5 parity, §11.2).
 """
 
 from __future__ import annotations
@@ -10,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum, auto
-from typing import Any
+from typing import Any, Literal
 
 
 # ── Base ────────────────────────────────────────────────────────────────
@@ -18,11 +29,18 @@ from typing import Any
 
 @dataclass(frozen=True, kw_only=True)
 class Event:
-    """Base event.  Every event carries provenance metadata."""
+    """Base event.  Every event carries provenance metadata.
+
+    ``source_layer`` is an additive Phase-1 field (Appendix A of
+    three_layer_architecture.md) that tags every emitted event with the
+    layer that produced it.  Default ``"UNKNOWN"`` preserves construction
+    for every existing producer that does not yet pass the tag.
+    """
 
     timestamp_ns: int
     correlation_id: str
     sequence: int
+    source_layer: str = "UNKNOWN"
 
 
 # ── Market Data Events ──────────────────────────────────────────────────
@@ -108,6 +126,13 @@ class RegimeState(Event):
     Emitted by the orchestrator after updating the platform-level
     RegimeEngine.  Consumed by dashboards, risk engine (via cached
     engine state), and logged for provenance.
+
+    Additive Phase-1 fields per §5.4:
+      ``horizon_seconds`` — 0 for the per-tick snapshot (legacy), positive
+      for horizon-anchored snapshots emitted by Layer-2 consumers in
+      Phase 3+.
+      ``stability`` — 0..1 stability of the dominant state over recent
+      posteriors.  Default 1.0 is a no-op for legacy producers.
     """
 
     symbol: str
@@ -116,6 +141,8 @@ class RegimeState(Event):
     posteriors: tuple[float, ...]
     dominant_state: int
     dominant_name: str
+    horizon_seconds: int = 0
+    stability: float = 1.0
 
 
 # ── Signal Events ───────────────────────────────────────────────────────
@@ -129,7 +156,26 @@ class SignalDirection(Enum):
 
 @dataclass(frozen=True, kw_only=True)
 class Signal(Event):
-    """Signal evaluation output — pure function of features (no side effects)."""
+    """Signal evaluation output — pure function of features (no side effects).
+
+    Additive Phase-1 fields (§5.5) and Phase-1.1 v0.3 fields (§20.3.2).
+    All defaults preserve legacy single-horizon producers exactly:
+
+      ``layer`` — ``"LEGACY_SIGNAL"`` for the existing per-tick path,
+                 ``"SIGNAL"`` for horizon-gated v0.2 producers (Phase 3+).
+      ``horizon_seconds`` — 0 for legacy, positive for horizon-anchored.
+      ``regime_gate_state`` — ``"N/A"`` for legacy, ``"ON"``/``"OFF"`` for
+                              regime-gated horizon signals (Phase 3+).
+      ``consumed_features`` — empty tuple for legacy; tuple of feature_ids
+                              consulted by horizon signal evaluation.
+      ``trend_mechanism`` — None for v0.2 producers; one of the 5
+                            ``TrendMechanism`` enum members for v0.3
+                            mechanism-bound signals (Phase 3.1+).
+      ``expected_half_life_seconds`` — 0 for unspecified (v0.2 behavior);
+                                        positive for v0.3 mechanism-bound
+                                        signals (drives decay weighting
+                                        and hard-exit-age in Phase 4.1).
+    """
 
     symbol: str
     strategy_id: str
@@ -137,6 +183,12 @@ class Signal(Event):
     strength: float
     edge_estimate_bps: float
     metadata: dict[str, Any] = field(default_factory=dict)
+    layer: Literal["SIGNAL", "LEGACY_SIGNAL"] = "LEGACY_SIGNAL"
+    horizon_seconds: int = 0
+    regime_gate_state: Literal["ON", "OFF", "N/A"] = "N/A"
+    consumed_features: tuple[str, ...] = ()
+    trend_mechanism: TrendMechanism | None = None
+    expected_half_life_seconds: int = 0
 
 
 # ── Risk Events ─────────────────────────────────────────────────────────
@@ -192,7 +244,16 @@ class OrderAckStatus(Enum):
 
 @dataclass(frozen=True, kw_only=True)
 class OrderRequest(Event):
-    """Request to place an order — output of ORDER_DECISION micro-state."""
+    """Request to place an order — output of ORDER_DECISION micro-state.
+
+    ``reason`` is a v0.3-additive free-text tag (default ``""``) used by
+    Phase-4-finalize emitters to distinguish ordinary entry/exit orders
+    from hazard-driven exits (``"HAZARD_SPIKE"`` / ``"HARD_EXIT_AGE"``)
+    and from Phase-4 PORTFOLIO-path orders (``"PORTFOLIO"``).  Present
+    on every emitted ``OrderRequest`` so forensics / parity baselines
+    can split the order stream by lineage without re-deriving it from
+    ``correlation_id``.
+    """
 
     order_id: str
     symbol: str
@@ -202,6 +263,7 @@ class OrderRequest(Event):
     limit_price: Decimal | None = None
     strategy_id: str = ""
     is_short: bool = False  # True for short-entry sells (HTB fee applies)
+    reason: str = ""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -327,3 +389,203 @@ class KillSwitchActivation(Event):
 
     reason: str
     activated_by: str
+
+
+# ── Three-Layer Architecture (v0.2) ─────────────────────────────────────
+#
+# Per design_docs/three_layer_architecture.md §5 and Appendix A.  All
+# events below are additive Phase-1 contracts; no producer is wired in
+# Phase 1 (Phase 2 ships the sensor framework, Phase 3 ships the
+# horizon signal engine, Phase 4 ships the composition layer).
+#
+# These types are defined for forward compatibility so that downstream
+# code can import them, type-check against them, and so that the YAML
+# loader can validate references to them without importing experimental
+# modules.
+
+
+# ── v0.3 TrendMechanism Taxonomy (§20.2 / §20.3.2) ──────────────────────
+
+
+class TrendMechanism(Enum):
+    """Closed taxonomy of trend-formation mechanisms (§20.2).
+
+    A v0.3 mechanism-bound signal must declare exactly one of these
+    families.  The taxonomy is closed by design: adding a new family is
+    a deliberate platform-level change, not an alpha-author decision.
+
+    - KYLE_INFO            — informed-trader price-impact (Kyle 1985)
+    - INVENTORY            — market-maker inventory drift
+    - HAWKES_SELF_EXCITE   — order-flow self-excitation cluster
+    - LIQUIDITY_STRESS     — depth withdrawal / spread blow-out
+    - SCHEDULED_FLOW       — known time-of-day flow window
+    """
+
+    KYLE_INFO = auto()
+    INVENTORY = auto()
+    HAWKES_SELF_EXCITE = auto()
+    LIQUIDITY_STRESS = auto()
+    SCHEDULED_FLOW = auto()
+
+
+# ── v0.3 RegimeHazardSpike (§20.3.1) ────────────────────────────────────
+
+
+@dataclass(frozen=True, kw_only=True)
+class RegimeHazardSpike(Event):
+    """Hazard-rate spike emitted when the dominant regime is about to flip.
+
+    Pure function of two consecutive ``RegimeState`` events; introduces no
+    new state and no new clock dependency (§20.3.1, replayable bit-
+    identically).  Suppression is per
+    ``(symbol, engine_name, departing_state)`` transition.
+    """
+
+    symbol: str
+    engine_name: str
+    departing_state: str
+    departing_posterior_prev: float
+    departing_posterior_now: float
+    incoming_state: str | None
+    hazard_score: float
+
+
+# ── Supporting types for new events ─────────────────────────────────────
+
+
+@dataclass(frozen=True, kw_only=True)
+class SensorProvenance:
+    """Inputs a sensor consumed to produce a ``SensorReading`` (§5.2).
+
+    ``input_sensor_ids`` lists upstream sensors (empty for raw-event
+    sensors).  ``input_event_kinds`` lists event-type names consumed
+    (e.g. ``("NBBOQuote",)`` or ``("Trade",)``).  Both are immutable
+    tuples so the provenance record is safely shareable.
+    """
+
+    input_sensor_ids: tuple[str, ...] = ()
+    input_event_kinds: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, kw_only=True)
+class TargetPosition:
+    """Per-symbol target produced by a Layer-3 portfolio alpha (§5.7).
+
+    ``target_usd`` is the signed dollar exposure (positive = long,
+    negative = short).  ``urgency`` is a 0..1 hint to the risk/execution
+    layer about how aggressively to close any gap to target.
+    """
+
+    symbol: str
+    target_usd: float
+    urgency: float = 0.5
+
+
+# ── v0.2 New Events ─────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True, kw_only=True)
+class HorizonTick(Event):
+    """Deterministic event-time scheduler tick (§5.1).
+
+    Emitted by the (Phase-2) ``HorizonScheduler`` at boundaries
+    ``session_open_ns + k * horizon_seconds * 1e9`` for k = 1, 2, ....
+    Drives Layer-2 aggregation and Layer-3 synchronization.
+
+    ``scope`` is ``"SYMBOL"`` for per-symbol horizons (in which case
+    ``symbol`` must be set) or ``"UNIVERSE"`` for cross-sectional
+    horizons (``symbol`` is ``None``).
+    """
+
+    horizon_seconds: int
+    boundary_index: int
+    session_id: str
+    scope: Literal["SYMBOL", "UNIVERSE"]
+    symbol: str | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class SensorReading(Event):
+    """Layer-1 sensor output emitted on every tick (§5.2).
+
+    ``value`` is a scalar or a tuple of floats depending on the sensor
+    contract.  ``confidence`` defaults to 1.0 (sensor declares full
+    confidence).  ``warm`` is False until the sensor's ``min_history``
+    is satisfied.  Consumers must skip non-warm readings.
+    """
+
+    symbol: str
+    sensor_id: str
+    sensor_version: str
+    value: float | tuple[float, ...]
+    confidence: float = 1.0
+    warm: bool = True
+    provenance: SensorProvenance = field(default_factory=SensorProvenance)
+
+
+@dataclass(frozen=True, kw_only=True)
+class HorizonFeatureSnapshot(Event):
+    """Layer-2 horizon-bucketed feature aggregate (§5.3).
+
+    Emitted by ``features/aggregator.py`` (Phase 2) on every
+    ``HorizonTick``.  Per-feature ``warm`` and ``stale`` flags carry the
+    aggregator's state so downstream signal evaluation can suppress on
+    either condition without re-reading sensor state.
+
+    Coexists with the legacy per-tick ``FeatureVector`` (§5.3) which
+    continues to serve LEGACY_SIGNAL alphas via
+    ``features/legacy_shim.py``.
+    """
+
+    symbol: str
+    horizon_seconds: int
+    boundary_index: int
+    values: dict[str, float] = field(default_factory=dict)
+    warm: dict[str, bool] = field(default_factory=dict)
+    stale: dict[str, bool] = field(default_factory=dict)
+    source_sensors: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, kw_only=True)
+class CrossSectionalContext(Event):
+    """Universe-wide barrier-synced snapshot for portfolio alphas (§5.6).
+
+    Emitted by ``composition/synchronizer.py`` (Phase 4) when every
+    symbol in the universe has produced a ``HorizonFeatureSnapshot`` at
+    the current decision-horizon boundary (or has been declared
+    permanently absent for this boundary).  ``signals_by_symbol`` and
+    ``snapshots_by_symbol`` use ``None`` for symbols whose feature
+    snapshot was stale or not warm at the barrier time.
+    """
+
+    horizon_seconds: int
+    boundary_index: int
+    universe: tuple[str, ...]
+    signals_by_symbol: dict[str, "Signal | None"] = field(default_factory=dict)
+    snapshots_by_symbol: dict[str, "HorizonFeatureSnapshot | None"] = field(
+        default_factory=dict
+    )
+    completeness: float = 0.0
+
+
+@dataclass(frozen=True, kw_only=True)
+class SizedPositionIntent(Event):
+    """Layer-3 portfolio-alpha output (§5.7), consumed by the risk engine.
+
+    Replaces the per-symbol ``OrderRequest`` upstream path for portfolio
+    alphas.  LEGACY_SIGNAL alphas continue to emit ``OrderRequest``
+    directly; the risk engine handles both paths.
+
+    ``mechanism_breakdown`` (v0.3 §20.3.3) reports the gross-exposure
+    share of each consumed ``TrendMechanism`` family.  Defaults to ``{}``
+    for v0.2 portfolio alphas.
+    """
+
+    strategy_id: str
+    layer: Literal["PORTFOLIO"] = "PORTFOLIO"
+    horizon_seconds: int = 0
+    target_positions: dict[str, TargetPosition] = field(default_factory=dict)
+    factor_exposures: dict[str, float] = field(default_factory=dict)
+    expected_turnover_usd: float = 0.0
+    expected_gross_exposure_usd: float = 0.0
+    mechanism_breakdown: dict[TrendMechanism, float] = field(default_factory=dict)
