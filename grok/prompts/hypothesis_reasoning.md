@@ -318,7 +318,7 @@ question.
 [G1]  Layer classified (SENSOR | SIGNAL | PORTFOLIO)
 [G2]  Structural actor named specifically
 [G3]  Mechanism sentence parses in Step 2 template
-[G4]  All referenced sensors exist in catalog (Section 8)
+[G4]  All referenced sensors exist in catalog (grok/prompts/sensor_catalog.md)
       OR a companion SENSOR hypothesis is attached
 [G5]  horizon_seconds ≥ 30 for SIGNAL layer
 [G6]  cost_arithmetic block fully populated with source citations
@@ -333,6 +333,19 @@ question.
 [G14] No data dependency beyond L1 NBBO + trades + reference data
 [G15] Fill assumptions consistent with PassiveLimitOrderRouter
       or BacktestOrderRouter behavior
+[G16] (Phase 3.1, schema 1.1 SIGNAL/PORTFOLIO with trend_mechanism:)
+      G16.1  family ∈ closed taxonomy (§14.1)
+      G16.2  expected_half_life_seconds within per-family envelope (§14.2)
+      G16.3  horizon_seconds / expected_half_life_seconds ∈ [0.5, 4.0]
+      G16.4  every l1_signature_sensors entry is a registered sensor
+      G16.5  family's primary fingerprint sensor (§14.1) is in
+             l1_signature_sensors
+      G16.6  failure_signature is non-empty
+      G16.7  LIQUIDITY_STRESS family is exit-only — signal: must not
+             return LONG/SHORT (AST-checked)
+      G16.8  PORTFOLIO trend_mechanism.consumes summation bounded;
+             every consumed family carries a max_share_of_gross
+      G16.9  PORTFOLIO depends_on_signals families ⊆ consumes whitelist
 ```
 
 If **any** of G1–G11 fails, do not write to `alphas/`. Write to
@@ -420,6 +433,29 @@ depends_on_sensors:
     min_history_seconds: 1800
 
 depends_on_signals: []              # Empty for SIGNAL layer; populated for PORTFOLIO
+
+# ===== TREND MECHANISM (Phase 3.1, gate G16; opt-in via field presence) =====
+trend_mechanism:
+  family: KYLE_INFO                 # KYLE_INFO | INVENTORY | HAWKES_SELF_EXCITE | LIQUIDITY_STRESS | SCHEDULED_FLOW
+  expected_half_life_seconds: 600   # within per-family envelope (§14.2);
+                                    # horizon_seconds / expected_half_life_seconds ∈ [0.5, 4.0]
+  l1_signature_sensors:             # at least one MUST be the family's primary fingerprint sensor
+    - kyle_lambda_60s               # primary fingerprint for KYLE_INFO
+    - ofi_ewma                      # confirming
+  failure_signature:                # non-empty list of mechanism-specific invalidator predicates
+    - "spread_z_30d > 2.0"
+    - "kyle_lambda_60s_zscore < -1.5"
+
+# ===== HAZARD EXIT (Phase 4.1; opt-in, default off) =====
+# Wires HazardExitController to flatten this alpha's positions on
+# RegimeHazardSpike events (per (symbol, alpha_id, departing_state)
+# suppression).  See docs/migration/schema_1_0_to_1_1.md §9.
+hazard_exit:
+  enabled: false                    # set true to opt in
+  hazard_score_threshold: 0.7       # spike posterior departure floor
+  min_age_seconds: 60               # don't exit positions younger than this
+  hard_exit_age_seconds: 1800       # hard cap; fires regardless of regime
+  hard_exit_suppression_seconds: 300
 
 # ===== FALSIFICATION (EXTENDED, MANDATORY) =====
 falsification_criteria:
@@ -571,21 +607,25 @@ alphas/
 
 ## 8. Sensor Catalog (Layer 1 Vocabulary)
 
-Reference sensors by `sensor_id`. Do not invent. New sensors require
-companion SENSOR hypotheses first.
+The authoritative Layer-1 sensor vocabulary lives in
+[`grok/prompts/sensor_catalog.md`](sensor_catalog.md). Reference
+sensors by `sensor_id`. Do not invent. New sensors require companion
+SENSOR hypotheses first; see `sensor_catalog.md` §5.
 
-| sensor_id | Formal definition | Latent variable measured |
-|---|---|---|
-| `ofi_ewma` | Cont-Kukanov-Stoikov OFI with τ=60 s EWMA | Net signed liquidity pressure |
-| `micro_price` | `(bs·a + as·b) / (bs + as)` | Size-weighted mid |
-| `micro_price_drift` | `micro_price − mid` | Expected next-mid revision |
-| `vpin_50bucket` | VPIN with V̄ = ADV / 50 | Informed-flow probability |
-| `kyle_lambda_60s` | `cov(Δp, signed_vol) / var(signed_vol)`, 60 s rolling | Price impact per unit flow |
-| `spread_z_30d` | Quoted spread z-score vs 30-day median | Liquidity stress |
-| `realized_vol_30s` | Parkinson vol over 30 s window | Instantaneous vol regime |
-| `quote_hazard_rate` | Exponential hazard on quote life distribution | Flickering / spoofing intensity |
-| `trade_through_rate` | % trades printing outside NBBO over 60 s | Hidden-liquidity / dark-pool activity |
-| `quote_replenish_asymmetry` | Re-quote time (bid) / re-quote time (ask) post-trade | Latent depth asymmetry (L2 proxy) |
+The catalog covers v0.3's 13 shipped sensors and includes the
+per-mechanism fingerprint matrix that gate G16.5 enforces. Quick
+summary (consult `sensor_catalog.md` §1 for formal definitions and
+output shapes):
+
+| Family role | Primary fingerprint sensor(s) |
+|---|---|
+| KYLE_INFO | `kyle_lambda_60s`, `micro_price` |
+| INVENTORY | `quote_replenish_asymmetry` |
+| HAWKES_SELF_EXCITE | `hawkes_intensity` |
+| LIQUIDITY_STRESS | `vpin_50bucket`, `realized_vol_30s` |
+| SCHEDULED_FLOW | `scheduled_flow_window` |
+| Cross-cutting (SNR floor) | `snr_drift_diffusion` |
+| Cross-cutting (stationarity) | `structural_break_score` |
 
 Sensors emit `SensorReading` events on the bus. SIGNAL-layer features
 consume these via the horizon aggregator.
@@ -819,6 +859,117 @@ Every Grok REPL turn has this structure:
 ```
 
 Do not deviate from this structure. The operator's tooling parses it.
+
+---
+
+## 14. Trend Mechanism Selection (v0.3, gate G16)
+
+When the alpha is a SIGNAL or PORTFOLIO at `schema_version: "1.1"`, you
+SHOULD declare a `trend_mechanism:` block. Once `platform.yaml:
+enforce_trend_mechanism: true` is set, the block becomes MANDATORY (the
+loader rejects without it). Independent of the strict-mode flag, **any
+declared `trend_mechanism:` block is fully validated by gate G16** —
+do not ship a half-filled block.
+
+### 14.1 Closed family taxonomy
+
+Pick exactly one of:
+
+| family | Structural actor archetype | Primary fingerprint sensor(s) | Direction emitted |
+|---|---|---|---|
+| `KYLE_INFO` | Informed-trader price impact (Kyle 1985 lambda) | `kyle_lambda_60s`, `micro_price` | LONG/SHORT |
+| `INVENTORY` | Market-maker inventory unwind | `quote_replenish_asymmetry` | LONG/SHORT |
+| `HAWKES_SELF_EXCITE` | Self-exciting trade clustering (Hawkes branching) | `hawkes_intensity` | LONG/SHORT |
+| `LIQUIDITY_STRESS` | Depth withdrawal / spread blow-out | `vpin_50bucket`, `realized_vol_30s` | **FLAT only — exit-only** (G16.7) |
+| `SCHEDULED_FLOW` | Time-of-day scheduled flow (MOC, earnings drift, etc.) | `scheduled_flow_window` | LONG/SHORT |
+
+Refuse to invent a new family. Adding one is a deliberate platform-
+level change requiring updates to `feelies.core.events.TrendMechanism`,
+`feelies.alpha.loader._TREND_MECHANISM_FAMILIES`, the layer validator
+envelope table, and `grok/prompts/sensor_catalog.md` §2.
+
+### 14.2 Half-life envelopes (G16.2)
+
+`expected_half_life_seconds` MUST lie inside its family's envelope.
+Out-of-envelope rejects with `HalfLifeOutOfEnvelopeError`.
+
+| family | envelope (seconds) |
+|---|---|
+| `KYLE_INFO` | `[60, 1800]` |
+| `INVENTORY` | `[10, 120]` |
+| `HAWKES_SELF_EXCITE` | `[5, 120]` |
+| `LIQUIDITY_STRESS` | `[30, 600]` |
+| `SCHEDULED_FLOW` | `[60, 3600]` |
+
+### 14.3 Horizon ↔ half-life ratio (G16.3)
+
+`horizon_seconds / expected_half_life_seconds ∈ [0.5, 4.0]`.
+
+- `< 0.5`: the horizon is too short to harvest the edge before the
+  signal noise dominates. Demote to a shorter-horizon family or
+  abandon.
+- `> 4.0`: the horizon outlives the mechanism's decay; the bulk of
+  predicted return has already evaporated by the time the horizon
+  closes. Either tighten `horizon_seconds` or accept that the
+  `expected_half_life_seconds` is mis-specified — both branches
+  re-trigger Step 5 cost arithmetic.
+
+### 14.4 LIQUIDITY_STRESS exit-only invariant (G16.7)
+
+A `LIQUIDITY_STRESS` family alpha may only emit `FLAT` (close-position)
+signals. Any code path in the `signal:` body that can return a
+`LONG`/`SHORT` `Signal` is rejected at load time by an AST scan.
+
+Rationale: stress regimes are *information about the price-discovery
+process*, not about price direction. Trading direction in stress is a
+common overfit; the platform refuses to enable it.
+
+### 14.5 PORTFOLIO mechanism cap (G16.8 / G16.9)
+
+PORTFOLIO alphas declare:
+
+```yaml
+trend_mechanism:
+  consumes:
+    - {family: KYLE_INFO,  max_share_of_gross: 0.6}
+    - {family: INVENTORY,  max_share_of_gross: 0.5}
+  max_share_of_gross: 0.6     # global cap
+```
+
+Constraints:
+
+- Every family in `depends_on_signals` (transitively, via the upstream
+  SIGNAL alphas' own `trend_mechanism.family`) MUST appear in
+  `consumes:` (G16.9). The whitelist forces the PORTFOLIO author to
+  acknowledge mechanism mix at composition design time, not at
+  emission time.
+- Per-family caps and the global cap are realised by
+  `CrossSectionalRanker` and reported on every `SizedPositionIntent`'s
+  `mechanism_breakdown: dict[TrendMechanism, float]`. Over-budget
+  families are scaled proportionally before the gross is re-normalised.
+- The PORTFOLIO alpha's promotion review reads the
+  `mechanism_breakdown` distribution and flags persistent
+  concentration drift as a crowding diagnostic.
+
+### 14.6 Selection checklist
+
+Before declaring a family, walk this list:
+
+```
+[T1] Can you name the structural actor in §4 Step 1 in one sentence?
+     If no → no mechanism → no family.
+[T2] Does the actor's behaviour map cleanly to one of the five
+     families in §14.1? If it spans two, decompose into N hypotheses.
+[T3] Does the family's primary fingerprint sensor (§14.1) appear in
+     the L1 signature you identified in Step 3?  If no → either swap
+     the family or revisit Step 3.
+[T4] Does your chosen horizon (Step 4) and your expected half-life
+     satisfy G16.3 (ratio ∈ [0.5, 4.0])?  If no → re-pick one or both.
+[T5] If LIQUIDITY_STRESS, does your signal: code emit only FLAT?
+     If no → either change family or restructure as exit-only.
+[T6] (PORTFOLIO only) Have you declared a max_share_of_gross for
+     every consumed family AND set a sensible global cap?
+```
 
 ---
 
