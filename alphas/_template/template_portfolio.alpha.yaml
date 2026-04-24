@@ -1,0 +1,114 @@
+# =============================================================
+#   PORTFOLIO template (schema 1.1, Phase 4 / 4.1)
+#   ----------------------------------------------------------------
+#   Cross-sectional alpha consuming N upstream SIGNAL alphas.
+#   Emits one SizedPositionIntent per (alpha_id, horizon_seconds,
+#   boundary_index) which the risk engine decomposes into per-leg
+#   OrderRequests with per-leg veto (Inv-11).
+#
+#   Required blocks (loader + LayerValidator G2–G16 PORTFOLIO subset):
+#     - schema_version, layer, alpha_id, version, description
+#     - hypothesis, falsification_criteria
+#     - horizon_seconds              (≥ 300; member of platform horizons)
+#     - universe                     (concrete symbol list — G10)
+#     - depends_on_signals           (upstream SIGNAL alpha_ids)
+#     - cost_arithmetic              (margin_ratio ≥ 1.5 — Inv-12)
+#
+#   Recommended:
+#     - factor_neutralization: true  (G11)
+#     - trend_mechanism.consumes     (per-family max_share_of_gross — G16 PORTFOLIO rule 8)
+#     - parameters.decay_weighting_enabled (Phase 4.1)
+#
+#   See:
+#     - grok/prompts/hypothesis_reasoning.md     (PORTFOLIO §3, §7.3)
+#     - alphas/SCHEMA.md                         (canonical field reference)
+#     - docs/migration/schema_1_0_to_1_1.md      (PORTFOLIO authoring guide)
+# =============================================================
+
+schema_version: "1.1"
+layer: PORTFOLIO
+
+alpha_id: my_portfolio_alpha          # ^[a-z][a-z0-9_]*$
+version: "1.0.0"
+description: |
+  Cross-sectional alpha consuming the listed SIGNAL outputs across a
+  small reference universe.  Construction pipeline is the platform
+  default (CrossSectionalRanker → FactorNeutralizer → SectorMatcher
+  → TurnoverOptimizer); override only via an explicit construct: block.
+
+hypothesis: |
+  Cross-sectional dispersion of horizon-anchored microstructure
+  signals carries a residual factor-orthogonal alpha that is
+  monetisable at <horizon_seconds>-second decision horizons after
+  fee + impact deductions.  Mechanism: aggregate per-name signal
+  strength, neutralise against declared factor model, cap per-family
+  mechanism concentration, then optimise turnover under the declared
+  risk budget.
+
+falsification_criteria:
+  - sharpe_post_cost_below_1.0_60d
+  - turnover_above_400_pct_per_day
+  - max_factor_exposure_above_0.10
+  - mechanism_breakdown_kyle_above_0.6_for_10_consecutive_barriers
+
+horizon_seconds: 300                  # ≥ 300; ≥ longest upstream SIGNAL horizon
+
+universe:                             # concrete symbol list (G10)
+  - AAPL
+  - MSFT
+  - GOOG
+  - AMZN
+  - META
+  - NVDA
+  - JPM
+  - BAC
+  - XOM
+  - CVX
+
+depends_on_signals:                   # upstream SIGNAL alpha_ids
+  - my_signal_alpha
+  # - pofi_inventory_revert_v1
+
+factor_neutralization: true           # G11; reference factor loadings parquet must be available
+
+cost_arithmetic:
+  edge_estimate_bps: 12.0
+  half_spread_bps: 1.5
+  impact_bps: 1.5
+  fee_bps: 0.5
+  margin_ratio: 3.43                  # ≥ 1.5 (Inv-12)
+
+trend_mechanism:
+  consumes:
+    - {family: KYLE_INFO, max_share_of_gross: 0.6}
+    - {family: INVENTORY, max_share_of_gross: 0.5}
+  max_share_of_gross: 0.6             # global cap across all families
+
+risk_budget:
+  max_position_per_symbol: 5000
+  max_gross_exposure_pct: 50.0
+  max_drawdown_pct: 5.0
+  capital_allocation_pct: 100.0
+
+parameters:
+  decay_weighting_enabled:
+    type: bool
+    default: false
+    description: |
+      Phase-4.1 toggle for inverse-staleness decay weighting.
+      OFF reproduces the canonical baseline parity hash; ON applies
+      exp(-Δt/hl) weighting per signal age × per-mechanism half-life.
+  composition_completeness_threshold:
+    type: float
+    default: 0.7
+    min: 0.5
+    max: 1.0
+    description: |
+      Skip cross-sectional decision boundaries whose universe
+      coverage falls below this fraction (default mirrors the
+      platform.yaml setting; override here per-alpha).
+
+# No inline ``construct:`` block — bootstrap binds the default
+# pipeline (CrossSectionalRanker → FactorNeutralizer → SectorMatcher
+# → TurnoverOptimizer) per design.  Override only with explicit
+# justification in a rationale.md.

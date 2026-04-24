@@ -22,9 +22,10 @@ from __future__ import annotations
 import logging
 from dataclasses import replace
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from feelies.alpha.intent_set import IntentSet
+from feelies.alpha.module import AlphaManifest, AlphaModule
 from feelies.alpha.registry import AlphaRegistry
 from feelies.core.events import (
     FeatureVector,
@@ -38,6 +39,7 @@ from feelies.execution.intent import IntentTranslator, OrderIntent, TradingInten
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 if TYPE_CHECKING:
     from feelies.alpha.risk_wrapper import AlphaBudgetRiskWrapper
+    from feelies.portfolio.position_store import PositionStore
     from feelies.risk.position_sizer import PositionSizer
 
 logger = logging.getLogger(__name__)
@@ -176,7 +178,10 @@ class MultiAlphaEvaluator:
             # ── Per-alpha risk check ──────────────────────
             verdict = self._risk_wrapper.check_signal(
                 signal,
-                self._strategy_positions.as_aggregate(),
+                cast(
+                    "PositionStore",
+                    self._strategy_positions.as_aggregate(),
+                ),
             )
             collected_verdicts[manifest.alpha_id] = verdict
 
@@ -245,10 +250,10 @@ class MultiAlphaEvaluator:
     def _scoped_features(
         self,
         features: FeatureVector,
-        alpha: object,
+        alpha: AlphaModule,
     ) -> FeatureVector:
         """Filter feature values and suppressed set to this alpha's scope."""
-        manifest = alpha.manifest  # type: ignore[union-attr]
+        manifest = alpha.manifest
         allowed = manifest.required_features
         scoped_values = {
             k: v for k, v in features.values.items() if k in allowed
@@ -264,14 +269,14 @@ class MultiAlphaEvaluator:
         self,
         signal: Signal,
         quote: NBBOQuote,
-        manifest: object,
+        manifest: AlphaManifest,
     ) -> int:
         mid_price = (quote.bid + quote.ask) / Decimal(2)
         if mid_price <= 0:
             return 0
         return self._position_sizer.compute_target_quantity(
             signal=signal,
-            risk_budget=manifest.risk_budget,  # type: ignore[union-attr]
+            risk_budget=manifest.risk_budget,
             symbol_price=mid_price,
             account_equity=self._account_equity,
         )

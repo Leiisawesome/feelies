@@ -42,6 +42,18 @@ class AlphaRegistryError(Exception):
     """Raised when alpha registration fails validation."""
 
 
+class UnresolvedDependencyError(AlphaRegistryError):
+    """Raised when a SIGNAL alpha declares ``depends_on_sensors`` that
+    references a sensor not registered in the platform's
+    :class:`feelies.sensors.registry.SensorRegistry`.
+
+    Plan §6.6 / §10 P3-α: the loader records the declared sensor IDs on
+    a SIGNAL alpha; bootstrap then calls
+    :py:meth:`AlphaRegistry.resolve_signal_dependencies` to fail fast at
+    boot rather than silently evaluating with missing sensors.
+    """
+
+
 class AlphaRegistry:
     """Manages the set of registered alpha modules.
 
@@ -141,6 +153,99 @@ class AlphaRegistry:
     def alpha_ids(self) -> frozenset[str]:
         """Set of all registered alpha IDs."""
         return frozenset(self._alphas.keys())
+
+    # ── SIGNAL-layer helpers (Phase 3-α) ──────────────────────────────
+
+    def signal_alphas(self) -> list[AlphaModule]:
+        """SIGNAL-layer alphas in deterministic registration order.
+
+        A SIGNAL-layer alpha is identified by ``manifest.layer == "SIGNAL"``.
+        The returned list preserves registration order so any
+        downstream consumer (e.g. :class:`HorizonSignalEngine`) sees
+        alphas in the same sequence across runs (Inv-C).
+
+        Returns an empty list when no SIGNAL alphas are loaded — the
+        bootstrap layer treats this as a signal to skip the entire
+        Phase-3 wiring path (Inv-A).
+        """
+        return [
+            alpha for alpha in self._alphas.values()
+            if alpha.manifest.layer == "SIGNAL"
+        ]
+
+    def has_signal_alphas(self) -> bool:
+        """True iff at least one ``layer: SIGNAL`` alpha is registered.
+
+        The orchestrator and bootstrap use this to gate the
+        :class:`SIGNAL_GATE` micro-state and the
+        :class:`HorizonSignalEngine` subscription respectively.  When
+        false, the legacy LEGACY_SIGNAL execution path is preserved
+        bit-for-bit (Inv-A).
+        """
+        return any(
+            alpha.manifest.layer == "SIGNAL"
+            for alpha in self._alphas.values()
+        )
+
+    # ── PORTFOLIO-layer helpers (Phase 4) ────────────────────────────
+
+    def portfolio_alphas(self) -> list[AlphaModule]:
+        """PORTFOLIO-layer alphas in deterministic registration order.
+
+        A PORTFOLIO-layer alpha is identified by
+        ``manifest.layer == "PORTFOLIO"``.  Returns an empty list when
+        no PORTFOLIO alphas are loaded — the bootstrap layer treats this
+        as a signal to skip the entire Phase-4 composition wiring path
+        (Inv-A: legacy LEGACY_SIGNAL parity hash unchanged).
+        """
+        return [
+            alpha for alpha in self._alphas.values()
+            if alpha.manifest.layer == "PORTFOLIO"
+        ]
+
+    def has_portfolio_alphas(self) -> bool:
+        """True iff at least one ``layer: PORTFOLIO`` alpha is registered."""
+        return any(
+            alpha.manifest.layer == "PORTFOLIO"
+            for alpha in self._alphas.values()
+        )
+
+    def resolve_signal_dependencies(
+        self, known_sensor_ids: frozenset[str]
+    ) -> None:
+        """Validate every SIGNAL alpha's ``depends_on_sensors`` block.
+
+        Called once at bootstrap, after all SIGNAL alphas are
+        registered and the :class:`SensorRegistry` is fully populated.
+        Raises :class:`UnresolvedDependencyError` listing every
+        unsatisfied ``(alpha_id, sensor_id)`` pair so the operator sees
+        all issues in a single error rather than fail-on-first.
+
+        Topological-order note: SIGNAL alphas declare a flat
+        ``depends_on_sensors`` list (no inter-alpha dependencies in
+        Phase 3-α), so no DAG construction is required here.  The
+        ordering invariant (Inv-C) is preserved because
+        :py:meth:`signal_alphas` returns alphas in registration order
+        and :py:meth:`AlphaLoader` enforces ``depends_on_sensors`` to
+        be sorted+deduplicated at load time.
+        """
+        missing: list[tuple[str, str]] = []
+        for alpha in self.signal_alphas():
+            depends = getattr(alpha, "depends_on_sensors", ())
+            for sensor_id in depends:
+                if sensor_id not in known_sensor_ids:
+                    missing.append((alpha.manifest.alpha_id, sensor_id))
+
+        if missing:
+            details = ", ".join(
+                f"{alpha_id!r} requires {sid!r}" for alpha_id, sid in missing
+            )
+            raise UnresolvedDependencyError(
+                "SIGNAL alpha(s) reference sensor IDs that are not "
+                f"registered in the SensorRegistry: {details}.  Add the "
+                "sensor specs to platform.yaml's sensors: block before "
+                "loading these alphas."
+            )
 
     def feature_definitions(self) -> Sequence[FeatureDefinition]:
         """Merged, deduplicated feature definitions across all alphas.

@@ -26,7 +26,7 @@ from enum import Enum, auto
 from typing import Any
 
 from feelies.core.clock import Clock
-from feelies.core.state_machine import StateMachine
+from feelies.core.state_machine import StateMachine, TransitionRecord
 
 _RESTORE_TOKEN: object = object()
 
@@ -194,7 +194,7 @@ class AlphaLifecycle:
         return self._alpha_id
 
     @property
-    def history(self) -> list:
+    def history(self) -> list[TransitionRecord]:
         return self._sm.history
 
     def promote_to_paper(

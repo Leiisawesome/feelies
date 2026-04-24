@@ -1,0 +1,139 @@
+# ── Identity & Provenance ─────────────────────────────────
+schema_version: "1.1"
+layer: SIGNAL
+alpha_id: pofi_benign_midcap_v1
+version: "1.0.0"
+description: |
+  Persistent order-flow-imbalance (POFI) drift in the benign / normal
+  microstructure regime for mid-cap names.  Long-horizon parent
+  orders sliced via VWAP/TWAP leave a multi-minute directional
+  signature on L1 OFI; the gate isolates that flow from the toxic
+  / breakout regimes where the signature reverses or is absent.
+
+# ── Hypothesis (causal mechanism) ─────────────────────────
+hypothesis: |
+  Institutional parent orders executed via VWAP/TWAP slicing leak
+  into L1 as persistent same-sign order-flow imbalance over 1-5
+  minute windows.  Conditional on the microstructure regime being
+  "normal" (low spread z-score, balanced quote replenishment) the
+  remaining child slices continue to execute in the same direction,
+  producing measurable forward drift in the mid-price at the
+  120-second horizon.  Returns the original parent-order direction
+  as a LONG/SHORT signal sized by the standardised imbalance.
+
+falsification_criteria:
+  - |
+    Spearman correlation between ofi_ewma over the prior 120s and
+    return over the next 120s drops below 0.05 in the normal regime
+    for >= 4 consecutive weeks.  (Mechanism requires sustained
+    positive correlation; loss indicates parent-order behaviour
+    has changed or the signature is saturated.)
+  - |
+    Out-of-sample DSR (deflated Sharpe ratio) below 1.0 across any
+    single calendar quarter after promotion to LIVE.
+  - |
+    SEC/FINRA mandates execution transparency that eliminates the
+    VWAP/TWAP slicing advantage; the parent-order leakage signature
+    disappears from L1 entirely.
+  - |
+    Realised volatility enters a sustained high regime (HMM
+    posterior P(vol_breakout) > 0.5 for > 30 trading days); the
+    on-condition becomes unreachable and the strategy is inactive.
+
+# ── Layer-1 sensor dependencies (Phase 3) ─────────────────
+# All three sensors ship with the platform and are wired via the
+# platform.yaml ``sensors:`` block.  G6 (feature/sensor dependency
+# DAG) verifies every entry resolves at boot.
+depends_on_sensors:
+  - ofi_ewma
+  - micro_price
+  - spread_z_30d
+
+# ── Universe ──────────────────────────────────────────────
+# Universe selection is config-driven (mid-cap subset of the
+# active platform symbols).  No static list is pinned here; the
+# operator restricts via ``platform.yaml`` for the deployment.
+
+# ── Parameters ────────────────────────────────────────────
+parameters:
+  entry_threshold_z:
+    type: float
+    default: 2.0
+    min: 1.5
+    max: 3.0
+    description: |
+      Entry trigger on |ofi_ewma_zscore|.  ~2.5% tail of the
+      normal-regime OFI z-score distribution at the default value.
+  edge_per_z_bps:
+    type: float
+    default: 4.0
+    min: 1.0
+    max: 8.0
+    description: |
+      Linear extrapolation slope from |z| to expected edge in bps.
+      Capped at 20 bps to avoid extrapolation tail risk.
+  edge_cap_bps:
+    type: float
+    default: 20.0
+    min: 5.0
+    max: 50.0
+    description: |
+      Maximum reported ``edge_estimate_bps``; safety cap.
+
+# ── Horizon (Layer-2 boundary) ────────────────────────────
+horizon_seconds: 120
+
+# ── Risk Budget ───────────────────────────────────────────
+risk_budget:
+  max_position_per_symbol: 100
+  max_gross_exposure_pct: 5.0
+  max_drawdown_pct: 1.0
+  capital_allocation_pct: 10.0
+
+# ── Regime Gate (Phase 3 DSL — §8.4) ──────────────────────
+regime_gate:
+  regime_engine: hmm_3state_fractional
+  on_condition: |
+    P(normal) > 0.7 and abs(spread_z_30d) < 0.5
+  off_condition: |
+    P(normal) < 0.5 or spread_z_30d > 1.5
+  hysteresis:
+    posterior_margin: 0.20
+    percentile_margin: 0.30
+
+# ── Cost Arithmetic Disclosure (G12) ──────────────────────
+cost_arithmetic:
+  edge_estimate_bps: 9.0
+  half_spread_bps: 2.0
+  impact_bps: 2.0
+  fee_bps: 1.0
+  margin_ratio: 1.8
+
+# ── Signal (Layer-2 evaluate) ─────────────────────────────
+signal: |
+  def evaluate(snapshot, regime, params):
+      threshold = params["entry_threshold_z"]
+      slope_bps = params["edge_per_z_bps"]
+      edge_cap = params["edge_cap_bps"]
+
+      z = snapshot.values.get("ofi_ewma_zscore")
+      if z is None:
+          return None
+
+      mag = abs(z)
+      if mag < threshold:
+          return None
+
+      direction = LONG if z > 0 else SHORT
+      edge_bps = min(mag * slope_bps, edge_cap)
+
+      return Signal(
+          timestamp_ns=snapshot.timestamp_ns,
+          correlation_id=snapshot.correlation_id,
+          sequence=snapshot.sequence,
+          symbol=snapshot.symbol,
+          strategy_id="pofi_benign_midcap_v1",
+          direction=direction,
+          strength=min(mag / (threshold * 2.0), 1.0),
+          edge_estimate_bps=edge_bps,
+      )

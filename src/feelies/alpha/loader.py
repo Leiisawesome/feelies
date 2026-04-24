@@ -27,34 +27,134 @@ import logging
 import math
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable
 
 import yaml  # pyright: ignore[reportMissingModuleSource]
 
+from feelies.alpha.cost_arithmetic import CostArithmetic, CostArithmeticError
 from feelies.alpha.module import (
     AlphaManifest,
-    AlphaModule,
     AlphaRiskBudget,
     ParameterDef,
 )
+from feelies.alpha.portfolio_layer_module import (
+    LoadedPortfolioLayerModule,
+    _CompiledPortfolioConstructor,
+    _DefaultPortfolioConstructor,
+    parse_consumes_mechanisms,
+)
+from feelies.alpha.signal_layer_module import (
+    LoadedSignalLayerModule,
+    _CompiledHorizonSignal,
+)
 from feelies.core.events import (
     FeatureVector,
+    HorizonFeatureSnapshot,
     NBBOQuote,
+    RegimeState,
     Signal,
     SignalDirection,
     Trade,
+    TrendMechanism,
 )
-from feelies.features.definition import FeatureDefinition, WarmUpSpec
+from feelies.features.definition import (
+    FeatureComputation,
+    FeatureDefinition,
+    WarmUpSpec,
+)
 from feelies.services.regime_engine import RegimeEngine, get_regime_engine
+from feelies.signals.regime_gate import RegimeGate, RegimeGateError
 
 logger = logging.getLogger(__name__)
 
+# Once-per-process LEGACY_SIGNAL sunset banner deduplication set.
+# Keyed by ``alpha_id`` so the operator sees one banner per legacy alpha
+# even if its YAML is re-loaded across multiple bootstrap calls in the
+# same process (e.g. parameter sweeps, replay harnesses).  This is
+# *not* persistence: a fresh process re-emits.
+#
+# Workstream D.1: ``schema_version: "1.0"`` was removed; this set now
+# only deduplicates the ``layer: LEGACY_SIGNAL`` banner (still emitted
+# pending D.2's removal of ``LEGACY_SIGNAL`` from ``_ACCEPTED_LAYERS``).
+_LEGACY_SUNSET_WARNED: set[str] = set()
+
+# LEGACY_SIGNAL alphas declare inline ``features:`` and ``signal:`` blocks
+# (the per-tick contract).  SIGNAL-layer alphas have a different required
+# set: no inline features (sensors come from the platform), but extra
+# blocks for horizon, sensor dependency declaration, regime gate, and
+# cost arithmetic.  See _REQUIRED_SIGNAL_LAYER_KEYS below.
 _REQUIRED_TOP_KEYS = {"alpha_id", "version", "description", "hypothesis",
                       "falsification_criteria", "features", "signal"}
 
-_SUPPORTED_SCHEMA_VERSIONS = {"1.0"}
+_REQUIRED_SIGNAL_LAYER_KEYS = {
+    "alpha_id",
+    "version",
+    "description",
+    "hypothesis",
+    "falsification_criteria",
+    "signal",
+    "horizon_seconds",
+    "depends_on_sensors",
+    "regime_gate",
+    "cost_arithmetic",
+}
+
+# PORTFOLIO-layer required keys (§6.6 / Phase 4).
+# A PORTFOLIO alpha replaces ``signal`` / ``depends_on_sensors`` with
+# ``universe`` and ``depends_on_signals``; the optimization weights are
+# carried in ``risk_budget`` and the (optional) ``construct:`` block.
+_REQUIRED_PORTFOLIO_LAYER_KEYS = {
+    "alpha_id",
+    "version",
+    "description",
+    "hypothesis",
+    "falsification_criteria",
+    "horizon_seconds",
+    "universe",
+    "depends_on_signals",
+    "cost_arithmetic",
+}
+
+_SUPPORTED_SCHEMA_VERSIONS = {"1.1"}
+
+# Schema 1.1 layer values per §6.6.  Phase 3-α extends the accepted
+# set to include ``SIGNAL`` (horizon-anchored, regime-gated alphas);
+# ``SENSOR`` and ``PORTFOLIO`` remain reserved for later phases (sensor
+# specs already live under the platform config, not the alpha YAML).
+# See design_docs/three_layer_architecture.md §10.
+_VALID_1_1_LAYERS = {"LEGACY_SIGNAL", "SIGNAL", "PORTFOLIO", "SENSOR"}
+_ACCEPTED_LAYERS = {"LEGACY_SIGNAL", "SIGNAL", "PORTFOLIO"}
+_LAYER_PHASE_MAP = {
+    "SENSOR": "Phase 2 (sensor framework — declared in platform.yaml, "
+    "not alpha YAML)",
+    "SIGNAL": "Phase 3 (horizon signal engine)",
+    "PORTFOLIO": "Phase 4 (composition layer)",
+}
+
+# v0.3 closed taxonomy of trend-formation mechanisms (§20.2).  When the
+# optional ``trend_mechanism:`` block is present in a schema-1.1 spec,
+# its ``family:`` field must be one of these names.  Enforcement of the
+# rest of the block is deferred to Phase 3.1 (gate G16); in Phase 1.1
+# only the family-name closedness is checked.
+_TREND_MECHANISM_FAMILIES = {
+    "KYLE_INFO",
+    "INVENTORY",
+    "HAWKES_SELF_EXCITE",
+    "LIQUIDITY_STRESS",
+    "SCHEDULED_FLOW",
+}
+
+# Phase-3 minimum allowed value for ``horizon_seconds:`` in a SIGNAL
+# spec.  Below 30s the platform's L1 NBBO sampling rate (and the
+# associated session boundaries scheduled by
+# :class:`feelies.sensors.horizon_scheduler.HorizonScheduler`) cannot
+# carry a meaningful horizon-anchored snapshot.  The platform-level
+# horizon registry (``PlatformConfig.horizons_seconds``) is the
+# authoritative whitelist; this floor is a defensive sanity check
+# applied before the registry membership check (G7).
+_SIGNAL_MIN_HORIZON_SECONDS = 30
 _ALPHA_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
@@ -272,6 +372,11 @@ class _CompoundElementComputation:
             result = self._shared.get_cached(quote.symbol)
         return float(result[self._index])
 
+    def update_trade(
+        self, trade: Trade, state: dict[str, Any]
+    ) -> float | None:
+        return None
+
     def reset_symbol(self, symbol: str) -> None:
         """Clear per-tick cache for this symbol (called by composite reset)."""
         if self._index == 0:
@@ -402,17 +507,26 @@ class AlphaLoader:
     def __init__(
         self,
         regime_engine: RegimeEngine | None = None,
+        *,
+        enforce_trend_mechanism: bool = False,
+        enforce_layer_gates: bool = True,
     ) -> None:
         self._regime_engine = regime_engine
+        self._enforce_trend_mechanism = bool(enforce_trend_mechanism)
+        self._enforce_layer_gates = bool(enforce_layer_gates)
 
     def load(
         self,
         path: str | Path,
         param_overrides: dict[str, Any] | None = None,
-    ) -> LoadedAlphaModule:
+    ) -> LoadedAlphaModule | LoadedSignalLayerModule | LoadedPortfolioLayerModule:
         """Load an alpha specification from a YAML file.
 
         Raises ``AlphaLoadError`` on any validation or compilation failure.
+        Returns one of the three layer-specialised module types depending
+        on the parsed ``layer:`` field (LEGACY_SIGNAL → ``LoadedAlphaModule``,
+        SIGNAL → ``LoadedSignalLayerModule``, PORTFOLIO →
+        ``LoadedPortfolioLayerModule``).
         """
         path = Path(path)
         try:
@@ -429,9 +543,29 @@ class AlphaLoader:
         spec: dict[str, Any],
         param_overrides: dict[str, Any] | None = None,
         source: str = "<dict>",
-    ) -> LoadedAlphaModule:
-        """Load an alpha specification from a pre-parsed dict."""
+    ) -> LoadedAlphaModule | LoadedSignalLayerModule | LoadedPortfolioLayerModule:
+        """Load an alpha specification from a pre-parsed dict.
+
+        Dispatches on ``layer:`` (schema 1.1):
+
+        - ``LEGACY_SIGNAL`` (or schema 1.0) → :class:`LoadedAlphaModule`
+          (per-tick contract; existing behavior preserved bit-identical).
+        - ``SIGNAL``                       → :class:`LoadedSignalLayerModule`
+          (Phase-3 horizon-anchored, regime-gated contract).
+        - ``PORTFOLIO``                    → :class:`LoadedPortfolioLayerModule`
+          (Phase-4 cross-sectional construction).
+        """
         self._validate_schema(spec, source)
+
+        layer_value = str(spec.get("layer") or "")
+        if layer_value == "SIGNAL":
+            return self._load_signal_layer(
+                spec, param_overrides=param_overrides, source=source,
+            )
+        if layer_value == "PORTFOLIO":
+            return self._load_portfolio_layer(
+                spec, param_overrides=param_overrides, source=source,
+            )
 
         alpha_id = spec["alpha_id"]
         param_defs = self._parse_parameters(spec.get("parameters", {}), source)
@@ -471,6 +605,14 @@ class AlphaLoader:
         )
         self._validate_risk_budget(risk_budget, source)
 
+        layer_field: Any = spec.get("layer")
+        trend_mechanism_block = self._parse_trend_mechanism_block(
+            spec.get("trend_mechanism"), source
+        )
+        hazard_exit_block = self._parse_hazard_exit_block(
+            spec.get("hazard_exit"), source
+        )
+
         manifest = AlphaManifest(
             alpha_id=alpha_id,
             version=spec["version"],
@@ -482,6 +624,9 @@ class AlphaLoader:
             parameters=params,
             parameter_schema=tuple(param_defs),
             risk_budget=risk_budget,
+            layer=str(layer_field) if layer_field is not None else None,
+            trend_mechanism=trend_mechanism_block,
+            hazard_exit=hazard_exit_block,
         )
 
         return LoadedAlphaModule(
@@ -491,12 +636,570 @@ class AlphaLoader:
             params=params,
         )
 
+    # ── SIGNAL-layer load path (Phase 3) ──────────────────────
+
+    def _load_signal_layer(
+        self,
+        spec: dict[str, Any],
+        *,
+        param_overrides: dict[str, Any] | None,
+        source: str,
+    ) -> LoadedSignalLayerModule:
+        """Load a schema-1.1 ``layer: SIGNAL`` alpha.
+
+        Differs from the LEGACY_SIGNAL path in three places:
+
+        1. **No inline features.**  ``depends_on_sensors`` declares the
+           Layer-1 sensors the alpha consumes; the platform provides
+           those via :class:`feelies.sensors.registry.SensorRegistry`.
+        2. **3-arg evaluate.**  The compiled inline ``signal:`` code
+           must define ``evaluate(snapshot, regime, params)``.  The
+           snapshot type is :class:`HorizonFeatureSnapshot`; ``regime``
+           is the latest :class:`RegimeState` (or ``None`` at cold
+           start); ``params`` is the resolved parameter mapping.
+        3. **Mandatory ``cost_arithmetic`` and ``regime_gate`` blocks**,
+           parsed up-front into :class:`CostArithmetic` and
+           :class:`RegimeGate` instances respectively.  Failure of
+           either parser surfaces as :class:`AlphaLoadError` so the
+           operator sees a single error class.
+        """
+        alpha_id = spec["alpha_id"]
+        param_defs = self._parse_parameters(spec.get("parameters", {}), source)
+        params = self._resolve_params(param_defs, param_overrides or {}, source)
+
+        horizon_seconds = self._parse_horizon_seconds(spec, source)
+        depends_on_sensors = self._parse_depends_on_sensors(spec, source)
+
+        try:
+            cost_arith = CostArithmetic.from_spec(
+                alpha_id=alpha_id, spec=spec.get("cost_arithmetic"),
+            )
+        except CostArithmeticError as exc:
+            raise AlphaLoadError(f"{source}: {exc}") from exc
+
+        try:
+            regime_gate = RegimeGate.from_spec(
+                alpha_id=alpha_id, spec=spec.get("regime_gate"),
+            )
+        except RegimeGateError as exc:
+            raise AlphaLoadError(f"{source}: {exc}") from exc
+
+        regime_engine = self._resolve_regime_engine(spec.get("regimes"), source)
+        namespace = self._build_namespace(alpha_id, regime_engine)
+        namespace["HorizonFeatureSnapshot"] = HorizonFeatureSnapshot
+        namespace["RegimeState"] = RegimeState
+        compiled_evaluate = self._compile_signal_layer_evaluate(
+            spec["signal"], alpha_id, namespace, source,
+        )
+        signal_obj = _CompiledHorizonSignal(
+            signal_id=alpha_id,
+            signal_version=str(spec["version"]),
+            fn=compiled_evaluate,
+        )
+
+        trend_mechanism_block = self._parse_trend_mechanism_block(
+            spec.get("trend_mechanism"), source
+        )
+        hazard_exit_block = self._parse_hazard_exit_block(
+            spec.get("hazard_exit"), source
+        )
+        trend_enum, expected_half_life = self._extract_trend_metadata(
+            trend_mechanism_block, source,
+        )
+
+        symbols_raw = spec.get("symbols")
+        symbols = (
+            frozenset(symbols_raw)
+            if symbols_raw is not None
+            else None
+        )
+
+        risk_budget_raw = spec.get("risk_budget", {}) or {}
+        risk_budget = AlphaRiskBudget(
+            max_position_per_symbol=risk_budget_raw.get("max_position_per_symbol", 100),
+            max_gross_exposure_pct=risk_budget_raw.get("max_gross_exposure_pct", 5.0),
+            max_drawdown_pct=risk_budget_raw.get("max_drawdown_pct", 1.0),
+            capital_allocation_pct=risk_budget_raw.get("capital_allocation_pct", 10.0),
+        )
+        self._validate_risk_budget(risk_budget, source)
+
+        manifest = AlphaManifest(
+            alpha_id=alpha_id,
+            version=str(spec["version"]),
+            description=str(spec["description"]),
+            hypothesis=str(spec["hypothesis"]),
+            falsification_criteria=tuple(spec["falsification_criteria"]),
+            required_features=frozenset(),
+            symbols=symbols,
+            parameters=params,
+            parameter_schema=tuple(param_defs),
+            risk_budget=risk_budget,
+            layer="SIGNAL",
+            trend_mechanism=trend_mechanism_block,
+            hazard_exit=hazard_exit_block,
+        )
+
+        return LoadedSignalLayerModule(
+            manifest=manifest,
+            signal=signal_obj,
+            gate=regime_gate,
+            cost=cost_arith,
+            horizon_seconds=horizon_seconds,
+            depends_on_sensors=depends_on_sensors,
+            trend_mechanism=trend_enum,
+            expected_half_life_seconds=expected_half_life,
+            consumed_features=depends_on_sensors,
+            params=params,
+        )
+
+    # ── PORTFOLIO-layer load path (Phase 4) ───────────────────────
+
+    def _load_portfolio_layer(
+        self,
+        spec: dict[str, Any],
+        *,
+        param_overrides: dict[str, Any] | None,
+        source: str,
+    ) -> LoadedPortfolioLayerModule:
+        """Load a schema-1.1 ``layer: PORTFOLIO`` alpha (§6.6 / Phase 4).
+
+        Differs from the SIGNAL path in three places:
+
+        1. **No inline ``signal:`` block.**  PORTFOLIO alphas operate on
+           the universe-wide :class:`CrossSectionalContext` rather than
+           per-symbol snapshots; the optional ``construct:`` block holds
+           the alpha's custom optimizer.  Absent ``construct:`` falls
+           back to the engine's default pipeline.
+        2. **``universe`` and ``depends_on_signals``** replace
+           ``symbols`` and ``depends_on_sensors``.  Both are parsed into
+           sorted tuples so iteration order is replay-stable.
+        3. **``trend_mechanism.consumes:`` whitelist** maps to a tuple
+           of :class:`TrendMechanism` enums; the engine refuses to
+           operate on signals whose family is outside the whitelist.
+        """
+        alpha_id = spec["alpha_id"]
+        param_defs = self._parse_parameters(spec.get("parameters", {}), source)
+        params = self._resolve_params(param_defs, param_overrides or {}, source)
+
+        horizon_seconds = self._parse_horizon_seconds(spec, source)
+        universe = self._parse_universe(spec, source)
+        _depends_on_signals = self._parse_depends_on_signals(spec, source)
+
+        try:
+            cost_arith = CostArithmetic.from_spec(
+                alpha_id=alpha_id, spec=spec.get("cost_arithmetic"),
+            )
+        except CostArithmeticError as exc:
+            raise AlphaLoadError(f"{source}: {exc}") from exc
+
+        trend_mechanism_block = self._parse_trend_mechanism_block(
+            spec.get("trend_mechanism"), source
+        )
+        hazard_exit_block = self._parse_hazard_exit_block(
+            spec.get("hazard_exit"), source
+        )
+
+        consumes_raw = (
+            (trend_mechanism_block or {}).get("consumes")
+            if trend_mechanism_block
+            else None
+        )
+        try:
+            consumes = parse_consumes_mechanisms(consumes_raw)
+        except ValueError as exc:
+            raise AlphaLoadError(f"{source}: {exc}") from exc
+
+        max_share_of_gross = float(
+            (trend_mechanism_block or {}).get("max_share_of_gross", 1.0)
+        )
+        if not 0.0 < max_share_of_gross <= 1.0:
+            raise AlphaLoadError(
+                f"{source}: trend_mechanism.max_share_of_gross must be in "
+                f"(0, 1], got {max_share_of_gross}"
+            )
+
+        # Optional inline construct() block
+        constructor: Any
+        if "construct" in spec and spec["construct"]:
+            namespace = self._build_namespace(alpha_id, regime_engine=None)
+            namespace["CrossSectionalContext"] = (
+                _import_cross_sectional_context()
+            )
+            namespace["SizedPositionIntent"] = (
+                _import_sized_position_intent()
+            )
+            namespace["TargetPosition"] = (
+                _import_target_position()
+            )
+            compiled = self._compile_portfolio_construct(
+                spec["construct"], alpha_id, namespace, source,
+            )
+            constructor = _CompiledPortfolioConstructor(fn=compiled)
+        else:
+            # Default-pipeline marker; bootstrap rebinds to engine.
+            constructor = _DefaultPortfolioConstructor(
+                engine_thunk=lambda: None,
+                strategy_id=alpha_id,
+            )
+
+        risk_budget_raw = spec.get("risk_budget", {}) or {}
+        risk_budget = AlphaRiskBudget(
+            max_position_per_symbol=risk_budget_raw.get("max_position_per_symbol", 100),
+            max_gross_exposure_pct=risk_budget_raw.get("max_gross_exposure_pct", 5.0),
+            max_drawdown_pct=risk_budget_raw.get("max_drawdown_pct", 1.0),
+            capital_allocation_pct=risk_budget_raw.get("capital_allocation_pct", 10.0),
+        )
+        self._validate_risk_budget(risk_budget, source)
+
+        manifest = AlphaManifest(
+            alpha_id=alpha_id,
+            version=str(spec["version"]),
+            description=str(spec["description"]),
+            hypothesis=str(spec["hypothesis"]),
+            falsification_criteria=tuple(spec["falsification_criteria"]),
+            required_features=frozenset(),
+            symbols=frozenset(universe) if universe else None,
+            parameters=params,
+            parameter_schema=tuple(param_defs),
+            risk_budget=risk_budget,
+            layer="PORTFOLIO",
+            trend_mechanism=trend_mechanism_block,
+            hazard_exit=hazard_exit_block,
+        )
+
+        return LoadedPortfolioLayerModule(
+            manifest=manifest,
+            construct=constructor,
+            universe=universe,
+            horizon_seconds=horizon_seconds,
+            consumes_mechanisms=consumes,
+            max_share_of_gross=max_share_of_gross,
+            factor_neutralization_disclosed=bool(
+                spec.get("factor_neutralization", False)
+            ),
+            params=params,
+        )
+
+    @staticmethod
+    def _parse_universe(spec: dict[str, Any], source: str) -> tuple[str, ...]:
+        raw = spec.get("universe")
+        if raw is None or not isinstance(raw, list) or not raw:
+            raise AlphaLoadError(
+                f"{source}: PORTFOLIO 'universe' must be a non-empty list "
+                f"of symbol strings; got {raw!r}"
+            )
+        out: list[str] = []
+        for entry in raw:
+            if not isinstance(entry, str) or not entry:
+                raise AlphaLoadError(
+                    f"{source}: PORTFOLIO 'universe' entries must be "
+                    f"non-empty strings; got {entry!r}"
+                )
+            out.append(entry)
+        return tuple(sorted(set(out)))
+
+    @staticmethod
+    def _parse_depends_on_signals(
+        spec: dict[str, Any], source: str,
+    ) -> tuple[str, ...]:
+        raw = spec.get("depends_on_signals")
+        if raw is None or not isinstance(raw, list) or not raw:
+            raise AlphaLoadError(
+                f"{source}: PORTFOLIO 'depends_on_signals' must be a "
+                f"non-empty list of signal alpha_ids; got {raw!r}"
+            )
+        out: list[str] = []
+        for entry in raw:
+            if not isinstance(entry, str) or not entry:
+                raise AlphaLoadError(
+                    f"{source}: PORTFOLIO 'depends_on_signals' entries "
+                    f"must be non-empty strings; got {entry!r}"
+                )
+            out.append(entry)
+        return tuple(out)
+
+    def _compile_portfolio_construct(
+        self,
+        code: str,
+        alpha_id: str,
+        namespace: dict[str, Any],
+        source: str,
+    ) -> Any:
+        """Compile inline ``construct(ctx, params)`` per the PORTFOLIO contract."""
+        try:
+            tree = compile(code, f"<{alpha_id}.construct>", "exec")
+        except SyntaxError as exc:
+            raise AlphaLoadError(
+                f"{source}: PORTFOLIO 'construct' block has a syntax "
+                f"error: {exc}"
+            ) from exc
+        local_ns: dict[str, Any] = {}
+        exec(tree, namespace, local_ns)
+        fn = local_ns.get("construct")
+        if fn is None or not callable(fn):
+            raise AlphaLoadError(
+                f"{source}: PORTFOLIO 'construct' must define a callable "
+                f"named 'construct(ctx, params)'."
+            )
+        sig = inspect.signature(fn)
+        if len(sig.parameters) != 2:
+            raise AlphaLoadError(
+                f"{source}: PORTFOLIO 'construct' must accept exactly 2 "
+                f"parameters (ctx, params); got "
+                f"{list(sig.parameters)}"
+            )
+        return fn
+
+    @staticmethod
+    def _parse_horizon_seconds(spec: dict[str, Any], source: str) -> int:
+        raw = spec.get("horizon_seconds")
+        if not isinstance(raw, int) or isinstance(raw, bool):
+            raise AlphaLoadError(
+                f"{source}: 'horizon_seconds' must be an integer (>= "
+                f"{_SIGNAL_MIN_HORIZON_SECONDS}); got "
+                f"{type(raw).__name__}={raw!r}"
+            )
+        if raw < _SIGNAL_MIN_HORIZON_SECONDS:
+            raise AlphaLoadError(
+                f"{source}: 'horizon_seconds' must be >= "
+                f"{_SIGNAL_MIN_HORIZON_SECONDS}, got {raw}. "
+                f"Sub-30s horizons are not supported by the L1 NBBO "
+                f"sampling regime."
+            )
+        return raw
+
+    @staticmethod
+    def _parse_depends_on_sensors(
+        spec: dict[str, Any], source: str,
+    ) -> tuple[str, ...]:
+        raw = spec.get("depends_on_sensors")
+        if raw is None:
+            return ()
+        if not isinstance(raw, list):
+            raise AlphaLoadError(
+                f"{source}: 'depends_on_sensors' must be a list of "
+                f"sensor_id strings, got {type(raw).__name__}"
+            )
+        sensors: list[str] = []
+        seen: set[str] = set()
+        for entry in raw:
+            if not isinstance(entry, str) or not entry.strip():
+                raise AlphaLoadError(
+                    f"{source}: every 'depends_on_sensors' entry must be "
+                    f"a non-empty sensor_id string; got {entry!r}"
+                )
+            sid = entry.strip()
+            if sid in seen:
+                raise AlphaLoadError(
+                    f"{source}: duplicate sensor_id {sid!r} in "
+                    f"depends_on_sensors"
+                )
+            seen.add(sid)
+            sensors.append(sid)
+        return tuple(sensors)
+
+    @staticmethod
+    def _extract_trend_metadata(
+        block: dict[str, Any] | None, source: str,
+    ) -> tuple[TrendMechanism | None, int]:
+        """Lift v0.3 ``trend_mechanism:`` family + half-life onto the module.
+
+        Returns ``(enum_or_None, half_life_seconds)`` so the
+        :class:`HorizonSignalEngine` can stamp every emitted ``Signal``
+        with deterministic metadata.  Phase 3.1 will activate the
+        full G16 binding rules; here we only need the family enum and
+        the disclosed half-life.
+        """
+        if block is None:
+            return None, 0
+        family_str = block.get("family")
+        enum_value: TrendMechanism | None = None
+        if family_str is not None:
+            try:
+                enum_value = TrendMechanism[str(family_str)]
+            except KeyError as exc:
+                raise AlphaLoadError(
+                    f"{source}: trend_mechanism.family {family_str!r} "
+                    f"could not be mapped to TrendMechanism enum"
+                ) from exc
+        half_life_raw = block.get("expected_half_life_seconds", 0)
+        try:
+            half_life = int(half_life_raw)
+        except (TypeError, ValueError) as exc:
+            raise AlphaLoadError(
+                f"{source}: trend_mechanism.expected_half_life_seconds "
+                f"must be an integer, got {half_life_raw!r}"
+            ) from exc
+        if half_life < 0:
+            raise AlphaLoadError(
+                f"{source}: trend_mechanism.expected_half_life_seconds "
+                f"must be >= 0, got {half_life}"
+            )
+        return enum_value, half_life
+
+    def _compile_signal_layer_evaluate(
+        self,
+        signal_code: str,
+        alpha_id: str,
+        namespace: dict[str, Any],
+        source: str,
+    ) -> Callable[..., Signal | None]:
+        """Compile the SIGNAL-layer inline ``signal:`` evaluate function.
+
+        Mirrors :py:meth:`_compile_signal` but expects the 3-arg
+        ``evaluate(snapshot, regime, params)`` signature instead of
+        the legacy 2-arg ``evaluate(features, params)``.
+        """
+        if not isinstance(signal_code, str):
+            raise AlphaLoadError(
+                f"{source}: layer: SIGNAL spec 'signal' must be inline "
+                f"Python code (string), got {type(signal_code).__name__}"
+            )
+        ns = dict(namespace)
+        try:
+            compiled = compile(signal_code, f"<{source}:signal>", "exec")
+            exec(compiled, ns)  # noqa: S102
+        except SyntaxError as exc:
+            raise AlphaLoadError(
+                f"{source}: signal code syntax error: {exc}"
+            ) from exc
+
+        evaluate_fn = ns.get("evaluate")
+        if evaluate_fn is None:
+            raise AlphaLoadError(
+                f"{source}: layer: SIGNAL signal code must define "
+                f"evaluate(snapshot, regime, params)"
+            )
+        _check_arity(evaluate_fn, 3, "evaluate", source, alpha_id)
+        evaluate_callable: Callable[..., Signal | None] = evaluate_fn
+        return evaluate_callable
+
     # ── Schema validation ─────────────────────────────────────
 
     def _validate_schema(self, spec: dict[str, Any], source: str) -> None:
+        """Validate top-level schema, dispatching on ``layer``.
+
+        Per design_docs/three_layer_architecture.md §6.6 + §8.7 the
+        validation ordering (post-workstream-D.1) is:
+
+          1. ``spec`` is a dict.
+          2. Read ``schema_version``; reject if missing or unsupported.
+             Schema 1.0 was removed in workstream D; the only supported
+             value is ``"1.1"``.
+          3. Read ``layer`` (mandatory in 1.1).
+          4. Dispatch on layer:
+             - LEGACY_SIGNAL → emit sunset banner (D.2 will reject) and
+               fall through to legacy ``_REQUIRED_TOP_KEYS`` check.
+             - SIGNAL → enforce ``_REQUIRED_SIGNAL_LAYER_KEYS`` and
+               run the LayerValidator.
+             - PORTFOLIO → enforce ``_REQUIRED_PORTFOLIO_LAYER_KEYS``
+               and run the LayerValidator.
+             - Any other (SENSOR, future) → reject.
+          5. Validate alpha_id and version syntax.
+          6. Run the LayerValidator (G14, G15 active).
+        """
         if not isinstance(spec, dict):
             raise AlphaLoadError(f"{source}: root must be a YAML mapping")
 
+        schema_version = spec.get("schema_version")
+        if schema_version is None:
+            raise AlphaLoadError(
+                f"{source}: missing required 'schema_version' field. "
+                f"The only supported value is \"1.1\". Schema 1.0 was "
+                f"removed in workstream D; see "
+                f"docs/migration/schema_1_0_to_1_1.md for the migration "
+                f"cookbook (still applicable as historical reference)."
+            )
+        if str(schema_version) not in _SUPPORTED_SCHEMA_VERSIONS:
+            raise AlphaLoadError(
+                f"{source}: unsupported schema_version "
+                f"'{schema_version}', supported: "
+                f"{sorted(_SUPPORTED_SCHEMA_VERSIONS)}. "
+                f"Schema 1.0 was removed in workstream D; migrate by "
+                f"setting schema_version: \"1.1\" and adding "
+                f"layer: LEGACY_SIGNAL (zero behaviour change) or "
+                f"layer: SIGNAL/PORTFOLIO. "
+                f"See docs/migration/schema_1_0_to_1_1.md."
+            )
+        schema_version = str(schema_version)
+
+        layer = spec.get("layer")
+
+        if schema_version == "1.1":
+            if layer is None:
+                raise AlphaLoadError(
+                    f"{source}: schema_version '1.1' requires the 'layer' "
+                    f"field (§8.7 of design_docs/three_layer_architecture.md). "
+                    f"There is no implicit upgrade path. Add "
+                    f"`layer: LEGACY_SIGNAL` to preserve existing "
+                    f"per-tick behavior, or migrate to a horizon-gated "
+                    f"layer in a later phase."
+                )
+            layer_str = str(layer)
+            if layer_str not in _VALID_1_1_LAYERS:
+                raise AlphaLoadError(
+                    f"{source}: unknown layer '{layer_str}'. "
+                    f"Valid layers: {sorted(_VALID_1_1_LAYERS)}."
+                )
+            if layer_str not in _ACCEPTED_LAYERS:
+                phase = _LAYER_PHASE_MAP.get(layer_str, "a future phase")
+                raise AlphaLoadError(
+                    f"{source}: layer '{layer_str}' is not yet implemented "
+                    f"({phase}). Use `layer: LEGACY_SIGNAL` or "
+                    f"`layer: SIGNAL`. "
+                    f"See docs/migration/schema_1_0_to_1_1.md."
+                )
+            if layer_str == "LEGACY_SIGNAL":
+                alpha_id = str(spec.get("alpha_id") or source)
+                if alpha_id not in _LEGACY_SUNSET_WARNED:
+                    _LEGACY_SUNSET_WARNED.add(alpha_id)
+                    logger.warning(
+                        "%s: layer: LEGACY_SIGNAL is DEPRECATED and "
+                        "scheduled for removal in a future release. "
+                        "Migrate to layer: SIGNAL (horizon-anchored, "
+                        "regime-gated) when the alpha can carry a "
+                        "structural mechanism, half-life, and cost "
+                        "arithmetic. Migration cookbook: "
+                        "docs/migration/schema_1_0_to_1_1.md.",
+                        source,
+                    )
+            # SIGNAL layer has its own required-key set; LEGACY_SIGNAL
+            # falls through to the legacy ``_REQUIRED_TOP_KEYS`` check.
+            if layer_str == "SIGNAL":
+                missing = _REQUIRED_SIGNAL_LAYER_KEYS - set(spec.keys())
+                if missing:
+                    raise AlphaLoadError(
+                        f"{source}: layer: SIGNAL spec is missing required "
+                        f"top-level keys: " + ", ".join(sorted(missing))
+                        + ". Required (Phase 3): "
+                        + ", ".join(sorted(_REQUIRED_SIGNAL_LAYER_KEYS))
+                    )
+                self._validate_alpha_id_and_version(spec, source)
+                from feelies.alpha.layer_validator import LayerValidator
+                LayerValidator(
+                    enforce_trend_mechanism=self._enforce_trend_mechanism,
+                    enforce_layer_gates=self._enforce_layer_gates,
+                ).validate(spec, source)
+                return
+            if layer_str == "PORTFOLIO":
+                missing = _REQUIRED_PORTFOLIO_LAYER_KEYS - set(spec.keys())
+                if missing:
+                    raise AlphaLoadError(
+                        f"{source}: layer: PORTFOLIO spec is missing required "
+                        f"top-level keys: " + ", ".join(sorted(missing))
+                        + ". Required (Phase 4): "
+                        + ", ".join(sorted(_REQUIRED_PORTFOLIO_LAYER_KEYS))
+                    )
+                self._validate_alpha_id_and_version(spec, source)
+                from feelies.alpha.layer_validator import LayerValidator
+                LayerValidator(
+                    enforce_trend_mechanism=self._enforce_trend_mechanism,
+                    enforce_layer_gates=self._enforce_layer_gates,
+                ).validate(spec, source)
+                return
+
+        # Reached only for layer: LEGACY_SIGNAL on schema 1.1 — SIGNAL
+        # and PORTFOLIO branches return early after their own checks.
         missing = _REQUIRED_TOP_KEYS - set(spec.keys())
         if missing:
             raise AlphaLoadError(
@@ -504,20 +1207,24 @@ class AlphaLoader:
                 + ", ".join(sorted(missing))
             )
 
-        schema_version = spec.get("schema_version")
-        if schema_version is None:
-            logger.warning(
-                "%s: missing 'schema_version' — defaulting to '1.0'. "
-                "Add schema_version: \"1.0\" to suppress this warning.",
-                source,
-            )
-            spec["schema_version"] = "1.0"
-        elif str(schema_version) not in _SUPPORTED_SCHEMA_VERSIONS:
-            raise AlphaLoadError(
-                f"{source}: unsupported schema_version '{schema_version}', "
-                f"supported: {sorted(_SUPPORTED_SCHEMA_VERSIONS)}"
-            )
+        self._validate_alpha_id_and_version(spec, source)
 
+        from feelies.alpha.layer_validator import LayerValidator
+        LayerValidator(
+            enforce_trend_mechanism=self._enforce_trend_mechanism,
+            enforce_layer_gates=self._enforce_layer_gates,
+        ).validate(spec, source)
+
+    def _validate_alpha_id_and_version(
+        self, spec: dict[str, Any], source: str,
+    ) -> None:
+        """Shared identifier validation lifted from ``_validate_schema``.
+
+        Both LEGACY_SIGNAL and SIGNAL layers gate on alpha_id syntax
+        (lower-snake-case) and semver version strings.  Extracted into
+        a helper so both branches enforce the same rules without
+        duplicating error messages.
+        """
         alpha_id = spec.get("alpha_id", "")
         if not _ALPHA_ID_RE.match(str(alpha_id)):
             raise AlphaLoadError(
@@ -531,6 +1238,62 @@ class AlphaLoader:
                 f"{source}: version '{version}' must be semver "
                 f"(e.g. '1.0.0')"
             )
+
+    # ── v0.3 optional YAML blocks ─────────────────────────────
+
+    def _parse_trend_mechanism_block(
+        self,
+        block: Any,
+        source: str,
+    ) -> dict[str, Any] | None:
+        """Parse the optional v0.3 ``trend_mechanism:`` block (§20.5).
+
+        Phase 1.1 only enforces:
+          - block is a mapping if present.
+          - if ``family:`` is set, it is one of the 5 closed
+            ``TrendMechanism`` names.
+
+        The remainder of the block (e.g. parameter constraints,
+        decay-curve specifications) is captured verbatim for
+        consumption by the gate G16 in Phase 3.1.  Absent block ⇒
+        opt-in not exercised; returns ``None``.
+        """
+        if block is None:
+            return None
+        if not isinstance(block, dict):
+            raise AlphaLoadError(
+                f"{source}: 'trend_mechanism' must be a mapping, got "
+                f"{type(block).__name__}"
+            )
+        family = block.get("family")
+        if family is not None and str(family) not in _TREND_MECHANISM_FAMILIES:
+            raise AlphaLoadError(
+                f"{source}: trend_mechanism.family '{family}' is not in "
+                f"the closed taxonomy. Valid families: "
+                f"{sorted(_TREND_MECHANISM_FAMILIES)}. "
+                f"See §20.2 of design_docs/three_layer_architecture.md."
+            )
+        return dict(block)
+
+    def _parse_hazard_exit_block(
+        self,
+        block: Any,
+        source: str,
+    ) -> dict[str, Any] | None:
+        """Parse the optional v0.3 ``hazard_exit:`` block (§20.5).
+
+        Phase 1.1 only enforces that the block is a mapping when present.
+        Field-level validation is deferred to Phase 4.1 when the
+        composition layer activates hazard-rate-driven exits.
+        """
+        if block is None:
+            return None
+        if not isinstance(block, dict):
+            raise AlphaLoadError(
+                f"{source}: 'hazard_exit' must be a mapping, got "
+                f"{type(block).__name__}"
+            )
+        return dict(block)
 
     @staticmethod
     def _validate_risk_budget(budget: AlphaRiskBudget, source: str) -> None:
@@ -771,17 +1534,19 @@ class AlphaLoader:
                 shared = _SharedCompoundComputation(init_fn, update_fn, n_elements)
                 for idx in range(n_elements):
                     sub_id = f"{fid}_{idx}"
-                    comp = _CompoundElementComputation(shared, idx, params)
+                    element_comp: FeatureComputation = (
+                        _CompoundElementComputation(shared, idx, params)
+                    )
                     all_defs.append(FeatureDefinition(
                         feature_id=sub_id,
                         version=version,
                         description=f"{description} [element {idx}]",
                         depends_on=depends_on,
                         warm_up=warm_up,
-                        compute=comp,
+                        compute=element_comp,
                     ))
             else:
-                comp = _YAMLFeatureComputation(
+                scalar_comp: FeatureComputation = _YAMLFeatureComputation(
                     init_fn, update_fn, params,
                     update_trade_fn=update_trade_fn,
                 )
@@ -791,7 +1556,7 @@ class AlphaLoader:
                     description=description,
                     depends_on=depends_on,
                     warm_up=warm_up,
-                    compute=comp,
+                    compute=scalar_comp,
                 ))
 
         return all_defs
@@ -856,4 +1621,25 @@ class AlphaLoader:
             )
         _check_arity(evaluate_fn, 2, "evaluate", source, alpha_id)
 
-        return evaluate_fn
+        evaluate_callable: Callable[
+            [FeatureVector, dict[str, Any]], Signal | None
+        ] = evaluate_fn
+        return evaluate_callable
+
+
+# ── Lazy event imports for PORTFOLIO inline construct() namespaces ─────
+
+
+def _import_cross_sectional_context() -> Any:
+    from feelies.core.events import CrossSectionalContext as _CSC
+    return _CSC
+
+
+def _import_sized_position_intent() -> Any:
+    from feelies.core.events import SizedPositionIntent as _SPI
+    return _SPI
+
+
+def _import_target_position() -> Any:
+    from feelies.core.events import TargetPosition as _TP
+    return _TP

@@ -31,7 +31,8 @@ T = TypeVar("T", bound=Event)
 PIPELINE_TEST_ALPHA_ID = "pipeline_test_smr"
 
 PIPELINE_TEST_ALPHA_SPEC = """\
-schema_version: "1.0"
+schema_version: "1.1"
+layer: LEGACY_SIGNAL
 alpha_id: pipeline_test_smr
 version: "1.0.0"
 description: "Minimal EWMA z-score alpha for pipeline integration testing"
@@ -303,7 +304,8 @@ def multi_symbol_scenario(tmp_path_factory: pytest.TempPathFactory):
 
 
 TRADE_ALPHA_SPEC = """\
-schema_version: "1.0"
+schema_version: "1.1"
+layer: LEGACY_SIGNAL
 alpha_id: trade_aware
 version: "1.0.0"
 author: validation_test

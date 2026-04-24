@@ -28,7 +28,8 @@ from feelies.storage.memory_event_log import InMemoryEventLog
 # ── Alpha spec that produces a BUY signal when mid > 150 ────────────
 
 LONG_ALPHA_SPEC = """\
-schema_version: "1.0"
+schema_version: "1.1"
+layer: LEGACY_SIGNAL
 alpha_id: spread_momentum
 version: "1.0.0"
 author: integration_test
@@ -96,7 +97,8 @@ signal: |
 # ── Alpha spec that never fires (null signal) ───────────────────────
 
 NULL_ALPHA_SPEC = """\
-schema_version: "1.0"
+schema_version: "1.1"
+layer: LEGACY_SIGNAL
 alpha_id: null_signal
 version: "1.0.0"
 author: integration_test

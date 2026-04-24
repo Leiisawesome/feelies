@@ -606,6 +606,7 @@ class CompositeSignalEngine:
         if not signals:
             return None
 
+        winner: Signal | None
         if len(signals) == 1:
             winner = signals[0]
         else:

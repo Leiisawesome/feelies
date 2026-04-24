@@ -1,0 +1,151 @@
+# =============================================================
+#   SIGNAL template (schema 1.1, Phase 3 / 3.1)
+#   ----------------------------------------------------------------
+#   Horizon-anchored, regime-gated, cost-disclosed signal alpha.
+#   This is the recommended template for new alphas.
+#
+#   Required blocks (loader + LayerValidator G2–G16):
+#     - schema_version, layer, alpha_id, version, description
+#     - hypothesis, falsification_criteria
+#     - depends_on_sensors        (sensor IDs declared in platform.yaml)
+#     - horizon_seconds           (≥ 30; member of platform horizons)
+#     - regime_gate               (on_condition + off_condition + hysteresis)
+#     - cost_arithmetic           (margin_ratio ≥ 1.5 — Inv-12)
+#     - signal                    (evaluate(snapshot, regime, params))
+#
+#   Recommended (Phase 3.1, gate G16):
+#     - trend_mechanism           (family + half-life + L1 signature)
+#
+#   See:
+#     - grok/prompts/hypothesis_reasoning.md     (7-step protocol, gates)
+#     - grok/prompts/sensor_catalog.md           (sensor vocabulary)
+#     - alphas/SCHEMA.md                         (canonical field reference)
+#     - docs/migration/schema_1_0_to_1_1.md      (LEGACY → SIGNAL cookbook)
+# =============================================================
+
+# ── Identity & Provenance ─────────────────────────────────
+schema_version: "1.1"
+layer: SIGNAL
+alpha_id: my_signal_alpha             # ^[a-z][a-z0-9_]*$
+version: "1.0.0"
+description: |
+  One-paragraph summary of the structural edge — the actor, the
+  observable signature, and the horizon at which the mechanism
+  expresses.
+
+# ── Hypothesis (causal mechanism) ─────────────────────────
+hypothesis: |
+  Name the structural actor (Inv-1) and the L1 signature their
+  behaviour leaks into the book.  Template:
+  "[ACTOR] does [ACTION] because [INCENTIVE], which must leak into
+  L1 as [OBSERVABLE SIGNATURE]."
+
+falsification_criteria:
+  - |
+    Spearman correlation between <signature_sensor>[t-W:t] and
+    forward-<H>-second return drops below 0.05 in the on-regime
+    for ≥ 4 consecutive weeks.
+  - |
+    Realised half-life drifts outside the family envelope
+    declared in trend_mechanism.expected_half_life_seconds
+    (G16 rule 2).
+  - |
+    Out-of-sample DSR < 1.0 across any single calendar quarter
+    after promotion to LIVE.
+
+# ── Layer-1 sensor dependencies (must exist in SensorRegistry) ───
+depends_on_sensors:
+  - kyle_lambda_60s
+  - ofi_ewma
+  - micro_price
+  - spread_z_30d
+
+# ── Parameters (≤ 3 with free range; G12) ─────────────────
+parameters:
+  entry_threshold_z:
+    type: float
+    default: 2.0
+    min: 1.5
+    max: 3.0
+    description: "Entry z-score on the primary signature sensor."
+  edge_per_unit_bps:
+    type: float
+    default: 4.0
+    min: 1.0
+    max: 8.0
+    description: "Linear edge attribution per unit z above threshold."
+  edge_cap_bps:
+    type: float
+    default: 20.0
+    min: 8.0
+    max: 50.0
+    description: "Hard cap on reported edge_estimate_bps."
+
+# ── Horizon (Layer-2 boundary) ────────────────────────────
+horizon_seconds: 300                  # ≥ 30; must be in platform horizons set
+
+# ── Risk Budget ───────────────────────────────────────────
+risk_budget:
+  max_position_per_symbol: 200
+  max_gross_exposure_pct: 8.0
+  max_drawdown_pct: 1.5
+  capital_allocation_pct: 15.0
+
+# ── Regime Gate (Phase 3 DSL — bindings: P(<state>), <sensor>, <sensor>_zscore, <sensor>_percentile) ──
+regime_gate:
+  regime_engine: hmm_3state_fractional
+  on_condition: |
+    P(normal) > 0.6 and spread_z_30d <= 1.0
+  off_condition: |
+    P(normal) < 0.4 or spread_z_30d > 2.0
+  hysteresis:
+    posterior_margin: 0.20            # ≥ 0.15 (G9)
+    percentile_margin: 0.30
+
+# ── Cost Arithmetic Disclosure (G12) ──────────────────────
+cost_arithmetic:
+  edge_estimate_bps: 11.7             # cite source in commit message / rationale.md
+  half_spread_bps: 2.5
+  impact_bps: 3.0
+  fee_bps: 1.0
+  margin_ratio: 1.8                   # = edge / (half_spread + impact + fee); ≥ 1.5
+
+# ── Trend Mechanism (Phase 3.1, gate G16 — recommended) ──
+trend_mechanism:
+  family: KYLE_INFO                   # KYLE_INFO | INVENTORY | HAWKES_SELF_EXCITE | LIQUIDITY_STRESS | SCHEDULED_FLOW
+  expected_half_life_seconds: 600     # within family envelope; horizon/half_life ∈ [0.5, 4.0]
+  l1_signature_sensors:
+    - kyle_lambda_60s
+    - ofi_ewma
+  failure_signature:
+    - "spread_z_30d > 2.0"
+    - "kyle_lambda_60s_zscore < -1.5"
+
+# ── Signal (Layer-2 evaluate) ─────────────────────────────
+signal: |
+  def evaluate(snapshot, regime, params):
+      z = snapshot.values.get("kyle_lambda_60s_zscore")
+      ofi = snapshot.values.get("ofi_ewma")
+      if z is None or ofi is None:
+          return None
+      if abs(z) < params["entry_threshold_z"]:
+          return None
+
+      direction = LONG if ofi > 0.0 else SHORT
+      edge_bps = min(
+          (abs(z) - params["entry_threshold_z"]) * params["edge_per_unit_bps"],
+          params["edge_cap_bps"],
+      )
+      if edge_bps <= 0.0:
+          return None
+
+      return Signal(
+          timestamp_ns=snapshot.timestamp_ns,
+          correlation_id=snapshot.correlation_id,
+          sequence=snapshot.sequence,
+          symbol=snapshot.symbol,
+          strategy_id="my_signal_alpha",
+          direction=direction,
+          strength=min(abs(z) / (params["entry_threshold_z"] * 2.0), 1.0),
+          edge_estimate_bps=edge_bps,
+      )
