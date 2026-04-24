@@ -110,6 +110,24 @@ class AlphaManifest:
     Carries the hypothesis, falsification criteria, versioning, symbol
     scope, parameters, and risk budget — everything needed to audit,
     reproduce, and lifecycle-manage the alpha without opening its code.
+
+    Three-layer architecture additive fields (Phase 1 / 1.1 of
+    design_docs/three_layer_architecture.md):
+
+      ``layer`` — declared layer for the alpha.  ``None`` means the
+                  manifest came from a schema-1.0 spec (legacy).
+                  Otherwise one of ``LEGACY_SIGNAL``, ``SIGNAL``,
+                  ``PORTFOLIO``, ``SENSOR`` (only ``LEGACY_SIGNAL``
+                  is accepted by the loader in Phase 1).
+
+      ``trend_mechanism`` — opt-in v0.3 ``trend_mechanism:`` block as a
+                            raw dict (parsed but not enforced in Phase 1.1
+                            per §20.1; consumed by the v0.3 mechanism
+                            classification gate G16 in Phase 3.1).
+
+      ``hazard_exit`` — opt-in v0.3 ``hazard_exit:`` block as a raw dict
+                        (parsed but not enforced in Phase 1.1 per §20.1;
+                        consumed by the composition layer in Phase 4.1).
     """
 
     alpha_id: str
@@ -127,6 +145,9 @@ class AlphaManifest:
         max_drawdown_pct=1.0,
         capital_allocation_pct=10.0,
     )
+    layer: str | None = None
+    trend_mechanism: dict[str, Any] | None = None
+    hazard_exit: dict[str, Any] | None = None
 
 
 # ── Alpha module protocol ───────────────────────────────────────────

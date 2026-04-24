@@ -17,6 +17,8 @@ from tests.alpha.conftest import clock, sample_quote
 # ── Minimal valid specs for testing ───────────────────────────────────────
 
 MINIMAL_SPEC = {
+    "schema_version": "1.1",
+    "layer": "LEGACY_SIGNAL",
     "alpha_id": "test_alpha",
     "version": "1.0.0",
     "description": "Test alpha",
@@ -328,6 +330,7 @@ class TestAlphaLoaderValidation:
                     "feature_id": "x",
                     "version": "1",
                     "description": "x",
+                    "warm_up": {"min_events": 0},
                     "computation": "def update(quote, state, params): return 0.0",
                 }
             ],
@@ -344,6 +347,7 @@ class TestAlphaLoaderValidation:
                     "feature_id": "x",
                     "version": "1",
                     "description": "x",
+                    "warm_up": {"min_events": 0},
                     "computation": "def initial_state(): return {}",
                 }
             ],
@@ -362,7 +366,12 @@ class TestAlphaLoaderValidation:
         spec = {
             **MINIMAL_SPEC,
             "features": [
-                {"version": "1", "description": "x", "computation": "x"}
+                {
+                    "version": "1",
+                    "description": "x",
+                    "warm_up": {"min_events": 0},
+                    "computation": "x",
+                }
             ],
         }
         loader = AlphaLoader()

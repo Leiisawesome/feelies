@@ -22,7 +22,8 @@ from feelies.monitoring.in_memory import (
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 ALPHA_SPEC_YAML = """\
-schema_version: "1.0"
+schema_version: "1.1"
+layer: LEGACY_SIGNAL
 alpha_id: test_alpha
 version: "1.0.0"
 author: test
@@ -181,6 +182,8 @@ backtest_fill_latency_ns: 0
 """
 
 MEAN_REV_ALPHA_YAML = """\
+schema_version: "1.1"
+layer: LEGACY_SIGNAL
 alpha_id: yaml_test_mean_rev
 version: "1.0.0"
 author: "test"

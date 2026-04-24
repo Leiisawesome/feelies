@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from feelies.alpha.module import AlphaRiskBudget
 from feelies.alpha.registry import AlphaRegistry
 from feelies.core.events import (
     OrderRequest,
@@ -128,7 +129,7 @@ class AlphaBudgetRiskWrapper:
     def _check_alpha_drawdown(
         self,
         signal: Signal,
-        budget: object,
+        budget: AlphaRiskBudget,
         alpha_equity: Decimal,
     ) -> RiskVerdict | None:
         """Per-alpha drawdown via high-water mark (net of fees)."""
@@ -156,7 +157,7 @@ class AlphaBudgetRiskWrapper:
         if hwm <= 0:
             return None
         drawdown_pct = float((hwm - current_equity) / hwm * 100)
-        if drawdown_pct >= budget.max_drawdown_pct:  # type: ignore[union-attr]
+        if drawdown_pct >= budget.max_drawdown_pct:
             return RiskVerdict(
                 timestamp_ns=signal.timestamp_ns,
                 correlation_id=signal.correlation_id,
@@ -165,7 +166,7 @@ class AlphaBudgetRiskWrapper:
                 action=RiskAction.REJECT,
                 reason=(
                     f"per-alpha drawdown {drawdown_pct:.2f}% >= "
-                    f"limit {budget.max_drawdown_pct}% — "  # type: ignore[union-attr]
+                    f"limit {budget.max_drawdown_pct}% — "
                     f"alpha should be quarantined"
                 ),
             )
@@ -239,7 +240,7 @@ class AlphaBudgetRiskWrapper:
     def _alpha_equity_and_exposure(
         self,
         strategy_id: str,
-        budget: object,
+        budget: AlphaRiskBudget,
     ) -> tuple[Decimal, Decimal, Decimal]:
         """Compute (alpha_equity, alpha_max_exposure, alpha_exposure).
 
@@ -247,10 +248,10 @@ class AlphaBudgetRiskWrapper:
         check_order, and _check_alpha_drawdown.
         """
         alpha_equity = self._account_equity * Decimal(
-            str(budget.capital_allocation_pct),  # type: ignore[union-attr]
+            str(budget.capital_allocation_pct),
         ) / Decimal("100")
         alpha_max_exposure = alpha_equity * Decimal(
-            str(budget.max_gross_exposure_pct),  # type: ignore[union-attr]
+            str(budget.max_gross_exposure_pct),
         ) / Decimal("100")
         alpha_exposure = self._strategy_positions.get_strategy_exposure(strategy_id)
         return alpha_equity, alpha_max_exposure, alpha_exposure

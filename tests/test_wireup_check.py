@@ -46,7 +46,8 @@ from feelies.storage.memory_feature_snapshot import InMemoryFeatureSnapshotStore
 from feelies.storage.memory_trade_journal import InMemoryTradeJournal
 
 ALPHA_SPEC = """\
-schema_version: "1.0"
+schema_version: "1.1"
+layer: LEGACY_SIGNAL
 alpha_id: wirecheck_alpha
 version: "1.0.0"
 author: test
