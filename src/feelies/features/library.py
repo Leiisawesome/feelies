@@ -76,7 +76,7 @@ class EWMAComputation:
         else:
             state["ewma"] += self._alpha * (mid - state["ewma"])
         state["count"] += 1
-        return state["ewma"]
+        return float(state["ewma"])
 
 
 class RollingVarianceComputation:
@@ -112,7 +112,7 @@ class RollingVarianceComputation:
 
         state["prev_mid"] = mid
         state["count"] = count + 1
-        return state["var"]
+        return float(state["var"])
 
 
 class ZScoreComputation:
@@ -151,8 +151,8 @@ class ZScoreComputation:
             state["var"] += self._alpha * (diff * diff - state["var"])
 
         state["count"] = count + 1
-        std = math.sqrt(max(state["var"], 1e-24))
+        std = math.sqrt(max(float(state["var"]), 1e-24))
         # Clamp z-score: near-zero variance early in the session (few ticks)
         # can produce arbitrarily large values that poison downstream signals.
         _MAX_ZSCORE = 10.0
-        return max(-_MAX_ZSCORE, min(_MAX_ZSCORE, diff / std))
+        return float(max(-_MAX_ZSCORE, min(_MAX_ZSCORE, diff / std)))
