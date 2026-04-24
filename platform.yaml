@@ -1,10 +1,10 @@
 # ═══════════════════════════════════════════════════════════
 # PLATFORM CONFIGURATION — Reference Config
-# Version: 0.1.0
+# Version: 0.2.0-dev (three-layer architecture refactor in flight)
 # ═══════════════════════════════════════════════════════════
 
 # ── Provenance (Invariant 13) ─────────────────────────────
-version: "0.1.0"
+version: "0.2.0-dev"
 author: "system"
 
 # ── Operating Mode ────────────────────────────────────────
@@ -19,7 +19,12 @@ symbols:
 
 # ── Alpha Discovery ──────────────────────────────────────
 # Directory scanned for *.alpha.yaml files at boot time.
-alpha_spec_dir: alphas/trade_cluster_drift
+#
+# Workstream-D update: ``alphas/trade_cluster_drift`` was retired in
+# D.2 (LEGACY_SIGNAL reference alpha) — the default discovery dir is
+# now the SIGNAL/PORTFOLIO mid-cap reference, ``alphas/
+# pofi_benign_midcap_v1``.  Override per-run via ``--config``.
+alpha_spec_dir: alphas/pofi_benign_midcap_v1
 
 # Explicit alpha spec paths (in addition to directory scan).
 alpha_specs: []
@@ -94,3 +99,57 @@ passive_cancel_fee_per_share: 0.0
 # ── Minimum Order Size ────────────────────────────────────
 # Orders below this share count are suppressed before routing.
 platform_min_order_shares: 50
+
+# ═══════════════════════════════════════════════════════════
+# Phase-2 (three-layer architecture v0.2) — sensor layer
+# ───────────────────────────────────────────────────────────
+# All Phase-2 fields are OPTIONAL.  Omitting them preserves
+# the legacy (pre-refactor) execution path bit-identically.
+# See ``design_docs/three_layer_architecture.md`` §6, §7.4.
+# ═══════════════════════════════════════════════════════════
+
+# ── Market / session identity ────────────────────────────
+# Used by the calendar adapter and horizon scheduler.
+market_id: US_EQUITY
+session_kind: RTH
+
+# ── Canonical horizons (seconds) ─────────────────────────
+# The five horizons §7.4 of the design doc enumerates.
+# A SIGNAL/PORTFOLIO alpha's ``horizon_seconds`` must be a
+# member of this set (gate G7 at load time).
+horizons_seconds:
+  - 30
+  - 120
+  - 300
+  - 900
+  - 1800
+
+# ── Session anchor (optional) ─────────────────────────────
+# Wall-clock ns of the session open.  If unset, the
+# HorizonScheduler lazily auto-binds to the first event it
+# sees (deterministic for backtests).
+# session_open_ns: null
+
+# ── Event calendar (optional) ─────────────────────────────
+# YAML file declaring scheduled session events (open, close,
+# auctions, halts) consumed by the calendar adapter.  Omit
+# for a calendar-free demo; provide for live / paper.
+# event_calendar_path: storage/reference/event_calendar/2026-03-24.yaml
+
+# ── Sensor specs (optional) ───────────────────────────────
+# Enumerate the sensors to register at boot.  Each entry
+# becomes one ``SensorSpec`` (see ``src/feelies/sensors/spec.py``).
+# An empty list means the sensor registry is skipped entirely
+# and the orchestrator takes the legacy micro-state path.
+sensor_specs: []
+# Example registration (uncomment + tune for live use):
+# sensor_specs:
+#   - sensor_id: ofi_ewma
+#     sensor_version: "1.0.0"
+#     cls: feelies.sensors.impl.ofi_ewma.OfiEwmaSensor
+#     params:
+#       half_life_ns: 5000000000
+#     subscribes_to: [NBBOQuote]
+#     input_sensor_ids: []
+#     min_history: 100
+#     throttled_ms: null
