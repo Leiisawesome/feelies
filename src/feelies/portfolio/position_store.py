@@ -40,8 +40,17 @@ class PositionStore(Protocol):
         quantity_delta: int,
         fill_price: Decimal,
         fees: Decimal = Decimal("0"),
+        timestamp_ns: int | None = None,
     ) -> Position:
-        """Update position after a fill.  Returns updated position."""
+        """Update position after a fill.  Returns updated position.
+
+        ``timestamp_ns`` (Phase-4-finalize, optional) records the wall-
+        time of the underlying fill.  When provided and the update
+        causes a flat → non-zero transition, the implementation records
+        the timestamp under :meth:`opened_at_ns` for the symbol.  When
+        omitted, position-age tracking is disabled for that fill (Inv-A
+        legacy callers see no behavioural change).
+        """
         ...
 
     def debit_fees(self, symbol: str, fees: Decimal) -> None:
@@ -69,5 +78,33 @@ class PositionStore(Protocol):
         Implementations should use the latest mark price when available
         (see ``update_mark``) and fall back to ``avg_entry_price`` only
         when no mark has been recorded for the symbol.
+        """
+        ...
+
+    def opened_at_ns(self, symbol: str) -> int | None:
+        """Timestamp (ns) of the fill that took ``symbol`` from flat → non-zero.
+
+        Returns ``None`` when the symbol is currently flat or has never
+        been filled.  When a position is closed (``quantity → 0``) and
+        later reopened, the returned timestamp reflects the **most
+        recent** open — never the original.
+
+        Phase-4-finalize uses this to enforce the hazard-exit
+        ``min_age_seconds`` safeguard and the optional
+        ``hard_exit_age_seconds`` reconciliation guard (§20.7.3).
+
+        Implementations that do not track this MUST return ``None`` so
+        the hazard controller falls back to the no-min-age behaviour
+        (Inv-A: legacy v0.2 deployments unaffected).
+        """
+        ...
+
+    def latest_mark(self, symbol: str) -> Decimal | None:
+        """Return the most recent mark recorded via :meth:`update_mark`.
+
+        Returns ``None`` when no mark has been recorded for ``symbol``.
+        Used by the Phase-4 risk-engine helper to translate intent
+        ``target_usd`` into share counts (see
+        :meth:`feelies.risk.basic_risk.BasicRiskEngine.check_sized_intent`).
         """
         ...

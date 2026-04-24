@@ -11,9 +11,19 @@ from feelies.services.regime_engine import (
     RegimeEngine,
     get_regime_engine,
 )
+from feelies.services.regime_hazard_detector import (
+    DEFAULT_HYSTERESIS_THRESHOLD,
+    HazardDetectorContractError,
+    RegimeHazardDetector,
+    detect as detect_hazard_spike,
+)
 
 __all__ = [
+    "DEFAULT_HYSTERESIS_THRESHOLD",
     "HMM3StateFractional",
+    "HazardDetectorContractError",
     "RegimeEngine",
+    "RegimeHazardDetector",
+    "detect_hazard_spike",
     "get_regime_engine",
 ]

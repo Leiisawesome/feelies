@@ -20,6 +20,17 @@ class MemoryPositionStore:
     def __init__(self) -> None:
         self._positions: dict[str, Position] = {}
         self._marks: dict[str, Decimal] = {}
+        # Phase-4-finalize: per-symbol "opened-at" shadow map used by
+        # the hazard-exit min-age safeguard and optional hard-exit-age
+        # reconciliation guard.  Set on flat→non-zero transitions in
+        # ``update``; cleared when ``new_qty == 0`` so the next reopen
+        # records a fresh open timestamp.
+        self._opened_at_ns: dict[str, int] = {}
+        # Most-recent fill timestamp per symbol — used to seed the
+        # "opened" timestamp on flat→non-zero transitions.  Updated on
+        # every ``update`` call, so callers passing ``timestamp_ns`` get
+        # deterministic behaviour across replay.
+        self._last_update_ns: dict[str, int] = {}
 
     def get(self, symbol: str) -> Position:
         pos = self._positions.get(symbol)
@@ -33,6 +44,7 @@ class MemoryPositionStore:
         quantity_delta: int,
         fill_price: Decimal,
         fees: Decimal = Decimal("0"),
+        timestamp_ns: int | None = None,
     ) -> Position:
         pos = self._positions.get(symbol)
         if pos is None:
@@ -41,6 +53,16 @@ class MemoryPositionStore:
 
         old_qty = pos.quantity
         new_qty = old_qty + quantity_delta
+
+        # Phase-4-finalize: track flat→non-zero opens for hazard exits.
+        # Only records when the caller supplies ``timestamp_ns`` —
+        # legacy callers that omit it see no behavioural change.
+        if timestamp_ns is not None:
+            self._last_update_ns[symbol] = int(timestamp_ns)
+            if old_qty == 0 and new_qty != 0:
+                self._opened_at_ns[symbol] = int(timestamp_ns)
+            elif new_qty == 0:
+                self._opened_at_ns.pop(symbol, None)
 
         if old_qty == 0:
             pos.avg_entry_price = fill_price
@@ -108,6 +130,25 @@ class MemoryPositionStore:
         cancel fee on a symbol that was never filled produces no entry.
         """
         return dict(self._positions)
+
+    def opened_at_ns(self, symbol: str) -> int | None:
+        """Return the timestamp (ns) of the most recent flat→non-zero fill.
+
+        Returns ``None`` when the symbol is currently flat or the
+        opening fill did not pass ``timestamp_ns``.  See the
+        :class:`PositionStore` protocol docstring for full semantics.
+        """
+        ts = self._opened_at_ns.get(symbol)
+        if ts is None:
+            return None
+        pos = self._positions.get(symbol)
+        if pos is None or pos.quantity == 0:
+            return None
+        return ts
+
+    def latest_mark(self, symbol: str) -> Decimal | None:
+        """Return the most recent mark recorded via :meth:`update_mark`."""
+        return self._marks.get(symbol)
 
     def total_exposure(self) -> Decimal:
         """Gross notional using the latest mark per symbol.
