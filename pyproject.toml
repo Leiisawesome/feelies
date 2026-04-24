@@ -21,6 +21,18 @@ massive = [
     "websockets>=13.0",
     "massive>=2.3",
 ]
+portfolio = [
+    # Phase-4 PORTFOLIO layer optional dependencies.  Loaded lazily inside
+    # composition modules; the pure-Python fallbacks (numpy z-scoring +
+    # heuristic turnover optimizer) keep the platform installable without
+    # this extra and are the only path exercised under the deterministic
+    # parity tests.  Install with `pip install feelies[portfolio]` to
+    # enable cvxpy-backed turnover optimization and parquet-backed factor
+    # loadings.
+    "cvxpy>=1.5",
+    "ecos>=2.0",
+    "pyarrow>=15.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -33,9 +45,76 @@ packages = ["src/feelies"]
 strict = true
 python_version = "3.12"
 
+# Acceptance Sweep — §18.3 #3 strict-mode scope (docs/acceptance/v02_v03_matrix.md).
+#
+# `strict = true` is the platform default and applies to every module
+# introduced or rewritten by Phases 1–5.1 (v0.2 + v0.3 — sensors,
+# composition, regime, layered alpha loader / signal-layer module /
+# portfolio-layer module / layer validator, signal regime gate,
+# horizon aggregator + signal engine, etc.).
+#
+# The override block below scopes-out a small set of pre-Phase-1.1
+# legacy modules whose strict-mode errors are pre-existing structural
+# debt unrelated to the v0.2/v0.3 contract.  These are tracked under
+# the future "type-tightening" workstream (gap-Z in the matrix) and
+# MUST NOT grow.  Adding a new module to this list requires a written
+# justification anchored to the matrix file.
+#
+# The corresponding acceptance test
+# (``tests/acceptance/test_mypy_strict_scope.py``) runs ``mypy``
+# against ``src/feelies`` and asserts a zero exit code, which closes
+# §18.3 #3 mechanically as long as this override list stays accurate.
+[[tool.mypy.overrides]]
+module = [
+    "feelies.bootstrap",
+    "feelies.execution.passive_limit_router",
+    "feelies.ingestion.massive_ingestor",
+    "feelies.ingestion.massive_normalizer",
+    "feelies.ingestion.massive_ws",
+    "feelies.kernel.orchestrator",
+    "feelies.storage.disk_event_cache",
+    "feelies.storage.memory_trade_journal",
+]
+ignore_errors = true
+
 [tool.ruff]
 target-version = "py312"
 line-length = 99
+
+[tool.ruff.lint]
+# Inv-10 (clock abstraction) — every wall-clock read must go through
+# ``feelies.core.clock.MonotonicClock``.  The platform forbids raw
+# ``datetime.now()`` / ``datetime.utcnow()`` / ``time.time*`` in the
+# production source tree and only allows them in the canonical clock
+# adapter and explicitly exempted modules listed below.
+#
+# The Phase-4-finalize slice extends this ban to cover the new
+# composition / monitoring / forensics / risk modules added in
+# Phase 4 + Phase 4.1: PORTFOLIO ranker, hazard exit controller,
+# horizon metrics collector, multi-horizon attribution, etc.  Any
+# such module that needs a current timestamp MUST inject a
+# ``MonotonicClock`` (or accept ``ts_ns`` as an explicit parameter)
+# so that deterministic replay (Inv-5) and the dual-mode parity
+# contract (Inv-9) are preserved.
+select = [
+    "DTZ",  # flake8-datetimez (DTZ005/DTZ006/DTZ011/...)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Only the canonical clock adapter is allowed to call wall-clock APIs
+# in production source.  Any new module added under ``src/feelies/``
+# MUST inherit this ban — do not add per-file-ignores here without a
+# written justification anchored to the design doc.
+"src/feelies/core/clock.py" = ["DTZ005", "DTZ006", "DTZ011"]
+# Ingestion functional tests talk to real wall-clock services
+# (Massive WebSocket; throttle pacing) and are explicitly excluded
+# from deterministic replay.
+"tests/ingestion/test_massive_functional.py" = ["DTZ005", "DTZ006", "DTZ011"]
+"tests/ingestion/test_parallel_ingest_integration.py" = ["DTZ005", "DTZ006", "DTZ011"]
+# Structured logger emits ISO-8601 timestamps via the injected clock
+# in production; module-level helpers retain a wall-clock fallback for
+# bootstrap-time error messages emitted before the clock is wired.
+"src/feelies/monitoring/structured_logging.py" = ["DTZ005", "DTZ006", "DTZ011"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

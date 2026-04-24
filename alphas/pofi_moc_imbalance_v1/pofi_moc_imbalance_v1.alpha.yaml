@@ -1,0 +1,168 @@
+# ── Identity & Provenance ─────────────────────────────────
+schema_version: "1.1"
+layer: SIGNAL
+alpha_id: pofi_moc_imbalance_v1
+version: "1.0.0"
+description: |
+  Market-on-close (MOC) imbalance drift — scheduled-flow alpha
+  that participates in the predictable order-flow accumulation
+  during the closing-auction imbalance window.  Direction is
+  taken from the published flow-direction prior carried by the
+  ``scheduled_flow_window`` sensor, conditioned on contemporary
+  OFI agreeing in sign.
+
+# ── Hypothesis (causal mechanism) ─────────────────────────
+hypothesis: |
+  Closing-auction MOC imbalance is structurally predictable in
+  sign because reported ``MOC_IMBALANCE`` windows publish a
+  flow-direction prior derived from exchange imbalance feeds.
+  Within the active window — and while the realised OFI agrees
+  in sign — child-order participation generates a predictable
+  micro-price drift that mean-reverts over the half-life of the
+  imbalance signature (~240 s).  We harvest the drift only when
+  more than 60 seconds remain in the window so the alpha never
+  trades into the closing seconds where slippage spikes.
+
+falsification_criteria:
+  - |
+    Realised half-life of the MOC drift signature drifts outside
+    [60, 1800] s — the family no longer satisfies G16 rule 2 for
+    SCHEDULED_FLOW.
+  - |
+    Sign-agreement rate between published flow-direction prior
+    and realised forward-120-s return drops below 0.55 over four
+    consecutive earnings cycles.
+  - |
+    Out-of-sample DSR < 1.0 across any single calendar quarter
+    after promotion to LIVE.
+  - |
+    The exchange imbalance feed is structurally retired or
+    replaced — reference event_calendar windows lose their
+    flow_direction_prior — gate stays OFF and the strategy is
+    structurally inactive.
+
+# ── Layer-1 sensor dependencies ───────────────────────────
+depends_on_sensors:
+  - scheduled_flow_window
+  - ofi_ewma
+
+# ── Parameters ────────────────────────────────────────────
+parameters:
+  min_seconds_to_close:
+    type: float
+    default: 60.0
+    min: 30.0
+    max: 240.0
+    description: |
+      Refuse to enter when fewer than this many seconds remain
+      in the active window — protects against terminal-slippage
+      spikes during the auction match.
+  ofi_agreement_threshold:
+    type: float
+    default: 0.1
+    min: 0.0
+    max: 1.0
+    description: |
+      Minimum |ofi_ewma| (in normalised units) required for the
+      realised order-flow to "confirm" the published prior.
+  edge_per_remaining_minute_bps:
+    type: float
+    default: 1.5
+    min: 0.5
+    max: 4.0
+    description: Linear edge per remaining minute inside the window, in bps.
+  edge_cap_bps:
+    type: float
+    default: 18.0
+    min: 6.0
+    max: 30.0
+    description: Hard cap on the reported ``edge_estimate_bps``.
+
+# ── Horizon (Layer-2 boundary) ────────────────────────────
+horizon_seconds: 120
+
+# ── Risk Budget ───────────────────────────────────────────
+risk_budget:
+  max_position_per_symbol: 150
+  max_gross_exposure_pct: 6.0
+  max_drawdown_pct: 1.5
+  capital_allocation_pct: 12.0
+
+# ── Regime Gate (Phase 3 DSL) ─────────────────────────────
+regime_gate:
+  regime_engine: hmm_3state_fractional
+  on_condition: |
+    scheduled_flow_window_active == 1.0 and seconds_to_window_close > 60
+  off_condition: |
+    scheduled_flow_window_active == 0.0 or seconds_to_window_close < 30
+  hysteresis:
+    posterior_margin: 0.20
+    percentile_margin: 0.30
+
+# ── Cost Arithmetic Disclosure (G12) ──────────────────────
+cost_arithmetic:
+  edge_estimate_bps: 12.0
+  half_spread_bps: 2.5
+  impact_bps: 2.5
+  fee_bps: 1.0
+  margin_ratio: 2.0
+
+# ── Trend Mechanism (v0.3 §20.5 — gate G16) ───────────────
+trend_mechanism:
+  family: SCHEDULED_FLOW
+  expected_half_life_seconds: 240
+  l1_signature_sensors:
+    - scheduled_flow_window
+    - ofi_ewma
+  failure_signature:
+    - "scheduled_flow_window_active == 0.0"
+    - "seconds_to_window_close < 0"
+
+# ── Signal (Layer-2 evaluate) ─────────────────────────────
+signal: |
+  def evaluate(snapshot, regime, params):
+      active = snapshot.values.get("scheduled_flow_window_active")
+      remaining = snapshot.values.get("seconds_to_window_close")
+      direction_prior = snapshot.values.get(
+          "scheduled_flow_window_direction_prior",
+      )
+      ofi = snapshot.values.get("ofi_ewma")
+      if (
+          active is None
+          or remaining is None
+          or direction_prior is None
+          or ofi is None
+      ):
+          return None
+      if active != 1.0:
+          return None
+      if remaining < params["min_seconds_to_close"]:
+          return None
+      if abs(ofi) < params["ofi_agreement_threshold"]:
+          return None
+
+      sign = 0.0
+      if direction_prior > 0.0 and ofi > 0.0:
+          sign = 1.0
+      elif direction_prior < 0.0 and ofi < 0.0:
+          sign = -1.0
+      else:
+          return None
+
+      direction = LONG if sign > 0.0 else SHORT
+      remaining_minutes = max(remaining / 60.0, 0.0)
+      edge_bps = min(
+          remaining_minutes * params["edge_per_remaining_minute_bps"],
+          params["edge_cap_bps"],
+      )
+
+      return Signal(
+          timestamp_ns=snapshot.timestamp_ns,
+          correlation_id=snapshot.correlation_id,
+          sequence=snapshot.sequence,
+          symbol=snapshot.symbol,
+          strategy_id="pofi_moc_imbalance_v1",
+          direction=direction,
+          strength=min(abs(ofi) / max(params["ofi_agreement_threshold"] * 4.0, 1e-9), 1.0),
+          edge_estimate_bps=edge_bps,
+      )

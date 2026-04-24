@@ -1,0 +1,68 @@
+schema_version: "1.1"
+layer: PORTFOLIO
+
+alpha_id: pofi_xsect_mixed_mechanism_v1
+version: "1.0.0"
+description: |
+  Reference cross-sectional PORTFOLIO alpha that consumes signals from
+  three distinct trend-formation mechanisms (KYLE_INFO, INVENTORY,
+  HAWKES_SELF_EXCITING) and verifies the engine's mechanism-share cap
+  enforcement.  Used in tests/integration/test_mixed_mechanism_universe.py
+  to lock in (a) the ranker's mechanism_breakdown bookkeeping and (b)
+  the optimizer's per-mechanism share caps.
+
+hypothesis: |
+  Combining cross-sectional signals from independent microstructure
+  mechanisms diversifies away mechanism-specific drawdowns while
+  preserving the underlying alpha; the resulting Sharpe should exceed
+  the best single-mechanism alpha by ≥0.2 over a 60-day backtest.
+
+falsification_criteria:
+  - sharpe_post_cost_below_best_single_mechanism_60d
+  - any_mechanism_share_exceeds_cap_for_3_consecutive_barriers
+
+horizon_seconds: 300
+
+universe:
+  - AAPL
+  - MSFT
+  - GOOG
+  - AMZN
+  - META
+  - NVDA
+  - JPM
+  - BAC
+  - XOM
+  - CVX
+
+depends_on_signals:
+  - pofi_kyle_drift_v1
+  - pofi_inventory_revert_v1
+  - pofi_hawkes_burst_v1
+
+factor_neutralization: true
+
+cost_arithmetic:
+  edge_estimate_bps: 14.0
+  half_spread_bps: 1.5
+  impact_bps: 1.5
+  fee_bps: 0.5
+  margin_ratio: 4.0
+
+trend_mechanism:
+  consumes:
+    - {family: KYLE_INFO, max_share_of_gross: 0.4}
+    - {family: INVENTORY, max_share_of_gross: 0.4}
+    - {family: HAWKES_SELF_EXCITE, max_share_of_gross: 0.4}
+  max_share_of_gross: 0.4
+
+risk_budget:
+  max_position_per_symbol: 5000
+  max_gross_exposure_pct: 50.0
+  max_drawdown_pct: 5.0
+  capital_allocation_pct: 100.0
+
+parameters:
+  decay_weighting_enabled:
+    type: bool
+    default: false
