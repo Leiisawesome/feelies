@@ -1,0 +1,76 @@
+schema_version: "1.1"
+layer: PORTFOLIO
+
+alpha_id: pofi_xsect_v1
+version: "1.0.0"
+description: |
+  Phase-4 reference cross-sectional alpha (decay weighting OFF).
+  Consumes the SIGNAL outputs of pofi_kyle_drift_v1 and
+  pofi_inventory_revert_v1 across a 10-name reference universe and
+  emits a sized intent every 5 minutes via the platform's default
+  composition pipeline (rank → factor-neutralize → sector-match →
+  turnover-optimize).
+
+hypothesis: |
+  Cross-sectional dispersion of horizon-anchored microstructure signals
+  contains a residual factor-orthogonal alpha that is monetizable at
+  5-minute decision horizons after fee + impact deductions, with
+  Sharpe ≥ 1.0 over a 60-trading-day backtest on the reference universe.
+
+falsification_criteria:
+  - sharpe_post_cost_below_1.0_60d
+  - turnover_above_400_pct_per_day
+  - max_factor_exposure_above_0.10
+  - mechanism_breakdown_kyle_above_0.6_for_10_consecutive_barriers
+
+horizon_seconds: 300
+
+universe:
+  - AAPL
+  - MSFT
+  - GOOG
+  - AMZN
+  - META
+  - NVDA
+  - JPM
+  - BAC
+  - XOM
+  - CVX
+
+depends_on_signals:
+  - pofi_kyle_drift_v1
+  - pofi_inventory_revert_v1
+
+factor_neutralization: true
+
+cost_arithmetic:
+  edge_estimate_bps: 12.0
+  half_spread_bps: 1.5
+  impact_bps: 1.5
+  fee_bps: 0.5
+  margin_ratio: 3.43
+
+trend_mechanism:
+  consumes:
+    - {family: KYLE_INFO, max_share_of_gross: 0.6}
+    - {family: INVENTORY, max_share_of_gross: 0.5}
+  max_share_of_gross: 0.6
+
+risk_budget:
+  max_position_per_symbol: 5000
+  max_gross_exposure_pct: 50.0
+  max_drawdown_pct: 5.0
+  capital_allocation_pct: 100.0
+
+parameters:
+  decay_weighting_enabled:
+    type: bool
+    default: false
+    description: |
+      Phase-4.1 toggle for inverse-staleness decay weighting.  Default
+      OFF for the v0.2 reference baseline so the parity hash matches
+      the canonical run.
+
+# No inline ``construct:`` block — bootstrap binds the default
+# pipeline (CrossSectionalRanker → FactorNeutralizer → SectorMatcher
+# → TurnoverOptimizer) per design.

@@ -5,7 +5,11 @@ Usage:
     python scripts/run_backtest.py --symbol AAPL --date 2024-01-15
     python scripts/run_backtest.py --symbol AAPL --date 2024-01-15 --end-date 2024-01-16
     python scripts/run_backtest.py --config platform.yaml  # uses symbols from config
-    python scripts/run_backtest.py --demo  # run with synthetic 8-tick data
+
+Workstream-D update — the ``--demo`` synthetic-tick mode was retired
+along with the ``trade_cluster_drift`` LEGACY reference alpha (D.2).
+For a no-API-key smoke test of the orchestration pipeline use the
+end-to-end suite directly: ``pytest tests/integration/test_phase4_e2e.py``.
 """
 
 from __future__ import annotations
@@ -14,9 +18,7 @@ import argparse
 import hashlib
 import json
 import os
-import shutil
 import sys
-import tempfile
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field, replace
@@ -33,16 +35,22 @@ sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 from feelies.bootstrap import build_platform
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
+    CrossSectionalContext,
     Event,
     FeatureVector,
+    HorizonFeatureSnapshot,
+    HorizonTick,
     MetricEvent,
     NBBOQuote,
     OrderAck,
     OrderAckStatus,
     OrderRequest,
     PositionUpdate,
+    RegimeHazardSpike,
+    SensorReading,
     Signal,
     SignalDirection,
+    SizedPositionIntent,
     Trade,
 )
 from feelies.core.identifiers import SequenceGenerator, make_correlation_id
@@ -141,7 +149,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--date",
         type=str,
         default=None,
-        help="Start date in YYYY-MM-DD format (required unless --demo)",
+        help="Start date in YYYY-MM-DD format (required)",
     )
     p.add_argument(
         "--end-date",
@@ -154,11 +162,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=str,
         default="platform.yaml",
         help="Path to platform.yaml (default: platform.yaml)",
-    )
-    p.add_argument(
-        "--demo",
-        action="store_true",
-        help="Run with synthetic 8-tick data (no Massive API key required)",
     )
     p.add_argument(
         "--cache-dir",
@@ -178,7 +181,394 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         metavar="MULT",
         help="Cost stress multiplier (e.g. 1.5 = 50%% higher fees, default: 1.0)",
     )
+    p.add_argument(
+        "--emit-fills-jsonl",
+        action="store_true",
+        help=(
+            "After the backtest completes, emit one JSON object per "
+            "FILLED OrderAck to stdout (one per line), in arrival order. "
+            "Originally consumed by the LEGACY_SIGNAL Level-1 fill "
+            "parity test (design_docs/three_layer_architecture.md "
+            "§11.1); the test was retired with workstream D.2 but the "
+            "emitter is preserved as a debugging hook for fill streams."
+        ),
+    )
+    # ── Phase-2 emit flags (composable with --emit-fills-jsonl) ─────
+    # Each flag dumps one JSON object per relevant event in arrival
+    # order, prefixed with a tag so consumers can grep / split a
+    # single run's stdout into separate Level-N parity streams.
+    p.add_argument(
+        "--emit-sensor-readings-jsonl",
+        action="store_true",
+        help=(
+            "Emit one JSON object per SensorReading to stdout "
+            "(prefix 'SENSOR_JSONL'). Used by the Level-4 parity "
+            "test (Phase-2 plan §3.7)."
+        ),
+    )
+    p.add_argument(
+        "--emit-horizon-ticks-jsonl",
+        action="store_true",
+        help=(
+            "Emit one JSON object per HorizonTick to stdout "
+            "(prefix 'HTICK_JSONL'). Used by the Level-2 parity "
+            "test (Phase-2 plan §3.7)."
+        ),
+    )
+    p.add_argument(
+        "--emit-snapshots-jsonl",
+        action="store_true",
+        help=(
+            "Emit one JSON object per HorizonFeatureSnapshot to "
+            "stdout (prefix 'SNAP_JSONL'). Used by the Level-3 "
+            "parity test (Phase-2 plan §3.7)."
+        ),
+    )
+    # ── Phase-3 emit flags (composable with Phase-1/2 emitters) ─────
+    p.add_argument(
+        "--emit-signals-jsonl",
+        action="store_true",
+        help=(
+            "Emit one JSON object per Signal to stdout "
+            "(prefix 'SIGNAL_JSONL'). Tags each row with the "
+            "originating layer (LEGACY_SIGNAL or SIGNAL). Used by "
+            "the Level-2 SIGNAL parity test "
+            "(design_docs/three_layer_architecture.md §11.2)."
+        ),
+    )
+    # ── Phase-3.1 emit flags (composable with all prior emitters) ───
+    p.add_argument(
+        "--emit-hazard-spikes-jsonl",
+        action="store_true",
+        help=(
+            "Emit one JSON object per RegimeHazardSpike to stdout "
+            "(prefix 'HAZARD_JSONL'). Used by the Level-5 hazard "
+            "parity test (design_docs/three_layer_architecture.md "
+            "§20.11.2)."
+        ),
+    )
+    # ── Phase-4 emit flags (composable with all prior emitters) ────
+    p.add_argument(
+        "--emit-cross-sectional-jsonl",
+        action="store_true",
+        help=(
+            "Emit one JSON object per CrossSectionalContext to stdout "
+            "(prefix 'XSECT_JSONL').  Used by the Level-2 cross-"
+            "sectional parity test (Phase-4 §11.2)."
+        ),
+    )
+    p.add_argument(
+        "--emit-sized-intents-jsonl",
+        action="store_true",
+        help=(
+            "Emit one JSON object per SizedPositionIntent to stdout "
+            "(prefix 'INTENT_JSONL').  Used by the Level-3 portfolio "
+            "intent parity tests (Phase-4 / Phase-4.1 §11.3)."
+        ),
+    )
+    p.add_argument(
+        "--emit-hazard-exits-jsonl",
+        action="store_true",
+        help=(
+            "Emit one JSON object per OrderRequest whose reason is "
+            "'HAZARD_SPIKE' or 'HARD_EXIT_AGE' (prefix "
+            "'HAZARD_EXIT_JSONL').  Used by the Phase-4.1 Level-1 + "
+            "Level-4 hazard-exit determinism tests."
+        ),
+    )
     return p.parse_args(argv)
+
+
+def _emit_fills_jsonl(recorder: BusRecorder) -> None:
+    """Print one JSON line per FILLED OrderAck in arrival order.
+
+    Stable shape — fields are ordered for deterministic hashing across
+    Python versions: (sequence, symbol, order_id, filled_quantity,
+    fill_price).  ``fill_price`` is rendered via ``str(Decimal)`` to
+    preserve the exact textual representation; never float-formatted.
+
+    Designed to be machine-checkable.  The original consumer
+    ``tests/determinism/test_legacy_alpha_parity.py`` was retired with
+    workstream D.2 alongside the ``trade_cluster_drift`` reference
+    alpha; the canonical-JSON shape is preserved verbatim so any
+    future fill-stream parity test can re-anchor on it without touching
+    this emitter.
+    """
+    import json
+    from decimal import Decimal
+
+    acks = recorder.of_type(OrderAck)
+    fills = [a for a in acks if a.status == OrderAckStatus.FILLED]
+    for a in fills:
+        line = {
+            "sequence": a.sequence,
+            "symbol": a.symbol,
+            "order_id": a.order_id,
+            "filled_quantity": a.filled_quantity,
+            "fill_price": (
+                str(a.fill_price) if isinstance(a.fill_price, Decimal)
+                else None if a.fill_price is None
+                else str(Decimal(str(a.fill_price)))
+            ),
+        }
+        print("FILL_JSONL " + json.dumps(line, sort_keys=True), flush=True)
+
+
+def _emit_sensor_readings_jsonl(recorder: BusRecorder) -> None:
+    """Print one JSON line per ``SensorReading`` in arrival order.
+
+    Stable shape: ``(sequence, sensor_id, sensor_version, symbol,
+    value, warm)``.  Sensor values may be scalar or tuple; tuples are
+    JSON-serialised as arrays.  The Level-4 baseline test (plan §3.7)
+    SHA-256s the canonical-JSON line stream.
+    """
+    for r in recorder.of_type(SensorReading):
+        value: object
+        if isinstance(r.value, tuple):
+            value = list(r.value)
+        else:
+            value = float(r.value)
+        line = {
+            "sequence": r.sequence,
+            "sensor_id": r.sensor_id,
+            "sensor_version": r.sensor_version,
+            "symbol": r.symbol,
+            "value": value,
+            "warm": bool(r.warm),
+        }
+        print("SENSOR_JSONL " + json.dumps(line, sort_keys=True), flush=True)
+
+
+def _emit_horizon_ticks_jsonl(recorder: BusRecorder) -> None:
+    """Print one JSON line per ``HorizonTick`` in arrival order.
+
+    Stable shape: ``(sequence, horizon_seconds, boundary_index,
+    scope, symbol, session_id)``.  Used by the Level-2 baseline
+    test (plan §3.7).  The same hash is also reproducible by reading
+    the in-process tick stream directly via the
+    :func:`tests.fixtures.replay.hash_horizon_tick_stream` helper.
+    """
+    for t in recorder.of_type(HorizonTick):
+        line = {
+            "sequence": t.sequence,
+            "horizon_seconds": t.horizon_seconds,
+            "boundary_index": t.boundary_index,
+            "scope": t.scope,
+            "symbol": t.symbol,
+            "session_id": t.session_id,
+        }
+        print("HTICK_JSONL " + json.dumps(line, sort_keys=True), flush=True)
+
+
+def _emit_snapshots_jsonl(recorder: BusRecorder) -> None:
+    """Print one JSON line per ``HorizonFeatureSnapshot`` in arrival order.
+
+    Stable shape: ``(sequence, symbol, horizon_seconds,
+    boundary_index, values, warm, stale)``.  Empty dicts are emitted
+    in passive mode (Phase 2: no horizon features registered) so
+    consumers can still hash a non-empty stream from day one.
+    """
+    for s in recorder.of_type(HorizonFeatureSnapshot):
+        line = {
+            "sequence": s.sequence,
+            "symbol": s.symbol,
+            "horizon_seconds": s.horizon_seconds,
+            "boundary_index": s.boundary_index,
+            "values": dict(s.values),
+            "warm": {k: bool(v) for k, v in s.warm.items()},
+            "stale": {k: bool(v) for k, v in s.stale.items()},
+        }
+        print("SNAP_JSONL " + json.dumps(line, sort_keys=True), flush=True)
+
+
+def _emit_signals_jsonl(recorder: BusRecorder) -> None:
+    """Print one JSON line per ``Signal`` in arrival order.
+
+    Stable shape — fields are ordered for deterministic hashing across
+    Python versions: ``(sequence, symbol, strategy_id, layer,
+    horizon_seconds, regime_gate_state, direction, strength,
+    edge_estimate_bps, consumed_features, trend_mechanism,
+    expected_half_life_seconds)``.
+
+    Tagged with prefix ``SIGNAL_JSONL`` so a single run's stdout can
+    interleave LEGACY_SIGNAL emissions (``layer="LEGACY_SIGNAL"``)
+    with Phase-3 ``layer="SIGNAL"`` emissions and still be sliced by
+    a downstream consumer.  The Level-2 SIGNAL baseline test
+    (design_docs/three_layer_architecture.md §11.2) hashes the
+    canonical-JSON line stream and compares it across Phase changes
+    to surface drift in scope, ordering, or sequence allocation.
+    """
+    for s in recorder.of_type(Signal):
+        line = {
+            "sequence": s.sequence,
+            "symbol": s.symbol,
+            "strategy_id": s.strategy_id,
+            "layer": s.layer,
+            "horizon_seconds": s.horizon_seconds,
+            "regime_gate_state": s.regime_gate_state,
+            "direction": s.direction.name,
+            "strength": float(s.strength),
+            "edge_estimate_bps": float(s.edge_estimate_bps),
+            "consumed_features": list(s.consumed_features),
+            "trend_mechanism": (
+                s.trend_mechanism.name if s.trend_mechanism is not None
+                else None
+            ),
+            "expected_half_life_seconds": int(s.expected_half_life_seconds),
+        }
+        print("SIGNAL_JSONL " + json.dumps(line, sort_keys=True), flush=True)
+
+
+def _emit_hazard_spikes_jsonl(recorder: BusRecorder) -> None:
+    """Print one JSON line per ``RegimeHazardSpike`` in arrival order.
+
+    Stable shape — fields ordered for deterministic hashing across
+    Python versions: ``(sequence, symbol, engine_name, departing_state,
+    departing_posterior_prev, departing_posterior_now, incoming_state,
+    hazard_score, timestamp_ns, correlation_id)``.
+
+    Tagged with prefix ``HAZARD_JSONL`` so a single run's stdout can
+    interleave hazard emissions with the Phase-1/2/3 emit streams and
+    still be sliced by a downstream consumer.  The Level-5 hazard
+    baseline test (design_docs/three_layer_architecture.md §20.11.2)
+    SHA-256s the canonical-JSON line stream.
+    """
+    for s in recorder.of_type(RegimeHazardSpike):
+        line = {
+            "sequence": s.sequence,
+            "symbol": s.symbol,
+            "engine_name": s.engine_name,
+            "departing_state": s.departing_state,
+            "departing_posterior_prev": float(s.departing_posterior_prev),
+            "departing_posterior_now": float(s.departing_posterior_now),
+            "incoming_state": s.incoming_state,
+            "hazard_score": float(s.hazard_score),
+            "timestamp_ns": s.timestamp_ns,
+            "correlation_id": s.correlation_id,
+        }
+        print("HAZARD_JSONL " + json.dumps(line, sort_keys=True), flush=True)
+
+
+def _emit_cross_sectional_jsonl(recorder: BusRecorder) -> None:
+    """Print one JSON line per ``CrossSectionalContext`` in arrival order.
+
+    Stable shape — fields ordered for deterministic hashing across
+    Python versions: ``(sequence, timestamp_ns, horizon_seconds,
+    boundary_index, universe, completeness, correlation_id)``.
+
+    Tagged with prefix ``XSECT_JSONL`` so a single run's stdout can
+    interleave LEGACY/SIGNAL/PORTFOLIO emissions and still be sliced
+    by a downstream consumer.  The Level-2 cross-sectional parity test
+    (Phase-4 §11.2) SHA-256s the canonical-JSON line stream.
+    """
+    for c in recorder.of_type(CrossSectionalContext):
+        line = {
+            "sequence": c.sequence,
+            "timestamp_ns": c.timestamp_ns,
+            "horizon_seconds": c.horizon_seconds,
+            "boundary_index": c.boundary_index,
+            "universe": list(c.universe),
+            "completeness": float(c.completeness),
+            "correlation_id": c.correlation_id,
+        }
+        print("XSECT_JSONL " + json.dumps(line, sort_keys=True), flush=True)
+
+
+def _emit_sized_intents_jsonl(recorder: BusRecorder) -> None:
+    """Print one JSON line per ``SizedPositionIntent`` in arrival order.
+
+    Stable shape: ``(sequence, timestamp_ns, strategy_id,
+    horizon_seconds, target_positions, factor_exposures,
+    expected_turnover_usd, expected_gross_exposure_usd,
+    mechanism_breakdown, correlation_id)``.
+
+    Target-position values are emitted as a *sorted* list of
+    ``{symbol, target_usd}`` records so byte-identity holds across
+    dict-ordering differences.  The Level-3 parity test
+    (Phase-4 / Phase-4.1 §11.3) SHA-256s the canonical-JSON stream.
+    """
+    for it in recorder.of_type(SizedPositionIntent):
+        targets = [
+            {"symbol": s, "target_usd": float(tp.target_usd)}
+            for s, tp in sorted(it.target_positions.items())
+        ]
+        mech_breakdown = {
+            (k.name if hasattr(k, "name") else str(k)): float(v)
+            for k, v in sorted(
+                it.mechanism_breakdown.items(),
+                key=lambda kv: (
+                    kv[0].name if hasattr(kv[0], "name") else str(kv[0])
+                ),
+            )
+        }
+        line = {
+            "sequence": it.sequence,
+            "timestamp_ns": it.timestamp_ns,
+            "strategy_id": it.strategy_id,
+            "horizon_seconds": it.horizon_seconds,
+            "target_positions": targets,
+            "factor_exposures": {
+                k: float(v) for k, v in sorted(it.factor_exposures.items())
+            },
+            "expected_turnover_usd": float(it.expected_turnover_usd),
+            "expected_gross_exposure_usd": float(
+                it.expected_gross_exposure_usd
+            ),
+            "mechanism_breakdown": mech_breakdown,
+            "correlation_id": it.correlation_id,
+        }
+        print("INTENT_JSONL " + json.dumps(line, sort_keys=True), flush=True)
+
+
+def _emit_hazard_exits_jsonl(recorder: BusRecorder) -> None:
+    """Print one JSON line per hazard-driven exit ``OrderRequest``.
+
+    Filters ``OrderRequest`` events whose ``reason`` is either
+    ``"HAZARD_SPIKE"`` or ``"HARD_EXIT_AGE"`` and emits a stable
+    ``(sequence, timestamp_ns, symbol, side, quantity, order_id,
+    strategy_id, reason, correlation_id)`` record tagged
+    ``HAZARD_EXIT_JSONL``.  Used by the Phase-4.1 Level-1 + Level-4
+    hazard-exit determinism tests.
+    """
+    for o in recorder.of_type(OrderRequest):
+        reason = getattr(o, "reason", "") or ""
+        if reason not in ("HAZARD_SPIKE", "HARD_EXIT_AGE"):
+            continue
+        line = {
+            "sequence": o.sequence,
+            "timestamp_ns": o.timestamp_ns,
+            "symbol": o.symbol,
+            "side": o.side.name,
+            "quantity": int(o.quantity),
+            "order_id": o.order_id,
+            "strategy_id": o.strategy_id or "",
+            "reason": reason,
+            "correlation_id": o.correlation_id,
+        }
+        print(
+            "HAZARD_EXIT_JSONL " + json.dumps(line, sort_keys=True),
+            flush=True,
+        )
+
+
+def _emit_phase2_jsonl(args: argparse.Namespace, recorder: BusRecorder) -> None:
+    """Composable wrapper — invokes each enabled Phase-2/3/3.1/4 emitter."""
+    if args.emit_sensor_readings_jsonl:
+        _emit_sensor_readings_jsonl(recorder)
+    if args.emit_horizon_ticks_jsonl:
+        _emit_horizon_ticks_jsonl(recorder)
+    if args.emit_snapshots_jsonl:
+        _emit_snapshots_jsonl(recorder)
+    if args.emit_signals_jsonl:
+        _emit_signals_jsonl(recorder)
+    if args.emit_hazard_spikes_jsonl:
+        _emit_hazard_spikes_jsonl(recorder)
+    if getattr(args, "emit_cross_sectional_jsonl", False):
+        _emit_cross_sectional_jsonl(recorder)
+    if getattr(args, "emit_sized_intents_jsonl", False):
+        _emit_sized_intents_jsonl(recorder)
+    if getattr(args, "emit_hazard_exits_jsonl", False):
+        _emit_hazard_exits_jsonl(recorder)
 
 
 # ── Ingestion ────────────────────────────────────────────────────────
@@ -329,96 +719,6 @@ def ingest_data(
     )
 
     return event_log, ingest_result, day_sources
-
-
-# ── Demo mode (synthetic 8-tick data) ────────────────────────────────
-
-_DEMO_TICKS: list[dict] = [
-    {"bid": "150.00", "ask": "150.02", "ts": 1_000_000_000},
-    {"bid": "150.00", "ask": "150.02", "ts": 2_000_000_000},
-    {"bid": "150.00", "ask": "150.02", "ts": 3_000_000_000},
-    {"bid": "150.00", "ask": "150.02", "ts": 4_000_000_000},
-    {"bid": "150.00", "ask": "150.02", "ts": 5_000_000_000},
-    {"bid": "150.10", "ask": "150.20", "ts": 6_000_000_000},
-    {"bid": "149.80", "ask": "150.00", "ts": 7_000_000_000},
-    {"bid": "149.80", "ask": "150.00", "ts": 8_000_000_000},
-]
-
-_ALPHA_SRC_DIR = _PROJECT_ROOT / "alphas" / "trade_cluster_drift"
-
-
-def _make_demo_quotes() -> list[NBBOQuote]:
-    quotes: list[NBBOQuote] = []
-    for i, td in enumerate(_DEMO_TICKS, start=1):
-        quotes.append(NBBOQuote(
-            timestamp_ns=td["ts"],
-            exchange_timestamp_ns=td["ts"],
-            correlation_id=f"AAPL-{td['ts']}-{i}",
-            sequence=i,
-            symbol="AAPL",
-            bid=Decimal(td["bid"]),
-            ask=Decimal(td["ask"]),
-            bid_size=100,
-            ask_size=100,
-        ))
-    return quotes
-
-
-def run_demo() -> tuple[object, BusRecorder, IngestResult, PlatformConfig, str, str]:
-    """Run the backtest with synthetic 8-tick data (no Massive API needed)."""
-    # Use a stable workspace name so consecutive --demo runs produce a
-    # bit-identical config snapshot. A randomised ``tempfile.mkdtemp()``
-    # path would leak into ``PlatformConfig.snapshot().checksum`` and
-    # break the parity-hash contract (audit A-DET-02 / B-PROMO-04).
-    # Combined with basename normalisation in ``PlatformConfig._to_dict``
-    # the absolute path is irrelevant; only the basename feeds the hash.
-    # The system temp dir is preferred over an in-repo location so that
-    # filesystem agents (e.g. OneDrive sync) cannot hold a lock on the
-    # workspace between back-to-back runs.
-    workspace = Path(tempfile.gettempdir()) / "feelies_demo_workspace"
-    workspace.mkdir(parents=True, exist_ok=True)
-    try:
-        alpha_dst = workspace / "trade_cluster_drift"
-        if alpha_dst.exists():
-            shutil.rmtree(alpha_dst, ignore_errors=True)
-        shutil.copytree(_ALPHA_SRC_DIR, alpha_dst, dirs_exist_ok=True)
-
-        config = PlatformConfig(
-            symbols=frozenset(["AAPL"]),
-            mode=OperatingMode.BACKTEST,
-            alpha_spec_dir=workspace,
-            regime_engine=None,
-            account_equity=100_000.0,
-            risk_max_position_per_symbol=50_000,
-            risk_max_gross_exposure_pct=200.0,
-            parameter_overrides={},
-        )
-
-        event_log = InMemoryEventLog()
-        for q in _make_demo_quotes():
-            event_log.append(q)
-
-        orchestrator, config = build_platform(config, event_log=event_log)
-
-        recorder = BusRecorder()
-        orchestrator._bus.subscribe_all(recorder)  # type: ignore[attr-defined]
-
-        orchestrator.boot(config)
-        orchestrator.run_backtest()
-
-        ingest_result = IngestResult(
-            events_ingested=len(_DEMO_TICKS),
-            pages_processed=1,
-            symbols_with_gaps=0,
-            duplicates_filtered=0,
-            symbols_completed=frozenset(["AAPL"]),
-        )
-
-        return orchestrator, recorder, ingest_result, config, "AAPL", "DEMO (synthetic)"
-    finally:
-        # Best-effort cleanup. Leftover state is harmless: the next
-        # run wipes ``alpha_dst`` before recopying.
-        shutil.rmtree(workspace, ignore_errors=True)
 
 
 # ── Report formatting helpers ────────────────────────────────────────
@@ -898,12 +1198,6 @@ def compute_artifact_id(
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _demo_data_version() -> str:
-    """Stable hash of the static demo tick payload."""
-    payload = json.dumps(_DEMO_TICKS, sort_keys=True, separators=(",", ":"))
-    return "demo:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
-
-
 def _live_data_version(symbols: list[str], date_range: str) -> str:
     """Stable identifier for a live backtest's input dataset.
 
@@ -1012,33 +1306,18 @@ def main(argv: list[str] | None = None) -> int:
     _force_utf8_console()
     args = parse_args(argv)
 
-    # ── Demo mode: synthetic data, no Massive API needed ─────────
-    if args.demo:
-        print("Running demo backtest with synthetic 8-tick data ...", flush=True)
-        orchestrator, recorder, ingest_result, config, symbol_str, date_range = run_demo()
-
-        report = generate_report(
-            recorder=recorder,
-            ingest_result=ingest_result,
-            config=config,
-            orchestrator=orchestrator,
-            symbol_str=symbol_str,
-            date_range=date_range,
-            data_version=_demo_data_version(),
-        )
-        print(report)
-
-        results = run_verification(
-            recorder=recorder,
-            ingest_result=ingest_result,
-            orchestrator=orchestrator,
-        )
-        all_passed = print_verification(results)
-        return 0 if all_passed else 2
-
-    # ── Live mode: requires Massive API key ──────────────────────
+    # Workstream-D update — the synthetic ``--demo`` path was retired
+    # with the ``trade_cluster_drift`` LEGACY reference alpha.  The
+    # live path below is now the only entry point; for a no-API smoke
+    # test of orchestration, run ``pytest tests/integration/
+    # test_phase4_e2e.py`` directly.
     if not args.date:
-        print("ERROR: --date is required (or use --demo for synthetic data)", file=sys.stderr)
+        print(
+            "ERROR: --date is required (the synthetic --demo mode was "
+            "retired with workstream D.2; use the integration suite "
+            "for no-API-key smoke tests)",
+            file=sys.stderr,
+        )
         return 1
 
     # 1. Load .env
@@ -1186,6 +1465,10 @@ def main(argv: list[str] | None = None) -> int:
 
     total_elapsed = time.monotonic() - run_t0
     print(f"  Total elapsed: {total_elapsed:.1f}s\n", flush=True)
+
+    if args.emit_fills_jsonl:
+        _emit_fills_jsonl(recorder)
+    _emit_phase2_jsonl(args, recorder)
 
     return 0 if all_passed else 2
 

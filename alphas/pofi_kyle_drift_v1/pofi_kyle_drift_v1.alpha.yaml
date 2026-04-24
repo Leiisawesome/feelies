@@ -1,0 +1,156 @@
+# ── Identity & Provenance ─────────────────────────────────
+schema_version: "1.1"
+layer: SIGNAL
+alpha_id: pofi_kyle_drift_v1
+version: "1.0.0"
+description: |
+  Kyle-style informed-trader drift — five-minute horizon alpha
+  that follows the residual mid-price drift attributable to
+  measured order-flow toxicity (Kyle's λ).  When λ̂ rises in
+  conjunction with same-sign OFI, the price impact of subsequent
+  child orders is structurally biased; the alpha captures the
+  remaining 5-minute drift before the informational footprint
+  is fully absorbed.
+
+# ── Hypothesis (causal mechanism) ─────────────────────────
+hypothesis: |
+  Kyle's permanent-impact coefficient λ measures the rate at
+  which informed-trader information is impounded into the
+  mid-price.  When the rolling-60-second estimate λ̂ exceeds the
+  empirical 70th percentile *and* the regime is normal, residual
+  mid-drift over the next 300 seconds is positively correlated
+  with the sign of contemporaneous OFI.  The alpha takes a
+  position in the direction of OFI and harvests the drift before
+  the half-life of the information signature (~600 s) has
+  decayed.
+
+falsification_criteria:
+  - |
+    Spearman correlation between λ̂_60s × sign(OFI) and forward
+    300-second return drops below 0.05 in the normal regime for
+    >= 4 consecutive weeks.
+  - |
+    Realised half-life of the price-impact signature drifts
+    outside [60, 1800] s — the mechanism then no longer satisfies
+    G16 rule 2 for the KYLE_INFO family.
+  - |
+    Out-of-sample DSR < 1.0 across any single calendar quarter
+    after promotion to LIVE.
+  - |
+    Spread z-score persistently > 1.0 (toxic regime) for >= 30
+    trading days; gate stays OFF and the strategy is structurally
+    inactive.
+
+# ── Layer-1 sensor dependencies ───────────────────────────
+depends_on_sensors:
+  - kyle_lambda_60s
+  - ofi_ewma
+  - micro_price
+  - spread_z_30d
+
+# ── Parameters ────────────────────────────────────────────
+parameters:
+  lambda_percentile_floor:
+    type: float
+    default: 0.7
+    min: 0.5
+    max: 0.95
+    description: |
+      Kyle λ percentile floor required to qualify a regime as
+      "actively informed".
+  ofi_threshold:
+    type: float
+    default: 0.5
+    min: 0.1
+    max: 1.0
+    description: |
+      Minimum |ofi_ewma| (in normalised units) required to take a
+      directional bet.
+  edge_per_lambda_bps:
+    type: float
+    default: 6.0
+    min: 2.0
+    max: 12.0
+    description: |
+      Linear edge attribution per unit of λ̂ above the percentile
+      floor, in bps.
+  edge_cap_bps:
+    type: float
+    default: 25.0
+    min: 8.0
+    max: 50.0
+    description: Hard cap on the reported ``edge_estimate_bps``.
+
+# ── Horizon (Layer-2 boundary) ────────────────────────────
+horizon_seconds: 300
+
+# ── Risk Budget ───────────────────────────────────────────
+risk_budget:
+  max_position_per_symbol: 200
+  max_gross_exposure_pct: 8.0
+  max_drawdown_pct: 1.5
+  capital_allocation_pct: 15.0
+
+# ── Regime Gate (Phase 3 DSL) ─────────────────────────────
+regime_gate:
+  regime_engine: hmm_3state_fractional
+  on_condition: |
+    P(normal) > 0.6 and spread_z_30d <= 1.0
+  off_condition: |
+    P(normal) < 0.4 or spread_z_30d > 2.0
+  hysteresis:
+    posterior_margin: 0.20
+    percentile_margin: 0.30
+
+# ── Cost Arithmetic Disclosure (G12) ──────────────────────
+cost_arithmetic:
+  edge_estimate_bps: 11.7
+  half_spread_bps: 2.5
+  impact_bps: 3.0
+  fee_bps: 1.0
+  margin_ratio: 1.8
+
+# ── Trend Mechanism (v0.3 §20.5 — gate G16) ───────────────
+trend_mechanism:
+  family: KYLE_INFO
+  expected_half_life_seconds: 600
+  l1_signature_sensors:
+    - kyle_lambda_60s
+    - ofi_ewma
+    - micro_price
+    - spread_z_30d
+  failure_signature:
+    - "spread_z_30d > 2.0"
+    - "kyle_lambda_60s_zscore < -1.5"
+
+# ── Signal (Layer-2 evaluate) ─────────────────────────────
+signal: |
+  def evaluate(snapshot, regime, params):
+      lam_pct = snapshot.values.get("kyle_lambda_60s_percentile")
+      ofi = snapshot.values.get("ofi_ewma")
+      lam_z = snapshot.values.get("kyle_lambda_60s_zscore")
+      if lam_pct is None or ofi is None:
+          return None
+
+      if lam_pct < params["lambda_percentile_floor"]:
+          return None
+      if abs(ofi) < params["ofi_threshold"]:
+          return None
+
+      direction = LONG if ofi > 0.0 else SHORT
+      magnitude = lam_z if lam_z is not None else (lam_pct - 0.5) * 4.0
+      edge_bps = min(
+          max(magnitude, 0.0) * params["edge_per_lambda_bps"],
+          params["edge_cap_bps"],
+      )
+
+      return Signal(
+          timestamp_ns=snapshot.timestamp_ns,
+          correlation_id=snapshot.correlation_id,
+          sequence=snapshot.sequence,
+          symbol=snapshot.symbol,
+          strategy_id="pofi_kyle_drift_v1",
+          direction=direction,
+          strength=min(abs(ofi) / (params["ofi_threshold"] * 2.0), 1.0),
+          edge_estimate_bps=edge_bps,
+      )

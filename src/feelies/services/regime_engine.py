@@ -409,12 +409,12 @@ class HMM3StateFractional:
 
 # ── Engine registry ──────────────────────────────────────────────────
 
-_ENGINE_REGISTRY: dict[str, type] = {
+_ENGINE_REGISTRY: dict[str, type[RegimeEngine]] = {
     "hmm_3state_fractional": HMM3StateFractional,
 }
 
 
-def register_engine(name: str, engine_cls: type) -> None:
+def register_engine(name: str, engine_cls: type[RegimeEngine]) -> None:
     """Register a custom regime engine class by name."""
     _ENGINE_REGISTRY[name] = engine_cls
 
@@ -430,4 +430,4 @@ def get_regime_engine(name: str, **kwargs: object) -> RegimeEngine:
         raise KeyError(
             f"Unknown regime engine '{name}'. Available: {available}"
         )
-    return cls(**kwargs)  # type: ignore[return-value]
+    return cls(**kwargs)

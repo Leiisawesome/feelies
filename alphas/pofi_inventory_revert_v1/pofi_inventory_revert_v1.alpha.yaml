@@ -1,0 +1,145 @@
+# ── Identity & Provenance ─────────────────────────────────
+schema_version: "1.1"
+layer: SIGNAL
+alpha_id: pofi_inventory_revert_v1
+version: "1.0.0"
+description: |
+  Inventory mean-reversion — short-horizon (30 s) alpha that
+  fades transient asymmetric quote replenishment.  A sharp,
+  one-sided depletion of resting liquidity that fails to
+  re-replenish symmetrically signals a temporary inventory
+  imbalance which mean-reverts as the affected side rebuilds.
+
+# ── Hypothesis (causal mechanism) ─────────────────────────
+hypothesis: |
+  When the bid (or ask) side of the L1 NBBO is rapidly drained
+  without a matching draw on the opposite side, the resulting
+  micro-price deviation is dominantly an inventory imbalance and
+  not informational.  The replenishment dynamics dictate a fast
+  reversion (~20 s half-life) once the affected side rebuilds.
+  We bet against the displaced side.
+
+falsification_criteria:
+  - |
+    Realised half-life of the asymmetry signature falls outside
+    the family's normative envelope of [1, 60] s for >= 2
+    consecutive weeks.
+  - |
+    Realised hit rate on the contrarian leg falls below 50% for
+    >= 4 consecutive trading weeks.
+  - |
+    Quote replenishment regime structurally shifts (e.g., venue
+    tick-size change) — quote_hazard_rate distribution drift
+    > 3σ from the in-sample baseline.
+  - |
+    Out-of-sample DSR < 1.0 across any single calendar quarter
+    after promotion to LIVE.
+
+# ── Layer-1 sensor dependencies ───────────────────────────
+depends_on_sensors:
+  - quote_replenish_asymmetry
+  - spread_z_30d
+  - quote_hazard_rate
+
+# ── Parameters ────────────────────────────────────────────
+parameters:
+  asymmetry_z_threshold:
+    type: float
+    default: 2.0
+    min: 1.0
+    max: 4.0
+    description: |
+      Minimum |z-score| of replenishment asymmetry required to
+      trigger a contrarian fade.
+  hazard_floor:
+    type: float
+    default: 0.05
+    min: 0.0
+    max: 0.5
+    description: |
+      Minimum quote hazard rate required to qualify the regime as
+      "actively replenishing"; below this floor the ladder is
+      stale and inventory inference is unreliable.
+  edge_per_z_bps:
+    type: float
+    default: 3.5
+    min: 1.0
+    max: 8.0
+    description: Linear edge per σ of asymmetry above threshold.
+  edge_cap_bps:
+    type: float
+    default: 14.0
+    min: 5.0
+    max: 25.0
+    description: Hard cap on the reported ``edge_estimate_bps``.
+
+# ── Horizon (Layer-2 boundary) ────────────────────────────
+horizon_seconds: 30
+
+# ── Risk Budget ───────────────────────────────────────────
+risk_budget:
+  max_position_per_symbol: 100
+  max_gross_exposure_pct: 5.0
+  max_drawdown_pct: 1.0
+  capital_allocation_pct: 8.0
+
+# ── Regime Gate (Phase 3 DSL) ─────────────────────────────
+regime_gate:
+  regime_engine: hmm_3state_fractional
+  on_condition: |
+    abs(quote_replenish_asymmetry_zscore) > 2.0 and P(normal) > 0.5
+  off_condition: |
+    P(normal) < 0.3 or spread_z_30d > 2.0
+  hysteresis:
+    posterior_margin: 0.20
+    percentile_margin: 0.30
+
+# ── Cost Arithmetic Disclosure (G12) ──────────────────────
+cost_arithmetic:
+  edge_estimate_bps: 8.25
+  half_spread_bps: 2.5
+  impact_bps: 2.0
+  fee_bps: 1.0
+  margin_ratio: 1.5
+
+# ── Trend Mechanism (v0.3 §20.5 — gate G16) ───────────────
+trend_mechanism:
+  family: INVENTORY
+  expected_half_life_seconds: 20
+  l1_signature_sensors:
+    - quote_replenish_asymmetry
+    - spread_z_30d
+    - quote_hazard_rate
+  failure_signature:
+    - "spread_z_30d > 2.0"
+    - "quote_hazard_rate < 0.05"
+
+# ── Signal (Layer-2 evaluate) ─────────────────────────────
+signal: |
+  def evaluate(snapshot, regime, params):
+      asym_z = snapshot.values.get("quote_replenish_asymmetry_zscore")
+      hazard = snapshot.values.get("quote_hazard_rate")
+      if asym_z is None or hazard is None:
+          return None
+      if hazard < params["hazard_floor"]:
+          return None
+      thr = params["asymmetry_z_threshold"]
+      if abs(asym_z) < thr:
+          return None
+
+      # Contrarian: if asymmetry is positive (bid drained > ask drained),
+      # micro-price drifts low; we fade by going LONG.
+      direction = LONG if asym_z > 0.0 else SHORT
+      excess = abs(asym_z) - thr
+      edge_bps = min(excess * params["edge_per_z_bps"], params["edge_cap_bps"])
+
+      return Signal(
+          timestamp_ns=snapshot.timestamp_ns,
+          correlation_id=snapshot.correlation_id,
+          sequence=snapshot.sequence,
+          symbol=snapshot.symbol,
+          strategy_id="pofi_inventory_revert_v1",
+          direction=direction,
+          strength=min(abs(asym_z) / (thr * 2.0), 1.0),
+          edge_estimate_bps=edge_bps,
+      )

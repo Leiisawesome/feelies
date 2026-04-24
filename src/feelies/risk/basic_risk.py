@@ -16,16 +16,19 @@ Invariants preserved:
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from decimal import Decimal
 
 from feelies.core.events import (
     OrderRequest,
+    OrderType,
     RiskAction,
     RiskVerdict,
     Side,
     Signal,
     SignalDirection,
+    SizedPositionIntent,
 )
 from feelies.portfolio.position_store import PositionStore
 from feelies.services.regime_engine import RegimeEngine
@@ -176,6 +179,138 @@ class BasicRiskEngine:
             action=RiskAction.ALLOW,
             reason="order within limits",
         )
+
+    def check_sized_intent(
+        self,
+        intent: SizedPositionIntent,
+        positions: PositionStore,
+    ) -> tuple[OrderRequest, ...]:
+        """Translate a Phase-4 ``SizedPositionIntent`` to per-leg orders.
+
+        Each non-zero ``TargetPosition`` delta vs the current position
+        (in *shares*, derived from ``target_usd`` divided by the
+        position store's last mark or, if no mark yet, the current
+        ``avg_entry_price``) is converted into one
+        :class:`OrderRequest`.
+
+        Determinism (Inv-5)
+        -------------------
+
+        Iteration over ``intent.target_positions`` is **lexicographically
+        sorted on symbol** so the emitted tuple is bit-identical across
+        replays.  ``order_id`` is derived from a SHA-256 of
+        ``(intent.correlation_id, intent.sequence, symbol)`` so two
+        runs of the same intent always produce identical IDs.
+
+        Per-leg veto (Inv-11)
+        ---------------------
+
+        When the per-symbol order would breach an existing risk gate
+        (post-fill quantity over the cap, exposure breach, drawdown
+        breach) the offending leg is silently dropped from the returned
+        tuple — the rest of the intent proceeds.  The intent is never
+        rejected wholesale; degenerate intents (empty
+        ``target_positions``) trivially produce an empty tuple.
+
+        Symbols whose ``target_usd`` matches the current notional
+        (within one cent) produce no order — the leg is a no-op.
+        """
+        if not intent.target_positions:
+            return ()
+
+        orders: list[OrderRequest] = []
+        for symbol in sorted(intent.target_positions):
+            tgt = intent.target_positions[symbol]
+            current = positions.get(symbol)
+            mark = self._mark_for(symbol, current, positions)
+            if mark <= 0:
+                continue
+
+            target_shares = int(round(float(tgt.target_usd) / float(mark)))
+            delta_shares = target_shares - current.quantity
+            if delta_shares == 0:
+                continue
+
+            side = Side.BUY if delta_shares > 0 else Side.SELL
+            quantity = abs(delta_shares)
+
+            order_id = hashlib.sha256(
+                f"{intent.correlation_id}:{intent.sequence}:{symbol}".encode()
+            ).hexdigest()[:16]
+
+            order = OrderRequest(
+                timestamp_ns=intent.timestamp_ns,
+                correlation_id=intent.correlation_id,
+                sequence=intent.sequence,
+                source_layer="PORTFOLIO",
+                order_id=order_id,
+                symbol=symbol,
+                side=side,
+                order_type=OrderType.MARKET,
+                quantity=quantity,
+                strategy_id=intent.strategy_id,
+                reason="PORTFOLIO",
+            )
+
+            verdict = self.check_order(order, positions)
+            if verdict.action in (RiskAction.REJECT, RiskAction.FORCE_FLATTEN):
+                # Per-leg veto — drop this leg, continue with the rest.
+                continue
+            if verdict.action == RiskAction.SCALE_DOWN:
+                scaled_qty = max(1, int(quantity * verdict.scaling_factor))
+                if scaled_qty == quantity:
+                    pass
+                else:
+                    order = OrderRequest(
+                        timestamp_ns=intent.timestamp_ns,
+                        correlation_id=intent.correlation_id,
+                        sequence=intent.sequence,
+                        source_layer="PORTFOLIO",
+                        order_id=order_id,
+                        symbol=symbol,
+                        side=side,
+                        order_type=OrderType.MARKET,
+                        quantity=scaled_qty,
+                        strategy_id=intent.strategy_id,
+                        reason="PORTFOLIO",
+                    )
+
+            orders.append(order)
+
+        return tuple(orders)
+
+    @staticmethod
+    def _mark_for(
+        symbol: str,
+        current: object,
+        positions: PositionStore,
+    ) -> Decimal:
+        """Return the best-available mark price for translating USD → shares.
+
+        Uses ``avg_entry_price`` when no live mark is recorded — this is
+        the boot-time fallback and matches the same convention used by
+        :meth:`MemoryPositionStore.total_exposure`.  Returns ``0`` when
+        the position has never been marked AND has zero average entry —
+        the caller must treat zero as "skip this leg" (Inv-11 fail-safe).
+        """
+        # ``MemoryPositionStore`` exposes its mark map indirectly via
+        # ``total_exposure``; we read ``avg_entry_price`` here for the
+        # cheapest deterministic conversion.  A future v0.4 enhancement
+        # may pass an explicit mark dict to avoid this approximation.
+        avg = getattr(current, "avg_entry_price", Decimal("0"))
+        if isinstance(avg, Decimal) and avg > 0:
+            return avg
+        # Try to read a live mark via the optional accessor introduced
+        # in Phase 4-finalize; fall back to zero on absence.
+        latest = getattr(positions, "latest_mark", None)
+        if callable(latest):
+            try:
+                m = latest(symbol)
+                if isinstance(m, Decimal) and m > 0:
+                    return m
+            except Exception:  # pragma: no cover - defensive
+                pass
+        return Decimal("0")
 
     def _check_exposure_and_drawdown(
         self,

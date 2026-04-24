@@ -179,7 +179,13 @@ class StrategyPositionStore:
         """Return a PositionStore-compatible aggregate view.
 
         The risk engine and orchestrator can use this without knowing
-        about per-strategy isolation.
+        about per-strategy isolation.  Returns the concrete
+        :class:`_AggregateView` because mypy's structural-typing on
+        :class:`PositionStore` rejects the partial implementation
+        (``debit_fees`` / ``opened_at_ns`` / ``latest_mark`` are
+        intentionally absent — see the class docstring).  Call sites
+        narrow at the boundary via ``cast(PositionStore, ...)`` or by
+        relying on the duck-typed methods directly.
         """
         return self._aggregate
 

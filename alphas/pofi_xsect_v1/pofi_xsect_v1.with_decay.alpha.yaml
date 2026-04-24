@@ -1,0 +1,72 @@
+schema_version: "1.1"
+layer: PORTFOLIO
+
+alpha_id: pofi_xsect_v1_with_decay
+version: "1.0.0"
+description: |
+  Phase-4.1 cross-sectional alpha — same baseline as
+  pofi_xsect_v1 but with inverse-staleness decay weighting ON.  Used
+  side-by-side with the baseline in the Phase-4.1 acceptance suite to
+  verify (a) deterministic Level-3 byte-identity for the *with-decay*
+  stream and (b) the ≤5% ranker-overhead budget.
+
+hypothesis: |
+  Inverse-staleness decay weighting on the per-symbol raw alpha scores
+  meaningfully improves the cross-sectional alpha's risk-adjusted
+  return without inflating turnover above the 400%/day budget.
+
+falsification_criteria:
+  - sharpe_post_cost_below_baseline_sharpe_60d
+  - turnover_increase_above_25_pct_vs_baseline_60d
+  - ranker_overhead_above_5_pct_in_perf_test
+
+horizon_seconds: 300
+
+universe:
+  - AAPL
+  - MSFT
+  - GOOG
+  - AMZN
+  - META
+  - NVDA
+  - JPM
+  - BAC
+  - XOM
+  - CVX
+
+depends_on_signals:
+  - pofi_kyle_drift_v1
+  - pofi_inventory_revert_v1
+
+factor_neutralization: true
+
+cost_arithmetic:
+  edge_estimate_bps: 12.0
+  half_spread_bps: 1.5
+  impact_bps: 1.5
+  fee_bps: 0.5
+  margin_ratio: 3.43
+
+trend_mechanism:
+  consumes:
+    - {family: KYLE_INFO, max_share_of_gross: 0.6}
+    - {family: INVENTORY, max_share_of_gross: 0.5}
+  max_share_of_gross: 0.6
+
+risk_budget:
+  max_position_per_symbol: 5000
+  max_gross_exposure_pct: 50.0
+  max_drawdown_pct: 5.0
+  capital_allocation_pct: 100.0
+
+parameters:
+  decay_weighting_enabled:
+    type: bool
+    default: true
+    description: Phase-4.1 inverse-staleness decay weighting (ON).
+  decay_floor:
+    type: float
+    default: 0.000001
+    description: Lower clamp on the decay multiplier.
+
+# Default pipeline; bootstrap rewires the constructor to the engine.

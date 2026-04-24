@@ -50,7 +50,11 @@ if TYPE_CHECKING:
     )
     from feelies.alpha.multi_alpha_evaluator import MultiAlphaEvaluator
     from feelies.alpha.registry import AlphaRegistry
+    from feelies.composition.engine import CompositionEngine
+    from feelies.monitoring.horizon_metrics import HorizonMetricsCollector
+    from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
     from feelies.portfolio.strategy_position_store import StrategyPositionStore
+    from feelies.risk.hazard_exit import HazardExitController
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock
@@ -70,6 +74,7 @@ from feelies.core.events import (
     OrderRequest,
     OrderType,
     PositionUpdate,
+    RegimeHazardSpike,
     RegimeState,
     RiskAction,
     RiskVerdict,
@@ -105,8 +110,12 @@ from feelies.portfolio.position_store import PositionStore
 from feelies.risk.engine import RiskEngine
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
 from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
+from feelies.sensors.horizon_scheduler import HorizonScheduler
+from feelies.sensors.registry import SensorRegistry
 from feelies.services.regime_engine import RegimeEngine
+from feelies.services.regime_hazard_detector import RegimeHazardDetector
 from feelies.signals.engine import SignalEngine
+from feelies.signals.horizon_engine import HorizonSignalEngine
 from feelies.storage.event_log import EventLog
 from feelies.storage.feature_snapshot import FeatureSnapshotMeta, FeatureSnapshotStore
 from feelies.storage.trade_journal import TradeJournal, TradeRecord
@@ -181,6 +190,17 @@ class _PostExitPositionView:
     def update_mark(self, *args: Any, **kwargs: Any) -> None:
         raise RuntimeError("_PostExitPositionView is read-only")
 
+    # ----- Phase-4 PositionStore Protocol shims --------------------------
+    # These delegate to the inner store unmodified.  The post-exit view
+    # only adjusts ``quantity`` for the in-flight reverse leg; the mark
+    # price and open-timestamp shadow maps are unaffected by the simulated
+    # exit and must therefore reflect the underlying store.
+    def latest_mark(self, symbol: str) -> Decimal | None:
+        return self._inner.latest_mark(symbol)
+
+    def opened_at_ns(self, symbol: str) -> int | None:
+        return self._inner.opened_at_ns(symbol)
+
 
 _TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset({
     OrderState.FILLED,
@@ -228,6 +248,19 @@ class Orchestrator:
         fill_ledger: "FillAttributionLedger | None" = None,
         strategy_positions: "StrategyPositionStore | None" = None,
         cost_model: "CostModel | None" = None,
+        sensor_registry: SensorRegistry | None = None,
+        horizon_scheduler: HorizonScheduler | None = None,
+        horizon_signal_engine: HorizonSignalEngine | None = None,
+        sensor_sequence_generator: SequenceGenerator | None = None,
+        horizon_sequence_generator: SequenceGenerator | None = None,
+        snapshot_sequence_generator: SequenceGenerator | None = None,
+        signal_sequence_generator: SequenceGenerator | None = None,
+        regime_hazard_detector: RegimeHazardDetector | None = None,
+        hazard_sequence_generator: SequenceGenerator | None = None,
+        composition_engine: "CompositionEngine | None" = None,
+        cross_sectional_tracker: "CrossSectionalTracker | None" = None,
+        composition_metrics_collector: "HorizonMetricsCollector | None" = None,
+        hazard_exit_controller: "HazardExitController | None" = None,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -259,6 +292,59 @@ class Orchestrator:
         self._strategy_positions = strategy_positions
         self._cost_model: "CostModel | None" = cost_model
         self._seq = SequenceGenerator()
+
+        # ── Phase-2 (three-layer architecture) ─────────────────────────
+        # Sensor / scheduler / aggregator are optional; when None the
+        # orchestrator takes the legacy bit-identical path through the
+        # micro-state machine (Inv-A in the implementation plan).
+        self._sensor_registry = sensor_registry
+        self._horizon_scheduler = horizon_scheduler
+        self._horizon_signal_engine = horizon_signal_engine
+        # Per-event-family sequence generators (C1).  These are
+        # *separate* from ``self._seq`` (legacy) so adding sensors /
+        # signals cannot perturb existing event sequence numbers.  Each
+        # generator is owned by exactly one event family:
+        #
+        #   _seq          → legacy events (FeatureVector, Signal, etc.)
+        #   _sensor_seq   → SensorReading
+        #   _horizon_seq  → HorizonTick
+        #   _snapshot_seq → HorizonFeatureSnapshot (P2-β)
+        #   _signal_seq   → Signal(layer='SIGNAL') (P3-α)
+        #
+        # The bootstrap layer constructs the registry/scheduler/
+        # horizon_signal_engine with the same SequenceGenerator
+        # instances it passes here, so tests that verify Inv-A (legacy
+        # parity) can introspect a single canonical reference.  When
+        # sensors / SIGNAL alphas are disabled these counters simply
+        # never advance.
+        self._sensor_seq = sensor_sequence_generator or SequenceGenerator()
+        self._horizon_seq = horizon_sequence_generator or SequenceGenerator()
+        self._snapshot_seq = snapshot_sequence_generator or SequenceGenerator()
+        self._signal_seq = signal_sequence_generator or SequenceGenerator()
+        # P3.1: optional hazard detector + dedicated _hazard_seq
+        # generator (Inv-A / C1 isolation: enabling hazard exits must
+        # not perturb pre-existing event sequence numbers).  Caller
+        # passes None when no alpha declares hazard_exit.enabled, in
+        # which case the orchestrator never publishes
+        # RegimeHazardSpike events and the counter stays at zero.
+        self._regime_hazard_detector = regime_hazard_detector
+        self._hazard_seq = hazard_sequence_generator or SequenceGenerator()
+        # ── Phase-4 PORTFOLIO / composition layer (optional) ─────────
+        # All four are ``None`` for default deployments — Inv-A: the
+        # legacy LEGACY_SIGNAL parity hash stays bit-stable when no
+        # PORTFOLIO alpha is registered.  When wired by bootstrap, the
+        # subscriptions are already installed; the orchestrator holds
+        # references purely for introspection (tests, forensics,
+        # operator ``stats()`` queries).
+        self._composition_engine = composition_engine
+        self._cross_sectional_tracker = cross_sectional_tracker
+        self._composition_metrics_collector = composition_metrics_collector
+        self._hazard_exit_controller = hazard_exit_controller
+        # Per-(symbol, engine_name) cache of the most recently
+        # observed RegimeState; used as ``prev`` argument to the
+        # detector on the next tick.  Cleared on session boundary
+        # alongside the regime engine itself.
+        self._last_regime_state: dict[tuple[str, str], RegimeState] = {}
 
         self._stop_loss_per_share: float = 0.0
         self._trail_activate_per_share: float = 0.0
@@ -608,6 +694,19 @@ class Orchestrator:
         supports ``on_trade()`` — enables volume-based queue aging
         for passive limit order fills.
         """
+        self._process_trade_inner(trade)
+
+    def _process_trade_inner(self, trade: Trade) -> None:
+        """Trade-path body (split out for Phase-2 sensor wiring, C3).
+
+        The trade path does *not* drive the micro-state machine
+        (trades are out-of-band w.r.t. the quote-driven pipeline), so
+        we do not transition through SENSOR_UPDATE / HORIZON_CHECK
+        for trades.  We *do* however invoke the sensor registry (via
+        the bus) and the horizon scheduler (manually) so trade-only
+        sensors and any time-bucket boundaries crossed by the trade
+        timestamp are observed.
+        """
         if not self._events_prelogged:
             self._event_log.append(trade)
         self._bus.publish(trade)
@@ -619,6 +718,93 @@ class Orchestrator:
         router_on_trade = getattr(self._backend.order_router, "on_trade", None)
         if router_on_trade is not None:
             router_on_trade(trade)
+
+        # P2-α: drive the scheduler from the trade path too (C3).  No
+        # micro-state walk; trade ticks just produce HorizonTicks if
+        # they cross a boundary.  Sensor registry runs through the
+        # bus subscription on ``self._bus.publish(trade)`` above.
+        if self._horizon_scheduler is not None:
+            for tick in self._horizon_scheduler.on_event(trade):
+                self._bus.publish(tick)
+
+    def _dispatch_sensor_layer(self, event: NBBOQuote, cid: str) -> None:
+        """Quote-path Phase-2 dispatch: sensors + scheduler + aggregator.
+
+        Walks the new micro-states (SENSOR_UPDATE → HORIZON_CHECK
+        → HORIZON_AGGREGATE) only when the sensor stack is wired.  The
+        sensor registry has already received the quote via its bus
+        subscription on ``self._bus.publish(quote)`` in the caller, so
+        SENSOR_UPDATE here is a bookkeeping transition; the
+        observability gain is that the micro SM exposes the explicit
+        Phase-2 stage to forensics consumers.
+
+        When the registry is empty *and* no scheduler is configured,
+        this method returns immediately and the caller transitions
+        STATE_UPDATE → FEATURE_COMPUTE directly — preserving the
+        legacy execution path bit-for-bit (Inv-A).
+        """
+        registry_active = (
+            self._sensor_registry is not None
+            and not self._sensor_registry.is_empty()
+        )
+        scheduler_active = self._horizon_scheduler is not None
+        if not registry_active and not scheduler_active:
+            return
+
+        # M2 → SENSOR_UPDATE.  Sensors already ran via the bus
+        # subscription; this transition is the authoritative record
+        # in the micro SM that the sensor stage completed.
+        self._micro.transition(
+            MicroState.SENSOR_UPDATE,
+            trigger="state_updated",
+            correlation_id=cid,
+        )
+        # SENSOR_UPDATE → HORIZON_CHECK.
+        self._micro.transition(
+            MicroState.HORIZON_CHECK,
+            trigger="sensors_dispatched",
+            correlation_id=cid,
+        )
+
+        ticks: tuple = ()
+        if scheduler_active:
+            assert self._horizon_scheduler is not None
+            ticks = self._horizon_scheduler.on_event(event)
+            for tick in ticks:
+                self._bus.publish(tick)
+
+        if ticks:
+            # HORIZON_CHECK → HORIZON_AGGREGATE.  In P2-α the
+            # aggregator does not yet exist; the transition is purely
+            # bookkeeping.  P2-β wires a real aggregator on the bus
+            # (subscribed to HorizonTick + SensorReading), so this
+            # transition window is where ``HorizonFeatureSnapshot``
+            # events will materialise.
+            self._micro.transition(
+                MicroState.HORIZON_AGGREGATE,
+                trigger="horizon_tick_emitted",
+                correlation_id=cid,
+            )
+            # HORIZON_AGGREGATE → SIGNAL_GATE (P3-α).  Only fires when
+            # at least one SIGNAL alpha is registered with the
+            # :class:`HorizonSignalEngine`.  Without it we transition
+            # straight to FEATURE_COMPUTE through the caller's per-tick
+            # path, preserving the Phase-2 bit-identical sequence (Inv-A).
+            #
+            # The signal engine has already executed via its
+            # :class:`HorizonFeatureSnapshot` bus subscription by the
+            # time this transition fires; the SM transition is the
+            # authoritative record that the SIGNAL stage completed
+            # (mirrors the SENSOR_UPDATE bookkeeping pattern).
+            if (
+                self._horizon_signal_engine is not None
+                and not self._horizon_signal_engine.is_empty
+            ):
+                self._micro.transition(
+                    MicroState.SIGNAL_GATE,
+                    trigger="horizon_signal_dispatched",
+                    correlation_id=cid,
+                )
 
     def _process_tick(self, quote: NBBOQuote) -> None:
         """Process a single tick through the full micro-state pipeline.
@@ -753,7 +939,16 @@ class Orchestrator:
         )
         self._update_regime(quote, cid)
 
-        # ── M2 → M3: FEATURE_COMPUTE ───────────────────────────
+        # ── (P2-α) Optional sensor + scheduler pass ────────────
+        # ``_dispatch_sensor_layer`` is a no-op when no sensor
+        # registry / scheduler is configured (Inv-A: legacy path is
+        # bit-identical).  When configured it walks the new
+        # SENSOR_UPDATE → HORIZON_CHECK [ → HORIZON_AGGREGATE ]
+        # micro-states and publishes any HorizonTick events emitted
+        # by the scheduler.
+        self._dispatch_sensor_layer(quote, cid)
+
+        # ── M2 (or HORIZON_*) → M3: FEATURE_COMPUTE ────────────
         self._micro.transition(
             MicroState.FEATURE_COMPUTE,
             trigger="state_updated",
@@ -1563,16 +1758,53 @@ class Orchestrator:
         posteriors = self._regime_engine.posterior(quote)
         dominant_idx = max(range(len(posteriors)), key=lambda i: posteriors[i])
         state_names = tuple(self._regime_engine.state_names)
-        self._bus.publish(RegimeState(
+        engine_name = type(self._regime_engine).__name__
+        regime_state = RegimeState(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=correlation_id,
             sequence=self._seq.next(),
             symbol=quote.symbol,
-            engine_name=type(self._regime_engine).__name__,
+            engine_name=engine_name,
             state_names=state_names,
             posteriors=tuple(posteriors),
             dominant_state=dominant_idx,
             dominant_name=state_names[dominant_idx] if dominant_idx < len(state_names) else "unknown",
+        )
+        self._bus.publish(regime_state)
+        self._maybe_publish_hazard_spike(regime_state, correlation_id)
+
+    def _maybe_publish_hazard_spike(
+        self,
+        regime_state: RegimeState,
+        correlation_id: str,
+    ) -> None:
+        """Detect and publish a RegimeHazardSpike if the detector is wired.
+
+        Pure function of two consecutive RegimeState events from the
+        same (symbol, engine_name) channel (§20.3.1, §20.7.3).
+        Sequence numbers are drawn from the dedicated _hazard_seq
+        generator so enabling hazard exits never perturbs LEGACY or
+        SIGNAL parity hashes (Inv-A / C1).
+        """
+        if self._regime_hazard_detector is None:
+            return
+        key = (regime_state.symbol, regime_state.engine_name)
+        prev = self._last_regime_state.get(key)
+        self._last_regime_state[key] = regime_state
+        spike = self._regime_hazard_detector.detect(prev, regime_state)
+        if spike is None:
+            return
+        self._bus.publish(RegimeHazardSpike(
+            timestamp_ns=spike.timestamp_ns,
+            correlation_id=correlation_id,
+            sequence=self._hazard_seq.next(),
+            symbol=spike.symbol,
+            engine_name=spike.engine_name,
+            departing_state=spike.departing_state,
+            departing_posterior_prev=spike.departing_posterior_prev,
+            departing_posterior_now=spike.departing_posterior_now,
+            incoming_state=spike.incoming_state,
+            hazard_score=spike.hazard_score,
         ))
 
     def _escalate_risk(self, correlation_id: str) -> None:
@@ -2629,6 +2861,10 @@ class Orchestrator:
                 self._feature_engine.reset(symbol)
                 if self._regime_engine is not None:
                     self._regime_engine.reset(symbol)
+                if self._regime_hazard_detector is not None:
+                    engine_name = type(self._regime_engine).__name__ \
+                        if self._regime_engine is not None else ""
+                    self._last_regime_state.pop((symbol, engine_name), None)
 
         self._restore_regime_snapshot()
 
