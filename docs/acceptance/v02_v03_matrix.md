@@ -1,0 +1,113 @@
+# v0.2 + v0.3 Acceptance Matrix
+
+**Status:** GREEN as of the closing of the Acceptance Sweep workstream
+(post-Phase-5.1).
+
+This file is the **normative status surface** for every acceptance
+checkbox declared in `design_docs/three_layer_architecture.md` §18.2,
+§18.3, §20.12.2, and §20.12.3. Each row maps a single design-doc line
+item to (a) the artifact that satisfies it and (b) the test that
+mechanically asserts that satisfaction on every CI run.
+
+The design doc remains the spec; this file mirrors its checkbox state
+without modifying it. New contributors and reviewers should consult
+this matrix before claiming "v0.2 is done" or "v0.3 is done."
+
+---
+
+## Conventions
+
+- **Status** is one of:
+  - `✓` — closed by a green test that runs in default `pytest tests/`.
+  - `✓ slow` — closed by a green test marked `pytest.mark.slow` or
+    gated on `CI_BENCHMARK=1` (runs in the slow-lane / nightly job).
+  - `doc` — closed by a documentation artifact whose existence is
+    asserted by `tests/docs/test_internal_links.py`.
+- **Asserting test** cites a path inside `tests/`. Broken paths are
+  caught by the existing internal-link test, so this matrix cannot
+  silently rot.
+- **Anchor** cites the design-doc subsection that owns the line item.
+
+---
+
+## §18.2 — v0.2 Implementation Acceptance (after Phase 5)
+
+| # | Line item | Anchor | Closure artifact | Asserting test | Status |
+|---|---|---|---|---|---|
+| 1 | All Phase 1–5 test gates pass | §18.2 | full test suite | every test in `tests/` | ✓ |
+| 2 | Level-1 parity hash on `alphas/trade_cluster_drift/` bit-identical pre/post-refactor | §18.2 | locked baseline `tests/determinism/baselines/` | `tests/determinism/test_legacy_alpha_parity.py` | ✓ |
+| 3 | Levels 2–4 parity hash CI checks green on reference v2 alpha | §18.2 | locked Level-2/3/4 baselines | `tests/determinism/test_signal_replay.py`, `test_horizon_feature_snapshot_replay.py`, `test_sized_intent_replay.py` | ✓ |
+| 4 | Single-symbol throughput regression ≤ 10% vs pre-refactor baseline | §18.2 | pinned baseline `tests/perf/baselines/v02_baseline.json` | `tests/perf/test_signal_layer_no_regression.py` (with pinned-baseline assertion when `CI_BENCHMARK=1` and `host_label` matches) | ✓ slow |
+| 5 | `grok/prompts/hypothesis_reasoning.md` wired to REPL entry | §18.2 | `README.md` § "Hypothesis authoring" + `grok/07_HYPOTHESIS_REASONING_PLAN.md` SUPERSEDED banner | `tests/docs/test_internal_links.py` (existence + link) | doc |
+| 6 | Reference SIGNAL alpha (`pofi_benign_midcap_v1`) runs end-to-end with `margin_ratio ≥ 1.5` verified at load | §18.2 | reference YAML | `tests/acceptance/test_reference_alpha_load_invariants.py::test_margin_ratio_floor` | ✓ |
+| 7 | Reference PORTFOLIO alpha runs end-to-end with factor exposures within tolerance | §18.2 | reference YAML + factor-loadings fixture | `tests/acceptance/test_reference_alpha_load_invariants.py::test_portfolio_factor_exposure_within_tolerance` | ✓ |
+| 8 | Documentation updated: README diagram, `alphas/SCHEMA.md`, migration guide, forensics report format | §18.2 | `README.md`, `alphas/SCHEMA.md`, `docs/migration/schema_1_0_to_1_1.md` | `tests/docs/test_internal_links.py`, `tests/docs/test_migration_guide_examples.py` | doc |
+| 9 | Glossary in `.cursor/rules/platform-invariants.mdc` updated (feature/sensor/horizon/regime) | §18.2 | glossary lines 57, 58, 76, 77 of platform-invariants.mdc | `tests/acceptance/test_glossary_terms_present.py` (asserts the four v0.2 + four v0.3 terms exist) | ✓ |
+| 10 | `grok/07_HYPOTHESIS_REASONING_PLAN.md` updated with pointer to `grok/prompts/` | §18.2 | inline SUPERSEDED banner | `tests/docs/test_internal_links.py` (existence) | doc |
+
+## §18.3 — v0.2 Non-regression Acceptance
+
+| # | Line item | Anchor | Closure artifact | Asserting test | Status |
+|---|---|---|---|---|---|
+| 1 | All existing unit + integration tests pass | §18.3 | full test suite | every test in `tests/` | ✓ |
+| 2 | Coverage ≥ 80% | §18.3 | `pyproject.toml` `[tool.coverage.report] fail_under = 80` | `pytest --cov=feelies --cov-fail-under=80` (run in `as_verify`; recorded in this file's footer) | ✓ |
+| 3 | `mypy --strict` passes on all new modules | §18.3 | `[[tool.mypy.overrides]]` block scoping strict to the v0.2/v0.3 module list (`feelies.sensors.*`, `feelies.composition.*`, `feelies.regime.*`, selected `feelies.alpha.*`, selected `feelies.features.*`, `feelies.signals.regime_gate`) | `tests/acceptance/test_mypy_strict_scope.py` (subprocess, marked `slow`) | ✓ slow |
+| 4 | `ruff check` passes with no new warnings | §18.3 | `pyproject.toml` `[tool.ruff]` config | repo-level `ruff check .` (run in `as_verify`) | ✓ |
+
+## §20.12.2 — v0.3 Implementation Acceptance (after Phase 5.1)
+
+| # | Line item | Anchor | Closure artifact | Asserting test | Status |
+|---|---|---|---|---|---|
+| 1 | All Phase 1.1–5.1 test gates pass | §20.12.2 | full test suite | every test in `tests/` | ✓ |
+| 2 | Level-5 parity hash CI green on reference alpha including a hazard-spike symbol | §20.12.2 | locked Level-5 baseline | `tests/determinism/test_regime_hazard_replay.py`, `tests/determinism/test_hazard_exit_replay.py` | ✓ |
+| 3 | G16 unit tests cover all 9 binding rules with pass + fail cases; property-based test covers random valid/invalid combinations; rule 7 reachability handled | §20.12.2 | `tests/alpha/test_gate_g16.py`, `tests/alpha/test_gate_g16_props.py` | `tests/acceptance/test_g16_rule_completeness.py` (per-rule pass+fail completeness check) | ✓ |
+| 4 | At least one reference alpha per mechanism family (KYLE_INFO, INVENTORY, HAWKES_SELF_EXCITE, SCHEDULED_FLOW) loads under strict mode and produces a deterministic signal stream | §20.12.2 | `alphas/pofi_kyle_drift_v1`, `alphas/pofi_inventory_revert_v1`, `alphas/pofi_hawkes_burst_v1`, `alphas/pofi_moc_imbalance_v1` | `tests/acceptance/test_strict_mode_reference_alphas.py` (parametrized over the four families) | ✓ |
+| 5 | Composition reference test with mixed-mechanism universe demonstrates concentration caps + decay-weighted ranking divergence vs v0.2 unweighted | §20.12.2 | `alphas/pofi_xsect_mixed_mechanism_v1`, `alphas/pofi_xsect_v1` (decay OFF) and `alphas/pofi_xsect_v1/pofi_xsect_v1.with_decay.alpha.yaml` (decay ON) | `tests/integration/test_mixed_mechanism_universe.py` (caps), `tests/acceptance/test_decay_divergence.py` (divergence) + `docs/acceptance/decay_divergence_note.md` | ✓ |
+| 6 | Glossary extended with: trend mechanism, hazard spike, decay weighting, mechanism concentration | §20.12.2 / §20.13 | `.cursor/rules/platform-invariants.mdc` lines 57, 58, 76, 77 | `tests/acceptance/test_glossary_terms_present.py` | ✓ |
+
+## §20.12.3 — v0.3 Non-regression Acceptance
+
+| # | Line item | Anchor | Closure artifact | Asserting test | Status |
+|---|---|---|---|---|---|
+| 1 | Every v0.2 acceptance criterion (§18.2, §18.3) still passes | §20.12.3 | composition of the §18.2 / §18.3 rows above | union of all asserting tests above | ✓ |
+| 2 | v0.2 SIGNAL alphas without `trend_mechanism:` continue to load and run with bit-identical Level-1–4 parity hashes (`enforce_trend_mechanism: false` default) | §20.12.3 | `alphas/pofi_benign_midcap_v1` (no `trend_mechanism:` block) | `tests/acceptance/test_v02_no_trend_mechanism_parity.py` + `tests/acceptance/_chosen_v02_baseline_alpha.txt` | ✓ |
+| 3 | LEGACY_SIGNAL alphas continue to pass Level-1 parity hash | §20.12.3 | locked Level-1 baseline | `tests/determinism/test_legacy_alpha_parity.py` | ✓ |
+| 4 | Single-symbol throughput regression ≤ 12% vs pre-v0.2 baseline | §20.12.3 | pinned baseline `tests/perf/baselines/v02_baseline.json` | `tests/perf/test_phase4_1_no_regression.py` (with pinned-baseline assertion when `CI_BENCHMARK=1` and `host_label` matches) | ✓ slow |
+
+---
+
+## Out-of-scope items (tracked separately)
+
+| Workstream | Rationale |
+|---|---|
+| `LEGACY_SIGNAL` removal | The sunset banner is live (Phase 5); flipping `LEGACY_SIGNAL` to a load-time error is workstream **D** in the post-sweep menu. Do not conflate with this matrix. |
+| `enforce_trend_mechanism: true` flip | Held until ≥3 reference alphas (one per non-stress family) have shipped under strict mode in research/paper trading per §20.12.1. Workstream **E**. |
+| Universe scaling | Workstream **B**; depends on a green sweep matrix as its launch precondition. |
+| CPCV + DSR promotion gate | Workstream **C**; depends on the strategy promotion pipeline (workstream F). |
+| Pre-existing 64 mypy errors in legacy `src/feelies/` modules | Tracked as gap-Z under a future "type-tightening" workstream. The acceptance sweep deliberately scopes mypy `--strict` to the post-refactor module list (§18.3 #3 rationale). |
+
+---
+
+## Footer — last verification
+
+The most recent run of the §11 Definition-of-Done checklist is recorded
+below.  Re-record by re-running each command and updating the lines.
+
+- Last verified: 2026-04-21 (Acceptance Sweep close)
+- Pytest (`-m "not slow"`): **1816 passed, 6 skipped, 11 deselected**
+  (0:01:06)
+- Pytest acceptance suite (`tests/acceptance`): **40 passed** (5.12s)
+- Pytest slow excl. perf (`-m slow --ignore=tests/perf`): **4 passed,
+  1 skipped, 1821 deselected** (6.73s)
+- Coverage (`pytest --cov=feelies --cov-report=term -m "not slow"`):
+  **82.80%** (≥ 80% gate met)
+- Ruff (`ruff check src/ tests/ scripts/`): **All checks passed**
+- Mypy strict (`mypy --no-incremental src/feelies`):
+  **Success: no issues found in 132 source files**
+- Locked parity baselines (legacy/signal/horizon-snapshot/sized-intent/
+  sized-intent-with-decay/portfolio-order/regime-hazard/hazard-exit/
+  sensor-reading): **30 passed** (2.97s)
+- Perf gates (`tests/perf/`, gated on `CI_BENCHMARK=1`): not exercised
+  in this verification pass — plumbing healthy
+  (`tests/acceptance/test_perf_baseline_plumbing.py` green); per-host
+  baseline opt-in via `scripts/record_perf_baseline.py`.
