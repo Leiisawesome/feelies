@@ -51,11 +51,9 @@ import logging
 from decimal import Decimal
 from pathlib import Path
 
-from feelies.alpha.composite import CompositeFeatureEngine, CompositeSignalEngine
 from feelies.alpha.discovery import load_and_register
 from feelies.alpha.fill_attribution import FillAttributionLedger
 from feelies.alpha.loader import AlphaLoader
-from feelies.alpha.multi_alpha_evaluator import MultiAlphaEvaluator
 from feelies.alpha.portfolio_layer_module import (
     LoadedPortfolioLayerModule,
     _DefaultPortfolioConstructor,
@@ -167,11 +165,21 @@ def build_platform(
 
     _load_alphas(config, registry, loader)
 
-    feature_engine = CompositeFeatureEngine(registry, clock)
-    signal_engine = CompositeSignalEngine(
-        registry,
-        entry_cooldown_ticks=config.signal_entry_cooldown_ticks,
-    )
+    # Workstream D.2 PR-2b-i: the legacy per-tick alpha pipeline
+    # (CompositeFeatureEngine → CompositeSignalEngine →
+    # MultiAlphaEvaluator) is no longer wired in default deployments.
+    # All surviving alphas are SIGNAL or PORTFOLIO layer, both of which
+    # produce outputs via the bus-driven Phase-3 / Phase-4 pipeline
+    # (HorizonAggregator → HorizonSignalEngine → CompositionEngine)
+    # composed below.  ``LoadedSignalLayerModule.evaluate(FeatureVector)``
+    # and ``LoadedPortfolioLayerModule.evaluate(FeatureVector)`` are
+    # no-ops post-D.2 PR-1 — running the legacy per-tick path was pure
+    # overhead.  See :class:`feelies.kernel.orchestrator.Orchestrator`'s
+    # docstring for the new optional-engine contract.  PR-2b-ii will
+    # delete the composite engines, the multi-alpha evaluator, the
+    # orchestrator's now-unreachable constructor parameters, and the
+    # ``CompositeFeatureEngine``/``CompositeSignalEngine``/
+    # ``MultiAlphaEvaluator`` imports in this file.
 
     risk_config = RiskConfig(
         max_position_per_symbol=config.risk_max_position_per_symbol,
@@ -311,24 +319,21 @@ def build_platform(
         account_equity=_decimal(config.account_equity),
     )
     fill_ledger = FillAttributionLedger()
-    multi_alpha_evaluator: MultiAlphaEvaluator | None = None
-    if len(registry) > 1:
-        multi_alpha_evaluator = MultiAlphaEvaluator(
-            registry=registry,
-            intent_translator=intent_translator,
-            risk_wrapper=risk_wrapper,
-            strategy_positions=strategy_positions,
-            position_sizer=position_sizer,
-            account_equity=_decimal(config.account_equity),
-            entry_cooldown_ticks=config.signal_entry_cooldown_ticks,
-        )
+    # Workstream D.2 PR-2b-i: ``MultiAlphaEvaluator`` is no longer
+    # constructed by bootstrap.  Post-D.2 the registry only contains
+    # SIGNAL and PORTFOLIO modules whose ``.evaluate(FeatureVector)``
+    # methods are no-ops; running the evaluator on every tick was pure
+    # overhead.  Direct callers that still need the legacy multi-alpha
+    # path can construct ``MultiAlphaEvaluator`` themselves and pass it
+    # through ``Orchestrator(multi_alpha_evaluator=...)`` until PR-2b-ii
+    # deletes the class entirely.
 
     orchestrator = Orchestrator(
         clock=clock,
         bus=bus,
         backend=backend,
-        feature_engine=feature_engine,
-        signal_engine=signal_engine,
+        feature_engine=None,
+        signal_engine=None,
         risk_engine=risk_engine,
         position_store=position_store,
         event_log=event_log,
@@ -342,7 +347,7 @@ def build_platform(
         account_equity=_decimal(config.account_equity),
         trade_journal=trade_journal,
         feature_snapshots=feature_snapshots,
-        multi_alpha_evaluator=multi_alpha_evaluator,
+        multi_alpha_evaluator=None,
         fill_ledger=fill_ledger,
         strategy_positions=strategy_positions,
         cost_model=cost_model,
