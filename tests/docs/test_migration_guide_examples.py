@@ -12,13 +12,16 @@ YAML, and applies cheap structural assertions:
   loader rejects it, but the cookbook still cites it in "before"
   examples illustrating the migration;
 * if a block carries a ``layer`` field, it must be one of the three
-  normative layers.
+  historical layer values.  ``LEGACY_SIGNAL`` is similarly kept in the
+  whitelist as a historical reference: post-workstream-D.2 the loader
+  rejects it, but the cookbook still cites it in "before" examples
+  illustrating the layer migration story.
 
 We deliberately do **not** push every snippet through
 ``AlphaLoader.load_from_dict`` — many snippets are intentionally
 *partial* (e.g. only the ``regime_gate:`` block, only the
-``cost_arithmetic:`` block) and would fail a full load.  The three
-layer-specific *templates* in ``alphas/_template/`` are the artifacts
+``cost_arithmetic:`` block) and would fail a full load.  The two
+loadable layer templates in ``alphas/_template/`` are the artifacts
 that get loaded end-to-end (covered by ``test_layer_templates.py``).
 """
 

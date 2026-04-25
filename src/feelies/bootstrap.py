@@ -279,7 +279,8 @@ def build_platform(
     #
     # When no PORTFOLIO alpha is registered the helper returns all
     # ``None`` and the orchestrator's optional ctor args stay unset
-    # (Inv-A: legacy LEGACY_SIGNAL parity hash unchanged).
+    # (Inv-A: SIGNAL-only deployments without portfolio layers take
+    # the short path through the orchestrator).
     (
         composition_engine,
         cross_sectional_tracker,
@@ -716,8 +717,9 @@ def _create_composition_layer(
 
     Returns ``(composition_engine, cross_sectional_tracker,
     horizon_metrics_collector, hazard_exit_controller)``.  All four
-    are ``None`` when no PORTFOLIO alpha is registered — the legacy
-    LEGACY_SIGNAL parity hash stays bit-stable in that case (Inv-A).
+    are ``None`` when no PORTFOLIO alpha is registered — SIGNAL-only
+    deployments take the short path through the orchestrator and the
+    cross-sectional pipeline is never instantiated (Inv-A).
 
     Subscription order on the shared bus (registration order is
     dispatch order):

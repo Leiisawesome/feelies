@@ -231,7 +231,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Emit one JSON object per Signal to stdout "
             "(prefix 'SIGNAL_JSONL'). Tags each row with the "
-            "originating layer (LEGACY_SIGNAL or SIGNAL). Used by "
+            "originating layer (only ``SIGNAL`` post-D.2). Used by "
             "the Level-2 SIGNAL parity test "
             "(design_docs/three_layer_architecture.md §11.2)."
         ),
@@ -391,9 +391,10 @@ def _emit_signals_jsonl(recorder: BusRecorder) -> None:
     expected_half_life_seconds)``.
 
     Tagged with prefix ``SIGNAL_JSONL`` so a single run's stdout can
-    interleave LEGACY_SIGNAL emissions (``layer="LEGACY_SIGNAL"``)
-    with Phase-3 ``layer="SIGNAL"`` emissions and still be sliced by
-    a downstream consumer.  The Level-2 SIGNAL baseline test
+    be sliced out from the other emit-channels by a downstream
+    consumer.  Post-D.2 every emitted row carries ``layer="SIGNAL"``;
+    the historical ``layer="LEGACY_SIGNAL"`` rows were retired with
+    the per-tick legacy path.  The Level-2 SIGNAL baseline test
     (design_docs/three_layer_architecture.md §11.2) hashes the
     canonical-JSON line stream and compares it across Phase changes
     to surface drift in scope, ordering, or sequence allocation.

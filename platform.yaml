@@ -21,9 +21,10 @@ symbols:
 # Directory scanned for *.alpha.yaml files at boot time.
 #
 # Workstream-D update: ``alphas/trade_cluster_drift`` was retired in
-# D.2 (LEGACY_SIGNAL reference alpha) — the default discovery dir is
-# now the SIGNAL/PORTFOLIO mid-cap reference, ``alphas/
-# pofi_benign_midcap_v1``.  Override per-run via ``--config``.
+# D.2 (the last LEGACY_SIGNAL reference alpha) and the loader-side
+# LEGACY_SIGNAL code-path was removed in the same workstream.  The
+# default discovery dir is now the SIGNAL/PORTFOLIO mid-cap reference,
+# ``alphas/pofi_benign_midcap_v1``.  Override per-run via ``--config``.
 alpha_spec_dir: alphas/pofi_benign_midcap_v1
 
 # Explicit alpha spec paths (in addition to directory scan).

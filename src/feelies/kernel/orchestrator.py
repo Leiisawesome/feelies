@@ -330,9 +330,10 @@ class Orchestrator:
         self._regime_hazard_detector = regime_hazard_detector
         self._hazard_seq = hazard_sequence_generator or SequenceGenerator()
         # ── Phase-4 PORTFOLIO / composition layer (optional) ─────────
-        # All four are ``None`` for default deployments — Inv-A: the
-        # legacy LEGACY_SIGNAL parity hash stays bit-stable when no
-        # PORTFOLIO alpha is registered.  When wired by bootstrap, the
+        # All four are ``None`` for default deployments — Inv-A:
+        # SIGNAL-only deployments without a PORTFOLIO alpha take the
+        # short path and the composition pipeline is never wired up.
+        # When wired by bootstrap, the
         # subscriptions are already installed; the orchestrator holds
         # references purely for introspection (tests, forensics,
         # operator ``stats()`` queries).

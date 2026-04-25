@@ -1,15 +1,22 @@
 """Phase-3 ``layer: SIGNAL`` alpha module.
 
 A :class:`LoadedSignalLayerModule` is the loader-side artifact for a
-schema-1.1 ``layer: SIGNAL`` alpha.  Unlike its LEGACY_SIGNAL sibling
-:class:`feelies.alpha.loader.LoadedAlphaModule`, this module:
+schema-1.1 ``layer: SIGNAL`` alpha.  As of workstream D.2 it is one of
+only two surviving loaded-module types (the other being
+:class:`feelies.alpha.portfolio_layer_module.LoadedPortfolioLayerModule`);
+the per-tick :class:`feelies.alpha.loader.LoadedAlphaModule` previously
+produced by ``layer: LEGACY_SIGNAL`` is unreachable post-D.2 and
+scheduled for deletion in D.2 PR-2.
+
+This module:
 
 * Declares **no inline features** — Layer-2 alphas consume Layer-1
   ``SensorReading`` events via ``depends_on_sensors:``.  ``feature_definitions()``
   therefore returns an empty sequence.
 * Implements ``AlphaModule.evaluate(features)`` as a deterministic
-  ``None`` — the per-tick :class:`feelies.alpha.composite.CompositeSignalEngine`
-  must not see SIGNAL-layer alphas.  The actual evaluation runs in
+  ``None`` — the (deprecated) per-tick
+  :class:`feelies.alpha.composite.CompositeSignalEngine` must not see
+  SIGNAL-layer alphas.  The actual evaluation runs in
   :class:`feelies.signals.horizon_engine.HorizonSignalEngine` on
   :class:`feelies.core.events.HorizonFeatureSnapshot` events.
 * Exposes the SIGNAL-specific surface (the compiled
@@ -21,12 +28,10 @@ schema-1.1 ``layer: SIGNAL`` alpha.  Unlike its LEGACY_SIGNAL sibling
   :class:`feelies.signals.horizon_engine.RegisteredSignal` records
   without touching the loader internals.
 
-By satisfying both the existing :class:`feelies.alpha.module.AlphaModule`
-protocol *and* the SIGNAL-layer surface, the module remains
-register-able through the existing :class:`feelies.alpha.registry.AlphaRegistry`
-without forking the registry.  This preserves Inv-A (legacy bit-identical
-path) while letting Phase-3 SIGNAL alphas live alongside LEGACY_SIGNAL
-alphas in the same registry.
+By satisfying the :class:`feelies.alpha.module.AlphaModule` protocol
+*and* the SIGNAL-layer surface, the module remains register-able
+through :class:`feelies.alpha.registry.AlphaRegistry` without forking
+the registry.
 """
 
 from __future__ import annotations
@@ -137,7 +142,8 @@ class LoadedSignalLayerModule:
 
         Mirrors :py:meth:`feelies.alpha.loader.LoadedAlphaModule.validate`
         so registry-side per-alpha validation has consistent behavior
-        across LEGACY_SIGNAL and SIGNAL modules.
+        across SIGNAL and PORTFOLIO modules (and the LEGACY_SIGNAL
+        path, which is unreachable post-D.2).
         """
         errors: list[str] = []
         for pdef in self._manifest.parameter_schema:

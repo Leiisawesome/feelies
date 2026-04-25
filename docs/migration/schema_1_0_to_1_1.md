@@ -1,11 +1,18 @@
 # Migration Cookbook — Alpha Schema 1.0 → 1.1
 
-> **Workstream D.1 — schema 1.0 hard-removal (current release).**
-> `schema_version: "1.0"` is **no longer accepted** by the loader; it
-> is rejected outright with a pointer back to this cookbook.  All
-> existing alphas must apply the §1 five-line upgrade.  The legacy
-> per-tick contract continues to load via `layer: LEGACY_SIGNAL`
-> (still on a sunset path; see §11 for the D.2 timeline).
+> **Workstream D.1 — schema 1.0 hard-removal.** `schema_version: "1.0"`
+> is **no longer accepted** by the loader; it is rejected outright
+> with a pointer back to this cookbook.  All existing alphas must
+> declare `schema_version: "1.1"`.
+
+> **Workstream D.2 — LEGACY_SIGNAL retirement (current release).**
+> `layer: LEGACY_SIGNAL` is also **no longer accepted** by the loader;
+> the per-tick legacy execution path was retired.  The §1 five-line
+> upgrade documented below is preserved for historical reference, but
+> the only viable migration target post-D.2 is the SIGNAL layer
+> (§3) or the PORTFOLIO layer (§8).  Authors with a private
+> ``layer: LEGACY_SIGNAL`` alpha must promote it to SIGNAL or pin a
+> private fork of the platform that retains the legacy code-path.
 
 > **Audience:** alpha authors with one or more existing
 > `schema_version: "1.0"` YAML files in `alphas/`.
@@ -36,41 +43,44 @@
 
 ---
 
-## 1. The five-line upgrade (LEGACY_SIGNAL)
+## 1. The five-line upgrade (LEGACY_SIGNAL) — historical reference only
 
-For every existing schema-1.0 alpha that you are **not** ready to
-migrate to the horizon engine yet:
+> **Status: rejected by the loader as of Workstream D.2.**  This
+> section is retained as a historical "before" example so the
+> §3 promotion path (`LEGACY_SIGNAL → SIGNAL`) reads end-to-end.
+> Do **not** apply the upgrade below to a new alpha — it will fail
+> to load.
 
-Open `alphas/<alpha_id>/<alpha_id>.alpha.yaml` and add two lines at the
-top:
+For an existing schema-1.0 alpha that you are not ready to promote to
+the horizon engine yet, the historical (D.1-only, pre-D.2) shape was:
 
 ```yaml
 schema_version: "1.1"
 layer: LEGACY_SIGNAL
 ```
 
-Everything else stays the same. The loader dispatches to the same
-`LoadedAlphaModule` as before, the per-tick `features:` and `signal:`
-contract is preserved, and replay determinism (Inv-5) is contractual.
+Post-D.2 the loader rejects every `layer: LEGACY_SIGNAL` spec with an
+`AlphaLoadError` pointing back at this cookbook.  The viable migration
+targets are:
+
+- `layer: SIGNAL` — see §3 below.
+- `layer: PORTFOLIO` — see §8 below.
 
 **Workstream-D update —** the in-repo `LEGACY_SIGNAL` reference alpha
 (`alphas/trade_cluster_drift/`) and its anchoring parity test
-(`tests/determinism/test_legacy_alpha_parity.py`) were retired with
-D.2.  The loader still accepts `layer: LEGACY_SIGNAL` so private
-alphas can stay on the per-tick contract, but the in-repo regression
-suite no longer carries a LEGACY-anchored Level-1 hash; if you keep a
-LEGACY alpha in a private fork, you are responsible for re-anchoring
-your own Level-1 parity hash on it.
+(`tests/determinism/test_legacy_alpha_parity.py`) were retired in D.2.
+Both the per-tick legacy execution path and the loader-side
+`LEGACY_SIGNAL` dispatch were removed in the same workstream; the
+in-repo regression suite no longer carries a LEGACY-anchored Level-1
+hash.
 
-**Why bother?** Two reasons:
+**Why a five-line upgrade is no longer enough?** Two reasons:
 
 - The bare `schema_version: "1.0"` form is **rejected** at load time
-  (workstream D.1).  An alpha that still pins it will fail to load
-  with an `AlphaLoadError` pointing back at this cookbook.
-- `layer: LEGACY_SIGNAL` is an explicit, machine-readable declaration
-  that you intend the per-tick contract — it survives `grep`, it
-  appears on the hypothesis status report, and it stops the next
-  reader from wondering whether the alpha is "stuck on 1.0 by accident".
+  (workstream D.1).
+- The historical bridge value `layer: LEGACY_SIGNAL` is also
+  **rejected** at load time (workstream D.2); declaring it does not
+  preserve the per-tick contract any more.
 
 ---
 
@@ -512,19 +522,21 @@ review.
 | Phase | `schema_version: "1.0"` | `layer: LEGACY_SIGNAL` |
 |---|---|---|
 | Pre-D | accepted, **once-per-process WARNING** at load | accepted, **once-per-process WARNING** at load |
-| **D.1 (current)** | **rejected at load** — `AlphaLoadError` pointing at this cookbook | accepted, **once-per-process WARNING** at load |
-| **D.2 (next)** | rejected (unchanged from D.1) | **rejected at load** — operators must promote LEGACY_SIGNAL alphas to `layer: SIGNAL` (or retire them) |
-| Post-D | rejected (unchanged) | rejected (unchanged); the `LEGACY_SIGNAL` token is removed from the loader's accepted set entirely |
+| **D.1** | **rejected at load** — `AlphaLoadError` pointing at this cookbook | accepted, **once-per-process WARNING** at load |
+| **D.2 (current)** | rejected (unchanged from D.1) | **rejected at load** — operators must promote LEGACY_SIGNAL alphas to `layer: SIGNAL` (or retire them) |
+| Post-D.2 (next) | rejected (unchanged) | rejected (unchanged); the per-tick legacy execution path (`LoadedAlphaModule`, `CompositeFeatureEngine`, `LegacyFeatureShim`, `CompositeSignalEngine`) is scheduled for deletion in a follow-up PR |
 
-Recommended migration order for a portfolio of legacy alphas:
+Recommended migration order for a portfolio of legacy alphas
+(post-D.2):
 
-1. **All in one PR**: bump every `schema_version` from `"1.0"` to
-   `"1.1"` and add `layer: LEGACY_SIGNAL`. Behaviour preserved
-   bit-identically; LEGACY parity hash unchanged.
-2. **Per-alpha**: for alphas where you can name a structural actor and
-   compute cost arithmetic, follow §3 to promote LEGACY_SIGNAL →
-   SIGNAL. Author a sibling `<alpha_id>_v2.alpha.yaml`; preserve the
-   v1 file under `alphas/_deprecated/` (mutation parity rules,
+1. **Promote, don't bridge.** The historical D.1-only step ("bump
+   every `schema_version` to `"1.1"` and add `layer: LEGACY_SIGNAL`")
+   no longer loads — the loader rejects `LEGACY_SIGNAL` outright.
+2. **Per-alpha promotion**: for each legacy alpha where you can name a
+   structural actor and compute cost arithmetic, follow §3 to promote
+   it to a `layer: SIGNAL` spec. Author a sibling
+   `<alpha_id>_v2.alpha.yaml`; preserve the v1 file under
+   `alphas/_deprecated/` (mutation parity rules,
    `grok/prompts/mutation_protocol.md` §4).
 3. **Cross-sectional**: once two or more SIGNAL alphas exist that you
    want to compose, author a PORTFOLIO alpha per §8.

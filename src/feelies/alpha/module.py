@@ -114,11 +114,11 @@ class AlphaManifest:
     Three-layer architecture additive fields (Phase 1 / 1.1 of
     design_docs/three_layer_architecture.md):
 
-      ``layer`` — declared layer for the alpha.  ``None`` means the
-                  manifest came from a schema-1.0 spec (legacy).
-                  Otherwise one of ``LEGACY_SIGNAL``, ``SIGNAL``,
-                  ``PORTFOLIO``, ``SENSOR`` (only ``LEGACY_SIGNAL``
-                  is accepted by the loader in Phase 1).
+      ``layer`` — declared layer for the alpha.  Post-D.2 the only
+                  values produced by the loader are ``"SIGNAL"`` and
+                  ``"PORTFOLIO"``.  ``None`` and ``"LEGACY_SIGNAL"``
+                  may still appear on hand-built manifests but are
+                  rejected at load time.
 
       ``trend_mechanism`` — opt-in v0.3 ``trend_mechanism:`` block as a
                             raw dict (parsed but not enforced in Phase 1.1

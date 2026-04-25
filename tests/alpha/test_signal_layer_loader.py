@@ -258,41 +258,20 @@ def test_trend_mechanism_negative_half_life_rejected() -> None:
         AlphaLoader().load_from_dict(spec, source="<test>")
 
 
-# ── Schema 1.1 acceptance / future layers ──────────────────────────────
+# ── Schema 1.1 acceptance / LEGACY_SIGNAL retirement (workstream D.2) ──
 
 
-def test_layer_legacy_signal_does_not_route_signal_layer() -> None:
-    """``layer: LEGACY_SIGNAL`` stays on the per-tick legacy path.
+def test_layer_legacy_signal_is_rejected_post_d2() -> None:
+    """``layer: LEGACY_SIGNAL`` is hard-rejected by the loader.
 
-    Pre-D.1 this was anchored on the now-removed ``schema_version: 1.0``
-    spec; post-D.1 we anchor on the legacy *layer* directly until D.2
-    retires the layer entirely.
+    Workstream D.2 retired the per-tick legacy path entirely.  Any
+    spec carrying the legacy layer must surface an :class:`AlphaLoadError`
+    with a migration pointer; there is no longer a fallback constructor.
     """
     spec = _signal_spec()
     spec["layer"] = "LEGACY_SIGNAL"
-    spec.pop("horizon_seconds")
-    spec.pop("depends_on_sensors")
-    spec.pop("regime_gate")
-    spec.pop("cost_arithmetic")
-    spec["features"] = {
-        "f1": {
-            "version": "1.0.0",
-            "description": "x",
-            "computation": (
-                "def initial_state():\n"
-                "    return {}\n"
-                "def update(quote, state, params):\n"
-                "    return 0.0\n"
-            ),
-            "warm_up": {"min_events": 5},
-        },
-    }
-    spec["signal"] = (
-        "def evaluate(features, params):\n"
-        "    return None\n"
-    )
-    m = AlphaLoader().load_from_dict(spec, source="<test>")
-    assert not isinstance(m, LoadedSignalLayerModule)
+    with pytest.raises(_LOAD_REJECTED, match="LEGACY_SIGNAL"):
+        AlphaLoader().load_from_dict(spec, source="<test>")
 
 
 # ── Manifest fields preserved end-to-end ───────────────────────────────

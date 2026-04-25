@@ -20,8 +20,8 @@ Determinism (§7.5)
   the exception and emits the same degenerate intent.
 
 The engine is *passive when no PORTFOLIO alphas are registered* — bus
-subscription is skipped entirely so legacy backtests incur zero
-overhead and the LEGACY_SIGNAL parity hash stays bit-stable.
+subscription is skipped entirely so SIGNAL-only deployments incur
+zero overhead and downstream Layer-4 parity hashes stay bit-stable.
 """
 
 from __future__ import annotations

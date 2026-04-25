@@ -50,8 +50,8 @@ class MicroState(Enum):
     ``SIGNAL_GATE`` is entered **only when at least one SIGNAL alpha
     is registered** (``AlphaRegistry.has_signal_alphas()`` is true);
     otherwise the orchestrator transitions
-    ``HORIZON_AGGREGATE → FEATURE_COMPUTE`` directly so LEGACY_SIGNAL
-    runs (and runs without SIGNAL alphas) remain bit-identical to the
+    ``HORIZON_AGGREGATE → FEATURE_COMPUTE`` directly so deployments
+    without SIGNAL alphas remain bit-identical to the
     Phase-2 execution path (Inv-A).
 
     Phase 4 addition (composition layer): one new state slots in after
@@ -68,8 +68,8 @@ class MicroState(Enum):
     ``CROSS_SECTIONAL`` is entered **only when at least one PORTFOLIO
     alpha is registered** (``AlphaRegistry.has_portfolio_alphas()`` is
     true); otherwise the orchestrator preserves the prior transition
-    edges so LEGACY_SIGNAL / SIGNAL-only runs remain bit-identical to
-    the Phase-3 execution path (Inv-A).
+    edges so SIGNAL-only runs remain bit-identical to the Phase-3
+    execution path (Inv-A).
     """
 
     WAITING_FOR_MARKET_EVENT = auto()

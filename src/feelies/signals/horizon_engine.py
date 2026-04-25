@@ -45,8 +45,8 @@ Lifecycle
    isolation).
 
 The engine is *passive when no SIGNAL alpha is registered* — the bus
-subscription is skipped entirely so legacy LEGACY_SIGNAL-only
-deployments incur zero overhead.
+subscription is skipped entirely so deployments without horizon-
+anchored alphas incur zero overhead.
 
 Determinism
 -----------
@@ -224,8 +224,8 @@ class HorizonSignalEngine:
         :class:`RegimeState` events on the configured bus.
 
         No-op when no signals are registered (bus subscription is
-        skipped entirely so legacy LEGACY_SIGNAL-only deployments
-        incur zero overhead — Inv-A).
+        skipped entirely so deployments without horizon-anchored
+        alphas incur zero overhead — Inv-A).
         """
         if self._attached:
             return

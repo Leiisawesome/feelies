@@ -2,24 +2,29 @@
 
 Covers three sub-cases (plan §p4f_bootstrap_tests):
 
-1. ``test_no_portfolio_alpha_no_composition`` — when no PORTFOLIO alpha
+1. ``test_no_portfolio_alpha_no_composition`` --when no PORTFOLIO alpha
    is registered, none of the composition layer components are
-   constructed.  Validates Inv-A: legacy LEGACY_SIGNAL parity hash
-   stays bit-stable for default deployments.
-2. ``test_single_portfolio_alpha_wires_full_pipeline`` — registering a
+   constructed.  Validates Inv-A: SIGNAL-only deployments do not pay
+   for the composition pipeline.
+2. ``test_single_portfolio_alpha_wires_full_pipeline`` --registering a
    single PORTFOLIO alpha brings up the entire composition pipeline:
    ``CompositionEngine``, ``CrossSectionalTracker``,
    ``HorizonMetricsCollector``, and (when hazard_exit is enabled) a
    ``HazardExitController``.
-3. ``test_universe_scale_cap_fail_stop`` — exceeding
+3. ``test_universe_scale_cap_fail_stop`` --exceeding
    ``composition_max_universe_size`` raises :class:`UniverseScaleError`
    at bootstrap rather than silently shipping a quietly-wrong pipeline
    (Inv-11 fail-safe).
+
+Workstream D.2: the upstream-alpha fixture is now a ``layer: SIGNAL``
+manifest (LEGACY_SIGNAL was retired from the loader's accepted layer
+set).  PORTFOLIO alphas reference its ``alpha_id`` in
+``depends_on_signals``.
 """
 
 from __future__ import annotations
 
-import textwrap  # noqa: F401  (retained for the legacy fixture)
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -30,20 +35,48 @@ from feelies.bootstrap import (
     build_platform,
 )
 from feelies.composition.engine import CompositionEngine
+from feelies.core.events import NBBOQuote
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.monitoring.horizon_metrics import HorizonMetricsCollector
 from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
 from feelies.risk.hazard_exit import HazardExitController
+from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
+from feelies.sensors.impl.spread_z_30d import SpreadZScoreSensor
+from feelies.sensors.spec import SensorSpec
 
 
-_LEGACY_ALPHA_YAML = textwrap.dedent(
+# ── Sensor catalog the upstream SIGNAL fixture depends on ──────────────
+#
+# Workstream D.2 swapped the LEGACY_SIGNAL upstream fixture (which had
+# no sensor dependencies) for a horizon-anchored SIGNAL alpha.  SIGNAL
+# alphas declare ``depends_on_sensors:`` and the bootstrap layer
+# resolves those IDs against the configured ``sensor_specs`` tuple.
+# Pin the two-sensor catalog needed by ``_UPSTREAM_SIGNAL_ALPHA_YAML``
+# at module scope so every wiring test gets the same registration.
+_TEST_SENSOR_SPECS: tuple[SensorSpec, ...] = (
+    SensorSpec(
+        sensor_id="ofi_ewma",
+        sensor_version="1.0.0",
+        cls=OFIEwmaSensor,
+        subscribes_to=(NBBOQuote,),
+    ),
+    SensorSpec(
+        sensor_id="spread_z_30d",
+        sensor_version="1.0.0",
+        cls=SpreadZScoreSensor,
+        subscribes_to=(NBBOQuote,),
+    ),
+)
+
+
+_UPSTREAM_SIGNAL_ALPHA_YAML = textwrap.dedent(
     """\
     schema_version: "1.1"
-    layer: LEGACY_SIGNAL
-    alpha_id: legacy_test_alpha
+    layer: SIGNAL
+    alpha_id: upstream_test_alpha
     version: "1.0.0"
     author: test
-    description: legacy test alpha
+    description: upstream signal fixture for portfolio wiring tests
     hypothesis: test
     falsification_criteria:
       - test criterion
@@ -55,20 +88,22 @@ _LEGACY_ALPHA_YAML = textwrap.dedent(
       max_gross_exposure_pct: 5.0
       max_drawdown_pct: 1.0
       capital_allocation_pct: 10.0
-    features:
-      - feature_id: mid
-        version: "1.0"
-        description: mid price
-        depends_on: []
-        warm_up:
-          min_events: 1
-        computation: |
-          def initial_state():
-              return {}
-          def update(quote, state, params):
-              return float((quote.bid + quote.ask) / 2)
+    horizon_seconds: 300
+    depends_on_sensors:
+      - ofi_ewma
+      - spread_z_30d
+    regime_gate:
+      regime_engine: hmm_3state_fractional
+      on_condition: "P(normal) > 0.7"
+      off_condition: "P(normal) < 0.5"
+    cost_arithmetic:
+      edge_estimate_bps: 9.0
+      half_spread_bps: 2.0
+      impact_bps: 2.0
+      fee_bps: 1.0
+      margin_ratio: 1.8
     signal: |
-      def evaluate(features, params):
+      def evaluate(snapshot, regime, params):
           return None
     """
 )
@@ -96,7 +131,7 @@ def _portfolio_alpha_yaml(
     lines.extend(f"  - {s}" for s in universe)
     lines.extend([
         "depends_on_signals:",
-        "  - legacy_test_alpha",
+        "  - upstream_test_alpha",
         "factor_neutralization: true",
         "cost_arithmetic:",
         "  edge_estimate_bps: 10.0",
@@ -150,6 +185,7 @@ def _make_config(
         alpha_spec_dir=tmp_path,
         account_equity=100_000.0,
         composition_max_universe_size=composition_max_universe_size,
+        sensor_specs=_TEST_SENSOR_SPECS,
     )
 
 
@@ -157,7 +193,7 @@ class TestCompositionWiring:
 
     def test_no_portfolio_alpha_no_composition(self, tmp_path: Path) -> None:
         """Inv-A: legacy fast-path preserved when no PORTFOLIO alpha exists."""
-        _write_alpha(tmp_path, "legacy.alpha.yaml", _LEGACY_ALPHA_YAML)
+        _write_alpha(tmp_path, "upstream.alpha.yaml", _UPSTREAM_SIGNAL_ALPHA_YAML)
         config = _make_config(tmp_path, symbols=("AAPL",))
         orchestrator, _ = build_platform(config)
         assert orchestrator._composition_engine is None
@@ -169,7 +205,7 @@ class TestCompositionWiring:
         self, tmp_path: Path
     ) -> None:
         """Single PORTFOLIO alpha activates the whole composition layer."""
-        _write_alpha(tmp_path, "legacy.alpha.yaml", _LEGACY_ALPHA_YAML)
+        _write_alpha(tmp_path, "upstream.alpha.yaml", _UPSTREAM_SIGNAL_ALPHA_YAML)
         _write_alpha(
             tmp_path,
             "pofi_xsect_v1.alpha.yaml",
@@ -185,14 +221,14 @@ class TestCompositionWiring:
             orchestrator._composition_metrics_collector,
             HorizonMetricsCollector,
         )
-        # No alpha enabled hazard_exit → controller stays None.
+        # No alpha enabled hazard_exit ->controller stays None.
         assert orchestrator._hazard_exit_controller is None
 
     def test_hazard_exit_alpha_constructs_controller(
         self, tmp_path: Path
     ) -> None:
         """Opt-in hazard_exit.enabled=true wires HazardExitController."""
-        _write_alpha(tmp_path, "legacy.alpha.yaml", _LEGACY_ALPHA_YAML)
+        _write_alpha(tmp_path, "upstream.alpha.yaml", _UPSTREAM_SIGNAL_ALPHA_YAML)
         _write_alpha(
             tmp_path,
             "pofi_xsect_hazard.alpha.yaml",
@@ -213,7 +249,7 @@ class TestCompositionWiring:
 
     def test_universe_scale_cap_fail_stop(self, tmp_path: Path) -> None:
         """Exceeding composition_max_universe_size raises UniverseScaleError."""
-        _write_alpha(tmp_path, "legacy.alpha.yaml", _LEGACY_ALPHA_YAML)
+        _write_alpha(tmp_path, "upstream.alpha.yaml", _UPSTREAM_SIGNAL_ALPHA_YAML)
         big_universe = tuple(f"SYM{i:03d}" for i in range(15))
         _write_alpha(
             tmp_path,
@@ -233,7 +269,7 @@ class TestCompositionWiring:
 
     def test_stale_factor_loadings_fail_stop(self, tmp_path: Path) -> None:
         """Bootstrap refuses to wire if factor loadings file is missing."""
-        _write_alpha(tmp_path, "legacy.alpha.yaml", _LEGACY_ALPHA_YAML)
+        _write_alpha(tmp_path, "upstream.alpha.yaml", _UPSTREAM_SIGNAL_ALPHA_YAML)
         _write_alpha(
             tmp_path,
             "pofi_xsect_v1.alpha.yaml",
@@ -249,6 +285,7 @@ class TestCompositionWiring:
             alpha_spec_dir=tmp_path,
             account_equity=100_000.0,
             factor_loadings_dir=loadings_dir,
+            sensor_specs=_TEST_SENSOR_SPECS,
         )
         with pytest.raises(StaleFactorLoadingsError):
             build_platform(config)

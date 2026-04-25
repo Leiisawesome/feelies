@@ -4,71 +4,125 @@ Covers the opt-in YAML blocks per §20.5 of
 ``design_docs/three_layer_architecture.md``:
 
   - Absent block ⇒ no enforcement, manifest field is ``None``.
-  - Present block + valid ``family:`` ⇒ accepted, stored verbatim on
-    the loaded ``AlphaManifest``.
-  - Present block + unknown ``family:`` ⇒ rejected against the closed
-    5-member taxonomy.
-  - Malformed (non-mapping) block ⇒ rejected with structured error.
+  - Present, well-formed block on a SIGNAL alpha ⇒ accepted and
+    stored verbatim on the loaded ``AlphaManifest``.
+  - Malformed (non-mapping) block ⇒ rejected with a structured error.
 
-Full v0.3 mechanism enforcement (gate G16, raised as
-``TrendMechanismValidationError``) is deferred to Phase 3.1 and
-covered by tests at that time.
+**Workstream D.2.** Pre-D.2 these tests used a ``layer: LEGACY_SIGNAL``
+base spec to bypass G16 and exercise only the schema-shape contract.
+Post-D.2 the loader rejects ``LEGACY_SIGNAL`` outright, so the base
+spec is now ``layer: SIGNAL`` and every accepted ``trend_mechanism:``
+block has to be G16-compliant. Family-name *rejection* paths and
+field-level enforcement live in
+``tests/alpha/test_signal_layer_loader.py`` and
+``tests/alpha/test_gate_g16{,_props}.py``; this file pins the loader
+contract that an opt-in v0.3 block survives the round-trip onto
+``AlphaManifest``.
 """
 
 from __future__ import annotations
 
 import copy
+from typing import Any
 
 import pytest
 
+from feelies.alpha.layer_validator import LayerValidationError
 from feelies.alpha.loader import AlphaLoadError, AlphaLoader
 
+# Loader-side schema rejections raise ``AlphaLoadError`` while
+# G2-G16 violations raise ``LayerValidationError`` subclasses; both
+# kill the load so either is acceptable for "block was rejected".
+_LOAD_REJECTED = (AlphaLoadError, LayerValidationError)
 
-_BASE_SPEC = {
+
+_BASE_SPEC: dict[str, Any] = {
     "schema_version": "1.1",
-    "layer": "LEGACY_SIGNAL",
+    "layer": "SIGNAL",
     "alpha_id": "v03_block_test",
     "version": "1.0.0",
     "description": "v0.3 block parsing test",
     "hypothesis": "Loader-shape fixture for the v0.3 YAML blocks.",
     "falsification_criteria": ["fails by construction"],
-    "features": [
-        {
-            "feature_id": "mid_price",
-            "version": "1.0",
-            "description": "mid",
-            "depends_on": [],
-            "warm_up": {"min_events": 0},
-            "computation": (
-                "def initial_state():\n"
-                "    return {}\n"
-                "def update(quote, state, params):\n"
-                "    return (float(quote.bid) + float(quote.ask)) / 2.0\n"
-            ),
-        }
+    "horizon_seconds": 120,
+    "depends_on_sensors": [
+        "ofi_ewma",
+        "spread_z_30d",
+        "kyle_lambda_60s",
+        "micro_price",
+        "quote_replenish_asymmetry",
+        "hawkes_intensity",
+        "vpin_50bucket",
+        "realized_vol_30s",
+        "scheduled_flow_window",
     ],
+    "regime_gate": {
+        "regime_engine": "hmm_3state_fractional",
+        "on_condition": "P(normal) > 0.7",
+        "off_condition": "P(normal) < 0.5",
+    },
+    "cost_arithmetic": {
+        "edge_estimate_bps": 9.0,
+        "half_spread_bps": 2.0,
+        "impact_bps": 2.0,
+        "fee_bps": 1.0,
+        "margin_ratio": 1.8,
+    },
     "signal": (
-        "def evaluate(features, params):\n"
-        "    if not features.warm:\n"
-        "        return None\n"
-        "    return Signal(\n"
-        "        timestamp_ns=features.timestamp_ns,\n"
-        "        correlation_id=features.correlation_id,\n"
-        "        sequence=features.sequence,\n"
-        "        symbol=features.symbol,\n"
-        "        strategy_id='v03_block_test',\n"
-        "        direction=SignalDirection.LONG,\n"
-        "        strength=0.5,\n"
-        "        edge_estimate_bps=1.0,\n"
-        "    )\n"
+        "def evaluate(snapshot, regime, params):\n"
+        "    return None\n"
     ),
 }
 
 
-def _spec(**overrides: object) -> dict[str, object]:
+def _spec(**overrides: object) -> dict[str, Any]:
     out = copy.deepcopy(_BASE_SPEC)
     out.update(overrides)
     return out
+
+
+# ── G16-compliant trend_mechanism fixtures (one per family) ─────────────
+#
+# The half-life is chosen inside the per-family envelope AND so that
+# ``horizon_seconds(120) / expected_half_life_seconds`` lands inside
+# the [0.5, 4.0] gate-G16 ratio band.
+
+_TREND_MECHANISM_FIXTURES: dict[str, dict[str, Any]] = {
+    "KYLE_INFO": {
+        "family": "KYLE_INFO",
+        "expected_half_life_seconds": 120,
+        "l1_signature_sensors": ["kyle_lambda_60s", "micro_price"],
+        "failure_signature": [
+            "kyle_lambda_60s deviation falls below 1σ for 30s",
+        ],
+    },
+    "INVENTORY": {
+        "family": "INVENTORY",
+        "expected_half_life_seconds": 30,
+        "l1_signature_sensors": ["quote_replenish_asymmetry"],
+        "failure_signature": [
+            "asymmetric replenishment dissipates within one horizon",
+        ],
+    },
+    "HAWKES_SELF_EXCITE": {
+        "family": "HAWKES_SELF_EXCITE",
+        "expected_half_life_seconds": 30,
+        "l1_signature_sensors": ["hawkes_intensity"],
+        "failure_signature": ["intensity ratio reverts below 1.5 within 60s"],
+    },
+    "LIQUIDITY_STRESS": {
+        "family": "LIQUIDITY_STRESS",
+        "expected_half_life_seconds": 60,
+        "l1_signature_sensors": ["vpin_50bucket", "realized_vol_30s"],
+        "failure_signature": ["vpin recovery within one horizon"],
+    },
+    "SCHEDULED_FLOW": {
+        "family": "SCHEDULED_FLOW",
+        "expected_half_life_seconds": 60,
+        "l1_signature_sensors": ["scheduled_flow_window"],
+        "failure_signature": ["window passes without measurable flow"],
+    },
+}
 
 
 # ── trend_mechanism: block ──────────────────────────────────────────────
@@ -81,60 +135,22 @@ def test_trend_mechanism_absent_yields_none_on_manifest() -> None:
 
 @pytest.mark.parametrize(
     "family",
-    [
-        "KYLE_INFO",
-        "INVENTORY",
-        "HAWKES_SELF_EXCITE",
-        "LIQUIDITY_STRESS",
-        "SCHEDULED_FLOW",
-    ],
+    sorted(_TREND_MECHANISM_FIXTURES.keys()),
 )
 def test_trend_mechanism_known_family_accepted(family: str) -> None:
-    block = {"family": family, "expected_half_life_seconds": 60}
+    block = copy.deepcopy(_TREND_MECHANISM_FIXTURES[family])
     loaded = AlphaLoader().load_from_dict(
         _spec(trend_mechanism=block), source="<test>"
     )
     assert loaded.manifest.trend_mechanism is not None
     assert loaded.manifest.trend_mechanism["family"] == family
-    assert loaded.manifest.trend_mechanism["expected_half_life_seconds"] == 60
-
-
-def test_trend_mechanism_unknown_family_rejected() -> None:
-    block = {"family": "MOMENTUM_RIDE"}
-    with pytest.raises(AlphaLoadError) as excinfo:
-        AlphaLoader().load_from_dict(
-            _spec(trend_mechanism=block), source="<test>"
-        )
-    msg = str(excinfo.value)
-    assert "MOMENTUM_RIDE" in msg
-    assert "closed taxonomy" in msg
-    for known in (
-        "KYLE_INFO",
-        "INVENTORY",
-        "HAWKES_SELF_EXCITE",
-        "LIQUIDITY_STRESS",
-        "SCHEDULED_FLOW",
-    ):
-        assert known in msg
-
-
-def test_trend_mechanism_block_without_family_is_accepted_in_phase_1_1() -> None:
-    """Phase 1.1 enforces only the family-name closedness.
-
-    Per §20.1 the opt-in is field-presence based, and field-level
-    enforcement is deferred to Phase 3.1.  A block missing ``family:``
-    is therefore accepted at this slice (a structurally-shaped block
-    consumed by later phases will surface its own error).
-    """
-    block = {"expected_half_life_seconds": 30, "decay": "exponential"}
-    loaded = AlphaLoader().load_from_dict(
-        _spec(trend_mechanism=block), source="<test>"
-    )
-    assert loaded.manifest.trend_mechanism == block
+    assert loaded.manifest.trend_mechanism[
+        "expected_half_life_seconds"
+    ] == block["expected_half_life_seconds"]
 
 
 def test_trend_mechanism_non_mapping_rejected() -> None:
-    with pytest.raises(AlphaLoadError, match="trend_mechanism.*must be a mapping"):
+    with pytest.raises(_LOAD_REJECTED, match="trend_mechanism.*must be a mapping"):
         AlphaLoader().load_from_dict(
             _spec(trend_mechanism="KYLE_INFO"), source="<test>"
         )
@@ -144,7 +160,8 @@ def test_trend_mechanism_block_stored_verbatim_as_dict_copy() -> None:
     """Manifest must hold a *copy* — mutating loader inputs after the fact
     must not affect the manifest.
     """
-    block = {"family": "INVENTORY", "extra": {"nested": True}}
+    block = copy.deepcopy(_TREND_MECHANISM_FIXTURES["INVENTORY"])
+    block["extra"] = {"nested": True}
     loaded = AlphaLoader().load_from_dict(
         _spec(trend_mechanism=block), source="<test>"
     )
@@ -174,7 +191,7 @@ def test_hazard_exit_block_accepted_verbatim() -> None:
 
 
 def test_hazard_exit_non_mapping_rejected() -> None:
-    with pytest.raises(AlphaLoadError, match="hazard_exit.*must be a mapping"):
+    with pytest.raises(_LOAD_REJECTED, match="hazard_exit.*must be a mapping"):
         AlphaLoader().load_from_dict(
             _spec(hazard_exit=["regime_hazard_spike"]), source="<test>"
         )
@@ -184,7 +201,7 @@ def test_hazard_exit_non_mapping_rejected() -> None:
 
 
 def test_both_v03_blocks_present_independently_stored() -> None:
-    tm = {"family": "HAWKES_SELF_EXCITE"}
+    tm = copy.deepcopy(_TREND_MECHANISM_FIXTURES["HAWKES_SELF_EXCITE"])
     he = {"trigger": "regime_hazard_spike"}
     loaded = AlphaLoader().load_from_dict(
         _spec(trend_mechanism=tm, hazard_exit=he), source="<test>"

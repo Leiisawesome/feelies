@@ -63,7 +63,7 @@ class PortfolioAlpha(Protocol):
     :class:`feelies.alpha.loader.AlphaLoader` when it encounters a
     schema-1.1 ``layer: PORTFOLIO`` spec, and registered with the
     :class:`feelies.alpha.registry.AlphaRegistry` exactly like a
-    LEGACY_SIGNAL or SIGNAL alpha.
+    SIGNAL alpha.
 
     Attributes
     ----------

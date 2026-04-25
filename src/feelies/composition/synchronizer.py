@@ -20,8 +20,8 @@ Design invariants (§7.5)
 3. **Isolated sequence stream** — every emitted
    :class:`CrossSectionalContext` draws its sequence number from the
    dedicated ``_ctx_seq`` generator owned by the synchronizer.  This
-   guarantees the LEGACY_SIGNAL fast-path's main ``_seq`` is never
-   perturbed (Inv-A / C1).
+   guarantees the upstream signal/event sequencer's main ``_seq`` is
+   never perturbed (Inv-A / C1).
 4. **Determinism** — iteration over the universe is sorted lex-by-
    symbol; the snapshot/signal cache is replaced (not mutated in-
    place) so stale references do not leak across boundaries.
@@ -182,8 +182,9 @@ class UniverseSynchronizer:
         self._snapshot_cache[key] = snap
 
     def _on_signal(self, sig: Signal) -> None:
-        # Layer-2 SIGNAL events carry horizon_seconds; LEGACY_SIGNAL
-        # events do not feed the cross-sectional pipeline.
+        # Layer-2 SIGNAL events carry horizon_seconds; any non-SIGNAL
+        # signal (legacy or otherwise) is filtered out before reaching
+        # the cross-sectional pipeline.
         if sig.layer != "SIGNAL":
             return
         if sig.horizon_seconds not in self._horizons:
