@@ -221,6 +221,23 @@ class Orchestrator:
 
     The orchestrator never inspects ``backend.mode`` to branch logic.
     Mode-specific behavior is confined to ExecutionBackend (platform inv 9).
+
+    Workstream D.2 PR-2b-i made ``feature_engine`` and ``signal_engine``
+    optional (typed ``FeatureEngine | None`` / ``SignalEngine | None``).
+    The legacy per-tick alpha dispatch (M3 FEATURE_COMPUTE → M4
+    SIGNAL_EVALUATE → ...) only does work when an engine is wired;
+    otherwise the micro-state transitions still fire (so the SM stays
+    on its legal path) but no ``FeatureVector`` is published and no
+    ``signal_engine.evaluate()`` is invoked.  Phase-3 SIGNAL/PORTFOLIO
+    outputs are produced via the bus-driven
+    ``HorizonAggregator`` → ``HorizonSignalEngine`` →
+    ``CompositionEngine`` chain wired upstream of ``_dispatch_sensor_layer``
+    and are unaffected by the legacy engines being absent.  Bootstrap
+    stops constructing the composite engines and ``MultiAlphaEvaluator``
+    in default deployments; direct callers (tests passing stub engines
+    explicitly) continue to take the legacy path identically.  PR-2b-ii
+    will delete the now-unreachable constructor parameters along with
+    the per-tick engine classes.
     """
 
     def __init__(
@@ -228,8 +245,8 @@ class Orchestrator:
         clock: Clock,
         bus: EventBus,
         backend: ExecutionBackend,
-        feature_engine: FeatureEngine,
-        signal_engine: SignalEngine,
+        feature_engine: FeatureEngine | None,
+        signal_engine: SignalEngine | None,
         risk_engine: RiskEngine,
         position_store: PositionStore,
         event_log: EventLog,
@@ -950,32 +967,44 @@ class Orchestrator:
         self._dispatch_sensor_layer(quote, cid)
 
         # ── M2 (or HORIZON_*) → M3: FEATURE_COMPUTE ────────────
+        # Workstream D.2 PR-2b-i: ``feature_engine`` is now optional.
+        # The micro-SM transition is unconditional (M3 must be visited
+        # to keep the legal path FEATURE_COMPUTE → SIGNAL_EVALUATE →
+        # LOG_AND_METRICS), but the legacy per-tick feature update only
+        # runs when an engine is wired.  Post-D.2 deployments boot with
+        # ``feature_engine=None`` and observe an empty M3 — Phase-3
+        # SIGNAL/PORTFOLIO outputs continue to be produced via the
+        # bus-driven ``HorizonAggregator`` → ``HorizonSignalEngine``
+        # → ``CompositionEngine`` chain attached upstream of the
+        # orchestrator (see ``_dispatch_sensor_layer``).
         self._micro.transition(
             MicroState.FEATURE_COMPUTE,
             trigger="state_updated",
             correlation_id=cid,
         )
-        t0 = time.perf_counter_ns()
-        features = self._feature_engine.update(quote)
-        self._tick_timings["feature_compute_ns"] = time.perf_counter_ns() - t0
-        self._bus.publish(features)
+        features: "FeatureVector | None" = None
+        if self._feature_engine is not None:
+            t0 = time.perf_counter_ns()
+            features = self._feature_engine.update(quote)
+            self._tick_timings["feature_compute_ns"] = time.perf_counter_ns() - t0
+            self._bus.publish(features)
 
-        degraded = getattr(self._feature_engine, "nan_degraded_features", None)
-        if degraded:
-            for fid, sym in degraded:
-                self._bus.publish(Alert(
-                    timestamp_ns=quote.timestamp_ns,
-                    correlation_id=cid,
-                    sequence=quote.sequence,
-                    symbol=sym,
-                    severity=AlertSeverity.CRITICAL,
-                    layer="feature_engine",
-                    alert_name="feature_nan_rate_exceeded",
-                    message=(
-                        f"Feature '{fid}' NaN rate exceeded threshold for {sym}"
-                    ),
-                    context={"feature_id": fid, "symbol": sym},
-                ))
+            degraded = getattr(self._feature_engine, "nan_degraded_features", None)
+            if degraded:
+                for fid, sym in degraded:
+                    self._bus.publish(Alert(
+                        timestamp_ns=quote.timestamp_ns,
+                        correlation_id=cid,
+                        sequence=quote.sequence,
+                        symbol=sym,
+                        severity=AlertSeverity.CRITICAL,
+                        layer="feature_engine",
+                        alert_name="feature_nan_rate_exceeded",
+                        message=(
+                            f"Feature '{fid}' NaN rate exceeded threshold for {sym}"
+                        ),
+                        context={"feature_id": fid, "symbol": sym},
+                    ))
 
         # ── M3 → M4: SIGNAL_EVALUATE ───────────────────────────
         self._micro.transition(
@@ -985,13 +1014,24 @@ class Orchestrator:
         )
 
         # ── Multi-alpha path: branch to _process_tick_multi_alpha ──
-        if self._multi_alpha_evaluator is not None:
+        # Both ``multi_alpha_evaluator`` and ``features`` are required
+        # for the legacy multi-alpha dispatch.  Bootstrap stops
+        # constructing the evaluator post-D.2 PR-2b-i so the branch is
+        # unreachable in default deployments; direct callers (tests
+        # passing stub engines explicitly) continue to take the legacy
+        # path identically.
+        if (
+            self._multi_alpha_evaluator is not None
+            and features is not None
+        ):
             self._process_tick_multi_alpha(features, quote, cid, t_wall_start)
             return
 
-        t0 = time.perf_counter_ns()
-        signal = self._signal_engine.evaluate(features)
-        self._tick_timings["signal_evaluate_ns"] = time.perf_counter_ns() - t0
+        signal: "Signal | None" = None
+        if self._signal_engine is not None and features is not None:
+            t0 = time.perf_counter_ns()
+            signal = self._signal_engine.evaluate(features)
+            self._tick_timings["signal_evaluate_ns"] = time.perf_counter_ns() - t0
 
         stop_signal = self._check_stop_exit(quote)
         if stop_signal is not None:
@@ -2841,8 +2881,21 @@ class Orchestrator:
         Best-effort: if a snapshot is missing, corrupt, or version-
         incompatible, the feature engine cold-starts for that symbol.
         Snapshot failures never block boot.
+
+        Workstream D.2 PR-2b-i: ``feature_engine`` is optional; when
+        unwired (post-D.2 default) there is no per-tick legacy state
+        to restore and we skip both the feature- and regime-snapshot
+        passes.  The regime engine is checkpointed/restored separately
+        only when paired with a live feature engine — Phase-3
+        deployments that boot without legacy plumbing rely on
+        deterministic cold-start replay (Inv-5, separate ``_seq``
+        generators per event family).
         """
-        if self._feature_snapshots is None or self._config is None:
+        if (
+            self._feature_snapshots is None
+            or self._config is None
+            or self._feature_engine is None
+        ):
             return
         version = self._feature_engine.version
         for symbol in self._config.symbols:
@@ -2894,8 +2947,17 @@ class Orchestrator:
         """Checkpoint feature engine state for all configured symbols.
 
         Best-effort: snapshot failures do not block shutdown.
+
+        Workstream D.2 PR-2b-i: ``feature_engine`` is optional; with
+        no engine wired there is nothing to checkpoint and we exit
+        immediately.  See :meth:`_load_feature_snapshots` for the
+        symmetric restore-side guard.
         """
-        if self._feature_snapshots is None or self._config is None:
+        if (
+            self._feature_snapshots is None
+            or self._config is None
+            or self._feature_engine is None
+        ):
             return
         version = self._feature_engine.version
         for symbol in self._config.symbols:
