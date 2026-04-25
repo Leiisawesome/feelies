@@ -79,10 +79,12 @@ class _StubModule:
 def _make_registry(*modules: _StubModule) -> AlphaRegistry:
     """Build an :class:`AlphaRegistry` populated by stub modules.
 
-    The registry's full contract requires LoadedAlphaModule objects;
-    we monkey-patch ``active_alphas`` for the bootstrap factory to
-    keep the fixture self-contained without instantiating the full
-    alpha-loading pipeline.
+    The registry's full contract requires loaded alpha modules
+    (post-D.2 PR-2: :class:`LoadedSignalLayerModule` or
+    :class:`LoadedPortfolioLayerModule`); we monkey-patch
+    ``active_alphas`` for the bootstrap factory to keep the fixture
+    self-contained without instantiating the full alpha-loading
+    pipeline.
     """
     registry = AlphaRegistry()
     registry.active_alphas = lambda: list(modules)  # type: ignore[method-assign]

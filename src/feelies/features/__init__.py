@@ -6,7 +6,6 @@ from feelies.features.definition import (
     FeatureDefinition,
     WarmUpSpec,
 )
-from feelies.features.legacy_shim import LegacyFeatureShim
 from feelies.features.protocol import HorizonFeature
 
 __all__ = [
@@ -14,6 +13,5 @@ __all__ = [
     "FeatureDefinition",
     "HorizonAggregator",
     "HorizonFeature",
-    "LegacyFeatureShim",
     "WarmUpSpec",
 ]

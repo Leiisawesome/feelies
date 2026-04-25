@@ -80,7 +80,7 @@ this matrix before claiming "v0.2 is done" or "v0.3 is done."
 
 | Workstream | Rationale |
 |---|---|
-| `LEGACY_SIGNAL` removal | Workstream **D.2** flipped `layer: LEGACY_SIGNAL` to a load-time error and deleted the in-repo LEGACY reference surface. The follow-up PR-2 will delete the per-tick legacy execution path (`LoadedAlphaModule`, `CompositeFeatureEngine`, `LegacyFeatureShim`, `CompositeSignalEngine`) and is tracked separately. |
+| `LEGACY_SIGNAL` removal | Workstream **D.2 PR-1** flipped `layer: LEGACY_SIGNAL` to a load-time error and deleted the in-repo LEGACY reference surface. **PR-2a** then deleted the leaf surfaces orphaned by that rejection — `LoadedAlphaModule`, `LegacyFeatureShim`, the loader's dead `_compile_signal` 2-arg compiler, and the `LayerValidator` G6/G8/G13 inline-features branches. The remaining per-tick engine teardown (`FeatureVector`, `CompositeFeatureEngine`, `CompositeSignalEngine`, `MultiAlphaEvaluator`, the `FeatureEngine`/`SignalEngine` protocols, the orchestrator's legacy `_process_tick` body, and the bootstrap legacy wiring) is scheduled for **PR-2b** and tracked separately. |
 | `enforce_trend_mechanism: true` flip | Held until ≥3 reference alphas (one per non-stress family) have shipped under strict mode in research/paper trading per §20.12.1. Workstream **E**. |
 | Universe scaling | Workstream **B**; depends on a green sweep matrix as its launch precondition. |
 | CPCV + DSR promotion gate | Workstream **C**; depends on the strategy promotion pipeline (workstream F). |

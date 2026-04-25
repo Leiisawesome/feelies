@@ -523,8 +523,9 @@ review.
 |---|---|---|
 | Pre-D | accepted, **once-per-process WARNING** at load | accepted, **once-per-process WARNING** at load |
 | **D.1** | **rejected at load** — `AlphaLoadError` pointing at this cookbook | accepted, **once-per-process WARNING** at load |
-| **D.2 (current)** | rejected (unchanged from D.1) | **rejected at load** — operators must promote LEGACY_SIGNAL alphas to `layer: SIGNAL` (or retire them) |
-| Post-D.2 (next) | rejected (unchanged) | rejected (unchanged); the per-tick legacy execution path (`LoadedAlphaModule`, `CompositeFeatureEngine`, `LegacyFeatureShim`, `CompositeSignalEngine`) is scheduled for deletion in a follow-up PR |
+| **D.2 PR-1** | rejected (unchanged from D.1) | **rejected at load** — operators must promote LEGACY_SIGNAL alphas to `layer: SIGNAL` (or retire them) |
+| **D.2 PR-2a (current)** | rejected (unchanged) | rejected (unchanged); the leaf surfaces orphaned by PR-1's rejection — `LoadedAlphaModule`, `LegacyFeatureShim`, the loader's dead `_compile_signal` 2-arg compiler, and the `LayerValidator` G6/G8/G13 inline-features branches — are deleted from the codebase |
+| Post-D.2 PR-2a (next: PR-2b) | rejected (unchanged) | rejected (unchanged); the remaining per-tick execution path (`FeatureVector`, `CompositeFeatureEngine`, `CompositeSignalEngine`, `MultiAlphaEvaluator`, the `FeatureEngine`/`SignalEngine` protocols, the orchestrator's legacy `_process_tick` body, and the bootstrap legacy wiring) is scheduled for deletion in PR-2b |
 
 Recommended migration order for a portfolio of legacy alphas
 (post-D.2):

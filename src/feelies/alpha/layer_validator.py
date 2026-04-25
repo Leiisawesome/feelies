@@ -622,77 +622,58 @@ class LayerValidator:
     def _check_g6_feature_dependency_dag(
         self, spec: dict[str, Any], source: str
     ) -> None:
-        """G6 — feature dependency graph must be a DAG, no cycles.
+        """G6 — sensor / feature dependency graph must be a DAG.
 
-        Phase 3-α enforcement (post-D.2):
+        Phase 3-α enforcement (post-D.2 PR-2):
 
         - **SIGNAL**: ``depends_on_sensors`` must be a non-empty list
           of unique sensor identifiers.  When ``known_sensor_ids`` was
           injected at construction, every entry must resolve.
-        - The historical ``LEGACY_SIGNAL`` branch (inline ``features:``
-          DAG validation) is unreachable post-D.2: the loader rejects
-          ``layer: LEGACY_SIGNAL`` before ever invoking the validator.
-          It is kept inline (rather than deleted) so any direct caller
-          of ``LayerValidator.validate`` with a hand-built spec still
-          surfaces a clean error; deletion is scheduled for D.2 PR-2
-          alongside the per-tick engine.
-        """
-        layer = str(spec.get("layer") or "LEGACY_SIGNAL")
-        if layer == "SIGNAL":
-            depends = spec.get("depends_on_sensors")
-            if not isinstance(depends, list) or not depends:
-                raise LayerValidationError(
-                    f"{source}: G6 — layer: SIGNAL spec must declare "
-                    f"a non-empty 'depends_on_sensors' list; got "
-                    f"{depends!r}"
-                )
-            seen: set[str] = set()
-            for entry in depends:
-                if not isinstance(entry, str) or not entry.strip():
-                    raise LayerValidationError(
-                        f"{source}: G6 — every depends_on_sensors "
-                        f"entry must be a non-empty sensor_id "
-                        f"string; got {entry!r}"
-                    )
-                if entry in seen:
-                    raise LayerValidationError(
-                        f"{source}: G6 — duplicate sensor_id "
-                        f"{entry!r} in depends_on_sensors"
-                    )
-                seen.add(entry)
-            if self._known_sensor_ids is not None:
-                missing = sorted(seen - self._known_sensor_ids)
-                if missing:
-                    raise LayerValidationError(
-                        f"{source}: G6 — depends_on_sensors references "
-                        f"sensor(s) {missing} which are not registered "
-                        f"in the platform; available: "
-                        f"{sorted(self._known_sensor_ids)}"
-                    )
-            return
+        - **PORTFOLIO**: no inline-feature DAG to validate; the gate is
+          a no-op.  Cross-alpha dependencies on upstream SIGNAL outputs
+          are resolved at registry merge time by the composition layer.
 
-        features_raw = spec.get("features")
-        if features_raw is None:
+        The historical ``layer: LEGACY_SIGNAL`` branch (which used to
+        validate an inline ``features:`` DAG via Kahn topological sort)
+        was deleted by D.2 PR-2 along with the per-tick execution path.
+        Any post-D.2 caller passing ``layer: LEGACY_SIGNAL`` directly
+        to :meth:`LayerValidator.validate` will fall through this gate
+        without enforcement; the loader's ``_RETIRED_LAYERS`` check is
+        the canonical rejection point and runs before any G-gate.
+        """
+        layer = str(spec.get("layer") or "")
+        if layer != "SIGNAL":
             return
-        normalized = _normalize_features_for_dag(features_raw)
-        feature_ids = {fid for fid, _ in normalized}
-        # Self-reference + cycle detection
-        for fid, deps in normalized:
-            if fid in deps:
-                raise LayerValidationError(
-                    f"{source}: G6 — feature {fid!r} depends on itself"
-                )
-            unknown = deps - feature_ids
-            # depends_on entries that name *other* alpha modules'
-            # features are tolerated (LEGACY_SIGNAL composite engines
-            # resolve these at registry merge time).  Only intra-spec
-            # cycles are caught here.
-            del unknown
-        if _has_cycle(normalized):
+        depends = spec.get("depends_on_sensors")
+        if not isinstance(depends, list) or not depends:
             raise LayerValidationError(
-                f"{source}: G6 — feature dependency graph contains "
-                f"a cycle"
+                f"{source}: G6 — layer: SIGNAL spec must declare "
+                f"a non-empty 'depends_on_sensors' list; got "
+                f"{depends!r}"
             )
+        seen: set[str] = set()
+        for entry in depends:
+            if not isinstance(entry, str) or not entry.strip():
+                raise LayerValidationError(
+                    f"{source}: G6 — every depends_on_sensors "
+                    f"entry must be a non-empty sensor_id "
+                    f"string; got {entry!r}"
+                )
+            if entry in seen:
+                raise LayerValidationError(
+                    f"{source}: G6 — duplicate sensor_id "
+                    f"{entry!r} in depends_on_sensors"
+                )
+            seen.add(entry)
+        if self._known_sensor_ids is not None:
+            missing = sorted(seen - self._known_sensor_ids)
+            if missing:
+                raise LayerValidationError(
+                    f"{source}: G6 — depends_on_sensors references "
+                    f"sensor(s) {missing} which are not registered "
+                    f"in the platform; available: "
+                    f"{sorted(self._known_sensor_ids)}"
+                )
 
     def _check_g7_horizon_registration(
         self, spec: dict[str, Any], source: str
@@ -734,31 +715,21 @@ class LayerValidator:
         compiled function from peeking at future events through the
         process clock.
         """
-        layer = str(spec.get("layer") or "LEGACY_SIGNAL")
+        layer = str(spec.get("layer") or "")
+        if layer != "SIGNAL":
+            return
         banned = frozenset(
             {
                 "time", "datetime", "monotonic", "perf_counter",
                 "process_time", "now",
             }
         )
-        if layer == "SIGNAL":
-            signal_code = spec.get("signal")
-            if isinstance(signal_code, str):
-                self._scan_for_banned_names(
-                    signal_code, source=source, gate="G8",
-                    banned=banned, what="signal evaluate",
-                )
-            return
-        features_raw = spec.get("features") or []
-        for entry in _iter_feature_specs(features_raw):
-            comp = entry.get("computation")
-            if isinstance(comp, str):
-                self._scan_for_banned_names(
-                    comp, source=source, gate="G8",
-                    banned=banned,
-                    what=f"feature '{entry.get('feature_id', '<?>')}' "
-                    f"computation",
-                )
+        signal_code = spec.get("signal")
+        if isinstance(signal_code, str):
+            self._scan_for_banned_names(
+                signal_code, source=source, gate="G8",
+                banned=banned, what="signal evaluate",
+            )
 
     def _check_g12_cost_arithmetic_disclosure(
         self, spec: dict[str, Any], source: str
@@ -801,37 +772,20 @@ class LayerValidator:
     ) -> None:
         """G13 — every feature must declare ``warm_up:`` (events or duration).
 
-        Phase 3-α enforcement: SIGNAL alphas don't declare inline
-        features (they consume sensors which carry their own
-        ``min_history``); the gate is therefore a no-op for SIGNAL
-        specs.
+        Phase 3-α enforcement (post-D.2 PR-2): SIGNAL alphas don't
+        declare inline features (they consume sensors which carry their
+        own ``min_history``); PORTFOLIO alphas don't declare inline
+        features either.  The gate is therefore a no-op for both
+        surviving layers.
 
-        The legacy inline-features branch is unreachable post-D.2 —
-        the loader rejects ``layer: LEGACY_SIGNAL`` before validation.
-        Kept here for direct ``LayerValidator.validate`` callers; full
-        removal is scheduled for D.2 PR-2 with the per-tick engine.
+        The historical ``layer: LEGACY_SIGNAL`` branch (which iterated
+        a spec's inline ``features:`` list and required a ``warm_up:``
+        mapping per entry) was deleted by D.2 PR-2 along with the
+        per-tick execution path.  Like G6/G8, the loader's
+        ``_RETIRED_LAYERS`` rejection runs before this gate is reached
+        for any LEGACY_SIGNAL spec.
         """
-        layer = str(spec.get("layer") or "LEGACY_SIGNAL")
-        if layer != "LEGACY_SIGNAL":
-            return
-        features_raw = spec.get("features") or []
-        for entry in _iter_feature_specs(features_raw):
-            warm = entry.get("warm_up")
-            if not isinstance(warm, dict):
-                raise LayerValidationError(
-                    f"{source}: G13 — feature "
-                    f"'{entry.get('feature_id', '<?>')}' must declare a "
-                    f"'warm_up:' mapping with at least one of "
-                    f"min_events / min_duration_ns; got {warm!r}"
-                )
-            has_events = "min_events" in warm
-            has_duration = "min_duration_ns" in warm
-            if not (has_events or has_duration):
-                raise LayerValidationError(
-                    f"{source}: G13 — feature "
-                    f"'{entry.get('feature_id', '<?>')}' warm_up must "
-                    f"declare min_events and/or min_duration_ns"
-                )
+        del spec, source  # all surviving layers are no-ops
 
     # ── AST-scan helpers (G5 / G8) ───────────────────────────────────
 
@@ -1160,70 +1114,6 @@ class LayerValidator:
                         f"this PORTFOLIO's consumes whitelist "
                         f"{sorted(seen_families)}"
                     )
-
-
-# ── Module-level helpers for G6 / G8 / G13 ─────────────────────────────
-
-
-def _iter_feature_specs(features_raw: Any) -> list[dict[str, Any]]:
-    """Yield normalised feature dicts from either list or mapping form.
-
-    Mirrors :py:meth:`AlphaLoader._normalize_features` but without
-    raising — we only need a best-effort iteration for gate checks.
-    Anything that isn't list-of-dicts or dict-of-dicts is silently
-    skipped; the loader's normaliser raises the structured error.
-    """
-    if isinstance(features_raw, list):
-        return [dict(item) for item in features_raw if isinstance(item, dict)]
-    if isinstance(features_raw, dict):
-        out: list[dict[str, Any]] = []
-        for fid, fspec in features_raw.items():
-            if isinstance(fspec, dict):
-                entry = {"feature_id": fid, **fspec}
-                out.append(entry)
-        return out
-    return []
-
-
-def _normalize_features_for_dag(features_raw: Any) -> list[tuple[str, set[str]]]:
-    """Return list of ``(feature_id, depends_on_set)`` for DAG checks."""
-    out: list[tuple[str, set[str]]] = []
-    for entry in _iter_feature_specs(features_raw):
-        fid = str(entry.get("feature_id", ""))
-        if not fid:
-            continue
-        deps_raw = entry.get("depends_on", []) or []
-        if not isinstance(deps_raw, (list, tuple)):
-            deps_raw = []
-        deps = {str(d) for d in deps_raw}
-        out.append((fid, deps))
-    return out
-
-
-def _has_cycle(features: list[tuple[str, set[str]]]) -> bool:
-    """Kahn topological sort; True iff the graph is cyclic.
-
-    Edges are restricted to in-spec ids — cross-alpha dependencies are
-    resolved at registry merge time, not here.
-    """
-    nodes = {fid for fid, _ in features}
-    in_degree = dict.fromkeys(nodes, 0)
-    edges: dict[str, list[str]] = {fid: [] for fid in nodes}
-    for fid, deps in features:
-        for dep in deps:
-            if dep in nodes:
-                edges[dep].append(fid)
-                in_degree[fid] += 1
-    queue = [n for n, d in in_degree.items() if d == 0]
-    visited = 0
-    while queue:
-        node = queue.pop()
-        visited += 1
-        for downstream in edges[node]:
-            in_degree[downstream] -= 1
-            if in_degree[downstream] == 0:
-                queue.append(downstream)
-    return visited != len(nodes)
 
 
 # ── G16 helpers ─────────────────────────────────────────────────────────
