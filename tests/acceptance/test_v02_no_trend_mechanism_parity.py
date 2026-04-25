@@ -37,10 +37,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from feelies.alpha.loader import (
-    _LEGACY_SUNSET_WARNED,
-    AlphaLoader,
-)
+from feelies.alpha.loader import AlphaLoader
 from feelies.alpha.signal_layer_module import LoadedSignalLayerModule
 
 
@@ -67,12 +64,10 @@ def _baseline_alpha_path() -> Path:
     return Path("alphas") / alpha_id / f"{alpha_id}.alpha.yaml"
 
 
-@pytest.fixture(autouse=True)
-def _reset_legacy_warned() -> None:
-    """Ensure deprecation deduplication does not silence the asserts."""
-    _LEGACY_SUNSET_WARNED.clear()
-    yield
-    _LEGACY_SUNSET_WARNED.clear()
+# Workstream D.2 retired the loader's once-per-process LEGACY_SIGNAL
+# sunset banner along with the per-tick legacy code-path.  The
+# previous autouse fixture cleared that dedup set; with the set gone
+# there is nothing to reset between tests.
 
 
 def test_baseline_alpha_yaml_has_no_trend_mechanism_block() -> None:

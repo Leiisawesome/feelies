@@ -1,4 +1,11 @@
-"""Unit tests for alpha spec discovery and load_and_register."""
+"""Unit tests for alpha spec discovery and load_and_register.
+
+Workstream D.2: the fixture template is a minimal ``layer: SIGNAL``
+alpha (LEGACY_SIGNAL was retired from the loader's accepted layer
+set).  The discovery layer is layer-agnostic — these tests assert
+filename selection, sort order, and per-alpha-fault tolerance, not
+loader semantics — so the migration is mechanical.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +19,7 @@ from feelies.alpha.registry import AlphaRegistry
 
 ALPHA_SPEC_TEMPLATE = """\
 schema_version: "1.1"
-layer: LEGACY_SIGNAL
+layer: SIGNAL
 alpha_id: {alpha_id}
 version: "1.0.0"
 author: test
@@ -28,20 +35,22 @@ risk_budget:
   max_gross_exposure_pct: 5.0
   max_drawdown_pct: 1.0
   capital_allocation_pct: 10.0
-features:
-  - feature_id: mid_{alpha_id}
-    version: "1.0"
-    description: mid price
-    depends_on: []
-    warm_up:
-      min_events: 1
-    computation: |
-      def initial_state():
-          return {{}}
-      def update(quote, state, params):
-          return float((quote.bid + quote.ask) / 2)
+horizon_seconds: 120
+depends_on_sensors:
+  - ofi_ewma
+  - spread_z_30d
+regime_gate:
+  regime_engine: hmm_3state_fractional
+  on_condition: "P(normal) > 0.7"
+  off_condition: "P(normal) < 0.5"
+cost_arithmetic:
+  edge_estimate_bps: 9.0
+  half_spread_bps: 2.0
+  impact_bps: 2.0
+  fee_bps: 1.0
+  margin_ratio: 1.8
 signal: |
-  def evaluate(features, params):
+  def evaluate(snapshot, regime, params):
       return None
 """
 
@@ -154,7 +163,7 @@ class TestLoadAndRegister:
     def test_applies_parameter_overrides(self, tmp_path: Path) -> None:
         spec_yaml = """\
 schema_version: "1.1"
-layer: LEGACY_SIGNAL
+layer: SIGNAL
 alpha_id: my_alpha
 version: "1.0.0"
 author: test
@@ -167,20 +176,22 @@ parameters:
     type: float
     default: 0.0
     description: threshold
-features:
-  - feature_id: mid_my_alpha
-    version: "1.0"
-    description: mid price
-    depends_on: []
-    warm_up:
-      min_events: 1
-    computation: |
-      def initial_state():
-          return {}
-      def update(quote, state, params):
-          return float((quote.bid + quote.ask) / 2)
+horizon_seconds: 120
+depends_on_sensors:
+  - ofi_ewma
+  - spread_z_30d
+regime_gate:
+  regime_engine: hmm_3state_fractional
+  on_condition: "P(normal) > 0.7"
+  off_condition: "P(normal) < 0.5"
+cost_arithmetic:
+  edge_estimate_bps: 9.0
+  half_spread_bps: 2.0
+  impact_bps: 2.0
+  fee_bps: 1.0
+  margin_ratio: 1.8
 signal: |
-  def evaluate(features, params):
+  def evaluate(snapshot, regime, params):
       return None
 """
         (tmp_path / "my_alpha.alpha.yaml").write_text(spec_yaml, encoding="utf-8")

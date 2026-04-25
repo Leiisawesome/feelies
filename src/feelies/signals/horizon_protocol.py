@@ -33,10 +33,12 @@ Design choices:
   trade this boundary" answer.  The engine never publishes a
   ``Signal`` event when ``evaluate`` returns ``None``.
 
-This protocol is **strictly additive**: the legacy per-tick
-:class:`feelies.signals.engine.SignalEngine` Protocol is preserved
-verbatim under ``layer="LEGACY_SIGNAL"`` (§7.6 / Inv-A in the Phase-3
-plan).  No existing code path is modified by adding this protocol.
+This protocol is the **only** Layer-2 signal contract in the platform.
+The legacy per-tick :class:`feelies.signals.engine.SignalEngine`
+Protocol — once mirrored by ``layer="LEGACY_SIGNAL"`` alphas — was
+retired by workstream D.2; the loader rejects ``LEGACY_SIGNAL``
+manifests at parse time and the per-tick :class:`SignalEngine` itself
+is scheduled for removal in D.2 PR-2.
 """
 
 from __future__ import annotations

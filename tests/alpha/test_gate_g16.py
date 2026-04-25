@@ -168,20 +168,6 @@ def test_signal_spec_without_mechanism_passes_when_strict_off() -> None:
     _validator(strict=False).validate(spec, source="<test>")
 
 
-def test_signal_spec_without_mechanism_passes_when_legacy_layer() -> None:
-    """LEGACY_SIGNAL alphas are exempt from the trend_mechanism gate.
-
-    Pre-D.1 this was anchored on ``schema_version == "1.0"``; post-D.1
-    schema 1.0 is gone, but the legacy *layer* (``LEGACY_SIGNAL``)
-    still bypasses the trend-mechanism strictness rules until D.2
-    retires the layer entirely.
-    """
-    spec = _signal_spec_with_mechanism()
-    spec.pop("trend_mechanism")
-    spec["layer"] = "LEGACY_SIGNAL"
-    _validator(strict=True).validate(spec, source="<test>")
-
-
 # ── Strict mode (§20.6.2) ───────────────────────────────────────────────
 
 
@@ -197,38 +183,6 @@ class TestStrictMode:
         spec.pop("trend_mechanism")
         with pytest.raises(MissingTrendMechanismError):
             _validator(strict=True).validate(spec, source="<test>")
-
-    def test_v11_legacy_signal_passes_strict(self) -> None:
-        """LEGACY_SIGNAL is not in the strict-mode scope (only SIGNAL +
-        PORTFOLIO).  G16 abstains."""
-        spec = {
-            "schema_version": "1.1",
-            "layer": "LEGACY_SIGNAL",
-            "alpha_id": "alpha_x",
-            "version": "1.0.0",
-            "description": "x",
-            "hypothesis": "x",
-            "falsification_criteria": ["c"],
-            "features": {
-                "f1": {
-                    "version": "1.0.0",
-                    "description": "x",
-                    "computation": (
-                        "def initial_state():\n"
-                        "    return {}\n"
-                        "def update(quote, state, params):\n"
-                        "    return 0.0\n"
-                    ),
-                    "warm_up": {"min_events": 5},
-                },
-            },
-            "signal": (
-                "def evaluate(features, params):\n"
-                "    return None\n"
-            ),
-        }
-        _validator(strict=True).validate(spec, source="<test>")
-
 
 # ── Rule 1 — closed family taxonomy ─────────────────────────────────────
 

@@ -179,8 +179,9 @@ class AlphaRegistry:
         The orchestrator and bootstrap use this to gate the
         :class:`SIGNAL_GATE` micro-state and the
         :class:`HorizonSignalEngine` subscription respectively.  When
-        false, the legacy LEGACY_SIGNAL execution path is preserved
-        bit-for-bit (Inv-A).
+        false, the bootstrap layer skips wiring the horizon signal
+        engine entirely (Inv-A: SIGNAL-only deployments without
+        portfolio layers take the short path).
         """
         return any(
             alpha.manifest.layer == "SIGNAL"
@@ -196,7 +197,8 @@ class AlphaRegistry:
         ``manifest.layer == "PORTFOLIO"``.  Returns an empty list when
         no PORTFOLIO alphas are loaded — the bootstrap layer treats this
         as a signal to skip the entire Phase-4 composition wiring path
-        (Inv-A: legacy LEGACY_SIGNAL parity hash unchanged).
+        (Inv-A: SIGNAL-only deployments without portfolio layers do
+        not pay for the cross-sectional construction pipeline).
         """
         return [
             alpha for alpha in self._alphas.values()

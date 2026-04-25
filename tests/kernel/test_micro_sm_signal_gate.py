@@ -6,7 +6,8 @@ Verifies the new transitions slotted in by P3-α:
   SIGNAL alpha registered).
 - ``SIGNAL_GATE → FEATURE_COMPUTE`` is the only valid exit.
 - ``HORIZON_AGGREGATE → FEATURE_COMPUTE`` (Phase-2 fast-path) remains
-  legal so LEGACY_SIGNAL-only deployments are bit-identical.
+  legal so SIGNAL-only deployments without a portfolio layer take the
+  short path through the orchestrator.
 - ``SIGNAL_GATE`` cannot be entered from any non-aggregate state.
 - The full sensor-enabled + SIGNAL-loaded pipeline reaches
   ``WAITING_FOR_MARKET_EVENT`` cleanly.

@@ -3,21 +3,27 @@
 Each test uses a minimal valid SIGNAL spec template and mutates exactly
 the field under test so failure messages cite the specific gate.
 
-Gate matrix:
+Gate matrix (post-D.2 — only SIGNAL/PORTFOLIO are loadable):
 
 * G2  — typed event contract  (signal: must be a non-empty string)
 * G4  — regime-gate purity     (DSL parse must succeed, whitelist only)
 * G5  — signal purity          (no import/exec/eval/__builtins__/etc.)
 * G6  — feature/sensor DAG     (depends_on_sensors non-empty + unique)
 * G7  — horizon registration   (horizon_seconds in registry)
-* G8  — no implicit lookahead  (no time/datetime/now refs)
+* G8  — no implicit lookahead  (no time/datetime/now refs in signal:)
 * G12 — cost arithmetic block  (delegated to CostArithmetic.from_spec)
-* G13 — warm-up documentation  (LEGACY_SIGNAL only)
+* G13 — warm-up documentation  (no-op for SIGNAL — sensor warm-up is
+        platform-owned via the SensorRegistry)
+
+Workstream D.2 retired ``layer: LEGACY_SIGNAL`` from the loader's
+accepted set, so the LEGACY_SIGNAL-specific validator branches (G6
+inline-feature DAG, G8 inline-feature lookahead, G13 inline-feature
+warm-up) are unreachable from the production load path; their dedicated
+tests have been removed.  PR-2 will delete the dead branches in
+:mod:`feelies.alpha.layer_validator` themselves.
 """
 
 from __future__ import annotations
-
-import copy
 
 import pytest
 
@@ -61,35 +67,6 @@ def _signal_spec() -> dict:
     }
 
 
-def _legacy_spec() -> dict:
-    return {
-        "schema_version": "1.1",
-        "layer": "LEGACY_SIGNAL",
-        "alpha_id": "alpha_x",
-        "version": "1.0.0",
-        "description": "test alpha",
-        "hypothesis": "test hypothesis",
-        "falsification_criteria": ["criterion 1"],
-        "features": {
-            "f1": {
-                "version": "1.0.0",
-                "description": "x",
-                "computation": (
-                    "def initial_state():\n"
-                    "    return {}\n"
-                    "def update(quote, state, params):\n"
-                    "    return 0.0\n"
-                ),
-                "warm_up": {"min_events": 5},
-            },
-        },
-        "signal": (
-            "def evaluate(features, params):\n"
-            "    return None\n"
-        ),
-    }
-
-
 def _validator(
     *,
     sensors: frozenset[str] | None = None,
@@ -108,10 +85,6 @@ def test_signal_spec_passes_all_gates() -> None:
     _validator(sensors=frozenset({"ofi_ewma", "spread_z_30d"})).validate(
         _signal_spec(), source="<test>",
     )
-
-
-def test_legacy_spec_passes_all_gates() -> None:
-    _validator().validate(_legacy_spec(), source="<test>")
 
 
 # ── G2 — event typing ──────────────────────────────────────────────────
@@ -238,22 +211,6 @@ def test_g6_skips_registry_check_when_unknown() -> None:
     _validator(sensors=None).validate(spec, source="<test>")
 
 
-def test_g6_legacy_feature_self_loop() -> None:
-    spec = _legacy_spec()
-    spec["features"]["f1"]["depends_on"] = ["f1"]
-    with pytest.raises(LayerValidationError, match="G6"):
-        _validator().validate(spec, source="<test>")
-
-
-def test_g6_legacy_feature_cycle() -> None:
-    spec = _legacy_spec()
-    spec["features"]["f1"]["depends_on"] = ["f2"]
-    spec["features"]["f2"] = copy.deepcopy(spec["features"]["f1"])
-    spec["features"]["f2"]["depends_on"] = ["f1"]
-    with pytest.raises(LayerValidationError, match="G6"):
-        _validator().validate(spec, source="<test>")
-
-
 # ── G7 — horizon registration ───────────────────────────────────────────
 
 
@@ -302,18 +259,6 @@ def test_g8_rejects_now_in_signal() -> None:
         _validator().validate(spec, source="<test>")
 
 
-def test_g8_rejects_datetime_in_legacy_feature() -> None:
-    spec = _legacy_spec()
-    spec["features"]["f1"]["computation"] = (
-        "def initial_state():\n"
-        "    return {}\n"
-        "def update(quote, state, params):\n"
-        "    return datetime\n"
-    )
-    with pytest.raises(LayerValidationError, match="G8"):
-        _validator().validate(spec, source="<test>")
-
-
 # ── G12 — cost arithmetic disclosure ────────────────────────────────────
 
 
@@ -338,25 +283,16 @@ def test_g12_rejects_low_margin_ratio() -> None:
         _validator().validate(spec, source="<test>")
 
 
-# ── G13 — warm-up documentation (LEGACY_SIGNAL only) ────────────────────
-
-
-def test_g13_rejects_legacy_feature_missing_warmup() -> None:
-    spec = _legacy_spec()
-    spec["features"]["f1"].pop("warm_up")
-    with pytest.raises(LayerValidationError, match="G13"):
-        _validator().validate(spec, source="<test>")
-
-
-def test_g13_rejects_legacy_warmup_without_required_keys() -> None:
-    spec = _legacy_spec()
-    spec["features"]["f1"]["warm_up"] = {"unrelated": 0}
-    with pytest.raises(LayerValidationError, match="G13"):
-        _validator().validate(spec, source="<test>")
+# ── G13 — warm-up documentation (no-op for SIGNAL post-D.2) ─────────────
 
 
 def test_g13_signal_layer_no_op() -> None:
-    """SIGNAL alphas don't have inline features — G13 is skipped."""
+    """SIGNAL alphas don't have inline features — G13 is skipped.
+
+    Sensor warm-up is owned by the platform's :class:`SensorRegistry`,
+    not the alpha YAML, so G13 has nothing to enforce on the only
+    loadable layer family post-D.2.
+    """
     _validator(sensors=frozenset({"ofi_ewma", "spread_z_30d"})).validate(
         _signal_spec(), source="<test>",
     )

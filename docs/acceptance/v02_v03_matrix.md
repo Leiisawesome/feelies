@@ -71,7 +71,7 @@ this matrix before claiming "v0.2 is done" or "v0.3 is done."
 |---|---|---|---|---|---|
 | 1 | Every v0.2 acceptance criterion (§18.2, §18.3) still passes | §20.12.3 | composition of the §18.2 / §18.3 rows above | union of all asserting tests above | ✓ |
 | 2 | v0.2 SIGNAL alphas without `trend_mechanism:` continue to load and run with bit-identical Level-1–4 parity hashes (`enforce_trend_mechanism: false` default) | §20.12.3 | `alphas/pofi_benign_midcap_v1` (no `trend_mechanism:` block) | `tests/acceptance/test_v02_no_trend_mechanism_parity.py` + `tests/acceptance/_chosen_v02_baseline_alpha.txt` | ✓ |
-| 3 | LEGACY_SIGNAL alphas continue to pass Level-1 parity hash | §20.12.3 | locked Level-1 baseline | `tests/determinism/test_legacy_alpha_parity.py` | ✓ |
+| 3 | LEGACY_SIGNAL alphas continue to pass Level-1 parity hash | §20.12.3 | (n/a — workstream D.2 retired both the in-repo LEGACY reference alpha and the loader-side LEGACY_SIGNAL dispatch; this row is preserved for matrix-row continuity but no longer asserts a pinned hash) | `tests/determinism/test_legacy_alpha_parity.py` (deleted with D.2) | n/a (retired by D.2) |
 | 4 | Single-symbol throughput regression ≤ 12% vs pre-v0.2 baseline | §20.12.3 | pinned baseline `tests/perf/baselines/v02_baseline.json` | `tests/perf/test_phase4_1_no_regression.py` (with pinned-baseline assertion when `CI_BENCHMARK=1` and `host_label` matches) | ✓ slow |
 
 ---
@@ -80,7 +80,7 @@ this matrix before claiming "v0.2 is done" or "v0.3 is done."
 
 | Workstream | Rationale |
 |---|---|
-| `LEGACY_SIGNAL` removal | The sunset banner is live (Phase 5); flipping `LEGACY_SIGNAL` to a load-time error is workstream **D** in the post-sweep menu. Do not conflate with this matrix. |
+| `LEGACY_SIGNAL` removal | Workstream **D.2** flipped `layer: LEGACY_SIGNAL` to a load-time error and deleted the in-repo LEGACY reference surface. The follow-up PR-2 will delete the per-tick legacy execution path (`LoadedAlphaModule`, `CompositeFeatureEngine`, `LegacyFeatureShim`, `CompositeSignalEngine`) and is tracked separately. |
 | `enforce_trend_mechanism: true` flip | Held until ≥3 reference alphas (one per non-stress family) have shipped under strict mode in research/paper trading per §20.12.1. Workstream **E**. |
 | Universe scaling | Workstream **B**; depends on a green sweep matrix as its launch precondition. |
 | CPCV + DSR promotion gate | Workstream **C**; depends on the strategy promotion pipeline (workstream F). |

@@ -10,11 +10,17 @@
 
 > **Workstream D.1 (schema 1.0 hard-removal).** `schema_version: "1.0"`
 > is no longer accepted by the loader; the only supported value is
-> `"1.1"`, and `schema_version:` is now mandatory.  The legacy
-> per-tick contract lives on as `layer: LEGACY_SIGNAL` (still on a
-> sunset path; D.2 will retire it).  See
+> `"1.1"`, and `schema_version:` is now mandatory.  See
 > [docs/migration/schema_1_0_to_1_1.md](../docs/migration/schema_1_0_to_1_1.md)
 > for the verbatim migration recipe.
+>
+> **Workstream D.2 (LEGACY_SIGNAL retirement).** `layer: LEGACY_SIGNAL`
+> is no longer accepted by the loader. The per-tick legacy execution
+> path was retired; alphas must declare `layer: SIGNAL`
+> (horizon-anchored, regime-gated, cost-aware) or `layer: PORTFOLIO`
+> (cross-sectional construction). The migration cookbook remains the
+> authoritative step-by-step source for promoting a legacy alpha to
+> the SIGNAL layer.
 
 ## Top-Level Fields
 
@@ -97,11 +103,10 @@ Alphas can be placed in either layout:
 
 ## Schema 1.1 (Three-Layer)
 
-> **Status: `LEGACY_SIGNAL` + `SIGNAL` + `PORTFOLIO` accepted (Phase 3-α + Phase 3.1 + Phase 4 + Phase 4.1). `SENSOR` reserved (Phase 5).**
+> **Status: `SIGNAL` + `PORTFOLIO` accepted (Phase 3-α + Phase 3.1 + Phase 4 + Phase 4.1). `LEGACY_SIGNAL` retired (Workstream D.2). `SENSOR` reserved (Phase 5).**
 >
-> As of Phase 4 + Phase 4.1, `schema_version: "1.1"` accepts:
+> As of Workstream D.2, `schema_version: "1.1"` accepts:
 >
-> - `layer: LEGACY_SIGNAL` — per-tick legacy path, parity-locked (Phase 3-α).
 > - `layer: SIGNAL` — horizon-anchored, regime-gated, optional v0.3 `trend_mechanism:` block enforced by G16 (Phase 3-α + Phase 3.1).
 > - `layer: PORTFOLIO` — cross-sectional alpha consuming
 >   `CrossSectionalContext` and emitting `SizedPositionIntent`. Must
@@ -112,6 +117,8 @@ Alphas can be placed in either layout:
 >   inverse-staleness reweighting (Phase 4.1). Optional `hazard_exit:
 >   {enabled: true, ...}` block wires `HazardExitController` for
 >   hazard-spike-driven exits and a hard-exit age cap (Phase 4.1).
+> - `layer: LEGACY_SIGNAL` is rejected with a workstream-D.2 retirement
+>   error pointing at the migration cookbook.
 > - `layer: SENSOR` is still rejected with a "Phase 5 not yet
 >   implemented" error.
 >
@@ -132,8 +139,8 @@ Alphas can be placed in either layout:
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `schema_version` | string | Yes | Set to `"1.1"` to opt into three-layer fields. Schema 1.0 remains supported with a deprecation warning. |
-| `layer` | string | Yes (when `schema_version == "1.1"`) | Dispatch key. One of `LEGACY_SIGNAL`, `SIGNAL`, `PORTFOLIO`, `SENSOR`. Phase 1 accepts only `LEGACY_SIGNAL`. |
+| `schema_version` | string | Yes | Set to `"1.1"`. Schema 1.0 was hard-removed in Workstream D.1. |
+| `layer` | string | Yes | Dispatch key. One of `SIGNAL`, `PORTFOLIO`, `SENSOR`. The historical value `LEGACY_SIGNAL` is rejected with a workstream-D.2 retirement error; `SENSOR` is reserved for Phase 5. |
 | `horizon_seconds` | int | No (Phase 3) | Decision-horizon for `SIGNAL` and `PORTFOLIO` alphas. Must be a registered horizon (Phase 3). |
 | `cost_arithmetic` | string | No (Phase 3) | Declares whether edge / cost are quoted in `bps` or `usd`. Phase-3 gate G12 will require this on all non-legacy alphas. |
 | `regime_gate` | string | No (Phase 3) | DSL expression over regime posteriors (e.g. `dominant == "compression" and P("vol_breakout") < 0.2`). Evaluated at the horizon boundary. |
@@ -192,7 +199,7 @@ hazard-rate exits via `RegimeHazardSpike` events.
 | G10 | **Active** (Phase 4) | PORTFOLIO `universe:` presence + scale cap — every PORTFOLIO alpha must declare a non-empty `universe:` list and the universe size must be ≤ `composition_max_universe_size` (v0.2 cap = 50 symbols). Always blocks. |
 | G11 | **Active** (Phase 4) | PORTFOLIO `factor_neutralization:` disclosure — every PORTFOLIO alpha must declare `factor_neutralization: true` (or list explicit excluded factor IDs). Reference factor loadings under `data/reference/factor_loadings/` must exist and not exceed `factor_loadings_max_age_seconds`; missing or stale loadings raise `StaleFactorLoadingsError` at bootstrap. Always blocks. |
 | G12 | **Active** (Phase 3-α) | Cost-arithmetic disclosure — `cost_arithmetic` block required, `margin_ratio >= 1.5`, components reconcile within ±5%. |
-| G13 | **Active** (Phase 3-α) | Warm-up documentation — `LEGACY_SIGNAL` must declare warm-up; `SIGNAL` inherits it from sensor warm-up by construction. |
+| G13 | **Active** (Phase 3-α) | Warm-up documentation — `SIGNAL` inherits warm-up from sensor warm-up by construction; the inline-features warm-up branch is unreachable post-D.2 (the loader rejects `LEGACY_SIGNAL` before validation). |
 | G14 | **Active** (Phase 1) | Alpha must declare no data dependency outside L1 NBBO + trades + reference data + session calendar. |
 | G15 | **Active** (Phase 1) | Declared `fill_model.router` must name a platform-supported router (`PassiveLimitOrderRouter` or `BacktestOrderRouter`). |
 | G16 | **Active** (Phase 3.1) | Mechanism-horizon binding — when a `schema_version: "1.1"` SIGNAL/PORTFOLIO alpha declares a `trend_mechanism:` block, validates: (1) `family` ∈ closed taxonomy; (2) `expected_half_life_seconds` ∈ per-family envelope; (3) `horizon_seconds / expected_half_life_seconds` ∈ `[0.5, 4.0]`; (4) every entry in `l1_signature_sensors` is a registered sensor; (5) the family's primary fingerprint sensor is among them; (6) `failure_signature` declared; (7) `LIQUIDITY_STRESS` mechanisms emit no entry-direction `Signal` (AST-checked); (8) PORTFOLIO `trend_mechanism.consumes.max_share_of_gross` summation; (9) PORTFOLIO `depends_on_signals` family whitelist. Strict mode (`platform.yaml: enforce_trend_mechanism: true`) additionally rejects schema-1.1 SIGNAL/PORTFOLIO specs missing `trend_mechanism:` entirely. |
@@ -230,15 +237,18 @@ catalog and horizon-aware feature scaffolding, but alpha specs are
   `EventCalendar.hash()` is folded into the bootstrap provenance
   bundle (Inv-13).
 
-LEGACY_SIGNAL alphas remain bit-identical (Inv-A); enabling sensors,
-horizons, or the aggregator is purely additive. Mechanism-binding
-enforcement (Gate G16) and active aggregation of `HorizonFeature`
-implementations land in Phase 3.
+Phase-2 wiring is purely additive — enabling sensors, horizons, or
+the aggregator does not affect any existing event sequence (Inv-A).
+The historical `LEGACY_SIGNAL` parity hash this clause originally
+guarded was retired with the per-tick legacy path in Workstream D.2;
+the same isolation guarantees now apply to the SIGNAL-only fast-path.
+Mechanism-binding enforcement (Gate G16) and active aggregation of
+`HorizonFeature` implementations land in Phase 3.
 
 ### Phase-3-α status (SIGNAL layer live)
 
-As of Phase 3-α, the `SIGNAL` layer is fully live and can run
-side-by-side with `LEGACY_SIGNAL` alphas on the same symbol:
+As of Phase 3-α, the `SIGNAL` layer is fully live and is the canonical
+Layer-2 contract:
 
 - `layer: SIGNAL` alphas are loaded by `AlphaLoader._load_signal_layer`
   and registered as `LoadedSignalLayerModule`. Their `evaluate` does
@@ -248,9 +258,7 @@ side-by-side with `LEGACY_SIGNAL` alphas on the same symbol:
   `RegimeState`, and `SensorReading`, applies the alpha's compiled
   `regime_gate`, and emits `Signal(layer="SIGNAL", regime_gate_state,
   horizon_seconds, consumed_features, ...)` via a dedicated
-  `_signal_seq` `SequenceGenerator` (Inv-A / C1 isolation — the
-  Phase-3 `Signal` stream cannot perturb the Level-1 LEGACY fill
-  hash).
+  `_signal_seq` `SequenceGenerator` (Inv-A / C1 isolation).
 - Every `SIGNAL`-layer alpha must declare `horizon_seconds`,
   `depends_on_sensors`, `regime_gate.on_condition` /
   `off_condition`, `cost_arithmetic`, and a `signal: |` block whose
@@ -262,11 +270,9 @@ side-by-side with `LEGACY_SIGNAL` alphas on the same symbol:
   locked in `tests/determinism/test_signal_replay.py`. Drift in
   ordering, scope, or sequence allocation surfaces as a baseline
   failure on the next CI run.
-- `scripts/run_backtest.py --emit-signals-jsonl` dumps every
-  emitted `Signal` (both legacy and Phase-3) to stdout under prefix
-  `SIGNAL_JSONL`; the row carries the originating `layer` so
-  downstream tooling can split a single run's output into Level-1
-  and Level-2 parity streams.
+- `scripts/run_backtest.py --emit-signals-jsonl` dumps every emitted
+  `Signal` to stdout under prefix `SIGNAL_JSONL`; post-D.2 every row
+  carries `layer="SIGNAL"`.
 - Gates G2, G4–G8, G12, G13 are **active** — see the Architectural
   gates table above. Gate G16 (mechanism-horizon binding) remains
   scaffolded; it flips active in Phase 3.1 alongside the v0.3
@@ -279,10 +285,11 @@ four reference alphas exercise the four non-stress families:
 
 - **Gate G16 is ACTIVE** for any `schema_version: "1.1"`
   `SIGNAL`/`PORTFOLIO` spec that declares a `trend_mechanism:` block.
-  See the Architectural gates table for the nine binding rules.
-  `LEGACY_SIGNAL` is unaffected; v0.2 `SIGNAL` specs without a
-  `trend_mechanism:` block continue to load (G16 is opt-in via field
-  presence, unless strict mode is enabled).
+  See the Architectural gates table for the nine binding rules. v0.2
+  `SIGNAL` specs without a `trend_mechanism:` block continue to load
+  (G16 is opt-in via field presence, unless strict mode is enabled).
+  The historical `LEGACY_SIGNAL`-exempt branch is moot post-D.2: the
+  loader rejects `LEGACY_SIGNAL` before any gate runs.
 - **Strict mode (`platform.yaml: enforce_trend_mechanism: true`,
   default `false`)** additionally rejects any schema-1.1
   `SIGNAL`/`PORTFOLIO` spec *missing* a `trend_mechanism:` block. This
@@ -335,8 +342,7 @@ four reference alphas exercise the four non-stress families:
 ### Phase-4 status (PORTFOLIO layer live)
 
 As of Phase 4, the `PORTFOLIO` layer is fully live and runs
-side-by-side with `LEGACY_SIGNAL` and `SIGNAL` alphas on the same
-universe:
+side-by-side with `SIGNAL` alphas on the same universe:
 
 - `layer: PORTFOLIO` alphas are loaded by
   `AlphaLoader._load_portfolio_layer` and registered as
@@ -454,12 +460,10 @@ live:
 
 ### Backward compatibility
 
-- Schema 1.0 specs continue to load unchanged with a deprecation
-  warning. No behavioral change. The `LEGACY_SIGNAL` parity contract
-  (`design_docs/three_layer_architecture.md` §11.1) guarantees
-  bit-identical fill sequences across this refactor.
-- A schema-1.0 spec containing a `layer:` field is rejected — `layer`
-  requires `schema_version: "1.1"` (§6.6).
+- Schema 1.0 specs are rejected (Workstream D.1 hard-removal).
+- Schema-1.1 specs declaring `layer: LEGACY_SIGNAL` are rejected
+  (Workstream D.2 retirement); the rejection error includes a
+  pointer to the migration cookbook.
 - A schema-1.1 spec without `layer:` is rejected — there is no
   implicit upgrade path (§8.7).
 
@@ -467,46 +471,40 @@ live:
 
 The dedicated migration guide ships at
 [`docs/migration/schema_1_0_to_1_1.md`](../docs/migration/schema_1_0_to_1_1.md).
-The mechanical upgrade for an existing alpha is two lines:
+After Workstream D.2 the only accepted layer values are `SIGNAL` and
+`PORTFOLIO`; the previously documented mechanical
+``layer: LEGACY_SIGNAL`` upgrade is no longer accepted by the loader.
+Authors must promote per-tick alphas to the SIGNAL layer (declaring
+`horizon_seconds`, `depends_on_sensors`, `regime_gate`,
+`cost_arithmetic`, and a 3-arg `evaluate(snapshot, regime, params)`
+signal block) — the cookbook walks through this end-to-end.
 
-```yaml
-schema_version: "1.1"
-layer: LEGACY_SIGNAL
-```
-
-Everything else in the spec stays the same; behaviour is preserved
-bit-identically.
-
-**Workstream-D update —** the in-repo LEGACY parity test
+**Workstream-D notes —** the in-repo LEGACY parity test
 (`tests/determinism/test_legacy_alpha_parity.py`) and its anchoring
-reference alpha (`alphas/trade_cluster_drift/`) were retired with
-D.2; the loader still accepts `layer: LEGACY_SIGNAL` for any private
-alphas that have not yet promoted to `SIGNAL`, but the Level-1
-parity hash is no longer pinned in this repo.  See
-[`docs/migration/schema_1_0_to_1_1.md`](../docs/migration/schema_1_0_to_1_1.md)
-for the workstream-D note.
+reference alpha (`alphas/trade_cluster_drift/`) were retired in D.2.
+Both the per-tick legacy execution path and the loader-side
+`LEGACY_SIGNAL` dispatch were removed in the same workstream; the
+Level-1 LEGACY-fill parity hash is no longer maintained in this repo.
 
-### Phase-5 status (documentation + LEGACY_SIGNAL sunset announced)
+### Phase-5 status (documentation + LEGACY_SIGNAL retirement complete)
 
-As of Phase 5, the platform's externally facing documentation is
-synchronised with the three-layer architecture and the
-`LEGACY_SIGNAL` deprecation timer is publicly announced:
+As of Phase 5 + Workstream D.2, the platform's externally facing
+documentation is synchronised with the three-layer architecture and
+the LEGACY_SIGNAL retirement is complete:
 
 - **Migration cookbook live** at
   [`docs/migration/schema_1_0_to_1_1.md`](../docs/migration/schema_1_0_to_1_1.md)
-  — covers the five-line LEGACY upgrade, the `LEGACY_SIGNAL → SIGNAL`
+  — covers the schema 1.0 → 1.1 upgrade, the per-tick → SIGNAL
   promotion path, the `regime_gate` DSL, the `cost_arithmetic` block,
-  authoring a PORTFOLIO alpha, hazard exits, the v0.3
-  `trend_mechanism` opt-in cookbook, and the deprecation timeline.
+  authoring a PORTFOLIO alpha, hazard exits, and the v0.3
+  `trend_mechanism` opt-in cookbook.
 - **Layer-specific templates** ship under
-  [`alphas/_template/`](_template/): `template_signal.alpha.yaml`,
+  [`alphas/_template/`](_template/): `template_signal.alpha.yaml` and
   `template_portfolio.alpha.yaml`.  The original
   `template.alpha.yaml` (schema 1.0) was deleted in workstream D.1
-  alongside the schema-1.0 hard removal; `template_legacy_signal.
-  alpha.yaml` was retired in D.2 with the rest of the LEGACY
-  reference surface.  Authors who still need a per-tick LEGACY
-  starting point should crib directly from one of the migrated
-  private alphas (no in-repo template will be re-introduced).
+  and `template_legacy_signal.alpha.yaml` was deleted in D.2 with
+  the loader-side retirement.  No in-repo per-tick LEGACY template
+  will be re-introduced.
 - **Hypothesis Reasoning Protocol** lives at
   [`grok/prompts/hypothesis_reasoning.md`](../grok/prompts/hypothesis_reasoning.md)
   with companion files
@@ -515,14 +513,7 @@ synchronised with the three-layer architecture and the
   [`grok/prompts/mutation_protocol.md`](../grok/prompts/mutation_protocol.md).
   The earlier draft `grok/07_HYPOTHESIS_REASONING_PLAN.md` is marked
   SUPERSEDED.
-- **`LEGACY_SIGNAL` sunset banner.** The loader emits a
-  once-per-process WARNING at load time for every alpha on
-  `schema_version: "1.0"` *or* `layer: LEGACY_SIGNAL`. Behaviour is
-  unchanged; the WARNING is the deprecation runway. See
-  [`docs/migration/schema_1_0_to_1_1.md`](../docs/migration/schema_1_0_to_1_1.md)
-  §11 for the timetable.
-- **Recommended migration order** (per the cookbook §11): bulk-bump
-  every `schema_version` to `"1.1"` with `layer: LEGACY_SIGNAL`
-  first (mechanical, preserves parity); then per-alpha promote
-  `LEGACY_SIGNAL → SIGNAL` for any alpha where you can name a
-  structural mechanism, half-life, and L1 fingerprint sensors.
+- **`LEGACY_SIGNAL` is hard-rejected.** The loader's once-per-process
+  sunset banner has been removed; any spec carrying
+  `layer: LEGACY_SIGNAL` raises an `AlphaLoadError` at parse time
+  with a stable pointer to the migration cookbook.

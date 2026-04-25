@@ -624,15 +624,18 @@ class LayerValidator:
     ) -> None:
         """G6 — feature dependency graph must be a DAG, no cycles.
 
-        Phase 3-α enforcement (both layers):
+        Phase 3-α enforcement (post-D.2):
 
-        - **LEGACY_SIGNAL**: scan the inline ``features:`` block; a
-          feature's ``depends_on:`` may not contain itself, must
-          reference declared feature ids only, and the resulting DAG
-          must be acyclic (Kahn-style topo-sort).
         - **SIGNAL**: ``depends_on_sensors`` must be a non-empty list
           of unique sensor identifiers.  When ``known_sensor_ids`` was
           injected at construction, every entry must resolve.
+        - The historical ``LEGACY_SIGNAL`` branch (inline ``features:``
+          DAG validation) is unreachable post-D.2: the loader rejects
+          ``layer: LEGACY_SIGNAL`` before ever invoking the validator.
+          It is kept inline (rather than deleted) so any direct caller
+          of ``LayerValidator.validate`` with a hand-built spec still
+          surfaces a clean error; deletion is scheduled for D.2 PR-2
+          alongside the per-tick engine.
         """
         layer = str(spec.get("layer") or "LEGACY_SIGNAL")
         if layer == "SIGNAL":
@@ -798,16 +801,15 @@ class LayerValidator:
     ) -> None:
         """G13 — every feature must declare ``warm_up:`` (events or duration).
 
-        Phase 3-α enforcement (LEGACY_SIGNAL): every feature in the
-        ``features:`` block must carry an explicit ``warm_up:`` key
-        (with at least one of ``min_events`` or ``min_duration_ns``).
-        Implicit warm-up = 0 is no longer accepted because horizon-
-        gated downstream consumers cannot reason about non-disclosed
-        warm-up windows.
+        Phase 3-α enforcement: SIGNAL alphas don't declare inline
+        features (they consume sensors which carry their own
+        ``min_history``); the gate is therefore a no-op for SIGNAL
+        specs.
 
-        SIGNAL alphas don't declare inline features (they consume
-        sensors which carry their own ``min_history``); the gate is
-        therefore a no-op for SIGNAL specs.
+        The legacy inline-features branch is unreachable post-D.2 —
+        the loader rejects ``layer: LEGACY_SIGNAL`` before validation.
+        Kept here for direct ``LayerValidator.validate`` callers; full
+        removal is scheduled for D.2 PR-2 with the per-tick engine.
         """
         layer = str(spec.get("layer") or "LEGACY_SIGNAL")
         if layer != "LEGACY_SIGNAL":

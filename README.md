@@ -52,9 +52,11 @@ horizon-bucketed snapshots.
 | **SIGNAL** (`src/feelies/signals/`) | 30 s – 30 min | `Signal` (directional alpha + edge bps) | horizon-anchored, regime-gated, cost-disclosed predictions |
 | **PORTFOLIO** (`src/feelies/composition/`) | 5 – 30 min | `SizedPositionIntent` (cross-sectional sized weights) | factor-neutralised, mechanism-capped, turnover-optimised cross-sectional construction |
 
-`LEGACY_SIGNAL` is a fourth, sunsetting layer that preserves the
-Phase-1 per-tick contract bit-identically (`design_docs/three_layer_architecture.md`
-§11.1). New alphas should target SIGNAL or PORTFOLIO; see
+`LEGACY_SIGNAL` was a fourth (per-tick) layer that preserved the
+Phase-1 contract bit-identically.  It was retired in Workstream D.2;
+the loader rejects `layer: LEGACY_SIGNAL` outright with a pointer to
+the migration cookbook.  Every alpha must target SIGNAL or PORTFOLIO;
+see
 [`docs/migration/schema_1_0_to_1_1.md`](docs/migration/schema_1_0_to_1_1.md)
 for the migration path.
 
@@ -127,7 +129,7 @@ feelies/
 │       ├── sensor_catalog.md        # Layer-1 sensor vocabulary + fingerprint matrix
 │       └── mutation_protocol.md     # 5-axis mutation discipline + parity rules
 ├── docs/migration/               # Migration cookbooks
-│   └── schema_1_0_to_1_1.md      # 1.0 → 1.1 cookbook + LEGACY_SIGNAL sunset timeline
+│   └── schema_1_0_to_1_1.md      # 1.0 → 1.1 cookbook + LEGACY_SIGNAL retirement notes
 ├── design_docs/                  # Platform architecture & invariants
 ├── scripts/                      # CLI entry points
 │   ├── run_backtest.py           # Full pipeline backtest (incl. parity hash)
@@ -215,16 +217,17 @@ recommended starting point for new alphas is
 `template_signal.alpha.yaml` (horizon-anchored, regime-gated, cost-
 disclosed).  Use `template_portfolio.alpha.yaml` once you have ≥ 2
 SIGNAL alphas to compose.  The historical `LEGACY_SIGNAL` reference
-template was retired with workstream D.2 along with the
-`trade_cluster_drift` reference alpha; the loader still accepts
-`layer: LEGACY_SIGNAL` for any private alphas held outside the repo
-(see "scope-deferral note" in `grok/07_HYPOTHESIS_REASONING_PLAN.md`).
+template was deleted in workstream D.2 along with the
+`trade_cluster_drift` reference alpha and the loader-side
+`LEGACY_SIGNAL` dispatch.  Any private alpha still pinned to
+`layer: LEGACY_SIGNAL` must be promoted to SIGNAL (cookbook §3) or
+held in a private fork that retains the per-tick code-path.
 
 ### Layer-to-package matrix
 
 | Layer | Required blocks | Loader entry | Engine | Parity hash |
 |---|---|---|---|---|
-| `LEGACY_SIGNAL` | `features`, `signal` (per-tick) | `AlphaLoader.load` → `LoadedAlphaModule` | `CompositeSignalEngine` | (no in-repo reference alpha; parity test retired with `trade_cluster_drift` in D.2) |
+| `LEGACY_SIGNAL` | (rejected by the loader; row preserved for matrix continuity) | rejected by `AlphaLoader._validate_schema` post-D.2 with a migration pointer | n/a (per-tick `CompositeSignalEngine` deletion scheduled for D.2 PR-2) | n/a |
 | `SIGNAL` | `depends_on_sensors`, `horizon_seconds`, `regime_gate`, `cost_arithmetic`, `signal` (snapshot) | `AlphaLoader._load_signal_layer` → `LoadedSignalLayerModule` | `HorizonSignalEngine` | `tests/determinism/test_signal_replay.py` |
 | `PORTFOLIO` | `universe`, `depends_on_signals`, `factor_neutralization`, `cost_arithmetic`, `horizon_seconds` | `AlphaLoader._load_portfolio_layer` → `LoadedPortfolioLayerModule` | `CompositionEngine` | `tests/determinism/test_sized_intent_replay.py`, `test_portfolio_order_replay.py` |
 | `SENSOR` (reserved) | declared in `platform.yaml` (registry-driven, not alpha YAML) | n/a | `SensorRegistry` | per-sensor unit tests |

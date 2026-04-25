@@ -23,9 +23,9 @@
 > The schema-version blocker (collision **C1** below) was resolved
 > by landing schema 1.1 in `feelies.alpha.loader.AlphaLoader` (Phase
 > 1.1 / Phase 3) — there is no sidecar; the new fields are first-
-> class on the alpha YAML. The `LEGACY_SIGNAL` layer preserves
-> Phase-1 per-tick behaviour byte-for-byte and is on a published
-> sunset path (see `docs/migration/schema_1_0_to_1_1.md`).
+> class on the alpha YAML. The historical `LEGACY_SIGNAL` layer was
+> retired in Workstream D.2; the loader now rejects it outright (see
+> `docs/migration/schema_1_0_to_1_1.md`).
 >
 > The collision analysis below remains a useful audit of the gaps
 > the protocol filled, but **the resolutions documented here are

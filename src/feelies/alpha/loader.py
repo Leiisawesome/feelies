@@ -69,22 +69,13 @@ from feelies.signals.regime_gate import RegimeGate, RegimeGateError
 
 logger = logging.getLogger(__name__)
 
-# Once-per-process LEGACY_SIGNAL sunset banner deduplication set.
-# Keyed by ``alpha_id`` so the operator sees one banner per legacy alpha
-# even if its YAML is re-loaded across multiple bootstrap calls in the
-# same process (e.g. parameter sweeps, replay harnesses).  This is
-# *not* persistence: a fresh process re-emits.
-#
-# Workstream D.1: ``schema_version: "1.0"`` was removed; this set now
-# only deduplicates the ``layer: LEGACY_SIGNAL`` banner (still emitted
-# pending D.2's removal of ``LEGACY_SIGNAL`` from ``_ACCEPTED_LAYERS``).
-_LEGACY_SUNSET_WARNED: set[str] = set()
-
-# LEGACY_SIGNAL alphas declare inline ``features:`` and ``signal:`` blocks
-# (the per-tick contract).  SIGNAL-layer alphas have a different required
-# set: no inline features (sensors come from the platform), but extra
-# blocks for horizon, sensor dependency declaration, regime gate, and
-# cost arithmetic.  See _REQUIRED_SIGNAL_LAYER_KEYS below.
+# Workstream D.2 retired ``layer: LEGACY_SIGNAL`` from the loader's
+# accepted set.  The once-per-process sunset banner that lived in this
+# module has been removed; any LEGACY_SIGNAL manifest is now hard-
+# rejected at parse time with a migration pointer.  ``_REQUIRED_TOP_KEYS``
+# (the per-tick contract's required key set) is retained so the still-
+# importable :class:`LoadedAlphaModule` class continues to type-check;
+# it has no callers post-D.2 and is scheduled for deletion in D.2 PR-2.
 _REQUIRED_TOP_KEYS = {"alpha_id", "version", "description", "hypothesis",
                       "falsification_criteria", "features", "signal"}
 
@@ -119,13 +110,21 @@ _REQUIRED_PORTFOLIO_LAYER_KEYS = {
 
 _SUPPORTED_SCHEMA_VERSIONS = {"1.1"}
 
-# Schema 1.1 layer values per §6.6.  Phase 3-α extends the accepted
-# set to include ``SIGNAL`` (horizon-anchored, regime-gated alphas);
-# ``SENSOR`` and ``PORTFOLIO`` remain reserved for later phases (sensor
-# specs already live under the platform config, not the alpha YAML).
-# See design_docs/three_layer_architecture.md §10.
-_VALID_1_1_LAYERS = {"LEGACY_SIGNAL", "SIGNAL", "PORTFOLIO", "SENSOR"}
-_ACCEPTED_LAYERS = {"LEGACY_SIGNAL", "SIGNAL", "PORTFOLIO"}
+# Schema 1.1 layer values per §6.6.  Workstream D.2 retired
+# ``LEGACY_SIGNAL`` from both the "valid" and "accepted" sets; it is
+# now handled as a dedicated *retired* category with its own migration
+# message.  ``SIGNAL`` and ``PORTFOLIO`` are accepted; ``SENSOR``
+# remains reserved (sensor specs live under platform.yaml, not alpha
+# YAML).  See design_docs/three_layer_architecture.md §10.
+_VALID_1_1_LAYERS = {"SIGNAL", "PORTFOLIO", "SENSOR"}
+_ACCEPTED_LAYERS = {"SIGNAL", "PORTFOLIO"}
+
+# Layers that were once accepted but have been removed from the
+# loader's dispatch table.  Membership in this set triggers a dedicated
+# rejection path with a migration pointer (rather than the generic
+# "unknown layer" message), so authors who copy old fixtures get a
+# stable, actionable error instead of a typo-shaped one.
+_RETIRED_LAYERS = {"LEGACY_SIGNAL"}
 _LAYER_PHASE_MAP = {
     "SENSOR": "Phase 2 (sensor framework — declared in platform.yaml, "
     "not alpha YAML)",
@@ -519,14 +518,14 @@ class AlphaLoader:
         self,
         path: str | Path,
         param_overrides: dict[str, Any] | None = None,
-    ) -> LoadedAlphaModule | LoadedSignalLayerModule | LoadedPortfolioLayerModule:
+    ) -> LoadedSignalLayerModule | LoadedPortfolioLayerModule:
         """Load an alpha specification from a YAML file.
 
         Raises ``AlphaLoadError`` on any validation or compilation failure.
-        Returns one of the three layer-specialised module types depending
-        on the parsed ``layer:`` field (LEGACY_SIGNAL → ``LoadedAlphaModule``,
-        SIGNAL → ``LoadedSignalLayerModule``, PORTFOLIO →
-        ``LoadedPortfolioLayerModule``).
+        Returns one of the two layer-specialised module types depending
+        on the parsed ``layer:`` field (SIGNAL → ``LoadedSignalLayerModule``,
+        PORTFOLIO → ``LoadedPortfolioLayerModule``).  ``layer: LEGACY_SIGNAL``
+        was retired by workstream D.2 and is hard-rejected at parse time.
         """
         path = Path(path)
         try:
@@ -543,17 +542,19 @@ class AlphaLoader:
         spec: dict[str, Any],
         param_overrides: dict[str, Any] | None = None,
         source: str = "<dict>",
-    ) -> LoadedAlphaModule | LoadedSignalLayerModule | LoadedPortfolioLayerModule:
+    ) -> LoadedSignalLayerModule | LoadedPortfolioLayerModule:
         """Load an alpha specification from a pre-parsed dict.
 
         Dispatches on ``layer:`` (schema 1.1):
 
-        - ``LEGACY_SIGNAL`` (or schema 1.0) → :class:`LoadedAlphaModule`
-          (per-tick contract; existing behavior preserved bit-identical).
         - ``SIGNAL``                       → :class:`LoadedSignalLayerModule`
           (Phase-3 horizon-anchored, regime-gated contract).
         - ``PORTFOLIO``                    → :class:`LoadedPortfolioLayerModule`
           (Phase-4 cross-sectional construction).
+
+        ``LEGACY_SIGNAL`` was retired by workstream D.2 and is rejected
+        in :meth:`_validate_schema`; the per-tick :class:`LoadedAlphaModule`
+        construction path no longer has any callers.
         """
         self._validate_schema(spec, source)
 
@@ -567,73 +568,16 @@ class AlphaLoader:
                 spec, param_overrides=param_overrides, source=source,
             )
 
-        alpha_id = spec["alpha_id"]
-        param_defs = self._parse_parameters(spec.get("parameters", {}), source)
-        params = self._resolve_params(param_defs, param_overrides or {}, source)
-
-        regime_engine = self._resolve_regime_engine(spec.get("regimes"), source)
-
-        namespace = self._build_namespace(alpha_id, regime_engine)
-
-        features_raw = spec["features"]
-        feature_list = self._normalize_features(features_raw, source)
-        feature_defs = self._compile_features(
-            feature_list, params, namespace, source
-        )
-
-        evaluate_fn = self._compile_signal(
-            spec["signal"], alpha_id, namespace, source
-        )
-
-        required_features = frozenset(
-            fd.feature_id for fd in feature_defs
-        )
-
-        symbols_raw = spec.get("symbols")
-        symbols = (
-            frozenset(symbols_raw)
-            if symbols_raw is not None
-            else None
-        )
-
-        risk_budget_raw = spec.get("risk_budget", {})
-        risk_budget = AlphaRiskBudget(
-            max_position_per_symbol=risk_budget_raw.get("max_position_per_symbol", 100),
-            max_gross_exposure_pct=risk_budget_raw.get("max_gross_exposure_pct", 5.0),
-            max_drawdown_pct=risk_budget_raw.get("max_drawdown_pct", 1.0),
-            capital_allocation_pct=risk_budget_raw.get("capital_allocation_pct", 10.0),
-        )
-        self._validate_risk_budget(risk_budget, source)
-
-        layer_field: Any = spec.get("layer")
-        trend_mechanism_block = self._parse_trend_mechanism_block(
-            spec.get("trend_mechanism"), source
-        )
-        hazard_exit_block = self._parse_hazard_exit_block(
-            spec.get("hazard_exit"), source
-        )
-
-        manifest = AlphaManifest(
-            alpha_id=alpha_id,
-            version=spec["version"],
-            description=spec["description"],
-            hypothesis=spec["hypothesis"],
-            falsification_criteria=tuple(spec["falsification_criteria"]),
-            required_features=required_features,
-            symbols=symbols,
-            parameters=params,
-            parameter_schema=tuple(param_defs),
-            risk_budget=risk_budget,
-            layer=str(layer_field) if layer_field is not None else None,
-            trend_mechanism=trend_mechanism_block,
-            hazard_exit=hazard_exit_block,
-        )
-
-        return LoadedAlphaModule(
-            manifest=manifest,
-            feature_defs=list(feature_defs),
-            evaluate_fn=evaluate_fn,
-            params=params,
+        # _validate_schema rejects every layer that does not have a
+        # dispatch branch above.  Reaching here means a layer slipped
+        # through `_ACCEPTED_LAYERS` without a corresponding branch in
+        # this method — a programmer error.  Keep the assertion in
+        # place so the failure surfaces loudly rather than producing
+        # ``None`` or hanging on a missing ``features`` key.
+        raise AssertionError(  # pragma: no cover
+            f"{source}: layer '{layer_value}' passed _validate_schema "
+            f"but has no dispatch branch in load_from_dict. "
+            f"This is a loader bug — please file an issue."
         )
 
     # ── SIGNAL-layer load path (Phase 3) ──────────────────────
@@ -647,7 +591,8 @@ class AlphaLoader:
     ) -> LoadedSignalLayerModule:
         """Load a schema-1.1 ``layer: SIGNAL`` alpha.
 
-        Differs from the LEGACY_SIGNAL path in three places:
+        Defining characteristics of the SIGNAL layer (vs. the retired
+        per-tick path that workstream D.2 removed):
 
         1. **No inline features.**  ``depends_on_sensors`` declares the
            Layer-1 sensors the alpha consumes; the platform provides
@@ -1080,22 +1025,22 @@ class AlphaLoader:
         """Validate top-level schema, dispatching on ``layer``.
 
         Per design_docs/three_layer_architecture.md §6.6 + §8.7 the
-        validation ordering (post-workstream-D.1) is:
+        validation ordering (post-workstream-D.2) is:
 
           1. ``spec`` is a dict.
           2. Read ``schema_version``; reject if missing or unsupported.
-             Schema 1.0 was removed in workstream D; the only supported
-             value is ``"1.1"``.
+             Schema 1.0 was removed in workstream D.1; the only
+             supported value is ``"1.1"``.
           3. Read ``layer`` (mandatory in 1.1).
           4. Dispatch on layer:
-             - LEGACY_SIGNAL → emit sunset banner (D.2 will reject) and
-               fall through to legacy ``_REQUIRED_TOP_KEYS`` check.
+             - LEGACY_SIGNAL → hard-reject with migration pointer
+               (workstream D.2 retired the per-tick legacy path).
+             - SENSOR / unknown layer → reject.
              - SIGNAL → enforce ``_REQUIRED_SIGNAL_LAYER_KEYS`` and
                run the LayerValidator.
              - PORTFOLIO → enforce ``_REQUIRED_PORTFOLIO_LAYER_KEYS``
                and run the LayerValidator.
-             - Any other (SENSOR, future) → reject.
-          5. Validate alpha_id and version syntax.
+          5. Validate alpha_id and version syntax (per-layer branch).
           6. Run the LayerValidator (G14, G15 active).
         """
         if not isinstance(spec, dict):
@@ -1106,7 +1051,7 @@ class AlphaLoader:
             raise AlphaLoadError(
                 f"{source}: missing required 'schema_version' field. "
                 f"The only supported value is \"1.1\". Schema 1.0 was "
-                f"removed in workstream D; see "
+                f"removed in workstream D.1; see "
                 f"docs/migration/schema_1_0_to_1_1.md for the migration "
                 f"cookbook (still applicable as historical reference)."
             )
@@ -1115,112 +1060,106 @@ class AlphaLoader:
                 f"{source}: unsupported schema_version "
                 f"'{schema_version}', supported: "
                 f"{sorted(_SUPPORTED_SCHEMA_VERSIONS)}. "
-                f"Schema 1.0 was removed in workstream D; migrate by "
-                f"setting schema_version: \"1.1\" and adding "
-                f"layer: LEGACY_SIGNAL (zero behaviour change) or "
-                f"layer: SIGNAL/PORTFOLIO. "
+                f"Schema 1.0 was removed in workstream D.1; migrate by "
+                f"setting schema_version: \"1.1\" and declaring "
+                f"layer: SIGNAL or layer: PORTFOLIO. "
                 f"See docs/migration/schema_1_0_to_1_1.md."
             )
         schema_version = str(schema_version)
 
         layer = spec.get("layer")
 
-        if schema_version == "1.1":
-            if layer is None:
-                raise AlphaLoadError(
-                    f"{source}: schema_version '1.1' requires the 'layer' "
-                    f"field (§8.7 of design_docs/three_layer_architecture.md). "
-                    f"There is no implicit upgrade path. Add "
-                    f"`layer: LEGACY_SIGNAL` to preserve existing "
-                    f"per-tick behavior, or migrate to a horizon-gated "
-                    f"layer in a later phase."
-                )
-            layer_str = str(layer)
-            if layer_str not in _VALID_1_1_LAYERS:
-                raise AlphaLoadError(
-                    f"{source}: unknown layer '{layer_str}'. "
-                    f"Valid layers: {sorted(_VALID_1_1_LAYERS)}."
-                )
-            if layer_str not in _ACCEPTED_LAYERS:
-                phase = _LAYER_PHASE_MAP.get(layer_str, "a future phase")
-                raise AlphaLoadError(
-                    f"{source}: layer '{layer_str}' is not yet implemented "
-                    f"({phase}). Use `layer: LEGACY_SIGNAL` or "
-                    f"`layer: SIGNAL`. "
-                    f"See docs/migration/schema_1_0_to_1_1.md."
-                )
-            if layer_str == "LEGACY_SIGNAL":
-                alpha_id = str(spec.get("alpha_id") or source)
-                if alpha_id not in _LEGACY_SUNSET_WARNED:
-                    _LEGACY_SUNSET_WARNED.add(alpha_id)
-                    logger.warning(
-                        "%s: layer: LEGACY_SIGNAL is DEPRECATED and "
-                        "scheduled for removal in a future release. "
-                        "Migrate to layer: SIGNAL (horizon-anchored, "
-                        "regime-gated) when the alpha can carry a "
-                        "structural mechanism, half-life, and cost "
-                        "arithmetic. Migration cookbook: "
-                        "docs/migration/schema_1_0_to_1_1.md.",
-                        source,
-                    )
-            # SIGNAL layer has its own required-key set; LEGACY_SIGNAL
-            # falls through to the legacy ``_REQUIRED_TOP_KEYS`` check.
-            if layer_str == "SIGNAL":
-                missing = _REQUIRED_SIGNAL_LAYER_KEYS - set(spec.keys())
-                if missing:
-                    raise AlphaLoadError(
-                        f"{source}: layer: SIGNAL spec is missing required "
-                        f"top-level keys: " + ", ".join(sorted(missing))
-                        + ". Required (Phase 3): "
-                        + ", ".join(sorted(_REQUIRED_SIGNAL_LAYER_KEYS))
-                    )
-                self._validate_alpha_id_and_version(spec, source)
-                from feelies.alpha.layer_validator import LayerValidator
-                LayerValidator(
-                    enforce_trend_mechanism=self._enforce_trend_mechanism,
-                    enforce_layer_gates=self._enforce_layer_gates,
-                ).validate(spec, source)
-                return
-            if layer_str == "PORTFOLIO":
-                missing = _REQUIRED_PORTFOLIO_LAYER_KEYS - set(spec.keys())
-                if missing:
-                    raise AlphaLoadError(
-                        f"{source}: layer: PORTFOLIO spec is missing required "
-                        f"top-level keys: " + ", ".join(sorted(missing))
-                        + ". Required (Phase 4): "
-                        + ", ".join(sorted(_REQUIRED_PORTFOLIO_LAYER_KEYS))
-                    )
-                self._validate_alpha_id_and_version(spec, source)
-                from feelies.alpha.layer_validator import LayerValidator
-                LayerValidator(
-                    enforce_trend_mechanism=self._enforce_trend_mechanism,
-                    enforce_layer_gates=self._enforce_layer_gates,
-                ).validate(spec, source)
-                return
-
-        # Reached only for layer: LEGACY_SIGNAL on schema 1.1 — SIGNAL
-        # and PORTFOLIO branches return early after their own checks.
-        missing = _REQUIRED_TOP_KEYS - set(spec.keys())
-        if missing:
+        if layer is None:
             raise AlphaLoadError(
-                f"{source}: missing required top-level keys: "
-                + ", ".join(sorted(missing))
+                f"{source}: schema_version '1.1' requires the 'layer' "
+                f"field (§8.7 of design_docs/three_layer_architecture.md). "
+                f"There is no implicit upgrade path. Declare "
+                f"`layer: SIGNAL` (horizon-anchored, regime-gated) or "
+                f"`layer: PORTFOLIO` (cross-sectional construction). "
+                f"See docs/migration/schema_1_0_to_1_1.md."
+            )
+        layer_str = str(layer)
+
+        # Workstream D.2: ``layer: LEGACY_SIGNAL`` was retired.  The
+        # per-tick LoadedAlphaModule construction path is gone and the
+        # only survivors are SIGNAL/PORTFOLIO.  Surface a dedicated
+        # rejection (rather than a generic "unknown layer" typo
+        # message) so authors copying old fixtures get a stable
+        # migration pointer.
+        if layer_str in _RETIRED_LAYERS:
+            raise AlphaLoadError(
+                f"{source}: layer '{layer_str}' was retired by "
+                f"workstream D.2 of the three-layer refactor. "
+                f"The per-tick legacy execution path no longer exists. "
+                f"Migrate to `layer: SIGNAL` (horizon-anchored, "
+                f"regime-gated, cost-aware) or `layer: PORTFOLIO` "
+                f"(cross-sectional construction over upstream signals). "
+                f"See docs/migration/schema_1_0_to_1_1.md for the "
+                f"step-by-step cookbook."
             )
 
-        self._validate_alpha_id_and_version(spec, source)
+        if layer_str not in _VALID_1_1_LAYERS:
+            raise AlphaLoadError(
+                f"{source}: unknown layer '{layer_str}'. "
+                f"Valid layers: {sorted(_VALID_1_1_LAYERS)}."
+            )
+        if layer_str not in _ACCEPTED_LAYERS:
+            phase = _LAYER_PHASE_MAP.get(layer_str, "a future phase")
+            raise AlphaLoadError(
+                f"{source}: layer '{layer_str}' is not yet implemented "
+                f"({phase}). Use `layer: SIGNAL` or `layer: PORTFOLIO`. "
+                f"See docs/migration/schema_1_0_to_1_1.md."
+            )
 
-        from feelies.alpha.layer_validator import LayerValidator
-        LayerValidator(
-            enforce_trend_mechanism=self._enforce_trend_mechanism,
-            enforce_layer_gates=self._enforce_layer_gates,
-        ).validate(spec, source)
+        if layer_str == "SIGNAL":
+            missing = _REQUIRED_SIGNAL_LAYER_KEYS - set(spec.keys())
+            if missing:
+                raise AlphaLoadError(
+                    f"{source}: layer: SIGNAL spec is missing required "
+                    f"top-level keys: " + ", ".join(sorted(missing))
+                    + ". Required (Phase 3): "
+                    + ", ".join(sorted(_REQUIRED_SIGNAL_LAYER_KEYS))
+                )
+            self._validate_alpha_id_and_version(spec, source)
+            from feelies.alpha.layer_validator import LayerValidator
+            LayerValidator(
+                enforce_trend_mechanism=self._enforce_trend_mechanism,
+                enforce_layer_gates=self._enforce_layer_gates,
+            ).validate(spec, source)
+            return
+
+        if layer_str == "PORTFOLIO":
+            missing = _REQUIRED_PORTFOLIO_LAYER_KEYS - set(spec.keys())
+            if missing:
+                raise AlphaLoadError(
+                    f"{source}: layer: PORTFOLIO spec is missing required "
+                    f"top-level keys: " + ", ".join(sorted(missing))
+                    + ". Required (Phase 4): "
+                    + ", ".join(sorted(_REQUIRED_PORTFOLIO_LAYER_KEYS))
+                )
+            self._validate_alpha_id_and_version(spec, source)
+            from feelies.alpha.layer_validator import LayerValidator
+            LayerValidator(
+                enforce_trend_mechanism=self._enforce_trend_mechanism,
+                enforce_layer_gates=self._enforce_layer_gates,
+            ).validate(spec, source)
+            return
+
+        # All accepted layers return inside their branch above; reaching
+        # this point would mean a layer slipped through `_ACCEPTED_LAYERS`
+        # without a dispatch case — a programmer error in this file.
+        raise AssertionError(  # pragma: no cover
+            f"{source}: layer '{layer_str}' is in _ACCEPTED_LAYERS but "
+            f"has no dispatch branch in _validate_schema. "
+            f"This is a loader bug — please file an issue."
+        )
 
     def _validate_alpha_id_and_version(
         self, spec: dict[str, Any], source: str,
     ) -> None:
         """Shared identifier validation lifted from ``_validate_schema``.
 
-        Both LEGACY_SIGNAL and SIGNAL layers gate on alpha_id syntax
+        Both SIGNAL and PORTFOLIO layers gate on alpha_id syntax
         (lower-snake-case) and semver version strings.  Extracted into
         a helper so both branches enforce the same rules without
         duplicating error messages.
