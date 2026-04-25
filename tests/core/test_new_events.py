@@ -114,8 +114,17 @@ def test_regime_state_horizon_anchored() -> None:
 # ── Signal additive fields (§5.5) ───────────────────────────────────────
 
 
-def test_signal_legacy_defaults_match_legacy_signal_layer() -> None:
-    """A bare-fields Signal is implicitly LEGACY_SIGNAL with horizon=0."""
+def test_signal_default_layer_is_signal_post_d2() -> None:
+    """A bare-fields Signal defaults to layer="SIGNAL" with horizon=0.
+
+    Workstream D.2 PR-2b-ii narrowed ``Signal.layer`` to
+    ``Literal["SIGNAL", "PORTFOLIO"]`` and changed the default from the
+    historical ``"LEGACY_SIGNAL"`` to ``"SIGNAL"``.  Horizon-agnostic
+    additive fields (``horizon_seconds``, ``regime_gate_state``,
+    ``consumed_features``) keep their original neutral defaults so that
+    pre-Phase-3 callers continue to construct ``Signal`` without
+    specifying horizon or gate metadata.
+    """
     sig = Signal(
         timestamp_ns=1,
         correlation_id="c",
@@ -126,7 +135,7 @@ def test_signal_legacy_defaults_match_legacy_signal_layer() -> None:
         strength=0.5,
         edge_estimate_bps=1.0,
     )
-    assert sig.layer == "LEGACY_SIGNAL"
+    assert sig.layer == "SIGNAL"
     assert sig.horizon_seconds == 0
     assert sig.regime_gate_state == "N/A"
     assert sig.consumed_features == ()

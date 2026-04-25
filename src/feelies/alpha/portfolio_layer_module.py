@@ -4,11 +4,13 @@ A :class:`LoadedPortfolioLayerModule` is the loader-side artifact for a
 schema-1.1 ``layer: PORTFOLIO`` alpha.  Its surface mirrors
 :class:`feelies.alpha.signal_layer_module.LoadedSignalLayerModule` —
 the manifest, an :class:`AlphaModule.evaluate` that always returns
-``None`` (the per-tick :class:`feelies.alpha.composite.CompositeSignalEngine`
-must not see PORTFOLIO alphas), and a Phase-4 surface exposing the
-universe, decision horizon, mechanism-consumes whitelist, and
-``construct`` callable consumed by
-:class:`feelies.composition.engine.CompositionEngine`.
+``None`` (post-D.2 PR-2b-ii the per-tick composite signal engine is
+deleted; the protocol method survives only as orchestrator
+test-scaffolding and PORTFOLIO alphas are wired by
+:class:`feelies.composition.engine.CompositionEngine` instead), and a
+Phase-4 surface exposing the universe, decision horizon,
+mechanism-consumes whitelist, and ``construct`` callable consumed by
+the composition engine.
 
 The default canonical implementation runs the engine's *default
 pipeline* (ranker → neutralizer → matcher → optimizer) with the

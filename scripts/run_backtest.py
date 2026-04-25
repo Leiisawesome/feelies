@@ -189,8 +189,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "FILLED OrderAck to stdout (one per line), in arrival order. "
             "Originally consumed by the LEGACY_SIGNAL Level-1 fill "
             "parity test (design_docs/three_layer_architecture.md "
-            "§11.1); the test was retired with workstream D.2 but the "
-            "emitter is preserved as a debugging hook for fill streams."
+            "§11.1); the test was retired with workstream D.2 (loader "
+            "rejection in PR-1, leaf deletion in PR-2a, per-tick engine "
+            "deletion in PR-2b-ii) but the emitter is preserved as a "
+            "debugging hook for fill streams."
         ),
     )
     # ── Phase-2 emit flags (composable with --emit-fills-jsonl) ─────

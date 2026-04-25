@@ -1,9 +1,15 @@
 """Declarative feature definitions for registry-based computation.
 
 A FeatureDefinition describes a single feature's identity, dependencies,
-warm-up requirements, and computation logic.  Alpha modules declare
-feature definitions; the CompositeFeatureEngine collects and executes
-them in dependency order.
+warm-up requirements, and computation logic.  Historically the
+``CompositeFeatureEngine`` collected and executed these in dependency
+order; D.2 PR-2b-ii deleted that engine, so post-PR-2b-ii these
+definitions survive only as test scaffolding for the orchestrator's
+gated single-alpha pipeline (registered with whatever engine the test
+caller injects).  Phase-2+ Layer-2 alphas consume Layer-1
+``SensorReading`` events via ``depends_on_sensors:`` instead, and
+:class:`feelies.alpha.signal_layer_module.LoadedSignalLayerModule`
+returns ``()`` from :py:meth:`feature_definitions`.
 
 Deduplication: when multiple alphas declare the same feature_id with
 the same version, the feature is computed once.  Version conflicts
@@ -91,9 +97,14 @@ class FeatureComputation(Protocol):
 class FeatureDefinition:
     """Declarative description of a single feature.
 
-    Registered with the CompositeFeatureEngine via AlphaModule.
-    Multiple alphas may declare the same feature_id + version
-    (deduplicated); conflicting versions are rejected.
+    Historically registered with the per-tick ``CompositeFeatureEngine``
+    via :class:`AlphaModule`; the engine itself was deleted by
+    workstream D.2 PR-2b-ii, so post-PR-2b-ii instances of this class
+    survive only as orchestrator test-scaffolding (the production
+    Layer-2 path is the bus-driven ``HorizonAggregator`` →
+    ``HorizonSignalEngine`` chain).  Multiple alphas may declare the
+    same feature_id + version (deduplicated); conflicting versions are
+    rejected.
     """
 
     feature_id: str

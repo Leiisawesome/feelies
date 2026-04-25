@@ -45,6 +45,15 @@ def runner():
 
 
 def _legacy_signal(seq: int) -> Signal:
+    """Construct a Signal with bare-minimum fields.
+
+    Workstream D.2 PR-2b-ii: the historical ``LEGACY_SIGNAL`` layer was
+    retired together with the per-tick composite engines; the default
+    ``layer`` is now ``"SIGNAL"``.  The function name is preserved so the
+    parity-stream tests (``test_emit_signals_jsonl_preserves_arrival_order``
+    et al.) continue to read naturally as a mix of "bare-defaults" and
+    "fully-populated Phase-3" rows.
+    """
     return Signal(
         timestamp_ns=1_000 * seq,
         correlation_id=f"corr-{seq}",
@@ -95,7 +104,14 @@ def test_emit_signals_jsonl_prefix_and_count(runner, capsys) -> None:
     assert all(line.startswith("SIGNAL_JSONL ") for line in out)
 
 
-def test_emit_signals_jsonl_legacy_row_shape(runner, capsys) -> None:
+def test_emit_signals_jsonl_default_row_shape(runner, capsys) -> None:
+    """Bare-defaults row shape post-D.2 PR-2b-ii.
+
+    Defaults: ``layer="SIGNAL"`` (was ``"LEGACY_SIGNAL"`` pre-D.2),
+    horizon=0, ``regime_gate_state="N/A"``, no consumed features and
+    no trend mechanism.  Other Phase-3 provenance keys remain present
+    in the canonical sorted-keys serialization.
+    """
     runner._emit_signals_jsonl(_make_recorder(runner, [_legacy_signal(7)]))
     line = capsys.readouterr().out.splitlines()[0]
     payload = json.loads(line[len("SIGNAL_JSONL "):])
@@ -105,7 +121,7 @@ def test_emit_signals_jsonl_legacy_row_shape(runner, capsys) -> None:
         "edge_estimate_bps": 3.5,
         "expected_half_life_seconds": 0,
         "horizon_seconds": 0,
-        "layer": "LEGACY_SIGNAL",
+        "layer": "SIGNAL",
         "regime_gate_state": "N/A",
         "sequence": 7,
         "strategy_id": "legacy_alpha",

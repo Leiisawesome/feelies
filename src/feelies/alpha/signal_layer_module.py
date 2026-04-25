@@ -2,8 +2,11 @@
 
 A :class:`LoadedSignalLayerModule` is the loader-side artifact for a
 schema-1.1 ``layer: SIGNAL`` alpha.  Workstream D.2 PR-1 retired
-``layer: LEGACY_SIGNAL`` and PR-2 deleted the per-tick
-``LoadedAlphaModule`` class itself, so this is one of only two
+``layer: LEGACY_SIGNAL`` and PR-2a deleted the per-tick
+``LoadedAlphaModule`` class itself; PR-2b-i unwired the per-tick
+engines from bootstrap and PR-2b-ii deleted the engine classes
+themselves (``CompositeFeatureEngine``, ``CompositeSignalEngine``,
+``MultiAlphaEvaluator``).  This is therefore one of only two
 surviving loaded-module types (the other being
 :class:`feelies.alpha.portfolio_layer_module.LoadedPortfolioLayerModule`).
 
@@ -13,9 +16,9 @@ This module:
   ``SensorReading`` events via ``depends_on_sensors:``.  ``feature_definitions()``
   therefore returns an empty sequence.
 * Implements ``AlphaModule.evaluate(features)`` as a deterministic
-  ``None`` — the (deprecated) per-tick
-  :class:`feelies.alpha.composite.CompositeSignalEngine` must not see
-  SIGNAL-layer alphas.  The actual evaluation runs in
+  ``None``.  Post-D.2 PR-2b-ii the protocol method survives only as
+  test scaffolding for the orchestrator's gated single-alpha
+  pipeline; the actual evaluation runs in
   :class:`feelies.signals.horizon_engine.HorizonSignalEngine` on
   :class:`feelies.core.events.HorizonFeatureSnapshot` events.
 * Exposes the SIGNAL-specific surface (the compiled
@@ -111,22 +114,24 @@ class LoadedSignalLayerModule:
     def feature_definitions(self) -> Sequence[FeatureDefinition]:
         """SIGNAL-layer alphas declare no inline features.
 
-        They consume Layer-1 sensors directly via ``depends_on_sensors``;
-        the per-tick :class:`CompositeFeatureEngine` therefore has
-        nothing to add for this module.  Returning ``()`` keeps the
-        existing dedup / version-conflict logic free of corner cases.
+        They consume Layer-1 sensors directly via ``depends_on_sensors``.
+        The per-tick composite feature engine was deleted by D.2
+        PR-2b-ii, so this method's return value is consumed only by the
+        orchestrator's gated single-alpha test scaffolding (and the
+        registry smoke-test).  Returning ``()`` keeps the existing
+        dedup / version-conflict logic free of corner cases.
         """
         return ()
 
     def evaluate(self, features: FeatureVector) -> Signal | None:
         """No-op — SIGNAL-layer alphas evaluate on snapshots, not ticks.
 
-        The legacy per-tick path
-        (:class:`feelies.alpha.composite.CompositeSignalEngine`) calls
-        ``evaluate(features)`` on every registered alpha.  Returning
-        ``None`` here means SIGNAL-layer alphas contribute nothing to
-        that path; their actual ``Signal`` events are emitted on the
-        bus by the :class:`HorizonSignalEngine`.
+        Post-D.2 PR-2b-ii the legacy per-tick composite signal engine
+        is deleted; this protocol method survives purely as test
+        scaffolding for the orchestrator's gated single-alpha pipeline.
+        Returning ``None`` here means SIGNAL-layer alphas contribute
+        nothing to that path; their actual ``Signal`` events are emitted
+        on the bus by the :class:`HorizonSignalEngine`.
 
         The smoke test in
         :class:`feelies.alpha.registry.AlphaRegistry._smoke_test`

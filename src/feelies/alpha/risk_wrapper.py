@@ -7,9 +7,12 @@ tracker — breach triggers per-alpha quarantine (REJECT), not
 platform lockdown (FORCE_FLATTEN).
 
 The inner engine handles aggregate-level checks and may return
-FORCE_FLATTEN for aggregate drawdown — the MultiAlphaEvaluator
-distinguishes this from per-alpha REJECT and short-circuits the
-evaluation loop.
+FORCE_FLATTEN for aggregate drawdown.  Historically the
+``MultiAlphaEvaluator`` distinguished this from per-alpha REJECT and
+short-circuited the evaluation loop; D.2 PR-2b-ii deleted that
+evaluator, so post-PR-2b-ii the FORCE_FLATTEN ladder is the
+``CompositionEngine`` (Phase-4 PORTFOLIO path) and the orchestrator's
+aggregate order gate (``check_order``).
 
 Invariants preserved:
   - Inv 11 (fail-safe): per-alpha drawdown -> REJECT -> quarantine;
