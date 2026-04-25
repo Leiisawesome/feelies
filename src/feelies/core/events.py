@@ -158,20 +158,28 @@ class SignalDirection(Enum):
 class Signal(Event):
     """Signal evaluation output — pure function of features (no side effects).
 
-    Additive Phase-1 fields (§5.5) and Phase-1.1 v0.3 fields (§20.3.2).
-    All defaults preserve legacy single-horizon producers exactly:
+    Phase-1.1 / v0.3 fields (§5.5, §20.3.2).  Workstream D.2 PR-2b-ii
+    narrowed ``layer`` to ``Literal["SIGNAL", "PORTFOLIO"]`` and made
+    ``"SIGNAL"`` the default — the historical ``"LEGACY_SIGNAL"`` value
+    was retired together with the per-tick composite engines.  Defaults
+    preserve horizon-anchored Phase-3 producers exactly:
 
-      ``layer`` — ``"LEGACY_SIGNAL"`` for the existing per-tick path,
-                 ``"SIGNAL"`` for horizon-gated v0.2 producers (Phase 3+).
-      ``horizon_seconds`` — 0 for legacy, positive for horizon-anchored.
-      ``regime_gate_state`` — ``"N/A"`` for legacy, ``"ON"``/``"OFF"`` for
-                              regime-gated horizon signals (Phase 3+).
-      ``consumed_features`` — empty tuple for legacy; tuple of feature_ids
-                              consulted by horizon signal evaluation.
-      ``trend_mechanism`` — None for v0.2 producers; one of the 5
+      ``layer`` — ``"SIGNAL"`` for horizon-gated Layer-2 outputs
+                 (default; emitted by :class:`HorizonSignalEngine`);
+                 ``"PORTFOLIO"`` for cross-sectional Layer-3 outputs
+                 (Phase-4 PORTFOLIO alphas via
+                 :class:`CrossSectionalEngine`).
+      ``horizon_seconds`` — 0 if unspecified, positive for
+                            horizon-anchored producers.
+      ``regime_gate_state`` — ``"N/A"`` when no gate applies;
+                              ``"ON"`` / ``"OFF"`` for regime-gated
+                              horizon signals.
+      ``consumed_features`` — tuple of feature_ids consulted during
+                              evaluation (empty when unspecified).
+      ``trend_mechanism`` — None when unspecified; one of the 5
                             ``TrendMechanism`` enum members for v0.3
                             mechanism-bound signals (Phase 3.1+).
-      ``expected_half_life_seconds`` — 0 for unspecified (v0.2 behavior);
+      ``expected_half_life_seconds`` — 0 for unspecified;
                                         positive for v0.3 mechanism-bound
                                         signals (drives decay weighting
                                         and hard-exit-age in Phase 4.1).
@@ -183,7 +191,7 @@ class Signal(Event):
     strength: float
     edge_estimate_bps: float
     metadata: dict[str, Any] = field(default_factory=dict)
-    layer: Literal["SIGNAL", "LEGACY_SIGNAL"] = "LEGACY_SIGNAL"
+    layer: Literal["SIGNAL", "PORTFOLIO"] = "SIGNAL"
     horizon_seconds: int = 0
     regime_gate_state: Literal["ON", "OFF", "N/A"] = "N/A"
     consumed_features: tuple[str, ...] = ()

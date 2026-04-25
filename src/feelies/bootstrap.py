@@ -165,21 +165,17 @@ def build_platform(
 
     _load_alphas(config, registry, loader)
 
-    # Workstream D.2 PR-2b-i: the legacy per-tick alpha pipeline
+    # Workstream D.2 PR-2b-ii: the legacy per-tick alpha pipeline
     # (CompositeFeatureEngine → CompositeSignalEngine →
-    # MultiAlphaEvaluator) is no longer wired in default deployments.
-    # All surviving alphas are SIGNAL or PORTFOLIO layer, both of which
-    # produce outputs via the bus-driven Phase-3 / Phase-4 pipeline
-    # (HorizonAggregator → HorizonSignalEngine → CompositionEngine)
-    # composed below.  ``LoadedSignalLayerModule.evaluate(FeatureVector)``
-    # and ``LoadedPortfolioLayerModule.evaluate(FeatureVector)`` are
-    # no-ops post-D.2 PR-1 — running the legacy per-tick path was pure
-    # overhead.  See :class:`feelies.kernel.orchestrator.Orchestrator`'s
-    # docstring for the new optional-engine contract.  PR-2b-ii will
-    # delete the composite engines, the multi-alpha evaluator, the
-    # orchestrator's now-unreachable constructor parameters, and the
-    # ``CompositeFeatureEngine``/``CompositeSignalEngine``/
-    # ``MultiAlphaEvaluator`` imports in this file.
+    # MultiAlphaEvaluator) and the FeatureEngine / SignalEngine
+    # Protocols have been deleted.  All surviving alphas are SIGNAL or
+    # PORTFOLIO layer and produce outputs via the bus-driven Phase-3 /
+    # Phase-4 pipeline (HorizonAggregator → HorizonSignalEngine →
+    # CompositionEngine) composed below.  The orchestrator's
+    # ``feature_engine`` / ``signal_engine`` constructor parameters
+    # survive only as test scaffolding and are passed ``None`` here —
+    # see :class:`feelies.kernel.orchestrator.Orchestrator`'s docstring
+    # for the optional-engine contract.
 
     risk_config = RiskConfig(
         max_position_per_symbol=config.risk_max_position_per_symbol,
@@ -319,14 +315,12 @@ def build_platform(
         account_equity=_decimal(config.account_equity),
     )
     fill_ledger = FillAttributionLedger()
-    # Workstream D.2 PR-2b-i: ``MultiAlphaEvaluator`` is no longer
-    # constructed by bootstrap.  Post-D.2 the registry only contains
-    # SIGNAL and PORTFOLIO modules whose ``.evaluate(FeatureVector)``
-    # methods are no-ops; running the evaluator on every tick was pure
-    # overhead.  Direct callers that still need the legacy multi-alpha
-    # path can construct ``MultiAlphaEvaluator`` themselves and pass it
-    # through ``Orchestrator(multi_alpha_evaluator=...)`` until PR-2b-ii
-    # deletes the class entirely.
+    # Workstream D.2 PR-2b-ii: ``MultiAlphaEvaluator`` was deleted along
+    # with the per-tick composite engines and the
+    # ``FeatureEngine`` / ``SignalEngine`` Protocols.  The orchestrator
+    # no longer accepts a ``multi_alpha_evaluator`` ctor parameter; the
+    # bus-driven Phase-3 / Phase-4 composition pipeline owns multi-alpha
+    # arbitration end-to-end.
 
     orchestrator = Orchestrator(
         clock=clock,
@@ -347,7 +341,6 @@ def build_platform(
         account_equity=_decimal(config.account_equity),
         trade_journal=trade_journal,
         feature_snapshots=feature_snapshots,
-        multi_alpha_evaluator=None,
         fill_ledger=fill_ledger,
         strategy_positions=strategy_positions,
         cost_model=cost_model,

@@ -34,11 +34,20 @@ Design choices:
   ``Signal`` event when ``evaluate`` returns ``None``.
 
 This protocol is the **only** Layer-2 signal contract in the platform.
-The legacy per-tick :class:`feelies.signals.engine.SignalEngine`
-Protocol — once mirrored by ``layer="LEGACY_SIGNAL"`` alphas — was
-retired by workstream D.2; the loader rejects ``LEGACY_SIGNAL``
-manifests at parse time and the per-tick :class:`SignalEngine` itself
-is scheduled for removal in D.2 PR-2.
+The legacy per-tick ``feelies.signals.engine.SignalEngine`` Protocol —
+once mirrored by ``layer="LEGACY_SIGNAL"`` alphas — was retired by
+workstream D.2: the loader rejects ``LEGACY_SIGNAL`` manifests at
+parse time (PR-1), the orphaned leaf surfaces (``LoadedAlphaModule``,
+``LegacyFeatureShim``, the ``LayerValidator`` G6/G8/G13 inline-features
+branches) were deleted by PR-2a, the orchestrator's per-tick engine
+constructor parameters were made optional and unwired by PR-2b-i, and
+PR-2b-ii deleted the engine classes themselves
+(``CompositeFeatureEngine``, ``CompositeSignalEngine``,
+``MultiAlphaEvaluator``) along with the ``FeatureEngine`` and
+``SignalEngine`` Protocols.  ``Signal.layer`` is now a strict
+``Literal["SIGNAL", "PORTFOLIO"]``; every horizon-anchored ``Signal``
+that flows out of :class:`HorizonSignalEngine` is stamped
+``layer="SIGNAL"``.
 """
 
 from __future__ import annotations

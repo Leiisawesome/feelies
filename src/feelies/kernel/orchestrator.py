@@ -48,7 +48,6 @@ if TYPE_CHECKING:
         AlphaContribution,
         FillAttributionLedger,
     )
-    from feelies.alpha.multi_alpha_evaluator import MultiAlphaEvaluator
     from feelies.alpha.registry import AlphaRegistry
     from feelies.composition.engine import CompositionEngine
     from feelies.monitoring.horizon_metrics import HorizonMetricsCollector
@@ -94,7 +93,6 @@ from feelies.execution.intent import (
     TradingIntent,
 )
 from feelies.execution.order_state import OrderState, create_order_state_machine
-from feelies.features.engine import FeatureEngine
 from feelies.ingestion.data_integrity import DataHealth
 from feelies.ingestion.normalizer import MarketDataNormalizer
 from feelies.kernel.macro import (
@@ -114,7 +112,6 @@ from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
 from feelies.services.regime_engine import RegimeEngine
 from feelies.services.regime_hazard_detector import RegimeHazardDetector
-from feelies.signals.engine import SignalEngine
 from feelies.signals.horizon_engine import HorizonSignalEngine
 from feelies.storage.event_log import EventLog
 from feelies.storage.feature_snapshot import FeatureSnapshotMeta, FeatureSnapshotStore
@@ -222,22 +219,27 @@ class Orchestrator:
     The orchestrator never inspects ``backend.mode`` to branch logic.
     Mode-specific behavior is confined to ExecutionBackend (platform inv 9).
 
-    Workstream D.2 PR-2b-i made ``feature_engine`` and ``signal_engine``
-    optional (typed ``FeatureEngine | None`` / ``SignalEngine | None``).
-    The legacy per-tick alpha dispatch (M3 FEATURE_COMPUTE → M4
-    SIGNAL_EVALUATE → ...) only does work when an engine is wired;
-    otherwise the micro-state transitions still fire (so the SM stays
-    on its legal path) but no ``FeatureVector`` is published and no
-    ``signal_engine.evaluate()`` is invoked.  Phase-3 SIGNAL/PORTFOLIO
-    outputs are produced via the bus-driven
-    ``HorizonAggregator`` → ``HorizonSignalEngine`` →
-    ``CompositionEngine`` chain wired upstream of ``_dispatch_sensor_layer``
-    and are unaffected by the legacy engines being absent.  Bootstrap
-    stops constructing the composite engines and ``MultiAlphaEvaluator``
-    in default deployments; direct callers (tests passing stub engines
-    explicitly) continue to take the legacy path identically.  PR-2b-ii
-    will delete the now-unreachable constructor parameters along with
-    the per-tick engine classes.
+    Workstream D.2 PR-2b-ii deleted the per-tick alpha pipeline
+    (:class:`CompositeFeatureEngine`, :class:`CompositeSignalEngine`,
+    :class:`MultiAlphaEvaluator`) along with the
+    :class:`feelies.features.engine.FeatureEngine` and
+    :class:`feelies.signals.engine.SignalEngine` Protocols.  The
+    ``feature_engine`` / ``signal_engine`` constructor parameters
+    survive only as test scaffolding (typed ``Any | None``) — bootstrap
+    always passes ``None`` and the per-tick legacy branch in
+    :py:meth:`_process_tick_inner` therefore never fires in production.
+    The micro-state transitions ``FEATURE_COMPUTE`` (M3) and
+    ``SIGNAL_EVALUATE`` (M4) still fire unconditionally so the SM stays
+    on its legal path, but their bodies are no-ops absent an engine.
+
+    Phase-3 SIGNAL and Phase-4 PORTFOLIO outputs are produced via the
+    bus-driven ``HorizonAggregator`` → ``HorizonSignalEngine`` →
+    ``CompositionEngine`` chain wired upstream of
+    ``_dispatch_sensor_layer`` and are unaffected by the legacy engines
+    being absent.  A future PR (PR-2b-iii) is expected to migrate the
+    orchestrator's risk → order → fill pipeline to subscribe to bus
+    ``Signal`` events directly, at which point the legacy ctor params
+    and the gated single-alpha branch can be dropped entirely.
     """
 
     def __init__(
@@ -245,8 +247,8 @@ class Orchestrator:
         clock: Clock,
         bus: EventBus,
         backend: ExecutionBackend,
-        feature_engine: FeatureEngine | None,
-        signal_engine: SignalEngine | None,
+        feature_engine: Any | None,
+        signal_engine: Any | None,
         risk_engine: RiskEngine,
         position_store: PositionStore,
         event_log: EventLog,
@@ -261,7 +263,6 @@ class Orchestrator:
         position_sizer: PositionSizer | None = None,
         alpha_registry: "AlphaRegistry | None" = None,
         account_equity: Decimal = Decimal("100000"),
-        multi_alpha_evaluator: "MultiAlphaEvaluator | None" = None,
         fill_ledger: "FillAttributionLedger | None" = None,
         strategy_positions: "StrategyPositionStore | None" = None,
         cost_model: "CostModel | None" = None,
@@ -304,7 +305,6 @@ class Orchestrator:
         )
         self._alpha_registry = alpha_registry
         self._account_equity = account_equity
-        self._multi_alpha_evaluator = multi_alpha_evaluator
         self._fill_ledger = fill_ledger
         self._strategy_positions = strategy_positions
         self._cost_model: "CostModel | None" = cost_model
@@ -1013,20 +1013,16 @@ class Orchestrator:
             correlation_id=cid,
         )
 
-        # ── Multi-alpha path: branch to _process_tick_multi_alpha ──
-        # Both ``multi_alpha_evaluator`` and ``features`` are required
-        # for the legacy multi-alpha dispatch.  Bootstrap stops
-        # constructing the evaluator post-D.2 PR-2b-i so the branch is
-        # unreachable in default deployments; direct callers (tests
-        # passing stub engines explicitly) continue to take the legacy
-        # path identically.
-        if (
-            self._multi_alpha_evaluator is not None
-            and features is not None
-        ):
-            self._process_tick_multi_alpha(features, quote, cid, t_wall_start)
-            return
-
+        # Workstream D.2 PR-2b-ii deleted ``MultiAlphaEvaluator`` along
+        # with the per-tick composite engines, so the multi-alpha branch
+        # that used to fan out to ``_process_tick_multi_alpha`` is gone.
+        # All remaining alpha dispatch happens on the bus-driven
+        # Phase-3/Phase-4 chain (``HorizonAggregator`` →
+        # ``HorizonSignalEngine`` → ``CompositionEngine``).  The block
+        # below is the single-alpha legacy path which only fires when a
+        # caller (tests) explicitly wires a duck-typed
+        # ``signal_engine.evaluate(features)``; bootstrap always passes
+        # ``None`` (PR-2b-i) so production never reaches the body.
         signal: "Signal | None" = None
         if self._signal_engine is not None and features is not None:
             t0 = time.perf_counter_ns()
@@ -1246,353 +1242,7 @@ class Orchestrator:
         )
         self._finalize_tick(t_wall_start, cid)
 
-    # ── Multi-alpha pipeline ─────────────────────────────────────
-
-    def _process_tick_multi_alpha(
-        self,
-        features: FeatureVector,
-        quote: NBBOQuote,
-        cid: str,
-        t_wall_start: int,
-    ) -> None:
-        """Full multi-alpha pipeline from M4 through M10.
-
-        Replaces the single-signal path when multi_alpha_evaluator is
-        set.  See architecture doc section 4.9 and the plan's Step 8.
-        """
-        from feelies.alpha.aggregation import aggregate_intents
-        from feelies.alpha.fill_attribution import (
-            AlphaContribution,
-            AttributionRecord,
-        )
-
-        # ── Stop-loss / trailing-stop check ────────────────────────
-        # Stop-loss is position-level protection, not alpha-level.
-        # When triggered it overrides all alpha intents: we skip the
-        # multi-alpha evaluator entirely and route the EXIT through
-        # the single-alpha RISK_CHECK → ORDER path (a valid M4→M5
-        # transition).  Strategy positions are reconciled via
-        # _distribute_fill_to_strategies() during fill processing.
-        stop_signal = self._check_stop_exit(quote)
-        if stop_signal is not None:
-            self._bus.publish(stop_signal)
-            current_position = self._positions.get(stop_signal.symbol)
-            stop_intent = self._intent_translator.translate(
-                stop_signal, current_position,
-            )
-            if stop_intent.intent != TradingIntent.NO_ACTION:
-                self._micro.transition(
-                    MicroState.RISK_CHECK,
-                    trigger="multi_alpha_stop_exit",
-                    correlation_id=cid,
-                )
-                stop_verdict = self._risk_engine.check_signal(
-                    stop_signal, self._positions,
-                )
-                self._bus.publish(stop_verdict)
-                if stop_verdict.action == RiskAction.FORCE_FLATTEN:
-                    if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
-                        self._escalate_risk(cid)
-                        self._micro.reset(
-                            trigger="pipeline_abort:stop_exit_lockdown",
-                            correlation_id=cid,
-                        )
-                        return
-                if stop_verdict.action == RiskAction.REJECT:
-                    self._micro.transition(
-                        MicroState.LOG_AND_METRICS,
-                        trigger="stop_exit_risk_reject",
-                        correlation_id=cid,
-                    )
-                    self._finalize_tick(t_wall_start, cid)
-                    return
-                order = self._build_order_from_intent(
-                    stop_intent, stop_verdict, cid, quote,
-                )
-                if order is not None:
-                    order_verdict = self._risk_engine.check_order(
-                        order, self._positions,
-                    )
-                    self._bus.publish(order_verdict)
-                    if order_verdict.action not in (
-                        RiskAction.REJECT, RiskAction.FORCE_FLATTEN,
-                    ):
-                        if order_verdict.action == RiskAction.SCALE_DOWN:
-                            scaled = round(
-                                order.quantity * order_verdict.scaling_factor,
-                            )
-                            if scaled > 0 and scaled != order.quantity:
-                                order = replace(order, quantity=scaled)
-                            elif scaled <= 0:
-                                order = None
-                        if order is not None:
-                            self._micro.transition(
-                                MicroState.ORDER_DECISION,
-                                trigger="stop_exit_risk_pass",
-                                correlation_id=cid,
-                            )
-                            self._track_order(
-                                order.order_id, order.side, order,
-                            )
-                            self._micro.transition(
-                                MicroState.ORDER_SUBMIT,
-                                trigger="stop_exit_order_constructed",
-                                correlation_id=cid,
-                            )
-                            self._transition_order(
-                                order.order_id,
-                                OrderState.SUBMITTED,
-                                "submitted",
-                            )
-                            self._backend.order_router.submit(order)
-                            self._bus.publish(order)
-                            self._micro.transition(
-                                MicroState.ORDER_ACK,
-                                trigger="stop_exit_submitted",
-                                correlation_id=cid,
-                            )
-                            acks = self._backend.order_router.poll_acks()
-                            for ack in acks:
-                                self._bus.publish(ack)
-                                self._apply_ack_to_order(ack)
-                            self._micro.transition(
-                                MicroState.POSITION_UPDATE,
-                                trigger="stop_exit_acked",
-                                correlation_id=cid,
-                            )
-                            self._reconcile_fills(acks, cid)
-                            self._micro.transition(
-                                MicroState.LOG_AND_METRICS,
-                                trigger="stop_exit_position_updated",
-                                correlation_id=cid,
-                            )
-                            self._finalize_tick(t_wall_start, cid)
-                            return
-                # Order construction failed or risk rejected — fall through to M10.
-                self._micro.transition(
-                    MicroState.LOG_AND_METRICS,
-                    trigger="stop_exit_no_order",
-                    correlation_id=cid,
-                )
-                self._finalize_tick(t_wall_start, cid)
-                return
-            # stop_intent was NO_ACTION (position already 0), fall through
-            # to normal multi-alpha evaluation in case other symbols
-            # have actionable intents.
-
-        t0 = time.perf_counter_ns()
-        intent_set = self._multi_alpha_evaluator.evaluate_tick(features, quote)
-        self._tick_timings["signal_evaluate_ns"] = time.perf_counter_ns() - t0
-
-        # ── Publish per-alpha signals for observability ──────────────
-        # Signals are published immediately after evaluation, before any
-        # execution-layer guards (is_empty, force_flatten branching).
-        # Signal emission must be pure: it records what each alpha evaluated
-        # based on market data and position state only.  Whether actionable
-        # intents result, or whether orders are later built/approved, must
-        # not change which signals are recorded.
-        for signal in intent_set.signals:
-            self._bus.publish(signal)
-
-        # ── FORCE_FLATTEN: short-circuit, fire safety cascade ──
-        if intent_set.force_flatten:
-            if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
-                self._escalate_risk(cid)
-                self._micro.reset(
-                    trigger="pipeline_abort:multi_alpha_force_flatten",
-                    correlation_id=cid,
-                )
-                return
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="multi_alpha_force_flatten_simulated",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
-            return
-
-        # ── Empty check ──
-        if intent_set.is_empty:
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="multi_alpha_no_intents",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
-            return
-
-        # ── M4 → ORDER_AGGREGATION ──
-        self._micro.transition(
-            MicroState.ORDER_AGGREGATION,
-            trigger="multi_alpha_intents_collected",
-            correlation_id=cid,
-        )
-
-        aggregated_by_symbol = aggregate_intents(intent_set.intents)
-
-        # ── Build orders_to_submit: exits first, then entries ──
-        orders_to_submit: list[OrderRequest] = []
-        for symbol, agg in aggregated_by_symbol.items():
-            if agg.exit_order is not None:
-                side, qty = agg.exit_order
-                order = self._build_net_order(
-                    symbol, side, qty, cid,
-                    is_exit=True,
-                    contributing_intents=agg.contributing_intents,
-                    quote=quote,
-                )
-                if order is not None:
-                    orders_to_submit.append(order)
-                    if self._fill_ledger is not None:
-                        contribs = self._compute_contributions(
-                            agg, "exit",
-                        )
-                        self._fill_ledger.record(AttributionRecord(
-                            order_id=order.order_id,
-                            symbol=symbol,
-                            net_side=side,
-                            net_quantity=qty,
-                            contributions=contribs,
-                        ))
-            if agg.entry_order is not None:
-                side, qty = agg.entry_order
-                order = self._build_net_order(
-                    symbol, side, qty, cid,
-                    is_exit=False,
-                    contributing_intents=agg.contributing_intents,
-                    quote=quote,
-                )
-                if order is not None:
-                    orders_to_submit.append(order)
-                    if self._fill_ledger is not None:
-                        contribs = self._compute_contributions(
-                            agg, "entry",
-                        )
-                        self._fill_ledger.record(AttributionRecord(
-                            order_id=order.order_id,
-                            symbol=symbol,
-                            net_side=side,
-                            net_quantity=qty,
-                            contributions=contribs,
-                        ))
-
-        if not orders_to_submit:
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="multi_alpha_empty_aggregation",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
-            return
-
-        # ── ORDER_AGGREGATION → M6: ORDER_DECISION ──
-        self._micro.transition(
-            MicroState.ORDER_DECISION,
-            trigger="multi_alpha_orders_aggregated",
-            correlation_id=cid,
-        )
-
-        # ── Pre-submission risk check on each aggregate order ──
-        #
-        # Design note: net orders carry strategy_id="multi_alpha_net",
-        # which is not a registered alpha.  This is intentional —
-        # per-alpha budget enforcement already happened in the
-        # MultiAlphaEvaluator at signal time (via AlphaBudgetRiskWrapper).
-        # At the order gate, only platform-aggregate risk checks apply
-        # (position limits, gross exposure, drawdown) via the inner
-        # BasicRiskEngine.  Re-applying per-alpha budgets to a net
-        # aggregate would be semantically incorrect: the net order is
-        # the composition of individually-budgeted intents, not a
-        # single alpha's position request.
-        approved_orders: list[OrderRequest] = []
-        for order in orders_to_submit:
-            order_verdict = self._risk_engine.check_order(
-                order, self._positions,
-            )
-            self._bus.publish(order_verdict)
-
-            if order_verdict.action == RiskAction.FORCE_FLATTEN:
-                if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
-                    self._escalate_risk(cid)
-                    self._micro.reset(
-                        trigger="pipeline_abort:check_order_lockdown",
-                        correlation_id=cid,
-                    )
-                    return
-                continue
-
-            if order_verdict.action == RiskAction.REJECT:
-                continue
-
-            if order_verdict.action == RiskAction.SCALE_DOWN:
-                scaled_qty = round(
-                    order.quantity * order_verdict.scaling_factor,
-                )
-                if scaled_qty <= 0:
-                    continue
-                if scaled_qty != order.quantity:
-                    order = replace(order, quantity=scaled_qty)
-
-            if order_verdict.action not in (
-                RiskAction.ALLOW, RiskAction.SCALE_DOWN,
-            ):
-                raise ValueError(
-                    f"Unhandled RiskAction at check_order gate: "
-                    f"{order_verdict.action!r}. "
-                    f"Fail-safe: aborting order path."
-                )
-
-            approved_orders.append(order)
-
-        if not approved_orders:
-            self._micro.transition(
-                MicroState.LOG_AND_METRICS,
-                trigger="multi_alpha_all_orders_rejected",
-                correlation_id=cid,
-            )
-            self._finalize_tick(t_wall_start, cid)
-            return
-
-        # ── M6 → M7: ORDER_SUBMIT ──
-        self._micro.transition(
-            MicroState.ORDER_SUBMIT,
-            trigger="multi_alpha_orders_approved",
-            correlation_id=cid,
-        )
-        for order in approved_orders:
-            self._track_order(order.order_id, order.side, order)
-            self._transition_order(
-                order.order_id, OrderState.SUBMITTED, "submitted",
-            )
-            self._backend.order_router.submit(order)
-            self._bus.publish(order)
-
-        # ── M7 → M8: ORDER_ACK ──
-        self._micro.transition(
-            MicroState.ORDER_ACK,
-            trigger="multi_alpha_orders_submitted",
-            correlation_id=cid,
-        )
-        acks = self._backend.order_router.poll_acks()
-        for ack in acks:
-            self._bus.publish(ack)
-            self._apply_ack_to_order(ack)
-
-        # ── M8 → M9: POSITION_UPDATE ──
-        self._micro.transition(
-            MicroState.POSITION_UPDATE,
-            trigger="multi_alpha_order_acked",
-            correlation_id=cid,
-        )
-        self._reconcile_fills(acks, cid)
-
-        # ── M9 → M10: LOG_AND_METRICS ──
-        self._micro.transition(
-            MicroState.LOG_AND_METRICS,
-            trigger="multi_alpha_position_updated",
-            correlation_id=cid,
-        )
-        self._finalize_tick(t_wall_start, cid)
+    # ── Net-order construction (used by Phase-4 PORTFOLIO path) ────
 
     def _build_net_order(
         self,
@@ -1664,10 +1314,11 @@ class Orchestrator:
             order_type=OrderType.MARKET,
             quantity=quantity,
             # Intentionally NOT a registered alpha — per-alpha budget
-            # checks happened at signal time in MultiAlphaEvaluator.
-            # The order-gate check_order sees this as unregistered and
-            # falls through to aggregate-only risk checks (see design
-            # note in _process_tick_multi_alpha).
+            # checks happened upstream (Phase-4 PORTFOLIO path: at the
+            # ``CompositionEngine`` / ``AlphaBudgetRiskWrapper`` layer).
+            # The order-gate ``check_order`` sees this as unregistered
+            # and falls through to aggregate-only risk checks
+            # (position limits, gross exposure, drawdown).
             strategy_id="multi_alpha_net",
         )
 
