@@ -1,4 +1,4 @@
-"""Alpha loader — parse .alpha.yaml specs into AlphaModule instances.
+"""Alpha loader — parse .alpha.yaml specs into layer-specialised modules.
 
 The AlphaLoader is the bridge between the external quant lab's YAML
 deliverables and the platform's typed protocol system.  It:
@@ -8,7 +8,15 @@ deliverables and the platform's typed protocol system.  It:
   3. Compiles inline Python code blocks in a sandboxed namespace
   4. Auto-flattens compound features (``return_type: list[N]``)
   5. Wraps the signal evaluate function with provenance patching
-  6. Produces a ``LoadedAlphaModule`` implementing ``AlphaModule``
+  6. Produces a :class:`LoadedSignalLayerModule` (``layer: SIGNAL``)
+     or :class:`LoadedPortfolioLayerModule` (``layer: PORTFOLIO``)
+
+Workstream D.2 retired the per-tick ``LoadedAlphaModule`` produced by
+the historical ``layer: LEGACY_SIGNAL`` path; PR-2 of D.2 then deleted
+the class itself.  Every accepted layer now resolves to a dedicated
+loaded-module type with a deterministic dispatch branch in
+:meth:`AlphaLoader.load_from_dict` — there is no longer a generic
+fall-through path.
 
 Security: inline code is compiled via ``compile()`` + ``exec()`` in a
 restricted namespace.  No ``import``, ``open``, ``eval``, ``exec``,
@@ -26,8 +34,6 @@ import inspect
 import logging
 import math
 import re
-from collections.abc import Sequence
-from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -50,7 +56,6 @@ from feelies.alpha.signal_layer_module import (
     _CompiledHorizonSignal,
 )
 from feelies.core.events import (
-    FeatureVector,
     HorizonFeatureSnapshot,
     NBBOQuote,
     RegimeState,
@@ -70,12 +75,14 @@ from feelies.signals.regime_gate import RegimeGate, RegimeGateError
 logger = logging.getLogger(__name__)
 
 # Workstream D.2 retired ``layer: LEGACY_SIGNAL`` from the loader's
-# accepted set.  The once-per-process sunset banner that lived in this
-# module has been removed; any LEGACY_SIGNAL manifest is now hard-
-# rejected at parse time with a migration pointer.  ``_REQUIRED_TOP_KEYS``
-# (the per-tick contract's required key set) is retained so the still-
-# importable :class:`LoadedAlphaModule` class continues to type-check;
-# it has no callers post-D.2 and is scheduled for deletion in D.2 PR-2.
+# accepted set; the once-per-process sunset banner and the per-tick
+# :class:`LoadedAlphaModule` class were both deleted by D.2 PR-2.  Any
+# LEGACY_SIGNAL manifest is now hard-rejected at parse time with a
+# migration pointer (see :meth:`AlphaLoader._validate_schema`).
+# ``_REQUIRED_TOP_KEYS`` is retained as a frozen historical record of
+# the legacy schema-1.0 contract so the early-validation messages can
+# point at exactly which field a copy-pasted-from-1.0 fixture is
+# missing — the keys themselves are no longer accepted.
 _REQUIRED_TOP_KEYS = {"alpha_id", "version", "description", "hypothesis",
                       "falsification_criteria", "features", "signal"}
 
@@ -442,66 +449,23 @@ class _SharedCompoundComputation:
         self._last_results.pop(symbol, None)
 
 
-# ── Loaded alpha module ──────────────────────────────────────────────
-
-
-class LoadedAlphaModule:
-    """Concrete AlphaModule produced by the AlphaLoader.
-
-    Satisfies the AlphaModule protocol so it can be registered with
-    AlphaRegistry without any special handling.
-    """
-
-    __slots__ = ("_manifest", "_feature_defs", "_evaluate_fn", "_params")
-
-    def __init__(
-        self,
-        manifest: AlphaManifest,
-        feature_defs: list[FeatureDefinition],
-        evaluate_fn: Callable[[FeatureVector, dict[str, Any]], Signal | None],
-        params: dict[str, Any],
-    ) -> None:
-        self._manifest = manifest
-        self._feature_defs = feature_defs
-        self._evaluate_fn = evaluate_fn
-        self._params = params
-
-    @property
-    def manifest(self) -> AlphaManifest:
-        return self._manifest
-
-    def feature_definitions(self) -> Sequence[FeatureDefinition]:
-        return self._feature_defs
-
-    def evaluate(self, features: FeatureVector) -> Signal | None:
-        result = self._evaluate_fn(features, self._params)
-        if result is None:
-            return None
-        if not isinstance(result, Signal):
-            return None
-        if not hasattr(result, "correlation_id") or result.correlation_id == "":
-            result = replace(
-                result,
-                correlation_id=features.correlation_id,
-                sequence=features.sequence,
-            )
-        return result
-
-    def validate(self) -> list[str]:
-        errors: list[str] = []
-        for pdef in self._manifest.parameter_schema:
-            value = self._params.get(pdef.name)
-            if value is None:
-                value = pdef.default
-            errors.extend(pdef.validate_value(value))
-        return errors
-
-
 # ── AlphaLoader ──────────────────────────────────────────────────────
 
 
 class AlphaLoader:
-    """Parses .alpha.yaml files and produces LoadedAlphaModule instances."""
+    """Parse ``.alpha.yaml`` files into layer-specialised loaded modules.
+
+    Each accepted ``layer:`` value resolves to a dedicated loaded-module
+    class via a deterministic dispatch branch in :meth:`load_from_dict`:
+
+    * ``layer: SIGNAL``     → :class:`LoadedSignalLayerModule`
+    * ``layer: PORTFOLIO``  → :class:`LoadedPortfolioLayerModule`
+
+    ``layer: LEGACY_SIGNAL`` was retired by workstream D.2; the per-tick
+    ``LoadedAlphaModule`` class that historically backed it was deleted
+    in D.2 PR-2.  Any LEGACY_SIGNAL manifest is hard-rejected by
+    :meth:`_validate_schema` with a migration-cookbook pointer.
+    """
 
     def __init__(
         self,
@@ -553,8 +517,9 @@ class AlphaLoader:
           (Phase-4 cross-sectional construction).
 
         ``LEGACY_SIGNAL`` was retired by workstream D.2 and is rejected
-        in :meth:`_validate_schema`; the per-tick :class:`LoadedAlphaModule`
-        construction path no longer has any callers.
+        in :meth:`_validate_schema`; the per-tick ``LoadedAlphaModule``
+        class that historically backed it was deleted in D.2 PR-2 and
+        no longer exists in the codebase.
         """
         self._validate_schema(spec, source)
 
@@ -991,9 +956,10 @@ class AlphaLoader:
     ) -> Callable[..., Signal | None]:
         """Compile the SIGNAL-layer inline ``signal:`` evaluate function.
 
-        Mirrors :py:meth:`_compile_signal` but expects the 3-arg
-        ``evaluate(snapshot, regime, params)`` signature instead of
-        the legacy 2-arg ``evaluate(features, params)``.
+        Expects the 3-arg ``evaluate(snapshot, regime, params)`` signature
+        introduced in schema 1.1.  The legacy 2-arg
+        ``evaluate(features, params)`` signature was deleted with the
+        ``LoadedAlphaModule`` per-tick path in D.2 PR-2.
         """
         if not isinstance(signal_code, str):
             raise AlphaLoadError(
@@ -1080,12 +1046,12 @@ class AlphaLoader:
             )
         layer_str = str(layer)
 
-        # Workstream D.2: ``layer: LEGACY_SIGNAL`` was retired.  The
-        # per-tick LoadedAlphaModule construction path is gone and the
-        # only survivors are SIGNAL/PORTFOLIO.  Surface a dedicated
-        # rejection (rather than a generic "unknown layer" typo
-        # message) so authors copying old fixtures get a stable
-        # migration pointer.
+        # Workstream D.2: ``layer: LEGACY_SIGNAL`` was retired in PR-1
+        # and the per-tick ``LoadedAlphaModule`` class itself was
+        # deleted in PR-2.  The only survivors are SIGNAL/PORTFOLIO.
+        # Surface a dedicated rejection (rather than a generic
+        # "unknown layer" typo message) so authors copying old
+        # fixtures get a stable migration pointer.
         if layer_str in _RETIRED_LAYERS:
             raise AlphaLoadError(
                 f"{source}: layer '{layer_str}' was retired by "
@@ -1534,37 +1500,6 @@ class AlphaLoader:
                 )
 
         return WarmUpSpec(min_events=min_events, min_duration_ns=min_duration_ns)
-
-    # ── Signal compilation ────────────────────────────────────
-
-    def _compile_signal(
-        self,
-        signal_code: str,
-        alpha_id: str,
-        namespace: dict[str, Any],
-        source: str,
-    ) -> Callable[[FeatureVector, dict[str, Any]], Signal | None]:
-        ns = dict(namespace)
-        try:
-            compiled = compile(signal_code, f"<{source}:signal>", "exec")
-            exec(compiled, ns)  # noqa: S102
-        except SyntaxError as exc:
-            raise AlphaLoadError(
-                f"{source}: signal code syntax error: {exc}"
-            ) from exc
-
-        evaluate_fn = ns.get("evaluate")
-        if evaluate_fn is None:
-            raise AlphaLoadError(
-                f"{source}: signal code must define evaluate(features, params)"
-            )
-        _check_arity(evaluate_fn, 2, "evaluate", source, alpha_id)
-
-        evaluate_callable: Callable[
-            [FeatureVector, dict[str, Any]], Signal | None
-        ] = evaluate_fn
-        return evaluate_callable
-
 
 # ── Lazy event imports for PORTFOLIO inline construct() namespaces ─────
 

@@ -1,16 +1,33 @@
 """Pluggable alpha module system.
 
 An AlphaModule is the atomic unit of plug/unplug.  It bundles
-hypothesis metadata, feature definitions, signal logic, and risk
-budget into a standardized template that the system can load, validate,
-and execute without modification to the orchestrator or core pipeline.
+hypothesis metadata, feature/sensor declarations, signal logic, and
+risk budget into a standardized template that the platform can load,
+validate, and execute without modification to the orchestrator or core
+pipeline.
 
-Assembly flow:
-  1. Create AlphaModule implementations
-  2. Register them with AlphaRegistry
-  3. Build CompositeFeatureEngine and CompositeSignalEngine from the registry
-  4. Inject composites into the Orchestrator as FeatureEngine / SignalEngine
-  5. The orchestrator runs identically to the single-alpha case
+Assembly flow (post-D.2 PR-2a, schema 1.1 only):
+  1. AlphaLoader parses ``.alpha.yaml`` files and dispatches on the
+     declared ``layer:`` field.
+  2. ``layer: SIGNAL`` resolves to a :class:`LoadedSignalLayerModule`
+     (Phase-3 horizon-anchored, regime-gated contract);
+     ``layer: PORTFOLIO`` resolves to a
+     :class:`LoadedPortfolioLayerModule` (Phase-4 cross-sectional
+     construction).  ``layer: LEGACY_SIGNAL`` is hard-rejected at parse
+     time with a migration pointer.
+  3. Loaded modules are registered with :class:`AlphaRegistry`; the
+     registry routes SIGNAL alphas to :class:`HorizonSignalEngine` and
+     PORTFOLIO alphas to :class:`CrossSectionalEngine` via the
+     bootstrap-built composition engine.
+  4. The orchestrator runs each layer engine on its own event-time
+     boundary (``HorizonTick`` for SIGNAL, ``CrossSectionalContext``
+     for PORTFOLIO) — there is no longer a per-tick alpha dispatch.
+
+The historical per-tick :class:`CompositeFeatureEngine` /
+:class:`CompositeSignalEngine` / :class:`MultiAlphaEvaluator` plumbing
+remains importable for backward compatibility but is unreachable from
+the post-D.2 load path; D.2 PR-2b will delete it along with the
+:class:`feelies.core.events.FeatureVector` event itself.
 """
 
 from feelies.alpha.aggregation import AggregatedOrders, aggregate_intents
@@ -29,7 +46,7 @@ from feelies.alpha.lifecycle import (
     GateRequirements,
     PromotionEvidence,
 )
-from feelies.alpha.loader import AlphaLoadError, AlphaLoader, LoadedAlphaModule
+from feelies.alpha.loader import AlphaLoadError, AlphaLoader
 from feelies.alpha.module import (
     AlphaManifest,
     AlphaModule,
@@ -64,7 +81,6 @@ __all__ = [
     "GateRequirements",
     "IntentSet",
     "load_and_register",
-    "LoadedAlphaModule",
     "MultiAlphaEvaluator",
     "ParameterDef",
     "PromotionEvidence",

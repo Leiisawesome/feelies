@@ -1,12 +1,11 @@
 """Phase-3 ``layer: SIGNAL`` alpha module.
 
 A :class:`LoadedSignalLayerModule` is the loader-side artifact for a
-schema-1.1 ``layer: SIGNAL`` alpha.  As of workstream D.2 it is one of
-only two surviving loaded-module types (the other being
-:class:`feelies.alpha.portfolio_layer_module.LoadedPortfolioLayerModule`);
-the per-tick :class:`feelies.alpha.loader.LoadedAlphaModule` previously
-produced by ``layer: LEGACY_SIGNAL`` is unreachable post-D.2 and
-scheduled for deletion in D.2 PR-2.
+schema-1.1 ``layer: SIGNAL`` alpha.  Workstream D.2 PR-1 retired
+``layer: LEGACY_SIGNAL`` and PR-2 deleted the per-tick
+``LoadedAlphaModule`` class itself, so this is one of only two
+surviving loaded-module types (the other being
+:class:`feelies.alpha.portfolio_layer_module.LoadedPortfolioLayerModule`).
 
 This module:
 
@@ -140,10 +139,13 @@ class LoadedSignalLayerModule:
     def validate(self) -> list[str]:
         """Return per-parameter validation errors.
 
-        Mirrors :py:meth:`feelies.alpha.loader.LoadedAlphaModule.validate`
+        Mirrors
+        :py:meth:`feelies.alpha.portfolio_layer_module.LoadedPortfolioLayerModule.validate`
         so registry-side per-alpha validation has consistent behavior
-        across SIGNAL and PORTFOLIO modules (and the LEGACY_SIGNAL
-        path, which is unreachable post-D.2).
+        across the two surviving loaded-module types (SIGNAL and
+        PORTFOLIO).  The historical per-tick ``LoadedAlphaModule.validate``
+        was deleted by D.2 PR-2 along with the rest of the legacy
+        per-tick contract.
         """
         errors: list[str] = []
         for pdef in self._manifest.parameter_schema:
