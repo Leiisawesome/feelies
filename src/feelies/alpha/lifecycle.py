@@ -21,13 +21,23 @@ Invariants preserved:
 from __future__ import annotations
 
 import json
+import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
 
+from feelies.alpha.promotion_evidence import (
+    GateId,
+    GateThresholds,
+    evidence_to_metadata,
+    validate_gate,
+)
 from feelies.alpha.promotion_ledger import PromotionLedger, PromotionLedgerEntry
 from feelies.core.clock import Clock
 from feelies.core.state_machine import StateMachine, TransitionRecord
+
+_logger = logging.getLogger(__name__)
 
 _RESTORE_TOKEN: object = object()
 
@@ -169,6 +179,48 @@ class AlphaLifecycle:
     Wraps the platform's generic ``StateMachine`` with alpha-specific
     gate checks.  Transitions that fail gate checks are rejected with
     descriptive error messages.
+
+    Two evidence paths are supported on every promote/revalidate
+    method (Workstream **F-4**):
+
+    1. **Structured path (preferred).**  Pass
+       ``structured_evidence=[ResearchAcceptanceEvidence(...), ...]``.
+       The lifecycle dispatches to
+       :func:`feelies.alpha.promotion_evidence.validate_gate` against
+       the gate-specific :class:`GateThresholds` (default values come
+       from the testing-validation and post-trade-forensics skills,
+       and Workstream **F-5** will allow per-alpha YAML overrides).
+       The committed ledger entry's ``metadata`` is the JSON-safe
+       projection produced by
+       :func:`feelies.alpha.promotion_evidence.evidence_to_metadata`,
+       carrying ``schema_version`` so :func:`metadata_to_evidence`
+       can reverse it for forensic replay.
+
+    2. **Legacy path (backwards compat).**  Pass a
+       :class:`PromotionEvidence` positional / keyword.  The
+       lifecycle dispatches to the lightweight
+       ``check_paper_gate`` / ``check_live_gate`` /
+       ``check_revalidation_gate`` validators against
+       :class:`GateRequirements`.  The committed ledger entry's
+       ``metadata`` is the loose ``{"evidence": {...}}`` shape used
+       since Workstream F-1.
+
+    Supplying *both* or *neither* raises :class:`ValueError` — the
+    caller must pick one path.
+
+    The two paths produce *different* metadata shapes on purpose: the
+    structured payload is round-trippable through
+    :func:`metadata_to_evidence` and the F-3 ``feelies promote
+    replay-evidence`` CLI; the legacy payload retains the historical
+    shape for pre-F-4 tooling.
+
+    .. note::
+       :py:meth:`quarantine` is a fail-safe demotion (Inv-11 — the
+       state machine only tightens).  When ``structured_evidence`` is
+       supplied, the per-evidence consistency validators
+       (:func:`validate_quarantine_trigger`) are run for forensics:
+       inconsistencies log a ``WARNING`` but do *not* block the
+       transition.
     """
 
     def __init__(
@@ -176,10 +228,12 @@ class AlphaLifecycle:
         alpha_id: str,
         clock: Clock,
         gate_requirements: GateRequirements | None = None,
+        gate_thresholds: GateThresholds | None = None,
         ledger: PromotionLedger | None = None,
     ) -> None:
         self._alpha_id = alpha_id
         self._gate_requirements = gate_requirements or GateRequirements()
+        self._gate_thresholds = gate_thresholds or GateThresholds()
         self._ledger = ledger
         self._sm = StateMachine(
             name=f"alpha_lifecycle:{alpha_id}",
@@ -209,45 +263,77 @@ class AlphaLifecycle:
 
     def promote_to_paper(
         self,
-        evidence: PromotionEvidence,
+        evidence: PromotionEvidence | None = None,
         *,
+        structured_evidence: Sequence[object] | None = None,
         correlation_id: str = "",
     ) -> list[str]:
         """Attempt RESEARCH -> PAPER promotion.
 
         Returns list of gate check errors (empty = success).
+
+        Provide *either* ``evidence`` (legacy :class:`PromotionEvidence`
+        path, validated by :func:`check_paper_gate`) *or*
+        ``structured_evidence`` (Workstream F-4 path, validated by
+        :func:`validate_gate` against
+        :data:`GateId.RESEARCH_TO_PAPER`'s required evidence types).
+        Supplying both or neither raises :class:`ValueError`.
         """
-        errors = check_paper_gate(evidence)
+        legacy_ev, errors = self._select_evidence(
+            evidence,
+            structured_evidence,
+            gate_id=GateId.RESEARCH_TO_PAPER,
+            legacy_validator=check_paper_gate,
+        )
         if errors:
             return errors
 
+        metadata = self._build_metadata(legacy_ev, structured_evidence)
         self._sm.transition(
             AlphaLifecycleState.PAPER,
             trigger="pass_paper_gate",
             correlation_id=correlation_id,
-            metadata={"evidence": _evidence_to_dict(evidence)},
+            metadata=metadata,
         )
         return []
 
     def promote_to_live(
         self,
-        evidence: PromotionEvidence,
+        evidence: PromotionEvidence | None = None,
         *,
+        structured_evidence: Sequence[object] | None = None,
         correlation_id: str = "",
     ) -> list[str]:
         """Attempt PAPER -> LIVE promotion.
 
         Returns list of gate check errors (empty = success).
+
+        Provide *either* ``evidence`` (legacy :class:`PromotionEvidence`
+        path, validated by :func:`check_live_gate` against
+        :class:`GateRequirements`) *or* ``structured_evidence``
+        (Workstream F-4 path, validated by :func:`validate_gate`
+        against :data:`GateId.PAPER_TO_LIVE`'s required evidence
+        types — :class:`PaperWindowEvidence` + :class:`CPCVEvidence`
+        + :class:`DSREvidence`).  Supplying both or neither raises
+        :class:`ValueError`.
         """
-        errors = check_live_gate(evidence, self._gate_requirements)
+        legacy_ev, errors = self._select_evidence(
+            evidence,
+            structured_evidence,
+            gate_id=GateId.PAPER_TO_LIVE,
+            legacy_validator=lambda ev: check_live_gate(
+                ev, self._gate_requirements
+            ),
+        )
         if errors:
             return errors
 
+        metadata = self._build_metadata(legacy_ev, structured_evidence)
         self._sm.transition(
             AlphaLifecycleState.LIVE,
             trigger="pass_live_gate",
             correlation_id=correlation_id,
-            metadata={"evidence": _evidence_to_dict(evidence)},
+            metadata=metadata,
         )
         return []
 
@@ -255,35 +341,80 @@ class AlphaLifecycle:
         self,
         reason: str,
         *,
+        structured_evidence: Sequence[object] | None = None,
         correlation_id: str = "",
     ) -> None:
-        """LIVE -> QUARANTINED (typically auto-triggered by forensics)."""
+        """LIVE -> QUARANTINED (typically auto-triggered by forensics).
+
+        Inv-11 fail-safe: a quarantine demotion **must** succeed —
+        the validator is consistency-only.  When
+        ``structured_evidence`` is supplied (typically a
+        :class:`QuarantineTriggerEvidence`),
+        :func:`validate_quarantine_trigger` runs for forensics and any
+        "spurious-trigger" complaints are logged at ``WARNING``
+        without blocking the transition.
+
+        The committed ledger entry's ``metadata`` always carries
+        ``{"reason": reason}``; structured evidence is merged in as
+        additional kind-keyed sections plus a ``schema_version``.
+        """
+        metadata: dict[str, Any] = {"reason": reason}
+        if structured_evidence is not None:
+            warnings = validate_gate(
+                GateId.LIVE_TO_QUARANTINED,
+                structured_evidence,
+                self._gate_thresholds,
+            )
+            if warnings:
+                _logger.warning(
+                    "alpha %r quarantine trigger evidence is suspicious "
+                    "(transition still committed per Inv-11 fail-safe): %s",
+                    self._alpha_id,
+                    "; ".join(warnings),
+                )
+            metadata.update(evidence_to_metadata(*structured_evidence))
+
         self._sm.transition(
             AlphaLifecycleState.QUARANTINED,
             trigger="edge_decay_detected",
             correlation_id=correlation_id,
-            metadata={"reason": reason},
+            metadata=metadata,
         )
 
     def revalidate_to_paper(
         self,
-        evidence: PromotionEvidence,
+        evidence: PromotionEvidence | None = None,
         *,
+        structured_evidence: Sequence[object] | None = None,
         correlation_id: str = "",
     ) -> list[str]:
         """Attempt QUARANTINED -> PAPER re-entry.
 
         Returns list of gate check errors (empty = success).
+
+        Provide *either* ``evidence`` (legacy :class:`PromotionEvidence`
+        path, validated by :func:`check_revalidation_gate`) *or*
+        ``structured_evidence`` (Workstream F-4 path, validated by
+        :func:`validate_gate` against
+        :data:`GateId.QUARANTINED_TO_PAPER`'s required evidence
+        types — :class:`RevalidationEvidence`).  Supplying both or
+        neither raises :class:`ValueError`.
         """
-        errors = check_revalidation_gate(evidence)
+        legacy_ev, errors = self._select_evidence(
+            evidence,
+            structured_evidence,
+            gate_id=GateId.QUARANTINED_TO_PAPER,
+            legacy_validator=check_revalidation_gate,
+        )
         if errors:
             return errors
 
+        metadata = self._build_metadata(legacy_ev, structured_evidence)
         self._sm.transition(
             AlphaLifecycleState.PAPER,
             trigger="revalidation_passed",
             correlation_id=correlation_id,
-            metadata={"evidence": _evidence_to_dict(evidence)},
+            metadata=metadata,
         )
         return []
 
@@ -313,6 +444,66 @@ class AlphaLifecycle:
     def is_live(self) -> bool:
         """Whether the alpha is deployed with real capital."""
         return self._sm.state == AlphaLifecycleState.LIVE
+
+    # ── Evidence dispatch helpers (Workstream F-4) ───────────
+
+    def _select_evidence(
+        self,
+        evidence: PromotionEvidence | None,
+        structured_evidence: Sequence[object] | None,
+        *,
+        gate_id: GateId,
+        legacy_validator: Any,
+    ) -> tuple[PromotionEvidence | None, list[str]]:
+        """Resolve which evidence path to use and run its validator.
+
+        Enforces the "exactly one of ``evidence``/``structured_evidence``"
+        contract.  Returns ``(legacy_evidence_or_None,
+        validation_errors)``: the legacy evidence is forwarded back so
+        :py:meth:`_build_metadata` can project it; the structured
+        evidence sequence is captured by the closure for the same
+        purpose.
+
+        Raises :class:`ValueError` if both or neither path is supplied.
+        """
+        if evidence is not None and structured_evidence is not None:
+            raise ValueError(
+                "AlphaLifecycle: supply either 'evidence' (legacy "
+                "PromotionEvidence) or 'structured_evidence' "
+                "(Workstream F-4 sequence), not both"
+            )
+        if evidence is None and structured_evidence is None:
+            raise ValueError(
+                "AlphaLifecycle: must supply either 'evidence' "
+                "(legacy PromotionEvidence) or 'structured_evidence' "
+                "(Workstream F-4 sequence)"
+            )
+        if structured_evidence is not None:
+            errors = validate_gate(
+                gate_id, structured_evidence, self._gate_thresholds
+            )
+            return None, errors
+        # legacy path
+        assert evidence is not None  # narrowed by the early returns above
+        errors = legacy_validator(evidence)
+        return evidence, list(errors)
+
+    def _build_metadata(
+        self,
+        legacy_evidence: PromotionEvidence | None,
+        structured_evidence: Sequence[object] | None,
+    ) -> dict[str, Any]:
+        """Project the chosen evidence path into ledger metadata.
+
+        Legacy path → ``{"evidence": _evidence_to_dict(ev)}`` (the
+        F-1 shape).  Structured path → :func:`evidence_to_metadata`
+        output (carries ``schema_version`` + kind-keyed sections,
+        round-trippable via :func:`metadata_to_evidence`).
+        """
+        if structured_evidence is not None:
+            return evidence_to_metadata(*structured_evidence)
+        assert legacy_evidence is not None
+        return {"evidence": _evidence_to_dict(legacy_evidence)}
 
     # ── Promotion ledger ─────────────────────────────────────
 

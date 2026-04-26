@@ -30,6 +30,7 @@ from feelies.alpha.lifecycle import (
     PromotionEvidence,
 )
 from feelies.alpha.module import AlphaModule
+from feelies.alpha.promotion_evidence import GateThresholds
 from feelies.alpha.promotion_ledger import PromotionLedger
 from feelies.alpha.validation import validate_alpha_set
 from feelies.core.clock import Clock
@@ -71,12 +72,14 @@ class AlphaRegistry:
         self,
         clock: Clock | None = None,
         gate_requirements: GateRequirements | None = None,
+        gate_thresholds: GateThresholds | None = None,
         promotion_ledger: PromotionLedger | None = None,
     ) -> None:
         self._alphas: dict[str, AlphaModule] = {}
         self._lifecycles: dict[str, AlphaLifecycle] = {}
         self._clock = clock
         self._gate_requirements = gate_requirements
+        self._gate_thresholds = gate_thresholds
         self._promotion_ledger = promotion_ledger
         self._feature_cache: list[FeatureDefinition] | None = None
 
@@ -110,6 +113,7 @@ class AlphaRegistry:
                 alpha_id=alpha_id,
                 clock=self._clock,
                 gate_requirements=self._gate_requirements,
+                gate_thresholds=self._gate_thresholds,
                 ledger=self._promotion_ledger,
             )
         self._feature_cache = None
@@ -311,14 +315,22 @@ class AlphaRegistry:
     def promote(
         self,
         alpha_id: str,
-        evidence: PromotionEvidence,
+        evidence: PromotionEvidence | None = None,
         *,
+        structured_evidence: Sequence[object] | None = None,
         correlation_id: str = "",
     ) -> list[str]:
         """Promote an alpha to its next lifecycle state.
 
         Automatically determines the correct gate based on current state.
         Returns gate check errors (empty = success).
+
+        Provide *either* ``evidence`` (legacy :class:`PromotionEvidence`
+        path) *or* ``structured_evidence`` (Workstream **F-4**
+        sequence of typed evidence dataclasses).  Supplying both or
+        neither raises :class:`ValueError`.  See
+        :class:`~feelies.alpha.lifecycle.AlphaLifecycle` docstring for
+        the contract.
 
         Raises ``KeyError`` if alpha not registered.
         Raises ``AlphaRegistryError`` if lifecycle tracking is disabled.
@@ -333,11 +345,23 @@ class AlphaRegistry:
 
         state = lc.state
         if state == AlphaLifecycleState.RESEARCH:
-            return lc.promote_to_paper(evidence, correlation_id=correlation_id)
+            return lc.promote_to_paper(
+                evidence,
+                structured_evidence=structured_evidence,
+                correlation_id=correlation_id,
+            )
         if state == AlphaLifecycleState.PAPER:
-            return lc.promote_to_live(evidence, correlation_id=correlation_id)
+            return lc.promote_to_live(
+                evidence,
+                structured_evidence=structured_evidence,
+                correlation_id=correlation_id,
+            )
         if state == AlphaLifecycleState.QUARANTINED:
-            return lc.revalidate_to_paper(evidence, correlation_id=correlation_id)
+            return lc.revalidate_to_paper(
+                evidence,
+                structured_evidence=structured_evidence,
+                correlation_id=correlation_id,
+            )
 
         return [f"Alpha '{alpha_id}' in state {state.name} cannot be promoted"]
 
@@ -346,9 +370,17 @@ class AlphaRegistry:
         alpha_id: str,
         reason: str,
         *,
+        structured_evidence: Sequence[object] | None = None,
         correlation_id: str = "",
     ) -> None:
         """Move a LIVE alpha to QUARANTINED state.
+
+        Optional ``structured_evidence`` (typically a
+        :class:`feelies.alpha.promotion_evidence.QuarantineTriggerEvidence`)
+        is recorded on the ledger entry alongside the free-form
+        ``reason``.  Per Inv-11 (fail-safe), the demotion is committed
+        even when the trigger evidence looks spurious — the validator
+        only logs a forensic warning.
 
         Raises ``KeyError`` if alpha not registered.
         Raises ``AlphaRegistryError`` if lifecycle tracking is disabled.
@@ -360,7 +392,11 @@ class AlphaRegistry:
             raise AlphaRegistryError(
                 "Lifecycle tracking is disabled (no clock provided)"
             )
-        lc.quarantine(reason, correlation_id=correlation_id)
+        lc.quarantine(
+            reason,
+            structured_evidence=structured_evidence,
+            correlation_id=correlation_id,
+        )
 
     def decommission(
         self,
