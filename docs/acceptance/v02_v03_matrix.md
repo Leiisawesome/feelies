@@ -51,7 +51,7 @@ this matrix before claiming "v0.2 is done" or "v0.3 is done."
 |---|---|---|---|---|---|
 | 1 | All existing unit + integration tests pass | §18.3 | full test suite | every test in `tests/` | ✓ |
 | 2 | Coverage ≥ 80% | §18.3 | `pyproject.toml` `[tool.coverage.report] fail_under = 80` | `pytest --cov=feelies --cov-fail-under=80` (run in `as_verify`; recorded in this file's footer) | ✓ |
-| 3 | `mypy --strict` passes on all new modules | §18.3 | `[[tool.mypy.overrides]]` block scoping strict to the v0.2/v0.3 module list (`feelies.sensors.*`, `feelies.composition.*`, `feelies.regime.*`, selected `feelies.alpha.*`, selected `feelies.features.*`, `feelies.signals.regime_gate`) | `tests/acceptance/test_mypy_strict_scope.py` (subprocess, marked `slow`) | ✓ slow |
+| 3 | `mypy --strict` passes on all modules | §18.3 | `strict = true` in `[tool.mypy]` applies to **every** module under `src/feelies/` — no per-module `ignore_errors` overrides remain (gap-Z closed). | `tests/acceptance/test_mypy_strict_scope.py` (subprocess, marked `slow`; both `test_mypy_strict_clean_on_src_feelies` and `test_no_strict_overrides_in_pyproject`) | ✓ slow |
 | 4 | `ruff check` passes with no new warnings | §18.3 | `pyproject.toml` `[tool.ruff]` config | repo-level `ruff check .` (run in `as_verify`) | ✓ |
 
 ## §20.12.2 — v0.3 Implementation Acceptance (after Phase 5.1)
@@ -84,7 +84,7 @@ this matrix before claiming "v0.2 is done" or "v0.3 is done."
 | `enforce_trend_mechanism: true` flip | Held until ≥3 reference alphas (one per non-stress family) have shipped under strict mode in research/paper trading per §20.12.1. Workstream **E**. |
 | Universe scaling | Workstream **B**; depends on a green sweep matrix as its launch precondition. |
 | CPCV + DSR promotion gate | Workstream **C**; depends on the strategy promotion pipeline (workstream F). |
-| Pre-existing 64 mypy errors in legacy `src/feelies/` modules | Tracked as gap-Z under a future "type-tightening" workstream. The acceptance sweep deliberately scopes mypy `--strict` to the post-refactor module list (§18.3 #3 rationale). |
+| Pre-existing strict-mode errors in legacy `src/feelies/` modules | **COMPLETE** as workstream **gap-Z**. The 8-module `[[tool.mypy.overrides]] ignore_errors = true` block has been deleted from `pyproject.toml`; `bootstrap`, `execution.passive_limit_router`, `ingestion.massive_ingestor`, `ingestion.massive_normalizer`, `ingestion.massive_ws`, `kernel.orchestrator`, `storage.disk_event_cache`, and `storage.memory_trade_journal` were tightened in place (27 errors fixed: missing generic type-args on `dict[...]` / `tuple[...]`, `Returning Any` from typed `bool` functions, `Decimal | None` fed to non-optional `OrderAck.fees`, `NBBOQuote | Trade` union-rebind in `MassiveNormalizer.normalize_ws`, `Position` forward-ref imported under `TYPE_CHECKING` in `_PostExitPositionView`, the `ws: object` parameter on `MassiveLiveFeed._authenticate` / `_subscribe` / `_consume` typed `Any` with documented rationale, the `BacktestOrderRouter` / `PassiveLimitOrderRouter` `tuple[...]` return-type widened upfront, and the `massive` library import marked `# type: ignore[import-untyped]` to suppress the missing-`py.typed` warning). The companion test `tests/acceptance/test_mypy_strict_scope.py` now contains a second test, `test_no_strict_overrides_in_pyproject`, which parses `pyproject.toml` and fails if any future commit re-introduces an `ignore_errors = true` override targeting a `feelies.*` module — locking the no-overrides invariant alongside the existing "mypy --strict clean" assertion. |
 
 ---
 
@@ -93,7 +93,7 @@ this matrix before claiming "v0.2 is done" or "v0.3 is done."
 The most recent run of the §11 Definition-of-Done checklist is recorded
 below.  Re-record by re-running each command and updating the lines.
 
-- Last verified: 2026-04-21 (Acceptance Sweep close)
+- Last verified: 2026-04-26 (gap-Z close — strict-everywhere)
 - Pytest (`-m "not slow"`): **1816 passed, 6 skipped, 11 deselected**
   (0:01:06)
 - Pytest acceptance suite (`tests/acceptance`): **40 passed** (5.12s)
@@ -103,7 +103,9 @@ below.  Re-record by re-running each command and updating the lines.
   **82.80%** (≥ 80% gate met)
 - Ruff (`ruff check src/ tests/ scripts/`): **All checks passed**
 - Mypy strict (`mypy --no-incremental src/feelies`):
-  **Success: no issues found in 132 source files**
+  **Success: no issues found in 126 source files** (no per-module
+  `ignore_errors` overrides — gap-Z closed; locked by
+  `tests/acceptance/test_mypy_strict_scope.py::test_no_strict_overrides_in_pyproject`)
 - Locked parity baselines (legacy/signal/horizon-snapshot/sized-intent/
   sized-intent-with-decay/portfolio-order/regime-hazard/hazard-exit/
   sensor-reading): **30 passed** (2.97s)

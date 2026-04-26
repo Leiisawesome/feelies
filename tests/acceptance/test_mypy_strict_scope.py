@@ -8,23 +8,26 @@ zero exit code.
 Strict-mode coverage is governed by the ``[tool.mypy]`` block in
 ``pyproject.toml``:
 
-* ``strict = true`` is the platform default, applied to every module
-  introduced or rewritten by Phases 1–5.1 (v0.2 + v0.3 — sensors,
-  composition, regime, layered alpha loader, signal-layer module,
-  portfolio-layer module, layer validator, signal regime gate,
-  horizon aggregator + signal engine, etc.).
-* A small ``[[tool.mypy.overrides]] ignore_errors = true`` block
-  scopes-out a few pre-Phase-1.1 legacy modules whose strict-mode
-  errors are pre-existing structural debt unrelated to the v0.2/v0.3
-  contract.  These are tracked under the future "type-tightening"
-  workstream (gap-Z in the matrix) and MUST NOT grow.
+* ``strict = true`` is the platform default and applies to **every**
+  module under ``src/feelies/`` — there are **no** per-module
+  ``ignore_errors = true`` overrides.  Workstream **gap-Z** closed the
+  historical 8-module override block by tightening the legacy modules
+  in place (``bootstrap``, ``execution.passive_limit_router``,
+  ``ingestion.massive_*``, ``kernel.orchestrator``,
+  ``storage.disk_event_cache``, ``storage.memory_trade_journal``).
 
-This test is the load-bearing artefact behind the matrix row.  If a
-contributor adds a new non-strict module to the override list without
-updating ``docs/acceptance/v02_v03_matrix.md``, the matrix's audit
-discipline is undermined; if they remove the override entirely (good)
-the test still passes; if they introduce a new strict-mode error in a
-post-refactor module, the test fails loudly.
+This test is the load-bearing artefact behind the matrix row, in two
+parts:
+
+1. ``test_mypy_strict_clean_on_src_feelies`` — runs ``mypy`` on the
+   full source tree and asserts a zero exit code.  A new strict-mode
+   error in any module fails the test loudly.
+2. ``test_no_strict_overrides_in_pyproject`` — parses
+   ``pyproject.toml`` and asserts that no ``[[tool.mypy.overrides]]``
+   block sets ``ignore_errors = true`` on any ``feelies.*`` module.
+   This locks the gap-Z invariant: a contributor who silences a new
+   strict-mode failure by re-introducing an override fails the test
+   even if mypy itself is happy.
 
 Marked ``slow`` because cold-cache mypy on the full source tree is
 several seconds — well beyond the per-test budget of the default
@@ -35,13 +38,16 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SRC = _REPO_ROOT / "src" / "feelies"
+_PYPROJECT = _REPO_ROOT / "pyproject.toml"
 
 
 pytestmark = pytest.mark.slow
@@ -66,10 +72,52 @@ def test_mypy_strict_clean_on_src_feelies() -> None:
     if proc.returncode != 0:
         pytest.fail(
             "mypy --strict failed on src/feelies — §18.3 #3 acceptance "
-            "criterion no longer satisfied.  Either annotate the new "
-            "errors away (preferred) or, if the failure is in genuinely "
-            "legacy code, extend the [[tool.mypy.overrides]] block in "
-            "pyproject.toml AND add a row to gap-Z in "
-            "docs/acceptance/v02_v03_matrix.md.\n\n"
+            "criterion no longer satisfied.  Annotate the new errors "
+            "away — DO NOT extend the [[tool.mypy.overrides]] block in "
+            "pyproject.toml; workstream gap-Z deleted that block "
+            "permanently and the companion test "
+            "``test_no_strict_overrides_in_pyproject`` enforces "
+            "no-overrides going forward.\n\n"
             f"STDOUT:\n{proc.stdout}\n\nSTDERR:\n{proc.stderr}"
         )
+
+
+def test_no_strict_overrides_in_pyproject() -> None:
+    """Lock the gap-Z invariant: no ``feelies.*`` strict-mode overrides.
+
+    A contributor who silences a new strict-mode failure by adding a
+    ``[[tool.mypy.overrides]] module = "feelies.foo" ignore_errors =
+    true`` block fails this test even if mypy is happy.  The only
+    exemption shape allowed is for **third-party** modules that lack a
+    ``py.typed`` marker (e.g. ``"massive"``); those are typed
+    ``ignore_missing_imports``, not ``ignore_errors``, and target the
+    third-party module — never ``feelies.*``.
+    """
+    raw = _PYPROJECT.read_bytes()
+    data: dict[str, Any] = tomllib.loads(raw.decode("utf-8"))
+
+    tool = data.get("tool", {})
+    mypy_section = tool.get("mypy", {})
+    overrides = mypy_section.get("overrides", [])
+
+    offenders: list[str] = []
+    for entry in overrides:
+        if not entry.get("ignore_errors"):
+            continue
+        modules = entry.get("module")
+        names: list[str] = (
+            [modules] if isinstance(modules, str)
+            else list(modules) if isinstance(modules, list)
+            else []
+        )
+        for name in names:
+            if isinstance(name, str) and name.startswith("feelies"):
+                offenders.append(name)
+
+    assert offenders == [], (
+        "gap-Z invariant violation: pyproject.toml re-introduced "
+        "``ignore_errors = true`` for the following ``feelies.*`` "
+        f"modules: {offenders}.  Tighten the modules to pass "
+        "``mypy --strict`` instead.  See workstream gap-Z notes in "
+        "docs/acceptance/v02_v03_matrix.md."
+    )

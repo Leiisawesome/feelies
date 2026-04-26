@@ -47,35 +47,16 @@ python_version = "3.12"
 
 # Acceptance Sweep — §18.3 #3 strict-mode scope (docs/acceptance/v02_v03_matrix.md).
 #
-# `strict = true` is the platform default and applies to every module
-# introduced or rewritten by Phases 1–5.1 (v0.2 + v0.3 — sensors,
-# composition, regime, layered alpha loader / signal-layer module /
-# portfolio-layer module / layer validator, signal regime gate,
-# horizon aggregator + signal engine, etc.).
-#
-# The override block below scopes-out a small set of pre-Phase-1.1
-# legacy modules whose strict-mode errors are pre-existing structural
-# debt unrelated to the v0.2/v0.3 contract.  These are tracked under
-# the future "type-tightening" workstream (gap-Z in the matrix) and
-# MUST NOT grow.  Adding a new module to this list requires a written
-# justification anchored to the matrix file.
-#
-# The corresponding acceptance test
-# (``tests/acceptance/test_mypy_strict_scope.py``) runs ``mypy``
-# against ``src/feelies`` and asserts a zero exit code, which closes
-# §18.3 #3 mechanically as long as this override list stays accurate.
-[[tool.mypy.overrides]]
-module = [
-    "feelies.bootstrap",
-    "feelies.execution.passive_limit_router",
-    "feelies.ingestion.massive_ingestor",
-    "feelies.ingestion.massive_normalizer",
-    "feelies.ingestion.massive_ws",
-    "feelies.kernel.orchestrator",
-    "feelies.storage.disk_event_cache",
-    "feelies.storage.memory_trade_journal",
-]
-ignore_errors = true
+# `strict = true` is the platform default and applies to **every**
+# module under `src/feelies/` — there are **no** per-module
+# `ignore_errors = true` overrides.  Workstream gap-Z (closed alongside
+# the v0.3 acceptance sweep follow-ups) eliminated the historical
+# 8-module override block by tightening the legacy modules in place;
+# the surviving acceptance test
+# (`tests/acceptance/test_mypy_strict_scope.py`) runs `mypy` against
+# `src/feelies` AND parses this file to assert that no future
+# `ignore_errors = true` block re-enters the project for any
+# `feelies.*` module without an explicit matrix amendment.
 
 [tool.ruff]
 target-version = "py312"

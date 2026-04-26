@@ -29,7 +29,9 @@ class InMemoryTradeJournal:
         start_ns: int | None = None,
         end_ns: int | None = None,
     ) -> Iterator[TradeRecord]:
-        _ts = lambda r: r.fill_timestamp_ns if r.fill_timestamp_ns is not None else float("inf")
+        def _ts(r: TradeRecord) -> float:
+            return float(r.fill_timestamp_ns) if r.fill_timestamp_ns is not None else float("inf")
+
         for rec in sorted(self._records, key=_ts):
             if symbol is not None and rec.symbol != symbol:
                 continue
