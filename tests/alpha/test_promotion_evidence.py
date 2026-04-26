@@ -26,6 +26,7 @@ import pytest
 from feelies.alpha.promotion_evidence import (
     EVIDENCE_SCHEMA_VERSION,
     GATE_EVIDENCE_REQUIREMENTS,
+    KIND_TO_TYPE,
     CapitalStageEvidence,
     CapitalStageTier,
     CPCVEvidence,
@@ -37,6 +38,7 @@ from feelies.alpha.promotion_evidence import (
     ResearchAcceptanceEvidence,
     RevalidationEvidence,
     evidence_to_metadata,
+    metadata_to_evidence,
     required_evidence_types,
     validate_capital_stage,
     validate_cpcv,
@@ -834,3 +836,183 @@ class TestGateThresholds:
         t = GateThresholds()
         with pytest.raises(FrozenInstanceError):
             t.paper_min_trading_days = 1  # type: ignore[misc]
+
+
+# ─────────────────────────────────────────────────────────────────────
+# KIND_TO_TYPE public mapping
+# ─────────────────────────────────────────────────────────────────────
+
+
+class TestKindToType:
+    def test_covers_every_evidence_kind(self) -> None:
+        expected = {
+            "research_acceptance",
+            "cpcv",
+            "dsr",
+            "paper_window",
+            "capital_stage",
+            "quarantine_trigger",
+            "revalidation",
+        }
+        assert set(KIND_TO_TYPE.keys()) == expected
+
+    def test_maps_kind_to_evidence_dataclass(self) -> None:
+        assert KIND_TO_TYPE["research_acceptance"] is ResearchAcceptanceEvidence
+        assert KIND_TO_TYPE["cpcv"] is CPCVEvidence
+        assert KIND_TO_TYPE["dsr"] is DSREvidence
+        assert KIND_TO_TYPE["paper_window"] is PaperWindowEvidence
+        assert KIND_TO_TYPE["capital_stage"] is CapitalStageEvidence
+        assert KIND_TO_TYPE["quarantine_trigger"] is QuarantineTriggerEvidence
+        assert KIND_TO_TYPE["revalidation"] is RevalidationEvidence
+
+
+# ─────────────────────────────────────────────────────────────────────
+# metadata_to_evidence (inverse of evidence_to_metadata)
+# ─────────────────────────────────────────────────────────────────────
+
+
+class TestMetadataToEvidence:
+    """Tests for the F-3-introduced reverse helper.
+
+    The forward direction (:func:`evidence_to_metadata`) is exhaustively
+    covered by :class:`TestEvidenceToMetadata`; here we focus on the
+    *inverse*: a metadata payload reconstructs into the same evidence
+    instance(s) the writer produced, schema-version mismatches are
+    refused, and unsupported kinds are surfaced.
+    """
+
+    def test_round_trip_preserves_research_acceptance(self) -> None:
+        original = _full_research_pass()
+        payload = evidence_to_metadata(original)
+        rebuilt = metadata_to_evidence(payload)
+        assert rebuilt == [original]
+
+    def test_round_trip_preserves_paper_cpcv_dsr(self) -> None:
+        originals = [
+            _full_paper_window_pass(),
+            _full_cpcv_pass(),
+            _full_dsr_pass(),
+        ]
+        payload = evidence_to_metadata(*originals)
+        rebuilt = metadata_to_evidence(payload)
+        assert sorted(
+            type(ev).__name__ for ev in rebuilt
+        ) == sorted(type(ev).__name__ for ev in originals)
+        for ev in originals:
+            assert ev in rebuilt
+
+    def test_round_trip_preserves_cpcv_tuple_field(self) -> None:
+        original = _full_cpcv_pass()
+        payload = evidence_to_metadata(original)
+        rebuilt = metadata_to_evidence(payload)
+        assert len(rebuilt) == 1
+        rebuilt_cpcv = rebuilt[0]
+        assert isinstance(rebuilt_cpcv, CPCVEvidence)
+        assert rebuilt_cpcv.fold_sharpes == original.fold_sharpes
+        assert isinstance(rebuilt_cpcv.fold_sharpes, tuple)
+
+    def test_round_trip_preserves_quarantine_trigger_tuples(self) -> None:
+        original = QuarantineTriggerEvidence(
+            net_alpha_negative_days=12,
+            hit_rate_residual_pp=-20.0,
+            microstructure_metrics_breached=("realized_vol", "spread_z"),
+            crowding_symptoms=("alpha_compression", "queue_lengthening"),
+            pnl_compression_ratio_5d=0.25,
+        )
+        payload = evidence_to_metadata(original)
+        rebuilt = metadata_to_evidence(payload)
+        assert len(rebuilt) == 1
+        rebuilt_qt = rebuilt[0]
+        assert isinstance(rebuilt_qt, QuarantineTriggerEvidence)
+        assert rebuilt_qt == original
+        assert isinstance(rebuilt_qt.microstructure_metrics_breached, tuple)
+        assert isinstance(rebuilt_qt.crowding_symptoms, tuple)
+
+    def test_round_trip_preserves_capital_stage_enum(self) -> None:
+        original = CapitalStageEvidence(
+            tier=CapitalStageTier.SCALED,
+            allocation_fraction=1.0,
+            deployment_days=30,
+            pnl_compression_ratio_realised=0.9,
+            slippage_residual_bps=1.5,
+            hit_rate_residual_pp=-1.0,
+            fill_rate_drift_pct=2.0,
+        )
+        payload = evidence_to_metadata(original)
+        rebuilt = metadata_to_evidence(payload)
+        assert len(rebuilt) == 1
+        rebuilt_cs = rebuilt[0]
+        assert isinstance(rebuilt_cs, CapitalStageEvidence)
+        assert rebuilt_cs == original
+        assert rebuilt_cs.tier is CapitalStageTier.SCALED
+
+    def test_no_schema_version_returns_empty_list(self) -> None:
+        # Legacy / non-evidence metadata (e.g. F-1-era quarantine
+        # entries that just carry {"reason": "..."}).
+        assert metadata_to_evidence({}) == []
+        assert metadata_to_evidence({"reason": "edge decay"}) == []
+        assert metadata_to_evidence(
+            {"evidence": {"paper_days": 30, "paper_sharpe": 1.5}}
+        ) == []
+
+    def test_mismatched_schema_version_rejected(self) -> None:
+        payload = evidence_to_metadata(_full_cpcv_pass())
+        payload["schema_version"] = "9.9.9"
+        with pytest.raises(ValueError, match="schema_version"):
+            metadata_to_evidence(payload)
+
+    def test_unknown_kind_rejected(self) -> None:
+        payload = evidence_to_metadata(_full_cpcv_pass())
+        payload["zzz_unknown_kind"] = {"foo": 1}
+        with pytest.raises(ValueError, match="unknown kind"):
+            metadata_to_evidence(payload)
+
+    def test_non_object_kind_payload_rejected(self) -> None:
+        with pytest.raises(ValueError, match="must be an object"):
+            metadata_to_evidence(
+                {
+                    "schema_version": EVIDENCE_SCHEMA_VERSION,
+                    "cpcv": "not-a-dict",
+                }
+            )
+
+    def test_non_mapping_input_rejected(self) -> None:
+        with pytest.raises(ValueError, match="expected a mapping"):
+            metadata_to_evidence([])  # type: ignore[arg-type]
+
+    def test_partial_payload_returns_only_present_kinds(self) -> None:
+        """If metadata carries CPCV but not DSR, the reconstructor
+        returns only the CPCV instance — it does not synthesise a
+        default DSR.  The validator at the next layer will report the
+        missing-required-type error."""
+        payload = evidence_to_metadata(_full_cpcv_pass())
+        rebuilt = metadata_to_evidence(payload)
+        assert len(rebuilt) == 1
+        assert isinstance(rebuilt[0], CPCVEvidence)
+
+    def test_replay_against_current_thresholds_passes(self) -> None:
+        """End-to-end: a metadata payload that originally passed the
+        gate still passes when re-validated through the dispatcher."""
+        evidences = [
+            _full_paper_window_pass(),
+            _full_cpcv_pass(),
+            _full_dsr_pass(),
+        ]
+        payload = evidence_to_metadata(*evidences)
+        rebuilt = metadata_to_evidence(payload)
+        assert validate_gate(GateId.PAPER_TO_LIVE, rebuilt) == []
+
+    def test_replay_with_tightened_threshold_fails(self) -> None:
+        """Tightening the platform's threshold causes previously-OK
+        evidence to fail re-validation — this is the audit value of
+        the CLI's ``replay-evidence`` subcommand."""
+        evidences = [
+            _full_paper_window_pass(),
+            _full_cpcv_pass(),
+            _full_dsr_pass(),
+        ]
+        payload = evidence_to_metadata(*evidences)
+        rebuilt = metadata_to_evidence(payload)
+        tighter = GateThresholds(dsr_min=2.0)
+        errors = validate_gate(GateId.PAPER_TO_LIVE, rebuilt, tighter)
+        assert any("DSR" in e for e in errors)

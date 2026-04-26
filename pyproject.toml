@@ -7,6 +7,18 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[project.scripts]
+# Operator command-line surface (Workstream F-3).
+#
+# `feelies promote ...` reads the append-only JSONL promotion-evidence
+# ledger written by `AlphaLifecycle` (see
+# src/feelies/alpha/promotion_ledger.py) and is read-only / forensic-only;
+# it never imports orchestrator or risk-engine production code, so
+# operator invocation cannot perturb replay determinism (audit A-DET-02).
+# `python -m feelies <subcommand>` resolves to the same dispatcher via
+# `feelies.cli.__main__`.
+feelies = "feelies.cli.main:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",

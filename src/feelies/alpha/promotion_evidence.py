@@ -960,6 +960,151 @@ def _evidence_to_jsonable(ev: object) -> dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────
+#   Inverse projection (metadata dict → evidence dataclasses)
+# ─────────────────────────────────────────────────────────────────────
+
+
+KIND_TO_TYPE: Mapping[str, _EvidenceType] = {
+    kind: ev_type for ev_type, kind in _KIND_BY_TYPE.items()
+}
+"""Public reverse mapping of :data:`_KIND_BY_TYPE`.
+
+Stable ``"kind"`` string → evidence dataclass type.  Used by
+:func:`metadata_to_evidence` (and by Workstream **F-3**'s
+``feelies promote replay-evidence`` CLI subcommand) to reconstruct
+typed evidence dataclasses from the JSON metadata persisted on a
+:class:`feelies.alpha.promotion_ledger.PromotionLedgerEntry`."""
+
+
+def _reconstruct_research_acceptance(
+    payload: Mapping[str, Any],
+) -> ResearchAcceptanceEvidence:
+    return ResearchAcceptanceEvidence(**payload)
+
+
+def _reconstruct_cpcv(payload: Mapping[str, Any]) -> CPCVEvidence:
+    fixed = dict(payload)
+    fixed["fold_sharpes"] = tuple(payload.get("fold_sharpes", ()))
+    return CPCVEvidence(**fixed)
+
+
+def _reconstruct_dsr(payload: Mapping[str, Any]) -> DSREvidence:
+    return DSREvidence(**payload)
+
+
+def _reconstruct_paper_window(
+    payload: Mapping[str, Any],
+) -> PaperWindowEvidence:
+    return PaperWindowEvidence(**payload)
+
+
+def _reconstruct_capital_stage(
+    payload: Mapping[str, Any],
+) -> CapitalStageEvidence:
+    fixed = dict(payload)
+    raw_tier = payload.get("tier", CapitalStageTier.SMALL_CAPITAL.value)
+    fixed["tier"] = CapitalStageTier(raw_tier)
+    return CapitalStageEvidence(**fixed)
+
+
+def _reconstruct_quarantine_trigger(
+    payload: Mapping[str, Any],
+) -> QuarantineTriggerEvidence:
+    fixed = dict(payload)
+    fixed["microstructure_metrics_breached"] = tuple(
+        payload.get("microstructure_metrics_breached", ())
+    )
+    fixed["crowding_symptoms"] = tuple(payload.get("crowding_symptoms", ()))
+    return QuarantineTriggerEvidence(**fixed)
+
+
+def _reconstruct_revalidation(
+    payload: Mapping[str, Any],
+) -> RevalidationEvidence:
+    return RevalidationEvidence(**payload)
+
+
+_RECONSTRUCTOR_BY_TYPE: Mapping[
+    _EvidenceType, Any
+] = {
+    ResearchAcceptanceEvidence: _reconstruct_research_acceptance,
+    CPCVEvidence: _reconstruct_cpcv,
+    DSREvidence: _reconstruct_dsr,
+    PaperWindowEvidence: _reconstruct_paper_window,
+    CapitalStageEvidence: _reconstruct_capital_stage,
+    QuarantineTriggerEvidence: _reconstruct_quarantine_trigger,
+    RevalidationEvidence: _reconstruct_revalidation,
+}
+
+
+def metadata_to_evidence(metadata: Mapping[str, Any]) -> list[object]:
+    """Reverse :func:`evidence_to_metadata`.
+
+    Reconstructs typed evidence dataclasses from a metadata payload
+    previously produced by :func:`evidence_to_metadata` (i.e. a dict
+    carrying ``"schema_version"`` plus zero or more
+    ``"kind": {field: value, ...}`` entries).
+
+    Returns the list of reconstructed evidence dataclass instances in
+    the canonical kind-iteration order of :data:`_KIND_BY_TYPE`.  An
+    empty list signals "the metadata has no F-2 evidence sections"
+    (e.g. a quarantine/decommission entry that only carries a free-form
+    ``reason``, or a legacy pre-F-2 entry with the loose
+    :class:`feelies.alpha.lifecycle.PromotionEvidence` shape).
+
+    Raises:
+      ValueError -- if ``schema_version`` is present but does not
+                    match :data:`EVIDENCE_SCHEMA_VERSION`, or if a
+                    recognised ``"kind"`` key carries a non-mapping
+                    payload, or if a kind is unknown.
+
+    Used by Workstream **F-3**'s ``feelies promote replay-evidence``
+    CLI subcommand to re-run :func:`validate_gate` against the
+    historical evidence with today's :class:`GateThresholds`.
+    """
+    if not isinstance(metadata, Mapping):
+        raise ValueError(
+            f"metadata_to_evidence expected a mapping, "
+            f"got {type(metadata).__name__!r}"
+        )
+
+    schema_version = metadata.get("schema_version")
+    if schema_version is None:
+        return []
+    if schema_version != EVIDENCE_SCHEMA_VERSION:
+        raise ValueError(
+            f"metadata schema_version {schema_version!r} does not match "
+            f"current EVIDENCE_SCHEMA_VERSION {EVIDENCE_SCHEMA_VERSION!r}"
+        )
+
+    evidences: list[object] = []
+    for ev_type, kind in _KIND_BY_TYPE.items():
+        if kind not in metadata:
+            continue
+        payload = metadata[kind]
+        if not isinstance(payload, Mapping):
+            raise ValueError(
+                f"metadata[{kind!r}] must be an object, got "
+                f"{type(payload).__name__!r}"
+            )
+        reconstruct = _RECONSTRUCTOR_BY_TYPE[ev_type]
+        evidences.append(reconstruct(payload))
+
+    unknown = sorted(
+        k
+        for k in metadata.keys()
+        if k != "schema_version" and k not in KIND_TO_TYPE
+    )
+    if unknown:
+        raise ValueError(
+            f"metadata carries unknown kind(s) {unknown}; supported kinds: "
+            f"{sorted(KIND_TO_TYPE.keys())}"
+        )
+
+    return evidences
+
+
+# ─────────────────────────────────────────────────────────────────────
 #   Construction-time invariant checks
 # ─────────────────────────────────────────────────────────────────────
 
@@ -1004,8 +1149,26 @@ def _check_validator_coverage() -> None:
                 )
 
 
+def _check_reconstructor_coverage() -> None:
+    """Enforce that every kind has a reconstructor (so
+    :func:`metadata_to_evidence` is closed over the same set of
+    evidence types as :func:`evidence_to_metadata`).
+    """
+    missing = sorted(
+        ev_type.__name__
+        for ev_type in _KIND_BY_TYPE.keys()
+        if ev_type not in _RECONSTRUCTOR_BY_TYPE
+    )
+    if missing:
+        raise RuntimeError(
+            "metadata_to_evidence is missing reconstructors for evidence "
+            f"types: {missing}"
+        )
+
+
 _check_matrix_completeness()
 _check_validator_coverage()
+_check_reconstructor_coverage()
 
 
 __all__ = (
@@ -1017,11 +1180,13 @@ __all__ = (
     "GATE_EVIDENCE_REQUIREMENTS",
     "GateId",
     "GateThresholds",
+    "KIND_TO_TYPE",
     "PaperWindowEvidence",
     "QuarantineTriggerEvidence",
     "ResearchAcceptanceEvidence",
     "RevalidationEvidence",
     "evidence_to_metadata",
+    "metadata_to_evidence",
     "required_evidence_types",
     "validate_capital_stage",
     "validate_cpcv",
