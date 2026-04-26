@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from feelies.alpha.lifecycle import (
@@ -13,6 +15,7 @@ from feelies.alpha.lifecycle import (
     check_paper_gate,
     check_revalidation_gate,
 )
+from feelies.alpha.promotion_ledger import PromotionLedger
 from feelies.core.clock import SimulatedClock
 
 
@@ -417,3 +420,198 @@ class TestAlphaLifecycle:
         lc.decommission("retired", correlation_id="c1")
         assert lc.state == AlphaLifecycleState.DECOMMISSIONED
         assert lc.is_active is False
+
+
+# ── Workstream F-1: PromotionLedger wiring ──────────────────────────────
+
+
+def _paper_evidence() -> PromotionEvidence:
+    return PromotionEvidence(
+        schema_valid=True,
+        determinism_test_passed=True,
+        feature_values_finite=True,
+    )
+
+
+def _live_evidence() -> PromotionEvidence:
+    return PromotionEvidence(
+        paper_days=60,
+        paper_sharpe=1.5,
+        paper_hit_rate=0.55,
+        paper_max_drawdown_pct=2.0,
+        cost_model_validated=True,
+    )
+
+
+def _revalidation_evidence() -> PromotionEvidence:
+    return PromotionEvidence(
+        determinism_test_passed=True,
+        revalidation_notes="re-audited; structural drivers intact",
+    )
+
+
+class TestAlphaLifecycleWithLedger:
+    """F-1: every successful transition is appended to the
+    promotion ledger; rejected transitions are NOT recorded."""
+
+    @pytest.fixture
+    def clock(self) -> SimulatedClock:
+        return SimulatedClock(start_ns=1_700_000_000_000_000_000)
+
+    @pytest.fixture
+    def ledger(self, tmp_path: Path) -> PromotionLedger:
+        return PromotionLedger(tmp_path / "promotion.jsonl")
+
+    def test_promote_to_paper_appends_one_entry(
+        self, clock: SimulatedClock, ledger: PromotionLedger
+    ) -> None:
+        lc = AlphaLifecycle(alpha_id="kyle", clock=clock, ledger=ledger)
+
+        errors = lc.promote_to_paper(
+            _paper_evidence(), correlation_id="corr-paper"
+        )
+
+        assert errors == []
+        entries = list(ledger.entries())
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry.alpha_id == "kyle"
+        assert entry.from_state == "RESEARCH"
+        assert entry.to_state == "PAPER"
+        assert entry.trigger == "pass_paper_gate"
+        assert entry.correlation_id == "corr-paper"
+        assert entry.timestamp_ns == clock.now_ns()
+        assert "evidence" in entry.metadata
+
+    def test_failed_promote_to_paper_does_not_write(
+        self, clock: SimulatedClock, ledger: PromotionLedger
+    ) -> None:
+        lc = AlphaLifecycle(alpha_id="kyle", clock=clock, ledger=ledger)
+
+        errors = lc.promote_to_paper(
+            PromotionEvidence(
+                schema_valid=False,
+                determinism_test_passed=True,
+                feature_values_finite=True,
+            )
+        )
+
+        assert errors  # gate rejected the promotion
+        assert lc.state == AlphaLifecycleState.RESEARCH
+        assert list(ledger.entries()) == []
+
+    def test_full_lifecycle_writes_one_entry_per_transition(
+        self, clock: SimulatedClock, ledger: PromotionLedger
+    ) -> None:
+        gate = GateRequirements(paper_min_days=1)
+        lc = AlphaLifecycle(
+            alpha_id="kyle",
+            clock=clock,
+            gate_requirements=gate,
+            ledger=ledger,
+        )
+
+        # 5 successful transitions:
+        # RESEARCH → PAPER → LIVE → QUARANTINED → PAPER → QUARANTINED
+        lc.promote_to_paper(_paper_evidence(), correlation_id="c1")
+        lc.promote_to_live(_live_evidence(), correlation_id="c2")
+        lc.quarantine("ic decayed", correlation_id="c3")
+        lc.revalidate_to_paper(_revalidation_evidence(), correlation_id="c4")
+        # need to walk back to LIVE before another quarantine works
+        lc.promote_to_live(_live_evidence(), correlation_id="c5")
+        lc.quarantine("ic decayed again", correlation_id="c6")
+
+        entries = list(ledger.entries())
+        assert len(entries) == 6
+        triggers = [e.trigger for e in entries]
+        assert triggers == [
+            "pass_paper_gate",
+            "pass_live_gate",
+            "edge_decay_detected",
+            "revalidation_passed",
+            "pass_live_gate",
+            "edge_decay_detected",
+        ]
+        correlation_ids = [e.correlation_id for e in entries]
+        assert correlation_ids == ["c1", "c2", "c3", "c4", "c5", "c6"]
+
+    def test_decommission_writes_with_reason(
+        self, clock: SimulatedClock, ledger: PromotionLedger
+    ) -> None:
+        gate = GateRequirements(paper_min_days=1)
+        lc = AlphaLifecycle(
+            alpha_id="kyle",
+            clock=clock,
+            gate_requirements=gate,
+            ledger=ledger,
+        )
+        lc.promote_to_paper(_paper_evidence())
+        lc.promote_to_live(_live_evidence())
+        lc.quarantine("decay")
+
+        lc.decommission("structural break", correlation_id="decom-1")
+
+        entries = list(ledger.entries())
+        assert entries[-1].to_state == "DECOMMISSIONED"
+        assert entries[-1].trigger == "decommissioned"
+        assert entries[-1].metadata.get("reason") == "structural break"
+        assert entries[-1].correlation_id == "decom-1"
+
+    def test_evidence_payload_preserved_in_ledger_metadata(
+        self, clock: SimulatedClock, ledger: PromotionLedger
+    ) -> None:
+        gate = GateRequirements(paper_min_days=1)
+        lc = AlphaLifecycle(
+            alpha_id="kyle",
+            clock=clock,
+            gate_requirements=gate,
+            ledger=ledger,
+        )
+        evidence = PromotionEvidence(
+            paper_days=42,
+            paper_sharpe=1.23,
+            paper_hit_rate=0.61,
+            paper_max_drawdown_pct=1.5,
+            cost_model_validated=True,
+        )
+        lc.promote_to_paper(_paper_evidence())
+        lc.promote_to_live(evidence)
+
+        live_entry = list(ledger.entries())[-1]
+        ev = live_entry.metadata["evidence"]
+        assert isinstance(ev, dict)
+        assert ev["paper_days"] == 42
+        assert ev["paper_sharpe"] == 1.23
+        assert ev["paper_hit_rate"] == 0.61
+        assert ev["paper_max_drawdown_pct"] == 1.5
+        assert ev["cost_model_validated"] is True
+
+    def test_no_ledger_means_no_writes_anywhere(
+        self, clock: SimulatedClock, tmp_path: Path
+    ) -> None:
+        # Backward-compat: without a ledger arg, the lifecycle behaves
+        # exactly as before — no on_transition callback registered, no
+        # filesystem side-effects.
+        lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
+        lc.promote_to_paper(_paper_evidence())
+
+        # tmp_path is empty: nothing was written under it
+        assert list(tmp_path.iterdir()) == []
+        # but the lifecycle still transitioned
+        assert lc.state == AlphaLifecycleState.PAPER
+
+    def test_failed_quarantine_via_illegal_state_does_not_write(
+        self, clock: SimulatedClock, ledger: PromotionLedger
+    ) -> None:
+        # Quarantining from RESEARCH is an illegal transition (raises
+        # IllegalTransition); the SM never invokes the callback, so the
+        # ledger remains empty.
+        from feelies.core.state_machine import IllegalTransition
+
+        lc = AlphaLifecycle(alpha_id="kyle", clock=clock, ledger=ledger)
+
+        with pytest.raises(IllegalTransition):
+            lc.quarantine("not allowed from research")
+
+        assert list(ledger.entries()) == []
+        assert lc.state == AlphaLifecycleState.RESEARCH

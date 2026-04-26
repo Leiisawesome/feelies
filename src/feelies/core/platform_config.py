@@ -207,6 +207,30 @@ class PlatformConfig:
     composition_max_universe_size: int = 50
     enforce_layer_gates: bool = True
 
+    # ── Workstream F-1 (promotion evidence ledger) ────────────────
+    #
+    # Optional path to an append-only JSONL ledger that records every
+    # committed alpha-lifecycle transition (RESEARCH→PAPER, PAPER→LIVE,
+    # LIVE→QUARANTINED, QUARANTINED→PAPER, QUARANTINED→DECOMMISSIONED).
+    # When ``None`` (default), no ledger is constructed and lifecycle
+    # transitions emit no forensic record (preserving Phase-1/2/3/4
+    # behaviour bit-identically).
+    #
+    # When set, ``bootstrap.build_platform`` instantiates a
+    # :class:`feelies.alpha.promotion_ledger.PromotionLedger` at this
+    # path, passes it to :class:`AlphaRegistry`, and every
+    # :class:`AlphaLifecycle` constructed by the registry registers a
+    # ``StateMachine.on_transition`` callback that appends a
+    # :class:`PromotionLedgerEntry` for each successful transition.
+    # Backtest deployments — which already disable per-alpha lifecycle
+    # tracking via ``registry_clock=None`` — leave the ledger file
+    # untouched (no transitions occur).
+    #
+    # The ledger is *forensic-only*: production code paths must NOT
+    # consume it for per-tick decisions.  See
+    # :mod:`feelies.alpha.promotion_ledger` for the consumer contract.
+    promotion_ledger_path: Path | None = None
+
     def validate(self) -> None:
         if not self.symbols:
             raise ConfigurationError("symbols must be non-empty")
@@ -448,6 +472,15 @@ class PlatformConfig:
             "composition_lambda_risk": self.composition_lambda_risk,
             "composition_max_universe_size": self.composition_max_universe_size,
             "enforce_layer_gates": self.enforce_layer_gates,
+            # Workstream F-1: ledger path is folded as a basename only
+            # (same Path-normalisation policy as event_log_path /
+            # cache_dir) so absolute-fs paths don't leak into the
+            # config checksum and break two-run determinism (A-DET-02).
+            "promotion_ledger_path": (
+                self.promotion_ledger_path.name
+                if self.promotion_ledger_path
+                else None
+            ),
         }
 
     @classmethod
@@ -655,6 +688,11 @@ class PlatformConfig:
             ),
             enforce_layer_gates=bool(
                 data.get("enforce_layer_gates", True)
+            ),
+            promotion_ledger_path=(
+                Path(data["promotion_ledger_path"])
+                if data.get("promotion_ledger_path")
+                else None
             ),
         )
 

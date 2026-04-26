@@ -84,6 +84,7 @@ this matrix before claiming "v0.2 is done" or "v0.3 is done."
 | `enforce_trend_mechanism: true` flip | Held until ≥3 reference alphas (one per non-stress family) have shipped under strict mode in research/paper trading per §20.12.1. Workstream **E**. |
 | Universe scaling | Workstream **B**; depends on a green sweep matrix as its launch precondition. |
 | CPCV + DSR promotion gate | Workstream **C**; depends on the strategy promotion pipeline (workstream F). |
+| Strategy promotion pipeline | Workstream **F**; full Research → Paper → Small Capital → Scaled Deployment ladder per the testing-validation skill. **F-1 IN PROGRESS** — `src/feelies/alpha/promotion_ledger.py` adds an append-only JSONL evidence ledger that records every committed lifecycle transition (RESEARCH→PAPER, PAPER→LIVE, LIVE→QUARANTINED, QUARANTINED→PAPER, QUARANTINED→DECOMMISSIONED) with the full evidence dict, trigger, clock-derived timestamp, and correlation_id; wired into `AlphaLifecycle` via a `StateMachine.on_transition` callback so a ledger-write failure atomically rolls back the lifecycle transition (Inv-13 provenance + Inv-11 fail-safe), threaded through `AlphaRegistry`, and constructed from the new optional `PlatformConfig.promotion_ledger_path` field at bootstrap. Forensic-only consumer contract — production code paths must never read the ledger to make per-tick decisions, so replay determinism (audit A-DET-02) is preserved. F-2 (gate-catalog reconciliation), F-3 (statistical RESEARCH→PAPER gates: OOS Sharpe, DSR, bootstrap-p), F-4 (`promotion:` block in YAML / `lifecycle:` block in alpha specs), F-5 (operator CLI), and F-6 (demote / Small-Capital stage) tracked separately. |
 | Pre-existing strict-mode errors in legacy `src/feelies/` modules | **COMPLETE** as workstream **gap-Z**. The 8-module `[[tool.mypy.overrides]] ignore_errors = true` block has been deleted from `pyproject.toml`; `bootstrap`, `execution.passive_limit_router`, `ingestion.massive_ingestor`, `ingestion.massive_normalizer`, `ingestion.massive_ws`, `kernel.orchestrator`, `storage.disk_event_cache`, and `storage.memory_trade_journal` were tightened in place (27 errors fixed: missing generic type-args on `dict[...]` / `tuple[...]`, `Returning Any` from typed `bool` functions, `Decimal | None` fed to non-optional `OrderAck.fees`, `NBBOQuote | Trade` union-rebind in `MassiveNormalizer.normalize_ws`, `Position` forward-ref imported under `TYPE_CHECKING` in `_PostExitPositionView`, the `ws: object` parameter on `MassiveLiveFeed._authenticate` / `_subscribe` / `_consume` typed `Any` with documented rationale, the `BacktestOrderRouter` / `PassiveLimitOrderRouter` `tuple[...]` return-type widened upfront, and the `massive` library import marked `# type: ignore[import-untyped]` to suppress the missing-`py.typed` warning). The companion test `tests/acceptance/test_mypy_strict_scope.py` now contains a second test, `test_no_strict_overrides_in_pyproject`, which parses `pyproject.toml` and fails if any future commit re-introduces an `ignore_errors = true` override targeting a `feelies.*` module — locking the no-overrides invariant alongside the existing "mypy --strict clean" assertion. |
 
 ---
@@ -93,19 +94,15 @@ this matrix before claiming "v0.2 is done" or "v0.3 is done."
 The most recent run of the §11 Definition-of-Done checklist is recorded
 below.  Re-record by re-running each command and updating the lines.
 
-- Last verified: 2026-04-26 (gap-Z close — strict-everywhere)
-- Pytest (`-m "not slow"`): **1816 passed, 6 skipped, 11 deselected**
-  (0:01:06)
-- Pytest acceptance suite (`tests/acceptance`): **40 passed** (5.12s)
-- Pytest slow excl. perf (`-m slow --ignore=tests/perf`): **4 passed,
-  1 skipped, 1821 deselected** (6.73s)
-- Coverage (`pytest --cov=feelies --cov-report=term -m "not slow"`):
-  **82.80%** (≥ 80% gate met)
+- Last verified: 2026-04-26 (workstream F-1 — promotion evidence ledger)
+- Pytest (`-m "not slow"`): **1460 passed, 3 skipped, 6 deselected**
+  (0:00:49)
 - Ruff (`ruff check src/ tests/ scripts/`): **All checks passed**
 - Mypy strict (`mypy --no-incremental src/feelies`):
-  **Success: no issues found in 126 source files** (no per-module
+  **Success: no issues found in 127 source files** (no per-module
   `ignore_errors` overrides — gap-Z closed; locked by
-  `tests/acceptance/test_mypy_strict_scope.py::test_no_strict_overrides_in_pyproject`)
+  `tests/acceptance/test_mypy_strict_scope.py::test_no_strict_overrides_in_pyproject`;
+  +1 module: `feelies.alpha.promotion_ledger`)
 - Locked parity baselines (legacy/signal/horizon-snapshot/sized-intent/
   sized-intent-with-decay/portfolio-order/regime-hazard/hazard-exit/
   sensor-reading): **30 passed** (2.97s)

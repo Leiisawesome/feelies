@@ -58,6 +58,7 @@ from feelies.alpha.portfolio_layer_module import (
     LoadedPortfolioLayerModule,
     _DefaultPortfolioConstructor,
 )
+from feelies.alpha.promotion_ledger import PromotionLedger
 from feelies.alpha.registry import AlphaRegistry
 from feelies.alpha.risk_wrapper import AlphaBudgetRiskWrapper
 from feelies.alpha.signal_layer_module import LoadedSignalLayerModule
@@ -156,7 +157,15 @@ def build_platform(
     regime_engine = _create_regime_engine(config.regime_engine)
 
     registry_clock = None if config.mode == OperatingMode.BACKTEST else clock
-    registry = AlphaRegistry(clock=registry_clock)
+    promotion_ledger = (
+        PromotionLedger(config.promotion_ledger_path)
+        if config.promotion_ledger_path is not None
+        else None
+    )
+    registry = AlphaRegistry(
+        clock=registry_clock,
+        promotion_ledger=promotion_ledger,
+    )
     loader = AlphaLoader(
         regime_engine=regime_engine,
         enforce_trend_mechanism=config.enforce_trend_mechanism,

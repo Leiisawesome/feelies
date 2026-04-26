@@ -30,6 +30,7 @@ from feelies.alpha.lifecycle import (
     PromotionEvidence,
 )
 from feelies.alpha.module import AlphaModule
+from feelies.alpha.promotion_ledger import PromotionLedger
 from feelies.alpha.validation import validate_alpha_set
 from feelies.core.clock import Clock
 from feelies.features.definition import FeatureDefinition
@@ -70,11 +71,13 @@ class AlphaRegistry:
         self,
         clock: Clock | None = None,
         gate_requirements: GateRequirements | None = None,
+        promotion_ledger: PromotionLedger | None = None,
     ) -> None:
         self._alphas: dict[str, AlphaModule] = {}
         self._lifecycles: dict[str, AlphaLifecycle] = {}
         self._clock = clock
         self._gate_requirements = gate_requirements
+        self._promotion_ledger = promotion_ledger
         self._feature_cache: list[FeatureDefinition] | None = None
 
     def register(self, alpha: AlphaModule) -> None:
@@ -107,6 +110,7 @@ class AlphaRegistry:
                 alpha_id=alpha_id,
                 clock=self._clock,
                 gate_requirements=self._gate_requirements,
+                ledger=self._promotion_ledger,
             )
         self._feature_cache = None
 
@@ -385,6 +389,18 @@ class AlphaRegistry:
             alpha_id: lc.state
             for alpha_id, lc in self._lifecycles.items()
         }
+
+    @property
+    def promotion_ledger(self) -> PromotionLedger | None:
+        """The :class:`PromotionLedger` shared across all registered
+        alphas, or ``None`` when forensic ledgering is disabled.
+
+        Workstream F-1: read-only accessor for downstream tooling
+        (operator CLI, audit reports, CPCV+DSR gate in workstream C)
+        that needs to inspect committed transitions without holding a
+        direct reference to the bootstrap-side ledger instance.
+        """
+        return self._promotion_ledger
 
     # ── Dunder methods ────────────────────────────────────────
 

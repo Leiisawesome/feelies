@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from feelies.alpha.lifecycle import AlphaLifecycleState, GateRequirements, PromotionEvidence
 from feelies.alpha.module import AlphaManifest, AlphaRiskBudget
+from feelies.alpha.promotion_ledger import PromotionLedger
 from feelies.alpha.registry import AlphaRegistry, AlphaRegistryError
 from feelies.core.clock import SimulatedClock
 from feelies.features.definition import FeatureDefinition, WarmUpSpec
@@ -356,3 +359,161 @@ class TestAlphaRegistryLifecycle:
         errors = registry.promote("mock_alpha", live_evidence)
         assert len(errors) == 1
         assert "cannot be promoted" in errors[0]
+
+
+class TestAlphaRegistryWithPromotionLedger:
+    """Workstream F-1: registry passes the promotion ledger through to
+    every constructed lifecycle, so transitions made via the registry
+    surface in the durable JSONL audit trail."""
+
+    @pytest.fixture
+    def clock(self) -> SimulatedClock:
+        return SimulatedClock(start_ns=1_700_000_000_000_000_000)
+
+    @pytest.fixture
+    def ledger(self, tmp_path: Path) -> PromotionLedger:
+        return PromotionLedger(tmp_path / "promotion.jsonl")
+
+    def test_default_registry_has_no_ledger(
+        self, clock: SimulatedClock
+    ) -> None:
+        registry = AlphaRegistry(clock=clock)
+        assert registry.promotion_ledger is None
+
+    def test_ledger_passed_in_is_exposed(
+        self, clock: SimulatedClock, ledger: PromotionLedger
+    ) -> None:
+        registry = AlphaRegistry(clock=clock, promotion_ledger=ledger)
+        assert registry.promotion_ledger is ledger
+
+    def test_promote_via_registry_writes_to_ledger(
+        self,
+        clock: SimulatedClock,
+        ledger: PromotionLedger,
+        mock_alpha: MockAlpha,
+    ) -> None:
+        gate = GateRequirements(paper_min_days=1, paper_min_sharpe=0.0)
+        registry = AlphaRegistry(
+            clock=clock,
+            gate_requirements=gate,
+            promotion_ledger=ledger,
+        )
+        registry.register(mock_alpha)
+
+        paper_evidence = PromotionEvidence(
+            schema_valid=True,
+            determinism_test_passed=True,
+            feature_values_finite=True,
+        )
+        errors = registry.promote(
+            "mock_alpha", paper_evidence, correlation_id="reg-1"
+        )
+
+        assert errors == []
+        entries = list(ledger.entries())
+        assert len(entries) == 1
+        assert entries[0].alpha_id == "mock_alpha"
+        assert entries[0].to_state == "PAPER"
+        assert entries[0].correlation_id == "reg-1"
+
+    def test_quarantine_and_decommission_via_registry_write_ledger(
+        self,
+        clock: SimulatedClock,
+        ledger: PromotionLedger,
+        mock_alpha: MockAlpha,
+    ) -> None:
+        gate = GateRequirements(paper_min_days=1, paper_min_sharpe=0.0)
+        registry = AlphaRegistry(
+            clock=clock,
+            gate_requirements=gate,
+            promotion_ledger=ledger,
+        )
+        registry.register(mock_alpha)
+        registry.promote(
+            "mock_alpha",
+            PromotionEvidence(
+                schema_valid=True,
+                determinism_test_passed=True,
+                feature_values_finite=True,
+            ),
+        )
+        registry.promote(
+            "mock_alpha",
+            PromotionEvidence(
+                paper_days=10,
+                paper_sharpe=1.0,
+                paper_hit_rate=0.55,
+                paper_max_drawdown_pct=0.0,
+                cost_model_validated=True,
+            ),
+        )
+        registry.quarantine("mock_alpha", "ic decay", correlation_id="q-1")
+        registry.decommission("mock_alpha", "retired", correlation_id="d-1")
+
+        triggers = [e.trigger for e in ledger.entries()]
+        assert triggers == [
+            "pass_paper_gate",
+            "pass_live_gate",
+            "edge_decay_detected",
+            "decommissioned",
+        ]
+        decom = ledger.latest_for("mock_alpha")
+        assert decom is not None
+        assert decom.metadata.get("reason") == "retired"
+        assert decom.correlation_id == "d-1"
+
+    def test_failed_promotion_does_not_write_to_ledger(
+        self,
+        clock: SimulatedClock,
+        ledger: PromotionLedger,
+        mock_alpha: MockAlpha,
+    ) -> None:
+        registry = AlphaRegistry(
+            clock=clock,
+            promotion_ledger=ledger,
+        )
+        registry.register(mock_alpha)
+
+        errors = registry.promote(
+            "mock_alpha",
+            PromotionEvidence(
+                schema_valid=False,  # gate will reject
+                determinism_test_passed=True,
+                feature_values_finite=True,
+            ),
+        )
+
+        assert errors  # rejected
+        assert list(ledger.entries()) == []
+
+    def test_two_alphas_share_one_ledger(
+        self,
+        clock: SimulatedClock,
+        ledger: PromotionLedger,
+    ) -> None:
+        gate = GateRequirements(paper_min_days=1, paper_min_sharpe=0.0)
+        registry = AlphaRegistry(
+            clock=clock,
+            gate_requirements=gate,
+            promotion_ledger=ledger,
+        )
+        # Build two distinct alphas
+        a = MockAlpha(alpha_id="alpha_a")
+        b = MockAlpha(alpha_id="alpha_b")
+        registry.register(a)
+        registry.register(b)
+
+        ev = PromotionEvidence(
+            schema_valid=True,
+            determinism_test_passed=True,
+            feature_values_finite=True,
+        )
+        registry.promote("alpha_a", ev, correlation_id="a-1")
+        registry.promote("alpha_b", ev, correlation_id="b-1")
+
+        a_entries = list(ledger.entries_for("alpha_a"))
+        b_entries = list(ledger.entries_for("alpha_b"))
+        assert len(a_entries) == 1
+        assert len(b_entries) == 1
+        assert a_entries[0].correlation_id == "a-1"
+        assert b_entries[0].correlation_id == "b-1"

@@ -252,6 +252,40 @@ backtest_fill_latency_ns: 9999
         snap = cfg.snapshot()
         assert snap.data["backtest_fill_latency_ns"] == 9999
 
+    def test_promotion_ledger_path_default_is_none(self, tmp_path: Path) -> None:
+        # Workstream F-1: omitted key defaults to None (preserves bit-identical
+        # snapshot for legacy configs that never set the field).
+        yaml_content = """\
+symbols: [AAPL]
+alpha_specs: [x.yaml]
+"""
+        (tmp_path / "config.yaml").write_text(yaml_content)
+        cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
+        assert cfg.promotion_ledger_path is None
+        assert cfg.snapshot().data["promotion_ledger_path"] is None
+
+    def test_promotion_ledger_path_from_yaml(self, tmp_path: Path) -> None:
+        yaml_content = """\
+symbols: [AAPL]
+alpha_specs: [x.yaml]
+promotion_ledger_path: data/promotion/ledger.jsonl
+"""
+        (tmp_path / "config.yaml").write_text(yaml_content)
+        cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
+        assert cfg.promotion_ledger_path == Path("data/promotion/ledger.jsonl")
+
+    def test_promotion_ledger_path_basename_in_snapshot(self) -> None:
+        # Path-based fields are normalised to their basename in the
+        # snapshot to keep config checksums stable across machines
+        # (audit A-DET-02 / B-PROMO-04).
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            promotion_ledger_path=Path("/tmp/abs/path/promotion/ledger.jsonl"),
+        )
+        snap = cfg.snapshot()
+        assert snap.data["promotion_ledger_path"] == "ledger.jsonl"
+
 
 # ── Configuration protocol compliance ──────────────────────────────
 
