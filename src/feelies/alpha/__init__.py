@@ -62,6 +62,7 @@ from feelies.alpha.module import (
 )
 from feelies.alpha.promotion_evidence import (
     GATE_EVIDENCE_REQUIREMENTS,
+    KIND_TO_TYPE,
     CapitalStageEvidence,
     CapitalStageTier,
     CPCVEvidence,
@@ -73,6 +74,7 @@ from feelies.alpha.promotion_evidence import (
     ResearchAcceptanceEvidence,
     RevalidationEvidence,
     evidence_to_metadata,
+    metadata_to_evidence,
     required_evidence_types,
     validate_gate,
 )
@@ -108,7 +110,9 @@ __all__ = [
     "GateRequirements",
     "GateThresholds",
     "IntentSet",
+    "KIND_TO_TYPE",
     "load_and_register",
+    "metadata_to_evidence",
     "PaperWindowEvidence",
     "ParameterDef",
     "PromotionEvidence",

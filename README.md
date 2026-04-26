@@ -110,6 +110,7 @@ feelies/
 │   ├── forensics/                # Multi-horizon attribution, post-trade analysis
 │   ├── research/                 # Experiment tracking, hypothesis management
 │   ├── services/                 # Regime engine + regime-hazard detector
+│   ├── cli/                      # Operator CLI (`feelies promote ...` ledger forensics)
 │   └── bootstrap.py              # One-call platform composition from config
 ├── alphas/                       # Alpha strategy specs
 │   ├── SCHEMA.md                 # YAML schema reference (1.1)
@@ -209,6 +210,48 @@ ordered event stream at each layer) for verifying replay reproducibility
 across environments. The platform locks five parity baselines —
 sensors, snapshots, signals, sized intents, and hazard exits — under
 `tests/determinism/`.
+
+## Operator CLI
+
+The `feelies` console-script (registered via `[project.scripts]` in
+`pyproject.toml`; equivalently reachable as `python -m feelies` or
+`python -m feelies.cli`) is the read-only operator surface for the
+append-only **promotion-evidence ledger** (`src/feelies/alpha/promotion_ledger.py`)
+written by `AlphaLifecycle` on every committed lifecycle transition.
+
+```bash
+# Per-alpha chronological timeline (text or JSON)
+feelies promote inspect kyle_drift_v1 --ledger ./var/promotion_ledger.jsonl
+feelies promote inspect kyle_drift_v1 --config platform.yaml --json
+
+# Every alpha in the ledger + current state + transition count
+feelies promote list --config platform.yaml
+
+# Re-run the F-2 gate matrix against every recorded F-2-shaped evidence
+# package (legacy reason-only metadata is reported as SKIPPED).
+# Exit code 3 if any gate now fails today's GateThresholds.
+feelies promote replay-evidence kyle_drift_v1 --config platform.yaml
+
+# Preflight the ledger file (parse + LEDGER_SCHEMA_VERSION check)
+feelies promote validate --ledger ./var/promotion_ledger.jsonl
+
+# Render the F-2 declarative gate matrix
+feelies promote gate-matrix --json
+```
+
+All subcommands accept `--ledger PATH` (explicit) or `--config PATH`
+(loads a `PlatformConfig` and resolves its `promotion_ledger_path`),
+and `--json` for stable machine-readable output.
+
+Exit codes are pinned for CI integration: `0` OK, `1` user error
+(missing args / non-existent file / config without
+`promotion_ledger_path`), `2` data error (corrupt ledger / malformed
+YAML / schema-version mismatch), `3` validation failure
+(replay-evidence found gate violations).
+
+The CLI is **read-only and forensic-only** — it never writes to the
+ledger and never imports orchestrator / risk-engine production code, so
+operator invocation cannot perturb replay determinism (audit A-DET-02).
 
 ## Writing an Alpha
 
