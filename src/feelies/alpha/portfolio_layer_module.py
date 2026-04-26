@@ -12,6 +12,17 @@ Phase-4 surface exposing the universe, decision horizon,
 mechanism-consumes whitelist, and ``construct`` callable consumed by
 the composition engine.
 
+PR-2b-iii (this commit) adds the ``depends_on_signals`` attribute to
+the surface (it was parsed from the manifest by the loader but
+discarded prior to this PR).  The orchestrator's bus-driven ``Signal``
+subscriber (``_on_bus_signal``) reads this list across every
+registered PORTFOLIO at boot and uses it to **skip** translating
+those upstream SIGNAL alphas' ``Signal`` events into ``OrderRequest``
+events — they are aggregated through ``CompositionEngine`` and emerge
+as ``SizedPositionIntent`` events instead (PR-2b-iv will translate
+intents into orders).  Translating them through both paths would
+double-trade (Inv-11: prefer no order over duplicate orders).
+
 The default canonical implementation runs the engine's *default
 pipeline* (ranker → neutralizer → matcher → optimizer) with the
 alpha's declared parameters.  Custom alphas may override
@@ -55,6 +66,7 @@ class LoadedPortfolioLayerModule:
         "_consumes_mechanisms",
         "_max_share_of_gross",
         "_factor_neutralization_disclosed",
+        "_depends_on_signals",
         "_params",
     )
 
@@ -68,6 +80,7 @@ class LoadedPortfolioLayerModule:
         consumes_mechanisms: tuple[TrendMechanism, ...],
         max_share_of_gross: float,
         factor_neutralization_disclosed: bool,
+        depends_on_signals: tuple[str, ...],
         params: Mapping[str, Any],
     ) -> None:
         self._manifest = manifest
@@ -79,6 +92,7 @@ class LoadedPortfolioLayerModule:
         self._factor_neutralization_disclosed = bool(
             factor_neutralization_disclosed
         )
+        self._depends_on_signals = tuple(depends_on_signals)
         self._params = dict(params)
 
     # ── AlphaModule protocol ─────────────────────────────────────────
@@ -126,6 +140,19 @@ class LoadedPortfolioLayerModule:
     @property
     def factor_neutralization_disclosed(self) -> bool:
         return self._factor_neutralization_disclosed
+
+    @property
+    def depends_on_signals(self) -> tuple[str, ...]:
+        """SIGNAL alpha_ids whose ``Signal`` events feed this PORTFOLIO.
+
+        Consumed by the orchestrator's PR-2b-iii Signal-bus subscriber to
+        skip translating these alphas' Signals into ``OrderRequest`` events
+        — they are aggregated through ``CompositionEngine`` and emerge as
+        ``SizedPositionIntent`` events instead (PR-2b-iv will translate
+        intents into orders).  Translating them through both paths would
+        double-trade (Inv-11).
+        """
+        return self._depends_on_signals
 
     @property
     def params(self) -> Mapping[str, Any]:

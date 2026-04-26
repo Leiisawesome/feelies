@@ -10,6 +10,18 @@ themselves (``CompositeFeatureEngine``, ``CompositeSignalEngine``,
 surviving loaded-module types (the other being
 :class:`feelies.alpha.portfolio_layer_module.LoadedPortfolioLayerModule`).
 
+PR-2b-iii (this commit) wired the **first production-reachable
+Signal → Order pipeline** by adding a bus-driven ``Signal`` subscriber
+on the ``Orchestrator`` (``_on_bus_signal``) that buffers
+``Signal(layer="SIGNAL")`` events emitted by
+:class:`feelies.signals.horizon_engine.HorizonSignalEngine` and feeds
+the M4 ``SIGNAL_EVALUATE`` drain — turning every ``LoadedSignalLayerModule``
+that fires a Signal at a horizon boundary into an actual
+``OrderRequest`` (subject to risk / intent translation), unless the
+alpha is referenced by some PORTFOLIO's ``depends_on_signals`` (in
+which case ``CompositionEngine`` aggregates it into a
+``SizedPositionIntent`` instead, to be wired to orders by PR-2b-iv).
+
 This module:
 
 * Declares **no inline features** — Layer-2 alphas consume Layer-1
@@ -18,9 +30,11 @@ This module:
 * Implements ``AlphaModule.evaluate(features)`` as a deterministic
   ``None``.  Post-D.2 PR-2b-ii the protocol method survives only as
   test scaffolding for the orchestrator's gated single-alpha
-  pipeline; the actual evaluation runs in
+  pipeline; the actual production evaluation runs in
   :class:`feelies.signals.horizon_engine.HorizonSignalEngine` on
-  :class:`feelies.core.events.HorizonFeatureSnapshot` events.
+  :class:`feelies.core.events.HorizonFeatureSnapshot` events, and the
+  emitted ``Signal`` is consumed by the orchestrator's PR-2b-iii bus
+  subscriber.
 * Exposes the SIGNAL-specific surface (the compiled
   :class:`feelies.signals.horizon_protocol.HorizonSignal` callable, the
   :class:`feelies.signals.regime_gate.RegimeGate` instance, the

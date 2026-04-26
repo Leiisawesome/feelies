@@ -693,7 +693,7 @@ class AlphaLoader:
 
         horizon_seconds = self._parse_horizon_seconds(spec, source)
         universe = self._parse_universe(spec, source)
-        _depends_on_signals = self._parse_depends_on_signals(spec, source)
+        depends_on_signals = self._parse_depends_on_signals(spec, source)
 
         try:
             cost_arith = CostArithmetic.from_spec(
@@ -787,6 +787,7 @@ class AlphaLoader:
             factor_neutralization_disclosed=bool(
                 spec.get("factor_neutralization", False)
             ),
+            depends_on_signals=depends_on_signals,
             params=params,
         )
 
