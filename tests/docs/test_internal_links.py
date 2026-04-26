@@ -69,6 +69,11 @@ _PLACEHOLDER_PATH_TOKENS: frozenset[str] = frozenset({
     # SCHEMA.md flat-vs-nested layout illustration:
     "alphas/my_alpha.alpha.yaml",
     "alphas/my_alpha/my_alpha.alpha.yaml",
+    # Workstream F-5 migration cookbook §11.5 worked example —
+    # forward-looking placeholder filename for an operator's
+    # research-grade alpha YAML carrying a stricter ``promotion:``
+    # block.
+    "alphas/my_research_alpha.alpha.yaml",
     # hypothesis_reasoning.md mutation example (forward-looking
     # successor file the operator would create on a real mutation):
     "alphas/pofi_benign_midcap_v2/pofi_benign_midcap_v2.alpha.yaml",

@@ -231,6 +231,35 @@ class PlatformConfig:
     # :mod:`feelies.alpha.promotion_ledger` for the consumer contract.
     promotion_ledger_path: Path | None = None
 
+    # ── Workstream F-5 (per-platform gate-threshold overrides) ─────
+    #
+    # Optional flat-key mapping of
+    # :class:`feelies.alpha.promotion_evidence.GateThresholds` field
+    # names to override values applied on top of the skill-pinned
+    # defaults at bootstrap time.  Per-alpha overrides declared in the
+    # ``promotion: { gate_thresholds: ... }`` block of an
+    # ``.alpha.yaml`` are then layered on top of *this* result by
+    # :class:`feelies.alpha.registry.AlphaRegistry`.
+    #
+    # Layering precedence (lowest to highest):
+    #
+    #   1. ``GateThresholds()`` skill-pinned defaults
+    #      (``promotion_evidence.py``).
+    #   2. ``platform.yaml :: gate_thresholds`` (this field).
+    #   3. ``<alpha>.alpha.yaml :: promotion.gate_thresholds``
+    #      (manifest-level).
+    #
+    # An empty dict (default) means "no platform overrides; pure
+    # skill-pinned defaults are used everywhere except where a
+    # per-alpha override applies".
+    #
+    # Keys are *not* validated at config-construction time — the
+    # validator is invoked from
+    # :func:`feelies.bootstrap.build_platform` so YAML errors surface
+    # at bootstrap with a single error class
+    # (:class:`feelies.core.errors.ConfigurationError`).
+    gate_thresholds_overrides: dict[str, Any] = field(default_factory=dict)
+
     def validate(self) -> None:
         if not self.symbols:
             raise ConfigurationError("symbols must be non-empty")
@@ -481,6 +510,9 @@ class PlatformConfig:
                 if self.promotion_ledger_path
                 else None
             ),
+            "gate_thresholds_overrides": dict(
+                sorted(self.gate_thresholds_overrides.items())
+            ),
         }
 
     @classmethod
@@ -694,7 +726,53 @@ class PlatformConfig:
                 if data.get("promotion_ledger_path")
                 else None
             ),
+            gate_thresholds_overrides=cls._parse_gate_thresholds_block(
+                data.get("gate_thresholds"), source=path
+            ),
         )
+
+    @staticmethod
+    def _parse_gate_thresholds_block(
+        block: Any, *, source: Path,
+    ) -> dict[str, Any]:
+        """Parse the optional top-level ``gate_thresholds:`` YAML block.
+
+        Workstream F-5 platform-level override entry-point.  The
+        block, when present, must be a mapping whose keys correspond
+        to fields of
+        :class:`feelies.alpha.promotion_evidence.GateThresholds`.
+        Per-key validation + type coercion is delegated to
+        :func:`feelies.alpha.promotion_evidence.parse_gate_thresholds_overrides`
+        — failures are re-raised as
+        :class:`~feelies.core.errors.ConfigurationError` so the
+        operator sees a single error class for every YAML parse
+        failure under this loader.
+
+        Returns an empty dict when the block is absent or empty.
+        """
+        if block is None:
+            return {}
+        if not isinstance(block, dict):
+            raise ConfigurationError(
+                f"{source}: 'gate_thresholds' must be a mapping, got "
+                f"{type(block).__name__}"
+            )
+        if not block:
+            return {}
+
+        # Imported lazily to avoid a hard dependency cycle between
+        # core.platform_config and alpha.promotion_evidence at import
+        # time (alpha modules import core.events / core.config).
+        from feelies.alpha.promotion_evidence import (
+            parse_gate_thresholds_overrides,
+        )
+
+        try:
+            return parse_gate_thresholds_overrides(block)
+        except ValueError as exc:
+            raise ConfigurationError(
+                f"{source}: gate_thresholds: {exc}"
+            ) from exc
 
     @staticmethod
     def _parse_sensor_spec(entry: Any, *, source: Path) -> SensorSpec:

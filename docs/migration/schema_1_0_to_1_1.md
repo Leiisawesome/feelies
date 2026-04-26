@@ -23,7 +23,7 @@
 > Phase-4 PORTFOLIO layer, and the Phase-4.1 decay/hazard extensions
 > when the operator is ready.
 >
-> **Deprecation timeline:** see §11.
+> **Deprecation timeline:** see §12.
 
 ---
 
@@ -39,7 +39,8 @@
 8. Authoring a PORTFOLIO alpha (Phase 4)
 9. Hazard exits (Phase 4.1)
 10. v0.3 opt-in cookbook — `trend_mechanism` + `enforce_trend_mechanism`
-11. Deprecation timeline & sunset
+11. Per-alpha promotion overrides — `promotion.gate_thresholds:` (Workstream F-5)
+12. Deprecation timeline & sunset
 
 ---
 
@@ -517,7 +518,133 @@ review.
 
 ---
 
-## 11. Deprecation timeline & sunset
+## 11. Per-alpha promotion overrides — `promotion.gate_thresholds:` (Workstream F-5)
+
+Workstream **F-5** introduces the optional `promotion:` block in
+alpha YAML so per-alpha thresholds can override the platform default
+`GateThresholds` consumed by `validate_gate(...)` at promotion time.
+The block is **opt-in via field presence** — absent or empty
+`promotion:` blocks preserve every prior behaviour bit-identically.
+
+### 11.1 Layering precedence
+
+Effective `GateThresholds` for an alpha at promotion time are the
+result of three left-to-right merges (lowest → highest):
+
+1. **Skill-pinned defaults.** `GateThresholds()` with the values
+   pinned in
+   [`src/feelies/alpha/promotion_evidence.py`](../../src/feelies/alpha/promotion_evidence.py)
+   (mirroring the testing-validation and post-trade-forensics skill
+   thresholds, e.g. `paper_min_trading_days=5`,
+   `cpcv_min_folds=8`, `dsr_min=1.0`).
+2. **`platform.yaml: gate_thresholds:`** — operator-wide overrides
+   parsed by `PlatformConfig.from_yaml` and applied at bootstrap by
+   `_build_platform_gate_thresholds(config)`. The result is passed
+   to `AlphaRegistry.__init__(gate_thresholds=...)`.
+3. **`promotion.gate_thresholds:`** in the alpha YAML — per-alpha
+   overrides parsed by `AlphaLoader._parse_promotion_block`, stored
+   on `AlphaManifest.gate_thresholds_overrides`, and applied on top
+   of (2) inside `AlphaRegistry._resolve_gate_thresholds` when the
+   alpha's `AlphaLifecycle` is constructed.
+
+The merge is non-mutating: each layer's overrides materialise a new
+`GateThresholds` instance via `dataclasses.replace`, so the
+upstream layers remain available for inspection.
+
+### 11.2 YAML grammar
+
+```yaml
+promotion:
+  gate_thresholds:
+    paper_min_trading_days: 7         # default 5  — longer paper window
+    dsr_min: 1.2                      # default 1.0 — stricter DSR floor
+    cpcv_min_mean_sharpe: 1.2         # default 1.0 — stricter CPCV bar
+    revalidation_min_oos_sharpe: 1.5  # default 1.0 — re-promotion harder
+```
+
+Validation rules at load time (raise `AlphaLoadError` with the alpha
+spec path and a structural message):
+
+1. `promotion:` must be a mapping (not a scalar or list).
+2. The only supported sub-key is `gate_thresholds:`. Other keys
+   (e.g. `promotion.notes:`) raise `AlphaLoadError` listing the
+   offending keys.
+3. `gate_thresholds:` must be a mapping; an empty mapping is
+   treated as "no overrides" and yields
+   `manifest.gate_thresholds_overrides=None`.
+4. Every key must name a real `GateThresholds` field.  Unknown
+   keys raise `AlphaLoadError` listing the valid field names.
+5. Every value must match the field's declared type
+   (`int` / `float` / `bool`).  Booleans are *not* coerced to
+   `int`; strings are *not* parsed as numbers.
+
+### 11.3 Platform-wide overrides
+
+The same field/type/coercion validation is applied to a top-level
+`gate_thresholds:` block in `platform.yaml`:
+
+```yaml
+# platform.yaml
+gate_thresholds:
+  paper_min_trading_days: 5     # accept the platform default explicitly
+  dsr_min: 1.1                  # tighten DSR floor for every alpha
+```
+
+Empty / absent block ⇒ `PlatformConfig.gate_thresholds_overrides`
+is `{}` and `_build_platform_gate_thresholds(config)` returns
+`None`, so the registry's base is the skill defaults.
+
+### 11.4 Cross-field invariants
+
+The override layer performs only **structural** validation
+(field-name existence + scalar type).  Cross-field invariants
+(e.g. `paper_min_pnl_compression_ratio ≤ paper_max_pnl_compression_ratio`,
+or family-specific consistency rules) are deferred to the
+F-2 validators inside
+[`src/feelies/alpha/promotion_evidence.py`](../../src/feelies/alpha/promotion_evidence.py).
+That keeps the loader simple and keeps the override surface
+identical regardless of where the keys are sourced from
+(`platform.yaml` vs. per-alpha YAML).
+
+### 11.5 Worked example — research-grade alpha with stricter DSR
+
+```yaml
+# alphas/my_research_alpha.alpha.yaml
+schema_version: "1.1"
+layer: SIGNAL
+alpha_id: my_research_alpha
+# … rest of the SIGNAL spec …
+
+promotion:
+  gate_thresholds:
+    # research-grade alpha — require a stronger DSR before paper
+    dsr_min: 1.5
+    # require CPCV mean Sharpe ≥ 1.2 (vs platform default 1.0)
+    cpcv_min_mean_sharpe: 1.2
+    # require 10-day PAPER window (vs default 5)
+    paper_min_trading_days: 10
+```
+
+At promotion time, the lifecycle dispatches to
+`validate_gate(GateId.PAPER_TO_LIVE, evs, gate_thresholds)` with the
+**merged** `GateThresholds` carrying the platform defaults overlaid
+by these three keys.  All other thresholds remain at the platform
+value (or skill default if no platform override applies).
+
+### 11.6 Forensic-only writer contract preserved
+
+Workstream F-5 adds **no** new code paths that read the merged
+thresholds at runtime — `AlphaLifecycle.promote_*` already consumed
+`GateThresholds` from F-4.  The only change is in *how* the
+lifecycle's `GateThresholds` instance is constructed (now via the
+three-layer merge instead of the one-layer registry pin).  Replay
+determinism (audit A-DET-02) is unaffected because the merge runs
+once at registration time and the resulting `GateThresholds` is
+immutable for the alpha's lifetime.
+
+---
+
+## 12. Deprecation timeline & sunset
 
 | Phase | `schema_version: "1.0"` | `layer: LEGACY_SIGNAL` |
 |---|---|---|

@@ -37,8 +37,10 @@ from feelies.alpha.promotion_evidence import (
     QuarantineTriggerEvidence,
     ResearchAcceptanceEvidence,
     RevalidationEvidence,
+    apply_gate_thresholds_overrides,
     evidence_to_metadata,
     metadata_to_evidence,
+    parse_gate_thresholds_overrides,
     required_evidence_types,
     validate_capital_stage,
     validate_cpcv,
@@ -1016,3 +1018,147 @@ class TestMetadataToEvidence:
         tighter = GateThresholds(dsr_min=2.0)
         errors = validate_gate(GateId.PAPER_TO_LIVE, rebuilt, tighter)
         assert any("DSR" in e for e in errors)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Workstream F-5: GateThresholds override parsing + merging
+# ─────────────────────────────────────────────────────────────────────
+
+
+class TestParseGateThresholdsOverrides:
+    """Structural + per-key validation for the F-5 override surface."""
+
+    def test_none_returns_empty_dict(self) -> None:
+        assert parse_gate_thresholds_overrides(None) == {}
+
+    def test_empty_mapping_returns_empty_dict(self) -> None:
+        assert parse_gate_thresholds_overrides({}) == {}
+
+    def test_non_mapping_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="must be a mapping"):
+            parse_gate_thresholds_overrides([1, 2, 3])  # type: ignore[arg-type]
+
+    def test_unknown_key_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="unknown field"):
+            parse_gate_thresholds_overrides({"not_a_real_threshold": 5})
+
+    def test_unknown_key_listed_in_error(self) -> None:
+        with pytest.raises(ValueError) as excinfo:
+            parse_gate_thresholds_overrides(
+                {"not_a_real_threshold": 5, "another_typo": 10}
+            )
+        msg = str(excinfo.value)
+        assert "another_typo" in msg
+        assert "not_a_real_threshold" in msg
+
+    def test_known_int_field_passes_through(self) -> None:
+        out = parse_gate_thresholds_overrides({"paper_min_trading_days": 7})
+        assert out == {"paper_min_trading_days": 7}
+        assert isinstance(out["paper_min_trading_days"], int)
+
+    def test_known_float_field_passes_through(self) -> None:
+        out = parse_gate_thresholds_overrides({"dsr_min": 1.25})
+        assert out == {"dsr_min": 1.25}
+        assert isinstance(out["dsr_min"], float)
+
+    def test_int_value_coerced_to_float_for_float_field(self) -> None:
+        out = parse_gate_thresholds_overrides({"dsr_min": 2})
+        assert out == {"dsr_min": 2.0}
+        assert isinstance(out["dsr_min"], float)
+
+    def test_float_value_for_int_field_raises(self) -> None:
+        with pytest.raises(ValueError, match="expects int"):
+            parse_gate_thresholds_overrides({"paper_min_trading_days": 5.5})
+
+    def test_string_value_for_float_field_raises(self) -> None:
+        with pytest.raises(ValueError, match="expects float"):
+            parse_gate_thresholds_overrides({"dsr_min": "1.0"})
+
+    def test_string_value_for_int_field_raises(self) -> None:
+        with pytest.raises(ValueError, match="expects int"):
+            parse_gate_thresholds_overrides({"paper_min_trading_days": "7"})
+
+    def test_bool_value_rejected_for_int_field(self) -> None:
+        # Without this guard ``True`` would silently become ``1`` and
+        # an operator's YAML typo would mis-configure the threshold.
+        with pytest.raises(ValueError, match="expects int"):
+            parse_gate_thresholds_overrides({"paper_min_trading_days": True})
+
+    def test_bool_value_rejected_for_float_field(self) -> None:
+        with pytest.raises(ValueError, match="expects float"):
+            parse_gate_thresholds_overrides({"dsr_min": True})
+
+    def test_partial_overrides_only_carry_specified_keys(self) -> None:
+        out = parse_gate_thresholds_overrides(
+            {"dsr_min": 1.5, "cpcv_min_folds": 12}
+        )
+        assert out == {"dsr_min": 1.5, "cpcv_min_folds": 12}
+
+    def test_does_not_mutate_input_mapping(self) -> None:
+        raw = {"dsr_min": 2}
+        parse_gate_thresholds_overrides(raw)
+        assert raw == {"dsr_min": 2}
+
+    def test_negative_value_passes_structural_validation(self) -> None:
+        # Numeric invariant checks (e.g. "must be >= 0") are explicitly
+        # deferred to consumers — the override layer is structural.
+        out = parse_gate_thresholds_overrides(
+            {"small_max_hit_rate_residual_pp": -8.0}
+        )
+        assert out == {"small_max_hit_rate_residual_pp": -8.0}
+
+
+class TestApplyGateThresholdsOverrides:
+    """Merge semantics — base + overrides → new GateThresholds."""
+
+    def test_empty_overrides_returns_base_unchanged(self) -> None:
+        base = GateThresholds()
+        out = apply_gate_thresholds_overrides(base, {})
+        assert out is base
+
+    def test_none_overrides_returns_base_unchanged(self) -> None:
+        base = GateThresholds()
+        out = apply_gate_thresholds_overrides(base, None)
+        assert out is base
+
+    def test_single_field_override(self) -> None:
+        base = GateThresholds()
+        out = apply_gate_thresholds_overrides(base, {"dsr_min": 1.5})
+        assert out.dsr_min == 1.5
+        assert out.paper_min_trading_days == base.paper_min_trading_days
+
+    def test_multiple_field_override_preserves_unrelated(self) -> None:
+        base = GateThresholds()
+        out = apply_gate_thresholds_overrides(
+            base, {"dsr_min": 1.5, "paper_min_trading_days": 10}
+        )
+        assert out.dsr_min == 1.5
+        assert out.paper_min_trading_days == 10
+        assert out.cpcv_min_folds == base.cpcv_min_folds
+
+    def test_returns_new_instance_when_overrides_present(self) -> None:
+        base = GateThresholds()
+        out = apply_gate_thresholds_overrides(base, {"dsr_min": 1.5})
+        assert out is not base
+
+    def test_unknown_key_propagates_value_error(self) -> None:
+        base = GateThresholds()
+        with pytest.raises(ValueError, match="unknown field"):
+            apply_gate_thresholds_overrides(base, {"bogus": 1})
+
+    def test_can_be_chained_for_multi_layer_overrides(self) -> None:
+        # Models the F-5 layering: skill defaults → platform override →
+        # per-alpha override.  Each layer wins over the previous one
+        # for keys it sets.
+        skill_defaults = GateThresholds()
+        platform_layer = apply_gate_thresholds_overrides(
+            skill_defaults, {"dsr_min": 1.2, "paper_min_trading_days": 7}
+        )
+        per_alpha_layer = apply_gate_thresholds_overrides(
+            platform_layer, {"dsr_min": 1.5}
+        )
+        assert per_alpha_layer.dsr_min == 1.5
+        assert per_alpha_layer.paper_min_trading_days == 7
+        assert (
+            per_alpha_layer.cpcv_min_folds == skill_defaults.cpcv_min_folds
+        )

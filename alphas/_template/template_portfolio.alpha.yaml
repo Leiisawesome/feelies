@@ -108,6 +108,25 @@ parameters:
       coverage falls below this fraction (default mirrors the
       platform.yaml setting; override here per-alpha).
 
+# ── Promotion Gate Thresholds (Workstream F-5 — optional) ──
+# Per-alpha override of one or more `GateThresholds` fields used by
+# `validate_gate(...)` at promotion time (see
+# `src/feelies/alpha/promotion_evidence.py`).  Layering precedence
+# (lowest → highest):
+#   1. Skill-pinned defaults (`GateThresholds()`),
+#   2. `platform.yaml: gate_thresholds:` (operator-wide),
+#   3. `promotion.gate_thresholds:` here (this alpha only).
+# PORTFOLIO alphas typically tighten the small-capital window because
+# cross-sectional construction amplifies any residual factor or
+# turnover drift; SCALED escalation requires the small-capital sample
+# to land cleanly inside the deployment window.
+# promotion:
+#   gate_thresholds:
+#     small_min_deployment_days: 15           # default 10 — require a longer SMALL_CAPITAL window
+#     small_max_slippage_residual_bps: 2.0    # default 2.5 — tighter slippage band
+#     small_min_pnl_compression_ratio: 0.6    # default 0.5 — narrower acceptable lower bound
+#     paper_min_trading_days: 10              # default 5 — longer PAPER window before LIVE
+
 # No inline ``construct:`` block — bootstrap binds the default
 # pipeline (CrossSectionalRanker → FactorNeutralizer → SectorMatcher
 # → TurnoverOptimizer) per design.  Override only with explicit
