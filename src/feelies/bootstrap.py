@@ -165,17 +165,16 @@ def build_platform(
 
     _load_alphas(config, registry, loader)
 
-    # Workstream D.2 PR-2b-ii: the legacy per-tick alpha pipeline
+    # Workstream D.2 PR-2b-ii deleted the legacy per-tick alpha pipeline
     # (CompositeFeatureEngine → CompositeSignalEngine →
     # MultiAlphaEvaluator) and the FeatureEngine / SignalEngine
-    # Protocols have been deleted.  All surviving alphas are SIGNAL or
-    # PORTFOLIO layer and produce outputs via the bus-driven Phase-3 /
-    # Phase-4 pipeline (HorizonAggregator → HorizonSignalEngine →
-    # CompositionEngine) composed below.  The orchestrator's
-    # ``feature_engine`` / ``signal_engine`` constructor parameters
-    # survive only as test scaffolding and are passed ``None`` here —
-    # see :class:`feelies.kernel.orchestrator.Orchestrator`'s docstring
-    # for the optional-engine contract.
+    # Protocols; D.2 PR-2b-iv then deleted the surviving test
+    # scaffolding (FeatureVector, AlphaModule.evaluate, the
+    # orchestrator's feature_engine / signal_engine ctor params, and
+    # the gated single-alpha branch).  All surviving alphas are SIGNAL
+    # or PORTFOLIO layer and produce outputs via the bus-driven
+    # Phase-3 / Phase-4 pipeline (HorizonAggregator →
+    # HorizonSignalEngine → CompositionEngine) composed below.
 
     risk_config = RiskConfig(
         max_position_per_symbol=config.risk_max_position_per_symbol,
@@ -326,8 +325,6 @@ def build_platform(
         clock=clock,
         bus=bus,
         backend=backend,
-        feature_engine=None,
-        signal_engine=None,
         risk_engine=risk_engine,
         position_store=position_store,
         event_log=event_log,

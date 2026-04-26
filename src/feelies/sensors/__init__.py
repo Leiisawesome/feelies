@@ -3,7 +3,7 @@
 Sensors are Layer-1 components: stateless-by-instance computations over
 raw L1 NBBO and trade events that emit typed ``SensorReading`` events
 on the bus.  They are platform-authored, deterministic, and entirely
-decoupled from the legacy per-tick ``FeatureVector`` path
+decoupled from the deleted per-tick feature path
 (see ``design_docs/three_layer_architecture.md`` §4.2 / §6.2).
 
 In Phase 2 the sensor layer is **observational only** — sensors emit

@@ -78,11 +78,6 @@ def test_default_parameters(loaded: LoadedSignalLayerModule) -> None:
     assert p["edge_cap_bps"] == pytest.approx(20.0)
 
 
-def test_evaluate_returns_none(loaded: LoadedSignalLayerModule) -> None:
-    """SIGNAL alphas never participate in CompositeSignalEngine.evaluate."""
-    assert loaded.evaluate(features=object()) is None  # type: ignore[arg-type]
-
-
 # ── End-to-end via HorizonSignalEngine ──────────────────────────────────
 
 

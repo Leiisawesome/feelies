@@ -2,18 +2,15 @@
 
 The orchestrator's :meth:`Orchestrator._on_bus_signal` translates
 ``Signal(layer="SIGNAL")`` events published on the platform bus into the
-existing per-tick risk → order → fill walk.  Pre-PR-2b-iii nothing in
-production translated bus-published Signals into ``OrderRequest`` events;
-the only Signal → Order path was the legacy ``signal_engine`` ctor stub
-which bootstrap never injected.
+existing per-tick risk → order → fill walk.
+
+PR-2b-iv (this commit) deleted the legacy ``signal_engine`` /
+``feature_engine`` ctor scaffolding, so the bus subscriber is now the
+sole standalone-SIGNAL → Order path.
 
 These tests assert the contract:
 
-* A bus-published SIGNAL alpha's ``Signal`` triggers the order pipeline
-  even when ``signal_engine=None`` (production scenario).
-* The legacy ``signal_engine`` stub takes precedence over the bus buffer
-  when both are wired (kernel-test back-compat preservation; PR-2b-iv
-  will delete the stub).
+* A bus-published SIGNAL alpha's ``Signal`` triggers the order pipeline.
 * Stop-loss exits computed inline by ``_check_stop_exit`` always
   override (Inv-11: position safety beats alpha conviction).
 * Signals with ``layer != "SIGNAL"`` and synthetic ``__stop_exit__``
@@ -192,8 +189,6 @@ def _build_orchestrator(
     *,
     bus: EventBus | None = None,
     risk_engine: Any | None = None,
-    signal_engine: Any | None = None,
-    feature_engine: Any | None = None,
     alpha_registry: Any | None = None,
     position_store: MemoryPositionStore | None = None,
 ) -> Orchestrator:
@@ -209,8 +204,6 @@ def _build_orchestrator(
         clock=clock,
         bus=bus,
         backend=backend,
-        feature_engine=feature_engine,
-        signal_engine=signal_engine,
         risk_engine=risk_engine or _StubRiskEngine(),
         position_store=pos,
         event_log=InMemoryEventLog(),
@@ -262,15 +255,13 @@ class TestBusDrivenSignalProducesOrder:
     on the bus, and the orchestrator translates that into an order.
     """
 
-    def test_bus_signal_translates_to_order_request_when_no_signal_engine(
-        self,
-    ) -> None:
+    def test_bus_signal_translates_to_order_request(self) -> None:
         clock = SimulatedClock(start_ns=1000)
         bus = EventBus()
         quote = _make_quote()
         signal = _make_signal(quote, strategy_id="test_standalone_alpha")
 
-        orch = _build_orchestrator(clock, bus=bus, signal_engine=None)
+        orch = _build_orchestrator(clock, bus=bus)
         captured = _capture_orders(bus)
         _signal_from_bus(bus, signal)
 
@@ -292,7 +283,7 @@ class TestBusDrivenSignalProducesOrder:
         bus = EventBus()
         quote = _make_quote()
 
-        orch = _build_orchestrator(clock, bus=bus, signal_engine=None)
+        orch = _build_orchestrator(clock, bus=bus)
         captured = _capture_orders(bus)
 
         BacktestOrderRouter.on_quote(orch._backend.order_router, quote)
@@ -301,71 +292,6 @@ class TestBusDrivenSignalProducesOrder:
 
         assert captured == []
         assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
-
-
-class TestLegacyStubPrecedence:
-    """When both legacy stub and bus-fed buffer are populated, the stub
-    takes precedence (PR-2b-iv will retire the stub entirely)."""
-
-    def test_legacy_signal_engine_takes_precedence_over_bus_buffer(self) -> None:
-        clock = SimulatedClock(start_ns=1000)
-        bus = EventBus()
-        quote = _make_quote()
-        bus_signal = _make_signal(
-            quote, strategy_id="bus_alpha",
-            direction=SignalDirection.LONG,
-        )
-        legacy_signal = _make_signal(
-            quote, strategy_id="legacy_stub_alpha",
-            direction=SignalDirection.SHORT,
-        )
-
-        class _StubLegacy:
-            def evaluate(self, _features: Any) -> Signal:
-                return legacy_signal
-
-        class _StubFeatures:
-            def update(self, _q: NBBOQuote) -> str:
-                return "fake-features"
-
-            def is_warm(self, _s: str) -> bool:
-                return True
-
-            @property
-            def version(self) -> str:
-                return "v0"
-
-            def checkpoint(self, _s: str) -> tuple[bytes, int]:
-                return b"", 0
-
-            def restore(self, _s: str, _state: bytes) -> None:
-                pass
-
-        orch = _build_orchestrator(
-            clock,
-            bus=bus,
-            signal_engine=_StubLegacy(),
-            feature_engine=_StubFeatures(),
-        )
-        captured_orders = _capture_orders(bus)
-        captured_signals: list[Signal] = []
-        bus.subscribe(Signal, captured_signals.append)
-        _signal_from_bus(bus, bus_signal)
-
-        BacktestOrderRouter.on_quote(orch._backend.order_router, quote)
-        _boot_to_backtest(orch)
-        orch._process_tick(quote)
-
-        assert len(captured_orders) == 1
-        assert captured_orders[0].side.name == "SELL", (
-            "legacy stub returned SHORT; the resulting OrderRequest should "
-            "be a SELL.  The bus-fed LONG Signal must have been dropped."
-        )
-        assert any(s.strategy_id == "bus_alpha" for s in captured_signals), (
-            "bus-fed Signal must still appear on the bus (subscribers "
-            "downstream of the orchestrator's _on_bus_signal must observe "
-            "it); the orchestrator just chose not to translate it."
-        )
 
 
 class TestPortfolioConsumedSignalsSkipped:
@@ -386,7 +312,7 @@ class TestPortfolioConsumedSignalsSkipped:
             ),
         )
         orch = _build_orchestrator(
-            clock, bus=bus, signal_engine=None, alpha_registry=registry,
+            clock, bus=bus, alpha_registry=registry,
         )
         captured = _capture_orders(bus)
         _signal_from_bus(bus, signal)
@@ -397,8 +323,9 @@ class TestPortfolioConsumedSignalsSkipped:
 
         assert captured == [], (
             "PORTFOLIO-consumed Signal must NOT translate to an OrderRequest; "
-            "the composition engine will aggregate it into a "
-            "SizedPositionIntent (PR-2b-iv will then translate the intent)."
+            "the composition engine aggregates it into a "
+            "SizedPositionIntent which the PR-2b-iv ``_on_bus_sized_intent`` "
+            "subscriber translates separately."
         )
 
     def test_signal_not_consumed_by_portfolio_still_translates(self) -> None:
@@ -415,7 +342,7 @@ class TestPortfolioConsumedSignalsSkipped:
             ),
         )
         orch = _build_orchestrator(
-            clock, bus=bus, signal_engine=None, alpha_registry=registry,
+            clock, bus=bus, alpha_registry=registry,
         )
         captured = _capture_orders(bus)
         _signal_from_bus(bus, signal)
@@ -441,7 +368,7 @@ class TestBufferLifecycle:
         quote_2 = _make_quote(ts=2000, seq=2)
         signal = _make_signal(quote_1, strategy_id="standalone_alpha")
 
-        orch = _build_orchestrator(clock, bus=bus, signal_engine=None)
+        orch = _build_orchestrator(clock, bus=bus)
         captured = _capture_orders(bus)
         bus.publish(signal)
         assert orch._signal_buffer == [signal], (
@@ -470,7 +397,7 @@ class TestFiltering:
     def test_non_signal_layer_is_filtered_out(self) -> None:
         clock = SimulatedClock(start_ns=1000)
         bus = EventBus()
-        orch = _build_orchestrator(clock, bus=bus, signal_engine=None)
+        orch = _build_orchestrator(clock, bus=bus)
 
         portfolio_signal = _make_signal(
             _make_quote(), strategy_id="pf_alpha", layer="PORTFOLIO",
@@ -489,7 +416,7 @@ class TestFiltering:
         """
         clock = SimulatedClock(start_ns=1000)
         bus = EventBus()
-        orch = _build_orchestrator(clock, bus=bus, signal_engine=None)
+        orch = _build_orchestrator(clock, bus=bus)
 
         stop_exit_signal = _make_signal(
             _make_quote(), strategy_id="__stop_exit__",
@@ -516,7 +443,7 @@ class TestMultipleStandaloneSignalsPerTick:
         signal_a = _make_signal(quote, strategy_id="alpha_first")
         signal_b = _make_signal(quote, strategy_id="alpha_second")
 
-        orch = _build_orchestrator(clock, bus=bus, signal_engine=None)
+        orch = _build_orchestrator(clock, bus=bus)
         captured = _capture_orders(bus)
 
         def emit_two_signals(q: NBBOQuote) -> None:
@@ -552,7 +479,7 @@ class TestMultipleStandaloneSignalsPerTick:
         signal_a = _make_signal(_make_quote(), strategy_id="alpha_first")
         signal_b = _make_signal(_make_quote(), strategy_id="alpha_second")
 
-        orch = _build_orchestrator(clock, bus=bus, signal_engine=None)
+        orch = _build_orchestrator(clock, bus=bus)
 
         def emit_two_signals(q: NBBOQuote) -> None:
             for s in (signal_a, signal_b):

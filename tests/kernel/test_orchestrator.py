@@ -1,7 +1,27 @@
-"""Tests for the Orchestrator tick-processing pipeline."""
+"""Tests for the Orchestrator tick-processing pipeline.
+
+Workstream D.2 PR-2b-iv migrated this file off the legacy
+``feature_engine`` / ``signal_engine`` ctor stubs.  Tests that used to
+inject ``_StubSignalEngine(signal=signal)`` now publish ``Signal``
+events on the platform bus through ``_publish_signal_on_quote``;
+``_on_bus_signal`` buffers them and the M4 ``SIGNAL_EVALUATE`` drain
+walks the existing risk → order → fill pipeline.
+
+Tests for behaviours that no longer exist were dropped:
+
+* ``TestOrchestratorTickFailure`` (legacy signal-engine error → DEGRADED)
+  — the bus subscriber cannot raise; the analogous failure mode is now
+  exercised via a raising ``RiskEngine``.
+* ``TestMultiAlphaB4Gate`` (``_build_net_order`` direct calls) — the
+  helper was orphaned together with ``MultiAlphaEvaluator`` (PR-2b-ii)
+  and deleted by PR-2b-iv.  The B4 gate still fires through
+  ``_check_b4_gate`` on the per-tick walk and is covered by
+  ``TestEdgeCostGate``.
+"""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from decimal import Decimal
 from typing import Any
 
@@ -10,7 +30,6 @@ import pytest
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
-    FeatureVector,
     MetricEvent,
     NBBOQuote,
     OrderAck,
@@ -52,61 +71,6 @@ class _StubMarketData:
         return iter(self._events)
 
 
-class _StubFeatureEngine:
-    """Feature engine that returns a warm FeatureVector with mid-price."""
-
-    def __init__(self, *, warm: bool = True, stale: bool = False) -> None:
-        self._warm = warm
-        self._stale = stale
-        self._call_count = 0
-
-    def update(self, quote: NBBOQuote) -> FeatureVector:
-        self._call_count += 1
-        return FeatureVector(
-            timestamp_ns=quote.timestamp_ns,
-            correlation_id=quote.correlation_id,
-            sequence=quote.sequence,
-            symbol=quote.symbol,
-            feature_version="test-v1",
-            values={"mid": (float(quote.bid) + float(quote.ask)) / 2.0},
-            warm=self._warm,
-            stale=self._stale,
-        )
-
-    def is_warm(self, symbol: str) -> bool:
-        return self._warm
-
-    def reset(self, symbol: str) -> None:
-        pass
-
-    @property
-    def version(self) -> str:
-        return "test-v1"
-
-    def checkpoint(self, symbol: str) -> tuple[bytes, int]:
-        return b"", 0
-
-    def restore(self, symbol: str, state: bytes) -> None:
-        pass
-
-
-class _StubSignalEngine:
-    """Signal engine that returns a fixed signal (or None)."""
-
-    def __init__(self, signal: Signal | None = None) -> None:
-        self._signal = signal
-
-    def evaluate(self, features: FeatureVector) -> Signal | None:
-        return self._signal
-
-
-class _RaisingSignalEngine:
-    """Signal engine that always raises to test error handling."""
-
-    def evaluate(self, features: FeatureVector) -> Signal | None:
-        raise RuntimeError("signal engine failure")
-
-
 class _StubRiskEngine:
     """Risk engine that returns a fixed action for both check methods."""
 
@@ -132,6 +96,25 @@ class _StubRiskEngine:
             action=self._action,
             reason="test",
         )
+
+
+class _RaisingRiskEngine:
+    """Risk engine that always raises to test orchestrator error handling.
+
+    Replaces the pre-PR-2b-iv ``_RaisingSignalEngine`` (which exercised
+    the now-deleted legacy ``signal_engine`` ctor stub).  The bus-driven
+    ``_on_bus_signal`` subscriber cannot raise, but the per-tick risk
+    check inside ``_process_tick_inner`` still runs ``check_signal`` —
+    making the risk engine the surviving choke-point for "tick raises →
+    DEGRADED" coverage (Inv-11: fail-safe degradation rather than
+    silent corruption).
+    """
+
+    def check_signal(self, signal: Signal, positions: PositionStore) -> RiskVerdict:
+        raise RuntimeError("risk engine failure")
+
+    def check_order(self, order: OrderRequest, positions: PositionStore) -> RiskVerdict:
+        raise RuntimeError("risk engine failure")
 
 
 class _ScaleDownToZeroRiskEngine:
@@ -212,7 +195,9 @@ def _make_quote(
     )
 
 
-def _make_signal(quote: NBBOQuote, direction: SignalDirection = SignalDirection.LONG) -> Signal:
+def _make_signal(
+    quote: NBBOQuote, direction: SignalDirection = SignalDirection.LONG,
+) -> Signal:
     return Signal(
         timestamp_ns=quote.timestamp_ns,
         correlation_id=quote.correlation_id,
@@ -225,15 +210,35 @@ def _make_signal(quote: NBBOQuote, direction: SignalDirection = SignalDirection.
     )
 
 
+def _publish_signal_on_quote(bus: EventBus, signal: Signal) -> None:
+    """Republish ``signal`` on every ``NBBOQuote`` (mimics HorizonSignalEngine).
+
+    Production: ``HorizonSignalEngine`` subscribes to
+    ``HorizonFeatureSnapshot`` and publishes ``Signal`` events as a
+    side-effect.  Tests don't bring up the full snapshot pipeline; we
+    publish a Signal directly in response to each ``NBBOQuote``, which
+    arrives at M1's ``bus.publish(quote)`` and is buffered by
+    :py:meth:`Orchestrator._on_bus_signal` before M4 drains.
+    """
+    def emit(quote: NBBOQuote) -> None:
+        bus.publish(replace(
+            signal,
+            timestamp_ns=quote.timestamp_ns,
+            correlation_id=quote.correlation_id,
+            sequence=quote.sequence,
+        ))
+    bus.subscribe(NBBOQuote, emit)  # type: ignore[arg-type]
+
+
 def _build_orchestrator(
     clock: SimulatedClock,
-    signal_engine: Any = None,
+    *,
+    bus: EventBus | None = None,
     risk_engine: Any = None,
-    feature_engine: Any = None,
     market_data: Any = None,
     position_store: Any = None,
 ) -> Orchestrator:
-    bus = EventBus()
+    bus = bus if bus is not None else EventBus()
     event_log = InMemoryEventLog()
     pos_store = position_store or MemoryPositionStore()
     bt_router = BacktestOrderRouter(clock=clock)
@@ -246,8 +251,6 @@ def _build_orchestrator(
         clock=clock,
         bus=bus,
         backend=backend,
-        feature_engine=feature_engine or _StubFeatureEngine(),
-        signal_engine=signal_engine or _StubSignalEngine(signal=None),
         risk_engine=risk_engine or _StubRiskEngine(),
         position_store=pos_store,
         event_log=event_log,
@@ -312,29 +315,19 @@ class TestOrchestratorRunBacktest:
         clock = SimulatedClock(start_ns=1000)
         quote = _make_quote()
         market_data = _StubMarketData(events=[quote])
-        feature_engine = _StubFeatureEngine()
 
-        bt_router = BacktestOrderRouter(clock=clock)
-        backend = ExecutionBackend(
-            market_data=market_data,
-            order_router=bt_router,
-            mode="BACKTEST",
-        )
-        orch = Orchestrator(
-            clock=clock,
-            bus=EventBus(),
-            backend=backend,
-            feature_engine=feature_engine,
-            signal_engine=_StubSignalEngine(signal=None),
-            risk_engine=_StubRiskEngine(),
-            position_store=MemoryPositionStore(),
-            event_log=InMemoryEventLog(),
-            metric_collector=_NoOpMetricCollector(),
-        )
+        bus = EventBus()
+        captured_quotes: list[NBBOQuote] = []
+        bus.subscribe(NBBOQuote, captured_quotes.append)
+
+        orch = _build_orchestrator(clock, bus=bus, market_data=market_data)
         _boot_to_ready(orch)
         orch.run_backtest()
 
-        assert feature_engine._call_count == 1
+        assert len(captured_quotes) == 1, (
+            "the single fixture quote must reach the bus exactly once "
+            "(M1 publish in _process_tick_inner)"
+        )
         assert orch.macro_state == MacroState.READY
 
 
@@ -347,24 +340,24 @@ class TestOrchestratorFullPipeline:
         quote = _make_quote()
         signal = _make_signal(quote)
 
+        bus = EventBus()
         bt_router = BacktestOrderRouter(clock=clock)
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
             clock=clock,
-            bus=EventBus(),
+            bus=bus,
             backend=ExecutionBackend(
                 market_data=_StubMarketData(),
                 order_router=bt_router,
                 mode="BACKTEST",
             ),
-            feature_engine=_StubFeatureEngine(),
-            signal_engine=_StubSignalEngine(signal=signal),
             risk_engine=_StubRiskEngine(action=RiskAction.ALLOW),
             position_store=MemoryPositionStore(),
             event_log=InMemoryEventLog(),
             metric_collector=_NoOpMetricCollector(),
         )
+        _publish_signal_on_quote(bus, signal)
 
         _boot_to_backtest(orch)
         orch._process_tick(quote)
@@ -377,25 +370,25 @@ class TestOrchestratorFullPipeline:
         quote = _make_quote()
         signal = _make_signal(quote)
 
+        bus = EventBus()
         position_store = MemoryPositionStore()
         bt_router = BacktestOrderRouter(clock=clock)
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
             clock=clock,
-            bus=EventBus(),
+            bus=bus,
             backend=ExecutionBackend(
                 market_data=_StubMarketData(),
                 order_router=bt_router,
                 mode="BACKTEST",
             ),
-            feature_engine=_StubFeatureEngine(),
-            signal_engine=_StubSignalEngine(signal=signal),
             risk_engine=_StubRiskEngine(action=RiskAction.ALLOW),
             position_store=position_store,
             event_log=InMemoryEventLog(),
             metric_collector=_NoOpMetricCollector(),
         )
+        _publish_signal_on_quote(bus, signal)
 
         _boot_to_backtest(orch)
         orch._process_tick(quote)
@@ -410,10 +403,7 @@ class TestOrchestratorFullPipeline:
 class TestOrchestratorNoSignal:
     def test_no_signal_ends_at_m0(self) -> None:
         clock = SimulatedClock(start_ns=1000)
-        orch = _build_orchestrator(
-            clock,
-            signal_engine=_StubSignalEngine(signal=None),
-        )
+        orch = _build_orchestrator(clock)
         _boot_to_backtest(orch)
 
         quote = _make_quote()
@@ -425,11 +415,7 @@ class TestOrchestratorNoSignal:
     def test_no_signal_leaves_position_unchanged(self) -> None:
         clock = SimulatedClock(start_ns=1000)
         position_store = MemoryPositionStore()
-        orch = _build_orchestrator(
-            clock,
-            signal_engine=_StubSignalEngine(signal=None),
-            position_store=position_store,
-        )
+        orch = _build_orchestrator(clock, position_store=position_store)
         _boot_to_backtest(orch)
 
         orch._process_tick(_make_quote())
@@ -449,24 +435,24 @@ class TestOrchestratorFlatSignalExit:
         position_store = MemoryPositionStore()
         position_store.update("AAPL", 100, Decimal("150.00"))
 
+        bus = EventBus()
         bt_router = BacktestOrderRouter(clock=clock)
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
             clock=clock,
-            bus=EventBus(),
+            bus=bus,
             backend=ExecutionBackend(
                 market_data=_StubMarketData(),
                 order_router=bt_router,
                 mode="BACKTEST",
             ),
-            feature_engine=_StubFeatureEngine(),
-            signal_engine=_StubSignalEngine(signal=flat_signal),
             risk_engine=_StubRiskEngine(action=RiskAction.ALLOW),
             position_store=position_store,
             event_log=InMemoryEventLog(),
             metric_collector=_NoOpMetricCollector(),
         )
+        _publish_signal_on_quote(bus, flat_signal)
 
         _boot_to_backtest(orch)
         orch._process_tick(quote)
@@ -480,28 +466,28 @@ class TestOrchestratorFlatSignalExit:
 
 
 class TestOrchestratorTickFailure:
-    def test_signal_engine_error_degrades_macro(self) -> None:
+    """A raising RiskEngine (the surviving M5 choke-point post PR-2b-iv)
+    must degrade the macro state, mirroring the pre-PR-2b-iv test that
+    used a raising signal-engine stub.
+    """
+
+    def _build(self) -> Orchestrator:
         clock = SimulatedClock(start_ns=1000)
-        orch = _build_orchestrator(
-            clock,
-            signal_engine=_RaisingSignalEngine(),
-        )
+        bus = EventBus()
+        signal = _make_signal(_make_quote())
+        orch = _build_orchestrator(clock, bus=bus, risk_engine=_RaisingRiskEngine())
+        _publish_signal_on_quote(bus, signal)
         _boot_to_backtest(orch)
+        return orch
 
-        quote = _make_quote()
-        orch._process_tick(quote)
-
+    def test_risk_engine_error_degrades_macro(self) -> None:
+        orch = self._build()
+        orch._process_tick(_make_quote())
         assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
         assert orch.macro_state == MacroState.DEGRADED
 
     def test_micro_resets_to_waiting_on_failure(self) -> None:
-        clock = SimulatedClock(start_ns=1000)
-        orch = _build_orchestrator(
-            clock,
-            signal_engine=_RaisingSignalEngine(),
-        )
-        _boot_to_backtest(orch)
-
+        orch = self._build()
         orch._process_tick(_make_quote())
         assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
 
@@ -512,6 +498,7 @@ class TestOrchestratorTickFailure:
 class TestOrchestratorRiskReject:
     def test_risk_reject_ends_at_m0_no_order(self) -> None:
         clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
         quote = _make_quote()
         signal = _make_signal(quote)
 
@@ -519,10 +506,11 @@ class TestOrchestratorRiskReject:
 
         orch = _build_orchestrator(
             clock,
-            signal_engine=_StubSignalEngine(signal=signal),
+            bus=bus,
             risk_engine=_StubRiskEngine(action=RiskAction.REJECT),
             position_store=position_store,
         )
+        _publish_signal_on_quote(bus, signal)
         _boot_to_backtest(orch)
         orch._process_tick(quote)
 
@@ -544,9 +532,10 @@ class TestOrchestratorShutdown:
 
     def test_shutdown_from_degraded(self) -> None:
         clock = SimulatedClock(start_ns=1000)
-        orch = _build_orchestrator(
-            clock, signal_engine=_RaisingSignalEngine()
-        )
+        bus = EventBus()
+        signal = _make_signal(_make_quote())
+        orch = _build_orchestrator(clock, bus=bus, risk_engine=_RaisingRiskEngine())
+        _publish_signal_on_quote(bus, signal)
         _boot_to_backtest(orch)
         orch._process_tick(_make_quote())
         assert orch.macro_state == MacroState.DEGRADED
@@ -561,9 +550,10 @@ class TestOrchestratorShutdown:
 class TestOrchestratorRecovery:
     def test_recover_from_degraded_to_ready(self) -> None:
         clock = SimulatedClock(start_ns=1000)
-        orch = _build_orchestrator(
-            clock, signal_engine=_RaisingSignalEngine()
-        )
+        bus = EventBus()
+        signal = _make_signal(_make_quote())
+        orch = _build_orchestrator(clock, bus=bus, risk_engine=_RaisingRiskEngine())
+        _publish_signal_on_quote(bus, signal)
         _boot_to_backtest(orch)
         orch._process_tick(_make_quote())
         assert orch.macro_state == MacroState.DEGRADED
@@ -600,9 +590,7 @@ class TestOrchestratorHalt:
 class TestOrchestratorMultipleTicks:
     def test_two_consecutive_no_signal_ticks(self) -> None:
         clock = SimulatedClock(start_ns=1000)
-        orch = _build_orchestrator(
-            clock, signal_engine=_StubSignalEngine(signal=None)
-        )
+        orch = _build_orchestrator(clock)
         _boot_to_backtest(orch)
 
         orch._process_tick(_make_quote(ts=1000, seq=1))
@@ -625,6 +613,7 @@ class TestScaleDownToZeroSuppression:
 
     def test_m6_scale_down_to_zero_suppresses_order(self) -> None:
         clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
         quote = _make_quote()
         signal = _make_signal(quote)
 
@@ -634,19 +623,18 @@ class TestScaleDownToZeroSuppression:
 
         orch = Orchestrator(
             clock=clock,
-            bus=EventBus(),
+            bus=bus,
             backend=ExecutionBackend(
                 market_data=_StubMarketData(),
                 order_router=bt_router,
                 mode="BACKTEST",
             ),
-            feature_engine=_StubFeatureEngine(),
-            signal_engine=_StubSignalEngine(signal=signal),
             risk_engine=_ScaleDownToZeroRiskEngine(),
             position_store=position_store,
             event_log=InMemoryEventLog(),
             metric_collector=_NoOpMetricCollector(),
         )
+        _publish_signal_on_quote(bus, signal)
 
         _boot_to_backtest(orch)
         orch._process_tick(quote)
@@ -682,7 +670,10 @@ class TestEdgeCostGate:
         signal: Signal,
         edge_cost_ratio: float = 2.0,
     ) -> Orchestrator:
-        from feelies.execution.cost_model import DefaultCostModel, DefaultCostModelConfig
+        from feelies.execution.cost_model import (
+            DefaultCostModel,
+            DefaultCostModelConfig,
+        )
         bus = EventBus()
         event_log = InMemoryEventLog()
         pos_store = MemoryPositionStore()
@@ -697,15 +688,13 @@ class TestEdgeCostGate:
             clock=clock,
             bus=bus,
             backend=backend,
-            feature_engine=_StubFeatureEngine(),
-            signal_engine=_StubSignalEngine(signal=signal),
             risk_engine=_StubRiskEngine(),
             position_store=pos_store,
             event_log=event_log,
             metric_collector=_NoOpMetricCollector(),
             cost_model=cost_model,
         )
-        # Set ratio directly (mimics what boot() would do from config)
+        _publish_signal_on_quote(bus, signal)
         orch._signal_min_edge_cost_ratio = edge_cost_ratio
         _boot_to_backtest(orch)
         return orch
@@ -720,7 +709,6 @@ class TestEdgeCostGate:
         orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
         orch._process_tick(quote)
 
-        # No order should have been placed — position stays zero
         pos = orch._positions.get("AAPL")
         assert pos.quantity == 0
 
@@ -778,13 +766,12 @@ class TestRestingOrderGuardAfterRisk:
             clock=clock,
             bus=bus,
             backend=backend,
-            feature_engine=_StubFeatureEngine(),
-            signal_engine=_StubSignalEngine(signal=signal),
             risk_engine=_StubRiskEngine(action=RiskAction.ALLOW),
             position_store=pos_store,
             event_log=InMemoryEventLog(),
             metric_collector=_NoOpMetricCollector(),
         )
+        _publish_signal_on_quote(bus, signal)
         orch._use_passive_entries = True
         return orch, bus
 
@@ -863,6 +850,7 @@ class TestExitBypassesMinOrderShares:
     def test_exit_below_min_shares_still_executes(self) -> None:
         """50-share EXIT proceeds even when min_order_shares is set to 1000."""
         clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
         quote = _make_quote()
         flat_signal = _make_signal(quote, direction=SignalDirection.FLAT)
 
@@ -873,19 +861,18 @@ class TestExitBypassesMinOrderShares:
         bt_router.on_quote(quote)
         orch = Orchestrator(
             clock=clock,
-            bus=EventBus(),
+            bus=bus,
             backend=ExecutionBackend(
                 market_data=_StubMarketData(),
                 order_router=bt_router,
                 mode="BACKTEST",
             ),
-            feature_engine=_StubFeatureEngine(),
-            signal_engine=_StubSignalEngine(signal=flat_signal),
             risk_engine=_StubRiskEngine(action=RiskAction.ALLOW),
             position_store=position_store,
             event_log=InMemoryEventLog(),
             metric_collector=_NoOpMetricCollector(),
         )
+        _publish_signal_on_quote(bus, flat_signal)
         _boot_to_backtest(orch)
         orch._min_order_shares = 1000  # threshold far above exit qty of 50
 
@@ -902,9 +889,13 @@ class TestExitBypassesEdgeCostGate:
 
     def test_exit_with_zero_edge_closes_position(self) -> None:
         """FLAT signal with edge=0 closes a long position despite B4 ratio=2."""
-        from feelies.execution.cost_model import DefaultCostModel, DefaultCostModelConfig
+        from feelies.execution.cost_model import (
+            DefaultCostModel,
+            DefaultCostModelConfig,
+        )
 
         clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
         # Wide spread → any ENTRY with low edge would be gated out.
         quote = _make_quote(bid="99.00", ask="101.00")
         flat_signal = Signal(
@@ -926,20 +917,19 @@ class TestExitBypassesEdgeCostGate:
         cost_model = DefaultCostModel(DefaultCostModelConfig())
         orch = Orchestrator(
             clock=clock,
-            bus=EventBus(),
+            bus=bus,
             backend=ExecutionBackend(
                 market_data=_StubMarketData(),
                 order_router=bt_router,
                 mode="BACKTEST",
             ),
-            feature_engine=_StubFeatureEngine(),
-            signal_engine=_StubSignalEngine(signal=flat_signal),
             risk_engine=_StubRiskEngine(action=RiskAction.ALLOW),
             position_store=position_store,
             event_log=InMemoryEventLog(),
             metric_collector=_NoOpMetricCollector(),
             cost_model=cost_model,
         )
+        _publish_signal_on_quote(bus, flat_signal)
         orch._signal_min_edge_cost_ratio = 2.0
         _boot_to_backtest(orch)
 
@@ -947,118 +937,3 @@ class TestExitBypassesEdgeCostGate:
 
         # EXIT must bypass B4 gate → position fully closed.
         assert position_store.get("AAPL").quantity == 0
-
-
-# ── F5: Multi-alpha B4 gate in _build_net_order ──────────────────────────
-
-
-class TestMultiAlphaB4Gate:
-    """F5: _build_net_order gates entries when min edge across contributing
-    intents falls below the B4 threshold; exits always pass (Inv-11).
-    """
-
-    def _build_gated_orch(self, clock: SimulatedClock) -> Orchestrator:
-        from feelies.execution.cost_model import DefaultCostModel, DefaultCostModelConfig
-
-        cost_model = DefaultCostModel(DefaultCostModelConfig())
-        orch = _build_orchestrator(clock)
-        orch._cost_model = cost_model
-        orch._signal_min_edge_cost_ratio = 2.0
-        _boot_to_backtest(orch)
-        return orch
-
-    def _make_entry_intent(
-        self,
-        quote: NBBOQuote,
-        edge_bps: float,
-        strategy_id: str = "alpha_a",
-    ):
-        from feelies.execution.intent import OrderIntent, TradingIntent
-
-        signal = _make_signal_with_edge(quote, edge_bps=edge_bps)
-        return OrderIntent(
-            intent=TradingIntent.ENTRY_LONG,
-            symbol=quote.symbol,
-            strategy_id=strategy_id,
-            target_quantity=100,
-            current_quantity=0,
-            signal=signal,
-        )
-
-    def test_entry_suppressed_when_min_edge_below_threshold(self) -> None:
-        """Single low-edge alpha → entry net order is gated out."""
-        from feelies.core.events import Side
-
-        clock = SimulatedClock(start_ns=1000)
-        quote = _make_quote(bid="99.00", ask="101.00")  # wide spread → high cost bps
-        orch = self._build_gated_orch(clock)
-
-        intent_low = self._make_entry_intent(quote, edge_bps=0.0)
-        result = orch._build_net_order(
-            "AAPL", Side.BUY, 100, "test-cid",
-            is_exit=False,
-            contributing_intents=(intent_low,),
-            quote=quote,
-        )
-        assert result is None
-
-    def test_entry_passes_when_min_edge_above_threshold(self) -> None:
-        """Single high-edge alpha above threshold → entry net order allowed."""
-        from feelies.core.events import Side
-
-        clock = SimulatedClock(start_ns=1000)
-        quote = _make_quote(bid="99.80", ask="100.20")  # tight spread → low cost bps
-        orch = self._build_gated_orch(clock)
-
-        intent_high = self._make_entry_intent(quote, edge_bps=10_000.0)
-        result = orch._build_net_order(
-            "AAPL", Side.BUY, 100, "test-cid",
-            is_exit=False,
-            contributing_intents=(intent_high,),
-            quote=quote,
-        )
-        assert result is not None
-
-    def test_min_edge_computed_across_multiple_intents(self) -> None:
-        """One low-edge alpha among high-edge peers drags min below threshold."""
-        from feelies.core.events import Side
-
-        clock = SimulatedClock(start_ns=1000)
-        quote = _make_quote(bid="99.80", ask="100.20")
-        orch = self._build_gated_orch(clock)
-
-        intent_high = self._make_entry_intent(quote, edge_bps=10_000.0, strategy_id="alpha_a")
-        intent_low = self._make_entry_intent(quote, edge_bps=0.0, strategy_id="alpha_b")
-        result = orch._build_net_order(
-            "AAPL", Side.BUY, 100, "test-cid",
-            is_exit=False,
-            contributing_intents=(intent_high, intent_low),
-            quote=quote,
-        )
-        assert result is None  # min edge (0.0) is below threshold
-
-    def test_exit_not_gated_by_b4(self) -> None:
-        """is_exit=True bypasses B4 entirely — exits always produce an OrderRequest."""
-        from feelies.core.events import Side
-        from feelies.execution.intent import OrderIntent, TradingIntent
-
-        clock = SimulatedClock(start_ns=1000)
-        quote = _make_quote(bid="99.00", ask="101.00")  # wide spread
-        orch = self._build_gated_orch(clock)
-
-        zero_edge_signal = _make_signal_with_edge(quote, edge_bps=0.0)
-        exit_intent = OrderIntent(
-            intent=TradingIntent.EXIT,
-            symbol=quote.symbol,
-            strategy_id="alpha_a",
-            target_quantity=100,
-            current_quantity=100,
-            signal=zero_edge_signal,
-        )
-        result = orch._build_net_order(
-            "AAPL", Side.SELL, 100, "test-cid",
-            is_exit=True,
-            contributing_intents=(exit_intent,),
-            quote=quote,
-        )
-        assert result is not None  # exits bypass B4 (Inv-11)

@@ -46,6 +46,24 @@ What this test guarantees
   the assertion holds vacuously today.  A future enrichment of the
   synthetic stream (or addition of an "always-on" tracer SIGNAL alpha)
   will make the assertion non-vacuous without rewriting it.
+* **PR-2b-iv contract:** every non-degenerate ``SizedPositionIntent``
+  emitted by a PORTFOLIO alpha (i.e. one whose ``target_positions``
+  contain at least one symbol with a non-zero notional delta vs the
+  current position) produces at least one ``OrderRequest`` on the bus.
+  Pre-PR-2b-iv ``CompositionEngine`` published intents end-to-end but
+  the production order pipeline silently ignored them; this test now
+  locks the bus-driven ``RiskEngine.check_sized_intent`` translation
+  in the same way the PR-2b-iii contract locks the SIGNAL path.
+
+  As with the PR-2b-iii assertion, the current fixture's 36-second
+  random walk happens to leave ``pofi_xsect_v1``'s realised non-trivial
+  intent count at zero (every intent collapses to an empty
+  ``target_positions`` because the cross-sectional gate rarely opens
+  inside the benign synthetic regime).  The assertion is therefore
+  vacuously true today and will become non-vacuous the moment the
+  fixture is enriched to actually drive the PORTFOLIO alpha — at which
+  point any future regression in the intent → order wiring will fire
+  loudly without test rewriting.
 """
 
 from __future__ import annotations
@@ -410,3 +428,60 @@ def test_phase4_e2e_standalone_signal_alphas_translate_to_orders() -> None:
             f"Inspect Orchestrator._on_bus_signal / _process_tick_inner / "
             f"RiskEngine.check_intent."
         )
+
+
+# ── PR-2b-iv contract: PORTFOLIO SizedPositionIntent → OrderRequest ────
+
+
+def test_phase4_e2e_portfolio_intents_translate_to_orders() -> None:
+    """A non-degenerate SizedPositionIntent must reach the order pipeline.
+
+    PR-2b-iv wires a bus-driven ``SizedPositionIntent`` subscriber on the
+    Orchestrator that calls :meth:`RiskEngine.check_sized_intent` for every
+    intent and submits each surviving per-leg ``OrderRequest`` to
+    ``backend.order_router`` (without driving the per-tick micro-SM walk;
+    PORTFOLIO orders dispatch as a synchronous side-effect of the M3
+    ``CROSS_SECTIONAL`` ``bus.publish(intent)``).  Pre-PR-2b-iv production
+    silently ignored intents — the entire PORTFOLIO order pipeline was
+    dead code reachable only through the now-deleted ``MultiAlphaEvaluator``.
+
+    The assertion: for every non-degenerate intent (one whose
+    ``target_positions`` contain at least one symbol with a non-zero
+    notional delta vs the current position at intent time), at least one
+    ``OrderRequest`` with ``source_layer == "PORTFOLIO"`` and matching
+    ``strategy_id`` must appear on the captured bus stream.
+
+    Like the PR-2b-iii assertion above, this is vacuously true on the
+    current synthetic fixture (cross-sectional gate stays closed) but
+    becomes a load-bearing regression guard the moment a richer fixture
+    or "always-on" PORTFOLIO tracer alpha is introduced.
+    """
+    orchestrator, _signals, intents, orders = _build()
+
+    non_degenerate_intents = [it for it in intents if it.target_positions]
+    portfolio_alpha_ids = {it.strategy_id for it in non_degenerate_intents}
+
+    orders_per_portfolio_alpha = {
+        aid: sum(
+            1 for o in orders
+            if o.strategy_id == aid and o.source_layer == "PORTFOLIO"
+        )
+        for aid in portfolio_alpha_ids
+    }
+
+    for aid in portfolio_alpha_ids:
+        n_intents = sum(
+            1 for it in non_degenerate_intents if it.strategy_id == aid
+        )
+        assert orders_per_portfolio_alpha[aid] >= 1, (
+            f"PR-2b-iv contract violation: PORTFOLIO alpha {aid!r} emitted "
+            f"{n_intents} non-degenerate SizedPositionIntent events but the "
+            f"orchestrator produced zero OrderRequest events for it.  Either "
+            f"_on_bus_sized_intent is unsubscribed, RiskEngine.check_sized_"
+            f"intent is dropping every leg, or the intent's target_positions "
+            f"are matching the current position notional within one cent. "
+            f"Inspect Orchestrator._on_bus_sized_intent and "
+            f"BasicRiskEngine.check_sized_intent."
+        )
+
+    _ = orchestrator

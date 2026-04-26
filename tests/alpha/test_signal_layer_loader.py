@@ -90,12 +90,6 @@ def test_dispatch_returns_signal_layer_module() -> None:
     assert isinstance(m, LoadedSignalLayerModule)
 
 
-def test_evaluate_returns_none_for_signal_layer_module() -> None:
-    """Loaded SIGNAL alphas never participate in CompositeSignalEngine."""
-    m = AlphaLoader().load_from_dict(_signal_spec(), source="<test>")
-    assert m.evaluate(features=object()) is None  # type: ignore[arg-type]
-
-
 def test_feature_definitions_empty_for_signal_layer() -> None:
     m = AlphaLoader().load_from_dict(_signal_spec(), source="<test>")
     assert tuple(m.feature_definitions()) == ()

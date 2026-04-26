@@ -4,37 +4,33 @@ A :class:`LoadedSignalLayerModule` is the loader-side artifact for a
 schema-1.1 ``layer: SIGNAL`` alpha.  Workstream D.2 PR-1 retired
 ``layer: LEGACY_SIGNAL`` and PR-2a deleted the per-tick
 ``LoadedAlphaModule`` class itself; PR-2b-i unwired the per-tick
-engines from bootstrap and PR-2b-ii deleted the engine classes
+engines from bootstrap, PR-2b-ii deleted the engine classes
 themselves (``CompositeFeatureEngine``, ``CompositeSignalEngine``,
-``MultiAlphaEvaluator``).  This is therefore one of only two
-surviving loaded-module types (the other being
+``MultiAlphaEvaluator``), and PR-2b-iv removed the surviving
+``AlphaModule.evaluate``/``FeatureVector`` protocol surface entirely.
+This is therefore one of only two surviving loaded-module types
+(the other being
 :class:`feelies.alpha.portfolio_layer_module.LoadedPortfolioLayerModule`).
 
-PR-2b-iii (this commit) wired the **first production-reachable
-Signal → Order pipeline** by adding a bus-driven ``Signal`` subscriber
-on the ``Orchestrator`` (``_on_bus_signal``) that buffers
+PR-2b-iii wired the **first production-reachable Signal → Order
+pipeline** by adding a bus-driven ``Signal`` subscriber on the
+``Orchestrator`` (``_on_bus_signal``) that buffers
 ``Signal(layer="SIGNAL")`` events emitted by
 :class:`feelies.signals.horizon_engine.HorizonSignalEngine` and feeds
-the M4 ``SIGNAL_EVALUATE`` drain — turning every ``LoadedSignalLayerModule``
-that fires a Signal at a horizon boundary into an actual
-``OrderRequest`` (subject to risk / intent translation), unless the
-alpha is referenced by some PORTFOLIO's ``depends_on_signals`` (in
-which case ``CompositionEngine`` aggregates it into a
-``SizedPositionIntent`` instead, to be wired to orders by PR-2b-iv).
+the M4 ``SIGNAL_EVALUATE`` drain — turning every
+``LoadedSignalLayerModule`` that fires a Signal at a horizon boundary
+into an actual ``OrderRequest`` (subject to risk / intent
+translation), unless the alpha is referenced by some PORTFOLIO's
+``depends_on_signals`` (in which case ``CompositionEngine`` aggregates
+it into a ``SizedPositionIntent`` and PR-2b-iv's
+``_on_bus_sized_intent`` translates that intent into per-leg orders
+through ``RiskEngine.check_sized_intent``).
 
 This module:
 
 * Declares **no inline features** — Layer-2 alphas consume Layer-1
-  ``SensorReading`` events via ``depends_on_sensors:``.  ``feature_definitions()``
-  therefore returns an empty sequence.
-* Implements ``AlphaModule.evaluate(features)`` as a deterministic
-  ``None``.  Post-D.2 PR-2b-ii the protocol method survives only as
-  test scaffolding for the orchestrator's gated single-alpha
-  pipeline; the actual production evaluation runs in
-  :class:`feelies.signals.horizon_engine.HorizonSignalEngine` on
-  :class:`feelies.core.events.HorizonFeatureSnapshot` events, and the
-  emitted ``Signal`` is consumed by the orchestrator's PR-2b-iii bus
-  subscriber.
+  ``SensorReading`` events via ``depends_on_sensors:``.
+  ``feature_definitions()`` therefore returns an empty sequence.
 * Exposes the SIGNAL-specific surface (the compiled
   :class:`feelies.signals.horizon_protocol.HorizonSignal` callable, the
   :class:`feelies.signals.regime_gate.RegimeGate` instance, the
@@ -58,7 +54,6 @@ from typing import Any, Mapping
 from feelies.alpha.cost_arithmetic import CostArithmetic
 from feelies.alpha.module import AlphaManifest
 from feelies.core.events import (
-    FeatureVector,
     HorizonFeatureSnapshot,
     RegimeState,
     Signal,
@@ -73,12 +68,11 @@ class LoadedSignalLayerModule:
     """Concrete ``AlphaModule`` for a schema-1.1 ``layer: SIGNAL`` alpha.
 
     The class exposes the standard :class:`AlphaModule` surface so it
-    can be registered with the existing :class:`AlphaRegistry`
-    (smoke-test passes trivially because :py:meth:`evaluate` is a
-    constant-``None`` function).  Phase-3 wiring then introspects each
-    registered module: those whose ``manifest.layer == "SIGNAL"`` are
-    constructed into a :class:`feelies.signals.horizon_engine.RegisteredSignal`
-    and handed to the :class:`HorizonSignalEngine`.
+    can be registered with the existing :class:`AlphaRegistry`.
+    Phase-3 wiring then introspects each registered module: those whose
+    ``manifest.layer == "SIGNAL"`` are constructed into a
+    :class:`feelies.signals.horizon_engine.RegisteredSignal` and handed
+    to the :class:`HorizonSignalEngine`.
     """
 
     __slots__ = (
@@ -128,32 +122,12 @@ class LoadedSignalLayerModule:
     def feature_definitions(self) -> Sequence[FeatureDefinition]:
         """SIGNAL-layer alphas declare no inline features.
 
-        They consume Layer-1 sensors directly via ``depends_on_sensors``.
-        The per-tick composite feature engine was deleted by D.2
-        PR-2b-ii, so this method's return value is consumed only by the
-        orchestrator's gated single-alpha test scaffolding (and the
-        registry smoke-test).  Returning ``()`` keeps the existing
-        dedup / version-conflict logic free of corner cases.
+        They consume Layer-1 sensors directly via ``depends_on_sensors``;
+        the per-tick composite feature engine was deleted by D.2 PR-2b-ii.
+        Returning ``()`` keeps the registry's dedup / version-conflict
+        logic free of corner cases.
         """
         return ()
-
-    def evaluate(self, features: FeatureVector) -> Signal | None:
-        """No-op — SIGNAL-layer alphas evaluate on snapshots, not ticks.
-
-        Post-D.2 PR-2b-ii the legacy per-tick composite signal engine
-        is deleted; this protocol method survives purely as test
-        scaffolding for the orchestrator's gated single-alpha pipeline.
-        Returning ``None`` here means SIGNAL-layer alphas contribute
-        nothing to that path; their actual ``Signal`` events are emitted
-        on the bus by the :class:`HorizonSignalEngine`.
-
-        The smoke test in
-        :class:`feelies.alpha.registry.AlphaRegistry._smoke_test`
-        invokes this method twice with identical input and compares the
-        results; constant ``None`` trivially satisfies the determinism
-        contract (Inv-5).
-        """
-        return None
 
     def validate(self) -> list[str]:
         """Return per-parameter validation errors.
