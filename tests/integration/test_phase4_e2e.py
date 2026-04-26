@@ -31,6 +31,21 @@ What this test guarantees
 * Per-strategy fill attribution remains independent across the three
   alpha boundaries: a fill against one alpha never appears in another
   alpha's position view.
+* **PR-2b-iii contract:** every ``Signal(layer="SIGNAL")`` event whose
+  ``strategy_id`` is *not* listed in any registered PORTFOLIO's
+  ``depends_on_signals`` is processed by the orchestrator's bus-driven
+  Signal subscriber and translated through the risk → order pipeline.
+  Pre-PR-2b-iii nothing translated bus Signals into orders, so the
+  invariant was vacuously true; this test now locks the contract so
+  any future regression that re-orphans the standalone-SIGNAL → order
+  path fails loudly.
+
+  The current fixture's 36-second random walk does not trigger
+  ``pofi_benign_midcap_v1``'s entry gate (|OFI z| > 2.0 inside the
+  benign regime), so the realised standalone-Signal count is zero and
+  the assertion holds vacuously today.  A future enrichment of the
+  synthetic stream (or addition of an "always-on" tracer SIGNAL alpha)
+  will make the assertion non-vacuous without rewriting it.
 """
 
 from __future__ import annotations
@@ -47,6 +62,7 @@ from feelies.bootstrap import build_platform
 from feelies.composition.engine import CompositionEngine
 from feelies.core.events import (
     NBBOQuote,
+    OrderRequest,
     Signal,
     SizedPositionIntent,
     Trade,
@@ -198,7 +214,12 @@ def _make_phase4_config() -> PlatformConfig:
     )
 
 
-def _build() -> tuple[Orchestrator, list[Signal], list[SizedPositionIntent]]:
+def _build() -> tuple[
+    Orchestrator,
+    list[Signal],
+    list[SizedPositionIntent],
+    list[OrderRequest],
+]:
     config = _make_phase4_config()
     event_log = InMemoryEventLog()
     event_log.append_batch(_synth_multi_symbol_events())
@@ -207,12 +228,14 @@ def _build() -> tuple[Orchestrator, list[Signal], list[SizedPositionIntent]]:
 
     captured_signals: list[Signal] = []
     captured_intents: list[SizedPositionIntent] = []
+    captured_orders: list[OrderRequest] = []
     orchestrator._bus.subscribe(Signal, captured_signals.append)
     orchestrator._bus.subscribe(SizedPositionIntent, captured_intents.append)
+    orchestrator._bus.subscribe(OrderRequest, captured_orders.append)
 
     orchestrator.boot(config)
     orchestrator.run_backtest()
-    return orchestrator, captured_signals, captured_intents
+    return orchestrator, captured_signals, captured_intents, captured_orders
 
 
 def _hash_signals(signals: list[Signal]) -> str:
@@ -255,7 +278,7 @@ def test_phase4_e2e_signal_and_portfolio_layers_register() -> None:
     contract that remains — SIGNAL signals feeding PORTFOLIO
     composition — is the substantive coverage.
     """
-    orchestrator, _signals, _intents = _build()
+    orchestrator, _signals, _intents, _orders = _build()
     registry = orchestrator._alpha_registry
     assert registry is not None
     ids = registry.alpha_ids()
@@ -264,7 +287,7 @@ def test_phase4_e2e_signal_and_portfolio_layers_register() -> None:
 
 
 def test_phase4_e2e_composition_layer_is_wired() -> None:
-    orchestrator, _s, _i = _build()
+    orchestrator, _s, _i, _o = _build()
     assert isinstance(orchestrator._composition_engine, CompositionEngine)
     assert isinstance(
         orchestrator._cross_sectional_tracker, CrossSectionalTracker
@@ -278,13 +301,13 @@ def test_phase4_e2e_composition_layer_is_wired() -> None:
 
 
 def test_phase4_e2e_run_completes_and_reaches_ready() -> None:
-    orchestrator, _s, _i = _build()
+    orchestrator, _s, _i, _o = _build()
     assert orchestrator.macro_state == MacroState.READY
 
 
 def test_phase4_e2e_per_strategy_positions_independent() -> None:
     """Layer-3 fills must never bleed into Layer-2 strategy views."""
-    orchestrator, _s, _i = _build()
+    orchestrator, _s, _i, _o = _build()
     sp = orchestrator._strategy_positions
     assert sp is not None
     for sym in _UNIVERSE:
@@ -298,8 +321,8 @@ def test_phase4_e2e_per_strategy_positions_independent() -> None:
 
 
 def test_phase4_e2e_signal_stream_is_deterministic() -> None:
-    _o_a, signals_a, intents_a = _build()
-    _o_b, signals_b, intents_b = _build()
+    _o_a, signals_a, intents_a, _orders_a = _build()
+    _o_b, signals_b, intents_b, _orders_b = _build()
     assert len(signals_a) == len(signals_b), (
         f"Signal count drift across replays: "
         f"{len(signals_a)} vs {len(signals_b)}"
@@ -310,8 +333,8 @@ def test_phase4_e2e_signal_stream_is_deterministic() -> None:
 
 
 def test_phase4_e2e_intent_stream_is_deterministic() -> None:
-    _o_a, _signals_a, intents_a = _build()
-    _o_b, _signals_b, intents_b = _build()
+    _o_a, _signals_a, intents_a, _orders_a = _build()
+    _o_b, _signals_b, intents_b, _orders_b = _build()
     assert len(intents_a) == len(intents_b), (
         f"SizedPositionIntent count drift across replays: "
         f"{len(intents_a)} vs {len(intents_b)}"
@@ -319,3 +342,71 @@ def test_phase4_e2e_intent_stream_is_deterministic() -> None:
     assert _hash_intents(intents_a) == _hash_intents(intents_b), (
         "Phase-4 e2e SizedPositionIntent hash drift across identical replays"
     )
+
+
+# ── PR-2b-iii contract: standalone-SIGNAL → OrderRequest ───────────────
+
+
+def test_phase4_e2e_standalone_signal_alphas_translate_to_orders() -> None:
+    """A standalone SIGNAL alpha's bus Signals must reach the order pipeline.
+
+    PR-2b-iii wires a bus-driven ``Signal`` subscriber on the Orchestrator
+    that translates ``Signal(layer="SIGNAL")`` events into ``OrderRequest``
+    events through the existing risk → order pipeline, *unless* the signal's
+    ``strategy_id`` is referenced by some PORTFOLIO alpha's
+    ``depends_on_signals`` (those are aggregated by ``CompositionEngine``
+    into ``SizedPositionIntent`` events instead, to be wired to orders by
+    PR-2b-iv).
+
+    The reference fixture registers ``pofi_benign_midcap_v1`` as a SIGNAL
+    alpha and ``pofi_xsect_v1`` as a PORTFOLIO alpha; the latter's
+    ``depends_on_signals`` lists ``pofi_kyle_drift_v1`` and
+    ``pofi_inventory_revert_v1`` — *not* ``pofi_benign_midcap_v1``.  So
+    every Signal published by ``pofi_benign_midcap_v1`` is a "standalone
+    SIGNAL Signal" and must produce a corresponding order pipeline walk.
+
+    The synthetic 36-second random walk does not satisfy
+    ``pofi_benign_midcap_v1``'s entry gate, so the realised count is zero
+    and the assertion is vacuously true.  This is a deliberate regression
+    guard: if a future change re-orphans the bus Signal → order path
+    (e.g. by mis-filtering, dropping the subscriber, or routing standalone
+    SIGNAL events through ``CompositionEngine``), the assertion will fire
+    the moment the fixture is enriched to actually trigger the alpha gate.
+    """
+    orchestrator, signals, _intents, orders = _build()
+
+    registry = orchestrator._alpha_registry
+    assert registry is not None
+
+    portfolio_consumed: set[str] = set()
+    portfolio_alphas_fn = getattr(registry, "portfolio_alphas", None)
+    if portfolio_alphas_fn is not None:
+        for module in portfolio_alphas_fn():
+            portfolio_consumed.update(module.depends_on_signals)
+
+    standalone_signals = [
+        s for s in signals
+        if s.layer == "SIGNAL"
+        and s.strategy_id != "__stop_exit__"
+        and s.strategy_id not in portfolio_consumed
+    ]
+    standalone_alpha_ids = {s.strategy_id for s in standalone_signals}
+
+    orders_per_standalone_alpha = {
+        aid: sum(1 for o in orders if o.strategy_id == aid)
+        for aid in standalone_alpha_ids
+    }
+
+    for aid, n_signals in (
+        (aid, sum(1 for s in standalone_signals if s.strategy_id == aid))
+        for aid in standalone_alpha_ids
+    ):
+        assert orders_per_standalone_alpha[aid] >= 1, (
+            f"PR-2b-iii contract violation: standalone SIGNAL alpha {aid!r} "
+            f"published {n_signals} bus Signals but the orchestrator emitted "
+            f"zero OrderRequest events for it.  Either the bus subscriber is "
+            f"misfiled, the Signal is being mis-routed through "
+            f"CompositionEngine, or risk is rejecting every translation.  "
+            f"Inspect Orchestrator._on_bus_signal / _process_tick_inner / "
+            f"RiskEngine.check_intent."
+        )

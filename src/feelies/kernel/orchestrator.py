@@ -225,21 +225,56 @@ class Orchestrator:
     :class:`feelies.features.engine.FeatureEngine` and
     :class:`feelies.signals.engine.SignalEngine` Protocols.  The
     ``feature_engine`` / ``signal_engine`` constructor parameters
-    survive only as test scaffolding (typed ``Any | None``) — bootstrap
-    always passes ``None`` and the per-tick legacy branch in
-    :py:meth:`_process_tick_inner` therefore never fires in production.
-    The micro-state transitions ``FEATURE_COMPUTE`` (M3) and
-    ``SIGNAL_EVALUATE`` (M4) still fire unconditionally so the SM stays
-    on its legal path, but their bodies are no-ops absent an engine.
+    survive as test scaffolding (typed ``Any | None``); bootstrap
+    always passes ``None`` and PR-2b-iv will delete them outright.
 
-    Phase-3 SIGNAL and Phase-4 PORTFOLIO outputs are produced via the
-    bus-driven ``HorizonAggregator`` → ``HorizonSignalEngine`` →
-    ``CompositionEngine`` chain wired upstream of
-    ``_dispatch_sensor_layer`` and are unaffected by the legacy engines
-    being absent.  A future PR (PR-2b-iii) is expected to migrate the
-    orchestrator's risk → order → fill pipeline to subscribe to bus
-    ``Signal`` events directly, at which point the legacy ctor params
-    and the gated single-alpha branch can be dropped entirely.
+    PR-2b-iii (this commit) adds a bus-driven ``Signal`` subscriber
+    (``_on_bus_signal``) that buffers ``Signal(layer="SIGNAL")`` events
+    per tick and feeds the M4 ``SIGNAL_EVALUATE`` drain.  This is the
+    first production-reachable Signal → Order path in the platform:
+
+      * Pre-PR-2b-iii: ``HorizonSignalEngine`` published ``Signal``
+        events on the bus but nothing translated them into
+        ``OrderRequest`` events — the legacy gated branch was the
+        only Signal → Order path and required a ``signal_engine`` stub
+        that bootstrap never injected.
+      * Post-PR-2b-iii: the bus subscriber translates standalone
+        SIGNAL alphas' ``Signal`` events through the existing risk →
+        order → fill pipeline.  Signals from SIGNAL alphas referenced
+        by any registered PORTFOLIO's ``depends_on_signals`` are
+        skipped — they aggregate through ``CompositionEngine`` into
+        ``SizedPositionIntent`` events (PR-2b-iv will translate
+        intents into orders).
+
+    Concurrency / coexistence rules:
+
+      * The legacy ``signal_engine`` stub takes precedence over the
+        bus-fed buffer when both are wired (kernel tests remain
+        bit-identical until PR-2b-iv migrates them).  The bus buffer
+        is still drained and discarded so it cannot leak into the
+        next tick.
+      * The micro-SM permits at most one Signal → Order walk per tick.
+        When more than one standalone SIGNAL alpha fires on the same
+        tick the orchestrator picks the first arrival
+        (HorizonSignalEngine's deterministic registration-order
+        dispatch) and emits a once-per-process WARNING hinting that
+        the operator should aggregate via a PORTFOLIO alpha.
+      * Stop-loss exits computed inline by ``_check_stop_exit`` always
+        override (Inv-11: position safety beats alpha conviction).
+
+    The micro-state transitions ``FEATURE_COMPUTE`` (M3) and
+    ``SIGNAL_EVALUATE`` (M4) fire unconditionally so the SM stays on
+    its legal path; M3's body is empty in production (the
+    ``feature_engine`` ctor is ``None``); M4's body either dispatches
+    a buffered Signal or finalises with no order.
+
+    A future PR (PR-2b-iv) is expected to (1) wire
+    ``SizedPositionIntent`` → ``OrderRequest`` via
+    ``RiskEngine.check_sized_intent`` so PORTFOLIO alphas finally
+    submit orders end-to-end, and (2) delete the surviving
+    ``feature_engine`` / ``signal_engine`` ctor params,
+    ``FeatureVector``, ``AlphaModule.evaluate``, and the legacy
+    gated branch in :py:meth:`_process_tick_inner`.
     """
 
     def __init__(
@@ -401,6 +436,33 @@ class Orchestrator:
         # Wire AlertManager to receive Alert events from the bus.
         if self._alert_manager is not None:
             self._bus.subscribe(Alert, self._on_alert_event)
+
+        # ── PR-2b-iii: bus-driven Signal subscriber ────────────────────
+        # Phase-3 ``HorizonSignalEngine`` publishes ``Signal(layer="SIGNAL")``
+        # events on the bus when an alpha's regime gate is ON at a horizon
+        # boundary.  Pre-PR-2b-iii nothing translated those Signals into
+        # ``OrderRequest`` events: the only Signal→Order path was the
+        # legacy gated branch in ``_process_tick_inner``, which fires only
+        # when a test injects a ``signal_engine`` stub.  Bootstrap passes
+        # ``signal_engine=None`` (PR-2b-i), so production never reached the
+        # body and the system did not submit orders end-to-end.
+        #
+        # The handler buffers SIGNAL-layer Signals per tick; the M4
+        # ``SIGNAL_EVALUATE`` drain consumes the buffer and walks the
+        # existing risk → order → fill pipeline once per tick (the micro
+        # SM only supports one Signal→Order walk per tick — multi-SIGNAL
+        # aggregation must be done by a PORTFOLIO alpha).
+        #
+        # Coexistence with the legacy ``signal_engine`` ctor scaffolding:
+        # the legacy branch still runs first when wired (test mode); only
+        # when ``signal_engine is None`` does the bus-driven path activate
+        # (production / Phase-3 e2e).  PR-2b-iv will delete the legacy
+        # scaffolding entirely once the kernel test suite has been
+        # migrated off engine stubs.
+        self._signal_buffer: list[Signal] = []
+        self._consumed_by_portfolio_ids: frozenset[str] | None = None
+        self._warned_multi_standalone_signals: bool = False
+        self._bus.subscribe(Signal, self._on_bus_signal)
 
     # ── Public state accessors ──────────────────────────────────────
 
@@ -897,6 +959,14 @@ class Orchestrator:
         t_wall_start = time.perf_counter_ns()
         self._tick_timings: dict[str, int] = {}
 
+        # PR-2b-iii: clear last tick's bus-fed Signal buffer before
+        # ``bus.publish(quote)`` triggers HorizonSignalEngine subscribers
+        # for the new tick.  Without this, Signals that fired during a
+        # prior tick (and were never drained — e.g., when the kill switch
+        # short-circuited the pipeline) would leak into the new tick's
+        # M4 drain and translate into ghost orders.
+        self._signal_buffer.clear()
+
         # ── Kill switch gate (W-2) ─────────────────────────────
         if self._kill_switch is not None and self._kill_switch.is_active:
             if self._macro.state in TRADING_MODES:
@@ -1018,15 +1088,39 @@ class Orchestrator:
         # that used to fan out to ``_process_tick_multi_alpha`` is gone.
         # All remaining alpha dispatch happens on the bus-driven
         # Phase-3/Phase-4 chain (``HorizonAggregator`` →
-        # ``HorizonSignalEngine`` → ``CompositionEngine``).  The block
-        # below is the single-alpha legacy path which only fires when a
-        # caller (tests) explicitly wires a duck-typed
-        # ``signal_engine.evaluate(features)``; bootstrap always passes
-        # ``None`` (PR-2b-i) so production never reaches the body.
+        # ``HorizonSignalEngine`` → ``CompositionEngine``).
+        #
+        # Two single-alpha Signal sources feed the per-tick risk → order
+        # → fill walk (the micro SM only supports one such walk per tick):
+        #
+        # 1. **Legacy ``signal_engine`` ctor scaffolding** (test-only;
+        #    PR-2b-iv will delete).  When a test injects a duck-typed
+        #    ``signal_engine.evaluate(features)`` we honour it for
+        #    backward-compatibility with the kernel test suite that
+        #    pre-dates the bus-driven path.
+        #
+        # 2. **PR-2b-iii bus-driven Signal subscriber** (production).
+        #    ``HorizonSignalEngine`` publishes ``Signal(layer="SIGNAL")``
+        #    events as a side-effect of ``bus.publish(quote)`` at M1
+        #    (synchronous bus dispatch); ``_on_bus_signal`` buffers them
+        #    after filtering out PORTFOLIO-consumed alphas (those flow
+        #    through ``CompositionEngine`` and emerge as
+        #    ``SizedPositionIntent``, not ``OrderRequest``).
+        #
+        # When both sources are wired the legacy stub takes precedence so
+        # existing tests remain bit-identical; the bus-fed buffer is
+        # still drained (and discarded) so the buffer does not leak into
+        # the next tick.  Stop-loss exits computed inline by
+        # ``_check_stop_exit`` always override (Inv-11: position safety
+        # beats alpha conviction).
         signal: "Signal | None" = None
         if self._signal_engine is not None and features is not None:
             t0 = time.perf_counter_ns()
             signal = self._signal_engine.evaluate(features)
+            self._tick_timings["signal_evaluate_ns"] = time.perf_counter_ns() - t0
+        elif self._signal_buffer:
+            t0 = time.perf_counter_ns()
+            signal = self._select_bus_signal()
             self._tick_timings["signal_evaluate_ns"] = time.perf_counter_ns() - t0
 
         stop_signal = self._check_stop_exit(quote)
@@ -2499,6 +2593,98 @@ class Orchestrator:
         """Forward Alert events from the bus to the AlertManager."""
         if isinstance(event, Alert) and self._alert_manager is not None:
             self._alert_manager.emit(event)
+
+    # ── PR-2b-iii: bus-driven Signal handler ────────────────────────
+
+    def _on_bus_signal(self, event: Event) -> None:
+        """Buffer a SIGNAL-layer ``Signal`` for the current tick's M4 drain.
+
+        Filtered for safety / correctness:
+
+        * ``layer != "SIGNAL"`` — Phase-4 PORTFOLIO emits
+          ``SizedPositionIntent`` events, not Signals; if a future PR
+          starts publishing ``Signal(layer="PORTFOLIO")`` it should not
+          enter the per-tick legacy order pipeline (PR-2b-iv will wire
+          PORTFOLIO intents through ``RiskEngine.check_sized_intent``).
+        * ``strategy_id == "__stop_exit__"`` — synthetic stop-loss signals
+          are computed inline at M4 by ``_check_stop_exit`` and merged
+          there; routing them through the bus would require the producer
+          to mint sequence numbers from the right generator and would
+          double-fire.
+        * ``alpha_id`` listed in any registered PORTFOLIO's
+          ``depends_on_signals`` — these Signals are aggregated by
+          ``CompositionEngine`` into ``SizedPositionIntent`` events.
+          Translating them into ``OrderRequest`` events here as well
+          would double-trade (Inv-11 fail-safe: prefer no order over
+          duplicate orders).
+
+        The buffer is cleared at the start of every ``_process_tick_inner``
+        call; Signals published in response to the same tick's
+        ``bus.publish(quote)`` arrive synchronously before M4 and are
+        drained there.
+        """
+        if not isinstance(event, Signal):
+            return
+        if event.layer != "SIGNAL":
+            return
+        if event.strategy_id == "__stop_exit__":
+            return
+        if self._is_consumed_by_portfolio(event.strategy_id):
+            return
+        self._signal_buffer.append(event)
+
+    def _is_consumed_by_portfolio(self, alpha_id: str) -> bool:
+        """True iff any PORTFOLIO alpha lists ``alpha_id`` in ``depends_on_signals``.
+
+        Lazily computes the union of every registered PORTFOLIO module's
+        ``depends_on_signals`` on first call, then caches it as a
+        ``frozenset``.  Alphas are registered at bootstrap and never
+        added at runtime (registry is sealed before ``boot()``), so the
+        cache is invalidation-free.
+        """
+        if self._consumed_by_portfolio_ids is None:
+            consumed: set[str] = set()
+            if self._alpha_registry is not None:
+                portfolio_alphas_fn = getattr(
+                    self._alpha_registry, "portfolio_alphas", None,
+                )
+                if portfolio_alphas_fn is not None:
+                    for module in portfolio_alphas_fn():
+                        deps = getattr(module, "depends_on_signals", ())
+                        consumed.update(deps)
+            self._consumed_by_portfolio_ids = frozenset(consumed)
+        return alpha_id in self._consumed_by_portfolio_ids
+
+    def _select_bus_signal(self) -> Signal | None:
+        """Pick one Signal from this tick's bus buffer (deterministic).
+
+        The micro-state machine permits at most one ``RISK_CHECK →
+        ORDER_DECISION → ORDER_SUBMIT → … → LOG_AND_METRICS`` walk per
+        tick (``_MICRO_TRANSITIONS`` in ``feelies.kernel.micro``).  When
+        more than one standalone SIGNAL alpha fires on the same tick
+        the orchestrator picks the first arrival (HorizonSignalEngine's
+        deterministic registration-order dispatch) and emits a
+        once-per-process WARNING hinting that the operator should
+        aggregate via a PORTFOLIO alpha.
+
+        Returns ``None`` when the buffer is empty.
+        """
+        if not self._signal_buffer:
+            return None
+        if len(self._signal_buffer) > 1 and not self._warned_multi_standalone_signals:
+            self._warned_multi_standalone_signals = True
+            ids = sorted({s.strategy_id for s in self._signal_buffer})
+            logger.warning(
+                "orchestrator: %d standalone SIGNAL alphas fired on the "
+                "same tick (%s); only the first (%s) will be translated to "
+                "an OrderRequest.  Aggregate the remaining alphas via a "
+                "PORTFOLIO alpha that lists them in depends_on_signals to "
+                "avoid dropped Signals.",
+                len(self._signal_buffer),
+                ids,
+                self._signal_buffer[0].strategy_id,
+            )
+        return self._signal_buffer[0]
 
     # ── Configuration and data integrity ────────────────────────────
 
