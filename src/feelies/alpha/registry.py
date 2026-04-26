@@ -30,7 +30,10 @@ from feelies.alpha.lifecycle import (
     PromotionEvidence,
 )
 from feelies.alpha.module import AlphaModule
-from feelies.alpha.promotion_evidence import GateThresholds
+from feelies.alpha.promotion_evidence import (
+    GateThresholds,
+    apply_gate_thresholds_overrides,
+)
 from feelies.alpha.promotion_ledger import PromotionLedger
 from feelies.alpha.validation import validate_alpha_set
 from feelies.core.clock import Clock
@@ -109,14 +112,44 @@ class AlphaRegistry:
 
         self._alphas[alpha_id] = alpha
         if self._clock is not None:
+            per_alpha_thresholds = self._resolve_gate_thresholds(manifest)
             self._lifecycles[alpha_id] = AlphaLifecycle(
                 alpha_id=alpha_id,
                 clock=self._clock,
                 gate_requirements=self._gate_requirements,
-                gate_thresholds=self._gate_thresholds,
+                gate_thresholds=per_alpha_thresholds,
                 ledger=self._promotion_ledger,
             )
         self._feature_cache = None
+
+    def _resolve_gate_thresholds(
+        self, manifest: object,
+    ) -> GateThresholds | None:
+        """Merge per-alpha ``gate_thresholds_overrides`` into the
+        registry's base :class:`GateThresholds`.
+
+        Workstream **F-5** wiring:
+
+        * Returns the registry's base :attr:`_gate_thresholds`
+          unchanged (possibly ``None``) when the manifest carries no
+          overrides — the lifecycle then falls through to the
+          ``GateThresholds()`` skill-pinned defaults that
+          :class:`~feelies.alpha.lifecycle.AlphaLifecycle` constructs.
+        * When the manifest carries non-empty overrides, *materialises*
+          a :class:`GateThresholds` (using the registry's base or the
+          skill-pinned defaults when ``None``) and applies the
+          overrides via
+          :func:`feelies.alpha.promotion_evidence.apply_gate_thresholds_overrides`.
+
+        The merge happens at registration time so each
+        :class:`AlphaLifecycle` instance is born with its final
+        thresholds and never has to re-resolve at promotion time.
+        """
+        overrides = getattr(manifest, "gate_thresholds_overrides", None)
+        if not overrides:
+            return self._gate_thresholds
+        base = self._gate_thresholds or GateThresholds()
+        return apply_gate_thresholds_overrides(base, overrides)
 
     def unregister(self, alpha_id: str) -> None:
         """Remove an alpha module from the registry.

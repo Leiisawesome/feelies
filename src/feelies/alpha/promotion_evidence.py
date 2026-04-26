@@ -58,7 +58,7 @@ Schema sources (so reviewers can double-check the field choices):
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass, fields, is_dataclass, replace
 from enum import Enum
 from typing import Any, cast
 
@@ -1105,6 +1105,156 @@ def metadata_to_evidence(metadata: Mapping[str, Any]) -> list[object]:
 
 
 # ─────────────────────────────────────────────────────────────────────
+#   GateThresholds override parsing + merging (Workstream F-5)
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _gate_threshold_field_types() -> dict[str, type]:
+    """Return ``{field_name: expected_python_type}`` for
+    :class:`GateThresholds`.
+
+    Used by :func:`parse_gate_thresholds_overrides` to validate that
+    operator-supplied keys correspond to a real ``GateThresholds``
+    field and to coerce the supplied value into the dataclass's
+    declared scalar type (``int`` / ``float`` / ``bool``).
+    """
+    out: dict[str, type] = {}
+    for f in fields(GateThresholds):
+        annotation = f.type
+        if isinstance(annotation, str):
+            if annotation == "int":
+                out[f.name] = int
+            elif annotation == "float":
+                out[f.name] = float
+            elif annotation == "bool":
+                out[f.name] = bool
+            else:
+                raise RuntimeError(
+                    f"GateThresholds field {f.name!r} has unsupported "
+                    f"annotation {annotation!r}; only int/float/bool are "
+                    "supported by F-5 override parsing"
+                )
+        else:
+            out[f.name] = annotation
+    return out
+
+
+_GATE_THRESHOLD_FIELD_TYPES: dict[str, type] = _gate_threshold_field_types()
+
+
+def parse_gate_thresholds_overrides(
+    raw: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Validate + coerce a raw ``gate_thresholds`` override mapping.
+
+    Used by both the alpha YAML loader (per-alpha overrides) and
+    :class:`feelies.core.platform_config.PlatformConfig` (platform-wide
+    overrides) so the override surface is identical regardless of
+    where the keys are sourced from.
+
+    Validation rules:
+
+    * ``raw`` must be a :class:`~collections.abc.Mapping` (or ``None``,
+      which yields an empty dict — the "no overrides" identity).
+    * Every key must be the name of a :class:`GateThresholds` field.
+      Unknown keys raise :class:`ValueError` listing the offending
+      keys and the closest known fields.
+    * Every value must be coercible into the field's declared scalar
+      type (``int`` / ``float`` / ``bool``).  Booleans are *not*
+      treated as ``int`` (passing ``True`` for an ``int`` field
+      raises).  Strings are *not* coerced (operators must supply
+      actual numbers in YAML).
+
+    Returns a new ``dict`` carrying the type-coerced values; the
+    original mapping is not mutated.
+
+    Numeric invariant checks (e.g. ``min ≤ max`` between two paired
+    fields) are deferred to consumers of the resulting
+    :class:`GateThresholds` instance — the override layer is purely
+    structural validation.
+    """
+    if raw is None:
+        return {}
+    if not isinstance(raw, Mapping):
+        raise ValueError(
+            "gate_thresholds overrides must be a mapping; got "
+            f"{type(raw).__name__}"
+        )
+
+    known = _GATE_THRESHOLD_FIELD_TYPES
+    unknown = sorted(k for k in raw if k not in known)
+    if unknown:
+        raise ValueError(
+            "gate_thresholds overrides reference unknown field(s) "
+            f"{unknown}; valid fields are {sorted(known)}"
+        )
+
+    out: dict[str, Any] = {}
+    for key, value in raw.items():
+        expected = known[key]
+        coerced = _coerce_threshold_value(key, value, expected)
+        out[key] = coerced
+    return out
+
+
+def _coerce_threshold_value(
+    key: str, value: Any, expected: type
+) -> Any:
+    """Coerce ``value`` into ``expected`` for a ``GateThresholds`` field.
+
+    Strict on type (``bool`` is *not* an ``int``, strings are not
+    auto-parsed) so that YAML typos surface as :class:`ValueError`
+    rather than silently mis-typed thresholds.
+    """
+    if expected is bool:
+        if isinstance(value, bool):
+            return value
+        raise ValueError(
+            f"gate_thresholds[{key!r}] expects bool; got "
+            f"{type(value).__name__}={value!r}"
+        )
+    if expected is int:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(
+                f"gate_thresholds[{key!r}] expects int; got "
+                f"{type(value).__name__}={value!r}"
+            )
+        return value
+    if expected is float:
+        if isinstance(value, bool):
+            raise ValueError(
+                f"gate_thresholds[{key!r}] expects float; got bool={value!r}"
+            )
+        if isinstance(value, (int, float)):
+            return float(value)
+        raise ValueError(
+            f"gate_thresholds[{key!r}] expects float; got "
+            f"{type(value).__name__}={value!r}"
+        )
+    raise RuntimeError(
+        f"unsupported expected type {expected!r} for "
+        f"gate_thresholds[{key!r}]"
+    )
+
+
+def apply_gate_thresholds_overrides(
+    base: GateThresholds, overrides: Mapping[str, Any] | None
+) -> GateThresholds:
+    """Return a new :class:`GateThresholds` derived from ``base`` with
+    ``overrides`` applied on top.
+
+    Overrides are passed through :func:`parse_gate_thresholds_overrides`
+    first so the same key/type validation applies regardless of how the
+    overrides were loaded.  Empty / ``None`` overrides return ``base``
+    unchanged (identity).
+    """
+    parsed = parse_gate_thresholds_overrides(overrides)
+    if not parsed:
+        return base
+    return replace(base, **parsed)
+
+
+# ─────────────────────────────────────────────────────────────────────
 #   Construction-time invariant checks
 # ─────────────────────────────────────────────────────────────────────
 
@@ -1185,8 +1335,10 @@ __all__ = (
     "QuarantineTriggerEvidence",
     "ResearchAcceptanceEvidence",
     "RevalidationEvidence",
+    "apply_gate_thresholds_overrides",
     "evidence_to_metadata",
     "metadata_to_evidence",
+    "parse_gate_thresholds_overrides",
     "required_evidence_types",
     "validate_capital_stage",
     "validate_cpcv",

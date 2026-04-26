@@ -45,6 +45,7 @@ from feelies.alpha.module import (
     AlphaRiskBudget,
     ParameterDef,
 )
+from feelies.alpha.promotion_evidence import parse_gate_thresholds_overrides
 from feelies.alpha.portfolio_layer_module import (
     LoadedPortfolioLayerModule,
     _CompiledPortfolioConstructor,
@@ -613,6 +614,9 @@ class AlphaLoader:
         hazard_exit_block = self._parse_hazard_exit_block(
             spec.get("hazard_exit"), source
         )
+        promotion_overrides = self._parse_promotion_block(
+            spec.get("promotion"), source
+        )
         trend_enum, expected_half_life = self._extract_trend_metadata(
             trend_mechanism_block, source,
         )
@@ -647,6 +651,7 @@ class AlphaLoader:
             layer="SIGNAL",
             trend_mechanism=trend_mechanism_block,
             hazard_exit=hazard_exit_block,
+            gate_thresholds_overrides=promotion_overrides,
         )
 
         return LoadedSignalLayerModule(
@@ -707,6 +712,9 @@ class AlphaLoader:
         )
         hazard_exit_block = self._parse_hazard_exit_block(
             spec.get("hazard_exit"), source
+        )
+        promotion_overrides = self._parse_promotion_block(
+            spec.get("promotion"), source
         )
 
         consumes_raw = (
@@ -775,6 +783,7 @@ class AlphaLoader:
             layer="PORTFOLIO",
             trend_mechanism=trend_mechanism_block,
             hazard_exit=hazard_exit_block,
+            gate_thresholds_overrides=promotion_overrides,
         )
 
         return LoadedPortfolioLayerModule(
@@ -1200,6 +1209,66 @@ class AlphaLoader:
                 f"{type(block).__name__}"
             )
         return dict(block)
+
+    def _parse_promotion_block(
+        self,
+        block: Any,
+        source: str,
+    ) -> dict[str, Any] | None:
+        """Parse the optional Workstream F-5 ``promotion:`` block.
+
+        Schema::
+
+            promotion:
+              gate_thresholds:
+                paper_min_trading_days: 7
+                dsr_min: 1.2
+                ...
+
+        Returns the type-coerced override dict (or ``None`` when the
+        block is absent or carries an empty / missing
+        ``gate_thresholds:`` sub-block).  Override keys are validated
+        against :class:`feelies.alpha.promotion_evidence.GateThresholds`
+        field names — unknown keys raise :class:`AlphaLoadError` with
+        the source path so the operator gets a concrete YAML location.
+
+        Numeric invariant checks (e.g. cross-field consistency) are
+        deferred to consumers; the loader is responsible only for
+        structural + per-field type validation.
+        """
+        if block is None:
+            return None
+        if not isinstance(block, dict):
+            raise AlphaLoadError(
+                f"{source}: 'promotion' must be a mapping, got "
+                f"{type(block).__name__}"
+            )
+
+        unknown_keys = sorted(k for k in block if k != "gate_thresholds")
+        if unknown_keys:
+            raise AlphaLoadError(
+                f"{source}: promotion block carries unknown key(s) "
+                f"{unknown_keys}; only 'gate_thresholds' is supported "
+                "today"
+            )
+
+        raw_overrides = block.get("gate_thresholds")
+        if raw_overrides is None:
+            return None
+        if not isinstance(raw_overrides, dict):
+            raise AlphaLoadError(
+                f"{source}: 'promotion.gate_thresholds' must be a "
+                f"mapping, got {type(raw_overrides).__name__}"
+            )
+        if not raw_overrides:
+            return None
+
+        try:
+            return parse_gate_thresholds_overrides(raw_overrides)
+        except ValueError as exc:
+            raise AlphaLoadError(
+                f"{source}: promotion.gate_thresholds: {exc}"
+            ) from exc
 
     @staticmethod
     def _validate_risk_budget(budget: AlphaRiskBudget, source: str) -> None:

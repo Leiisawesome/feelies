@@ -58,6 +58,10 @@ from feelies.alpha.portfolio_layer_module import (
     LoadedPortfolioLayerModule,
     _DefaultPortfolioConstructor,
 )
+from feelies.alpha.promotion_evidence import (
+    GateThresholds,
+    apply_gate_thresholds_overrides,
+)
 from feelies.alpha.promotion_ledger import PromotionLedger
 from feelies.alpha.registry import AlphaRegistry
 from feelies.alpha.risk_wrapper import AlphaBudgetRiskWrapper
@@ -162,8 +166,19 @@ def build_platform(
         if config.promotion_ledger_path is not None
         else None
     )
+    # Workstream F-5 layering: skill-pinned defaults sit at the bottom,
+    # platform-level YAML overrides on top.  Per-alpha
+    # ``promotion.gate_thresholds`` overrides are layered onto *this*
+    # result inside :py:meth:`AlphaRegistry.register` (lowest →
+    # highest: skill defaults < platform.yaml < alpha.yaml).  When the
+    # platform YAML carries no ``gate_thresholds:`` block we leave the
+    # registry's base as ``None`` — the lifecycle then falls through
+    # to the skill-pinned defaults at promotion time, preserving the
+    # F-2 / F-4 baseline bit-identically.
+    gate_thresholds = _build_platform_gate_thresholds(config)
     registry = AlphaRegistry(
         clock=registry_clock,
+        gate_thresholds=gate_thresholds,
         promotion_ledger=promotion_ledger,
     )
     loader = AlphaLoader(
@@ -385,6 +400,31 @@ def _select_clock(mode: OperatingMode) -> Clock:
     if mode == OperatingMode.BACKTEST:
         return SimulatedClock()
     return WallClock()
+
+
+def _build_platform_gate_thresholds(
+    config: PlatformConfig,
+) -> GateThresholds | None:
+    """Apply platform-level YAML overrides on top of skill-pinned defaults.
+
+    Workstream **F-5** entry-point.  When the operator supplies a
+    ``gate_thresholds:`` block in ``platform.yaml`` we materialise a
+    :class:`~feelies.alpha.promotion_evidence.GateThresholds` carrying
+    the merged values; otherwise we return ``None`` so the
+    :class:`AlphaRegistry` keeps its "no platform overrides" identity
+    (and per-alpha overrides materialise a ``GateThresholds()``
+    on-demand inside the registry).
+
+    Re-validation is intentional even though
+    :class:`PlatformConfig` already validated the keys at YAML parse
+    time — direct ``PlatformConfig(...)`` constructions skip
+    :meth:`PlatformConfig.from_yaml` entirely, so this is the single
+    place that enforces validity for *every* code path.
+    """
+    overrides = config.gate_thresholds_overrides
+    if not overrides:
+        return None
+    return apply_gate_thresholds_overrides(GateThresholds(), overrides)
 
 
 def _create_regime_engine(engine_name: str | None) -> RegimeEngine | None:

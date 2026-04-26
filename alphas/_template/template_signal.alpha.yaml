@@ -121,6 +121,24 @@ trend_mechanism:
     - "spread_z_30d > 2.0"
     - "kyle_lambda_60s_zscore < -1.5"
 
+# ── Promotion Gate Thresholds (Workstream F-5 — optional) ──
+# Per-alpha override of one or more `GateThresholds` fields used by
+# `validate_gate(...)` at promotion time (see
+# `src/feelies/alpha/promotion_evidence.py`).  Layering precedence
+# (lowest → highest):
+#   1. Skill-pinned defaults (`GateThresholds()`),
+#   2. `platform.yaml: gate_thresholds:` (operator-wide),
+#   3. `promotion.gate_thresholds:` here (this alpha only).
+# Unknown keys raise an `AlphaLoadError` at load time; types must
+# match the dataclass fields (no string-coercion).  See
+# `alphas/SCHEMA.md` § "Promotion overrides" for the full field list.
+# promotion:
+#   gate_thresholds:
+#     paper_min_trading_days: 7         # default 5 — require a longer paper window
+#     dsr_min: 1.2                      # default 1.0 — stricter deflated-Sharpe floor
+#     cpcv_min_mean_sharpe: 1.2         # default 1.0 — stricter CPCV pre-deployment
+#     revalidation_min_oos_sharpe: 1.5  # default 1.0 — re-promotion harder after quarantine
+
 # ── Signal (Layer-2 evaluate) ─────────────────────────────
 signal: |
   def evaluate(snapshot, regime, params):

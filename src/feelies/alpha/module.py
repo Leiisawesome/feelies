@@ -133,6 +133,18 @@ class AlphaManifest:
       ``hazard_exit`` — opt-in v0.3 ``hazard_exit:`` block as a raw dict
                         (parsed but not enforced in Phase 1.1 per §20.1;
                         consumed by the composition layer in Phase 4.1).
+
+      ``gate_thresholds_overrides`` — Workstream F-5 per-alpha
+                        ``promotion.gate_thresholds:`` overrides.  A
+                        flat-key mapping of
+                        :class:`~feelies.alpha.promotion_evidence.GateThresholds`
+                        field names to override values, validated and
+                        coerced at load time by
+                        :func:`feelies.alpha.promotion_evidence.parse_gate_thresholds_overrides`.
+                        ``None`` means "no per-alpha overrides; use
+                        platform defaults".  Empty ``dict`` is also
+                        treated as "no overrides" by the registry
+                        merge step.
     """
 
     alpha_id: str
@@ -153,6 +165,7 @@ class AlphaManifest:
     layer: str | None = None
     trend_mechanism: dict[str, Any] | None = None
     hazard_exit: dict[str, Any] | None = None
+    gate_thresholds_overrides: dict[str, Any] | None = None
 
 
 # ── Alpha module protocol ───────────────────────────────────────────

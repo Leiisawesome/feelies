@@ -150,6 +150,7 @@ Alphas can be placed in either layout:
 | `mechanism` | string | No (Phase 3) | Free-text mechanism summary; complementary to the v0.3 `trend_mechanism` block below. |
 | `trend_mechanism` | dict | No (Phase 1.1 parsed, Phase 3.1 enforced) | v0.3 mechanism descriptor, see below. |
 | `hazard_exit` | dict | No (Phase 1.1 parsed, Phase 4.1 enforced) | v0.3 hazard-rate exit policy, see below. |
+| `promotion` | dict | No (Workstream F-5) | Per-alpha override of the platform `GateThresholds` used by `validate_gate(...)` at promotion time, see below. |
 
 ### `trend_mechanism:` block (v0.3, §20.5)
 
@@ -458,6 +459,60 @@ live:
   the ranker enforces it at emission time. Verified by
   `tests/integration/test_mixed_mechanism_universe.py`.
 
+### `promotion:` block (v0.3, Workstream F-5)
+
+Optional per-alpha override of the platform `GateThresholds` consumed
+by `validate_gate(...)` in
+[`src/feelies/alpha/promotion_evidence.py`](../src/feelies/alpha/promotion_evidence.py).
+The block is **opt-in via field presence** — absent or empty block
+⇒ no per-alpha override and the alpha promotes against the platform
+defaults.  When supplied, the loader stores the validated overrides
+on `AlphaManifest.gate_thresholds_overrides`; the registry then
+applies them on top of the platform `GateThresholds` when
+constructing the alpha's `AlphaLifecycle`.
+
+```yaml
+promotion:
+  gate_thresholds:
+    paper_min_trading_days: 7         # default 5
+    dsr_min: 1.2                      # default 1.0
+    cpcv_min_mean_sharpe: 1.2         # default 1.0
+    revalidation_min_oos_sharpe: 1.5  # default 1.0
+```
+
+Layering precedence (lowest → highest):
+
+1. **Skill-pinned defaults** — `GateThresholds()` with the values
+   pinned in `promotion_evidence.py` (mirroring the
+   testing-validation and post-trade-forensics skill thresholds).
+2. **`platform.yaml: gate_thresholds:`** — operator-wide overrides
+   (Workstream F-5 platform-level surface; see
+   `PlatformConfig.gate_thresholds_overrides`).  Applied on top of
+   the skill defaults at bootstrap to produce the registry's base
+   `GateThresholds`.
+3. **`promotion.gate_thresholds:`** in this YAML — per-alpha
+   overrides applied on top of (2) at registration time.
+
+Validation at load time:
+
+| Rule | Behaviour |
+|---|---|
+| Block must be a mapping | `AlphaLoadError` if scalar/list. |
+| Only `gate_thresholds:` sub-block is supported | Other keys (e.g. `promotion.notes:`) raise `AlphaLoadError` listing the offending keys. |
+| `gate_thresholds:` must be a mapping | `AlphaLoadError` otherwise. |
+| Every key must name a `GateThresholds` field | Unknown keys raise `AlphaLoadError` listing the valid field names. |
+| Every value must match the field's declared type | Booleans are not auto-cast to ints; strings are not auto-parsed as numbers — operator must supply real numbers/booleans in YAML. |
+| Empty `gate_thresholds: {}` | Treated as "no overrides"; manifest carries `gate_thresholds_overrides=None`. |
+
+The loader does **not** perform cross-field invariant checks (e.g.
+`small_min_pnl_compression_ratio < small_max_pnl_compression_ratio`)
+— those are deferred to the consumer (the F-2 validators).  The
+override surface is purely structural.  See
+[`docs/migration/schema_1_0_to_1_1.md`](../docs/migration/schema_1_0_to_1_1.md)
+§ "Per-alpha promotion overrides" for the operator cookbook and
+[`tests/alpha/test_loader_promotion_block.py`](../tests/alpha/test_loader_promotion_block.py)
+for the asserting tests.
+
 ### Backward compatibility
 
 - Schema 1.0 specs are rejected (Workstream D.1 hard-removal).
@@ -466,6 +521,12 @@ live:
   pointer to the migration cookbook.
 - A schema-1.1 spec without `layer:` is rejected — there is no
   implicit upgrade path (§8.7).
+- A schema-1.1 spec **without** a `promotion:` block continues to
+  load unchanged (Workstream F-5 is opt-in via field presence).
+  The alpha promotes against the platform `GateThresholds` produced
+  by `bootstrap._build_platform_gate_thresholds` from
+  `platform.yaml` (or against the skill-pinned defaults if no
+  platform overrides exist either).
 
 ### Migration
 
