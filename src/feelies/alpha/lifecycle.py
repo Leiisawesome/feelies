@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
 
+from feelies.alpha.promotion_ledger import PromotionLedger, PromotionLedgerEntry
 from feelies.core.clock import Clock
 from feelies.core.state_machine import StateMachine, TransitionRecord
 
@@ -175,15 +176,24 @@ class AlphaLifecycle:
         alpha_id: str,
         clock: Clock,
         gate_requirements: GateRequirements | None = None,
+        ledger: PromotionLedger | None = None,
     ) -> None:
         self._alpha_id = alpha_id
         self._gate_requirements = gate_requirements or GateRequirements()
+        self._ledger = ledger
         self._sm = StateMachine(
             name=f"alpha_lifecycle:{alpha_id}",
             initial_state=AlphaLifecycleState.RESEARCH,
             transitions=_LIFECYCLE_TRANSITIONS,
             clock=clock,
         )
+        # Workstream F-1: forensic evidence ledger receives every
+        # successfully-committed transition.  Wired through
+        # ``StateMachine.on_transition`` (callbacks fire pre-commit, so
+        # a ledger-write failure rolls the SM back atomically — Inv-13
+        # provenance + Inv-11 fail-safe).
+        if self._ledger is not None:
+            self._sm.on_transition(self._record_to_ledger)
 
     @property
     def state(self) -> AlphaLifecycleState:
@@ -303,6 +313,25 @@ class AlphaLifecycle:
     def is_live(self) -> bool:
         """Whether the alpha is deployed with real capital."""
         return self._sm.state == AlphaLifecycleState.LIVE
+
+    # ── Promotion ledger ─────────────────────────────────────
+
+    def _record_to_ledger(self, record: TransitionRecord) -> None:
+        """``StateMachine.on_transition`` callback that projects a
+        ``TransitionRecord`` into a :class:`PromotionLedgerEntry` and
+        appends it.  Only attached when a ledger is provided.
+        """
+        assert self._ledger is not None  # invariant: only registered when set
+        entry = PromotionLedgerEntry(
+            alpha_id=self._alpha_id,
+            from_state=record.from_state,
+            to_state=record.to_state,
+            trigger=record.trigger,
+            timestamp_ns=record.timestamp_ns,
+            correlation_id=record.correlation_id,
+            metadata=dict(record.metadata),
+        )
+        self._ledger.append(entry)
 
     # ── Persistence ──────────────────────────────────────────
 
