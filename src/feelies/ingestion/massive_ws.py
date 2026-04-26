@@ -22,6 +22,7 @@ import logging
 import queue
 import threading
 from collections.abc import Iterator, Sequence
+from typing import Any
 
 from feelies.core.clock import Clock
 from feelies.core.events import NBBOQuote, Trade
@@ -169,23 +170,29 @@ class MassiveLiveFeed:
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * _BACKOFF_MULTIPLIER, _MAX_BACKOFF_S)
 
-    async def _authenticate(self, ws: object) -> None:
+    async def _authenticate(self, ws: Any) -> None:
         """Send auth message and validate the response.
 
         Massive responds with a JSON array; a successful auth contains
         ``{"ev": "status", "status": "auth_success", ...}``.
+
+        ``ws`` is typed ``Any`` because the optional ``websockets`` library
+        ships without a ``py.typed`` marker; the structural contract is
+        documented in the dependency README and exercised end-to-end by
+        ``tests/ingestion/test_massive_functional.py``.
         """
         auth_msg = json.dumps({"action": "auth", "params": self._api_key})
-        await ws.send(auth_msg)  # type: ignore[union-attr]
-        raw = await ws.recv()  # type: ignore[union-attr]
+        await ws.send(auth_msg)
+        raw = await ws.recv()
         logger.info("massive_ws: auth response: %s", raw)
         self._validate_status_response(raw, "auth_success", "authentication")
 
-    async def _subscribe(self, ws: object) -> None:
+    async def _subscribe(self, ws: Any) -> None:
         """Subscribe to quote and trade channels and validate the response.
 
         Massive responds with ``{"ev": "status", "status": "success", ...}``
-        for each successfully subscribed channel.
+        for each successfully subscribed channel.  ``ws`` is typed ``Any``
+        for the same reason as in :meth:`_authenticate`.
         """
         channels = []
         for sym in self._symbols:
@@ -195,8 +202,8 @@ class MassiveLiveFeed:
             "action": "subscribe",
             "params": ",".join(channels),
         })
-        await ws.send(sub_msg)  # type: ignore[union-attr]
-        raw = await ws.recv()  # type: ignore[union-attr]
+        await ws.send(sub_msg)
+        raw = await ws.recv()
         logger.info("massive_ws: subscribe response: %s", raw)
         self._validate_status_response(raw, "success", "subscription")
 
@@ -230,9 +237,12 @@ class MassiveLiveFeed:
             f"'{expected_status}', got: {raw!r}"
         )
 
-    async def _consume(self, ws: object) -> None:
-        """Read messages from the WebSocket and enqueue normalized events."""
-        async for raw_msg in ws:  # type: ignore[union-attr]
+    async def _consume(self, ws: Any) -> None:
+        """Read messages from the WebSocket and enqueue normalized events.
+
+        ``ws`` is typed ``Any`` for the same reason as :meth:`_authenticate`.
+        """
+        async for raw_msg in ws:
             if self._stop_event.is_set():
                 return
 

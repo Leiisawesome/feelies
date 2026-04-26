@@ -59,6 +59,7 @@ from feelies.core.events import (
     Alert,
     AlertSeverity,
     Event,
+    HorizonTick,
     KillSwitchActivation,
     MetricEvent,
     MetricType,
@@ -118,6 +119,7 @@ from feelies.storage.trade_journal import TradeJournal, TradeRecord
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from feelies.execution.cost_model import CostModel
+    from feelies.portfolio.position_store import Position
 
 class _PostExitPositionView:
     """Position view that simulates a pending exit fill for risk checking.
@@ -853,7 +855,7 @@ class Orchestrator:
             correlation_id=cid,
         )
 
-        ticks: tuple = ()
+        ticks: tuple[HorizonTick, ...] = ()
         if scheduler_active:
             assert self._horizon_scheduler is not None
             ticks = self._horizon_scheduler.on_event(event)

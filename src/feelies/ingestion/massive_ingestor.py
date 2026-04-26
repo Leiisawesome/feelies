@@ -34,7 +34,7 @@ from feelies.ingestion.massive_normalizer import MassiveNormalizer
 from feelies.storage.event_log import EventLog
 
 if TYPE_CHECKING:
-    from massive import RESTClient  # pyright: ignore[reportMissingImports]
+    from massive import RESTClient  # type: ignore[import-untyped]  # pyright: ignore[reportMissingImports]
 
 logger = logging.getLogger(__name__)
 

@@ -21,6 +21,7 @@ import time
 from collections.abc import Sequence
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 from feelies.core.events import NBBOQuote, Trade
 
@@ -48,13 +49,15 @@ def _compute_schema_hash() -> str:
     return f"sha256:{hashlib.sha256(raw.encode()).hexdigest()}"
 
 
-def _event_to_dict(event: NBBOQuote | Trade) -> dict:
+def _event_to_dict(event: NBBOQuote | Trade) -> dict[str, Any]:
     """Serialize a frozen event to a JSON-safe dict.
 
     Decimal fields are converted to strings to preserve precision (Inv-5).
     Tuple fields are converted to lists for JSON compatibility.
     """
-    d: dict = {"__type__": _TYPE_QUOTE if isinstance(event, NBBOQuote) else _TYPE_TRADE}
+    d: dict[str, Any] = {
+        "__type__": _TYPE_QUOTE if isinstance(event, NBBOQuote) else _TYPE_TRADE,
+    }
 
     for name in event.__dataclass_fields__:
         val = getattr(event, name)
@@ -68,7 +71,7 @@ def _event_to_dict(event: NBBOQuote | Trade) -> dict:
     return d
 
 
-def _dict_to_event(d: dict) -> NBBOQuote | Trade:
+def _dict_to_event(d: dict[str, Any]) -> NBBOQuote | Trade:
     """Deserialize a dict back into a frozen NBBOQuote or Trade."""
     type_tag = d.pop("__type__")
     cls = NBBOQuote if type_tag == _TYPE_QUOTE else Trade
@@ -120,11 +123,13 @@ class DiskEventCache:
             return False
 
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest: dict[str, Any] = json.loads(
+                manifest_path.read_text(encoding="utf-8"),
+            )
         except Exception:
             return False
 
-        return manifest.get("event_schema_hash") == self._schema_hash
+        return bool(manifest.get("event_schema_hash") == self._schema_hash)
 
     def load(self, symbol: str, date: str) -> list[NBBOQuote | Trade] | None:
         """Load cached events for a (symbol, date) pair.

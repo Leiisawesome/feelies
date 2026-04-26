@@ -394,7 +394,7 @@ class PassiveLimitOrderRouter:
             reason=(
                 f"passive limit timeout after {pending.total_ticks} ticks"
             ),
-            fees=cancel_fees if cancel_fees > 0 else None,
+            fees=cancel_fees if cancel_fees > 0 else Decimal("0"),
         ))
 
     # ── Explicit cancellation ───────────────────────────────────
@@ -417,7 +417,7 @@ class PassiveLimitOrderRouter:
             symbol=pending.request.symbol,
             status=OrderAckStatus.CANCELLED,
             reason="client_cancel",
-            fees=cancel_fees if cancel_fees > 0 else None,
+            fees=cancel_fees if cancel_fees > 0 else Decimal("0"),
         ))
         self._remove_resting(order_id)
         return True

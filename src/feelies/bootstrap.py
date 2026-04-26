@@ -428,6 +428,8 @@ def _create_backend(
     passive_cancel_fee_per_share: float = 0.0,
     market_impact_factor: float = 0.5,
 ) -> tuple[ExecutionBackend, BacktestOrderRouter | PassiveLimitOrderRouter | None]:
+    backend: ExecutionBackend
+    router: BacktestOrderRouter | PassiveLimitOrderRouter | None
     if mode == OperatingMode.BACKTEST:
         if execution_mode == "passive_limit":
             backend, router = build_passive_limit_backend(

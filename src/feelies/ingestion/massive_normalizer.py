@@ -117,6 +117,7 @@ class MassiveNormalizer:
             if not isinstance(msg, dict):
                 continue
             ev = msg.get("ev")
+            event: NBBOQuote | Trade | None
             if ev == "Q":
                 event = self._ws_quote(msg)
                 if event is not None:
@@ -143,6 +144,7 @@ class MassiveNormalizer:
             cid = make_correlation_id(symbol, exchange_ts_ns, internal_seq)
 
             raw_c = msg.get("c")
+            conditions: tuple[int, ...]
             if raw_c is not None and not isinstance(raw_c, list):
                 conditions = (int(raw_c),)
             elif isinstance(raw_c, list):
@@ -228,6 +230,7 @@ class MassiveNormalizer:
 
         # REST records are passed individually by the ingestor.
         # Detect type by field presence.
+        event: NBBOQuote | Trade | None
         if "bid_price" in data or "ask_price" in data:
             event = self._rest_quote(data)
             return [event] if event is not None else []
