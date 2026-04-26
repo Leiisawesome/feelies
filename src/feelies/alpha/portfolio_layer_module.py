@@ -3,25 +3,27 @@
 A :class:`LoadedPortfolioLayerModule` is the loader-side artifact for a
 schema-1.1 ``layer: PORTFOLIO`` alpha.  Its surface mirrors
 :class:`feelies.alpha.signal_layer_module.LoadedSignalLayerModule` —
-the manifest, an :class:`AlphaModule.evaluate` that always returns
-``None`` (post-D.2 PR-2b-ii the per-tick composite signal engine is
-deleted; the protocol method survives only as orchestrator
-test-scaffolding and PORTFOLIO alphas are wired by
-:class:`feelies.composition.engine.CompositionEngine` instead), and a
-Phase-4 surface exposing the universe, decision horizon,
-mechanism-consumes whitelist, and ``construct`` callable consumed by
-the composition engine.
+the manifest plus a Phase-4 surface exposing the universe, decision
+horizon, mechanism-consumes whitelist, and ``construct`` callable
+consumed by :class:`feelies.composition.engine.CompositionEngine`.
 
-PR-2b-iii (this commit) adds the ``depends_on_signals`` attribute to
-the surface (it was parsed from the manifest by the loader but
-discarded prior to this PR).  The orchestrator's bus-driven ``Signal``
-subscriber (``_on_bus_signal``) reads this list across every
-registered PORTFOLIO at boot and uses it to **skip** translating
+PR-2b-iv removed the legacy ``AlphaModule.evaluate`` method from the
+protocol entirely (it had degraded to a no-op shim after PR-2b-ii
+deleted the composite signal engine).  PORTFOLIO alphas now drive
+order flow exclusively via the bus-driven path:
+``CompositionEngine`` aggregates the upstream SIGNAL alphas they
+declare in ``depends_on_signals``, emits a ``SizedPositionIntent``
+for each tick, and ``Orchestrator._on_bus_sized_intent`` translates
+that intent into per-leg ``OrderRequest`` events through
+``RiskEngine.check_sized_intent``.
+
+PR-2b-iii first added ``depends_on_signals`` to the surface (it was
+parsed from the manifest by the loader but discarded earlier).  The
+orchestrator's ``_on_bus_signal`` subscriber reads this list across
+every registered PORTFOLIO at boot and uses it to **skip** translating
 those upstream SIGNAL alphas' ``Signal`` events into ``OrderRequest``
-events — they are aggregated through ``CompositionEngine`` and emerge
-as ``SizedPositionIntent`` events instead (PR-2b-iv will translate
-intents into orders).  Translating them through both paths would
-double-trade (Inv-11: prefer no order over duplicate orders).
+events directly — they would otherwise be double-traded (Inv-11:
+prefer no order over duplicate orders).
 
 The default canonical implementation runs the engine's *default
 pipeline* (ranker → neutralizer → matcher → optimizer) with the
@@ -41,8 +43,6 @@ from feelies.alpha.module import AlphaManifest
 from feelies.composition.protocol import CompositionContextError
 from feelies.core.events import (
     CrossSectionalContext,
-    FeatureVector,
-    Signal,
     SizedPositionIntent,
     TrendMechanism,
 )
@@ -103,10 +103,6 @@ class LoadedPortfolioLayerModule:
 
     def feature_definitions(self) -> Sequence[FeatureDefinition]:
         return ()
-
-    def evaluate(self, features: FeatureVector) -> Signal | None:
-        """No-op — PORTFOLIO alphas do not run on the per-tick path."""
-        return None
 
     def validate(self) -> list[str]:
         errors: list[str] = []

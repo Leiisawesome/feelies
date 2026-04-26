@@ -27,11 +27,15 @@ The historical per-tick :class:`CompositeFeatureEngine` /
 :class:`CompositeSignalEngine` / :class:`MultiAlphaEvaluator` plumbing
 was deleted by workstream D.2 PR-2b-ii along with the
 :class:`feelies.features.engine.FeatureEngine` and
-:class:`feelies.signals.engine.SignalEngine` protocols.  The
-:class:`feelies.core.events.FeatureVector` event survives only as
-test-side scaffolding for the orchestrator's gated single-alpha
-pipeline (``feature_engine``/``signal_engine`` are constructor-optional
-and bootstrap always passes ``None`` post-D.2 PR-2b-i).
+:class:`feelies.signals.engine.SignalEngine` protocols.  D.2 PR-2b-iv
+then deleted the surviving test scaffolding: the
+:class:`feelies.core.events.FeatureVector` event,
+:py:meth:`AlphaModule.evaluate`, the orchestrator's
+``feature_engine``/``signal_engine`` constructor parameters, and the
+gated single-alpha branch in ``_process_tick_inner``.  All Signal /
+SizedPositionIntent → OrderRequest dispatch now flows through the
+orchestrator's bus subscribers (``_on_bus_signal`` /
+``_on_bus_sized_intent``).
 """
 
 from feelies.alpha.aggregation import AggregatedOrders, aggregate_intents

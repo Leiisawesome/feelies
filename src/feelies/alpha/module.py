@@ -3,16 +3,22 @@
 An AlphaModule is the atomic unit of plug/unplug.  It bundles:
   - Metadata (AlphaManifest): hypothesis, falsification, version, risk budget
   - Feature declarations (FeatureDefinition): what features it introduces/needs
-  - Signal logic (evaluate): the pure function from features to signal
+  - Layer-typed evaluation logic supplied by the layer-specific subclass
+    (``LoadedSignalLayerModule.evaluate_horizon`` for SIGNAL alphas;
+    ``LoadedPortfolioLayerModule.evaluate_cross_section`` for PORTFOLIO
+    alphas)
 
 Alpha modules are registered with the AlphaRegistry before the
-orchestrator boots.  The system constructs composite FeatureEngine
-and SignalEngine implementations from the registered modules.
+orchestrator boots.  Phase-3 / Phase-4 dispatch flows through the
+bus-driven HorizonAggregator → HorizonSignalEngine → CompositionEngine
+chain — the orchestrator never sees AlphaModule directly (invariant 9:
+no mode-specific branching, invariant 8: layer separation preserved).
 
-The orchestrator never sees AlphaModule directly — it interacts with
-the composite engines through the standard FeatureEngine/SignalEngine
-protocols (invariant 9: no mode-specific branching, invariant 8:
-layer separation preserved).
+Workstream D.2 PR-2b-iv deleted the legacy per-tick ``evaluate(features)``
+method that used to map a :class:`FeatureVector` to a :class:`Signal`;
+the surviving protocol surface is metadata-only.  Layer-specific
+``LoadedSignalLayerModule`` / ``LoadedPortfolioLayerModule`` subclasses
+expose typed evaluation hooks consumed by the bus-driven chain.
 """
 
 from __future__ import annotations
@@ -21,7 +27,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from feelies.core.events import FeatureVector, Signal
 from feelies.features.definition import FeatureDefinition
 
 _TYPE_MAP: dict[str, type] = {
@@ -154,16 +159,21 @@ class AlphaManifest:
 
 
 class AlphaModule(Protocol):
-    """Self-contained alpha: features + signal logic + metadata.
+    """Self-contained alpha: feature declarations + manifest metadata.
 
     Implementations must satisfy:
-      - ``evaluate()`` is a pure function (invariant 5): deterministic,
-        no side effects, no state mutation, no I/O.
       - ``feature_definitions()`` returns the features this alpha
         introduces.  Shared features are deduplicated by feature_id +
         version across all registered modules.
       - ``validate()`` performs self-checks and returns a list of error
         strings (empty = valid).
+
+    Workstream D.2 PR-2b-iv deleted the per-tick ``evaluate(features)``
+    method.  Layer-specific evaluation lives on the loader-emitted
+    subclasses (``LoadedSignalLayerModule.evaluate_horizon`` /
+    ``LoadedPortfolioLayerModule.evaluate_cross_section``) which are
+    consumed by the bus-driven HorizonSignalEngine / CompositionEngine
+    chain — invariant 5 (purity) is enforced at those entry points.
     """
 
     @property
@@ -178,17 +188,6 @@ class AlphaModule(Protocol):
         other modules.  Features with the same feature_id + version
         across modules are deduplicated; version conflicts are
         rejected at registration.
-        """
-        ...
-
-    def evaluate(self, features: FeatureVector) -> Signal | None:
-        """Evaluate features into a trading signal.
-
-        Pure function: deterministic, no side effects, no state
-        mutation, no I/O (invariant 5).
-
-        Returns Signal when a tradeable condition is detected,
-        None when no action is warranted this tick.
         """
         ...
 

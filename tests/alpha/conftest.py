@@ -9,7 +9,7 @@ import pytest
 from feelies.alpha.module import AlphaManifest, AlphaRiskBudget
 from feelies.alpha.registry import AlphaRegistry
 from feelies.core.clock import SimulatedClock
-from feelies.core.events import FeatureVector, NBBOQuote, Signal, SignalDirection
+from feelies.core.events import NBBOQuote
 from feelies.features.definition import FeatureDefinition, WarmUpSpec
 
 
@@ -60,21 +60,6 @@ class MockAlpha:
 
     def feature_definitions(self) -> list[FeatureDefinition]:
         return self._feature_defs
-
-    def evaluate(self, features: FeatureVector) -> Signal | None:
-        spread = features.values.get("spread", 0.0)
-        if spread > 0.01:
-            return Signal(
-                timestamp_ns=features.timestamp_ns,
-                correlation_id=features.correlation_id,
-                sequence=features.sequence,
-                symbol=features.symbol,
-                strategy_id=self._manifest.alpha_id,
-                direction=SignalDirection.LONG,
-                strength=0.8,
-                edge_estimate_bps=10.0,
-            )
-        return None
 
     def validate(self) -> list[str]:
         return []

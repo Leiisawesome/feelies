@@ -56,8 +56,6 @@ def test_orchestrator_constructs_default_generators_when_none_provided() -> None
         clock=MagicMock(),
         bus=MagicMock(),
         backend=MagicMock(),
-        feature_engine=MagicMock(),
-        signal_engine=MagicMock(),
         risk_engine=MagicMock(),
         position_store=MagicMock(),
         event_log=MagicMock(),

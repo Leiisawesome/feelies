@@ -97,23 +97,13 @@ class Trade(Event):
 
 
 # ── Feature Events ──────────────────────────────────────────────────────
-
-
-@dataclass(frozen=True, kw_only=True)
-class FeatureVector(Event):
-    """Computed features for a symbol at a point in time.
-
-    Emitted by the feature engine after every incremental update.
-    Consumed by the signal engine — never raw market events.
-    """
-
-    symbol: str
-    feature_version: str
-    values: dict[str, float]
-    warm: bool = True
-    stale: bool = False
-    event_count: int = 0
-    suppressed_features: frozenset[str] = frozenset()
+#
+# Workstream D.2 PR-2b-iv deleted the per-tick ``FeatureVector`` event
+# along with the legacy feature-engine plumbing.  The current canonical
+# feature event is :class:`HorizonFeatureSnapshot` (Phase-2 horizon-bucketed
+# snapshot emitted by :class:`HorizonAggregator` when a HorizonTick boundary
+# is crossed); see ``§5.6`` of the migration guide and the ``feature``
+# glossary entry in ``platform-invariants.mdc`` for the full timeline.
 
 
 # ── Regime Events ───────────────────────────────────────────────────────
@@ -540,9 +530,8 @@ class HorizonFeatureSnapshot(Event):
     aggregator's state so downstream signal evaluation can suppress on
     either condition without re-reading sensor state.
 
-    Coexists with the legacy per-tick ``FeatureVector`` (§5.3) which
-    continues to serve LEGACY_SIGNAL alphas via
-    ``features/legacy_shim.py``.
+    Workstream D.2 PR-2b-iv deleted the legacy per-tick ``FeatureVector``
+    event; ``HorizonFeatureSnapshot`` is now the sole feature-event type.
     """
 
     symbol: str

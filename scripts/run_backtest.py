@@ -37,7 +37,6 @@ from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
     CrossSectionalContext,
     Event,
-    FeatureVector,
     HorizonFeatureSnapshot,
     HorizonTick,
     MetricEvent,
@@ -787,7 +786,6 @@ def generate_report(
     from feelies.storage.trade_journal import TradeRecord
 
     quotes = recorder.of_type(NBBOQuote)
-    features = recorder.of_type(FeatureVector)
     signals = recorder.of_type(Signal)
     orders = recorder.of_type(OrderRequest)
     acks = recorder.of_type(OrderAck)
@@ -799,7 +797,7 @@ def generate_report(
     long_signals = [s for s in signals if s.direction == SignalDirection.LONG]
     short_signals = [s for s in signals if s.direction == SignalDirection.SHORT]
 
-    warmup_features = [f for f in features if not f.warm]
+    horizon_snapshots = recorder.of_type(HorizonFeatureSnapshot)
 
     total_shares = sum(abs(a.filled_quantity) for a in filled_acks)
 
@@ -960,8 +958,7 @@ def generate_report(
     # Pipeline
     lines.append(_section("Signal Pipeline"))
     lines.append(_kv("Quotes processed", f"{len(quotes):,}"))
-    lines.append(_kv("Feature vectors", f"{len(features):,}"))
-    lines.append(_kv("Warm-up ticks", f"{len(warmup_features)}"))
+    lines.append(_kv("Horizon snapshots", f"{len(horizon_snapshots):,}"))
     lines.append(_kv("Signals emitted", f"{len(signals):,}"))
     lines.append(_sub_kv("Long", f"{len(long_signals):,}"))
     lines.append(_sub_kv("Short", f"{len(short_signals):,}"))
