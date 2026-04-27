@@ -38,6 +38,7 @@ from typing import Any
 from feelies.alpha.promotion_evidence import (
     EVIDENCE_SCHEMA_VERSION,
     GATE_EVIDENCE_REQUIREMENTS,
+    PROMOTE_CAPITAL_TIER_TRIGGER,
     CapitalStageTier,
     GateId,
     GateThresholds,
@@ -213,25 +214,47 @@ def _dump_json(payload: Mapping[str, Any]) -> None:
 _STATE_PAIR_TO_GATE: Mapping[tuple[str, str], GateId] = {
     ("RESEARCH", "PAPER"): GateId.RESEARCH_TO_PAPER,
     ("PAPER", "LIVE"): GateId.PAPER_TO_LIVE,
-    ("LIVE", "LIVE"): GateId.LIVE_PROMOTE_CAPITAL_TIER,
     ("LIVE", "QUARANTINED"): GateId.LIVE_TO_QUARANTINED,
     ("QUARANTINED", "PAPER"): GateId.QUARANTINED_TO_PAPER,
     ("QUARANTINED", "DECOMMISSIONED"): GateId.QUARANTINED_TO_DECOMMISSIONED,
 }
 """Map a recorded ``(from_state, to_state)`` pair onto the F-2 gate id.
 
-The ``("LIVE", "LIVE")`` entry was introduced by Workstream **F-6**:
-the LIVE @ SMALL_CAPITAL → LIVE @ SCALED escalation is recorded as a
-self-loop transition with the
-:data:`feelies.alpha.lifecycle.PROMOTE_CAPITAL_TIER_TRIGGER` trigger,
-even though the lifecycle state is unchanged.  The
+The Workstream **F-6** ``LIVE @ SMALL_CAPITAL → LIVE @ SCALED``
+escalation is **deliberately not** in this table: a ``("LIVE", "LIVE")``
+self-loop transition can in principle carry any trigger (the state
+machine permits self-loops generically), so the gate inference must
+also consult the trigger to avoid misclassifying a non-capital-tier
+``LIVE → LIVE`` event as a capital-tier promotion.  The
+``("LIVE", "LIVE")`` ↔ :attr:`GateId.LIVE_PROMOTE_CAPITAL_TIER`
+binding is applied by :func:`_gate_for_entry` only when
+``entry.trigger == PROMOTE_CAPITAL_TIER_TRIGGER``.  The
 ``replay-evidence`` subcommand handles unknown pairs gracefully (skip
 with a notice rather than crash).
 """
 
 
 def _gate_for_entry(entry: PromotionLedgerEntry) -> GateId | None:
-    return _STATE_PAIR_TO_GATE.get((entry.from_state, entry.to_state))
+    """Resolve the F-2 gate id implied by a ledger entry.
+
+    For most state pairs the lookup is unambiguous, but the F-6
+    ``LIVE → LIVE`` self-loop must additionally match
+    :data:`PROMOTE_CAPITAL_TIER_TRIGGER`: the state machine allows
+    arbitrary self-loop triggers in general (e.g. a future
+    book-keeping event could record some other ``LIVE → LIVE``
+    metadata), and silently classifying every ``LIVE → LIVE``
+    transition as ``LIVE_PROMOTE_CAPITAL_TIER`` would mask such cases
+    behind a misleading ``replay-evidence`` row.  When the trigger
+    does not match, return ``None`` so the entry is reported as
+    *skipped — no gate registered* rather than mis-replayed against
+    the capital-tier gate's evidence schema.
+    """
+    pair = (entry.from_state, entry.to_state)
+    if pair == ("LIVE", "LIVE"):
+        if entry.trigger == PROMOTE_CAPITAL_TIER_TRIGGER:
+            return GateId.LIVE_PROMOTE_CAPITAL_TIER
+        return None
+    return _STATE_PAIR_TO_GATE.get(pair)
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -269,7 +292,7 @@ def _capital_tier_from_entries(
         return None
     live_name = "LIVE"
     for entry in reversed(rows_sorted):
-        if entry.trigger == "promote_capital_tier":
+        if entry.trigger == PROMOTE_CAPITAL_TIER_TRIGGER:
             return CapitalStageTier.SCALED
         if entry.to_state == live_name and entry.from_state != live_name:
             return CapitalStageTier.SMALL_CAPITAL
@@ -324,7 +347,7 @@ def _render_inspect_text(result: _InspectResult) -> None:
         if (
             row["from_state"] == "LIVE"
             and row["to_state"] == "LIVE"
-            and row["trigger"] == "promote_capital_tier"
+            and row["trigger"] == PROMOTE_CAPITAL_TIER_TRIGGER
         ):
             arrow = "LIVE @ SMALL_CAPITAL -> LIVE @ SCALED"
             print(

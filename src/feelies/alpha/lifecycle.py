@@ -256,6 +256,16 @@ class AlphaLifecycle:
         self._gate_requirements = gate_requirements or GateRequirements()
         self._gate_thresholds = gate_thresholds or GateThresholds()
         self._ledger = ledger
+        # Workstream F-6 P1 fix: when ``restore()`` rehydrates an alpha
+        # from a checkpoint, the in-memory ``StateMachine.history`` is
+        # empty but the alpha may still have been at LIVE @ SCALED in
+        # the previous process.  ``current_capital_tier`` consults this
+        # fallback hint **only** when the live-epoch scan over history
+        # is silent; once any fresh ``PAPER -> LIVE`` (or
+        # ``PROMOTE_CAPITAL_TIER_TRIGGER``) record lands in history
+        # post-restore, the scan finds it first and the hint is
+        # naturally bypassed (history > hint).
+        self._persisted_capital_tier: CapitalStageTier | None = None
         self._sm = StateMachine(
             name=f"alpha_lifecycle:{alpha_id}",
             initial_state=AlphaLifecycleState.RESEARCH,
@@ -563,6 +573,17 @@ class AlphaLifecycle:
                 return CapitalStageTier.SCALED
             if record.to_state == live_name and record.from_state != live_name:
                 return CapitalStageTier.SMALL_CAPITAL
+        # History exhausted without determining the tier — fall back to
+        # the hint persisted at checkpoint time, if any.  This matters
+        # when ``restore()`` rehydrates an alpha that reached
+        # ``LIVE @ SCALED`` in a prior process: the in-memory history
+        # is empty but the alpha is still SCALED for the operator.
+        # Without this fallback, ``promote_capital_tier()`` would
+        # happily commit a *duplicate* SCALED escalation post-restart
+        # because the SCALED-rejection guard would mis-read the tier
+        # as SMALL_CAPITAL.
+        if self._persisted_capital_tier is not None:
+            return self._persisted_capital_tier
         return CapitalStageTier.SMALL_CAPITAL
 
     # ── Evidence dispatch helpers (Workstream F-4) ───────────
@@ -649,19 +670,40 @@ class AlphaLifecycle:
     def checkpoint(self) -> bytes:
         """Serialize lifecycle state for persistence.
 
-        Returns a JSON-encoded blob containing the current state name.
+        Returns a JSON-encoded blob containing the current state name
+        and — when the alpha is currently in ``LIVE`` — the capital
+        tier of the live epoch.
+
+        The ``capital_tier`` field was added by Workstream **F-6 P1**:
+        without it, restoring a ``LIVE @ SCALED`` alpha from a prior
+        process would silently revert the in-memory tier to
+        ``SMALL_CAPITAL`` (because the inferred tier reads
+        ``StateMachine.history``, which is empty after restore), and a
+        subsequent ``promote_capital_tier()`` call would commit a
+        *duplicate* SCALED escalation to the ledger.  The field is
+        only emitted when ``state == LIVE`` because the tier is
+        meaningless in any other state (mirrors
+        :py:attr:`current_capital_tier`).
+
+        The format is forward-compatible: older blobs without
+        ``capital_tier`` restore as ``SMALL_CAPITAL`` (the historic
+        default), so existing on-disk checkpoints remain loadable.
         """
-        payload = {
+        payload: dict[str, Any] = {
             "alpha_id": self._alpha_id,
             "state": self._sm.state.name,
         }
+        if self._sm.state is AlphaLifecycleState.LIVE:
+            tier = self.current_capital_tier
+            assert tier is not None  # state==LIVE => tier defined
+            payload["capital_tier"] = tier.name
         return json.dumps(payload).encode()
 
     def restore(self, data: bytes) -> None:
         """Restore lifecycle state from a checkpoint.
 
         Raises ``ValueError`` if the data is corrupt or references an
-        unknown state.
+        unknown state or capital tier.
         """
         try:
             payload = json.loads(data.decode())
@@ -683,6 +725,32 @@ class AlphaLifecycle:
                 f"Unknown lifecycle state '{state_name}' in checkpoint "
                 f"for '{self._alpha_id}'"
             )
+
+        # Rehydrate the F-6 capital-tier hint *before* the state is
+        # actually flipped: ``current_capital_tier`` consults the hint
+        # only after exhausting history, so the order doesn't change
+        # behavior, but persisted-tier-before-state-set keeps the
+        # invariant tidy (no transient window where state==LIVE and
+        # the tier hint is stale).
+        tier_name = payload.get("capital_tier")
+        if tier_name is not None:
+            if target is not AlphaLifecycleState.LIVE:
+                raise ValueError(
+                    f"checkpoint for '{self._alpha_id}' carries "
+                    f"capital_tier={tier_name!r} but state={state_name!r} "
+                    f"(capital tier is only meaningful in LIVE)"
+                )
+            try:
+                self._persisted_capital_tier = CapitalStageTier[tier_name]
+            except KeyError:
+                raise ValueError(
+                    f"Unknown capital_tier '{tier_name}' in checkpoint "
+                    f"for '{self._alpha_id}'"
+                )
+        else:
+            # Legacy checkpoint (pre-F-6) or non-LIVE state — clear any
+            # hint from a prior restore to avoid stale-fallback bugs.
+            self._persisted_capital_tier = None
 
         self._restore_to_checkpoint(target, _RESTORE_TOKEN)
 

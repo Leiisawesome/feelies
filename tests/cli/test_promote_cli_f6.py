@@ -499,3 +499,139 @@ class TestReplayEvidenceCapitalTier:
         assert row["gate"] == "live_promote_capital_tier"
         assert row["skipped_reason"] is None
         assert any("deployment_days" in e for e in row["errors"])
+
+
+# ── F-6 P2: trigger-aware ("LIVE", "LIVE") gate inference ─────────
+
+
+class TestReplayEvidenceTriggerAwareLiveSelfLoop:
+    """The Codex-bot P2 review issue on PR #23.
+
+    Pre-fix, the CLI's ``_STATE_PAIR_TO_GATE`` mapping classified
+    *every* ``("LIVE", "LIVE")`` ledger entry as
+    :attr:`GateId.LIVE_PROMOTE_CAPITAL_TIER`, regardless of the
+    entry's ``trigger`` field.  That meant any future (or
+    accidental) ``LIVE -> LIVE`` self-loop carrying a different
+    trigger would be silently mis-replayed against the
+    capital-tier gate's evidence schema, masking real audit issues
+    behind a misleading row.
+
+    Post-fix, the CLI requires the trigger to match
+    :data:`PROMOTE_CAPITAL_TIER_TRIGGER` to apply the
+    capital-tier gate; any other ``LIVE -> LIVE`` trigger is
+    reported as *skipped — no gate registered* (the safe default
+    documented for unknown transitions).
+    """
+
+    def test_live_to_live_with_unknown_trigger_is_skipped(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        ledger_path = tmp_path / "ledger.jsonl"
+        ledger = PromotionLedger(ledger_path)
+        _seed_live_history(ledger, "ALPHA-MISC")
+        # A hand-crafted (or future-feature) self-loop with a trigger
+        # that is NOT the capital-tier sentinel.  The CLI must NOT
+        # silently classify this as LIVE_PROMOTE_CAPITAL_TIER.
+        ledger.append(
+            _make_entry(
+                alpha_id="ALPHA-MISC",
+                from_state="LIVE",
+                to_state="LIVE",
+                trigger="some_other_live_loop_trigger",
+                timestamp_ns=1_700_000_000_002_000_000,
+                metadata={"schema_version": EVIDENCE_SCHEMA_VERSION},
+            )
+        )
+
+        rc = main(
+            [
+                "promote",
+                "replay-evidence",
+                "ALPHA-MISC",
+                "--ledger",
+                str(ledger_path),
+                "--json",
+            ]
+        )
+        captured = capsys.readouterr()
+        # Skipped, not failed: the entry was not mis-classified, and
+        # there is nothing to validate.  Exit code 0 (OK).
+        assert rc == EXIT_OK
+        payload = json.loads(captured.out)
+        cap_rows = [
+            r
+            for r in payload["results"]
+            if r["from_state"] == "LIVE" and r["to_state"] == "LIVE"
+        ]
+        assert len(cap_rows) == 1
+        row = cap_rows[0]
+        assert row["gate"] is None
+        assert row["skipped_reason"] is not None
+        assert "no gate registered" in row["skipped_reason"]
+        assert row["errors"] == []
+
+    def test_live_to_live_with_capital_tier_trigger_still_replays(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # Sanity check: the trigger-aware lookup did not break the
+        # happy path — a properly-triggered entry still classifies
+        # as LIVE_PROMOTE_CAPITAL_TIER and replays normally.
+        ledger_path = tmp_path / "ledger.jsonl"
+        ledger = PromotionLedger(ledger_path)
+        _seed_scaled(ledger, "ALPHA-OK")
+
+        rc = main(
+            [
+                "promote",
+                "replay-evidence",
+                "ALPHA-OK",
+                "--ledger",
+                str(ledger_path),
+                "--json",
+            ]
+        )
+        captured = capsys.readouterr()
+        assert rc == EXIT_OK
+        payload = json.loads(captured.out)
+        cap_rows = [
+            r
+            for r in payload["results"]
+            if r["from_state"] == "LIVE" and r["to_state"] == "LIVE"
+        ]
+        assert len(cap_rows) == 1
+        row = cap_rows[0]
+        assert row["gate"] == "live_promote_capital_tier"
+        assert row["skipped_reason"] is None
+
+    def test_text_output_skip_notice_for_unknown_trigger(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # The text path renders "SKIPPED" + "skipped: ..." line.
+        ledger_path = tmp_path / "ledger.jsonl"
+        ledger = PromotionLedger(ledger_path)
+        _seed_live_history(ledger, "ALPHA-TXT")
+        ledger.append(
+            _make_entry(
+                alpha_id="ALPHA-TXT",
+                from_state="LIVE",
+                to_state="LIVE",
+                trigger="future_unknown_trigger",
+                timestamp_ns=1_700_000_000_002_000_000,
+                metadata={"schema_version": EVIDENCE_SCHEMA_VERSION},
+            )
+        )
+
+        rc = main(
+            [
+                "promote",
+                "replay-evidence",
+                "ALPHA-TXT",
+                "--ledger",
+                str(ledger_path),
+            ]
+        )
+        captured = capsys.readouterr()
+        assert rc == EXIT_OK
+        assert "SKIPPED" in captured.out
+        assert "no gate registered" in captured.out
+        assert "LIVE->LIVE" in captured.out

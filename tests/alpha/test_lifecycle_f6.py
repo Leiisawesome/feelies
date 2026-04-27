@@ -562,3 +562,244 @@ class TestRegistryPromoteCapitalTier:
         lc = registry.get_lifecycle("kyle")
         assert lc is not None
         assert lc.current_capital_tier is CapitalStageTier.SMALL_CAPITAL
+
+
+# ── F-6 P1: capital tier survives checkpoint/restore ───────────────
+
+
+class TestCapitalTierCheckpointRestore:
+    """The Codex-bot P1 review issue on PR #23.
+
+    ``AlphaLifecycle.checkpoint()`` historically persisted only the
+    state name, so restoring a ``LIVE @ SCALED`` alpha would silently
+    revert the in-memory tier to ``SMALL_CAPITAL`` (because
+    ``current_capital_tier`` reads ``StateMachine.history``, which is
+    empty after restore).  A subsequent ``promote_capital_tier()``
+    would then commit a duplicate SCALED escalation to the ledger.
+
+    These tests pin the corrected behavior: the checkpoint blob now
+    carries ``capital_tier`` whenever ``state == LIVE``, and
+    ``restore()`` rehydrates it onto a private fallback consulted by
+    ``current_capital_tier`` when in-memory history is silent.
+    """
+
+    @pytest.fixture
+    def clock(self) -> SimulatedClock:
+        return SimulatedClock(start_ns=1_700_000_000_000_000_000)
+
+    def test_scaled_survives_checkpoint_restore_round_trip(
+        self, clock: SimulatedClock
+    ) -> None:
+        lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
+        _walk_to_live(lc)
+        assert lc.promote_capital_tier(_passing_capital_stage()) == []
+        assert lc.current_capital_tier is CapitalStageTier.SCALED
+
+        blob = lc.checkpoint()
+
+        # Fresh instance — no in-memory history at all.
+        restored = AlphaLifecycle(alpha_id="kyle", clock=clock)
+        restored.restore(blob)
+        assert restored.state is AlphaLifecycleState.LIVE
+        assert restored.current_capital_tier is CapitalStageTier.SCALED
+
+    def test_small_capital_round_trip_keeps_small(
+        self, clock: SimulatedClock
+    ) -> None:
+        lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
+        _walk_to_live(lc)
+        assert lc.current_capital_tier is CapitalStageTier.SMALL_CAPITAL
+
+        blob = lc.checkpoint()
+        restored = AlphaLifecycle(alpha_id="kyle", clock=clock)
+        restored.restore(blob)
+        assert restored.current_capital_tier is CapitalStageTier.SMALL_CAPITAL
+
+    def test_legacy_blob_without_capital_tier_restores_as_small(
+        self, clock: SimulatedClock
+    ) -> None:
+        # Pre-F-6 checkpoint format: no ``capital_tier`` field.
+        legacy_blob = b'{"alpha_id": "kyle", "state": "LIVE"}'
+        lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
+        lc.restore(legacy_blob)
+        assert lc.state is AlphaLifecycleState.LIVE
+        # Backwards-compat: no field → historic SMALL_CAPITAL default.
+        assert lc.current_capital_tier is CapitalStageTier.SMALL_CAPITAL
+
+    def test_restored_scaled_blocks_duplicate_escalation(
+        self, clock: SimulatedClock, tmp_path: Path
+    ) -> None:
+        # Scenario: restart of an already-SCALED alpha.  The new
+        # process must NOT happily commit a second SCALED escalation
+        # against a fresh ledger.
+        lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
+        _walk_to_live(lc)
+        lc.promote_capital_tier(_passing_capital_stage())
+        blob = lc.checkpoint()
+
+        ledger = PromotionLedger(tmp_path / "post_restart.jsonl")
+        restored = AlphaLifecycle(
+            alpha_id="kyle", clock=clock, ledger=ledger
+        )
+        restored.restore(blob)
+
+        errors = restored.promote_capital_tier(_passing_capital_stage())
+        assert errors  # rejected
+        assert any(
+            "tier=SCALED" in e or "already complete" in e for e in errors
+        )
+        # And critically: nothing was written.
+        assert list(ledger.entries()) == []
+
+    def test_quarantine_after_restore_clears_tier_semantics(
+        self, clock: SimulatedClock
+    ) -> None:
+        # After restore + quarantine, current_capital_tier is None
+        # (state != LIVE) and a subsequent revalidate -> live re-entry
+        # starts a brand-new SMALL_CAPITAL epoch — the persisted
+        # SCALED hint must NOT bleed into the fresh epoch.
+        lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
+        _walk_to_live(lc)
+        lc.promote_capital_tier(_passing_capital_stage())
+        blob = lc.checkpoint()
+
+        restored = AlphaLifecycle(alpha_id="kyle", clock=clock)
+        restored.restore(blob)
+        assert restored.current_capital_tier is CapitalStageTier.SCALED
+
+        restored.quarantine("post-restart edge decay")
+        assert restored.current_capital_tier is None
+
+        assert restored.revalidate_to_paper(
+            structured_evidence=[_passing_revalidation()]
+        ) == []
+        assert restored.promote_to_live(
+            structured_evidence=[
+                _passing_paper_window(),
+                _passing_cpcv(),
+                _passing_dsr(),
+            ],
+        ) == []
+        # Fresh LIVE epoch: starts at SMALL_CAPITAL, NOT the
+        # persisted SCALED hint from the prior process.
+        assert restored.current_capital_tier is CapitalStageTier.SMALL_CAPITAL
+
+    def test_checkpoint_does_not_emit_capital_tier_when_not_live(
+        self, clock: SimulatedClock
+    ) -> None:
+        import json as _json
+
+        lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
+        # State == RESEARCH; no tier field expected.
+        blob = lc.checkpoint()
+        payload = _json.loads(blob.decode())
+        assert "capital_tier" not in payload
+        assert payload["state"] == "RESEARCH"
+
+        # PAPER: also no tier.
+        assert lc.promote_to_paper(
+            structured_evidence=[_passing_research_acceptance()]
+        ) == []
+        payload = _json.loads(lc.checkpoint().decode())
+        assert "capital_tier" not in payload
+        assert payload["state"] == "PAPER"
+
+    def test_corrupt_capital_tier_in_checkpoint_raises(
+        self, clock: SimulatedClock
+    ) -> None:
+        bad_blob = (
+            b'{"alpha_id": "kyle", "state": "LIVE", '
+            b'"capital_tier": "MEGA_CAPITAL"}'
+        )
+        lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
+        with pytest.raises(ValueError, match="MEGA_CAPITAL"):
+            lc.restore(bad_blob)
+
+    def test_capital_tier_on_non_live_state_rejected(
+        self, clock: SimulatedClock
+    ) -> None:
+        # A capital_tier on a non-LIVE state is malformed — reject
+        # rather than silently storing a stale hint.
+        bad_blob = (
+            b'{"alpha_id": "kyle", "state": "PAPER", '
+            b'"capital_tier": "SCALED"}'
+        )
+        lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
+        with pytest.raises(ValueError, match="capital_tier"):
+            lc.restore(bad_blob)
+
+    def test_restore_clears_stale_hint_when_legacy_blob_loaded(
+        self, clock: SimulatedClock
+    ) -> None:
+        # If an instance has a hint from a prior restore() and is then
+        # restored from a *legacy* blob (no capital_tier field), the
+        # stale hint must NOT bleed through.
+        lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
+        scaled_blob = (
+            b'{"alpha_id": "kyle", "state": "LIVE", '
+            b'"capital_tier": "SCALED"}'
+        )
+        lc.restore(scaled_blob)
+        assert lc.current_capital_tier is CapitalStageTier.SCALED
+
+        legacy_blob = b'{"alpha_id": "kyle", "state": "LIVE"}'
+        lc.restore(legacy_blob)
+        assert lc.current_capital_tier is CapitalStageTier.SMALL_CAPITAL
+
+
+# ── F-6 P2: CLI gate inference is trigger-aware ────────────────────
+
+
+class TestCapitalTierTriggerSentinel:
+    """The Codex-bot P2 review issue on PR #23.
+
+    The wire-format trigger ``promote_capital_tier`` is the **only**
+    string that distinguishes a capital-tier escalation from any
+    future ``LIVE -> LIVE`` self-loop the platform might gain.  This
+    test pins the symbol to a stable value so a refactor cannot
+    silently rename it (which would simultaneously break ``feelies
+    promote replay-evidence`` gate inference and ledger archeology).
+    """
+
+    def test_trigger_sentinel_is_stable(self) -> None:
+        assert PROMOTE_CAPITAL_TIER_TRIGGER == "promote_capital_tier"
+
+    def test_lifecycle_records_trigger_sentinel_on_self_loop(
+        self,
+    ) -> None:
+        clock = SimulatedClock(start_ns=1_700_000_000_000_000_000)
+        lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
+        _walk_to_live(lc)
+        assert lc.promote_capital_tier(_passing_capital_stage()) == []
+
+        history = lc.history
+        live = AlphaLifecycleState.LIVE.name
+        scaled_records = [
+            r
+            for r in history
+            if r.from_state == live and r.to_state == live
+        ]
+        assert len(scaled_records) == 1
+        assert scaled_records[0].trigger == PROMOTE_CAPITAL_TIER_TRIGGER
+
+    def test_metadata_round_trip_preserves_tier(
+        self,
+    ) -> None:
+        clock = SimulatedClock(start_ns=1_700_000_000_000_000_000)
+        lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
+        _walk_to_live(lc)
+        lc.promote_capital_tier(_passing_capital_stage())
+
+        live = AlphaLifecycleState.LIVE.name
+        record = next(
+            r
+            for r in reversed(lc.history)
+            if r.from_state == live and r.to_state == live
+        )
+        assert record.metadata.get("schema_version") == EVIDENCE_SCHEMA_VERSION
+        evs = metadata_to_evidence(record.metadata)
+        # Exactly one CapitalStageEvidence on the round-trip.
+        assert len(evs) == 1
+        ev = evs[0]
+        assert isinstance(ev, CapitalStageEvidence)
+        assert ev.tier is CapitalStageTier.SMALL_CAPITAL
