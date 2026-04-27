@@ -40,6 +40,7 @@
 9. Hazard exits (Phase 4.1)
 10. v0.3 opt-in cookbook — `trend_mechanism` + `enforce_trend_mechanism`
 11. Per-alpha promotion overrides — `promotion.gate_thresholds:` (Workstream F-5)
+11.bis. Capital-tier escalation — `LIVE @ SMALL_CAPITAL → LIVE @ SCALED` (Workstream F-6)
 12. Deprecation timeline & sunset
 
 ---
@@ -641,6 +642,119 @@ three-layer merge instead of the one-layer registry pin).  Replay
 determinism (audit A-DET-02) is unaffected because the merge runs
 once at registration time and the resulting `GateThresholds` is
 immutable for the alpha's lifetime.
+
+---
+
+## 11.bis. Capital-tier escalation — `LIVE @ SMALL_CAPITAL → LIVE @ SCALED` (Workstream F-6)
+
+Workstream **F-6** closes the strategy-promotion pipeline by wiring
+the LIVE @ SMALL_CAPITAL → LIVE @ SCALED capital-tier escalation as
+a **state-machine self-loop** on `AlphaLifecycle`.  The lifecycle
+state stays LIVE; only the alpha's capital-stage tier flips.  The
+escalation is recorded as a `LIVE -> LIVE` entry on the F-1
+promotion ledger whose `trigger == "promote_capital_tier"`
+distinguishes it from the LIVE -> QUARANTINED demotion (both share
+`from_state == "LIVE"`).  The 5-state lifecycle machine is unchanged
+— Inv-13 (provenance) is satisfied without inflating it to 6 states.
+
+### 11.bis.1 The new method
+
+```python
+from feelies.alpha.promotion_evidence import (
+    CapitalStageEvidence,
+    CapitalStageTier,
+)
+
+evidence = CapitalStageEvidence(
+    tier=CapitalStageTier.SMALL_CAPITAL,   # the *outgoing* tier
+    allocation_fraction=0.01,              # 1 % of target during window
+    deployment_days=12,                    # ≥ small_min_deployment_days
+    pnl_compression_ratio_realised=0.85,   # within [0.5, 1.0] band
+    slippage_residual_bps=1.0,             # ≤ 2.5 bps default ceiling
+    hit_rate_residual_pp=-2.0,             # ≥ -5 pp default floor
+    fill_rate_drift_pct=3.0,               # within ±10 % default band
+)
+
+errors = registry.promote_capital_tier(
+    "kyle_info_v2",
+    evidence,
+    correlation_id="cap-2026-01-15",
+)
+assert errors == []   # gate passed; tier flipped to SCALED
+```
+
+`AlphaLifecycle.promote_capital_tier(evidence, *, correlation_id="")`
+and `AlphaRegistry.promote_capital_tier(alpha_id, evidence, *,
+correlation_id="")` are the two entry points.  Both dispatch
+`validate_gate(GateId.LIVE_PROMOTE_CAPITAL_TIER, [evidence],
+gate_thresholds)` against the per-alpha resolved `GateThresholds`
+(the §11 three-layer merge), so an alpha with stricter or looser
+SCALED criteria can override them in its `promotion: {
+gate_thresholds: ... }` block without affecting any other alpha.
+
+### 11.bis.2 Pre/post-conditions
+
+| Condition | Behaviour |
+|---|---|
+| Lifecycle state must be `LIVE` | Otherwise returns `["…requires state=LIVE; current state is …"]`; no ledger entry. |
+| Current tier must be `SMALL_CAPITAL` | A second call after a prior SCALED escalation returns `["…tier=SCALED; no further escalation defined"]`; no ledger entry. |
+| `evidence.tier` field must be `SMALL_CAPITAL` | The validator reads the *outgoing* tier; passing `SCALED` is a configuration error. |
+| Validator failures | Returned as `list[str]` like the other promotion methods; no ledger entry, no state change. |
+| Validator success | One `LIVE -> LIVE` ledger entry, `trigger == "promote_capital_tier"`, metadata = `evidence_to_metadata(evidence)`; tier flips to `SCALED`. |
+| Quarantine after SCALED | The next `LIVE -> QUARANTINED` entry uses the existing demotion path; tier returns to `None`.  Quarantine + revalidate + re-promote starts a **new** LIVE epoch that resets to `SMALL_CAPITAL` (the prior epoch's SCALED escalation does not bleed forward — operators must re-justify). |
+
+### 11.bis.3 New `current_capital_tier` property
+
+`AlphaLifecycle.current_capital_tier: CapitalStageTier | None`
+returns `None` for non-LIVE states, `SCALED` if the current LIVE
+epoch contains a `promote_capital_tier` self-loop, and
+`SMALL_CAPITAL` otherwise.  The property scans `history` backwards
+from the most recent record to the most recent transition *into*
+LIVE so it agrees with the F-1 ledger contents byte-for-byte (the
+operator CLI uses the same algorithm to render the tier on
+`feelies promote inspect / list`, see §11.bis.4).
+
+### 11.bis.4 Operator CLI surfaces
+
+The F-3 `feelies promote` CLI was extended in three places:
+
+* `feelies promote inspect <alpha_id>` renders a `tier=SCALED` /
+  `tier=SMALL_CAPITAL` suffix in the per-alpha header and formats
+  the self-loop arrow as `LIVE @ SMALL_CAPITAL -> LIVE @ SCALED` so
+  operators don't have to read the metadata blob.  JSON output
+  carries a top-level `current_capital_tier` field.
+* `feelies promote list` renders the state column as `LIVE @ <tier>`
+  for live alphas (text + JSON `current_capital_tier` field).
+* `feelies promote replay-evidence <alpha_id>` infers
+  `GateId.LIVE_PROMOTE_CAPITAL_TIER` for `("LIVE", "LIVE")`
+  transitions with trigger `promote_capital_tier` and validates the
+  round-tripped `CapitalStageEvidence` against today's thresholds.
+  Failed replays surface as exit code 3 (`EXIT_VALIDATION_FAILED`)
+  exactly like the other gates.
+
+### 11.bis.5 Wire-format symbol location
+
+The trigger string `PROMOTE_CAPITAL_TIER_TRIGGER = "promote_capital_tier"`
+lives in
+[`src/feelies/alpha/promotion_evidence.py`](../../src/feelies/alpha/promotion_evidence.py)
+(re-exported from `feelies.alpha`) rather than in
+`feelies.alpha.lifecycle` so the wire-format symbol is shared
+between writer (lifecycle) and readers (CLI / forensics) without
+re-introducing a layering edge — the CLI must not import
+`feelies.alpha.lifecycle` (forensic-only consumer contract).
+
+### 11.bis.6 Backwards compatibility
+
+Alphas that never call `promote_capital_tier` continue to pass
+through the existing 5-state machine without writing self-loop
+entries — the `LIVE` state's transition set now contains both
+`LIVE` and `QUARANTINED`, but no caller is forced to produce a
+self-loop.  Existing legacy `PromotionEvidence` consumers
+(`promote_to_paper` / `promote_to_live` / `revalidate_to_paper`)
+are entirely untouched, and the F-3 CLI continues to handle
+ledgers that contain no self-loop entries (the helpers fall back
+to `current_capital_tier=None` cleanly when no LIVE entry has been
+recorded).
 
 ---
 

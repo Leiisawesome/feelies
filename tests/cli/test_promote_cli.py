@@ -889,10 +889,12 @@ class TestReplayEvidenceSubcommand:
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        # SMALL → SCALED capital-tier escalation does not change the
-        # lifecycle state today, so no LIVE→LIVE entries land on the
-        # ledger.  But the F-3 reconstructor must round-trip the
-        # CapitalStageTier enum cleanly when F-4 starts writing them.
+        # Workstream F-6 wired the LIVE @ SMALL_CAPITAL -> LIVE @ SCALED
+        # capital-tier escalation as a state-machine self-loop, so the
+        # ledger now carries LIVE -> LIVE entries with trigger=
+        # "promote_capital_tier".  The F-3 replay-evidence path must
+        # infer GateId.LIVE_PROMOTE_CAPITAL_TIER for these entries and
+        # successfully validate the round-tripped CapitalStageEvidence.
         ledger_path = tmp_path / "ledger.jsonl"
         ledger = PromotionLedger(ledger_path)
         cap = CapitalStageEvidence(
@@ -904,16 +906,12 @@ class TestReplayEvidenceSubcommand:
             hit_rate_residual_pp=-2.0,
             fill_rate_drift_pct=3.0,
         )
-        # We cheat and write a synthetic LIVE→LIVE entry to exercise
-        # the reconstructor path; F-3 doesn't *infer* a gate for this
-        # state pair (LIVE_PROMOTE_CAPITAL_TIER is non-state-changing),
-        # so the entry surfaces as "no gate registered".
         ledger.append(
             _make_entry(
                 alpha_id="ALPHA-CAP",
                 from_state="LIVE",
                 to_state="LIVE",
-                trigger="capital_tier_promote",
+                trigger="promote_capital_tier",
                 timestamp_ns=100,
                 metadata=evidence_to_metadata(cap),
             )
@@ -933,11 +931,10 @@ class TestReplayEvidenceSubcommand:
         payload = json.loads(captured.out)
         assert len(payload["results"]) == 1
         result = payload["results"][0]
-        # F-4 will introduce the LIVE→LIVE gate inference; for now the
-        # replay marks the entry as "no gate registered".
-        assert result["gate"] is None
-        assert result["skipped_reason"] is not None
-        assert "no gate registered" in result["skipped_reason"]
+        assert result["gate"] == "live_promote_capital_tier"
+        assert result["skipped_reason"] is None
+        assert result["errors"] == []
+        assert "capital_stage" in result["evidence_kinds"]
 
 
 # ─────────────────────────────────────────────────────────────────────

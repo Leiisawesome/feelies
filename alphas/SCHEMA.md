@@ -513,6 +513,23 @@ override surface is purely structural.  See
 [`tests/alpha/test_loader_promotion_block.py`](../tests/alpha/test_loader_promotion_block.py)
 for the asserting tests.
 
+The same `gate_thresholds` block also governs the **Workstream F-6**
+LIVE @ SMALL_CAPITAL → LIVE @ SCALED capital-tier escalation (gate
+`LIVE_PROMOTE_CAPITAL_TIER`).  The thresholds the F-6 gate reads —
+`small_min_deployment_days`, `small_min_pnl_compression_ratio`,
+`small_max_pnl_compression_ratio`, `small_max_slippage_residual_bps`,
+`small_max_hit_rate_residual_pp`, `small_max_fill_rate_drift_pct` —
+are part of the same `GateThresholds` dataclass, so an alpha that
+needs a stricter or looser SCALED bar can override them in this
+block without touching the platform defaults or any other alpha.
+The escalation itself is invoked through
+`AlphaLifecycle.promote_capital_tier(evidence)` (or
+`AlphaRegistry.promote_capital_tier(alpha_id, evidence)`); on success
+it records a `LIVE -> LIVE` self-loop entry on the F-1 promotion
+ledger with `trigger == "promote_capital_tier"` so the operator CLI
+(`feelies promote inspect <alpha_id>`) can render the escalation
+without the lifecycle state name changing.
+
 ### Backward compatibility
 
 - Schema 1.0 specs are rejected (Workstream D.1 hard-removal).

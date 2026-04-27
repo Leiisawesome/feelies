@@ -63,6 +63,7 @@ from feelies.alpha.module import (
 from feelies.alpha.promotion_evidence import (
     GATE_EVIDENCE_REQUIREMENTS,
     KIND_TO_TYPE,
+    PROMOTE_CAPITAL_TIER_TRIGGER,
     CapitalStageEvidence,
     CapitalStageTier,
     CPCVEvidence,
@@ -115,6 +116,7 @@ __all__ = [
     "metadata_to_evidence",
     "PaperWindowEvidence",
     "ParameterDef",
+    "PROMOTE_CAPITAL_TIER_TRIGGER",
     "PromotionEvidence",
     "QuarantineTriggerEvidence",
     "required_evidence_types",
