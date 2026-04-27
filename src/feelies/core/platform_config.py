@@ -147,16 +147,27 @@ class PlatformConfig:
 
     # ── Phase-3.1 (mechanism enforcement) ─────────────────────────────
     #
-    # Strict-mode opt-in for gate G16 (§20.6.2).  When False (default),
-    # schema-1.1 SIGNAL/PORTFOLIO specs may omit ``trend_mechanism:`` —
-    # G16 only fires for specs that *do* declare the block.  When True,
-    # every schema-1.1 SIGNAL/PORTFOLIO spec must declare a fully-formed
-    # ``trend_mechanism:`` block and the loader refuses to load
-    # otherwise via :class:`MissingTrendMechanismError`.
+    # Strict-mode default for gate G16 (§20.6.2).  When ``True``
+    # (the post-Workstream-E default), every schema-1.1 SIGNAL/PORTFOLIO
+    # spec MUST declare a fully-formed ``trend_mechanism:`` block —
+    # the loader refuses to load otherwise via
+    # :class:`MissingTrendMechanismError`.  When ``False`` (legacy
+    # opt-out), schema-1.1 SIGNAL/PORTFOLIO specs may omit the block
+    # and G16 only fires for specs that *do* declare it; this is the
+    # documented escape hatch for v0.2-baseline alphas (such as the
+    # reference ``pofi_benign_midcap_v1``) that pre-date the mechanism
+    # taxonomy.
     #
-    # Default preserves v0.2 load behaviour bit-identically.  Promote
-    # to True at the start of Phase 3.1 strict-mode rollout (§20.6.2).
-    enforce_trend_mechanism: bool = False
+    # Workstream E (acceptance row 84, §20.12.1) flipped the default
+    # from False → True now that the four canonical reference alphas
+    # (one per non-stress family — KYLE_INFO / INVENTORY /
+    # HAWKES_SELF_EXCITE / SCHEDULED_FLOW) ship under strict mode and
+    # close the §20.12.2 #4 acceptance criterion.  Operators relying
+    # on a v0.2 baseline alpha must now opt back in by pinning
+    # ``enforce_trend_mechanism: false`` in their ``platform.yaml``;
+    # the reference ``platform.yaml`` documents this opt-out path
+    # alongside the v0.2 reference alpha.
+    enforce_trend_mechanism: bool = True
 
     # ── Phase-4 (composition layer) ──────────────────────────────────
     #
@@ -687,7 +698,7 @@ class PlatformConfig:
             market_id=str(data.get("market_id", "US_EQUITY")),
             session_kind=str(data.get("session_kind", "RTH")),
             enforce_trend_mechanism=bool(
-                data.get("enforce_trend_mechanism", False)
+                data.get("enforce_trend_mechanism", True)
             ),
             composition_completeness_threshold=float(
                 data.get("composition_completeness_threshold", 0.80)

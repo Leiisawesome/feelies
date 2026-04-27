@@ -125,10 +125,12 @@ Alphas can be placed in either layout:
 > As of Phase 3.1, the v0.3 `trend_mechanism:` block is **enforced by
 > gate G16** for any `SIGNAL`/`PORTFOLIO` alpha that declares one (see
 > [`design_docs/three_layer_architecture.md`](../design_docs/three_layer_architecture.md)
-> §20.6). Strict mode is opt-in via `enforce_trend_mechanism: true` in
-> `platform.yaml`, in which case schema-1.1 `SIGNAL`/`PORTFOLIO` specs
-> *missing* a `trend_mechanism:` block are also rejected. Four
-> reference alphas covering the non-stress families ship in this slice
+> §20.6). **Strict mode is the platform default since Workstream E**
+> (acceptance row 84): schema-1.1 `SIGNAL`/`PORTFOLIO` specs *missing*
+> a `trend_mechanism:` block are rejected at load time unless the
+> operator explicitly pins `enforce_trend_mechanism: false` in
+> `platform.yaml` (the documented v0.2 escape hatch). Four reference
+> alphas covering the non-stress families ship in this slice
 > (`pofi_hawkes_burst_v1`, `pofi_kyle_drift_v1`,
 > `pofi_inventory_revert_v1`, `pofi_moc_imbalance_v1`); the
 > `LIQUIDITY_STRESS` family is enforced **exit-only** — a stress-family
@@ -203,7 +205,7 @@ hazard-rate exits via `RegimeHazardSpike` events.
 | G13 | **Active** (Phase 3-α) | Warm-up documentation — `SIGNAL` inherits warm-up from sensor warm-up by construction; the inline-features warm-up branch is unreachable post-D.2 (the loader rejects `LEGACY_SIGNAL` before validation). |
 | G14 | **Active** (Phase 1) | Alpha must declare no data dependency outside L1 NBBO + trades + reference data + session calendar. |
 | G15 | **Active** (Phase 1) | Declared `fill_model.router` must name a platform-supported router (`PassiveLimitOrderRouter` or `BacktestOrderRouter`). |
-| G16 | **Active** (Phase 3.1) | Mechanism-horizon binding — when a `schema_version: "1.1"` SIGNAL/PORTFOLIO alpha declares a `trend_mechanism:` block, validates: (1) `family` ∈ closed taxonomy; (2) `expected_half_life_seconds` ∈ per-family envelope; (3) `horizon_seconds / expected_half_life_seconds` ∈ `[0.5, 4.0]`; (4) every entry in `l1_signature_sensors` is a registered sensor; (5) the family's primary fingerprint sensor is among them; (6) `failure_signature` declared; (7) `LIQUIDITY_STRESS` mechanisms emit no entry-direction `Signal` (AST-checked); (8) PORTFOLIO `trend_mechanism.consumes.max_share_of_gross` summation; (9) PORTFOLIO `depends_on_signals` family whitelist. Strict mode (`platform.yaml: enforce_trend_mechanism: true`) additionally rejects schema-1.1 SIGNAL/PORTFOLIO specs missing `trend_mechanism:` entirely. |
+| G16 | **Active** (Phase 3.1) | Mechanism-horizon binding — when a `schema_version: "1.1"` SIGNAL/PORTFOLIO alpha declares a `trend_mechanism:` block, validates: (1) `family` ∈ closed taxonomy; (2) `expected_half_life_seconds` ∈ per-family envelope; (3) `horizon_seconds / expected_half_life_seconds` ∈ `[0.5, 4.0]`; (4) every entry in `l1_signature_sensors` is a registered sensor; (5) the family's primary fingerprint sensor is among them; (6) `failure_signature` declared; (7) `LIQUIDITY_STRESS` mechanisms emit no entry-direction `Signal` (AST-checked); (8) PORTFOLIO `trend_mechanism.consumes.max_share_of_gross` summation; (9) PORTFOLIO `depends_on_signals` family whitelist. **Strict mode is the platform default since Workstream E** (`platform.yaml: enforce_trend_mechanism: true`, default `true`) — schema-1.1 SIGNAL/PORTFOLIO specs *missing* a `trend_mechanism:` block are rejected at load time unless the operator explicitly pins `enforce_trend_mechanism: false`. |
 
 ### Phase-2 status (Sensor layer + Horizon scheduler shipped)
 
@@ -292,9 +294,12 @@ four reference alphas exercise the four non-stress families:
   The historical `LEGACY_SIGNAL`-exempt branch is moot post-D.2: the
   loader rejects `LEGACY_SIGNAL` before any gate runs.
 - **Strict mode (`platform.yaml: enforce_trend_mechanism: true`,
-  default `false`)** additionally rejects any schema-1.1
-  `SIGNAL`/`PORTFOLIO` spec *missing* a `trend_mechanism:` block. This
-  is the recommended setting once an operator has committed to the
+  default `true` since Workstream E, acceptance row 84)** rejects
+  any schema-1.1 `SIGNAL`/`PORTFOLIO` spec *missing* a
+  `trend_mechanism:` block at load time. Operators staying on a v0.2
+  baseline alpha (e.g. `pofi_benign_midcap_v1`) must pin
+  `enforce_trend_mechanism: false` explicitly. This is the
+  recommended setting once an operator has committed to the
   v0.3 mechanism contract; it catches "drift back to v0.2" at load
   time rather than at promotion review.
 - **Reference alphas (one per non-stress family):**

@@ -865,11 +865,16 @@ Do not deviate from this structure. The operator's tooling parses it.
 ## 14. Trend Mechanism Selection (v0.3, gate G16)
 
 When the alpha is a SIGNAL or PORTFOLIO at `schema_version: "1.1"`, you
-SHOULD declare a `trend_mechanism:` block. Once `platform.yaml:
-enforce_trend_mechanism: true` is set, the block becomes MANDATORY (the
-loader rejects without it). Independent of the strict-mode flag, **any
-declared `trend_mechanism:` block is fully validated by gate G16** —
-do not ship a half-filled block.
+MUST declare a `trend_mechanism:` block: `platform.yaml:
+enforce_trend_mechanism` defaults to `true` since Workstream E
+(acceptance row 84), and the loader rejects schema-1.1 SIGNAL/PORTFOLIO
+alphas without the block via `MissingTrendMechanismError`. The only
+loadable exception is the v0.2-baseline `pofi_benign_midcap_v1`
+reference alpha, which exists explicitly so operators can pin
+`enforce_trend_mechanism: false` and exercise the §20.12.3 #2 parity
+path. Independent of the strict-mode flag, **any declared
+`trend_mechanism:` block is fully validated by gate G16** — do not
+ship a half-filled block.
 
 ### 14.1 Closed family taxonomy
 
