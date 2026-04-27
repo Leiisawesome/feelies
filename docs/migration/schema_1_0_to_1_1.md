@@ -426,9 +426,20 @@ Both paths are bit-identical across replays — verified by
 
 ## 10. v0.3 opt-in cookbook — `trend_mechanism` + `enforce_trend_mechanism`
 
-The v0.3 mechanism contract (gate G16, Phase 3.1) is **opt-in via
-field presence** by default. A SIGNAL alpha without a
-`trend_mechanism:` block continues to load and run unchanged.
+The v0.3 mechanism contract (gate G16, Phase 3.1) was originally
+**opt-in via field presence**: a SIGNAL alpha without a
+`trend_mechanism:` block continued to load and run unchanged. As of
+**Workstream E** (acceptance row 84) the platform default for
+`enforce_trend_mechanism` flipped from `false` → `true`, so the
+opt-in is now the *opt-out*: schema-1.1 SIGNAL/PORTFOLIO specs
+missing a `trend_mechanism:` block are refused at load time unless
+the operator explicitly pins `enforce_trend_mechanism: false` in
+their `platform.yaml`. The reference `platform.yaml` at the repo
+root documents the explicit opt-out path; the §20.12.3 #2 v0.2
+parity contract continues to be locked by
+`tests/acceptance/test_v02_no_trend_mechanism_parity.py`, which
+constructs an `AlphaLoader(enforce_trend_mechanism=False)`
+directly.
 
 ### 10.1 Adding a `trend_mechanism:` block (SIGNAL)
 
@@ -504,18 +515,33 @@ table.
 | `LIQUIDITY_STRESS` | `[30, 600]` |
 | `SCHEDULED_FLOW` | `[60, 3600]` |
 
-### 10.5 Strict mode
+### 10.5 Strict mode (default since Workstream E)
 
 ```yaml
 # platform.yaml
-enforce_trend_mechanism: true     # default false
+# enforce_trend_mechanism: true   # platform default since Workstream E (row 84)
 ```
 
-When set, schema-1.1 SIGNAL/PORTFOLIO specs **missing** a
-`trend_mechanism:` block are also rejected at load time. Recommended
-once an operator has committed to the v0.3 mechanism contract — it
-catches "drift back to v0.2" at load time rather than at promotion
-review.
+When `true` (the post-Workstream-E **default**), schema-1.1
+SIGNAL/PORTFOLIO specs missing a `trend_mechanism:` block are
+rejected at load time via `MissingTrendMechanismError`. This is
+the recommended setting for production deployments — it catches
+"drift back to v0.2" at load time rather than at promotion review.
+
+Operators relying on a v0.2-baseline alpha (e.g. `pofi_benign_midcap_v1`,
+the §20.12.3 #2 reference alpha that pre-dates the mechanism
+taxonomy) must explicitly pin the opt-out:
+
+```yaml
+# platform.yaml
+enforce_trend_mechanism: false    # legacy opt-out for v0.2 baseline alphas
+```
+
+The reference `platform.yaml` at the repo root carries this
+opt-out and a comment pointing at the v0.3 reference alphas
+(`pofi_kyle_drift_v1`, `pofi_inventory_revert_v1`,
+`pofi_hawkes_burst_v1`, `pofi_moc_imbalance_v1`) for operators
+ready to switch.
 
 ---
 
@@ -787,8 +813,14 @@ Recommended migration order for a portfolio of legacy alphas
    want to compose, author a PORTFOLIO alpha per §8.
 4. **v0.3 opt-in**: add `trend_mechanism:` blocks per §10 once you can
    name the family, half-life, and L1 fingerprint sensors.
-5. **Strict mode flip**: set
-   `platform.yaml: enforce_trend_mechanism: true` once every
-   active SIGNAL/PORTFOLIO alpha carries a `trend_mechanism:` block.
+5. **Strict mode flip**: as of **Workstream E** (acceptance row 84)
+   the platform default is already `enforce_trend_mechanism: true`,
+   so a fresh deployment lands in strict mode automatically. If you
+   need to keep loading a v0.2 alpha without a `trend_mechanism:`
+   block (e.g. the reference `pofi_benign_midcap_v1`), pin
+   `platform.yaml: enforce_trend_mechanism: false` explicitly and
+   plan the migration to one of the v0.3 reference alphas
+   (`pofi_kyle_drift_v1`, `pofi_inventory_revert_v1`,
+   `pofi_hawkes_burst_v1`, `pofi_moc_imbalance_v1`).
 
 End of cookbook.

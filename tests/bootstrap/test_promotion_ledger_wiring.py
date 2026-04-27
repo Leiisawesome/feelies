@@ -104,6 +104,12 @@ def _make_config(
         account_equity=100_000.0,
         sensor_specs=_TEST_SENSOR_SPECS,
         promotion_ledger_path=promotion_ledger_path,
+        # Workstream E flipped the platform default to ``true``.  This
+        # F-1 wiring test is orthogonal to G16 — its concern is the
+        # ``promotion_ledger_path`` plumbing through bootstrap.
+        # Pinning the opt-out keeps the fixture minimal and avoids
+        # dragging the mechanism taxonomy into a ledger-wiring test.
+        enforce_trend_mechanism=False,
     )
 
 

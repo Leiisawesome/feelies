@@ -186,6 +186,16 @@ def _make_config(
         account_equity=100_000.0,
         composition_max_universe_size=composition_max_universe_size,
         sensor_specs=_TEST_SENSOR_SPECS,
+        # Workstream E flipped the platform default to ``true``.  These
+        # bootstrap-wiring tests are orthogonal to G16 (composition
+        # wiring, hazard-exit construction, scale-cap fail-stop) and
+        # the upstream SIGNAL fixture only registers ``ofi_ewma`` and
+        # ``spread_z_30d``, neither of which is a primary fingerprint
+        # sensor for any mechanism family.  Pinning the opt-out here
+        # preserves the v0.2-style fixture without dragging the
+        # mechanism taxonomy into a wiring test (parity with the
+        # ``platform.yaml`` opt-out documented for ``pofi_benign_midcap_v1``).
+        enforce_trend_mechanism=False,
     )
 
 
@@ -286,6 +296,8 @@ class TestCompositionWiring:
             account_equity=100_000.0,
             factor_loadings_dir=loadings_dir,
             sensor_specs=_TEST_SENSOR_SPECS,
+            # See ``_make_config`` above for the rationale.
+            enforce_trend_mechanism=False,
         )
         with pytest.raises(StaleFactorLoadingsError):
             build_platform(config)

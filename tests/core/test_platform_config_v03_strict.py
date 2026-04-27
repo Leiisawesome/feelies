@@ -2,8 +2,10 @@
 
 Covers ``enforce_trend_mechanism`` per §20.6.2:
 
-  - Default is False → schema-1.1 SIGNAL/PORTFOLIO specs without
-    ``trend_mechanism:`` continue to load (v0.2 parity preserved).
+  - Default is True (post-Workstream-E flip, acceptance row 84) →
+    schema-1.1 SIGNAL/PORTFOLIO specs missing ``trend_mechanism:``
+    are refused at load time; v0.2-baseline alphas must explicitly
+    pin ``enforce_trend_mechanism: false`` to keep loading.
   - YAML round-trip (``True`` / ``False`` / absent) reflects the
     declared value with no surprises.
   - Snapshot checksum is *deterministic* across repeated calls and
@@ -39,9 +41,16 @@ def _base_config(**overrides) -> PlatformConfig:
 
 
 class TestDefaults:
-    def test_default_value_is_false(self) -> None:
+    def test_default_value_is_true(self) -> None:
+        """Workstream-E (acceptance row 84): default flipped False → True.
+
+        Operators relying on a v0.2-baseline alpha (no
+        ``trend_mechanism:`` block) must now explicitly pin
+        ``enforce_trend_mechanism: false`` in their ``platform.yaml``;
+        the reference yaml at the repo root documents this opt-out.
+        """
         cfg = _base_config()
-        assert cfg.enforce_trend_mechanism is False
+        assert cfg.enforce_trend_mechanism is True
 
     def test_default_config_validates(self) -> None:
         _base_config().validate()
@@ -51,14 +60,20 @@ class TestDefaults:
 
 
 class TestYAMLRoundTrip:
-    def test_omitted_yields_default_false(self, tmp_path: Path) -> None:
+    def test_omitted_yields_default_true(self, tmp_path: Path) -> None:
+        """Workstream-E: an absent ``enforce_trend_mechanism:`` key in
+        the YAML now resolves to ``True`` (the new platform default),
+        not ``False`` as in v0.2.  The dataclass default and the YAML
+        parser default are kept in sync so a YAML omission and a
+        Python ``PlatformConfig(...)`` construction agree.
+        """
         path = tmp_path / "platform.yaml"
         path.write_text(dedent("""
             symbols: [AAPL]
             alpha_specs: [dummy.alpha.yaml]
         """).strip())
         cfg = PlatformConfig.from_yaml(path)
-        assert cfg.enforce_trend_mechanism is False
+        assert cfg.enforce_trend_mechanism is True
 
     def test_explicit_true_loaded(self, tmp_path: Path) -> None:
         path = tmp_path / "platform.yaml"

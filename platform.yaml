@@ -33,6 +33,22 @@ alpha_specs: []
 # Per-alpha parameter overrides keyed by alpha_id.
 parameter_overrides: {}
 
+# ── G16 strict mode (Workstream E) ───────────────────────
+# Post-E default in code is ``true`` — every schema-1.1 SIGNAL /
+# PORTFOLIO alpha must declare a ``trend_mechanism:`` block per the
+# G16 mechanism-horizon binding rules (§20.6).  This reference yaml
+# pins ``false`` only because ``alpha_spec_dir`` above points at
+# ``pofi_benign_midcap_v1``, the v0.2-baseline reference alpha that
+# pre-dates the mechanism taxonomy and ships *without* a
+# ``trend_mechanism:`` block on purpose (the §20.12.3 #2 parity
+# anchor).  When you switch ``alpha_spec_dir`` to any of the v0.3
+# reference alphas (``pofi_kyle_drift_v1``,
+# ``pofi_inventory_revert_v1``, ``pofi_hawkes_burst_v1``,
+# ``pofi_moc_imbalance_v1``) — or to your own strict-mode-compliant
+# alpha — delete this line to inherit the platform default and have
+# G16 catch any missing-mechanism regressions at load time (Inv-1).
+enforce_trend_mechanism: false
+
 # ── Regime Engine ─────────────────────────────────────────
 # Name of the shared regime engine, or null to disable.
 regime_engine: hmm_3state_fractional

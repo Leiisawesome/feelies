@@ -33,7 +33,8 @@
   may be approved/declined independently. **APPROVED by repo author
   on 2026-04-20** with all four open questions (Q11–Q14, §20.14)
   resolved per recommendation. Taxonomy locked at 5 families;
-  `enforce_trend_mechanism: false` is the default for the v0.3 ramp;
+  `enforce_trend_mechanism: true` is the default since Workstream E
+  (acceptance row 84; was `false` during the v0.3 ramp);
   `LIQUIDITY_STRESS` is exit-only; `RegimeHazardSpike` is per-symbol
   only; `scheduled_flow_window` is US-only in v0.3; mechanism
   concentration cap is hard-drop. Phase 1.1 implementation
@@ -1986,12 +1987,16 @@ v0.3 adds five enforcement primitives that the v0.2 architecture
    60-second-half-life Hawkes signals ranked equal-weight against
    300-second-half-life Kyle signals at a 5-minute decision boundary).
 
-**Design principle:** every v0.3 addition is **opt-in via YAML field
-presence**. A v0.2 SIGNAL alpha that does not declare a
-`trend_mechanism:` block continues to load and run unchanged. The new
-gate G16 fires only when the field is present (forward-compatible) or
-when `enforce_trend_mechanism: true` is set in `platform.yaml`
-(strict-mode opt-in). v0.2 LEGACY_SIGNAL alphas are unaffected.
+**Design principle (post-Workstream-E):** every v0.3 addition was
+originally **opt-in via YAML field presence**. As of Workstream E
+(acceptance row 84) the platform default flipped: a schema-1.1
+SIGNAL/PORTFOLIO alpha missing a `trend_mechanism:` block is rejected
+at load time unless the operator explicitly pins
+`enforce_trend_mechanism: false` in `platform.yaml` (the documented
+v0.2 escape hatch for the `pofi_benign_midcap_v1` baseline reference).
+Gate G16 fires whenever the field is present (forward-compatible)
+*and* whenever a schema-1.1 alpha is missing the field under the
+default-`true` strict mode. v0.2 LEGACY_SIGNAL alphas are unaffected.
 
 ### 20.2 Trend mechanism taxonomy
 
@@ -2221,9 +2226,12 @@ families with at least one direct fingerprint sensor:
 ### 20.5 YAML schema additions (schema_version 1.1, optional fields)
 
 Two new top-level blocks are added to the schema 1.1 SIGNAL/PORTFOLIO
-shapes. Both are **optional in v0.3**; they become **mandatory** only
-when `platform.yaml: enforce_trend_mechanism: true` is set (default
-`false` to preserve v0.2 load behavior).
+shapes. Both were originally **optional in v0.3**; as of Workstream E
+(acceptance row 84) they are **mandatory by default** because
+`platform.yaml: enforce_trend_mechanism` defaults to `true`.
+Operators can opt back out by pinning `enforce_trend_mechanism:
+false` (the documented v0.2 escape hatch for the
+`pofi_benign_midcap_v1` baseline reference).
 
 #### 20.5.1 `trend_mechanism:` block (SIGNAL alphas)
 
@@ -2350,12 +2358,16 @@ For PORTFOLIO alphas with `trend_mechanism.consumes:` declared:
 
 `platform.yaml: enforce_trend_mechanism: true` makes the
 `trend_mechanism:` block **mandatory** for all schema-1.1 SIGNAL and
-PORTFOLIO alphas. Alphas without it refuse to load. Default `false`
-preserves v0.2 behavior.
+PORTFOLIO alphas. Alphas without it refuse to load. **Default `true`
+since Workstream E** (acceptance row 84); operators staying on the
+v0.2-baseline reference alpha must pin `enforce_trend_mechanism:
+false` explicitly.
 
 Strict mode is the recommended setting for production deployments
 post-v0.3 ramp. Research/development may run with strict mode off to
-permit exploratory hypotheses prior to mechanism classification.
+permit exploratory hypotheses prior to mechanism classification —
+opt out by pinning `enforce_trend_mechanism: false` in your
+`platform.yaml`.
 
 #### 20.6.3 Error-class taxonomy
 
@@ -2565,12 +2577,22 @@ This amendment is accepted when ALL of the following are true:
 - [x] The 5-family `TrendMechanism` taxonomy is confirmed closed (no
       `OTHER` slot) and the empirical half-life ranges in §20.2 are
       acceptable. **Locked.**
-- [x] `enforce_trend_mechanism: false` is the agreed default for the
-      v0.3 ramp; the timeline for flipping to `true` in production is
+- [x] `enforce_trend_mechanism: false` was the agreed default for the
+      v0.3 ramp; the timeline for flipping to `true` in production was
       tracked separately (not blocking v0.3 merge). **Confirmed; flip
       date deferred to a separate proposal once at least three
       reference alphas (one per non-stress family) have shipped under
-      strict mode in research/paper trading.**
+      strict mode in research/paper trading.** **CLOSED by Workstream
+      E** (acceptance row 84): the four reference alphas
+      (`pofi_kyle_drift_v1` — KYLE_INFO, `pofi_inventory_revert_v1` —
+      INVENTORY, `pofi_hawkes_burst_v1` — HAWKES_SELF_EXCITE,
+      `pofi_moc_imbalance_v1` — SCHEDULED_FLOW) load under strict
+      mode (`tests/acceptance/test_strict_mode_reference_alphas.py`)
+      *and* clear the F-4 RESEARCH → PAPER gate end-to-end on a real
+      promotion ledger (`tests/research/test_strict_mode_promotion_e2e.py`),
+      mechanically closing the §20.12.1 precondition. The platform
+      default flipped from `false` → `true` and is locked by
+      `tests/acceptance/test_strict_mode_default_true.py`.
 - [x] Q11–Q14 (§20.14) resolved per recommendation: `LIQUIDITY_STRESS`
       is exit-only; `RegimeHazardSpike` is per-symbol only;
       `scheduled_flow_window` is US-only; `mechanism_concentration` cap
@@ -2606,9 +2628,15 @@ This amendment is accepted when ALL of the following are true:
 #### 20.12.3 Non-regression acceptance
 
 - [ ] Every v0.2 acceptance criterion (§18.2, §18.3) still passes.
-- [ ] v0.2 SIGNAL alphas without `trend_mechanism:` continue to load
-      and run with bit-identical Level-1–4 parity hashes
-      (`enforce_trend_mechanism: false` default).
+- [x] v0.2 SIGNAL alphas without `trend_mechanism:` continue to load
+      and run with bit-identical Level-1–4 parity hashes when the
+      operator explicitly pins `enforce_trend_mechanism: false` (the
+      v0.2 escape hatch; the platform default is `true` post-Workstream-E,
+      acceptance row 84). Locked by
+      `tests/acceptance/test_v02_no_trend_mechanism_parity.py`
+      (explicit-opt-out path) and
+      `tests/acceptance/test_strict_mode_default_true.py`
+      (default-True contract).
 - [ ] LEGACY_SIGNAL alphas continue to pass Level-1 parity hash.
 - [ ] Single-symbol throughput regression ≤ 12% vs pre-v0.2 baseline
       (revised from v0.2's 10% to accommodate the new sensors; 12%

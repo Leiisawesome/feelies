@@ -101,6 +101,13 @@ def _make_config(
             if gate_thresholds_overrides is not None
             else {}
         ),
+        # Workstream E flipped the platform default to ``true``.  This
+        # F-5 wiring test is orthogonal to G16 — its concern is the
+        # ``gate_thresholds_overrides`` plumbing through bootstrap into
+        # ``AlphaRegistry``.  Pinning the opt-out keeps the fixture
+        # minimal and avoids dragging the mechanism taxonomy into a
+        # promotion-thresholds wiring test.
+        enforce_trend_mechanism=False,
     )
 
 

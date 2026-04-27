@@ -229,6 +229,12 @@ def _make_phase4_config() -> PlatformConfig:
         account_equity=1_000_000.0,
         factor_loadings_dir=_FACTOR_LOADINGS_DIR,
         sector_map_path=_SECTOR_MAP_PATH,
+        # Workstream-E flipped the platform default to True; this
+        # integration test exercises the v0.2 baseline SIGNAL alpha
+        # (pofi_benign_midcap_v1) which ships *without* a
+        # trend_mechanism: block on purpose (§20.12.3 #2 parity
+        # anchor), so we explicitly opt back out of strict mode here.
+        enforce_trend_mechanism=False,
     )
 
 

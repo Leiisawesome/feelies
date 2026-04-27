@@ -363,9 +363,14 @@ composition_completeness_threshold: 0.7   # Drop CrossSectionalContext below thi
 composition_max_universe_size: 50         # PORTFOLIO universe cap (G10)
 factor_loadings_max_age_seconds: 86400    # Stale factor loadings → bootstrap fail
 
-# v0.3 strict mode (Phase 3.1)
-enforce_trend_mechanism: false            # When true, reject schema-1.1 SIGNAL/PORTFOLIO
-                                          # alphas missing trend_mechanism: (G16 strict)
+# v0.3 strict mode (Phase 3.1) — default-true since Workstream E
+# enforce_trend_mechanism: true           # Default since Workstream E (acceptance row 84):
+                                          # reject schema-1.1 SIGNAL/PORTFOLIO alphas missing
+                                          # trend_mechanism: (G16 strict).  Pin to false only
+                                          # if your alpha_spec_dir points at a v0.2 baseline
+                                          # alpha (e.g. pofi_benign_midcap_v1) that pre-dates
+                                          # the mechanism taxonomy — see
+                                          # docs/migration/schema_1_0_to_1_1.md §10.5.
 
 # Architectural gate enforcement (Phase 4)
 enforce_layer_gates: true                 # When false, G1/G3 violations log WARNING
