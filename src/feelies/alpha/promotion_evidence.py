@@ -64,6 +64,19 @@ from typing import Any, cast
 
 EVIDENCE_SCHEMA_VERSION = "1.0.0"
 
+PROMOTE_CAPITAL_TIER_TRIGGER = "promote_capital_tier"
+"""Stable trigger string for the F-6 LIVE @ SMALL_CAPITAL ->
+LIVE @ SCALED escalation.  Persisted on the
+:class:`feelies.core.state_machine.TransitionRecord` and on the
+resulting :class:`feelies.alpha.promotion_ledger.PromotionLedgerEntry`,
+so the operator CLI and forensic readers can distinguish capital-tier
+escalations from LIVE -> QUARANTINED demotions even though both share
+``from_state == "LIVE"``.  Defined here (next to :class:`GateId` and
+:class:`CapitalStageEvidence`) rather than in
+:mod:`feelies.alpha.lifecycle` so the wire-format symbol is shared
+between writer (lifecycle) and reader (CLI / forensics) without
+re-introducing a layering edge."""
+
 
 # ─────────────────────────────────────────────────────────────────────
 #   Capital-stage tier
@@ -123,7 +136,9 @@ class GateId(Enum):
 
     LIVE_PROMOTE_CAPITAL_TIER = "live_promote_capital_tier"
     """LIVE @ SMALL_CAPITAL → LIVE @ SCALED (capital-tier escalation
-    that does not change the lifecycle state)."""
+    that does not change the lifecycle state).  Wired by Workstream
+    **F-6** as a state-machine self-loop with trigger
+    :data:`PROMOTE_CAPITAL_TIER_TRIGGER`."""
 
     LIVE_TO_QUARANTINED = "live_to_quarantined"
     """LIVE → QUARANTINED.  Quarantine is normally auto-triggered by
@@ -1323,6 +1338,7 @@ _check_reconstructor_coverage()
 
 __all__ = (
     "EVIDENCE_SCHEMA_VERSION",
+    "PROMOTE_CAPITAL_TIER_TRIGGER",
     "CPCVEvidence",
     "CapitalStageEvidence",
     "CapitalStageTier",

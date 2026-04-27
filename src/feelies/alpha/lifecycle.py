@@ -7,6 +7,8 @@ detected edge decay.
 State transitions:
   RESEARCH -> PAPER         pass_paper_gate (schema valid, determinism OK)
   PAPER -> LIVE             pass_live_gate (evidence-based promotion)
+  LIVE -> LIVE              promote_capital_tier (SMALL_CAPITAL -> SCALED;
+                            metadata-only escalation, state stays LIVE)
   LIVE -> QUARANTINED       edge_decay_detected (auto-triggered)
   QUARANTINED -> PAPER      revalidation_passed (human + evidence)
   QUARANTINED -> DECOMMISSIONED  decommissioned (terminal)
@@ -28,6 +30,9 @@ from enum import Enum, auto
 from typing import Any
 
 from feelies.alpha.promotion_evidence import (
+    PROMOTE_CAPITAL_TIER_TRIGGER,
+    CapitalStageEvidence,
+    CapitalStageTier,
     GateId,
     GateThresholds,
     evidence_to_metadata,
@@ -55,7 +60,14 @@ class AlphaLifecycleState(Enum):
 _LIFECYCLE_TRANSITIONS: dict[AlphaLifecycleState, frozenset[AlphaLifecycleState]] = {
     AlphaLifecycleState.RESEARCH: frozenset({AlphaLifecycleState.PAPER}),
     AlphaLifecycleState.PAPER: frozenset({AlphaLifecycleState.LIVE}),
-    AlphaLifecycleState.LIVE: frozenset({AlphaLifecycleState.QUARANTINED}),
+    # LIVE -> LIVE is the Workstream F-6 capital-tier escalation
+    # (SMALL_CAPITAL -> SCALED).  The lifecycle state is unchanged;
+    # the tier flip is recorded as a metadata-only ledger entry whose
+    # ``trigger`` distinguishes it from the LIVE -> QUARANTINED demotion.
+    AlphaLifecycleState.LIVE: frozenset({
+        AlphaLifecycleState.LIVE,
+        AlphaLifecycleState.QUARANTINED,
+    }),
     AlphaLifecycleState.QUARANTINED: frozenset({
         AlphaLifecycleState.PAPER,
         AlphaLifecycleState.DECOMMISSIONED,
@@ -221,6 +233,15 @@ class AlphaLifecycle:
        (:func:`validate_quarantine_trigger`) are run for forensics:
        inconsistencies log a ``WARNING`` but do *not* block the
        transition.
+
+    Workstream **F-6** added :py:meth:`promote_capital_tier` for the
+    LIVE @ SMALL_CAPITAL -> LIVE @ SCALED escalation.  The lifecycle
+    state remains ``LIVE`` (the tier is *evidence on LIVE*, not a
+    distinct state), but the underlying state machine commits a
+    ``LIVE -> LIVE`` self-loop transition with
+    :data:`PROMOTE_CAPITAL_TIER_TRIGGER` so the ledger captures a
+    durable provenance record.  See :py:meth:`current_capital_tier`
+    for the live-epoch tier inference.
     """
 
     def __init__(
@@ -418,6 +439,70 @@ class AlphaLifecycle:
         )
         return []
 
+    def promote_capital_tier(
+        self,
+        evidence: CapitalStageEvidence,
+        *,
+        correlation_id: str = "",
+    ) -> list[str]:
+        """Attempt LIVE @ SMALL_CAPITAL -> LIVE @ SCALED escalation.
+
+        The lifecycle state stays ``LIVE``; the capital tier flips
+        from ``SMALL_CAPITAL`` to ``SCALED`` as recorded by a
+        ``LIVE -> LIVE`` self-loop transition with the
+        :data:`PROMOTE_CAPITAL_TIER_TRIGGER` trigger.  The supplied
+        :class:`CapitalStageEvidence` is the small-capital window's
+        execution-quality and PnL-compression summary; the validator
+        enforces every threshold from the testing-validation skill's
+        Small-Capital exit criteria via
+        :data:`GateId.LIVE_PROMOTE_CAPITAL_TIER`.
+
+        Returns the list of gate-check errors (empty = success).  No
+        ``IllegalTransition`` is raised when the alpha is not in LIVE
+        or is already at SCALED — the caller receives a descriptive
+        error string instead, mirroring :py:meth:`promote_to_paper`
+        and friends.
+
+        Unlike the other promote/revalidate methods this one is
+        structured-evidence-only: there is no legacy
+        :class:`PromotionEvidence` shape that captures the
+        Small-Capital exit criteria, so accepting one would be
+        ambiguous.
+        """
+        errors: list[str] = []
+
+        if self._sm.state is not AlphaLifecycleState.LIVE:
+            errors.append(
+                f"capital-tier promotion requires state=LIVE; "
+                f"current state is {self._sm.state.name}"
+            )
+            return errors
+
+        current_tier = self.current_capital_tier
+        if current_tier is CapitalStageTier.SCALED:
+            errors.append(
+                "capital-tier promotion already complete: alpha is at "
+                "tier=SCALED; no further escalation defined"
+            )
+            return errors
+
+        gate_errors = validate_gate(
+            GateId.LIVE_PROMOTE_CAPITAL_TIER,
+            (evidence,),
+            self._gate_thresholds,
+        )
+        if gate_errors:
+            return list(gate_errors)
+
+        metadata = evidence_to_metadata(evidence)
+        self._sm.transition(
+            AlphaLifecycleState.LIVE,
+            trigger=PROMOTE_CAPITAL_TIER_TRIGGER,
+            correlation_id=correlation_id,
+            metadata=metadata,
+        )
+        return []
+
     def decommission(
         self,
         reason: str,
@@ -444,6 +529,41 @@ class AlphaLifecycle:
     def is_live(self) -> bool:
         """Whether the alpha is deployed with real capital."""
         return self._sm.state == AlphaLifecycleState.LIVE
+
+    @property
+    def current_capital_tier(self) -> CapitalStageTier | None:
+        """Capital-stage tier of the *current* LIVE epoch.
+
+        Returns ``None`` when the alpha is not currently in the LIVE
+        state (capital tier is only meaningful while live).
+
+        Otherwise scans :py:attr:`history` backwards from the most
+        recent record to the most recent transition *into* LIVE
+        (typically a ``PAPER -> LIVE`` promotion or a
+        ``QUARANTINED -> PAPER`` revalidation followed by another
+        promotion to LIVE).  The tier returned is:
+
+        * :attr:`CapitalStageTier.SCALED` if at least one
+          ``LIVE -> LIVE`` self-loop with
+          :data:`PROMOTE_CAPITAL_TIER_TRIGGER` is present in the
+          current epoch.
+        * :attr:`CapitalStageTier.SMALL_CAPITAL` otherwise (the
+          default at first entry into LIVE).
+
+        Quarantine -> revalidate -> LIVE re-entry resets the tier
+        back to ``SMALL_CAPITAL`` because the LIVE-entry transition
+        starts a new epoch.
+        """
+        if self._sm.state is not AlphaLifecycleState.LIVE:
+            return None
+        live_name = AlphaLifecycleState.LIVE.name
+        history = self._sm.history
+        for record in reversed(history):
+            if record.trigger == PROMOTE_CAPITAL_TIER_TRIGGER:
+                return CapitalStageTier.SCALED
+            if record.to_state == live_name and record.from_state != live_name:
+                return CapitalStageTier.SMALL_CAPITAL
+        return CapitalStageTier.SMALL_CAPITAL
 
     # ── Evidence dispatch helpers (Workstream F-4) ───────────
 

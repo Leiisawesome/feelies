@@ -31,6 +31,7 @@ from feelies.alpha.lifecycle import (
 )
 from feelies.alpha.module import AlphaModule
 from feelies.alpha.promotion_evidence import (
+    CapitalStageEvidence,
     GateThresholds,
     apply_gate_thresholds_overrides,
 )
@@ -397,6 +398,40 @@ class AlphaRegistry:
             )
 
         return [f"Alpha '{alpha_id}' in state {state.name} cannot be promoted"]
+
+    def promote_capital_tier(
+        self,
+        alpha_id: str,
+        evidence: CapitalStageEvidence,
+        *,
+        correlation_id: str = "",
+    ) -> list[str]:
+        """Escalate a LIVE alpha from SMALL_CAPITAL to SCALED.
+
+        Workstream **F-6** capital-tier escalation: the lifecycle
+        state stays ``LIVE``; the alpha's capital-stage tier flips to
+        ``SCALED`` and is recorded as a metadata-only ledger entry
+        (a ``LIVE -> LIVE`` self-loop with the
+        :data:`feelies.alpha.lifecycle.PROMOTE_CAPITAL_TIER_TRIGGER`
+        trigger).  Returns the list of gate-check errors (empty =
+        success); see
+        :py:meth:`feelies.alpha.lifecycle.AlphaLifecycle.promote_capital_tier`
+        for the gate semantics and the validator threshold contract.
+
+        Raises ``KeyError`` if alpha not registered.
+        Raises ``AlphaRegistryError`` if lifecycle tracking is disabled.
+        """
+        lc = self._lifecycles.get(alpha_id)
+        if lc is None:
+            if alpha_id not in self._alphas:
+                raise KeyError(f"Alpha '{alpha_id}' is not registered")
+            raise AlphaRegistryError(
+                "Lifecycle tracking is disabled (no clock provided)"
+            )
+        return lc.promote_capital_tier(
+            evidence,
+            correlation_id=correlation_id,
+        )
 
     def quarantine(
         self,

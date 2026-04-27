@@ -38,6 +38,7 @@ from typing import Any
 from feelies.alpha.promotion_evidence import (
     EVIDENCE_SCHEMA_VERSION,
     GATE_EVIDENCE_REQUIREMENTS,
+    CapitalStageTier,
     GateId,
     GateThresholds,
     metadata_to_evidence,
@@ -212,23 +213,67 @@ def _dump_json(payload: Mapping[str, Any]) -> None:
 _STATE_PAIR_TO_GATE: Mapping[tuple[str, str], GateId] = {
     ("RESEARCH", "PAPER"): GateId.RESEARCH_TO_PAPER,
     ("PAPER", "LIVE"): GateId.PAPER_TO_LIVE,
+    ("LIVE", "LIVE"): GateId.LIVE_PROMOTE_CAPITAL_TIER,
     ("LIVE", "QUARANTINED"): GateId.LIVE_TO_QUARANTINED,
     ("QUARANTINED", "PAPER"): GateId.QUARANTINED_TO_PAPER,
     ("QUARANTINED", "DECOMMISSIONED"): GateId.QUARANTINED_TO_DECOMMISSIONED,
 }
 """Map a recorded ``(from_state, to_state)`` pair onto the F-2 gate id.
 
-Note: ``GateId.LIVE_PROMOTE_CAPITAL_TIER`` is a non-state-changing
-escalation (LIVE @ SMALL_CAPITAL → LIVE @ SCALED).  No ``LIVE → LIVE``
-transitions appear in the ledger today; Workstream **F-4** will
-introduce the trigger string that records it, and this mapping will
-be extended at that time.  The ``replay-evidence`` subcommand handles
-unknown pairs gracefully (skip with a notice rather than crash).
+The ``("LIVE", "LIVE")`` entry was introduced by Workstream **F-6**:
+the LIVE @ SMALL_CAPITAL → LIVE @ SCALED escalation is recorded as a
+self-loop transition with the
+:data:`feelies.alpha.lifecycle.PROMOTE_CAPITAL_TIER_TRIGGER` trigger,
+even though the lifecycle state is unchanged.  The
+``replay-evidence`` subcommand handles unknown pairs gracefully (skip
+with a notice rather than crash).
 """
 
 
 def _gate_for_entry(entry: PromotionLedgerEntry) -> GateId | None:
     return _STATE_PAIR_TO_GATE.get((entry.from_state, entry.to_state))
+
+
+# ─────────────────────────────────────────────────────────────────────
+#   Capital-stage tier inference (Workstream F-6)
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _capital_tier_from_entries(
+    entries: Iterable[PromotionLedgerEntry],
+) -> CapitalStageTier | None:
+    """Infer the *current* capital-stage tier from a chronological
+    sequence of ledger entries for one alpha.
+
+    Returns ``None`` when the alpha is not currently in the LIVE
+    state (capital tier is only meaningful while live).  Otherwise
+    walks the entries backwards from the most recent and returns:
+
+    * :attr:`CapitalStageTier.SCALED` if any
+      ``trigger == "promote_capital_tier"`` entry appears after the
+      most recent transition into LIVE;
+    * :attr:`CapitalStageTier.SMALL_CAPITAL` otherwise (the default
+      tier on first entry into LIVE).
+
+    The forensic-only consumer contract is preserved: this helper
+    only reads ledger entries (no clock reads, no live state).  The
+    algorithm matches
+    :py:attr:`feelies.alpha.lifecycle.AlphaLifecycle.current_capital_tier`
+    so a ledger replay agrees with the live state machine.
+    """
+    rows = list(entries)
+    if not rows:
+        return None
+    rows_sorted = sorted(rows, key=lambda e: e.timestamp_ns)
+    if rows_sorted[-1].to_state != "LIVE":
+        return None
+    live_name = "LIVE"
+    for entry in reversed(rows_sorted):
+        if entry.trigger == "promote_capital_tier":
+            return CapitalStageTier.SCALED
+        if entry.to_state == live_name and entry.from_state != live_name:
+            return CapitalStageTier.SMALL_CAPITAL
+    return CapitalStageTier.SMALL_CAPITAL
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -240,34 +285,60 @@ def _gate_for_entry(entry: PromotionLedgerEntry) -> GateId | None:
 class _InspectResult:
     alpha_id: str
     transitions: list[dict[str, Any]]
+    current_capital_tier: CapitalStageTier | None
 
 
 def _build_inspect_result(
     ledger: PromotionLedger,
     alpha_id: str,
 ) -> _InspectResult:
-    rows: list[dict[str, Any]] = []
-    for entry in ledger.entries_for(alpha_id):
-        rows.append(_entry_as_dict(entry))
-    return _InspectResult(alpha_id=alpha_id, transitions=rows)
+    raw_entries: list[PromotionLedgerEntry] = list(
+        ledger.entries_for(alpha_id)
+    )
+    rows: list[dict[str, Any]] = [_entry_as_dict(e) for e in raw_entries]
+    return _InspectResult(
+        alpha_id=alpha_id,
+        transitions=rows,
+        current_capital_tier=_capital_tier_from_entries(raw_entries),
+    )
 
 
 def _render_inspect_text(result: _InspectResult) -> None:
     if not result.transitions:
         print(f"no ledger entries found for alpha_id={result.alpha_id!r}")
         return
+    tier_suffix = (
+        f"  tier={result.current_capital_tier.value}"
+        if result.current_capital_tier is not None
+        else ""
+    )
     print(
         f"alpha_id: {result.alpha_id}  "
-        f"({len(result.transitions)} transitions)"
+        f"({len(result.transitions)} transitions){tier_suffix}"
     )
     print("-" * 78)
     for idx, row in enumerate(result.transitions):
-        print(
-            f"#{idx:02d}  {row['timestamp_iso']}  "
-            f"{row['from_state']:>14} -> {row['to_state']:<14}  "
-            f"trigger={row['trigger']!r}  "
-            f"correlation_id={row['correlation_id']!r}"
-        )
+        # Render LIVE -> LIVE capital-tier escalations with an explicit
+        # SMALL_CAPITAL -> SCALED suffix so the operator can read the
+        # tier transition without having to parse the metadata blob.
+        if (
+            row["from_state"] == "LIVE"
+            and row["to_state"] == "LIVE"
+            and row["trigger"] == "promote_capital_tier"
+        ):
+            arrow = "LIVE @ SMALL_CAPITAL -> LIVE @ SCALED"
+            print(
+                f"#{idx:02d}  {row['timestamp_iso']}  "
+                f"{arrow:<40}  trigger={row['trigger']!r}  "
+                f"correlation_id={row['correlation_id']!r}"
+            )
+        else:
+            print(
+                f"#{idx:02d}  {row['timestamp_iso']}  "
+                f"{row['from_state']:>14} -> {row['to_state']:<14}  "
+                f"trigger={row['trigger']!r}  "
+                f"correlation_id={row['correlation_id']!r}"
+            )
         metadata = row["metadata"]
         if metadata:
             print(f"      metadata: {json.dumps(metadata, sort_keys=True)}")
@@ -292,6 +363,11 @@ def _handle_inspect(args: argparse.Namespace) -> int:
                 "alpha_id": result.alpha_id,
                 "ledger_path": str(ledger.path),
                 "transitions": result.transitions,
+                "current_capital_tier": (
+                    result.current_capital_tier.value
+                    if result.current_capital_tier is not None
+                    else None
+                ),
             }
         )
     else:
@@ -308,6 +384,7 @@ def _handle_inspect(args: argparse.Namespace) -> int:
 class _AlphaSummary:
     alpha_id: str
     current_state: str
+    current_capital_tier: CapitalStageTier | None
     transition_count: int
     first_timestamp_ns: int
     last_timestamp_ns: int
@@ -328,12 +405,23 @@ def _build_alpha_summaries(
             _AlphaSummary(
                 alpha_id=alpha_id,
                 current_state=rows_sorted[-1].to_state,
+                current_capital_tier=_capital_tier_from_entries(rows_sorted),
                 transition_count=len(rows_sorted),
                 first_timestamp_ns=rows_sorted[0].timestamp_ns,
                 last_timestamp_ns=rows_sorted[-1].timestamp_ns,
             )
         )
     return summaries
+
+
+def _format_state_with_tier(summary: _AlphaSummary) -> str:
+    """Render the per-alpha state column with a capital-tier suffix
+    when the alpha is LIVE.  For non-LIVE alphas the column is just
+    the lifecycle state name.
+    """
+    if summary.current_capital_tier is None:
+        return summary.current_state
+    return f"{summary.current_state} @ {summary.current_capital_tier.value}"
 
 
 def _render_list_text(
@@ -351,14 +439,14 @@ def _render_list_text(
         print("(no entries)")
         return
     header = (
-        f"{'alpha_id':<32}  {'state':<14}  {'#tx':>4}  "
+        f"{'alpha_id':<32}  {'state':<26}  {'#tx':>4}  "
         f"{'first_seen':<32}  {'last_seen':<32}"
     )
     print(header)
     print("-" * len(header))
     for s in summaries:
         print(
-            f"{s.alpha_id:<32}  {s.current_state:<14}  "
+            f"{s.alpha_id:<32}  {_format_state_with_tier(s):<26}  "
             f"{s.transition_count:>4}  "
             f"{_format_ts(s.first_timestamp_ns):<32}  "
             f"{_format_ts(s.last_timestamp_ns):<32}"
@@ -384,6 +472,11 @@ def _handle_list(args: argparse.Namespace) -> int:
                     {
                         "alpha_id": s.alpha_id,
                         "current_state": s.current_state,
+                        "current_capital_tier": (
+                            s.current_capital_tier.value
+                            if s.current_capital_tier is not None
+                            else None
+                        ),
                         "transition_count": s.transition_count,
                         "first_timestamp_ns": s.first_timestamp_ns,
                         "first_timestamp_iso": _format_ts(
