@@ -7,9 +7,9 @@ allowed substitution** from the repo pipeline. It replaces
 `MassiveHistoricalIngestor` with a Grok-native Polygon REST fetcher that
 emits **identical** `NBBOQuote` / `Trade` dataclasses.
 
-Everything downstream (feature engine, backtest router, cost model,
-orchestrator) sees the same canonical events it would see from the repo's
-ingestor.
+Everything downstream (sensor registry, horizon aggregation, signal engine,
+composition, execution, risk, and orchestrator) sees the same canonical
+events it would see from the repo's ingestor.
 
 ---
 
@@ -487,8 +487,9 @@ All **signal evaluation** uses Regular Trading Hours only:
 
 The event log contains full-day data (matching the repo). The orchestrator internally
 suppresses entry signals outside RTH via the session guard in `Orchestrator`.
-Pre- and post-market ticks still flow through the feature and regime engines,
-providing warm-up identical to the repo's `scripts/run_backtest.py`.
+Pre- and post-market ticks still flow through the sensor, horizon, and regime
+path when the loaded alpha requires them, providing warm-up identical to the
+repo's `scripts/run_backtest.py`.
 
 ---
 
@@ -500,6 +501,7 @@ Substitution:         MassiveHistoricalIngestor → PolygonFetcher
 Field mapping:        Matches MassiveNormalizer._rest_quote/_rest_trade exactly
 Fetch window:         Full calendar day (00:00:00Z–23:59:59Z) — matches repo
 RTH filtering:        Handled by orchestrator internally (not at ingest layer)
+Downstream path:      sensor -> horizon -> signal -> composition when required by alpha
 Cache:                /home/user/data_cache/{symbol}_{date}_{quotes|trades}.parquet
 Resequencing:         Matches scripts/run_backtest.py _resequence() logic
 Output:               InMemoryEventLog (from repo source)

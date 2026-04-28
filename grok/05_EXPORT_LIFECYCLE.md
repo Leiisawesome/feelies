@@ -91,6 +91,14 @@ def EXPORT(
     fingerprint = {
         "signal_id":       signal_id,
         "alpha_id":        alpha_id,
+        "schema_version":  spec_dict.get("schema_version"),
+        "layer":           spec_dict.get("layer"),
+        "horizon_seconds": spec_dict.get("horizon_seconds"),
+        "family":          (spec_dict.get("trend_mechanism") or {}).get("family"),
+        "expected_half_life_seconds": (
+            (spec_dict.get("trend_mechanism") or {}).get("expected_half_life_seconds")
+        ),
+        "margin_ratio":    (spec_dict.get("cost_arithmetic") or {}).get("margin_ratio"),
         "n_trades":        oos_metrics.get("n"),
         "total_pnl":       oos_metrics.get("mean_pnl"),
         "oos_sharpe":      oos_metrics.get("sharpe"),
@@ -190,6 +198,10 @@ STEP 1 — Copy files to local repo
 mkdir -p feelies/alphas/{alpha_id}/
 cp {export_dir}/{alpha_id}.alpha.yaml  feelies/alphas/{alpha_id}/{alpha_id}.alpha.yaml
 cp {export_dir}/*.py                    feelies/alphas/{alpha_id}/   (if any)
+
+    NOTE: current Grok emits schema-1.1 alphas by default. The local repo's
+    loader must be at or beyond the pinned commit family that supports
+    `schema_version: "1.1"` and the declared `layer:` contract.
 
   NOTE: .py files MUST be in the same directory as the .alpha.yaml
   because computation_module paths resolve relative to the .alpha.yaml.
@@ -368,12 +380,21 @@ def _registry_upsert(signal_id: str, alpha_id: str, report: dict, fingerprint: d
     ic      = report.get("steps", {}).get("ic", {})
     cpcv    = report.get("steps", {}).get("cpcv", {})
     lineage = report.get("lineage", {})
+    meta    = report.get("metadata", {})
+    hypothesis = report.get("hypothesis", {})
+    hypothesis_text = hypothesis.get("statement") or hypothesis.get("mechanism") or ""
 
     row = {
         "generation":           SESSION.get("generation", 1),
         "signal_id":            signal_id,
         "alpha_id":             alpha_id,
-        "hypothesis":           report.get("hypothesis", {}).get("statement", "")[:120],
+        "layer":                meta.get("layer", ""),
+        "horizon_seconds":      meta.get("horizon_seconds", ""),
+        "family":               meta.get("trend_mechanism_family", ""),
+        "expected_half_life_seconds": meta.get("expected_half_life_seconds", ""),
+        "margin_ratio":         meta.get("margin_ratio", ""),
+        "hypothesis_status":    "proposed",
+        "hypothesis":           hypothesis_text[:120],
         "oos_sharpe":           round(oos.get("sharpe") or 0, 4),
         "dsr":                  round(falsif.get("dsr") or 0, 4),
         "ic_mean":              round(ic.get("ic_mean")   or 0, 6) if ic else "",
@@ -447,11 +468,11 @@ def REGISTRY() -> None:
 
     print(f"\n{'Signal Registry':}")
     print(f"{'─'*100}")
-    header = f"{'signal_id':25s} {'alpha_id':25s} {'oos_sharpe':>10} {'dsr':>6} {'status':15s} {'verdict':12s}"
+    header = f"{'signal_id':25s} {'layer':9s} {'horizon':>7s} {'oos_sharpe':>10} {'dsr':>6} {'status':15s} {'verdict':12s}"
     print(header)
     print(f"{'─'*100}")
     for r in rows:
-        print(f"{r.get('signal_id',''):25s} {r.get('alpha_id',''):25s} "
+        print(f"{r.get('signal_id',''):25s} {r.get('layer',''):9s} {str(r.get('horizon_seconds','')):>7s} "
               f"{r.get('oos_sharpe',''):>10} {r.get('dsr',''):>6} "
               f"{r.get('status',''):15s} {r.get('recommendation',''):12s}")
     print(f"{'─'*100}")
@@ -498,9 +519,9 @@ LIFECYCLE_STATES = ["RESEARCH", "PAPER", "LIVE", "QUARANTINED", "DECOMMISSIONED"
 # Promotion gates (must all pass before advancing state)
 PROMOTION_GATES = {
     "RESEARCH → PAPER": [
-        "AlphaLoader validation passes (schema + compilation)",
+        "AlphaLoader validation passes (schema-1.1 + compilation)",
         "Determinism test: same event_log → same trade sequence",
-        "Feature values finite (no NaN/Inf) over 5-day sample",
+        "Sensor / snapshot bindings finite (no NaN/Inf) over a 5-day sample",
         "OOS Sharpe ≥ 0.80",
         "DSR > 1.0",
         "Bootstrap p < 0.05",
@@ -574,6 +595,7 @@ def STATUS() -> None:
     """Report all module states and current session variables."""
     # Module sentinels — loaded by checking for a function each module exports.
     _m6 = "EVOLVE" in globals()
+    _m7 = "PROPOSE" in globals()
     print(f"\n{'='*60}")
     print("MICROSTRUCTURE RESEARCH LABORATORY V2 — STATUS")
     print(f"{'='*60}")
@@ -583,6 +605,7 @@ def STATUS() -> None:
     print(f"  Module 4 (Backtest Exec):     ACTIVE")
     print(f"  Module 5 (Export/Lifecycle):  ACTIVE")
     print(f"  Module 6 (Evolution):         {'ACTIVE' if _m6 else 'NOT YET LOADED — paste Prompt 6'}")
+    print(f"  Module 7 (Hypothesis):        {'ACTIVE' if _m7 else 'NOT YET LOADED — paste Prompt 7'}")
     print()
     print(f"  API key set:      {'YES' if SESSION.get('api_key') else 'NO — run INITIALIZE()'}")
     print(f"  Loaded symbols:   {SESSION.get('loaded_symbols', [])}")
@@ -615,7 +638,7 @@ print("STATUS() command: ACTIVE — full system status")
 print()
 print("=" * 60)
 print("Export & Lifecycle module: ACTIVE")
-print("Modules 1–5 loaded. Paste Prompt 6 (Evolution) next, then INITIALIZE().")
+print("Modules 1–5 loaded. Paste Prompt 6 (Evolution), then Prompt 7 (Hypothesis), then INITIALIZE().")
 print("=" * 60)
 print()
 print("Commands available so far:")
@@ -686,7 +709,7 @@ next config change will silently break parity.
 
 ```
 RESEARCH   →  Grok testing + falsification + parity export
-  ↓ Gate: AlphaLoader passes, OOS Sharpe ≥ 0.80, DSR > 1.0
+    ↓ Gate: schema-1.1 AlphaLoader pass, OOS Sharpe ≥ 0.80, DSR > 1.0
 PAPER      →  Running on feelies platform with paper signals
   ↓ Gate: ≥30 days, Sharpe ≥ 1.0, hit rate ≥ 50%, no quarantine triggers
 LIVE       →  Real capital allocated by feelies

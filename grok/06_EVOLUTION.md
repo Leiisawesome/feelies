@@ -12,7 +12,8 @@ and **promotion-gated** (TEST verdict + selfcheck).
 
 This module composes symbols defined in earlier modules:
 
-- `assemble_alpha` / `FEATURE_LIBRARY` / `MECHANISM_CATALOG` / `formalize_hypothesis`  (Module 3)
+- `assemble_signal_alpha` / `clone_reference_alpha` / `SENSOR_CATALOG` /
+    `MECHANISM_FAMILY_CATALOG` / `formalize_hypothesis`  (Module 3)
 - `TEST` / `SELFCHECK` / `falsification_battery` / `holm_correction` / `compute_ic`  (Module 4)
 - `EXPORT` / `_registry_upsert`  (Module 5)
 - `ALPHA_ACTIVE_DIR` / `SESSION["active_alpha_id"]`  (Module 1)
@@ -27,8 +28,8 @@ through the production `alpha_spec_dir` code path — the same path
 A generated alpha becomes "what the platform sees" without manual file
 copying.
 
-No new dependency. No invented features. Only operators that compose
-existing repo primitives.
+No new dependency. No invented sensors. Only operators that compose
+existing repo primitives and preserve the schema-1.1 contract.
 
 ---
 
@@ -37,6 +38,62 @@ existing repo primitives.
 ```python
 import copy, random, hashlib, datetime
 from typing import Callable
+
+MUTATION_TRIGGER_RULES = [
+    "Realized IC decay versus in-sample.",
+    "Per-regime IC heterogeneity.",
+    "Cost arithmetic drift.",
+    "Half-life drift outside the declared family envelope.",
+    "Mechanism crowding.",
+    "Structural-break alarm on a fingerprint sensor.",
+]
+
+MUTATION_AXIS_RULES = {
+    1: "Regime refinement: tighten the regime gate to isolate the working sub-regime.",
+    2: "Sensor substitution: replace a sensor only with another sensor measuring the same latent variable.",
+    3: "Horizon adjustment: move horizon_seconds and recheck cost arithmetic and half-life ratio.",
+    4: "Universe refinement: tighten the universe and document the selection criterion.",
+    5: "Layer promotion: promote a SIGNAL to a PORTFOLIO hypothesis instead of deleting the parent signal.",
+}
+
+FORBIDDEN_MUTATIONS = [
+    "Parameter sweeps without a mechanism hypothesis.",
+    "Adding measurements without naming the latent variable they capture.",
+    "Combining decaying signals without a cross-sectional construction mechanism.",
+    "Making falsification criteria easier to satisfy.",
+    "Loosening the regime gate just to trade more often.",
+    "Reducing hurdle_bps or inflating edge_estimate_bps without a fresh rationale.",
+    "Renaming trend families just to evade G16.",
+]
+
+MUTATION_PREEMIT_CHECKLIST = [
+    "Name exactly one mutation axis.",
+    "State the trigger condition and supporting forensics.",
+    "Keep schema_version and layer unchanged unless doing explicit layer promotion.",
+    "Recompute cost arithmetic when horizon, regime, or universe changed.",
+    "Recheck horizon / expected_half_life_seconds when trend_mechanism exists.",
+    "Preserve predecessor lineage rather than overwriting history in place.",
+    "Keep falsification criteria mechanism-tied and not easier than the parent.",
+]
+
+
+def SHOW_MUTATION_PROTOCOL() -> None:
+    """Print the embedded mutation protocol for paste-only sessions."""
+    print("\nMutation protocol")
+    print("-" * 90)
+    print("Triggers")
+    for line in MUTATION_TRIGGER_RULES:
+        print(f"  - {line}")
+    print("\nAxes")
+    for axis, line in MUTATION_AXIS_RULES.items():
+        print(f"  {axis}. {line}")
+    print("\nForbidden")
+    for line in FORBIDDEN_MUTATIONS:
+        print(f"  - {line}")
+    print("\nPre-emit checklist")
+    for idx, line in enumerate(MUTATION_PREEMIT_CHECKLIST, 1):
+        print(f"  {idx}. {line}")
+    print("-" * 90)
 
 # -------------------------------------------------------------------
 # Operator contract.
@@ -48,14 +105,14 @@ from typing import Callable
 #   1. Return a NEW dict (deepcopy parent first; never mutate parent in place).
 #   2. Set child["alpha_id"]  = unique id derived from parent + operator + seed.
 #   3. Set child["lineage"]   = {parent_id, mutation_type, operator_kwargs, seed}.
-#   4. Preserve the .alpha.yaml schema (assemble_alpha output shape).
+#   4. Preserve the current-main .alpha.yaml schema (Prompt 3 SIGNAL path).
 #   5. Return None if the mutation is structurally impossible (e.g. parameter
 #      perturbation on an alpha with no parameters). EXPLORE skips Nones.
 #
 # Operators MUST NOT:
 #   - Touch SESSION, registry, filesystem.
 #   - Read wall-clock state. (Determinism: same parent + seed → same child.)
-#   - Mutate features that don't exist in FEATURE_LIBRARY (use known-good only).
+#   - Invent sensors, layers, or regime state names that current main does not load.
 # -------------------------------------------------------------------
 
 def _child_id(parent_spec: dict, op_name: str, seed: int) -> str:
@@ -87,6 +144,63 @@ def _new_child(parent_spec: dict, op_name: str, seed: int,
     return child
 
 
+def _numeric_bounds(spec: dict) -> tuple[float | None, float | None]:
+    if "range" in spec and isinstance(spec.get("range"), (list, tuple)) and len(spec["range"]) == 2:
+        return spec["range"][0], spec["range"][1]
+    return spec.get("min"), spec.get("max")
+
+
+_SENSOR_LATENT_GROUPS = {
+    "price_impact_proxy": ("kyle_lambda_60s", "micro_price"),
+    "order_flow_pressure": ("ofi_ewma", "trade_through_rate"),
+    "inventory_replenishment": ("quote_replenish_asymmetry", "quote_hazard_rate"),
+    "stress_pressure": ("vpin_50bucket", "realized_vol_30s"),
+}
+
+
+def _same_latent_variable(left_sensor: str, right_sensor: str) -> bool:
+    if left_sensor == right_sensor:
+        return True
+    for members in _SENSOR_LATENT_GROUPS.values():
+        if left_sensor in members and right_sensor in members:
+            return True
+
+    left_role = str((SENSOR_CATALOG.get(left_sensor) or {}).get("role", ""))
+    right_role = str((SENSOR_CATALOG.get(right_sensor) or {}).get("role", ""))
+    left_head = left_role.split(" primary")[0].split(" confirming")[0]
+    right_head = right_role.split(" primary")[0].split(" confirming")[0]
+    return bool(left_head) and left_head == right_head
+
+
+def _replace_sensor_text(value, old_sensor: str, new_sensor: str):
+    if isinstance(value, str):
+        return value.replace(old_sensor, new_sensor)
+    if isinstance(value, list):
+        return [item.replace(old_sensor, new_sensor) if isinstance(item, str) else item for item in value]
+    return value
+
+
+def _dedupe_in_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            ordered.append(item)
+    return ordered
+
+
+def _infer_parent_family(parent_spec: dict) -> str | None:
+    family = ((parent_spec.get("trend_mechanism") or {}).get("family"))
+    if family in MECHANISM_FAMILY_CATALOG and family != "PORTFOLIO_XSECT":
+        return family
+
+    family = REFERENCE_ALPHA_CATALOG.get(parent_spec.get("alpha_id", ""), {}).get("family")
+    if family in MECHANISM_FAMILY_CATALOG and family != "PORTFOLIO_XSECT":
+        return family
+    return None
+
+
 # ---- OP 1: parameter perturbation ---------------------------------
 def op_perturb_parameter(parent_spec: dict, rng: random.Random,
                          scale: float = 0.25) -> dict | None:
@@ -106,7 +220,7 @@ def op_perturb_parameter(parent_spec: dict, rng: random.Random,
     child = _new_child(parent_spec, "perturb_param", seed, {"scale": scale})
     name  = rng.choice(numeric)
     spec  = child["parameters"][name]
-    lo, hi = (spec.get("range") or [None, None])
+    lo, hi = _numeric_bounds(spec)
     factor = 1.0 + rng.uniform(-scale, scale)
     new_val = spec["default"] * factor
     if lo is not None: new_val = max(new_val, lo)
@@ -120,121 +234,270 @@ def op_perturb_parameter(parent_spec: dict, rng: random.Random,
     return child
 
 
-# ---- OP 2: threshold flip / sign reversal -------------------------
-def op_flip_sign(parent_spec: dict, rng: random.Random) -> dict | None:
+# ---- OP 1b: sensor substitution (Axis 2) --------------------------
+def op_substitute_sensor(parent_spec: dict, rng: random.Random,
+                         old_sensor: str | None = None,
+                         new_sensor: str | None = None) -> dict | None:
     """
-    Reverse the sign convention inside the signal: replace `LONG` with
-    `SHORT` and vice-versa. Tests the symmetric hypothesis (the mechanism
-    points the opposite way). Only mutates spec["signal"] textually.
+    Replace one declared sensor with a same-latent-variable proxy and rewrite
+    the inline signal and related text fields consistently.
+
+    This stays intentionally narrow: it only touches schema fields that commonly
+    embed sensor bindings and refuses substitutions across unrelated latent
+    variables.
     """
-    sig = parent_spec.get("signal", "")
-    if "LONG" not in sig or "SHORT" not in sig:
+    if parent_spec.get("layer") != "SIGNAL":
         return None
+
+    sensors = list(parent_spec.get("depends_on_sensors") or [])
+    if not sensors:
+        return None
+
+    if old_sensor is None:
+        for candidate in sensors:
+            compatible = [
+                sensor_id for sensor_id in SENSOR_CATALOG
+                if sensor_id != candidate and _same_latent_variable(candidate, sensor_id)
+            ]
+            if compatible:
+                old_sensor = candidate
+                new_sensor = compatible[0] if new_sensor is None else new_sensor
+                break
+
+    if old_sensor is None or old_sensor not in sensors:
+        return None
+    if new_sensor is None or new_sensor not in SENSOR_CATALOG:
+        return None
+    if not _same_latent_variable(old_sensor, new_sensor):
+        return None
+
     seed = rng.randrange(1 << 30)
-    child = _new_child(parent_spec, "flip_sign", seed)
-    sentinel = "____TMP_DIR_SWAP____"
-    child["signal"] = (sig.replace("LONG", sentinel)
-                          .replace("SHORT", "LONG")
-                          .replace(sentinel, "SHORT"))
-    child["hypothesis"] = "[SIGN-FLIPPED] " + parent_spec.get("hypothesis", "")
+    child = _new_child(parent_spec, "substitute_sensor", seed,
+                       {"old_sensor": old_sensor, "new_sensor": new_sensor})
+    child["depends_on_sensors"] = _dedupe_in_order([
+        new_sensor if sensor_id == old_sensor else sensor_id
+        for sensor_id in sensors
+    ])
+
+    rewrite_hits = 0
+    for field in ("signal", "hypothesis", "description"):
+        original = child.get(field)
+        rewritten = _replace_sensor_text(original, old_sensor, new_sensor)
+        if rewritten != original:
+            rewrite_hits += 1
+            child[field] = rewritten
+
+    falsification = child.get("falsification_criteria") or []
+    rewritten_falsification = _replace_sensor_text(falsification, old_sensor, new_sensor)
+    if rewritten_falsification != falsification:
+        rewrite_hits += 1
+        child["falsification_criteria"] = rewritten_falsification
+
+    regime_gate = child.get("regime_gate") or {}
+    for gate_key in ("on_condition", "off_condition"):
+        original = regime_gate.get(gate_key)
+        rewritten = _replace_sensor_text(original, old_sensor, new_sensor)
+        if rewritten != original:
+            rewrite_hits += 1
+            regime_gate[gate_key] = rewritten
+    if regime_gate:
+        child["regime_gate"] = regime_gate
+
+    trend = child.get("trend_mechanism") or {}
+    signature = trend.get("l1_signature_sensors") or []
+    rewritten_signature = [new_sensor if sensor_id == old_sensor else sensor_id for sensor_id in signature]
+    rewritten_signature = _dedupe_in_order(rewritten_signature)
+    if rewritten_signature != signature:
+        rewrite_hits += 1
+        trend["l1_signature_sensors"] = rewritten_signature
+    failure_signature = trend.get("failure_signature") or []
+    rewritten_failure_signature = _replace_sensor_text(failure_signature, old_sensor, new_sensor)
+    if rewritten_failure_signature != failure_signature:
+        rewrite_hits += 1
+        trend["failure_signature"] = rewritten_failure_signature
+    if trend:
+        child["trend_mechanism"] = trend
+
+    child["lineage"]["operator_kwargs"].update({
+        "rewritten_fields": rewrite_hits,
+        "compatible_latent_group": next(
+            (name for name, members in _SENSOR_LATENT_GROUPS.items() if old_sensor in members and new_sensor in members),
+            None,
+        ),
+    })
     return child
 
 
-# ---- OP 3: feature swap (within-family) ---------------------------
-def op_swap_feature(parent_spec: dict, rng: random.Random,
-                    candidates: list[str] | None = None) -> dict | None:
+# ---- OP 2: horizon adjustment (Axis 3) ----------------------------
+def op_adjust_horizon(parent_spec: dict, rng: random.Random,
+                      allowed: tuple = (30, 120, 300, 900, 1800)) -> dict | None:
     """
-    Replace one feature in the spec with a sibling feature from
-    FEATURE_LIBRARY that has the same input dependency profile. The signal
-    code is left untouched — if it references the removed feature by name
-    the AlphaLoader will reject it, and EXPLORE will mark this child invalid.
-    The point is to falsify the hypothesis "this specific feature carries
-    the edge"; if the sibling also works, the edge is broader than claimed.
+    Move the alpha to a neighboring allowed horizon while preserving G16's
+    horizon / half-life ratio when a trend_mechanism block is present.
     """
-    feats = parent_spec.get("features") or []
-    if not feats:
+    current = parent_spec.get("horizon_seconds")
+    if current is None:
         return None
-    candidates = candidates or list(FEATURE_LIBRARY.keys())  # Prompt 3 global
-    seed = rng.randrange(1 << 30)
-    idx = rng.randrange(len(feats))
-    old_id = feats[idx].get("feature_id")
-    pool = [c for c in candidates if c != old_id]
-    if not pool:
-        return None
-    new_id = rng.choice(pool)
 
-    child = _new_child(parent_spec, "swap_feature", seed,
-                       {"index": idx, "old": old_id, "new": new_id})
-    child["features"][idx] = feature_entry(new_id)   # Prompt 3 helper
-    return child
-
-
-# ---- OP 4: holding-window scaling ---------------------------------
-def op_scale_holding(parent_spec: dict, rng: random.Random,
-                     factor_choices: tuple = (0.5, 2.0)) -> dict | None:
-    """
-    Scale the alpha's holding-time / cooldown parameter (any param whose
-    name contains 'hold' or 'cooldown' or 'window'). Rotates through factor_choices.
-    Tests the persistence-window dimension of the edge — if doubling the
-    horizon kills it, the mechanism decays fast (information-driven).
-    """
-    params = parent_spec.get("parameters") or {}
-    candidates = [k for k in params
-                  if any(t in k.lower() for t in ("hold", "cooldown", "window"))
-                  and isinstance(params[k].get("default"), (int, float))]
+    half_life = ((parent_spec.get("trend_mechanism") or {})
+                 .get("expected_half_life_seconds"))
+    candidates = []
+    for horizon in allowed:
+        if horizon == current:
+            continue
+        if half_life is not None:
+            ratio = float(horizon) / float(half_life)
+            if not 0.5 <= ratio <= 4.0:
+                continue
+        candidates.append(horizon)
     if not candidates:
         return None
+
     seed = rng.randrange(1 << 30)
-    name = rng.choice(candidates)
-    factor = rng.choice(factor_choices)
-    child = _new_child(parent_spec, "scale_holding", seed,
-                       {"parameter": name, "factor": factor})
-    spec = child["parameters"][name]
-    new_val = spec["default"] * factor
-    lo, hi = (spec.get("range") or [None, None])
-    if lo is not None: new_val = max(new_val, lo)
-    if hi is not None: new_val = min(new_val, hi)
-    if spec.get("type") == "int":
-        new_val = int(round(new_val))
-    spec["default"] = new_val
+    new_horizon = rng.choice(candidates)
+    child = _new_child(parent_spec, "adjust_horizon", seed,
+                       {"old_horizon": current, "new_horizon": new_horizon})
+    child["horizon_seconds"] = int(new_horizon)
     return child
 
 
-# ---- OP 5: regime-condition the signal ----------------------------
-def op_regime_filter(parent_spec: dict, rng: random.Random,
-                     regimes: tuple = ("trending", "compression_clustering",
-                                       "vol_breakout")) -> dict | None:
+# ---- OP 3: regime refinement (Axis 1) -----------------------------
+def op_refine_regime_gate(parent_spec: dict, rng: random.Random,
+                          posterior_step: float = 0.05,
+                          percentile_step: float = 0.05) -> dict | None:
     """
-    Wrap the signal's evaluate() body in a regime gate that suppresses
-    entries outside a chosen regime. Requires the regime engine to be
-    active during backtest (TEST passes regime_engine through).
-    Tests the hypothesis that the edge is regime-conditional, which is the
-    most common reason a backtest looks great but live PnL collapses.
+    Tighten the declared regime gate by increasing hysteresis margins. This is
+    a conservative sub-regime refinement that preserves the gate DSL while
+    reducing chattering and loosening risk of over-trading marginal states.
     """
-    sig = parent_spec.get("signal", "")
-    if "def evaluate" not in sig:
+    gate = parent_spec.get("regime_gate") or {}
+    hysteresis = gate.get("hysteresis") or {}
+    if not gate:
         return None
-    seed = rng.randrange(1 << 30)
-    regime = rng.choice(regimes)
-    child = _new_child(parent_spec, "regime_filter", seed, {"regime": regime})
 
-    # Inject a lightweight gate at the top of evaluate(). The features dict
-    # is expected to expose 'regime' (provided by feelies.regime adapter when
-    # regime_engine is wired into the build_platform() pipeline).
-    gate = (
-        f"    # regime gate injected by op_regime_filter\n"
-        f"    if features.get('regime') != {regime!r}:\n"
-        f"        return None\n"
+    seed = rng.randrange(1 << 30)
+    child = _new_child(parent_spec, "refine_regime", seed,
+                       {"posterior_step": posterior_step,
+                        "percentile_step": percentile_step})
+    child_gate = child.setdefault("regime_gate", {})
+    child_hysteresis = child_gate.setdefault("hysteresis", {})
+    old_post = float(hysteresis.get("posterior_margin", 0.20))
+    old_pct = float(hysteresis.get("percentile_margin", 0.30))
+    child_hysteresis["posterior_margin"] = round(min(old_post + posterior_step, 0.50), 3)
+    child_hysteresis["percentile_margin"] = round(min(old_pct + percentile_step, 0.60), 3)
+    child["lineage"]["operator_kwargs"].update({
+        "old_posterior_margin": old_post,
+        "new_posterior_margin": child_hysteresis["posterior_margin"],
+        "old_percentile_margin": old_pct,
+        "new_percentile_margin": child_hysteresis["percentile_margin"],
+    })
+    return child
+
+
+# ---- OP 4: universe refinement (Axis 4) ---------------------------
+def op_refine_universe(parent_spec: dict, rng: random.Random,
+                       keep_fraction: float = 0.5) -> dict | None:
+    """
+    Restrict a symbol list or universe list to a deterministic sub-universe.
+    This is only applicable when the parent spec already declares an explicit
+    list; config-driven universes remain untouched.
+    """
+    key = None
+    values = None
+    if isinstance(parent_spec.get("symbols"), list) and len(parent_spec["symbols"]) > 1:
+        key = "symbols"
+        values = parent_spec["symbols"]
+    elif isinstance(parent_spec.get("universe"), list) and len(parent_spec["universe"]) > 1:
+        key = "universe"
+        values = parent_spec["universe"]
+    if key is None or values is None:
+        return None
+
+    seed = rng.randrange(1 << 30)
+    child = _new_child(parent_spec, "refine_universe", seed,
+                       {"key": key, "keep_fraction": keep_fraction})
+    count = max(1, int(round(len(values) * keep_fraction)))
+    chosen = sorted(rng.sample(list(values), count))
+    child[key] = chosen
+    child["lineage"]["operator_kwargs"].update({"old_size": len(values), "new_size": len(chosen)})
+    return child
+
+
+# ---- OP 5: layer promotion (Axis 5) -------------------------------
+def op_promote_to_portfolio(parent_spec: dict, rng: random.Random,
+                            template_alpha_id: str = "pofi_xsect_v1",
+                            horizon_seconds: int | None = None,
+                            universe: list[str] | None = None) -> dict | None:
+    """
+    Promote a SIGNAL alpha into a PORTFOLIO draft that consumes the parent via
+    depends_on_signals and inherits the shipped cross-sectional template.
+
+    This helper returns a new child spec but intentionally does not assume the
+    parent signal is already materialized in the active alpha directory.
+    """
+    if parent_spec.get("layer") != "SIGNAL":
+        return None
+
+    family = _infer_parent_family(parent_spec)
+    if family is None:
+        return None
+
+    seed = rng.randrange(1 << 30)
+    child_alpha_id = _child_id(parent_spec, "promote_portfolio", seed)
+    child = clone_reference_alpha(template_alpha_id, new_alpha_id=child_alpha_id)
+
+    parent_ver = parent_spec.get("version", "1.0.0").split(".")
+    try:
+        parent_ver[-1] = str(int(parent_ver[-1]) + 1)
+    except ValueError:
+        parent_ver = ["1", "0", "1"]
+    child["version"] = ".".join(parent_ver)
+
+    promoted_horizon = max(
+        300,
+        int(child.get("horizon_seconds", 300) or 300),
+        int(horizon_seconds or parent_spec.get("horizon_seconds") or 300),
     )
-    lines = sig.split("\n")
-    out = []
-    injected = False
-    for ln in lines:
-        out.append(ln)
-        if not injected and ln.strip().startswith("def evaluate"):
-            out.append(gate.rstrip())
-            injected = True
-    child["signal"] = "\n".join(out)
+    child["horizon_seconds"] = promoted_horizon
+    child["depends_on_signals"] = [parent_spec["alpha_id"]]
+
+    if universe is not None:
+        child["universe"] = list(universe)
+    elif isinstance(parent_spec.get("symbols"), list) and len(parent_spec["symbols"]) > 1:
+        child["universe"] = list(parent_spec["symbols"])
+
+    parent_actor = MECHANISM_FAMILY_CATALOG.get(family, {}).get("structural_actor", "the parent mechanism")
+    child["description"] = (
+        f"Prompt-7 layer promotion of {parent_spec['alpha_id']} into a PORTFOLIO allocator. "
+        f"Consumes the parent SIGNAL across the template universe via the platform's default composition pipeline."
+    )
+    child["hypothesis"] = (
+        f"Cross-sectional ranking of {parent_spec['alpha_id']} preserves the {family} mechanism driven by "
+        f"{parent_actor} because dispersion in the parent signal remains observable across a synchronized universe "
+        f"at {promoted_horizon}-second decision intervals."
+    )
+    child["falsification_criteria"] = [
+        f"cross_sectional_ir_below_0_5_60d_on_{parent_spec['alpha_id']}",
+        f"mechanism_breakdown_{family.lower()}_exceeds_cap_for_3_consecutive_barriers",
+        f"parent_signal_{parent_spec['alpha_id']}_loses_family_alignment_or_turnover_exceeds_budget",
+    ]
+    child["trend_mechanism"] = {
+        "consumes": [{"family": family, "max_share_of_gross": 1.0}],
+        "max_share_of_gross": 1.0,
+    }
+    child["lineage"] = {
+        "parent_id": parent_spec["alpha_id"],
+        "parent_version": parent_spec.get("version", "1.0.0"),
+        "mutation_type": "promote_portfolio",
+        "operator_kwargs": {
+            "template_alpha_id": template_alpha_id,
+            "family": family,
+            "horizon_seconds": promoted_horizon,
+            "depends_on_signals": list(child["depends_on_signals"]),
+        },
+        "seed": seed,
+        "created_at": datetime.datetime.utcnow().isoformat(),
+    }
     return child
 
 
@@ -242,10 +505,10 @@ def op_regime_filter(parent_spec: dict, rng: random.Random,
 # Order is irrelevant; EXPLORE samples uniformly with the seeded RNG.
 MUTATION_OPERATORS: dict[str, Callable] = {
     "perturb_param":   op_perturb_parameter,
-    "flip_sign":       op_flip_sign,
-    "swap_feature":    op_swap_feature,
-    "scale_holding":   op_scale_holding,
-    "regime_filter":   op_regime_filter,
+    "substitute_sensor": op_substitute_sensor,
+    "adjust_horizon":  op_adjust_horizon,
+    "refine_regime":   op_refine_regime_gate,
+    "refine_universe": op_refine_universe,
 }
 
 print(f"Mutation operators registered: {list(MUTATION_OPERATORS)}")
@@ -260,8 +523,8 @@ print(f"Mutation operators registered: {list(MUTATION_OPERATORS)}")
 # Splice (recombination) operator.
 #
 # Unlike the unary operators in MUTATION_OPERATORS, splice takes TWO
-# parents and produces one child whose feature set is the union of both
-# parents' features and whose signal logic is one parent's. This tests
+# parents and produces one child whose sensor dependency set is the union
+# of both parents and whose signal logic is one parent's. This tests
 # whether two independent mechanisms compose into a stronger combined
 # edge — a classic genetic-algorithm crossover, scoped to our schema.
 #
@@ -280,22 +543,23 @@ def op_splice(
     signal_from: str = "a",
 ) -> dict | None:
     """
-    Splice features from parent_b into parent_a; keep parent_a's signal
+    Splice sensor dependencies from parent_b into parent_a; keep parent_a's signal
     code (or parent_b's if signal_from='b').
 
-    Both parents must validate. The child's feature list is the union by
-    feature_id (parent_a wins on ID collision so its computation_module
-    is preserved). The signal text is taken verbatim from the chosen parent;
-    if the chosen parent's signal references a feature that the union does
-    NOT contain, AlphaLoader will reject the child and EXPLORE will skip it.
+    Both parents must validate. The child's `depends_on_sensors` list is the
+    union of both parents. Parameters are also unioned, with the base parent
+    winning on name collision. The signal text is taken verbatim from the
+    chosen parent; if the chosen parent's signal expects bindings not exposed
+    by the unioned sensors, AlphaLoader may still load the child but the
+    strategy can become inactive at runtime, so use splice sparingly.
     """
     assert signal_from in ("a", "b"), "signal_from must be 'a' or 'b'"
     if parent_a.get("alpha_id") == parent_b.get("alpha_id"):
         return None   # splicing with self is a no-op
 
-    a_feats = parent_a.get("features") or []
-    b_feats = parent_b.get("features") or []
-    if not a_feats or not b_feats:
+    a_sensors = parent_a.get("depends_on_sensors") or []
+    b_sensors = parent_b.get("depends_on_sensors") or []
+    if not a_sensors and not b_sensors:
         return None
 
     seed = rng.randrange(1 << 30)
@@ -320,20 +584,36 @@ def op_splice(
         parent_ver = ["1", "0", "1"]
     child["version"] = ".".join(parent_ver)
 
-    # Union features by feature_id; base wins on collision.
-    have = {f.get("feature_id") for f in child["features"]}
+    # Union sensor dependencies; base wins on collision only in the sense
+    # that order is preserved from the chosen parent first.
+    base_sensors = list(base.get("depends_on_sensors") or [])
+    other_sensors = list(other.get("depends_on_sensors") or [])
+    have = set(base_sensors)
     added = []
-    for f in (parent_a["features"] if signal_from == "b" else parent_b["features"]):
-        fid = f.get("feature_id")
-        if fid and fid not in have:
-            child["features"].append(copy.deepcopy(f))
-            have.add(fid)
-            added.append(fid)
+    for sensor_id in other_sensors:
+        if sensor_id not in have:
+            base_sensors.append(sensor_id)
+            have.add(sensor_id)
+            added.append(sensor_id)
+    child["depends_on_sensors"] = base_sensors
 
-    # Union parameters by name; base wins on collision (same rule as features).
+    # Union parameters by name; base wins on collision.
     other_params = other.get("parameters") or {}
     for pname, pdef in other_params.items():
         child.setdefault("parameters", {}).setdefault(pname, copy.deepcopy(pdef))
+
+    # Widen the trend-mechanism signature sensor list if both parents declare one.
+    child_tm = child.get("trend_mechanism") or {}
+    other_tm = other.get("trend_mechanism") or {}
+    if child_tm and other_tm:
+        tm_sensors = list(child_tm.get("l1_signature_sensors") or [])
+        tm_have = set(tm_sensors)
+        for sensor_id in other_tm.get("l1_signature_sensors") or []:
+            if sensor_id not in tm_have:
+                tm_sensors.append(sensor_id)
+                tm_have.add(sensor_id)
+        child_tm["l1_signature_sensors"] = tm_sensors
+        child["trend_mechanism"] = child_tm
 
     child["lineage"] = {
         # parent_id is the "primary" parent for genealogy; co_parent_id
@@ -344,7 +624,7 @@ def op_splice(
         "mutation_type":  op_name,
         "operator_kwargs": {
             "signal_from":    signal_from,
-            "spliced_features": added,
+            "spliced_sensors": added,
         },
         "seed":           seed,
         "created_at":     datetime.datetime.utcnow().isoformat(),
@@ -373,15 +653,15 @@ def RECOMBINE(
     child = op_splice(parent_a_spec, parent_b_spec, rng, signal_from=signal_from)
     if child is None:
         raise ValueError(
-            f"Splice not applicable: same alpha_id, missing features, "
+            f"Splice not applicable: same alpha_id, missing sensor dependencies, "
             f"or invalid signal_from='{signal_from}'."
         )
     if not validate_alpha(child):
         raise ValueError(
             f"Spliced child '{child['alpha_id']}' failed AlphaLoader validation. "
-            f"Most common cause: signal_from='{signal_from}' references a feature "
-            f"not present in the union. Try signal_from='{'b' if signal_from=='a' else 'a'}' "
-            f"or adjust the unioned features manually."
+            f"Most common cause: signal_from='{signal_from}' expects a schema field "
+            f"the base parent provided but the splice mutated incompatibly. Try "
+            f"signal_from='{'b' if signal_from=='a' else 'a'}' or inspect the unioned sensors manually."
         )
     print(f"RECOMBINE: {parent_a_spec['alpha_id']}  x  {parent_b_spec['alpha_id']}  "
           f"--[{child['lineage']['mutation_type']}]-->  {child['alpha_id']}")
@@ -405,6 +685,116 @@ print("Recombination operator registered: op_splice (binary, via RECOMBINE)")
 ```python
 import shutil, yaml as _yaml
 
+ADOPTION_DEPENDENCY_BUNDLES: dict[str, dict[str, dict]] = {}
+
+
+def _archive_prior_active() -> str | None:
+    """Preserve the current active spec in ALPHA_DEV_DIR/_deprecated before swap."""
+    prior_alpha_id = SESSION.get("active_alpha_id")
+    if not prior_alpha_id:
+        return None
+
+    prior_yaml = os.path.join(ALPHA_ACTIVE_DIR, prior_alpha_id, f"{prior_alpha_id}.alpha.yaml")
+    if not os.path.exists(prior_yaml):
+        return None
+
+    with open(prior_yaml, "r") as f:
+        prior_spec = _yaml.safe_load(f)
+
+    prior_version = str((prior_spec or {}).get("version", "unknown")).replace("/", "_")
+    deprecated_dir = WORKSPACE.get("alpha_deprecated") or os.path.join(ALPHA_DEV_DIR, "_deprecated")
+    os.makedirs(deprecated_dir, exist_ok=True)
+
+    archive_name = f"{prior_alpha_id}_v{prior_version}.alpha.yaml"
+    archive_path = os.path.join(deprecated_dir, archive_name)
+    if os.path.exists(archive_path):
+        archive_name = (
+            f"{prior_alpha_id}_v{prior_version}_"
+            f"{datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%S')}.alpha.yaml"
+        )
+        archive_path = os.path.join(deprecated_dir, archive_name)
+
+    shutil.copy2(prior_yaml, archive_path)
+    return archive_path
+
+
+def _resolve_adopt_dependency(alpha_id: str, owner_alpha_id: str | None = None) -> dict | None:
+    """Resolve a dependency spec for adoption-time staging.
+
+    Resolution order prefers session-local generated specs over shipped
+    references so a promoted PORTFOLIO can consume a freshly mutated SIGNAL.
+    """
+    bundle = ADOPTION_DEPENDENCY_BUNDLES.get(owner_alpha_id or "", {})
+    bundled = bundle.get(alpha_id)
+    if bundled is not None:
+        return copy.deepcopy(bundled)
+
+    current_active = SESSION.get("active_alpha_id")
+    candidates = [
+        os.path.join(ALPHA_DEV_DIR, alpha_id, f"{alpha_id}.alpha.yaml"),
+        os.path.join(ALPHA_ACTIVE_DIR, alpha_id, f"{alpha_id}.alpha.yaml"),
+    ]
+    if current_active:
+        candidates.append(os.path.join(ALPHA_ACTIVE_DIR, current_active, alpha_id, f"{alpha_id}.alpha.yaml"))
+    candidates.append(os.path.join(REFERENCE_ALPHA_DIR, alpha_id, f"{alpha_id}.alpha.yaml"))
+
+    for path in candidates:
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                return _yaml.safe_load(f)
+    return None
+
+
+def _copy_computation_modules(spec: dict, alpha_id: str, target_dir: str) -> list[str]:
+    """Stage external computation modules beside the adopted spec when needed."""
+    missing_modules = []
+    for feat in spec.get("features") or []:
+        mod = feat.get("computation_module")
+        if not mod:
+            continue
+        candidates = [
+            os.path.join(ALPHA_DEV_DIR, alpha_id, os.path.basename(mod)),
+            os.path.join(ALPHA_DEV_DIR, spec.get("lineage", {}).get("parent_id", ""),
+                         os.path.basename(mod)),
+            mod if os.path.isabs(mod) else None,
+        ]
+        src = next((c for c in candidates if c and os.path.exists(c)), None)
+        if src is None:
+            missing_modules.append(mod)
+            continue
+        shutil.copy2(src, os.path.join(target_dir, os.path.basename(mod)))
+    return missing_modules
+
+
+def _write_adopted_spec_bundle(target_dir: str, spec: dict, alpha_id: str) -> tuple[str, list[str]]:
+    os.makedirs(target_dir, exist_ok=True)
+    target_yaml = os.path.join(target_dir, f"{alpha_id}.alpha.yaml")
+    with open(target_yaml, "w") as f:
+        _yaml.dump(spec, f, default_flow_style=False, sort_keys=False)
+    missing_modules = _copy_computation_modules(spec, alpha_id, target_dir)
+    return target_yaml, missing_modules
+
+
+def _collect_portfolio_dependencies(spec: dict, owner_alpha_id: str) -> tuple[dict[str, dict], list[str]]:
+    resolved: dict[str, dict] = {}
+    missing: list[str] = []
+    for dependency_id in spec.get("depends_on_signals") or []:
+        dependency_spec = _resolve_adopt_dependency(dependency_id, owner_alpha_id=owner_alpha_id)
+        if dependency_spec is None:
+            missing.append(dependency_id)
+            continue
+        resolved[dependency_id] = dependency_spec
+    return resolved, missing
+
+
+def _stage_portfolio_dependencies(resolved_dependencies: dict[str, dict], target_dir: str) -> list[str]:
+    staged: list[str] = []
+    for dependency_id, dependency_spec in resolved_dependencies.items():
+        dep_dir = os.path.join(target_dir, dependency_id)
+        _write_adopted_spec_bundle(dep_dir, dependency_spec, dependency_id)
+        staged.append(dependency_id)
+    return staged
+
 # -------------------------------------------------------------------
 # ADOPT — flip the platform's "currently live" alpha.
 #
@@ -415,11 +805,12 @@ import shutil, yaml as _yaml
 # backtest with use_active_dir=True) loads through bootstrap._load_alphas
 # exactly as scripts/run_backtest.py would.
 #
-# Directory of one (atomic swap):
-#   ALPHA_ACTIVE_DIR is wiped on every ADOPT before writing the new spec.
-#   This mirrors how a human edits platform.yaml: only one alpha is live
-#   at any moment. Lineage is preserved in WORKSPACE["alphas"] and the
-#   registry — never in ALPHA_ACTIVE_DIR.
+# Active bundle (atomic swap):
+#   ALPHA_ACTIVE_DIR is wiped on every ADOPT before writing the new active
+#   subtree. The adopted alpha remains the single live root at
+#   ALPHA_ACTIVE_DIR/<alpha_id>/, but PORTFOLIO alphas may stage one-level
+#   nested SIGNAL dependencies under that subtree so bootstrap's discovery
+#   path can load the full bundle from alpha_spec_dir.
 #
 # Validation gate:
 #   ADOPT calls validate_alpha (Prompt 3) before writing. An invalid spec
@@ -427,12 +818,12 @@ import shutil, yaml as _yaml
 #   alpha. This matches EXPORT()'s gate.
 #
 # computation_module handling:
-#   FEATURE_LIBRARY entries (Prompt 3) ship inline `code` strings, so
-#   children produced by MUTATION_OPERATORS / op_splice carry no external
-#   .py dependencies. If the spec does reference computation_module files
-#   we resolve them relative to ALPHA_DEV_DIR/<alpha_id>/ first (the
-#   save_alpha home), then warn if any file is missing — at which point
-#   the user must save_alpha() the spec before adopting.
+#   Current-main SIGNAL prompts usually keep logic inline in `signal:` and do
+#   not ship external feature modules. If a spec does reference legacy
+#   computation_module files, we resolve them relative to
+#   ALPHA_DEV_DIR/<alpha_id>/ first (the save_alpha home), then warn if any
+#   file is missing — at which point the user must save_alpha() the spec
+#   before adopting.
 # -------------------------------------------------------------------
 def ADOPT(
     spec: dict,
@@ -448,7 +839,7 @@ def ADOPT(
                                   discovery path (alpha_spec_dir).
 
     Args:
-        spec:     .alpha.yaml dict (output of assemble_alpha / MUTATE / RECOMBINE)
+        spec:     .alpha.yaml dict (output of assemble_signal_alpha / MUTATE / RECOMBINE)
         alpha_id: defaults to spec["alpha_id"]; explicit value lets you alias
                   e.g. for a quick "active" handle independent of the lineage id.
         source:   free-form provenance tag stored in adoption_history. Suggested
@@ -468,53 +859,53 @@ def ADOPT(
             f"malformed alpha."
         )
 
+    dependency_ids = list(spec.get("depends_on_signals") or []) if spec.get("layer") == "PORTFOLIO" else []
+    resolved_dependencies: dict[str, dict] = {}
+    missing_dependencies: list[str] = []
+    if dependency_ids:
+        resolved_dependencies, missing_dependencies = _collect_portfolio_dependencies(spec, owner_alpha_id=alpha_id)
+        if missing_dependencies:
+            raise ValueError(
+                f"ADOPT BLOCKED: PORTFOLIO '{alpha_id}' is missing dependency spec(s) "
+                f"for depends_on_signals={missing_dependencies}. Save or stage the parent SIGNAL first."
+            )
+
+    archived_prior = _archive_prior_active()
+
     # ---- Atomic swap: wipe then write ----
     for entry in os.listdir(ALPHA_ACTIVE_DIR):
         path = os.path.join(ALPHA_ACTIVE_DIR, entry)
         (shutil.rmtree if os.path.isdir(path) else os.remove)(path)
 
     target_dir = os.path.join(ALPHA_ACTIVE_DIR, alpha_id)
-    os.makedirs(target_dir, exist_ok=True)
-    target_yaml = os.path.join(target_dir, f"{alpha_id}.alpha.yaml")
-    with open(target_yaml, "w") as f:
-        _yaml.dump(spec, f, default_flow_style=False, sort_keys=False)
-
-    # ---- Resolve any external computation_module files ----
-    # FEATURE_LIBRARY entries are inline so this is usually a no-op.
-    missing_modules = []
-    for feat in spec.get("features") or []:
-        mod = feat.get("computation_module")
-        if not mod:
-            continue
-        candidates = [
-            os.path.join(ALPHA_DEV_DIR, alpha_id, os.path.basename(mod)),
-            os.path.join(ALPHA_DEV_DIR, spec.get("lineage", {}).get("parent_id", ""),
-                         os.path.basename(mod)),
-            mod if os.path.isabs(mod) else None,
-        ]
-        src = next((c for c in candidates if c and os.path.exists(c)), None)
-        if src is None:
-            missing_modules.append(mod)
-            continue
-        shutil.copy2(src, os.path.join(target_dir, os.path.basename(mod)))
+    target_yaml, missing_modules = _write_adopted_spec_bundle(target_dir, spec, alpha_id)
+    staged_dependencies: list[str] = []
+    if dependency_ids:
+        staged_dependencies = _stage_portfolio_dependencies(resolved_dependencies, target_dir)
 
     if missing_modules:
         print(f"  WARN: ADOPT could not resolve {len(missing_modules)} "
               f"computation_module file(s): {missing_modules}. "
               f"RUN_ACTIVE() will fail at AlphaLoader time. "
               f"Run save_alpha(spec) with the .py files in the same dir first.")
-
     # ---- Update session state ----
     SESSION["active_alpha_id"] = alpha_id
+    SESSION["active_dependency_alpha_ids"] = list(staged_dependencies)
     SESSION.setdefault("adoption_history", []).append({
         "alpha_id":   alpha_id,
         "source":     source,
         "ts":         datetime.datetime.utcnow().isoformat(),
         "lineage":    spec.get("lineage", {}),
+        "archived_prior": archived_prior,
+        "dependency_alpha_ids": list(staged_dependencies),
     })
 
     print(f"ADOPT: '{alpha_id}' is now the active alpha "
           f"(source={source}, dir={target_dir})")
+    if archived_prior:
+        print(f"  Archived prior active spec: {archived_prior}")
+    if staged_dependencies:
+        print(f"  Staged dependency SIGNALs: {staged_dependencies}")
     return target_yaml
 
 
@@ -539,18 +930,27 @@ def LIST_ACTIVE() -> dict:
 
     target_yaml = os.path.join(ALPHA_ACTIVE_DIR, aid, f"{aid}.alpha.yaml")
     on_disk = os.path.exists(target_yaml)
+    dependency_ids = SESSION.get("active_dependency_alpha_ids") or []
     print(f"  active_alpha_id : {aid}")
     print(f"  spec path       : {target_yaml}")
     print(f"  on disk         : {'YES' if on_disk else 'MISSING — re-ADOPT'}")
+    if dependency_ids:
+        print(f"  staged deps     : {dependency_ids}")
     print(f"\n  Recent adoptions ({len(history)} total, last 5 shown):")
     for h in history[-5:]:
-        print(f"    {h['ts']}  {h['source']:10s}  {h['alpha_id']}")
+        archived = h.get("archived_prior")
+        deps = h.get("dependency_alpha_ids") or []
+        suffix = f"  archived={archived}" if archived else ""
+        if deps:
+            suffix += f"  deps={deps}"
+        print(f"    {h['ts']}  {h['source']:10s}  {h['alpha_id']}{suffix}")
     print(f"{'='*60}\n")
 
     return {
         "active_alpha_id": aid,
         "spec_path":       target_yaml,
         "on_disk":         on_disk,
+        "dependency_alpha_ids": dependency_ids,
         "history":         history,
     }
 
@@ -1242,16 +1642,57 @@ def LINEAGE(signal_id: str, depth: int = 10) -> list[dict]:
 
 print("EVOLVE / EXPLORE / MUTATE / RECOMBINE / SELFCHECK_MUTATION / AUDIT / LINEAGE: ACTIVE")
 print("ADOPT / LIST_ACTIVE: ACTIVE — production discovery handoff online")
+print("SHOW_MUTATION_PROTOCOL(): ACTIVE")
 print("Evolution module: ACTIVE")
 ```
 
 ---
 
+## EMBEDDED MUTATION CONTRACT
+
+### Triggers
+
+- Mutate only when there is decay, regime heterogeneity, cost drift, half-life drift, crowding, or a structural-break alarm.
+- If the operator supplies none of those, ask for forensics instead of guessing.
+
+### Axes
+
+1. Regime refinement.
+2. Sensor substitution for the same latent variable.
+3. Horizon adjustment with cost and half-life recheck.
+4. Universe refinement with an explicit selection criterion.
+5. Layer promotion from SIGNAL to PORTFOLIO.
+
+### Forbidden Moves
+
+- Parameter sweeps without a mechanism hypothesis.
+- Easier falsification criteria.
+- Looser regime gates just to trade more.
+- Cost or edge edits without a fresh rationale.
+- Family renames used only to evade trend-mechanism constraints.
+
+### Pre-Emit Checklist
+
+- Name one axis.
+- State the trigger and forensics.
+- Keep schema and layer stable unless the mutation is an explicit promotion.
+- Recompute cost arithmetic whenever horizon, regime, or universe changed.
+- Recheck `horizon_seconds / expected_half_life_seconds` when `trend_mechanism` exists.
+- Preserve predecessor lineage rather than overwriting history in place.
+- Keep falsification criteria mechanism-tied.
+
+### Current Prompt-6 Scope
+
+- Axis 1, 2, 3, and 4 are automated here through the seeded unary operator surface.
+- Axis 5 is now available as deterministic template-based PORTFOLIO promotion via `op_promote_to_portfolio()`.
+- `ADOPT()` performs live active-dir handoff; long-lived archival and deprecated-tree policy remain an operator concern outside this prompt surface.
+
 ## EVOLUTION MODULE STATUS
 
 ```
-Unary operators:       perturb_param, flip_sign, swap_feature, scale_holding, regime_filter
-Binary operator:       op_splice (via RECOMBINE — feature/parameter union, signal from chosen parent)
+Unary operators:       perturb_param, substitute_sensor, adjust_horizon, refine_regime, refine_universe
+Promotion helper:      op_promote_to_portfolio (template-based SIGNAL -> PORTFOLIO draft)
+Binary operator:       op_splice (via RECOMBINE — sensor/parameter union, signal from chosen parent)
 Determinism:           SELFCHECK_MUTATION asserts seeded reproducibility (Inv-5 in mutation layer)
 MHT correction:        Holm-Bonferroni over each EXPLORE family (alpha=0.05 default)
 DSR n_trials:          EXPLORE passes len(children) → falsification_battery deflates by trial count
@@ -1266,7 +1707,7 @@ Post-promotion:        AUDIT(signal_id) re-runs CPCV+IC on a fresh window, stamp
                        (HEALTHY / DEGRADED / DEAD) into the registry
 Lineage view:          LINEAGE(signal_id) prints the chain root→leaf with IC stability summary
 Persistence:           every EXPLORE → family_summary.json; every EVOLVE → evolution_run.json;
-                       ALPHA_ACTIVE_DIR is ephemeral (directory of one) — lineage lives in
+                       ALPHA_ACTIVE_DIR is ephemeral (one live bundle at a time) — lineage lives in
                        WORKSPACE["alphas"] + the registry, never here
 
 Ready: EXPLORE(parent_spec, n=8)                     — Holm-corrected family of mutated siblings

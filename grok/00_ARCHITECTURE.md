@@ -37,8 +37,14 @@ L1 NBBO data. Grok's sandbox cannot install that SDK. Instead Prompt 2 provides 
 `NBBOQuote` / `Trade` dataclasses — same field types, same nanosecond timestamps,
 same resequencing logic.
 
-Everything downstream (feature engine, signal engine, backtest router, cost model,
-risk engine, orchestrator) runs from repo source unchanged.
+Everything downstream (sensor registry, horizon aggregation, signal engine,
+composition, execution, risk, and orchestrator) runs from repo source unchanged.
+
+In current-main terms, the live downstream path is:
+
+```
+sensor -> horizon -> signal -> composition -> execution/risk/orchestrator
+```
 
 ---
 
@@ -49,15 +55,25 @@ Prompt 1: Paste once at session start (downloads repo ZIP at pinned commit SHA,
                                        extracts BOTH src/feelies/ AND repo-root files
                                        — including platform.yaml — sets sys.path)
 Prompt 2: Paste once to activate data layer (PolygonFetcher + RTH logic)
-Prompt 3: Paste once to activate alpha development (schema, feature library, AlphaLoader)
+Prompt 3: Paste once to activate alpha development (schema-1.1 SIGNAL builder,
+                                                    reference-alpha cloning,
+                                                    sensor catalog, AlphaLoader)
 Prompt 4: Paste once to activate backtest execution (build_platform, CPCV, IC, MHT,
-                                                     SELFCHECK, three-hash parity)
-Prompt 5: Paste once to activate export and lifecycle (registry, parity verify)
-Prompt 6: Paste once to activate evolution (MUTATE, EXPLORE, EVOLVE, LINEAGE)
+                                                     SELFCHECK, three-hash parity,
+                                                     layer-aware metadata)
+Prompt 5: Paste once to activate export and lifecycle (registry, parity verify,
+                                                       metadata-aware export)
+Prompt 6: Paste once to activate evolution (schema-safe MUTATE, RECOMBINE,
+                                            EXPLORE, EVOLVE, LINEAGE)
+Prompt 7: Paste once to activate hypothesis reasoning (embedded protocol,
+                                                       proposal gates, axis mapping)
 
 After setup, the PI issues commands:
   INITIALIZE                       → set API key, bootstrap workspace dirs
   LOAD "AAPL" "2026-01-15"         → fetch RTH data, populate InMemoryEventLog
+  LIST_SENSORS                       → show the shipped Layer-1 sensor catalog
+  DESCRIBE_SENSOR_RULES              → print embedded sensor binding, fingerprint,
+                                       and half-life rules from Prompt 3
   TEST <hypothesis>                → run directed hypothesis test (7 steps)
   BACKTEST <alpha_id>              → run full backtest (explicit-spec ingress)
   RUN_ACTIVE                       → backtest the currently ADOPTed alpha via the
@@ -65,6 +81,12 @@ After setup, the PI issues commands:
   SELFCHECK <alpha_id>             → assert Inv-5 (deterministic replay) on this alpha
   SELFCHECK_ADOPTION <spec_path>   → assert explicit-spec ≡ alpha_spec_dir ingress
                                      (Grok ↔ scripts/run_backtest.py path equivalence)
+  PROPOSE <template_alpha_id>      → clone a shipped reference alpha and apply bounded
+                                     hypothesis-driven edits before validation
+  SHOW_PROTOCOL_OVERVIEW           → print the embedded generation contract from Prompt 7
+  SHOW_OUTPUT_CONTRACT_EXAMPLES    → print generation/mutation REPL output templates
+  MUTATE_BY_AXIS <parent_spec> <n> → dispatch the normative mutation axes onto Prompt 6
+  SHOW_MUTATION_PROTOCOL           → print the embedded mutation trigger/axis/checklist rules
   MUTATE <parent_spec> <op>        → produce one typed, deterministic child (auto-ADOPTs)
   RECOMBINE <a_spec> <b_spec>      → binary splice (auto-ADOPTs the validated child)
   EXPLORE <parent_spec> n=8        → Holm-corrected family of mutated siblings
@@ -99,12 +121,14 @@ continuing — every later prompt depends on symbols defined earlier.
 | 4    | Paste `04_BACKTEST_EXECUTION.md` | `Backtest Execution module: ACTIVE` |
 | 5    | Paste `05_EXPORT_LIFECYCLE.md` | `Export & Lifecycle module: ACTIVE` |
 | 6    | Paste `06_EVOLUTION.md`      | `Evolution module: ACTIVE`            |
-| 7    | Call `INITIALIZE("<polygon_api_key>")` | All 6 modules report `ACTIVE` |
+| 7    | Paste `07_HYPOTHESIS_REASONING.md` | `Hypothesis Reasoning Module: ACTIVE` |
+| 8    | Call `INITIALIZE("<polygon_api_key>")` | All 7 modules report `ACTIVE` |
 
 Cell 1 of Prompt 1 fetches a ~3 MB ZIP over HTTPS; expect 10–30 seconds.
 `RUN_ACTIVE()` and `SELFCHECK_ADOPTION()` from Prompt 4 require Prompt 6 to
-be pasted (they call `ADOPT`, defined in Prompt 6). Every other Prompt 4
-command works standalone.
+be pasted (they call `ADOPT`, defined in Prompt 6). Prompt 7 assumes Prompts 3
+and 6 are already loaded because it wraps `clone_reference_alpha()`,
+`validate_alpha()`, and `MUTATE()`.
 
 ---
 
@@ -149,7 +173,9 @@ discovery code path `scripts/run_backtest.py` uses with `platform.yaml`.
 │ MUTATE / RECOMB │ ───────────► │ ADOPT(spec) writes:          │ ─────────────► │ build_platform() │
 │ EXPLORE / EVOLVE│   spec dict   │ ALPHA_ACTIVE_DIR/<id>/<id>   │  via           │ scans alpha_spec │
 │ EXPORT          │              │     .alpha.yaml              │  alpha_spec_   │ _dir, registers  │
-└─────────────────┘              │ + SESSION["active_alpha_id"] │  dir = above   │ via AlphaLoader  │
+└─────────────────┘              │ + optional <id>/<dep>/<dep>  │  dir = above   │ via AlphaLoader  │
+                                  │     .alpha.yaml sidecars     │                │                  │
+                                  │ + SESSION["active_alpha_id"] │                │                  │
                                   └─────────────────────────────┘                └──────────────────┘
                                                                                           │
                                   ┌─────────────────────────────┐                         ▼
@@ -163,10 +189,11 @@ discovery code path `scripts/run_backtest.py` uses with `platform.yaml`.
 also re-adopts so the post-export world is observable. Manual `ADOPT(spec)` is
 available for hand-crafted specs.
 
-**Directory of one.** `ALPHA_ACTIVE_DIR` holds exactly one alpha at a time
-(atomic swap on every `ADOPT`). Lineage lives in `WORKSPACE["alphas"]` (the dev
-tree) and the registry — never here. This mirrors how a human edits
-`platform.yaml`: only one alpha is live in production at any moment.
+**One live bundle.** `ALPHA_ACTIVE_DIR` holds exactly one adopted alpha subtree
+at a time (atomic swap on every `ADOPT`). The subtree may include one-level
+nested dependency SIGNAL specs for a live PORTFOLIO alpha, but only one
+primary adopted root is live in production at any moment. Lineage lives in
+`WORKSPACE["alphas"]` (the dev tree) and the registry — never here.
 
 **Equivalence proof.** The local platform's `bootstrap._load_alphas` has two
 ingress branches: explicit-spec (`alpha_specs=[...]`, used by Grok's
@@ -186,10 +213,11 @@ or to `bootstrap._load_alphas`.
 | `00_ARCHITECTURE.md` | This document — PI reference | No |
 | `01_BOOTSTRAP.md` | Prompt 1: source + platform.yaml download, system identity, registry schema | Yes (first) |
 | `02_DATA_INGESTION.md` | Prompt 2: Polygon RTH fetcher (the one allowed substitution) | Yes (second) |
-| `03_ALPHA_DEVELOPMENT.md` | Prompt 3: `.alpha.yaml`, FEATURE_LIBRARY, MECHANISM_CATALOG, hypothesis formalization | Yes (third) |
-| `04_BACKTEST_EXECUTION.md` | Prompt 4: `build_platform`, CPCV, IC, Holm/BH, SELFCHECK, three-hash parity, TEST | Yes (fourth) |
-| `05_EXPORT_LIFECYCLE.md` | Prompt 5: EXPORT, VERIFY (three-hash), registry upsert, lifecycle | Yes (fifth) |
-| `06_EVOLUTION.md` | Prompt 6: MUTATION_OPERATORS, MUTATE, EXPLORE (Holm family), EVOLVE, LINEAGE | Yes (sixth) |
+| `03_ALPHA_DEVELOPMENT.md` | Prompt 3: schema-1.1 SIGNAL assembly, reference-alpha cloning, sensor catalog, mechanism family catalog | Yes (third) |
+| `04_BACKTEST_EXECUTION.md` | Prompt 4: `build_platform`, CPCV, IC, Holm/BH, SELFCHECK, three-hash parity, TEST, metadata | Yes (fourth) |
+| `05_EXPORT_LIFECYCLE.md` | Prompt 5: EXPORT, VERIFY (three-hash), registry upsert, lifecycle, metadata carry-through | Yes (fifth) |
+| `06_EVOLUTION.md` | Prompt 6: schema-safe mutation operators, RECOMBINE, EXPLORE (Holm family), EVOLVE, LINEAGE | Yes (sixth) |
+| `07_HYPOTHESIS_REASONING.md` | Prompt 7: embedded reasoning contract with proposal audit and mutation-axis mapping | Yes (seventh) |
 
 ---
 
@@ -210,8 +238,8 @@ or to `bootstrap._load_alphas`.
 |---|---|
 | `.alpha.yaml` schema + AlphaLoader validation | Was correct — these match repo source |
 | Feature/signal protocols (`initial_state`, `update`, `evaluate`) | Was correct |
-| Feature library (6 reusable modules) | Was correct |
-| Mechanism catalog (10 entries) | Research guidance, independent of fill model |
+| Reference-alpha-first development flow | Better anchor than inventing specs from scratch |
+| Mechanism-family catalog | Research guidance, independent of fill model |
 | Statistical validation (CPCV, DSR, bootstrap, IC) | Research-layer logic, correct |
 | Signal registry, lifecycle states, artifact storage | Was correct |
 | Hypothesis formalization workflow | Was correct |

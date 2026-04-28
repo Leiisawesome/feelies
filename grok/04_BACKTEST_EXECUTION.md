@@ -7,9 +7,11 @@ every backtest through the repo's actual pipeline — `build_platform()` from
 `feelies.bootstrap` — with no invented fill model, no invented cost
 constants, no invented risk limits.
 
-All execution behavior comes from repo source. The only input the kernel
-provides is a populated `InMemoryEventLog` (from Module 2) and a valid
-`.alpha.yaml` spec (from Module 3).
+All execution behavior comes from repo source. Depending on the loaded alpha,
+that means the live sensor, horizon, signal, composition, execution, and risk
+path from current main. The only input the kernel provides is a populated
+`InMemoryEventLog` (from Module 2) and a valid `.alpha.yaml` spec (from
+Module 3).
 
 `RUN_ACTIVE()` and `SELFCHECK_ADOPTION()` defined here both call `ADOPT`,
 which is defined in Module 6. They will raise `NameError` until Module 6 is
@@ -31,8 +33,10 @@ from feelies.core.events import Signal
 # -------------------------------------------------------------------
 # State clearing is automatic: every call to run_backtest() creates
 # entirely fresh instances — PlatformConfig, InMemoryEventLog, all
-# engines (AlphaRegistry, CompositeFeatureEngine, SimulatedClock,
-# BacktestOrderRouter, BasicRiskEngine, HMM3StateFractional).
+# engines required by the loaded alpha (AlphaRegistry, SimulatedClock,
+# SensorRegistry / HorizonAggregator / HorizonSignalEngine /
+# CompositionEngine when applicable, BacktestOrderRouter,
+# BasicRiskEngine, HMM3StateFractional).
 # There is no shared mutable state between runs.
 # -------------------------------------------------------------------
 
@@ -1276,13 +1280,33 @@ def TEST(
     Returns:
         Full research report dict
     """
-    alpha_id = (spec if isinstance(spec, dict) else yaml.safe_load(spec)).get("alpha_id", "unknown")
+    spec_dict = spec if isinstance(spec, dict) else yaml.safe_load(spec)
+    alpha_id = spec_dict.get("alpha_id", "unknown")
+    hypothesis_text = (
+        hypothesis.get("statement")
+        or hypothesis.get("mechanism")
+        or spec_dict.get("hypothesis", "")
+    )
     print(f"\n{'='*60}")
     print(f"TEST: {alpha_id}")
-    print(f"Hypothesis: {hypothesis.get('statement','')[:80]}")
+    print(f"Hypothesis: {hypothesis_text[:80]}")
     print(f"{'='*60}")
 
-    report = {"hypothesis": hypothesis, "alpha_id": alpha_id, "steps": {}}
+    report = {
+        "hypothesis": hypothesis,
+        "alpha_id": alpha_id,
+        "metadata": {
+            "schema_version": spec_dict.get("schema_version"),
+            "layer": spec_dict.get("layer"),
+            "horizon_seconds": spec_dict.get("horizon_seconds"),
+            "depends_on_sensors": spec_dict.get("depends_on_sensors", []),
+            "depends_on_signals": spec_dict.get("depends_on_signals", []),
+            "margin_ratio": (spec_dict.get("cost_arithmetic") or {}).get("margin_ratio"),
+            "trend_mechanism_family": (spec_dict.get("trend_mechanism") or {}).get("family"),
+            "expected_half_life_seconds": (spec_dict.get("trend_mechanism") or {}).get("expected_half_life_seconds"),
+        },
+        "steps": {},
+    }
 
     # Step 1: Validate spec
     print("\n[Step 1/7] Validating alpha spec via AlphaLoader...")
@@ -1453,8 +1477,9 @@ build_platform(config, event_log=event_log)  →  creates fresh:
   SimulatedClock()          start_ns = 0
   AlphaRegistry             clock = None (backtest mode)
   AlphaLoader               fresh instance
-  CompositeFeatureEngine    fresh instance, all feature states at initial_state()
+    Sensor / horizon path     fresh instances when the loaded alpha requires them
   HMM3StateFractional       fresh instance, all posteriors at uniform prior
+    Signal / composition path fresh instances when the loaded alpha requires them
   BacktestOrderRouter       fresh instance, no pending orders
   DefaultCostModel          fresh instance
   BasicRiskEngine           fresh instance, HWM = starting equity
@@ -1500,6 +1525,7 @@ Backtest Execution Module: ACTIVE
 Pipeline:          build_platform() from feelies.bootstrap (repo source)
 Config source:     platform.yaml from same commit SHA as source ZIP
                     (loaded via PlatformConfig.from_yaml(PLATFORM_YAML_PATH))
+Layer path:        sensor -> horizon -> signal -> composition when required by loaded alpha
 Fill model:        BacktestOrderRouter (mid-price, depth-based partial fills)
 Cost model:        DefaultCostModel (IB Tiered defaults from platform.yaml)
 Risk engine:       BasicRiskEngine / AlphaBudgetRiskWrapper (from source)

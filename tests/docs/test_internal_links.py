@@ -1,8 +1,7 @@
 """Verify internal repo paths cited from documentation actually exist.
 
 The Phase-5 documentation rewrite (README, alphas/SCHEMA.md, the
-migration cookbook, the Grok prompts under ``grok/prompts/``, the
-deprecated ``grok/07_HYPOTHESIS_REASONING_PLAN.md`` superseded banner,
+migration cookbook, the Grok prompts under ``grok/prompts/``,
 and the source-code comments in ``layer_validator.py`` /
 ``regime_gate.py``) carries dozens of cross-references to other
 repository paths.  When a file is renamed or moved without updating
@@ -36,10 +35,6 @@ _REPO_ROOT = Path(".").resolve()
 
 # Files we authoritatively own and whose links should resolve.
 #
-# ``grok/07_HYPOTHESIS_REASONING_PLAN.md`` is intentionally excluded:
-# Phase 5 retired it (banner at the top), but its body is preserved
-# verbatim as a historical record of the v0.2 plan and contains stale
-# citations.  Touching the body would defeat the audit purpose.
 _DOC_FILES: tuple[Path, ...] = (
     Path("README.md"),
     Path("alphas/SCHEMA.md"),
@@ -50,10 +45,8 @@ _DOC_FILES: tuple[Path, ...] = (
 )
 
 
-# Files we want to assert exist but do NOT scan for stale references.
-_DOC_EXISTENCE_ONLY: tuple[Path, ...] = (
-    Path("grok/07_HYPOTHESIS_REASONING_PLAN.md"),
-)
+# No retired doc files remain on the tracked existence-only list.
+_DOC_EXISTENCE_ONLY: tuple[Path, ...] = ()
 
 
 # Source files whose comment-level path references must stay valid.

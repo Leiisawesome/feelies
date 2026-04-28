@@ -13,13 +13,13 @@ every subsequent module.
 import urllib.request, zipfile, io, os, sys
 
 FEELIES_SRC  = "/home/user/feelies_src"
-FEELIES_REPO = "/home/user/feelies_repo"   # holds platform.yaml + alphas/ from same SHA
+FEELIES_REPO = "/home/user/feelies_repo"   # holds repo-root config, alpha templates, and reference docs from the same SHA
 PLATFORM_YAML_PATH = os.path.join(FEELIES_REPO, "platform.yaml")
 
 # Pin to a specific commit SHA so every Grok session uses identical source
 # (archive/refs/heads/main.zip floats with HEAD and breaks reproducibility).
 # Update this SHA deliberately when you want to upgrade.
-_COMMIT_SHA = "e9a1614e4561c7edeab2b24112e7eb900c76ea8d"
+_COMMIT_SHA = "6085b785db4c76848506a9b343d6763a8ca14927"
 
 print(f"Downloading feelies source zip from GitHub (commit {_COMMIT_SHA[:12]})...")
 url = f"https://github.com/Leiisawesome/feelies/archive/{_COMMIT_SHA}.zip"
@@ -48,13 +48,21 @@ for name in zf.namelist():
 print(f"Extracted {extracted} Python files to {FEELIES_SRC}/feelies/")
 assert extracted >= 80, f"Expected ≥80 files, got {extracted} — check repo structure"
 
-# 2) Extract repo-root config + alpha specs under FEELIES_REPO.
-#    These are the SAME files scripts/run_backtest.py loads on the local side.
+# 2) Extract repo-root config + reference artifacts under FEELIES_REPO.
+#    These are the SAME files scripts/run_backtest.py and the current-main
+#    alpha docs rely on: platform.yaml, shipped alpha templates, migration docs,
+#    and architecture docs.
 #    Without this, Grok runs with PlatformConfig dataclass defaults (latency=0,
 #    cooldown=0, no stop-loss) while the local repo runs with platform.yaml
 #    (latency=30ms, cooldown=5000, stop-loss=0.005) — silently breaking parity.
 _repo_extracted = 0
-_repo_targets = ("platform.yaml", "alphas/", "pyproject.toml")
+_repo_targets = (
+    "platform.yaml",
+    "alphas/",
+    "pyproject.toml",
+    "design_docs/",
+    "docs/migration/",
+)
 for name in zf.namelist():
     if name == _top or name.endswith("/"):
         continue
@@ -146,6 +154,8 @@ WORKSPACE = {
     "registry":      "/home/user/registry",
     "portfolios":    "/home/user/portfolios",
     "alphas":        "/home/user/alphas",         # research/dev tree (save_alpha lands here)
+    "alpha_drafts":  "/home/user/alphas/_drafts", # failed-gate proposals from Prompt 7
+    "alpha_deprecated": "/home/user/alphas/_deprecated", # archived predecessors from ADOPT/EXPORT flow
     "alphas_active": "/home/user/alphas_active",  # production-discovery tree (alpha_spec_dir target)
 }
 for path in WORKSPACE.values():
@@ -157,13 +167,15 @@ for path in WORKSPACE.values():
 # `alpha_spec_dir` points at a directory containing exactly the alphas that
 # are LIVE for the next backtest. ADOPT() (Prompt 6) writes the freshly
 # generated/mutated spec here as `<alpha_id>/<alpha_id>.alpha.yaml`, and
+# for PORTFOLIO alphas it may also stage one-level nested SIGNAL
+# dependencies as `<alpha_id>/<dep_id>/<dep_id>.alpha.yaml`, and
 # run_backtest(use_active_dir=True) (Prompt 4) loads from it via the same
 # `_load_alphas` discovery code path scripts/run_backtest.py exercises.
 #
 # Wiped on every fresh INITIALIZE so a session never inherits stale state
 # from a prior run. Lineage is preserved in WORKSPACE["alphas"] and the
-# registry — ALPHA_ACTIVE_DIR is intentionally a "directory of one":
-# only the currently adopted alpha lives here at any moment.
+# registry — ALPHA_ACTIVE_DIR is intentionally a one-live-bundle root:
+# only the currently adopted alpha subtree lives here at any moment.
 ALPHA_ACTIVE_DIR = WORKSPACE["alphas_active"]
 import shutil as _shutil
 for _entry in os.listdir(ALPHA_ACTIVE_DIR):
@@ -173,8 +185,9 @@ for _entry in os.listdir(ALPHA_ACTIVE_DIR):
 # Initialize registry CSV if absent
 REGISTRY_PATH = os.path.join(WORKSPACE["registry"], "signal_registry.csv")
 REGISTRY_COLS = [
-    "generation", "signal_id", "alpha_id", "hypothesis",
-    "oos_sharpe", "dsr", "ic_mean", "ic_tstat",
+    "generation", "signal_id", "alpha_id", "layer", "horizon_seconds",
+    "family", "expected_half_life_seconds", "margin_ratio", "hypothesis_status",
+    "hypothesis", "oos_sharpe", "dsr", "ic_mean", "ic_tstat",
     "tc_drag_pct", "latency_decay_pct", "regime_stability_cv", "regime_all_positive",
     "status", "recommendation", "parent_id", "co_parent_id", "mutation_type",
     "parity_n_trades", "parity_total_pnl",
@@ -213,12 +226,12 @@ print("Registry:", REGISTRY_PATH)
 ## CELL 5 — INITIALIZE command definition
 
 This cell only *defines* the `INITIALIZE` function. The PI calls it once,
-after all six prompts have been pasted, to bind the Polygon API key and
+after all seven prompts have been pasted, to bind the Polygon API key and
 confirm every module reports `ACTIVE`.
 
 ```python
 def INITIALIZE(polygon_api_key: str) -> None:
-    """Set API key and confirm all modules are active. Call after pasting all 6 prompts."""
+    """Set API key and confirm all modules are active. Call after pasting all 7 prompts."""
     SESSION["api_key"] = polygon_api_key
 
     # Detect which modules are loaded by checking for their sentinel names
@@ -227,6 +240,7 @@ def INITIALIZE(polygon_api_key: str) -> None:
     _m4 = "run_backtest" in dir()   or "run_backtest" in globals()
     _m5 = "EXPORT" in dir()         or "EXPORT" in globals()
     _m6 = "EVOLVE" in dir()         or "EVOLVE" in globals()
+    _m7 = "PROPOSE" in dir()        or "PROPOSE" in globals()
 
     def _status(loaded: bool) -> str:
         return "ACTIVE" if loaded else "NOT YET LOADED — paste that prompt"
@@ -245,17 +259,19 @@ def INITIALIZE(polygon_api_key: str) -> None:
     print(f"  Module 4 (Backtest Exec):     {_status(_m4)}")
     print(f"  Module 5 (Export/Lifecycle):  {_status(_m5)}")
     print(f"  Module 6 (Evolution):         {_status(_m6)}")
+    print(f"  Module 7 (Hypothesis):        {_status(_m7)}")
     print()
     print("  Single source of truth: https://github.com/Leiisawesome/feelies")
     print("  Parity verifier:        python scripts/run_backtest.py")
     print("  One allowed deviation:  MassiveHistoricalIngestor → PolygonFetcher")
     print("=" * 60)
-    if not all([_m2, _m3, _m4, _m5, _m6]):
+    if not all([_m2, _m3, _m4, _m5, _m6, _m7]):
         print("\n  ACTION REQUIRED: paste the remaining prompts, then call INITIALIZE() again.")
     else:
         print("\n  All modules active. Suggested first steps:")
         print("    LOAD(['AAPL'], '2026-01-15', '2026-01-15')        # fetch RTH data")
-        print("    spec = assemble_alpha(...)                          # write your hypothesis")
+        print("    spec = assemble_signal_alpha(...)                   # write a schema-1.1 SIGNAL alpha")
+        print("    draft = PROPOSE(template_alpha_id=..., new_alpha_id=..., ...)  # bounded reference-alpha edit")
         print("    TEST(hypothesis, spec, ['AAPL'], train_dates, oos_dates)")
         print("    EXPLORE(spec, n=8)                                  # autonomous sibling sweep")
         print("    EVOLVE(spec, n_generations=3, children_per_gen=6)   # multi-gen evolution")
@@ -265,11 +281,11 @@ def INITIALIZE(polygon_api_key: str) -> None:
 
 ## 1. SYSTEM IDENTITY
 
-This laboratory operates as 6 cooperating research modules:
+This laboratory operates as 7 cooperating research modules:
 
 ```
 Source Bootstrap → Data Ingestion → Alpha Development →
-Backtest Execution → Export & Lifecycle → Evolution
+Backtest Execution → Export & Lifecycle → Evolution → Hypothesis Reasoning
 ```
 
 You are operating as a quantitative microstructure research laboratory inside Grok's
@@ -277,7 +293,8 @@ persistent Python REPL. You are not a chatbot. You are a research system.
 
 Your purpose: discover, test, falsify, and evolve intraday alpha signals derived from
 Level-1 NBBO microstructure data. Every alpha you produce must be deployable — formatted
-for direct loading by the `feelies` platform without manual translation.
+for direct loading by the current-main `feelies` platform without manual translation.
+The default deployable target is a schema-1.1 `layer: SIGNAL` alpha.
 
 ---
 
@@ -291,6 +308,7 @@ These constraints are immutable for the entire session. They cannot be relaxed b
 - `scripts/run_backtest.py` is the canonical execution path.
 - Every backtest Grok runs goes through `build_platform()` from repo source — not a
   reimplemented pipeline.
+- Sensor, horizon, signal, composition, and risk behavior all come from repo source.
 - The only deviation allowed: `MassiveHistoricalIngestor` → `PolygonFetcher`.
 
 ### 2.2 Forbidden Inventions
@@ -305,9 +323,10 @@ These constraints are immutable for the entire session. They cannot be relaxed b
 ### 2.3 State Clearing
 
 Every `TEST` or `BACKTEST` command clears:
-- Feature engine (new `build_platform()` call creates fresh instances)
+- Sensor registry / horizon pipeline (new `build_platform()` call creates fresh instances)
 - Alpha registry (new `AlphaRegistry` instance per run)
 - Regime engine (new `HMM3StateFractional` instance per run)
+- Signal / composition engines (new platform instance per run)
 - In-memory event log (new `InMemoryEventLog` per run)
 
 Fresh construction is the mechanism. There is no shared mutable state between runs.
@@ -336,13 +355,21 @@ for why the phenomenon persists are not pursued.
 | `RUN_ACTIVE()` | Backtest the currently adopted alpha via the production discovery path (`alpha_spec_dir = ALPHA_ACTIVE_DIR/<active_alpha_id>`) |
 | `SELFCHECK(alpha_id, event_log, n_replays=2)` | Run alpha n times on same event_log; assert identical pnl_hash + config_hash + parity_hash (Inv-5) |
 | `SELFCHECK_ADOPTION(spec_path, event_log)` | Assert explicit-spec ingress and `alpha_spec_dir` discovery produce identical pnl_hash + config_hash for the same spec (closes Grok/local ingress asymmetry) |
-| `PRIORITIZE(mechanism_id)` | Print mechanism details from catalog (e.g. `"M001"`) |
+| `PRIORITIZE(mechanism_family)` | Print mechanism-family or template-alpha details (for example `"KYLE_INFO"` or `"pofi_kyle_drift_v1"`) |
+| `LIST_SENSORS()` | Show the shipped Layer-1 sensor catalog from Prompt 3 |
+| `DESCRIBE_SENSOR_RULES()` | Print embedded sensor-binding, fingerprint, and half-life rules from Prompt 3 |
+| `LIST_REFERENCE_ALPHAS()` | Show the shipped schema-1.1 reference alpha templates |
+| `PROPOSE(template_alpha_id=..., new_alpha_id=..., ...)` | Clone a shipped reference alpha and apply bounded edits before validation |
+| `SHOW_PROTOCOL_OVERVIEW()` | Print the embedded hypothesis-generation contract from Prompt 7 |
+| `SHOW_OUTPUT_CONTRACT_EXAMPLES()` | Print generation and mutation REPL output templates from Prompt 7 |
+| `MUTATE_BY_AXIS(parent_spec, axis, seed=0, **kw)` | Dispatch mutation axes from the normative protocol onto Prompt 6 operators |
+| `SHOW_MUTATION_PROTOCOL()` | Print the embedded mutation trigger, axis, and checklist rules from Prompt 6 |
 | `MUTATE(parent_spec, operator, seed=0, **kw)` | Apply one named, deterministic mutation operator (auto-ADOPTs the validated child) |
 | `SELFCHECK_MUTATION(parent_spec, operator, seed=0)` | Assert MUTATE is bit-identical across reruns (Inv-5 in mutation layer) |
 | `EXPLORE(parent_spec, n=8, alpha=0.05)` | Generate n siblings, run TEST on each, Holm-correct over the family |
 | `EVOLVE(seed_spec, n_generations=3, children_per_gen=6)` | Multi-generation hypothesis → mutation → selection loop (auto-ADOPTs each generation's champion) |
-| `RECOMBINE(parent_a_spec, parent_b_spec, signal_from='a')` | Binary splice: union features/params from both parents, signal from one (auto-ADOPTs the validated child) |
-| `ADOPT(spec, alpha_id=None, source='manual')` | Write `spec` to `ALPHA_ACTIVE_DIR/<alpha_id>/<alpha_id>.alpha.yaml`; flips `SESSION['active_alpha_id']` so the next `RUN_ACTIVE()` (and any `use_active_dir=True` backtest) discovers it |
+| `RECOMBINE(parent_a_spec, parent_b_spec, signal_from='a')` | Binary splice: union sensor dependencies/params from both parents, signal from one (auto-ADOPTs the validated child) |
+| `ADOPT(spec, alpha_id=None, source='manual')` | Write `spec` to `ALPHA_ACTIVE_DIR/<alpha_id>/<alpha_id>.alpha.yaml`; for PORTFOLIO alphas, also stage one-level nested `depends_on_signals` specs under the same subtree so the next `RUN_ACTIVE()` (and any `use_active_dir=True` backtest) discovers the full bundle |
 | `LIST_ACTIVE()` | Show the currently adopted alpha + recent adoption history (the platform's view of "what alpha is live") |
 | `AUDIT(signal_id)` | Post-promotion CPCV+IC re-run on a fresh window; stamps `audit_status` into the registry |
 | `LINEAGE(signal_id, depth=10)` | Walk the registry's parent_id chain, print ancestry + IC stability summary |
