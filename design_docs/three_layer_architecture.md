@@ -185,7 +185,7 @@ platform, not something the alpha author has to reconstruct inside every
 
 - The alpha authoring surface (YAML + `signal` Python block) will be
   consumed by the Grok hypothesis-generation REPL (see
-  `grok/prompts/hypothesis_reasoning.md`). Grok produces layer-classified
+  `grok/07_HYPOTHESIS_REASONING.md`). Grok produces layer-classified
   hypotheses. The platform must accept them natively.
 - Design invariant 8 ("layer separation") is currently interpreted as
   "ingestion / feature / signal / risk / execution" layers. The refactor
@@ -556,7 +556,7 @@ match the engine's published `state_names` verbatim (`compression`,
 `services/regime_engine.py:HMM3StateFractional`).
 
 **Implementer note:** the canonical example in
-`design_docs/hypothesis_reasoning.md` uses the names `benign`,
+`grok/07_HYPOTHESIS_REASONING.md` uses the names `benign`,
 `stressed`, `toxic` (from Appendix B of the prompt). These are the
 *aspirational* taxonomy, not the *current* engine's published names.
 Phase 3 must either (a) align the example to the engine's actual names
@@ -679,7 +679,7 @@ is preserved by strict superset.
 - `protocol.py` — `Sensor` ABC with `initial_state()`, `update(event, state, params) -> SensorReading | None`. Signature differs from current `features/` by returning a typed `SensorReading`, not a raw float.
 - `registry.py` — `SensorRegistry` with `register(sensor_spec: SensorSpec) -> None`, `get(sensor_id, version) -> Sensor`, version pinning, and import-time conflict detection.
 - `horizon_scheduler.py` — see §7.2 for semantics.
-- `impl/*.py` — 10 canonical sensor implementations per the catalog in `grok/prompts/hypothesis_reasoning.md § 8`. Each sensor is ≤ 150 lines of Python with strict typing.
+- `impl/*.py` — 10 canonical sensor implementations per the embedded sensor catalog in `grok/03_ALPHA_DEVELOPMENT.md`. Each sensor is ≤ 150 lines of Python with strict typing.
 
 **Migration note:** The repo currently has feature implementations in
 `alphas/*/` directories (external modules). These modules' `update(quote, ...)`
@@ -785,7 +785,7 @@ piece; the rest is composition of numpy/pandas routines.
   registry based on `layer:` field. Enforce schema_version ≥ 1.1 for
   layered alphas.
 - `layer_validator.py` (NEW) — enforces gates G1–G15 from
-  `grok/prompts/hypothesis_reasoning.md § 6` on YAML load. Load-time
+  `grok/07_HYPOTHESIS_REASONING.md` on YAML load. Load-time
   validation produces clear error messages tied to gate IDs. Alphas
   failing G1–G11 are refused; alphas failing G12–G15 are refused with a
   different error class (author must fix, cannot be soft-drafted).
@@ -1042,7 +1042,7 @@ Schema 1.1 files MUST declare `layer: SENSOR | SIGNAL | PORTFOLIO`.
 
 ### 8.2 Additive fields (all mandatory for 1.1)
 
-The full set is specified in `grok/prompts/hypothesis_reasoning.md § 7`.
+The full set is specified in `grok/07_HYPOTHESIS_REASONING.md`.
 Summary:
 
 - `layer: SENSOR | SIGNAL | PORTFOLIO`
@@ -1265,7 +1265,7 @@ each require careful unit testing and locked test vectors).
 - `src/feelies/signals/regime_gate.py` — DSL evaluator.
 - `src/feelies/alpha/layer_validator.py` — gates G1–G13 active.
 - One reference SIGNAL alpha (`alphas/pofi_benign_midcap_v1/`) per the
-  canonical example in `grok/prompts/hypothesis_reasoning.md § 9`.
+  canonical example in `grok/03_ALPHA_DEVELOPMENT.md`.
 
 **Test gates:**
 - Legacy alphas continue to pass parity hash.
@@ -1306,7 +1306,9 @@ layered alphas. Legacy alphas flagged for migration.
 
 **Deliverables:**
 - `README.md` updated with three-layer architecture diagram.
-- `grok/prompts/hypothesis_reasoning.md` wired to the REPL entry point.
+- Embedded Grok prompt stack (`grok/03_ALPHA_DEVELOPMENT.md`,
+  `grok/06_EVOLUTION.md`, `grok/07_HYPOTHESIS_REASONING.md`) wired to
+  the REPL entry point.
 - Migration guide for legacy alphas (`docs/migration/schema_1_0_to_1_1.md`).
 - Deprecation timer for LEGACY_SIGNAL (e.g., supported through Q4 2026).
 
@@ -1791,29 +1793,20 @@ if extra is missing.
 without the extra installed. SIGNAL-only and SENSOR-only deployments
 incur no `cvxpy` dependency.
 
-### Q8 — Is the `grok/` directory's current contents compatible with the new `grok/prompts/hypothesis_reasoning.md`?
+### Q8 — Is the `grok/` directory's current contents compatible with the embedded Grok prompt stack?
 
 **Required:** repo author to confirm. I have not inspected `grok/`
 contents. If there are existing prompt artifacts, they may need
 reconciliation or deprecation. Phase 5 deliverable depends on this.
 
-**RESOLVED → reconcilable (confirmed by author).** Current `grok/`
-contents (`00_ARCHITECTURE.md` through `07_HYPOTHESIS_REASONING_PLAN.md`)
-are planning and architecture documentation, not REPL prompt artifacts.
-They are retained as-is. Phase 5 creates a new `grok/prompts/`
-subdirectory containing:
-
-- `grok/prompts/hypothesis_reasoning.md` — moved from
-  `design_docs/hypothesis_reasoning.md`. The move is a single git
-  rename; no content change. The `design_docs/` copy is deleted to
-  avoid drift.
-- `grok/prompts/sensor_catalog.md` — extracted from §8 of the moved
-  prompt; canonical sensor reference table.
-- `grok/prompts/mutation_protocol.md` — extracted from §5 of the moved
-  prompt; the 5-axis mutation protocol.
-
-Existing `grok/07_HYPOTHESIS_REASONING_PLAN.md` is updated with a
-one-line pointer to the new `grok/prompts/` location.
+**RESOLVED → yes (implemented).** The numbered `grok/` prompt sequence
+became the live REPL surface. `grok/07_HYPOTHESIS_REASONING.md` now owns
+the reasoning protocol and hard gates, `grok/03_ALPHA_DEVELOPMENT.md`
+owns the embedded sensor catalog and reference-alpha authoring contract,
+and `grok/06_EVOLUTION.md` owns the embedded mutation protocol and
+active-adoption semantics. The intermediate standalone prompt package
+proposed in this design was later retired after those contracts were
+embedded directly into Prompts 3, 6, and 7.
 
 ### Q9 — Deprecation timeline for LEGACY_SIGNAL?
 
@@ -1866,7 +1859,9 @@ This spec is accepted when ALL of the following are true:
       bit-identical pre-and-post-refactor.
 - [ ] Levels 2–4 parity hash CI checks green on reference v2 alpha.
 - [ ] Single-symbol throughput regression ≤ 10% vs pre-refactor baseline.
-- [ ] `grok/prompts/hypothesis_reasoning.md` wired to REPL entry.
+- [ ] Embedded Grok prompt stack (`grok/03_ALPHA_DEVELOPMENT.md`,
+  `grok/06_EVOLUTION.md`, `grok/07_HYPOTHESIS_REASONING.md`) wired
+  to REPL entry.
 - [ ] Reference SIGNAL alpha (`pofi_benign_midcap_v1`) runs end-to-end
       with margin_ratio ≥ 1.5 verified at load.
 - [ ] Reference PORTFOLIO alpha runs end-to-end with factor exposures
@@ -1880,8 +1875,9 @@ This spec is accepted when ALL of the following are true:
       `SensorReading`); a new "horizon" entry is added (decision-cadence
       anchor); the "regime" entry references the per-symbol
       `RegimeState` extension.
-- [ ] Existing `grok/07_HYPOTHESIS_REASONING_PLAN.md` updated with a
-      pointer to `grok/prompts/`.
+- [ ] Retired standalone prompt package replaced by embedded contracts in
+  `grok/03_ALPHA_DEVELOPMENT.md`, `grok/06_EVOLUTION.md`, and
+  `grok/07_HYPOTHESIS_REASONING.md`.
 
 ### 18.3 Non-regression acceptance
 
@@ -1902,7 +1898,7 @@ log.
 
 | # | Invariant | How the refactor preserves or strengthens it | Status |
 |---|---|---|---|
-| **1** | Structural mechanism required | `mechanism:` and `structural_actor:` are mandatory YAML fields for SIGNAL/PORTFOLIO (§8.2). Gates G2/G3 in `alpha/layer_validator.py` reject load if they are absent or unparseable. The Grok protocol's Step 1 (§4 of `hypothesis_reasoning.md`) refuses to proceed without naming an actor. | **STRENGTHENED** |
+| **1** | Structural mechanism required | `mechanism:` and `structural_actor:` are mandatory YAML fields for SIGNAL/PORTFOLIO (§8.2). Gates G2/G3 in `alpha/layer_validator.py` reject load if they are absent or unparseable. The Grok protocol's Step 1 (see `grok/07_HYPOTHESIS_REASONING.md`) refuses to proceed without naming an actor. | **STRENGTHENED** |
 | **2** | Falsifiability before testing | `falsification_criteria:` field extended (§8.2) with three sub-blocks: `statistical`, `structural_invalidators`, `regime_shift_invalidators`. Gates G10/G11 enforce that the criterion is mechanism-tied, not P&L-tied. | **STRENGTHENED** |
 | **3** | Evidence over intuition | `cost_arithmetic.edge_source` field (§8.2) requires a citation (empirical backtest path, paper reference, or theoretical derivation). "Guess" is an explicit refusal condition in the Grok protocol (§4 Step 5). Existing promotion gates (paper → live) are unchanged. | **PRESERVED** |
 | **4** | Decay is the default | `forensics/multi_horizon_attribution.py` (§6.10) emits per-alpha rolling-30d realized IC; `monitoring/horizon_metrics.py` (§6.9) alerts at `< 50%` and CRITICAL at `< 25%` of in-sample IC. Existing DECAYING/RETIRED status transitions in `research/hypothesis_status.py` remain authoritative. | **STRENGTHENED** |
@@ -2510,7 +2506,7 @@ v0.2 contracts.
 | **2.1** | `sensors/impl/hawkes_intensity.py`, `scheduled_flow_window.py`, `snr_drift_diffusion.py`, `structural_break_score.py`. `storage/reference/event_calendar/` adapter. Sensor unit + determinism + benchmark tests. | +800 (incl. tests) | 1.0 wk |
 | **3.1** | `alpha/layer_validator.py`: Gate G16 with all 9 binding rules (rule 7 is the AST-inspection-based stress-family-entry check; ~80 lines on its own). `services/regime_engine.py`: `RegimeHazardDetector` emitting `RegimeHazardSpike`. Property-based tests for G16 and hazard determinism. Reference SIGNAL alpha update with `trend_mechanism:` block. | +580 | 4–5 days |
 | **4.1** | `composition/cross_sectional.py`: decay-weighting and concentration enforcement. `risk/`: hazard-spike subscription and hard-exit-age check. `monitoring/horizon_metrics.py`: 4 new metrics. `forensics/multi_horizon_attribution.py`: `per_mechanism` axis. End-to-end test with mixed-mechanism reference universe. | +600 | 1.0 wk |
-| **5.1** | Update `grok/prompts/hypothesis_reasoning.md` with mechanism taxonomy reference. Migration note in `docs/migration/schema_1_0_to_1_1.md` for v0.2-strict alphas wanting v0.3 opt-in. Glossary extension (§20.13). | +150 | 2 days |
+| **5.1** | Update the embedded Grok prompt stack with mechanism taxonomy references (`grok/07_HYPOTHESIS_REASONING.md` for reasoning rules, `grok/03_ALPHA_DEVELOPMENT.md` for sensor/family catalogs, `grok/06_EVOLUTION.md` for mutation semantics). Migration note in `docs/migration/schema_1_0_to_1_1.md` for v0.2-strict alphas wanting v0.3 opt-in. Glossary extension (§20.13). | +150 | 2 days |
 
 **v0.3 net total:** ~2,250 lines, ~2 engineer-weeks. Unblocks every
 gap identified in the v0.3 motivating analysis.
@@ -2842,11 +2838,10 @@ tests/determinism/test_xsect_context_replay.py    | CREATE  | +200
 ```
 README.md                                         | EXTEND  | +100
 docs/migration/schema_1_0_to_1_1.md               | CREATE  | +300
-grok/prompts/hypothesis_reasoning.md              | RENAME  | from design_docs/hypothesis_reasoning.md
-design_docs/hypothesis_reasoning.md               | DELETE  | rename target
-grok/prompts/sensor_catalog.md                    | CREATE  | +200 (extracted from §8 of moved prompt)
-grok/prompts/mutation_protocol.md                 | CREATE  | +300 (extracted from §5 of moved prompt)
-grok/07_HYPOTHESIS_REASONING_PLAN.md              | EXTEND  | +20 (pointer to grok/prompts/)
+grok/03_ALPHA_DEVELOPMENT.md                      | EXTEND  | +embedded sensor catalog + reference-alpha flow
+grok/06_EVOLUTION.md                              | EXTEND  | +embedded mutation protocol + adoption semantics
+grok/07_HYPOTHESIS_REASONING.md                   | EXTEND  | +embedded reasoning protocol + hard gates
+standalone prompt package                         | DELETE  | superseded by embedded prompt contracts
 .cursor/rules/platform-invariants.mdc             | EXTEND  | +30 (glossary update per §18.2)
 ```
 
@@ -2912,7 +2907,7 @@ tests/integration/test_mixed_mechanism_universe.py| CREATE  | +250 (e2e)
 #### Phase 5.1
 
 ```
-grok/prompts/hypothesis_reasoning.md              | EXTEND  | +80   (mechanism taxonomy reference)
+grok/07_HYPOTHESIS_REASONING.md                   | EXTEND  | +80   (mechanism taxonomy reference)
 docs/migration/schema_1_0_to_1_1.md               | EXTEND  | +60   (v0.3 opt-in migration note)
 .cursor/rules/platform-invariants.mdc             | EXTEND  | +30   (glossary additions per §20.13)
 README.md                                         | EXTEND  | +40   (v0.3 mechanism diagram)

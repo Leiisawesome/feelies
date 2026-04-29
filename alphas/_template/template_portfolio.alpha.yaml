@@ -20,7 +20,8 @@
 #     - parameters.decay_weighting_enabled (Phase 4.1)
 #
 #   See:
-#     - grok/prompts/hypothesis_reasoning.md     (PORTFOLIO §3, §7.3)
+#     - grok/07_HYPOTHESIS_REASONING.md          (reasoning contract, hard gates)
+#     - grok/06_EVOLUTION.md                     (portfolio mutation and adoption)
 #     - alphas/SCHEMA.md                         (canonical field reference)
 #     - docs/migration/schema_1_0_to_1_1.md      (PORTFOLIO authoring guide)
 # =============================================================

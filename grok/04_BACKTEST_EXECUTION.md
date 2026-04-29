@@ -602,20 +602,28 @@ def cpcv_backtest(
         for gid in test_group_ids:
             test_dates.extend(groups[gid])
 
-        # Embargo: drop the first/last `embargo_days` of each train segment
-        # adjacent to a test group. We don't actually train on dates here
-        # (the alpha is fixed), but embargo still matters because feature
-        # state warmed by trailing train data would otherwise leak into the
-        # test segment evaluation if both shared a date.
-        # Simplest correct behaviour: skip embargo dates entirely.
+        # Embargo: drop the boundary days of each test group that are adjacent
+        # to a train group.  Feature state computed over a trailing train window
+        # leaks into the first `embargo_days` of the succeeding test group
+        # (autocorrelation / warm-up); the reverse holds for the tail of a test
+        # group that precedes a train group.
+        #
+        # Correct logic: for each test group gid, remove its leading
+        # `embargo_days` when the prior group (gid-1) is a *train* group, and
+        # remove its trailing `embargo_days` when the next group (gid+1) is a
+        # *train* group.  We filter within test_dates — the embargo_set is
+        # therefore a subset of test_dates by construction.
+        test_group_set = set(test_group_ids)
         embargo_set: set[str] = set()
         for gid in test_group_ids:
-            if gid > 0:
-                embargo_set.update(groups[gid - 1][-embargo_days:])
-            if gid < n_groups - 1:
-                embargo_set.update(groups[gid + 1][:embargo_days])
+            if gid > 0 and (gid - 1) not in test_group_set:
+                # prior group is train: contaminated leading edge of this test group
+                embargo_set.update(groups[gid][:embargo_days])
+            if gid < n_groups - 1 and (gid + 1) not in test_group_set:
+                # next group is train: contaminated trailing edge of this test group
+                embargo_set.update(groups[gid][-embargo_days:])
 
-        # Test fold = test groups - any embargoed dates (defensive).
+        # Test fold = test groups minus embargoed boundary dates.
         test_dates = [d for d in test_dates if d not in embargo_set]
         if not test_dates:
             continue

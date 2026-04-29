@@ -1,7 +1,7 @@
 """Layer-validation gates for the three-layer architecture (§6.6).
 
 This module owns the architectural compliance gates G1-G16 enumerated
-in ``grok/prompts/hypothesis_reasoning.md`` §6 and referenced from
+in ``grok/07_HYPOTHESIS_REASONING.md`` and referenced from
 ``design_docs/three_layer_architecture.md`` §6.6.
 
 Phase 3-α status
@@ -334,7 +334,7 @@ class LayerValidator:
     def _check_g14_data_scope(self, spec: dict[str, Any], source: str) -> None:
         """G14 — alpha must declare no data dependency beyond L1 NBBO + trades.
 
-        Per ``grok/prompts/hypothesis_reasoning.md`` §6 line 333.
+        Per ``grok/07_HYPOTHESIS_REASONING.md`` gate G14.
 
         Phase 1 enforcement: the loader's existing namespace exposes
         only ``NBBOQuote`` and ``Trade`` event types to compiled
@@ -367,7 +367,7 @@ class LayerValidator:
     ) -> None:
         """G15 — fill assumptions must be consistent with the platform router.
 
-        Per ``grok/prompts/hypothesis_reasoning.md`` §6 lines 334-335.
+        Per ``grok/07_HYPOTHESIS_REASONING.md`` gate G15.
 
         Phase 1 enforcement: when an alpha declares a ``fill_model:``
         block, its ``router:`` field must name an implementation that

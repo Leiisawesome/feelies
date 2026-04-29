@@ -121,11 +121,17 @@ def cost_arithmetic_block(
     half_spread_bps: float,
     impact_bps: float,
     fee_bps: float,
+    basis: str = "caller_supplied",
 ) -> dict:
     """Build a cost_arithmetic block with a derived margin_ratio.
 
     margin_ratio = expected_edge / (1.5 * round_trip_cost), where:
         round_trip_cost = 2 * (half_spread + impact + fee)
+
+    Args:
+        basis: Human-readable source for the edge and cost estimates
+               (e.g. "analyst_estimate", "backtest_median", "template_inherited:pofi_kyle_drift_v1").
+               Stored in the spec so audit_gates G6 can verify a basis was cited.
     """
     one_way_cost_bps = float(half_spread_bps + impact_bps + fee_bps)
     round_trip_cost_bps = 2.0 * one_way_cost_bps
@@ -137,6 +143,7 @@ def cost_arithmetic_block(
         "impact_bps": float(impact_bps),
         "fee_bps": float(fee_bps),
         "margin_ratio": round(margin_ratio, 4),
+        "basis": basis,
     }
 
 
@@ -499,6 +506,22 @@ MECHANISM_FAMILY_CATALOG = {
         "signature_sensors": ["scheduled_flow_window", "ofi_ewma"],
         "primary_fingerprint_sensors": FAMILY_PRIMARY_FINGERPRINTS["SCHEDULED_FLOW"],
         "confirming_sensors": FAMILY_CONFIRMING_SENSORS["SCHEDULED_FLOW"],
+    },
+    "LIQUIDITY_STRESS": {
+        "structural_actor": "adverse-selection risk that widens spreads and compresses depth",
+        "observable": "vpin_50bucket rising with realized_vol_30s and widening spread_z_30d",
+        "typical_horizon_seconds": (30, 600),
+        "half_life_envelope_seconds": HALF_LIFE_ENVELOPES["LIQUIDITY_STRESS"],
+        "template_alpha": None,   # no shipped template — use SIGNAL with exit-only logic
+        "signature_sensors": ["vpin_50bucket", "realized_vol_30s", "spread_z_30d", "quote_hazard_rate"],
+        "primary_fingerprint_sensors": FAMILY_PRIMARY_FINGERPRINTS["LIQUIDITY_STRESS"],
+        "confirming_sensors": FAMILY_CONFIRMING_SENSORS["LIQUIDITY_STRESS"],
+        "note": (
+            "LIQUIDITY_STRESS alphas are exit-only gate overlays.  "
+            "Signal code must NOT emit LONG/SHORT — it only suppresses existing positions "
+            "(G16.7).  Use snr_drift_diffusion and structural_break_score as confirming "
+            "diagnostics, not as primary entry triggers."
+        ),
     },
     "PORTFOLIO_XSECT": {
         "structural_actor": "cross-sectional allocator combining multiple validated signals",

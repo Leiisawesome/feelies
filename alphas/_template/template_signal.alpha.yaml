@@ -17,8 +17,8 @@
 #     - trend_mechanism           (family + half-life + L1 signature)
 #
 #   See:
-#     - grok/prompts/hypothesis_reasoning.md     (7-step protocol, gates)
-#     - grok/prompts/sensor_catalog.md           (sensor vocabulary)
+#     - grok/07_HYPOTHESIS_REASONING.md          (7-step protocol, gates)
+#     - grok/03_ALPHA_DEVELOPMENT.md             (sensor vocabulary)
 #     - alphas/SCHEMA.md                         (canonical field reference)
 #     - docs/migration/schema_1_0_to_1_1.md      (LEGACY → SIGNAL cookbook)
 # =============================================================

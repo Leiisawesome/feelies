@@ -387,15 +387,49 @@ class PolygonFetcher:
         return quotes, trades
 
 
+# US equity market holidays (NYSE/NASDAQ official calendar).
+# Covers 2024-2028. Extend by appending ISO dates for later years.
+# Observed dates already applied: e.g. Jul 3 2026 (Jul 4 falls on Saturday),
+# Jul 5 2027 (Jul 4 on Sunday), Dec 31 2027 (observed New Year's Day 2028).
+_US_MARKET_HOLIDAYS: frozenset[str] = frozenset([
+    # 2024
+    "2024-01-01", "2024-01-15", "2024-02-19", "2024-03-29",
+    "2024-05-27", "2024-06-19", "2024-07-04", "2024-09-02",
+    "2024-11-28", "2024-12-25",
+    # 2025 (Jan 9: National Day of Mourning for Jimmy Carter)
+    "2025-01-01", "2025-01-09", "2025-01-20", "2025-02-17",
+    "2025-04-18", "2025-05-26", "2025-06-19", "2025-07-04",
+    "2025-09-01", "2025-11-27", "2025-12-25",
+    # 2026 (Jul 3: Independence Day observed; Jul 4 is Saturday)
+    "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03",
+    "2026-05-25", "2026-06-19", "2026-07-03", "2026-09-07",
+    "2026-11-26", "2026-12-25",
+    # 2027 (Jun 18: Juneteenth observed; Jul 5: Independence Day observed;
+    #        Dec 24: Christmas observed; Dec 31: New Year's Day 2028 observed)
+    "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26",
+    "2027-05-31", "2027-06-18", "2027-07-05", "2027-09-06",
+    "2027-11-25", "2027-12-24", "2027-12-31",
+    # 2028 (New Year's Day observed 2027-12-31 above)
+    "2028-01-17", "2028-02-21", "2028-04-14",
+    "2028-05-29", "2028-06-19", "2028-07-04", "2028-09-04",
+    "2028-11-23", "2028-12-25",
+])
+
+
 def _trading_days(start: str, end: str) -> list[str]:
-    """Return all weekday dates in [start, end] as YYYY-MM-DD strings."""
+    """Return US equity market trading days in [start, end] as YYYY-MM-DD strings.
+
+    Excludes weekends and US exchange holidays (NYSE/NASDAQ calendar).
+    Holiday table covers 2024-2028; append to _US_MARKET_HOLIDAYS for later years.
+    """
     s = datetime.date.fromisoformat(start)
     e = datetime.date.fromisoformat(end)
     days = []
     cur = s
     while cur <= e:
-        if cur.weekday() < 5:   # Mon-Fri
-            days.append(cur.isoformat())
+        iso = cur.isoformat()
+        if cur.weekday() < 5 and iso not in _US_MARKET_HOLIDAYS:
+            days.append(iso)
         cur += datetime.timedelta(days=1)
     return days
 

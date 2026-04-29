@@ -3,7 +3,7 @@
 ## ACTIVATION DIRECTIVE
 
 This module embeds the reasoning contract required for paste-only Grok REPL
-usage. It does not assume the user also pasted or mounted `grok/prompts/*`.
+usage. It does not assume the user also pasted or mounted any companion docs.
 
 Prompt 7 owns the embedded reasoning protocol, hard-gate checklist, mutation-axis
 map, and anti-pattern refusals needed at proposal time. Prompt 3 carries the

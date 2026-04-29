@@ -1301,7 +1301,8 @@ def EVOLVE(
             chain.append({"generation": gen, "halt_reason": "no_holm_survivors"})
             break
 
-        # Pick the survivor with the best OOS sharpe that ALSO improves on the champion.
+        # Pick the survivor with the best OOS sharpe that ALSO improves on the champion
+        # AND clears the absolute promotion floor (promotion_min_sharpe).
         best = survivors[0]
         best_sr = best["report"].get("steps", {}).get("oos", {}).get("sharpe") or -1e9
         if best_sr <= chain[-1]["oos_sharpe"]:
@@ -1309,6 +1310,13 @@ def EVOLVE(
                   f"≤ champion {chain[-1]['oos_sharpe']:+.3f}. Local max — halting.")
             chain.append({"generation": gen, "halt_reason": "no_improvement",
                           "best_candidate_sharpe": best_sr})
+            break
+        if best_sr < promotion_min_sharpe:
+            print(f"[EVOLVE] Generation {gen}: best survivor sharpe={best_sr:+.3f} "
+                  f"< promotion_min_sharpe={promotion_min_sharpe:+.3f}. Halting.")
+            chain.append({"generation": gen, "halt_reason": "below_min_sharpe",
+                          "best_candidate_sharpe": best_sr,
+                          "promotion_min_sharpe": promotion_min_sharpe})
             break
 
         # Promote inside the loop (research-only — does NOT call EXPORT).

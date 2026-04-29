@@ -1,12 +1,13 @@
 """Verify internal repo paths cited from documentation actually exist.
 
 The Phase-5 documentation rewrite (README, alphas/SCHEMA.md, the
-migration cookbook, the Grok prompts under ``grok/prompts/``,
-and the source-code comments in ``layer_validator.py`` /
-``regime_gate.py``) carries dozens of cross-references to other
-repository paths.  When a file is renamed or moved without updating
-those references, the operator hits a 404 inside their own checkout —
-exactly the kind of silent doc rot Phase 5 was meant to eliminate.
+migration cookbook, the embedded Grok prompts in ``grok/03_*``,
+``grok/06_*``, and ``grok/07_*``, and the source-code comments in
+``layer_validator.py`` / ``regime_gate.py``) carries dozens of
+cross-references to other repository paths.  When a file is renamed or
+moved without updating those references, the operator hits a 404 inside
+their own checkout — exactly the kind of silent doc rot Phase 5 was
+meant to eliminate.
 
 This test enumerates the *whitelist* of canonical doc files we
 shipped in Phase 5, scrapes the path tokens they cite, and asserts
@@ -39,9 +40,9 @@ _DOC_FILES: tuple[Path, ...] = (
     Path("README.md"),
     Path("alphas/SCHEMA.md"),
     Path("docs/migration/schema_1_0_to_1_1.md"),
-    Path("grok/prompts/hypothesis_reasoning.md"),
-    Path("grok/prompts/sensor_catalog.md"),
-    Path("grok/prompts/mutation_protocol.md"),
+    Path("grok/03_ALPHA_DEVELOPMENT.md"),
+    Path("grok/06_EVOLUTION.md"),
+    Path("grok/07_HYPOTHESIS_REASONING.md"),
 )
 
 
@@ -67,7 +68,7 @@ _PLACEHOLDER_PATH_TOKENS: frozenset[str] = frozenset({
     # research-grade alpha YAML carrying a stricter ``promotion:``
     # block.
     "alphas/my_research_alpha.alpha.yaml",
-    # hypothesis_reasoning.md mutation example (forward-looking
+    # Prompt-7 mutation example (forward-looking
     # successor file the operator would create on a real mutation):
     "alphas/pofi_benign_midcap_v2/pofi_benign_midcap_v2.alpha.yaml",
     "alphas/_deprecated/pofi_benign_midcap_v1_v1.0.0.yaml",

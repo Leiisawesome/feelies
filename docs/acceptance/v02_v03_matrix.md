@@ -38,12 +38,12 @@ this matrix before claiming "v0.2 is done" or "v0.3 is done."
 | 2 | Level-1 parity hash on `alphas/trade_cluster_drift/` bit-identical pre/post-refactor | §18.2 | locked baseline `tests/determinism/baselines/` | `tests/determinism/test_legacy_alpha_parity.py` | ✓ |
 | 3 | Levels 2–4 parity hash CI checks green on reference v2 alpha | §18.2 | locked Level-2/3/4 baselines | `tests/determinism/test_signal_replay.py`, `test_horizon_feature_snapshot_replay.py`, `test_sized_intent_replay.py` | ✓ |
 | 4 | Single-symbol throughput regression ≤ 10% vs pre-refactor baseline | §18.2 | pinned baseline `tests/perf/baselines/v02_baseline.json` | `tests/perf/test_signal_layer_no_regression.py` (with pinned-baseline assertion when `CI_BENCHMARK=1` and `host_label` matches) | ✓ slow |
-| 5 | `grok/prompts/hypothesis_reasoning.md` wired to REPL entry | §18.2 | `README.md` § "Hypothesis authoring" + `grok/07_HYPOTHESIS_REASONING_PLAN.md` SUPERSEDED banner | `tests/docs/test_internal_links.py` (existence + link) | doc |
+| 5 | Embedded Grok prompt stack wired to REPL entry | §18.2 | `README.md` § "Hypothesis authoring" + `grok/07_HYPOTHESIS_REASONING.md` | `tests/docs/test_internal_links.py` (existence + link) | doc |
 | 6 | Reference SIGNAL alpha (`pofi_benign_midcap_v1`) runs end-to-end with `margin_ratio ≥ 1.5` verified at load | §18.2 | reference YAML | `tests/acceptance/test_reference_alpha_load_invariants.py::test_margin_ratio_floor` | ✓ |
 | 7 | Reference PORTFOLIO alpha runs end-to-end with factor exposures within tolerance | §18.2 | reference YAML + factor-loadings fixture | `tests/acceptance/test_reference_alpha_load_invariants.py::test_portfolio_factor_exposure_within_tolerance` | ✓ |
 | 8 | Documentation updated: README diagram, `alphas/SCHEMA.md`, migration guide, forensics report format | §18.2 | `README.md`, `alphas/SCHEMA.md`, `docs/migration/schema_1_0_to_1_1.md` | `tests/docs/test_internal_links.py`, `tests/docs/test_migration_guide_examples.py` | doc |
 | 9 | Glossary in `.cursor/rules/platform-invariants.mdc` updated (feature/sensor/horizon/regime) | §18.2 | glossary lines 57, 58, 76, 77 of platform-invariants.mdc | `tests/acceptance/test_glossary_terms_present.py` (asserts the four v0.2 + four v0.3 terms exist) | ✓ |
-| 10 | `grok/07_HYPOTHESIS_REASONING_PLAN.md` updated with pointer to `grok/prompts/` | §18.2 | inline SUPERSEDED banner | `tests/docs/test_internal_links.py` (existence) | doc |
+| 10 | Retired standalone prompt package replaced by embedded Prompt 3/6/7 contracts | §18.2 | `grok/03_ALPHA_DEVELOPMENT.md`, `grok/06_EVOLUTION.md`, `grok/07_HYPOTHESIS_REASONING.md` | `tests/docs/test_internal_links.py` (existence + link) | doc |
 
 ## §18.3 — v0.2 Non-regression Acceptance
 

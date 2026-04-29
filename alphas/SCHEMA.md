@@ -589,13 +589,14 @@ the LEGACY_SIGNAL retirement is complete:
   the loader-side retirement.  No in-repo per-tick LEGACY template
   will be re-introduced.
 - **Hypothesis Reasoning Protocol** lives at
-  [`grok/prompts/hypothesis_reasoning.md`](../grok/prompts/hypothesis_reasoning.md)
-  with companion files
-  [`grok/prompts/sensor_catalog.md`](../grok/prompts/sensor_catalog.md)
-  and
-  [`grok/prompts/mutation_protocol.md`](../grok/prompts/mutation_protocol.md).
-  The earlier Prompt-7 planning draft has been retired; use the live
-  hypothesis reasoning prompt surface instead.
+  [`grok/07_HYPOTHESIS_REASONING.md`](../grok/07_HYPOTHESIS_REASONING.md).
+  The embedded sensor catalog and reference-alpha authoring contract
+  live in
+  [`grok/03_ALPHA_DEVELOPMENT.md`](../grok/03_ALPHA_DEVELOPMENT.md),
+  and the embedded mutation protocol and adoption semantics live in
+  [`grok/06_EVOLUTION.md`](../grok/06_EVOLUTION.md). The earlier
+  Prompt-7 planning draft has been retired; use the live numbered
+  prompt surfaces instead.
 - **`LEGACY_SIGNAL` is hard-rejected.** The loader's once-per-process
   sunset banner has been removed; any spec carrying
   `layer: LEGACY_SIGNAL` raises an `AlphaLoadError` at parse time

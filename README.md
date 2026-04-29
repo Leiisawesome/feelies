@@ -124,11 +124,10 @@ feelies/
 │   ├── pofi_benign_midcap_v1/    # Reference SIGNAL (Phase-3 canonical)
 │   ├── pofi_xsect_v1/            # Reference PORTFOLIO (decay OFF baseline)
 │   └── pofi_xsect_mixed_mechanism_v1/  # Reference PORTFOLIO (multi-mechanism cap)
-├── grok/                         # Grok REPL prompts (Hypothesis Reasoning Protocol)
-│   └── prompts/
-│       ├── hypothesis_reasoning.md  # 7-step protocol, hard gates, output contract
-│       ├── sensor_catalog.md        # Layer-1 sensor vocabulary + fingerprint matrix
-│       └── mutation_protocol.md     # 5-axis mutation discipline + parity rules
+├── grok/                         # Grok REPL prompts
+│   ├── 03_ALPHA_DEVELOPMENT.md   # Embedded sensor catalog + reference-alpha flow
+│   ├── 06_EVOLUTION.md           # Embedded mutation protocol + adoption semantics
+│   └── 07_HYPOTHESIS_REASONING.md # Embedded reasoning protocol, hard gates, REPL contract
 ├── docs/migration/               # Migration cookbooks
 │   └── schema_1_0_to_1_1.md      # 1.0 → 1.1 cookbook + LEGACY_SIGNAL retirement notes
 ├── design_docs/                  # Platform architecture & invariants
@@ -337,11 +336,13 @@ The `LayerValidator` enforces gates G2–G16 at load time. See
 
 ### Hypothesis authoring
 
-Use Grok with the prompt at `grok/prompts/hypothesis_reasoning.md` (and
-its companion `sensor_catalog.md` + `mutation_protocol.md`). The
-protocol enforces a 7-step generation discipline, refuses anti-patterns
-(MA crossovers, "momentum without mechanism", etc.), and emits
-machine-validated YAML matching the schema-1.1 contract.
+Use Grok with the embedded numbered prompt stack. Prompt 7
+(`grok/07_HYPOTHESIS_REASONING.md`) owns the 7-step reasoning
+discipline and hard gates, Prompt 3 (`grok/03_ALPHA_DEVELOPMENT.md`)
+owns the sensor vocabulary and reference-alpha authoring contract, and
+Prompt 6 (`grok/06_EVOLUTION.md`) owns mutation discipline and active
+adoption semantics. Together they emit machine-validated YAML matching
+the schema-1.1 contract.
 
 ## Platform Configuration
 
