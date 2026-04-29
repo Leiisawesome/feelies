@@ -166,12 +166,30 @@ def validate_alpha(
     spec: dict | str,
     regime_engine_name: str | None = "hmm_3state_fractional",
 ) -> bool:
-    """Validate a .alpha.yaml spec using the repo's actual AlphaLoader."""
+    """Validate a .alpha.yaml spec using the repo's actual AlphaLoader.
+
+    The loader is configured with the same enforce_trend_mechanism flag that
+    platform.yaml declares so that validation strictness matches build_platform
+    strictness. A spec that passes here will not be rejected at backtest time
+    due to a G16 strictness mismatch.
+    """
     if isinstance(spec, str):
         spec = yaml.safe_load(spec)
 
+    # Mirror the platform's enforce_trend_mechanism setting so validate_alpha
+    # and build_platform agree on G16 strictness. Read from the canonical
+    # PLATFORM_YAML_PATH when available; fall back to the platform_config.py
+    # default (True) when Prompt 1 has not been pasted yet.
+    _etm: bool = True
+    if "PLATFORM_YAML_PATH" in globals():
+        try:
+            from feelies.core.platform_config import PlatformConfig as _PC
+            _etm = _PC.from_yaml(PLATFORM_YAML_PATH).enforce_trend_mechanism
+        except Exception:
+            pass
+
     regime = get_regime_engine(regime_engine_name) if regime_engine_name else None
-    loader = AlphaLoader(regime_engine=regime)
+    loader = AlphaLoader(regime_engine=regime, enforce_trend_mechanism=_etm)
 
     try:
         module = loader.load_from_dict(spec)

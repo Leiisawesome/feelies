@@ -278,6 +278,30 @@ def _resequence(events: list) -> list:
 
 
 # -------------------------------------------------------------------
+# Seq-num deduplication: mirrors MassiveNormalizer._is_duplicate.
+# Polygon retransmits records at REST pagination boundaries.  Drop any
+# record whose (symbol, feed, sequence_number) key matches the last
+# emitted record for that symbol so the event count matches the local
+# ingestor.
+# -------------------------------------------------------------------
+def _dedup_by_seqnum(records: list[dict], symbol: str) -> list[dict]:
+    """Remove Polygon pagination retransmissions from a raw record list."""
+    seen: set[tuple] = set()
+    out: list[dict] = []
+    for rec in records:
+        key = (
+            symbol,
+            rec.get("feed", ""),
+            rec.get("sequence_number", 0),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(rec)
+    return out
+
+
+# -------------------------------------------------------------------
 # Main fetcher: builds InMemoryEventLog ready for build_platform()
 # -------------------------------------------------------------------
 class PolygonFetcher:
@@ -320,33 +344,36 @@ class PolygonFetcher:
 
         # Enumerate trading days in [start, end] (skip weekends)
         dates = _trading_days(start, end)
-        print(f"Loading {symbols} for {dates} (RTH only)...")
+        print(f"Loading {symbols} for {dates} (full calendar day, RTH-filtered by orchestrator)...")
 
-        # Collect raw dicts in parallel: one thread per (symbol, date)
-        raw_pairs: list[tuple[list, list]] = []
+        # Collect raw dicts in parallel: one thread per (symbol, date).
+        # Fix: use pool.map (not as_completed) so raw_pairs arrives in the
+        # same deterministic (symbol, date) order as tasks. as_completed
+        # populates in thread-completion order, causing non-deterministic
+        # tie-breaking inside _resequence when events share timestamps.
+        raw_pairs: list[tuple[str, str, list, list]] = []  # (sym, date, quotes, trades)
         tasks = [(sym, d) for sym in symbols for d in dates]
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-            futures = {
-                pool.submit(self._fetch_with_cache, sym, date): (sym, date)
-                for sym, date in tasks
-            }
-            for fut in concurrent.futures.as_completed(futures):
-                sym, date = futures[fut]
-                quotes_raw, trades_raw = fut.result()
-                _validate_quotes(quotes_raw, sym, date)
-                raw_pairs.append((quotes_raw, trades_raw))
+            results_map = {(sym, date): pool.submit(self._fetch_with_cache, sym, date)
+                           for sym, date in tasks}
+        for sym, date in tasks:  # iterate in original deterministic order
+            quotes_raw, trades_raw = results_map[(sym, date)].result()
+            _validate_quotes(quotes_raw, sym, date)
+            raw_pairs.append((sym, date, quotes_raw, trades_raw))
 
         # Convert all raw records to canonical dataclasses using a temporary
-        # SequenceGenerator (will be replaced by _resequence below)
+        # SequenceGenerator (will be replaced by _resequence below).
+        # Deduplicate each (symbol, date) slice to drop Polygon pagination
+        # retransmissions before concatenating across symbols/dates.
         tmp_seq = SequenceGenerator(start=0)
         all_events: list[NBBOQuote | Trade] = []
-        for quotes_raw, trades_raw in raw_pairs:
-            for rec in quotes_raw:
+        for sym, date, quotes_raw, trades_raw in raw_pairs:
+            for rec in _dedup_by_seqnum(quotes_raw, sym):
                 evt = _to_nbbo(rec, tmp_seq.next())
                 if evt is not None:
                     all_events.append(evt)
-            for rec in trades_raw:
+            for rec in _dedup_by_seqnum(trades_raw, sym):
                 evt = _to_trade(rec, tmp_seq.next())
                 if evt is not None:
                     all_events.append(evt)

@@ -28,7 +28,8 @@ from dataclasses import replace as _dc_replace
 from feelies.bootstrap import build_platform
 from feelies.core.platform_config import PlatformConfig, OperatingMode
 from feelies.storage.memory_event_log import InMemoryEventLog
-from feelies.core.events import Signal
+from feelies.core.events import Signal, NBBOQuote, Trade
+from feelies.sensors.spec import SensorSpec
 
 # -------------------------------------------------------------------
 # State clearing is automatic: every call to run_backtest() creates
@@ -51,14 +52,105 @@ def _symbols_from_event_log(event_log: InMemoryEventLog) -> frozenset[str]:
 
 
 # -------------------------------------------------------------------
+# Sensor spec builder.
+#
+# platform.yaml ships with sensor_specs: [] so that the file remains a
+# minimal reference config. Every SIGNAL alpha in the shipped catalog
+# declares depends_on_sensors; without a populated SensorRegistry the
+# bootstrap raises UnresolvedDependencyError before any backtest runs.
+#
+# This function constructs SensorSpec objects for all 13 shipped sensors
+# and is called from _load_platform_config whenever platform.yaml has an
+# empty sensor_specs list. The inject-via-dataclasses.replace approach
+# keeps platform.yaml as the single source of truth for every other
+# field while closing the sensor-registry gap.
+#
+# scheduled_flow_window uses an empty EventCalendar when no calendar
+# file is available in the Grok sandbox. Signals from
+# pofi_moc_imbalance_v1 will report "no active window" but the bootstrap
+# succeeds and all other reference alphas run correctly. To restore
+# full MOC behaviour extract storage/reference/event_calendar/ in
+# Prompt 1 and set event_calendar_path in platform.yaml.
+# -------------------------------------------------------------------
+def _build_grok_sensor_specs() -> tuple:
+    """Construct SensorSpec objects for all 13 shipped catalog sensors."""
+    from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
+    from feelies.sensors.impl.micro_price import MicroPriceSensor
+    from feelies.sensors.impl.spread_z_30d import SpreadZScoreSensor
+    from feelies.sensors.impl.kyle_lambda_60s import KyleLambda60sSensor
+    from feelies.sensors.impl.quote_replenish_asymmetry import QuoteReplenishAsymmetrySensor
+    from feelies.sensors.impl.quote_hazard_rate import QuoteHazardRateSensor
+    from feelies.sensors.impl.hawkes_intensity import HawkesIntensitySensor
+    from feelies.sensors.impl.trade_through_rate import TradeThroughRateSensor
+    from feelies.sensors.impl.scheduled_flow_window import ScheduledFlowWindowSensor
+    from feelies.sensors.impl.realized_vol_30s import RealizedVol30sSensor
+    from feelies.sensors.impl.vpin_50bucket import VPIN50BucketSensor
+    from feelies.sensors.impl.snr_drift_diffusion import SNRDriftDiffusionSensor
+    from feelies.sensors.impl.structural_break_score import StructuralBreakScoreSensor
+    from feelies.storage.reference.event_calendar import EventCalendar
+
+    # Derive calendar date from the loaded session if available, else today.
+    _cal_date = (
+        datetime.date.fromisoformat(SESSION["loaded_dates"][0])
+        if SESSION.get("loaded_dates")
+        else datetime.date.today()
+    )
+    _empty_calendar = EventCalendar(session_date=_cal_date, windows=())
+
+    return (
+        SensorSpec(sensor_id="ofi_ewma",                    sensor_version="1.0.0",
+                   cls=OFIEwmaSensor,                       params={"alpha": 0.1, "warm_after": 50},
+                   subscribes_to=(NBBOQuote, Trade)),
+        SensorSpec(sensor_id="micro_price",                 sensor_version="1.0.0",
+                   cls=MicroPriceSensor,                    params={},
+                   subscribes_to=(NBBOQuote,)),
+        SensorSpec(sensor_id="spread_z_30d",                sensor_version="1.0.0",
+                   cls=SpreadZScoreSensor,                  params={},
+                   subscribes_to=(NBBOQuote,)),
+        SensorSpec(sensor_id="kyle_lambda_60s",             sensor_version="1.0.0",
+                   cls=KyleLambda60sSensor,                 params={},
+                   subscribes_to=(NBBOQuote, Trade)),
+        SensorSpec(sensor_id="quote_replenish_asymmetry",   sensor_version="1.0.0",
+                   cls=QuoteReplenishAsymmetrySensor,       params={},
+                   subscribes_to=(NBBOQuote,)),
+        SensorSpec(sensor_id="quote_hazard_rate",           sensor_version="1.0.0",
+                   cls=QuoteHazardRateSensor,               params={},
+                   subscribes_to=(NBBOQuote,)),
+        SensorSpec(sensor_id="hawkes_intensity",            sensor_version="1.0.0",
+                   cls=HawkesIntensitySensor,               params={},
+                   subscribes_to=(NBBOQuote, Trade)),
+        SensorSpec(sensor_id="trade_through_rate",          sensor_version="1.0.0",
+                   cls=TradeThroughRateSensor,              params={},
+                   subscribes_to=(NBBOQuote, Trade)),
+        SensorSpec(sensor_id="scheduled_flow_window",       sensor_version="1.0.0",
+                   cls=ScheduledFlowWindowSensor,           params={"calendar": _empty_calendar},
+                   subscribes_to=(NBBOQuote,)),
+        SensorSpec(sensor_id="realized_vol_30s",            sensor_version="1.0.0",
+                   cls=RealizedVol30sSensor,                params={},
+                   subscribes_to=(NBBOQuote, Trade)),
+        SensorSpec(sensor_id="vpin_50bucket",               sensor_version="1.0.0",
+                   cls=VPIN50BucketSensor,                  params={},
+                   subscribes_to=(NBBOQuote, Trade)),
+        SensorSpec(sensor_id="snr_drift_diffusion",         sensor_version="1.0.0",
+                   cls=SNRDriftDiffusionSensor,
+                   params={"horizons_seconds": (30, 120, 300, 900, 1800)},
+                   subscribes_to=(NBBOQuote,)),
+        SensorSpec(sensor_id="structural_break_score",      sensor_version="1.0.0",
+                   cls=StructuralBreakScoreSensor,          params={},
+                   subscribes_to=(NBBOQuote,)),
+    )
+
+
+# -------------------------------------------------------------------
 # Canonical config loader.
 #
 # CRITICAL FOR PARITY:
 #   scripts/run_backtest.py loads platform.yaml from the repo root.
 #   Grok MUST do the same — otherwise PlatformConfig dataclass defaults
 #   (latency=0, cooldown=0, no stop-loss, account_equity=1_000_000) will
-#   silently override platform.yaml values (latency=30ms, cooldown=5000,
-#   stop-loss=0.005, account_equity=100_000) and break parity hashes.
+#   silently override platform.yaml values (latency=30ms, cooldown=100
+#   ticks, stop-loss=0.005, account_equity=100_000) and break parity
+#   hashes.
 #
 # The PLATFORM_YAML_PATH global is set in Prompt 1 from the same commit
 # SHA the source ZIP was extracted from. Single source of truth.
@@ -104,6 +196,15 @@ def _load_platform_config(
         "Bootstrap must extract platform.yaml from the same SHA as the source."
     )
     base = PlatformConfig.from_yaml(PLATFORM_YAML_PATH)
+
+    # Fix #1: platform.yaml ships with sensor_specs: [] so that the file
+    # stays minimal. Every shipped SIGNAL alpha declares depends_on_sensors;
+    # the bootstrap raises UnresolvedDependencyError without a populated
+    # registry. Inject the full shipped catalog when the YAML leaves the
+    # list empty. If the operator has explicitly populated sensor_specs in
+    # their own platform.yaml that list is respected as-is.
+    if not base.sensor_specs:
+        base = _dc_replace(base, sensor_specs=_build_grok_sensor_specs())
 
     symbols = _symbols_from_event_log(event_log)
     assert symbols, "event_log contains no events with symbols — run LOAD() first"
@@ -468,6 +569,22 @@ def SELFCHECK_ADOPTION(spec_path: str | Path,
     spec_path = Path(spec_path)
     assert spec_path.exists(), f"Spec not found: {spec_path}"
 
+    # PORTFOLIO alphas depend on SIGNAL alphas being staged in ALPHA_ACTIVE_DIR
+    # for the alpha_spec_dir scan (Leg B). Without transitive dep staging, Leg B
+    # would find zero SIGNAL alphas and produce an empty portfolio, making the
+    # equivalence check a false positive rather than a real test. Warn and skip
+    # rather than silently produce misleading results.
+    _spec_layer = (_yaml_safe_load_path(spec_path) or {}).get("layer", "")
+    if str(_spec_layer).upper() == "PORTFOLIO":
+        print(
+            f"\nWARN: SELFCHECK_ADOPTION skipped for PORTFOLIO alpha '{spec_path.name}'.\n"
+            f"  Leg B (alpha_spec_dir) requires all depends_on_signals entries to be\n"
+            f"  staged in ALPHA_ACTIVE_DIR first. Run SELFCHECK_ADOPTION on each SIGNAL\n"
+            f"  component individually, then ADOPT the PORTFOLIO spec and verify\n"
+            f"  portfolio construction via RUN_ACTIVE()."
+        )
+        return {"skipped": True, "reason": "PORTFOLIO ingress equivalence requires staged deps"}
+
     # Need ADOPT (Prompt 6) to populate ALPHA_ACTIVE_DIR.
     assert "ADOPT" in globals(), (
         "ADOPT not loaded — paste Prompt 6 first. SELFCHECK_ADOPTION needs "
@@ -689,11 +806,15 @@ def _compute_metrics(pnls: list[float], label: str = "") -> dict:
     sigma = statistics.stdev(pnls)
     sr    = mu / max(sigma, 1e-10)
 
-    # DSR: deflated Sharpe ratio (accounts for skew, kurtosis, and trial count)
+    # DSR: deflated Sharpe ratio (accounts for skew, kurtosis, and trial count).
+    # _excess_kurtosis returns γ₄ − 3 (excess kurtosis). The Bailey–de Prado
+    # variance term uses raw kurtosis γ₄ = excess + 3, which equals
+    # (excess + 2) / 4 in the (γ₄ − 1)/4 formula — so the correct
+    # coefficient on SR² is (ku + 2) / 4, NOT ku / 4.
     try:
         sk  = _skewness(pnls)
         ku  = _excess_kurtosis(pnls)
-        dsr = sr * math.sqrt(n) / math.sqrt(1 - sk * sr + (ku / 4) * sr ** 2)
+        dsr = sr * math.sqrt(n) / math.sqrt(1 - sk * sr + ((ku + 2) / 4) * sr ** 2)
     except (ZeroDivisionError, ValueError):
         dsr = None
 
@@ -802,15 +923,17 @@ def falsification_battery(
     try:
         sk  = _skewness(trade_pnls)
         ku  = _excess_kurtosis(trade_pnls)
-        # base DSR (single-trial form)
+        # base DSR (single-trial form). Coefficient is (ku+2)/4 because
+        # _excess_kurtosis returns γ₄−3; raw kurtosis γ₄ = excess+3,
+        # and the Bailey–de Prado variance term is (γ₄−1)/4 = (excess+2)/4.
         dsr_single = sr * math.sqrt(n) / math.sqrt(
-            max(1 - sk * sr + (ku / 4) * sr ** 2, 1e-10)
+            max(1 - sk * sr + ((ku + 2) / 4) * sr ** 2, 1e-10)
         )
         # multiple-trial penalty
         if n_trials > 1:
             sr_max_null = math.sqrt(2 * math.log(max(n_trials, 2)))
             dsr = (sr - sr_max_null / math.sqrt(n)) * math.sqrt(n) / math.sqrt(
-                max(1 - sk * sr + (ku / 4) * sr ** 2, 1e-10)
+                max(1 - sk * sr + ((ku + 2) / 4) * sr ** 2, 1e-10)
             )
         else:
             dsr = dsr_single
@@ -1030,12 +1153,12 @@ def compute_ic(
         t = rs * math.sqrt((n - 2) / (1 - rs * rs)) / overlap_factor
     hit = sum(1 for s, r in pairs if (s > 0 and r > 0) or (s < 0 and r < 0))
     return {
-        "ic_mean":       rs,
-        "ic_tstat":      t,
-        "n_pairs":       n,
-        "horizon_ticks": horizon_ticks,
-        "hit_rate":      hit / n,
-        "method":        "spearman + Newey-West (heuristic HAC adj.)",
+        "ic_mean":              rs,
+        "ic_tstat_heuristic":   t,   # heuristic HAC; NOT a proper Newey-West estimator
+        "n_pairs":              n,
+        "horizon_ticks":        horizon_ticks,
+        "hit_rate":             hit / n,
+        "method":               "spearman + heuristic HAC (overlap_factor = sqrt(horizon_ticks))",
     }
 
 
@@ -1488,7 +1611,7 @@ build_platform(config, event_log=event_log)  →  creates fresh:
     Sensor / horizon path     fresh instances when the loaded alpha requires them
   HMM3StateFractional       fresh instance, all posteriors at uniform prior
     Signal / composition path fresh instances when the loaded alpha requires them
-  BacktestOrderRouter       fresh instance, no pending orders
+  PassiveLimitOrderRouter   fresh instance, no pending orders (queue-position fill model)
   DefaultCostModel          fresh instance
   BasicRiskEngine           fresh instance, HWM = starting equity
   InMemoryTradeJournal      empty
@@ -1502,13 +1625,22 @@ two independent pipelines with zero shared state.
 
 ## 2. FILL MODEL (DO NOT INVENT — READ FROM SOURCE)
 
-`BacktestOrderRouter` in `feelies.execution.backtest_router`:
-- Fill price: `(bid + ask) / 2` (mid-price) — **NOT spread-crossing**
-- No fill probability, no RNG seed
-- Depth check: partial fills if `request.quantity > available_depth`
-- Impact: `fill_price ± market_impact_factor × (excess / depth) × half_spread`
-- Default `market_impact_factor`: 0.5 (from `PlatformConfig`)
-- Latency: configurable via `backtest_fill_latency_ns`
+The canonical `platform.yaml` sets `execution_mode: passive_limit`, so
+`bootstrap._create_backend` routes through `PassiveLimitOrderRouter` in
+`feelies.execution.passive_limit_router` — **not** `BacktestOrderRouter`.
+
+`PassiveLimitOrderRouter` (queue-position fill model):
+- Orders rest at BBO; fill triggers when `passive_queue_position_shares`
+  shares at our price level have traded through (D10 mode) or after
+  `passive_fill_delay_ticks` ticks (legacy mode, disabled when
+  `passive_queue_position_shares > 0`).
+- Cancel timeout: `passive_max_resting_ticks` (default 1000 ticks).
+- Cancel fee: `passive_cancel_fee_per_share` (default $0.00/share).
+- Maker rebate applies on successful fills (not taker fee).
+- Latency: configurable via `backtrack_fill_latency_ns`.
+
+`BacktestOrderRouter` (mid-price fill, market mode) is only active when
+`execution_mode: market` is set in platform.yaml — not the canonical config.
 
 ---
 
@@ -1534,7 +1666,7 @@ Pipeline:          build_platform() from feelies.bootstrap (repo source)
 Config source:     platform.yaml from same commit SHA as source ZIP
                     (loaded via PlatformConfig.from_yaml(PLATFORM_YAML_PATH))
 Layer path:        sensor -> horizon -> signal -> composition when required by loaded alpha
-Fill model:        BacktestOrderRouter (mid-price, depth-based partial fills)
+Fill model:        PassiveLimitOrderRouter (queue-position fills, passive_limit mode)
 Cost model:        DefaultCostModel (IB Tiered defaults from platform.yaml)
 Risk engine:       BasicRiskEngine / AlphaBudgetRiskWrapper (from source)
 Regime engine:     HMM3StateFractional — states: compression_clustering, normal, vol_breakout

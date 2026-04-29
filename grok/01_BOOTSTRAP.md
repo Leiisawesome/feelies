@@ -54,7 +54,7 @@ assert extracted >= 80, f"Expected ≥80 files, got {extracted} — check repo s
 #    and architecture docs.
 #    Without this, Grok runs with PlatformConfig dataclass defaults (latency=0,
 #    cooldown=0, no stop-loss) while the local repo runs with platform.yaml
-#    (latency=30ms, cooldown=5000, stop-loss=0.005) — silently breaking parity.
+#    (latency=30ms, cooldown=100 ticks, stop-loss=0.005) — silently breaking parity.
 _repo_extracted = 0
 _repo_targets = (
     "platform.yaml",
@@ -234,13 +234,19 @@ def INITIALIZE(polygon_api_key: str) -> None:
     """Set API key and confirm all modules are active. Call after pasting all 7 prompts."""
     SESSION["api_key"] = polygon_api_key
 
-    # Detect which modules are loaded by checking for their sentinel names
-    _m2 = "LOAD" in dir()           or "LOAD" in globals()
-    _m3 = "validate_alpha" in dir() or "validate_alpha" in globals()
-    _m4 = "run_backtest" in dir()   or "run_backtest" in globals()
-    _m5 = "EXPORT" in dir()         or "EXPORT" in globals()
-    _m6 = "EVOLVE" in dir()         or "EVOLVE" in globals()
-    _m7 = "PROPOSE" in dir()        or "PROPOSE" in globals()
+    # Detect which modules are loaded by checking for their sentinel names.
+    # Use globals() from __main__ via sys.modules so the lookup is reliable
+    # regardless of whether the code runs in Jupyter, IPython, or a plain
+    # exec() context. dir() inside a function only returns local names and
+    # must not be used here.
+    import sys as _sys
+    _main_ns = vars(_sys.modules.get("__main__", _sys.modules[__name__]))
+    _m2 = "LOAD" in _main_ns
+    _m3 = "validate_alpha" in _main_ns
+    _m4 = "run_backtest" in _main_ns
+    _m5 = "EXPORT" in _main_ns
+    _m6 = "EVOLVE" in _main_ns
+    _m7 = "PROPOSE" in _main_ns
 
     def _status(loaded: bool) -> str:
         return "ACTIVE" if loaded else "NOT YET LOADED — paste that prompt"

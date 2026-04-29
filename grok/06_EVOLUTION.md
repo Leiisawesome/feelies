@@ -689,32 +689,41 @@ ADOPTION_DEPENDENCY_BUNDLES: dict[str, dict[str, dict]] = {}
 
 
 def _archive_prior_active() -> str | None:
-    """Preserve the current active spec in ALPHA_DEV_DIR/_deprecated before swap."""
+    """Preserve the current active spec bundle in alpha_deprecated before swap.
+
+    Archives the entire adopted subtree (top-level YAML plus any staged
+    dependency sub-directories) so that a previous PORTFOLIO bundle can
+    be reconstructed from the archive after a subsequent ADOPT.
+    """
     prior_alpha_id = SESSION.get("active_alpha_id")
     if not prior_alpha_id:
         return None
 
-    prior_yaml = os.path.join(ALPHA_ACTIVE_DIR, prior_alpha_id, f"{prior_alpha_id}.alpha.yaml")
-    if not os.path.exists(prior_yaml):
+    prior_dir = os.path.join(ALPHA_ACTIVE_DIR, prior_alpha_id)
+    if not os.path.isdir(prior_dir):
         return None
 
-    with open(prior_yaml, "r") as f:
-        prior_spec = _yaml.safe_load(f)
-
-    prior_version = str((prior_spec or {}).get("version", "unknown")).replace("/", "_")
     deprecated_dir = WORKSPACE.get("alpha_deprecated") or os.path.join(ALPHA_DEV_DIR, "_deprecated")
     os.makedirs(deprecated_dir, exist_ok=True)
 
-    archive_name = f"{prior_alpha_id}_v{prior_version}.alpha.yaml"
+    # Read version from the top-level YAML for the archive directory name.
+    prior_yaml = os.path.join(prior_dir, f"{prior_alpha_id}.alpha.yaml")
+    prior_version = "unknown"
+    if os.path.exists(prior_yaml):
+        with open(prior_yaml, "r") as f:
+            prior_spec = _yaml.safe_load(f)
+        prior_version = str((prior_spec or {}).get("version", "unknown")).replace("/", "_")
+
+    archive_name = f"{prior_alpha_id}_v{prior_version}"
     archive_path = os.path.join(deprecated_dir, archive_name)
     if os.path.exists(archive_path):
-        archive_name = (
-            f"{prior_alpha_id}_v{prior_version}_"
-            f"{datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%S')}.alpha.yaml"
+        archive_path = (
+            f"{archive_path}_{datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%S')}"
         )
-        archive_path = os.path.join(deprecated_dir, archive_name)
 
-    shutil.copy2(prior_yaml, archive_path)
+    # Copy the entire adopted subtree (YAML + any staged dep directories)
+    # so PORTFOLIO bundles can be fully reconstructed from the archive.
+    shutil.copytree(prior_dir, archive_path)
     return archive_path
 
 
@@ -776,6 +785,15 @@ def _write_adopted_spec_bundle(target_dir: str, spec: dict, alpha_id: str) -> tu
 
 
 def _collect_portfolio_dependencies(spec: dict, owner_alpha_id: str) -> tuple[dict[str, dict], list[str]]:
+    """Resolve one level of depends_on_signals for adoption-time staging.
+
+    NOTE: resolution is intentionally one level deep. A PORTFOLIO alpha
+    whose SIGNAL dependencies themselves have depends_on_signals (i.e.
+    nested PORTFOLIO-of-PORTFOLIO) will NOT have transitive deps staged
+    automatically. The shipped catalog has at most one level of nesting;
+    if you introduce deeper nesting you must stage the transitive deps
+    manually before calling ADOPT.
+    """
     resolved: dict[str, dict] = {}
     missing: list[str] = []
     for dependency_id in spec.get("depends_on_signals") or []:
@@ -967,6 +985,7 @@ def MUTATE(
     parent_spec: dict,
     operator: str,
     seed: int = 0,
+    auto_adopt: bool = True,
     **operator_kwargs,
 ) -> dict:
     """
@@ -977,6 +996,13 @@ def MUTATE(
 
     The child carries a `lineage` block that downstream TEST/EXPORT use to
     populate parent_id and mutation_type in the registry.
+
+    Args:
+        auto_adopt: when True (default for standalone MUTATE calls) the
+            validated child is immediately ADOPTed so RUN_ACTIVE() reflects
+            it.  EXPLORE passes auto_adopt=False to prevent every generated
+            sibling from flipping the live spec mid-loop; EXPLORE explicitly
+            ADOPTs only the Holm-survivor the user selects.
     """
     if operator not in MUTATION_OPERATORS:
         raise ValueError(f"Unknown operator '{operator}'. "
@@ -1000,16 +1026,16 @@ def MUTATE(
 
     print(f"MUTATE: {parent_spec['alpha_id']} --[{operator}]--> {child['alpha_id']}")
 
-    # Adopt every validated child — closes the autonomy loop. The next
-    # RUN_ACTIVE() will discover this spec via alpha_spec_dir, exactly as
-    # scripts/run_backtest.py would. Per architecture decision: every
-    # validated MUTATE/RECOMBINE child + every EVOLVE strict-improvement
-    # winner flips the live spec.
-    try:
-        ADOPT(child, source=f"MUTATE:{operator}")
-    except Exception as e:
-        print(f"  WARN: ADOPT failed for child '{child['alpha_id']}': {e}. "
-              f"Spec is valid but not promoted; RUN_ACTIVE() will use prior active.")
+    # Adopt the validated child when auto_adopt=True (default for standalone
+    # MUTATE calls). EXPLORE passes auto_adopt=False so each generated
+    # sibling does NOT flip the live spec; the caller chooses which survivor
+    # to ADOPT after Holm correction.
+    if auto_adopt:
+        try:
+            ADOPT(child, source=f"MUTATE:{operator}")
+        except Exception as e:
+            print(f"  WARN: ADOPT failed for child '{child['alpha_id']}': {e}. "
+                  f"Spec is valid but not promoted; RUN_ACTIVE() will use prior active.")
 
     return child
 
@@ -1091,7 +1117,8 @@ def EXPLORE(
         attempts += 1
         op = rng.choice(operators)
         try:
-            child = MUTATE(parent_spec, op, seed=rng.randrange(1 << 30))
+            child = MUTATE(parent_spec, op, seed=rng.randrange(1 << 30),
+                           auto_adopt=False)  # do NOT flip live spec per child
             children.append({"spec": child, "operator": op})
         except ValueError as e:
             # Operator inapplicable — try another. Logged but not fatal.
