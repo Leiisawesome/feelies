@@ -1,16 +1,22 @@
 """Level-3 baseline — ``HorizonFeatureSnapshot`` replay parity.
 
-In Phase 2 the :class:`HorizonAggregator` ships in *passive-emitter*
-mode: no horizon features are registered, so each
-:class:`HorizonFeatureSnapshot` carries empty ``values`` / ``warm`` /
-``stale`` dicts.  The other fields (sequence, symbol,
-horizon_seconds, boundary_index, correlation_id, timestamp_ns) are
-fully populated and form a stable Level-3 fingerprint.
+Phase 3.5 (commit df632ef) activated the :class:`HorizonAggregator`:
+horizon features are now registered in production and each
+:class:`HorizonFeatureSnapshot` carries non-empty ``values`` / ``warm`` /
+``stale`` dicts.  The locked hash covers the full snapshot content
+(scope, ordering, sequence allocation, *and* feature values) so any
+drift in any of those dimensions surfaces immediately.
 
-Locking this baseline now means Phase 3 cannot accidentally change
-snapshot scope expansion, ordering, or sequence allocation when it
-starts attaching real horizon features — any drift there will
-immediately surface as a failure here.
+Features wired for the two sensors in this test:
+  ofi_ewma → SensorPassthroughFeature (feature_id=``ofi_ewma``) +
+             RollingZscoreFeature (feature_id=``ofi_ewma_zscore``)
+  micro_price → (none)
+across horizons {30, 120, 300}.
+
+The synthetic fixture has fewer quotes than ``min_samples=30``, so
+both ofi_ewma and ofi_ewma_zscore are always cold (warm=False) and
+ofi_ewma_zscore always returns 0.0.  That is expected: the baseline
+locks the cold-path field shape, not warm-path values.
 """
 
 from __future__ import annotations
@@ -18,14 +24,15 @@ from __future__ import annotations
 import hashlib
 
 from feelies.core.events import HorizonFeatureSnapshot, NBBOQuote
+from feelies.features.impl.rolling_stats import RollingZscoreFeature
+from feelies.features.impl.sensor_passthrough import SensorPassthroughFeature
+from feelies.features.protocol import HorizonFeature
 from feelies.sensors.impl.micro_price import MicroPriceSensor
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
 from feelies.sensors.spec import SensorSpec
 from tests.fixtures.replay import replay_through_aggregator
 
 
-# Two simple sensors are enough to drive the aggregator: the
-# Level-3 hash measures snapshot scope/ordering, not value content.
 _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     SensorSpec(
         sensor_id="ofi_ewma",
@@ -43,6 +50,20 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     ),
 )
 
+# Active features for the two sensors above across the three test horizons.
+# Mirrors _horizon_features_for() in bootstrap.py:
+#   ofi_ewma  → SensorPassthroughFeature + RollingZscoreFeature
+#   micro_price → (none)
+_HORIZONS = frozenset({30, 120, 300})
+_HORIZON_FEATURES: tuple[HorizonFeature, ...] = tuple(
+    feature
+    for h in sorted(_HORIZONS)
+    for feature in (
+        SensorPassthroughFeature("ofi_ewma", h),
+        RollingZscoreFeature("ofi_ewma", h),
+    )
+)
+
 
 def _hash_snapshot_stream(snapshots: list[HorizonFeatureSnapshot]) -> str:
     lines: list[str] = []
@@ -58,15 +79,21 @@ def _hash_snapshot_stream(snapshots: list[HorizonFeatureSnapshot]) -> str:
 
 
 def _replay() -> tuple[str, int]:
-    recorder = replay_through_aggregator(sensor_specs=_SENSOR_SPECS)
+    recorder = replay_through_aggregator(
+        sensor_specs=_SENSOR_SPECS,
+        horizon_features=_HORIZON_FEATURES,
+    )
     return _hash_snapshot_stream(recorder.snapshots), len(recorder.snapshots)
 
 
 def test_snapshot_stream_matches_locked_baseline() -> None:
     actual_hash, actual_count = _replay()
 
+    # Phase 3.5 re-lock: aggregator now carries active features so V/W/S
+    # dicts are non-empty.  ofi_ewma is warm (warm_after=5); ofi_ewma_zscore
+    # is cold (fixture < min_samples=30) and always returns 0.0.
     EXPECTED_LEVEL3_SNAPSHOT_HASH = (
-        "a853ab09b0f4d45bbfcaf0d52c24dc9931c9e3a045a4d9d82dd6d6a77080eb2c"
+        "74b682f64f90625db0eb9a2aa3864cc2e5a7c0ab6162fb83ab4dbe505e3a2a23"
     )
     EXPECTED_LEVEL3_SNAPSHOT_COUNT = 28
 

@@ -47,6 +47,9 @@ from feelies.core.events import (
 )
 from feelies.core.identifiers import SequenceGenerator
 from feelies.features.aggregator import HorizonAggregator
+from feelies.features.impl.rolling_stats import RollingZscoreFeature
+from feelies.features.impl.sensor_passthrough import SensorPassthroughFeature
+from feelies.features.protocol import HorizonFeature
 from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.impl.micro_price import MicroPriceSensor
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
@@ -90,6 +93,21 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
 )
 
 
+# Active features for the sensors registered in _SENSOR_SPECS:
+#   ofi_ewma     → passthrough + zscore at each horizon
+#   micro_price  → (none, no features in _horizon_features_for)
+#   spread_z_30d → (none, handled via sensor_cache gate path)
+_SIGNAL_REPLAY_HORIZONS: frozenset[int] = frozenset({30, 120, 300})
+_SIGNAL_REPLAY_FEATURES: tuple[HorizonFeature, ...] = tuple(
+    feature
+    for h in sorted(_SIGNAL_REPLAY_HORIZONS)
+    for feature in (
+        SensorPassthroughFeature("ofi_ewma", h),
+        RollingZscoreFeature("ofi_ewma", h),
+    )
+)
+
+
 def _replay(alpha_path: str = str(REFERENCE_PATH)) -> tuple[str, int]:
     bus = EventBus()
     captured_signals: list[Signal] = []
@@ -104,7 +122,7 @@ def _replay(alpha_path: str = str(REFERENCE_PATH)) -> tuple[str, int]:
         registry.register(spec)
 
     scheduler = HorizonScheduler(
-        horizons=frozenset({30, 120, 300}),
+        horizons=_SIGNAL_REPLAY_HORIZONS,
         session_id="TEST_SYNTH",
         symbols=frozenset({"AAPL"}),
         session_open_ns=SESSION_OPEN_NS,
@@ -116,6 +134,7 @@ def _replay(alpha_path: str = str(REFERENCE_PATH)) -> tuple[str, int]:
         symbols=frozenset({"AAPL"}),
         sensor_buffer_seconds=600,
         sequence_generator=SequenceGenerator(),
+        horizon_features=list(_SIGNAL_REPLAY_FEATURES),
     )
     aggregator.attach()
 
@@ -308,6 +327,7 @@ def test_wiring_actually_dispatches() -> None:
         symbols=frozenset({"AAPL"}),
         sensor_buffer_seconds=600,
         sequence_generator=SequenceGenerator(),
+        horizon_features=list(_SIGNAL_REPLAY_FEATURES),
     )
     aggregator.attach()
 

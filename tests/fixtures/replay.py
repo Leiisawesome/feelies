@@ -22,6 +22,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from collections.abc import Sequence
+
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
     Event,
@@ -33,6 +35,7 @@ from feelies.core.events import (
 )
 from feelies.core.identifiers import SequenceGenerator
 from feelies.features.aggregator import HorizonAggregator
+from feelies.features.protocol import HorizonFeature
 from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
 from feelies.sensors.spec import SensorSpec
@@ -142,6 +145,7 @@ def replay_through_registry(
 def replay_through_aggregator(
     *,
     sensor_specs: tuple[SensorSpec, ...],
+    horizon_features: Sequence[HorizonFeature] | None = None,
     horizons: frozenset[int] = frozenset({30, 120, 300}),
     symbols: frozenset[str] = frozenset({"AAPL"}),
     fixture_path: Path = DEFAULT_OUTPUT,
@@ -150,13 +154,11 @@ def replay_through_aggregator(
 ) -> BusRecorder:
     """Compose bus + registry + scheduler + aggregator; replay the fixture.
 
-    The aggregator runs in passive-emitter mode (no horizon features)
-    so the resulting :class:`HorizonFeatureSnapshot` stream carries
-    empty ``values`` / ``warm`` / ``stale`` dicts but every other field
-    is fully populated.  This is exactly what Phase-2 ships in
-    production today, so locking the Level-3 hash on this stream
-    catches drift in scope expansion, ordering, and snapshot sequence
-    allocation independently of any feature semantics.
+    When *horizon_features* is ``None`` the aggregator runs in
+    passive-emitter mode (empty ``values`` / ``warm`` / ``stale`` dicts).
+    Pass a non-empty list to exercise the active Phase-3.5 path where
+    ``HorizonFeatureSnapshot.values`` is populated with real sensor-derived
+    feature values — this is the production mode after commit df632ef.
     """
     bus = EventBus()
     recorder = BusRecorder()
@@ -183,6 +185,7 @@ def replay_through_aggregator(
         symbols=symbols,
         sensor_buffer_seconds=2 * max(horizons),
         sequence_generator=SequenceGenerator(),
+        horizon_features=list(horizon_features) if horizon_features is not None else [],
     )
     aggregator.attach()
 
