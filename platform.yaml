@@ -22,13 +22,18 @@ symbols:
 #
 # Workstream-D update: ``alphas/trade_cluster_drift`` was retired in
 # D.2 (the last LEGACY_SIGNAL reference alpha) and the loader-side
-# LEGACY_SIGNAL code-path was removed in the same workstream.  The
-# default discovery dir is now the SIGNAL/PORTFOLIO mid-cap reference,
-# ``alphas/pofi_benign_midcap_v1``.  Override per-run via ``--config``.
-alpha_spec_dir: alphas/pofi_benign_midcap_v1
+# LEGACY_SIGNAL code-path was removed in the same workstream.
+# alpha_spec_dir is null; alphas 1-4 are listed explicitly below.
+# alpha 5 (pofi_moc_imbalance_v1) requires a scheduled_flow_window
+# sensor with an EventCalendar object and is wired separately.
+alpha_spec_dir: null
 
-# Explicit alpha spec paths (in addition to directory scan).
-alpha_specs: []
+# Explicit alpha spec paths — alphas 1-4 are ready for backtest.
+alpha_specs:
+  - alphas/pofi_benign_midcap_v1/pofi_benign_midcap_v1.alpha.yaml
+  - alphas/pofi_hawkes_burst_v1/pofi_hawkes_burst_v1.alpha.yaml
+  - alphas/pofi_inventory_revert_v1/pofi_inventory_revert_v1.alpha.yaml
+  - alphas/pofi_kyle_drift_v1/pofi_kyle_drift_v1.alpha.yaml
 
 # Per-alpha parameter overrides keyed by alpha_id.
 parameter_overrides: {}
@@ -158,15 +163,101 @@ horizons_seconds:
 # becomes one ``SensorSpec`` (see ``src/feelies/sensors/spec.py``).
 # An empty list means the sensor registry is skipped entirely
 # and the orchestrator takes the legacy micro-state path.
-sensor_specs: []
-# Example registration (uncomment + tune for live use):
-# sensor_specs:
-#   - sensor_id: ofi_ewma
-#     sensor_version: "1.0.0"
-#     cls: feelies.sensors.impl.ofi_ewma.OfiEwmaSensor
-#     params:
-#       half_life_ns: 5000000000
-#     subscribes_to: [NBBOQuote]
-#     input_sensor_ids: []
-#     min_history: 100
-#     throttled_ms: null
+# ── Sensors wired for alphas 1-4 ────────────────────────────────────
+# Covers the union of depends_on_sensors across:
+#   pofi_benign_midcap_v1  (ofi_ewma, micro_price, spread_z_30d)
+#   pofi_hawkes_burst_v1   (hawkes_intensity, trade_through_rate, ofi_ewma, spread_z_30d)
+#   pofi_inventory_revert_v1 (quote_replenish_asymmetry, spread_z_30d, quote_hazard_rate)
+#   pofi_kyle_drift_v1     (kyle_lambda_60s, ofi_ewma, micro_price, spread_z_30d)
+sensor_specs:
+
+  # ── Shared: NBBOQuote sensors ────────────────────────────────────
+  - sensor_id: ofi_ewma
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.ofi_ewma.OFIEwmaSensor
+    params:
+      alpha: 0.1
+      warm_after: 50
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 50
+    throttled_ms: null
+
+  - sensor_id: micro_price
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.micro_price.MicroPriceSensor
+    params:
+      warm_after: 1
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 1
+    throttled_ms: null
+
+  - sensor_id: spread_z_30d
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.spread_z_30d.SpreadZScoreSensor
+    params:
+      window: 6000
+      min_std: 1.0e-9
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 6000
+    throttled_ms: null
+
+  - sensor_id: quote_replenish_asymmetry
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.quote_replenish_asymmetry.QuoteReplenishAsymmetrySensor
+    params:
+      window_seconds: 5
+      min_observations: 20
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 20
+    throttled_ms: null
+
+  - sensor_id: quote_hazard_rate
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.quote_hazard_rate.QuoteHazardRateSensor
+    params:
+      window_seconds: 5
+      min_samples: 20
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 20
+    throttled_ms: null
+
+  # ── Alpha 2 + 4: Trade sensors ───────────────────────────────────
+  - sensor_id: hawkes_intensity
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.hawkes_intensity.HawkesIntensitySensor
+    params:
+      alpha: 0.4
+      beta: 0.05
+      warm_window_seconds: 60
+      warm_trades_per_side: 20
+    subscribes_to: [Trade]
+    input_sensor_ids: []
+    min_history: 20
+    throttled_ms: null
+
+  - sensor_id: trade_through_rate
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.trade_through_rate.TradeThroughRateSensor
+    params:
+      window_seconds: 30
+      min_trades: 20
+    subscribes_to: [NBBOQuote, Trade]
+    input_sensor_ids: []
+    min_history: 20
+    throttled_ms: null
+
+  - sensor_id: kyle_lambda_60s
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.kyle_lambda_60s.KyleLambda60sSensor
+    params:
+      window_seconds: 60
+      min_samples: 30
+    subscribes_to: [Trade]
+    input_sensor_ids: []
+    min_history: 30
+    throttled_ms: null
