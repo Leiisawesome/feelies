@@ -48,7 +48,8 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict, deque
-from typing import Any, Mapping
+from collections.abc import Mapping as MappingABC
+from typing import Any, Mapping, Sequence
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
@@ -106,7 +107,11 @@ class HorizonAggregator:
         self,
         *,
         bus: EventBus,
-        horizon_features: Mapping[str, HorizonFeature] | None = None,
+        horizon_features: (
+            Sequence[HorizonFeature]
+            | Mapping[str, HorizonFeature]
+            | None
+        ) = None,
         symbols: frozenset[str],
         sensor_buffer_seconds: int,
         sequence_generator: SequenceGenerator,
@@ -116,15 +121,24 @@ class HorizonAggregator:
             raise ValueError(
                 f"sensor_buffer_seconds must be > 0, got {sensor_buffer_seconds}"
             )
+        # Normalise to a plain list of features.  Accept a Mapping for
+        # backward compatibility (existing tests pass {key: feature});
+        # the Mapping keys are ignored — feature.feature_id is used.
         if horizon_features is None:
-            horizon_features = {}
+            features_list: list[HorizonFeature] = []
+        elif isinstance(horizon_features, MappingABC):
+            features_list = list(horizon_features.values())
+        else:
+            features_list = list(horizon_features)
 
         # Sort features once at construction so iteration is O(F)
         # without per-tick re-sorting (Inv-C / hot-path determinism).
-        self._features_sorted: tuple[tuple[str, HorizonFeature], ...] = tuple(
+        # Sorted by (feature_id, horizon_seconds, feature_version) so
+        # the same sensor at multiple horizons gets stable ordering.
+        self._features_sorted: tuple[HorizonFeature, ...] = tuple(
             sorted(
-                horizon_features.items(),
-                key=lambda kv: (kv[0], kv[1].feature_version),
+                features_list,
+                key=lambda f: (f.feature_id, f.horizon_seconds, f.feature_version),
             )
         )
         self._symbols_sorted: tuple[str, ...] = tuple(sorted(symbols))
@@ -138,15 +152,17 @@ class HorizonAggregator:
             tuple[str, str], deque[tuple[int, SensorReading]]
         ] = defaultdict(deque)
 
-        # Per-(feature_id, symbol) feature state owned by the
-        # aggregator (mirrors the SensorRegistry per-symbol state
-        # ownership pattern).
-        self._feature_state: dict[tuple[str, str], dict[str, Any]] = {}
-        for feature_id, feature in self._features_sorted:
+        # Per-(feature_id, horizon_seconds, symbol) feature state owned
+        # by the aggregator (mirrors the SensorRegistry per-symbol state
+        # ownership pattern).  Using horizon_seconds as part of the key
+        # allows the same feature_id (e.g. "ofi_ewma") to exist at
+        # multiple horizon boundaries without state collision.
+        self._feature_state: dict[tuple[str, int, str], dict[str, Any]] = {}
+        for feature in self._features_sorted:
             for symbol in self._symbols_sorted:
-                self._feature_state[(feature_id, symbol)] = (
-                    feature.initial_state()
-                )
+                self._feature_state[
+                    (feature.feature_id, feature.horizon_seconds, symbol)
+                ] = feature.initial_state()
 
         self._subscribed = False
 
@@ -201,15 +217,16 @@ class HorizonAggregator:
         # Notify any feature whose ``input_sensor_ids`` contains this
         # sensor_id.  Passive mode (no features) skips this loop
         # entirely with zero cost.
-        for _, feature in self._features_sorted:
+        for feature in self._features_sorted:
             if reading.sensor_id not in feature.input_sensor_ids:
                 continue
-            state = self._feature_state.get((feature.feature_id, symbol))
+            state_key = (feature.feature_id, feature.horizon_seconds, symbol)
+            state = self._feature_state.get(state_key)
             if state is None:
                 # New symbol observed after construction; allocate
                 # lazily so dynamic universes (Phase 4+) still work.
                 state = feature.initial_state()
-                self._feature_state[(feature.feature_id, symbol)] = state
+                self._feature_state[state_key] = state
             feature.observe(reading, state, params={})
 
     def _on_horizon_tick(
@@ -243,18 +260,19 @@ class HorizonAggregator:
         stale: dict[str, bool] = {}
         source_sensors: dict[str, tuple[str, ...]] = {}
 
-        for feature_id, feature in self._features_sorted:
+        for feature in self._features_sorted:
             if feature.horizon_seconds != tick.horizon_seconds:
                 continue
-            state = self._feature_state.get((feature_id, symbol))
+            state_key = (feature.feature_id, feature.horizon_seconds, symbol)
+            state = self._feature_state.get(state_key)
             if state is None:
                 state = feature.initial_state()
-                self._feature_state[(feature_id, symbol)] = state
+                self._feature_state[state_key] = state
             value, w, s = feature.finalize(tick, state, params={})
-            values[feature_id] = float(value)
-            warm[feature_id] = bool(w)
-            stale[feature_id] = bool(s)
-            source_sensors[feature_id] = tuple(feature.input_sensor_ids)
+            values[feature.feature_id] = float(value)
+            warm[feature.feature_id] = bool(w)
+            stale[feature.feature_id] = bool(s)
+            source_sensors[feature.feature_id] = tuple(feature.input_sensor_ids)
 
         seq = self._sequence_generator.next()
         cid = make_correlation_id(

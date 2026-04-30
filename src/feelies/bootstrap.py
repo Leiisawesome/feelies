@@ -96,6 +96,15 @@ from feelies.execution.cost_model import DefaultCostModel, DefaultCostModelConfi
 from feelies.execution.intent import SignalPositionTranslator
 from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
 from feelies.features.aggregator import HorizonAggregator
+from feelies.features.impl.rolling_stats import (
+    RollingPercentileFeature,
+    RollingZscoreFeature,
+)
+from feelies.features.impl.sensor_passthrough import (
+    SensorPassthroughFeature,
+    TupleComponentFeature,
+)
+from feelies.features.protocol import HorizonFeature
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.monitoring.in_memory import (
     InMemoryAlertManager,
@@ -537,6 +546,77 @@ def _derive_session_id(config: PlatformConfig) -> str:
     return f"{config.market_id}_{config.session_kind}_{date_str}"
 
 
+# ── Sensor → feature mapping (Phase 3.5) ─────────────────────────────────────
+# For each sensor_id that may appear in platform.yaml, declare which
+# HorizonFeature implementations to construct at each registered horizon.
+# Features for sensors that are NOT in config.sensor_specs are skipped.
+# Adding a new sensor here is the only change needed to surface its
+# readings in HorizonFeatureSnapshot.values for new alphas.
+
+def _horizon_features_for(
+    sensor_id: str,
+    horizon: int,
+) -> list[HorizonFeature]:
+    """Return the HorizonFeature instances for *sensor_id* at *horizon*."""
+    if sensor_id == "ofi_ewma":
+        return [
+            SensorPassthroughFeature("ofi_ewma", horizon),
+            RollingZscoreFeature("ofi_ewma", horizon),
+        ]
+    if sensor_id == "kyle_lambda_60s":
+        return [
+            RollingZscoreFeature("kyle_lambda_60s", horizon),
+            RollingPercentileFeature("kyle_lambda_60s", horizon),
+        ]
+    if sensor_id == "quote_replenish_asymmetry":
+        return [RollingZscoreFeature("quote_replenish_asymmetry", horizon)]
+    if sensor_id == "quote_hazard_rate":
+        return [SensorPassthroughFeature("quote_hazard_rate", horizon)]
+    if sensor_id == "hawkes_intensity":
+        return [RollingZscoreFeature("hawkes_intensity", horizon)]
+    if sensor_id == "trade_through_rate":
+        return [SensorPassthroughFeature("trade_through_rate", horizon)]
+    if sensor_id == "scheduled_flow_window":
+        return [
+            TupleComponentFeature(
+                "scheduled_flow_window", 0,
+                "scheduled_flow_window_active", horizon,
+            ),
+            TupleComponentFeature(
+                "scheduled_flow_window", 1,
+                "seconds_to_window_close", horizon,
+            ),
+            TupleComponentFeature(
+                "scheduled_flow_window", 3,
+                "scheduled_flow_window_direction_prior", horizon,
+            ),
+        ]
+    # Sensors that produce stats already (e.g. spread_z_30d, micro_price)
+    # do not yet have evaluate()-level consumers — no features needed.
+    return []
+
+
+def _build_horizon_features(
+    config: PlatformConfig,
+) -> list[HorizonFeature]:
+    """Build the full HorizonFeature list from registered sensors + horizons.
+
+    Creates features for every (sensor_id, horizon_seconds) pair that
+    has an entry in *_horizon_features_for*.  Sensors without an entry
+    (e.g. ``spread_z_30d``) are skipped silently — they are fully
+    handled by the gate DSL via the sensor_cache path in
+    HorizonSignalEngine._build_bindings.
+    """
+    if not config.sensor_specs or not config.horizons_seconds:
+        return []
+    registered = {spec.sensor_id for spec in config.sensor_specs}
+    features: list[HorizonFeature] = []
+    for sensor_id in sorted(registered):  # sorted for determinism
+        for h in sorted(config.horizons_seconds):
+            features.extend(_horizon_features_for(sensor_id, h))
+    return features
+
+
 def _create_sensor_layer(
     config: PlatformConfig,
     bus: EventBus,
@@ -645,20 +725,24 @@ def _create_sensor_layer(
         # window equals the longest registered horizon still has full
         # history available at finalize time.
         sensor_buffer_seconds = 2 * max(config.horizons_seconds)
+        _active_features = _build_horizon_features(config)
         horizon_aggregator = HorizonAggregator(
             bus=bus,
-            horizon_features={},  # passive in Phase 2 — see plan §4.3.
+            horizon_features=_active_features,
             symbols=frozenset(config.symbols),
             sensor_buffer_seconds=sensor_buffer_seconds,
             sequence_generator=snapshot_seq,
             metric_collector=metric_collector,
         )
         horizon_aggregator.attach()
+        _mode_label = "active" if _active_features else "passive"
         logger.info(
-            "HorizonAggregator composed (passive mode): "
-            "buffer_window=%ds, symbols=%d",
+            "HorizonAggregator composed (%s mode): "
+            "buffer_window=%ds, symbols=%d, features=%d",
+            _mode_label,
             sensor_buffer_seconds,
             len(config.symbols),
+            len(_active_features),
         )
 
     return (
