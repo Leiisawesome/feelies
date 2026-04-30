@@ -1,0 +1,43 @@
+# Reference scheduled-flow window calendar for 2026-01-15 (regular RTH).
+#
+# Consumed by feelies.sensors.impl.scheduled_flow_window via
+# feelies.storage.reference.event_calendar.load_event_calendar().  This
+# file is content-addressed: any edit changes EventCalendar.hash() and
+# must be rationalised in the commit message that bumps it.
+#
+# Window kinds (v0.3 §20.4.2): MOC_IMBALANCE, OPENING_AUCTION,
+# INDEX_REBALANCE, EARNINGS_DRIFT, FOMC_BLACKOUT.
+#
+# Times are ET clock strings; the loader resolves them to integer
+# nanoseconds via ZoneInfo("America/New_York").
+#
+# 2026-01-15 is the synthetic session anchor date for integration tests
+# (SESSION_OPEN_NS = 1_768_532_400_000_000_000 = 2026-01-15 09:30:00 ET).
+# The MOC_IMBALANCE window is placed at 15:50–16:00 ET so that a 360-second
+# synthetic stream starting at 09:30 does NOT activate the window during the
+# standard integration test runs.  An extended test stream covering the full
+# RTH would enter the window after 15:50.
+
+session_date: 2026-01-15
+windows:
+  - window_id: nyse_open_2026_01_15
+    kind: OPENING_AUCTION
+    symbol: null
+    start_et: "09:30"
+    end_et: "09:35"
+    flow_direction_prior: 0.0
+    meta:
+      description: First 5 min of RTH; opening-auction tape printing.
+
+  - window_id: moc_imbalance_2026_01_15
+    kind: MOC_IMBALANCE
+    symbol: null
+    start_et: "15:50"
+    end_et: "16:00"
+    flow_direction_prior: 1.0
+    meta:
+      description: >
+        Standard 10-minute MOC imbalance publication window.
+        flow_direction_prior=1.0 indicates expected net buy-side pressure
+        based on historical January MOC flow patterns; overridden to 0.0
+        when exchange imbalance feed is unavailable.

@@ -28,12 +28,13 @@ symbols:
 # sensor with an EventCalendar object and is wired separately.
 alpha_spec_dir: null
 
-# Explicit alpha spec paths — alphas 1-4 are ready for backtest.
+# Explicit alpha spec paths — alphas 1-5 are ready for backtest.
 alpha_specs:
   - alphas/pofi_benign_midcap_v1/pofi_benign_midcap_v1.alpha.yaml
   - alphas/pofi_hawkes_burst_v1/pofi_hawkes_burst_v1.alpha.yaml
   - alphas/pofi_inventory_revert_v1/pofi_inventory_revert_v1.alpha.yaml
   - alphas/pofi_kyle_drift_v1/pofi_kyle_drift_v1.alpha.yaml
+  - alphas/pofi_moc_imbalance_v1/pofi_moc_imbalance_v1.alpha.yaml
 
 # Per-alpha parameter overrides keyed by alpha_id.
 parameter_overrides: {}
@@ -156,7 +157,10 @@ horizons_seconds:
 # YAML file declaring scheduled session events (open, close,
 # auctions, halts) consumed by the calendar adapter.  Omit
 # for a calendar-free demo; provide for live / paper.
-# event_calendar_path: storage/reference/event_calendar/2026-03-24.yaml
+# Required for alpha 5 (pofi_moc_imbalance_v1) which depends on the
+# ScheduledFlowWindowSensor; bootstrap loads it and injects the
+# EventCalendar object into the sensor spec at boot time.
+event_calendar_path: storage/reference/event_calendar/2026-01-15.yaml
 
 # ── Sensor specs (optional) ───────────────────────────────
 # Enumerate the sensors to register at boot.  Each entry
@@ -260,4 +264,18 @@ sensor_specs:
     subscribes_to: [Trade]
     input_sensor_ids: []
     min_history: 30
+    throttled_ms: null
+
+  # ── Alpha 5: ScheduledFlowWindowSensor ──────────────────────────
+  # The ``calendar`` param is intentionally omitted here; bootstrap
+  # injects the live EventCalendar object loaded from
+  # event_calendar_path before handing the spec to SensorRegistry
+  # (see src/feelies/bootstrap.py _create_sensor_layer).
+  - sensor_id: scheduled_flow_window
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.scheduled_flow_window.ScheduledFlowWindowSensor
+    params: {}
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 0
     throttled_ms: null

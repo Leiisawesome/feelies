@@ -578,7 +578,35 @@ def _create_sensor_layer(
             symbols=frozenset(config.symbols),
             metric_collector=metric_collector,
         )
+        # ── Calendar injection for ScheduledFlowWindowSensor ──────────
+        # ScheduledFlowWindowSensor requires a live EventCalendar object
+        # that cannot be expressed as a plain YAML params value.  When
+        # event_calendar_path is set we load it once and splice it into
+        # every matching spec's params before handing off to the registry
+        # (which calls cls(**params) at registration time).
+        import dataclasses as _dc
+        from feelies.sensors.impl.scheduled_flow_window import (
+            ScheduledFlowWindowSensor as _SFWS,
+        )
+        from feelies.storage.reference.event_calendar import (
+            load_event_calendar as _load_calendar,
+        )
+
+        _calendar = (
+            _load_calendar(config.event_calendar_path)
+            if config.event_calendar_path is not None
+            else None
+        )
         for spec in config.sensor_specs:
+            if spec.cls is _SFWS:
+                if _calendar is None:
+                    raise ConfigurationError(
+                        "sensor 'scheduled_flow_window' requires "
+                        "event_calendar_path to be set in PlatformConfig"
+                    )
+                spec = _dc.replace(
+                    spec, params={**spec.params, "calendar": _calendar}
+                )
             sensor_registry.register(spec)
         logger.info(
             "Sensor registry composed: %d specs, %d symbols",
