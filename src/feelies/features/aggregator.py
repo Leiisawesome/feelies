@@ -118,6 +118,7 @@ class HorizonAggregator:
         sensor_buffer_seconds: int,
         sequence_generator: SequenceGenerator,
         metric_collector: MetricCollector | None = None,
+        known_sensor_ids: frozenset[str] | None = None,
     ) -> None:
         if sensor_buffer_seconds <= 0:
             raise ValueError(
@@ -165,10 +166,28 @@ class HorizonAggregator:
         self._sequence_generator = sequence_generator
         self._bus = bus
 
-        # Per-(symbol, sensor_id) ring buffer of (ts_ns, reading).
-        # ``deque`` for O(1) popleft on eviction.
+        # S16: at construction time, warn about any feature input_sensor_id
+        # that is not in the registered sensor universe.  Such a feature will
+        # never observe any readings, which is almost certainly a config error.
+        if known_sensor_ids is not None:
+            for _f in self._features_sorted:
+                for _sid in _f.input_sensor_ids:
+                    if _sid not in known_sensor_ids:
+                        _logger.warning(
+                            "HorizonAggregator: feature %r declares "
+                            "input_sensor_id %r which is not in the "
+                            "registered sensor set; feature will never "
+                            "observe readings (likely misconfiguration)",
+                            _f.feature_id,
+                            _sid,
+                        )
+
+        # Per-(symbol, sensor_id, sensor_version) ring buffer of (ts_ns, reading).
+        # ``deque`` for O(1) popleft on eviction.  Keying on version prevents
+        # two versions of the same sensor from contaminating each other's
+        # ring buffer when both are registered (S8).
         self._buffers: dict[
-            tuple[str, str], deque[tuple[int, SensorReading]]
+            tuple[str, str, str], deque[tuple[int, SensorReading]]
         ] = defaultdict(deque)
 
         # Per-(feature_id, horizon_seconds, symbol) feature state owned
@@ -237,13 +256,16 @@ class HorizonAggregator:
 
     def _on_sensor_reading(self, reading: SensorReading) -> None:
         symbol = reading.symbol
-        key = (symbol, reading.sensor_id)
+        # S8: key on (symbol, sensor_id, sensor_version) to prevent two
+        # concurrent versions of the same sensor from contaminating each
+        # other's ring buffer.
+        key = (symbol, reading.sensor_id, reading.sensor_version)
         buf = self._buffers[key]
         buf.append((reading.timestamp_ns, reading))
         # H9 / M8: record the latest event-time timestamp for each
-        # (symbol, sensor_id) so _build_snapshot can declare a feature
-        # stale when its input sensor has not fired within the horizon.
-        self._last_reading_ns[key] = reading.timestamp_ns
+        # (symbol, sensor_id) — version-agnostic, taking the most recent
+        # read across all versions (correct for stale detection).
+        self._last_reading_ns[(symbol, reading.sensor_id)] = reading.timestamp_ns
         # Event-time eviction.  Anchored to the just-appended ts so
         # late-arriving events do not retroactively prune the buffer.
         cutoff = reading.timestamp_ns - self._buffer_window_ns
@@ -334,9 +356,15 @@ class HorizonAggregator:
                     if last_ns is None or (tick.timestamp_ns - last_ns) > horizon_ns:
                         s = True
                         break
-            values[feature.feature_id] = float(value)
+            # S2: always populate warm/stale for every registered feature
+            # so the engine can detect active mode even when all features
+            # are temporarily cold.  Only add to values when the feature
+            # is warm — cold features are absent (not 0.0) so consumers
+            # correctly distinguish "not yet warm" from "computed zero".
             warm[feature.feature_id] = bool(w)
             stale[feature.feature_id] = bool(s)
+            if w:
+                values[feature.feature_id] = float(value)
             source_sensors[feature.feature_id] = tuple(feature.input_sensor_ids)
 
         seq = self._sequence_generator.next()
@@ -357,6 +385,7 @@ class HorizonAggregator:
             warm=warm,
             stale=stale,
             source_sensors=source_sensors,
+            parent_correlation_id=tick.correlation_id,  # S4: audit-spine chain
         )
 
     # ── Monitoring (plan §4.5) ───────────────────────────────────────
@@ -397,9 +426,21 @@ class HorizonAggregator:
 
     # ── Introspection helpers (used by tests / forensics) ────────────
 
-    def buffer_size(self, *, symbol: str, sensor_id: str) -> int:
-        """Number of readings currently retained for ``(symbol, sensor_id)``."""
-        return len(self._buffers.get((symbol, sensor_id), ()))
+    def buffer_size(self, *, symbol: str, sensor_id: str, sensor_version: str | None = None) -> int:
+        """Number of readings currently retained for ``(symbol, sensor_id[, version])``.
+
+        When ``sensor_version`` is ``None`` (default), returns the total
+        count across all versions of ``sensor_id`` for backward
+        compatibility with tests that pre-date the version-keyed buffer
+        change (S8).
+        """
+        if sensor_version is not None:
+            return len(self._buffers.get((symbol, sensor_id, sensor_version), ()))
+        return sum(
+            len(buf)
+            for (sym, sid, _ver), buf in self._buffers.items()
+            if sym == symbol and sid == sensor_id
+        )
 
     def is_passive(self) -> bool:
         """True iff no features were registered (passive-emitter mode)."""

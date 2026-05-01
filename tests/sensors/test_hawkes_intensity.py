@@ -73,9 +73,10 @@ def test_decay_between_trades() -> None:
     r = sensor.update(_trade(ts_ns=11_000_000_000, price="100.02"), state, params={})
     assert r is not None
     lam_buy, _lam_sell, _ratio, _br = r.value
-    # Hand: λ(t) = 0.4·exp(-0.05·10) ≈ 0.4·0.6065 ≈ 0.2426; then jump
-    # to β·λ + α = 0.05·0.2426 + 0.4 ≈ 0.4121.
-    expected = 0.05 * (0.4 * math.exp(-0.05 * 10.0)) + 0.4
+    # Hand: λ_decayed = 0.4·exp(-0.05·10) ≈ 0.2426;
+    # then additive impulse: λ_new = λ_decayed + α = 0.2426 + 0.4 ≈ 0.6426.
+    # (S1 fix: the canonical Hawkes update is additive, not β·λ + α.)
+    expected = (0.4 * math.exp(-0.05 * 10.0)) + 0.4
     assert lam_buy == pytest.approx(expected, rel=1e-9)
 
 

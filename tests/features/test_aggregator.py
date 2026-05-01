@@ -258,7 +258,7 @@ def test_active_mode_second_horizon_reports_stale_when_no_new_readings() -> None
     assert len(captured) == 2
     assert captured[0].stale == {"sum_feat": False}
     assert captured[1].stale == {"sum_feat": True}
-    assert captured[1].values == {"sum_feat": 0.0}
+    assert captured[1].values == {}  # S2: cold features are absent from values
 
 
 def test_horizon_mismatch_skips_feature() -> None:

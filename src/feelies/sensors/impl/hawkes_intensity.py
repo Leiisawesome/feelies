@@ -9,7 +9,7 @@ fingerprint of the ``HAWKES_SELF_EXCITE`` mechanism family
 Algorithm (per side, incremental):
 
     Between trades:    λ(t)   = λ(t_last) · exp(-β · (t - t_last))
-    On a same-side trade at t_i:  λ(t_i) = β · λ(t_i⁻) + α
+    On a same-side trade at t_i:  λ(t_i) = λ(t_i⁻) + α
     Between-side trades leave the side's λ unchanged except for the
     decay above.
 
@@ -150,10 +150,10 @@ class HawkesIntensitySensor:
         state["last_side"] = side
 
         if side > 0:
-            state["lambda_buy"] = self._beta * state["lambda_buy"] + self._alpha
+            state["lambda_buy"] = state["lambda_buy"] + self._alpha  # S1: additive impulse; decay already applied by _decay_to
             state["buy_ts"].append(ts_ns)
         else:
-            state["lambda_sell"] = self._beta * state["lambda_sell"] + self._alpha
+            state["lambda_sell"] = state["lambda_sell"] + self._alpha  # S1: additive impulse
             state["sell_ts"].append(ts_ns)
 
         cutoff = ts_ns - self._warm_window_ns

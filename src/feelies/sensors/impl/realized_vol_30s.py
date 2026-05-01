@@ -119,5 +119,5 @@ class RealizedVol30sSensor:
             sensor_id=self.sensor_id,
             sensor_version=self.sensor_version,
             value=value,
-            warm=state["count"] >= self._warm_after,
+            warm=len(state["history"]) >= self._warm_after,  # S3: window-bounded len un-warms after gaps
         )

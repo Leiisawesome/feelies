@@ -510,6 +510,11 @@ class SensorReading(Event):
     contract.  ``confidence`` defaults to 1.0 (sensor declares full
     confidence).  ``warm`` is False until the sensor's ``min_history``
     is satisfied.  Consumers must skip non-warm readings.
+
+    ``parent_correlation_id`` carries the ``correlation_id`` of the
+    originating market-data event (``NBBOQuote`` / ``Trade``) that
+    triggered this reading.  Set by ``SensorRegistry._stamp``;
+    restores the audit-spine chain required by A-DATA-04.
     """
 
     symbol: str
@@ -519,6 +524,7 @@ class SensorReading(Event):
     confidence: float = 1.0
     warm: bool = True
     provenance: SensorProvenance = field(default_factory=SensorProvenance)
+    parent_correlation_id: str = ""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -532,6 +538,17 @@ class HorizonFeatureSnapshot(Event):
 
     Workstream D.2 PR-2b-iv deleted the legacy per-tick ``FeatureVector``
     event; ``HorizonFeatureSnapshot`` is now the sole feature-event type.
+
+    ``values`` contains only *warm* features; cold features are absent
+    (not 0.0) so consumers that key on presence correctly distinguish
+    "not yet warm" from "computed zero" (S2 / audit).
+    ``warm`` and ``stale`` include ALL registered features regardless
+    of warmth, so the engine can detect active-mode snapshots even when
+    all features are temporarily cold.
+
+    ``parent_correlation_id`` carries the ``correlation_id`` of the
+    ``HorizonTick`` that triggered this snapshot, restoring the
+    audit-spine chain (S4 / A-DATA-04).
     """
 
     symbol: str
@@ -541,6 +558,7 @@ class HorizonFeatureSnapshot(Event):
     warm: dict[str, bool] = field(default_factory=dict)
     stale: dict[str, bool] = field(default_factory=dict)
     source_sensors: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    parent_correlation_id: str = ""
 
 
 @dataclass(frozen=True, kw_only=True)

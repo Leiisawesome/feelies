@@ -753,6 +753,13 @@ def _create_sensor_layer(
             sensor_buffer_seconds=sensor_buffer_seconds,
             sequence_generator=snapshot_seq,
             metric_collector=metric_collector,
+            # S16: pass registered sensor IDs so the aggregator can warn
+            # at construction time about features that declare unknown
+            # input_sensor_ids (likely misconfiguration).
+            known_sensor_ids=frozenset(
+                spec.sensor_id
+                for spec in (sensor_registry.specs if sensor_registry is not None else ())
+            ),
         )
         horizon_aggregator.attach()
         _mode_label = "active" if _active_features else "passive"

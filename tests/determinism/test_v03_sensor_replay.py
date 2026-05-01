@@ -147,7 +147,7 @@ def test_v03_sensor_reading_stream_matches_locked_baseline() -> None:
     actual_hash, actual_count = _replay()
 
     EXPECTED_V03_READING_HASH = (
-        "a13832a58ac6a0fe32c39dd883ae626484adb609df1490ce398eac62fa58f466"
+        "f16b189ce987a1300b393d8713f377a7d34133f609e4685914ebe69c3553c3b3"
     )
     EXPECTED_V03_READING_COUNT = 9428
 

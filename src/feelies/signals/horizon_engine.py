@@ -305,9 +305,14 @@ class HorizonSignalEngine:
         """Evaluate gate, then signal, and publish the resulting event."""
         # H2 / M1 / M8: refuse to evaluate when the snapshot carries
         # non-empty feature maps but any feature is not warm or is stale.
-        # In passive / Phase-2 mode snapshot.values is empty, so this
-        # guard is a no-op (preserves legacy behaviour — Inv-A).
-        if snapshot.values:
+        # In passive / Phase-2 mode snapshot.warm is empty (no features
+        # registered), so this guard is a no-op (preserves legacy
+        # behaviour — Inv-A).
+        # S2: use snapshot.warm (not snapshot.values) as the active-mode
+        # sentinel; cold features are absent from snapshot.values but
+        # still present in snapshot.warm, so an all-cold snapshot is
+        # correctly detected as active-mode-but-not-ready.
+        if snapshot.warm:
             not_warm = any(not v for v in snapshot.warm.values())
             is_stale = any(v for v in snapshot.stale.values())
             if not_warm or is_stale:
@@ -335,7 +340,7 @@ class HorizonSignalEngine:
             # OFF here prevents a previously-latched ON gate from
             # silently persisting through the warm-up window.
             registered.gate.reset(snapshot.symbol)
-            _logger.debug(
+            _logger.warning(
                 "HorizonSignalEngine: %s gate evaluation suppressed for "
                 "%s — required binding missing (cold start / warm-up); "
                 "latch forced OFF",
@@ -383,6 +388,26 @@ class HorizonSignalEngine:
         emitted = self._patch_signal(raw, snapshot, registered)
         self._bus.publish(emitted)
 
+    # ── Symbol lifecycle ───────────────────────────────────────────
+
+    def forget(self, symbol: str) -> None:
+        """Remove all per-symbol cached state for *symbol* (S7).
+
+        Called when a symbol is delisted or when a clean restart of
+        per-symbol state is needed.  Drops the regime cache, sensor
+        cache, and gate latch state for *symbol* so a re-admission
+        starts clean without stale cached values contaminating the
+        new evaluation context.
+        """
+        self._regime_cache = {
+            k: v for k, v in self._regime_cache.items() if k[0] != symbol
+        }
+        self._sensor_cache = {
+            k: v for k, v in self._sensor_cache.items() if k[0] != symbol
+        }
+        for registered in self._signals:
+            registered.gate.reset(symbol)
+
     # ── Helpers ──────────────────────────────────────────────────────
 
     def _lookup_regime(
@@ -396,7 +421,8 @@ class HorizonSignalEngine:
         engine has published for *symbol* and no ``engine_name`` is
         declared, this method picks by highest timestamp to be
         deterministic rather than relying on dict insertion order
-        (H7 / audit).
+        (H7 / audit) and logs a WARNING so the ambiguity is visible
+        in production (S9).
         """
         if gate.engine_name is not None:
             return self._regime_cache.get((symbol, gate.engine_name))
@@ -404,11 +430,24 @@ class HorizonSignalEngine:
         # RegimeState for this symbol so the selection rule is
         # deterministic and independent of dict insertion order.
         best: RegimeState | None = None
-        for (sym, _engine), state in self._regime_cache.items():
+        best_engine: str | None = None
+        count = 0
+        for (sym, engine), state in self._regime_cache.items():
             if sym != symbol:
                 continue
+            count += 1
             if best is None or state.timestamp_ns > best.timestamp_ns:
                 best = state
+                best_engine = engine
+        # S9: warn when the fallback selection is ambiguous; operators
+        # should always declare engine_name in multi-engine deployments.
+        if count > 1:
+            _logger.warning(
+                "HorizonSignalEngine: regime lookup for symbol %s found "
+                "%d engines (%r selected by latest timestamp); declare "
+                "engine_name in the alpha config to remove ambiguity",
+                symbol, count, best_engine,
+            )
         return best
 
     @staticmethod
@@ -425,11 +464,19 @@ class HorizonSignalEngine:
         through Layer-2 features.  Identifiers without a suffix
         resolve to the corresponding sensor/feature value.
 
+        **Priority rule**: snapshot ``values`` (horizon-boundary
+        aggregates) take priority over ``sensor_cache`` (latest intra-
+        period tick values).  This is intentional: for signal
+        evaluation the boundary aggregate is the semantically correct
+        value; the cache serves only as a fallback for identifiers that
+        have no registered feature (e.g. sensors consumed directly by
+        alphas without a Layer-2 wrapper).  The ``setdefault`` call
+        implements this — it writes the cache value only when the key
+        is *absent* from the snapshot.
+
         The aggregator runs in passive mode for v0.2 (snapshot.values
-        is empty), so this method also overlays the latest scalar
-        sensor readings from ``sensor_cache`` for ``snapshot.symbol``.
-        Snapshot values take priority — once the active aggregator
-        ships in Phase 3.5+ its outputs naturally win.
+        is empty), so in that mode all bindings come from
+        ``sensor_cache`` and the priority distinction is moot.
         """
         sensor_values = dict(snapshot.values)
         for (sym, sensor_id), value in sensor_cache.items():

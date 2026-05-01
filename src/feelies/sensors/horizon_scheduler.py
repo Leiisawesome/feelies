@@ -101,6 +101,17 @@ class HorizonScheduler:
         self._horizons_sorted: tuple[int, ...] = tuple(sorted(horizons))
         self._session_id = session_id
         self._symbols_sorted: tuple[str, ...] = tuple(sorted(symbols))
+
+        # S17: warn early when the symbol universe is empty but horizons are
+        # configured; SYMBOL-scope ticks will never be emitted, which almost
+        # certainly means the platform config is wrong.
+        if not symbols and horizons:
+            _logger.warning(
+                "HorizonScheduler: symbols universe is empty but %d horizon(s) "
+                "are configured; SYMBOL-scope ticks will never be emitted "
+                "(likely misconfiguration)",
+                len(horizons),
+            )
         self._session_open_ns: int | None = session_open_ns
         # ``_session_open_locked`` is True iff we have either accepted
         # an explicit session_open_ns at construction or auto-bound on

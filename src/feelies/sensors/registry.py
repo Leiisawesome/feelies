@@ -49,7 +49,6 @@ The registry never publishes ``Signal``, ``OrderIntent``, or
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any
 
 from feelies.bus.event_bus import EventBus
@@ -131,13 +130,15 @@ class SensorRegistry:
         self._throttle_last_ns: dict[_ThrottleKey, int] = {}
         self._subscribed_types: set[type[Event]] = set()
         self._publish_target: list[SensorReading] | None = None
-        # Plan §4.5: ``feelies.sensor.reading.count`` (counter) and
-        # ``feelies.sensor.reading.latency`` (histogram, nanoseconds)
-        # are emitted on every successful sensor update when a metric
-        # collector is wired.  A *dedicated* sequence generator keeps
-        # MetricEvent sequence numbers separate from SensorReading
-        # sequences so adding metrics never perturbs the locked
-        # Level-2 hash (Inv-A / C1).
+        # Plan §4.5: ``feelies.sensor.reading.count`` (counter) is emitted
+        # on every successful sensor update when a metric collector is wired.
+        # A-CLOCK-01: latency timing via time.perf_counter_ns() is prohibited
+        # in the deterministic dispatch path (sensor/ layer); latency monitoring
+        # should be done via a dedicated monitoring subscriber outside this hot
+        # path.  The latency histogram has been removed accordingly (S6).
+        # A *dedicated* sequence generator keeps MetricEvent sequence numbers
+        # separate from SensorReading sequences so adding metrics never perturbs
+        # the locked Level-2 hash (Inv-A / C1).
         self._metric_collector = metric_collector
         self._metrics_seq: SequenceGenerator | None = (
             SequenceGenerator() if metric_collector is not None else None
@@ -279,11 +280,6 @@ class SensorRegistry:
 
             sensor = self._sensors[spec.key]
             state = self._state[(spec.sensor_id, spec.sensor_version, symbol)]
-            t0 = (
-                time.perf_counter_ns()
-                if self._metric_collector is not None
-                else 0
-            )
             try:
                 raw = sensor.update(event, state, spec.params)
             except Exception:
@@ -311,12 +307,10 @@ class SensorRegistry:
                 published.append(reading)
 
             if self._metric_collector is not None:
-                latency_ns = time.perf_counter_ns() - t0
                 self._emit_reading_metrics(
                     spec=spec,
                     symbol=symbol,
                     ts_ns=event.timestamp_ns,
-                    latency_ns=latency_ns,
                 )
 
     def _stamp(
@@ -334,7 +328,20 @@ class SensorRegistry:
         fields — ``sequence``, ``correlation_id``, ``source_layer``,
         ``provenance`` — so producers cannot accidentally diverge from
         the platform's determinism contract.
+
+        ``parent_correlation_id`` is set to the originating market-data
+        event's ``correlation_id`` to restore the audit-spine chain
+        required by A-DATA-04 (S4).
         """
+        if reading.correlation_id != "placeholder":
+            # S15: sensors should leave correlation_id as "placeholder";
+            # the registry is the sole authority that sets real IDs.
+            _logger.debug(
+                "sensor %s returned SensorReading with non-placeholder "
+                "correlation_id %r; registry will override",
+                spec.sensor_id,
+                reading.correlation_id,
+            )
         seq = self._sequence_generator.next()
         correlation_id = make_correlation_id(
             symbol=f"sensor:{spec.sensor_id}",
@@ -354,6 +361,7 @@ class SensorRegistry:
             confidence=reading.confidence,
             warm=reading.warm,
             provenance=provenance,
+            parent_correlation_id=event.correlation_id,  # S4: audit-spine chain
         )
 
     # ── Monitoring (plan §4.5) ───────────────────────────────────────
@@ -364,20 +372,21 @@ class SensorRegistry:
         spec: SensorSpec,
         symbol: str,
         ts_ns: int,
-        latency_ns: int,
     ) -> None:
         """Emit per-reading monitoring metrics.
 
-        Two metrics per published ``SensorReading`` (plan §4.5):
+        One metric per published ``SensorReading`` (plan §4.5):
 
         - ``feelies.sensor.reading.count`` — counter (``value=1.0``).
-        - ``feelies.sensor.reading.latency`` — histogram, value in
-          nanoseconds (raw ``time.perf_counter_ns()`` delta around
-          the sensor's ``update`` call).
 
-        Both share the ``layer="sensor"`` namespace so the
+        The latency histogram previously emitted here violated A-CLOCK-01
+        (``time.perf_counter_ns()`` in the deterministic dispatch path).
+        Latency monitoring should be done via a dedicated monitoring
+        subscriber outside the sensor hot path (S6).
+
+        Both metrics share the ``layer="sensor"`` namespace so the
         :class:`InMemoryMetricCollector` summary key resolves to
-        ``sensor.feelies.sensor.reading.count`` / ``...latency``.
+        ``sensor.feelies.sensor.reading.count``.
         """
         assert self._metric_collector is not None
         assert self._metrics_seq is not None
@@ -401,18 +410,6 @@ class SensorRegistry:
             value=1.0,
             metric_type=MetricType.COUNTER,
             tags=tags,
-        ))
-        seq_lat = self._metrics_seq.next()
-        self._metric_collector.record(MetricEvent(
-            timestamp_ns=ts_ns,
-            correlation_id=cid,
-            sequence=seq_lat,
-            source_layer="SENSOR",
-            layer="sensor",
-            name="feelies.sensor.reading.latency",
-            value=float(latency_ns),
-            metric_type=MetricType.HISTOGRAM,
-            tags={"sensor_id": spec.sensor_id},
         ))
 
     # ── Test / forensic helpers ──────────────────────────────────────

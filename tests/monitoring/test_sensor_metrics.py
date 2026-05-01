@@ -57,6 +57,13 @@ def _quote(*, ts_ns: int, symbol: str = "AAPL") -> NBBOQuote:
 
 
 def test_registry_emits_reading_count_and_latency_per_reading() -> None:
+    """Registry emits a count metric (not a latency histogram) per reading.
+
+    S6: the latency histogram was removed because ``time.perf_counter_ns()``
+    in the deterministic dispatch path violates A-CLOCK-01.  Only the
+    count metric is now emitted; latency monitoring should be done via a
+    dedicated monitoring subscriber outside the hot path.
+    """
     bus = EventBus()
     mc = InMemoryMetricCollector()
     registry = SensorRegistry(
@@ -85,22 +92,21 @@ def test_registry_emits_reading_count_and_latency_per_reading() -> None:
         e for e in mc.events
         if e.name == "feelies.sensor.reading.count"
     ]
+    # S6: latency histogram removed (A-CLOCK-01 violation in dispatch path).
     latencies = [
         e for e in mc.events
         if e.name == "feelies.sensor.reading.latency"
     ]
     assert len(counts) == 3
-    assert len(latencies) == 3
+    assert len(latencies) == 0  # S6: no longer emitted
     assert all(e.metric_type is MetricType.COUNTER for e in counts)
     assert all(e.value == 1.0 for e in counts)
-    assert all(e.metric_type is MetricType.HISTOGRAM for e in latencies)
-    assert all(e.value >= 0.0 for e in latencies)
-    # Tags must include sensor_id (and symbol for the count metric).
+    # Tags must include sensor_id and symbol for the count metric.
     assert all(
-        e.tags.get("sensor_id") == "micro_price" for e in counts + latencies
+        e.tags.get("sensor_id") == "micro_price" for e in counts
     )
     assert all(e.tags.get("symbol") == "AAPL" for e in counts)
-    assert all(e.layer == "sensor" for e in counts + latencies)
+    assert all(e.layer == "sensor" for e in counts)
 
 
 def test_registry_metrics_dont_perturb_sensor_reading_sequence() -> None:
@@ -310,4 +316,5 @@ def test_metric_collector_summary_keys_match_plan() -> None:
 
     keys = set(mc.summaries.keys())
     assert "sensor.feelies.sensor.reading.count" in keys
-    assert "sensor.feelies.sensor.reading.latency" in keys
+    # S6: latency histogram removed from registry dispatch path (A-CLOCK-01).
+    assert "sensor.feelies.sensor.reading.latency" not in keys

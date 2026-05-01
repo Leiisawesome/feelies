@@ -96,7 +96,7 @@ def test_snapshot_stream_matches_locked_baseline() -> None:
     # (symbol, horizon, boundary_index); SYMBOL+UNIVERSE ticks no longer
     # produce duplicate snapshots, halving the count from 28 → 14.
     EXPECTED_LEVEL3_SNAPSHOT_HASH = (
-        "d03258eb3f077ad4d3ebaea697843e9226f251c9ece9800c1e672182e3aab8c7"
+        "464075c8f554c85cf5ae38d425ee35791a206da1827c9f5a5aef61ebcd7f1258"
     )
     EXPECTED_LEVEL3_SNAPSHOT_COUNT = 14
 
