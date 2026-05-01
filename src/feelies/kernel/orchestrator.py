@@ -51,6 +51,8 @@ if TYPE_CHECKING:
     from feelies.portfolio.strategy_position_store import StrategyPositionStore
     from feelies.risk.hazard_exit import HazardExitController
 
+from feelies.alpha.arbitration import EdgeWeightedArbitrator, SignalArbitrator
+
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock
 from feelies.core.config import Configuration
@@ -311,6 +313,7 @@ class Orchestrator:
         cross_sectional_tracker: "CrossSectionalTracker | None" = None,
         composition_metrics_collector: "HorizonMetricsCollector | None" = None,
         hazard_exit_controller: "HazardExitController | None" = None,
+        signal_arbitrator: SignalArbitrator | None = None,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -390,6 +393,11 @@ class Orchestrator:
         self._cross_sectional_tracker = cross_sectional_tracker
         self._composition_metrics_collector = composition_metrics_collector
         self._hazard_exit_controller = hazard_exit_controller
+        self._signal_arbitrator: SignalArbitrator = (
+            signal_arbitrator
+            if signal_arbitrator is not None
+            else EdgeWeightedArbitrator()
+        )
         # Per-(symbol, engine_name) cache of the most recently
         # observed RegimeState; used as ``prev`` argument to the
         # detector on the next tick.  Cleared on session boundary
@@ -442,8 +450,10 @@ class Orchestrator:
         # consumes via ``depends_on_signals``); the M4 ``SIGNAL_EVALUATE``
         # drain consumes the buffer and walks the existing risk → order →
         # fill pipeline once per tick (the micro SM only supports one
-        # Signal → Order walk per tick — multi-SIGNAL aggregation must be
-        # done by a PORTFOLIO alpha).  PR-2b-iv (this commit) deleted the
+        # Signal → Order walk per tick; multiple standalone candidates on
+        # the same tick are filtered by ``EdgeWeightedArbitrator`` before
+        # this walk — full cross-alpha aggregation belongs in a PORTFOLIO
+        # alpha).  PR-2b-iv (this commit) deleted the
         # legacy ``signal_engine`` ctor scaffolding, so this is now the
         # sole standalone-SIGNAL → Order path.
         self._signal_buffer: list[Signal] = []
@@ -1078,10 +1088,11 @@ class Orchestrator:
         # not ``OrderRequest``, handled by ``_on_bus_sized_intent``).
         #
         # The micro SM only supports one Signal-driven walk per tick;
-        # the standalone-SIGNAL case selects the first buffered signal
-        # in arrival order.  Stop-loss exits computed inline by
-        # ``_check_stop_exit`` always override (Inv-11: position safety
-        # beats alpha conviction).
+        # the standalone-SIGNAL case resolves multiple buffered Signals
+        # via :class:`~feelies.alpha.arbitration.EdgeWeightedArbitrator`
+        # (injectable ``signal_arbitrator`` ctor param).  Stop-loss exits
+        # computed inline by ``_check_stop_exit`` always override (Inv-11:
+        # position safety beats alpha conviction).
         signal: "Signal | None" = None
         if self._signal_buffer:
             t0 = time.perf_counter_ns()
@@ -2502,30 +2513,34 @@ class Orchestrator:
         The micro-state machine permits at most one ``RISK_CHECK →
         ORDER_DECISION → ORDER_SUBMIT → … → LOG_AND_METRICS`` walk per
         tick (``_MICRO_TRANSITIONS`` in ``feelies.kernel.micro``).  When
-        more than one standalone SIGNAL alpha fires on the same tick
-        the orchestrator picks the first arrival (HorizonSignalEngine's
-        deterministic registration-order dispatch) and emits a
-        once-per-process WARNING hinting that the operator should
-        aggregate via a PORTFOLIO alpha.
+        more than one standalone SIGNAL alpha fires on the same tick,
+        candidates are passed to ``self._signal_arbitrator`` (default
+        :class:`~feelies.alpha.arbitration.EdgeWeightedArbitrator`: FLAT
+        privileged, else highest ``edge_estimate_bps * strength``; below
+        dead-zone yields ``None``).  Ties break by earliest bus arrival
+        (buffer order).  Emits a once-per-process WARNING when multiple
+        candidates appear, recommending a PORTFOLIO alpha for explicit
+        cross-sectional aggregation.
 
-        Returns ``None`` when the buffer is empty.
+        Returns ``None`` when the buffer is empty or the arbitrator
+        suppresses all candidates.
         """
         if not self._signal_buffer:
             return None
-        if len(self._signal_buffer) > 1 and not self._warned_multi_standalone_signals:
+        buf = self._signal_buffer
+        if len(buf) > 1 and not self._warned_multi_standalone_signals:
             self._warned_multi_standalone_signals = True
-            ids = sorted({s.strategy_id for s in self._signal_buffer})
+            ids = sorted({s.strategy_id for s in buf})
             logger.warning(
                 "orchestrator: %d standalone SIGNAL alphas fired on the "
-                "same tick (%s); only the first (%s) will be translated to "
-                "an OrderRequest.  Aggregate the remaining alphas via a "
-                "PORTFOLIO alpha that lists them in depends_on_signals to "
-                "avoid dropped Signals.",
-                len(self._signal_buffer),
+                "same tick (%s); arbitrating via %s.  Prefer a PORTFOLIO "
+                "alpha listing these ids in depends_on_signals for full "
+                "multi-alpha aggregation.",
+                len(buf),
                 ids,
-                self._signal_buffer[0].strategy_id,
+                type(self._signal_arbitrator).__name__,
             )
-        return self._signal_buffer[0]
+        return self._signal_arbitrator.arbitrate(buf)
 
     # ── PR-2b-iv: bus-driven SizedPositionIntent handler ────────────
 

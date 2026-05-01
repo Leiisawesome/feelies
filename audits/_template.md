@@ -1,6 +1,6 @@
 # Audit YYYY-MM-DD — <commit-sha>
 
-Protocol version: v1.0
+Protocol version: v1.3 LOCKED (2026-05-03)
 Config checksum: <PlatformConfig.snapshot().checksum>
 Artifact id: <hash(strategy_version, config_version, data_version, engine_version)>
 Tests: passed=N failed=N skipped=N xfailed=N (vs prior: ±)
@@ -97,6 +97,17 @@ Iteration verdict: PASS / FAIL  (per "Pass/Fail criteria")
 ### A14. Secrets & credentials handling
 - A-SEC-01: PASS / FAIL <severity> — <evidence>
 
+### A15. Three-layer alpha architecture
+- A-THREE-01: PASS / FAIL <severity> — <evidence>
+- A-THREE-02: PASS / FAIL <severity> — <evidence>
+- A-THREE-03: PASS / FAIL <severity> — <evidence>
+- A-THREE-04: PASS / FAIL <severity> — <evidence>
+
+### A16. Promotion lifecycle integrity
+- A-PROMO-01: PASS / FAIL <severity> — <evidence (lifecycle SM)>
+- A-PROMO-02: PASS / FAIL <severity> — <evidence (promotion ledger)>
+- A-PROMO-03: PASS / FAIL <severity> — <evidence (gate evidence matrix)>
+
 ## Pillar B — Causal Chain
 
 ### B1. Mechanism-before-trade
@@ -146,7 +157,7 @@ Iteration verdict: PASS / FAIL  (per "Pass/Fail criteria")
 - B-E2E-02: PASS / FAIL <severity> — <evidence (twin parity hash match)>
 - B-E2E-03: PASS / FAIL <severity> — <evidence (1.5x and 2.0x stress PnL)>
 - B-E2E-04: PASS / FAIL <severity> — <evidence (e2e coverage gaps + stub list)>
-- B-E2E-05: PASS / FAIL <severity> — <evidence (sim-vs-live divergence harness state)>
+- B-E2E-05: PASS / FAIL <severity> — <evidence (paper/live router stubs exist; `_create_backend` still raises for non-BACKTEST?)>
 
 ### B9. Provenance & audit trail
 - B-PROV-01: PASS / FAIL <severity> — <evidence>
@@ -157,7 +168,7 @@ Iteration verdict: PASS / FAIL  (per "Pass/Fail criteria")
 ### B10. Personal-trading guardrails
 - B-GUARD-01: PASS / FAIL <severity> — <evidence (stop-loss)>
 - B-GUARD-02: PASS / FAIL <severity> — <evidence (trailing stop)>
-- B-GUARD-03: PASS / FAIL <severity> — <evidence (entry cooldown)>
+- B-GUARD-03: PASS / FAIL <severity> — <evidence (signal-layer gate / entry discipline)>
 - B-GUARD-04: PASS / FAIL <severity> — <evidence (min order size)>
 - B-GUARD-05: PASS / FAIL <severity> — <evidence (account_equity semantics)>
 - B-GUARD-06: PASS / FAIL <severity> — <evidence (Decimal vs float boundary)>
@@ -180,6 +191,11 @@ Iteration verdict: PASS / FAIL  (per "Pass/Fail criteria")
 - B-DECAY-02: PASS / FAIL <severity> — <evidence>
 - B-DECAY-03: PASS / FAIL <severity> — <evidence>
 - B-DECAY-04: PASS / FAIL <severity> — <evidence>
+
+### B14. Sensor-to-signal pipeline & hazard controls
+- B-SENSOR-01: PASS / FAIL <severity> — <evidence>
+- B-HAZARD-01: PASS / FAIL <severity> — <evidence>
+- B-HAZARD-02: PASS / FAIL <severity> — <evidence>
 
 ## Promotion-gate readiness summary
 

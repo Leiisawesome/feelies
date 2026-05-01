@@ -1,43 +1,43 @@
 # Feelies — Living Audit Protocol (SOP)
 
-**Version:** `v1.1` — revised 2026-05-01. (`v1.0` locked 2026-04-17.)
+**Version:** `v1.3` — **LOCKED** `2026-05-03` (B-MULTI-02 reconciliation: `EdgeWeightedArbitrator` wired in `Orchestrator._select_bus_signal`; step 4 retired `--demo` — credentialed `run_backtest.py` + Phase-4 e2e substitute). Earlier: **`v1.2`** `2026-05-02` · **`v1.1`** `2026-05-01` · **`v1.0`** `2026-04-17`.
 
-**v1.1 changelog** *(document in the next audit's `META-01` section)*:
-- `A-LAYER-01`: expanded layer list from 11 to 17 named layers (added Sensors, Signals, Composition, Services, Research, Forensics, CLI).
-- `A-LAYER-03`: added `SensorRegistry`, `HorizonSignalEngine`, `CompositionEngine`, `StrategyPositionStore`, `FillAttributionLedger` to bootstrap-only grep list.
-- `A-FAIL-04`: replaced deleted `CompositeSignalEngine.evaluate` check with `HorizonSignalEngine._evaluate_one` warm-guard check.
-- `A-DATA-06`: updated — `EventSerializer` Protocol now exists; finding narrowed to absence of a concrete durable backend.
-- `A-REGIME-01`: updated to include `RegimeHazardDetector` Phase-2 wiring.
-- `A-THREE-01`–`A-THREE-04` *(new section A15)*: three-layer alpha architecture checks (loader gate flags, `SensorRegistry` binding, `RegimeGate` compilation, `CompositionEngine` wiring).
-- `A-PROMO-01`–`A-PROMO-03` *(new section A16)*: promotion lifecycle integrity checks (`AlphaLifecycle`, `PromotionLedger`, `GateId` evidence matrix).
-- `B-CAUSAL-02`: replaced `CompositeSignalEngine` with `HorizonSignalEngine._evaluate_one` warm-guard.
-- `B-GUARD-03`: replaced `CompositeSignalEngine` cooldown with `RegimeGate` per-(alpha_id, symbol) cooldown.
-- `B-MULTI-01`: replaced `MultiAlphaEvaluator` (deleted) with bus-driven `_on_bus_signal`/`_on_bus_sized_intent` description.
-- `B-MULTI-02`: updated `SignalArbitrator` description — Protocol + `EdgeWeightedArbitrator`, wired in orchestrator's `_on_bus_signal` path.
-- `B-E2E-05`: updated — router stub files now exist; BLOCKER narrowed to `_create_backend` not yet wiring them.
-- `B-SENSOR-01`–`B-HAZARD-02` *(new section B14)*: sensor-to-signal pipeline and hazard-controller checks.
-- Risk register: updated paper/live-router and `EventSerializer` entries.
-- Cadence: added `sensors/`, `signals/`, `composition/`, `services/` to high-blast-radius modules.
+### Protocol lock — sealed artifact set
 
-This file is the Standard Operating Procedure that the agent re-reads at the start of every audit iteration. It is the *only* document the agent needs in order to execute a complete audit; all source-of-truth references back to platform invariants and skills are inlined per check.
+| Artifact | Role |
+|:---|:---|
+| **`audits/AUDIT_PROTOCOL.md`** (this file) | **Authoritative.** Check inventory **Pillar A `A1`–`A16`** (includes **`A8b`**) and **Pillar B `B1`–`B14`**; every method and severity table here wins over companions. |
+| **`audits/_template.md`** | Report skeleton — `Protocol version:` line **must equal** this file’s version. Fill every checklist line per iteration. |
+| **`audits/README.md`** | Invocation / automation order / guardrails — if a step differs from this SOP on *what to check*, **this SOP wins**; README is procedural glue only. |
+| **`.cursor/plans/recurring-codebase-audit-protocol_301e015c.plan.md`** | Architecture narrative + mermaid — **non-authoritative** for check methods; illustrative only. |
 
-Any change to this SOP requires a revision bump (e.g. `v1.0` -> `v1.1`) and a corresponding entry in the next audit report's `META-01` section.
+**Bump rule.** Any substantive change to checks, IDs, severity, pass criteria, or cadence ⇒ bump **`v1.3` → `v1.4+`** and record the bump plus rationale in that iteration’s **`META-01`** (and in this header changelog on merge of the protocol edit).
+
+**`v1.3` changelog (this lock, `2026-05-03`).** Retired synthetic `run_backtest.py --demo` (Workstream D.2); step 4 and pass/fail items 4–5 now use a **primary** credentialed backtest path plus a **documented substitute** when `MASSIVE_API_KEY` is unavailable. **`B-MULTI-02`** pass criterion pinned to `Orchestrator._select_bus_signal` invoking `EdgeWeightedArbitrator` (default; injectable `signal_arbitrator`). Table rows **`A-DET-02`**, **`A-PERFB-02`**, **`B-FILL-02`**, **`B-PNL-03`**, **`B-E2E-01`**, **`B-MULTI-04`** aligned to the same split.
+
+**`v1.2` changelog (prior lock, `2026-05-02`).** Third-pass alignment: codebase-accurate symbols (`HorizonSignalEngine._dispatch_one`, `_on_sensor_reading`; lifecycle `_LIFECYCLE_TRANSITIONS`; bus `Signal`); `features/` included in high-blast-radius cadence; `B-GUARD-03` / `B-CAUSAL-01`/`02` three-layer wording; pillar-B causal chain prose; consolidated duplicate v1.1 narrative into this freeze block; META-01 rule extended to protocol-file edits.
+
+**Prior releases (summarized).** `v1.0` baseline SOP · `v1.1` D.2 three-layer expansion (layers A15–A16, B14, bootstrap/sensor/composition probes, router-stub vs `_create_backend` risk register).
+
+This file is the Standard Operating Procedure reread each audit iteration.
+
+Any change requires a revision bump (`v1.3` → `v1.4`, …) and a matching **`META-01`** entry in the report that merges the protocol change.
 
 ## How an iteration runs
 
 1. Read this file.
 2. Walk Pillar A (`A1` -> `A16`, including `A8b`) in order. For each check, perform the listed Method, decide PASS / FAIL with severity, and record one line of evidence (file path + line number, grep hit count, or command output).
 3. Walk Pillar B (`B1` -> `B14`) in order, same protocol.
-4. Run the embedded automation:
+4. Run the embedded automation (see **Replay harness** below):
    - `pytest -q` (record passed/failed/skipped/xfailed counts + exit code)
-   - `python scripts/run_backtest.py --demo` (record parity hash, trade count, gross/net PnL, max DD)
-   - Re-run the demo to confirm parity hash is bit-identical
-   - `python scripts/run_backtest.py --demo --stress-cost 1.5`
-   - `python scripts/run_backtest.py --demo --stress-cost 2.0`
-5. Open `audits/_template.md`, copy to `audits/YYYY-MM-DD-<slug>.md`, and fill every line.
+   - **Primary (parity + PnL + stress):** `python scripts/run_backtest.py --date <YYYY-MM-DD> [--end-date …] --config platform.yaml` with `MASSIVE_API_KEY` set — run twice with identical inputs; record `parity_hash (both)`, trade count, gross/net PnL, max DD from the report footer. Re-run to confirm `parity_hash (both)` is bit-identical. Then `... --stress-cost 1.5` and `... --stress-cost 2.0` on the same date/config baseline.
+   - **Substitute (no API key / CI smoke):** `pytest tests/integration/test_phase4_e2e.py -q` twice; record that exit code is 0 and that `test_phase4_e2e_signal_stream_is_deterministic` + `test_phase4_e2e_intent_stream_is_deterministic` pass (stream hashes stable). **Does not** satisfy stress-PnL or `run_backtest.py` footer parity — call that out in the report when the primary path is skipped.
+5. Open `audits/_template.md`, copy to `audits/YYYY-MM-DD-<slug>.md`, confirm the **`Protocol version:`** field matches **`v1.3`** in this header, and fill **every** checklist line.
 6. Apply the **Pass/Fail criteria** (below) to compute the iteration verdict.
-7. Apply the **META-01** rule: list every change to `.cursor/rules/platform-invariants.mdc` and `.cursor/skills/**` since the prior audit, and either add new check IDs or justify "no new check required".
+7. Apply the **META-01** rule: list every change to `.cursor/rules/platform-invariants.mdc` and `.cursor/skills/**` since the prior audit, plus **any bump to `AUDIT_PROTOCOL.md`** since last report (`v1.3` LOCK baseline unless your PR touches the protocol), and either add new check IDs or justify "no new check required".
 8. Print the one-line summary: `verdict=PASS|FAIL BLOCKER=N MAJOR=N MINOR=N parity_hash_stable=Y/N tests_delta=+-N promotion_ready=research|paper|small|scaled`.
+
+**Replay harness (normative).** Workstream D.2 retired `run_backtest.py --demo`. Audits MUST either execute the **primary** `run_backtest.py` path (footer `parity_hash (both)` + stress) or explicitly **defer** those checks with a `MAJOR` process finding and run the **substitute** Phase-4 e2e suite above — never silently treat a missing `--demo` flag as a code defect.
 
 ## Severity rules
 
@@ -56,7 +56,7 @@ A finding flagged in the **Risk register** below is *permanent* until verifiably
 | ID | Method | Pass criterion | Severity if fail |
 |---|---|---|---|
 | `A-LAYER-01` | Glob `src/feelies/**/*.py`, bucket by top-level directory, then grep cross-layer imports (e.g. `from feelies.execution.passive_limit_router` inside `src/feelies/risk/`). | Every module belongs to exactly one of the 17 layers (Ingestion, Event Bus, Sensors, Features, Signals, Composition, Intent & Sizing, Risk Engine, Execution Engine, Alpha Module System, Portfolio, Storage, Monitoring, Services, Research, Forensics, CLI) plus the Kernel layer. Zero cross-layer imports outside the kernel/bootstrap composition sites. | BLOCKER |
-| `A-LAYER-02` | Grep `^_[A-Z_]+ = ` and `^global ` in `src/feelies/{kernel,risk,execution,features}/`. | No module-level mutable singletons in hot-path layers. | MAJOR |
+| `A-LAYER-02` | Grep `^_[A-Z_]+ = ` and `^global ` in `src/feelies/{kernel,risk,execution,features,sensors,signals,composition}/`. | No module-level mutable singletons in hot-path layers. | MAJOR |
 | `A-LAYER-03` | Grep instantiation of `BasicRiskEngine`, `MemoryPositionStore`, `BacktestOrderRouter`, `PassiveLimitOrderRouter`, `BudgetBasedSizer`, `SignalPositionTranslator`, `SensorRegistry`, `HorizonSignalEngine`, `CompositionEngine`, `StrategyPositionStore`, `FillAttributionLedger` across the repo. | All concrete instantiations live only in `src/feelies/bootstrap.py` and `tests/`. | MAJOR |
 
 ### A2. Event-bus & typed-schema discipline — Inv 7 (`system-architect`)
@@ -99,14 +99,14 @@ A finding flagged in the **Risk register** below is *permanent* until verifiably
 | `A-FAIL-01` | Read `_process_tick` M5/M6 branches. | Every `RiskAction` enum value has an explicit branch and `else: raise ValueError(...)` exists. | BLOCKER |
 | `A-FAIL-02` | Read `_apply_ack_to_order`. | Unknown `OrderAckStatus` raises. | MAJOR |
 | `A-FAIL-03` | Read `KillSwitch.activate`. | Irreversible without `unlock_from_lockdown(audit_token=...)`. | BLOCKER |
-| `A-FAIL-04` | Read `src/feelies/signals/horizon_engine.py` `HorizonSignalEngine._evaluate_one`. | Does not publish a `SignalEvent` when `event.warm is False` (cold-start / warm-up guard); regime gate evaluated before signal; gate `OFF` suppresses evaluation. `CompositeSignalEngine` was deleted by Workstream D.2 PR-2b-ii — `src/feelies/alpha/composite.py` must no longer exist. | BLOCKER |
+| `A-FAIL-04` | Read `src/feelies/signals/horizon_engine.py`: `_on_sensor_reading` (cold `SensorReading.warm` skipped) and `HorizonSignalEngine._dispatch_one`. | When `snapshot.warm` is non-empty, any cold feature or any `snapshot.stale` value suppresses evaluation before publish; regime gate runs before `registered.signal.evaluate`; gate `OFF` or non-publishable disposition yields no bus `Signal`. `CompositeSignalEngine` deleted — `src/feelies/alpha/composite.py` must not exist. | BLOCKER |
 
 ### A7. Determinism & provenance — Inv 5, 13 (`backtest-engine`, `testing-validation`)
 
 | ID | Method | Pass criterion | Severity if fail |
 |---|---|---|---|
 | `A-DET-01` | Grep `uuid4` under `src/feelies/execution/` and `src/feelies/kernel/`. | Zero hits; order IDs use `hashlib.sha256(f"{correlation_id}:{seq}")`. | BLOCKER |
-| `A-DET-02` | Run `python scripts/run_backtest.py --demo` twice; diff parity hashes. | Bit-identical hashes. Both recorded in report. | BLOCKER |
+| `A-DET-02` | **Primary:** run `scripts/run_backtest.py` twice with identical `--date`/`--config`/symbols and `MASSIVE_API_KEY`; diff footer `parity_hash (both)`. **Substitute:** paired `pytest tests/integration/test_phase4_e2e.py::test_phase4_e2e_signal_stream_is_deterministic` + `::test_phase4_e2e_intent_stream_is_deterministic` (or full `test_phase4_e2e.py` ×2) — record stream hash stability; state **MAJOR** deferral if primary skipped. | Bit-identical comparator for the path executed. Both runs recorded. | BLOCKER |
 | `A-DET-03` | Run bootstrap on `platform.yaml`; capture `PlatformConfig.snapshot().checksum`; re-snapshot from the same loaded config. | Checksum identical across snapshots, logged in bootstrap output. | MAJOR |
 | `A-DET-04` | Read `scripts/run_backtest.py` event-loading path. | Events are sorted by global `exchange_timestamp_ns` before resequencing, not per-`(symbol, day)`. If still per-day, log as MAJOR finding. | MAJOR |
 
@@ -124,8 +124,8 @@ A finding flagged in the **Risk register** below is *permanent* until verifiably
 | ID | Method | Pass criterion | Severity if fail |
 |---|---|---|---|
 | `A-PERFB-01` | Run `pytest -m "backtest_validation and not slow"`. Record wall time. | <=25% regression vs prior report. | MAJOR |
-| `A-PERFB-02` | Read p50/p95/p99 of `tick_to_decision_latency_ns` from the `--demo` MetricEvent stream (or synthesize from logged samples). | p99 <= 10 ms (hard ceiling). p95 should approach the 3 ms target. | BLOCKER (hard ceiling), MAJOR (target drift) |
-| `A-PERFB-03` | Compute events/sec on the demo replay. | <=25% regression vs prior report. | MAJOR |
+| `A-PERFB-02` | **Primary:** p50/p95/p99 of `tick_to_decision_latency_ns` from `run_backtest.py` MetricEvent stream. **Substitute:** synthesize from a Phase-4 e2e / short replay bus scrape (document fixture). | p99 <= 10 ms (hard ceiling). p95 should approach the 3 ms target. | BLOCKER (hard ceiling), MAJOR (target drift) |
+| `A-PERFB-03` | Compute events/sec on the **primary** backtest replay **or** the Phase-4 e2e substitute (document which). | <=25% regression vs prior report. | MAJOR |
 
 ### A9. Test-coverage spine — `testing-validation`
 
@@ -173,7 +173,7 @@ A finding flagged in the **Risk register** below is *permanent* until verifiably
 | `A-PERSIST-01` | Read `bootstrap.build_platform`. | Inventory in-memory backends used (`InMemoryEventLog`, `InMemoryTradeJournal`, `InMemoryFeatureSnapshotStore`, `InMemoryKillSwitch`, `InMemoryAlertManager`, `InMemoryMetricCollector`); each acceptable for backtest only. | MAJOR |
 | `A-PERSIST-02` | Confirm absence of durable backends. | Permanent BLOCKER for promotion to PAPER/LIVE recorded in the risk register. | BLOCKER for promotion |
 | `A-PERSIST-03` | Call `build_platform(config)` twice on the same config. | Identical `config_snapshot.checksum` and equivalent component graph. | MAJOR |
-| `A-PERSIST-04` | Look for a feature-snapshot warm-start round-trip test. | Test exists and passes (checkpoint -> restore -> next event = same `FeatureVector`). If absent, record MAJOR. | MAJOR |
+| `A-PERSIST-04` | Look for a horizon-snapshot / replay parity warm-start round-trip test. | Test exists and passes (checkpoint -> restore -> next boundary matches no-restart `HorizonFeatureSnapshot` or downstream hash). If absent, record MAJOR. Do not reference deleted `FeatureVector`. | MAJOR |
 
 ### A14. Secrets & credentials handling — `live-execution`, `data-engineering`
 
@@ -194,7 +194,7 @@ A finding flagged in the **Risk register** below is *permanent* until verifiably
 
 | ID | Method | Pass criterion | Severity if fail |
 |---|---|---|---|
-| `A-PROMO-01` | Read `src/feelies/alpha/lifecycle.py` `AlphaLifecycleState` enum and the `_ALLOWED_TRANSITIONS` table. | States: RESEARCH → PAPER → LIVE; LIVE → QUARANTINED → PAPER (revalidation); LIVE → LIVE (capital-tier escalation). Transition matrix is enforced by `StateMachine`; no unlisted transition is reachable. | BLOCKER |
+| `A-PROMO-01` | Read `src/feelies/alpha/lifecycle.py` `AlphaLifecycleState` enum and `_LIFECYCLE_TRANSITIONS`. | States: RESEARCH → PAPER → LIVE; LIVE → QUARANTINED → PAPER (revalidation); LIVE → LIVE (capital-tier escalation). Transition matrix is enforced by `StateMachine`; no unlisted transition is reachable. | BLOCKER |
 | `A-PROMO-02` | Read `src/feelies/alpha/promotion_ledger.py` `PromotionLedger`. | Append-only JSONL ledger; every committed lifecycle transition is durably written (pre-commit semantics: ledger write failure rolls back the state transition, leaving no half-promoted alpha). | MAJOR |
 | `A-PROMO-03` | Read `src/feelies/alpha/promotion_evidence.py` `GateId` and `GATE_EVIDENCE_REQUIREMENTS`. | Each `(from_state, to_state)` gate is wired to typed evidence requirements; `GateId` enum is exhaustive over all lifecycle transitions. | MAJOR |
 
@@ -202,7 +202,7 @@ A finding flagged in the **Risk register** below is *permanent* until verifiably
 
 ## Pillar B — Causal-Chain Audit (institutional-grade trading rigor)
 
-The chain: `quote -> feature -> signal -> intent -> risk -> order -> ack -> fill -> position -> PnL -> guards -> decay -> promotion`.
+The chain (three-layer): `NBBO/Trade -> SensorReading -> HorizonFeatureSnapshot -> Signal -> (SizedPositionIntent via PORTFOLIO) -> risk -> order -> ack -> fill -> position -> PnL -> guards -> decay -> promotion`.
 
 ### B1. Mechanism-before-trade — Inv 1, 2 (`microstructure-alpha`, `post-trade-forensics`)
 
@@ -217,8 +217,8 @@ The chain: `quote -> feature -> signal -> intent -> risk -> order -> ack -> fill
 
 | ID | Method | Pass criterion | Severity if fail |
 |---|---|---|---|
-| `B-CAUSAL-01` | Read each `computation_module` referenced by alpha YAMLs (`alphas/trade_cluster_drift/`, etc.). | `update(quote)` uses only `quote` plus prior internal state. | BLOCKER |
-| `B-CAUSAL-02` | Read `src/feelies/signals/horizon_engine.py` `HorizonSignalEngine._evaluate_one`. | Does not evaluate or publish when `event.warm is False` (cold-start / warm-up guard). `CompositeSignalEngine` was deleted by Workstream D.2 — any surviving import is itself a BLOCKER. | BLOCKER |
+| `B-CAUSAL-01` | Read `feelies.sensors.impl.*` observers and `src/feelies/features/aggregator.py` `HorizonAggregator`. | Each uses only causally available events (`timestamp_ns` ≤ boundary / tick context) plus prior bounded internal state — no lookahead into future ticks or symbols. | BLOCKER |
+| `B-CAUSAL-02` | Read `HorizonSignalEngine._dispatch_one` (and `_on_sensor_reading`). | Warm/stale guards on `HorizonFeatureSnapshot` suppress publish; cold `SensorReading` ignored; no `CompositeSignalEngine` / `FeatureVector` imports remain — any surviving import is BLOCKER. | BLOCKER |
 | `B-CAUSAL-03` | Read routers (`src/feelies/execution/backtest_router.py`, `src/feelies/execution/passive_limit_router.py`). | Order decisions use last-seen NBBO at ack time, not signal time. | BLOCKER |
 | `B-CAUSAL-04` | Grep `Clock.now`, `clock.now` in `src/feelies/{ingestion,bus,kernel}/` outside monitoring/metric paths. | Replay-relevant timestamps use ingestion `exchange_timestamp_ns`, never `Clock.now()`. | BLOCKER |
 
@@ -226,7 +226,7 @@ The chain: `quote -> feature -> signal -> intent -> risk -> order -> ack -> fill
 
 | ID | Method | Pass criterion | Severity if fail |
 |---|---|---|---|
-| `B-RISK-01` | Read `_process_tick` M5 and M6. | Both `check_signal` (M5) and `check_order` (M6) called for every order; no path constructs an `OrderRequest` without both. | BLOCKER |
+| `B-RISK-01` | Read `_process_tick` / `RiskEngine.check_sized_intent`. | **SIGNAL path:** `check_signal` then `check_order` per emitted `OrderRequest`. **PORTFOLIO path:** `check_sized_intent` builds legs and calls `check_order` per leg (per-leg veto — Inv-11). No `OrderRequest` bypasses `check_order`. | BLOCKER |
 | `B-RISK-02` | Read NO_ACTION branch. | Skips M5-M9 and goes to M10. | MAJOR |
 | `B-RISK-03` | Read SCALE_DOWN branch. | Applies `verdict.scaling_factor` before submission, then re-checks via `check_order`. | BLOCKER |
 | `B-RISK-04` | Read `src/feelies/risk/basic_risk.py` and the risk-engine skill table. | Drawdown gate thresholds (warning / throttle / circuit / kill) match, or any divergence is documented. | MAJOR |
@@ -254,7 +254,7 @@ The chain: `quote -> feature -> signal -> intent -> risk -> order -> ack -> fill
 | ID | Method | Pass criterion | Severity if fail |
 |---|---|---|---|
 | `B-FILL-01` | Read `DefaultCostModelConfig`. | Components present: spread, commission (taker/maker), adverse selection, regulatory, stress multiplier. | BLOCKER |
-| `B-FILL-02` | Run `python scripts/run_backtest.py --demo --stress-cost 1.5`. | Run completes; net PnL >= 0 at portfolio level (or affected alpha quarantined per `post-trade-forensics`). | BLOCKER |
+| `B-FILL-02` | **Primary:** `python scripts/run_backtest.py --stress-cost 1.5` (with required `--date` + API key). **Substitute:** record **deferred** + `MAJOR` if primary cannot run. | Run completes; net PnL >= 0 at portfolio level (or affected alpha quarantined per `post-trade-forensics`). | BLOCKER |
 | `B-FILL-03` | Read `PassiveLimitOrderRouter`. | Through-fill and level-fill triggers present; cancel after `passive_max_resting_ticks`. | MAJOR |
 | `B-FILL-04` | Grep router selection in stop-loss path. | Stop-loss / emergency exits use MARKET orders, not passive (Inv 11). | BLOCKER |
 
@@ -264,16 +264,16 @@ The chain: `quote -> feature -> signal -> intent -> risk -> order -> ack -> fill
 |---|---|---|---|
 | `B-PNL-01` | Read `_reconcile_fills`. | Updates `MemoryPositionStore` atomically and emits `PositionUpdate` + `TradeRecord`. | BLOCKER |
 | `B-PNL-02` | Read `TradeRecord` schema. | gross / realized / unrealized / fees / slippage computable per trade. | MAJOR |
-| `B-PNL-03` | Run a `--demo` with two test alphas (or rely on existing demo if multi-alpha) and sum `StrategyPositionStore` + `FillAttributionLedger`. | Sum equals portfolio totals. | MAJOR |
+| `B-PNL-03` | **Primary:** credentialed multi-alpha `run_backtest.py` session. **Substitute:** Phase-4 e2e + fill-ledger tests (`test_phase4_e2e.py`, attribution tests). | Sum equals portfolio totals. | MAJOR |
 | `B-PNL-04` | Read mark-to-market drawdown trigger. | Per-tick MtM DD computed against last NBBO mid; trigger path into `_escalate_risk` exists. | BLOCKER |
 
 ### B8. End-to-end live-practice replay — `testing-validation`
 
 | ID | Method | Pass criterion | Severity if fail |
 |---|---|---|---|
-| `B-E2E-01` | `python scripts/run_backtest.py --demo`. | Capture: parity hash, trade count, gross/net PnL, max DD, kill-switch state. | BLOCKER (run failure) |
-| `B-E2E-02` | Run twice. | Bit-identical parity hashes. | BLOCKER |
-| `B-E2E-03` | Run with `--stress-cost 1.5` and `--stress-cost 2.0`. | PnL >= 0 at portfolio level OR any negative alpha is quarantined. | BLOCKER |
+| `B-E2E-01` | **Primary:** `scripts/run_backtest.py` with `--date` + `MASSIVE_API_KEY`. **Substitute:** `pytest tests/integration/test_phase4_e2e.py -q` (record passing; no footer parity hash). | Capture: parity hash (primary), trade count, gross/net PnL, max DD, kill-switch state — or document substitute limits. | BLOCKER (run failure) |
+| `B-E2E-02` | **Primary:** run primary backtest twice; diff `parity_hash (both)`. **Substitute:** paired e2e determinism tests (signal + intent stream hashes). | Bit-identical hashes for chosen path. | BLOCKER |
+| `B-E2E-03` | **Primary:** `--stress-cost 1.5` and `2.0` on same baseline as B-FILL-02. **Substitute:** defer + `MAJOR`. | PnL >= 0 at portfolio level OR any negative alpha is quarantined. | BLOCKER |
 | `B-E2E-04` | Read `tests/test_backtest_e2e.py`. | Covers warm-up, regime transitions, circuit-breaker firing, reconnect/gap, multi-alpha arbitration. Each missing scenario opens a `MAJOR` finding with the test stub to add. | MAJOR (per gap) |
 | `B-E2E-05` | Check existence of `src/feelies/execution/paper_router.py` and `src/feelies/execution/live_router.py`. Then read `bootstrap._create_backend`. | Router stub files `paper_router.py` and `live_router.py` exist. However `_create_backend` still raises `NotImplementedError` for non-BACKTEST modes — stubs are not yet wired. Permanent BLOCKER for promotion until `_create_backend` fully integrates paper/live backends. | BLOCKER for promotion |
 
@@ -292,7 +292,7 @@ The chain: `quote -> feature -> signal -> intent -> risk -> order -> ack -> fill
 |---|---|---|---|
 | `B-GUARD-01` | Read stop-loss branch in `_process_tick`. | `stop_loss_per_share` evaluated per tick from last NBBO mid; exit issued via MARKET; not gated by passive cooldowns. | BLOCKER |
 | `B-GUARD-02` | Read trailing-stop tracker. | `trail_activate_per_share` + `trail_pct` peak tracker is per-position, resets on flat/flip; peak monotonic (cannot move adversely). | BLOCKER |
-| `B-GUARD-03` | Read `src/feelies/signals/regime_gate.py` `RegimeGate` and `HorizonSignalEngine._evaluate_one`. | Entry cooldown state is tracked per-(alpha_id, symbol) inside `RegimeGate`; not a global counter; resets on EXIT. `CompositeSignalEngine` was deleted by Workstream D.2 — cooldown now lives in the signal layer. | MAJOR |
+| `B-GUARD-03` | Read `RegimeGate` and `HorizonSignalEngine._dispatch_one`; grep `signal_entry_cooldown_ticks` in `platform.yaml` / `platform_config.py`. | Gate hysteresis is per-(alpha_id, symbol); confirm `signal_entry_cooldown_ticks` is either wired into behaviour or explicitly documented as deprecated — `MAJOR` if orphaned knob with no effect. | MAJOR |
 | `B-GUARD-04` | Grep `platform_min_order_shares`. | Enforced at exactly one place, after sizing and before routing. | MAJOR |
 | `B-GUARD-05` | Read sizing input wiring. | `account_equity` semantics (start-of-day NAV vs live MtM) recorded; flag any mismatch with the alpha YAML's risk-budget assumption. | MAJOR |
 | `B-GUARD-06` | Grep `float(`, bare `float` annotations on price / quantity / PnL fields in `risk/`, `execution/`, `portfolio/`. | Money fields are `Decimal` end-to-end. | BLOCKER |
@@ -302,9 +302,9 @@ The chain: `quote -> feature -> signal -> intent -> risk -> order -> ack -> fill
 | ID | Method | Pass criterion | Severity if fail |
 |---|---|---|---|
 | `B-MULTI-01` | Read `bootstrap.py` Phase-3/4 wiring and `src/feelies/kernel/orchestrator.py` `__init__`. | `MultiAlphaEvaluator` was deleted by Workstream D.2 PR-2b-iv. Multi-alpha coordination is bus-driven: SIGNAL-layer alphas publish `Signal` events buffered by `_on_bus_signal`; PORTFOLIO-layer alphas publish `SizedPositionIntent` events handled by `_on_bus_sized_intent`. Confirm both subscribers are registered in `Orchestrator.__init__`. | MAJOR |
-| `B-MULTI-02` | Read `src/feelies/alpha/arbitration.py` `SignalArbitrator` Protocol and `EdgeWeightedArbitrator`. | `SignalArbitrator` is a Protocol with `EdgeWeightedArbitrator` as the default implementation: highest `edge_estimate_bps * strength` wins; dead-zone suppresses low-conviction signals. Same inputs → same outcome. Confirm it is invoked in the `_on_bus_signal` buffer-drain path inside the orchestrator. | BLOCKER |
+| `B-MULTI-02` | Read `src/feelies/alpha/arbitration.py` and `Orchestrator._select_bus_signal`. | Default `EdgeWeightedArbitrator` is invoked for the buffered standalone-SIGNAL drain (injectable `signal_arbitrator` ctor param): highest `edge_estimate_bps * strength` (FLAT privileged; dead-zone may yield no signal). Same inputs → same outcome. | BLOCKER |
 | `B-MULTI-03` | Read `AlphaBudgetRiskWrapper`. | Per-strategy risk isolated; one alpha's drawdown cannot consume another's allocation. | BLOCKER |
-| `B-MULTI-04` | Run `--demo` with two test alphas; sum `FillAttributionLedger` totals against `MemoryPositionStore`. | Sum equals portfolio totals. | MAJOR |
+| `B-MULTI-04` | **Primary:** credentialed two-alpha `run_backtest.py`. **Substitute:** Phase-4 e2e + `FillAttributionLedger` tests. | Sum equals portfolio totals. | MAJOR |
 | `B-MULTI-05` | Read alpha YAMLs / risk config. | Cross-strategy correlation budget documented; if absent, permanent finding. | MAJOR |
 
 ### B12. Promotion-gate readiness — Inv 3 (`testing-validation`)
@@ -314,7 +314,7 @@ The chain: `quote -> feature -> signal -> intent -> risk -> order -> ack -> fill
 | `B-PROMO-01` | Walk the testing-validation skill's Research -> Paper criteria. | Each criterion gets a yes/no with evidence in the report. | n/a (records readiness) |
 | `B-PROMO-02` | Confirm presence of paper router and sim-vs-live divergence baseline. | Until paper router exists, automatic NO. | n/a (records readiness) |
 | `B-PROMO-03` | Confirm presence of >=10 trading days of small-capital live data. | Without it, automatic NO. | n/a (records readiness) |
-| `B-PROMO-04` | Compute `hash(strategy_version, config_version, data_version, engine_version)` for the demo run. | Same inputs across two consecutive audits yield same id. | BLOCKER (drift) |
+| `B-PROMO-04` | Compute `hash(strategy_version, config_version, data_version, engine_version)` ( `scripts/run_backtest.py` `artifact_id` helper **or** equivalent for Phase-4 e2e — document `data_version`). | Same inputs across two consecutive audits yield same id. | BLOCKER (drift) |
 
 ### B13. Decay-detection plumbing — Inv 4 (`post-trade-forensics`)
 
@@ -329,9 +329,9 @@ The chain: `quote -> feature -> signal -> intent -> risk -> order -> ack -> fill
 
 | ID | Method | Pass criterion | Severity if fail |
 |---|---|---|---|
-| `B-SENSOR-01` | Read `bootstrap.py` Phase-2 and `src/feelies/features/aggregator.py` `HorizonAggregator`. | Sensor output events flow into `HorizonAggregator`; aggregated `HorizonSnapshot` events flow to `HorizonSignalEngine`. No sensor output bypasses the aggregator to reach signal evaluation. | BLOCKER |
+| `B-SENSOR-01` | Read `bootstrap.py` Phase-2 and `src/feelies/features/aggregator.py` `HorizonAggregator`. | Sensor output events flow into `HorizonAggregator`; aggregated `HorizonFeatureSnapshot` events flow to `HorizonSignalEngine`. No sensor output bypasses the aggregator to reach signal evaluation. | BLOCKER |
 | `B-HAZARD-01` | Read `src/feelies/risk/hazard_exit.py` `HazardExitController` and bootstrap wiring. | `HazardExitController` is instantiated in bootstrap; subscribed (via bus) to hazard events emitted by `RegimeHazardDetector`; responds by issuing typed MARKET exit events — does not directly mutate positions. | BLOCKER |
-| `B-HAZARD-02` | Read `src/feelies/services/regime_hazard_detector.py` `RegimeHazardDetector`. | Subscribes to `RegimeSnapshot` events; emits a typed `HazardEvent` when regime-change thresholds are breached; read-only with respect to positions and orders. | MAJOR |
+| `B-HAZARD-02` | Read `src/feelies/services/regime_hazard_detector.py` `RegimeHazardDetector`. | Consumes consecutive `RegimeState` events; emits typed `RegimeHazardSpike` when departure thresholds fire; read-only with respect to positions and orders. | MAJOR |
 
 ---
 
@@ -342,8 +342,8 @@ An audit iteration is a **PASS** iff **all** of the following hold:
 1. Zero **new** `BLOCKER` findings vs prior report (permanent BLOCKERs in the risk register do not count).
 2. `MAJOR` count is non-increasing vs prior report.
 3. `pytest` exit code is 0; failed/error counts are 0.
-4. `--demo` parity hash is bit-identical across two back-to-back runs.
-5. `--demo --stress-cost 1.5` net PnL is `>= 0` at the **portfolio** level. An individual alpha may be net negative under stress only if it is concurrently flagged for quarantine in this report's risk register per `post-trade-forensics`; otherwise FAIL.
+4. **Primary:** footer `parity_hash (both)` from two back-to-back `scripts/run_backtest.py` runs (identical `--date`/`--config`/inputs) is bit-identical. **Substitute:** only satisfies this bullet if the report documents a `MAJOR` deferral for primary parity **and** proves bit-identical replay via the Phase-4 e2e determinism tests (not comparable across machines to footer hashes).
+5. **Primary:** `--stress-cost 1.5` (and protocol step 4 `2.0` run) net PnL is `>= 0` at the **portfolio** level. **Substitute:** defer + `MAJOR` if primary not run. An individual alpha may be net negative under stress only if it is concurrently flagged for quarantine in this report's risk register per `post-trade-forensics`; otherwise FAIL.
 6. p99 of `tick_to_decision_latency_ns` does not exceed the 10 ms hard ceiling.
 
 Any FAIL halts promotion to a higher operating mode (BACKTEST -> PAPER -> LIVE) until the next PASS.
@@ -355,7 +355,7 @@ The audit runs:
 - On every merge to `main` (CI invocation, agent-driven).
 - Before any `mode:` switch in `platform.yaml` (BACKTEST -> PAPER, PAPER -> LIVE).
 - On every change to `.cursor/rules/` or `.cursor/skills/` (the audit's source of truth changed).
-- On every change to `src/feelies/bootstrap.py`, `src/feelies/kernel/orchestrator.py`, `src/feelies/risk/`, `src/feelies/execution/`, `src/feelies/ingestion/`, `src/feelies/alpha/`, `src/feelies/sensors/`, `src/feelies/signals/`, `src/feelies/composition/`, `src/feelies/services/`, `src/feelies/core/events.py`, or `src/feelies/core/state_machine.py` (high-blast-radius modules).
+- On every change to `src/feelies/bootstrap.py`, `src/feelies/kernel/orchestrator.py`, `src/feelies/risk/`, `src/feelies/execution/`, `src/feelies/ingestion/`, `src/feelies/alpha/`, `src/feelies/features/`, `src/feelies/sensors/`, `src/feelies/signals/`, `src/feelies/composition/`, `src/feelies/services/`, `src/feelies/core/events.py`, or `src/feelies/core/state_machine.py` (high-blast-radius modules).
 - Weekly regardless, against latest `main`, to catch drift that escaped per-PR audits.
 
 A new `BLOCKER` auto-halts promotion until resolved. A new permanent risk-register entry requires explicit user acknowledgement before the next mode switch.
@@ -376,9 +376,15 @@ Initial seed (first iteration may add to or replace this list based on what the 
 
 ## Meta-rule (`META-01`, audit-of-the-audit)
 
-The protocol itself decays. Whenever `.cursor/rules/platform-invariants.mdc` changes, or any file under `.cursor/skills/` is added or materially edited, the next audit iteration must:
+The protocol itself decays. Whenever **any** of the following change, the next audit iteration must satisfy **`META-01`**:
 
-1. Add at least one new check ID covering the new invariant or skill clause, **OR**
-2. Justify in the report's `META-01` section why no new check is required (existing IDs cover it).
+- `.cursor/rules/platform-invariants.mdc`
+- Any file under `.cursor/skills/` (added or materially edited)
+- **`audits/AUDIT_PROTOCOL.md`** (any revision bump or material edit to checks / cadence / pass-fail)
+
+For each trigger:
+
+1. Add at least one new check ID covering the delta, **OR**
+2. Justify in the report's `META-01` section why no new check is required (existing IDs cover it). If the change was **only** a protocol version bump with no check-table delta, state that explicitly.
 
 `META-01` is itself recorded in every report.

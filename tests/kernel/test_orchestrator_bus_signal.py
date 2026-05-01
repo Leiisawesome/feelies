@@ -22,8 +22,10 @@ These tests assert the contract:
 * The buffer is cleared at the start of every tick so prior-tick
   Signals cannot leak into subsequent ticks.
 * When more than one standalone SIGNAL alpha fires on the same tick,
-  the orchestrator picks the first arrival and emits a once-per-process
-  WARNING hinting at PORTFOLIO aggregation.
+  ``EdgeWeightedArbitrator`` (default; injectable via ``signal_arbitrator``)
+  selects one candidate (FLAT privileged; else edge*strength; tie →
+  arrival order).  A once-per-process WARNING recommends PORTFOLIO
+  aggregation for richer multi-alpha policy.
 """
 
 from __future__ import annotations
@@ -427,13 +429,9 @@ class TestFiltering:
 
 
 class TestMultipleStandaloneSignalsPerTick:
-    """The micro SM only allows one Signal → Order walk per tick.  When
-    multiple standalone SIGNAL alphas fire on the same tick, the
-    orchestrator picks the first arrival deterministically and emits a
-    once-per-process WARNING.
-    """
+    """One micro-SM order walk per tick; multiple candidates → arbitrator."""
 
-    def test_picks_first_signal_in_arrival_order(
+    def test_tie_break_favors_first_arrival_when_scores_equal(
         self, caplog: pytest.LogCaptureFixture,
     ) -> None:
         caplog.set_level(logging.WARNING, logger="feelies.kernel.orchestrator")
@@ -463,12 +461,45 @@ class TestMultipleStandaloneSignalsPerTick:
         assert len(captured) == 1, (
             "exactly one OrderRequest per tick (micro-SM constraint)"
         )
+        assert captured[0].strategy_id == "alpha_first"
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert any("standalone SIGNAL alphas fired" in r.message for r in warnings), (
             "expected a once-per-process WARNING about multiple "
             "standalone Signals; got logs: "
             + str([r.message for r in warnings])
         )
+
+    def test_arbitration_prefers_higher_composite_over_first_arrival(
+        self, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.WARNING, logger="feelies.kernel.orchestrator")
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        quote = _make_quote()
+        weak_first = _make_signal(quote, strategy_id="weak_first")
+        weak_first = replace(weak_first, strength=0.2, edge_estimate_bps=5.0)
+        strong_second = _make_signal(quote, strategy_id="strong_second")
+        strong_second = replace(strong_second, strength=1.0, edge_estimate_bps=50.0)
+
+        orch = _build_orchestrator(clock, bus=bus)
+        captured = _capture_orders(bus)
+
+        def emit_two_signals(q: NBBOQuote) -> None:
+            for s in (weak_first, strong_second):
+                bus.publish(replace(
+                    s,
+                    timestamp_ns=q.timestamp_ns,
+                    correlation_id=q.correlation_id,
+                    sequence=q.sequence,
+                ))
+        bus.subscribe(NBBOQuote, emit_two_signals)  # type: ignore[arg-type]
+
+        BacktestOrderRouter.on_quote(orch._backend.order_router, quote)
+        _boot_to_backtest(orch)
+        orch._process_tick(quote)
+
+        assert len(captured) == 1
+        assert captured[0].strategy_id == "strong_second"
 
     def test_warning_emitted_only_once_per_process(
         self, caplog: pytest.LogCaptureFixture,

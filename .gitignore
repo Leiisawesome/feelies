@@ -14,5 +14,7 @@ dist/
 build/
 run_output.txt
 test_output.txt
+# Audit runs — pytest tee scratch (regenerable)
+audits/_last_pytest*.txt
 .cursor/plans/
 .DS_Store
