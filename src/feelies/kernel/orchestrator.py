@@ -293,6 +293,7 @@ class Orchestrator:
         trade_journal: TradeJournal | None = None,
         feature_snapshots: FeatureSnapshotStore | None = None,
         regime_engine: RegimeEngine | None = None,
+        regime_engine_registry_name: str | None = None,
         intent_translator: IntentTranslator | None = None,
         position_sizer: PositionSizer | None = None,
         alpha_registry: "AlphaRegistry | None" = None,
@@ -328,6 +329,11 @@ class Orchestrator:
         self._trade_journal = trade_journal
         self._feature_snapshots = feature_snapshots
         self._regime_engine = regime_engine
+        # Bus-visible name must match alpha YAML ``regime_gate.regime_engine``
+        # (registry key, e.g. ``hmm_3state_fractional``), not the Python class
+        # name — otherwise HorizonSignalEngine's regime cache lookup misses and
+        # every ``P(...)`` gate raises UnknownIdentifierError.
+        self._regime_engine_registry_name = regime_engine_registry_name
         self._intent_translator: IntentTranslator = (
             intent_translator if intent_translator is not None
             else SignalPositionTranslator()
@@ -1396,7 +1402,11 @@ class Orchestrator:
         posteriors = self._regime_engine.posterior(quote)
         dominant_idx = max(range(len(posteriors)), key=lambda i: posteriors[i])
         state_names = tuple(self._regime_engine.state_names)
-        engine_name = type(self._regime_engine).__name__
+        engine_name = (
+            self._regime_engine_registry_name
+            if self._regime_engine_registry_name is not None
+            else type(self._regime_engine).__name__
+        )
         regime_state = RegimeState(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=correlation_id,

@@ -310,3 +310,24 @@ def test_from_spec_records_engine_name_and_hysteresis() -> None:
     h = g.hysteresis
     assert h["posterior_margin"] == pytest.approx(0.20)
     assert h["percentile_margin"] == pytest.approx(0.30)
+
+
+def test_binding_identifier_names_strips_regime_and_hysteresis_noise() -> None:
+    g = RegimeGate(
+        alpha_id="a",
+        on_condition="P(normal) > 0.6 and spread_z_30d <= 1.0",
+        off_condition="P(normal) < 0.4 or spread_z_30d > 2.0",
+        hysteresis={"posterior_margin": 0.2, "percentile_margin": 0.3},
+        engine_name="hmm",
+    )
+    assert g.binding_identifier_names() == frozenset({"spread_z_30d"})
+
+
+def test_binding_identifier_names_keeps_zscore_identifiers() -> None:
+    g = RegimeGate(
+        alpha_id="a",
+        on_condition="P(normal) > 0.7 and ofi_ewma_zscore > 2.0",
+        off_condition="P(normal) < 0.5",
+        engine_name="hmm",
+    )
+    assert g.binding_identifier_names() == frozenset({"ofi_ewma_zscore"})

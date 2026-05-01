@@ -500,6 +500,45 @@ class RegimeGate:
     def hysteresis(self) -> Mapping[str, float]:
         return dict(self._hysteresis)
 
+    def binding_identifier_names(self) -> frozenset[str]:
+        """Names resolved via :func:`_resolve_name` that appear in ON/OFF ASTs.
+
+        Excludes ``P(<state>)`` state labels, ``dominant``, ``pNN`` literals,
+        and hysteresis margin keys — these never correspond to
+        :class:`~feelies.core.events.HorizonFeatureSnapshot` ``warm`` /
+        ``stale`` entries.
+        """
+        raw: set[str] = set()
+        for tree in (self._on_tree, self._off_tree):
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Name):
+                    raw.add(node.id)
+        p_state_args = self._p_posterior_argument_names()
+        raw -= p_state_args
+        raw.discard(_DOMINANT_NAME)
+        raw -= frozenset(self._hysteresis.keys())
+        lit = {n for n in raw if _PERCENTILE_LITERAL_RE.match(n) is not None}
+        raw -= lit
+        # Whitelisted Call func names are never binding identifiers.
+        raw -= _SAFE_FUNCTIONS_AND_REGIME
+        return frozenset(raw)
+
+    def _p_posterior_argument_names(self) -> set[str]:
+        """State labels referenced inside ``P(...)`` calls."""
+        out: set[str] = set()
+        for tree in (self._on_tree, self._off_tree):
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                if not isinstance(node.func, ast.Name):
+                    continue
+                if node.func.id != _REGIME_FUNCTION_NAME:
+                    continue
+                if len(node.args) != 1 or not isinstance(node.args[0], ast.Name):
+                    continue
+                out.add(node.args[0].id)
+        return out
+
     def is_on(self, symbol: str) -> bool:
         """Latched ON/OFF state for *symbol*.  ``False`` until first ON."""
         return self._state.get(symbol, False)

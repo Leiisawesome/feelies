@@ -1388,7 +1388,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
     except Exception as exc:
-        print(f"\n  ERROR: Ingestion failed: {exc}", file=sys.stderr)
+        print(f"\n  ERROR: Ingestion failed: {exc!r}", file=sys.stderr)
         return 1
 
     cache_days = sum(1 for ds in day_sources if ds.source == "cache")

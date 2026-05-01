@@ -116,6 +116,7 @@ def _registered(
     consumed_features: tuple[str, ...] = ("ofi_ewma",),
     trend_mechanism: TrendMechanism | None = None,
     expected_half_life_seconds: int = 0,
+    required_warm_feature_ids: frozenset[str] | None = None,
 ) -> RegisteredSignal:
     return RegisteredSignal(
         alpha_id=alpha_id,
@@ -127,6 +128,7 @@ def _registered(
         consumed_features=consumed_features,
         trend_mechanism=trend_mechanism,
         expected_half_life_seconds=expected_half_life_seconds,
+        required_warm_feature_ids=required_warm_feature_ids,
     )
 
 
@@ -174,6 +176,8 @@ def _snapshot(
     boundary_index: int = 1,
     sequence: int = 10,
     values: dict[str, float] | None = None,
+    warm: dict[str, bool] | None = None,
+    stale: dict[str, bool] | None = None,
 ) -> HorizonFeatureSnapshot:
     return HorizonFeatureSnapshot(
         timestamp_ns=2_000,
@@ -183,6 +187,8 @@ def _snapshot(
         horizon_seconds=horizon_seconds,
         boundary_index=boundary_index,
         values=values or {},
+        warm=warm or {},
+        stale=stale or {},
     )
 
 
@@ -219,6 +225,32 @@ def test_attach_is_noop_when_empty() -> None:
 
 
 # ── End-to-end dispatch ─────────────────────────────────────────────────
+
+
+def test_narrow_required_warm_ignores_unrelated_cold_features() -> None:
+    """Bootstrap-style ``required_warm_feature_ids`` must not block on other features."""
+    engine, bus, captured = _engine()
+    rec = _registered(
+        gate=_gate(on_condition="P(normal) > 0.7"),
+        required_warm_feature_ids=frozenset({"ofi_ewma"}),
+    )
+    engine.register(rec)
+    engine.attach()
+
+    bus.publish(_regime_normal_high())
+    bus.publish(_snapshot(
+        warm={
+            "ofi_ewma": True,
+            "hawkes_intensity_zscore": False,
+        },
+        stale={
+            "ofi_ewma": False,
+            "hawkes_intensity_zscore": False,
+        },
+        values={"ofi_ewma": 1.0},
+    ))
+
+    assert len(captured) == 1
 
 
 def test_full_emit_with_gate_on() -> None:

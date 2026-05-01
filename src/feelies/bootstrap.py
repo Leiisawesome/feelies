@@ -48,6 +48,7 @@ legacy execution path bit-for-bit (Inv-A).
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from decimal import Decimal
 from pathlib import Path
 
@@ -121,6 +122,7 @@ from feelies.risk.position_sizer import BudgetBasedSizer
 from feelies.services.regime_engine import RegimeEngine, get_regime_engine
 from feelies.services.regime_hazard_detector import RegimeHazardDetector
 from feelies.signals.horizon_engine import HorizonSignalEngine, RegisteredSignal
+from feelies.signals.regime_gate import RegimeGate
 from feelies.storage.memory_event_log import InMemoryEventLog
 from feelies.storage.memory_feature_snapshot import InMemoryFeatureSnapshotStore
 from feelies.storage.memory_trade_journal import InMemoryTradeJournal
@@ -364,6 +366,7 @@ def build_platform(
         alert_manager=alert_manager,
         kill_switch=kill_switch,
         regime_engine=regime_engine,
+        regime_engine_registry_name=config.regime_engine,
         position_sizer=position_sizer,
         intent_translator=intent_translator,
         alpha_registry=registry,
@@ -614,6 +617,49 @@ def _build_horizon_features(
         for h in sorted(config.horizons_seconds):
             features.extend(_horizon_features_for(sensor_id, h))
     return features
+
+
+def _feature_ids_for_sensor_at_horizon(
+    sensor_id: str,
+    horizon_seconds: int,
+    horizon_features: Sequence[HorizonFeature],
+) -> frozenset[str]:
+    """Layer-2 ``feature_id`` keys at one horizon driven by a sensor."""
+    out: set[str] = set()
+    for f in horizon_features:
+        if f.horizon_seconds != horizon_seconds:
+            continue
+        if sensor_id in f.input_sensor_ids:
+            out.add(f.feature_id)
+    return frozenset(out)
+
+
+def _required_warm_feature_ids_for_signal_alpha(
+    *,
+    depends_on_sensors: Sequence[str],
+    horizon_seconds: int,
+    horizon_features: Sequence[HorizonFeature],
+    gate: RegimeGate,
+) -> frozenset[str]:
+    """Union of snapshot ``warm`` / ``stale`` keys an alpha must satisfy.
+
+    Built from ``depends_on_sensors`` → registered :class:`HorizonFeature`
+    rows at this horizon, plus regime-gate identifiers mapped the same
+    way (``*_percentile`` / ``*_zscore`` names are already feature_ids).
+    """
+    req: set[str] = set()
+    for sid in sorted(depends_on_sensors):
+        req.update(
+            _feature_ids_for_sensor_at_horizon(sid, horizon_seconds, horizon_features),
+        )
+    for name in sorted(gate.binding_identifier_names()):
+        if name.endswith("_percentile") or name.endswith("_zscore"):
+            req.add(name)
+            continue
+        req.update(
+            _feature_ids_for_sensor_at_horizon(name, horizon_seconds, horizon_features),
+        )
+    return frozenset(req)
 
 
 def _create_sensor_layer(
@@ -901,6 +947,12 @@ def _create_signal_layer(
     for module in signal_alphas:
         if not isinstance(module, LoadedSignalLayerModule):
             continue
+        warm_ids = _required_warm_feature_ids_for_signal_alpha(
+            depends_on_sensors=module.consumed_features,
+            horizon_seconds=module.horizon_seconds,
+            horizon_features=horizon_features or [],
+            gate=module.gate,
+        )
         engine.register(RegisteredSignal(
             alpha_id=module.manifest.alpha_id,
             horizon_seconds=module.horizon_seconds,
@@ -911,6 +963,7 @@ def _create_signal_layer(
             trend_mechanism=module.trend_mechanism_enum,
             expected_half_life_seconds=module.expected_half_life_seconds,
             consumed_features=module.consumed_features,
+            required_warm_feature_ids=warm_ids,
         ))
     engine.attach()
     logger.info(

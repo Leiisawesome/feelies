@@ -252,7 +252,10 @@ class MassiveNormalizer:
 
             if self._is_duplicate(symbol, self._FEED_QUOTE, seq_num, sip_ts):
                 return None
-            self._check_gap(symbol, self._FEED_QUOTE, seq_num)
+            # REST historical responses are thinned: each row keeps the original
+            # SIP sequence_number but omits intervening ticks, so consecutive rows
+            # routinely jump by ≫1 — unlike the live WebSocket feed. Gap detection
+            # would falsely flag almost every symbol (see AUDIT / data_integrity).
             self._update_last_seen(symbol, self._FEED_QUOTE, seq_num, sip_ts)
 
             internal_seq = self._seq.next()
@@ -302,7 +305,7 @@ class MassiveNormalizer:
 
             if self._is_duplicate(symbol, self._FEED_TRADE, seq_num, sip_ts):
                 return None
-            self._check_gap(symbol, self._FEED_TRADE, seq_num)
+            # Same thinned-stream semantics as quotes (``_rest_quote``).
             self._update_last_seen(symbol, self._FEED_TRADE, seq_num, sip_ts)
 
             internal_seq = self._seq.next()

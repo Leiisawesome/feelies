@@ -227,7 +227,10 @@ class MassiveHistoricalIngestor:
                 _download_raw, client, symbol, start_date, end_date,
                 client.list_trades, "trades", _t_on_page,
             )
-            _DOWNLOAD_TIMEOUT_S = 300
+            # One REST stream can exceed 5m on liquid names / full session days;
+            # ``TimeoutError`` has an empty ``str()``, so a too-tight bound looks
+            # like an opaque ingestion failure in the backtest CLI.
+            _DOWNLOAD_TIMEOUT_S = 900
             raw_quotes, q_pages = quotes_future.result(timeout=_DOWNLOAD_TIMEOUT_S)
             raw_trades, t_pages = trades_future.result(timeout=_DOWNLOAD_TIMEOUT_S)
 

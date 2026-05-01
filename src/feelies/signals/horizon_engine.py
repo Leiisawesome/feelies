@@ -133,6 +133,11 @@ class RegisteredSignal:
     trend_mechanism: TrendMechanism | None = None
     expected_half_life_seconds: int = 0
     consumed_features: tuple[str, ...] = ()
+    # When ``None``, every key in ``snapshot.warm`` must be warm and
+    # non-stale (legacy).  When set, only these ``feature_id`` keys —
+    # derived at bootstrap from ``depends_on_sensors`` + regime-gate
+    # identifiers — gate dispatch.
+    required_warm_feature_ids: frozenset[str] | None = None
 
 
 class HorizonSignalEngine:
@@ -313,8 +318,20 @@ class HorizonSignalEngine:
         # still present in snapshot.warm, so an all-cold snapshot is
         # correctly detected as active-mode-but-not-ready.
         if snapshot.warm:
-            not_warm = any(not v for v in snapshot.warm.values())
-            is_stale = any(v for v in snapshot.stale.values())
+            if registered.required_warm_feature_ids is None:
+                keys_to_check = tuple(snapshot.warm.keys())
+            else:
+                keys_to_check = tuple(registered.required_warm_feature_ids)
+            not_warm = any(
+                not snapshot.warm[k]
+                for k in keys_to_check
+                if k in snapshot.warm
+            )
+            is_stale = any(
+                snapshot.stale.get(k, False)
+                for k in keys_to_check
+                if k in snapshot.stale
+            )
             if not_warm or is_stale:
                 _logger.debug(
                     "HorizonSignalEngine: %s snapshot for %s at "
@@ -334,17 +351,21 @@ class HorizonSignalEngine:
             on = registered.gate.evaluate(
                 symbol=snapshot.symbol, bindings=bindings,
             )
-        except UnknownIdentifierError:
+        except UnknownIdentifierError as exc:
             # H8 / M6: a missing binding during warm-up means the gate
             # cannot make a valid ON/OFF decision.  Forcing the latch to
             # OFF here prevents a previously-latched ON gate from
             # silently persisting through the warm-up window.
             registered.gate.reset(snapshot.symbol)
+            hint = (
+                f" hint: published RegimeState.engine_name must match "
+                f"regime_gate.regime_engine={registered.gate.engine_name!r}."
+                if "no RegimeState" in str(exc)
+                else ""
+            )
             _logger.warning(
-                "HorizonSignalEngine: %s gate evaluation suppressed for "
-                "%s — required binding missing (cold start / warm-up); "
-                "latch forced OFF",
-                registered.alpha_id, snapshot.symbol,
+                "HorizonSignalEngine: %s gate suppressed for %s — %s%s",
+                registered.alpha_id, snapshot.symbol, exc, hint,
             )
             return
         except RegimeGateError as exc:

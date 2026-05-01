@@ -156,6 +156,24 @@ class TestMassiveNormalizerREST:
         events = normalizer.on_message(raw, clock.now_ns(), "massive_rest")
         assert events == []
 
+    def test_rest_thinned_history_large_seq_jumps_stay_healthy(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock
+    ) -> None:
+        """REST rows omit intervening SIP ticks; sequence_number is not contiguous."""
+        base_ts = 1_700_000_000_000_000_000
+        for seq in (1, 5000, 5001):
+            rec = {
+                "ticker": "AAPL",
+                "bid_price": 150.0,
+                "ask_price": 150.05,
+                "bid_size": 10,
+                "ask_size": 20,
+                "sip_timestamp": base_ts + seq,
+                "sequence_number": seq,
+            }
+            normalizer.on_message(json.dumps(rec).encode("utf-8"), clock.now_ns(), "massive_rest")
+        assert normalizer.health("AAPL") == DataHealth.HEALTHY
+
 
 class TestMassiveNormalizerHealth:
     """Tests for DataHealth tracking."""
