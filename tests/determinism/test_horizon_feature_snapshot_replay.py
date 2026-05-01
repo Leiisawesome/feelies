@@ -92,10 +92,13 @@ def test_snapshot_stream_matches_locked_baseline() -> None:
     # Phase 3.5 re-lock: aggregator now carries active features so V/W/S
     # dicts are non-empty.  ofi_ewma is warm (warm_after=5); ofi_ewma_zscore
     # is cold (fixture < min_samples=30) and always returns 0.0.
+    # H1 fix (audit): dedup logic now emits exactly one snapshot per
+    # (symbol, horizon, boundary_index); SYMBOL+UNIVERSE ticks no longer
+    # produce duplicate snapshots, halving the count from 28 → 14.
     EXPECTED_LEVEL3_SNAPSHOT_HASH = (
-        "74b682f64f90625db0eb9a2aa3864cc2e5a7c0ab6162fb83ab4dbe505e3a2a23"
+        "d03258eb3f077ad4d3ebaea697843e9226f251c9ece9800c1e672182e3aab8c7"
     )
-    EXPECTED_LEVEL3_SNAPSHOT_COUNT = 28
+    EXPECTED_LEVEL3_SNAPSHOT_COUNT = 14
 
     assert actual_count == EXPECTED_LEVEL3_SNAPSHOT_COUNT, (
         f"snapshot count drift: expected "

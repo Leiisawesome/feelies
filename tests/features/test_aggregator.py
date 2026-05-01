@@ -221,9 +221,9 @@ def test_active_mode_finalizes_feature_with_value() -> None:
     assert not agg.is_passive()
 
     for ts, value in [
-        (1_001_000_000, 1.0),
-        (1_002_000_000, 2.0),
-        (1_003_000_000, 3.0),
+        (1_001_000_000_000, 1.0),
+        (1_002_000_000_000, 2.0),
+        (1_003_000_000_000, 3.0),
     ]:
         bus.publish(_reading(ts_ns=ts, value=value))
 
@@ -251,7 +251,7 @@ def test_active_mode_second_horizon_reports_stale_when_no_new_readings() -> None
     )
     agg.attach()
 
-    bus.publish(_reading(ts_ns=1_001_000_000, value=2.5))
+    bus.publish(_reading(ts_ns=1_001_000_000_000, value=2.5))
     bus.publish(_tick(boundary=1, ts_ns=1_030_000_000_000))
     bus.publish(_tick(boundary=2, ts_ns=1_060_000_000_000))
 
@@ -297,9 +297,9 @@ def test_per_symbol_state_isolation() -> None:
     )
     agg.attach()
 
-    bus.publish(_reading(symbol="AAPL", ts_ns=1_001_000_000, value=1.0))
-    bus.publish(_reading(symbol="MSFT", ts_ns=1_002_000_000, value=10.0))
-    bus.publish(_reading(symbol="AAPL", ts_ns=1_003_000_000, value=2.0))
+    bus.publish(_reading(symbol="AAPL", ts_ns=1_001_000_000_000, value=1.0))
+    bus.publish(_reading(symbol="MSFT", ts_ns=1_002_000_000_000, value=10.0))
+    bus.publish(_reading(symbol="AAPL", ts_ns=1_003_000_000_000, value=2.0))
 
     bus.publish(
         _tick(

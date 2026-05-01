@@ -521,7 +521,32 @@ class RegimeGate:
         Returns the **post-transition** state (True if currently ON,
         False otherwise).  Callers that need the pre-transition state
         for forensics should snapshot :meth:`is_on` first.
+
+        M7: When ``hysteresis`` margins are declared (e.g.
+        ``posterior_margin: 0.20``) they are injected into the binding
+        table as named scalar constants so that gate expressions can
+        reference them directly:
+
+            on_condition: "P(benign) > 0.7 + posterior_margin"
+
+        Keys in ``hysteresis`` that collide with existing sensor /
+        feature names in *bindings* are intentionally overridden by
+        the hysteresis values \u2014 margin constants have higher
+        precedence than dynamic sensor readings to avoid accidental
+        capture.
         """
+        # Overlay hysteresis margin constants so expression identifiers
+        # like ``posterior_margin`` and ``percentile_margin`` resolve
+        # to their declared values.  When _hysteresis is empty this
+        # creates no extra objects (fast path for the common case).
+        if self._hysteresis:
+            merged = {**bindings.sensor_values, **self._hysteresis}
+            bindings = Bindings(
+                regime=bindings.regime,
+                sensor_values=merged,
+                percentiles=bindings.percentiles,
+                zscores=bindings.zscores,
+            )
         currently_on = self._state.get(symbol, False)
         if currently_on:
             if self._eval(self._off_tree, bindings):

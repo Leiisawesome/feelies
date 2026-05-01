@@ -277,14 +277,12 @@ def build_platform(
         snapshot_seq,
         sensor_registry,
         horizon_scheduler,
-        horizon_aggregator,
+        _,  # horizon_aggregator — already bus-attached inside _create_sensor_layer
     ) = _create_sensor_layer(config, bus, metric_collector=metric_collector)
-    # ``horizon_aggregator`` is intentionally unused below; it is
-    # already attached to the bus inside ``_create_sensor_layer`` and
-    # does not require any orchestrator-side wiring in Phase 2 because
-    # the orchestrator never reads ``HorizonFeatureSnapshot`` events
-    # (they are consumed by forensics / parity recorders only).
-    del horizon_aggregator
+    # Keep a reference to the built feature list for the M2 coverage
+    # check in _create_signal_layer; the aggregator itself is already
+    # attached to the bus and does not need further orchestrator wiring.
+    _built_horizon_features = _build_horizon_features(config)
 
     # ── Phase-3 SIGNAL layer (additive, optional) ─────────────────
     # Created *after* the aggregator so its bus subscription is
@@ -301,6 +299,7 @@ def build_platform(
         bus=bus,
         clock=clock,
         sensor_registry=sensor_registry,
+        horizon_features=_built_horizon_features,
     )
 
     # ── Phase-4 PORTFOLIO / composition layer (additive, optional) ──
@@ -699,6 +698,27 @@ def _create_sensor_layer(
     if config.horizons_seconds and (
         sensor_registry is not None or config.sensor_specs
     ):
+        # H10: lazy-binding session_open_ns from the first event makes
+        # boundary indices depend on event-arrival ordering at the
+        # scheduler, which defeats bit-identical replay (B-PROV-01 /
+        # A-DET-02 in the audit protocol).  Require an explicit anchor
+        # for any non-backtest run; for backtests the replayed event log
+        # has a deterministic ordering so auto-bind is acceptable.
+        if config.session_open_ns is None:
+            if config.mode != OperatingMode.BACKTEST:
+                raise ConfigurationError(
+                    "H10: session_open_ns must be set explicitly for "
+                    f"mode={config.mode.name} deployments.  "
+                    "Lazy-binding from the first market event yields "
+                    "non-deterministic boundary indices (audit H10)."
+                )
+            logger.warning(
+                "H10: session_open_ns is None; the HorizonScheduler "
+                "will auto-bind to the first event timestamp.  "
+                "Replay parity is preserved only when the replayed "
+                "event log is strictly ordered and never partially "
+                "replayed (acceptable for BACKTEST mode only)."
+            )
         # Only construct the scheduler when sensors exist; without
         # downstream consumers the scheduler would emit ticks into
         # the void and inflate the bus traffic for no benefit.  This
@@ -801,6 +821,7 @@ def _create_signal_layer(
     bus: EventBus,
     clock: Clock,
     sensor_registry: SensorRegistry | None,
+    horizon_features: list[HorizonFeature] | None = None,
 ) -> tuple[SequenceGenerator, HorizonSignalEngine | None]:
     """Compose the Phase-3 :class:`HorizonSignalEngine` if SIGNAL alphas exist.
 
@@ -816,6 +837,15 @@ def _create_signal_layer(
     receives the empty sensor universe; loaders that declared
     ``depends_on_sensors`` will fail validation at boot via
     :class:`feelies.alpha.registry.UnresolvedDependencyError`.
+
+    H3 / M2: after the sensor-id check, an additional validation
+    verifies that every ``depends_on_sensors`` entry is reachable by
+    either a registered ``HorizonFeature`` (surfaced in
+    ``HorizonFeatureSnapshot.values``) or the engine's sensor cache
+    (raw ``SensorReading`` pass-through via gate DSL).  Entries that
+    fall into neither set are logged as warnings so the operator
+    surfaces the gap at boot rather than via silent ``None`` at
+    runtime.
     """
     signal_seq = SequenceGenerator()
 
@@ -831,6 +861,30 @@ def _create_signal_layer(
         )
 
     registry.resolve_signal_dependencies(known_sensor_ids)
+
+    # H3 / M2: build the set of feature_ids that will be present in
+    # HorizonFeatureSnapshot.values so we can warn on any
+    # depends_on_sensors entry that neither maps to a feature nor
+    # lands in the sensor cache (= known_sensor_ids).
+    feature_ids: frozenset[str] = frozenset(
+        f.feature_id for f in (horizon_features or [])
+    )
+    covered = feature_ids | known_sensor_ids
+    for alpha in signal_alphas:
+        depends = getattr(alpha, "depends_on_sensors", ())
+        uncovered = [sid for sid in depends if sid not in covered]
+        if uncovered:
+            logger.warning(
+                "H3/M2 boot validation: alpha %r declares "
+                "depends_on_sensors entries %s that are not covered by "
+                "any registered HorizonFeature (feature_ids=%s) or "
+                "sensor cache (sensor_ids=%s).  snapshot.values.get() "
+                "will silently return None for these keys at runtime.",
+                alpha.manifest.alpha_id,
+                uncovered,
+                sorted(feature_ids),
+                sorted(known_sensor_ids),
+            )
 
     engine = HorizonSignalEngine(
         bus=bus,

@@ -98,6 +98,8 @@ class HorizonAggregator:
         "_sequence_generator",
         "_buffers",
         "_feature_state",
+        "_last_snapshot_boundary",
+        "_last_reading_ns",
         "_subscribed",
         "_metric_collector",
         "_metrics_seq",
@@ -141,6 +143,23 @@ class HorizonAggregator:
                 key=lambda f: (f.feature_id, f.horizon_seconds, f.feature_version),
             )
         )
+
+        # M9: detect same (feature_id, horizon_seconds) with conflicting
+        # feature_version — aggregator cannot deterministically pick one.
+        _seen_fv: dict[tuple[str, int], str] = {}
+        for _f in self._features_sorted:
+            _key = (_f.feature_id, _f.horizon_seconds)
+            _prev = _seen_fv.get(_key)
+            if _prev is None:
+                _seen_fv[_key] = _f.feature_version
+            elif _prev != _f.feature_version:
+                raise ValueError(
+                    f"HorizonAggregator: feature_id={_f.feature_id!r} at "
+                    f"horizon={_f.horizon_seconds}s is declared with "
+                    f"conflicting versions {_prev!r} and "
+                    f"{_f.feature_version!r}; each (feature_id, horizon) "
+                    f"pair must have exactly one version"
+                )
         self._symbols_sorted: tuple[str, ...] = tuple(sorted(symbols))
         self._buffer_window_ns = sensor_buffer_seconds * _NS_PER_SECOND
         self._sequence_generator = sequence_generator
@@ -163,6 +182,19 @@ class HorizonAggregator:
                 self._feature_state[
                     (feature.feature_id, feature.horizon_seconds, symbol)
                 ] = feature.initial_state()
+
+        # H1 / M3: per-(horizon_seconds, symbol) last boundary index for
+        # which a snapshot has already been emitted.  Prevents the
+        # UNIVERSE-tick fan-out from producing a second identical snapshot
+        # for symbols already covered by their own SYMBOL tick at the
+        # same boundary.
+        self._last_snapshot_boundary: dict[tuple[int, str], int] = {}
+
+        # H9 / M8: latest event-time timestamp at which a SensorReading
+        # was observed, keyed by (symbol, sensor_id).  Used in
+        # _build_snapshot to mark features stale when their input sensor
+        # has not fired within the feature's horizon window.
+        self._last_reading_ns: dict[tuple[str, str], int] = {}
 
         self._subscribed = False
 
@@ -208,6 +240,10 @@ class HorizonAggregator:
         key = (symbol, reading.sensor_id)
         buf = self._buffers[key]
         buf.append((reading.timestamp_ns, reading))
+        # H9 / M8: record the latest event-time timestamp for each
+        # (symbol, sensor_id) so _build_snapshot can declare a feature
+        # stale when its input sensor has not fired within the horizon.
+        self._last_reading_ns[key] = reading.timestamp_ns
         # Event-time eviction.  Anchored to the just-appended ts so
         # late-arriving events do not retroactively prune the buffer.
         cutoff = reading.timestamp_ns - self._buffer_window_ns
@@ -234,15 +270,32 @@ class HorizonAggregator:
     ) -> tuple[HorizonFeatureSnapshot, ...]:
         # Universe ticks fan out across every symbol; symbol-scoped
         # ticks emit a single snapshot for that one symbol.
+        # H1 / M3: the scheduler emits both per-symbol SYMBOL ticks and
+        # a UNIVERSE tick at each boundary.  To prevent each
+        # (symbol, horizon, boundary_index) triple from producing two
+        # identical snapshots, skip any symbol that already received a
+        # snapshot at this boundary (SYMBOL ticks arrive before UNIVERSE
+        # ticks per the scheduler's canonical emission order).
         if tick.scope == "SYMBOL":
             assert tick.symbol is not None
             target_symbols: tuple[str, ...] = (tick.symbol,)
         else:
-            target_symbols = self._symbols_sorted
+            target_symbols = tuple(
+                sym for sym in self._symbols_sorted
+                if self._last_snapshot_boundary.get(
+                    (tick.horizon_seconds, sym), -1
+                ) < tick.boundary_index
+            )
 
         snapshots: list[HorizonFeatureSnapshot] = []
         for symbol in target_symbols:
             snapshot = self._build_snapshot(tick=tick, symbol=symbol)
+            # Record that this (horizon, symbol) has been snapshotted at
+            # this boundary so a later UNIVERSE tick (or an out-of-order
+            # SYMBOL tick) cannot produce a duplicate.
+            self._last_snapshot_boundary[
+                (tick.horizon_seconds, symbol)
+            ] = tick.boundary_index
             self._bus.publish(snapshot)
             snapshots.append(snapshot)
             if self._metric_collector is not None:
@@ -269,6 +322,18 @@ class HorizonAggregator:
                 state = feature.initial_state()
                 self._feature_state[state_key] = state
             value, w, s = feature.finalize(tick, state, params={})
+            # H9 / M8: override stale=True when any input sensor has not
+            # fired within the feature's horizon window.  This catches the
+            # "sensor goes silent" case that the buffer-eviction anchor
+            # alone cannot detect (eviction only fires when the sensor
+            # re-fires, so a silent sensor keeps a stale buffer alive).
+            if not s:
+                horizon_ns = feature.horizon_seconds * _NS_PER_SECOND
+                for sid in feature.input_sensor_ids:
+                    last_ns = self._last_reading_ns.get((symbol, sid))
+                    if last_ns is None or (tick.timestamp_ns - last_ns) > horizon_ns:
+                        s = True
+                        break
             values[feature.feature_id] = float(value)
             warm[feature.feature_id] = bool(w)
             stale[feature.feature_id] = bool(s)

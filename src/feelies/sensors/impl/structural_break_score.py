@@ -7,19 +7,24 @@ crosses ``0.95`` when the cumulative drift in the observable's mean
 exceeds the configured tolerance — the canonical "alpha is dying"
 diagnostic used by ``forensics/multi_horizon_attribution.py`` (§20.9).
 
-Design note (v0.3 cross-sensor wiring):
+H6 / M5 design note (v0.3 implementation boundary):
 
-  The registry's hot path (``_on_event``) routes only raw market
-  events (``NBBOQuote`` / ``Trade``); cross-sensor SensorReading
-  consumption is wired indirectly via ``input_sensor_ids`` for
-  topological-order enforcement only.  This v0.3 implementation
-  therefore subscribes to ``NBBOQuote`` directly and uses the
-  per-quote *absolute mid-price log-return* as its internal upstream
-  observable.  This keeps the v0.3 slice strictly additive — no
-  registry surgery — while delivering the same statistical signal
-  (page-Hinkley over a stationary-under-null feature) the design
-  doc specifies.  Replacing the internal observable with a true
-  cross-sensor read is a v0.4 hot-path change and is out of scope.
+  This v0.3 sensor subscribes to ``NBBOQuote`` directly and derives its
+  internal observable (absolute mid-price log-return) from raw quotes.
+  It does **not** consume an upstream ``SensorReading`` stream.
+  Accordingly, ``input_sensor_ids`` is declared as an empty tuple —
+  accurately reflecting the zero cross-sensor wiring in the current
+  implementation.  The ``SensorProvenance`` emitted by this sensor is
+  therefore honest for forensic consumers reconstructing the dependency
+  DAG (H6 / audit).
+
+  The design §20.4.4 intent is to apply the Page-Hinkley test over an
+  upstream sensor's output (e.g. ``hawkes_intensity``).  True
+  cross-sensor wiring requires the registry's ``_on_event`` to route
+  ``SensorReading`` events to downstream sensors — a v0.4 hot-path
+  change tracked separately.  Until that lands, callers should treat
+  the ``structural_break_score`` reading as derived from mid-price
+  log-returns, not from a named upstream sensor.
 
 Algorithm (page-Hinkley, one-sided up-test):
 

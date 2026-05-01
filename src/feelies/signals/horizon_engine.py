@@ -223,9 +223,17 @@ class HorizonSignalEngine:
         """Subscribe to :class:`HorizonFeatureSnapshot` and
         :class:`RegimeState` events on the configured bus.
 
-        No-op when no signals are registered (bus subscription is
-        skipped entirely so deployments without horizon-anchored
-        alphas incur zero overhead — Inv-A).
+        When no signals are registered the subscription is deferred:
+        ``_attached`` is left ``False`` so a subsequent call *after*
+        :meth:`register` will still subscribe correctly.
+
+        .. warning::
+           Once subscribed this method is a no-op (``_attached`` is
+           ``True``).  Signals registered **after** a successful
+           ``attach()`` call are dispatched correctly (they are in
+           ``self._signals``), but calling ``attach()`` again is
+           harmless — do **not** rely on the second call to add new
+           subscriptions (H11 / audit).
         """
         if self._attached:
             return
@@ -295,6 +303,26 @@ class HorizonSignalEngine:
         snapshot: HorizonFeatureSnapshot,
     ) -> None:
         """Evaluate gate, then signal, and publish the resulting event."""
+        # H2 / M1 / M8: refuse to evaluate when the snapshot carries
+        # non-empty feature maps but any feature is not warm or is stale.
+        # In passive / Phase-2 mode snapshot.values is empty, so this
+        # guard is a no-op (preserves legacy behaviour — Inv-A).
+        if snapshot.values:
+            not_warm = any(not v for v in snapshot.warm.values())
+            is_stale = any(v for v in snapshot.stale.values())
+            if not_warm or is_stale:
+                _logger.debug(
+                    "HorizonSignalEngine: %s snapshot for %s at "
+                    "boundary=%d is not ready (warm=%s stale=%s); "
+                    "suppressing evaluation",
+                    registered.alpha_id,
+                    snapshot.symbol,
+                    snapshot.boundary_index,
+                    not not_warm,
+                    is_stale,
+                )
+                return
+
         regime = self._lookup_regime(snapshot.symbol, registered.gate)
         bindings = self._build_bindings(snapshot, regime, self._sensor_cache)
         try:
@@ -302,9 +330,15 @@ class HorizonSignalEngine:
                 symbol=snapshot.symbol, bindings=bindings,
             )
         except UnknownIdentifierError:
+            # H8 / M6: a missing binding during warm-up means the gate
+            # cannot make a valid ON/OFF decision.  Forcing the latch to
+            # OFF here prevents a previously-latched ON gate from
+            # silently persisting through the warm-up window.
+            registered.gate.reset(snapshot.symbol)
             _logger.debug(
                 "HorizonSignalEngine: %s gate evaluation suppressed for "
-                "%s — required binding missing (cold start / warm-up)",
+                "%s — required binding missing (cold start / warm-up); "
+                "latch forced OFF",
                 registered.alpha_id, snapshot.symbol,
             )
             return
@@ -357,18 +391,25 @@ class HorizonSignalEngine:
         """Resolve the cached :class:`RegimeState` for *symbol*.
 
         Picks by ``gate.engine_name`` when declared; otherwise returns
-        whichever engine published last for *symbol* (matches the
-        single-engine production deployment).
+        the most-recently-published regime for *symbol* across all
+        engines.  In a multi-engine deployment, when more than one
+        engine has published for *symbol* and no ``engine_name`` is
+        declared, this method picks by highest timestamp to be
+        deterministic rather than relying on dict insertion order
+        (H7 / audit).
         """
         if gate.engine_name is not None:
             return self._regime_cache.get((symbol, gate.engine_name))
-        # Single-engine fallback — first match wins, deterministic
-        # because cache key insertion order mirrors RegimeState
-        # publication order.
+        # Multi-engine fallback — pick the most recently published
+        # RegimeState for this symbol so the selection rule is
+        # deterministic and independent of dict insertion order.
+        best: RegimeState | None = None
         for (sym, _engine), state in self._regime_cache.items():
-            if sym == symbol:
-                return state
-        return None
+            if sym != symbol:
+                continue
+            if best is None or state.timestamp_ns > best.timestamp_ns:
+                best = state
+        return best
 
     @staticmethod
     def _build_bindings(

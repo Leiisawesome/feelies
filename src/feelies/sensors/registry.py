@@ -10,16 +10,23 @@ Architectural decisions (plan §3.1):
 2. **Pre-baked SensorProvenance (S4).**  Each ``(sensor_id, sensor_version)``
    gets one immutable :class:`feelies.core.events.SensorProvenance`
    instance built at registration time from ``subscribes_to`` +
-   ``input_sensor_ids``.  Sensors attach this exact object to the
-   :class:`feelies.core.events.SensorReading` they emit; no per-event
-   allocation, identical bytes across runs.
+   ``input_sensor_ids``.  The registry's ``_stamp`` helper builds a
+   fresh :class:`feelies.core.events.SensorReading` wrapper around the
+   sensor-returned value on every emission, overriding audit fields
+   (``sequence``, ``correlation_id``, ``source_layer``, ``provenance``)
+   so producers cannot diverge from the platform's determinism contract.
+   The ``SensorProvenance`` itself is shared (no per-event allocation),
+   but ``SensorReading`` is re-allocated once per emission (H5 / audit).
 
 3. **Throttle gate at registry level (S5).**  When a spec sets
    ``throttled_ms``, the registry tracks last-emit timestamps per
-   ``(sensor_id, symbol)`` and short-circuits ``update()`` calls
-   inside the throttle window.  The sensor is not invoked, so its
-   internal state advances only on emissions — a cleaner determinism
-   contract than "run and discard".
+   ``(sensor_id, symbol)`` and short-circuits *emission* inside the
+   throttle window.  For stateless sensors (``spec.stateful=False``,
+   the default) the ``update()`` call is also skipped.  For stateful
+   (accumulator) sensors (``spec.stateful=True``) ``update()`` is
+   called on every event so the estimator remains unbiased; only the
+   resulting ``SensorReading`` is suppressed until the window expires
+   (H4 / M4 audit).
 
 4. **Topological registration order.**  A spec with
    ``input_sensor_ids`` can only be registered after every input has
@@ -235,6 +242,15 @@ class SensorRegistry:
 
         symbol = event.symbol
         if symbol not in self._symbols:
+            # M13: log at DEBUG so universe-drift (config out of sync with
+            # replay file) is observable without flooding production logs.
+            _logger.debug(
+                "SensorRegistry: dropping event for unknown symbol %r "
+                "(known symbols: %s); check that the replay/live feed "
+                "universe matches the configured symbol set",
+                symbol,
+                sorted(self._symbols),
+            )
             return
 
         published: list[SensorReading] | None = self._publish_target
@@ -244,6 +260,7 @@ class SensorRegistry:
                 continue
 
             throttle_key: _ThrottleKey = (spec.sensor_id, symbol)
+            inside_throttle_window = False
             if spec.throttled_ms is not None and spec.throttled_ms > 0:
                 last_ns = self._throttle_last_ns.get(throttle_key)
                 if (
@@ -251,7 +268,14 @@ class SensorRegistry:
                     and (event.timestamp_ns - last_ns)
                     < spec.throttled_ms * 1_000_000
                 ):
-                    continue
+                    if not spec.stateful:
+                        # H4 / M4: stateless sensors are skipped entirely
+                        # inside the throttle window (original behaviour).
+                        continue
+                    # H4 / M4: stateful (accumulator) sensors must still
+                    # advance their internal state on every event; only
+                    # *emission* is suppressed by the throttle window.
+                    inside_throttle_window = True
 
             sensor = self._sensors[spec.key]
             state = self._state[(spec.sensor_id, spec.sensor_version, symbol)]
@@ -272,6 +296,11 @@ class SensorRegistry:
                 raise
 
             if raw is None:
+                continue
+
+            # Suppress emission (but not state advance) when inside the
+            # throttle window for stateful sensors (H4 / M4).
+            if inside_throttle_window:
                 continue
 
             reading = self._stamp(raw, spec=spec, event=event, symbol=symbol)

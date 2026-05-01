@@ -72,6 +72,29 @@ class SensorSpec:
     input_sensor_ids: tuple[str, ...] = ()
     min_history: int = 0
     throttled_ms: int | None = None
+    stateful: bool = False
+    """When ``True`` the sensor is an accumulator (e.g. EWMA, Hawkes
+    intensity, Kyle-lambda): its ``update()`` call *must not* be skipped
+    even when the registry is inside a throttle window, because every
+    skipped event biases the estimator.
+
+    Effect on throttle behaviour:
+
+    * ``stateful=False`` (default): when inside the throttle window,
+      ``sensor.update()`` is skipped entirely (legacy behaviour,
+      preserves the original determinism contract — the sensor only
+      advances on emissions).
+    * ``stateful=True``: ``sensor.update()`` is called on every event
+      regardless of the throttle window, but the resulting
+      ``SensorReading`` is only *emitted* (published to the bus) when
+      outside the window.  This separates "state advance" from
+      "emission rate-limiting" so the estimator remains unbiased.
+
+    Operators MUST set ``stateful=True`` for any accumulator sensor
+    paired with a non-null ``throttled_ms``.  Setting
+    ``throttled_ms`` on a stateful sensor without this flag is
+    undefined behaviour (H4 / M4 audit).
+    """
 
     def __post_init__(self) -> None:
         if not self.sensor_id:
