@@ -149,14 +149,30 @@ The input is `correlation_id` (which ties back to the originating tick
 via `make_correlation_id(symbol, exchange_timestamp_ns, sequence)` from
 `core/identifiers.py`) concatenated with a monotonic sequence number
 from `SequenceGenerator`. This produces deterministic IDs for backtest
-replay (invariant 5). The same event log replayed with the same
-parameters always generates the same order IDs.
+replay (Inv-5). The same event log replayed with the same parameters
+always generates the same order IDs — locked by the L2, L3-orders, and
+L4 parity hashes (`tests/determinism/`).
 
 An exhaustiveness guard in `_side_from_intent()` ensures every
 `TradingIntent` enum member is explicitly handled. `FLAT` signals
 are handled by the `IntentTranslator` which returns `NO_ACTION`,
 causing the pipeline to skip from M4 directly to M10 — before the
 risk check at M5.
+
+## `OrderRequest.reason` Lineage
+
+Each emitted `OrderRequest` carries a `reason` string identifying its
+origin layer for forensic attribution and per-strategy quarantine:
+
+| `reason` | Origin | Path |
+|----------|--------|------|
+| `"SIGNAL"` | Layer-2 SIGNAL alpha → `IntentTranslator` | M4 → M5 → M6 → M7 |
+| `"PORTFOLIO"` | Layer-3 PORTFOLIO alpha → `RiskEngine.check_sized_intent` | CROSS_SECTIONAL → M5 (per-leg) → M7 |
+| `"HAZARD_SPIKE"` | `HazardExitController` consuming `RegimeHazardSpike` | hazard branch → M7 |
+| `"HARD_EXIT_AGE"` | `HazardExitController` time-cap branch | hazard branch → M7 |
+
+Post-trade-forensics consumes these via the `MultiHorizonAttributor`
+and `OrderRequest`-keyed `TradeRecord` joins.
 
 > **Future**: LRU-based deduplication cache for live mode, keyed by
 > order ID, to prevent accidental double-submission.

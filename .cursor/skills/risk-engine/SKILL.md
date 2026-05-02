@@ -1,280 +1,300 @@
 ---
 name: risk-engine
 description: >
-  Risk control layer and portfolio governor for real-time position limits, exposure
-  management, drawdown enforcement, regime detection, and PnL attribution. Use when
-  designing risk constraints, implementing drawdown gates, building volatility-adjusted
-  sizing, detecting regime shifts or concentration risk, defining hedge overlays,
-  emergency de-leveraging, or reasoning about fail-safe guarantees, PnL decomposition,
-  or risk budget allocation.
+  Risk control layer + portfolio governor for the feelies platform. Owns
+  the `RiskEngine` protocol with three entry points (`check_signal`,
+  `check_order`, `check_sized_intent` for the Layer-3 path), the
+  `RiskLevel` escalation SM, real-time PnL attribution, regime-aware
+  sizing, the `HazardExitController`, and the per-leg veto semantics
+  that turn a `SizedPositionIntent` into per-leg `OrderRequest`s. Use
+  when designing risk constraints, debugging the per-leg veto path,
+  reasoning about regime-conditional sizing, hazard-driven exits,
+  fail-safe escalation, or PnL attribution.
 ---
 
 # Risk Engine & Portfolio Governor
 
-The risk engine is the sole gatekeeper between signal and execution. Every order
-intent passes through it — no module bypasses risk checks. The system defaults to
-safe: unknown states, missing data, and unhandled conditions all resolve to
-position reduction or trading halt, never to increased exposure.
+The risk engine is the sole gatekeeper between any alpha layer and the
+order router. **No order intent reaches `OrderRouter.submit` without
+transiting the risk engine**. The system defaults to safe: unknown
+states, missing data, and unhandled conditions all resolve to
+position reduction or trading halt, never to increased exposure
+(Inv-11).
+
+The risk engine has three entry points, one per upstream:
+
+| Entry point | Caller | Path |
+|-------------|--------|------|
+| `check_signal(signal, positions)` | M5 (SIGNAL → Order) | Per-symbol gate before order construction |
+| `check_order(order, positions)` | M6 (post-construction) | Final gate before submission |
+| `check_sized_intent(intent, positions)` | CROSS_SECTIONAL (PORTFOLIO) | Per-leg veto on cross-sectional intent |
+
+The third path was added with the Layer-3 PORTFOLIO architecture and
+is documented in detail below.
 
 ## Core Invariants
 
-Inherits platform invariants 5 (deterministic replay), 11 (fail-safe default + monotonic safety).
-Additionally:
+Inherits Inv-5 (deterministic replay), Inv-11 (fail-safe default +
+monotonic safety). Additionally:
 
-1. **No bypass** — every order intent transits the risk engine; no direct signal-to-execution path exists
-2. **Two-phase check** — `check_signal()` at micro-state M5 (signal-level), `check_order()` at M6 (concrete order); both must pass before submission. The `IntentTranslator` and `PositionSizer` run between M4 and M5 to compute the target quantity and trading intent; `NO_ACTION` intents skip the risk check entirely (no order means no risk to check)
-3. **Independent authority** — risk engine can halt trading unilaterally; no other layer can override
+1. **No bypass** — every order request transits the risk engine; no
+   direct alpha → execution path exists.
+2. **Two-phase per-symbol check** — `check_signal()` at M5,
+   `check_order()` at M6. Both must pass.
+3. **Per-leg veto on cross-sectional** — `check_sized_intent` evaluates
+   each leg independently; a single failed leg drops only that leg
+   (the rest of the intent proceeds). This is Inv-11 made structural.
+4. **Independent authority** — the risk engine can halt trading
+   unilaterally; no other layer can override.
+5. **Replay-deterministic ordering** — per-leg `OrderRequest`s are
+   sorted lexicographically by symbol so the L3-orders parity hash
+   stays bit-identical.
 
-## Risk Escalation State Machine
+## Risk Escalation SM
 
 The `RiskLevel` SM (`risk/escalation.py`) enforces monotonic safety
 tightening. Once escalation begins, de-escalation is forbidden — only
-the full cycle through LOCKED and human-authorized unlock can return
-to NORMAL (invariant 11).
+the full cycle through LOCKED and human-authorized unlock returns to
+NORMAL (Inv-11).
 
-| State | ID | Transitions To |
-|-------|----|---------------|
+| State | ID | Transitions to |
+|-------|----|----------------|
 | `NORMAL` | R0 | WARNING |
 | `WARNING` | R1 | BREACH_DETECTED |
 | `BREACH_DETECTED` | R2 | FORCED_FLATTEN |
 | `FORCED_FLATTEN` | R3 | LOCKED |
-| `LOCKED` | R4 | NORMAL (human override + audit only) |
+| `LOCKED` | R4 | NORMAL (only via `unlock_from_lockdown(audit_token)` with zero-exposure guard) |
 
-The orchestrator's `_escalate_risk()` walks R0 → R1 → R2 → R3 → R4
+`Orchestrator._escalate_risk()` walks R0 → R1 → R2 → R3 → R4
 atomically, then activates `KillSwitch` and transitions macro to
-RISK_LOCKDOWN. Recovery requires `unlock_from_lockdown(audit_token)`
-with a zero-exposure guard.
+RISK_LOCKDOWN. For intermediate stranding (callback exception during
+escalation), `reset_risk_escalation(audit_token)` resets from
+{WARNING, BREACH_DETECTED, FORCED_FLATTEN}; LOCKED is exit-only.
 
-For intermediate stranding (callback exception during escalation),
-`reset_risk_escalation(audit_token)` resets from WARNING, BREACH_DETECTED,
-or FORCED_FLATTEN — but not from LOCKED.
+## `RiskAction` Decisions
 
-## Risk Decision Types
+`RiskEngine` returns `RiskVerdict` events (`core/events.py`) with a
+typed `RiskAction`:
 
-This skill owns the `RiskEngine` protocol (`risk/engine.py`). It returns
-`RiskVerdict` events (`core/events.py`) with a typed `RiskAction` enum:
+| `RiskAction` | Pipeline response |
+|--------------|-------------------|
+| `ALLOW` | Proceed to order construction / submission |
+| `SCALE_DOWN` | Apply `verdict.scaling_factor` to order quantity |
+| `REJECT` | Skip order; transition to M10 |
+| `FORCE_FLATTEN` | Trigger `_escalate_risk()` cascade; abort pipeline |
 
-| `RiskAction` | Meaning | Pipeline Response |
-|-------------|---------|-------------------|
-| `ALLOW` | No constraints violated | Proceed to order construction/submission |
-| `SCALE_DOWN` | Within limits after scaling | Apply `verdict.scaling_factor` to order quantity |
-| `REJECT` | Constraint violated | Skip order; transition to M10 (LOG_AND_METRICS) |
-| `FORCE_FLATTEN` | Critical breach | Trigger `_escalate_risk()` cascade; abort pipeline |
-
-Exhaustiveness guards at both M5 and M6 raise `ValueError` for any
-`RiskAction` not explicitly handled — preventing new enum members from
-silently falling through to order submission.
+Exhaustiveness guards at M5, M6, and the per-leg veto loop raise
+`ValueError` for any `RiskAction` not explicitly handled.
 
 ---
 
-## Real-Time Risk Constraints
+## Layer-3 Path: `check_sized_intent`
+
+Triggered by Layer-3 PORTFOLIO alphas at the `CROSS_SECTIONAL`
+sub-state. The `CompositionEngine` emits one `SizedPositionIntent` per
+`(alpha_id, horizon_seconds, boundary_index)`; `check_sized_intent`:
+
+1. **Resolves desired delta** against `PositionStore` (current signed
+   quantity and `latest_mark`)
+2. **Emits per-leg `OrderRequest`s** sorted lexicographically by symbol
+   (deterministic ordering for the L3-orders parity hash)
+3. **Applies per-leg risk checks** with **per-leg veto** — a single
+   failed leg drops only that leg, not the whole intent
+4. **Stamps `OrderRequest.reason = "PORTFOLIO"`** for forensic lineage
+
+The per-leg veto is structural Inv-11: a single risk-bound stock
+cannot break the entire cross-sectional book. Each emitted leg
+inherits the intent's `correlation_id` so post-trade attribution can
+recover the originating intent.
+
+`SizedPositionIntent.mechanism_breakdown: dict[TrendMechanism, float]`
+is preserved through the veto loop — the per-mechanism gross-exposure
+share is recorded even after some legs are vetoed, so the
+`MultiHorizonAttributor` can compute realized vs decided breakdowns.
+
+---
+
+## Real-Time Constraints
 
 ### Position Limits
 
 | Constraint | Scope | Default | Enforcement |
 |------------|-------|---------|-------------|
-| Max shares per symbol | Per-symbol | Configurable per ticker | Reject order if post-fill position exceeds limit |
-| Max notional per symbol | Per-symbol | % of NAV (configurable) | Reject based on mark-to-market notional |
-| Max symbols held | Portfolio | Configurable | Reject new-name orders when at capacity |
+| Max shares per symbol | Per-symbol | configured per ticker | Reject if post-fill exceeds limit |
+| Max notional per symbol | Per-symbol | % of NAV | Reject based on mark-to-market notional |
+| Max symbols held | Portfolio | configurable | Reject new-name orders at capacity |
 | Max position as % of ADV | Per-symbol | 1% of 20-day ADV | Prevent outsized participation |
 
 ### Exposure Limits
 
-| Constraint | Definition | Default | Action on Breach |
-|------------|-----------|---------|------------------|
-| Max gross exposure | Sum of |long| + |short| notional / NAV | Configurable | Block new orders; begin unwinding if sustained |
-| Max net exposure | (long - short) notional / NAV | Configurable | Block directional orders that increase |
-| Max sector exposure | Gross notional in any single sector / NAV | Configurable | Block same-sector orders |
-| Max single-name concentration | Single position notional / gross notional | 20% | Reject orders increasing concentration |
+| Constraint | Definition | Action on breach |
+|------------|-----------|------------------|
+| Max gross | Σ\|long\| + \|short\| / NAV | Block new; begin unwinding if sustained |
+| Max net | (long − short) / NAV | Block directional that increases |
+| Max sector gross | Sector notional / NAV | Block same-sector orders |
+| Max single-name concentration | One position / gross | Reject orders increasing concentration |
 
 ### Drawdown Gates
 
 | Level | Trigger | Response |
 |-------|---------|----------|
-| Warning | Intraday PnL < -0.5% NAV | Log alert; tighten position sizing to 50% |
-| Throttle | Intraday PnL < -1.0% NAV | Cancel open orders; reduce position sizing to 25%; no new positions |
-| Circuit breaker | Intraday PnL < -1.5% NAV | Cancel all orders; no new trades; existing positions monitored with stops |
-| Kill switch | Intraday PnL < -2.0% NAV | Flatten all positions; halt trading for the day |
+| Warning | Intraday PnL < −0.5% NAV | Log alert; tighten sizing to 50% |
+| Throttle | Intraday PnL < −1.0% NAV | Cancel open; reduce sizing to 25%; no new positions |
+| Circuit breaker | Intraday PnL < −1.5% NAV | Cancel all; positions monitored with stops |
+| Kill switch | Intraday PnL < −2.0% NAV | Flatten all; halt for the day |
 
-Drawdown levels are configurable. PnL measured mark-to-market using last NBBO mid.
-Thresholds checked on every quote update and every fill event.
-
-**Ownership boundary**: Drawdown gates define the policy (thresholds and
-responses). The live-execution skill owns the safety mechanisms (kill switch,
-circuit breaker, capital throttle) that enforce these policies at the order
-routing level.
+Drawdown thresholds are configurable. PnL is mark-to-market using
+last NBBO mid. **Ownership boundary**: this skill defines the policy
+(thresholds and responses). The live-execution skill owns the
+mechanism layer (kill switch, circuit breaker, capital throttle).
 
 ### Volatility-Adjusted Sizing
 
 ```
-target_risk_per_trade = risk_budget_bps * NAV
-position_size = target_risk_per_trade / (realized_vol * vol_scalar)
+target_risk = risk_budget_bps × NAV
+position_size = target_risk / (realized_vol × vol_scalar)
 position_size = min(position_size, max_position_limit, adv_limit)
 ```
 
-| Parameter | Source | Update Frequency |
-|-----------|--------|-----------------|
-| Realized volatility | Rolling intraday (configurable window) | Every quote update |
-| Vol scalar | Regime-dependent multiplier (see Regime Detection) | On regime transition |
-| Risk budget | Per-strategy allocation from portfolio governor | Daily or on rebalance |
+The default `BudgetBasedSizer` (`risk/position_sizer.py`) applies
+regime-dependent scaling drawn from `RegimeEngine.current_state`
+(read-only). E.g., `vol_breakout` → 0.5×, `normal` → 1.0×.
 
-Position size scales inversely with volatility. In elevated-vol regimes, sizes
-shrink automatically without manual intervention.
+---
+
+## Hazard-Driven Exit
+
+`HazardExitController` (`risk/hazard_exit.py`) consumes
+`RegimeHazardSpike` events from `RegimeHazardDetector` (services
+package) and emits `OrderRequest` exits for open positions when a
+regime flip is imminent.
+
+| Reason | Trigger | Suppression |
+|--------|---------|-------------|
+| `HAZARD_SPIKE` | Posterior departure exceeds per-alpha `hazard_score_threshold` AND position open ≥ `min_age_seconds` | Per `(symbol, alpha_id, departing_state)` — at most one spike-exit per departure episode |
+| `HARD_EXIT_AGE` | Position open ≥ `hard_exit_age_seconds` | Per-symbol `hard_exit_suppression_seconds` |
+
+Behavior:
+
+- Wired behind alpha-level `hazard_exit.enabled: true` (default off,
+  v0.2-compatible)
+- Bit-identical replay (Inv-5) — verified by the Level-1 + Level-4
+  hazard-exit replay tests
+- The controller never closes a position on its own initiative
+  without a triggering event; the spike merely surfaces a
+  microstructure signal
+
+See the regime-detection skill for the hazard detector itself.
 
 ---
 
 ## Regime Detection
 
-The risk engine maintains regime classifiers that feed into sizing, exposure
-limits, and safety controls.
+The risk engine consumes regime state from the platform-level
+`RegimeEngine` service (services package). Read-only access via
+`current_state(symbol)`. **Ownership boundary**:
 
-**Ownership boundary**: The microstructure-alpha skill defines the regime
-taxonomy (what regimes exist and their structural meaning). This skill owns
-real-time detection and the risk response to regime transitions. The
-post-trade-forensics skill audits whether regime classification remains
-accurate and whether strategy performance is stable across regimes. When
-forensic and risk-engine regime labels diverge, use the more conservative
-classification and alert.
+- microstructure-alpha defines the regime taxonomy (what regimes exist)
+- regime-detection owns the platform-level service (the writer/reader contract)
+- this skill owns the risk response to regime transitions
+- post-trade-forensics audits classification accuracy
+
+When forensic and risk-engine regime labels diverge, use the **more
+conservative** classification.
 
 ### Volatility Regime
 
-| Regime | Detection | Risk Response |
+| Regime | Detection | Risk response |
 |--------|-----------|---------------|
-| Low | Realized vol < 20th percentile of lookback | Normal sizing; full allocation |
-| Normal | 20th–80th percentile | Normal sizing |
-| Elevated | 80th–95th percentile | Reduce sizing to 50%; widen stops |
-| Crisis | > 95th percentile or vol spike > 3x rolling mean | Reduce sizing to 25%; activate circuit breaker evaluation |
-
-Detection via exponentially weighted realized volatility with regime persistence
-filter (minimum dwell time before transition, configurable).
+| Low | Realized vol < 20th percentile | Normal sizing |
+| Normal | 20–80th | Normal sizing |
+| Elevated | 80–95th | Reduce to 50%; widen stops |
+| Crisis | > 95th or vol spike > 3× rolling mean | Reduce to 25%; activate circuit breaker eval |
 
 ### Correlation Clustering
 
-Monitor rolling pairwise correlations across held positions:
-
 | Condition | Detection | Response |
 |-----------|-----------|----------|
-| Correlation spike | Mean pairwise corr > threshold (e.g., 0.7) | Reduce gross exposure; alert |
-| Directional clustering | > 80% of positions same-sign beta | Flag concentration; enforce net exposure limit |
-| Correlation breakdown | Historical stable correlations diverge | Re-evaluate hedges; alert for manual review |
-
-Correlation estimated from intraday returns (5-min windows, rolling).
-Not raw price correlation — use returns to avoid spurious level effects.
+| Correlation spike | Mean pairwise corr > 0.7 | Reduce gross exposure; alert |
+| Directional clustering | > 80% positions same-sign beta | Flag concentration; enforce net cap |
+| Correlation breakdown | Historically stable correlations diverge | Re-evaluate hedges; manual review |
 
 ### Concentration Risk
 
 | Metric | Threshold | Action |
 |--------|-----------|--------|
-| Herfindahl index (notional) | > 0.25 | Alert; block further concentration |
-| Top-3 position weight | > 60% of gross | Reduce or block |
+| Notional Herfindahl | > 0.25 | Alert; block further concentration |
+| Top-3 weight | > 60% gross | Reduce or block |
 | Sector Herfindahl | > 0.35 | Alert; enforce sector caps |
 
 ---
 
 ## Risk-Neutral Overlays
 
-### Beta Hedge Logic
-
-Maintain portfolio beta within target band:
+### Beta Hedge
 
 ```
-portfolio_beta = sum(position_i * beta_i) / NAV
-hedge_needed   = (portfolio_beta - target_beta) * NAV
-hedge_instrument = configurable (index ETF, futures proxy)
+portfolio_beta = Σ position_i × beta_i / NAV
+hedge_needed   = (portfolio_beta − target_beta) × NAV
 ```
 
-| Parameter | Default | Notes |
-|-----------|---------|-------|
-| Target beta | 0.0 (market-neutral) | Configurable per strategy |
-| Rebalance trigger | |portfolio_beta - target| > tolerance | Tolerance configurable |
-| Hedge instrument | SPY / sector ETFs | Configurable; must be liquid |
-| Beta estimation | Rolling OLS, intraday 5-min returns | Window configurable |
-
-Hedge orders route through the same risk engine — they are not exempt from
-position limits or exposure checks.
+Hedge orders route through the same risk engine — they are not exempt
+from limits or exposure checks.
 
 ### Dynamic Exposure Scaling
 
-Total exposure scales based on regime and system health:
-
 ```
-effective_allocation = base_allocation * regime_scalar * health_scalar * drawdown_scalar
-
-regime_scalar   = f(volatility_regime)     # 1.0 normal, 0.5 elevated, 0.25 crisis
-health_scalar   = f(execution_quality)     # from live-execution monitoring
-drawdown_scalar = f(intraday_pnl_vs_limit) # linear ramp from 1.0 to 0.0
+effective = base × regime_scalar × health_scalar × drawdown_scalar
 ```
 
-Scalars multiply — compounding reduces exposure aggressively when multiple
-risk signals fire simultaneously.
+Scalars multiply — compounding reduces exposure aggressively when
+multiple risk signals fire simultaneously.
 
-### Emergency De-Leveraging Protocol
+### Emergency De-Leveraging
 
-Triggered when multiple risk signals fire concurrently or a single critical
-breach occurs.
-
-| Phase | Trigger | Action | Duration |
-|-------|---------|--------|----------|
-| 1 — Reduce | 2+ warning-level signals | Cut new order sizes by 50% | Until signals clear |
-| 2 — Defensive | Any throttle-level + elevated vol | Cancel all open orders; reduce positions to 50% | Until regime normalizes |
-| 3 — Flatten | Kill switch trigger or 3+ throttle signals | Market-order flatten all positions | Immediate; irreversible without manual restart |
-
-Flattening order:
-1. Cancel all open orders (wait for confirmations)
-2. Submit market orders to close each position
-3. Verify flat via broker reconciliation
-4. Enter halted state — no automated re-entry
+| Phase | Trigger | Action |
+|-------|---------|--------|
+| 1 — Reduce | 2+ warning-level signals | Cut new sizes by 50% |
+| 2 — Defensive | Any throttle-level + elevated vol | Cancel open; reduce positions to 50% |
+| 3 — Flatten | Kill-switch trigger or 3+ throttle signals | Market-order flatten; halted state, irreversible without manual restart |
 
 ---
 
-## Real-Time PnL Decomposition
+## Real-Time PnL Attribution
 
-### PnL Components
-
-Track continuously, updated on every fill and quote:
+Tracked continuously, updated on every fill and every quote.
 
 | Component | Definition |
 |-----------|-----------|
-| Gross PnL | Mark-to-market change in portfolio value |
-| Realized PnL | Closed-trade profit/loss |
-| Unrealized PnL | Open-position mark-to-market |
-| Transaction costs | Commissions + fees (realized) |
-| Slippage cost | Fill price vs reference price at signal time |
-| Net PnL | Gross - transaction costs - slippage |
+| Gross PnL | Mark-to-market change |
+| Realized PnL | Closed-trade P/L |
+| Unrealized PnL | Open-position MTM |
+| Transaction costs | Commissions + fees |
+| Slippage cost | Fill vs reference at signal time |
+| Net PnL | Gross − costs − slippage |
 
-### Attribution
-
-**Ownership boundary**: This skill computes real-time PnL attribution
-(updated per-fill and per-quote) for operational risk management. The
-post-trade-forensics skill performs deeper forensic attribution over
-longer windows (5–10 day rolling), comparing realized attribution against
-backtest baselines to detect structural edge decay. Same decomposition
-framework, different timeframes and purposes.
-
-Decompose returns into sources:
-
-| Attribution | Calculation | Purpose |
-|-------------|------------|---------|
-| Alpha | Residual return after removing beta exposure | Measure signal quality |
-| Beta | Portfolio beta * market return | Measure market exposure contribution |
-| Slippage | Realized fill vs backtest-expected fill | Measure execution quality |
-| Spread cost | Half-spread paid on entry + exit | Measure liquidity cost |
-| Timing | Return from signal time to fill time | Measure latency cost |
+### Attribution Sources
 
 ```
 total_return = alpha + beta_return + slippage + spread_cost + timing_cost + fees
 ```
 
-Attribution computed per-trade and aggregated at strategy and portfolio level.
-Rolling windows (1hr, session, daily) maintained for monitoring dashboards.
+Computed per-trade and aggregated at strategy + portfolio level.
+Rolling windows (1 hr, session, daily) for monitoring.
+
+**Ownership boundary**: this skill computes real-time attribution
+for operational risk. The post-trade-forensics skill performs deeper
+forensic attribution over multi-day windows including per-mechanism
+decomposition (`MultiHorizonAttributor`) — same framework, longer
+window, different purpose.
 
 ### Reconciliation
 
-| Check | Frequency | Action on Failure |
+| Check | Frequency | Action on failure |
 |-------|-----------|-------------------|
-| PnL vs position * price change | Every quote update | Alert; re-derive from fills |
-| Sum of attributed components = total PnL | Every trade | Alert; flag attribution model |
-| Internal PnL vs broker statement | End of day | Investigate discrepancy; broker is authoritative |
+| PnL vs position × price change | Every quote | Alert; re-derive from fills |
+| Σ attributed = total | Every trade | Alert; flag attribution model |
+| Internal vs broker | End of day | Investigate; broker is authoritative |
 
 ---
 
@@ -282,58 +302,39 @@ Rolling windows (1hr, session, daily) maintained for monitoring dashboards.
 
 ### Per-Strategy Budgets
 
-Each strategy receives an independent risk allocation:
-
 | Parameter | Scope | Purpose |
 |-----------|-------|---------|
 | Max drawdown | Per-strategy | Independent kill switch per strategy |
 | Capital allocation | Per-strategy | Fraction of NAV available |
-| Position limit | Per-strategy per-symbol | Prevent single strategy from monopolizing a name |
+| Position limit | Per-strategy per-symbol | Prevent monopolizing a name |
 | Correlation budget | Cross-strategy | Limit aggregate correlated exposure |
 
-### Portfolio-Level Governor
+### Portfolio Governor
 
-The portfolio governor enforces aggregate constraints that no single strategy
-can evaluate alone:
+Aggregate constraints no single strategy can evaluate alone:
 
-- Total gross exposure across all strategies
-- Total drawdown across all strategies (diversified)
-- Net beta exposure across all strategies
-- Aggregate concentration across all strategies holding the same name
+- Total gross across all strategies
+- Total drawdown (diversified)
+- Net beta exposure
+- Aggregate concentration across strategies holding the same name
 
-If aggregate constraints bind, the governor reduces the most recently submitted
-order first (LIFO priority for risk reduction).
+If aggregate constraints bind, the governor reduces the most recently
+submitted order first (LIFO priority for risk reduction).
 
 ---
 
 ## Event Interface
 
-Risk decisions are communicated via `RiskVerdict` events (`core/events.py`)
-carrying `RiskAction`, `reason`, `scaling_factor`, and `constraints`.
-The orchestrator publishes each verdict on the bus at both M5 and M6.
-
-Regime transitions, drawdown alerts, and other risk signals should be
-emitted as typed events extending the `Event` base class. Currently
-implemented events relevant to risk:
-
-| Event | Source | Key Fields |
-|-------|--------|------------|
-| `RiskVerdict` | Risk engine | `action: RiskAction`, `reason`, `scaling_factor`, `constraints` |
-| `StateTransition` | Risk escalation SM | `machine_name="risk_escalation"`, from/to state, trigger |
-| `Alert` | Orchestrator/risk | `severity: AlertSeverity`, `alert_name`, context |
+| Event | Source | Key fields |
+|-------|--------|-----------|
+| `RiskVerdict` | `RiskEngine` | `action: RiskAction`, `reason`, `scaling_factor`, `constraints` |
+| `StateTransition` | Risk-escalation SM | `machine_name="risk_escalation"`, from/to, trigger |
+| `Alert` | Orchestrator / risk | `severity: AlertSeverity`, `alert_name`, context |
 | `KillSwitchActivation` | Orchestrator | `reason`, `activated_by` |
 
-The following events are NOT YET IMPLEMENTED as typed events but should
-extend `Event` when built:
-
-| Future Event | Payload |
-|-------|---------|
-| `REGIME_TRANSITION` | old_regime, new_regime, detection_method |
-| `DRAWDOWN_ALERT` | level, current_pnl, threshold, response_taken |
-| `EXPOSURE_BREACH` | metric, current_value, limit, action_taken |
-| `PNL_SNAPSHOT` | gross, net, alpha, beta, slippage, by_strategy |
-
-Every event carries a timestamp from the injectable clock (never raw `datetime.now()`).
+`OrderRequest.reason` is set to `"SIGNAL"`, `"PORTFOLIO"`,
+`"HAZARD_SPIKE"`, or `"HARD_EXIT_AGE"` depending on the upstream path,
+giving post-trade forensics a clean lineage axis.
 
 ---
 
@@ -341,14 +342,14 @@ Every event carries a timestamp from the injectable clock (never raw `datetime.n
 
 | Failure | Detection | Response |
 |---------|-----------|----------|
-| Stale NBBO (no update > threshold) | Heartbeat monitor on quote stream | Use last-known price; flag stale; block new orders if sustained |
-| Risk engine crash | Watchdog process; heartbeat | Kill switch activates; no orders can route without risk engine |
-| PnL calculation error | Reconciliation check fails | Halt new orders; re-derive PnL from fill log |
-| Regime model divergence | Backtest vs live regime disagreement | Alert; use more conservative regime classification |
-| Clock desync | Clock drift detection | Use more conservative (earlier) timestamp; alert |
+| Stale NBBO | Heartbeat monitor on quote stream | Use last-known; flag stale; block new orders if sustained |
+| Risk-engine crash | Watchdog process | Kill switch activates; no orders route |
+| PnL calculation error | Reconciliation check fails | Halt new orders; re-derive PnL from fills |
+| Regime model divergence | Backtest vs live disagreement | Use more conservative classification |
+| Clock desync | Drift detection (Inv-10) | Use earlier timestamp; alert |
 
-The risk engine is a **hard dependency** for order flow. If it is unavailable,
-the system cannot trade. This is by design.
+The risk engine is a **hard dependency** for order flow. If
+unavailable, the system cannot trade. By design.
 
 ---
 
@@ -356,25 +357,17 @@ the system cannot trade. This is by design.
 
 | Dependency | Interface |
 |------------|-----------|
-| System Architect (system-architect skill) | Clock abstraction, event bus, layer boundaries |
-| Live Execution (live-execution skill) | Order routing gate; safety controls coordination; execution quality health signal |
-| Backtest Engine (backtest-engine skill) | Shared risk check logic; deterministic replay of risk decisions |
-| Microstructure Alpha (microstructure-alpha skill) | Signal regime awareness; entry/exit conditions; volatility features |
-| Data Engineering (data-engineering skill) | Real-time NBBO feed for mark-to-market, vol estimation, regime detection |
+| System Architect | Clock, EventBus, layer boundaries, `PositionStore` |
+| Live Execution | Order routing gate; safety controls coordination; execution-quality health signal |
+| Backtest Engine | Shared risk-check logic; deterministic replay of risk decisions |
+| Microstructure Alpha | `Signal` events with `SignalDirection`, `trend_mechanism`; entry / exit conditions |
+| Composition Layer | `SizedPositionIntent` consumed via `check_sized_intent`; per-leg veto |
+| Regime Detection | `current_state(symbol)` for sizing scalars; `RegimeHazardSpike` for hazard exits |
+| Data Engineering | Real-time NBBO feed for MTM and vol estimation |
+| Post-Trade Forensics | `OrderRequest.reason` lineage; per-mechanism attribution |
+| Alpha Lifecycle | Quarantine demotion; capital-tier scaling |
 
-The risk engine sits between signal and execution in both backtest and live modes.
-Same risk logic, same constraints, same fail-safe behavior. Mode-specific
-differences (e.g., broker reconciliation in live vs simulated reconciliation in
-backtest) are behind the `ExecutionBackend` interface (`execution/backend.py`).
-
-The `RiskEngine` protocol (`risk/engine.py`) exposes two methods:
-- `check_signal(signal: Signal, positions: PositionStore) -> RiskVerdict`
-- `check_order(order: OrderRequest, positions: PositionStore) -> RiskVerdict`
-
-The `PositionSizer` protocol (`risk/position_sizer.py`) is co-located
-with the risk engine layer and consumes regime state for scaling:
-- `compute_target_quantity(signal, risk_budget, symbol_price, account_equity) -> int`
-
-The default `BudgetBasedSizer` applies regime-dependent scaling
-(e.g., `vol_breakout` → 0.5×, `normal` → 1.0×) and caps at the
-alpha's declared `max_position_per_symbol`.
+The risk engine sits between every alpha layer and execution in
+backtest, paper, and live. Same logic, same constraints, same
+fail-safe behavior — mode-specific differences are confined to
+`ExecutionBackend` (`execution/backend.py`).

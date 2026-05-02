@@ -1,417 +1,330 @@
 ---
 name: system-architect
 description: >
-  Foundational system architecture for a unified intraday trading platform.
-  Enforces layer separation, determinism, event-driven design, and dual-mode
-  (research/live) behavioral equivalence under L1 NBBO constraints (Massive
-  Advanced, formerly Polygon.io). Use when designing system components, defining layer boundaries,
-  making architectural decisions, or reasoning about cross-layer interactions,
-  failure modes, or deterministic replay.
+  Foundational architecture for the feelies intraday platform: three alpha
+  layers (SENSOR / SIGNAL / PORTFOLIO) anchored to horizon-bucketed snapshots,
+  five state machines, single-`ExecutionBackend` mode swap, and end-to-end
+  determinism. Use when designing components, defining layer boundaries,
+  reasoning about cross-layer interactions, micro-state ordering, replay
+  determinism, or fail-safe enforcement on L1 NBBO data from Massive
+  (formerly Polygon.io).
 ---
 
-# System Architect — Foundation
+# System Architect — Platform Foundation
 
-Design all components for a unified intraday trading platform where research
-backtesting and live trading share core logic, behavioral equivalence is
-enforced, and determinism is guaranteed in replay mode.
+The feelies platform is a deterministic, event-driven, three-layer alpha
+stack on L1 NBBO data. Research backtests and live trading share the
+same core; mode-specific code lives only behind `ExecutionBackend`.
+Every architectural decision is gated by the 13 invariants in
+`.cursor/rules/platform-invariants.mdc`.
 
-## System Boundaries
+This skill owns the system-wide contract: layer topology, state
+machines, the `ExecutionBackend` abstraction, the typed event catalog,
+the kernel/orchestrator, and the observability layer. Layer-internal
+contracts are owned by their respective skills.
 
-All code must belong to exactly one of these layers:
+## Three Alpha Layers
 
-| Layer | Responsibility |
-|-------|---------------|
-| Market Data Ingestion | Normalize Massive L1 NBBO into canonical events |
-| Event Bus | Route typed events with deterministic ordering |
-| Feature Engine | Stateful feature computation from event streams (see feature-engine skill) |
-| Signal Engine | Pure functions: features → signals (no side effects) |
-| Intent & Sizing | Position-aware intent translation and risk-budget position sizing |
-| Risk Engine | Position limits, exposure checks, drawdown gates |
-| Execution Engine | Order routing, fill simulation (backtest) / broker API (live) |
-| Alpha Module System | Discovery, registration, and lifecycle of strategy modules |
-| Portfolio Layer | Position tracking, PnL, capital allocation |
-| Storage Layer | Event log, feature snapshots, trade journal |
-| Monitoring | Latency histograms, throughput, health checks, kill-switch |
+Every alpha targets exactly one of these layers; cross-layer leakage is
+a load-time failure (gate G1).
 
-## Kernel & Orchestration
+| Layer | Package | Horizon | Output Event | Owner skill |
+|-------|---------|---------|--------------|-------------|
+| **SENSOR** (Layer 1) | `feelies.sensors` | event-time (≤ 1 s) | `SensorReading` | feature-engine |
+| **SIGNAL** (Layer 2) | `feelies.signals` | 30 s – 30 min | `Signal` | microstructure-alpha |
+| **PORTFOLIO** (Layer 3) | `feelies.composition` | 5 – 30 min | `SizedPositionIntent` | composition-layer |
 
-The Kernel layer is the coordination center. The `Orchestrator`
-(`kernel/orchestrator.py`) owns all five state machines and drives
-layers through the deterministic micro-state pipeline. It contains
-**no business logic** — only coordination, state management, and
-fail-safe enforcement.
+`LEGACY_SIGNAL` was a fourth (per-tick) layer retired in Workstream D.2;
+the loader rejects `layer: LEGACY_SIGNAL` outright. The legacy
+per-tick `FeatureVector` event, `FeatureEngine.update`, `SignalEngine.evaluate`,
+`CompositeFeatureEngine`, `CompositeSignalEngine`, and
+`AlphaModule.evaluate` were all deleted in D.2 PR-2b-iv — any
+documentation or skill referring to them is stale.
 
-### State Machines
+The canonical Layer-2 input is **`HorizonFeatureSnapshot`** (emitted by
+`HorizonAggregator` on `HorizonTick` boundary crossings). The canonical
+Layer-2 output is **`Signal`** (emitted by `HorizonSignalEngine` after
+the alpha's `regime_gate` resolves to ON). The canonical Layer-3 output
+is **`SizedPositionIntent`** (emitted by `CompositionEngine` per
+`CrossSectionalContext`).
 
-Five state machines govern all system behavior. Each uses the generic
-`StateMachine[S]` framework (`core/state_machine.py`) with a frozen
-transition table validated for enum completeness at construction.
+## Kernel & Orchestrator
+
+The kernel layer (`feelies.kernel.orchestrator.Orchestrator`) coordinates
+all five state machines and drives the per-tick micro-state pipeline.
+It contains **no business logic** — only state management, bus
+dispatch, and fail-safe enforcement.
+
+### Five State Machines
+
+Each uses the generic `StateMachine[S]` framework
+(`core/state_machine.py`) with a frozen transition table validated for
+enum completeness at construction. Every transition emits a typed
+`StateTransition` event on the bus via `TransitionRecord` callbacks —
+no silent transitions (Inv-13).
 
 | Machine | Enum | File | States | Scope |
 |---------|------|------|--------|-------|
-| Global Stack | `MacroState` | `kernel/macro.py` | 10 | System-wide lifecycle (INIT through SHUTDOWN) |
-| Tick Pipeline | `MicroState` | `kernel/micro.py` | 11 | Per-tick processing sequence (M0 through M10) |
-| Order Lifecycle | `OrderState` | `execution/order_state.py` | 9 | Per-order (CREATED through terminal) |
-| Risk Escalation | `RiskLevel` | `risk/escalation.py` | 5 | Monotonic safety tightening (NORMAL through LOCKED) |
-| Data Integrity | `DataHealth` | `ingestion/data_integrity.py` | 4 | Per-symbol stream health |
+| Macro lifecycle | `MacroState` | `kernel/macro.py` | INIT → DATA_SYNC → READY → {RESEARCH, BACKTEST, PAPER_TRADING, LIVE_TRADING}_MODE → DEGRADED → RISK_LOCKDOWN → SHUTDOWN | System-wide |
+| Micro pipeline | `MicroState` | `kernel/micro.py` | M0 ‥ M10 backbone + Phase-2/3/4 sub-states (see below) | Per-tick |
+| Order lifecycle | `OrderState` | `execution/order_state.py` | CREATED → SUBMITTED → ACKNOWLEDGED → {PARTIALLY_FILLED, FILLED, CANCEL_REQUESTED, REJECTED, EXPIRED, CANCELLED} | Per-order |
+| Risk escalation | `RiskLevel` | `risk/escalation.py` | NORMAL → WARNING → BREACH_DETECTED → FORCED_FLATTEN → LOCKED | Monotonic safety |
+| Data integrity | `DataHealth` | `ingestion/data_integrity.py` | HEALTHY → GAP_DETECTED → CORRUPTED → RECOVERING | Per-symbol stream |
 
-Every transition emits a `StateTransition` event on the bus via
-`TransitionRecord` callbacks — no silent transitions (invariant 13).
-Illegal transitions raise `IllegalTransition`.
+Illegal transitions raise `IllegalTransition`. Construction-time enum
+completeness check guarantees every enum member has a transition entry
+— a contributor adding a new state without wiring it triggers a hard
+failure at `StateMachine.__init__`.
 
-### ExecutionBackend (Invariant 9)
+### Micro-State Pipeline (Per Tick)
 
-This skill owns the `ExecutionBackend` abstraction and its two composed
-protocols (`execution/backend.py`):
+The `MicroState` enum (`kernel/micro.py`) defines the M0 → M10
+backbone with Phase-2/3/4 sub-states inserted between M2 and M3.
+The orchestrator's `_process_tick_inner()` is the **single code path**
+across all trading modes — it never inspects `backend.mode`.
+
+```
+M0  WAITING_FOR_MARKET_EVENT
+M1  MARKET_EVENT_RECEIVED          (event log append + bus publish)
+M2  STATE_UPDATE                   (RegimeEngine.posterior → RegimeState)
+    SENSOR_UPDATE                  (Layer-1 fan-out via SensorRegistry)
+    HORIZON_CHECK                  (HorizonScheduler boundary check)
+    HORIZON_AGGREGATE              (HorizonAggregator → HorizonFeatureSnapshot)
+    SIGNAL_GATE                    (HorizonSignalEngine → Signal)
+    CROSS_SECTIONAL                (UniverseSynchronizer → CrossSectionalContext;
+                                    CompositionEngine → SizedPositionIntent)
+M3  FEATURE_COMPUTE                (body now empty — legacy hook preserved
+                                    so the SM stays on its legal path)
+M4  SIGNAL_EVALUATE                (drain bus-buffered Signal → OrderRequest)
+    ORDER_AGGREGATION              (multi-leg intent fan-out)
+M5  RISK_CHECK                     (RiskEngine.check_signal | check_sized_intent)
+M6  ORDER_DECISION                 (build OrderRequest from intent + verdict)
+M7  ORDER_SUBMIT                   (OrderRouter.submit)
+M8  ORDER_ACK                      (OrderRouter.poll_acks → OrderAck)
+M9  POSITION_UPDATE                (_reconcile_fills → PositionUpdate)
+M10 LOG_AND_METRICS                (tick_to_decision_latency_ns, cleanup)
+```
+
+Sub-states between M2 and M3 are the Phase-2/3/4 wiring; the M0–M10
+backbone is preserved so the SM transition table remains stable. The
+SIGNAL → Order path runs through M4; the PORTFOLIO `SizedPositionIntent`
+path is dispatched on the bus at `CROSS_SECTIONAL` and consumed by
+`RiskEngine.check_sized_intent` at M5 (with per-leg veto semantics).
+M3's body is empty for Phase-3 alphas — kept as a structural hook so
+the legal-path walk stays bit-identical (Inv-5).
+
+### `ExecutionBackend` (Inv-9)
+
+The single mode-specific abstraction (`execution/backend.py`):
 
 - `MarketDataSource` — historical replay (backtest) or live feed
 - `OrderRouter` — simulated fills (backtest) or broker API (live)
 
-`ExecutionBackend` is the **sole** mode-specific abstraction.
-
-The orchestrator never inspects `backend.mode`. The micro-state pipeline
-is identical across BACKTEST_MODE, PAPER_TRADING_MODE, and
-LIVE_TRADING_MODE. Any logic that branches on mode outside
-`ExecutionBackend` implementations is a defect.
-
-#### Composition by Mode
-
-Mode selection determines which concrete implementations are composed
-into `ExecutionBackend` at startup. The orchestrator receives a fully
-composed backend and never inspects `backend.mode`.
+The orchestrator never inspects `backend.mode`. Composition happens at
+startup via `bootstrap.build_platform(config)`:
 
 | Mode | `MarketDataSource` | `OrderRouter` | `Clock` |
 |------|-------------------|---------------|---------|
 | `BACKTEST_MODE` (`execution_mode: market`) | `ReplayFeed(EventLog)` | `BacktestOrderRouter` (mid-price fills) | `SimulatedClock` |
 | `BACKTEST_MODE` (`execution_mode: passive_limit`) | `ReplayFeed(EventLog)` | `PassiveLimitOrderRouter` (queue-position fills) | `SimulatedClock` |
-| `PAPER_TRADING_MODE` | `MassiveLiveFeed` | Paper router (NOT YET IMPLEMENTED) | `WallClock` |
-| `LIVE_TRADING_MODE` | `MassiveLiveFeed` | Broker router (NOT YET IMPLEMENTED) | `WallClock` |
+| `PAPER_TRADING_MODE` | `MassiveLiveFeed` | *(not yet implemented)* | `WallClock` |
+| `LIVE_TRADING_MODE` | `MassiveLiveFeed` | *(not yet implemented)* | `WallClock` |
 
-Historical backfill (`MassiveHistoricalIngestor`) is a batch process
-that populates `EventLog` — it runs outside the orchestrator lifecycle
-and is not an operating mode. See the data-engineering skill for
-backfill details (REST API, checkpointing, resumability).
+`MassiveHistoricalIngestor` is a batch ETL that populates `EventLog`
+outside the orchestrator lifecycle — it is not an operating mode (see
+the data-engineering skill).
 
-Composition happens at startup via `bootstrap.build_platform(config)`,
-which selects concrete implementations for the desired mode:
-`build_backtest_backend()` composes `ReplayFeed` + `BacktestOrderRouter`
-(mid-price fills) and `build_passive_limit_backend()` composes
-`ReplayFeed` + `PassiveLimitOrderRouter` (queue-position fills).
-The `execution_mode` config field (`"market"` or `"passive_limit"`)
-selects which factory is called. Both wire `NBBOQuote` bus subscriptions
-so the router tracks last-seen quotes for fill pricing. The orchestrator
-receives a fully composed backend and never inspects `backend.mode`.
+### Fail-Safe Cascade (Inv-11)
 
-### Fail-Safe Cascade (Invariant 11)
+When any tick-processing step throws:
 
-When any tick-processing step throws an exception:
-
-1. Micro SM resets to M0 (`_handle_tick_failure`)
+1. Micro SM resets to M0 via `_handle_tick_failure()`
 2. Macro transitions to DEGRADED
 3. The original exception type is captured in the trigger for provenance
 
 When risk escalation fires (`_escalate_risk`):
 
 1. Risk SM walks R0 → R1 → R2 → R3 → R4 (monotonic, forward-only)
-2. Kill switch activates (irreversible without human intervention)
+2. `KillSwitch.activate()` — irreversible without human authorization
 3. Macro transitions to RISK_LOCKDOWN
-4. Recovery requires `unlock_from_lockdown(audit_token)` with zero exposure
+4. Recovery requires `Orchestrator.unlock_from_lockdown(audit_token)` with
+   a zero-exposure guard (`PositionStore.total_exposure() == Decimal("0")`)
+
+Intermediate stranding (callback exception during escalation) is
+recovered via `reset_risk_escalation(audit_token)` from {WARNING,
+BREACH_DETECTED, FORCED_FLATTEN}; LOCKED is exit-only via
+`unlock_from_lockdown`.
 
 ### Exhaustiveness Guards
 
-At every enum-driven decision point, an explicit guard raises `ValueError`
-for unhandled enum members. This pattern prevents new enum additions from
-silently falling through to unsafe paths. Applied at:
+Every enum-driven decision point has an explicit guard that raises
+`ValueError` for unhandled members. New enum additions cannot silently
+fall through to unsafe paths. Applied at:
 
-- `RiskAction` gate (M5 and M6)
+- `RiskAction` gate at M5 and M6
 - `TradingIntent` in `_side_from_intent`
 - `OrderAckStatus` in `_apply_ack_to_order`
-
-## Hard Rules
-
-Inherits platform invariants 5 (deterministic replay), 7 (event-driven typed schemas),
-8 (layer separation), 10 (clock abstraction). Additionally:
-
-1. **Explicit latency modeling** — annotate every path with expected latency; measure actual vs expected in production.
-2. **Canonical message formats** — define typed schemas for every event crossing a layer boundary.
+- `SignalDirection` in the SIGNAL → Order translation
+- `TrendMechanism` in attribution and capacity-cap enforcement
 
 ## Typed Event Catalog
 
-All inter-layer communication uses frozen dataclasses from `core/events.py`.
-Every event inherits from `Event` which carries `timestamp_ns`,
-`correlation_id`, and `sequence` for provenance.
+All inter-layer communication is via frozen dataclasses from
+`core/events.py`. Every event inherits from `Event` carrying
+`timestamp_ns` (clock-derived), `correlation_id`, and `sequence` for
+end-to-end provenance.
 
-| Event | Layer Boundary | Key Fields |
-|-------|---------------|------------|
-| `NBBOQuote` | Ingestion → Feature/Signal | symbol, bid, ask, bid_size, ask_size |
-| `Trade` | Ingestion → Feature/Storage | symbol, price, size |
-| `FeatureVector` | Feature → Signal | symbol, feature_version, values, warm, stale |
-| `Signal` | Signal → Risk | symbol, direction (`SignalDirection`), strength, edge_estimate_bps |
-| `RiskVerdict` | Risk → Kernel | action (`RiskAction`), reason, scaling_factor |
-| `OrderRequest` | Kernel → Execution | order_id, symbol, side, order_type, quantity |
-| `OrderAck` | Execution → Kernel | order_id, status (`OrderAckStatus`), fill_price, filled_quantity |
-| `PositionUpdate` | Kernel → Portfolio | symbol, quantity, avg_price, realized_pnl |
-| `StateTransition` | Any SM → Bus | machine_name, from_state, to_state, trigger |
-| `MetricEvent` | Any → Monitoring | layer, name, value, metric_type (`MetricType`) |
-| `Alert` | Any → Monitoring | severity (`AlertSeverity`), alert_name, message |
-| `KillSwitchActivation` | Kernel → All | reason, activated_by |
+| Event | Boundary | Key fields |
+|-------|----------|-----------|
+| `NBBOQuote` | Ingestion → Layer 1 | symbol, bid/ask, sizes |
+| `Trade` | Ingestion → Layer 1 / storage | symbol, price, size, conditions |
+| `RegimeState` | Service → Layer 2 / risk | engine_name, posteriors, dominant_state |
+| `RegimeHazardSpike` | Service → Risk / portfolio | engine_name, departing_state, posterior_drop |
+| `SensorReading` | Layer 1 → Layer 2 | sensor_id, value, provenance |
+| `HorizonTick` | Scheduler → aggregator | horizon_seconds, boundary_index, boundary_ts_ns |
+| `HorizonFeatureSnapshot` | Layer 1.5 → Layer 2 | symbol, horizon_seconds, values, warm, stale |
+| `Signal` | Layer 2 → Layer 3 / risk | direction, strength, edge_estimate_bps, trend_mechanism, expected_half_life_seconds |
+| `CrossSectionalContext` | Layer 3 → portfolio alpha | alpha_id, horizon_seconds, signals, completeness |
+| `SizedPositionIntent` | Layer 3 → risk | target_positions, mechanism_breakdown, decision_basis_hash |
+| `RiskVerdict` | Risk → kernel | action (`RiskAction`), reason, scaling_factor |
+| `OrderRequest` | Kernel → execution | order_id, symbol, side, qty, reason |
+| `OrderAck` | Execution → kernel | status (`OrderAckStatus`), fill_price, filled_qty |
+| `PositionUpdate` | Kernel → portfolio | symbol, signed qty, avg_entry, realized_pnl |
+| `StateTransition` | Any SM → bus | machine_name, from/to, trigger |
+| `MetricEvent` | Any → monitoring | layer, name, value, metric_type |
+| `Alert` | Any → monitoring | severity (`AlertSeverity`), name, context |
+| `KillSwitchActivation` | Kernel → all | reason, activated_by |
 
-## Intent & Sizing Layer
-
-Between signal evaluation (M4) and risk check (M5), the orchestrator
-runs two injectable components that bridge the stateless signal to a
-position-aware trading action:
-
-### PositionSizer (`risk/position_sizer.py`)
-
-```python
-class PositionSizer(Protocol):
-    def compute_target_quantity(
-        self, signal: Signal, risk_budget: AlphaRiskBudget,
-        symbol_price: Decimal, account_equity: Decimal,
-    ) -> int: ...
-```
-
-Computes unsigned target share count from the alpha's declared risk
-budget, account equity, mid-price, signal strength, and regime state.
-The default `BudgetBasedSizer` applies regime-dependent scaling factors
-(e.g., `vol_breakout` → 0.5×).
-
-### IntentTranslator (`execution/intent.py`)
-
-```python
-class IntentTranslator(Protocol):
-    def translate(
-        self, signal: Signal, position: Position,
-        target_quantity: int | None = None,
-    ) -> OrderIntent: ...
-```
-
-Maps `(signal direction × current position)` to a `TradingIntent` enum:
-`ENTRY_LONG`, `ENTRY_SHORT`, `EXIT`, `REVERSE_LONG_TO_SHORT`,
-`REVERSE_SHORT_TO_LONG`, `SCALE_UP`, or `NO_ACTION`. The default
-`SignalPositionTranslator` encodes the full signal×position matrix.
-
-`NO_ACTION` causes the micro-state pipeline to skip M5–M9 entirely,
-transitioning directly from M4 to M10 (LOG_AND_METRICS). This is the
-path taken when the signal agrees with the current position and no
-scaling is needed, or when a `FLAT` signal has no position to exit.
-
-### Pipeline Position
-
-```
-M4: signal = signal_engine.evaluate(features)
-    → target_qty = position_sizer.compute_target_quantity(signal, ...)
-    → intent = intent_translator.translate(signal, position, target_qty)
-    → if intent.intent == NO_ACTION → M10 (skip risk + order path)
-M5: verdict = risk_engine.check_signal(signal, positions)
-M6: order = _build_order_from_intent(intent, verdict, cid)
-```
-
----
+`SensorProvenance` and `TargetPosition` are value objects (not events).
+`TrendMechanism` is a closed enum (`KYLE_INFO, INVENTORY,
+HAWKES_SELF_EXCITE, LIQUIDITY_STRESS, SCHEDULED_FLOW`) carried on every
+`Signal` and aggregated on `SizedPositionIntent.mechanism_breakdown`.
 
 ## Alpha Module System
 
-The alpha module system provides multi-strategy support behind the
-single-engine protocol interfaces. It is composed at startup via
+`feelies.alpha` provides multi-strategy support behind the layer
+protocols. Composition happens at startup via
 `bootstrap.build_platform()`.
 
-### Components
-
 | Component | File | Responsibility |
-|-----------|------|---------------|
-| `AlphaModule` | `alpha/module.py` | Bundled strategy unit: manifest, feature defs, signal evaluator, risk budget |
-| `AlphaRegistry` | `alpha/registry.py` | Tracks registered modules with lifecycle (active/suspended/quarantined) |
-| `AlphaLoader` | `alpha/loader.py` | Discovers and loads `.alpha.yaml` spec files into `AlphaModule` instances |
-| `CompositeFeatureEngine` | `alpha/composite.py` | Aggregates feature definitions from all registered alphas; computes in topological order |
-| `CompositeSignalEngine` | `alpha/composite.py` | Fans out `evaluate()` to each active alpha; applies signal arbitration |
-| `SignalArbitrator` | `alpha/arbitration.py` | Resolves conflicts when multiple alphas emit signals for the same symbol |
-| `load_and_register()` | `alpha/discovery.py` | Discovers `.alpha.yaml` files in a directory and registers them |
+|-----------|------|----------------|
+| `AlphaManifest` | `alpha/module.py` | Schema-1.1 manifest (validated by `AlphaLoader`) |
+| `LoadedSignalLayerModule` | `alpha/signal_layer_module.py` | Schema-1.1 SIGNAL alpha runtime |
+| `LoadedPortfolioLayerModule` | `alpha/portfolio_layer_module.py` | Schema-1.1 PORTFOLIO alpha runtime |
+| `AlphaLoader` | `alpha/loader.py` | Discovers and loads `*.alpha.yaml`; rejects `LEGACY_SIGNAL` |
+| `LayerValidator` | `alpha/layer_validator.py` | Enforces gates G1–G16 at load time |
+| `AlphaRegistry` | `alpha/registry.py` | Tracks active modules + per-alpha lifecycle (F-5 threshold merge) |
+| `AlphaLifecycle` | `alpha/lifecycle.py` | 5-state machine (RESEARCH → PAPER → LIVE → QUARANTINED → DECOMMISSIONED) + LIVE @ SCALED self-loop (F-6) |
+| `PromotionLedger` | `alpha/promotion_ledger.py` | Append-only JSONL audit trail (F-1) |
+| `validate_gate` + `GATE_EVIDENCE_REQUIREMENTS` | `alpha/promotion_evidence.py` | F-2 declarative gate matrix |
+| `feelies promote` | `cli/promote.py` | F-3 read-only operator CLI |
 
-### Composition Flow
+Per-alpha `GateThresholds` overrides merge over `platform.yaml`
+defaults, themselves merged over skill-pinned defaults (F-5
+three-layer merge). The merge is non-mutating and runs once at
+registration time so an alpha's effective thresholds are immutable for
+its lifetime — replay determinism is preserved.
 
-```
-PlatformConfig.alpha_spec_dir / alpha_specs
-  → AlphaLoader.load(spec_path) → AlphaModule
-    → AlphaRegistry.register(module)
-      → CompositeFeatureEngine(registry)  # implements FeatureEngine protocol
-      → CompositeSignalEngine(registry)   # implements SignalEngine protocol
-```
+See the alpha-lifecycle skill for the full evidence schema, gate
+matrix, capital-tier escalation, and operator-CLI contract.
 
-The orchestrator receives `CompositeFeatureEngine` and
-`CompositeSignalEngine` as its `FeatureEngine` and `SignalEngine`
-dependencies — it never knows about the multi-alpha structure.
+## Layer Gates G1–G16
 
----
+Enforced by `LayerValidator` against every alpha YAML before
+instantiation. Each gate raises a distinct `LayerValidationError`
+subclass.
 
-## Tradeoff Documentation
+| Gate | Concern | Enforcement |
+|------|---------|-------------|
+| G1 | Layer independence | SIGNAL alphas cannot import PORTFOLIO modules and vice versa |
+| G2–G8, G13 | Phase-3-α: event-typing, regime-gate purity, signal purity, sensor-DAG validity, horizon registration, no implicit lookahead, cost-arithmetic disclosure, warm-up documentation | Always blocks |
+| G9 | Cross-symbol staleness | Always blocks |
+| G10 | PORTFOLIO universe presence | Always blocks |
+| G11 | PORTFOLIO factor-neutralization disclosure | Always blocks |
+| G12 | Cost-arithmetic margin_ratio ≥ 1.5 (Inv-12) | Always blocks |
+| G14 | Data dependency declaration | Always blocks |
+| G15 | Router whitelist | Always blocks |
+| G16 | Mechanism-horizon binding (taxonomy + half-life envelope + horizon ratio + fingerprint sensors + stress-family exit-only + family caps) | Always blocks |
 
-When making architectural decisions, explicitly state the tradeoff:
+`PlatformConfig.enforce_layer_gates` (default `true`) toggles G1 and G3
+(architectural gates) between hard-blocking and WARNING-only. The
+data-integrity / economic / provenance gates (G9–G16) **always block**
+regardless of the flag.
 
-- Simplicity vs performance
-- Memory vs CPU
-- Latency vs abstraction
-- Flexibility vs type safety
+`PlatformConfig.enforce_trend_mechanism` (default `true` since
+Workstream E) additionally rejects schema-1.1 SIGNAL/PORTFOLIO alphas
+that omit a `trend_mechanism:` block. Operators on a v0.2 baseline
+must pin to `false` explicitly.
 
-## Failure & Degradation
+## Intent & Sizing
 
-- Every component defines its failure mode (crash, degrade, retry).
-- Stale data must be detected and surfaced, never silently consumed.
-- Kill-switch conditions defined per-strategy and globally.
-- Throughput bottlenecks and latency-critical paths identified and documented.
+The Layer-2 (SIGNAL) path runs through these injectable components
+between the bus-buffered `Signal` and the M5 risk check:
 
-## Observability & Monitoring
+- **`PositionSizer`** (`risk/position_sizer.py`) — computes target
+  share count from the alpha's risk budget, account equity, mid price,
+  signal strength, and regime state. Default `BudgetBasedSizer`
+  applies regime-dependent scaling (e.g., `vol_breakout` → 0.5×).
+- **`IntentTranslator`** (`execution/intent.py`) — maps `(SignalDirection
+  × current Position × target_quantity)` to a `TradingIntent` enum
+  (`ENTRY_LONG, ENTRY_SHORT, EXIT, REVERSE_*, SCALE_UP, NO_ACTION`).
+  `NO_ACTION` short-circuits the pipeline directly to M10.
 
-The Monitoring layer listed in System Boundaries is a cross-cutting concern.
-Every other layer emits telemetry into it; no layer implements its own
-alerting or dashboarding in isolation.
+The Layer-3 (PORTFOLIO) path bypasses the per-symbol translator: the
+`SizedPositionIntent` is consumed by `RiskEngine.check_sized_intent`
+which (a) resolves desired delta against `PositionStore`, (b) emits per-leg
+`OrderRequest`s sorted lexicographically by symbol, (c) applies per-leg
+risk checks with **per-leg veto semantics** — a single failed leg drops
+only that leg, not the whole intent (Inv-11). Each emitted
+`OrderRequest.reason = "PORTFOLIO"` for forensic lineage.
 
-### Pillars
+Hazard-driven exits run through `HazardExitController`
+(`risk/hazard_exit.py`) which emits `OrderRequest.reason ∈
+{"HAZARD_SPIKE", "HARD_EXIT_AGE"}`. See the regime-detection and
+risk-engine skills.
+
+## Observability
+
+The monitoring layer is a cross-cutting concern. Every layer emits
+typed events into it; no layer implements its own alerting in
+isolation.
 
 | Pillar | What | How |
 |--------|------|-----|
-| Logging | Structured, machine-parseable event logs | JSON lines; one log stream per layer; no unstructured prints |
-| Metrics | Numeric time-series (latency, throughput, PnL, fill rate) | Counters, gauges, histograms; emitted via event bus |
-| Tracing | End-to-end request/event correlation | Correlation ID assigned at ingestion; propagated through every layer |
-| Alerting | Threshold- and anomaly-based notifications | Defined per layer; routed through a central alert manager |
+| Logging | Structured JSON event stream | One stream per layer; `StateTransition` audit trail |
+| Metrics | Time-series (latency, throughput, fill rate, parity) | `MetricEvent` with `MetricType ∈ {COUNTER, GAUGE, HISTOGRAM}` via `MetricCollector` |
+| Tracing | End-to-end correlation | `correlation_id = make_correlation_id(symbol, exchange_ts_ns, sequence)` propagated across every layer |
+| Alerting | Threshold + anomaly notifications | `Alert` with `AlertSeverity ∈ {INFO, WARNING, CRITICAL, EMERGENCY}` via `AlertManager` |
 
-### Correlation ID
+`MetricCollector.record(metric)` accepts `MetricEvent` from all layers
+via bus subscription. `flush()` is called at M10 each tick and on
+graceful shutdown. `AlertManager.emit(alert)` routes by severity;
+CRITICAL and EMERGENCY trigger safety controls synchronously before
+returning. `AlertManager.acknowledge(name, operator)` records human
+acknowledgment but does not deactivate safety — re-authorization is
+explicit (`KillSwitch.reset`, `Orchestrator.unlock_from_lockdown`).
 
-Every inbound market data event receives a unique `correlation_id` at
-ingestion via `make_correlation_id()` (`core/identifiers.py`). This ID
-propagates through feature computation, signal generation, risk check,
-and order submission. A single correlation ID links a quote update to
-the trade it ultimately caused — enabling end-to-end latency measurement
-and root-cause investigation.
-
-```
-correlation_id = f"{symbol}:{exchange_timestamp_ns}:{sequence}"
-```
-
-Sequence numbers are produced by `SequenceGenerator` (`core/identifiers.py`),
-a thread-safe monotonic counter.
-
-### Metric Collection
-
-Each layer emits metrics onto the event bus as typed `MetricEvent` events
-(`core/events.py`). The orchestrator forwards these to the `MetricCollector`
-protocol (`monitoring/telemetry.py`) via bus subscription.
-
-| Layer | Key Metrics |
-|-------|------------|
-| Ingestion | Events/sec, parse errors, feed latency, gap count |
-| Feature Engine | Compute time per tick, warm-up status, stale symbol count |
-| Signal Engine | Signals emitted/sec, signal-to-noise ratio, evaluation time |
-| Risk Engine | Checks/sec, rejection rate, regime state, drawdown level |
-| Execution Engine | Orders/sec, fill rate, slippage, latency histograms |
-| Storage | Write throughput, disk usage, checkpoint lag |
-
-Metrics are collected at p50, p95, p99, p99.9 where applicable.
-
-### Alert Routing
-
-Alerts are typed `Alert` events carrying `AlertSeverity` (`core/events.py`),
-routed to the `AlertManager` protocol (`monitoring/alerting.py`) via bus
-subscription. Kill switch activations emit `KillSwitchActivation` events.
-
-| Severity (`AlertSeverity`) | Response Time | Channel | Examples |
-|----------|--------------|---------|----------|
-| INFO | Async review | Log only | Feature warm-up complete, regime transition |
-| WARNING | < 15 min | Log + dashboard highlight | Elevated slippage, latency approaching ceiling |
-| CRITICAL | < 1 min | Log + push notification | Kill switch fired, position reconciliation failure |
-| EMERGENCY | Immediate (automated) | Automated safety response + notification | Unrecoverable state, broker disconnect |
-
-Critical and emergency alerts activate safety controls autonomously.
-Human review follows but does not gate the safety response.
-
-### Dashboard Requirements
-
-Operational dashboards must surface at minimum:
-- Real-time PnL curve (gross, net, by strategy)
-- Tick-to-trade latency histogram (updating)
-- Per-symbol feature staleness map
-- Risk constraint utilization (how close to limits)
-- Safety control state (kill switch, circuit breaker, throttle)
-- Feed health (events/sec, gap count, reconnect count)
-
-Dashboards read from the metric stream. They never query production
-databases or add load to the critical path.
-
-### Monitoring Protocol Ownership
-
-This skill owns the `MetricCollector` and `AlertManager` protocols.
-
-#### MetricCollector (`monitoring/telemetry.py`)
-
-```python
-class MetricCollector(Protocol):
-    def record(self, metric: MetricEvent) -> None: ...
-    def flush(self) -> None: ...
-```
-
-`record()` accepts typed `MetricEvent` from all layers via bus subscription.
-`flush()` writes buffered metrics to persistent storage — called at end of
-each tick (M10) and on graceful shutdown.
-
-#### AlertManager (`monitoring/alerting.py`)
-
-```python
-class AlertManager(Protocol):
-    def emit(self, alert: Alert) -> None: ...
-    def active_alerts(self) -> list[Alert]: ...
-    def acknowledge(self, alert_name: str, *, operator: str) -> None: ...
-```
-
-`emit()` routes alerts by `AlertSeverity`. CRITICAL and EMERGENCY trigger
-safety controls synchronously before returning (invariant 11).
-`acknowledge()` records human acknowledgment but does not deactivate
-safety controls — those require explicit re-authorization (e.g.,
-`KillSwitch.reset`, `Orchestrator.unlock_from_lockdown`).
-
-Failure mode: crash. If AlertManager is unavailable, the system cannot
-guarantee safety responses — it is a hard dependency.
-
-### Ownership Boundaries
-
-Observability infrastructure (log aggregation, metric storage, alert
-routing, dashboards) is owned by this layer. Individual layers define
-*what* they emit; this layer defines *how* it is collected, stored,
-correlated, and surfaced. Skill-specific monitoring details:
-- Execution quality metrics: live-execution skill
-- Latency budgets and profiling: performance-engineering skill
-- Forensic health reports: post-trade-forensics skill
-- Risk snapshots and PnL attribution: risk-engine skill
-
----
+Per-layer telemetry ownership:
+- Execution-quality metrics → live-execution skill
+- Latency budgets and profiling → performance-engineering skill
+- Forensic health reports → post-trade-forensics skill
+- Risk snapshots and PnL attribution → risk-engine skill
+- Sensor-layer health → feature-engine skill
 
 ## Portfolio Layer Ownership
 
-The Portfolio Layer (position tracking, PnL, capital allocation) is not a
-separate skill. Its responsibilities are distributed:
+The portfolio layer (position tracking, PnL, capital allocation) is
+distributed:
 
-| Responsibility | Owning Skill |
-|---------------|-------------|
+| Responsibility | Owning skill |
+|---------------|--------------|
 | Position tracking and reconciliation | live-execution (live) / backtest-engine (replay) |
-| PnL decomposition and attribution | risk-engine |
+| PnL decomposition and real-time attribution | risk-engine |
 | Capital allocation and risk budgets | risk-engine (portfolio governor) |
-| Position state interface | system-architect (`PositionStore` protocol, injected independently) |
-
-All three skills share the `PositionStore` protocol (`portfolio/position_store.py`),
-injected as a separate dependency into the orchestrator (not composed into
-`ExecutionBackend`). Mode-specific `PositionStore` implementations (broker-backed
-live, simulated backtest) are selected at composition time alongside `ExecutionBackend`.
-
-### PositionStore Protocol
+| Multi-horizon attribution (per-mechanism, per-regime) | post-trade-forensics |
+| Position-state interface (`PositionStore`) | this skill |
 
 ```python
-@dataclass
-class Position:
-    symbol: str
-    quantity: int              # signed: +long, -short
-    avg_entry_price: Decimal
-    realized_pnl: Decimal
-    unrealized_pnl: Decimal
-
 class PositionStore(Protocol):
     def get(self, symbol: str) -> Position: ...
     def update(self, symbol: str, quantity_delta: int, fill_price: Decimal) -> Position: ...
@@ -419,16 +332,65 @@ class PositionStore(Protocol):
     def total_exposure(self) -> Decimal: ...
 ```
 
-- `get()` — returns current position for a symbol (zero-position `Position` if none)
-- `update()` — atomically applies a fill delta and returns updated position with recalculated `realized_pnl`; called in `_reconcile_fills()` at M9
-- `all_positions()` — snapshot for risk checks, PnL attribution, and reconciliation
-- `total_exposure()` — aggregate absolute exposure; used by risk engine for limit checks and by `unlock_from_lockdown()` zero-exposure guard
+`PositionStore` is injected as a separate dependency into the
+orchestrator (not composed into `ExecutionBackend`). Mode-specific
+implementations (broker-backed live, simulated backtest) are selected
+at composition time alongside `ExecutionBackend`. `total_exposure()`
+gates `unlock_from_lockdown()`.
 
----
+## Determinism (Inv-5)
+
+Five locked **parity hashes** guard end-to-end determinism. Each is a
+SHA-256 over the ordered event stream at one layer, asserted by a
+subprocess-isolated test under `tests/determinism/`:
+
+| Level | Stream | Test |
+|-------|--------|------|
+| L1 | `SensorReading` | `test_sensor_replay.py` |
+| L2 | `Signal` (SIGNAL layer) | `test_signal_replay.py` |
+| L3 | `SizedPositionIntent` | `test_sized_intent_replay.py` |
+| L3-orders | per-leg `OrderRequest` from PORTFOLIO | `test_portfolio_order_replay.py` |
+| L4 | hazard-exit `OrderRequest` | `test_hazard_exit_replay.py` |
+| L5 | `RegimeHazardSpike` | `test_hazard_parity.py` |
+
+Determinism is structurally supported by:
+- `SimulatedClock.set_time()` rejecting backward movement
+- SHA-256 order IDs (`hashlib.sha256(f"{correlation_id}:{seq}")`) — never `uuid4`
+- `SequenceGenerator` (`core/identifiers.py`) thread-safe monotonic counter
+- Frozen `StateMachine` transition tables
+- `TransitionRecord` audit trail on every SM change
+- `ruff DTZ` rules banning raw `datetime.now()` outside the `Clock` protocol (Inv-10)
+- Strict `mypy` (no per-module `ignore_errors` overrides) — locked by
+  `tests/acceptance/test_mypy_strict_scope.py`
+
+## Hard Rules (this skill)
+
+Inherits Inv-5, 7, 8, 9, 10, 11. Additionally:
+
+1. **Explicit latency modeling** — every path is annotated with expected
+   latency; live measures against expected via `MetricEvent`.
+2. **Canonical message formats** — every event crossing a layer
+   boundary is a frozen dataclass under `core/events.py`.
+3. **Single tick code path** — `_process_tick_inner` is the only
+   per-tick driver; mode branching outside `ExecutionBackend` is a
+   defect.
+4. **No silent transitions** — every SM change emits `StateTransition`
+   on the bus.
+5. **Exhaustiveness over flexibility** — explicit guard at every
+   enum-driven decision point.
+
+## Tradeoff Documentation
+
+When making architectural decisions, state the tradeoff explicitly:
+simplicity vs performance, memory vs CPU, latency vs abstraction,
+flexibility vs type safety, generality vs determinism. Determinism
+always wins when in tension.
 
 ## Design Targets
 
-- **Auditability**: every decision traceable to an event
-- **Determinism**: replay produces identical output
-- **Scalability**: horizontal scaling at ingestion and feature layers
-- **Testability**: every layer testable in isolation with mock events
+- **Auditability** — every decision traceable to a typed event with
+  correlation ID
+- **Determinism** — five locked parity hashes; bit-identical replay
+- **Testability** — every layer testable in isolation with mock events
+- **Strictness** — mypy strict on every module under `src/feelies/`;
+  ruff DTZ on every `datetime` call; no `ignore_errors` overrides

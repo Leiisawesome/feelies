@@ -169,10 +169,14 @@ re-implemented as a proper module before backtesting:
 
 | Notebook Artifact | Formalized As | Destination |
 |------------------|--------------|-------------|
-| Feature prototype (pandas/numpy) | `FeatureEngine` protocol implementation with `update(NBBOQuote) -> FeatureVector` | Feature engine (`features/engine.py`) |
-| Signal logic (threshold + condition) | `SignalEngine` protocol implementation with `evaluate(FeatureVector) -> Signal | None` | Signal engine (`signals/engine.py`) |
-| Entry/exit rules | `Signal.direction` (`SignalDirection.LONG`/`SHORT`/`FLAT`) + `Signal.edge_estimate_bps` | Strategy module |
-| Parameter values | `Configuration` with valid ranges and `snapshot()` for provenance | Strategy artifact |
+| Feature prototype (pandas/numpy) | `SensorProtocol` implementation registered via `SensorSpec` (incremental `update(NBBOQuote | Trade) -> SensorReading | None`) | Sensor layer (`feelies.sensors.impl`) |
+| Signal logic (threshold + condition) | `HorizonSignal.evaluate(snapshot, regime, params) -> Signal | None` declared inline in a schema-1.1 SIGNAL alpha YAML | `alphas/<alpha_id>/<alpha_id>.alpha.yaml` |
+| Entry/exit rules | `Signal.direction`, `Signal.strength`, `Signal.edge_estimate_bps`, `Signal.trend_mechanism`, `Signal.expected_half_life_seconds` | Schema-1.1 SIGNAL alpha (G16) |
+| Cross-sectional weights | `PortfolioAlpha.compute_weights(...) -> dict[str, TargetPosition]` declared inline in a `layer: PORTFOLIO` alpha YAML | `alphas/<alpha_id>/<alpha_id>.alpha.yaml` |
+| Cost arithmetic | `cost_arithmetic:` block (G12 — `margin_ratio ≥ 1.5`, reconciles ±5%) | Alpha YAML |
+| Trend mechanism declaration (G16) | `trend_mechanism:` block with family + `expected_half_life_seconds` + `l1_signature_sensors` + `failure_signature` | Alpha YAML (default-required since Workstream E) |
+| Regime gate | `regime_gate:` AST-DSL block | Alpha YAML |
+| Parameter values | `parameters:` block with valid ranges; per-alpha `promotion: { gate_thresholds: ... }` overrides via F-5 | Alpha YAML |
 
 ### Handoff Checklist
 
@@ -267,10 +271,12 @@ Reject or flag experiments that exhibit:
 
 | Dependency | Interface |
 |------------|-----------|
-| Microstructure Alpha (microstructure-alpha skill) | Research protocol; `Signal` schema (`SignalDirection`, `edge_estimate_bps`) |
-| Feature Engine (feature-engine skill) | `FeatureEngine` protocol; `FeatureVector` output type; `version` property |
-| Backtest Engine (backtest-engine skill) | `Orchestrator.run_backtest()` for formalized strategy validation |
-| Testing & Validation (testing-validation skill) | Acceptance criteria, promotion pipeline, artifact management |
+| Microstructure Alpha (microstructure-alpha skill) | Research protocol; `HorizonSignal` contract; `Signal` schema with `trend_mechanism`; G16 mechanism-horizon binding |
+| Feature / Sensor (feature-engine skill) | `SensorProtocol`; `SensorSpec` registration; `HorizonFeatureSnapshot` output type |
+| Composition Layer (composition-layer skill) | `PortfolioAlpha` contract for cross-sectional research |
+| Backtest Engine (backtest-engine skill) | `Orchestrator.run_backtest()` for formalized validation; five parity hashes |
+| Testing & Validation (testing-validation skill) | F-2 evidence schemas; CPCV + DSR acceptance suite; promotion pipeline |
+| Alpha Lifecycle (alpha-lifecycle skill) | F-1 ledger; F-3 `feelies promote` CLI; F-5 per-alpha threshold overrides |
 | Data Engineering (data-engineering skill) | `EventLog.replay()` for versioned data snapshots |
 | System Architect (system-architect skill) | `MacroState.RESEARCH_MODE`; `Configuration.snapshot()`; `SimulatedClock` |
 

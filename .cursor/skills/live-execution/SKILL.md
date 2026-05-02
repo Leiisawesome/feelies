@@ -366,17 +366,20 @@ via SHA-256.
 
 ### Shared Logic Enforcement
 
-The micro-state pipeline (`MicroState` M0-M10 in `kernel/micro.py`) is
-identical across all trading modes. The orchestrator's `_process_tick()`
-method is the single code path — it never inspects `backend.mode`.
+The micro-state pipeline (`MicroState` in `kernel/micro.py`, M0–M10
+backbone with Phase-2/3/4 sub-states) is identical across all
+trading modes. The orchestrator's `_process_tick_inner()` method is
+the single code path — it never inspects `backend.mode`.
 
-| Component | Shared Between Modes | Mode-Specific |
+| Component | Shared between modes | Mode-specific |
 |-----------|---------------------|---------------|
-| Signal generation | Yes | — |
-| Feature computation | Yes | — |
+| Sensor + horizon aggregator | Yes | — |
+| Horizon-anchored signals (`HorizonSignalEngine`) | Yes | — |
+| Composition pipeline (`CompositionEngine`) | Yes | — |
 | Intent translation + position sizing | Yes | — |
-| Risk checks (`check_signal`, `check_order`) | Yes | — |
+| Risk checks (`check_signal`, `check_order`, `check_sized_intent`) | Yes | — |
 | Order construction (`_build_order_from_intent`) | Yes | — |
+| Hazard-exit controller | Yes | — |
 | Order routing | — | `OrderRouter`: fill simulator (backtest) / broker API (live) |
 | Market data | — | `MarketDataSource`: replay (backtest) / live feed |
 | Clock | — | `SimulatedClock` (backtest) / `WallClock` (live) |
@@ -413,8 +416,10 @@ Live execution produces a continuous stream of:
 |------------|-----------|
 | Backtest Engine (backtest-engine skill) | Shared `OrderRouter` protocol; fill model behind same interface |
 | System Architect (system-architect skill) | `Clock`, `EventBus`, `ExecutionBackend`, `PositionStore` protocols |
-| Risk Engine (risk-engine skill) | `RiskVerdict` with `RiskAction`; `_escalate_risk()` cascade |
-| Microstructure Alpha (microstructure-alpha skill) | `Signal` events with `SignalDirection`; entry/exit logic |
+| Risk Engine (risk-engine skill) | `RiskVerdict` with `RiskAction`; `_escalate_risk()` cascade; per-leg veto on `check_sized_intent` |
+| Microstructure Alpha (microstructure-alpha skill) | `Signal` events with `SignalDirection`, `trend_mechanism`; entry/exit logic |
+| Composition Layer (composition-layer skill) | `SizedPositionIntent` decomposed into per-leg `OrderRequest`s with `reason="PORTFOLIO"` |
+| Regime Detection (regime-detection skill) | `RegimeHazardSpike` consumed by `HazardExitController` for hazard-driven exits |
 | Data Engineering (data-engineering skill) | `NBBOQuote` / `Trade` events for reference pricing |
 
 The live execution engine is a concrete `OrderRouter` implementation

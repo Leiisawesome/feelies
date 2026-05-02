@@ -2,17 +2,33 @@
 
 ## Codebase Alignment
 
-Research features defined below feed into the `FeatureEngine` protocol
-(`features/engine.py`), which produces `FeatureVector` events
-(`core/events.py`). Signal logic feeds into the `SignalEngine` protocol
-(`signals/engine.py`), which produces `Signal` events with
-`SignalDirection` (`LONG`/`SHORT`/`FLAT`) and `edge_estimate_bps`.
+Research features defined below feed into the Layer-1 sensor framework
+(`feelies.sensors`) — implementations of `SensorProtocol`
+(`sensors/protocol.py`) emitting `SensorReading` events
+(`core/events.py`). `HorizonAggregator` (`features/aggregator.py`)
+fans them into `HorizonFeatureSnapshot` events on `HorizonTick`
+boundary crossings. Signal logic feeds into the `HorizonSignal`
+contract (`signals/horizon_protocol.py`) declared inline in a
+schema-1.1 SIGNAL alpha YAML — `evaluate(snapshot, regime, params)
+-> Signal | None`.
+
+The historical per-tick `FeatureVector` / `FeatureEngine.update` /
+`SignalEngine.evaluate` contracts were retired in Workstream D.2 and
+are unsupported.
 
 The formalization path from research prototype to engine component is
-governed by the research-workflow skill. Features must implement
-incremental `update(NBBOQuote) -> FeatureVector` semantics; batch
-pandas/numpy prototypes must be re-implemented incrementally before
-backtesting via `Orchestrator.run_backtest()`.
+governed by the research-workflow skill. Sensors must implement
+incremental `update(NBBOQuote | Trade) -> SensorReading | None`
+semantics; batch pandas/numpy prototypes must be re-implemented
+incrementally before backtesting via `Orchestrator.run_backtest()`.
+
+Schema-1.1 SIGNAL alphas additionally declare:
+
+- `depends_on_sensors:` (G6 sensor-DAG validity)
+- `horizon_seconds:` (single-horizon binding)
+- `trend_mechanism:` (G16 — required since Workstream E)
+- `regime_gate:` (AST-DSL purity boundary)
+- `cost_arithmetic:` (G12 — margin_ratio ≥ 1.5, reconciles ±5%)
 
 ---
 
@@ -214,14 +230,21 @@ Test predictive power of OFI on next-bucket return.
 
 ## Implementation Mapping
 
-| Research Concept | Codebase Type | Location |
-|-----------------|---------------|----------|
-| Feature prototype | `FeatureEngine` protocol | `features/engine.py` |
-| Feature output | `FeatureVector` (with `warm`, `stale` flags) | `core/events.py` |
-| Signal output | `Signal` (with `SignalDirection`, `edge_estimate_bps`) | `core/events.py` |
-| L1 quote input | `NBBOQuote` event | `core/events.py` |
-| Trade input | `Trade` event | `core/events.py` |
+| Research concept | Codebase type | Location |
+|------------------|---------------|----------|
+| Sensor prototype (Layer 1) | `SensorProtocol` + `SensorSpec` | `sensors/protocol.py`, `sensors/spec.py`, `sensors/registry.py` |
+| Sensor output | `SensorReading` (with `SensorProvenance`) | `core/events.py` |
+| Layer-2 input | `HorizonFeatureSnapshot` (warm/stale flags, z-scores, percentiles) | `core/events.py` |
+| SIGNAL alpha contract | `HorizonSignal.evaluate(snapshot, regime, params)` | `signals/horizon_protocol.py` |
+| Signal output | `Signal` (with `SignalDirection`, `edge_estimate_bps`, `trend_mechanism`, `expected_half_life_seconds`) | `core/events.py` |
+| Regime gate DSL | `RegimeGate` (AST-evaluated boolean DSL) | `signals/regime_gate.py` |
+| Cost arithmetic | `CostArithmetic` (G12 enforcement at load time) | `alpha/cost_arithmetic.py` |
+| Trend mechanism (G16) | `TrendMechanism` enum + family envelopes | `core/events.py`, `alpha/layer_validator.py` |
+| Cross-sectional construction | `PortfolioAlpha` + `CompositionEngine` | `composition/protocol.py`, `composition/engine.py` |
+| L1 quote / trade input | `NBBOQuote` / `Trade` | `core/events.py` |
 | Backtest execution | `Orchestrator.run_backtest()` | `kernel/orchestrator.py` |
 | Research execution | `Orchestrator.run_research(job)` | `kernel/orchestrator.py` |
 | Deterministic time | `SimulatedClock` | `core/clock.py` |
 | Config provenance | `Configuration.snapshot()` | `core/config.py` |
+| Promotion lifecycle | `AlphaLifecycle` + F-2 gate matrix + F-1 ledger | `alpha/lifecycle.py`, `alpha/promotion_evidence.py`, `alpha/promotion_ledger.py` |
+| Operator forensic CLI | `feelies promote ...` | `cli/promote.py` |

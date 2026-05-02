@@ -1,375 +1,302 @@
 ---
 name: feature-engine
 description: >
-  Incremental feature computation engine for stateful, per-symbol feature
-  extraction from L1 NBBO event streams. Defines computation patterns, state
-  lifecycle, versioning, feature–signal contracts, and reproducibility
-  guarantees. Use when designing feature pipelines, implementing incremental
-  updates, managing per-symbol state, defining feature schemas, versioning
-  feature definitions, or reasoning about feature reproducibility, staleness
-  detection, or the boundary between features and signals.
+  Layer-1 sensor framework + horizon-aggregation contract for the feelies
+  platform. Owns per-symbol sensor state, the `SensorRegistry`, the
+  `HorizonScheduler` / `HorizonAggregator` pipeline, and the
+  `HorizonFeatureSnapshot` event consumed by Layer-2 alphas. Use when
+  designing or extending Layer-1 sensors, debugging warm-up / staleness,
+  reasoning about sensor-DAG topology, horizon bucketing, snapshot
+  emission, or the boundary between Layer-1 (event-time) and Layer-2
+  (horizon-anchored) computation.
 ---
 
-# Feature Engine — Stateful Computation Layer
+# Sensor Layer & Horizon Aggregation
 
-The feature engine transforms raw L1 NBBO events into stateful, per-symbol
-feature vectors consumed by the signal layer. It sits between data ingestion
-and signal generation — receiving canonical events from the event bus and
-emitting typed feature snapshots.
+The Layer-1 sensor framework is the only stateful layer in the data
+pipeline. Every other layer is either stateless (signal evaluation,
+risk checks) or manages a different state domain (orders, positions,
+data integrity).
 
-The feature engine is the only layer that maintains mutable per-symbol state
-across ticks. Every other layer is either stateless (signal engine) or
-manages different state domains (risk engine: portfolio state; execution
-engine: order state).
+Sensors transform raw L1 NBBO events into typed `SensorReading`
+estimates. `HorizonAggregator` then bucket-aggregates those readings
+into `HorizonFeatureSnapshot` events on `HorizonTick` boundary
+crossings. This is the **only** Layer-2 input contract — the historical
+per-tick `FeatureVector` path was retired in Workstream D.2 (D.2
+PR-2b-iv deleted `FeatureVector`, `FeatureEngine.update`,
+`SignalEngine.evaluate`, `CompositeFeatureEngine`, `CompositeSignalEngine`,
+and `AlphaModule.evaluate`).
 
 ## Core Invariants
 
-Inherits platform invariants 5 (deterministic replay), 6 (causality), 13 (versioned provenance).
-Additionally:
+Inherits Inv-5 (deterministic replay), Inv-6 (causality enforced),
+Inv-13 (versioned provenance). Additionally:
 
-1. **Incremental by default** — features update incrementally on each event; full recomputation only on state reset or recovery
-2. **Isolated per symbol** — per-symbol feature state is independent; no cross-symbol leakage within the feature engine
-3. **Bounded** — per-symbol memory footprint is bounded and configurable; no unbounded accumulation
+1. **Incremental by default** — sensors update incrementally on each
+   event; full recomputation only at cold start or recovery.
+2. **Per-symbol isolation** — sensor state is per-symbol; no
+   cross-symbol leakage inside the sensor layer.
+3. **Bounded** — per-sensor memory footprint is bounded and
+   configurable; no unbounded accumulation.
+4. **Horizon anchoring** — `HorizonFeatureSnapshot` emission is
+   anchored to integer-math boundary crossings against
+   `session_open_ns`; no wall-clock drift.
 
----
+## Sensor Protocol (Layer 1)
 
-## Computation Patterns
-
-### Incremental Update
-
-Every feature engine must implement the `FeatureEngine` protocol
-(`features/engine.py`):
+The `SensorProtocol` (`sensors/protocol.py`) defines the per-symbol
+incremental computation contract:
 
 ```python
-class FeatureEngine(Protocol):
-    def update(self, quote: NBBOQuote) -> FeatureVector: ...
-    def process_trade(self, trade: Trade) -> FeatureVector | None: ...
+class SensorProtocol(Protocol):
+    @property
+    def sensor_id(self) -> str: ...
+    @property
+    def sensor_version(self) -> str: ...
+    def update(self, event: NBBOQuote | Trade) -> SensorReading | None: ...
     def is_warm(self, symbol: str) -> bool: ...
     def reset(self, symbol: str) -> None: ...
-    @property
-    def version(self) -> str: ...
-    def checkpoint(self, symbol: str) -> tuple[bytes, int]: ...
-    def restore(self, symbol: str, state: bytes) -> None: ...
 ```
 
-`update()` processes a single `NBBOQuote` event and returns the updated
-`FeatureVector` — advancing internal state exactly once per event.
-The orchestrator calls this at micro-state M3 (FEATURE_COMPUTE) and
-publishes the result on the bus.
+`update()` processes a single L1 event and returns a `SensorReading`
+event (with `SensorProvenance`) or `None` if the sensor abstains. The
+orchestrator dispatches this fan-out at the `SENSOR_UPDATE` micro-state
+(between M2 and M3).
 
-`process_trade()` updates feature state from a `Trade` event (e.g.,
-volume clustering, trade arrival rate). Returns a `FeatureVector` if
-any feature consumed the trade, `None` otherwise. Trade-triggered
-updates modify state but do not drive signal evaluation — the updated
-values feed into the next quote-driven `FeatureVector`. Called by
-`_process_trade()` in the orchestrator outside the micro-state pipeline.
+A sensor is **stateless-by-instance** — multiple symbols share the
+class but per-symbol state is keyed inside the implementation. This
+keeps memory bounded and replay deterministic.
 
-Full recomputation from raw events is used only for:
-- Cold start (no prior state)
-- Recovery from corruption
-- Validation (compare incremental vs full-recompute output)
+### `SensorRegistry` (`sensors/registry.py`)
 
-### Rolling Window Features
-
-Fixed-size windows over time or event counts. Implemented via ring buffers
-to guarantee O(1) update and bounded memory.
-
-| Pattern | Implementation | Memory |
-|---------|---------------|--------|
-| Time-windowed (e.g., 5s VWAP) | Ring buffer keyed by timestamp; evict expired | O(window_size) |
-| Count-windowed (e.g., last 100 trades) | Circular buffer; overwrite oldest | O(N) fixed |
-| Exponentially weighted (e.g., EWMA vol) | Single accumulator; no buffer needed | O(1) |
-| Decaying sum (e.g., order flow imbalance) | Accumulator with decay factor per tick | O(1) |
-
-### Cross-Event Features
-
-Features that combine information from quotes and trades (e.g., trade
-arrival rate relative to quote update rate). These subscribe to multiple
-event types but maintain a single coherent state per symbol.
-
-Ordering within a tick follows the backtest engine's micro-batch rules:
-quotes processed before trades within the same timestamp.
-
-### Derived Features
-
-Features computed from other features (e.g., z-score of spread relative
-to rolling mean spread). Derived features declare their dependencies
-explicitly and update only after all upstream features have updated for the
-current event.
-
-```
-DerivedFeature:
-  depends_on: list[FeatureId]
-  compute(upstream_values: dict[FeatureId, value]) -> value
-```
-
-Circular dependencies are forbidden and detected at registration time.
-
----
-
-## State Lifecycle
-
-### Per-Symbol State
-
-Each symbol maintains an independent feature state container:
-
-| Phase | Trigger | Behavior |
-|-------|---------|----------|
-| Init | First event for symbol or explicit start | Allocate state; all features in cold-start mode |
-| Warm-up | Events received but insufficient history | Features emit values marked `warming_up=True`; signal engine may ignore |
-| Active | Warm-up period complete | Normal operation; all features valid |
-| Stale | No event received for > staleness threshold | Features marked stale; signal engine suppresses |
-| Reset | Explicit command or corruption detected | Clear all state; re-enter Init |
-| Shutdown | End of session or symbol removal | Persist state snapshot if configured; deallocate |
-
-### Warm-Up Protocol
-
-Each feature declares its minimum warm-up requirement:
-
-| Feature Type | Warm-Up Requirement |
-|-------------|---------------------|
-| EWMA (span N) | N events (or configurable multiplier) |
-| Rolling window (W seconds) | W seconds of data received |
-| Count-based window (N events) | N events |
-| Point-in-time (e.g., current spread) | 1 event |
-
-The feature engine tracks warm-up status per feature per symbol. A
-`FEATURES_READY` event is emitted when all features for a symbol exit
-warm-up. The signal engine must not act on features that are still warming.
-
-### Staleness Detection
-
-If no event arrives for a symbol within a configurable threshold (default:
-5 seconds during market hours), the feature state for that symbol is marked
-stale. Stale features:
-- Continue to hold their last value (no decay to zero)
-- Are flagged in the feature snapshot (`stale=True`)
-- Trigger an alert if sustained beyond a second threshold
-
-The signal engine must not generate entry signals from stale features.
-Exit signals from stale features are allowed (conservative: exit is safer
-than hold when data is missing).
-
----
-
-## Feature–Signal Contract
-
-The boundary between feature engine and signal engine is a strict typed
-contract. Features produce; signals consume. No negotiation.
-
-### Feature Snapshot Schema
-
-The `FeatureVector` event (`core/events.py`) is the output type:
+Sensors are registered declaratively via `SensorSpec` so the registry
+can pre-bake provenance, enforce throttling, and validate dependency
+topology before any tick runs.
 
 ```python
 @dataclass(frozen=True, kw_only=True)
-class FeatureVector(Event):
+class SensorSpec:
+    sensor_id: str
+    sensor_version: str
+    factory: Callable[..., SensorProtocol]
+    depends_on: tuple[str, ...]      # upstream sensor_ids
+    warm_up: WarmUpSpec
+    throttle_ns: int = 0             # per-symbol min inter-emission interval
+```
+
+The registry resolves the dependency DAG, computes a topological order,
+and rejects cycles. Layer gate **G6** enforces sensor-DAG validity at
+alpha-load time — a SIGNAL alpha cannot declare a `depends_on_sensors`
+edge that would create a cycle or reference an unregistered sensor.
+
+### Implemented Sensors (v0.3, 13 total)
+
+Implementations live under `feelies.sensors.impl`. The v0.3 catalog
+is anchored to the trend-mechanism taxonomy (see
+microstructure-alpha):
+
+- `kyle_lambda_60s`, `kyle_lambda_300s` — KYLE_INFO fingerprint
+- `inventory_pressure`, `quote_replenishment_asym` — INVENTORY fingerprint
+- `hawkes_intensity`, `trade_clustering` — HAWKES_SELF_EXCITE fingerprint
+- `liquidity_stress_score`, `spread_z_30d`, `quote_flicker_rate` — LIQUIDITY_STRESS fingerprint
+- `scheduled_flow_window` — SCHEDULED_FLOW fingerprint
+- `ofi_ewma`, `micro_price_drift`, `effective_spread` — composite
+
+Per-sensor implementations expose `is_warm(symbol)` and emit
+`SensorReading.provenance.warm` so downstream consumers (the horizon
+aggregator) can track readiness on a per-(symbol, sensor) basis.
+
+## Horizon Pipeline (Layer 1.5)
+
+The bridge between event-time sensors and horizon-anchored Layer-2
+alphas.
+
+### `HorizonScheduler` (`sensors/horizon_scheduler.py`)
+
+A pure-integer-math scheduler that detects horizon boundary crossings
+against `session_open_ns`. For each configured horizon (canonical
+Phase-2 set: `{30, 120, 300, 900, 1800}` seconds), it emits a
+`HorizonTick(horizon_seconds, boundary_index, boundary_ts_ns)` event
+when the current event timestamp crosses an integer multiple of the
+horizon since session open.
+
+Bit-identical replay across runs is contractual: the scheduler has no
+clock dependency beyond the event timestamp it receives.
+
+### `HorizonAggregator` (`features/aggregator.py`)
+
+On each `HorizonTick`, fans in the most recent `SensorReading` per
+(symbol, sensor_id) within the horizon window and emits a
+`HorizonFeatureSnapshot`:
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class HorizonFeatureSnapshot(Event):
     symbol: str
-    feature_version: str
-    values: dict[str, float]
-    warm: bool = True
-    stale: bool = False
-    event_count: int = 0
+    horizon_seconds: int
+    boundary_index: int
+    values: dict[str, float]          # {sensor_id: value}
+    z_scores: dict[str, float]        # {sensor_id: z_score}
+    percentiles: dict[str, float]     # {sensor_id: percentile}
+    warm: bool
+    stale: bool
 ```
 
-It inherits `timestamp_ns`, `correlation_id`, and `sequence` from `Event`.
-Feature vectors are frozen dataclasses — immutable after creation, safe to
-share without copying.
+The snapshot is the **canonical Layer-2 input**. It carries warm/stale
+quality gates per sensor and z-score / percentile views (used by
+`RegimeGate` DSL bindings — see microstructure-alpha skill).
 
-### Contract Rules
+### Snapshot Quality Gates
 
-1. The signal engine receives `FeatureVector` objects — never raw events
-2. Feature IDs are stable across versions; renamed features get new IDs
-3. Adding a feature is non-breaking; removing or changing semantics requires a version bump
-4. The signal engine must not modify feature state or call feature internals
-5. Feature snapshots are immutable after emission — safe to share without copying
+| Field | Source | Layer-2 contract |
+|-------|--------|------------------|
+| `warm: bool` | All consumed sensors past their `warm_up` requirement | SIGNAL alphas suppress entry signals when `warm == False` |
+| `stale: bool` | No NBBO arrival for the symbol within the staleness threshold (default 5s) | Entry signals suppressed; exits permitted (conservative) |
+| `boundary_index` | `HorizonScheduler` integer math | Used as the deterministic sequence key for parity hashing |
 
----
+## Computation Patterns
 
-## Feature Registry
+### Rolling Windows
 
-All features are registered in a central registry that enforces uniqueness,
-tracks versions, and resolves dependencies.
+| Pattern | Implementation | Memory |
+|---------|---------------|--------|
+| Time-windowed (e.g., 5s VWAP) | Ring buffer keyed by timestamp; evict expired | O(window) |
+| Count-windowed (last N trades) | Circular buffer; overwrite oldest | O(N) |
+| Exponentially weighted (EWMA vol) | Single accumulator; no buffer | O(1) |
+| Decaying sum (OFI EWMA) | Accumulator with decay factor per tick | O(1) |
 
-### Registration
+### Cross-Event Sensors
 
-```
-FeatureRegistry:
-  register(feature: FeatureDefinition) -> None
-  resolve_dependencies() -> DependencyGraph
-  validate() -> list[ValidationError]
-  get_computation_order() -> list[FeatureId]  # topological sort
-```
+Sensors that combine information from quotes and trades (e.g.,
+`hawkes_intensity` consuming aggressor side from `Trade` and quote
+update rate from `NBBOQuote`) subscribe to multiple event types but
+maintain a single coherent state per symbol. Within-tick ordering
+follows the data-engineering skill's micro-batch rules: quotes
+processed before trades within the same exchange timestamp.
 
-### Feature Definition
+### Derived Sensors
 
-```
-FeatureDefinition:
-  id: FeatureId (unique, stable)
-  version: str (semantic version)
-  description: str
-  event_types: list[EventType] (subscribed events)
-  depends_on: list[FeatureId] (upstream features, if derived)
-  warm_up: WarmUpSpec
-  memory_budget: int (bytes, per symbol)
-  compute: Callable (the update function)
-```
+Sensors computed from other sensors declare their `depends_on:` edges
+and update only after all upstreams have updated for the current
+event. The `SensorRegistry` topological sort enforces this; cycles
+are rejected at construction.
 
-### Versioning Rules
+## State Lifecycle (per Symbol)
 
-| Change Type | Version Bump | Action |
-|-------------|-------------|--------|
+| Phase | Trigger | Behavior |
+|-------|---------|----------|
+| Init | First event for symbol | Allocate state; cold-start mode |
+| Warm-up | Events received but insufficient history | `is_warm == False`; `SensorReading.provenance.warm = False` |
+| Active | Warm-up complete | Normal operation; readings flow into the aggregator |
+| Stale | No event received for > staleness threshold | `HorizonFeatureSnapshot.stale = True` |
+| Reset | Explicit command or corruption detected | Clear state; re-enter Init |
+
+### Warm-Up
+
+Each sensor declares its minimum warm-up requirement via
+`WarmUpSpec(min_events: int, min_duration_ns: int)`. Layer gate **G8**
+enforces that every alpha's `depends_on_sensors` declares a warm-up
+budget consistent with its sensors.
+
+The aggregator emits `warm=True` only when **every** consumed sensor
+reports warm. SIGNAL alphas must not act on `warm=False` snapshots
+for entry; exits are permitted (conservative).
+
+### Staleness
+
+If no NBBO event arrives for a symbol within a configurable threshold
+(default 5 s during market hours), the snapshot is marked stale. Stale
+snapshots:
+
+- Continue to hold last-known sensor values (no decay to zero)
+- Carry `HorizonFeatureSnapshot.stale = True`
+- Trigger an `Alert` if sustained beyond a second threshold
+
+## Snapshot/Sensor Versioning
+
+| Change type | Version bump | Action |
+|-------------|--------------|--------|
 | Bug fix (same semantics) | Patch | Recompute affected backtests |
-| Parameter change (e.g., window length) | Minor | New feature ID recommended; old version retained |
-| Semantic change (different meaning) | Major | New feature ID required; old version deprecated |
-| New feature added | N/A | Additive; no version bump to existing features |
+| Parameter change | Minor | New `sensor_id` recommended; old version retained |
+| Semantic change | Major | New `sensor_id` required; old version deprecated |
+| New sensor added | N/A | Additive; no version bump on existing sensors |
 
-Feature version is embedded in every feature snapshot and in backtest
-reproducibility logs. A backtest result is only valid for the feature
-versions it was computed with.
-
----
-
-## Cross-Sectional Features
-
-While per-symbol state is isolated within the feature engine, some signals
-require cross-sectional context (e.g., sector-relative spread, market-wide
-volatility rank). These are handled at the boundary:
-
-| Approach | When |
-|----------|------|
-| Market-level features | Computed as a special "symbol" (e.g., `_MARKET`, `_SPY`) with its own state |
-| Cross-sectional aggregation | Performed in the signal engine, not the feature engine |
-| Sector/index features | Computed per-index symbol; consumed by signal engine alongside per-stock features |
-
-The feature engine never compares across symbols internally. Cross-sectional
-logic belongs to the signal engine, which receives snapshots from multiple
-symbols and can reason across them.
-
----
-
-## Reproducibility
-
-### Replay Guarantee
-
-Given the same event sequence and feature definitions (version-pinned),
-the feature engine must produce bit-identical feature snapshots. This is
-tested via the replay reproducibility tests in the testing-validation skill.
-
-### Snapshot Persistence
-
-This skill owns the `FeatureSnapshotStore` protocol and `FeatureSnapshotMeta`
-dataclass (`storage/feature_snapshot.py`) for checkpoint persistence:
-
-- `checkpoint(symbol) -> (bytes, event_count)` serializes engine state
-- `restore(symbol, state: bytes)` deserializes and validates
-- `FeatureSnapshotMeta` carries `symbol`, `feature_version`, `event_count`,
-  `last_sequence`, `last_timestamp_ns`, `checksum` (SHA-256 of state blob)
-
-The orchestrator manages the warm-start lifecycle:
-- `_restore_feature_snapshots()` at boot: loads snapshots per symbol,
-  falls back to cold-start on version mismatch or corruption
-- `_checkpoint_feature_snapshots()` at shutdown: persists state for all
-  configured symbols (best-effort, does not block shutdown)
-
-Snapshots are keyed by `(symbol, feature_version)` and stored in the
-storage layer.
-
-### Validation: Incremental vs Full Recompute
-
-Periodically (configurable, default: daily), run a full recompute from
-raw events for a sample of symbols and compare against the incremental
-output. Any divergence is a bug — the incremental path must exactly match
-the full-recompute path.
-
----
+`SensorReading.sensor_version` is captured on every emission. Backtest
+parity hashes are only valid for the `(sensor_id, sensor_version)`
+tuples they were computed with.
 
 ## Failure Modes
 
 | Failure | Detection | Response |
 |---------|-----------|----------|
-| NaN / Inf in feature value | Post-update value check | Suppress feature; emit with `valid=False`; alert |
-| State corruption (inconsistent internals) | Invariant checks after update | Reset symbol state; re-warm from recent events |
-| Memory budget exceeded | Per-symbol allocation tracking | Evict oldest rolling window entries; alert if persistent |
-| Dependency cycle detected | Registry validation at startup | Fail startup; do not proceed with circular dependencies |
-| Feature computation exceeds latency budget | Scoped timer per update | Log; alert if sustained; profile for optimization |
-| Event ordering violation | Timestamp monotonicity check | Log; use last-known ordering; alert for investigation |
-
----
-
-## Multi-Alpha Composition
-
-In multi-strategy deployments, the `CompositeFeatureEngine`
-(`alpha/composite.py`) aggregates feature definitions from all
-registered alpha modules (`AlphaRegistry`). It implements the
-`FeatureEngine` protocol so the orchestrator is unaware of the
-multi-alpha structure.
-
-- Features are computed in topological dependency order (stable
-  tie-breaking by `feature_id` for determinism)
-- Per-symbol state is maintained per feature definition
-- The composite `version` is a SHA-256 hash of all constituent
-  feature versions
-- `checkpoint()` / `restore()` serialize/deserialize the full
-  multi-alpha state
-
-Individual alpha modules declare their feature definitions via
-`AlphaModule.feature_definitions` and are loaded from `.alpha.yaml`
-specs by the `AlphaLoader`. See the system-architect skill for the
-full alpha module system.
-
----
+| NaN / Inf in sensor value | Post-update value check | Suppress emission; emit `Alert`; flag `provenance.valid = False` |
+| State corruption | Per-update invariant check | `reset(symbol)`; re-warm from recent events |
+| Memory budget exceeded | Per-symbol allocation tracking | Evict oldest ring-buffer entries; alert if persistent |
+| Dependency cycle | Registry construction | Fail bootstrap (`SensorRegistry` raises) |
+| Clock-derived staleness flagged but quote arriving | Race between staleness sweep and event ingestion | Accept the new event; clear stale flag on next snapshot |
 
 ## Performance Constraints
 
-Feature computation is on the critical path (tick-to-trade pipeline).
-Budget from the performance-engineering skill:
+Sensor + aggregator wall time is on the per-tick critical path. Budget
+from the performance-engineering skill (per tick, all sensors, one
+symbol):
 
-| Operation | Budget | Hard Ceiling |
-|-----------|--------|-------------|
-| Per-tick incremental update (all features, 1 symbol) | 1 ms | 5 ms |
-| Feature snapshot emission | 50 μs | 200 μs |
-| Per-symbol memory footprint | < 1 MB | Configurable |
+| Operation | Budget | Hard ceiling |
+|-----------|--------|--------------|
+| Single sensor `update()` | 50 μs | 200 μs |
+| Full sensor fan-out at SENSOR_UPDATE | 500 μs | 2 ms |
+| `HorizonAggregator` snapshot emission | 200 μs | 1 ms |
+| Per-symbol memory footprint | < 1 MB | configurable |
 
-Optimization hierarchy: incremental updates > vectorized batch >
-pre-allocated buffers. Never sacrifice determinism or correctness for speed.
+The Phase-4 perf gate is `≤ 12 %` end-to-end throughput regression vs
+the v0.2 baseline; the Phase-4.1 gate is `≤ 5 %` decay-weighting
+overhead. Per-host pinned baselines live in
+`tests/perf/baselines/v02_baseline.json` (opt-in via `PERF_HOST_LABEL`).
 
----
+## Reproducibility
+
+Same `(sensor_id, sensor_version)` set + same event log → bit-identical
+`SensorReading` and `HorizonFeatureSnapshot` streams. Locked by the
+Level-1 sensor parity test (`tests/determinism/test_sensor_replay.py`).
+
+### Snapshot Persistence
+
+This skill owns the optional `SensorStateStore` checkpoint protocol for
+warm-start. Snapshots are keyed by `(symbol, sensor_id,
+sensor_version)`. Version mismatch on restore falls back to cold start
+— never silently degrade to a different version's state.
+
+## Cross-Sectional Aggregation
+
+The sensor layer is **strictly per-symbol**. Cross-sectional
+aggregation (sector-relative spread, market-wide vol rank) belongs to
+Layer 3 (`composition` package). The aggregator never compares across
+symbols; per-symbol horizon snapshots are the unit of cross-symbol
+fan-in for `UniverseSynchronizer` in the composition layer.
 
 ## Event Interface
 
-| Event | Direction | Type (`core/events.py`) |
-|-------|-----------|---------|
-| Quote update | Inbound | `NBBOQuote` — symbol, bid, ask, bid_size, ask_size, exchange_timestamp_ns |
-| Trade print | Inbound | `Trade` — symbol, price, size, exchange_timestamp_ns |
-| Feature output | Outbound | `FeatureVector` — symbol, feature_version, values, warm, stale, event_count |
+| Event | Direction | Notes |
+|-------|-----------|-------|
+| `NBBOQuote` | Inbound | Consumed by `update()` |
+| `Trade` | Inbound | Consumed by trade-driven sensors |
+| `SensorReading` | Outbound | Per-event emission with provenance |
+| `HorizonTick` | Internal | Scheduler → aggregator |
+| `HorizonFeatureSnapshot` | Outbound | Layer-1.5 → Layer-2 contract |
 
-The following signals are NOT YET IMPLEMENTED as typed events but should
-extend `Event` when built:
-
-| Future Event | Purpose |
-|-------|---------|
-| `FEATURES_READY` | All features for a symbol past warm-up |
-| `FEATURE_STALE` | No event for symbol beyond staleness threshold |
-| `FEATURE_ERROR` | NaN/Inf or state corruption detected |
-
-All events carry timestamps from the injectable `Clock` protocol.
-
----
+All carry timestamps from the injectable `Clock` (Inv-10).
 
 ## Integration Points
 
 | Dependency | Interface |
 |------------|-----------|
-| Data Engineering (data-engineering skill) | `NBBOQuote` / `Trade` events from `MarketDataSource` |
-| System Architect (system-architect skill) | `Clock`, `EventBus`, micro-state M3 (FEATURE_COMPUTE) |
-| Microstructure Alpha (microstructure-alpha skill) | Signal taxonomy defines what features to compute |
-| Signal Engine | Consumes `FeatureVector`; calls `SignalEngine.evaluate(features)` at M4 |
-| Backtest Engine (backtest-engine skill) | Replays events through feature engine; snapshot comparison for determinism |
-| Storage Layer | `FeatureSnapshotStore` for checkpoint persistence |
-| Performance Engineering (performance-engineering skill) | M3 feature compute latency budget (1ms target, 5ms ceiling) |
-| Testing & Validation (testing-validation skill) | Incremental vs full-recompute validation; property-based invariant tests |
+| Data Engineering | `NBBOQuote` / `Trade` events from `MarketDataSource` |
+| System Architect | `Clock`, `EventBus`, micro-state pipeline (M2 → SENSOR_UPDATE → HORIZON_AGGREGATE) |
+| Microstructure Alpha | Defines what sensors to compute; consumes `HorizonFeatureSnapshot` |
+| Composition Layer | Per-symbol snapshots feed `UniverseSynchronizer` for cross-sectional context |
+| Backtest Engine | Replays events through the sensor + aggregator pipeline |
+| Performance Engineering | Per-tick sensor compute budget |
+| Testing & Validation | Sensor parity hash + warm-up + staleness property tests |
 
-The feature engine is the stateful core of the data pipeline. It is
-deterministic, incremental, bounded, and version-controlled — the foundation
-on which signal quality depends.
+The sensor layer is the deterministic, incremental, bounded,
+version-controlled foundation on which every alpha depends.
