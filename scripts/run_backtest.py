@@ -10,6 +10,10 @@ Workstream-D update — the ``--demo`` synthetic-tick mode was retired
 along with the ``trade_cluster_drift`` LEGACY reference alpha (D.2).
 For a no-API-key smoke test of the orchestration pipeline use the
 end-to-end suite directly: ``pytest tests/integration/test_phase4_e2e.py``.
+
+Offline replay from gzipped JSONL disk cache (no Massive API key)::
+
+    python scripts/replay_backtest_from_cache.py --symbol SNDU --date 2026-05-01
 """
 
 from __future__ import annotations
@@ -25,7 +29,7 @@ from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import TypeVar
+from typing import Any, Sequence, TypeVar
 
 # Ensure the project root is on sys.path so `feelies` is importable
 # when running the script directly (e.g. `python scripts/run_backtest.py`).
@@ -33,6 +37,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 
 from feelies.bootstrap import build_platform
+from feelies.kernel.signal_order_trace import SignalOrderTraceRow
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
     CrossSectionalContext,
@@ -83,6 +88,31 @@ class BusRecorder:
 
     def of_type(self, t: type[T]) -> list[T]:
         return self.by_type[t]  # type: ignore[return-value]
+
+
+def _dedupe_republished_signal_events(signals: list[Signal]) -> list[Signal]:
+    """One entry per distinct ``Signal`` instance (preserves arrival order).
+
+    ``HorizonSignalEngine`` publishes each evaluation once; the orchestrator
+    re-publishes the arbitration-selected ``Signal`` on the same tick
+    (``Orchestrator._process_tick_inner``) so downstream bus subscribers see
+    it again.  :class:`BusRecorder` therefore often records the **same**
+    immutable object twice — inflating naive ``len(recorder.of_type(Signal))``
+    counts.  Dedupe by ``id()`` so report totals match distinct horizon
+    emissions.
+
+    Separate evaluations are distinct instances (unique ``sequence``), so
+    this does not merge two equal-valued signals from different ticks.
+    """
+    seen: set[int] = set()
+    out: list[Signal] = []
+    for s in signals:
+        oid = id(s)
+        if oid in seen:
+            continue
+        seen.add(oid)
+        out.append(s)
+    return out
 
 
 # ── Progress reporter ────────────────────────────────────────────────
@@ -277,7 +307,64 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Level-4 hazard-exit determinism tests."
         ),
     )
+    p.add_argument(
+        "--trace-signal-orders",
+        action="store_true",
+        help=(
+            "After the run, print one row per Signal that reached the "
+            "orchestrator bus (published Signals only — alphas suppressed "
+            "before emission, e.g. cold regime gate, do not appear).  Each "
+            "row states ORDER_SUBMITTED vs NO_ORDER and pipe-stage reasons "
+            "(arbitration, sizing, risk, order build, resting-order guard)."
+        ),
+    )
     return p.parse_args(argv)
+
+
+def parse_cache_replay_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """CLI for :func:`main_cache_replay` — disk cache only, no API."""
+    p = argparse.ArgumentParser(
+        description=(
+            "Replay a backtest using only gzipped JSONL cache files "
+            "(see DiskEventCache layout under ~/.feelies/cache by default)."
+        ),
+    )
+    p.add_argument(
+        "--symbol",
+        type=str,
+        nargs="+",
+        default=None,
+        help="Symbols (default: from platform.yaml)",
+    )
+    p.add_argument("--date", type=str, required=True, help="YYYY-MM-DD")
+    p.add_argument("--end-date", type=str, default=None, help="YYYY-MM-DD inclusive")
+    p.add_argument("--config", type=str, default="platform.yaml")
+    p.add_argument(
+        "--cache-dir",
+        type=str,
+        default=None,
+        help="Disk cache root (default: ~/.feelies/cache)",
+    )
+    p.add_argument("--trace-signal-orders", action="store_true")
+    p.add_argument(
+        "--stress-cost",
+        type=float,
+        default=1.0,
+        metavar="MULT",
+        help="Cost stress multiplier (same as run_backtest.py)",
+    )
+    args = p.parse_args(argv)
+    # Shared Phase-2 JSONL emit hooks default off for this entry-point.
+    args.emit_fills_jsonl = False
+    args.emit_sensor_readings_jsonl = False
+    args.emit_horizon_ticks_jsonl = False
+    args.emit_snapshots_jsonl = False
+    args.emit_signals_jsonl = False
+    args.emit_hazard_spikes_jsonl = False
+    args.emit_cross_sectional_jsonl = False
+    args.emit_sized_intents_jsonl = False
+    args.emit_hazard_exits_jsonl = False
+    return args
 
 
 def _emit_fills_jsonl(recorder: BusRecorder) -> None:
@@ -786,7 +873,8 @@ def generate_report(
     from feelies.storage.trade_journal import TradeRecord
 
     quotes = recorder.of_type(NBBOQuote)
-    signals = recorder.of_type(Signal)
+    raw_signals = recorder.of_type(Signal)
+    signals = _dedupe_republished_signal_events(raw_signals)
     orders = recorder.of_type(OrderRequest)
     acks = recorder.of_type(OrderAck)
     pos_updates = recorder.of_type(PositionUpdate)
@@ -960,6 +1048,13 @@ def generate_report(
     lines.append(_kv("Quotes processed", f"{len(quotes):,}"))
     lines.append(_kv("Horizon snapshots", f"{len(horizon_snapshots):,}"))
     lines.append(_kv("Signals emitted", f"{len(signals):,}"))
+    if len(raw_signals) != len(signals):
+        lines.append(
+            _sub_kv(
+                "Raw bus Signal rows",
+                f"{len(raw_signals):,} (incl. republish)",
+            ),
+        )
     lines.append(_sub_kv("Long", f"{len(long_signals):,}"))
     lines.append(_sub_kv("Short", f"{len(short_signals):,}"))
 
@@ -1228,9 +1323,13 @@ def run_verification(
     n = ingest_result.events_ingested
     results.append(("Events ingested", n > 0, f"{n} events"))
 
-    # 2. Signals fired > 0
-    sigs = recorder.of_type(Signal)
-    results.append(("Signals fired", len(sigs) > 0, f"{len(sigs)} signals"))
+    # 2. Signals fired > 0 (dedupe orchestrator re-publish of same instance)
+    raw_sigs = recorder.of_type(Signal)
+    sigs = _dedupe_republished_signal_events(raw_sigs)
+    detail = f"{len(sigs)} signals"
+    if len(raw_sigs) != len(sigs):
+        detail += f" ({len(raw_sigs)} bus records incl. republish)"
+    results.append(("Signals fired", len(sigs) > 0, detail))
 
     # 3. Fills occurred >= 1
     acks = recorder.of_type(OrderAck)
@@ -1282,6 +1381,37 @@ def print_verification(results: list[tuple[str, bool, str]]) -> bool:
     return all_passed
 
 
+def _print_signal_order_trace(rows: list[SignalOrderTraceRow]) -> None:
+    """Human-readable audit of standalone SIGNAL → OrderRequest outcomes."""
+    print(_section("Signal → order trace"), flush=True)
+    if not rows:
+        print(
+            "    (empty — enable with --trace-signal-orders; bus Signals "
+            "that never reached the orchestrator filter are not listed)",
+            flush=True,
+        )
+        print()
+        return
+    w = 72
+    print(
+        f"    {'#':>4}  {'outcome':^18}  {'strategy_id':^26}  "
+        f"{'sym':^6}  {'dir':^5}  {'sig_seq':>7}",
+        flush=True,
+    )
+    print(f"    {'-' * w}", flush=True)
+    for i, r in enumerate(rows, 1):
+        rs = " | ".join(r.reasons)
+        print(
+            f"    {i:4d}  {r.outcome:18s}  {r.strategy_id:26s}  "
+            f"{r.symbol:6s}  {r.signal_direction:5s}  {r.signal_sequence:7d}",
+            flush=True,
+        )
+        print(f"          reasons: {rs}", flush=True)
+    print(f"    {'-' * w}", flush=True)
+    print(f"    Total rows: {len(rows)}", flush=True)
+    print()
+
+
 # ── Main ─────────────────────────────────────────────────────────────
 
 
@@ -1300,6 +1430,98 @@ def _force_utf8_console() -> None:
                 reconfigure(encoding="utf-8", errors="replace")
             except Exception:
                 pass
+
+
+def _run_backtest_phases_2_7(
+    args: argparse.Namespace,
+    event_log: InMemoryEventLog,
+    ingest_result: IngestResult,
+    day_sources: Sequence[Any],
+    config: PlatformConfig,
+    symbols: list[str],
+    symbol_str: str,
+    date_range: str,
+    run_t0: float,
+) -> int:
+    """Bootstrap → replay → report → verification (shared by API and cache harness)."""
+    # ── Phase 2: Platform bootstrap ───────────────────────────
+    step_t = _step("Composing platform (alphas, engines, risk)")
+    signal_trace_sink: list[SignalOrderTraceRow] | None = (
+        [] if args.trace_signal_orders else None
+    )
+    orchestrator, config_out = build_platform(
+        config,
+        event_log=event_log,
+        signal_order_trace_sink=signal_trace_sink,
+    )
+    alpha_count = len(orchestrator._alpha_registry) if orchestrator._alpha_registry else 0  # type: ignore[attr-defined]
+    dt = time.monotonic() - step_t
+    print(f"  OK - {alpha_count} alpha(s) registered [{dt:.1f}s]", flush=True)
+
+    # ── Phase 3: Attach recorder ──────────────────────────────
+    recorder = BusRecorder()
+    orchestrator._bus.subscribe_all(recorder)  # type: ignore[attr-defined]
+
+    # ── Phase 4: Boot ─────────────────────────────────────────
+    step_t = _step("Booting orchestrator (integrity checks, warm-start)")
+    orchestrator.boot(config_out)
+    macro = orchestrator.macro_state
+    dt = time.monotonic() - step_t
+    print(f"  OK - macro state: {macro.name} [{dt:.1f}s]", flush=True)
+
+    if macro != MacroState.READY:
+        print(
+            f"  ERROR: Boot failed — macro state is {macro.name}, expected READY",
+            file=sys.stderr,
+        )
+        return 1
+
+    # ── Phase 5: Run pipeline ─────────────────────────────────
+    n_quotes = sum(1 for e in event_log.replay() if isinstance(e, NBBOQuote))
+    progress = _ProgressReporter(total_events=n_quotes, interval=100_000)
+    orchestrator._bus.subscribe(NBBOQuote, progress)  # type: ignore[attr-defined]
+
+    step_t = _step(f"Replaying {n_quotes:,} quotes through pipeline")
+    print(flush=True)
+    orchestrator.run_backtest()
+    dt = time.monotonic() - step_t
+    print(f"  Pipeline complete - {progress.summary()}", flush=True)
+
+    # ── Phase 6: Report ───────────────────────────────────────
+    step_t = _step("Generating report")
+    report = generate_report(
+        recorder=recorder,
+        ingest_result=ingest_result,
+        config=config_out,
+        orchestrator=orchestrator,
+        symbol_str=symbol_str,
+        date_range=date_range,
+        day_sources=list(day_sources),
+        data_version=_live_data_version(symbols, date_range),
+    )
+    dt = time.monotonic() - step_t
+    print(f"  OK [{dt:.1f}s]", flush=True)
+    print(report)
+
+    if args.trace_signal_orders and signal_trace_sink is not None:
+        _print_signal_order_trace(signal_trace_sink)
+
+    # ── Phase 7: Verification ─────────────────────────────────
+    results = run_verification(
+        recorder=recorder,
+        ingest_result=ingest_result,
+        orchestrator=orchestrator,
+    )
+    all_passed = print_verification(results)
+
+    total_elapsed = time.monotonic() - run_t0
+    print(f"  Total elapsed: {total_elapsed:.1f}s\n", flush=True)
+
+    if args.emit_fills_jsonl:
+        _emit_fills_jsonl(recorder)
+    _emit_phase2_jsonl(args, recorder)
+
+    return 0 if all_passed else 2
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1405,72 +1627,92 @@ def main(argv: list[str] | None = None) -> int:
         flush=True,
     )
 
-    # ── Phase 2: Platform bootstrap ───────────────────────────
-    step_t = _step("Composing platform (alphas, engines, risk)")
-    orchestrator, config = build_platform(config, event_log=event_log)
-    alpha_count = len(orchestrator._alpha_registry) if orchestrator._alpha_registry else 0  # type: ignore[attr-defined]
-    dt = time.monotonic() - step_t
-    print(f"  OK - {alpha_count} alpha(s) registered [{dt:.1f}s]", flush=True)
+    return _run_backtest_phases_2_7(
+        args,
+        event_log,
+        ingest_result,
+        day_sources,
+        config,
+        symbols,
+        symbol_str,
+        date_range,
+        run_t0,
+    )
 
-    # ── Phase 3: Attach recorder ──────────────────────────────
-    recorder = BusRecorder()
-    orchestrator._bus.subscribe_all(recorder)  # type: ignore[attr-defined]
 
-    # ── Phase 4: Boot ─────────────────────────────────────────
-    step_t = _step("Booting orchestrator (integrity checks, warm-start)")
-    orchestrator.boot(config)
-    macro = orchestrator.macro_state
-    dt = time.monotonic() - step_t
-    print(f"  OK - macro state: {macro.name} [{dt:.1f}s]", flush=True)
+def main_cache_replay(argv: list[str] | None = None) -> int:
+    """Entry point: replay from DiskEventCache JSONL.gz only (no Massive API)."""
+    _force_utf8_console()
+    args = parse_cache_replay_args(argv)
 
-    if macro != MacroState.READY:
-        print(f"  ERROR: Boot failed — macro state is {macro.name}, expected READY",
-              file=sys.stderr)
+    config_path = Path(args.config)
+    if not config_path.exists():
+        print(f"ERROR: Config file not found: {config_path}", file=sys.stderr)
         return 1
 
-    # ── Phase 5: Run pipeline ─────────────────────────────────
-    n_quotes = sum(1 for e in event_log.replay() if isinstance(e, NBBOQuote))
-    progress = _ProgressReporter(total_events=n_quotes, interval=100_000)
-    orchestrator._bus.subscribe(NBBOQuote, progress)  # type: ignore[attr-defined]
+    config = PlatformConfig.from_yaml(config_path)
 
-    step_t = _step(f"Replaying {n_quotes:,} quotes through pipeline")
+    if args.stress_cost != 1.0:
+        from dataclasses import replace as _replace
+
+        config = _replace(config, cost_stress_multiplier=args.stress_cost)
+
+    if args.symbol:
+        config.symbols = frozenset(s.upper() for s in args.symbol)
+
+    symbols = sorted(config.symbols)
+    if not symbols:
+        print(
+            "ERROR: No symbols specified (use --symbol or set in platform.yaml)",
+            file=sys.stderr,
+        )
+        return 1
+
+    start_date = args.date
+    end_date = args.end_date or start_date
+    date_range = start_date if start_date == end_date else f"{start_date} to {end_date}"
+    symbol_str = ", ".join(symbols)
+    run_t0 = time.monotonic()
+
+    print(f"\n  Cache replay: {symbol_str}  |  {date_range}", flush=True)
+    print(f"  {_RULE_LIGHT}", flush=True)
+
+    step_t = _step("Loading disk cache (JSONL.gz only)")
     print(flush=True)
-    orchestrator.run_backtest()
-    dt = time.monotonic() - step_t
-    print(f"  Pipeline complete - {progress.summary()}", flush=True)
 
-    # ── Phase 6: Report ───────────────────────────────────────
-    step_t = _step("Generating report")
-    report = generate_report(
-        recorder=recorder,
-        ingest_result=ingest_result,
-        config=config,
-        orchestrator=orchestrator,
-        symbol_str=symbol_str,
-        date_range=date_range,
-        day_sources=day_sources,
-        data_version=_live_data_version(symbols, date_range),
+    from feelies.storage.cache_replay import CacheReplayError, load_event_log_from_disk_cache
+
+    cache_path = Path(args.cache_dir) if args.cache_dir else None
+
+    try:
+        event_log, ingest_result, day_sources = load_event_log_from_disk_cache(
+            symbols,
+            start_date,
+            end_date,
+            cache_dir=cache_path,
+        )
+    except CacheReplayError as exc:
+        print(f"\n  ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    dt_load = time.monotonic() - step_t
+    print(
+        f"  OK - {ingest_result.events_ingested:,} events "
+        f"(disk cache only) [{dt_load:.1f}s]",
+        flush=True,
     )
-    dt = time.monotonic() - step_t
-    print(f"  OK [{dt:.1f}s]", flush=True)
-    print(report)
 
-    # ── Phase 7: Verification ─────────────────────────────────
-    results = run_verification(
-        recorder=recorder,
-        ingest_result=ingest_result,
-        orchestrator=orchestrator,
+    return _run_backtest_phases_2_7(
+        args,
+        event_log,
+        ingest_result,
+        day_sources,
+        config,
+        symbols,
+        symbol_str,
+        date_range,
+        run_t0,
     )
-    all_passed = print_verification(results)
-
-    total_elapsed = time.monotonic() - run_t0
-    print(f"  Total elapsed: {total_elapsed:.1f}s\n", flush=True)
-
-    if args.emit_fills_jsonl:
-        _emit_fills_jsonl(recorder)
-    _emit_phase2_jsonl(args, recorder)
-
-    return 0 if all_passed else 2
 
 
 if __name__ == "__main__":

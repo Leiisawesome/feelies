@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
-"""Run the full backtest validation suite.
+"""Run pytest tests marked ``backtest_validation`` (thin wrapper).
+
+Equivalent core invocation::
+
+    pytest -m backtest_validation
 
 Usage:
-    python scripts/run_validation.py            # all tests (including benchmarks)
-    python scripts/run_validation.py --quick    # skip slow performance benchmarks
-    python scripts/run_validation.py --new      # only new validation tests
-    python scripts/run_validation.py -k drawdown  # filter by keyword
+    python scripts/run_validation.py              # marker suite (verbose)
+    python scripts/run_validation.py --quick       # same subset but excludes ``slow``
+    python scripts/run_validation.py -k drawdown   # filter by keyword
+
+Note:
+    ``--quick`` expands to ``-m \"backtest_validation and not slow\"``.  Today no
+    ``backtest_validation`` module also carries ``slow``, so it matches the default
+    suite unless that overlap is introduced later.
 """
 
 from __future__ import annotations
@@ -17,17 +25,15 @@ import sys
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Run the backtest validation suite.",
+        description='Run tests with pytest marker "backtest_validation".',
     )
     parser.add_argument(
         "--quick",
         action="store_true",
-        help="Skip slow performance benchmarks",
-    )
-    parser.add_argument(
-        "--new",
-        action="store_true",
-        help="Run only the new tests/validation/ tests",
+        help=(
+            'Same as default but adds "and not slow" (perf/mypy tests '
+            "that also carry backtest_validation would be skipped)"
+        ),
     )
     parser.add_argument(
         "-k",
@@ -49,9 +55,7 @@ def main() -> int:
 
     cmd = [sys.executable, "-m", "pytest"]
 
-    if args.new:
-        cmd.append("tests/validation/")
-    elif args.quick:
+    if args.quick:
         cmd.extend(["-m", "backtest_validation and not slow"])
     else:
         cmd.extend(["-m", "backtest_validation"])

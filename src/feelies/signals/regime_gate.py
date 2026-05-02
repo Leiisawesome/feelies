@@ -81,7 +81,23 @@ class UnknownIdentifierError(RegimeGateError):
     missing.  Bindings come from the snapshot + regime; a missing
     sensor reading is a sign of cold-start or warm-up incomplete and
     callers typically suppress emission rather than crash.
+
+    ``missing_binding_token`` is set when the missing name is a sensor /
+    feature binding (scalar, ``*_percentile``, or ``*_zscore``) rather
+    than an unavailable regime object — consumers may log those at
+    DEBUG during sensor warm-up.
     """
+
+    missing_binding_token: str | None
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        missing_binding_token: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.missing_binding_token = missing_binding_token
 
 
 class UnknownRegimeStateError(RegimeGateError):
@@ -407,7 +423,8 @@ def _resolve_name(name: str, b: Bindings) -> Any:
             raise UnknownIdentifierError(
                 f"regime-gate: percentile {name!r} not in bindings; "
                 f"known sensors with percentiles: "
-                f"{sorted(b.percentiles)}"
+                f"{sorted(b.percentiles)}",
+                missing_binding_token=name,
             )
         return b.percentiles[sensor_id]
 
@@ -416,7 +433,8 @@ def _resolve_name(name: str, b: Bindings) -> Any:
         if sensor_id not in b.zscores:
             raise UnknownIdentifierError(
                 f"regime-gate: zscore {name!r} not in bindings; "
-                f"known sensors with zscores: {sorted(b.zscores)}"
+                f"known sensors with zscores: {sorted(b.zscores)}",
+                missing_binding_token=name,
             )
         return b.zscores[sensor_id]
 
@@ -425,7 +443,8 @@ def _resolve_name(name: str, b: Bindings) -> Any:
 
     raise UnknownIdentifierError(
         f"regime-gate: identifier {name!r} not in bindings; "
-        f"available sensors: {sorted(b.sensor_values)}"
+        f"available sensors: {sorted(b.sensor_values)}",
+        missing_binding_token=name,
     )
 
 

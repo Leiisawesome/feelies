@@ -107,6 +107,7 @@ from feelies.features.impl.sensor_passthrough import (
 )
 from feelies.features.protocol import HorizonFeature
 from feelies.kernel.orchestrator import Orchestrator
+from feelies.kernel.signal_order_trace import SignalOrderTraceRow
 from feelies.monitoring.in_memory import (
     InMemoryAlertManager,
     InMemoryKillSwitch,
@@ -149,6 +150,8 @@ class UniverseScaleError(RuntimeError):
 def build_platform(
     config: PlatformConfig | str | Path,
     event_log: InMemoryEventLog | None = None,
+    *,
+    signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
 ) -> tuple[Orchestrator, PlatformConfig]:
     """Compose the full platform from configuration.
 
@@ -156,6 +159,10 @@ def build_platform(
         config: A ``PlatformConfig`` instance, or a path to a YAML file.
         event_log: Optional pre-populated event log (for backtest with
             pre-ingested data).  If None, an empty in-memory log is created.
+        signal_order_trace_sink: When non-None, the orchestrator appends
+            :class:`~feelies.kernel.signal_order_trace.SignalOrderTraceRow`
+            records explaining why each bus :class:`~feelies.core.events.Signal`
+            did or did not yield a standalone ``OrderRequest`` on its quote tick.
 
     Returns:
         ``(orchestrator, config)`` — caller does
@@ -389,6 +396,7 @@ def build_platform(
         cross_sectional_tracker=cross_sectional_tracker,
         composition_metrics_collector=composition_metrics,
         hazard_exit_controller=hazard_exit_controller,
+        signal_order_trace_sink=signal_order_trace_sink,
     )
 
     config_snapshot = config.snapshot()

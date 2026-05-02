@@ -38,7 +38,7 @@ import time
 from collections.abc import Callable
 from dataclasses import replace
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +100,7 @@ from feelies.kernel.macro import (
     create_macro_state_machine,
 )
 from feelies.kernel.micro import MicroState, create_micro_state_machine
+from feelies.kernel.signal_order_trace import SignalOrderTraceRow
 from feelies.monitoring.alerting import AlertManager
 from feelies.monitoring.kill_switch import KillSwitch
 from feelies.monitoring.telemetry import MetricCollector
@@ -315,6 +316,7 @@ class Orchestrator:
         composition_metrics_collector: "HorizonMetricsCollector | None" = None,
         hazard_exit_controller: "HazardExitController | None" = None,
         signal_arbitrator: SignalArbitrator | None = None,
+        signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -404,6 +406,10 @@ class Orchestrator:
             if signal_arbitrator is not None
             else EdgeWeightedArbitrator()
         )
+        self._signal_order_trace_sink: list[SignalOrderTraceRow] | None = (
+            signal_order_trace_sink
+        )
+        self._tick_quote_for_trace: NBBOQuote | None = None
         # Per-(symbol, engine_name) cache of the most recently
         # observed RegimeState; used as ``prev`` argument to the
         # detector on the next tick.  Cleared on session boundary
@@ -492,6 +498,75 @@ class Orchestrator:
         # ``depends_on_signals`` skip-rule prevents double-trading when a
         # SIGNAL alpha is consumed by a PORTFOLIO alpha).
         self._bus.subscribe(SizedPositionIntent, self._on_bus_sized_intent)
+
+    # ── Optional SIGNAL → order diagnostic sink ─────────────────────
+
+    def _append_signal_order_trace(
+        self,
+        quote: NBBOQuote,
+        signal: Signal,
+        *,
+        outcome: Literal["ORDER_SUBMITTED", "NO_ORDER"],
+        reasons: tuple[str, ...],
+    ) -> None:
+        sink = self._signal_order_trace_sink
+        if sink is None:
+            return
+        sink.append(
+            SignalOrderTraceRow(
+                quote_timestamp_ns=quote.timestamp_ns,
+                quote_correlation_id=quote.correlation_id,
+                quote_sequence=quote.sequence,
+                signal_sequence=signal.sequence,
+                strategy_id=signal.strategy_id,
+                symbol=signal.symbol,
+                signal_direction=signal.direction.name,
+                outcome=outcome,
+                reasons=reasons,
+            )
+        )
+
+    def _trace_buffered_signals_arbitration(
+        self,
+        quote: NBBOQuote,
+        buf_snapshot: list[Signal],
+        bus_selected: Signal | None,
+        stop_signal: Signal | None,
+    ) -> None:
+        if self._signal_order_trace_sink is None or not buf_snapshot:
+            return
+        if stop_signal is not None:
+            for s in buf_snapshot:
+                self._append_signal_order_trace(
+                    quote,
+                    s,
+                    outcome="NO_ORDER",
+                    reasons=("superseded_by_inline_stop_exit",),
+                )
+            return
+        if bus_selected is None:
+            for s in buf_snapshot:
+                self._append_signal_order_trace(
+                    quote,
+                    s,
+                    outcome="NO_ORDER",
+                    reasons=(
+                        "arbitration_returned_none_dead_zone_or_conflict",
+                    ),
+                )
+            return
+        for s in buf_snapshot:
+            if s is bus_selected:
+                continue
+            self._append_signal_order_trace(
+                quote,
+                s,
+                outcome="NO_ORDER",
+                reasons=(
+                    "not_selected_in_arbitration_winner_is:"
+                    f"{bus_selected.strategy_id}",
+                ),
+            )
 
     # ── Public state accessors ──────────────────────────────────────
 
@@ -991,6 +1066,7 @@ class Orchestrator:
         # short-circuited the pipeline) would leak into the new tick's
         # M4 drain and translate into ghost orders.
         self._signal_buffer.clear()
+        self._tick_quote_for_trace = None
 
         # ── Kill switch gate (W-2) ─────────────────────────────
         if self._kill_switch is not None and self._kill_switch.is_active:
@@ -1023,6 +1099,8 @@ class Orchestrator:
         )
         if not self._events_prelogged:
             self._event_log.append(quote)
+        if self._signal_order_trace_sink is not None:
+            self._tick_quote_for_trace = quote
         self._bus.publish(quote)
 
         # ── Mark-to-market feed ─────────────────────────────────
@@ -1099,13 +1177,18 @@ class Orchestrator:
         # (injectable ``signal_arbitrator`` ctor param).  Stop-loss exits
         # computed inline by ``_check_stop_exit`` always override (Inv-11:
         # position safety beats alpha conviction).
-        signal: "Signal | None" = None
-        if self._signal_buffer:
+        buf_snapshot = list(self._signal_buffer)
+        signal: Signal | None = None
+        if buf_snapshot:
             t0 = time.perf_counter_ns()
             signal = self._select_bus_signal()
             self._tick_timings["signal_evaluate_ns"] = time.perf_counter_ns() - t0
 
         stop_signal = self._check_stop_exit(quote)
+        self._trace_buffered_signals_arbitration(
+            quote, buf_snapshot, signal, stop_signal,
+        )
+
         if stop_signal is not None:
             signal = stop_signal
 
@@ -1128,6 +1211,19 @@ class Orchestrator:
         intent = self._intent_translator.translate(signal, current_position, target_qty)
 
         if intent.intent == TradingIntent.NO_ACTION:
+            reasons_no: list[str] = [
+                "intent_translator_no_action",
+                f"intent_enum={intent.intent.name}",
+                f"current_position_qty={intent.current_quantity}",
+            ]
+            if target_qty == 0:
+                reasons_no.insert(0, "position_sizer_returned_zero_target_quantity")
+            self._append_signal_order_trace(
+                quote,
+                signal,
+                outcome="NO_ORDER",
+                reasons=tuple(reasons_no),
+            )
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
                 trigger="intent_no_action",
@@ -1150,12 +1246,30 @@ class Orchestrator:
         # ── M5 branch: risk fail → cross-machine to G8 ─────────
         if verdict.action == RiskAction.FORCE_FLATTEN:
             if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
+                self._append_signal_order_trace(
+                    quote,
+                    signal,
+                    outcome="NO_ORDER",
+                    reasons=(
+                        "risk_check_signal_force_flatten_lockdown",
+                        verdict.reason,
+                    ),
+                )
                 self._escalate_risk(cid)
                 self._micro.reset(
                     trigger="pipeline_abort:risk_lockdown",
                     correlation_id=cid,
                 )
                 return
+            self._append_signal_order_trace(
+                quote,
+                signal,
+                outcome="NO_ORDER",
+                reasons=(
+                    "risk_check_signal_force_flatten_simulated",
+                    verdict.reason,
+                ),
+            )
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
                 trigger="risk_force_flatten_simulated",
@@ -1166,6 +1280,12 @@ class Orchestrator:
 
         # ── M5 branch: risk rejected → M10 ─────────────────────
         if verdict.action == RiskAction.REJECT:
+            self._append_signal_order_trace(
+                quote,
+                signal,
+                outcome="NO_ORDER",
+                reasons=("risk_check_signal_reject", verdict.reason),
+            )
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
                 trigger="risk_reject_no_order",
@@ -1197,8 +1317,19 @@ class Orchestrator:
             self._execute_reverse(intent, verdict, cid, quote, t_wall_start)
             return
 
-        order = self._build_order_from_intent(intent, verdict, cid, quote)
+        order, order_build_reason = self._try_build_order_from_intent(
+            intent, verdict, cid, quote,
+        )
         if order is None:
+            self._append_signal_order_trace(
+                quote,
+                signal,
+                outcome="NO_ORDER",
+                reasons=(
+                    "order_request_build_failed",
+                    order_build_reason or "unknown",
+                ),
+            )
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
                 trigger="risk_scale_down_to_zero",
@@ -1213,12 +1344,30 @@ class Orchestrator:
 
         if order_verdict.action == RiskAction.FORCE_FLATTEN:
             if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
+                self._append_signal_order_trace(
+                    quote,
+                    signal,
+                    outcome="NO_ORDER",
+                    reasons=(
+                        "risk_check_order_force_flatten_lockdown",
+                        order_verdict.reason,
+                    ),
+                )
                 self._escalate_risk(cid)
                 self._micro.reset(
                     trigger="pipeline_abort:check_order_lockdown",
                     correlation_id=cid,
                 )
                 return
+            self._append_signal_order_trace(
+                quote,
+                signal,
+                outcome="NO_ORDER",
+                reasons=(
+                    "risk_check_order_force_flatten_simulated",
+                    order_verdict.reason,
+                ),
+            )
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
                 trigger="check_order_force_flatten_simulated",
@@ -1228,6 +1377,12 @@ class Orchestrator:
             return
 
         if order_verdict.action == RiskAction.REJECT:
+            self._append_signal_order_trace(
+                quote,
+                signal,
+                outcome="NO_ORDER",
+                reasons=("risk_check_order_reject", order_verdict.reason),
+            )
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
                 trigger=f"check_order_rejected:{order_verdict.reason}",
@@ -1239,6 +1394,15 @@ class Orchestrator:
         if order_verdict.action == RiskAction.SCALE_DOWN:
             scaled_qty = round(order.quantity * order_verdict.scaling_factor)
             if scaled_qty <= 0:
+                self._append_signal_order_trace(
+                    quote,
+                    signal,
+                    outcome="NO_ORDER",
+                    reasons=(
+                        "risk_check_order_scale_down_to_zero_quantity",
+                        order_verdict.reason,
+                    ),
+                )
                 self._micro.transition(
                     MicroState.LOG_AND_METRICS,
                     trigger="check_order_scale_down_to_zero",
@@ -1270,6 +1434,15 @@ class Orchestrator:
             and self._has_pending_order_for_symbol(order.symbol)
         ):
             if intent.intent != TradingIntent.EXIT or self._has_pending_exit_for_symbol(order.symbol):
+                self._append_signal_order_trace(
+                    quote,
+                    signal,
+                    outcome="NO_ORDER",
+                    reasons=(
+                        "resting_order_guard_blocked_duplicate_passive_order",
+                        f"symbol={order.symbol}",
+                    ),
+                )
                 self._micro.transition(
                     MicroState.LOG_AND_METRICS,
                     trigger="resting_order_pending",
@@ -1290,6 +1463,16 @@ class Orchestrator:
         self._transition_order(order.order_id, OrderState.SUBMITTED, "submitted")
         self._backend.order_router.submit(order)
         self._bus.publish(order)
+        self._append_signal_order_trace(
+            quote,
+            signal,
+            outcome="ORDER_SUBMITTED",
+            reasons=(
+                f"order_id={order.order_id}",
+                f"quantity={order.quantity}",
+                f"order_type={order.order_type.name}",
+            ),
+        )
 
         # ── M7 → M8: ORDER_ACK ─────────────────────────────────
         self._micro.transition(
@@ -1904,28 +2087,14 @@ class Orchestrator:
         )
         self._finalize_tick(t_wall_start, cid)
 
-    def _build_order_from_intent(
+    def _try_build_order_from_intent(
         self,
         intent: OrderIntent,
         verdict: RiskVerdict,
         correlation_id: str,
         quote: NBBOQuote | None = None,
-    ) -> OrderRequest | None:
-        """Construct an OrderRequest from an OrderIntent.
-
-        order_id is derived from correlation_id + sequence via SHA-256
-        so that replay of identical events produces identical order IDs
-        (invariant 5).  uuid4 is forbidden here.
-
-        The intent's ``target_quantity`` is the pre-computed quantity
-        from the IntentTranslator (which may include position sizer
-        output).  ``verdict.scaling_factor`` is applied on top for
-        risk-driven scaling.
-
-        When ``_use_passive_entries`` is set and ``quote`` is provided,
-        entry/exit orders use LIMIT at the near BBO.  Stop-loss exits
-        always use MARKET (invariant 11: fail-safe).
-        """
+    ) -> tuple[OrderRequest | None, str | None]:
+        """Like :meth:`_build_order_from_intent` but returns a failure token."""
         side = self._side_from_intent(intent)
         seq = self._seq.next()
         order_id = hashlib.sha256(
@@ -1934,7 +2103,7 @@ class Orchestrator:
 
         quantity = round(intent.target_quantity * verdict.scaling_factor)
         if quantity <= 0:
-            return None
+            return None, "rounded_quantity_after_risk_scaling_le_zero"
 
         # F2: Exits and stop-losses bypass min_order_shares — you must be
         # able to close any position regardless of size (Inv-11 fail-safe).
@@ -1943,7 +2112,7 @@ class Orchestrator:
             or intent.signal.strategy_id == "__stop_exit__"
         )
         if not is_exit_or_stop and quantity < self._min_order_shares:
-            return None
+            return None, "quantity_below_platform_min_order_shares"
 
         # B4: signal edge vs round-trip cost gate.
         # Skip exits and stop-losses (always allow for safety) and when
@@ -1967,7 +2136,7 @@ class Orchestrator:
             if intent.signal.edge_estimate_bps < (
                 self._signal_min_edge_cost_ratio * round_trip_cost_bps
             ):
-                return None
+                return None, "signal_edge_below_min_edge_cost_ratio_gate"
 
         # Determine if this is a short-entry sell (for HTB fee routing).
         is_short = intent.intent in (
@@ -1987,19 +2156,49 @@ class Orchestrator:
                 order_type = OrderType.LIMIT
                 limit_price = quote.bid if side == Side.BUY else quote.ask
 
-        return OrderRequest(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=correlation_id,
-            sequence=seq,
-            order_id=order_id,
-            symbol=intent.symbol,
-            side=side,
-            order_type=order_type,
-            quantity=quantity,
-            limit_price=limit_price,
-            strategy_id=intent.strategy_id,
-            is_short=is_short,
+        return (
+            OrderRequest(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=correlation_id,
+                sequence=seq,
+                order_id=order_id,
+                symbol=intent.symbol,
+                side=side,
+                order_type=order_type,
+                quantity=quantity,
+                limit_price=limit_price,
+                strategy_id=intent.strategy_id,
+                is_short=is_short,
+            ),
+            None,
         )
+
+    def _build_order_from_intent(
+        self,
+        intent: OrderIntent,
+        verdict: RiskVerdict,
+        correlation_id: str,
+        quote: NBBOQuote | None = None,
+    ) -> OrderRequest | None:
+        """Construct an OrderRequest from an OrderIntent.
+
+        order_id is derived from correlation_id + sequence via SHA-256
+        so that replay of identical events produces identical order IDs
+        (invariant 5).  uuid4 is forbidden here.
+
+        The intent's ``target_quantity`` is the pre-computed quantity
+        from the IntentTranslator (which may include position sizer
+        output).  ``verdict.scaling_factor`` is applied on top for
+        risk-driven scaling.
+
+        When ``_use_passive_entries`` is set and ``quote`` is provided,
+        entry/exit orders use LIMIT at the near BBO.  Stop-loss exits
+        always use MARKET (invariant 11: fail-safe).
+        """
+        order, _reason = self._try_build_order_from_intent(
+            intent, verdict, correlation_id, quote,
+        )
+        return order
 
     @staticmethod
     def _side_from_intent(intent: OrderIntent) -> Side:
@@ -2487,11 +2686,38 @@ class Orchestrator:
         """
         if not isinstance(event, Signal):
             return
+        q = self._tick_quote_for_trace
         if event.layer != "SIGNAL":
+            if self._signal_order_trace_sink is not None and q is not None:
+                self._append_signal_order_trace(
+                    q,
+                    event,
+                    outcome="NO_ORDER",
+                    reasons=(
+                        "filtered_bus_signal_pipeline_wrong_layer",
+                        f"layer={event.layer!r}",
+                    ),
+                )
             return
         if event.strategy_id == "__stop_exit__":
+            if self._signal_order_trace_sink is not None and q is not None:
+                self._append_signal_order_trace(
+                    q,
+                    event,
+                    outcome="NO_ORDER",
+                    reasons=("filtered_stop_exit_routed_inline_only",),
+                )
             return
         if self._is_consumed_by_portfolio(event.strategy_id):
+            if self._signal_order_trace_sink is not None and q is not None:
+                self._append_signal_order_trace(
+                    q,
+                    event,
+                    outcome="NO_ORDER",
+                    reasons=(
+                        "filtered_alpha_consumed_by_portfolio_composition",
+                    ),
+                )
             return
         self._signal_buffer.append(event)
 

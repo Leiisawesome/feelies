@@ -108,14 +108,23 @@ cost_max_commission_pct: 1.0
 # "market": immediate mid-price fill, charges spread cost.
 # "passive_limit": limit orders at BBO, queue-position fill model.
 execution_mode: passive_limit
-# Ticks the quote must remain at our level before queue-drain fill (legacy mode).
+# Tick-based level fill (only when passive_queue_position_shares is 0):
+# consecutive NBBO updates with bid/ask still at your limit before drain fill.
 passive_fill_delay_ticks: 3
-# Maximum ticks before cancelling an unfilled resting order.
-passive_max_resting_ticks: 1000
-# Shares traded at our level before queue-drain fill triggers (D10 mode).
-# 0 = disabled (use tick-based fill_delay_ticks); 500 = approximately
-# 1 lot of queue drains before we fill.
-passive_queue_position_shares: 500
+# Maximum NBBO updates (for that symbol) while the order rests before timeout
+# cancel.  Maker quotes often sit through thousands of prints — keep this
+# high enough that fills are gated by queue/through logic, not spurious timeout.
+passive_max_resting_ticks: 8000
+# Realistic maker queue (D10): cumulative aggressive volume at/through your
+# limit price that must print before a level-based fill, while the NBBO keeps
+# you "at level" (see PassiveLimitOrderRouter._evaluate_fill).  This proxies
+# shares ahead of you at the touch under L1-only data — not full depth-of-book.
+#   ~100–150 : thin / small-cap top-of-book (1–1.5 round lots ahead)
+#   ~200–400 : typical mid-cap display size–scaled prior (default below)
+#   ~500+    : deep-queue / large-cap conservative stress
+# Set to 0 to disable volume queue and use passive_fill_delay_ticks only
+# (faster fills, less queue realism).
+passive_queue_position_shares: 200
 # Cancel fee per share when a resting order times out (0 = no cancel fee).
 passive_cancel_fee_per_share: 0.0
 

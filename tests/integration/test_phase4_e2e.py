@@ -96,6 +96,9 @@ from feelies.sensors.impl.spread_z_30d import SpreadZScoreSensor
 from feelies.sensors.spec import SensorSpec
 from feelies.storage.memory_event_log import InMemoryEventLog
 from tests.fixtures.event_logs._generate import SESSION_OPEN_NS
+from tests.integration.portfolio_test_constants import (
+    FACTOR_LOADINGS_MAX_AGE_SECONDS_FIXTURE,
+)
 
 
 pytestmark = pytest.mark.backtest_validation
@@ -228,6 +231,7 @@ def _make_phase4_config() -> PlatformConfig:
         session_open_ns=SESSION_OPEN_NS,
         account_equity=1_000_000.0,
         factor_loadings_dir=_FACTOR_LOADINGS_DIR,
+        factor_loadings_max_age_seconds=FACTOR_LOADINGS_MAX_AGE_SECONDS_FIXTURE,
         sector_map_path=_SECTOR_MAP_PATH,
         # Workstream-E flipped the platform default to True; this
         # integration test exercises the v0.2 baseline SIGNAL alpha

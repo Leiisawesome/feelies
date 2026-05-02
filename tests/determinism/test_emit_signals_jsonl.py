@@ -195,3 +195,11 @@ def test_emit_phase2_jsonl_skips_signals_when_flag_off(runner, capsys) -> None:
     )
     runner._emit_phase2_jsonl(args, _make_recorder(runner, [_phase3_signal(5)]))
     assert capsys.readouterr().out == ""
+
+
+def test_dedupe_republished_signal_events_collapses_same_instance(runner) -> None:
+    """Orchestrator republish records the same immutable ``Signal`` twice."""
+    a = _legacy_signal(1)
+    b = _legacy_signal(2)
+    assert runner._dedupe_republished_signal_events([a, a, b]) == [a, b]
+    assert runner._dedupe_republished_signal_events([a, b, a]) == [a, b]

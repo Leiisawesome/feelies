@@ -363,9 +363,19 @@ class HorizonSignalEngine:
                 if "no RegimeState" in str(exc)
                 else ""
             )
-            _logger.warning(
+            # Missing sensor / Layer-2 feature bindings are routine until
+            # sensors publish warm readings (e.g. spread_z_30d window).
+            log_fn = (
+                _logger.debug
+                if exc.missing_binding_token is not None
+                else _logger.warning
+            )
+            log_fn(
                 "HorizonSignalEngine: %s gate suppressed for %s — %s%s",
-                registered.alpha_id, snapshot.symbol, exc, hint,
+                registered.alpha_id,
+                snapshot.symbol,
+                exc,
+                hint,
             )
             return
         except RegimeGateError as exc:
