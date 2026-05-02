@@ -36,13 +36,20 @@ Backtest execution is driven by `Orchestrator.run_backtest()`:
 6. On exception: BACKTEST_MODE → DEGRADED (`BACKTEST_INTEGRITY_FAIL`)
 
 The pipeline dispatches by event type: `NBBOQuote` drives the full
-signal pipeline via `_process_tick()`; `Trade` events are logged and
-published via `_process_trade()`.
+three-layer pipeline via `_process_tick()` (sensors → aggregator →
+horizon signals → composition → risk → execution); `Trade` events are
+logged and published via `_process_trade()`. The micro-state path is
+the M0 → M10 backbone with the Phase-2/3/4 sub-states
+(SENSOR_UPDATE, HORIZON_CHECK, HORIZON_AGGREGATE, SIGNAL_GATE,
+CROSS_SECTIONAL) inserted between M2 and M3 — see the
+system-architect skill for the full pipeline diagram.
 
 Order IDs are deterministic — derived from
 `hashlib.sha256(f"{correlation_id}:{seq}")`. This ensures two runs
-with the same event log and parameters produce bit-identical signals,
-orders, and PnL (invariant 5).
+with the same event log and parameters produce bit-identical sensor
+readings, signals, sized intents, per-leg orders, hazard exits, and
+PnL — locked by the **five parity hashes** under `tests/determinism/`
+(see the testing-validation skill).
 
 ---
 
@@ -132,17 +139,37 @@ as live trading. The orchestrator's `_process_tick()` is identical in
 backtest and live modes — fill responses arrive as `OrderAck` events with
 typed `OrderAckStatus` enum members.
 
+SIGNAL-layer path:
+
 ```
-Signal evaluated (M4)
-  → Position sizing (PositionSizer.compute_target_quantity())
-    → Intent translation (IntentTranslator.translate() → OrderIntent)
-      → if NO_ACTION → M10 (skip risk + order path)
-  → Risk check (M5: check_signal → RiskVerdict)
-    → Order constructed (M6: _build_order_from_intent → OrderRequest)
-      → Second risk check (M6: check_order → RiskVerdict)
-        → Order submitted (M7: OrderRouter.submit())
-          → Ack polled (M8: OrderRouter.poll_acks() → OrderAck[])
-            → Position updated (M9: _reconcile_fills())
+SIGNAL_GATE: HorizonSignalEngine emits Signal → bus
+  → M4 SIGNAL_EVALUATE: orchestrator drains buffered Signal
+    → PositionSizer.compute_target_quantity()
+      → IntentTranslator.translate() → OrderIntent
+        → if NO_ACTION → M10 (skip risk + order path)
+    → M5 RISK_CHECK: RiskEngine.check_signal → RiskVerdict
+      → M6 ORDER_DECISION: _build_order_from_intent → OrderRequest
+        → second risk check: RiskEngine.check_order → RiskVerdict
+          → M7 ORDER_SUBMIT: OrderRouter.submit()
+            → M8 ORDER_ACK: OrderRouter.poll_acks() → OrderAck[]
+              → M9 POSITION_UPDATE: _reconcile_fills()
+```
+
+PORTFOLIO-layer path (Layer 3):
+
+```
+CROSS_SECTIONAL: CompositionEngine emits SizedPositionIntent → bus
+  → RiskEngine.check_sized_intent → per-leg OrderRequests (sorted by symbol)
+    with reason="PORTFOLIO" and per-leg veto semantics (Inv-11)
+    → M7 ORDER_SUBMIT → M8 ORDER_ACK → M9 POSITION_UPDATE
+```
+
+Hazard-exit path:
+
+```
+RegimeHazardSpike (from RegimeHazardDetector) → HazardExitController
+  → OrderRequest with reason ∈ {"HAZARD_SPIKE", "HARD_EXIT_AGE"}
+    → M7 ORDER_SUBMIT → M8 ORDER_ACK → M9 POSITION_UPDATE
 ```
 
 Two backtest order routers are available, selected via
@@ -381,9 +408,12 @@ should aggregate from the typed events above:
 |--------------------|-----------|
 | Data Engineering (data-engineering skill) | `NBBOQuote` / `Trade` events from `MarketDataSource.events()` |
 | System Architect (system-architect skill) | `SimulatedClock`, `EventBus`, `ExecutionBackend`, micro-state pipeline |
-| Feature Engine (feature-engine skill) | `FeatureEngine.update(quote) -> FeatureVector`; snapshot persistence via `FeatureSnapshotStore` |
-| Risk Engine (risk-engine skill) | `RiskEngine.check_signal()` / `check_order()` returning `RiskVerdict` |
-| Microstructure Alpha (microstructure-alpha skill) | `Signal` events with `SignalDirection`; research protocol |
+| Sensor / Feature Engine (feature-engine skill) | Layer-1 sensor fan-out + `HorizonAggregator` → `HorizonFeatureSnapshot` |
+| Risk Engine (risk-engine skill) | `RiskEngine.check_signal()` / `check_order()` / `check_sized_intent()` returning `RiskVerdict`; per-leg veto on PORTFOLIO path |
+| Microstructure Alpha (microstructure-alpha skill) | `Signal` events with `SignalDirection`, `trend_mechanism`, `expected_half_life_seconds`; research protocol |
+| Composition Layer (composition-layer skill) | `SizedPositionIntent` from PORTFOLIO alphas; mechanism-cap enforcement |
+| Regime Detection (regime-detection skill) | `RegimeState`, `RegimeHazardSpike` for hazard exits |
+| Testing & Validation (testing-validation skill) | Five locked parity hashes; per-host pinned perf baselines |
 
 The backtest engine is a concrete `MarketDataSource` + `OrderRouter`
 implementation composed into `ExecutionBackend`. Two router variants

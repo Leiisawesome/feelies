@@ -29,24 +29,31 @@ Inherits platform invariants 3 (evidence over intuition → profile before optim
 
 ## Critical Path
 
-The tick-to-trade pipeline maps directly to micro-state transitions
-(`MicroState` in `kernel/micro.py`). Each segment corresponds to a
-measurable state transition:
+The tick-to-trade pipeline maps to the M0–M10 backbone in
+`MicroState` (`kernel/micro.py`) plus the Phase-2/3/4 sub-states
+inserted between M2 and M3. Each segment corresponds to a measurable
+state transition:
 
 ```
 Market data arrives (M0: WAITING_FOR_MARKET_EVENT)
   → M0→M1: Event receipt, event log append, bus publish
-    → M1→M2: Regime engine update (STATE_UPDATE)
-      → M2→M3: Feature computation (FeatureEngine.update())
-        → M3→M4: Signal evaluation (SignalEngine.evaluate())
-          → M4(pre-M5): Position sizing + intent translation
-            → M4→M5: Risk check (RiskEngine.check_signal())
-              → M5→M6: Order construction (_build_order_from_intent())
-                → M6→M7: Second risk check + order submission
-                  → M7→M8: Ack polling (OrderRouter.poll_acks())
-                    → M8→M9: Position update (_reconcile_fills())
-                      → M9→M10: Logging + metrics
-                        → M10→M0: Ready for next tick
+    → M1→M2: Regime engine update (STATE_UPDATE → RegimeState)
+      → SENSOR_UPDATE: SensorRegistry fan-out → SensorReading[]
+        → HORIZON_CHECK: HorizonScheduler boundary detection
+          → HORIZON_AGGREGATE: HorizonAggregator → HorizonFeatureSnapshot
+            → SIGNAL_GATE: HorizonSignalEngine → Signal | None (regime-gated)
+              → CROSS_SECTIONAL: UniverseSynchronizer → CrossSectionalContext
+                                 CompositionEngine → SizedPositionIntent (PORTFOLIO)
+                → M3 FEATURE_COMPUTE: legacy hook (body empty for Phase-3 alphas)
+                  → M4 SIGNAL_EVALUATE: drain bus-buffered Signal
+                       → PositionSizer + IntentTranslator
+                    → M5 RISK_CHECK: check_signal | check_sized_intent
+                      → M6 ORDER_DECISION: _build_order_from_intent + check_order
+                        → M7 ORDER_SUBMIT: OrderRouter.submit
+                          → M8 ORDER_ACK: poll_acks → OrderAck
+                            → M9 POSITION_UPDATE: _reconcile_fills
+                              → M10 LOG_AND_METRICS: tick_to_decision_latency_ns
+                                → M10→M0: ready for next tick
 ```
 
 Note: Normalization happens outside the tick pipeline — at the
@@ -56,17 +63,20 @@ pipeline receives already-normalized `NBBOQuote` / `Trade` events.
 
 ### Latency Budget
 
-| Segment | Micro-State Span | Budget | Hard Ceiling | Notes |
-|---------|-----------------|--------|-------------|-------|
+| Segment | Span | Budget | Hard ceiling | Notes |
+|---------|------|--------|--------------|-------|
 | Event receipt + log + publish | M0→M1 | 100 μs | 500 μs | Append to event log, bus dispatch |
 | Regime engine update | M1→M2 | 50 μs | 200 μs | `RegimeEngine.posterior()` (Bayesian update) |
-| Feature computation | M2→M3 | 1 ms | 5 ms | `FeatureEngine.update()` incremental |
-| Signal evaluation | M3→M4 | 200 μs | 1 ms | Pure function; no I/O |
-| Position sizing + intent | M4 (pre-M5) | 50 μs | 200 μs | `PositionSizer` + `IntentTranslator` |
-| Risk check (signal) | M4→M5 | 100 μs | 500 μs | `RiskEngine.check_signal()` |
+| Sensor fan-out | M2 → SENSOR_UPDATE | 500 μs | 2 ms | `SensorRegistry` topological dispatch (13 sensors in v0.3) |
+| Horizon check + aggregate | HORIZON_CHECK + HORIZON_AGGREGATE | 200 μs | 1 ms | Boundary detection + snapshot fan-in (only on boundary tick) |
+| Signal gate | SIGNAL_GATE | 200 μs | 1 ms | `HorizonSignalEngine` regime-gate eval + `evaluate()` (only on boundary) |
+| Cross-sectional | CROSS_SECTIONAL | 1 ms | 5 ms | `UniverseSynchronizer` + `CompositionEngine` (PORTFOLIO; only on boundary; cvxpy optional) |
+| Position sizing + intent | M4 pre-M5 | 50 μs | 200 μs | `PositionSizer` + `IntentTranslator` |
+| Risk check (per-symbol) | M4→M5 | 100 μs | 500 μs | `RiskEngine.check_signal()` |
+| Risk check (per-leg veto) | CROSS_SECTIONAL → M5 | 200 μs / leg | 1 ms / leg | `RiskEngine.check_sized_intent()` |
 | Order construction + risk | M5→M7 | 500 μs | 2 ms | `_build_order_from_intent()` + `check_order()` |
 | Submission + ack | M7→M9 | — | — | Network-bound in live; instant in backtest |
-| **End-to-end (M0 → M10)** | Full pipeline | **< 3 ms** | **< 10 ms** | `tick_to_decision_latency_ns` metric |
+| **End-to-end (M0 → M10)** | Full pipeline | **< 3 ms** (non-boundary tick) / **< 8 ms** (boundary tick with PORTFOLIO) | **< 10 ms** / **< 25 ms** | `tick_to_decision_latency_ns` metric |
 
 The orchestrator emits `tick_to_decision_latency_ns` as a `MetricEvent`
 (type: HISTOGRAM) at M10 for every tick.
@@ -235,11 +245,21 @@ single-writer / multi-reader patterns over mutexes.
 
 ### CI Performance Gate
 
+Per-host pinned baselines live in
+`tests/perf/baselines/v02_baseline.json` (opt-in via
+`PERF_HOST_LABEL`); record new baselines via
+`python scripts/record_perf_baseline.py --host-label <id>`.
+
+| Gate | Threshold | File |
+|------|-----------|------|
+| Phase 4 throughput regression | ≤ 12% e2e vs v0.2 baseline | `tests/perf/test_phase4_no_regression.py` |
+| Phase 4.1 decay-weighting overhead | ≤ 5% wall-clock vs decay-OFF | `tests/perf/test_phase4_1_no_regression.py` |
+
 Every PR that touches hot-path code must:
 
-1. Run the benchmark suite against the target branch baseline
+1. Run the benchmark suite against the per-host pinned baseline
 2. Report latency and throughput delta
-3. Fail if any metric regresses beyond threshold (default: 10% at p99)
+3. Fail if any metric regresses beyond threshold
 
 ### Tracking
 
@@ -276,6 +296,8 @@ When a performance decision involves a tradeoff, document it explicitly:
 | Backtest Engine (backtest-engine skill) | Replay speed targets; event processing budget; single-event latency |
 | Live Execution (live-execution skill) | End-to-end latency monitoring; signal-to-fill latency histograms |
 | Data Engineering (data-engineering skill) | Ingestion throughput; storage I/O; query-path latency (Parquet scans) |
-| Feature Engine (feature-engine skill) | Per-tick compute budget; incremental update enforcement; memory budget |
-| Signal Layer | Signal evaluation latency budget |
-| Risk Engine (risk-engine skill) | Risk check latency budget; pre-computed constraint lookups |
+| Sensor / Feature Engine (feature-engine skill) | Per-tick sensor compute budget; incremental update enforcement; memory budget |
+| Microstructure Alpha (microstructure-alpha skill) | Horizon-anchored signal evaluation latency budget (boundary-tick only) |
+| Composition Layer (composition-layer skill) | Cross-sectional construction latency; cvxpy turnover-optimizer budget |
+| Risk Engine (risk-engine skill) | Risk-check latency; per-leg veto budget; pre-computed constraint lookups |
+| Testing & Validation (testing-validation skill) | Per-host pinned perf baselines; ≤12% / ≤5% regression gates |

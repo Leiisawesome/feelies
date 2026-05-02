@@ -82,6 +82,15 @@ The third reads already-normalized events from `EventLog`.
 | Live stream | WebSocket (`Q.*`, `T.*`) | `MassiveLiveFeed` (`ingestion/massive_ws.py`) | Orchestrator tick pipeline via `MarketDataSource.events()` | `PAPER_TRADING_MODE`, `LIVE_TRADING_MODE` |
 | Replay | `EventLog.replay()` | `ReplayFeed` (`ingestion/replay_feed.py`) | Orchestrator tick pipeline via `MarketDataSource.events()` | `BACKTEST_MODE`, `RESEARCH_MODE` |
 
+**Layer-1 / Layer-2 anchoring**: ingested `NBBOQuote` and `Trade`
+events are consumed by the Layer-1 sensor framework
+(`feelies.sensors`) at the orchestrator's `SENSOR_UPDATE` sub-state
+(between M2 and M3). The historical per-tick `FeatureVector` /
+`FeatureEngine.update` contract was retired in Workstream D.2; the
+canonical Layer-2 input is now `HorizonFeatureSnapshot` emitted by
+`HorizonAggregator` on `HorizonTick` boundary crossings. See the
+feature-engine skill for the sensor + horizon-aggregator contract.
+
 **Key invariant**: backfill and live both normalize through
 `MassiveNormalizer` (source tags `"massive_rest"` and `"massive_ws"`
 respectively). Replay reads already-normalized events from `EventLog`.
@@ -284,7 +293,7 @@ produces identical bytes.
 | Dependency | Interface |
 |------------|-----------|
 | System Architect (system-architect skill) | `Clock`, `EventBus`, layer boundaries; `Event` base class for all typed events |
-| Feature Engine (feature-engine skill) | Produces `NBBOQuote`/`Trade` consumed by `FeatureEngine.update()` at M2 |
+| Sensor / Feature Engine (feature-engine skill) | Produces `NBBOQuote`/`Trade` consumed by Layer-1 sensors at SENSOR_UPDATE; `HorizonAggregator` produces the canonical Layer-2 `HorizonFeatureSnapshot` |
 | Backtest Engine (backtest-engine skill) | `EventLog.replay()` drives backtest via `MarketDataSource`; `SimulatedClock` for deterministic time |
 | Live Execution (live-execution skill) | Real-time `NBBOQuote`/`Trade` feed for live pipeline; reference pricing for slippage |
 | Risk Engine (risk-engine skill) | Real-time NBBO for mark-to-market, volatility estimation, regime detection |
