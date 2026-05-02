@@ -1,11 +1,10 @@
 <!--
-  File:     docs/design/three_layer_architecture.md
-  Status:   DRAFT — awaiting repo author review
-  Author:   feelies quant team (drafted via /quant-trading-skill)
-  Audience: repo maintainer(s) and implementing engineer(s)
-  Purpose:  Engineering specification for the 3-layer architecture refactor.
-            This is a design document, not a ticket — approval required
-            before any implementation work begins.
+  File:     design_docs/three_layer_architecture.md
+  Status:   APPROVED canonical platform spec (v0.3.0 § header); section
+            numbers are referenced by tests and source — preserve anchors.
+  Audience: maintainers, implementers, acceptance / parity tests
+  Purpose:  Engineering specification for the three-layer architecture
+            and v0.3 trend-physics amendment (normative where cited).
 -->
 
 # Engineering Specification — Three-Layer Architecture Refactor
