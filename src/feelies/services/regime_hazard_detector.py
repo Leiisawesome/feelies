@@ -86,8 +86,6 @@ swapped or reconfigured between ticks.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from feelies.core.events import RegimeHazardSpike, RegimeState
 
 DEFAULT_HYSTERESIS_THRESHOLD: float = 0.30
@@ -100,8 +98,14 @@ but is decaying fast enough to be statistically indistinguishable
 from a flip on the next tick."""
 
 _EPS_DENOMINATOR: float = 1e-12
-"""Floor on the divisor when computing ``hazard_score``; below this
-the prior posterior is treated as zero and no spike is produced."""
+"""Floor on the divisor when computing ``hazard_score``.
+
+When the departing posterior is below this floor (i.e. the state is
+already effectively gone), the divisor is clamped to
+``_EPS_DENOMINATOR`` so ``(p_prev - p_now) / denom`` cannot blow up.
+The score is then clipped to ``[0.0, 1.0]``, so degenerate "decay
+from already-near-zero" cases produce a small, bounded hazard score
+rather than a divide-by-zero or an overshoot of 1.0."""
 
 
 class HazardDetectorContractError(ValueError):
@@ -115,23 +119,10 @@ class HazardDetectorContractError(ValueError):
     """
 
 
-@dataclass(frozen=True, kw_only=True)
-class _SuppressionKey:
-    """Key under which the *most recent* fired spike is remembered.
-
-    Re-armed when ``curr.dominant_name`` becomes a state different
-    from ``departing_state``, per §20.3.1.
-    """
-
-    symbol: str
-    engine_name: str
-    departing_state: str
-
-
 class RegimeHazardDetector:
-    """Stateful wrapper around the pure ``detect`` function.
+    """Stateful wrapper around the pure :func:`detect` function.
 
-    Owns the suppression dictionary so callers can simply hand it
+    Owns the suppression set so callers can simply hand it
     successive :class:`RegimeState` events and let the detector
     emit at most one :class:`RegimeHazardSpike` per
     ``(symbol, engine_name, departing_state)`` transition.
@@ -165,7 +156,7 @@ class RegimeHazardDetector:
                 f"got {hysteresis_threshold!r}"
             )
         self._hysteresis_threshold: float = float(hysteresis_threshold)
-        self._suppressed: set[_SuppressionKey] = set()
+        self._suppressed: set[tuple[str, str, str]] = set()
 
     @property
     def hysteresis_threshold(self) -> float:
@@ -178,111 +169,21 @@ class RegimeHazardDetector:
     ) -> RegimeHazardSpike | None:
         """Return a hazard spike description, or ``None``.
 
-        ``prev=None`` is the cold-start case — no spike can be
-        detected from a single observation.  The detector still
-        accepts ``curr`` so callers can prime its suppression state
-        without branching at the call site.
+        Delegates to the module-level :func:`detect`, passing
+        ``self._suppressed`` as the in-place suppression set.  The
+        decision pipeline lives in exactly one place; this method is
+        a thin owner of mutable session state.
         """
-        if prev is None:
-            return None
-
-        _validate_pair(prev, curr)
-
-        # Re-arm step (§20.3.1 last paragraph): clear suppression
-        # entries on this channel whose ``departing_state`` has just
-        # *regained* dominance (i.e., was non-dominant in ``prev``
-        # and is dominant in ``curr``).  This starts a fresh decay
-        # episode and lets the next decay through fire a new spike.
-        self._rearm_channel(prev, curr)
-
-        departing_idx = prev.dominant_state
-        if departing_idx < 0 or departing_idx >= len(prev.posteriors):
-            return None
-        departing_state = prev.state_names[departing_idx]
-        p_prev = float(prev.posteriors[departing_idx])
-        p_now = float(curr.posteriors[departing_idx])
-
-        if p_now >= p_prev:
-            return None
-
-        flipped = curr.dominant_state != departing_idx
-        below_floor = p_now < (1.0 - self._hysteresis_threshold)
-        if not (flipped or below_floor):
-            return None
-
-        key = _SuppressionKey(
-            symbol=curr.symbol,
-            engine_name=curr.engine_name,
-            departing_state=departing_state,
-        )
-        if key in self._suppressed:
-            return None
-
-        self._suppressed.add(key)
-
-        denom = max(p_prev, _EPS_DENOMINATOR)
-        raw = (p_prev - p_now) / denom
-        hazard_score = max(0.0, min(1.0, raw))
-
-        incoming_state = _resolve_incoming(curr, departing_idx)
-
-        return RegimeHazardSpike(
-            timestamp_ns=curr.timestamp_ns,
-            correlation_id=curr.correlation_id,
-            sequence=curr.sequence,
-            symbol=curr.symbol,
-            engine_name=curr.engine_name,
-            departing_state=departing_state,
-            departing_posterior_prev=p_prev,
-            departing_posterior_now=p_now,
-            incoming_state=incoming_state,
-            hazard_score=hazard_score,
+        return detect(
+            prev,
+            curr,
+            hysteresis_threshold=self._hysteresis_threshold,
+            suppressed=self._suppressed,
         )
 
     def reset(self) -> None:
         """Clear all suppression state."""
         self._suppressed.clear()
-
-    def _rearm_channel(self, prev: RegimeState, curr: RegimeState) -> None:
-        """Re-arm suppression entries when a departure episode resolves.
-
-        A suppression key ``(symbol, engine_name, X)`` is cleared
-        when *either* of the following resolution conditions holds
-        on the current tick:
-
-        1. **Re-dominance** — ``X`` was non-dominant in ``prev`` and
-           is dominant in ``curr`` (a clean round-trip).
-        2. **Posterior recovery** — ``X``'s posterior in ``curr`` has
-           climbed back above the dominance floor
-           ``1.0 - hysteresis_threshold`` (the wobble has resolved
-           even without a dominance flip).
-
-        Either condition signals that the prior departure episode
-        for ``X`` is over, so a fresh decay can fire a new spike.
-        Until then, every subsequent tick in the same episode is
-        suppressed, preventing downstream churn (§20.3.1).
-        """
-        if not self._suppressed:
-            return
-        floor = 1.0 - self._hysteresis_threshold
-        names = curr.state_names
-        index_by_name = {name: i for i, name in enumerate(names)}
-        stale: list[_SuppressionKey] = []
-        for key in self._suppressed:
-            if key.symbol != curr.symbol or key.engine_name != curr.engine_name:
-                continue
-            re_dominant = (
-                prev.dominant_name != curr.dominant_name
-                and key.departing_state == curr.dominant_name
-            )
-            recovered = False
-            idx = index_by_name.get(key.departing_state)
-            if idx is not None and idx < len(curr.posteriors):
-                recovered = float(curr.posteriors[idx]) >= floor
-            if re_dominant or recovered:
-                stale.append(key)
-        for key in stale:
-            self._suppressed.discard(key)
 
 
 def detect(
@@ -292,15 +193,23 @@ def detect(
     hysteresis_threshold: float = DEFAULT_HYSTERESIS_THRESHOLD,
     suppressed: set[tuple[str, str, str]] | None = None,
 ) -> RegimeHazardSpike | None:
-    """Pure-function form for tests and tools that don't want to
-    instantiate a stateful detector.
+    """Pure decision pipeline: ``(prev, curr) → RegimeHazardSpike?``.
+
+    Single source of truth for hazard detection; the stateful
+    :class:`RegimeHazardDetector` is a thin wrapper that owns the
+    suppression set and delegates here.
 
     The ``suppressed`` set, when supplied, is mutated in-place to
     record the ``(symbol, engine_name, departing_state)`` triple of
-    the spike that was returned (or to clear an existing entry when
-    the dominant state has changed).  Pass ``None`` to skip
+    the spike that was returned (and to clear existing entries that
+    have been re-armed on this tick).  Pass ``None`` to skip
     suppression accounting entirely — useful for property tests that
     enumerate spike conditions in isolation.
+
+    ``prev=None`` is the cold-start case — no spike can be detected
+    from a single observation.  The function still accepts ``curr``
+    so callers can prime suppression state without branching at the
+    call site.
     """
     if prev is None:
         return None
@@ -308,28 +217,9 @@ def detect(
     _validate_pair(prev, curr)
 
     if suppressed is not None and suppressed:
-        floor = 1.0 - hysteresis_threshold
-        index_by_name = {name: i for i, name in enumerate(curr.state_names)}
-        stale_pure: list[tuple[str, str, str]] = []
-        for k in suppressed:
-            if k[0] != curr.symbol or k[1] != curr.engine_name:
-                continue
-            re_dominant = (
-                prev.dominant_name != curr.dominant_name
-                and k[2] == curr.dominant_name
-            )
-            recovered = False
-            idx = index_by_name.get(k[2])
-            if idx is not None and idx < len(curr.posteriors):
-                recovered = float(curr.posteriors[idx]) >= floor
-            if re_dominant or recovered:
-                stale_pure.append(k)
-        for k in stale_pure:
-            suppressed.discard(k)
+        _rearm_suppression(prev, curr, hysteresis_threshold, suppressed)
 
     departing_idx = prev.dominant_state
-    if departing_idx < 0 or departing_idx >= len(prev.posteriors):
-        return None
     departing_state = prev.state_names[departing_idx]
     p_prev = float(prev.posteriors[departing_idx])
     p_now = float(curr.posteriors[departing_idx])
@@ -367,6 +257,47 @@ def detect(
     )
 
 
+def _rearm_suppression(
+    prev: RegimeState,
+    curr: RegimeState,
+    hysteresis_threshold: float,
+    suppressed: set[tuple[str, str, str]],
+) -> None:
+    """Discard suppression keys whose departure episode has resolved.
+
+    A key ``(symbol, engine_name, X)`` is cleared when either:
+
+    1. **Re-dominance** — ``X`` was non-dominant in ``prev`` and is
+       dominant in ``curr`` (a clean round-trip).
+    2. **Posterior recovery** — ``X``'s posterior in ``curr`` has
+       climbed back above ``1.0 - hysteresis_threshold`` (the
+       wobble has resolved even without a dominance flip).
+
+    Either condition signals that the prior departure episode for
+    ``X`` is over, so a fresh decay can fire a new spike.  Until
+    then, every subsequent tick in the same episode is suppressed,
+    preventing downstream churn (§20.3.1).
+    """
+    floor = 1.0 - hysteresis_threshold
+    index_by_name = {name: i for i, name in enumerate(curr.state_names)}
+    stale: list[tuple[str, str, str]] = []
+    for k in suppressed:
+        if k[0] != curr.symbol or k[1] != curr.engine_name:
+            continue
+        re_dominant = (
+            prev.dominant_name != curr.dominant_name
+            and k[2] == curr.dominant_name
+        )
+        recovered = False
+        idx = index_by_name.get(k[2])
+        if idx is not None and idx < len(curr.posteriors):
+            recovered = float(curr.posteriors[idx]) >= floor
+        if re_dominant or recovered:
+            stale.append(k)
+    for k in stale:
+        suppressed.discard(k)
+
+
 def _validate_pair(prev: RegimeState, curr: RegimeState) -> None:
     if prev.symbol != curr.symbol:
         raise HazardDetectorContractError(
@@ -387,6 +318,41 @@ def _validate_pair(prev: RegimeState, curr: RegimeState) -> None:
         raise HazardDetectorContractError(
             "RegimeState pair must share posteriors length; "
             f"got prev={len(prev.posteriors)} curr={len(curr.posteriors)}"
+        )
+    if len(prev.posteriors) != len(prev.state_names):
+        raise HazardDetectorContractError(
+            "RegimeState.posteriors and state_names must have equal "
+            f"length; got posteriors={len(prev.posteriors)} "
+            f"state_names={len(prev.state_names)}"
+        )
+    # Producers populate ``dominant_state`` (int index) and
+    # ``dominant_name`` (str) independently; the detector reads BOTH
+    # — ``dominant_state`` to index into ``state_names`` for the
+    # departing label, ``dominant_name`` to drive re-arming on
+    # round-trip dominance.  Disagreement between the two would
+    # silently produce wrong suppression keys and inconsistent spike
+    # text.  Catching it at the layer boundary upholds Inv-7 (typed
+    # events on the bus carry self-consistent invariants).
+    _validate_dominant_consistency(prev, "prev")
+    _validate_dominant_consistency(curr, "curr")
+
+
+def _validate_dominant_consistency(state: RegimeState, label: str) -> None:
+    idx = state.dominant_state
+    n = len(state.state_names)
+    if idx < 0 or idx >= n:
+        raise HazardDetectorContractError(
+            f"{label}.dominant_state={idx} out of range for "
+            f"state_names of length {n}"
+        )
+    expected_name = state.state_names[idx]
+    if state.dominant_name != expected_name:
+        raise HazardDetectorContractError(
+            f"{label}.dominant_state={idx} indexes "
+            f"state_names[{idx}]={expected_name!r}, but "
+            f"dominant_name={state.dominant_name!r} — "
+            "RegimeState must publish self-consistent dominance "
+            "fields"
         )
 
 

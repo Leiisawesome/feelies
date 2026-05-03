@@ -163,6 +163,27 @@ def test_two_replays_produce_identical_hazard_hash() -> None:
 # justified commit message and bump of *both* count and hash.
 EXPECTED_LEVEL5_HAZARD_COUNT = 3
 
+# Frozen literal SHA-256 of the (RegimeHazardSpike,...) stream
+# produced by the canonical fixture above when fed through
+# :class:`RegimeHazardDetector` with ``hysteresis_threshold=0.30``.
+#
+# This constant is the actual locked baseline.  Earlier revisions of
+# this test computed ``expected`` via a sibling driver
+# (``_drive_reference``) that ran the same detector on the same
+# fixture, so any change in detector logic moved both sides in lock-
+# step and the assertion was vacuous.  Treat any drift here as a
+# Level-5 parity break:
+#
+#   * If intentional (a deliberate change to the fixture, the hazard
+#     formula, or the line format in ``_hash_spike_stream``), update
+#     this literal in the same commit and justify the change in the
+#     commit message.
+#   * If unintentional, the detector or one of its dependencies
+#     changed observable output and must be fixed before merge.
+EXPECTED_LEVEL5_HAZARD_HASH = (
+    "8092e88586a006ff7a46ee02dfc8f26c31d62d4cb2db7d1493bb8e8e81e3bf2e"
+)
+
 
 def test_hazard_count_matches_locked_baseline() -> None:
     _, actual_count = _replay()
@@ -174,32 +195,10 @@ def test_hazard_count_matches_locked_baseline() -> None:
 
 def test_hazard_stream_matches_locked_baseline() -> None:
     actual_hash, _ = _replay()
-    # The expected hash is computed from the deterministic fixture +
-    # detector.  Replays must reproduce it.  When the fixture, the
-    # detector formula, or the hash format change, regenerate the
-    # constant in the same commit.
-    expected = _hash_spike_stream(
-        list(_drive_reference(_fixture_states()))
-    )
-    assert actual_hash == expected, (
+    assert actual_hash == EXPECTED_LEVEL5_HAZARD_HASH, (
         "Level-5 RegimeHazardSpike hash drift!\n"
-        f"  Expected: {expected}\n"
+        f"  Expected: {EXPECTED_LEVEL5_HAZARD_HASH}\n"
         f"  Actual:   {actual_hash}\n"
-        "If intentional, update the constant in the same commit and "
-        "justify in the commit message."
+        "If intentional, update EXPECTED_LEVEL5_HAZARD_HASH in the "
+        "same commit and justify in the commit message."
     )
-
-
-def _drive_reference(states: list[RegimeState]) -> list[RegimeHazardSpike]:
-    """Reference driver — independent of :func:`_replay` so the locked
-    hash above is computed from a second, equivalent invocation
-    rather than from the same code path that produces ``actual``."""
-    detector = RegimeHazardDetector(hysteresis_threshold=0.30)
-    spikes: list[RegimeHazardSpike] = []
-    prev: RegimeState | None = None
-    for curr in states:
-        spike = detector.detect(prev, curr)
-        if spike is not None:
-            spikes.append(spike)
-        prev = curr
-    return spikes

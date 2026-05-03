@@ -101,12 +101,47 @@ class HMM3StateFractional:
       2 — vol_breakout (high vol, wide spreads)
 
     Uses an online Bayesian update with spread-derived observations.
-    Transition matrix and emission parameters are calibrated for
-    typical US equity microstructure.
+
+    Tick-time semantics
+    -------------------
+
+    The transition matrix is applied **once per inbound NBBOQuote**,
+    not on a wall-clock grid.  The 0.99 self-transition probability
+    therefore implies a mean dwell time of *ticks*, not seconds — and
+    tick rates vary by orders of magnitude across the universe and
+    across the trading day:
+
+    * For a thin name at ~1 quote/sec, mean dwell ≈ 100 ticks ≈
+      100 seconds, which is reasonable for an intraday regime.
+    * For SPY at ~10⁴ quotes/sec, mean dwell ≈ 10 ms, which is far
+      too fast — the engine will appear to switch regimes constantly.
+
+    Practical implications:
+
+    * Calibrate the transition matrix per deployment class (e.g.,
+      slow / medium / fast tick-rate cohorts) by passing
+      ``transition_matrix=`` at construction.  The default is tuned
+      for a *medium* tick rate.
+    * If your universe spans wildly different tick rates, consider
+      either subsampling fast-tick names to a fixed wall-clock
+      cadence before feeding them in, or registering a per-cohort
+      engine via :func:`register_engine`.
+
+    Emission parameters are also **log-relative-spread** based; they
+    must be calibrated against representative historical quotes for
+    the same universe.  Calling :meth:`posterior` without first
+    calling :meth:`calibrate` (or constructing with explicit
+    ``emission_params``) emits a one-shot warning — the built-in
+    defaults are placeholders that will produce poor discrimination
+    on real US-equity microstructure.
     """
 
     _DEFAULT_STATE_NAMES = ("compression_clustering", "normal", "vol_breakout")
 
+    # Default transition matrix.  Per-tick application; see "Tick-time
+    # semantics" in the class docstring for caveats.  Tuned for a
+    # medium tick-rate cohort (~10–100 quotes/sec); recalibrate or
+    # override per-deployment for slow/fast cohorts.
     _DEFAULT_TRANSITION = (
         (0.990, 0.008, 0.002),
         (0.005, 0.990, 0.005),
@@ -114,6 +149,10 @@ class HMM3StateFractional:
     )
 
     # Emission: log-normal spread model — (mean_log_spread, std_log_spread)
+    # over ``log(spread / mid)`` (i.e., log-relative spread).  These are
+    # placeholder defaults; ``calibrate()`` should be called with
+    # representative historical quotes before live use, otherwise the
+    # one-shot uncalibrated warning fires from ``posterior()``.
     _DEFAULT_EMISSION = (
         (-4.5, 0.3),  # compression: very tight spreads
         (-3.5, 0.5),  # normal: moderate spreads
@@ -141,6 +180,7 @@ class HMM3StateFractional:
         self._validate_params()
         self._posteriors: dict[str, list[float]] = {}
         self._last_update_seq: dict[str, int] = {}
+        self._uncalibrated_warned: bool = False
 
     def _validate_params(self) -> None:
         n = self._n_states
@@ -272,12 +312,20 @@ class HMM3StateFractional:
         if self._last_update_seq.get(symbol) == seq:
             return list(self._posteriors[symbol])
 
-        self._last_update_seq[symbol] = seq
+        if not self._calibrated and not self._uncalibrated_warned:
+            logger.warning(
+                "regime_engine: posterior() called before calibrate(); "
+                "running with %s default emission parameters — these are "
+                "likely inappropriate for typical US-equity log-relative "
+                "spreads and will produce poor discrimination. Call "
+                "calibrate() with historical quotes first.",
+                type(self).__name__,
+            )
+            self._uncalibrated_warned = True
 
         prior = self._posteriors.get(symbol)
         if prior is None:
             prior = [1.0 / self._n_states] * self._n_states
-            self._posteriors[symbol] = prior
 
         predicted = self._predict(prior)
 
@@ -285,24 +333,31 @@ class HMM3StateFractional:
         mid = float(quote.ask + quote.bid) / 2.0
 
         if spread <= 0 or mid <= 0:
-            self._posteriors[symbol] = predicted
-            return list(predicted)
+            updated: list[float] = predicted
+        else:
+            rel_spread = spread / mid
+            log_spread = math.log(max(rel_spread, 1e-12))
 
-        rel_spread = spread / mid
-        log_spread = math.log(max(rel_spread, 1e-12))
+            likelihoods = self._emission_likelihood(log_spread)
+            updated = self._bayes_update(predicted, likelihoods)
 
-        likelihoods = self._emission_likelihood(log_spread)
-        updated = self._bayes_update(predicted, likelihoods)
+            if any(math.isnan(v) or math.isinf(v) for v in updated):
+                logger.warning(
+                    "regime_engine: NaN/inf in Bayesian update for symbol=%s; "
+                    "posteriors=%s likelihoods=%s — resetting to uniform prior",
+                    symbol, updated, likelihoods,
+                )
+                updated = [1.0 / self._n_states] * self._n_states
 
-        if any(math.isnan(v) or math.isinf(v) for v in updated):
-            logger.warning(
-                "regime_engine: NaN/inf in Bayesian update for symbol=%s; "
-                "posteriors=%s likelihoods=%s — resetting to uniform prior",
-                symbol, updated, likelihoods,
-            )
-            updated = [1.0 / self._n_states] * self._n_states
-
+        # Commit the new posterior and seq watermark together.  Doing
+        # this only after the update fully succeeds means an exception
+        # mid-update leaves both ``_posteriors[symbol]`` and
+        # ``_last_update_seq[symbol]`` untouched — the next call sees
+        # the previous tick's posterior with a non-matching seq, and
+        # re-runs the update rather than returning a phantom-cached
+        # value.
         self._posteriors[symbol] = updated
+        self._last_update_seq[symbol] = seq
         return list(updated)
 
     def current_state(self, symbol: str) -> list[float] | None:
