@@ -19,7 +19,7 @@ PLATFORM_YAML_PATH = os.path.join(FEELIES_REPO, "platform.yaml")
 # Pin to a specific commit SHA so every Grok session uses identical source
 # (archive/refs/heads/main.zip floats with HEAD and breaks reproducibility).
 # Update this SHA deliberately when you want to upgrade.
-_COMMIT_SHA = "a954e2d0c834e8c392428e0ff8e428fcedb3d07d"  # Phase 3.5: active HorizonAggregator + zscore features
+_COMMIT_SHA = "2945eb13a9aa7f83b5902ea463f734ba9cb839f2"  # Phase 3.5: active HorizonAggregator + zscore features
 
 print(f"Downloading feelies source zip from GitHub (commit {_COMMIT_SHA[:12]})...")
 url = f"https://github.com/Leiisawesome/feelies/archive/{_COMMIT_SHA}.zip"

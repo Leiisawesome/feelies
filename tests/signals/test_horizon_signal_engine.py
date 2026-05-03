@@ -538,6 +538,21 @@ def test_declared_mechanism_propagates_to_signal() -> None:
         assert sig.expected_half_life_seconds == 600
 
 
+def test_engine_stamps_g12_disclosure_fields() -> None:
+    """HorizonSignalEngine copies load-time G12 totals onto every Signal."""
+    engine, bus, captured = _engine()
+    engine.register(_registered())
+    engine.attach()
+
+    bus.publish(_regime_normal_high())
+    bus.publish(_snapshot())
+
+    assert len(captured) == 1
+    sig = captured[0]
+    assert sig.disclosed_cost_total_bps == pytest.approx(5.0)
+    assert sig.disclosed_margin_ratio == pytest.approx(1.8)
+
+
 def test_alpha_supplied_mechanism_overrides_registered_default() -> None:
     """If the alpha returns a ``Signal`` that already carries its own
     ``trend_mechanism``, the engine does NOT overwrite it — alpha wins.

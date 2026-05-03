@@ -292,7 +292,7 @@ The chain (three-layer): `NBBO/Trade -> SensorReading -> HorizonFeatureSnapshot 
 |---|---|---|---|
 | `B-GUARD-01` | Read stop-loss branch in `_process_tick`. | `stop_loss_per_share` evaluated per tick from last NBBO mid; exit issued via MARKET; not gated by passive cooldowns. | BLOCKER |
 | `B-GUARD-02` | Read trailing-stop tracker. | `trail_activate_per_share` + `trail_pct` peak tracker is per-position, resets on flat/flip; peak monotonic (cannot move adversely). | BLOCKER |
-| `B-GUARD-03` | Read `RegimeGate` and `HorizonSignalEngine._dispatch_one`; grep `signal_entry_cooldown_ticks` in `platform.yaml` / `platform_config.py`. | Gate hysteresis is per-(alpha_id, symbol); confirm `signal_entry_cooldown_ticks` is either wired into behaviour or explicitly documented as deprecated — `MAJOR` if orphaned knob with no effect. | MAJOR |
+| `B-GUARD-03` | Read `RegimeGate` and `HorizonSignalEngine._dispatch_one`. | Gate hysteresis is per-(alpha_id, symbol); ON/OFF transitions match declared `on_condition` / `off_condition` semantics. | MAJOR |
 | `B-GUARD-04` | Grep `platform_min_order_shares`. | Enforced at exactly one place, after sizing and before routing. | MAJOR |
 | `B-GUARD-05` | Read sizing input wiring. | `account_equity` semantics (start-of-day NAV vs live MtM) recorded; flag any mismatch with the alpha YAML's risk-budget assumption. | MAJOR |
 | `B-GUARD-06` | Grep `float(`, bare `float` annotations on price / quantity / PnL fields in `risk/`, `execution/`, `portfolio/`. | Money fields are `Decimal` end-to-end. | BLOCKER |

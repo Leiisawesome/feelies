@@ -148,6 +148,7 @@ class TestOrderRequest:
         assert req.order_type == OrderType.MARKET
         assert req.quantity == 100
         assert req.limit_price is None
+        assert req.g12_disclosed_cost_total_bps == 0.0
 
 
 class TestOrderAck:

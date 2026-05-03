@@ -118,6 +118,8 @@ def test_emit_signals_jsonl_default_row_shape(runner, capsys) -> None:
     assert payload == {
         "consumed_features": [],
         "direction": "LONG",
+        "disclosed_cost_total_bps": 0.0,
+        "disclosed_margin_ratio": 0.0,
         "edge_estimate_bps": 3.5,
         "expected_half_life_seconds": 0,
         "horizon_seconds": 0,

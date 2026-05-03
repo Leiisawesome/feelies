@@ -4,6 +4,7 @@
 Usage:
     python scripts/run_backtest.py --symbol AAPL --date 2024-01-15
     python scripts/run_backtest.py --symbol AAPL --date 2024-01-15 --end-date 2024-01-16
+    python scripts/run_backtest.py --symbol AAPL --date 2026-04-08 --trace-signal-orders
     python scripts/run_backtest.py --config platform.yaml  # uses symbols from config
 
 Workstream-D update — the ``--demo`` synthetic-tick mode was retired
@@ -21,12 +22,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import os
 import sys
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field, replace
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Sequence, TypeVar
@@ -72,6 +74,35 @@ T = TypeVar("T", bound=Event)
 _W = 62
 _RULE_HEAVY = "=" * _W
 _RULE_LIGHT = "-" * _W
+
+
+def _replay_scan_meta(event_log: InMemoryEventLog) -> tuple[int | None, int]:
+    """First replay timestamp (session anchor) + ``NBBOQuote`` count in one pass."""
+    first_ts: int | None = None
+    n_quotes = 0
+    for ev in event_log.replay():
+        if first_ts is None:
+            first_ts = int(ev.timestamp_ns)
+        if isinstance(ev, NBBOQuote):
+            n_quotes += 1
+    return first_ts, n_quotes
+
+
+def _ensure_backtest_session_anchor(
+    config: PlatformConfig,
+    *,
+    first_event_ts_ns: int | None,
+) -> PlatformConfig:
+    """Set ``session_open_ns`` when unset so bootstrap skips H10 (audit).
+
+    *first_event_ts_ns* must be the first event in replay order — identical
+    anchor to :class:`HorizonScheduler` auto-binding when ordering matches.
+    """
+    if config.mode != OperatingMode.BACKTEST or config.session_open_ns is not None:
+        return config
+    if first_event_ts_ns is None:
+        return config
+    return replace(config, session_open_ns=first_event_ts_ns)
 
 
 # ── BusRecorder (same pattern as test_backtest_e2e.py) ───────────────
@@ -151,12 +182,18 @@ class _ProgressReporter:
 
 
 def _step(msg: str, t0: float | None = None) -> float:
-    """Print a progress step with optional elapsed time from a prior step."""
+    """Print a progress step with optional elapsed time from a prior step.
+
+    Each step is emitted as a **full line** (trailing newline).  Historically
+    ``end=""`` glued the next ``print``/log/progress output onto the same
+    physical line as ``Booting …`` / ``Replaying …``, which produced scrambled
+    CLI output when ``logging`` (stdout) or ``_ProgressReporter`` interleaved.
+    """
     now = time.monotonic()
     if t0 is not None:
         dt = now - t0
         print(f"  OK ({dt:.1f}s)", flush=True)
-    print(f"  {msg} ...", end="", flush=True)
+    print(f"  {msg} ...", flush=True)
     return now
 
 
@@ -311,11 +348,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--trace-signal-orders",
         action="store_true",
         help=(
-            "After the run, print one row per Signal that reached the "
-            "orchestrator bus (published Signals only — alphas suppressed "
-            "before emission, e.g. cold regime gate, do not appear).  Each "
-            "row states ORDER_SUBMITTED vs NO_ORDER and pipe-stage reasons "
-            "(arbitration, sizing, risk, order build, resting-order guard)."
+            "After the run, print a diagnostic table for standalone SIGNAL "
+            "→ order handling: alpha id (strategy_id), signal timestamp "
+            "(UTC), translated TradingIntent when evaluated, outcome, and "
+            "reasons. Includes arbitration losers and bus-filtered Signals "
+            "(wrong layer / portfolio-consumed); horizon alphas never "
+            "published do not appear."
         ),
     )
     return p.parse_args(argv)
@@ -475,8 +513,8 @@ def _emit_signals_jsonl(recorder: BusRecorder) -> None:
     Stable shape — fields are ordered for deterministic hashing across
     Python versions: ``(sequence, symbol, strategy_id, layer,
     horizon_seconds, regime_gate_state, direction, strength,
-    edge_estimate_bps, consumed_features, trend_mechanism,
-    expected_half_life_seconds)``.
+    edge_estimate_bps, disclosed_cost_total_bps, disclosed_margin_ratio,
+    consumed_features, trend_mechanism, expected_half_life_seconds)``.
 
     Tagged with prefix ``SIGNAL_JSONL`` so a single run's stdout can
     be sliced out from the other emit-channels by a downstream
@@ -498,6 +536,8 @@ def _emit_signals_jsonl(recorder: BusRecorder) -> None:
             "direction": s.direction.name,
             "strength": float(s.strength),
             "edge_estimate_bps": float(s.edge_estimate_bps),
+            "disclosed_cost_total_bps": float(s.disclosed_cost_total_bps),
+            "disclosed_margin_ratio": float(s.disclosed_margin_ratio),
             "consumed_features": list(s.consumed_features),
             "trend_mechanism": (
                 s.trend_mechanism.name if s.trend_mechanism is not None
@@ -724,6 +764,7 @@ def ingest_data(
         cache = DiskEventCache(resolved_dir)
 
     dates = _iter_dates(start_date, end_date)
+    multi_day_or_symbol = len(symbols) * len(dates) > 1
     all_events: list[NBBOQuote | Trade] = []
     day_sources: list[DaySource] = []
 
@@ -742,7 +783,11 @@ def ingest_data(
                         symbol=symbol, date=day,
                         source="cache", event_count=len(loaded),
                     ))
-                    print(f"  {symbol} {day}: {len(loaded):,} events (cache)", flush=True)
+                    if multi_day_or_symbol:
+                        print(
+                            f"  {symbol} {day}: {len(loaded):,} events (cache)",
+                            flush=True,
+                        )
                     continue
 
             clock = SimulatedClock(start_ns=1_000_000_000)
@@ -786,10 +831,12 @@ def ingest_data(
                 symbol=symbol, date=day,
                 source="api", event_count=len(day_events),
             ))
-            print(
-                f"  {symbol} {day}: {len(day_events):,} events (api, {result.pages_processed} pages)",
-                flush=True,
-            )
+            if multi_day_or_symbol:
+                print(
+                    f"  {symbol} {day}: {len(day_events):,} events "
+                    f"(api, {result.pages_processed} pages)",
+                    flush=True,
+                )
 
     resequenced = _resequence(all_events)
 
@@ -1381,6 +1428,12 @@ def print_verification(results: list[tuple[str, bool, str]]) -> bool:
     return all_passed
 
 
+def _signal_ts_iso_utc(ns: int) -> str:
+    return datetime.fromtimestamp(
+        ns / 1e9, tz=timezone.utc,
+    ).strftime("%Y-%m-%d %H:%M:%S.%f UTC")
+
+
 def _print_signal_order_trace(rows: list[SignalOrderTraceRow]) -> None:
     """Human-readable audit of standalone SIGNAL → OrderRequest outcomes."""
     print(_section("Signal → order trace"), flush=True)
@@ -1392,18 +1445,24 @@ def _print_signal_order_trace(rows: list[SignalOrderTraceRow]) -> None:
         )
         print()
         return
-    w = 72
+    w = 118
     print(
-        f"    {'#':>4}  {'outcome':^18}  {'strategy_id':^26}  "
-        f"{'sym':^6}  {'dir':^5}  {'sig_seq':>7}",
+        f"    {'#':>4}  {'alpha (strategy_id)':^28}  "
+        f"{'signal_timestamp_utc':^27}  {'intent':^22}  {'outcome':^16}",
         flush=True,
     )
     print(f"    {'-' * w}", flush=True)
     for i, r in enumerate(rows, 1):
         rs = " | ".join(r.reasons)
+        ts_s = _signal_ts_iso_utc(r.signal_timestamp_ns)
         print(
-            f"    {i:4d}  {r.outcome:18s}  {r.strategy_id:26s}  "
-            f"{r.symbol:6s}  {r.signal_direction:5s}  {r.signal_sequence:7d}",
+            f"    {i:4d}  {r.strategy_id:28s}  {ts_s:27s}  "
+            f"{r.trading_intent:22s}  {r.outcome:16s}",
+            flush=True,
+        )
+        print(
+            f"          symbol={r.symbol}  signal_dir={r.signal_direction}  "
+            f"sig_seq={r.signal_sequence}  quote_ts={_signal_ts_iso_utc(r.quote_timestamp_ns)}",
             flush=True,
         )
         print(f"          reasons: {rs}", flush=True)
@@ -1432,6 +1491,22 @@ def _force_utf8_console() -> None:
                 pass
 
 
+def _configure_logging_for_cli() -> None:
+    """Send ``logging`` output to stdout (keep WARNING+ only).
+
+    Bootstrap emits H10 and other notices via ``logger.warning``, which
+    defaults to stderr.  PowerShell wraps stderr from Python as
+    ``NativeCommandError``, splitting log lines across ``print`` progress
+    output.  Stdout stays plain text alongside this script's banners.
+    """
+    logging.basicConfig(
+        level=logging.WARNING,
+        format="  %(levelname)s: %(message)s",
+        stream=sys.stdout,
+        force=True,
+    )
+
+
 def _run_backtest_phases_2_7(
     args: argparse.Namespace,
     event_log: InMemoryEventLog,
@@ -1444,6 +1519,11 @@ def _run_backtest_phases_2_7(
     run_t0: float,
 ) -> int:
     """Bootstrap → replay → report → verification (shared by API and cache harness)."""
+    first_ts, n_quotes = _replay_scan_meta(event_log)
+    config = _ensure_backtest_session_anchor(
+        config, first_event_ts_ns=first_ts,
+    )
+
     # ── Phase 2: Platform bootstrap ───────────────────────────
     step_t = _step("Composing platform (alphas, engines, risk)")
     signal_trace_sink: list[SignalOrderTraceRow] | None = (
@@ -1477,7 +1557,6 @@ def _run_backtest_phases_2_7(
         return 1
 
     # ── Phase 5: Run pipeline ─────────────────────────────────
-    n_quotes = sum(1 for e in event_log.replay() if isinstance(e, NBBOQuote))
     progress = _ProgressReporter(total_events=n_quotes, interval=100_000)
     orchestrator._bus.subscribe(NBBOQuote, progress)  # type: ignore[attr-defined]
 
@@ -1526,6 +1605,7 @@ def _run_backtest_phases_2_7(
 
 def main(argv: list[str] | None = None) -> int:
     _force_utf8_console()
+    _configure_logging_for_cli()
     args = parse_args(argv)
 
     # Workstream-D update — the synthetic ``--demo`` path was retired
@@ -1643,6 +1723,7 @@ def main(argv: list[str] | None = None) -> int:
 def main_cache_replay(argv: list[str] | None = None) -> int:
     """Entry point: replay from DiskEventCache JSONL.gz only (no Massive API)."""
     _force_utf8_console()
+    _configure_logging_for_cli()
     args = parse_cache_replay_args(argv)
 
     config_path = Path(args.config)

@@ -146,6 +146,14 @@ class TestOrderStateMachine:
         sm.transition(OrderState.CANCELLED, trigger="broker_cancel")
         assert sm.state == OrderState.CANCELLED
 
+    def test_acknowledged_direct_to_cancelled(self, clock: SimulatedClock):
+        """Fully resting order: broker cancel without partial fill (passive timeout)."""
+        sm = create_order_state_machine("o11b", clock)
+        sm.transition(OrderState.SUBMITTED, trigger="send")
+        sm.transition(OrderState.ACKNOWLEDGED, trigger="ack")
+        sm.transition(OrderState.CANCELLED, trigger="broker_cancel")
+        assert sm.state == OrderState.CANCELLED
+
     def test_partially_filled_to_expired(self, clock: SimulatedClock):
         """TIF expiry on a partially-filled order."""
         sm = create_order_state_machine("o12", clock)

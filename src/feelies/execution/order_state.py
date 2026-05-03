@@ -42,6 +42,7 @@ _ORDER_TRANSITIONS: dict[OrderState, frozenset[OrderState]] = {
         OrderState.PARTIALLY_FILLED,
         OrderState.FILLED,
         OrderState.CANCEL_REQUESTED,
+        OrderState.CANCELLED,  # broker unsolicited cancel (e.g. passive timeout)
         OrderState.EXPIRED,
     }),
     # Real brokers permit cancel-the-remainder and TIF expiry on a

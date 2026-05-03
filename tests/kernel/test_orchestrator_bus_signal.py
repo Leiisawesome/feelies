@@ -26,6 +26,9 @@ These tests assert the contract:
   selects one candidate (FLAT privileged; else edge*strength; tie →
   arrival order).  A once-per-process WARNING recommends PORTFOLIO
   aggregation for richer multi-alpha policy.
+* Standalone Signals buffered only from Trade-driven horizon ticks (between
+  quote ticks) receive a trace row when the next quote tick clears the
+  buffer, so ``--trace-signal-orders`` stays aligned with bus Signal counts.
 """
 
 from __future__ import annotations
@@ -54,6 +57,7 @@ from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
 from feelies.kernel.orchestrator import Orchestrator
+from feelies.kernel.signal_order_trace import SignalOrderTraceRow
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import PositionStore
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -537,3 +541,41 @@ class TestMultipleStandaloneSignalsPerTick:
             f"expected exactly 1 WARNING across 3 ticks (once-per-process "
             f"latch), got {len(warnings)}"
         )
+
+
+def test_trace_sink_records_buffer_evicted_standalone_signals() -> None:
+    """Signals left in ``_signal_buffer`` across quote ticks get one trace row.
+
+    Mirrors Trade-driven ``HorizonTick`` paths: bus-visible Signals that were
+    buffered but never drained by M4 must not disappear from
+    ``signal_order_trace_sink`` when the next tick clears the buffer.
+    """
+    clock = SimulatedClock(start_ns=1000)
+    bus = EventBus()
+    sink: list[SignalOrderTraceRow] = []
+    orch = _build_orchestrator(clock, bus=bus)
+    orch._signal_order_trace_sink = sink
+    _boot_to_backtest(orch)
+
+    q1 = _make_quote(ts=1000, seq=1)
+    orch._process_tick(q1)
+
+    orphan = replace(
+        _make_signal(q1, strategy_id="orphan_alpha"),
+        sequence=91_000,
+        timestamp_ns=q1.timestamp_ns + 500,
+    )
+    orch._signal_buffer.append(orphan)
+
+    q2 = _make_quote(ts=2000, seq=2)
+    orch._process_tick(q2)
+
+    evicted = [
+        r
+        for r in sink
+        if r.signal_sequence == 91_000
+        and "signal_buffer_cleared_unprocessed_at_tick_boundary" in r.reasons
+    ]
+    assert len(evicted) == 1
+    assert evicted[0].quote_sequence == q1.sequence
+    assert evicted[0].outcome == "NO_ORDER"

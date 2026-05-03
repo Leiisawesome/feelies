@@ -183,7 +183,7 @@ def _load_platform_config(
              ADOPT — Prompt 6 — or EXPORT — Prompt 5).
       3. Apply caller overrides last (e.g. cost_stress_multiplier for sweeps).
 
-    Any other field — backtest_fill_latency_ns, signal_entry_cooldown_ticks,
+    Any other field — backtest_fill_latency_ns,
     stop_loss_per_share, trail_*, cost_*, passive_*, platform_min_order_shares,
     signal_min_edge_cost_ratio — comes verbatim from platform.yaml.
 

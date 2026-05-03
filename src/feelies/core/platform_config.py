@@ -66,7 +66,6 @@ class PlatformConfig:
 
     account_equity: float = 1_000_000.0
     backtest_fill_latency_ns: int = 0
-    signal_entry_cooldown_ticks: int = 0
 
     stop_loss_per_share: float = 0.0
     trail_activate_per_share: float = 0.0
@@ -102,7 +101,9 @@ class PlatformConfig:
     platform_min_order_shares: int = 1
 
     # B4: signal edge vs round-trip cost gate.
-    # Orders are suppressed when signal.edge_estimate_bps < ratio × 2 × cost_bps.
+    # Orders are suppressed when signal.edge_estimate_bps < ratio × RT cost_bps,
+    # where RT cost is the sum of model entry + exit legs (symmetric taker/maker
+    # assumption per leg), including HTB on short-entry sells when configured.
     # Set to 0 to disable the gate (no filtering).  Default 0.0 (gate
     # disabled).  This is a *runtime* filter that complements — but does
     # not replace — the load-time G12 / cost_arithmetic discipline on the
@@ -443,7 +444,6 @@ class PlatformConfig:
             "risk_max_drawdown_pct": self.risk_max_drawdown_pct,
             "account_equity": self.account_equity,
             "backtest_fill_latency_ns": self.backtest_fill_latency_ns,
-            "signal_entry_cooldown_ticks": self.signal_entry_cooldown_ticks,
             "stop_loss_per_share": self.stop_loss_per_share,
             "trail_activate_per_share": self.trail_activate_per_share,
             "trail_pct": self.trail_pct,
@@ -625,9 +625,6 @@ class PlatformConfig:
             account_equity=float(data.get("account_equity", 1_000_000.0)),
             backtest_fill_latency_ns=int(
                 data.get("backtest_fill_latency_ns", 0)
-            ),
-            signal_entry_cooldown_ticks=int(
-                data.get("signal_entry_cooldown_ticks", 0)
             ),
             stop_loss_per_share=float(
                 data.get("stop_loss_per_share", 0.0)

@@ -35,6 +35,13 @@ naming the alpha, the offending field, and the computed numbers.
 The exception is a sub-class of ``ValueError`` so existing alpha
 loaders that wrap parse errors in ``ValueError`` continue to surface
 it without code changes.
+
+Runtime (Inv-12 complement): :class:`HorizonSignalEngine` stamps the
+validated totals onto each emitted ``Signal`` as ``disclosed_*`` fields.
+The orchestrator B4 gate uses :func:`feelies.execution.cost_model.estimate_round_trip_cost_bps`;
+fills whose modeled ``cost_bps`` exceed ``MIN_MARGIN_RATIO ×``
+``disclosed_cost_total_bps`` emit a forensic ``Alert`` (they do not
+block replay — Inv-11 prefers observability over speculative rejects).
 """
 
 from __future__ import annotations

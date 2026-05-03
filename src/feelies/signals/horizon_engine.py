@@ -8,9 +8,9 @@ artifacts:
   - :class:`feelies.signals.regime_gate.RegimeGate` — DSL-driven
     ON/OFF latch over regime posteriors.
   - :class:`feelies.alpha.cost_arithmetic.CostArithmetic` — disclosed
-    edge / cost reconciliation (read at construction; not consumed at
-    runtime — every emitted ``Signal`` already encodes
-    ``edge_estimate_bps``).
+    edge / cost bundle (load-time G12).  Emitted ``Signal`` events also
+    carry ``disclosed_cost_total_bps`` / ``disclosed_margin_ratio`` stamped
+    from this record for runtime B4 + post-fill forensic checks (Inv-12).
   - :class:`feelies.core.events.HorizonFeatureSnapshot` — Layer-2
     feature aggregate the engine consumes.
 
@@ -578,6 +578,12 @@ class HorizonSignalEngine:
                 raw.expected_half_life_seconds
                 if raw.expected_half_life_seconds
                 else registered.expected_half_life_seconds
+            ),
+            disclosed_cost_total_bps=(
+                registered.cost_arithmetic.cost_total_bps
+            ),
+            disclosed_margin_ratio=(
+                registered.cost_arithmetic.margin_ratio
             ),
         )
 

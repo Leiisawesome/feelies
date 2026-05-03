@@ -46,7 +46,6 @@ risk_max_gross_exposure_pct: 200.0
 risk_max_drawdown_pct: 5.0
 
 backtest_fill_latency_ns: 30000000
-signal_entry_cooldown_ticks: 100
 
 # Fixed dollars/share — BACKTEST reference only; vol-scaled overrides better for production.
 stop_loss_per_share: 0.005

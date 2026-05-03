@@ -52,6 +52,7 @@ if TYPE_CHECKING:
     from feelies.risk.hazard_exit import HazardExitController
 
 from feelies.alpha.arbitration import EdgeWeightedArbitrator, SignalArbitrator
+from feelies.alpha.cost_arithmetic import MIN_MARGIN_RATIO
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock
@@ -85,6 +86,7 @@ from feelies.core.events import (
 from feelies.core.identifiers import SequenceGenerator
 from feelies.core.state_machine import StateMachine, TransitionRecord
 from feelies.execution.backend import ExecutionBackend
+from feelies.execution.cost_model import estimate_round_trip_cost_bps
 from feelies.execution.intent import (
     IntentTranslator,
     OrderIntent,
@@ -410,6 +412,13 @@ class Orchestrator:
             signal_order_trace_sink
         )
         self._tick_quote_for_trace: NBBOQuote | None = None
+        # Last quote that completed M1 with tracing enabled — survives the
+        # per-tick ``_tick_quote_for_trace = None`` reset so Trade-driven
+        # horizon ticks (which can publish Signals between quotes) still have
+        # an anchor row for ``SignalOrderTraceRow`` and so buffer evictions
+        # can attribute ``signal_buffer_cleared_unprocessed_at_tick_boundary``.
+        self._last_quote_context_for_signal_trace: NBBOQuote | None = None
+        self._signal_order_trace_seen_sequences: set[int] = set()
         # Per-(symbol, engine_name) cache of the most recently
         # observed RegimeState; used as ``prev`` argument to the
         # detector on the next tick.  Cleared by
@@ -515,6 +524,7 @@ class Orchestrator:
         *,
         outcome: Literal["ORDER_SUBMITTED", "NO_ORDER"],
         reasons: tuple[str, ...],
+        trading_intent: str | None = None,
     ) -> None:
         sink = self._signal_order_trace_sink
         if sink is None:
@@ -525,13 +535,18 @@ class Orchestrator:
                 quote_correlation_id=quote.correlation_id,
                 quote_sequence=quote.sequence,
                 signal_sequence=signal.sequence,
+                signal_timestamp_ns=int(signal.timestamp_ns),
                 strategy_id=signal.strategy_id,
                 symbol=signal.symbol,
                 signal_direction=signal.direction.name,
+                trading_intent=(
+                    trading_intent if trading_intent is not None else "—"
+                ),
                 outcome=outcome,
                 reasons=reasons,
             )
         )
+        self._signal_order_trace_seen_sequences.add(signal.sequence)
 
     def _trace_buffered_signals_arbitration(
         self,
@@ -1075,6 +1090,26 @@ class Orchestrator:
         # prior tick (and were never drained — e.g., when the kill switch
         # short-circuited the pipeline) would leak into the new tick's
         # M4 drain and translate into ghost orders.
+        #
+        # Trade-driven ``HorizonTick`` emissions can publish standalone
+        # Signals *between* quote ticks; they land in this buffer but never
+        # reach M4 on the trade event.  Record any still-untraced rows before
+        # clearing so ``--trace-signal-orders`` stays aligned with bus-level
+        # Signal counts (BusRecorder / report dedupe).
+        if self._signal_order_trace_sink is not None and self._signal_buffer:
+            anchor = self._last_quote_context_for_signal_trace
+            if anchor is not None:
+                for pending in list(self._signal_buffer):
+                    if pending.sequence in self._signal_order_trace_seen_sequences:
+                        continue
+                    self._append_signal_order_trace(
+                        anchor,
+                        pending,
+                        outcome="NO_ORDER",
+                        reasons=(
+                            "signal_buffer_cleared_unprocessed_at_tick_boundary",
+                        ),
+                    )
         self._signal_buffer.clear()
         self._tick_quote_for_trace = None
 
@@ -1111,6 +1146,7 @@ class Orchestrator:
             self._event_log.append(quote)
         if self._signal_order_trace_sink is not None:
             self._tick_quote_for_trace = quote
+            self._last_quote_context_for_signal_trace = quote
         self._bus.publish(quote)
 
         # ── Mark-to-market feed ─────────────────────────────────
@@ -1233,6 +1269,7 @@ class Orchestrator:
                 signal,
                 outcome="NO_ORDER",
                 reasons=tuple(reasons_no),
+                trading_intent=intent.intent.name,
             )
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
@@ -1264,6 +1301,7 @@ class Orchestrator:
                         "risk_check_signal_force_flatten_lockdown",
                         verdict.reason,
                     ),
+                    trading_intent=intent.intent.name,
                 )
                 self._escalate_risk(cid)
                 self._micro.reset(
@@ -1279,6 +1317,7 @@ class Orchestrator:
                     "risk_check_signal_force_flatten_simulated",
                     verdict.reason,
                 ),
+                trading_intent=intent.intent.name,
             )
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
@@ -1295,6 +1334,7 @@ class Orchestrator:
                 signal,
                 outcome="NO_ORDER",
                 reasons=("risk_check_signal_reject", verdict.reason),
+                trading_intent=intent.intent.name,
             )
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
@@ -1339,6 +1379,7 @@ class Orchestrator:
                     "order_request_build_failed",
                     order_build_reason or "unknown",
                 ),
+                trading_intent=intent.intent.name,
             )
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
@@ -1362,6 +1403,7 @@ class Orchestrator:
                         "risk_check_order_force_flatten_lockdown",
                         order_verdict.reason,
                     ),
+                    trading_intent=intent.intent.name,
                 )
                 self._escalate_risk(cid)
                 self._micro.reset(
@@ -1377,6 +1419,7 @@ class Orchestrator:
                     "risk_check_order_force_flatten_simulated",
                     order_verdict.reason,
                 ),
+                trading_intent=intent.intent.name,
             )
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
@@ -1392,6 +1435,7 @@ class Orchestrator:
                 signal,
                 outcome="NO_ORDER",
                 reasons=("risk_check_order_reject", order_verdict.reason),
+                trading_intent=intent.intent.name,
             )
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
@@ -1412,6 +1456,7 @@ class Orchestrator:
                         "risk_check_order_scale_down_to_zero_quantity",
                         order_verdict.reason,
                     ),
+                    trading_intent=intent.intent.name,
                 )
                 self._micro.transition(
                     MicroState.LOG_AND_METRICS,
@@ -1452,6 +1497,7 @@ class Orchestrator:
                         "resting_order_guard_blocked_duplicate_passive_order",
                         f"symbol={order.symbol}",
                     ),
+                    trading_intent=intent.intent.name,
                 )
                 self._micro.transition(
                     MicroState.LOG_AND_METRICS,
@@ -1482,6 +1528,7 @@ class Orchestrator:
                 f"quantity={order.quantity}",
                 f"order_type={order.order_type.name}",
             ),
+            trading_intent=intent.intent.name,
         )
 
         # ── M7 → M8: ORDER_ACK ─────────────────────────────────
@@ -2012,11 +2059,16 @@ class Orchestrator:
                 gate_price = (quote.bid + quote.ask) / Decimal("2")
                 gate_spread = (quote.ask - quote.bid) / Decimal("2")
                 is_taker_gate = not self._use_passive_entries
-                cost = self._cost_model.compute(
-                    intent.symbol, entry_side, entry_qty, gate_price,
-                    gate_spread, is_taker=is_taker_gate,
+                round_trip_cost_bps = estimate_round_trip_cost_bps(
+                    self._cost_model,
+                    symbol=intent.symbol,
+                    entry_side=entry_side,
+                    quantity=entry_qty,
+                    mid_price=gate_price,
+                    half_spread=gate_spread,
+                    is_taker=is_taker_gate,
+                    is_short_entry=is_short,
                 )
-                round_trip_cost_bps = float(cost.cost_bps) * 2
                 if intent.signal.edge_estimate_bps < (
                     self._signal_min_edge_cost_ratio * round_trip_cost_bps
                 ):
@@ -2048,6 +2100,9 @@ class Orchestrator:
                     limit_price=limit_price,
                     strategy_id=intent.strategy_id,
                     is_short=is_short,
+                    g12_disclosed_cost_total_bps=(
+                        intent.signal.disclosed_cost_total_bps
+                    ),
                 )
 
                 # Risk check entry leg against post-exit position view.
@@ -2115,6 +2170,23 @@ class Orchestrator:
         )
         self._reconcile_fills(acks, cid)
 
+        if self._signal_order_trace_sink is not None:
+            leg = (
+                "exit_plus_entry"
+                if entry_order is not None
+                else "exit_only"
+            )
+            self._append_signal_order_trace(
+                quote,
+                intent.signal,
+                outcome="ORDER_SUBMITTED",
+                reasons=(
+                    f"reverse_{leg}_submitted",
+                    f"exit_order_id={exit_order.order_id}",
+                ),
+                trading_intent=intent.intent.name,
+            )
+
         # ── M9 → M10: LOG_AND_METRICS ─────────────────────────────
         self._micro.transition(
             MicroState.LOG_AND_METRICS,
@@ -2150,7 +2222,16 @@ class Orchestrator:
         if not is_exit_or_stop and quantity < self._min_order_shares:
             return None, "quantity_below_platform_min_order_shares"
 
-        # B4: signal edge vs round-trip cost gate.
+        # Short-entry routing for HTB (B4 below + order construction).
+        is_short = intent.intent in (
+            TradingIntent.ENTRY_SHORT,
+            TradingIntent.REVERSE_LONG_TO_SHORT,
+        ) or (
+            intent.intent == TradingIntent.SCALE_UP
+            and intent.current_quantity < 0
+        )
+
+        # B4: signal edge vs round-trip cost gate (model-computed legs).
         # Skip exits and stop-losses (always allow for safety) and when
         # the gate is disabled (ratio == 0) or no cost model / quote.
         if (
@@ -2164,24 +2245,20 @@ class Orchestrator:
             # F4: Use maker cost when passive entries are enabled —
             # taker assumption overestimates cost for passive strategies.
             is_taker_gate = not self._use_passive_entries
-            cost = self._cost_model.compute(
-                intent.symbol, side, quantity, gate_price, gate_spread,
+            round_trip_cost_bps = estimate_round_trip_cost_bps(
+                self._cost_model,
+                symbol=intent.symbol,
+                entry_side=side,
+                quantity=quantity,
+                mid_price=gate_price,
+                half_spread=gate_spread,
                 is_taker=is_taker_gate,
+                is_short_entry=is_short,
             )
-            round_trip_cost_bps = float(cost.cost_bps) * 2
             if intent.signal.edge_estimate_bps < (
                 self._signal_min_edge_cost_ratio * round_trip_cost_bps
             ):
                 return None, "signal_edge_below_min_edge_cost_ratio_gate"
-
-        # Determine if this is a short-entry sell (for HTB fee routing).
-        is_short = intent.intent in (
-            TradingIntent.ENTRY_SHORT,
-            TradingIntent.REVERSE_LONG_TO_SHORT,
-        ) or (
-            intent.intent == TradingIntent.SCALE_UP
-            and intent.current_quantity < 0
-        )
 
         order_type = OrderType.MARKET
         limit_price: Decimal | None = None
@@ -2205,6 +2282,9 @@ class Orchestrator:
                 limit_price=limit_price,
                 strategy_id=intent.strategy_id,
                 is_short=is_short,
+                g12_disclosed_cost_total_bps=(
+                    intent.signal.disclosed_cost_total_bps
+                ),
             ),
             None,
         )
@@ -2559,6 +2639,32 @@ class Orchestrator:
                 cumulative_fees=position.cumulative_fees,
                 cost_bps=ack.cost_bps,
             ))
+
+            disclosed = order.g12_disclosed_cost_total_bps
+            if disclosed > 0 and float(ack.cost_bps) > disclosed * MIN_MARGIN_RATIO:
+                self._bus.publish(Alert(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=correlation_id,
+                    sequence=self._seq.next(),
+                    severity=AlertSeverity.WARNING,
+                    layer="kernel",
+                    alert_name="g12_realized_cost_exceeds_disclosure_stress",
+                    message=(
+                        f"Fill cost_bps={float(ack.cost_bps):.4f} exceeds "
+                        f"{MIN_MARGIN_RATIO}× G12 disclosed one-way "
+                        f"cost_total_bps={disclosed:.4f} "
+                        f"(strategy_id={order.strategy_id!r}, "
+                        f"symbol={ack.symbol!r}, order_id={ack.order_id!r})"
+                    ),
+                    context={
+                        "strategy_id": order.strategy_id,
+                        "symbol": ack.symbol,
+                        "order_id": ack.order_id,
+                        "realized_cost_bps": float(ack.cost_bps),
+                        "g12_disclosed_cost_total_bps": disclosed,
+                        "stress_multiplier": MIN_MARGIN_RATIO,
+                    },
+                ))
 
             if self._trade_journal is not None:
                 self._trade_journal.record(TradeRecord(

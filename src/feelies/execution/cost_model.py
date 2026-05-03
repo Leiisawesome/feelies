@@ -217,3 +217,46 @@ class ZeroCostModel:
             cost_bps=Decimal("0"),
             notional=notional,
         )
+
+
+def estimate_round_trip_cost_bps(
+    model: CostModel,
+    *,
+    symbol: str,
+    entry_side: Side,
+    quantity: int,
+    mid_price: Decimal,
+    half_spread: Decimal,
+    is_taker: bool,
+    is_short_entry: bool,
+) -> float:
+    """Sum model one-way ``cost_bps`` for an entry + flat-to-flat exit leg.
+
+    Used by the orchestrator B4 gate (Inv-12 runtime complement to load-
+    time G12).  Preserves sell-side regulatory fees and HTB on short-entry
+    sells while using a symmetric exit (cover / close) without HTB.
+
+    Both legs share the same ``is_taker`` assumption — matching the legacy
+    ``cost_bps * 2`` heuristic when costs are symmetric.
+    """
+    entry_short = bool(is_short_entry and entry_side == Side.SELL)
+    entry = model.compute(
+        symbol,
+        entry_side,
+        quantity,
+        mid_price,
+        half_spread,
+        is_taker=is_taker,
+        is_short=entry_short,
+    )
+    exit_side = Side.SELL if entry_side == Side.BUY else Side.BUY
+    exit_leg = model.compute(
+        symbol,
+        exit_side,
+        quantity,
+        mid_price,
+        half_spread,
+        is_taker=is_taker,
+        is_short=False,
+    )
+    return float(entry.cost_bps + exit_leg.cost_bps)

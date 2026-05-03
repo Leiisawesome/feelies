@@ -21,8 +21,10 @@ class SignalOrderTraceRow:
     quote_correlation_id: str
     quote_sequence: int
     signal_sequence: int
+    signal_timestamp_ns: int
     strategy_id: str
     symbol: str
     signal_direction: str
+    trading_intent: str
     outcome: Literal["ORDER_SUBMITTED", "NO_ORDER"]
     reasons: tuple[str, ...]

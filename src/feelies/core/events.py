@@ -180,6 +180,8 @@ class Signal(Event):
     direction: SignalDirection
     strength: float
     edge_estimate_bps: float
+    disclosed_cost_total_bps: float = 0.0
+    disclosed_margin_ratio: float = 0.0
     metadata: dict[str, Any] = field(default_factory=dict)
     layer: Literal["SIGNAL", "PORTFOLIO"] = "SIGNAL"
     horizon_seconds: int = 0
@@ -261,6 +263,7 @@ class OrderRequest(Event):
     limit_price: Decimal | None = None
     strategy_id: str = ""
     is_short: bool = False  # True for short-entry sells (HTB fee applies)
+    g12_disclosed_cost_total_bps: float = 0.0
     reason: str = ""
 
 
