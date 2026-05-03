@@ -4,6 +4,14 @@
 # ═══════════════════════════════════════════════════════════
 
 # ── Provenance (Invariant 13) ─────────────────────────────
+# Yaml-surface provenance is intentionally thin (version + author).
+# PlatformConfig.from_yaml() automatically computes a SHA-256 checksum
+# over the normalised config dict (see ``_to_dict`` + ``snapshot``);
+# absolute filesystem paths are stripped to basenames before hashing
+# so that determinism (audit A-DET-02) and cross-machine
+# reproducibility (B-PROMO-04) hold without operator intervention.
+# Build-id / git-sha enrichment belongs in deployment overlays, not
+# the reference yaml.
 version: "0.2.0-dev"
 author: "system"
 
@@ -43,16 +51,24 @@ parameter_overrides: {}
 # Post-E default in code is ``true`` — every schema-1.1 SIGNAL /
 # PORTFOLIO alpha must declare a ``trend_mechanism:`` block per the
 # G16 mechanism-horizon binding rules (§20.6).  This reference yaml
-# pins ``false`` only because ``alpha_spec_dir`` above points at
+# pins ``false`` only because ``alpha_specs`` above includes
 # ``pofi_benign_midcap_v1``, the v0.2-baseline reference alpha that
 # pre-dates the mechanism taxonomy and ships *without* a
 # ``trend_mechanism:`` block on purpose (the §20.12.3 #2 parity
-# anchor).  When you switch ``alpha_spec_dir`` to any of the v0.3
-# reference alphas (``pofi_kyle_drift_v1``,
-# ``pofi_inventory_revert_v1``, ``pofi_hawkes_burst_v1``,
-# ``pofi_moc_imbalance_v1``) — or to your own strict-mode-compliant
-# alpha — delete this line to inherit the platform default and have
-# G16 catch any missing-mechanism regressions at load time (Inv-1).
+# anchor).  When you switch to any of the v0.3 reference alphas
+# (``pofi_kyle_drift_v1``, ``pofi_inventory_revert_v1``,
+# ``pofi_hawkes_burst_v1``, ``pofi_moc_imbalance_v1``) — or to your
+# own strict-mode-compliant alpha — delete this line to inherit the
+# platform default and have G16 catch any missing-mechanism
+# regressions at load time (Inv-1).
+#
+# !! WARNING — DO NOT DEPLOY THIS YAML AS-IS TO PAPER/LIVE !!
+# This opt-out is coupled to the benign reference alpha. Production
+# overlays MUST either (a) drop ``pofi_benign_midcap_v1`` from
+# ``alpha_specs`` AND remove this line, or (b) be replaced by a
+# dedicated paper.yaml / live.yaml that ships strict-mode-compliant
+# alphas only.  Leaving this ``false`` in production hides G16
+# violations across the entire bundle, not just for benign.
 enforce_trend_mechanism: false
 
 # ── Regime Engine ─────────────────────────────────────────
@@ -64,10 +80,30 @@ regime_engine: hmm_3state_fractional
 # event_log_path: data/event_log.jsonl
 
 # ── Account & Risk ────────────────────────────────────────
+# Sandbox / BACKTEST equity.  PAPER/LIVE overlays must re-assess all
+# four risk knobs below — none of these values are appropriate for
+# production at face value.
 account_equity: 100000.0
 
+# Per-symbol position cap in **shares** (integer count, NOT USD
+# notional).  BasicRiskEngine treats this as an absolute share-count
+# ceiling.  At $100k account equity and current US large-cap prices
+# (AAPL/MSFT/NVDA), a 50,000-share cap is structurally non-binding —
+# the binding constraint on this universe is
+# ``risk_max_gross_exposure_pct`` below.  Production deployments
+# should add an explicit per-symbol *notional* or %-of-gross
+# concentration cap (today only available via per-alpha risk-wrapper
+# config; platform-scope notional caps are a future work item).
 risk_max_position_per_symbol: 50000
+
+# Gross exposure cap as % of account equity. 200 = 2× leverage gross.
+# !! WARNING !! 2× gross is a sandbox / backtest setting chosen for
+# strategy headroom during research.  PAPER/LIVE overlays MUST lower
+# this to a risk-committee-approved level (typical institutional
+# starting points: 100–150% gross for single-strategy, ≤200% only
+# with explicit margin / liquidation review).
 risk_max_gross_exposure_pct: 200.0
+
 risk_max_drawdown_pct: 5.0
 
 # ── Backtest Settings ─────────────────────────────────────
@@ -77,11 +113,23 @@ backtest_fill_latency_ns: 30000000
 signal_entry_cooldown_ticks: 100
 
 # ── Stop-Loss & Trailing Stop ────────────────────────────
+# !! Sandbox tuning !! All three values below are *absolute dollars
+# per share*, not vol-scaled.  On a multi-symbol universe with
+# heterogeneous volatility (AAPL ~50 bps daily vol vs NVDA 150+ bps),
+# fixed-cents stops will trip on noise on the high-vol names and be
+# loose on the low-vol ones.  Production deployments should either
+# (a) move to vol- or regime-scaled exit parameters, or (b) override
+# per-alpha via the risk_wrapper / per-alpha config block.  Keeping
+# absolute cents here is BACKTEST-reference-only.
+
 # Exit if unrealized P&L drops below -X per share (0 = disabled).
 stop_loss_per_share: 0.005
 # Trailing stop activates when unrealized P&L exceeds X per share.
 trail_activate_per_share: 0.01
-# Once trailing active, exit when unrealized drops to this fraction of peak.
+# Once trailing active, exit when unrealized drops to this fraction
+# of peak.  0.50 is aggressive (exits at half-peak); typical
+# institutional trailing is 0.80–0.95.  Tightness here is a research
+# choice for the v0.2 reference bundle, not a recommended default.
 trail_pct: 0.50
 
 # ── Cost Model (IB US Equity Tiered) ─────────────────────
@@ -95,14 +143,55 @@ cost_taker_exchange_per_share: 0.003
 cost_maker_exchange_per_share: -0.002
 # Adverse selection penalty on passive fills in basis points.
 cost_passive_adverse_selection_bps: 0.5
-# Sell-side regulatory fee in basis points (0 = disabled; ~0.0022 for SEC fee).
+# Sell-side regulatory fee in basis points.
+# !! Optimistic lower bound !! 0.0 disables the SEC §31 transaction
+# fee modelling.  The §31 fee on sells is non-zero in reality (the
+# 2024 rate is roughly $27.80 per $1M of sell-side notional ≈ 0.28
+# bps) and the rate is re-set annually by the SEC.  The reference
+# yaml leaves this at zero so backtest cost-arithmetic stays purely a
+# function of the IB fee schedule above; production deployments
+# should set a dated value from a maintained §31 rate table and
+# re-validate after every SEC adjustment.
 cost_sell_regulatory_bps: 0.0
 # Cost stress multiplier (1.0 = baseline; 1.5 = 50% stress scenario).
+# Reference yaml runs at baseline.  Risk-committee governance runs
+# should rerun the bundle with this set to 1.5–2.0 to verify P&L /
+# Sharpe under amplified-cost regimes (B-ranking robustness).
 cost_stress_multiplier: 1.0
 # IB Tiered minimum commission per order.
 cost_min_commission: 0.35
 # IB Tiered maximum commission as % of trade value.
 cost_max_commission_pct: 1.0
+
+# ── Runtime cost / edge gates (explicit) ─────────────────
+# Both keys below default to 0.0 in PlatformConfig and so would be
+# silently disabled if omitted from this yaml.  We pin them
+# explicitly so the audit trail captures the operator's intent
+# rather than inheriting an unstated default.
+
+# Runtime gate (B4): suppress orders when
+# ``signal.edge_estimate_bps < ratio × 2 × cost_bps``.
+# 0.0 = gate disabled (every signal that satisfied the load-time G12 /
+# cost_arithmetic discipline still routes).  This is the documented
+# research-parity setting for the v0.2 reference bundle: the alpha
+# spec already discloses its expected edge-vs-cost arithmetic at
+# load time, and we don't want a second runtime filter silently
+# pruning sub-cost edges during backtest.  Production overlays
+# should set this to ≥ 1.5 (matching G12) or stricter (e.g. 2.0)
+# per deployment policy — institutional-grade is *runtime* edge
+# discipline ON TOP OF load-time disclosure, not a substitute.
+signal_min_edge_cost_ratio: 0.0
+
+# Annualised hard-to-borrow fee in bps for short-side fills.
+# 0.0 = HTB modelling disabled.
+# !! Cost-leakage warning !! ``pofi_benign_midcap_v1`` emits SHORT
+# signals; with this at 0.0 the SHORT leg pays no borrow cost and
+# backtest P&L is optimistically biased.  For SHORT-capable
+# deployments, set this to a realistic per-deployment HTB rate
+# (typical large-cap easy-to-borrow: 25–50 bps; specials: 100+ bps;
+# hard-to-borrow: 1000+ bps).  Long-only deployments may leave
+# this at 0.0 with no impact.
+cost_htb_borrow_annual_bps: 0.0
 
 # ── Execution Mode ───────────────────────────────────────
 # "market": immediate mid-price fill, charges spread cost.
@@ -131,6 +220,38 @@ passive_cancel_fee_per_share: 0.0
 # ── Minimum Order Size ────────────────────────────────────
 # Orders below this share count are suppressed before routing.
 platform_min_order_shares: 50
+
+# ═══════════════════════════════════════════════════════════
+# Governance overlays (explicit — would otherwise be silent)
+# ───────────────────────────────────────────────────────────
+# The two keys below default to a no-op in PlatformConfig and so do
+# not need to be present for the platform to load.  They are pinned
+# here explicitly so that operators reading this reference yaml see
+# the full governance surface without grepping the loader.
+#
+# For PAPER/LIVE deployments these belong in a dedicated overlay
+# (e.g. ``paper.yaml`` / ``live.yaml``) — the values in this
+# reference yaml are intentionally set to "off" / "skill-pinned
+# defaults" for deterministic-replay backtests.
+# ═══════════════════════════════════════════════════════════
+
+# Workstream F-5: per-platform gate-threshold overrides.  Empty
+# mapping ⇒ no platform-level overrides; the skill-pinned
+# ``GateThresholds`` defaults in
+# ``feelies.alpha.promotion_evidence`` are used everywhere except
+# where a per-alpha ``promotion.gate_thresholds`` block applies.
+# Document any non-empty override here with rationale + sign-off.
+gate_thresholds: {}
+
+# Workstream F-1: append-only JSONL ledger of alpha-lifecycle
+# transitions (RESEARCH→PAPER→LIVE / QUARANTINED).  ``null`` means
+# no ledger is constructed (the BACKTEST default; deterministic
+# replay does not transition lifecycles, so the ledger would be
+# empty anyway).  PAPER/LIVE overlays SHOULD set this to a
+# durable filesystem path (e.g.
+# ``storage/promotion_ledger/<env>.jsonl``) for governance and
+# audit narrative.
+promotion_ledger_path: null
 
 # ═══════════════════════════════════════════════════════════
 # Phase-2 (three-layer architecture v0.2) — sensor layer
