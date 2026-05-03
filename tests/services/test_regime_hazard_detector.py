@@ -222,6 +222,71 @@ class TestContractValidation:
         with pytest.raises(HazardDetectorContractError):
             det.detect(prev, curr)
 
+    def test_dominant_index_name_mismatch_raises(self) -> None:
+        """Producers must publish self-consistent dominance fields."""
+        det = RegimeHazardDetector()
+        # Hand-build a RegimeState whose dominant_state and
+        # dominant_name disagree.  The dataclass is frozen so we
+        # construct it directly rather than via _state().
+        prev = RegimeState(
+            timestamp_ns=1_000,
+            correlation_id="corr-1",
+            sequence=0,
+            symbol="AAPL",
+            engine_name="HMM3StateFractional",
+            state_names=_STATE_NAMES,
+            posteriors=(0.05, 0.95, 0.0),
+            dominant_state=1,
+            dominant_name="vol_breakout",  # mismatch — should be "normal"
+        )
+        curr = _state(posteriors=(0.4, 0.55, 0.05), dominant_idx=1, sequence=1)
+        with pytest.raises(HazardDetectorContractError, match="dominant_name"):
+            det.detect(prev, curr)
+
+    def test_dominant_index_out_of_range_raises(self) -> None:
+        det = RegimeHazardDetector()
+        prev = RegimeState(
+            timestamp_ns=1_000,
+            correlation_id="corr-1",
+            sequence=0,
+            symbol="AAPL",
+            engine_name="HMM3StateFractional",
+            state_names=_STATE_NAMES,
+            posteriors=(0.05, 0.95, 0.0),
+            dominant_state=99,
+            dominant_name="normal",
+        )
+        curr = _state(posteriors=(0.4, 0.55, 0.05), dominant_idx=1, sequence=1)
+        with pytest.raises(HazardDetectorContractError, match="out of range"):
+            det.detect(prev, curr)
+
+    def test_posteriors_state_names_length_mismatch_raises(self) -> None:
+        det = RegimeHazardDetector()
+        prev = RegimeState(
+            timestamp_ns=1_000,
+            correlation_id="corr-1",
+            sequence=0,
+            symbol="AAPL",
+            engine_name="HMM3StateFractional",
+            state_names=("a", "b"),  # 2 names
+            posteriors=(0.5, 0.3, 0.2),  # 3 posteriors
+            dominant_state=0,
+            dominant_name="a",
+        )
+        curr = RegimeState(
+            timestamp_ns=2_000,
+            correlation_id="corr-2",
+            sequence=1,
+            symbol="AAPL",
+            engine_name="HMM3StateFractional",
+            state_names=("a", "b"),
+            posteriors=(0.4, 0.4, 0.2),
+            dominant_state=0,
+            dominant_name="a",
+        )
+        with pytest.raises(HazardDetectorContractError, match="equal"):
+            det.detect(prev, curr)
+
 
 class TestIncomingState:
     def test_tied_runners_up_returns_none_incoming(self) -> None:

@@ -172,3 +172,176 @@ class TestEndToEndSpikeEmission:
         assert spike.engine_name == "HMM3StateFractional"
         assert spike.departing_state == "normal"
         assert spike.hazard_score == pytest.approx((0.95 - 0.55) / 0.95)
+
+
+class TestSessionBoundaryReset:
+    """Session-boundary contract: ``Orchestrator._reset_regime_session_state``
+    clears both the prev-pointer cache and the hazard suppression set so a
+    new session starts from a clean tape (§20.3.1, v0.2 §12.5).
+
+    Without these clears, a ``RegimeState`` from session N-1 would pair
+    with the first ``RegimeState`` of session N inside
+    ``_maybe_publish_hazard_spike``, computing a "decay" across the gap
+    and emitting a spurious spike — and suppression keys from the prior
+    session would silence legitimate spikes early in the new one.
+    """
+
+    def _build_orchestrator(self):
+        from decimal import Decimal
+
+        from feelies.bus.event_bus import EventBus
+        from feelies.core.clock import SimulatedClock
+        from feelies.core.events import (
+            OrderRequest,
+            RiskAction,
+            RiskVerdict,
+            Signal,
+        )
+        from feelies.execution.backend import ExecutionBackend
+        from feelies.execution.backtest_router import BacktestOrderRouter
+        from feelies.kernel.orchestrator import Orchestrator
+        from feelies.portfolio.memory_position_store import MemoryPositionStore
+        from feelies.portfolio.position_store import PositionStore
+        from feelies.storage.memory_event_log import InMemoryEventLog
+
+        class _StubMarketData:
+            def events(self):
+                return iter(())
+
+        class _NoOpMetrics:
+            def record(self, _m: Any) -> None: ...
+            def flush(self) -> None: ...
+
+        class _StubRisk:
+            def check_signal(
+                self, signal: Signal, positions: PositionStore,
+            ) -> RiskVerdict:
+                return RiskVerdict(
+                    timestamp_ns=signal.timestamp_ns,
+                    correlation_id=signal.correlation_id,
+                    sequence=signal.sequence,
+                    symbol=signal.symbol,
+                    action=RiskAction.ALLOW,
+                    reason="ok",
+                )
+
+            def check_order(
+                self, order: OrderRequest, positions: PositionStore,
+            ) -> RiskVerdict:
+                return RiskVerdict(
+                    timestamp_ns=order.timestamp_ns,
+                    correlation_id=order.correlation_id,
+                    sequence=order.sequence,
+                    symbol=order.symbol,
+                    action=RiskAction.ALLOW,
+                    reason="ok",
+                )
+
+        clock = SimulatedClock()
+        bus = EventBus()
+        backend = ExecutionBackend(
+            market_data=_StubMarketData(),
+            order_router=BacktestOrderRouter(clock=clock),
+            mode="BACKTEST",
+        )
+        return Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=backend,
+            risk_engine=_StubRisk(),
+            position_store=MemoryPositionStore(),
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetrics(),
+            account_equity=Decimal("100000"),
+            regime_hazard_detector=RegimeHazardDetector(),
+        )
+
+    def test_reset_clears_last_regime_state(self) -> None:
+        orch = self._build_orchestrator()
+        # Simulate one session producing a prev-pointer.
+        s = _state(posteriors=(0.05, 0.95, 0.0), dominant_idx=1, sequence=0)
+        orch._last_regime_state[(s.symbol, s.engine_name)] = s
+        assert orch._last_regime_state, "precondition: prev cached"
+
+        orch._reset_regime_session_state()
+
+        assert orch._last_regime_state == {}, (
+            "session boundary must clear prev-pointer cache"
+        )
+
+    def test_reset_clears_hazard_suppression(self) -> None:
+        orch = self._build_orchestrator()
+        det = orch._regime_hazard_detector
+        assert det is not None
+
+        prev = _state(posteriors=(0.05, 0.95, 0.0), dominant_idx=1, sequence=0)
+        curr = _state(posteriors=(0.45, 0.55, 0.0), dominant_idx=1, sequence=1)
+        first = det.detect(prev, curr)
+        assert first is not None
+        # Same prev/curr re-run is suppressed.
+        assert det.detect(prev, curr) is None
+
+        orch._reset_regime_session_state()
+
+        # After session-boundary reset, the same departure transition
+        # must be allowed to fire again.
+        replay = det.detect(prev, curr)
+        assert replay is not None
+        assert replay.departing_state == "normal"
+
+    def test_no_cross_session_phantom_spike(self) -> None:
+        """End-of-session prev paired with start-of-session curr must
+        NOT publish a spike after ``_reset_regime_session_state``.
+        """
+        orch = self._build_orchestrator()
+        det = orch._regime_hazard_detector
+        assert det is not None
+
+        # Session N-1 final tick: normal-dominant.
+        end_prev = _state(posteriors=(0.05, 0.95, 0.0), dominant_idx=1, sequence=0)
+        orch._last_regime_state[
+            (end_prev.symbol, end_prev.engine_name)
+        ] = end_prev
+
+        # Boundary.
+        orch._reset_regime_session_state()
+
+        # Session N first tick: would have been a "decay through floor"
+        # if paired with end_prev — but the cache is empty, so prev is
+        # None and detect() must return None.
+        start_curr = _state(
+            posteriors=(0.45, 0.55, 0.0), dominant_idx=1, sequence=1,
+        )
+        prev = orch._last_regime_state.get(
+            (start_curr.symbol, start_curr.engine_name)
+        )
+        assert prev is None, "stale prev must not survive boundary"
+        assert det.detect(prev, start_curr) is None
+
+    def test_run_backtest_invokes_session_reset(self) -> None:
+        """The fix is wired: ``run_backtest`` must invoke
+        ``_reset_regime_session_state`` so the misleading
+        orchestrator comment is now correct."""
+        orch = self._build_orchestrator()
+        det = orch._regime_hazard_detector
+        assert det is not None
+
+        # Pre-populate cross-session state.
+        s = _state(posteriors=(0.05, 0.95, 0.0), dominant_idx=1, sequence=0)
+        orch._last_regime_state[(s.symbol, s.engine_name)] = s
+        # Force suppression by driving one transition.
+        prev = _state(posteriors=(0.05, 0.95, 0.0), dominant_idx=1, sequence=0)
+        curr = _state(posteriors=(0.45, 0.55, 0.0), dominant_idx=1, sequence=1)
+        det.detect(prev, curr)
+
+        # Boot then run the backtest path; the empty market data means
+        # the pipeline returns immediately, so we only exercise the
+        # session-start clearing.
+        from feelies.kernel.macro import MacroState
+        orch._macro.transition(MacroState.DATA_SYNC, trigger="CMD_BOOT")
+        orch._macro.transition(MacroState.READY, trigger="DATA_INTEGRITY_OK")
+        orch.run_backtest()
+
+        assert orch._last_regime_state == {}
+        # Suppression cleared → the same transition re-fires.
+        assert det.detect(prev, curr) is not None

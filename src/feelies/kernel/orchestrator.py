@@ -412,8 +412,15 @@ class Orchestrator:
         self._tick_quote_for_trace: NBBOQuote | None = None
         # Per-(symbol, engine_name) cache of the most recently
         # observed RegimeState; used as ``prev`` argument to the
-        # detector on the next tick.  Cleared on session boundary
-        # alongside the regime engine itself.
+        # detector on the next tick.  Cleared by
+        # ``_reset_regime_session_state`` at every session_start (along
+        # with the hazard detector's suppression set) so a stale prev
+        # from a previous session never pairs with a fresh curr — that
+        # pairing would otherwise compute a "decay" across the session
+        # gap and leak a spurious RegimeHazardSpike (see §20.3.1).
+        # The regime engine itself is intentionally NOT reset: its
+        # per-symbol HMM posterior is the very state we want to carry
+        # across sessions (calibration is done once at boot).
         self._last_regime_state: dict[tuple[str, str], RegimeState] = {}
 
         self._stop_loss_per_share: float = 0.0
@@ -638,6 +645,7 @@ class Orchestrator:
         """
         self._macro.assert_state(MacroState.READY)
         self._micro.reset(trigger="session_start:backtest")
+        self._reset_regime_session_state()
         self._macro.transition(MacroState.BACKTEST_MODE, trigger="CMD_BACKTEST")
 
         self._events_prelogged = True
@@ -667,6 +675,7 @@ class Orchestrator:
         """
         self._macro.assert_state(MacroState.READY)
         self._micro.reset(trigger="session_start:paper")
+        self._reset_regime_session_state()
         self._macro.transition(
             MacroState.PAPER_TRADING_MODE,
             trigger="CMD_PAPER_DEPLOY",
@@ -702,6 +711,7 @@ class Orchestrator:
                 f"must be NORMAL"
             )
         self._micro.reset(trigger="session_start:live")
+        self._reset_regime_session_state()
         self._macro.transition(
             MacroState.LIVE_TRADING_MODE,
             trigger="CMD_LIVE_DEPLOY",
@@ -1603,6 +1613,32 @@ class Orchestrator:
         )
         self._bus.publish(regime_state)
         self._maybe_publish_hazard_spike(regime_state, correlation_id)
+
+    def _reset_regime_session_state(self) -> None:
+        """Clear hazard-detection state that must not span sessions.
+
+        Called from every ``run_*`` entry point alongside ``_micro.reset``.
+        Two structures are cleared:
+
+        * ``self._last_regime_state`` — the prev-pointer dict feeding
+          :class:`RegimeHazardDetector`.  Without this clear, a
+          ``RegimeState`` from session N-1 would pair with the first
+          ``RegimeState`` of session N, the detector would compute a
+          "decay" across the session gap, and a spurious
+          :class:`RegimeHazardSpike` could be emitted (§20.3.1).
+        * ``self._regime_hazard_detector._suppressed`` (via
+          ``reset()``) — without this clear, suppression keys from
+          session N-1 would silence legitimate spikes early in
+          session N for the same ``(symbol, engine_name,
+          departing_state)`` triple.
+
+        The :class:`RegimeEngine` itself is intentionally NOT reset:
+        its per-symbol HMM posterior is the carry-over we want
+        (boot-time calibration is the only place that wipes it).
+        """
+        self._last_regime_state.clear()
+        if self._regime_hazard_detector is not None:
+            self._regime_hazard_detector.reset()
 
     def _maybe_publish_hazard_spike(
         self,

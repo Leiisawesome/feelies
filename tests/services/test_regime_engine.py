@@ -293,6 +293,79 @@ class TestNaNInfRecovery:
         assert all(abs(p - expected) < 1e-10 for p in posteriors)
 
 
+class TestUpdateAtomicity:
+    """Failure mid-update must not poison the seq-watermark cache."""
+
+    def test_exception_mid_update_leaves_seq_watermark_unset(self) -> None:
+        """If the Bayesian step raises, the next call with a fresh
+        sequence must still re-run the update — not return a phantom
+        cached value from a half-applied tick.
+        """
+        engine = HMM3StateFractional(
+            emission_params=[(-4.5, 0.3), (-3.5, 0.5), (-2.5, 0.7)],
+        )
+
+        # Establish a baseline posterior at seq=1.
+        baseline = engine.posterior(_make_quote(sequence=1))
+
+        # Force the seq=2 update to raise after _predict but before commit.
+        original_emission = engine._emission_likelihood
+
+        def _raising(log_spread: float) -> list[float]:
+            raise RuntimeError("synthetic emission failure")
+
+        engine._emission_likelihood = _raising  # type: ignore[assignment]
+        with pytest.raises(RuntimeError):
+            engine.posterior(_make_quote(sequence=2))
+
+        # Watermark must NOT have been advanced to 2.
+        assert engine._last_update_seq.get("AAPL") == 1
+        # Posterior cache must still hold the seq=1 baseline.
+        cached = engine.current_state("AAPL")
+        assert cached == baseline
+
+        # Restore emission and re-attempt seq=2 — the engine must
+        # actually run the update rather than short-circuit on a
+        # spurious watermark match.
+        engine._emission_likelihood = original_emission  # type: ignore[assignment]
+        retry = engine.posterior(_make_quote(sequence=2))
+        assert retry != baseline
+        assert engine._last_update_seq.get("AAPL") == 2
+
+
+class TestUncalibratedWarning:
+    """First posterior() call without calibration emits one warning."""
+
+    def test_uncalibrated_first_call_warns(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        engine = HMM3StateFractional()
+        with caplog.at_level(logging.WARNING, logger="feelies.services.regime_engine"):
+            engine.posterior(_make_quote(sequence=1))
+            engine.posterior(_make_quote(sequence=2))
+        warnings = [
+            r for r in caplog.records
+            if "posterior() called before calibrate()" in r.message
+        ]
+        assert len(warnings) == 1, (
+            f"Expected exactly one uncalibrated warning, got {len(warnings)}"
+        )
+
+    def test_calibrated_engine_does_not_warn(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        engine = HMM3StateFractional(
+            emission_params=[(-9.6, 0.3), (-9.0, 0.5), (-8.0, 0.7)],
+        )
+        with caplog.at_level(logging.WARNING, logger="feelies.services.regime_engine"):
+            engine.posterior(_make_quote(sequence=1))
+        warnings = [
+            r for r in caplog.records
+            if "posterior() called before calibrate()" in r.message
+        ]
+        assert warnings == []
+
+
 class TestLockedAndCrossedMarket:
     """Edge case: spread <= 0 skips observation, applies prediction only."""
 
