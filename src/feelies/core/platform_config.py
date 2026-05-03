@@ -103,7 +103,13 @@ class PlatformConfig:
 
     # B4: signal edge vs round-trip cost gate.
     # Orders are suppressed when signal.edge_estimate_bps < ratio × 2 × cost_bps.
-    # Set to 0 to disable the gate (no filtering).  Default 2.0.
+    # Set to 0 to disable the gate (no filtering).  Default 0.0 (gate
+    # disabled).  This is a *runtime* filter that complements — but does
+    # not replace — the load-time G12 / cost_arithmetic discipline on the
+    # alpha spec (Inv-12).  Operators should set ≥ 1.5 (matching G12) or
+    # stricter (e.g. 2.0) explicitly per deployment policy; the merge
+    # default leaves the gate off so research backtests don't silently
+    # suppress sub-cost edges that the alpha spec already discloses.
     signal_min_edge_cost_ratio: float = 0.0
 
     # 2d: market-impact factor for walk-the-book slippage on large orders.
