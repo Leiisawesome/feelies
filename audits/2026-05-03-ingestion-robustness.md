@@ -29,15 +29,19 @@ the most serious being:
 
 1. `BackfillCheckpoint` is a documented public feature but **never read or
    written by the ingestor** — resumability is dead code.
-2. `MassiveLiveFeed._authenticate` does not consume Massive/Polygon's initial
-   `"connected"` status frame, so the auth-validation `recv()` reads the
-   *connect* frame, validation fails, and every connection enters the
-   reconnect-with-backoff loop on the *first* attempt under normal server
-   behavior.
-3. The `RECOVERING` health state is unreachable: nothing transitions a stream
-   into `RECOVERING`, so once a symbol is `CORRUPTED` it remains corrupted for
-   the lifetime of the process — the documented "recovery validated" path is
-   inert.
+2. `MassiveLiveFeed._authenticate` sends auth and validates the very next
+   `recv()` as the auth response. If the Massive WS server emits an unsolicited
+   status (e.g. `"connected"`) frame before the auth response — as the
+   documented Polygon predecessor does — validation reads the wrong frame and
+   the connection enters reconnect-with-backoff. **Severity is BLOCKER for
+   live readiness pending confirmation against the current Massive WS
+   contract / a wire capture.**
+3. The `RECOVERING` health state has no producer in `MassiveNormalizer`. The
+   state graph itself is *not* terminal — `data_integrity.py:34–39` explicitly
+   permits `CORRUPTED → RECOVERING → HEALTHY` — but no code calls
+   `transition(RECOVERING)`, so recovery is unimplemented. Operationally a
+   `CORRUPTED` stream stays corrupted with no automated recovery, even though
+   the enum/SM anticipates a recovery phase.
 
 A handful of MAJORs concentrate on the WebSocket gap-detection logic, which is
 not robust to out-of-order delivery, and on the parallel REST ingestor, where
@@ -82,34 +86,36 @@ symbol-granularity and rename the surface to match.
 
 ---
 
-### B-INGEST-02 — `MassiveLiveFeed._authenticate` desyncs with the Massive/Polygon handshake
+### B-INGEST-02 — `MassiveLiveFeed._authenticate` may desync with the Massive WS handshake
 **File:** `massive_ws.py`
 **Lines:** 173–188.
-
-Massive (and its Polygon predecessor) sends an unsolicited
-`[{"ev":"status","status":"connected","message":"Connected Successfully"}]`
-frame **immediately upon WebSocket open, before any client message**. The
-documented auth flow is: server → connected, client → auth, server →
-auth_success.
 
 `_authenticate()` does:
 
 ```python
 auth_msg = json.dumps({"action": "auth", "params": self._api_key})
 await ws.send(auth_msg)
-raw = await ws.recv()                         # ← reads the "connected" frame
+raw = await ws.recv()                         # validates this as auth response
 self._validate_status_response(raw, "auth_success", "authentication")
 ```
 
-The first `recv()` after the send retrieves the `"connected"` frame already
-queued, *not* the auth response. `_validate_status_response` then raises
-`ConnectionError`, which is caught by `_connect_with_retry` and triggers
-exponential backoff. Depending on race timing the live feed may eventually
-succeed (if the connect frame arrived after our auth send), but the expected
-case is reconnect-storm at startup and unreliable behavior across networks.
+It sends auth and treats the *next* incoming frame as the auth response —
+there is no drain of any pre-auth status frame. The Polygon predecessor
+unconditionally pushes
+`[{"ev":"status","status":"connected","message":"Connected Successfully"}]`
+on socket open, before any client message; if Massive preserves that
+behavior, the first `recv()` after the send returns the queued
+`"connected"` frame, validation raises `ConnectionError`, and
+`_connect_with_retry` enters exponential backoff. Whether the unsolicited
+frame is still emitted by the current Massive WS endpoint should be pinned
+with a wire capture or an explicit protocol note — `tests/ingestion/test_massive_functional.py`
+is opt-in live, so its passing does not by itself prove the issue is absent
+(it could be timing-masked).
 
-**Impact:** Live trading cannot reliably establish a stream; backoff up to 60s
-between retries delays first tick.
+**Impact (conditional on the protocol contract):** live feed cannot reliably
+establish a stream; backoff up to 60s between retries delays the first tick.
+Severity remains **BLOCKER** for live readiness until the contract is
+confirmed or the code is hardened.
 
 **Fix sketch:** Drain the initial status frame (or any pre-auth frames) before
 sending auth, e.g.:
@@ -127,24 +133,26 @@ server can't wedge the loop.
 
 ---
 
-### B-INGEST-03 — `DataHealth.RECOVERING` is unreachable; `CORRUPTED` is terminal in practice
+### B-INGEST-03 — `RECOVERING` is unused; no path from `CORRUPTED` to recovery in the normalizer
 **File:** `data_integrity.py` (`25–41`), `massive_normalizer.py` (`409–412`).
 
-The transition table allows `CORRUPTED → RECOVERING → HEALTHY`, but the
-normalizer only ever invokes:
+The state graph itself is *not* terminal: `data_integrity.py:34–39`
+explicitly allows `CORRUPTED → RECOVERING` and `RECOVERING → HEALTHY`. The
+defect is in the producer, not the SM. `MassiveNormalizer` only ever invokes:
 
 - `HEALTHY → GAP_DETECTED` (`385–390`)
 - `GAP_DETECTED → HEALTHY` (`395–399`)
 - `* → CORRUPTED` (`409–412`, gated by `can_transition`)
 
-There is no producer of `RECOVERING`. The docstring on `data_integrity.py`
-states a `CORRUPTED` symbol elevates the macro state to `DEGRADED` and stops
-execution. With no recovery path, **a single bad message permanently disables
-that symbol's stream until process restart** — including gracefully recoverable
-cases like a one-off malformed JSON object on the WS feed.
+No code calls `transition(RECOVERING)`. The recovery phase that the enum
+and transition table anticipate is therefore unimplemented; once a symbol
+is marked `CORRUPTED`, there is no automated path back to `HEALTHY`.
 
-**Impact:** Operationally, a transient parse error is upgraded to permanent
-symbol blackout, with no programmatic recovery.
+**Impact:** Operationally, a transient parse error is upgraded to a
+prolonged symbol blackout with no programmatic recovery — even though the
+state machine was designed to allow one. The runtime behavior is
+"effectively terminal," but the enum value `CORRUPTED` is *not* a terminal
+state in the formal SM.
 
 **Fix sketch:** Either (a) add a recovery probe that, after N consecutive
 clean ticks following corruption, calls `transition(RECOVERING)` then
@@ -493,9 +501,36 @@ state machine extras or a `GAP_DETECTED → CORRUPTED` escalation rule (e.g.
 
 ## Verdict
 
-**Conditional PASS for backtest-only use** (REST ingest path mostly correct,
-caveats M-INGEST-04 and M-INGEST-07).
-**FAIL for live trading readiness** until B-INGEST-02, B-INGEST-03, and
-M-INGEST-05 are resolved — the live feed cannot be relied on to authenticate
-deterministically, recover from a transient parse error, or shut down
-cleanly under the current implementation.
+**Conditional PASS** for the paths actually exercised today — historical
+REST ingest + cache replay — with caveats M-INGEST-04 and M-INGEST-07.
+**FAIL for unconditional "live trading ready"** until at least B-INGEST-02
+is fixed or its protocol assumption confirmed by a wire capture, and
+B-INGEST-01 is either wired through or descoped in the docs (operators
+will reasonably believe resume works as written). B-INGEST-03 and
+M-INGEST-05 are next-tier blockers for live: the live feed currently has
+no automated recovery from a single corrupting message and cannot be
+relied on to shut down cleanly while idle.
+
+---
+
+## Addendum — review-of-review (2026-05-03)
+
+A peer review of the audit agreed with the overall posture and called out
+two wording / framing issues, both incorporated above:
+
+- **B-INGEST-03 wording.** The original phrasing ("`CORRUPTED` is terminal
+  until process restart") was loose: the state machine in
+  `data_integrity.py:34–39` explicitly allows `CORRUPTED → RECOVERING →
+  HEALTHY`. The accurate finding is that **`RECOVERING` is unused — no
+  producer in `MassiveNormalizer` transitions into it** — so recovery is
+  unimplemented even though the SM anticipates it. Updated.
+- **B-INGEST-02 protocol caveat.** The handshake-desync claim depends on
+  the current Massive WS contract; the Polygon predecessor sends an
+  unsolicited `"connected"` frame on open, but Massive's behavior should
+  be pinned with a wire capture before declaring this a guaranteed
+  failure. Severity remains BLOCKER for live readiness pending
+  confirmation; the section now says so explicitly.
+
+No MAJOR/MINOR findings were challenged on substance. The verdict block
+was rephrased to emphasize "paths actually exercised" vs unconditional
+live-readiness, matching the reviewer's framing.
