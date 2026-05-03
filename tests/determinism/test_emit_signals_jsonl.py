@@ -2,7 +2,7 @@
 
 Verifies the canonical JSON shape emitted under
 ``--emit-signals-jsonl`` (Phase-3 Level-2 SIGNAL parity stream,
-design_docs/three_layer_architecture.md §11.2):
+docs/three_layer_architecture.md §11.2):
 
 * prefix ``SIGNAL_JSONL`` on every line,
 * keys sorted (stable across Python versions),

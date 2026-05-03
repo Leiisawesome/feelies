@@ -124,7 +124,7 @@ Alphas can be placed in either layout:
 >
 > As of Phase 3.1, the v0.3 `trend_mechanism:` block is **enforced by
 > gate G16** for any `SIGNAL`/`PORTFOLIO` alpha that declares one (see
-> [`design_docs/three_layer_architecture.md`](../design_docs/three_layer_architecture.md)
+> [`docs/three_layer_architecture.md`](../docs/three_layer_architecture.md)
 > §20.6). **Strict mode is the platform default since Workstream E**
 > (acceptance row 84): schema-1.1 `SIGNAL`/`PORTFOLIO` specs *missing*
 > a `trend_mechanism:` block are rejected at load time unless the
@@ -200,7 +200,7 @@ hazard-rate exits via `RegimeHazardSpike` events.
 | G8 | **Active** (Phase 3-α) | No implicit lookahead — AST-scan rejects access to future-bucketed names. |
 | G9 | **Active** (Phase 4) | Cross-symbol staleness checks — `CrossSectionalContext.completeness` must clear the per-platform `composition_completeness_threshold` (default `0.7`) for the boundary to produce a `SizedPositionIntent`. Always blocks (data-integrity gate; not affected by `enforce_layer_gates`). |
 | G10 | **Active** (Phase 4) | PORTFOLIO `universe:` presence + scale cap — every PORTFOLIO alpha must declare a non-empty `universe:` list and the universe size must be ≤ `composition_max_universe_size` (v0.2 cap = 50 symbols). Always blocks. |
-| G11 | **Active** (Phase 4) | PORTFOLIO `factor_neutralization:` disclosure — every PORTFOLIO alpha must declare `factor_neutralization: true` (or list explicit excluded factor IDs). Reference factor loadings under `data/reference/factor_loadings/` must exist and not exceed `factor_loadings_max_age_seconds`; missing or stale loadings raise `StaleFactorLoadingsError` at bootstrap. Always blocks. |
+| G11 | **Active** (Phase 4) | PORTFOLIO `factor_neutralization:` disclosure — every PORTFOLIO alpha must declare `factor_neutralization: true` (or list explicit excluded factor IDs). Reference factor loadings under `storage/reference/factor_loadings/` must exist and not exceed `factor_loadings_max_age_seconds`; missing or stale loadings raise `StaleFactorLoadingsError` at bootstrap. Always blocks. |
 | G12 | **Active** (Phase 3-α) | Cost-arithmetic disclosure — `cost_arithmetic` block required, `margin_ratio >= 1.5`, components reconcile within ±5%. |
 | G13 | **Active** (Phase 3-α) | Warm-up documentation — `SIGNAL` inherits warm-up from sensor warm-up by construction; the inline-features warm-up branch is unreachable post-D.2 (the loader rejects `LEGACY_SIGNAL` before validation). |
 | G14 | **Active** (Phase 1) | Alpha must declare no data dependency outside L1 NBBO + trades + reference data + session calendar. |
@@ -391,9 +391,9 @@ side-by-side with `SIGNAL` alphas on the same universe:
   `max_gross_exposure_pct`, `capital_allocation_pct`) are
   inherited by per-leg `OrderRequest`s through the standard risk
   pipeline. Reference factor loadings live under
-  `data/reference/factor_loadings/<universe_hash>/loadings.json`
+  `storage/reference/factor_loadings/<universe_hash>/loadings.json`
   (with optional `loadings.parquet`) and a sector map under
-  `data/reference/sector_map/sector_map.json`; both are produced
+  `storage/reference/sector_map/sector_map.json`; both are produced
   by `scripts/build_reference_factor_loadings.py` and folded into
   the bootstrap provenance bundle (Inv-13).
 - Bootstrap is gated on `AlphaRegistry.has_portfolio_alphas()` —

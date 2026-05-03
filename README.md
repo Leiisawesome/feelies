@@ -128,9 +128,11 @@ feelies/
 │   ├── 03_ALPHA_DEVELOPMENT.md   # Embedded sensor catalog + reference-alpha flow
 │   ├── 06_EVOLUTION.md           # Embedded mutation protocol + adoption semantics
 │   └── 07_HYPOTHESIS_REASONING.md # Embedded reasoning protocol, hard gates, REPL contract
-├── docs/migration/               # Migration cookbooks
-│   └── schema_1_0_to_1_1.md      # 1.0 → 1.1 cookbook + LEGACY_SIGNAL retirement notes
-├── design_docs/                  # Platform architecture & invariants
+├── docs/                         # Architecture spec, migration, acceptance notes
+│   ├── three_layer_architecture.md
+│   ├── migration/
+│   │   └── schema_1_0_to_1_1.md
+│   └── acceptance/
 ├── scripts/                      # CLI entry points
 │   ├── run_backtest.py           # Full pipeline backtest (incl. parity hash)
 │   ├── run_validation.py         # Validation suite runner

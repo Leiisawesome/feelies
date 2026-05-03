@@ -2,7 +2,7 @@
 
 These tests are *meta*: they assert that the platform satisfies the
 acceptance checkboxes declared in
-``design_docs/three_layer_architecture.md`` and mirrored by the
+``docs/three_layer_architecture.md`` and mirrored by the
 normative status table in ``docs/acceptance/v02_v03_matrix.md``.
 
 Each test in this package is intentionally narrow and redundant with

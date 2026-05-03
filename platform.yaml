@@ -1,42 +1,19 @@
-# ═══════════════════════════════════════════════════════════
-# PLATFORM CONFIGURATION — Reference Config
-# Version: 0.2.0-dev (three-layer architecture refactor in flight)
-# ═══════════════════════════════════════════════════════════
-
-# ── Provenance (Invariant 13) ─────────────────────────────
-# Yaml-surface provenance is intentionally thin (version + author).
-# PlatformConfig.from_yaml() automatically computes a SHA-256 checksum
-# over the normalised config dict (see ``_to_dict`` + ``snapshot``);
-# absolute filesystem paths are stripped to basenames before hashing
-# so that determinism (audit A-DET-02) and cross-machine
-# reproducibility (B-PROMO-04) hold without operator intervention.
-# Build-id / git-sha enrichment belongs in deployment overlays, not
-# the reference yaml.
+# Platform reference config (v0.2.0-dev). PlatformConfig snapshots a checksum
+# from the normalized dict (paths baselined) for audit/replay.
 version: "0.2.0-dev"
 author: "system"
 
-# ── Operating Mode ────────────────────────────────────────
 # BACKTEST | PAPER | LIVE
 mode: BACKTEST
 
-# ── Trading Universe ─────────────────────────────────────
 symbols:
   - AAPL
   - MSFT
   - NVDA
 
-# ── Alpha Discovery ──────────────────────────────────────
-# Directory scanned for *.alpha.yaml files at boot time.
-#
-# Workstream-D update: ``alphas/trade_cluster_drift`` was retired in
-# D.2 (the last LEGACY_SIGNAL reference alpha) and the loader-side
-# LEGACY_SIGNAL code-path was removed in the same workstream.
-# alpha_spec_dir is null; alphas 1-4 are listed explicitly below.
-# alpha 5 (pofi_moc_imbalance_v1) requires a scheduled_flow_window
-# sensor with an EventCalendar object and is wired separately.
+# Scanned for *.alpha.yaml if set; here we use explicit paths below.
 alpha_spec_dir: null
 
-# Explicit alpha spec paths — alphas 1-5 are ready for backtest.
 alpha_specs:
   - alphas/pofi_benign_midcap_v1/pofi_benign_midcap_v1.alpha.yaml
   - alphas/pofi_hawkes_burst_v1/pofi_hawkes_burst_v1.alpha.yaml
@@ -44,232 +21,75 @@ alpha_specs:
   - alphas/pofi_kyle_drift_v1/pofi_kyle_drift_v1.alpha.yaml
   - alphas/pofi_moc_imbalance_v1/pofi_moc_imbalance_v1.alpha.yaml
 
-# Per-alpha parameter overrides keyed by alpha_id.
 parameter_overrides: {}
 
-# ── G16 strict mode (Workstream E) ───────────────────────
-# Post-E default in code is ``true`` — every schema-1.1 SIGNAL /
-# PORTFOLIO alpha must declare a ``trend_mechanism:`` block per the
-# G16 mechanism-horizon binding rules (§20.6).  This reference yaml
-# pins ``false`` only because ``alpha_specs`` above includes
-# ``pofi_benign_midcap_v1``, the v0.2-baseline reference alpha that
-# pre-dates the mechanism taxonomy and ships *without* a
-# ``trend_mechanism:`` block on purpose (the §20.12.3 #2 parity
-# anchor).  When you switch to any of the v0.3 reference alphas
-# (``pofi_kyle_drift_v1``, ``pofi_inventory_revert_v1``,
-# ``pofi_hawkes_burst_v1``, ``pofi_moc_imbalance_v1``) — or to your
-# own strict-mode-compliant alpha — delete this line to inherit the
-# platform default and have G16 catch any missing-mechanism
-# regressions at load time (Inv-1).
-#
-# !! WARNING — DO NOT DEPLOY THIS YAML AS-IS TO PAPER/LIVE !!
-# This opt-out is coupled to the benign reference alpha. Production
-# overlays MUST either (a) drop ``pofi_benign_midcap_v1`` from
-# ``alpha_specs`` AND remove this line, or (b) be replaced by a
-# dedicated paper.yaml / live.yaml that ships strict-mode-compliant
-# alphas only.  Leaving this ``false`` in production hides G16
-# violations across the entire bundle, not just for benign.
+# Default true in code: schema-1.1 SIGNAL/PORTFOLIO need trend_mechanism (G16).
+# false here only because pofi_benign_midcap_v1 is the v0.2 parity anchor without
+# that block. Remove this (or drop benign) for strict bundles.
+# Do not ship false to PAPER/LIVE with mixed alphas — it disables G16 for the whole bundle.
 enforce_trend_mechanism: false
 
-# ── Regime Engine ─────────────────────────────────────────
-# Name of the shared regime engine, or null to disable.
 regime_engine: hmm_3state_fractional
 
-# ── Data Paths ────────────────────────────────────────────
 # data_dir: data/
 # event_log_path: data/event_log.jsonl
 
-# ── Account & Risk ────────────────────────────────────────
-# Sandbox / BACKTEST equity.  PAPER/LIVE overlays must re-assess all
-# four risk knobs below — none of these values are appropriate for
-# production at face value.
+# Sandbox backtest equity; overlays must set real limits for PAPER/LIVE.
 account_equity: 100000.0
 
-# Per-symbol position cap in **shares** (integer count, NOT USD
-# notional).  BasicRiskEngine treats this as an absolute share-count
-# ceiling.  At $100k account equity and current US large-cap prices
-# (AAPL/MSFT/NVDA), a 50,000-share cap is structurally non-binding —
-# the binding constraint on this universe is
-# ``risk_max_gross_exposure_pct`` below.  Production deployments
-# should add an explicit per-symbol *notional* or %-of-gross
-# concentration cap (today only available via per-alpha risk-wrapper
-# config; platform-scope notional caps are a future work item).
+# Per-symbol cap in shares (not USD). High value here; gross cap below binds for this universe.
 risk_max_position_per_symbol: 50000
 
-# Gross exposure cap as % of account equity. 200 = 2× leverage gross.
-# !! WARNING !! 2× gross is a sandbox / backtest setting chosen for
-# strategy headroom during research.  PAPER/LIVE overlays MUST lower
-# this to a risk-committee-approved level (typical institutional
-# starting points: 100–150% gross for single-strategy, ≤200% only
-# with explicit margin / liquidation review).
+# Gross as % of equity (200 = 2×). Research-only; production should lower per policy.
 risk_max_gross_exposure_pct: 200.0
 
 risk_max_drawdown_pct: 5.0
 
-# ── Backtest Settings ─────────────────────────────────────
-# Simulated fill latency in nanoseconds (30ms = realistic IB order round-trip).
 backtest_fill_latency_ns: 30000000
-# Suppress directional entry signals for N ticks after the last entry.
 signal_entry_cooldown_ticks: 100
 
-# ── Stop-Loss & Trailing Stop ────────────────────────────
-# !! Sandbox tuning !! All three values below are *absolute dollars
-# per share*, not vol-scaled.  On a multi-symbol universe with
-# heterogeneous volatility (AAPL ~50 bps daily vol vs NVDA 150+ bps),
-# fixed-cents stops will trip on noise on the high-vol names and be
-# loose on the low-vol ones.  Production deployments should either
-# (a) move to vol- or regime-scaled exit parameters, or (b) override
-# per-alpha via the risk_wrapper / per-alpha config block.  Keeping
-# absolute cents here is BACKTEST-reference-only.
-
-# Exit if unrealized P&L drops below -X per share (0 = disabled).
+# Fixed dollars/share — BACKTEST reference only; vol-scaled overrides better for production.
 stop_loss_per_share: 0.005
-# Trailing stop activates when unrealized P&L exceeds X per share.
 trail_activate_per_share: 0.01
-# Once trailing active, exit when unrealized drops to this fraction
-# of peak.  0.50 is aggressive (exits at half-peak); typical
-# institutional trailing is 0.80–0.95.  Tightness here is a research
-# choice for the v0.2 reference bundle, not a recommended default.
 trail_pct: 0.50
 
-# ── Cost Model (IB US Equity Tiered) ─────────────────────
-# Spread floor in basis points (0 = use actual half-spread only).
 cost_min_spread_bps: 0.0
-# IB Tiered commission component per share.
 cost_commission_per_share: 0.0035
-# IB taker exchange fee per share (removing liquidity).
 cost_taker_exchange_per_share: 0.003
-# IB maker exchange rebate per share (adding liquidity, negative = credit).
 cost_maker_exchange_per_share: -0.002
-# Adverse selection penalty on passive fills in basis points.
 cost_passive_adverse_selection_bps: 0.5
-# Sell-side regulatory fee in basis points.
-# !! Optimistic lower bound !! 0.0 disables the SEC §31 transaction
-# fee modelling.  The §31 fee on sells is non-zero in reality (the
-# 2024 rate is roughly $27.80 per $1M of sell-side notional ≈ 0.28
-# bps) and the rate is re-set annually by the SEC.  The reference
-# yaml leaves this at zero so backtest cost-arithmetic stays purely a
-# function of the IB fee schedule above; production deployments
-# should set a dated value from a maintained §31 rate table and
-# re-validate after every SEC adjustment.
+# 0 = no SEC fee on sells; set from current rate for realism.
 cost_sell_regulatory_bps: 0.0
-# Cost stress multiplier (1.0 = baseline; 1.5 = 50% stress scenario).
-# Reference yaml runs at baseline.  Risk-committee governance runs
-# should rerun the bundle with this set to 1.5–2.0 to verify P&L /
-# Sharpe under amplified-cost regimes (B-ranking robustness).
 cost_stress_multiplier: 1.0
-# IB Tiered minimum commission per order.
 cost_min_commission: 0.35
-# IB Tiered maximum commission as % of trade value.
 cost_max_commission_pct: 1.0
 
-# ── Runtime cost / edge gates (explicit) ─────────────────
-# Both keys below default to 0.0 in PlatformConfig and so would be
-# silently disabled if omitted from this yaml.  We pin them
-# explicitly so the audit trail captures the operator's intent
-# rather than inheriting an unstated default.
-
-# Runtime gate (B4): suppress orders when
-# ``signal.edge_estimate_bps < ratio × 2 × cost_bps``.
-# 0.0 = gate disabled (every signal that satisfied the load-time G12 /
-# cost_arithmetic discipline still routes).  This is the documented
-# research-parity setting for the v0.2 reference bundle: the alpha
-# spec already discloses its expected edge-vs-cost arithmetic at
-# load time, and we don't want a second runtime filter silently
-# pruning sub-cost edges during backtest.  Production overlays
-# should set this to ≥ 1.5 (matching G12) or stricter (e.g. 2.0)
-# per deployment policy — institutional-grade is *runtime* edge
-# discipline ON TOP OF load-time disclosure, not a substitute.
+# Pinned explicitly (defaults are 0). signal_min_edge_cost_ratio: suppress when
+# edge < ratio × 2 × cost_bps. 0 = off (disclosure-only G12 in backtest); production ≥1.5 typical.
 signal_min_edge_cost_ratio: 0.0
 
-# Annualised hard-to-borrow fee in bps for short-side fills.
-# 0.0 = HTB modelling disabled.
-# !! Cost-leakage warning !! ``pofi_benign_midcap_v1`` emits SHORT
-# signals; with this at 0.0 the SHORT leg pays no borrow cost and
-# backtest P&L is optimistically biased.  For SHORT-capable
-# deployments, set this to a realistic per-deployment HTB rate
-# (typical large-cap easy-to-borrow: 25–50 bps; specials: 100+ bps;
-# hard-to-borrow: 1000+ bps).  Long-only deployments may leave
-# this at 0.0 with no impact.
+# Short borrow annual bps; 0 = off (optimistic for SHORT alphas like benign).
 cost_htb_borrow_annual_bps: 0.0
 
-# ── Execution Mode ───────────────────────────────────────
-# "market": immediate mid-price fill, charges spread cost.
-# "passive_limit": limit orders at BBO, queue-position fill model.
 execution_mode: passive_limit
-# Tick-based level fill (only when passive_queue_position_shares is 0):
-# consecutive NBBO updates with bid/ask still at your limit before drain fill.
 passive_fill_delay_ticks: 3
-# Maximum NBBO updates (for that symbol) while the order rests before timeout
-# cancel.  Maker quotes often sit through thousands of prints — keep this
-# high enough that fills are gated by queue/through logic, not spurious timeout.
 passive_max_resting_ticks: 8000
-# Realistic maker queue (D10): cumulative aggressive volume at/through your
-# limit price that must print before a level-based fill, while the NBBO keeps
-# you "at level" (see PassiveLimitOrderRouter._evaluate_fill).  This proxies
-# shares ahead of you at the touch under L1-only data — not full depth-of-book.
-#   ~100–150 : thin / small-cap top-of-book (1–1.5 round lots ahead)
-#   ~200–400 : typical mid-cap display size–scaled prior (default below)
-#   ~500+    : deep-queue / large-cap conservative stress
-# Set to 0 to disable volume queue and use passive_fill_delay_ticks only
-# (faster fills, less queue realism).
+# Aggressive volume through limit before level fill (L1 queue proxy). 0 = delay-ticks only.
 passive_queue_position_shares: 200
-# Cancel fee per share when a resting order times out (0 = no cancel fee).
 passive_cancel_fee_per_share: 0.0
 
-# ── Minimum Order Size ────────────────────────────────────
-# Orders below this share count are suppressed before routing.
 platform_min_order_shares: 50
 
-# ═══════════════════════════════════════════════════════════
-# Governance overlays (explicit — would otherwise be silent)
-# ───────────────────────────────────────────────────────────
-# The two keys below default to a no-op in PlatformConfig and so do
-# not need to be present for the platform to load.  They are pinned
-# here explicitly so that operators reading this reference yaml see
-# the full governance surface without grepping the loader.
-#
-# For PAPER/LIVE deployments these belong in a dedicated overlay
-# (e.g. ``paper.yaml`` / ``live.yaml``) — the values in this
-# reference yaml are intentionally set to "off" / "skill-pinned
-# defaults" for deterministic-replay backtests.
-# ═══════════════════════════════════════════════════════════
-
-# Workstream F-5: per-platform gate-threshold overrides.  Empty
-# mapping ⇒ no platform-level overrides; the skill-pinned
-# ``GateThresholds`` defaults in
-# ``feelies.alpha.promotion_evidence`` are used everywhere except
-# where a per-alpha ``promotion.gate_thresholds`` block applies.
-# Document any non-empty override here with rationale + sign-off.
+# Explicit no-op overrides; PAPER/LIVE often set promotion_ledger_path.
 gate_thresholds: {}
-
-# Workstream F-1: append-only JSONL ledger of alpha-lifecycle
-# transitions (RESEARCH→PAPER→LIVE / QUARANTINED).  ``null`` means
-# no ledger is constructed (the BACKTEST default; deterministic
-# replay does not transition lifecycles, so the ledger would be
-# empty anyway).  PAPER/LIVE overlays SHOULD set this to a
-# durable filesystem path (e.g.
-# ``storage/promotion_ledger/<env>.jsonl``) for governance and
-# audit narrative.
 promotion_ledger_path: null
 
-# ═══════════════════════════════════════════════════════════
-# Phase-2 (three-layer architecture v0.2) — sensor layer
-# ───────────────────────────────────────────────────────────
-# All Phase-2 fields are OPTIONAL.  Omitting them preserves
-# the legacy (pre-refactor) execution path bit-identically.
-# See ``design_docs/three_layer_architecture.md`` §6, §7.4.
-# ═══════════════════════════════════════════════════════════
+# Phase-2: optional; omit for legacy path. See docs/three_layer_architecture.md.
 
-# ── Market / session identity ────────────────────────────
-# Used by the calendar adapter and horizon scheduler.
 market_id: US_EQUITY
 session_kind: RTH
 
-# ── Canonical horizons (seconds) ─────────────────────────
-# The five horizons §7.4 of the design doc enumerates.
-# A SIGNAL/PORTFOLIO alpha's ``horizon_seconds`` must be a
-# member of this set (gate G7 at load time).
+# Alpha horizon_seconds must be in this set (G7).
 horizons_seconds:
   - 30
   - 120
@@ -277,35 +97,14 @@ horizons_seconds:
   - 900
   - 1800
 
-# ── Session anchor (optional) ─────────────────────────────
-# Wall-clock ns of the session open.  If unset, the
-# HorizonScheduler lazily auto-binds to the first event it
-# sees (deterministic for backtests).
-# session_open_ns: null
+# session_open_ns: null  # else first event anchors backtests
 
-# ── Event calendar (optional) ─────────────────────────────
-# YAML file declaring scheduled session events (open, close,
-# auctions, halts) consumed by the calendar adapter.  Omit
-# for a calendar-free demo; provide for live / paper.
-# Required for alpha 5 (pofi_moc_imbalance_v1) which depends on the
-# ScheduledFlowWindowSensor; bootstrap loads it and injects the
-# EventCalendar object into the sensor spec at boot time.
+# For scheduled_flow_window sensor (e.g. pofi_moc_imbalance_v1); bootstrap injects calendar.
 event_calendar_path: storage/reference/event_calendar/2026-01-15.yaml
 
-# ── Sensor specs (optional) ───────────────────────────────
-# Enumerate the sensors to register at boot.  Each entry
-# becomes one ``SensorSpec`` (see ``src/feelies/sensors/spec.py``).
-# An empty list means the sensor registry is skipped entirely
-# and the orchestrator takes the legacy micro-state path.
-# ── Sensors wired for alphas 1-4 ────────────────────────────────────
-# Covers the union of depends_on_sensors across:
-#   pofi_benign_midcap_v1  (ofi_ewma, micro_price, spread_z_30d)
-#   pofi_hawkes_burst_v1   (hawkes_intensity, trade_through_rate, ofi_ewma, spread_z_30d)
-#   pofi_inventory_revert_v1 (quote_replenish_asymmetry, spread_z_30d, quote_hazard_rate)
-#   pofi_kyle_drift_v1     (kyle_lambda_60s, ofi_ewma, micro_price, spread_z_30d)
+# Sensors for alphas 1–5 (union of their depends_on_sensors).
 sensor_specs:
 
-  # ── Shared: NBBOQuote sensors ────────────────────────────────────
   - sensor_id: ofi_ewma
     sensor_version: "1.0.0"
     cls: feelies.sensors.impl.ofi_ewma.OFIEwmaSensor
@@ -360,7 +159,6 @@ sensor_specs:
     min_history: 20
     throttled_ms: null
 
-  # ── Alpha 2 + 4: Trade sensors ───────────────────────────────────
   - sensor_id: hawkes_intensity
     sensor_version: "1.1.0"
     cls: feelies.sensors.impl.hawkes_intensity.HawkesIntensitySensor
@@ -396,11 +194,7 @@ sensor_specs:
     min_history: 30
     throttled_ms: null
 
-  # ── Alpha 5: ScheduledFlowWindowSensor ──────────────────────────
-  # The ``calendar`` param is intentionally omitted here; bootstrap
-  # injects the live EventCalendar object loaded from
-  # event_calendar_path before handing the spec to SensorRegistry
-  # (see src/feelies/bootstrap.py _create_sensor_layer).
+  # calendar param injected from event_calendar_path at bootstrap.
   - sensor_id: scheduled_flow_window
     sensor_version: "1.0.0"
     cls: feelies.sensors.impl.scheduled_flow_window.ScheduledFlowWindowSensor

@@ -4,7 +4,7 @@ Every event crossing a layer boundary must use one of these schemas.
 No untyped messages.  No polling.  All events are frozen dataclasses
 — immutable after creation, safe to share without copying.
 
-Three-layer architecture additions (§5, §20.3 of design_docs/three_layer_architecture.md):
+Three-layer architecture additions (§5, §20.3 of docs/three_layer_architecture.md):
   - ``source_layer`` on the base ``Event`` — full-provenance tag (Inv-13).
   - Layer-1 ``SensorReading`` (event-time state estimator output).
   - ``HorizonTick`` cross-cutting scheduler event.
@@ -391,7 +391,7 @@ class KillSwitchActivation(Event):
 
 # ── Three-Layer Architecture (v0.2) ─────────────────────────────────────
 #
-# Per design_docs/three_layer_architecture.md §5 and Appendix A.  All
+# Per docs/three_layer_architecture.md §5 and Appendix A.  All
 # events below are additive Phase-1 contracts; no producer is wired in
 # Phase 1 (Phase 2 ships the sensor framework, Phase 3 ships the
 # horizon signal engine, Phase 4 ships the composition layer).

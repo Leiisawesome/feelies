@@ -1,6 +1,6 @@
 """Closes G-C — §20.12.3 #2 v0.2-without-``trend_mechanism`` parity.
 
-§20.12.3 #2 of ``design_docs/three_layer_architecture.md`` requires
+§20.12.3 #2 of ``docs/three_layer_architecture.md`` requires
 that a v0.2 SIGNAL alpha that does **not** declare a
 ``trend_mechanism:`` block continues to load and run with bit-
 identical Level-1–4 parity hashes under v0.3 code, with the loader

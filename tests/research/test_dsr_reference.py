@@ -13,9 +13,8 @@ The values below are reproducible offline by re-running the
 derivation script in the test docstring; if a CPython upgrade
 shifts a value by ULP, update both the hand-derived expectation
 and the pinned constant in the same commit so the audit trail
-records what changed.  (Recent 3.12+ ``math.erf`` /
-``statistics.NormalDist`` refinements can flip the last bit vs
-earlier minors.)
+records what changed.  (CPython 3.12–3.14 can differ by a ULP from
+earlier releases; constants below match 3.14.x.)
 """
 
 from __future__ import annotations
@@ -44,17 +43,17 @@ from feelies.research.dsr import (
 
 # Standard normal CDF reference values (hand-derived via math.erf):
 #     Φ(x) = 0.5 * (1 + erf(x / sqrt(2)))
-PINNED_PHI_1_0 = 0.8413447460685429
+PINNED_PHI_1_0 = 0.8413447460685428
 PINNED_PHI_1_96 = 0.9750021048517796
-PINNED_PHI_NEG_1_96 = 0.024997895148220428
+PINNED_PHI_NEG_1_96 = 0.024997895148220373
 PINNED_PHI_2_5758 = 0.995  # exact at this precision
 
 # Standard normal quantile (Φ⁻¹) reference values (hand-derived via
 # statistics.NormalDist().inv_cdf):
-PINNED_INV_CDF_0_975 = 1.9599639845400534
+PINNED_INV_CDF_0_975 = 1.9599639845400536
 PINNED_INV_CDF_0_99 = 2.3263478740408408
 # Φ⁻¹(1 - 1 / (100·e)), used inside expected_max_sharpe(N=100):
-PINNED_INV_CDF_1_MINUS_1_OVER_100E = 2.680210444966888
+PINNED_INV_CDF_1_MINUS_1_OVER_100E = 2.680210444966887
 
 # PSR reference: observed=0.1, threshold=0, T=252, Gaussian.
 # Hand-derived:
@@ -69,21 +68,21 @@ PINNED_PSR_REF_VALUE = 0.9429868610243622
 #   E[max SR] = sqrt(1/251)
 #             · ((1-γ)·Φ⁻¹(0.99) + γ·Φ⁻¹(1 - 1/(100·e)))
 #             = 0.15973023826520108
-PINNED_E_MAX_SHARPE_N100_V1_OVER_251 = 0.1597302382652011
+PINNED_E_MAX_SHARPE_N100_V1_OVER_251 = 0.15973023826520108
 
 # Strong-alpha DSR reference: observed_sharpe=0.5 (per-period),
 # T=252, trials=100, Gaussian, annualisation = sqrt(252).
 # Hand-derived from the chain
 #   threshold = expected_max_sharpe(100, 1/251) = 0.15973…
-#   dsr_per_period = 0.5 - threshold = 0.3402697617347989
-#   dsr_annualised = dsr_per_period * sqrt(252) = 5.401615009352881
+#   dsr_per_period = 0.5 - threshold = 0.34026976173479895
+#   dsr_annualised = dsr_per_period * sqrt(252) = 5.401615009352882
 #   z2 = (0.5 - threshold) * sqrt(251) / sqrt(1 + 0.25/2) = 5.084…
 #   psr2 = Φ(z2) ≈ 1 - 1.86e-7
 #   dsr_p_value = 1 - psr2 = 1.8617426289502248e-07
 #   observed_sharpe_annualised = 0.5 * sqrt(252) = 7.937253933193772
-PINNED_STRONG_ALPHA_THRESHOLD_PER_PERIOD = 0.1597302382652011
-PINNED_STRONG_ALPHA_DSR_PER_PERIOD = 0.3402697617347989
-PINNED_STRONG_ALPHA_DSR_ANNUALISED = 5.401615009352881
+PINNED_STRONG_ALPHA_THRESHOLD_PER_PERIOD = 0.15973023826520108
+PINNED_STRONG_ALPHA_DSR_PER_PERIOD = 0.34026976173479895
+PINNED_STRONG_ALPHA_DSR_ANNUALISED = 5.401615009352882
 PINNED_STRONG_ALPHA_DSR_P_VALUE = 1.8617426289502248e-07
 PINNED_STRONG_ALPHA_OBSERVED_ANNUALISED = 7.937253933193772
 

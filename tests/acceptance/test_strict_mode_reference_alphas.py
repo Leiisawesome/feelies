@@ -1,6 +1,6 @@
 """Closes G-E — §20.12.2 #4 strict-mode reference alphas.
 
-§20.12.2 #4 of ``design_docs/three_layer_architecture.md`` requires
+§20.12.2 #4 of ``docs/three_layer_architecture.md`` requires
 that "at least one reference alpha per mechanism family (KYLE_INFO,
 INVENTORY, HAWKES_SELF_EXCITE, SCHEDULED_FLOW) loads under strict
 mode and produces a deterministic signal stream".

@@ -86,9 +86,9 @@ _XSECT_DECAY_ALPHA = (
     _REPO_ROOT / "alphas" / "pofi_xsect_v1"
     / "pofi_xsect_v1.with_decay.alpha.yaml"
 )
-_FACTOR_LOADINGS_DIR = _REPO_ROOT / "data" / "reference" / "factor_loadings"
+_FACTOR_LOADINGS_DIR = _REPO_ROOT / "storage" / "reference" / "factor_loadings"
 _SECTOR_MAP_PATH = (
-    _REPO_ROOT / "data" / "reference" / "sector_map" / "sector_map.json"
+    _REPO_ROOT / "storage" / "reference" / "sector_map" / "sector_map.json"
 )
 
 _UNIVERSE: tuple[str, ...] = (

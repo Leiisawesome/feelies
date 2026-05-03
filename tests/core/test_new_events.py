@@ -1,7 +1,7 @@
 """Phase-1 event-contract tests (three-layer architecture v0.2).
 
 Covers the five new event types added in §5.1-5.7 of
-``design_docs/three_layer_architecture.md`` plus the additive fields
+``docs/three_layer_architecture.md`` plus the additive fields
 on ``RegimeState`` and ``Signal`` and the ``source_layer`` provenance
 tag on the ``Event`` base class.
 

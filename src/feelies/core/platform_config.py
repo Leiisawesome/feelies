@@ -128,7 +128,7 @@ class PlatformConfig:
     # ── Phase-2 (three-layer architecture) — all optional ──────────────
     #
     # These fields drive the new sensor / horizon scheduler subsystem
-    # introduced by ``design_docs/three_layer_architecture.md``.  They
+    # introduced by ``docs/three_layer_architecture.md``.  They
     # are *all* optional with defaults that preserve Phase-1 behaviour
     # bit-for-bit:
     #

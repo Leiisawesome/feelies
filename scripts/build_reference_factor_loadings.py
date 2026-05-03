@@ -7,15 +7,15 @@ and a flat sector-map JSON consumed by
 
 Outputs (idempotent — safe to re-run):
 
-  ``data/reference/factor_loadings/loadings.json``
+  ``storage/reference/factor_loadings/loadings.json``
       Per-symbol FF5 + momentum + STR betas.  Values are seeded from a
       ``hashlib.sha256(symbol)`` PRNG so reruns produce bit-identical
       bytes; this is critical for replay determinism (Inv-5).
 
-  ``data/reference/sector_map/sector_map.json``
+  ``storage/reference/sector_map/sector_map.json``
       Flat ``{symbol: sector_id_str}`` mapping.
 
-  ``data/reference/factor_loadings/loadings.parquet``  *(optional)*
+  ``storage/reference/factor_loadings/loadings.parquet``  *(optional)*
       Same content as ``loadings.json`` but in columnar parquet for
       research notebooks.  Skipped silently when ``pyarrow`` is not
       installed (see ``[project.optional-dependencies].portfolio``).
@@ -147,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--output-root",
         type=Path,
-        default=Path("data") / "reference",
+        default=Path("storage") / "reference",
         help="Root directory for the emitted reference fixtures.",
     )
     parser.add_argument(

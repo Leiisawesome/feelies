@@ -217,7 +217,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "After the backtest completes, emit one JSON object per "
             "FILLED OrderAck to stdout (one per line), in arrival order. "
             "Originally consumed by the LEGACY_SIGNAL Level-1 fill "
-            "parity test (design_docs/three_layer_architecture.md "
+            "parity test (docs/three_layer_architecture.md "
             "§11.1); the test was retired with workstream D.2 (loader "
             "rejection in PR-1, leaf deletion in PR-2a, per-tick engine "
             "deletion in PR-2b-ii) but the emitter is preserved as a "
@@ -264,7 +264,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "(prefix 'SIGNAL_JSONL'). Tags each row with the "
             "originating layer (only ``SIGNAL`` post-D.2). Used by "
             "the Level-2 SIGNAL parity test "
-            "(design_docs/three_layer_architecture.md §11.2)."
+            "(docs/three_layer_architecture.md §11.2)."
         ),
     )
     # ── Phase-3.1 emit flags (composable with all prior emitters) ───
@@ -274,7 +274,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Emit one JSON object per RegimeHazardSpike to stdout "
             "(prefix 'HAZARD_JSONL'). Used by the Level-5 hazard "
-            "parity test (design_docs/three_layer_architecture.md "
+            "parity test (docs/three_layer_architecture.md "
             "§20.11.2)."
         ),
     )
@@ -483,7 +483,7 @@ def _emit_signals_jsonl(recorder: BusRecorder) -> None:
     consumer.  Post-D.2 every emitted row carries ``layer="SIGNAL"``;
     the historical ``layer="LEGACY_SIGNAL"`` rows were retired with
     the per-tick legacy path.  The Level-2 SIGNAL baseline test
-    (design_docs/three_layer_architecture.md §11.2) hashes the
+    (docs/three_layer_architecture.md §11.2) hashes the
     canonical-JSON line stream and compares it across Phase changes
     to surface drift in scope, ordering, or sequence allocation.
     """
@@ -519,7 +519,7 @@ def _emit_hazard_spikes_jsonl(recorder: BusRecorder) -> None:
     Tagged with prefix ``HAZARD_JSONL`` so a single run's stdout can
     interleave hazard emissions with the Phase-1/2/3 emit streams and
     still be sliced by a downstream consumer.  The Level-5 hazard
-    baseline test (design_docs/three_layer_architecture.md §20.11.2)
+    baseline test (docs/three_layer_architecture.md §20.11.2)
     SHA-256s the canonical-JSON line stream.
     """
     for s in recorder.of_type(RegimeHazardSpike):

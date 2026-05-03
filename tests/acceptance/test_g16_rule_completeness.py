@@ -1,6 +1,6 @@
 """Closes G-D — §20.12.2 #3 G16 rule completeness.
 
-§20.12.2 #3 of ``design_docs/three_layer_architecture.md`` requires
+§20.12.2 #3 of ``docs/three_layer_architecture.md`` requires
 that "G16 unit tests cover all 9 binding rules with pass + fail
 cases".  The unit tests themselves live in
 ``tests/alpha/test_gate_g16.py`` and are organised as one

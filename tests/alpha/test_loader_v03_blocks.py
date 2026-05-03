@@ -1,7 +1,7 @@
 """Phase-1.1 (v0.3) loader tests for ``trend_mechanism:`` and ``hazard_exit:``.
 
 Covers the opt-in YAML blocks per §20.5 of
-``design_docs/three_layer_architecture.md``:
+``docs/three_layer_architecture.md``:
 
   - Absent block ⇒ no enforcement, manifest field is ``None``.
   - Present, well-formed block on a SIGNAL alpha ⇒ accepted and

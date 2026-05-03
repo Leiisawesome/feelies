@@ -14,7 +14,7 @@ The block is **disclosed** by the alpha author and **validated** by
 the platform.  Validation is purely arithmetic: there is no place for
 opinion in this gate.
 
-Rules (§9 / §12 of ``design_docs/three_layer_architecture.md`` and
+Rules (§9 / §12 of ``docs/three_layer_architecture.md`` and
 the canonical example in §6.5 of the legacy doc):
 
 1. All five fields must be present and finite (``int`` or ``float``).

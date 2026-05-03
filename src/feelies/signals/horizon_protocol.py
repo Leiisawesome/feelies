@@ -7,7 +7,7 @@ feature aggregate at a horizon boundary) and the latest
 optional :class:`feelies.core.events.Signal`.
 
 Three-layer architecture (§5.5, §6.4 of
-``design_docs/three_layer_architecture.md``):
+``docs/three_layer_architecture.md``):
 
     Sensor (Layer 1) ──► HorizonAggregator (Layer 2)
                           │

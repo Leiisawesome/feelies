@@ -1,5 +1,5 @@
 <!--
-  File:     design_docs/three_layer_architecture.md
+  File:     docs/three_layer_architecture.md
   Status:   APPROVED canonical platform spec (v0.3.0 § header); section
             numbers are referenced by tests and source — preserve anchors.
   Audience: maintainers, implementers, acceptance / parity tests
@@ -1203,7 +1203,7 @@ multiple engineers are available.
 
 **Goal:** repo author signs off on this spec. No code changes.
 
-**Deliverable:** this document merged to `docs/design/three_layer_architecture.md`,
+**Deliverable:** this document lives at `docs/three_layer_architecture.md`,
 with author approval recorded in commit message.
 
 **Blockers to resolve:** all items in §17.

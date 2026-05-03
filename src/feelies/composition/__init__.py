@@ -16,7 +16,7 @@ alpha is loaded; otherwise the entire path is bypassed so SIGNAL-only
 deployments do not pay the cost of the cross-sectional construction
 pipeline (Inv-A).
 
-See ``design_docs/three_layer_architecture.md`` §6.5 for the design.
+See ``docs/three_layer_architecture.md`` §6.5 for the design.
 """
 
 from feelies.composition.protocol import (

@@ -2,7 +2,7 @@
 
 Subscribes to the bus events emitted by the Phase-4 composition
 pipeline and the Phase-4.1 hazard-exit controller and records the 12
-metrics enumerated in :doc:`/design_docs/three_layer_architecture`
+metrics enumerated in :doc:`/docs/three_layer_architecture`
 §20.12.2:
 
 ==  ====================================  ======================================

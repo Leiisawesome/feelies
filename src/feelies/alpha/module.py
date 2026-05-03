@@ -117,7 +117,7 @@ class AlphaManifest:
     reproduce, and lifecycle-manage the alpha without opening its code.
 
     Three-layer architecture additive fields (Phase 1 / 1.1 of
-    design_docs/three_layer_architecture.md):
+    docs/three_layer_architecture.md):
 
       ``layer`` — declared layer for the alpha.  Post-D.2 the only
                   values produced by the loader are ``"SIGNAL"`` and

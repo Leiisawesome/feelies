@@ -2,12 +2,12 @@
 
 This module owns the architectural compliance gates G1-G16 enumerated
 in ``grok/07_HYPOTHESIS_REASONING.md`` and referenced from
-``design_docs/three_layer_architecture.md`` §6.6.
+``docs/three_layer_architecture.md`` §6.6.
 
 Phase 3-α status
 ----------------
 
-Per §10 of ``design_docs/three_layer_architecture.md`` the Phase-3-α
+Per §10 of ``docs/three_layer_architecture.md`` the Phase-3-α
 slice activates **G2, G4, G5, G6, G7, G8, G12, G13** for the new
 ``layer: SIGNAL`` specs.  G14 and G15 remain the universally-active
 gates from Phase 1.  G1, G3, G9, G10, G11 stay scaffolded for Phase 4

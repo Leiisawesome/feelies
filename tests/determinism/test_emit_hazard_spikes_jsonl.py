@@ -2,7 +2,7 @@
 
 Verifies the canonical JSON shape emitted under
 ``--emit-hazard-spikes-jsonl`` (Phase-3.1 Level-5 hazard parity stream,
-design_docs/three_layer_architecture.md §20.11.2):
+docs/three_layer_architecture.md §20.11.2):
 
 * prefix ``HAZARD_JSONL`` on every line,
 * keys sorted (stable across Python versions),

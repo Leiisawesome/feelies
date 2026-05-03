@@ -123,7 +123,7 @@ _SUPPORTED_SCHEMA_VERSIONS = {"1.1"}
 # now handled as a dedicated *retired* category with its own migration
 # message.  ``SIGNAL`` and ``PORTFOLIO`` are accepted; ``SENSOR``
 # remains reserved (sensor specs live under platform.yaml, not alpha
-# YAML).  See design_docs/three_layer_architecture.md §10.
+# YAML).  See docs/three_layer_architecture.md §10.
 _VALID_1_1_LAYERS = {"SIGNAL", "PORTFOLIO", "SENSOR"}
 _ACCEPTED_LAYERS = {"SIGNAL", "PORTFOLIO"}
 
@@ -1000,7 +1000,7 @@ class AlphaLoader:
     def _validate_schema(self, spec: dict[str, Any], source: str) -> None:
         """Validate top-level schema, dispatching on ``layer``.
 
-        Per design_docs/three_layer_architecture.md §6.6 + §8.7 the
+        Per docs/three_layer_architecture.md §6.6 + §8.7 the
         validation ordering (post-workstream-D.2) is:
 
           1. ``spec`` is a dict.
@@ -1048,7 +1048,7 @@ class AlphaLoader:
         if layer is None:
             raise AlphaLoadError(
                 f"{source}: schema_version '1.1' requires the 'layer' "
-                f"field (§8.7 of design_docs/three_layer_architecture.md). "
+                f"field (§8.7 of docs/three_layer_architecture.md). "
                 f"There is no implicit upgrade path. Declare "
                 f"`layer: SIGNAL` (horizon-anchored, regime-gated) or "
                 f"`layer: PORTFOLIO` (cross-sectional construction). "
@@ -1186,7 +1186,7 @@ class AlphaLoader:
                 f"{source}: trend_mechanism.family '{family}' is not in "
                 f"the closed taxonomy. Valid families: "
                 f"{sorted(_TREND_MECHANISM_FAMILIES)}. "
-                f"See §20.2 of design_docs/three_layer_architecture.md."
+                f"See §20.2 of docs/three_layer_architecture.md."
             )
         return dict(block)
 

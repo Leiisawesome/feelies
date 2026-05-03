@@ -60,8 +60,7 @@ _repo_targets = (
     "platform.yaml",
     "alphas/",
     "pyproject.toml",
-    "design_docs/",
-    "docs/migration/",
+    "docs/",
 )
 for name in zf.namelist():
     if name == _top or name.endswith("/"):

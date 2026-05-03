@@ -2,7 +2,7 @@
 
 Loads, validates, and exposes the per-session list of *scheduled-flow
 windows* consumed by ``feelies.sensors.impl.scheduled_flow_window``
-(see ``design_docs/three_layer_architecture.md`` §20.4.2).
+(see ``docs/three_layer_architecture.md`` §20.4.2).
 
 Calendar files live under ``storage/reference/event_calendar/<date>.yaml``
 where ``<date>`` is an ISO-8601 ``YYYY-MM-DD`` session date.  The format

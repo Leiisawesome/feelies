@@ -99,7 +99,7 @@ _BACKTICK_PATH_RE = re.compile(
 # accept them when the path component contains a slash and a known
 # extension).
 _BARE_PATH_RE = re.compile(
-    r"(?<![\w/`])((?:src|tests|docs|alphas|grok|design_docs|\.cursor)/"
+    r"(?<![\w/`])((?:src|tests|docs|alphas|grok|\.cursor)/"
     r"[a-zA-Z0-9_./\-]+\.(?:mdc|yaml|toml|md|py|yml))"
 )
 

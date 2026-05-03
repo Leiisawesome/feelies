@@ -4,7 +4,7 @@ Estimates the conditional buy- and sell-side trade arrival rates above
 a baseline using two parallel exponentially-weighted self-exciting
 kernels — one per side.  A jump in either intensity is the L1
 fingerprint of the ``HAWKES_SELF_EXCITE`` mechanism family
-(``design_docs/three_layer_architecture.md`` §20.2).
+(``docs/three_layer_architecture.md`` §20.2).
 
 Algorithm (per side, incremental):
 

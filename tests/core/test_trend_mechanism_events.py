@@ -3,7 +3,7 @@
 Covers the closed ``TrendMechanism`` enum, ``RegimeHazardSpike`` event,
 the v0.3 additive fields on ``Signal``, and the ``mechanism_breakdown``
 field on ``SizedPositionIntent`` per
-``design_docs/three_layer_architecture.md`` §20.3.
+``docs/three_layer_architecture.md`` §20.3.
 """
 
 from __future__ import annotations

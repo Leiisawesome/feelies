@@ -1,7 +1,7 @@
 """Mechanical proof that §18.3 #3 is closed — ``mypy --strict`` clean.
 
 Closes the ``mypy --strict`` half of §18.3 of
-``design_docs/three_layer_architecture.md`` by running ``mypy`` as a
+``docs/three_layer_architecture.md`` by running ``mypy`` as a
 subprocess against the entire ``src/feelies`` tree and asserting a
 zero exit code.
 
@@ -56,7 +56,7 @@ pytestmark = pytest.mark.slow
 def test_mypy_strict_clean_on_src_feelies() -> None:
     assert _SRC.exists(), (
         f"src/feelies not found at {_SRC}; this test is anchored to the "
-        "repository layout described in design_docs/three_layer_architecture.md"
+        "repository layout described in docs/three_layer_architecture.md"
     )
 
     proc = subprocess.run(

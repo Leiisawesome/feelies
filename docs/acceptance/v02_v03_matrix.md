@@ -4,7 +4,7 @@
 (post-Phase-5.1).
 
 This file is the **normative status surface** for every acceptance
-checkbox declared in `design_docs/three_layer_architecture.md` §18.2,
+checkbox declared in `docs/three_layer_architecture.md` §18.2,
 §18.3, §20.12.2, and §20.12.3. Each row maps a single design-doc line
 item to (a) the artifact that satisfies it and (b) the test that
 mechanically asserts that satisfaction on every CI run.
