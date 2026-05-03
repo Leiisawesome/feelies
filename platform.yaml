@@ -241,7 +241,7 @@ sensor_specs:
 
   # ── Alpha 2 + 4: Trade sensors ───────────────────────────────────
   - sensor_id: hawkes_intensity
-    sensor_version: "1.0.0"
+    sensor_version: "1.1.0"
     cls: feelies.sensors.impl.hawkes_intensity.HawkesIntensitySensor
     params:
       alpha: 0.4
@@ -265,12 +265,12 @@ sensor_specs:
     throttled_ms: null
 
   - sensor_id: kyle_lambda_60s
-    sensor_version: "1.0.0"
+    sensor_version: "1.1.0"
     cls: feelies.sensors.impl.kyle_lambda_60s.KyleLambda60sSensor
     params:
       window_seconds: 60
       min_samples: 30
-    subscribes_to: [Trade]
+    subscribes_to: [NBBOQuote, Trade]
     input_sensor_ids: []
     min_history: 30
     throttled_ms: null

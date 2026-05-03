@@ -33,7 +33,7 @@ Three synthetic alphas cover both standalone-SIGNAL and PORTFOLIO paths:
 Four sensors cover both the quote-driven and trade-driven sensor paths:
 
   ofi_ewma, micro_price, spread_z_30d — NBBOQuote sensors
-  kyle_lambda_60s                     — Trade sensor (tests Trade-path warmup)
+  kyle_lambda_60s                     — NBBOTrade mix (warm-up exercises both paths)
 
 Additional sub-runs:
 
@@ -150,12 +150,12 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     ),
     SensorSpec(
         sensor_id="kyle_lambda_60s",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=KyleLambda60sSensor,
         # Use min_samples=5 so the sensor warms up quickly within the
         # smoke run (default is 30; 5 trades arrive within seconds).
         params={"min_samples": 5},
-        subscribes_to=(Trade,),
+        subscribes_to=(NBBOQuote, Trade),
     ),
 )
 

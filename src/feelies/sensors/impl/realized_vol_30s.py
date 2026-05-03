@@ -1,23 +1,22 @@
 """Realized volatility over a sliding event-time window.
 
-Computes the standard deviation of mid-price log-returns over the
-last ``window_seconds`` of trades / quotes:
+Computes the **sample standard deviation** of mid-price log-returns over the
+last ``window_seconds`` of quotes:
 
-    rv_t = sqrt( sum_{i in window} r_i^2  )
+    r_i          = log(mid_i / mid_{i-1})
+    rv_t (n≥2)   = sqrt( max( 0,
+        (sum r_i² - (sum r_i)² / n) / (n - 1) ) )
 
-where ``r_i = log(mid_i / mid_{i-1})``.  This is unannualized — the
-raw window-local standard deviation — so feature consumers may
-re-scale by ``sqrt(seconds_per_year / window_seconds)`` if they want
-an annualised number.
+Uses the unbiased window variance (Bessel correction). For ``n < 2`` returns
+inside the trailing window ``value = 0.0``.
 
-The window is enforced by event time, not event count, by storing
-``(ts_ns, log_ret)`` tuples in a deque and trimming the front when
-events fall out of the trailing ``window_seconds * 1e9`` ns range.
-This makes the sensor robust to bursty quote streams.
+Unannualised — consumers may multiply by ``sqrt(seconds_per_year / window_seconds)``
+if they need an annualised scale.
 
-Determinism: math is purely arithmetic (``math.log``, ``math.sqrt``)
-which produces identical results across Python versions on the same
-platform.  No RNG, no time-of-day reads.
+Windowing is **event-time** via ``(ts_ns, log_ret)`` and a deque eviction
+policy aligned to ``window_seconds * 1e9`` ns — robust to bursty streams.
+
+Determinism: purely ``math.log`` / ``math.sqrt``.  No RNG, no clock reads.
 """
 
 from __future__ import annotations
@@ -45,7 +44,7 @@ class RealizedVol30sSensor:
     """
 
     sensor_id: str = "realized_vol_30s"
-    sensor_version: str = "1.0.0"
+    sensor_version: str = "1.1.0"
 
     def __init__(
         self,
@@ -71,9 +70,9 @@ class RealizedVol30sSensor:
     def initial_state(self) -> dict[str, Any]:
         return {
             "history": deque(),  # (ts_ns, log_ret)
-            "sum_sq": 0.0,
+            "sum_r": 0.0,
+            "sum_r2": 0.0,
             "last_mid": None,
-            "count": 0,
         }
 
     def update(
@@ -97,15 +96,23 @@ class RealizedVol30sSensor:
             log_ret = math.log(mid / last_mid)
             history: deque[tuple[int, float]] = state["history"]
             history.append((ts, log_ret))
-            state["sum_sq"] += log_ret * log_ret
-            state["count"] += 1
+            state["sum_r"] += log_ret
+            state["sum_r2"] += log_ret * log_ret
 
             cutoff = ts - self._window_ns
             while history and history[0][0] < cutoff:
                 _, ev_ret = history.popleft()
-                state["sum_sq"] -= ev_ret * ev_ret
+                state["sum_r"] -= ev_ret
+                state["sum_r2"] -= ev_ret * ev_ret
 
-            value = math.sqrt(max(0.0, state["sum_sq"]))
+            n = len(history)
+            if n < 2:
+                value = 0.0
+            else:
+                sum_r = state["sum_r"]
+                accum = state["sum_r2"] - (sum_r * sum_r) / float(n)
+                var = accum / float(n - 1)
+                value = math.sqrt(max(0.0, var))
         else:
             value = 0.0
 

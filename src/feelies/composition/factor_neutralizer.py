@@ -39,7 +39,11 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Mapping
+from typing import TYPE_CHECKING, Mapping
+
+if TYPE_CHECKING:  # pragma: no cover
+    import numpy as np
+    from numpy.typing import NDArray
 
 try:  # pragma: no cover - optional dependency for portfolio extras
     import numpy as np
@@ -157,7 +161,7 @@ class FactorNeutralizer:
 
     # ── Internals ────────────────────────────────────────────────────
 
-    def _build_b_matrix(self, universe: tuple[str, ...]) -> "np.ndarray":
+    def _build_b_matrix(self, universe: tuple[str, ...]) -> NDArray[np.float64]:
         """Stack per-symbol loadings into an ``(N, K)`` matrix."""
         rows: list[list[float]] = []
         for s in universe:

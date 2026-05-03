@@ -146,13 +146,13 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
         params={"min_samples": 5},
         subscribes_to=(NBBOQuote,),
     ),
-    # Trade sensor — needed by pofi_kyle_drift_v1.
+    # Trade-priced impact / NBBO mids — mirrors production ``subscribes_to``.
     SensorSpec(
         sensor_id="kyle_lambda_60s",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=KyleLambda60sSensor,
         params={"min_samples": 5},
-        subscribes_to=(Trade,),
+        subscribes_to=(NBBOQuote, Trade),
     ),
 )
 

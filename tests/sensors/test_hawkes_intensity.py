@@ -32,6 +32,8 @@ def test_constructor_validates_arguments() -> None:
         HawkesIntensitySensor(warm_window_seconds=0)
     with pytest.raises(ValueError, match="warm_trades_per_side"):
         HawkesIntensitySensor(warm_trades_per_side=-1)
+    with pytest.raises(ValueError, match="baseline_mu"):
+        HawkesIntensitySensor(baseline_mu=-0.01)
 
 
 def test_quote_events_return_none() -> None:
@@ -52,36 +54,46 @@ def test_quote_events_return_none() -> None:
 
 
 def test_first_buy_trade_emits_alpha_on_buy_side() -> None:
-    """First trade of a side: λ = β·0 + α = α."""
-    sensor = HawkesIntensitySensor(alpha=0.4, beta=0.05)
+    """First buy impulse: λ_buy = μ + α (default μ = 0)."""
+    sensor = HawkesIntensitySensor(alpha=0.4, beta=0.05, baseline_mu=0.0)
     state = sensor.initial_state()
     r = sensor.update(_trade(ts_ns=1_000_000_000, price="100.01"), state, params={})
     assert r is not None
     assert isinstance(r.value, tuple)
     lam_buy, lam_sell, ratio, branching = r.value
     assert lam_buy == pytest.approx(0.4, rel=1e-12)
-    assert lam_sell == 0.0
+    assert lam_sell == pytest.approx(0.0, abs=1e-15)
     assert branching == pytest.approx(0.4 / 0.05, rel=1e-12)
     assert ratio == pytest.approx(1.0, rel=1e-9)
 
 
+def test_baseline_mu_offsets_first_impulse() -> None:
+    sensor = HawkesIntensitySensor(alpha=0.4, beta=0.05, baseline_mu=0.1)
+    state = sensor.initial_state()
+    assert state["lambda_buy"] == pytest.approx(0.1)
+    r = sensor.update(_trade(ts_ns=1_000_000_000, price="100.01"), state, params={})
+    assert r is not None
+    lam_buy, _ls, _ratio, _br = r.value
+    assert lam_buy == pytest.approx(0.5, rel=1e-12)
+
+
 def test_decay_between_trades() -> None:
     """One buy trade then 10s gap then another buy: decay applied first."""
-    sensor = HawkesIntensitySensor(alpha=0.4, beta=0.05)
+    sensor = HawkesIntensitySensor(alpha=0.4, beta=0.05, baseline_mu=0.0)
     state = sensor.initial_state()
     sensor.update(_trade(ts_ns=1_000_000_000, price="100.01"), state, params={})
     r = sensor.update(_trade(ts_ns=11_000_000_000, price="100.02"), state, params={})
     assert r is not None
     lam_buy, _lam_sell, _ratio, _br = r.value
-    # Hand: λ_decayed = 0.4·exp(-0.05·10) ≈ 0.2426;
-    # then additive impulse: λ_new = λ_decayed + α = 0.2426 + 0.4 ≈ 0.6426.
-    # (S1 fix: the canonical Hawkes update is additive, not β·λ + α.)
-    expected = (0.4 * math.exp(-0.05 * 10.0)) + 0.4
+    mu = 0.0
+    prev = 0.4
+    lamb = mu + (prev - mu) * math.exp(-0.05 * 10.0)
+    expected = lamb + 0.4
     assert lam_buy == pytest.approx(expected, rel=1e-9)
 
 
 def test_buy_then_sell_independent_intensities() -> None:
-    sensor = HawkesIntensitySensor(alpha=0.4, beta=0.05)
+    sensor = HawkesIntensitySensor(alpha=0.4, beta=0.05, baseline_mu=0.0)
     state = sensor.initial_state()
     sensor.update(_trade(ts_ns=1_000_000_000, price="100.01"), state, params={})
     r = sensor.update(_trade(ts_ns=2_000_000_000, price="99.99"), state, params={})

@@ -47,7 +47,7 @@ class KyleLambda60sSensor:
     """
 
     sensor_id: str = "kyle_lambda_60s"
-    sensor_version: str = "1.0.0"
+    sensor_version: str = "1.1.0"
 
     def __init__(
         self,
@@ -80,8 +80,10 @@ class KyleLambda60sSensor:
             "sum_dq": 0.0,
             "sum_dp_dq": 0.0,
             "sum_dq2": 0.0,
-            "last_price": None,
+            "last_trade_price": None,
             "last_side": +1,
+            "last_nbbo_mid": None,
+            "mid_at_prev_trade": None,
         }
 
     def update(
@@ -90,6 +92,14 @@ class KyleLambda60sSensor:
         state: dict[str, Any],
         params: Mapping[str, Any],
     ) -> SensorReading | None:
+        if isinstance(event, NBBOQuote):
+            bid = float(event.bid)
+            ask = float(event.ask)
+            if bid <= 0.0 or ask <= 0.0:
+                return None
+            state["last_nbbo_mid"] = (bid + ask) / 2.0
+            return None
+
         if not isinstance(event, Trade):
             return None
 
@@ -98,22 +108,30 @@ class KyleLambda60sSensor:
         if size <= 0.0:
             return None
 
-        last_price = state["last_price"]
-        if last_price is None:
-            state["last_price"] = price
+        mid_now = state["last_nbbo_mid"]
+        if mid_now is None:
             return None
 
-        if price > last_price:
+        last_trade_price = state["last_trade_price"]
+        if last_trade_price is None:
+            state["last_trade_price"] = price
+            state["mid_at_prev_trade"] = mid_now
+            return None
+
+        if price > last_trade_price:
             side = +1
-        elif price < last_price:
+        elif price < last_trade_price:
             side = -1
         else:
             side = state["last_side"]
         state["last_side"] = side
 
-        dp = price - last_price
+        mid_prev = state["mid_at_prev_trade"]
+        if mid_prev is None:
+            return None
+
+        dp = mid_now - mid_prev
         dq = side * size
-        state["last_price"] = price
 
         samples = state["samples"]
         samples.append((event.timestamp_ns, dp, dq))
@@ -138,6 +156,9 @@ class KyleLambda60sSensor:
             state["sum_dq"] = 0.0
             state["sum_dp_dq"] = 0.0
             state["sum_dq2"] = 0.0
+
+        state["mid_at_prev_trade"] = mid_now
+        state["last_trade_price"] = price
 
         denom = n * state["sum_dq2"] - state["sum_dq"] * state["sum_dq"]
         if n < 2 or denom <= 0.0:

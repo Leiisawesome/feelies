@@ -4,9 +4,9 @@ Per-horizon rolling estimator of the signal-to-noise ratio
 
     SNR(h) = |μ_t(h)| / (σ_t(h) / √h)
 
-where ``μ_t(h)`` is the EWMA of mid-price returns at horizon ``h``
-(seconds) and ``σ_t(h)`` is the EWMA of squared returns at the same
-horizon.  This is the essay's §4.2 *exploitability gate* — alphas are
+where ``μ_t(h)`` is the EWMA of **log** mid-price returns at horizon
+``h`` (seconds) and ``σ_t(h)`` is the EWMA RMSE proxy from squared
+log returns at the same horizon.  This is the essay's §4.2 *exploitability gate* — alphas are
 required by the regime DSL to consult ``snr(h)`` against a configured
 floor before opening positions, where ``h`` matches the alpha's
 ``horizon_seconds``.
@@ -21,9 +21,13 @@ Algorithm (per horizon ``h``):
   ``next_sample_ns_h = last_sample_ns_h + h * 1e9``.  The first quote
   bootstraps the grid.  Quotes between grid points only update the
   most-recent mid (no leakage of intra-bar information).
-- On each grid crossing, compute ``r = mid - last_sample_mid`` (raw
-  price change; the SNR's ``√h`` denominator already normalises it
-  per second of holding).
+- When the event time reaches or passes a grid deadline, compute a
+  single **log-return** over the elapsed bar:
+  ``r = log(mid_now) - log(mid_open)`` where ``mid_open`` is the NBBO
+  mid carried from the previous grid boundary (bootstrap seeds the
+  first open).  Quotes that arrive after **multiple** missed
+  deadlines consolidate into **one** return — no zero-filled interior
+  steps.
 - Update incrementally:
       μ_h ← (1 - λ_μ) · μ_h + λ_μ · r
       σ²_h ← (1 - λ_σ²) · σ²_h + λ_σ² · r²
@@ -64,7 +68,7 @@ class SNRDriftDiffusionSensor:
     """
 
     sensor_id: str = "snr_drift_diffusion"
-    sensor_version: str = "1.0.0"
+    sensor_version: str = "1.1.0"
 
     def __init__(
         self,
@@ -103,7 +107,7 @@ class SNRDriftDiffusionSensor:
                 h: {
                     "mu": 0.0,
                     "sig2": 0.0,
-                    "last_sample_mid": None,
+                    "mid_bar_open": None,
                     "next_sample_ns": None,
                     "samples": 0,
                 }
@@ -119,18 +123,29 @@ class SNRDriftDiffusionSensor:
         mid: float,
     ) -> None:
         if slot["next_sample_ns"] is None:
-            slot["last_sample_mid"] = mid
+            slot["mid_bar_open"] = mid
             slot["next_sample_ns"] = ts_ns + h * _NS_PER_SECOND
             slot["samples"] += 1
             return
-        while ts_ns >= slot["next_sample_ns"]:
-            r = mid - slot["last_sample_mid"]
-            lam = self._ewma_lambda
-            slot["mu"] = (1.0 - lam) * slot["mu"] + lam * r
-            slot["sig2"] = (1.0 - lam) * slot["sig2"] + lam * r * r
-            slot["last_sample_mid"] = mid
+        if ts_ns < slot["next_sample_ns"]:
+            return
+
+        mo = slot["mid_bar_open"]
+        if mo is None or mo <= 0.0 or mid <= 0.0:
+            slot["mid_bar_open"] = mid if mid > 0 else mo
+            while slot["next_sample_ns"] <= ts_ns:
+                slot["next_sample_ns"] += h * _NS_PER_SECOND
+            return
+
+        # One consolidated log-return across all missed deadlines on this quote.
+        r = math.log(mid) - math.log(mo)
+        lam = self._ewma_lambda
+        slot["mu"] = (1.0 - lam) * slot["mu"] + lam * r
+        slot["sig2"] = (1.0 - lam) * slot["sig2"] + lam * r * r
+        slot["mid_bar_open"] = mid
+        while slot["next_sample_ns"] <= ts_ns:
             slot["next_sample_ns"] += h * _NS_PER_SECOND
-            slot["samples"] += 1
+        slot["samples"] += 1
 
     def update(
         self,
@@ -140,7 +155,11 @@ class SNRDriftDiffusionSensor:
     ) -> SensorReading | None:
         if not isinstance(event, NBBOQuote):
             return None
-        mid = (float(event.bid) + float(event.ask)) / 2.0
+        bid = float(event.bid)
+        ask = float(event.ask)
+        if bid <= 0.0 or ask <= 0.0:
+            return None
+        mid = (bid + ask) / 2.0
         state["last_mid"] = mid
 
         ts_ns = event.timestamp_ns

@@ -28,12 +28,15 @@ H6 / M5 design note (v0.3 implementation boundary):
 
 Algorithm (page-Hinkley, one-sided up-test):
 
-    Maintain a rolling reference window of the last
-    ``window_seconds`` of the observable.  Compute its running mean
-    ``μ_ref`` (online incremental).  On each new sample ``x_t``:
+    Maintain a deque of ``(ts, x)`` in the last ``window_seconds`` of
+    event time.  Before appending the new sample ``x_t``, evict expired
+    observations and compute ``μ_ref`` as the mean of the deque
+    (**references only past data, not** ``x_t``).  Update
 
         m_t = max(0, m_{t-1} + (x_t - μ_ref) - δ)
         score_t = min(1.0, m_t / λ)
+
+    Finally append ``x_t`` into the deque.
 
     where ``δ`` is the tolerated drift floor (default ``0.0``) and
     ``λ`` is the alarm threshold (default ``small relative to typical
@@ -41,8 +44,9 @@ Algorithm (page-Hinkley, one-sided up-test):
     ``score_t > 0.95`` is a structural-break alert per §20.4.4.
 
     The reference window evicts samples older than ``window_seconds``
-    in event time.  When the window resets (e.g. after a long pause),
-    ``m`` and ``μ_ref`` are re-initialised from the next observation.
+    in event time before each Page-Hinkley step.  When the window
+    resets (e.g. after a long pause), ``m`` is re-initialised on the
+    next observation.
 
 Determinism: pure float arithmetic; deque-based event-time eviction;
 no RNG.
@@ -80,7 +84,7 @@ class StructuralBreakScoreSensor:
     """
 
     sensor_id: str = "structural_break_score"
-    sensor_version: str = "1.0.0"
+    sensor_version: str = "1.1.0"
 
     def __init__(
         self,
@@ -159,26 +163,23 @@ class StructuralBreakScoreSensor:
 
         ts_ns = event.timestamp_ns
         samples = state["samples"]
-        samples.append((ts_ns, observable))
-        state["sum"] += observable
         cutoff = ts_ns - self._window_ns
         while samples and samples[0][0] < cutoff:
             _t, v = samples.popleft()
             state["sum"] -= v
 
-        n = len(samples)
-        if n == 0:
-            return None
-        mean = state["sum"] / float(n)
+        n_ref = len(samples)
+        mu_ref = state["sum"] / float(n_ref) if n_ref > 0 else 0.0
 
-        # Page-Hinkley up-test.  Reset ``m`` to zero when negative —
-        # this is the standard one-sided variant detecting an *increase*
-        # in the observable's drift (equivalent to a structural shift
-        # toward higher volatility / higher activity).
-        new_m = max(0.0, state["m"] + (observable - mean) - self._drift_floor)
+        # Page-Hinkley up-test: reference mean excludes the current ``x_t``.
+        new_m = max(0.0, state["m"] + (observable - mu_ref) - self._drift_floor)
         state["m"] = new_m
         score = min(1.0, new_m / self._alarm_threshold)
 
+        samples.append((ts_ns, observable))
+        state["sum"] += observable
+
+        n = len(samples)
         warm = (
             n >= self._warm_samples
             and (samples[-1][0] - samples[0][0]) >= self._window_ns

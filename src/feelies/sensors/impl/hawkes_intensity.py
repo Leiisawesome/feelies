@@ -8,10 +8,10 @@ fingerprint of the ``HAWKES_SELF_EXCITE`` mechanism family
 
 Algorithm (per side, incremental):
 
-    Between trades:    λ(t)   = λ(t_last) · exp(-β · (t - t_last))
-    On a same-side trade at t_i:  λ(t_i) = λ(t_i⁻) + α
-    Between-side trades leave the side's λ unchanged except for the
-    decay above.
+Between trades:    λ(t) = μ + (λ(t_last) - μ) · exp(-β · (t - t_last))
+On a same-side trade at t_i:  λ(t_i) = λ(t_i⁻) + α
+Between-side trades leave the side's λ unchanged except for the decay
+above.
 
 Outputs (length-4 tuple):
 
@@ -63,10 +63,13 @@ class HawkesIntensitySensor:
       used for the per-side trade-count warm-up criterion.
     - ``warm_trades_per_side`` (int, default 20): minimum trades on
       *each* side within ``warm_window_seconds`` before ``warm=True``.
+    - ``baseline_mu`` (float, default ``0.0``): Hawkes background
+      intensity μ (events / second) toward which both sides decay between
+      impulses.  Must be non-negative.
     """
 
     sensor_id: str = "hawkes_intensity"
-    sensor_version: str = "1.0.0"
+    sensor_version: str = "1.1.0"
 
     def __init__(
         self,
@@ -77,11 +80,14 @@ class HawkesIntensitySensor:
         beta: float = 0.05,
         warm_window_seconds: int = 60,
         warm_trades_per_side: int = 20,
+        baseline_mu: float = 0.0,
     ) -> None:
         if alpha <= 0.0:
             raise ValueError(f"alpha must be > 0, got {alpha}")
         if beta <= 0.0:
             raise ValueError(f"beta must be > 0, got {beta}")
+        if baseline_mu < 0.0:
+            raise ValueError(f"baseline_mu must be >= 0, got {baseline_mu}")
         if warm_window_seconds <= 0:
             raise ValueError(
                 f"warm_window_seconds must be > 0, got {warm_window_seconds}"
@@ -99,11 +105,13 @@ class HawkesIntensitySensor:
         self._warm_window_ns = warm_window_seconds * 1_000_000_000
         self._warm_per_side = warm_trades_per_side
         self._branching_ratio = self._alpha / self._beta
+        self._baseline_mu = float(baseline_mu)
 
     def initial_state(self) -> dict[str, Any]:
+        mu0 = self._baseline_mu
         return {
-            "lambda_buy": 0.0,
-            "lambda_sell": 0.0,
+            "lambda_buy": mu0,
+            "lambda_sell": mu0,
             "last_ts_ns": None,
             "last_price": None,
             "last_side": +1,
@@ -118,8 +126,9 @@ class HawkesIntensitySensor:
             return
         dt_s = (ts_ns - last_ts) / _NS_PER_SECOND
         decay = math.exp(-self._beta * dt_s)
-        state["lambda_buy"] *= decay
-        state["lambda_sell"] *= decay
+        mu = self._baseline_mu
+        state["lambda_buy"] = mu + (state["lambda_buy"] - mu) * decay
+        state["lambda_sell"] = mu + (state["lambda_sell"] - mu) * decay
         state["last_ts_ns"] = ts_ns
 
     def update(

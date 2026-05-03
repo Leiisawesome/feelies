@@ -42,8 +42,7 @@ def test_handcomputed_two_returns() -> None:
     """mids: 100.01 → 100.02 → 100.03
 
     log returns: log(100.02/100.01) ≈ 9.99950e-5, log(100.03/100.02) ≈ 9.99850e-5
-    sum_sq ≈ (9.99950e-5)^2 + (9.99850e-5)^2 ≈ 1.99960e-8
-    rv = sqrt(sum_sq) ≈ 1.41407e-4
+    sample variance (unbiased): (sum_sq - (sum)^2/n) / (n-1) with n = 2
     """
     s = RealizedVol30sSensor(window_seconds=30, warm_after=1)
     state = s.initial_state()
@@ -53,7 +52,10 @@ def test_handcomputed_two_returns() -> None:
     assert r is not None
     r1 = math.log(100.02 / 100.01)
     r2 = math.log(100.03 / 100.02)
-    expected = math.sqrt(r1 * r1 + r2 * r2)
+    n = 2
+    mu = (r1 + r2) / float(n)
+    var = ((r1 - mu) ** 2 + (r2 - mu) ** 2) / float(n - 1)
+    expected = math.sqrt(max(0.0, var))
     assert r.value == pytest.approx(expected, rel=1e-12)
 
 
@@ -63,11 +65,11 @@ def test_window_eviction_drops_old_returns() -> None:
     state = s.initial_state()
     s.update(_q(bid="100.00", ask="100.02", ts=0), state, {})
     s.update(_q(bid="101.00", ask="101.02", ts=1_000_000_000), state, {})  # in window
-    # Move forward 5 seconds — the prior return drops out of the 2s window.
+    # Move forward 5 seconds — the prior return drops out of the 2s window;
+    # a single-log-return window yields n=1 → std undefined → emitted 0.0.
     r = s.update(_q(bid="101.50", ask="101.52", ts=6_000_000_000), state, {})
-    expected = abs(math.log(101.51 / 101.01))
     assert r is not None
-    assert r.value == pytest.approx(expected, rel=1e-12)
+    assert r.value == 0.0
 
 
 def test_zero_or_negative_quote_returns_none() -> None:

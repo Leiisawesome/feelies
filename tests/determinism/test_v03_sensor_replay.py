@@ -79,7 +79,7 @@ _TEST_CALENDAR = _build_test_calendar()
 _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     SensorSpec(
         sensor_id="hawkes_intensity",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=HawkesIntensitySensor,
         params={
             "alpha": 0.4,
@@ -98,7 +98,7 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     ),
     SensorSpec(
         sensor_id="snr_drift_diffusion",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=SNRDriftDiffusionSensor,
         params={
             "horizons_seconds": (30, 120),
@@ -109,7 +109,7 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     ),
     SensorSpec(
         sensor_id="structural_break_score",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=StructuralBreakScoreSensor,
         params={
             "window_seconds": 60,
@@ -147,7 +147,7 @@ def test_v03_sensor_reading_stream_matches_locked_baseline() -> None:
     actual_hash, actual_count = _replay()
 
     EXPECTED_V03_READING_HASH = (
-        "f16b189ce987a1300b393d8713f377a7d34133f609e4685914ebe69c3553c3b3"
+        "215108e8380b9afb180750faced53846208133e03a26702031cdc6dd9a50736a"
     )
     EXPECTED_V03_READING_COUNT = 9428
 
