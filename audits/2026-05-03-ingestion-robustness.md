@@ -534,3 +534,372 @@ two wording / framing issues, both incorporated above:
 No MAJOR/MINOR findings were challenged on substance. The verdict block
 was rephrased to emphasize "paths actually exercised" vs unconditional
 live-readiness, matching the reviewer's framing.
+
+---
+
+## Second-pass audit (2026-05-04)
+
+Goal: re-read every file and its dependencies (`Clock`,
+`SequenceGenerator`, `StateMachine`, `EventLog`, the `tests/ingestion/`
+corpus) with fresh eyes and surface residuals the first pass missed.
+Methodology: each first-pass finding was used as a seed and then deliberately
+*not* re-walked, focusing review attention on the un-touched code paths,
+the dependency contracts, and the test inventory.
+
+Confirmed against dependencies:
+
+- `SequenceGenerator.next()` is genuinely thread-safe (`identifiers.py:25–30`,
+  uses `threading.Lock`) — first-pass concern m-INGEST-01 about cross-thread
+  use of `_seq` is therefore a non-issue at the *generator* level. The
+  surrounding mutable state (`_last_seen`, `_health_machines`,
+  `_duplicates_filtered`) is **not** lock-protected, so the residual
+  thread-safety risk lives there.
+- `StateMachine.transition()` (`state_machine.py:125–163`) raises
+  `IllegalTransition` on a forbidden target. The normalizer guards every
+  invocation with `can_transition` or an explicit state check, so this
+  cannot leak — but see R-INGEST-04 for a residual ordering hazard.
+- `SimulatedClock.set_time` raises `ValueError` on backward jumps
+  (`clock.py:46–47`). `ReplayFeed` already guards with `if ts >
+  self._clock.now_ns()`, so the raise path is unreachable from inside
+  ingestion. Confirms first-pass m-INGEST-07 is observability-only.
+
+Residuals are numbered `R-INGEST-NN` to keep them distinct from the first
+pass.
+
+### New BLOCKER
+
+#### R-INGEST-01 — `MassiveLiveFeed` silently swallows fatal feed termination
+**File:** `massive_ws.py:128–139` and `141–171`.
+
+```python
+def _run_loop(self) -> None:
+    self._loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(self._loop)
+    try:
+        self._loop.run_until_complete(self._connect_with_retry())
+    except Exception:
+        logger.exception("massive_ws: event loop terminated unexpectedly")
+    finally:
+        self._loop.close()
+        self._loop = None
+        self._queue.put(_SENTINEL)
+```
+
+Three independent failure modes terminate the feed *without notifying the
+caller*:
+
+1. `import websockets` inside `_connect_with_retry` raises `ImportError` if
+   the optional extra is not installed. The exception is caught by the broad
+   `except Exception` in `_run_loop`, logged, and the sentinel is enqueued —
+   `start()` returned cleanly seconds earlier, so the caller believes the
+   feed is up. Consumers see an empty `events()` iterator and silently exit
+   their loops. (`massive_ws.py:144–149`.)
+2. Any `Exception` raised by `_authenticate` / `_subscribe` / `_consume` that
+   is *not* the expected `ConnectionError` (e.g., a `RuntimeError` from
+   `asyncio`, an `OSError` from a lower-level socket bug, an unexpected
+   `KeyError` in a server frame) bypasses the reconnect-with-backoff loop —
+   that loop only catches *generic* `Exception` and only re-runs while
+   `self._stop_event.is_set()` is False. Same outcome: log + sentinel.
+   (`massive_ws.py:160–171`.)
+3. The `try/except` block in `_connect_with_retry` is itself inside
+   `_run_loop`'s `try/except`. If `_connect_with_retry` exits cleanly because
+   stop was requested, that's correct. But if it returns due to
+   `asyncio.CancelledError` originating from elsewhere, the outer block
+   doesn't distinguish.
+
+**Impact:** for a *live trading* deployment this is worse than B-INGEST-02:
+when the feed dies for *any* reason, the orchestrator keeps running with
+zero new ticks. The kill-switch / data-integrity escalation path described
+in `data_integrity.py:1–6` ("if CORRUPTED during LIVE_TRADING_MODE, the
+global macro state transitions to DEGRADED — execution stops") only fires
+on parse-driven `_mark_corrupted`. Silent thread death does **not** mark any
+symbol corrupted, so DEGRADED is never reached.
+
+**Fix sketch:** accept a `on_terminated: Callable[[BaseException | None],
+None]` callback in `__init__` and invoke it from `_run_loop`'s `finally`.
+For the `import websockets` case, perform the import in `__init__` so
+construction fails fast. Promote one-symbol corruption (or even a global
+corruption marker) when the feed thread exits abnormally.
+
+### New MAJORs
+
+#### R-INGEST-02 — `_download_raw` does not catch mid-iteration errors; partial batch is lost
+**File:** `massive_ingestor.py:285–324`.
+
+The `try/except Exception` only wraps the *first* `list_fn(...)` call, which
+returns a paginator. The subsequent `for obj in records_iter:` is
+unprotected. If the underlying HTTP iterator raises on page 73 of 100
+(network blip, 5xx after retries exhausted, JSON decode of a corrupted
+response), the exception propagates out of `_download_raw`, then out of
+`future.result(...)` in `ingest_symbol_parallel`, then out of `ingest()` —
+**and the partial `raw_dicts` accumulated so far are discarded**. Combined
+with B-INGEST-01 (no checkpoint), the next retry re-downloads from page 1.
+
+**Fix sketch:** wrap the iteration in a per-page try/except, log the
+failing page, return what you have (with `pages` reflecting actual
+completion), and let the caller decide whether partial-OK is acceptable.
+Pair with checkpointing so the next attempt can pick up where pagination
+broke.
+
+#### R-INGEST-03 — `received_ns` is a required Protocol parameter that nobody uses
+**File:** `normalizer.py:41–59`, `massive_normalizer.py:78–96`,
+`massive_ingestor.py:256`, `massive_ws.py:254–259`.
+
+`MarketDataNormalizer.on_message` requires `received_ns`, the docstring says
+it's used for latency tracking. `MassiveNormalizer.on_message` accepts the
+parameter but **never reads it** — it's not stored on the event, not logged,
+not fed into health metrics, not added to dedup state. `received_ns` is
+pure dead weight in the only implementation.
+
+This matters because the Protocol contract is the boundary advertised in
+the module docstring (`normalizer.py:1–15`). Downstream code that *does*
+care about ingestion latency (e.g., a future `tick_to_decision_latency_ns`
+budget enforcer) cannot extract it from the canonical events because the
+event schemas (`events.py:NBBOQuote`, `Trade`) have no `received_ns` field.
+The audit trail is therefore missing the moment-of-ingest timestamp on
+every tick.
+
+**Fix sketch:** add an optional `received_ns: int | None = None` field to
+`Event` (or to `NBBOQuote`/`Trade`), populate it in the normalizer, and
+update the protocol docstring. Or — if the parameter is genuinely
+unnecessary — remove it from the Protocol so the contract matches reality.
+
+#### R-INGEST-04 — `_check_gap` reads pre-update `_last_seen` but `_update_last_seen` rewrites it before the SM transition's callback fires
+**File:** `massive_normalizer.py:138–141`, `186–189`, `373–407`.
+
+Sequence in `_ws_quote`:
+
+```python
+if self._is_duplicate(...): return None
+self._check_gap(symbol, feed_type, seq_num)              # may transition SM
+self._update_last_seen(symbol, feed_type, seq_num, ts)
+```
+
+`_check_gap` (correctly) reads `_last_seen` *before* updating. But the SM
+transition fires its registered callback synchronously inside
+`_check_gap` — and that callback (when wired, see R-INGEST-05) sees a
+normalizer whose `_last_seen` for `(symbol, feed_type)` still points at the
+*previous* sequence, not the current one. A naive callback that does
+`normalizer._last_seen[(sym, ft)]` to capture "current seq" would log the
+*prior* seq.
+
+**Impact:** subtle, only matters once the `transition_callback` is actually
+used. Worth flagging because the wiring is already in place
+(`massive_normalizer.py:69, 350–351`).
+
+**Fix sketch:** either move `_update_last_seen` *before* `_check_gap` (and
+have `_check_gap` accept the prior seq as an argument), or document the
+ordering invariant in `MassiveNormalizer`'s class docstring.
+
+#### R-INGEST-05 — `transition_callback` constructor parameter is dead in production
+**File:** `massive_normalizer.py:62–70, 349–352`. Verified across the repo:
+
+```
+grep -rn "MassiveNormalizer(" src tests scripts
+```
+
+shows three callsites: `scripts/run_backtest.py:749`,
+`tests/ingestion/test_massive_functional.py:161,192`. None pass
+`transition_callback`. The optional surface for routing
+`GAP_DETECTED → HEALTHY` and `* → CORRUPTED` transitions to the metrics
+pipeline / alert bus is therefore inert. Health changes are observable
+*only* via `health(symbol)` polling and log scraping.
+
+This is the inverse of B-INGEST-01: the API is implemented but no caller
+uses it. For live trading, it means the operator dashboard cannot react in
+real time to a symbol going CORRUPTED — they discover it on the next
+polling tick.
+
+**Fix sketch:** wire the callback in the orchestrator's bootstrap, route
+the `TransitionRecord` to the metrics bus, and add an integration test that
+asserts the callback fires on a forced corruption.
+
+#### R-INGEST-06 — `MassiveLiveFeed._subscribe` only validates the first response, but Massive sends one status frame per channel
+**File:** `massive_ws.py:190–208`.
+
+For N symbols, `_subscribe` sends `2*N` channels in one comma-joined
+message. The server replies with up to `2*N` `{"ev":"status","status":"success"}`
+frames (Polygon's behavior is one-per-channel). `_subscribe` reads exactly
+one frame and validates it; the remaining `2*N - 1` frames are then
+delivered to `_consume` and routed through `MassiveNormalizer.on_message`,
+which does not recognize `ev == "status"` and silently drops them
+(`massive_normalizer.py:121–128`).
+
+Two consequences:
+
+1. A *partial* failure (e.g., `Q.AAPL` succeeds, `T.AAPL` returns
+   `auth_required`) is invisible — the first `success` short-circuits
+   validation.
+2. Every subscription leaks `2*N - 1` parser warnings? No — actually the
+   normalizer doesn't warn on unknown `ev`, it silently drops, so this is
+   only a missed-error class, not log spam. Still: the "subscription
+   succeeded" guarantee is much weaker than the docstring implies.
+
+**Fix sketch:** loop `recv()` until you've seen exactly one status per
+channel or exhausted a timeout; require *all* of them to match
+`expected_status`.
+
+#### R-INGEST-07 — `ingest_symbol_parallel` has no streaming path; whole-symbol-day held in memory
+**File:** `massive_ingestor.py:195–267`.
+
+`raw_quotes` and `raw_trades` are full dict lists, then `merged = raw_quotes
++ raw_trades` doubles the footprint, then `all_events` accumulates the
+full list of canonical events, then `append_batch(all_events)` is called
+once at the end. For a liquid name on a full session, quotes + trades can
+be **tens of millions of dicts**, each ~10 keys. Easily 5–20 GB of Python
+heap before any persistence, with all four lists alive simultaneously.
+
+The class is called "batch ETL" so memory is "expected to be large", but
+the path has no graceful degradation — there is no chunked merge-sort, no
+on-disk sort spill, no incremental `append_batch` per K events. The
+`_CHUNK_SIZE = 5_000` constant at the top of the module is used only to
+shape the page-callback cadence, not to bound memory.
+
+**Impact:** running this against a 30-symbol universe over a month-long
+window will OOM on a 32 GB box. There is no early warning — `_download_raw`
+just keeps appending until the OS kills the process.
+
+**Fix sketch:** either (a) cap to a per-day window and externalize day-loop
+to the caller, (b) stream merge-sort with a heap that pulls from both
+paginators directly, or (c) `append_batch` per K events and let the
+EventLog handle ordering at read time.
+
+### New MINORs
+
+#### r-INGEST-01 — Per-page timeout on the REST iterator is missing
+**File:** `massive_ingestor.py:288–295`.
+
+`list_fn(symbol, ..., limit=50000)` does not pass an HTTP timeout. The
+upstream `massive` SDK defaults vary by version. A stalled TCP connection
+on page 50 will hang the worker indefinitely; the `_DOWNLOAD_TIMEOUT_S`
+on `future.result()` doesn't cancel the worker thread (M-INGEST-03).
+
+#### r-INGEST-02 — `_validate_status_response` accepts the expected status anywhere in the array
+**File:** `massive_ws.py:230–238`.
+
+(First pass m-INGEST-04 noted this in summary form; flagging again as a
+*hard* finding because R-INGEST-06 multiplies the impact: with multiple
+status frames in one reply, a single `success` masks a colocated
+`auth_required` or `error` frame.)
+
+#### r-INGEST-03 — No date-format / range validation in `ingest()`
+**File:** `massive_ingestor.py:122–145`.
+
+`start_date` and `end_date` are interpolated directly into
+`f"{start_date}T00:00:00Z"`. A typo (`"2025-13-01"`, `"2025/05/01"`,
+empty string) becomes a malformed REST URL and surfaces as an opaque API
+error inside `_download_raw`. Add an `fromisoformat` round-trip and assert
+`start <= end`.
+
+#### r-INGEST-04 — Symbol-key case sensitivity is not enforced
+**File:** `massive_normalizer.py` throughout (`134, 182, 249, 302`).
+
+`msg["sym"]` and `rec["ticker"]` are used verbatim as dict keys for
+`_last_seen` and `_health_machines`. Polygon symbols are uppercase by
+convention, but the normalizer accepts whatever the wire produces. A
+mixed-case stream (`"aapl"` vs `"AAPL"`) would create two independent
+state machines and dedup tables. Cheap fix: `.upper()` at the boundary.
+
+#### r-INGEST-05 — `make_correlation_id` uses `:` as separator without quoting
+**File:** `identifiers.py:8–15` (used by all four `*_quote` / `*_trade`
+constructors in `massive_normalizer.py`).
+
+If a symbol ever contains `:` (CME futures, OTC tickers like `BRK:A`), the
+correlation ID becomes ambiguous to parse. No current symbol triggers
+this; document the precondition or switch to a length-prefixed format.
+
+#### r-INGEST-06 — `_rest_trade` hard-codes `trf_timestamp_ns=None`
+**File:** `massive_normalizer.py:335`.
+
+REST trade records do carry `trf_timestamp` (`/v3/trades/{ticker}`); the
+quote variant reads it (`273–274`). The trade variant ignores the field
+entirely. Likely an oversight rather than a deliberate omission — the
+event schema has the field (`events.py:Trade.trf_timestamp_ns`).
+
+#### r-INGEST-07 — `_ensure_health_machine(symbol)` is called twice per accepted message
+**File:** `massive_normalizer.py:383, 407`.
+
+`_check_gap` calls it (when sequence machinery fires) and
+`_update_last_seen` calls it unconditionally. For a symbol that already
+has a machine, it's a single dict lookup either way — micro. But it does
+mean the SM creation path runs twice on the very first message for a
+symbol; not a correctness issue, but a small defensive simplification.
+
+#### r-INGEST-08 — `MassiveLiveFeed` has no upper bound on subscription size
+**File:** `massive_ws.py:190–208`.
+
+For a 1,000-symbol universe, `subscribe` sends a 2,000-channel
+comma-joined string in one frame. WebSocket frame size is typically
+capped (Polygon historical limit ~4 KB per subscribe; modern Massive
+unclear). For large universes, batch the subscribe into multiple frames.
+
+#### r-INGEST-09 — No `ping_interval` / `ping_timeout` on the WS connection
+**File:** `massive_ws.py:155`.
+
+`websockets.connect(self._ws_url)` uses library defaults (20s ping,
+20s timeout in modern `websockets`). Explicit configuration would make the
+liveness contract part of the source of truth and immune to library
+version drift.
+
+#### r-INGEST-10 — `queue.Full` drops in `_consume` are not counted
+**File:** `massive_ws.py:262–267`.
+
+Drops are logged at `WARNING` per event, but no counter is exposed on
+`MassiveLiveFeed`. Compare to `duplicates_filtered` on the normalizer.
+During an overload, log volume becomes a denial-of-service vector and the
+operator can't quantify what's actually being dropped.
+
+### Test-coverage gaps reconfirmed
+
+`tests/ingestion/` was inventoried against the (now nine) BLOCKER /
+MAJOR findings. Concrete gaps:
+
+| Finding | Test coverage |
+| --- | --- |
+| B-INGEST-01 (checkpoint) | `InMemoryCheckpoint` is *imported* in `test_massive_ingestor.py:13` but never instantiated or asserted on. **Zero behavioural coverage.** |
+| B-INGEST-02 (handshake)  | `TestMassiveLiveFeedValidation` (`test_massive_normalizer.py:328–356`) tests `_validate_status_response` in isolation, never tests the recv-order in `_authenticate`. |
+| B-INGEST-03 (RECOVERING) | `test_data_integrity.py:17` only asserts the enum value is distinct. No test exercises a CORRUPTED → RECOVERING → HEALTHY transition. |
+| M-INGEST-01 (out-of-order WS seq) | `test_massive_normalizer.py` covers gap detection and recovery but **no test feeds a backward seq.** |
+| M-INGEST-02 (Decimal precision) | All test prices are well-behaved (`150.0`, `400.05`); no test exercises a price that would round through float (`0.1+0.2`, `42.123456789`). |
+| M-INGEST-03 (executor timeout cleanup) | None. |
+| M-INGEST-04 (cross-feed sort) | `test_parallel_ingest_integration.py` exists but does not assert on sort order across tied `sip_timestamp`. |
+| M-INGEST-05 / M-INGEST-06 (live shutdown) | None — only validation helpers tested in isolation. |
+| R-INGEST-01 (silent feed death) | None. |
+| R-INGEST-02 (partial download) | None. |
+
+### Updated action queue
+
+Insertions (priority within their tier):
+
+- **R-INGEST-01** added at BLOCKER tier 4 (after B-INGEST-01..03), before
+  the existing M-INGEST-05 — silent feed death is a strict superset of
+  "shutdown is messy".
+- **R-INGEST-02** added immediately after M-INGEST-03 — partial-download
+  loss should be fixed *with* the executor-timeout cleanup.
+- **R-INGEST-07** (memory bound) added at MAJOR tier; depends on the
+  EventLog supporting incremental append (already true) and on whoever
+  consumes the result tolerating eventual sort.
+
+### Updated verdict
+
+The first pass said "PASS for paths actually exercised today; FAIL for
+unconditional live readiness." The second pass does **not** change the
+backtest verdict — the new MAJORs around live shutdown, silent feed
+termination, and the unwired `transition_callback` are all on the live
+path. R-INGEST-07 (memory bound) is the one new caveat for the backtest
+path: large universes / long windows will OOM with no early warning, so
+the conditional PASS is now narrowed to "single-symbol, single-day or
+short-window backfills" until streaming or chunked persistence lands.
+
+No first-pass finding was overturned. Three first-pass findings were
+strengthened by new evidence:
+
+- M-INGEST-03 (executor timeout) ↔ R-INGEST-02 (partial download loss)
+  compound: timeout doesn't cancel the worker, *and* mid-stream errors
+  discard partial state.
+- M-INGEST-05 (shutdown can't exit on idle socket) ↔ R-INGEST-01 (silent
+  thread death) compound: even when shutdown *is* triggered cleanly, the
+  caller has no signal that the feed is dead vs. just quiet.
+- B-INGEST-02 (handshake) ↔ R-INGEST-06 (subscribe validates only first
+  status) compound: both stem from the same "single recv() then assume
+  the rest of the stream is data" pattern.
