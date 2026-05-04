@@ -518,6 +518,14 @@ def sharpe_ratio(returns: Sequence[float]) -> float:
     standard deviation is exactly zero (degenerate cases that should
     contribute zero "edge" in the bootstrap distribution).
 
+    The mean and standard deviation are evaluated on the series
+    after dividing by ``max_i |r_i|`` when that scale is non-zero.
+    This is algebraically identical to ``mean/sd`` but avoids
+    spurious ``std == 0`` / ``mean == 0`` artifacts from IEEE-754
+    underflow when returns span extremely small magnitudes yet are
+    not strictly constant — preserving positive-scale invariance for
+    :func:`statistics.fmean` / :func:`statistics.pstdev`.
+
     No annualisation is applied: the returned number has the units
     of the *input series* (i.e. per-bar).  The caller is expected
     to know whether the input is per-bar / per-day / per-period and
@@ -529,8 +537,16 @@ def sharpe_ratio(returns: Sequence[float]) -> float:
     """
     if len(returns) < 2:
         return 0.0
-    mean = statistics.fmean(returns)
-    sd = statistics.pstdev(returns)
+    scale = 0.0
+    for x in returns:
+        ax = abs(x)
+        if ax > scale:
+            scale = ax
+    if scale == 0.0:
+        return 0.0
+    scaled = [x / scale for x in returns]
+    mean = statistics.fmean(scaled)
+    sd = statistics.pstdev(scaled)
     if sd == 0.0:
         return 0.0
     return mean / sd

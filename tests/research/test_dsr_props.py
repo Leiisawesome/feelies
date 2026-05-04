@@ -144,7 +144,9 @@ def test_psr_monotone_in_observed_sharpe(
     psr_low = probabilistic_sharpe_ratio(**kwargs_low)
     psr_high = probabilistic_sharpe_ratio(**kwargs_high)
     # Allow tiny floating-point regressions when both saturate.
-    assert psr_high >= psr_low - 1e-12
+    # Tolerance is 1e-9: the CDF loses ~1e-10 precision near saturation
+    # (PSR ≈ 1), which is ~70× larger than the old 1e-12 guard.
+    assert psr_high >= psr_low - 1e-9
 
 
 @SETTINGS

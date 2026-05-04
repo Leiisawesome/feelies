@@ -228,13 +228,13 @@ class TestBuildCPCVEvidenceSplitPerturbedReturns:
         assert ev.embargo_bars == 2
         assert ev.fold_sharpes == (
             1.6666786234834272,
-            1.6971325386809162,
-            1.711318347117981,
+            1.697132538680916,
+            1.7113183471179811,
             1.7206809607751885,
-            1.7308884836955287,
+            1.730888483695529,
         )
         assert math.isclose(ev.mean_sharpe, 1.705339790750608, rel_tol=1e-12)
-        assert ev.median_sharpe == 1.711318347117981
+        assert ev.median_sharpe == 1.7113183471179811
         assert math.isclose(ev.mean_pnl, 0.456, abs_tol=1e-12)
         assert ev.p_value == 0.004975124378109453
         assert (

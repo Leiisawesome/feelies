@@ -57,15 +57,20 @@ class InMemoryMetricCollector:
     computed incrementally for quick access during and after a run.
     """
 
-    __slots__ = ("_events", "_summaries", "_flushed")
+    __slots__ = ("_events", "_summaries", "_flushed", "_store_raw_events")
 
     def __init__(self) -> None:
         self._events: list[MetricEvent] = []
         self._summaries: dict[str, MetricSummary] = defaultdict(MetricSummary)
         self._flushed: bool = False
+        # Set to False to skip raw-event storage and avoid large list
+        # reallocations in long backtest runs (~11M entries → 91 MB buffer).
+        # Summaries are always updated regardless of this flag.
+        self._store_raw_events: bool = True
 
     def record(self, metric: MetricEvent) -> None:
-        self._events.append(metric)
+        if self._store_raw_events:
+            self._events.append(metric)
         key = f"{metric.layer}.{metric.name}"
         self._summaries[key].record(metric.value)
 

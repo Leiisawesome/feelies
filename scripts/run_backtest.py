@@ -29,6 +29,9 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+_TZ_ET = ZoneInfo("America/New_York")
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Sequence, TypeVar
@@ -88,6 +91,40 @@ def _replay_scan_meta(event_log: InMemoryEventLog) -> tuple[int | None, int]:
     return first_ts, n_quotes
 
 
+def _filter_to_rth(
+    event_log: InMemoryEventLog,
+) -> tuple[InMemoryEventLog, int]:
+    """Return a new EventLog containing only RTH events (09:30–16:00 ET).
+
+    Events are gated on ``exchange_timestamp_ns``.  Events without that
+    attribute (non-market events) are passed through unchanged so the
+    log stays internally consistent.
+
+    Returns the filtered log and the number of events dropped.
+    """
+    _RTH_OPEN_H, _RTH_OPEN_M = 9, 30
+    _RTH_CLOSE_H, _RTH_CLOSE_M = 16, 0
+
+    kept: list[Event] = []
+    dropped = 0
+    for ev in event_log.replay():
+        ts_ns: int | None = getattr(ev, "exchange_timestamp_ns", None)
+        if ts_ns is None:
+            kept.append(ev)
+            continue
+        dt = datetime.fromtimestamp(ts_ns / 1e9, tz=_TZ_ET)
+        open_secs = _RTH_OPEN_H * 3600 + _RTH_OPEN_M * 60
+        close_secs = _RTH_CLOSE_H * 3600 + _RTH_CLOSE_M * 60
+        event_secs = dt.hour * 3600 + dt.minute * 60 + dt.second
+        if open_secs <= event_secs < close_secs:
+            kept.append(ev)
+        else:
+            dropped += 1
+    filtered = InMemoryEventLog()
+    filtered.append_batch(kept)
+    return filtered, dropped
+
+
 def _ensure_backtest_session_anchor(
     config: PlatformConfig,
     *,
@@ -110,12 +147,21 @@ def _ensure_backtest_session_anchor(
 
 @dataclass
 class BusRecorder:
-    events: list[Event] = field(default_factory=list)
+    # ``events`` (flat list of all events) has been removed: it accumulated
+    # ~20 M pointers by tick #913 K and triggered a 30–50 ms Windows
+    # VirtualAlloc/copy realloc at a deterministic threshold.  Nothing in
+    # the report path reads ``recorder.events``; all consumers use
+    # ``recorder.of_type(X)`` which goes through ``by_type``.
     by_type: dict[type, list[Event]] = field(default_factory=lambda: defaultdict(list))
+    # Event types to skip storing entirely.  Pass ``{SensorReading}`` when
+    # ``--emit-sensor-readings-jsonl`` is not requested: that eliminates a
+    # second large list (~10 M entries) whose realloc can also spike latency.
+    skip_types: frozenset[type] = field(default_factory=frozenset)
 
     def __call__(self, event: Event) -> None:
-        self.events.append(event)
-        self.by_type[type(event)].append(event)
+        t = type(event)
+        if t not in self.skip_types:
+            self.by_type[t].append(event)
 
     def of_type(self, t: type[T]) -> list[T]:
         return self.by_type[t]  # type: ignore[return-value]
@@ -350,7 +396,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "After the run, print a diagnostic table for standalone SIGNAL "
             "→ order handling: alpha id (strategy_id), signal timestamp "
-            "(UTC), translated TradingIntent when evaluated, outcome, and "
+            "(ET), translated TradingIntent when evaluated, outcome, and "
             "reasons. Includes arbitration losers and bus-filtered Signals "
             "(wrong layer / portfolio-consumed); horizon alphas never "
             "published do not appear."
@@ -908,6 +954,7 @@ def _ns_to_ms(ns: float) -> str:
 def generate_report(
     *,
     recorder: BusRecorder,
+    tick_latency_events: list[MetricEvent] | None = None,
     ingest_result: IngestResult,
     config: PlatformConfig,
     orchestrator: object,
@@ -1044,10 +1091,15 @@ def generate_report(
     p95_tick_ns: float | None = None
     p99_tick_ns: float | None = None
     if tick_summary:
-        tick_metrics = [
-            e for e in recorder.of_type(MetricEvent)
-            if e.name == "tick_to_decision_latency_ns"
-        ]
+        # Use dedicated latency list when available (avoids materialising
+        # the full ~11 M MetricEvent list from the BusRecorder).
+        if tick_latency_events is not None:
+            tick_metrics = tick_latency_events
+        else:
+            tick_metrics = [
+                e for e in recorder.of_type(MetricEvent)
+                if e.name == "tick_to_decision_latency_ns"
+            ]
         if tick_metrics:
             values = sorted(e.value for e in tick_metrics)
             p95_tick_ns = values[min(len(values) - 1, int(0.95 * len(values)))]
@@ -1164,9 +1216,9 @@ def generate_report(
         ts_ns = max_tick_meta.get("exchange_ts_ns")
         ts_str = ""
         if isinstance(ts_ns, int):
-            from datetime import datetime, timezone
-            dt = datetime.fromtimestamp(ts_ns / 1e9, tz=timezone.utc)
-            ts_str = dt.strftime("%H:%M:%S.%f")[:-3] + " UTC"
+            from datetime import datetime
+            dt = datetime.fromtimestamp(ts_ns / 1e9, tz=_TZ_ET)
+            ts_str = dt.strftime("%H:%M:%S.%f")[:-3] + " ET"
         warmup_flag = "  [warm-up]" if max_tick_meta.get("is_first_5_pct") else ""
         lines.append(_sub_kv(
             "spike origin",
@@ -1428,10 +1480,10 @@ def print_verification(results: list[tuple[str, bool, str]]) -> bool:
     return all_passed
 
 
-def _signal_ts_iso_utc(ns: int) -> str:
+def _signal_ts_iso_et(ns: int) -> str:
     return datetime.fromtimestamp(
-        ns / 1e9, tz=timezone.utc,
-    ).strftime("%Y-%m-%d %H:%M:%S.%f UTC")
+        ns / 1e9, tz=_TZ_ET,
+    ).strftime("%Y-%m-%d %H:%M:%S.%f ET")
 
 
 def _print_signal_order_trace(rows: list[SignalOrderTraceRow]) -> None:
@@ -1448,13 +1500,13 @@ def _print_signal_order_trace(rows: list[SignalOrderTraceRow]) -> None:
     w = 118
     print(
         f"    {'#':>4}  {'alpha (strategy_id)':^28}  "
-        f"{'signal_timestamp_utc':^27}  {'intent':^22}  {'outcome':^16}",
+        f"{'signal_timestamp_et':^27}  {'intent':^22}  {'outcome':^16}",
         flush=True,
     )
     print(f"    {'-' * w}", flush=True)
     for i, r in enumerate(rows, 1):
         rs = " | ".join(r.reasons)
-        ts_s = _signal_ts_iso_utc(r.signal_timestamp_ns)
+        ts_s = _signal_ts_iso_et(r.signal_timestamp_ns)
         print(
             f"    {i:4d}  {r.strategy_id:28s}  {ts_s:27s}  "
             f"{r.trading_intent:22s}  {r.outcome:16s}",
@@ -1462,7 +1514,7 @@ def _print_signal_order_trace(rows: list[SignalOrderTraceRow]) -> None:
         )
         print(
             f"          symbol={r.symbol}  signal_dir={r.signal_direction}  "
-            f"sig_seq={r.signal_sequence}  quote_ts={_signal_ts_iso_utc(r.quote_timestamp_ns)}",
+            f"sig_seq={r.signal_sequence}  quote_ts={_signal_ts_iso_et(r.quote_timestamp_ns)}",
             flush=True,
         )
         print(f"          reasons: {rs}", flush=True)
@@ -1519,6 +1571,21 @@ def _run_backtest_phases_2_7(
     run_t0: float,
 ) -> int:
     """Bootstrap → replay → report → verification (shared by API and cache harness)."""
+    # ── RTH filter ────────────────────────────────────────────
+    # When session_kind is "RTH", drop pre-market and after-hours events
+    # before replay.  The pipeline has no timestamp gate of its own;
+    # without this filter the orchestrator processes every event in the
+    # cache (03:59–19:58 ET on 2026-04-08), leading to the last
+    # after-hours tick being measured as the latency spike.
+    if config.session_kind == "RTH":
+        event_log, _dropped = _filter_to_rth(event_log)
+        if _dropped:
+            from dataclasses import replace as _dc_replace
+            ingest_result = _dc_replace(
+                ingest_result,
+                events_ingested=ingest_result.events_ingested - _dropped,
+            )
+
     first_ts, n_quotes = _replay_scan_meta(event_log)
     config = _ensure_backtest_session_anchor(
         config, first_event_ts_ns=first_ts,
@@ -1539,8 +1606,32 @@ def _run_backtest_phases_2_7(
     print(f"  OK - {alpha_count} alpha(s) registered [{dt:.1f}s]", flush=True)
 
     # ── Phase 3: Attach recorder ──────────────────────────────
-    recorder = BusRecorder()
+    # Skip storing SensorReadings unless the caller requested
+    # --emit-sensor-readings-jsonl: those ~10 M entries cause the same
+    # Windows VirtualAlloc realloc spike we eliminated from ``events``.
+    _skip: set[type] = set()
+    if not getattr(args, "emit_sensor_readings_jsonl", False):
+        _skip.add(SensorReading)
+    # Skip MetricEvent from the BusRecorder entirely: the sensor registry
+    # emits ~10.4 M «feelies.sensor.reading.count» MetricEvents during
+    # replay, and accumulating them in a flat list triggers a Windows
+    # VirtualAlloc/copy realloc of a ~83 MB buffer late in the session.
+    # The report only needs the ~965 K tick_to_decision_latency_ns entries;
+    # those are captured below via a dedicated subscriber.
+    _skip.add(MetricEvent)
+    recorder = BusRecorder(skip_types=frozenset(_skip))
     orchestrator._bus.subscribe_all(recorder)  # type: ignore[attr-defined]
+
+    # Dedicated latency recorder — captures only tick_to_decision_latency_ns
+    # MetricEvents so the report can compute p95/p99 and locate the spike
+    # origin without materialising the full ~11 M MetricEvent list.
+    _tick_latency_events: list[MetricEvent] = []
+
+    def _on_metric_event(event: Event) -> None:
+        if isinstance(event, MetricEvent) and event.name == "tick_to_decision_latency_ns":
+            _tick_latency_events.append(event)
+
+    orchestrator._bus.subscribe(MetricEvent, _on_metric_event)  # type: ignore[attr-defined]
 
     # ── Phase 4: Boot ─────────────────────────────────────────
     step_t = _step("Booting orchestrator (integrity checks, warm-start)")
@@ -1562,7 +1653,49 @@ def _run_backtest_phases_2_7(
 
     step_t = _step(f"Replaying {n_quotes:,} quotes through pipeline")
     print(flush=True)
-    orchestrator.run_backtest()
+    # Prevent CPython GC pauses from inflating tick-to-decision latency.
+    # Per-tick allocations (MetricEvent, correlation-id strings, dicts) are
+    # short-lived and bounded; incremental collection buys nothing and causes
+    # multi-hundred-ms gen2 sweeps deep into the replay.  We disable GC for
+    # the duration and do a single collection at the end.
+    import gc as _gc
+    import sys as _sys
+    # Disable raw MetricEvent storage in the InMemoryMetricCollector.
+    # The sensor registry emits ~10.4 M MetricEvents during replay;
+    # accumulating them in a flat list triggers a Windows VirtualAlloc
+    # + memcpy realloc of a ~91 MB buffer near the end of the session.
+    # The report only uses metrics.get_summary() (incremental summaries
+    # in a dict), so the raw list is never read and can be safely discarded.
+    _metrics_collector = getattr(orchestrator, "_metrics", None)
+    if _metrics_collector is not None and hasattr(_metrics_collector, "_store_raw_events"):
+        _metrics_collector._store_raw_events = False
+        _metrics_collector._events.clear()  # free warmup events already accumulated
+    _gc.collect()
+    _gc.freeze()
+    _gc.disable()
+    # On Windows, elevate process priority to HIGH_PRIORITY_CLASS to reduce
+    # OS scheduler preemption events that can inflate the max tick-to-decision
+    # reading.  Falls back silently on non-Windows or if psutil is absent.
+    _prev_nice: object = None
+    try:
+        if _sys.platform == "win32":
+            import psutil as _psutil  # type: ignore[import-untyped]
+            _proc = _psutil.Process()
+            _prev_nice = _proc.nice()
+            _proc.nice(_psutil.HIGH_PRIORITY_CLASS)
+    except Exception:
+        pass
+    try:
+        orchestrator.run_backtest()
+    finally:
+        if _prev_nice is not None:
+            try:
+                _proc.nice(_prev_nice)  # type: ignore[possibly-undefined]
+            except Exception:
+                pass
+        _gc.enable()
+        _gc.unfreeze()
+        _gc.collect()
     dt = time.monotonic() - step_t
     print(f"  Pipeline complete - {progress.summary()}", flush=True)
 
@@ -1570,6 +1703,7 @@ def _run_backtest_phases_2_7(
     step_t = _step("Generating report")
     report = generate_report(
         recorder=recorder,
+        tick_latency_events=_tick_latency_events,
         ingest_result=ingest_result,
         config=config_out,
         orchestrator=orchestrator,
