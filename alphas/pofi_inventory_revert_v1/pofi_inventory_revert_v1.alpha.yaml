@@ -72,6 +72,15 @@ parameters:
     min: 5.0
     max: 25.0
     description: Hard cap on the reported ``edge_estimate_bps``.
+  cost_floor_bps:
+    type: float
+    default: 5.5
+    min: 0.0
+    max: 30.0
+    description: |
+      One-way cost floor (bps): edge_bps must strictly exceed this to
+      generate a signal. Derived from cost_arithmetic (one-way convention):
+      half_spread_bps + impact_bps + fee_bps = 2.5 + 2.0 + 1.0 = 5.5.
 
 # ── Horizon (Layer-2 boundary) ────────────────────────────
 horizon_seconds: 30
@@ -132,6 +141,8 @@ signal: |
       direction = LONG if asym_z > 0.0 else SHORT
       excess = abs(asym_z) - thr
       edge_bps = min(excess * params["edge_per_z_bps"], params["edge_cap_bps"])
+      if edge_bps <= params["cost_floor_bps"]:
+          return None
 
       return Signal(
           timestamp_ns=snapshot.timestamp_ns,

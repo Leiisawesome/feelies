@@ -15,19 +15,12 @@ symbols:
 alpha_spec_dir: null
 
 alpha_specs:
-  - alphas/pofi_benign_midcap_v1/pofi_benign_midcap_v1.alpha.yaml
-  - alphas/pofi_hawkes_burst_v1/pofi_hawkes_burst_v1.alpha.yaml
   - alphas/pofi_inventory_revert_v1/pofi_inventory_revert_v1.alpha.yaml
-  - alphas/pofi_kyle_drift_v1/pofi_kyle_drift_v1.alpha.yaml
-  - alphas/pofi_moc_imbalance_v1/pofi_moc_imbalance_v1.alpha.yaml
 
 parameter_overrides: {}
 
-# Default true in code: schema-1.1 SIGNAL/PORTFOLIO need trend_mechanism (G16).
-# false here only because pofi_benign_midcap_v1 is the v0.2 parity anchor without
-# that block. Remove this (or drop benign) for strict bundles.
-# Do not ship false to PAPER/LIVE with mixed alphas — it disables G16 for the whole bundle.
-enforce_trend_mechanism: false
+# schema-1.1 alpha; trend_mechanism block present.
+enforce_trend_mechanism: true
 
 regime_engine: hmm_3state_fractional
 
@@ -101,29 +94,8 @@ horizons_seconds:
 # For scheduled_flow_window sensor (e.g. pofi_moc_imbalance_v1); bootstrap injects calendar.
 event_calendar_path: storage/reference/event_calendar/2026-01-15.yaml
 
-# Sensors for alphas 1–5 (union of their depends_on_sensors).
+# Sensors for pofi_inventory_revert_v1 (depends_on_sensors).
 sensor_specs:
-
-  - sensor_id: ofi_ewma
-    sensor_version: "1.0.0"
-    cls: feelies.sensors.impl.ofi_ewma.OFIEwmaSensor
-    params:
-      alpha: 0.1
-      warm_after: 50
-    subscribes_to: [NBBOQuote]
-    input_sensor_ids: []
-    min_history: 50
-    throttled_ms: null
-
-  - sensor_id: micro_price
-    sensor_version: "1.0.0"
-    cls: feelies.sensors.impl.micro_price.MicroPriceSensor
-    params:
-      warm_after: 1
-    subscribes_to: [NBBOQuote]
-    input_sensor_ids: []
-    min_history: 1
-    throttled_ms: null
 
   - sensor_id: spread_z_30d
     sensor_version: "1.0.0"
@@ -158,47 +130,4 @@ sensor_specs:
     min_history: 20
     throttled_ms: null
 
-  - sensor_id: hawkes_intensity
-    sensor_version: "1.1.0"
-    cls: feelies.sensors.impl.hawkes_intensity.HawkesIntensitySensor
-    params:
-      alpha: 0.4
-      beta: 0.05
-      warm_window_seconds: 60
-      warm_trades_per_side: 20
-    subscribes_to: [Trade]
-    input_sensor_ids: []
-    min_history: 20
-    throttled_ms: null
 
-  - sensor_id: trade_through_rate
-    sensor_version: "1.0.0"
-    cls: feelies.sensors.impl.trade_through_rate.TradeThroughRateSensor
-    params:
-      window_seconds: 30
-      min_trades: 20
-    subscribes_to: [NBBOQuote, Trade]
-    input_sensor_ids: []
-    min_history: 20
-    throttled_ms: null
-
-  - sensor_id: kyle_lambda_60s
-    sensor_version: "1.1.0"
-    cls: feelies.sensors.impl.kyle_lambda_60s.KyleLambda60sSensor
-    params:
-      window_seconds: 60
-      min_samples: 30
-    subscribes_to: [NBBOQuote, Trade]
-    input_sensor_ids: []
-    min_history: 30
-    throttled_ms: null
-
-  # calendar param injected from event_calendar_path at bootstrap.
-  - sensor_id: scheduled_flow_window
-    sensor_version: "1.0.0"
-    cls: feelies.sensors.impl.scheduled_flow_window.ScheduledFlowWindowSensor
-    params: {}
-    subscribes_to: [NBBOQuote]
-    input_sensor_ids: []
-    min_history: 0
-    throttled_ms: null

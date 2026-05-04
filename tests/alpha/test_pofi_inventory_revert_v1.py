@@ -165,9 +165,9 @@ def test_emits_long_when_positive_asymmetry_above_threshold(
     loaded: LoadedSignalLayerModule,
 ) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
-    bus.publish(_normal_with_asym(2.5))
+    bus.publish(_normal_with_asym(3.6))
     bus.publish(_spread_reading())
-    bus.publish(_snapshot(asym_z=2.5, hazard=0.2))
+    bus.publish(_snapshot(asym_z=3.6, hazard=0.2))
 
     assert len(captured) == 1
     sig = captured[0]
@@ -184,9 +184,9 @@ def test_emits_short_for_negative_asymmetry(
     loaded: LoadedSignalLayerModule,
 ) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
-    bus.publish(_normal_with_asym(2.5))
+    bus.publish(_normal_with_asym(3.6))
     bus.publish(_spread_reading())
-    bus.publish(_snapshot(asym_z=-2.5, hazard=0.2))
+    bus.publish(_snapshot(asym_z=-3.6, hazard=0.2))
     assert len(captured) == 1
     assert captured[0].direction == SignalDirection.SHORT
 
@@ -217,7 +217,8 @@ def test_no_emission_when_gate_off(
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_toxic_regime())
     bus.publish(_spread_reading())
-    bus.publish(_snapshot(asym_z=2.5, hazard=0.2))
+    # asym_z=3.6 clears the cost floor — only the gate suppresses here.
+    bus.publish(_snapshot(asym_z=3.6, hazard=0.2))
     assert captured == []
 
 
@@ -230,3 +231,14 @@ def test_edge_capped_at_disclosed_maximum(
     bus.publish(_snapshot(asym_z=100.0, hazard=0.2))
     assert len(captured) == 1
     assert captured[0].edge_estimate_bps == pytest.approx(14.0)
+
+
+def test_no_emission_below_cost_floor(
+    loaded: LoadedSignalLayerModule,
+) -> None:
+    """asym_z=3.5 clears the z-threshold (>2.0) but edge_bps=5.25 < cost_floor=5.5."""
+    _, bus, captured = _engine_with_alpha(loaded)
+    bus.publish(_normal_with_asym(3.5))
+    bus.publish(_spread_reading())
+    bus.publish(_snapshot(asym_z=3.5, hazard=0.2))
+    assert captured == []

@@ -347,6 +347,7 @@ class HorizonSignalEngine:
 
         regime = self._lookup_regime(snapshot.symbol, registered.gate)
         bindings = self._build_bindings(snapshot, regime, self._sensor_cache)
+        was_on = registered.gate.is_on(snapshot.symbol)
         try:
             on = registered.gate.evaluate(
                 symbol=snapshot.symbol, bindings=bindings,
@@ -385,6 +386,23 @@ class HorizonSignalEngine:
             )
             return
 
+        if was_on and not on:
+            # Regime gate just closed — emit FLAT to unwind any open position.
+            self._bus.publish(Signal(
+                timestamp_ns=snapshot.timestamp_ns,
+                correlation_id=snapshot.correlation_id,
+                sequence=self._signal_seq.next(),
+                source_layer="SIGNAL",
+                symbol=snapshot.symbol,
+                strategy_id=registered.alpha_id,
+                direction=SignalDirection.FLAT,
+                strength=0.0,
+                edge_estimate_bps=0.0,
+                layer="SIGNAL",
+                horizon_seconds=registered.horizon_seconds,
+                regime_gate_state="OFF",
+            ))
+            return
         if not on:
             return
 
