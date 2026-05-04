@@ -14,7 +14,10 @@ class TestDataHealth:
     def test_has_expected_states(self) -> None:
         assert DataHealth.HEALTHY.value != DataHealth.GAP_DETECTED.value
         assert DataHealth.GAP_DETECTED.value != DataHealth.CORRUPTED.value
-        assert DataHealth.CORRUPTED.value != DataHealth.RECOVERING.value
+
+    def test_corrupted_is_terminal(self) -> None:
+        from feelies.ingestion.data_integrity import _DATA_TRANSITIONS
+        assert _DATA_TRANSITIONS[DataHealth.CORRUPTED] == frozenset()
 
 
 class TestCreateDataIntegrityMachine:

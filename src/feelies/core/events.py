@@ -69,6 +69,7 @@ class NBBOQuote(Event):
     tape: int = 0
     participant_timestamp_ns: int | None = None
     trf_timestamp_ns: int | None = None
+    received_ns: int | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -94,6 +95,7 @@ class Trade(Event):
     trf_timestamp_ns: int | None = None
     participant_timestamp_ns: int | None = None
     correction: int | None = None
+    received_ns: int | None = None
 
 
 # ── Feature Events ──────────────────────────────────────────────────────

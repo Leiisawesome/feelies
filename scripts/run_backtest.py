@@ -940,8 +940,9 @@ def _money(v: Decimal) -> str:
     return f"{sign}${abs(v):,.2f}"
 
 
-def _pct(v: float) -> str:
-    return f"{v:.2f}%"
+def _pct(v: float, sign: bool = False) -> str:
+    prefix = "+" if sign and v > 0 else ""
+    return f"{prefix}{v:.2f}%"
 
 
 def _ns_to_ms(ns: float) -> str:
@@ -975,9 +976,11 @@ def generate_report(
 
     filled_acks = [a for a in acks if a.status == OrderAckStatus.FILLED]
     rejected_acks = [a for a in acks if a.status == OrderAckStatus.REJECTED]
+    pending_orders = len(orders) - len(filled_acks) - len(rejected_acks)
 
     long_signals = [s for s in signals if s.direction == SignalDirection.LONG]
     short_signals = [s for s in signals if s.direction == SignalDirection.SHORT]
+    flat_signals = [s for s in signals if s.direction == SignalDirection.FLAT]
 
     horizon_snapshots = recorder.of_type(HorizonFeatureSnapshot)
 
@@ -1026,6 +1029,7 @@ def generate_report(
     win_count = len(winning_pnls)
     loss_count = len(losing_pnls)
     resolved_count = win_count + loss_count
+    entry_fills = total_fills - resolved_count
     win_rate = (win_count / resolved_count * 100.0) if resolved_count else 0.0
     avg_win = sum(winning_pnls, Decimal("0")) / len(winning_pnls) if winning_pnls else Decimal("0")
     avg_loss = sum(losing_pnls, Decimal("0")) / len(losing_pnls) if losing_pnls else Decimal("0")
@@ -1145,26 +1149,29 @@ def generate_report(
     # Pipeline
     lines.append(_section("Signal Pipeline"))
     lines.append(_kv("Quotes processed", f"{len(quotes):,}"))
-    lines.append(_kv("Horizon snapshots", f"{len(horizon_snapshots):,}"))
+    lines.append(_kv("Feature snapshots", f"{len(horizon_snapshots):,}"))
     lines.append(_kv("Signals emitted", f"{len(signals):,}"))
     if len(raw_signals) != len(signals):
         lines.append(
             _sub_kv(
-                "Raw bus Signal rows",
-                f"{len(raw_signals):,} (incl. republish)",
+                "Deduplicated from",
+                f"{len(raw_signals):,} bus rows (incl. republish)",
             ),
         )
-    lines.append(_sub_kv("Long", f"{len(long_signals):,}"))
-    lines.append(_sub_kv("Short", f"{len(short_signals):,}"))
+    lines.append(_sub_kv("Long  (entry)", f"{len(long_signals):,}"))
+    lines.append(_sub_kv("Short (entry)", f"{len(short_signals):,}"))
+    lines.append(_sub_kv("Flat  (exit) ", f"{len(flat_signals):,}"))
 
     lines.append(_divider())
 
     # Execution
     lines.append(_section("Execution"))
     lines.append(_kv("Orders submitted", f"{len(orders):,}"))
-    lines.append(_kv("Orders filled", f"{len(filled_acks):,}"))
-    lines.append(_kv("Orders rejected", f"{len(rejected_acks):,}"))
-    lines.append(_kv("Total shares traded", f"{total_shares:,}"))
+    lines.append(_sub_kv("Filled  ", f"{len(filled_acks):,}"))
+    lines.append(_sub_kv("Rejected", f"{len(rejected_acks):,}"))
+    if pending_orders:
+        lines.append(_sub_kv("Pending / no ack", f"{pending_orders:,}"))
+    lines.append(_kv("Shares traded", f"{total_shares:,}"))
 
     lines.append(_divider())
 
@@ -1177,14 +1184,15 @@ def generate_report(
     lines.append(_kv("Fees", _money(fees)))
     lines.append(_kv("Net P&L", _money(net_pnl)))
     lines.append(_kv("Final equity", _money(final_equity)))
-    lines.append(_kv("Return", _pct(return_pct)))
+    lines.append(_kv("Return", _pct(return_pct, sign=True)))
 
     lines.append(_divider())
 
     # Trade summary
     lines.append(_section("Trade Analysis"))
     lines.append(_kv("Total fills", f"{total_fills:,}"))
-    lines.append(_kv("Closing fills", f"{resolved_count:,}"))
+    lines.append(_sub_kv("Entry fills ", f"{entry_fills:,}"))
+    lines.append(_sub_kv("Closing fills", f"{resolved_count:,}"))
     lines.append(_kv("Open positions", f"{open_positions}"))
     win_rate_str = f"{win_rate:.1f}% ({win_count}/{resolved_count})" if resolved_count else "N/A"
     lines.append(_kv("Win rate", win_rate_str))

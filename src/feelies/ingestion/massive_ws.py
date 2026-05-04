@@ -21,7 +21,7 @@ import json
 import logging
 import queue
 import threading
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from typing import Any
 
 from feelies.core.clock import Clock
@@ -98,7 +98,9 @@ class MassiveLiveFeed:
             if item is _SENTINEL:
                 return
             yield item  # type: ignore[misc]
-
+    def on_health_transition(self, callback: Callable[..., None]) -> None:
+        """Register a callback for DataHealth transitions on any ingested symbol."""
+        self._normalizer.on_health_transition(callback)
     # ── Lifecycle ────────────────────────────────────────────────────
 
     def start(self) -> None:
@@ -162,6 +164,7 @@ class MassiveLiveFeed:
             except Exception:
                 if self._stop_event.is_set():
                     return
+                self._normalizer.notify_feed_interrupted(self._symbols)
                 logger.warning(
                     "massive_ws: connection lost, retrying in %.1fs",
                     backoff,
@@ -176,14 +179,21 @@ class MassiveLiveFeed:
         Massive responds with a JSON array; a successful auth contains
         ``{"ev": "status", "status": "auth_success", ...}``.
 
+        Massive pushes a ``"connected"`` status frame immediately on socket
+        open, before any client message.  We drain that preamble first, then
+        send the auth request and validate the auth response.
+
         ``ws`` is typed ``Any`` because the optional ``websockets`` library
         ships without a ``py.typed`` marker; the structural contract is
         documented in the dependency README and exercised end-to-end by
         ``tests/ingestion/test_massive_functional.py``.
         """
+        preamble = await asyncio.wait_for(ws.recv(), timeout=10.0)
+        logger.info("massive_ws: connection preamble: %s", preamble)
+        self._validate_status_response(preamble, "connected", "connect_preamble")
         auth_msg = json.dumps({"action": "auth", "params": self._api_key})
         await ws.send(auth_msg)
-        raw = await ws.recv()
+        raw = await asyncio.wait_for(ws.recv(), timeout=10.0)
         logger.info("massive_ws: auth response: %s", raw)
         self._validate_status_response(raw, "auth_success", "authentication")
 
@@ -203,9 +213,41 @@ class MassiveLiveFeed:
             "params": ",".join(channels),
         })
         await ws.send(sub_msg)
-        raw = await ws.recv()
-        logger.info("massive_ws: subscribe response: %s", raw)
-        self._validate_status_response(raw, "success", "subscription")
+
+        # Massive may send one frame per channel or batch them together.
+        # Read until we have confirmation for every channel or the server
+        # goes quiet.  Warn (not raise) on a partial result so that a
+        # temporarily-unavailable channel does not block the whole feed.
+        n_expected = len(channels)
+        successes = 0
+        for _ in range(n_expected):
+            try:
+                raw = await asyncio.wait_for(ws.recv(), timeout=5.0)
+            except asyncio.TimeoutError:
+                break  # no more frames arriving
+            logger.info("massive_ws: subscribe frame: %s", raw)
+            try:
+                payload = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                logger.warning("massive_ws: non-JSON subscribe response: %r", raw)
+                continue
+            messages = payload if isinstance(payload, list) else [payload]
+            for msg in messages:
+                if isinstance(msg, dict) and msg.get("status") == "success":
+                    successes += 1
+            if successes >= n_expected:
+                break
+
+        if successes == 0:
+            raise ConnectionError(
+                "massive_ws: subscription failed — no success confirmations received"
+            )
+        if successes < n_expected:
+            logger.warning(
+                "massive_ws: only %d/%d channel confirmations received",
+                successes,
+                n_expected,
+            )
 
     @staticmethod
     def _validate_status_response(

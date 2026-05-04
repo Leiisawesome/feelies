@@ -158,6 +158,15 @@ class MassiveHistoricalIngestor:
         completed_symbols: set[str] = set()
 
         for symbol in symbols:
+            q_done = self._checkpoint.is_done(symbol, "quotes")
+            t_done = self._checkpoint.is_done(symbol, "trades")
+            if q_done and t_done:
+                logger.info(
+                    "massive_ingestor: skipping %s (checkpoint complete)", symbol
+                )
+                completed_symbols.add(symbol)
+                continue
+
             logger.info(
                 "massive_ingestor: ingesting %s from %s to %s",
                 symbol, start_date, end_date,
@@ -218,14 +227,20 @@ class MassiveHistoricalIngestor:
                 with _lock:
                     on_page("trades", page_num, total, time.monotonic() - _t0)
 
+        # Each thread gets its own RESTClient so their urllib3 connection pools
+        # never collide — prevents "Connection pool is full" warnings that fire
+        # when two threads return sockets simultaneously to a shared pool.
+        client_q = type(client)(api_key=self._api_key)
+        client_t = type(client)(api_key=self._api_key)
+
         with ThreadPoolExecutor(max_workers=2) as pool:
             quotes_future = pool.submit(
-                _download_raw, client, symbol, start_date, end_date,
-                client.list_quotes, "quotes", _q_on_page,
+                _download_raw, client_q, symbol, start_date, end_date,
+                client_q.list_quotes, "quotes", _q_on_page,
             )
             trades_future = pool.submit(
-                _download_raw, client, symbol, start_date, end_date,
-                client.list_trades, "trades", _t_on_page,
+                _download_raw, client_t, symbol, start_date, end_date,
+                client_t.list_trades, "trades", _t_on_page,
             )
             # One REST stream can exceed 5m on liquid names / full session days;
             # ``TimeoutError`` has an empty ``str()``, so a too-tight bound looks
@@ -246,25 +261,35 @@ class MassiveHistoricalIngestor:
             d["__type_rank__"] = _TYPE_RANK_TRADE
 
         merged = raw_quotes + raw_trades
+        del raw_quotes, raw_trades  # free the two intermediate copies before processing
         merged.sort(key=lambda d: (
             d.get("sip_timestamp", 0),
             d.get("sequence_number", 0),
             d.get("__type_rank__", 0),
         ))
 
-        all_events: list[NBBOQuote | Trade] = []
         received_ns = self._clock.now_ns()
+        total_events_local = 0
+        chunk: list[NBBOQuote | Trade] = []
 
         for rec_dict in merged:
             rec_dict.pop("__type_rank__", None)
             raw = json.dumps(rec_dict).encode("utf-8")
             events = self._normalizer.on_message(raw, received_ns, "massive_rest")
-            all_events.extend(events)
+            chunk.extend(events)
+            if len(chunk) >= _CHUNK_SIZE:
+                self._event_log.append_batch(chunk)
+                total_events_local += len(chunk)
+                chunk = []
 
-        if all_events:
-            self._event_log.append_batch(all_events)
+        if chunk:
+            self._event_log.append_batch(chunk)
+            total_events_local += len(chunk)
 
-        return len(all_events), total_pages
+        self._checkpoint.mark_done(symbol, "quotes")
+        self._checkpoint.mark_done(symbol, "trades")
+
+        return total_events_local, total_pages
 
 
 def _download_raw(
@@ -300,17 +325,24 @@ def _download_raw(
         return [], 0
 
     buf: list[Any] = []
-    for obj in records_iter:
-        buf.append(obj)
-        if len(buf) >= _CHUNK_SIZE:
-            for record in buf:
-                d = _model_to_dict(record, symbol)
-                if d:
-                    raw_dicts.append(d)
-            pages += 1
-            if _on_page is not None:
-                _on_page(pages, len(raw_dicts))
-            buf = []
+    try:
+        for obj in records_iter:
+            buf.append(obj)
+            if len(buf) >= _CHUNK_SIZE:
+                for record in buf:
+                    d = _model_to_dict(record, symbol)
+                    if d:
+                        raw_dicts.append(d)
+                pages += 1
+                if _on_page is not None:
+                    _on_page(pages, len(raw_dicts))
+                buf = []
+    except Exception:
+        logger.exception(
+            "massive_ingestor: mid-pagination error for %s/%s after %d pages;"
+            " partial data (%d records) retained",
+            symbol, data_label, pages, len(raw_dicts),
+        )
 
     if buf:
         for record in buf:

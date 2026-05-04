@@ -88,9 +88,9 @@ class MassiveNormalizer:
             return []
 
         if source == _WS_SOURCE:
-            return self._parse_ws(data)
+            return self._parse_ws(data, received_ns)
         if source == _REST_SOURCE:
-            return self._parse_rest(data)
+            return self._parse_rest(data, received_ns)
 
         logger.warning("massive_normalizer: unknown source %r", source)
         return []
@@ -109,6 +109,7 @@ class MassiveNormalizer:
     def _parse_ws(
         self,
         data: object,
+        received_ns: int,
     ) -> list[NBBOQuote | Trade]:
         messages = data if isinstance(data, list) else [data]
         results: list[NBBOQuote | Trade] = []
@@ -119,17 +120,17 @@ class MassiveNormalizer:
             ev = msg.get("ev")
             event: NBBOQuote | Trade | None
             if ev == "Q":
-                event = self._ws_quote(msg)
+                event = self._ws_quote(msg, received_ns)
                 if event is not None:
                     results.append(event)
             elif ev == "T":
-                event = self._ws_trade(msg)
+                event = self._ws_trade(msg, received_ns)
                 if event is not None:
                     results.append(event)
 
         return results
 
-    def _ws_quote(self, msg: dict) -> NBBOQuote | None:  # type: ignore[type-arg]
+    def _ws_quote(self, msg: dict, received_ns: int) -> NBBOQuote | None:  # type: ignore[type-arg]
         try:
             symbol: str = msg["sym"]
             exchange_ts_ns = int(msg["t"]) * _MS_TO_NS
@@ -137,8 +138,10 @@ class MassiveNormalizer:
 
             if self._is_duplicate(symbol, self._FEED_QUOTE, seq_num, exchange_ts_ns):
                 return None
-            self._check_gap(symbol, self._FEED_QUOTE, seq_num)
+            prev = self._last_seen.get((symbol, self._FEED_QUOTE))
+            prev_seq = prev[0] if prev is not None else 0
             self._update_last_seen(symbol, self._FEED_QUOTE, seq_num, exchange_ts_ns)
+            self._check_gap(symbol, self._FEED_QUOTE, seq_num, prev_seq)
 
             internal_seq = self._seq.next()
             cid = make_correlation_id(symbol, exchange_ts_ns, internal_seq)
@@ -171,13 +174,14 @@ class MassiveNormalizer:
                 indicators=indicators,
                 sequence_number=seq_num,
                 tape=int(msg.get("z", 0)),
+                received_ns=received_ns,
             )
         except (KeyError, ValueError, TypeError) as exc:
             logger.warning("massive_normalizer: bad WS quote: %s", exc)
             self._mark_corrupted(msg.get("sym", "UNKNOWN"))
             return None
 
-    def _ws_trade(self, msg: dict) -> Trade | None:  # type: ignore[type-arg]
+    def _ws_trade(self, msg: dict, received_ns: int) -> Trade | None:  # type: ignore[type-arg]
         try:
             symbol: str = msg["sym"]
             exchange_ts_ns = int(msg["t"]) * _MS_TO_NS
@@ -185,8 +189,10 @@ class MassiveNormalizer:
 
             if self._is_duplicate(symbol, self._FEED_TRADE, seq_num, exchange_ts_ns):
                 return None
-            self._check_gap(symbol, self._FEED_TRADE, seq_num)
+            prev = self._last_seen.get((symbol, self._FEED_TRADE))
+            prev_seq = prev[0] if prev is not None else 0
             self._update_last_seen(symbol, self._FEED_TRADE, seq_num, exchange_ts_ns)
+            self._check_gap(symbol, self._FEED_TRADE, seq_num, prev_seq)
 
             internal_seq = self._seq.next()
             cid = make_correlation_id(symbol, exchange_ts_ns, internal_seq)
@@ -213,6 +219,7 @@ class MassiveNormalizer:
                 tape=int(msg.get("z", 0)),
                 trf_id=int(msg["trfi"]) if "trfi" in msg else None,
                 trf_timestamp_ns=trf_ts,
+                received_ns=received_ns,
             )
         except (KeyError, ValueError, TypeError) as exc:
             logger.warning("massive_normalizer: bad WS trade: %s", exc)
@@ -224,6 +231,7 @@ class MassiveNormalizer:
     def _parse_rest(
         self,
         data: object,
+        received_ns: int,
     ) -> list[NBBOQuote | Trade]:
         if not isinstance(data, dict):
             return []
@@ -232,10 +240,10 @@ class MassiveNormalizer:
         # Detect type by field presence.
         event: NBBOQuote | Trade | None
         if "bid_price" in data or "ask_price" in data:
-            event = self._rest_quote(data)
+            event = self._rest_quote(data, received_ns)
             return [event] if event is not None else []
         if "price" in data:
-            event = self._rest_trade(data)
+            event = self._rest_trade(data, received_ns)
             return [event] if event is not None else []
 
         logger.warning(
@@ -244,7 +252,7 @@ class MassiveNormalizer:
         )
         return []
 
-    def _rest_quote(self, rec: dict) -> NBBOQuote | None:  # type: ignore[type-arg]
+    def _rest_quote(self, rec: dict, received_ns: int) -> NBBOQuote | None:  # type: ignore[type-arg]
         try:
             symbol: str = rec["ticker"]
             sip_ts = int(rec["sip_timestamp"])
@@ -291,13 +299,14 @@ class MassiveNormalizer:
                 tape=int(rec.get("tape", 0)),
                 participant_timestamp_ns=part_ts,
                 trf_timestamp_ns=trf_ts,
+                received_ns=received_ns,
             )
         except (KeyError, ValueError, TypeError) as exc:
             logger.warning("massive_normalizer: bad REST quote: %s", exc)
             self._mark_corrupted(rec.get("ticker", "UNKNOWN"))
             return None
 
-    def _rest_trade(self, rec: dict) -> Trade | None:  # type: ignore[type-arg]
+    def _rest_trade(self, rec: dict, received_ns: int) -> Trade | None:  # type: ignore[type-arg]
         try:
             symbol: str = rec["ticker"]
             sip_ts = int(rec["sip_timestamp"])
@@ -335,6 +344,7 @@ class MassiveNormalizer:
                 trf_timestamp_ns=None,
                 participant_timestamp_ns=part_ts,
                 correction=int(rec["correction"]) if "correction" in rec else None,
+                received_ns=received_ns,
             )
         except (KeyError, ValueError, TypeError) as exc:
             logger.warning("massive_normalizer: bad REST trade: %s", exc)
@@ -370,14 +380,14 @@ class MassiveNormalizer:
             return True
         return False
 
-    def _check_gap(self, symbol: str, feed_type: str, seq_num: int) -> None:
-        if seq_num == 0:
-            return
-        prev = self._last_seen.get((symbol, feed_type))
-        if prev is None:
-            return
-        prev_seq = prev[0]
-        if prev_seq == 0:
+    def _check_gap(self, symbol: str, feed_type: str, seq_num: int, prev_seq: int) -> None:
+        """Fire DataHealth transitions based on sequence-number continuity.
+
+        ``prev_seq`` must be captured by the caller *before* calling
+        ``_update_last_seen`` so that any ``on_transition`` callback
+        observes the already-updated ``_last_seen`` state.
+        """
+        if seq_num == 0 or prev_seq == 0:
             return
 
         sm = self._ensure_health_machine(symbol)
@@ -410,3 +420,25 @@ class MassiveNormalizer:
         sm = self._ensure_health_machine(symbol)
         if sm.can_transition(DataHealth.CORRUPTED):
             sm.transition(DataHealth.CORRUPTED, trigger="parse_error")
+
+    def on_health_transition(self, callback: Callable[[TransitionRecord], None]) -> None:
+        """Register a callback for DataHealth state transitions on any symbol.
+
+        Stores the callback for symbols registered in the future and registers
+        it immediately on all currently-tracked symbol state machines.
+        """
+        self._transition_callback = callback
+        for sm in self._health_machines.values():
+            sm.on_transition(callback)
+
+    def notify_feed_interrupted(self, symbols: Sequence[str]) -> None:
+        """Transition HEALTHY symbols to GAP_DETECTED on feed connection loss.
+
+        Called by the WS transport layer so that DataHealth escalates
+        immediately rather than waiting for the next message to reveal
+        the gap via sequence-number discontinuity.
+        """
+        for sym in symbols:
+            sm = self._health_machines.get(sym)
+            if sm is not None and sm.state == DataHealth.HEALTHY:
+                sm.transition(DataHealth.GAP_DETECTED, trigger="feed_connection_lost")

@@ -14,12 +14,16 @@ from feelies.core.state_machine import StateMachine
 
 
 class DataHealth(Enum):
-    """Per-symbol data stream health."""
+    """Per-symbol data stream health.
+
+    ``CORRUPTED`` is a terminal state by design: once a symbol stream is
+    corrupted, the only recovery path is a manual restart.  The operator
+    runbook should restart the normalizer for affected symbols.
+    """
 
     HEALTHY = auto()
     GAP_DETECTED = auto()
     CORRUPTED = auto()
-    RECOVERING = auto()
 
 
 _DATA_TRANSITIONS: dict[DataHealth, frozenset[DataHealth]] = {
@@ -31,13 +35,7 @@ _DATA_TRANSITIONS: dict[DataHealth, frozenset[DataHealth]] = {
         DataHealth.HEALTHY,     # gap resolved
         DataHealth.CORRUPTED,   # gap unresolvable
     }),
-    DataHealth.CORRUPTED: frozenset({
-        DataHealth.RECOVERING,
-    }),
-    DataHealth.RECOVERING: frozenset({
-        DataHealth.HEALTHY,     # recovery validated
-        DataHealth.CORRUPTED,   # recovery failed
-    }),
+    DataHealth.CORRUPTED: frozenset(),  # terminal — restart required
 }
 
 
