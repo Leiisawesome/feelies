@@ -1405,3 +1405,503 @@ strengthened by new evidence:
   (seq-zero dedup trap): both stem from `_last_seen` being trusted
   unconditionally. A unified fix (treat `seq == 0` and `seq < high
   watermark` as "do not poison `_last_seen`") closes both.
+
+---
+
+## Fourth-pass audit (2026-05-04, post-fix)
+
+**Tree audited:** `origin/main` at `dbb1cf5` (`fix: resolve all confirmed
+ingestion audit findings`), pulled into the working branch via fast-forward.
+Diff against the pre-fix tree is +185 / −68 across `data_integrity.py`,
+`massive_normalizer.py`, `massive_ingestor.py`, `massive_ws.py`,
+`core/events.py`, plus a one-line test addition.
+
+This pass has two halves:
+
+1. **Fix verification** — for every B-/R-/R3- finding the fix commit
+   claims, was it actually delivered, partially delivered, or
+   side-effectful?
+2. **New residuals introduced by the fixes** — graded `R4-NEW-NN`.
+
+### Part 1 — Fix verification
+
+| Finding | Status | Evidence / caveat |
+| --- | --- | --- |
+| B-INGEST-01 (checkpoint dead) | **Mostly fixed** | `is_done` checked at `massive_ingestor.py:161–168`, `mark_done` called at `289–290`. **But:** `mark_done` runs unconditionally — see R4-NEW-01 below. |
+| B-INGEST-02 (handshake) | **Fixed** | `massive_ws.py:191–198` drains the `connected` preamble first, validates it, then sends auth, validates auth response. Both `recv()`s wrapped in `asyncio.wait_for(timeout=10.0)`. Clean. |
+| B-INGEST-03 (RECOVERING) | **Fixed cleanly** | `data_integrity.py:24–39`: `RECOVERING` removed from the enum entirely; `CORRUPTED` is now formally terminal (`frozenset()`). Test at `tests/ingestion/test_data_integrity.py:18–20` asserts the invariant. |
+| R-INGEST-01 (silent feed termination) | **Partial** | `massive_ws.py:167` calls `notify_feed_interrupted` from the **inner** except inside `_connect_with_retry`. The **outer** `_run_loop` `except Exception` (line 136) — which catches `ImportError`, `RecursionError`, and any uncaught `decimal.InvalidOperation` — does **not** call it. See R4-NEW-04. |
+| R-INGEST-02 (mid-pagination loss) | **Fixed** | `massive_ingestor.py:328–345`. Try/except wraps the iteration; partial `raw_dicts` is logged and returned. The post-loop `if buf:` cleanup (`347–354`) still drains the partial buffer. |
+| R-INGEST-03 (received_ns unused) | **Fixed structurally; semantically partial** | `received_ns` added to `NBBOQuote`/`Trade` (`core/events.py:69, 96`) and threaded through all four parse paths. **But:** `massive_ingestor.py:271` still captures `received_ns` once per *batch*, so historical events all share one value (r3-INGEST-09 from pass 3 is therefore confirmed and not fixed). |
+| R-INGEST-04 (callback ordering) | **Fixed** | `massive_normalizer.py:141–144, 192–195`: `prev_seq` captured **before** `_update_last_seen`; `_check_gap` is then called **after** the update, so any callback fired by a gap transition observes a fully-updated `_last_seen`. |
+| R-INGEST-05 (transition_callback dead) | **Functionally fixed; two new bugs** | `on_health_transition()` added on `MassiveNormalizer` (`424–432`) and `MassiveLiveFeed` (`101–103`). Replaces the dead constructor surface. **But** the implementation has the inconsistencies in R4-NEW-02 and R4-NEW-03. |
+| R-INGEST-06 (subscribe one-frame validation) | **Fixed** | `massive_ws.py:200–250`: loops up to `len(channels)` frames with a 5 s inter-frame timeout, counts `success` statuses, raises only when **zero** are received, warns on partial. The "warn-on-partial" choice is more permissive than the original suggestion ("require all"); defensible for degraded-mode operation but worth a one-line comment in the docstring. |
+| R-INGEST-07 (memory bound) | **Improved ~2x; not eliminated** | `massive_ingestor.py:264, 273–290`: `del raw_quotes, raw_trades` after building `merged`; events now stream to `EventLog` in `_CHUNK_SIZE`-sized batches via `chunk`. **Peak memory** still includes `merged` (the full N+M sorted list) plus a 5 K-event chunk — a ~2× footprint vs. the prior ~4× peak, not the streaming heap merge that R-INGEST-07 sketched. |
+
+**Fix-side summary:** all three pass-1 BLOCKERs are addressed (B-01 with a
+caveat, B-02 + B-03 cleanly). All seven pass-2 R-INGEST findings are
+addressed at least nominally; R-01 and R-07 are partial. **None of the
+sixteen pass-3 findings (R3-INGEST-01..06, r3-INGEST-01..10) are
+addressed** — the fix commit predates pass 3 by 45 minutes, so this is
+chronological, not adversarial.
+
+**Test coverage of the fixes:** zero. Verified mechanically:
+
+```
+grep -c "notify_feed_interrupted\|on_health_transition\|is_done\|mark_done\
+\|received_ns\|preamble\|InMemoryCheckpoint(" tests/ingestion/*.py
+```
+
+every file returns `0` matches. The only test addition in the fix
+commit is `test_corrupted_is_terminal` (good — proves the invariant).
+Every other behavioral fix ships without a regression test.
+
+### Part 2 — New residuals introduced by the fixes
+
+#### R4-NEW-01 — `mark_done` runs unconditionally; failed downloads poison the checkpoint with permanent silent data loss
+**File:** `massive_ingestor.py:175–186, 289–290`.
+
+```python
+ev_count, pg_count = self.ingest_symbol_parallel(
+    client, symbol, start_date, end_date, on_page=on_page,
+)
+total_events += ev_count
+total_pages += pg_count
+completed_symbols.add(symbol)
+```
+
+…and inside `ingest_symbol_parallel`:
+
+```python
+if chunk:
+    self._event_log.append_batch(chunk)
+    total_events_local += len(chunk)
+
+self._checkpoint.mark_done(symbol, "quotes")
+self._checkpoint.mark_done(symbol, "trades")
+
+return total_events_local, total_pages
+```
+
+`mark_done` is called **after** the chunk loop unconditionally, with no
+check of how many records actually flowed. Three pathological inputs
+all reach this point and corrupt the checkpoint:
+
+1. **Auth/network failure at iteration start.** `_download_raw`'s
+   *outer* try/except (`312–325`) returns `([], 0)` and logs the
+   exception. `merged` is empty. The chunk loop runs zero iterations.
+   `mark_done` is then called for both feed types. Next retry skips the
+   symbol entirely.
+2. **Mid-pagination failure** (paired with the R-INGEST-02 fix). The
+   inner try/except (`328–345`) retains partial pages and logs them as
+   "partial data retained." Then `merged` contains the partial set,
+   `chunk`s flush, and `mark_done` is called as if the run was
+   complete. The missing pages are never re-fetched, even though the
+   log line said they were retained for retry.
+3. **Empty result for a real symbol on a no-trading date.** Indistinguishable from
+   case 1 from the checkpoint's perspective; harmless in this one case
+   but worth noting because the code can't distinguish.
+
+Severity: **BLOCKER** for any production backfill that relies on
+checkpoint correctness — the two passes that fixed B-INGEST-01 created
+a worse failure mode (silent permanent loss) than the original
+no-resume behavior (visible re-download).
+
+**Fix sketch:** mark done only when the call returned successfully **and**
+yielded > 0 events, **or** distinguish "mark feed-type done" from
+"mark symbol done" so partial completion is recoverable. The cleanest
+shape: `_download_raw` returns a `tuple[list, int, bool]` where the
+third element is "iteration ran to completion"; `ingest_symbol_parallel`
+only marks per-feed done when that flag is True. (The R-INGEST-02 fix
+swallows the mid-iteration exception, so this flag *must* be plumbed
+through — a caller-side check on `len(raw_dicts)` is insufficient.)
+
+---
+
+#### R4-NEW-02 — `on_health_transition()` has inconsistent semantics for already-created vs. future symbols
+**File:** `massive_normalizer.py:424–432`.
+
+```python
+def on_health_transition(self, callback) -> None:
+    self._transition_callback = callback
+    for sm in self._health_machines.values():
+        sm.on_transition(callback)
+```
+
+If the normalizer was constructed with `transition_callback=A` and a
+caller then runs `on_health_transition(B)`:
+
+- **Already-created symbol machines** had `A` registered at creation
+  time (`350–351`). `sm.on_transition(B)` *appends* — so both `A` and
+  `B` fire on every transition.
+- **Symbols seen for the first time after the call** get only `B`
+  (the constructor callback was overwritten in `_transition_callback`,
+  and `_ensure_health_machine:350–351` looks at the *current* value of
+  that field).
+
+Operators see the same transition reported either once or twice
+depending on when the symbol first arrived. A monitoring system that
+counts events will be off by a factor of two for symbols active before
+the late wiring.
+
+**Fix sketch:** either (a) clear the prior callback list on existing
+machines before re-registering, or (b) document that
+`on_health_transition` is single-shot, must be called before any
+message is processed. (a) is friendlier; (b) matches the dependency
+injection pattern already used elsewhere in the codebase.
+
+---
+
+#### R4-NEW-03 — `on_health_transition()` is not idempotent
+**File:** `massive_normalizer.py:424–432`.
+
+Calling the method twice with the *same* callback registers it twice
+on every existing machine via `sm.on_transition(callback)` (which is
+an `append`, not a `set`). Each transition then fires the callback
+twice. This is a separate bug from R4-NEW-02 — even with no
+constructor callback, the second call doubles up.
+
+Realistic trigger: a caller that hot-rebinds the metrics sink (e.g., a
+test harness re-running the same fixture, an operator dashboard
+re-attaching after reconnect). The deduplication burden is pushed
+onto the callback.
+
+**Fix sketch:** clear `sm._on_transition_callbacks` before each
+re-registration, or maintain a registry on the normalizer and replace
+in-place. Add an idempotency unit test.
+
+---
+
+#### R4-NEW-04 — `notify_feed_interrupted` is not called for the fatal-thread-death paths
+**File:** `massive_ws.py:130–141, 143–174`.
+
+The R-INGEST-01 fix wires `notify_feed_interrupted` into the **inner**
+`except Exception` of `_connect_with_retry` (line 164–172), which
+handles the connection-loss-with-retry case. But three real failure
+modes reach the **outer** `_run_loop`'s broad `except` (line 136)
+without entering that inner block:
+
+1. `import websockets` fails at line 146, raises `ImportError`,
+   propagates out of `_connect_with_retry` directly to `_run_loop`.
+   No `notify_feed_interrupted` call.
+2. A coroutine inside `websockets.connect` itself raises a
+   `RuntimeError` (asyncio teardown edge case, OS-level error).
+3. The normalizer raises an exception that escapes its
+   `(KeyError, ValueError, TypeError)` catch — most importantly
+   `decimal.InvalidOperation` (R3-INGEST-02) and `RecursionError`
+   (r3-INGEST-01). These propagate up through `_consume` → out of the
+   `async with websockets.connect(...) as ws:` block → out of
+   `_connect_with_retry`'s outer body (note: the inner `try:` at line
+   156 wraps the `async with` and would catch this; verify by re-read
+   below).
+
+Re-read of `_connect_with_retry`:
+
+```python
+while not self._stop_event.is_set():
+    try:                                          # ← inner try
+        async with websockets.connect(...) as ws:
+            ...
+            await self._consume(ws)
+    except asyncio.CancelledError:
+        return
+    except Exception:                             # ← inner except
+        if self._stop_event.is_set():
+            return
+        self._normalizer.notify_feed_interrupted(self._symbols)
+        ...
+```
+
+So **(3)** does enter the inner except. Good — the normalizer-escaped
+exceptions will trigger `notify_feed_interrupted`. But **(1)** and
+**(2)** (and any exception raised *before* line 153 `backoff =
+_INITIAL_BACKOFF_S` or *between* the import and the while loop) bypass
+the inner try entirely. The outer `except` in `_run_loop` is the only
+catcher, and it does not call notify.
+
+**Severity:** MAJOR. The orchestrator can be told the feed was
+"interrupted" for one class of failure but silently dies for another,
+including the exact path the dependency-extra installation hint was
+designed to prevent.
+
+**Fix sketch:** call `notify_feed_interrupted` from `_run_loop`'s
+`except` block as well, right before logging. Consider adding an
+`on_terminated` callback so the orchestrator can degrade the macro
+state machine, not just per-symbol DataHealth.
+
+---
+
+#### R4-NEW-05 — Pre-emission gap transitions: `_check_gap` fires before event construction; failures leave SM history with phantom transitions
+**File:** `massive_normalizer.py:141–146, 192–197`.
+
+The new ordering inside `_ws_quote`:
+
+```python
+if self._is_duplicate(...): return None
+prev = self._last_seen.get((symbol, self._FEED_QUOTE))
+prev_seq = prev[0] if prev is not None else 0
+self._update_last_seen(symbol, self._FEED_QUOTE, seq_num, exchange_ts_ns)
+self._check_gap(symbol, self._FEED_QUOTE, seq_num, prev_seq)
+
+internal_seq = self._seq.next()
+cid = make_correlation_id(symbol, exchange_ts_ns, internal_seq)
+...
+return NBBOQuote(...)        # ← can still raise on bp / ap / Decimal
+```
+
+If construction at `161–178` raises (missing `"bp"`, malformed
+`Decimal`), the function falls into the catch and calls
+`_mark_corrupted(symbol)`. **By that point:**
+
+- `_last_seen` has already been updated to `(seq_num, ts)`.
+- The SM may have already transitioned `HEALTHY → GAP_DETECTED`
+  (recorded in history with `trigger="seq_gap:..."`).
+- A `_mark_corrupted` then transitions `GAP_DETECTED → CORRUPTED`.
+
+History now reads:
+
+```
+HEALTHY -> GAP_DETECTED (seq_gap:quote:N->N+5)
+GAP_DETECTED -> CORRUPTED (parse_error)
+```
+
+— for an event that **never appeared in the EventLog**. Operator
+forensics correlating SM history with EventLog records will hit a
+phantom: history says we *saw* and gap-detected `seq=N+5`; the log
+has nothing.
+
+This is a regression vs. the pre-fix behavior. Pre-fix: `_check_gap`
+ran *before* `_update_last_seen`, so the gap transition implied a
+real prior event mismatch, and a parse failure on the *current* event
+left `_last_seen` untouched (so the next valid event would still see
+the gap). Post-fix: gap is recorded eagerly, but the triggering event
+may never have existed.
+
+**Severity:** MAJOR for forensic / audit-trail consumers; benign for
+the trading path because CORRUPTED is terminal anyway.
+
+**Fix sketch:** either (a) move `_check_gap` and `_update_last_seen`
+*after* successful event construction (revert the order change for
+WS only — REST already runs without `_check_gap` for thinned-stream
+reasons documented at `263–266`), or (b) record the gap-detection
+intent and *commit* it only when the event constructs cleanly. (a)
+is simpler.
+
+---
+
+#### R4-NEW-06 — Per-call `RESTClient` duplication: 2N pool teardowns for an N-symbol ingest
+**File:** `massive_ingestor.py:233–234`.
+
+```python
+client_q = type(client)(api_key=self._api_key)
+client_t = type(client)(api_key=self._api_key)
+```
+
+Two new `RESTClient`s per call to `ingest_symbol_parallel`, each with
+its own urllib3 connection pool, TLS context, etc. For a 100-symbol
+ingest this constructs and destroys 200 pools sequentially. The
+parent `client` parameter (`206`) is now used only as a type token —
+its constructed pool is never used inside this function.
+
+The fix is correct in solving the "pool full" warning; the cost is a
+real (small) memory and connection-establishment overhead per
+symbol. For a single-day single-symbol run it's negligible; for a
+multi-day backfill universe it's measurable.
+
+**Fix sketch:** create the two `RESTClient`s once at
+`MassiveHistoricalIngestor.__init__` time (or lazily on first call),
+keep them on `self`, reuse across symbols. Drop the `client` parameter
+from `ingest_symbol_parallel` since it's unused.
+
+---
+
+#### R4-NEW-07 — `client` parameter is now dead in `ingest_symbol_parallel`
+**File:** `massive_ingestor.py:204–207`.
+
+The parameter is read once at line 233 (`type(client)`) and otherwise
+unused. Two callers pass it in (`ingest()` at `175–177`). Cleanup:
+either delete the parameter and inline the import, or actually use
+the passed-in client (one of the two threads can use it without
+duplication).
+
+Severity: MINOR (clarity).
+
+---
+
+#### R4-NEW-08 — `notify_feed_interrupted` does not record the reason on already-non-HEALTHY symbols
+**File:** `massive_normalizer.py:434–444`.
+
+```python
+for sym in symbols:
+    sm = self._health_machines.get(sym)
+    if sm is not None and sm.state == DataHealth.HEALTHY:
+        sm.transition(DataHealth.GAP_DETECTED, trigger="feed_connection_lost")
+```
+
+Symbols already in `GAP_DETECTED` (from a prior sequence gap) get no
+trigger update — the SM history still attributes their state to
+`seq_gap:...`, even though a connection drop is now also true. An
+operator triaging the dashboard sees a stale reason.
+
+**Fix sketch:** for non-HEALTHY symbols, append a `MetricEvent` (or
+similar) recording that a connection drop also occurred. Don't try to
+re-transition; the SM is correct. Just don't lose the audit trail.
+
+Severity: MINOR.
+
+---
+
+#### R4-NEW-09 — Pass-3 findings remain unaddressed
+**Files:** `massive_normalizer.py` (R3-INGEST-01, -02, -03, -06),
+`massive_ws.py` (R3-INGEST-04), `core/state_machine.py` (R3-INGEST-05),
+all r3-INGEST-NN MINORs.
+
+Verified by direct inspection:
+
+- `_is_duplicate` (`370–381`) still has no `seq_num == 0` guard ⇒
+  R3-INGEST-01 (silent dedup of seq-zero events) **still active**.
+- `Decimal(str(...))` (`166–167, 211, 289–290, 334`) is unchanged;
+  `decimal.InvalidOperation` is not in the catch tuple at `179, 224,
+  304, 349` ⇒ R3-INGEST-02 (NaN/Infinity acceptance, parser-thread
+  crash on bad numerics) **still active**.
+- `internal_seq = self._seq.next()` at `146, 197, 269, 320` still runs
+  *before* event construction ⇒ R3-INGEST-03 (sequence holes) **still
+  active**.
+- `MassiveLiveFeed.start()` (`106–116`) does not drain `_queue` ⇒
+  R3-INGEST-04 (queue restart bug) **still active**.
+- `core/state_machine.py:158–162` still appends to history and
+  reassigns `_state` *after* the callback loop ⇒ R3-INGEST-05
+  (callback observes pre-transition state) **still active** (and is
+  now reachable via R-INGEST-05's new `on_health_transition` wiring,
+  so the hazard window is wider than before).
+- `_mark_corrupted(msg.get("sym", "UNKNOWN"))` at `181, 226, 306, 351`
+  still falls back to `"UNKNOWN"` ⇒ R3-INGEST-06 (synthetic stream
+  collapse) **still active**.
+
+This is not a "regression" — the fix commit was authored before the
+pass-3 audit was written. But for purposes of the post-fix verdict,
+all six MAJORs and ten MINORs from pass 3 carry over unchanged.
+
+Severity: tracking.
+
+---
+
+### New MINORs
+
+#### r4-NEW-01 — Stylistic: `on_health_transition` defined without surrounding blank lines
+**File:** `massive_ws.py:99–104`.
+
+```python
+            yield item  # type: ignore[misc]
+    def on_health_transition(self, callback: Callable[..., None]) -> None:
+        """Register a callback for DataHealth transitions on any ingested symbol."""
+        self._normalizer.on_health_transition(callback)
+    # ── Lifecycle ────────────────────────────────────────────────────
+```
+
+No blank line between `events()` and `on_health_transition()`, and the
+section comment that originally separated `events()` from the lifecycle
+methods is now visually attached to `on_health_transition` rather than
+the next method. Minor, but the reading flow suffers.
+
+#### r4-NEW-02 — `_subscribe`'s "warn-on-partial" is undocumented in the `MarketDataSource` contract
+**File:** `massive_ws.py:241–250`.
+
+The new behavior — accept any non-zero number of channel
+confirmations, log a warning if fewer than expected — is a real
+operational choice (degraded-mode operation is preferable to
+hard-failing the whole feed when one of 200 symbols is briefly
+unsubscribable). It should be documented in the class docstring so
+operators don't assume "subscribe succeeded" implies "all channels
+confirmed."
+
+#### r4-NEW-03 — `received_ns` is now a public field on `NBBOQuote` / `Trade` but is `None` for events constructed outside the normalizer
+**File:** `core/events.py:69, 96`.
+
+The default `int | None = None` preserves backward compatibility, but
+any consumer that does `event.received_ns - event.exchange_timestamp_ns`
+must guard against `None`. There is no documented contract that
+ingestion always populates the field — only the convention that
+`MassiveNormalizer` does so. Tests / fixtures elsewhere in the codebase
+that construct events directly will produce `None` values that
+propagate. Worth a docstring note (or, more strictly, making the field
+required and updating call sites).
+
+#### r4-NEW-04 — `notify_feed_interrupted` ignores the `_health_machines` lock (which doesn't exist)
+**File:** `massive_normalizer.py:434–444`.
+
+The method iterates `self._health_machines.get(sym)` from the WS
+thread (the asyncio loop thread). Other writers — `_ws_quote`,
+`_ws_trade` running in the same thread — are concurrent only with
+themselves, so this is single-threaded by construction. **However**,
+the *future* wiring of `on_health_transition` callbacks introduces a
+plausible scenario where a callback synchronously enqueues a metric
+event into a thread-safe sink, the sink's consumer runs on another
+thread, and a subsequent reader of `normalizer.all_health()` from the
+orchestrator thread observes a partially-mutated `_health_machines`
+dict. None of this is reachable today; the constraint should be
+documented in the normalizer's docstring before the surface ossifies.
+
+---
+
+### Updated finding inventory
+
+| Pass | Verdict | BLOCKER | MAJOR | MINOR |
+| --- | --- | --- | --- | --- |
+| 1 | initial | 3 | 7 | 10 |
+| 2 | residual | 1 | 6 | 10 |
+| 3 | deepening | 0 | 6 | 10 |
+| 4 | post-fix | 1 (R4-NEW-01) | 6 (R4-NEW-02..05, R4-NEW-08 + carry-over R4-NEW-09 ≡ pass-3 set) | 4 (r4-NEW-01..04) |
+
+Carry-over: R3-INGEST-01..06 + r3-INGEST-01..10 from pass 3 (all
+unchanged). Resolved by the fix commit: B-INGEST-01..03 (caveats above)
+and R-INGEST-01..07 (caveats above).
+
+**Net active findings on the post-fix tree:**
+
+- 1 BLOCKER (R4-NEW-01: poisoned checkpoint on download failure).
+- 12 MAJORs (six R4-NEW + six R3-INGEST carry-over).
+- 14 MINORs (four r4-NEW + ten r3-INGEST carry-over).
+
+### Updated verdict
+
+The fix commit makes meaningful progress: every BLOCKER from pass 1 is
+addressed, and the live-feed handshake is now correct. **But the
+checkpoint logic now has a worse failure mode than before** (R4-NEW-01),
+and the silent-feed-death class is only half-fixed (R4-NEW-04). The
+backtest path therefore drops from "conditional PASS for short
+windows" to **"FAIL until R4-NEW-01 is patched"** — a poisoned
+checkpoint silently loses data on every retry, which is strictly
+worse than the pre-fix "every retry re-downloads everything."
+
+The live-readiness verdict is unchanged from pass 3: **FAIL** —
+B-INGEST-02 and the live shutdown / queue-restart paths are still
+gating, and R3-INGEST-02 (Decimal NaN / `InvalidOperation`) still
+silently kills the parser thread, with R4-NEW-04 ensuring the
+orchestrator isn't told.
+
+Of the 19 MAJORs across all four passes, **the fix commit closed five
+cleanly (R-INGEST-04, R-INGEST-06, plus the three pass-1 BLOCKERs
+which were graded above MAJOR), partially closed two (R-INGEST-01,
+R-INGEST-07), and introduced six new ones**. Net pre/post: roughly
+unchanged in volume, but the *types* of bugs have shifted from
+"documented contract not met" toward "recently-introduced state
+poisoning and call-graph gaps" — a profile that is harder to detect
+without targeted regression tests, of which there are zero.
+
+### Recommended next-cycle priority order
+
+1. **R4-NEW-01** (BLOCKER, checkpoint poisoning) — gate any backfill
+   re-run on this. Trivial to fix, catastrophic if shipped.
+2. **R4-NEW-04** (silent thread death gap) — call
+   `notify_feed_interrupted` from `_run_loop`'s outer except.
+3. **R3-INGEST-02** (Decimal NaN + InvalidOperation) — sole reason
+   R4-NEW-04 matters today; both must land together.
+4. **R3-INGEST-01** (seq-zero dedup trap) — silent stale-data
+   delivery is still possible.
+5. **R4-NEW-02 / R4-NEW-03** (callback semantics) — ship before any
+   metrics consumer is wired.
+6. **R4-NEW-05** (phantom SM transitions) — forensics / audit-trail
+   correctness.
+7. Tests for everything in the fix commit. **Zero regression coverage
+   was added** for the eleven behavioral fixes.
