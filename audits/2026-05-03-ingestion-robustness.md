@@ -903,3 +903,505 @@ strengthened by new evidence:
 - B-INGEST-02 (handshake) ↔ R-INGEST-06 (subscribe validates only first
   status) compound: both stem from the same "single recv() then assume
   the rest of the stream is data" pattern.
+
+---
+
+## Third-pass audit (2026-05-04)
+
+**Status of prior fixes:** None. Verified by `git diff HEAD origin/main --
+src/feelies/ingestion/` (empty) and `git log --all --since="2026-05-03 12:00"
+-- src/feelies/ingestion/` (no commits). Every finding from passes 1 and 2
+still applies verbatim against the code on disk. This third pass is
+therefore a *deepening* exercise — searching for residuals that the first
+two passes did not exercise — rather than a delta verification.
+
+Methodology: focused on (a) malformed-payload defense, (b) internal-state
+ordering across the SM ↔ normalizer boundary, (c) lifecycle restart paths,
+(d) silent dedup / sequence-assignment traps, and (e) numerical edge cases
+in `Decimal` construction. Findings are numbered `R3-INGEST-NN`.
+
+### New MAJORs
+
+#### R3-INGEST-01 — Missing `q` field silently drops every event after the first
+**File:** `massive_normalizer.py:136, 184` (`seq_num = int(msg.get("q",
+0))`) interacting with `_is_duplicate` (`360–371`).
+
+`_check_gap` early-returns when `seq_num == 0` (`373–375`) and again when
+`prev_seq == 0` (`380–381`) — the author understood that `0` is a
+"sequence unknown" sentinel for the gap path. **`_is_duplicate` has no
+matching guard.**
+
+Trace, for a feed (or a malformed payload) where the `q` field is omitted
+on every WS quote:
+
+1. Frame 1: `seq_num = 0`. `prev` is `None` → not a duplicate. `_check_gap`
+   returns early. `_update_last_seen` sets `prev = (0, ts1)`. **Event
+   emitted.**
+2. Frame 2: `seq_num = 0`. `prev[0] == seq_num` → `0 == 0` → **`True`.
+   `_duplicates_filtered += 1`. Event silently dropped.**
+3. Every subsequent frame: same outcome.
+
+Net behavior: when the wire omits `q`, **only the very first event for
+each `(symbol, feed_type)` is emitted, and `duplicates_filtered`
+inexplicably climbs by one per tick** — visible as a metric anomaly but
+not as a parse error or health transition. The symbol stays HEALTHY.
+
+This is the worst kind of silent corruption: the orchestrator receives
+plausible-looking traffic, makes decisions on stale prices, and the
+data-integrity SM never fires because nothing was malformed at the
+parser level — the dedup *is* the bug.
+
+The same trap applies to any feed whose first event happens to carry
+`q == 0` (legitimate sequence-zero on session start), with the next
+non-zero `q` being treated as a forward gap and a `GAP_DETECTED → HEALTHY`
+flap on the next tick — but the silent-drop path above is the dangerous
+one.
+
+**Fix sketch:** in `_is_duplicate`, mirror the `_check_gap` guard:
+
+```python
+if seq_num == 0:
+    return False  # 0 is "unknown", cannot be used for dedup
+```
+
+Then `_update_last_seen` should *not* persist `(0, ts)` either — keep
+`_last_seen[(sym, ft)]` absent until a real seq arrives, so the dedup
+state isn't poisoned by sentinel zeros. Add a regression test feeding
+two identical messages without `q`.
+
+---
+
+#### R3-INGEST-02 — `Decimal(str(msg["bp"]))` accepts `"NaN"`, `"Infinity"`, and negative prices without validation
+**File:** `massive_normalizer.py:163–164, 205, 281–282, 325`.
+
+`Decimal` is *more permissive* than `float`:
+
+```python
+>>> from decimal import Decimal
+>>> Decimal(str("NaN"))
+Decimal('NaN')
+>>> Decimal(str("Infinity"))
+Decimal('Infinity')
+>>> Decimal(str(-1.5))
+Decimal('-1.5')
+```
+
+Wire-level pathologies — a server bug emitting `null` (caught — None
+→ `str(None)` → `Decimal("None")` raises `InvalidOperation`, propagated
+to the catch block as `ValueError`? actually `decimal.InvalidOperation`
+is a subclass of `ArithmeticError`, **not** `ValueError`, so it would
+escape the `(KeyError, ValueError, TypeError)` catch and crash the
+parser thread), `"NaN"` (silently constructs an NaN Decimal, emitted as
+a "valid" event), or a negative bid — are not handled. Each creates a
+different failure shape:
+
+- **`"NaN"` / `"Infinity"`**: `Decimal("NaN")` succeeds; the resulting
+  `NBBOQuote` carries a NaN bid, which compares `bid > ask` to `False`
+  (NaN comparisons are always False). Downstream "is the book crossed?"
+  guards fail-open. Position sizing and signal logic that does
+  `mid = (bid + ask) / 2` propagates the NaN into PnL.
+- **Negative prices**: silently accepted. `bid_size`, `ask_size`,
+  trade size — all `int(...)` — also accept negatives without
+  complaint.
+- **`InvalidOperation` from genuine garbage** (e.g., `Decimal("abc")`)
+  bypasses the `(KeyError, ValueError, TypeError)` catch at `175` /
+  `217` / `295` / `339` and crashes the parser thread, which in
+  `MassiveLiveFeed` propagates up through `_consume` → `_run_loop`'s
+  broad `except` → silent feed termination (R-INGEST-01).
+
+**Fix sketch:** add a `_safe_decimal(value)` helper that:
+1. Catches `decimal.InvalidOperation` and re-raises as `ValueError`
+   (so the existing catch handles it).
+2. Rejects `is_nan()` and `is_infinite()`.
+3. Rejects values `<= 0` for prices (not for `decimal_size` etc).
+
+Apply at all four call sites. Include `decimal.InvalidOperation` in the
+existing exception tuples regardless, as defense in depth.
+
+---
+
+#### R3-INGEST-03 — `_seq.next()` advances on parse failures, leaving holes in the EventLog sequence space
+**File:** `massive_normalizer.py:143, 191, 261, 311`.
+
+Sequence assignment in `_ws_quote`:
+
+```python
+internal_seq = self._seq.next()
+cid = make_correlation_id(symbol, exchange_ts_ns, internal_seq)
+...
+return NBBOQuote(
+    ...
+    bid=Decimal(str(msg["bp"])),  # ← may raise KeyError / InvalidOperation
+    ...
+)
+```
+
+`_seq.next()` is at line 143; the `NBBOQuote(...)` constructor at 158
+materializes the dataclass *after* the counter has already advanced. If
+construction raises (missing `"bp"`, `"ap"`, `"bs"`, `"as"`, or
+`InvalidOperation` from a bad numeric), the catch at 175 returns `None` —
+**but the sequence number is permanently burned.** The EventLog
+therefore has gaps in the `Event.sequence` field that do not correspond
+to any real event.
+
+Replay determinism is preserved (the gaps are deterministic given
+deterministic inputs), but invariant 13 (every event has a unique,
+contiguous sequence) is violated, and any tooling that audits
+"events ordered by sequence with no holes" will flag false positives.
+
+The same hole-creation pattern applies in the REST paths (`261`, `311`).
+
+**Fix sketch:** move `_seq.next()` to be the **last operation before
+`return`**, after all field accesses and `Decimal` construction have
+succeeded. Equivalently, wrap construction first and then assign the
+sequence in a tiny success-path helper.
+
+---
+
+#### R3-INGEST-04 — `MassiveLiveFeed.start()` after `stop()` reuses a queue with a stale sentinel and possibly stale events
+**File:** `massive_ws.py:104–124`, queue lifetime at `76–78`.
+
+`stop()` enqueues `_SENTINEL` (`121`), and `_run_loop`'s `finally` enqueues
+*another* `_SENTINEL` (`139`). After `_thread.join()`, the queue still
+contains:
+
+- 0+ stale events the consumer never drained
+- 1–2 `_SENTINEL` markers
+
+`start()` (`104–114`) does **not** drain the queue and does **not** create
+a new one. It only:
+
+- checks `_thread.is_alive()`
+- clears `_stop_event`
+- spawns a new thread
+
+The new feed thread starts producing events into the same queue. The
+consumer's next `events()` call:
+
+1. Yields the stale events from the prior session as if they were new
+   (timestamps potentially hours behind clock time — replay-feed-like
+   causality violation, but no `CausalityViolation` is raised because
+   the live feed has no monotonicity check).
+2. Hits the stale `_SENTINEL` and the consumer iterator **terminates
+   cleanly**, even though the feed is healthy and producing.
+
+This is a real restart bug. Triggered by any code path that does
+`feed.stop()` then `feed.start()` — e.g., reconnect-on-config-change,
+test fixture reuse, or a healthcheck-driven restart.
+
+**Fix sketch:** in `start()`, after the alive check, drain the queue with
+a non-blocking loop:
+
+```python
+while True:
+    try:
+        self._queue.get_nowait()
+    except queue.Empty:
+        break
+```
+
+Or replace `_queue` with a fresh `queue.Queue(maxsize=_MAX_QUEUE_SIZE)`
+on each `start()`. The latter is simpler and avoids a reordering hazard
+with concurrent producers.
+
+---
+
+#### R3-INGEST-05 — `StateMachine.transition()` callback contract: callbacks observe the *pre-transition* state
+**File:** `core/state_machine.py:144–163`.
+
+The docstring (`135–143`) calls the sequence "atomic" with steps:
+*validate → build → notify → commit*. The implementation, however,
+runs callbacks at step 3 (line 158) **before** appending to history
+(`161`) and **before** updating `self._state` (`162`). Inside any
+registered callback:
+
+- `sm.state` returns the **old** state.
+- `sm.history[-1]` is the **previous** transition, not the current one.
+- The `record` parameter contains the new `to_state` (correct).
+
+This is internally consistent and well-defended (if a callback raises,
+no side effects — exactly as the docstring promises). But it is
+**surprising**, and it directly affects the ingestion layer: when the
+`transition_callback` constructor parameter on `MassiveNormalizer`
+(`62–70, 350–351`) is finally wired (R-INGEST-05 from pass 2), naïve
+callback authors will write code like:
+
+```python
+def on_health_change(record):
+    log_metric("data_health.transition", labels={
+        "symbol": record.machine_name,
+        "to": record.to_state,
+        "current_sm_state": sm.state.name,  # ← will print the OLD state
+    })
+```
+
+— and observe a contradiction between `record.to_state` and `sm.state`.
+Subtler: a callback that *queries* `_last_seen` to enrich the metric
+will also see the pre-update tuple, because `_check_gap` is called
+*before* `_update_last_seen` in the normalizer.
+
+**Fix sketch:** either reorder the SM (`history.append` and
+`self._state = target` *before* the callback loop, then revert on
+exception — at the cost of mutability) or document the contract
+explicitly in `StateMachine.on_transition`'s docstring with a note that
+`record` is the source of truth, not `self.state`. Pair with a
+normalizer-level docstring noting that `_check_gap` runs *before*
+`_update_last_seen` so callbacks see the prior `(seq, ts)` for the
+symbol.
+
+---
+
+#### R3-INGEST-06 — `_mark_corrupted("UNKNOWN")` collapses unrelated parse failures into one synthetic stream
+**File:** `massive_normalizer.py:177, 219, 297, 341`.
+
+The fallback when a parse error happens *before* `symbol` could be
+extracted:
+
+```python
+self._mark_corrupted(msg.get("sym", "UNKNOWN"))
+```
+
+Any frame missing `"sym"` (or `"ticker"` in the REST paths) creates or
+updates a single `_health_machines["UNKNOWN"]` state machine. A burst
+of garbage from one upstream incident — say, the WS server briefly
+emits status frames in an unexpected shape — flips `"UNKNOWN"` to
+`CORRUPTED` once, then `can_transition(CORRUPTED)` returns False from
+the state graph for subsequent calls (the gate at `411`), so further
+errors are silent.
+
+Real symbols are unaffected (they have their own machines), but the
+operator dashboard now shows a permanent `UNKNOWN: CORRUPTED` symbol
+that does not correspond to any tradable instrument and cannot be
+acknowledged or recovered. The only actionable signal — "*which*
+symbol just broke" — is destroyed.
+
+**Fix sketch:** when `symbol` cannot be extracted, *do not* drive the
+SM at all. Emit a counter (`_unattributable_parse_errors += 1`) and a
+log line, leaving the per-symbol state space clean. Optionally include
+a hash of the offending raw bytes for triage.
+
+---
+
+### New MINORs
+
+#### r3-INGEST-01 — No defense against deeply nested or oversized JSON payloads
+**File:** `massive_normalizer.py:84–88`.
+
+`json.loads(raw)` is unbounded. A WS frame containing `{"a": [[[…]]]}`
+nested past `sys.getrecursionlimit()` (~1000) raises `RecursionError`,
+which is **not** in the `(json.JSONDecodeError, UnicodeDecodeError)`
+catch — it propagates through `on_message`, into `_consume`, and then
+into `_run_loop`'s broad `except`, killing the live feed silently
+(R-INGEST-01). A 100 MB frame allocates 100 MB of Python objects. In a
+trusted-feed deployment this is not a high-priority concern, but in
+any deployment that proxies untrusted upstream (TLS-MITM debugging,
+test harnesses replaying captured fuzzed traffic) it's a one-frame
+liveness kill.
+
+**Fix sketch:** cap raw frame size before `json.loads` (`if len(raw) >
+_MAX_FRAME_BYTES: log + return []`). Add `RecursionError` to the catch
+tuple.
+
+#### r3-INGEST-02 — No range / sanity validation on `exchange_ts_ns`
+**File:** `massive_normalizer.py:135, 183, 250, 303`.
+
+`int(msg["t"]) * _MS_TO_NS` is unchecked. A wire-level bug producing
+`t == 1e15` (a large but valid integer) yields a nanosecond timestamp
+~30,000 years from now. The replay-feed causality check still passes
+(monotonic), but downstream comparators that subtract event time from
+wall time produce nonsense latencies.
+
+**Fix sketch:** sanity-bound to `[clock.now_ns() − 30 days, clock.now_ns() +
+1 hour]` or similar; on out-of-range, mark CORRUPTED with a precise
+reason.
+
+#### r3-INGEST-03 — REST classifier collapses ambiguous records silently
+**File:** `massive_normalizer.py:233–244`.
+
+```python
+if "bid_price" in data or "ask_price" in data:
+    event = self._rest_quote(data)
+elif "price" in data:
+    event = self._rest_trade(data)
+```
+
+A record with **both** `bid_price` and `price` is classified as a
+quote and the `price` field is silently discarded. Real-world cause
+for this is unlikely, but if Massive ever introduces a hybrid record
+(unlikely) or a test fixture is malformed (likely), the silent drop
+makes diagnosis hard. Add a `logger.warning` for the ambiguous case.
+
+#### r3-INGEST-04 — `MassiveNormalizer.health(symbol)` returns `HEALTHY` for unseen symbols
+**File:** `massive_normalizer.py:98–102`.
+
+```python
+def health(self, symbol: str) -> DataHealth:
+    sm = self._health_machines.get(symbol)
+    if sm is None:
+        return DataHealth.HEALTHY
+    return sm.state
+```
+
+A kill-switch / liveness watchdog that loops over the requested symbol
+universe and asks `normalizer.health(sym)` cannot distinguish "data
+flowing fine" from "we never received a single tick for this symbol."
+Both return HEALTHY.
+
+**Fix sketch:** add `DataHealth.NEVER_SEEN` (or rename the default to
+`UNKNOWN`) and return it for absent machines. Update the SM transition
+table to allow `NEVER_SEEN → HEALTHY` on first successful event.
+
+#### r3-INGEST-05 — REST ingest does not validate that returned ticker matches requested symbol
+**File:** `massive_ingestor.py:303–312` paired with `massive_normalizer.py:249, 302`.
+
+`_download_raw` requests `symbol = "AAPL"` from the SDK; `_model_to_dict`
+preserves whatever `ticker` the SDK returned, falling back to the
+requested symbol only when the field is absent (`354–355`). If the
+upstream returns `ticker = "MSFT"` for an `AAPL` request (Massive bug,
+proxy misconfig, cache poisoning), the normalizer will key state under
+`"MSFT"` and pollute the live `MSFT` machine with `AAPL` data. Defense
+in depth: assert `rec_dict["ticker"] == symbol` in `_model_to_dict`
+and drop+log on mismatch.
+
+#### r3-INGEST-06 — `decimal.InvalidOperation` is not in the catch tuple
+**File:** `massive_normalizer.py:175, 217, 295, 339`.
+
+`(KeyError, ValueError, TypeError)` — `decimal.InvalidOperation` is an
+`ArithmeticError`, not a `ValueError`. A wire payload like
+`{"bp": "1.2.3"}` raises `InvalidOperation` from `Decimal(str("1.2.3"))`
+and skips the catch entirely, killing the parser thread. See
+R3-INGEST-02 for the broader Decimal-validation fix; this one is the
+narrow defensive minimum.
+
+#### r3-INGEST-07 — `_parse_ws` silently skips non-dict elements with no metric
+**File:** `massive_normalizer.py:113–129`.
+
+```python
+for msg in messages:
+    if not isinstance(msg, dict):
+        continue
+```
+
+A malformed batch like `[{"ev":"Q",...}, "garbage", {"ev":"T",...}]`
+processes the first and third, drops the second silently. No counter,
+no log. Add a `_unparseable_elements` counter analogous to
+`_duplicates_filtered`.
+
+#### r3-INGEST-08 — `int(msg["bs"])` accepts negative sizes silently
+**File:** `massive_normalizer.py:165–166, 206, 283–284, 326`.
+
+`bid_size = -1` passes `int()`. The event schema does not constrain
+non-negativity. Downstream depth aggregations that sum sizes will
+produce nonsense. Reject `< 0` at the boundary.
+
+#### r3-INGEST-09 — `received_ns` is captured once per `ingest_symbol_parallel` batch
+**File:** `massive_ingestor.py:256`.
+
+Already noted at architecture level (R-INGEST-03 / `received_ns`
+unused). Concrete additional wrinkle: even if R-INGEST-03 is fixed by
+plumbing `received_ns` into the event, the historical path hands
+*every* record in a batch the same `received_ns`. Latency analysis
+based on `received_ns - exchange_timestamp_ns` therefore returns the
+batch wall-clock duration as a constant offset, not per-record
+ingestion latency. Document or re-capture per-record.
+
+#### r3-INGEST-10 — `_subscribe`'s comma-joined channel list duplicates per-symbol entries with no de-dup
+**File:** `massive_ws.py:197–204`.
+
+```python
+for sym in self._symbols:
+    channels.append(f"Q.{sym}")
+    channels.append(f"T.{sym}")
+```
+
+If the caller passes `symbols = ["AAPL", "AAPL", "MSFT"]` (an honest
+mistake from upstream config), the subscribe message contains
+duplicate `Q.AAPL` entries. Massive may accept, error, or silently
+double-charge. Defensive `list(dict.fromkeys(self._symbols))` at
+construction would fix.
+
+---
+
+### Concurrency / contract observations
+
+These are not bugs in the current single-threaded usage but are worth
+recording since they're load-bearing assumptions the code does not
+state explicitly:
+
+- `MassiveNormalizer._last_seen`, `_health_machines`,
+  `_duplicates_filtered` are mutated without locking. The Protocol
+  docstring (`normalizer.py`) does not state thread-safety
+  expectations. If a future caller shares one normalizer between the
+  WS feed thread and a side ingest, races on the dict and integer
+  produce silently incorrect dedup / counters.
+- `StateMachine` itself is not thread-safe (`history` and `_state`
+  mutation in `transition()` is unguarded). The data-integrity SMs
+  inherit this.
+- `ThreadPoolExecutor` workers in `ingest_symbol_parallel` invoke
+  `client.list_quotes` / `list_trades` from two threads on a single
+  client. The `massive` SDK's thread-safety is undocumented in this
+  repo. Worth a constructor-time assertion or an explicit two-client
+  pattern.
+
+### Determinism cross-check
+
+Verified that, given deterministic inputs and a fixed symbol-iteration
+order:
+
+- `_seq.next()` advances deterministically (R3-INGEST-03 holes are
+  themselves deterministic).
+- The merge-sort key in `ingest_symbol_parallel` is total-ordering on
+  inputs that follow the per-feed sequence-space invariant; ties are
+  broken by `(type_rank, list-position)` via Python's stable sort.
+- `make_correlation_id` is pure.
+- `received_ns` capture point is fixed.
+
+So replay determinism appears to hold *despite* the holes — but the
+EventLog's `Event.sequence` is no longer dense, which any auditor
+checking "no skipped sequences" will flag.
+
+### Updated finding inventory
+
+| Pass | BLOCKER | MAJOR | MINOR |
+| --- | --- | --- | --- |
+| 1 | 3 (B-INGEST-01..03) | 7 (M-INGEST-01..07) | 10 (m-INGEST-01..10) |
+| 2 | 1 (R-INGEST-01) | 6 (R-INGEST-02..07) | 10 (r-INGEST-01..10) |
+| 3 | 0 | 6 (R3-INGEST-01..06) | 10 (r3-INGEST-01..10) |
+| **Total** | **4** | **19** | **30** |
+
+R3-INGEST-01 (silent dedup of seq-zero events) is functionally a
+BLOCKER — silent stale-data delivery — but is graded MAJOR here because
+its trigger requires either a malformed payload or a session-start
+edge case (legitimate `q == 0`). If a wire capture confirms `q == 0`
+ever occurs in normal operation, escalate.
+
+### Updated verdict
+
+The backtest verdict from passes 1 + 2 (conditional PASS, narrowed
+to short-window single-symbol runs) is **further weakened**:
+
+- R3-INGEST-01 means *any* historical record where `sequence_number`
+  defaults to `0` (e.g., REST records with the field absent or
+  zero-valued at session boundary) would be dropped after the first.
+  The risk that a REST page legitimately contains `sequence_number:
+  0` should be checked against actual cache fixtures.
+- R3-INGEST-03 (sequence holes) does not break replay determinism
+  but does break the "EventLog has dense sequence" invariant any
+  audit-trail tool will assume.
+
+The live verdict (FAIL) is **reinforced** by R3-INGEST-04 (queue
+restart bug) and R3-INGEST-06 (UNKNOWN-symbol error collapse), both
+of which break operational recovery without affecting the parse path.
+
+No first-pass or second-pass finding was overturned. Two were
+strengthened by new evidence:
+
+- R-INGEST-01 (silent feed termination) ↔ R3-INGEST-02 (Decimal
+  errors escape catch) ↔ r3-INGEST-01 (RecursionError escapes catch):
+  three concrete failure modes that all funnel through the same
+  silent-thread-death path. Fixing the broad `except` in
+  `_run_loop` is now triple-justified.
+- M-INGEST-01 (out-of-order watermark regression) ↔ R3-INGEST-01
+  (seq-zero dedup trap): both stem from `_last_seen` being trusted
+  unconditionally. A unified fix (treat `seq == 0` and `seq < high
+  watermark` as "do not poison `_last_seen`") closes both.
