@@ -50,6 +50,7 @@ from feelies.core.events import (
     Side,
     Trade,
 )
+from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.cost_model import CostModel, ZeroCostModel
 
 
@@ -104,11 +105,13 @@ class PassiveLimitOrderRouter:
         self._last_quotes: dict[str, NBBOQuote] = {}
         self._pending_acks: list[OrderAck] = []
         self._resting_orders: dict[str, _PendingOrder] = {}
-        # Symbol → order_ids index so on_quote() is O(k) in the number
-        # of orders for that symbol rather than O(n) across all orders.
-        self._resting_by_symbol: dict[str, set[str]] = {}
+        # Symbol → insertion-ordered order_ids index so on_quote() is O(k)
+        # in the number of orders for that symbol rather than O(n) across
+        # all orders.  Order of fills/cancels is determinism-critical.
+        self._resting_by_symbol: dict[str, dict[str, None]] = {}
         # Full set of order_ids ever submitted — used for idempotent reject.
         self._submitted_order_ids: set[str] = set()
+        self._ack_seq = SequenceGenerator()
 
     # ── Public interface (OrderRouter protocol) ──────────────────
 
@@ -194,7 +197,7 @@ class PassiveLimitOrderRouter:
         self._pending_acks.append(OrderAck(
             timestamp_ns=fill_ts,
             correlation_id=request.correlation_id,
-            sequence=request.sequence,
+            sequence=self._ack_seq.next(),
             order_id=request.order_id,
             symbol=request.symbol,
             status=OrderAckStatus.FILLED,
@@ -202,6 +205,7 @@ class PassiveLimitOrderRouter:
             fill_price=fill_price,
             fees=costs.total_fees,
             cost_bps=costs.cost_bps,
+            request_sequence=request.sequence,
         ))
 
     # ── Passive (limit) order posting ────────────────────────────
@@ -230,17 +234,18 @@ class PassiveLimitOrderRouter:
             queue_ahead_shares=self._queue_position_shares,
         )
         self._resting_orders[request.order_id] = pending
-        self._resting_by_symbol.setdefault(request.symbol, set()).add(
+        self._resting_by_symbol.setdefault(request.symbol, {})[
             request.order_id
-        )
+        ] = None
 
         self._pending_acks.append(OrderAck(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=request.correlation_id,
-            sequence=request.sequence,
+            sequence=self._ack_seq.next(),
             order_id=request.order_id,
             symbol=request.symbol,
             status=OrderAckStatus.ACKNOWLEDGED,
+            request_sequence=request.sequence,
         ))
 
     def set_queue_ahead(self, order_id: str, shares: int) -> bool:
@@ -335,11 +340,12 @@ class PassiveLimitOrderRouter:
         self._pending_acks.append(OrderAck(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=request.correlation_id,
-            sequence=request.sequence,
+            sequence=self._ack_seq.next(),
             order_id=request.order_id,
             symbol=request.symbol,
             status=OrderAckStatus.REJECTED,
             reason=reason,
+            request_sequence=request.sequence,
         ))
 
     def _emit_passive_fill(self, pending: _PendingOrder) -> None:
@@ -365,7 +371,7 @@ class PassiveLimitOrderRouter:
         self._pending_acks.append(OrderAck(
             timestamp_ns=fill_ts,
             correlation_id=pending.request.correlation_id,
-            sequence=pending.request.sequence,
+            sequence=self._ack_seq.next(),
             order_id=pending.request.order_id,
             symbol=pending.request.symbol,
             status=OrderAckStatus.FILLED,
@@ -373,6 +379,7 @@ class PassiveLimitOrderRouter:
             fill_price=fill_price,
             fees=costs.total_fees,
             cost_bps=costs.cost_bps,
+            request_sequence=pending.request.sequence,
         ))
 
     def _cancel_fees(self, quantity: int) -> Decimal:
@@ -387,7 +394,7 @@ class PassiveLimitOrderRouter:
         self._pending_acks.append(OrderAck(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=pending.request.correlation_id,
-            sequence=pending.request.sequence,
+            sequence=self._ack_seq.next(),
             order_id=pending.request.order_id,
             symbol=pending.request.symbol,
             status=OrderAckStatus.CANCELLED,
@@ -395,6 +402,7 @@ class PassiveLimitOrderRouter:
                 f"passive limit timeout after {pending.total_ticks} ticks"
             ),
             fees=cancel_fees if cancel_fees > 0 else Decimal("0"),
+            request_sequence=pending.request.sequence,
         ))
 
     # ── Explicit cancellation ───────────────────────────────────
@@ -412,12 +420,13 @@ class PassiveLimitOrderRouter:
         self._pending_acks.append(OrderAck(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=pending.request.correlation_id,
-            sequence=pending.request.sequence,
+            sequence=self._ack_seq.next(),
             order_id=order_id,
             symbol=pending.request.symbol,
             status=OrderAckStatus.CANCELLED,
             reason="client_cancel",
             fees=cancel_fees if cancel_fees > 0 else Decimal("0"),
+            request_sequence=pending.request.sequence,
         ))
         self._remove_resting(order_id)
         return True
@@ -426,10 +435,10 @@ class PassiveLimitOrderRouter:
         pending = self._resting_orders.pop(order_id, None)
         if pending is None:
             return
-        symbol_set = self._resting_by_symbol.get(pending.request.symbol)
-        if symbol_set is not None:
-            symbol_set.discard(order_id)
-            if not symbol_set:
+        symbol_orders = self._resting_by_symbol.get(pending.request.symbol)
+        if symbol_orders is not None:
+            symbol_orders.pop(order_id, None)
+            if not symbol_orders:
                 del self._resting_by_symbol[pending.request.symbol]
 
     # ── Diagnostics ──────────────────────────────────────────────

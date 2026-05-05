@@ -49,9 +49,25 @@ class StrategyPositionStore:
         quantity_delta: int,
         fill_price: Decimal,
         fees: Decimal = Decimal("0"),
+        timestamp_ns: int | None = None,
     ) -> Position:
         """Update position for a specific strategy."""
-        return self._get_store(strategy_id).update(symbol, quantity_delta, fill_price, fees=fees)
+        return self._get_store(strategy_id).update(
+            symbol,
+            quantity_delta,
+            fill_price,
+            fees=fees,
+            timestamp_ns=timestamp_ns,
+        )
+
+    def debit_fees(
+        self,
+        strategy_id: str,
+        symbol: str,
+        fees: Decimal,
+    ) -> None:
+        """Record fees for a specific strategy + symbol without a fill."""
+        self._get_store(strategy_id).debit_fees(symbol, fees)
 
     def update_mark(self, symbol: str, mark_price: Decimal) -> None:
         """Propagate a mark price to every per-strategy book.
@@ -207,6 +223,7 @@ class _AggregateView:
         quantity_delta: int,
         fill_price: Decimal,
         fees: Decimal = Decimal("0"),
+        timestamp_ns: int | None = None,
     ) -> Position:
         raise RuntimeError(
             "Cannot update aggregate view directly — use "

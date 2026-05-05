@@ -30,6 +30,14 @@ class TestUpdate:
         assert pos.quantity == 100
         assert pos.avg_entry_price == Decimal("150")
 
+    def test_sign_flip_resets_opened_at_timestamp(self, store: MemoryPositionStore) -> None:
+        store.update("AAPL", 100, Decimal("150"), timestamp_ns=1_000)
+
+        pos = store.update("AAPL", -150, Decimal("140"), timestamp_ns=2_000)
+
+        assert pos.quantity == -50
+        assert store.opened_at_ns("AAPL") == 2_000
+
     def test_sell_reduces_position(self, store: MemoryPositionStore) -> None:
         store.update("AAPL", 100, Decimal("150"))
         pos = store.update("AAPL", -50, Decimal("155"))
@@ -105,11 +113,13 @@ class TestDebitFees:
         store.debit_fees("AAPL", Decimal("1.50"))
         assert store.get("AAPL").cumulative_fees == Decimal("1.50")
 
-    def test_no_ghost_position_when_no_fill(self, store: MemoryPositionStore) -> None:
-        """Cancel fee on a never-filled symbol must not create a ghost entry."""
+    def test_fee_only_position_retained_when_no_fill(self, store: MemoryPositionStore) -> None:
+        """Cancel fee on a never-filled symbol must remain visible to P&L accounting."""
         store.debit_fees("AAPL", Decimal("0.50"))
-        # all_positions() should remain empty — no zero-qty ghost
-        assert store.all_positions() == {}
+        result = store.all_positions()
+        assert set(result.keys()) == {"AAPL"}
+        assert result["AAPL"].quantity == 0
+        assert result["AAPL"].cumulative_fees == Decimal("0.50")
 
     def test_fully_closed_position_visible_in_all_positions(
         self, store: MemoryPositionStore

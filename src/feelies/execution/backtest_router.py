@@ -50,6 +50,7 @@ from feelies.core.events import (
     OrderRequest,
     Side,
 )
+from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.cost_model import CostModel, ZeroCostModel
 
 
@@ -104,6 +105,7 @@ class BacktestOrderRouter:
         self._last_quotes: dict[str, NBBOQuote] = {}
         self._pending_acks: list[OrderAck] = []
         self._submitted_order_ids: set[str] = set()
+        self._ack_seq = SequenceGenerator()
 
     def on_quote(self, quote: NBBOQuote) -> None:
         """Update the latest quote for a symbol.
@@ -137,10 +139,11 @@ class BacktestOrderRouter:
         self._pending_acks.append(OrderAck(
             timestamp_ns=ack_ts,
             correlation_id=request.correlation_id,
-            sequence=request.sequence,
+            sequence=self._ack_seq.next(),
             order_id=request.order_id,
             symbol=request.symbol,
             status=OrderAckStatus.ACKNOWLEDGED,
+            request_sequence=request.sequence,
         ))
 
         fill_price = (quote.bid + quote.ask) / Decimal("2")
@@ -177,7 +180,7 @@ class BacktestOrderRouter:
             self._pending_acks.append(OrderAck(
                 timestamp_ns=fill_ts,
                 correlation_id=request.correlation_id,
-                sequence=request.sequence,
+                sequence=self._ack_seq.next(),
                 order_id=request.order_id,
                 symbol=request.symbol,
                 status=OrderAckStatus.PARTIALLY_FILLED,
@@ -185,6 +188,7 @@ class BacktestOrderRouter:
                 fill_price=fill_price,
                 fees=partial_costs.total_fees,
                 cost_bps=partial_costs.cost_bps,
+                request_sequence=request.sequence,
             ))
 
             # ── Part 2: fill remainder with market-impact premium ──
@@ -219,7 +223,7 @@ class BacktestOrderRouter:
             self._pending_acks.append(OrderAck(
                 timestamp_ns=fill_ts,
                 correlation_id=request.correlation_id,
-                sequence=request.sequence,
+                sequence=self._ack_seq.next(),
                 order_id=request.order_id,
                 symbol=request.symbol,
                 status=OrderAckStatus.FILLED,
@@ -227,6 +231,7 @@ class BacktestOrderRouter:
                 fill_price=impact_price,
                 fees=excess_costs.total_fees,
                 cost_bps=excess_costs.cost_bps,
+                request_sequence=request.sequence,
             ))
             return
 
@@ -243,7 +248,7 @@ class BacktestOrderRouter:
         self._pending_acks.append(OrderAck(
             timestamp_ns=fill_ts,
             correlation_id=request.correlation_id,
-            sequence=request.sequence,
+            sequence=self._ack_seq.next(),
             order_id=request.order_id,
             symbol=request.symbol,
             status=OrderAckStatus.FILLED,
@@ -251,6 +256,7 @@ class BacktestOrderRouter:
             fill_price=fill_price,
             fees=costs.total_fees,
             cost_bps=costs.cost_bps,
+            request_sequence=request.sequence,
         ))
 
     def poll_acks(self) -> list[OrderAck]:
@@ -262,9 +268,10 @@ class BacktestOrderRouter:
         self._pending_acks.append(OrderAck(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=request.correlation_id,
-            sequence=request.sequence,
+            sequence=self._ack_seq.next(),
             order_id=request.order_id,
             symbol=request.symbol,
             status=OrderAckStatus.REJECTED,
             reason=reason,
+            request_sequence=request.sequence,
         ))

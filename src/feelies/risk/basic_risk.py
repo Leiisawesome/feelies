@@ -87,8 +87,10 @@ class BasicRiskEngine:
 
         The exposure and drawdown sub-checks via
         ``_check_exposure_and_drawdown`` are shared with gate 2.
-        In the single-alpha path these see the same position snapshot
-        (no mutation between gates).  This partial redundancy is
+        In the standalone SIGNAL walk these see the same position
+        snapshot. Same-tick PORTFOLIO orders, when present, reconcile
+        before gate 1 runs; no bus-driven position mutation occurs
+        between gate 1 and gate 2. This partial redundancy is
         acceptable: gate 1 provides an early-exit before order
         construction, and removing either gate would lose the unique
         check that only that gate performs.
@@ -164,9 +166,14 @@ class BasicRiskEngine:
                 ),
             )
 
+        prospective_exposure = self._prospective_total_exposure(
+            order, positions, current,
+        )
         shared = self._check_exposure_and_drawdown(
             order.timestamp_ns, order.correlation_id, order.sequence, order.symbol,
-            positions, scale_down_reason="approaching exposure limit at order gate",
+            positions,
+            scale_down_reason="approaching exposure limit at order gate",
+            exposure_override=prospective_exposure,
         )
         if shared is not None:
             return shared
@@ -279,6 +286,33 @@ class BasicRiskEngine:
 
         return tuple(orders)
 
+    def _prospective_total_exposure(
+        self,
+        order: OrderRequest,
+        positions: PositionStore,
+        current: object,
+    ) -> Decimal:
+        """Gross exposure after hypothetically applying ``order``.
+
+        Gate 2 must account for the candidate order's own notional, not
+        just the snapshot passed in.  This matters especially for reverse
+        entries, where the orchestrator supplies a post-exit view and the
+        new entry leg must still count against the gross cap.
+        """
+        exposure = positions.total_exposure()
+        mark = self._mark_for(order.symbol, current, positions)
+        if mark <= 0 and order.limit_price is not None and order.limit_price > 0:
+            mark = order.limit_price
+        if mark <= 0:
+            return exposure
+
+        current_qty_obj = getattr(current, "quantity", 0)
+        current_qty = current_qty_obj if isinstance(current_qty_obj, int) else 0
+        signed_qty = order.quantity if order.side == Side.BUY else -order.quantity
+        current_contrib = abs(current_qty) * mark
+        post_fill_contrib = abs(current_qty + signed_qty) * mark
+        return exposure - current_contrib + post_fill_contrib
+
     @staticmethod
     def _mark_for(
         symbol: str,
@@ -287,21 +321,15 @@ class BasicRiskEngine:
     ) -> Decimal:
         """Return the best-available mark price for translating USD → shares.
 
-        Uses ``avg_entry_price`` when no live mark is recorded — this is
-        the boot-time fallback and matches the same convention used by
-        :meth:`MemoryPositionStore.total_exposure`.  Returns ``0`` when
-        the position has never been marked AND has zero average entry —
-        the caller must treat zero as "skip this leg" (Inv-11 fail-safe).
+        Prefers the latest live mark when recorded; otherwise falls back
+        to ``avg_entry_price`` for the boot-time case before any quote has
+        flowed through.  Returns ``0`` when the position has never been
+        marked AND has zero average entry — the caller must treat zero as
+        "skip this leg" (Inv-11 fail-safe).
         """
-        # ``MemoryPositionStore`` exposes its mark map indirectly via
-        # ``total_exposure``; we read ``avg_entry_price`` here for the
-        # cheapest deterministic conversion.  A future v0.4 enhancement
-        # may pass an explicit mark dict to avoid this approximation.
-        avg = getattr(current, "avg_entry_price", Decimal("0"))
-        if isinstance(avg, Decimal) and avg > 0:
-            return avg
         # Try to read a live mark via the optional accessor introduced
-        # in Phase 4-finalize; fall back to zero on absence.
+        # in Phase 4-finalize; for already-open positions this must take
+        # priority over cost basis so USD targets track current notional.
         latest = getattr(positions, "latest_mark", None)
         if callable(latest):
             try:
@@ -310,6 +338,9 @@ class BasicRiskEngine:
                     return m
             except Exception:  # pragma: no cover - defensive
                 pass
+        avg = getattr(current, "avg_entry_price", Decimal("0"))
+        if isinstance(avg, Decimal) and avg > 0:
+            return avg
         return Decimal("0")
 
     def _check_exposure_and_drawdown(
@@ -321,6 +352,7 @@ class BasicRiskEngine:
         positions: PositionStore,
         *,
         scale_down_reason: str,
+        exposure_override: Decimal | None = None,
     ) -> RiskVerdict | None:
         """Check exposure cap, drawdown guard, and scale-down threshold.
 
@@ -334,7 +366,10 @@ class BasicRiskEngine:
         definition so the two checks stay internally consistent.
         """
         current_equity = self._compute_current_equity(positions)
-        exposure = positions.total_exposure()
+        exposure = (
+            positions.total_exposure()
+            if exposure_override is None else exposure_override
+        )
         equity_for_cap = current_equity if current_equity > 0 else self._config.account_equity
         max_exposure = equity_for_cap * Decimal(
             str(self._config.max_gross_exposure_pct)

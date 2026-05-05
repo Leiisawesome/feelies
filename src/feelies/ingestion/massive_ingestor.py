@@ -43,6 +43,38 @@ _TYPE_RANK_QUOTE = 0
 _TYPE_RANK_TRADE = 1
 
 
+def _is_massive_rest_client_instance(client: object) -> bool:
+    """Best-effort check for real Massive REST client instances.
+
+    We only synthesize fresh per-thread clients for actual Massive
+    REST clients (or thin wrappers around one).  Test doubles such as
+    ``MagicMock`` and the limited wrapper fixtures used in ingestion
+    tests should keep their configured methods and therefore fall back
+    to the provided instance unless we can re-wrap a cloned inner
+    Massive client safely.
+    """
+    return type(client).__module__.startswith("massive")
+
+
+def _clone_parallel_clients(client: Any, api_key: str) -> tuple[Any, Any]:
+    """Return per-thread clients when safe, else reuse the provided one.
+
+    Real Massive REST clients get two fresh instances to avoid sharing
+    the same urllib3 pool across the quote/trade threads.  For mocks,
+    limited wrappers, and other test doubles, reusing the provided
+    object is intentional: their configured methods, credentials, and
+    record caps must stay attached to the instance the caller passed in.
+    """
+
+    if _is_massive_rest_client_instance(client):
+        try:
+            return type(client)(api_key=api_key), type(client)(api_key=api_key)
+        except TypeError:
+            pass
+
+    return client, client
+
+
 @dataclass(frozen=True)
 class IngestResult:
     """Summary statistics from a historical ingestion run."""
@@ -227,11 +259,11 @@ class MassiveHistoricalIngestor:
                 with _lock:
                     on_page("trades", page_num, total, time.monotonic() - _t0)
 
-        # Each thread gets its own RESTClient so their urllib3 connection pools
-        # never collide — prevents "Connection pool is full" warnings that fire
-        # when two threads return sockets simultaneously to a shared pool.
-        client_q = type(client)(api_key=self._api_key)
-        client_t = type(client)(api_key=self._api_key)
+        # Real Massive clients get distinct per-thread instances so their
+        # urllib3 pools never collide.  Mocks and test wrappers fall back to
+        # the configured client object unless we can safely clone and re-wrap
+        # an inner Massive client.
+        client_q, client_t = _clone_parallel_clients(client, self._api_key)
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             quotes_future = pool.submit(

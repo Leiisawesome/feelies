@@ -276,6 +276,10 @@ class OrderAck(Event):
     In backtest mode this is emitted by the fill simulator.
     In live mode this is emitted by the broker gateway.
     The pipeline does not branch on which source produced it (invariant 9).
+
+    ``sequence`` is the ack event's own sequence within the producer's
+    OrderAck stream. ``request_sequence`` is an additive back-reference
+    to the originating OrderRequest sequence when the producer has it.
     """
 
     order_id: str
@@ -286,6 +290,7 @@ class OrderAck(Event):
     fees: Decimal = Decimal("0")
     cost_bps: Decimal = Decimal("0")
     reason: str = ""
+    request_sequence: int | None = None
 
 
 # ── Position Events ─────────────────────────────────────────────────────

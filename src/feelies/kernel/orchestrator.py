@@ -153,12 +153,20 @@ class _PostExitPositionView:
 
     def _adjusted(self, pos: "Position") -> "Position":
         from feelies.portfolio.position_store import Position
+        new_qty = pos.quantity + self._adj
+        mark = self.latest_mark(pos.symbol)
+        unrealized = Decimal("0")
+        if new_qty != 0:
+            if mark is not None and mark > 0:
+                unrealized = (mark - pos.avg_entry_price) * new_qty
+            else:
+                unrealized = pos.unrealized_pnl
         return Position(
             symbol=pos.symbol,
-            quantity=pos.quantity + self._adj,
+            quantity=new_qty,
             avg_entry_price=pos.avg_entry_price,
             realized_pnl=pos.realized_pnl,
-            unrealized_pnl=pos.unrealized_pnl,
+            unrealized_pnl=unrealized,
             cumulative_fees=pos.cumulative_fees,
         )
 
@@ -177,8 +185,11 @@ class _PostExitPositionView:
     def total_exposure(self) -> Decimal:
         total = self._inner.total_exposure()
         pos = self._inner.get(self._symbol)
-        old_contrib = abs(pos.quantity) * pos.avg_entry_price
-        new_contrib = abs(pos.quantity + self._adj) * pos.avg_entry_price
+        mark = self.latest_mark(self._symbol)
+        if mark is None or mark <= 0:
+            mark = pos.avg_entry_price
+        old_contrib = abs(pos.quantity) * mark
+        new_contrib = abs(pos.quantity + self._adj) * mark
         return total - old_contrib + new_contrib
 
     def update(self, *args: Any, **kwargs: Any) -> Any:
@@ -411,6 +422,7 @@ class Orchestrator:
         self._signal_order_trace_sink: list[SignalOrderTraceRow] | None = (
             signal_order_trace_sink
         )
+        self._quote_tick_in_flight: bool = False
         self._tick_quote_for_trace: NBBOQuote | None = None
         # Last quote that completed M1 with tracing enabled — survives the
         # per-tick ``_tick_quote_for_trace = None`` reset so Trade-driven
@@ -419,6 +431,12 @@ class Orchestrator:
         # can attribute ``signal_buffer_cleared_unprocessed_at_tick_boundary``.
         self._last_quote_context_for_signal_trace: NBBOQuote | None = None
         self._signal_order_trace_seen_sequences: set[int] = set()
+        # Signal sequences first observed while no quote tick is in-flight.
+        # These are the only buffered Signals eligible to carry across the
+        # next quote boundary (trade-driven/inter-quote HorizonTicks).  Once
+        # they reach M4, eligibility is retired so they cannot be processed
+        # again on later ticks.
+        self._carryover_signal_sequences: set[int] = set()
         # Per-(symbol, engine_name) cache of the most recently
         # observed RegimeState; used as ``prev`` argument to the
         # detector on the next tick.  Cleared by
@@ -444,6 +462,10 @@ class Orchestrator:
         # Per-order lifecycle tracking for Inv-4 enforcement.
         # Maps order_id -> (OrderState SM, Side, OrderRequest).
         self._active_orders: dict[str, tuple[StateMachine[OrderState], Side, OrderRequest]] = {}
+        # Router acks that were drained while waiting for a different
+        # order family.  The order-router queue is global, so targeted
+        # pollers must buffer unrelated acks instead of stealing them.
+        self._deferred_router_acks: list[OrderAck] = []
 
         # When True, market events arriving from the data source are
         # already present in the event log (replay mode).  Prevents
@@ -492,8 +514,9 @@ class Orchestrator:
         # ── PR-2b-iv: bus-driven SizedPositionIntent subscriber ─────────
         # Phase-4 ``CompositionEngine`` publishes one
         # ``SizedPositionIntent`` per registered PORTFOLIO alpha at every
-        # horizon boundary (a side-effect of ``bus.publish(quote)`` while
-        # the micro-SM is in CROSS_SECTIONAL).  Pre-PR-2b-iv nothing
+        # horizon boundary (a synchronous side-effect of scheduler-driven
+        # ``bus.publish(HorizonTick)`` during ``_dispatch_sensor_layer``).
+        # Pre-PR-2b-iv nothing
         # translated those intents into ``OrderRequest`` events: PORTFOLIO
         # alphas were hooked into the bus end-to-end for SizedPositionIntent
         # but the production order pipeline simply ignored them.
@@ -505,9 +528,11 @@ class Orchestrator:
         # order to ``backend.order_router``, polling synchronous acks and
         # reconciling fills into the position store.
         #
-        # The handler runs *outside* the per-tick micro-SM walk: PORTFOLIO
-        # orders are bus-dispatched at CROSS_SECTIONAL (M3) and do NOT
-        # drive the M5 → M10 transitions, which remain reserved for the
+        # The handler runs outside the standalone SIGNAL order walk:
+        # PORTFOLIO orders are bus-dispatched synchronously while the
+        # scheduler's HorizonTick fan-out is still executing, before the
+        # per-tick FEATURE_COMPUTE → SIGNAL_EVALUATE path begins.  They do
+        # NOT drive the M5 → M10 transitions, which remain reserved for the
         # at-most-one SIGNAL-driven order per tick.  This sidesteps the
         # SM's single-walk-per-tick limit and lets PORTFOLIO + standalone
         # SIGNAL coexist on the same tick (PR-2b-iii's
@@ -1032,10 +1057,13 @@ class Orchestrator:
         errors resolve to reduced exposure, never undefined state).
         """
         cid = quote.correlation_id
+        self._quote_tick_in_flight = True
         try:
             self._process_tick_inner(quote)
         except Exception as exc:
             self._handle_tick_failure(cid, exc)
+        finally:
+            self._quote_tick_in_flight = False
 
     def _handle_tick_failure(self, cid: str, original: Exception) -> None:
         """Recover micro SM and degrade macro after a tick-processing failure.
@@ -1084,33 +1112,55 @@ class Orchestrator:
         t_wall_start = time.perf_counter_ns()
         self._tick_timings: dict[str, int] = {}
 
-        # PR-2b-iii: clear last tick's bus-fed Signal buffer before
-        # ``bus.publish(quote)`` triggers HorizonSignalEngine subscribers
-        # for the new tick.  Without this, Signals that fired during a
-        # prior tick (and were never drained — e.g., when the kill switch
-        # short-circuited the pipeline) would leak into the new tick's
-        # M4 drain and translate into ghost orders.
+        # PR-2b-iii (H1 fix): partition the inter-tick Signal buffer into
+        # *fresh* and *stale* before ``bus.publish(quote)`` triggers
+        # HorizonSignalEngine subscribers for this tick.
         #
-        # Trade-driven ``HorizonTick`` emissions can publish standalone
-        # Signals *between* quote ticks; they land in this buffer but never
-        # reach M4 on the trade event.  Record any still-untraced rows before
-        # clearing so ``--trace-signal-orders`` stays aligned with bus-level
-        # Signal counts (BusRecorder / report dedupe).
-        if self._signal_order_trace_sink is not None and self._signal_buffer:
-            anchor = self._last_quote_context_for_signal_trace
-            if anchor is not None:
-                for pending in list(self._signal_buffer):
-                    if pending.sequence in self._signal_order_trace_seen_sequences:
-                        continue
-                    self._append_signal_order_trace(
-                        anchor,
-                        pending,
-                        outcome="NO_ORDER",
-                        reasons=(
-                            "signal_buffer_cleared_unprocessed_at_tick_boundary",
-                        ),
-                    )
-        self._signal_buffer.clear()
+        # Prior policy (unconditional clear) silently dropped trade-path
+        # Signals whose triggering horizon boundary was first crossed by a
+        # Trade event rather than a quote.  Those Signals are valid and must
+        # reach M4 on the next quote tick, provided the alpha's
+        # ``horizon_seconds`` window has not yet elapsed.
+        #
+        # Staleness rules (evaluated against this quote's timestamp_ns):
+        #   • sequence not marked carry-over          → STALE (quote-path
+        #     leftovers / M4 republish rows must never leak forward)
+        #   • horizon_seconds > 0 and age > horizon  → STALE (evict + trace)
+        #   • horizon_seconds == 0 (non-horizon)      → STALE (no carry-over
+        #     guarantee; preserves historical behaviour for legacy producers)
+        #   • carry-over + horizon_seconds > 0 and age ≤ horizon  → FRESH
+        if self._signal_buffer:
+            _now_ns = quote.timestamp_ns
+            fresh: list[Signal] = []
+            stale: list[Signal] = []
+            for sig in self._signal_buffer:
+                if (
+                    sig.sequence in self._carryover_signal_sequences
+                    and
+                    sig.horizon_seconds > 0
+                    and (_now_ns - sig.timestamp_ns)
+                    <= sig.horizon_seconds * 1_000_000_000
+                ):
+                    fresh.append(sig)
+                else:
+                    stale.append(sig)
+                    self._carryover_signal_sequences.discard(sig.sequence)
+            if self._signal_order_trace_sink is not None and stale:
+                anchor = self._last_quote_context_for_signal_trace
+                if anchor is not None:
+                    for pending in stale:
+                        if pending.sequence in self._signal_order_trace_seen_sequences:
+                            continue
+                        self._append_signal_order_trace(
+                            anchor,
+                            pending,
+                            outcome="NO_ORDER",
+                            reasons=(
+                                "signal_buffer_cleared_unprocessed_at_tick_boundary",
+                            ),
+                        )
+            self._signal_buffer.clear()
+            self._signal_buffer.extend(fresh)
         self._tick_quote_for_trace = None
 
         # ── Kill switch gate (W-2) ─────────────────────────────
@@ -1234,6 +1284,10 @@ class Orchestrator:
         self._trace_buffered_signals_arbitration(
             quote, buf_snapshot, signal, stop_signal,
         )
+        if buf_snapshot:
+            for buffered in buf_snapshot:
+                self._carryover_signal_sequences.discard(buffered.sequence)
+            self._signal_buffer.clear()
 
         if stop_signal is not None:
             signal = stop_signal
@@ -1446,7 +1500,15 @@ class Orchestrator:
             return
 
         if order_verdict.action == RiskAction.SCALE_DOWN:
-            scaled_qty = round(order.quantity * order_verdict.scaling_factor)
+            # H2: ``check_signal`` and ``check_order`` can both emit
+            # ``SCALE_DOWN``.  Compose them as the tightest cap on the
+            # original target quantity, rather than multiplying an
+            # already-scaled order and shrinking it twice.
+            scaled_qty = self._compose_scaled_quantity(
+                intent.target_quantity,
+                verdict.scaling_factor,
+                order_verdict.scaling_factor,
+            )
             if scaled_qty <= 0:
                 self._append_signal_order_trace(
                     quote,
@@ -1537,7 +1599,7 @@ class Orchestrator:
             trigger="order_submitted",
             correlation_id=cid,
         )
-        acks = self._backend.order_router.poll_acks()
+        acks = self._poll_order_router_acks({order.order_id})
         for ack in acks:
             self._bus.publish(ack)
             self._apply_ack_to_order(ack)
@@ -1829,7 +1891,7 @@ class Orchestrator:
                 self._transition_order(order_id, OrderState.SUBMITTED, "emergency_flatten")
                 self._backend.order_router.submit(order)
                 self._bus.publish(order)
-                acks = self._backend.order_router.poll_acks()
+                acks = self._poll_order_router_acks({order_id})
                 for ack in acks:
                     self._bus.publish(ack)
                     self._apply_ack_to_order(ack)
@@ -1920,7 +1982,8 @@ class Orchestrator:
         return Signal(
             timestamp_ns=quote.timestamp_ns,
             correlation_id=quote.correlation_id,
-            sequence=quote.sequence,
+            sequence=self._signal_seq.next(),
+            source_layer="SIGNAL",
             symbol=quote.symbol,
             strategy_id="__stop_exit__",
             direction=SignalDirection.FLAT,
@@ -2115,8 +2178,10 @@ class Orchestrator:
                 ):
                     entry_order = None
                 elif entry_rv.action == RiskAction.SCALE_DOWN:
-                    scaled = round(
-                        entry_order.quantity * entry_rv.scaling_factor,
+                    scaled = self._compose_scaled_quantity(
+                        entry_qty_raw,
+                        verdict.scaling_factor,
+                        entry_rv.scaling_factor,
                     )
                     if scaled < self._min_order_shares:
                         entry_order = None
@@ -2157,7 +2222,10 @@ class Orchestrator:
             trigger="reverse_orders_submitted",
             correlation_id=cid,
         )
-        acks = self._backend.order_router.poll_acks()
+        expected_order_ids = {exit_order.order_id}
+        if entry_order is not None:
+            expected_order_ids.add(entry_order.order_id)
+        acks = self._poll_order_router_acks(expected_order_ids)
         for ack in acks:
             self._bus.publish(ack)
             self._apply_ack_to_order(ack)
@@ -2317,6 +2385,12 @@ class Orchestrator:
         return order
 
     @staticmethod
+    def _compose_scaled_quantity(base_quantity: int, *factors: float) -> int:
+        """Apply the tightest risk cap exactly once to ``base_quantity``."""
+        capped = min(max(0.0, min(1.0, factor)) for factor in factors)
+        return round(base_quantity * capped)
+
+    @staticmethod
     def _side_from_intent(intent: OrderIntent) -> Side:
         """Derive order Side from TradingIntent."""
         if intent.intent in (
@@ -2406,12 +2480,49 @@ class Orchestrator:
         for order_id, (sm, _, order) in list(self._active_orders.items()):
             if order.symbol == symbol and sm.state not in _TERMINAL_ORDER_STATES:
                 cancel_fn(order_id)
-        cancel_acks = self._backend.order_router.poll_acks()
+        cancel_order_ids = {
+            order_id
+            for order_id, (sm, _, order) in self._active_orders.items()
+            if order.symbol == symbol and sm.state not in _TERMINAL_ORDER_STATES
+        }
+        cancel_acks = self._poll_order_router_acks(cancel_order_ids)
         if cancel_acks:
             for ack in cancel_acks:
                 self._bus.publish(ack)
                 self._apply_ack_to_order(ack)
             self._reconcile_fills(cancel_acks, cid)
+
+    def _poll_order_router_acks(
+        self,
+        expected_order_ids: set[str] | None = None,
+    ) -> list[OrderAck]:
+        """Drain router acks, buffering unrelated ones for the next caller.
+
+        The execution backend exposes a single pending-ack queue shared by
+        immediate submit/cancel acks and quote-driven fills from previously
+        resting orders.  Callers that just submitted a specific order family
+        must not steal unrelated pending acks and reconcile them under the
+        wrong correlation lineage.
+        """
+        polled = self._backend.order_router.poll_acks()
+        if self._deferred_router_acks:
+            all_acks = [*self._deferred_router_acks, *polled]
+            self._deferred_router_acks.clear()
+        else:
+            all_acks = polled
+
+        if expected_order_ids is None:
+            return all_acks
+
+        matched: list[OrderAck] = []
+        deferred: list[OrderAck] = []
+        for ack in all_acks:
+            if ack.order_id in expected_order_ids:
+                matched.append(ack)
+            else:
+                deferred.append(ack)
+        self._deferred_router_acks.extend(deferred)
+        return matched
 
     def _reconcile_resting_fills(self, cid: str) -> None:
         """Poll and reconcile fills from resting orders.
@@ -2420,7 +2531,7 @@ class Orchestrator:
         router) to process fills from limit orders posted on previous
         ticks.  Uses the same reconciliation path as normal fills.
         """
-        acks = self._backend.order_router.poll_acks()
+        acks = self._poll_order_router_acks()
         if not acks:
             return
         for ack in acks:
@@ -2547,6 +2658,30 @@ class Orchestrator:
                 OrderAckStatus.CANCELLED, OrderAckStatus.EXPIRED,
             ) and ack.fees and ack.fees > 0:
                 self._positions.debit_fees(ack.symbol, ack.fees)
+                if (
+                    self._strategy_positions is not None
+                    and ack.order_id in self._active_orders
+                ):
+                    strategy_id = self._active_orders[ack.order_id][2].strategy_id
+                    if strategy_id:
+                        self._strategy_positions.debit_fees(
+                            strategy_id,
+                            ack.symbol,
+                            ack.fees,
+                        )
+                fee_position = self._positions.get(ack.symbol)
+                self._bus.publish(PositionUpdate(
+                    timestamp_ns=ack.timestamp_ns,
+                    correlation_id=correlation_id,
+                    sequence=self._seq.next(),
+                    symbol=ack.symbol,
+                    quantity=fee_position.quantity,
+                    avg_price=fee_position.avg_entry_price,
+                    realized_pnl=fee_position.realized_pnl,
+                    unrealized_pnl=fee_position.unrealized_pnl,
+                    cumulative_fees=fee_position.cumulative_fees,
+                    cost_bps=ack.cost_bps,
+                ))
 
             if ack.fill_price is None or ack.filled_quantity <= 0:
                 continue
@@ -2585,6 +2720,7 @@ class Orchestrator:
                 signed_qty,
                 ack.fill_price,
                 fees=ack.fees,
+                timestamp_ns=ack.timestamp_ns,
             )
 
             if position.quantity == 0:
@@ -2617,6 +2753,7 @@ class Orchestrator:
                         self._strategy_positions.update(
                             strat_id, sym, alpha_signed, price,
                             fees=alloc_fees,
+                            timestamp_ns=ack.timestamp_ns,
                         )
                 else:
                     # No attribution record (emergency flatten, stop
@@ -2625,10 +2762,14 @@ class Orchestrator:
                     # for this symbol to keep strategy and global stores
                     # in sync.
                     self._distribute_fill_to_strategies(
-                        ack.symbol, signed_qty, ack.fill_price, ack.fees,
+                        ack.symbol,
+                        signed_qty,
+                        ack.fill_price,
+                        ack.fees,
+                        ack.timestamp_ns,
                     )
             self._bus.publish(PositionUpdate(
-                timestamp_ns=self._clock.now_ns(),
+                timestamp_ns=ack.timestamp_ns,
                 correlation_id=correlation_id,
                 sequence=self._seq.next(),
                 symbol=ack.symbol,
@@ -2692,6 +2833,7 @@ class Orchestrator:
         signed_qty: int,
         fill_price: Decimal,
         fees: Decimal,
+        timestamp_ns: int,
     ) -> None:
         """Distribute a fill proportionally across per-alpha strategy positions.
 
@@ -2734,9 +2876,8 @@ class Orchestrator:
 
         # Apply each allocation with the sign matching the fill direction.
         fee_remainder = fees
-        for idx, ((sid, q), alloc_qty) in enumerate(
-            zip(strategy_qtys, floors, strict=True),
-        ):
+        remainder_sid: str | None = None
+        for (sid, _q), alloc_qty in zip(strategy_qtys, floors, strict=True):
             if alloc_qty == 0:
                 continue
             # Sign: same as the overall fill direction.
@@ -2750,13 +2891,17 @@ class Orchestrator:
             self._strategy_positions.update(
                 sid, symbol, alloc_sign * alloc_qty, fill_price,
                 fees=alloc_fees,
+                timestamp_ns=timestamp_ns,
             )
+            remainder_sid = sid
 
-        # Assign any rounding remainder to the last allocation.
-        if fee_remainder != Decimal("0") and strategy_qtys:
-            last_sid = strategy_qtys[-1][0]
-            last_pos = self._strategy_positions.get(last_sid, symbol)
-            last_pos.cumulative_fees += fee_remainder
+        # Assign any rounding remainder to the last non-zero allocation.
+        if fee_remainder != Decimal("0") and remainder_sid is not None:
+            self._strategy_positions.debit_fees(
+                remainder_sid,
+                symbol,
+                fee_remainder,
+            )
 
     def _prune_terminal_orders(self) -> None:
         """Remove terminally-resolved orders from _active_orders.
@@ -2862,6 +3007,8 @@ class Orchestrator:
                 )
             return
         self._signal_buffer.append(event)
+        if not self._quote_tick_in_flight:
+            self._carryover_signal_sequences.add(event.sequence)
 
     def _is_consumed_by_portfolio(self, alpha_id: str) -> bool:
         """True iff any PORTFOLIO alpha lists ``alpha_id`` in ``depends_on_signals``.
@@ -2910,11 +3057,12 @@ class Orchestrator:
             self._warned_multi_standalone_signals = True
             ids = sorted({s.strategy_id for s in buf})
             logger.warning(
-                "orchestrator: %d standalone SIGNAL alphas fired on the "
-                "same tick (%s); arbitrating via %s.  Prefer a PORTFOLIO "
-                "alpha listing these ids in depends_on_signals for full "
-                "multi-alpha aggregation.",
+                "orchestrator: %d standalone SIGNAL candidate(s) from %d "
+                "alpha id(s) fired on the same tick (%s); arbitrating via "
+                "%s.  Prefer a PORTFOLIO alpha listing these ids in "
+                "depends_on_signals for full multi-alpha aggregation.",
                 len(buf),
+                len(ids),
                 ids,
                 type(self._signal_arbitrator).__name__,
             )
@@ -2937,14 +3085,14 @@ class Orchestrator:
            iteration is lexicographically sorted and ``order_id`` is a
            SHA-256 of ``(intent.correlation_id, intent.sequence, symbol)``
            so per-leg orders are bit-identical across replays (Inv-5).
-        3. For every surviving order, track it, mark it submitted, publish
-           it on the bus, hand it to ``backend.order_router.submit``, then
-           drain ``poll_acks`` and reconcile fills into the position
-           store.  This mirrors the ``_execute_reverse`` pattern minus the
-           micro-SM transitions: PORTFOLIO orders dispatch at M3
-           CROSS_SECTIONAL (the bus callback fires while the micro-SM is
-           still *entering* CROSS_SECTIONAL) and do NOT advance the
-           SIGNAL-reserved M5 → M10 walk.
+          3. For every surviving order, track it, mark it submitted, publish
+              it on the bus, hand it to ``backend.order_router.submit``, then
+              drain ``poll_acks`` and reconcile fills into the position
+              store.  This mirrors the ``_execute_reverse`` pattern minus the
+              micro-SM transitions: PORTFOLIO orders dispatch while the
+              scheduler's ``HorizonTick`` callback chain is still running
+              inside ``_dispatch_sensor_layer`` and do NOT advance the
+              SIGNAL-reserved M5 → M10 walk.
 
         Consequences for SIGNAL/PORTFOLIO coexistence on a single tick:
 
@@ -2973,7 +3121,8 @@ class Orchestrator:
             )
             self._backend.order_router.submit(order)
             self._bus.publish(order)
-        acks = self._backend.order_router.poll_acks()
+        expected_order_ids = {order.order_id for order in orders}
+        acks = self._poll_order_router_acks(expected_order_ids)
         for ack in acks:
             self._bus.publish(ack)
             self._apply_ack_to_order(ack)

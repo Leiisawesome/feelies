@@ -82,12 +82,13 @@ class PositionStore(Protocol):
         ...
 
     def opened_at_ns(self, symbol: str) -> int | None:
-        """Timestamp (ns) of the fill that took ``symbol`` from flat → non-zero.
+        """Timestamp (ns) of the start of the current open episode.
 
         Returns ``None`` when the symbol is currently flat or has never
         been filled.  When a position is closed (``quantity → 0``) and
-        later reopened, the returned timestamp reflects the **most
-        recent** open — never the original.
+        later reopened, or when a single fill crosses through zero and
+        flips the position sign, the returned timestamp reflects the
+        **most recent** open episode — never the original.
 
         Phase-4-finalize uses this to enforce the hazard-exit
         ``min_age_seconds`` safeguard and the optional

@@ -171,6 +171,18 @@ class TestBacktestOrderRouter:
         assert acks[0].timestamp_ns == 3000
         assert acks[1].timestamp_ns == 3000
 
+    def test_ack_sequences_are_monotonic_and_preserve_request_sequence(self):
+        clock = SimulatedClock(start_ns=5000)
+        router = BacktestOrderRouter(clock)
+
+        router.on_quote(_quote_with_depth("99.00", "101.00", bid_size=200, ask_size=50))
+        request = _order_qty(150, side=Side.BUY)
+        router.submit(request)
+
+        acks = router.poll_acks()
+        assert [a.sequence for a in acks] == [0, 1, 2]
+        assert [a.request_sequence for a in acks] == [request.sequence] * 3
+
 
 def _quote_with_depth(
     bid: str, ask: str, bid_size: int, ask_size: int, ts: int = 1000

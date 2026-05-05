@@ -22,9 +22,9 @@ class MemoryPositionStore:
         self._marks: dict[str, Decimal] = {}
         # Phase-4-finalize: per-symbol "opened-at" shadow map used by
         # the hazard-exit min-age safeguard and optional hard-exit-age
-        # reconciliation guard.  Set on flat→non-zero transitions in
-        # ``update``; cleared when ``new_qty == 0`` so the next reopen
-        # records a fresh open timestamp.
+        # reconciliation guard.  Set when an update starts a new open
+        # episode (flat→non-zero or direct sign flip); cleared when
+        # ``new_qty == 0`` so the next reopen records a fresh timestamp.
         self._opened_at_ns: dict[str, int] = {}
         # Most-recent fill timestamp per symbol — used to seed the
         # "opened" timestamp on flat→non-zero transitions.  Updated on
@@ -54,15 +54,16 @@ class MemoryPositionStore:
         old_qty = pos.quantity
         new_qty = old_qty + quantity_delta
 
-        # Phase-4-finalize: track flat→non-zero opens for hazard exits.
-        # Only records when the caller supplies ``timestamp_ns`` —
-        # legacy callers that omit it see no behavioural change.
+        # Phase-4-finalize: track the start of each open episode for
+        # hazard exits. Only records when the caller supplies
+        # ``timestamp_ns`` — legacy callers that omit it see no
+        # behavioural change.
         if timestamp_ns is not None:
             self._last_update_ns[symbol] = int(timestamp_ns)
-            if old_qty == 0 and new_qty != 0:
-                self._opened_at_ns[symbol] = int(timestamp_ns)
-            elif new_qty == 0:
+            if new_qty == 0:
                 self._opened_at_ns.pop(symbol, None)
+            elif old_qty == 0 or not _same_sign(old_qty, new_qty):
+                self._opened_at_ns[symbol] = int(timestamp_ns)
 
         if old_qty == 0:
             pos.avg_entry_price = fill_price
@@ -109,14 +110,18 @@ class MemoryPositionStore:
     def debit_fees(self, symbol: str, fees: Decimal) -> None:
         """Record fees without a fill (e.g. cancel fees).
 
-        Only updates positions that already exist (non-zero quantity).
-        A cancel on a never-filled order produces no position entry —
-        creating a ghost zero-qty position would pollute all_positions()
-        and miscount open positions in downstream consumers.
+        Creates a zero-quantity accounting entry when the symbol has
+        never filled so cumulative fees remain visible to equity and
+        P&L consumers.  Downstream code that cares only about open
+        positions must continue filtering ``quantity != 0``.
         """
+        if fees == 0:
+            return
         pos = self._positions.get(symbol)
-        if pos is not None:
-            pos.cumulative_fees += fees
+        if pos is None:
+            pos = Position(symbol=symbol)
+            self._positions[symbol] = pos
+        pos.cumulative_fees += fees
 
     def all_positions(self) -> dict[str, Position]:
         """Return all tracked positions, including fully-closed ones.
@@ -126,16 +131,18 @@ class MemoryPositionStore:
         drawdown guard in the risk engine).  Callers that care only about
         open positions must filter by ``pos.quantity != 0`` themselves.
 
-        Ghost positions are prevented at the ``debit_fees`` level — a
-        cancel fee on a symbol that was never filled produces no entry.
+        Fee-only zero-qty entries are also retained so cancel / expiry
+        fees on never-filled orders remain visible to equity and report
+        consumers.
         """
         return dict(self._positions)
 
     def opened_at_ns(self, symbol: str) -> int | None:
-        """Return the timestamp (ns) of the most recent flat→non-zero fill.
+        """Return the timestamp (ns) of the most recent open episode start.
 
         Returns ``None`` when the symbol is currently flat or the
-        opening fill did not pass ``timestamp_ns``.  See the
+        opening fill did not pass ``timestamp_ns``.  Direct sign flips
+        also reset the timestamp to the reversing fill.  See the
         :class:`PositionStore` protocol docstring for full semantics.
         """
         ts = self._opened_at_ns.get(symbol)

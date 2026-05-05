@@ -30,12 +30,12 @@ from dataclasses import dataclass
 from typing import Mapping
 
 try:  # pragma: no cover - optional extra
-    import cvxpy as cp  # type: ignore[import-not-found]
+    import cvxpy as cp
     import numpy as np
     _HAS_CVXPY = True
 except ImportError:  # pragma: no cover
     _HAS_CVXPY = False
-    np = None  # type: ignore[assignment]
+    np = None
 
 
 _logger = logging.getLogger(__name__)

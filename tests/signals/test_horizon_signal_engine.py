@@ -299,6 +299,23 @@ def test_gate_off_suppresses_emission() -> None:
     assert captured == []
 
 
+def test_gate_closure_emits_flat_with_off_state() -> None:
+    engine, bus, captured = _engine()
+    engine.register(_registered())
+    engine.attach()
+
+    bus.publish(_regime_normal_high())
+    bus.publish(_snapshot(sequence=10, boundary_index=1))
+    bus.publish(_regime_normal_low())
+    bus.publish(_snapshot(sequence=11, boundary_index=2))
+
+    assert len(captured) == 2
+    close_signal = captured[1]
+    assert close_signal.direction == SignalDirection.FLAT
+    assert close_signal.strategy_id == "alpha_x"
+    assert close_signal.regime_gate_state == "OFF"
+
+
 def test_cold_start_missing_binding_swallowed() -> None:
     """Cold start: no RegimeState yet → gate raises UnknownIdentifierError."""
     engine, bus, captured = _engine()

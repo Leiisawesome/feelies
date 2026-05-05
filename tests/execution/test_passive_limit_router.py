@@ -133,6 +133,23 @@ class TestPassiveLimitRouter:
         assert acks[0].filled_quantity == 0
         assert router.resting_order_count == 1
 
+    def test_ack_sequences_are_monotonic_and_preserve_request_sequence(self):
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
+
+        request = _limit_buy("AAPL")
+        router.on_quote(_quote("AAPL", "150.00", "150.02"))
+        router.submit(request)
+        submit_acks = router.poll_acks()
+
+        clock.set_time(6000)
+        router.on_quote(_quote("AAPL", "149.98", "150.00", ts=6000))
+        fill_acks = router.poll_acks()
+
+        acks = [*submit_acks, *fill_acks]
+        assert [a.sequence for a in acks] == [0, 1]
+        assert [a.request_sequence for a in acks] == [request.sequence, request.sequence]
+
     def test_limit_price_defaults_to_bid_for_buy(self):
         """BUY limit defaults to bid when no explicit price given."""
         clock = SimulatedClock(start_ns=5000)
@@ -717,6 +734,26 @@ class TestMultipleOrders:
         assert len(filled) == 1
         assert filled[0].symbol == "AAPL"
         assert router.resting_order_count == 1
+
+    def test_same_symbol_fills_follow_submission_order(self):
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=1)
+
+        router.on_quote(_quote("AAPL", "150.00", "150.02"))
+        router.submit(_limit_buy("AAPL", order_id="aapl_first"))
+        router.submit(_limit_buy("AAPL", order_id="aapl_second"))
+        router.poll_acks()
+
+        clock.set_time(6000)
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6000))
+
+        acks = router.poll_acks()
+        filled_ids = [
+            ack.order_id for ack in acks
+            if ack.status == OrderAckStatus.FILLED
+        ]
+
+        assert filled_ids == ["aapl_first", "aapl_second"]
 
     def test_poll_acks_clears_queue(self):
         clock = SimulatedClock(start_ns=5000)

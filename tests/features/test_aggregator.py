@@ -359,3 +359,38 @@ def test_snapshot_sequence_isolated_from_tick_sequence() -> None:
     bus.publish(_tick(boundary=2, ts_ns=1_060_000_000_000))
 
     assert [s.sequence for s in captured] == [0, 1]
+
+
+def test_same_boundary_dedup_prevents_snapshot_cid_collision() -> None:
+    bus = EventBus()
+    captured: list[HorizonFeatureSnapshot] = []
+    bus.subscribe(HorizonFeatureSnapshot, captured.append)
+
+    agg = HorizonAggregator(
+        bus=bus,
+        symbols=frozenset({"AAPL"}),
+        sensor_buffer_seconds=60,
+        sequence_generator=SequenceGenerator(),
+    )
+    agg.attach()
+
+    first_tick = _tick(boundary=7, ts_ns=7_030_000_000_000, symbol="AAPL")
+    duplicate_boundary_tick = _tick(
+        boundary=7,
+        ts_ns=7_030_000_000_000,
+        symbol=None,
+        scope="UNIVERSE",
+    )
+    next_tick = _tick(boundary=8, ts_ns=8_030_000_000_000, symbol="AAPL")
+
+    first = agg.on_horizon_tick(first_tick)
+    duplicate = agg.on_horizon_tick(duplicate_boundary_tick)
+    second = agg.on_horizon_tick(next_tick)
+
+    assert len(first) == 1
+    assert duplicate == ()
+    assert len(second) == 1
+    assert [snap.boundary_index for snap in captured] == [7, 8]
+    assert captured[0].correlation_id == "snap:AAPL:30:7030000000000:7"
+    assert captured[1].correlation_id == "snap:AAPL:30:8030000000000:8"
+    assert captured[0].correlation_id != captured[1].correlation_id

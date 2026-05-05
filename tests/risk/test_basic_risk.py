@@ -13,6 +13,8 @@ from feelies.core.events import (
     Side,
     Signal,
     SignalDirection,
+    SizedPositionIntent,
+    TargetPosition,
 )
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
@@ -51,6 +53,22 @@ def _make_order(
         side=side,
         order_type=OrderType.MARKET,
         quantity=quantity,
+    )
+
+
+def _make_sized_intent(
+    strategy_id: str = "portfolio_alpha",
+    targets: dict[str, float] | None = None,
+) -> SizedPositionIntent:
+    return SizedPositionIntent(
+        timestamp_ns=1_000_000_000,
+        correlation_id="corr-1",
+        sequence=1,
+        strategy_id=strategy_id,
+        target_positions={
+            symbol: TargetPosition(symbol=symbol, target_usd=target_usd)
+            for symbol, target_usd in (targets or {}).items()
+        },
     )
 
 
@@ -295,3 +313,41 @@ class TestMarkToMarketExposureAndDrawdown:
 
         verdict = engine.check_signal(_make_signal(symbol="MSFT"), store)
         assert verdict.action in (RiskAction.ALLOW, RiskAction.SCALE_DOWN)
+
+    def test_order_gate_uses_prospective_exposure(
+        self, store: MemoryPositionStore,
+    ) -> None:
+        cfg = RiskConfig(
+            max_position_per_symbol=100_000,
+            max_gross_exposure_pct=10.0,
+            account_equity=Decimal("100000"),
+        )
+        engine = BasicRiskEngine(cfg)
+        store.update("AAPL", 50, Decimal("100"))
+        store.update_mark("AAPL", Decimal("150"))
+
+        order = _make_order(side=Side.BUY, quantity=50)
+        verdict = engine.check_order(order, store)
+
+        assert verdict.action == RiskAction.REJECT
+        assert "gross exposure" in verdict.reason
+
+
+class TestSizedIntentMarkSelection:
+    def test_live_mark_overrides_avg_entry_for_open_positions(
+        self, config: RiskConfig, store: MemoryPositionStore,
+    ) -> None:
+        engine = BasicRiskEngine(config)
+        store.update("AAPL", 200, Decimal("100"))
+        store.update_mark("AAPL", Decimal("125"))
+
+        orders = engine.check_sized_intent(
+            _make_sized_intent(targets={"AAPL": 50_000.0}),
+            store,
+        )
+
+        assert len(orders) == 1
+        order = orders[0]
+        assert order.symbol == "AAPL"
+        assert order.side == Side.BUY
+        assert order.quantity == 200

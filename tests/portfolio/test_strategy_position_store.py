@@ -39,6 +39,29 @@ class TestStrategyIsolation:
         assert store.get("alpha_1", "AAPL").quantity == 50
         assert store.get("alpha_2", "AAPL").quantity == 50
 
+    def test_update_records_open_timestamp_when_provided(
+        self, store: StrategyPositionStore,
+    ) -> None:
+        store.update(
+            "alpha_1",
+            "AAPL",
+            100,
+            Decimal("150"),
+            timestamp_ns=123456789,
+        )
+
+        assert store._get_store("alpha_1").opened_at_ns("AAPL") == 123456789
+
+    def test_debit_fees_retained_when_no_fill(
+        self, store: StrategyPositionStore,
+    ) -> None:
+        store.debit_fees("alpha_1", "AAPL", Decimal("0.50"))
+
+        pos = store.get("alpha_1", "AAPL")
+        assert pos.quantity == 0
+        assert pos.cumulative_fees == Decimal("0.50")
+        assert store.get_strategy_cumulative_fees("alpha_1") == Decimal("0.50")
+
 
 class TestGetAggregate:
     def test_sums_quantities_across_strategies(

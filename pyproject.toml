@@ -70,6 +70,10 @@ python_version = "3.12"
 # `ignore_errors = true` block re-enters the project for any
 # `feelies.*` module without an explicit matrix amendment.
 
+[[tool.mypy.overrides]]
+module = ["cvxpy", "cvxpy.*", "numpy", "numpy.*"]
+ignore_missing_imports = true
+
 [tool.ruff]
 target-version = "py312"
 line-length = 99

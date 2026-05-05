@@ -35,8 +35,11 @@ from feelies.core.events import (
     OrderAck,
     OrderAckStatus,
     OrderRequest,
+    OrderType,
+    PositionUpdate,
     RiskAction,
     RiskVerdict,
+    Side,
     Signal,
     SignalDirection,
 )
@@ -46,7 +49,9 @@ from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
+from feelies.portfolio.position_store import Position
 from feelies.portfolio.position_store import PositionStore
+from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 
@@ -69,6 +74,55 @@ class _StubMarketData:
 
     def events(self):
         return iter(self._events)
+
+
+class _SnapshotStrategyPositionStore:
+    """Minimal strategy store whose get() returns detached Position copies."""
+
+    def __init__(self) -> None:
+        self._positions: dict[str, Position] = {
+            "alpha_a": Position(symbol="AAPL", quantity=100),
+            "alpha_b": Position(symbol="AAPL", quantity=100),
+            "alpha_c": Position(symbol="AAPL", quantity=100),
+            "alpha_d": Position(symbol="AAPL", quantity=1),
+        }
+        self.debit_fee_calls: list[tuple[str, str, Decimal]] = []
+
+    def strategy_ids(self) -> tuple[str, ...]:
+        return ("alpha_a", "alpha_b", "alpha_c", "alpha_d")
+
+    def get(self, strategy_id: str, symbol: str) -> Position:
+        pos = self._positions.get(strategy_id)
+        if pos is None or pos.symbol != symbol:
+            return Position(symbol=symbol)
+        return Position(
+            symbol=pos.symbol,
+            quantity=pos.quantity,
+            avg_entry_price=pos.avg_entry_price,
+            realized_pnl=pos.realized_pnl,
+            unrealized_pnl=pos.unrealized_pnl,
+            cumulative_fees=pos.cumulative_fees,
+        )
+
+    def update(
+        self,
+        strategy_id: str,
+        symbol: str,
+        quantity_delta: int,
+        fill_price: Decimal,
+        fees: Decimal = Decimal("0"),
+        timestamp_ns: int | None = None,
+    ) -> Position:
+        pos = self._positions.setdefault(strategy_id, Position(symbol=symbol))
+        pos.quantity += quantity_delta
+        pos.avg_entry_price = fill_price
+        pos.cumulative_fees += fees
+        return pos
+
+    def debit_fees(self, strategy_id: str, symbol: str, fees: Decimal) -> None:
+        self.debit_fee_calls.append((strategy_id, symbol, fees))
+        pos = self._positions.setdefault(strategy_id, Position(symbol=symbol))
+        pos.cumulative_fees += fees
 
 
 class _StubRiskEngine:
@@ -237,6 +291,7 @@ def _build_orchestrator(
     risk_engine: Any = None,
     market_data: Any = None,
     position_store: Any = None,
+    strategy_positions: Any = None,
 ) -> Orchestrator:
     bus = bus if bus is not None else EventBus()
     event_log = InMemoryEventLog()
@@ -255,6 +310,7 @@ def _build_orchestrator(
         position_store=pos_store,
         event_log=event_log,
         metric_collector=_NoOpMetricCollector(),
+        strategy_positions=strategy_positions,
     )
 
 
@@ -396,6 +452,74 @@ class TestOrchestratorFullPipeline:
         pos = position_store.get("AAPL")
         assert pos.quantity != 0
 
+    def test_fill_records_opened_at_timestamp(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        quote = _make_quote()
+        signal = _make_signal(quote)
+
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router.on_quote(quote)
+
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(action=RiskAction.ALLOW),
+            position_store=position_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+        _publish_signal_on_quote(bus, signal)
+
+        _boot_to_backtest(orch)
+        orch._process_tick(quote)
+
+        assert position_store.opened_at_ns("AAPL") == quote.timestamp_ns
+
+    def test_filled_position_update_uses_ack_timestamp(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        updates: list[PositionUpdate] = []
+        bus.subscribe(PositionUpdate, updates.append)
+
+        orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="fill-cid",
+            sequence=2,
+            order_id="filled-order",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            strategy_id="alpha_1",
+        )
+        orch._track_order(order.order_id, Side.BUY, order)
+
+        orch._reconcile_fills([
+            OrderAck(
+                timestamp_ns=2000,
+                correlation_id="fill-cid",
+                sequence=2,
+                order_id=order.order_id,
+                symbol="AAPL",
+                status=OrderAckStatus.FILLED,
+                filled_quantity=10,
+                fill_price=Decimal("150.00"),
+                fees=Decimal("0.10"),
+            ),
+        ], correlation_id="tick-cid")
+
+        assert len(updates) == 1
+        assert updates[0].timestamp_ns == 2000
+
 
 # ── Tests: No signal path ────────────────────────────────────────────
 
@@ -517,6 +641,146 @@ class TestOrchestratorRiskReject:
         assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
         assert orch.macro_state == MacroState.BACKTEST_MODE
         assert position_store.get("AAPL").quantity == 0
+
+
+class TestStopExitSignalMetadata:
+    def test_stop_exit_signal_uses_signal_sequence_family(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        published_signals: list[Signal] = []
+        bus.subscribe(Signal, published_signals.append)
+
+        position_store = MemoryPositionStore()
+        position_store.update("AAPL", 100, Decimal("150.00"))
+
+        orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
+        orch._stop_loss_per_share = 1.0
+        _boot_to_backtest(orch)
+
+        quote = _make_quote(ts=2000, bid="147.50", ask="148.50", seq=7)
+
+        orch._process_tick(quote)
+
+        stop_signals = [
+            signal for signal in published_signals
+            if signal.strategy_id == "__stop_exit__"
+        ]
+        assert len(stop_signals) == 1
+        stop_signal = stop_signals[0]
+        assert stop_signal.correlation_id == quote.correlation_id
+        assert stop_signal.sequence == 0
+        assert stop_signal.sequence != quote.sequence
+        assert stop_signal.source_layer == "SIGNAL"
+        assert stop_signal.layer == "SIGNAL"
+        assert stop_signal.regime_gate_state == "N/A"
+
+
+class TestCancelFeeAccounting:
+    def test_cancel_fee_without_fill_creates_fee_only_position_and_update(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        updates: list[PositionUpdate] = []
+        bus.subscribe(PositionUpdate, updates.append)
+
+        orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
+
+        orch._reconcile_fills([
+            OrderAck(
+                timestamp_ns=2000,
+                correlation_id="cancel-cid",
+                sequence=2,
+                order_id="never-filled",
+                symbol="AAPL",
+                status=OrderAckStatus.CANCELLED,
+                fees=Decimal("0.50"),
+                reason="client_cancel",
+            ),
+        ], correlation_id="tick-cid")
+
+        pos = position_store.all_positions()["AAPL"]
+        assert pos.quantity == 0
+        assert pos.cumulative_fees == Decimal("0.50")
+        assert len(updates) == 1
+        assert updates[0].symbol == "AAPL"
+        assert updates[0].quantity == 0
+        assert updates[0].cumulative_fees == Decimal("0.50")
+        assert updates[0].timestamp_ns == 2000
+
+    def test_cancel_fee_without_fill_updates_strategy_fees(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        strategy_positions = StrategyPositionStore()
+
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            position_store=position_store,
+            strategy_positions=strategy_positions,
+        )
+
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="cancel-cid",
+            sequence=2,
+            order_id="never-filled-alpha",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=50,
+            limit_price=Decimal("149.50"),
+            strategy_id="alpha_1",
+        )
+        orch._track_order(order.order_id, Side.BUY, order)
+
+        orch._reconcile_fills([
+            OrderAck(
+                timestamp_ns=2000,
+                correlation_id="cancel-cid",
+                sequence=2,
+                order_id=order.order_id,
+                symbol="AAPL",
+                status=OrderAckStatus.CANCELLED,
+                fees=Decimal("0.50"),
+                reason="client_cancel",
+            ),
+        ], correlation_id="tick-cid")
+
+        strat_pos = strategy_positions.get("alpha_1", "AAPL")
+        assert strat_pos.quantity == 0
+        assert strat_pos.cumulative_fees == Decimal("0.50")
+        assert strategy_positions.get_strategy_cumulative_fees("alpha_1") == Decimal("0.50")
+
+
+class TestStrategyFillDistribution:
+    def test_fee_remainder_uses_debit_fees_on_last_nonzero_allocation(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        strategy_positions = _SnapshotStrategyPositionStore()
+
+        orch = _build_orchestrator(
+            clock,
+            strategy_positions=strategy_positions,
+        )
+
+        orch._distribute_fill_to_strategies(
+            symbol="AAPL",
+            signed_qty=3,
+            fill_price=Decimal("150.00"),
+            fees=Decimal("0.01"),
+            timestamp_ns=2000,
+        )
+
+        assert strategy_positions.get("alpha_a", "AAPL").quantity == 101
+        assert strategy_positions.get("alpha_b", "AAPL").quantity == 101
+        assert strategy_positions.get("alpha_c", "AAPL").quantity == 101
+        assert strategy_positions.get("alpha_d", "AAPL").quantity == 1
+
+        assert strategy_positions.debit_fee_calls == [
+            ("alpha_c", "AAPL", Decimal("0.01")),
+        ]
+        assert strategy_positions.get("alpha_c", "AAPL").cumulative_fees == Decimal("0.01")
+        assert strategy_positions.get("alpha_d", "AAPL").cumulative_fees == Decimal("0")
 
 
 # ── Tests: Shutdown ──────────────────────────────────────────────────
