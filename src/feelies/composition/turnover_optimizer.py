@@ -27,15 +27,21 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Any, Mapping
 
+# Optional [portfolio] extras — typed as ``Any`` so strict mypy accepts
+# the ImportError branch without pretending ``numpy`` / ``cvxpy`` exist.
+cp: Any = None
+_np: Any = None
 try:  # pragma: no cover - optional extra
-    import cvxpy as cp
-    import numpy as np
+    import cvxpy as _cp
+    import numpy as _numpy
+
+    cp = _cp
+    _np = _numpy
     _HAS_CVXPY = True
 except ImportError:  # pragma: no cover
     _HAS_CVXPY = False
-    np = None
 
 
 _logger = logging.getLogger(__name__)
@@ -193,19 +199,20 @@ class TurnoverOptimizer:
         current_positions_usd: Mapping[str, float],
     ) -> OptimizerResult:
         assert _HAS_CVXPY
+        assert cp is not None and _np is not None
         n = len(universe)
-        mu = np.asarray(
-            [weights.get(s, 0.0) for s in universe], dtype=np.float64,
+        mu = _np.asarray(
+            [weights.get(s, 0.0) for s in universe], dtype=_np.float64,
         )
-        p_cur = np.asarray(
+        p_cur = _np.asarray(
             [current_positions_usd.get(s, 0.0) for s in universe],
-            dtype=np.float64,
+            dtype=_np.float64,
         )
         # Diagonal "risk" — cross-sectional position penalization;
         # per Q5 we don't have an intraday Σ here, so use identity
         # scaled by an estimated per-name vol of 1% of capital.  This
         # keeps the optimizer well-conditioned and is pure / static.
-        sigma_diag = (0.01 * self._capital) ** 2 * np.ones(n)
+        sigma_diag = (0.01 * self._capital) ** 2 * _np.ones(n)
 
         x = cp.Variable(n)
         per_name_cap = self._per_name_cap * self._capital
