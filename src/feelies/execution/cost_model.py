@@ -73,12 +73,17 @@ class DefaultCostModelConfig:
         Daily cost = notional × annual_bps / 252 / 10 000.
         Default 0 = disabled.  Set only for short-selling strategies.
     ``min_commission_applies_to_per_share_only``: when True, the
-        ``min_commission`` floor applies only to the per-share
-        component before the exchange pass-through/rebate is added.
-        Default False matches IB Tiered behavior (min applies to
-        the total, so rebates don't show on small orders).  Set to
-        True for advanced passive strategies that need to model the
-        rebate net of commission on small orders.
+        ``min_commission`` floor applies to the per-share IB execution
+        fee only; exchange/regulatory pass-through fees and the maker
+        rebate are added on top of the floored value.  This matches
+        IBKR's published Tiered fee schedule: the $0.35 minimum is on
+        the IB execution component ("Commissions"), not the bundled
+        "Commission + Routing/Regulatory" total.  When False (legacy
+        behavior, kept for tests and parity with the v0.1 model), the
+        floor applies to the bundled total — which absorbs taker
+        exchange fees inside the floor and so under-counts cost on
+        small taker orders.  Default True (more conservative for
+        small orders, accurate for IBKR Tiered).
     """
 
     min_spread_cost_bps: Decimal = Decimal("0")
@@ -91,7 +96,13 @@ class DefaultCostModelConfig:
     sell_regulatory_bps: Decimal = Decimal("0.0")
     stress_multiplier: Decimal = Decimal("1.0")
     htb_borrow_annual_bps: Decimal = Decimal("0.0")
-    min_commission_applies_to_per_share_only: bool = False
+    min_commission_applies_to_per_share_only: bool = True
+    # When True (default), the spread-floor (``min_spread_cost_bps``)
+    # only applies on taker fills.  Maker/passive fills don't cross
+    # the spread, so charging a phantom floor on them would be a
+    # categorically wrong cost attribution.  Kept as a flag so legacy
+    # configs that intentionally floor passive fills can opt back in.
+    spread_floor_taker_only: bool = True
 
 
 class DefaultCostModel:
@@ -124,11 +135,53 @@ class DefaultCostModel:
         notional = fill_price * quantity
         stress = self._cfg.stress_multiplier
 
+        # Zero-quantity / zero-notional safe-no-op.  IBKR doesn't
+        # commission a zero-share fill, and applying the floor in this
+        # branch would charge a $0.35 phantom fee on synthetic zero
+        # fills (e.g. unit-test fixtures, partial-fill remainders that
+        # round to zero).  Return early; the breakdown is all zeros.
+        if quantity <= 0:
+            return CostBreakdown(
+                spread_cost=Decimal("0.00"),
+                commission=Decimal("0.00"),
+                total_fees=Decimal("0.00"),
+                cost_bps=Decimal("0.00"),
+                notional=notional,
+            )
+
         # Spread cost: actual half-spread (stressed — spreads widen under
         # stress) with optional BPS floor (also stressed).
-        actual_spread_cost = half_spread * quantity * stress
-        floor_spread_cost = notional * self._cfg.min_spread_cost_bps * stress / Decimal("10000")
-        spread_cost = max(actual_spread_cost, floor_spread_cost)
+        # Semantic: the spread cost models the *cost of crossing the
+        # spread*.  A maker (passive) fill rests at the BBO and by
+        # definition does not cross — its spread cost is therefore
+        # zero regardless of the quoted half-spread.  This matches the
+        # passive-limit router's real fill semantics
+        # (``_emit_passive_fill`` already passes ``half_spread=0``);
+        # making the cost model itself zero out the maker spread keeps
+        # callers like ``estimate_round_trip_cost_bps`` honest when
+        # they pass the actual half-spread for a forward-looking
+        # round-trip estimate.
+        # The floor is similarly taker-only by default (it models a
+        # worst-case taker spread when ``half_spread`` is artificially
+        # zero, e.g. locked quotes).  Set ``spread_floor_taker_only=False``
+        # to opt back into legacy behavior (floor charged on every leg).
+        if is_taker:
+            actual_spread_cost = half_spread * quantity * stress
+            floor_spread_cost = (
+                notional * self._cfg.min_spread_cost_bps * stress
+                / Decimal("10000")
+            )
+            spread_cost = max(actual_spread_cost, floor_spread_cost)
+        elif not self._cfg.spread_floor_taker_only:
+            # Legacy opt-in: maker fills also pay the spread floor.
+            actual_spread_cost = half_spread * quantity * stress
+            floor_spread_cost = (
+                notional * self._cfg.min_spread_cost_bps * stress
+                / Decimal("10000")
+            )
+            spread_cost = max(actual_spread_cost, floor_spread_cost)
+        else:
+            spread_cost = Decimal("0")
 
         # IB Tiered commission: per-share + exchange pass-through.
         # Taker pays taker_exchange_per_share; maker receives the maker rebate.
@@ -143,14 +196,20 @@ class DefaultCostModel:
         per_share_commission = stressed_commission * quantity
         exchange_fees = exchange_per_share * quantity
         if self._cfg.min_commission_applies_to_per_share_only:
-            # Advanced mode: floor the per-share part only; rebates can
-            # produce a net credit on small maker orders.
+            # IBKR Tiered actual semantics: $0.35 minimum is on the IB
+            # execution-fee per-share component only.  Exchange and
+            # regulatory pass-throughs (and the maker rebate) layer on
+            # top — so a 10-share taker order is floored at $0.35 IB
+            # commission *plus* $0.03 taker exchange fee = $0.38 total.
             per_share_commission = max(
                 per_share_commission, self._cfg.min_commission * stress
             )
             commission = per_share_commission + exchange_fees
         else:
-            # IB Tiered default: floor the total (commission + exchange).
+            # Legacy bundled-floor mode (kept for opt-in parity).
+            # Floors the *total* (per-share + exchange) at ``min_commission``,
+            # which absorbs taker exchange fees inside the floor and
+            # under-counts commission on small orders relative to IBKR.
             commission = max(
                 per_share_commission + exchange_fees,
                 self._cfg.min_commission * stress,
@@ -229,6 +288,7 @@ def estimate_round_trip_cost_bps(
     half_spread: Decimal,
     is_taker: bool,
     is_short_entry: bool,
+    is_taker_exit: bool | None = None,
 ) -> float:
     """Sum model one-way ``cost_bps`` for an entry + flat-to-flat exit leg.
 
@@ -236,9 +296,24 @@ def estimate_round_trip_cost_bps(
     time G12).  Preserves sell-side regulatory fees and HTB on short-entry
     sells while using a symmetric exit (cover / close) without HTB.
 
-    Both legs share the same ``is_taker`` assumption — matching the legacy
-    ``cost_bps * 2`` heuristic when costs are symmetric.
+    ``is_taker`` controls the entry-leg assumption.  ``is_taker_exit``,
+    when provided, controls the exit-leg assumption independently.  When
+    ``is_taker_exit is None`` the legacy symmetric behavior is preserved
+    (``is_taker_exit = is_taker``).
+
+    Why an asymmetric option matters: in the platform's passive-limit
+    execution mode the entry is posted as a maker (``is_taker=False``)
+    but the exit leg can still reach the router as MARKET — stop-loss
+    exits, forced-flatten escalation, the ``_execute_reverse`` exit
+    leg, and any cross-the-book maker that gets reclassified as taker
+    by the marketability guard all bypass the passive path.  Treating
+    both legs as maker therefore *understates* round-trip cost in the
+    very paths most likely to actually trade — the conservative gate
+    (preferred for IBKR-style realism) prices the exit leg as taker
+    even when the entry is passive.
     """
+    if is_taker_exit is None:
+        is_taker_exit = is_taker
     entry_short = bool(is_short_entry and entry_side == Side.SELL)
     entry = model.compute(
         symbol,
@@ -256,7 +331,7 @@ def estimate_round_trip_cost_bps(
         quantity,
         mid_price,
         half_spread,
-        is_taker=is_taker,
+        is_taker=is_taker_exit,
         is_short=False,
     )
     return float(entry.cost_bps + exit_leg.cost_bps)

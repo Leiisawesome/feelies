@@ -87,6 +87,10 @@ from feelies.core.identifiers import SequenceGenerator
 from feelies.core.state_machine import StateMachine, TransitionRecord
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.cost_model import estimate_round_trip_cost_bps
+from feelies.execution.min_cost_policy import (
+    MinCostPolicyConfig,
+    MinimumCostExecutionPolicy,
+)
 from feelies.execution.intent import (
     IntentTranslator,
     OrderIntent,
@@ -476,6 +480,12 @@ class Orchestrator:
         # MARKET.  Stop-loss exits always use MARKET (fail-safe).
         # Set from config via boot().
         self._use_passive_entries = False
+        # Optional per-order routing policy (set in boot() when
+        # config.execution_mode == "minimum_cost").  When non-None,
+        # the order constructor consults the policy for each candidate
+        # order and picks LIMIT or MARKET accordingly; otherwise the
+        # static ``_use_passive_entries`` flag governs.
+        self._min_cost_policy: MinimumCostExecutionPolicy | None = None
 
         self._macro = create_macro_state_machine(clock)
         self._micro = create_micro_state_machine(clock)
@@ -647,9 +657,51 @@ class Orchestrator:
             if hasattr(config, "trail_pct"):
                 self._trail_pct = config.trail_pct
             if hasattr(config, "execution_mode"):
-                self._use_passive_entries = (
-                    config.execution_mode == "passive_limit"
+                # passive_limit and minimum_cost both wire through the
+                # passive-limit backend.  The static flag tells the
+                # rest of the orchestrator (resting-fill reconciliation,
+                # duplicate-passive-order guard) to expect resting
+                # orders.  ``minimum_cost`` additionally constructs a
+                # per-order policy that may override the choice on a
+                # per-order basis.
+                self._use_passive_entries = config.execution_mode in (
+                    "passive_limit", "minimum_cost",
                 )
+                if (
+                    config.execution_mode == "minimum_cost"
+                    and self._cost_model is not None
+                ):
+                    self._min_cost_policy = MinimumCostExecutionPolicy(
+                        cost_model=self._cost_model,
+                        config=MinCostPolicyConfig(
+                            prefer_passive_bias_bps=Decimal(
+                                str(getattr(
+                                    config, "cost_min_passive_bias_bps", 0.0,
+                                ))
+                            ),
+                            small_order_aggressive_threshold_shares=int(
+                                getattr(
+                                    config,
+                                    "cost_min_small_order_threshold_shares",
+                                    0,
+                                )
+                            ),
+                            min_half_spread_for_passive=Decimal(
+                                str(getattr(
+                                    config,
+                                    "cost_min_half_spread_threshold",
+                                    0.0,
+                                ))
+                            ),
+                            allow_passive_short_entry=bool(
+                                getattr(
+                                    config,
+                                    "cost_min_allow_passive_short_entry",
+                                    True,
+                                )
+                            ),
+                        ),
+                    )
             if hasattr(config, "platform_min_order_shares"):
                 self._min_order_shares = config.platform_min_order_shares
             if hasattr(config, "signal_min_edge_cost_ratio"):
@@ -2121,7 +2173,12 @@ class Orchestrator:
             ):
                 gate_price = (quote.bid + quote.ask) / Decimal("2")
                 gate_spread = (quote.ask - quote.bid) / Decimal("2")
-                is_taker_gate = not self._use_passive_entries
+                # Reverse always submits the EXIT leg as MARKET (taker)
+                # — guaranteed-fill close — regardless of execution mode.
+                # The ENTRY leg follows ``_use_passive_entries``.  The
+                # gate must therefore use asymmetric is_taker for the
+                # two legs or it under-prices the round-trip.
+                is_taker_entry = not self._use_passive_entries
                 round_trip_cost_bps = estimate_round_trip_cost_bps(
                     self._cost_model,
                     symbol=intent.symbol,
@@ -2129,7 +2186,8 @@ class Orchestrator:
                     quantity=entry_qty,
                     mid_price=gate_price,
                     half_spread=gate_spread,
-                    is_taker=is_taker_gate,
+                    is_taker=is_taker_entry,
+                    is_taker_exit=True,
                     is_short_entry=is_short,
                 )
                 if intent.signal.edge_estimate_bps < (
@@ -2146,10 +2204,23 @@ class Orchestrator:
                 order_type = OrderType.MARKET
                 limit_price: Decimal | None = None
                 if self._use_passive_entries:
-                    order_type = OrderType.LIMIT
-                    limit_price = (
-                        quote.bid if entry_side == Side.BUY else quote.ask
-                    )
+                    use_passive = True
+                    if self._min_cost_policy is not None:
+                        decision = self._min_cost_policy.decide(
+                            symbol=intent.symbol,
+                            side=entry_side,
+                            quantity=entry_qty,
+                            mid_price=(quote.bid + quote.ask) / Decimal("2"),
+                            half_spread=(quote.ask - quote.bid) / Decimal("2"),
+                            is_short=is_short,
+                            force_aggressive=False,
+                        )
+                        use_passive = decision == "passive"
+                    if use_passive:
+                        order_type = OrderType.LIMIT
+                        limit_price = (
+                            quote.bid if entry_side == Side.BUY else quote.ask
+                        )
 
                 entry_order = OrderRequest(
                     timestamp_ns=self._clock.now_ns(),
@@ -2310,9 +2381,15 @@ class Orchestrator:
         ):
             gate_price = (quote.bid + quote.ask) / Decimal("2")
             gate_spread = (quote.ask - quote.bid) / Decimal("2")
-            # F4: Use maker cost when passive entries are enabled —
-            # taker assumption overestimates cost for passive strategies.
-            is_taker_gate = not self._use_passive_entries
+            # Entry leg: passive when in passive mode, else taker.
+            # Exit leg: always priced as taker for the gate.  Stop-loss
+            # exits, forced-flatten escalation, and any maker that the
+            # marketability guard reclassifies as taker all bypass the
+            # passive path — pricing the exit as maker would silently
+            # admit trades whose realized round-trip cost exceeds the
+            # disclosed edge.  Conservative (worst-case exit) is the
+            # documented default for IBKR-style realism.
+            is_taker_entry = not self._use_passive_entries
             round_trip_cost_bps = estimate_round_trip_cost_bps(
                 self._cost_model,
                 symbol=intent.symbol,
@@ -2320,7 +2397,8 @@ class Orchestrator:
                 quantity=quantity,
                 mid_price=gate_price,
                 half_spread=gate_spread,
-                is_taker=is_taker_gate,
+                is_taker=is_taker_entry,
+                is_taker_exit=True,
                 is_short_entry=is_short,
             )
             if intent.signal.edge_estimate_bps < (
@@ -2334,8 +2412,27 @@ class Orchestrator:
         if self._use_passive_entries and quote is not None:
             is_stop_exit = intent.signal.strategy_id == "__stop_exit__"
             if not is_stop_exit:
-                order_type = OrderType.LIMIT
-                limit_price = quote.bid if side == Side.BUY else quote.ask
+                # Default: post passive at the near BBO.  When the
+                # minimum-cost policy is wired, let it override on a
+                # per-order basis.  Stop-loss / forced-flatten always
+                # short-circuit to MARKET above (is_stop_exit branch),
+                # so the policy is consulted only on tradeable orders
+                # where either route is safe.
+                use_passive = True
+                if self._min_cost_policy is not None:
+                    decision = self._min_cost_policy.decide(
+                        symbol=intent.symbol,
+                        side=side,
+                        quantity=quantity,
+                        mid_price=(quote.bid + quote.ask) / Decimal("2"),
+                        half_spread=(quote.ask - quote.bid) / Decimal("2"),
+                        is_short=is_short,
+                        force_aggressive=is_exit_or_stop,
+                    )
+                    use_passive = decision == "passive"
+                if use_passive:
+                    order_type = OrderType.LIMIT
+                    limit_price = quote.bid if side == Side.BUY else quote.ask
 
         return (
             OrderRequest(

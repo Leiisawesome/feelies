@@ -82,9 +82,24 @@ class PlatformConfig:
     cost_min_commission: float = 0.35
     cost_max_commission_pct: float = 1.0
 
-    # Execution mode: "market" (immediate mid-price fill, spread cost charged)
-    # or "passive_limit" (limit orders at BBO, queue-position fill model).
+    # Execution mode:
+    #   "market"        — every order routes as MARKET (mid-price fill,
+    #                     spread charged via cost model).  Conservative
+    #                     baseline, identical to the v0.1 backend.
+    #   "passive_limit" — entry/exit orders post LIMIT at the near BBO
+    #                     and fall through to MARKET only on stop/exit.
+    #   "minimum_cost"  — per-order policy picks LIMIT vs MARKET based
+    #                     on the cost-model comparison plus configured
+    #                     carve-outs (small-order, tight-spread,
+    #                     short-entry).  See feelies.execution
+    #                     .min_cost_policy.MinimumCostExecutionPolicy.
     execution_mode: str = "market"
+    # Minimum-cost policy knobs (only consumed when
+    # ``execution_mode == "minimum_cost"``; ignored otherwise).
+    cost_min_passive_bias_bps: float = 0.0
+    cost_min_small_order_threshold_shares: int = 0
+    cost_min_half_spread_threshold: float = 0.0
+    cost_min_allow_passive_short_entry: bool = True
     # Ticks at our level before queue-drain fill triggers (legacy tick-based mode).
     passive_fill_delay_ticks: int = 3
     # Cancel unfilled resting orders after this many ticks.
@@ -301,11 +316,19 @@ class PlatformConfig:
         if self.account_equity <= 0:
             raise ConfigurationError("account_equity must be positive")
 
-        valid_modes = ("market", "passive_limit")
+        valid_modes = ("market", "passive_limit", "minimum_cost")
         if self.execution_mode not in valid_modes:
             raise ConfigurationError(
                 f"execution_mode must be one of {valid_modes}, "
                 f"got '{self.execution_mode}'"
+            )
+        if self.cost_min_small_order_threshold_shares < 0:
+            raise ConfigurationError(
+                "cost_min_small_order_threshold_shares must be >= 0"
+            )
+        if self.cost_min_half_spread_threshold < 0.0:
+            raise ConfigurationError(
+                "cost_min_half_spread_threshold must be >= 0"
             )
 
         # ── Phase-2 validation ────────────────────────────────────────
@@ -457,6 +480,16 @@ class PlatformConfig:
             "cost_min_commission": self.cost_min_commission,
             "cost_max_commission_pct": self.cost_max_commission_pct,
             "execution_mode": self.execution_mode,
+            "cost_min_passive_bias_bps": self.cost_min_passive_bias_bps,
+            "cost_min_small_order_threshold_shares": (
+                self.cost_min_small_order_threshold_shares
+            ),
+            "cost_min_half_spread_threshold": (
+                self.cost_min_half_spread_threshold
+            ),
+            "cost_min_allow_passive_short_entry": (
+                self.cost_min_allow_passive_short_entry
+            ),
             "passive_fill_delay_ticks": self.passive_fill_delay_ticks,
             "passive_max_resting_ticks": self.passive_max_resting_ticks,
             "passive_queue_position_shares": self.passive_queue_position_shares,
@@ -666,6 +699,18 @@ class PlatformConfig:
                 data.get("cost_max_commission_pct", 1.0)
             ),
             execution_mode=str(data.get("execution_mode", "market")),
+            cost_min_passive_bias_bps=float(
+                data.get("cost_min_passive_bias_bps", 0.0)
+            ),
+            cost_min_small_order_threshold_shares=int(
+                data.get("cost_min_small_order_threshold_shares", 0)
+            ),
+            cost_min_half_spread_threshold=float(
+                data.get("cost_min_half_spread_threshold", 0.0)
+            ),
+            cost_min_allow_passive_short_entry=bool(
+                data.get("cost_min_allow_passive_short_entry", True)
+            ),
             passive_fill_delay_ticks=int(
                 data.get("passive_fill_delay_ticks", 3)
             ),

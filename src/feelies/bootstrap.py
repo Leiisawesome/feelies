@@ -95,6 +95,10 @@ from feelies.execution.backtest_backend import (
 from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.execution.cost_model import DefaultCostModel, DefaultCostModelConfig
 from feelies.execution.intent import SignalPositionTranslator
+from feelies.execution.min_cost_policy import (
+    MinCostPolicyConfig,
+    MinimumCostExecutionPolicy,
+)
 from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
 from feelies.features.aggregator import HorizonAggregator
 from feelies.features.impl.rolling_stats import (
@@ -499,7 +503,13 @@ def _create_backend(
     backend: ExecutionBackend
     router: BacktestOrderRouter | PassiveLimitOrderRouter | None
     if mode == OperatingMode.BACKTEST:
-        if execution_mode == "passive_limit":
+        # ``minimum_cost`` runs through the passive-limit backend
+        # because the per-order policy must be able to post a LIMIT
+        # when it picks the passive route.  When the policy returns
+        # "aggressive", the orchestrator emits an ``OrderType.MARKET``
+        # which the passive router fills via its ``_fill_aggressive``
+        # path (same economics as ``BacktestOrderRouter``).
+        if execution_mode in ("passive_limit", "minimum_cost"):
             backend, router = build_passive_limit_backend(
                 event_log, clock,
                 latency_ns=fill_latency_ns,

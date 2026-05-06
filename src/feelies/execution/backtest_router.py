@@ -209,15 +209,24 @@ class BacktestOrderRouter:
             else:
                 impact_price = max(fill_price - impact, Decimal("0.01"))
 
-            # Attribute the full per-share slippage of the excess leg
-            # (half_spread for the mid crossing + impact premium) to
-            # the cost model so cost_bps reflects the true cost.
+            # The walk-the-book impact premium is already encoded in
+            # ``impact_price`` (the position records its cost basis at
+            # the worse-than-mid price) — so the cost model must NOT
+            # add the impact a second time as a spread component.
+            # Pass plain ``half_spread`` here; ``cost_bps`` will then
+            # reflect the half-spread cross + commission + adverse
+            # selection, while the impact is captured economically via
+            # the position's avg-entry price.  The earlier code passed
+            # ``half_spread + impact`` and so charged the impact twice
+            # (once via fill_price, once via the spread component),
+            # producing a spuriously punitive cost on thin-book partial
+            # fills.
             excess_costs = self._cost_model.compute(
                 symbol=request.symbol,
                 side=request.side,
                 quantity=excess_qty,
                 fill_price=impact_price,
-                half_spread=half_spread + impact,
+                half_spread=half_spread,
                 is_short=request.is_short,
             )
             self._pending_acks.append(OrderAck(

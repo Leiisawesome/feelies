@@ -56,8 +56,25 @@ class TestDefaultCostModel:
         assert result.commission == Decimal("6.50")
 
     def test_min_commission_floor(self) -> None:
+        # IBKR Tiered: the $0.35 minimum applies to the IB execution
+        # (per-share) commission only; exchange pass-throughs add on
+        # top.  10 shares * $0.0035 = $0.035 → floored to $0.35; plus
+        # 10 * $0.003 = $0.03 taker exchange = $0.38 total.
         model = DefaultCostModel()
-        # 10 shares * ($0.0035 + $0.003 taker fee) = $0.065 (below min $0.35)
+        result = model.compute("AAPL", Side.BUY, 10, Decimal("150"), Decimal("0.01"))
+        assert result.commission == Decimal("0.38")
+
+    def test_min_commission_floor_legacy_bundled(self) -> None:
+        """Legacy ``min_commission_applies_to_per_share_only=False`` path.
+
+        Kept for parity with the v0.1 cost model: the floor applies to
+        the bundled per-share + exchange total, so 10 shares at
+        $0.0035 + $0.003 = $0.065 floors to a flat $0.35 (which absorbs
+        the exchange fee inside the floor — under-counts vs IBKR).
+        """
+        model = DefaultCostModel(DefaultCostModelConfig(
+            min_commission_applies_to_per_share_only=False,
+        ))
         result = model.compute("AAPL", Side.BUY, 10, Decimal("150"), Decimal("0.01"))
         assert result.commission == Decimal("0.35")
 
@@ -102,8 +119,10 @@ class TestDefaultCostModel:
         result = model.compute("AAPL", Side.BUY, 100, Decimal("100"), Decimal("0.001"))
         # floor spread = 100*100 * 1.0/10000 = $1.00
         assert result.spread_cost == Decimal("1.00")
-        # commission = max(100*(0.01+0.002), 2.00) = max(1.20, 2.00) = $2.00
-        assert result.commission == Decimal("2.00")
+        # IBKR Tiered (default ``min_commission_applies_to_per_share_only=True``):
+        # per_share = 100 * $0.01 = $1.00, floored at $2.00; exchange
+        # adds 100 * $0.002 = $0.20 on top → $2.20.
+        assert result.commission == Decimal("2.20")
 
 
 class TestZeroCostModel:
@@ -127,11 +146,17 @@ class TestEdgeCases:
     """Edge cases: zero quantity, zero price, locked market."""
 
     def test_zero_quantity(self) -> None:
+        # IBKR doesn't charge commission on a zero-share fill.  The
+        # earlier model applied the $0.35 floor unconditionally,
+        # producing a phantom fee on synthetic zero fills (e.g.
+        # rounded-down partial-fill remainders).  All-zero is the
+        # correct, conservative-but-correct behavior.
         model = DefaultCostModel()
         result = model.compute("AAPL", Side.BUY, 0, Decimal("150"), Decimal("0.01"))
         assert result.spread_cost == Decimal("0.00")
-        assert result.commission == Decimal("0.35")  # min commission still applies
-        assert result.cost_bps == Decimal("0")  # notional is 0
+        assert result.commission == Decimal("0.00")
+        assert result.total_fees == Decimal("0.00")
+        assert result.cost_bps == Decimal("0")
 
     def test_zero_price(self) -> None:
         model = DefaultCostModel()
@@ -222,3 +247,117 @@ class TestHTBBorrowFee:
         buy_with_flag = model.compute("AAPL", Side.BUY, 100, Decimal("100"), Decimal("0"), is_short=True)
         buy_without = model.compute("AAPL", Side.BUY, 100, Decimal("100"), Decimal("0"))
         assert buy_with_flag.total_fees == buy_without.total_fees
+
+
+class TestSmallOrderTieredFloor:
+    """Audit fix F1: IBKR Tiered min_commission applies to per-share only."""
+
+    def test_taker_small_order_floor_plus_exchange(self) -> None:
+        """Default config: floor on per-share IB fee; exchange on top.
+
+        50 shares * $0.0035 = $0.175 IB fee → floored to $0.35.
+        Exchange = 50 * $0.003 = $0.15.  Total = $0.50 — strictly
+        higher than the legacy bundled-floor result of $0.35.  This
+        is the conservative (correct-for-IBKR) direction.
+        """
+        model = DefaultCostModel()
+        result = model.compute(
+            "AAPL", Side.BUY, 50, Decimal("100"), Decimal("0.01"),
+            is_taker=True,
+        )
+        assert result.commission == Decimal("0.50")
+
+    def test_maker_small_order_floor_plus_rebate(self) -> None:
+        """Maker: $0.35 IB fee floor minus the $0.10 rebate = $0.25 net."""
+        model = DefaultCostModel()
+        result = model.compute(
+            "AAPL", Side.BUY, 50, Decimal("100"), Decimal("0"),
+            is_taker=False,
+        )
+        # 50 * $0.0035 = $0.175 → floored to $0.35; rebate -50 * $0.002 = -$0.10
+        assert result.commission == Decimal("0.25")
+
+
+class TestSpreadFloorTakerOnly:
+    """Audit fix F7: ``min_spread_cost_bps`` floor only applies on taker fills."""
+
+    def test_floor_applies_on_taker(self) -> None:
+        cfg = DefaultCostModelConfig(min_spread_cost_bps=Decimal("2"))
+        model = DefaultCostModel(cfg)
+        result = model.compute(
+            "AAPL", Side.BUY, 100, Decimal("100"), Decimal("0"),
+            is_taker=True,
+        )
+        # floor = 100*100 * 2/10000 = $2.00
+        assert result.spread_cost == Decimal("2.00")
+
+    def test_floor_skipped_on_maker(self) -> None:
+        cfg = DefaultCostModelConfig(min_spread_cost_bps=Decimal("2"))
+        model = DefaultCostModel(cfg)
+        result = model.compute(
+            "AAPL", Side.BUY, 100, Decimal("100"), Decimal("0"),
+            is_taker=False,
+        )
+        # Maker doesn't cross the spread → no phantom spread floor.
+        assert result.spread_cost == Decimal("0.00")
+
+    def test_legacy_spread_floor_on_maker_opt_in(self) -> None:
+        cfg = DefaultCostModelConfig(
+            min_spread_cost_bps=Decimal("2"),
+            spread_floor_taker_only=False,
+        )
+        model = DefaultCostModel(cfg)
+        result = model.compute(
+            "AAPL", Side.BUY, 100, Decimal("100"), Decimal("0"),
+            is_taker=False,
+        )
+        # Legacy: floor charged regardless of liquidity side.
+        assert result.spread_cost == Decimal("2.00")
+
+
+class TestRoundTripAsymmetricLegs:
+    """Audit fix F3: estimate_round_trip_cost_bps supports asymmetric legs."""
+
+    def test_taker_exit_costs_more_than_maker_exit(self) -> None:
+        """When the entry leg is passive but the exit is taker, the
+        round-trip cost is strictly higher than treating both as maker.
+        """
+        from feelies.execution.cost_model import estimate_round_trip_cost_bps
+
+        model = DefaultCostModel()
+        common = dict(
+            symbol="AAPL",
+            entry_side=Side.BUY,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.02"),
+            is_short_entry=False,
+        )
+        symmetric_maker = estimate_round_trip_cost_bps(
+            model, is_taker=False, **common,
+        )
+        passive_entry_taker_exit = estimate_round_trip_cost_bps(
+            model, is_taker=False, is_taker_exit=True, **common,
+        )
+        assert passive_entry_taker_exit > symmetric_maker
+
+    def test_default_exit_matches_entry_when_unset(self) -> None:
+        """Backwards-compatible: ``is_taker_exit=None`` ⇒ symmetric."""
+        from feelies.execution.cost_model import estimate_round_trip_cost_bps
+
+        model = DefaultCostModel()
+        common = dict(
+            symbol="AAPL",
+            entry_side=Side.BUY,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.02"),
+            is_short_entry=False,
+        )
+        explicit = estimate_round_trip_cost_bps(
+            model, is_taker=True, is_taker_exit=True, **common,
+        )
+        symmetric = estimate_round_trip_cost_bps(
+            model, is_taker=True, **common,
+        )
+        assert explicit == symmetric

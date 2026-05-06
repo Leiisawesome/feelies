@@ -334,6 +334,74 @@ class TestPartialFillAndSlippage:
         assert all(a.order_id == "my-order" for a in acks)
 
 
+class TestExcessLegImpactNotDoubleCounted:
+    """Audit fix F2: walk-the-book impact must not be double-charged.
+
+    Before the fix, the cost model received ``half_spread + impact`` on
+    the excess leg — the impact was already encoded in ``fill_price``,
+    so this added an extra ``impact * qty`` to fees on top of the
+    already-worse fill price.  After the fix, the model receives
+    plain ``half_spread`` on both legs; the L1 leg fees and the
+    excess leg fees scale linearly with their respective quantities
+    instead of the excess leg paying a quadratic-ish premium.
+    """
+
+    def test_excess_leg_fees_per_share_match_l1_leg(self) -> None:
+        from feelies.execution.cost_model import (
+            DefaultCostModel,
+            DefaultCostModelConfig,
+        )
+
+        clock = SimulatedClock(start_ns=5000)
+        # Use a config with adverse_selection=0 and reg=0 so we can
+        # compare the per-share fees component cleanly between the L1
+        # and excess legs.  Both legs are taker (default).
+        cfg = DefaultCostModelConfig(
+            passive_adverse_selection_bps=Decimal("0"),
+            sell_regulatory_bps=Decimal("0"),
+        )
+        router = BacktestOrderRouter(
+            clock,
+            cost_model=DefaultCostModel(cfg),
+            market_impact_factor=Decimal("0.5"),
+        )
+
+        # 200-share order against 50 ask depth → 50 at L1, 150 excess.
+        # Half-spread $1.00, impact = 0.5 * (150/50) * 1.00 = $1.50.
+        router.on_quote(_quote_with_depth("99.00", "101.00", bid_size=200, ask_size=50))
+        router.submit(_order_qty(200, side=Side.BUY))
+
+        acks = router.poll_acks()
+        partial = next(a for a in acks if a.status == OrderAckStatus.PARTIALLY_FILLED)
+        filled = next(a for a in acks if a.status == OrderAckStatus.FILLED)
+
+        # Spread-cost per share is $1.00 on both legs (the impact is
+        # encoded in fill_price, NOT in fees).  Commission scales with
+        # quantity only.  So fees-per-share should be approximately
+        # equal on the two legs.  Before the fix, the excess leg
+        # included an additional $1.50/share spread charge.
+        l1_fee_per_share = partial.fees / partial.filled_quantity
+        excess_fee_per_share = filled.fees / filled.filled_quantity
+
+        # Equality is expected up to commission's per-share rate +
+        # rounding.  The pre-fix bug produced excess_fee_per_share ≈
+        # l1_fee_per_share + $1.50 — a 100%+ blowup.  Tolerance here
+        # is set tight enough to catch that without flaking on
+        # legitimate per-share rounding.
+        assert abs(excess_fee_per_share - l1_fee_per_share) < Decimal("0.05")
+
+    def test_excess_fill_price_still_includes_impact(self) -> None:
+        """Sanity: the impact is still encoded in fill_price (Inv-12 realism)."""
+        clock = SimulatedClock(start_ns=5000)
+        router = BacktestOrderRouter(clock, market_impact_factor=Decimal("0.5"))
+        router.on_quote(_quote_with_depth("98.00", "102.00", bid_size=200, ask_size=50))
+        router.submit(_order_qty(150, side=Side.BUY))
+        _, _, filled = router.poll_acks()
+        # mid=$100, impact = 0.5 * (100/50) * $2 = $2.00.  Excess
+        # leg fills at $102.00.  Unchanged from pre-fix behavior.
+        assert filled.fill_price == Decimal("102.00")
+
+
 class TestHTBFeeRouting:
     """2g: short-locate / HTB borrow fees."""
 
