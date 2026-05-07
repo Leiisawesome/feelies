@@ -42,6 +42,8 @@ jobs:
   alpha-unit-tests:
     name: Alpha unit tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository
@@ -98,6 +100,8 @@ jobs:
   integration-tests:
     name: Integration / parity tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository
@@ -122,6 +126,8 @@ jobs:
   live-backtest:
     name: Deterministic backtest (${{ inputs.alpha || 'pofi_l1_imbalance_momentum_v1' }})
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     # Only runs when triggered manually with a MASSIVE_API_KEY secret available.
     if: ${{ github.event_name == 'workflow_dispatch' && secrets.MASSIVE_API_KEY != '' }}
 
