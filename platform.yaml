@@ -15,7 +15,6 @@ symbols:
 alpha_spec_dir: null
 
 alpha_specs:
-  - alphas/pofi_inventory_revert_v1/pofi_inventory_revert_v1.alpha.yaml
   - alphas/pofi_l1_imbalance_momentum_v1/pofi_l1_imbalance_momentum_v1.signal.alpha.yaml
 
 parameter_overrides: {}
@@ -129,5 +128,28 @@ sensor_specs:
     subscribes_to: [NBBOQuote]
     input_sensor_ids: []
     min_history: 20
+    throttled_ms: null
+
+  - sensor_id: ofi_ewma
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.ofi_ewma.OFIEwmaSensor
+    params:
+      alpha: 0.1
+      warm_after: 50
+      warm_window_seconds: 300
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 50
+    throttled_ms: null
+
+  - sensor_id: micro_price
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.micro_price.MicroPriceSensor
+    params:
+      warm_after: 1
+      warm_window_seconds: 60
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 1
     throttled_ms: null
 
