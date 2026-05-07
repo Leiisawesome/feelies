@@ -1,0 +1,19 @@
+# Portfolio wrapper for L1 Imbalance Momentum (minimal cross-sectional)
+schema_version: "1.1"
+layer: PORTFOLIO
+alpha_id: pofi_l1_imbalance_momentum_port_v1
+version: "1.0.0"
+description: Cross-sectional wrapper for L1 Imbalance Momentum SIGNAL on AAPL universe.
+hypothesis: Cross-sectional application of L1 imbalance momentum signal.
+depends_on_signals:
+  - pofi_l1_imbalance_momentum_v1
+horizon_seconds: 300
+universe:
+  - AAPL
+factor_neutralization: false
+cost_arithmetic:
+  edge_estimate_bps: 13.5
+  half_spread_bps: 2.8
+  impact_bps: 3.2
+  fee_bps: 0.8
+  margin_ratio: 1.85

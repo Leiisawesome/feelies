@@ -1,0 +1,73 @@
+# L1 Imbalance Momentum v1
+schema_version: "1.1"
+layer: SIGNAL
+alpha_id: pofi_l1_imbalance_momentum_v1
+version: "1.0.0"
+description: |
+  L1-derived order-flow imbalance momentum. Exploits positive OFI_EWMA and micro-price imbalance under spread compression regimes to predict short-horizon upward drift.
+
+hypothesis: |
+  Aggressive liquidity-taking at the ask (positive OFI_EWMA + rising microprice) under spread-compression regime reveals latent buy pressure. This causes short-horizon momentum drift (Pring momentum signature + Pedersen trend-following/liquidity provision mechanism).
+
+falsification_criteria:
+  - Spearman correlation between ofi_ewma and forward return drops below 0.05 in on-regime for 4+ weeks
+  - Realised half-life outside [180, 900] seconds
+  - DSR < 1.0 in any OOS quarter
+
+depends_on_sensors:
+  - ofi_ewma
+  - micro_price
+  - spread_z_30d
+
+parameters:
+  entry_threshold_z:
+    type: float
+    default: 1.8
+    min: 1.2
+    max: 3.0
+  edge_per_unit_bps:
+    type: float
+    default: 5.5
+    min: 2.0
+    max: 12.0
+
+horizon_seconds: 300
+
+regime_gate:
+  regime_engine: hmm_3state_fractional
+  on_condition: P(normal) > 0.65 and spread_z_30d <= 0.8
+  off_condition: P(normal) < 0.45 or spread_z_30d > 1.8
+  hysteresis:
+    posterior_margin: 0.22
+
+cost_arithmetic:
+  edge_estimate_bps: 14.0
+  half_spread_bps: 2.8
+  impact_bps: 3.2
+  fee_bps: 0.8
+  margin_ratio: 1.92
+
+trend_mechanism:
+  family: KYLE_INFO
+  expected_half_life_seconds: 420
+  l1_signature_sensors:
+    - ofi_ewma
+    - micro_price
+
+signal: |
+  def evaluate(snapshot, regime, params):
+      ofi_z = snapshot.values.get("ofi_ewma_zscore")
+      micro_z = snapshot.values.get("micro_price_zscore")
+      if ofi_z is None or micro_z is None:
+          return None
+      z = (ofi_z + micro_z) / 2.0
+      if z < params["entry_threshold_z"]:
+          return None
+      edge_bps = min((z - params["entry_threshold_z"]) * params["edge_per_unit_bps"], 25.0)
+      return Signal(
+          timestamp_ns=snapshot.timestamp_ns,
+          symbol=snapshot.symbol,
+          direction=LONG,
+          strength=min(z / 4.0, 1.0),
+          edge_estimate_bps=edge_bps,
+      )
