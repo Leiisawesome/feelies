@@ -391,6 +391,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        "--alpha",
+        type=str,
+        default=None,
+        metavar="ALPHA_ID",
+        help=(
+            "Override platform.yaml alpha_specs with a single alpha by ID "
+            "(e.g. pofi_l1_imbalance_momentum_v1). Resolves to "
+            "alphas/<ALPHA_ID>/<ALPHA_ID>.signal.alpha.yaml, falling back "
+            "to alphas/<ALPHA_ID>/<ALPHA_ID>.alpha.yaml."
+        ),
+    )
+    p.add_argument(
         "--trace-signal-orders",
         action="store_true",
         help=(
@@ -1790,6 +1802,28 @@ def main(argv: list[str] | None = None) -> int:
     if args.stress_cost != 1.0:
         from dataclasses import replace as _replace
         config = _replace(config, cost_stress_multiplier=args.stress_cost)
+
+    # Override alpha_specs if --alpha is provided via CLI
+    if getattr(args, "alpha", None):
+        alpha_id = args.alpha
+        alpha_dir = _PROJECT_ROOT / "alphas" / alpha_id
+        signal_yaml = alpha_dir / f"{alpha_id}.signal.alpha.yaml"
+        if not signal_yaml.exists():
+            signal_yaml = alpha_dir / f"{alpha_id}.alpha.yaml"
+        if not signal_yaml.exists():
+            print(
+                f"ERROR: Alpha YAML not found for {alpha_id!r}. "
+                f"Tried:\n"
+                f"  {alpha_dir / (alpha_id + '.signal.alpha.yaml')}\n"
+                f"  {alpha_dir / (alpha_id + '.alpha.yaml')}",
+                file=sys.stderr,
+            )
+            return 1
+        config.alpha_specs = [signal_yaml]
+        print(
+            f"  [--alpha] Using alpha: {alpha_id} ({signal_yaml.name})",
+            flush=True,
+        )
 
     # Override symbols if provided via CLI
     if args.symbol:

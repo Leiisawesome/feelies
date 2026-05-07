@@ -37,7 +37,7 @@ horizon_seconds: 300
 regime_gate:
   regime_engine: hmm_3state_fractional
   on_condition: |
-    P(normal) > 0.65 and spread_z_30d <= 1.0 and abs(ofi_ewma_z) > 1.5
+    P(normal) > 0.65 and spread_z_30d <= 1.0 and abs(ofi_ewma_zscore) > 1.5
   off_condition: |
     P(normal) < 0.4 or spread_z_30d > 1.8
   hysteresis:
@@ -65,12 +65,15 @@ signal: |
       spread_z = snapshot.values.get('spread_z_30d', 99)
       if abs(ofi_z) < params['entry_threshold_z'] or spread_z > 1.0:
           return None
-      direction = 1 if ofi_z > 0 else -1
+      direction = LONG if ofi_z > 0 else SHORT
       edge = min(abs(ofi_z) * 3.5, 25.0)  # bps
       return Signal(
+          timestamp_ns=snapshot.timestamp_ns,
+          correlation_id=snapshot.correlation_id,
+          sequence=snapshot.sequence,
           symbol=snapshot.symbol,
+          strategy_id="pofi_l1_imbalance_momentum_v1",
           direction=direction,
           strength=abs(ofi_z)/3.0,
           edge_estimate_bps=edge,
-          timestamp_ns=snapshot.timestamp_ns
       )
