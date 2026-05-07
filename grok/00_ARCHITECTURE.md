@@ -25,6 +25,35 @@ no reimplemented risk engine. One substitution is allowed and explicitly named.
 
 ---
 
+## GitHub Connector
+
+Grok's native GitHub connector allows the model to read any file in the
+`Leiisawesome/feelies` repository directly — without Python code and without
+downloading a ZIP. This changes the session architecture in three ways:
+
+**1. Bootstrap scope shrinks.** The ZIP download in Cell 1 of Prompt 1 now extracts
+only what the Python kernel needs to import: `src/feelies/**/*.py` and
+`platform.yaml`. The `alphas/` and `docs/` trees are no longer bundled into the ZIP
+extraction path because the model reads them live via the connector.
+
+**2. Reference alpha access is direct.** Prompt 3's `load_reference_alpha()` first
+checks the local `FEELIES_REPO` path; if the alpha wasn't extracted (connector
+session), it falls back to a raw GitHub URL at the pinned commit SHA. No manual
+file copying is required to access shipped alpha templates.
+
+**3. Live repo inspection is first-class.** The PI can ask Grok to read
+`alphas/SCHEMA.md`, `audits/AUDIT_PROTOCOL.md`, or any reference alpha YAML at
+any point in the session. Grok answers directly from the repo, not from stale
+in-memory copies. New commands `SHOW_LIVE_SCHEMA()` and `SHOW_LIVE_AUDIT_PROTOCOL()`
+(Prompt 7) surface this capability explicitly.
+
+**What does NOT change.** The Python kernel still requires `src/feelies/` on the
+filesystem for `import feelies` to work. The ZIP download is retained for that
+purpose. The parity contract, the three-hash verification, the SELFCHECK invariant,
+and every behavioral constraint remain identical.
+
+---
+
 ## The One Allowed Substitution
 
 ```
@@ -51,9 +80,13 @@ sensor -> horizon -> signal -> composition -> execution/risk/orchestrator
 ## Session Flow
 
 ```
+Prompt 0: GitHub connector (model-level, no Python): verify pinned commit SHA exists;
+                           browse alphas/ and read platform.yaml directly so the model
+                           has full repo context before any code runs.
 Prompt 1: Paste once at session start (downloads repo ZIP at pinned commit SHA,
-                                       extracts BOTH src/feelies/ AND repo-root files
-                                       — including platform.yaml — sets sys.path)
+                                       extracts src/feelies/ AND platform.yaml only —
+                                       alphas/ and docs/ are now read via connector;
+                                       sets sys.path)
 Prompt 2: Paste once to activate data layer (PolygonFetcher + RTH logic)
 Prompt 3: Paste once to activate alpha development (schema-1.1 SIGNAL builder,
                                                     reference-alpha cloning,
@@ -125,6 +158,8 @@ continuing — every later prompt depends on symbols defined earlier.
 | 8    | Call `INITIALIZE("<polygon_api_key>")` | All 7 modules report `ACTIVE` |
 
 Cell 1 of Prompt 1 fetches a ~3 MB ZIP over HTTPS; expect 10–30 seconds.
+With the GitHub connector active, `alphas/` and `docs/` are no longer extracted
+from the ZIP, so extraction is slightly faster and FEELIES_REPO is smaller.
 `RUN_ACTIVE()` and `SELFCHECK_ADOPTION()` from Prompt 4 require Prompt 6 to
 be pasted (they call `ADOPT`, defined in Prompt 6). Prompt 7 assumes Prompts 3
 and 6 are already loaded because it wraps `clone_reference_alpha()`,
@@ -231,6 +266,7 @@ or to `bootstrap._load_alphas`.
 | Phase A / Phase B Prompt 7 | No separate harness needed |
 | Custom HMM Python code | Imported from `HMM3StateFractional` source |
 | 87 individual GitHub file fetches | Replaced with single ZIP download |
+| `alphas/` + `docs/` ZIP extraction | GitHub connector reads these directly; only `src/` + `platform.yaml` extracted |
 
 ## What Was Preserved from V1
 
@@ -243,3 +279,15 @@ or to `bootstrap._load_alphas`.
 | Statistical validation (CPCV, DSR, bootstrap, IC) | Research-layer logic, correct |
 | Signal registry, lifecycle states, artifact storage | Was correct |
 | Hypothesis formalization workflow | Was correct |
+
+## New Capabilities (GitHub Connector)
+
+| Capability | Where |
+|---|---|
+| Live repo browsing at session start | Prompt 1, Cell 0 (model-level) |
+| `load_reference_alpha()` GitHub raw URL fallback | Prompt 3, `load_reference_alpha()` |
+| `LIST_REFERENCE_ALPHAS_LIVE()` — query alphas/ via GitHub API | Prompt 3 |
+| `SYNC_FROM_GITHUB(path)` — re-read a specific repo file without full re-bootstrap | Prompt 1, Cell 5 |
+| `SHOW_LIVE_SCHEMA()` — read `alphas/SCHEMA.md` live from repo | Prompt 7 |
+| `SHOW_LIVE_AUDIT_PROTOCOL()` — read `audits/AUDIT_PROTOCOL.md` live | Prompt 7 |
+| Alpha collision detection before EXPORT | Prompt 5, `EXPORT()` |

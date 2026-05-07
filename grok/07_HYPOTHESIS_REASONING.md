@@ -734,6 +734,95 @@ print("Hypothesis Reasoning Module: ACTIVE")
 
 ---
 
+## CELL 5 — GitHub Connector: live repo document access
+
+```python
+import requests as _gh_req
+
+
+def _fetch_github_raw(repo_path: str) -> str:
+    """Fetch a raw file from the pinned commit via raw.githubusercontent.com.
+
+    Args:
+        repo_path: Repo-relative path, e.g. "alphas/SCHEMA.md" or
+                   "audits/AUDIT_PROTOCOL.md".
+
+    Returns:
+        File content as a string.
+
+    Raises:
+        RuntimeError on HTTP error.
+    """
+    url = (
+        f"https://raw.githubusercontent.com/Leiisawesome/feelies/"
+        f"{_COMMIT_SHA}/{repo_path}"
+    )
+    resp = _gh_req.get(url, timeout=15)
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"GitHub fetch failed: HTTP {resp.status_code} for {url}. "
+            f"Check path and commit SHA."
+        )
+    return resp.text
+
+
+def SHOW_LIVE_SCHEMA() -> str:
+    """Print alphas/SCHEMA.md directly from the pinned commit on GitHub.
+
+    The GitHub connector loaded this file at session start (Cell 0 of Prompt 1).
+    This function fetches it again via raw URL so the PI can confirm the live
+    schema contract any time during the session without leaving the REPL.
+
+    Returns:
+        The raw SCHEMA.md content.
+    """
+    content = _fetch_github_raw("alphas/SCHEMA.md")
+    print("\n=== alphas/SCHEMA.md (live from GitHub, commit " + _COMMIT_SHA[:12] + ") ===")
+    print(content)
+    print("=" * 72)
+    return content
+
+
+def SHOW_LIVE_AUDIT_PROTOCOL() -> str:
+    """Print audits/AUDIT_PROTOCOL.md directly from the pinned commit on GitHub.
+
+    Useful for checking the audit gate protocol mid-session, especially after
+    a PROPOSE / MUTATE cycle before calling AUDIT().
+
+    Returns:
+        The raw AUDIT_PROTOCOL.md content.
+    """
+    content = _fetch_github_raw("audits/AUDIT_PROTOCOL.md")
+    print("\n=== audits/AUDIT_PROTOCOL.md (live from GitHub, commit " + _COMMIT_SHA[:12] + ") ===")
+    print(content)
+    print("=" * 72)
+    return content
+
+
+def SHOW_LIVE_ALPHA(alpha_id: str) -> dict:
+    """Fetch a reference alpha YAML from the pinned commit on GitHub and return as dict.
+
+    Equivalent to load_reference_alpha(alpha_id) but always fetches from GitHub,
+    bypassing any locally cached copy. Useful for confirming the canonical shipped
+    spec before running a PROPOSE or MUTATE.
+
+    Returns:
+        Parsed spec dict.
+    """
+    import yaml as _yaml
+    raw = _fetch_github_raw(f"alphas/{alpha_id}/{alpha_id}.alpha.yaml")
+    spec = _yaml.safe_load(raw)
+    print(f"\n=== alphas/{alpha_id}/{alpha_id}.alpha.yaml (live, commit {_COMMIT_SHA[:12]}) ===")
+    print(raw)
+    print("=" * 72)
+    return spec
+
+
+print("SHOW_LIVE_SCHEMA(), SHOW_LIVE_AUDIT_PROTOCOL(), SHOW_LIVE_ALPHA(alpha_id): ACTIVE")
+```
+
+---
+
 ## EMBEDDED REASONING CONTRACT
 
 ### Mode Detection
@@ -791,4 +880,5 @@ Embedded protocol:    mode detection, generation steps, hard gates, mutation axe
 Mechanical helpers:   PROPOSE(), MUTATE_BY_AXIS(), audit_gates()
 Primary validator:    validate_alpha(spec)
 Primary development:  clone_reference_alpha() -> bounded edits -> audit -> HYPOTHESIS_FROM_SPEC() -> backtest
+GitHub connector:     SHOW_LIVE_SCHEMA(), SHOW_LIVE_AUDIT_PROTOCOL(), SHOW_LIVE_ALPHA(alpha_id)
 ```

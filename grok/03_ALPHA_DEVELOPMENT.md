@@ -49,7 +49,12 @@ def _alpha_yaml_path(alpha_id: str, root: str = REFERENCE_ALPHA_DIR) -> str:
 
 
 def list_reference_alphas() -> list[str]:
-    """Return sorted shipped alpha ids under FEELIES_REPO/alphas."""
+    """Return sorted shipped alpha ids under FEELIES_REPO/alphas.
+
+    In GitHub connector sessions, FEELIES_REPO/alphas/ is not extracted from the
+    ZIP. Use list_reference_alphas_live() for a live GitHub API query, or rely on
+    the reference alpha id list that Cell 0 of Prompt 1 put into model context.
+    """
     alpha_ids: list[str] = []
     if not os.path.isdir(REFERENCE_ALPHA_DIR):
         return alpha_ids
@@ -60,16 +65,69 @@ def list_reference_alphas() -> list[str]:
     return alpha_ids
 
 
+def list_reference_alphas_live() -> list[str]:
+    """Query the GitHub API to list shipped alpha ids from the pinned commit SHA.
+
+    Works even when alphas/ was not extracted from the ZIP (GitHub connector
+    sessions). Falls back to list_reference_alphas() if the API call fails.
+    """
+    import requests as _req
+    url = (
+        f"https://api.github.com/repos/Leiisawesome/feelies/contents/alphas"
+        f"?ref={_COMMIT_SHA}"
+    )
+    try:
+        resp = _req.get(url, timeout=15, headers={"Accept": "application/vnd.github.v3+json"})
+        if resp.status_code == 200:
+            entries = [
+                e["name"] for e in resp.json()
+                if e.get("type") == "dir" and not e["name"].startswith("_")
+            ]
+            alpha_ids = sorted(entries)
+            print(f"[list_reference_alphas_live] {len(alpha_ids)} alphas at SHA {_COMMIT_SHA[:12]}: {alpha_ids}")
+            return alpha_ids
+        else:
+            print(f"[list_reference_alphas_live] GitHub API returned {resp.status_code}; falling back to local.")
+    except Exception as e:
+        print(f"[list_reference_alphas_live] network error: {e}; falling back to local.")
+    return list_reference_alphas()
+
+
 def load_reference_alpha(alpha_id: str) -> dict:
-    """Load a shipped .alpha.yaml from FEELIES_REPO/alphas."""
+    """Load a shipped .alpha.yaml from FEELIES_REPO/alphas.
+
+    Primary path: FEELIES_REPO/alphas/<alpha_id>/<alpha_id>.alpha.yaml
+    (present when Bootstrap Cell 1 extracted the full ZIP including alphas/).
+
+    Fallback (GitHub connector sessions): the alphas/ tree is not extracted
+    locally, so this function fetches the file directly from the pinned commit
+    via raw.githubusercontent.com. Requires `requests` (available in Grok).
+    """
     path = _alpha_yaml_path(alpha_id)
-    if not os.path.exists(path):
+    if os.path.exists(path):
+        with open(path, "r") as f:
+            return yaml.safe_load(f)
+    # GitHub connector session: alphas/ not extracted — fetch via raw URL.
+    try:
+        import requests as _req
+        _raw_url = (
+            f"https://raw.githubusercontent.com/Leiisawesome/feelies/"
+            f"{_COMMIT_SHA}/alphas/{alpha_id}/{alpha_id}.alpha.yaml"
+        )
+        resp = _req.get(_raw_url, timeout=15)
+        if resp.status_code == 200:
+            print(f"  [load_reference_alpha] fetched {alpha_id} from GitHub raw URL.")
+            return yaml.safe_load(resp.text)
+        else:
+            raise FileNotFoundError(
+                f"Reference alpha '{alpha_id}' not found at {_raw_url} "
+                f"(HTTP {resp.status_code}). Check alpha_id and commit SHA."
+            )
+    except ImportError:
         raise FileNotFoundError(
             f"Reference alpha not found: {path}. "
             f"Available: {list_reference_alphas()}"
         )
-    with open(path, "r") as f:
-        return yaml.safe_load(f)
 
 
 def clone_reference_alpha(

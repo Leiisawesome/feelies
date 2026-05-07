@@ -21,6 +21,32 @@ promotion was skipped.
 ```python
 import datetime, csv, json, os, yaml
 
+
+def _github_alpha_id_exists(alpha_id: str) -> bool:
+    """Return True if alpha_id already exists in alphas/ on the pinned commit.
+
+    Uses the GitHub API. If the request fails (network unavailable, rate limit),
+    returns False with a warning rather than blocking the export.
+    """
+    try:
+        import requests as _req
+        url = (
+            f"https://api.github.com/repos/Leiisawesome/feelies/contents/alphas/{alpha_id}"
+            f"?ref={_COMMIT_SHA}"
+        )
+        resp = _req.get(url, timeout=10, headers={"Accept": "application/vnd.github.v3+json"})
+        if resp.status_code == 200:
+            return True
+        elif resp.status_code == 404:
+            return False
+        else:
+            print(f"  [_github_alpha_id_exists] GitHub API returned {resp.status_code} — treating as 'not found'.")
+            return False
+    except Exception as e:
+        print(f"  [_github_alpha_id_exists] network error: {e} — skipping collision check.")
+        return False
+
+
 def EXPORT(
     signal_id: str,
     report: dict,
@@ -54,6 +80,14 @@ def EXPORT(
         spec_yaml = yaml.dump(spec_dict, default_flow_style=False, sort_keys=False)
 
     alpha_id = spec_dict.get("alpha_id", signal_id)
+
+    # --- GitHub collision check (connector-enabled): warn if alpha_id already in repo ---
+    if _github_alpha_id_exists(alpha_id):
+        print(
+            f"  WARN: alpha_id '{alpha_id}' already exists in the repo at the pinned commit. "
+            f"If this is an intentional update, rename the alpha (bump version suffix) or "
+            f"confirm the overwrite intent before copying files to the local repo."
+        )
 
     # --- Validation gate: must pass AlphaLoader before export ---
     print(f"[EXPORT] Validating {alpha_id} via AlphaLoader...")
@@ -115,7 +149,7 @@ def EXPORT(
         "platform_yaml_source": "Same commit SHA as source ZIP — loaded via PlatformConfig.from_yaml",
         "generated_in":    "grok_repl_v2",
         "generated_at":    datetime.datetime.utcnow().isoformat(),
-        "repo_source":     "github.com/Leiisawesome/feelies (ZIP bootstrap)",
+        "repo_source":     f"github.com/Leiisawesome/feelies (commit {_COMMIT_SHA[:12]}, src via ZIP + connector)",
         "data_source":     "Polygon REST API (RTH substitution)",
         "parity_contract": (
             "Running same .alpha.yaml on same date range through Grok REPL "

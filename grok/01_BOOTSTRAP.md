@@ -7,6 +7,39 @@ every subsequent module.
 
 ---
 
+## CELL 0 — GitHub Connector: verify repo state (model-level, no Python)
+
+**This is a model instruction, not a Python code cell.**
+Before running any Python, use the GitHub connector to perform the following
+steps. This puts the model in sync with the repo before any extraction runs.
+
+1. **Confirm the pinned commit SHA exists.** Open repository
+   `Leiisawesome/feelies`. Verify that commit
+   `2945eb13a9aa7f83b5902ea463f734ba9cb839f2` is reachable. If a newer HEAD
+   exists, note the delta as an informational warning — the session runs at
+   the pinned SHA for reproducibility; do not upgrade automatically.
+
+2. **Read `platform.yaml` from the pinned commit.** Confirm it contains
+   `latency_ms`, `cooldown_ticks`, and `stop_loss_fraction` fields. Hold this
+   content in context so that, if Cell 1’s extraction is missing or malformed,
+   the discrepancy is immediately visible.
+
+3. **Browse `alphas/` and hold the directory listing.** List all subdirectories
+   whose name does not start with `_`. Each is a reference alpha id. This list
+   is used by `list_reference_alphas_live()` (Prompt 3) without requiring ZIP
+   extraction of the `alphas/` tree.
+
+4. **Read `alphas/SCHEMA.md` and `audits/AUDIT_PROTOCOL.md`** into the model
+   context. These govern the schema-1.1 contract and the audit gate protocol.
+   Having them in context allows `SHOW_LIVE_SCHEMA()` and
+   `SHOW_LIVE_AUDIT_PROTOCOL()` (Prompt 7) to answer without a network round-trip.
+
+Report: “GitHub connector check complete. SHA `{first 12 chars}` confirmed /
+        `{n}` reference alphas found / platform.yaml fields confirmed /
+        SCHEMA.md and AUDIT_PROTOCOL.md loaded.”
+
+---
+
 ## CELL 1 — Download `feelies` source from GitHub (single ZIP, no git required)
 
 ```python
@@ -48,19 +81,14 @@ for name in zf.namelist():
 print(f"Extracted {extracted} Python files to {FEELIES_SRC}/feelies/")
 assert extracted >= 80, f"Expected ≥80 files, got {extracted} — check repo structure"
 
-# 2) Extract repo-root config + reference artifacts under FEELIES_REPO.
-#    These are the SAME files scripts/run_backtest.py and the current-main
-#    alpha docs rely on: platform.yaml, shipped alpha templates, migration docs,
-#    and architecture docs.
-#    Without this, Grok runs with PlatformConfig dataclass defaults (latency=0,
-#    cooldown=0, no stop-loss) while the local repo runs with platform.yaml
-#    (latency=30ms, cooldown=100 ticks, stop-loss=0.005) — silently breaking parity.
+# 2) Extract repo-root config under FEELIES_REPO.
+#    Only platform.yaml and pyproject.toml are needed here; alphas/ and docs/
+#    are read directly by the model via the GitHub connector (Cell 0 above).
+#    Extracting them would be redundant and would inflate the bootstrap time.
 _repo_extracted = 0
 _repo_targets = (
     "platform.yaml",
-    "alphas/",
     "pyproject.toml",
-    "docs/",
 )
 for name in zf.namelist():
     if name == _top or name.endswith("/"):
@@ -229,6 +257,47 @@ after all seven prompts have been pasted, to bind the Polygon API key and
 confirm every module reports `ACTIVE`.
 
 ```python
+def SYNC_FROM_GITHUB(path: str | None = None) -> str:
+    """Fetch a single file from the pinned commit SHA via raw GitHub URL.
+
+    Useful for re-reading a config or reference file without a full re-bootstrap.
+
+    Args:
+        path: Repo-relative path, e.g. "platform.yaml" or
+              "alphas/pofi_kyle_drift_v1/pofi_kyle_drift_v1.alpha.yaml".
+              If None, re-fetches platform.yaml and overwrites PLATFORM_YAML_PATH.
+
+    Returns:
+        The file content as a string.
+
+    Example:
+        SYNC_FROM_GITHUB("platform.yaml")
+        SYNC_FROM_GITHUB("alphas/pofi_benign_midcap_v1/pofi_benign_midcap_v1.alpha.yaml")
+    """
+    import requests as _req
+    _target = path or "platform.yaml"
+    url = (
+        f"https://raw.githubusercontent.com/Leiisawesome/feelies/"
+        f"{_COMMIT_SHA}/{_target}"
+    )
+    resp = _req.get(url, timeout=20)
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"SYNC_FROM_GITHUB: HTTP {resp.status_code} for {url}. "
+            f"Check path spelling and commit SHA."
+        )
+    content = resp.text
+    # If re-fetching platform.yaml, overwrite the local copy so downstream
+    # calls to PlatformConfig.from_yaml(PLATFORM_YAML_PATH) stay in sync.
+    if _target == "platform.yaml":
+        with open(PLATFORM_YAML_PATH, "w") as _f:
+            _f.write(content)
+        print(f"SYNC_FROM_GITHUB: platform.yaml refreshed at {PLATFORM_YAML_PATH}")
+    else:
+        print(f"SYNC_FROM_GITHUB: {_target} fetched ({len(content)} bytes)")
+    return content
+
+
 def INITIALIZE(polygon_api_key: str) -> None:
     """Set API key and confirm all modules are active. Call after pasting all 7 prompts."""
     SESSION["api_key"] = polygon_api_key
@@ -268,7 +337,9 @@ def INITIALIZE(polygon_api_key: str) -> None:
     print()
     print("  Single source of truth: https://github.com/Leiisawesome/feelies")
     print("  Parity verifier:        python scripts/run_backtest.py")
-    print("  One allowed deviation:  MassiveHistoricalIngestor → PolygonFetcher")
+    print("  One allowed deviation:  MassiveHistoricalIngestor \u2192 PolygonFetcher")
+    print("  GitHub connector:       alphas/ and docs/ read via connector (not extracted)")
+    print("  SYNC_FROM_GITHUB(path): re-read any repo file from pinned SHA on demand")
     print("=" * 60)
     if not all([_m2, _m3, _m4, _m5, _m6, _m7]):
         print("\n  ACTION REQUIRED: paste the remaining prompts, then call INITIALIZE() again.")
