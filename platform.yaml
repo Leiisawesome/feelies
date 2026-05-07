@@ -16,6 +16,7 @@ alpha_spec_dir: null
 
 alpha_specs:
   - alphas/pofi_inventory_revert_v1/pofi_inventory_revert_v1.alpha.yaml
+  - alphas/pofi_l1_imbalance_momentum_v1/pofi_l1_imbalance_momentum_v1.signal.alpha.yaml
 
 parameter_overrides: {}
 
@@ -129,5 +130,4 @@ sensor_specs:
     input_sensor_ids: []
     min_history: 20
     throttled_ms: null
-
 
