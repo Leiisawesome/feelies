@@ -115,10 +115,11 @@ cost_arithmetic:
 # ``tests/acceptance/test_v02_no_trend_mechanism_parity.py``.  Adding a
 # ``trend_mechanism:`` block here breaks the locked contract that the
 # v0.3 loader (under ``enforce_trend_mechanism=False``) must accept a
-# v0.2-style schema-1.1 SIGNAL alpha unmodified.  Production
-# deployments that need strict mode must instead pin
-# ``enforce_trend_mechanism: false`` in ``platform.yaml`` for this
-# alpha or pick a different alpha for ``alpha_specs:``.
+# v0.2-style schema-1.1 SIGNAL alpha unmodified.  Operators wiring
+# this alpha in ``platform.yaml: alpha_specs:`` must therefore pin
+# ``enforce_trend_mechanism: false`` (the dataclass default is
+# ``true``); deployments that want strict mode should pick a
+# different schema-1.1 alpha for ``alpha_specs:``.
 
 # ── Signal (Layer-2 evaluate) ─────────────────────────────
 signal: |
