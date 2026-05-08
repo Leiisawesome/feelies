@@ -37,6 +37,7 @@ from typing import Sequence
 
 import pytest
 
+from feelies.storage.reference.paths import FACTOR_LOADINGS_DIR, SECTOR_MAP_PATH
 from tests.perf._pinned_baseline import load_pinned_baseline
 
 
@@ -53,10 +54,8 @@ _PORTFOLIO_ALPHA_WITH_DECAY = (
     _REPO_ROOT / "alphas" / "pofi_xsect_v1"
     / "pofi_xsect_v1.with_decay.alpha.yaml"
 )
-_FACTOR_LOADINGS_DIR = _REPO_ROOT / "storage" / "reference" / "factor_loadings"
-_SECTOR_MAP_PATH = (
-    _REPO_ROOT / "storage" / "reference" / "sector_map" / "sector_map.json"
-)
+_FACTOR_LOADINGS_DIR = FACTOR_LOADINGS_DIR
+_SECTOR_MAP_PATH = SECTOR_MAP_PATH
 
 
 REPEATS: int = 5

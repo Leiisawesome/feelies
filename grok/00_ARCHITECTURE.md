@@ -1,1 +1,0 @@
-[Updated architecture note: REPL-native self-contained bootstrap. No ZIP.]

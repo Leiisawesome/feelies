@@ -197,13 +197,13 @@ Mechanical mapping from a typical 1.0 signal:
   by `HorizonAggregator` from `depends_on_sensors` and exposes
   `<sensor_id>`, `<sensor_id>_zscore`, `<sensor_id>_percentile`
   bindings (and tuple-component bindings for tuple-valued sensors —
-  see `grok/03_ALPHA_DEVELOPMENT.md` for the embedded sensor catalog).
+  see `.cursor/skills/feature-engine/SKILL.md` for the sensor framework).
 - Replace `features.timestamp_ns` / `correlation_id` / `sequence` /
   `symbol` with the same fields on `snapshot`. The Signal constructor
   signature is unchanged.
 - Drop the `features:` block entirely. If the legacy alpha computed a
   feature that does not exist as a sensor, you must:
-  - either find a sensor in `grok/03_ALPHA_DEVELOPMENT.md` that
+  - either find a shipped sensor (see `.cursor/skills/feature-engine/SKILL.md`) that
     measures the same latent variable, or
   - author a SENSOR hypothesis first and add it to the registry, then
     reference it from `depends_on_sensors`.
@@ -304,11 +304,12 @@ Every entry must resolve to a registered sensor in
 dependencies (declared on `SensorSpec.input_sensor_ids`) raise
 `SensorTopologyError`.
 
-The canonical catalog ships in
-[`grok/03_ALPHA_DEVELOPMENT.md`](../../grok/03_ALPHA_DEVELOPMENT.md).
+The canonical catalog is documented in
+[`feature-engine` skill](../../.cursor/skills/feature-engine/SKILL.md)
+and the implementations under `src/feelies/sensors/impl/`.
 Adding a sensor is a deliberate platform-level change — a new
 implementation under `src/feelies/sensors/impl/`, a registry entry
-(`SensorSpec`), a catalog row, and a SENSOR hypothesis YAML.
+(`SensorSpec`), platform `sensor_specs` wiring, and provenance.
 
 ---
 
@@ -461,8 +462,8 @@ Validation at load time (G16):
 2. `expected_half_life_seconds` within per-family envelope (§10.4).
 3. `horizon_seconds / expected_half_life_seconds ∈ [0.5, 4.0]`.
 4. Every `l1_signature_sensors` entry is a registered sensor.
-5. The family's primary fingerprint sensor (per
-  `grok/03_ALPHA_DEVELOPMENT.md`) appears in
+5. The family's primary fingerprint sensor (per the feature-engine skill
+  and `alphas/SCHEMA.md`) appears in
    `l1_signature_sensors`.
 6. `failure_signature` is a non-empty list of strings.
 7. **`LIQUIDITY_STRESS` is exit-only** — the `signal:` body is
@@ -808,7 +809,7 @@ Recommended migration order for a portfolio of legacy alphas
    it to a `layer: SIGNAL` spec. Author a sibling
    `<alpha_id>_v2.alpha.yaml`; preserve the v1 file under
    `alphas/_deprecated/` (mutation parity rules,
-  `grok/06_EVOLUTION.md`).
+  `.cursor/skills/research-workflow/SKILL.md`).
 3. **Cross-sectional**: once two or more SIGNAL alphas exist that you
    want to compose, author a PORTFOLIO alpha per §8.
 4. **v0.3 opt-in**: add `trend_mechanism:` blocks per §10 once you can

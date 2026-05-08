@@ -200,7 +200,7 @@ hazard-rate exits via `RegimeHazardSpike` events.
 | G8 | **Active** (Phase 3-α) | No implicit lookahead — AST-scan rejects access to future-bucketed names. |
 | G9 | **Active** (Phase 4) | Cross-symbol staleness checks — `CrossSectionalContext.completeness` must clear the per-platform `composition_completeness_threshold` (default `0.7`) for the boundary to produce a `SizedPositionIntent`. Always blocks (data-integrity gate; not affected by `enforce_layer_gates`). |
 | G10 | **Active** (Phase 4) | PORTFOLIO `universe:` presence + scale cap — every PORTFOLIO alpha must declare a non-empty `universe:` list and the universe size must be ≤ `composition_max_universe_size` (v0.2 cap = 50 symbols). Always blocks. |
-| G11 | **Active** (Phase 4) | PORTFOLIO `factor_neutralization:` disclosure — every PORTFOLIO alpha must declare `factor_neutralization: true` (or list explicit excluded factor IDs). Reference factor loadings under `storage/reference/factor_loadings/` must exist and not exceed `factor_loadings_max_age_seconds`; missing or stale loadings raise `StaleFactorLoadingsError` at bootstrap. Always blocks. |
+| G11 | **Active** (Phase 4) | PORTFOLIO `factor_neutralization:` disclosure — every PORTFOLIO alpha must declare `factor_neutralization: true` (or list explicit excluded factor IDs). Reference factor loadings under `src/feelies/storage/reference/factor_loadings/` (or the path set in `PlatformConfig.factor_loadings_dir`) must exist and not exceed `factor_loadings_max_age_seconds`; missing or stale loadings raise `StaleFactorLoadingsError` at bootstrap. Always blocks. |
 | G12 | **Active** (Phase 3-α) | Cost-arithmetic disclosure — `cost_arithmetic` block required, `margin_ratio >= 1.5`, components reconcile within ±5%. |
 | G13 | **Active** (Phase 3-α) | Warm-up documentation — `SIGNAL` inherits warm-up from sensor warm-up by construction; the inline-features warm-up branch is unreachable post-D.2 (the loader rejects `LEGACY_SIGNAL` before validation). |
 | G14 | **Active** (Phase 1) | Alpha must declare no data dependency outside L1 NBBO + trades + reference data + session calendar. |
@@ -236,7 +236,7 @@ catalog and horizon-aware feature scaffolding, but alpha specs are
   built and tested against a stable contract before Phase 3 wires
   concrete `HorizonFeature` implementations.
 - The `scheduled_flow_window` sensor reads
-  ``storage/reference/event_calendar/<date>.yaml``; the calendar's
+  ``src/feelies/storage/reference/event_calendar/<date>.yaml`` (or any path passed via `PlatformConfig.event_calendar_path`); the calendar's
   `EventCalendar.hash()` is folded into the bootstrap provenance
   bundle (Inv-13).
 
@@ -391,9 +391,9 @@ side-by-side with `SIGNAL` alphas on the same universe:
   `max_gross_exposure_pct`, `capital_allocation_pct`) are
   inherited by per-leg `OrderRequest`s through the standard risk
   pipeline. Reference factor loadings live under
-  `storage/reference/factor_loadings/<universe_hash>/loadings.json`
+  `src/feelies/storage/reference/factor_loadings/<universe_hash>/loadings.json`
   (with optional `loadings.parquet`) and a sector map under
-  `storage/reference/sector_map/sector_map.json`; both are produced
+  `src/feelies/storage/reference/sector_map/sector_map.json`; both are produced
   by `scripts/build_reference_factor_loadings.py` and folded into
   the bootstrap provenance bundle (Inv-13).
 - Bootstrap is gated on `AlphaRegistry.has_portfolio_alphas()` —
@@ -588,15 +588,11 @@ the LEGACY_SIGNAL retirement is complete:
   and `template_legacy_signal.alpha.yaml` was deleted in D.2 with
   the loader-side retirement.  No in-repo per-tick LEGACY template
   will be re-introduced.
-- **Hypothesis Reasoning Protocol** lives at
-  [`grok/07_HYPOTHESIS_REASONING.md`](../grok/07_HYPOTHESIS_REASONING.md).
-  The embedded sensor catalog and reference-alpha authoring contract
-  live in
-  [`grok/03_ALPHA_DEVELOPMENT.md`](../grok/03_ALPHA_DEVELOPMENT.md),
-  and the embedded mutation protocol and adoption semantics live in
-  [`grok/06_EVOLUTION.md`](../grok/06_EVOLUTION.md). The earlier
-  Prompt-7 planning draft has been retired; use the live numbered
-  prompt surfaces instead.
+- **Authoring guidance** — SIGNAL hypothesis discipline and mechanism
+  taxonomy: [`.cursor/skills/microstructure-alpha/SKILL.md`](../.cursor/skills/microstructure-alpha/SKILL.md).
+  Sensor / horizon-feature layer: [`.cursor/skills/feature-engine/SKILL.md`](../.cursor/skills/feature-engine/SKILL.md).
+  Research workflow and experiment hygiene:
+  [`.cursor/skills/research-workflow/SKILL.md`](../.cursor/skills/research-workflow/SKILL.md).
 - **`LEGACY_SIGNAL` is hard-rejected.** The loader's once-per-process
   sunset banner has been removed; any spec carrying
   `layer: LEGACY_SIGNAL` raises an `AlphaLoadError` at parse time

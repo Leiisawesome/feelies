@@ -63,7 +63,8 @@ class ScheduledFlowWindowSensor:
 
     - ``calendar`` (:class:`EventCalendar`, required): the per-session
       window registry loaded from
-      ``storage/reference/event_calendar/<date>.yaml``.  Pinned at
+      ``src/feelies/storage/reference/event_calendar/<date>.yaml`` (or any path
+      passed via ``PlatformConfig.event_calendar_path``).  Pinned at
       construction time; the sensor never mutates it.
     """
 

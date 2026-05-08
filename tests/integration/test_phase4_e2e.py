@@ -95,6 +95,7 @@ from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
 from feelies.sensors.impl.spread_z_30d import SpreadZScoreSensor
 from feelies.sensors.spec import SensorSpec
 from feelies.storage.memory_event_log import InMemoryEventLog
+from feelies.storage.reference.paths import FACTOR_LOADINGS_DIR, SECTOR_MAP_PATH
 from tests.fixtures.event_logs._generate import SESSION_OPEN_NS
 from tests.integration.portfolio_test_constants import (
     FACTOR_LOADINGS_MAX_AGE_SECONDS_FIXTURE,
@@ -113,10 +114,8 @@ _PORTFOLIO_ALPHA = (
     _REPO_ROOT / "alphas" / "pofi_xsect_v1"
     / "pofi_xsect_v1.alpha.yaml"
 )
-_FACTOR_LOADINGS_DIR = _REPO_ROOT / "storage" / "reference" / "factor_loadings"
-_SECTOR_MAP_PATH = (
-    _REPO_ROOT / "storage" / "reference" / "sector_map" / "sector_map.json"
-)
+_FACTOR_LOADINGS_DIR = FACTOR_LOADINGS_DIR
+_SECTOR_MAP_PATH = SECTOR_MAP_PATH
 
 # 10-symbol reference universe — must match alphas/pofi_xsect_v1/.
 _UNIVERSE: tuple[str, ...] = (

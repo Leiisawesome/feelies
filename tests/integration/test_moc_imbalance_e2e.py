@@ -56,6 +56,7 @@ from feelies.sensors.impl.scheduled_flow_window import ScheduledFlowWindowSensor
 from feelies.sensors.spec import SensorSpec
 from feelies.signals.horizon_engine import HorizonSignalEngine
 from feelies.storage.memory_event_log import InMemoryEventLog
+from feelies.storage.reference.paths import EVENT_CALENDAR_DIR
 from tests.fixtures.event_logs._generate import SESSION_OPEN_NS
 
 
@@ -68,10 +69,7 @@ _MOC_ALPHA = (
     _REPO_ROOT / "alphas" / "pofi_moc_imbalance_v1"
     / "pofi_moc_imbalance_v1.alpha.yaml"
 )
-_CALENDAR_PATH = (
-    _REPO_ROOT / "storage" / "reference" / "event_calendar"
-    / "2026-01-15.yaml"
-)
+_CALENDAR_PATH = EVENT_CALENDAR_DIR / "2026-01-15.yaml"
 
 # 3-symbol universe — SIGNAL-only alphas have no portfolio universe
 # constraint, so a small set keeps the test fast.

@@ -105,7 +105,7 @@ feelies/
 │   ├── risk/                     # Risk engine, escalation SM, sizer, hazard-exit controller
 │   ├── execution/                # Backend abstraction, intent translator, order SM, routers
 │   ├── portfolio/                # Position store, per-strategy + cross-sectional trackers
-│   ├── storage/                  # Event log, disk cache, reference factor loadings
+│   ├── storage/                  # Event log, disk cache, bundled reference YAML/JSON
 │   ├── monitoring/               # Metrics (incl. horizon metrics), alerting, kill switch
 │   ├── forensics/                # Multi-horizon attribution, post-trade analysis
 │   ├── research/                 # Experiment tracking, hypothesis management
@@ -124,10 +124,6 @@ feelies/
 │   ├── pofi_benign_midcap_v1/    # Reference SIGNAL (Phase-3 canonical)
 │   ├── pofi_xsect_v1/            # Reference PORTFOLIO (decay OFF baseline)
 │   └── pofi_xsect_mixed_mechanism_v1/  # Reference PORTFOLIO (multi-mechanism cap)
-├── grok/                         # Grok REPL prompts
-│   ├── 03_ALPHA_DEVELOPMENT.md   # Embedded sensor catalog + reference-alpha flow
-│   ├── 06_EVOLUTION.md           # Embedded mutation protocol + adoption semantics
-│   └── 07_HYPOTHESIS_REASONING.md # Embedded reasoning protocol, hard gates, REPL contract
 ├── docs/                         # Architecture spec, migration, acceptance notes
 │   ├── three_layer_architecture.md
 │   ├── migration/
@@ -338,13 +334,13 @@ The `LayerValidator` enforces gates G2–G16 at load time. See
 
 ### Hypothesis authoring
 
-Use Grok with the embedded numbered prompt stack. Prompt 7
-(`grok/07_HYPOTHESIS_REASONING.md`) owns the 7-step reasoning
-discipline and hard gates, Prompt 3 (`grok/03_ALPHA_DEVELOPMENT.md`)
-owns the sensor vocabulary and reference-alpha authoring contract, and
-Prompt 6 (`grok/06_EVOLUTION.md`) owns mutation discipline and active
-adoption semantics. Together they emit machine-validated YAML matching
-the schema-1.1 contract.
+Follow the Cursor skills aligned to each layer: hypothesis and SIGNAL
+authoring in [`.cursor/skills/microstructure-alpha/SKILL.md`](.cursor/skills/microstructure-alpha/SKILL.md),
+sensor and horizon-feature design in
+[`.cursor/skills/feature-engine/SKILL.md`](.cursor/skills/feature-engine/SKILL.md),
+and research lifecycle / mutation discipline in
+[`.cursor/skills/research-workflow/SKILL.md`](.cursor/skills/research-workflow/SKILL.md).
+[`alphas/SCHEMA.md`](alphas/SCHEMA.md) remains the normative YAML gate reference.
 
 ## Platform Configuration
 

@@ -109,6 +109,18 @@ cost_arithmetic:
   fee_bps: 1.0
   margin_ratio: 1.8
 
+# ── Trend Mechanism (v0.3 §20.5 — gate G16) ───────────────
+trend_mechanism:
+  family: KYLE_INFO
+  expected_half_life_seconds: 240
+  l1_signature_sensors:
+    - ofi_ewma
+    - micro_price
+    - spread_z_30d
+  failure_signature:
+    - "spread_z_30d > 1.5"
+    - "ofi_ewma_zscore < 0.5"
+
 # ── Signal (Layer-2 evaluate) ─────────────────────────────
 signal: |
   def evaluate(snapshot, regime, params):

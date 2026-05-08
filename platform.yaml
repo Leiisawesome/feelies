@@ -15,7 +15,7 @@ symbols:
 alpha_spec_dir: null
 
 alpha_specs:
-  - alphas/pofi_l1_imbalance_momentum_v1/pofi_l1_imbalance_momentum_v1.signal.alpha.yaml
+  - alphas/pofi_benign_midcap_v1/pofi_benign_midcap_v1.alpha.yaml
 
 parameter_overrides: {}
 
@@ -92,7 +92,7 @@ horizons_seconds:
 # session_open_ns: null  # else first event anchors backtests
 
 # For scheduled_flow_window sensor (e.g. pofi_moc_imbalance_v1); bootstrap injects calendar.
-event_calendar_path: storage/reference/event_calendar/2026-01-15.yaml
+event_calendar_path: src/feelies/storage/reference/event_calendar/2026-01-15.yaml
 
 # Sensors for pofi_inventory_revert_v1 (depends_on_sensors).
 sensor_specs:

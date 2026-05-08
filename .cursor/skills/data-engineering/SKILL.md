@@ -193,7 +193,7 @@ tick. If CORRUPTED during a trading mode, macro transitions to DEGRADED.
 
 The storage layer exposes two key protocols:
 
-### EventLog (`storage/event_log.py`)
+### EventLog (`src/feelies/storage/event_log.py`)
 
 Append-only, sequence-based event store for replay and audit:
 
@@ -215,7 +215,7 @@ class EventLog(Protocol):
   replay (invariant 5).
 - `last_sequence()` — sequence number of the most recent event.
 
-### TradeJournal (`storage/trade_journal.py`)
+### TradeJournal (`src/feelies/storage/trade_journal.py`)
 
 Structured, queryable trade lifecycle store — distinct from EventLog:
 

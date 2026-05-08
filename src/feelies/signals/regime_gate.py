@@ -45,9 +45,9 @@ hysteresis state machine** (ON/OFF) — see §8.4 + §6.4 of the design
 doc.  When ``on_condition`` evaluates True the gate transitions
 OFF→ON; when ``off_condition`` evaluates True it transitions ON→OFF.
 Both conditions can fail simultaneously (the hysteresis band) — the
-state then carries forward unchanged.  This matches the embedded Grok
-reasoning contract's hysteresis margin requirement (Step 6 of
-``grok/07_HYPOTHESIS_REASONING.md``).
+state then carries forward unchanged.  This matches the regime-gate
+hysteresis margin requirement in §8.4 / §6.4 of the design doc and
+``.cursor/skills/microstructure-alpha/SKILL.md``.
 """
 
 from __future__ import annotations
@@ -480,8 +480,7 @@ class RegimeGate:
     Replay starts from ``OFF`` for every symbol; identical inputs
     therefore drive identical state transitions.
 
-    Hysteresis semantics (Step 6 of
-    ``grok/07_HYPOTHESIS_REASONING.md``):
+    Hysteresis semantics (regime gate DSL; see design doc §8.4):
 
     - When state == OFF and ``on_condition`` evaluates True → ON.
     - When state == ON  and ``off_condition`` evaluates True → OFF.

@@ -43,6 +43,8 @@ from typing import Sequence
 
 import pytest
 
+from feelies.storage.reference.paths import FACTOR_LOADINGS_DIR, SECTOR_MAP_PATH
+
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SIGNAL_ALPHA = (
@@ -53,10 +55,8 @@ _PORTFOLIO_ALPHA = (
     _REPO_ROOT / "alphas" / "pofi_xsect_v1"
     / "pofi_xsect_v1.alpha.yaml"
 )
-_FACTOR_LOADINGS_DIR = _REPO_ROOT / "storage" / "reference" / "factor_loadings"
-_SECTOR_MAP_PATH = (
-    _REPO_ROOT / "storage" / "reference" / "sector_map" / "sector_map.json"
-)
+_FACTOR_LOADINGS_DIR = FACTOR_LOADINGS_DIR
+_SECTOR_MAP_PATH = SECTOR_MAP_PATH
 
 
 REPEATS: int = 5

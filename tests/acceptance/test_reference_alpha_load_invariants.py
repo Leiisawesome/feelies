@@ -15,7 +15,7 @@ Two acceptance lines from §18.2 are mechanically asserted here:
   factor exposures within tolerance."  Loads
   ``pofi_xsect_v1`` (the canonical PORTFOLIO reference) and runs the
   declared factor model through :class:`FactorNeutralizer`, primed
-  from ``storage/reference/factor_loadings/loadings.json``.  Asserts
+  from bundled ``feelies.storage.reference`` factor loadings.  Asserts
   every post-neutralization residual factor exposure is within
   ``1e-9`` of zero on a non-trivial weight vector across the symbols
   for which loadings exist.
@@ -39,10 +39,10 @@ import pytest
 from feelies.alpha.loader import AlphaLoader
 from feelies.alpha.signal_layer_module import LoadedSignalLayerModule
 from feelies.composition.factor_neutralizer import FactorNeutralizer
+from feelies.storage.reference.paths import FACTOR_LOADINGS_DIR as _FACTOR_LOADINGS_DIR
 
 
 _ALPHAS_ROOT = Path("alphas")
-_FACTOR_LOADINGS_DIR = Path("storage/reference/factor_loadings")
 
 
 # G-A — every reference SIGNAL alpha must clear the 1.5 floor at load

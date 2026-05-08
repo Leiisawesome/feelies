@@ -13,11 +13,9 @@ from feelies.storage.reference.event_calendar import (
     WindowKind,
     load_event_calendar,
 )
+from feelies.storage.reference.paths import EVENT_CALENDAR_DIR
 
-REFERENCE_CALENDAR_PATH: Path = (
-    Path(__file__).resolve().parents[2]
-    / "storage" / "reference" / "event_calendar" / "2026-03-24.yaml"
-)
+REFERENCE_CALENDAR_PATH: Path = EVENT_CALENDAR_DIR / "2026-03-24.yaml"
 
 
 def test_window_validates_interval() -> None:

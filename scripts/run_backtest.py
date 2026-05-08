@@ -1275,8 +1275,7 @@ def generate_report(
                 lines.append(_sub_kv("  Recent edge", f"{ds.realized:.2f} bps"))
                 lines.append(_sub_kv("  Z-score", f"{ds.z_score:.2f}"))
 
-    # Three-hash parity contract — pnl_hash, config_hash, parity_hash.
-    # Grok's VERIFY(signal_id, local_pnl_hash, local_config_hash) consumes both.
+    # Three-hash parity contract — pnl_hash, config_hash, parity_hash (combined bind).
     pnl_hash = compute_parity_hash(orchestrator)
     config_hash = compute_config_hash(config)
     parity_hash = compute_combined_parity_hash(pnl_hash, config_hash)
@@ -1301,14 +1300,13 @@ def generate_report(
     return "\n".join(lines)
 
 
-# ── Parity hashes (three-hash contract — see grok/05_EXPORT_LIFECYCLE.md) ──
+# ── Parity hashes (three-hash contract — trade journal + config snapshot) ──
 
 
 def compute_parity_hash(orchestrator: object) -> str:
-    """SHA-256 over the ordered trade sequence.
+    """SHA-256 over the ordered trade sequence (canonical JSON representation).
 
-    Canonical format shared with the Grok REPL (grok/04_BACKTEST_EXECUTION.md).
-    Both sides MUST produce identical hashes for the same alpha + date range
+    Identical inputs MUST yield identical hashes for the same alpha + date range
     + same platform.yaml.
     """
     from feelies.storage.trade_journal import TradeRecord
@@ -1343,8 +1341,7 @@ def compute_combined_parity_hash(pnl_hash: str, config_hash: str) -> str:
     """SHA-256(pnl_hash + ":" + config_hash).
 
     Single comparator that binds the trade sequence to the configuration
-    that produced it. Mirrors the Grok REPL's ``_compute_combined_parity_hash``
-    in ``grok/04_BACKTEST_EXECUTION.md``.
+    that produced it.
     """
     return hashlib.sha256(f"{pnl_hash}:{config_hash}".encode("utf-8")).hexdigest()
 

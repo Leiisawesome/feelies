@@ -15,9 +15,9 @@ This baseline is *additive* to the Level-4 baseline in
 four simple sensors; this one locks the four v0.3 sensors.  Both must
 remain green for Phase 2 + Phase 2.1 to ship together.
 
-The v0.3 ``scheduled_flow_window`` sensor consumes the committed
-``storage/reference/event_calendar/2026-03-24.yaml`` fixture, so this
-test also implicitly exercises the calendar adapter's hash stability.
+The v0.3 ``scheduled_flow_window`` sensor uses an in-test synthetic calendar;
+the committed reference calendar lives next to
+``feelies.storage.reference.event_calendar`` as ``2026-03-24.yaml``.
 
 Re-baseline protocol matches ``test_sensor_reading_replay.py``:
 print-on-fail, then update the constant in the same commit.
@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import hashlib
 from datetime import date
-from pathlib import Path
 from typing import Any
 
 from feelies.core.events import NBBOQuote, Trade
@@ -43,6 +42,7 @@ from feelies.storage.reference.event_calendar import (
     EventCalendar,
     WindowKind,
 )
+from feelies.storage.reference.paths import EVENT_CALENDAR_DIR
 from tests.fixtures.event_logs._generate import SESSION_OPEN_NS
 from tests.fixtures.replay import replay_through_registry
 
@@ -186,8 +186,5 @@ def test_calendar_hash_is_stable_across_constructions() -> None:
 
 def test_reference_calendar_path_exists() -> None:
     """Belt-and-suspenders: the committed reference calendar is present."""
-    path = (
-        Path(__file__).resolve().parents[2]
-        / "storage" / "reference" / "event_calendar" / "2026-03-24.yaml"
-    )
+    path = EVENT_CALENDAR_DIR / "2026-03-24.yaml"
     assert path.is_file(), f"reference calendar missing: {path}"
