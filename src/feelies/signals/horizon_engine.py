@@ -271,9 +271,18 @@ class HorizonSignalEngine:
         the scalar-only binding contract.  Tuple sensors not declared
         in the registry are skipped — preserving v0.2 behavior — and
         a debug record is emitted so missing entries are easy to spot.
+
+        Cold readings (``warm=False``) **invalidate** any previously-cached
+        value for the corresponding (symbol, sensor_id) — they do not
+        merely abstain.  Sensors with sliding-window warm-up criteria
+        (e.g. ``ofi_ewma``'s S3 path) revert to ``warm=False`` after
+        sustained data gaps; without invalidation, the cache would
+        silently retain a stale warm value forever and gate evaluation
+        would fire on data that no longer exists.  Dropping the entry
+        forces ``UnknownIdentifierError`` on the next gate evaluation
+        which routes through the H8 / M6 fail-safe (gate latch reset
+        to OFF) — Inv-11 (fail-safe default).
         """
-        if not event.warm:
-            return
         value = event.value
         if isinstance(value, tuple):
             components = _TUPLE_SENSOR_COMPONENTS.get(event.sensor_id)
@@ -284,10 +293,17 @@ class HorizonSignalEngine:
                     event.sensor_id,
                 )
                 return
+            if not event.warm:
+                for name in components:
+                    self._sensor_cache.pop((event.symbol, name), None)
+                return
             for name, component_value in zip(components, value):
                 self._sensor_cache[(event.symbol, name)] = float(
                     component_value
                 )
+            return
+        if not event.warm:
+            self._sensor_cache.pop((event.symbol, event.sensor_id), None)
             return
         self._sensor_cache[(event.symbol, event.sensor_id)] = float(value)
 
@@ -378,6 +394,14 @@ class HorizonSignalEngine:
                 exc,
                 hint,
             )
+            # If the gate was previously ON we still need to unwind any
+            # open position even though the binding is now missing
+            # (Inv-11 fail-safe default).  Without this, sensors that
+            # revert to cold mid-run (e.g. ``ofi_ewma`` after a >300 s
+            # data gap) would silently orphan positions opened while
+            # the gate was latched ON.
+            if was_on:
+                self._publish_gate_close(snapshot, registered)
             return
         except RegimeGateError as exc:
             _logger.warning(
@@ -387,21 +411,7 @@ class HorizonSignalEngine:
             return
 
         if was_on and not on:
-            # Regime gate just closed — emit FLAT to unwind any open position.
-            self._bus.publish(Signal(
-                timestamp_ns=snapshot.timestamp_ns,
-                correlation_id=snapshot.correlation_id,
-                sequence=self._signal_seq.next(),
-                source_layer="SIGNAL",
-                symbol=snapshot.symbol,
-                strategy_id=registered.alpha_id,
-                direction=SignalDirection.FLAT,
-                strength=0.0,
-                edge_estimate_bps=0.0,
-                layer="SIGNAL",
-                horizon_seconds=registered.horizon_seconds,
-                regime_gate_state="OFF",
-            ))
+            self._publish_gate_close(snapshot, registered)
             return
         if not on:
             return
@@ -436,6 +446,46 @@ class HorizonSignalEngine:
 
         emitted = self._patch_signal(raw, snapshot, registered)
         self._bus.publish(emitted)
+
+    def _publish_gate_close(
+        self,
+        snapshot: HorizonFeatureSnapshot,
+        registered: RegisteredSignal,
+    ) -> None:
+        """Emit a FLAT signal carrying full alpha-level provenance.
+
+        Used both on the normal ON → OFF gate transition and on the
+        H8 / M6 fail-safe path when a previously-ON gate cannot
+        re-evaluate (missing binding, sensor reverted to cold).  The
+        FLAT signal carries the same metadata as a regular entry
+        signal so post-trade forensics can attribute the unwind PnL
+        to the correct mechanism family (Inv-13).
+        """
+        self._bus.publish(Signal(
+            timestamp_ns=snapshot.timestamp_ns,
+            correlation_id=snapshot.correlation_id,
+            sequence=self._signal_seq.next(),
+            source_layer="SIGNAL",
+            symbol=snapshot.symbol,
+            strategy_id=registered.alpha_id,
+            direction=SignalDirection.FLAT,
+            strength=0.0,
+            edge_estimate_bps=0.0,
+            layer="SIGNAL",
+            horizon_seconds=registered.horizon_seconds,
+            regime_gate_state="OFF",
+            consumed_features=registered.consumed_features,
+            trend_mechanism=registered.trend_mechanism,
+            expected_half_life_seconds=(
+                registered.expected_half_life_seconds
+            ),
+            disclosed_cost_total_bps=(
+                registered.cost_arithmetic.cost_total_bps
+            ),
+            disclosed_margin_ratio=(
+                registered.cost_arithmetic.margin_ratio
+            ),
+        ))
 
     # ── Symbol lifecycle ───────────────────────────────────────────
 
