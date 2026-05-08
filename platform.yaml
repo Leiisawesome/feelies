@@ -19,8 +19,11 @@ alpha_specs:
 
 parameter_overrides: {}
 
-# schema-1.1 alpha; trend_mechanism block present.
-enforce_trend_mechanism: true
+# pofi_benign_midcap_v1 is the v0.2-baseline parity anchor (§20.12.3 #2)
+# and intentionally omits a ``trend_mechanism:`` block; opt out of strict
+# mode here so the alpha continues to load.  Production deployments
+# wiring a different schema-1.1 alpha may flip this back to ``true``.
+enforce_trend_mechanism: false
 
 regime_engine: hmm_3state_fractional
 
