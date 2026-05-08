@@ -109,17 +109,16 @@ cost_arithmetic:
   fee_bps: 1.0
   margin_ratio: 1.8
 
-# ── Trend Mechanism (v0.3 §20.5 — gate G16) ───────────────
-trend_mechanism:
-  family: KYLE_INFO
-  expected_half_life_seconds: 240
-  l1_signature_sensors:
-    - ofi_ewma
-    - micro_price
-    - spread_z_30d
-  failure_signature:
-    - "spread_z_30d > 1.5"
-    - "ofi_ewma_zscore < 0.5"
+# Note (§20.12.3 #2): this alpha is intentionally the v0.2 baseline
+# parity anchor — it must NOT declare a top-level ``trend_mechanism:``
+# block.  See ``tests/acceptance/_chosen_v02_baseline_alpha.txt`` and
+# ``tests/acceptance/test_v02_no_trend_mechanism_parity.py``.  Adding a
+# ``trend_mechanism:`` block here breaks the locked contract that the
+# v0.3 loader (under ``enforce_trend_mechanism=False``) must accept a
+# v0.2-style schema-1.1 SIGNAL alpha unmodified.  Production
+# deployments that need strict mode must instead pin
+# ``enforce_trend_mechanism: false`` in ``platform.yaml`` for this
+# alpha or pick a different alpha for ``alpha_specs:``.
 
 # ── Signal (Layer-2 evaluate) ─────────────────────────────
 signal: |
