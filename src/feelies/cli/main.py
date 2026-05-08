@@ -27,7 +27,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 
-from feelies.cli import promote
+from feelies.cli import health_check, promote
 
 
 EXIT_OK = 0
@@ -60,6 +60,16 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     promote.register(promote_parser)
+
+    hc_parser = subparsers.add_parser(
+        "health-check",
+        help="Run deterministic alpha health checks on backtest artefacts.",
+        description=(
+            "Loads CSV/JSON artefacts from a run directory, evaluates causal / economic "
+            "gates, and emits alpha_health_report.{json,md}."
+        ),
+    )
+    health_check.register(hc_parser)
 
     return parser
 
