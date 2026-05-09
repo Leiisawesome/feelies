@@ -550,6 +550,40 @@ class Orchestrator:
         # SIGNAL alpha is consumed by a PORTFOLIO alpha).
         self._bus.subscribe(SizedPositionIntent, self._on_bus_sized_intent)
 
+        # ── Audit R1: hazard-exit submission dedup ────────────────────
+        # ``_active_orders`` is pruned on FILLED (so memory doesn't
+        # grow unboundedly in long-running live sessions), but that
+        # also means it cannot serve as a long-lived idempotency set
+        # for the hazard handler — a duplicate publish AFTER the fill
+        # would re-submit.  Track every hazard ``order_id`` we have
+        # ever forwarded to the router in this run; the controller's
+        # SHA-256 ``order_id`` derivation is collision-free per
+        # ``(correlation_id, trigger_ts_ns, symbol, reason)`` so this
+        # set never grows past one entry per (episode, symbol, reason).
+        self._hazard_submitted_order_ids: set[str] = set()
+
+        # ── Audit R1: bus-driven hazard-exit OrderRequest subscriber ──
+        # ``HazardExitController`` publishes ``OrderRequest`` events
+        # with ``source_layer="RISK"`` and ``reason in {"HAZARD_SPIKE",
+        # "HARD_EXIT_AGE"}`` directly on the bus (no router call —
+        # see risk/hazard_exit.py:_emit_exit).  Pre-fix, no production
+        # subscriber routed those orders to ``backend.order_router``,
+        # so the entire hazard-exit subsystem was effectively inert
+        # in any orchestrator-composed deployment (the only subscriber
+        # was the metrics collector).  ``_on_bus_hazard_order`` filters
+        # to *exactly* the controller's signature and runs the same
+        # submit → poll_acks → reconcile_fills flow used by
+        # ``_emergency_flatten_all`` (which also bypasses ``check_order``
+        # by design — Inv-11 fail-safe: an exit-direction order may
+        # never *increase* exposure, so the per-symbol cap and gross
+        # exposure cap cannot be breached by it).  Per-leg attribution
+        # lands in ``_reconcile_fills`` exactly as for SIGNAL-driven
+        # exits.  The subscriber is registered unconditionally; in
+        # deployments without a hazard detector the bus simply never
+        # sees a hazard-tagged ``OrderRequest`` so this handler is a
+        # no-op (Inv-A: pre-R1 baselines bit-identical).
+        self._bus.subscribe(OrderRequest, self._on_bus_hazard_order)
+
     # ── Optional SIGNAL → order diagnostic sink ─────────────────────
 
     def _append_signal_order_trace(
@@ -3224,6 +3258,80 @@ class Orchestrator:
             self._bus.publish(order)
         expected_order_ids = {order.order_id for order in orders}
         acks = self._poll_order_router_acks(expected_order_ids)
+        for ack in acks:
+            self._bus.publish(ack)
+            self._apply_ack_to_order(ack)
+        self._reconcile_fills(acks, event.correlation_id)
+
+    # ── Audit R1: bus-driven hazard-exit OrderRequest handler ────────
+
+    _HAZARD_EXIT_REASONS: frozenset[str] = frozenset(
+        {"HAZARD_SPIKE", "HARD_EXIT_AGE"}
+    )
+
+    def _on_bus_hazard_order(self, event: Event) -> None:
+        """Route hazard-exit ``OrderRequest`` events to the execution backend.
+
+        ``HazardExitController._emit_exit`` publishes an
+        ``OrderRequest`` (with ``source_layer="RISK"`` and ``reason in
+        {"HAZARD_SPIKE", "HARD_EXIT_AGE"}``) but does NOT call any
+        router itself.  Pre-R1 there was no production subscriber that
+        bridged these orders to ``backend.order_router.submit``, so
+        every hazard exit was silently inert in any composed
+        deployment.  This handler closes that gap.
+
+        Filtering is intentionally tight: only orders matching the
+        controller's exact signature are submitted from here.  Orders
+        published by ``_on_bus_sized_intent`` (PORTFOLIO leg fan-out),
+        ``_emergency_flatten_all``, ``_execute_reverse``, and the
+        normal SIGNAL walk all reach the router via their direct
+        ``self._backend.order_router.submit`` calls upstream of their
+        ``self._bus.publish(order)``; this handler must NOT
+        double-submit them when their published copy reaches the bus.
+
+        Inv-11 (fail-safe): hazard exits are exit-direction-only by
+        construction in ``HazardExitController`` (the order side is
+        always opposite the position sign) so they cannot increase
+        exposure.  Skipping ``check_order`` here is consistent with
+        the same fail-safe carve-out applied to
+        ``_emergency_flatten_all``; the per-symbol cap, gross
+        exposure cap, and drawdown guard are all mathematically
+        non-binding for an exit.  See risk/engine.py docstring for
+        the formal "sole gatekeeper" carve-outs.
+        """
+        if not isinstance(event, OrderRequest):
+            return
+        if event.source_layer != "RISK":
+            return
+        if event.reason not in self._HAZARD_EXIT_REASONS:
+            return
+        # Idempotency guard against a duplicate publish of the same
+        # hazard order_id (e.g. a misconfigured second subscriber
+        # echoing onto the bus, or a controller bug bypassing its
+        # own episode-suppression).  ``_active_orders`` is pruned on
+        # terminal states so it can't serve as a long-lived dedup
+        # set; ``_hazard_submitted_order_ids`` is hazard-only and
+        # never pruned (one entry per episode-symbol-reason —
+        # bounded by trading volume per session).
+        if event.order_id in self._hazard_submitted_order_ids:
+            return
+        self._hazard_submitted_order_ids.add(event.order_id)
+        self._track_order(event.order_id, event.side, event)
+        self._transition_order(
+            event.order_id, OrderState.SUBMITTED, event.reason,
+        )
+        try:
+            self._backend.order_router.submit(event)
+        except Exception:  # noqa: BLE001 — fail-safe: never raise from bus
+            logger.exception(
+                "Hazard exit order submission failed for %s "
+                "(strategy_id=%s, reason=%s, order_id=%s); position "
+                "remains open and will be retried on the next spike.",
+                event.symbol, event.strategy_id, event.reason,
+                event.order_id,
+            )
+            return
+        acks = self._poll_order_router_acks({event.order_id})
         for ack in acks:
             self._bus.publish(ack)
             self._apply_ack_to_order(ack)
