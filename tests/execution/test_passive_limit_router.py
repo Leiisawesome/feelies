@@ -840,6 +840,34 @@ class TestLatency:
         assert len(acks2) == 1
         assert acks2[0].status == OrderAckStatus.FILLED
 
+    def test_deferred_aggressive_rejects_after_max_ticks_without_eligible_exchange_time(
+        self,
+    ) -> None:
+        """Stale exchange timestamps never reach latency deadline → timeout."""
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(
+            clock,
+            latency_ns=1000,
+            fill_delay_ticks=1,
+            max_resting_ticks=3,
+        )
+
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=1000))
+        router.submit(_market_order("AAPL"))
+        assert [a.status for a in router.poll_acks()] == [
+            OrderAckStatus.ACKNOWLEDGED,
+        ]
+
+        for _ in range(3):
+            router.on_quote(_quote("AAPL", "150.00", "150.02", ts=1000))
+
+        rejects = [
+            a for a in router.poll_acks() if a.status == OrderAckStatus.REJECTED
+        ]
+        assert len(rejects) == 1
+        assert "timeout" in rejects[0].reason.lower()
+        assert "ticks" in rejects[0].reason.lower()
+
     def test_immediate_market_rejects_zero_depth(self):
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock, latency_ns=0)
