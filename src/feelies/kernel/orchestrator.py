@@ -1916,7 +1916,11 @@ class Orchestrator:
         """
         positions = self._positions.all_positions()
         failures: dict[str, str] = {}
-        for symbol, pos in positions.items():
+        # Iterate in lexicographic symbol order so the emitted
+        # OrderRequest stream is bit-identical across replays even
+        # when the position store's insertion order differs (Inv-5).
+        for symbol in sorted(positions):
+            pos = positions[symbol]
             if pos.quantity == 0:
                 continue
             side = Side.SELL if pos.quantity > 0 else Side.BUY
