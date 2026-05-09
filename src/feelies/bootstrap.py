@@ -228,9 +228,16 @@ def build_platform(
         max_drawdown_pct=config.risk_max_drawdown_pct,
         account_equity=_decimal(config.account_equity),
     )
+    # The dedicated alert sequence generator keeps risk-engine
+    # diagnostics (e.g. the per-leg PORTFOLIO veto Alert) on a
+    # separate sequence stream from the orchestrator's own ``_seq`` so
+    # neither can disturb the other's bit-identical replay (Inv-5).
+    risk_alert_seq = SequenceGenerator()
     risk_engine = BasicRiskEngine(
         config=risk_config,
         regime_engine=regime_engine,
+        bus=bus,
+        alert_sequence_generator=risk_alert_seq,
     )
 
     if event_log is None:

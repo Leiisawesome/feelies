@@ -351,3 +351,94 @@ class TestSizedIntentMarkSelection:
         assert order.symbol == "AAPL"
         assert order.side == Side.BUY
         assert order.quantity == 200
+
+
+class TestSizedIntentDroppedLegAlert:
+    """Audit R4: per-leg PORTFOLIO veto must surface a diagnostic Alert.
+
+    Without the Alert, a partial portfolio-construction execution
+    silently executes the surviving legs without re-validating any
+    cross-sectional invariant (dollar-neutral, sector-matched,
+    mechanism-capped) the alpha intended.
+    """
+
+    def test_dropped_leg_publishes_alert_with_full_attribution(
+        self, store: MemoryPositionStore
+    ) -> None:
+        from feelies.bus.event_bus import EventBus
+        from feelies.core.events import Alert
+        from feelies.core.identifiers import SequenceGenerator
+
+        bus = EventBus()
+        captured: list[Alert] = []
+        bus.subscribe(Alert, captured.append)  # type: ignore[arg-type]
+
+        # Tight per-symbol cap so MSFT will be vetoed; AAPL passes.
+        cfg = RiskConfig(
+            max_position_per_symbol=100,
+            max_gross_exposure_pct=100.0,
+            account_equity=Decimal("1000000"),
+        )
+        engine = BasicRiskEngine(
+            cfg,
+            bus=bus,
+            alert_sequence_generator=SequenceGenerator(),
+        )
+        store.update("AAPL", 0, Decimal("100"))
+        store.update_mark("AAPL", Decimal("100"))
+        store.update("MSFT", 0, Decimal("200"))
+        store.update_mark("MSFT", Decimal("200"))
+
+        intent = _make_sized_intent(
+            targets={"AAPL": 5_000.0, "MSFT": 60_000.0},
+        )
+        orders = engine.check_sized_intent(intent, store)
+
+        assert {o.symbol for o in orders} == {"AAPL"}
+        assert len(captured) == 1
+        alert = captured[0]
+        assert alert.alert_name == "portfolio_intent_partial_execution"
+        assert alert.context["strategy_id"] == intent.strategy_id
+        assert alert.context["total_legs"] == 2
+        dropped_syms = {d["symbol"] for d in alert.context["dropped_legs"]}
+        assert dropped_syms == {"MSFT"}
+
+    def test_no_alert_when_all_legs_execute(
+        self, config: RiskConfig, store: MemoryPositionStore
+    ) -> None:
+        from feelies.bus.event_bus import EventBus
+        from feelies.core.events import Alert
+        from feelies.core.identifiers import SequenceGenerator
+
+        bus = EventBus()
+        captured: list[Alert] = []
+        bus.subscribe(Alert, captured.append)  # type: ignore[arg-type]
+
+        engine = BasicRiskEngine(
+            config,
+            bus=bus,
+            alert_sequence_generator=SequenceGenerator(),
+        )
+        store.update("AAPL", 0, Decimal("100"))
+        store.update_mark("AAPL", Decimal("100"))
+
+        engine.check_sized_intent(
+            _make_sized_intent(targets={"AAPL": 5_000.0}),
+            store,
+        )
+
+        assert captured == []
+
+    def test_engine_works_without_bus_wired(
+        self, config: RiskConfig, store: MemoryPositionStore
+    ) -> None:
+        """Backwards-compat: bus + seq are optional; logging still fires."""
+        engine = BasicRiskEngine(config)
+        store.update("AAPL", 0, Decimal("100"))
+        store.update_mark("AAPL", Decimal("100"))
+
+        orders = engine.check_sized_intent(
+            _make_sized_intent(targets={"AAPL": 5_000.0}),
+            store,
+        )
+        assert len(orders) == 1
