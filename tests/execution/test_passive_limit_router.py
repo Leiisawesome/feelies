@@ -850,6 +850,80 @@ class TestLatency:
         assert acks2[0].status == OrderAckStatus.REJECTED
         assert "depth" in acks2[0].reason.lower()
 
+    def test_deferred_market_partial_fill_walk_the_book(self) -> None:
+        """D14 parity with BacktestOrderRouter: excess qty pays walk-the-book impact."""
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(
+            clock,
+            latency_ns=1000,
+            market_impact_factor=Decimal("0.5"),
+        )
+
+        router.on_quote(_quote(
+            "AAPL", "99.00", "101.00", ts=1000, bid_size=100, ask_size=50,
+        ))
+        large_buy = OrderRequest(
+            timestamp_ns=2000,
+            correlation_id="o1",
+            sequence=2,
+            order_id="big-mkt",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=150,
+        )
+        router.submit(large_buy)
+        assert [a.status for a in router.poll_acks()] == [
+            OrderAckStatus.ACKNOWLEDGED,
+        ]
+
+        router.on_quote(_quote(
+            "AAPL", "99.00", "101.00", ts=2500, bid_size=100, ask_size=50,
+        ))
+        acks = router.poll_acks()
+        assert [a.status for a in acks] == [
+            OrderAckStatus.PARTIALLY_FILLED,
+            OrderAckStatus.FILLED,
+        ]
+        mid = Decimal("100")
+        half_spread = Decimal("1")
+        assert acks[0].filled_quantity == 50
+        assert acks[0].fill_price == mid
+        expected_impact = Decimal("0.5") * (Decimal("100") / Decimal("50")) * half_spread
+        assert acks[1].filled_quantity == 100
+        assert acks[1].fill_price == mid + expected_impact
+
+    def test_marketable_limit_walk_the_book_caps_excess_at_limit_price(self) -> None:
+        """Aggressive LIMIT fills cannot execute the excess leg above ``limit_price``."""
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(
+            clock,
+            latency_ns=0,
+            market_impact_factor=Decimal("0.5"),
+        )
+
+        router.on_quote(_quote(
+            "AAPL",
+            "100.00",
+            "100.50",
+            bid_size=500,
+            ask_size=50,
+        ))
+        lim = Decimal("100.50")
+        router.submit(_limit_buy("AAPL", qty=550, limit_price="100.50"))
+
+        acks = router.poll_acks()
+        assert [a.status for a in acks] == [
+            OrderAckStatus.ACKNOWLEDGED,
+            OrderAckStatus.PARTIALLY_FILLED,
+            OrderAckStatus.FILLED,
+        ]
+        mid = Decimal("100.25")
+        assert acks[1].fill_price == mid
+        assert acks[1].filled_quantity == 50
+        assert acks[2].filled_quantity == 500
+        assert acks[2].fill_price == lim
+
     def test_deferred_market_queues_despite_zero_depth_on_submit_quote(self):
         """Submit-time quote may be vacuum; fill uses first latency-eligible quote."""
         clock = SimulatedClock(start_ns=5000)
@@ -884,6 +958,43 @@ class TestLatency:
         rej = router.poll_acks()[0]
         assert rej.status == OrderAckStatus.REJECTED
         assert "limit" in rej.reason.lower()
+
+    def test_marketable_limit_same_order_id_retry_after_deferred_reject(
+        self,
+    ) -> None:
+        """Deferred aggressive REJECTED must release ``order_id`` for transient BBO moves."""
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(clock, latency_ns=1000)
+        oid = "marketable-limit-retry"
+
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=1000))
+        router.submit(_limit_buy("AAPL", limit_price="150.02", order_id=oid))
+        assert [a.status for a in router.poll_acks()] == [
+            OrderAckStatus.ACKNOWLEDGED,
+        ]
+
+        router.on_quote(_quote("AAPL", "151.00", "151.02", ts=2000))
+        assert router.poll_acks()[0].status == OrderAckStatus.REJECTED
+
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=3000))
+        router.submit(_limit_buy("AAPL", limit_price="150.02", order_id=oid))
+        retry_acks = router.poll_acks()
+        assert [a.status for a in retry_acks] == [OrderAckStatus.ACKNOWLEDGED]
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=4000))
+        assert router.poll_acks()[0].status == OrderAckStatus.FILLED
+
+    def test_duplicate_still_rejected_when_passive_limit_resting(self) -> None:
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(clock)
+        router.on_quote(_quote("AAPL", "150.00", "150.02"))
+        router.submit(_limit_buy("AAPL", limit_price="150.00"))
+        router.poll_acks()
+
+        router.submit(_limit_buy("AAPL", limit_price="150.00"))
+        dup = router.poll_acks()
+        assert len(dup) == 1
+        assert dup[0].status == OrderAckStatus.REJECTED
+        assert "duplicate" in dup[0].reason.lower()
 
     def test_deferred_aggressive_rejects_after_max_ticks_without_eligible_exchange_time(
         self,

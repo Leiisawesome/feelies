@@ -20,11 +20,10 @@ Fill model (L1-only, conservative):
 
   Unfilled orders are cancelled after ``max_resting_ticks`` quotes.
 
-  MARKET orders fill at mid-price using the same causal latency model as
-  ``BacktestOrderRouter``: ACKNOWLEDGED is always emitted before any fill
-  or reject; with ``latency_ns > 0``, the fill price comes from the first
-  subsequent quote whose exchange time reaches
-  ``submit_exchange_ts + latency_ns``.
+  MARKET orders use the same causal latency model and D14 mid-price +
+  walk-the-book partial-fill semantics as :class:`~feelies.execution.backtest_router.BacktestOrderRouter`:
+  ACKNOWLEDGED is always emitted before any fill or reject; with
+  ``latency_ns > 0``, fills price off the first latency-eligible quote.
 
 Invariants preserved:
   - Inv 5 (deterministic replay): no randomness — queue drain is a
@@ -55,6 +54,7 @@ from feelies.core.events import (
 )
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.cost_model import CostModel, ZeroCostModel
+from feelies.execution.market_fill import append_market_fill_acks, to_decimal
 
 
 @dataclass
@@ -100,8 +100,9 @@ class PassiveLimitOrderRouter:
     Handles two order types:
       - ``LIMIT``: deferred fill via queue-position model (entries/exits)
       - ``MARKET``: mid-price aggressive fill with the same ``latency_ns``
-        deferral model as :class:`~feelies.execution.backtest_router.BacktestOrderRouter`
-        (zero L1 depth on the relevant side rejects; no vacuum fills)
+        deferral and D14 depth walk as
+        :class:`~feelies.execution.backtest_router.BacktestOrderRouter`
+        (zero L1 depth rejects; no vacuum fills)
 
     The orchestrator must call ``on_quote()`` for each incoming quote
     so the router can (a) track the latest NBBO and (b) check resting
@@ -113,6 +114,8 @@ class PassiveLimitOrderRouter:
         clock: Clock,
         latency_ns: int = 0,
         cost_model: CostModel | None = None,
+        market_impact_factor: Decimal | int | str | float = Decimal("0.5"),
+        max_impact_half_spreads: Decimal | int | str | float = Decimal("10"),
         *,
         fill_delay_ticks: int = 3,
         max_resting_ticks: int = 50,
@@ -122,6 +125,12 @@ class PassiveLimitOrderRouter:
         self._clock = clock
         self._latency_ns = latency_ns
         self._cost_model: CostModel = cost_model or ZeroCostModel()
+        self._market_impact_factor = to_decimal(
+            market_impact_factor, "market_impact_factor"
+        )
+        self._max_impact_half_spreads = to_decimal(
+            max_impact_half_spreads, "max_impact_half_spreads"
+        )
         self._fill_delay_ticks = fill_delay_ticks
         self._max_resting_ticks = max_resting_ticks
         self._queue_position_shares = queue_position_shares
@@ -171,7 +180,11 @@ class PassiveLimitOrderRouter:
 
     def submit(self, request: OrderRequest) -> None:
         if request.order_id in self._submitted_order_ids:
-            self._reject(request, f"duplicate order_id: {request.order_id}")
+            self._reject(
+                request,
+                f"duplicate order_id: {request.order_id}",
+                release_submitted_id=False,
+            )
             return
         self._submitted_order_ids.add(request.order_id)
 
@@ -330,34 +343,19 @@ class PassiveLimitOrderRouter:
         *,
         fill_ts: int | None = None,
     ) -> None:
-        """Fill MARKET at ``quote`` mid (``submit()`` validated non-crossed)."""
-        fill_price = (quote.bid + quote.ask) / Decimal("2")
-        half_spread = (quote.ask - quote.bid) / Decimal("2")
+        """Aggressive fill at ``quote`` — shared D14 model with ``BacktestOrderRouter``."""
         if fill_ts is None:
             fill_ts = self._clock.now_ns() + self._latency_ns
-
-        costs = self._cost_model.compute(
-            symbol=request.symbol,
-            side=request.side,
-            quantity=request.quantity,
-            fill_price=fill_price,
-            half_spread=half_spread,
-            is_short=request.is_short,
+        append_market_fill_acks(
+            self._pending_acks,
+            self._ack_seq,
+            self._cost_model,
+            request,
+            quote,
+            fill_ts,
+            market_impact_factor=self._market_impact_factor,
+            max_impact_half_spreads=self._max_impact_half_spreads,
         )
-
-        self._pending_acks.append(OrderAck(
-            timestamp_ns=fill_ts,
-            correlation_id=request.correlation_id,
-            sequence=self._ack_seq.next(),
-            order_id=request.order_id,
-            symbol=request.symbol,
-            status=OrderAckStatus.FILLED,
-            filled_quantity=request.quantity,
-            fill_price=fill_price,
-            fees=costs.total_fees,
-            cost_bps=costs.cost_bps,
-            request_sequence=request.sequence,
-        ))
 
     # ── Passive (limit) order posting ────────────────────────────
 
@@ -492,8 +490,14 @@ class PassiveLimitOrderRouter:
         reason: str,
         *,
         timestamp_ns: int | None = None,
+        release_submitted_id: bool = True,
     ) -> None:
-        """Emit a REJECTED ack for the given order request."""
+        """Emit a REJECTED ack for the given order request.
+
+        Clears ``order_id`` from :attr:`_submitted_order_ids` unless
+        ``release_submitted_id=False`` (duplicate submissions — the id may
+        still belong to an in-flight resting or deferred aggressive order).
+        """
         ts = self._clock.now_ns() if timestamp_ns is None else timestamp_ns
         self._pending_acks.append(OrderAck(
             timestamp_ns=ts,
@@ -505,6 +509,8 @@ class PassiveLimitOrderRouter:
             reason=reason,
             request_sequence=request.sequence,
         ))
+        if release_submitted_id:
+            self._submitted_order_ids.discard(request.order_id)
 
     def _emit_passive_fill(self, pending: _PendingOrder) -> None:
         """Emit a FILLED ack for a passive limit order.

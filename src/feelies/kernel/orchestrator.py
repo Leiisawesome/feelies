@@ -1303,13 +1303,13 @@ class Orchestrator:
             if self._strategy_positions is not None:
                 self._strategy_positions.update_mark(quote.symbol, mid)
 
-        # ── Resting order fill check ─────────────────────────────
-        # bus.publish(quote) triggered on_quote() on the router,
-        # which evaluated fill conditions for any resting limit
-        # orders.  Pick up those fills before evaluating signals so
-        # the position store is current.
-        if self._use_passive_entries:
-            self._reconcile_resting_fills(cid)
+        # ── Quote-driven router ack drain ────────────────────────
+        # bus.publish(quote) triggered on_quote() on the router, which
+        # may emit fills/cancels for resting limits (passive entries)
+        # or deferred aggressive / MARKET acks when ``latency_ns > 0``
+        # (market-mode BacktestOrderRouter).  Drain pending router acks
+        # before evaluating signals so the position store is current.
+        self._reconcile_resting_fills(cid)
 
         # ── M1 → M2: STATE_UPDATE ──────────────────────────────
         self._micro.transition(
@@ -2766,11 +2766,13 @@ class Orchestrator:
         return matched
 
     def _reconcile_resting_fills(self, cid: str) -> None:
-        """Poll and reconcile fills from resting orders.
+        """Poll and reconcile quote-driven router acknowledgements.
 
-        Called at tick start (after the quote triggers on_quote on the
-        router) to process fills from limit orders posted on previous
-        ticks.  Uses the same reconciliation path as normal fills.
+        Called at tick start (after the quote triggers ``on_quote`` on the
+        router) to process pending acks queued by the router — resting
+        passive fills/cancels and deferred aggressive fills when execution
+        latency is modeled.  Uses the same reconciliation path as submit-
+        time polls.
         """
         acks = self._poll_order_router_acks()
         if not acks:

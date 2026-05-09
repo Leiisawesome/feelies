@@ -21,6 +21,7 @@ Tests for behaviours that no longer exist were dropped:
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
 from dataclasses import replace
 from decimal import Decimal
 from typing import Any
@@ -30,6 +31,7 @@ import pytest
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
+    Event,
     MetricEvent,
     NBBOQuote,
     OrderAck,
@@ -63,6 +65,70 @@ class _NoOpMetricCollector:
         pass
 
     def flush(self) -> None:
+        pass
+
+
+class _CountingReplayLog:
+    """Event log stub that exposes how far calibration iterated."""
+
+    def __init__(self, events: Sequence[Event]) -> None:
+        self._events = tuple(events)
+        self.events_yielded = 0
+
+    def append(self, event: Event) -> None:
+        raise NotImplementedError
+
+    def append_batch(self, events: Sequence[Event]) -> None:
+        raise NotImplementedError
+
+    def replace_events(self, _events: Sequence[Event]) -> None:
+        raise NotImplementedError
+
+    def replay(
+        self,
+        start_sequence: int = 0,
+        end_sequence: int | None = None,
+    ) -> Iterator[Event]:
+        del start_sequence, end_sequence
+        for event in self._events:
+            self.events_yielded += 1
+            yield event
+
+    def last_sequence(self) -> int:
+        return self._events[-1].sequence if self._events else -1
+
+
+class _StubRegimeEngine:
+    def __init__(self) -> None:
+        self.calibrated = False
+        self.calibration_count: int | None = None
+
+    @property
+    def state_names(self) -> Sequence[str]:
+        return ("normal",)
+
+    @property
+    def n_states(self) -> int:
+        return 1
+
+    def calibrate(self, quotes: Sequence[NBBOQuote]) -> bool:
+        self.calibrated = True
+        self.calibration_count = len(quotes)
+        return True
+
+    def posterior(self, quote: NBBOQuote) -> list[float]:
+        return [1.0]
+
+    def current_state(self, symbol: str) -> list[float] | None:
+        return None
+
+    def reset(self, symbol: str) -> None:
+        pass
+
+    def checkpoint(self) -> bytes:
+        return b"{}"
+
+    def restore(self, data: bytes) -> None:
         pass
 
 
@@ -336,6 +402,39 @@ class TestOrchestratorBoot:
         clock = SimulatedClock(start_ns=1000)
         orch = _build_orchestrator(clock)
         assert orch.macro_state == MacroState.INIT
+
+    def test_regime_calibration_does_not_scan_suffix_for_total_count(
+        self,
+    ) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        quotes = tuple(
+            _make_quote(ts=1000 + i, seq=i + 1)
+            for i in range(100)
+        )
+        event_log = _CountingReplayLog(quotes)
+        regime_engine = _StubRegimeEngine()
+        bt_router = BacktestOrderRouter(clock=clock)
+        backend = ExecutionBackend(
+            market_data=_StubMarketData(),
+            order_router=bt_router,
+            mode="BACKTEST",
+        )
+        orch = Orchestrator(
+            clock=clock,
+            bus=EventBus(),
+            backend=backend,
+            risk_engine=_StubRiskEngine(),
+            position_store=MemoryPositionStore(),
+            event_log=event_log,
+            metric_collector=_NoOpMetricCollector(),
+            regime_engine=regime_engine,
+        )
+        orch._regime_calibration_max_quotes = 3
+
+        orch._calibrate_regime_engine()
+
+        assert regime_engine.calibration_count == 3
+        assert event_log.events_yielded == 3
 
     def test_boot_transitions_to_ready(self) -> None:
         clock = SimulatedClock(start_ns=1000)
