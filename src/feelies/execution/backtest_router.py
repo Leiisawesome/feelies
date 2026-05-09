@@ -228,7 +228,12 @@ class BacktestOrderRouter:
         if not self._deferred_markets:
             return
         remaining: list[_DeferredMarketFill] = []
-        fill_ts = quote.exchange_timestamp_ns + self._latency_ns
+        # Use the same time source as the ACK in ``submit`` (clock-derived) so
+        # consumers that compare lifecycle acks by timestamp never observe a
+        # FILLED ack with an earlier timestamp than its preceding ACKNOWLEDGED
+        # — under the orchestrator the clock tracks exchange time so this is
+        # numerically equivalent to the quote's exchange timestamp + latency.
+        fill_ts = self._clock.now_ns() + self._latency_ns
         for dm in self._deferred_markets:
             if dm.request.symbol != quote.symbol:
                 remaining.append(dm)

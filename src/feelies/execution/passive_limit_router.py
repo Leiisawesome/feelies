@@ -230,7 +230,12 @@ class PassiveLimitOrderRouter:
         if not self._deferred_aggressive:
             return
         remaining: list[tuple[OrderRequest, int, int]] = []
-        fill_ts = quote.exchange_timestamp_ns + self._latency_ns
+        # Use the same time source as the ACK in ``submit`` (clock-derived) so
+        # consumers that compare lifecycle acks by timestamp never observe a
+        # FILLED ack with an earlier timestamp than its preceding ACKNOWLEDGED
+        # — under the orchestrator the clock tracks exchange time so this is
+        # numerically equivalent to the quote's exchange timestamp + latency.
+        fill_ts = self._clock.now_ns() + self._latency_ns
         for req, deadline_ns, ticks_for_symbol in self._deferred_aggressive:
             if req.symbol != quote.symbol:
                 remaining.append((req, deadline_ns, ticks_for_symbol))

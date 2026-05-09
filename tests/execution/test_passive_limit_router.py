@@ -802,7 +802,9 @@ class TestLatency:
         router.on_quote(_quote("AAPL", "150.00", "150.02", ts=2000))
         acks2 = router.poll_acks()
         assert acks2[0].status == OrderAckStatus.FILLED
-        assert acks2[0].timestamp_ns == 3000
+        # Fill timestamp uses the same clock-based source as the ACK above
+        # (clock=5000 + latency=1000) so lifecycle acks are non-decreasing.
+        assert acks2[0].timestamp_ns == 6000
 
     def test_deferred_market_rejects_zero_depth_at_fill_quote(self):
         """First eligible quote after latency must have L1 depth (Backtest parity)."""

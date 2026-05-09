@@ -73,7 +73,6 @@ class InMemoryEventLog:
         so :meth:`append_batch` causality rules hold on subsequent appends.
         """
         with self._lock:
-            self._events.clear()
             prev_ts = 0
             for event in events:
                 ts: int | None = getattr(event, "exchange_timestamp_ns", None)
@@ -84,6 +83,7 @@ class InMemoryEventLog:
                             f"at sequence={event.sequence} < previous {prev_ts}"
                         )
                     prev_ts = ts
+            self._events.clear()
             self._last_exchange_ts = prev_ts
             self._events.extend(events)
 

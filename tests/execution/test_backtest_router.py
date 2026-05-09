@@ -135,7 +135,9 @@ class TestBacktestOrderRouter:
         acks2 = router.poll_acks()
         assert len(acks2) == 1
         assert acks2[0].status == OrderAckStatus.FILLED
-        assert acks2[0].timestamp_ns == 3000
+        # Fill timestamp uses the same clock-based source as the ACK above
+        # (clock=5000 + latency=1000) so lifecycle acks are non-decreasing.
+        assert acks2[0].timestamp_ns == 6000
 
     def test_deferred_market_queues_despite_zero_depth_on_submit_quote(self):
         """Depth at submit is ignored when latency defers the fill (causal model)."""
