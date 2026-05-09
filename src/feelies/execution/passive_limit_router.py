@@ -171,7 +171,11 @@ class PassiveLimitOrderRouter:
 
     def submit(self, request: OrderRequest) -> None:
         if request.order_id in self._submitted_order_ids:
-            self._reject(request, f"duplicate order_id: {request.order_id}")
+            self._reject(
+                request,
+                f"duplicate order_id: {request.order_id}",
+                release_submitted_id=False,
+            )
             return
         self._submitted_order_ids.add(request.order_id)
 
@@ -492,8 +496,14 @@ class PassiveLimitOrderRouter:
         reason: str,
         *,
         timestamp_ns: int | None = None,
+        release_submitted_id: bool = True,
     ) -> None:
-        """Emit a REJECTED ack for the given order request."""
+        """Emit a REJECTED ack for the given order request.
+
+        Clears ``order_id`` from :attr:`_submitted_order_ids` unless
+        ``release_submitted_id=False`` (duplicate submissions — the id may
+        still belong to an in-flight resting or deferred aggressive order).
+        """
         ts = self._clock.now_ns() if timestamp_ns is None else timestamp_ns
         self._pending_acks.append(OrderAck(
             timestamp_ns=ts,
@@ -505,6 +515,8 @@ class PassiveLimitOrderRouter:
             reason=reason,
             request_sequence=request.sequence,
         ))
+        if release_submitted_id:
+            self._submitted_order_ids.discard(request.order_id)
 
     def _emit_passive_fill(self, pending: _PendingOrder) -> None:
         """Emit a FILLED ack for a passive limit order.

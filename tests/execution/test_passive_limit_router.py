@@ -885,6 +885,43 @@ class TestLatency:
         assert rej.status == OrderAckStatus.REJECTED
         assert "limit" in rej.reason.lower()
 
+    def test_marketable_limit_same_order_id_retry_after_deferred_reject(
+        self,
+    ) -> None:
+        """Deferred aggressive REJECTED must release ``order_id`` for transient BBO moves."""
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(clock, latency_ns=1000)
+        oid = "marketable-limit-retry"
+
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=1000))
+        router.submit(_limit_buy("AAPL", limit_price="150.02", order_id=oid))
+        assert [a.status for a in router.poll_acks()] == [
+            OrderAckStatus.ACKNOWLEDGED,
+        ]
+
+        router.on_quote(_quote("AAPL", "151.00", "151.02", ts=2000))
+        assert router.poll_acks()[0].status == OrderAckStatus.REJECTED
+
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=3000))
+        router.submit(_limit_buy("AAPL", limit_price="150.02", order_id=oid))
+        retry_acks = router.poll_acks()
+        assert [a.status for a in retry_acks] == [OrderAckStatus.ACKNOWLEDGED]
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=4000))
+        assert router.poll_acks()[0].status == OrderAckStatus.FILLED
+
+    def test_duplicate_still_rejected_when_passive_limit_resting(self) -> None:
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(clock)
+        router.on_quote(_quote("AAPL", "150.00", "150.02"))
+        router.submit(_limit_buy("AAPL", limit_price="150.00"))
+        router.poll_acks()
+
+        router.submit(_limit_buy("AAPL", limit_price="150.00"))
+        dup = router.poll_acks()
+        assert len(dup) == 1
+        assert dup[0].status == OrderAckStatus.REJECTED
+        assert "duplicate" in dup[0].reason.lower()
+
     def test_deferred_aggressive_rejects_after_max_ticks_without_eligible_exchange_time(
         self,
     ) -> None:

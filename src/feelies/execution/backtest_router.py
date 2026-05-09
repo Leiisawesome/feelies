@@ -188,7 +188,11 @@ class BacktestOrderRouter:
 
     def submit(self, request: OrderRequest) -> None:
         if request.order_id in self._submitted_order_ids:
-            self._reject(request, f"duplicate order_id: {request.order_id}")
+            self._reject(
+                request,
+                f"duplicate order_id: {request.order_id}",
+                release_submitted_id=False,
+            )
             return
         self._submitted_order_ids.add(request.order_id)
 
@@ -414,6 +418,7 @@ class BacktestOrderRouter:
         reason: str,
         *,
         timestamp_ns: int | None = None,
+        release_submitted_id: bool = True,
     ) -> None:
         ts = self._clock.now_ns() if timestamp_ns is None else timestamp_ns
         self._pending_acks.append(OrderAck(
@@ -426,3 +431,5 @@ class BacktestOrderRouter:
             reason=reason,
             request_sequence=request.sequence,
         ))
+        if release_submitted_id:
+            self._submitted_order_ids.discard(request.order_id)

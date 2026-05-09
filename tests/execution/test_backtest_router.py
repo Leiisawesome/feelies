@@ -222,6 +222,29 @@ class TestBacktestOrderRouter:
         assert len(acks2) == 1
         assert acks2[0].status == OrderAckStatus.FILLED
 
+    def test_same_order_id_allowed_after_deferred_reject(self) -> None:
+        """Terminal REJECTED releases id so callers can retry the same ``order_id``."""
+        clock = SimulatedClock(start_ns=5000)
+        router = BacktestOrderRouter(clock, latency_ns=1000)
+
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=1000))
+        router.submit(_order("AAPL", order_id="reuse-1"))
+        router.poll_acks()
+
+        router.on_quote(_quote_with_depth(
+            "100.00", "100.10", bid_size=100, ask_size=0, ts=2000,
+        ))
+        assert router.poll_acks()[0].status == OrderAckStatus.REJECTED
+
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=3000))
+        router.submit(_order("AAPL", order_id="reuse-1"))
+        assert [a.status for a in router.poll_acks()] == [
+            OrderAckStatus.ACKNOWLEDGED,
+        ]
+
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=4000))
+        assert router.poll_acks()[0].status == OrderAckStatus.FILLED
+
     def test_multiple_symbols_independent(self):
         clock = SimulatedClock(start_ns=5000)
         router = BacktestOrderRouter(clock)
