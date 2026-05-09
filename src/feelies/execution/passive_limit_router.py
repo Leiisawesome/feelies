@@ -267,6 +267,26 @@ class PassiveLimitOrderRouter:
                     f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
                 )
                 continue
+            # If this deferred order originated as a marketable LIMIT (via
+            # ``_post_passive``'s marketability guard), the BBO may have moved
+            # adversely during the latency window so the mid-fill would now
+            # exceed the caller's limit_price.  Real exchanges never fill a
+            # LIMIT beyond its limit price — reject rather than producing an
+            # unrealistic backtest fill (Inv 12: transaction cost realism).
+            if req.limit_price is not None:
+                fill_mid = (quote.bid + quote.ask) / Decimal("2")
+                if (
+                    req.side == Side.BUY and fill_mid > req.limit_price
+                ) or (
+                    req.side == Side.SELL and fill_mid < req.limit_price
+                ):
+                    self._reject(
+                        req,
+                        f"deferred fill mid {fill_mid} violates "
+                        f"{req.side.name} limit {req.limit_price} "
+                        f"(BBO moved adversely during latency window)",
+                    )
+                    continue
             self._fill_aggressive_immediate(req, quote, fill_ts=fill_ts)
         self._deferred_aggressive = remaining
 
