@@ -21,8 +21,9 @@ Fill model (L1-only, conservative):
   Unfilled orders are cancelled after ``max_resting_ticks`` quotes.
 
   MARKET orders fill at mid-price using the same causal latency model as
-  ``BacktestOrderRouter``: with ``latency_ns > 0``, the fill price comes
-  from the first subsequent quote whose exchange time reaches
+  ``BacktestOrderRouter``: ACKNOWLEDGED is always emitted before any fill
+  or reject; with ``latency_ns > 0``, the fill price comes from the first
+  subsequent quote whose exchange time reaches
   ``submit_exchange_ts + latency_ns``.
 
 Invariants preserved:
@@ -205,9 +206,22 @@ class PassiveLimitOrderRouter:
         request: OrderRequest,
         quote: NBBOQuote,
     ) -> None:
-        """MARKET submit: immediate FILLED when ``latency_ns == 0``, else ACK +
-        deferred fill on the first exchange-time-eligible quote.
+        """MARKET submit: ACKNOWLEDGED first (Inv 9, parity with
+        ``BacktestOrderRouter``); then immediate FILLED when ``latency_ns <= 0``
+        (after depth check), else deferred fill on the first exchange-time-
+        eligible quote.
         """
+        ack_ts = self._clock.now_ns() + self._latency_ns
+        self._pending_acks.append(OrderAck(
+            timestamp_ns=ack_ts,
+            correlation_id=request.correlation_id,
+            sequence=self._ack_seq.next(),
+            order_id=request.order_id,
+            symbol=request.symbol,
+            status=OrderAckStatus.ACKNOWLEDGED,
+            request_sequence=request.sequence,
+        ))
+
         if self._latency_ns <= 0:
             depth = (
                 quote.ask_size if request.side == Side.BUY else quote.bid_size
@@ -219,19 +233,9 @@ class PassiveLimitOrderRouter:
                     f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
                 )
                 return
-            self._fill_aggressive_immediate(request, quote)
+            self._fill_aggressive_immediate(request, quote, fill_ts=ack_ts)
             return
 
-        ack_ts = self._clock.now_ns() + self._latency_ns
-        self._pending_acks.append(OrderAck(
-            timestamp_ns=ack_ts,
-            correlation_id=request.correlation_id,
-            sequence=self._ack_seq.next(),
-            order_id=request.order_id,
-            symbol=request.symbol,
-            status=OrderAckStatus.ACKNOWLEDGED,
-            request_sequence=request.sequence,
-        ))
         # Deferred fills: depth is checked in ``_flush_deferred_aggressive`` on
         # the first latency-eligible quote (not the submission quote).
         self._deferred_aggressive.append(

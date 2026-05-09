@@ -94,7 +94,7 @@ class TestPassiveLimitRouter:
     """Core passive limit order router tests."""
 
     def test_market_order_fills_at_mid(self):
-        """MARKET orders still fill immediately at mid-price."""
+        """MARKET orders: ACKNOWLEDGED then immediate FILLED at mid-price."""
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock)
 
@@ -102,10 +102,13 @@ class TestPassiveLimitRouter:
         router.submit(_market_order("AAPL"))
 
         acks = router.poll_acks()
-        assert len(acks) == 1
-        assert acks[0].status == OrderAckStatus.FILLED
-        assert acks[0].fill_price == Decimal("150.00")
-        assert acks[0].filled_quantity == 50
+        assert [a.status for a in acks] == [
+            OrderAckStatus.ACKNOWLEDGED,
+            OrderAckStatus.FILLED,
+        ]
+        filled = acks[1]
+        assert filled.fill_price == Decimal("150.00")
+        assert filled.filled_quantity == 50
 
     def test_reject_on_missing_quote(self):
         clock = SimulatedClock(start_ns=5000)
@@ -422,7 +425,7 @@ class TestCostModel:
         router.submit(_market_order("AAPL"))
 
         acks = router.poll_acks()
-        fill = acks[0]
+        fill = next(a for a in acks if a.status == OrderAckStatus.FILLED)
         assert fill.status == OrderAckStatus.FILLED
         # Spread cost = 0.05 * 50 = $2.50 + commission
         assert fill.fees > Decimal("2.00")
@@ -450,7 +453,10 @@ class TestCostModel:
         clock.set_time(7000)
         router.on_quote(_quote("AAPL", "150.00", "150.02", ts=7000))
         router.submit(_market_order("AAPL"))
-        aggressive_fill = router.poll_acks()[0]
+        aggressive_fill = next(
+            a for a in router.poll_acks()
+            if a.status == OrderAckStatus.FILLED
+        )
 
         # Maker commission per unit < taker commission per unit (rebate vs fee on exchange)
         assert passive_fill.cost_bps < aggressive_fill.cost_bps
@@ -470,9 +476,11 @@ class TestMarketabilityGuard:
         router.submit(buy)
         acks = router.poll_acks()
 
-        assert len(acks) == 1
-        assert acks[0].status == OrderAckStatus.FILLED
-        assert acks[0].fill_price is not None
+        assert [a.status for a in acks] == [
+            OrderAckStatus.ACKNOWLEDGED,
+            OrderAckStatus.FILLED,
+        ]
+        assert acks[1].fill_price is not None
         # Not resting — was redirected to aggressive
         assert router.resting_order_count == 0
 
@@ -501,8 +509,10 @@ class TestMarketabilityGuard:
         router.submit(sell)
         acks = router.poll_acks()
 
-        assert len(acks) == 1
-        assert acks[0].status == OrderAckStatus.FILLED
+        assert [a.status for a in acks] == [
+            OrderAckStatus.ACKNOWLEDGED,
+            OrderAckStatus.FILLED,
+        ]
         assert router.resting_order_count == 0
 
     def test_sell_above_bid_rests_as_passive(self):
@@ -763,7 +773,7 @@ class TestMultipleOrders:
         router.submit(_market_order("AAPL"))
 
         first = router.poll_acks()
-        assert len(first) == 1
+        assert len(first) == 2
 
         second = router.poll_acks()
         assert second == []
@@ -894,9 +904,12 @@ class TestLatency:
         ))
         router.submit(_market_order("AAPL"))
         acks = router.poll_acks()
-        assert len(acks) == 1
-        assert acks[0].status == OrderAckStatus.REJECTED
-        assert "depth" in acks[0].reason.lower()
+        assert [a.status for a in acks] == [
+            OrderAckStatus.ACKNOWLEDGED,
+            OrderAckStatus.REJECTED,
+        ]
+        reject = acks[1]
+        assert "depth" in reject.reason.lower()
 
 
 class TestDeterminism:
