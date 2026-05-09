@@ -40,10 +40,10 @@ def resequence_event_list(
     events: list[NBBOQuote | Trade],
 ) -> list[NBBOQuote | Trade]:
     """Sort by :func:`event_merge_sort_key` and assign contiguous sequences."""
-    events.sort(key=event_merge_sort_key)
+    sorted_events = sorted(events, key=event_merge_sort_key)
     seq = SequenceGenerator()
     result: list[NBBOQuote | Trade] = []
-    for event in events:
+    for event in sorted_events:
         new_seq = seq.next()
         new_cid = make_correlation_id(
             event.symbol, event.exchange_timestamp_ns, new_seq,

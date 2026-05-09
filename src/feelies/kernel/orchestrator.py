@@ -1814,18 +1814,12 @@ class Orchestrator:
             )
             return
 
-        # Count remaining quotes without retaining them so the full event
-        # log isn't materialised in memory just to log a total.
-        total_quotes_in_log = len(quotes) + sum(1 for _ in quote_stream)
-
         ok = calibrate_fn(quotes)
         if ok:
             logger.info(
-                "Regime engine calibrated from %d quotes "
-                "(prefix cap=%d, total_log=%d)",
+                "Regime engine calibrated from %d quotes (prefix cap=%d)",
                 len(quotes),
                 max_q,
-                total_quotes_in_log,
             )
         else:
             logger.warning(
@@ -1850,7 +1844,6 @@ class Orchestrator:
                 context={
                     "prefix_quote_count": len(quotes),
                     "cap": max_q,
-                    "total_quotes_in_log": total_quotes_in_log,
                 },
             ))
 
