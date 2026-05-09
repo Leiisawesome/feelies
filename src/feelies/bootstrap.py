@@ -182,6 +182,8 @@ def build_platform(
     bus = EventBus()
 
     regime_engine = _create_regime_engine(config.regime_engine)
+    if config.enforce_regime_state_scale_alignment and regime_engine is not None:
+        _validate_regime_engine_risk_scale_alignment(regime_engine)
 
     registry_clock = None if config.mode == OperatingMode.BACKTEST else clock
     promotion_ledger = (
@@ -359,11 +361,9 @@ def build_platform(
     hazard_seq, regime_hazard_detector = _create_hazard_detector(registry)
 
     # ── Multi-alpha execution components ──
-    # Audit R2: when enforce_per_alpha_risk_budget is True we wrap the
-    # risk engine so each alpha's risk_budget block is enforced in
-    # addition to the platform-wide caps.  Default off preserves
-    # bit-identical replay against existing baselines (Inv-A); operators
-    # opt in via platform.yaml: enforce_per_alpha_risk_budget: true.
+    # Audit R2: default-on wraps the risk engine so each alpha's
+    # risk_budget block is enforced alongside platform caps; operators
+    # opt out via platform.yaml: enforce_per_alpha_risk_budget: false.
     risk_wrapper = AlphaBudgetRiskWrapper(
         inner=risk_engine,
         registry=registry,
@@ -466,6 +466,26 @@ def _build_platform_gate_thresholds(
     if not overrides:
         return None
     return apply_gate_thresholds_overrides(GateThresholds(), overrides)
+
+
+_REGIME_RISK_SCALE_KEYS = frozenset({
+    "vol_breakout",
+    "compression_clustering",
+    "normal",
+})
+
+
+def _validate_regime_engine_risk_scale_alignment(engine: RegimeEngine) -> None:
+    """Fail boot when regime posteriors use names BasicRiskEngine cannot scale."""
+    unknown = frozenset(engine.state_names) - _REGIME_RISK_SCALE_KEYS
+    if unknown:
+        raise ConfigurationError(
+            "RegimeEngine state_names contain entries not mapped by "
+            "BasicRiskEngine regime scaling: "
+            f"{sorted(unknown)}. Expected subset of {_REGIME_RISK_SCALE_KEYS}. "
+            "Extend RiskConfig / regime_vol_*_scale or disable "
+            "enforce_regime_state_scale_alignment."
+        )
 
 
 def _create_regime_engine(engine_name: str | None) -> RegimeEngine | None:

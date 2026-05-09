@@ -997,6 +997,8 @@ the emission (e.g., if a trade at t=10:30:00.001 triggers the 10:30:00
 boundary tick, the tick carries timestamp 10:30:00.000, not
 10:30:00.001).
 
+**Multi-symbol market-data merge:** offline replay merges per-symbol days with a single sort whose key is `(exchange_timestamp_ns, symbol, quote-before-trade rank, prior_sequence)` before global sequence reassignment — concatenation order alone must never decide ties at identical SIP timestamps.
+
 ### 7.5 UniverseSynchronizer barrier semantics
 
 The Synchronizer is the single non-trivial correctness risk in this design.

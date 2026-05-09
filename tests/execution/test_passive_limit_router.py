@@ -792,11 +792,17 @@ class TestLatency:
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock, latency_ns=1000)
 
-        router.on_quote(_quote("AAPL", "150.00", "150.02"))
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=1000))
         router.submit(_market_order("AAPL"))
 
         acks = router.poll_acks()
-        assert acks[0].timestamp_ns == 6000  # 5000 + 1000
+        assert acks[0].status == OrderAckStatus.ACKNOWLEDGED
+        assert acks[0].timestamp_ns == 6000
+
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=2000))
+        acks2 = router.poll_acks()
+        assert acks2[0].status == OrderAckStatus.FILLED
+        assert acks2[0].timestamp_ns == 3000
 
 
 class TestDeterminism:

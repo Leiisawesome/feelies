@@ -7,15 +7,15 @@ Used by offline replay harnesses after a first run has populated::
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Literal, Sequence
 
 from feelies.core.events import NBBOQuote, Trade
-from feelies.core.identifiers import SequenceGenerator, make_correlation_id
 from feelies.ingestion.massive_ingestor import IngestResult
 from feelies.storage.disk_event_cache import DiskEventCache
+from feelies.storage.event_resequence import resequence_event_list
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 __all__ = ["CacheReplayError", "DiskCacheDayMeta", "load_event_log_from_disk_cache"]
@@ -44,20 +44,6 @@ def _iter_dates(start_date: str, end_date: str) -> list[str]:
         dates.append(current.isoformat())
         current += timedelta(days=1)
     return dates
-
-
-def _resequence(events: list[NBBOQuote | Trade]) -> list[NBBOQuote | Trade]:
-    """Sort by exchange time and assign globally monotonic sequences."""
-    events.sort(key=lambda e: e.exchange_timestamp_ns)
-    seq = SequenceGenerator()
-    result: list[NBBOQuote | Trade] = []
-    for event in events:
-        new_seq = seq.next()
-        new_cid = make_correlation_id(
-            event.symbol, event.exchange_timestamp_ns, new_seq,
-        )
-        result.append(replace(event, sequence=new_seq, correlation_id=new_cid))
-    return result
 
 
 def load_event_log_from_disk_cache(
@@ -107,7 +93,7 @@ def load_event_log_from_disk_cache(
                 )
             )
 
-    resequenced = _resequence(all_events)
+    resequenced = resequence_event_list(all_events)
     event_log = InMemoryEventLog()
     event_log.append_batch(resequenced)
 

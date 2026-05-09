@@ -223,6 +223,16 @@ class MassiveHistoricalIngestor:
             if h in (DataHealth.GAP_DETECTED, DataHealth.CORRUPTED)
         )
 
+        if len(symbols) > 1:
+            from feelies.storage.event_resequence import resequence_event_list
+
+            merged_raw = [
+                e for e in self._event_log.replay()
+                if isinstance(e, (NBBOQuote, Trade))
+            ]
+            sorted_events = resequence_event_list(merged_raw)
+            self._event_log.replace_events(sorted_events)
+
         return IngestResult(
             events_ingested=total_events,
             pages_processed=total_pages,

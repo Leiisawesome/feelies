@@ -109,17 +109,15 @@ cost_arithmetic:
   fee_bps: 1.0
   margin_ratio: 1.8
 
-# Note (§20.12.3 #2): this alpha is intentionally the v0.2 baseline
-# parity anchor — it must NOT declare a top-level ``trend_mechanism:``
-# block.  See ``tests/acceptance/_chosen_v02_baseline_alpha.txt`` and
-# ``tests/acceptance/test_v02_no_trend_mechanism_parity.py``.  Adding a
-# ``trend_mechanism:`` block here breaks the locked contract that the
-# v0.3 loader (under ``enforce_trend_mechanism=False``) must accept a
-# v0.2-style schema-1.1 SIGNAL alpha unmodified.  Operators wiring
-# this alpha in ``platform.yaml: alpha_specs:`` must therefore pin
-# ``enforce_trend_mechanism: false`` (the dataclass default is
-# ``true``); deployments that want strict mode should pick a
-# different schema-1.1 alpha for ``alpha_specs:``.
+trend_mechanism:
+  family: KYLE_INFO
+  expected_half_life_seconds: 120
+  l1_signature_sensors:
+    - micro_price
+    - ofi_ewma
+    - spread_z_30d
+  failure_signature:
+    - "Persistent informed-flow signature on OFI disappears in normal regime"
 
 # ── Signal (Layer-2 evaluate) ─────────────────────────────
 signal: |

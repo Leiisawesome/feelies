@@ -66,6 +66,27 @@ class InMemoryEventLog:
             self._last_exchange_ts = prev_ts
             self._events.extend(events)
 
+    def replace_events(self, events: Sequence[Event]) -> None:
+        """Replace the entire log with *events* (ingestion merge-sort path).
+
+        Caller must supply events sorted by exchange time (including tie-breakers)
+        so :meth:`append_batch` causality rules hold on subsequent appends.
+        """
+        with self._lock:
+            self._events.clear()
+            prev_ts = 0
+            for event in events:
+                ts: int | None = getattr(event, "exchange_timestamp_ns", None)
+                if ts is not None:
+                    if ts < prev_ts:
+                        raise CausalityViolation(
+                            f"replace_events: exchange_timestamp_ns={ts} "
+                            f"at sequence={event.sequence} < previous {prev_ts}"
+                        )
+                    prev_ts = ts
+            self._last_exchange_ts = prev_ts
+            self._events.extend(events)
+
     def _enforce_causality(self, event: Event) -> None:
         ts: int | None = getattr(event, "exchange_timestamp_ns", None)
         if ts is not None:

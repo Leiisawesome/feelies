@@ -3,13 +3,12 @@ flag (audit R2).
 
 Covers:
 
-1. ``test_default_does_not_wire_wrapper`` — default ``PlatformConfig``
-   leaves ``enforce_per_alpha_risk_budget=False`` and the orchestrator
-   receives the raw ``BasicRiskEngine``.  Preserves bit-identical
-   replay against existing baselines (Inv-A).
-2. ``test_flag_on_wires_alpha_budget_wrapper`` — flipping the flag
-   wraps the engine in :class:`AlphaBudgetRiskWrapper` so per-alpha
-   ``risk_budget`` blocks are enforced at runtime.
+1. ``test_default_wires_alpha_budget_wrapper`` — default
+   ``PlatformConfig`` sets ``enforce_per_alpha_risk_budget=True`` and
+   the orchestrator receives :class:`AlphaBudgetRiskWrapper`.
+2. ``test_explicit_false_disables_wrapper`` — operators may opt out;
+   ``enforce_per_alpha_risk_budget=False`` yields the raw
+   ``BasicRiskEngine``.
 3. ``test_yaml_round_trip_preserves_flag`` — the flag survives the
    ``PlatformConfig.to_yaml`` / ``from_yaml`` round trip so
    operator-set ``platform.yaml: enforce_per_alpha_risk_budget: true``
@@ -90,7 +89,7 @@ _SIGNAL_ALPHA_YAML = textwrap.dedent(
 
 
 def _make_config(
-    tmp_path: Path, *, enforce: bool = False,
+    tmp_path: Path, *, enforce_per_alpha_risk_budget: bool = True,
 ) -> PlatformConfig:
     return PlatformConfig(
         symbols=frozenset({"AAPL"}),
@@ -99,7 +98,7 @@ def _make_config(
         account_equity=100_000.0,
         sensor_specs=_TEST_SENSOR_SPECS,
         enforce_trend_mechanism=False,
-        enforce_per_alpha_risk_budget=enforce,
+        enforce_per_alpha_risk_budget=enforce_per_alpha_risk_budget,
     )
 
 
@@ -108,24 +107,22 @@ def _write_alpha(directory: Path, name: str, body: str) -> None:
 
 
 class TestPerAlphaRiskBudgetWiring:
-    def test_default_does_not_wire_wrapper(self, tmp_path: Path) -> None:
+    def test_default_wires_alpha_budget_wrapper(self, tmp_path: Path) -> None:
         _write_alpha(tmp_path, "r2.alpha.yaml", _SIGNAL_ALPHA_YAML)
         config = _make_config(tmp_path)
         orchestrator, _ = build_platform(config)
 
-        assert isinstance(orchestrator._risk_engine, BasicRiskEngine)
-        assert not isinstance(
+        assert isinstance(
             orchestrator._risk_engine, AlphaBudgetRiskWrapper,
         )
 
-    def test_flag_on_wires_alpha_budget_wrapper(
-        self, tmp_path: Path,
-    ) -> None:
+    def test_explicit_false_disables_wrapper(self, tmp_path: Path) -> None:
         _write_alpha(tmp_path, "r2.alpha.yaml", _SIGNAL_ALPHA_YAML)
-        config = _make_config(tmp_path, enforce=True)
+        config = _make_config(tmp_path, enforce_per_alpha_risk_budget=False)
         orchestrator, _ = build_platform(config)
 
-        assert isinstance(
+        assert isinstance(orchestrator._risk_engine, BasicRiskEngine)
+        assert not isinstance(
             orchestrator._risk_engine, AlphaBudgetRiskWrapper,
         )
 
@@ -141,13 +138,11 @@ class TestPerAlphaRiskBudgetWiring:
         config_out = PlatformConfig.from_yaml(yaml_path)
         assert config_out.enforce_per_alpha_risk_budget is True
 
-    def test_yaml_round_trip_default_false(self, tmp_path: Path) -> None:
-        config_in = PlatformConfig(
-            symbols=frozenset({"AAPL"}),
-            mode=OperatingMode.BACKTEST,
-            account_equity=100_000.0,
-        )
+    def test_yaml_omitted_flag_defaults_true(self, tmp_path: Path) -> None:
         yaml_path = tmp_path / "platform.yaml"
-        yaml_path.write_text(yaml.safe_dump(config_in._to_dict()))
+        yaml_path.write_text(
+            "symbols: [AAPL]\nalpha_specs: [dummy.alpha.yaml]\n",
+            encoding="utf-8",
+        )
         config_out = PlatformConfig.from_yaml(yaml_path)
-        assert config_out.enforce_per_alpha_risk_budget is False
+        assert config_out.enforce_per_alpha_risk_budget is True

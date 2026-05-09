@@ -20,16 +20,18 @@ Fill model (L1-only, conservative):
 
   Unfilled orders are cancelled after ``max_resting_ticks`` quotes.
 
-  MARKET orders fill immediately at mid-price (identical to
-  ``BacktestOrderRouter``), used for stop-loss and emergency exits.
+  MARKET orders fill at mid-price using the same causal latency model as
+  ``BacktestOrderRouter``: with ``latency_ns > 0``, the fill price comes
+  from the first subsequent quote whose exchange time reaches
+  ``submit_exchange_ts + latency_ns``.
 
 Invariants preserved:
   - Inv 5 (deterministic replay): no randomness — queue drain is a
     deterministic tick counter.
   - Inv 9 (backtest/live parity): implements the same OrderRouter
     protocol used by live and paper routers.
-  - Inv 11 (fail-safe): MARKET orders always fill immediately;
-    passive orders that timeout are CANCELLED, not silently dropped;
+  - Inv 11 (fail-safe): MARKET orders fill once latency-eligible quotes
+    arrive; passive orders that timeout are CANCELLED, not silently dropped;
     duplicate order_ids are rejected.
   - Inv 12 (transaction cost realism): passive fills charge zero
     spread cost and optionally model maker rebates.
@@ -112,12 +114,14 @@ class PassiveLimitOrderRouter:
         # Full set of order_ids ever submitted — used for idempotent reject.
         self._submitted_order_ids: set[str] = set()
         self._ack_seq = SequenceGenerator()
+        self._deferred_aggressive: list[tuple[OrderRequest, int]] = []
 
     # ── Public interface (OrderRouter protocol) ──────────────────
 
     def on_quote(self, quote: NBBOQuote) -> None:
         """Update latest quote and check resting orders for fills."""
         self._last_quotes[quote.symbol] = quote
+        self._flush_deferred_aggressive(quote)
         self._check_resting_orders(quote)
 
     def on_trade(self, trade: Trade) -> None:
@@ -162,7 +166,7 @@ class PassiveLimitOrderRouter:
             return
 
         if request.order_type == OrderType.MARKET:
-            self._fill_aggressive(request, quote)
+            self._submit_aggressive_market(request, quote)
         elif request.order_type == OrderType.LIMIT:
             self._post_passive(request, quote)
         else:
@@ -175,15 +179,65 @@ class PassiveLimitOrderRouter:
 
     # ── Aggressive (market) fills ────────────────────────────────
 
-    def _fill_aggressive(self, request: OrderRequest, quote: NBBOQuote) -> None:
-        """Immediate fill at mid-price — same economics as BacktestOrderRouter.
-
-        ``submit()`` is the only caller and has already validated that the
-        quote is non-crossed, so we do not re-check here.
+    def _submit_aggressive_market(
+        self,
+        request: OrderRequest,
+        quote: NBBOQuote,
+    ) -> None:
+        """MARKET submit: immediate FILLED when ``latency_ns == 0``, else ACK +
+        deferred fill on the first exchange-time-eligible quote.
         """
+        if self._latency_ns <= 0:
+            self._fill_aggressive_immediate(request, quote)
+            return
+
+        ack_ts = self._clock.now_ns() + self._latency_ns
+        self._pending_acks.append(OrderAck(
+            timestamp_ns=ack_ts,
+            correlation_id=request.correlation_id,
+            sequence=self._ack_seq.next(),
+            order_id=request.order_id,
+            symbol=request.symbol,
+            status=OrderAckStatus.ACKNOWLEDGED,
+            request_sequence=request.sequence,
+        ))
+        self._deferred_aggressive.append(
+            (request, quote.exchange_timestamp_ns + self._latency_ns),
+        )
+
+    def _flush_deferred_aggressive(self, quote: NBBOQuote) -> None:
+        if not self._deferred_aggressive:
+            return
+        remaining: list[tuple[OrderRequest, int]] = []
+        fill_ts = quote.exchange_timestamp_ns + self._latency_ns
+        for req, deadline_ns in self._deferred_aggressive:
+            if req.symbol != quote.symbol:
+                remaining.append((req, deadline_ns))
+                continue
+            if quote.exchange_timestamp_ns < deadline_ns:
+                remaining.append((req, deadline_ns))
+                continue
+            if quote.bid >= quote.ask:
+                self._reject(
+                    req,
+                    f"crossed or locked quote bid={quote.bid} ask={quote.ask}",
+                )
+                continue
+            self._fill_aggressive_immediate(req, quote, fill_ts=fill_ts)
+        self._deferred_aggressive = remaining
+
+    def _fill_aggressive_immediate(
+        self,
+        request: OrderRequest,
+        quote: NBBOQuote,
+        *,
+        fill_ts: int | None = None,
+    ) -> None:
+        """Fill MARKET at ``quote`` mid (``submit()`` validated non-crossed)."""
         fill_price = (quote.bid + quote.ask) / Decimal("2")
         half_spread = (quote.ask - quote.bid) / Decimal("2")
-        fill_ts = self._clock.now_ns() + self._latency_ns
+        if fill_ts is None:
+            fill_ts = self._clock.now_ns() + self._latency_ns
 
         costs = self._cost_model.compute(
             symbol=request.symbol,
@@ -220,10 +274,10 @@ class PassiveLimitOrderRouter:
         # cross the spread, redirect to aggressive fill to avoid posting
         # a marketable limit order (which exchanges reject or fill as taker).
         if request.side == Side.BUY and limit_price >= quote.ask:
-            self._fill_aggressive(request, quote)
+            self._submit_aggressive_market(request, quote)
             return
         if request.side == Side.SELL and limit_price <= quote.bid:
-            self._fill_aggressive(request, quote)
+            self._submit_aggressive_market(request, quote)
             return
 
         pending = _PendingOrder(

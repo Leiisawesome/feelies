@@ -236,13 +236,11 @@ class TestV02ParityPreservedOnExplicitOptOut:
             "expected LoadedSignalLayerModule."
         )
 
-    def test_v02_baseline_alpha_refused_under_default(self) -> None:
-        """Cross-check: the same alpha must be refused under the
-        new platform default.  Flipping the default and silently
-        accepting v0.2 alphas would be the worst-of-both-worlds
-        regression — strict mode advertised but not enforced.
+    def test_v02_baseline_alpha_loads_under_strict_platform_default(self) -> None:
+        """The reference alpha ships ``trend_mechanism:`` (G16); it must load
+        under strict mode — refusal is reserved for specs that omit the block.
         """
         platform_default = _base_config().enforce_trend_mechanism
         loader = AlphaLoader(enforce_trend_mechanism=platform_default)
-        with pytest.raises(MissingTrendMechanismError, match="strict-mode"):
-            loader.load(_V02_BASELINE_ALPHA)
+        module = loader.load(_V02_BASELINE_ALPHA)
+        assert isinstance(module, LoadedSignalLayerModule)
