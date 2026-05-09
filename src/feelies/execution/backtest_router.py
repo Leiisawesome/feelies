@@ -106,6 +106,9 @@ class _DeferredMarketFill:
     waited ``latency_ns`` on the exchange clock — adding latency again when
     ``ReplayFeed`` keeps ``clock.now_ns()`` aligned with
     ``exchange_timestamp_ns`` would double-count one-way delay (Inv 9).
+    The same floor applies to ``max_resting_ticks`` timeout rejects so
+    REJECTED never timestamps before ACKNOWLEDGED while exchange time is
+    still short of the latency deadline.
     """
 
     request: OrderRequest
@@ -269,7 +272,8 @@ class BacktestOrderRouter:
                         f"deferred market timeout after "
                         f"{ticks_for_symbol} ticks (no latency-eligible quote)",
                         timestamp_ns=max(
-                            self._clock.now_ns(), dm.ack_timestamp_ns
+                            self._clock.now_ns(),
+                            dm.ack_timestamp_ns,
                         ),
                     )
                     continue

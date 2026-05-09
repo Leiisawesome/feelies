@@ -170,9 +170,9 @@ class TestBacktestOrderRouter:
 
         router.on_quote(_quote("AAPL", "100.00", "100.10", ts=1000))
         router.submit(_order("AAPL"))
-        assert [a.status for a in router.poll_acks()] == [
-            OrderAckStatus.ACKNOWLEDGED,
-        ]
+        acks0 = router.poll_acks()
+        assert [a.status for a in acks0] == [OrderAckStatus.ACKNOWLEDGED]
+        ack_ts = acks0[0].timestamp_ns
 
         for _ in range(3):
             router.on_quote(_quote("AAPL", "100.00", "100.10", ts=1000))
@@ -181,6 +181,28 @@ class TestBacktestOrderRouter:
         assert len(rejects) == 1
         assert "timeout" in rejects[0].reason.lower()
         assert "ticks" in rejects[0].reason.lower()
+        assert rejects[0].timestamp_ns >= ack_ts
+
+    def test_deferred_market_timeout_reject_ts_not_before_ack_when_clock_tracks_exchange(
+        self,
+    ) -> None:
+        """max_resting_ticks fires before latency deadline: REJECTED must not precede ACK."""
+        clock = SimulatedClock(start_ns=1000)
+        router = BacktestOrderRouter(clock, latency_ns=1000, max_resting_ticks=3)
+
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=1000))
+        router.submit(_order("AAPL"))
+        ack = router.poll_acks()[0]
+        assert ack.status == OrderAckStatus.ACKNOWLEDGED
+        assert ack.timestamp_ns == 2000
+
+        for _ in range(3):
+            clock.set_time(1500)
+            router.on_quote(_quote("AAPL", "100.00", "100.10", ts=1500))
+
+        rej = router.poll_acks()[0]
+        assert rej.status == OrderAckStatus.REJECTED
+        assert rej.timestamp_ns >= ack.timestamp_ns
 
     def test_deferred_market_queues_despite_zero_depth_on_submit_quote(self):
         """Depth at submit is ignored when latency defers the fill (causal model)."""

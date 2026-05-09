@@ -84,6 +84,8 @@ class _DeferredAggressiveFill:
     again when the injected clock tracks exchange time (``ReplayFeed``) —
     the eligibility deadline already advanced exchange time by one latency
     slice (parity with :class:`~feelies.execution.backtest_router.BacktestOrderRouter`).
+    ``max_resting_ticks`` timeout rejects use the same floor so REJECTED
+    does not precede ACKNOWLEDGED before the latency deadline.
     """
 
     request: OrderRequest
@@ -269,7 +271,8 @@ class PassiveLimitOrderRouter:
                         f"deferred aggressive timeout after "
                         f"{ticks_for_symbol} ticks (no latency-eligible quote)",
                         timestamp_ns=max(
-                            self._clock.now_ns(), dm.ack_timestamp_ns
+                            self._clock.now_ns(),
+                            dm.ack_timestamp_ns,
                         ),
                     )
                     continue
