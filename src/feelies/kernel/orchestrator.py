@@ -3405,7 +3405,11 @@ class Orchestrator:
             return
         self._hazard_submitted_order_ids.add(event.order_id)
         hv = self._risk_engine.check_order(event, self._positions)
-        self._bus.publish(hv)
+        # Do not broadcast FORCE_FLATTEN: downstream subscribers may treat it as
+        # a global lockdown trigger while this handler still submits the exit
+        # (Inv-11 fail-safe).  REJECT / ALLOW are fine for audit parity.
+        if hv.action != RiskAction.FORCE_FLATTEN:
+            self._bus.publish(hv)
         if hv.action == RiskAction.REJECT:
             self._bus.publish(Alert(
                 timestamp_ns=self._clock.now_ns(),
