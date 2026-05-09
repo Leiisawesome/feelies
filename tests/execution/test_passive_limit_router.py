@@ -893,6 +893,37 @@ class TestLatency:
         assert acks[1].filled_quantity == 100
         assert acks[1].fill_price == mid + expected_impact
 
+    def test_marketable_limit_walk_the_book_caps_excess_at_limit_price(self) -> None:
+        """Aggressive LIMIT fills cannot execute the excess leg above ``limit_price``."""
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(
+            clock,
+            latency_ns=0,
+            market_impact_factor=Decimal("0.5"),
+        )
+
+        router.on_quote(_quote(
+            "AAPL",
+            "100.00",
+            "100.50",
+            bid_size=500,
+            ask_size=50,
+        ))
+        lim = Decimal("100.50")
+        router.submit(_limit_buy("AAPL", qty=550, limit_price="100.50"))
+
+        acks = router.poll_acks()
+        assert [a.status for a in acks] == [
+            OrderAckStatus.ACKNOWLEDGED,
+            OrderAckStatus.PARTIALLY_FILLED,
+            OrderAckStatus.FILLED,
+        ]
+        mid = Decimal("100.25")
+        assert acks[1].fill_price == mid
+        assert acks[1].filled_quantity == 50
+        assert acks[2].filled_quantity == 500
+        assert acks[2].fill_price == lim
+
     def test_deferred_market_queues_despite_zero_depth_on_submit_quote(self):
         """Submit-time quote may be vacuum; fill uses first latency-eligible quote."""
         clock = SimulatedClock(start_ns=5000)

@@ -16,6 +16,24 @@ from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.cost_model import CostModel
 
 
+def _clamp_fill_price_to_limit(
+    side: Side,
+    price: Decimal,
+    limit_price: Decimal | None,
+) -> Decimal:
+    """Ensure simulated aggressive fills respect a LIMIT ``limit_price`` when set.
+
+    Pure MARKET orders leave ``limit_price`` unset; marketable LIMIT orders routed
+    to this helper carry the submission limit and must not execute worse than it
+    (buyer never pays above limit, seller never receives below limit).
+    """
+    if limit_price is None:
+        return price
+    if side == Side.BUY:
+        return min(price, limit_price)
+    return max(price, limit_price)
+
+
 def to_decimal(value: Decimal | int | str | float, name: str) -> Decimal:
     """Coerce a numeric input to Decimal, rejecting non-finite floats."""
     if isinstance(value, float):
@@ -45,7 +63,9 @@ def append_market_fill_acks(
     Caller must ensure the quote is non-crossed and L1 depth on the relevant
     side is strictly positive.
     """
-    fill_price = (quote.bid + quote.ask) / Decimal("2")
+    limit_px = request.limit_price
+    mid = (quote.bid + quote.ask) / Decimal("2")
+    fill_price = _clamp_fill_price_to_limit(request.side, mid, limit_px)
     half_spread = (quote.ask - quote.bid) / Decimal("2")
 
     available_depth = (
@@ -86,9 +106,14 @@ def append_market_fill_acks(
         impact_cap = max_impact_half_spreads * half_spread
         impact = min(raw_impact, impact_cap)
         if request.side == Side.BUY:
-            impact_price = fill_price + impact
+            raw_impact_px = mid + impact
         else:
-            impact_price = max(fill_price - impact, Decimal("0.01"))
+            raw_impact_px = max(mid - impact, Decimal("0.01"))
+        impact_price = _clamp_fill_price_to_limit(
+            request.side,
+            raw_impact_px,
+            limit_px,
+        )
 
         excess_costs = cost_model.compute(
             symbol=request.symbol,
