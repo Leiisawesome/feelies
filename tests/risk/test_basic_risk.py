@@ -442,3 +442,57 @@ class TestSizedIntentDroppedLegAlert:
             store,
         )
         assert len(orders) == 1
+
+
+class TestPortfolioOrderG12Disclosure:
+    """Audit R3: PORTFOLIO orders must carry the per-symbol disclosed cost.
+
+    Without the stamp, the post-fill cost-vs-disclosure stress alert
+    in the orchestrator (only fires when ``g12_disclosed_cost_total_bps
+    > 0``) is silently disabled for every PORTFOLIO leg — and PORTFOLIO
+    is the only production-reachable order path post-D.2.
+    """
+
+    def test_portfolio_order_carries_disclosed_cost_per_symbol(
+        self, config: RiskConfig, store: MemoryPositionStore
+    ) -> None:
+        engine = BasicRiskEngine(config)
+        store.update("AAPL", 0, Decimal("100"))
+        store.update_mark("AAPL", Decimal("100"))
+        store.update("MSFT", 0, Decimal("200"))
+        store.update_mark("MSFT", Decimal("200"))
+
+        intent = SizedPositionIntent(
+            timestamp_ns=1_000_000_000,
+            correlation_id="corr-1",
+            sequence=1,
+            strategy_id="portfolio_alpha",
+            target_positions={
+                "AAPL": TargetPosition(symbol="AAPL", target_usd=5_000.0),
+                "MSFT": TargetPosition(symbol="MSFT", target_usd=8_000.0),
+            },
+            disclosed_cost_total_bps_by_symbol={
+                "AAPL": 3.5,
+                "MSFT": 4.25,
+            },
+        )
+        orders = engine.check_sized_intent(intent, store)
+
+        by_symbol = {o.symbol: o for o in orders}
+        assert by_symbol["AAPL"].g12_disclosed_cost_total_bps == 3.5
+        assert by_symbol["MSFT"].g12_disclosed_cost_total_bps == 4.25
+
+    def test_missing_per_symbol_disclosure_defaults_to_zero(
+        self, config: RiskConfig, store: MemoryPositionStore
+    ) -> None:
+        """Backwards-compat: empty map → 0.0, alert remains gated off."""
+        engine = BasicRiskEngine(config)
+        store.update("AAPL", 0, Decimal("100"))
+        store.update_mark("AAPL", Decimal("100"))
+
+        orders = engine.check_sized_intent(
+            _make_sized_intent(targets={"AAPL": 5_000.0}),
+            store,
+        )
+        assert len(orders) == 1
+        assert orders[0].g12_disclosed_cost_total_bps == 0.0

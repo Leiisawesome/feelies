@@ -280,6 +280,9 @@ class BasicRiskEngine:
                 f"{intent.correlation_id}:{intent.sequence}:{symbol}".encode()
             ).hexdigest()[:16]
 
+            disclosed_cost = intent.disclosed_cost_total_bps_by_symbol.get(
+                symbol, 0.0,
+            )
             order = OrderRequest(
                 timestamp_ns=intent.timestamp_ns,
                 correlation_id=intent.correlation_id,
@@ -292,6 +295,7 @@ class BasicRiskEngine:
                 quantity=quantity,
                 strategy_id=intent.strategy_id,
                 reason="PORTFOLIO",
+                g12_disclosed_cost_total_bps=disclosed_cost,
             )
 
             verdict = self.check_order(order, positions)
@@ -316,6 +320,7 @@ class BasicRiskEngine:
                         quantity=scaled_qty,
                         strategy_id=intent.strategy_id,
                         reason="PORTFOLIO",
+                        g12_disclosed_cost_total_bps=disclosed_cost,
                     )
 
             orders.append(order)
