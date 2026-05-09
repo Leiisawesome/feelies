@@ -81,6 +81,9 @@ class _CountingReplayLog:
     def append_batch(self, events: Sequence[Event]) -> None:
         raise NotImplementedError
 
+    def replace_events(self, _events: Sequence[Event]) -> None:
+        raise NotImplementedError
+
     def replay(
         self,
         start_sequence: int = 0,

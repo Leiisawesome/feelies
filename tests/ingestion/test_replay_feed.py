@@ -52,6 +52,9 @@ class _UnsortedEventLog:
     def append_batch(self, events: Sequence[Event]) -> None:
         self._events.extend(events)
 
+    def replace_events(self, events: Sequence[Event]) -> None:
+        self._events = list(events)
+
     def replay(
         self, start_sequence: int = 0, end_sequence: int | None = None,
     ) -> Iterator[Event]:
