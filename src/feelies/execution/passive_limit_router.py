@@ -286,6 +286,22 @@ class PassiveLimitOrderRouter:
                     f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
                 )
                 continue
+            # Marketable LIMIT orders route here via ``_post_passive``; during a
+            # positive-latency window the BBO may move so mid exceeds limit_price.
+            if req.limit_price is not None:
+                fill_mid = (quote.bid + quote.ask) / Decimal("2")
+                if (
+                    req.side == Side.BUY and fill_mid > req.limit_price
+                ) or (
+                    req.side == Side.SELL and fill_mid < req.limit_price
+                ):
+                    self._reject(
+                        req,
+                        f"deferred fill mid {fill_mid} violates "
+                        f"{req.side.name} limit {req.limit_price} "
+                        f"(BBO moved adversely during latency window)",
+                    )
+                    continue
             fill_ts = max(dm.ack_timestamp_ns, quote.exchange_timestamp_ns)
             self._fill_aggressive_immediate(req, quote, fill_ts=fill_ts)
         self._deferred_aggressive = remaining

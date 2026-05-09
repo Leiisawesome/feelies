@@ -867,6 +867,24 @@ class TestLatency:
         assert len(acks2) == 1
         assert acks2[0].status == OrderAckStatus.FILLED
 
+    def test_deferred_marketable_limit_rejects_when_mid_exceeds_limit_after_latency(
+        self,
+    ) -> None:
+        """Marketable LIMIT → deferred aggressive must not fill beyond limit_price."""
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(clock, latency_ns=1000)
+
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=1000))
+        router.submit(_limit_buy("AAPL", limit_price="150.02"))
+        assert [a.status for a in router.poll_acks()] == [
+            OrderAckStatus.ACKNOWLEDGED,
+        ]
+
+        router.on_quote(_quote("AAPL", "151.00", "151.02", ts=2000))
+        rej = router.poll_acks()[0]
+        assert rej.status == OrderAckStatus.REJECTED
+        assert "limit" in rej.reason.lower()
+
     def test_deferred_aggressive_rejects_after_max_ticks_without_eligible_exchange_time(
         self,
     ) -> None:
