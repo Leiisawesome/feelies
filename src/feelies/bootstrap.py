@@ -122,6 +122,7 @@ from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
+from feelies.risk.engine import RiskEngine
 from feelies.risk.hazard_exit import HazardExitController, HazardPolicy
 from feelies.risk.position_sizer import BudgetBasedSizer
 from feelies.services.regime_engine import RegimeEngine, get_regime_engine
@@ -358,12 +359,22 @@ def build_platform(
     hazard_seq, regime_hazard_detector = _create_hazard_detector(registry)
 
     # ── Multi-alpha execution components ──
+    # Audit R2: when enforce_per_alpha_risk_budget is True we wrap the
+    # risk engine so each alpha's risk_budget block is enforced in
+    # addition to the platform-wide caps.  Default off preserves
+    # bit-identical replay against existing baselines (Inv-A); operators
+    # opt in via platform.yaml: enforce_per_alpha_risk_budget: true.
     risk_wrapper = AlphaBudgetRiskWrapper(
         inner=risk_engine,
         registry=registry,
         strategy_positions=strategy_positions,
         platform_config=risk_config,
         account_equity=_decimal(config.account_equity),
+    )
+    effective_risk_engine: RiskEngine = (
+        risk_wrapper
+        if config.enforce_per_alpha_risk_budget
+        else risk_engine
     )
     fill_ledger = FillAttributionLedger()
     # Workstream D.2 PR-2b-ii: ``MultiAlphaEvaluator`` was deleted along
@@ -377,7 +388,7 @@ def build_platform(
         clock=clock,
         bus=bus,
         backend=backend,
-        risk_engine=risk_engine,
+        risk_engine=effective_risk_engine,
         position_store=position_store,
         event_log=event_log,
         metric_collector=metric_collector,

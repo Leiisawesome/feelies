@@ -240,6 +240,17 @@ class PlatformConfig:
     composition_max_universe_size: int = 50
     enforce_layer_gates: bool = True
 
+    # ── Audit R2: per-alpha risk-budget enforcement ───────────────
+    # When True, the platform wraps the BasicRiskEngine in
+    # AlphaBudgetRiskWrapper at boot so each alpha's
+    # ``risk_budget`` block (max_position_per_symbol,
+    # max_gross_exposure_pct, max_drawdown_pct,
+    # capital_allocation_pct) is enforced at runtime in addition to
+    # the platform-wide caps.  Default is False to preserve
+    # bit-identical replay against existing baselines (Inv-A); flip
+    # to True to take per-alpha caps live.
+    enforce_per_alpha_risk_budget: bool = False
+
     # ── Workstream F-1 (promotion evidence ledger) ────────────────
     #
     # Optional path to an append-only JSONL ledger that records every
@@ -551,6 +562,9 @@ class PlatformConfig:
             "composition_lambda_risk": self.composition_lambda_risk,
             "composition_max_universe_size": self.composition_max_universe_size,
             "enforce_layer_gates": self.enforce_layer_gates,
+            "enforce_per_alpha_risk_budget": (
+                self.enforce_per_alpha_risk_budget
+            ),
             # Workstream F-1: ledger path is folded as a basename only
             # (same Path-normalisation policy as event_log_path /
             # cache_dir) so absolute-fs paths don't leak into the
@@ -779,6 +793,9 @@ class PlatformConfig:
             ),
             enforce_layer_gates=bool(
                 data.get("enforce_layer_gates", True)
+            ),
+            enforce_per_alpha_risk_budget=bool(
+                data.get("enforce_per_alpha_risk_budget", False)
             ),
             promotion_ledger_path=(
                 Path(data["promotion_ledger_path"])
