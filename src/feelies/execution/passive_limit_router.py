@@ -248,7 +248,7 @@ class PassiveLimitOrderRouter:
                     f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
                 )
                 return
-            self._fill_aggressive_immediate(request, quote, fill_ts=ack_ts)
+            self._execute_market_fill(request, quote, fill_ts=ack_ts)
             return
 
         # Deferred fills: depth is checked in ``_flush_deferred_aggressive`` on
@@ -333,17 +333,17 @@ class PassiveLimitOrderRouter:
                     )
                     continue
             fill_ts = max(dm.ack_timestamp_ns, quote.exchange_timestamp_ns)
-            self._fill_aggressive_immediate(req, quote, fill_ts=fill_ts)
+            self._execute_market_fill(req, quote, fill_ts=fill_ts)
         self._deferred_aggressive = remaining
 
-    def _fill_aggressive_immediate(
+    def _execute_market_fill(
         self,
         request: OrderRequest,
         quote: NBBOQuote,
         *,
         fill_ts: int | None = None,
     ) -> None:
-        """Aggressive fill at ``quote`` — shared D14 model with ``BacktestOrderRouter``."""
+        """D14 market fill via ``append_market_fill_acks`` (Inv-9 parity with ``BacktestOrderRouter``)."""
         if fill_ts is None:
             fill_ts = self._clock.now_ns() + self._latency_ns
         append_market_fill_acks(
