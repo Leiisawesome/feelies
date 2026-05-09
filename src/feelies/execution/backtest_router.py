@@ -98,10 +98,19 @@ class _DeferredMarketFill:
     router applies to deferred aggressive fills.  Without this cap, a halt
     or thinly-traded symbol could leave a MARKET order pending indefinitely
     (Inv 11: fail-safe default).
+
+    ``ack_timestamp_ns`` is the ACKNOWLEDGED ack timestamp emitted at
+    submit (``clock.now_ns() + latency_ns`` at submit time).  It is stored
+    so the deferred FILLED timestamp can be ``max(ack, fill_quote_ts)``
+    instead of ``fill_quote_ts + latency_ns``: the eligibility gate already
+    waited ``latency_ns`` on the exchange clock — adding latency again when
+    ``ReplayFeed`` keeps ``clock.now_ns()`` aligned with
+    ``exchange_timestamp_ns`` would double-count one-way delay (Inv 9).
     """
 
     request: OrderRequest
     fill_deadline_exchange_ns: int
+    ack_timestamp_ns: int
     ticks_for_symbol: int = 0
 
 
@@ -227,6 +236,7 @@ class BacktestOrderRouter:
                     fill_deadline_exchange_ns=(
                         quote.exchange_timestamp_ns + self._latency_ns
                     ),
+                    ack_timestamp_ns=ack_ts,
                     ticks_for_symbol=0,
                 ),
             )
@@ -239,12 +249,10 @@ class BacktestOrderRouter:
         if not self._deferred_markets:
             return
         remaining: list[_DeferredMarketFill] = []
-        # Use the same time source as the ACK in ``submit`` (clock-derived) so
-        # consumers that compare lifecycle acks by timestamp never observe a
-        # FILLED ack with an earlier timestamp than its preceding ACKNOWLEDGED
-        # — under the orchestrator the clock tracks exchange time so this is
-        # numerically equivalent to the quote's exchange timestamp + latency.
-        fill_ts = self._clock.now_ns() + self._latency_ns
+        # FILLED must be >= the stored ACKNOWLEDGED timestamp.  When the
+        # injected clock tracks exchange time (``ReplayFeed``), using
+        # ``clock.now_ns() + latency_ns`` here would add a second copy of
+        # one-way latency on top of the exchange-time eligibility gate below.
         for dm in self._deferred_markets:
             if dm.request.symbol != quote.symbol:
                 remaining.append(dm)
@@ -276,6 +284,7 @@ class BacktestOrderRouter:
                     f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
                 )
                 continue
+            fill_ts = max(dm.ack_timestamp_ns, quote.exchange_timestamp_ns)
             self._execute_market_fill(dm.request, quote, fill_ts)
         self._deferred_markets = remaining
 

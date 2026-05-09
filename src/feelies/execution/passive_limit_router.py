@@ -39,7 +39,7 @@ Invariants preserved:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import ROUND_HALF_UP, Decimal
 
 from feelies.core.clock import Clock
@@ -71,6 +71,24 @@ class _PendingOrder:
     ticks_at_level: int = 0
     total_ticks: int = 0
     shares_traded_at_level: int = 0
+
+
+@dataclass(frozen=True)
+class _DeferredAggressiveFill:
+    """MARKET order deferred until exchange time reaches ``deadline_ns``.
+
+    ``ack_timestamp_ns`` matches the ACKNOWLEDGED ack emitted at submit.
+    The FILLED timestamp uses ``max(ack_timestamp_ns,
+    fill_quote.exchange_timestamp_ns)`` so we do not add ``latency_ns``
+    again when the injected clock tracks exchange time (``ReplayFeed``) —
+    the eligibility deadline already advanced exchange time by one latency
+    slice (parity with :class:`~feelies.execution.backtest_router.BacktestOrderRouter`).
+    """
+
+    request: OrderRequest
+    fill_deadline_exchange_ns: int
+    ack_timestamp_ns: int
+    ticks_for_symbol: int = 0
 
 
 class PassiveLimitOrderRouter:
@@ -116,14 +134,8 @@ class PassiveLimitOrderRouter:
         # Full set of order_ids ever submitted — used for idempotent reject.
         self._submitted_order_ids: set[str] = set()
         self._ack_seq = SequenceGenerator()
-        # Each deferred-aggressive entry tracks (request, deadline_ns,
-        # ticks_for_symbol).  ``ticks_for_symbol`` is incremented every
-        # time a matching-symbol quote arrives so the deferred order can
-        # be cancelled after ``max_resting_ticks`` quotes — mirroring the
-        # safety net resting LIMIT orders already enjoy.  Without this
-        # cap, a halt or thinly-traded symbol could leave a MARKET order
-        # pending indefinitely (Inv 11: fail-safe default).
-        self._deferred_aggressive: list[tuple[OrderRequest, int, int]] = []
+        # Deferred MARKET orders: see ``_DeferredAggressiveFill``.
+        self._deferred_aggressive: list[_DeferredAggressiveFill] = []
 
     # ── Public interface (OrderRouter protocol) ──────────────────
 
@@ -223,25 +235,26 @@ class PassiveLimitOrderRouter:
         # Deferred fills: depth is checked in ``_flush_deferred_aggressive`` on
         # the first latency-eligible quote (not the submission quote).
         self._deferred_aggressive.append(
-            (request, quote.exchange_timestamp_ns + self._latency_ns, 0),
+            _DeferredAggressiveFill(
+                request=request,
+                fill_deadline_exchange_ns=(
+                    quote.exchange_timestamp_ns + self._latency_ns
+                ),
+                ack_timestamp_ns=ack_ts,
+            ),
         )
 
     def _flush_deferred_aggressive(self, quote: NBBOQuote) -> None:
         if not self._deferred_aggressive:
             return
-        remaining: list[tuple[OrderRequest, int, int]] = []
-        # Use the same time source as the ACK in ``submit`` (clock-derived) so
-        # consumers that compare lifecycle acks by timestamp never observe a
-        # FILLED ack with an earlier timestamp than its preceding ACKNOWLEDGED
-        # — under the orchestrator the clock tracks exchange time so this is
-        # numerically equivalent to the quote's exchange timestamp + latency.
-        fill_ts = self._clock.now_ns() + self._latency_ns
-        for req, deadline_ns, ticks_for_symbol in self._deferred_aggressive:
+        remaining: list[_DeferredAggressiveFill] = []
+        for dm in self._deferred_aggressive:
+            req = dm.request
             if req.symbol != quote.symbol:
-                remaining.append((req, deadline_ns, ticks_for_symbol))
+                remaining.append(dm)
                 continue
-            ticks_for_symbol += 1
-            if quote.exchange_timestamp_ns < deadline_ns:
+            ticks_for_symbol = dm.ticks_for_symbol + 1
+            if quote.exchange_timestamp_ns < dm.fill_deadline_exchange_ns:
                 if ticks_for_symbol >= self._max_resting_ticks:
                     self._reject(
                         req,
@@ -249,7 +262,9 @@ class PassiveLimitOrderRouter:
                         f"{ticks_for_symbol} ticks (no latency-eligible quote)",
                     )
                     continue
-                remaining.append((req, deadline_ns, ticks_for_symbol))
+                remaining.append(
+                    replace(dm, ticks_for_symbol=ticks_for_symbol),
+                )
                 continue
             if quote.bid >= quote.ask:
                 self._reject(
@@ -267,6 +282,7 @@ class PassiveLimitOrderRouter:
                     f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
                 )
                 continue
+            fill_ts = max(dm.ack_timestamp_ns, quote.exchange_timestamp_ns)
             self._fill_aggressive_immediate(req, quote, fill_ts=fill_ts)
         self._deferred_aggressive = remaining
 

@@ -135,9 +135,27 @@ class TestBacktestOrderRouter:
         acks2 = router.poll_acks()
         assert len(acks2) == 1
         assert acks2[0].status == OrderAckStatus.FILLED
-        # Fill timestamp uses the same clock-based source as the ACK above
-        # (clock=5000 + latency=1000) so lifecycle acks are non-decreasing.
+        # Deferred FILLED uses max(ack_ts, fill_quote.exchange_timestamp_ns).
+        # Here the injected clock stays at 5000 while exchange timestamps run
+        # 1000 → 2000, so ack_ts=6000 dominates (tests ACK ≤ FILLED ordering).
         assert acks2[0].timestamp_ns == 6000
+
+    def test_deferred_market_fill_ts_no_double_latency_when_clock_tracks_exchange(
+        self,
+    ) -> None:
+        """ReplayFeed advances clock to each quote — FILLED must not add latency twice."""
+        clock = SimulatedClock(start_ns=1000)
+        router = BacktestOrderRouter(clock, latency_ns=1000)
+
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=1000))
+        router.submit(_order("AAPL"))
+        assert router.poll_acks()[0].timestamp_ns == 2000
+
+        clock.set_time(2500)
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=2500))
+        fill = router.poll_acks()[0]
+        assert fill.status == OrderAckStatus.FILLED
+        assert fill.timestamp_ns == 2500
 
     def test_deferred_market_rejects_after_max_ticks_without_eligible_exchange_time(
         self,
