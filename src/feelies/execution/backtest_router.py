@@ -260,10 +260,17 @@ class BacktestOrderRouter:
             ticks_for_symbol = dm.ticks_for_symbol + 1
             if quote.exchange_timestamp_ns < dm.fill_deadline_exchange_ns:
                 if ticks_for_symbol >= self._max_resting_ticks:
+                    # Preserve monotonic ordering of the order's ack stream:
+                    # the timeout fires precisely because exchange time has
+                    # not yet reached the latency deadline, so ``clock.now_ns()``
+                    # may be < the stored ACKNOWLEDGED timestamp.
                     self._reject(
                         dm.request,
                         f"deferred market timeout after "
                         f"{ticks_for_symbol} ticks (no latency-eligible quote)",
+                        timestamp_ns=max(
+                            self._clock.now_ns(), dm.ack_timestamp_ns
+                        ),
                     )
                     continue
                 remaining.append(replace(dm, ticks_for_symbol=ticks_for_symbol))
@@ -391,9 +398,16 @@ class BacktestOrderRouter:
         self._pending_acks.clear()
         return acks
 
-    def _reject(self, request: OrderRequest, reason: str) -> None:
+    def _reject(
+        self,
+        request: OrderRequest,
+        reason: str,
+        *,
+        timestamp_ns: int | None = None,
+    ) -> None:
+        ts = self._clock.now_ns() if timestamp_ns is None else timestamp_ns
         self._pending_acks.append(OrderAck(
-            timestamp_ns=self._clock.now_ns(),
+            timestamp_ns=ts,
             correlation_id=request.correlation_id,
             sequence=self._ack_seq.next(),
             order_id=request.order_id,

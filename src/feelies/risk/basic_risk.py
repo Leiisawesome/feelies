@@ -63,6 +63,17 @@ class BasicRiskEngine:
     Satisfies the ``RiskEngine`` protocol.
     """
 
+    # Single source of truth for the regime state names that
+    # :meth:`__init__` knows how to map onto a ``RiskConfig`` scale field.
+    # ``bootstrap._validate_regime_engine_risk_scale_alignment`` reads this
+    # frozenset so adding/renaming a regime here propagates without a
+    # parallel constant drifting out of sync.
+    REGIME_SCALE_STATE_NAMES: frozenset[str] = frozenset({
+        "vol_breakout",
+        "compression_clustering",
+        "normal",
+    })
+
     def __init__(
         self,
         config: RiskConfig,
@@ -80,6 +91,12 @@ class BasicRiskEngine:
             "compression_clustering": config.regime_compression_scale,
             "normal": config.regime_normal_scale,
         }
+        assert (
+            self._regime_scale_map.keys()
+            == BasicRiskEngine.REGIME_SCALE_STATE_NAMES
+        ), (
+            "REGIME_SCALE_STATE_NAMES drifted from _regime_scale_map keys"
+        )
         self._regime_scale_default = min(self._regime_scale_map.values())
         # Optional diagnostic emission for the per-leg PORTFOLIO veto.
         # When ``bus`` is supplied an Alert is published listing the

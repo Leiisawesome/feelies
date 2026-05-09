@@ -468,21 +468,18 @@ def _build_platform_gate_thresholds(
     return apply_gate_thresholds_overrides(GateThresholds(), overrides)
 
 
-_REGIME_RISK_SCALE_KEYS = frozenset({
-    "vol_breakout",
-    "compression_clustering",
-    "normal",
-})
-
-
 def _validate_regime_engine_risk_scale_alignment(engine: RegimeEngine) -> None:
     """Fail boot when regime posteriors use names BasicRiskEngine cannot scale."""
-    unknown = frozenset(engine.state_names) - _REGIME_RISK_SCALE_KEYS
+    # Read the single source of truth from BasicRiskEngine so the validation
+    # cannot drift if the risk engine adds, renames, or removes a regime
+    # scale key.
+    valid = BasicRiskEngine.REGIME_SCALE_STATE_NAMES
+    unknown = frozenset(engine.state_names) - valid
     if unknown:
         raise ConfigurationError(
             "RegimeEngine state_names contain entries not mapped by "
             "BasicRiskEngine regime scaling: "
-            f"{sorted(unknown)}. Expected subset of {_REGIME_RISK_SCALE_KEYS}. "
+            f"{sorted(unknown)}. Expected subset of {valid}. "
             "Extend RiskConfig / regime_vol_*_scale or disable "
             "enforce_regime_state_scale_alignment."
         )
