@@ -271,6 +271,7 @@ class AlphaBudgetRiskWrapper:
             return ()
 
         orders: list[OrderRequest] = []
+        dropped: list[tuple[str, str]] = []
         for symbol in sorted(intent.target_positions):
             tgt = intent.target_positions[symbol]
             current = positions.get(symbol)
@@ -309,6 +310,7 @@ class AlphaBudgetRiskWrapper:
 
             verdict = self.check_order(order, positions)
             if verdict.action in (RiskAction.REJECT, RiskAction.FORCE_FLATTEN):
+                dropped.append((symbol, verdict.reason))
                 continue
             if verdict.action == RiskAction.SCALE_DOWN:
                 scaled_qty = max(1, int(quantity * verdict.scaling_factor))
@@ -328,6 +330,12 @@ class AlphaBudgetRiskWrapper:
                         g12_disclosed_cost_total_bps=disclosed_cost,
                     )
             orders.append(order)
+
+        if dropped:
+            emit_alert = getattr(self._inner, "_emit_dropped_legs_alert", None)
+            if callable(emit_alert):
+                emit_alert(intent, dropped)
+
         return tuple(orders)
 
     @staticmethod

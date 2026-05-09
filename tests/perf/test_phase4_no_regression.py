@@ -177,6 +177,7 @@ _HARNESS_TEMPLATE = textwrap.dedent("""\
         account_equity=1_000_000.0,
         factor_loadings_dir=factor_loadings_dir,
         sector_map_path=sector_map_path,
+        enforce_per_alpha_risk_budget=False,
     )
 
     log = InMemoryEventLog()

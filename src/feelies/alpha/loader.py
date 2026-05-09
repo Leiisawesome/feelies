@@ -1328,6 +1328,15 @@ class AlphaLoader:
     ) -> dict[str, Any]:
         params: dict[str, Any] = {}
         errors: list[str] = []
+        override_keys = set(overrides)
+        declared = {p.name for p in param_defs}
+        unknown = sorted(override_keys - declared)
+        if unknown:
+            raise AlphaLoadError(
+                f"{source}: unknown parameter_overrides key(s): "
+                f"{unknown} — refusing silent drops"
+            )
+
         for pdef in param_defs:
             value = overrides.get(pdef.name, pdef.default)
             errs = pdef.validate_value(value)

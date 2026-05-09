@@ -33,6 +33,7 @@ Key architectural invariants:
 from __future__ import annotations
 
 import hashlib
+import itertools
 import logging
 import time
 from collections.abc import Callable
@@ -459,7 +460,8 @@ class Orchestrator:
         self._trail_pct: float = 0.5
         self._peak_pnl_per_share: dict[str, float] = {}
         self._min_order_shares: int = 1
-        self._signal_min_edge_cost_ratio: float = 0.0  # 0 = gate disabled
+        self._signal_min_edge_cost_ratio: float = 1.5  # 0 = gate disabled
+        self._regime_calibration_max_quotes: int | None = None
 
         self._config: Configuration | None = None
 
@@ -740,6 +742,10 @@ class Orchestrator:
                 self._min_order_shares = config.platform_min_order_shares
             if hasattr(config, "signal_min_edge_cost_ratio"):
                 self._signal_min_edge_cost_ratio = config.signal_min_edge_cost_ratio
+            if hasattr(config, "regime_calibration_max_quotes"):
+                self._regime_calibration_max_quotes = (
+                    config.regime_calibration_max_quotes
+                )
             self._macro.transition(
                 MacroState.DATA_SYNC,
                 trigger="CONFIG_VALIDATED",
@@ -771,6 +777,7 @@ class Orchestrator:
         """
         self._macro.assert_state(MacroState.READY)
         self._micro.reset(trigger="session_start:backtest")
+        self._consumed_by_portfolio_ids = None
         self._reset_regime_session_state()
         self._macro.transition(MacroState.BACKTEST_MODE, trigger="CMD_BACKTEST")
 
@@ -1740,13 +1747,45 @@ class Orchestrator:
             correlation_id=correlation_id,
         )
 
-    def _calibrate_regime_engine(self) -> None:
-        """Calibrate regime engine emission parameters from event log data.
+    def _emit_signal_edge_gate_suppression_alert(
+        self,
+        signal: Signal,
+        symbol: str,
+        correlation_id: str,
+        *,
+        detail: str,
+    ) -> None:
+        """Surface B4 edge-vs-cost suppressions (Inv-13 provenance)."""
+        self._bus.publish(Alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            sequence=self._seq.next(),
+            severity=AlertSeverity.WARNING,
+            layer="kernel",
+            alert_name="signal_edge_below_min_edge_cost_ratio_gate",
+            message=(
+                f"Order suppressed: signal.edge_estimate_bps below "
+                f"{self._signal_min_edge_cost_ratio}× round-trip cost "
+                f"({detail}; strategy_id={signal.strategy_id!r}, "
+                f"symbol={symbol!r})."
+            ),
+            context={
+                "detail": detail,
+                "strategy_id": signal.strategy_id,
+                "symbol": symbol,
+                "edge_estimate_bps": signal.edge_estimate_bps,
+                "signal_min_edge_cost_ratio": self._signal_min_edge_cost_ratio,
+            },
+        ))
 
-        Pre-scans quotes in the event log and calls ``calibrate()`` if
-        the engine supports it and hasn't already been calibrated (e.g.,
-        via restored checkpoint).  Backtest mode has the full dataset
-        available; live/paper would use previous-day data.
+    def _calibrate_regime_engine(self) -> None:
+        """Calibrate regime emission parameters from a *prefix* of the log.
+
+        Full-event-log calibration leaks future spread statistics into
+        boot-time parameters.  When ``regime_calibration_max_quotes`` is
+        ``None`` (platform default), calibration from the trading log is
+        skipped entirely — use explicit positive integers for a causal
+        warmup prefix only.
         """
         if self._regime_engine is None:
             return
@@ -1756,27 +1795,82 @@ class Orchestrator:
         if getattr(self._regime_engine, "calibrated", False):
             return
 
-        quotes = [
+        max_q = self._regime_calibration_max_quotes
+        if max_q is None:
+            logger.info(
+                "Regime calibration skipped — regime_calibration_max_quotes "
+                "is unset (no lookahead calibration from the full event log)"
+            )
+            return
+
+        quote_stream = (
             event for event in self._event_log.replay()
             if isinstance(event, NBBOQuote)
-        ]
+        )
+        quotes = list(itertools.islice(quote_stream, max_q))
         if not quotes:
             logger.info(
                 "Regime calibration skipped — no quotes in event log"
             )
             return
 
+        prefix_n = len(quotes)
+        # Exact total only when the prefix exhausts the quote stream; otherwise
+        # counting the suffix is O(full log) at boot — report a lower bound.
+        exact_total = prefix_n < max_q
+
         ok = calibrate_fn(quotes)
         if ok:
-            logger.info(
-                "Regime engine calibrated from %d quotes", len(quotes),
-            )
+            if exact_total:
+                logger.info(
+                    "Regime engine calibrated from %d quotes "
+                    "(prefix cap=%d, total_log=%d)",
+                    prefix_n,
+                    max_q,
+                    prefix_n,
+                )
+            else:
+                logger.info(
+                    "Regime engine calibrated from %d quotes "
+                    "(prefix cap=%d; NBBO quote count ≥ %d — suffix not scanned)",
+                    prefix_n,
+                    max_q,
+                    max_q,
+                )
         else:
             logger.warning(
-                "Regime calibration failed (insufficient data: %d quotes) "
-                "— using default emission parameters",
-                len(quotes),
+                "Regime calibration failed (insufficient data in prefix: "
+                "%d quotes, cap=%d) — using default emission parameters",
+                prefix_n,
+                max_q,
             )
+            self._bus.publish(Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id="regime_calibration",
+                sequence=self._seq.next(),
+                severity=AlertSeverity.CRITICAL,
+                layer="kernel",
+                alert_name="regime_calibration_failed",
+                message=(
+                    f"Regime engine calibrate() returned False "
+                    f"(prefix_quotes={prefix_n}, cap={max_q}). "
+                    "Posteriors may discriminate poorly until operators "
+                    "raise regime_calibration_max_quotes or supply cleaner data."
+                ),
+                context=(
+                    {
+                        "prefix_quote_count": prefix_n,
+                        "cap": max_q,
+                        "total_quotes_in_log": prefix_n,
+                    }
+                    if exact_total
+                    else {
+                        "prefix_quote_count": prefix_n,
+                        "cap": max_q,
+                        "total_quotes_in_log_at_least": max_q,
+                    }
+                ),
+            ))
 
     def _update_regime(self, quote: NBBOQuote, correlation_id: str) -> None:
         """Update platform-level RegimeEngine and publish RegimeState event.
@@ -2232,6 +2326,12 @@ class Orchestrator:
                     self._signal_min_edge_cost_ratio * round_trip_cost_bps
                 ):
                     entry_passes_edge_gate = False
+                    self._emit_signal_edge_gate_suppression_alert(
+                        intent.signal,
+                        intent.symbol,
+                        cid,
+                        detail="reverse_entry_leg_suppressed",
+                    )
 
             if entry_passes_edge_gate:
                 seq_entry = self._seq.next()
@@ -2442,6 +2542,12 @@ class Orchestrator:
             if intent.signal.edge_estimate_bps < (
                 self._signal_min_edge_cost_ratio * round_trip_cost_bps
             ):
+                self._emit_signal_edge_gate_suppression_alert(
+                    intent.signal,
+                    intent.symbol,
+                    correlation_id,
+                    detail="standalone_intent_suppressed",
+                )
                 return None, "signal_edge_below_min_edge_cost_ratio_gate"
 
         order_type = OrderType.MARKET
@@ -2715,7 +2821,13 @@ class Orchestrator:
         sm = self._active_orders[ack.order_id][0]
 
         if ack.status == OrderAckStatus.REJECTED:
-            sm.transition(OrderState.REJECTED, trigger=f"broker_reject:{ack.reason}")
+            if sm.can_transition(OrderState.REJECTED):
+                sm.transition(
+                    OrderState.REJECTED,
+                    trigger=f"broker_reject:{ack.reason}",
+                )
+            else:
+                self._emit_ack_drop_alert(ack, sm)
             return
 
         if ack.status == OrderAckStatus.ACKNOWLEDGED:
@@ -3316,6 +3428,31 @@ class Orchestrator:
         if event.order_id in self._hazard_submitted_order_ids:
             return
         self._hazard_submitted_order_ids.add(event.order_id)
+        hv = self._risk_engine.check_order(event, self._positions)
+        # Do not broadcast FORCE_FLATTEN: downstream subscribers may treat it as
+        # a global lockdown trigger while this handler still submits the exit
+        # (Inv-11 fail-safe).  REJECT / ALLOW are fine for audit parity.
+        if hv.action != RiskAction.FORCE_FLATTEN:
+            self._bus.publish(hv)
+        if hv.action == RiskAction.REJECT:
+            self._bus.publish(Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=event.correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="hazard_exit_defensive_check_order_reject",
+                message=(
+                    "Defensive check_order returned REJECT on a hazard exit "
+                    f"(strategy_id={event.strategy_id!r}, symbol={event.symbol!r}, "
+                    f"reason={hv.reason!r}) — submitting anyway (Inv-11 exit "
+                    "fail-safe)."
+                ),
+                context={
+                    "order_id": event.order_id,
+                    "risk_reason": hv.reason,
+                },
+            ))
         self._track_order(event.order_id, event.side, event)
         self._transition_order(
             event.order_id, OrderState.SUBMITTED, event.reason,

@@ -193,7 +193,14 @@ class DiskEventCache:
         )
         return events
 
-    def save(self, symbol: str, date: str, events: Sequence[NBBOQuote | Trade]) -> None:
+    def save(
+        self,
+        symbol: str,
+        date: str,
+        events: Sequence[NBBOQuote | Trade],
+        *,
+        ingestion_health: str | None = None,
+    ) -> None:
         """Persist events to gzipped JSONL with atomic writes.
 
         Both the data file and manifest are written to temporary files
@@ -227,7 +234,7 @@ class DiskEventCache:
 
         checksum = f"sha256:{hashlib.sha256(compressed).hexdigest()}"
 
-        manifest = {
+        manifest: dict[str, Any] = {
             "symbol": symbol,
             "date": date,
             "event_count": len(events),
@@ -237,6 +244,8 @@ class DiskEventCache:
             "event_schema_hash": self._schema_hash,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
+        if ingestion_health is not None:
+            manifest["ingestion_health"] = ingestion_health
 
         manifest_tmp = manifest_path.with_suffix(".tmp")
         manifest_tmp.write_text(json.dumps(manifest, indent=2), encoding="utf-8")

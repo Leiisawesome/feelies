@@ -19,10 +19,9 @@ alpha_specs:
 
 parameter_overrides: {}
 
-# pofi_benign_midcap_v1 is the v0.2-baseline parity anchor (§20.12.3 #2)
-# and intentionally omits a ``trend_mechanism:`` block; opt out of strict
-# mode here so the alpha continues to load.  Production deployments
-# wiring a different schema-1.1 alpha may flip this back to ``true``.
+# Reference alpha ships a schema-1.1 ``trend_mechanism:`` block (G16).
+# This pin stays ``false`` so local smoke runs match historical v0.2-style
+# operator configs that pointed at the same id before strict-by-default.
 enforce_trend_mechanism: false
 
 regime_engine: hmm_3state_fractional
@@ -59,9 +58,13 @@ cost_stress_multiplier: 1.0
 cost_min_commission: 0.35
 cost_max_commission_pct: 1.0
 
-# Pinned explicitly (defaults are 0). signal_min_edge_cost_ratio: suppress when
-# edge < ratio × 2 × cost_bps. 0 = off (disclosure-only G12 in backtest); production ≥1.5 typical.
-signal_min_edge_cost_ratio: 0.0
+# Runtime B4 gate: suppress orders when edge < ratio × model RT cost.  Default 1.5
+# matches Inv-12; set 0 only for deliberate sub-cost research scenarios.
+signal_min_edge_cost_ratio: 1.5
+
+# Optional causal regime warmup: calibrate HMM emissions from the first N NBBO quotes
+# in replay order only (never the full session). Omit or null to skip boot calibration.
+regime_calibration_max_quotes: 100000
 
 # Short borrow annual bps; 0 = off (optimistic for SHORT alphas like benign).
 cost_htb_borrow_annual_bps: 0.0

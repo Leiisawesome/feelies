@@ -63,12 +63,13 @@ from feelies.core.events import (
     SizedPositionIntent,
     Trade,
 )
-from feelies.core.identifiers import SequenceGenerator, make_correlation_id
 from feelies.core.platform_config import OperatingMode, PlatformConfig
+from feelies.ingestion.data_integrity import DataHealth
 from feelies.ingestion.massive_ingestor import IngestResult
 from feelies.kernel.macro import MacroState
 from feelies.monitoring.in_memory import InMemoryMetricCollector
 from feelies.storage.disk_event_cache import DiskEventCache
+from feelies.storage.event_resequence import resequence_event_list
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 T = TypeVar("T", bound=Event)
@@ -784,22 +785,8 @@ def _iter_dates(start_date: str, end_date: str) -> list[str]:
 def _resequence(
     events: list[NBBOQuote | Trade],
 ) -> list[NBBOQuote | Trade]:
-    """Sort by exchange time and assign globally monotonic sequences.
-
-    Multi-symbol events may arrive concatenated (all AAPL then all MSFT).
-    Sorting by exchange_timestamp_ns ensures the SimulatedClock advances
-    correctly and all components see chronologically ordered ticks.
-    """
-    events.sort(key=lambda e: e.exchange_timestamp_ns)
-    seq = SequenceGenerator()
-    result: list[NBBOQuote | Trade] = []
-    for event in events:
-        new_seq = seq.next()
-        new_cid = make_correlation_id(
-            event.symbol, event.exchange_timestamp_ns, new_seq,
-        )
-        result.append(replace(event, sequence=new_seq, correlation_id=new_cid))
-    return result
+    """Sort by exchange time (deterministic tie-breakers) and re-sequence."""
+    return resequence_event_list(events)
 
 
 @dataclass(frozen=True)
@@ -890,7 +877,19 @@ def ingest_data(
             day_events: list[NBBOQuote | Trade] = list(day_log.replay())  # type: ignore[arg-type]
 
             if cache is not None:
-                cache.save(symbol, day, day_events)
+                sym_health = normalizer.all_health().get(symbol)
+                ing_health = (
+                    "HEALTHY"
+                    if sym_health == DataHealth.HEALTHY
+                    else (
+                        sym_health.name
+                        if sym_health is not None
+                        else "UNKNOWN"
+                    )
+                )
+                cache.save(
+                    symbol, day, day_events, ingestion_health=ing_health,
+                )
 
             all_events.extend(day_events)
             day_sources.append(DaySource(

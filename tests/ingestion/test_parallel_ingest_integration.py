@@ -13,7 +13,6 @@ import itertools
 import os
 import sys
 from collections.abc import Iterator
-from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -27,12 +26,13 @@ sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import NBBOQuote, Trade
-from feelies.core.identifiers import SequenceGenerator, make_correlation_id
+from feelies.core.identifiers import make_correlation_id
 from feelies.ingestion.massive_ingestor import (
     MassiveHistoricalIngestor,
     _download_raw,
 )
 from feelies.ingestion.massive_normalizer import MassiveNormalizer
+from feelies.storage.event_resequence import resequence_event_list as _resequence
 from feelies.storage.disk_event_cache import DiskEventCache
 from feelies.storage.memory_event_log import InMemoryEventLog
 
@@ -85,16 +85,6 @@ class _LimitedClient:
     def list_trades(self, *a: Any, **kw: Any) -> Iterator[Any]:
         kw["limit"] = min(int(kw.get("limit", self._max)), self._max)
         return itertools.islice(self._client.list_trades(*a, **kw), self._max)
-
-
-def _resequence(events: list[NBBOQuote | Trade]) -> list[NBBOQuote | Trade]:
-    seq = SequenceGenerator()
-    result: list[NBBOQuote | Trade] = []
-    for event in events:
-        new_seq = seq.next()
-        new_cid = make_correlation_id(event.symbol, event.exchange_timestamp_ns, new_seq)
-        result.append(replace(event, sequence=new_seq, correlation_id=new_cid))
-    return result
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────

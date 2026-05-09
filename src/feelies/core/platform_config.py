@@ -119,14 +119,23 @@ class PlatformConfig:
     # Orders are suppressed when signal.edge_estimate_bps < ratio × RT cost_bps,
     # where RT cost is the sum of model entry + exit legs (symmetric taker/maker
     # assumption per leg), including HTB on short-entry sells when configured.
-    # Set to 0 to disable the gate (no filtering).  Default 0.0 (gate
-    # disabled).  This is a *runtime* filter that complements — but does
-    # not replace — the load-time G12 / cost_arithmetic discipline on the
-    # alpha spec (Inv-12).  Operators should set ≥ 1.5 (matching G12) or
-    # stricter (e.g. 2.0) explicitly per deployment policy; the merge
-    # default leaves the gate off so research backtests don't silently
-    # suppress sub-cost edges that the alpha spec already discloses.
-    signal_min_edge_cost_ratio: float = 0.0
+    # Set to 0 to disable the gate (no filtering).  Default ``1.5``
+    # matches Inv-12 / G12 cost realism — operators may set ``0`` only
+    # for explicit research scenarios that intentionally admit sub-cost
+    # hypothetical fills.
+    signal_min_edge_cost_ratio: float = 1.5
+
+    # Regime engine boot-time calibration (lookahead avoidance).  ``None``
+    # skips feeding the trading event log into ``calibrate()`` entirely
+    # (cold emission defaults + per-run warning).  A positive integer uses
+    # only the first N NBBO quotes in replay sequence order as calibration
+    # input — causal prefix, never the full session.
+    regime_calibration_max_quotes: int | None = None
+
+    # When True, bootstrap refuses to start if ``RegimeEngine.state_names``
+    # contains any name missing from the risk engine's regime scale map
+    # (fail-closed vs silent ``min(scale)`` fallback for unknown states).
+    enforce_regime_state_scale_alignment: bool = False
 
     # 2d: market-impact factor for walk-the-book slippage on large orders.
     # Excess beyond L1 available depth is priced at
@@ -247,9 +256,9 @@ class PlatformConfig:
     # max_gross_exposure_pct, max_drawdown_pct,
     # capital_allocation_pct) is enforced at runtime in addition to
     # the platform-wide caps.  Default is False to preserve
-    # bit-identical replay against existing baselines (Inv-A); flip
-    # to True to take per-alpha caps live.
-    enforce_per_alpha_risk_budget: bool = False
+    # Default True — per-alpha YAML ``risk_budget`` blocks are enforced
+    # at runtime in addition to platform-wide caps.
+    enforce_per_alpha_risk_budget: bool = True
 
     # ── Workstream F-1 (promotion evidence ledger) ────────────────
     #
@@ -358,6 +367,12 @@ class PlatformConfig:
             raise ConfigurationError("market_id must be non-empty")
         if not self.session_kind:
             raise ConfigurationError("session_kind must be non-empty")
+
+        if self.regime_calibration_max_quotes is not None:
+            if self.regime_calibration_max_quotes < 1:
+                raise ConfigurationError(
+                    "regime_calibration_max_quotes must be >= 1 when set"
+                )
 
         # Sensor specs: detect duplicate (sensor_id, sensor_version)
         # pairs early so registration-time errors at boot are reserved
@@ -507,6 +522,10 @@ class PlatformConfig:
             "passive_cancel_fee_per_share": self.passive_cancel_fee_per_share,
             "platform_min_order_shares": self.platform_min_order_shares,
             "signal_min_edge_cost_ratio": self.signal_min_edge_cost_ratio,
+            "regime_calibration_max_quotes": self.regime_calibration_max_quotes,
+            "enforce_regime_state_scale_alignment": (
+                self.enforce_regime_state_scale_alignment
+            ),
             "cost_market_impact_factor": self.cost_market_impact_factor,
             "cost_htb_borrow_annual_bps": self.cost_htb_borrow_annual_bps,
             # Phase-2 fields (folded into the snapshot so determinism
@@ -649,6 +668,20 @@ class PlatformConfig:
             int(session_open_ns_raw) if session_open_ns_raw is not None else None
         )
 
+        taker_exch_raw = data.get("cost_taker_exchange_per_share")
+        maker_exch_raw = data.get("cost_maker_exchange_per_share")
+        legacy_exch = data.get("cost_exchange_per_share")
+        if taker_exch_raw is None and legacy_exch is not None:
+            taker_exch_raw = legacy_exch
+        if maker_exch_raw is None and legacy_exch is not None:
+            maker_exch_raw = legacy_exch
+
+        regime_cal_raw = data.get("regime_calibration_max_quotes")
+        if regime_cal_raw is None:
+            regime_calibration_max_quotes = None
+        else:
+            regime_calibration_max_quotes = int(regime_cal_raw)
+
         return cls(
             version=str(data.get("version", "0.1.0")),
             author=str(data.get("author", "system")),
@@ -692,10 +725,10 @@ class PlatformConfig:
                 data.get("cost_exchange_per_share", 0.0005)
             ),
             cost_taker_exchange_per_share=float(
-                data.get("cost_taker_exchange_per_share", 0.003)
+                taker_exch_raw if taker_exch_raw is not None else 0.003
             ),
             cost_maker_exchange_per_share=float(
-                data.get("cost_maker_exchange_per_share", -0.002)
+                maker_exch_raw if maker_exch_raw is not None else -0.002
             ),
             cost_passive_adverse_selection_bps=float(
                 data.get("cost_passive_adverse_selection_bps", 0.5)
@@ -744,7 +777,11 @@ class PlatformConfig:
                 data.get("platform_min_order_shares", 1)
             ),
             signal_min_edge_cost_ratio=float(
-                data.get("signal_min_edge_cost_ratio", 0.0)
+                data.get("signal_min_edge_cost_ratio", 1.5)
+            ),
+            regime_calibration_max_quotes=regime_calibration_max_quotes,
+            enforce_regime_state_scale_alignment=bool(
+                data.get("enforce_regime_state_scale_alignment", False)
             ),
             cost_market_impact_factor=float(
                 data.get("cost_market_impact_factor", 0.5)
@@ -795,7 +832,7 @@ class PlatformConfig:
                 data.get("enforce_layer_gates", True)
             ),
             enforce_per_alpha_risk_budget=bool(
-                data.get("enforce_per_alpha_risk_budget", False)
+                data.get("enforce_per_alpha_risk_budget", True)
             ),
             promotion_ledger_path=(
                 Path(data["promotion_ledger_path"])

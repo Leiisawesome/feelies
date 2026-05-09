@@ -154,6 +154,14 @@ class TestOrderStateMachine:
         sm.transition(OrderState.CANCELLED, trigger="broker_cancel")
         assert sm.state == OrderState.CANCELLED
 
+    def test_acknowledged_to_rejected(self, clock: SimulatedClock):
+        """Post-ack reject for deferred aggressive/MARKET (latency > 0)."""
+        sm = create_order_state_machine("o11c", clock)
+        sm.transition(OrderState.SUBMITTED, trigger="send")
+        sm.transition(OrderState.ACKNOWLEDGED, trigger="ack")
+        sm.transition(OrderState.REJECTED, trigger="broker_reject")
+        assert sm.state == OrderState.REJECTED
+
     def test_partially_filled_to_expired(self, clock: SimulatedClock):
         """TIF expiry on a partially-filled order."""
         sm = create_order_state_machine("o12", clock)

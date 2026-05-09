@@ -169,6 +169,7 @@ _HARNESS_TEMPLATE = textwrap.dedent("""\
         factor_loadings_dir=Path({factor_loadings_dir!r}),
         sector_map_path=Path({sector_map_path!r}),
         enforce_trend_mechanism=False,
+        enforce_per_alpha_risk_budget=False,
     )
 
     log = InMemoryEventLog()
