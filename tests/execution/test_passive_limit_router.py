@@ -804,6 +804,51 @@ class TestLatency:
         assert acks2[0].status == OrderAckStatus.FILLED
         assert acks2[0].timestamp_ns == 3000
 
+    def test_deferred_market_rejects_zero_depth_at_fill_quote(self):
+        """First eligible quote after latency must have L1 depth (Backtest parity)."""
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(clock, latency_ns=1000)
+
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=1000))
+        router.submit(_market_order("AAPL"))
+        router.poll_acks()
+
+        router.on_quote(_quote(
+            "AAPL", "150.00", "150.02", ts=2000, bid_size=100, ask_size=0,
+        ))
+        acks2 = router.poll_acks()
+        assert len(acks2) == 1
+        assert acks2[0].status == OrderAckStatus.REJECTED
+        assert "depth" in acks2[0].reason.lower()
+
+    def test_deferred_market_rejects_zero_depth_at_submit(self):
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(clock, latency_ns=1000)
+
+        router.on_quote(_quote(
+            "AAPL", "150.00", "150.02", ts=1000, bid_size=100, ask_size=0,
+        ))
+        router.submit(_market_order("AAPL"))
+        acks = router.poll_acks()
+        assert [a.status for a in acks] == [
+            OrderAckStatus.ACKNOWLEDGED,
+            OrderAckStatus.REJECTED,
+        ]
+        assert "depth" in acks[1].reason.lower()
+
+    def test_immediate_market_rejects_zero_depth(self):
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(clock, latency_ns=0)
+
+        router.on_quote(_quote(
+            "AAPL", "150.00", "150.02", bid_size=100, ask_size=0,
+        ))
+        router.submit(_market_order("AAPL"))
+        acks = router.poll_acks()
+        assert len(acks) == 1
+        assert acks[0].status == OrderAckStatus.REJECTED
+        assert "depth" in acks[0].reason.lower()
+
 
 class TestDeterminism:
     """Verify deterministic replay (invariant 5)."""

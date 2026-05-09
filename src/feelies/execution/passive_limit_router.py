@@ -78,7 +78,9 @@ class PassiveLimitOrderRouter:
 
     Handles two order types:
       - ``LIMIT``: deferred fill via queue-position model (entries/exits)
-      - ``MARKET``: immediate mid-price fill (stop-loss, emergency exits)
+      - ``MARKET``: mid-price aggressive fill with the same ``latency_ns``
+        deferral model as :class:`~feelies.execution.backtest_router.BacktestOrderRouter`
+        (zero L1 depth on the relevant side rejects; no vacuum fills)
 
     The orchestrator must call ``on_quote()`` for each incoming quote
     so the router can (a) track the latest NBBO and (b) check resting
@@ -187,7 +189,17 @@ class PassiveLimitOrderRouter:
         """MARKET submit: immediate FILLED when ``latency_ns == 0``, else ACK +
         deferred fill on the first exchange-time-eligible quote.
         """
+        depth = (
+            quote.ask_size if request.side == Side.BUY else quote.bid_size
+        )
         if self._latency_ns <= 0:
+            if depth <= 0:
+                self._reject(
+                    request,
+                    f"zero depth on {request.side.name} side "
+                    f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
+                )
+                return
             self._fill_aggressive_immediate(request, quote)
             return
 
@@ -201,6 +213,13 @@ class PassiveLimitOrderRouter:
             status=OrderAckStatus.ACKNOWLEDGED,
             request_sequence=request.sequence,
         ))
+        if depth <= 0:
+            self._reject(
+                request,
+                f"zero depth on {request.side.name} side "
+                f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
+            )
+            return
         self._deferred_aggressive.append(
             (request, quote.exchange_timestamp_ns + self._latency_ns),
         )
@@ -221,6 +240,16 @@ class PassiveLimitOrderRouter:
                 self._reject(
                     req,
                     f"crossed or locked quote bid={quote.bid} ask={quote.ask}",
+                )
+                continue
+            depth = (
+                quote.ask_size if req.side == Side.BUY else quote.bid_size
+            )
+            if depth <= 0:
+                self._reject(
+                    req,
+                    f"zero depth on {req.side.name} side "
+                    f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
                 )
                 continue
             self._fill_aggressive_immediate(req, quote, fill_ts=fill_ts)
