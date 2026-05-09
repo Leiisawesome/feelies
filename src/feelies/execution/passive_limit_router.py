@@ -189,10 +189,10 @@ class PassiveLimitOrderRouter:
         """MARKET submit: immediate FILLED when ``latency_ns == 0``, else ACK +
         deferred fill on the first exchange-time-eligible quote.
         """
-        depth = (
-            quote.ask_size if request.side == Side.BUY else quote.bid_size
-        )
         if self._latency_ns <= 0:
+            depth = (
+                quote.ask_size if request.side == Side.BUY else quote.bid_size
+            )
             if depth <= 0:
                 self._reject(
                     request,
@@ -213,13 +213,8 @@ class PassiveLimitOrderRouter:
             status=OrderAckStatus.ACKNOWLEDGED,
             request_sequence=request.sequence,
         ))
-        if depth <= 0:
-            self._reject(
-                request,
-                f"zero depth on {request.side.name} side "
-                f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
-            )
-            return
+        # Deferred fills: depth is checked in ``_flush_deferred_aggressive`` on
+        # the first latency-eligible quote (not the submission quote).
         self._deferred_aggressive.append(
             (request, quote.exchange_timestamp_ns + self._latency_ns),
         )

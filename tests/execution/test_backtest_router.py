@@ -137,6 +137,24 @@ class TestBacktestOrderRouter:
         assert acks2[0].status == OrderAckStatus.FILLED
         assert acks2[0].timestamp_ns == 3000
 
+    def test_deferred_market_queues_despite_zero_depth_on_submit_quote(self):
+        """Depth at submit is ignored when latency defers the fill (causal model)."""
+        clock = SimulatedClock(start_ns=5000)
+        router = BacktestOrderRouter(clock, latency_ns=1000)
+
+        router.on_quote(_quote_with_depth(
+            "100.00", "100.10", bid_size=100, ask_size=0, ts=1000,
+        ))
+        router.submit(_order("AAPL"))
+        assert [a.status for a in router.poll_acks()] == [
+            OrderAckStatus.ACKNOWLEDGED,
+        ]
+
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=2000))
+        acks2 = router.poll_acks()
+        assert len(acks2) == 1
+        assert acks2[0].status == OrderAckStatus.FILLED
+
     def test_multiple_symbols_independent(self):
         clock = SimulatedClock(start_ns=5000)
         router = BacktestOrderRouter(clock)

@@ -821,7 +821,8 @@ class TestLatency:
         assert acks2[0].status == OrderAckStatus.REJECTED
         assert "depth" in acks2[0].reason.lower()
 
-    def test_deferred_market_rejects_zero_depth_at_submit(self):
+    def test_deferred_market_queues_despite_zero_depth_on_submit_quote(self):
+        """Submit-time quote may be vacuum; fill uses first latency-eligible quote."""
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock, latency_ns=1000)
 
@@ -830,11 +831,12 @@ class TestLatency:
         ))
         router.submit(_market_order("AAPL"))
         acks = router.poll_acks()
-        assert [a.status for a in acks] == [
-            OrderAckStatus.ACKNOWLEDGED,
-            OrderAckStatus.REJECTED,
-        ]
-        assert "depth" in acks[1].reason.lower()
+        assert [a.status for a in acks] == [OrderAckStatus.ACKNOWLEDGED]
+
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=2000))
+        acks2 = router.poll_acks()
+        assert len(acks2) == 1
+        assert acks2[0].status == OrderAckStatus.FILLED
 
     def test_immediate_market_rejects_zero_depth(self):
         clock = SimulatedClock(start_ns=5000)

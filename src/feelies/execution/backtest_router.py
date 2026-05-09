@@ -185,21 +185,22 @@ class BacktestOrderRouter:
             request_sequence=request.sequence,
         ))
 
-        available_depth = (
-            quote.ask_size if request.side == Side.BUY else quote.bid_size
-        )
-        if available_depth <= 0:
-            self._reject(
-                request,
-                f"zero depth on {request.side.name} side "
-                f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
-            )
-            return
-
         if self._latency_ns <= 0:
+            available_depth = (
+                quote.ask_size if request.side == Side.BUY else quote.bid_size
+            )
+            if available_depth <= 0:
+                self._reject(
+                    request,
+                    f"zero depth on {request.side.name} side "
+                    f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
+                )
+                return
             fill_ts = ack_ts
             self._execute_market_fill(request, quote, fill_ts)
         else:
+            # Deferred fills: depth is validated in ``_flush_deferred_market_fills``
+            # against the first latency-eligible quote (not the submission quote).
             self._deferred_markets.append(_DeferredMarketFill(
                 request=request,
                 fill_deadline_exchange_ns=(
