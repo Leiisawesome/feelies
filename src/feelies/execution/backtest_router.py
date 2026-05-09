@@ -1,15 +1,43 @@
 """Backtest order router — simulated fills for backtest mode.
 
-Implements the ``OrderRouter`` protocol with an immediate mid-price
-fill model.  This is a v1 placeholder; the backtest-engine skill
-specifies a full queue-priority fill model with adverse selection
-and partial fills.
+Implements the ``OrderRouter`` protocol with a deterministic
+mid-price + walk-the-book partial-fill model.  Despite the historical
+"v1 placeholder" framing, the implementation is the production
+backtest path: ACKNOWLEDGED + (optional) PARTIALLY_FILLED + FILLED
+with cost-model attribution and L1-depth-walk impact.  The
+backtest-engine skill's full queue-priority + adverse-selection
+fill model is implemented separately by
+:class:`feelies.execution.passive_limit_router.PassiveLimitOrderRouter`
+and is selected via ``execution_mode in {"passive_limit",
+"minimum_cost"}`` at bootstrap time.
+
+Cost-accounting convention (audit R6)
+-------------------------------------
+
+Market orders fill at the **mid** ``(bid + ask) / 2`` and the
+half-spread cross is debited as a separate ``spread_cost`` component
+inside the :class:`CostBreakdown` returned by the cost model.  The
+position's :attr:`Position.avg_entry_price` therefore records the
+mid (NOT the executed cross price) and the half-spread flows through
+:attr:`Position.cumulative_fees` instead.  This is internally
+consistent — NAV (`BasicRiskEngine._compute_current_equity`) and
+forensics both subtract fees explicitly — but consumers that read
+``realized_pnl`` directly without subtracting fees will overstate
+edge.  See :class:`feelies.portfolio.position_store.Position` for
+the canonical statement of this convention; live deployments must
+mirror it (or update both ends together) to preserve Inv-9 parity.
+
+The ``walk-the-book`` excess-quantity branch is the one exception:
+the impact premium IS encoded into ``avg_entry_price`` (because the
+adverse impact is genuinely realized at fill time, not a synthetic
+spread cost).  See the inline comment in :meth:`submit`.
 
 Fill semantics:
   - Orders are acknowledged immediately on submit (ACKNOWLEDGED ack
     emitted first, for parity with the live-mode state machine).
   - Orders are then filled at mid-price of the most recent quote
-    for that symbol.
+    for that symbol; the half-spread cost is attributed via the
+    cost model (see convention above).
   - If no quote has been seen for the symbol, the order is rejected.
   - If the quote is crossed or locked (bid >= ask), the order is
     rejected rather than silently filling at a dubious mid.

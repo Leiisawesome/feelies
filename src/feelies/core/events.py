@@ -614,3 +614,16 @@ class SizedPositionIntent(Event):
     expected_turnover_usd: float = 0.0
     expected_gross_exposure_usd: float = 0.0
     mechanism_breakdown: dict[TrendMechanism, float] = field(default_factory=dict)
+    # Per-symbol disclosed one-way ``cost_total_bps`` carried over from
+    # the consumed SIGNAL events for each symbol in ``target_positions``.
+    # Populated by :class:`CompositionEngine` from
+    # :attr:`CrossSectionalContext.signals_by_symbol`; the risk engine
+    # stamps the corresponding entry onto each emitted PORTFOLIO
+    # ``OrderRequest.g12_disclosed_cost_total_bps`` so the post-fill G12
+    # cost-vs-disclosure stress alert (orchestrator §M9) fires for the
+    # PORTFOLIO path the same way it does for SIGNAL-driven orders.
+    # Empty default keeps v0.2 portfolio alphas bit-identical until the
+    # composition engine starts populating it (Inv-A).
+    disclosed_cost_total_bps_by_symbol: dict[str, float] = field(
+        default_factory=dict,
+    )

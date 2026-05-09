@@ -258,3 +258,108 @@ class TestCheckOrderDelegatesToInner:
 
         verdict = wrapper.check_order(order, agg)
         assert verdict.action in (RiskAction.ALLOW, RiskAction.SCALE_DOWN)
+
+
+class TestCheckSizedIntent:
+    """Audit R2: wrapper must enforce per-alpha caps on the PORTFOLIO path.
+
+    The protocol's ``check_sized_intent`` is the only production-
+    reachable order path post-D.2.  Without an override on the
+    wrapper, the inner engine's implementation calls
+    ``self._inner.check_order`` directly and silently skips the
+    wrapper's per-alpha caps.
+    """
+
+    def _make_intent(
+        self,
+        strategy_id: str,
+        targets: dict[str, float],
+    ) -> "SizedPositionIntent":
+        from feelies.core.events import SizedPositionIntent, TargetPosition
+        return SizedPositionIntent(
+            timestamp_ns=1_000_000_000,
+            correlation_id="corr-1",
+            sequence=1,
+            strategy_id=strategy_id,
+            target_positions={
+                sym: TargetPosition(symbol=sym, target_usd=usd)
+                for sym, usd in targets.items()
+            },
+        )
+
+    def test_per_alpha_position_limit_drops_oversize_leg(self) -> None:
+        """A leg that would breach the alpha's post-fill share cap drops.
+
+        The orchestrator passes its aggregate ``MemoryPositionStore``
+        (which exposes ``latest_mark``), not the per-strategy view, so
+        we mirror that here.  Per-strategy book tracks the alpha's
+        share count for the per-alpha gate; aggregate book is the
+        mark/exposure source for the inner gates.
+        """
+        alpha = _make_alpha(
+            max_position=50,
+            max_exposure_pct=100.0,
+            capital_pct=100.0,
+        )
+        strategy_positions = StrategyPositionStore()
+        strategy_positions.update("test_alpha", "AAPL", 45, Decimal("150"))
+        agg_store = MemoryPositionStore()
+        agg_store.update("AAPL", 45, Decimal("150"))
+        agg_store.update_mark("AAPL", Decimal("150"))
+
+        wrapper = _build_wrapper(
+            alpha, strategy_positions=strategy_positions,
+        )
+        intent = self._make_intent(
+            strategy_id="test_alpha",
+            targets={"AAPL": 15_000.0},  # 100 shares @ $150
+        )
+
+        orders = wrapper.check_sized_intent(intent, agg_store)
+        assert orders == ()  # leg dropped by per-alpha cap
+
+    def test_within_alpha_budget_legs_pass_through(self) -> None:
+        alpha = _make_alpha(
+            max_position=200,
+            max_exposure_pct=100.0,
+            capital_pct=100.0,
+        )
+        strategy_positions = StrategyPositionStore()
+        agg_store = MemoryPositionStore()
+        agg_store.update_mark("AAPL", Decimal("100"))
+
+        wrapper = _build_wrapper(
+            alpha, strategy_positions=strategy_positions,
+        )
+        intent = self._make_intent(
+            strategy_id="test_alpha",
+            targets={"AAPL": 5_000.0},  # 50 shares
+        )
+
+        orders = wrapper.check_sized_intent(intent, agg_store)
+        assert len(orders) == 1
+        assert orders[0].symbol == "AAPL"
+        assert orders[0].quantity == 50
+        assert orders[0].reason == "PORTFOLIO"
+
+    def test_unregistered_strategy_id_falls_through(self) -> None:
+        """Unregistered strategy_id (e.g. PORTFOLIO net) only sees inner caps."""
+        alpha = _make_alpha()
+        agg_store = MemoryPositionStore()
+        agg_store.update_mark("AAPL", Decimal("100"))
+
+        wrapper = _build_wrapper(alpha)
+        intent = self._make_intent(
+            strategy_id="multi_alpha_net",
+            targets={"AAPL": 1_000.0},
+        )
+
+        orders = wrapper.check_sized_intent(intent, agg_store)
+        assert len(orders) == 1
+
+    def test_empty_intent_returns_empty_tuple(self) -> None:
+        alpha = _make_alpha()
+        wrapper = _build_wrapper(alpha)
+        intent = self._make_intent(strategy_id="test_alpha", targets={})
+
+        assert wrapper.check_sized_intent(intent, MemoryPositionStore()) == ()
