@@ -68,7 +68,7 @@ Invariants preserved:
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from feelies.core.clock import Clock
@@ -85,10 +85,19 @@ from feelies.execution.cost_model import CostModel, ZeroCostModel
 
 @dataclass(frozen=True)
 class _DeferredMarketFill:
-    """MARKET order waiting until exchange time reaches fill deadline."""
+    """MARKET order waiting until exchange time reaches fill deadline.
+
+    ``ticks_for_symbol`` is incremented every time a matching-symbol quote
+    arrives so the deferred order can be cancelled after
+    ``max_resting_ticks`` quotes — mirroring the safety net the passive
+    router applies to deferred aggressive fills.  Without this cap, a halt
+    or thinly-traded symbol could leave a MARKET order pending indefinitely
+    (Inv 11: fail-safe default).
+    """
 
     request: OrderRequest
     fill_deadline_exchange_ns: int
+    ticks_for_symbol: int = 0
 
 
 def _to_decimal(value: Decimal | int | str | float, name: str) -> Decimal:
@@ -129,6 +138,8 @@ class BacktestOrderRouter:
         cost_model: CostModel | None = None,
         market_impact_factor: Decimal | int | str | float = Decimal("0.5"),
         max_impact_half_spreads: Decimal | int | str | float = Decimal("10"),
+        *,
+        max_resting_ticks: int = 50,
     ) -> None:
         self._clock = clock
         self._latency_ns = latency_ns
@@ -139,6 +150,7 @@ class BacktestOrderRouter:
         self._max_impact_half_spreads = _to_decimal(
             max_impact_half_spreads, "max_impact_half_spreads"
         )
+        self._max_resting_ticks = max_resting_ticks
         self._last_quotes: dict[str, NBBOQuote] = {}
         self._pending_acks: list[OrderAck] = []
         self._submitted_order_ids: set[str] = set()
@@ -221,8 +233,16 @@ class BacktestOrderRouter:
             if dm.request.symbol != quote.symbol:
                 remaining.append(dm)
                 continue
+            ticks_for_symbol = dm.ticks_for_symbol + 1
             if quote.exchange_timestamp_ns < dm.fill_deadline_exchange_ns:
-                remaining.append(dm)
+                if ticks_for_symbol >= self._max_resting_ticks:
+                    self._reject(
+                        dm.request,
+                        f"deferred market timeout after "
+                        f"{ticks_for_symbol} ticks (no latency-eligible quote)",
+                    )
+                    continue
+                remaining.append(replace(dm, ticks_for_symbol=ticks_for_symbol))
                 continue
             if quote.bid >= quote.ask:
                 self._reject(
