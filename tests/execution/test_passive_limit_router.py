@@ -850,6 +850,49 @@ class TestLatency:
         assert acks2[0].status == OrderAckStatus.REJECTED
         assert "depth" in acks2[0].reason.lower()
 
+    def test_deferred_market_partial_fill_walk_the_book(self) -> None:
+        """D14 parity with BacktestOrderRouter: excess qty pays walk-the-book impact."""
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(
+            clock,
+            latency_ns=1000,
+            market_impact_factor=Decimal("0.5"),
+        )
+
+        router.on_quote(_quote(
+            "AAPL", "99.00", "101.00", ts=1000, bid_size=100, ask_size=50,
+        ))
+        large_buy = OrderRequest(
+            timestamp_ns=2000,
+            correlation_id="o1",
+            sequence=2,
+            order_id="big-mkt",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=150,
+        )
+        router.submit(large_buy)
+        assert [a.status for a in router.poll_acks()] == [
+            OrderAckStatus.ACKNOWLEDGED,
+        ]
+
+        router.on_quote(_quote(
+            "AAPL", "99.00", "101.00", ts=2500, bid_size=100, ask_size=50,
+        ))
+        acks = router.poll_acks()
+        assert [a.status for a in acks] == [
+            OrderAckStatus.PARTIALLY_FILLED,
+            OrderAckStatus.FILLED,
+        ]
+        mid = Decimal("100")
+        half_spread = Decimal("1")
+        assert acks[0].filled_quantity == 50
+        assert acks[0].fill_price == mid
+        expected_impact = Decimal("0.5") * (Decimal("100") / Decimal("50")) * half_spread
+        assert acks[1].filled_quantity == 100
+        assert acks[1].fill_price == mid + expected_impact
+
     def test_deferred_market_queues_despite_zero_depth_on_submit_quote(self):
         """Submit-time quote may be vacuum; fill uses first latency-eligible quote."""
         clock = SimulatedClock(start_ns=5000)

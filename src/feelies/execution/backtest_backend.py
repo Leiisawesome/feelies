@@ -72,6 +72,7 @@ def build_passive_limit_backend(
     end_sequence: int | None = None,
     latency_ns: int = 0,
     cost_model: CostModel | None = None,
+    market_impact_factor: float = 0.5,
     *,
     fill_delay_ticks: int = 3,
     max_resting_ticks: int = 50,
@@ -89,6 +90,9 @@ def build_passive_limit_backend(
     ``router.on_trade()`` to the trade event stream or orders will
     never fill by queue drain.  Check ``router.requires_trade_feed``
     to detect this requirement at wiring time.
+
+    ``market_impact_factor`` scales MARKET / marketable-limit aggressive
+    walk-the-book impact identically to ``build_backtest_backend``.
     """
     feed = ReplayFeed(
         event_log=event_log,
@@ -100,6 +104,7 @@ def build_passive_limit_backend(
         clock=clock,
         latency_ns=latency_ns,
         cost_model=cost_model,
+        market_impact_factor=market_impact_factor,
         fill_delay_ticks=fill_delay_ticks,
         max_resting_ticks=max_resting_ticks,
         queue_position_shares=queue_position_shares,

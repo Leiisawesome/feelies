@@ -72,7 +72,6 @@ Invariants preserved:
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, replace
 from decimal import Decimal
 
@@ -86,6 +85,7 @@ from feelies.core.events import (
 )
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.cost_model import CostModel, ZeroCostModel
+from feelies.execution.market_fill import append_market_fill_acks, to_decimal
 
 
 @dataclass(frozen=True)
@@ -115,19 +115,6 @@ class _DeferredMarketFill:
     fill_deadline_exchange_ns: int
     ack_timestamp_ns: int
     ticks_for_symbol: int = 0
-
-
-def _to_decimal(value: Decimal | int | str | float, name: str) -> Decimal:
-    """Coerce a numeric input to Decimal, rejecting non-finite floats."""
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise ValueError(f"{name} must be a finite number, got {value!r}")
-        return Decimal(str(value))
-    if isinstance(value, (int, str)):
-        return Decimal(str(value))
-    if isinstance(value, Decimal):
-        return value
-    raise TypeError(f"{name} must be Decimal | int | str | float, got {type(value).__name__}")
 
 
 class BacktestOrderRouter:
@@ -164,10 +151,10 @@ class BacktestOrderRouter:
         self._clock = clock
         self._latency_ns = latency_ns
         self._cost_model: CostModel = cost_model or ZeroCostModel()
-        self._market_impact_factor = _to_decimal(
+        self._market_impact_factor = to_decimal(
             market_impact_factor, "market_impact_factor"
         )
-        self._max_impact_half_spreads = _to_decimal(
+        self._max_impact_half_spreads = to_decimal(
             max_impact_half_spreads, "max_impact_half_spreads"
         )
         self._max_resting_ticks = max_resting_ticks
@@ -316,96 +303,16 @@ class BacktestOrderRouter:
         fill_ts: int,
     ) -> None:
         """Append FILLED / PARTIALLY_FILLED acks for a MARKET order."""
-        fill_price = (quote.bid + quote.ask) / Decimal("2")
-        half_spread = (quote.ask - quote.bid) / Decimal("2")
-
-        available_depth = (
-            quote.ask_size if request.side == Side.BUY else quote.bid_size
+        append_market_fill_acks(
+            self._pending_acks,
+            self._ack_seq,
+            self._cost_model,
+            request,
+            quote,
+            fill_ts,
+            market_impact_factor=self._market_impact_factor,
+            max_impact_half_spreads=self._max_impact_half_spreads,
         )
-
-        if request.quantity > available_depth:
-            partial_qty = available_depth
-            partial_costs = self._cost_model.compute(
-                symbol=request.symbol,
-                side=request.side,
-                quantity=partial_qty,
-                fill_price=fill_price,
-                half_spread=half_spread,
-                is_short=request.is_short,
-            )
-            self._pending_acks.append(OrderAck(
-                timestamp_ns=fill_ts,
-                correlation_id=request.correlation_id,
-                sequence=self._ack_seq.next(),
-                order_id=request.order_id,
-                symbol=request.symbol,
-                status=OrderAckStatus.PARTIALLY_FILLED,
-                filled_quantity=partial_qty,
-                fill_price=fill_price,
-                fees=partial_costs.total_fees,
-                cost_bps=partial_costs.cost_bps,
-                request_sequence=request.sequence,
-            ))
-
-            excess_qty = request.quantity - available_depth
-            raw_impact = (
-                self._market_impact_factor
-                * Decimal(str(excess_qty))
-                / Decimal(str(available_depth))
-                * half_spread
-            )
-            impact_cap = self._max_impact_half_spreads * half_spread
-            impact = min(raw_impact, impact_cap)
-            if request.side == Side.BUY:
-                impact_price = fill_price + impact
-            else:
-                impact_price = max(fill_price - impact, Decimal("0.01"))
-
-            excess_costs = self._cost_model.compute(
-                symbol=request.symbol,
-                side=request.side,
-                quantity=excess_qty,
-                fill_price=impact_price,
-                half_spread=half_spread,
-                is_short=request.is_short,
-            )
-            self._pending_acks.append(OrderAck(
-                timestamp_ns=fill_ts,
-                correlation_id=request.correlation_id,
-                sequence=self._ack_seq.next(),
-                order_id=request.order_id,
-                symbol=request.symbol,
-                status=OrderAckStatus.FILLED,
-                filled_quantity=excess_qty,
-                fill_price=impact_price,
-                fees=excess_costs.total_fees,
-                cost_bps=excess_costs.cost_bps,
-                request_sequence=request.sequence,
-            ))
-            return
-
-        costs = self._cost_model.compute(
-            symbol=request.symbol,
-            side=request.side,
-            quantity=request.quantity,
-            fill_price=fill_price,
-            half_spread=half_spread,
-            is_short=request.is_short,
-        )
-
-        self._pending_acks.append(OrderAck(
-            timestamp_ns=fill_ts,
-            correlation_id=request.correlation_id,
-            sequence=self._ack_seq.next(),
-            order_id=request.order_id,
-            symbol=request.symbol,
-            status=OrderAckStatus.FILLED,
-            filled_quantity=request.quantity,
-            fill_price=fill_price,
-            fees=costs.total_fees,
-            cost_bps=costs.cost_bps,
-            request_sequence=request.sequence,
-        ))
 
     def poll_acks(self) -> list[OrderAck]:
         acks = list(self._pending_acks)
