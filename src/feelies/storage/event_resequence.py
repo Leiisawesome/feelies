@@ -39,7 +39,10 @@ def event_merge_sort_key(
 def resequence_event_list(
     events: list[NBBOQuote | Trade],
 ) -> list[NBBOQuote | Trade]:
-    """Sort by :func:`event_merge_sort_key` and assign contiguous sequences."""
+    """Sort by :func:`event_merge_sort_key` and assign contiguous sequences.
+
+    Does not mutate ``events``; callers may retain their original list order.
+    """
     sorted_events = sorted(events, key=event_merge_sort_key)
     seq = SequenceGenerator()
     result: list[NBBOQuote | Trade] = []

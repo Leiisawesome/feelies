@@ -59,3 +59,13 @@ def test_merge_sort_key_orders_types() -> None:
     q = _q("AAPL", 500, 9)
     tr = _t("AAPL", 500, 1)
     assert event_merge_sort_key(q) < event_merge_sort_key(tr)
+
+
+def test_resequence_leaves_input_list_order_unchanged() -> None:
+    a = _q("AAPL", 1000, 1)
+    b = _q("MSFT", 2000, 2)
+    events = [b, a]
+    before_ids = [id(events[0]), id(events[1])]
+    _ = resequence_event_list(events)
+    assert events[0] is b and events[1] is a
+    assert [id(events[0]), id(events[1])] == before_ids

@@ -1814,18 +1814,34 @@ class Orchestrator:
             )
             return
 
+        prefix_n = len(quotes)
+        # Exact total only when the prefix exhausts the quote stream; otherwise
+        # counting the suffix is O(full log) at boot — report a lower bound.
+        exact_total = prefix_n < max_q
+
         ok = calibrate_fn(quotes)
         if ok:
-            logger.info(
-                "Regime engine calibrated from %d quotes (prefix cap=%d)",
-                len(quotes),
-                max_q,
-            )
+            if exact_total:
+                logger.info(
+                    "Regime engine calibrated from %d quotes "
+                    "(prefix cap=%d, total_log=%d)",
+                    prefix_n,
+                    max_q,
+                    prefix_n,
+                )
+            else:
+                logger.info(
+                    "Regime engine calibrated from %d quotes "
+                    "(prefix cap=%d; NBBO quote count ≥ %d — suffix not scanned)",
+                    prefix_n,
+                    max_q,
+                    max_q,
+                )
         else:
             logger.warning(
                 "Regime calibration failed (insufficient data in prefix: "
                 "%d quotes, cap=%d) — using default emission parameters",
-                len(quotes),
+                prefix_n,
                 max_q,
             )
             self._bus.publish(Alert(
@@ -1837,14 +1853,23 @@ class Orchestrator:
                 alert_name="regime_calibration_failed",
                 message=(
                     f"Regime engine calibrate() returned False "
-                    f"(prefix_quotes={len(quotes)}, cap={max_q}). "
+                    f"(prefix_quotes={prefix_n}, cap={max_q}). "
                     "Posteriors may discriminate poorly until operators "
                     "raise regime_calibration_max_quotes or supply cleaner data."
                 ),
-                context={
-                    "prefix_quote_count": len(quotes),
-                    "cap": max_q,
-                },
+                context=(
+                    {
+                        "prefix_quote_count": prefix_n,
+                        "cap": max_q,
+                        "total_quotes_in_log": prefix_n,
+                    }
+                    if exact_total
+                    else {
+                        "prefix_quote_count": prefix_n,
+                        "cap": max_q,
+                        "total_quotes_in_log_at_least": max_q,
+                    }
+                ),
             ))
 
     def _update_regime(self, quote: NBBOQuote, correlation_id: str) -> None:
