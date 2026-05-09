@@ -549,6 +549,7 @@ def _create_backend(
                 event_log, clock,
                 latency_ns=fill_latency_ns,
                 cost_model=cost_model,
+                market_impact_factor=market_impact_factor,
                 fill_delay_ticks=passive_fill_delay_ticks,
                 max_resting_ticks=passive_max_resting_ticks,
                 queue_position_shares=passive_queue_position_shares,
