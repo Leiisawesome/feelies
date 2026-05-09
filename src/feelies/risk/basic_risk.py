@@ -17,8 +17,11 @@ Invariants preserved:
 from __future__ import annotations
 
 import hashlib
+import logging
 from dataclasses import dataclass, field
 from decimal import Decimal
+
+_logger = logging.getLogger(__name__)
 
 from feelies.core.events import (
     OrderRequest,
@@ -336,8 +339,17 @@ class BasicRiskEngine:
                 m = latest(symbol)
                 if isinstance(m, Decimal) and m > 0:
                     return m
-            except Exception:  # pragma: no cover - defensive
-                pass
+            except Exception as exc:  # pragma: no cover - defensive
+                # Inv-11 fail-safe: fall back to cost basis rather than
+                # raising into the risk path.  But the swallow itself is
+                # a degraded mode (live-mark feed bug) — surface it via
+                # WARNING so the operator can see the slippage drift in
+                # promotion-window forensics.
+                _logger.warning(
+                    "_mark_for(%s): latest_mark accessor raised %s; "
+                    "falling back to avg_entry_price",
+                    symbol, exc,
+                )
         avg = getattr(current, "avg_entry_price", Decimal("0"))
         if isinstance(avg, Decimal) and avg > 0:
             return avg
@@ -384,6 +396,10 @@ class BasicRiskEngine:
                 reason=f"gross exposure limit: {exposure} >= {max_exposure}",
             )
 
+        # Bump the HWM as a separate, explicit step so the predicate
+        # below is a pure function of (current_equity, hwm) — see
+        # _is_drawdown_breached docstring for the rationale.
+        self._update_high_water_mark(current_equity)
         if self._is_drawdown_breached(current_equity):
             return RiskVerdict(
                 timestamp_ns=timestamp_ns,
@@ -479,10 +495,25 @@ class BasicRiskEngine:
             + total_unrealized
         )
 
-    def _is_drawdown_breached(self, current_equity: Decimal) -> bool:
+    def _update_high_water_mark(self, current_equity: Decimal) -> None:
+        """Bump the HWM monotonically.
+
+        Split out from ``_is_drawdown_breached`` so that a "what-if"
+        caller (e.g. a speculative intent translator that probes
+        ``check_order`` without intending to submit) cannot silently
+        ratchet the HWM as a side effect of asking a boolean question.
+        Callers that must update the HWM call this *before* querying
+        ``_is_drawdown_breached`` (see ``_check_exposure_and_drawdown``).
+        """
         if current_equity > self._high_water_mark:
             self._high_water_mark = current_equity
 
+    def _is_drawdown_breached(self, current_equity: Decimal) -> bool:
+        """Pure predicate over (current_equity, self._high_water_mark).
+
+        Does NOT mutate the HWM.  Call ``_update_high_water_mark`` first
+        if the caller represents a real (non-speculative) check.
+        """
         if self._high_water_mark <= 0:
             return True
 
