@@ -279,10 +279,15 @@ class BacktestOrderRouter:
                     continue
                 remaining.append(replace(dm, ticks_for_symbol=ticks_for_symbol))
                 continue
+            # Post-ACK reject paths must floor at ``ack_timestamp_ns`` so
+            # REJECTED never timestamps before ACKNOWLEDGED (mirrors the
+            # ``max_resting_ticks`` timeout path above).
+            reject_ts = max(self._clock.now_ns(), dm.ack_timestamp_ns)
             if quote.bid >= quote.ask:
                 self._reject(
                     dm.request,
                     f"crossed or locked quote bid={quote.bid} ask={quote.ask}",
+                    timestamp_ns=reject_ts,
                 )
                 continue
             depth = (
@@ -293,6 +298,7 @@ class BacktestOrderRouter:
                     dm.request,
                     f"zero depth on {dm.request.side.name} side "
                     f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
+                    timestamp_ns=reject_ts,
                 )
                 continue
             fill_ts = max(dm.ack_timestamp_ns, quote.exchange_timestamp_ns)
