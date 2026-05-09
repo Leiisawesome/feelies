@@ -30,11 +30,18 @@ def build_backtest_backend(
     latency_ns: int = 0,
     cost_model: CostModel | None = None,
     market_impact_factor: float = 0.5,
+    *,
+    max_resting_ticks: int = 50,
 ) -> tuple[ExecutionBackend, BacktestOrderRouter]:
     """Build a backtest ExecutionBackend from an event log.
 
     Returns ``(backend, router)`` so the caller can wire
     ``router.on_quote()`` to the event bus for price tracking.
+
+    ``max_resting_ticks`` caps how many per-symbol NBBO updates a deferred
+    MARKET fill (when ``latency_ns > 0``) may wait while exchange time remains
+    before the latency deadline — same fail-safe as
+    ``build_passive_limit_backend(..., max_resting_ticks=...)``.
     """
     feed = ReplayFeed(
         event_log=event_log,
@@ -47,6 +54,7 @@ def build_backtest_backend(
         latency_ns=latency_ns,
         cost_model=cost_model,
         market_impact_factor=market_impact_factor,
+        max_resting_ticks=max_resting_ticks,
     )
 
     backend = ExecutionBackend(

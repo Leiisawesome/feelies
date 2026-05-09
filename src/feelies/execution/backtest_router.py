@@ -62,7 +62,12 @@ Invariants preserved:
   - Inv 5 (deterministic replay): fill prices are derived from
     deterministic market data, not random noise.
   - Inv 11 (fail-safe): duplicate order_id submissions are rejected
-    rather than silently producing a second fill.
+    rather than silently producing a second fill; deferred MARKET
+    fills (``latency_ns > 0``) are rejected after ``max_resting_ticks``
+    quotes for that symbol while still waiting for exchange-time
+    eligibility — mirroring :class:`~feelies.execution.passive_limit_router.PassiveLimitOrderRouter`
+    aggressive deferrals so thin data cannot leave an ACK-only order
+    stranded indefinitely.
 """
 
 from __future__ import annotations
@@ -129,6 +134,9 @@ class BacktestOrderRouter:
     cannot move the fill price more than 10 half-spreads beyond mid,
     even against a 1-lot book.  Protects against unbounded slippage
     on thin quotes.
+    ``max_resting_ticks``: when ``latency_ns > 0``, deferred MARKET fills
+    are rejected after this many quotes for the symbol while exchange
+    time is still before the latency eligibility deadline (Inv 11).
     """
 
     def __init__(
@@ -213,12 +221,15 @@ class BacktestOrderRouter:
         else:
             # Deferred fills: depth is validated in ``_flush_deferred_market_fills``
             # against the first latency-eligible quote (not the submission quote).
-            self._deferred_markets.append(_DeferredMarketFill(
-                request=request,
-                fill_deadline_exchange_ns=(
-                    quote.exchange_timestamp_ns + self._latency_ns
+            self._deferred_markets.append(
+                _DeferredMarketFill(
+                    request=request,
+                    fill_deadline_exchange_ns=(
+                        quote.exchange_timestamp_ns + self._latency_ns
+                    ),
+                    ticks_for_symbol=0,
                 ),
-            ))
+            )
 
     def _flush_deferred_market_fills(self, quote: NBBOQuote) -> None:
         """Fill queued MARKET orders once ``latency_ns`` of exchange time has

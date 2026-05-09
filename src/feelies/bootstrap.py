@@ -564,6 +564,7 @@ def _create_backend(
             latency_ns=fill_latency_ns,
             cost_model=cost_model,
             market_impact_factor=market_impact_factor,
+            max_resting_ticks=passive_max_resting_ticks,
         )
         return backend, router
 

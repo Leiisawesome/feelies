@@ -139,6 +139,31 @@ class TestBacktestOrderRouter:
         # (clock=5000 + latency=1000) so lifecycle acks are non-decreasing.
         assert acks2[0].timestamp_ns == 6000
 
+    def test_deferred_market_rejects_after_max_ticks_without_eligible_exchange_time(
+        self,
+    ) -> None:
+        """Stale/frozen exchange timestamps never reach latency deadline → timeout."""
+        clock = SimulatedClock(start_ns=5000)
+        router = BacktestOrderRouter(
+            clock,
+            latency_ns=1000,
+            max_resting_ticks=3,
+        )
+
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=1000))
+        router.submit(_order("AAPL"))
+        assert [a.status for a in router.poll_acks()] == [
+            OrderAckStatus.ACKNOWLEDGED,
+        ]
+
+        for _ in range(3):
+            router.on_quote(_quote("AAPL", "100.00", "100.10", ts=1000))
+
+        rejects = [a for a in router.poll_acks() if a.status == OrderAckStatus.REJECTED]
+        assert len(rejects) == 1
+        assert "timeout" in rejects[0].reason.lower()
+        assert "ticks" in rejects[0].reason.lower()
+
     def test_deferred_market_queues_despite_zero_depth_on_submit_quote(self):
         """Depth at submit is ignored when latency defers the fill (causal model)."""
         clock = SimulatedClock(start_ns=5000)
