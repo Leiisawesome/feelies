@@ -116,7 +116,14 @@ class PassiveLimitOrderRouter:
         # Full set of order_ids ever submitted — used for idempotent reject.
         self._submitted_order_ids: set[str] = set()
         self._ack_seq = SequenceGenerator()
-        self._deferred_aggressive: list[tuple[OrderRequest, int]] = []
+        # Each deferred-aggressive entry tracks (request, deadline_ns,
+        # ticks_for_symbol).  ``ticks_for_symbol`` is incremented every
+        # time a matching-symbol quote arrives so the deferred order can
+        # be cancelled after ``max_resting_ticks`` quotes — mirroring the
+        # safety net resting LIMIT orders already enjoy.  Without this
+        # cap, a halt or thinly-traded symbol could leave a MARKET order
+        # pending indefinitely (Inv 11: fail-safe default).
+        self._deferred_aggressive: list[tuple[OrderRequest, int, int]] = []
 
     # ── Public interface (OrderRouter protocol) ──────────────────
 
@@ -216,20 +223,28 @@ class PassiveLimitOrderRouter:
         # Deferred fills: depth is checked in ``_flush_deferred_aggressive`` on
         # the first latency-eligible quote (not the submission quote).
         self._deferred_aggressive.append(
-            (request, quote.exchange_timestamp_ns + self._latency_ns),
+            (request, quote.exchange_timestamp_ns + self._latency_ns, 0),
         )
 
     def _flush_deferred_aggressive(self, quote: NBBOQuote) -> None:
         if not self._deferred_aggressive:
             return
-        remaining: list[tuple[OrderRequest, int]] = []
+        remaining: list[tuple[OrderRequest, int, int]] = []
         fill_ts = quote.exchange_timestamp_ns + self._latency_ns
-        for req, deadline_ns in self._deferred_aggressive:
+        for req, deadline_ns, ticks_for_symbol in self._deferred_aggressive:
             if req.symbol != quote.symbol:
-                remaining.append((req, deadline_ns))
+                remaining.append((req, deadline_ns, ticks_for_symbol))
                 continue
+            ticks_for_symbol += 1
             if quote.exchange_timestamp_ns < deadline_ns:
-                remaining.append((req, deadline_ns))
+                if ticks_for_symbol >= self._max_resting_ticks:
+                    self._reject(
+                        req,
+                        f"deferred aggressive timeout after "
+                        f"{ticks_for_symbol} ticks (no latency-eligible quote)",
+                    )
+                    continue
+                remaining.append((req, deadline_ns, ticks_for_symbol))
                 continue
             if quote.bid >= quote.ask:
                 self._reject(

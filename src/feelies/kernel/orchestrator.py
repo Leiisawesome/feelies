@@ -33,6 +33,7 @@ Key architectural invariants:
 from __future__ import annotations
 
 import hashlib
+import itertools
 import logging
 import time
 from collections.abc import Callable
@@ -1802,17 +1803,21 @@ class Orchestrator:
             )
             return
 
-        quotes_all = [
+        quote_stream = (
             event for event in self._event_log.replay()
             if isinstance(event, NBBOQuote)
-        ]
-        if not quotes_all:
+        )
+        quotes = list(itertools.islice(quote_stream, max_q))
+        if not quotes:
             logger.info(
                 "Regime calibration skipped — no quotes in event log"
             )
             return
 
-        quotes = quotes_all[:max_q]
+        # Count remaining quotes without retaining them so the full event
+        # log isn't materialised in memory just to log a total.
+        total_quotes_in_log = len(quotes) + sum(1 for _ in quote_stream)
+
         ok = calibrate_fn(quotes)
         if ok:
             logger.info(
@@ -1820,7 +1825,7 @@ class Orchestrator:
                 "(prefix cap=%d, total_log=%d)",
                 len(quotes),
                 max_q,
-                len(quotes_all),
+                total_quotes_in_log,
             )
         else:
             logger.warning(
@@ -1845,7 +1850,7 @@ class Orchestrator:
                 context={
                     "prefix_quote_count": len(quotes),
                     "cap": max_q,
-                    "total_quotes_in_log": len(quotes_all),
+                    "total_quotes_in_log": total_quotes_in_log,
                 },
             ))
 
