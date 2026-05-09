@@ -2803,7 +2803,13 @@ class Orchestrator:
         sm = self._active_orders[ack.order_id][0]
 
         if ack.status == OrderAckStatus.REJECTED:
-            sm.transition(OrderState.REJECTED, trigger=f"broker_reject:{ack.reason}")
+            if sm.can_transition(OrderState.REJECTED):
+                sm.transition(
+                    OrderState.REJECTED,
+                    trigger=f"broker_reject:{ack.reason}",
+                )
+            else:
+                self._emit_ack_drop_alert(ack, sm)
             return
 
         if ack.status == OrderAckStatus.ACKNOWLEDGED:

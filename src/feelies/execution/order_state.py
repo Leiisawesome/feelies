@@ -44,10 +44,9 @@ _ORDER_TRANSITIONS: dict[OrderState, frozenset[OrderState]] = {
         OrderState.CANCEL_REQUESTED,
         OrderState.CANCELLED,  # broker unsolicited cancel (e.g. passive timeout)
         OrderState.EXPIRED,
-        # Deferred-fill backtest routers ack at submit then may reject on a
-        # later quote (zero depth, crossed, or resting-tick timeout).  Live
-        # brokers also issue post-ack risk rejects.  Skill-doc contract
-        # ("REJECTED: any → REJECTED") relies on this edge.
+        # Deferred MARKET / aggressive fills (latency_ns > 0): ACK at submit,
+        # then reject on depth, crossed NBBO, or resting-tick timeout; live
+        # brokers may post-ack risk-reject as well.
         OrderState.REJECTED,
     }),
     # Real brokers permit cancel-the-remainder and TIF expiry on a
