@@ -33,7 +33,7 @@ def test_discovery_excludes_template_and_underscore_paths() -> None:
 @pytest.mark.parametrize(
     "enforce_tm",
     [False, True],
-    ids=["default_strict", "enforce_trend_mechanism_true"],
+    ids=["enforce_trend_mechanism_false", "enforce_trend_mechanism_true"],
 )
 def test_each_discovered_spec_loads(enforce_tm: bool) -> None:
     regime = get_regime_engine("hmm_3state_fractional")
