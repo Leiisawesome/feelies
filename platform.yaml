@@ -159,3 +159,35 @@ sensor_specs:
     min_history: 1
     throttled_ms: null
 
+  # Trade-backed sensors for Kyle / Hawkes / trade-through reference alphas.
+  # Extend this block when wiring additional shipped SIGNAL specs locally.
+  - sensor_id: kyle_lambda_60s
+    sensor_version: "1.1.0"
+    cls: feelies.sensors.impl.kyle_lambda_60s.KyleLambda60sSensor
+    params:
+      min_samples: 5
+    subscribes_to: [NBBOQuote, Trade]
+    input_sensor_ids: []
+    min_history: 5
+    throttled_ms: null
+
+  - sensor_id: trade_through_rate
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.trade_through_rate.TradeThroughRateSensor
+    params:
+      min_trades: 5
+    subscribes_to: [NBBOQuote, Trade]
+    input_sensor_ids: []
+    min_history: 5
+    throttled_ms: null
+
+  - sensor_id: hawkes_intensity
+    sensor_version: "1.1.0"
+    cls: feelies.sensors.impl.hawkes_intensity.HawkesIntensitySensor
+    params:
+      warm_trades_per_side: 3
+    subscribes_to: [Trade]
+    input_sensor_ids: []
+    min_history: 3
+    throttled_ms: null
+

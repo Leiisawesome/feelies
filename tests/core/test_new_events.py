@@ -285,6 +285,7 @@ def test_cross_sectional_context_completeness_default() -> None:
     )
     assert ctx.completeness == 0.0
     assert ctx.signals_by_symbol == {}
+    assert ctx.signals_by_strategy_by_symbol == {}
     assert ctx.snapshots_by_symbol == {}
 
 

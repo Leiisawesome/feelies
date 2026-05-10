@@ -55,7 +55,8 @@ def test_manifest_metadata(loaded: LoadedSignalLayerModule) -> None:
 
 
 def test_cost_arithmetic_meets_floor(loaded: LoadedSignalLayerModule) -> None:
-    assert loaded.cost.margin_ratio == pytest.approx(1.5)
+    assert loaded.cost.margin_ratio == pytest.approx(1.6)
+    assert loaded.cost.computed_margin_ratio == pytest.approx(1.6, abs=0.05)
 
 
 def _engine_with_alpha(

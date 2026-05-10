@@ -1,0 +1,434 @@
+{
+  "repo": "Leiisawesome/feelies",
+  "scope": "alphas/",
+  "created_at": "2026-05-10T05:39:03Z",
+  "methodology": "Static review of YAML + embedded Python; AlphaLoader loose/strict load; codebase tracing of UniverseSynchronizer → CrossSectionalContext → CompositionEngine; pytest subset (598 tests in alpha + selected integration + reference load). No walk-forward PnL or live-slippage evidence audited.",
+  "summary": {
+    "alpha_files_found": 8,
+    "template_files_excluded": 2,
+    "loaded_successfully": 8,
+    "failed_load": 0,
+    "pass": 0,
+    "warn": 5,
+    "fail": 3,
+    "kill": 0,
+    "research_more": 8,
+    "paper_trade_candidate": 0,
+    "deploy_small_candidate": 0,
+    "pass_structural_only": 5
+  },
+  "inventory_columns": {
+    "note": "Mechanism family omitted for PORTFOLIO rows (multiple consumes); regime_gate N/A for PORTFOLIO."
+  },
+  "alphas": [
+    {
+      "alpha_id": "pofi_benign_midcap_v1",
+      "file": "alphas/pofi_benign_midcap_v1/pofi_benign_midcap_v1.alpha.yaml",
+      "layer": "SIGNAL",
+      "schema_version": "1.1",
+      "horizon_seconds": 120,
+      "mechanism_family": "KYLE_INFO",
+      "depends_on_sensors": ["ofi_ewma", "micro_price", "spread_z_30d"],
+      "depends_on_signals": [],
+      "regime_gate": "hmm_3state_fractional; on P(normal)>0.7 and abs(spread_z_30d)<0.5; off P(normal)<0.5 or spread_z_30d>1.5",
+      "cost_margin_ratio_declared": 1.8,
+      "trend_mechanism": true,
+      "hazard_exit": false,
+      "risk_budget": "max_position_per_symbol=100, max_gross_exposure_pct=5.0",
+      "promotion_thresholds": "not declared (platform merge)",
+      "computation_module": null,
+      "score": 72,
+      "status": "WARN",
+      "decision": "RESEARCH_MORE",
+      "economic_rationale": "PLAUSIBLE",
+      "regime_design": "PLAUSIBLE",
+      "cost_execution": "COST_PLAUSIBLE",
+      "risk_readiness": "SAFE_FOR_RESEARCH",
+      "findings": [
+        {
+          "severity": "HIGH",
+          "category": "economic_mechanism",
+          "status": "WARN",
+          "finding": "Declared trend_mechanism.family is KYLE_INFO but hypothesis emphasizes VWAP/TWAP parent-order slicing — structurally closer to scheduled/batch liquidity provision than Kyle λ permanent-impact narrative. Fingerprint passes G16 via micro_price only; kyle_lambda_60s is not in l1_signature_sensors.",
+          "evidence": "alphas/pofi_benign_midcap_v1/pofi_benign_midcap_v1.alpha.yaml trend_mechanism + hypothesis blocks",
+          "recommended_action": "Either retag mechanism family / rewrite hypothesis for coherence, or add kyle_lambda_60s to sensors + signal logic if the economic claim is Kyle-style impact."
+        },
+        {
+          "severity": "MEDIUM",
+          "category": "promotion_readiness",
+          "status": "WARN",
+          "finding": "No per-alpha promotion.gate_thresholds; falsification criteria reference forward correlations and DSR — testable but not wired to CI artifacts in this audit.",
+          "evidence": "Spec lacks promotion: block",
+          "recommended_action": "Attach measurable promotion evidence gates when promoting beyond research."
+        },
+        {
+          "severity": "LOW",
+          "category": "schema_loader_compliance",
+          "status": "PASS",
+          "finding": "Loads under AlphaLoader with enforce_trend_mechanism true and false.",
+          "evidence": "uv run python loader smoke + tests/alpha/test_shipped_alpha_specs_load.py",
+          "recommended_action": null
+        }
+      ]
+    },
+    {
+      "alpha_id": "pofi_kyle_drift_v1",
+      "file": "alphas/pofi_kyle_drift_v1/pofi_kyle_drift_v1.alpha.yaml",
+      "layer": "SIGNAL",
+      "schema_version": "1.1",
+      "horizon_seconds": 300,
+      "mechanism_family": "KYLE_INFO",
+      "depends_on_sensors": ["kyle_lambda_60s", "ofi_ewma", "micro_price", "spread_z_30d"],
+      "depends_on_signals": [],
+      "regime_gate": "on P(normal)>0.6 and spread_z_30d<=1.0; off P(normal)<0.4 or spread_z_30d>2.0",
+      "cost_margin_ratio_declared": 1.8,
+      "trend_mechanism": true,
+      "hazard_exit": false,
+      "risk_budget": "max_position_per_symbol=200, max_gross_exposure_pct=8.0",
+      "promotion_thresholds": "not declared",
+      "computation_module": null,
+      "score": 82,
+      "status": "WARN",
+      "decision": "RESEARCH_MORE",
+      "economic_rationale": "STRONG",
+      "regime_design": "ROBUST",
+      "cost_execution": "COST_PLAUSIBLE",
+      "risk_readiness": "SAFE_FOR_RESEARCH",
+      "findings": [
+        {
+          "severity": "MEDIUM",
+          "category": "economic_mechanism",
+          "status": "WARN",
+          "finding": "Hypothesis and YAML cite forward 300s return correlations for falsification — descriptive only; signal code uses snapshot/regime only (no lookahead in evaluate).",
+          "evidence": "falsification_criteria text vs signal block",
+          "recommended_action": "Keep falsification as research metrics; ensure research notebooks never leak forward returns into features."
+        },
+        {
+          "severity": "INFO",
+          "category": "trend_mechanism_binding",
+          "status": "PASS",
+          "finding": "horizon_seconds/expected_half_life_seconds = 300/600 = 0.5 (G16 lower bound); intentional.",
+          "evidence": "layer_validator ratio rule",
+          "recommended_action": null
+        }
+      ]
+    },
+    {
+      "alpha_id": "pofi_inventory_revert_v1",
+      "file": "alphas/pofi_inventory_revert_v1/pofi_inventory_revert_v1.alpha.yaml",
+      "layer": "SIGNAL",
+      "schema_version": "1.1",
+      "horizon_seconds": 30,
+      "mechanism_family": "INVENTORY",
+      "depends_on_sensors": ["quote_replenish_asymmetry", "spread_z_30d", "quote_hazard_rate"],
+      "depends_on_signals": [],
+      "regime_gate": "on abs(quote_replenish_asymmetry_zscore)>2 and P(normal)>0.5",
+      "cost_margin_ratio_declared": 1.5,
+      "trend_mechanism": true,
+      "hazard_exit": false,
+      "risk_budget": "max_position_per_symbol=100, max_gross_exposure_pct=5.0",
+      "promotion_thresholds": "not declared",
+      "computation_module": null,
+      "score": 78,
+      "status": "WARN",
+      "decision": "RESEARCH_MORE",
+      "economic_rationale": "STRONG",
+      "regime_design": "PLAUSIBLE",
+      "cost_execution": "COST_THIN",
+      "risk_readiness": "SAFE_FOR_RESEARCH",
+      "findings": [
+        {
+          "severity": "HIGH",
+          "category": "cost_execution",
+          "status": "WARN",
+          "finding": "margin_ratio equals platform minimum 1.5 (Inv-12 floor); minimal shock buffer.",
+          "evidence": "cost_arithmetic.margin_ratio: 1.5",
+          "recommended_action": "Stress-test at 2× cost; consider raising disclosed edge or costs to reflect uncertainty."
+        },
+        {
+          "severity": "MEDIUM",
+          "category": "trend_mechanism_binding",
+          "status": "WARN",
+          "finding": "Falsification text cites half-life envelope [1,60]s; platform G16 INVENTORY envelope is [5,60]s per layer_validator — documentation drift.",
+          "evidence": "alphas/.../pofi_inventory_revert_v1.alpha.yaml vs src/feelies/alpha/layer_validator.py _FAMILY_HALF_LIFE_RANGES_SECONDS",
+          "recommended_action": "Align YAML falsification band with enforced G16 table."
+        },
+        {
+          "severity": "HIGH",
+          "category": "backtest_compatibility",
+          "status": "WARN",
+          "finding": "Used as feeder for PORTFOLIO alphas at horizon 300s; UniverseSynchronizer only attaches signals where Signal.horizon_seconds equals CrossSectionalContext.horizon_seconds — this alpha never surfaces inside 300s contexts (see PORTFOLIO findings).",
+          "evidence": "src/feelies/composition/synchronizer.py _emit_context signal selection",
+          "recommended_action": "Align horizons or redesign synchronizer fan-in (portfolio-level change)."
+        }
+      ]
+    },
+    {
+      "alpha_id": "pofi_hawkes_burst_v1",
+      "file": "alphas/pofi_hawkes_burst_v1/pofi_hawkes_burst_v1.alpha.yaml",
+      "layer": "SIGNAL",
+      "schema_version": "1.1",
+      "horizon_seconds": 30,
+      "mechanism_family": "HAWKES_SELF_EXCITE",
+      "depends_on_sensors": ["hawkes_intensity", "trade_through_rate", "ofi_ewma", "spread_z_30d"],
+      "depends_on_signals": [],
+      "regime_gate": "on P(normal)>0.6 and spread_z_30d<1.0",
+      "cost_margin_ratio_declared": 1.6,
+      "trend_mechanism": true,
+      "hazard_exit": true,
+      "risk_budget": "max_position_per_symbol=50, max_gross_exposure_pct=3.0",
+      "promotion_thresholds": "not declared",
+      "computation_module": null,
+      "score": 80,
+      "status": "WARN",
+      "decision": "RESEARCH_MORE",
+      "economic_rationale": "PLAUSIBLE",
+      "regime_design": "PLAUSIBLE",
+      "cost_execution": "COST_PLAUSIBLE",
+      "risk_readiness": "SAFE_FOR_RESEARCH",
+      "findings": [
+        {
+          "severity": "HIGH",
+          "category": "backtest_compatibility",
+          "status": "WARN",
+          "finding": "Same cross-horizon issue as inventory when used as feeder for pofi_xsect_mixed_mechanism_v1 (portfolio horizon 300s).",
+          "evidence": "depends_on_signals in mixed portfolio alpha + synchronizer",
+          "recommended_action": "Same as portfolio remediation."
+        },
+        {
+          "severity": "INFO",
+          "category": "signal_logic_safety",
+          "status": "PASS",
+          "finding": "hazard_exit.enabled true — wired for Phase 4.1 hazard path per platform skill docs.",
+          "evidence": "hazard_exit block present",
+          "recommended_action": null
+        }
+      ]
+    },
+    {
+      "alpha_id": "pofi_moc_imbalance_v1",
+      "file": "alphas/pofi_moc_imbalance_v1/pofi_moc_imbalance_v1.alpha.yaml",
+      "layer": "SIGNAL",
+      "schema_version": "1.1",
+      "horizon_seconds": 120,
+      "mechanism_family": "SCHEDULED_FLOW",
+      "depends_on_sensors": ["scheduled_flow_window", "ofi_ewma"],
+      "depends_on_signals": [],
+      "regime_gate": "on scheduled_flow_window_active==1 and seconds_to_window_close>60; off window inactive or seconds_to_window_close<30",
+      "cost_margin_ratio_declared": 2.0,
+      "trend_mechanism": true,
+      "hazard_exit": false,
+      "risk_budget": "max_position_per_symbol=150, max_gross_exposure_pct=6.0",
+      "promotion_thresholds": "not declared",
+      "computation_module": null,
+      "score": 76,
+      "status": "WARN",
+      "decision": "RESEARCH_MORE",
+      "economic_rationale": "PLAUSIBLE",
+      "regime_design": "ROBUST",
+      "cost_execution": "COST_PLAUSIBLE",
+      "risk_readiness": "SAFE_FOR_RESEARCH",
+      "findings": [
+        {
+          "severity": "MEDIUM",
+          "category": "causality_lookahead",
+          "status": "WARN",
+          "finding": "Trade relies on scheduled_flow_window_direction_prior and calendar-backed sensor; economically valid only if prior is knowable at boundary timestamp (exchange-published / deterministic calendar). Audit did not re-verify sensor implementation against live feed latency.",
+          "evidence": "scheduled_flow_window tuple expansion in horizon_engine.py",
+          "recommended_action": "Document feed latency + staleness in sensor spec; add functional tests under pytest -m functional if available."
+        },
+        {
+          "severity": "LOW",
+          "category": "trend_mechanism_binding",
+          "status": "PASS",
+          "finding": "horizon_seconds/expected_half_life_seconds = 120/240 = 0.5 at G16 floor.",
+          "evidence": "YAML",
+          "recommended_action": null
+        }
+      ]
+    },
+    {
+      "alpha_id": "pofi_xsect_v1",
+      "file": "alphas/pofi_xsect_v1/pofi_xsect_v1.alpha.yaml",
+      "layer": "PORTFOLIO",
+      "schema_version": "1.1",
+      "horizon_seconds": 300,
+      "mechanism_family": null,
+      "depends_on_sensors": [],
+      "depends_on_signals": ["pofi_kyle_drift_v1", "pofi_inventory_revert_v1"],
+      "regime_gate": null,
+      "cost_margin_ratio_declared": 3.43,
+      "trend_mechanism": true,
+      "hazard_exit": false,
+      "risk_budget": "max_position_per_symbol=5000, max_gross_exposure_pct=50.0",
+      "promotion_thresholds": "not declared",
+      "computation_module": null,
+      "score": 38,
+      "status": "FAIL",
+      "decision": "RESEARCH_MORE",
+      "economic_rationale": "WEAK",
+      "regime_design": "UNDER_SPECIFIED",
+      "cost_execution": "COST_UNPROVEN",
+      "risk_readiness": "TOO_LOOSE",
+      "findings": [
+        {
+          "severity": "BLOCKER",
+          "category": "backtest_compatibility",
+          "status": "FAIL",
+          "finding": "depends_on_signals lists pofi_inventory_revert_v1 (horizon_seconds=30) but PORTFOLIO horizon_seconds=300. UniverseSynchronizer publishes CrossSectionalContext only at PORTFOLIO horizons and selects Signal events with matching sig.horizon_seconds — inventory feeder signals are excluded from ctx.signals_by_symbol at 300s barriers.",
+          "evidence": "src/feelies/composition/synchronizer.py lines 184-198, 228-238; feeder YAML horizons",
+          "recommended_action": "Set feeder SIGNAL horizons to 300, add multi-horizon synchronizer fan-in, or drop misleading depends_on_signals entry."
+        },
+        {
+          "severity": "HIGH",
+          "category": "risk_budget",
+          "status": "WARN",
+          "finding": "max_gross_exposure_pct=50 and capital_allocation_pct=100 are aggressive for deploy-small posture; acceptable only as integration fixture scale.",
+          "evidence": "risk_budget block",
+          "recommended_action": "Tighten for any capital-bearing config."
+        },
+        {
+          "severity": "MEDIUM",
+          "category": "economic_mechanism",
+          "status": "WARN",
+          "finding": "Hypothesis is performance-target (Sharpe≥1) without standalone structural mechanism beyond feeder aggregation.",
+          "evidence": "hypothesis text",
+          "recommended_action": "Treat as benchmark harness until feeder alignment fixed."
+        }
+      ]
+    },
+    {
+      "alpha_id": "pofi_xsect_v1_with_decay",
+      "file": "alphas/pofi_xsect_v1/pofi_xsect_v1.with_decay.alpha.yaml",
+      "layer": "PORTFOLIO",
+      "schema_version": "1.1",
+      "horizon_seconds": 300,
+      "mechanism_family": null,
+      "depends_on_sensors": [],
+      "depends_on_signals": ["pofi_kyle_drift_v1", "pofi_inventory_revert_v1"],
+      "regime_gate": null,
+      "cost_margin_ratio_declared": 3.43,
+      "trend_mechanism": true,
+      "hazard_exit": false,
+      "risk_budget": "max_position_per_symbol=5000, max_gross_exposure_pct=50.0",
+      "promotion_thresholds": "not declared",
+      "computation_module": null,
+      "score": 38,
+      "status": "FAIL",
+      "decision": "RESEARCH_MORE",
+      "economic_rationale": "WEAK",
+      "regime_design": "UNDER_SPECIFIED",
+      "cost_execution": "COST_UNPROVEN",
+      "risk_readiness": "TOO_LOOSE",
+      "findings": [
+        {
+          "severity": "BLOCKER",
+          "category": "backtest_compatibility",
+          "status": "FAIL",
+          "finding": "Same horizon mismatch as pofi_xsect_v1; decay_weighting_enabled cannot compensate for missing feeder signals in ctx.",
+          "evidence": "CrossSectionalRanker.rank consumes ctx.signals_by_symbol only",
+          "recommended_action": "Same as pofi_xsect_v1."
+        }
+      ]
+    },
+    {
+      "alpha_id": "pofi_xsect_mixed_mechanism_v1",
+      "file": "alphas/pofi_xsect_mixed_mechanism_v1/pofi_xsect_mixed_mechanism_v1.alpha.yaml",
+      "layer": "PORTFOLIO",
+      "schema_version": "1.1",
+      "horizon_seconds": 300,
+      "mechanism_family": null,
+      "depends_on_sensors": [],
+      "depends_on_signals": ["pofi_kyle_drift_v1", "pofi_inventory_revert_v1", "pofi_hawkes_burst_v1"],
+      "regime_gate": null,
+      "cost_margin_ratio_declared": 4.0,
+      "trend_mechanism": true,
+      "hazard_exit": false,
+      "risk_budget": "max_position_per_symbol=5000, max_gross_exposure_pct=50.0",
+      "promotion_thresholds": "not declared",
+      "computation_module": null,
+      "score": 35,
+      "status": "FAIL",
+      "decision": "RESEARCH_MORE",
+      "economic_rationale": "WEAK",
+      "regime_design": "UNDER_SPECIFIED",
+      "cost_execution": "COST_UNPROVEN",
+      "risk_readiness": "TOO_LOOSE",
+      "findings": [
+        {
+          "severity": "BLOCKER",
+          "category": "backtest_compatibility",
+          "status": "FAIL",
+          "finding": "Two of three feeders operate at horizon_seconds=30 (inventory, hawkes); cannot appear in 300s CrossSectionalContext under current synchronizer.",
+          "evidence": "synchronizer signal horizon filter",
+          "recommended_action": "Same remediation as other PORTFOLIO specs."
+        },
+        {
+          "severity": "LOW",
+          "category": "schema_loader_compliance",
+          "status": "INFO",
+          "finding": "description typo 'HAWKES_SELF_EXCITING' vs enum HAWKES_SELF_EXCITE",
+          "evidence": "YAML description line",
+          "recommended_action": "Cosmetic YAML fix"
+        }
+      ]
+    }
+  ],
+  "cross_alpha_findings": [
+    {
+      "severity": "BLOCKER",
+      "category": "dependency_validity",
+      "finding": "PORTFOLIO reference alphas declare depends_on_signals spanning 30s and 300s horizons; runtime composition pipeline is single-horizon per context.",
+      "evidence": "src/feelies/composition/synchronizer.py",
+      "recommended_action": "Platform or YAML remediation required before trusting multi-feeder cross-sectional economics."
+    },
+    {
+      "severity": "MEDIUM",
+      "category": "configuration",
+      "finding": "platform.yaml alpha_specs lists only pofi_benign_midcap_v1; other shipped alphas require explicit operator wiring plus sensor_specs coverage.",
+      "evidence": "platform.yaml",
+      "recommended_action": "Document minimal sensor_specs sets per alpha bundle."
+    },
+    {
+      "severity": "MEDIUM",
+      "category": "test_coverage",
+      "finding": "AGENTS.md documents acceptance drift: baseline alpha trend_mechanism vs tests expecting v0.2 parity.",
+      "evidence": "AGENTS.md Known pre-existing acceptance test failures",
+      "recommended_action": "Reconcile tests or baseline YAML policy."
+    }
+  ],
+  "test_coverage_findings": [
+    {
+      "severity": "INFO",
+      "category": "test_coverage",
+      "finding": "Added tests/alpha/test_shipped_alpha_specs_load.py — discovers and loads all eight shipped specs under loose and strict trend_mechanism enforcement.",
+      "evidence": "pytest file",
+      "recommended_action": null
+    },
+    {
+      "severity": "MEDIUM",
+      "category": "test_coverage",
+      "finding": "No automated test asserts CrossSectionalContext contains non-null signals for every depends_on_signals feeder across horizon mismatches (gap surfaced only by audit tracing).",
+      "evidence": "tests/integration/test_xsect_v1_e2e.py allows degenerate intents",
+      "recommended_action": "Add assertion that completeness implies multi-feeder presence when configured, or enforce loader-side horizon alignment."
+    }
+  ],
+  "recommended_actions": [
+    {
+      "priority": "P0",
+      "action": "Fix PORTFOLIO vs feeder horizon contract (code or YAML) before trusting multi-mechanism portfolio specs."
+    },
+    {
+      "priority": "P1",
+      "action": "Reconcile pofi_benign_midcap_v1 mechanism narrative with KYLE_INFO taxonomy or sensors."
+    },
+    {
+      "priority": "P2",
+      "action": "Tighten portfolio risk_budget defaults for any non-fixture deployment path."
+    },
+    {
+      "priority": "P3",
+      "action": "Align inventory falsification half-life band text with G16 table."
+    }
+  ]
+}

@@ -1031,6 +1031,34 @@ def _create_signal_layer(
     return signal_seq, engine
 
 
+def _union_portfolio_upstream_strategy_ids(
+    portfolio_modules: Sequence[LoadedPortfolioLayerModule],
+) -> tuple[str, ...]:
+    """Sorted union of SIGNAL alpha_ids referenced by PORTFOLIO specs."""
+    ids: set[str] = set()
+    for m in portfolio_modules:
+        ids.update(m.depends_on_signals)
+    return tuple(sorted(ids))
+
+
+def _composition_signal_horizons(
+    registry: AlphaRegistry,
+    context_horizons: frozenset[int],
+    upstream_strategy_ids: tuple[str, ...],
+) -> frozenset[int]:
+    """Horizons for which the synchronizer caches Layer-2 ``Signal`` events."""
+    hs: set[int] = set(context_horizons)
+    for sid in upstream_strategy_ids:
+        try:
+            mod = registry.get(sid)
+        except KeyError:
+            continue
+        h = getattr(mod, "horizon_seconds", None)
+        if isinstance(h, int) and h > 0:
+            hs.add(h)
+    return frozenset(hs)
+
+
 def _create_composition_layer(
     *,
     config: PlatformConfig,
@@ -1115,11 +1143,19 @@ def _create_composition_layer(
     ctx_seq = SequenceGenerator()
     metric_seq = SequenceGenerator()
 
+    upstream_ids = _union_portfolio_upstream_strategy_ids(portfolio_modules)
+    signal_horizons = _composition_signal_horizons(
+        registry,
+        frozenset(horizons),
+        upstream_ids,
+    )
     synchronizer = UniverseSynchronizer(
         bus=bus,
         universe=universe,
         horizons=horizons,
         ctx_sequence_generator=ctx_seq,
+        signal_horizons=signal_horizons,
+        upstream_strategy_ids=upstream_ids,
     )
     synchronizer.attach()
 
@@ -1179,6 +1215,7 @@ def _create_composition_layer(
             module._construct = _DefaultPortfolioConstructor(  # noqa: SLF001
                 engine_thunk=lambda e=engine: e,
                 strategy_id=module.alpha_id,
+                feeder_strategy_ids=module.depends_on_signals,
             )
         engine.register(RegisteredPortfolioAlpha(
             alpha_id=module.alpha_id,

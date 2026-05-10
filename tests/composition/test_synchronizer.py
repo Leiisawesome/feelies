@@ -14,17 +14,25 @@ from feelies.core.events import (
 from feelies.core.identifiers import SequenceGenerator
 
 
-def _make_signal(*, symbol: str, ts_ns: int, horizon: int = 300) -> Signal:
+def _make_signal(
+    *,
+    symbol: str,
+    ts_ns: int,
+    horizon: int = 300,
+    strategy_id: str = "alpha_a",
+    strength: float = 1.0,
+    edge_bps: float = 5.0,
+) -> Signal:
     return Signal(
         timestamp_ns=ts_ns,
         sequence=0,
         correlation_id=f"sig:{symbol}",
         source_layer="SIGNAL",
         symbol=symbol,
-        strategy_id="alpha_a",
+        strategy_id=strategy_id,
         direction=SignalDirection.LONG,
-        strength=1.0,
-        edge_estimate_bps=5.0,
+        strength=strength,
+        edge_estimate_bps=edge_bps,
         layer="SIGNAL",
         horizon_seconds=horizon,
     )
@@ -143,6 +151,64 @@ def test_attach_is_noop_for_empty_universe():
     sync.attach()
     bus.publish(_make_tick(ts_ns=2_000, bi=1))
     # No subscription installed → no event raised.
+
+
+def test_fan_in_cross_horizon_feeders_into_portfolio_context():
+    """30s feeder ``Signal`` events must surface under the 300s barrier."""
+    bus = EventBus()
+    captured: list[CrossSectionalContext] = []
+    bus.subscribe(CrossSectionalContext, lambda e: captured.append(e))
+
+    sync = UniverseSynchronizer(
+        bus=bus,
+        universe=("AAPL",),
+        horizons=(300,),
+        ctx_sequence_generator=SequenceGenerator(),
+        signal_horizons=(30, 300),
+        upstream_strategy_ids=("fast_feeder", "slow_feeder"),
+    )
+    sync.attach()
+
+    boundary_ts = 10_000_000_000
+    bi = 3
+    bus.publish(
+        _make_snapshot(
+            symbol="AAPL",
+            ts_ns=boundary_ts - 500,
+            bi=bi,
+            horizon=300,
+        )
+    )
+    bus.publish(
+        _make_signal(
+            symbol="AAPL",
+            ts_ns=boundary_ts - 400,
+            horizon=30,
+            strategy_id="fast_feeder",
+            strength=0.5,
+            edge_bps=4.0,
+        )
+    )
+    bus.publish(
+        _make_signal(
+            symbol="AAPL",
+            ts_ns=boundary_ts - 100,
+            horizon=300,
+            strategy_id="slow_feeder",
+            strength=1.0,
+            edge_bps=6.0,
+        )
+    )
+    bus.publish(_make_tick(ts_ns=boundary_ts, bi=bi, horizon=300))
+
+    assert len(captured) == 1
+    ctx = captured[0]
+    row = ctx.signals_by_strategy_by_symbol["AAPL"]
+    assert row["fast_feeder"] is not None
+    assert row["fast_feeder"].horizon_seconds == 30
+    assert row["slow_feeder"] is not None
+    assert row["slow_feeder"].horizon_seconds == 300
+    assert ctx.signals_by_symbol["AAPL"] == row["fast_feeder"]
 
 
 def test_separate_horizons_independent():

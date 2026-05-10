@@ -758,6 +758,7 @@ class AlphaLoader:
             constructor = _DefaultPortfolioConstructor(
                 engine_thunk=lambda: None,
                 strategy_id=alpha_id,
+                feeder_strategy_ids=depends_on_signals,
             )
 
         risk_budget_raw = spec.get("risk_budget", {}) or {}
