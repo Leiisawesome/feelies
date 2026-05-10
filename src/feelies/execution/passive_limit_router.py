@@ -343,7 +343,7 @@ class PassiveLimitOrderRouter:
         *,
         fill_ts: int | None = None,
     ) -> None:
-        """D14 market fill via ``append_market_fill_acks`` (Inv-9 parity with ``BacktestOrderRouter``)."""
+        """Aggressive fill at ``quote`` — shared D14 model with ``BacktestOrderRouter``."""
         if fill_ts is None:
             fill_ts = self._clock.now_ns() + self._latency_ns
         append_market_fill_acks(
