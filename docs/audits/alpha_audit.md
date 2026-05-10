@@ -2,56 +2,60 @@
 
 **Repository:** [Leiisawesome/feelies](https://github.com/Leiisawesome/feelies)  
 **Scope:** `alphas/` (active specs discovered by `discover_alpha_specs`; `_template/` excluded by underscore rule)  
-**Audit date:** 2026-05-10 (UTC)  
-**Loader verification:** `AlphaLoader(enforce_trend_mechanism=False|True)` loads all eight shipped specs without error.
+**Audit dates:** Pass 1 — 2026-05-10 (UTC); **Pass 2 (this revision)** — 2026-05-10 (UTC)  
+**Loader verification:** `AlphaLoader(enforce_trend_mechanism=False|True)` loads all eight shipped specs without error (`tests/alpha/test_shipped_alpha_specs_load.py`).
 
 This audit is **not** a performance guarantee. No walk-forward Sharpe, live-slippage, or fill-model evidence was evaluated beyond tracing platform wiring and running a focused pytest subset.
 
-### Remediation applied (in-repo, same date)
+### Pass 1 remediation (implemented before pass 2)
 
-The following items from this audit were implemented in the codebase (BLOCKER / HIGH / operator config); numeric scores in the JSON snapshot below are **not** recomputed until a full re-audit.
+Code and YAML changes that motivated the second pass:
 
-- **BLOCKER — PORTFOLIO vs feeder horizons:** `UniverseSynchronizer` now unions portfolio and upstream SIGNAL horizons, caches per-feeder `Signal`s, and at portfolio barriers selects same-horizon feeders by boundary alignment and cross-horizon feeders by latest `timestamp_ns ≤ barrier`. `CrossSectionalContext` carries `signals_by_strategy_by_symbol`; bootstrap wires `signal_horizons`, `upstream_strategy_ids`, and `feeder_strategy_ids` into the composition pipeline; `CrossSectionalRanker` sums marginal raw scores across feeders when configured.
-- **HIGH — benign KYLE narrative / fingerprint:** `pofi_benign_midcap_v1` hypothesis reframed toward Kyle-style footprint; `trend_mechanism.l1_signature_sensors` includes `kyle_lambda_60s` (alongside existing sensors).
-- **HIGH — inventory margin floor:** `pofi_inventory_revert_v1` cost block adjusted (`margin_ratio` above Inv-12 floor; falsification half-life band tightened per audit).
-- **HIGH — mixed typo:** `pofi_xsect_mixed_mechanism_v1` mechanism enum spelling corrected to `HAWKES_SELF_EXCITE`.
-- **MEDIUM — `platform.yaml`:** Additional `sensor_specs` entries for `kyle_lambda_60s`, `trade_through_rate`, `hawkes_intensity`.
+- **BLOCKER — PORTFOLIO vs feeder horizons:** `UniverseSynchronizer` unions portfolio and feeder horizons; cross-horizon feeders use latest `timestamp_ns ≤ barrier`; `CrossSectionalContext.signals_by_strategy_by_symbol`; bootstrap `signal_horizons` / `upstream_strategy_ids`; `CrossSectionalRanker` multi-feeder aggregation when `feeder_strategy_ids` is set.
+- **Benign / inventory / mixed / platform.yaml:** Hypothesis + G16 fingerprint updates; inventory margin and falsification band; `HAWKES_SELF_EXCITE` spelling; extra `sensor_specs` in `platform.yaml`.
+
+### Pass 2 verification
+
+- Re-ran loader discovery for all eight specs (strict + loose).
+- Confirmed synchronizer cross-horizon fan-in via `tests/composition/test_synchronizer.py::test_fan_in_cross_horizon_feeders_into_portfolio_context` and PORTFOLIO integration tests (`test_xsect_v1_e2e`, `test_mixed_mechanism_e2e`).
+- Rescored alphas in `alpha_audit_findings.json` (BLOCKER cleared; residual WARNs documented).
 
 ---
 
 ## Executive Summary
 
-| Metric | Value |
-|--------|------:|
+| Metric | Value (pass 2) |
+|--------|---------------:|
 | `.alpha.yaml` files found (active) | 8 |
 | Template / underscore-dir specs (excluded from discovery) | 2 |
 | Loaded successfully (strict + loose) | 8 |
 | Failed load | 0 |
 | Audit status **PASS** | 0 |
-| Audit status **WARN** | 5 |
-| Audit status **FAIL** | 3 |
+| Audit status **WARN** | 8 |
+| Audit status **FAIL** | 0 |
 | Decision **KILL** | 0 |
 | Decision **RESEARCH_MORE** | 8 |
 | Decision **PAPER_TRADE_CANDIDATE** | 0 |
 | Decision **DEPLOY_SMALL_CANDIDATE** | 0 |
 | Decision **PASS_STRUCTURAL_ONLY** (SIGNAL subset) | 5 |
 
-**Interpretation:** Every shipped SIGNAL alpha is **structurally loadable** and passes inline AST purity gates at load time, but none carries audited profitability or execution evidence. At audit time, all three PORTFOLIO reference alphas **FAILED** the composition-feed contract because **30s** feeders did not reach **300s** barriers through the synchronizer; that wiring gap is **remediated** in-tree (see **Remediation applied** above). Table counts below reflect the pre-remediation audit pass unless refreshed.
+**Interpretation:** Every shipped alpha remains **RESEARCH_MORE** — no profitability or live execution audit. Pass 1’s **composition-feed BLOCKER** is **closed**: **30s** feeders **do** reach **300s** `CrossSectionalContext` through the updated synchronizer and bootstrap wiring. Residual issues are **fixture-scale PORTFOLIO risk**, **operator bundle documentation**, **benign fingerprint vs `evaluate()` sensor usage**, and **AGENTS.md acceptance drift** (unchanged).
 
 ---
 
 ## Critical Findings
 
-BLOCKER and HIGH items appear first.
+Pass 2 — residual BLOCKER/HIGH list (pass 1 BLOCKER/HIGH composition-feed and inventory margin items are **resolved**).
 
 | Severity | Category | Finding |
 |----------|----------|---------|
-| **BLOCKER** | backtest_compatibility | `pofi_xsect_v1`, `pofi_xsect_v1_with_decay`, `pofi_xsect_mixed_mechanism_v1` declare `depends_on_signals` that include SIGNAL alphas at **30s** horizon while `horizon_seconds: 300`. `UniverseSynchronizer` filters bus `Signal` events with `sig.horizon_seconds == tick.horizon_seconds`; **30s signals never populate `CrossSectionalContext.signals_by_symbol` at 300s barriers.** Integration tests explicitly allow **degenerate** (empty) intents — see `tests/integration/test_xsect_v1_e2e.py`. |
-| **HIGH** | economic_mechanism | `pofi_benign_midcap_v1` declares `trend_mechanism.family: KYLE_INFO` while the hypothesis emphasizes VWAP/TWAP slicing — narrative mismatch vs taxonomy; fingerprint list omits `kyle_lambda_60s` (G16 satisfied by `micro_price` only). |
-| **HIGH** | cost_execution | `pofi_inventory_revert_v1` declares `margin_ratio: 1.5`, exactly the platform floor — zero headroom vs Inv-12 stress doctrine. |
-| **HIGH** | backtest_compatibility | Same horizon mismatch implies **inventory / hawkes feeders do not actually reach** the reference PORTFOLIO ranker at 300s — multi-mechanism diversification claimed in YAML is **not executed** by current wiring. |
-| **MEDIUM** | configuration | `platform.yaml` pins a single `alpha_specs` entry (`pofi_benign_midcap_v1`) and a partial `sensor_specs` list — other shipped alphas need explicit operator bundles. |
-| **MEDIUM** | test_coverage | Documented acceptance drift: baseline alpha YAML vs v0.2 parity tests (`AGENTS.md`). |
+| **HIGH** | risk_budget | Reference PORTFOLIO alphas (`pofi_xsect_*`) retain **fixture-scale** gross exposure and capital allocation — unsafe verbatim for capital-bearing configs. |
+| **MEDIUM** | dependency_validity | `pofi_benign_midcap_v1`: `trend_mechanism.l1_signature_sensors` lists **`kyle_lambda_60s`** but **`depends_on_sensors` / `evaluate()`** do not read Kyle λ — fingerprint vs runtime mechanism traceability gap (Inv-1 research hygiene). |
+| **MEDIUM** | configuration | `platform.yaml` still defaults `alpha_specs` to a **single** shipped SIGNAL id; multi-alpha / PORTFOLIO bundles require explicit operator lists (sensor_specs expanded for common sensors only partially offsets this). |
+| **MEDIUM** | test_coverage | `AGENTS.md` documents acceptance drift: baseline alpha YAML vs v0.2 parity tests. |
+| **LOW** | test_coverage | E2E tests may still admit sparse or empty intents when replay does not emit feeder signals — orthogonal to horizon wiring. |
+
+**Resolved since pass 1 (for traceability):** synchronizer horizon filter excluding **30s** feeders at **300s** barriers; inventory **`margin_ratio: 1.5`** at Inv-12 floor; falsification half-life text vs G16 table drift; benign **VWAP/TWAP vs KYLE** narrative tension; mixed-alpha **HAWKES_SELF_EXCITE** typo.
 
 ---
 
@@ -61,12 +65,12 @@ BLOCKER and HIGH items appear first.
 |----------|------|-------|------------:|------------------|---------|-------------|-----------------|-------------|--------|----------|
 | pofi_benign_midcap_v1 | `alphas/pofi_benign_midcap_v1/pofi_benign_midcap_v1.alpha.yaml` | SIGNAL | 120 | KYLE_INFO | ofi_ewma, micro_price, spread_z_30d | Yes | Yes | Conservative caps | WARN | RESEARCH_MORE |
 | pofi_kyle_drift_v1 | `alphas/pofi_kyle_drift_v1/pofi_kyle_drift_v1.alpha.yaml` | SIGNAL | 300 | KYLE_INFO | kyle_lambda_60s, ofi_ewma, micro_price, spread_z_30d | Yes | Yes | Moderate | WARN | RESEARCH_MORE |
-| pofi_inventory_revert_v1 | `alphas/pofi_inventory_revert_v1/pofi_inventory_revert_v1.alpha.yaml` | SIGNAL | 30 | INVENTORY | quote_replenish_asymmetry, spread_z_30d, quote_hazard_rate | Yes | Yes (floor margin) | Conservative | WARN | RESEARCH_MORE |
+| pofi_inventory_revert_v1 | `alphas/pofi_inventory_revert_v1/pofi_inventory_revert_v1.alpha.yaml` | SIGNAL | 30 | INVENTORY | quote_replenish_asymmetry, spread_z_30d, quote_hazard_rate | Yes | Yes (margin 1.6) | Conservative | WARN | RESEARCH_MORE |
 | pofi_hawkes_burst_v1 | `alphas/pofi_hawkes_burst_v1/pofi_hawkes_burst_v1.alpha.yaml` | SIGNAL | 30 | HAWKES_SELF_EXCITE | hawkes_intensity, trade_through_rate, ofi_ewma, spread_z_30d | Yes | Yes | Tight | WARN | RESEARCH_MORE |
 | pofi_moc_imbalance_v1 | `alphas/pofi_moc_imbalance_v1/pofi_moc_imbalance_v1.alpha.yaml` | SIGNAL | 120 | SCHEDULED_FLOW | scheduled_flow_window, ofi_ewma | Yes | Yes | Moderate | WARN | RESEARCH_MORE |
-| pofi_xsect_v1 | `alphas/pofi_xsect_v1/pofi_xsect_v1.alpha.yaml` | PORTFOLIO | 300 | (multi consume) | — | N/A | Yes | Very loose (fixture-scale) | FAIL | RESEARCH_MORE |
-| pofi_xsect_v1_with_decay | `alphas/pofi_xsect_v1/pofi_xsect_v1.with_decay.alpha.yaml` | PORTFOLIO | 300 | (multi consume) | — | N/A | Yes | Very loose | FAIL | RESEARCH_MORE |
-| pofi_xsect_mixed_mechanism_v1 | `alphas/pofi_xsect_mixed_mechanism_v1/pofi_xsect_mixed_mechanism_v1.alpha.yaml` | PORTFOLIO | 300 | (multi consume) | — | N/A | Yes | Very loose | FAIL | RESEARCH_MORE |
+| pofi_xsect_v1 | `alphas/pofi_xsect_v1/pofi_xsect_v1.alpha.yaml` | PORTFOLIO | 300 | (multi consume) | — | N/A | Yes | Very loose (fixture-scale) | WARN | RESEARCH_MORE |
+| pofi_xsect_v1_with_decay | `alphas/pofi_xsect_v1/pofi_xsect_v1.with_decay.alpha.yaml` | PORTFOLIO | 300 | (multi consume) | — | N/A | Yes | Very loose | WARN | RESEARCH_MORE |
+| pofi_xsect_mixed_mechanism_v1 | `alphas/pofi_xsect_mixed_mechanism_v1/pofi_xsect_mixed_mechanism_v1.alpha.yaml` | PORTFOLIO | 300 | (multi consume) | — | N/A | Yes | Very loose | WARN | RESEARCH_MORE |
 
 ---
 
@@ -79,9 +83,9 @@ BLOCKER and HIGH items appear first.
 - **File:** `alphas/pofi_benign_midcap_v1/pofi_benign_midcap_v1.alpha.yaml`
 - **Layer:** SIGNAL — **schema_version:** 1.1
 - **Horizon:** 120 s
-- **Mechanism:** KYLE_INFO (declared) vs VWAP/TWAP narrative (hypothesis)
+- **Mechanism:** KYLE_INFO — hypothesis aligned to Kyle-style footprint (pass 2); **residual:** `kyle_lambda_60s` in fingerprint but not in `evaluate()`
 - **Declared actor:** implicit — `structural_actor` field absent
-- **Declared hypothesis:** persistent OFI drift in “normal” microstructure
+- **Declared hypothesis:** Kyle-style informed-flow footprint (OFI + micro-price) in normal regime; VWAP/TWAP as execution modality only
 - **Falsification criteria:** correlation decay, DSR, structural regime shift — substantive
 - **Cost margin:** 1.8 (reconciles with `9 / (2+2+1)`)
 - **Regime gate:** HMM posteriors + `spread_z_30d`
@@ -91,7 +95,7 @@ BLOCKER and HIGH items appear first.
 
 | Severity | Category | Finding | Evidence | Recommended Action |
 |----------|----------|---------|----------|-------------------|
-| HIGH | economic_mechanism | Mechanism label KYLE_INFO vs VWAP/TWAP institutional slicing story — taxonomy tension | `trend_mechanism` + `hypothesis` | Align family + sensors with Kyle λ story or rewrite hypothesis |
+| MEDIUM | dependency_validity | G16 `l1_signature_sensors` includes `kyle_lambda_60s` but signal logic never reads λ — fingerprint ahead of runtime claim | YAML `depends_on_sensors` + `signal:` | Add λ to deps + snapshot or drop from fingerprint |
 | MEDIUM | promotion_readiness | No `promotion:` thresholds | YAML | Add when promoting |
 | LOW | schema_loader_compliance | Loads with strict `enforce_trend_mechanism` | Loader smoke | None |
 
@@ -99,8 +103,8 @@ BLOCKER and HIGH items appear first.
 
 - **Kill if:** N/A (no leakage detected in `signal:` block)
 - **Freeze if:** Operator enables strict economics and mechanism coherence checks fail research board
-- **Research more if:** Mechanism narrative, Kyle sensor inclusion, execution realism vs passive router
-- **Paper trade only if:** After horizon-aligned portfolio fixes elsewhere — single-name SIGNAL path only
+- **Research more if:** Runtime use of declared fingerprint sensors (λ), execution realism vs passive router
+- **Paper trade only if:** After CPCV/OOS evidence — single-name SIGNAL path only unless PORTFOLIO bundle explicitly promoted
 
 ---
 
@@ -131,9 +135,8 @@ BLOCKER and HIGH items appear first.
 
 | Severity | Category | Finding | Evidence | Recommended Action |
 |----------|----------|---------|----------|-------------------|
-| HIGH | cost_execution | margin_ratio == MIN (1.5) | `cost_arithmetic` | Stress costs |
-| MEDIUM | documentation | Falsification mentions half-life [1,60]s; code table uses [5,60] for INVENTORY | YAML vs `layer_validator.py` | Align copy |
-| HIGH | portfolio_feeder | 30s feeder cannot populate 300s `CrossSectionalContext` | synchronizer | Fix portfolio horizon design |
+| LOW | cost_execution | Margin 1.6 clears floor; still modest vs aggressive stress | `cost_arithmetic` | Stress at 2× cost before promotion |
+| INFO | backtest_compatibility | 30s feeder reaches 300s PORTFOLIO via cross-horizon fan-in | synchronizer tests | None |
 
 ---
 
@@ -148,7 +151,7 @@ BLOCKER and HIGH items appear first.
 
 | Severity | Category | Finding | Evidence | Recommended Action |
 |----------|----------|---------|----------|-------------------|
-| HIGH | portfolio_feeder | Same 30s vs 300s PORTFOLIO mismatch when used as mixed feeder | synchronizer | Align horizons |
+| INFO | portfolio_feeder | Cross-horizon fan-in supplies hawkes at 300s barriers | integration tests | None |
 | INFO | hazard_exit | Opt-in hazard policy declared | YAML | Monitor Level-5 replay tests |
 
 ---
@@ -173,33 +176,34 @@ BLOCKER and HIGH items appear first.
 **Summary**
 
 - **PORTFOLIO** — **horizon_seconds:** 300 — **depends_on_signals:** kyle (300) + inventory (30)
-- **Final decision:** RESEARCH_MORE — audit status **FAIL**
+- **Final decision:** RESEARCH_MORE — audit status **WARN** (pass 2)
 
 **Findings**
 
 | Severity | Category | Finding | Evidence | Recommended Action |
 |----------|----------|---------|----------|-------------------|
-| BLOCKER | backtest_compatibility | Inventory feeder signals excluded from 300s cross-sectional fan-in | `synchronizer.py` | Remediate horizon contract |
+| INFO | backtest_compatibility | Multi-horizon fan-in supplies inventory feeder at 300s barriers | synchronizer + e2e | None |
 | HIGH | risk_budget | 50% gross / 100% capital_allocation fixture posture | YAML | Do not deploy literally |
+| MEDIUM | economic_mechanism | Harness hypothesis is performance-target without standalone structural claim beyond feeders | YAML hypothesis | CPCV/OOS before promotion |
 
 ---
 
 ### pofi_xsect_v1_with_decay
 
-Same BLOCKER as `pofi_xsect_v1`; decay weighting does not inject missing feeder signals.
+Same wiring as `pofi_xsect_v1`; decay applies **after** feeders populate context (pass 2 **WARN**).
 
 ---
 
 ### pofi_xsect_mixed_mechanism_v1
 
-Same BLOCKER; **two** feeders at 30s (`inventory`, `hawkes`) never surface at 300s barriers.
+Dual **30s** feeders (`inventory`, `hawkes`) plus **300s** kyle feeder — all reach composition via `signals_by_strategy_by_symbol` + multi-feeder ranker (pass 2 **WARN**; fixture risk unchanged).
 
 ---
 
 ## Cross-Alpha Findings
 
-- **Horizon contract:** PORTFOLIO composition is single-horizon per `CrossSectionalContext`; multi-horizon `depends_on_signals` is misleading without synchronizer changes.
-- **Sensor coverage:** Loader-level G6/G16 rule 4 abstains when `known_sensor_ids` is unset; bootstrap resolves sensors — ship minimal `sensor_specs` per bundle.
+- **Horizon contract:** **PASS 2:** Multi-horizon `depends_on_signals` is supported by synchronizer + bootstrap union horizons and ranker aggregation.
+- **Sensor coverage:** Operator must still align `alpha_specs` and sensors per deployment; reference `platform.yaml` lists extra trade-backed sensors but not every bundle.
 - **Acceptance drift:** Baseline alpha vs strict-mode parity tests — see `AGENTS.md`.
 
 ---
@@ -210,7 +214,7 @@ Same BLOCKER; **two** feeders at 30s (`inventory`, `hawkes`) never surface at 30
 
 **PORTFOLIO path traced:** upstream `Signal` → `UniverseSynchronizer` → `CrossSectionalContext` → `CompositionEngine` → `SizedPositionIntent` → `RiskEngine.check_sized_intent` → per-leg orders.
 
-**Gap:** Synchronizer horizon filter breaks declared multi-feeder PORTFOLIO specs (see Critical Findings).
+**Gap (pass 2):** None on horizon fan-in — residual gap is **economic evidence** (no audited PnL) and **fixture risk_budget** on reference PORTFOLIO YAML.
 
 **Execution realism:** `README.md` documents mid-price fills for `execution_mode: market` backtests — disclosed edges are **not** proof of profit under passive queue or live adverse selection.
 
@@ -220,23 +224,22 @@ Same BLOCKER; **two** feeders at 30s (`inventory`, `hawkes`) never surface at 30
 
 **Existing tests (sample):** `tests/alpha/*`, `tests/integration/test_xsect_v1_e2e.py`, determinism replay suites, reference alpha load invariants.
 
-**Missing tests (audit flag):** Assertion that each `depends_on_signals` alpha’s `Signal.horizon_seconds` equals PORTFOLIO `horizon_seconds`, or explicit multi-horizon aggregation contract.
+**Pass 2 regression tests:** `tests/composition/test_synchronizer.py::test_fan_in_cross_horizon_feeders_into_portfolio_context`, `tests/composition/test_ranker_multi_feeder.py`, plus shipped-spec loader and xsect / mixed e2e modules.
 
-**Tests added:** `tests/alpha/test_shipped_alpha_specs_load.py` — discovers eight specs; loads each under `enforce_trend_mechanism` on/off.
-
-**Commands run**
+**Commands run (pass 2 slice)**
 
 ```bash
-uv run pytest tests/alpha tests/integration/test_xsect_v1_e2e.py \
-  tests/integration/test_mixed_mechanism_e2e.py \
-  tests/acceptance/test_reference_alpha_load_invariants.py -q
-# 598 passed
+uv run pytest tests/alpha/test_shipped_alpha_specs_load.py \
+  tests/composition/test_synchronizer.py::test_fan_in_cross_horizon_feeders_into_portfolio_context \
+  tests/integration/test_xsect_v1_e2e.py \
+  tests/integration/test_mixed_mechanism_e2e.py -q
+# 16 passed (representative slice)
 
 uv run pytest tests/alpha/test_shipped_alpha_specs_load.py -q
 # 3 passed
 ```
 
-Full `uv run pytest` was **not** executed in this audit slice (~2095 tests).
+Full `uv run pytest` was **not** executed for pass 2 (~2095 tests).
 
 ---
 
@@ -246,7 +249,7 @@ Weights (max 115): schema_loader 15, economic_mechanism 10, dependency_validity 
 
 **PASS** = full weight; **WARN** = half; **FAIL** = zero for that category; **mandatory overrides** zero-out overall trust regardless of subscores.
 
-Detailed numeric scores per alpha are in `alpha_audit_findings.json`.
+Detailed numeric scores per alpha are in `alpha_audit_findings.json` (**pass 2** rescoring; see `second_pass_at` and `methodology_pass_2`).
 
 ---
 
@@ -256,9 +259,10 @@ Detailed numeric scores per alpha are in `alpha_audit_findings.json`.
 
 - ~~Align feeder `horizon_seconds` with PORTFOLIO horizon **or** extend `UniverseSynchronizer` / context schema for explicit multi-horizon fan-in **or** trim `depends_on_signals` to match reality.~~ Implemented: multi-horizon fan-in + per-strategy map + ranker aggregation.
 
-**P1 — must fix before promotion narrative**
+**P1 — promotion narrative / mechanism traceability**
 
-- ~~Reconcile `pofi_benign_midcap_v1` mechanism taxonomy with hypothesis.~~ Addressed in YAML; acceptance drift vs baseline YAML (`AGENTS.md`) remains an open test/YAML alignment item.
+- **Open (pass 2):** Wire `kyle_lambda_60s` into `pofi_benign_midcap_v1` `depends_on_sensors` + `evaluate()` **or** narrow `l1_signature_sensors` to sensors the signal actually consumes.
+- Acceptance drift vs baseline YAML (`AGENTS.md`) remains open.
 
 **P2 — research quality** *(done for margin headroom)*
 
@@ -272,18 +276,18 @@ Detailed numeric scores per alpha are in `alpha_audit_findings.json`.
 
 ## Final Alpha Decision Table
 
+Pass 2 scores (see JSON).
+
 | Alpha | Score | Status | Decision | Main Reason | Next Action |
 |-------|------:|--------|----------|-------------|-------------|
-| pofi_benign_midcap_v1 | 72 | WARN | RESEARCH_MORE | Mechanism/hypothesis tension | Align KYLE_INFO story |
+| pofi_benign_midcap_v1 | 74 | WARN | RESEARCH_MORE | Fingerprint vs runtime λ usage | Wire λ or narrow fingerprint |
 | pofi_kyle_drift_v1 | 82 | WARN | RESEARCH_MORE | No PnL evidence | CPCV / OOS workflow |
-| pofi_inventory_revert_v1 | 78 | WARN | RESEARCH_MORE | Margin at floor; feeder/portfolio mismatch | Cost stress + horizon fix |
-| pofi_hawkes_burst_v1 | 80 | WARN | RESEARCH_MORE | Feeder/portfolio mismatch | Horizon fix |
+| pofi_inventory_revert_v1 | 88 | WARN | RESEARCH_MORE | No OOS proof | Stress costs + research gates |
+| pofi_hawkes_burst_v1 | 85 | WARN | RESEARCH_MORE | No PnL evidence | CPCV / hazard monitoring |
 | pofi_moc_imbalance_v1 | 76 | WARN | RESEARCH_MORE | Prior latency unverified | Sensor functional proof |
-| pofi_xsect_v1 | 38 | FAIL† | RESEARCH_MORE | Was BLOCKER: horizon fan-in | Remediated in synchronizer/ranker; re-score on re-audit |
-| pofi_xsect_v1_with_decay | 38 | FAIL† | RESEARCH_MORE | Same BLOCKER | Same |
-| pofi_xsect_mixed_mechanism_v1 | 35 | FAIL† | RESEARCH_MORE | Same BLOCKER (×2 feeders) | Same |
-
-† **Status column** reflects the original audit scoring artifact; structural BLOCKER is addressed in code — expect higher `backtest_compat` on refresh.
+| pofi_xsect_v1 | 63 | WARN | RESEARCH_MORE | Fixture risk_budget; weak harness hypothesis | Tighten YAML for real use |
+| pofi_xsect_v1_with_decay | 63 | WARN | RESEARCH_MORE | Same | Same |
+| pofi_xsect_mixed_mechanism_v1 | 64 | WARN | RESEARCH_MORE | Same | Same |
 
 ---
 
