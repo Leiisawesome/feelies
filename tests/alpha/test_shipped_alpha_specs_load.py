@@ -40,6 +40,8 @@ def test_all_shipped_alpha_specs_discovered() -> None:
 )
 def test_all_shipped_alpha_specs_load(enforce_tm: bool) -> None:
     loader = AlphaLoader(enforce_trend_mechanism=enforce_tm)
-    for path in discover_alpha_specs(_REPO_ROOT / "alphas"):
+    specs = discover_alpha_specs(_REPO_ROOT / "alphas")
+    assert specs, "Expected at least one shipped alpha spec under alphas/"
+    for path in specs:
         module = loader.load(path)
         assert module.manifest.alpha_id
