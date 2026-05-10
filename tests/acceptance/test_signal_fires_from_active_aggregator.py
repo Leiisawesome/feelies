@@ -66,6 +66,7 @@ from feelies.core.events import (
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.sensors.impl.micro_price import MicroPriceSensor
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
+from feelies.sensors.impl.realized_vol_30s import RealizedVol30sSensor
 from feelies.sensors.impl.spread_z_30d import SpreadZScoreSensor
 from feelies.sensors.spec import SensorSpec
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -85,8 +86,8 @@ _SIGNAL_ALPHA = (
 # Single-symbol universe — sufficient to prove the chain end-to-end.
 _UNIVERSE: tuple[str, ...] = ("AAPL",)
 
-# pofi_benign_midcap_v1 declares depends_on_sensors: [ofi_ewma, micro_price,
-# spread_z_30d].  All three must be registered for G6 to pass at load.
+# pofi_benign_midcap_v1 declares depends_on_sensors including ofi_ewma,
+# micro_price, spread_z_30d, realized_vol_30s — all must be registered.
 # warm_after=5 speeds warm-up; the test pre-warms by direct SensorReading
 # injection, not through real quotes.
 _SENSOR_SPECS: tuple[SensorSpec, ...] = (
@@ -109,6 +110,13 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
         sensor_version="1.0.0",
         cls=SpreadZScoreSensor,
         params={},
+        subscribes_to=(NBBOQuote,),
+    ),
+    SensorSpec(
+        sensor_id="realized_vol_30s",
+        sensor_version="1.1.0",
+        cls=RealizedVol30sSensor,
+        params={"window_seconds": 30, "warm_after": 8},
         subscribes_to=(NBBOQuote,),
     ),
 )
@@ -160,6 +168,8 @@ def _reading(
     sensor_id: str,
     value: float,
     ts_ns: int,
+    *,
+    sensor_version: str = "1.0.0",
 ) -> SensorReading:
     return SensorReading(
         timestamp_ns=ts_ns,
@@ -167,7 +177,7 @@ def _reading(
         sequence=seq,
         symbol=symbol,
         sensor_id=sensor_id,
-        sensor_version="1.0.0",
+        sensor_version=sensor_version,
         value=value,
         warm=True,
     )
@@ -250,9 +260,23 @@ def _fire_signals(
     n_warmup = 30
     for i in range(n_warmup):
         v = (i / (n_warmup - 1)) * 2.0 - 1.0  # -1.0 … +1.0
+        micro = 100.0 + (i / max(n_warmup - 1, 1)) * 1.0  # gentle uptrend
         ts = SESSION_OPEN_NS + i * 1_000_000_000
         for symbol in _UNIVERSE:
             bus.publish(_reading(symbol, seq, "ofi_ewma", v, ts))
+            seq += 1
+            bus.publish(_reading(symbol, seq, "micro_price", micro, ts))
+            seq += 1
+            bus.publish(
+                _reading(
+                    symbol,
+                    seq,
+                    "realized_vol_30s",
+                    0.0005,
+                    ts,
+                    sensor_version="1.1.0",
+                ),
+            )
             seq += 1
 
     # ── 4. Spike OFI — this is the reading that drives z above threshold ─
@@ -261,6 +285,19 @@ def _fire_signals(
     spike_ts = SESSION_OPEN_NS + n_warmup * 1_000_000_000
     for symbol in _UNIVERSE:
         bus.publish(_reading(symbol, seq, "ofi_ewma", ofi_spike, spike_ts))
+        seq += 1
+        bus.publish(_reading(symbol, seq, "micro_price", 103.0, spike_ts))
+        seq += 1
+        bus.publish(
+            _reading(
+                symbol,
+                seq,
+                "realized_vol_30s",
+                0.0005,
+                spike_ts,
+                sensor_version="1.1.0",
+            ),
+        )
         seq += 1
 
     # ── 5. Trigger the 120-second horizon boundary ─────────────────────

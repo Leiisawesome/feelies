@@ -52,6 +52,7 @@ depends_on_sensors:
   - ofi_ewma
   - micro_price
   - spread_z_30d
+  - realized_vol_30s
 
 # ── Universe ──────────────────────────────────────────────
 # Universe selection is config-driven (mid-cap subset of the
@@ -100,7 +101,7 @@ regime_gate:
   on_condition: |
     P(normal) > 0.7 and abs(spread_z_30d) < 0.5
   off_condition: |
-    P(normal) < 0.5 or spread_z_30d > 1.5
+    P(normal) < 0.5 or spread_z_30d > 1.5 or realized_vol_30s_zscore > 3.5
   hysteresis:
     posterior_margin: 0.20
     percentile_margin: 0.30
@@ -132,11 +133,16 @@ signal: |
       edge_cap = params["edge_cap_bps"]
 
       z = snapshot.values.get("ofi_ewma_zscore")
-      if z is None:
+      z_mp = snapshot.values.get("micro_price_zscore")
+      if z is None or z_mp is None:
           return None
 
       mag = abs(z)
       if mag < threshold:
+          return None
+
+      # Require micro-price pressure aligned with signed OFI (L1 footprint).
+      if (z > 0.0 and z_mp <= 0.0) or (z < 0.0 and z_mp >= 0.0):
           return None
 
       direction = LONG if z > 0 else SHORT

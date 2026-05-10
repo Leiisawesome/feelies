@@ -46,6 +46,7 @@ depends_on_sensors:
   - trade_through_rate
   - ofi_ewma
   - spread_z_30d
+  - realized_vol_30s
 
 # ── Parameters ────────────────────────────────────────────
 parameters:
@@ -95,7 +96,7 @@ regime_gate:
   on_condition: |
     P(normal) > 0.6 and spread_z_30d < 1.0
   off_condition: |
-    P(normal) < 0.4 or spread_z_30d > 2.5
+    P(normal) < 0.4 or spread_z_30d > 2.5 or realized_vol_30s_zscore > 3.5
   hysteresis:
     posterior_margin: 0.20
     percentile_margin: 0.30

@@ -76,6 +76,7 @@ def test_manifest_metadata(loaded: LoadedSignalLayerModule) -> None:
         "trade_through_rate",
         "ofi_ewma",
         "spread_z_30d",
+        "realized_vol_30s",
     )
 
 
@@ -171,6 +172,7 @@ def _snapshot(
             "hawkes_intensity_zscore": z,
             "trade_through_rate": ttr,
             "ofi_ewma": ofi,
+            "realized_vol_30s_zscore": 0.5,
         },
     )
 

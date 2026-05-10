@@ -14,8 +14,14 @@ symbols:
 # Scanned for *.alpha.yaml if set; here we use explicit paths below.
 alpha_spec_dir: null
 
+# All shipped SIGNAL alphas (PORTFOLIO specs need a wider symbols universe +
+# factor_loadings_dir — wire those via integration-style configs).
 alpha_specs:
   - alphas/pofi_benign_midcap_v1/pofi_benign_midcap_v1.alpha.yaml
+  - alphas/pofi_inventory_revert_v1/pofi_inventory_revert_v1.alpha.yaml
+  - alphas/pofi_kyle_drift_v1/pofi_kyle_drift_v1.alpha.yaml
+  - alphas/pofi_hawkes_burst_v1/pofi_hawkes_burst_v1.alpha.yaml
+  - alphas/pofi_moc_imbalance_v1/pofi_moc_imbalance_v1.alpha.yaml
 
 parameter_overrides: {}
 
@@ -189,5 +195,25 @@ sensor_specs:
     subscribes_to: [Trade]
     input_sensor_ids: []
     min_history: 3
+    throttled_ms: null
+
+  - sensor_id: scheduled_flow_window
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.scheduled_flow_window.ScheduledFlowWindowSensor
+    params: {}
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 0
+    throttled_ms: null
+
+  - sensor_id: realized_vol_30s
+    sensor_version: "1.1.0"
+    cls: feelies.sensors.impl.realized_vol_30s.RealizedVol30sSensor
+    params:
+      window_seconds: 30
+      warm_after: 16
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 16
     throttled_ms: null
 

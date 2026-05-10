@@ -50,7 +50,10 @@ def loaded() -> LoadedSignalLayerModule:
 def test_manifest_metadata(loaded: LoadedSignalLayerModule) -> None:
     assert loaded.manifest.layer == "SIGNAL"
     assert loaded.depends_on_sensors == (
-        "quote_replenish_asymmetry", "spread_z_30d", "quote_hazard_rate",
+        "quote_replenish_asymmetry",
+        "spread_z_30d",
+        "quote_hazard_rate",
+        "realized_vol_30s",
     )
 
 
@@ -158,6 +161,7 @@ def _snapshot(
         values={
             "quote_replenish_asymmetry_zscore": asym_z,
             "quote_hazard_rate": hazard,
+            "realized_vol_30s_zscore": 0.5,
         },
     )
 

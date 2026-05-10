@@ -60,6 +60,12 @@ class RollingZscoreFeature:
         Minimum warm readings before returning ``warm=True``.
     max_samples:
         FIFO window ceiling.  Older readings are silently dropped.
+    tuple_sum_component_indices:
+        When set, a tuple-valued ``SensorReading.value`` is reduced to the
+        sum of the listed components (e.g. Hawkes ``(λ_buy, λ_sell, …)``
+        → ``λ_buy + λ_sell``).  When ``None`` (default), non-scalar values
+        are ignored — use :class:`TupleComponentFeature` for single-index
+        extraction instead.
     """
 
     feature_version: str = "1.0.0"
@@ -72,6 +78,7 @@ class RollingZscoreFeature:
         feature_id: str | None = None,
         min_samples: int = 30,
         max_samples: int = 2000,
+        tuple_sum_component_indices: tuple[int, ...] | None = None,
     ) -> None:
         self.feature_id: str = (
             feature_id if feature_id is not None else f"{sensor_id}_zscore"
@@ -80,6 +87,7 @@ class RollingZscoreFeature:
         self.input_sensor_ids: tuple[str, ...] = (sensor_id,)
         self._min_samples = min_samples
         self._max_samples = max_samples
+        self._tuple_sum_component_indices = tuple_sum_component_indices
 
     def initial_state(self) -> dict[str, Any]:
         return {"vals": deque(maxlen=self._max_samples)}
@@ -92,9 +100,21 @@ class RollingZscoreFeature:
     ) -> None:
         if not reading.warm:
             return
-        v = reading.value
-        if isinstance(v, tuple):
-            return
+        v_raw = reading.value
+        idxs = self._tuple_sum_component_indices
+        if isinstance(v_raw, tuple):
+            if idxs is None:
+                return
+            acc = 0.0
+            for i in idxs:
+                if i >= len(v_raw):
+                    return
+                acc += float(v_raw[i])
+            v = acc
+        else:
+            if idxs is not None:
+                return
+            v = float(v_raw)
         state["vals"].append(float(v))
 
     def finalize(
