@@ -33,6 +33,7 @@ class DiskCacheDayMeta:
     date: str
     source: Literal["cache"]
     event_count: int
+    ingestion_health: str | None = None
 
 
 def _iter_dates(start_date: str, end_date: str) -> list[str]:
@@ -52,11 +53,16 @@ def load_event_log_from_disk_cache(
     end_date: str,
     *,
     cache_dir: Path | None = None,
+    require_healthy_ingestion_manifests: bool = False,
 ) -> tuple[InMemoryEventLog, IngestResult, list[DiskCacheDayMeta]]:
     """Load and merge cached JSONL.gz days; fail fast if any day is absent.
 
     No network I/O.  Re-sequences identically to
     :func:`scripts.run_backtest.ingest_data` after cache hits.
+
+    When ``require_healthy_ingestion_manifests`` is True, every manifest must
+    carry ``ingestion_health == \"HEALTHY\"`` (fail-closed for stale cache
+    written before ingestion-health tagging or degraded normalizer runs).
     """
     resolved = cache_dir if cache_dir is not None else Path.home() / ".feelies" / "cache"
     cache = DiskEventCache(resolved)
@@ -86,10 +92,26 @@ def load_event_log_from_disk_cache(
                 raise CacheReplayError(
                     f"Cache entry unreadable or checksum/schema mismatch: {sym}/{day}"
                 )
+            manifest = cache.read_manifest(sym, day)
+            ing_health = (
+                manifest.get("ingestion_health") if manifest else None
+            )
+            if require_healthy_ingestion_manifests:
+                if ing_health != "HEALTHY":
+                    raise CacheReplayError(
+                        f"{sym}/{day}: disk cache manifest ingestion_health="
+                        f"{ing_health!r} (require HEALTHY — re-ingest this day)"
+                    )
             all_events.extend(loaded)
             day_meta.append(
                 DiskCacheDayMeta(
-                    symbol=sym, date=day, source="cache", event_count=len(loaded),
+                    symbol=sym,
+                    date=day,
+                    source="cache",
+                    event_count=len(loaded),
+                    ingestion_health=(
+                        str(ing_health) if ing_health is not None else None
+                    ),
                 )
             )
 

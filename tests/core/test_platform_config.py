@@ -287,6 +287,55 @@ promotion_ledger_path: data/promotion/ledger.jsonl
         assert snap.data["promotion_ledger_path"] == "ledger.jsonl"
 
 
+# ── Risk regime scales + disk-cache manifest health ─────────────────
+
+
+class TestRiskRegimeScales:
+    def test_regime_scale_must_be_positive(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            risk_regime_vol_breakout_scale=0.0,
+        )
+        with pytest.raises(ConfigurationError, match="risk_regime_vol_breakout_scale"):
+            cfg.validate()
+
+
+class TestDiskCacheManifestHealth:
+    def test_require_healthy_accepts_all_healthy_rows(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            require_healthy_disk_cache_manifests=True,
+            disk_cache_ingestion_health_rows=(
+                ("AAPL", "2024-01-02", "HEALTHY"),
+            ),
+        )
+        cfg.validate()
+
+    def test_require_healthy_empty_rows_raises(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            require_healthy_disk_cache_manifests=True,
+            disk_cache_ingestion_health_rows=(),
+        )
+        with pytest.raises(ConfigurationError, match="non-empty"):
+            cfg.validate()
+
+    def test_require_healthy_rejects_non_healthy_row(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            require_healthy_disk_cache_manifests=True,
+            disk_cache_ingestion_health_rows=(
+                ("AAPL", "2024-01-02", "GAP_DETECTED"),
+            ),
+        )
+        with pytest.raises(ConfigurationError, match="not HEALTHY"):
+            cfg.validate()
+
+
 # ── Configuration protocol compliance ──────────────────────────────
 
 

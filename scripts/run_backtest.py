@@ -796,6 +796,7 @@ class DaySource:
     date: str
     source: str
     event_count: int
+    ingestion_health: str | None = None
 
 
 def ingest_data(
@@ -831,10 +832,17 @@ def ingest_data(
             if cache is not None and cache.exists(symbol, day):
                 loaded = cache.load(symbol, day)
                 if loaded is not None:
+                    manifest = cache.read_manifest(symbol, day)
+                    ing_h = (
+                        manifest.get("ingestion_health") if manifest else None
+                    )
                     all_events.extend(loaded)
                     day_sources.append(DaySource(
                         symbol=symbol, date=day,
                         source="cache", event_count=len(loaded),
+                        ingestion_health=(
+                            str(ing_h) if ing_h is not None else None
+                        ),
                     ))
                     if multi_day_or_symbol:
                         print(
@@ -876,25 +884,26 @@ def ingest_data(
 
             day_events: list[NBBOQuote | Trade] = list(day_log.replay())  # type: ignore[arg-type]
 
-            if cache is not None:
-                sym_health = normalizer.all_health().get(symbol)
-                ing_health = (
-                    "HEALTHY"
-                    if sym_health == DataHealth.HEALTHY
-                    else (
-                        sym_health.name
-                        if sym_health is not None
-                        else "UNKNOWN"
-                    )
+            sym_health = normalizer.all_health().get(symbol)
+            ing_health_str = (
+                "HEALTHY"
+                if sym_health == DataHealth.HEALTHY
+                else (
+                    sym_health.name
+                    if sym_health is not None
+                    else "UNKNOWN"
                 )
+            )
+            if cache is not None:
                 cache.save(
-                    symbol, day, day_events, ingestion_health=ing_health,
+                    symbol, day, day_events, ingestion_health=ing_health_str,
                 )
 
             all_events.extend(day_events)
             day_sources.append(DaySource(
                 symbol=symbol, date=day,
                 source="api", event_count=len(day_events),
+                ingestion_health=ing_health_str,
             ))
             if multi_day_or_symbol:
                 print(
@@ -920,6 +929,20 @@ def ingest_data(
     )
 
     return event_log, ingest_result, day_sources
+
+
+def _attach_disk_cache_health_rows(
+    config: PlatformConfig,
+    day_sources: Sequence[DaySource],
+) -> PlatformConfig:
+    """Fold per-day ingestion_health into config for offline integrity gates."""
+    from dataclasses import replace as _cfg_replace
+
+    rows = tuple(
+        (ds.symbol, ds.date, ds.ingestion_health or "UNKNOWN")
+        for ds in day_sources
+    )
+    return _cfg_replace(config, disk_cache_ingestion_health_rows=rows)
 
 
 # ── Report formatting helpers ────────────────────────────────────────
@@ -1884,6 +1907,8 @@ def main(argv: list[str] | None = None) -> int:
         flush=True,
     )
 
+    config = _attach_disk_cache_health_rows(config, day_sources)
+
     return _run_backtest_phases_2_7(
         args,
         event_log,
@@ -1943,11 +1968,14 @@ def main_cache_replay(argv: list[str] | None = None) -> int:
     cache_path = Path(args.cache_dir) if args.cache_dir else None
 
     try:
-        event_log, ingest_result, day_sources = load_event_log_from_disk_cache(
+        event_log, ingest_result, day_meta = load_event_log_from_disk_cache(
             symbols,
             start_date,
             end_date,
             cache_dir=cache_path,
+            require_healthy_ingestion_manifests=(
+                config.require_healthy_disk_cache_manifests
+            ),
         )
     except CacheReplayError as exc:
         print(f"\n  ERROR: {exc}", file=sys.stderr)
@@ -1959,6 +1987,26 @@ def main_cache_replay(argv: list[str] | None = None) -> int:
         f"(disk cache only) [{dt_load:.1f}s]",
         flush=True,
     )
+
+    from dataclasses import replace as _cfg_replace
+
+    config = _cfg_replace(
+        config,
+        disk_cache_ingestion_health_rows=tuple(
+            (m.symbol, m.date, m.ingestion_health or "UNKNOWN")
+            for m in day_meta
+        ),
+    )
+    day_sources = [
+        DaySource(
+            symbol=m.symbol,
+            date=m.date,
+            source=m.source,
+            event_count=m.event_count,
+            ingestion_health=m.ingestion_health,
+        )
+        for m in day_meta
+    ]
 
     return _run_backtest_phases_2_7(
         args,
