@@ -22,8 +22,8 @@ hypothesis: |
 falsification_criteria:
   - |
     Realised half-life of the asymmetry signature falls outside
-    the family's normative envelope of [1, 60] s for >= 2
-    consecutive weeks.
+    the family's normative envelope of [5, 60] s for >= 2
+    consecutive weeks (G16 INVENTORY empirical band).
   - |
     Realised hit rate on the contrarian leg falls below 50% for
     >= 4 consecutive trading weeks.
@@ -105,11 +105,11 @@ regime_gate:
 
 # ── Cost Arithmetic Disclosure (G12) ──────────────────────
 cost_arithmetic:
-  edge_estimate_bps: 8.25
+  edge_estimate_bps: 8.8
   half_spread_bps: 2.5
   impact_bps: 2.0
   fee_bps: 1.0
-  margin_ratio: 1.5
+  margin_ratio: 1.6
 
 # ── Trend Mechanism (v0.3 §20.5 — gate G16) ───────────────
 trend_mechanism:

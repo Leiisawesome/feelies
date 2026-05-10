@@ -4,22 +4,26 @@ layer: SIGNAL
 alpha_id: pofi_benign_midcap_v1
 version: "1.0.0"
 description: |
-  Persistent order-flow-imbalance (POFI) drift in the benign / normal
-  microstructure regime for mid-cap names.  Long-horizon parent
-  orders sliced via VWAP/TWAP leave a multi-minute directional
-  signature on L1 OFI; the gate isolates that flow from the toxic
-  / breakout regimes where the signature reverses or is absent.
+  Kyle-style informed-flow footprint on L1 (OFI + micro-price vs mid)
+  in the benign / normal microstructure regime for mid-cap names.
+  Institutional parent fills often arrive as VWAP/TWAP slices; those
+  waves imprint the same directional imbalance this alpha reads.  The
+  regime gate suppresses toxic / breakout states where the footprint
+  mean-reverts or inverts.
 
 # ── Hypothesis (causal mechanism) ─────────────────────────
 hypothesis: |
-  Institutional parent orders executed via VWAP/TWAP slicing leak
-  into L1 as persistent same-sign order-flow imbalance over 1-5
-  minute windows.  Conditional on the microstructure regime being
-  "normal" (low spread z-score, balanced quote replenishment) the
-  remaining child slices continue to execute in the same direction,
-  producing measurable forward drift in the mid-price at the
-  120-second horizon.  Returns the original parent-order direction
-  as a LONG/SHORT signal sized by the standardised imbalance.
+  When informed trading pressure is present but transient-impact
+  conditions remain orderly (low spread z-score, replenishment not
+  one-sided toxic), persistent same-sign OFI and micro-price tilt
+  relative to mid reveal a Kyle-style information footprint on L1.
+  VWAP/TWAP parent slicing is a common *execution modality* that
+  produces such footprints; the tradeable claim is the footprint
+  itself, not the algorithm tag.  Conditional on the HMM ``normal``
+  posterior and mild spreads, residual mid drift over the 120-second
+  horizon aligns with the signed imbalance; the signal sizes exposure
+  by standardised OFI rather than by parent-order identifiers (which
+  are unobserved).
 
 falsification_criteria:
   - |
@@ -113,6 +117,7 @@ trend_mechanism:
   family: KYLE_INFO
   expected_half_life_seconds: 120
   l1_signature_sensors:
+    - kyle_lambda_60s
     - micro_price
     - ofi_ewma
     - spread_z_30d

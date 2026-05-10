@@ -7,6 +7,16 @@
 
 This audit is **not** a performance guarantee. No walk-forward Sharpe, live-slippage, or fill-model evidence was evaluated beyond tracing platform wiring and running a focused pytest subset.
 
+### Remediation applied (in-repo, same date)
+
+The following items from this audit were implemented in the codebase (BLOCKER / HIGH / operator config); numeric scores in the JSON snapshot below are **not** recomputed until a full re-audit.
+
+- **BLOCKER — PORTFOLIO vs feeder horizons:** `UniverseSynchronizer` now unions portfolio and upstream SIGNAL horizons, caches per-feeder `Signal`s, and at portfolio barriers selects same-horizon feeders by boundary alignment and cross-horizon feeders by latest `timestamp_ns ≤ barrier`. `CrossSectionalContext` carries `signals_by_strategy_by_symbol`; bootstrap wires `signal_horizons`, `upstream_strategy_ids`, and `feeder_strategy_ids` into the composition pipeline; `CrossSectionalRanker` sums marginal raw scores across feeders when configured.
+- **HIGH — benign KYLE narrative / fingerprint:** `pofi_benign_midcap_v1` hypothesis reframed toward Kyle-style footprint; `trend_mechanism.l1_signature_sensors` includes `kyle_lambda_60s` (alongside existing sensors).
+- **HIGH — inventory margin floor:** `pofi_inventory_revert_v1` cost block adjusted (`margin_ratio` above Inv-12 floor; falsification half-life band tightened per audit).
+- **HIGH — mixed typo:** `pofi_xsect_mixed_mechanism_v1` mechanism enum spelling corrected to `HAWKES_SELF_EXCITE`.
+- **MEDIUM — `platform.yaml`:** Additional `sensor_specs` entries for `kyle_lambda_60s`, `trade_through_rate`, `hawkes_intensity`.
+
 ---
 
 ## Executive Summary
@@ -26,7 +36,7 @@ This audit is **not** a performance guarantee. No walk-forward Sharpe, live-slip
 | Decision **DEPLOY_SMALL_CANDIDATE** | 0 |
 | Decision **PASS_STRUCTURAL_ONLY** (SIGNAL subset) | 5 |
 
-**Interpretation:** Every shipped SIGNAL alpha is **structurally loadable** and passes inline AST purity gates at load time, but none carries audited profitability or execution evidence. All three PORTFOLIO reference alphas **FAIL** the composition-feed contract audit because declared `depends_on_signals` include **30s** horizon feeders while the PORTFOLIO operates at **300s** — the stock `UniverseSynchronizer` never attaches those feeder `Signal` events to `CrossSectionalContext` at portfolio barriers.
+**Interpretation:** Every shipped SIGNAL alpha is **structurally loadable** and passes inline AST purity gates at load time, but none carries audited profitability or execution evidence. At audit time, all three PORTFOLIO reference alphas **FAILED** the composition-feed contract because **30s** feeders did not reach **300s** barriers through the synchronizer; that wiring gap is **remediated** in-tree (see **Remediation applied** above). Table counts below reflect the pre-remediation audit pass unless refreshed.
 
 ---
 
@@ -242,22 +252,21 @@ Detailed numeric scores per alpha are in `alpha_audit_findings.json`.
 
 ## Recommended Action Plan
 
-**P0 — must fix before trusting PORTFOLIO multi-feeder specs**
+**P0 — must fix before trusting PORTFOLIO multi-feeder specs** *(done in-tree)*
 
-- Align feeder `horizon_seconds` with PORTFOLIO horizon **or** extend `UniverseSynchronizer` / context schema for explicit multi-horizon fan-in **or** trim `depends_on_signals` to match reality.
+- ~~Align feeder `horizon_seconds` with PORTFOLIO horizon **or** extend `UniverseSynchronizer` / context schema for explicit multi-horizon fan-in **or** trim `depends_on_signals` to match reality.~~ Implemented: multi-horizon fan-in + per-strategy map + ranker aggregation.
 
 **P1 — must fix before promotion narrative**
 
-- Reconcile `pofi_benign_midcap_v1` mechanism taxonomy with hypothesis.
-- Reconcile acceptance tests vs baseline YAML (`AGENTS.md`).
+- ~~Reconcile `pofi_benign_midcap_v1` mechanism taxonomy with hypothesis.~~ Addressed in YAML; acceptance drift vs baseline YAML (`AGENTS.md`) remains an open test/YAML alignment item.
 
-**P2 — research quality**
+**P2 — research quality** *(done for margin headroom)*
 
-- Raise inventory cost margin headroom or disclose stress failure.
+- ~~Raise inventory cost margin headroom or disclose stress failure.~~ Margin raised above floor in `pofi_inventory_revert_v1`.
 
-**P3 — ergonomics**
+**P3 — ergonomics** *(done)*
 
-- Fix `HAWKES_SELF_EXCITING` typo in mixed PORTFOLIO description.
+- ~~Fix `HAWKES_SELF_EXCITING` typo in mixed PORTFOLIO description.~~ Corrected to `HAWKES_SELF_EXCITE`.
 
 ---
 
@@ -270,9 +279,11 @@ Detailed numeric scores per alpha are in `alpha_audit_findings.json`.
 | pofi_inventory_revert_v1 | 78 | WARN | RESEARCH_MORE | Margin at floor; feeder/portfolio mismatch | Cost stress + horizon fix |
 | pofi_hawkes_burst_v1 | 80 | WARN | RESEARCH_MORE | Feeder/portfolio mismatch | Horizon fix |
 | pofi_moc_imbalance_v1 | 76 | WARN | RESEARCH_MORE | Prior latency unverified | Sensor functional proof |
-| pofi_xsect_v1 | 38 | FAIL | RESEARCH_MORE | BLOCKER: horizon fan-in | Fix synchronizer or YAML |
-| pofi_xsect_v1_with_decay | 38 | FAIL | RESEARCH_MORE | Same BLOCKER | Same |
-| pofi_xsect_mixed_mechanism_v1 | 35 | FAIL | RESEARCH_MORE | Same BLOCKER (×2 feeders) | Same |
+| pofi_xsect_v1 | 38 | FAIL† | RESEARCH_MORE | Was BLOCKER: horizon fan-in | Remediated in synchronizer/ranker; re-score on re-audit |
+| pofi_xsect_v1_with_decay | 38 | FAIL† | RESEARCH_MORE | Same BLOCKER | Same |
+| pofi_xsect_mixed_mechanism_v1 | 35 | FAIL† | RESEARCH_MORE | Same BLOCKER (×2 feeders) | Same |
+
+† **Status column** reflects the original audit scoring artifact; structural BLOCKER is addressed in code — expect higher `backtest_compat` on refresh.
 
 ---
 

@@ -587,6 +587,13 @@ class CrossSectionalContext(Event):
     boundary_index: int
     universe: tuple[str, ...]
     signals_by_symbol: dict[str, "Signal | None"] = field(default_factory=dict)
+    # Per-symbol map strategy_id -> latest feeder Signal at the portfolio barrier.
+    # Populated when :class:`~feelies.composition.synchronizer.UniverseSynchronizer`
+    # is wired with ``upstream_strategy_ids`` so Layer-3 can aggregate SIGNAL
+    # alphas whose ``horizon_seconds`` differ from the PORTFOLIO decision horizon.
+    signals_by_strategy_by_symbol: dict[str, dict[str, "Signal | None"]] = field(
+        default_factory=dict,
+    )
     snapshots_by_symbol: dict[str, "HorizonFeatureSnapshot | None"] = field(
         default_factory=dict
     )

@@ -205,6 +205,16 @@ class CompositionEngine:
             sig = ctx.signals_by_symbol.get(symbol)
             if sig is not None and sig.disclosed_cost_total_bps > 0:
                 disclosed[symbol] = sig.disclosed_cost_total_bps
+                continue
+            row = ctx.signals_by_strategy_by_symbol.get(symbol)
+            if row:
+                for _, cand in sorted(row.items()):
+                    if (
+                        cand is not None
+                        and cand.disclosed_cost_total_bps > 0
+                    ):
+                        disclosed[symbol] = cand.disclosed_cost_total_bps
+                        break
 
         from dataclasses import replace as _replace
         publishable = _replace(
@@ -256,6 +266,7 @@ class CompositionEngine:
         ctx: CrossSectionalContext,
         *,
         strategy_id: str,
+        feeder_strategy_ids: tuple[str, ...] = (),
         capital_usd: float | None = None,
     ) -> SizedPositionIntent:
         """Execute the canonical ranker → neutralize → match → optimize chain.
@@ -265,7 +276,9 @@ class CompositionEngine:
         implementations can compose their own pipeline using the engine's
         public components.
         """
-        rank_result = self._ranker.rank(ctx)
+        rank_result = self._ranker.rank(
+            ctx, feeder_strategy_ids=feeder_strategy_ids,
+        )
         neutral_weights, factor_exposures = self._neutralizer.neutralize(
             rank_result.weights, ctx.universe,
         )

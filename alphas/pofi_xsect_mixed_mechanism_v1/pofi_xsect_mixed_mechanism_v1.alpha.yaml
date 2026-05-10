@@ -6,7 +6,7 @@ version: "1.0.0"
 description: |
   Reference cross-sectional PORTFOLIO alpha that consumes signals from
   three distinct trend-formation mechanisms (KYLE_INFO, INVENTORY,
-  HAWKES_SELF_EXCITING) and verifies the engine's mechanism-share cap
+  HAWKES_SELF_EXCITE) and verifies the engine's mechanism-share cap
   enforcement.  Used in tests/integration/test_mixed_mechanism_universe.py
   to lock in (a) the ranker's mechanism_breakdown bookkeeping and (b)
   the optimizer's per-mechanism share caps.
