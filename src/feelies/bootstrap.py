@@ -230,6 +230,9 @@ def build_platform(
         max_gross_exposure_pct=config.risk_max_gross_exposure_pct,
         max_drawdown_pct=config.risk_max_drawdown_pct,
         account_equity=_decimal(config.account_equity),
+        regime_vol_breakout_scale=config.risk_regime_vol_breakout_scale,
+        regime_compression_scale=config.risk_regime_compression_scale,
+        regime_normal_scale=config.risk_regime_normal_scale,
     )
     # The dedicated alert sequence generator keeps risk-engine
     # diagnostics (e.g. the per-leg PORTFOLIO veto Alert) on a
@@ -549,6 +552,7 @@ def _create_backend(
                 event_log, clock,
                 latency_ns=fill_latency_ns,
                 cost_model=cost_model,
+                market_impact_factor=market_impact_factor,
                 fill_delay_ticks=passive_fill_delay_ticks,
                 max_resting_ticks=passive_max_resting_ticks,
                 queue_position_shares=passive_queue_position_shares,

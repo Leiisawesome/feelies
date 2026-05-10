@@ -110,6 +110,16 @@ class DiskEventCache:
     def _manifest_path(self, symbol: str, date: str) -> Path:
         return self._symbol_dir(symbol) / f"{date}.manifest.json"
 
+    def read_manifest(self, symbol: str, date: str) -> dict[str, Any] | None:
+        """Return parsed manifest JSON for a cache day, or None if unreadable."""
+        manifest_path = self._manifest_path(symbol, date)
+        if not manifest_path.exists():
+            return None
+        try:
+            return json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+
     def exists(self, symbol: str, date: str) -> bool:
         """Check if a valid cache entry exists for this (symbol, date).
 

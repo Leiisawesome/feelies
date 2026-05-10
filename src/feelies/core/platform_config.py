@@ -64,6 +64,21 @@ class PlatformConfig:
     risk_max_gross_exposure_pct: float = 20.0
     risk_max_drawdown_pct: float = 5.0
 
+    # Regime-aware position-limit scaling (BasicRiskEngine expected-value gate).
+    # Keys correspond to built-in HMM state_names (vol_breakout /
+    # compression_clustering / normal).  Tune via YAML; defaults match
+    # RiskConfig skill baselines.
+    risk_regime_vol_breakout_scale: float = 0.5
+    risk_regime_compression_scale: float = 0.75
+    risk_regime_normal_scale: float = 1.0
+
+    # Offline replay only: when True, ``disk_cache_ingestion_health_rows`` must
+    # be populated (typically after ingest/replay) and every row must be
+    # HEALTHY — mirrors normalizer HEALTHY checks when no Massive normalizer
+    # is wired at orchestrator boot.
+    require_healthy_disk_cache_manifests: bool = False
+    disk_cache_ingestion_health_rows: tuple[tuple[str, str, str], ...] = ()
+
     account_equity: float = 1_000_000.0
     backtest_fill_latency_ns: int = 0
 
@@ -336,6 +351,29 @@ class PlatformConfig:
         if self.account_equity <= 0:
             raise ConfigurationError("account_equity must be positive")
 
+        for scale_name, scale_val in (
+            ("risk_regime_vol_breakout_scale", self.risk_regime_vol_breakout_scale),
+            ("risk_regime_compression_scale", self.risk_regime_compression_scale),
+            ("risk_regime_normal_scale", self.risk_regime_normal_scale),
+        ):
+            if not (0.0 < scale_val <= 2.0):
+                raise ConfigurationError(
+                    f"{scale_name} must lie in (0, 2], got {scale_val}"
+                )
+
+        if self.require_healthy_disk_cache_manifests:
+            if not self.disk_cache_ingestion_health_rows:
+                raise ConfigurationError(
+                    "require_healthy_disk_cache_manifests=True requires "
+                    "non-empty disk_cache_ingestion_health_rows "
+                    "(populate after ingest / cache replay)"
+                )
+            for sym, day, h in self.disk_cache_ingestion_health_rows:
+                if h != "HEALTHY":
+                    raise ConfigurationError(
+                        f"disk cache manifest not HEALTHY for {sym}/{day}: {h!r}"
+                    )
+
         valid_modes = ("market", "passive_limit", "minimum_cost")
         if self.execution_mode not in valid_modes:
             raise ConfigurationError(
@@ -491,6 +529,15 @@ class PlatformConfig:
             "risk_max_position_per_symbol": self.risk_max_position_per_symbol,
             "risk_max_gross_exposure_pct": self.risk_max_gross_exposure_pct,
             "risk_max_drawdown_pct": self.risk_max_drawdown_pct,
+            "risk_regime_vol_breakout_scale": self.risk_regime_vol_breakout_scale,
+            "risk_regime_compression_scale": self.risk_regime_compression_scale,
+            "risk_regime_normal_scale": self.risk_regime_normal_scale,
+            "require_healthy_disk_cache_manifests": (
+                self.require_healthy_disk_cache_manifests
+            ),
+            "disk_cache_ingestion_health_rows": list(
+                self.disk_cache_ingestion_health_rows,
+            ),
             "account_equity": self.account_equity,
             "backtest_fill_latency_ns": self.backtest_fill_latency_ns,
             "stop_loss_per_share": self.stop_loss_per_share,
@@ -701,6 +748,18 @@ class PlatformConfig:
             ),
             risk_max_drawdown_pct=float(
                 data.get("risk_max_drawdown_pct", 5.0)
+            ),
+            risk_regime_vol_breakout_scale=float(
+                data.get("risk_regime_vol_breakout_scale", 0.5)
+            ),
+            risk_regime_compression_scale=float(
+                data.get("risk_regime_compression_scale", 0.75)
+            ),
+            risk_regime_normal_scale=float(
+                data.get("risk_regime_normal_scale", 1.0)
+            ),
+            require_healthy_disk_cache_manifests=bool(
+                data.get("require_healthy_disk_cache_manifests", False)
             ),
             account_equity=float(data.get("account_equity", 1_000_000.0)),
             backtest_fill_latency_ns=int(

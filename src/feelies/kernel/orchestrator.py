@@ -3482,19 +3482,41 @@ class Orchestrator:
         """Verify data integrity for all configured symbols.
 
         If a normalizer is available, checks that every configured
-        symbol is tracked and reports HEALTHY.  Without a normalizer
-        (e.g., backtest with pre-validated data), returns True.
+        symbol is tracked and reports HEALTHY.
+
+        Without a normalizer (cached replay / offline logs), optional
+        ``PlatformConfig.require_healthy_disk_cache_manifests`` enforces
+        per-day ``ingestion_health`` rows supplied by the ingest/replay path.
         """
-        if self._normalizer is None:
-            return True
         if self._config is None:
             return True
-        health = self._normalizer.all_health()
-        for symbol in self._config.symbols:
-            if symbol not in health:
+
+        if self._normalizer is not None:
+            health = self._normalizer.all_health()
+            for symbol in self._config.symbols:
+                if symbol not in health:
+                    return False
+                if health[symbol] != DataHealth.HEALTHY:
+                    return False
+            return True
+
+        if getattr(self._config, "require_healthy_disk_cache_manifests", False):
+            rows = getattr(self._config, "disk_cache_ingestion_health_rows", ()) or ()
+            if not rows:
+                logger.warning(
+                    "require_healthy_disk_cache_manifests=True but "
+                    "disk_cache_ingestion_health_rows is empty — integrity fail"
+                )
                 return False
-            if health[symbol] != DataHealth.HEALTHY:
-                return False
+            for sym, day, h in rows:
+                if h != "HEALTHY":
+                    logger.warning(
+                        "disk cache ingestion_health=%s for %s/%s — integrity fail",
+                        h,
+                        sym,
+                        day,
+                    )
+                    return False
         return True
 
     # ── Feature snapshot management ─────────────────────────────────

@@ -232,11 +232,9 @@ def _make_phase4_config() -> PlatformConfig:
         factor_loadings_dir=_FACTOR_LOADINGS_DIR,
         factor_loadings_max_age_seconds=FACTOR_LOADINGS_MAX_AGE_SECONDS_FIXTURE,
         sector_map_path=_SECTOR_MAP_PATH,
-        # Workstream-E flipped the platform default to True; this
-        # integration test exercises the v0.2 baseline SIGNAL alpha
-        # (pofi_benign_midcap_v1) which ships *without* a
-        # trend_mechanism: block on purpose (§20.12.3 #2 parity
-        # anchor), so we explicitly opt back out of strict mode here.
+        # Reference SIGNAL alpha carries ``trend_mechanism:`` (G16); keep
+        # strict mechanism enforcement off here so the fixture focuses on
+        # Phase-4 wiring rather than loader strict-mode defaults.
         enforce_trend_mechanism=False,
     )
 
@@ -273,6 +271,48 @@ def _hash_signals(signals: list[Signal]) -> str:
             f"{s.horizon_seconds}|{s.regime_gate_state}|"
             f"{s.direction.name}|{s.strength:.6f}|"
             f"{s.edge_estimate_bps:.6f}|{s.timestamp_ns}|{s.correlation_id}"
+        )
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+
+
+def _hash_orders(orders: list[OrderRequest]) -> str:
+    lines: list[str] = []
+    for o in sorted(orders, key=lambda x: (x.sequence, x.order_id)):
+        lp = "" if o.limit_price is None else str(o.limit_price)
+        lines.append(
+            f"{o.sequence}|{o.order_id}|{o.symbol}|{o.side.name}|"
+            f"{o.order_type.name}|{o.quantity}|{lp}|"
+            f"{o.strategy_id}|{o.timestamp_ns}|{o.correlation_id}"
+        )
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+
+
+def _hash_positions_book(orch: Orchestrator) -> str:
+    store = orch._positions
+    lines: list[str] = []
+    for sym in sorted(store.all_positions()):
+        p = store.get(sym)
+        lines.append(
+            f"{sym}|{p.quantity}|{p.avg_entry_price}|"
+            f"{p.realized_pnl}|{p.cumulative_fees}|{p.unrealized_pnl}"
+        )
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+
+
+def _hash_trade_journal(orch: Orchestrator) -> str:
+    tj = orch._trade_journal
+    if tj is None:
+        return hashlib.sha256(b"").hexdigest()
+    recs = list(tj.query())
+    lines: list[str] = []
+    for r in sorted(recs, key=lambda x: (x.fill_timestamp_ns or 0, x.order_id)):
+        fp = "" if r.fill_price is None else str(r.fill_price)
+        lines.append(
+            f"{r.order_id}|{r.symbol}|{r.strategy_id}|{r.side.name}|"
+            f"{r.requested_quantity}|{r.filled_quantity}|{fp}|"
+            f"{r.signal_timestamp_ns}|{r.submit_timestamp_ns}|"
+            f"{r.fill_timestamp_ns}|{r.cost_bps}|{r.fees}|"
+            f"{r.realized_pnl}|{r.correlation_id}"
         )
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
@@ -368,6 +408,30 @@ def test_phase4_e2e_intent_stream_is_deterministic() -> None:
     )
     assert _hash_intents(intents_a) == _hash_intents(intents_b), (
         "Phase-4 e2e SizedPositionIntent hash drift across identical replays"
+    )
+
+
+def test_phase4_e2e_order_stream_is_deterministic() -> None:
+    """Same synthetic log + config → identical OrderRequest bus stream."""
+    _o_a, _sa, _ia, orders_a = _build()
+    _o_b, _sb, _ib, orders_b = _build()
+    assert len(orders_a) == len(orders_b), (
+        f"OrderRequest count drift: {len(orders_a)} vs {len(orders_b)}"
+    )
+    assert _hash_orders(orders_a) == _hash_orders(orders_b), (
+        "Phase-4 e2e OrderRequest hash drift across identical replays"
+    )
+
+
+def test_phase4_e2e_final_positions_and_journal_are_deterministic() -> None:
+    """Full replay outcomes (positions + trade journal) are replay-stable."""
+    o_a, *_rest_a = _build()
+    o_b, *_rest_b = _build()
+    assert _hash_positions_book(o_a) == _hash_positions_book(o_b), (
+        "Position book hash drift across identical replays"
+    )
+    assert _hash_trade_journal(o_a) == _hash_trade_journal(o_b), (
+        "Trade journal hash drift across identical replays"
     )
 
 
