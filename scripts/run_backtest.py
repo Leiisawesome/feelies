@@ -1988,15 +1988,6 @@ def main_cache_replay(argv: list[str] | None = None) -> int:
         flush=True,
     )
 
-    from dataclasses import replace as _cfg_replace
-
-    config = _cfg_replace(
-        config,
-        disk_cache_ingestion_health_rows=tuple(
-            (m.symbol, m.date, m.ingestion_health or "UNKNOWN")
-            for m in day_meta
-        ),
-    )
     day_sources = [
         DaySource(
             symbol=m.symbol,
@@ -2007,6 +1998,7 @@ def main_cache_replay(argv: list[str] | None = None) -> int:
         )
         for m in day_meta
     ]
+    config = _attach_disk_cache_health_rows(config, day_sources)
 
     return _run_backtest_phases_2_7(
         args,
