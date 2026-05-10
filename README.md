@@ -106,9 +106,10 @@ feelies/
 │   ├── execution/                # Backend abstraction, intent translator, order SM, routers
 │   ├── portfolio/                # Position store, per-strategy + cross-sectional trackers
 │   ├── storage/                  # Event log, disk cache, bundled reference YAML/JSON
+│   ├── health/                   # Alpha health-check framework (10 check categories)
 │   ├── monitoring/               # Metrics (incl. horizon metrics), alerting, kill switch
 │   ├── forensics/                # Multi-horizon attribution, post-trade analysis
-│   ├── research/                 # Experiment tracking, hypothesis management
+│   ├── research/                 # Experiment tracking, CPCV, DSR significance tools
 │   ├── services/                 # Regime engine + regime-hazard detector
 │   ├── cli/                      # Operator CLI (`feelies promote ...` ledger forensics)
 │   └── bootstrap.py              # One-call platform composition from config
@@ -131,7 +132,9 @@ feelies/
 │   └── acceptance/
 ├── scripts/                      # CLI entry points
 │   ├── run_backtest.py           # Full pipeline backtest (incl. parity hash)
+│   ├── smoke_pipeline.py         # No-API-key micro-state smoke test (synthetic ticks)
 │   ├── run_validation.py         # Validation suite runner
+│   ├── record_perf_baseline.py   # Pin per-host throughput baselines for perf gates
 │   └── build_reference_factor_loadings.py  # PORTFOLIO factor loadings builder
 ├── tests/                        # Pytest suite (mirrors src/, plus determinism + perf)
 ├── platform.yaml                 # Reference platform configuration
@@ -145,6 +148,7 @@ feelies/
 
 - Python 3.12 or later
 - A Massive (Polygon.io) API key for market data
+- [`uv`](https://github.com/astral-sh/uv) package manager (`pip install uv`)
 
 ### Installation
 
@@ -152,18 +156,35 @@ feelies/
 git clone https://github.com/<org>/feelies.git
 cd feelies
 
+# Recommended: use uv (lockfile-backed, reproducible)
+uv sync --all-extras
+
+# Alternatively, install with pip:
 # Core install (backtest + live + sensors + composition; PORTFOLIO solver optional)
 pip install -e ".[dev,massive]"
 
 # To enable the PORTFOLIO turnover optimiser (cvxpy-based) and parquet
 # reference factor loadings, also install the [portfolio] extra:
 pip install -e ".[dev,massive,portfolio]"
+
+# To enable Parquet-backed research artefacts for the health gate, add [health]:
+pip install -e ".[dev,massive,health]"
 ```
 
 The `[portfolio]` extra pulls `cvxpy`, `ecos`, and `pyarrow`. Without
 it, PORTFOLIO alphas still load and run; only the optional
 turnover-optimisation step and parquet-reference factor loadings are
 disabled.
+
+The `[health]` extra pulls `pyarrow` for Parquet artefact loading in
+`feelies.health`. Without it, `.parquet` files in the health check run
+directory are skipped and a definition-category **WARN** is issued.
+
+All commands in this repo should be run via `uv run <cmd>` when using the
+`uv`-managed virtual environment (e.g. `uv run pytest`, `uv run python
+scripts/run_backtest.py`). For mypy strict-mode acceptance
+(`test_mypy_strict_clean_on_src_feelies`), all three extras — `dev`,
+`massive`, and `portfolio` — must be installed.
 
 ### Environment
 
@@ -249,6 +270,89 @@ YAML / schema-version mismatch), `3` validation failure
 The CLI is **read-only and forensic-only** — it never writes to the
 ledger and never imports orchestrator / risk-engine production code, so
 operator invocation cannot perturb replay determinism (audit A-DET-02).
+
+### `feelies health-check`
+
+The `health-check` subcommand runs the 10-category alpha health gate
+(`feelies.health`) against artefacts exported by `--export-health-dir`
+from `run_backtest.py`. It produces a deterministic, auditable report
+answering whether an alpha is causal, economically plausible after costs,
+reasonably robust, and safe enough for the next deployment stage.
+
+```bash
+# Step 1 — run backtest and export artefacts
+python scripts/run_backtest.py \
+    --symbol AAPL --date 2026-04-08 \
+    --export-health-dir ./runs/my_alpha/latest
+
+# Step 2 — run the health gate
+feelies health-check \
+    --backtest-output ./runs/my_alpha/latest \
+    --out-dir ./runs/my_alpha/latest/health \
+    --format both
+```
+
+**Health check categories** (each produces PASS / WARN / FAIL / SKIP):
+
+| Category | Module | Checks |
+|---|---|---|
+| Definition | `definition_checks.py` | Required metadata fields, artefact completeness |
+| Predictive | `predictive_checks.py` | IC, t-stat, monotonicity, signal coverage |
+| Execution | `execution_checks.py` | Edge-to-cost ratio, execution lens coverage |
+| Capacity | `capacity_checks.py` | Position-size vs. ADV constraints |
+| Regime | `regime_checks.py` | PnL concentration per regime, losing-regime fraction |
+| Robustness | `robustness_checks.py` | Parameter-neighbor stability, IS/OOS degradation |
+| Risk | `risk_checks.py` | Drawdown fraction, single-day loss/profit caps |
+| Causality | `causality_checks.py` | Look-ahead / causality flags |
+| Portfolio | `portfolio_checks.py` | Multi-symbol, factor-exposure constraints |
+| Production | `production_checks.py` | Kill-switch status, data-version staleness |
+
+**CLI flags**
+
+| Flag | Meaning |
+|---|---|
+| `--backtest-output DIR` | Run directory with `metadata.json` and tabular artefacts. **Required.** |
+| `--alpha NAME` | Override `alpha_name` from `metadata.json`. |
+| `--config PATH` | Health thresholds YAML (`configs/health/default.yaml`). Omitted → built-in defaults. |
+| `--out-dir DIR` | Report output directory. Default: `<backtest-output>/health/`. |
+| `--format` | `json`, `markdown`, `both` (default), or `all` (also writes `alpha_health_checks.csv`). |
+| `--strict` | Exit `3` if decision is `KILL` or any check has status `FAIL`. |
+
+Exit codes match the `feelies promote` convention (`0` success, `1` user error, `2` data error, `3` validation failed).
+
+## Research Tools
+
+`feelies.research` provides pure-Python significance procedures consumed by
+the F-2 promotion-gate matrix and alpha lifecycle decisions:
+
+### Combinatorial Purged Cross-Validation (CPCV)
+
+```python
+from feelies.research import generate_cpcv_splits, build_cpcv_evidence
+
+splits = generate_cpcv_splits(n_obs=5000, n_splits=6, n_test_splits=2)
+evidence = build_cpcv_evidence(path_pnl_series, config=CPCVConfig())
+```
+
+`build_cpcv_evidence` emits a `CPCVEvidence` object accepted by the F-2
+`validate_gate` dispatcher. The combinatorial structure gives ~4–7×
+more test paths than walk-forward CV of the same length.
+
+### Deflated Sharpe Ratio (DSR)
+
+```python
+from feelies.research import build_dsr_evidence_from_returns
+
+evidence = build_dsr_evidence_from_returns(
+    returns=daily_returns,
+    n_trials=50,
+    strategy_id="my_alpha",
+)
+```
+
+`build_dsr_evidence_from_returns` applies the Bailey & López de Prado
+correction for multiple-testing bias and emits a `DSREvidence` object.
+Both procedures are deterministic (no RNG state) for reproducible CI checks.
 
 ## Writing an Alpha
 
@@ -427,16 +531,25 @@ for the canonical wording and glossary.
 ## Testing
 
 ```bash
-# Full test suite
+# Full test suite (~2095 tests)
 pytest
+
+# Skip network/benchmark tests (recommended for local dev)
+pytest -m "not functional and not slow"
 
 # Coverage
 pytest --cov=feelies --cov-report=term-missing
 
 # Selective markers
 pytest -m "not slow"                  # skip benchmarks
-pytest -m functional                  # network-backed only
+pytest -m functional                  # network-backed only (requires MASSIVE_API_KEY)
 pytest -m backtest_validation         # full validation suite
+
+# Determinism parity hash tests
+pytest tests/determinism/
+
+# End-to-end pipeline (no API key needed)
+pytest tests/integration/test_phase4_e2e.py
 
 # Validation suite via script
 python scripts/run_validation.py
@@ -446,12 +559,13 @@ python scripts/run_validation.py --quick
 The test suite mirrors `src/feelies/` and includes:
 
 - Unit tests + property-based tests (Hypothesis).
-- **Determinism tests** (`tests/determinism/`) — five locked parity
+- **Determinism tests** (`tests/determinism/`, 54 tests) — five locked parity
   hashes (sensor / signal / sized-intent / portfolio-order /
-  hazard-exit), each subprocess-isolated to detect any non-determinism
+  hazard-exit) plus regime-hazard, horizon-tick, and v0.3 sensor
+  streams, each subprocess-isolated to detect any non-determinism
   introduced by ordering, RNG, or wall-clock.
 - **End-to-end integration tests** (`tests/integration/`) — multi-
-  symbol, multi-alpha, mixed-mechanism universes.
+  symbol, multi-alpha, mixed-mechanism universes (8 tests).
 - **Performance regression gates** (`tests/perf/`) — Phase 4 ≤ 12 %
   end-to-end throughput; Phase 4.1 ≤ 5 % decay-weighting overhead.
   Per-host pinned baselines (opt-in via `PERF_HOST_LABEL`) live in
@@ -464,6 +578,20 @@ The test suite mirrors `src/feelies/` and includes:
   (`margin_ratio`, factor exposures), G16 rule completeness,
   decay-divergence, strict-mode loading per mechanism family, and
   perf-baseline plumbing.
+
+### Known pre-existing test failures
+
+Two acceptance tests fail on the `main` branch because
+`alphas/pofi_benign_midcap_v1/` already contains a `trend_mechanism:`
+block but the acceptance tests expect it to be absent (v0.2 baseline parity):
+
+- `tests/acceptance/test_strict_mode_default_true.py::TestV02ParityPreservedOnExplicitOptOut::test_v02_baseline_alpha_refused_under_default`
+- `tests/acceptance/test_v02_no_trend_mechanism_parity.py::test_baseline_alpha_yaml_has_no_trend_mechanism_block`
+- `tests/acceptance/test_v02_no_trend_mechanism_parity.py::test_baseline_alpha_loads_under_v03_default`
+
+These are not environment issues — they reflect an intentional drift
+between the reference alpha YAML and the v0.2 acceptance baseline.
+No other tests fail in a clean environment.
 
 ## Tooling
 
