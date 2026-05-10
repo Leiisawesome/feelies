@@ -1,27 +1,28 @@
 {
   "repo": "Leiisawesome/feelies",
   "scope": "alphas/",
-  "created_at": "2026-05-10T05:39:03Z",
-  "second_pass_at": "2026-05-10T08:45:00Z",
-  "methodology_pass_1": "Static review of YAML + embedded Python; AlphaLoader loose/strict load; codebase tracing of UniverseSynchronizer → CrossSectionalContext → CompositionEngine; pytest subset. No walk-forward PnL or live-slippage evidence audited.",
-  "methodology_pass_2": "Re-verified shipped YAML vs tree after remediation: AlphaLoader strict/loose (tests/alpha/test_shipped_alpha_specs_load.py); UniverseSynchronizer cross-horizon fan-in + signals_by_strategy_by_symbol (tests/composition/test_synchronizer.py); PORTFOLIO integration paths (tests/integration/test_xsect_v1_e2e.py, test_mixed_mechanism_e2e.py). Scores rescaled from pass-1 model with BLOCKER cleared for composition-feed; still no profitability audit.",
+  "created_at": "2026-05-10T10:07:04Z",
+  "commit": "56057629c68abd73c378467afb731901e6539bea",
+  "branch": "cursor/alpha-institutional-audit-4f52",
   "summary": {
-    "alpha_files_found": 8,
-    "template_files_excluded": 2,
-    "loaded_successfully": 8,
-    "failed_load": 0,
+    "alpha_files_found": 10,
+    "active_alpha_files": 8,
+    "excluded_alpha_files": 2,
+    "loaded_successfully_yaml_loader": 8,
+    "failed_load_yaml_loader": 0,
     "pass": 0,
-    "warn": 8,
-    "fail": 0,
-    "kill": 0,
-    "research_more": 8,
+    "warn": 7,
+    "fail": 1,
+    "kill": 1,
+    "research_more": 6,
+    "pass_structural_only": 3,
     "paper_trade_candidate": 0,
-    "deploy_small_candidate": 0,
-    "pass_structural_only": 5
+    "deploy_small_candidate": 0
   },
-  "inventory_columns": {
-    "note": "Mechanism family omitted for PORTFOLIO rows (multiple consumes); regime_gate N/A for PORTFOLIO."
-  },
+  "notes": [
+    "YAML-level load uses AlphaLoader only; full bootstrap with repo-root platform.yaml registers a single explicit alpha (pofi_benign_midcap_v1) and omits scheduled_flow_window sensor spec — see pipeline findings.",
+    "Scores are heuristic 0–100 from weighted category rubric; mandatory overrides dominate (e.g. Hawkes pipeline defect → KILL regardless of score)."
+  ],
   "alphas": [
     {
       "alpha_id": "pofi_benign_midcap_v1",
@@ -30,96 +31,36 @@
       "schema_version": "1.1",
       "horizon_seconds": 120,
       "mechanism_family": "KYLE_INFO",
-      "depends_on_sensors": ["ofi_ewma", "micro_price", "spread_z_30d"],
+      "sensors": ["ofi_ewma", "micro_price", "spread_z_30d"],
       "depends_on_signals": [],
-      "regime_gate": "hmm_3state_fractional; on P(normal)>0.7 and abs(spread_z_30d)<0.5; off P(normal)<0.5 or spread_z_30d>1.5",
-      "cost_margin_ratio_declared": 1.8,
-      "trend_mechanism": true,
-      "hazard_exit": false,
-      "risk_budget": "max_position_per_symbol=100, max_gross_exposure_pct=5.0",
-      "promotion_thresholds": "not declared (platform merge)",
-      "computation_module": null,
-      "score": 74,
+      "score": 58,
       "status": "WARN",
       "decision": "RESEARCH_MORE",
-      "economic_rationale": "PLAUSIBLE",
-      "regime_design": "PLAUSIBLE",
-      "cost_execution": "COST_PLAUSIBLE",
-      "risk_readiness": "SAFE_FOR_RESEARCH",
+      "sensor_mechanism_coherence": "PARTIALLY_COHERENT",
       "findings": [
         {
-          "severity": "INFO",
+          "severity": "HIGH",
+          "category": "alpha_sensor_mechanism_coherence",
+          "status": "WARN",
+          "finding": "Hypothesis and trend_mechanism list Kyle footprint via micro_price and kyle_lambda_60s fingerprint, but evaluate() uses only ofi_ewma_zscore; micro_price is declared but unused in signal logic.",
+          "evidence": "alphas/pofi_benign_midcap_v1/pofi_benign_midcap_v1.alpha.yaml depends_on_sensors vs signal block.",
+          "recommended_action": "Either consume micro_price / explicit imbalance-vs-mid feature in evaluate(), or narrow hypothesis and l1_signature_sensors to match actual decision state."
+        },
+        {
+          "severity": "MEDIUM",
           "category": "economic_mechanism",
-          "status": "PASS",
-          "finding": "Pass 1 HIGH (VWAP/TWAP vs KYLE narrative) cleared: hypothesis reframed to Kyle-style footprint with slicing as modality; l1_signature_sensors lists kyle_lambda_60s plus OFI/micro/spread sensors.",
-          "evidence": "alphas/pofi_benign_midcap_v1/pofi_benign_midcap_v1.alpha.yaml",
-          "recommended_action": null
-        },
-        {
-          "severity": "MEDIUM",
-          "category": "dependency_validity",
           "status": "WARN",
-          "finding": "trend_mechanism.l1_signature_sensors includes kyle_lambda_60s but depends_on_sensors and evaluate() only consume ofi_ewma_zscore (plus regime/snapshot gates)—the fingerprint sensor is not read in signal logic. Either wire λ into evaluate for mechanism coherence or document fingerprint-as-attribution-only and accept weaker Inv-1 traceability at runtime.",
-          "evidence": "YAML depends_on_sensors vs trend_mechanism.l1_signature_sensors vs signal: block",
-          "recommended_action": "Add kyle_lambda to depends_on_sensors + snapshot reads, or narrow l1_signature_sensors to evaluated features."
-        },
-        {
-          "severity": "MEDIUM",
-          "category": "promotion_readiness",
-          "status": "WARN",
-          "finding": "No per-alpha promotion.gate_thresholds; falsification criteria reference forward correlations and DSR — testable but not wired to CI artifacts in this audit.",
-          "evidence": "Spec lacks promotion: block",
-          "recommended_action": "Attach measurable promotion evidence gates when promoting beyond research."
+          "finding": "Falsification criteria reference forward 120s returns (research labels); not code leakage but criteria are not wired to automated promotion artifacts.",
+          "evidence": "falsification_criteria bullets in YAML.",
+          "recommended_action": "Define observable metrics in replay JSONL / attribution exports matching those criteria."
         },
         {
           "severity": "LOW",
-          "category": "schema_loader_compliance",
+          "category": "cost_execution",
           "status": "PASS",
-          "finding": "Loads under AlphaLoader with enforce_trend_mechanism true and false.",
-          "evidence": "tests/alpha/test_shipped_alpha_specs_load.py",
-          "recommended_action": null
-        }
-      ]
-    },
-    {
-      "alpha_id": "pofi_kyle_drift_v1",
-      "file": "alphas/pofi_kyle_drift_v1/pofi_kyle_drift_v1.alpha.yaml",
-      "layer": "SIGNAL",
-      "schema_version": "1.1",
-      "horizon_seconds": 300,
-      "mechanism_family": "KYLE_INFO",
-      "depends_on_sensors": ["kyle_lambda_60s", "ofi_ewma", "micro_price", "spread_z_30d"],
-      "depends_on_signals": [],
-      "regime_gate": "on P(normal)>0.6 and spread_z_30d<=1.0; off P(normal)<0.4 or spread_z_30d>2.0",
-      "cost_margin_ratio_declared": 1.8,
-      "trend_mechanism": true,
-      "hazard_exit": false,
-      "risk_budget": "max_position_per_symbol=200, max_gross_exposure_pct=8.0",
-      "promotion_thresholds": "not declared",
-      "computation_module": null,
-      "score": 82,
-      "status": "WARN",
-      "decision": "RESEARCH_MORE",
-      "economic_rationale": "STRONG",
-      "regime_design": "ROBUST",
-      "cost_execution": "COST_PLAUSIBLE",
-      "risk_readiness": "SAFE_FOR_RESEARCH",
-      "findings": [
-        {
-          "severity": "MEDIUM",
-          "category": "economic_mechanism",
-          "status": "WARN",
-          "finding": "Hypothesis and YAML cite forward 300s return correlations for falsification — descriptive only; signal code uses snapshot/regime only (no lookahead in evaluate).",
-          "evidence": "falsification_criteria text vs signal block",
-          "recommended_action": "Keep falsification as research metrics; ensure research notebooks never leak forward returns into features."
-        },
-        {
-          "severity": "INFO",
-          "category": "trend_mechanism_binding",
-          "status": "PASS",
-          "finding": "horizon_seconds/expected_half_life_seconds = 300/600 = 0.5 (G16 lower bound); intentional.",
-          "evidence": "layer_validator ratio rule",
-          "recommended_action": null
+          "finding": "cost_arithmetic margin_ratio 1.8 meets platform floor; components reconcile at load time.",
+          "evidence": "AlphaLoader + CostArithmetic validation; tests/alpha/test_pofi_benign_midcap_v1.py",
+          "recommended_action": "None."
         }
       ]
     },
@@ -130,46 +71,60 @@
       "schema_version": "1.1",
       "horizon_seconds": 30,
       "mechanism_family": "INVENTORY",
-      "depends_on_sensors": ["quote_replenish_asymmetry", "spread_z_30d", "quote_hazard_rate"],
+      "sensors": ["quote_replenish_asymmetry", "spread_z_30d", "quote_hazard_rate"],
       "depends_on_signals": [],
-      "regime_gate": "on abs(quote_replenish_asymmetry_zscore)>2 and P(normal)>0.5",
-      "cost_margin_ratio_declared": 1.6,
-      "trend_mechanism": true,
-      "hazard_exit": false,
-      "risk_budget": "max_position_per_symbol=100, max_gross_exposure_pct=5.0",
-      "promotion_thresholds": "not declared",
-      "computation_module": null,
-      "score": 88,
+      "score": 62,
       "status": "WARN",
       "decision": "RESEARCH_MORE",
-      "economic_rationale": "STRONG",
-      "regime_design": "PLAUSIBLE",
-      "cost_execution": "COST_PLAUSIBLE",
-      "risk_readiness": "SAFE_FOR_RESEARCH",
+      "sensor_mechanism_coherence": "COHERENT",
       "findings": [
         {
-          "severity": "INFO",
-          "category": "cost_execution",
-          "status": "PASS",
-          "finding": "Pass 1 HIGH cleared: margin_ratio raised to 1.6 (above Inv-12 minimum); falsification half-life band aligned to G16 INVENTORY [5, 60]s.",
-          "evidence": "cost_arithmetic + falsification_criteria in YAML",
-          "recommended_action": null
+          "severity": "MEDIUM",
+          "category": "regime_gate",
+          "status": "WARN",
+          "finding": "Regime on_condition hardcodes abs(quote_replenish_asymmetry_zscore) > 2.0 while signal uses parameterized asymmetry_z_threshold (default 2.0); changing params desynchronizes gate vs signal.",
+          "evidence": "regime_gate.on_condition vs parameters.asymmetry_z_threshold",
+          "recommended_action": "Align gate expression with parameter bindings if RegimeGate DSL supports it, or document gate as fixed structural filter."
         },
         {
-          "severity": "INFO",
-          "category": "backtest_compatibility",
-          "status": "PASS",
-          "finding": "Pass 1 HIGH (30s feeder invisible at 300s PORTFOLIO barriers) cleared by synchronizer multi-horizon fan-in and per-strategy context map.",
-          "evidence": "src/feelies/composition/synchronizer.py; tests/composition/test_synchronizer.py::test_fan_in_cross_horizon_feeders_into_portfolio_context",
-          "recommended_action": null
+          "severity": "MEDIUM",
+          "category": "sensor_microstructure",
+          "status": "WARN",
+          "finding": "Quote replenishment / hazard sensors use L1-only proxies; inventory narrative is plausible but not identifiable without depth.",
+          "evidence": "Sensor implementations under src/feelies/sensors/impl/quote_replenish_asymmetry.py, quote_hazard_rate.py",
+          "recommended_action": "Treat as weak diagnostic alpha; stress crossed-book and flicker regimes in research."
+        }
+      ]
+    },
+    {
+      "alpha_id": "pofi_kyle_drift_v1",
+      "file": "alphas/pofi_kyle_drift_v1/pofi_kyle_drift_v1.alpha.yaml",
+      "layer": "SIGNAL",
+      "schema_version": "1.1",
+      "horizon_seconds": 300,
+      "mechanism_family": "KYLE_INFO",
+      "sensors": ["kyle_lambda_60s", "ofi_ewma", "micro_price", "spread_z_30d"],
+      "depends_on_signals": [],
+      "score": 60,
+      "status": "WARN",
+      "decision": "RESEARCH_MORE",
+      "sensor_mechanism_coherence": "PARTIALLY_COHERENT",
+      "findings": [
+        {
+          "severity": "MEDIUM",
+          "category": "sensor_numerical_stability",
+          "status": "WARN",
+          "finding": "Reference platform.yaml sets kyle_lambda_60s min_samples: 5; OLS lambda with tiny n is high-variance.",
+          "evidence": "platform.yaml sensor_specs; KyleLambda60sSensor denom guard returns warm=False when n < min_samples but estimator remains noisy near threshold.",
+          "recommended_action": "Raise min_samples for production research or widen uncertainty bands on edge_estimate_bps."
         },
         {
           "severity": "LOW",
-          "category": "cost_execution",
+          "category": "alpha_sensor_mechanism_coherence",
           "status": "WARN",
-          "finding": "Margin still modest versus aggressive stress scenarios; CPCV / OOS economics remain unaudited.",
-          "evidence": "margin_ratio 1.6",
-          "recommended_action": "Stress at 2× cost in research harness before promotion."
+          "finding": "micro_price declared in depends_on_sensors but not referenced in evaluate().",
+          "evidence": "YAML signal block",
+          "recommended_action": "Drop unused dependency or incorporate into directional confirmation."
         }
       ]
     },
@@ -180,38 +135,28 @@
       "schema_version": "1.1",
       "horizon_seconds": 30,
       "mechanism_family": "HAWKES_SELF_EXCITE",
-      "depends_on_sensors": ["hawkes_intensity", "trade_through_rate", "ofi_ewma", "spread_z_30d"],
+      "sensors": ["hawkes_intensity", "trade_through_rate", "ofi_ewma", "spread_z_30d"],
       "depends_on_signals": [],
-      "regime_gate": "on P(normal)>0.6 and spread_z_30d<1.0",
-      "cost_margin_ratio_declared": 1.6,
-      "trend_mechanism": true,
-      "hazard_exit": true,
-      "risk_budget": "max_position_per_symbol=50, max_gross_exposure_pct=3.0",
-      "promotion_thresholds": "not declared",
-      "computation_module": null,
-      "score": 85,
-      "status": "WARN",
-      "decision": "RESEARCH_MORE",
-      "economic_rationale": "PLAUSIBLE",
-      "regime_design": "PLAUSIBLE",
-      "cost_execution": "COST_PLAUSIBLE",
-      "risk_readiness": "SAFE_FOR_RESEARCH",
+      "score": 22,
+      "status": "FAIL",
+      "decision": "KILL",
+      "sensor_mechanism_coherence": "MECHANISM_UNSUPPORTED",
       "findings": [
         {
-          "severity": "INFO",
-          "category": "backtest_compatibility",
-          "status": "PASS",
-          "finding": "Pass 1 HIGH cleared for mixed PORTFOLIO feeder use: cross-horizon fan-in supplies hawkes signals at 300s barriers.",
-          "evidence": "synchronizer + integration tests",
-          "recommended_action": null
+          "severity": "BLOCKER",
+          "category": "backtest_pipeline_compatibility",
+          "status": "FAIL",
+          "finding": "bootstrap wires RollingZscoreFeature for hawkes_intensity, but HawkesIntensitySensor emits a tuple value and RollingZscoreFeature.observe skips tuples — hawkes_intensity_zscore cannot warm from real sensor readings.",
+          "evidence": "src/feelies/bootstrap.py _horizon_features_for; src/feelies/features/impl/rolling_stats.py; src/feelies/sensors/impl/hawkes_intensity.py; tests/features/test_rolling_zscore_skips_tuple_sensor_values.py",
+          "recommended_action": "P0: expose a scalar component (e.g. intensity_ratio) via TupleComponentFeature then rolling stats, or extend RollingZscoreFeature for tuple indices — then replay-test full L1→L2 path."
         },
         {
-          "severity": "INFO",
-          "category": "signal_logic_safety",
-          "status": "PASS",
-          "finding": "hazard_exit.enabled true — wired for Phase 4.1 hazard path per platform skill docs.",
-          "evidence": "hazard_exit block present",
-          "recommended_action": null
+          "severity": "HIGH",
+          "category": "test_coverage",
+          "status": "FAIL",
+          "finding": "tests/alpha/test_pofi_hawkes_burst_v1.py injects hawkes_intensity_zscore directly into HorizonFeatureSnapshot; does not validate aggregator output from Hawkes sensor.",
+          "evidence": "_snapshot() helper in test file",
+          "recommended_action": "Add integration test feeding Trade stream through registry + aggregator matching integration fixtures."
         }
       ]
     },
@@ -222,38 +167,28 @@
       "schema_version": "1.1",
       "horizon_seconds": 120,
       "mechanism_family": "SCHEDULED_FLOW",
-      "depends_on_sensors": ["scheduled_flow_window", "ofi_ewma"],
+      "sensors": ["scheduled_flow_window", "ofi_ewma"],
       "depends_on_signals": [],
-      "regime_gate": "on scheduled_flow_window_active==1 and seconds_to_window_close>60; off window inactive or seconds_to_window_close<30",
-      "cost_margin_ratio_declared": 2.0,
-      "trend_mechanism": true,
-      "hazard_exit": false,
-      "risk_budget": "max_position_per_symbol=150, max_gross_exposure_pct=6.0",
-      "promotion_thresholds": "not declared",
-      "computation_module": null,
-      "score": 76,
+      "score": 48,
       "status": "WARN",
       "decision": "RESEARCH_MORE",
-      "economic_rationale": "PLAUSIBLE",
-      "regime_design": "ROBUST",
-      "cost_execution": "COST_PLAUSIBLE",
-      "risk_readiness": "SAFE_FOR_RESEARCH",
+      "sensor_mechanism_coherence": "COHERENT",
       "findings": [
         {
-          "severity": "MEDIUM",
-          "category": "causality_lookahead",
-          "status": "WARN",
-          "finding": "Trade relies on scheduled_flow_window_direction_prior and calendar-backed sensor; economically valid only if prior is knowable at boundary timestamp (exchange-published / deterministic calendar). Audit did not re-verify sensor implementation against live feed latency.",
-          "evidence": "scheduled_flow_window tuple expansion in horizon_engine.py",
-          "recommended_action": "Document feed latency + staleness in sensor spec; add functional tests under pytest -m functional if available."
+          "severity": "HIGH",
+          "category": "loader_discovery_compatibility",
+          "status": "FAIL",
+          "finding": "Repo-root platform.yaml has no scheduled_flow_window SensorSpec; bootstrap raises ConfigurationError if spec uses ScheduledFlowWindowSensor without event_calendar_path + injected calendar.",
+          "evidence": "platform.yaml ends at hawkes_intensity; src/feelies/bootstrap.py calendar injection block",
+          "recommended_action": "Document required sensor_specs snippet for MOC alpha; integration tests already carry full sensor list — promote pattern to operator docs."
         },
         {
-          "severity": "LOW",
-          "category": "trend_mechanism_binding",
-          "status": "PASS",
-          "finding": "horizon_seconds/expected_half_life_seconds = 120/240 = 0.5 at G16 floor.",
-          "evidence": "YAML",
-          "recommended_action": null
+          "severity": "MEDIUM",
+          "category": "economic_mechanism",
+          "status": "WARN",
+          "finding": "Hypothesis leans on exchange imbalance prior embedded in reference calendar YAML — point-in-time validity depends on calendar provenance, not tape replay alone.",
+          "evidence": "scheduled_flow_window sensor + storage/reference/event_calendar/*.yaml",
+          "recommended_action": "Version and audit calendar sources; treat as structural research dependency."
         }
       ]
     },
@@ -263,47 +198,29 @@
       "layer": "PORTFOLIO",
       "schema_version": "1.1",
       "horizon_seconds": 300,
-      "mechanism_family": null,
-      "depends_on_sensors": [],
+      "mechanism_family": "PORTFOLIO_MULTI",
+      "sensors": [],
       "depends_on_signals": ["pofi_kyle_drift_v1", "pofi_inventory_revert_v1"],
-      "regime_gate": null,
-      "cost_margin_ratio_declared": 3.43,
-      "trend_mechanism": true,
-      "hazard_exit": false,
-      "risk_budget": "max_position_per_symbol=5000, max_gross_exposure_pct=50.0",
-      "promotion_thresholds": "not declared",
-      "computation_module": null,
-      "score": 63,
+      "score": 52,
       "status": "WARN",
-      "decision": "RESEARCH_MORE",
-      "economic_rationale": "WEAK",
-      "regime_design": "UNDER_SPECIFIED",
-      "cost_execution": "COST_UNPROVEN",
-      "risk_readiness": "TOO_LOOSE",
+      "decision": "PASS_STRUCTURAL_ONLY",
+      "sensor_mechanism_coherence": "NOT_APPLICABLE",
       "findings": [
-        {
-          "severity": "INFO",
-          "category": "backtest_compatibility",
-          "status": "PASS",
-          "finding": "Pass 1 BLOCKER cleared: bootstrap supplies union of portfolio + feeder horizons and upstream strategy ids; synchronizer attaches latest-per-strategy signals at 300s barriers including 30s inventory feeder.",
-          "evidence": "src/feelies/bootstrap.py; synchronizer; tests/composition/test_synchronizer.py",
-          "recommended_action": null
-        },
         {
           "severity": "HIGH",
           "category": "risk_budget",
           "status": "WARN",
-          "finding": "max_gross_exposure_pct=50 and capital_allocation_pct=100 are aggressive for deploy-small posture; acceptable only as integration fixture scale.",
+          "finding": "max_position_per_symbol 5000 and max_gross_exposure_pct 50.0 are institutional-scale defaults, unsafe for personal-grade deployment without platform caps.",
           "evidence": "risk_budget block",
-          "recommended_action": "Tighten for any capital-bearing config."
+          "recommended_action": "Override via PlatformConfig risk rails for personal accounts."
         },
         {
           "severity": "MEDIUM",
-          "category": "economic_mechanism",
+          "category": "promotion_falsification",
           "status": "WARN",
-          "finding": "Hypothesis remains performance-target (Sharpe≥1) without standalone structural mechanism beyond feeder aggregation — acceptable as harness, not as economic proof.",
-          "evidence": "hypothesis text",
-          "recommended_action": "Treat as benchmark harness; require CPCV/OOS before promotion narrative."
+          "finding": "falsification_criteria are symbolic strings (sharpe_post_cost_below_1.0_60d) — not mapped to measurable ledger artifacts in-repo.",
+          "evidence": "YAML falsification_criteria list",
+          "recommended_action": "Wire to concrete metrics from backtest exports or promotion evidence schemas."
         }
       ]
     },
@@ -313,39 +230,21 @@
       "layer": "PORTFOLIO",
       "schema_version": "1.1",
       "horizon_seconds": 300,
-      "mechanism_family": null,
-      "depends_on_sensors": [],
+      "mechanism_family": "PORTFOLIO_MULTI",
+      "sensors": [],
       "depends_on_signals": ["pofi_kyle_drift_v1", "pofi_inventory_revert_v1"],
-      "regime_gate": null,
-      "cost_margin_ratio_declared": 3.43,
-      "trend_mechanism": true,
-      "hazard_exit": false,
-      "risk_budget": "max_position_per_symbol=5000, max_gross_exposure_pct=50.0",
-      "promotion_thresholds": "not declared",
-      "computation_module": null,
-      "score": 63,
+      "score": 52,
       "status": "WARN",
-      "decision": "RESEARCH_MORE",
-      "economic_rationale": "WEAK",
-      "regime_design": "UNDER_SPECIFIED",
-      "cost_execution": "COST_UNPROVEN",
-      "risk_readiness": "TOO_LOOSE",
+      "decision": "PASS_STRUCTURAL_ONLY",
+      "sensor_mechanism_coherence": "NOT_APPLICABLE",
       "findings": [
-        {
-          "severity": "INFO",
-          "category": "backtest_compatibility",
-          "status": "PASS",
-          "finding": "Pass 1 BLOCKER cleared: decay path receives feeder signals via the same multi-horizon context as baseline xsect v1.",
-          "evidence": "CompositionEngine + CrossSectionalRanker feeder_strategy_ids wiring",
-          "recommended_action": null
-        },
         {
           "severity": "HIGH",
           "category": "risk_budget",
           "status": "WARN",
-          "finding": "Same fixture-scale risk posture as pofi_xsect_v1.",
+          "finding": "Same elevated PORTFOLIO risk_budget as pofi_xsect_v1.",
           "evidence": "risk_budget block",
-          "recommended_action": "Tighten for production bundles."
+          "recommended_action": "Align with operator risk policy."
         }
       ]
     },
@@ -355,129 +254,266 @@
       "layer": "PORTFOLIO",
       "schema_version": "1.1",
       "horizon_seconds": 300,
-      "mechanism_family": null,
-      "depends_on_sensors": [],
+      "mechanism_family": "PORTFOLIO_MULTI",
+      "sensors": [],
       "depends_on_signals": ["pofi_kyle_drift_v1", "pofi_inventory_revert_v1", "pofi_hawkes_burst_v1"],
-      "regime_gate": null,
-      "cost_margin_ratio_declared": 4.0,
-      "trend_mechanism": true,
-      "hazard_exit": false,
-      "risk_budget": "max_position_per_symbol=5000, max_gross_exposure_pct=50.0",
-      "promotion_thresholds": "not declared",
-      "computation_module": null,
-      "score": 64,
+      "score": 45,
       "status": "WARN",
-      "decision": "RESEARCH_MORE",
-      "economic_rationale": "WEAK",
-      "regime_design": "UNDER_SPECIFIED",
-      "cost_execution": "COST_UNPROVEN",
-      "risk_readiness": "TOO_LOOSE",
+      "decision": "PASS_STRUCTURAL_ONLY",
+      "sensor_mechanism_coherence": "NOT_APPLICABLE",
       "findings": [
         {
-          "severity": "INFO",
-          "category": "backtest_compatibility",
-          "status": "PASS",
-          "finding": "Pass 1 BLOCKER cleared: dual 30s feeders reach 300s composition via cross-horizon selection + multi-feeder rank aggregation.",
-          "evidence": "tests/integration/test_mixed_mechanism_e2e.py; tests/composition/test_ranker_multi_feeder.py",
-          "recommended_action": null
-        },
-        {
-          "severity": "INFO",
-          "category": "schema_loader_compliance",
-          "status": "PASS",
-          "finding": "Pass 1 LOW typo (HAWKES_SELF_EXCITING) cleared in description — uses HAWKES_SELF_EXCITE.",
-          "evidence": "YAML description",
-          "recommended_action": null
+          "severity": "BLOCKER",
+          "category": "upstream_signal_dependency",
+          "status": "FAIL",
+          "finding": "Depends on pofi_hawkes_burst_v1 which is not end-to-end viable until Hawkes tuple→rolling-feature wiring is fixed.",
+          "evidence": "depends_on_signals list + Hawkes pipeline defect above",
+          "recommended_action": "Fix Hawkes Layer-2 feature path before trusting mixed-mechanism portfolio e2e intent quality."
         },
         {
           "severity": "HIGH",
           "category": "risk_budget",
           "status": "WARN",
-          "finding": "Fixture-scale gross / capital_allocation identical to other reference PORTFOLIO specs.",
+          "finding": "Large PORTFOLIO caps as other reference xsect alphas.",
           "evidence": "risk_budget block",
-          "recommended_action": "Tighten for capital-bearing configs."
+          "recommended_action": "Override platform risk for personal deployment."
+        }
+      ]
+    }
+  ],
+  "sensor_math_findings": [
+    {
+      "sensor_id": "ofi_ewma",
+      "implementation": "src/feelies/sensors/impl/ofi_ewma.py",
+      "used_by": ["pofi_benign_midcap_v1", "pofi_kyle_drift_v1", "pofi_hawkes_burst_v1", "pofi_moc_imbalance_v1"],
+      "formula_status": "PASS",
+      "causality_status": "PASS",
+      "unit_status": "PASS",
+      "numerical_stability_status": "PASS",
+      "microstructure_status": "PASS",
+      "test_status": "PASS",
+      "overall_status": "PASS",
+      "findings": []
+    },
+    {
+      "sensor_id": "micro_price",
+      "implementation": "src/feelies/sensors/impl/micro_price.py",
+      "used_by": ["pofi_benign_midcap_v1", "pofi_kyle_drift_v1"],
+      "formula_status": "PASS",
+      "causality_status": "PASS",
+      "unit_status": "PASS",
+      "numerical_stability_status": "PASS",
+      "microstructure_status": "PASS",
+      "test_status": "PASS",
+      "overall_status": "PASS",
+      "findings": [
+        {
+          "severity": "INFO",
+          "category": "usage",
+          "status": "NOT_APPLICABLE",
+          "finding": "Declared on multiple SIGNAL alphas but often unused in evaluate(); still mathematically valid as L1 pressure proxy.",
+          "evidence": "sensor code + alpha signal blocks",
+          "recommended_action": "Align alpha consumption with declaration."
+        }
+      ]
+    },
+    {
+      "sensor_id": "spread_z_30d",
+      "implementation": "src/feelies/sensors/impl/spread_z_30d.py",
+      "used_by": ["pofi_benign_midcap_v1", "pofi_inventory_revert_v1", "pofi_kyle_drift_v1", "pofi_hawkes_burst_v1"],
+      "formula_status": "PASS",
+      "causality_status": "PASS",
+      "unit_status": "PASS",
+      "numerical_stability_status": "PASS",
+      "microstructure_status": "PASS",
+      "test_status": "PASS",
+      "overall_status": "PASS",
+      "findings": []
+    },
+    {
+      "sensor_id": "quote_replenish_asymmetry",
+      "implementation": "src/feelies/sensors/impl/quote_replenish_asymmetry.py",
+      "used_by": ["pofi_inventory_revert_v1"],
+      "formula_status": "PASS",
+      "causality_status": "PASS",
+      "unit_status": "WARN",
+      "numerical_stability_status": "PASS",
+      "microstructure_status": "WARN",
+      "test_status": "PASS",
+      "overall_status": "WARN",
+      "findings": [
+        {
+          "severity": "MEDIUM",
+          "finding": "L1-only replenishment proxy; flicker and tier-size changes can dominate.",
+          "evidence": "Implementation docstring + tests/sensors/test_quote_replenish_asymmetry.py",
+          "recommended_action": "Pair with spread/hazard gates (already present)."
+        }
+      ]
+    },
+    {
+      "sensor_id": "quote_hazard_rate",
+      "implementation": "src/feelies/sensors/impl/quote_hazard_rate.py",
+      "used_by": ["pofi_inventory_revert_v1"],
+      "formula_status": "PASS",
+      "causality_status": "PASS",
+      "unit_status": "PASS",
+      "numerical_stability_status": "PASS",
+      "microstructure_status": "WARN",
+      "test_status": "PASS",
+      "overall_status": "WARN",
+      "findings": [
+        {
+          "severity": "MEDIUM",
+          "finding": "Hazard defined as count(window)/window_seconds — intensity, not a probability; alpha thresholds hazard_floor as if interpretable absolute scale.",
+          "evidence": "Sensor docstring vs alpha parameter hazard_floor",
+          "recommended_action": "Calibrate hazard_floor per symbol/venue or normalize."
+        }
+      ]
+    },
+    {
+      "sensor_id": "kyle_lambda_60s",
+      "implementation": "src/feelies/sensors/impl/kyle_lambda_60s.py",
+      "used_by": ["pofi_kyle_drift_v1"],
+      "formula_status": "PASS",
+      "causality_status": "PASS",
+      "unit_status": "WARN",
+      "numerical_stability_status": "WARN",
+      "microstructure_status": "WARN",
+      "test_status": "PASS",
+      "overall_status": "WARN",
+      "findings": [
+        {
+          "severity": "MEDIUM",
+          "finding": "Tick-rule signed volume; not true aggressor side.",
+          "evidence": "Sensor module header",
+          "recommended_action": "Document limitation in alpha hypothesis; avoid crossing-symbol raw lambda comparisons without normalization."
+        }
+      ]
+    },
+    {
+      "sensor_id": "trade_through_rate",
+      "implementation": "src/feelies/sensors/impl/trade_through_rate.py",
+      "used_by": ["pofi_hawkes_burst_v1"],
+      "formula_status": "PASS",
+      "causality_status": "PASS",
+      "unit_status": "PASS",
+      "numerical_stability_status": "PASS",
+      "microstructure_status": "WARN",
+      "test_status": "PASS",
+      "overall_status": "WARN",
+      "findings": [
+        {
+          "severity": "MEDIUM",
+          "finding": "Uses last NBBO at trade timestamp; SIP ordering ambiguity unmodeled.",
+          "evidence": "Sensor docstring",
+          "recommended_action": "Sensitivity analysis under latency stress."
+        }
+      ]
+    },
+    {
+      "sensor_id": "hawkes_intensity",
+      "implementation": "src/feelies/sensors/impl/hawkes_intensity.py",
+      "used_by": ["pofi_hawkes_burst_v1"],
+      "formula_status": "PASS",
+      "causality_status": "PASS",
+      "unit_status": "PASS",
+      "numerical_stability_status": "PASS",
+      "microstructure_status": "WARN",
+      "test_status": "PASS",
+      "overall_status": "FAIL",
+      "findings": [
+        {
+          "severity": "BLOCKER",
+          "finding": "Tuple output incompatible with current RollingZscoreFeature wiring for primary alpha feature hawkes_intensity_zscore.",
+          "evidence": "tests/features/test_rolling_zscore_skips_tuple_sensor_values.py",
+          "recommended_action": "Fix bootstrap/feature layering."
+        },
+        {
+          "severity": "MEDIUM",
+          "finding": "Tick-rule classification inherits Hawkes/Kyle limitations.",
+          "evidence": "hawkes_intensity.py",
+          "recommended_action": "Same as kyle_lambda trade-sign caveat."
+        }
+      ]
+    },
+    {
+      "sensor_id": "scheduled_flow_window",
+      "implementation": "src/feelies/sensors/impl/scheduled_flow_window.py",
+      "used_by": ["pofi_moc_imbalance_v1"],
+      "formula_status": "PASS",
+      "causality_status": "PASS",
+      "unit_status": "PASS",
+      "numerical_stability_status": "PASS",
+      "microstructure_status": "PASS",
+      "test_status": "PASS",
+      "overall_status": "PASS",
+      "findings": [
+        {
+          "severity": "HIGH",
+          "finding": "Requires explicit calendar injection + platform sensor registration absent from repo-root platform.yaml.",
+          "evidence": "bootstrap.py; platform.yaml sensor_specs truncation",
+          "recommended_action": "Ship operator snippet or extend reference platform for all shipped SIGNAL alphas."
         }
       ]
     }
   ],
   "cross_alpha_findings": [
     {
-      "severity": "INFO",
-      "category": "dependency_validity",
-      "finding": "Pass 1 BLOCKER (multi-horizon depends_on_signals vs single-horizon synchronizer) remediated: runtime fan-in + ranker multi-feeder path exercised by tests.",
-      "evidence": "src/feelies/composition/synchronizer.py; bootstrap wiring",
-      "recommended_action": null
+      "severity": "HIGH",
+      "category": "sensor_concentration",
+      "finding": "Six SIGNAL alphas share spread_z_30d and/or ofi_ewma — correlated gate failures in wide-spread regimes.",
+      "evidence": "depends_on_sensors overlap across YAMLs",
+      "recommended_action": "Diversify regime stress tests."
+    },
+    {
+      "severity": "HIGH",
+      "category": "upstream_dependency",
+      "finding": "pofi_xsect_mixed_mechanism_v1 depends on Hawkes feeder alpha impacted by Layer-2 tuple/z-score defect.",
+      "evidence": "PORTFOLIO depends_on_signals",
+      "recommended_action": "Block promotion of mixed portfolio until Hawkes path fixed."
     },
     {
       "severity": "MEDIUM",
-      "category": "configuration",
-      "finding": "platform.yaml alpha_specs still lists only pofi_benign_midcap_v1 for default bootstrap — extended sensor_specs reduce sensor-coverage gap for local bundles but operators must still enumerate alpha_specs for multi-alpha deployments.",
+      "category": "platform_config_drift",
+      "finding": "Reference platform.yaml pins enforce_trend_mechanism: false and lists only one alpha — not representative of full alphas/ directory.",
       "evidence": "platform.yaml",
-      "recommended_action": "Document bundle recipes or add example multi-alpha platform overlay."
-    },
-    {
-      "severity": "MEDIUM",
-      "category": "test_coverage",
-      "finding": "AGENTS.md documents acceptance drift: baseline alpha trend_mechanism vs tests expecting v0.2 parity.",
-      "evidence": "AGENTS.md Known pre-existing acceptance test failures",
-      "recommended_action": "Reconcile tests or baseline YAML policy."
+      "recommended_action": "Separate reference smoke config from full alpha CI matrix."
     }
   ],
   "test_coverage_findings": [
     {
       "severity": "INFO",
-      "category": "test_coverage",
-      "finding": "tests/alpha/test_shipped_alpha_specs_load.py discovers and loads all eight shipped specs under loose and strict trend_mechanism enforcement.",
-      "evidence": "pytest file",
-      "recommended_action": null
+      "finding": "tests/alpha/*.py provide loader + HorizonSignalEngine harness coverage for SIGNAL alphas; Hawkes tests bypass aggregator.",
+      "evidence": "tests/alpha/test_pofi_hawkes_burst_v1.py",
+      "recommended_action": "Closed-loop Hawkes replay test post-wiring fix."
     },
     {
       "severity": "INFO",
-      "category": "test_coverage",
-      "finding": "tests/composition/test_synchronizer.py::test_fan_in_cross_horizon_feeders_into_portfolio_context asserts per-strategy signals at 300s barriers.",
-      "evidence": "pytest",
-      "recommended_action": null
-    },
-    {
-      "severity": "INFO",
-      "category": "test_coverage",
-      "finding": "tests/composition/test_ranker_multi_feeder.py locks marginal raw-score aggregation across feeders.",
-      "evidence": "pytest",
-      "recommended_action": null
-    },
-    {
-      "severity": "LOW",
-      "category": "test_coverage",
-      "finding": "Integration e2e may still produce sparse or degenerate intents when live replay lacks feeder emissions — distinct from horizon wiring.",
-      "evidence": "tests/integration/test_xsect_v1_e2e.py posture",
-      "recommended_action": "Optional: assert non-empty intent when synthetic feeds guarantee signals."
+      "finding": "Added tests/alpha/test_discovered_alpha_specs_load.py and tests/features/test_rolling_zscore_skips_tuple_sensor_values.py in this audit branch.",
+      "evidence": "git diff",
+      "recommended_action": "Keep discovery test green as new alphas land."
     }
   ],
   "recommended_actions": [
     {
       "priority": "P0",
-      "action": "PASS 2: PORTFOLIO vs feeder horizon contract satisfied in code — no further P0 on composition-feed wiring.",
-      "status": "resolved"
+      "action": "Repair Hawkes intensity → horizon z-score wiring (tuple component + rolling stats or equivalent)."
+    },
+    {
+      "priority": "P0",
+      "action": "Extend operator platform.yaml templates to register scheduled_flow_window + event_calendar_path when running pofi_moc_imbalance_v1."
     },
     {
       "priority": "P1",
-      "action": "Align pofi_benign_midcap_v1 runtime snapshot reads with kyle_lambda_60s fingerprint or narrow declared fingerprint sensors.",
-      "status": "open"
+      "action": "Reconcile pofi_benign_midcap_v1 narrative sensors with evaluate() inputs; remove dead depends_on_sensors or use them."
+    },
+    {
+      "priority": "P1",
+      "action": "Tighten PORTFOLIO reference risk_budget defaults for personal-tier docs or gate behind explicit operator acknowledgement."
     },
     {
       "priority": "P2",
-      "action": "Tighten reference PORTFOLIO risk_budget defaults for any non-fixture deployment path.",
-      "status": "open"
-    },
-    {
-      "priority": "P3",
-      "action": "PASS 2: Inventory falsification band aligned — closed.",
-      "status": "resolved"
-    },
-    {
-      "priority": "P4",
-      "action": "Reconcile AGENTS.md acceptance drift (baseline YAML vs v0.2 parity tests).",
-      "status": "open"
+      "action": "Replace symbolic falsification strings on PORTFOLIO alphas with measurable promotion-evidence hooks."
     }
   ]
 }
