@@ -235,17 +235,22 @@ class CrossSectionalRanker:
             decay_track = 1.0
             best_abs = -1.0
             best_mech: TrendMechanism | None = None
-            found_signal = False
+            found_any_signal = False
+            had_entry_eligible = False
+            exit_only_mech: TrendMechanism | None = None
 
             for sid in feeder_strategy_ids:
                 sig = row.get(sid)
                 if sig is None:
                     continue
-                found_signal = True
+                found_any_signal = True
                 mech = sig.trend_mechanism
                 if mech in _EXIT_ONLY_MECHANISMS:
+                    if mech is not None:
+                        exit_only_mech = mech
                     continue
 
+                had_entry_eligible = True
                 sign = self._direction_to_sign(sig.direction)
                 raw = sign * sig.strength * sig.edge_estimate_bps
                 decay = 1.0
@@ -263,9 +268,16 @@ class CrossSectionalRanker:
                     best_abs = contrib_abs
                     best_mech = mech
 
-            if not found_signal:
+            if not found_any_signal:
                 raw_scores[symbol] = 0.0
                 decay_factors[symbol] = 0.0
+                continue
+
+            if not had_entry_eligible:
+                raw_scores[symbol] = 0.0
+                decay_factors[symbol] = 0.0
+                if exit_only_mech is not None:
+                    mechanism_by_symbol[symbol] = exit_only_mech
                 continue
 
             raw_scores[symbol] = raw_total
