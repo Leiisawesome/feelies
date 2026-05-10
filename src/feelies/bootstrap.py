@@ -633,7 +633,14 @@ def _horizon_features_for(
     if sensor_id == "quote_hazard_rate":
         return [SensorPassthroughFeature("quote_hazard_rate", horizon)]
     if sensor_id == "hawkes_intensity":
-        return [RollingZscoreFeature("hawkes_intensity", horizon)]
+        # Sensor emits a 4-tuple; sum λ_buy+λ_sell as burst-intensity scalar.
+        return [
+            RollingZscoreFeature(
+                "hawkes_intensity",
+                horizon,
+                tuple_sum_component_indices=(0, 1),
+            ),
+        ]
     if sensor_id == "trade_through_rate":
         return [SensorPassthroughFeature("trade_through_rate", horizon)]
     if sensor_id == "scheduled_flow_window":
@@ -651,8 +658,18 @@ def _horizon_features_for(
                 "scheduled_flow_window_direction_prior", horizon,
             ),
         ]
-    # Sensors that produce stats already (e.g. spread_z_30d, micro_price)
-    # do not yet have evaluate()-level consumers — no features needed.
+    if sensor_id == "micro_price":
+        return [
+            SensorPassthroughFeature("micro_price", horizon),
+            RollingZscoreFeature("micro_price", horizon),
+        ]
+    if sensor_id == "realized_vol_30s":
+        return [
+            SensorPassthroughFeature("realized_vol_30s", horizon),
+            RollingZscoreFeature("realized_vol_30s", horizon),
+        ]
+    # Sensors that produce stats already (e.g. spread_z_30d)
+    # skip horizon features — gate resolves them via sensor_cache.
     return []
 
 

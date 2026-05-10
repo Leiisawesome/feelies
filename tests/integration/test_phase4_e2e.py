@@ -92,6 +92,7 @@ from feelies.monitoring.horizon_metrics import HorizonMetricsCollector
 from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
 from feelies.sensors.impl.micro_price import MicroPriceSensor
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
+from feelies.sensors.impl.realized_vol_30s import RealizedVol30sSensor
 from feelies.sensors.impl.spread_z_30d import SpreadZScoreSensor
 from feelies.sensors.spec import SensorSpec
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -145,6 +146,13 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
         sensor_version="1.0.0",
         cls=SpreadZScoreSensor,
         params={},
+        subscribes_to=(NBBOQuote,),
+    ),
+    SensorSpec(
+        sensor_id="realized_vol_30s",
+        sensor_version="1.1.0",
+        cls=RealizedVol30sSensor,
+        params={"window_seconds": 30, "warm_after": 8},
         subscribes_to=(NBBOQuote,),
     ),
 )

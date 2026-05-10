@@ -91,6 +91,7 @@ _HARNESS_TEMPLATE = textwrap.dedent("""\
     from feelies.core.platform_config import OperatingMode, PlatformConfig
     from feelies.sensors.impl.micro_price import MicroPriceSensor
     from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
+    from feelies.sensors.impl.realized_vol_30s import RealizedVol30sSensor
     from feelies.sensors.impl.spread_z_30d import SpreadZScoreSensor
     from feelies.sensors.spec import SensorSpec
     from feelies.storage.memory_event_log import InMemoryEventLog
@@ -109,6 +110,12 @@ _HARNESS_TEMPLATE = textwrap.dedent("""\
         SensorSpec(
             sensor_id='spread_z_30d', sensor_version='1.0.0',
             cls=SpreadZScoreSensor, params={{}}, subscribes_to=(NBBOQuote,),
+        ),
+        SensorSpec(
+            sensor_id='realized_vol_30s', sensor_version='1.1.0',
+            cls=RealizedVol30sSensor,
+            params={{'window_seconds': 30, 'warm_after': 8}},
+            subscribes_to=(NBBOQuote,),
         ),
     )
 

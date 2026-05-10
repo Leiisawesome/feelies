@@ -52,6 +52,7 @@ from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
+from feelies.sensors.impl.realized_vol_30s import RealizedVol30sSensor
 from feelies.sensors.impl.scheduled_flow_window import ScheduledFlowWindowSensor
 from feelies.sensors.spec import SensorSpec
 from feelies.signals.horizon_engine import HorizonSignalEngine
@@ -100,6 +101,13 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
         sensor_version="1.0.0",
         cls=ScheduledFlowWindowSensor,
         params={},
+        subscribes_to=(NBBOQuote,),
+    ),
+    SensorSpec(
+        sensor_id="realized_vol_30s",
+        sensor_version="1.1.0",
+        cls=RealizedVol30sSensor,
+        params={"window_seconds": 30, "warm_after": 8},
         subscribes_to=(NBBOQuote,),
     ),
 )

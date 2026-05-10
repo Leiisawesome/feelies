@@ -57,7 +57,10 @@ def test_manifest_metadata(loaded: LoadedSignalLayerModule) -> None:
     assert loaded.manifest.version == "1.0.0"
     assert loaded.horizon_seconds == 120
     assert loaded.depends_on_sensors == (
-        "ofi_ewma", "micro_price", "spread_z_30d",
+        "ofi_ewma",
+        "micro_price",
+        "spread_z_30d",
+        "realized_vol_30s",
     )
     assert loaded.consumed_features == loaded.depends_on_sensors
 
@@ -145,10 +148,12 @@ def _spread_low_reading(symbol: str = "AAPL") -> SensorReading:
 def _snapshot_with_z(
     z: float,
     *,
+    z_micro: float | None = None,
     symbol: str = "AAPL",
     boundary_index: int = 1,
 ) -> HorizonFeatureSnapshot:
-    """Snapshot whose ``values`` carries the ``ofi_ewma_zscore`` reading."""
+    """Snapshot with aligned OFI / micro-price z-scores (footprint check)."""
+    zm = float(z) if z_micro is None else float(z_micro)
     return HorizonFeatureSnapshot(
         timestamp_ns=2_000,
         correlation_id="corr",
@@ -156,7 +161,11 @@ def _snapshot_with_z(
         symbol=symbol,
         horizon_seconds=120,
         boundary_index=boundary_index,
-        values={"ofi_ewma_zscore": z},
+        values={
+            "ofi_ewma_zscore": z,
+            "micro_price_zscore": zm,
+            "realized_vol_30s_zscore": 0.5,
+        },
     )
 
 
@@ -187,6 +196,16 @@ def test_emits_short_for_negative_z(loaded: LoadedSignalLayerModule) -> None:
 
     assert len(captured) == 1
     assert captured[0].direction == SignalDirection.SHORT
+
+
+def test_no_emission_when_micro_price_disagrees(
+    loaded: LoadedSignalLayerModule,
+) -> None:
+    _, bus, captured = _engine_with_alpha(loaded)
+    bus.publish(_normal_high())
+    bus.publish(_spread_low_reading())
+    bus.publish(_snapshot_with_z(z=2.5, z_micro=-1.0))
+    assert captured == []
 
 
 def test_no_emission_below_threshold(loaded: LoadedSignalLayerModule) -> None:

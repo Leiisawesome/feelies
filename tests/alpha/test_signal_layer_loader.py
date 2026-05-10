@@ -76,7 +76,12 @@ def test_reference_alpha_loads_from_file() -> None:
     assert m.manifest.alpha_id == "pofi_benign_midcap_v1"
     assert m.manifest.layer == "SIGNAL"
     assert m.horizon_seconds == 120
-    assert m.depends_on_sensors == ("ofi_ewma", "micro_price", "spread_z_30d")
+    assert m.depends_on_sensors == (
+        "ofi_ewma",
+        "micro_price",
+        "spread_z_30d",
+        "realized_vol_30s",
+    )
     assert isinstance(m.gate, RegimeGate)
     assert isinstance(m.cost, CostArithmetic)
     assert m.cost.margin_ratio == pytest.approx(1.8)

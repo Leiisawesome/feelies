@@ -62,6 +62,7 @@ from feelies.monitoring.horizon_metrics import HorizonMetricsCollector
 from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
 from feelies.sensors.impl.kyle_lambda_60s import KyleLambda60sSensor
 from feelies.sensors.impl.micro_price import MicroPriceSensor
+from feelies.sensors.impl.realized_vol_30s import RealizedVol30sSensor
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
 from feelies.sensors.impl.quote_hazard_rate import QuoteHazardRateSensor
 from feelies.sensors.impl.quote_replenish_asymmetry import (
@@ -152,6 +153,13 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
         cls=KyleLambda60sSensor,
         params={"min_samples": 5},
         subscribes_to=(NBBOQuote, Trade),
+    ),
+    SensorSpec(
+        sensor_id="realized_vol_30s",
+        sensor_version="1.1.0",
+        cls=RealizedVol30sSensor,
+        params={"window_seconds": 30, "warm_after": 8},
+        subscribes_to=(NBBOQuote,),
     ),
 )
 

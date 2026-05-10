@@ -57,10 +57,10 @@ trend_mechanism:
   max_share_of_gross: 0.4
 
 risk_budget:
-  max_position_per_symbol: 5000
-  max_gross_exposure_pct: 50.0
-  max_drawdown_pct: 5.0
-  capital_allocation_pct: 100.0
+  max_position_per_symbol: 500
+  max_gross_exposure_pct: 15.0
+  max_drawdown_pct: 3.0
+  capital_allocation_pct: 25.0
 
 parameters:
   decay_weighting_enabled:

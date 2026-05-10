@@ -50,7 +50,11 @@ def loaded() -> LoadedSignalLayerModule:
 def test_manifest_metadata(loaded: LoadedSignalLayerModule) -> None:
     assert loaded.manifest.layer == "SIGNAL"
     assert loaded.depends_on_sensors == (
-        "kyle_lambda_60s", "ofi_ewma", "micro_price", "spread_z_30d",
+        "kyle_lambda_60s",
+        "ofi_ewma",
+        "micro_price",
+        "spread_z_30d",
+        "realized_vol_30s",
     )
 
 
@@ -139,6 +143,7 @@ def _snapshot(
             "kyle_lambda_60s_percentile": lam_pct,
             "kyle_lambda_60s_zscore": lam_z,
             "ofi_ewma": ofi,
+            "realized_vol_30s_zscore": 0.5,
         },
     )
 

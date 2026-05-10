@@ -45,6 +45,7 @@ falsification_criteria:
 depends_on_sensors:
   - scheduled_flow_window
   - ofi_ewma
+  - realized_vol_30s
 
 # ── Parameters ────────────────────────────────────────────
 parameters:
@@ -94,7 +95,7 @@ regime_gate:
   on_condition: |
     scheduled_flow_window_active == 1.0 and seconds_to_window_close > 60
   off_condition: |
-    scheduled_flow_window_active == 0.0 or seconds_to_window_close < 30
+    scheduled_flow_window_active == 0.0 or seconds_to_window_close < 30 or realized_vol_30s_zscore > 3.5
   hysteresis:
     posterior_margin: 0.20
     percentile_margin: 0.30

@@ -55,7 +55,11 @@ def loaded() -> LoadedSignalLayerModule:
 
 def test_manifest_metadata(loaded: LoadedSignalLayerModule) -> None:
     assert loaded.manifest.layer == "SIGNAL"
-    assert loaded.depends_on_sensors == ("scheduled_flow_window", "ofi_ewma")
+    assert loaded.depends_on_sensors == (
+        "scheduled_flow_window",
+        "ofi_ewma",
+        "realized_vol_30s",
+    )
 
 
 def test_cost_arithmetic_meets_floor(loaded: LoadedSignalLayerModule) -> None:
@@ -138,6 +142,7 @@ def _snapshot(
             "seconds_to_window_close": seconds_to_close,
             "scheduled_flow_window_direction_prior": direction_prior,
             "ofi_ewma": ofi,
+            "realized_vol_30s_zscore": 0.5,
         },
     )
 
