@@ -58,7 +58,7 @@ from feelies.alpha.cost_arithmetic import MIN_MARGIN_RATIO
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock
 from feelies.core.config import Configuration
-from feelies.core.errors import ConfigurationError
+from feelies.core.errors import ConfigurationError, OrchestratorPipelineAbortError
 from feelies.core.events import (
     Alert,
     AlertSeverity,
@@ -1050,6 +1050,12 @@ class Orchestrator:
                 self._process_tick(event)
             elif isinstance(event, Trade):
                 self._process_trade(event)
+
+        if self._pipeline_abort_requested:
+            raise OrchestratorPipelineAbortError(
+                "Tick failure recovery could not transition macro to DEGRADED "
+                "(transition callback raised); pipeline aborted fail-safe."
+            )
 
     def _process_trade(self, trade: Trade) -> None:
         """Log, publish, and forward a trade event to the feature engine.

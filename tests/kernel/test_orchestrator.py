@@ -30,6 +30,8 @@ import pytest
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
+from feelies.core.errors import OrchestratorPipelineAbortError
+from feelies.core.state_machine import TransitionRecord
 from feelies.core.events import (
     Event,
     MetricEvent,
@@ -1028,6 +1030,36 @@ class TestOrchestratorMacroLifecycleRemediation:
         _boot_to_ready(orch)
         orch.run_live()
         assert orch.macro_state == MacroState.READY
+
+    def test_run_paper_pipeline_abort_not_session_feed_complete(self) -> None:
+        """If DEGRADED transition fails inside tick recovery, do not → READY.
+
+        Regression: ``_pipeline_abort_requested`` broke the tick loop without
+        raising, so ``SESSION_FEED_COMPLETE`` looked like normal exhaustion.
+        """
+        clock = SimulatedClock(start_ns=1000)
+        quote = _make_quote()
+        orch = _build_orchestrator(
+            clock,
+            market_data=_StubMarketData([quote]),
+        )
+        _boot_to_ready(orch)
+
+        def veto_drift(record: TransitionRecord) -> None:
+            if record.trigger.startswith("EXECUTION_DRIFT_DETECTED"):
+                raise RuntimeError("macro transition subscriber boom")
+
+        orch._macro.on_transition(veto_drift)
+
+        def boom(_quote: NBBOQuote) -> None:
+            raise RuntimeError("tick boom")
+
+        orch._process_tick_inner = boom  # type: ignore[method-assign]
+
+        with pytest.raises(OrchestratorPipelineAbortError):
+            orch.run_paper()
+
+        assert orch.macro_state == MacroState.DEGRADED
 
 
 # ── Tests: Multiple ticks ────────────────────────────────────────────
