@@ -484,7 +484,7 @@ class MassiveNormalizer:
             symbol,
             feed_type,
         )
-        self._mark_corrupted(symbol)
+        self._mark_corrupted(symbol, trigger="sequence_reuse_payload_mismatch")
         return True
 
     def _check_gap(self, symbol: str, feed_type: str, seq_num: int, prev_seq: int) -> None:
@@ -530,7 +530,7 @@ class MassiveNormalizer:
         self._last_seen[(symbol, feed_type)] = (seq_num, exchange_ts_ns, content_fp)
         self._ensure_health_machine(symbol)
 
-    def _mark_corrupted(self, symbol: str) -> None:
+    def _mark_corrupted(self, symbol: str, trigger: str = "parse_error") -> None:
         if not symbol or symbol == "UNKNOWN":
             logger.warning(
                 "massive_normalizer: parse error for indeterminate symbol — "
@@ -539,7 +539,7 @@ class MassiveNormalizer:
             return
         sm = self._ensure_health_machine(symbol)
         if sm.can_transition(DataHealth.CORRUPTED):
-            sm.transition(DataHealth.CORRUPTED, trigger="parse_error")
+            sm.transition(DataHealth.CORRUPTED, trigger=trigger)
 
     def on_health_transition(self, callback: Callable[[TransitionRecord], None]) -> None:
         """Register a callback for DataHealth state transitions on any symbol.

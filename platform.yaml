@@ -36,7 +36,7 @@ enforce_trend_mechanism: false
 # CORRUPTED: macro DEGRADED and no further ticks/trades for that symbol. Standard
 # backtest replay has no normalizer; pair with require_healthy_disk_cache_manifests
 # for strict offline manifests.
-degrade_on_data_gap: true
+degrade_on_data_gap: false
 
 regime_engine: hmm_3state_fractional
 
