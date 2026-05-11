@@ -19,7 +19,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 _logger = logging.getLogger(__name__)
 
@@ -293,7 +293,11 @@ class BasicRiskEngine:
             if mark <= 0:
                 continue
 
-            target_shares = int(round(float(tgt.target_usd) / float(mark)))
+            target_shares = int(
+                (Decimal(str(tgt.target_usd)) / mark).to_integral_value(
+                    rounding=ROUND_HALF_UP,
+                )
+            )
             delta_shares = target_shares - current.quantity
             if delta_shares == 0:
                 continue
