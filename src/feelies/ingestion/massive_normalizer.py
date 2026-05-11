@@ -15,6 +15,7 @@ Responsibilities (per data-engineering skill):
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from collections.abc import Callable, Sequence
@@ -34,6 +35,84 @@ logger = logging.getLogger(__name__)
 _WS_SOURCE = "massive_ws"
 _REST_SOURCE = "massive_rest"
 _MS_TO_NS = 1_000_000
+
+
+def _fingerprint_ws_quote(msg: dict) -> str:  # type: ignore[type-arg]
+    """Stable hash of WS quote payload fields (sequence reuse detection)."""
+    raw_c = msg.get("c")
+    conditions: tuple[int, ...]
+    if raw_c is not None and not isinstance(raw_c, list):
+        conditions = (int(raw_c),)
+    elif isinstance(raw_c, list):
+        conditions = tuple(int(x) for x in raw_c)
+    else:
+        conditions = ()
+    raw_i = msg.get("i")
+    indicators = tuple(int(x) for x in raw_i) if isinstance(raw_i, list) else ()
+    parts = (
+        str(msg["bp"]),
+        str(msg["ap"]),
+        str(msg["bs"]),
+        str(msg["as"]),
+        int(msg.get("bx", 0)),
+        int(msg.get("ax", 0)),
+        int(msg.get("z", 0)),
+        conditions,
+        indicators,
+    )
+    return hashlib.sha256(repr(parts).encode()).hexdigest()
+
+
+def _fingerprint_ws_trade(msg: dict) -> str:  # type: ignore[type-arg]
+    raw_c = msg.get("c")
+    conditions = tuple(int(x) for x in raw_c) if isinstance(raw_c, list) else ()
+    parts = (
+        str(msg["p"]),
+        str(msg["s"]),
+        int(msg.get("x", 0)),
+        str(msg.get("i", "")),
+        int(msg.get("z", 0)),
+        conditions,
+        str(msg.get("trfi", "")),
+        str(msg.get("trft", "")),
+    )
+    return hashlib.sha256(repr(parts).encode()).hexdigest()
+
+
+def _fingerprint_rest_quote(rec: dict) -> str:  # type: ignore[type-arg]
+    raw_cond = rec.get("conditions")
+    conditions = tuple(int(x) for x in raw_cond) if isinstance(raw_cond, list) else ()
+    raw_ind = rec.get("indicators")
+    indicators = tuple(int(x) for x in raw_ind) if isinstance(raw_ind, list) else ()
+    parts = (
+        str(rec["bid_price"]),
+        str(rec["ask_price"]),
+        str(rec["bid_size"]),
+        str(rec["ask_size"]),
+        int(rec.get("bid_exchange", 0)),
+        int(rec.get("ask_exchange", 0)),
+        int(rec.get("tape", 0)),
+        conditions,
+        indicators,
+    )
+    return hashlib.sha256(repr(parts).encode()).hexdigest()
+
+
+def _fingerprint_rest_trade(rec: dict) -> str:  # type: ignore[type-arg]
+    raw_cond = rec.get("conditions")
+    conditions = tuple(int(x) for x in raw_cond) if isinstance(raw_cond, list) else ()
+    parts = (
+        str(rec["price"]),
+        str(rec["size"]),
+        int(rec.get("exchange", 0)),
+        str(rec.get("id", "")),
+        int(rec.get("tape", 0)),
+        conditions,
+        str(rec.get("trf_id", "")),
+        str(rec.get("correction", "")),
+        str(rec.get("participant_timestamp", "")),
+    )
+    return hashlib.sha256(repr(parts).encode()).hexdigest()
 
 
 class MassiveNormalizer:
@@ -70,7 +149,8 @@ class MassiveNormalizer:
         # Keyed by (symbol, feed_type) — quotes and trades have independent
         # Massive sequence_number spaces and must be tracked separately to
         # avoid false dedup and spurious gap detection when interleaved.
-        self._last_seen: dict[tuple[str, str], tuple[int, int]] = {}
+        # Value: (sequence_number, exchange_timestamp_ns, content_fingerprint).
+        self._last_seen: dict[tuple[str, str], tuple[int, int, str]] = {}
         self._duplicates_filtered: int = 0
 
     # ── MarketDataNormalizer protocol ────────────────────────────────
@@ -135,12 +215,13 @@ class MassiveNormalizer:
             symbol: str = msg["sym"]
             exchange_ts_ns = int(msg["t"]) * _MS_TO_NS
             seq_num = int(msg.get("q", 0))
+            fp = _fingerprint_ws_quote(msg)
 
-            if self._is_duplicate(symbol, self._FEED_QUOTE, seq_num, exchange_ts_ns):
+            if self._reject_sequence_reuse(symbol, self._FEED_QUOTE, seq_num, fp):
                 return None
             prev = self._last_seen.get((symbol, self._FEED_QUOTE))
             prev_seq = prev[0] if prev is not None else 0
-            self._update_last_seen(symbol, self._FEED_QUOTE, seq_num, exchange_ts_ns)
+            self._update_last_seen(symbol, self._FEED_QUOTE, seq_num, exchange_ts_ns, fp)
             self._check_gap(symbol, self._FEED_QUOTE, seq_num, prev_seq)
 
             internal_seq = self._seq.next()
@@ -186,12 +267,13 @@ class MassiveNormalizer:
             symbol: str = msg["sym"]
             exchange_ts_ns = int(msg["t"]) * _MS_TO_NS
             seq_num = int(msg.get("q", 0))
+            fp = _fingerprint_ws_trade(msg)
 
-            if self._is_duplicate(symbol, self._FEED_TRADE, seq_num, exchange_ts_ns):
+            if self._reject_sequence_reuse(symbol, self._FEED_TRADE, seq_num, fp):
                 return None
             prev = self._last_seen.get((symbol, self._FEED_TRADE))
             prev_seq = prev[0] if prev is not None else 0
-            self._update_last_seen(symbol, self._FEED_TRADE, seq_num, exchange_ts_ns)
+            self._update_last_seen(symbol, self._FEED_TRADE, seq_num, exchange_ts_ns, fp)
             self._check_gap(symbol, self._FEED_TRADE, seq_num, prev_seq)
 
             internal_seq = self._seq.next()
@@ -257,14 +339,15 @@ class MassiveNormalizer:
             symbol: str = rec["ticker"]
             sip_ts = int(rec["sip_timestamp"])
             seq_num = int(rec.get("sequence_number", 0))
+            fp = _fingerprint_rest_quote(rec)
 
-            if self._is_duplicate(symbol, self._FEED_QUOTE, seq_num, sip_ts):
+            if self._reject_sequence_reuse(symbol, self._FEED_QUOTE, seq_num, fp):
                 return None
             # REST historical responses are thinned: each row keeps the original
             # SIP sequence_number but omits intervening ticks, so consecutive rows
             # routinely jump by ≫1 — unlike the live WebSocket feed. Gap detection
             # would falsely flag almost every symbol (see AUDIT / data_integrity).
-            self._update_last_seen(symbol, self._FEED_QUOTE, seq_num, sip_ts)
+            self._update_last_seen(symbol, self._FEED_QUOTE, seq_num, sip_ts, fp)
 
             internal_seq = self._seq.next()
             cid = make_correlation_id(symbol, sip_ts, internal_seq)
@@ -311,11 +394,12 @@ class MassiveNormalizer:
             symbol: str = rec["ticker"]
             sip_ts = int(rec["sip_timestamp"])
             seq_num = int(rec.get("sequence_number", 0))
+            fp = _fingerprint_rest_trade(rec)
 
-            if self._is_duplicate(symbol, self._FEED_TRADE, seq_num, sip_ts):
+            if self._reject_sequence_reuse(symbol, self._FEED_TRADE, seq_num, fp):
                 return None
             # Same thinned-stream semantics as quotes (``_rest_quote``).
-            self._update_last_seen(symbol, self._FEED_TRADE, seq_num, sip_ts)
+            self._update_last_seen(symbol, self._FEED_TRADE, seq_num, sip_ts, fp)
 
             internal_seq = self._seq.next()
             cid = make_correlation_id(symbol, sip_ts, internal_seq)
@@ -367,18 +451,41 @@ class MassiveNormalizer:
         """Total number of exact-duplicate messages filtered across all symbols."""
         return self._duplicates_filtered
 
-    def _is_duplicate(self, symbol: str, feed_type: str, seq_num: int, exchange_ts_ns: int) -> bool:
+    def _reject_sequence_reuse(
+        self,
+        symbol: str,
+        feed_type: str,
+        seq_num: int,
+        content_fp: str,
+    ) -> bool:
+        """Drop replays of the same vendor sequence (exact dup) or flag corruption.
+
+        When ``sequence_number`` matches the previous row for this feed but the
+        fingerprint differs, the stream is inconsistent — emit nothing and
+        transition to ``CORRUPTED``.
+
+        Returns True when this message must not produce an event.
+        """
+        if seq_num == 0:
+            return False
         prev = self._last_seen.get((symbol, feed_type))
         if prev is None:
             return False
-        # Match on seq_num alone: REST retransmissions reuse the same
-        # sequence number but may carry a different exchange timestamp,
-        # so including exchange_ts_ns in the key would let retransmissions
-        # pass dedup as new events.
-        if prev[0] == seq_num:
+        prev_seq, _prev_ts, prev_fp = prev
+        if prev_seq == 0 or prev_seq != seq_num:
+            return False
+        if prev_fp == content_fp:
             self._duplicates_filtered += 1
             return True
-        return False
+        logger.warning(
+            "massive_normalizer: sequence_number %s reused with differing payload "
+            "(%s %s)",
+            seq_num,
+            symbol,
+            feed_type,
+        )
+        self._mark_corrupted(symbol, trigger="sequence_reuse_payload_mismatch")
+        return True
 
     def _check_gap(self, symbol: str, feed_type: str, seq_num: int, prev_seq: int) -> None:
         """Fire DataHealth transitions based on sequence-number continuity.
@@ -412,14 +519,27 @@ class MassiveNormalizer:
                 symbol, feed_type, seq_num,
             )
 
-    def _update_last_seen(self, symbol: str, feed_type: str, seq_num: int, exchange_ts_ns: int) -> None:
-        self._last_seen[(symbol, feed_type)] = (seq_num, exchange_ts_ns)
+    def _update_last_seen(
+        self,
+        symbol: str,
+        feed_type: str,
+        seq_num: int,
+        exchange_ts_ns: int,
+        content_fp: str,
+    ) -> None:
+        self._last_seen[(symbol, feed_type)] = (seq_num, exchange_ts_ns, content_fp)
         self._ensure_health_machine(symbol)
 
-    def _mark_corrupted(self, symbol: str) -> None:
+    def _mark_corrupted(self, symbol: str, trigger: str = "parse_error") -> None:
+        if not symbol or symbol == "UNKNOWN":
+            logger.warning(
+                "massive_normalizer: parse error for indeterminate symbol — "
+                "skipping DataHealth CORRUPTED (no usable ticker/sym)",
+            )
+            return
         sm = self._ensure_health_machine(symbol)
         if sm.can_transition(DataHealth.CORRUPTED):
-            sm.transition(DataHealth.CORRUPTED, trigger="parse_error")
+            sm.transition(DataHealth.CORRUPTED, trigger=trigger)
 
     def on_health_transition(self, callback: Callable[[TransitionRecord], None]) -> None:
         """Register a callback for DataHealth state transitions on any symbol.
@@ -439,6 +559,6 @@ class MassiveNormalizer:
         the gap via sequence-number discontinuity.
         """
         for sym in symbols:
-            sm = self._health_machines.get(sym)
-            if sm is not None and sm.state == DataHealth.HEALTHY:
+            sm = self._ensure_health_machine(sym)
+            if sm.state == DataHealth.HEALTHY:
                 sm.transition(DataHealth.GAP_DETECTED, trigger="feed_connection_lost")

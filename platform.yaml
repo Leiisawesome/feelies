@@ -32,6 +32,12 @@ parameter_overrides: {}
 # operator configs that pointed at the same id before strict-by-default.
 enforce_trend_mechanism: false
 
+# When a Massive normalizer is wired (e.g. live WS), GAP_DETECTED is treated like
+# CORRUPTED: macro DEGRADED and no further ticks/trades for that symbol. Standard
+# backtest replay has no normalizer; pair with require_healthy_disk_cache_manifests
+# for strict offline manifests.
+degrade_on_data_gap: false
+
 regime_engine: hmm_3state_fractional
 
 # data_dir: data/

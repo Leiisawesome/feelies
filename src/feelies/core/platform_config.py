@@ -78,6 +78,12 @@ class PlatformConfig:
     # is wired at orchestrator boot.
     require_healthy_disk_cache_manifests: bool = False
     disk_cache_ingestion_health_rows: tuple[tuple[str, str, str], ...] = ()
+    # When True and a Massive normalizer is wired, GAP_DETECTED halts ticks/trades
+    # for that symbol the same way CORRUPTED does (strict streaming policy).
+    degrade_on_data_gap: bool = False
+    # Log WARNING at boot when disk_cache_ingestion_health_rows carries non-HEALTHY
+    # rows while require_healthy_disk_cache_manifests is False (advisory path).
+    warn_on_unhealthy_disk_cache: bool = True
 
     account_equity: float = 1_000_000.0
     backtest_fill_latency_ns: int = 0
@@ -542,6 +548,8 @@ class PlatformConfig:
             "disk_cache_ingestion_health_rows": list(
                 self.disk_cache_ingestion_health_rows,
             ),
+            "degrade_on_data_gap": self.degrade_on_data_gap,
+            "warn_on_unhealthy_disk_cache": self.warn_on_unhealthy_disk_cache,
             "account_equity": self.account_equity,
             "backtest_fill_latency_ns": self.backtest_fill_latency_ns,
             "stop_loss_per_share": self.stop_loss_per_share,
@@ -766,6 +774,10 @@ class PlatformConfig:
             ),
             require_healthy_disk_cache_manifests=bool(
                 data.get("require_healthy_disk_cache_manifests", False)
+            ),
+            degrade_on_data_gap=bool(data.get("degrade_on_data_gap", False)),
+            warn_on_unhealthy_disk_cache=bool(
+                data.get("warn_on_unhealthy_disk_cache", True)
             ),
             account_equity=float(data.get("account_equity", 1_000_000.0)),
             backtest_fill_latency_ns=int(

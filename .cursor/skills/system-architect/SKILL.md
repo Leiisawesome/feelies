@@ -69,7 +69,7 @@ no silent transitions (Inv-13).
 | Micro pipeline | `MicroState` | `kernel/micro.py` | M0 ‥ M10 backbone + Phase-2/3/4 sub-states (see below) | Per-tick |
 | Order lifecycle | `OrderState` | `execution/order_state.py` | CREATED → SUBMITTED → ACKNOWLEDGED → {PARTIALLY_FILLED, FILLED, CANCEL_REQUESTED, REJECTED, EXPIRED, CANCELLED} | Per-order |
 | Risk escalation | `RiskLevel` | `risk/escalation.py` | NORMAL → WARNING → BREACH_DETECTED → FORCED_FLATTEN → LOCKED | Monotonic safety |
-| Data integrity | `DataHealth` | `ingestion/data_integrity.py` | HEALTHY → GAP_DETECTED → CORRUPTED → RECOVERING | Per-symbol stream |
+| Data integrity | `DataHealth` | `ingestion/data_integrity.py` | HEALTHY ↔ GAP_DETECTED (WS); CORRUPTED terminal | Per-symbol stream |
 
 Illegal transitions raise `IllegalTransition`. Construction-time enum
 completeness check guarantees every enum member has a transition entry
