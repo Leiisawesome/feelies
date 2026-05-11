@@ -116,10 +116,11 @@ class TestRawDownload:
     """Verify that _download_raw works for both quotes and trades."""
 
     def test_downloads_quotes(self, limited_client: _LimitedClient, trading_day: str) -> None:
-        raw_quotes, pages = _download_raw(
+        raw_quotes, pages, ok = _download_raw(
             limited_client, "AAPL", trading_day, trading_day,
             limited_client.list_quotes, "quotes",
         )
+        assert ok
         assert len(raw_quotes) > 0, "should download at least one quote"
         assert pages >= 1
         for d in raw_quotes:
@@ -127,10 +128,11 @@ class TestRawDownload:
             assert d.get("ticker") == "AAPL"
 
     def test_downloads_trades(self, limited_client: _LimitedClient, trading_day: str) -> None:
-        raw_trades, pages = _download_raw(
+        raw_trades, pages, ok = _download_raw(
             limited_client, "AAPL", trading_day, trading_day,
             limited_client.list_trades, "trades",
         )
+        assert ok
         assert len(raw_trades) > 0, "should download at least one trade"
         assert pages >= 1
         for d in raw_trades:

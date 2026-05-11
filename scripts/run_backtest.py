@@ -931,6 +931,33 @@ def ingest_data(
     return event_log, ingest_result, day_sources
 
 
+def _warn_if_unhealthy_manifest_days(day_sources: Sequence[Any]) -> None:
+    """Advisory banner when ingest/cache metadata reports degraded health."""
+    bad: list[Any] = []
+    for ds in day_sources:
+        h = getattr(ds, "ingestion_health", None)
+        if h is not None and h != "HEALTHY":
+            bad.append(ds)
+    if not bad:
+        return
+    lines = [
+        f"    {getattr(ds, 'symbol', '?')} {getattr(ds, 'date', '?')}: "
+        f"{getattr(ds, 'ingestion_health', '?')!r}"
+        for ds in bad[:20]
+    ]
+    extra = "" if len(bad) <= 20 else f"\n    ... and {len(bad) - 20} more day(s)"
+    print(
+        "\n  WARNING: One or more loaded days have ingestion_health != HEALTHY.\n"
+        "  Replay continues; set require_healthy_disk_cache_manifests: true in "
+        "platform.yaml to fail boot, or fix/re-ingest degraded days.\n"
+        + "\n".join(lines)
+        + extra
+        + "\n",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
 def _attach_disk_cache_health_rows(
     config: PlatformConfig,
     day_sources: Sequence[DaySource],
@@ -1615,6 +1642,8 @@ def _run_backtest_phases_2_7(
     run_t0: float,
 ) -> int:
     """Bootstrap → replay → report → verification (shared by API and cache harness)."""
+    _warn_if_unhealthy_manifest_days(day_sources)
+
     # ── RTH filter ────────────────────────────────────────────
     # When session_kind is "RTH", drop pre-market and after-hours events
     # before replay.  The pipeline has no timestamp gate of its own;

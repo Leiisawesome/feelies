@@ -1100,6 +1100,9 @@ class Orchestrator:
         sensors and any time-bucket boundaries crossed by the trade
         timestamp are observed.
         """
+        if self._data_health_blocks_trading(trade.symbol, trade.correlation_id):
+            return
+
         if not self._events_prelogged:
             self._event_log.append(trade)
         self._bus.publish(trade)
@@ -1359,16 +1362,8 @@ class Orchestrator:
             return
 
         # ── Runtime data integrity check (W-6) ─────────────────
-        if self._normalizer is not None:
-            symbol_health = self._normalizer.health(quote.symbol)
-            if symbol_health == DataHealth.CORRUPTED:
-                if self._macro.can_transition(MacroState.DEGRADED):
-                    self._macro.transition(
-                        MacroState.DEGRADED,
-                        trigger=f"DATA_CORRUPTED:{quote.symbol}",
-                        correlation_id=cid,
-                    )
-                return
+        if self._data_health_blocks_trading(quote.symbol, cid):
+            return
 
         # ── M0 → M1: MARKET_EVENT_RECEIVED ─────────────────────
         self._micro.transition(
@@ -3849,6 +3844,35 @@ class Orchestrator:
 
     # ── Configuration and data integrity ────────────────────────────
 
+    def _data_health_blocks_trading(self, symbol: str, correlation_id: str) -> bool:
+        """Return True when the Massive normalizer forbids consuming this symbol.
+
+        CORRUPTED always halts trading for the symbol when a normalizer is wired.
+        GAP_DETECTED does the same only when ``PlatformConfig.degrade_on_data_gap``
+        is enabled (strict paper/live policy).
+        """
+        if self._normalizer is None:
+            return False
+        health = self._normalizer.health(symbol)
+        if health == DataHealth.CORRUPTED:
+            if self._macro.can_transition(MacroState.DEGRADED):
+                self._macro.transition(
+                    MacroState.DEGRADED,
+                    trigger=f"DATA_CORRUPTED:{symbol}",
+                    correlation_id=correlation_id,
+                )
+            return True
+        degrade_gap = getattr(self._config, "degrade_on_data_gap", False)
+        if degrade_gap and health == DataHealth.GAP_DETECTED:
+            if self._macro.can_transition(MacroState.DEGRADED):
+                self._macro.transition(
+                    MacroState.DEGRADED,
+                    trigger=f"DATA_GAP_DETECTED:{symbol}",
+                    correlation_id=correlation_id,
+                )
+            return True
+        return False
+
     def _verify_data_integrity(self) -> bool:
         """Verify data integrity for all configured symbols.
 
@@ -3888,6 +3912,21 @@ class Orchestrator:
                         day,
                     )
                     return False
+        elif getattr(self._config, "warn_on_unhealthy_disk_cache", True):
+            rows = getattr(self._config, "disk_cache_ingestion_health_rows", ()) or ()
+            bad = [(s, d, h) for s, d, h in (rows or ()) if h != "HEALTHY"]
+            if bad:
+                sample = bad[:10]
+                more = "" if len(bad) <= 10 else f" (+{len(bad) - 10} more)"
+                logger.warning(
+                    "orchestrator: disk_cache_ingestion_health_rows contains "
+                    "non-HEALTHY manifest rows — replay continues (advisory). "
+                    "Sample: %s%s. Set require_healthy_disk_cache_manifests: true "
+                    "to fail boot, or warn_on_unhealthy_disk_cache: false to "
+                    "silence.",
+                    sample,
+                    more,
+                )
         return True
 
     # ── Feature snapshot management ─────────────────────────────────

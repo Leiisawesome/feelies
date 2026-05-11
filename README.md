@@ -70,9 +70,9 @@ Five state machines govern all system behaviour:
 | **Micro** (tick pipeline) | WAITING → MARKET_EVENT → STATE_UPDATE → SENSOR → AGGREGATOR → SIGNAL → COMPOSITION → RISK → ORDER → ACK → POSITION → LOG | Per-tick |
 | **Order** lifecycle | CREATED → SUBMITTED → ACKNOWLEDGED → FILLED/CANCELLED/REJECTED/EXPIRED | Per-order |
 | **Risk** escalation | NORMAL → WARNING → BREACH → FORCED_FLATTEN → LOCKED | Monotonic safety |
-| **Data** integrity | HEALTHY → GAP_DETECTED → CORRUPTED → RECOVERING | Per-symbol stream |
+| **Data** integrity | HEALTHY ↔ GAP_DETECTED (WS sequence / feed loss); CORRUPTED (terminal). Historical REST omits seq-gap detection (thinned feeds). | Per-symbol stream |
 
-Every transition emits a `StateTransition` event for full auditability.
+Kernel/wiring surfaces emit `StateTransition` on the bus where subscribed (ingestion `DataHealth` transitions use `TransitionRecord` on the normalizer unless a bridge callback is registered).
 
 ### Backtest/Live Parity
 

@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
 from feelies.core.clock import Clock
+from feelies.core.errors import DataIntegrityError
 from feelies.core.events import NBBOQuote, Trade
 from feelies.ingestion.data_integrity import DataHealth
 from feelies.ingestion.massive_normalizer import MassiveNormalizer
@@ -288,8 +289,21 @@ class MassiveHistoricalIngestor:
             # ``TimeoutError`` has an empty ``str()``, so a too-tight bound looks
             # like an opaque ingestion failure in the backtest CLI.
             _DOWNLOAD_TIMEOUT_S = 900
-            raw_quotes, q_pages = quotes_future.result(timeout=_DOWNLOAD_TIMEOUT_S)
-            raw_trades, t_pages = trades_future.result(timeout=_DOWNLOAD_TIMEOUT_S)
+            raw_quotes, q_pages, q_ok = quotes_future.result(timeout=_DOWNLOAD_TIMEOUT_S)
+            raw_trades, t_pages, t_ok = trades_future.result(timeout=_DOWNLOAD_TIMEOUT_S)
+
+        if not q_ok:
+            raise DataIntegrityError(
+                f"massive_ingestor: quotes REST pagination did not complete cleanly "
+                f"for {symbol} ({start_date}–{end_date}) — refusing partial checkpoint "
+                "and refusing to normalize",
+            )
+        if not t_ok:
+            raise DataIntegrityError(
+                f"massive_ingestor: trades REST pagination did not complete cleanly "
+                f"for {symbol} ({start_date}–{end_date}) — refusing partial checkpoint "
+                "and refusing to normalize",
+            )
 
         total_pages = q_pages + t_pages
         logger.info(
@@ -342,11 +356,15 @@ def _download_raw(
     list_fn: Callable[..., Any],
     data_label: str,
     _on_page: Callable[[int, int], None] | None = None,
-) -> tuple[list[dict[str, Any]], int]:
+) -> tuple[list[dict[str, Any]], int, bool]:
     """Paginate through a client list method, collecting raw dicts.
 
     ``list_fn`` is either ``client.list_quotes`` or ``client.list_trades``.
     ``data_label`` is used only for log messages.
+
+    Returns ``(records, pages, completed_ok)``.  ``completed_ok`` is False when
+    iteration aborted via exception — callers must not checkpoint or treat
+    the stream as complete (empty-but-successful downloads still yield True).
     """
     raw_dicts: list[dict[str, Any]] = []
     pages = 0
@@ -364,9 +382,10 @@ def _download_raw(
         logger.exception(
             "massive_ingestor: failed to start %s iteration for %s", data_label, symbol,
         )
-        return [], 0
+        return [], 0, False
 
     buf: list[Any] = []
+    completed_ok = True
     try:
         for obj in records_iter:
             buf.append(obj)
@@ -380,6 +399,7 @@ def _download_raw(
                     _on_page(pages, len(raw_dicts))
                 buf = []
     except Exception:
+        completed_ok = False
         logger.exception(
             "massive_ingestor: mid-pagination error for %s/%s after %d pages;"
             " partial data (%d records) retained",
@@ -395,7 +415,7 @@ def _download_raw(
         if _on_page is not None:
             _on_page(pages, len(raw_dicts))
 
-    return raw_dicts, pages
+    return raw_dicts, pages, completed_ok
 
 
 def _model_to_dict(record: Any, symbol: str) -> dict[str, Any]:
