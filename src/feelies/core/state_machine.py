@@ -115,7 +115,12 @@ class StateMachine(Generic[S]):
         return list(self._history)
 
     def on_transition(self, callback: Callable[[TransitionRecord], None]) -> None:
-        """Register a callback invoked after every successful transition."""
+        """Register a callback invoked during each successful transition.
+
+        Callbacks run after validation and record construction, but **before**
+        the state pointer and history are updated — subscribers must treat
+        ``record.from_state`` / ``record.to_state`` as the authoritative edge.
+        """
         self._on_transition_callbacks.append(callback)
 
     def can_transition(self, target: S) -> bool:

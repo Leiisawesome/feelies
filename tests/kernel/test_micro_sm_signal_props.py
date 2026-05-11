@@ -67,11 +67,15 @@ class TickConfig:
     selects between sibling targets based on these flags.  Names
     mirror the conditions documented inline in
     :data:`feelies.kernel.micro._MICRO_TRANSITIONS`.
+
+    Multi-alpha arbitration is handled bus-side before M4 in production
+    (:meth:`feelies.kernel.orchestrator.Orchestrator._select_bus_signal`);
+    the micro SM always walks ``SIGNAL_EVALUATE → RISK_CHECK`` when a
+    signal is emitted.
     """
 
     sensors_enabled: bool
     signal_alpha_loaded: bool
-    multi_alpha: bool
     horizon_crossed: bool
     signal_emitted: bool
     risk_pass: bool
@@ -123,19 +127,6 @@ def _walk_one_tick(cfg: TickConfig) -> list[MicroState]:
 
     if not cfg.signal_emitted:
         step(MicroState.LOG_AND_METRICS)
-    elif cfg.multi_alpha:
-        step(MicroState.ORDER_AGGREGATION)
-        if not cfg.order_warranted:
-            step(MicroState.LOG_AND_METRICS)
-        elif not cfg.check_order_pass:
-            step(MicroState.ORDER_DECISION)
-            step(MicroState.LOG_AND_METRICS)
-        else:
-            step(MicroState.ORDER_DECISION)
-            step(MicroState.ORDER_SUBMIT)
-            step(MicroState.ORDER_ACK)
-            step(MicroState.POSITION_UPDATE)
-            step(MicroState.LOG_AND_METRICS)
     else:
         if not cfg.risk_pass or not cfg.order_warranted:
             step(MicroState.RISK_CHECK)
@@ -167,7 +158,6 @@ def _tick_config(draw: st.DrawFn) -> TickConfig:
     return TickConfig(
         sensors_enabled=draw(_BOOL),
         signal_alpha_loaded=draw(_BOOL),
-        multi_alpha=draw(_BOOL),
         horizon_crossed=draw(_BOOL),
         signal_emitted=draw(_BOOL),
         risk_pass=draw(_BOOL),

@@ -95,8 +95,8 @@ M2  STATE_UPDATE                   (RegimeEngine.posterior → RegimeState)
                                     CompositionEngine → SizedPositionIntent)
 M3  FEATURE_COMPUTE                (body now empty — legacy hook preserved
                                     so the SM stays on its legal path)
-M4  SIGNAL_EVALUATE                (drain bus-buffered Signal → OrderRequest)
-    ORDER_AGGREGATION              (multi-leg intent fan-out)
+M4  SIGNAL_EVALUATE                (drain bus-buffered Signal → OrderRequest;
+                                    multi-alpha arbitration is bus-side)
 M5  RISK_CHECK                     (RiskEngine.check_signal | check_sized_intent)
 M6  ORDER_DECISION                 (build OrderRequest from intent + verdict)
 M7  ORDER_SUBMIT                   (OrderRouter.submit)
@@ -108,8 +108,10 @@ M10 LOG_AND_METRICS                (tick_to_decision_latency_ns, cleanup)
 Sub-states between M2 and M3 are the Phase-2/3/4 wiring; the M0–M10
 backbone is preserved so the SM transition table remains stable. The
 SIGNAL → Order path runs through M4; the PORTFOLIO `SizedPositionIntent`
-path is dispatched on the bus at `CROSS_SECTIONAL` and consumed by
-`RiskEngine.check_sized_intent` at M5 (with per-leg veto semantics).
+path is dispatched on the bus during the horizon tick chain; the
+orchestrator records ``MicroState.CROSS_SECTIONAL`` before M3 when a
+boundary was processed.  ``RiskEngine.check_sized_intent`` runs inside
+``_on_bus_sized_intent`` (outside the M5–M10 walk for those legs).
 M3's body is empty for Phase-3 alphas — kept as a structural hook so
 the legal-path walk stays bit-identical (Inv-5).
 
