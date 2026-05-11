@@ -939,11 +939,94 @@ class TestOrchestratorHalt:
         orch.halt()
         assert orch.macro_state == MacroState.READY
 
+    def test_halt_resets_micro_state_machine(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_backtest(orch)
+        orch.halt()
+        assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
+
     def test_halt_noop_when_not_trading(self) -> None:
         clock = SimulatedClock(start_ns=1000)
         orch = _build_orchestrator(clock)
         _boot_to_ready(orch)
         orch.halt()
+        assert orch.macro_state == MacroState.READY
+
+
+# ── Macro lifecycle remediation (global stack audit) ──────────────────
+
+
+class TestOrchestratorMacroLifecycleRemediation:
+    def test_shutdown_from_risk_lockdown_reaches_shutdown(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_ready(orch)
+        orch._macro.transition(
+            MacroState.LIVE_TRADING_MODE,
+            trigger="CMD_LIVE_DEPLOY",
+        )
+        orch._macro.transition(
+            MacroState.RISK_LOCKDOWN,
+            trigger="RISK_BREACH",
+        )
+        orch.shutdown()
+        assert orch.macro_state == MacroState.SHUTDOWN
+
+    def test_unlock_from_lockdown_clears_kill_switch(self) -> None:
+        from feelies.monitoring.in_memory import InMemoryKillSwitch
+        from feelies.risk.escalation import RiskLevel
+
+        clock = SimulatedClock(start_ns=1000)
+        kill = InMemoryKillSwitch()
+        kill.activate("pre_unlock", activated_by="test")
+        bus = EventBus()
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=BacktestOrderRouter(clock=clock),
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=MemoryPositionStore(),
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+            kill_switch=kill,
+        )
+        _boot_to_ready(orch)
+        re = orch._risk_escalation
+        re.transition(RiskLevel.WARNING, trigger="t")
+        re.transition(RiskLevel.BREACH_DETECTED, trigger="t")
+        re.transition(RiskLevel.FORCED_FLATTEN, trigger="t")
+        re.transition(RiskLevel.LOCKED, trigger="t")
+        orch._macro.transition(
+            MacroState.LIVE_TRADING_MODE,
+            trigger="CMD_LIVE_DEPLOY",
+        )
+        orch._macro.transition(
+            MacroState.RISK_LOCKDOWN,
+            trigger="RISK_BREACH",
+        )
+        assert kill.is_active
+        orch.unlock_from_lockdown(audit_token="tok-audit")
+        assert not kill.is_active
+        assert orch.macro_state == MacroState.READY
+        assert orch.risk_level == RiskLevel.NORMAL
+
+    def test_run_paper_empty_feed_returns_ready(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_ready(orch)
+        orch.run_paper()
+        assert orch.macro_state == MacroState.READY
+
+    def test_run_live_empty_feed_returns_ready(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_ready(orch)
+        orch.run_live()
         assert orch.macro_state == MacroState.READY
 
 
