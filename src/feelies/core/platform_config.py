@@ -211,7 +211,7 @@ class PlatformConfig:
     # opt-out), schema-1.1 SIGNAL/PORTFOLIO specs may omit the block
     # and G16 only fires for specs that *do* declare it; this is the
     # documented escape hatch for v0.2-baseline alphas (such as the
-    # reference ``pofi_benign_midcap_v1``) that pre-date the mechanism
+    # reference ``sig_benign_midcap_v1``) that pre-date the mechanism
     # taxonomy.
     #
     # Workstream E (acceptance row 84, §20.12.1) flipped the default

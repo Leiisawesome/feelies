@@ -49,7 +49,7 @@ def _portfolio_missing_universe() -> dict:
     return {
         "schema_version": "1.1",
         "layer": "PORTFOLIO",
-        "alpha_id": "pofi_xsect_v1",
+        "alpha_id": "pro_xsect_v1",
         "version": "1.0.0",
         "description": "x",
         "hypothesis": "h",

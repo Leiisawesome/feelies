@@ -2,7 +2,7 @@
 
 Two acceptance lines from §18.2 are mechanically asserted here:
 
-* **G-A** — §18.2 #6: "Reference SIGNAL alpha (`pofi_benign_midcap_v1`)
+* **G-A** — §18.2 #6: "Reference SIGNAL alpha (`sig_benign_midcap_v1`)
   runs end-to-end with `margin_ratio ≥ 1.5` verified at load."
   Generalised to **all five** v0.2/v0.3 reference SIGNAL alphas to
   catch silent regressions across the family rather than a single
@@ -13,7 +13,7 @@ Two acceptance lines from §18.2 are mechanically asserted here:
 
 * **G-B** — §18.2 #7: "Reference PORTFOLIO alpha runs end-to-end with
   factor exposures within tolerance."  Loads
-  ``pofi_xsect_v1`` (the canonical PORTFOLIO reference) and runs the
+  ``pro_xsect_v1`` (the canonical PORTFOLIO reference) and runs the
   declared factor model through :class:`FactorNeutralizer`, primed
   from bundled ``feelies.storage.reference`` factor loadings.  Asserts
   every post-neutralization residual factor exposure is within
@@ -49,11 +49,11 @@ _ALPHAS_ROOT = Path("alphas")
 # time.  Adding a new reference SIGNAL alpha?  Add it here so the
 # acceptance matrix's #6 row stays accurate.
 _REFERENCE_SIGNAL_ALPHAS: tuple[str, ...] = (
-    "pofi_benign_midcap_v1",
-    "pofi_moc_imbalance_v1",
-    "pofi_kyle_drift_v1",
-    "pofi_inventory_revert_v1",
-    "pofi_hawkes_burst_v1",
+    "sig_benign_midcap_v1",
+    "sig_moc_imbalance_v1",
+    "sig_kyle_drift_v1",
+    "sig_inventory_revert_v1",
+    "sig_hawkes_burst_v1",
 )
 
 
@@ -109,7 +109,7 @@ def test_margin_ratio_floor(alpha_id: str) -> None:
 
 
 # G-B — reference PORTFOLIO alpha factor exposures.
-_PORTFOLIO_REFERENCE_ALPHA = "pofi_xsect_v1"
+_PORTFOLIO_REFERENCE_ALPHA = "pro_xsect_v1"
 _FACTOR_EXPOSURE_TOLERANCE: float = 1e-9
 
 

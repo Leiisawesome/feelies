@@ -15,7 +15,7 @@ HAWKES_SELF_EXCITE), then asserts:
 This is intentionally narrower than ``test_phase4_e2e.py``: we
 exercise the *mechanism-aware path* of the ranker without taking on
 the per-symbol sensor wiring overhead of three real SIGNAL alphas.
-The reference YAML ``alphas/pofi_xsect_mixed_mechanism_v1`` documents
+The reference YAML ``alphas/pro_xsect_mixed_mechanism_v1`` documents
 the consumes-block layout this test pins down at the engine level.
 """
 
@@ -44,7 +44,7 @@ from feelies.core.identifiers import SequenceGenerator
 
 
 _HORIZON_SECONDS: int = 300
-_STRATEGY_ID: str = "pofi_xsect_mixed_mechanism_v1"
+_STRATEGY_ID: str = "pro_xsect_mixed_mechanism_v1"
 _MECHANISM_CAP: float = 0.4
 
 # 9-symbol universe, 3 symbols per mechanism family.

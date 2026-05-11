@@ -6,7 +6,7 @@ Covers :py:meth:`AlphaLoader.load_from_dict` dispatch on
 :py:meth:`_parse_depends_on_sensors`, :py:meth:`_extract_trend_metadata`,
 and :py:meth:`_compile_signal_layer_evaluate`.
 
-The reference YAML at ``alphas/pofi_benign_midcap_v1`` is used as the
+The reference YAML at ``alphas/sig_benign_midcap_v1`` is used as the
 canonical happy-path fixture.
 """
 
@@ -34,7 +34,7 @@ from feelies.signals.regime_gate import RegimeGate
 _LOAD_REJECTED = (AlphaLoadError, LayerValidationError)
 
 
-REFERENCE_PATH = Path("alphas/pofi_benign_midcap_v1/pofi_benign_midcap_v1.alpha.yaml")
+REFERENCE_PATH = Path("alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml")
 
 
 def _signal_spec() -> dict:
@@ -73,7 +73,7 @@ def _signal_spec() -> dict:
 def test_reference_alpha_loads_from_file() -> None:
     m = AlphaLoader().load(str(REFERENCE_PATH))
     assert isinstance(m, LoadedSignalLayerModule)
-    assert m.manifest.alpha_id == "pofi_benign_midcap_v1"
+    assert m.manifest.alpha_id == "sig_benign_midcap_v1"
     assert m.manifest.layer == "SIGNAL"
     assert m.horizon_seconds == 120
     assert m.depends_on_sensors == (

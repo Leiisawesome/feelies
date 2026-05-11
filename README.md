@@ -118,13 +118,13 @@ feelies/
 │   ├── _template/                # Layer-specific templates
 │   │   ├── template_signal.alpha.yaml           # 1.1 SIGNAL (recommended)
 │   │   └── template_portfolio.alpha.yaml        # 1.1 PORTFOLIO
-│   ├── pofi_kyle_drift_v1/       # Reference SIGNAL (KYLE_INFO)
-│   ├── pofi_inventory_revert_v1/ # Reference SIGNAL (INVENTORY)
-│   ├── pofi_hawkes_burst_v1/     # Reference SIGNAL (HAWKES_SELF_EXCITE)
-│   ├── pofi_moc_imbalance_v1/    # Reference SIGNAL (SCHEDULED_FLOW)
-│   ├── pofi_benign_midcap_v1/    # Reference SIGNAL (Phase-3 canonical)
-│   ├── pofi_xsect_v1/            # Reference PORTFOLIO (decay OFF baseline)
-│   └── pofi_xsect_mixed_mechanism_v1/  # Reference PORTFOLIO (multi-mechanism cap)
+│   ├── sig_kyle_drift_v1/       # Reference SIGNAL (KYLE_INFO)
+│   ├── sig_inventory_revert_v1/ # Reference SIGNAL (INVENTORY)
+│   ├── sig_hawkes_burst_v1/     # Reference SIGNAL (HAWKES_SELF_EXCITE)
+│   ├── sig_moc_imbalance_v1/    # Reference SIGNAL (SCHEDULED_FLOW)
+│   ├── sig_benign_midcap_v1/    # Reference SIGNAL (Phase-3 canonical)
+│   ├── pro_xsect_v1/            # Reference PORTFOLIO (decay OFF baseline)
+│   └── pro_xsect_mixed_mechanism_v1/  # Reference PORTFOLIO (multi-mechanism cap)
 ├── docs/                         # Architecture spec, migration, acceptance notes
 │   ├── three_layer_architecture.md
 │   ├── migration/
@@ -471,7 +471,7 @@ factor_loadings_max_age_seconds: 86400    # Stale factor loadings → bootstrap 
                                           # reject schema-1.1 SIGNAL/PORTFOLIO alphas missing
                                           # trend_mechanism: (G16 strict).  Pin to false only
                                           # if your alpha_spec_dir points at a v0.2 baseline
-                                          # alpha (e.g. pofi_benign_midcap_v1) that pre-dates
+                                          # alpha (e.g. sig_benign_midcap_v1) that pre-dates
                                           # the mechanism taxonomy — see
                                           # docs/migration/schema_1_0_to_1_1.md §10.5.
 
@@ -582,7 +582,7 @@ The test suite mirrors `src/feelies/` and includes:
 ### Known pre-existing test failures
 
 Two acceptance tests fail on the `main` branch because
-`alphas/pofi_benign_midcap_v1/` already contains a `trend_mechanism:`
+`alphas/sig_benign_midcap_v1/` already contains a `trend_mechanism:`
 block but the acceptance tests expect it to be absent (v0.2 baseline parity):
 
 - `tests/acceptance/test_strict_mode_default_true.py::TestV02ParityPreservedOnExplicitOptOut::test_v02_baseline_alpha_refused_under_default`
