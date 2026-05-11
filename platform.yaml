@@ -14,14 +14,16 @@ symbols:
 # Scanned for *.alpha.yaml if set; here we use explicit paths below.
 alpha_spec_dir: null
 
-# All shipped SIGNAL alphas (PORTFOLIO specs need a wider symbols universe +
-# factor_loadings_dir — wire those via integration-style configs).
+# SIGNAL alphas + PORTFOLIO coordinator for hawkes_burst + inventory_revert.
+# factor_neutralization: false in pofi_burst_revert_v1 — FactorNeutralizer
+# is a no-op when factor_loadings_dir is null (default).
 alpha_specs:
   - alphas/pofi_benign_midcap_v1/pofi_benign_midcap_v1.alpha.yaml
   - alphas/pofi_inventory_revert_v1/pofi_inventory_revert_v1.alpha.yaml
   - alphas/pofi_kyle_drift_v1/pofi_kyle_drift_v1.alpha.yaml
   - alphas/pofi_hawkes_burst_v1/pofi_hawkes_burst_v1.alpha.yaml
   - alphas/pofi_moc_imbalance_v1/pofi_moc_imbalance_v1.alpha.yaml
+  - alphas/pofi_burst_revert_v1/pofi_burst_revert_v1.alpha.yaml
 
 parameter_overrides: {}
 
@@ -48,9 +50,10 @@ risk_max_drawdown_pct: 5.0
 
 backtest_fill_latency_ns: 30000000
 
-# Fixed dollars/share — BACKTEST reference only; vol-scaled overrides better for production.
-stop_loss_per_share: 0.005
-trail_activate_per_share: 0.01
+# Percentage-based stops (fraction of entry price). Takes precedence over per-share fields.
+# 0.01 = 1% stop-loss; 0.005 = 0.5% trail activation.
+stop_loss_pct: 0.01
+trail_activate_pct: 0.005
 trail_pct: 0.50
 
 cost_min_spread_bps: 0.0

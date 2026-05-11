@@ -1,0 +1,98 @@
+# ── Identity & Provenance ─────────────────────────────────
+schema_version: "1.1"
+layer: PORTFOLIO
+
+alpha_id: pofi_burst_revert_v1
+version: "1.0.0"
+description: |
+  Cross-sectional coordinator for two complementary short-horizon
+  microstructure mechanisms: Hawkes self-exciting burst momentum
+  (pofi_hawkes_burst_v1) and inventory mean-reversion
+  (pofi_inventory_revert_v1).  Routes both SIGNAL streams through
+  the platform composition pipeline (rank → factor-neutralize →
+  sector-match → turnover-optimize) so they never double-trade the
+  same symbol on the same tick.
+
+# ── Hypothesis (causal mechanism) ─────────────────────────
+hypothesis: |
+  HAWKES_SELF_EXCITE and INVENTORY are decorrelated mechanisms —
+  one fires on self-exciting aggressor bursts, the other fades
+  asymmetric quote depletion.  Combining them under a single
+  composition layer diversifies mechanism-specific drawdowns while
+  preserving the per-name edge; the joint Sharpe should exceed
+  either standalone alpha over rolling 60-day windows.
+
+falsification_criteria:
+  - |
+    Joint Sharpe post-cost falls below the better of the two
+    standalone alphas for >= 4 consecutive weeks.
+  - |
+    Either mechanism's share of gross exposure exceeds its declared
+    cap for >= 3 consecutive composition barriers.
+  - |
+    Out-of-sample DSR < 1.0 across any single calendar quarter.
+
+# ── Upstream SIGNAL dependencies ──────────────────────────
+depends_on_signals:
+  - pofi_hawkes_burst_v1
+  - pofi_inventory_revert_v1
+
+# ── Universe ──────────────────────────────────────────────
+universe:
+  - AAPL
+  - MSFT
+  - NVDA
+
+# ── Horizon (Layer-3 boundary; >= 300 and >= all upstream) ─
+horizon_seconds: 300
+
+# ── Factor neutralization ─────────────────────────────────
+# Opt out: no factor_loadings_dir configured in the reference
+# platform.yaml; the FactorNeutralizer is a no-op when
+# factor_loadings_dir is null.  Set to true and configure
+# factor_loadings_dir in platform.yaml for production use.
+factor_neutralization: false
+
+# ── Cost Arithmetic Disclosure (G12) ──────────────────────
+cost_arithmetic:
+  edge_estimate_bps: 10.0
+  half_spread_bps: 2.0
+  impact_bps: 1.5
+  fee_bps: 0.5
+  margin_ratio: 2.5
+
+# ── Trend Mechanism concentration caps (G16 PORTFOLIO rule 8) ─
+trend_mechanism:
+  consumes:
+    - {family: HAWKES_SELF_EXCITE, max_share_of_gross: 0.6}
+    - {family: INVENTORY, max_share_of_gross: 0.6}
+  max_share_of_gross: 0.7
+
+# ── Risk Budget ───────────────────────────────────────────
+risk_budget:
+  max_position_per_symbol: 200
+  max_gross_exposure_pct: 10.0
+  max_drawdown_pct: 2.0
+  capital_allocation_pct: 15.0
+
+# ── Parameters ────────────────────────────────────────────
+parameters:
+  decay_weighting_enabled:
+    type: bool
+    default: false
+    description: |
+      Phase-4.1 toggle for inverse-staleness decay weighting.
+      OFF preserves baseline parity hash; ON applies
+      exp(-Δt/hl) weighting per signal age × per-mechanism half-life.
+  composition_completeness_threshold:
+    type: float
+    default: 0.7
+    min: 0.5
+    max: 1.0
+    description: |
+      Skip cross-sectional decision boundaries whose universe
+      coverage falls below this fraction.
+
+# No inline ``construct:`` block — bootstrap binds the default
+# pipeline (CrossSectionalRanker → FactorNeutralizer → SectorMatcher
+# → TurnoverOptimizer) per design.

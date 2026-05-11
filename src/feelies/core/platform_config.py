@@ -85,6 +85,10 @@ class PlatformConfig:
     stop_loss_per_share: float = 0.0
     trail_activate_per_share: float = 0.0
     trail_pct: float = 0.5
+    # Percentage-based stops (fraction of entry price, e.g. 0.01 = 1%).
+    # When non-zero, these override stop_loss_per_share / trail_activate_per_share.
+    stop_loss_pct: float = 0.0
+    trail_activate_pct: float = 0.0
 
     cost_min_spread_bps: float = 0.0
     cost_commission_per_share: float = 0.0035
@@ -543,6 +547,8 @@ class PlatformConfig:
             "stop_loss_per_share": self.stop_loss_per_share,
             "trail_activate_per_share": self.trail_activate_per_share,
             "trail_pct": self.trail_pct,
+            "stop_loss_pct": self.stop_loss_pct,
+            "trail_activate_pct": self.trail_activate_pct,
             "cost_min_spread_bps": self.cost_min_spread_bps,
             "cost_commission_per_share": self.cost_commission_per_share,
             "cost_taker_exchange_per_share": self.cost_taker_exchange_per_share,
@@ -773,6 +779,12 @@ class PlatformConfig:
             ),
             trail_pct=float(
                 data.get("trail_pct", 0.5)
+            ),
+            stop_loss_pct=float(
+                data.get("stop_loss_pct", 0.0)
+            ),
+            trail_activate_pct=float(
+                data.get("trail_activate_pct", 0.0)
             ),
             cost_min_spread_bps=float(
                 data.get("cost_min_spread_bps", 0.0)

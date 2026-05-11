@@ -112,6 +112,14 @@ _TUPLE_SENSOR_COMPONENTS: dict[str, tuple[str, ...]] = {
         "scheduled_flow_window_id_hash",
         "scheduled_flow_window_direction_prior",
     ),
+    # design §20.4.1: (intensity_buy, intensity_sell,
+    # intensity_ratio, branching_ratio_est)
+    "hawkes_intensity": (
+        "hawkes_intensity_buy",
+        "hawkes_intensity_sell",
+        "hawkes_intensity_ratio",
+        "hawkes_branching_ratio_est",
+    ),
 }
 
 

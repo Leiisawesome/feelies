@@ -467,6 +467,8 @@ class Orchestrator:
         self._stop_loss_per_share: float = 0.0
         self._trail_activate_per_share: float = 0.0
         self._trail_pct: float = 0.5
+        self._stop_loss_pct: float = 0.0
+        self._trail_activate_pct: float = 0.0
         self._peak_pnl_per_share: dict[str, float] = {}
         self._min_order_shares: int = 1
         self._signal_min_edge_cost_ratio: float = 1.5  # 0 = gate disabled
@@ -705,6 +707,10 @@ class Orchestrator:
                 self._trail_activate_per_share = config.trail_activate_per_share
             if hasattr(config, "trail_pct"):
                 self._trail_pct = config.trail_pct
+            if hasattr(config, "stop_loss_pct"):
+                self._stop_loss_pct = config.stop_loss_pct
+            if hasattr(config, "trail_activate_pct"):
+                self._trail_activate_pct = config.trail_activate_pct
             if hasattr(config, "execution_mode"):
                 # passive_limit and minimum_cost both wire through the
                 # passive-limit backend.  The static flag tells the
@@ -2211,7 +2217,8 @@ class Orchestrator:
         Returns a synthetic FLAT Signal if a stop triggers, None otherwise.
         Also updates peak unrealized P&L tracking for trailing stops.
         """
-        if self._stop_loss_per_share <= 0 and self._trail_activate_per_share <= 0:
+        if (self._stop_loss_per_share <= 0 and self._trail_activate_per_share <= 0
+                and self._stop_loss_pct <= 0 and self._trail_activate_pct <= 0):
             return None
 
         pos = self._positions.get(quote.symbol)
@@ -2224,6 +2231,19 @@ class Orchestrator:
         if entry <= 0:
             return None
 
+        # Resolve percentage-based thresholds to per-share dollar amounts.
+        # Pct fields take precedence over the fixed per-share fields when set.
+        stop_per_share = (
+            entry * self._stop_loss_pct
+            if self._stop_loss_pct > 0
+            else self._stop_loss_per_share
+        )
+        trail_activate_per_share = (
+            entry * self._trail_activate_pct
+            if self._trail_activate_pct > 0
+            else self._trail_activate_per_share
+        )
+
         sign = 1.0 if pos.quantity > 0 else -1.0
         unrealized_per_share = (mid - entry) * sign
 
@@ -2234,11 +2254,11 @@ class Orchestrator:
 
         triggered = False
 
-        if self._stop_loss_per_share > 0 and unrealized_per_share < -self._stop_loss_per_share:
+        if stop_per_share > 0 and unrealized_per_share < -stop_per_share:
             triggered = True
 
-        if (self._trail_activate_per_share > 0
-                and peak >= self._trail_activate_per_share
+        if (trail_activate_per_share > 0
+                and peak >= trail_activate_per_share
                 and unrealized_per_share < peak * self._trail_pct):
             triggered = True
 
