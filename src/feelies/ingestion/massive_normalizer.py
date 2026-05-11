@@ -466,11 +466,13 @@ class MassiveNormalizer:
 
         Returns True when this message must not produce an event.
         """
+        if seq_num == 0:
+            return False
         prev = self._last_seen.get((symbol, feed_type))
         if prev is None:
             return False
         prev_seq, _prev_ts, prev_fp = prev
-        if prev_seq != seq_num:
+        if prev_seq == 0 or prev_seq != seq_num:
             return False
         if prev_fp == content_fp:
             self._duplicates_filtered += 1
