@@ -66,7 +66,7 @@ Five state machines govern all system behaviour:
 
 | Machine | States | Scope |
 |---|---|---|
-| **Macro** (global lifecycle) | INIT → DATA_SYNC → READY → BACKTEST/PAPER/LIVE → DEGRADED → RISK_LOCKDOWN → SHUTDOWN | System-wide |
+| **Macro** (global lifecycle) | INIT → DATA_SYNC → READY → RESEARCH or BACKTEST/PAPER/LIVE → DEGRADED; PAPER/LIVE → RISK_LOCKDOWN on SIGNAL-path breach; RISK_LOCKDOWN → READY (unlock) or SHUTDOWN | System-wide |
 | **Micro** (tick pipeline) | WAITING → MARKET_EVENT → STATE_UPDATE → SENSOR → AGGREGATOR → SIGNAL → COMPOSITION → RISK → ORDER → ACK → POSITION → LOG | Per-tick |
 | **Order** lifecycle | CREATED → SUBMITTED → ACKNOWLEDGED → FILLED/CANCELLED/REJECTED/EXPIRED | Per-order |
 | **Risk** escalation | NORMAL → WARNING → BREACH → FORCED_FLATTEN → LOCKED | Monotonic safety |

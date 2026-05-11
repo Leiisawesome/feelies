@@ -4,6 +4,15 @@ The entire system exists in one and only one of these macro states
 at any time.  States are mutually exclusive and deterministic.
 Transitions are event-triggered and logged.  No silent transitions.
 
+Policy notes (audit remediation):
+
+* **BACKTEST_MODE** cannot transition to **RISK_LOCKDOWN** — standalone-SIGNAL
+  ``FORCE_FLATTEN`` is simulated during backtests so replay parity can continue
+  without the global lockdown machinery (see orchestrator).
+* **PORTFOLIO** ``SizedPositionIntent`` routing applies **per-leg veto** for
+  breach legs and **never** drives macro **RISK_LOCKDOWN** (Inv-11 fail-safe at
+  leg granularity vs SIGNAL path).
+
 SHUTDOWN is terminal — no outbound edges.
 """
 
@@ -75,6 +84,7 @@ _MACRO_TRANSITIONS: dict[MacroState, frozenset[MacroState]] = {
     }),
     MacroState.RISK_LOCKDOWN: frozenset({
         MacroState.READY,       # forced flatten + audit pass (human authorized)
+        MacroState.SHUTDOWN,    # CMD_SHUTDOWN — operator teardown without unlock
     }),
     MacroState.SHUTDOWN: frozenset(),  # terminal — no outbound edges
 }

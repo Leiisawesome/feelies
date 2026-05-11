@@ -58,7 +58,7 @@ from feelies.alpha.cost_arithmetic import MIN_MARGIN_RATIO
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock
 from feelies.core.config import Configuration
-from feelies.core.errors import ConfigurationError
+from feelies.core.errors import ConfigurationError, OrchestratorPipelineAbortError
 from feelies.core.events import (
     Alert,
     AlertSeverity,
@@ -130,6 +130,10 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from feelies.execution.cost_model import CostModel
     from feelies.portfolio.position_store import Position
+
+# Stable correlation id for boot-time macro transitions (audit replay).
+_PLATFORM_BOOT_CORRELATION_ID = "platform_boot"
+
 
 class _PostExitPositionView:
     """Position view that simulates a pending exit fill for risk checking.
@@ -477,6 +481,10 @@ class Orchestrator:
         # already present in the event log (replay mode).  Prevents
         # re-appending identical events during backtest replay.
         self._events_prelogged = False
+        # When tick-failure recovery cannot transition macro to DEGRADED,
+        # stop consuming market events (fail-safe — avoids trading in an
+        # unknown macro/micro pairing).
+        self._pipeline_abort_requested = False
 
         # When True, entry/exit orders use LIMIT at BBO instead of
         # MARKET.  Stop-loss exits always use MARKET (fail-safe).
@@ -749,11 +757,13 @@ class Orchestrator:
             self._macro.transition(
                 MacroState.DATA_SYNC,
                 trigger="CONFIG_VALIDATED",
+                correlation_id=_PLATFORM_BOOT_CORRELATION_ID,
             )
         except ConfigurationError as exc:
             self._macro.transition(
                 MacroState.SHUTDOWN,
                 trigger=f"CONFIG_ERROR:{exc}",
+                correlation_id=_PLATFORM_BOOT_CORRELATION_ID,
             )
             return
 
@@ -761,6 +771,7 @@ class Orchestrator:
             self._macro.transition(
                 MacroState.READY,
                 trigger="DATA_INTEGRITY_OK",
+                correlation_id=_PLATFORM_BOOT_CORRELATION_ID,
             )
             self._restore_feature_snapshots()
             self._calibrate_regime_engine()
@@ -768,6 +779,7 @@ class Orchestrator:
             self._macro.transition(
                 MacroState.DEGRADED,
                 trigger="DATA_INTEGRITY_FAIL",
+                correlation_id=_PLATFORM_BOOT_CORRELATION_ID,
             )
 
     def run_backtest(self) -> None:
@@ -776,6 +788,7 @@ class Orchestrator:
         Guard: backtest config valid.
         """
         self._macro.assert_state(MacroState.READY)
+        self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:backtest")
         self._consumed_by_portfolio_ids = None
         self._reset_regime_session_state()
@@ -803,10 +816,13 @@ class Orchestrator:
         """G2 → G5 → pipeline.
 
         Guard: broker sim connected.
-        Post-pipeline: if macro is still G5, the data feed terminated
-        unexpectedly — transition to DEGRADED.
+        Normal completion (feed iterator exhausted without exception)
+        returns macro to **READY** — same hub state as ``run_backtest``.
+        Exceptions during the pipeline transition to **DEGRADED** and
+        re-raise.
         """
         self._macro.assert_state(MacroState.READY)
+        self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:paper")
         self._reset_regime_session_state()
         self._macro.transition(
@@ -824,8 +840,8 @@ class Orchestrator:
             raise
         if self._macro.state == MacroState.PAPER_TRADING_MODE:
             self._macro.transition(
-                MacroState.DEGRADED,
-                trigger="DATA_DRIFT_DETECTED:feed_terminated",
+                MacroState.READY,
+                trigger="SESSION_FEED_COMPLETE",
             )
 
     def run_live(self) -> None:
@@ -834,8 +850,8 @@ class Orchestrator:
         Guard: human approval + risk audit pass.
         Inv-3: R4 (LOCKED) forbids this — must pass through G2 first,
         which is structurally guaranteed (G8 → G2 → G6).
-        Post-pipeline: if macro is still G6, the data feed terminated
-        unexpectedly — transition to DEGRADED.
+        Normal completion (feed iterator exhausted without exception)
+        returns macro to **READY**. Exceptions transition to **DEGRADED**.
         """
         self._macro.assert_state(MacroState.READY)
         if self._risk_escalation.state != RiskLevel.NORMAL:
@@ -843,6 +859,7 @@ class Orchestrator:
                 f"Cannot enter LIVE: risk level is {self._risk_escalation.state.name}, "
                 f"must be NORMAL"
             )
+        self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:live")
         self._reset_regime_session_state()
         self._macro.transition(
@@ -860,8 +877,8 @@ class Orchestrator:
             raise
         if self._macro.state == MacroState.LIVE_TRADING_MODE:
             self._macro.transition(
-                MacroState.DEGRADED,
-                trigger="DATA_DRIFT_DETECTED:feed_terminated",
+                MacroState.READY,
+                trigger="SESSION_FEED_COMPLETE",
             )
 
     def run_research(self, job: Callable[[], None]) -> None:
@@ -872,6 +889,7 @@ class Orchestrator:
         that executes within the RESEARCH_MODE macro state.
         """
         self._macro.assert_state(MacroState.READY)
+        self._pipeline_abort_requested = False
         self._macro.transition(MacroState.RESEARCH_MODE, trigger="CMD_RESEARCH")
         try:
             job()
@@ -889,9 +907,15 @@ class Orchestrator:
             raise
 
     def halt(self) -> None:
-        """CMD_STOP: any trading mode → G2."""
+        """CMD_STOP: any trading mode → G2.
+
+        Resets the micro state machine so the next session starts from a
+        defined WAITING baseline (audit remediation — avoids stranded
+        mid-pipeline micro states after an operator halt).
+        """
         if self._macro.state in TRADING_MODES:
             self._macro.transition(MacroState.READY, trigger="CMD_STOP")
+            self._micro.reset(trigger="halt:operator_stop")
 
     def recover_from_degraded(self) -> bool:
         """G7 → G2 on recovery validation.  Returns True if successful."""
@@ -917,6 +941,10 @@ class Orchestrator:
         (risk at NORMAL, macro at RISK_LOCKDOWN) would break the
         retry path because the next unlock_from_lockdown attempt
         would try R4→R0 from R0, raising IllegalTransition.
+
+        When ``_escalate_risk`` activated the kill switch, this method
+        also resets it with the same audit token so ticks do not
+        immediately re-enter DEGRADED on kill-switch polling.
         """
         self._macro.assert_state(MacroState.RISK_LOCKDOWN)
 
@@ -935,6 +963,14 @@ class Orchestrator:
             RiskLevel.NORMAL,
             trigger=f"human_override_audit:{audit_token}",
         )
+        # Risk escalation activates the kill switch in `_escalate_risk`.
+        # Clearing it here keeps macro/risk/kill-switch semantics coherent
+        # so the next quote tick does not immediately re-enter DEGRADED.
+        if self._kill_switch is not None and self._kill_switch.is_active:
+            self._kill_switch.reset(
+                operator="unlock_from_lockdown",
+                audit_token=audit_token,
+            )
 
     def reset_risk_escalation(self, *, audit_token: str) -> None:
         """Human-authorized reset of risk escalation from any intermediate level.
@@ -966,6 +1002,9 @@ class Orchestrator:
         Inv-4: all orders must be terminally resolved before shutdown.
         Pending orders are surfaced as a WARNING alert but do not
         block shutdown — the operator investigates post-mortem.
+
+        Allowed from **RISK_LOCKDOWN** via ``CMD_SHUTDOWN`` so operators
+        can tear down the process without a prior unlock when needed.
         """
         self._checkpoint_feature_snapshots()
         pending = [
@@ -1003,12 +1042,20 @@ class Orchestrator:
         observability but do not trigger signal evaluation.
         """
         for event in self._backend.market_data.events():
+            if self._pipeline_abort_requested:
+                break
             if self._macro.state not in TRADING_MODES:
                 break
             if isinstance(event, NBBOQuote):
                 self._process_tick(event)
             elif isinstance(event, Trade):
                 self._process_trade(event)
+
+        if self._pipeline_abort_requested:
+            raise OrchestratorPipelineAbortError(
+                "Tick failure recovery could not transition macro to DEGRADED "
+                "(transition callback raised); pipeline aborted fail-safe."
+            )
 
     def _process_trade(self, trade: Trade) -> None:
         """Log, publish, and forward a trade event to the feature engine.
@@ -1196,6 +1243,7 @@ class Orchestrator:
                 "— orchestrator state is unknown",
                 exc_info=True,
             )
+            self._pipeline_abort_requested = True
 
     def _process_tick_inner(self, quote: NBBOQuote) -> None:
         """Core tick-processing logic.  Separated from _process_tick
@@ -1438,6 +1486,9 @@ class Orchestrator:
         self._bus.publish(verdict)
 
         # ── M5 branch: risk fail → cross-machine to G8 ─────────
+        # Macro RISK_LOCKDOWN exists only from PAPER/LIVE (`macro.py`).
+        # BACKTEST_MODE cannot transition there — `can_transition` is false
+        # and we simulate flatten without global lockdown (replay parity).
         if verdict.action == RiskAction.FORCE_FLATTEN:
             if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
                 self._append_signal_order_trace(
@@ -3353,6 +3404,11 @@ class Orchestrator:
         * Standalone SIGNAL alphas continue to drive the per-tick
           M5 → M10 walk; PORTFOLIO alphas dispatch their orders here.
           Both can fire on the same tick without contention.
+
+        Macro policy: ``FORCE_FLATTEN`` at ``check_order`` is handled as a
+        **per-leg veto** here — it **does not** invoke ``_escalate_risk``
+        or macro **RISK_LOCKDOWN** (unlike the standalone SIGNAL path).
+        See :mod:`feelies.kernel.macro` and ``BasicRiskEngine.check_sized_intent``.
 
         The risk engine's contract guarantees ``check_sized_intent`` does
         not raise (Inv-11); this handler treats the empty tuple as
