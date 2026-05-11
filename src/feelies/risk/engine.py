@@ -18,6 +18,7 @@ from feelies.core.events import (
     SizedPositionIntent,
 )
 from feelies.portfolio.position_store import PositionStore
+from feelies.risk.sized_intent_result import SizedIntentRiskResult
 
 
 class RiskEngine(Protocol):
@@ -50,7 +51,7 @@ class RiskEngine(Protocol):
         self,
         intent: SizedPositionIntent,
         positions: PositionStore,
-    ) -> tuple[OrderRequest, ...]:
+    ) -> SizedIntentRiskResult:
         """Translate a Phase-4 ``SizedPositionIntent`` to per-leg orders.
 
         Each non-zero ``TargetPosition`` delta vs the current position
@@ -59,14 +60,18 @@ class RiskEngine(Protocol):
         bit-identical across replays (Inv-5).
 
         Per-leg veto semantics (Inv-11): when the per-symbol order
-        cannot be admitted (post-fill quantity over the cap, exposure
-        breach, etc.) the offending leg is **dropped silently** from
-        the returned tuple — the rest of the intent proceeds.  The
-        intent is never rejected wholesale.
+        cannot be admitted (post-fill quantity over the cap, gross
+        exposure breach, etc.) the offending leg is **dropped silently**
+        from ``orders`` — the rest of the intent proceeds.
 
-        Implementations MUST NOT raise.  An empty tuple ``()`` means
-        the intent reduces to "hold all current positions" (Inv-11
-        fail-safe).
+        Drawdown breach is different: any leg whose :meth:`check_order`
+        returns ``RiskAction.FORCE_FLATTEN`` sets
+        ``requires_global_risk_escalation=True`` and yields **empty**
+        ``orders`` so the orchestrator runs emergency flatten +
+        risk LOCKED (same global halt as the standalone SIGNAL path).
+
+        Implementations MUST NOT raise.  Empty ``orders`` with the flag
+        false means the intent reduced to no trades after vetoes.
 
         The legacy :meth:`check_signal` and :meth:`check_order` paths
         are unchanged; this method is purely additive.

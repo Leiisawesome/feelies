@@ -827,12 +827,20 @@ class Orchestrator:
         """G2 → G5 → pipeline.
 
         Guard: broker sim connected.
+        Same risk precondition as ``run_live()`` — must start at
+        ``RiskLevel.NORMAL`` so a prior lockdown cannot silently trade paper.
+
         Normal completion (feed iterator exhausted without exception)
         returns macro to **READY** — same hub state as ``run_backtest``.
         Exceptions during the pipeline transition to **DEGRADED** and
         re-raise.
         """
         self._macro.assert_state(MacroState.READY)
+        if self._risk_escalation.state != RiskLevel.NORMAL:
+            raise RuntimeError(
+                f"Cannot enter PAPER: risk level is {self._risk_escalation.state.name}, "
+                f"must be NORMAL"
+            )
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:paper")
         self._reset_regime_session_state()
@@ -1337,6 +1345,9 @@ class Orchestrator:
         self._tick_quote_for_trace = None
 
         # ── Kill switch gate (W-2) ─────────────────────────────
+        # Halts before signal/order work.  Trading modes also flip macro →
+        # DEGRADED for operator visibility; RISK_LOCKDOWN is not a trading
+        # mode, so ticks are quietly dropped until unlock (flatten already ran).
         if self._kill_switch is not None and self._kill_switch.is_active:
             if self._macro.state in TRADING_MODES:
                 if self._macro.can_transition(MacroState.DEGRADED):
@@ -1519,42 +1530,23 @@ class Orchestrator:
         self._bus.publish(verdict)
 
         # ── M5 branch: risk fail → cross-machine to G8 ─────────
-        # Macro RISK_LOCKDOWN exists only from PAPER/LIVE (`macro.py`).
-        # BACKTEST_MODE cannot transition there — `can_transition` is false
-        # and we simulate flatten without global lockdown (replay parity).
+        # Aggregate drawdown: always escalate (flatten + LOCKED + kill switch).
+        # Macro enters RISK_LOCKDOWN when legal (backtest/paper/live trading).
         if verdict.action == RiskAction.FORCE_FLATTEN:
-            if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
-                self._append_signal_order_trace(
-                    quote,
-                    signal,
-                    outcome="NO_ORDER",
-                    reasons=(
-                        "risk_check_signal_force_flatten_lockdown",
-                        verdict.reason,
-                    ),
-                    trading_intent=intent.intent.name,
-                )
-                self._escalate_risk(cid)
-                self._micro.transition(
-                    MicroState.LOG_AND_METRICS,
-                    trigger="risk_force_flatten_lockdown",
-                    correlation_id=cid,
-                )
-                self._finalize_tick(t_wall_start, cid)
-                return
             self._append_signal_order_trace(
                 quote,
                 signal,
                 outcome="NO_ORDER",
                 reasons=(
-                    "risk_check_signal_force_flatten_simulated",
+                    "risk_check_signal_force_flatten_escalation",
                     verdict.reason,
                 ),
                 trading_intent=intent.intent.name,
             )
+            self._escalate_risk(cid)
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
-                trigger="risk_force_flatten_simulated",
+                trigger="risk_force_flatten_escalation",
                 correlation_id=cid,
             )
             self._finalize_tick(t_wall_start, cid)
@@ -1627,38 +1619,20 @@ class Orchestrator:
         self._bus.publish(order_verdict)
 
         if order_verdict.action == RiskAction.FORCE_FLATTEN:
-            if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
-                self._append_signal_order_trace(
-                    quote,
-                    signal,
-                    outcome="NO_ORDER",
-                    reasons=(
-                        "risk_check_order_force_flatten_lockdown",
-                        order_verdict.reason,
-                    ),
-                    trading_intent=intent.intent.name,
-                )
-                self._escalate_risk(cid)
-                self._micro.transition(
-                    MicroState.LOG_AND_METRICS,
-                    trigger="check_order_force_flatten_lockdown",
-                    correlation_id=cid,
-                )
-                self._finalize_tick(t_wall_start, cid)
-                return
             self._append_signal_order_trace(
                 quote,
                 signal,
                 outcome="NO_ORDER",
                 reasons=(
-                    "risk_check_order_force_flatten_simulated",
+                    "risk_check_order_force_flatten_escalation",
                     order_verdict.reason,
                 ),
                 trading_intent=intent.intent.name,
             )
+            self._escalate_risk(cid)
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
-                trigger="check_order_force_flatten_simulated",
+                trigger="check_order_force_flatten_escalation",
                 correlation_id=cid,
             )
             self._finalize_tick(t_wall_start, cid)
@@ -2098,7 +2072,13 @@ class Orchestrator:
         At R3 (FORCED_FLATTEN) we attempt to close all non-zero
         positions via emergency market orders before transitioning
         to R4 (LOCKED).
+
+        Idempotent: if already LOCKED, returns without re-flattening or
+        duplicate macro transitions.
         """
+        if self._risk_escalation.state == RiskLevel.LOCKED:
+            return
+
         level = self._risk_escalation.state
 
         if level == RiskLevel.NORMAL:
@@ -2151,11 +2131,12 @@ class Orchestrator:
                 activated_by="orchestrator",
             ))
 
-        self._macro.transition(
-            MacroState.RISK_LOCKDOWN,
-            trigger="RISK_BREACH",
-            correlation_id=correlation_id,
-        )
+        if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
+            self._macro.transition(
+                MacroState.RISK_LOCKDOWN,
+                trigger="RISK_BREACH",
+                correlation_id=correlation_id,
+            )
 
     def _emergency_flatten_all(
         self,
@@ -3698,20 +3679,22 @@ class Orchestrator:
         1. Filter the bus event for ``SizedPositionIntent``.
         2. Call :meth:`RiskEngine.check_sized_intent`.  The risk engine
            translates each non-zero ``TargetPosition`` delta into one
-           ``OrderRequest`` under per-leg veto semantics (Inv-11: a
-           breaching leg is dropped silently — the rest of the intent
-           proceeds; degenerate intents trivially yield ``()``).  Symbol
-           iteration is lexicographically sorted and ``order_id`` is a
-           SHA-256 of ``(intent.correlation_id, intent.sequence, symbol)``
-           so per-leg orders are bit-identical across replays (Inv-5).
-          3. For every surviving order, track it, mark it submitted, publish
-              it on the bus, hand it to ``backend.order_router.submit``, then
-              drain ``poll_acks`` and reconcile fills into the position
-              store.  This mirrors the ``_execute_reverse`` pattern minus the
-              micro-SM transitions: PORTFOLIO orders dispatch while the
-              scheduler's ``HorizonTick`` callback chain is still running
-              inside ``_dispatch_sensor_layer`` and do NOT advance the
-              SIGNAL-reserved M5 → M10 walk.
+           ``OrderRequest`` under per-leg veto semantics for ordinary
+           rejects (Inv-11).  Aggregate drawdown surfaces
+           ``RiskAction.FORCE_FLATTEN``: the result signals
+           ``requires_global_risk_escalation`` and this handler invokes
+           ``_escalate_risk`` without submitting PORTFOLIO legs (same halt
+           as standalone SIGNAL).  Symbol iteration is lexicographically
+           sorted and ``order_id`` is a SHA-256 of
+           ``(intent.correlation_id, intent.sequence, symbol)`` (Inv-5).
+        3. For every surviving order, track it, mark it submitted, publish
+           it on the bus, hand it to ``backend.order_router.submit``, then
+           drain ``poll_acks`` and reconcile fills into the position
+           store.  This mirrors the ``_execute_reverse`` pattern minus the
+           micro-SM transitions: PORTFOLIO orders dispatch while the
+           scheduler's ``HorizonTick`` callback chain is still running
+           inside ``_dispatch_sensor_layer`` and do NOT advance the
+           SIGNAL-reserved M5 → M10 walk.
 
         Consequences for SIGNAL/PORTFOLIO coexistence on a single tick:
 
@@ -3724,18 +3707,19 @@ class Orchestrator:
           M5 → M10 walk; PORTFOLIO alphas dispatch their orders here.
           Both can fire on the same tick without contention.
 
-        Macro policy: ``FORCE_FLATTEN`` at ``check_order`` is handled as a
-        **per-leg veto** here — it **does not** invoke ``_escalate_risk``
-        or macro **RISK_LOCKDOWN** (unlike the standalone SIGNAL path).
         See :mod:`feelies.kernel.macro` and ``BasicRiskEngine.check_sized_intent``.
 
         The risk engine's contract guarantees ``check_sized_intent`` does
-        not raise (Inv-11); this handler treats the empty tuple as
-        "hold all current positions" and exits silently.
+        not raise (Inv-11); an empty ``orders`` tuple with no escalation
+        flag means "hold all current positions" after vetoes.
         """
         if not isinstance(event, SizedPositionIntent):
             return
-        orders = self._risk_engine.check_sized_intent(event, self._positions)
+        sized = self._risk_engine.check_sized_intent(event, self._positions)
+        if sized.requires_global_risk_escalation:
+            self._escalate_risk(event.correlation_id)
+            return
+        orders = sized.orders
         if not orders:
             return
         submitted_ids: set[str] = set()

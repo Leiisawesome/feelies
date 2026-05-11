@@ -47,6 +47,8 @@ from feelies.core.events import (
     Side,
     Signal,
     SignalDirection,
+    SizedPositionIntent,
+    TargetPosition,
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
@@ -58,6 +60,9 @@ from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import Position
 from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
+from feelies.monitoring.in_memory import InMemoryKillSwitch
+from feelies.risk.escalation import RiskLevel
+from feelies.risk.sized_intent_result import SizedIntentRiskResult
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 
@@ -221,6 +226,29 @@ class _StubRiskEngine:
             reason="test",
         )
 
+    def check_sized_intent(
+        self,
+        intent: Any,
+        positions: PositionStore,
+    ) -> SizedIntentRiskResult:
+        del intent, positions
+        return SizedIntentRiskResult(orders=())
+
+
+class _SizedIntentGlobalEscalateEngine(_StubRiskEngine):
+    """PORTFOLIO path: signals aggregate breach for orchestrator escalation."""
+
+    def check_sized_intent(
+        self,
+        intent: SizedPositionIntent,
+        positions: PositionStore,
+    ) -> SizedIntentRiskResult:
+        del intent, positions
+        return SizedIntentRiskResult(
+            orders=(),
+            requires_global_risk_escalation=True,
+        )
+
 
 class _RaisingRiskEngine:
     """Risk engine that always raises to test orchestrator error handling.
@@ -238,6 +266,10 @@ class _RaisingRiskEngine:
         raise RuntimeError("risk engine failure")
 
     def check_order(self, order: OrderRequest, positions: PositionStore) -> RiskVerdict:
+        raise RuntimeError("risk engine failure")
+
+    def check_sized_intent(self, intent: Any, positions: PositionStore) -> SizedIntentRiskResult:
+        del intent, positions
         raise RuntimeError("risk engine failure")
 
 
@@ -268,6 +300,14 @@ class _ScaleDownToZeroRiskEngine:
             reason="scale to zero test",
             scaling_factor=0.001,
         )
+
+    def check_sized_intent(
+        self,
+        intent: Any,
+        positions: PositionStore,
+    ) -> SizedIntentRiskResult:
+        del intent, positions
+        return SizedIntentRiskResult(orders=())
 
 
 class _MinimalConfig:
@@ -362,6 +402,7 @@ def _build_orchestrator(
     market_data: Any = None,
     position_store: Any = None,
     strategy_positions: Any = None,
+    kill_switch: Any = None,
 ) -> Orchestrator:
     bus = bus if bus is not None else EventBus()
     event_log = InMemoryEventLog()
@@ -381,6 +422,7 @@ def _build_orchestrator(
         event_log=event_log,
         metric_collector=_NoOpMetricCollector(),
         strategy_positions=strategy_positions,
+        kill_switch=kill_switch,
     )
 
 
@@ -1107,6 +1149,65 @@ class TestOrchestratorHalt:
         _boot_to_ready(orch)
         orch.halt()
         assert orch.macro_state == MacroState.READY
+
+
+# ── Risk escalation remediation (aggregate breach fail-closed) ────────
+
+
+class TestRiskEscalationRemediation:
+    def test_signal_force_flatten_in_backtest_enters_risk_lockdown(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        quote = _make_quote()
+        signal = _make_signal(quote)
+        kill = InMemoryKillSwitch()
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=_StubRiskEngine(action=RiskAction.FORCE_FLATTEN),
+            kill_switch=kill,
+        )
+        _publish_signal_on_quote(bus, signal)
+        _boot_to_backtest(orch)
+        orch._process_tick(quote)
+        assert orch.risk_level == RiskLevel.LOCKED
+        assert orch.macro_state == MacroState.RISK_LOCKDOWN
+        assert kill.is_active
+
+    def test_bus_sized_intent_global_flag_calls_escalate_risk(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        kill = InMemoryKillSwitch()
+        orch = _build_orchestrator(
+            clock,
+            risk_engine=_SizedIntentGlobalEscalateEngine(),
+            kill_switch=kill,
+        )
+        _boot_to_backtest(orch)
+        intent = SizedPositionIntent(
+            timestamp_ns=1000,
+            correlation_id="intent-cid",
+            sequence=42,
+            strategy_id="pf_test",
+            target_positions={
+                "AAPL": TargetPosition(symbol="AAPL", target_usd=1000.0),
+            },
+        )
+        orch._on_bus_sized_intent(intent)
+        assert orch.risk_level == RiskLevel.LOCKED
+        assert orch.macro_state == MacroState.RISK_LOCKDOWN
+        assert kill.is_active
+
+    def test_run_paper_rejects_when_risk_not_normal(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_ready(orch)
+        re = orch._risk_escalation
+        re.transition(RiskLevel.WARNING, trigger="t")
+        re.transition(RiskLevel.BREACH_DETECTED, trigger="t")
+        re.transition(RiskLevel.FORCED_FLATTEN, trigger="t")
+        re.transition(RiskLevel.LOCKED, trigger="t")
+        with pytest.raises(RuntimeError, match="Cannot enter PAPER"):
+            orch.run_paper()
 
 
 # ── Macro lifecycle remediation (global stack audit) ──────────────────

@@ -117,6 +117,13 @@ class TestMacroDegradedPaths:
         sm.transition(MacroState.DEGRADED, trigger="INTEGRITY_VIOLATION")
         assert sm.state == MacroState.DEGRADED
 
+    def test_backtest_to_risk_lockdown(self, clock: SimulatedClock) -> None:
+        sm = create_macro_state_machine(clock)
+        _advance_to_ready(sm, clock)
+        sm.transition(MacroState.BACKTEST_MODE, trigger="CMD_BACKTEST")
+        sm.transition(MacroState.RISK_LOCKDOWN, trigger="RISK_BREACH")
+        assert sm.state == MacroState.RISK_LOCKDOWN
+
     def test_research_to_degraded(self, clock: SimulatedClock) -> None:
         sm = create_macro_state_machine(clock)
         _advance_to_ready(sm, clock)
@@ -174,6 +181,14 @@ class TestMacroRiskLockdown:
         sm = create_macro_state_machine(clock)
         _advance_to_ready(sm, clock)
         sm.transition(MacroState.LIVE_TRADING_MODE, trigger="CMD_LIVE_DEPLOY")
+        sm.transition(MacroState.RISK_LOCKDOWN, trigger="RISK_BREACH")
+        sm.transition(MacroState.READY, trigger="FORCED_FLATTEN_COMPLETE")
+        assert sm.state == MacroState.READY
+
+    def test_backtest_lockdown_to_ready_human_unlock(self, clock: SimulatedClock) -> None:
+        sm = create_macro_state_machine(clock)
+        _advance_to_ready(sm, clock)
+        sm.transition(MacroState.BACKTEST_MODE, trigger="CMD_BACKTEST")
         sm.transition(MacroState.RISK_LOCKDOWN, trigger="RISK_BREACH")
         sm.transition(MacroState.READY, trigger="FORCED_FLATTEN_COMPLETE")
         assert sm.state == MacroState.READY
