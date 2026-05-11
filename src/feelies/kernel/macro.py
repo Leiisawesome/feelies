@@ -6,12 +6,12 @@ Transitions are event-triggered and logged.  No silent transitions.
 
 Policy notes (audit remediation):
 
-* **BACKTEST_MODE** cannot transition to **RISK_LOCKDOWN** — standalone-SIGNAL
-  ``FORCE_FLATTEN`` is simulated during backtests so replay parity can continue
-  without the global lockdown machinery (see orchestrator).
-* **PORTFOLIO** ``SizedPositionIntent`` routing applies **per-leg veto** for
-  breach legs and **never** drives macro **RISK_LOCKDOWN** (Inv-11 fail-safe at
-  leg granularity vs SIGNAL path).
+* **BACKTEST_MODE** may transition to **RISK_LOCKDOWN** on aggregate breach
+  (same as paper/live) so ``FORCE_FLATTEN`` always runs emergency flatten +
+  kill-switch lockdown during replay — safety overrides replay convenience.
+* **PORTFOLIO** ``SizedPositionIntent`` routing uses per-leg veto for ordinary
+  rejects; aggregate drawdown still surfaces ``FORCE_FLATTEN`` and drives global
+  escalation via :meth:`feelies.kernel.orchestrator.Orchestrator._escalate_risk`.
 
 SHUTDOWN is terminal — no outbound edges.
 """
@@ -65,6 +65,7 @@ _MACRO_TRANSITIONS: dict[MacroState, frozenset[MacroState]] = {
     }),
     MacroState.BACKTEST_MODE: frozenset({
         MacroState.READY,       # reproducibility verified
+        MacroState.RISK_LOCKDOWN,  # aggregate risk breach (aligned with paper/live)
         MacroState.DEGRADED,    # integrity violation
     }),
     MacroState.PAPER_TRADING_MODE: frozenset({
