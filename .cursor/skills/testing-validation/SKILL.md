@@ -118,7 +118,7 @@ and construction-time enum-completeness check.
 | `MicroState` | `kernel/micro.py` | M0 → M10 backbone with Phase-2/3/4 sub-states; no skipping |
 | `OrderState` | `execution/order_state.py` | FILLED/CANCELLED/REJECTED/EXPIRED terminal |
 | `RiskLevel` | `risk/escalation.py` | Monotonic forward-only; only R4 → R0 via human unlock |
-| `DataHealth` | `ingestion/data_integrity.py` | CORRUPTED → RECOVERING required; no direct CORRUPTED → HEALTHY |
+| `DataHealth` | `ingestion/data_integrity.py` | Three states: HEALTHY ↔ GAP_DETECTED (WS seq / disconnect); CORRUPTED is terminal |
 
 #### Core Invariants
 
