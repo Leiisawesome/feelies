@@ -274,9 +274,14 @@ class Orchestrator:
         ``SizedPositionIntent`` into per-leg ``OrderRequest`` events via
         :meth:`RiskEngine.check_sized_intent` (Inv-11 per-leg veto;
         Inv-5 deterministic order_id).  Runs *outside* the per-tick
-        micro-SM walk: PORTFOLIO orders dispatch as a synchronous
-        side-effect of the M3 ``CROSS_SECTIONAL`` ``bus.publish(intent)``
-        and do NOT advance the SIGNAL-reserved M5 → M10 walk.
+        SIGNAL ``RISK_CHECK`` → ``ORDER_SUBMIT`` micro walk: PORTFOLIO
+        orders dispatch as a synchronous side-effect of the bus-driven
+        composition chain (``HorizonTick`` → … → ``bus.publish(intent)``).
+        The orchestrator records :class:`~feelies.kernel.micro.MicroState.CROSS_SECTIONAL`
+        immediately before ``FEATURE_COMPUTE`` when a horizon boundary
+        walk has reached ``HORIZON_AGGREGATE`` / ``SIGNAL_GATE`` so
+        forensics see a micro-stage bookend even though M5–M10 do not run
+        for those legs.
 
     Concurrency / coexistence rules:
 
@@ -1176,6 +1181,27 @@ class Orchestrator:
                     correlation_id=cid,
                 )
 
+    def _maybe_transition_cross_sectional_bookend(self, correlation_id: str) -> None:
+        """Record ``MicroState.CROSS_SECTIONAL`` after the bus composition chain.
+
+        ``UniverseSynchronizer`` / ``CompositionEngine`` run synchronously
+        inside the ``HorizonTick`` handler stack (``_dispatch_sensor_layer``).
+        This transition is a forensic bookend only — it does not re-invoke
+        composition.  It is emitted **iff** at least one PORTFOLIO alpha is
+        registered **and** the micro SM has reached ``HORIZON_AGGREGATE`` or
+        ``SIGNAL_GATE`` on this quote tick (the only states whose outgoing
+        edges include ``CROSS_SECTIONAL``).
+        """
+        if self._alpha_registry is None or not self._alpha_registry.has_portfolio_alphas():
+            return
+        if not self._micro.can_transition(MicroState.CROSS_SECTIONAL):
+            return
+        self._micro.transition(
+            MicroState.CROSS_SECTIONAL,
+            trigger="composition_pipeline_bookend",
+            correlation_id=correlation_id,
+        )
+
     def _process_tick(self, quote: NBBOQuote) -> None:
         """Process a single tick through the full micro-state pipeline.
 
@@ -1375,6 +1401,7 @@ class Orchestrator:
         # micro-states and publishes any HorizonTick events emitted
         # by the scheduler.
         self._dispatch_sensor_layer(quote, cid)
+        self._maybe_transition_cross_sectional_bookend(cid)
 
         # ── M2 (or HORIZON_*) → M3: FEATURE_COMPUTE ────────────
         # Workstream D.2 PR-2b-iv: legacy ``feature_engine`` is gone.
@@ -1502,10 +1529,12 @@ class Orchestrator:
                     trading_intent=intent.intent.name,
                 )
                 self._escalate_risk(cid)
-                self._micro.reset(
-                    trigger="pipeline_abort:risk_lockdown",
+                self._micro.transition(
+                    MicroState.LOG_AND_METRICS,
+                    trigger="risk_force_flatten_lockdown",
                     correlation_id=cid,
                 )
+                self._finalize_tick(t_wall_start, cid)
                 return
             self._append_signal_order_trace(
                 quote,
@@ -1604,10 +1633,12 @@ class Orchestrator:
                     trading_intent=intent.intent.name,
                 )
                 self._escalate_risk(cid)
-                self._micro.reset(
-                    trigger="pipeline_abort:check_order_lockdown",
+                self._micro.transition(
+                    MicroState.LOG_AND_METRICS,
+                    trigger="check_order_force_flatten_lockdown",
                     correlation_id=cid,
                 )
+                self._finalize_tick(t_wall_start, cid)
                 return
             self._append_signal_order_trace(
                 quote,

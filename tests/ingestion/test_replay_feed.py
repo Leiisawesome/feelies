@@ -148,7 +148,7 @@ class TestReplayFeedCausalityEnforcement:
         ])
         feed = ReplayFeed(log, clock=None)
 
-        with pytest.raises(CausalityViolation, match="exchange_timestamp_ns=50"):
+        with pytest.raises(CausalityViolation, match="out of deterministic order"):
             list(feed.events())
 
     def test_accepts_equal_timestamps(self) -> None:
@@ -158,6 +158,25 @@ class TestReplayFeedCausalityEnforcement:
         ])
         feed = ReplayFeed(log, clock=None)
         assert len(list(feed.events())) == 2
+
+    def test_raises_when_equal_timestamp_breaks_kind_tie_order(self) -> None:
+        """At identical (ts, sequence), quotes must precede trades (Inv-6)."""
+        log = _UnsortedEventLog([
+            _make_trade(1, symbol="AAPL", exchange_ts_ns=100),
+            _make_quote(1, symbol="AAPL", exchange_ts_ns=100),
+        ])
+        feed = ReplayFeed(log, clock=None)
+        with pytest.raises(CausalityViolation, match="out of deterministic order"):
+            list(feed.events())
+
+    def test_raises_when_equal_timestamp_sequence_regresses(self) -> None:
+        log = _UnsortedEventLog([
+            _make_quote(5, exchange_ts_ns=100),
+            _make_trade(3, symbol="AAPL", exchange_ts_ns=100),
+        ])
+        feed = ReplayFeed(log, clock=None)
+        with pytest.raises(CausalityViolation, match="out of deterministic order"):
+            list(feed.events())
 
     def test_inmemory_log_also_rejects_at_insert_time(self) -> None:
         """Primary guard: InMemoryEventLog catches backward timestamps on append."""

@@ -67,9 +67,16 @@ class MicroState(Enum):
 
     ``CROSS_SECTIONAL`` is entered **only when at least one PORTFOLIO
     alpha is registered** (``AlphaRegistry.has_portfolio_alphas()`` is
-    true); otherwise the orchestrator preserves the prior transition
-    edges so SIGNAL-only runs remain bit-identical to the Phase-3
-    execution path (Inv-A).
+    true) **and** the orchestrator has reached ``HORIZON_AGGREGATE``
+    or ``SIGNAL_GATE`` on the quote tick (the bus-driven composition
+    chain has run for any crossed boundary).  Otherwise the
+    orchestrator preserves the prior transition edges so SIGNAL-only
+    runs remain bit-identical to the Phase-3 execution path (Inv-A).
+
+    ``FEATURE_COMPUTE`` (M3) is a **bookkeeping** transition only: the
+    historical per-tick feature engine was removed in Workstream D.2;
+    the micro SM still visits M3 so ``FEATURE_COMPUTE → SIGNAL_EVALUATE
+    → …`` remains a legal spine for observability and parity tests.
     """
 
     WAITING_FOR_MARKET_EVENT = auto()
@@ -82,7 +89,6 @@ class MicroState(Enum):
     CROSS_SECTIONAL = auto()       # NEW (P4):   CompositionEngine emit
     FEATURE_COMPUTE = auto()
     SIGNAL_EVALUATE = auto()
-    ORDER_AGGREGATION = auto()
     RISK_CHECK = auto()
     ORDER_DECISION = auto()
     ORDER_SUBMIT = auto()
@@ -103,7 +109,7 @@ _MICRO_TRANSITIONS: dict[MicroState, frozenset[MicroState]] = {
     #   legacy / sensor-empty config: → FEATURE_COMPUTE (bit-identical Phase-1 path)
     MicroState.STATE_UPDATE: frozenset({
         MicroState.SENSOR_UPDATE,    # sensor layer registered
-        MicroState.FEATURE_COMPUTE,  # legacy fast-path
+        MicroState.FEATURE_COMPUTE,  # sensor/scheduler-empty fast-path
     }),
     MicroState.SENSOR_UPDATE: frozenset({
         MicroState.HORIZON_CHECK,
@@ -115,10 +121,10 @@ _MICRO_TRANSITIONS: dict[MicroState, frozenset[MicroState]] = {
         MicroState.HORIZON_AGGREGATE,
         MicroState.FEATURE_COMPUTE,
     }),
-    # HORIZON_AGGREGATE branches:
+    # HORIZON_AGGREGATE branches (orchestrator picks exactly one per tick):
     #   SIGNAL alpha(s) loaded → SIGNAL_GATE (P3-α)
-    #   PORTFOLIO alpha(s) only → CROSS_SECTIONAL (P4 — skip SIGNAL_GATE)
-    #   no SIGNAL alpha        → FEATURE_COMPUTE (Phase-2 bit-identical fast-path)
+    #   else → FEATURE_COMPUTE (Phase-2 fast-path)  OR  via orchestrator bookend
+    #   ``CROSS_SECTIONAL`` → FEATURE_COMPUTE when PORTFOLIO alphas are registered
     MicroState.HORIZON_AGGREGATE: frozenset({
         MicroState.SIGNAL_GATE,
         MicroState.CROSS_SECTIONAL,
@@ -138,17 +144,11 @@ _MICRO_TRANSITIONS: dict[MicroState, frozenset[MicroState]] = {
         MicroState.SIGNAL_EVALUATE,
     }),
     # M4 branches:
-    #   single-alpha: signal → RISK_CHECK
-    #   multi-alpha:  intents → ORDER_AGGREGATION
+    #   signal selected → RISK_CHECK (multi-alpha arbitration is bus-side
+    #   before M4; see ``Orchestrator._select_bus_signal``)
     #   no signal / force_flatten: → LOG_AND_METRICS
     MicroState.SIGNAL_EVALUATE: frozenset({
-        MicroState.RISK_CHECK,          # single-alpha path
-        MicroState.ORDER_AGGREGATION,   # multi-alpha path
-        MicroState.LOG_AND_METRICS,     # no signal / force_flatten
-    }),
-    # Multi-alpha: aggregated orders ready → ORDER_DECISION, or empty → M10.
-    MicroState.ORDER_AGGREGATION: frozenset({
-        MicroState.ORDER_DECISION,
+        MicroState.RISK_CHECK,
         MicroState.LOG_AND_METRICS,
     }),
     # M5 branches: risk pass + order needed → M6, risk pass + no order → M10.
