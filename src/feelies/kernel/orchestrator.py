@@ -3415,9 +3415,11 @@ class Orchestrator:
         1. Filter the bus event for ``SizedPositionIntent``.
         2. Call :meth:`RiskEngine.check_sized_intent`.  The risk engine
            translates each non-zero ``TargetPosition`` delta into one
-           ``OrderRequest`` under per-leg veto semantics (Inv-11: a
-           breaching leg is dropped silently — the rest of the intent
-           proceeds; degenerate intents trivially yield ``()``).  Symbol
+           ``OrderRequest`` under per-leg veto semantics for ordinary
+           rejects (Inv-11).  Aggregate drawdown can surface
+           ``RiskAction.FORCE_FLATTEN`` via
+           ``requires_global_risk_escalation`` and this handler invokes
+           ``_escalate_risk`` without submitting portfolio legs.  Symbol
            iteration is lexicographically sorted and ``order_id`` is a
            SHA-256 of ``(intent.correlation_id, intent.sequence, symbol)``
            so per-leg orders are bit-identical across replays (Inv-5).
@@ -3441,18 +3443,22 @@ class Orchestrator:
           M5 → M10 walk; PORTFOLIO alphas dispatch their orders here.
           Both can fire on the same tick without contention.
 
-        Macro policy: ``FORCE_FLATTEN`` at ``check_order`` is handled as a
-        **per-leg veto** here — it **does not** invoke ``_escalate_risk``
-        or macro **RISK_LOCKDOWN** (unlike the standalone SIGNAL path).
         See :mod:`feelies.kernel.macro` and ``BasicRiskEngine.check_sized_intent``.
 
         The risk engine's contract guarantees ``check_sized_intent`` does
-        not raise (Inv-11); this handler treats the empty tuple as
-        "hold all current positions" and exits silently.
+        not raise (Inv-11); an empty ``orders`` tuple with no escalation
+        flag means "hold all current positions" after vetoes.
         """
         if not isinstance(event, SizedPositionIntent):
             return
-        orders = self._risk_engine.check_sized_intent(event, self._positions)
+        sized = self._risk_engine.check_sized_intent(event, self._positions)
+        requires_global_risk_escalation = bool(
+            getattr(sized, "requires_global_risk_escalation", False)
+        )
+        if requires_global_risk_escalation:
+            self._escalate_risk(event.correlation_id)
+            return
+        orders = getattr(sized, "orders", sized)
         if not orders:
             return
         for order in orders:
