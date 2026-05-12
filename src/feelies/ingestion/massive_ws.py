@@ -120,7 +120,10 @@ class MassiveLiveFeed:
         self._stop_event.set()
         if self._loop is not None:
             self._loop.call_soon_threadsafe(self._loop.stop)
-        self._queue.put(_SENTINEL)
+        try:
+            self._queue.put_nowait(_SENTINEL)
+        except queue.Full:
+            pass
         if self._thread is not None:
             self._thread.join(timeout=10.0)
             self._thread = None
@@ -138,7 +141,10 @@ class MassiveLiveFeed:
         finally:
             self._loop.close()
             self._loop = None
-            self._queue.put(_SENTINEL)
+            try:
+                self._queue.put_nowait(_SENTINEL)
+            except queue.Full:
+                pass
 
     async def _connect_with_retry(self) -> None:
         """Connect to the WebSocket with exponential backoff on failure."""
@@ -305,5 +311,5 @@ class MassiveLiveFeed:
                 except queue.Full:
                     logger.warning(
                         "massive_ws: queue full, dropping event for %s",
-                        event.symbol,
+                        getattr(event, "symbol", "?"),
                     )

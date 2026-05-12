@@ -35,6 +35,8 @@ backtest_reject_zero_ingest_events: true
 # Live/paper with ``build_platform(..., normalizer=...)``: require symbols in universe
 # to appear in normalizer.all_health() before consumption (catches replay/normalizer skew).
 strict_normalizer_symbol_coverage: false
+# Historical REST rows are usually thinned; enable only for full contiguous SIP dumps.
+enable_rest_sequence_gap_detection: false
 
 regime_engine: hmm_3state_fractional
 

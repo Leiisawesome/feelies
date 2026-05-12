@@ -95,6 +95,10 @@ class PlatformConfig:
     # When a Massive normalizer is wired, universe symbols must appear in
     # ``normalizer.all_health()`` before ticks/trades are consumed (live/paper hook).
     strict_normalizer_symbol_coverage: bool = False
+    # Historical Massive REST rows are usually thinned (non-contiguous SIP
+    # ``sequence_number``).  Keep False for default ingest; set True only when
+    # the REST stream is full-tick contiguous so gap detection matches WS.
+    enable_rest_sequence_gap_detection: bool = False
 
     account_equity: float = 1_000_000.0
     backtest_fill_latency_ns: int = 0
@@ -597,6 +601,9 @@ class PlatformConfig:
             "strict_normalizer_symbol_coverage": (
                 self.strict_normalizer_symbol_coverage
             ),
+            "enable_rest_sequence_gap_detection": (
+                self.enable_rest_sequence_gap_detection
+            ),
             "account_equity": self.account_equity,
             "backtest_fill_latency_ns": self.backtest_fill_latency_ns,
             "stop_loss_per_share": self.stop_loss_per_share,
@@ -852,6 +859,9 @@ class PlatformConfig:
             ),
             strict_normalizer_symbol_coverage=bool(
                 data.get("strict_normalizer_symbol_coverage", False)
+            ),
+            enable_rest_sequence_gap_detection=bool(
+                data.get("enable_rest_sequence_gap_detection", False)
             ),
             account_equity=float(data.get("account_equity", 1_000_000.0)),
             backtest_fill_latency_ns=int(

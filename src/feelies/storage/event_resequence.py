@@ -11,6 +11,11 @@ The canonical tie-breaker is:
 
 where quotes sort before trades at equal timestamps and ``prior_sequence`` is the
 sequence carried on the event before reassignment (preserves intra-batch order).
+
+**Live vs replay note:** This pass assigns fresh contiguous ``sequence`` and
+``correlation_id`` values for deterministic replay. Those identifiers are not
+expected to match an incremental live ingest of the same vendor events unless
+live applies an identical merge/resequence policy.
 """
 
 from __future__ import annotations
