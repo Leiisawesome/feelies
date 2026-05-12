@@ -6,6 +6,8 @@ from collections import defaultdict
 from decimal import Decimal
 
 # ── bootstrap ────────────────────────────────────────────────────────
+from dataclasses import replace
+
 from feelies.core.platform_config import PlatformConfig
 from feelies.bootstrap import build_platform
 from feelies.storage.disk_event_cache import DiskEventCache
@@ -13,7 +15,11 @@ from feelies.storage.memory_event_log import InMemoryEventLog
 from feelies.core.events import PositionUpdate, OrderAck, OrderRequest, NBBOQuote
 
 config = PlatformConfig.from_yaml("platform.yaml")
-config.symbols = frozenset({"AAPL"})
+config = replace(
+    config,
+    symbols=frozenset({"AAPL"}),
+    ingest_terminal_symbol_health=(("AAPL", "HEALTHY"),),
+)
 
 cache = DiskEventCache(Path.home() / ".feelies" / "cache")
 events = cache.load("AAPL", "2026-04-08")

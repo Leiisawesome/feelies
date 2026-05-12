@@ -65,6 +65,7 @@ from feelies.core.events import (
 )
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.ingestion.data_integrity import DataHealth
+from feelies.ingestion.ingest_health import terminal_symbol_health_rows
 from feelies.ingestion.massive_ingestor import IngestResult
 from feelies.kernel.macro import MacroState
 from feelies.monitoring.in_memory import InMemoryMetricCollector
@@ -948,8 +949,9 @@ def _warn_if_unhealthy_manifest_days(day_sources: Sequence[Any]) -> None:
     extra = "" if len(bad) <= 20 else f"\n    ... and {len(bad) - 20} more day(s)"
     print(
         "\n  WARNING: One or more loaded days have ingestion_health != HEALTHY.\n"
-        "  Replay continues; set require_healthy_disk_cache_manifests: true in "
-        "platform.yaml to fail boot, or fix/re-ingest degraded days.\n"
+        "  Replay continues; set require_healthy_disk_cache_manifests: true or "
+        "backtest_enforce_ingest_terminal_health: true (after ingest attaches rows) "
+        "to fail boot, or fix/re-ingest degraded days.\n"
         + "\n".join(lines)
         + extra
         + "\n",
@@ -970,6 +972,19 @@ def _attach_disk_cache_health_rows(
         for ds in day_sources
     )
     return _cfg_replace(config, disk_cache_ingestion_health_rows=rows)
+
+
+def _attach_day_source_provenance(
+    config: PlatformConfig,
+    symbols: list[str],
+    day_sources: Sequence[DaySource],
+) -> PlatformConfig:
+    """Attach per-day manifest rows plus worst-case per-symbol terminal health."""
+    cfg = _attach_disk_cache_health_rows(config, day_sources)
+    return replace(
+        cfg,
+        ingest_terminal_symbol_health=terminal_symbol_health_rows(symbols, day_sources),
+    )
 
 
 # ── Report formatting helpers ────────────────────────────────────────
@@ -1936,7 +1951,15 @@ def main(argv: list[str] | None = None) -> int:
         flush=True,
     )
 
-    config = _attach_disk_cache_health_rows(config, day_sources)
+    if config.backtest_reject_zero_ingest_events and ingest_result.events_ingested == 0:
+        print(
+            "\n  ERROR: Zero events ingested — "
+            "backtest_reject_zero_ingest_events is enabled in platform config.",
+            file=sys.stderr,
+        )
+        return 1
+
+    config = _attach_day_source_provenance(config, symbols, day_sources)
 
     return _run_backtest_phases_2_7(
         args,
@@ -2027,7 +2050,15 @@ def main_cache_replay(argv: list[str] | None = None) -> int:
         )
         for m in day_meta
     ]
-    config = _attach_disk_cache_health_rows(config, day_sources)
+    if config.backtest_reject_zero_ingest_events and ingest_result.events_ingested == 0:
+        print(
+            "\n  ERROR: Zero events loaded from disk cache — "
+            "backtest_reject_zero_ingest_events is enabled in platform config.",
+            file=sys.stderr,
+        )
+        return 1
+
+    config = _attach_day_source_provenance(config, symbols, day_sources)
 
     return _run_backtest_phases_2_7(
         args,

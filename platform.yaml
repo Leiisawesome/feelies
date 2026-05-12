@@ -35,9 +35,17 @@ enforce_trend_mechanism: false
 
 # When a Massive normalizer is wired (e.g. live WS), GAP_DETECTED is treated like
 # CORRUPTED: macro DEGRADED and no further ticks/trades for that symbol. Standard
-# backtest replay has no normalizer; pair with require_healthy_disk_cache_manifests
-# for strict offline manifests.
-degrade_on_data_gap: false
+# backtest replay has no normalizer; use ingest terminal health enforcement below
+# for strict offline runs.
+degrade_on_data_gap: true
+
+# After ingest/cache load, ``run_backtest.py`` attaches worst-case per-symbol health.
+# When true, ``validate()`` requires every config symbol to be HEALTHY or boot fails.
+backtest_enforce_ingest_terminal_health: true
+backtest_reject_zero_ingest_events: true
+# Live/paper with ``build_platform(..., normalizer=...)``: require symbols in universe
+# to appear in normalizer.all_health() before consumption (catches replay/normalizer skew).
+strict_normalizer_symbol_coverage: false
 
 regime_engine: hmm_3state_fractional
 

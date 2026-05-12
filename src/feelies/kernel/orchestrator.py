@@ -1127,6 +1127,9 @@ class Orchestrator:
         sensors and any time-bucket boundaries crossed by the trade
         timestamp are observed.
         """
+        if self._data_health_blocks_trading(trade.symbol, trade.correlation_id):
+            return
+
         if not self._events_prelogged:
             self._event_log.append(trade)
         self._bus.publish(trade)
@@ -1544,25 +1547,8 @@ class Orchestrator:
             return
 
         # ── Runtime data integrity check (W-6) ─────────────────
-        if self._normalizer is not None:
-            symbol_health = self._normalizer.health(quote.symbol)
-            if symbol_health == DataHealth.CORRUPTED:
-                if self._macro.can_transition(MacroState.DEGRADED):
-                    self._macro.transition(
-                        MacroState.DEGRADED,
-                        trigger=f"DATA_CORRUPTED:{quote.symbol}",
-                        correlation_id=cid,
-                    )
-                self._bus.publish(MetricEvent(
-                    timestamp_ns=self._clock.now_ns(),
-                    correlation_id=cid,
-                    sequence=self._seq.next(),
-                    layer="kernel",
-                    name="tick_suppressed_data_corrupted",
-                    value=1.0,
-                    metric_type=MetricType.COUNTER,
-                ))
-                return
+        if self._data_health_blocks_trading(quote.symbol, cid):
+            return
 
         # ── M0 → M1: MARKET_EVENT_RECEIVED ─────────────────────
         self._micro.transition(
@@ -4091,6 +4077,52 @@ class Orchestrator:
         self._reconcile_fills(acks, event.correlation_id)
 
     # ── Configuration and data integrity ────────────────────────────
+
+    def _data_health_blocks_trading(self, symbol: str, correlation_id: str) -> bool:
+        """Return True when the Massive normalizer forbids consuming this symbol.
+
+        CORRUPTED always halts trading for the symbol when a normalizer is wired.
+        GAP_DETECTED does the same only when ``PlatformConfig.degrade_on_data_gap``
+        is enabled (strict paper/live policy).
+        """
+        if self._normalizer is None:
+            return False
+        health = self._normalizer.health(symbol)
+        cfg_syms = (
+            {s.upper() for s in self._config.symbols}
+            if self._config is not None
+            else frozenset()
+        )
+        if getattr(self._config, "strict_normalizer_symbol_coverage", False):
+            if symbol.upper() in cfg_syms:
+                tracked = {k.upper() for k in self._normalizer.all_health()}
+                if symbol.upper() not in tracked:
+                    if self._macro.can_transition(MacroState.DEGRADED):
+                        self._macro.transition(
+                            MacroState.DEGRADED,
+                            trigger=f"DATA_SYMBOL_UNTRACKED:{symbol}",
+                            correlation_id=correlation_id,
+                        )
+                    return True
+        if health == DataHealth.CORRUPTED:
+            if self._macro.can_transition(MacroState.DEGRADED):
+                self._macro.transition(
+                    MacroState.DEGRADED,
+                    trigger=f"DATA_CORRUPTED:{symbol}",
+                    correlation_id=correlation_id,
+                )
+            return True
+        degrade_gap = getattr(self._config, "degrade_on_data_gap", False)
+        if degrade_gap and health == DataHealth.GAP_DETECTED:
+            if self._macro.can_transition(MacroState.DEGRADED):
+                self._macro.transition(
+                    MacroState.DEGRADED,
+                    trigger=f"DATA_GAP_DETECTED:{symbol}",
+                    correlation_id=correlation_id,
+                )
+            return True
+        return False
+
 
     def _verify_data_integrity(self) -> bool:
         """Verify data integrity for all configured symbols.
