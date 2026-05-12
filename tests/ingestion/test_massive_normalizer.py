@@ -290,6 +290,44 @@ class TestMassiveNormalizerSequenceCollision:
         assert out == []
         assert normalizer.health("AAPL") == DataHealth.CORRUPTED
 
+    @pytest.mark.parametrize(
+        ("field", "first_value", "second_value"),
+        [
+            ("correction", 0, 1),
+            (
+                "participant_timestamp",
+                1_700_000_000_001_234_567,
+                1_700_000_000_001_234_568,
+            ),
+            ("ft", 1_700_000_000_002_000_000, 1_700_000_000_002_000_001),
+        ],
+    )
+    def test_ws_trade_same_sequence_different_optional_field_corrupts(
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
+        field: str,
+        first_value: int,
+        second_value: int,
+    ) -> None:
+        base = {
+            "ev": "T",
+            "sym": "AAPL",
+            "p": 150.02,
+            "s": 100,
+            "t": 1000,
+            "q": 5,
+        }
+        first = {**base, field: first_value}
+        normalizer.on_message(json.dumps(first).encode("utf-8"), clock.now_ns(), "massive_ws")
+
+        alt = {**base, field: second_value}
+        out = normalizer.on_message(json.dumps(alt).encode("utf-8"), clock.now_ns(), "massive_ws")
+
+        assert out == []
+        assert normalizer.health("AAPL") == DataHealth.CORRUPTED
+        assert normalizer.duplicates_filtered == 0
+
 
 class TestMassiveNormalizerNotifyFeedInterrupted:
     def test_disconnect_flags_gap_before_first_tick(
