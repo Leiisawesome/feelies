@@ -2,48 +2,54 @@
 schema_version: "1.1"
 layer: PORTFOLIO
 
-alpha_id: pofi_burst_revert_v1
+alpha_id: pro_kyle_benign_v1
 version: "1.0.0"
 description: |
-  Cross-sectional coordinator for two complementary short-horizon
-  microstructure mechanisms: Hawkes self-exciting burst momentum
-  (pofi_hawkes_burst_v1) and inventory mean-reversion
-  (pofi_inventory_revert_v1).  Routes both SIGNAL streams through
-  the platform composition pipeline (rank → factor-neutralize →
-  sector-match → turnover-optimize) so they never double-trade the
-  same symbol on the same tick.
+  Cross-sectional coordinator for two complementary KYLE_INFO
+  mechanisms: benign-regime informed-flow footprint
+  (sig_benign_midcap_v1) and five-minute Kyle-drift momentum
+  (sig_kyle_drift_v1).  Routes both SIGNAL streams through the
+  platform composition pipeline (rank → factor-neutralize →
+  sector-match → turnover-optimize) so they never double-trade
+  the same symbol on the same tick via EdgeWeightedArbitrator
+  fallback.
 
 # ── Hypothesis (causal mechanism) ─────────────────────────
 hypothesis: |
-  HAWKES_SELF_EXCITE and INVENTORY are decorrelated mechanisms —
-  one fires on self-exciting aggressor bursts, the other fades
-  asymmetric quote depletion.  Combining them under a single
-  composition layer diversifies mechanism-specific drawdowns while
-  preserving the per-name edge; the joint Sharpe should exceed
-  either standalone alpha over rolling 60-day windows.
+  Both upstream alphas share the KYLE_INFO mechanism but operate on
+  different horizons and feature composites (120 s OFI-zscore
+  footprint vs 300 s λ̂-weighted drift).  Their conditioning sets are
+  partially orthogonal: sig_benign_midcap_v1 gates on a tighter
+  normal-regime posterior and low spread; sig_kyle_drift_v1 gates
+  on λ̂ exceeding the 70th percentile.  Combining under a single
+  PORTFOLIO layer prevents signal cancellation through arbitration
+  and correctly sizes net exposure across both contributions before
+  risk veto.
 
 falsification_criteria:
   - |
     Joint Sharpe post-cost falls below the better of the two
     standalone alphas for >= 4 consecutive weeks.
   - |
-    Either mechanism's share of gross exposure exceeds its declared
-    cap for >= 3 consecutive composition barriers.
+    KYLE_INFO mechanism share of gross exposure exceeds 0.7 for
+    >= 3 consecutive composition barriers.
   - |
     Out-of-sample DSR < 1.0 across any single calendar quarter.
 
 # ── Upstream SIGNAL dependencies ──────────────────────────
 depends_on_signals:
-  - pofi_hawkes_burst_v1
-  - pofi_inventory_revert_v1
+  - sig_benign_midcap_v1
+  - sig_kyle_drift_v1
 
 # ── Universe ──────────────────────────────────────────────
+# Intersection of platform.yaml symbols and the mid-cap names
+# covered by the benign regime alpha.
 universe:
   - AAPL
   - MSFT
   - NVDA
 
-# ── Horizon (Layer-3 boundary; >= 300 and >= all upstream) ─
+# ── Horizon (Layer-3 boundary; >= longest upstream horizon) ─
 horizon_seconds: 300
 
 # ── Factor neutralization ─────────────────────────────────
@@ -54,23 +60,26 @@ horizon_seconds: 300
 factor_neutralization: false
 
 # ── Cost Arithmetic Disclosure (G12) ──────────────────────
+# Blended estimate: upstream margins are both 1.8; use a
+# conservative 2.0 with impact reflecting 300 s horizon.
 cost_arithmetic:
   edge_estimate_bps: 10.0
   half_spread_bps: 2.0
-  impact_bps: 1.5
+  impact_bps: 2.0
   fee_bps: 0.5
-  margin_ratio: 2.5
+  margin_ratio: 2.22
 
 # ── Trend Mechanism concentration caps (G16 PORTFOLIO rule 8) ─
+# Both upstreams are KYLE_INFO; single-family cap must be >= 1.0
+# so full-book deployment is structurally reachable (G16 rule 8).
 trend_mechanism:
   consumes:
-    - {family: HAWKES_SELF_EXCITE, max_share_of_gross: 0.6}
-    - {family: INVENTORY, max_share_of_gross: 0.6}
-  max_share_of_gross: 0.7
+    - {family: KYLE_INFO, max_share_of_gross: 1.0}
+  max_share_of_gross: 1.0
 
 # ── Risk Budget ───────────────────────────────────────────
 risk_budget:
-  max_position_per_symbol: 200
+  max_position_per_symbol: 150
   max_gross_exposure_pct: 10.0
   max_drawdown_pct: 2.0
   capital_allocation_pct: 15.0
@@ -81,18 +90,6 @@ parameters:
     type: bool
     default: false
     description: |
-      Phase-4.1 toggle for inverse-staleness decay weighting.
-      OFF preserves baseline parity hash; ON applies
-      exp(-Δt/hl) weighting per signal age × per-mechanism half-life.
-  composition_completeness_threshold:
-    type: float
-    default: 0.7
-    min: 0.5
-    max: 1.0
-    description: |
-      Skip cross-sectional decision boundaries whose universe
-      coverage falls below this fraction.
-
-# No inline ``construct:`` block — bootstrap binds the default
-# pipeline (CrossSectionalRanker → FactorNeutralizer → SectorMatcher
-# → TurnoverOptimizer) per design.
+      When true, weights upstream signal strengths by
+      exp(-age_seconds / horizon_seconds) before ranking.
+      Disabled by default to match v0.2 parity baseline.

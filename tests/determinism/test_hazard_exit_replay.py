@@ -38,7 +38,7 @@ from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.risk.hazard_exit import HazardExitController, HazardPolicy
 
 
-_STRATEGY_ID: str = "pofi_xsect_v1"
+_STRATEGY_ID: str = "pro_xsect_v1"
 _UNIVERSE: tuple[str, ...] = ("AAPL", "MSFT", "GOOG")
 _BASE_TS: int = 1_700_000_000_000_000_000
 _HAZARD_THRESHOLD: float = 0.85

@@ -1,5 +1,5 @@
 """Acceptance tests for the reference SIGNAL alpha
-``alphas/pofi_moc_imbalance_v1`` (Phase 3.1, SCHEDULED_FLOW family).
+``alphas/sig_moc_imbalance_v1`` (Phase 3.1, SCHEDULED_FLOW family).
 
 Exercises the tuple-sensor expansion path
 (``scheduled_flow_window`` → ``scheduled_flow_window_active``,
@@ -29,9 +29,9 @@ from feelies.signals.horizon_engine import HorizonSignalEngine, RegisteredSignal
 
 
 REFERENCE_PATH = Path(
-    "alphas/pofi_moc_imbalance_v1/pofi_moc_imbalance_v1.alpha.yaml"
+    "alphas/sig_moc_imbalance_v1/sig_moc_imbalance_v1.alpha.yaml"
 )
-ALPHA_ID = "pofi_moc_imbalance_v1"
+ALPHA_ID = "sig_moc_imbalance_v1"
 
 
 def test_loads_without_strict_mode() -> None:

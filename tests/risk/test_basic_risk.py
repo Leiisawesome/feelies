@@ -346,7 +346,7 @@ class TestSizedIntentMarkSelection:
         orders = engine.check_sized_intent(
             _make_sized_intent(targets={"AAPL": 50_000.0}),
             store,
-        )
+        ).orders
 
         assert len(orders) == 1
         order = orders[0]
@@ -394,7 +394,7 @@ class TestSizedIntentDroppedLegAlert:
         intent = _make_sized_intent(
             targets={"AAPL": 5_000.0, "MSFT": 60_000.0},
         )
-        orders = engine.check_sized_intent(intent, store)
+        orders = engine.check_sized_intent(intent, store).orders
 
         assert {o.symbol for o in orders} == {"AAPL"}
         assert len(captured) == 1
@@ -442,8 +442,32 @@ class TestSizedIntentDroppedLegAlert:
         orders = engine.check_sized_intent(
             _make_sized_intent(targets={"AAPL": 5_000.0}),
             store,
-        )
+        ).orders
         assert len(orders) == 1
+
+
+class TestSizedIntentDrawdownAbortsWholeIntent:
+    def test_force_flatten_on_one_leg_returns_empty_orders_and_flag(self) -> None:
+        cfg = RiskConfig(
+            max_position_per_symbol=100_000,
+            max_gross_exposure_pct=100.0,
+            max_drawdown_pct=1.0,
+            account_equity=Decimal("100000"),
+        )
+        engine = BasicRiskEngine(cfg)
+        store = MemoryPositionStore()
+        store.update("AAPL", 100, Decimal("100"))
+        store.update("AAPL", -100, Decimal("90"))
+        store.update_mark("AAPL", Decimal("90"))
+        store.update("MSFT", 0, Decimal("200"))
+        store.update_mark("MSFT", Decimal("200"))
+
+        intent = _make_sized_intent(
+            targets={"AAPL": 5_000.0, "MSFT": 10_000.0},
+        )
+        result = engine.check_sized_intent(intent, store)
+        assert result.orders == ()
+        assert result.requires_global_risk_escalation is True
 
 
 class TestPortfolioOrderG12Disclosure:
@@ -478,7 +502,7 @@ class TestPortfolioOrderG12Disclosure:
                 "MSFT": 4.25,
             },
         )
-        orders = engine.check_sized_intent(intent, store)
+        orders = engine.check_sized_intent(intent, store).orders
 
         by_symbol = {o.symbol: o for o in orders}
         assert by_symbol["AAPL"].g12_disclosed_cost_total_bps == 3.5
@@ -495,7 +519,7 @@ class TestPortfolioOrderG12Disclosure:
         orders = engine.check_sized_intent(
             _make_sized_intent(targets={"AAPL": 5_000.0}),
             store,
-        )
+        ).orders
         assert len(orders) == 1
         assert orders[0].g12_disclosed_cost_total_bps == 0.0
 

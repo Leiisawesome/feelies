@@ -38,6 +38,7 @@ from feelies.core.events import (
 )
 from feelies.core.identifiers import SequenceGenerator
 from feelies.portfolio.position_store import PositionStore
+from feelies.risk.sized_intent_result import SizedIntentRiskResult
 from feelies.services.regime_engine import RegimeEngine
 
 
@@ -226,7 +227,7 @@ class BasicRiskEngine:
         self,
         intent: SizedPositionIntent,
         positions: PositionStore,
-    ) -> tuple[OrderRequest, ...]:
+    ) -> SizedIntentRiskResult:
         """Translate a Phase-4 ``SizedPositionIntent`` to per-leg orders.
 
         Each non-zero ``TargetPosition`` delta vs the current position
@@ -247,12 +248,14 @@ class BasicRiskEngine:
         Per-leg veto (Inv-11)
         ---------------------
 
-        When the per-symbol order would breach an existing risk gate
-        (post-fill quantity over the cap, exposure breach, drawdown
-        breach) the offending leg is dropped from the returned tuple
-        — the rest of the intent proceeds.  The intent is never
-        rejected wholesale; degenerate intents (empty
-        ``target_positions``) trivially produce an empty tuple.
+        When the per-symbol order would breach post-fill quantity or gross
+        exposure limits, the offending leg is dropped and the rest of the
+        intent proceeds.
+
+        Drawdown breach (``RiskAction.FORCE_FLATTEN`` at ``check_order``)
+        aborts **the entire intent**: ``orders`` is empty and
+        ``requires_global_risk_escalation`` is true so the orchestrator
+        runs the same emergency flatten + LOCKED path as standalone SIGNAL.
 
         Macro interaction (kernel audit)
         ----------------------------------
@@ -265,26 +268,18 @@ class BasicRiskEngine:
         Diagnostic (audit R4)
         ---------------------
 
-        Dropped legs are surfaced on the WARNING log and (when the
-        engine was constructed with a ``bus`` and
-        ``alert_sequence_generator``) as a single ``Alert`` event per
-        intent, listing every dropped symbol + reason.  This is the
-        only place dollar-neutrality / sector-neutrality breaches
-        produced by the per-leg veto become visible to operators —
-        without it the surviving legs execute in isolation and the
-        portfolio alpha's structural invariants (which it cannot
-        re-validate after the fact) silently degrade.
+        Ordinary veto drops are surfaced via ``_emit_dropped_legs_alert``.
+        Global flatten intent does **not** emit the partial-execution
+        alert — the orchestrator owns flatten + CRITICAL residual alerts.
 
         Symbols whose ``target_usd`` matches the current notional
         (within one cent) produce no order — the leg is a no-op and is
         NOT counted as a veto-dropped leg.
         """
         if not intent.target_positions:
-            return ()
+            return SizedIntentRiskResult(orders=())
 
         orders: list[OrderRequest] = []
-        # (symbol, reason) for any leg dropped by the per-leg veto so
-        # the diagnostic Alert can attribute each one specifically.
         dropped: list[tuple[str, str]] = []
         for symbol in sorted(intent.target_positions):
             tgt = intent.target_positions[symbol]
@@ -328,8 +323,12 @@ class BasicRiskEngine:
             )
 
             verdict = self.check_order(order, positions)
-            if verdict.action in (RiskAction.REJECT, RiskAction.FORCE_FLATTEN):
-                # Per-leg veto — drop this leg, continue with the rest.
+            if verdict.action == RiskAction.FORCE_FLATTEN:
+                return SizedIntentRiskResult(
+                    orders=(),
+                    requires_global_risk_escalation=True,
+                )
+            if verdict.action == RiskAction.REJECT:
                 dropped.append((symbol, verdict.reason))
                 continue
             if verdict.action == RiskAction.SCALE_DOWN:
@@ -365,7 +364,7 @@ class BasicRiskEngine:
         if dropped:
             self._emit_dropped_legs_alert(intent, dropped)
 
-        return tuple(orders)
+        return SizedIntentRiskResult(orders=tuple(orders))
 
     def _emit_dropped_legs_alert(
         self,

@@ -1,7 +1,7 @@
 # ── Identity & Provenance ─────────────────────────────────
 schema_version: "1.1"
 layer: SIGNAL
-alpha_id: pofi_benign_midcap_v1
+alpha_id: sig_benign_midcap_v1
 version: "1.0.0"
 description: |
   Kyle-style informed-flow footprint on L1 (OFI + micro-price vs mid)
@@ -153,7 +153,7 @@ signal: |
           correlation_id=snapshot.correlation_id,
           sequence=snapshot.sequence,
           symbol=snapshot.symbol,
-          strategy_id="pofi_benign_midcap_v1",
+          strategy_id="sig_benign_midcap_v1",
           direction=direction,
           strength=min(mag / (threshold * 2.0), 1.0),
           edge_estimate_bps=edge_bps,

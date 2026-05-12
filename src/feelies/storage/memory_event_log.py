@@ -14,9 +14,11 @@ from __future__ import annotations
 import bisect
 import threading
 from collections.abc import Iterator, Sequence
+from typing import cast
 
 from feelies.core.errors import CausalityViolation
-from feelies.core.events import Event
+from feelies.core.events import Event, NBBOQuote, Trade
+from feelies.storage.event_resequence import event_merge_sort_key
 
 
 class _SequenceKey:
@@ -37,67 +39,68 @@ class _SequenceKey:
 class InMemoryEventLog:
     """Volatile, list-backed event store implementing ``EventLog``."""
 
-    __slots__ = ("_events", "_lock", "_last_exchange_ts")
+    __slots__ = ("_events", "_lock", "_last_market_key")
 
     def __init__(self) -> None:
         self._events: list[Event] = []
         self._lock = threading.Lock()
-        self._last_exchange_ts: int = 0
+        self._last_market_key: tuple[int, str, int, int] | None = None
 
     def append(self, event: Event) -> None:
         with self._lock:
-            self._enforce_causality(event)
+            self._enforce_market_order(event)
             self._events.append(event)
+
+    @staticmethod
+    def _stabilize_market_slice(events: list[Event]) -> None:
+        """Sort ``NBBOQuote`` / ``Trade`` rows in-place at their indices (Inv-6)."""
+        idxs = [i for i, e in enumerate(events) if isinstance(e, (NBBOQuote, Trade))]
+        if not idxs:
+            return
+        market = cast(
+            list[NBBOQuote | Trade],
+            [events[i] for i in idxs],
+        )
+        market.sort(key=event_merge_sort_key)
+        for i, e in zip(idxs, market):
+            events[i] = e
 
     def append_batch(self, events: Sequence[Event]) -> None:
         with self._lock:
-            prev_ts = self._last_exchange_ts
-            for event in events:
-                ts: int | None = getattr(event, "exchange_timestamp_ns", None)
-                if ts is not None:
-                    if ts < prev_ts:
-                        raise CausalityViolation(
-                            f"append_batch: exchange_timestamp_ns={ts} "
-                            f"at sequence={event.sequence} < previous {prev_ts} "
-                            f"— events must be sorted by exchange time before "
-                            f"insertion (invariant 6)"
-                        )
-                    prev_ts = ts
-            self._last_exchange_ts = prev_ts
-            self._events.extend(events)
+            ev = list(events)
+            self._stabilize_market_slice(ev)
+            for event in ev:
+                self._enforce_market_order(event)
+            self._events.extend(ev)
 
     def replace_events(self, events: Sequence[Event]) -> None:
         """Replace the entire log with *events* (ingestion merge-sort path).
 
-        Caller must supply events sorted by exchange time (including tie-breakers)
-        so :meth:`append_batch` causality rules hold on subsequent appends.
+        Caller should supply merge-sorted market rows; intra-batch
+        ``NBBOQuote``/``Trade`` ordering is stabilized the same way as
+        :meth:`append_batch` before the monotonicity check.
         """
         with self._lock:
-            prev_ts = 0
-            for event in events:
-                ts: int | None = getattr(event, "exchange_timestamp_ns", None)
-                if ts is not None:
-                    if ts < prev_ts:
-                        raise CausalityViolation(
-                            f"replace_events: exchange_timestamp_ns={ts} "
-                            f"at sequence={event.sequence} < previous {prev_ts}"
-                        )
-                    prev_ts = ts
+            ev = list(events)
+            self._stabilize_market_slice(ev)
+            self._last_market_key = None
+            for event in ev:
+                self._enforce_market_order(event)
             self._events.clear()
-            self._last_exchange_ts = prev_ts
-            self._events.extend(events)
+            self._events.extend(ev)
 
-    def _enforce_causality(self, event: Event) -> None:
-        ts: int | None = getattr(event, "exchange_timestamp_ns", None)
-        if ts is not None:
-            if ts < self._last_exchange_ts:
+    def _enforce_market_order(self, event: Event) -> None:
+        if isinstance(event, (NBBOQuote, Trade)):
+            key = event_merge_sort_key(event)
+            if self._last_market_key is not None and key < self._last_market_key:
                 raise CausalityViolation(
-                    f"append: exchange_timestamp_ns={ts} "
-                    f"at sequence={event.sequence} < previous "
-                    f"{self._last_exchange_ts} — multi-symbol events must be "
-                    f"sorted by exchange time before insertion (invariant 6)"
+                    "InMemoryEventLog: market event out of merge-sort order "
+                    f"at sequence={event.sequence}: key={key!r} < "
+                    f"previous {self._last_market_key!r} — use "
+                    ":func:`~feelies.storage.event_resequence.resequence_event_list` "
+                    "before append (invariant 6)"
                 )
-            self._last_exchange_ts = ts
+            self._last_market_key = key
 
     def replay(
         self,

@@ -137,8 +137,11 @@ _MICRO_TRANSITIONS: dict[MicroState, frozenset[MicroState]] = {
         MicroState.CROSS_SECTIONAL,
         MicroState.FEATURE_COMPUTE,
     }),
+    # PORTFOLIO can walk M5–M10 here when :meth:`Orchestrator._flush_pending_sized_intents`
+    # drains horizon-buffered ``SizedPositionIntent`` events before M3.
     MicroState.CROSS_SECTIONAL: frozenset({
         MicroState.FEATURE_COMPUTE,
+        MicroState.RISK_CHECK,
     }),
     MicroState.FEATURE_COMPUTE: frozenset({
         MicroState.SIGNAL_EVALUATE,
@@ -146,7 +149,8 @@ _MICRO_TRANSITIONS: dict[MicroState, frozenset[MicroState]] = {
     # M4 branches:
     #   signal selected → RISK_CHECK (multi-alpha arbitration is bus-side
     #   before M4; see ``Orchestrator._select_bus_signal``)
-    #   no signal / force_flatten: → LOG_AND_METRICS
+    #   no signal this tick → LOG_AND_METRICS
+    #   (FORCE_FLATTEN is evaluated only after RISK_CHECK on the SIGNAL path.)
     MicroState.SIGNAL_EVALUATE: frozenset({
         MicroState.RISK_CHECK,
         MicroState.LOG_AND_METRICS,
@@ -171,9 +175,12 @@ _MICRO_TRANSITIONS: dict[MicroState, frozenset[MicroState]] = {
     MicroState.POSITION_UPDATE: frozenset({
         MicroState.LOG_AND_METRICS,
     }),
-    # Loop back to wait for next tick
+    # Loop back to wait for next tick, continue a PORTFOLIO multi-intent flush on
+    # the same quote, or resume M3 after that flush (orchestrator-guarded only).
     MicroState.LOG_AND_METRICS: frozenset({
         MicroState.WAITING_FOR_MARKET_EVENT,
+        MicroState.RISK_CHECK,
+        MicroState.FEATURE_COMPUTE,
     }),
 }
 
