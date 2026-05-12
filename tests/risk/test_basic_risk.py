@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 
@@ -10,6 +11,7 @@ from feelies.core.events import (
     OrderRequest,
     OrderType,
     RiskAction,
+    RiskVerdict,
     Side,
     Signal,
     SignalDirection,
@@ -520,3 +522,39 @@ class TestPortfolioOrderG12Disclosure:
         ).orders
         assert len(orders) == 1
         assert orders[0].g12_disclosed_cost_total_bps == 0.0
+
+
+class TestSizedIntentScaleDownDecimal:
+    def test_scale_down_quantity_uses_half_up_not_float_truncation(
+        self, config: RiskConfig, store: MemoryPositionStore,
+    ) -> None:
+        """10 × 0.45 = 4.5 → 5 shares (Decimal); int(10*0.45) truncates to 4."""
+
+        engine = BasicRiskEngine(config)
+        store.update("AAPL", 0, Decimal("100"))
+        store.update_mark("AAPL", Decimal("100"))
+
+        def fake_check_order(
+            self: BasicRiskEngine,
+            order: OrderRequest,
+            positions: MemoryPositionStore,
+        ) -> RiskVerdict:
+            if order.symbol == "AAPL" and order.quantity == 10:
+                return RiskVerdict(
+                    timestamp_ns=order.timestamp_ns,
+                    correlation_id=order.correlation_id,
+                    sequence=order.sequence,
+                    symbol=order.symbol,
+                    action=RiskAction.SCALE_DOWN,
+                    reason="test_scale_down",
+                    scaling_factor=0.45,
+                )
+            return BasicRiskEngine.check_order(self, order, positions)
+
+        with patch.object(BasicRiskEngine, "check_order", fake_check_order):
+            orders = engine.check_sized_intent(
+                _make_sized_intent(targets={"AAPL": 1_000.0}),
+                store,
+            )
+        assert len(orders) == 1
+        assert orders[0].quantity == 5

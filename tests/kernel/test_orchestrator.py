@@ -629,6 +629,283 @@ class TestOrchestratorFullPipeline:
         assert updates[0].timestamp_ns == 2000
 
 
+class TestOrchestratorFillReconcileGuards:
+    def test_reconcile_ignores_fill_fields_on_rejected_ack(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+        position_store = MemoryPositionStore()
+        orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="c1",
+            sequence=1,
+            order_id="ord-rej-fill",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            strategy_id="a",
+        )
+        orch._track_order(order.order_id, order.side, order)
+        orch._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=order.correlation_id,
+        )
+
+        orch._reconcile_fills([
+            OrderAck(
+                timestamp_ns=1100,
+                correlation_id="c1",
+                sequence=1,
+                order_id=order.order_id,
+                symbol="AAPL",
+                status=OrderAckStatus.REJECTED,
+                filled_quantity=10,
+                fill_price=Decimal("150"),
+                reason="simulated",
+            ),
+        ], correlation_id="tick-cid")
+
+        assert position_store.get("AAPL").quantity == 0
+        assert any(
+            a.alert_name == "fill_payload_inconsistent_with_ack_status"
+            for a in alerts
+        )
+
+    def test_reconcile_alerts_on_filled_missing_price(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+        position_store = MemoryPositionStore()
+        orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="c2",
+            sequence=1,
+            order_id="ord-bad-fill",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            strategy_id="a",
+        )
+        orch._track_order(order.order_id, order.side, order)
+        orch._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=order.correlation_id,
+        )
+
+        orch._reconcile_fills([
+            OrderAck(
+                timestamp_ns=1200,
+                correlation_id="c2",
+                sequence=1,
+                order_id=order.order_id,
+                symbol="AAPL",
+                status=OrderAckStatus.FILLED,
+                filled_quantity=10,
+                fill_price=None,
+            ),
+        ], correlation_id="tick-cid")
+
+        assert position_store.get("AAPL").quantity == 0
+        assert any(
+            a.alert_name == "fill_ack_missing_price_or_quantity"
+            for a in alerts
+        )
+
+    def test_duplicate_filled_ack_emits_warning_alert(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="c3",
+            sequence=1,
+            order_id="ord-dup-fill",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            strategy_id="a",
+        )
+        orch._track_order(order.order_id, order.side, order)
+        orch._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=order.correlation_id,
+        )
+        orch._apply_ack_to_order(OrderAck(
+            timestamp_ns=1300,
+            correlation_id="c3",
+            sequence=1,
+            order_id=order.order_id,
+            symbol="AAPL",
+            status=OrderAckStatus.ACKNOWLEDGED,
+        ))
+        orch._apply_ack_to_order(OrderAck(
+            timestamp_ns=1310,
+            correlation_id="c3",
+            sequence=2,
+            order_id=order.order_id,
+            symbol="AAPL",
+            status=OrderAckStatus.FILLED,
+            filled_quantity=10,
+            fill_price=Decimal("150"),
+        ))
+        orch._apply_ack_to_order(OrderAck(
+            timestamp_ns=1320,
+            correlation_id="c3",
+            sequence=3,
+            order_id=order.order_id,
+            symbol="AAPL",
+            status=OrderAckStatus.FILLED,
+            filled_quantity=10,
+            fill_price=Decimal("150"),
+        ))
+
+        assert any(
+            a.alert_name == "duplicate_terminal_fill_ack"
+            for a in alerts
+        )
+
+    def test_emergency_flatten_poll_failure_force_terminals_order(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+
+        class _PollFailsRouter(BacktestOrderRouter):
+            def poll_acks(self):  # type: ignore[override]
+                raise RuntimeError("poll boom")
+
+        quote = _make_quote()
+        router = _PollFailsRouter(clock=clock)
+        router.on_quote(quote)
+
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=MemoryPositionStore(),
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+        _boot_to_backtest(orch)
+        orch._positions.update("AAPL", 100, Decimal("150.00"))
+
+        failures, residual = orch._emergency_flatten_all("esc-cid")
+
+        assert "AAPL" in failures
+        assert residual["AAPL"] == 100
+        assert any(a.alert_name == "order_pipeline_exception" for a in alerts)
+        assert not any(
+            sm.state == OrderState.SUBMITTED
+            for sm, _, _ in orch._active_orders.values()
+        )
+
+    def test_cancel_order_without_router_resolves_to_cancelled(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="cc",
+            sequence=1,
+            order_id="ord-cancel-local",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            strategy_id="a",
+        )
+        orch._track_order(order.order_id, order.side, order)
+        orch._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=order.correlation_id,
+        )
+        orch._apply_ack_to_order(OrderAck(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="cc",
+            sequence=1,
+            order_id=order.order_id,
+            symbol="AAPL",
+            status=OrderAckStatus.ACKNOWLEDGED,
+        ))
+
+        assert orch.cancel_order(order.order_id) is True
+        assert order.order_id not in orch._active_orders
+        assert any(
+            a.alert_name == "cancel_order_router_unsupported"
+            for a in alerts
+        )
+
+    def test_shutdown_resolves_cancel_requested(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="sd",
+            sequence=1,
+            order_id="ord-shut-cr",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=1,
+            strategy_id="a",
+        )
+        orch._track_order(order.order_id, order.side, order)
+        orch._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=order.correlation_id,
+        )
+        orch._apply_ack_to_order(OrderAck(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="sd",
+            sequence=1,
+            order_id=order.order_id,
+            symbol="AAPL",
+            status=OrderAckStatus.ACKNOWLEDGED,
+        ))
+        sm = orch._active_orders[order.order_id][0]
+        sm.transition(
+            OrderState.CANCEL_REQUESTED,
+            trigger="manual_test",
+            correlation_id=order.correlation_id,
+        )
+
+        orch.shutdown()
+
+        assert order.order_id not in orch._active_orders
+        assert not any(
+            a.alert_name == "pending_orders_at_shutdown" for a in alerts
+        )
+
+
 # ── Tests: No signal path ────────────────────────────────────────────
 
 

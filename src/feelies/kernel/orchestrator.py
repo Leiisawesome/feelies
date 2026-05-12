@@ -1027,10 +1027,28 @@ class Orchestrator:
         Pending orders are surfaced as a WARNING alert but do not
         block shutdown — the operator investigates post-mortem.
 
+        ``CANCEL_REQUESTED`` orders (e.g. abandoned when no router cancel
+        API existed in an older build) are transitioned to ``CANCELLED``
+        best-effort before the pending-order scan so shutdown reflects
+        local operator intent.
+
         Allowed from **RISK_LOCKDOWN** via ``CMD_SHUTDOWN`` so operators
         can tear down the process without a prior unlock when needed.
         """
         self._checkpoint_feature_snapshots()
+        # Resolve operator cancel intent when no broker ack will arrive
+        # (e.g. mid backtest router has no cancel_order API).
+        for oid, (sm, _, order) in list(self._active_orders.items()):
+            if sm.state != OrderState.CANCEL_REQUESTED:
+                continue
+            if sm.can_transition(OrderState.CANCELLED):
+                sm.transition(
+                    OrderState.CANCELLED,
+                    trigger="shutdown_resolve_cancel_requested",
+                    correlation_id=order.correlation_id,
+                )
+        self._prune_terminal_orders()
+
         pending = [
             oid for oid, (sm, _, _) in self._active_orders.items()
             if sm.state not in _TERMINAL_ORDER_STATES
@@ -1943,8 +1961,45 @@ class Orchestrator:
             trigger="order_constructed",
             correlation_id=cid,
         )
-        self._transition_order(order.order_id, OrderState.SUBMITTED, "submitted")
-        self._backend.order_router.submit(order)
+        self._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=cid,
+        )
+        try:
+            self._backend.order_router.submit(order)
+        except Exception as exc:
+            self._reject_order_after_submit_failure(order, exc)
+            self._append_signal_order_trace(
+                quote,
+                signal,
+                outcome="NO_ORDER",
+                reasons=(
+                    "order_router_submit_raised",
+                    type(exc).__name__,
+                    repr(exc),
+                ),
+                trading_intent=intent.intent.name,
+            )
+            self._micro.transition(
+                MicroState.ORDER_ACK,
+                trigger="order_submit_failed_no_router_ack",
+                correlation_id=cid,
+            )
+            self._micro.transition(
+                MicroState.POSITION_UPDATE,
+                trigger="order_submit_failed_no_fills",
+                correlation_id=cid,
+            )
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="order_submit_failed",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
         self._bus.publish(order)
         self._append_signal_order_trace(
             quote,
@@ -2273,10 +2328,15 @@ class Orchestrator:
             level = RiskLevel.FORCED_FLATTEN
 
         if level == RiskLevel.FORCED_FLATTEN:
-            self._emergency_flatten_all(correlation_id)
+            failures, residual = self._emergency_flatten_all(correlation_id)
+            flatten_clean = not failures and not residual
             self._risk_escalation.transition(
                 RiskLevel.LOCKED,
-                trigger="positions_zero_flatten_complete",
+                trigger=(
+                    "positions_zero_flatten_complete"
+                    if flatten_clean
+                    else "emergency_flatten_incomplete_residual_exposure"
+                ),
                 correlation_id=correlation_id,
             )
 
@@ -2299,7 +2359,10 @@ class Orchestrator:
             correlation_id=correlation_id,
         )
 
-    def _emergency_flatten_all(self, correlation_id: str) -> None:
+    def _emergency_flatten_all(
+        self,
+        correlation_id: str,
+    ) -> tuple[dict[str, str], dict[str, int]]:
         """Submit market orders to flatten all non-zero positions.
 
         Emergency path -- bypasses the micro SM (which will be reset
@@ -2313,6 +2376,9 @@ class Orchestrator:
         fills, or rejected acks — a CRITICAL alert is emitted listing
         every failed symbol so the operator sees exactly which legs
         need manual intervention before LOCKED traps them.
+
+        Returns ``(failures, residual_qty_by_symbol)`` so risk escalation
+        can record an honest transition trigger when exposure remains.
         """
         positions = self._positions.all_positions()
         failures: dict[str, str] = {}
@@ -2344,8 +2410,19 @@ class Orchestrator:
 
             try:
                 self._track_order(order_id, side, order)
-                self._transition_order(order_id, OrderState.SUBMITTED, "emergency_flatten")
-                self._backend.order_router.submit(order)
+                self._transition_order(
+                    order_id,
+                    OrderState.SUBMITTED,
+                    "emergency_flatten",
+                    correlation_id=correlation_id,
+                )
+                try:
+                    self._backend.order_router.submit(order)
+                except Exception as submit_exc:
+                    failures[symbol] = f"submit_exception: {submit_exc!r}"
+                    self._reject_order_after_submit_failure(order, submit_exc)
+                    continue
+
                 self._bus.publish(order)
                 acks = self._poll_order_router_acks({order_id})
                 for ack in acks:
@@ -2372,6 +2449,12 @@ class Orchestrator:
                     symbol, pos.quantity,
                 )
                 failures[symbol] = f"submit_exception: {exc!r}"
+                if order_id in self._active_orders:
+                    self._force_order_terminal_after_pipeline_error(
+                        order,
+                        exc,
+                        context="emergency_flatten",
+                    )
 
         residual = {
             sym: p.quantity
@@ -2394,6 +2477,7 @@ class Orchestrator:
                 alert_name="emergency_flatten_incomplete",
                 message=msg,
             ))
+        return failures, residual
 
     def _check_stop_exit(self, quote: NBBOQuote) -> Signal | None:
         """Check stop-loss and trailing stop for open positions.
@@ -2681,21 +2765,58 @@ class Orchestrator:
         # Submit EXIT leg.
         self._track_order(exit_order.order_id, exit_order.side, exit_order)
         self._transition_order(
-            exit_order.order_id, OrderState.SUBMITTED, "submitted",
+            exit_order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=cid,
         )
-        self._backend.order_router.submit(exit_order)
+        try:
+            self._backend.order_router.submit(exit_order)
+        except Exception as exc:
+            self._reject_order_after_submit_failure(exit_order, exc)
+            self._micro.transition(
+                MicroState.ORDER_ACK,
+                trigger="reverse_exit_submit_failed",
+                correlation_id=cid,
+            )
+            acks = self._poll_order_router_acks({exit_order.order_id})
+            for ack in acks:
+                self._bus.publish(ack)
+                self._apply_ack_to_order(ack)
+            self._micro.transition(
+                MicroState.POSITION_UPDATE,
+                trigger="reverse_acks_after_failed_exit_submit",
+                correlation_id=cid,
+            )
+            self._reconcile_fills(acks, cid)
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="reverse_aborted_exit_submit_failed",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
         self._bus.publish(exit_order)
 
-        # Submit ENTRY leg (if valid).
+        entry_submitted_ok = False
         if entry_order is not None:
             self._track_order(
                 entry_order.order_id, entry_order.side, entry_order,
             )
             self._transition_order(
-                entry_order.order_id, OrderState.SUBMITTED, "submitted",
+                entry_order.order_id,
+                OrderState.SUBMITTED,
+                "submitted",
+                correlation_id=cid,
             )
-            self._backend.order_router.submit(entry_order)
-            self._bus.publish(entry_order)
+            try:
+                self._backend.order_router.submit(entry_order)
+            except Exception as exc:
+                self._reject_order_after_submit_failure(entry_order, exc)
+            else:
+                self._bus.publish(entry_order)
+                entry_submitted_ok = True
 
         # ── M7 → M8: ORDER_ACK ────────────────────────────────────
         self._micro.transition(
@@ -2704,7 +2825,7 @@ class Orchestrator:
             correlation_id=cid,
         )
         expected_order_ids = {exit_order.order_id}
-        if entry_order is not None:
+        if entry_order is not None and entry_submitted_ok:
             expected_order_ids.add(entry_order.order_id)
         acks = self._poll_order_router_acks(expected_order_ids)
         for ack in acks:
@@ -2722,7 +2843,7 @@ class Orchestrator:
         if self._signal_order_trace_sink is not None:
             leg = (
                 "exit_plus_entry"
-                if entry_order is not None
+                if entry_order is not None and entry_submitted_ok
                 else "exit_only"
             )
             self._append_signal_order_trace(
@@ -2934,26 +3055,61 @@ class Orchestrator:
     def cancel_order(self, order_id: str, *, reason: str = "operator") -> bool:
         """Request cancellation of an active order.
 
-        Transitions the order SM: ACKNOWLEDGED → CANCEL_REQUESTED.
-        Only orders in ACKNOWLEDGED state can be cancel-requested;
-        SUBMITTED orders have not yet been confirmed by the broker
-        so cancellation is premature, and PARTIALLY_FILLED orders
-        have restricted transitions per the order SM spec.
+        Valid kernel transitions into ``CANCEL_REQUESTED`` follow the
+        ``OrderState`` table (typically from ``ACKNOWLEDGED`` or
+        ``PARTIALLY_FILLED``).
 
-        Returns True if the cancel request was accepted, False if the
-        order is in a state that doesn't allow cancel requests.
-        Terminal orders (FILLED, CANCELLED, REJECTED, EXPIRED) are
-        no-ops that return False.
+        When ``order_router.cancel_order`` exists it is invoked and the
+        resulting acks are reconciled.  Routers without cancel support
+        emit ``cancel_order_router_unsupported`` and immediately resolve
+        the SM to ``CANCELLED`` (no broker ack is possible in backtest).
+
+        Returns True if the SM accepted ``CANCEL_REQUESTED``, False when
+        the order is missing or cannot cancel from its current state.
         """
         if order_id not in self._active_orders:
             return False
         sm = self._active_orders[order_id][0]
         if not sm.can_transition(OrderState.CANCEL_REQUESTED):
             return False
+        order = self._active_orders[order_id][2]
         sm.transition(
             OrderState.CANCEL_REQUESTED,
             trigger=f"cancel_requested:{reason}",
+            correlation_id=order.correlation_id,
         )
+        cancel_fn = getattr(self._backend.order_router, "cancel_order", None)
+        if cancel_fn is None:
+            self._bus.publish(Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=order.correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="cancel_order_router_unsupported",
+                message=(
+                    f"cancel_order requested for {order_id!r} but "
+                    f"{type(self._backend.order_router).__name__} has no "
+                    "cancel_order(...) — resolving SM to CANCELLED locally "
+                    "(Inv-4 shutdown hygiene)."
+                ),
+                context={"order_id": order_id},
+            ))
+            sm2 = self._active_orders[order_id][0]
+            if sm2.can_transition(OrderState.CANCELLED):
+                sm2.transition(
+                    OrderState.CANCELLED,
+                    trigger="cancel_router_unsupported_local_terminal",
+                    correlation_id=order.correlation_id,
+                )
+            self._prune_terminal_orders()
+            return True
+        cancel_fn(order_id)
+        acks = self._poll_order_router_acks({order_id})
+        for ack in acks:
+            self._bus.publish(ack)
+            self._apply_ack_to_order(ack)
+        self._reconcile_fills(acks, order.correlation_id)
         return True
 
     def _has_pending_order_for_symbol(self, symbol: str) -> bool:
@@ -3037,6 +3193,101 @@ class Orchestrator:
         self._deferred_router_acks.extend(deferred)
         return matched
 
+    def _reject_order_after_submit_failure(
+        self,
+        order: OrderRequest,
+        exc: BaseException,
+    ) -> None:
+        """Transition a tracked order to REJECTED when ``submit`` raises (Inv-11)."""
+        self._bus.publish(Alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=order.correlation_id,
+            sequence=self._seq.next(),
+            severity=AlertSeverity.WARNING,
+            layer="kernel",
+            alert_name="order_submit_failed",
+            message=(
+                f"order_router.submit raised for order_id={order.order_id!r} "
+                f"symbol={order.symbol!r}: {exc!r}"
+            ),
+            context={
+                "order_id": order.order_id,
+                "symbol": order.symbol,
+                "exc_type": type(exc).__name__,
+            },
+        ))
+        oid = order.order_id
+        if oid not in self._active_orders:
+            return
+        sm = self._active_orders[oid][0]
+        if sm.can_transition(OrderState.REJECTED):
+            sm.transition(
+                OrderState.REJECTED,
+                trigger=f"submit_failed:{type(exc).__name__}",
+                correlation_id=order.correlation_id,
+            )
+        self._prune_terminal_orders()
+
+    def _force_order_terminal_after_pipeline_error(
+        self,
+        order: OrderRequest,
+        exc: BaseException,
+        *,
+        context: str,
+    ) -> None:
+        """Best-effort terminal resolution after an unexpected pipeline failure.
+
+        Used when ``submit`` succeeded but a later step (poll/apply/reconcile)
+        raised — the order must not remain stuck in a non-terminal SM state
+        (Inv-4 / operator hygiene).
+        """
+        self._bus.publish(Alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=order.correlation_id,
+            sequence=self._seq.next(),
+            severity=AlertSeverity.WARNING,
+            layer="kernel",
+            alert_name="order_pipeline_exception",
+            message=(
+                f"{context}: pipeline failed after submit for "
+                f"order_id={order.order_id!r} symbol={order.symbol!r}: {exc!r}"
+            ),
+            context={
+                "order_id": order.order_id,
+                "symbol": order.symbol,
+                "context": context,
+                "exc_type": type(exc).__name__,
+            },
+        ))
+        oid = order.order_id
+        if oid not in self._active_orders:
+            return
+        sm = self._active_orders[oid][0]
+        if sm.state in _TERMINAL_ORDER_STATES:
+            self._prune_terminal_orders()
+            return
+        trigger_base = f"{context}_pipeline_abort:{type(exc).__name__}"
+        for target in (
+            OrderState.REJECTED,
+            OrderState.CANCELLED,
+            OrderState.EXPIRED,
+        ):
+            if sm.can_transition(target):
+                sm.transition(
+                    target,
+                    trigger=trigger_base,
+                    correlation_id=order.correlation_id,
+                )
+                self._prune_terminal_orders()
+                return
+        logger.critical(
+            "orchestrator: could not force terminal order state for %s "
+            "(current=%s) after %s — manual reconciliation required",
+            oid,
+            sm.state.name,
+            context,
+        )
+
     def _reconcile_resting_fills(self, cid: str) -> None:
         """Poll and reconcile quote-driven router acknowledgements.
 
@@ -3065,11 +3316,17 @@ class Orchestrator:
         order_id: str,
         target: OrderState,
         trigger: str,
+        *,
+        correlation_id: str = "",
     ) -> None:
         """Transition an order's state machine."""
         if order_id in self._active_orders:
             sm = self._active_orders[order_id][0]
-            sm.transition(target, trigger=trigger)
+            sm.transition(
+                target,
+                trigger=trigger,
+                correlation_id=correlation_id,
+            )
 
     def _apply_ack_to_order(self, ack: OrderAck) -> None:
         """Update an order's SM based on a broker acknowledgement.
@@ -3080,10 +3337,11 @@ class Orchestrator:
         in an incompatible state, an alert is emitted instead of
         silently dropping the ack (invariant 13: full provenance).
         """
+        cid = ack.correlation_id
         if ack.order_id not in self._active_orders:
             self._bus.publish(Alert(
                 timestamp_ns=self._clock.now_ns(),
-                correlation_id=ack.correlation_id,
+                correlation_id=cid,
                 sequence=self._seq.next(),
                 severity=AlertSeverity.WARNING,
                 layer="kernel",
@@ -3099,6 +3357,7 @@ class Orchestrator:
                 sm.transition(
                     OrderState.REJECTED,
                     trigger=f"broker_reject:{ack.reason}",
+                    correlation_id=cid,
                 )
             else:
                 self._emit_ack_drop_alert(ack, sm)
@@ -3106,35 +3365,84 @@ class Orchestrator:
 
         if ack.status == OrderAckStatus.ACKNOWLEDGED:
             if sm.state == OrderState.SUBMITTED:
-                sm.transition(OrderState.ACKNOWLEDGED, trigger="broker_ack")
+                sm.transition(
+                    OrderState.ACKNOWLEDGED,
+                    trigger="broker_ack",
+                    correlation_id=cid,
+                )
             return
 
         # Ensure ACKNOWLEDGED before any fill/cancel/expiry transition.
         if sm.state == OrderState.SUBMITTED:
-            sm.transition(OrderState.ACKNOWLEDGED, trigger="broker_ack")
+            sm.transition(
+                OrderState.ACKNOWLEDGED,
+                trigger="broker_ack",
+                correlation_id=cid,
+            )
 
         if ack.status == OrderAckStatus.FILLED:
-            sm.transition(OrderState.FILLED, trigger="fill_complete")
-        elif ack.status == OrderAckStatus.PARTIALLY_FILLED:
+            if sm.state == OrderState.FILLED:
+                self._bus.publish(Alert(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=cid,
+                    sequence=self._seq.next(),
+                    severity=AlertSeverity.WARNING,
+                    layer="kernel",
+                    alert_name="duplicate_terminal_fill_ack",
+                    message=(
+                        f"Ignoring duplicate FILLED ack for order_id={ack.order_id} "
+                        "(already terminal FILLED)."
+                    ),
+                    context={"order_id": ack.order_id},
+                ))
+                return
+            if sm.can_transition(OrderState.FILLED):
+                sm.transition(
+                    OrderState.FILLED,
+                    trigger="fill_complete",
+                    correlation_id=cid,
+                )
+            else:
+                self._emit_ack_drop_alert(ack, sm)
+            return
+
+        if ack.status == OrderAckStatus.PARTIALLY_FILLED:
             if sm.can_transition(OrderState.PARTIALLY_FILLED):
-                sm.transition(OrderState.PARTIALLY_FILLED, trigger="partial_fill")
+                sm.transition(
+                    OrderState.PARTIALLY_FILLED,
+                    trigger="partial_fill",
+                    correlation_id=cid,
+                )
             else:
                 self._emit_ack_drop_alert(ack, sm)
-        elif ack.status == OrderAckStatus.CANCELLED:
+            return
+
+        if ack.status == OrderAckStatus.CANCELLED:
             if sm.can_transition(OrderState.CANCELLED):
-                sm.transition(OrderState.CANCELLED, trigger="broker_cancel")
+                sm.transition(
+                    OrderState.CANCELLED,
+                    trigger="broker_cancel",
+                    correlation_id=cid,
+                )
             else:
                 self._emit_ack_drop_alert(ack, sm)
-        elif ack.status == OrderAckStatus.EXPIRED:
+            return
+
+        if ack.status == OrderAckStatus.EXPIRED:
             if sm.can_transition(OrderState.EXPIRED):
-                sm.transition(OrderState.EXPIRED, trigger="order_expired")
+                sm.transition(
+                    OrderState.EXPIRED,
+                    trigger="order_expired",
+                    correlation_id=cid,
+                )
             else:
                 self._emit_ack_drop_alert(ack, sm)
-        else:
-            raise ValueError(
-                f"Unhandled OrderAckStatus: {ack.status!r}. "
-                f"Fail-safe: all enum members must be explicitly handled."
-            )
+            return
+
+        raise ValueError(
+            f"Unhandled OrderAckStatus: {ack.status!r}. "
+            f"Fail-safe: all enum members must be explicitly handled."
+        )
 
     def _emit_ack_drop_alert(self, ack: OrderAck, sm: StateMachine[OrderState]) -> None:
         """Emit an alert when a valid broker ack cannot be applied to the order SM."""
@@ -3172,6 +3480,9 @@ class Orchestrator:
         Inv-11 fail-safe: fills for unknown order IDs are rejected
         (not applied) and surfaced via alert.  Defaulting to BUY
         would risk increasing exposure from an untracked sell order.
+
+        Position mutations require ``status ∈ {FILLED, PARTIALLY_FILLED}``
+        with positive ``filled_quantity`` and a non-null ``fill_price``.
         """
         for ack in acks:
             # F7: debit cancel/expiry fees even when there is no fill.
@@ -3204,7 +3515,57 @@ class Orchestrator:
                     cost_bps=ack.cost_bps,
                 ))
 
-            if ack.fill_price is None or ack.filled_quantity <= 0:
+            if ack.status in (
+                OrderAckStatus.FILLED,
+                OrderAckStatus.PARTIALLY_FILLED,
+            ):
+                if ack.fill_price is None or ack.filled_quantity <= 0:
+                    self._bus.publish(Alert(
+                        timestamp_ns=self._clock.now_ns(),
+                        correlation_id=correlation_id,
+                        sequence=self._seq.next(),
+                        severity=AlertSeverity.WARNING,
+                        layer="kernel",
+                        alert_name="fill_ack_missing_price_or_quantity",
+                        message=(
+                            f"{ack.status.name} ack missing economics "
+                            f"(order_id={ack.order_id!r}, symbol={ack.symbol!r}, "
+                            f"filled_quantity={ack.filled_quantity}, "
+                            f"fill_price={ack.fill_price!r})."
+                        ),
+                        context={
+                            "order_id": ack.order_id,
+                            "symbol": ack.symbol,
+                            "status": ack.status.name,
+                            "filled_quantity": ack.filled_quantity,
+                            "fill_price": str(ack.fill_price),
+                        },
+                    ))
+                    continue
+            else:
+                fill_like = (
+                    ack.fill_price is not None and ack.filled_quantity > 0
+                )
+                if fill_like:
+                    self._bus.publish(Alert(
+                        timestamp_ns=self._clock.now_ns(),
+                        correlation_id=correlation_id,
+                        sequence=self._seq.next(),
+                        severity=AlertSeverity.WARNING,
+                        layer="kernel",
+                        alert_name="fill_payload_inconsistent_with_ack_status",
+                        message=(
+                            f"Ignoring fill-like payload on {ack.status.name} ack "
+                            f"(order_id={ack.order_id!r}, symbol={ack.symbol!r})."
+                        ),
+                        context={
+                            "order_id": ack.order_id,
+                            "symbol": ack.symbol,
+                            "status": ack.status.name,
+                            "filled_quantity": ack.filled_quantity,
+                            "fill_price": str(ack.fill_price),
+                        },
+                    ))
                 continue
 
             if ack.order_id not in self._active_orders:
@@ -3636,12 +3997,10 @@ class Orchestrator:
         Inv-11 (fail-safe): hazard exits are exit-direction-only by
         construction in ``HazardExitController`` (the order side is
         always opposite the position sign) so they cannot increase
-        exposure.  Skipping ``check_order`` here is consistent with
-        the same fail-safe carve-out applied to
-        ``_emergency_flatten_all``; the per-symbol cap, gross
-        exposure cap, and drawdown guard are all mathematically
-        non-binding for an exit.  See risk/engine.py docstring for
-        the formal "sole gatekeeper" carve-outs.
+        exposure.  A defensive ``check_order`` runs for audit parity;
+        ``REJECT`` verdicts are logged and the order is still submitted
+        (mirroring emergency flatten).  See ``risk/engine.py`` for the
+        formal sole-gatekeeper carve-outs.
         """
         if not isinstance(event, OrderRequest):
             return
@@ -3687,11 +4046,14 @@ class Orchestrator:
             ))
         self._track_order(event.order_id, event.side, event)
         self._transition_order(
-            event.order_id, OrderState.SUBMITTED, event.reason,
+            event.order_id,
+            OrderState.SUBMITTED,
+            event.reason,
+            correlation_id=event.correlation_id,
         )
         try:
             self._backend.order_router.submit(event)
-        except Exception:  # noqa: BLE001 — fail-safe: never raise from bus
+        except Exception as exc:  # noqa: BLE001 — fail-safe: never raise from bus
             logger.exception(
                 "Hazard exit order submission failed for %s "
                 "(strategy_id=%s, reason=%s, order_id=%s); position "
@@ -3699,6 +4061,7 @@ class Orchestrator:
                 event.symbol, event.strategy_id, event.reason,
                 event.order_id,
             )
+            self._reject_order_after_submit_failure(event, exc)
             return
         acks = self._poll_order_router_acks({event.order_id})
         for ack in acks:

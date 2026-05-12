@@ -332,7 +332,15 @@ class BasicRiskEngine:
                 dropped.append((symbol, verdict.reason))
                 continue
             if verdict.action == RiskAction.SCALE_DOWN:
-                scaled_qty = max(1, int(quantity * verdict.scaling_factor))
+                scaled_qty = max(
+                    1,
+                    int(
+                        (
+                            Decimal(quantity)
+                            * Decimal(str(verdict.scaling_factor))
+                        ).to_integral_value(rounding=ROUND_HALF_UP),
+                    ),
+                )
                 if scaled_qty == quantity:
                     pass
                 else:
