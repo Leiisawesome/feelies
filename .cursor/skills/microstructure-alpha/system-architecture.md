@@ -132,7 +132,7 @@ Raw Massive data is normalized into typed events (`core/events.py`):
 These flow through the `MarketDataNormalizer` protocol
 (`ingestion/normalizer.py`). Per-symbol data health is tracked by the
 `DataHealth` SM (`ingestion/data_integrity.py`):
-`HEALTHY → GAP_DETECTED → CORRUPTED → RECOVERING`.
+`HEALTHY ↔ GAP_DETECTED` (live WS sequence / feed loss); `CORRUPTED` is terminal (three states).
 
 ### Replay Engine
 

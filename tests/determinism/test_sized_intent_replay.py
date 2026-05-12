@@ -44,7 +44,7 @@ from feelies.core.identifiers import SequenceGenerator
 
 _UNIVERSE: tuple[str, ...] = ("AAPL", "AMZN", "GOOG", "META", "MSFT")
 _HORIZON_SECONDS: int = 300
-_STRATEGY_ID: str = "pofi_xsect_v1"
+_STRATEGY_ID: str = "pro_xsect_v1"
 _NUM_BOUNDARIES: int = 4
 
 # Deterministic per-(boundary, symbol) signal book.  Mix LONG/SHORT,
@@ -75,7 +75,7 @@ def _make_signal(
         correlation_id=f"sig:{symbol}:{seq}",
         source_layer="SIGNAL",
         symbol=symbol,
-        strategy_id="pofi_kyle_drift_v1",
+        strategy_id="sig_kyle_drift_v1",
         direction=direction,
         strength=strength,
         edge_estimate_bps=edge_bps,

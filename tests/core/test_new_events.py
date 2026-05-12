@@ -297,7 +297,7 @@ def test_sized_position_intent_defaults() -> None:
         timestamp_ns=1,
         correlation_id="c",
         sequence=1,
-        strategy_id="pofi_xsect_v1",
+        strategy_id="pro_xsect_v1",
     )
     assert intent.layer == "PORTFOLIO"
     assert intent.target_positions == {}

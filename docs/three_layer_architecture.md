@@ -635,7 +635,7 @@ class SizedPositionIntent:
     timestamp_ns: int
     correlation_id: CorrelationId
     sequence: int
-    strategy_id: str                   # e.g., 'pofi_xsect_v1'
+    strategy_id: str                   # e.g., 'pro_xsect_v1'
     layer: Literal['PORTFOLIO']
     horizon_seconds: int
     target_positions: dict[Symbol, TargetPosition]
@@ -1265,7 +1265,7 @@ each require careful unit testing and locked test vectors).
 - `src/feelies/signals/engine.py` — `HorizonSignalEngine`.
 - `src/feelies/signals/regime_gate.py` — DSL evaluator.
 - `src/feelies/alpha/layer_validator.py` — gates G1–G13 active.
-- One reference SIGNAL alpha (`alphas/pofi_benign_midcap_v1/`) per the
+- One reference SIGNAL alpha (`alphas/sig_benign_midcap_v1/`) per the
   canonical example in `.cursor/skills/feature-engine/SKILL.md`.
 
 **Test gates:**
@@ -1530,7 +1530,7 @@ Level-1–Level-4 parity hash.
   `alphas/trade_cluster_drift/` alpha produces the exact same trade
   sequence post-refactor as pre-refactor. Level-1 parity hash check.
 - `test_v2_alpha_deterministic`: reference
-  `alphas/pofi_benign_midcap_v1/` alpha produces a deterministic trade
+  `alphas/sig_benign_midcap_v1/` alpha produces a deterministic trade
   sequence across replays. Level-1–4 parity hashes.
 - `test_mixed_mode`: one legacy + one v2 alpha on the same symbol both
   run, both produce expected signals, risk engine aggregates correctly.
@@ -1857,7 +1857,7 @@ This spec is accepted when ALL of the following are true:
 - [ ] Cursor authoring skills (`.cursor/skills/feature-engine/SKILL.md`,
   `.cursor/skills/research-workflow/SKILL.md`, `.cursor/skills/microstructure-alpha/SKILL.md`)
   linked from README / SCHEMA.
-- [ ] Reference SIGNAL alpha (`pofi_benign_midcap_v1`) runs end-to-end
+- [ ] Reference SIGNAL alpha (`sig_benign_midcap_v1`) runs end-to-end
       with margin_ratio ≥ 1.5 verified at load.
 - [ ] Reference PORTFOLIO alpha runs end-to-end with factor exposures
       within tolerance.
@@ -1984,7 +1984,7 @@ originally **opt-in via YAML field presence**. As of Workstream E
 SIGNAL/PORTFOLIO alpha missing a `trend_mechanism:` block is rejected
 at load time unless the operator explicitly pins
 `enforce_trend_mechanism: false` in `platform.yaml` (the documented
-v0.2 escape hatch for the `pofi_benign_midcap_v1` baseline reference).
+v0.2 escape hatch for the `sig_benign_midcap_v1` baseline reference).
 Gate G16 fires whenever the field is present (forward-compatible)
 *and* whenever a schema-1.1 alpha is missing the field under the
 default-`true` strict mode. v0.2 LEGACY_SIGNAL alphas are unaffected.
@@ -2222,7 +2222,7 @@ shapes. Both were originally **optional in v0.3**; as of Workstream E
 `platform.yaml: enforce_trend_mechanism` defaults to `true`.
 Operators can opt back out by pinning `enforce_trend_mechanism:
 false` (the documented v0.2 escape hatch for the
-`pofi_benign_midcap_v1` baseline reference).
+`sig_benign_midcap_v1` baseline reference).
 
 #### 20.5.1 `trend_mechanism:` block (SIGNAL alphas)
 
@@ -2575,9 +2575,9 @@ This amendment is accepted when ALL of the following are true:
       reference alphas (one per non-stress family) have shipped under
       strict mode in research/paper trading.** **CLOSED by Workstream
       E** (acceptance row 84): the four reference alphas
-      (`pofi_kyle_drift_v1` — KYLE_INFO, `pofi_inventory_revert_v1` —
-      INVENTORY, `pofi_hawkes_burst_v1` — HAWKES_SELF_EXCITE,
-      `pofi_moc_imbalance_v1` — SCHEDULED_FLOW) load under strict
+      (`sig_kyle_drift_v1` — KYLE_INFO, `sig_inventory_revert_v1` —
+      INVENTORY, `sig_hawkes_burst_v1` — HAWKES_SELF_EXCITE,
+      `sig_moc_imbalance_v1` — SCHEDULED_FLOW) load under strict
       mode (`tests/acceptance/test_strict_mode_reference_alphas.py`)
       *and* clear the F-4 RESEARCH → PAPER gate end-to-end on a real
       promotion ledger (`tests/research/test_strict_mode_promotion_e2e.py`),
@@ -2802,7 +2802,7 @@ tests/determinism/test_sensor_reading_replay.py   | CREATE  | +150
 src/feelies/signals/engine.py                     | EXTEND  | +200
 src/feelies/signals/regime_gate.py                | CREATE  | +250
 src/feelies/alpha/layer_validator.py              | EXTEND  | +150
-alphas/pofi_benign_midcap_v1/*.yaml               | CREATE  | reference alpha
+alphas/sig_benign_midcap_v1/*.yaml               | CREATE  | reference alpha
 tests/signals/test_regime_gate_dsl.py             | CREATE  | +200
 tests/signals/test_signal_engine_v2.py            | CREATE  | +250
 tests/determinism/test_signal_replay.py           | CREATE  | +150
@@ -2822,7 +2822,7 @@ src/feelies/composition/turnover_optimizer.py     | CREATE  | +300
 src/feelies/portfolio/cross_sectional_tracker.py  | CREATE  | +150
 src/feelies/monitoring/horizon_metrics.py         | CREATE  | +200
 src/feelies/forensics/multi_horizon_attribution.py| CREATE  | +400
-alphas/pofi_xsect_v1/*.yaml                       | CREATE  | reference alpha
+alphas/pro_xsect_v1/*.yaml                       | CREATE  | reference alpha
 pyproject.toml                                    | EXTEND  | +5 (cvxpy extra)
 tests/composition/test_*.py                       | CREATE  | +1000
 tests/determinism/test_xsect_context_replay.py    | CREATE  | +200
@@ -2876,10 +2876,10 @@ tests/determinism/test_v03_sensor_replay.py       | CREATE  | +150
 ```
 src/feelies/services/regime_engine.py             | EXTEND  | +150 (RegimeHazardDetector)
 src/feelies/alpha/layer_validator.py              | EXTEND  | +330 (Gate G16 — 9 binding rules; rule 7 = AST-based stress entry check)
-alphas/pofi_hawkes_burst_v1/*.yaml                | CREATE  | reference HAWKES alpha
-alphas/pofi_kyle_drift_v1/*.yaml                  | CREATE  | reference KYLE_INFO alpha
-alphas/pofi_inventory_revert_v1/*.yaml            | CREATE  | reference INVENTORY alpha
-alphas/pofi_moc_imbalance_v1/*.yaml               | CREATE  | reference SCHEDULED_FLOW alpha
+alphas/sig_hawkes_burst_v1/*.yaml                | CREATE  | reference HAWKES alpha
+alphas/sig_kyle_drift_v1/*.yaml                  | CREATE  | reference KYLE_INFO alpha
+alphas/sig_inventory_revert_v1/*.yaml            | CREATE  | reference INVENTORY alpha
+alphas/sig_moc_imbalance_v1/*.yaml               | CREATE  | reference SCHEDULED_FLOW alpha
 tests/alpha/test_gate_g16.py                      | CREATE  | +320 (all 9 rules + property test; rule 7 = AST-inspection cases)
 tests/services/test_regime_hazard_detector.py     | CREATE  | +180
 tests/determinism/test_regime_hazard_replay.py    | CREATE  | +120 (Level-5 parity hash)

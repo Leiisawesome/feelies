@@ -9,9 +9,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from feelies.core.clock import SimulatedClock
+from feelies.core.errors import DataIntegrityError
 from feelies.ingestion.massive_ingestor import (
     InMemoryCheckpoint,
     MassiveHistoricalIngestor,
+    _download_raw,
     _model_to_dict,
 )
 from feelies.ingestion.massive_normalizer import MassiveNormalizer
@@ -256,6 +258,92 @@ class TestParallelDownload:
         mock_client.list_trades.assert_called_once()
         assert result.events_ingested >= 2
         assert result.symbols_completed == frozenset({"AAPL"})
+
+
+class TestDownloadIntegrityAndCheckpoint:
+    """Failed REST pagination must not normalize or checkpoint partial streams."""
+
+    def test_ingest_raises_when_quotes_download_aborts(self) -> None:
+        ckpt = InMemoryCheckpoint()
+        clock = SimulatedClock(1700000000000000000)
+        normalizer = MassiveNormalizer(clock)
+        event_log = InMemoryEventLog()
+
+        mock_client = MagicMock()
+        mock_client.list_quotes = MagicMock(side_effect=RuntimeError("network"))
+        mock_client.list_trades = MagicMock(return_value=iter([_make_mock_trade()]))
+
+        ingestor = MassiveHistoricalIngestor(
+            api_key="test",
+            normalizer=normalizer,
+            event_log=event_log,
+            clock=clock,
+            checkpoint=ckpt,
+        )
+
+        with pytest.raises(DataIntegrityError, match="quotes REST pagination"):
+            ingestor.ingest_symbol_parallel(
+                mock_client, "AAPL", "2024-01-01", "2024-01-02",
+            )
+
+        assert not ckpt.is_done("AAPL", "quotes")
+        assert not ckpt.is_done("AAPL", "trades")
+        assert len(event_log) == 0
+
+    def test_ingest_raises_when_trades_download_aborts(self) -> None:
+        ckpt = InMemoryCheckpoint()
+        clock = SimulatedClock(1700000000000000000)
+        normalizer = MassiveNormalizer(clock)
+        event_log = InMemoryEventLog()
+
+        mock_client = MagicMock()
+        mock_client.list_quotes = MagicMock(return_value=iter([_make_mock_quote()]))
+        mock_client.list_trades = MagicMock(side_effect=RuntimeError("network"))
+
+        ingestor = MassiveHistoricalIngestor(
+            api_key="test",
+            normalizer=normalizer,
+            event_log=event_log,
+            clock=clock,
+            checkpoint=ckpt,
+        )
+
+        with pytest.raises(DataIntegrityError, match="trades REST pagination"):
+            ingestor.ingest_symbol_parallel(
+                mock_client, "AAPL", "2024-01-01", "2024-01-02",
+            )
+
+        assert not ckpt.is_done("AAPL", "quotes")
+        assert not ckpt.is_done("AAPL", "trades")
+        assert len(event_log) == 0
+
+    def test_download_raw_reports_incomplete_on_mid_iteration_error(self) -> None:
+        """Third-party iterators that raise mid-flight must set completed_ok False."""
+
+        class BoomIterator:
+            def __init__(self) -> None:
+                self._n = 0
+
+            def __iter__(self) -> BoomIterator:
+                return self
+
+            def __next__(self) -> Any:
+                self._n += 1
+                if self._n == 2:
+                    raise RuntimeError("pagination boom")
+                return _make_mock_quote(seq=self._n)
+
+        mock_client = MagicMock()
+
+        def _list_fn(symbol: str, **kwargs: Any) -> BoomIterator:
+            return BoomIterator()
+
+        raw, pages, ok = _download_raw(
+            mock_client, "AAPL", "2024-01-01", "2024-01-01",
+            _list_fn, "quotes",
+        )
+        assert ok is False
+        assert len(raw) >= 1
 
 
 class TestDuplicateCountingInIngestor:

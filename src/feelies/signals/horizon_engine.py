@@ -112,6 +112,14 @@ _TUPLE_SENSOR_COMPONENTS: dict[str, tuple[str, ...]] = {
         "scheduled_flow_window_id_hash",
         "scheduled_flow_window_direction_prior",
     ),
+    # design §20.4.1: (intensity_buy, intensity_sell,
+    # intensity_ratio, branching_ratio_est)
+    "hawkes_intensity": (
+        "hawkes_intensity_buy",
+        "hawkes_intensity_sell",
+        "hawkes_intensity_ratio",
+        "hawkes_branching_ratio_est",
+    ),
 }
 
 
@@ -270,7 +278,8 @@ class HorizonSignalEngine:
         outputs by their documented component names without breaking
         the scalar-only binding contract.  Tuple sensors not declared
         in the registry are skipped — preserving v0.2 behavior — and
-        a debug record is emitted so missing entries are easy to spot.
+        a **warning** is logged so missing entries surface in operator
+        telemetry.
 
         Cold readings (``warm=False``) **invalidate** any previously-cached
         value for the corresponding (symbol, sensor_id) — they do not
@@ -287,9 +296,11 @@ class HorizonSignalEngine:
         if isinstance(value, tuple):
             components = _TUPLE_SENSOR_COMPONENTS.get(event.sensor_id)
             if components is None:
-                _logger.debug(
+                _logger.warning(
                     "HorizonSignalEngine: tuple sensor %r emitted "
-                    "without a registered component map; skipping",
+                    "without a registered component map in "
+                    "_TUPLE_SENSOR_COMPONENTS; skipping (add mapping for "
+                    "regime-gate bindings)",
                     event.sensor_id,
                 )
                 return

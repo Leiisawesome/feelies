@@ -604,7 +604,7 @@ class TestRule9DependencyAuthorised:
             ],
             depends=[
                 {
-                    "alpha_id": "pofi_hawkes_burst_v1",
+                    "alpha_id": "sig_hawkes_burst_v1",
                     "trend_mechanism_family": "HAWKES_SELF_EXCITE",
                 },
             ],
@@ -620,11 +620,11 @@ class TestRule9DependencyAuthorised:
             ],
             depends=[
                 {
-                    "alpha_id": "pofi_hawkes_burst_v1",
+                    "alpha_id": "sig_hawkes_burst_v1",
                     "trend_mechanism_family": "HAWKES_SELF_EXCITE",
                 },
                 {
-                    "alpha_id": "pofi_kyle_drift_v1",
+                    "alpha_id": "sig_kyle_drift_v1",
                     "trend_mechanism_family": "KYLE_INFO",
                 },
             ],

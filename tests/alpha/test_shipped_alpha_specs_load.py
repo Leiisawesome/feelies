@@ -21,14 +21,16 @@ def test_all_shipped_alpha_specs_discovered() -> None:
     basenames = sorted(p.name for p in specs)
     assert basenames == sorted(
         [
-            "pofi_benign_midcap_v1.alpha.yaml",
-            "pofi_hawkes_burst_v1.alpha.yaml",
-            "pofi_inventory_revert_v1.alpha.yaml",
-            "pofi_kyle_drift_v1.alpha.yaml",
-            "pofi_moc_imbalance_v1.alpha.yaml",
-            "pofi_xsect_mixed_mechanism_v1.alpha.yaml",
-            "pofi_xsect_v1.alpha.yaml",
-            "pofi_xsect_v1.with_decay.alpha.yaml",
+            "sig_benign_midcap_v1.alpha.yaml",
+            "sig_hawkes_burst_v1.alpha.yaml",
+            "sig_inventory_revert_v1.alpha.yaml",
+            "sig_kyle_drift_v1.alpha.yaml",
+            "sig_moc_imbalance_v1.alpha.yaml",
+            "pro_burst_revert_v1.alpha.yaml",
+            "pro_kyle_benign_v1.alpha.yaml",
+            "pro_xsect_mixed_mechanism_v1.alpha.yaml",
+            "pro_xsect_v1.alpha.yaml",
+            "pro_xsect_v1.with_decay.alpha.yaml",
         ]
     )
 

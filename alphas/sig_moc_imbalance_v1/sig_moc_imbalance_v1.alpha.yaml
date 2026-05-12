@@ -1,7 +1,7 @@
 # ── Identity & Provenance ─────────────────────────────────
 schema_version: "1.1"
 layer: SIGNAL
-alpha_id: pofi_moc_imbalance_v1
+alpha_id: sig_moc_imbalance_v1
 version: "1.0.0"
 description: |
   Market-on-close (MOC) imbalance drift — scheduled-flow alpha
@@ -162,7 +162,7 @@ signal: |
           correlation_id=snapshot.correlation_id,
           sequence=snapshot.sequence,
           symbol=snapshot.symbol,
-          strategy_id="pofi_moc_imbalance_v1",
+          strategy_id="sig_moc_imbalance_v1",
           direction=direction,
           strength=min(abs(ofi) / max(params["ofi_agreement_threshold"] * 4.0, 1e-9), 1.0),
           edge_estimate_bps=edge_bps,
