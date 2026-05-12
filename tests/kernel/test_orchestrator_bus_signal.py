@@ -177,6 +177,9 @@ class _StaticAlphaRegistry:
     def portfolio_alphas(self) -> tuple[_StaticPortfolioModule, ...]:
         return self._portfolio_modules
 
+    def has_portfolio_alphas(self) -> bool:
+        return bool(self._portfolio_modules)
+
     def get(self, alpha_id: str) -> Any:
         raise KeyError(alpha_id)
 
