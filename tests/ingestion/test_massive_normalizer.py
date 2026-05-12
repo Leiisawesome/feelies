@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import queue
 from decimal import Decimal
 
 import pytest
@@ -288,6 +290,44 @@ class TestMassiveNormalizerSequenceCollision:
         assert out == []
         assert normalizer.health("AAPL") == DataHealth.CORRUPTED
 
+    @pytest.mark.parametrize(
+        ("field", "first_value", "second_value"),
+        [
+            ("correction", 0, 1),
+            (
+                "participant_timestamp",
+                1_700_000_000_001_234_567,
+                1_700_000_000_001_234_568,
+            ),
+            ("ft", 1_700_000_000_002_000_000, 1_700_000_000_002_000_001),
+        ],
+    )
+    def test_ws_trade_same_sequence_different_optional_field_corrupts(
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
+        field: str,
+        first_value: int,
+        second_value: int,
+    ) -> None:
+        base = {
+            "ev": "T",
+            "sym": "AAPL",
+            "p": 150.02,
+            "s": 100,
+            "t": 1000,
+            "q": 5,
+        }
+        first = {**base, field: first_value}
+        normalizer.on_message(json.dumps(first).encode("utf-8"), clock.now_ns(), "massive_ws")
+
+        alt = {**base, field: second_value}
+        out = normalizer.on_message(json.dumps(alt).encode("utf-8"), clock.now_ns(), "massive_ws")
+
+        assert out == []
+        assert normalizer.health("AAPL") == DataHealth.CORRUPTED
+        assert normalizer.duplicates_filtered == 0
+
 
 class TestMassiveNormalizerNotifyFeedInterrupted:
     def test_disconnect_flags_gap_before_first_tick(
@@ -472,3 +512,100 @@ class TestMassiveLiveFeedValidation:
         raw = json.dumps([])
         with pytest.raises(ConnectionError, match="authentication failed"):
             MassiveLiveFeed._validate_status_response(raw, "auth_success", "authentication")
+
+
+class _AsyncMessages:
+    def __init__(self, messages: list[str | bytes]) -> None:
+        self._messages = iter(messages)
+
+    def __aiter__(self) -> _AsyncMessages:
+        return self
+
+    async def __anext__(self) -> str | bytes:
+        try:
+            return next(self._messages)
+        except StopIteration as exc:
+            raise StopAsyncIteration from exc
+
+
+class _AlwaysFullQueue:
+    def __init__(self) -> None:
+        self.put_nowait_called = False
+        self.put_called = False
+
+    def put_nowait(self, _item: object) -> None:
+        self.put_nowait_called = True
+        raise queue.Full
+
+    def put(self, _item: object) -> None:
+        self.put_called = True
+        raise AssertionError("blocking queue.put must not be used")
+
+
+class _FullSentinelQueue:
+    def __init__(self) -> None:
+        self.items: list[object] = [object()]
+        self.put_nowait_calls = 0
+        self.put_called = False
+
+    def put_nowait(self, item: object) -> None:
+        self.put_nowait_calls += 1
+        if self.items:
+            raise queue.Full
+        self.items.append(item)
+
+    def get_nowait(self) -> object:
+        try:
+            return self.items.pop(0)
+        except IndexError as exc:
+            raise queue.Empty from exc
+
+    def put(self, _item: object) -> None:
+        self.put_called = True
+        raise AssertionError("blocking queue.put must not be used")
+
+
+class TestMassiveLiveFeedBackpressure:
+    def test_consume_drops_when_queue_full_without_blocking(
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        feed = MassiveLiveFeed("key", ["AAPL"], normalizer, clock)
+        full_queue = _AlwaysFullQueue()
+        feed._queue = full_queue  # type: ignore[assignment]
+        raw = json.dumps(
+            {
+                "ev": "Q",
+                "sym": "AAPL",
+                "bp": 150.0,
+                "ap": 150.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1000,
+                "q": 1,
+            }
+        ).encode("utf-8")
+
+        caplog.set_level("WARNING", logger="feelies.ingestion.massive_ws")
+        asyncio.run(feed._consume(_AsyncMessages([raw])))
+
+        assert full_queue.put_nowait_called
+        assert not full_queue.put_called
+        assert "queue full, dropping event for AAPL" in caplog.text
+
+    def test_stop_evicts_one_item_to_enqueue_sentinel_without_blocking(
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
+    ) -> None:
+        feed = MassiveLiveFeed("key", ["AAPL"], normalizer, clock)
+        full_queue = _FullSentinelQueue()
+        feed._queue = full_queue  # type: ignore[assignment]
+
+        feed.stop()
+
+        assert full_queue.put_nowait_calls == 2
+        assert not full_queue.put_called
+        assert len(full_queue.items) == 1
