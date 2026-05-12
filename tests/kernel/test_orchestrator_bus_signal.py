@@ -474,7 +474,9 @@ class TestBusDrivenSignalProducesOrder:
         _signal_from_bus(bus, signal)
 
         BacktestOrderRouter.on_quote(orch._backend.order_router, quote)
-        _boot_to_backtest(orch)
+        orch.boot(_MinimalConfig())
+        orch._macro.transition(MacroState.LIVE_TRADING_MODE, trigger="CMD_LIVE_DEPLOY")
+        orch._micro.reset(trigger="session_start:test")
         orch._process_tick(quote)
 
         non_emergency = [o for o in captured if o.strategy_id != "emergency_flatten"]
