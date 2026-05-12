@@ -1209,6 +1209,18 @@ class TestRiskEscalationRemediation:
         with pytest.raises(RuntimeError, match="Cannot enter PAPER"):
             orch.run_paper()
 
+    def test_run_backtest_rejects_when_risk_not_normal(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_ready(orch)
+        re = orch._risk_escalation
+        re.transition(RiskLevel.WARNING, trigger="t")
+        re.transition(RiskLevel.BREACH_DETECTED, trigger="t")
+        re.transition(RiskLevel.FORCED_FLATTEN, trigger="t")
+        re.transition(RiskLevel.LOCKED, trigger="t")
+        with pytest.raises(RuntimeError, match="Cannot enter BACKTEST"):
+            orch.run_backtest()
+
 
 # ── Macro lifecycle remediation (global stack audit) ──────────────────
 

@@ -796,9 +796,15 @@ class Orchestrator:
     def run_backtest(self) -> None:
         """G2 → G4 → pipeline → G2.
 
-        Guard: backtest config valid.
+        Guard: backtest config valid.  Same risk precondition as paper/live —
+        must start at ``RiskLevel.NORMAL`` so a prior lockdown cannot replay.
         """
         self._macro.assert_state(MacroState.READY)
+        if self._risk_escalation.state != RiskLevel.NORMAL:
+            raise RuntimeError(
+                f"Cannot enter BACKTEST: risk level is {self._risk_escalation.state.name}, "
+                f"must be NORMAL"
+            )
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:backtest")
         self._consumed_by_portfolio_ids = None
@@ -2408,7 +2414,19 @@ class Orchestrator:
             exit_order, self._positions,
         )
         self._bus.publish(exit_verdict)
-        if exit_verdict.action in (RiskAction.REJECT, RiskAction.FORCE_FLATTEN):
+        if exit_verdict.action == RiskAction.FORCE_FLATTEN:
+            # Same global halt as standalone SIGNAL/order gates — drawdown
+            # breach must not strand the book without emergency flatten.
+            self._escalate_risk(cid)
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="reverse_exit_force_flatten_escalation",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
+        if exit_verdict.action == RiskAction.REJECT:
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
                 trigger="reverse_exit_rejected",
