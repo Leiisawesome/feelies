@@ -1,13 +1,13 @@
-"""Wiring e2e for pofi_moc_imbalance_v1 (SIGNAL layer, calendar-injected).
+"""Wiring e2e for sig_moc_imbalance_v1 (SIGNAL layer, calendar-injected).
 
-Boots ``pofi_moc_imbalance_v1`` (SIGNAL) through ``build_platform`` over a
+Boots ``sig_moc_imbalance_v1`` (SIGNAL) through ``build_platform`` over a
 360-second deterministic 3-symbol synthetic stream anchored at
 SESSION_OPEN_NS (2026-01-15 09:30 ET).
 
 What this test guarantees
 --------------------------
 
-* ``pofi_moc_imbalance_v1`` registers without ``AlphaLoadError``,
+* ``sig_moc_imbalance_v1`` registers without ``AlphaLoadError``,
   ``LayerValidationError``, or wiring failures.
 * ``ScheduledFlowWindowSensor`` is constructed successfully — which
   proves bootstrap correctly loaded the ``EventCalendar`` from
@@ -67,8 +67,8 @@ pytestmark = pytest.mark.backtest_validation
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 _MOC_ALPHA = (
-    _REPO_ROOT / "alphas" / "pofi_moc_imbalance_v1"
-    / "pofi_moc_imbalance_v1.alpha.yaml"
+    _REPO_ROOT / "alphas" / "sig_moc_imbalance_v1"
+    / "sig_moc_imbalance_v1.alpha.yaml"
 )
 _CALENDAR_PATH = EVENT_CALENDAR_DIR / "2026-01-15.yaml"
 
@@ -213,11 +213,11 @@ def _hash_signals(signals: list[Signal]) -> str:
 
 
 def test_moc_imbalance_e2e_alpha_registers() -> None:
-    """``pofi_moc_imbalance_v1`` must register without error."""
+    """``sig_moc_imbalance_v1`` must register without error."""
     orchestrator, _s = _build()
     registry = orchestrator._alpha_registry
     assert registry is not None
-    assert "pofi_moc_imbalance_v1" in registry.alpha_ids()
+    assert "sig_moc_imbalance_v1" in registry.alpha_ids()
 
 
 def test_moc_imbalance_e2e_calendar_injection_succeeded() -> None:
@@ -264,9 +264,9 @@ def test_moc_imbalance_e2e_regime_gate_inactive_outside_moc_window() -> None:
     must not fire during random opening-range price moves.
     """
     _orch, signals = _build()
-    moc_signals = [s for s in signals if s.strategy_id == "pofi_moc_imbalance_v1"]
+    moc_signals = [s for s in signals if s.strategy_id == "sig_moc_imbalance_v1"]
     assert len(moc_signals) == 0, (
-        f"Expected zero pofi_moc_imbalance_v1 signals during 09:30–09:36 ET "
+        f"Expected zero sig_moc_imbalance_v1 signals during 09:30–09:36 ET "
         f"(MOC window opens at 15:50 ET), but got {len(moc_signals)}.  "
         f"Check that regime_gate.on_condition correctly gates on "
         f"scheduled_flow_window_active == 1.0."
@@ -289,6 +289,6 @@ def test_moc_imbalance_e2e_signal_stream_is_deterministic() -> None:
         f"{len(signals_a)} vs {len(signals_b)}"
     )
     assert _hash_signals(signals_a) == _hash_signals(signals_b), (
-        "pofi_moc_imbalance_v1 signal hash drift across identical replays "
+        "sig_moc_imbalance_v1 signal hash drift across identical replays "
         "(Inv-5 violation)"
     )

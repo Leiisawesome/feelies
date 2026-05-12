@@ -20,13 +20,13 @@
     "deploy_small_candidate": 0
   },
   "notes": [
-    "YAML-level load uses AlphaLoader only; full bootstrap with repo-root platform.yaml registers a single explicit alpha (pofi_benign_midcap_v1) and omits scheduled_flow_window sensor spec — see pipeline findings.",
+    "YAML-level load uses AlphaLoader only; full bootstrap with repo-root platform.yaml registers a single explicit alpha (sig_benign_midcap_v1) and omits scheduled_flow_window sensor spec — see pipeline findings.",
     "Scores are heuristic 0–100 from weighted category rubric; mandatory overrides dominate (e.g. Hawkes pipeline defect → KILL regardless of score)."
   ],
   "alphas": [
     {
-      "alpha_id": "pofi_benign_midcap_v1",
-      "file": "alphas/pofi_benign_midcap_v1/pofi_benign_midcap_v1.alpha.yaml",
+      "alpha_id": "sig_benign_midcap_v1",
+      "file": "alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml",
       "layer": "SIGNAL",
       "schema_version": "1.1",
       "horizon_seconds": 120,
@@ -43,7 +43,7 @@
           "category": "alpha_sensor_mechanism_coherence",
           "status": "WARN",
           "finding": "Hypothesis and trend_mechanism list Kyle footprint via micro_price and kyle_lambda_60s fingerprint, but evaluate() uses only ofi_ewma_zscore; micro_price is declared but unused in signal logic.",
-          "evidence": "alphas/pofi_benign_midcap_v1/pofi_benign_midcap_v1.alpha.yaml depends_on_sensors vs signal block.",
+          "evidence": "alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml depends_on_sensors vs signal block.",
           "recommended_action": "Either consume micro_price / explicit imbalance-vs-mid feature in evaluate(), or narrow hypothesis and l1_signature_sensors to match actual decision state."
         },
         {
@@ -59,14 +59,14 @@
           "category": "cost_execution",
           "status": "PASS",
           "finding": "cost_arithmetic margin_ratio 1.8 meets platform floor; components reconcile at load time.",
-          "evidence": "AlphaLoader + CostArithmetic validation; tests/alpha/test_pofi_benign_midcap_v1.py",
+          "evidence": "AlphaLoader + CostArithmetic validation; tests/alpha/test_sig_benign_midcap_v1.py",
           "recommended_action": "None."
         }
       ]
     },
     {
-      "alpha_id": "pofi_inventory_revert_v1",
-      "file": "alphas/pofi_inventory_revert_v1/pofi_inventory_revert_v1.alpha.yaml",
+      "alpha_id": "sig_inventory_revert_v1",
+      "file": "alphas/sig_inventory_revert_v1/sig_inventory_revert_v1.alpha.yaml",
       "layer": "SIGNAL",
       "schema_version": "1.1",
       "horizon_seconds": 30,
@@ -97,8 +97,8 @@
       ]
     },
     {
-      "alpha_id": "pofi_kyle_drift_v1",
-      "file": "alphas/pofi_kyle_drift_v1/pofi_kyle_drift_v1.alpha.yaml",
+      "alpha_id": "sig_kyle_drift_v1",
+      "file": "alphas/sig_kyle_drift_v1/sig_kyle_drift_v1.alpha.yaml",
       "layer": "SIGNAL",
       "schema_version": "1.1",
       "horizon_seconds": 300,
@@ -129,8 +129,8 @@
       ]
     },
     {
-      "alpha_id": "pofi_hawkes_burst_v1",
-      "file": "alphas/pofi_hawkes_burst_v1/pofi_hawkes_burst_v1.alpha.yaml",
+      "alpha_id": "sig_hawkes_burst_v1",
+      "file": "alphas/sig_hawkes_burst_v1/sig_hawkes_burst_v1.alpha.yaml",
       "layer": "SIGNAL",
       "schema_version": "1.1",
       "horizon_seconds": 30,
@@ -154,15 +154,15 @@
           "severity": "HIGH",
           "category": "test_coverage",
           "status": "FAIL",
-          "finding": "tests/alpha/test_pofi_hawkes_burst_v1.py injects hawkes_intensity_zscore directly into HorizonFeatureSnapshot; does not validate aggregator output from Hawkes sensor.",
+          "finding": "tests/alpha/test_sig_hawkes_burst_v1.py injects hawkes_intensity_zscore directly into HorizonFeatureSnapshot; does not validate aggregator output from Hawkes sensor.",
           "evidence": "_snapshot() helper in test file",
           "recommended_action": "Add integration test feeding Trade stream through registry + aggregator matching integration fixtures."
         }
       ]
     },
     {
-      "alpha_id": "pofi_moc_imbalance_v1",
-      "file": "alphas/pofi_moc_imbalance_v1/pofi_moc_imbalance_v1.alpha.yaml",
+      "alpha_id": "sig_moc_imbalance_v1",
+      "file": "alphas/sig_moc_imbalance_v1/sig_moc_imbalance_v1.alpha.yaml",
       "layer": "SIGNAL",
       "schema_version": "1.1",
       "horizon_seconds": 120,
@@ -193,14 +193,14 @@
       ]
     },
     {
-      "alpha_id": "pofi_xsect_v1",
-      "file": "alphas/pofi_xsect_v1/pofi_xsect_v1.alpha.yaml",
+      "alpha_id": "pro_xsect_v1",
+      "file": "alphas/pro_xsect_v1/pro_xsect_v1.alpha.yaml",
       "layer": "PORTFOLIO",
       "schema_version": "1.1",
       "horizon_seconds": 300,
       "mechanism_family": "PORTFOLIO_MULTI",
       "sensors": [],
-      "depends_on_signals": ["pofi_kyle_drift_v1", "pofi_inventory_revert_v1"],
+      "depends_on_signals": ["sig_kyle_drift_v1", "sig_inventory_revert_v1"],
       "score": 52,
       "status": "WARN",
       "decision": "PASS_STRUCTURAL_ONLY",
@@ -225,14 +225,14 @@
       ]
     },
     {
-      "alpha_id": "pofi_xsect_v1_with_decay",
-      "file": "alphas/pofi_xsect_v1/pofi_xsect_v1.with_decay.alpha.yaml",
+      "alpha_id": "pro_xsect_v1_with_decay",
+      "file": "alphas/pro_xsect_v1/pro_xsect_v1.with_decay.alpha.yaml",
       "layer": "PORTFOLIO",
       "schema_version": "1.1",
       "horizon_seconds": 300,
       "mechanism_family": "PORTFOLIO_MULTI",
       "sensors": [],
-      "depends_on_signals": ["pofi_kyle_drift_v1", "pofi_inventory_revert_v1"],
+      "depends_on_signals": ["sig_kyle_drift_v1", "sig_inventory_revert_v1"],
       "score": 52,
       "status": "WARN",
       "decision": "PASS_STRUCTURAL_ONLY",
@@ -242,21 +242,21 @@
           "severity": "HIGH",
           "category": "risk_budget",
           "status": "WARN",
-          "finding": "Same elevated PORTFOLIO risk_budget as pofi_xsect_v1.",
+          "finding": "Same elevated PORTFOLIO risk_budget as pro_xsect_v1.",
           "evidence": "risk_budget block",
           "recommended_action": "Align with operator risk policy."
         }
       ]
     },
     {
-      "alpha_id": "pofi_xsect_mixed_mechanism_v1",
-      "file": "alphas/pofi_xsect_mixed_mechanism_v1/pofi_xsect_mixed_mechanism_v1.alpha.yaml",
+      "alpha_id": "pro_xsect_mixed_mechanism_v1",
+      "file": "alphas/pro_xsect_mixed_mechanism_v1/pro_xsect_mixed_mechanism_v1.alpha.yaml",
       "layer": "PORTFOLIO",
       "schema_version": "1.1",
       "horizon_seconds": 300,
       "mechanism_family": "PORTFOLIO_MULTI",
       "sensors": [],
-      "depends_on_signals": ["pofi_kyle_drift_v1", "pofi_inventory_revert_v1", "pofi_hawkes_burst_v1"],
+      "depends_on_signals": ["sig_kyle_drift_v1", "sig_inventory_revert_v1", "sig_hawkes_burst_v1"],
       "score": 45,
       "status": "WARN",
       "decision": "PASS_STRUCTURAL_ONLY",
@@ -266,7 +266,7 @@
           "severity": "BLOCKER",
           "category": "upstream_signal_dependency",
           "status": "FAIL",
-          "finding": "Depends on pofi_hawkes_burst_v1 which is not end-to-end viable until Hawkes tuple→rolling-feature wiring is fixed.",
+          "finding": "Depends on sig_hawkes_burst_v1 which is not end-to-end viable until Hawkes tuple→rolling-feature wiring is fixed.",
           "evidence": "depends_on_signals list + Hawkes pipeline defect above",
           "recommended_action": "Fix Hawkes Layer-2 feature path before trusting mixed-mechanism portfolio e2e intent quality."
         },
@@ -285,7 +285,7 @@
     {
       "sensor_id": "ofi_ewma",
       "implementation": "src/feelies/sensors/impl/ofi_ewma.py",
-      "used_by": ["pofi_benign_midcap_v1", "pofi_kyle_drift_v1", "pofi_hawkes_burst_v1", "pofi_moc_imbalance_v1"],
+      "used_by": ["sig_benign_midcap_v1", "sig_kyle_drift_v1", "sig_hawkes_burst_v1", "sig_moc_imbalance_v1"],
       "formula_status": "PASS",
       "causality_status": "PASS",
       "unit_status": "PASS",
@@ -298,7 +298,7 @@
     {
       "sensor_id": "micro_price",
       "implementation": "src/feelies/sensors/impl/micro_price.py",
-      "used_by": ["pofi_benign_midcap_v1", "pofi_kyle_drift_v1"],
+      "used_by": ["sig_benign_midcap_v1", "sig_kyle_drift_v1"],
       "formula_status": "PASS",
       "causality_status": "PASS",
       "unit_status": "PASS",
@@ -320,7 +320,7 @@
     {
       "sensor_id": "spread_z_30d",
       "implementation": "src/feelies/sensors/impl/spread_z_30d.py",
-      "used_by": ["pofi_benign_midcap_v1", "pofi_inventory_revert_v1", "pofi_kyle_drift_v1", "pofi_hawkes_burst_v1"],
+      "used_by": ["sig_benign_midcap_v1", "sig_inventory_revert_v1", "sig_kyle_drift_v1", "sig_hawkes_burst_v1"],
       "formula_status": "PASS",
       "causality_status": "PASS",
       "unit_status": "PASS",
@@ -333,7 +333,7 @@
     {
       "sensor_id": "quote_replenish_asymmetry",
       "implementation": "src/feelies/sensors/impl/quote_replenish_asymmetry.py",
-      "used_by": ["pofi_inventory_revert_v1"],
+      "used_by": ["sig_inventory_revert_v1"],
       "formula_status": "PASS",
       "causality_status": "PASS",
       "unit_status": "WARN",
@@ -353,7 +353,7 @@
     {
       "sensor_id": "quote_hazard_rate",
       "implementation": "src/feelies/sensors/impl/quote_hazard_rate.py",
-      "used_by": ["pofi_inventory_revert_v1"],
+      "used_by": ["sig_inventory_revert_v1"],
       "formula_status": "PASS",
       "causality_status": "PASS",
       "unit_status": "PASS",
@@ -373,7 +373,7 @@
     {
       "sensor_id": "kyle_lambda_60s",
       "implementation": "src/feelies/sensors/impl/kyle_lambda_60s.py",
-      "used_by": ["pofi_kyle_drift_v1"],
+      "used_by": ["sig_kyle_drift_v1"],
       "formula_status": "PASS",
       "causality_status": "PASS",
       "unit_status": "WARN",
@@ -393,7 +393,7 @@
     {
       "sensor_id": "trade_through_rate",
       "implementation": "src/feelies/sensors/impl/trade_through_rate.py",
-      "used_by": ["pofi_hawkes_burst_v1"],
+      "used_by": ["sig_hawkes_burst_v1"],
       "formula_status": "PASS",
       "causality_status": "PASS",
       "unit_status": "PASS",
@@ -413,7 +413,7 @@
     {
       "sensor_id": "hawkes_intensity",
       "implementation": "src/feelies/sensors/impl/hawkes_intensity.py",
-      "used_by": ["pofi_hawkes_burst_v1"],
+      "used_by": ["sig_hawkes_burst_v1"],
       "formula_status": "PASS",
       "causality_status": "PASS",
       "unit_status": "PASS",
@@ -439,7 +439,7 @@
     {
       "sensor_id": "scheduled_flow_window",
       "implementation": "src/feelies/sensors/impl/scheduled_flow_window.py",
-      "used_by": ["pofi_moc_imbalance_v1"],
+      "used_by": ["sig_moc_imbalance_v1"],
       "formula_status": "PASS",
       "causality_status": "PASS",
       "unit_status": "PASS",
@@ -468,7 +468,7 @@
     {
       "severity": "HIGH",
       "category": "upstream_dependency",
-      "finding": "pofi_xsect_mixed_mechanism_v1 depends on Hawkes feeder alpha impacted by Layer-2 tuple/z-score defect.",
+      "finding": "pro_xsect_mixed_mechanism_v1 depends on Hawkes feeder alpha impacted by Layer-2 tuple/z-score defect.",
       "evidence": "PORTFOLIO depends_on_signals",
       "recommended_action": "Block promotion of mixed portfolio until Hawkes path fixed."
     },
@@ -484,7 +484,7 @@
     {
       "severity": "INFO",
       "finding": "tests/alpha/*.py provide loader + HorizonSignalEngine harness coverage for SIGNAL alphas; Hawkes tests bypass aggregator.",
-      "evidence": "tests/alpha/test_pofi_hawkes_burst_v1.py",
+      "evidence": "tests/alpha/test_sig_hawkes_burst_v1.py",
       "recommended_action": "Closed-loop Hawkes replay test post-wiring fix."
     },
     {
@@ -501,11 +501,11 @@
     },
     {
       "priority": "P0",
-      "action": "Extend operator platform.yaml templates to register scheduled_flow_window + event_calendar_path when running pofi_moc_imbalance_v1."
+      "action": "Extend operator platform.yaml templates to register scheduled_flow_window + event_calendar_path when running sig_moc_imbalance_v1."
     },
     {
       "priority": "P1",
-      "action": "Reconcile pofi_benign_midcap_v1 narrative sensors with evaluate() inputs; remove dead depends_on_sensors or use them."
+      "action": "Reconcile sig_benign_midcap_v1 narrative sensors with evaluate() inputs; remove dead depends_on_sensors or use them."
     },
     {
       "priority": "P1",

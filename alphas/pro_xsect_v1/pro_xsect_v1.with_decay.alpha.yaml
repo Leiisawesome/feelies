@@ -1,11 +1,11 @@
 schema_version: "1.1"
 layer: PORTFOLIO
 
-alpha_id: pofi_xsect_v1_with_decay
+alpha_id: pro_xsect_v1_with_decay
 version: "1.0.0"
 description: |
   Phase-4.1 cross-sectional alpha — same baseline as
-  pofi_xsect_v1 but with inverse-staleness decay weighting ON.  Used
+  pro_xsect_v1 but with inverse-staleness decay weighting ON.  Used
   side-by-side with the baseline in the Phase-4.1 acceptance suite to
   verify (a) deterministic Level-3 byte-identity for the *with-decay*
   stream and (b) the ≤5% ranker-overhead budget.
@@ -35,8 +35,8 @@ universe:
   - CVX
 
 depends_on_signals:
-  - pofi_kyle_drift_v1
-  - pofi_inventory_revert_v1
+  - sig_kyle_drift_v1
+  - sig_inventory_revert_v1
 
 factor_neutralization: true
 

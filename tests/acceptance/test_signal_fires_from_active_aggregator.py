@@ -30,7 +30,7 @@ Pipeline under test
    - gate: ``P(normal)=0.85 > 0.7 ✓`` and
      ``abs(spread_z_30d)=0.05 < 0.5 ✓``
    - ``evaluate()``: ``z≈4.9 > entry_threshold_z=2.0`` →
-     ``Signal(direction=LONG, strategy_id="pofi_benign_midcap_v1")``
+     ``Signal(direction=LONG, strategy_id="sig_benign_midcap_v1")``
 
 4. Signal published on bus → captured by test subscriber.
 
@@ -79,14 +79,14 @@ pytestmark = pytest.mark.backtest_validation
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 _SIGNAL_ALPHA = (
-    _REPO_ROOT / "alphas" / "pofi_benign_midcap_v1"
-    / "pofi_benign_midcap_v1.alpha.yaml"
+    _REPO_ROOT / "alphas" / "sig_benign_midcap_v1"
+    / "sig_benign_midcap_v1.alpha.yaml"
 )
 
 # Single-symbol universe — sufficient to prove the chain end-to-end.
 _UNIVERSE: tuple[str, ...] = ("AAPL",)
 
-# pofi_benign_midcap_v1 declares depends_on_sensors including ofi_ewma,
+# sig_benign_midcap_v1 declares depends_on_sensors including ofi_ewma,
 # micro_price, spread_z_30d, realized_vol_30s — all must be registered.
 # warm_after=5 speeds warm-up; the test pre-warms by direct SensorReading
 # injection, not through real quotes.
@@ -129,12 +129,12 @@ def _make_config() -> PlatformConfig:
         alpha_specs=[_SIGNAL_ALPHA],
         regime_engine="hmm_3state_fractional",
         sensor_specs=_SENSOR_SPECS,
-        # Only horizon=120 to match pofi_benign_midcap_v1 (horizon_seconds=120)
+        # Only horizon=120 to match sig_benign_midcap_v1 (horizon_seconds=120)
         # and keep the test fast.
         horizons_seconds=frozenset({120}),
         session_open_ns=SESSION_OPEN_NS,
         account_equity=1_000_000.0,
-        # pofi_benign_midcap_v1 has no trend_mechanism: block; this is the
+        # sig_benign_midcap_v1 has no trend_mechanism: block; this is the
         # designated v0.2 parity anchor.  Workstream-E made True the
         # platform default, so the test must opt out explicitly.
         enforce_trend_mechanism=False,
@@ -338,7 +338,7 @@ def test_signal_fires_nonvacuously() -> None:
         "snapshot.values may still be empty (passive aggregator)."
     )
     sig = signals[0]
-    assert sig.strategy_id == "pofi_benign_midcap_v1"
+    assert sig.strategy_id == "sig_benign_midcap_v1"
     assert sig.layer == "SIGNAL"
     assert sig.horizon_seconds == 120
     assert sig.regime_gate_state == "ON"

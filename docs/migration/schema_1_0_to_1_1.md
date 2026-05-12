@@ -210,7 +210,7 @@ Mechanical mapping from a typical 1.0 signal:
 - Add a `regime_gate:` block. The DSL is documented in §5.
 
 The reference SIGNAL alpha is
-[`alphas/pofi_kyle_drift_v1`](../../alphas/pofi_kyle_drift_v1/) — copy
+[`alphas/sig_kyle_drift_v1`](../../alphas/sig_kyle_drift_v1/) — copy
 its structure verbatim and edit the mechanism story.
 
 ---
@@ -529,7 +529,7 @@ rejected at load time via `MissingTrendMechanismError`. This is
 the recommended setting for production deployments — it catches
 "drift back to v0.2" at load time rather than at promotion review.
 
-Operators relying on a v0.2-baseline alpha (e.g. `pofi_benign_midcap_v1`,
+Operators relying on a v0.2-baseline alpha (e.g. `sig_benign_midcap_v1`,
 the §20.12.3 #2 reference alpha that pre-dates the mechanism
 taxonomy) must explicitly pin the opt-out:
 
@@ -540,8 +540,8 @@ enforce_trend_mechanism: false    # legacy opt-out for v0.2 baseline alphas
 
 The reference `platform.yaml` at the repo root carries this
 opt-out and a comment pointing at the v0.3 reference alphas
-(`pofi_kyle_drift_v1`, `pofi_inventory_revert_v1`,
-`pofi_hawkes_burst_v1`, `pofi_moc_imbalance_v1`) for operators
+(`sig_kyle_drift_v1`, `sig_inventory_revert_v1`,
+`sig_hawkes_burst_v1`, `sig_moc_imbalance_v1`) for operators
 ready to switch.
 
 ---
@@ -818,10 +818,10 @@ Recommended migration order for a portfolio of legacy alphas
    the platform default is already `enforce_trend_mechanism: true`,
    so a fresh deployment lands in strict mode automatically. If you
    need to keep loading a v0.2 alpha without a `trend_mechanism:`
-   block (e.g. the reference `pofi_benign_midcap_v1`), pin
+   block (e.g. the reference `sig_benign_midcap_v1`), pin
    `platform.yaml: enforce_trend_mechanism: false` explicitly and
    plan the migration to one of the v0.3 reference alphas
-   (`pofi_kyle_drift_v1`, `pofi_inventory_revert_v1`,
-   `pofi_hawkes_burst_v1`, `pofi_moc_imbalance_v1`).
+   (`sig_kyle_drift_v1`, `sig_inventory_revert_v1`,
+   `sig_hawkes_burst_v1`, `sig_moc_imbalance_v1`).
 
 End of cookbook.

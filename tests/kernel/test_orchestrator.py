@@ -30,7 +30,7 @@ import pytest
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
-from feelies.core.errors import OrchestratorPipelineAbortError
+from feelies.core.errors import OrchestratorPipelineAbortError, SessionEntryBlockedError
 from feelies.core.state_machine import TransitionRecord
 from feelies.core.events import (
     Alert,
@@ -47,8 +47,7 @@ from feelies.core.events import (
     Side,
     Signal,
     SignalDirection,
-    SizedPositionIntent,
-    TargetPosition,
+    StateTransition,
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
@@ -56,13 +55,12 @@ from feelies.execution.order_state import OrderState
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
 from feelies.kernel.orchestrator import Orchestrator
+from feelies.monitoring.in_memory import InMemoryKillSwitch
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import Position
 from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
-from feelies.monitoring.in_memory import InMemoryKillSwitch
 from feelies.risk.escalation import RiskLevel
-from feelies.risk.sized_intent_result import SizedIntentRiskResult
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 
@@ -226,29 +224,6 @@ class _StubRiskEngine:
             reason="test",
         )
 
-    def check_sized_intent(
-        self,
-        intent: Any,
-        positions: PositionStore,
-    ) -> SizedIntentRiskResult:
-        del intent, positions
-        return SizedIntentRiskResult(orders=())
-
-
-class _SizedIntentGlobalEscalateEngine(_StubRiskEngine):
-    """PORTFOLIO path: signals aggregate breach for orchestrator escalation."""
-
-    def check_sized_intent(
-        self,
-        intent: SizedPositionIntent,
-        positions: PositionStore,
-    ) -> SizedIntentRiskResult:
-        del intent, positions
-        return SizedIntentRiskResult(
-            orders=(),
-            requires_global_risk_escalation=True,
-        )
-
 
 class _RaisingRiskEngine:
     """Risk engine that always raises to test orchestrator error handling.
@@ -266,10 +241,6 @@ class _RaisingRiskEngine:
         raise RuntimeError("risk engine failure")
 
     def check_order(self, order: OrderRequest, positions: PositionStore) -> RiskVerdict:
-        raise RuntimeError("risk engine failure")
-
-    def check_sized_intent(self, intent: Any, positions: PositionStore) -> SizedIntentRiskResult:
-        del intent, positions
         raise RuntimeError("risk engine failure")
 
 
@@ -300,14 +271,6 @@ class _ScaleDownToZeroRiskEngine:
             reason="scale to zero test",
             scaling_factor=0.001,
         )
-
-    def check_sized_intent(
-        self,
-        intent: Any,
-        positions: PositionStore,
-    ) -> SizedIntentRiskResult:
-        del intent, positions
-        return SizedIntentRiskResult(orders=())
 
 
 class _MinimalConfig:
@@ -816,6 +779,132 @@ class TestOrchestratorFillReconcileGuards:
             for a in alerts
         )
 
+    def test_emergency_flatten_poll_failure_force_terminals_order(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+
+        class _PollFailsRouter(BacktestOrderRouter):
+            def poll_acks(self):  # type: ignore[override]
+                raise RuntimeError("poll boom")
+
+        quote = _make_quote()
+        router = _PollFailsRouter(clock=clock)
+        router.on_quote(quote)
+
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=MemoryPositionStore(),
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+        _boot_to_backtest(orch)
+        orch._positions.update("AAPL", 100, Decimal("150.00"))
+
+        failures, residual = orch._emergency_flatten_all("esc-cid")
+
+        assert "AAPL" in failures
+        assert residual["AAPL"] == 100
+        assert any(a.alert_name == "order_pipeline_exception" for a in alerts)
+        assert not any(
+            sm.state == OrderState.SUBMITTED
+            for sm, _, _ in orch._active_orders.values()
+        )
+
+    def test_cancel_order_without_router_resolves_to_cancelled(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="cc",
+            sequence=1,
+            order_id="ord-cancel-local",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            strategy_id="a",
+        )
+        orch._track_order(order.order_id, order.side, order)
+        orch._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=order.correlation_id,
+        )
+        orch._apply_ack_to_order(OrderAck(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="cc",
+            sequence=1,
+            order_id=order.order_id,
+            symbol="AAPL",
+            status=OrderAckStatus.ACKNOWLEDGED,
+        ))
+
+        assert orch.cancel_order(order.order_id) is True
+        assert order.order_id not in orch._active_orders
+        assert any(
+            a.alert_name == "cancel_order_router_unsupported"
+            for a in alerts
+        )
+
+    def test_shutdown_resolves_cancel_requested(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="sd",
+            sequence=1,
+            order_id="ord-shut-cr",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=1,
+            strategy_id="a",
+        )
+        orch._track_order(order.order_id, order.side, order)
+        orch._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=order.correlation_id,
+        )
+        orch._apply_ack_to_order(OrderAck(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="sd",
+            sequence=1,
+            order_id=order.order_id,
+            symbol="AAPL",
+            status=OrderAckStatus.ACKNOWLEDGED,
+        ))
+        sm = orch._active_orders[order.order_id][0]
+        sm.transition(
+            OrderState.CANCEL_REQUESTED,
+            trigger="manual_test",
+            correlation_id=order.correlation_id,
+        )
+
+        orch.shutdown()
+
+        assert order.order_id not in orch._active_orders
+        assert not any(
+            a.alert_name == "pending_orders_at_shutdown" for a in alerts
+        )
+
 
 # ── Tests: No signal path ────────────────────────────────────────────
 
@@ -1151,76 +1240,6 @@ class TestOrchestratorHalt:
         assert orch.macro_state == MacroState.READY
 
 
-# ── Risk escalation remediation (aggregate breach fail-closed) ────────
-
-
-class TestRiskEscalationRemediation:
-    def test_signal_force_flatten_in_backtest_enters_risk_lockdown(self) -> None:
-        clock = SimulatedClock(start_ns=1000)
-        bus = EventBus()
-        quote = _make_quote()
-        signal = _make_signal(quote)
-        kill = InMemoryKillSwitch()
-        orch = _build_orchestrator(
-            clock,
-            bus=bus,
-            risk_engine=_StubRiskEngine(action=RiskAction.FORCE_FLATTEN),
-            kill_switch=kill,
-        )
-        _publish_signal_on_quote(bus, signal)
-        _boot_to_backtest(orch)
-        orch._process_tick(quote)
-        assert orch.risk_level == RiskLevel.LOCKED
-        assert orch.macro_state == MacroState.RISK_LOCKDOWN
-        assert kill.is_active
-
-    def test_bus_sized_intent_global_flag_calls_escalate_risk(self) -> None:
-        clock = SimulatedClock(start_ns=1000)
-        kill = InMemoryKillSwitch()
-        orch = _build_orchestrator(
-            clock,
-            risk_engine=_SizedIntentGlobalEscalateEngine(),
-            kill_switch=kill,
-        )
-        _boot_to_backtest(orch)
-        intent = SizedPositionIntent(
-            timestamp_ns=1000,
-            correlation_id="intent-cid",
-            sequence=42,
-            strategy_id="pf_test",
-            target_positions={
-                "AAPL": TargetPosition(symbol="AAPL", target_usd=1000.0),
-            },
-        )
-        orch._on_bus_sized_intent(intent)
-        assert orch.risk_level == RiskLevel.LOCKED
-        assert orch.macro_state == MacroState.RISK_LOCKDOWN
-        assert kill.is_active
-
-    def test_run_paper_rejects_when_risk_not_normal(self) -> None:
-        clock = SimulatedClock(start_ns=1000)
-        orch = _build_orchestrator(clock)
-        _boot_to_ready(orch)
-        re = orch._risk_escalation
-        re.transition(RiskLevel.WARNING, trigger="t")
-        re.transition(RiskLevel.BREACH_DETECTED, trigger="t")
-        re.transition(RiskLevel.FORCED_FLATTEN, trigger="t")
-        re.transition(RiskLevel.LOCKED, trigger="t")
-        with pytest.raises(RuntimeError, match="Cannot enter PAPER"):
-            orch.run_paper()
-
-    def test_run_backtest_rejects_when_risk_not_normal(self) -> None:
-        clock = SimulatedClock(start_ns=1000)
-        orch = _build_orchestrator(clock)
-        _boot_to_ready(orch)
-        re = orch._risk_escalation
-        re.transition(RiskLevel.WARNING, trigger="t")
-        re.transition(RiskLevel.BREACH_DETECTED, trigger="t")
-        re.transition(RiskLevel.FORCED_FLATTEN, trigger="t")
-        re.transition(RiskLevel.LOCKED, trigger="t")
-        with pytest.raises(RuntimeError, match="Cannot enter BACKTEST"):
-            orch.run_backtest()
-
 
 # ── Macro lifecycle remediation (global stack audit) ──────────────────
 
@@ -1242,9 +1261,6 @@ class TestOrchestratorMacroLifecycleRemediation:
         assert orch.macro_state == MacroState.SHUTDOWN
 
     def test_unlock_from_lockdown_clears_kill_switch(self) -> None:
-        from feelies.monitoring.in_memory import InMemoryKillSwitch
-        from feelies.risk.escalation import RiskLevel
-
         clock = SimulatedClock(start_ns=1000)
         kill = InMemoryKillSwitch()
         kill.activate("pre_unlock", activated_by="test")
@@ -1296,6 +1312,117 @@ class TestOrchestratorMacroLifecycleRemediation:
         _boot_to_ready(orch)
         orch.run_live()
         assert orch.macro_state == MacroState.READY
+
+    def test_run_backtest_refuses_active_kill_switch(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        kill = InMemoryKillSwitch()
+        kill.activate("test_halt", activated_by="test")
+        orch = _build_orchestrator(clock, kill_switch=kill)
+        _boot_to_ready(orch)
+        with pytest.raises(SessionEntryBlockedError, match="kill switch"):
+            orch.run_backtest()
+
+    def test_run_backtest_refuses_non_normal_risk(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_ready(orch)
+        orch._risk_escalation.transition(RiskLevel.WARNING, trigger="probe")
+        with pytest.raises(SessionEntryBlockedError, match="risk escalation"):
+            orch.run_backtest()
+
+    def test_live_mode_force_flatten_reaches_macro_risk_lockdown(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        quote = _make_quote()
+        signal = _make_signal(quote)
+        _publish_signal_on_quote(bus, signal)
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=_StubRiskEngine(RiskAction.FORCE_FLATTEN),
+        )
+        _boot_to_ready(orch)
+        orch._macro.transition(MacroState.LIVE_TRADING_MODE, trigger="CMD_LIVE_DEPLOY")
+        orch._process_tick(quote)
+        assert orch.macro_state == MacroState.RISK_LOCKDOWN
+        assert orch.risk_level == RiskLevel.LOCKED
+
+    def test_backtest_force_flatten_does_not_reach_macro_lockdown(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        quote = _make_quote()
+        signal = _make_signal(quote)
+        _publish_signal_on_quote(bus, signal)
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=_StubRiskEngine(RiskAction.FORCE_FLATTEN),
+        )
+        _boot_to_backtest(orch)
+        orch._process_tick(quote)
+        assert orch.macro_state == MacroState.BACKTEST_MODE
+        assert orch.risk_level == RiskLevel.NORMAL
+
+    def test_recover_from_degraded_refuses_when_kill_switch_active(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        signal = _make_signal(_make_quote())
+        kill = InMemoryKillSwitch()
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=_RaisingRiskEngine(),
+            kill_switch=kill,
+        )
+        _publish_signal_on_quote(bus, signal)
+        _boot_to_ready(orch)
+        orch._macro.transition(MacroState.BACKTEST_MODE, trigger="CMD_BACKTEST")
+        orch._micro.reset(trigger="session_start:test")
+        orch._process_tick(_make_quote())
+        assert orch.macro_state == MacroState.DEGRADED
+        kill.activate("during_degraded", activated_by="test")
+        assert orch.recover_from_degraded() is False
+        assert orch.macro_state == MacroState.DEGRADED
+
+    def test_shutdown_macro_transition_uses_correlation_id(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        st_events: list[StateTransition] = []
+        bus.subscribe(StateTransition, st_events.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        _boot_to_ready(orch)
+        orch.shutdown()
+        macro_shutdown = [
+            e for e in st_events
+            if e.machine_name == "global_stack" and e.to_state == "SHUTDOWN"
+        ]
+        assert macro_shutdown
+        assert macro_shutdown[-1].correlation_id == "orchestrator_shutdown"
+
+    def test_shutdown_warns_on_pending_orders(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        _boot_to_ready(orch)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="pending-cid",
+            sequence=1,
+            order_id="pending-order-1",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=10,
+            limit_price=Decimal("150.00"),
+            strategy_id="alpha_1",
+        )
+        orch._track_order(order.order_id, Side.BUY, order)
+        orch.shutdown()
+        pending_alerts = [a for a in alerts if a.alert_name == "pending_orders_at_shutdown"]
+        assert len(pending_alerts) == 1
+        assert "pending-order-1" in pending_alerts[0].context.get("order_ids", [])
 
     def test_run_paper_pipeline_abort_not_session_feed_complete(self) -> None:
         """If DEGRADED transition fails inside tick recovery, do not → READY.

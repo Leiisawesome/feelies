@@ -162,25 +162,27 @@ When a `SimulatedClock` is provided, advances the clock to each event's
 |---|---|---|
 | Real-time streaming | Massive WebSocket → `MassiveNormalizer.on_message()` → `NBBOQuote` / `Trade` | Implemented (`MassiveLiveFeed`) |
 | Historical backfill | Idempotent; resumable from last checkpoint via `BackfillCheckpoint` | Implemented (`MassiveHistoricalIngestor`) |
-| Gap detection | Sequence breaks surfaced via `DataHealth` SM transitions; auto-recovers to `HEALTHY` when continuity resumes | Implemented (`MassiveNormalizer._check_gap`) |
-| Deduplication | Exact-duplicate elimination with count tracking (`MassiveNormalizer.duplicates_filtered`) | Implemented |
+| Gap detection | WS: sequence breaks surfaced via `DataHealth`; REST historical skips `_check_gap` (thinned SIP rows would false-positive) | Implemented (`MassiveNormalizer._check_gap`, WS only) |
+| Deduplication | Same-vendor-`sequence_number` replay: identical payload filtered (`duplicates_filtered`); conflicting payload → `CORRUPTED` | Implemented (`MassiveNormalizer._reject_sequence_reuse`) |
 | Timestamp normalization | All times UTC nanoseconds; exchange time and receipt time tracked separately | Implemented |
 | WS auth validation | Auth and subscribe responses validated; failure triggers reconnect | Implemented (`MassiveLiveFeed._validate_status_response`) |
 
 ## Data Integrity State Machine
 
 Per-symbol data integrity is tracked by the `DataHealth` SM
-(`ingestion/data_integrity.py`) with 4 states:
+(`ingestion/data_integrity.py`) with **three** states:
 
 | State | Transitions To | Meaning |
 |-------|---------------|---------|
 | `HEALTHY` | GAP_DETECTED, CORRUPTED | Normal operation |
-| `GAP_DETECTED` | HEALTHY, CORRUPTED | Sequence gap found; gap-fill in progress |
-| `CORRUPTED` | RECOVERING | Unresolvable data corruption |
-| `RECOVERING` | HEALTHY, CORRUPTED | Recovery attempt in progress |
+| `GAP_DETECTED` | HEALTHY, CORRUPTED | Sequence gap (live WS) or feed disconnect; may auto-resume to HEALTHY on contiguous sequence |
+| `CORRUPTED` | *(terminal)* | Parse errors or sequence reuse with conflicting payload — restart/normalizer reset |
 
-The orchestrator checks `normalizer.health(symbol)` at the top of each
-tick. If CORRUPTED during a trading mode, macro transitions to DEGRADED.
+When a `MassiveNormalizer` is wired into the orchestrator, quote and trade
+handlers consult `normalizer.health(symbol)`: `CORRUPTED` forces macro
+`DEGRADED`; optional `PlatformConfig.degrade_on_data_gap` treats
+`GAP_DETECTED` the same way. Offline replay without a normalizer relies on
+`DiskEventCache` checksums plus optional `require_healthy_disk_cache_manifests`.
 
 ## Validation & Integrity
 

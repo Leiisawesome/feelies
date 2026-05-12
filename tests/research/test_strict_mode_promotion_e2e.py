@@ -91,10 +91,10 @@ _ALPHAS_ROOT = Path("alphas")
 # kept aligned with :mod:`tests.acceptance.test_strict_mode_reference_alphas`
 # so a future addition of a new family lands in both files together.
 _REFERENCE_BY_FAMILY: tuple[tuple[TrendMechanism, str], ...] = (
-    (TrendMechanism.KYLE_INFO, "pofi_kyle_drift_v1"),
-    (TrendMechanism.INVENTORY, "pofi_inventory_revert_v1"),
-    (TrendMechanism.HAWKES_SELF_EXCITE, "pofi_hawkes_burst_v1"),
-    (TrendMechanism.SCHEDULED_FLOW, "pofi_moc_imbalance_v1"),
+    (TrendMechanism.KYLE_INFO, "sig_kyle_drift_v1"),
+    (TrendMechanism.INVENTORY, "sig_inventory_revert_v1"),
+    (TrendMechanism.HAWKES_SELF_EXCITE, "sig_hawkes_burst_v1"),
+    (TrendMechanism.SCHEDULED_FLOW, "sig_moc_imbalance_v1"),
 )
 
 

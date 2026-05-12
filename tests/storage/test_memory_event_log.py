@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from feelies.core.errors import CausalityViolation
+from feelies.core.events import NBBOQuote, Trade
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 from tests.storage.conftest import make_quote, make_trade
@@ -84,13 +85,13 @@ class TestInMemoryEventLog:
 
 
 class TestCausalityEnforcement:
-    """Invariant 6: exchange_timestamp_ns must be monotonically non-decreasing."""
+    """Invariant 6: ``NBBOQuote`` / ``Trade`` rows follow merge-sort order."""
 
     def test_append_rejects_backward_exchange_timestamp(self) -> None:
         log = InMemoryEventLog()
         log.append(make_quote(seq=0, exchange_ts_ns=200))
 
-        with pytest.raises(CausalityViolation, match="exchange_timestamp_ns=100"):
+        with pytest.raises(CausalityViolation, match="out of merge-sort order"):
             log.append(make_quote(seq=1, exchange_ts_ns=100))
 
     def test_append_accepts_equal_exchange_timestamp(self) -> None:
@@ -99,23 +100,32 @@ class TestCausalityEnforcement:
         log.append(make_trade(seq=1, exchange_ts_ns=100))
         assert len(log) == 2
 
-    def test_append_batch_rejects_internal_backward_timestamp(self) -> None:
+    def test_append_batch_sorts_market_rows_within_batch(self) -> None:
         events = [
             make_quote(seq=0, exchange_ts_ns=100),
-            make_quote(seq=1, exchange_ts_ns=300),
-            make_quote(seq=2, exchange_ts_ns=200),
+            make_quote(seq=2, exchange_ts_ns=300),
+            make_quote(seq=1, exchange_ts_ns=200),
         ]
         log = InMemoryEventLog()
+        log.append_batch(events)
+        ts = [e.exchange_timestamp_ns for e in log.replay()]
+        assert ts == [100, 200, 300]
 
-        with pytest.raises(CausalityViolation, match="exchange_timestamp_ns=200"):
-            log.append_batch(events)
-        assert len(log) == 0
+    def test_append_batch_reorders_quote_before_trade_at_equal_ts(self) -> None:
+        log = InMemoryEventLog()
+        log.append_batch([
+            make_trade(seq=1, exchange_ts_ns=100),
+            make_quote(seq=0, exchange_ts_ns=100),
+        ])
+        r = list(log.replay())
+        assert isinstance(r[0], NBBOQuote)
+        assert isinstance(r[1], Trade)
 
     def test_append_batch_rejects_backward_vs_prior_append(self) -> None:
         log = InMemoryEventLog()
         log.append(make_quote(seq=0, exchange_ts_ns=500))
 
-        with pytest.raises(CausalityViolation, match="exchange_timestamp_ns=100"):
+        with pytest.raises(CausalityViolation, match="out of merge-sort order"):
             log.append_batch([make_quote(seq=1, exchange_ts_ns=100)])
         assert len(log) == 1
 

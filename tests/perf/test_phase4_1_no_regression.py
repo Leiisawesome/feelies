@@ -43,16 +43,16 @@ from tests.perf._pinned_baseline import load_pinned_baseline
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SIGNAL_ALPHA = (
-    _REPO_ROOT / "alphas" / "pofi_benign_midcap_v1"
-    / "pofi_benign_midcap_v1.alpha.yaml"
+    _REPO_ROOT / "alphas" / "sig_benign_midcap_v1"
+    / "sig_benign_midcap_v1.alpha.yaml"
 )
 _PORTFOLIO_ALPHA_BASELINE = (
-    _REPO_ROOT / "alphas" / "pofi_xsect_v1"
-    / "pofi_xsect_v1.alpha.yaml"
+    _REPO_ROOT / "alphas" / "pro_xsect_v1"
+    / "pro_xsect_v1.alpha.yaml"
 )
 _PORTFOLIO_ALPHA_WITH_DECAY = (
-    _REPO_ROOT / "alphas" / "pofi_xsect_v1"
-    / "pofi_xsect_v1.with_decay.alpha.yaml"
+    _REPO_ROOT / "alphas" / "pro_xsect_v1"
+    / "pro_xsect_v1.with_decay.alpha.yaml"
 )
 _FACTOR_LOADINGS_DIR = FACTOR_LOADINGS_DIR
 _SECTOR_MAP_PATH = SECTOR_MAP_PATH

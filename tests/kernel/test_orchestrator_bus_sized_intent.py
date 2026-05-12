@@ -322,10 +322,11 @@ def _seed_position(
 class TestBusDrivenSizedIntentProducesOrders:
     """Bus-published SizedPositionIntent is the production PORTFOLIO path.
 
-    This is the core PR-2b-iv contract: PORTFOLIO alphas publish
-    SizedPositionIntent on the bus and the orchestrator translates that
-    into per-symbol OrderRequest events without requiring any per-tick
-    micro-SM walk for the PORTFOLIO contribution.
+    PR-2b-iv: composition publishes ``SizedPositionIntent`` on the bus and the
+    orchestrator translates it into per-symbol ``OrderRequest`` events.
+    Out-of-tick publishes execute immediately (micro unchanged); under
+    ``_process_tick`` the same work is flushed after the ``CROSS_SECTIONAL``
+    bookend with micro M5–M10 transitions.
     """
 
     def test_intent_with_single_target_emits_single_order(self) -> None:
@@ -794,7 +795,7 @@ class TestPortfolioCoexistsWithStandaloneSignal:
         orch._process_tick(_make_quote())
 
         assert intent_states == [MicroState.HORIZON_CHECK]
-        assert order_states == [MicroState.HORIZON_CHECK]
+        assert order_states == [MicroState.ORDER_SUBMIT]
 
 
 class TestFiltering:

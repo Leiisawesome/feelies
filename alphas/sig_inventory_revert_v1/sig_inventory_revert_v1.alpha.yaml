@@ -1,7 +1,7 @@
 # ── Identity & Provenance ─────────────────────────────────
 schema_version: "1.1"
 layer: SIGNAL
-alpha_id: pofi_inventory_revert_v1
+alpha_id: sig_inventory_revert_v1
 version: "1.0.0"
 description: |
   Inventory mean-reversion — short-horizon (30 s) alpha that
@@ -150,7 +150,7 @@ signal: |
           correlation_id=snapshot.correlation_id,
           sequence=snapshot.sequence,
           symbol=snapshot.symbol,
-          strategy_id="pofi_inventory_revert_v1",
+          strategy_id="sig_inventory_revert_v1",
           direction=direction,
           strength=min(abs(asym_z) / (thr * 2.0), 1.0),
           edge_estimate_bps=edge_bps,

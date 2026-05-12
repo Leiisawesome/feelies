@@ -1,18 +1,18 @@
-"""Wiring e2e for pofi_xsect_v1_with_decay driven by its feeder alphas.
+"""Wiring e2e for pro_xsect_v1_with_decay driven by its feeder alphas.
 
-Boots ``pofi_kyle_drift_v1`` + ``pofi_inventory_revert_v1`` (SIGNAL
-feeders) and ``pofi_xsect_v1.with_decay`` (PORTFOLIO) through
+Boots ``sig_kyle_drift_v1`` + ``sig_inventory_revert_v1`` (SIGNAL
+feeders) and ``pro_xsect_v1.with_decay`` (PORTFOLIO) through
 ``build_platform`` over a 360-second deterministic multi-symbol stream.
 
 What this test guarantees
 --------------------------
 
-* ``pofi_xsect_v1_with_decay`` registers alongside its two SIGNAL
+* ``pro_xsect_v1_with_decay`` registers alongside its two SIGNAL
   feeders without ``AlphaLoadError``, ``LayerValidationError``, or
   wiring failures.
 * The composition layer is fully wired.
 * At least one 300-second boundary fires at least one
-  ``SizedPositionIntent`` tagged ``strategy_id == "pofi_xsect_v1_with_decay"``.
+  ``SizedPositionIntent`` tagged ``strategy_id == "pro_xsect_v1_with_decay"``.
 * A full backtest reaches ``MacroState.READY`` without exception.
 * Two replays of the same fixture produce byte-identical intent streams
   (Inv-5 determinism for the decay-weighted pipeline).
@@ -77,16 +77,16 @@ pytestmark = pytest.mark.backtest_validation
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 _KYLE_ALPHA = (
-    _REPO_ROOT / "alphas" / "pofi_kyle_drift_v1"
-    / "pofi_kyle_drift_v1.alpha.yaml"
+    _REPO_ROOT / "alphas" / "sig_kyle_drift_v1"
+    / "sig_kyle_drift_v1.alpha.yaml"
 )
 _INVENTORY_ALPHA = (
-    _REPO_ROOT / "alphas" / "pofi_inventory_revert_v1"
-    / "pofi_inventory_revert_v1.alpha.yaml"
+    _REPO_ROOT / "alphas" / "sig_inventory_revert_v1"
+    / "sig_inventory_revert_v1.alpha.yaml"
 )
 _XSECT_DECAY_ALPHA = (
-    _REPO_ROOT / "alphas" / "pofi_xsect_v1"
-    / "pofi_xsect_v1.with_decay.alpha.yaml"
+    _REPO_ROOT / "alphas" / "pro_xsect_v1"
+    / "pro_xsect_v1.with_decay.alpha.yaml"
 )
 _FACTOR_LOADINGS_DIR = FACTOR_LOADINGS_DIR
 _SECTOR_MAP_PATH = SECTOR_MAP_PATH
@@ -284,16 +284,16 @@ def _hash_intents(intents: list[SizedPositionIntent]) -> str:
 def test_xsect_v1_with_decay_all_three_alphas_register() -> None:
     """All three layers must register without error.
 
-    ``pofi_kyle_drift_v1`` and ``pofi_inventory_revert_v1`` as SIGNAL
-    feeders, ``pofi_xsect_v1_with_decay`` as the PORTFOLIO consumer.
+    ``sig_kyle_drift_v1`` and ``sig_inventory_revert_v1`` as SIGNAL
+    feeders, ``pro_xsect_v1_with_decay`` as the PORTFOLIO consumer.
     """
     orchestrator, _s, _i, _o = _build()
     registry = orchestrator._alpha_registry
     assert registry is not None
     ids = registry.alpha_ids()
-    assert "pofi_kyle_drift_v1" in ids
-    assert "pofi_inventory_revert_v1" in ids
-    assert "pofi_xsect_v1_with_decay" in ids
+    assert "sig_kyle_drift_v1" in ids
+    assert "sig_inventory_revert_v1" in ids
+    assert "pro_xsect_v1_with_decay" in ids
 
 
 def test_xsect_v1_with_decay_composition_layer_is_wired() -> None:
@@ -323,7 +323,7 @@ def test_xsect_v1_with_decay_composition_cycle_fires() -> None:
         "to HorizonTick for the 300-second horizon."
     )
     strategy_ids = {it.strategy_id for it in intents}
-    assert "pofi_xsect_v1_with_decay" in strategy_ids
+    assert "pro_xsect_v1_with_decay" in strategy_ids
 
 
 def test_xsect_v1_with_decay_per_strategy_positions_independent() -> None:
@@ -332,9 +332,9 @@ def test_xsect_v1_with_decay_per_strategy_positions_independent() -> None:
     sp = orchestrator._strategy_positions
     assert sp is not None
     for sym in _UNIVERSE:
-        kyle_pos = sp.get("pofi_kyle_drift_v1", sym)
-        inv_pos = sp.get("pofi_inventory_revert_v1", sym)
-        decay_pos = sp.get("pofi_xsect_v1_with_decay", sym)
+        kyle_pos = sp.get("sig_kyle_drift_v1", sym)
+        inv_pos = sp.get("sig_inventory_revert_v1", sym)
+        decay_pos = sp.get("pro_xsect_v1_with_decay", sym)
         assert kyle_pos is not inv_pos
         assert kyle_pos is not decay_pos
         assert inv_pos is not decay_pos
@@ -358,6 +358,6 @@ def test_xsect_v1_with_decay_intent_stream_is_deterministic() -> None:
         f"{len(intents_a)} vs {len(intents_b)}"
     )
     assert _hash_intents(intents_a) == _hash_intents(intents_b), (
-        "pofi_xsect_v1_with_decay intent hash drift across identical "
+        "pro_xsect_v1_with_decay intent hash drift across identical "
         "replays (Inv-5 violation)"
     )

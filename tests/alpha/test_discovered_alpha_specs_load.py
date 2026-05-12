@@ -26,8 +26,8 @@ def test_discovery_excludes_template_and_underscore_paths() -> None:
     paths = discover_alpha_specs(_ALPHAS_DIR)
     rel = {p.relative_to(_ALPHAS_DIR).as_posix() for p in paths}
     assert not any(part.startswith("_") for p in rel for part in p.split("/"))
-    assert "pofi_xsect_v1/pofi_xsect_v1.alpha.yaml" in rel
-    assert "pofi_xsect_v1/pofi_xsect_v1.with_decay.alpha.yaml" in rel
+    assert "pro_xsect_v1/pro_xsect_v1.alpha.yaml" in rel
+    assert "pro_xsect_v1/pro_xsect_v1.with_decay.alpha.yaml" in rel
 
 
 @pytest.mark.parametrize(
