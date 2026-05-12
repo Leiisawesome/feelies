@@ -34,10 +34,10 @@ Usage
     )
 
     attr = MultiHorizonAttributor(
-        intent_snapshots={"pofi_xsect_v1": last_intent_snapshot},
+        intent_snapshots={"pro_xsect_v1": last_intent_snapshot},
         regime_engine=regime_engine,
     )
-    report = attr.attribute(trade_journal.query(strategy_id="pofi_xsect_v1"))
+    report = attr.attribute(trade_journal.query(strategy_id="pro_xsect_v1"))
 """
 
 from __future__ import annotations

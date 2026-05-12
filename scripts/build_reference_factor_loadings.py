@@ -22,7 +22,7 @@ Outputs (idempotent — safe to re-run):
 
 The fixture is intentionally *small* (10 symbols × 7 factors); the
 universe matches the v0.2 reference deployment used by
-``alphas/pofi_xsect_v1/`` and the Phase-4 end-to-end tests.
+``alphas/pro_xsect_v1/`` and the Phase-4 end-to-end tests.
 
 Determinism contract
 --------------------

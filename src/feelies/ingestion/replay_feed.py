@@ -17,23 +17,7 @@ from feelies.core.clock import Clock, SimulatedClock
 from feelies.core.errors import CausalityViolation
 from feelies.core.events import NBBOQuote, Trade
 from feelies.storage.event_log import EventLog
-
-
-def _market_replay_sort_key(event: NBBOQuote | Trade) -> tuple[int, int, int, str]:
-    """Deterministic tie-break when ``exchange_timestamp_ns`` ties (Inv-6).
-
-    ``(timestamp, sequence, kind_rank, symbol)`` with quotes before trades
-    at the same ``(timestamp, sequence)`` so merged L1 feeds replay
-    identically across runs.
-    """
-
-    kind_rank = 0 if isinstance(event, NBBOQuote) else 1
-    return (
-        event.exchange_timestamp_ns,
-        event.sequence,
-        kind_rank,
-        event.symbol,
-    )
+from feelies.storage.event_resequence import event_merge_sort_key
 
 
 class ReplayFeed:
@@ -66,28 +50,28 @@ class ReplayFeed:
         skipped since they are not market data inputs.
 
         Validates that market events are strictly non-decreasing in
-        ``(exchange_timestamp_ns, sequence, kind, symbol)`` order (see
-        :func:`_market_replay_sort_key`).  Raises ``CausalityViolation``
-        if the EventLog was not merge-sorted before replay (invariant 6).
+        :func:`~feelies.storage.event_resequence.event_merge_sort_key`
+        order.  Raises ``CausalityViolation`` if the EventLog was not
+        merge-sorted before replay (invariant 6).
 
         If a ``SimulatedClock`` was provided, sets its time to the
         event's ``exchange_timestamp_ns`` before yielding, so that
         downstream components see deterministic time progression.
         """
-        last_key: tuple[int, int, int, str] | None = None
+        last_key: tuple[int, str, int, int] | None = None
         for event in self._event_log.replay(
             self._start_sequence,
             self._end_sequence,
         ):
             if isinstance(event, (NBBOQuote, Trade)):
-                key = _market_replay_sort_key(event)
+                key = event_merge_sort_key(event)
                 if last_key is not None and key < last_key:
                     raise CausalityViolation(
                         "ReplayFeed: market events out of deterministic order "
                         f"at sequence={event.sequence}: key={key!r} < "
-                        f"previous {last_key!r}.  Sort the EventLog by "
-                        "(exchange_timestamp_ns, sequence, event kind, symbol) "
-                        "before replay (invariant 6)"
+                        f"previous {last_key!r}.  Sort the EventLog with "
+                        ":func:`~feelies.storage.event_resequence.resequence_event_list` "
+                        "or equivalent merge key (invariant 6)"
                     )
                 last_key = key
                 ts = event.exchange_timestamp_ns

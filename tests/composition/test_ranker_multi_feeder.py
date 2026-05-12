@@ -21,7 +21,7 @@ def test_rank_sums_feeder_marginal_raw_scores() -> None:
         correlation_id="inv",
         source_layer="SIGNAL",
         symbol="AAPL",
-        strategy_id="pofi_inventory_revert_v1",
+        strategy_id="sig_inventory_revert_v1",
         direction=SignalDirection.LONG,
         strength=1.0,
         edge_estimate_bps=3.0,
@@ -36,7 +36,7 @@ def test_rank_sums_feeder_marginal_raw_scores() -> None:
         correlation_id="kyle",
         source_layer="SIGNAL",
         symbol="AAPL",
-        strategy_id="pofi_kyle_drift_v1",
+        strategy_id="sig_kyle_drift_v1",
         direction=SignalDirection.SHORT,
         strength=0.5,
         edge_estimate_bps=10.0,
@@ -56,8 +56,8 @@ def test_rank_sums_feeder_marginal_raw_scores() -> None:
         signals_by_symbol={"AAPL": kyle},
         signals_by_strategy_by_symbol={
             "AAPL": {
-                "pofi_inventory_revert_v1": inv,
-                "pofi_kyle_drift_v1": kyle,
+                "sig_inventory_revert_v1": inv,
+                "sig_kyle_drift_v1": kyle,
             },
         },
         completeness=1.0,
@@ -66,8 +66,8 @@ def test_rank_sums_feeder_marginal_raw_scores() -> None:
     result = ranker.rank(
         ctx,
         feeder_strategy_ids=(
-            "pofi_inventory_revert_v1",
-            "pofi_kyle_drift_v1",
+            "sig_inventory_revert_v1",
+            "sig_kyle_drift_v1",
         ),
     )
     # LONG: +3 ; SHORT: -0.5 * 10 = -5  → raw_total -2

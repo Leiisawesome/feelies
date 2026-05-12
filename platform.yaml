@@ -15,15 +15,16 @@ symbols:
 alpha_spec_dir: null
 
 # SIGNAL alphas + PORTFOLIO coordinator for hawkes_burst + inventory_revert.
-# factor_neutralization: false in pofi_burst_revert_v1 — FactorNeutralizer
+# factor_neutralization: false in pro_burst_revert_v1 — FactorNeutralizer
 # is a no-op when factor_loadings_dir is null (default).
 alpha_specs:
-  - alphas/pofi_benign_midcap_v1/pofi_benign_midcap_v1.alpha.yaml
-  - alphas/pofi_inventory_revert_v1/pofi_inventory_revert_v1.alpha.yaml
-  - alphas/pofi_kyle_drift_v1/pofi_kyle_drift_v1.alpha.yaml
-  - alphas/pofi_hawkes_burst_v1/pofi_hawkes_burst_v1.alpha.yaml
-  - alphas/pofi_moc_imbalance_v1/pofi_moc_imbalance_v1.alpha.yaml
-  - alphas/pofi_burst_revert_v1/pofi_burst_revert_v1.alpha.yaml
+  - alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml
+  - alphas/sig_inventory_revert_v1/sig_inventory_revert_v1.alpha.yaml
+  - alphas/sig_kyle_drift_v1/sig_kyle_drift_v1.alpha.yaml
+  - alphas/sig_hawkes_burst_v1/sig_hawkes_burst_v1.alpha.yaml
+  - alphas/sig_moc_imbalance_v1/sig_moc_imbalance_v1.alpha.yaml
+  - alphas/pro_burst_revert_v1/pro_burst_revert_v1.alpha.yaml
+  - alphas/pro_kyle_benign_v1/pro_kyle_benign_v1.alpha.yaml
 
 parameter_overrides: {}
 
@@ -120,10 +121,10 @@ horizons_seconds:
 
 # session_open_ns: null  # else first event anchors backtests
 
-# For scheduled_flow_window sensor (e.g. pofi_moc_imbalance_v1); bootstrap injects calendar.
+# For scheduled_flow_window sensor (e.g. sig_moc_imbalance_v1); bootstrap injects calendar.
 event_calendar_path: src/feelies/storage/reference/event_calendar/2026-01-15.yaml
 
-# Sensors for pofi_inventory_revert_v1 (depends_on_sensors).
+# Sensors for sig_inventory_revert_v1 (depends_on_sensors).
 sensor_specs:
 
   - sensor_id: spread_z_30d

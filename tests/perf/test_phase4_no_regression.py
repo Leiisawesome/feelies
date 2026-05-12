@@ -19,10 +19,10 @@ already negligible relative to SIGNAL/sensor/regime work.
 Two configurations are timed in fresh subprocesses so import-cost
 and allocator state are amortised identically:
 
-* **baseline** — SIGNAL (``pofi_benign_midcap_v1``) loaded;
+* **baseline** — SIGNAL (``sig_benign_midcap_v1``) loaded;
   no PORTFOLIO alpha.
 * **mixed**    — same SIGNAL pair *plus* the v0.2 reference PORTFOLIO
-  alpha (``pofi_xsect_v1``).  This activates
+  alpha (``pro_xsect_v1``).  This activates
   ``_create_composition_layer`` end-to-end.
 
 The pass condition is ``mixed_best <= baseline_best * 1.12``.  The
@@ -48,12 +48,12 @@ from feelies.storage.reference.paths import FACTOR_LOADINGS_DIR, SECTOR_MAP_PATH
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SIGNAL_ALPHA = (
-    _REPO_ROOT / "alphas" / "pofi_benign_midcap_v1"
-    / "pofi_benign_midcap_v1.alpha.yaml"
+    _REPO_ROOT / "alphas" / "sig_benign_midcap_v1"
+    / "sig_benign_midcap_v1.alpha.yaml"
 )
 _PORTFOLIO_ALPHA = (
-    _REPO_ROOT / "alphas" / "pofi_xsect_v1"
-    / "pofi_xsect_v1.alpha.yaml"
+    _REPO_ROOT / "alphas" / "pro_xsect_v1"
+    / "pro_xsect_v1.alpha.yaml"
 )
 _FACTOR_LOADINGS_DIR = FACTOR_LOADINGS_DIR
 _SECTOR_MAP_PATH = SECTOR_MAP_PATH

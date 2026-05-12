@@ -1,12 +1,12 @@
 schema_version: "1.1"
 layer: PORTFOLIO
 
-alpha_id: pofi_xsect_v1
+alpha_id: pro_xsect_v1
 version: "1.0.0"
 description: |
   Phase-4 reference cross-sectional alpha (decay weighting OFF).
-  Consumes the SIGNAL outputs of pofi_kyle_drift_v1 and
-  pofi_inventory_revert_v1 across a 10-name reference universe and
+  Consumes the SIGNAL outputs of sig_kyle_drift_v1 and
+  sig_inventory_revert_v1 across a 10-name reference universe and
   emits a sized intent every 5 minutes via the platform's default
   composition pipeline (rank → factor-neutralize → sector-match →
   turnover-optimize).
@@ -38,8 +38,8 @@ universe:
   - CVX
 
 depends_on_signals:
-  - pofi_kyle_drift_v1
-  - pofi_inventory_revert_v1
+  - sig_kyle_drift_v1
+  - sig_inventory_revert_v1
 
 factor_neutralization: true
 

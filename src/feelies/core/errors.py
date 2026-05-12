@@ -46,3 +46,7 @@ class OrchestratorPipelineAbortError(FeeliesError):
     ``DEGRADED`` failed inside :meth:`Orchestrator._handle_tick_failure`) so
     callers do not mis-classify an aborted loop as normal feed exhaustion.
     """
+
+
+class SessionEntryBlockedError(FeeliesError):
+    """Cannot enter RESEARCH/BACKTEST/PAPER/LIVE — kill switch or risk interlock."""
