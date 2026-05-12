@@ -99,6 +99,9 @@ def _fingerprint_ws_trade(msg: dict) -> str:  # type: ignore[type-arg]
         conditions,
         str(msg.get("trfi", "")),
         str(msg.get("trft", "")),
+        str(msg.get("participant_timestamp", "")),
+        str(msg.get("ft", "")),
+        str(msg.get("correction", "")),
     )
     return hashlib.sha256(repr(parts).encode()).hexdigest()
 
