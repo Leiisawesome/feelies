@@ -36,6 +36,7 @@ import hashlib
 import itertools
 import logging
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import replace
 from decimal import Decimal
@@ -275,13 +276,12 @@ class Orchestrator:
         emerge as SizedPositionIntent, not OrderRequest).  Drain the
         first buffered signal at M4 ``SIGNAL_EVALUATE`` and run it
         through the per-tick risk → order → fill walk.
-      * **PORTFOLIO alphas** (``_on_bus_sized_intent``).  Translate every
-        ``SizedPositionIntent`` into per-leg ``OrderRequest`` events via
-        :meth:`RiskEngine.check_sized_intent` (Inv-11 per-leg veto;
-        Inv-5 deterministic order_id).  Runs *outside* the per-tick
-        micro-SM walk: PORTFOLIO orders dispatch as a synchronous
-        side-effect of the M3 ``CROSS_SECTIONAL`` ``bus.publish(intent)``
-        and do NOT advance the SIGNAL-reserved M5 → M10 walk.
+      * **PORTFOLIO alphas** (``_on_bus_sized_intent`` + ``_flush_pending_sized_intents``).
+        Each ``SizedPositionIntent`` is buffered on the bus, then drained after the
+        ``CROSS_SECTIONAL`` bookend: ``RiskEngine.check_sized_intent`` runs under
+        micro ``RISK_CHECK`` through ``LOG_AND_METRICS`` (M5–M10) before ``FEATURE_COMPUTE``,
+        preserving position updates before the standalone-SIGNAL M4 drain.  Multiple intents
+        on the same quote walk ``LOG_AND_METRICS → RISK_CHECK`` between legs.
 
     Concurrency / coexistence rules:
 
@@ -532,6 +532,7 @@ class Orchestrator:
         # legacy ``signal_engine`` ctor scaffolding, so this is now the
         # sole standalone-SIGNAL → Order path.
         self._signal_buffer: list[Signal] = []
+        self._pending_sized_intents: deque[SizedPositionIntent] = deque()
         self._consumed_by_portfolio_ids: frozenset[str] | None = None
         self._warned_multi_standalone_signals: bool = False
         self._bus.subscribe(Signal, self._on_bus_signal)
@@ -546,23 +547,14 @@ class Orchestrator:
         # alphas were hooked into the bus end-to-end for SizedPositionIntent
         # but the production order pipeline simply ignored them.
         #
-        # ``_on_bus_sized_intent`` calls
-        # :meth:`RiskEngine.check_sized_intent` (which translates
-        # ``TargetPosition`` deltas into per-leg ``OrderRequest`` tuples
-        # under per-leg veto semantics; Inv-11) and submits each surviving
-        # order to ``backend.order_router``, polling synchronous acks and
-        # reconciling fills into the position store.
-        #
-        # The handler runs outside the standalone SIGNAL order walk:
-        # PORTFOLIO orders are bus-dispatched synchronously while the
-        # scheduler's HorizonTick fan-out is still executing, before the
-        # per-tick FEATURE_COMPUTE → SIGNAL_EVALUATE path begins.  They do
-        # NOT drive the M5 → M10 transitions, which remain reserved for the
-        # at-most-one SIGNAL-driven order per tick.  This sidesteps the
-        # SM's single-walk-per-tick limit and lets PORTFOLIO + standalone
-        # SIGNAL coexist on the same tick (PR-2b-iii's
-        # ``depends_on_signals`` skip-rule prevents double-trading when a
-        # SIGNAL alpha is consumed by a PORTFOLIO alpha).
+        # ``_on_bus_sized_intent`` **buffers** each
+        # ``SizedPositionIntent``; :meth:`_flush_pending_sized_intents`
+        # drains the queue after the ``CROSS_SECTIONAL`` bookend (still
+        # before ``FEATURE_COMPUTE``) so M5 → M10 transitions record
+        # PORTFOLIO execution on the same micro SM.  This preserves the
+        # causal order vs standalone SIGNAL alphas (positions updated before
+        # M4).  PR-2b-iii ``depends_on_signals`` skip-rule still prevents
+        # double-trading.
         self._bus.subscribe(SizedPositionIntent, self._on_bus_sized_intent)
 
         # ── Audit R1: hazard-exit submission dedup ────────────────────
@@ -798,6 +790,7 @@ class Orchestrator:
             )
             self._restore_feature_snapshots()
             self._calibrate_regime_engine()
+            self._pending_sized_intents.clear()
         else:
             self._macro.transition(
                 MacroState.DEGRADED,
@@ -814,6 +807,7 @@ class Orchestrator:
         self._require_safe_session_entry()
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:backtest")
+        self._pending_sized_intents.clear()
         self._consumed_by_portfolio_ids = None
         self._reset_regime_session_state()
         self._macro.transition(MacroState.BACKTEST_MODE, trigger="CMD_BACKTEST")
@@ -849,6 +843,7 @@ class Orchestrator:
         self._require_safe_session_entry()
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:paper")
+        self._pending_sized_intents.clear()
         self._reset_regime_session_state()
         self._macro.transition(
             MacroState.PAPER_TRADING_MODE,
@@ -882,6 +877,7 @@ class Orchestrator:
         self._require_safe_session_entry()
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:live")
+        self._pending_sized_intents.clear()
         self._reset_regime_session_state()
         self._macro.transition(
             MacroState.LIVE_TRADING_MODE,
@@ -938,6 +934,7 @@ class Orchestrator:
         if self._macro.state in TRADING_MODES:
             self._macro.transition(MacroState.READY, trigger="CMD_STOP")
             self._micro.reset(trigger="halt:operator_stop")
+            self._pending_sized_intents.clear()
 
     def recover_from_degraded(self) -> bool:
         """G7 → G2 on recovery validation.  Returns True if successful."""
@@ -1207,6 +1204,164 @@ class Orchestrator:
                     correlation_id=cid,
                 )
 
+    def _maybe_transition_cross_sectional_bookend(self, correlation_id: str) -> None:
+        """Record ``MicroState.CROSS_SECTIONAL`` after the bus composition chain.
+
+        ``UniverseSynchronizer`` / ``CompositionEngine`` run synchronously
+        inside the ``HorizonTick`` handler stack (``_dispatch_sensor_layer``).
+        This transition is a forensic bookend only — it does not re-invoke
+        composition.  It is emitted when a **registered PORTFOLIO alpha**
+        exists **or** a :class:`~feelies.composition.engine.CompositionEngine`
+        is attached (test / partial deployments), and the micro SM can legally
+        enter ``CROSS_SECTIONAL`` from the current horizon state (typically
+        ``HORIZON_AGGREGATE`` or ``SIGNAL_GATE``).
+        """
+        registry_portfolio = (
+            self._alpha_registry is not None
+            and self._alpha_registry.has_portfolio_alphas()
+        )
+        if not registry_portfolio and self._composition_engine is None:
+            return
+        if not self._micro.can_transition(MicroState.CROSS_SECTIONAL):
+            return
+        self._micro.transition(
+            MicroState.CROSS_SECTIONAL,
+            trigger="composition_pipeline_bookend",
+            correlation_id=correlation_id,
+        )
+
+    def _flush_pending_sized_intents(
+        self,
+        *,
+        correlation_id: str,
+    ) -> None:
+        """Drain horizon-buffered PORTFOLIO intents under micro M5–M10 before M3."""
+        if not self._pending_sized_intents:
+            return
+        first_intent = True
+        while self._pending_sized_intents:
+            intent = self._pending_sized_intents.popleft()
+            if first_intent:
+                first_intent = False
+                if self._micro.state is MicroState.CROSS_SECTIONAL:
+                    self._micro.transition(
+                        MicroState.RISK_CHECK,
+                        trigger="portfolio_sized_intent",
+                        correlation_id=correlation_id,
+                    )
+                elif self._micro.can_transition(MicroState.RISK_CHECK):
+                    self._micro.transition(
+                        MicroState.RISK_CHECK,
+                        trigger="portfolio_sized_intent_resume",
+                        correlation_id=correlation_id,
+                    )
+                else:
+                    logger.warning(
+                        "orchestrator: portfolio flush blocked at micro state "
+                        "%s — submitting without SM transitions",
+                        self._micro.state.name,
+                    )
+                    self._submit_portfolio_leg_without_micro_walk(
+                        intent, correlation_id,
+                    )
+                    while self._pending_sized_intents:
+                        nxt = self._pending_sized_intents.popleft()
+                        self._submit_portfolio_leg_without_micro_walk(
+                            nxt, correlation_id,
+                        )
+                    return
+            else:
+                self._micro.transition(
+                    MicroState.RISK_CHECK,
+                    trigger="portfolio_sized_intent_next",
+                    correlation_id=correlation_id,
+                )
+
+            sized = self._risk_engine.check_sized_intent(intent, self._positions)
+            if sized.requires_global_risk_escalation:
+                self._escalate_risk(correlation_id)
+                self._micro.transition(
+                    MicroState.LOG_AND_METRICS,
+                    trigger="portfolio_intent_risk_escalation",
+                    correlation_id=correlation_id,
+                )
+                continue
+            orders = sized.orders
+            if not orders:
+                self._micro.transition(
+                    MicroState.LOG_AND_METRICS,
+                    trigger="portfolio_intent_no_orders",
+                    correlation_id=correlation_id,
+                )
+                continue
+
+            self._micro.transition(
+                MicroState.ORDER_DECISION,
+                trigger="portfolio_orders_ready",
+                correlation_id=correlation_id,
+            )
+            self._micro.transition(
+                MicroState.ORDER_SUBMIT,
+                trigger="portfolio_batch_submitted",
+                correlation_id=correlation_id,
+            )
+            for order in orders:
+                self._track_order(order.order_id, order.side, order)
+                self._transition_order(
+                    order.order_id, OrderState.SUBMITTED, "submitted",
+                )
+                self._backend.order_router.submit(order)
+                self._bus.publish(order)
+
+            self._micro.transition(
+                MicroState.ORDER_ACK,
+                trigger="portfolio_poll_acks",
+                correlation_id=correlation_id,
+            )
+            expected_order_ids = {o.order_id for o in orders}
+            acks = self._poll_order_router_acks(expected_order_ids)
+            for ack in acks:
+                self._bus.publish(ack)
+                self._apply_ack_to_order(ack)
+
+            self._micro.transition(
+                MicroState.POSITION_UPDATE,
+                trigger="portfolio_reconcile",
+                correlation_id=correlation_id,
+            )
+            self._reconcile_fills(acks, correlation_id)
+
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="portfolio_leg_complete",
+                correlation_id=correlation_id,
+            )
+
+    def _submit_portfolio_leg_without_micro_walk(
+        self,
+        intent: SizedPositionIntent,
+        correlation_id: str,
+    ) -> None:
+        """Fail-safe submit when micro cannot enter ``RISK_CHECK`` (should be rare)."""
+        sized = self._risk_engine.check_sized_intent(intent, self._positions)
+        if sized.requires_global_risk_escalation:
+            self._escalate_risk(correlation_id)
+            return
+        orders = sized.orders
+        if not orders:
+            return
+        for order in orders:
+            self._track_order(order.order_id, order.side, order)
+            self._transition_order(
+                order.order_id, OrderState.SUBMITTED, "submitted",
+            )
+            self._backend.order_router.submit(order)
+            self._bus.publish(order)
+        acks = self._poll_order_router_acks({o.order_id for o in orders})
+        for ack in acks:
+            self._bus.publish(ack)
+            self._apply_ack_to_order(ack)
+        self._reconcile_fills(acks, correlation_id)
     def _process_tick(self, quote: NBBOQuote) -> None:
         """Process a single tick through the full micro-state pipeline.
 
@@ -1215,7 +1370,7 @@ class Orchestrator:
 
         Micro-state sequence (formal spec Section II):
           M0 → M1 → M2 → M3 → M4 → M5 →
-            (risk fail)         → [G8, pipeline aborts]
+            (lockdown FORCE_FLATTEN) → M10 → M0  (via ``_finalize_tick``)
             (pass, no order)    → M10 → M0
             (pass, order)       → M6 →
               (check_order fail)  → M10 → M0
@@ -1256,6 +1411,16 @@ class Orchestrator:
                 trigger=f"pipeline_abort:{exc_name}",
                 correlation_id=cid,
             )
+            self._pending_sized_intents.clear()
+            self._bus.publish(MetricEvent(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=cid,
+                sequence=self._seq.next(),
+                layer="kernel",
+                name="tick_aborted_micro_reset",
+                value=1.0,
+                metric_type=MetricType.COUNTER,
+            ))
         except Exception:
             logger.critical(
                 "orchestrator: micro SM reset failed during tick-failure recovery "
@@ -1349,6 +1514,15 @@ class Orchestrator:
                         trigger="KILL_SWITCH_ACTIVE",
                         correlation_id=cid,
                     )
+            self._bus.publish(MetricEvent(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=cid,
+                sequence=self._seq.next(),
+                layer="kernel",
+                name="tick_suppressed_kill_switch",
+                value=1.0,
+                metric_type=MetricType.COUNTER,
+            ))
             return
 
         # ── Runtime data integrity check (W-6) ─────────────────
@@ -1361,6 +1535,15 @@ class Orchestrator:
                         trigger=f"DATA_CORRUPTED:{quote.symbol}",
                         correlation_id=cid,
                     )
+                self._bus.publish(MetricEvent(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=cid,
+                    sequence=self._seq.next(),
+                    layer="kernel",
+                    name="tick_suppressed_data_corrupted",
+                    value=1.0,
+                    metric_type=MetricType.COUNTER,
+                ))
                 return
 
         # ── M0 → M1: MARKET_EVENT_RECEIVED ─────────────────────
@@ -1411,6 +1594,8 @@ class Orchestrator:
         # micro-states and publishes any HorizonTick events emitted
         # by the scheduler.
         self._dispatch_sensor_layer(quote, cid)
+        self._maybe_transition_cross_sectional_bookend(cid)
+        self._flush_pending_sized_intents(correlation_id=cid)
 
         # ── M2 (or HORIZON_*) → M3: FEATURE_COMPUTE ────────────
         # Workstream D.2 PR-2b-iv: legacy ``feature_engine`` is gone.
@@ -3407,73 +3592,20 @@ class Orchestrator:
     # ── PR-2b-iv: bus-driven SizedPositionIntent handler ────────────
 
     def _on_bus_sized_intent(self, event: Event) -> None:
-        """Translate a Phase-4 ``SizedPositionIntent`` to per-leg orders.
+        """Buffer or immediately execute ``SizedPositionIntent`` (Inv-9 parity).
 
-        Workflow (synchronous side-effect of
-        ``bus.publish(intent)`` in ``CompositionEngine``):
-
-        1. Filter the bus event for ``SizedPositionIntent``.
-        2. Call :meth:`RiskEngine.check_sized_intent`.  The risk engine
-           translates each non-zero ``TargetPosition`` delta into one
-           ``OrderRequest`` under per-leg veto semantics for ordinary
-           rejects (Inv-11).  Aggregate drawdown can surface
-           ``RiskAction.FORCE_FLATTEN`` via
-           ``requires_global_risk_escalation`` and this handler invokes
-           ``_escalate_risk`` without submitting portfolio legs.  Symbol
-           iteration is lexicographically sorted and ``order_id`` is a
-           SHA-256 of ``(intent.correlation_id, intent.sequence, symbol)``
-           so per-leg orders are bit-identical across replays (Inv-5).
-          3. For every surviving order, track it, mark it submitted, publish
-              it on the bus, hand it to ``backend.order_router.submit``, then
-              drain ``poll_acks`` and reconcile fills into the position
-              store.  This mirrors the ``_execute_reverse`` pattern minus the
-              micro-SM transitions: PORTFOLIO orders dispatch while the
-              scheduler's ``HorizonTick`` callback chain is still running
-              inside ``_dispatch_sensor_layer`` and do NOT advance the
-              SIGNAL-reserved M5 → M10 walk.
-
-        Consequences for SIGNAL/PORTFOLIO coexistence on a single tick:
-
-        * The PR-2b-iii ``depends_on_signals`` skip-rule prevents the
-          SIGNAL-bus subscriber from also translating Signals consumed by
-          PORTFOLIO alphas — so each strategy_id contributes orders
-          through exactly one path, never both (Inv-11 fail-safe: prefer
-          no order over duplicate orders).
-        * Standalone SIGNAL alphas continue to drive the per-tick
-          M5 → M10 walk; PORTFOLIO alphas dispatch their orders here.
-          Both can fire on the same tick without contention.
-
-        See :mod:`feelies.kernel.macro` and ``BasicRiskEngine.check_sized_intent``.
-
-        The risk engine's contract guarantees ``check_sized_intent`` does
-        not raise (Inv-11); an empty ``orders`` tuple with no escalation
-        flag means "hold all current positions" after vetoes.
+        During ``_process_tick`` (``_quote_tick_in_flight``), intents are
+        queued and drained by :meth:`_flush_pending_sized_intents` after the
+        ``CROSS_SECTIONAL`` bookend so M5–M10 record PORTFOLIO execution.
+        Out-of-tick bus publishes (unit tests, diagnostics) execute
+        immediately without micro transitions — micro stays at ``WAITING``.
         """
         if not isinstance(event, SizedPositionIntent):
             return
-        sized = self._risk_engine.check_sized_intent(event, self._positions)
-        requires_global_risk_escalation = bool(
-            getattr(sized, "requires_global_risk_escalation", False)
-        )
-        if requires_global_risk_escalation:
-            self._escalate_risk(event.correlation_id)
-            return
-        orders = getattr(sized, "orders", sized)
-        if not orders:
-            return
-        for order in orders:
-            self._track_order(order.order_id, order.side, order)
-            self._transition_order(
-                order.order_id, OrderState.SUBMITTED, "submitted",
-            )
-            self._backend.order_router.submit(order)
-            self._bus.publish(order)
-        expected_order_ids = {order.order_id for order in orders}
-        acks = self._poll_order_router_acks(expected_order_ids)
-        for ack in acks:
-            self._bus.publish(ack)
-            self._apply_ack_to_order(ack)
-        self._reconcile_fills(acks, event.correlation_id)
+        if self._quote_tick_in_flight:
+            self._pending_sized_intents.append(event)
+        else:
+            self._submit_portfolio_leg_without_micro_walk(event, event.correlation_id)
 
     # ── Audit R1: bus-driven hazard-exit OrderRequest handler ────────
 
