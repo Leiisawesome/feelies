@@ -110,6 +110,7 @@ from feelies.features.impl.sensor_passthrough import (
     TupleComponentFeature,
 )
 from feelies.features.protocol import HorizonFeature
+from feelies.ingestion.normalizer import MarketDataNormalizer
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.kernel.signal_order_trace import SignalOrderTraceRow
 from feelies.monitoring.in_memory import (
@@ -157,6 +158,7 @@ def build_platform(
     event_log: InMemoryEventLog | None = None,
     *,
     signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
+    normalizer: MarketDataNormalizer | None = None,
 ) -> tuple[Orchestrator, PlatformConfig]:
     """Compose the full platform from configuration.
 
@@ -168,6 +170,9 @@ def build_platform(
             :class:`~feelies.kernel.signal_order_trace.SignalOrderTraceRow`
             records explaining why each bus :class:`~feelies.core.events.Signal`
             did or did not yield a standalone ``OrderRequest`` on its quote tick.
+        normalizer: Optional live Massive normalizer for streaming feeds. When
+            wired, orchestrator enforces :class:`~feelies.ingestion.data_integrity.DataHealth`
+            gates on each market event (backtests normally omit this).
 
     Returns:
         ``(orchestrator, config)`` — caller does
@@ -177,6 +182,17 @@ def build_platform(
         config = PlatformConfig.from_yaml(config)
 
     config.validate()
+
+    if (
+        config.mode == OperatingMode.BACKTEST
+        and config.backtest_enforce_ingest_terminal_health
+        and not config.ingest_terminal_symbol_health
+    ):
+        raise ConfigurationError(
+            "backtest_enforce_ingest_terminal_health=True requires "
+            "ingest_terminal_symbol_health to be populated before "
+            "build_platform (e.g. scripts/run_backtest.py after ingest).",
+        )
 
     clock = _select_clock(config.mode)
     bus = EventBus()
@@ -422,6 +438,7 @@ def build_platform(
         composition_metrics_collector=composition_metrics,
         hazard_exit_controller=hazard_exit_controller,
         signal_order_trace_sink=signal_order_trace_sink,
+        normalizer=normalizer,
     )
 
     config_snapshot = config.snapshot()

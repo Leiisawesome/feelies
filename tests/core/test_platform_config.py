@@ -336,6 +336,60 @@ class TestDiskCacheManifestHealth:
             cfg.validate()
 
 
+class TestBacktestIngestTerminalHealth:
+    def test_validate_passes_when_enforce_true_but_rows_not_attached_yet(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            backtest_enforce_ingest_terminal_health=True,
+            ingest_terminal_symbol_health=(),
+        )
+        cfg.validate()
+
+    def test_enforce_requires_every_symbol_present(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL", "MSFT"}),
+            alpha_specs=[Path("x.yaml")],
+            backtest_enforce_ingest_terminal_health=True,
+            ingest_terminal_symbol_health=(("AAPL", "HEALTHY"),),
+        )
+        with pytest.raises(ConfigurationError, match="missing"):
+            cfg.validate()
+
+    def test_enforce_rejects_non_healthy_terminal(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            backtest_enforce_ingest_terminal_health=True,
+            ingest_terminal_symbol_health=(("AAPL", "GAP_DETECTED"),),
+        )
+        with pytest.raises(ConfigurationError, match="terminal health"):
+            cfg.validate()
+
+    def test_enforce_only_in_backtest_mode(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            mode=OperatingMode.LIVE,
+            backtest_enforce_ingest_terminal_health=True,
+            ingest_terminal_symbol_health=(("AAPL", "HEALTHY"),),
+        )
+        with pytest.raises(ConfigurationError, match="BACKTEST"):
+            cfg.validate()
+
+    def test_enforce_succeeds_when_all_healthy(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL", "msft"}),
+            alpha_specs=[Path("x.yaml")],
+            backtest_enforce_ingest_terminal_health=True,
+            ingest_terminal_symbol_health=(
+                ("AAPL", "HEALTHY"),
+                ("MSFT", "HEALTHY"),
+            ),
+        )
+        cfg.validate()
+
+
 # ── Configuration protocol compliance ──────────────────────────────
 
 

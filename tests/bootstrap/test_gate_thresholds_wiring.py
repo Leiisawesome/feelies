@@ -18,10 +18,14 @@ Layering precedence (lowest → highest):
 from __future__ import annotations
 
 import textwrap
+from dataclasses import replace
 from pathlib import Path
+
+import pytest
 
 from feelies.alpha.promotion_evidence import GateThresholds
 from feelies.bootstrap import _build_platform_gate_thresholds, build_platform
+from feelies.core.errors import ConfigurationError
 from feelies.core.events import NBBOQuote
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
@@ -194,3 +198,19 @@ class TestBuildPlatformGateThresholdsWiring:
         assert (
             thresholds.cpcv_min_folds == GateThresholds().cpcv_min_folds
         )
+
+
+class TestBuildPlatformIngestTerminalEnforcement:
+    def test_build_platform_raises_when_enforce_without_rows(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        _write_alpha(tmp_path, "f5.alpha.yaml", _SIGNAL_ALPHA_YAML)
+        config = _make_config(tmp_path)
+        config = replace(
+            config,
+            backtest_enforce_ingest_terminal_health=True,
+            ingest_terminal_symbol_health=(),
+        )
+        with pytest.raises(ConfigurationError, match="ingest_terminal_symbol_health"):
+            build_platform(config)

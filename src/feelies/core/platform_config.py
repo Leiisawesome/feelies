@@ -84,6 +84,17 @@ class PlatformConfig:
     # Log WARNING at boot when disk_cache_ingestion_health_rows carries non-HEALTHY
     # rows while require_healthy_disk_cache_manifests is False (advisory path).
     warn_on_unhealthy_disk_cache: bool = True
+    # After historical ingest / cache load, worst-case per-symbol DataHealth.name
+    # (populated by run_backtest / cache replay — not usually hand-authored in YAML).
+    ingest_terminal_symbol_health: tuple[tuple[str, str], ...] = ()
+    # BACKTEST only: ``validate()`` requires ``ingest_terminal_symbol_health`` to cover
+    # every config symbol with ``HEALTHY`` (fail closed on GAP_DETECTED / CORRUPTED).
+    backtest_enforce_ingest_terminal_health: bool = False
+    # BACKTEST ingest path: refuse runs with zero events when True.
+    backtest_reject_zero_ingest_events: bool = False
+    # When a Massive normalizer is wired, universe symbols must appear in
+    # ``normalizer.all_health()`` before ticks/trades are consumed (live/paper hook).
+    strict_normalizer_symbol_coverage: bool = False
 
     account_equity: float = 1_000_000.0
     backtest_fill_latency_ns: int = 0
@@ -384,6 +395,30 @@ class PlatformConfig:
                         f"disk cache manifest not HEALTHY for {sym}/{day}: {h!r}"
                     )
 
+        if self.backtest_enforce_ingest_terminal_health:
+            if self.mode != OperatingMode.BACKTEST:
+                raise ConfigurationError(
+                    "backtest_enforce_ingest_terminal_health is only valid "
+                    "in BACKTEST mode",
+                )
+            if self.ingest_terminal_symbol_health:
+                terminal_map = {
+                    k.upper(): v for k, v in self.ingest_terminal_symbol_health
+                }
+                for sym in self.symbols:
+                    key = sym.upper()
+                    state = terminal_map.get(key)
+                    if state is None:
+                        raise ConfigurationError(
+                            "backtest_enforce_ingest_terminal_health: "
+                            f"missing ingest_terminal_symbol_health row for {sym!r}",
+                        )
+                    if state != "HEALTHY":
+                        raise ConfigurationError(
+                            "backtest_enforce_ingest_terminal_health: "
+                            f"symbol {sym!r} terminal health is {state!r}, expected HEALTHY",
+                        )
+
         valid_modes = ("market", "passive_limit", "minimum_cost")
         if self.execution_mode not in valid_modes:
             raise ConfigurationError(
@@ -550,6 +585,18 @@ class PlatformConfig:
             ),
             "degrade_on_data_gap": self.degrade_on_data_gap,
             "warn_on_unhealthy_disk_cache": self.warn_on_unhealthy_disk_cache,
+            "ingest_terminal_symbol_health": list(
+                self.ingest_terminal_symbol_health,
+            ),
+            "backtest_enforce_ingest_terminal_health": (
+                self.backtest_enforce_ingest_terminal_health
+            ),
+            "backtest_reject_zero_ingest_events": (
+                self.backtest_reject_zero_ingest_events
+            ),
+            "strict_normalizer_symbol_coverage": (
+                self.strict_normalizer_symbol_coverage
+            ),
             "account_equity": self.account_equity,
             "backtest_fill_latency_ns": self.backtest_fill_latency_ns,
             "stop_loss_per_share": self.stop_loss_per_share,
@@ -697,6 +744,23 @@ class PlatformConfig:
         event_log_raw = data.get("event_log_path")
         cache_dir_raw = data.get("cache_dir")
 
+        terminal_raw = data.get("ingest_terminal_symbol_health")
+        ingest_terminal_symbol_health: tuple[tuple[str, str], ...] = ()
+        if terminal_raw:
+            if not isinstance(terminal_raw, list):
+                raise ConfigurationError(
+                    f"{path}: ingest_terminal_symbol_health must be a list of pairs",
+                )
+            parsed_term: list[tuple[str, str]] = []
+            for i, item in enumerate(terminal_raw):
+                if not isinstance(item, (list, tuple)) or len(item) != 2:
+                    raise ConfigurationError(
+                        f"{path}: ingest_terminal_symbol_health[{i}] "
+                        "must be [symbol, state]",
+                    )
+                parsed_term.append((str(item[0]), str(item[1])))
+            ingest_terminal_symbol_health = tuple(parsed_term)
+
         # ── Phase-2 fields (optional in YAML) ─────────────────────────
         horizons_raw = data.get("horizons_seconds")
         if horizons_raw is None:
@@ -778,6 +842,16 @@ class PlatformConfig:
             degrade_on_data_gap=bool(data.get("degrade_on_data_gap", False)),
             warn_on_unhealthy_disk_cache=bool(
                 data.get("warn_on_unhealthy_disk_cache", True)
+            ),
+            ingest_terminal_symbol_health=ingest_terminal_symbol_health,
+            backtest_enforce_ingest_terminal_health=bool(
+                data.get("backtest_enforce_ingest_terminal_health", False)
+            ),
+            backtest_reject_zero_ingest_events=bool(
+                data.get("backtest_reject_zero_ingest_events", False)
+            ),
+            strict_normalizer_symbol_coverage=bool(
+                data.get("strict_normalizer_symbol_coverage", False)
             ),
             account_equity=float(data.get("account_equity", 1_000_000.0)),
             backtest_fill_latency_ns=int(

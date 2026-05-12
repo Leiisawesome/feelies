@@ -3854,6 +3854,22 @@ class Orchestrator:
         if self._normalizer is None:
             return False
         health = self._normalizer.health(symbol)
+        cfg_syms = (
+            {s.upper() for s in self._config.symbols}
+            if self._config is not None
+            else frozenset()
+        )
+        if getattr(self._config, "strict_normalizer_symbol_coverage", False):
+            if symbol.upper() in cfg_syms:
+                tracked = {k.upper() for k in self._normalizer.all_health()}
+                if symbol.upper() not in tracked:
+                    if self._macro.can_transition(MacroState.DEGRADED):
+                        self._macro.transition(
+                            MacroState.DEGRADED,
+                            trigger=f"DATA_SYMBOL_UNTRACKED:{symbol}",
+                            correlation_id=correlation_id,
+                        )
+                    return True
         if health == DataHealth.CORRUPTED:
             if self._macro.can_transition(MacroState.DEGRADED):
                 self._macro.transition(
