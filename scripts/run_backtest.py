@@ -808,6 +808,7 @@ def ingest_data(
     *,
     cache_dir: Path | None = None,
     no_cache: bool = False,
+    enable_rest_sequence_gap_detection: bool = False,
 ) -> tuple[InMemoryEventLog, IngestResult, list[DaySource]]:
     """Download historical data with per-day cache and parallel download."""
     from feelies.ingestion.massive_ingestor import MassiveHistoricalIngestor
@@ -853,7 +854,10 @@ def ingest_data(
                     continue
 
             clock = SimulatedClock(start_ns=1_000_000_000)
-            normalizer = MassiveNormalizer(clock)
+            normalizer = MassiveNormalizer(
+                clock,
+                enable_rest_sequence_gap_detection=enable_rest_sequence_gap_detection,
+            )
             day_log = InMemoryEventLog()
 
             ingestor = MassiveHistoricalIngestor(
@@ -1925,6 +1929,9 @@ def main(argv: list[str] | None = None) -> int:
         event_log, ingest_result, day_sources = ingest_data(
             api_key, symbols, start_date, end_date,
             cache_dir=cache_dir, no_cache=no_cache,
+            enable_rest_sequence_gap_detection=(
+                config.enable_rest_sequence_gap_detection
+            ),
         )
     except ImportError as exc:
         print(

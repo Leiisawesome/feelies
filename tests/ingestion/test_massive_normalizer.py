@@ -356,6 +356,94 @@ class TestMassiveNormalizerGapRecovery:
         assert normalizer.health("AAPL") == DataHealth.GAP_DETECTED
 
 
+class TestMassiveNormalizerCrossFeedHealth:
+    """Quote vs trade sequence spaces must not false-clear each other's gaps."""
+
+    def test_trade_continuity_does_not_clear_quote_gap(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock
+    ) -> None:
+        msgs = [
+            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1000, "q": 1},
+            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1005, "q": 5},
+            {"ev": "T", "sym": "AAPL", "p": 150.02, "s": 50, "t": 1001, "q": 100},
+            {"ev": "T", "sym": "AAPL", "p": 150.03, "s": 50, "t": 1003, "q": 101},
+        ]
+        for msg in msgs:
+            normalizer.on_message(json.dumps(msg).encode("utf-8"), clock.now_ns(), "massive_ws")
+        assert normalizer.health("AAPL") == DataHealth.GAP_DETECTED
+
+
+class TestMassiveNormalizerWsOptionalTimestamps:
+    def test_ws_quote_optional_participant_trf_nanoseconds(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock
+    ) -> None:
+        msg = {
+            "ev": "Q",
+            "sym": "AAPL",
+            "bp": 150.0,
+            "ap": 150.05,
+            "bs": 10,
+            "as": 20,
+            "t": 1700000000000,
+            "q": 1,
+            "participant_timestamp": 1_700_000_000_001_234_567,
+            "trf_timestamp": 1_700_000_000_002_345_678,
+        }
+        raw = json.dumps(msg).encode("utf-8")
+        ev = normalizer.on_message(raw, clock.now_ns(), "massive_ws")[0]
+        assert isinstance(ev, NBBOQuote)
+        assert ev.participant_timestamp_ns == 1_700_000_000_001_234_567
+        assert ev.trf_timestamp_ns == 1_700_000_000_002_345_678
+
+
+class TestMassiveNormalizerRestTradeTrf:
+    def test_rest_trade_populates_trf_timestamp_ns(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock
+    ) -> None:
+        rec = {
+            "ticker": "AAPL",
+            "price": 150.02,
+            "size": 100,
+            "sip_timestamp": 1_700_000_000_000_000_000,
+            "sequence_number": 3,
+            "trf_timestamp": 1_700_000_000_000_000_099,
+        }
+        events = normalizer.on_message(
+            json.dumps(rec).encode("utf-8"),
+            clock.now_ns(),
+            "massive_rest",
+        )
+        assert len(events) == 1
+        tr = events[0]
+        assert isinstance(tr, Trade)
+        assert tr.trf_timestamp_ns == 1_700_000_000_000_000_099
+
+
+class TestMassiveNormalizerRestGapOptIn:
+    def test_rest_gap_detection_when_enabled(
+        self, clock: SimulatedClock,
+    ) -> None:
+        norm = MassiveNormalizer(
+            clock, enable_rest_sequence_gap_detection=True,
+        )
+        for seq in (1, 5):
+            rec = {
+                "ticker": "AAPL",
+                "bid_price": 150.0,
+                "ask_price": 150.05,
+                "bid_size": 10,
+                "ask_size": 20,
+                "sip_timestamp": 1_700_000_000_000_000_000 + seq,
+                "sequence_number": seq,
+            }
+            norm.on_message(
+                json.dumps(rec).encode("utf-8"),
+                clock.now_ns(),
+                "massive_rest",
+            )
+        assert norm.health("AAPL") == DataHealth.GAP_DETECTED
+
+
 class TestMassiveLiveFeedValidation:
     """Tests for _validate_status_response (WebSocket auth/subscribe checks)."""
 

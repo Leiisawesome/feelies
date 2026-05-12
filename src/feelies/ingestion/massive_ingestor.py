@@ -324,13 +324,13 @@ class MassiveHistoricalIngestor:
             d.get("__type_rank__", 0),
         ))
 
-        received_ns = self._clock.now_ns()
         total_events_local = 0
         chunk: list[NBBOQuote | Trade] = []
 
         for rec_dict in merged:
             rec_dict.pop("__type_rank__", None)
             raw = json.dumps(rec_dict).encode("utf-8")
+            received_ns = self._clock.now_ns()
             events = self._normalizer.on_message(raw, received_ns, "massive_rest")
             chunk.extend(events)
             if len(chunk) >= _CHUNK_SIZE:

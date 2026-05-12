@@ -301,9 +301,10 @@ class MassiveLiveFeed:
             )
             for event in events:
                 try:
-                    self._queue.put_nowait(event)
-                except queue.Full:
-                    logger.warning(
-                        "massive_ws: queue full, dropping event for %s",
-                        event.symbol,
+                    self._queue.put(event)
+                except Exception:
+                    logger.exception(
+                        "massive_ws: queue.put failed for %s",
+                        getattr(event, "symbol", "?"),
                     )
+                    raise
