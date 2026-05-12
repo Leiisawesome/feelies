@@ -1014,10 +1014,28 @@ class Orchestrator:
         Pending orders are surfaced as a WARNING alert but do not
         block shutdown — the operator investigates post-mortem.
 
+        ``CANCEL_REQUESTED`` orders (e.g. abandoned when no router cancel
+        API existed in an older build) are transitioned to ``CANCELLED``
+        best-effort before the pending-order scan so shutdown reflects
+        local operator intent.
+
         Allowed from **RISK_LOCKDOWN** via ``CMD_SHUTDOWN`` so operators
         can tear down the process without a prior unlock when needed.
         """
         self._checkpoint_feature_snapshots()
+        # Resolve operator cancel intent when no broker ack will arrive
+        # (e.g. mid backtest router has no cancel_order API).
+        for oid, (sm, _, order) in list(self._active_orders.items()):
+            if sm.state != OrderState.CANCEL_REQUESTED:
+                continue
+            if sm.can_transition(OrderState.CANCELLED):
+                sm.transition(
+                    OrderState.CANCELLED,
+                    trigger="shutdown_resolve_cancel_requested",
+                    correlation_id=order.correlation_id,
+                )
+        self._prune_terminal_orders()
+
         pending = [
             oid for oid, (sm, _, _) in self._active_orders.items()
             if sm.state not in _TERMINAL_ORDER_STATES
@@ -2247,6 +2265,12 @@ class Orchestrator:
                     symbol, pos.quantity,
                 )
                 failures[symbol] = f"submit_exception: {exc!r}"
+                if order_id in self._active_orders:
+                    self._force_order_terminal_after_pipeline_error(
+                        order,
+                        exc,
+                        context="emergency_flatten",
+                    )
 
         residual = {
             sym: p.quantity
@@ -2867,8 +2891,8 @@ class Orchestrator:
 
         When ``order_router.cancel_order`` exists it is invoked and the
         resulting acks are reconciled.  Routers without cancel support
-        emit ``cancel_order_router_unsupported`` — the SM still records
-        operator intent.
+        emit ``cancel_order_router_unsupported`` and immediately resolve
+        the SM to ``CANCELLED`` (no broker ack is possible in backtest).
 
         Returns True if the SM accepted ``CANCEL_REQUESTED``, False when
         the order is missing or cannot cancel from its current state.
@@ -2896,10 +2920,19 @@ class Orchestrator:
                 message=(
                     f"cancel_order requested for {order_id!r} but "
                     f"{type(self._backend.order_router).__name__} has no "
-                    "cancel_order(...) — SM left in CANCEL_REQUESTED."
+                    "cancel_order(...) — resolving SM to CANCELLED locally "
+                    "(Inv-4 shutdown hygiene)."
                 ),
                 context={"order_id": order_id},
             ))
+            sm2 = self._active_orders[order_id][0]
+            if sm2.can_transition(OrderState.CANCELLED):
+                sm2.transition(
+                    OrderState.CANCELLED,
+                    trigger="cancel_router_unsupported_local_terminal",
+                    correlation_id=order.correlation_id,
+                )
+            self._prune_terminal_orders()
             return True
         cancel_fn(order_id)
         acks = self._poll_order_router_acks({order_id})
@@ -3024,6 +3057,66 @@ class Orchestrator:
                 correlation_id=order.correlation_id,
             )
         self._prune_terminal_orders()
+
+    def _force_order_terminal_after_pipeline_error(
+        self,
+        order: OrderRequest,
+        exc: BaseException,
+        *,
+        context: str,
+    ) -> None:
+        """Best-effort terminal resolution after an unexpected pipeline failure.
+
+        Used when ``submit`` succeeded but a later step (poll/apply/reconcile)
+        raised — the order must not remain stuck in a non-terminal SM state
+        (Inv-4 / operator hygiene).
+        """
+        self._bus.publish(Alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=order.correlation_id,
+            sequence=self._seq.next(),
+            severity=AlertSeverity.WARNING,
+            layer="kernel",
+            alert_name="order_pipeline_exception",
+            message=(
+                f"{context}: pipeline failed after submit for "
+                f"order_id={order.order_id!r} symbol={order.symbol!r}: {exc!r}"
+            ),
+            context={
+                "order_id": order.order_id,
+                "symbol": order.symbol,
+                "context": context,
+                "exc_type": type(exc).__name__,
+            },
+        ))
+        oid = order.order_id
+        if oid not in self._active_orders:
+            return
+        sm = self._active_orders[oid][0]
+        if sm.state in _TERMINAL_ORDER_STATES:
+            self._prune_terminal_orders()
+            return
+        trigger_base = f"{context}_pipeline_abort:{type(exc).__name__}"
+        for target in (
+            OrderState.REJECTED,
+            OrderState.CANCELLED,
+            OrderState.EXPIRED,
+        ):
+            if sm.can_transition(target):
+                sm.transition(
+                    target,
+                    trigger=trigger_base,
+                    correlation_id=order.correlation_id,
+                )
+                self._prune_terminal_orders()
+                return
+        logger.critical(
+            "orchestrator: could not force terminal order state for %s "
+            "(current=%s) after %s — manual reconciliation required",
+            oid,
+            sm.state.name,
+            context,
+        )
 
     def _reconcile_resting_fills(self, cid: str) -> None:
         """Poll and reconcile quote-driven router acknowledgements.
