@@ -257,6 +257,14 @@ class BasicRiskEngine:
         ``requires_global_risk_escalation`` is true so the orchestrator
         runs the same emergency flatten + LOCKED path as standalone SIGNAL.
 
+        Macro interaction (kernel audit)
+        ----------------------------------
+        A ``RiskAction.FORCE_FLATTEN`` verdict on a per-leg
+        :meth:`check_order` call is **not** promoted to orchestrator
+        global lockdown — the leg is veto-dropped like REJECT. Only the
+        standalone-SIGNAL per-tick path can drive macro
+        **RISK_LOCKDOWN** (see :mod:`feelies.kernel.macro`).
+
         Diagnostic (audit R4)
         ---------------------
 
