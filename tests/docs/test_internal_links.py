@@ -68,7 +68,7 @@ _PLACEHOLDER_PATH_TOKENS: frozenset[str] = frozenset({
     # Prompt-7 mutation example (forward-looking
     # successor file the operator would create on a real mutation):
     "alphas/pofi_benign_midcap_v2/pofi_benign_midcap_v2.alpha.yaml",
-    "alphas/_deprecated/pofi_benign_midcap_v1_v1.0.0.yaml",
+    "alphas/_deprecated/sig_benign_midcap_v1_v1.0.0.yaml",
     # Forward-looking research infrastructure path referenced as a
     # design pointer for the hypothesis status taxonomy.  Not yet
     # implemented; tracked separately:

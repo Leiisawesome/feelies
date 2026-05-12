@@ -51,6 +51,7 @@ from feelies.core.events import (
     RiskVerdict,
     Signal,
     SignalDirection,
+    SizedPositionIntent,
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
@@ -61,6 +62,7 @@ from feelies.kernel.signal_order_trace import SignalOrderTraceRow
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import PositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
+from feelies.risk.sized_intent_result import SizedIntentRiskResult
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 
@@ -107,6 +109,14 @@ class _StubRiskEngine:
             reason="bus-signal-test",
         )
 
+    def check_sized_intent(
+        self,
+        intent: SizedPositionIntent,
+        _positions: PositionStore,
+    ) -> SizedIntentRiskResult:
+        del intent
+        return SizedIntentRiskResult(orders=())
+
 
 class _DualScaleDownRiskEngine:
     """Emit SCALE_DOWN at both gates to verify single-application."""
@@ -135,6 +145,14 @@ class _DualScaleDownRiskEngine:
             reason="dual-scale-down-test:order",
             scaling_factor=self._factor,
         )
+
+    def check_sized_intent(
+        self,
+        intent: SizedPositionIntent,
+        _positions: PositionStore,
+    ) -> SizedIntentRiskResult:
+        del intent
+        return SizedIntentRiskResult(orders=())
 
 
 class _MinimalConfig:

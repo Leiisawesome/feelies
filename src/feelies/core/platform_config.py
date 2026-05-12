@@ -78,6 +78,12 @@ class PlatformConfig:
     # is wired at orchestrator boot.
     require_healthy_disk_cache_manifests: bool = False
     disk_cache_ingestion_health_rows: tuple[tuple[str, str, str], ...] = ()
+    # When True and a Massive normalizer is wired, GAP_DETECTED halts ticks/trades
+    # for that symbol the same way CORRUPTED does (strict streaming policy).
+    degrade_on_data_gap: bool = False
+    # Log WARNING at boot when disk_cache_ingestion_health_rows carries non-HEALTHY
+    # rows while require_healthy_disk_cache_manifests is False (advisory path).
+    warn_on_unhealthy_disk_cache: bool = True
 
     account_equity: float = 1_000_000.0
     backtest_fill_latency_ns: int = 0
@@ -85,6 +91,10 @@ class PlatformConfig:
     stop_loss_per_share: float = 0.0
     trail_activate_per_share: float = 0.0
     trail_pct: float = 0.5
+    # Percentage-based stops (fraction of entry price, e.g. 0.01 = 1%).
+    # When non-zero, these override stop_loss_per_share / trail_activate_per_share.
+    stop_loss_pct: float = 0.0
+    trail_activate_pct: float = 0.0
 
     cost_min_spread_bps: float = 0.0
     cost_commission_per_share: float = 0.0035
@@ -201,7 +211,7 @@ class PlatformConfig:
     # opt-out), schema-1.1 SIGNAL/PORTFOLIO specs may omit the block
     # and G16 only fires for specs that *do* declare it; this is the
     # documented escape hatch for v0.2-baseline alphas (such as the
-    # reference ``pofi_benign_midcap_v1``) that pre-date the mechanism
+    # reference ``sig_benign_midcap_v1``) that pre-date the mechanism
     # taxonomy.
     #
     # Workstream E (acceptance row 84, §20.12.1) flipped the default
@@ -538,11 +548,15 @@ class PlatformConfig:
             "disk_cache_ingestion_health_rows": list(
                 self.disk_cache_ingestion_health_rows,
             ),
+            "degrade_on_data_gap": self.degrade_on_data_gap,
+            "warn_on_unhealthy_disk_cache": self.warn_on_unhealthy_disk_cache,
             "account_equity": self.account_equity,
             "backtest_fill_latency_ns": self.backtest_fill_latency_ns,
             "stop_loss_per_share": self.stop_loss_per_share,
             "trail_activate_per_share": self.trail_activate_per_share,
             "trail_pct": self.trail_pct,
+            "stop_loss_pct": self.stop_loss_pct,
+            "trail_activate_pct": self.trail_activate_pct,
             "cost_min_spread_bps": self.cost_min_spread_bps,
             "cost_commission_per_share": self.cost_commission_per_share,
             "cost_taker_exchange_per_share": self.cost_taker_exchange_per_share,
@@ -761,6 +775,10 @@ class PlatformConfig:
             require_healthy_disk_cache_manifests=bool(
                 data.get("require_healthy_disk_cache_manifests", False)
             ),
+            degrade_on_data_gap=bool(data.get("degrade_on_data_gap", False)),
+            warn_on_unhealthy_disk_cache=bool(
+                data.get("warn_on_unhealthy_disk_cache", True)
+            ),
             account_equity=float(data.get("account_equity", 1_000_000.0)),
             backtest_fill_latency_ns=int(
                 data.get("backtest_fill_latency_ns", 0)
@@ -773,6 +791,12 @@ class PlatformConfig:
             ),
             trail_pct=float(
                 data.get("trail_pct", 0.5)
+            ),
+            stop_loss_pct=float(
+                data.get("stop_loss_pct", 0.0)
+            ),
+            trail_activate_pct=float(
+                data.get("trail_activate_pct", 0.0)
             ),
             cost_min_spread_bps=float(
                 data.get("cost_min_spread_bps", 0.0)

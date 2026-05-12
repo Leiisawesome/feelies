@@ -7,12 +7,10 @@ tracker — breach triggers per-alpha quarantine (REJECT), not
 platform lockdown (FORCE_FLATTEN).
 
 The inner engine handles aggregate-level checks and may return
-FORCE_FLATTEN for aggregate drawdown.  Historically the
-``MultiAlphaEvaluator`` distinguished this from per-alpha REJECT and
-short-circuited the evaluation loop; D.2 PR-2b-ii deleted that
-evaluator, so post-PR-2b-ii the FORCE_FLATTEN ladder is the
-``CompositionEngine`` (Phase-4 PORTFOLIO path) and the orchestrator's
-aggregate order gate (``check_order``).
+FORCE_FLATTEN for aggregate drawdown.  On the PORTFOLIO path,
+``check_sized_intent`` surfaces that verdict as
+``requires_global_risk_escalation`` so the orchestrator runs the same
+emergency flatten + macro lockdown as standalone SIGNAL breaches.
 
 Invariants preserved:
   - Inv 11 (fail-safe): per-alpha drawdown -> REJECT -> quarantine;
@@ -41,6 +39,7 @@ from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.basic_risk import RiskConfig
 from feelies.risk.engine import RiskEngine
+from feelies.risk.sized_intent_result import SizedIntentRiskResult
 
 
 class AlphaBudgetRiskWrapper:
@@ -247,7 +246,7 @@ class AlphaBudgetRiskWrapper:
         self,
         intent: SizedPositionIntent,
         positions: PositionStore,
-    ) -> tuple[OrderRequest, ...]:
+    ) -> SizedIntentRiskResult:
         """Translate a PORTFOLIO ``SizedPositionIntent`` to per-leg orders.
 
         Mirrors :meth:`BasicRiskEngine.check_sized_intent` (sort by
@@ -262,13 +261,14 @@ class AlphaBudgetRiskWrapper:
 
         Inv-5: lexicographic symbol order keeps the emitted tuple
         bit-identical across replays.  Inv-11: per-leg veto drops only
-        the offending leg, the rest of the intent proceeds — and the
-        inner engine's diagnostic Alert path (audit R4) still fires
-        because we re-use ``self._inner.check_sized_intent`` for
-        anything we delegate.
+        the offending leg for ordinary rejects; aggregate
+        ``FORCE_FLATTEN`` aborts the intent and requests global
+        orchestrator escalation.  The inner engine's diagnostic Alert
+        path (audit R4) still fires for ordinary veto drops via
+        ``_emit_dropped_legs_alert``.
         """
         if not intent.target_positions:
-            return ()
+            return SizedIntentRiskResult(orders=())
 
         orders: list[OrderRequest] = []
         dropped: list[tuple[str, str]] = []
@@ -309,7 +309,12 @@ class AlphaBudgetRiskWrapper:
             )
 
             verdict = self.check_order(order, positions)
-            if verdict.action in (RiskAction.REJECT, RiskAction.FORCE_FLATTEN):
+            if verdict.action == RiskAction.FORCE_FLATTEN:
+                return SizedIntentRiskResult(
+                    orders=(),
+                    requires_global_risk_escalation=True,
+                )
+            if verdict.action == RiskAction.REJECT:
                 dropped.append((symbol, verdict.reason))
                 continue
             if verdict.action == RiskAction.SCALE_DOWN:
@@ -336,7 +341,7 @@ class AlphaBudgetRiskWrapper:
             if callable(emit_alert):
                 emit_alert(intent, dropped)
 
-        return tuple(orders)
+        return SizedIntentRiskResult(orders=tuple(orders))
 
     @staticmethod
     def _mark_for(

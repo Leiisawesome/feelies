@@ -315,7 +315,7 @@ class TestCheckSizedIntent:
             targets={"AAPL": 15_000.0},  # 100 shares @ $150
         )
 
-        orders = wrapper.check_sized_intent(intent, agg_store)
+        orders = wrapper.check_sized_intent(intent, agg_store).orders
         assert orders == ()  # leg dropped by per-alpha cap
 
     def test_within_alpha_budget_legs_pass_through(self) -> None:
@@ -336,7 +336,7 @@ class TestCheckSizedIntent:
             targets={"AAPL": 5_000.0},  # 50 shares
         )
 
-        orders = wrapper.check_sized_intent(intent, agg_store)
+        orders = wrapper.check_sized_intent(intent, agg_store).orders
         assert len(orders) == 1
         assert orders[0].symbol == "AAPL"
         assert orders[0].quantity == 50
@@ -354,7 +354,7 @@ class TestCheckSizedIntent:
             targets={"AAPL": 1_000.0},
         )
 
-        orders = wrapper.check_sized_intent(intent, agg_store)
+        orders = wrapper.check_sized_intent(intent, agg_store).orders
         assert len(orders) == 1
 
     def test_empty_intent_returns_empty_tuple(self) -> None:
@@ -362,4 +362,6 @@ class TestCheckSizedIntent:
         wrapper = _build_wrapper(alpha)
         intent = self._make_intent(strategy_id="test_alpha", targets={})
 
-        assert wrapper.check_sized_intent(intent, MemoryPositionStore()) == ()
+        empty = wrapper.check_sized_intent(intent, MemoryPositionStore())
+        assert empty.orders == ()
+        assert empty.requires_global_risk_escalation is False

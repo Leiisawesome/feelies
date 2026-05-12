@@ -1,8 +1,8 @@
 """Phase-4 e2e — SIGNAL + PORTFOLIO concurrent on a 10-symbol universe.
 
 Locks the structural invariants of mixed-mode operation when a
-SIGNAL alpha (``pofi_benign_midcap_v1``) and the v0.2 PORTFOLIO
-reference alpha (``pofi_xsect_v1``) coexist in a single
+SIGNAL alpha (``sig_benign_midcap_v1``) and the v0.2 PORTFOLIO
+reference alpha (``pro_xsect_v1``) coexist in a single
 ``build_platform`` invocation driven by a deterministic multi-symbol
 synthetic event log.
 
@@ -41,7 +41,7 @@ What this test guarantees
   path fails loudly.
 
   The current fixture's 36-second random walk does not trigger
-  ``pofi_benign_midcap_v1``'s entry gate (|OFI z| > 2.0 inside the
+  ``sig_benign_midcap_v1``'s entry gate (|OFI z| > 2.0 inside the
   benign regime), so the realised standalone-Signal count is zero and
   the assertion holds vacuously today.  A future enrichment of the
   synthetic stream (or addition of an "always-on" tracer SIGNAL alpha)
@@ -56,7 +56,7 @@ What this test guarantees
   in the same way the PR-2b-iii contract locks the SIGNAL path.
 
   As with the PR-2b-iii assertion, the current fixture's 36-second
-  random walk happens to leave ``pofi_xsect_v1``'s realised non-trivial
+  random walk happens to leave ``pro_xsect_v1``'s realised non-trivial
   intent count at zero (every intent collapses to an empty
   ``target_positions`` because the cross-sectional gate rarely opens
   inside the benign synthetic regime).  The assertion is therefore
@@ -108,17 +108,17 @@ pytestmark = pytest.mark.backtest_validation
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SIGNAL_ALPHA = (
-    _REPO_ROOT / "alphas" / "pofi_benign_midcap_v1"
-    / "pofi_benign_midcap_v1.alpha.yaml"
+    _REPO_ROOT / "alphas" / "sig_benign_midcap_v1"
+    / "sig_benign_midcap_v1.alpha.yaml"
 )
 _PORTFOLIO_ALPHA = (
-    _REPO_ROOT / "alphas" / "pofi_xsect_v1"
-    / "pofi_xsect_v1.alpha.yaml"
+    _REPO_ROOT / "alphas" / "pro_xsect_v1"
+    / "pro_xsect_v1.alpha.yaml"
 )
 _FACTOR_LOADINGS_DIR = FACTOR_LOADINGS_DIR
 _SECTOR_MAP_PATH = SECTOR_MAP_PATH
 
-# 10-symbol reference universe — must match alphas/pofi_xsect_v1/.
+# 10-symbol reference universe — must match alphas/pro_xsect_v1/.
 _UNIVERSE: tuple[str, ...] = (
     "AAPL", "AMZN", "BAC", "CVX", "GOOG",
     "JPM", "META", "MSFT", "NVDA", "XOM",
@@ -357,8 +357,8 @@ def test_phase4_e2e_signal_and_portfolio_layers_register() -> None:
     registry = orchestrator._alpha_registry
     assert registry is not None
     ids = registry.alpha_ids()
-    assert "pofi_benign_midcap_v1" in ids
-    assert "pofi_xsect_v1" in ids
+    assert "sig_benign_midcap_v1" in ids
+    assert "pro_xsect_v1" in ids
 
 
 def test_phase4_e2e_composition_layer_is_wired() -> None:
@@ -386,8 +386,8 @@ def test_phase4_e2e_per_strategy_positions_independent() -> None:
     sp = orchestrator._strategy_positions
     assert sp is not None
     for sym in _UNIVERSE:
-        signal_pos = sp.get("pofi_benign_midcap_v1", sym)
-        portfolio_pos = sp.get("pofi_xsect_v1", sym)
+        signal_pos = sp.get("sig_benign_midcap_v1", sym)
+        portfolio_pos = sp.get("pro_xsect_v1", sym)
         # Distinct objects (StrategyPositionStore keys by (alpha, sym)).
         assert signal_pos is not portfolio_pos
 
@@ -457,15 +457,15 @@ def test_phase4_e2e_standalone_signal_alphas_translate_to_orders() -> None:
     into ``SizedPositionIntent`` events instead, to be wired to orders by
     PR-2b-iv).
 
-    The reference fixture registers ``pofi_benign_midcap_v1`` as a SIGNAL
-    alpha and ``pofi_xsect_v1`` as a PORTFOLIO alpha; the latter's
-    ``depends_on_signals`` lists ``pofi_kyle_drift_v1`` and
-    ``pofi_inventory_revert_v1`` — *not* ``pofi_benign_midcap_v1``.  So
-    every Signal published by ``pofi_benign_midcap_v1`` is a "standalone
+    The reference fixture registers ``sig_benign_midcap_v1`` as a SIGNAL
+    alpha and ``pro_xsect_v1`` as a PORTFOLIO alpha; the latter's
+    ``depends_on_signals`` lists ``sig_kyle_drift_v1`` and
+    ``sig_inventory_revert_v1`` — *not* ``sig_benign_midcap_v1``.  So
+    every Signal published by ``sig_benign_midcap_v1`` is a "standalone
     SIGNAL Signal" and must produce a corresponding order pipeline walk.
 
     The synthetic 36-second random walk does not satisfy
-    ``pofi_benign_midcap_v1``'s entry gate, so the realised count is zero
+    ``sig_benign_midcap_v1``'s entry gate, so the realised count is zero
     and the assertion is vacuously true.  This is a deliberate regression
     guard: if a future change re-orphans the bus Signal → order path
     (e.g. by mis-filtering, dropping the subscriber, or routing standalone

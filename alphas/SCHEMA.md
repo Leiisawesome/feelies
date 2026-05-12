@@ -131,8 +131,8 @@ Alphas can be placed in either layout:
 > operator explicitly pins `enforce_trend_mechanism: false` in
 > `platform.yaml` (the documented v0.2 escape hatch). Four reference
 > alphas covering the non-stress families ship in this slice
-> (`pofi_hawkes_burst_v1`, `pofi_kyle_drift_v1`,
-> `pofi_inventory_revert_v1`, `pofi_moc_imbalance_v1`); the
+> (`sig_hawkes_burst_v1`, `sig_kyle_drift_v1`,
+> `sig_inventory_revert_v1`, `sig_moc_imbalance_v1`); the
 > `LIQUIDITY_STRESS` family is enforced **exit-only** — a stress-family
 > alpha may not emit an entry-direction `Signal`. See §20.10 (v0.3
 > Phased Delivery) for the full timeline.
@@ -268,7 +268,7 @@ Layer-2 contract:
   `evaluate(snapshot, regime, params)` is parsed and validated by
   gates G2–G13 at load time.
 - The reference alpha
-  [`alphas/pofi_benign_midcap_v1`](pofi_benign_midcap_v1/) ships as
+  [`alphas/sig_benign_midcap_v1`](sig_benign_midcap_v1/) ships as
   the canonical Phase-3 example. Its Level-2 SIGNAL parity hash is
   locked in `tests/determinism/test_signal_replay.py`. Drift in
   ordering, scope, or sequence allocation surfaces as a baseline
@@ -297,20 +297,20 @@ four reference alphas exercise the four non-stress families:
   default `true` since Workstream E, acceptance row 84)** rejects
   any schema-1.1 `SIGNAL`/`PORTFOLIO` spec *missing* a
   `trend_mechanism:` block at load time. Operators staying on a v0.2
-  baseline alpha (e.g. `pofi_benign_midcap_v1`) must pin
+  baseline alpha (e.g. `sig_benign_midcap_v1`) must pin
   `enforce_trend_mechanism: false` explicitly. This is the
   recommended setting once an operator has committed to the
   v0.3 mechanism contract; it catches "drift back to v0.2" at load
   time rather than at promotion review.
 - **Reference alphas (one per non-stress family):**
-  - [`alphas/pofi_hawkes_burst_v1`](pofi_hawkes_burst_v1/) —
+  - [`alphas/sig_hawkes_burst_v1`](sig_hawkes_burst_v1/) —
     `HAWKES_SELF_EXCITE`, 30 s horizon, hazard-exit enabled.
-  - [`alphas/pofi_kyle_drift_v1`](pofi_kyle_drift_v1/) — `KYLE_INFO`,
+  - [`alphas/sig_kyle_drift_v1`](sig_kyle_drift_v1/) — `KYLE_INFO`,
     300 s horizon, slow drift on informed-trader price impact.
-  - [`alphas/pofi_inventory_revert_v1`](pofi_inventory_revert_v1/) —
+  - [`alphas/sig_inventory_revert_v1`](sig_inventory_revert_v1/) —
     `INVENTORY`, 30 s horizon, contrarian on quote-replenish
     asymmetry (`abs(zscore) > 2.0`).
-  - [`alphas/pofi_moc_imbalance_v1`](pofi_moc_imbalance_v1/) —
+  - [`alphas/sig_moc_imbalance_v1`](sig_moc_imbalance_v1/) —
     `SCHEDULED_FLOW`, 120 s horizon, MOC-window flow tracking via the
     tuple-valued `scheduled_flow_window` sensor (component-expanded
     by `HorizonSignalEngine`).
@@ -405,10 +405,10 @@ side-by-side with `SIGNAL` alphas on the same universe:
   (12 composition + hazard metrics), and (if any alpha enables
   `hazard_exit.enabled: true`) `HazardExitController`.
 - The reference alpha
-  [`alphas/pofi_xsect_v1`](pofi_xsect_v1/) ships as the canonical
-  Phase-4 example, with a sibling `pofi_xsect_v1.with_decay.alpha.yaml`
+  [`alphas/pro_xsect_v1`](pro_xsect_v1/) ships as the canonical
+  Phase-4 example, with a sibling `pro_xsect_v1.with_decay.alpha.yaml`
   exercising the Phase-4.1 decay-weighting branch and
-  [`alphas/pofi_xsect_mixed_mechanism_v1`](pofi_xsect_mixed_mechanism_v1/)
+  [`alphas/pro_xsect_mixed_mechanism_v1`](pro_xsect_mixed_mechanism_v1/)
   exercising the multi-mechanism cap.
 - `scripts/run_backtest.py` exposes three new emission flags
   composable with the Phase-3 ones:

@@ -1,5 +1,5 @@
 """Acceptance tests for the reference SIGNAL alpha
-``alphas/pofi_inventory_revert_v1`` (Phase 3.1, INVENTORY family)."""
+``alphas/sig_kyle_drift_v1`` (Phase 3.1, KYLE_INFO family)."""
 
 from __future__ import annotations
 
@@ -23,9 +23,9 @@ from feelies.signals.horizon_engine import HorizonSignalEngine, RegisteredSignal
 
 
 REFERENCE_PATH = Path(
-    "alphas/pofi_inventory_revert_v1/pofi_inventory_revert_v1.alpha.yaml"
+    "alphas/sig_kyle_drift_v1/sig_kyle_drift_v1.alpha.yaml"
 )
-ALPHA_ID = "pofi_inventory_revert_v1"
+ALPHA_ID = "sig_kyle_drift_v1"
 
 
 def test_loads_without_strict_mode() -> None:
@@ -37,9 +37,9 @@ def test_loads_without_strict_mode() -> None:
 def test_loads_under_strict_mode() -> None:
     m = AlphaLoader(enforce_trend_mechanism=True).load(str(REFERENCE_PATH))
     assert isinstance(m, LoadedSignalLayerModule)
-    assert m.horizon_seconds == 30
-    assert m.trend_mechanism_enum is TrendMechanism.INVENTORY
-    assert m.expected_half_life_seconds == 20
+    assert m.horizon_seconds == 300
+    assert m.trend_mechanism_enum is TrendMechanism.KYLE_INFO
+    assert m.expected_half_life_seconds == 600
 
 
 @pytest.fixture
@@ -50,16 +50,20 @@ def loaded() -> LoadedSignalLayerModule:
 def test_manifest_metadata(loaded: LoadedSignalLayerModule) -> None:
     assert loaded.manifest.layer == "SIGNAL"
     assert loaded.depends_on_sensors == (
-        "quote_replenish_asymmetry",
+        "kyle_lambda_60s",
+        "ofi_ewma",
+        "micro_price",
         "spread_z_30d",
-        "quote_hazard_rate",
         "realized_vol_30s",
     )
 
 
 def test_cost_arithmetic_meets_floor(loaded: LoadedSignalLayerModule) -> None:
-    assert loaded.cost.margin_ratio == pytest.approx(1.6)
-    assert loaded.cost.computed_margin_ratio == pytest.approx(1.6, abs=0.05)
+    assert loaded.cost.margin_ratio == pytest.approx(1.8)
+
+
+def test_regime_gate_engine_name(loaded: LoadedSignalLayerModule) -> None:
+    assert loaded.gate.engine_name == "hmm_3state_fractional"
 
 
 def _engine_with_alpha(
@@ -85,7 +89,7 @@ def _engine_with_alpha(
     return engine, bus, captured
 
 
-def _normal_with_asym(asym_z: float) -> RegimeState:
+def _normal_high() -> RegimeState:
     return RegimeState(
         timestamp_ns=1_000,
         correlation_id="corr",
@@ -93,13 +97,13 @@ def _normal_with_asym(asym_z: float) -> RegimeState:
         symbol="AAPL",
         engine_name="hmm_3state_fractional",
         state_names=("compression_clustering", "normal", "vol_breakout"),
-        posteriors=(0.1, 0.8, 0.1),
+        posteriors=(0.05, 0.85, 0.10),
         dominant_state=1,
         dominant_name="normal",
     )
 
 
-def _toxic_regime() -> RegimeState:
+def _normal_low() -> RegimeState:
     return RegimeState(
         timestamp_ns=1_500,
         correlation_id="corr",
@@ -107,13 +111,13 @@ def _toxic_regime() -> RegimeState:
         symbol="AAPL",
         engine_name="hmm_3state_fractional",
         state_names=("compression_clustering", "normal", "vol_breakout"),
-        posteriors=(0.7, 0.2, 0.1),
+        posteriors=(0.6, 0.2, 0.2),
         dominant_state=0,
         dominant_name="compression_clustering",
     )
 
 
-def _spread_reading(z: float = 0.4) -> SensorReading:
+def _spread_low_reading() -> SensorReading:
     return SensorReading(
         timestamp_ns=1_700,
         correlation_id="corr",
@@ -121,98 +125,77 @@ def _spread_reading(z: float = 0.4) -> SensorReading:
         symbol="AAPL",
         sensor_id="spread_z_30d",
         sensor_version="1.0.0",
-        value=z,
-    )
-
-
-def _asym_zscore_reading(value: float) -> SensorReading:
-    """Publish a quote_replenish_asymmetry reading with the given z-score
-    by stamping the percentile/zscore caches via the snapshot route.
-
-    The regime gate references ``quote_replenish_asymmetry_zscore``
-    which the engine resolves from the snapshot's ``values`` dict, so
-    we route the value through the snapshot rather than the sensor
-    cache.
-    """
-    return SensorReading(
-        timestamp_ns=1_750,
-        correlation_id="corr",
-        sequence=4,
-        symbol="AAPL",
-        sensor_id="quote_replenish_asymmetry",
-        sensor_version="1.0.0",
-        value=value,
+        value=0.4,
     )
 
 
 def _snapshot(
-    *,
-    asym_z: float,
-    hazard: float,
-    boundary_index: int = 1,
+    *, lam_pct: float, lam_z: float, ofi: float, boundary_index: int = 1,
 ) -> HorizonFeatureSnapshot:
     return HorizonFeatureSnapshot(
         timestamp_ns=2_000,
         correlation_id="corr",
         sequence=10 + boundary_index,
         symbol="AAPL",
-        horizon_seconds=30,
+        horizon_seconds=300,
         boundary_index=boundary_index,
         values={
-            "quote_replenish_asymmetry_zscore": asym_z,
-            "quote_hazard_rate": hazard,
+            "kyle_lambda_60s_percentile": lam_pct,
+            "kyle_lambda_60s_zscore": lam_z,
+            "ofi_ewma": ofi,
             "realized_vol_30s_zscore": 0.5,
         },
     )
 
 
-def test_emits_long_when_positive_asymmetry_above_threshold(
+def test_emits_long_when_lambda_high_and_ofi_positive(
     loaded: LoadedSignalLayerModule,
 ) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
-    bus.publish(_normal_with_asym(3.6))
-    bus.publish(_spread_reading())
-    bus.publish(_snapshot(asym_z=3.6, hazard=0.2))
+    bus.publish(_normal_high())
+    bus.publish(_spread_low_reading())
+    bus.publish(_snapshot(lam_pct=0.9, lam_z=2.0, ofi=0.8))
 
     assert len(captured) == 1
     sig = captured[0]
-    assert sig.direction == SignalDirection.LONG  # contrarian fade
+    assert sig.direction == SignalDirection.LONG
     assert sig.layer == "SIGNAL"
-    assert sig.horizon_seconds == 30
+    assert sig.regime_gate_state == "ON"
+    assert sig.horizon_seconds == 300
     assert sig.strategy_id == ALPHA_ID
-    assert sig.trend_mechanism is TrendMechanism.INVENTORY
-    assert sig.expected_half_life_seconds == 20
-    assert 0 < sig.edge_estimate_bps <= 14.0
+    assert sig.trend_mechanism is TrendMechanism.KYLE_INFO
+    assert sig.expected_half_life_seconds == 600
+    assert 0 < sig.edge_estimate_bps <= 25.0
 
 
-def test_emits_short_for_negative_asymmetry(
+def test_emits_short_for_negative_ofi(
     loaded: LoadedSignalLayerModule,
 ) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
-    bus.publish(_normal_with_asym(3.6))
-    bus.publish(_spread_reading())
-    bus.publish(_snapshot(asym_z=-3.6, hazard=0.2))
+    bus.publish(_normal_high())
+    bus.publish(_spread_low_reading())
+    bus.publish(_snapshot(lam_pct=0.85, lam_z=1.5, ofi=-0.7))
     assert len(captured) == 1
     assert captured[0].direction == SignalDirection.SHORT
 
 
-def test_no_emission_when_hazard_below_floor(
+def test_no_emission_when_lambda_below_percentile(
     loaded: LoadedSignalLayerModule,
 ) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
-    bus.publish(_normal_with_asym(2.5))
-    bus.publish(_spread_reading())
-    bus.publish(_snapshot(asym_z=2.5, hazard=0.01))  # below default 0.05
+    bus.publish(_normal_high())
+    bus.publish(_spread_low_reading())
+    bus.publish(_snapshot(lam_pct=0.5, lam_z=0.2, ofi=0.8))
     assert captured == []
 
 
-def test_no_emission_when_asymmetry_below_threshold(
+def test_no_emission_when_ofi_below_threshold(
     loaded: LoadedSignalLayerModule,
 ) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
-    bus.publish(_normal_with_asym(2.5))
-    bus.publish(_spread_reading())
-    bus.publish(_snapshot(asym_z=1.0, hazard=0.2))
+    bus.publish(_normal_high())
+    bus.publish(_spread_low_reading())
+    bus.publish(_snapshot(lam_pct=0.9, lam_z=2.0, ofi=0.1))
     assert captured == []
 
 
@@ -220,10 +203,9 @@ def test_no_emission_when_gate_off(
     loaded: LoadedSignalLayerModule,
 ) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
-    bus.publish(_toxic_regime())
-    bus.publish(_spread_reading())
-    # asym_z=3.6 clears the cost floor — only the gate suppresses here.
-    bus.publish(_snapshot(asym_z=3.6, hazard=0.2))
+    bus.publish(_normal_low())
+    bus.publish(_spread_low_reading())
+    bus.publish(_snapshot(lam_pct=0.9, lam_z=2.0, ofi=0.8))
     assert captured == []
 
 
@@ -231,19 +213,8 @@ def test_edge_capped_at_disclosed_maximum(
     loaded: LoadedSignalLayerModule,
 ) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
-    bus.publish(_normal_with_asym(2.5))
-    bus.publish(_spread_reading())
-    bus.publish(_snapshot(asym_z=100.0, hazard=0.2))
+    bus.publish(_normal_high())
+    bus.publish(_spread_low_reading())
+    bus.publish(_snapshot(lam_pct=0.99, lam_z=100.0, ofi=0.8))
     assert len(captured) == 1
-    assert captured[0].edge_estimate_bps == pytest.approx(14.0)
-
-
-def test_no_emission_below_cost_floor(
-    loaded: LoadedSignalLayerModule,
-) -> None:
-    """asym_z=3.5 clears the z-threshold (>2.0) but edge_bps=5.25 < cost_floor=5.5."""
-    _, bus, captured = _engine_with_alpha(loaded)
-    bus.publish(_normal_with_asym(3.5))
-    bus.publish(_spread_reading())
-    bus.publish(_snapshot(asym_z=3.5, hazard=0.2))
-    assert captured == []
+    assert captured[0].edge_estimate_bps == pytest.approx(25.0)

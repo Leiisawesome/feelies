@@ -36,7 +36,7 @@ There are no long-running services. The platform is a library + CLI; the "applic
 
 ### Known pre-existing acceptance test failures (as of main)
 
-Two acceptance tests fail because `alphas/pofi_benign_midcap_v1/` already contains a `trend_mechanism:` block but the acceptance test expects it to be absent (v0.2 baseline parity):
+Two acceptance tests fail because `alphas/sig_benign_midcap_v1/` already contains a `trend_mechanism:` block but the acceptance test expects it to be absent (v0.2 baseline parity):
 - `tests/acceptance/test_strict_mode_default_true.py::TestV02ParityPreservedOnExplicitOptOut::test_v02_baseline_alpha_refused_under_default`
 - `tests/acceptance/test_v02_no_trend_mechanism_parity.py::test_baseline_alpha_yaml_has_no_trend_mechanism_block`
 - `tests/acceptance/test_v02_no_trend_mechanism_parity.py::test_baseline_alpha_loads_under_v03_default`

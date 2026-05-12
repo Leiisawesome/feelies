@@ -266,6 +266,37 @@ class TestMassiveNormalizerDuplicateCounting:
         assert normalizer.duplicates_filtered == 0
 
 
+class TestMassiveNormalizerSequenceCollision:
+    """Vendor sequence reuse with different payloads must surface CORRUPTED."""
+
+    def test_ws_quote_same_sequence_different_bid_corrupts(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock
+    ) -> None:
+        base = {
+            "ev": "Q",
+            "sym": "AAPL",
+            "bp": 150.0,
+            "ap": 150.05,
+            "bs": 10,
+            "as": 20,
+            "t": 1000,
+            "q": 5,
+        }
+        normalizer.on_message(json.dumps(base).encode("utf-8"), clock.now_ns(), "massive_ws")
+        alt = {**base, "bp": 151.0}
+        out = normalizer.on_message(json.dumps(alt).encode("utf-8"), clock.now_ns(), "massive_ws")
+        assert out == []
+        assert normalizer.health("AAPL") == DataHealth.CORRUPTED
+
+
+class TestMassiveNormalizerNotifyFeedInterrupted:
+    def test_disconnect_flags_gap_before_first_tick(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock
+    ) -> None:
+        normalizer.notify_feed_interrupted(["ZZZZ"])
+        assert normalizer.health("ZZZZ") == DataHealth.GAP_DETECTED
+
+
 class TestMassiveNormalizerGapRecovery:
     """Tests for gap detection and automatic recovery."""
 

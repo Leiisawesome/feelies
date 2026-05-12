@@ -1,1 +1,1 @@
-pofi_benign_midcap_v1
+sig_benign_midcap_v1
