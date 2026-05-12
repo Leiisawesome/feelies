@@ -2621,7 +2621,28 @@ class Orchestrator:
             exit_order, self._positions,
         )
         self._bus.publish(exit_verdict)
-        if exit_verdict.action in (RiskAction.REJECT, RiskAction.FORCE_FLATTEN):
+        if exit_verdict.action == RiskAction.FORCE_FLATTEN:
+            if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
+                # Same global halt as standalone SIGNAL/order gates — drawdown
+                # breach must not strand the book without emergency flatten.
+                self._escalate_risk(cid)
+                self._micro.transition(
+                    MicroState.LOG_AND_METRICS,
+                    trigger="reverse_exit_force_flatten_escalation",
+                    correlation_id=cid,
+                )
+                self._finalize_tick(t_wall_start, cid)
+                return
+            # BACKTEST_MODE: simulate without global lockdown (replay parity).
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="reverse_exit_force_flatten_simulated",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
+        if exit_verdict.action == RiskAction.REJECT:
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
                 trigger="reverse_exit_rejected",

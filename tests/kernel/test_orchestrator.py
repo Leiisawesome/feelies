@@ -1240,6 +1240,7 @@ class TestOrchestratorHalt:
         assert orch.macro_state == MacroState.READY
 
 
+
 # ── Macro lifecycle remediation (global stack audit) ──────────────────
 
 

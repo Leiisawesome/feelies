@@ -555,6 +555,6 @@ class TestSizedIntentScaleDownDecimal:
             orders = engine.check_sized_intent(
                 _make_sized_intent(targets={"AAPL": 1_000.0}),
                 store,
-            )
+            ).orders
         assert len(orders) == 1
         assert orders[0].quantity == 5
