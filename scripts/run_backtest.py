@@ -6,7 +6,6 @@ Usage:
     python scripts/run_backtest.py --symbol AAPL --date 2024-01-15 --end-date 2024-01-16
     python scripts/run_backtest.py --symbol AAPL --date 2026-04-08 --trace-signal-orders
     python scripts/run_backtest.py --config platform.yaml  # uses symbols from config
-    python scripts/run_backtest.py ... --export-health-dir ./runs/my_alpha/latest  # health artefacts
 
 Workstream-D update — the ``--demo`` synthetic-tick mode was retired
 along with the ``trade_cluster_drift`` LEGACY reference alpha (D.2).
@@ -405,18 +404,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "published do not appear."
         ),
     )
-    p.add_argument(
-        "--export-health-dir",
-        type=str,
-        default=None,
-        metavar="DIR",
-        help=(
-            "After the run, write alpha health-check artefacts under DIR "
-            "(metadata.json, signals.csv, trades.csv, pnl.csv, "
-            "execution_variants.json, optional config_snapshot.yaml). "
-            "Pass DIR to: feelies health-check --backtest-output DIR"
-        ),
-    )
     return p.parse_args(argv)
 
 
@@ -451,13 +438,6 @@ def parse_cache_replay_args(argv: list[str] | None = None) -> argparse.Namespace
         default=1.0,
         metavar="MULT",
         help="Cost stress multiplier (same as run_backtest.py)",
-    )
-    p.add_argument(
-        "--export-health-dir",
-        type=str,
-        default=None,
-        metavar="DIR",
-        help="Export alpha health artefacts after replay (same as run_backtest.py).",
     )
     args = p.parse_args(argv)
     # Shared Phase-2 JSONL emit hooks default off for this entry-point.
@@ -1817,28 +1797,6 @@ def _run_backtest_phases_2_7(
 
     total_elapsed = time.monotonic() - run_t0
     print(f"  Total elapsed: {total_elapsed:.1f}s\n", flush=True)
-
-    export_health_dir = getattr(args, "export_health_dir", None)
-    if export_health_dir:
-        from feelies.health.backtest_export import export_backtest_health_dir
-
-        cfg_arg = getattr(args, "config", None)
-        cfg_resolved = str(Path(cfg_arg).resolve()) if cfg_arg else None
-        cache_only = bool(day_sources) and all(ds.source == "cache" for ds in day_sources)
-        health_ds = "disk_event_cache_jsonl" if cache_only else "massive_l1_nbbo"
-        export_backtest_health_dir(
-            Path(export_health_dir),
-            recorder=recorder,
-            orchestrator=orchestrator,
-            config=config_out,
-            symbols=list(symbols),
-            date_range=date_range,
-            platform_config_path=cfg_resolved,
-            stress_cost_multiplier=float(getattr(args, "stress_cost", 1.0)),
-            ingest_events=int(ingest_result.events_ingested),
-            data_source=health_ds,
-        )
-        print(f"  Health artefacts → {Path(export_health_dir).resolve()}", flush=True)
 
     if args.emit_fills_jsonl:
         _emit_fills_jsonl(recorder)
