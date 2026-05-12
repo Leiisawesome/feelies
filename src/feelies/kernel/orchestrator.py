@@ -1127,6 +1127,9 @@ class Orchestrator:
         sensors and any time-bucket boundaries crossed by the trade
         timestamp are observed.
         """
+        if self._data_health_blocks_trading(trade.symbol, trade.correlation_id):
+            return
+
         if not self._events_prelogged:
             self._event_log.append(trade)
         self._bus.publish(trade)
@@ -1544,25 +1547,8 @@ class Orchestrator:
             return
 
         # ── Runtime data integrity check (W-6) ─────────────────
-        if self._normalizer is not None:
-            symbol_health = self._normalizer.health(quote.symbol)
-            if symbol_health == DataHealth.CORRUPTED:
-                if self._macro.can_transition(MacroState.DEGRADED):
-                    self._macro.transition(
-                        MacroState.DEGRADED,
-                        trigger=f"DATA_CORRUPTED:{quote.symbol}",
-                        correlation_id=cid,
-                    )
-                self._bus.publish(MetricEvent(
-                    timestamp_ns=self._clock.now_ns(),
-                    correlation_id=cid,
-                    sequence=self._seq.next(),
-                    layer="kernel",
-                    name="tick_suppressed_data_corrupted",
-                    value=1.0,
-                    metric_type=MetricType.COUNTER,
-                ))
-                return
+        if self._data_health_blocks_trading(quote.symbol, cid):
+            return
 
         # ── M0 → M1: MARKET_EVENT_RECEIVED ─────────────────────
         self._micro.transition(
