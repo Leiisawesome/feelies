@@ -949,8 +949,9 @@ def _warn_if_unhealthy_manifest_days(day_sources: Sequence[Any]) -> None:
     extra = "" if len(bad) <= 20 else f"\n    ... and {len(bad) - 20} more day(s)"
     print(
         "\n  WARNING: One or more loaded days have ingestion_health != HEALTHY.\n"
-        "  Replay continues; set require_healthy_disk_cache_manifests: true in "
-        "platform.yaml to fail boot, or fix/re-ingest degraded days.\n"
+        "  Replay continues; set require_healthy_disk_cache_manifests: true or "
+        "backtest_enforce_ingest_terminal_health: true (after ingest attaches rows) "
+        "to fail boot, or fix/re-ingest degraded days.\n"
         + "\n".join(lines)
         + extra
         + "\n",
