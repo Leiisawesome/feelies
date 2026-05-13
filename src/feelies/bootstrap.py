@@ -638,7 +638,9 @@ def _horizon_features_for(
     if sensor_id == "ofi_ewma":
         return [
             SensorPassthroughFeature("ofi_ewma", horizon),
-            RollingZscoreFeature("ofi_ewma", horizon),
+            # Short rolling window (200 samples) so z-score reflects
+            # recent OFI regime rather than whole-session history.
+            RollingZscoreFeature("ofi_ewma", horizon, max_samples=200),
         ]
     if sensor_id == "kyle_lambda_60s":
         return [

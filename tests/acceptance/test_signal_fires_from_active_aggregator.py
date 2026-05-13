@@ -29,7 +29,7 @@ Pipeline under test
 3. ``HorizonSignalEngine._on_snapshot()``:
    - gate: ``P(normal)=0.85 > 0.7 ✓`` and
      ``abs(spread_z_30d)=0.05 < 0.5 ✓``
-   - ``evaluate()``: ``z≈4.9 > entry_threshold_z=2.0`` →
+   - ``evaluate()``: ``z≈4.9 > entry_threshold_z=0.8`` →
      ``Signal(direction=LONG, strategy_id="sig_benign_midcap_v1")``
 
 4. Signal published on bus → captured by test subscriber.
@@ -208,7 +208,7 @@ def _fire_signals(
     ----------
     ofi_spike:
         The OFI reading appended after the 30-sample warm-up window.
-        Default 3.0 → z ≈ 4.9 >> entry_threshold_z=2.0.
+        Default 3.0 → z ≈ 4.9 >> entry_threshold_z=0.8.
         Set to 1.0 to produce z ≈ 1.65 < 2.0 (below-threshold case).
     regime_p_normal:
         Posterior probability assigned to "normal" in the injected
@@ -281,7 +281,7 @@ def _fire_signals(
 
     # ── 4. Spike OFI — this is the reading that drives z above threshold ─
     # After 30 symmetric readings (mean≈0, std≈0.607) a reading of +3.0
-    # produces z = (3.0 - 0) / 0.607 ≈ 4.94 >> entry_threshold_z=2.0.
+    # produces z = (3.0 - 0) / 0.607 ≈ 4.94 >> entry_threshold_z=0.8.
     spike_ts = SESSION_OPEN_NS + n_warmup * 1_000_000_000
     for symbol in _UNIVERSE:
         bus.publish(_reading(symbol, seq, "ofi_ewma", ofi_spike, spike_ts))
@@ -382,12 +382,12 @@ def test_signal_determinism_inv5() -> None:
 
 
 def test_below_threshold_no_signal() -> None:
-    """OFI z-score below entry_threshold_z=2.0 produces no signals.
+    """OFI z-score below entry_threshold_z=0.8 produces no signals.
 
     With the same 30-sample warm-up window (mean≈0, std≈0.607) and
-    spike value 1.0, z = 1.0 / 0.607 ≈ 1.65 < 2.0 → evaluate() returns None.
+    spike value 0.3, z = 0.3 / 0.607 ≈ 0.49 < 0.8 → evaluate() returns None.
     """
-    signals = _fire_signals(ofi_spike=1.0)
+    signals = _fire_signals(ofi_spike=0.3)
     assert len(signals) == 0, (
         f"Expected 0 signals below threshold but got {len(signals)}: "
         f"{[(s.strategy_id, s.direction) for s in signals]}"
@@ -395,10 +395,10 @@ def test_below_threshold_no_signal() -> None:
 
 
 def test_gate_closed_no_signal() -> None:
-    """Closed regime gate (P(normal) < 0.7) suppresses signals entirely.
+    """Closed regime gate (P(normal) < 0.5) suppresses signals entirely.
 
     Regardless of the OFI z-score, the gate on_condition
-    'P(normal) > 0.7 and abs(spread_z_30d) < 0.5' is not satisfied
+    'P(normal) > 0.5 and spread_z_30d < 1.5' is not satisfied
     when P(normal)=0.30.
     """
     signals = _fire_signals(regime_p_normal=0.30)

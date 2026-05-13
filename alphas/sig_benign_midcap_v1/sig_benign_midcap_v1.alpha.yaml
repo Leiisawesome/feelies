@@ -63,8 +63,8 @@ depends_on_sensors:
 parameters:
   entry_threshold_z:
     type: float
-    default: 2.0
-    min: 1.5
+    default: 0.8
+    min: 0.5
     max: 3.0
     description: |
       Entry trigger on |ofi_ewma_zscore|.  ~2.5% tail of the
@@ -99,9 +99,9 @@ risk_budget:
 regime_gate:
   regime_engine: hmm_3state_fractional
   on_condition: |
-    P(normal) > 0.7 and abs(spread_z_30d) < 0.5
+    P(normal) > 0.5 and spread_z_30d < 1.5
   off_condition: |
-    P(normal) < 0.5 or spread_z_30d > 1.5 or realized_vol_30s_zscore > 3.5
+    P(normal) < 0.35 or spread_z_30d > 3.0 or realized_vol_30s_zscore > 4.5
   hysteresis:
     posterior_margin: 0.20
     percentile_margin: 0.30

@@ -76,7 +76,7 @@ def test_regime_gate_engine_name(loaded: LoadedSignalLayerModule) -> None:
 
 def test_default_parameters(loaded: LoadedSignalLayerModule) -> None:
     p = loaded.params
-    assert p["entry_threshold_z"] == pytest.approx(2.0)
+    assert p["entry_threshold_z"] == pytest.approx(0.8)
     assert p["edge_per_z_bps"] == pytest.approx(4.0)
     assert p["edge_cap_bps"] == pytest.approx(20.0)
 
@@ -212,7 +212,7 @@ def test_no_emission_below_threshold(loaded: LoadedSignalLayerModule) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_high())
     bus.publish(_spread_low_reading())
-    bus.publish(_snapshot_with_z(z=1.0))               # below default threshold 2.0
+    bus.publish(_snapshot_with_z(z=0.5))               # below default threshold 0.8
     assert captured == []
 
 
