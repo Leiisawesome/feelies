@@ -13,7 +13,7 @@ symbols:
 alpha_spec_dir: null
 
 alpha_specs:
-  - alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml
+  - alphas/sig_inventory_revert_v1/sig_inventory_revert_v1.alpha.yaml
 
 parameter_overrides: {}
 
