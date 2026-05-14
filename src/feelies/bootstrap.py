@@ -197,7 +197,10 @@ def build_platform(
     clock = _select_clock(config.mode)
     bus = EventBus()
 
-    regime_engine = _create_regime_engine(config.regime_engine)
+    regime_engine = _create_regime_engine(
+        config.regime_engine,
+        config.regime_engine_options,
+    )
     if config.enforce_regime_state_scale_alignment and regime_engine is not None:
         _validate_regime_engine_risk_scale_alignment(regime_engine)
 
@@ -505,11 +508,15 @@ def _validate_regime_engine_risk_scale_alignment(engine: RegimeEngine) -> None:
         )
 
 
-def _create_regime_engine(engine_name: str | None) -> RegimeEngine | None:
+def _create_regime_engine(
+    engine_name: str | None,
+    options: dict[str, object] | None = None,
+) -> RegimeEngine | None:
     if engine_name is None:
         return None
     try:
-        engine = get_regime_engine(engine_name)
+        kwargs = dict(options or {})
+        engine = get_regime_engine(engine_name, **kwargs)
         logger.info("Created shared RegimeEngine: %s", engine_name)
         return engine
     except KeyError:
@@ -517,6 +524,10 @@ def _create_regime_engine(engine_name: str | None) -> RegimeEngine | None:
             f"Unknown regime engine '{engine_name}': not found in registry. "
             "Check the 'regime_engine' field in your platform configuration."
         ) from None
+    except TypeError as exc:
+        raise ConfigurationError(
+            f"Invalid regime_engine_options for engine {engine_name!r}: {exc}"
+        ) from exc
 
 
 def _load_alphas(

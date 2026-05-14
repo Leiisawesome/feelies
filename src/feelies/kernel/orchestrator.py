@@ -122,7 +122,7 @@ from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
 from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
 from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
-from feelies.services.regime_engine import RegimeEngine
+from feelies.services.regime_engine import RegimeEngine, regime_posterior_entropy_nats
 from feelies.services.regime_hazard_detector import RegimeHazardDetector
 from feelies.signals.horizon_engine import HorizonSignalEngine
 from feelies.storage.event_log import EventLog
@@ -2212,6 +2212,7 @@ class Orchestrator:
             posteriors=tuple(posteriors),
             dominant_state=dominant_idx,
             dominant_name=state_names[dominant_idx] if dominant_idx < len(state_names) else "unknown",
+            posterior_entropy_nats=regime_posterior_entropy_nats(posteriors),
         )
         self._bus.publish(regime_state)
         self._maybe_publish_hazard_spike(regime_state, correlation_id)
