@@ -313,7 +313,7 @@ feelies health-check \
 |---|---|
 | `--backtest-output DIR` | Run directory with `metadata.json` and tabular artefacts. **Required.** |
 | `--alpha NAME` | Override `alpha_name` from `metadata.json`. |
-| `--config PATH` | Health thresholds YAML (`configs/health/default.yaml`). Omitted → built-in defaults. |
+| `--config PATH` | Optional health thresholds YAML. Omitted → built-in defaults. |
 | `--out-dir DIR` | Report output directory. Default: `<backtest-output>/health/`. |
 | `--format` | `json`, `markdown`, `both` (default), or `all` (also writes `alpha_health_checks.csv`). |
 | `--strict` | Exit `3` if decision is `KILL` or any check has status `FAIL`. |
