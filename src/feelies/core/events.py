@@ -125,6 +125,8 @@ class RegimeState(Event):
       Phase 3+.
       ``stability`` — 0..1 stability of the dominant state over recent
       posteriors.  Default 1.0 is a no-op for legacy producers.
+      ``posterior_entropy_nats`` — Shannon entropy (natural log base) of
+      the posterior categorical; ``0`` when unused (legacy producers).
     """
 
     symbol: str
@@ -135,6 +137,7 @@ class RegimeState(Event):
     dominant_name: str
     horizon_seconds: int = 0
     stability: float = 1.0
+    posterior_entropy_nats: float = 0.0
 
 
 # ── Signal Events ───────────────────────────────────────────────────────

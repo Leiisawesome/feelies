@@ -24,6 +24,20 @@ logger = logging.getLogger(__name__)
 from feelies.core.events import NBBOQuote
 
 
+def regime_posterior_entropy_nats(posteriors: Sequence[float]) -> float:
+    """Shannon entropy (nats) of a categorical posterior ``p``.
+
+    ``0`` is returned when the vector is degenerate (all mass on one
+    state) or empty — callers may treat ``0`` as maximal confidence
+    (no mixing) and larger values as softer posteriors.
+    """
+    h = 0.0
+    for p in posteriors:
+        if p > 0.0:
+            h -= p * math.log(p)
+    return h
+
+
 # ── RegimeEngine protocol ────────────────────────────────────────────
 
 
@@ -93,47 +107,34 @@ class RegimeEngine(Protocol):
 
 
 class HMM3StateFractional:
-    """Built-in 3-state HMM regime engine using fractional updates.
+    """Built-in 3-state online regime filter on log-relative spread.
+
+    Despite the historical registry name ``hmm_3state_fractional``, the
+    implementation is a **fixed-structure discrete-time forward filter**
+    (Markov prediction + diagonal Gaussian emissions), **not** a full
+    Baum–Welch / EM HMM fit: :meth:`calibrate` fits emission moments from
+    spread quantiles (optionally per symbol), while the transition matrix
+    stays author-controlled unless time scaling reshapes it.
 
     States:
       0 — compression/clustering (low vol, tight spreads)
       1 — normal (typical trading conditions)
       2 — vol_breakout (high vol, wide spreads)
 
-    Uses an online Bayesian update with spread-derived observations.
-
     Tick-time semantics
     -------------------
 
-    The transition matrix is applied **once per inbound NBBOQuote**,
-    not on a wall-clock grid.  The 0.99 self-transition probability
-    therefore implies a mean dwell time of *ticks*, not seconds — and
-    tick rates vary by orders of magnitude across the universe and
-    across the trading day:
+    By default the transition matrix is applied **once per inbound
+    NBBOQuote** with no wall-clock adjustment, so mean dwell is in
+    *ticks* (see historical caveat in platform docs).  Enable
+    ``transition_time_scaling_enabled`` to re-exponentiate each row's
+    self-transition by ``p_stay ** (Δt / dt_reference)`` so bursty vs
+    sparse quote streams share comparable **per-second** mixing when
+    ``dt_reference`` is tuned to the deployment cohort.
 
-    * For a thin name at ~1 quote/sec, mean dwell ≈ 100 ticks ≈
-      100 seconds, which is reasonable for an intraday regime.
-    * For SPY at ~10⁴ quotes/sec, mean dwell ≈ 10 ms, which is far
-      too fast — the engine will appear to switch regimes constantly.
-
-    Practical implications:
-
-    * Calibrate the transition matrix per deployment class (e.g.,
-      slow / medium / fast tick-rate cohorts) by passing
-      ``transition_matrix=`` at construction.  The default is tuned
-      for a *medium* tick rate.
-    * If your universe spans wildly different tick rates, consider
-      either subsampling fast-tick names to a fixed wall-clock
-      cadence before feeding them in, or registering a per-cohort
-      engine via :func:`register_engine`.
-
-    Emission parameters are also **log-relative-spread** based; they
-    must be calibrated against representative historical quotes for
-    the same universe.  Calling :meth:`posterior` without first
-    calling :meth:`calibrate` (or constructing with explicit
-    ``emission_params``) emits a one-shot warning — the built-in
-    defaults are placeholders that will produce poor discrimination
-    on real US-equity microstructure.
+    Emission parameters are **log-relative-spread** based; call
+    :meth:`calibrate` with representative quotes (or pass explicit
+    ``emission_params``) before relying on posteriors in production.
     """
 
     _DEFAULT_STATE_NAMES = ("compression_clustering", "normal", "vol_breakout")
@@ -167,6 +168,15 @@ class HMM3StateFractional:
         state_names: Sequence[str] | None = None,
         transition_matrix: Sequence[Sequence[float]] | None = None,
         emission_params: Sequence[tuple[float, float]] | None = None,
+        *,
+        transition_time_scaling_enabled: bool = False,
+        transition_dt_reference_seconds: float = 0.05,
+        transition_dt_scale_min: float = 0.01,
+        transition_dt_scale_max: float = 40.0,
+        per_symbol_calibration: bool = False,
+        order_emissions_by_increasing_mean: bool = True,
+        enforce_min_pairwise_emission_separation: bool = False,
+        min_pairwise_emission_separation: float = 0.5,
     ) -> None:
         self._state_names = tuple(state_names or self._DEFAULT_STATE_NAMES)
         self._n_states = len(self._state_names)
@@ -177,9 +187,36 @@ class HMM3StateFractional:
             emission_params or self._DEFAULT_EMISSION
         )
         self._calibrated = emission_params is not None
+        self._transition_time_scaling_enabled = transition_time_scaling_enabled
+        self._transition_dt_reference_seconds = transition_dt_reference_seconds
+        self._transition_dt_scale_min = transition_dt_scale_min
+        self._transition_dt_scale_max = transition_dt_scale_max
+        self._per_symbol_calibration = per_symbol_calibration
+        self._order_emissions_by_increasing_mean = order_emissions_by_increasing_mean
+        self._enforce_min_pairwise_emission_separation = (
+            enforce_min_pairwise_emission_separation
+        )
+        self._min_pairwise_emission_separation = min_pairwise_emission_separation
+
+        if self._transition_dt_reference_seconds <= 0:
+            raise ValueError(
+                "transition_dt_reference_seconds must be positive, got "
+                f"{self._transition_dt_reference_seconds}"
+            )
+        if self._transition_dt_scale_min <= 0 or self._transition_dt_scale_max <= 0:
+            raise ValueError("transition_dt scale bounds must be positive")
+        if self._transition_dt_scale_min > self._transition_dt_scale_max:
+            raise ValueError(
+                "transition_dt_scale_min must be <= transition_dt_scale_max"
+            )
+        if self._min_pairwise_emission_separation <= 0:
+            raise ValueError("min_pairwise_emission_separation must be positive")
+
         self._validate_params()
         self._posteriors: dict[str, list[float]] = {}
         self._last_update_seq: dict[str, int] = {}
+        self._last_quote_ts_ns: dict[str, int] = {}
+        self._emission_by_symbol: dict[str, tuple[tuple[float, float], ...]] = {}
         self._uncalibrated_warned: bool = False
 
     def _validate_params(self) -> None:
@@ -234,34 +271,76 @@ class HMM3StateFractional:
     def calibrate(self, quotes: Sequence[NBBOQuote]) -> bool:
         """Fit emission parameters from historical spread distribution.
 
-        Partitions ``log(relative_spread)`` values into terciles and
-        computes per-bucket mean and standard deviation.  Parameters
-        are frozen after calibration — call before the first
-        ``posterior()`` update.
+        Partitions ``log(relative_spread)`` values into quantile buckets
+        (one per state) and fits a Gaussian per bucket.  When
+        ``per_symbol_calibration`` is enabled, symbols with enough quotes
+        receive their own emission triple; others fall back to the
+        pooled global fit.
 
-        Returns True if calibration succeeded (enough valid samples),
-        False if insufficient data (defaults are retained).
+        Returns True if calibration succeeded (enough valid samples and
+        optional pairwise-separation gate), False otherwise.
         """
-        log_spreads: list[float] = []
+        sym_logs: list[tuple[str, float]] = []
         for q in quotes:
             spread = float(q.ask - q.bid)
             mid = float(q.ask + q.bid) / 2.0
             if spread > 0 and mid > 0:
-                log_spreads.append(math.log(spread / mid))
+                sym_logs.append((q.symbol, math.log(spread / mid)))
 
-        if len(log_spreads) < self._MIN_CALIBRATION_SAMPLES:
+        if len(sym_logs) < self._MIN_CALIBRATION_SAMPLES:
             return False
 
-        log_spreads.sort()
-        n = len(log_spreads)
+        all_sorted = sorted(v for _, v in sym_logs)
+        global_fit = self._fit_quantile_emissions_from_sorted(all_sorted)
+        if global_fit is None:
+            return False
+
+        if self._order_emissions_by_increasing_mean:
+            global_fit = self._sort_emissions_by_mean(global_fit)
+
+        if not self._emissions_pass_pairwise_gate(global_fit):
+            return False
+
+        self._emission = global_fit
+        self._emission_by_symbol = {}
+        if self._per_symbol_calibration:
+            by_sym: dict[str, list[float]] = {}
+            for sym, v in sym_logs:
+                by_sym.setdefault(sym, []).append(v)
+            for sym, vals in by_sym.items():
+                if len(vals) < self._MIN_CALIBRATION_SAMPLES:
+                    continue
+                srt = sorted(vals)
+                per = self._fit_quantile_emissions_from_sorted(srt)
+                if per is None:
+                    continue
+                if self._order_emissions_by_increasing_mean:
+                    per = self._sort_emissions_by_mean(per)
+                if not self._emissions_pass_pairwise_gate(per):
+                    continue
+                self._emission_by_symbol[sym] = per
+
+        self._calibrated = True
+        self._posteriors.clear()
+        self._last_update_seq.clear()
+        self._last_quote_ts_ns.clear()
+
+        self._check_emission_separation()
+        return True
+
+    def _fit_quantile_emissions_from_sorted(
+        self, log_spreads_sorted: list[float]
+    ) -> tuple[tuple[float, float], ...] | None:
+        n = len(log_spreads_sorted)
         k = self._n_states
+        if n < self._MIN_CALIBRATION_SAMPLES:
+            return None
         boundaries = [i * n // k for i in range(1, k)]
         bucket_edges = [0] + boundaries + [n]
         buckets = [
-            log_spreads[bucket_edges[i]:bucket_edges[i + 1]]
+            log_spreads_sorted[bucket_edges[i]: bucket_edges[i + 1]]
             for i in range(k)
         ]
-
         fitted: list[tuple[float, float]] = []
         for bucket in buckets:
             mu = statistics.mean(bucket)
@@ -270,40 +349,79 @@ class HMM3StateFractional:
                 self._MIN_SIGMA,
             )
             fitted.append((mu, sigma))
+        return tuple(fitted)
 
-        self._emission = tuple(fitted)
-        self._calibrated = True
-        self._posteriors.clear()
-        self._last_update_seq.clear()
+    @staticmethod
+    def _sort_emissions_by_mean(
+        emission: Sequence[tuple[float, float]],
+    ) -> tuple[tuple[float, float], ...]:
+        """Order (mu, sigma) by increasing *mu* so state 0 is tightest spread."""
+        return tuple(sorted(emission, key=lambda t: t[0]))
 
-        self._check_emission_separation()
+    def _pairwise_separation_index(
+        self,
+        emission: Sequence[tuple[float, float]],
+        i: int,
+        j: int,
+    ) -> float:
+        mu_a, sigma_a = emission[i]
+        mu_b, sigma_b = emission[j]
+        denom = math.sqrt(sigma_a ** 2 + sigma_b ** 2)
+        if denom < 1e-12:
+            return 0.0
+        return abs(mu_b - mu_a) / denom
+
+    def _compute_min_pairwise_emission_separation(
+        self, emission: Sequence[tuple[float, float]]
+    ) -> float:
+        k = len(emission)
+        if k < 2:
+            return float("inf")
+        best = float("inf")
+        for i in range(k):
+            for j in range(i + 1, k):
+                best = min(best, self._pairwise_separation_index(emission, i, j))
+        return best
+
+    def _emissions_pass_pairwise_gate(
+        self, emission: Sequence[tuple[float, float]],
+    ) -> bool:
+        if not self._enforce_min_pairwise_emission_separation:
+            return True
+        min_d = self._compute_min_pairwise_emission_separation(emission)
+        if min_d < self._min_pairwise_emission_separation:
+            logger.warning(
+                "regime_engine: calibration rejected — min pairwise emission "
+                "separation d_min=%.4f is below required %.4f "
+                "(enforce_min_pairwise_emission_separation=True)",
+                min_d,
+                self._min_pairwise_emission_separation,
+            )
+            return False
         return True
 
     def _check_emission_separation(self) -> None:
-        """Log a warning when adjacent emission distributions overlap heavily.
-
-        Uses the Gaussian separability index d = |mu_i - mu_j| / sqrt(s_i^2 + s_j^2)
-        between each adjacent pair.  d < 0.5 means substantial overlap —
-        the engine will update posteriors but provide weak discrimination
-        between those two states.
-        """
-        for i in range(self._n_states - 1):
-            mu_a, sigma_a = self._emission[i]
-            mu_b, sigma_b = self._emission[i + 1]
-            denom = math.sqrt(sigma_a ** 2 + sigma_b ** 2)
-            if denom < 1e-12:
-                continue
-            separation = abs(mu_b - mu_a) / denom
-            if separation < 0.5:
-                logger.warning(
-                    "regime_engine: weak emission separation between "
-                    "state %d (%s) and state %d (%s): d=%.3f "
-                    "(mu=%.3f,%.3f sigma=%.3f,%.3f) — posteriors will "
-                    "have limited discriminative power",
-                    i, self._state_names[i],
-                    i + 1, self._state_names[i + 1],
-                    separation, mu_a, mu_b, sigma_a, sigma_b,
-                )
+        """Log warnings when Gaussian emissions overlap (all pairs + adjacent)."""
+        k = self._n_states
+        for i in range(k):
+            for j in range(i + 1, k):
+                separation = self._pairwise_separation_index(self._emission, i, j)
+                if separation < 0.5:
+                    logger.warning(
+                        "regime_engine: weak emission separation between "
+                        "state %d (%s) and state %d (%s): d=%.3f "
+                        "(mu=%.3f,%.3f sigma=%.3f,%.3f) — posteriors will "
+                        "have limited discriminative power",
+                        i,
+                        self._state_names[i],
+                        j,
+                        self._state_names[j],
+                        separation,
+                        self._emission[i][0],
+                        self._emission[j][0],
+                        self._emission[i][1],
+                        self._emission[j][1],
+                    )
 
     def posterior(self, quote: NBBOQuote) -> list[float]:
         symbol = quote.symbol
@@ -327,7 +445,8 @@ class HMM3StateFractional:
         if prior is None:
             prior = [1.0 / self._n_states] * self._n_states
 
-        predicted = self._predict(prior)
+        transition = self._transition_for_step(symbol, quote.timestamp_ns)
+        predicted = self._predict_with_matrix(prior, transition)
 
         spread = float(quote.ask - quote.bid)
         mid = float(quote.ask + quote.bid) / 2.0
@@ -338,7 +457,7 @@ class HMM3StateFractional:
             rel_spread = spread / mid
             log_spread = math.log(max(rel_spread, 1e-12))
 
-            likelihoods = self._emission_likelihood(log_spread)
+            likelihoods = self._emission_likelihood_for_symbol(symbol, log_spread)
             updated = self._bayes_update(predicted, likelihoods)
 
             if any(math.isnan(v) or math.isinf(v) for v in updated):
@@ -358,6 +477,7 @@ class HMM3StateFractional:
         # value.
         self._posteriors[symbol] = updated
         self._last_update_seq[symbol] = seq
+        self._last_quote_ts_ns[symbol] = quote.timestamp_ns
         return list(updated)
 
     def current_state(self, symbol: str) -> list[float] | None:
@@ -367,14 +487,21 @@ class HMM3StateFractional:
     def reset(self, symbol: str) -> None:
         self._posteriors.pop(symbol, None)
         self._last_update_seq.pop(symbol, None)
+        self._last_quote_ts_ns.pop(symbol, None)
 
     def checkpoint(self) -> bytes:
         payload: dict[str, object] = {
             "posteriors": self._posteriors,
             "last_update_seq": self._last_update_seq,
+            "last_quote_ts_ns": self._last_quote_ts_ns,
         }
         if self._calibrated:
             payload["emission"] = [list(pair) for pair in self._emission]
+        if self._emission_by_symbol:
+            payload["emission_by_symbol"] = {
+                sym: [list(pair) for pair in pairs]
+                for sym, pairs in self._emission_by_symbol.items()
+            }
         return json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
     def restore(self, data: bytes) -> None:
@@ -402,6 +529,16 @@ class HMM3StateFractional:
             self._posteriors = {k: list(v) for k, v in posteriors.items()}
             self._last_update_seq = {k: int(v) for k, v in last_seq.items()}
 
+            last_ts_raw = payload.get("last_quote_ts_ns")
+            if last_ts_raw is None:
+                self._last_quote_ts_ns = {}
+            elif not isinstance(last_ts_raw, dict):
+                raise ValueError("last_quote_ts_ns must be a dict when present")
+            else:
+                self._last_quote_ts_ns = {k: int(v) for k, v in last_ts_raw.items()}
+
+            self._emission_by_symbol = {}
+
             emission_data = payload.get("emission")
             if emission_data is not None:
                 if len(emission_data) != self._n_states:
@@ -420,33 +557,107 @@ class HMM3StateFractional:
                     parsed_emission.append((mu, sigma))
                 self._emission = tuple(parsed_emission)
                 self._calibrated = True
+
+            ebs = payload.get("emission_by_symbol")
+            if ebs is not None:
+                if not isinstance(ebs, dict):
+                    raise ValueError("emission_by_symbol must be a dict")
+                parsed_ebs: dict[str, tuple[tuple[float, float], ...]] = {}
+                for sym, rows in ebs.items():
+                    if len(rows) != self._n_states:
+                        raise ValueError(
+                            f"emission_by_symbol[{sym!r}] length mismatch"
+                        )
+                    sym_pairs: list[tuple[float, float]] = []
+                    for i, pair in enumerate(rows):
+                        mu, sigma = float(pair[0]), float(pair[1])
+                        if sigma <= 0:
+                            raise ValueError(
+                                f"Restored sigma for {sym}[{i}] invalid"
+                            )
+                        sym_pairs.append((mu, sigma))
+                    parsed_ebs[str(sym)] = tuple(sym_pairs)
+                self._emission_by_symbol = parsed_ebs
         except Exception:
             self._posteriors = {}
             self._last_update_seq = {}
+            self._last_quote_ts_ns = {}
+            self._emission_by_symbol = {}
             raise
 
-    def _predict(self, prior: list[float]) -> list[float]:
-        """Compute predicted state via transition matrix, then renormalize.
+    def _transition_for_step(self, symbol: str, timestamp_ns: int) -> tuple[tuple[float, ...], ...]:
+        """Effective row-stochastic transition for this quote's wall-clock step."""
+        if not self._transition_time_scaling_enabled:
+            return self._transition
+        last_ns = self._last_quote_ts_ns.get(symbol)
+        if last_ns is None:
+            scale = 1.0
+        else:
+            dt = max(0.0, (timestamp_ns - last_ns) / 1e9)
+            raw = dt / self._transition_dt_reference_seconds
+            scale = max(
+                self._transition_dt_scale_min,
+                min(self._transition_dt_scale_max, raw),
+            )
+        return self._scale_transition_matrix(scale)
 
-        The matrix-vector product preserves unit sum in exact arithmetic
-        but accumulates ~7e-16 float drift per step.  In the normal path
-        ``_bayes_update`` renormalizes, but the locked-market path
-        (spread <= 0) stores the prediction directly.  Renormalizing here
-        prevents drift from accumulating across consecutive prediction-only
-        steps (common in illiquid names or pre-market).
-        """
+    def _scale_transition_matrix(
+        self, scale: float
+    ) -> tuple[tuple[float, ...], ...]:
+        """Raise diagonal self-transition mass toward 1 when *scale* is small."""
+        if math.isnan(scale) or math.isinf(scale) or scale <= 0.0:
+            scale = 1e-12
+        n = self._n_states
+        out_rows: list[list[float]] = []
+        for i in range(n):
+            row = self._transition[i]
+            p_stay = min(1.0 - 1e-12, max(1e-12, float(row[i])))
+            p_stay_new = min(1.0 - 1e-12, max(1e-12, p_stay ** scale))
+            off_sum = sum(float(row[j]) for j in range(n) if j != i)
+            new_row = [0.0] * n
+            new_row[i] = p_stay_new
+            if off_sum > 1e-12:
+                factor = (1.0 - p_stay_new) / off_sum
+                for j in range(n):
+                    if j != i:
+                        new_row[j] = float(row[j]) * factor
+            elif n > 1:
+                fill = (1.0 - p_stay_new) / (n - 1)
+                for j in range(n):
+                    if j != i:
+                        new_row[j] = fill
+            total = sum(new_row)
+            if total <= 0:
+                return self._transition
+            out_rows.append([x / total for x in new_row])
+        return tuple(tuple(r) for r in out_rows)
+
+    def _emission_for_symbol(self, symbol: str) -> tuple[tuple[float, float], ...]:
+        per = self._emission_by_symbol.get(symbol)
+        if per is not None:
+            return per
+        return self._emission
+
+    def _predict_with_matrix(
+        self,
+        prior: list[float],
+        transition: tuple[tuple[float, ...], ...],
+    ) -> list[float]:
+        """Markov prediction then renormalize (drift-safe for prediction-only paths)."""
         predicted = [0.0] * self._n_states
         for j in range(self._n_states):
             for i in range(self._n_states):
-                predicted[j] += self._transition[i][j] * prior[i]
+                predicted[j] += transition[i][j] * prior[i]
         total = sum(predicted)
         if total > 0:
             return [p / total for p in predicted]
         return [1.0 / self._n_states] * self._n_states
 
-    def _emission_likelihood(self, log_spread: float) -> list[float]:
+    def _emission_likelihood_for_symbol(
+        self, symbol: str, log_spread: float
+    ) -> list[float]:
         likelihoods = []
-        for mu, sigma in self._emission:
+        for mu, sigma in self._emission_for_symbol(symbol):
             z = (log_spread - mu) / sigma
             ll = math.exp(-0.5 * z * z) / (sigma * math.sqrt(2.0 * math.pi))
             likelihoods.append(max(ll, 1e-300))

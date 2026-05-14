@@ -91,6 +91,27 @@ def test_regime_state_legacy_defaults() -> None:
     )
     assert rs.horizon_seconds == 0
     assert rs.stability == 1.0
+    assert rs.posterior_entropy_nats == 0.0
+
+
+def test_regime_state_posterior_entropy_populated() -> None:
+    from feelies.services.regime_engine import regime_posterior_entropy_nats
+
+    probs = (0.5, 0.25, 0.25)
+    h = regime_posterior_entropy_nats(probs)
+    rs = RegimeState(
+        timestamp_ns=1,
+        correlation_id="c",
+        sequence=1,
+        symbol="AAPL",
+        engine_name="hmm_3state_fractional",
+        state_names=("compression", "normal", "vol_breakout"),
+        posteriors=probs,
+        dominant_state=0,
+        dominant_name="compression",
+        posterior_entropy_nats=h,
+    )
+    assert abs(rs.posterior_entropy_nats - h) < 1e-15
 
 
 def test_regime_state_horizon_anchored() -> None:

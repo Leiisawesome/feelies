@@ -56,7 +56,9 @@ class PlatformConfig:
     parameter_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     regime_engine: str | None = "hmm_3state_fractional"
-
+    # Optional kwargs forwarded to ``get_regime_engine(..., **options)`` at
+    # bootstrap (e.g. ``transition_time_scaling_enabled: true``).
+    regime_engine_options: dict[str, object] = field(default_factory=dict)
     data_dir: Path | None = None
     event_log_path: Path | None = None
 
@@ -376,6 +378,17 @@ class PlatformConfig:
         if self.account_equity <= 0:
             raise ConfigurationError("account_equity must be positive")
 
+        if not isinstance(self.regime_engine_options, dict):
+            raise ConfigurationError(
+                "regime_engine_options must be a dict[str, object] mapping"
+            )
+        for opt_key in self.regime_engine_options:
+            if not isinstance(opt_key, str):
+                raise ConfigurationError(
+                    "regime_engine_options keys must be strings, "
+                    f"got {type(opt_key).__name__}"
+                )
+
         for scale_name, scale_val in (
             ("risk_regime_vol_breakout_scale", self.risk_regime_vol_breakout_scale),
             ("risk_regime_compression_scale", self.risk_regime_compression_scale),
@@ -573,6 +586,7 @@ class PlatformConfig:
             "alpha_specs": sorted(p.name for p in self.alpha_specs),
             "parameter_overrides": self.parameter_overrides,
             "regime_engine": self.regime_engine,
+            "regime_engine_options": dict(self.regime_engine_options),
             "data_dir": self.data_dir.name if self.data_dir else None,
             "event_log_path": self.event_log_path.name if self.event_log_path else None,
             "risk_max_position_per_symbol": self.risk_max_position_per_symbol,
@@ -814,6 +828,16 @@ class PlatformConfig:
         else:
             regime_calibration_max_quotes = int(regime_cal_raw)
 
+        raw_regime_opts = data.get("regime_engine_options")
+        if raw_regime_opts is None:
+            regime_engine_options: dict[str, object] = {}
+        else:
+            if not isinstance(raw_regime_opts, dict):
+                raise ConfigurationError(
+                    f"{path}: regime_engine_options must be a YAML mapping"
+                )
+            regime_engine_options = {str(k): v for k, v in raw_regime_opts.items()}
+
         return cls(
             version=str(data.get("version", "0.1.0")),
             author=str(data.get("author", "system")),
@@ -823,6 +847,7 @@ class PlatformConfig:
             alpha_specs=alpha_specs,
             parameter_overrides=data.get("parameter_overrides", {}),
             regime_engine=data.get("regime_engine", "hmm_3state_fractional"),
+            regime_engine_options=regime_engine_options,
             data_dir=Path(data_dir_raw) if data_dir_raw else None,
             event_log_path=Path(event_log_raw) if event_log_raw else None,
             risk_max_position_per_symbol=int(

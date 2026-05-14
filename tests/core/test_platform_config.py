@@ -23,6 +23,10 @@ class TestDefaults:
         cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
         assert cfg.regime_engine == "hmm_3state_fractional"
 
+    def test_default_regime_engine_options_empty(self) -> None:
+        cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
+        assert cfg.regime_engine_options == {}
+
     def test_default_risk_params(self) -> None:
         cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
         assert cfg.risk_max_position_per_symbol == 1000
@@ -81,6 +85,15 @@ class TestValidation:
             account_equity=0.0,
         )
         with pytest.raises(ConfigurationError, match="account_equity"):
+            cfg.validate()
+
+    def test_regime_engine_options_non_str_key_raises(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            regime_engine_options={1: True},  # type: ignore[arg-type, dict-item]
+        )
+        with pytest.raises(ConfigurationError, match="regime_engine_options keys"):
             cfg.validate()
 
 
@@ -184,6 +197,31 @@ account_equity: 500000
         (tmp_path / "config.yaml").write_text(yaml_content)
         cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
         assert cfg.mode == OperatingMode.BACKTEST
+
+    def test_regime_engine_options_from_yaml(self, tmp_path: Path) -> None:
+        yaml_content = """\
+symbols: [AAPL]
+alpha_specs: [x.yaml]
+regime_engine_options:
+  transition_time_scaling_enabled: true
+  transition_dt_reference_seconds: 0.1
+"""
+        (tmp_path / "config.yaml").write_text(yaml_content)
+        cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
+        assert cfg.regime_engine_options["transition_time_scaling_enabled"] is True
+        assert cfg.regime_engine_options["transition_dt_reference_seconds"] == 0.1
+
+    def test_regime_engine_options_must_be_mapping_in_yaml(
+        self, tmp_path: Path
+    ) -> None:
+        yaml_content = """\
+symbols: [AAPL]
+alpha_specs: [x.yaml]
+regime_engine_options: not_a_mapping
+"""
+        (tmp_path / "bad.yaml").write_text(yaml_content)
+        with pytest.raises(ConfigurationError, match="regime_engine_options"):
+            PlatformConfig.from_yaml(tmp_path / "bad.yaml")
 
     def test_risk_params_from_yaml(self, tmp_path: Path) -> None:
         yaml_content = """\
