@@ -505,6 +505,8 @@ class HMM3StateFractional:
         return json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
     def restore(self, data: bytes) -> None:
+        prev_emission = self._emission
+        prev_calibrated = self._calibrated
         try:
             payload = json.loads(data)
             posteriors = payload["posteriors"]
@@ -583,6 +585,8 @@ class HMM3StateFractional:
             self._last_update_seq = {}
             self._last_quote_ts_ns = {}
             self._emission_by_symbol = {}
+            self._emission = prev_emission
+            self._calibrated = prev_calibrated
             raise
 
     def _transition_for_step(self, symbol: str, timestamp_ns: int) -> tuple[tuple[float, ...], ...]:
