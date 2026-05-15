@@ -44,6 +44,12 @@ def test_regime_posterior_entropy_pure_mass_is_zero() -> None:
     assert regime_posterior_entropy_nats([1.0, 0.0, 0.0]) == 0.0
 
 
+def test_regime_posterior_entropy_renormalizes_negative_and_nan() -> None:
+    h = regime_posterior_entropy_nats([0.5, float("nan"), -0.1, 0.6])
+    assert h > 0.0
+    assert h == regime_posterior_entropy_nats([0.5, 0.0, 0.0, 0.6])
+
+
 def test_scale_transition_matrix_more_mixing_at_higher_scale() -> None:
     engine = HMM3StateFractional(
         emission_params=[(-4.5, 0.3), (-3.5, 0.5), (-2.5, 0.7)],
@@ -90,6 +96,71 @@ def test_per_symbol_calibration_populates_map() -> None:
     assert engine.calibrate(cal)
     assert "AAPL" in engine._emission_by_symbol
     assert "MSFT" in engine._emission_by_symbol
+
+
+def test_per_symbol_pairwise_gate_failure_logs_warning(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+
+    ncalls = {"n": 0}
+    real_gate = HMM3StateFractional._emissions_pass_pairwise_gate
+
+    def gated(self, emission, *, _real=real_gate, _n=ncalls):
+        _n["n"] += 1
+        if _n["n"] <= 1:
+            return _real(self, emission)
+        return False
+
+    monkeypatch.setattr(
+        HMM3StateFractional,
+        "_emissions_pass_pairwise_gate",
+        gated,
+    )
+    engine = HMM3StateFractional(per_symbol_calibration=True)
+    cal: list[NBBOQuote] = []
+    spreads = [0.01] * 100 + [0.05] * 100 + [0.50] * 100
+    for i, sp in enumerate(spreads):
+        cal.append(
+            _q(
+                bid="150.00",
+                ask=f"{150.0 + sp:.4f}",
+                sequence=i + 1,
+                timestamp_ns=(i + 1) * 1000,
+            )
+        )
+    base_seq = len(cal)
+    for j in range(30):
+        cal.append(
+            _q(
+                symbol="THIN1",
+                bid="10.00",
+                ask="10.01",
+                sequence=base_seq + j + 1,
+                timestamp_ns=(base_seq + j + 1) * 1000,
+            )
+        )
+    for j in range(30):
+        cal.append(
+            _q(
+                symbol="THIN2",
+                bid="20.00",
+                ask="20.01",
+                sequence=base_seq + 30 + j + 1,
+                timestamp_ns=(base_seq + 30 + j + 1) * 1000,
+            )
+        )
+    with caplog.at_level(logging.WARNING, logger="feelies.services.regime_engine"):
+        assert engine.calibrate(cal)
+    skips = [
+        r for r in caplog.records
+        if "per-symbol calibration skipped" in r.message
+    ]
+    thin_skips = [r for r in skips if "THIN" in r.message]
+    assert len(thin_skips) == 2
+    joined = " ".join(r.message for r in thin_skips)
+    assert "THIN1" in joined and "THIN2" in joined
 
 
 def test_restore_legacy_checkpoint_without_last_quote_ts() -> None:

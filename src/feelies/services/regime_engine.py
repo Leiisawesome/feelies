@@ -1,13 +1,13 @@
-"""Regime engine — platform-provided HMM-based regime detection.
+"""Regime engine — platform-provided online regime filtering services.
 
-The RegimeEngine protocol defines the contract for regime detection
-services.  Alpha specs declare which engine they need in the ``regimes``
-section; the AlphaLoader resolves it by name from the engine registry
-and injects the instance as ``regime_engine`` into feature computation
-namespaces.
+The :class:`RegimeEngine` protocol defines the contract for per-symbol
+stateful regime posteriors (typically driven by NBBO-derived features).
+Alpha specs may reference an engine by name in YAML; :class:`AlphaLoader`
+and bootstrap resolve registry implementations and inject them into
+evaluation namespaces.
 
-The risk engine also consumes RegimeEngine for regime-aware position
-sizing and drawdown gating.
+The risk engine also consumes :class:`RegimeEngine` for regime-aware
+position sizing and drawdown gating.
 """
 
 from __future__ import annotations
@@ -27,14 +27,27 @@ from feelies.core.events import NBBOQuote
 def regime_posterior_entropy_nats(posteriors: Sequence[float]) -> float:
     """Shannon entropy (nats) of a categorical posterior ``p``.
 
-    ``0`` is returned when the vector is degenerate (all mass on one
-    state) or empty — callers may treat ``0`` as maximal confidence
-    (no mixing) and larger values as softer posteriors.
+    Non-finite and negative components are treated as zero mass, then
+    the vector is renormalized to a simplex before computing ``H``.
+    ``0`` is returned when there is no positive mass (degenerate /
+    empty input).  A peaked distribution has entropy near ``0``; a
+    diffuse distribution has higher entropy.
     """
-    h = 0.0
+    cleaned: list[float] = []
     for p in posteriors:
-        if p > 0.0:
-            h -= p * math.log(p)
+        x = float(p)
+        if math.isnan(x) or math.isinf(x):
+            cleaned.append(0.0)
+        else:
+            cleaned.append(max(0.0, x))
+    total = sum(cleaned)
+    if total <= 0.0:
+        return 0.0
+    h = 0.0
+    for p in cleaned:
+        q = p / total
+        if q > 0.0:
+            h -= q * math.log(q)
     return h
 
 
@@ -317,6 +330,12 @@ class HMM3StateFractional:
                 if self._order_emissions_by_increasing_mean:
                     per = self._sort_emissions_by_mean(per)
                 if not self._emissions_pass_pairwise_gate(per):
+                    logger.warning(
+                        "regime_engine: per-symbol calibration skipped for "
+                        "symbol=%s — pairwise emission separation gate failed "
+                        "(falling back to global emissions for this symbol)",
+                        sym,
+                    )
                     continue
                 self._emission_by_symbol[sym] = per
 
@@ -490,6 +509,17 @@ class HMM3StateFractional:
         self._last_quote_ts_ns.pop(symbol, None)
 
     def checkpoint(self) -> bytes:
+        """Serialize per-symbol filter state to JSON bytes.
+
+        The blob carries posteriors, sequence watermarks, optional
+        calibrated emissions, per-symbol emissions, and last quote
+        timestamps for time-scaled transitions.  Constructor flags
+        (``transition_time_scaling_enabled``, scale bounds,
+        ``per_symbol_calibration``, etc.) are **not** included —
+        ``restore()`` must be used on an instance constructed with the
+        same flags as the engine that produced the checkpoint, or replay
+        may diverge.
+        """
         payload: dict[str, object] = {
             "posteriors": self._posteriors,
             "last_update_seq": self._last_update_seq,
@@ -505,6 +535,14 @@ class HMM3StateFractional:
         return json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
     def restore(self, data: bytes) -> None:
+        """Restore state from :meth:`checkpoint` JSON.
+
+        On failure, rolls back in-memory posteriors, watermarks, and
+        per-symbol emission maps, restores ``_emission`` / ``_calibrated``
+        to their pre-call values, then re-raises.  Constructor flags are
+        not stored in the blob — use the same engine configuration as the
+        producer when restoring for deterministic replay.
+        """
         prev_emission = self._emission
         prev_calibrated = self._calibrated
         try:
@@ -632,8 +670,15 @@ class HMM3StateFractional:
                         new_row[j] = fill
             total = sum(new_row)
             if total <= 0:
-                return self._transition
-            out_rows.append([x / total for x in new_row])
+                orig = [float(x) for x in self._transition[i]]
+                tot2 = sum(orig)
+                if tot2 <= 0.0:
+                    new_row = [1.0 / n] * n
+                else:
+                    new_row = [x / tot2 for x in orig]
+            else:
+                new_row = [x / total for x in new_row]
+            out_rows.append(new_row)
         return tuple(tuple(r) for r in out_rows)
 
     def _emission_for_symbol(self, symbol: str) -> tuple[tuple[float, float], ...]:
