@@ -545,6 +545,7 @@ class HMM3StateFractional:
         """
         prev_emission = self._emission
         prev_calibrated = self._calibrated
+        prev_emission_by_symbol = self._emission_by_symbol
         try:
             payload = json.loads(data)
             posteriors = payload["posteriors"]
@@ -622,7 +623,7 @@ class HMM3StateFractional:
             self._posteriors = {}
             self._last_update_seq = {}
             self._last_quote_ts_ns = {}
-            self._emission_by_symbol = {}
+            self._emission_by_symbol = prev_emission_by_symbol
             self._emission = prev_emission
             self._calibrated = prev_calibrated
             raise
