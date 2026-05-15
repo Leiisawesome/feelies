@@ -2,7 +2,7 @@
 schema_version: "1.1"
 layer: SIGNAL
 alpha_id: sig_inventory_revert_v1
-version: "1.0.0"
+version: "1.1.0"
 description: |
   Inventory mean-reversion — short-horizon (30 s) alpha that
   fades transient asymmetric quote replenishment.  A sharp,
@@ -58,9 +58,18 @@ parameters:
     min: 0.0
     max: 0.5
     description: |
-      Minimum quote hazard rate required to qualify the regime as
-      "actively replenishing"; below this floor the ladder is
-      stale and inventory inference is unreliable.
+      Hard minimum quote hazard rate; below this floor the ladder is
+      stale and inventory inference is unreliable, so no signal fires.
+  hazard_band:
+    type: float
+    default: 0.05
+    min: 0.001
+    max: 0.5
+    description: |
+      Width of the soft ramp above ``hazard_floor``. Edge is scaled by
+      ``clip((hazard - hazard_floor) / hazard_band, 0, 1)`` so marginally
+      active ladders contribute proportionally instead of falling off a
+      cliff at the floor.
   edge_per_z_bps:
     type: float
     default: 3.5
@@ -73,6 +82,17 @@ parameters:
     min: 5.0
     max: 25.0
     description: Hard cap on the reported ``edge_estimate_bps``.
+  vol_taper_z_scale:
+    type: float
+    default: 3.5
+    min: 0.5
+    max: 10.0
+    description: |
+      Linear taper scale on ``realized_vol_30s_zscore``: edge is multiplied
+      by ``max(0, 1 - max(0, rv_z) / vol_taper_z_scale)``. Default 3.5
+      matches the gate's vol off-switch, so capture decays smoothly toward
+      zero as the gate disarm boundary is approached instead of being a
+      step function.
   cost_floor_bps:
     type: float
     default: 5.5
@@ -80,8 +100,10 @@ parameters:
     max: 30.0
     description: |
       One-way cost floor (bps): edge_bps must strictly exceed this to
-      generate a signal. Derived from cost_arithmetic (one-way convention):
-      half_spread_bps + impact_bps + fee_bps = 2.5 + 2.0 + 1.0 = 5.5.
+      generate a signal. Aligned with the cost_arithmetic disclosure
+      (one-way convention): half_spread_bps + impact_bps + fee_bps =
+      2.5 + 2.0 + 1.0 = 5.5. Authors changing this away from the
+      disclosure should also update cost_arithmetic to keep G12 coherent.
 
 # ── Horizon (Layer-2 boundary) ────────────────────────────
 horizon_seconds: 30
@@ -94,12 +116,19 @@ risk_budget:
   capital_allocation_pct: 15.0
 
 # ── Regime Gate (Phase 3 DSL) ─────────────────────────────
+# NOTE: the asymmetry literal (2.0) below MUST match the default of the
+# ``asymmetry_z_threshold`` parameter. The gate DSL binding map does not
+# resolve YAML ``parameters:`` entries, so the gate threshold cannot be
+# parameterized without platform support; sweeps on asymmetry_z_threshold
+# below 2.0 are silently floored by the gate. Keep these two numbers in
+# sync, and prefer a single platform change to inject params into the
+# binding map over divergent literals here.
 regime_gate:
   regime_engine: hmm_3state_fractional
   on_condition: |
     abs(quote_replenish_asymmetry_zscore) > 2.0 and P(normal) > 0.5
   off_condition: |
-    P(normal) < 0.3 or spread_z_30d > 2.0 or realized_vol_30s_zscore > 3.5
+    P(normal) < 0.5 - posterior_margin or abs(quote_replenish_asymmetry_zscore) < 2.0 - percentile_margin or spread_z_30d > 2.0 or realized_vol_30s_zscore > 3.5
   hysteresis:
     posterior_margin: 0.20
     percentile_margin: 0.30
@@ -137,11 +166,28 @@ signal: |
       if abs(asym_z) < thr:
           return None
 
-      # Contrarian: if asymmetry is positive (bid drained > ask drained),
-      # micro-price drifts low; we fade by going LONG.
+      # Direction mapping: sensor convention is positive asym_z ⇒ bid-side
+      # replenishment is faster (architecture §2.1). Under the inventory
+      # hypothesis the affected side was previously drawn, so faster
+      # replenishment marks the displaced side and we fade with LONG.
+      # This sign assumption is empirical and must be re-confirmed against
+      # forward 30 s micro-price returns before relying on this alpha live.
       direction = LONG if asym_z > 0.0 else SHORT
       excess = abs(asym_z) - thr
-      edge_bps = min(excess * params["edge_per_z_bps"], params["edge_cap_bps"])
+      edge_bps_raw = min(excess * params["edge_per_z_bps"], params["edge_cap_bps"])
+
+      # Soft hazard gate: continuous ramp above the floor instead of a step.
+      hazard_weight = max(
+          0.0,
+          min(1.0, (hazard - params["hazard_floor"]) / params["hazard_band"]),
+      )
+
+      # Vol stress taper: scales edge linearly to zero as realized_vol_30s_zscore
+      # approaches the gate's hard disarm threshold. Negative / low z ⇒ no taper.
+      rv_z = snapshot.values.get("realized_vol_30s_zscore") or 0.0
+      vol_weight = max(0.0, 1.0 - max(0.0, rv_z) / params["vol_taper_z_scale"])
+
+      edge_bps = edge_bps_raw * hazard_weight * vol_weight
       if edge_bps <= params["cost_floor_bps"]:
           return None
 
@@ -152,6 +198,6 @@ signal: |
           symbol=snapshot.symbol,
           strategy_id="sig_inventory_revert_v1",
           direction=direction,
-          strength=min(abs(asym_z) / (thr * 2.0), 1.0),
+          strength=edge_bps / params["edge_cap_bps"],
           edge_estimate_bps=edge_bps,
       )
