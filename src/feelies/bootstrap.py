@@ -229,6 +229,7 @@ def build_platform(
         regime_engine=regime_engine,
         enforce_trend_mechanism=config.enforce_trend_mechanism,
         enforce_layer_gates=config.enforce_layer_gates,
+        regime_engine_options=config.regime_engine_options,
     )
 
     _load_alphas(config, registry, loader)

@@ -282,3 +282,38 @@ def test_manifest_layer_and_falsification_criteria_propagate() -> None:
     m = AlphaLoader().load_from_dict(spec, source="<test>")
     assert m.manifest.layer == "SIGNAL"
     assert m.manifest.falsification_criteria == ("a", "b", "c")
+
+
+# ── Regime engine options (standalone ``get_regime_engine`` path) ───────
+
+
+def test_alpha_loader_forwards_regime_engine_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def spy(name: str, **kwargs: object) -> object:
+        captured["kwargs"] = kwargs
+        from feelies.services.regime_engine import get_regime_engine as real_get
+
+        return real_get(name, **kwargs)
+
+    monkeypatch.setattr("feelies.alpha.loader.get_regime_engine", spy)
+    spec = copy.deepcopy(_signal_spec())
+    spec["regimes"] = {"engine": "hmm_3state_fractional"}
+    AlphaLoader(
+        regime_engine=None,
+        regime_engine_options={"transition_time_scaling_enabled": True},
+    ).load_from_dict(spec, source="<test>")
+    assert captured["kwargs"].get("transition_time_scaling_enabled") is True
+
+
+def test_alpha_loader_invalid_regime_engine_options_raise_alpha_load_error() -> None:
+    spec = copy.deepcopy(_signal_spec())
+    spec["regimes"] = {"engine": "hmm_3state_fractional"}
+    loader = AlphaLoader(
+        regime_engine=None,
+        regime_engine_options={"not_a_valid_constructor_kwarg": 1},
+    )
+    with pytest.raises(AlphaLoadError, match="invalid regime_engine_options"):
+        loader.load_from_dict(spec, source="<test>")
