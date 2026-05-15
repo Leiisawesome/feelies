@@ -406,10 +406,10 @@ class PlatformConfig:
                     "non-empty disk_cache_ingestion_health_rows "
                     "(populate after ingest / cache replay)"
                 )
-            for sym, day, h in self.disk_cache_ingestion_health_rows:
-                if h != "HEALTHY":
+            for sym, day, health_status in self.disk_cache_ingestion_health_rows:
+                if health_status != "HEALTHY":
                     raise ConfigurationError(
-                        f"disk cache manifest not HEALTHY for {sym}/{day}: {h!r}"
+                        f"disk cache manifest not HEALTHY for {sym}/{day}: {health_status!r}"
                     )
 
         if self.backtest_enforce_ingest_terminal_health:

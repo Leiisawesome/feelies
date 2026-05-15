@@ -21,7 +21,7 @@ import time
 from collections.abc import Sequence
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from feelies.core.events import NBBOQuote, Trade
 
@@ -116,7 +116,7 @@ class DiskEventCache:
         if not manifest_path.exists():
             return None
         try:
-            return json.loads(manifest_path.read_text(encoding="utf-8"))
+            return cast(dict[str, Any], json.loads(manifest_path.read_text(encoding="utf-8")))
         except Exception:
             return None
 

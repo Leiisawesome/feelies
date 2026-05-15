@@ -75,7 +75,7 @@ parameters:
     description: Hard cap on the reported ``edge_estimate_bps``.
   cost_floor_bps:
     type: float
-    default: 3.0
+    default: 5.5
     min: 0.0
     max: 30.0
     description: |

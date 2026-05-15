@@ -527,7 +527,13 @@ class TestFieldFidelity:
         trades = [e for e in loaded if isinstance(e, Trade)]
         assert len(trades) > 0
 
-        t = trades[0]
+        # Fractional-share trades may have size=0 with decimal_size set;
+        # find a whole-share trade to assert integer size fidelity.
+        whole_share_trades = [tr for tr in trades if tr.size > 0]
+        assert len(whole_share_trades) > 0, (
+            "expected at least one whole-share trade (size>0) in the loaded events"
+        )
+        t = whole_share_trades[0]
         assert isinstance(t.price, Decimal), f"price should be Decimal, got {type(t.price)}"
         assert t.price > 0
         assert t.size > 0
