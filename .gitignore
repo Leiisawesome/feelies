@@ -15,4 +15,5 @@ build/
 run_output.txt
 test_output.txt
 .cursor/plans/
+artifacts/
 .DS_Store

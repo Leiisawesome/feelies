@@ -1,0 +1,104 @@
+# Phase-0 measurement config for sig_benign_midcap_v1 (research only).
+# Run: uv run python scripts/phase0_sig_benign_midcap_v1.py --config platforms/phase0_sig_benign_midcap_v1.yaml
+
+version: "0.2.0-dev"
+author: "phase0-research"
+mode: BACKTEST
+
+symbols:
+  - AAPL
+  - MSFT
+  - NVDA
+
+alpha_specs:
+  - alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml
+
+parameter_overrides: {}
+
+# Strict G16 on — mirrors production default; benign ships trend_mechanism.
+enforce_trend_mechanism: true
+
+backtest_enforce_ingest_terminal_health: false
+backtest_reject_zero_ingest_events: false
+
+regime_engine: hmm_3state_fractional
+regime_calibration_max_quotes: 5000
+
+account_equity: 1000000.0
+risk_max_position_per_symbol: 500
+risk_max_gross_exposure_pct: 25.0
+risk_max_drawdown_pct: 1.0
+
+backtest_fill_latency_ns: 30000000
+signal_min_edge_cost_ratio: 1.5
+
+cost_min_spread_bps: 0.0
+cost_commission_per_share: 0.0035
+cost_taker_exchange_per_share: 0.003
+cost_maker_exchange_per_share: -0.002
+cost_passive_adverse_selection_bps: 0.5
+cost_sell_regulatory_bps: 0.0
+cost_stress_multiplier: 1.0
+cost_min_commission: 0.35
+cost_max_commission_pct: 1.0
+cost_htb_borrow_annual_bps: 0.0
+
+execution_mode: passive_limit
+passive_fill_delay_ticks: 3
+passive_max_resting_ticks: 8000
+passive_queue_position_shares: 200
+
+platform_min_order_shares: 50
+
+horizons_seconds:
+  - 120
+
+# Anchor horizon boundaries (avoids H10 auto-bind warning).
+session_open_ns: 1768532400000000000
+
+sensor_specs:
+
+  - sensor_id: spread_z_30d
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.spread_z_30d.SpreadZScoreSensor
+    params:
+      window: 6000
+      min_std: 1.0e-9
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 6000
+    throttled_ms: null
+
+  - sensor_id: ofi_ewma
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.ofi_ewma.OFIEwmaSensor
+    params:
+      alpha: 0.1
+      warm_after: 50
+      warm_window_seconds: 300
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 50
+    throttled_ms: null
+
+  - sensor_id: micro_price
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.micro_price.MicroPriceSensor
+    params:
+      warm_after: 1
+      warm_window_seconds: 60
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 1
+    throttled_ms: null
+
+  - sensor_id: realized_vol_30s
+    sensor_version: "1.1.0"
+    cls: feelies.sensors.impl.realized_vol_30s.RealizedVol30sSensor
+    params:
+      window_seconds: 30
+      warm_after: 16
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 16
+    throttled_ms: null
