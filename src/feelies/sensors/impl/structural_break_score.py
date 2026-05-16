@@ -39,14 +39,24 @@ Algorithm (page-Hinkley, one-sided up-test):
     Finally append ``x_t`` into the deque.
 
     where ``δ`` is the tolerated drift floor (default ``0.0``) and
-    ``λ`` is the alarm threshold (default ``small relative to typical
-    cumulative drift``, sensor parameter ``alarm_threshold``).
+    ``λ`` is the alarm threshold (sensor parameter ``alarm_threshold``).
     ``score_t > 0.95`` is a structural-break alert per §20.4.4.
 
+    Note that ``max(0, ·)`` is the canonical reflected-random-walk
+    formulation of Page-Hinkley: it is identically equal to
+    ``PH_t − min_{s≤t} PH_s`` (the classic "alarm when the cumulant
+    exits its running minimum by more than λ" form), so no separate
+    running-minimum bookkeeping is required.
+
     The reference window evicts samples older than ``window_seconds``
-    in event time before each Page-Hinkley step.  When the window
-    resets (e.g. after a long pause), ``m`` is re-initialised on the
-    next observation.
+    in event time before each Page-Hinkley step.  Using a *rolling*
+    rather than a *fixed* baseline is a deliberate design choice: it
+    detects abrupt regime jumps within ``window_seconds`` of onset
+    with high sensitivity, while gradual drifts whose timescale much
+    exceeds ``window_seconds`` are detected with reduced sensitivity
+    (μ_ref tracks them).  For "alpha is dying" diagnostics that
+    expect a drift slower than the default 1-hour window, configure a
+    longer ``window_seconds`` so the baseline lags the drift.
 
 Determinism: pure float arithmetic; deque-based event-time eviction;
 no RNG.

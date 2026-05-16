@@ -25,14 +25,20 @@ Algorithm (per horizon ``h``):
   single **log-return** over the elapsed bar:
   ``r = log(mid_now) - log(mid_open)`` where ``mid_open`` is the NBBO
   mid carried from the previous grid boundary (bootstrap seeds the
-  first open).  Quotes that arrive after **multiple** missed
-  deadlines consolidate into **one** return — no zero-filled interior
-  steps.
-- Update incrementally:
-      μ_h ← (1 - λ_μ) · μ_h + λ_μ · r
-      σ²_h ← (1 - λ_σ²) · σ²_h + λ_σ² · r²
-  with default decay λ_μ = λ_σ² = 2 / (1 + N_eff), N_eff = 16
-  effective samples per horizon (≈ Welford-equivalent half-life).
+  first open).  When a quote arrives after ``N`` missed grid
+  deadlines (N ≥ 1), the cumulative log-return ``r`` is split into
+  ``N`` equal per-bar increments ``r/N`` and the EWMA is advanced by
+  ``N`` updates in closed form (see below).  This keeps both ``μ`` and
+  ``σ²`` unbiased after gaps — feeding ``r`` as a single sample would
+  inflate ``σ²`` by O(N) and ``μ`` by O(N).
+- Update incrementally per missed bar:
+      μ_h  ← (1 - λ)·μ_h  + λ·(r/N)
+      σ²_h ← (1 - λ)·σ²_h + λ·(r/N)²
+  with default decay λ = 2 / (1 + N_eff), N_eff = 16 effective samples
+  per horizon (≈ Welford-equivalent half-life).  ``N`` such updates
+  collapse into a closed-form weight ``(1-λ)^N`` on the prior state
+  plus ``1 - (1-λ)^N`` on the per-bar value — O(1) regardless of gap
+  size.
 - ``SNR(h) = |μ_h| / (max(σ_h, ε) / √h)``.
 
 Determinism: pure float arithmetic; integer grid crossings.
@@ -40,6 +46,9 @@ Determinism: pure float arithmetic; integer grid crossings.
 Warm-up: ``warm = True`` once *every* registered horizon has
 accumulated ≥ ``warm_samples_per_horizon`` (default 4) grid samples,
 matching the §20.4.3 requirement of "four horizon samples minimum".
+A multi-bar consolidated update increments ``samples`` by ``N`` (the
+number of missed bars it stands in for), so the warm gate tracks
+elapsed grid time rather than callback count.
 """
 
 from __future__ import annotations
@@ -68,7 +77,7 @@ class SNRDriftDiffusionSensor:
     """
 
     sensor_id: str = "snr_drift_diffusion"
-    sensor_version: str = "1.1.0"
+    sensor_version: str = "1.2.0"
 
     def __init__(
         self,
@@ -130,22 +139,26 @@ class SNRDriftDiffusionSensor:
         if ts_ns < slot["next_sample_ns"]:
             return
 
+        # Caller's guard (bid, ask > 0) implies mid > 0; combined with the
+        # bootstrap branch above which pins mid_bar_open to a positive mid,
+        # ``mo`` is always > 0 here.  No defensive fallback is needed.
         mo = slot["mid_bar_open"]
-        if mo is None or mo <= 0.0 or mid <= 0.0:
-            slot["mid_bar_open"] = mid if mid > 0 else mo
-            while slot["next_sample_ns"] <= ts_ns:
-                slot["next_sample_ns"] += h * _NS_PER_SECOND
-            return
 
-        # One consolidated log-return across all missed deadlines on this quote.
-        r = math.log(mid) - math.log(mo)
+        # Closed-form ``n_bars`` EWMA updates with per-bar return ``r/n_bars``.
+        # ``r`` is the total log-return over the elapsed ``n_bars * h``
+        # seconds; splitting equally avoids the O(N) variance inflation that
+        # treating ``r`` as a single sample would cause.
+        h_ns = h * _NS_PER_SECOND
+        n_bars = (ts_ns - slot["next_sample_ns"]) // h_ns + 1
+        r_total = math.log(mid) - math.log(mo)
+        r_per_bar = r_total / float(n_bars)
         lam = self._ewma_lambda
-        slot["mu"] = (1.0 - lam) * slot["mu"] + lam * r
-        slot["sig2"] = (1.0 - lam) * slot["sig2"] + lam * r * r
+        decay = (1.0 - lam) ** n_bars
+        slot["mu"] = decay * slot["mu"] + (1.0 - decay) * r_per_bar
+        slot["sig2"] = decay * slot["sig2"] + (1.0 - decay) * r_per_bar * r_per_bar
         slot["mid_bar_open"] = mid
-        while slot["next_sample_ns"] <= ts_ns:
-            slot["next_sample_ns"] += h * _NS_PER_SECOND
-        slot["samples"] += 1
+        slot["next_sample_ns"] += n_bars * h_ns
+        slot["samples"] += n_bars
 
     def update(
         self,

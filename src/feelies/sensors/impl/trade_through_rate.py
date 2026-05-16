@@ -1,21 +1,29 @@
-"""Trade-through rate — fraction of trades that lift the offer / hit the bid.
+"""NBBO-aggression rate — fraction of trades that touch or cross the NBBO.
 
-A *trade-through* is a print whose price is at or beyond the
-prevailing NBBO (i.e. ≥ ask for buys, ≤ bid for sells) — the
-opposite of a midpoint trade.  A high trade-through rate signals
-aggressive marketable order flow that consumes top-of-book
-liquidity, often a precursor to a regime shift in the Hawkes
-self-exciting family (see ``hawkes_intensity``).
+Note on naming: Reg-NMS / standard microstructure reserves the term
+*trade-through* for prints **strictly outside** the NBBO (``price > ask``
+or ``price < bid``).  This sensor uses a broader definition — prints
+**at or beyond** the prevailing NBBO (``price >= ask`` for buys,
+``price <= bid`` for sells) — because the regime-shift signal we care
+about here is "did this print consume top-of-book liquidity?", which
+includes the touch case.  The metric is therefore an **NBBO-aggression
+rate**, kept under the legacy ``trade_through_rate`` sensor_id for
+locked-vector compatibility.  Consumers expecting strict Reg-NMS
+trade-through accounting should not use this signal as a proxy.
+
+A high aggression rate signals marketable order flow that consumes
+top-of-book liquidity, often a precursor to a regime shift in the
+Hawkes self-exciting family (see ``hawkes_intensity``).
 
 This sensor needs the prevailing NBBO at the time of each trade.
 We maintain the most-recent ``(bid, ask)`` from the upstream
 ``NBBOQuote`` stream and consult it on every ``Trade``:
 
-- buy-side trade-through if ``trade.price >= ask``;
-- sell-side trade-through if ``trade.price <= bid``;
+- buy-side aggression if ``trade.price >= ask``;
+- sell-side aggression if ``trade.price <= bid``;
 - otherwise the trade prints inside the spread.
 
-The sensor returns the rolling-window fraction of trade-throughs.
+The sensor returns the rolling-window fraction of aggressive prints.
 
 Determinism: deque-based event-time eviction, integer counters.
 The NBBO snapshot is taken at the trade's exchange timestamp using

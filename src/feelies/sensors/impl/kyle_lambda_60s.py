@@ -23,8 +23,7 @@ true once at least ``min_samples`` samples are in the window.
 
 Determinism: incremental running sums.  Numerical drift over long
 windows is bounded by the deque length cap (~window_seconds * trade
-rate); we recompute from scratch when the deque empties to anchor
-the sums to zero exactly.
+rate).
 """
 
 from __future__ import annotations
@@ -126,10 +125,9 @@ class KyleLambda60sSensor:
             side = state["last_side"]
         state["last_side"] = side
 
+        # ``mid_at_prev_trade`` is non-None here: the first-trade branch above
+        # always pairs setting ``last_trade_price`` with setting it.
         mid_prev = state["mid_at_prev_trade"]
-        if mid_prev is None:
-            return None
-
         dp = mid_now - mid_prev
         dq = side * size
 
@@ -148,14 +146,10 @@ class KyleLambda60sSensor:
             state["sum_dp_dq"] -= old_dp * old_dq
             state["sum_dq2"] -= old_dq * old_dq
 
+        # ``n >= 1`` here: the just-appended sample has ts == event.timestamp_ns
+        # which equals ``cutoff + window_ns``, so it is never < cutoff and
+        # cannot be evicted.
         n = len(samples)
-        # Anchor sums to exactly zero when the window empties — keeps
-        # numerical drift bounded over long sessions.
-        if n == 0:
-            state["sum_dp"] = 0.0
-            state["sum_dq"] = 0.0
-            state["sum_dp_dq"] = 0.0
-            state["sum_dq2"] = 0.0
 
         state["mid_at_prev_trade"] = mid_now
         state["last_trade_price"] = price

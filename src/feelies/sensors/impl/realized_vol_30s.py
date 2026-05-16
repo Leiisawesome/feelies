@@ -1,14 +1,20 @@
 """Realized volatility over a sliding event-time window.
 
-Computes the **sample standard deviation** of mid-price log-returns over the
-last ``window_seconds`` of quotes:
+Computes the **sample standard deviation** (Bessel-corrected) of mid-price
+log-returns over the last ``window_seconds`` of quotes via a Welford
+sliding-window mean/M2 accumulator (Pébay 2008):
 
-    r_i          = log(mid_i / mid_{i-1})
-    rv_t (n≥2)   = sqrt( max( 0,
-        (sum r_i² - (sum r_i)² / n) / (n - 1) ) )
+    r_i        = log(mid_i / mid_{i-1})
+    M2 / (n-1) = sample variance (unbiased)
+    rv_t       = sqrt( max(0, M2 / (n-1)) )
 
-Uses the unbiased window variance (Bessel correction). For ``n < 2`` returns
-inside the trailing window ``value = 0.0``.
+The Welford forward + reverse update avoids the catastrophic cancellation
+of the ``Σr² − (Σr)²/n`` "shortcut" formula, which is critical here because
+log-returns are tiny (~1e-5 over 30s) and naïve cancellation eats several
+digits of precision over a full session.  Mirrors the pattern used in
+``spread_z_30d`` for the same reason.
+
+For ``n < 2`` returns inside the trailing window, ``value = 0.0``.
 
 Unannualised — consumers may multiply by ``sqrt(seconds_per_year / window_seconds)``
 if they need an annualised scale.
@@ -44,7 +50,7 @@ class RealizedVol30sSensor:
     """
 
     sensor_id: str = "realized_vol_30s"
-    sensor_version: str = "1.1.0"
+    sensor_version: str = "1.2.0"
 
     def __init__(
         self,
@@ -70,8 +76,9 @@ class RealizedVol30sSensor:
     def initial_state(self) -> dict[str, Any]:
         return {
             "history": deque(),  # (ts_ns, log_ret)
-            "sum_r": 0.0,
-            "sum_r2": 0.0,
+            "n": 0,       # Welford element count (== len(history))
+            "mean": 0.0,  # Welford running mean of log-returns
+            "M2": 0.0,    # Welford sum of squared deviations from mean
             "last_mid": None,
         }
 
@@ -95,24 +102,37 @@ class RealizedVol30sSensor:
         if last_mid is not None and last_mid > 0.0:
             log_ret = math.log(mid / last_mid)
             history: deque[tuple[int, float]] = state["history"]
-            history.append((ts, log_ret))
-            state["sum_r"] += log_ret
-            state["sum_r2"] += log_ret * log_ret
 
+            # Welford forward add for the incoming log-return.
+            n_new = state["n"] + 1
+            delta = log_ret - state["mean"]
+            state["mean"] += delta / n_new
+            delta2 = log_ret - state["mean"]
+            state["M2"] += delta * delta2
+            state["n"] = n_new
+            history.append((ts, log_ret))
+
+            # Reverse-Welford eviction of expired returns (Pébay 2008).
             cutoff = ts - self._window_ns
             while history and history[0][0] < cutoff:
-                _, ev_ret = history.popleft()
-                state["sum_r"] -= ev_ret
-                state["sum_r2"] -= ev_ret * ev_ret
+                _, x_old = history.popleft()
+                n_cur = state["n"]
+                mean_cur = state["mean"]
+                if n_cur > 1:
+                    mean_without = (n_cur * mean_cur - x_old) / (n_cur - 1)
+                    state["M2"] -= (x_old - mean_cur) * (x_old - mean_without)
+                    state["mean"] = mean_without
+                else:
+                    state["mean"] = 0.0
+                    state["M2"] = 0.0
+                state["n"] -= 1
 
-            n = len(history)
+            n = state["n"]
             if n < 2:
                 value = 0.0
             else:
-                sum_r = state["sum_r"]
-                accum = state["sum_r2"] - (sum_r * sum_r) / float(n)
-                var = accum / float(n - 1)
-                value = math.sqrt(max(0.0, var))
+                var = max(0.0, state["M2"] / float(n - 1))
+                value = math.sqrt(var)
         else:
             value = 0.0
 

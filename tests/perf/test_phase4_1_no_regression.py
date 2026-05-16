@@ -111,7 +111,7 @@ _HARNESS_TEMPLATE = textwrap.dedent("""\
             cls=SpreadZScoreSensor, params={{}}, subscribes_to=(NBBOQuote,),
         ),
         SensorSpec(
-            sensor_id='realized_vol_30s', sensor_version='1.1.0',
+            sensor_id='realized_vol_30s', sensor_version='1.2.0',
             cls=RealizedVol30sSensor,
             params={{'window_seconds': 30, 'warm_after': 8}},
             subscribes_to=(NBBOQuote,),
