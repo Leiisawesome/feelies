@@ -149,12 +149,13 @@ def main() -> int:
             print(f"  adjacent d({engine.state_names[i]},{engine.state_names[i+1]}): {d:.3f}")
 
     # ── Full-day posterior pass (strided) ───────────────────────────
-    engine2 = HMM3StateFractional(
-        emission_params=list(engine._emission) if ok else None,
-        transition_time_scaling_enabled=args.time_scaling,
-        transition_dt_reference_seconds=0.05,
-    )
-    if not ok:
+    if ok:
+        engine2 = HMM3StateFractional(
+            emission_params=list(engine._emission),
+            transition_time_scaling_enabled=args.time_scaling,
+            transition_dt_reference_seconds=0.05,
+        )
+    else:
         engine2 = HMM3StateFractional(
             transition_time_scaling_enabled=args.time_scaling,
         )
