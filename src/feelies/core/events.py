@@ -127,6 +127,9 @@ class RegimeState(Event):
       posteriors.  Default 1.0 is a no-op for legacy producers.
       ``posterior_entropy_nats`` — Shannon entropy (natural log base) of
       the posterior categorical; ``0`` when unused (legacy producers).
+
+    When ``posteriors`` tie, producers pick the lowest ``dominant_state``
+    index (deterministic replay).
     """
 
     symbol: str

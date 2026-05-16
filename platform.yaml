@@ -39,6 +39,15 @@ strict_normalizer_symbol_coverage: false
 enable_rest_sequence_gap_detection: false
 
 regime_engine: hmm_3state_fractional
+# Alias: hmm_3state_spread_filter (same implementation).
+
+# Optional engine kwargs (forwarded at bootstrap). Defaults preserve tick-based
+# transitions and pooled prefix calibration only.
+# regime_engine_options:
+#   transition_time_scaling_enabled: true
+#   transition_dt_reference_seconds: 0.05
+#   per_symbol_calibration: true   # needs >=30 quotes/symbol in calibration prefix
+#   enforce_min_pairwise_emission_separation: false
 
 # data_dir: data/
 # event_log_path: data/event_log.jsonl
@@ -77,8 +86,9 @@ cost_max_commission_pct: 1.0
 # matches Inv-12; set 0 only for deliberate sub-cost research scenarios.
 signal_min_edge_cost_ratio: 1.5
 
-# Optional causal regime warmup: calibrate HMM emissions from the first N NBBO quotes
-# in replay order only (never the full session). Omit or null to skip boot calibration.
+# Optional causal regime warmup: calibrate spread-emission quantiles from the first
+# N NBBO quotes in replay order (pooled across symbols unless per_symbol_calibration
+# is enabled in regime_engine_options). Omit or null to skip boot calibration.
 regime_calibration_max_quotes: 100000
 
 # Short borrow annual bps; 0 = off (optimistic for SHORT alphas like benign).

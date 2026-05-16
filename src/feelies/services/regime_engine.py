@@ -110,8 +110,11 @@ class RegimeEngine(Protocol):
     def restore(self, data: bytes) -> None:
         """Restore internal state from a blob produced by ``checkpoint()``.
 
-        Replaces all per-symbol state.  On failure, the implementation
-        must leave itself in a clean cold-start state (empty posteriors).
+        Replaces all per-symbol state.  On failure, implementations must
+        not leave a half-applied checkpoint visible: either roll back to
+        the pre-call snapshot (as :class:`HMM3StateFractional` does for
+        posteriors and emission parameters) or reset to an empty cold
+        start.  Constructor flags are not part of the blob.
         """
         ...
 
@@ -129,10 +132,17 @@ class HMM3StateFractional:
     spread quantiles (optionally per symbol), while the transition matrix
     stays author-controlled unless time scaling reshapes it.
 
-    States:
-      0 — compression/clustering (low vol, tight spreads)
-      1 — normal (typical trading conditions)
-      2 — vol_breakout (high vol, wide spreads)
+    States (indices after :meth:`calibrate` with
+    ``order_emissions_by_increasing_mean=True``):
+      0 — tightest log-relative-spread tercile
+      1 — middle tercile
+      2 — widest tercile
+
+    The default ``state_names`` (``compression_clustering``, ``normal``,
+    ``vol_breakout``) are **registry labels** for risk scaling and YAML
+    ``P(...)`` gates — they are **not** re-derived from data.  After
+    calibration, index ``i`` always maps to the *i*-th emission sorted by
+  increasing spread mean, which may not match the English name's intuition.
 
     Tick-time semantics
     -------------------
@@ -175,6 +185,7 @@ class HMM3StateFractional:
 
     _MIN_CALIBRATION_SAMPLES = 30
     _MIN_SIGMA = 0.01
+    _CHECKPOINT_SCHEMA_VERSION = 1
 
     def __init__(
         self,
@@ -231,6 +242,9 @@ class HMM3StateFractional:
         self._last_quote_ts_ns: dict[str, int] = {}
         self._emission_by_symbol: dict[str, tuple[tuple[float, float], ...]] = {}
         self._uncalibrated_warned: bool = False
+        self._scaled_transition_cache: (
+            tuple[float, tuple[tuple[float, ...], ...]] | None
+        ) = None
 
     def _validate_params(self) -> None:
         n = self._n_states
@@ -343,6 +357,7 @@ class HMM3StateFractional:
         self._posteriors.clear()
         self._last_update_seq.clear()
         self._last_quote_ts_ns.clear()
+        self._scaled_transition_cache = None
 
         self._check_emission_separation()
         return True
@@ -521,6 +536,7 @@ class HMM3StateFractional:
         may diverge.
         """
         payload: dict[str, object] = {
+            "checkpoint_schema_version": self._CHECKPOINT_SCHEMA_VERSION,
             "posteriors": self._posteriors,
             "last_update_seq": self._last_update_seq,
             "last_quote_ts_ns": self._last_quote_ts_ns,
@@ -548,6 +564,14 @@ class HMM3StateFractional:
         prev_emission_by_symbol = self._emission_by_symbol
         try:
             payload = json.loads(data)
+            schema_raw = payload.get("checkpoint_schema_version")
+            if schema_raw is not None:
+                schema_v = int(schema_raw)
+                if schema_v > self._CHECKPOINT_SCHEMA_VERSION:
+                    raise ValueError(
+                        f"Unsupported checkpoint_schema_version {schema_v} "
+                        f"(engine supports <= {self._CHECKPOINT_SCHEMA_VERSION})"
+                    )
             posteriors = payload["posteriors"]
             last_seq = payload["last_update_seq"]
             if not isinstance(posteriors, dict) or not isinstance(last_seq, dict):
@@ -619,6 +643,7 @@ class HMM3StateFractional:
                         sym_pairs.append((mu, sigma))
                     parsed_ebs[str(sym)] = tuple(sym_pairs)
                 self._emission_by_symbol = parsed_ebs
+            self._scaled_transition_cache = None
         except Exception:
             self._posteriors = {}
             self._last_update_seq = {}
@@ -626,6 +651,7 @@ class HMM3StateFractional:
             self._emission_by_symbol = prev_emission_by_symbol
             self._emission = prev_emission
             self._calibrated = prev_calibrated
+            self._scaled_transition_cache = None
             raise
 
     def _transition_for_step(self, symbol: str, timestamp_ns: int) -> tuple[tuple[float, ...], ...]:
@@ -642,7 +668,12 @@ class HMM3StateFractional:
                 self._transition_dt_scale_min,
                 min(self._transition_dt_scale_max, raw),
             )
-        return self._scale_transition_matrix(scale)
+        cache = self._scaled_transition_cache
+        if cache is not None and cache[0] == scale:
+            return cache[1]
+        matrix = self._scale_transition_matrix(scale)
+        self._scaled_transition_cache = (scale, matrix)
+        return matrix
 
     def _scale_transition_matrix(
         self, scale: float
@@ -727,6 +758,8 @@ class HMM3StateFractional:
 
 _ENGINE_REGISTRY: dict[str, type[RegimeEngine]] = {
     "hmm_3state_fractional": HMM3StateFractional,
+    # Preferred alias — same implementation; name reflects spread-filter semantics.
+    "hmm_3state_spread_filter": HMM3StateFractional,
 }
 
 
@@ -737,6 +770,9 @@ def register_engine(name: str, engine_cls: type[RegimeEngine]) -> None:
 
 def get_regime_engine(name: str, **kwargs: object) -> RegimeEngine:
     """Look up and instantiate a regime engine by name.
+
+    Built-in registry keys: ``hmm_3state_fractional`` (historical) and
+    ``hmm_3state_spread_filter`` (alias for the same class).
 
     Raises ``KeyError`` if the engine name is not registered.
     """

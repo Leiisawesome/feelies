@@ -2195,6 +2195,7 @@ class Orchestrator:
         if self._regime_engine is None:
             return
         posteriors = self._regime_engine.posterior(quote)
+        # Ties: lowest index wins (stable, deterministic replay).
         dominant_idx = max(range(len(posteriors)), key=lambda i: posteriors[i])
         state_names = tuple(self._regime_engine.state_names)
         engine_name = (
