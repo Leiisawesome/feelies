@@ -98,11 +98,11 @@ def main() -> int:
         if prev_ts is not None and len(dts) < 50_000:
             dts.append(max(0.0, (q.timestamp_ns - prev_ts) / 1e9))
         prev_ts = q.timestamp_ns
-        if float(q.ask - q.bid) <= 0:
-            n_locked += 1
-        if ls is None:
-            n_bad_spread += 1
         if len(calib_quotes) < args.calibration_quotes:
+            if float(q.ask - q.bid) <= 0:
+                n_locked += 1
+            if ls is None:
+                n_bad_spread += 1
             calib_quotes.append(q)
         if len(calib_quotes) >= args.calibration_quotes and len(log_sample) >= 50_000:
             break
