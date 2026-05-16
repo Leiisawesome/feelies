@@ -64,7 +64,7 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     ),
     SensorSpec(
         sensor_id="realized_vol_30s",
-        sensor_version="1.1.0",
+        sensor_version="1.2.0",
         cls=RealizedVol30sSensor,
         params={"window_seconds": 30, "warm_after": 5},
         subscribes_to=(NBBOQuote,),
@@ -107,8 +107,14 @@ def test_sensor_reading_stream_matches_locked_baseline() -> None:
 
     # Recorded at Phase-2-β tip.  Re-baseline only with explicit
     # justification (see module docstring).
+    # Re-baselined 2026-05-16: ``realized_vol_30s`` 1.1.0 → 1.2.0
+    # switched from the numerically unstable Σr² − (Σr)²/n shortcut
+    # formula to Welford forward + reverse accumulation, matching the
+    # pattern already used by ``spread_z_30d``.  Output values are
+    # mathematically equivalent but differ in floating-point last bits
+    # due to different operation ordering — the count is unchanged.
     EXPECTED_LEVEL4_READING_HASH = (
-        "9299e59f143fae9b7e2afbe694e30583e2191cbb30b2779737727ffe36632fd4"
+        "bd77894b5a6b322d609fa3aad9d1572626b95df5fe5872e82425f5a522e22e42"
     )
     EXPECTED_LEVEL4_READING_COUNT = 12_000
 

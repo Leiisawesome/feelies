@@ -98,14 +98,14 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     # calendar param intentionally omitted — bootstrap injects it.
     SensorSpec(
         sensor_id="scheduled_flow_window",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=ScheduledFlowWindowSensor,
         params={},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="realized_vol_30s",
-        sensor_version="1.1.0",
+        sensor_version="1.2.0",
         cls=RealizedVol30sSensor,
         params={"window_seconds": 30, "warm_after": 8},
         subscribes_to=(NBBOQuote,),

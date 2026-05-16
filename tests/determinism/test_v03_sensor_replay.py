@@ -91,14 +91,14 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     ),
     SensorSpec(
         sensor_id="scheduled_flow_window",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=ScheduledFlowWindowSensor,
         params={"calendar": _TEST_CALENDAR},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="snr_drift_diffusion",
-        sensor_version="1.1.0",
+        sensor_version="1.2.0",
         cls=SNRDriftDiffusionSensor,
         params={
             "horizons_seconds": (30, 120),
@@ -146,8 +146,16 @@ def test_v03_sensor_reading_stream_matches_locked_baseline() -> None:
     """Locks SHA-256 + count of the v0.3 SensorReading stream."""
     actual_hash, actual_count = _replay()
 
+    # Re-baselined 2026-05-16: ``snr_drift_diffusion`` 1.1.0 → 1.2.0 fixed
+    # the multi-bar consolidated-return bias by splitting an ``N``-bar
+    # log-return into ``N`` per-bar increments and advancing the EWMA in
+    # closed form.  For the v0.3 fixture (no large data gaps) the per-call
+    # behaviour matches the prior implementation bit-for-bit; the
+    # ``scheduled_flow_window`` 1.0.0 → 1.1.0 bump (added a deterministic
+    # ``window_id`` tiebreaker for end_ns ties) drives the hash drift via
+    # the version-string contribution, not the values.
     EXPECTED_V03_READING_HASH = (
-        "215108e8380b9afb180750faced53846208133e03a26702031cdc6dd9a50736a"
+        "0cb33fadb87f5ee43ebd771a2330ef960a1ad1d08713ca6ee462815414091a14"
     )
     EXPECTED_V03_READING_COUNT = 9428
 

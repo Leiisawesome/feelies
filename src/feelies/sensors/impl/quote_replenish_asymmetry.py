@@ -15,9 +15,11 @@ Algorithm:
 - Maintain two trailing-window sums of additions per side over
   ``window_seconds`` of event time.
 - Sensor value:
-      asymmetry = (bid_add_rate - ask_add_rate) /
-                  max(bid_add_rate + ask_add_rate, ε)
-  Bounded in ``[-1, 1]``; positive ⇒ bid replenishes faster.
+      asymmetry = (bid_adds - ask_adds) /
+                  max(bid_adds + ask_adds, ε)
+  Bounded in ``[-1, 1]``; positive ⇒ bid replenishes faster.  The
+  per-second normalisation cancels in the ratio so we use the raw
+  trailing-window sums directly.
 
 Returns the asymmetry score.  ``warm`` is true once
 ``min_observations`` quotes have been seen and at least one
@@ -72,7 +74,6 @@ class QuoteReplenishAsymmetrySensor:
         if sensor_version is not None:
             self.sensor_version = sensor_version
         self._window_ns = window_seconds * 1_000_000_000
-        self._window_seconds = float(window_seconds)
         self._min_observations = min_observations
 
     def initial_state(self) -> dict[str, Any]:
@@ -127,13 +128,13 @@ class QuoteReplenishAsymmetrySensor:
             _t, v = ask_adds.popleft()
             state["ask_sum"] -= v
 
-        bid_rate = state["bid_sum"] / self._window_seconds
-        ask_rate = state["ask_sum"] / self._window_seconds
-        denom = bid_rate + ask_rate
+        bid_total = state["bid_sum"]
+        ask_total = state["ask_sum"]
+        denom = bid_total + ask_total
         if denom < _EPS:
             value = 0.0
         else:
-            value = (bid_rate - ask_rate) / denom
+            value = (bid_total - ask_total) / denom
 
         warm = (
             state["count"] >= self._min_observations

@@ -92,17 +92,16 @@ class SpreadZScoreSensor:
         # S14: Welford sliding-window variance (Pébay 2008).
         # If the deque is full, the oldest element will be evicted
         # by the append below; remove it from the Welford accumulators first.
+        # ``window >= 2`` is enforced in __init__, so when we hit ``maxlen``
+        # we always have n_cur == maxlen >= 2 — the ``n_cur == 1`` branch
+        # is unreachable.
         if len(spreads) == spreads.maxlen:
             x_old = spreads[0]
-            n_cur = state["n"]  # == len(spreads) == maxlen
+            n_cur = state["n"]  # == len(spreads) == maxlen >= 2
             mean_cur = state["mean"]
-            if n_cur > 1:
-                mean_without = (n_cur * mean_cur - x_old) / (n_cur - 1)
-                state["M2"] -= (x_old - mean_cur) * (x_old - mean_without)
-                state["mean"] = mean_without
-            else:
-                state["mean"] = 0.0
-                state["M2"] = 0.0
+            mean_without = (n_cur * mean_cur - x_old) / (n_cur - 1)
+            state["M2"] -= (x_old - mean_cur) * (x_old - mean_without)
+            state["mean"] = mean_without
             state["n"] -= 1
 
         # Welford add for the incoming spread.
@@ -120,7 +119,11 @@ class SpreadZScoreSensor:
         if n < 2:
             value = 0.0
         else:
-            # Population variance: M2/n (consistent with prior formula)
+            # Population variance (M2/n), not Bessel-corrected.  For the
+            # default window=6000 the difference vs M2/(n-1) is ~0.008%,
+            # and downstream consumers treat this as a standardised score
+            # rather than an unbiased point estimate.  The locked-vector
+            # tests pin this convention.
             var = max(0.0, state["M2"] / n)
             std = math.sqrt(var)
             if std < self._min_std:

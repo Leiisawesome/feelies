@@ -114,7 +114,7 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     ),
     SensorSpec(
         sensor_id="realized_vol_30s",
-        sensor_version="1.1.0",
+        sensor_version="1.2.0",
         cls=RealizedVol30sSensor,
         params={"window_seconds": 30, "warm_after": 8},
         subscribes_to=(NBBOQuote,),
@@ -274,7 +274,7 @@ def _fire_signals(
                     "realized_vol_30s",
                     0.0005,
                     ts,
-                    sensor_version="1.1.0",
+                    sensor_version="1.2.0",
                 ),
             )
             seq += 1
@@ -295,7 +295,7 @@ def _fire_signals(
                 "realized_vol_30s",
                 0.0005,
                 spike_ts,
-                sensor_version="1.1.0",
+                sensor_version="1.2.0",
             ),
         )
         seq += 1
