@@ -17,7 +17,8 @@ hypothesis: |
   micro-price deviation is dominantly an inventory imbalance and
   not informational.  The replenishment dynamics dictate a fast
   reversion (~20 s half-life) once the affected side rebuilds.
-  We bet against the displaced side.
+  We fade the displacement direction: long after bid-side depletion
+  (positive asym_z), short after ask-side depletion (negative asym_z).
 
 falsification_criteria:
   - |
@@ -83,9 +84,12 @@ parameters:
     max: 25.0
     description: |
       Hard cap on the *theoretical peak* edge per fade, before the
-      ``realized_capture_ratio`` decay tax is applied. Reported
-      ``edge_estimate_bps`` is at most
-      ``edge_cap_bps * realized_capture_ratio``.
+      ``realized_capture_ratio`` decay tax is applied. At runtime,
+      capturable edge is further reduced by ``hazard_weight * vol_weight``;
+      the absolute ceiling ``edge_cap_bps * realized_capture_ratio``
+      (9.044 bps with defaults) is reached only when both weights are 1.
+      The disclosed ``edge_estimate_bps`` (8.8 bps) is a near-peak
+      reference value (asym_z ≈ 5.9, full hazard and vol weights).
   realized_capture_ratio:
     type: float
     default: 0.646
@@ -140,18 +144,20 @@ risk_budget:
 
 # ── Regime Gate (Phase 3 DSL) ─────────────────────────────
 # NOTE: the asymmetry literal (2.0) below MUST match the default of the
-# ``asymmetry_z_threshold`` parameter. The gate DSL binding map does not
-# resolve YAML ``parameters:`` entries, so the gate threshold cannot be
-# parameterized without platform support; sweeps on asymmetry_z_threshold
-# below 2.0 are silently floored by the gate. Keep these two numbers in
-# sync, and prefer a single platform change to inject params into the
-# binding map over divergent literals here.
+# ``asymmetry_z_threshold`` parameter. The ``quote_hazard_rate < 0.05``
+# literal in off_condition MUST match the ``hazard_floor`` parameter
+# default. The gate DSL binding map does not resolve YAML ``parameters:``
+# entries, so gate thresholds cannot be parameterized without platform
+# support; sweeps on asymmetry_z_threshold below 2.0 are silently floored
+# by the gate. Keep these literals in sync with their parameter defaults,
+# and prefer a single platform change to inject params into the binding
+# map over divergent literals here.
 regime_gate:
   regime_engine: hmm_3state_fractional
   on_condition: |
     abs(quote_replenish_asymmetry_zscore) > 2.0 and P(normal) > 0.5
   off_condition: |
-    P(normal) < 0.5 - posterior_margin or abs(quote_replenish_asymmetry_zscore) < 2.0 - percentile_margin or spread_z_30d > 2.0 or realized_vol_30s_zscore > 3.5
+    P(normal) < 0.5 - posterior_margin or abs(quote_replenish_asymmetry_zscore) < 2.0 - percentile_margin or spread_z_30d > 2.0 or realized_vol_30s_zscore > 3.5 or quote_hazard_rate < 0.05
   hysteresis:
     posterior_margin: 0.20
     percentile_margin: 0.30
@@ -175,6 +181,7 @@ trend_mechanism:
   failure_signature:
     - "spread_z_30d > 2.0"
     - "quote_hazard_rate < 0.05"
+    - "realized_vol_30s_zscore > 3.5"
 
 # ── Signal (Layer-2 evaluate) ─────────────────────────────
 signal: |
@@ -213,7 +220,9 @@ signal: |
 
       # Vol stress taper: scales edge linearly to zero as realized_vol_30s_zscore
       # approaches the gate's hard disarm threshold. Negative / low z ⇒ no taper.
-      rv_z = snapshot.values.get("realized_vol_30s_zscore") or 0.0
+      # Missing sensor defaults to 0.0 (no taper) intentionally: vol is a
+      # softening overlay, not a hard gate like asym_z or hazard.
+      rv_z = snapshot.values.get("realized_vol_30s_zscore", 0.0)
       vol_weight = max(0.0, 1.0 - max(0.0, rv_z) / params["vol_taper_z_scale"])
 
       edge_bps = capturable_edge_bps * hazard_weight * vol_weight
