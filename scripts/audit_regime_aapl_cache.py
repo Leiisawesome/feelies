@@ -25,7 +25,7 @@ from feelies.services.regime_engine import (
     HMM3StateFractional,
     regime_posterior_entropy_nats,
 )
-from feelies.storage.disk_event_cache import DiskEventCache, _dict_to_event
+from feelies.storage.disk_event_cache import _dict_to_event
 
 
 def _iter_quotes(cache_dir: Path, symbol: str, date: str):
@@ -67,7 +67,6 @@ def main() -> int:
     p.add_argument("--time-scaling", action="store_true")
     args = p.parse_args()
 
-    cache = DiskEventCache(args.cache_dir)
     manifest_path = args.cache_dir / args.symbol.upper() / f"{args.date}.manifest.json"
     if not manifest_path.is_file():
         print(f"ERROR: no manifest at {manifest_path}", file=sys.stderr)
@@ -111,6 +110,7 @@ def main() -> int:
     print("\n=== Prefix microstructure (first quotes scanned) ===")
     print(f"  quotes scanned for prefix: {len(calib_quotes):,}")
     print(f"  locked/crossed (spread<=0): {n_locked:,}")
+    print(f"  bad spread (spread<=0 or mid<=0): {n_bad_spread:,}")
     if log_sample:
         log_sample.sort()
         n = len(log_sample)
@@ -142,7 +142,6 @@ def main() -> int:
         for i, (mu, sig) in enumerate(engine._emission):
             name = engine.state_names[i]
             print(f"  fitted state {i} ({name}): mu={mu:.6f} sigma={sig:.6f}")
-        eng = HMM3StateFractional()
         for i in range(engine.n_states - 1):
             mu_a, sa = engine._emission[i]
             mu_b, sb = engine._emission[i + 1]
