@@ -215,3 +215,43 @@ def test_get_regime_engine_rejects_unknown_kwarg() -> None:
 
     with pytest.raises(TypeError):
         get_regime_engine("hmm_3state_fractional", not_a_valid_option=True)
+
+
+def test_get_regime_engine_spread_filter_alias() -> None:
+    from feelies.services.regime_engine import get_regime_engine
+
+    eng = get_regime_engine("hmm_3state_spread_filter")
+    assert type(eng).__name__ == "HMM3StateFractional"
+
+
+def test_checkpoint_includes_schema_version() -> None:
+    engine = HMM3StateFractional(
+        emission_params=[(-4.5, 0.3), (-3.5, 0.5), (-2.5, 0.7)],
+    )
+    engine.posterior(_q(sequence=1))
+    payload = json.loads(engine.checkpoint())
+    assert payload["checkpoint_schema_version"] == 1
+
+
+def test_restore_rejects_unsupported_schema_version() -> None:
+    engine = HMM3StateFractional()
+    payload = json.dumps({
+        "checkpoint_schema_version": 999,
+        "posteriors": {},
+        "last_update_seq": {},
+    }).encode()
+    with pytest.raises(ValueError, match="Unsupported checkpoint_schema_version"):
+        engine.restore(payload)
+
+
+def test_scaled_transition_matrix_cache_reused() -> None:
+    engine = HMM3StateFractional(
+        emission_params=[(-4.5, 0.3), (-3.5, 0.5), (-2.5, 0.7)],
+        transition_time_scaling_enabled=True,
+    )
+    engine.posterior(_q(sequence=1, timestamp_ns=1_000_000_000))
+    engine.posterior(_q(sequence=2, timestamp_ns=1_000_000_000 + 50_000_000))
+    first = engine._scaled_transition_cache
+    assert first is not None
+    engine.posterior(_q(sequence=3, timestamp_ns=1_000_000_000 + 100_000_000))
+    assert engine._scaled_transition_cache is first

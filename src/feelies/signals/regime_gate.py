@@ -28,6 +28,7 @@ Whitelist (§8.4):
     <sensor_id>_percentile — percentile rank in rolling window
     <sensor_id>_zscore     — z-score in rolling window
     dominant               — name of the currently dominant state
+    entropy                — posterior Shannon entropy in nats (0 = peaked)
     p<NN>                  — percentile literal, e.g. p40 = 0.40
     Operators: and, or, not, ==, !=, <, <=, >, >=, +, -, *, /
     Functions: abs, min, max
@@ -115,6 +116,7 @@ _PERCENTILE_LITERAL_RE = re.compile(r"^p(\d{1,2})$")
 _PERCENTILE_SUFFIX = "_percentile"
 _ZSCORE_SUFFIX = "_zscore"
 _DOMINANT_NAME = "dominant"
+_ENTROPY_NAME = "entropy"
 _REGIME_FUNCTION_NAME = "P"
 _SAFE_FUNCTIONS: frozenset[str] = frozenset({"abs", "min", "max"})
 _SAFE_FUNCTIONS_AND_REGIME: frozenset[str] = (
@@ -407,6 +409,14 @@ def _resolve_name(name: str, b: Bindings) -> Any:
             )
         return b.regime.dominant_name
 
+    if name == _ENTROPY_NAME:
+        if b.regime is None:
+            raise UnknownIdentifierError(
+                "regime-gate: 'entropy' referenced but no RegimeState "
+                "is available (cold start / regime engine inactive)"
+            )
+        return float(b.regime.posterior_entropy_nats)
+
     pmatch = _PERCENTILE_LITERAL_RE.match(name)
     if pmatch is not None:
         n = int(pmatch.group(1))
@@ -521,7 +531,8 @@ class RegimeGate:
     def binding_identifier_names(self) -> frozenset[str]:
         """Names resolved via :func:`_resolve_name` that appear in ON/OFF ASTs.
 
-        Excludes ``P(<state>)`` state labels, ``dominant``, ``pNN`` literals,
+        Excludes ``P(<state>)`` state labels, ``dominant``, ``entropy``,
+        ``pNN`` literals,
         and hysteresis margin keys — these never correspond to
         :class:`~feelies.core.events.HorizonFeatureSnapshot` ``warm`` /
         ``stale`` entries.
@@ -534,6 +545,7 @@ class RegimeGate:
         p_state_args = self._p_posterior_argument_names()
         raw -= p_state_args
         raw.discard(_DOMINANT_NAME)
+        raw.discard(_ENTROPY_NAME)
         raw -= frozenset(self._hysteresis.keys())
         lit = {n for n in raw if _PERCENTILE_LITERAL_RE.match(n) is not None}
         raw -= lit

@@ -235,6 +235,7 @@ class TestCalibrate:
 
         blob = engine.checkpoint()
         payload = json.loads(blob)
+        assert payload.get("checkpoint_schema_version") == 1
         assert "emission" in payload
 
         engine2 = HMM3StateFractional()
