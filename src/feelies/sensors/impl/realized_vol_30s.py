@@ -50,7 +50,7 @@ class RealizedVol30sSensor:
     """
 
     sensor_id: str = "realized_vol_30s"
-    sensor_version: str = "1.2.0"
+    sensor_version: str = "1.3.0"
 
     def __init__(
         self,
@@ -75,8 +75,10 @@ class RealizedVol30sSensor:
 
     def initial_state(self) -> dict[str, Any]:
         return {
+            # ``history`` length is the single source of truth for the
+            # in-window sample count (used by both the variance formula
+            # and the warm gate).
             "history": deque(),  # (ts_ns, log_ret)
-            "n": 0,       # Welford element count (== len(history))
             "mean": 0.0,  # Welford running mean of log-returns
             "M2": 0.0,    # Welford sum of squared deviations from mean
             "last_mid": None,
@@ -94,40 +96,42 @@ class RealizedVol30sSensor:
         bid = float(event.bid)
         ask = float(event.ask)
         if bid <= 0.0 or ask <= 0.0:
+            # A2: a bad quote invalidates the carry-forward mid so the next
+            # good quote bootstraps fresh.  Preserving ``last_mid`` would
+            # cause the next good quote to compute a log-return spanning
+            # the bad-data gap, inflating the realized-vol estimate.
+            state["last_mid"] = None
             return None
         mid = (bid + ask) / 2.0
         ts = event.timestamp_ns
         last_mid = state["last_mid"]
+        history: deque[tuple[int, float]] = state["history"]
 
         if last_mid is not None and last_mid > 0.0:
             log_ret = math.log(mid / last_mid)
-            history: deque[tuple[int, float]] = state["history"]
 
             # Welford forward add for the incoming log-return.
-            n_new = state["n"] + 1
+            n_new = len(history) + 1
             delta = log_ret - state["mean"]
             state["mean"] += delta / n_new
             delta2 = log_ret - state["mean"]
             state["M2"] += delta * delta2
-            state["n"] = n_new
             history.append((ts, log_ret))
 
             # Reverse-Welford eviction of expired returns (Pébay 2008).
+            # The just-appended sample has ts == cutoff + window_ns and is
+            # never < cutoff, so eviction always leaves n_cur >= 2 — the
+            # n_cur == 1 fallback would be dead code.
             cutoff = ts - self._window_ns
             while history and history[0][0] < cutoff:
                 _, x_old = history.popleft()
-                n_cur = state["n"]
+                n_cur = len(history) + 1  # state count BEFORE this removal
                 mean_cur = state["mean"]
-                if n_cur > 1:
-                    mean_without = (n_cur * mean_cur - x_old) / (n_cur - 1)
-                    state["M2"] -= (x_old - mean_cur) * (x_old - mean_without)
-                    state["mean"] = mean_without
-                else:
-                    state["mean"] = 0.0
-                    state["M2"] = 0.0
-                state["n"] -= 1
+                mean_without = (n_cur * mean_cur - x_old) / (n_cur - 1)
+                state["M2"] -= (x_old - mean_cur) * (x_old - mean_without)
+                state["mean"] = mean_without
 
-            n = state["n"]
+            n = len(history)
             if n < 2:
                 value = 0.0
             else:
@@ -146,5 +150,5 @@ class RealizedVol30sSensor:
             sensor_id=self.sensor_id,
             sensor_version=self.sensor_version,
             value=value,
-            warm=len(state["history"]) >= self._warm_after,  # S3: window-bounded len un-warms after gaps
+            warm=len(history) >= self._warm_after,  # S3: window-bounded len un-warms after gaps
         )

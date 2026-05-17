@@ -53,7 +53,7 @@ class OFIEwmaSensor:
     """
 
     sensor_id: str = "ofi_ewma"
-    sensor_version: str = "1.0.0"
+    sensor_version: str = "1.1.0"
 
     def __init__(
         self,
@@ -87,7 +87,6 @@ class OFIEwmaSensor:
             "last_ask": None,
             "last_bid_size": 0,
             "last_ask_size": 0,
-            "count": 0,
             "warm_ts": deque(),  # event-time timestamps of recent quotes (S3)
         }
 
@@ -102,6 +101,12 @@ class OFIEwmaSensor:
 
         bid = float(event.bid)
         ask = float(event.ask)
+        # A1: uniform bid/ask positivity validation across price-consuming
+        # sensors.  A degenerate book (halt / pre-open) provides no useful
+        # OFI signal; drop the quote rather than poisoning state with
+        # zero-price deltas.
+        if bid <= 0.0 or ask <= 0.0:
+            return None
         bid_sz = event.bid_size
         ask_sz = event.ask_size
 
@@ -134,7 +139,6 @@ class OFIEwmaSensor:
         state["last_ask"] = ask
         state["last_bid_size"] = bid_sz
         state["last_ask_size"] = ask_sz
-        state["count"] += 1
 
         # S3: sliding-window warm check — reverts to cold after data gaps
         ts_ns = event.timestamp_ns

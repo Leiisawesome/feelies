@@ -79,7 +79,7 @@ _TEST_CALENDAR = _build_test_calendar()
 _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     SensorSpec(
         sensor_id="hawkes_intensity",
-        sensor_version="1.1.0",
+        sensor_version="1.2.0",
         cls=HawkesIntensitySensor,
         params={
             "alpha": 0.4,
@@ -91,14 +91,14 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     ),
     SensorSpec(
         sensor_id="scheduled_flow_window",
-        sensor_version="1.1.0",
+        sensor_version="1.2.0",
         cls=ScheduledFlowWindowSensor,
         params={"calendar": _TEST_CALENDAR},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="snr_drift_diffusion",
-        sensor_version="1.2.0",
+        sensor_version="1.3.0",
         cls=SNRDriftDiffusionSensor,
         params={
             "horizons_seconds": (30, 120),
@@ -109,7 +109,7 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     ),
     SensorSpec(
         sensor_id="structural_break_score",
-        sensor_version="1.1.0",
+        sensor_version="1.2.0",
         cls=StructuralBreakScoreSensor,
         params={
             "window_seconds": 60,
@@ -154,8 +154,22 @@ def test_v03_sensor_reading_stream_matches_locked_baseline() -> None:
     # ``scheduled_flow_window`` 1.0.0 → 1.1.0 bump (added a deterministic
     # ``window_id`` tiebreaker for end_ns ties) drives the hash drift via
     # the version-string contribution, not the values.
+    # Re-baselined 2026-05-17 (audit pass 2):
+    #   * ``hawkes_intensity`` 1.1.0 → 1.2.0 — neutral 0.5 fallback for
+    #     intensity_ratio at startup (#5), guarded backwards-timestamp
+    #     decay anchor (#7), renamed ``branching_ratio_est`` →
+    #     ``branching_ratio_param`` (doc only);
+    #   * ``snr_drift_diffusion`` 1.2.0 → 1.3.0 — bootstrap quote no
+    #     longer counted toward warm-sample gate (#13), grid anchored to
+    #     epoch (``grid_anchor_ns=0`` default) so all symbols share
+    #     boundaries (#14);
+    #   * ``scheduled_flow_window`` 1.1.0 → 1.2.0 — ``warm`` now reflects
+    #     calendar emptiness (#16);
+    #   * ``structural_break_score`` 1.1.0 → 1.2.0 — invalidate
+    #     carry-forward mid on bad quote (#A2), Kahan-compensated running
+    #     sum for the rolling-mean baseline (#15).
     EXPECTED_V03_READING_HASH = (
-        "0cb33fadb87f5ee43ebd771a2330ef960a1ad1d08713ca6ee462815414091a14"
+        "e994160b2d26c836f8104b53815628bc38ebfe9cf34b8d1fed86caba0cd6c7f8"
     )
     EXPECTED_V03_READING_COUNT = 9428
 

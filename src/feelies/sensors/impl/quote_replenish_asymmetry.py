@@ -11,7 +11,13 @@ Algorithm:
 
 - On every quote, compute ``Δbid_size`` and ``Δask_size`` versus the
   previous quote.  Positive deltas are *additions* (replenishment);
-  negative deltas are *withdrawals*.
+  negative deltas are *withdrawals*.  A delta is only counted as
+  replenishment when the side's price is **unchanged** — a new
+  best price represents a *different* price level (a tighter
+  quote or a price step), not a deepening of the prior level.
+  Without this guard, a best-bid move from 100.00 / 100 lots up to
+  100.01 / 200 lots would be miscounted as +100 lots of bid-side
+  replenishment.
 - Maintain two trailing-window sums of additions per side over
   ``window_seconds`` of event time.
 - Sensor value:
@@ -51,7 +57,7 @@ class QuoteReplenishAsymmetrySensor:
     """
 
     sensor_id: str = "quote_replenish_asymmetry"
-    sensor_version: str = "1.0.0"
+    sensor_version: str = "1.1.0"
 
     def __init__(
         self,
@@ -84,6 +90,8 @@ class QuoteReplenishAsymmetrySensor:
             "ask_sum": 0,
             "last_bid_size": None,
             "last_ask_size": None,
+            "last_bid_price": None,
+            "last_ask_price": None,
             "count": 0,
         }
 
@@ -97,26 +105,35 @@ class QuoteReplenishAsymmetrySensor:
             return None
 
         ts = event.timestamp_ns
+        bid_price = float(event.bid)
+        ask_price = float(event.ask)
         bid_sz = int(event.bid_size)
         ask_sz = int(event.ask_size)
 
-        last_bid = state["last_bid_size"]
-        last_ask = state["last_ask_size"]
+        last_bid_sz = state["last_bid_size"]
+        last_ask_sz = state["last_ask_size"]
+        last_bid_price = state["last_bid_price"]
+        last_ask_price = state["last_ask_price"]
         state["count"] += 1
 
-        if last_bid is not None:
-            d_bid = bid_sz - last_bid
+        # Only count size growth as replenishment when the price is unchanged
+        # — a different best price is a *different* level, not a deepening
+        # of the prior one.
+        if last_bid_sz is not None and last_bid_price == bid_price:
+            d_bid = bid_sz - last_bid_sz
             if d_bid > 0:
                 state["bid_adds"].append((ts, d_bid))
                 state["bid_sum"] += d_bid
-        if last_ask is not None:
-            d_ask = ask_sz - last_ask
+        if last_ask_sz is not None and last_ask_price == ask_price:
+            d_ask = ask_sz - last_ask_sz
             if d_ask > 0:
                 state["ask_adds"].append((ts, d_ask))
                 state["ask_sum"] += d_ask
 
         state["last_bid_size"] = bid_sz
         state["last_ask_size"] = ask_sz
+        state["last_bid_price"] = bid_price
+        state["last_ask_price"] = ask_price
 
         cutoff = ts - self._window_ns
         bid_adds = state["bid_adds"]

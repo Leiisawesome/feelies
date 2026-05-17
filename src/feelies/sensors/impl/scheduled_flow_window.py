@@ -71,7 +71,7 @@ class ScheduledFlowWindowSensor:
     """
 
     sensor_id: str = "scheduled_flow_window"
-    sensor_version: str = "1.1.0"
+    sensor_version: str = "1.2.0"
 
     def __init__(
         self,
@@ -89,6 +89,11 @@ class ScheduledFlowWindowSensor:
         if sensor_version is not None:
             self.sensor_version = sensor_version
         self._calendar = calendar
+        # An empty calendar can't produce any informative readings — surface
+        # this as ``warm=False`` so misconfigurations (e.g. wrong session
+        # date, missing YAML) don't silently look like normal "outside any
+        # window" readings.
+        self._has_windows = len(calendar.windows) > 0
 
     def initial_state(self) -> dict[str, Any]:
         return {}
@@ -142,5 +147,5 @@ class ScheduledFlowWindowSensor:
             sensor_id=self.sensor_id,
             sensor_version=self.sensor_version,
             value=value,
-            warm=True,
+            warm=self._has_windows,
         )

@@ -120,7 +120,7 @@ def _spread_reading(z: float = 0.4) -> SensorReading:
         sequence=3,
         symbol="AAPL",
         sensor_id="spread_z_30d",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         value=z,
     )
 
@@ -140,7 +140,7 @@ def _asym_zscore_reading(value: float) -> SensorReading:
         sequence=4,
         symbol="AAPL",
         sensor_id="quote_replenish_asymmetry",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         value=value,
     )
 

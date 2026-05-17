@@ -43,28 +43,28 @@ from tests.fixtures.replay import replay_through_registry
 _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     SensorSpec(
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=OFIEwmaSensor,
         params={"alpha": 0.1, "warm_after": 5},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="micro_price",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=MicroPriceSensor,
         params={},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="spread_z_30d",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=SpreadZScoreSensor,
         params={"window": 30, "warm_after": 5},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="realized_vol_30s",
-        sensor_version="1.2.0",
+        sensor_version="1.3.0",
         cls=RealizedVol30sSensor,
         params={"window_seconds": 30, "warm_after": 5},
         subscribes_to=(NBBOQuote,),
@@ -113,8 +113,20 @@ def test_sensor_reading_stream_matches_locked_baseline() -> None:
     # pattern already used by ``spread_z_30d``.  Output values are
     # mathematically equivalent but differ in floating-point last bits
     # due to different operation ordering — the count is unchanged.
+    # Re-baselined 2026-05-17 (audit pass 2):
+    #   * ``ofi_ewma`` 1.0.0 → 1.1.0 — added bid/ask > 0 validation,
+    #     dropped dead ``count`` field;
+    #   * ``micro_price`` 1.0.0 → 1.1.0 — added bid/ask > 0 validation,
+    #     dropped dead ``count`` field;
+    #   * ``spread_z_30d`` 1.0.0 → 1.1.0 — added bid/ask > 0 validation,
+    #     dropped dead ``count`` field, removed unreachable n_cur==1 branch;
+    #   * ``realized_vol_30s`` 1.2.0 → 1.3.0 — invalidate carry-forward mid
+    #     on bad quote (#A2), consolidated n vs len(history) (#12).
+    # The version-string contribution + the value updates from validation
+    # together change the per-reading line content, so the SHA-256 over
+    # the canonical reading stream rolls forward.
     EXPECTED_LEVEL4_READING_HASH = (
-        "bd77894b5a6b322d609fa3aad9d1572626b95df5fe5872e82425f5a522e22e42"
+        "1cb37e110cacd693b0c0e14a4ce99cb87169848a1e9ceb5c273ba4f974f27152"
     )
     EXPECTED_LEVEL4_READING_COUNT = 12_000
 
