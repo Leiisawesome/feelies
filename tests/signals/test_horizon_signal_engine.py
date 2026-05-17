@@ -441,7 +441,7 @@ def test_sensor_cache_overlay_makes_value_available_to_gate() -> None:
         sequence=3,
         symbol="AAPL",
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         value=2.5,
     ))
     bus.publish(_snapshot())
@@ -465,7 +465,7 @@ def test_sensor_cache_skips_non_warm_readings() -> None:
         sequence=3,
         symbol="AAPL",
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         value=2.5,
         warm=False,
     ))
@@ -490,7 +490,7 @@ def test_sensor_cache_skips_tuple_value() -> None:
         sequence=3,
         symbol="AAPL",
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         value=(2.5, 3.0),
     ))
     bus.publish(_snapshot())
@@ -525,7 +525,7 @@ def test_cold_reading_invalidates_warm_cache_entry() -> None:
         sequence=3,
         symbol="AAPL",
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         value=2.5,
         warm=True,
     ))
@@ -541,7 +541,7 @@ def test_cold_reading_invalidates_warm_cache_entry() -> None:
         sequence=4,
         symbol="AAPL",
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         value=0.0,
         warm=False,
     ))
@@ -638,7 +638,7 @@ def test_cold_reading_with_open_position_emits_flat_close() -> None:
         sequence=3,
         symbol="AAPL",
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         value=2.5,
         warm=True,
     ))
@@ -654,7 +654,7 @@ def test_cold_reading_with_open_position_emits_flat_close() -> None:
         sequence=4,
         symbol="AAPL",
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         value=0.0,
         warm=False,
     ))

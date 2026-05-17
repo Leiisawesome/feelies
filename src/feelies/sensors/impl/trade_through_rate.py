@@ -51,7 +51,7 @@ class TradeThroughRateSensor:
     """
 
     sensor_id: str = "trade_through_rate"
-    sensor_version: str = "1.0.0"
+    sensor_version: str = "1.1.0"
 
     def __init__(
         self,
@@ -91,8 +91,15 @@ class TradeThroughRateSensor:
         params: Mapping[str, Any],
     ) -> SensorReading | None:
         if isinstance(event, NBBOQuote):
-            state["last_bid"] = float(event.bid)
-            state["last_ask"] = float(event.ask)
+            bid = float(event.bid)
+            ask = float(event.ask)
+            # A1: ignore degenerate quotes — a (bid=0, ask=0) snapshot would
+            # classify every positive-priced trade as ``price >= ask`` and
+            # poison the rolling fraction.  Preserve the prior valid NBBO.
+            if bid <= 0.0 or ask <= 0.0:
+                return None
+            state["last_bid"] = bid
+            state["last_ask"] = ask
             return None
 
         if not isinstance(event, Trade):

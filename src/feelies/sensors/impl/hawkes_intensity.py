@@ -16,10 +16,12 @@ above.
 Outputs (length-4 tuple):
 
     SensorReading.value = (
-        intensity_buy,        # λ_buy(t)  per second
-        intensity_sell,       # λ_sell(t) per second
-        intensity_ratio,      # max(buy, sell) / (buy + sell + ε); ∈ [0.5, 1]
-        branching_ratio_est,  # α / β; constant under fixed params
+        intensity_buy,         # λ_buy(t)  per second
+        intensity_sell,        # λ_sell(t) per second
+        intensity_ratio,       # ∈ [0.5, 1]; defaults to 0.5 when both sides
+                               # are below ε (no information state)
+        branching_ratio_param, # configured α / β (NOT a runtime estimate);
+                               # constant under fixed params
     )
 
 Determinism: pure float arithmetic; no RNG; ``math.exp`` over an
@@ -69,7 +71,7 @@ class HawkesIntensitySensor:
     """
 
     sensor_id: str = "hawkes_intensity"
-    sensor_version: str = "1.1.0"
+    sensor_version: str = "1.2.0"
 
     def __init__(
         self,
@@ -104,7 +106,9 @@ class HawkesIntensitySensor:
         self._beta = float(beta)
         self._warm_window_ns = warm_window_seconds * 1_000_000_000
         self._warm_per_side = warm_trades_per_side
-        self._branching_ratio = self._alpha / self._beta
+        # Configured branching-ratio parameter (α / β), not an on-line
+        # estimate.  Emitted verbatim on every reading.
+        self._branching_ratio_param = self._alpha / self._beta
         self._baseline_mu = float(baseline_mu)
 
     def initial_state(self) -> dict[str, Any]:
@@ -121,8 +125,17 @@ class HawkesIntensitySensor:
 
     def _decay_to(self, state: dict[str, Any], ts_ns: int) -> None:
         last_ts = state["last_ts_ns"]
-        if last_ts is None or ts_ns <= last_ts:
+        if last_ts is None:
             state["last_ts_ns"] = ts_ns
+            return
+        if ts_ns == last_ts:
+            # Same-instant event: no decay to apply, no anchor to advance.
+            return
+        if ts_ns < last_ts:
+            # Strictly backwards event (shouldn't happen under monotonic
+            # per-symbol delivery, but guard regardless).  Rewinding
+            # ``last_ts_ns`` would double-count decay on the next forward
+            # event; leave state untouched.
             return
         dt_s = (ts_ns - last_ts) / _NS_PER_SECOND
         decay = math.exp(-self._beta * dt_s)
@@ -172,8 +185,15 @@ class HawkesIntensitySensor:
 
         lam_buy = state["lambda_buy"]
         lam_sell = state["lambda_sell"]
-        denom = lam_buy + lam_sell + _EPS
-        intensity_ratio = max(lam_buy, lam_sell) / denom
+        total = lam_buy + lam_sell
+        if total < _EPS:
+            # No-information state (both sides below ε; happens at startup
+            # when ``baseline_mu = 0`` and no trades have fired yet).
+            # ``max / total`` would give 0/ε = 0 which violates the
+            # documented [0.5, 1] range.  Emit the neutral midpoint.
+            intensity_ratio = 0.5
+        else:
+            intensity_ratio = max(lam_buy, lam_sell) / total
         warm = (
             len(state["buy_ts"]) >= self._warm_per_side
             and len(state["sell_ts"]) >= self._warm_per_side
@@ -186,6 +206,6 @@ class HawkesIntensitySensor:
             symbol=event.symbol,
             sensor_id=self.sensor_id,
             sensor_version=self.sensor_version,
-            value=(lam_buy, lam_sell, intensity_ratio, self._branching_ratio),
+            value=(lam_buy, lam_sell, intensity_ratio, self._branching_ratio_param),
             warm=warm,
         )

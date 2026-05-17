@@ -149,7 +149,7 @@ def _spread_low_reading() -> SensorReading:
         sequence=3,
         symbol="AAPL",
         sensor_id="spread_z_30d",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         value=0.25,
     )
 

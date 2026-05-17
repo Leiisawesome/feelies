@@ -45,7 +45,7 @@ class SpreadZScoreSensor:
     """
 
     sensor_id: str = "spread_z_30d"
-    sensor_version: str = "1.0.0"
+    sensor_version: str = "1.1.0"
 
     def __init__(
         self,
@@ -74,7 +74,6 @@ class SpreadZScoreSensor:
             "n": 0,       # Welford element count (== len(spreads))
             "mean": 0.0,  # Welford running mean
             "M2": 0.0,    # Welford sum of squared deviations from mean
-            "count": 0,   # monotonic insert counter (for warm legacy compat)
         }
 
     def update(
@@ -86,7 +85,15 @@ class SpreadZScoreSensor:
         if not isinstance(event, NBBOQuote):
             return None
 
-        spread = float(event.ask) - float(event.bid)
+        bid = float(event.bid)
+        ask = float(event.ask)
+        # A1: uniform bid/ask positivity validation across price-consuming
+        # sensors.  A zero/negative side gives a nonsense spread and
+        # would poison the rolling mean/variance.
+        if bid <= 0.0 or ask <= 0.0:
+            return None
+
+        spread = ask - bid
         spreads: deque[float] = state["spreads"]
 
         # S14: Welford sliding-window variance (Pébay 2008).
@@ -113,7 +120,6 @@ class SpreadZScoreSensor:
         state["n"] = n_new
 
         spreads.append(spread)  # evicts oldest when maxlen is hit
-        state["count"] += 1
 
         n = state["n"]  # == len(spreads)
         if n < 2:
@@ -139,5 +145,9 @@ class SpreadZScoreSensor:
             sensor_id=self.sensor_id,
             sensor_version=self.sensor_version,
             value=value,
-            warm=len(spreads) >= self._warm_after,  # S3: len un-warms after window empties
+            # Deque has maxlen=window with FIFO eviction; once the window
+            # fills, ``len`` stays at ``window`` for the lifetime of the
+            # state.  (Unlike the event-time-windowed sensors, this one
+            # cannot un-warm — there is no S3 reversion path.)
+            warm=len(spreads) >= self._warm_after,
         )

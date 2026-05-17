@@ -17,10 +17,15 @@ Output (length ``len(horizons_seconds)`` tuple, *sorted ascending*):
 
 Algorithm (per horizon ``h``):
 
-- Sample mid-prices on a fixed integer-nanosecond grid:
-  ``next_sample_ns_h = last_sample_ns_h + h * 1e9``.  The first quote
-  bootstraps the grid.  Quotes between grid points only update the
-  most-recent mid (no leakage of intra-bar information).
+- Sample mid-prices on a fixed integer-nanosecond grid **anchored to a
+  shared reference time** (``grid_anchor_ns``, default 0 = Unix epoch).
+  Grid points are at ``grid_anchor_ns + k * h * 1e9`` for integer k, so
+  *all symbols share the same grid boundaries* — cross-symbol
+  horizon-aligned analyses are well-defined.  The first quote per
+  symbol seeds ``mid_bar_open`` and aligns ``next_sample_ns`` to the
+  next grid point after its timestamp.  Quotes between grid points
+  only update the most-recent mid (no leakage of intra-bar
+  information).
 - When the event time reaches or passes a grid deadline, compute a
   single **log-return** over the elapsed bar:
   ``r = log(mid_now) - log(mid_open)`` where ``mid_open`` is the NBBO
@@ -44,11 +49,13 @@ Algorithm (per horizon ``h``):
 Determinism: pure float arithmetic; integer grid crossings.
 
 Warm-up: ``warm = True`` once *every* registered horizon has
-accumulated ≥ ``warm_samples_per_horizon`` (default 4) grid samples,
-matching the §20.4.3 requirement of "four horizon samples minimum".
-A multi-bar consolidated update increments ``samples`` by ``N`` (the
-number of missed bars it stands in for), so the warm gate tracks
-elapsed grid time rather than callback count.
+accumulated ≥ ``warm_samples_per_horizon`` (default 4) *returns*
+contributing to the EWMA accumulators (matching the §20.4.3
+requirement of "four horizon samples minimum").  The bootstrap quote
+sets ``mid_bar_open`` without producing a return and so does **not**
+count toward this gate.  A multi-bar consolidated update increments
+the counter by ``N`` (the number of missed bars it stands in for), so
+the gate tracks elapsed grid time rather than callback count.
 """
 
 from __future__ import annotations
@@ -71,13 +78,20 @@ class SNRDriftDiffusionSensor:
       seconds) at which to estimate SNR.  Stored sorted ascending.
     - ``ewma_n_eff`` (int, default 16): effective-sample-size for the
       EWMA decays; smaller is faster-tracking, larger is smoother.
-    - ``warm_samples_per_horizon`` (int, default 4): minimum grid
-      samples on every horizon before ``warm=True``.  Matches the
-      design-doc default.
+    - ``warm_samples_per_horizon`` (int, default 4): minimum *returns*
+      observed on every horizon before ``warm=True``.  Matches the
+      design-doc default.  The bootstrap quote does not count.
+    - ``grid_anchor_ns`` (int, default 0): shared reference time (ns)
+      for the per-horizon grid.  All symbols snap their grid to
+      ``grid_anchor_ns + k * h * 1e9``, so any two SNR readings at the
+      same wall-clock time are referenced to the same grid boundaries.
+      Default 0 anchors to the Unix epoch (gives stable boundaries
+      across processes / restarts); set to a session-open timestamp
+      for tighter alignment to session structure.
     """
 
     sensor_id: str = "snr_drift_diffusion"
-    sensor_version: str = "1.2.0"
+    sensor_version: str = "1.3.0"
 
     def __init__(
         self,
@@ -87,6 +101,7 @@ class SNRDriftDiffusionSensor:
         horizons_seconds: tuple[int, ...] = (30, 120),
         ewma_n_eff: int = 16,
         warm_samples_per_horizon: int = 4,
+        grid_anchor_ns: int = 0,
     ) -> None:
         if not horizons_seconds:
             raise ValueError("horizons_seconds must be non-empty")
@@ -108,6 +123,7 @@ class SNRDriftDiffusionSensor:
         self._horizons = tuple(sorted(int(h) for h in horizons_seconds))
         self._ewma_lambda = 2.0 / (1.0 + float(ewma_n_eff))
         self._warm_samples = warm_samples_per_horizon
+        self._grid_anchor_ns = int(grid_anchor_ns)
 
     def initial_state(self) -> dict[str, Any]:
         return {
@@ -131,10 +147,17 @@ class SNRDriftDiffusionSensor:
         ts_ns: int,
         mid: float,
     ) -> None:
+        h_ns = h * _NS_PER_SECOND
         if slot["next_sample_ns"] is None:
+            # Snap to the next grid boundary at or after ``ts_ns``.
+            # Grid points are at ``grid_anchor_ns + k * h_ns``; the next one
+            # strictly greater than ``ts_ns`` becomes our first bar close.
+            offset = (ts_ns - self._grid_anchor_ns) % h_ns
+            slot["next_sample_ns"] = ts_ns + (h_ns - offset)
             slot["mid_bar_open"] = mid
-            slot["next_sample_ns"] = ts_ns + h * _NS_PER_SECOND
-            slot["samples"] += 1
+            # Bootstrap quote seeds the grid but produces no return — do not
+            # advance the warm-sample counter here (counter measures returns
+            # contributing to the EWMA, not callbacks).
             return
         if ts_ns < slot["next_sample_ns"]:
             return
@@ -148,7 +171,6 @@ class SNRDriftDiffusionSensor:
         # ``r`` is the total log-return over the elapsed ``n_bars * h``
         # seconds; splitting equally avoids the O(N) variance inflation that
         # treating ``r`` as a single sample would cause.
-        h_ns = h * _NS_PER_SECOND
         n_bars = (ts_ns - slot["next_sample_ns"]) // h_ns + 1
         r_total = math.log(mid) - math.log(mo)
         r_per_bar = r_total / float(n_bars)

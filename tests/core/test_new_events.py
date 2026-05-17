@@ -225,7 +225,7 @@ def test_sensor_reading_scalar_value() -> None:
         sequence=1,
         symbol="AAPL",
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         value=0.42,
     )
     assert reading.confidence == 1.0

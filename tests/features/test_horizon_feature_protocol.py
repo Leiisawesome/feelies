@@ -110,7 +110,7 @@ def test_finalize_returns_value_warm_stale_triple() -> None:
         sequence=1,
         symbol="AAPL",
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         value=2.5,
         warm=True,
     )
@@ -147,7 +147,7 @@ def test_finalize_resets_window_freshness_flag() -> None:
         sequence=1,
         symbol="AAPL",
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         value=1.0,
         warm=True,
     )

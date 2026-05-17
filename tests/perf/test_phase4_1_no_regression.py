@@ -98,20 +98,20 @@ _HARNESS_TEMPLATE = textwrap.dedent("""\
 
     SENSOR_SPECS = (
         SensorSpec(
-            sensor_id='ofi_ewma', sensor_version='1.0.0',
+            sensor_id='ofi_ewma', sensor_version='1.1.0',
             cls=OFIEwmaSensor, params={{'alpha': 0.1, 'warm_after': 5}},
             subscribes_to=(NBBOQuote,),
         ),
         SensorSpec(
-            sensor_id='micro_price', sensor_version='1.0.0',
+            sensor_id='micro_price', sensor_version='1.1.0',
             cls=MicroPriceSensor, params={{}}, subscribes_to=(NBBOQuote,),
         ),
         SensorSpec(
-            sensor_id='spread_z_30d', sensor_version='1.0.0',
+            sensor_id='spread_z_30d', sensor_version='1.1.0',
             cls=SpreadZScoreSensor, params={{}}, subscribes_to=(NBBOQuote,),
         ),
         SensorSpec(
-            sensor_id='realized_vol_30s', sensor_version='1.2.0',
+            sensor_id='realized_vol_30s', sensor_version='1.3.0',
             cls=RealizedVol30sSensor,
             params={{'window_seconds': 30, 'warm_after': 8}},
             subscribes_to=(NBBOQuote,),

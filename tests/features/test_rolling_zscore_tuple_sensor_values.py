@@ -23,7 +23,7 @@ def test_rolling_zscore_skips_tuple_without_component_sum_config() -> None:
         source_layer="SENSORS",
         symbol="TEST",
         sensor_id="hawkes_intensity",
-        sensor_version="1.1.0",
+        sensor_version="1.2.0",
         value=(1.0, 2.0, 0.66, 8.0),
         warm=True,
     )
@@ -61,7 +61,7 @@ def test_rolling_zscore_sums_configured_tuple_components_for_hawkes() -> None:
         source_layer="SENSORS",
         symbol="TEST",
         sensor_id="hawkes_intensity",
-        sensor_version="1.1.0",
+        sensor_version="1.2.0",
         value=(1.0, 2.0, 0.66, 8.0),
         warm=True,
     )
