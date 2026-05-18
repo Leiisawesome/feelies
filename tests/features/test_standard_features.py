@@ -302,25 +302,43 @@ class TestRollingPercentileFeature:
         _, warm, _ = f.finalize(_DUMMY_TICK, state, {})
         assert warm is True
 
-    def test_max_value_is_100th_percentile(self) -> None:
+    def test_max_value_is_near_top_percentile(self) -> None:
         f = RollingPercentileFeature("kyle_lambda_60s", 300, min_samples=5)
         state = f.initial_state()
         for v in [1.0, 2.0, 3.0, 4.0, 5.0]:
             f.observe(_reading(ts_ns=1, sensor_id="kyle_lambda_60s", value=v), state, {})
         value, warm, _ = f.finalize(_DUMMY_TICK, state, {})
-        assert abs(value - 1.0) < 1e-9  # 5/5 values <= 5.0
+        # Audit #9: Hazen plotting position — rank=5, n=5 → (5-0.5)/5 = 0.9
+        assert abs(value - 0.9) < 1e-9
         assert warm is True
 
-    def test_min_value_is_near_zero(self) -> None:
+    def test_min_value_is_near_bottom_percentile(self) -> None:
         f = RollingPercentileFeature("kyle_lambda_60s", 300, min_samples=5)
         state = f.initial_state()
         for v in [5.0, 4.0, 3.0, 2.0, 1.0]:
             f.observe(_reading(ts_ns=1, sensor_id="kyle_lambda_60s", value=v), state, {})
         # Reload latest with the 1.0 we just appended (already last)
         value, warm, _ = f.finalize(_DUMMY_TICK, state, {})
-        # 1/5 values <= 1.0
-        assert abs(value - 0.2) < 1e-9
+        # Audit #9: Hazen plotting position — rank=1, n=5 → (1-0.5)/5 = 0.1
+        assert abs(value - 0.1) < 1e-9
         assert warm is True
+
+    def test_hazen_is_symmetric_around_half(self) -> None:
+        """The Hazen formula (rank - 0.5) / n is symmetric: percentile(max) +
+        percentile(min) == 1.0 (audit #9 regression guard)."""
+        f_high = RollingPercentileFeature("s", 300, min_samples=5)
+        state_h = f_high.initial_state()
+        for v in [1.0, 2.0, 3.0, 4.0, 5.0]:
+            f_high.observe(_reading(ts_ns=1, sensor_id="s", value=v), state_h, {})
+        high, _, _ = f_high.finalize(_DUMMY_TICK, state_h, {})
+
+        f_low = RollingPercentileFeature("s", 300, min_samples=5)
+        state_l = f_low.initial_state()
+        for v in [5.0, 4.0, 3.0, 2.0, 1.0]:
+            f_low.observe(_reading(ts_ns=1, sensor_id="s", value=v), state_l, {})
+        low, _, _ = f_low.finalize(_DUMMY_TICK, state_l, {})
+
+        assert abs((high + low) - 1.0) < 1e-9
 
     def test_cold_readings_not_included(self) -> None:
         f = RollingPercentileFeature("kyle_lambda_60s", 300, min_samples=3)

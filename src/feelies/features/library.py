@@ -43,7 +43,11 @@ class SpreadComputation:
 class BidAskImbalanceComputation:
     """Size imbalance: (bid_size - ask_size) / (bid_size + ask_size).
 
-    Returns 0.0 when both sizes are zero.
+    Returns 0.0 when both sizes are zero.  This conflates "undefined"
+    (no liquidity on either side) with "balanced" (audit #13);
+    callers that need to distinguish the two should also gate on the
+    raw sizes upstream — the FeatureComputation protocol is constrained
+    to ``float`` returns, so a sentinel is not available here.
     """
 
     def initial_state(self) -> dict[str, Any]:
@@ -60,10 +64,19 @@ class EWMAComputation:
     """Exponentially weighted moving average of mid-price.
 
     Parameters:
-        span: lookback span for EMA decay (alpha = 2 / (span + 1))
+        span: lookback span for EMA decay (alpha = 2 / (span + 1)).
+              Must be >= 1; span=0 produces alpha=2 (overshoots every
+              update) and span<0 is mathematically meaningless
+              (audit #11).
     """
 
     def __init__(self, span: int = 100) -> None:
+        if span < 1:
+            raise ValueError(
+                f"EWMAComputation: span must be >= 1, got {span}; "
+                "smaller values yield alpha >= 1 which is not a valid "
+                "exponential smoothing weight"
+            )
         self._alpha = 2.0 / (span + 1)
 
     def initial_state(self) -> dict[str, Any]:
@@ -80,17 +93,26 @@ class EWMAComputation:
 
 
 class RollingVarianceComputation:
-    """Incremental EWMA variance of mid-price returns.
+    """Incremental EWMA of squared mid-price tick-to-tick differences.
 
-    Uses the same exponential decay as EWMA.  The variance is computed
-    on tick-to-tick mid-price differences, not raw prices, so it
-    measures short-term volatility.
+    Computes ``EWMA(Δ²)`` where ``Δ = mid_t − mid_{t-1}`` — i.e. the
+    second moment of mid-price *differences* (not log-returns), and
+    *not* the centred variance ``Var(Δ) = E[Δ²] − E[Δ]²`` (audit #4).
+    For high-frequency intraday data the drift ``E[Δ]`` is small, so
+    ``E[Δ²] ≈ Var(Δ)``, but the two diverge under non-zero drift
+    (intraday momentum, post-news).  Callers needing centred variance
+    should subtract a running EWMA of ``Δ``.
 
     Parameters:
-        span: lookback span for decay (alpha = 2 / (span + 1))
+        span: lookback span for decay (alpha = 2 / (span + 1)).
+              Must be >= 1 (audit #11).
     """
 
     def __init__(self, span: int = 100) -> None:
+        if span < 1:
+            raise ValueError(
+                f"RollingVarianceComputation: span must be >= 1, got {span}"
+            )
         self._alpha = 2.0 / (span + 1)
 
     def initial_state(self) -> dict[str, Any]:
@@ -122,11 +144,24 @@ class ZScoreComputation:
     in the same tick's computation.  Falls back to computing its own
     EWMA internally if used standalone.
 
+    Design note (audit #14): the residual ``diff = spread - ewma`` is
+    computed against the *prior* EWMA, then both (a) drives the EWMA
+    update ``ewma += alpha * diff`` and (b) is reused as the numerator
+    of the z-score ``diff / sqrt(EWMA(diff²))``.  Reusing the
+    prior-residual matches the RiskMetrics convention for EWMA variance
+    estimation; refactoring this to use a "current" residual would bias
+    the z-score numerator and is not recommended.
+
     Parameters:
-        span: lookback span for EWMA and variance decay
+        span: lookback span for EWMA and variance decay.  Must be >= 1
+              (audit #11).
     """
 
     def __init__(self, span: int = 100) -> None:
+        if span < 1:
+            raise ValueError(
+                f"ZScoreComputation: span must be >= 1, got {span}"
+            )
         self._alpha = 2.0 / (span + 1)
 
     def initial_state(self) -> dict[str, Any]:
