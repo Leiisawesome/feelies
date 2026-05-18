@@ -95,8 +95,12 @@ def test_snapshot_stream_matches_locked_baseline() -> None:
     # H1 fix (audit): dedup logic now emits exactly one snapshot per
     # (symbol, horizon, boundary_index); SYMBOL+UNIVERSE ticks no longer
     # produce duplicate snapshots, halving the count from 28 → 14.
+    # Audit #6 re-lock: ``_last_reading_ns`` now updates only on warm
+    # readings, so snapshots whose horizon window contains only cold
+    # sensor output correctly report ``stale=True`` for those features
+    # (previously they were incorrectly considered fresh).
     EXPECTED_LEVEL3_SNAPSHOT_HASH = (
-        "464075c8f554c85cf5ae38d425ee35791a206da1827c9f5a5aef61ebcd7f1258"
+        "3fc89a4d800e86ad91567a870737957e3630e8be09c922696fdea94540b9d06c"
     )
     EXPECTED_LEVEL3_SNAPSHOT_COUNT = 14
 

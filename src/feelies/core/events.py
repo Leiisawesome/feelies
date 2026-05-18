@@ -565,6 +565,14 @@ class HorizonFeatureSnapshot(Event):
     ``parent_correlation_id`` carries the ``correlation_id`` of the
     ``HorizonTick`` that triggered this snapshot, restoring the
     audit-spine chain (S4 / A-DATA-04).
+
+    ``feature_versions`` records the ``feature_version`` string for each
+    feature_id present in this snapshot.  Combined with ``source_sensors``
+    (which records ``input_sensor_ids``) this closes the Inv-13 provenance
+    gap: a consumer reading an archived snapshot can reconstruct exactly
+    which feature *version* produced each value, even when the same
+    ``feature_id`` is registered at multiple horizons with different
+    versions.  Empty dict in passive mode (no features).
     """
 
     symbol: str
@@ -574,6 +582,7 @@ class HorizonFeatureSnapshot(Event):
     warm: dict[str, bool] = field(default_factory=dict)
     stale: dict[str, bool] = field(default_factory=dict)
     source_sensors: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    feature_versions: dict[str, str] = field(default_factory=dict)
     parent_correlation_id: str = ""
 
 
