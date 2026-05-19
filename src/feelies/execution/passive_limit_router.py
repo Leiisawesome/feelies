@@ -277,7 +277,28 @@ class PassiveLimitOrderRouter:
             action = self._evaluate_fill(pending, quote)
 
             if action == "fill":
-                self._emit_passive_fill(pending)
+                # Price improvement on through-fills: IBKR (and the
+                # NMS rule) fills limit orders at the limit price OR
+                # BETTER, never worse.  When the opposite-side BBO has
+                # gapped through our limit (BUY: ask < limit, SELL:
+                # bid > limit), the realistic fill price is the new
+                # BBO, not the resting limit.  Without this, a passive
+                # BUY at $100 with ask=$99.99 records as a $100 fill
+                # — overstating the trader's cost by one tick per
+                # share, conservative for backtest but wrong vs IBKR.
+                # Level-fills (queue drain) still fill at the limit.
+                fill_price = pending.limit_price
+                if (
+                    pending.side == Side.BUY
+                    and quote.ask < pending.limit_price
+                ):
+                    fill_price = quote.ask
+                elif (
+                    pending.side == Side.SELL
+                    and quote.bid > pending.limit_price
+                ):
+                    fill_price = quote.bid
+                self._emit_passive_fill(pending, fill_price=fill_price)
                 to_remove.append(order_id)
             elif action == "cancel":
                 self._emit_timeout_cancel(pending)
@@ -348,14 +369,24 @@ class PassiveLimitOrderRouter:
             request_sequence=request.sequence,
         ))
 
-    def _emit_passive_fill(self, pending: _PendingOrder) -> None:
+    def _emit_passive_fill(
+        self,
+        pending: _PendingOrder,
+        fill_price: Decimal | None = None,
+    ) -> None:
         """Emit a FILLED ack for a passive limit order.
 
         Calls the cost model with ``is_taker=False`` so the maker rebate
         and adverse-selection penalty are applied by the model — no
         separate rebate subtraction needed here.
+
+        ``fill_price`` defaults to the resting ``limit_price`` (queue-
+        drain / level fills).  Callers may pass a better price (BUY:
+        a lower ask that gapped through, SELL: a higher bid) to model
+        IBKR's price-improvement rule on through-fills.
         """
-        fill_price = pending.limit_price
+        if fill_price is None:
+            fill_price = pending.limit_price
         fill_ts = self._clock.now_ns() + self._latency_ns
 
         costs = self._cost_model.compute(

@@ -197,7 +197,13 @@ class TestThroughFill:
         assert router.resting_order_count == 0
 
     def test_buy_fills_when_ask_drops_below_limit(self):
-        """BUY limit fills when ask < limit_price (price through)."""
+        """BUY limit fills when ask < limit_price (price through).
+
+        IBKR / Reg-NMS price improvement: a passive BUY at $150.00
+        whose limit is crossed by an ask of $149.98 fills at the
+        better price ($149.98), not at the resting limit.  See
+        ``_check_resting_orders`` for the routing rule.
+        """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
 
@@ -211,7 +217,7 @@ class TestThroughFill:
 
         assert len(acks) == 1
         assert acks[0].status == OrderAckStatus.FILLED
-        assert acks[0].fill_price == Decimal("150.00")
+        assert acks[0].fill_price == Decimal("149.98")
 
     def test_sell_fills_when_bid_rises_to_limit(self):
         """SELL limit fills when bid >= limit_price (through fill)."""
@@ -232,7 +238,11 @@ class TestThroughFill:
         assert acks[0].filled_quantity == 100
 
     def test_sell_fills_when_bid_rises_above_limit(self):
-        """SELL limit fills when bid > limit_price (price through)."""
+        """SELL limit fills when bid > limit_price → price improvement.
+
+        Resting SELL at $150.02 with a new bid of $150.05 fills at the
+        better price ($150.05), not the resting limit.
+        """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
 
@@ -246,7 +256,70 @@ class TestThroughFill:
 
         assert len(acks) == 1
         assert acks[0].status == OrderAckStatus.FILLED
-        assert acks[0].fill_price == Decimal("150.02")
+        assert acks[0].fill_price == Decimal("150.05")
+
+
+class TestThroughFillPriceImprovement:
+    """Audit fix E7: through-fills get the better price (limit-or-better).
+
+    IBKR (and Reg-NMS) requires limit orders to fill at the limit
+    price OR BETTER, never worse.  When the opposite-side BBO has
+    gapped through our limit, the realistic execution price is the
+    new opposite-side BBO, not the resting limit price.
+    """
+
+    def test_buy_through_fill_uses_lower_ask(self):
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
+        router.on_quote(_quote("AAPL", "150.00", "150.02"))
+        router.submit(_limit_buy("AAPL", limit_price="150.00"))
+        router.poll_acks()
+
+        clock.set_time(6000)
+        # Ask gapped to $149.95 — buyer should fill at $149.95, not $150.
+        router.on_quote(_quote("AAPL", "149.93", "149.95", ts=6000))
+        acks = router.poll_acks()
+        assert acks[0].fill_price == Decimal("149.95")
+
+    def test_buy_at_limit_no_improvement(self):
+        """If ask equals limit exactly, fill at the limit (no through)."""
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
+        router.on_quote(_quote("AAPL", "150.00", "150.02"))
+        router.submit(_limit_buy("AAPL", limit_price="150.00"))
+        router.poll_acks()
+        clock.set_time(6000)
+        # Ask drops to the limit — fills at limit.  No improvement.
+        router.on_quote(_quote("AAPL", "149.98", "150.00", ts=6000))
+        acks = router.poll_acks()
+        assert acks[0].fill_price == Decimal("150.00")
+
+    def test_sell_through_fill_uses_higher_bid(self):
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
+        router.on_quote(_quote("AAPL", "150.00", "150.02"))
+        router.submit(_limit_sell("AAPL", limit_price="150.02"))
+        router.poll_acks()
+        clock.set_time(6000)
+        # Bid gapped to $150.10 — seller should fill at $150.10.
+        router.on_quote(_quote("AAPL", "150.10", "150.12", ts=6000))
+        acks = router.poll_acks()
+        assert acks[0].fill_price == Decimal("150.10")
+
+    def test_level_fill_stays_at_limit(self):
+        """Queue-drain (level) fills do NOT get price improvement —
+        they fill at our resting limit because BBO never crossed."""
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=1)
+        router.on_quote(_quote("AAPL", "150.00", "150.02"))
+        router.submit(_limit_buy("AAPL", limit_price="150.00"))
+        router.poll_acks()
+        clock.set_time(6000)
+        # BBO unchanged — no through-fill, just a level tick.
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6000))
+        acks = router.poll_acks()
+        assert acks[0].status == OrderAckStatus.FILLED
+        assert acks[0].fill_price == Decimal("150.00")
 
 
 class TestLevelFill:
