@@ -84,7 +84,16 @@ parameters:
     max: 50.0
     description: |
       Maximum reported ``edge_estimate_bps``; safety cap.
-
+  strength_cap:
+    type: float
+    default: 2.0
+    min: 1.0
+    max: 4.0
+    description: |
+      Ceiling for convex strength scaling.  Signals at |z| == threshold*2
+      still produce strength==1.0 (backward-compatible floor); the cap
+      allows high-z signals to size proportionally larger up to this
+      multiple of the base unit size.
 # ── Horizon (Layer-2 boundary) ────────────────────────────
 horizon_seconds: 120
 
@@ -131,6 +140,7 @@ signal: |
       threshold = params["entry_threshold_z"]
       slope_bps = params["edge_per_z_bps"]
       edge_cap = params["edge_cap_bps"]
+      str_cap = params["strength_cap"]
 
       z = snapshot.values.get("ofi_ewma_zscore")
       z_mp = snapshot.values.get("micro_price_zscore")
@@ -148,6 +158,17 @@ signal: |
       direction = LONG if z > 0 else SHORT
       edge_bps = min(mag * slope_bps, edge_cap)
 
+      # Convex strength: superlinear above the old saturation point
+      # (mag == threshold*2 => norm==1.0 => same strength as before).
+      norm = mag / (threshold * 2.0)
+      # Below saturation (norm <= 1.0): original linear scaling — no change
+      # to existing signal sizes.  Above saturation (norm > 1.0): convex
+      # upside capped at str_cap, rewarding high-conviction moments.
+      if norm <= 1.0:
+          strength = norm
+      else:
+          strength = min(1.0 + (norm - 1.0) ** 1.2, str_cap)
+
       return Signal(
           timestamp_ns=snapshot.timestamp_ns,
           correlation_id=snapshot.correlation_id,
@@ -155,6 +176,6 @@ signal: |
           symbol=snapshot.symbol,
           strategy_id="sig_benign_midcap_v1",
           direction=direction,
-          strength=min(mag / (threshold * 2.0), 1.0),
+          strength=strength,
           edge_estimate_bps=edge_bps,
       )

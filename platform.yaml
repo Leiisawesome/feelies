@@ -13,7 +13,7 @@ symbols:
 alpha_spec_dir: null
 
 alpha_specs:
-  - alphas/sig_inventory_revert_v1/sig_inventory_revert_v1.alpha.yaml
+  - alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml
 
 parameter_overrides: {}
 
@@ -123,9 +123,9 @@ horizons_seconds:
 # session_open_ns: null  # else first event anchors backtests
 
 # For scheduled_flow_window sensor (e.g. sig_moc_imbalance_v1); bootstrap injects calendar.
-event_calendar_path: src/feelies/storage/reference/event_calendar/2026-01-15.yaml
+event_calendar_path: src/feelies/storage/reference/event_calendar/2026-03-26.yaml
 
-# Sensors for sig_inventory_revert_v1 (depends_on_sensors).
+# Sensors for sig_benign_midcap_v1 (depends_on_sensors: ofi_ewma, micro_price, spread_z_30d, realized_vol_30s).
 sensor_specs:
 
   - sensor_id: spread_z_30d
