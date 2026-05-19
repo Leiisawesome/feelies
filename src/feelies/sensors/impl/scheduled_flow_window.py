@@ -94,6 +94,19 @@ class ScheduledFlowWindowSensor:
         # date, missing YAML) don't silently look like normal "outside any
         # window" readings.
         self._has_windows = len(calendar.windows) > 0
+        # Per-tick warm gate: True only when at least one symbol-eligible
+        # window exists in the calendar.  A calendar populated with
+        # windows for OTHER symbols (e.g. an EARNINGS_DRIFT-only file
+        # consumed by a non-event symbol) would otherwise warm to
+        # ``active=0.0`` and silently mask scope misconfiguration.
+        self._symbol_has_windows: dict[str, bool] = {}
+        for w in calendar.windows:
+            if w.symbol is None:
+                # Universe-wide window — keys are resolved lazily.
+                self._has_universe_wide_window = True
+                break
+        else:
+            self._has_universe_wide_window = False
 
     def initial_state(self) -> dict[str, Any]:
         return {}
@@ -120,6 +133,22 @@ class ScheduledFlowWindowSensor:
                 chosen = w
         return chosen
 
+    def _symbol_has_eligible_window(self, symbol: str) -> bool:
+        """Memoised check: is at least one window eligible for *symbol*?
+
+        A universe-wide window short-circuits to True for every symbol;
+        otherwise we scan the (small) per-session window list once per
+        symbol and cache the result.
+        """
+        if self._has_universe_wide_window:
+            return True
+        cached = self._symbol_has_windows.get(symbol)
+        if cached is not None:
+            return cached
+        eligible = any(w.symbol == symbol for w in self._calendar.windows)
+        self._symbol_has_windows[symbol] = eligible
+        return eligible
+
     def update(
         self,
         event: NBBOQuote | Trade,
@@ -139,6 +168,12 @@ class ScheduledFlowWindowSensor:
                 float(_window_id_hash(window.window_id)),
                 float(window.flow_direction_prior),
             )
+        # Warm only when both the calendar has windows AND at least one
+        # is symbol-eligible for the inbound event.  This catches scope
+        # misconfiguration (e.g. EARNINGS_DRIFT for AAPL consumed by MSFT)
+        # which would otherwise present as a normal "outside any window"
+        # reading and silently disable a downstream alpha.
+        warm = self._has_windows and self._symbol_has_eligible_window(symbol)
         return SensorReading(
             timestamp_ns=ts_ns,
             correlation_id="placeholder",
@@ -147,5 +182,5 @@ class ScheduledFlowWindowSensor:
             sensor_id=self.sensor_id,
             sensor_version=self.sensor_version,
             value=value,
-            warm=self._has_windows,
+            warm=warm,
         )

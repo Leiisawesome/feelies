@@ -93,6 +93,75 @@ def _replay_scan_meta(event_log: InMemoryEventLog) -> tuple[int | None, int]:
     return first_ts, n_quotes
 
 
+def _count_event_types(event_log: InMemoryEventLog) -> tuple[int, int]:
+    """Return ``(quote_count, trade_count)`` for the event log.
+
+    Used by ``backtest_reject_zero_ingest_events`` to surface the
+    quote-only or trade-only failure mode that a bare total-count check
+    misses (trade-dependent sensors like ``kyle_lambda_60s`` would never
+    warm if the trade stream is empty).
+    """
+    n_quotes = 0
+    n_trades = 0
+    for ev in event_log.replay():
+        if isinstance(ev, NBBOQuote):
+            n_quotes += 1
+        elif isinstance(ev, Trade):
+            n_trades += 1
+    return n_quotes, n_trades
+
+
+def _enforce_ingest_event_mix(
+    config: Any,
+    event_log: InMemoryEventLog,
+    *,
+    source_label: str,
+) -> int:
+    """Apply ``backtest_reject_zero_ingest_events`` per event type.
+
+    Returns ``0`` on success or ``1`` if the run should abort.  Logs to
+    stderr with the same shape as the legacy total-only check.
+    """
+    if not config.backtest_reject_zero_ingest_events:
+        return 0
+    n_quotes, n_trades = _count_event_types(event_log)
+    if n_quotes == 0 and n_trades == 0:
+        print(
+            f"\n  ERROR: Zero events {source_label} — "
+            "backtest_reject_zero_ingest_events is enabled in platform config.",
+            file=sys.stderr,
+        )
+        return 1
+    if n_quotes == 0:
+        print(
+            f"\n  ERROR: Zero NBBOQuote events {source_label} "
+            f"(trades={n_trades:,}) — backtest_reject_zero_ingest_events "
+            "rejects quote-starved feeds because quote-driven sensors "
+            "(spread_z_30d, ofi_ewma, micro_price, ...) cannot warm.",
+            file=sys.stderr,
+        )
+        return 1
+    if n_trades == 0:
+        # Only fail when at least one configured sensor consumes Trade.
+        # A pure-quote universe is legitimate when no trade-driven sensor
+        # is registered.
+        trade_consumers = tuple(
+            spec.sensor_id
+            for spec in (config.sensor_specs or ())
+            if "Trade" in (getattr(spec, "subscribes_to", ()) or ())
+        )
+        if trade_consumers:
+            print(
+                f"\n  ERROR: Zero Trade events {source_label} "
+                f"(quotes={n_quotes:,}) — sensors {list(trade_consumers)} "
+                "subscribe to Trade and would never warm. "
+                "backtest_reject_zero_ingest_events is enabled.",
+                file=sys.stderr,
+            )
+            return 1
+    return 0
+
+
 def _filter_to_rth(
     event_log: InMemoryEventLog,
 ) -> tuple[InMemoryEventLog, int]:
@@ -1916,13 +1985,9 @@ def main(argv: list[str] | None = None) -> int:
         flush=True,
     )
 
-    if config.backtest_reject_zero_ingest_events and ingest_result.events_ingested == 0:
-        print(
-            "\n  ERROR: Zero events ingested — "
-            "backtest_reject_zero_ingest_events is enabled in platform config.",
-            file=sys.stderr,
-        )
-        return 1
+    rc = _enforce_ingest_event_mix(config, event_log, source_label="ingested")
+    if rc != 0:
+        return rc
 
     config = _attach_day_source_provenance(config, symbols, day_sources)
 
@@ -2015,13 +2080,11 @@ def main_cache_replay(argv: list[str] | None = None) -> int:
         )
         for m in day_meta
     ]
-    if config.backtest_reject_zero_ingest_events and ingest_result.events_ingested == 0:
-        print(
-            "\n  ERROR: Zero events loaded from disk cache — "
-            "backtest_reject_zero_ingest_events is enabled in platform config.",
-            file=sys.stderr,
-        )
-        return 1
+    rc = _enforce_ingest_event_mix(
+        config, event_log, source_label="loaded from disk cache",
+    )
+    if rc != 0:
+        return rc
 
     config = _attach_day_source_provenance(config, symbols, day_sources)
 

@@ -181,7 +181,7 @@ def test_emits_long_when_positive_asymmetry_above_threshold(
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_with_asym(4.5))
     bus.publish(_spread_reading())
-    bus.publish(_snapshot(asym_z=4.5, hazard=0.2))
+    bus.publish(_snapshot(asym_z=4.5, hazard=8.0))
 
     assert len(captured) == 1
     sig = captured[0]
@@ -202,7 +202,7 @@ def test_emits_short_for_negative_asymmetry(
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_with_asym(4.5))
     bus.publish(_spread_reading())
-    bus.publish(_snapshot(asym_z=-4.5, hazard=0.2))
+    bus.publish(_snapshot(asym_z=-4.5, hazard=8.0))
     assert len(captured) == 1
     assert captured[0].direction == SignalDirection.SHORT
 
@@ -213,7 +213,8 @@ def test_no_emission_when_hazard_below_floor(
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_with_asym(2.5))
     bus.publish(_spread_reading())
-    bus.publish(_snapshot(asym_z=2.5, hazard=0.01))  # below default 0.05
+    # 1.0 events/sec is below the default 4.0/sec floor.
+    bus.publish(_snapshot(asym_z=2.5, hazard=1.0))
     assert captured == []
 
 
@@ -223,7 +224,7 @@ def test_no_emission_when_asymmetry_below_threshold(
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_with_asym(2.5))
     bus.publish(_spread_reading())
-    bus.publish(_snapshot(asym_z=1.0, hazard=0.2))
+    bus.publish(_snapshot(asym_z=1.0, hazard=8.0))
     assert captured == []
 
 
@@ -234,7 +235,7 @@ def test_no_emission_when_gate_off(
     bus.publish(_toxic_regime())
     bus.publish(_spread_reading())
     # asym_z=4.5 would clear the cost floor — only the gate suppresses here.
-    bus.publish(_snapshot(asym_z=4.5, hazard=0.2))
+    bus.publish(_snapshot(asym_z=4.5, hazard=8.0))
     assert captured == []
 
 
@@ -247,7 +248,7 @@ def test_edge_capped_at_capturable_peak(
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_with_asym(2.5))
     bus.publish(_spread_reading())
-    bus.publish(_snapshot(asym_z=100.0, hazard=0.2, rv_z=0.0))
+    bus.publish(_snapshot(asym_z=100.0, hazard=8.0, rv_z=0.0))
     assert len(captured) == 1
     assert captured[0].edge_estimate_bps == pytest.approx(14.0 * 0.646)
     # Strength is normalized against the capturable cap, so saturation
@@ -264,7 +265,7 @@ def test_no_emission_below_cost_floor(
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_with_asym(4.0))
     bus.publish(_spread_reading())
-    bus.publish(_snapshot(asym_z=4.0, hazard=0.2))
+    bus.publish(_snapshot(asym_z=4.0, hazard=8.0))
     assert captured == []
 
 
@@ -276,7 +277,7 @@ def test_realized_capture_ratio_taxes_peak_edge(
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_with_asym(5.5))
     bus.publish(_spread_reading())
-    bus.publish(_snapshot(asym_z=5.5, hazard=0.2, rv_z=0.0))
+    bus.publish(_snapshot(asym_z=5.5, hazard=8.0, rv_z=0.0))
     assert len(captured) == 1
     expected_peak = (5.5 - 2.0) * 3.5
     assert captured[0].edge_estimate_bps == pytest.approx(expected_peak * 0.646)
@@ -292,8 +293,8 @@ def test_soft_hazard_ramp_scales_edge_below_full_weight(
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_with_asym(100.0))
     bus.publish(_spread_reading())
-    # hazard = floor + 0.9*band = 0.05 + 0.045 = 0.095 → hazard_weight = 0.9
-    bus.publish(_snapshot(asym_z=100.0, hazard=0.095, rv_z=0.0))
+    # hazard = floor + 0.9*band = 4.0 + 1.8 = 5.8 → hazard_weight = 0.9
+    bus.publish(_snapshot(asym_z=100.0, hazard=5.8, rv_z=0.0))
     assert len(captured) == 1
     # Saturated peak (14.0) * ratio (0.646) * hazard_weight (0.9).
     assert captured[0].edge_estimate_bps == pytest.approx(14.0 * 0.646 * 0.9)
@@ -309,8 +310,9 @@ def test_soft_hazard_ramp_suppresses_when_weight_pushes_below_floor(
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_with_asym(100.0))
     bus.publish(_spread_reading())
-    # hazard_weight = 0.5 ⇒ edge = 14*0.646*0.5 = 4.52 < 5.5
-    bus.publish(_snapshot(asym_z=100.0, hazard=0.075, rv_z=0.0))
+    # hazard = floor + 0.5*band = 4.0 + 1.0 = 5.0 → hazard_weight = 0.5
+    # ⇒ edge = 14*0.646*0.5 = 4.52 < 5.5
+    bus.publish(_snapshot(asym_z=100.0, hazard=5.0, rv_z=0.0))
     assert captured == []
 
 
@@ -323,7 +325,7 @@ def test_vol_taper_reduces_edge_under_stress(
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_with_asym(100.0))
     bus.publish(_spread_reading())
-    bus.publish(_snapshot(asym_z=100.0, hazard=0.2, rv_z=0.7))
+    bus.publish(_snapshot(asym_z=100.0, hazard=8.0, rv_z=0.7))
     assert len(captured) == 1
     assert captured[0].edge_estimate_bps == pytest.approx(14.0 * 0.646 * 0.8)
 
@@ -344,10 +346,10 @@ def test_direction_sign_locked_to_hypothesis(
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_with_asym(4.5))
     bus.publish(_spread_reading())
-    bus.publish(_snapshot(asym_z=+4.5, hazard=0.2))
+    bus.publish(_snapshot(asym_z=+4.5, hazard=8.0))
     bus.publish(_normal_with_asym(-4.5))
     bus.publish(_spread_reading())
-    bus.publish(_snapshot(asym_z=-4.5, hazard=0.2, boundary_index=2))
+    bus.publish(_snapshot(asym_z=-4.5, hazard=8.0, boundary_index=2))
     assert len(captured) == 2
     pos_sig, neg_sig = captured
     assert pos_sig.direction == SignalDirection.LONG

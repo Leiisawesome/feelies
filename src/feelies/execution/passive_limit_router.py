@@ -65,6 +65,11 @@ class _PendingOrder:
     side: Side
     limit_price: Decimal
     submit_time_ns: int
+    # ACKNOWLEDGED ack timestamp captured at submit so subsequent acks
+    # (CANCELLED on timeout / explicit cancel) can be floored at it to
+    # preserve monotonic per-order ack ordering even when ``clock.now_ns()``
+    # has not yet advanced past the post timestamp.
+    ack_timestamp_ns: int = 0
     # Per-order queue threshold captured at post time.  Allows callers
     # to override the default via ``set_queue_ahead`` if they need a
     # per-order sampled position rather than a global assumption.
@@ -375,11 +380,13 @@ class PassiveLimitOrderRouter:
             self._submit_aggressive_market(request, quote)
             return
 
+        ack_ts = self._clock.now_ns()
         pending = _PendingOrder(
             request=request,
             side=request.side,
             limit_price=limit_price,
-            submit_time_ns=self._clock.now_ns(),
+            submit_time_ns=ack_ts,
+            ack_timestamp_ns=ack_ts,
             queue_ahead_shares=self._queue_position_shares,
         )
         self._resting_orders[request.order_id] = pending
@@ -388,7 +395,7 @@ class PassiveLimitOrderRouter:
         ] = None
 
         self._pending_acks.append(OrderAck(
-            timestamp_ns=self._clock.now_ns(),
+            timestamp_ns=ack_ts,
             correlation_id=request.correlation_id,
             sequence=self._ack_seq.next(),
             order_id=request.order_id,
@@ -584,10 +591,17 @@ class PassiveLimitOrderRouter:
         )
 
     def _emit_timeout_cancel(self, pending: _PendingOrder) -> None:
-        """Emit a CANCELLED ack for a timed-out resting order."""
+        """Emit a CANCELLED ack for a timed-out resting order.
+
+        Floors at ``pending.ack_timestamp_ns`` so the CANCELLED ack never
+        timestamps before ACKNOWLEDGED — matches the same guard the
+        aggressive-deferred-timeout path applies in
+        ``_flush_deferred_aggressive``.
+        """
         cancel_fees = self._cancel_fees(pending.request.quantity)
+        cancel_ts = max(self._clock.now_ns(), pending.ack_timestamp_ns)
         self._pending_acks.append(OrderAck(
-            timestamp_ns=self._clock.now_ns(),
+            timestamp_ns=cancel_ts,
             correlation_id=pending.request.correlation_id,
             sequence=self._ack_seq.next(),
             order_id=pending.request.order_id,
@@ -612,8 +626,9 @@ class PassiveLimitOrderRouter:
         if pending is None:
             return False
         cancel_fees = self._cancel_fees(pending.request.quantity)
+        cancel_ts = max(self._clock.now_ns(), pending.ack_timestamp_ns)
         self._pending_acks.append(OrderAck(
-            timestamp_ns=self._clock.now_ns(),
+            timestamp_ns=cancel_ts,
             correlation_id=pending.request.correlation_id,
             sequence=self._ack_seq.next(),
             order_id=order_id,

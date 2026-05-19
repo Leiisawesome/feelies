@@ -135,17 +135,22 @@ signal: |
           or ofi is None
       ):
           return None
-      if active != 1.0:
+      # Active is an indicator float (0.0 / 1.0) emitted by the
+      # scheduled_flow_window sensor; use a tolerance so any future
+      # interpolation / fractional-active variant still gates correctly.
+      if active < 0.5:
           return None
       if remaining < params["min_seconds_to_close"]:
           return None
       if abs(ofi) < params["ofi_agreement_threshold"]:
           return None
 
+      # CalendarWindow validates flow_direction_prior to {-1.0, 0.0, +1.0};
+      # use a half-step tolerance for forward-compat with smoothed priors.
       sign = 0.0
-      if direction_prior > 0.0 and ofi > 0.0:
+      if direction_prior > 0.5 and ofi > 0.0:
           sign = 1.0
-      elif direction_prior < 0.0 and ofi < 0.0:
+      elif direction_prior < -0.5 and ofi < 0.0:
           sign = -1.0
       else:
           return None

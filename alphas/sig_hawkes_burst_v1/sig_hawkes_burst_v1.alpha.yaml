@@ -139,6 +139,10 @@ signal: |
           return None
       if ttr < params["trade_through_floor"]:
           return None
+      # Zero OFI carries no directional information; suppress the signal
+      # rather than defaulting to SHORT when ofi sits at exactly 0.0.
+      if abs(ofi) < 1e-9:
+          return None
 
       direction = LONG if ofi > 0.0 else SHORT
       edge_bps = min(z * params["edge_per_z_bps"], params["edge_cap_bps"])

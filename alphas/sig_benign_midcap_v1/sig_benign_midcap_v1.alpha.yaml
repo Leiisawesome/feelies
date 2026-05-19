@@ -152,7 +152,12 @@ signal: |
           return None
 
       # Require micro-price pressure aligned with signed OFI (L1 footprint).
-      if (z > 0.0 and z_mp <= 0.0) or (z < 0.0 and z_mp >= 0.0):
+      # Strict inequality so an exactly-zero z_mp is treated as neutral
+      # (insufficient evidence) rather than as contradicting either side.
+      if (z > 0.0 and z_mp < 0.0) or (z < 0.0 and z_mp > 0.0):
+          return None
+      # Zero micro-price pressure carries no L1 confirmation of OFI.
+      if z_mp == 0.0:
           return None
 
       direction = LONG if z > 0 else SHORT
