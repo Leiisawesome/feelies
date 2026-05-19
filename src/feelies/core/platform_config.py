@@ -159,13 +159,26 @@ class PlatformConfig:
 
     # B4: signal edge vs round-trip cost gate.
     # Orders are suppressed when signal.edge_estimate_bps < ratio × RT cost_bps,
-    # where RT cost is the sum of model entry + exit legs (symmetric taker/maker
-    # assumption per leg), including HTB on short-entry sells when configured.
-    # Set to 0 to disable the gate (no filtering).  Default ``1.5``
-    # matches Inv-12 / G12 cost realism — operators may set ``0`` only
-    # for explicit research scenarios that intentionally admit sub-cost
-    # hypothetical fills.
-    signal_min_edge_cost_ratio: float = 1.5
+    # where RT cost is the sum of model entry + exit legs (asymmetric:
+    # entry leg follows execution_mode, exit leg always priced as taker
+    # — conservative direction; see estimate_round_trip_cost_bps).
+    # HTB is applied on short-entry sells when configured.
+    #
+    # SEMANTIC: this ratio is on *round-trip* cost, not one-way cost.
+    # The load-time G12 gate (alpha/cost_arithmetic.MIN_MARGIN_RATIO=1.5)
+    # compares edge to *one-way* cost; the runtime gate compares edge
+    # to *round-trip* cost.  So ``signal_min_edge_cost_ratio=0.75``
+    # is the runtime-equivalent of G12's 1.5× one-way margin, and
+    # ``signal_min_edge_cost_ratio=1.5`` is roughly 2× stricter than
+    # G12 (requires edge ≥ 3× one-way cost ≈ 1.5× round-trip).  Set
+    # 0 to disable.  Default 0.0 (gate off in research backtests).
+    # This is a *runtime* filter that complements — but does not
+    # replace — the load-time G12 / cost_arithmetic discipline on the
+    # alpha spec (Inv-12).  Operators picking a runtime threshold
+    # should reason in round-trip units explicitly; the merge default
+    # leaves the gate off so research backtests don't silently
+    # suppress sub-cost edges that the alpha spec already discloses.
+    signal_min_edge_cost_ratio: float = 0.0
 
     # Regime engine boot-time calibration (lookahead avoidance).  ``None``
     # skips feeding the trading event log into ``calibrate()`` entirely

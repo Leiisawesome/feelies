@@ -59,19 +59,47 @@ class DefaultCostModelConfig:
         liquidity (~$0.003 per share).
     ``maker_exchange_per_share``: IB maker rebate for adding liquidity
         (negative, ~−$0.002 per share).
-    ``min_commission``: IB Tiered minimum per order ($0.35).
-    ``max_commission_pct``: IB Tiered maximum commission as a
-        percentage of trade value (1.0%).
+    ``min_commission``: IB Tiered minimum per order ($0.35).  This is
+        a fixed broker threshold and is NOT scaled by
+        ``stress_multiplier`` (IBKR doesn't raise the per-order floor
+        in volatile regimes).
+    ``max_commission_pct``: IB Tiered maximum IB commission as a
+        percentage of trade value (1.0%).  Per IBKR's published Tiered
+        schedule the 1% cap applies to the **IB execution commission
+        only** — exchange / regulatory pass-throughs are not capped
+        and continue to accrue on top of the capped commission.  This
+        is enforced when ``min_commission_applies_to_per_share_only=True``;
+        in legacy bundled-floor mode the cap is applied to the bundled
+        total (consistent with the bundled floor).
     ``passive_adverse_selection_bps``: additional cost on passive
         (maker) fills to model adverse selection risk in basis points.
-    ``sell_regulatory_bps``: SEC/FINRA regulatory fee on sell-side
-        fills in basis points (0 = disabled by default).
-    ``stress_multiplier``: scalar applied to all variable costs for
-        stress-testing (1.0 = baseline, 1.5 = 50% cost stress).
+        A flat per-fill proxy — real adverse selection is direction-
+        and event-dependent (through-fills are typically worse than
+        queue-drain fills).  See module docstring for limitations.
+    ``sell_regulatory_bps``: combined SEC Section 31 fee + small
+        operator-conservativeness margin, in basis points of notional,
+        applied on SELL fills only.  Default 0.5 bps approximates the
+        current SEC fee rate (~$27.80 per $1M = 0.278 bps at time of
+        writing) with conservative headroom for rate changes.  Set to
+        0 for pre-2024 backtests or to suppress entirely.
+    ``finra_taf_per_share``: FINRA Trading Activity Fee per share on
+        SELL fills only.  Default $0.000166 (current FINRA published
+        rate).  Set to 0 to disable.
+    ``finra_taf_max_per_order``: FINRA TAF cap per execution (USD).
+        Default $8.30 (current FINRA published cap).
+    ``stress_multiplier``: scalar applied to variable costs only
+        (per-share commission, taker exchange fees, spread cost,
+        adverse selection, sell-side regulatory, HTB).  Fixed
+        broker thresholds (``min_commission``, ``max_commission_pct``,
+        ``finra_taf_max_per_order``, maker rebate) are NOT stressed.
     ``htb_borrow_annual_bps``: annualised hard-to-borrow fee in basis
         points applied on SELL-side fills when ``is_short=True``.
-        Daily cost = notional × annual_bps / 252 / 10 000.
-        Default 0 = disabled.  Set only for short-selling strategies.
+        Daily cost = notional × annual_bps / 360 / 10 000 (broker
+        convention: stock-loan accruals use a 360-day year, not 252
+        trading days).  Default 0 = disabled.  Only the one entry-day
+        accrual is charged here; multi-day holding accrual is a
+        position-store concern and is out of scope for this fill-time
+        model.
     ``min_commission_applies_to_per_share_only``: when True, the
         ``min_commission`` floor applies to the per-share IB execution
         fee only; exchange/regulatory pass-through fees and the maker
@@ -93,7 +121,9 @@ class DefaultCostModelConfig:
     min_commission: Decimal = Decimal("0.35")
     max_commission_pct: Decimal = Decimal("1.0")
     passive_adverse_selection_bps: Decimal = Decimal("0.5")
-    sell_regulatory_bps: Decimal = Decimal("0.0")
+    sell_regulatory_bps: Decimal = Decimal("0.5")
+    finra_taf_per_share: Decimal = Decimal("0.000166")
+    finra_taf_max_per_order: Decimal = Decimal("8.30")
     stress_multiplier: Decimal = Decimal("1.0")
     htb_borrow_annual_bps: Decimal = Decimal("0.0")
     min_commission_applies_to_per_share_only: bool = True
@@ -185,8 +215,15 @@ class DefaultCostModel:
 
         # IB Tiered commission: per-share + exchange pass-through.
         # Taker pays taker_exchange_per_share; maker receives the maker rebate.
-        # Stress multiplier applies to commission and taker exchange fee; the
-        # maker rebate is not stressed (already a conservative assumption).
+        # ``stress_multiplier`` applies only to *variable* costs (the
+        # per-share rate and the taker exchange fee).  The maker rebate
+        # is NOT stressed (already conservative — never inflated under
+        # stress).  The fixed ``min_commission`` floor and the
+        # contractual ``max_commission_pct`` cap are also NOT stressed
+        # — IBKR doesn't change its per-order thresholds under
+        # volatility.  Stressing them would model an implausible
+        # broker-side cost shock and disconnect the gate from real-cost
+        # plausibility.
         stressed_commission = self._cfg.commission_per_share * stress
         if is_taker:
             exchange_per_share = self._cfg.taker_exchange_per_share * stress
@@ -196,47 +233,77 @@ class DefaultCostModel:
         per_share_commission = stressed_commission * quantity
         exchange_fees = exchange_per_share * quantity
         if self._cfg.min_commission_applies_to_per_share_only:
-            # IBKR Tiered actual semantics: $0.35 minimum is on the IB
-            # execution-fee per-share component only.  Exchange and
-            # regulatory pass-throughs (and the maker rebate) layer on
-            # top — so a 10-share taker order is floored at $0.35 IB
-            # commission *plus* $0.03 taker exchange fee = $0.38 total.
+            # IBKR Tiered: $0.35 minimum and 1% maximum BOTH apply to
+            # the IB execution-fee per-share component only.  Exchange
+            # and regulatory pass-throughs (and the maker rebate) layer
+            # on top of the floored/capped IB commission.
+            #
+            # Floor first, then cap (matches the IBKR billing order:
+            # floor brings small orders up to $0.35, then the 1% cap
+            # brings penny-stock orders back down — but exchange fees
+            # are uncapped pass-throughs and continue to accrue).
             per_share_commission = max(
-                per_share_commission, self._cfg.min_commission * stress
+                per_share_commission, self._cfg.min_commission
             )
+            if notional > 0:
+                max_ib_commission = (
+                    notional * self._cfg.max_commission_pct / Decimal("100")
+                )
+                per_share_commission = min(per_share_commission, max_ib_commission)
             commission = per_share_commission + exchange_fees
         else:
             # Legacy bundled-floor mode (kept for opt-in parity).
             # Floors the *total* (per-share + exchange) at ``min_commission``,
             # which absorbs taker exchange fees inside the floor and
             # under-counts commission on small orders relative to IBKR.
+            # In this mode the 1% cap is also applied to the bundled
+            # total — consistent with the bundled floor.
             commission = max(
                 per_share_commission + exchange_fees,
-                self._cfg.min_commission * stress,
+                self._cfg.min_commission,
             )
-        if notional > 0:
-            max_commission = notional * self._cfg.max_commission_pct / Decimal("100")
-            commission = min(commission, max_commission)
+            if notional > 0:
+                max_commission = (
+                    notional * self._cfg.max_commission_pct / Decimal("100")
+                )
+                commission = min(commission, max_commission)
 
         # Passive adverse-selection penalty (maker fills only)
         adverse_cost = Decimal("0")
         if not is_taker:
             adverse_cost = notional * self._cfg.passive_adverse_selection_bps * stress / Decimal("10000")
 
-        # Sell-side regulatory fee (e.g. SEC fee, default 0)
+        # Sell-side regulatory fees.
+        #   - SEC Section 31 fee: bps of notional on sells (modeled
+        #     via ``sell_regulatory_bps``, stressed).
+        #   - FINRA Trading Activity Fee: per-share on sells, capped
+        #     per execution.  Per-share rate is variable (stressed);
+        #     the cap is a fixed FINRA threshold (NOT stressed).
         regulatory_cost = Decimal("0")
         if side == Side.SELL:
-            regulatory_cost = notional * self._cfg.sell_regulatory_bps * stress / Decimal("10000")
+            regulatory_cost = (
+                notional * self._cfg.sell_regulatory_bps * stress
+                / Decimal("10000")
+            )
+            if self._cfg.finra_taf_per_share > 0:
+                taf = self._cfg.finra_taf_per_share * stress * quantity
+                if self._cfg.finra_taf_max_per_order > 0:
+                    taf = min(taf, self._cfg.finra_taf_max_per_order)
+                regulatory_cost += taf
 
-        # Hard-to-borrow (HTB) daily borrow cost for short-side sells (2g).
+        # Hard-to-borrow (HTB) daily borrow cost for short-side sells.
         # Applied only when is_short=True and htb_borrow_annual_bps > 0.
-        # Daily cost = notional × annual_bps / 252 / 10 000 (one trading day).
-        # Stressed to model borrow-fee spikes in risk-off regimes.
+        # Daily cost = notional × annual_bps / 360 / 10 000 — broker
+        # convention is a 360-day year for stock-loan accruals, not 252
+        # trading days.  Stressed to model borrow-fee spikes in
+        # risk-off regimes.  Note: only ONE entry-day accrual is
+        # charged here; multi-day holding accrual is a position-store
+        # concern documented as a remaining gap.
         htb_cost = Decimal("0")
         if is_short and side == Side.SELL and self._cfg.htb_borrow_annual_bps > 0:
             htb_cost = (
                 notional * self._cfg.htb_borrow_annual_bps * stress
-                / Decimal("252") / Decimal("10000")
+                / Decimal("360") / Decimal("10000")
             )
 
         total_fees = spread_cost + commission + adverse_cost + regulatory_cost + htb_cost

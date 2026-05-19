@@ -79,10 +79,30 @@ class TestDefaultCostModel:
         assert result.commission == Decimal("0.35")
 
     def test_max_commission_cap(self) -> None:
+        # IBKR Tiered: the 1% cap applies to the IB commission ONLY;
+        # exchange and regulatory pass-throughs are not capped.
+        # 100 shares at $0.01 → notional = $1.00.
+        # IB per-share = max(100*$0.0035, $0.35) = $0.35
+        #             → min($0.35, 1% of $1.00) = $0.01 (IB capped).
+        # Exchange = 100 * $0.003 = $0.30 (uncapped pass-through).
+        # Total commission = $0.01 + $0.30 = $0.31.
         model = DefaultCostModel()
-        # 100 shares at $0.01 → notional = $1.00
-        # raw commission = 100 * (0.0035 + 0.003) = $0.65, but max cap = 1.0% of $1.00 = $0.01
         result = model.compute("PENNY", Side.BUY, 100, Decimal("0.01"), Decimal("0"))
+        assert result.commission == Decimal("0.31")
+
+    def test_max_commission_cap_legacy_bundled_mode(self) -> None:
+        """Legacy bundled-floor mode: the 1% cap is also bundled.
+
+        Documented opt-in escape for parity with the v0.1 model.  Caps
+        the bundled per-share + exchange total at 1% of notional.
+        """
+        cfg = DefaultCostModelConfig(
+            min_commission_applies_to_per_share_only=False,
+        )
+        model = DefaultCostModel(cfg)
+        result = model.compute("PENNY", Side.BUY, 100, Decimal("0.01"), Decimal("0"))
+        # bundled (per-share+exchange) floor = max($0.65, $0.35) = $0.65
+        # bundled cap = 1% of $1 = $0.01 → $0.01
         assert result.commission == Decimal("0.01")
 
     def test_total_fees_is_sum(self) -> None:
@@ -95,17 +115,42 @@ class TestDefaultCostModel:
         assert result.total_fees == expected_total
 
     def test_cost_bps_computation(self) -> None:
+        """``cost_bps`` is internally consistent with ``total_fees / notional``.
+
+        Both fields are independently quantized to 0.01, so a one-cent
+        rounding step can fall on either side of the half-tick.  We
+        allow a 0.01 bps tolerance to absorb that without making the
+        rounding contract implementation-specific.
+        """
         model = DefaultCostModel()
         result = model.compute("AAPL", Side.SELL, 100, Decimal("200"), Decimal("0.01"))
         notional = Decimal("200") * 100
-        expected_bps = (result.total_fees / notional * Decimal("10000")).quantize(Decimal("0.01"))
-        assert result.cost_bps == expected_bps
+        expected_bps = (result.total_fees / notional * Decimal("10000"))
+        assert abs(result.cost_bps - expected_bps) <= Decimal("0.01")
 
-    def test_buy_and_sell_same_cost(self) -> None:
-        model = DefaultCostModel()
+    def test_buy_and_sell_same_cost_with_sell_fees_disabled(self) -> None:
+        # With default IBKR-conservative sell-side regulatory fees
+        # (SEC Section 31 + FINRA TAF) sells cost strictly more than
+        # buys.  This test verifies the buy/sell symmetry of the rest
+        # of the model when those sell-only knobs are disabled.
+        cfg = DefaultCostModelConfig(
+            sell_regulatory_bps=Decimal("0"),
+            finra_taf_per_share=Decimal("0"),
+        )
+        model = DefaultCostModel(cfg)
         buy = model.compute("AAPL", Side.BUY, 100, Decimal("150"), Decimal("0.005"))
         sell = model.compute("AAPL", Side.SELL, 100, Decimal("150"), Decimal("0.005"))
         assert buy.total_fees == sell.total_fees
+
+    def test_sell_costs_more_than_buy_under_defaults(self) -> None:
+        # Conservative default: SEC fee + FINRA TAF on sells produce
+        # asymmetric round-trip cost (sell > buy).  This is the IBKR
+        # reality — backtests that assumed buy/sell parity were too
+        # optimistic on the exit leg.
+        model = DefaultCostModel()
+        buy = model.compute("AAPL", Side.BUY, 1000, Decimal("150"), Decimal("0.005"))
+        sell = model.compute("AAPL", Side.SELL, 1000, Decimal("150"), Decimal("0.005"))
+        assert sell.total_fees > buy.total_fees
 
     def test_custom_config(self) -> None:
         config = DefaultCostModelConfig(
@@ -211,15 +256,35 @@ class TestHTBBorrowFee:
     """2g: hard-to-borrow daily fee for short-side sells."""
 
     def test_htb_added_for_short_sell(self) -> None:
-        """is_short=True + side=SELL + htb_borrow_annual_bps>0 → extra fee."""
-        config = DefaultCostModelConfig(htb_borrow_annual_bps=Decimal("252"))
+        """is_short=True + side=SELL + htb_borrow_annual_bps>0 → extra fee.
+
+        Daily HTB accrual uses a 360-day year (broker convention for
+        stock-loan accruals).  360 bps annual → 1 bps/day → $1.00 on
+        a $10 000 notional.
+        """
+        config = DefaultCostModelConfig(htb_borrow_annual_bps=Decimal("360"))
         model = DefaultCostModel(config)
 
         # notional = 100 * $100 = $10 000
-        # daily htb = 10 000 * 252 / 252 / 10 000 = $1.00
+        # daily htb = 10 000 * 360 / 360 / 10 000 = $1.00
         result = model.compute("AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=True)
         baseline = model.compute("AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=False)
         assert result.total_fees - baseline.total_fees == pytest.approx(Decimal("1.00"), abs=Decimal("0.01"))
+
+    def test_htb_uses_360_day_year(self) -> None:
+        """Audit fix P6: HTB accrual uses 360-day broker convention.
+
+        With ``htb_borrow_annual_bps=252`` (one 252-trading-day year's
+        worth in bps), the daily accrual is $10 000 * 252 / 360 / 10 000
+        = $0.70 per day — strictly LESS than the legacy 252-day
+        denominator (which would have charged $1.00).  This matches
+        IBKR's published stock-loan accrual basis.
+        """
+        config = DefaultCostModelConfig(htb_borrow_annual_bps=Decimal("252"))
+        model = DefaultCostModel(config)
+        result = model.compute("AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=True)
+        baseline = model.compute("AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=False)
+        assert result.total_fees - baseline.total_fees == pytest.approx(Decimal("0.70"), abs=Decimal("0.01"))
 
     def test_htb_not_applied_to_long_sell(self) -> None:
         """is_short=False → no HTB fee even if config has htb_borrow_annual_bps set."""
@@ -247,6 +312,105 @@ class TestHTBBorrowFee:
         buy_with_flag = model.compute("AAPL", Side.BUY, 100, Decimal("100"), Decimal("0"), is_short=True)
         buy_without = model.compute("AAPL", Side.BUY, 100, Decimal("100"), Decimal("0"))
         assert buy_with_flag.total_fees == buy_without.total_fees
+
+
+class TestSellSideRegulatoryFees:
+    """Audit fix P2: SEC Section 31 + FINRA TAF on sell-side fills."""
+
+    def test_finra_taf_applied_on_sell(self) -> None:
+        """1000 shares SELL → TAF = 1000 * $0.000166 = $0.166 → $0.17 quantized."""
+        cfg = DefaultCostModelConfig(
+            sell_regulatory_bps=Decimal("0"),
+            passive_adverse_selection_bps=Decimal("0"),
+        )
+        model = DefaultCostModel(cfg)
+        buy = model.compute("AAPL", Side.BUY, 1000, Decimal("100"), Decimal("0"))
+        sell = model.compute("AAPL", Side.SELL, 1000, Decimal("100"), Decimal("0"))
+        diff = sell.total_fees - buy.total_fees
+        # 1000 * 0.000166 = 0.166, quantized to 0.17 via total_fees rounding
+        assert diff == pytest.approx(Decimal("0.17"), abs=Decimal("0.01"))
+
+    def test_finra_taf_capped_per_order(self) -> None:
+        """Max TAF $8.30 per execution — million-share sell still caps."""
+        cfg = DefaultCostModelConfig(
+            sell_regulatory_bps=Decimal("0"),
+            passive_adverse_selection_bps=Decimal("0"),
+        )
+        model = DefaultCostModel(cfg)
+        buy = model.compute("AAPL", Side.BUY, 1_000_000, Decimal("100"), Decimal("0"))
+        sell = model.compute("AAPL", Side.SELL, 1_000_000, Decimal("100"), Decimal("0"))
+        # 1M * 0.000166 = $166 raw, capped at $8.30
+        diff = sell.total_fees - buy.total_fees
+        assert diff == pytest.approx(Decimal("8.30"), abs=Decimal("0.01"))
+
+    def test_taf_disabled_when_per_share_zero(self) -> None:
+        cfg = DefaultCostModelConfig(
+            finra_taf_per_share=Decimal("0"),
+            sell_regulatory_bps=Decimal("0"),
+            passive_adverse_selection_bps=Decimal("0"),
+        )
+        model = DefaultCostModel(cfg)
+        buy = model.compute("AAPL", Side.BUY, 1000, Decimal("100"), Decimal("0"))
+        sell = model.compute("AAPL", Side.SELL, 1000, Decimal("100"), Decimal("0"))
+        assert sell.total_fees == buy.total_fees
+
+    def test_sec_fee_default_nonzero(self) -> None:
+        """Default sell_regulatory_bps>0 — sells cost more than buys."""
+        cfg = DefaultCostModelConfig(
+            finra_taf_per_share=Decimal("0"),
+            passive_adverse_selection_bps=Decimal("0"),
+        )
+        model = DefaultCostModel(cfg)
+        buy = model.compute("AAPL", Side.BUY, 1000, Decimal("100"), Decimal("0"))
+        sell = model.compute("AAPL", Side.SELL, 1000, Decimal("100"), Decimal("0"))
+        # notional = $100,000; default 0.5 bps → $5.00
+        assert sell.total_fees - buy.total_fees == pytest.approx(
+            Decimal("5.00"), abs=Decimal("0.01"),
+        )
+
+
+class TestStressDoesNotInflateBrokerThresholds:
+    """Audit fix P4/P5: stress multiplier only scales variable costs."""
+
+    def test_min_commission_floor_not_stressed(self) -> None:
+        """The $0.35 floor is a published IBKR threshold and should
+        not bend under volatility stress.  10-share order at stress=2
+        still floors at $0.35, not $0.70."""
+        cfg = DefaultCostModelConfig(stress_multiplier=Decimal("2"))
+        model = DefaultCostModel(cfg)
+        result = model.compute("AAPL", Side.BUY, 10, Decimal("100"), Decimal("0"))
+        # per_share = 10 * 0.0035 * 2 = $0.07, floored at $0.35 (not 0.70)
+        # exchange = 10 * 0.003 * 2 = $0.06
+        # commission = $0.35 + $0.06 = $0.41
+        assert result.commission == Decimal("0.41")
+
+    def test_max_commission_cap_not_stressed(self) -> None:
+        """1% cap is a contractual IBKR threshold; stress doesn't change it.
+
+        100 shares at $0.01 (notional $1, stress=2):
+          per_share = 100 * $0.0035 * 2 = $0.70, floored at $0.35 → $0.70
+          per_share capped at 1% of $1 = $0.01 (cap unchanged by stress)
+          exchange = 100 * $0.003 * 2 = $0.60
+          commission = $0.01 + $0.60 = $0.61
+        """
+        cfg = DefaultCostModelConfig(stress_multiplier=Decimal("2"))
+        model = DefaultCostModel(cfg)
+        result = model.compute("PENNY", Side.BUY, 100, Decimal("0.01"), Decimal("0"))
+        assert result.commission == Decimal("0.61")
+
+    def test_finra_taf_cap_not_stressed(self) -> None:
+        """TAF $8.30 cap is a fixed FINRA threshold; stress only scales the per-share rate."""
+        cfg = DefaultCostModelConfig(
+            stress_multiplier=Decimal("3"),
+            sell_regulatory_bps=Decimal("0"),
+            passive_adverse_selection_bps=Decimal("0"),
+        )
+        model = DefaultCostModel(cfg)
+        buy = model.compute("AAPL", Side.BUY, 1_000_000, Decimal("100"), Decimal("0"))
+        sell = model.compute("AAPL", Side.SELL, 1_000_000, Decimal("100"), Decimal("0"))
+        diff = sell.total_fees - buy.total_fees
+        # raw TAF stress: 1M * 0.000166 * 3 = $498 → capped at $8.30
+        assert diff == pytest.approx(Decimal("8.30"), abs=Decimal("0.01"))
 
 
 class TestSmallOrderTieredFloor:
