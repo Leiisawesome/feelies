@@ -60,6 +60,7 @@ from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import Position
 from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
+from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
 from feelies.risk.escalation import RiskLevel
 from feelies.storage.memory_event_log import InMemoryEventLog
 
@@ -528,6 +529,43 @@ class TestOrchestratorFullPipeline:
 
         assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
         assert orch.macro_state == MacroState.BACKTEST_MODE
+
+    def test_mark_only_tick_refreshes_risk_high_water_mark(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        rally_quote = _make_quote(ts=1000, bid="119.50", ask="120.50", seq=1)
+        drawdown_quote = _make_quote(ts=2000, bid="99.50", ask="100.50", seq=2)
+        position_store = MemoryPositionStore()
+        position_store.update("AAPL", 100, Decimal("100"))
+        risk_engine = BasicRiskEngine(RiskConfig(
+            max_position_per_symbol=100_000,
+            max_gross_exposure_pct=100.0,
+            max_drawdown_pct=1.0,
+            account_equity=Decimal("100000"),
+        ))
+
+        bus = EventBus()
+        verdicts: list[RiskVerdict] = []
+        bus.subscribe(RiskVerdict, verdicts.append)
+
+        def emit_second_quote_signal(quote: NBBOQuote) -> None:
+            if quote.sequence == drawdown_quote.sequence:
+                bus.publish(_make_signal(quote, direction=SignalDirection.SHORT))
+
+        bus.subscribe(NBBOQuote, emit_second_quote_signal)
+
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=risk_engine,
+            position_store=position_store,
+        )
+        _boot_to_backtest(orch)
+
+        orch._process_tick(rally_quote)
+        orch._process_tick(drawdown_quote)
+
+        assert verdicts[-1].action == RiskAction.FORCE_FLATTEN
+        assert "drawdown" in verdicts[-1].reason
 
     def test_position_updated_after_fill(self) -> None:
         clock = SimulatedClock(start_ns=1000)
