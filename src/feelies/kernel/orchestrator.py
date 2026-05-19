@@ -1583,6 +1583,16 @@ class Orchestrator:
             self._positions.update_mark(quote.symbol, mid)
             if self._strategy_positions is not None:
                 self._strategy_positions.update_mark(quote.symbol, mid)
+            # Advance the platform-level HWM on every mark update so the
+            # drawdown guard sees the true peak equity, not the
+            # equity-at-last-order-check.  Optional on the protocol;
+            # ``getattr`` keeps custom RiskEngine implementations that
+            # don't carry an HWM working without raising.
+            refresh_hwm = getattr(
+                self._risk_engine, "refresh_high_water_mark", None,
+            )
+            if callable(refresh_hwm):
+                refresh_hwm(self._positions)
 
         # ── Quote-driven router ack drain ────────────────────────
         # bus.publish(quote) triggered on_quote() on the router, which
