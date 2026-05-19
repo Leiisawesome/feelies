@@ -226,6 +226,19 @@ class _StubRiskEngine:
         )
 
 
+class _CountingHwmRiskEngine(_StubRiskEngine):
+    def __init__(self) -> None:
+        super().__init__(RiskAction.ALLOW)
+        self.refresh_calls: list[PositionStore] = []
+
+    def refresh_high_water_mark(self, positions: PositionStore) -> None:
+        self.refresh_calls.append(positions)
+
+
+class _NonCallableHwmRiskEngine(_StubRiskEngine):
+    refresh_high_water_mark = object()
+
+
 class _RaisingRiskEngine:
     """Risk engine that always raises to test orchestrator error handling.
 
@@ -566,6 +579,34 @@ class TestOrchestratorFullPipeline:
 
         assert verdicts[-1].action == RiskAction.FORCE_FLATTEN
         assert "drawdown" in verdicts[-1].reason
+
+    def test_mark_only_tick_refreshes_risk_high_water_mark_once(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        position_store = MemoryPositionStore()
+        risk_engine = _CountingHwmRiskEngine()
+        orch = _build_orchestrator(
+            clock,
+            risk_engine=risk_engine,
+            position_store=position_store,
+        )
+        _boot_to_backtest(orch)
+
+        orch._process_tick(_make_quote())
+
+        assert risk_engine.refresh_calls == [position_store]
+
+    def test_non_callable_hwm_hook_is_skipped(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(
+            clock,
+            risk_engine=_NonCallableHwmRiskEngine(),
+        )
+        _boot_to_backtest(orch)
+
+        orch._process_tick(_make_quote())
+
+        assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
+        assert orch.macro_state == MacroState.BACKTEST_MODE
 
     def test_position_updated_after_fill(self) -> None:
         clock = SimulatedClock(start_ns=1000)

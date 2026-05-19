@@ -1581,11 +1581,14 @@ class Orchestrator:
         mid = (quote.bid + quote.ask) / Decimal("2")
         if mid > 0:
             self._positions.update_mark(quote.symbol, mid)
-            # Advance the platform-level HWM on every mark update so the
-            # drawdown guard sees the true peak equity, not the
-            # equity-at-last-order-check.  Optional on the protocol;
-            # ``getattr`` keeps custom RiskEngine implementations that
-            # don't carry an HWM working without raising.
+            # Advance the risk engine's drawdown high-water mark from
+            # the freshly updated marks so peak equity reflects open
+            # appreciation between order checks.  Without this, the HWM
+            # only ratchets when ``check_signal`` / ``check_order`` run,
+            # which biases drawdown verdicts to be order-arrival
+            # dependent (BasicRiskEngine.refresh_high_water_mark).  The
+            # capability is optional on the ``RiskEngine`` protocol so
+            # legacy stubs without the hook are silently skipped.
             refresh_hwm = getattr(
                 self._risk_engine, "refresh_high_water_mark", None,
             )
