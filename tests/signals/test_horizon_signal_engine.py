@@ -316,6 +316,36 @@ def test_gate_closure_emits_flat_with_off_state() -> None:
     assert close_signal.regime_gate_state == "OFF"
 
 
+def test_flat_close_signal_carries_alpha_metadata() -> None:
+    """The FLAT exit signal MUST carry the same alpha-level provenance
+    metadata as a regular entry signal so post-trade forensics can
+    attribute the unwind PnL to the correct mechanism family (Inv-13).
+    """
+    engine, bus, captured = _engine()
+    engine.register(_registered(
+        consumed_features=("ofi_ewma", "spread_z_30d"),
+        trend_mechanism=TrendMechanism.KYLE_INFO,
+        expected_half_life_seconds=600,
+    ))
+    engine.attach()
+
+    bus.publish(_regime_normal_high())
+    bus.publish(_snapshot(sequence=10, boundary_index=1))
+    bus.publish(_regime_normal_low())
+    bus.publish(_snapshot(sequence=11, boundary_index=2))
+
+    assert len(captured) == 2
+    close_signal = captured[1]
+    assert close_signal.direction is SignalDirection.FLAT
+    assert close_signal.consumed_features == ("ofi_ewma", "spread_z_30d")
+    assert close_signal.trend_mechanism is TrendMechanism.KYLE_INFO
+    assert close_signal.expected_half_life_seconds == 600
+    # G12 disclosure fields propagate identically to the entry path.
+    assert close_signal.disclosed_cost_total_bps == pytest.approx(5.0)
+    assert close_signal.disclosed_margin_ratio == pytest.approx(1.8)
+    assert close_signal.horizon_seconds == 120
+
+
 def test_cold_start_missing_binding_swallowed() -> None:
     """Cold start: no RegimeState yet → gate raises UnknownIdentifierError."""
     engine, bus, captured = _engine()
@@ -411,7 +441,7 @@ def test_sensor_cache_overlay_makes_value_available_to_gate() -> None:
         sequence=3,
         symbol="AAPL",
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         value=2.5,
     ))
     bus.publish(_snapshot())
@@ -435,7 +465,7 @@ def test_sensor_cache_skips_non_warm_readings() -> None:
         sequence=3,
         symbol="AAPL",
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         value=2.5,
         warm=False,
     ))
@@ -460,12 +490,188 @@ def test_sensor_cache_skips_tuple_value() -> None:
         sequence=3,
         symbol="AAPL",
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         value=(2.5, 3.0),
     ))
     bus.publish(_snapshot())
 
     assert captured == []
+
+
+def test_cold_reading_invalidates_warm_cache_entry() -> None:
+    """A previously-warm sensor that goes cold (sliding-window warm-up
+    revert after a data gap) MUST drop its cached value.
+
+    Without invalidation the gate would silently fire on the stale
+    warm value forever — a real bug for sensors like ``ofi_ewma`` that
+    lazily revert to ``warm=False`` after >300 s without quotes.  The
+    expected fail-safe is that the next snapshot evaluation hits an
+    ``UnknownIdentifierError`` (caught by the H8 / M6 path) which
+    resets the gate latch to OFF (Inv-11 fail-safe default).
+    """
+    engine, bus, captured = _engine()
+    gate = _gate(
+        on_condition="P(normal) > 0.7 AND ofi_ewma > 1.0",
+        off_condition="P(normal) < 0.5 OR ofi_ewma < 0.5",
+    )
+    engine.register(_registered(gate=gate))
+    engine.attach()
+
+    bus.publish(_regime_normal_high())
+    # First, warm reading populates the cache.
+    bus.publish(SensorReading(
+        timestamp_ns=1_900,
+        correlation_id="corr",
+        sequence=3,
+        symbol="AAPL",
+        sensor_id="ofi_ewma",
+        sensor_version="1.1.0",
+        value=2.5,
+        warm=True,
+    ))
+    bus.publish(_snapshot(boundary_index=1, sequence=10))
+    assert len(captured) == 1
+
+    # Sensor reverts to cold (e.g. sustained data gap).  This MUST drop
+    # the cached 2.5 — otherwise the next snapshot evaluation would
+    # spuriously fire on stale data.
+    bus.publish(SensorReading(
+        timestamp_ns=200_000,
+        correlation_id="corr",
+        sequence=4,
+        symbol="AAPL",
+        sensor_id="ofi_ewma",
+        sensor_version="1.1.0",
+        value=0.0,
+        warm=False,
+    ))
+    bus.publish(_snapshot(boundary_index=2, sequence=11))
+
+    # No new entry signal should be emitted.  The gate transition
+    # ON → OFF emits one FLAT exit signal, which is correct: the alpha
+    # is no longer trading, and any open position should be unwound.
+    assert len(captured) == 2
+    assert captured[1].direction is SignalDirection.FLAT
+    assert captured[1].regime_gate_state == "OFF"
+
+
+def test_cold_tuple_reading_invalidates_warm_components() -> None:
+    """Same invalidation semantics as the scalar case, for tuple sensors.
+
+    A previously-warm tuple sensor that goes cold MUST drop every
+    fanned-out component cache entry — otherwise downstream gate
+    evaluation could fire on stale component values.
+    """
+    engine, _bus, _ = _engine()
+    engine.register(_registered())
+    engine.attach()
+
+    # Warm tuple reading populates four component cache entries
+    # (per ``_TUPLE_SENSOR_COMPONENTS["scheduled_flow_window"]``).
+    engine._on_sensor_reading(SensorReading(  # type: ignore[arg-type]
+        timestamp_ns=1_900,
+        correlation_id="corr",
+        sequence=3,
+        symbol="AAPL",
+        sensor_id="scheduled_flow_window",
+        sensor_version="1.0.0",
+        value=(1.0, 60.0, 12345.0, 1.0),
+        warm=True,
+    ))
+    expected_components = {
+        "scheduled_flow_window_active",
+        "seconds_to_window_close",
+        "scheduled_flow_window_id_hash",
+        "scheduled_flow_window_direction_prior",
+    }
+    cached_names = {
+        name for (sym, name) in engine._sensor_cache if sym == "AAPL"
+    }
+    assert expected_components == cached_names
+
+    # Cold reading drops every component, not just the leading one.
+    engine._on_sensor_reading(SensorReading(  # type: ignore[arg-type]
+        timestamp_ns=200_000,
+        correlation_id="corr",
+        sequence=4,
+        symbol="AAPL",
+        sensor_id="scheduled_flow_window",
+        sensor_version="1.0.0",
+        value=(0.0, -1.0, 0.0, 0.0),
+        warm=False,
+    ))
+    cached_names_after = {
+        name for (sym, name) in engine._sensor_cache if sym == "AAPL"
+    }
+    assert cached_names_after == set()
+
+
+def test_cold_reading_with_open_position_emits_flat_close() -> None:
+    """Sensor reverting to cold while gate is ON unwinds the position.
+
+    H8 / M6 fail-safe: a previously-ON gate that loses its binding
+    (sensor reverted to ``warm=False`` after a data gap) is reset to
+    OFF and a FLAT signal is emitted so the open position is unwound
+    rather than orphaned.  Without this, ``ofi_ewma`` (and any sensor
+    with a sliding-window warm criterion) would leave positions
+    behind whenever their sliding window emptied between snapshots.
+    """
+    engine, bus, captured = _engine()
+    gate = _gate(
+        # Both conditions reference ``ofi_ewma`` so once the cache
+        # entry is dropped neither side can evaluate.
+        on_condition="P(normal) > 0.7 AND ofi_ewma > 1.0",
+        off_condition="P(normal) < 0.5 OR ofi_ewma < -1.0",
+    )
+    engine.register(_registered(
+        gate=gate,
+        consumed_features=("ofi_ewma",),
+        trend_mechanism=TrendMechanism.KYLE_INFO,
+        expected_half_life_seconds=600,
+    ))
+    engine.attach()
+
+    bus.publish(_regime_normal_high())
+    bus.publish(SensorReading(
+        timestamp_ns=1_900,
+        correlation_id="corr",
+        sequence=3,
+        symbol="AAPL",
+        sensor_id="ofi_ewma",
+        sensor_version="1.1.0",
+        value=2.5,
+        warm=True,
+    ))
+    bus.publish(_snapshot(boundary_index=1, sequence=10))
+    assert len(captured) == 1
+    assert captured[0].direction is SignalDirection.LONG
+    assert gate.is_on("AAPL")
+
+    # Cold reading drops the cache entry.
+    bus.publish(SensorReading(
+        timestamp_ns=200_000,
+        correlation_id="corr",
+        sequence=4,
+        symbol="AAPL",
+        sensor_id="ofi_ewma",
+        sensor_version="1.1.0",
+        value=0.0,
+        warm=False,
+    ))
+    bus.publish(_snapshot(boundary_index=2, sequence=11))
+
+    # Gate raised UnknownIdentifierError → was_on=True → FLAT close
+    # emitted before the latch is reset to OFF.
+    assert len(captured) == 2
+    close = captured[1]
+    assert close.direction is SignalDirection.FLAT
+    assert close.regime_gate_state == "OFF"
+    assert close.strategy_id == "alpha_x"
+    # Forensic provenance propagates onto the FLAT close.
+    assert close.consumed_features == ("ofi_ewma",)
+    assert close.trend_mechanism is TrendMechanism.KYLE_INFO
+    assert close.expected_half_life_seconds == 600
+    assert not gate.is_on("AAPL")
 
 
 def test_regime_cache_per_symbol_engine() -> None:

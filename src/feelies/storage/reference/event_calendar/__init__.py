@@ -4,8 +4,9 @@ Loads, validates, and exposes the per-session list of *scheduled-flow
 windows* consumed by ``feelies.sensors.impl.scheduled_flow_window``
 (see ``docs/three_layer_architecture.md`` §20.4.2).
 
-Calendar files live under ``storage/reference/event_calendar/<date>.yaml``
-where ``<date>`` is an ISO-8601 ``YYYY-MM-DD`` session date.  The format
+Calendar files live next to this module as ``<date>.yaml`` (typically under
+``src/feelies/storage/reference/event_calendar/`` in a source checkout), where
+``<date>`` is an ISO-8601 ``YYYY-MM-DD`` session date.  The format
 intentionally mirrors a YAML serialisation of :class:`CalendarWindow`
 fields and is read once at bootstrap; downstream sensors index into the
 :class:`EventCalendar` via ``windows_active_at(ts_ns)`` for O(log N)

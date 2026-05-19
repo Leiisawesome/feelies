@@ -189,6 +189,33 @@ class CompositionEngine:
 
         # Patch in deterministic envelope fields (the alpha returns a
         # *value*; the engine owns sequencing and timestamping).
+        # Also propagate per-symbol disclosed cost from the consumed
+        # signals so the risk engine can stamp G12 disclosure on each
+        # emitted PORTFOLIO OrderRequest (audit R3).  Carried on the
+        # intent rather than recomputed in the risk engine because the
+        # context's signals are the canonical per-symbol attribution
+        # source — recomputing in risk would couple risk to the
+        # composition flow.  When the alpha's ``construct`` already
+        # populated the field (rare; future-friendly) we preserve the
+        # caller's value rather than overwriting.
+        disclosed = dict(intent.disclosed_cost_total_bps_by_symbol)
+        for symbol in intent.target_positions:
+            if symbol in disclosed:
+                continue
+            sig = ctx.signals_by_symbol.get(symbol)
+            if sig is not None and sig.disclosed_cost_total_bps > 0:
+                disclosed[symbol] = sig.disclosed_cost_total_bps
+                continue
+            row = ctx.signals_by_strategy_by_symbol.get(symbol)
+            if row:
+                for _, cand in sorted(row.items()):
+                    if (
+                        cand is not None
+                        and cand.disclosed_cost_total_bps > 0
+                    ):
+                        disclosed[symbol] = cand.disclosed_cost_total_bps
+                        break
+
         from dataclasses import replace as _replace
         publishable = _replace(
             intent,
@@ -199,6 +226,7 @@ class CompositionEngine:
             strategy_id=registered.alpha_id,
             layer="PORTFOLIO",
             horizon_seconds=ctx.horizon_seconds,
+            disclosed_cost_total_bps_by_symbol=disclosed,
         )
         self._bus.publish(publishable)
 
@@ -238,6 +266,7 @@ class CompositionEngine:
         ctx: CrossSectionalContext,
         *,
         strategy_id: str,
+        feeder_strategy_ids: tuple[str, ...] = (),
         capital_usd: float | None = None,
     ) -> SizedPositionIntent:
         """Execute the canonical ranker → neutralize → match → optimize chain.
@@ -247,7 +276,9 @@ class CompositionEngine:
         implementations can compose their own pipeline using the engine's
         public components.
         """
-        rank_result = self._ranker.rank(ctx)
+        rank_result = self._ranker.rank(
+            ctx, feeder_strategy_ids=feeder_strategy_ids,
+        )
         neutral_weights, factor_exposures = self._neutralizer.neutralize(
             rank_result.weights, ctx.universe,
         )

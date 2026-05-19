@@ -174,11 +174,18 @@ class _DefaultPortfolioConstructor:
     rebinds once both the engine and the registry are wired.
     """
 
-    __slots__ = ("_engine_thunk", "_strategy_id")
+    __slots__ = ("_engine_thunk", "_strategy_id", "_feeder_strategy_ids")
 
-    def __init__(self, *, engine_thunk: Any, strategy_id: str) -> None:
+    def __init__(
+        self,
+        *,
+        engine_thunk: Any,
+        strategy_id: str,
+        feeder_strategy_ids: tuple[str, ...] = (),
+    ) -> None:
         self._engine_thunk = engine_thunk
         self._strategy_id = strategy_id
+        self._feeder_strategy_ids = feeder_strategy_ids
 
     def __call__(
         self,
@@ -191,7 +198,9 @@ class _DefaultPortfolioConstructor:
                 "_DefaultPortfolioConstructor: engine not yet wired"
             )
         intent: SizedPositionIntent = engine.run_default_pipeline(
-            ctx, strategy_id=self._strategy_id,
+            ctx,
+            strategy_id=self._strategy_id,
+            feeder_strategy_ids=self._feeder_strategy_ids,
         )
         return intent
 

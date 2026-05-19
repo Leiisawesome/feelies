@@ -37,26 +37,25 @@ from typing import Sequence
 
 import pytest
 
+from feelies.storage.reference.paths import FACTOR_LOADINGS_DIR, SECTOR_MAP_PATH
 from tests.perf._pinned_baseline import load_pinned_baseline
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SIGNAL_ALPHA = (
-    _REPO_ROOT / "alphas" / "pofi_benign_midcap_v1"
-    / "pofi_benign_midcap_v1.alpha.yaml"
+    _REPO_ROOT / "alphas" / "sig_benign_midcap_v1"
+    / "sig_benign_midcap_v1.alpha.yaml"
 )
 _PORTFOLIO_ALPHA_BASELINE = (
-    _REPO_ROOT / "alphas" / "pofi_xsect_v1"
-    / "pofi_xsect_v1.alpha.yaml"
+    _REPO_ROOT / "alphas" / "pro_xsect_v1"
+    / "pro_xsect_v1.alpha.yaml"
 )
 _PORTFOLIO_ALPHA_WITH_DECAY = (
-    _REPO_ROOT / "alphas" / "pofi_xsect_v1"
-    / "pofi_xsect_v1.with_decay.alpha.yaml"
+    _REPO_ROOT / "alphas" / "pro_xsect_v1"
+    / "pro_xsect_v1.with_decay.alpha.yaml"
 )
-_FACTOR_LOADINGS_DIR = _REPO_ROOT / "storage" / "reference" / "factor_loadings"
-_SECTOR_MAP_PATH = (
-    _REPO_ROOT / "storage" / "reference" / "sector_map" / "sector_map.json"
-)
+_FACTOR_LOADINGS_DIR = FACTOR_LOADINGS_DIR
+_SECTOR_MAP_PATH = SECTOR_MAP_PATH
 
 
 REPEATS: int = 5
@@ -91,6 +90,7 @@ _HARNESS_TEMPLATE = textwrap.dedent("""\
     from feelies.core.platform_config import OperatingMode, PlatformConfig
     from feelies.sensors.impl.micro_price import MicroPriceSensor
     from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
+    from feelies.sensors.impl.realized_vol_30s import RealizedVol30sSensor
     from feelies.sensors.impl.spread_z_30d import SpreadZScoreSensor
     from feelies.sensors.spec import SensorSpec
     from feelies.storage.memory_event_log import InMemoryEventLog
@@ -98,17 +98,23 @@ _HARNESS_TEMPLATE = textwrap.dedent("""\
 
     SENSOR_SPECS = (
         SensorSpec(
-            sensor_id='ofi_ewma', sensor_version='1.0.0',
+            sensor_id='ofi_ewma', sensor_version='1.1.0',
             cls=OFIEwmaSensor, params={{'alpha': 0.1, 'warm_after': 5}},
             subscribes_to=(NBBOQuote,),
         ),
         SensorSpec(
-            sensor_id='micro_price', sensor_version='1.0.0',
+            sensor_id='micro_price', sensor_version='1.1.0',
             cls=MicroPriceSensor, params={{}}, subscribes_to=(NBBOQuote,),
         ),
         SensorSpec(
-            sensor_id='spread_z_30d', sensor_version='1.0.0',
+            sensor_id='spread_z_30d', sensor_version='1.1.0',
             cls=SpreadZScoreSensor, params={{}}, subscribes_to=(NBBOQuote,),
+        ),
+        SensorSpec(
+            sensor_id='realized_vol_30s', sensor_version='1.3.0',
+            cls=RealizedVol30sSensor,
+            params={{'window_seconds': 30, 'warm_after': 8}},
+            subscribes_to=(NBBOQuote,),
         ),
     )
 
@@ -170,6 +176,7 @@ _HARNESS_TEMPLATE = textwrap.dedent("""\
         factor_loadings_dir=Path({factor_loadings_dir!r}),
         sector_map_path=Path({sector_map_path!r}),
         enforce_trend_mechanism=False,
+        enforce_per_alpha_risk_budget=False,
     )
 
     log = InMemoryEventLog()

@@ -23,6 +23,10 @@ class TestDefaults:
         cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
         assert cfg.regime_engine == "hmm_3state_fractional"
 
+    def test_default_regime_engine_options_empty(self) -> None:
+        cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
+        assert cfg.regime_engine_options == {}
+
     def test_default_risk_params(self) -> None:
         cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
         assert cfg.risk_max_position_per_symbol == 1000
@@ -81,6 +85,15 @@ class TestValidation:
             account_equity=0.0,
         )
         with pytest.raises(ConfigurationError, match="account_equity"):
+            cfg.validate()
+
+    def test_regime_engine_options_non_str_key_raises(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            regime_engine_options={1: True},  # type: ignore[arg-type, dict-item]
+        )
+        with pytest.raises(ConfigurationError, match="regime_engine_options keys"):
             cfg.validate()
 
 
@@ -185,6 +198,31 @@ account_equity: 500000
         cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
         assert cfg.mode == OperatingMode.BACKTEST
 
+    def test_regime_engine_options_from_yaml(self, tmp_path: Path) -> None:
+        yaml_content = """\
+symbols: [AAPL]
+alpha_specs: [x.yaml]
+regime_engine_options:
+  transition_time_scaling_enabled: true
+  transition_dt_reference_seconds: 0.1
+"""
+        (tmp_path / "config.yaml").write_text(yaml_content)
+        cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
+        assert cfg.regime_engine_options["transition_time_scaling_enabled"] is True
+        assert cfg.regime_engine_options["transition_dt_reference_seconds"] == 0.1
+
+    def test_regime_engine_options_must_be_mapping_in_yaml(
+        self, tmp_path: Path
+    ) -> None:
+        yaml_content = """\
+symbols: [AAPL]
+alpha_specs: [x.yaml]
+regime_engine_options: not_a_mapping
+"""
+        (tmp_path / "bad.yaml").write_text(yaml_content)
+        with pytest.raises(ConfigurationError, match="regime_engine_options"):
+            PlatformConfig.from_yaml(tmp_path / "bad.yaml")
+
     def test_risk_params_from_yaml(self, tmp_path: Path) -> None:
         yaml_content = """\
 symbols: [AAPL]
@@ -285,6 +323,109 @@ promotion_ledger_path: data/promotion/ledger.jsonl
         )
         snap = cfg.snapshot()
         assert snap.data["promotion_ledger_path"] == "ledger.jsonl"
+
+
+# ── Risk regime scales + disk-cache manifest health ─────────────────
+
+
+class TestRiskRegimeScales:
+    def test_regime_scale_must_be_positive(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            risk_regime_vol_breakout_scale=0.0,
+        )
+        with pytest.raises(ConfigurationError, match="risk_regime_vol_breakout_scale"):
+            cfg.validate()
+
+
+class TestDiskCacheManifestHealth:
+    def test_require_healthy_accepts_all_healthy_rows(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            require_healthy_disk_cache_manifests=True,
+            disk_cache_ingestion_health_rows=(
+                ("AAPL", "2024-01-02", "HEALTHY"),
+            ),
+        )
+        cfg.validate()
+
+    def test_require_healthy_empty_rows_raises(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            require_healthy_disk_cache_manifests=True,
+            disk_cache_ingestion_health_rows=(),
+        )
+        with pytest.raises(ConfigurationError, match="non-empty"):
+            cfg.validate()
+
+    def test_require_healthy_rejects_non_healthy_row(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            require_healthy_disk_cache_manifests=True,
+            disk_cache_ingestion_health_rows=(
+                ("AAPL", "2024-01-02", "GAP_DETECTED"),
+            ),
+        )
+        with pytest.raises(ConfigurationError, match="not HEALTHY"):
+            cfg.validate()
+
+
+class TestBacktestIngestTerminalHealth:
+    def test_validate_passes_when_enforce_true_but_rows_not_attached_yet(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            backtest_enforce_ingest_terminal_health=True,
+            ingest_terminal_symbol_health=(),
+        )
+        cfg.validate()
+
+    def test_enforce_requires_every_symbol_present(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL", "MSFT"}),
+            alpha_specs=[Path("x.yaml")],
+            backtest_enforce_ingest_terminal_health=True,
+            ingest_terminal_symbol_health=(("AAPL", "HEALTHY"),),
+        )
+        with pytest.raises(ConfigurationError, match="missing"):
+            cfg.validate()
+
+    def test_enforce_rejects_non_healthy_terminal(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            backtest_enforce_ingest_terminal_health=True,
+            ingest_terminal_symbol_health=(("AAPL", "GAP_DETECTED"),),
+        )
+        with pytest.raises(ConfigurationError, match="terminal health"):
+            cfg.validate()
+
+    def test_enforce_only_in_backtest_mode(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            mode=OperatingMode.LIVE,
+            backtest_enforce_ingest_terminal_health=True,
+            ingest_terminal_symbol_health=(("AAPL", "HEALTHY"),),
+        )
+        with pytest.raises(ConfigurationError, match="BACKTEST"):
+            cfg.validate()
+
+    def test_enforce_succeeds_when_all_healthy(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL", "msft"}),
+            alpha_specs=[Path("x.yaml")],
+            backtest_enforce_ingest_terminal_health=True,
+            ingest_terminal_symbol_health=(
+                ("AAPL", "HEALTHY"),
+                ("MSFT", "HEALTHY"),
+            ),
+        )
+        cfg.validate()
 
 
 # ── Configuration protocol compliance ──────────────────────────────

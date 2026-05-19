@@ -17,10 +17,16 @@ Invariants preserved:
 from __future__ import annotations
 
 import hashlib
+import logging
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
+_logger = logging.getLogger(__name__)
+
+from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
+    Alert,
+    AlertSeverity,
     OrderRequest,
     OrderType,
     RiskAction,
@@ -30,7 +36,9 @@ from feelies.core.events import (
     SignalDirection,
     SizedPositionIntent,
 )
+from feelies.core.identifiers import SequenceGenerator
 from feelies.portfolio.position_store import PositionStore
+from feelies.risk.sized_intent_result import SizedIntentRiskResult
 from feelies.services.regime_engine import RegimeEngine
 
 
@@ -56,10 +64,24 @@ class BasicRiskEngine:
     Satisfies the ``RiskEngine`` protocol.
     """
 
+    # Single source of truth for the regime state names that
+    # :meth:`__init__` knows how to map onto a ``RiskConfig`` scale field.
+    # ``bootstrap._validate_regime_engine_risk_scale_alignment`` reads this
+    # frozenset so adding/renaming a regime here propagates without a
+    # parallel constant drifting out of sync.
+    REGIME_SCALE_STATE_NAMES: frozenset[str] = frozenset({
+        "vol_breakout",
+        "compression_clustering",
+        "normal",
+    })
+
     def __init__(
         self,
         config: RiskConfig,
         regime_engine: RegimeEngine | None = None,
+        *,
+        bus: EventBus | None = None,
+        alert_sequence_generator: SequenceGenerator | None = None,
     ) -> None:
         self._config = config
         self._regime_engine = regime_engine
@@ -70,7 +92,21 @@ class BasicRiskEngine:
             "compression_clustering": config.regime_compression_scale,
             "normal": config.regime_normal_scale,
         }
+        assert (
+            self._regime_scale_map.keys()
+            == BasicRiskEngine.REGIME_SCALE_STATE_NAMES
+        ), (
+            "REGIME_SCALE_STATE_NAMES drifted from _regime_scale_map keys"
+        )
         self._regime_scale_default = min(self._regime_scale_map.values())
+        # Optional diagnostic emission for the per-leg PORTFOLIO veto.
+        # When ``bus`` is supplied an Alert is published listing the
+        # dropped legs so dollar-neutrality / sector-neutrality breaches
+        # are visible to operators (audit R4).  When omitted the
+        # WARNING log line is the only signal — preserves construction
+        # backwards-compatibility for existing test fixtures.
+        self._bus = bus
+        self._alert_seq = alert_sequence_generator
 
     def check_signal(
         self,
@@ -191,7 +227,7 @@ class BasicRiskEngine:
         self,
         intent: SizedPositionIntent,
         positions: PositionStore,
-    ) -> tuple[OrderRequest, ...]:
+    ) -> SizedIntentRiskResult:
         """Translate a Phase-4 ``SizedPositionIntent`` to per-leg orders.
 
         Each non-zero ``TargetPosition`` delta vs the current position
@@ -212,20 +248,39 @@ class BasicRiskEngine:
         Per-leg veto (Inv-11)
         ---------------------
 
-        When the per-symbol order would breach an existing risk gate
-        (post-fill quantity over the cap, exposure breach, drawdown
-        breach) the offending leg is silently dropped from the returned
-        tuple — the rest of the intent proceeds.  The intent is never
-        rejected wholesale; degenerate intents (empty
-        ``target_positions``) trivially produce an empty tuple.
+        When the per-symbol order would breach post-fill quantity or gross
+        exposure limits, the offending leg is dropped and the rest of the
+        intent proceeds.
+
+        Drawdown breach (``RiskAction.FORCE_FLATTEN`` at ``check_order``)
+        aborts **the entire intent**: ``orders`` is empty and
+        ``requires_global_risk_escalation`` is true so the orchestrator
+        runs the same emergency flatten + LOCKED path as standalone SIGNAL.
+
+        Macro interaction (kernel audit)
+        ----------------------------------
+        A ``RiskAction.FORCE_FLATTEN`` verdict on a per-leg
+        :meth:`check_order` call is **not** promoted to orchestrator
+        global lockdown — the leg is veto-dropped like REJECT. Only the
+        standalone-SIGNAL per-tick path can drive macro
+        **RISK_LOCKDOWN** (see :mod:`feelies.kernel.macro`).
+
+        Diagnostic (audit R4)
+        ---------------------
+
+        Ordinary veto drops are surfaced via ``_emit_dropped_legs_alert``.
+        Global flatten intent does **not** emit the partial-execution
+        alert — the orchestrator owns flatten + CRITICAL residual alerts.
 
         Symbols whose ``target_usd`` matches the current notional
-        (within one cent) produce no order — the leg is a no-op.
+        (within one cent) produce no order — the leg is a no-op and is
+        NOT counted as a veto-dropped leg.
         """
         if not intent.target_positions:
-            return ()
+            return SizedIntentRiskResult(orders=())
 
         orders: list[OrderRequest] = []
+        dropped: list[tuple[str, str]] = []
         for symbol in sorted(intent.target_positions):
             tgt = intent.target_positions[symbol]
             current = positions.get(symbol)
@@ -233,7 +288,11 @@ class BasicRiskEngine:
             if mark <= 0:
                 continue
 
-            target_shares = int(round(float(tgt.target_usd) / float(mark)))
+            target_shares = int(
+                (Decimal(str(tgt.target_usd)) / mark).to_integral_value(
+                    rounding=ROUND_HALF_UP,
+                )
+            )
             delta_shares = target_shares - current.quantity
             if delta_shares == 0:
                 continue
@@ -245,6 +304,9 @@ class BasicRiskEngine:
                 f"{intent.correlation_id}:{intent.sequence}:{symbol}".encode()
             ).hexdigest()[:16]
 
+            disclosed_cost = intent.disclosed_cost_total_bps_by_symbol.get(
+                symbol, 0.0,
+            )
             order = OrderRequest(
                 timestamp_ns=intent.timestamp_ns,
                 correlation_id=intent.correlation_id,
@@ -257,14 +319,28 @@ class BasicRiskEngine:
                 quantity=quantity,
                 strategy_id=intent.strategy_id,
                 reason="PORTFOLIO",
+                g12_disclosed_cost_total_bps=disclosed_cost,
             )
 
             verdict = self.check_order(order, positions)
-            if verdict.action in (RiskAction.REJECT, RiskAction.FORCE_FLATTEN):
-                # Per-leg veto — drop this leg, continue with the rest.
+            if verdict.action == RiskAction.FORCE_FLATTEN:
+                return SizedIntentRiskResult(
+                    orders=(),
+                    requires_global_risk_escalation=True,
+                )
+            if verdict.action == RiskAction.REJECT:
+                dropped.append((symbol, verdict.reason))
                 continue
             if verdict.action == RiskAction.SCALE_DOWN:
-                scaled_qty = max(1, int(quantity * verdict.scaling_factor))
+                scaled_qty = max(
+                    1,
+                    int(
+                        (
+                            Decimal(quantity)
+                            * Decimal(str(verdict.scaling_factor))
+                        ).to_integral_value(rounding=ROUND_HALF_UP),
+                    ),
+                )
                 if scaled_qty == quantity:
                     pass
                 else:
@@ -280,11 +356,70 @@ class BasicRiskEngine:
                         quantity=scaled_qty,
                         strategy_id=intent.strategy_id,
                         reason="PORTFOLIO",
+                        g12_disclosed_cost_total_bps=disclosed_cost,
                     )
 
             orders.append(order)
 
-        return tuple(orders)
+        if dropped:
+            self._emit_dropped_legs_alert(intent, dropped)
+
+        return SizedIntentRiskResult(orders=tuple(orders))
+
+    def _emit_dropped_legs_alert(
+        self,
+        intent: SizedPositionIntent,
+        dropped: list[tuple[str, str]],
+    ) -> None:
+        """Surface per-leg PORTFOLIO veto drops to operators.
+
+        Always logs at WARNING; additionally publishes a single
+        ``Alert`` event when the engine was constructed with both a
+        bus and a sequence generator.  The Alert lists every dropped
+        symbol so a portfolio alpha that intended a dollar-neutral
+        construction can be reconciled against what actually executed.
+        """
+        symbols_summary = ", ".join(sym for sym, _ in dropped)
+        _logger.warning(
+            "PORTFOLIO per-leg veto dropped %d/%d legs from intent "
+            "(strategy_id=%s, correlation_id=%s): %s",
+            len(dropped),
+            len(intent.target_positions),
+            intent.strategy_id,
+            intent.correlation_id,
+            symbols_summary,
+        )
+        if self._bus is None or self._alert_seq is None:
+            return
+        self._bus.publish(Alert(
+            timestamp_ns=intent.timestamp_ns,
+            correlation_id=intent.correlation_id,
+            sequence=self._alert_seq.next(),
+            source_layer="RISK",
+            severity=AlertSeverity.WARNING,
+            layer="risk",
+            alert_name="portfolio_intent_partial_execution",
+            message=(
+                f"Per-leg PORTFOLIO veto dropped {len(dropped)} of "
+                f"{len(intent.target_positions)} legs from intent "
+                f"(strategy_id={intent.strategy_id!r}, "
+                f"correlation_id={intent.correlation_id!r}). "
+                f"Surviving legs execute as a partial portfolio; "
+                f"any dollar-neutral / sector-neutral / "
+                f"mechanism-cap invariant the alpha intended is "
+                f"NOT re-validated after the drop."
+            ),
+            context={
+                "strategy_id": intent.strategy_id,
+                "intent_correlation_id": intent.correlation_id,
+                "intent_sequence": intent.sequence,
+                "total_legs": len(intent.target_positions),
+                "dropped_legs": [
+                    {"symbol": sym, "reason": reason}
+                    for sym, reason in dropped
+                ],
+            },
+        ))
 
     def _prospective_total_exposure(
         self,
@@ -336,8 +471,17 @@ class BasicRiskEngine:
                 m = latest(symbol)
                 if isinstance(m, Decimal) and m > 0:
                     return m
-            except Exception:  # pragma: no cover - defensive
-                pass
+            except Exception as exc:  # pragma: no cover - defensive
+                # Inv-11 fail-safe: fall back to cost basis rather than
+                # raising into the risk path.  But the swallow itself is
+                # a degraded mode (live-mark feed bug) — surface it via
+                # WARNING so the operator can see the slippage drift in
+                # promotion-window forensics.
+                _logger.warning(
+                    "_mark_for(%s): latest_mark accessor raised %s; "
+                    "falling back to avg_entry_price",
+                    symbol, exc,
+                )
         avg = getattr(current, "avg_entry_price", Decimal("0"))
         if isinstance(avg, Decimal) and avg > 0:
             return avg
@@ -384,6 +528,10 @@ class BasicRiskEngine:
                 reason=f"gross exposure limit: {exposure} >= {max_exposure}",
             )
 
+        # Bump the HWM as a separate, explicit step so the predicate
+        # below is a pure function of (current_equity, hwm) — see
+        # _is_drawdown_breached docstring for the rationale.
+        self._update_high_water_mark(current_equity)
         if self._is_drawdown_breached(current_equity):
             return RiskVerdict(
                 timestamp_ns=timestamp_ns,
@@ -479,10 +627,25 @@ class BasicRiskEngine:
             + total_unrealized
         )
 
-    def _is_drawdown_breached(self, current_equity: Decimal) -> bool:
+    def _update_high_water_mark(self, current_equity: Decimal) -> None:
+        """Bump the HWM monotonically.
+
+        Split out from ``_is_drawdown_breached`` so that a "what-if"
+        caller (e.g. a speculative intent translator that probes
+        ``check_order`` without intending to submit) cannot silently
+        ratchet the HWM as a side effect of asking a boolean question.
+        Callers that must update the HWM call this *before* querying
+        ``_is_drawdown_breached`` (see ``_check_exposure_and_drawdown``).
+        """
         if current_equity > self._high_water_mark:
             self._high_water_mark = current_equity
 
+    def _is_drawdown_breached(self, current_equity: Decimal) -> bool:
+        """Pure predicate over (current_equity, self._high_water_mark).
+
+        Does NOT mutate the HWM.  Call ``_update_high_water_mark`` first
+        if the caller represents a real (non-speculative) check.
+        """
         if self._high_water_mark <= 0:
             return True
 

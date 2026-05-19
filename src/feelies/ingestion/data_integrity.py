@@ -42,10 +42,17 @@ _DATA_TRANSITIONS: dict[DataHealth, frozenset[DataHealth]] = {
 def create_data_integrity_machine(
     symbol: str,
     clock: Clock,
+    *,
+    channel: str | None = None,
 ) -> StateMachine[DataHealth]:
-    """Create a data integrity tracker for a single symbol."""
+    """Create a data integrity tracker for a single symbol (and optional channel).
+
+    ``channel`` distinguishes quote vs trade sequence spaces on the same symbol
+    so gap / recovery on one feed does not false-clear the other.
+    """
+    label = f"{symbol}:{channel}" if channel else symbol
     return StateMachine(
-        name=f"data_integrity:{symbol}",
+        name=f"data_integrity:{label}",
         initial_state=DataHealth.HEALTHY,
         transitions=_DATA_TRANSITIONS,
         clock=clock,

@@ -120,10 +120,28 @@ class MassiveLiveFeed:
         self._stop_event.set()
         if self._loop is not None:
             self._loop.call_soon_threadsafe(self._loop.stop)
-        self._queue.put(_SENTINEL)
+        self._enqueue_sentinel_nowait()
         if self._thread is not None:
             self._thread.join(timeout=10.0)
             self._thread = None
+
+    def _enqueue_sentinel_nowait(self) -> None:
+        """Signal consumers without blocking the caller on a full queue."""
+        try:
+            self._queue.put_nowait(_SENTINEL)
+            return
+        except queue.Full:
+            pass
+
+        try:
+            self._queue.get_nowait()
+        except queue.Empty:
+            pass
+
+        try:
+            self._queue.put_nowait(_SENTINEL)
+        except queue.Full:
+            logger.warning("massive_ws: queue full, unable to enqueue stop sentinel")
 
     # ── Background event loop ────────────────────────────────────────
 
@@ -138,7 +156,7 @@ class MassiveLiveFeed:
         finally:
             self._loop.close()
             self._loop = None
-            self._queue.put(_SENTINEL)
+            self._enqueue_sentinel_nowait()
 
     async def _connect_with_retry(self) -> None:
         """Connect to the WebSocket with exponential backoff on failure."""
@@ -305,5 +323,5 @@ class MassiveLiveFeed:
                 except queue.Full:
                     logger.warning(
                         "massive_ws: queue full, dropping event for %s",
-                        event.symbol,
+                        getattr(event, "symbol", "?"),
                     )

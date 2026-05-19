@@ -28,6 +28,11 @@ class TestCreateDataIntegrityMachine:
         sm = create_data_integrity_machine("AAPL", clock)
         assert sm.name == "data_integrity:AAPL"
 
+    def test_channel_suffix_in_name(self) -> None:
+        clock = SimulatedClock(0)
+        sm = create_data_integrity_machine("AAPL", clock, channel="quote")
+        assert sm.name == "data_integrity:AAPL:quote"
+
     def test_initial_state_is_healthy(self) -> None:
         clock = SimulatedClock(0)
         sm = create_data_integrity_machine("MSFT", clock)

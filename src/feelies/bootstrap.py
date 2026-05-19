@@ -110,6 +110,7 @@ from feelies.features.impl.sensor_passthrough import (
     TupleComponentFeature,
 )
 from feelies.features.protocol import HorizonFeature
+from feelies.ingestion.normalizer import MarketDataNormalizer
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.kernel.signal_order_trace import SignalOrderTraceRow
 from feelies.monitoring.in_memory import (
@@ -122,6 +123,7 @@ from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
+from feelies.risk.engine import RiskEngine
 from feelies.risk.hazard_exit import HazardExitController, HazardPolicy
 from feelies.risk.position_sizer import BudgetBasedSizer
 from feelies.services.regime_engine import RegimeEngine, get_regime_engine
@@ -156,6 +158,7 @@ def build_platform(
     event_log: InMemoryEventLog | None = None,
     *,
     signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
+    normalizer: MarketDataNormalizer | None = None,
 ) -> tuple[Orchestrator, PlatformConfig]:
     """Compose the full platform from configuration.
 
@@ -167,6 +170,9 @@ def build_platform(
             :class:`~feelies.kernel.signal_order_trace.SignalOrderTraceRow`
             records explaining why each bus :class:`~feelies.core.events.Signal`
             did or did not yield a standalone ``OrderRequest`` on its quote tick.
+        normalizer: Optional live Massive normalizer for streaming feeds. When
+            wired, orchestrator enforces :class:`~feelies.ingestion.data_integrity.DataHealth`
+            gates on each market event (backtests normally omit this).
 
     Returns:
         ``(orchestrator, config)`` — caller does
@@ -177,10 +183,26 @@ def build_platform(
 
     config.validate()
 
+    if (
+        config.mode == OperatingMode.BACKTEST
+        and config.backtest_enforce_ingest_terminal_health
+        and not config.ingest_terminal_symbol_health
+    ):
+        raise ConfigurationError(
+            "backtest_enforce_ingest_terminal_health=True requires "
+            "ingest_terminal_symbol_health to be populated before "
+            "build_platform (e.g. scripts/run_backtest.py after ingest).",
+        )
+
     clock = _select_clock(config.mode)
     bus = EventBus()
 
-    regime_engine = _create_regime_engine(config.regime_engine)
+    regime_engine = _create_regime_engine(
+        config.regime_engine,
+        config.regime_engine_options,
+    )
+    if config.enforce_regime_state_scale_alignment and regime_engine is not None:
+        _validate_regime_engine_risk_scale_alignment(regime_engine)
 
     registry_clock = None if config.mode == OperatingMode.BACKTEST else clock
     promotion_ledger = (
@@ -207,6 +229,7 @@ def build_platform(
         regime_engine=regime_engine,
         enforce_trend_mechanism=config.enforce_trend_mechanism,
         enforce_layer_gates=config.enforce_layer_gates,
+        regime_engine_options=config.regime_engine_options,
     )
 
     _load_alphas(config, registry, loader)
@@ -227,10 +250,20 @@ def build_platform(
         max_gross_exposure_pct=config.risk_max_gross_exposure_pct,
         max_drawdown_pct=config.risk_max_drawdown_pct,
         account_equity=_decimal(config.account_equity),
+        regime_vol_breakout_scale=config.risk_regime_vol_breakout_scale,
+        regime_compression_scale=config.risk_regime_compression_scale,
+        regime_normal_scale=config.risk_regime_normal_scale,
     )
+    # The dedicated alert sequence generator keeps risk-engine
+    # diagnostics (e.g. the per-leg PORTFOLIO veto Alert) on a
+    # separate sequence stream from the orchestrator's own ``_seq`` so
+    # neither can disturb the other's bit-identical replay (Inv-5).
+    risk_alert_seq = SequenceGenerator()
     risk_engine = BasicRiskEngine(
         config=risk_config,
         regime_engine=regime_engine,
+        bus=bus,
+        alert_sequence_generator=risk_alert_seq,
     )
 
     if event_log is None:
@@ -351,12 +384,20 @@ def build_platform(
     hazard_seq, regime_hazard_detector = _create_hazard_detector(registry)
 
     # ── Multi-alpha execution components ──
+    # Audit R2: default-on wraps the risk engine so each alpha's
+    # risk_budget block is enforced alongside platform caps; operators
+    # opt out via platform.yaml: enforce_per_alpha_risk_budget: false.
     risk_wrapper = AlphaBudgetRiskWrapper(
         inner=risk_engine,
         registry=registry,
         strategy_positions=strategy_positions,
         platform_config=risk_config,
         account_equity=_decimal(config.account_equity),
+    )
+    effective_risk_engine: RiskEngine = (
+        risk_wrapper
+        if config.enforce_per_alpha_risk_budget
+        else risk_engine
     )
     fill_ledger = FillAttributionLedger()
     # Workstream D.2 PR-2b-ii: ``MultiAlphaEvaluator`` was deleted along
@@ -370,7 +411,7 @@ def build_platform(
         clock=clock,
         bus=bus,
         backend=backend,
-        risk_engine=risk_engine,
+        risk_engine=effective_risk_engine,
         position_store=position_store,
         event_log=event_log,
         metric_collector=metric_collector,
@@ -401,6 +442,7 @@ def build_platform(
         composition_metrics_collector=composition_metrics,
         hazard_exit_controller=hazard_exit_controller,
         signal_order_trace_sink=signal_order_trace_sink,
+        normalizer=normalizer,
     )
 
     config_snapshot = config.snapshot()
@@ -450,11 +492,32 @@ def _build_platform_gate_thresholds(
     return apply_gate_thresholds_overrides(GateThresholds(), overrides)
 
 
-def _create_regime_engine(engine_name: str | None) -> RegimeEngine | None:
+def _validate_regime_engine_risk_scale_alignment(engine: RegimeEngine) -> None:
+    """Fail boot when regime posteriors use names BasicRiskEngine cannot scale."""
+    # Read the single source of truth from BasicRiskEngine so the validation
+    # cannot drift if the risk engine adds, renames, or removes a regime
+    # scale key.
+    valid = BasicRiskEngine.REGIME_SCALE_STATE_NAMES
+    unknown = frozenset(engine.state_names) - valid
+    if unknown:
+        raise ConfigurationError(
+            "RegimeEngine state_names contain entries not mapped by "
+            "BasicRiskEngine regime scaling: "
+            f"{sorted(unknown)}. Expected subset of {valid}. "
+            "Extend RiskConfig / regime_vol_*_scale or disable "
+            "enforce_regime_state_scale_alignment."
+        )
+
+
+def _create_regime_engine(
+    engine_name: str | None,
+    options: dict[str, object] | None = None,
+) -> RegimeEngine | None:
     if engine_name is None:
         return None
     try:
-        engine = get_regime_engine(engine_name)
+        kwargs = dict(options or {})
+        engine = get_regime_engine(engine_name, **kwargs)
         logger.info("Created shared RegimeEngine: %s", engine_name)
         return engine
     except KeyError:
@@ -462,6 +525,10 @@ def _create_regime_engine(engine_name: str | None) -> RegimeEngine | None:
             f"Unknown regime engine '{engine_name}': not found in registry. "
             "Check the 'regime_engine' field in your platform configuration."
         ) from None
+    except TypeError as exc:
+        raise ConfigurationError(
+            f"Invalid regime_engine_options for engine {engine_name!r}: {exc}"
+        ) from exc
 
 
 def _load_alphas(
@@ -514,6 +581,7 @@ def _create_backend(
                 event_log, clock,
                 latency_ns=fill_latency_ns,
                 cost_model=cost_model,
+                market_impact_factor=market_impact_factor,
                 fill_delay_ticks=passive_fill_delay_ticks,
                 max_resting_ticks=passive_max_resting_ticks,
                 queue_position_shares=passive_queue_position_shares,
@@ -526,6 +594,7 @@ def _create_backend(
             latency_ns=fill_latency_ns,
             cost_model=cost_model,
             market_impact_factor=market_impact_factor,
+            max_resting_ticks=passive_max_resting_ticks,
         )
         return backend, router
 
@@ -581,7 +650,9 @@ def _horizon_features_for(
     if sensor_id == "ofi_ewma":
         return [
             SensorPassthroughFeature("ofi_ewma", horizon),
-            RollingZscoreFeature("ofi_ewma", horizon),
+            # Short rolling window (200 samples) so z-score reflects
+            # recent OFI regime rather than whole-session history.
+            RollingZscoreFeature("ofi_ewma", horizon, max_samples=200),
         ]
     if sensor_id == "kyle_lambda_60s":
         return [
@@ -593,7 +664,14 @@ def _horizon_features_for(
     if sensor_id == "quote_hazard_rate":
         return [SensorPassthroughFeature("quote_hazard_rate", horizon)]
     if sensor_id == "hawkes_intensity":
-        return [RollingZscoreFeature("hawkes_intensity", horizon)]
+        # Sensor emits a 4-tuple; sum λ_buy+λ_sell as burst-intensity scalar.
+        return [
+            RollingZscoreFeature(
+                "hawkes_intensity",
+                horizon,
+                tuple_sum_component_indices=(0, 1),
+            ),
+        ]
     if sensor_id == "trade_through_rate":
         return [SensorPassthroughFeature("trade_through_rate", horizon)]
     if sensor_id == "scheduled_flow_window":
@@ -611,8 +689,18 @@ def _horizon_features_for(
                 "scheduled_flow_window_direction_prior", horizon,
             ),
         ]
-    # Sensors that produce stats already (e.g. spread_z_30d, micro_price)
-    # do not yet have evaluate()-level consumers — no features needed.
+    if sensor_id == "micro_price":
+        return [
+            SensorPassthroughFeature("micro_price", horizon),
+            RollingZscoreFeature("micro_price", horizon),
+        ]
+    if sensor_id == "realized_vol_30s":
+        return [
+            SensorPassthroughFeature("realized_vol_30s", horizon),
+            RollingZscoreFeature("realized_vol_30s", horizon),
+        ]
+    # Sensors that produce stats already (e.g. spread_z_30d)
+    # skip horizon features — gate resolves them via sensor_cache.
     return []
 
 
@@ -991,6 +1079,34 @@ def _create_signal_layer(
     return signal_seq, engine
 
 
+def _union_portfolio_upstream_strategy_ids(
+    portfolio_modules: Sequence[LoadedPortfolioLayerModule],
+) -> tuple[str, ...]:
+    """Sorted union of SIGNAL alpha_ids referenced by PORTFOLIO specs."""
+    ids: set[str] = set()
+    for m in portfolio_modules:
+        ids.update(m.depends_on_signals)
+    return tuple(sorted(ids))
+
+
+def _composition_signal_horizons(
+    registry: AlphaRegistry,
+    context_horizons: frozenset[int],
+    upstream_strategy_ids: tuple[str, ...],
+) -> frozenset[int]:
+    """Horizons for which the synchronizer caches Layer-2 ``Signal`` events."""
+    hs: set[int] = set(context_horizons)
+    for sid in upstream_strategy_ids:
+        try:
+            mod = registry.get(sid)
+        except KeyError:
+            continue
+        h = getattr(mod, "horizon_seconds", None)
+        if isinstance(h, int) and h > 0:
+            hs.add(h)
+    return frozenset(hs)
+
+
 def _create_composition_layer(
     *,
     config: PlatformConfig,
@@ -1075,11 +1191,19 @@ def _create_composition_layer(
     ctx_seq = SequenceGenerator()
     metric_seq = SequenceGenerator()
 
+    upstream_ids = _union_portfolio_upstream_strategy_ids(portfolio_modules)
+    signal_horizons = _composition_signal_horizons(
+        registry,
+        frozenset(horizons),
+        upstream_ids,
+    )
     synchronizer = UniverseSynchronizer(
         bus=bus,
         universe=universe,
         horizons=horizons,
         ctx_sequence_generator=ctx_seq,
+        signal_horizons=signal_horizons,
+        upstream_strategy_ids=upstream_ids,
     )
     synchronizer.attach()
 
@@ -1139,6 +1263,7 @@ def _create_composition_layer(
             module._construct = _DefaultPortfolioConstructor(  # noqa: SLF001
                 engine_thunk=lambda e=engine: e,
                 strategy_id=module.alpha_id,
+                feeder_strategy_ids=module.depends_on_signals,
             )
         engine.register(RegisteredPortfolioAlpha(
             alpha_id=module.alpha_id,

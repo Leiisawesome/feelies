@@ -39,14 +39,24 @@ Algorithm (page-Hinkley, one-sided up-test):
     Finally append ``x_t`` into the deque.
 
     where ``δ`` is the tolerated drift floor (default ``0.0``) and
-    ``λ`` is the alarm threshold (default ``small relative to typical
-    cumulative drift``, sensor parameter ``alarm_threshold``).
+    ``λ`` is the alarm threshold (sensor parameter ``alarm_threshold``).
     ``score_t > 0.95`` is a structural-break alert per §20.4.4.
 
+    Note that ``max(0, ·)`` is the canonical reflected-random-walk
+    formulation of Page-Hinkley: it is identically equal to
+    ``PH_t − min_{s≤t} PH_s`` (the classic "alarm when the cumulant
+    exits its running minimum by more than λ" form), so no separate
+    running-minimum bookkeeping is required.
+
     The reference window evicts samples older than ``window_seconds``
-    in event time before each Page-Hinkley step.  When the window
-    resets (e.g. after a long pause), ``m`` is re-initialised on the
-    next observation.
+    in event time before each Page-Hinkley step.  Using a *rolling*
+    rather than a *fixed* baseline is a deliberate design choice: it
+    detects abrupt regime jumps within ``window_seconds`` of onset
+    with high sensitivity, while gradual drifts whose timescale much
+    exceeds ``window_seconds`` are detected with reduced sensitivity
+    (μ_ref tracks them).  For "alpha is dying" diagnostics that
+    expect a drift slower than the default 1-hour window, configure a
+    longer ``window_seconds`` so the baseline lags the drift.
 
 Determinism: pure float arithmetic; deque-based event-time eviction;
 no RNG.
@@ -84,7 +94,7 @@ class StructuralBreakScoreSensor:
     """
 
     sensor_id: str = "structural_break_score"
-    sensor_version: str = "1.1.0"
+    sensor_version: str = "1.2.0"
 
     def __init__(
         self,
@@ -125,10 +135,24 @@ class StructuralBreakScoreSensor:
     def initial_state(self) -> dict[str, Any]:
         return {
             "samples": deque(),  # (ts_ns, value)
+            # Kahan-compensated running sum of in-window observables.
+            # ``sum_c`` is the running compensation term that absorbs the
+            # low-order bits lost in each add/sub, keeping the relative
+            # error in ``sum`` near machine epsilon even after millions of
+            # add/evict pairs in a multi-day continuous run.
             "sum": 0.0,
+            "sum_c": 0.0,
             "m": 0.0,             # page-Hinkley running cumulant
             "last_mid": None,
         }
+
+    @staticmethod
+    def _kahan_add(state: dict[str, Any], x: float) -> None:
+        """Numerically-stable ``state['sum'] += x``."""
+        y = x - state["sum_c"]
+        t = state["sum"] + y
+        state["sum_c"] = (t - state["sum"]) - y
+        state["sum"] = t
 
     def update(
         self,
@@ -142,6 +166,10 @@ class StructuralBreakScoreSensor:
         bid = float(event.bid)
         ask = float(event.ask)
         if bid <= 0.0 or ask <= 0.0:
+            # A2: invalidate carry-forward mid so the next good quote
+            # bootstraps fresh rather than computing an observable that
+            # spans the bad-data gap.
+            state["last_mid"] = None
             return None
         mid = (bid + ask) / 2.0
 
@@ -166,7 +194,7 @@ class StructuralBreakScoreSensor:
         cutoff = ts_ns - self._window_ns
         while samples and samples[0][0] < cutoff:
             _t, v = samples.popleft()
-            state["sum"] -= v
+            self._kahan_add(state, -v)
 
         n_ref = len(samples)
         mu_ref = state["sum"] / float(n_ref) if n_ref > 0 else 0.0
@@ -177,7 +205,7 @@ class StructuralBreakScoreSensor:
         score = min(1.0, new_m / self._alarm_threshold)
 
         samples.append((ts_ns, observable))
-        state["sum"] += observable
+        self._kahan_add(state, observable)
 
         n = len(samples)
         warm = (

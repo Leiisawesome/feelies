@@ -245,11 +245,15 @@ dependencies = [
 dev = [
     { name = "hypothesis" },
     { name = "mypy" },
+    { name = "pyarrow" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "python-dotenv" },
     { name = "ruff" },
     { name = "types-pyyaml" },
+]
+health = [
+    { name = "pyarrow" },
 ]
 massive = [
     { name = "massive" },
@@ -268,6 +272,8 @@ requires-dist = [
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.0" },
     { name = "massive", marker = "extra == 'massive'", specifier = ">=2.3" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8" },
+    { name = "pyarrow", marker = "extra == 'dev'", specifier = ">=15.0" },
+    { name = "pyarrow", marker = "extra == 'health'", specifier = ">=15.0" },
     { name = "pyarrow", marker = "extra == 'portfolio'", specifier = ">=15.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0" },
@@ -277,7 +283,7 @@ requires-dist = [
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6.0" },
     { name = "websockets", marker = "extra == 'massive'", specifier = ">=13.0" },
 ]
-provides-extras = ["dev", "massive", "portfolio"]
+provides-extras = ["dev", "massive", "health", "portfolio"]
 
 [[package]]
 name = "highspy"

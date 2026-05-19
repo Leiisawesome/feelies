@@ -1,0 +1,519 @@
+{
+  "repo": "Leiisawesome/feelies",
+  "scope": "alphas/",
+  "created_at": "2026-05-10T10:07:04Z",
+  "commit": "56057629c68abd73c378467afb731901e6539bea",
+  "branch": "cursor/alpha-institutional-audit-4f52",
+  "summary": {
+    "alpha_files_found": 10,
+    "active_alpha_files": 8,
+    "excluded_alpha_files": 2,
+    "loaded_successfully_yaml_loader": 8,
+    "failed_load_yaml_loader": 0,
+    "pass": 0,
+    "warn": 7,
+    "fail": 1,
+    "kill": 1,
+    "research_more": 6,
+    "pass_structural_only": 3,
+    "paper_trade_candidate": 0,
+    "deploy_small_candidate": 0
+  },
+  "notes": [
+    "YAML-level load uses AlphaLoader only; full bootstrap with repo-root platform.yaml registers a single explicit alpha (sig_benign_midcap_v1) and omits scheduled_flow_window sensor spec — see pipeline findings.",
+    "Scores are heuristic 0–100 from weighted category rubric; mandatory overrides dominate (e.g. Hawkes pipeline defect → KILL regardless of score)."
+  ],
+  "alphas": [
+    {
+      "alpha_id": "sig_benign_midcap_v1",
+      "file": "alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml",
+      "layer": "SIGNAL",
+      "schema_version": "1.1",
+      "horizon_seconds": 120,
+      "mechanism_family": "KYLE_INFO",
+      "sensors": ["ofi_ewma", "micro_price", "spread_z_30d"],
+      "depends_on_signals": [],
+      "score": 58,
+      "status": "WARN",
+      "decision": "RESEARCH_MORE",
+      "sensor_mechanism_coherence": "PARTIALLY_COHERENT",
+      "findings": [
+        {
+          "severity": "HIGH",
+          "category": "alpha_sensor_mechanism_coherence",
+          "status": "WARN",
+          "finding": "Hypothesis and trend_mechanism list Kyle footprint via micro_price and kyle_lambda_60s fingerprint, but evaluate() uses only ofi_ewma_zscore; micro_price is declared but unused in signal logic.",
+          "evidence": "alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml depends_on_sensors vs signal block.",
+          "recommended_action": "Either consume micro_price / explicit imbalance-vs-mid feature in evaluate(), or narrow hypothesis and l1_signature_sensors to match actual decision state."
+        },
+        {
+          "severity": "MEDIUM",
+          "category": "economic_mechanism",
+          "status": "WARN",
+          "finding": "Falsification criteria reference forward 120s returns (research labels); not code leakage but criteria are not wired to automated promotion artifacts.",
+          "evidence": "falsification_criteria bullets in YAML.",
+          "recommended_action": "Define observable metrics in replay JSONL / attribution exports matching those criteria."
+        },
+        {
+          "severity": "LOW",
+          "category": "cost_execution",
+          "status": "PASS",
+          "finding": "cost_arithmetic margin_ratio 1.8 meets platform floor; components reconcile at load time.",
+          "evidence": "AlphaLoader + CostArithmetic validation; tests/alpha/test_sig_benign_midcap_v1.py",
+          "recommended_action": "None."
+        }
+      ]
+    },
+    {
+      "alpha_id": "sig_inventory_revert_v1",
+      "file": "alphas/sig_inventory_revert_v1/sig_inventory_revert_v1.alpha.yaml",
+      "layer": "SIGNAL",
+      "schema_version": "1.1",
+      "horizon_seconds": 30,
+      "mechanism_family": "INVENTORY",
+      "sensors": ["quote_replenish_asymmetry", "spread_z_30d", "quote_hazard_rate"],
+      "depends_on_signals": [],
+      "score": 62,
+      "status": "WARN",
+      "decision": "RESEARCH_MORE",
+      "sensor_mechanism_coherence": "COHERENT",
+      "findings": [
+        {
+          "severity": "MEDIUM",
+          "category": "regime_gate",
+          "status": "WARN",
+          "finding": "Regime on_condition hardcodes abs(quote_replenish_asymmetry_zscore) > 2.0 while signal uses parameterized asymmetry_z_threshold (default 2.0); changing params desynchronizes gate vs signal.",
+          "evidence": "regime_gate.on_condition vs parameters.asymmetry_z_threshold",
+          "recommended_action": "Align gate expression with parameter bindings if RegimeGate DSL supports it, or document gate as fixed structural filter."
+        },
+        {
+          "severity": "MEDIUM",
+          "category": "sensor_microstructure",
+          "status": "WARN",
+          "finding": "Quote replenishment / hazard sensors use L1-only proxies; inventory narrative is plausible but not identifiable without depth.",
+          "evidence": "Sensor implementations under src/feelies/sensors/impl/quote_replenish_asymmetry.py, quote_hazard_rate.py",
+          "recommended_action": "Treat as weak diagnostic alpha; stress crossed-book and flicker regimes in research."
+        }
+      ]
+    },
+    {
+      "alpha_id": "sig_kyle_drift_v1",
+      "file": "alphas/sig_kyle_drift_v1/sig_kyle_drift_v1.alpha.yaml",
+      "layer": "SIGNAL",
+      "schema_version": "1.1",
+      "horizon_seconds": 300,
+      "mechanism_family": "KYLE_INFO",
+      "sensors": ["kyle_lambda_60s", "ofi_ewma", "micro_price", "spread_z_30d"],
+      "depends_on_signals": [],
+      "score": 60,
+      "status": "WARN",
+      "decision": "RESEARCH_MORE",
+      "sensor_mechanism_coherence": "PARTIALLY_COHERENT",
+      "findings": [
+        {
+          "severity": "MEDIUM",
+          "category": "sensor_numerical_stability",
+          "status": "WARN",
+          "finding": "Reference platform.yaml sets kyle_lambda_60s min_samples: 5; OLS lambda with tiny n is high-variance.",
+          "evidence": "platform.yaml sensor_specs; KyleLambda60sSensor denom guard returns warm=False when n < min_samples but estimator remains noisy near threshold.",
+          "recommended_action": "Raise min_samples for production research or widen uncertainty bands on edge_estimate_bps."
+        },
+        {
+          "severity": "LOW",
+          "category": "alpha_sensor_mechanism_coherence",
+          "status": "WARN",
+          "finding": "micro_price declared in depends_on_sensors but not referenced in evaluate().",
+          "evidence": "YAML signal block",
+          "recommended_action": "Drop unused dependency or incorporate into directional confirmation."
+        }
+      ]
+    },
+    {
+      "alpha_id": "sig_hawkes_burst_v1",
+      "file": "alphas/sig_hawkes_burst_v1/sig_hawkes_burst_v1.alpha.yaml",
+      "layer": "SIGNAL",
+      "schema_version": "1.1",
+      "horizon_seconds": 30,
+      "mechanism_family": "HAWKES_SELF_EXCITE",
+      "sensors": ["hawkes_intensity", "trade_through_rate", "ofi_ewma", "spread_z_30d"],
+      "depends_on_signals": [],
+      "score": 22,
+      "status": "FAIL",
+      "decision": "KILL",
+      "sensor_mechanism_coherence": "MECHANISM_UNSUPPORTED",
+      "findings": [
+        {
+          "severity": "BLOCKER",
+          "category": "backtest_pipeline_compatibility",
+          "status": "FAIL",
+          "finding": "bootstrap wires RollingZscoreFeature for hawkes_intensity, but HawkesIntensitySensor emits a tuple value and RollingZscoreFeature.observe skips tuples — hawkes_intensity_zscore cannot warm from real sensor readings.",
+          "evidence": "src/feelies/bootstrap.py _horizon_features_for; src/feelies/features/impl/rolling_stats.py; src/feelies/sensors/impl/hawkes_intensity.py; tests/features/test_rolling_zscore_skips_tuple_sensor_values.py",
+          "recommended_action": "P0: expose a scalar component (e.g. intensity_ratio) via TupleComponentFeature then rolling stats, or extend RollingZscoreFeature for tuple indices — then replay-test full L1→L2 path."
+        },
+        {
+          "severity": "HIGH",
+          "category": "test_coverage",
+          "status": "FAIL",
+          "finding": "tests/alpha/test_sig_hawkes_burst_v1.py injects hawkes_intensity_zscore directly into HorizonFeatureSnapshot; does not validate aggregator output from Hawkes sensor.",
+          "evidence": "_snapshot() helper in test file",
+          "recommended_action": "Add integration test feeding Trade stream through registry + aggregator matching integration fixtures."
+        }
+      ]
+    },
+    {
+      "alpha_id": "sig_moc_imbalance_v1",
+      "file": "alphas/sig_moc_imbalance_v1/sig_moc_imbalance_v1.alpha.yaml",
+      "layer": "SIGNAL",
+      "schema_version": "1.1",
+      "horizon_seconds": 120,
+      "mechanism_family": "SCHEDULED_FLOW",
+      "sensors": ["scheduled_flow_window", "ofi_ewma"],
+      "depends_on_signals": [],
+      "score": 48,
+      "status": "WARN",
+      "decision": "RESEARCH_MORE",
+      "sensor_mechanism_coherence": "COHERENT",
+      "findings": [
+        {
+          "severity": "HIGH",
+          "category": "loader_discovery_compatibility",
+          "status": "FAIL",
+          "finding": "Repo-root platform.yaml has no scheduled_flow_window SensorSpec; bootstrap raises ConfigurationError if spec uses ScheduledFlowWindowSensor without event_calendar_path + injected calendar.",
+          "evidence": "platform.yaml ends at hawkes_intensity; src/feelies/bootstrap.py calendar injection block",
+          "recommended_action": "Document required sensor_specs snippet for MOC alpha; integration tests already carry full sensor list — promote pattern to operator docs."
+        },
+        {
+          "severity": "MEDIUM",
+          "category": "economic_mechanism",
+          "status": "WARN",
+          "finding": "Hypothesis leans on exchange imbalance prior embedded in reference calendar YAML — point-in-time validity depends on calendar provenance, not tape replay alone.",
+          "evidence": "scheduled_flow_window sensor + storage/reference/event_calendar/*.yaml",
+          "recommended_action": "Version and audit calendar sources; treat as structural research dependency."
+        }
+      ]
+    },
+    {
+      "alpha_id": "pro_xsect_v1",
+      "file": "alphas/pro_xsect_v1/pro_xsect_v1.alpha.yaml",
+      "layer": "PORTFOLIO",
+      "schema_version": "1.1",
+      "horizon_seconds": 300,
+      "mechanism_family": "PORTFOLIO_MULTI",
+      "sensors": [],
+      "depends_on_signals": ["sig_kyle_drift_v1", "sig_inventory_revert_v1"],
+      "score": 52,
+      "status": "WARN",
+      "decision": "PASS_STRUCTURAL_ONLY",
+      "sensor_mechanism_coherence": "NOT_APPLICABLE",
+      "findings": [
+        {
+          "severity": "HIGH",
+          "category": "risk_budget",
+          "status": "WARN",
+          "finding": "max_position_per_symbol 5000 and max_gross_exposure_pct 50.0 are institutional-scale defaults, unsafe for personal-grade deployment without platform caps.",
+          "evidence": "risk_budget block",
+          "recommended_action": "Override via PlatformConfig risk rails for personal accounts."
+        },
+        {
+          "severity": "MEDIUM",
+          "category": "promotion_falsification",
+          "status": "WARN",
+          "finding": "falsification_criteria are symbolic strings (sharpe_post_cost_below_1.0_60d) — not mapped to measurable ledger artifacts in-repo.",
+          "evidence": "YAML falsification_criteria list",
+          "recommended_action": "Wire to concrete metrics from backtest exports or promotion evidence schemas."
+        }
+      ]
+    },
+    {
+      "alpha_id": "pro_xsect_v1_with_decay",
+      "file": "alphas/pro_xsect_v1/pro_xsect_v1.with_decay.alpha.yaml",
+      "layer": "PORTFOLIO",
+      "schema_version": "1.1",
+      "horizon_seconds": 300,
+      "mechanism_family": "PORTFOLIO_MULTI",
+      "sensors": [],
+      "depends_on_signals": ["sig_kyle_drift_v1", "sig_inventory_revert_v1"],
+      "score": 52,
+      "status": "WARN",
+      "decision": "PASS_STRUCTURAL_ONLY",
+      "sensor_mechanism_coherence": "NOT_APPLICABLE",
+      "findings": [
+        {
+          "severity": "HIGH",
+          "category": "risk_budget",
+          "status": "WARN",
+          "finding": "Same elevated PORTFOLIO risk_budget as pro_xsect_v1.",
+          "evidence": "risk_budget block",
+          "recommended_action": "Align with operator risk policy."
+        }
+      ]
+    },
+    {
+      "alpha_id": "pro_xsect_mixed_mechanism_v1",
+      "file": "alphas/pro_xsect_mixed_mechanism_v1/pro_xsect_mixed_mechanism_v1.alpha.yaml",
+      "layer": "PORTFOLIO",
+      "schema_version": "1.1",
+      "horizon_seconds": 300,
+      "mechanism_family": "PORTFOLIO_MULTI",
+      "sensors": [],
+      "depends_on_signals": ["sig_kyle_drift_v1", "sig_inventory_revert_v1", "sig_hawkes_burst_v1"],
+      "score": 45,
+      "status": "WARN",
+      "decision": "PASS_STRUCTURAL_ONLY",
+      "sensor_mechanism_coherence": "NOT_APPLICABLE",
+      "findings": [
+        {
+          "severity": "BLOCKER",
+          "category": "upstream_signal_dependency",
+          "status": "FAIL",
+          "finding": "Depends on sig_hawkes_burst_v1 which is not end-to-end viable until Hawkes tuple→rolling-feature wiring is fixed.",
+          "evidence": "depends_on_signals list + Hawkes pipeline defect above",
+          "recommended_action": "Fix Hawkes Layer-2 feature path before trusting mixed-mechanism portfolio e2e intent quality."
+        },
+        {
+          "severity": "HIGH",
+          "category": "risk_budget",
+          "status": "WARN",
+          "finding": "Large PORTFOLIO caps as other reference xsect alphas.",
+          "evidence": "risk_budget block",
+          "recommended_action": "Override platform risk for personal deployment."
+        }
+      ]
+    }
+  ],
+  "sensor_math_findings": [
+    {
+      "sensor_id": "ofi_ewma",
+      "implementation": "src/feelies/sensors/impl/ofi_ewma.py",
+      "used_by": ["sig_benign_midcap_v1", "sig_kyle_drift_v1", "sig_hawkes_burst_v1", "sig_moc_imbalance_v1"],
+      "formula_status": "PASS",
+      "causality_status": "PASS",
+      "unit_status": "PASS",
+      "numerical_stability_status": "PASS",
+      "microstructure_status": "PASS",
+      "test_status": "PASS",
+      "overall_status": "PASS",
+      "findings": []
+    },
+    {
+      "sensor_id": "micro_price",
+      "implementation": "src/feelies/sensors/impl/micro_price.py",
+      "used_by": ["sig_benign_midcap_v1", "sig_kyle_drift_v1"],
+      "formula_status": "PASS",
+      "causality_status": "PASS",
+      "unit_status": "PASS",
+      "numerical_stability_status": "PASS",
+      "microstructure_status": "PASS",
+      "test_status": "PASS",
+      "overall_status": "PASS",
+      "findings": [
+        {
+          "severity": "INFO",
+          "category": "usage",
+          "status": "NOT_APPLICABLE",
+          "finding": "Declared on multiple SIGNAL alphas but often unused in evaluate(); still mathematically valid as L1 pressure proxy.",
+          "evidence": "sensor code + alpha signal blocks",
+          "recommended_action": "Align alpha consumption with declaration."
+        }
+      ]
+    },
+    {
+      "sensor_id": "spread_z_30d",
+      "implementation": "src/feelies/sensors/impl/spread_z_30d.py",
+      "used_by": ["sig_benign_midcap_v1", "sig_inventory_revert_v1", "sig_kyle_drift_v1", "sig_hawkes_burst_v1"],
+      "formula_status": "PASS",
+      "causality_status": "PASS",
+      "unit_status": "PASS",
+      "numerical_stability_status": "PASS",
+      "microstructure_status": "PASS",
+      "test_status": "PASS",
+      "overall_status": "PASS",
+      "findings": []
+    },
+    {
+      "sensor_id": "quote_replenish_asymmetry",
+      "implementation": "src/feelies/sensors/impl/quote_replenish_asymmetry.py",
+      "used_by": ["sig_inventory_revert_v1"],
+      "formula_status": "PASS",
+      "causality_status": "PASS",
+      "unit_status": "WARN",
+      "numerical_stability_status": "PASS",
+      "microstructure_status": "WARN",
+      "test_status": "PASS",
+      "overall_status": "WARN",
+      "findings": [
+        {
+          "severity": "MEDIUM",
+          "finding": "L1-only replenishment proxy; flicker and tier-size changes can dominate.",
+          "evidence": "Implementation docstring + tests/sensors/test_quote_replenish_asymmetry.py",
+          "recommended_action": "Pair with spread/hazard gates (already present)."
+        }
+      ]
+    },
+    {
+      "sensor_id": "quote_hazard_rate",
+      "implementation": "src/feelies/sensors/impl/quote_hazard_rate.py",
+      "used_by": ["sig_inventory_revert_v1"],
+      "formula_status": "PASS",
+      "causality_status": "PASS",
+      "unit_status": "PASS",
+      "numerical_stability_status": "PASS",
+      "microstructure_status": "WARN",
+      "test_status": "PASS",
+      "overall_status": "WARN",
+      "findings": [
+        {
+          "severity": "MEDIUM",
+          "finding": "Hazard defined as count(window)/window_seconds — intensity, not a probability; alpha thresholds hazard_floor as if interpretable absolute scale.",
+          "evidence": "Sensor docstring vs alpha parameter hazard_floor",
+          "recommended_action": "Calibrate hazard_floor per symbol/venue or normalize."
+        }
+      ]
+    },
+    {
+      "sensor_id": "kyle_lambda_60s",
+      "implementation": "src/feelies/sensors/impl/kyle_lambda_60s.py",
+      "used_by": ["sig_kyle_drift_v1"],
+      "formula_status": "PASS",
+      "causality_status": "PASS",
+      "unit_status": "WARN",
+      "numerical_stability_status": "WARN",
+      "microstructure_status": "WARN",
+      "test_status": "PASS",
+      "overall_status": "WARN",
+      "findings": [
+        {
+          "severity": "MEDIUM",
+          "finding": "Tick-rule signed volume; not true aggressor side.",
+          "evidence": "Sensor module header",
+          "recommended_action": "Document limitation in alpha hypothesis; avoid crossing-symbol raw lambda comparisons without normalization."
+        }
+      ]
+    },
+    {
+      "sensor_id": "trade_through_rate",
+      "implementation": "src/feelies/sensors/impl/trade_through_rate.py",
+      "used_by": ["sig_hawkes_burst_v1"],
+      "formula_status": "PASS",
+      "causality_status": "PASS",
+      "unit_status": "PASS",
+      "numerical_stability_status": "PASS",
+      "microstructure_status": "WARN",
+      "test_status": "PASS",
+      "overall_status": "WARN",
+      "findings": [
+        {
+          "severity": "MEDIUM",
+          "finding": "Uses last NBBO at trade timestamp; SIP ordering ambiguity unmodeled.",
+          "evidence": "Sensor docstring",
+          "recommended_action": "Sensitivity analysis under latency stress."
+        }
+      ]
+    },
+    {
+      "sensor_id": "hawkes_intensity",
+      "implementation": "src/feelies/sensors/impl/hawkes_intensity.py",
+      "used_by": ["sig_hawkes_burst_v1"],
+      "formula_status": "PASS",
+      "causality_status": "PASS",
+      "unit_status": "PASS",
+      "numerical_stability_status": "PASS",
+      "microstructure_status": "WARN",
+      "test_status": "PASS",
+      "overall_status": "FAIL",
+      "findings": [
+        {
+          "severity": "BLOCKER",
+          "finding": "Tuple output incompatible with current RollingZscoreFeature wiring for primary alpha feature hawkes_intensity_zscore.",
+          "evidence": "tests/features/test_rolling_zscore_skips_tuple_sensor_values.py",
+          "recommended_action": "Fix bootstrap/feature layering."
+        },
+        {
+          "severity": "MEDIUM",
+          "finding": "Tick-rule classification inherits Hawkes/Kyle limitations.",
+          "evidence": "hawkes_intensity.py",
+          "recommended_action": "Same as kyle_lambda trade-sign caveat."
+        }
+      ]
+    },
+    {
+      "sensor_id": "scheduled_flow_window",
+      "implementation": "src/feelies/sensors/impl/scheduled_flow_window.py",
+      "used_by": ["sig_moc_imbalance_v1"],
+      "formula_status": "PASS",
+      "causality_status": "PASS",
+      "unit_status": "PASS",
+      "numerical_stability_status": "PASS",
+      "microstructure_status": "PASS",
+      "test_status": "PASS",
+      "overall_status": "PASS",
+      "findings": [
+        {
+          "severity": "HIGH",
+          "finding": "Requires explicit calendar injection + platform sensor registration absent from repo-root platform.yaml.",
+          "evidence": "bootstrap.py; platform.yaml sensor_specs truncation",
+          "recommended_action": "Ship operator snippet or extend reference platform for all shipped SIGNAL alphas."
+        }
+      ]
+    }
+  ],
+  "cross_alpha_findings": [
+    {
+      "severity": "HIGH",
+      "category": "sensor_concentration",
+      "finding": "Six SIGNAL alphas share spread_z_30d and/or ofi_ewma — correlated gate failures in wide-spread regimes.",
+      "evidence": "depends_on_sensors overlap across YAMLs",
+      "recommended_action": "Diversify regime stress tests."
+    },
+    {
+      "severity": "HIGH",
+      "category": "upstream_dependency",
+      "finding": "pro_xsect_mixed_mechanism_v1 depends on Hawkes feeder alpha impacted by Layer-2 tuple/z-score defect.",
+      "evidence": "PORTFOLIO depends_on_signals",
+      "recommended_action": "Block promotion of mixed portfolio until Hawkes path fixed."
+    },
+    {
+      "severity": "MEDIUM",
+      "category": "platform_config_drift",
+      "finding": "Reference platform.yaml pins enforce_trend_mechanism: false and lists only one alpha — not representative of full alphas/ directory.",
+      "evidence": "platform.yaml",
+      "recommended_action": "Separate reference smoke config from full alpha CI matrix."
+    }
+  ],
+  "test_coverage_findings": [
+    {
+      "severity": "INFO",
+      "finding": "tests/alpha/*.py provide loader + HorizonSignalEngine harness coverage for SIGNAL alphas; Hawkes tests bypass aggregator.",
+      "evidence": "tests/alpha/test_sig_hawkes_burst_v1.py",
+      "recommended_action": "Closed-loop Hawkes replay test post-wiring fix."
+    },
+    {
+      "severity": "INFO",
+      "finding": "Added tests/alpha/test_discovered_alpha_specs_load.py and tests/features/test_rolling_zscore_skips_tuple_sensor_values.py in this audit branch.",
+      "evidence": "git diff",
+      "recommended_action": "Keep discovery test green as new alphas land."
+    }
+  ],
+  "recommended_actions": [
+    {
+      "priority": "P0",
+      "action": "Repair Hawkes intensity → horizon z-score wiring (tuple component + rolling stats or equivalent)."
+    },
+    {
+      "priority": "P0",
+      "action": "Extend operator platform.yaml templates to register scheduled_flow_window + event_calendar_path when running sig_moc_imbalance_v1."
+    },
+    {
+      "priority": "P1",
+      "action": "Reconcile sig_benign_midcap_v1 narrative sensors with evaluate() inputs; remove dead depends_on_sensors or use them."
+    },
+    {
+      "priority": "P1",
+      "action": "Tighten PORTFOLIO reference risk_budget defaults for personal-tier docs or gate behind explicit operator acknowledgement."
+    },
+    {
+      "priority": "P2",
+      "action": "Replace symbolic falsification strings on PORTFOLIO alphas with measurable promotion-evidence hooks."
+    }
+  ]
+}

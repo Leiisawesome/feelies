@@ -124,13 +124,126 @@ class TestBacktestOrderRouter:
         clock = SimulatedClock(start_ns=5000)
         router = BacktestOrderRouter(clock, latency_ns=1000)
 
-        router.on_quote(_quote("AAPL", "100.00", "100.10"))
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=1000))
         router.submit(_order("AAPL"))
 
         acks = router.poll_acks()
-        # ACK and FILL both carry now + latency.
+        assert [a.status for a in acks] == [OrderAckStatus.ACKNOWLEDGED]
         assert acks[0].timestamp_ns == 6000
-        assert acks[1].timestamp_ns == 6000
+
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=2000))
+        acks2 = router.poll_acks()
+        assert len(acks2) == 1
+        assert acks2[0].status == OrderAckStatus.FILLED
+        # Deferred FILLED uses max(ack_ts, fill_quote.exchange_timestamp_ns).
+        # Here the injected clock stays at 5000 while exchange timestamps run
+        # 1000 → 2000, so ack_ts=6000 dominates (tests ACK ≤ FILLED ordering).
+        assert acks2[0].timestamp_ns == 6000
+
+    def test_deferred_market_fill_ts_no_double_latency_when_clock_tracks_exchange(
+        self,
+    ) -> None:
+        """ReplayFeed advances clock to each quote — FILLED must not add latency twice."""
+        clock = SimulatedClock(start_ns=1000)
+        router = BacktestOrderRouter(clock, latency_ns=1000)
+
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=1000))
+        router.submit(_order("AAPL"))
+        assert router.poll_acks()[0].timestamp_ns == 2000
+
+        clock.set_time(2500)
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=2500))
+        fill = router.poll_acks()[0]
+        assert fill.status == OrderAckStatus.FILLED
+        assert fill.timestamp_ns == 2500
+
+    def test_deferred_market_rejects_after_max_ticks_without_eligible_exchange_time(
+        self,
+    ) -> None:
+        """Stale/frozen exchange timestamps never reach latency deadline → timeout."""
+        clock = SimulatedClock(start_ns=5000)
+        router = BacktestOrderRouter(
+            clock,
+            latency_ns=1000,
+            max_resting_ticks=3,
+        )
+
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=1000))
+        router.submit(_order("AAPL"))
+        acks0 = router.poll_acks()
+        assert [a.status for a in acks0] == [OrderAckStatus.ACKNOWLEDGED]
+        ack_ts = acks0[0].timestamp_ns
+
+        for _ in range(3):
+            router.on_quote(_quote("AAPL", "100.00", "100.10", ts=1000))
+
+        rejects = [a for a in router.poll_acks() if a.status == OrderAckStatus.REJECTED]
+        assert len(rejects) == 1
+        assert "timeout" in rejects[0].reason.lower()
+        assert "ticks" in rejects[0].reason.lower()
+        assert rejects[0].timestamp_ns >= ack_ts
+
+    def test_deferred_market_timeout_reject_ts_not_before_ack_when_clock_tracks_exchange(
+        self,
+    ) -> None:
+        """max_resting_ticks fires before latency deadline: REJECTED must not precede ACK."""
+        clock = SimulatedClock(start_ns=1000)
+        router = BacktestOrderRouter(clock, latency_ns=1000, max_resting_ticks=3)
+
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=1000))
+        router.submit(_order("AAPL"))
+        ack = router.poll_acks()[0]
+        assert ack.status == OrderAckStatus.ACKNOWLEDGED
+        assert ack.timestamp_ns == 2000
+
+        for _ in range(3):
+            clock.set_time(1500)
+            router.on_quote(_quote("AAPL", "100.00", "100.10", ts=1500))
+
+        rej = router.poll_acks()[0]
+        assert rej.status == OrderAckStatus.REJECTED
+        assert rej.timestamp_ns >= ack.timestamp_ns
+
+    def test_deferred_market_queues_despite_zero_depth_on_submit_quote(self):
+        """Depth at submit is ignored when latency defers the fill (causal model)."""
+        clock = SimulatedClock(start_ns=5000)
+        router = BacktestOrderRouter(clock, latency_ns=1000)
+
+        router.on_quote(_quote_with_depth(
+            "100.00", "100.10", bid_size=100, ask_size=0, ts=1000,
+        ))
+        router.submit(_order("AAPL"))
+        assert [a.status for a in router.poll_acks()] == [
+            OrderAckStatus.ACKNOWLEDGED,
+        ]
+
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=2000))
+        acks2 = router.poll_acks()
+        assert len(acks2) == 1
+        assert acks2[0].status == OrderAckStatus.FILLED
+
+    def test_same_order_id_allowed_after_deferred_reject(self) -> None:
+        """Terminal REJECTED releases id so callers can retry the same ``order_id``."""
+        clock = SimulatedClock(start_ns=5000)
+        router = BacktestOrderRouter(clock, latency_ns=1000)
+
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=1000))
+        router.submit(_order("AAPL", order_id="reuse-1"))
+        router.poll_acks()
+
+        router.on_quote(_quote_with_depth(
+            "100.00", "100.10", bid_size=100, ask_size=0, ts=2000,
+        ))
+        assert router.poll_acks()[0].status == OrderAckStatus.REJECTED
+
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=3000))
+        router.submit(_order("AAPL", order_id="reuse-1"))
+        assert [a.status for a in router.poll_acks()] == [
+            OrderAckStatus.ACKNOWLEDGED,
+        ]
+
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=4000))
+        assert router.poll_acks()[0].status == OrderAckStatus.FILLED
 
     def test_multiple_symbols_independent(self):
         clock = SimulatedClock(start_ns=5000)

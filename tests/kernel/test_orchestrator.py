@@ -21,6 +21,7 @@ Tests for behaviours that no longer exist were dropped:
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
 from dataclasses import replace
 from decimal import Decimal
 from typing import Any
@@ -29,7 +30,11 @@ import pytest
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
+from feelies.core.errors import OrchestratorPipelineAbortError, SessionEntryBlockedError
+from feelies.core.state_machine import TransitionRecord
 from feelies.core.events import (
+    Alert,
+    Event,
     MetricEvent,
     NBBOQuote,
     OrderAck,
@@ -42,16 +47,20 @@ from feelies.core.events import (
     Side,
     Signal,
     SignalDirection,
+    StateTransition,
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
+from feelies.execution.order_state import OrderState
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
 from feelies.kernel.orchestrator import Orchestrator
+from feelies.monitoring.in_memory import InMemoryKillSwitch
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import Position
 from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
+from feelies.risk.escalation import RiskLevel
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 
@@ -63,6 +72,70 @@ class _NoOpMetricCollector:
         pass
 
     def flush(self) -> None:
+        pass
+
+
+class _CountingReplayLog:
+    """Event log stub that exposes how far calibration iterated."""
+
+    def __init__(self, events: Sequence[Event]) -> None:
+        self._events = tuple(events)
+        self.events_yielded = 0
+
+    def append(self, event: Event) -> None:
+        raise NotImplementedError
+
+    def append_batch(self, events: Sequence[Event]) -> None:
+        raise NotImplementedError
+
+    def replace_events(self, _events: Sequence[Event]) -> None:
+        raise NotImplementedError
+
+    def replay(
+        self,
+        start_sequence: int = 0,
+        end_sequence: int | None = None,
+    ) -> Iterator[Event]:
+        del start_sequence, end_sequence
+        for event in self._events:
+            self.events_yielded += 1
+            yield event
+
+    def last_sequence(self) -> int:
+        return self._events[-1].sequence if self._events else -1
+
+
+class _StubRegimeEngine:
+    def __init__(self) -> None:
+        self.calibrated = False
+        self.calibration_count: int | None = None
+
+    @property
+    def state_names(self) -> Sequence[str]:
+        return ("normal",)
+
+    @property
+    def n_states(self) -> int:
+        return 1
+
+    def calibrate(self, quotes: Sequence[NBBOQuote]) -> bool:
+        self.calibrated = True
+        self.calibration_count = len(quotes)
+        return True
+
+    def posterior(self, quote: NBBOQuote) -> list[float]:
+        return [1.0]
+
+    def current_state(self, symbol: str) -> list[float] | None:
+        return None
+
+    def reset(self, symbol: str) -> None:
+        pass
+
+    def checkpoint(self) -> bytes:
+        return b"{}"
+
+    def restore(self, data: bytes) -> None:
         pass
 
 
@@ -292,6 +365,7 @@ def _build_orchestrator(
     market_data: Any = None,
     position_store: Any = None,
     strategy_positions: Any = None,
+    kill_switch: Any = None,
 ) -> Orchestrator:
     bus = bus if bus is not None else EventBus()
     event_log = InMemoryEventLog()
@@ -311,6 +385,7 @@ def _build_orchestrator(
         event_log=event_log,
         metric_collector=_NoOpMetricCollector(),
         strategy_positions=strategy_positions,
+        kill_switch=kill_switch,
     )
 
 
@@ -336,6 +411,39 @@ class TestOrchestratorBoot:
         clock = SimulatedClock(start_ns=1000)
         orch = _build_orchestrator(clock)
         assert orch.macro_state == MacroState.INIT
+
+    def test_regime_calibration_does_not_scan_suffix_for_total_count(
+        self,
+    ) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        quotes = tuple(
+            _make_quote(ts=1000 + i, seq=i + 1)
+            for i in range(100)
+        )
+        event_log = _CountingReplayLog(quotes)
+        regime_engine = _StubRegimeEngine()
+        bt_router = BacktestOrderRouter(clock=clock)
+        backend = ExecutionBackend(
+            market_data=_StubMarketData(),
+            order_router=bt_router,
+            mode="BACKTEST",
+        )
+        orch = Orchestrator(
+            clock=clock,
+            bus=EventBus(),
+            backend=backend,
+            risk_engine=_StubRiskEngine(),
+            position_store=MemoryPositionStore(),
+            event_log=event_log,
+            metric_collector=_NoOpMetricCollector(),
+            regime_engine=regime_engine,
+        )
+        orch._regime_calibration_max_quotes = 3
+
+        orch._calibrate_regime_engine()
+
+        assert regime_engine.calibration_count == 3
+        assert event_log.events_yielded == 3
 
     def test_boot_transitions_to_ready(self) -> None:
         clock = SimulatedClock(start_ns=1000)
@@ -519,6 +627,283 @@ class TestOrchestratorFullPipeline:
 
         assert len(updates) == 1
         assert updates[0].timestamp_ns == 2000
+
+
+class TestOrchestratorFillReconcileGuards:
+    def test_reconcile_ignores_fill_fields_on_rejected_ack(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+        position_store = MemoryPositionStore()
+        orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="c1",
+            sequence=1,
+            order_id="ord-rej-fill",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            strategy_id="a",
+        )
+        orch._track_order(order.order_id, order.side, order)
+        orch._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=order.correlation_id,
+        )
+
+        orch._reconcile_fills([
+            OrderAck(
+                timestamp_ns=1100,
+                correlation_id="c1",
+                sequence=1,
+                order_id=order.order_id,
+                symbol="AAPL",
+                status=OrderAckStatus.REJECTED,
+                filled_quantity=10,
+                fill_price=Decimal("150"),
+                reason="simulated",
+            ),
+        ], correlation_id="tick-cid")
+
+        assert position_store.get("AAPL").quantity == 0
+        assert any(
+            a.alert_name == "fill_payload_inconsistent_with_ack_status"
+            for a in alerts
+        )
+
+    def test_reconcile_alerts_on_filled_missing_price(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+        position_store = MemoryPositionStore()
+        orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="c2",
+            sequence=1,
+            order_id="ord-bad-fill",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            strategy_id="a",
+        )
+        orch._track_order(order.order_id, order.side, order)
+        orch._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=order.correlation_id,
+        )
+
+        orch._reconcile_fills([
+            OrderAck(
+                timestamp_ns=1200,
+                correlation_id="c2",
+                sequence=1,
+                order_id=order.order_id,
+                symbol="AAPL",
+                status=OrderAckStatus.FILLED,
+                filled_quantity=10,
+                fill_price=None,
+            ),
+        ], correlation_id="tick-cid")
+
+        assert position_store.get("AAPL").quantity == 0
+        assert any(
+            a.alert_name == "fill_ack_missing_price_or_quantity"
+            for a in alerts
+        )
+
+    def test_duplicate_filled_ack_emits_warning_alert(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="c3",
+            sequence=1,
+            order_id="ord-dup-fill",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            strategy_id="a",
+        )
+        orch._track_order(order.order_id, order.side, order)
+        orch._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=order.correlation_id,
+        )
+        orch._apply_ack_to_order(OrderAck(
+            timestamp_ns=1300,
+            correlation_id="c3",
+            sequence=1,
+            order_id=order.order_id,
+            symbol="AAPL",
+            status=OrderAckStatus.ACKNOWLEDGED,
+        ))
+        orch._apply_ack_to_order(OrderAck(
+            timestamp_ns=1310,
+            correlation_id="c3",
+            sequence=2,
+            order_id=order.order_id,
+            symbol="AAPL",
+            status=OrderAckStatus.FILLED,
+            filled_quantity=10,
+            fill_price=Decimal("150"),
+        ))
+        orch._apply_ack_to_order(OrderAck(
+            timestamp_ns=1320,
+            correlation_id="c3",
+            sequence=3,
+            order_id=order.order_id,
+            symbol="AAPL",
+            status=OrderAckStatus.FILLED,
+            filled_quantity=10,
+            fill_price=Decimal("150"),
+        ))
+
+        assert any(
+            a.alert_name == "duplicate_terminal_fill_ack"
+            for a in alerts
+        )
+
+    def test_emergency_flatten_poll_failure_force_terminals_order(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+
+        class _PollFailsRouter(BacktestOrderRouter):
+            def poll_acks(self):  # type: ignore[override]
+                raise RuntimeError("poll boom")
+
+        quote = _make_quote()
+        router = _PollFailsRouter(clock=clock)
+        router.on_quote(quote)
+
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=MemoryPositionStore(),
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+        _boot_to_backtest(orch)
+        orch._positions.update("AAPL", 100, Decimal("150.00"))
+
+        failures, residual = orch._emergency_flatten_all("esc-cid")
+
+        assert "AAPL" in failures
+        assert residual["AAPL"] == 100
+        assert any(a.alert_name == "order_pipeline_exception" for a in alerts)
+        assert not any(
+            sm.state == OrderState.SUBMITTED
+            for sm, _, _ in orch._active_orders.values()
+        )
+
+    def test_cancel_order_without_router_resolves_to_cancelled(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="cc",
+            sequence=1,
+            order_id="ord-cancel-local",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            strategy_id="a",
+        )
+        orch._track_order(order.order_id, order.side, order)
+        orch._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=order.correlation_id,
+        )
+        orch._apply_ack_to_order(OrderAck(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="cc",
+            sequence=1,
+            order_id=order.order_id,
+            symbol="AAPL",
+            status=OrderAckStatus.ACKNOWLEDGED,
+        ))
+
+        assert orch.cancel_order(order.order_id) is True
+        assert order.order_id not in orch._active_orders
+        assert any(
+            a.alert_name == "cancel_order_router_unsupported"
+            for a in alerts
+        )
+
+    def test_shutdown_resolves_cancel_requested(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="sd",
+            sequence=1,
+            order_id="ord-shut-cr",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=1,
+            strategy_id="a",
+        )
+        orch._track_order(order.order_id, order.side, order)
+        orch._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=order.correlation_id,
+        )
+        orch._apply_ack_to_order(OrderAck(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="sd",
+            sequence=1,
+            order_id=order.order_id,
+            symbol="AAPL",
+            status=OrderAckStatus.ACKNOWLEDGED,
+        ))
+        sm = orch._active_orders[order.order_id][0]
+        sm.transition(
+            OrderState.CANCEL_REQUESTED,
+            trigger="manual_test",
+            correlation_id=order.correlation_id,
+        )
+
+        orch.shutdown()
+
+        assert order.order_id not in orch._active_orders
+        assert not any(
+            a.alert_name == "pending_orders_at_shutdown" for a in alerts
+        )
 
 
 # ── Tests: No signal path ────────────────────────────────────────────
@@ -840,12 +1225,234 @@ class TestOrchestratorHalt:
         orch.halt()
         assert orch.macro_state == MacroState.READY
 
+    def test_halt_resets_micro_state_machine(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_backtest(orch)
+        orch.halt()
+        assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
+
     def test_halt_noop_when_not_trading(self) -> None:
         clock = SimulatedClock(start_ns=1000)
         orch = _build_orchestrator(clock)
         _boot_to_ready(orch)
         orch.halt()
         assert orch.macro_state == MacroState.READY
+
+
+
+# ── Macro lifecycle remediation (global stack audit) ──────────────────
+
+
+class TestOrchestratorMacroLifecycleRemediation:
+    def test_shutdown_from_risk_lockdown_reaches_shutdown(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_ready(orch)
+        orch._macro.transition(
+            MacroState.LIVE_TRADING_MODE,
+            trigger="CMD_LIVE_DEPLOY",
+        )
+        orch._macro.transition(
+            MacroState.RISK_LOCKDOWN,
+            trigger="RISK_BREACH",
+        )
+        orch.shutdown()
+        assert orch.macro_state == MacroState.SHUTDOWN
+
+    def test_unlock_from_lockdown_clears_kill_switch(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        kill = InMemoryKillSwitch()
+        kill.activate("pre_unlock", activated_by="test")
+        bus = EventBus()
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=BacktestOrderRouter(clock=clock),
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=MemoryPositionStore(),
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+            kill_switch=kill,
+        )
+        _boot_to_ready(orch)
+        re = orch._risk_escalation
+        re.transition(RiskLevel.WARNING, trigger="t")
+        re.transition(RiskLevel.BREACH_DETECTED, trigger="t")
+        re.transition(RiskLevel.FORCED_FLATTEN, trigger="t")
+        re.transition(RiskLevel.LOCKED, trigger="t")
+        orch._macro.transition(
+            MacroState.LIVE_TRADING_MODE,
+            trigger="CMD_LIVE_DEPLOY",
+        )
+        orch._macro.transition(
+            MacroState.RISK_LOCKDOWN,
+            trigger="RISK_BREACH",
+        )
+        assert kill.is_active
+        orch.unlock_from_lockdown(audit_token="tok-audit")
+        assert not kill.is_active
+        assert orch.macro_state == MacroState.READY
+        assert orch.risk_level == RiskLevel.NORMAL
+
+    def test_run_paper_empty_feed_returns_ready(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_ready(orch)
+        orch.run_paper()
+        assert orch.macro_state == MacroState.READY
+
+    def test_run_live_empty_feed_returns_ready(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_ready(orch)
+        orch.run_live()
+        assert orch.macro_state == MacroState.READY
+
+    def test_run_backtest_refuses_active_kill_switch(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        kill = InMemoryKillSwitch()
+        kill.activate("test_halt", activated_by="test")
+        orch = _build_orchestrator(clock, kill_switch=kill)
+        _boot_to_ready(orch)
+        with pytest.raises(SessionEntryBlockedError, match="kill switch"):
+            orch.run_backtest()
+
+    def test_run_backtest_refuses_non_normal_risk(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_ready(orch)
+        orch._risk_escalation.transition(RiskLevel.WARNING, trigger="probe")
+        with pytest.raises(SessionEntryBlockedError, match="risk escalation"):
+            orch.run_backtest()
+
+    def test_live_mode_force_flatten_reaches_macro_risk_lockdown(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        quote = _make_quote()
+        signal = _make_signal(quote)
+        _publish_signal_on_quote(bus, signal)
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=_StubRiskEngine(RiskAction.FORCE_FLATTEN),
+        )
+        _boot_to_ready(orch)
+        orch._macro.transition(MacroState.LIVE_TRADING_MODE, trigger="CMD_LIVE_DEPLOY")
+        orch._process_tick(quote)
+        assert orch.macro_state == MacroState.RISK_LOCKDOWN
+        assert orch.risk_level == RiskLevel.LOCKED
+
+    def test_backtest_force_flatten_does_not_reach_macro_lockdown(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        quote = _make_quote()
+        signal = _make_signal(quote)
+        _publish_signal_on_quote(bus, signal)
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=_StubRiskEngine(RiskAction.FORCE_FLATTEN),
+        )
+        _boot_to_backtest(orch)
+        orch._process_tick(quote)
+        assert orch.macro_state == MacroState.BACKTEST_MODE
+        assert orch.risk_level == RiskLevel.NORMAL
+
+    def test_recover_from_degraded_refuses_when_kill_switch_active(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        signal = _make_signal(_make_quote())
+        kill = InMemoryKillSwitch()
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=_RaisingRiskEngine(),
+            kill_switch=kill,
+        )
+        _publish_signal_on_quote(bus, signal)
+        _boot_to_ready(orch)
+        orch._macro.transition(MacroState.BACKTEST_MODE, trigger="CMD_BACKTEST")
+        orch._micro.reset(trigger="session_start:test")
+        orch._process_tick(_make_quote())
+        assert orch.macro_state == MacroState.DEGRADED
+        kill.activate("during_degraded", activated_by="test")
+        assert orch.recover_from_degraded() is False
+        assert orch.macro_state == MacroState.DEGRADED
+
+    def test_shutdown_macro_transition_uses_correlation_id(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        st_events: list[StateTransition] = []
+        bus.subscribe(StateTransition, st_events.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        _boot_to_ready(orch)
+        orch.shutdown()
+        macro_shutdown = [
+            e for e in st_events
+            if e.machine_name == "global_stack" and e.to_state == "SHUTDOWN"
+        ]
+        assert macro_shutdown
+        assert macro_shutdown[-1].correlation_id == "orchestrator_shutdown"
+
+    def test_shutdown_warns_on_pending_orders(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        _boot_to_ready(orch)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="pending-cid",
+            sequence=1,
+            order_id="pending-order-1",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=10,
+            limit_price=Decimal("150.00"),
+            strategy_id="alpha_1",
+        )
+        orch._track_order(order.order_id, Side.BUY, order)
+        orch.shutdown()
+        pending_alerts = [a for a in alerts if a.alert_name == "pending_orders_at_shutdown"]
+        assert len(pending_alerts) == 1
+        assert "pending-order-1" in pending_alerts[0].context.get("order_ids", [])
+
+    def test_run_paper_pipeline_abort_not_session_feed_complete(self) -> None:
+        """If DEGRADED transition fails inside tick recovery, do not → READY.
+
+        Regression: ``_pipeline_abort_requested`` broke the tick loop without
+        raising, so ``SESSION_FEED_COMPLETE`` looked like normal exhaustion.
+        """
+        clock = SimulatedClock(start_ns=1000)
+        quote = _make_quote()
+        orch = _build_orchestrator(
+            clock,
+            market_data=_StubMarketData([quote]),
+        )
+        _boot_to_ready(orch)
+
+        def veto_drift(record: TransitionRecord) -> None:
+            if record.trigger.startswith("EXECUTION_DRIFT_DETECTED"):
+                raise RuntimeError("macro transition subscriber boom")
+
+        orch._macro.on_transition(veto_drift)
+
+        def boom(_quote: NBBOQuote) -> None:
+            raise RuntimeError("tick boom")
+
+        orch._process_tick_inner = boom  # type: ignore[method-assign]
+
+        with pytest.raises(OrchestratorPipelineAbortError):
+            orch.run_paper()
+
+        assert orch.macro_state == MacroState.DEGRADED
 
 
 # ── Tests: Multiple ticks ────────────────────────────────────────────

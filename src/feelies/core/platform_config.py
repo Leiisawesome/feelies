@@ -56,7 +56,9 @@ class PlatformConfig:
     parameter_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     regime_engine: str | None = "hmm_3state_fractional"
-
+    # Optional kwargs forwarded to ``get_regime_engine(..., **options)`` at
+    # bootstrap (e.g. ``transition_time_scaling_enabled: true``).
+    regime_engine_options: dict[str, object] = field(default_factory=dict)
     data_dir: Path | None = None
     event_log_path: Path | None = None
 
@@ -64,12 +66,52 @@ class PlatformConfig:
     risk_max_gross_exposure_pct: float = 20.0
     risk_max_drawdown_pct: float = 5.0
 
+    # Regime-aware position-limit scaling (BasicRiskEngine expected-value gate).
+    # Keys correspond to built-in HMM state_names (vol_breakout /
+    # compression_clustering / normal).  Tune via YAML; defaults match
+    # RiskConfig skill baselines.
+    risk_regime_vol_breakout_scale: float = 0.5
+    risk_regime_compression_scale: float = 0.75
+    risk_regime_normal_scale: float = 1.0
+
+    # Offline replay only: when True, ``disk_cache_ingestion_health_rows`` must
+    # be populated (typically after ingest/replay) and every row must be
+    # HEALTHY — mirrors normalizer HEALTHY checks when no Massive normalizer
+    # is wired at orchestrator boot.
+    require_healthy_disk_cache_manifests: bool = False
+    disk_cache_ingestion_health_rows: tuple[tuple[str, str, str], ...] = ()
+    # When True and a Massive normalizer is wired, GAP_DETECTED halts ticks/trades
+    # for that symbol the same way CORRUPTED does (strict streaming policy).
+    degrade_on_data_gap: bool = False
+    # Log WARNING at boot when disk_cache_ingestion_health_rows carries non-HEALTHY
+    # rows while require_healthy_disk_cache_manifests is False (advisory path).
+    warn_on_unhealthy_disk_cache: bool = True
+    # After historical ingest / cache load, worst-case per-symbol DataHealth.name
+    # (populated by run_backtest / cache replay — not usually hand-authored in YAML).
+    ingest_terminal_symbol_health: tuple[tuple[str, str], ...] = ()
+    # BACKTEST only: ``validate()`` requires ``ingest_terminal_symbol_health`` to cover
+    # every config symbol with ``HEALTHY`` (fail closed on GAP_DETECTED / CORRUPTED).
+    backtest_enforce_ingest_terminal_health: bool = False
+    # BACKTEST ingest path: refuse runs with zero events when True.
+    backtest_reject_zero_ingest_events: bool = False
+    # When a Massive normalizer is wired, universe symbols must appear in
+    # ``normalizer.all_health()`` before ticks/trades are consumed (live/paper hook).
+    strict_normalizer_symbol_coverage: bool = False
+    # Historical Massive REST rows are usually thinned (non-contiguous SIP
+    # ``sequence_number``).  Keep False for default ingest; set True only when
+    # the REST stream is full-tick contiguous so gap detection matches WS.
+    enable_rest_sequence_gap_detection: bool = False
+
     account_equity: float = 1_000_000.0
     backtest_fill_latency_ns: int = 0
 
     stop_loss_per_share: float = 0.0
     trail_activate_per_share: float = 0.0
     trail_pct: float = 0.5
+    # Percentage-based stops (fraction of entry price, e.g. 0.01 = 1%).
+    # When non-zero, these override stop_loss_per_share / trail_activate_per_share.
+    stop_loss_pct: float = 0.0
+    trail_activate_pct: float = 0.0
 
     cost_min_spread_bps: float = 0.0
     cost_commission_per_share: float = 0.0035
@@ -138,6 +180,18 @@ class PlatformConfig:
     # suppress sub-cost edges that the alpha spec already discloses.
     signal_min_edge_cost_ratio: float = 0.0
 
+    # Regime engine boot-time calibration (lookahead avoidance).  ``None``
+    # skips feeding the trading event log into ``calibrate()`` entirely
+    # (cold emission defaults + per-run warning).  A positive integer uses
+    # only the first N NBBO quotes in replay sequence order as calibration
+    # input — causal prefix, never the full session.
+    regime_calibration_max_quotes: int | None = None
+
+    # When True, bootstrap refuses to start if ``RegimeEngine.state_names``
+    # contains any name missing from the risk engine's regime scale map
+    # (fail-closed vs silent ``min(scale)`` fallback for unknown states).
+    enforce_regime_state_scale_alignment: bool = False
+
     # 2d: market-impact factor for walk-the-book slippage on large orders.
     # Excess beyond L1 available depth is priced at
     #   fill_price ± impact_factor × (excess / depth) × half_spread.
@@ -187,7 +241,7 @@ class PlatformConfig:
     # opt-out), schema-1.1 SIGNAL/PORTFOLIO specs may omit the block
     # and G16 only fires for specs that *do* declare it; this is the
     # documented escape hatch for v0.2-baseline alphas (such as the
-    # reference ``pofi_benign_midcap_v1``) that pre-date the mechanism
+    # reference ``sig_benign_midcap_v1``) that pre-date the mechanism
     # taxonomy.
     #
     # Workstream E (acceptance row 84, §20.12.1) flipped the default
@@ -249,6 +303,17 @@ class PlatformConfig:
     composition_lambda_risk: float = 0.1
     composition_max_universe_size: int = 50
     enforce_layer_gates: bool = True
+
+    # ── Audit R2: per-alpha risk-budget enforcement ───────────────
+    # When True, the platform wraps the BasicRiskEngine in
+    # AlphaBudgetRiskWrapper at boot so each alpha's
+    # ``risk_budget`` block (max_position_per_symbol,
+    # max_gross_exposure_pct, max_drawdown_pct,
+    # capital_allocation_pct) is enforced at runtime in addition to
+    # the platform-wide caps.  Default is False to preserve
+    # Default True — per-alpha YAML ``risk_budget`` blocks are enforced
+    # at runtime in addition to platform-wide caps.
+    enforce_per_alpha_risk_budget: bool = True
 
     # ── Workstream F-1 (promotion evidence ledger) ────────────────
     #
@@ -326,6 +391,64 @@ class PlatformConfig:
         if self.account_equity <= 0:
             raise ConfigurationError("account_equity must be positive")
 
+        if not isinstance(self.regime_engine_options, dict):
+            raise ConfigurationError(
+                "regime_engine_options must be a dict[str, object] mapping"
+            )
+        for opt_key in self.regime_engine_options:
+            if not isinstance(opt_key, str):
+                raise ConfigurationError(
+                    "regime_engine_options keys must be strings, "
+                    f"got {type(opt_key).__name__}"
+                )
+
+        for scale_name, scale_val in (
+            ("risk_regime_vol_breakout_scale", self.risk_regime_vol_breakout_scale),
+            ("risk_regime_compression_scale", self.risk_regime_compression_scale),
+            ("risk_regime_normal_scale", self.risk_regime_normal_scale),
+        ):
+            if not (0.0 < scale_val <= 2.0):
+                raise ConfigurationError(
+                    f"{scale_name} must lie in (0, 2], got {scale_val}"
+                )
+
+        if self.require_healthy_disk_cache_manifests:
+            if not self.disk_cache_ingestion_health_rows:
+                raise ConfigurationError(
+                    "require_healthy_disk_cache_manifests=True requires "
+                    "non-empty disk_cache_ingestion_health_rows "
+                    "(populate after ingest / cache replay)"
+                )
+            for sym, day, health_status in self.disk_cache_ingestion_health_rows:
+                if health_status != "HEALTHY":
+                    raise ConfigurationError(
+                        f"disk cache manifest not HEALTHY for {sym}/{day}: {health_status!r}"
+                    )
+
+        if self.backtest_enforce_ingest_terminal_health:
+            if self.mode != OperatingMode.BACKTEST:
+                raise ConfigurationError(
+                    "backtest_enforce_ingest_terminal_health is only valid "
+                    "in BACKTEST mode",
+                )
+            if self.ingest_terminal_symbol_health:
+                terminal_map = {
+                    k.upper(): v for k, v in self.ingest_terminal_symbol_health
+                }
+                for sym in self.symbols:
+                    key = sym.upper()
+                    state = terminal_map.get(key)
+                    if state is None:
+                        raise ConfigurationError(
+                            "backtest_enforce_ingest_terminal_health: "
+                            f"missing ingest_terminal_symbol_health row for {sym!r}",
+                        )
+                    if state != "HEALTHY":
+                        raise ConfigurationError(
+                            "backtest_enforce_ingest_terminal_health: "
+                            f"symbol {sym!r} terminal health is {state!r}, expected HEALTHY",
+                        )
+
         valid_modes = ("market", "passive_limit", "minimum_cost")
         if self.execution_mode not in valid_modes:
             raise ConfigurationError(
@@ -357,6 +480,12 @@ class PlatformConfig:
             raise ConfigurationError("market_id must be non-empty")
         if not self.session_kind:
             raise ConfigurationError("session_kind must be non-empty")
+
+        if self.regime_calibration_max_quotes is not None:
+            if self.regime_calibration_max_quotes < 1:
+                raise ConfigurationError(
+                    "regime_calibration_max_quotes must be >= 1 when set"
+                )
 
         # Sensor specs: detect duplicate (sensor_id, sensor_version)
         # pairs early so registration-time errors at boot are reserved
@@ -470,16 +599,45 @@ class PlatformConfig:
             "alpha_specs": sorted(p.name for p in self.alpha_specs),
             "parameter_overrides": self.parameter_overrides,
             "regime_engine": self.regime_engine,
+            "regime_engine_options": dict(self.regime_engine_options),
             "data_dir": self.data_dir.name if self.data_dir else None,
             "event_log_path": self.event_log_path.name if self.event_log_path else None,
             "risk_max_position_per_symbol": self.risk_max_position_per_symbol,
             "risk_max_gross_exposure_pct": self.risk_max_gross_exposure_pct,
             "risk_max_drawdown_pct": self.risk_max_drawdown_pct,
+            "risk_regime_vol_breakout_scale": self.risk_regime_vol_breakout_scale,
+            "risk_regime_compression_scale": self.risk_regime_compression_scale,
+            "risk_regime_normal_scale": self.risk_regime_normal_scale,
+            "require_healthy_disk_cache_manifests": (
+                self.require_healthy_disk_cache_manifests
+            ),
+            "disk_cache_ingestion_health_rows": list(
+                self.disk_cache_ingestion_health_rows,
+            ),
+            "degrade_on_data_gap": self.degrade_on_data_gap,
+            "warn_on_unhealthy_disk_cache": self.warn_on_unhealthy_disk_cache,
+            "ingest_terminal_symbol_health": list(
+                self.ingest_terminal_symbol_health,
+            ),
+            "backtest_enforce_ingest_terminal_health": (
+                self.backtest_enforce_ingest_terminal_health
+            ),
+            "backtest_reject_zero_ingest_events": (
+                self.backtest_reject_zero_ingest_events
+            ),
+            "strict_normalizer_symbol_coverage": (
+                self.strict_normalizer_symbol_coverage
+            ),
+            "enable_rest_sequence_gap_detection": (
+                self.enable_rest_sequence_gap_detection
+            ),
             "account_equity": self.account_equity,
             "backtest_fill_latency_ns": self.backtest_fill_latency_ns,
             "stop_loss_per_share": self.stop_loss_per_share,
             "trail_activate_per_share": self.trail_activate_per_share,
             "trail_pct": self.trail_pct,
+            "stop_loss_pct": self.stop_loss_pct,
+            "trail_activate_pct": self.trail_activate_pct,
             "cost_min_spread_bps": self.cost_min_spread_bps,
             "cost_commission_per_share": self.cost_commission_per_share,
             "cost_taker_exchange_per_share": self.cost_taker_exchange_per_share,
@@ -506,6 +664,10 @@ class PlatformConfig:
             "passive_cancel_fee_per_share": self.passive_cancel_fee_per_share,
             "platform_min_order_shares": self.platform_min_order_shares,
             "signal_min_edge_cost_ratio": self.signal_min_edge_cost_ratio,
+            "regime_calibration_max_quotes": self.regime_calibration_max_quotes,
+            "enforce_regime_state_scale_alignment": (
+                self.enforce_regime_state_scale_alignment
+            ),
             "cost_market_impact_factor": self.cost_market_impact_factor,
             "cost_htb_borrow_annual_bps": self.cost_htb_borrow_annual_bps,
             # Phase-2 fields (folded into the snapshot so determinism
@@ -561,6 +723,9 @@ class PlatformConfig:
             "composition_lambda_risk": self.composition_lambda_risk,
             "composition_max_universe_size": self.composition_max_universe_size,
             "enforce_layer_gates": self.enforce_layer_gates,
+            "enforce_per_alpha_risk_budget": (
+                self.enforce_per_alpha_risk_budget
+            ),
             # Workstream F-1: ledger path is folded as a basename only
             # (same Path-normalisation policy as event_log_path /
             # cache_dir) so absolute-fs paths don't leak into the
@@ -613,6 +778,23 @@ class PlatformConfig:
         event_log_raw = data.get("event_log_path")
         cache_dir_raw = data.get("cache_dir")
 
+        terminal_raw = data.get("ingest_terminal_symbol_health")
+        ingest_terminal_symbol_health: tuple[tuple[str, str], ...] = ()
+        if terminal_raw:
+            if not isinstance(terminal_raw, list):
+                raise ConfigurationError(
+                    f"{path}: ingest_terminal_symbol_health must be a list of pairs",
+                )
+            parsed_term: list[tuple[str, str]] = []
+            for i, item in enumerate(terminal_raw):
+                if not isinstance(item, (list, tuple)) or len(item) != 2:
+                    raise ConfigurationError(
+                        f"{path}: ingest_terminal_symbol_health[{i}] "
+                        "must be [symbol, state]",
+                    )
+                parsed_term.append((str(item[0]), str(item[1])))
+            ingest_terminal_symbol_health = tuple(parsed_term)
+
         # ── Phase-2 fields (optional in YAML) ─────────────────────────
         horizons_raw = data.get("horizons_seconds")
         if horizons_raw is None:
@@ -645,6 +827,30 @@ class PlatformConfig:
             int(session_open_ns_raw) if session_open_ns_raw is not None else None
         )
 
+        taker_exch_raw = data.get("cost_taker_exchange_per_share")
+        maker_exch_raw = data.get("cost_maker_exchange_per_share")
+        legacy_exch = data.get("cost_exchange_per_share")
+        if taker_exch_raw is None and legacy_exch is not None:
+            taker_exch_raw = legacy_exch
+        if maker_exch_raw is None and legacy_exch is not None:
+            maker_exch_raw = legacy_exch
+
+        regime_cal_raw = data.get("regime_calibration_max_quotes")
+        if regime_cal_raw is None:
+            regime_calibration_max_quotes = None
+        else:
+            regime_calibration_max_quotes = int(regime_cal_raw)
+
+        raw_regime_opts = data.get("regime_engine_options")
+        if raw_regime_opts is None:
+            regime_engine_options: dict[str, object] = {}
+        else:
+            if not isinstance(raw_regime_opts, dict):
+                raise ConfigurationError(
+                    f"{path}: regime_engine_options must be a YAML mapping"
+                )
+            regime_engine_options = {str(k): v for k, v in raw_regime_opts.items()}
+
         return cls(
             version=str(data.get("version", "0.1.0")),
             author=str(data.get("author", "system")),
@@ -654,6 +860,7 @@ class PlatformConfig:
             alpha_specs=alpha_specs,
             parameter_overrides=data.get("parameter_overrides", {}),
             regime_engine=data.get("regime_engine", "hmm_3state_fractional"),
+            regime_engine_options=regime_engine_options,
             data_dir=Path(data_dir_raw) if data_dir_raw else None,
             event_log_path=Path(event_log_raw) if event_log_raw else None,
             risk_max_position_per_symbol=int(
@@ -664,6 +871,35 @@ class PlatformConfig:
             ),
             risk_max_drawdown_pct=float(
                 data.get("risk_max_drawdown_pct", 5.0)
+            ),
+            risk_regime_vol_breakout_scale=float(
+                data.get("risk_regime_vol_breakout_scale", 0.5)
+            ),
+            risk_regime_compression_scale=float(
+                data.get("risk_regime_compression_scale", 0.75)
+            ),
+            risk_regime_normal_scale=float(
+                data.get("risk_regime_normal_scale", 1.0)
+            ),
+            require_healthy_disk_cache_manifests=bool(
+                data.get("require_healthy_disk_cache_manifests", False)
+            ),
+            degrade_on_data_gap=bool(data.get("degrade_on_data_gap", False)),
+            warn_on_unhealthy_disk_cache=bool(
+                data.get("warn_on_unhealthy_disk_cache", True)
+            ),
+            ingest_terminal_symbol_health=ingest_terminal_symbol_health,
+            backtest_enforce_ingest_terminal_health=bool(
+                data.get("backtest_enforce_ingest_terminal_health", False)
+            ),
+            backtest_reject_zero_ingest_events=bool(
+                data.get("backtest_reject_zero_ingest_events", False)
+            ),
+            strict_normalizer_symbol_coverage=bool(
+                data.get("strict_normalizer_symbol_coverage", False)
+            ),
+            enable_rest_sequence_gap_detection=bool(
+                data.get("enable_rest_sequence_gap_detection", False)
             ),
             account_equity=float(data.get("account_equity", 1_000_000.0)),
             backtest_fill_latency_ns=int(
@@ -678,6 +914,12 @@ class PlatformConfig:
             trail_pct=float(
                 data.get("trail_pct", 0.5)
             ),
+            stop_loss_pct=float(
+                data.get("stop_loss_pct", 0.0)
+            ),
+            trail_activate_pct=float(
+                data.get("trail_activate_pct", 0.0)
+            ),
             cost_min_spread_bps=float(
                 data.get("cost_min_spread_bps", 0.0)
             ),
@@ -688,10 +930,10 @@ class PlatformConfig:
                 data.get("cost_exchange_per_share", 0.0005)
             ),
             cost_taker_exchange_per_share=float(
-                data.get("cost_taker_exchange_per_share", 0.003)
+                taker_exch_raw if taker_exch_raw is not None else 0.003
             ),
             cost_maker_exchange_per_share=float(
-                data.get("cost_maker_exchange_per_share", -0.002)
+                maker_exch_raw if maker_exch_raw is not None else -0.002
             ),
             cost_passive_adverse_selection_bps=float(
                 data.get("cost_passive_adverse_selection_bps", 0.5)
@@ -740,7 +982,11 @@ class PlatformConfig:
                 data.get("platform_min_order_shares", 1)
             ),
             signal_min_edge_cost_ratio=float(
-                data.get("signal_min_edge_cost_ratio", 0.0)
+                data.get("signal_min_edge_cost_ratio", 1.5)
+            ),
+            regime_calibration_max_quotes=regime_calibration_max_quotes,
+            enforce_regime_state_scale_alignment=bool(
+                data.get("enforce_regime_state_scale_alignment", False)
             ),
             cost_market_impact_factor=float(
                 data.get("cost_market_impact_factor", 0.5)
@@ -789,6 +1035,9 @@ class PlatformConfig:
             ),
             enforce_layer_gates=bool(
                 data.get("enforce_layer_gates", True)
+            ),
+            enforce_per_alpha_risk_budget=bool(
+                data.get("enforce_per_alpha_risk_budget", True)
             ),
             promotion_ledger_path=(
                 Path(data["promotion_ledger_path"])

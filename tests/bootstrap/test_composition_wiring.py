@@ -56,13 +56,13 @@ from feelies.sensors.spec import SensorSpec
 _TEST_SENSOR_SPECS: tuple[SensorSpec, ...] = (
     SensorSpec(
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=OFIEwmaSensor,
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="spread_z_30d",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=SpreadZScoreSensor,
         subscribes_to=(NBBOQuote,),
     ),
@@ -111,7 +111,7 @@ _UPSTREAM_SIGNAL_ALPHA_YAML = textwrap.dedent(
 
 def _portfolio_alpha_yaml(
     *,
-    alpha_id: str = "pofi_xsect_v1",
+    alpha_id: str = "pro_xsect_v1",
     universe: tuple[str, ...] = ("AAPL", "GOOG", "MSFT"),
     hazard_exit_enabled: bool = False,
     decay_weighting: bool = False,
@@ -194,7 +194,7 @@ def _make_config(
         # sensor for any mechanism family.  Pinning the opt-out here
         # preserves the v0.2-style fixture without dragging the
         # mechanism taxonomy into a wiring test (parity with the
-        # ``platform.yaml`` opt-out documented for ``pofi_benign_midcap_v1``).
+        # ``platform.yaml`` opt-out documented for ``sig_benign_midcap_v1``).
         enforce_trend_mechanism=False,
     )
 
@@ -218,7 +218,7 @@ class TestCompositionWiring:
         _write_alpha(tmp_path, "upstream.alpha.yaml", _UPSTREAM_SIGNAL_ALPHA_YAML)
         _write_alpha(
             tmp_path,
-            "pofi_xsect_v1.alpha.yaml",
+            "pro_xsect_v1.alpha.yaml",
             _portfolio_alpha_yaml(),
         )
         config = _make_config(tmp_path)
@@ -282,7 +282,7 @@ class TestCompositionWiring:
         _write_alpha(tmp_path, "upstream.alpha.yaml", _UPSTREAM_SIGNAL_ALPHA_YAML)
         _write_alpha(
             tmp_path,
-            "pofi_xsect_v1.alpha.yaml",
+            "pro_xsect_v1.alpha.yaml",
             _portfolio_alpha_yaml(),
         )
         loadings_dir = tmp_path / "loadings"

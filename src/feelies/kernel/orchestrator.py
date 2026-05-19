@@ -33,8 +33,10 @@ Key architectural invariants:
 from __future__ import annotations
 
 import hashlib
+import itertools
 import logging
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import replace
 from decimal import Decimal
@@ -57,7 +59,11 @@ from feelies.alpha.cost_arithmetic import MIN_MARGIN_RATIO
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import Clock
 from feelies.core.config import Configuration
-from feelies.core.errors import ConfigurationError
+from feelies.core.errors import (
+    ConfigurationError,
+    OrchestratorPipelineAbortError,
+    SessionEntryBlockedError,
+)
 from feelies.core.events import (
     Alert,
     AlertSeverity,
@@ -116,7 +122,7 @@ from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
 from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
 from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
-from feelies.services.regime_engine import RegimeEngine
+from feelies.services.regime_engine import RegimeEngine, regime_posterior_entropy_nats
 from feelies.services.regime_hazard_detector import RegimeHazardDetector
 from feelies.signals.horizon_engine import HorizonSignalEngine
 from feelies.storage.event_log import EventLog
@@ -129,6 +135,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from feelies.execution.cost_model import CostModel
     from feelies.portfolio.position_store import Position
+
+# Stable correlation id for boot-time macro transitions (audit replay).
+_PLATFORM_BOOT_CORRELATION_ID = "platform_boot"
+_ORCHESTRATOR_SHUTDOWN_CORRELATION_ID = "orchestrator_shutdown"
+
 
 class _PostExitPositionView:
     """Position view that simulates a pending exit fill for risk checking.
@@ -265,13 +276,12 @@ class Orchestrator:
         emerge as SizedPositionIntent, not OrderRequest).  Drain the
         first buffered signal at M4 ``SIGNAL_EVALUATE`` and run it
         through the per-tick risk → order → fill walk.
-      * **PORTFOLIO alphas** (``_on_bus_sized_intent``).  Translate every
-        ``SizedPositionIntent`` into per-leg ``OrderRequest`` events via
-        :meth:`RiskEngine.check_sized_intent` (Inv-11 per-leg veto;
-        Inv-5 deterministic order_id).  Runs *outside* the per-tick
-        micro-SM walk: PORTFOLIO orders dispatch as a synchronous
-        side-effect of the M3 ``CROSS_SECTIONAL`` ``bus.publish(intent)``
-        and do NOT advance the SIGNAL-reserved M5 → M10 walk.
+      * **PORTFOLIO alphas** (``_on_bus_sized_intent`` + ``_flush_pending_sized_intents``).
+        Each ``SizedPositionIntent`` is buffered on the bus, then drained after the
+        ``CROSS_SECTIONAL`` bookend: ``RiskEngine.check_sized_intent`` runs under
+        micro ``RISK_CHECK`` through ``LOG_AND_METRICS`` (M5–M10) before ``FEATURE_COMPUTE``,
+        preserving position updates before the standalone-SIGNAL M4 drain.  Multiple intents
+        on the same quote walk ``LOG_AND_METRICS → RISK_CHECK`` between legs.
 
     Concurrency / coexistence rules:
 
@@ -459,7 +469,8 @@ class Orchestrator:
         self._trail_pct: float = 0.5
         self._peak_pnl_per_share: dict[str, float] = {}
         self._min_order_shares: int = 1
-        self._signal_min_edge_cost_ratio: float = 0.0  # 0 = gate disabled
+        self._signal_min_edge_cost_ratio: float = 1.5  # 0 = gate disabled
+        self._regime_calibration_max_quotes: int | None = None
 
         self._config: Configuration | None = None
 
@@ -475,6 +486,10 @@ class Orchestrator:
         # already present in the event log (replay mode).  Prevents
         # re-appending identical events during backtest replay.
         self._events_prelogged = False
+        # When tick-failure recovery cannot transition macro to DEGRADED,
+        # stop consuming market events (fail-safe — avoids trading in an
+        # unknown macro/micro pairing).
+        self._pipeline_abort_requested = False
 
         # When True, entry/exit orders use LIMIT at BBO instead of
         # MARKET.  Stop-loss exits always use MARKET (fail-safe).
@@ -517,6 +532,7 @@ class Orchestrator:
         # legacy ``signal_engine`` ctor scaffolding, so this is now the
         # sole standalone-SIGNAL → Order path.
         self._signal_buffer: list[Signal] = []
+        self._pending_sized_intents: deque[SizedPositionIntent] = deque()
         self._consumed_by_portfolio_ids: frozenset[str] | None = None
         self._warned_multi_standalone_signals: bool = False
         self._bus.subscribe(Signal, self._on_bus_signal)
@@ -531,24 +547,49 @@ class Orchestrator:
         # alphas were hooked into the bus end-to-end for SizedPositionIntent
         # but the production order pipeline simply ignored them.
         #
-        # ``_on_bus_sized_intent`` calls
-        # :meth:`RiskEngine.check_sized_intent` (which translates
-        # ``TargetPosition`` deltas into per-leg ``OrderRequest`` tuples
-        # under per-leg veto semantics; Inv-11) and submits each surviving
-        # order to ``backend.order_router``, polling synchronous acks and
-        # reconciling fills into the position store.
-        #
-        # The handler runs outside the standalone SIGNAL order walk:
-        # PORTFOLIO orders are bus-dispatched synchronously while the
-        # scheduler's HorizonTick fan-out is still executing, before the
-        # per-tick FEATURE_COMPUTE → SIGNAL_EVALUATE path begins.  They do
-        # NOT drive the M5 → M10 transitions, which remain reserved for the
-        # at-most-one SIGNAL-driven order per tick.  This sidesteps the
-        # SM's single-walk-per-tick limit and lets PORTFOLIO + standalone
-        # SIGNAL coexist on the same tick (PR-2b-iii's
-        # ``depends_on_signals`` skip-rule prevents double-trading when a
-        # SIGNAL alpha is consumed by a PORTFOLIO alpha).
+        # ``_on_bus_sized_intent`` **buffers** each
+        # ``SizedPositionIntent``; :meth:`_flush_pending_sized_intents`
+        # drains the queue after the ``CROSS_SECTIONAL`` bookend (still
+        # before ``FEATURE_COMPUTE``) so M5 → M10 transitions record
+        # PORTFOLIO execution on the same micro SM.  This preserves the
+        # causal order vs standalone SIGNAL alphas (positions updated before
+        # M4).  PR-2b-iii ``depends_on_signals`` skip-rule still prevents
+        # double-trading.
         self._bus.subscribe(SizedPositionIntent, self._on_bus_sized_intent)
+
+        # ── Audit R1: hazard-exit submission dedup ────────────────────
+        # ``_active_orders`` is pruned on FILLED (so memory doesn't
+        # grow unboundedly in long-running live sessions), but that
+        # also means it cannot serve as a long-lived idempotency set
+        # for the hazard handler — a duplicate publish AFTER the fill
+        # would re-submit.  Track every hazard ``order_id`` we have
+        # ever forwarded to the router in this run; the controller's
+        # SHA-256 ``order_id`` derivation is collision-free per
+        # ``(correlation_id, trigger_ts_ns, symbol, reason)`` so this
+        # set never grows past one entry per (episode, symbol, reason).
+        self._hazard_submitted_order_ids: set[str] = set()
+
+        # ── Audit R1: bus-driven hazard-exit OrderRequest subscriber ──
+        # ``HazardExitController`` publishes ``OrderRequest`` events
+        # with ``source_layer="RISK"`` and ``reason in {"HAZARD_SPIKE",
+        # "HARD_EXIT_AGE"}`` directly on the bus (no router call —
+        # see risk/hazard_exit.py:_emit_exit).  Pre-fix, no production
+        # subscriber routed those orders to ``backend.order_router``,
+        # so the entire hazard-exit subsystem was effectively inert
+        # in any orchestrator-composed deployment (the only subscriber
+        # was the metrics collector).  ``_on_bus_hazard_order`` filters
+        # to *exactly* the controller's signature and runs the same
+        # submit → poll_acks → reconcile_fills flow used by
+        # ``_emergency_flatten_all`` (which also bypasses ``check_order``
+        # by design — Inv-11 fail-safe: an exit-direction order may
+        # never *increase* exposure, so the per-symbol cap and gross
+        # exposure cap cannot be breached by it).  Per-leg attribution
+        # lands in ``_reconcile_fills`` exactly as for SIGNAL-driven
+        # exits.  The subscriber is registered unconditionally; in
+        # deployments without a hazard detector the bus simply never
+        # sees a hazard-tagged ``OrderRequest`` so this handler is a
+        # no-op (Inv-A: pre-R1 baselines bit-identical).
+        self._bus.subscribe(OrderRequest, self._on_bus_hazard_order)
 
     # ── Optional SIGNAL → order diagnostic sink ─────────────────────
 
@@ -639,6 +680,24 @@ class Orchestrator:
     def risk_level(self) -> RiskLevel:
         return self._risk_escalation.state
 
+    def _require_safe_session_entry(self) -> None:
+        """Fail closed before operational macro modes (Inv-11).
+
+        Applies to ``run_research``, ``run_backtest``, ``run_paper``, and
+        ``run_live`` — kill switch and risk escalation must both allow entry.
+        """
+        if self._kill_switch is not None and self._kill_switch.is_active:
+            raise SessionEntryBlockedError(
+                "Cannot start session: kill switch is active — "
+                "reset with operator audit first",
+            )
+        if self._risk_escalation.state != RiskLevel.NORMAL:
+            raise SessionEntryBlockedError(
+                f"Cannot start session: risk escalation is "
+                f"{self._risk_escalation.state.name}, must be NORMAL — "
+                "use reset_risk_escalation() or unlock_from_lockdown()",
+            )
+
     # ── Lifecycle: boot / run / shutdown ────────────────────────────
 
     def boot(self, config: Configuration) -> None:
@@ -706,14 +765,20 @@ class Orchestrator:
                 self._min_order_shares = config.platform_min_order_shares
             if hasattr(config, "signal_min_edge_cost_ratio"):
                 self._signal_min_edge_cost_ratio = config.signal_min_edge_cost_ratio
+            if hasattr(config, "regime_calibration_max_quotes"):
+                self._regime_calibration_max_quotes = (
+                    config.regime_calibration_max_quotes
+                )
             self._macro.transition(
                 MacroState.DATA_SYNC,
                 trigger="CONFIG_VALIDATED",
+                correlation_id=_PLATFORM_BOOT_CORRELATION_ID,
             )
         except ConfigurationError as exc:
             self._macro.transition(
                 MacroState.SHUTDOWN,
                 trigger=f"CONFIG_ERROR:{exc}",
+                correlation_id=_PLATFORM_BOOT_CORRELATION_ID,
             )
             return
 
@@ -721,22 +786,29 @@ class Orchestrator:
             self._macro.transition(
                 MacroState.READY,
                 trigger="DATA_INTEGRITY_OK",
+                correlation_id=_PLATFORM_BOOT_CORRELATION_ID,
             )
             self._restore_feature_snapshots()
             self._calibrate_regime_engine()
+            self._pending_sized_intents.clear()
         else:
             self._macro.transition(
                 MacroState.DEGRADED,
                 trigger="DATA_INTEGRITY_FAIL",
+                correlation_id=_PLATFORM_BOOT_CORRELATION_ID,
             )
 
     def run_backtest(self) -> None:
         """G2 → G4 → pipeline → G2.
 
-        Guard: backtest config valid.
+        Guard: backtest config valid; kill switch inactive; risk NORMAL.
         """
         self._macro.assert_state(MacroState.READY)
+        self._require_safe_session_entry()
+        self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:backtest")
+        self._pending_sized_intents.clear()
+        self._consumed_by_portfolio_ids = None
         self._reset_regime_session_state()
         self._macro.transition(MacroState.BACKTEST_MODE, trigger="CMD_BACKTEST")
 
@@ -762,11 +834,16 @@ class Orchestrator:
         """G2 → G5 → pipeline.
 
         Guard: broker sim connected.
-        Post-pipeline: if macro is still G5, the data feed terminated
-        unexpectedly — transition to DEGRADED.
+        Normal completion (feed iterator exhausted without exception)
+        returns macro to **READY** — same hub state as ``run_backtest``.
+        Exceptions during the pipeline transition to **DEGRADED** and
+        re-raise.
         """
         self._macro.assert_state(MacroState.READY)
+        self._require_safe_session_entry()
+        self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:paper")
+        self._pending_sized_intents.clear()
         self._reset_regime_session_state()
         self._macro.transition(
             MacroState.PAPER_TRADING_MODE,
@@ -783,26 +860,24 @@ class Orchestrator:
             raise
         if self._macro.state == MacroState.PAPER_TRADING_MODE:
             self._macro.transition(
-                MacroState.DEGRADED,
-                trigger="DATA_DRIFT_DETECTED:feed_terminated",
+                MacroState.READY,
+                trigger="SESSION_FEED_COMPLETE",
             )
 
     def run_live(self) -> None:
         """G2 → G6 → pipeline.
 
-        Guard: human approval + risk audit pass.
+        Guard: human approval + risk audit pass; kill switch inactive.
         Inv-3: R4 (LOCKED) forbids this — must pass through G2 first,
         which is structurally guaranteed (G8 → G2 → G6).
-        Post-pipeline: if macro is still G6, the data feed terminated
-        unexpectedly — transition to DEGRADED.
+        Normal completion (feed iterator exhausted without exception)
+        returns macro to **READY**. Exceptions transition to **DEGRADED**.
         """
         self._macro.assert_state(MacroState.READY)
-        if self._risk_escalation.state != RiskLevel.NORMAL:
-            raise RuntimeError(
-                f"Cannot enter LIVE: risk level is {self._risk_escalation.state.name}, "
-                f"must be NORMAL"
-            )
+        self._require_safe_session_entry()
+        self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:live")
+        self._pending_sized_intents.clear()
         self._reset_regime_session_state()
         self._macro.transition(
             MacroState.LIVE_TRADING_MODE,
@@ -819,8 +894,8 @@ class Orchestrator:
             raise
         if self._macro.state == MacroState.LIVE_TRADING_MODE:
             self._macro.transition(
-                MacroState.DEGRADED,
-                trigger="DATA_DRIFT_DETECTED:feed_terminated",
+                MacroState.READY,
+                trigger="SESSION_FEED_COMPLETE",
             )
 
     def run_research(self, job: Callable[[], None]) -> None:
@@ -831,6 +906,8 @@ class Orchestrator:
         that executes within the RESEARCH_MODE macro state.
         """
         self._macro.assert_state(MacroState.READY)
+        self._require_safe_session_entry()
+        self._pipeline_abort_requested = False
         self._macro.transition(MacroState.RESEARCH_MODE, trigger="CMD_RESEARCH")
         try:
             job()
@@ -848,13 +925,25 @@ class Orchestrator:
             raise
 
     def halt(self) -> None:
-        """CMD_STOP: any trading mode → G2."""
+        """CMD_STOP: any trading mode → G2.
+
+        Resets the micro state machine so the next session starts from a
+        defined WAITING baseline (audit remediation — avoids stranded
+        mid-pipeline micro states after an operator halt).
+        """
         if self._macro.state in TRADING_MODES:
             self._macro.transition(MacroState.READY, trigger="CMD_STOP")
+            self._micro.reset(trigger="halt:operator_stop")
+            self._pending_sized_intents.clear()
 
     def recover_from_degraded(self) -> bool:
         """G7 → G2 on recovery validation.  Returns True if successful."""
         self._macro.assert_state(MacroState.DEGRADED)
+        if self._kill_switch is not None and self._kill_switch.is_active:
+            logger.warning(
+                "recover_from_degraded: refused — kill switch is still active",
+            )
+            return False
         if self._verify_data_integrity():
             self._macro.transition(
                 MacroState.READY,
@@ -871,11 +960,15 @@ class Orchestrator:
         Transition ordering: macro first, then risk.  If the macro
         transition succeeded but risk failed (both are structurally
         valid, so failure is near-impossible), macro at READY with
-        risk at LOCKED is fail-safe — run_live() guard blocks entry,
-        and paper would re-lock on first FORCE_FLATTEN.  The reverse
+        risk at LOCKED is fail-safe — session-entry guard blocks
+        ``run_*`` until resolved.  The reverse
         (risk at NORMAL, macro at RISK_LOCKDOWN) would break the
         retry path because the next unlock_from_lockdown attempt
         would try R4→R0 from R0, raising IllegalTransition.
+
+        When ``_escalate_risk`` activated the kill switch, this method
+        also resets it with the same audit token so ticks do not
+        immediately re-enter DEGRADED on kill-switch polling.
         """
         self._macro.assert_state(MacroState.RISK_LOCKDOWN)
 
@@ -894,6 +987,14 @@ class Orchestrator:
             RiskLevel.NORMAL,
             trigger=f"human_override_audit:{audit_token}",
         )
+        # Risk escalation activates the kill switch in `_escalate_risk`.
+        # Clearing it here keeps macro/risk/kill-switch semantics coherent
+        # so the next quote tick does not immediately re-enter DEGRADED.
+        if self._kill_switch is not None and self._kill_switch.is_active:
+            self._kill_switch.reset(
+                operator="unlock_from_lockdown",
+                audit_token=audit_token,
+            )
 
     def reset_risk_escalation(self, *, audit_token: str) -> None:
         """Human-authorized reset of risk escalation from any intermediate level.
@@ -925,8 +1026,29 @@ class Orchestrator:
         Inv-4: all orders must be terminally resolved before shutdown.
         Pending orders are surfaced as a WARNING alert but do not
         block shutdown — the operator investigates post-mortem.
+
+        ``CANCEL_REQUESTED`` orders (e.g. abandoned when no router cancel
+        API existed in an older build) are transitioned to ``CANCELLED``
+        best-effort before the pending-order scan so shutdown reflects
+        local operator intent.
+
+        Allowed from **RISK_LOCKDOWN** via ``CMD_SHUTDOWN`` so operators
+        can tear down the process without a prior unlock when needed.
         """
         self._checkpoint_feature_snapshots()
+        # Resolve operator cancel intent when no broker ack will arrive
+        # (e.g. mid backtest router has no cancel_order API).
+        for oid, (sm, _, order) in list(self._active_orders.items()):
+            if sm.state != OrderState.CANCEL_REQUESTED:
+                continue
+            if sm.can_transition(OrderState.CANCELLED):
+                sm.transition(
+                    OrderState.CANCELLED,
+                    trigger="shutdown_resolve_cancel_requested",
+                    correlation_id=order.correlation_id,
+                )
+        self._prune_terminal_orders()
+
         pending = [
             oid for oid, (sm, _, _) in self._active_orders.items()
             if sm.state not in _TERMINAL_ORDER_STATES
@@ -947,7 +1069,11 @@ class Orchestrator:
             ))
 
         if self._macro.can_transition(MacroState.SHUTDOWN):
-            self._macro.transition(MacroState.SHUTDOWN, trigger="CMD_SHUTDOWN")
+            self._macro.transition(
+                MacroState.SHUTDOWN,
+                trigger="CMD_SHUTDOWN",
+                correlation_id=_ORCHESTRATOR_SHUTDOWN_CORRELATION_ID,
+            )
         self._metrics.flush()
 
     # ── Pipeline: the deterministic tick loop ───────────────────────
@@ -962,12 +1088,20 @@ class Orchestrator:
         observability but do not trigger signal evaluation.
         """
         for event in self._backend.market_data.events():
+            if self._pipeline_abort_requested:
+                break
             if self._macro.state not in TRADING_MODES:
                 break
             if isinstance(event, NBBOQuote):
                 self._process_tick(event)
             elif isinstance(event, Trade):
                 self._process_trade(event)
+
+        if self._pipeline_abort_requested:
+            raise OrchestratorPipelineAbortError(
+                "Tick failure recovery could not transition macro to DEGRADED "
+                "(transition callback raised); pipeline aborted fail-safe."
+            )
 
     def _process_trade(self, trade: Trade) -> None:
         """Log, publish, and forward a trade event to the feature engine.
@@ -993,6 +1127,9 @@ class Orchestrator:
         sensors and any time-bucket boundaries crossed by the trade
         timestamp are observed.
         """
+        if self._data_health_blocks_trading(trade.symbol, trade.correlation_id):
+            return
+
         if not self._events_prelogged:
             self._event_log.append(trade)
         self._bus.publish(trade)
@@ -1088,6 +1225,164 @@ class Orchestrator:
                     correlation_id=cid,
                 )
 
+    def _maybe_transition_cross_sectional_bookend(self, correlation_id: str) -> None:
+        """Record ``MicroState.CROSS_SECTIONAL`` after the bus composition chain.
+
+        ``UniverseSynchronizer`` / ``CompositionEngine`` run synchronously
+        inside the ``HorizonTick`` handler stack (``_dispatch_sensor_layer``).
+        This transition is a forensic bookend only — it does not re-invoke
+        composition.  It is emitted when a **registered PORTFOLIO alpha**
+        exists **or** a :class:`~feelies.composition.engine.CompositionEngine`
+        is attached (test / partial deployments), and the micro SM can legally
+        enter ``CROSS_SECTIONAL`` from the current horizon state (typically
+        ``HORIZON_AGGREGATE`` or ``SIGNAL_GATE``).
+        """
+        registry_portfolio = (
+            self._alpha_registry is not None
+            and self._alpha_registry.has_portfolio_alphas()
+        )
+        if not registry_portfolio and self._composition_engine is None:
+            return
+        if not self._micro.can_transition(MicroState.CROSS_SECTIONAL):
+            return
+        self._micro.transition(
+            MicroState.CROSS_SECTIONAL,
+            trigger="composition_pipeline_bookend",
+            correlation_id=correlation_id,
+        )
+
+    def _flush_pending_sized_intents(
+        self,
+        *,
+        correlation_id: str,
+    ) -> None:
+        """Drain horizon-buffered PORTFOLIO intents under micro M5–M10 before M3."""
+        if not self._pending_sized_intents:
+            return
+        first_intent = True
+        while self._pending_sized_intents:
+            intent = self._pending_sized_intents.popleft()
+            if first_intent:
+                first_intent = False
+                if self._micro.state is MicroState.CROSS_SECTIONAL:
+                    self._micro.transition(
+                        MicroState.RISK_CHECK,
+                        trigger="portfolio_sized_intent",
+                        correlation_id=correlation_id,
+                    )
+                elif self._micro.can_transition(MicroState.RISK_CHECK):
+                    self._micro.transition(
+                        MicroState.RISK_CHECK,
+                        trigger="portfolio_sized_intent_resume",
+                        correlation_id=correlation_id,
+                    )
+                else:
+                    logger.warning(
+                        "orchestrator: portfolio flush blocked at micro state "
+                        "%s — submitting without SM transitions",
+                        self._micro.state.name,
+                    )
+                    self._submit_portfolio_leg_without_micro_walk(
+                        intent, correlation_id,
+                    )
+                    while self._pending_sized_intents:
+                        nxt = self._pending_sized_intents.popleft()
+                        self._submit_portfolio_leg_without_micro_walk(
+                            nxt, correlation_id,
+                        )
+                    return
+            else:
+                self._micro.transition(
+                    MicroState.RISK_CHECK,
+                    trigger="portfolio_sized_intent_next",
+                    correlation_id=correlation_id,
+                )
+
+            sized = self._risk_engine.check_sized_intent(intent, self._positions)
+            if sized.requires_global_risk_escalation:
+                self._escalate_risk(correlation_id)
+                self._micro.transition(
+                    MicroState.LOG_AND_METRICS,
+                    trigger="portfolio_intent_risk_escalation",
+                    correlation_id=correlation_id,
+                )
+                continue
+            orders = sized.orders
+            if not orders:
+                self._micro.transition(
+                    MicroState.LOG_AND_METRICS,
+                    trigger="portfolio_intent_no_orders",
+                    correlation_id=correlation_id,
+                )
+                continue
+
+            self._micro.transition(
+                MicroState.ORDER_DECISION,
+                trigger="portfolio_orders_ready",
+                correlation_id=correlation_id,
+            )
+            self._micro.transition(
+                MicroState.ORDER_SUBMIT,
+                trigger="portfolio_batch_submitted",
+                correlation_id=correlation_id,
+            )
+            for order in orders:
+                self._track_order(order.order_id, order.side, order)
+                self._transition_order(
+                    order.order_id, OrderState.SUBMITTED, "submitted",
+                )
+                self._backend.order_router.submit(order)
+                self._bus.publish(order)
+
+            self._micro.transition(
+                MicroState.ORDER_ACK,
+                trigger="portfolio_poll_acks",
+                correlation_id=correlation_id,
+            )
+            expected_order_ids = {o.order_id for o in orders}
+            acks = self._poll_order_router_acks(expected_order_ids)
+            for ack in acks:
+                self._bus.publish(ack)
+                self._apply_ack_to_order(ack)
+
+            self._micro.transition(
+                MicroState.POSITION_UPDATE,
+                trigger="portfolio_reconcile",
+                correlation_id=correlation_id,
+            )
+            self._reconcile_fills(acks, correlation_id)
+
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="portfolio_leg_complete",
+                correlation_id=correlation_id,
+            )
+
+    def _submit_portfolio_leg_without_micro_walk(
+        self,
+        intent: SizedPositionIntent,
+        correlation_id: str,
+    ) -> None:
+        """Fail-safe submit when micro cannot enter ``RISK_CHECK`` (should be rare)."""
+        sized = self._risk_engine.check_sized_intent(intent, self._positions)
+        if sized.requires_global_risk_escalation:
+            self._escalate_risk(correlation_id)
+            return
+        orders = sized.orders
+        if not orders:
+            return
+        for order in orders:
+            self._track_order(order.order_id, order.side, order)
+            self._transition_order(
+                order.order_id, OrderState.SUBMITTED, "submitted",
+            )
+            self._backend.order_router.submit(order)
+            self._bus.publish(order)
+        acks = self._poll_order_router_acks({o.order_id for o in orders})
+        for ack in acks:
+            self._bus.publish(ack)
+            self._apply_ack_to_order(ack)
+        self._reconcile_fills(acks, correlation_id)
     def _process_tick(self, quote: NBBOQuote) -> None:
         """Process a single tick through the full micro-state pipeline.
 
@@ -1096,7 +1391,7 @@ class Orchestrator:
 
         Micro-state sequence (formal spec Section II):
           M0 → M1 → M2 → M3 → M4 → M5 →
-            (risk fail)         → [G8, pipeline aborts]
+            (lockdown FORCE_FLATTEN) → M10 → M0  (via ``_finalize_tick``)
             (pass, no order)    → M10 → M0
             (pass, order)       → M6 →
               (check_order fail)  → M10 → M0
@@ -1124,6 +1419,11 @@ class Orchestrator:
         transition fails, we still degrade to the safest reachable
         state.  The original exception's type name is captured in the
         trigger for provenance (invariant 13).
+
+        If the macro ``DEGRADED`` transition raises (e.g. subscriber
+        veto), ``_pipeline_abort_requested`` is set and :meth:`_run_pipeline`
+        raises :class:`~feelies.core.errors.OrchestratorPipelineAbortError`
+        so callers do not treat the loop as normally exhausted.
         """
         exc_name = type(original).__name__
 
@@ -1132,6 +1432,16 @@ class Orchestrator:
                 trigger=f"pipeline_abort:{exc_name}",
                 correlation_id=cid,
             )
+            self._pending_sized_intents.clear()
+            self._bus.publish(MetricEvent(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=cid,
+                sequence=self._seq.next(),
+                layer="kernel",
+                name="tick_aborted_micro_reset",
+                value=1.0,
+                metric_type=MetricType.COUNTER,
+            ))
         except Exception:
             logger.critical(
                 "orchestrator: micro SM reset failed during tick-failure recovery "
@@ -1155,6 +1465,7 @@ class Orchestrator:
                 "— orchestrator state is unknown",
                 exc_info=True,
             )
+            self._pipeline_abort_requested = True
 
     def _process_tick_inner(self, quote: NBBOQuote) -> None:
         """Core tick-processing logic.  Separated from _process_tick
@@ -1224,19 +1535,20 @@ class Orchestrator:
                         trigger="KILL_SWITCH_ACTIVE",
                         correlation_id=cid,
                     )
+            self._bus.publish(MetricEvent(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=cid,
+                sequence=self._seq.next(),
+                layer="kernel",
+                name="tick_suppressed_kill_switch",
+                value=1.0,
+                metric_type=MetricType.COUNTER,
+            ))
             return
 
         # ── Runtime data integrity check (W-6) ─────────────────
-        if self._normalizer is not None:
-            symbol_health = self._normalizer.health(quote.symbol)
-            if symbol_health == DataHealth.CORRUPTED:
-                if self._macro.can_transition(MacroState.DEGRADED):
-                    self._macro.transition(
-                        MacroState.DEGRADED,
-                        trigger=f"DATA_CORRUPTED:{quote.symbol}",
-                        correlation_id=cid,
-                    )
-                return
+        if self._data_health_blocks_trading(quote.symbol, cid):
+            return
 
         # ── M0 → M1: MARKET_EVENT_RECEIVED ─────────────────────
         self._micro.transition(
@@ -1262,13 +1574,13 @@ class Orchestrator:
             if self._strategy_positions is not None:
                 self._strategy_positions.update_mark(quote.symbol, mid)
 
-        # ── Resting order fill check ─────────────────────────────
-        # bus.publish(quote) triggered on_quote() on the router,
-        # which evaluated fill conditions for any resting limit
-        # orders.  Pick up those fills before evaluating signals so
-        # the position store is current.
-        if self._use_passive_entries:
-            self._reconcile_resting_fills(cid)
+        # ── Quote-driven router ack drain ────────────────────────
+        # bus.publish(quote) triggered on_quote() on the router, which
+        # may emit fills/cancels for resting limits (passive entries)
+        # or deferred aggressive / MARKET acks when ``latency_ns > 0``
+        # (market-mode BacktestOrderRouter).  Drain pending router acks
+        # before evaluating signals so the position store is current.
+        self._reconcile_resting_fills(cid)
 
         # ── M1 → M2: STATE_UPDATE ──────────────────────────────
         self._micro.transition(
@@ -1286,6 +1598,8 @@ class Orchestrator:
         # micro-states and publishes any HorizonTick events emitted
         # by the scheduler.
         self._dispatch_sensor_layer(quote, cid)
+        self._maybe_transition_cross_sectional_bookend(cid)
+        self._flush_pending_sized_intents(correlation_id=cid)
 
         # ── M2 (or HORIZON_*) → M3: FEATURE_COMPUTE ────────────
         # Workstream D.2 PR-2b-iv: legacy ``feature_engine`` is gone.
@@ -1397,6 +1711,9 @@ class Orchestrator:
         self._bus.publish(verdict)
 
         # ── M5 branch: risk fail → cross-machine to G8 ─────────
+        # Macro RISK_LOCKDOWN exists only from PAPER/LIVE (`macro.py`).
+        # BACKTEST_MODE cannot transition there — `can_transition` is false
+        # and we simulate flatten without global lockdown (replay parity).
         if verdict.action == RiskAction.FORCE_FLATTEN:
             if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
                 self._append_signal_order_trace(
@@ -1630,8 +1947,45 @@ class Orchestrator:
             trigger="order_constructed",
             correlation_id=cid,
         )
-        self._transition_order(order.order_id, OrderState.SUBMITTED, "submitted")
-        self._backend.order_router.submit(order)
+        self._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=cid,
+        )
+        try:
+            self._backend.order_router.submit(order)
+        except Exception as exc:
+            self._reject_order_after_submit_failure(order, exc)
+            self._append_signal_order_trace(
+                quote,
+                signal,
+                outcome="NO_ORDER",
+                reasons=(
+                    "order_router_submit_raised",
+                    type(exc).__name__,
+                    repr(exc),
+                ),
+                trading_intent=intent.intent.name,
+            )
+            self._micro.transition(
+                MicroState.ORDER_ACK,
+                trigger="order_submit_failed_no_router_ack",
+                correlation_id=cid,
+            )
+            self._micro.transition(
+                MicroState.POSITION_UPDATE,
+                trigger="order_submit_failed_no_fills",
+                correlation_id=cid,
+            )
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="order_submit_failed",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
         self._bus.publish(order)
         self._append_signal_order_trace(
             quote,
@@ -1706,13 +2060,45 @@ class Orchestrator:
             correlation_id=correlation_id,
         )
 
-    def _calibrate_regime_engine(self) -> None:
-        """Calibrate regime engine emission parameters from event log data.
+    def _emit_signal_edge_gate_suppression_alert(
+        self,
+        signal: Signal,
+        symbol: str,
+        correlation_id: str,
+        *,
+        detail: str,
+    ) -> None:
+        """Surface B4 edge-vs-cost suppressions (Inv-13 provenance)."""
+        self._bus.publish(Alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            sequence=self._seq.next(),
+            severity=AlertSeverity.WARNING,
+            layer="kernel",
+            alert_name="signal_edge_below_min_edge_cost_ratio_gate",
+            message=(
+                f"Order suppressed: signal.edge_estimate_bps below "
+                f"{self._signal_min_edge_cost_ratio}× round-trip cost "
+                f"({detail}; strategy_id={signal.strategy_id!r}, "
+                f"symbol={symbol!r})."
+            ),
+            context={
+                "detail": detail,
+                "strategy_id": signal.strategy_id,
+                "symbol": symbol,
+                "edge_estimate_bps": signal.edge_estimate_bps,
+                "signal_min_edge_cost_ratio": self._signal_min_edge_cost_ratio,
+            },
+        ))
 
-        Pre-scans quotes in the event log and calls ``calibrate()`` if
-        the engine supports it and hasn't already been calibrated (e.g.,
-        via restored checkpoint).  Backtest mode has the full dataset
-        available; live/paper would use previous-day data.
+    def _calibrate_regime_engine(self) -> None:
+        """Calibrate regime emission parameters from a *prefix* of the log.
+
+        Full-event-log calibration leaks future spread statistics into
+        boot-time parameters.  When ``regime_calibration_max_quotes`` is
+        ``None`` (platform default), calibration from the trading log is
+        skipped entirely — use explicit positive integers for a causal
+        warmup prefix only.
         """
         if self._regime_engine is None:
             return
@@ -1722,27 +2108,82 @@ class Orchestrator:
         if getattr(self._regime_engine, "calibrated", False):
             return
 
-        quotes = [
+        max_q = self._regime_calibration_max_quotes
+        if max_q is None:
+            logger.info(
+                "Regime calibration skipped — regime_calibration_max_quotes "
+                "is unset (no lookahead calibration from the full event log)"
+            )
+            return
+
+        quote_stream = (
             event for event in self._event_log.replay()
             if isinstance(event, NBBOQuote)
-        ]
+        )
+        quotes = list(itertools.islice(quote_stream, max_q))
         if not quotes:
             logger.info(
                 "Regime calibration skipped — no quotes in event log"
             )
             return
 
+        prefix_n = len(quotes)
+        # Exact total only when the prefix exhausts the quote stream; otherwise
+        # counting the suffix is O(full log) at boot — report a lower bound.
+        exact_total = prefix_n < max_q
+
         ok = calibrate_fn(quotes)
         if ok:
-            logger.info(
-                "Regime engine calibrated from %d quotes", len(quotes),
-            )
+            if exact_total:
+                logger.info(
+                    "Regime engine calibrated from %d quotes "
+                    "(prefix cap=%d, total_log=%d)",
+                    prefix_n,
+                    max_q,
+                    prefix_n,
+                )
+            else:
+                logger.info(
+                    "Regime engine calibrated from %d quotes "
+                    "(prefix cap=%d; NBBO quote count ≥ %d — suffix not scanned)",
+                    prefix_n,
+                    max_q,
+                    max_q,
+                )
         else:
             logger.warning(
-                "Regime calibration failed (insufficient data: %d quotes) "
-                "— using default emission parameters",
-                len(quotes),
+                "Regime calibration failed (insufficient data in prefix: "
+                "%d quotes, cap=%d) — using default emission parameters",
+                prefix_n,
+                max_q,
             )
+            self._bus.publish(Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id="regime_calibration",
+                sequence=self._seq.next(),
+                severity=AlertSeverity.CRITICAL,
+                layer="kernel",
+                alert_name="regime_calibration_failed",
+                message=(
+                    f"Regime engine calibrate() returned False "
+                    f"(prefix_quotes={prefix_n}, cap={max_q}). "
+                    "Posteriors may discriminate poorly until operators "
+                    "raise regime_calibration_max_quotes or supply cleaner data."
+                ),
+                context=(
+                    {
+                        "prefix_quote_count": prefix_n,
+                        "cap": max_q,
+                        "total_quotes_in_log": prefix_n,
+                    }
+                    if exact_total
+                    else {
+                        "prefix_quote_count": prefix_n,
+                        "cap": max_q,
+                        "total_quotes_in_log_at_least": max_q,
+                    }
+                ),
+            ))
 
     def _update_regime(self, quote: NBBOQuote, correlation_id: str) -> None:
         """Update platform-level RegimeEngine and publish RegimeState event.
@@ -1754,6 +2195,7 @@ class Orchestrator:
         if self._regime_engine is None:
             return
         posteriors = self._regime_engine.posterior(quote)
+        # Ties: lowest index wins (stable, deterministic replay).
         dominant_idx = max(range(len(posteriors)), key=lambda i: posteriors[i])
         state_names = tuple(self._regime_engine.state_names)
         engine_name = (
@@ -1771,6 +2213,7 @@ class Orchestrator:
             posteriors=tuple(posteriors),
             dominant_state=dominant_idx,
             dominant_name=state_names[dominant_idx] if dominant_idx < len(state_names) else "unknown",
+            posterior_entropy_nats=regime_posterior_entropy_nats(posteriors),
         )
         self._bus.publish(regime_state)
         self._maybe_publish_hazard_spike(regime_state, correlation_id)
@@ -1873,10 +2316,15 @@ class Orchestrator:
             level = RiskLevel.FORCED_FLATTEN
 
         if level == RiskLevel.FORCED_FLATTEN:
-            self._emergency_flatten_all(correlation_id)
+            failures, residual = self._emergency_flatten_all(correlation_id)
+            flatten_clean = not failures and not residual
             self._risk_escalation.transition(
                 RiskLevel.LOCKED,
-                trigger="positions_zero_flatten_complete",
+                trigger=(
+                    "positions_zero_flatten_complete"
+                    if flatten_clean
+                    else "emergency_flatten_incomplete_residual_exposure"
+                ),
                 correlation_id=correlation_id,
             )
 
@@ -1899,7 +2347,10 @@ class Orchestrator:
             correlation_id=correlation_id,
         )
 
-    def _emergency_flatten_all(self, correlation_id: str) -> None:
+    def _emergency_flatten_all(
+        self,
+        correlation_id: str,
+    ) -> tuple[dict[str, str], dict[str, int]]:
         """Submit market orders to flatten all non-zero positions.
 
         Emergency path -- bypasses the micro SM (which will be reset
@@ -1913,10 +2364,17 @@ class Orchestrator:
         fills, or rejected acks — a CRITICAL alert is emitted listing
         every failed symbol so the operator sees exactly which legs
         need manual intervention before LOCKED traps them.
+
+        Returns ``(failures, residual_qty_by_symbol)`` so risk escalation
+        can record an honest transition trigger when exposure remains.
         """
         positions = self._positions.all_positions()
         failures: dict[str, str] = {}
-        for symbol, pos in positions.items():
+        # Iterate in lexicographic symbol order so the emitted
+        # OrderRequest stream is bit-identical across replays even
+        # when the position store's insertion order differs (Inv-5).
+        for symbol in sorted(positions):
+            pos = positions[symbol]
             if pos.quantity == 0:
                 continue
             side = Side.SELL if pos.quantity > 0 else Side.BUY
@@ -1940,8 +2398,19 @@ class Orchestrator:
 
             try:
                 self._track_order(order_id, side, order)
-                self._transition_order(order_id, OrderState.SUBMITTED, "emergency_flatten")
-                self._backend.order_router.submit(order)
+                self._transition_order(
+                    order_id,
+                    OrderState.SUBMITTED,
+                    "emergency_flatten",
+                    correlation_id=correlation_id,
+                )
+                try:
+                    self._backend.order_router.submit(order)
+                except Exception as submit_exc:
+                    failures[symbol] = f"submit_exception: {submit_exc!r}"
+                    self._reject_order_after_submit_failure(order, submit_exc)
+                    continue
+
                 self._bus.publish(order)
                 acks = self._poll_order_router_acks({order_id})
                 for ack in acks:
@@ -1968,6 +2437,12 @@ class Orchestrator:
                     symbol, pos.quantity,
                 )
                 failures[symbol] = f"submit_exception: {exc!r}"
+                if order_id in self._active_orders:
+                    self._force_order_terminal_after_pipeline_error(
+                        order,
+                        exc,
+                        context="emergency_flatten",
+                    )
 
         residual = {
             sym: p.quantity
@@ -1990,6 +2465,7 @@ class Orchestrator:
                 alert_name="emergency_flatten_incomplete",
                 message=msg,
             ))
+        return failures, residual
 
     def _check_stop_exit(self, quote: NBBOQuote) -> Signal | None:
         """Check stop-loss and trailing stop for open positions.
@@ -2133,7 +2609,28 @@ class Orchestrator:
             exit_order, self._positions,
         )
         self._bus.publish(exit_verdict)
-        if exit_verdict.action in (RiskAction.REJECT, RiskAction.FORCE_FLATTEN):
+        if exit_verdict.action == RiskAction.FORCE_FLATTEN:
+            if self._macro.can_transition(MacroState.RISK_LOCKDOWN):
+                # Same global halt as standalone SIGNAL/order gates — drawdown
+                # breach must not strand the book without emergency flatten.
+                self._escalate_risk(cid)
+                self._micro.transition(
+                    MicroState.LOG_AND_METRICS,
+                    trigger="reverse_exit_force_flatten_escalation",
+                    correlation_id=cid,
+                )
+                self._finalize_tick(t_wall_start, cid)
+                return
+            # BACKTEST_MODE: simulate without global lockdown (replay parity).
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="reverse_exit_force_flatten_simulated",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
+        if exit_verdict.action == RiskAction.REJECT:
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
                 trigger="reverse_exit_rejected",
@@ -2194,6 +2691,12 @@ class Orchestrator:
                     self._signal_min_edge_cost_ratio * round_trip_cost_bps
                 ):
                     entry_passes_edge_gate = False
+                    self._emit_signal_edge_gate_suppression_alert(
+                        intent.signal,
+                        intent.symbol,
+                        cid,
+                        detail="reverse_entry_leg_suppressed",
+                    )
 
             if entry_passes_edge_gate:
                 seq_entry = self._seq.next()
@@ -2271,21 +2774,58 @@ class Orchestrator:
         # Submit EXIT leg.
         self._track_order(exit_order.order_id, exit_order.side, exit_order)
         self._transition_order(
-            exit_order.order_id, OrderState.SUBMITTED, "submitted",
+            exit_order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=cid,
         )
-        self._backend.order_router.submit(exit_order)
+        try:
+            self._backend.order_router.submit(exit_order)
+        except Exception as exc:
+            self._reject_order_after_submit_failure(exit_order, exc)
+            self._micro.transition(
+                MicroState.ORDER_ACK,
+                trigger="reverse_exit_submit_failed",
+                correlation_id=cid,
+            )
+            acks = self._poll_order_router_acks({exit_order.order_id})
+            for ack in acks:
+                self._bus.publish(ack)
+                self._apply_ack_to_order(ack)
+            self._micro.transition(
+                MicroState.POSITION_UPDATE,
+                trigger="reverse_acks_after_failed_exit_submit",
+                correlation_id=cid,
+            )
+            self._reconcile_fills(acks, cid)
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="reverse_aborted_exit_submit_failed",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
         self._bus.publish(exit_order)
 
-        # Submit ENTRY leg (if valid).
+        entry_submitted_ok = False
         if entry_order is not None:
             self._track_order(
                 entry_order.order_id, entry_order.side, entry_order,
             )
             self._transition_order(
-                entry_order.order_id, OrderState.SUBMITTED, "submitted",
+                entry_order.order_id,
+                OrderState.SUBMITTED,
+                "submitted",
+                correlation_id=cid,
             )
-            self._backend.order_router.submit(entry_order)
-            self._bus.publish(entry_order)
+            try:
+                self._backend.order_router.submit(entry_order)
+            except Exception as exc:
+                self._reject_order_after_submit_failure(entry_order, exc)
+            else:
+                self._bus.publish(entry_order)
+                entry_submitted_ok = True
 
         # ── M7 → M8: ORDER_ACK ────────────────────────────────────
         self._micro.transition(
@@ -2294,7 +2834,7 @@ class Orchestrator:
             correlation_id=cid,
         )
         expected_order_ids = {exit_order.order_id}
-        if entry_order is not None:
+        if entry_order is not None and entry_submitted_ok:
             expected_order_ids.add(entry_order.order_id)
         acks = self._poll_order_router_acks(expected_order_ids)
         for ack in acks:
@@ -2312,7 +2852,7 @@ class Orchestrator:
         if self._signal_order_trace_sink is not None:
             leg = (
                 "exit_plus_entry"
-                if entry_order is not None
+                if entry_order is not None and entry_submitted_ok
                 else "exit_only"
             )
             self._append_signal_order_trace(
@@ -2404,6 +2944,12 @@ class Orchestrator:
             if intent.signal.edge_estimate_bps < (
                 self._signal_min_edge_cost_ratio * round_trip_cost_bps
             ):
+                self._emit_signal_edge_gate_suppression_alert(
+                    intent.signal,
+                    intent.symbol,
+                    correlation_id,
+                    detail="standalone_intent_suppressed",
+                )
                 return None, "signal_edge_below_min_edge_cost_ratio_gate"
 
         order_type = OrderType.MARKET
@@ -2518,26 +3064,61 @@ class Orchestrator:
     def cancel_order(self, order_id: str, *, reason: str = "operator") -> bool:
         """Request cancellation of an active order.
 
-        Transitions the order SM: ACKNOWLEDGED → CANCEL_REQUESTED.
-        Only orders in ACKNOWLEDGED state can be cancel-requested;
-        SUBMITTED orders have not yet been confirmed by the broker
-        so cancellation is premature, and PARTIALLY_FILLED orders
-        have restricted transitions per the order SM spec.
+        Valid kernel transitions into ``CANCEL_REQUESTED`` follow the
+        ``OrderState`` table (typically from ``ACKNOWLEDGED`` or
+        ``PARTIALLY_FILLED``).
 
-        Returns True if the cancel request was accepted, False if the
-        order is in a state that doesn't allow cancel requests.
-        Terminal orders (FILLED, CANCELLED, REJECTED, EXPIRED) are
-        no-ops that return False.
+        When ``order_router.cancel_order`` exists it is invoked and the
+        resulting acks are reconciled.  Routers without cancel support
+        emit ``cancel_order_router_unsupported`` and immediately resolve
+        the SM to ``CANCELLED`` (no broker ack is possible in backtest).
+
+        Returns True if the SM accepted ``CANCEL_REQUESTED``, False when
+        the order is missing or cannot cancel from its current state.
         """
         if order_id not in self._active_orders:
             return False
         sm = self._active_orders[order_id][0]
         if not sm.can_transition(OrderState.CANCEL_REQUESTED):
             return False
+        order = self._active_orders[order_id][2]
         sm.transition(
             OrderState.CANCEL_REQUESTED,
             trigger=f"cancel_requested:{reason}",
+            correlation_id=order.correlation_id,
         )
+        cancel_fn = getattr(self._backend.order_router, "cancel_order", None)
+        if cancel_fn is None:
+            self._bus.publish(Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=order.correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="cancel_order_router_unsupported",
+                message=(
+                    f"cancel_order requested for {order_id!r} but "
+                    f"{type(self._backend.order_router).__name__} has no "
+                    "cancel_order(...) — resolving SM to CANCELLED locally "
+                    "(Inv-4 shutdown hygiene)."
+                ),
+                context={"order_id": order_id},
+            ))
+            sm2 = self._active_orders[order_id][0]
+            if sm2.can_transition(OrderState.CANCELLED):
+                sm2.transition(
+                    OrderState.CANCELLED,
+                    trigger="cancel_router_unsupported_local_terminal",
+                    correlation_id=order.correlation_id,
+                )
+            self._prune_terminal_orders()
+            return True
+        cancel_fn(order_id)
+        acks = self._poll_order_router_acks({order_id})
+        for ack in acks:
+            self._bus.publish(ack)
+            self._apply_ack_to_order(ack)
+        self._reconcile_fills(acks, order.correlation_id)
         return True
 
     def _has_pending_order_for_symbol(self, symbol: str) -> bool:
@@ -2621,12 +3202,109 @@ class Orchestrator:
         self._deferred_router_acks.extend(deferred)
         return matched
 
-    def _reconcile_resting_fills(self, cid: str) -> None:
-        """Poll and reconcile fills from resting orders.
+    def _reject_order_after_submit_failure(
+        self,
+        order: OrderRequest,
+        exc: BaseException,
+    ) -> None:
+        """Transition a tracked order to REJECTED when ``submit`` raises (Inv-11)."""
+        self._bus.publish(Alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=order.correlation_id,
+            sequence=self._seq.next(),
+            severity=AlertSeverity.WARNING,
+            layer="kernel",
+            alert_name="order_submit_failed",
+            message=(
+                f"order_router.submit raised for order_id={order.order_id!r} "
+                f"symbol={order.symbol!r}: {exc!r}"
+            ),
+            context={
+                "order_id": order.order_id,
+                "symbol": order.symbol,
+                "exc_type": type(exc).__name__,
+            },
+        ))
+        oid = order.order_id
+        if oid not in self._active_orders:
+            return
+        sm = self._active_orders[oid][0]
+        if sm.can_transition(OrderState.REJECTED):
+            sm.transition(
+                OrderState.REJECTED,
+                trigger=f"submit_failed:{type(exc).__name__}",
+                correlation_id=order.correlation_id,
+            )
+        self._prune_terminal_orders()
 
-        Called at tick start (after the quote triggers on_quote on the
-        router) to process fills from limit orders posted on previous
-        ticks.  Uses the same reconciliation path as normal fills.
+    def _force_order_terminal_after_pipeline_error(
+        self,
+        order: OrderRequest,
+        exc: BaseException,
+        *,
+        context: str,
+    ) -> None:
+        """Best-effort terminal resolution after an unexpected pipeline failure.
+
+        Used when ``submit`` succeeded but a later step (poll/apply/reconcile)
+        raised — the order must not remain stuck in a non-terminal SM state
+        (Inv-4 / operator hygiene).
+        """
+        self._bus.publish(Alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=order.correlation_id,
+            sequence=self._seq.next(),
+            severity=AlertSeverity.WARNING,
+            layer="kernel",
+            alert_name="order_pipeline_exception",
+            message=(
+                f"{context}: pipeline failed after submit for "
+                f"order_id={order.order_id!r} symbol={order.symbol!r}: {exc!r}"
+            ),
+            context={
+                "order_id": order.order_id,
+                "symbol": order.symbol,
+                "context": context,
+                "exc_type": type(exc).__name__,
+            },
+        ))
+        oid = order.order_id
+        if oid not in self._active_orders:
+            return
+        sm = self._active_orders[oid][0]
+        if sm.state in _TERMINAL_ORDER_STATES:
+            self._prune_terminal_orders()
+            return
+        trigger_base = f"{context}_pipeline_abort:{type(exc).__name__}"
+        for target in (
+            OrderState.REJECTED,
+            OrderState.CANCELLED,
+            OrderState.EXPIRED,
+        ):
+            if sm.can_transition(target):
+                sm.transition(
+                    target,
+                    trigger=trigger_base,
+                    correlation_id=order.correlation_id,
+                )
+                self._prune_terminal_orders()
+                return
+        logger.critical(
+            "orchestrator: could not force terminal order state for %s "
+            "(current=%s) after %s — manual reconciliation required",
+            oid,
+            sm.state.name,
+            context,
+        )
+
+    def _reconcile_resting_fills(self, cid: str) -> None:
+        """Poll and reconcile quote-driven router acknowledgements.
+
+        Called at tick start (after the quote triggers ``on_quote`` on the
+        router) to process pending acks queued by the router — resting
+        passive fills/cancels and deferred aggressive fills when execution
+        latency is modeled.  Uses the same reconciliation path as submit-
+        time polls.
         """
         acks = self._poll_order_router_acks()
         if not acks:
@@ -2647,11 +3325,17 @@ class Orchestrator:
         order_id: str,
         target: OrderState,
         trigger: str,
+        *,
+        correlation_id: str = "",
     ) -> None:
         """Transition an order's state machine."""
         if order_id in self._active_orders:
             sm = self._active_orders[order_id][0]
-            sm.transition(target, trigger=trigger)
+            sm.transition(
+                target,
+                trigger=trigger,
+                correlation_id=correlation_id,
+            )
 
     def _apply_ack_to_order(self, ack: OrderAck) -> None:
         """Update an order's SM based on a broker acknowledgement.
@@ -2662,10 +3346,11 @@ class Orchestrator:
         in an incompatible state, an alert is emitted instead of
         silently dropping the ack (invariant 13: full provenance).
         """
+        cid = ack.correlation_id
         if ack.order_id not in self._active_orders:
             self._bus.publish(Alert(
                 timestamp_ns=self._clock.now_ns(),
-                correlation_id=ack.correlation_id,
+                correlation_id=cid,
                 sequence=self._seq.next(),
                 severity=AlertSeverity.WARNING,
                 layer="kernel",
@@ -2677,40 +3362,96 @@ class Orchestrator:
         sm = self._active_orders[ack.order_id][0]
 
         if ack.status == OrderAckStatus.REJECTED:
-            sm.transition(OrderState.REJECTED, trigger=f"broker_reject:{ack.reason}")
+            if sm.can_transition(OrderState.REJECTED):
+                sm.transition(
+                    OrderState.REJECTED,
+                    trigger=f"broker_reject:{ack.reason}",
+                    correlation_id=cid,
+                )
+            else:
+                self._emit_ack_drop_alert(ack, sm)
             return
 
         if ack.status == OrderAckStatus.ACKNOWLEDGED:
             if sm.state == OrderState.SUBMITTED:
-                sm.transition(OrderState.ACKNOWLEDGED, trigger="broker_ack")
+                sm.transition(
+                    OrderState.ACKNOWLEDGED,
+                    trigger="broker_ack",
+                    correlation_id=cid,
+                )
             return
 
         # Ensure ACKNOWLEDGED before any fill/cancel/expiry transition.
         if sm.state == OrderState.SUBMITTED:
-            sm.transition(OrderState.ACKNOWLEDGED, trigger="broker_ack")
+            sm.transition(
+                OrderState.ACKNOWLEDGED,
+                trigger="broker_ack",
+                correlation_id=cid,
+            )
 
         if ack.status == OrderAckStatus.FILLED:
-            sm.transition(OrderState.FILLED, trigger="fill_complete")
-        elif ack.status == OrderAckStatus.PARTIALLY_FILLED:
+            if sm.state == OrderState.FILLED:
+                self._bus.publish(Alert(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=cid,
+                    sequence=self._seq.next(),
+                    severity=AlertSeverity.WARNING,
+                    layer="kernel",
+                    alert_name="duplicate_terminal_fill_ack",
+                    message=(
+                        f"Ignoring duplicate FILLED ack for order_id={ack.order_id} "
+                        "(already terminal FILLED)."
+                    ),
+                    context={"order_id": ack.order_id},
+                ))
+                return
+            if sm.can_transition(OrderState.FILLED):
+                sm.transition(
+                    OrderState.FILLED,
+                    trigger="fill_complete",
+                    correlation_id=cid,
+                )
+            else:
+                self._emit_ack_drop_alert(ack, sm)
+            return
+
+        if ack.status == OrderAckStatus.PARTIALLY_FILLED:
             if sm.can_transition(OrderState.PARTIALLY_FILLED):
-                sm.transition(OrderState.PARTIALLY_FILLED, trigger="partial_fill")
+                sm.transition(
+                    OrderState.PARTIALLY_FILLED,
+                    trigger="partial_fill",
+                    correlation_id=cid,
+                )
             else:
                 self._emit_ack_drop_alert(ack, sm)
-        elif ack.status == OrderAckStatus.CANCELLED:
+            return
+
+        if ack.status == OrderAckStatus.CANCELLED:
             if sm.can_transition(OrderState.CANCELLED):
-                sm.transition(OrderState.CANCELLED, trigger="broker_cancel")
+                sm.transition(
+                    OrderState.CANCELLED,
+                    trigger="broker_cancel",
+                    correlation_id=cid,
+                )
             else:
                 self._emit_ack_drop_alert(ack, sm)
-        elif ack.status == OrderAckStatus.EXPIRED:
+            return
+
+        if ack.status == OrderAckStatus.EXPIRED:
             if sm.can_transition(OrderState.EXPIRED):
-                sm.transition(OrderState.EXPIRED, trigger="order_expired")
+                sm.transition(
+                    OrderState.EXPIRED,
+                    trigger="order_expired",
+                    correlation_id=cid,
+                )
             else:
                 self._emit_ack_drop_alert(ack, sm)
-        else:
-            raise ValueError(
-                f"Unhandled OrderAckStatus: {ack.status!r}. "
-                f"Fail-safe: all enum members must be explicitly handled."
-            )
+            return
+
+        raise ValueError(
+            f"Unhandled OrderAckStatus: {ack.status!r}. "
+            f"Fail-safe: all enum members must be explicitly handled."
+        )
 
     def _emit_ack_drop_alert(self, ack: OrderAck, sm: StateMachine[OrderState]) -> None:
         """Emit an alert when a valid broker ack cannot be applied to the order SM."""
@@ -2748,6 +3489,9 @@ class Orchestrator:
         Inv-11 fail-safe: fills for unknown order IDs are rejected
         (not applied) and surfaced via alert.  Defaulting to BUY
         would risk increasing exposure from an untracked sell order.
+
+        Position mutations require ``status ∈ {FILLED, PARTIALLY_FILLED}``
+        with positive ``filled_quantity`` and a non-null ``fill_price``.
         """
         for ack in acks:
             # F7: debit cancel/expiry fees even when there is no fill.
@@ -2780,7 +3524,57 @@ class Orchestrator:
                     cost_bps=ack.cost_bps,
                 ))
 
-            if ack.fill_price is None or ack.filled_quantity <= 0:
+            if ack.status in (
+                OrderAckStatus.FILLED,
+                OrderAckStatus.PARTIALLY_FILLED,
+            ):
+                if ack.fill_price is None or ack.filled_quantity <= 0:
+                    self._bus.publish(Alert(
+                        timestamp_ns=self._clock.now_ns(),
+                        correlation_id=correlation_id,
+                        sequence=self._seq.next(),
+                        severity=AlertSeverity.WARNING,
+                        layer="kernel",
+                        alert_name="fill_ack_missing_price_or_quantity",
+                        message=(
+                            f"{ack.status.name} ack missing economics "
+                            f"(order_id={ack.order_id!r}, symbol={ack.symbol!r}, "
+                            f"filled_quantity={ack.filled_quantity}, "
+                            f"fill_price={ack.fill_price!r})."
+                        ),
+                        context={
+                            "order_id": ack.order_id,
+                            "symbol": ack.symbol,
+                            "status": ack.status.name,
+                            "filled_quantity": ack.filled_quantity,
+                            "fill_price": str(ack.fill_price),
+                        },
+                    ))
+                    continue
+            else:
+                fill_like = (
+                    ack.fill_price is not None and ack.filled_quantity > 0
+                )
+                if fill_like:
+                    self._bus.publish(Alert(
+                        timestamp_ns=self._clock.now_ns(),
+                        correlation_id=correlation_id,
+                        sequence=self._seq.next(),
+                        severity=AlertSeverity.WARNING,
+                        layer="kernel",
+                        alert_name="fill_payload_inconsistent_with_ack_status",
+                        message=(
+                            f"Ignoring fill-like payload on {ack.status.name} ack "
+                            f"(order_id={ack.order_id!r}, symbol={ack.symbol!r})."
+                        ),
+                        context={
+                            "order_id": ack.order_id,
+                            "symbol": ack.symbol,
+                            "status": ack.status.name,
+                            "filled_quantity": ack.filled_quantity,
+                            "fill_price": str(ack.fill_price),
+                        },
+                    ))
                 continue
 
             if ack.order_id not in self._active_orders:
@@ -3168,58 +3962,117 @@ class Orchestrator:
     # ── PR-2b-iv: bus-driven SizedPositionIntent handler ────────────
 
     def _on_bus_sized_intent(self, event: Event) -> None:
-        """Translate a Phase-4 ``SizedPositionIntent`` to per-leg orders.
+        """Buffer or immediately execute ``SizedPositionIntent`` (Inv-9 parity).
 
-        Workflow (synchronous side-effect of
-        ``bus.publish(intent)`` in ``CompositionEngine``):
-
-        1. Filter the bus event for ``SizedPositionIntent``.
-        2. Call :meth:`RiskEngine.check_sized_intent`.  The risk engine
-           translates each non-zero ``TargetPosition`` delta into one
-           ``OrderRequest`` under per-leg veto semantics (Inv-11: a
-           breaching leg is dropped silently — the rest of the intent
-           proceeds; degenerate intents trivially yield ``()``).  Symbol
-           iteration is lexicographically sorted and ``order_id`` is a
-           SHA-256 of ``(intent.correlation_id, intent.sequence, symbol)``
-           so per-leg orders are bit-identical across replays (Inv-5).
-          3. For every surviving order, track it, mark it submitted, publish
-              it on the bus, hand it to ``backend.order_router.submit``, then
-              drain ``poll_acks`` and reconcile fills into the position
-              store.  This mirrors the ``_execute_reverse`` pattern minus the
-              micro-SM transitions: PORTFOLIO orders dispatch while the
-              scheduler's ``HorizonTick`` callback chain is still running
-              inside ``_dispatch_sensor_layer`` and do NOT advance the
-              SIGNAL-reserved M5 → M10 walk.
-
-        Consequences for SIGNAL/PORTFOLIO coexistence on a single tick:
-
-        * The PR-2b-iii ``depends_on_signals`` skip-rule prevents the
-          SIGNAL-bus subscriber from also translating Signals consumed by
-          PORTFOLIO alphas — so each strategy_id contributes orders
-          through exactly one path, never both (Inv-11 fail-safe: prefer
-          no order over duplicate orders).
-        * Standalone SIGNAL alphas continue to drive the per-tick
-          M5 → M10 walk; PORTFOLIO alphas dispatch their orders here.
-          Both can fire on the same tick without contention.
-
-        The risk engine's contract guarantees ``check_sized_intent`` does
-        not raise (Inv-11); this handler treats the empty tuple as
-        "hold all current positions" and exits silently.
+        During ``_process_tick`` (``_quote_tick_in_flight``), intents are
+        queued and drained by :meth:`_flush_pending_sized_intents` after the
+        ``CROSS_SECTIONAL`` bookend so M5–M10 record PORTFOLIO execution.
+        Out-of-tick bus publishes (unit tests, diagnostics) execute
+        immediately without micro transitions — micro stays at ``WAITING``.
         """
         if not isinstance(event, SizedPositionIntent):
             return
-        orders = self._risk_engine.check_sized_intent(event, self._positions)
-        if not orders:
+        if self._quote_tick_in_flight:
+            self._pending_sized_intents.append(event)
+        else:
+            self._submit_portfolio_leg_without_micro_walk(event, event.correlation_id)
+
+    # ── Audit R1: bus-driven hazard-exit OrderRequest handler ────────
+
+    _HAZARD_EXIT_REASONS: frozenset[str] = frozenset(
+        {"HAZARD_SPIKE", "HARD_EXIT_AGE"}
+    )
+
+    def _on_bus_hazard_order(self, event: Event) -> None:
+        """Route hazard-exit ``OrderRequest`` events to the execution backend.
+
+        ``HazardExitController._emit_exit`` publishes an
+        ``OrderRequest`` (with ``source_layer="RISK"`` and ``reason in
+        {"HAZARD_SPIKE", "HARD_EXIT_AGE"}``) but does NOT call any
+        router itself.  Pre-R1 there was no production subscriber that
+        bridged these orders to ``backend.order_router.submit``, so
+        every hazard exit was silently inert in any composed
+        deployment.  This handler closes that gap.
+
+        Filtering is intentionally tight: only orders matching the
+        controller's exact signature are submitted from here.  Orders
+        published by ``_on_bus_sized_intent`` (PORTFOLIO leg fan-out),
+        ``_emergency_flatten_all``, ``_execute_reverse``, and the
+        normal SIGNAL walk all reach the router via their direct
+        ``self._backend.order_router.submit`` calls upstream of their
+        ``self._bus.publish(order)``; this handler must NOT
+        double-submit them when their published copy reaches the bus.
+
+        Inv-11 (fail-safe): hazard exits are exit-direction-only by
+        construction in ``HazardExitController`` (the order side is
+        always opposite the position sign) so they cannot increase
+        exposure.  A defensive ``check_order`` runs for audit parity;
+        ``REJECT`` verdicts are logged and the order is still submitted
+        (mirroring emergency flatten).  See ``risk/engine.py`` for the
+        formal sole-gatekeeper carve-outs.
+        """
+        if not isinstance(event, OrderRequest):
             return
-        for order in orders:
-            self._track_order(order.order_id, order.side, order)
-            self._transition_order(
-                order.order_id, OrderState.SUBMITTED, "submitted",
+        if event.source_layer != "RISK":
+            return
+        if event.reason not in self._HAZARD_EXIT_REASONS:
+            return
+        # Idempotency guard against a duplicate publish of the same
+        # hazard order_id (e.g. a misconfigured second subscriber
+        # echoing onto the bus, or a controller bug bypassing its
+        # own episode-suppression).  ``_active_orders`` is pruned on
+        # terminal states so it can't serve as a long-lived dedup
+        # set; ``_hazard_submitted_order_ids`` is hazard-only and
+        # never pruned (one entry per episode-symbol-reason —
+        # bounded by trading volume per session).
+        if event.order_id in self._hazard_submitted_order_ids:
+            return
+        self._hazard_submitted_order_ids.add(event.order_id)
+        hv = self._risk_engine.check_order(event, self._positions)
+        # Do not broadcast FORCE_FLATTEN: downstream subscribers may treat it as
+        # a global lockdown trigger while this handler still submits the exit
+        # (Inv-11 fail-safe).  REJECT / ALLOW are fine for audit parity.
+        if hv.action != RiskAction.FORCE_FLATTEN:
+            self._bus.publish(hv)
+        if hv.action == RiskAction.REJECT:
+            self._bus.publish(Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=event.correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="hazard_exit_defensive_check_order_reject",
+                message=(
+                    "Defensive check_order returned REJECT on a hazard exit "
+                    f"(strategy_id={event.strategy_id!r}, symbol={event.symbol!r}, "
+                    f"reason={hv.reason!r}) — submitting anyway (Inv-11 exit "
+                    "fail-safe)."
+                ),
+                context={
+                    "order_id": event.order_id,
+                    "risk_reason": hv.reason,
+                },
+            ))
+        self._track_order(event.order_id, event.side, event)
+        self._transition_order(
+            event.order_id,
+            OrderState.SUBMITTED,
+            event.reason,
+            correlation_id=event.correlation_id,
+        )
+        try:
+            self._backend.order_router.submit(event)
+        except Exception as exc:  # noqa: BLE001 — fail-safe: never raise from bus
+            logger.exception(
+                "Hazard exit order submission failed for %s "
+                "(strategy_id=%s, reason=%s, order_id=%s); position "
+                "remains open and will be retried on the next spike.",
+                event.symbol, event.strategy_id, event.reason,
+                event.order_id,
             )
-            self._backend.order_router.submit(order)
-            self._bus.publish(order)
-        expected_order_ids = {order.order_id for order in orders}
-        acks = self._poll_order_router_acks(expected_order_ids)
+            self._reject_order_after_submit_failure(event, exc)
+            return
+        acks = self._poll_order_router_acks({event.order_id})
         for ack in acks:
             self._bus.publish(ack)
             self._apply_ack_to_order(ack)
@@ -3227,23 +4080,91 @@ class Orchestrator:
 
     # ── Configuration and data integrity ────────────────────────────
 
+    def _data_health_blocks_trading(self, symbol: str, correlation_id: str) -> bool:
+        """Return True when the Massive normalizer forbids consuming this symbol.
+
+        CORRUPTED always halts trading for the symbol when a normalizer is wired.
+        GAP_DETECTED does the same only when ``PlatformConfig.degrade_on_data_gap``
+        is enabled (strict paper/live policy).
+        """
+        if self._normalizer is None:
+            return False
+        health = self._normalizer.health(symbol)
+        cfg_syms = (
+            {s.upper() for s in self._config.symbols}
+            if self._config is not None
+            else frozenset()
+        )
+        if getattr(self._config, "strict_normalizer_symbol_coverage", False):
+            if symbol.upper() in cfg_syms:
+                tracked = {k.upper() for k in self._normalizer.all_health()}
+                if symbol.upper() not in tracked:
+                    if self._macro.can_transition(MacroState.DEGRADED):
+                        self._macro.transition(
+                            MacroState.DEGRADED,
+                            trigger=f"DATA_SYMBOL_UNTRACKED:{symbol}",
+                            correlation_id=correlation_id,
+                        )
+                    return True
+        if health == DataHealth.CORRUPTED:
+            if self._macro.can_transition(MacroState.DEGRADED):
+                self._macro.transition(
+                    MacroState.DEGRADED,
+                    trigger=f"DATA_CORRUPTED:{symbol}",
+                    correlation_id=correlation_id,
+                )
+            return True
+        degrade_gap = getattr(self._config, "degrade_on_data_gap", False)
+        if degrade_gap and health == DataHealth.GAP_DETECTED:
+            if self._macro.can_transition(MacroState.DEGRADED):
+                self._macro.transition(
+                    MacroState.DEGRADED,
+                    trigger=f"DATA_GAP_DETECTED:{symbol}",
+                    correlation_id=correlation_id,
+                )
+            return True
+        return False
+
+
     def _verify_data_integrity(self) -> bool:
         """Verify data integrity for all configured symbols.
 
         If a normalizer is available, checks that every configured
-        symbol is tracked and reports HEALTHY.  Without a normalizer
-        (e.g., backtest with pre-validated data), returns True.
+        symbol is tracked and reports HEALTHY.
+
+        Without a normalizer (cached replay / offline logs), optional
+        ``PlatformConfig.require_healthy_disk_cache_manifests`` enforces
+        per-day ``ingestion_health`` rows supplied by the ingest/replay path.
         """
-        if self._normalizer is None:
-            return True
         if self._config is None:
             return True
-        health = self._normalizer.all_health()
-        for symbol in self._config.symbols:
-            if symbol not in health:
+
+        if self._normalizer is not None:
+            health = self._normalizer.all_health()
+            for symbol in self._config.symbols:
+                if symbol not in health:
+                    return False
+                if health[symbol] != DataHealth.HEALTHY:
+                    return False
+            return True
+
+        if getattr(self._config, "require_healthy_disk_cache_manifests", False):
+            rows = getattr(self._config, "disk_cache_ingestion_health_rows", ()) or ()
+            if not rows:
+                logger.warning(
+                    "require_healthy_disk_cache_manifests=True but "
+                    "disk_cache_ingestion_health_rows is empty — integrity fail"
+                )
                 return False
-            if health[symbol] != DataHealth.HEALTHY:
-                return False
+            for sym, day, h in rows:
+                if h != "HEALTHY":
+                    logger.warning(
+                        "disk cache ingestion_health=%s for %s/%s — integrity fail",
+                        h,
+                        sym,
+                        day,
+                    )
+                    return False
         return True
 
     # ── Feature snapshot management ─────────────────────────────────

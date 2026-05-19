@@ -20,16 +20,18 @@ Fill model (L1-only, conservative):
 
   Unfilled orders are cancelled after ``max_resting_ticks`` quotes.
 
-  MARKET orders fill immediately at mid-price (identical to
-  ``BacktestOrderRouter``), used for stop-loss and emergency exits.
+  MARKET orders use the same causal latency model and D14 mid-price +
+  walk-the-book partial-fill semantics as :class:`~feelies.execution.backtest_router.BacktestOrderRouter`:
+  ACKNOWLEDGED is always emitted before any fill or reject; with
+  ``latency_ns > 0``, fills price off the first latency-eligible quote.
 
 Invariants preserved:
   - Inv 5 (deterministic replay): no randomness — queue drain is a
     deterministic tick counter.
   - Inv 9 (backtest/live parity): implements the same OrderRouter
     protocol used by live and paper routers.
-  - Inv 11 (fail-safe): MARKET orders always fill immediately;
-    passive orders that timeout are CANCELLED, not silently dropped;
+  - Inv 11 (fail-safe): MARKET orders fill once latency-eligible quotes
+    arrive; passive orders that timeout are CANCELLED, not silently dropped;
     duplicate order_ids are rejected.
   - Inv 12 (transaction cost realism): passive fills charge zero
     spread cost and optionally model maker rebates.
@@ -37,7 +39,7 @@ Invariants preserved:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import ROUND_HALF_UP, Decimal
 
 from feelies.core.clock import Clock
@@ -52,6 +54,7 @@ from feelies.core.events import (
 )
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.cost_model import CostModel, ZeroCostModel
+from feelies.execution.market_fill import append_market_fill_acks, to_decimal
 
 
 @dataclass
@@ -71,12 +74,35 @@ class _PendingOrder:
     shares_traded_at_level: int = 0
 
 
+@dataclass(frozen=True)
+class _DeferredAggressiveFill:
+    """MARKET order deferred until exchange time reaches ``deadline_ns``.
+
+    ``ack_timestamp_ns`` matches the ACKNOWLEDGED ack emitted at submit.
+    The FILLED timestamp uses ``max(ack_timestamp_ns,
+    fill_quote.exchange_timestamp_ns)`` so we do not add ``latency_ns``
+    again when the injected clock tracks exchange time (``ReplayFeed``) —
+    the eligibility deadline already advanced exchange time by one latency
+    slice (parity with :class:`~feelies.execution.backtest_router.BacktestOrderRouter`).
+    ``max_resting_ticks`` timeout rejects use the same floor so REJECTED
+    does not precede ACKNOWLEDGED before the latency deadline.
+    """
+
+    request: OrderRequest
+    fill_deadline_exchange_ns: int
+    ack_timestamp_ns: int
+    ticks_for_symbol: int = 0
+
+
 class PassiveLimitOrderRouter:
     """Simulated order router with passive limit order fill model.
 
     Handles two order types:
       - ``LIMIT``: deferred fill via queue-position model (entries/exits)
-      - ``MARKET``: immediate mid-price fill (stop-loss, emergency exits)
+      - ``MARKET``: mid-price aggressive fill with the same ``latency_ns``
+        deferral and D14 depth walk as
+        :class:`~feelies.execution.backtest_router.BacktestOrderRouter`
+        (zero L1 depth rejects; no vacuum fills)
 
     The orchestrator must call ``on_quote()`` for each incoming quote
     so the router can (a) track the latest NBBO and (b) check resting
@@ -88,6 +114,8 @@ class PassiveLimitOrderRouter:
         clock: Clock,
         latency_ns: int = 0,
         cost_model: CostModel | None = None,
+        market_impact_factor: Decimal | int | str | float = Decimal("0.5"),
+        max_impact_half_spreads: Decimal | int | str | float = Decimal("10"),
         *,
         fill_delay_ticks: int = 3,
         max_resting_ticks: int = 50,
@@ -97,6 +125,12 @@ class PassiveLimitOrderRouter:
         self._clock = clock
         self._latency_ns = latency_ns
         self._cost_model: CostModel = cost_model or ZeroCostModel()
+        self._market_impact_factor = to_decimal(
+            market_impact_factor, "market_impact_factor"
+        )
+        self._max_impact_half_spreads = to_decimal(
+            max_impact_half_spreads, "max_impact_half_spreads"
+        )
         self._fill_delay_ticks = fill_delay_ticks
         self._max_resting_ticks = max_resting_ticks
         self._queue_position_shares = queue_position_shares
@@ -112,12 +146,15 @@ class PassiveLimitOrderRouter:
         # Full set of order_ids ever submitted — used for idempotent reject.
         self._submitted_order_ids: set[str] = set()
         self._ack_seq = SequenceGenerator()
+        # Deferred MARKET orders: see ``_DeferredAggressiveFill``.
+        self._deferred_aggressive: list[_DeferredAggressiveFill] = []
 
     # ── Public interface (OrderRouter protocol) ──────────────────
 
     def on_quote(self, quote: NBBOQuote) -> None:
         """Update latest quote and check resting orders for fills."""
         self._last_quotes[quote.symbol] = quote
+        self._flush_deferred_aggressive(quote)
         self._check_resting_orders(quote)
 
     def on_trade(self, trade: Trade) -> None:
@@ -143,7 +180,11 @@ class PassiveLimitOrderRouter:
 
     def submit(self, request: OrderRequest) -> None:
         if request.order_id in self._submitted_order_ids:
-            self._reject(request, f"duplicate order_id: {request.order_id}")
+            self._reject(
+                request,
+                f"duplicate order_id: {request.order_id}",
+                release_submitted_id=False,
+            )
             return
         self._submitted_order_ids.add(request.order_id)
 
@@ -162,7 +203,7 @@ class PassiveLimitOrderRouter:
             return
 
         if request.order_type == OrderType.MARKET:
-            self._fill_aggressive(request, quote)
+            self._submit_aggressive_market(request, quote)
         elif request.order_type == OrderType.LIMIT:
             self._post_passive(request, quote)
         else:
@@ -175,38 +216,146 @@ class PassiveLimitOrderRouter:
 
     # ── Aggressive (market) fills ────────────────────────────────
 
-    def _fill_aggressive(self, request: OrderRequest, quote: NBBOQuote) -> None:
-        """Immediate fill at mid-price — same economics as BacktestOrderRouter.
-
-        ``submit()`` is the only caller and has already validated that the
-        quote is non-crossed, so we do not re-check here.
+    def _submit_aggressive_market(
+        self,
+        request: OrderRequest,
+        quote: NBBOQuote,
+    ) -> None:
+        """MARKET submit: ACKNOWLEDGED first (Inv 9, parity with
+        ``BacktestOrderRouter``); then immediate FILLED when ``latency_ns <= 0``
+        (after depth check), else deferred fill on the first exchange-time-
+        eligible quote.
         """
-        fill_price = (quote.bid + quote.ask) / Decimal("2")
-        half_spread = (quote.ask - quote.bid) / Decimal("2")
-        fill_ts = self._clock.now_ns() + self._latency_ns
-
-        costs = self._cost_model.compute(
-            symbol=request.symbol,
-            side=request.side,
-            quantity=request.quantity,
-            fill_price=fill_price,
-            half_spread=half_spread,
-            is_short=request.is_short,
-        )
-
+        ack_ts = self._clock.now_ns() + self._latency_ns
         self._pending_acks.append(OrderAck(
-            timestamp_ns=fill_ts,
+            timestamp_ns=ack_ts,
             correlation_id=request.correlation_id,
             sequence=self._ack_seq.next(),
             order_id=request.order_id,
             symbol=request.symbol,
-            status=OrderAckStatus.FILLED,
-            filled_quantity=request.quantity,
-            fill_price=fill_price,
-            fees=costs.total_fees,
-            cost_bps=costs.cost_bps,
+            status=OrderAckStatus.ACKNOWLEDGED,
             request_sequence=request.sequence,
         ))
+
+        if self._latency_ns <= 0:
+            depth = (
+                quote.ask_size if request.side == Side.BUY else quote.bid_size
+            )
+            if depth <= 0:
+                self._reject(
+                    request,
+                    f"zero depth on {request.side.name} side "
+                    f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
+                )
+                return
+            self._execute_market_fill(request, quote, fill_ts=ack_ts)
+            return
+
+        # Deferred fills: depth is checked in ``_flush_deferred_aggressive`` on
+        # the first latency-eligible quote (not the submission quote).
+        self._deferred_aggressive.append(
+            _DeferredAggressiveFill(
+                request=request,
+                fill_deadline_exchange_ns=(
+                    quote.exchange_timestamp_ns + self._latency_ns
+                ),
+                ack_timestamp_ns=ack_ts,
+            ),
+        )
+
+    def _flush_deferred_aggressive(self, quote: NBBOQuote) -> None:
+        if not self._deferred_aggressive:
+            return
+        remaining: list[_DeferredAggressiveFill] = []
+        for dm in self._deferred_aggressive:
+            req = dm.request
+            if req.symbol != quote.symbol:
+                remaining.append(dm)
+                continue
+            ticks_for_symbol = dm.ticks_for_symbol + 1
+            if quote.exchange_timestamp_ns < dm.fill_deadline_exchange_ns:
+                if ticks_for_symbol >= self._max_resting_ticks:
+                    # Preserve monotonic ordering of the order's ack stream:
+                    # the timeout fires precisely because exchange time has
+                    # not yet reached the latency deadline, so ``clock.now_ns()``
+                    # may be < the stored ACKNOWLEDGED timestamp.
+                    self._reject(
+                        req,
+                        f"deferred aggressive timeout after "
+                        f"{ticks_for_symbol} ticks (no latency-eligible quote)",
+                        timestamp_ns=max(
+                            self._clock.now_ns(),
+                            dm.ack_timestamp_ns,
+                        ),
+                    )
+                    continue
+                remaining.append(
+                    replace(dm, ticks_for_symbol=ticks_for_symbol),
+                )
+                continue
+            # Post-ACK reject paths must floor at ``ack_timestamp_ns`` so
+            # REJECTED never timestamps before ACKNOWLEDGED (mirrors the
+            # ``max_resting_ticks`` timeout path above).
+            reject_ts = max(self._clock.now_ns(), dm.ack_timestamp_ns)
+            if quote.bid >= quote.ask:
+                self._reject(
+                    req,
+                    f"crossed or locked quote bid={quote.bid} ask={quote.ask}",
+                    timestamp_ns=reject_ts,
+                )
+                continue
+            depth = (
+                quote.ask_size if req.side == Side.BUY else quote.bid_size
+            )
+            if depth <= 0:
+                self._reject(
+                    req,
+                    f"zero depth on {req.side.name} side "
+                    f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
+                    timestamp_ns=reject_ts,
+                )
+                continue
+            # Marketable LIMIT orders route here via ``_post_passive``; during a
+            # positive-latency window the BBO may move so mid exceeds limit_price.
+            if req.limit_price is not None:
+                fill_mid = (quote.bid + quote.ask) / Decimal("2")
+                if (
+                    req.side == Side.BUY and fill_mid > req.limit_price
+                ) or (
+                    req.side == Side.SELL and fill_mid < req.limit_price
+                ):
+                    self._reject(
+                        req,
+                        f"deferred fill mid {fill_mid} violates "
+                        f"{req.side.name} limit {req.limit_price} "
+                        f"(BBO moved adversely during latency window)",
+                        timestamp_ns=reject_ts,
+                    )
+                    continue
+            fill_ts = max(dm.ack_timestamp_ns, quote.exchange_timestamp_ns)
+            self._execute_market_fill(req, quote, fill_ts=fill_ts)
+        self._deferred_aggressive = remaining
+
+    def _execute_market_fill(
+        self,
+        request: OrderRequest,
+        quote: NBBOQuote,
+        *,
+        fill_ts: int | None = None,
+    ) -> None:
+        """Aggressive fill at ``quote`` — shared D14 model with ``BacktestOrderRouter``."""
+        if fill_ts is None:
+            fill_ts = self._clock.now_ns() + self._latency_ns
+        append_market_fill_acks(
+            self._pending_acks,
+            self._ack_seq,
+            self._cost_model,
+            request,
+            quote,
+            fill_ts,
+            market_impact_factor=self._market_impact_factor,
+            max_impact_half_spreads=self._max_impact_half_spreads,
+        )
 
     # ── Passive (limit) order posting ────────────────────────────
 
@@ -220,10 +369,10 @@ class PassiveLimitOrderRouter:
         # cross the spread, redirect to aggressive fill to avoid posting
         # a marketable limit order (which exchanges reject or fill as taker).
         if request.side == Side.BUY and limit_price >= quote.ask:
-            self._fill_aggressive(request, quote)
+            self._submit_aggressive_market(request, quote)
             return
         if request.side == Side.SELL and limit_price <= quote.bid:
-            self._fill_aggressive(request, quote)
+            self._submit_aggressive_market(request, quote)
             return
 
         pending = _PendingOrder(
@@ -356,10 +505,23 @@ class PassiveLimitOrderRouter:
         return "wait"
 
     # ── Ack emission helpers ─────────────────────────────────────
-    def _reject(self, request: OrderRequest, reason: str) -> None:
-        """Emit a REJECTED ack for the given order request."""
+    def _reject(
+        self,
+        request: OrderRequest,
+        reason: str,
+        *,
+        timestamp_ns: int | None = None,
+        release_submitted_id: bool = True,
+    ) -> None:
+        """Emit a REJECTED ack for the given order request.
+
+        Clears ``order_id`` from :attr:`_submitted_order_ids` unless
+        ``release_submitted_id=False`` (duplicate submissions — the id may
+        still belong to an in-flight resting or deferred aggressive order).
+        """
+        ts = self._clock.now_ns() if timestamp_ns is None else timestamp_ns
         self._pending_acks.append(OrderAck(
-            timestamp_ns=self._clock.now_ns(),
+            timestamp_ns=ts,
             correlation_id=request.correlation_id,
             sequence=self._ack_seq.next(),
             order_id=request.order_id,
@@ -368,6 +530,8 @@ class PassiveLimitOrderRouter:
             reason=reason,
             request_sequence=request.sequence,
         ))
+        if release_submitted_id:
+            self._submitted_order_ids.discard(request.order_id)
 
     def _emit_passive_fill(
         self,

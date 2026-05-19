@@ -131,8 +131,8 @@ Alphas can be placed in either layout:
 > operator explicitly pins `enforce_trend_mechanism: false` in
 > `platform.yaml` (the documented v0.2 escape hatch). Four reference
 > alphas covering the non-stress families ship in this slice
-> (`pofi_hawkes_burst_v1`, `pofi_kyle_drift_v1`,
-> `pofi_inventory_revert_v1`, `pofi_moc_imbalance_v1`); the
+> (`sig_hawkes_burst_v1`, `sig_kyle_drift_v1`,
+> `sig_inventory_revert_v1`, `sig_moc_imbalance_v1`); the
 > `LIQUIDITY_STRESS` family is enforced **exit-only** — a stress-family
 > alpha may not emit an entry-direction `Signal`. See §20.10 (v0.3
 > Phased Delivery) for the full timeline.
@@ -200,7 +200,7 @@ hazard-rate exits via `RegimeHazardSpike` events.
 | G8 | **Active** (Phase 3-α) | No implicit lookahead — AST-scan rejects access to future-bucketed names. |
 | G9 | **Active** (Phase 4) | Cross-symbol staleness checks — `CrossSectionalContext.completeness` must clear the per-platform `composition_completeness_threshold` (default `0.7`) for the boundary to produce a `SizedPositionIntent`. Always blocks (data-integrity gate; not affected by `enforce_layer_gates`). |
 | G10 | **Active** (Phase 4) | PORTFOLIO `universe:` presence + scale cap — every PORTFOLIO alpha must declare a non-empty `universe:` list and the universe size must be ≤ `composition_max_universe_size` (v0.2 cap = 50 symbols). Always blocks. |
-| G11 | **Active** (Phase 4) | PORTFOLIO `factor_neutralization:` disclosure — every PORTFOLIO alpha must declare `factor_neutralization: true` (or list explicit excluded factor IDs). Reference factor loadings under `storage/reference/factor_loadings/` must exist and not exceed `factor_loadings_max_age_seconds`; missing or stale loadings raise `StaleFactorLoadingsError` at bootstrap. Always blocks. |
+| G11 | **Active** (Phase 4) | PORTFOLIO `factor_neutralization:` disclosure — every PORTFOLIO alpha must declare `factor_neutralization: true` (or list explicit excluded factor IDs). Reference factor loadings under `src/feelies/storage/reference/factor_loadings/` (or the path set in `PlatformConfig.factor_loadings_dir`) must exist and not exceed `factor_loadings_max_age_seconds`; missing or stale loadings raise `StaleFactorLoadingsError` at bootstrap. Always blocks. |
 | G12 | **Active** (Phase 3-α) | Cost-arithmetic disclosure — `cost_arithmetic` block required, `margin_ratio >= 1.5`, components reconcile within ±5%. |
 | G13 | **Active** (Phase 3-α) | Warm-up documentation — `SIGNAL` inherits warm-up from sensor warm-up by construction; the inline-features warm-up branch is unreachable post-D.2 (the loader rejects `LEGACY_SIGNAL` before validation). |
 | G14 | **Active** (Phase 1) | Alpha must declare no data dependency outside L1 NBBO + trades + reference data + session calendar. |
@@ -236,7 +236,7 @@ catalog and horizon-aware feature scaffolding, but alpha specs are
   built and tested against a stable contract before Phase 3 wires
   concrete `HorizonFeature` implementations.
 - The `scheduled_flow_window` sensor reads
-  ``storage/reference/event_calendar/<date>.yaml``; the calendar's
+  ``src/feelies/storage/reference/event_calendar/<date>.yaml`` (or any path passed via `PlatformConfig.event_calendar_path`); the calendar's
   `EventCalendar.hash()` is folded into the bootstrap provenance
   bundle (Inv-13).
 
@@ -268,7 +268,7 @@ Layer-2 contract:
   `evaluate(snapshot, regime, params)` is parsed and validated by
   gates G2–G13 at load time.
 - The reference alpha
-  [`alphas/pofi_benign_midcap_v1`](pofi_benign_midcap_v1/) ships as
+  [`alphas/sig_benign_midcap_v1`](sig_benign_midcap_v1/) ships as
   the canonical Phase-3 example. Its Level-2 SIGNAL parity hash is
   locked in `tests/determinism/test_signal_replay.py`. Drift in
   ordering, scope, or sequence allocation surfaces as a baseline
@@ -297,20 +297,20 @@ four reference alphas exercise the four non-stress families:
   default `true` since Workstream E, acceptance row 84)** rejects
   any schema-1.1 `SIGNAL`/`PORTFOLIO` spec *missing* a
   `trend_mechanism:` block at load time. Operators staying on a v0.2
-  baseline alpha (e.g. `pofi_benign_midcap_v1`) must pin
+  baseline alpha (e.g. `sig_benign_midcap_v1`) must pin
   `enforce_trend_mechanism: false` explicitly. This is the
   recommended setting once an operator has committed to the
   v0.3 mechanism contract; it catches "drift back to v0.2" at load
   time rather than at promotion review.
 - **Reference alphas (one per non-stress family):**
-  - [`alphas/pofi_hawkes_burst_v1`](pofi_hawkes_burst_v1/) —
+  - [`alphas/sig_hawkes_burst_v1`](sig_hawkes_burst_v1/) —
     `HAWKES_SELF_EXCITE`, 30 s horizon, hazard-exit enabled.
-  - [`alphas/pofi_kyle_drift_v1`](pofi_kyle_drift_v1/) — `KYLE_INFO`,
+  - [`alphas/sig_kyle_drift_v1`](sig_kyle_drift_v1/) — `KYLE_INFO`,
     300 s horizon, slow drift on informed-trader price impact.
-  - [`alphas/pofi_inventory_revert_v1`](pofi_inventory_revert_v1/) —
+  - [`alphas/sig_inventory_revert_v1`](sig_inventory_revert_v1/) —
     `INVENTORY`, 30 s horizon, contrarian on quote-replenish
     asymmetry (`abs(zscore) > 2.0`).
-  - [`alphas/pofi_moc_imbalance_v1`](pofi_moc_imbalance_v1/) —
+  - [`alphas/sig_moc_imbalance_v1`](sig_moc_imbalance_v1/) —
     `SCHEDULED_FLOW`, 120 s horizon, MOC-window flow tracking via the
     tuple-valued `scheduled_flow_window` sensor (component-expanded
     by `HorizonSignalEngine`).
@@ -391,9 +391,9 @@ side-by-side with `SIGNAL` alphas on the same universe:
   `max_gross_exposure_pct`, `capital_allocation_pct`) are
   inherited by per-leg `OrderRequest`s through the standard risk
   pipeline. Reference factor loadings live under
-  `storage/reference/factor_loadings/<universe_hash>/loadings.json`
+  `src/feelies/storage/reference/factor_loadings/<universe_hash>/loadings.json`
   (with optional `loadings.parquet`) and a sector map under
-  `storage/reference/sector_map/sector_map.json`; both are produced
+  `src/feelies/storage/reference/sector_map/sector_map.json`; both are produced
   by `scripts/build_reference_factor_loadings.py` and folded into
   the bootstrap provenance bundle (Inv-13).
 - Bootstrap is gated on `AlphaRegistry.has_portfolio_alphas()` —
@@ -405,10 +405,10 @@ side-by-side with `SIGNAL` alphas on the same universe:
   (12 composition + hazard metrics), and (if any alpha enables
   `hazard_exit.enabled: true`) `HazardExitController`.
 - The reference alpha
-  [`alphas/pofi_xsect_v1`](pofi_xsect_v1/) ships as the canonical
-  Phase-4 example, with a sibling `pofi_xsect_v1.with_decay.alpha.yaml`
+  [`alphas/pro_xsect_v1`](pro_xsect_v1/) ships as the canonical
+  Phase-4 example, with a sibling `pro_xsect_v1.with_decay.alpha.yaml`
   exercising the Phase-4.1 decay-weighting branch and
-  [`alphas/pofi_xsect_mixed_mechanism_v1`](pofi_xsect_mixed_mechanism_v1/)
+  [`alphas/pro_xsect_mixed_mechanism_v1`](pro_xsect_mixed_mechanism_v1/)
   exercising the multi-mechanism cap.
 - `scripts/run_backtest.py` exposes three new emission flags
   composable with the Phase-3 ones:
@@ -588,15 +588,11 @@ the LEGACY_SIGNAL retirement is complete:
   and `template_legacy_signal.alpha.yaml` was deleted in D.2 with
   the loader-side retirement.  No in-repo per-tick LEGACY template
   will be re-introduced.
-- **Hypothesis Reasoning Protocol** lives at
-  [`grok/07_HYPOTHESIS_REASONING.md`](../grok/07_HYPOTHESIS_REASONING.md).
-  The embedded sensor catalog and reference-alpha authoring contract
-  live in
-  [`grok/03_ALPHA_DEVELOPMENT.md`](../grok/03_ALPHA_DEVELOPMENT.md),
-  and the embedded mutation protocol and adoption semantics live in
-  [`grok/06_EVOLUTION.md`](../grok/06_EVOLUTION.md). The earlier
-  Prompt-7 planning draft has been retired; use the live numbered
-  prompt surfaces instead.
+- **Authoring guidance** — SIGNAL hypothesis discipline and mechanism
+  taxonomy: [`.cursor/skills/microstructure-alpha/SKILL.md`](../.cursor/skills/microstructure-alpha/SKILL.md).
+  Sensor / horizon-feature layer: [`.cursor/skills/feature-engine/SKILL.md`](../.cursor/skills/feature-engine/SKILL.md).
+  Research workflow and experiment hygiene:
+  [`.cursor/skills/research-workflow/SKILL.md`](../.cursor/skills/research-workflow/SKILL.md).
 - **`LEGACY_SIGNAL` is hard-rejected.** The loader's once-per-process
   sunset banner has been removed; any spec carrying
   `layer: LEGACY_SIGNAL` raises an `AlphaLoadError` at parse time

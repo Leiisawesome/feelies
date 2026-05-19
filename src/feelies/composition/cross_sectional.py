@@ -151,12 +151,26 @@ class CrossSectionalRanker:
 
     # ── Public API ───────────────────────────────────────────────────
 
-    def rank(self, ctx: CrossSectionalContext) -> RankResult:
+    def rank(
+        self,
+        ctx: CrossSectionalContext,
+        *,
+        feeder_strategy_ids: tuple[str, ...] = (),
+    ) -> RankResult:
         """Rank ``ctx``; return :class:`RankResult`.
 
-        Symbols with ``signals_by_symbol[symbol] is None`` produce
-        ``weights[symbol] = 0.0`` (hold existing position).
+        When *feeder_strategy_ids* is non-empty and the synchronizer
+        populated ``signals_by_strategy_by_symbol``, raw scores sum the
+        marginal contribution of each upstream SIGNAL alpha (deterministic
+        iteration order).  Otherwise the legacy single-slot
+        ``signals_by_symbol`` path is used.
         """
+        if feeder_strategy_ids and ctx.signals_by_strategy_by_symbol:
+            return self._rank_multi_feeder(ctx, feeder_strategy_ids)
+        return self._rank_legacy(ctx)
+
+    def _rank_legacy(self, ctx: CrossSectionalContext) -> RankResult:
+        """Single-signal-per-symbol ranking (pre–fan-in behaviour)."""
         raw_scores: dict[str, float] = {}
         decay_factors: dict[str, float] = {}
         mechanism_by_symbol: dict[str, TrendMechanism] = {}
@@ -185,7 +199,6 @@ class CrossSectionalRanker:
                 age_ns = max(0, ctx.timestamp_ns - sig.timestamp_ns)
                 age_s = age_ns / 1e9
                 hl = float(sig.expected_half_life_seconds)
-                # exp(-Δt / hl) ∈ (0, 1]; floor for numerical stability.
                 decay = max(self._decay_floor, math.exp(-age_s / hl))
                 raw *= decay
 
@@ -194,8 +207,86 @@ class CrossSectionalRanker:
             active.add(symbol)
 
         weights = self._standardize(raw_scores, ctx.universe, active)
+        weights, breakdown = self._apply_mechanism_cap(
+            weights, mechanism_by_symbol,
+        )
+        return RankResult(
+            weights=weights,
+            raw_scores=raw_scores,
+            decay_factors=decay_factors,
+            mechanism_by_symbol=mechanism_by_symbol,
+            mechanism_breakdown=breakdown,
+        )
 
-        # Apply mechanism-concentration cap (Phase 4.1).
+    def _rank_multi_feeder(
+        self,
+        ctx: CrossSectionalContext,
+        feeder_strategy_ids: tuple[str, ...],
+    ) -> RankResult:
+        """Aggregate ranked contribution across upstream SIGNAL alphas."""
+        raw_scores: dict[str, float] = {}
+        decay_factors: dict[str, float] = {}
+        mechanism_by_symbol: dict[str, TrendMechanism] = {}
+        active: set[str] = set()
+
+        for symbol in ctx.universe:
+            row = ctx.signals_by_strategy_by_symbol.get(symbol, {})
+            raw_total = 0.0
+            decay_track = 1.0
+            best_abs = -1.0
+            best_mech: TrendMechanism | None = None
+            found_any_signal = False
+            had_entry_eligible = False
+            exit_only_mech: TrendMechanism | None = None
+
+            for sid in feeder_strategy_ids:
+                sig = row.get(sid)
+                if sig is None:
+                    continue
+                found_any_signal = True
+                mech = sig.trend_mechanism
+                if mech in _EXIT_ONLY_MECHANISMS:
+                    if mech is not None:
+                        exit_only_mech = mech
+                    continue
+
+                had_entry_eligible = True
+                sign = self._direction_to_sign(sig.direction)
+                raw = sign * sig.strength * sig.edge_estimate_bps
+                decay = 1.0
+                if self._decay_enabled and sig.expected_half_life_seconds > 0:
+                    age_ns = max(0, ctx.timestamp_ns - sig.timestamp_ns)
+                    age_s = age_ns / 1e9
+                    hl = float(sig.expected_half_life_seconds)
+                    decay = max(self._decay_floor, math.exp(-age_s / hl))
+                    raw *= decay
+
+                raw_total += raw
+                decay_track = min(decay_track, decay)
+                contrib_abs = abs(raw)
+                if contrib_abs > best_abs:
+                    best_abs = contrib_abs
+                    best_mech = mech
+
+            if not found_any_signal:
+                raw_scores[symbol] = 0.0
+                decay_factors[symbol] = 0.0
+                continue
+
+            if not had_entry_eligible:
+                raw_scores[symbol] = 0.0
+                decay_factors[symbol] = 0.0
+                if exit_only_mech is not None:
+                    mechanism_by_symbol[symbol] = exit_only_mech
+                continue
+
+            raw_scores[symbol] = raw_total
+            decay_factors[symbol] = decay_track
+            if best_mech is not None:
+                mechanism_by_symbol[symbol] = best_mech
+            active.add(symbol)
+
+        weights = self._standardize(raw_scores, ctx.universe, active)
         weights, breakdown = self._apply_mechanism_cap(
             weights, mechanism_by_symbol,
         )

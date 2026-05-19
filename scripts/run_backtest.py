@@ -62,12 +62,14 @@ from feelies.core.events import (
     SizedPositionIntent,
     Trade,
 )
-from feelies.core.identifiers import SequenceGenerator, make_correlation_id
 from feelies.core.platform_config import OperatingMode, PlatformConfig
+from feelies.ingestion.data_integrity import DataHealth
+from feelies.ingestion.ingest_health import terminal_symbol_health_rows
 from feelies.ingestion.massive_ingestor import IngestResult
 from feelies.kernel.macro import MacroState
 from feelies.monitoring.in_memory import InMemoryMetricCollector
 from feelies.storage.disk_event_cache import DiskEventCache
+from feelies.storage.event_resequence import resequence_event_list
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 T = TypeVar("T", bound=Event)
@@ -764,22 +766,8 @@ def _iter_dates(start_date: str, end_date: str) -> list[str]:
 def _resequence(
     events: list[NBBOQuote | Trade],
 ) -> list[NBBOQuote | Trade]:
-    """Sort by exchange time and assign globally monotonic sequences.
-
-    Multi-symbol events may arrive concatenated (all AAPL then all MSFT).
-    Sorting by exchange_timestamp_ns ensures the SimulatedClock advances
-    correctly and all components see chronologically ordered ticks.
-    """
-    events.sort(key=lambda e: e.exchange_timestamp_ns)
-    seq = SequenceGenerator()
-    result: list[NBBOQuote | Trade] = []
-    for event in events:
-        new_seq = seq.next()
-        new_cid = make_correlation_id(
-            event.symbol, event.exchange_timestamp_ns, new_seq,
-        )
-        result.append(replace(event, sequence=new_seq, correlation_id=new_cid))
-    return result
+    """Sort by exchange time (deterministic tie-breakers) and re-sequence."""
+    return resequence_event_list(events)
 
 
 @dataclass(frozen=True)
@@ -789,6 +777,7 @@ class DaySource:
     date: str
     source: str
     event_count: int
+    ingestion_health: str | None = None
 
 
 def ingest_data(
@@ -799,6 +788,7 @@ def ingest_data(
     *,
     cache_dir: Path | None = None,
     no_cache: bool = False,
+    enable_rest_sequence_gap_detection: bool = False,
 ) -> tuple[InMemoryEventLog, IngestResult, list[DaySource]]:
     """Download historical data with per-day cache and parallel download."""
     from feelies.ingestion.massive_ingestor import MassiveHistoricalIngestor
@@ -824,10 +814,17 @@ def ingest_data(
             if cache is not None and cache.exists(symbol, day):
                 loaded = cache.load(symbol, day)
                 if loaded is not None:
+                    manifest = cache.read_manifest(symbol, day)
+                    ing_h = (
+                        manifest.get("ingestion_health") if manifest else None
+                    )
                     all_events.extend(loaded)
                     day_sources.append(DaySource(
                         symbol=symbol, date=day,
                         source="cache", event_count=len(loaded),
+                        ingestion_health=(
+                            str(ing_h) if ing_h is not None else None
+                        ),
                     ))
                     if multi_day_or_symbol:
                         print(
@@ -837,7 +834,10 @@ def ingest_data(
                     continue
 
             clock = SimulatedClock(start_ns=1_000_000_000)
-            normalizer = MassiveNormalizer(clock)
+            normalizer = MassiveNormalizer(
+                clock,
+                enable_rest_sequence_gap_detection=enable_rest_sequence_gap_detection,
+            )
             day_log = InMemoryEventLog()
 
             ingestor = MassiveHistoricalIngestor(
@@ -869,13 +869,26 @@ def ingest_data(
 
             day_events: list[NBBOQuote | Trade] = list(day_log.replay())  # type: ignore[arg-type]
 
+            sym_health = normalizer.all_health().get(symbol)
+            ing_health_str = (
+                "HEALTHY"
+                if sym_health == DataHealth.HEALTHY
+                else (
+                    sym_health.name
+                    if sym_health is not None
+                    else "UNKNOWN"
+                )
+            )
             if cache is not None:
-                cache.save(symbol, day, day_events)
+                cache.save(
+                    symbol, day, day_events, ingestion_health=ing_health_str,
+                )
 
             all_events.extend(day_events)
             day_sources.append(DaySource(
                 symbol=symbol, date=day,
                 source="api", event_count=len(day_events),
+                ingestion_health=ing_health_str,
             ))
             if multi_day_or_symbol:
                 print(
@@ -901,6 +914,61 @@ def ingest_data(
     )
 
     return event_log, ingest_result, day_sources
+
+
+def _warn_if_unhealthy_manifest_days(day_sources: Sequence[Any]) -> None:
+    """Advisory banner when ingest/cache metadata reports degraded health."""
+    bad: list[Any] = []
+    for ds in day_sources:
+        h = getattr(ds, "ingestion_health", None)
+        if h is not None and h != "HEALTHY":
+            bad.append(ds)
+    if not bad:
+        return
+    lines = [
+        f"    {getattr(ds, 'symbol', '?')} {getattr(ds, 'date', '?')}: "
+        f"{getattr(ds, 'ingestion_health', '?')!r}"
+        for ds in bad[:20]
+    ]
+    extra = "" if len(bad) <= 20 else f"\n    ... and {len(bad) - 20} more day(s)"
+    print(
+        "\n  WARNING: One or more loaded days have ingestion_health != HEALTHY.\n"
+        "  Replay continues; set require_healthy_disk_cache_manifests: true or "
+        "backtest_enforce_ingest_terminal_health: true (after ingest attaches rows) "
+        "to fail boot, or fix/re-ingest degraded days.\n"
+        + "\n".join(lines)
+        + extra
+        + "\n",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
+def _attach_disk_cache_health_rows(
+    config: PlatformConfig,
+    day_sources: Sequence[DaySource],
+) -> PlatformConfig:
+    """Fold per-day ingestion_health into config for offline integrity gates."""
+    from dataclasses import replace as _cfg_replace
+
+    rows = tuple(
+        (ds.symbol, ds.date, ds.ingestion_health or "UNKNOWN")
+        for ds in day_sources
+    )
+    return _cfg_replace(config, disk_cache_ingestion_health_rows=rows)
+
+
+def _attach_day_source_provenance(
+    config: PlatformConfig,
+    symbols: list[str],
+    day_sources: Sequence[DaySource],
+) -> PlatformConfig:
+    """Attach per-day manifest rows plus worst-case per-symbol terminal health."""
+    cfg = _attach_disk_cache_health_rows(config, day_sources)
+    return replace(
+        cfg,
+        ingest_terminal_symbol_health=terminal_symbol_health_rows(symbols, day_sources),
+    )
 
 
 # ── Report formatting helpers ────────────────────────────────────────
@@ -1275,8 +1343,7 @@ def generate_report(
                 lines.append(_sub_kv("  Recent edge", f"{ds.realized:.2f} bps"))
                 lines.append(_sub_kv("  Z-score", f"{ds.z_score:.2f}"))
 
-    # Three-hash parity contract — pnl_hash, config_hash, parity_hash.
-    # Grok's VERIFY(signal_id, local_pnl_hash, local_config_hash) consumes both.
+    # Three-hash parity contract — pnl_hash, config_hash, parity_hash (combined bind).
     pnl_hash = compute_parity_hash(orchestrator)
     config_hash = compute_config_hash(config)
     parity_hash = compute_combined_parity_hash(pnl_hash, config_hash)
@@ -1301,14 +1368,13 @@ def generate_report(
     return "\n".join(lines)
 
 
-# ── Parity hashes (three-hash contract — see grok/05_EXPORT_LIFECYCLE.md) ──
+# ── Parity hashes (three-hash contract — trade journal + config snapshot) ──
 
 
 def compute_parity_hash(orchestrator: object) -> str:
-    """SHA-256 over the ordered trade sequence.
+    """SHA-256 over the ordered trade sequence (canonical JSON representation).
 
-    Canonical format shared with the Grok REPL (grok/04_BACKTEST_EXECUTION.md).
-    Both sides MUST produce identical hashes for the same alpha + date range
+    Identical inputs MUST yield identical hashes for the same alpha + date range
     + same platform.yaml.
     """
     from feelies.storage.trade_journal import TradeRecord
@@ -1343,8 +1409,7 @@ def compute_combined_parity_hash(pnl_hash: str, config_hash: str) -> str:
     """SHA-256(pnl_hash + ":" + config_hash).
 
     Single comparator that binds the trade sequence to the configuration
-    that produced it. Mirrors the Grok REPL's ``_compute_combined_parity_hash``
-    in ``grok/04_BACKTEST_EXECUTION.md``.
+    that produced it.
     """
     return hashlib.sha256(f"{pnl_hash}:{config_hash}".encode("utf-8")).hexdigest()
 
@@ -1576,6 +1641,8 @@ def _run_backtest_phases_2_7(
     run_t0: float,
 ) -> int:
     """Bootstrap → replay → report → verification (shared by API and cache harness)."""
+    _warn_if_unhealthy_manifest_days(day_sources)
+
     # ── RTH filter ────────────────────────────────────────────
     # When session_kind is "RTH", drop pre-market and after-hours events
     # before replay.  The pipeline has no timestamp gate of its own;
@@ -1820,6 +1887,9 @@ def main(argv: list[str] | None = None) -> int:
         event_log, ingest_result, day_sources = ingest_data(
             api_key, symbols, start_date, end_date,
             cache_dir=cache_dir, no_cache=no_cache,
+            enable_rest_sequence_gap_detection=(
+                config.enable_rest_sequence_gap_detection
+            ),
         )
     except ImportError as exc:
         print(
@@ -1845,6 +1915,16 @@ def main(argv: list[str] | None = None) -> int:
         f"  OK - {ingest_result.events_ingested:,} events ({src_str}) [{dt:.1f}s]",
         flush=True,
     )
+
+    if config.backtest_reject_zero_ingest_events and ingest_result.events_ingested == 0:
+        print(
+            "\n  ERROR: Zero events ingested — "
+            "backtest_reject_zero_ingest_events is enabled in platform config.",
+            file=sys.stderr,
+        )
+        return 1
+
+    config = _attach_day_source_provenance(config, symbols, day_sources)
 
     return _run_backtest_phases_2_7(
         args,
@@ -1905,11 +1985,14 @@ def main_cache_replay(argv: list[str] | None = None) -> int:
     cache_path = Path(args.cache_dir) if args.cache_dir else None
 
     try:
-        event_log, ingest_result, day_sources = load_event_log_from_disk_cache(
+        event_log, ingest_result, day_meta = load_event_log_from_disk_cache(
             symbols,
             start_date,
             end_date,
             cache_dir=cache_path,
+            require_healthy_ingestion_manifests=(
+                config.require_healthy_disk_cache_manifests
+            ),
         )
     except CacheReplayError as exc:
         print(f"\n  ERROR: {exc}", file=sys.stderr)
@@ -1921,6 +2004,26 @@ def main_cache_replay(argv: list[str] | None = None) -> int:
         f"(disk cache only) [{dt_load:.1f}s]",
         flush=True,
     )
+
+    day_sources = [
+        DaySource(
+            symbol=m.symbol,
+            date=m.date,
+            source=m.source,
+            event_count=m.event_count,
+            ingestion_health=m.ingestion_health,
+        )
+        for m in day_meta
+    ]
+    if config.backtest_reject_zero_ingest_events and ingest_result.events_ingested == 0:
+        print(
+            "\n  ERROR: Zero events loaded from disk cache — "
+            "backtest_reject_zero_ingest_events is enabled in platform config.",
+            file=sys.stderr,
+        )
+        return 1
+
+    config = _attach_day_source_provenance(config, symbols, day_sources)
 
     return _run_backtest_phases_2_7(
         args,

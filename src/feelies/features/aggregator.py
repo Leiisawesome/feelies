@@ -42,6 +42,17 @@ Architectural decisions (plan §4.3):
     publishes ``HorizonFeatureSnapshot`` events.  It never publishes
     ``Signal``, ``OrderIntent``, ``OrderAck``, or any other event
     type that would re-enter the legacy execution path.
+
+7.  **Symmetric SYMBOL/UNIVERSE dedup (audit #1).**  Both tick scopes
+    consult ``_last_snapshot_boundary`` before emitting, so the
+    (symbol, horizon, boundary) invariant holds regardless of which
+    scope arrives first at the same boundary.
+
+8.  **Warm-only, monotonic freshness clock (audits #3, #6).**
+    ``_last_reading_ns`` advances only on *warm* readings and only
+    when the timestamp is monotonically newer.  Cold readings do not
+    refresh the sensor (features ignore them), and out-of-order late
+    arrivals cannot regress freshness.
 """
 
 from __future__ import annotations
@@ -93,13 +104,17 @@ class HorizonAggregator:
     __slots__ = (
         "_bus",
         "_features_sorted",
+        "_features_by_horizon",
         "_symbols_sorted",
         "_buffer_window_ns",
         "_sequence_generator",
         "_buffers",
         "_feature_state",
+        "_feature_params",
         "_last_snapshot_boundary",
         "_last_reading_ns",
+        "_observed_versions",
+        "_multi_version_warned",
         "_subscribed",
         "_metric_collector",
         "_metrics_seq",
@@ -119,6 +134,7 @@ class HorizonAggregator:
         sequence_generator: SequenceGenerator,
         metric_collector: MetricCollector | None = None,
         known_sensor_ids: frozenset[str] | None = None,
+        feature_params: Mapping[str, Mapping[str, Any]] | None = None,
     ) -> None:
         if sensor_buffer_seconds <= 0:
             raise ValueError(
@@ -161,10 +177,31 @@ class HorizonAggregator:
                     f"{_f.feature_version!r}; each (feature_id, horizon) "
                     f"pair must have exactly one version"
                 )
+        # #17: Pre-bucket features by horizon so per-tick dispatch is
+        # O(F_h) instead of O(F).  Tuple is preserved in sorted order so
+        # iteration determinism (Inv-C) is unchanged.
+        _by_horizon: dict[int, list[HorizonFeature]] = defaultdict(list)
+        for _f in self._features_sorted:
+            _by_horizon[_f.horizon_seconds].append(_f)
+        self._features_by_horizon: dict[int, tuple[HorizonFeature, ...]] = {
+            h: tuple(fs) for h, fs in _by_horizon.items()
+        }
+
         self._symbols_sorted: tuple[str, ...] = tuple(sorted(symbols))
         self._buffer_window_ns = sensor_buffer_seconds * _NS_PER_SECOND
         self._sequence_generator = sequence_generator
         self._bus = bus
+
+        # #7: Per-feature params plumbed from construction time.  The
+        # protocol exposes a ``params: Mapping[str, Any]`` argument to
+        # both ``observe`` and ``finalize``; the aggregator previously
+        # hard-coded ``{}`` everywhere, leaving the protocol surface as
+        # dead area.  Now callers pass ``feature_params={feature_id: {...}}``
+        # at construction time and the aggregator forwards each feature's
+        # params to its lifecycle methods (defaults to ``{}`` when absent).
+        self._feature_params: dict[str, Mapping[str, Any]] = (
+            dict(feature_params) if feature_params is not None else {}
+        )
 
         # S16: at construction time, warn about any feature input_sensor_id
         # that is not in the registered sensor universe.  Such a feature will
@@ -186,6 +223,14 @@ class HorizonAggregator:
         # ``deque`` for O(1) popleft on eviction.  Keying on version prevents
         # two versions of the same sensor from contaminating each other's
         # ring buffer when both are registered (S8).
+        #
+        # Audit #8: feature ``observe()`` dispatch does *not* read from
+        # these buffers — features keep their own state.  The buffers
+        # exist for forensic introspection (``buffer_size``, late-arrival
+        # reconciliation per plan §4.3) and as the audit-spine ring used
+        # by the determinism harness.  The 2× ``max(horizons)`` window
+        # ensures a feature whose horizon equals the max still has a full
+        # history on the boundary.
         self._buffers: dict[
             tuple[str, str, str], deque[tuple[int, SensorReading]]
         ] = defaultdict(deque)
@@ -203,17 +248,45 @@ class HorizonAggregator:
                 ] = feature.initial_state()
 
         # H1 / M3: per-(horizon_seconds, symbol) last boundary index for
-        # which a snapshot has already been emitted.  Prevents the
-        # UNIVERSE-tick fan-out from producing a second identical snapshot
-        # for symbols already covered by their own SYMBOL tick at the
-        # same boundary.
+        # which a snapshot has already been emitted.  Prevents either
+        # tick scope from producing a second identical snapshot for
+        # symbols already covered at the same boundary.  Sentinel is
+        # ``-1`` so the first tick (boundary_index >= 0) always passes
+        # the ``< boundary_index`` guard; the scheduler currently emits
+        # ``boundary_index >= 1`` but the sentinel handles 0 correctly
+        # too (audit #16 observation).
         self._last_snapshot_boundary: dict[tuple[int, str], int] = {}
 
-        # H9 / M8: latest event-time timestamp at which a SensorReading
-        # was observed, keyed by (symbol, sensor_id).  Used in
-        # _build_snapshot to mark features stale when their input sensor
-        # has not fired within the feature's horizon window.
+        # H9 / M8: latest event-time timestamp at which a *warm*
+        # SensorReading was observed, keyed by (symbol, sensor_id).  Used
+        # in _build_snapshot to mark features stale when their input
+        # sensor has not fired within the feature's horizon window.
+        #
+        # Audit #3: updates use ``max(prev, ts_ns)`` so out-of-order
+        # arrivals (late delivery, multi-source merge) cannot regress
+        # freshness; without the guard, an old reading arriving after a
+        # newer one would spuriously mark fresh features stale on the
+        # next horizon tick.
+        #
+        # Audit #6: only *warm* readings update this clock.  A sensor
+        # that fires continuously but never warms (still in its own
+        # warm-up) must not appear "fresh" to the stale-override logic,
+        # because features ignore cold readings anyway and the semantic
+        # we are tracking is "freshness of usable data", not "did the
+        # sensor publish any event recently".
         self._last_reading_ns: dict[tuple[str, str], int] = {}
+
+        # Audit #2: ``_buffers`` is keyed by (symbol, sensor_id, version)
+        # for S8 forensic isolation, but feature ``observe()`` dispatch is
+        # version-blind by design — features aggregate over whichever
+        # version is live.  This is correct under the standing assumption
+        # that *exactly one* sensor_version is active per sensor_id at
+        # runtime; A/B deployments must use distinct feature_ids.  We
+        # track observed versions per (symbol, sensor_id) and emit a
+        # one-shot warning the first time a second version delivers a
+        # reading to a feature, so the misconfiguration is loud.
+        self._observed_versions: dict[tuple[str, str], set[str]] = defaultdict(set)
+        self._multi_version_warned: set[tuple[str, str]] = set()
 
         self._subscribed = False
 
@@ -262,15 +335,44 @@ class HorizonAggregator:
         key = (symbol, reading.sensor_id, reading.sensor_version)
         buf = self._buffers[key]
         buf.append((reading.timestamp_ns, reading))
-        # H9 / M8: record the latest event-time timestamp for each
-        # (symbol, sensor_id) — version-agnostic, taking the most recent
-        # read across all versions (correct for stale detection).
-        self._last_reading_ns[(symbol, reading.sensor_id)] = reading.timestamp_ns
+        # H9 / M8 + audit #3 + audit #6: record the latest event-time
+        # timestamp for each (symbol, sensor_id), but only for warm
+        # readings and only when monotonically advancing.  Cold readings
+        # do not "refresh" the sensor because features ignore them; late
+        # arrivals do not regress freshness.
+        if reading.warm:
+            sid_key = (symbol, reading.sensor_id)
+            prev = self._last_reading_ns.get(sid_key)
+            if prev is None or reading.timestamp_ns > prev:
+                self._last_reading_ns[sid_key] = reading.timestamp_ns
         # Event-time eviction.  Anchored to the just-appended ts so
         # late-arriving events do not retroactively prune the buffer.
         cutoff = reading.timestamp_ns - self._buffer_window_ns
         while buf and buf[0][0] < cutoff:
             buf.popleft()
+
+        # Audit #2: track which versions of this sensor have delivered
+        # readings; warn (once per pair) when a second version appears,
+        # since feature state is shared across versions by design.
+        version_seen = self._observed_versions[(symbol, reading.sensor_id)]
+        if reading.sensor_version not in version_seen:
+            version_seen.add(reading.sensor_version)
+            if (
+                len(version_seen) > 1
+                and (symbol, reading.sensor_id) not in self._multi_version_warned
+            ):
+                self._multi_version_warned.add((symbol, reading.sensor_id))
+                _logger.warning(
+                    "HorizonAggregator: sensor %r on symbol %r has "
+                    "delivered readings from multiple versions %s; "
+                    "feature observe() dispatch is version-blind and "
+                    "will fold both streams into the same per-feature "
+                    "state.  Use a distinct feature_id (or feature) for "
+                    "each version when running A/B sensor variants.",
+                    reading.sensor_id,
+                    symbol,
+                    sorted(version_seen),
+                )
 
         # Notify any feature whose ``input_sensor_ids`` contains this
         # sensor_id.  Passive mode (no features) skips this loop
@@ -285,7 +387,12 @@ class HorizonAggregator:
                 # lazily so dynamic universes (Phase 4+) still work.
                 state = feature.initial_state()
                 self._feature_state[state_key] = state
-            feature.observe(reading, state, params={})
+            # Audit #7: forward per-feature params from construction.
+            feature.observe(
+                reading,
+                state,
+                params=self._feature_params.get(feature.feature_id, {}),
+            )
 
     def _on_horizon_tick(
         self, tick: HorizonTick
@@ -296,17 +403,32 @@ class HorizonAggregator:
         # a UNIVERSE tick at each boundary.  To prevent each
         # (symbol, horizon, boundary_index) triple from producing two
         # identical snapshots, skip any symbol that already received a
-        # snapshot at this boundary (SYMBOL ticks arrive before UNIVERSE
-        # ticks per the scheduler's canonical emission order).
+        # snapshot at this boundary.
+        #
+        # Audit #1: dedup must be symmetric.  The previous version only
+        # guarded the UNIVERSE branch, relying on the scheduler's
+        # canonical "SYMBOL before UNIVERSE" emission order.  Anything
+        # publishing ticks directly to the bus (tests, replayers, future
+        # gateways) could publish UNIVERSE → SYMBOL at the same boundary
+        # and produce duplicate snapshots with non-deterministic
+        # ``sequence`` allocation.  The guard is now applied in both
+        # branches so the (symbol, horizon, boundary) invariant holds
+        # regardless of upstream ordering.
+        boundary_idx = tick.boundary_index
+        horizon = tick.horizon_seconds
         if tick.scope == "SYMBOL":
             assert tick.symbol is not None
+            if (
+                self._last_snapshot_boundary.get((horizon, tick.symbol), -1)
+                >= boundary_idx
+            ):
+                return ()
             target_symbols: tuple[str, ...] = (tick.symbol,)
         else:
             target_symbols = tuple(
                 sym for sym in self._symbols_sorted
-                if self._last_snapshot_boundary.get(
-                    (tick.horizon_seconds, sym), -1
-                ) < tick.boundary_index
+                if self._last_snapshot_boundary.get((horizon, sym), -1)
+                < boundary_idx
             )
 
         snapshots: list[HorizonFeatureSnapshot] = []
@@ -334,21 +456,37 @@ class HorizonAggregator:
         warm: dict[str, bool] = {}
         stale: dict[str, bool] = {}
         source_sensors: dict[str, tuple[str, ...]] = {}
+        feature_versions: dict[str, str] = {}
 
-        for feature in self._features_sorted:
-            if feature.horizon_seconds != tick.horizon_seconds:
-                continue
+        # Audit #17: dispatch on horizon-bucketed view so passive
+        # horizons cost O(1), not O(F).  Iteration order matches the
+        # global sorted order because we built the buckets from it.
+        for feature in self._features_by_horizon.get(tick.horizon_seconds, ()):
             state_key = (feature.feature_id, feature.horizon_seconds, symbol)
             state = self._feature_state.get(state_key)
             if state is None:
                 state = feature.initial_state()
                 self._feature_state[state_key] = state
-            value, w, s = feature.finalize(tick, state, params={})
+            # Audit #7: forward per-feature params from construction.
+            value, w, s = feature.finalize(
+                tick,
+                state,
+                params=self._feature_params.get(feature.feature_id, {}),
+            )
             # H9 / M8: override stale=True when any input sensor has not
-            # fired within the feature's horizon window.  This catches the
-            # "sensor goes silent" case that the buffer-eviction anchor
-            # alone cannot detect (eviction only fires when the sensor
-            # re-fires, so a silent sensor keeps a stale buffer alive).
+            # fired (warm) within the feature's horizon window.  This
+            # catches the "sensor goes silent" case that the
+            # buffer-eviction anchor alone cannot detect (eviction only
+            # fires when the sensor re-fires, so a silent sensor keeps a
+            # stale buffer alive).
+            #
+            # Semantic: "stale" here means "no fresh usable data within
+            # the horizon window".  When the feature has never observed
+            # a warm reading (last_ns is None) we treat that as stale —
+            # combined with warm=False from the feature itself, the
+            # downstream gate (``warm and not stale``) suppresses
+            # correctly either way, but recording stale=True makes the
+            # absence of fresh data explicit in the snapshot.
             if not s:
                 horizon_ns = feature.horizon_seconds * _NS_PER_SECOND
                 for sid in feature.input_sensor_ids:
@@ -366,6 +504,10 @@ class HorizonAggregator:
             if w:
                 values[feature.feature_id] = float(value)
             source_sensors[feature.feature_id] = tuple(feature.input_sensor_ids)
+            # Audit #12: provenance now records feature_version so a
+            # consumer reading an archived snapshot can reconstruct which
+            # version produced each value (Inv-13).
+            feature_versions[feature.feature_id] = feature.feature_version
 
         seq = self._sequence_generator.next()
         cid = make_correlation_id(
@@ -385,6 +527,7 @@ class HorizonAggregator:
             warm=warm,
             stale=stale,
             source_sensors=source_sensors,
+            feature_versions=feature_versions,
             parent_correlation_id=tick.correlation_id,  # S4: audit-spine chain
         )
 
@@ -396,10 +539,14 @@ class HorizonAggregator:
         """Emit ``feelies.feature.snapshot.stale_fraction`` for one snapshot.
 
         Gauge in ``[0, 1]`` reporting the fraction of features whose
-        ``stale`` flag is True for this snapshot.  Passive-mode
-        snapshots (no features) report ``0.0`` by convention so the
-        gauge time-series remains continuous across feature
-        registration.
+        ``stale`` flag is True for this snapshot, computed against the
+        *total* number of registered features (warm + cold), not just
+        the warm subset.  Cold features count as "not stale" in the
+        denominator — a snapshot with one warm-stale feature out of ten
+        registered reports 0.1.  This matches Plan §4.5 ("fraction of
+        features").  Passive-mode snapshots (no features) report
+        ``0.0`` by convention so the gauge time-series remains
+        continuous across feature registration (audit #15).
         """
         assert self._metric_collector is not None
         assert self._metrics_seq is not None

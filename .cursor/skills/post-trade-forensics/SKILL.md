@@ -348,7 +348,7 @@ reduce, retire).
 
 | Source | Type | Location |
 |--------|------|----------|
-| Trade lifecycle | `TradeRecord` | `storage/trade_journal.py` — `TradeJournal.query()` |
+| Trade lifecycle | `TradeRecord` | `src/feelies/storage/trade_journal.py` — `TradeJournal.query()` |
 | Position changes | `PositionUpdate` | `core/events.py` — bus at M9 |
 | Execution acks | `OrderAck` with `OrderAckStatus` | `core/events.py` |
 | Risk decisions | `RiskVerdict` with `RiskAction` | `core/events.py` — bus at M5 / M6 |

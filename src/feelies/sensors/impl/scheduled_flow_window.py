@@ -23,7 +23,9 @@ When multiple windows are simultaneously active for a symbol (e.g.
 ``OPENING_AUCTION`` and ``EARNINGS_DRIFT`` overlap at 09:30), the
 sensor returns the window with the *earliest* ``end_ns`` — the one
 about to close first — so the reported ``seconds_to_window_close``
-remains a useful regime-clock signal.
+remains a useful regime-clock signal.  Ties on ``end_ns`` are broken
+by lexicographic ``window_id`` so selection is fully deterministic
+and independent of the underlying calendar's iteration order.
 
 Determinism:
 
@@ -63,12 +65,13 @@ class ScheduledFlowWindowSensor:
 
     - ``calendar`` (:class:`EventCalendar`, required): the per-session
       window registry loaded from
-      ``storage/reference/event_calendar/<date>.yaml``.  Pinned at
+      ``src/feelies/storage/reference/event_calendar/<date>.yaml`` (or any path
+      passed via ``PlatformConfig.event_calendar_path``).  Pinned at
       construction time; the sensor never mutates it.
     """
 
     sensor_id: str = "scheduled_flow_window"
-    sensor_version: str = "1.0.0"
+    sensor_version: str = "1.2.0"
 
     def __init__(
         self,
@@ -86,6 +89,11 @@ class ScheduledFlowWindowSensor:
         if sensor_version is not None:
             self.sensor_version = sensor_version
         self._calendar = calendar
+        # An empty calendar can't produce any informative readings — surface
+        # this as ``warm=False`` so misconfigurations (e.g. wrong session
+        # date, missing YAML) don't silently look like normal "outside any
+        # window" readings.
+        self._has_windows = len(calendar.windows) > 0
 
     def initial_state(self) -> dict[str, Any]:
         return {}
@@ -93,12 +101,22 @@ class ScheduledFlowWindowSensor:
     def _select_active_window(
         self, ts_ns: int, symbol: str,
     ) -> CalendarWindow | None:
-        """Pick the matching window with the earliest ``end_ns``."""
+        """Pick the matching window with the earliest ``end_ns``.
+
+        Ties on ``end_ns`` are broken by lexicographic ``window_id`` so
+        selection does not depend on the calendar's internal iteration
+        order (Inv-C: determinism).
+        """
         chosen: CalendarWindow | None = None
         for w in self._calendar.windows_active_at(ts_ns):
             if w.symbol is not None and w.symbol != symbol:
                 continue
-            if chosen is None or w.end_ns < chosen.end_ns:
+            if chosen is None:
+                chosen = w
+                continue
+            if w.end_ns < chosen.end_ns or (
+                w.end_ns == chosen.end_ns and w.window_id < chosen.window_id
+            ):
                 chosen = w
         return chosen
 
@@ -129,5 +147,5 @@ class ScheduledFlowWindowSensor:
             sensor_id=self.sensor_id,
             sensor_version=self.sensor_version,
             value=value,
-            warm=True,
+            warm=self._has_windows,
         )

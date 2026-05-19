@@ -41,7 +41,7 @@ class MicroPriceSensor:
     """
 
     sensor_id: str = "micro_price"
-    sensor_version: str = "1.0.0"
+    sensor_version: str = "1.1.0"
 
     def __init__(
         self,
@@ -66,7 +66,6 @@ class MicroPriceSensor:
 
     def initial_state(self) -> dict[str, Any]:
         return {
-            "count": 0,
             "warm_ts": deque(),  # timestamps of valid (total > 0) quotes (S3)
         }
 
@@ -81,6 +80,11 @@ class MicroPriceSensor:
 
         bid = float(event.bid)
         ask = float(event.ask)
+        # A1: uniform bid/ask positivity validation across price-consuming
+        # sensors.  A zero/negative side is a halt / pre-open marker and
+        # cannot produce a meaningful micro-price.
+        if bid <= 0.0 or ask <= 0.0:
+            return None
         bid_sz = event.bid_size
         ask_sz = event.ask_size
         total = bid_sz + ask_sz
@@ -90,7 +94,6 @@ class MicroPriceSensor:
             warm = False
         else:
             value = (ask * bid_sz + bid * ask_sz) / float(total)
-            state["count"] += 1
             # S3: sliding-window warm check — reverts to cold after data gaps
             ts_ns = event.timestamp_ns
             warm_ts: deque[int] = state["warm_ts"]

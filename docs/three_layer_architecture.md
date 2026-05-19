@@ -182,10 +182,10 @@ platform, not something the alpha author has to reconstruct inside every
 
 ### 2.3 Why now
 
-- The alpha authoring surface (YAML + `signal` Python block) will be
-  consumed by the Grok hypothesis-generation REPL (see
-  `grok/07_HYPOTHESIS_REASONING.md`). Grok produces layer-classified
-  hypotheses. The platform must accept them natively.
+- The alpha authoring surface (YAML + `signal` Python block) is documented
+  for operators via Cursor skills (see
+  `.cursor/skills/microstructure-alpha/SKILL.md`). Layer-classified
+  hypotheses must load natively through `AlphaLoader`.
 - Design invariant 8 ("layer separation") is currently interpreted as
   "ingestion / feature / signal / risk / execution" layers. The refactor
   extends this to include the **alpha-internal layer classification**
@@ -555,7 +555,7 @@ match the engine's published `state_names` verbatim (`compression`,
 `services/regime_engine.py:HMM3StateFractional`).
 
 **Implementer note:** the canonical example in
-`grok/07_HYPOTHESIS_REASONING.md` uses the names `benign`,
+`.cursor/skills/microstructure-alpha/SKILL.md` uses the names `benign`,
 `stressed`, `toxic` (from Appendix B of the prompt). These are the
 *aspirational* taxonomy, not the *current* engine's published names.
 Phase 3 must either (a) align the example to the engine's actual names
@@ -635,7 +635,7 @@ class SizedPositionIntent:
     timestamp_ns: int
     correlation_id: CorrelationId
     sequence: int
-    strategy_id: str                   # e.g., 'pofi_xsect_v1'
+    strategy_id: str                   # e.g., 'pro_xsect_v1'
     layer: Literal['PORTFOLIO']
     horizon_seconds: int
     target_positions: dict[Symbol, TargetPosition]
@@ -678,7 +678,7 @@ is preserved by strict superset.
 - `protocol.py` — `Sensor` ABC with `initial_state()`, `update(event, state, params) -> SensorReading | None`. Signature differs from current `features/` by returning a typed `SensorReading`, not a raw float.
 - `registry.py` — `SensorRegistry` with `register(sensor_spec: SensorSpec) -> None`, `get(sensor_id, version) -> Sensor`, version pinning, and import-time conflict detection.
 - `horizon_scheduler.py` — see §7.2 for semantics.
-- `impl/*.py` — 10 canonical sensor implementations per the embedded sensor catalog in `grok/03_ALPHA_DEVELOPMENT.md`. Each sensor is ≤ 150 lines of Python with strict typing.
+- `impl/*.py` — 10 canonical sensor implementations per the embedded sensor catalog in `.cursor/skills/feature-engine/SKILL.md`. Each sensor is ≤ 150 lines of Python with strict typing.
 
 **Migration note:** The repo currently has feature implementations in
 `alphas/*/` directories (external modules). These modules' `update(quote, ...)`
@@ -784,7 +784,7 @@ piece; the rest is composition of numpy/pandas routines.
   registry based on `layer:` field. Enforce schema_version ≥ 1.1 for
   layered alphas.
 - `layer_validator.py` (NEW) — enforces gates G1–G15 from
-  `grok/07_HYPOTHESIS_REASONING.md` on YAML load. Load-time
+  `.cursor/skills/microstructure-alpha/SKILL.md` on YAML load. Load-time
   validation produces clear error messages tied to gate IDs. Alphas
   failing G1–G11 are refused; alphas failing G12–G15 are refused with a
   different error class (author must fix, cannot be soft-drafted).
@@ -830,7 +830,7 @@ below configured threshold for a given alpha.
 - Net alpha
 - Realized-vs-expected IC (per alpha, per horizon, per regime)
 
-Output consumed by the Grok mutation protocol (§ Axis evaluation).
+Output consumed by the research mutation workflow (`.cursor/skills/research-workflow/SKILL.md`).
 
 **Estimation:** 1 week.
 
@@ -997,6 +997,8 @@ the emission (e.g., if a trade at t=10:30:00.001 triggers the 10:30:00
 boundary tick, the tick carries timestamp 10:30:00.000, not
 10:30:00.001).
 
+**Multi-symbol market-data merge:** offline replay merges per-symbol days with a single sort whose key is `(exchange_timestamp_ns, symbol, quote-before-trade rank, prior_sequence)` before global sequence reassignment — concatenation order alone must never decide ties at identical SIP timestamps.
+
 ### 7.5 UniverseSynchronizer barrier semantics
 
 The Synchronizer is the single non-trivial correctness risk in this design.
@@ -1041,7 +1043,7 @@ Schema 1.1 files MUST declare `layer: SENSOR | SIGNAL | PORTFOLIO`.
 
 ### 8.2 Additive fields (all mandatory for 1.1)
 
-The full set is specified in `grok/07_HYPOTHESIS_REASONING.md`.
+The full set is specified in `.cursor/skills/microstructure-alpha/SKILL.md`.
 Summary:
 
 - `layer: SENSOR | SIGNAL | PORTFOLIO`
@@ -1263,8 +1265,8 @@ each require careful unit testing and locked test vectors).
 - `src/feelies/signals/engine.py` — `HorizonSignalEngine`.
 - `src/feelies/signals/regime_gate.py` — DSL evaluator.
 - `src/feelies/alpha/layer_validator.py` — gates G1–G13 active.
-- One reference SIGNAL alpha (`alphas/pofi_benign_midcap_v1/`) per the
-  canonical example in `grok/03_ALPHA_DEVELOPMENT.md`.
+- One reference SIGNAL alpha (`alphas/sig_benign_midcap_v1/`) per the
+  canonical example in `.cursor/skills/feature-engine/SKILL.md`.
 
 **Test gates:**
 - Legacy alphas continue to pass parity hash.
@@ -1298,16 +1300,16 @@ shipping `CrossSectionalContext`; turnover-aware construction producing
 
 **Estimated duration:** 1.5 weeks.
 
-### Phase 5 — Documentation, Grok wiring, and author migration
+### Phase 5 — Documentation, authoring guides, and migration
 
-**Goal:** first external alpha authors (via Grok REPL) produce validated
-layered alphas. Legacy alphas flagged for migration.
+**Goal:** external alpha authors produce validated layered alphas using the
+repo docs and Cursor skills. Legacy alphas flagged for migration.
 
 **Deliverables:**
 - `README.md` updated with three-layer architecture diagram.
-- Embedded Grok prompt stack (`grok/03_ALPHA_DEVELOPMENT.md`,
-  `grok/06_EVOLUTION.md`, `grok/07_HYPOTHESIS_REASONING.md`) wired to
-  the REPL entry point.
+- Authoring guidance in `.cursor/skills/feature-engine/SKILL.md`,
+  `.cursor/skills/research-workflow/SKILL.md`, and `.cursor/skills/microstructure-alpha/SKILL.md`
+  cross-linked from `README.md` / `alphas/SCHEMA.md`.
 - Migration guide for legacy alphas (`docs/migration/schema_1_0_to_1_1.md`).
 - Deprecation timer for LEGACY_SIGNAL (e.g., supported through Q4 2026).
 
@@ -1322,7 +1324,7 @@ layered alphas. Legacy alphas flagged for migration.
 | 2 — Sensor layer + horizon scheduling | 2.5–3 wk |
 | 3 — Signal layer v2 + regime gate | 1.5 wk |
 | 4 — Composition layer | 1.5 wk |
-| 5 — Docs, Grok wiring, migration | 1 wk |
+| 5 — Docs, authoring guides, migration | 1 wk |
 
 **Optimistic** (one engineer, full-time, no blockers): **8 weeks** of
 implementation + 1–2 wk Phase 0 review.
@@ -1528,7 +1530,7 @@ Level-1–Level-4 parity hash.
   `alphas/trade_cluster_drift/` alpha produces the exact same trade
   sequence post-refactor as pre-refactor. Level-1 parity hash check.
 - `test_v2_alpha_deterministic`: reference
-  `alphas/pofi_benign_midcap_v1/` alpha produces a deterministic trade
+  `alphas/sig_benign_midcap_v1/` alpha produces a deterministic trade
   sequence across replays. Level-1–4 parity hashes.
 - `test_mixed_mode`: one legacy + one v2 alpha on the same symbol both
   run, both produce expected signals, risk engine aggregates correctly.
@@ -1580,7 +1582,7 @@ re-merge.
 ### 14.3 Forensics output
 
 The `forensics/multi_horizon_attribution.py` report is the primary input
-to the Grok mutation protocol. It MUST produce, per alpha:
+to the research mutation workflow (`.cursor/skills/research-workflow/SKILL.md`). It MUST produce, per alpha:
 
 - Per-regime IC (on, off, transitional)
 - Per-horizon IC (primary, ± one horizon)
@@ -1622,7 +1624,7 @@ Output format: JSON + Markdown summary, written to
 
 | Risk | Probability | Impact | Mitigation |
 |---|---|---|---|
-| Refactored platform still produces no working alpha | Medium | Low | Platform quality ≠ alpha quality; refactor enables but does not guarantee alpha. Grok's discipline is the second lever. |
+| Refactored platform still produces no working alpha | Medium | Low | Platform quality ≠ alpha quality; refactor enables but does not guarantee alpha. Operator authoring discipline (Cursor skills + review) is the second lever. |
 | New v2 alphas underperform legacy | Medium | Low | Both run in parallel; A/B comparison over 60 days before any deprecation decision |
 
 ---
@@ -1769,7 +1771,7 @@ intraday neutralization. Upgradeable to (b) later.
 
 **RESOLVED → (c).** Ken French daily factor returns + a rolling 252-day
 beta regression per symbol against those factors. Loadings cached at
-`storage/reference/factor_loadings/<date>.parquet`. The fetcher is a
+`src/feelies/storage/reference/factor_loadings/<date>.parquet`. The fetcher is a
 small adapter in `composition/factor_neutralizer.py`; license-bearing
 providers (Barra, Axioma) are deferred to a future proposal.
 
@@ -1792,20 +1794,14 @@ if extra is missing.
 without the extra installed. SIGNAL-only and SENSOR-only deployments
 incur no `cvxpy` dependency.
 
-### Q8 — Is the `grok/` directory's current contents compatible with the embedded Grok prompt stack?
+### Q8 — Historical `grok/` prompt directory
 
-**Required:** repo author to confirm. I have not inspected `grok/`
-contents. If there are existing prompt artifacts, they may need
-reconciliation or deprecation. Phase 5 deliverable depends on this.
-
-**RESOLVED → yes (implemented).** The numbered `grok/` prompt sequence
-became the live REPL surface. `grok/07_HYPOTHESIS_REASONING.md` now owns
-the reasoning protocol and hard gates, `grok/03_ALPHA_DEVELOPMENT.md`
-owns the embedded sensor catalog and reference-alpha authoring contract,
-and `grok/06_EVOLUTION.md` owns the embedded mutation protocol and
-active-adoption semantics. The intermediate standalone prompt package
-proposed in this design was later retired after those contracts were
-embedded directly into Prompts 3, 6, and 7.
+**RETIRED.** The former `grok/` numbered prompt markdown tree was removed
+from the repository. Equivalent authoring contracts live in
+`.cursor/skills/microstructure-alpha/SKILL.md`,
+`.cursor/skills/feature-engine/SKILL.md`, and
+`.cursor/skills/research-workflow/SKILL.md`, with normative gate tables in
+`alphas/SCHEMA.md`.
 
 ### Q9 — Deprecation timeline for LEGACY_SIGNAL?
 
@@ -1858,10 +1854,10 @@ This spec is accepted when ALL of the following are true:
       bit-identical pre-and-post-refactor.
 - [ ] Levels 2–4 parity hash CI checks green on reference v2 alpha.
 - [ ] Single-symbol throughput regression ≤ 10% vs pre-refactor baseline.
-- [ ] Embedded Grok prompt stack (`grok/03_ALPHA_DEVELOPMENT.md`,
-  `grok/06_EVOLUTION.md`, `grok/07_HYPOTHESIS_REASONING.md`) wired
-  to REPL entry.
-- [ ] Reference SIGNAL alpha (`pofi_benign_midcap_v1`) runs end-to-end
+- [ ] Cursor authoring skills (`.cursor/skills/feature-engine/SKILL.md`,
+  `.cursor/skills/research-workflow/SKILL.md`, `.cursor/skills/microstructure-alpha/SKILL.md`)
+  linked from README / SCHEMA.
+- [ ] Reference SIGNAL alpha (`sig_benign_midcap_v1`) runs end-to-end
       with margin_ratio ≥ 1.5 verified at load.
 - [ ] Reference PORTFOLIO alpha runs end-to-end with factor exposures
       within tolerance.
@@ -1874,9 +1870,9 @@ This spec is accepted when ALL of the following are true:
       `SensorReading`); a new "horizon" entry is added (decision-cadence
       anchor); the "regime" entry references the per-symbol
       `RegimeState` extension.
-- [ ] Retired standalone prompt package replaced by embedded contracts in
-  `grok/03_ALPHA_DEVELOPMENT.md`, `grok/06_EVOLUTION.md`, and
-  `grok/07_HYPOTHESIS_REASONING.md`.
+- [ ] Retired standalone prompt package superseded by the Cursor skill docs
+  `.cursor/skills/feature-engine/SKILL.md`, `.cursor/skills/research-workflow/SKILL.md`, and
+  `.cursor/skills/microstructure-alpha/SKILL.md`.
 
 ### 18.3 Non-regression acceptance
 
@@ -1897,9 +1893,9 @@ log.
 
 | # | Invariant | How the refactor preserves or strengthens it | Status |
 |---|---|---|---|
-| **1** | Structural mechanism required | `mechanism:` and `structural_actor:` are mandatory YAML fields for SIGNAL/PORTFOLIO (§8.2). Gates G2/G3 in `alpha/layer_validator.py` reject load if they are absent or unparseable. The Grok protocol's Step 1 (see `grok/07_HYPOTHESIS_REASONING.md`) refuses to proceed without naming an actor. | **STRENGTHENED** |
+| **1** | Structural mechanism required | `mechanism:` and `structural_actor:` are mandatory YAML fields for SIGNAL/PORTFOLIO (§8.2). Gates G2/G3 in `alpha/layer_validator.py` reject load if they are absent or unparseable. Authoring discipline (`.cursor/skills/microstructure-alpha/SKILL.md`) requires naming an actor before promotion. | **STRENGTHENED** |
 | **2** | Falsifiability before testing | `falsification_criteria:` field extended (§8.2) with three sub-blocks: `statistical`, `structural_invalidators`, `regime_shift_invalidators`. Gates G10/G11 enforce that the criterion is mechanism-tied, not P&L-tied. | **STRENGTHENED** |
-| **3** | Evidence over intuition | `cost_arithmetic.edge_source` field (§8.2) requires a citation (empirical backtest path, paper reference, or theoretical derivation). "Guess" is an explicit refusal condition in the Grok protocol (§4 Step 5). Existing promotion gates (paper → live) are unchanged. | **PRESERVED** |
+| **3** | Evidence over intuition | `cost_arithmetic.edge_source` field (§8.2) requires a citation (empirical backtest path, paper reference, or theoretical derivation). "Guess" is an explicit refusal condition in the microstructure-alpha authoring skill. Existing promotion gates (paper → live) are unchanged. | **PRESERVED** |
 | **4** | Decay is the default | `forensics/multi_horizon_attribution.py` (§6.10) emits per-alpha rolling-30d realized IC; `monitoring/horizon_metrics.py` (§6.9) alerts at `< 50%` and CRITICAL at `< 25%` of in-sample IC. Existing DECAYING/RETIRED status transitions in `research/hypothesis_status.py` remain authoritative. | **STRENGTHENED** |
 | **5** | Deterministic replay | §12.1–§12.4: proof sketches for `HorizonTick`, `HorizonFeatureSnapshot`, `CrossSectionalContext` determinism. 4-level parity hash CI (Fills / Signals / HorizonFeatureSnapshots / SensorReadings) replaces the existing 1-level check. Non-determinism risk inventory in §12.5 enumerates and mitigates every known source. | **STRENGTHENED** |
 | **6** | Causality enforced | Gate G13 (`alpha/layer_validator.py`) statically checks that feature definitions reference only events with `timestamp ≤ T`. `HorizonAggregator` (§6.3) only consumes `SensorReading` events whose timestamp is `≤ HorizonTick.timestamp_ns`; reading the buffer at boundary close cannot see the future by construction. `HorizonTick.timestamp_ns` carries the *boundary* timestamp, not the *triggering event's* timestamp (§7.4) — this is the load-bearing detail. | **PRESERVED** |
@@ -1931,7 +1927,7 @@ log.
 
 - It does not assert that **alphas authored under v1.1** will be
   causally sound — only that the platform mechanically enforces the
-  preconditions for soundness. The Grok protocol (§4 Steps 1–7) and the
+  preconditions for soundness. The microstructure-alpha authoring skill and the
   human reviewer remain the upstream filter.
 - It does not assert that the refactor improves backtest realism.
   Realism is a property of the cost/fill model + execution backend,
@@ -1988,7 +1984,7 @@ originally **opt-in via YAML field presence**. As of Workstream E
 SIGNAL/PORTFOLIO alpha missing a `trend_mechanism:` block is rejected
 at load time unless the operator explicitly pins
 `enforce_trend_mechanism: false` in `platform.yaml` (the documented
-v0.2 escape hatch for the `pofi_benign_midcap_v1` baseline reference).
+v0.2 escape hatch for the `sig_benign_midcap_v1` baseline reference).
 Gate G16 fires whenever the field is present (forward-compatible)
 *and* whenever a schema-1.1 alpha is missing the field under the
 default-`true` strict mode. v0.2 LEGACY_SIGNAL alphas are unaffected.
@@ -2146,7 +2142,7 @@ SensorReading.value = (
 ```
 
 **Window registry:** loaded at bootstrap from
-`storage/reference/event_calendar/<date>.yaml`. Window types:
+`src/feelies/storage/reference/event_calendar/<date>.yaml`. Window types:
 
 - `MOC_IMBALANCE` — last 10 minutes of RTH (15:50–16:00 ET); direction from published imbalance feeds when available, else neutral.
 - `OPENING_AUCTION` — first 5 minutes of RTH (09:30–09:35 ET).
@@ -2226,7 +2222,7 @@ shapes. Both were originally **optional in v0.3**; as of Workstream E
 `platform.yaml: enforce_trend_mechanism` defaults to `true`.
 Operators can opt back out by pinning `enforce_trend_mechanism:
 false` (the documented v0.2 escape hatch for the
-`pofi_benign_midcap_v1` baseline reference).
+`sig_benign_midcap_v1` baseline reference).
 
 #### 20.5.1 `trend_mechanism:` block (SIGNAL alphas)
 
@@ -2502,10 +2498,10 @@ v0.2 contracts.
 | Phase | Deliverable | Lines (approx) | Estimate |
 |---|---|---|---|
 | **1.1** | `core/events.py`: `TrendMechanism` enum, `RegimeHazardSpike` event, additive fields on `Signal` and `SizedPositionIntent`. `alpha/loader.py`: parse `trend_mechanism:` and `hazard_exit:` blocks (no enforcement yet). | +200 | 3 days |
-| **2.1** | `sensors/impl/hawkes_intensity.py`, `scheduled_flow_window.py`, `snr_drift_diffusion.py`, `structural_break_score.py`. `storage/reference/event_calendar/` adapter. Sensor unit + determinism + benchmark tests. | +800 (incl. tests) | 1.0 wk |
+| **2.1** | `sensors/impl/hawkes_intensity.py`, `scheduled_flow_window.py`, `snr_drift_diffusion.py`, `structural_break_score.py`. `src/feelies/storage/reference/event_calendar/` adapter. Sensor unit + determinism + benchmark tests. | +800 (incl. tests) | 1.0 wk |
 | **3.1** | `alpha/layer_validator.py`: Gate G16 with all 9 binding rules (rule 7 is the AST-inspection-based stress-family-entry check; ~80 lines on its own). `services/regime_engine.py`: `RegimeHazardDetector` emitting `RegimeHazardSpike`. Property-based tests for G16 and hazard determinism. Reference SIGNAL alpha update with `trend_mechanism:` block. | +580 | 4–5 days |
 | **4.1** | `composition/cross_sectional.py`: decay-weighting and concentration enforcement. `risk/`: hazard-spike subscription and hard-exit-age check. `monitoring/horizon_metrics.py`: 4 new metrics. `forensics/multi_horizon_attribution.py`: `per_mechanism` axis. End-to-end test with mixed-mechanism reference universe. | +600 | 1.0 wk |
-| **5.1** | Update the embedded Grok prompt stack with mechanism taxonomy references (`grok/07_HYPOTHESIS_REASONING.md` for reasoning rules, `grok/03_ALPHA_DEVELOPMENT.md` for sensor/family catalogs, `grok/06_EVOLUTION.md` for mutation semantics). Migration note in `docs/migration/schema_1_0_to_1_1.md` for v0.2-strict alphas wanting v0.3 opt-in. Glossary extension (§20.13). | +150 | 2 days |
+| **5.1** | Update Cursor authoring skills with mechanism taxonomy references (`.cursor/skills/microstructure-alpha/SKILL.md` for reasoning rules, `.cursor/skills/feature-engine/SKILL.md` for sensor/family catalogs, `.cursor/skills/research-workflow/SKILL.md` for mutation semantics). Migration note in `docs/migration/schema_1_0_to_1_1.md` for v0.2-strict alphas wanting v0.3 opt-in. Glossary extension (§20.13). | +150 | 2 days |
 
 **v0.3 net total:** ~2,250 lines, ~2 engineer-weeks. Unblocks every
 gap identified in the v0.3 motivating analysis.
@@ -2579,9 +2575,9 @@ This amendment is accepted when ALL of the following are true:
       reference alphas (one per non-stress family) have shipped under
       strict mode in research/paper trading.** **CLOSED by Workstream
       E** (acceptance row 84): the four reference alphas
-      (`pofi_kyle_drift_v1` — KYLE_INFO, `pofi_inventory_revert_v1` —
-      INVENTORY, `pofi_hawkes_burst_v1` — HAWKES_SELF_EXCITE,
-      `pofi_moc_imbalance_v1` — SCHEDULED_FLOW) load under strict
+      (`sig_kyle_drift_v1` — KYLE_INFO, `sig_inventory_revert_v1` —
+      INVENTORY, `sig_hawkes_burst_v1` — HAWKES_SELF_EXCITE,
+      `sig_moc_imbalance_v1` — SCHEDULED_FLOW) load under strict
       mode (`tests/acceptance/test_strict_mode_reference_alphas.py`)
       *and* clear the F-4 RESEARCH → PAPER gate end-to-end on a real
       promotion ledger (`tests/research/test_strict_mode_promotion_e2e.py`),
@@ -2806,7 +2802,7 @@ tests/determinism/test_sensor_reading_replay.py   | CREATE  | +150
 src/feelies/signals/engine.py                     | EXTEND  | +200
 src/feelies/signals/regime_gate.py                | CREATE  | +250
 src/feelies/alpha/layer_validator.py              | EXTEND  | +150
-alphas/pofi_benign_midcap_v1/*.yaml               | CREATE  | reference alpha
+alphas/sig_benign_midcap_v1/*.yaml               | CREATE  | reference alpha
 tests/signals/test_regime_gate_dsl.py             | CREATE  | +200
 tests/signals/test_signal_engine_v2.py            | CREATE  | +250
 tests/determinism/test_signal_replay.py           | CREATE  | +150
@@ -2826,7 +2822,7 @@ src/feelies/composition/turnover_optimizer.py     | CREATE  | +300
 src/feelies/portfolio/cross_sectional_tracker.py  | CREATE  | +150
 src/feelies/monitoring/horizon_metrics.py         | CREATE  | +200
 src/feelies/forensics/multi_horizon_attribution.py| CREATE  | +400
-alphas/pofi_xsect_v1/*.yaml                       | CREATE  | reference alpha
+alphas/pro_xsect_v1/*.yaml                       | CREATE  | reference alpha
 pyproject.toml                                    | EXTEND  | +5 (cvxpy extra)
 tests/composition/test_*.py                       | CREATE  | +1000
 tests/determinism/test_xsect_context_replay.py    | CREATE  | +200
@@ -2837,10 +2833,10 @@ tests/determinism/test_xsect_context_replay.py    | CREATE  | +200
 ```
 README.md                                         | EXTEND  | +100
 docs/migration/schema_1_0_to_1_1.md               | CREATE  | +300
-grok/03_ALPHA_DEVELOPMENT.md                      | EXTEND  | +embedded sensor catalog + reference-alpha flow
-grok/06_EVOLUTION.md                              | EXTEND  | +embedded mutation protocol + adoption semantics
-grok/07_HYPOTHESIS_REASONING.md                   | EXTEND  | +embedded reasoning protocol + hard gates
-standalone prompt package                         | DELETE  | superseded by embedded prompt contracts
+.cursor/skills/feature-engine/SKILL.md                      | EXTEND  | +embedded sensor catalog + reference-alpha flow
+.cursor/skills/research-workflow/SKILL.md                              | EXTEND  | +embedded mutation protocol + adoption semantics
+.cursor/skills/microstructure-alpha/SKILL.md                   | EXTEND  | +embedded reasoning protocol + hard gates
+standalone prompt package                         | DELETE  | superseded by Cursor skill docs
 .cursor/rules/platform-invariants.mdc             | EXTEND  | +30 (glossary update per §18.2)
 ```
 
@@ -2867,7 +2863,7 @@ src/feelies/sensors/impl/scheduled_flow_window.py | CREATE  | +160
 src/feelies/sensors/impl/snr_drift_diffusion.py   | CREATE  | +140
 src/feelies/sensors/impl/structural_break_score.py| CREATE  | +130
 src/feelies/storage/reference/event_calendar/__init__.py | CREATE | +120 (calendar adapter)
-storage/reference/event_calendar/2026-03-24.yaml  | CREATE  | +60   (reference window data)
+src/feelies/storage/reference/event_calendar/2026-03-24.yaml  | CREATE  | +60   (reference window data)
 tests/sensors/test_hawkes_intensity.py            | CREATE  | +150
 tests/sensors/test_scheduled_flow_window.py       | CREATE  | +120
 tests/sensors/test_snr_drift_diffusion.py         | CREATE  | +120
@@ -2880,10 +2876,10 @@ tests/determinism/test_v03_sensor_replay.py       | CREATE  | +150
 ```
 src/feelies/services/regime_engine.py             | EXTEND  | +150 (RegimeHazardDetector)
 src/feelies/alpha/layer_validator.py              | EXTEND  | +330 (Gate G16 — 9 binding rules; rule 7 = AST-based stress entry check)
-alphas/pofi_hawkes_burst_v1/*.yaml                | CREATE  | reference HAWKES alpha
-alphas/pofi_kyle_drift_v1/*.yaml                  | CREATE  | reference KYLE_INFO alpha
-alphas/pofi_inventory_revert_v1/*.yaml            | CREATE  | reference INVENTORY alpha
-alphas/pofi_moc_imbalance_v1/*.yaml               | CREATE  | reference SCHEDULED_FLOW alpha
+alphas/sig_hawkes_burst_v1/*.yaml                | CREATE  | reference HAWKES alpha
+alphas/sig_kyle_drift_v1/*.yaml                  | CREATE  | reference KYLE_INFO alpha
+alphas/sig_inventory_revert_v1/*.yaml            | CREATE  | reference INVENTORY alpha
+alphas/sig_moc_imbalance_v1/*.yaml               | CREATE  | reference SCHEDULED_FLOW alpha
 tests/alpha/test_gate_g16.py                      | CREATE  | +320 (all 9 rules + property test; rule 7 = AST-inspection cases)
 tests/services/test_regime_hazard_detector.py     | CREATE  | +180
 tests/determinism/test_regime_hazard_replay.py    | CREATE  | +120 (Level-5 parity hash)
@@ -2906,7 +2902,7 @@ tests/integration/test_mixed_mechanism_universe.py| CREATE  | +250 (e2e)
 #### Phase 5.1
 
 ```
-grok/07_HYPOTHESIS_REASONING.md                   | EXTEND  | +80   (mechanism taxonomy reference)
+.cursor/skills/microstructure-alpha/SKILL.md                   | EXTEND  | +80   (mechanism taxonomy reference)
 docs/migration/schema_1_0_to_1_1.md               | EXTEND  | +60   (v0.3 opt-in migration note)
 .cursor/rules/platform-invariants.mdc             | EXTEND  | +30   (glossary additions per §20.13)
 README.md                                         | EXTEND  | +40   (v0.3 mechanism diagram)

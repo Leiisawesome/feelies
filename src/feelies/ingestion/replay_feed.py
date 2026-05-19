@@ -17,6 +17,7 @@ from feelies.core.clock import Clock, SimulatedClock
 from feelies.core.errors import CausalityViolation
 from feelies.core.events import NBBOQuote, Trade
 from feelies.storage.event_log import EventLog
+from feelies.storage.event_resequence import event_merge_sort_key
 
 
 class ReplayFeed:
@@ -48,31 +49,32 @@ class ReplayFeed:
         event types (signals, risk verdicts, state transitions) are
         skipped since they are not market data inputs.
 
-        Validates that ``exchange_timestamp_ns`` is monotonically
-        non-decreasing across yielded events.  Raises
-        ``CausalityViolation`` if a backward timestamp is detected,
-        indicating the EventLog was not properly sorted before replay
-        (invariant 6).
+        Validates that market events are strictly non-decreasing in
+        :func:`~feelies.storage.event_resequence.event_merge_sort_key`
+        order.  Raises ``CausalityViolation`` if the EventLog was not
+        merge-sorted before replay (invariant 6).
 
         If a ``SimulatedClock`` was provided, sets its time to the
         event's ``exchange_timestamp_ns`` before yielding, so that
         downstream components see deterministic time progression.
         """
-        last_exchange_ts: int = 0
+        last_key: tuple[int, str, int, int] | None = None
         for event in self._event_log.replay(
             self._start_sequence,
             self._end_sequence,
         ):
             if isinstance(event, (NBBOQuote, Trade)):
-                ts = event.exchange_timestamp_ns
-                if ts < last_exchange_ts:
+                key = event_merge_sort_key(event)
+                if last_key is not None and key < last_key:
                     raise CausalityViolation(
-                        f"ReplayFeed: exchange_timestamp_ns={ts} "
-                        f"at sequence={event.sequence} < previous "
-                        f"{last_exchange_ts} — EventLog not sorted by "
-                        f"exchange time (invariant 6)"
+                        "ReplayFeed: market events out of deterministic order "
+                        f"at sequence={event.sequence}: key={key!r} < "
+                        f"previous {last_key!r}.  Sort the EventLog with "
+                        ":func:`~feelies.storage.event_resequence.resequence_event_list` "
+                        "or equivalent merge key (invariant 6)"
                     )
-                last_exchange_ts = ts
+                last_key = key
+                ts = event.exchange_timestamp_ns
                 if isinstance(self._clock, SimulatedClock):
                     if ts > self._clock.now_ns():
                         self._clock.set_time(ts)

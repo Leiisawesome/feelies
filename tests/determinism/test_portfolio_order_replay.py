@@ -76,7 +76,7 @@ def _replay() -> tuple[str, int]:
 
     orders: list[OrderRequest] = []
     for intent in captured_intents:
-        legs = risk.check_sized_intent(intent, store)
+        legs = risk.check_sized_intent(intent, store).orders
         orders.extend(legs)
 
     return _hash_order_stream(orders), len(orders)
@@ -125,7 +125,7 @@ def test_orders_are_lex_sorted_within_each_intent() -> None:
     )
     store = _build_position_store()
     for intent in captured_intents:
-        legs = risk.check_sized_intent(intent, store)
+        legs = risk.check_sized_intent(intent, store).orders
         symbols = [leg.symbol for leg in legs]
         assert symbols == sorted(symbols), (
             f"per-intent legs not lex-sorted: {symbols}"

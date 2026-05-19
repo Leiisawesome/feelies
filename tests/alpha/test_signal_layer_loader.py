@@ -6,7 +6,7 @@ Covers :py:meth:`AlphaLoader.load_from_dict` dispatch on
 :py:meth:`_parse_depends_on_sensors`, :py:meth:`_extract_trend_metadata`,
 and :py:meth:`_compile_signal_layer_evaluate`.
 
-The reference YAML at ``alphas/pofi_benign_midcap_v1`` is used as the
+The reference YAML at ``alphas/sig_benign_midcap_v1`` is used as the
 canonical happy-path fixture.
 """
 
@@ -34,7 +34,7 @@ from feelies.signals.regime_gate import RegimeGate
 _LOAD_REJECTED = (AlphaLoadError, LayerValidationError)
 
 
-REFERENCE_PATH = Path("alphas/pofi_benign_midcap_v1/pofi_benign_midcap_v1.alpha.yaml")
+REFERENCE_PATH = Path("alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml")
 
 
 def _signal_spec() -> dict:
@@ -73,10 +73,15 @@ def _signal_spec() -> dict:
 def test_reference_alpha_loads_from_file() -> None:
     m = AlphaLoader().load(str(REFERENCE_PATH))
     assert isinstance(m, LoadedSignalLayerModule)
-    assert m.manifest.alpha_id == "pofi_benign_midcap_v1"
+    assert m.manifest.alpha_id == "sig_benign_midcap_v1"
     assert m.manifest.layer == "SIGNAL"
     assert m.horizon_seconds == 120
-    assert m.depends_on_sensors == ("ofi_ewma", "micro_price", "spread_z_30d")
+    assert m.depends_on_sensors == (
+        "ofi_ewma",
+        "micro_price",
+        "spread_z_30d",
+        "realized_vol_30s",
+    )
     assert isinstance(m.gate, RegimeGate)
     assert isinstance(m.cost, CostArithmetic)
     assert m.cost.margin_ratio == pytest.approx(1.8)
@@ -277,3 +282,38 @@ def test_manifest_layer_and_falsification_criteria_propagate() -> None:
     m = AlphaLoader().load_from_dict(spec, source="<test>")
     assert m.manifest.layer == "SIGNAL"
     assert m.manifest.falsification_criteria == ("a", "b", "c")
+
+
+# ── Regime engine options (standalone ``get_regime_engine`` path) ───────
+
+
+def test_alpha_loader_forwards_regime_engine_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def spy(name: str, **kwargs: object) -> object:
+        captured["kwargs"] = kwargs
+        from feelies.services.regime_engine import get_regime_engine as real_get
+
+        return real_get(name, **kwargs)
+
+    monkeypatch.setattr("feelies.alpha.loader.get_regime_engine", spy)
+    spec = copy.deepcopy(_signal_spec())
+    spec["regimes"] = {"engine": "hmm_3state_fractional"}
+    AlphaLoader(
+        regime_engine=None,
+        regime_engine_options={"transition_time_scaling_enabled": True},
+    ).load_from_dict(spec, source="<test>")
+    assert captured["kwargs"].get("transition_time_scaling_enabled") is True
+
+
+def test_alpha_loader_invalid_regime_engine_options_raise_alpha_load_error() -> None:
+    spec = copy.deepcopy(_signal_spec())
+    spec["regimes"] = {"engine": "hmm_3state_fractional"}
+    loader = AlphaLoader(
+        regime_engine=None,
+        regime_engine_options={"not_a_valid_constructor_kwarg": 1},
+    )
+    with pytest.raises(AlphaLoadError, match="invalid regime_engine_options"):
+        loader.load_from_dict(spec, source="<test>")

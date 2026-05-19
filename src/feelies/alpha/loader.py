@@ -456,6 +456,11 @@ class _SharedCompoundComputation:
 class AlphaLoader:
     """Parse ``.alpha.yaml`` files into layer-specialised loaded modules.
 
+    Optional ``regime_engine_options`` are forwarded as ``**kwargs`` to
+    :func:`feelies.services.regime_engine.get_regime_engine` when this
+    loader must instantiate a standalone regime engine (no shared
+    ``regime_engine`` instance was supplied at construction).
+
     Each accepted ``layer:`` value resolves to a dedicated loaded-module
     class via a deterministic dispatch branch in :meth:`load_from_dict`:
 
@@ -474,10 +479,12 @@ class AlphaLoader:
         *,
         enforce_trend_mechanism: bool = False,
         enforce_layer_gates: bool = True,
+        regime_engine_options: dict[str, object] | None = None,
     ) -> None:
         self._regime_engine = regime_engine
         self._enforce_trend_mechanism = bool(enforce_trend_mechanism)
         self._enforce_layer_gates = bool(enforce_layer_gates)
+        self._regime_engine_options = dict(regime_engine_options or {})
 
     def load(
         self,
@@ -758,6 +765,7 @@ class AlphaLoader:
             constructor = _DefaultPortfolioConstructor(
                 engine_thunk=lambda: None,
                 strategy_id=alpha_id,
+                feeder_strategy_ids=depends_on_signals,
             )
 
         risk_budget_raw = spec.get("risk_budget", {}) or {}
@@ -1328,6 +1336,15 @@ class AlphaLoader:
     ) -> dict[str, Any]:
         params: dict[str, Any] = {}
         errors: list[str] = []
+        override_keys = set(overrides)
+        declared = {p.name for p in param_defs}
+        unknown = sorted(override_keys - declared)
+        if unknown:
+            raise AlphaLoadError(
+                f"{source}: unknown parameter_overrides key(s): "
+                f"{unknown} — refusing silent drops"
+            )
+
         for pdef in param_defs:
             value = overrides.get(pdef.name, pdef.default)
             errs = pdef.validate_value(value)
@@ -1359,9 +1376,17 @@ class AlphaLoader:
             return self._regime_engine
 
         try:
-            return get_regime_engine(engine_name)
+            return get_regime_engine(
+                engine_name,
+                **dict(self._regime_engine_options),
+            )
         except KeyError as exc:
             raise AlphaLoadError(f"{source}: {exc}") from exc
+        except TypeError as exc:
+            raise AlphaLoadError(
+                f"{source}: invalid regime_engine_options for engine "
+                f"{engine_name!r}: {exc}"
+            ) from exc
 
     # ── Namespace construction ────────────────────────────────
 

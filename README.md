@@ -66,13 +66,13 @@ Five state machines govern all system behaviour:
 
 | Machine | States | Scope |
 |---|---|---|
-| **Macro** (global lifecycle) | INIT → DATA_SYNC → READY → BACKTEST/PAPER/LIVE → DEGRADED → RISK_LOCKDOWN → SHUTDOWN | System-wide |
+| **Macro** (global lifecycle) | INIT → DATA_SYNC → READY → RESEARCH or BACKTEST/PAPER/LIVE → DEGRADED; PAPER/LIVE → RISK_LOCKDOWN on SIGNAL-path breach; RISK_LOCKDOWN → READY (unlock) or SHUTDOWN | System-wide |
 | **Micro** (tick pipeline) | WAITING → MARKET_EVENT → STATE_UPDATE → SENSOR → AGGREGATOR → SIGNAL → COMPOSITION → RISK → ORDER → ACK → POSITION → LOG | Per-tick |
 | **Order** lifecycle | CREATED → SUBMITTED → ACKNOWLEDGED → FILLED/CANCELLED/REJECTED/EXPIRED | Per-order |
 | **Risk** escalation | NORMAL → WARNING → BREACH → FORCED_FLATTEN → LOCKED | Monotonic safety |
-| **Data** integrity | HEALTHY → GAP_DETECTED → CORRUPTED → RECOVERING | Per-symbol stream |
+| **Data** integrity | HEALTHY ↔ GAP_DETECTED (WS sequence / feed loss); CORRUPTED (terminal). Historical REST omits seq-gap detection (thinned feeds). | Per-symbol stream |
 
-Every transition emits a `StateTransition` event for full auditability.
+Kernel/wiring surfaces emit `StateTransition` on the bus where subscribed (ingestion `DataHealth` transitions use `TransitionRecord` on the normalizer unless a bridge callback is registered).
 
 ### Backtest/Live Parity
 
@@ -105,10 +105,11 @@ feelies/
 │   ├── risk/                     # Risk engine, escalation SM, sizer, hazard-exit controller
 │   ├── execution/                # Backend abstraction, intent translator, order SM, routers
 │   ├── portfolio/                # Position store, per-strategy + cross-sectional trackers
-│   ├── storage/                  # Event log, disk cache, reference factor loadings
+│   ├── storage/                  # Event log, disk cache, bundled reference YAML/JSON
+│   ├── health/                   # Alpha health-check framework (10 check categories)
 │   ├── monitoring/               # Metrics (incl. horizon metrics), alerting, kill switch
 │   ├── forensics/                # Multi-horizon attribution, post-trade analysis
-│   ├── research/                 # Experiment tracking, hypothesis management
+│   ├── research/                 # Experiment tracking, CPCV, DSR significance tools
 │   ├── services/                 # Regime engine + regime-hazard detector
 │   ├── cli/                      # Operator CLI (`feelies promote ...` ledger forensics)
 │   └── bootstrap.py              # One-call platform composition from config
@@ -117,17 +118,13 @@ feelies/
 │   ├── _template/                # Layer-specific templates
 │   │   ├── template_signal.alpha.yaml           # 1.1 SIGNAL (recommended)
 │   │   └── template_portfolio.alpha.yaml        # 1.1 PORTFOLIO
-│   ├── pofi_kyle_drift_v1/       # Reference SIGNAL (KYLE_INFO)
-│   ├── pofi_inventory_revert_v1/ # Reference SIGNAL (INVENTORY)
-│   ├── pofi_hawkes_burst_v1/     # Reference SIGNAL (HAWKES_SELF_EXCITE)
-│   ├── pofi_moc_imbalance_v1/    # Reference SIGNAL (SCHEDULED_FLOW)
-│   ├── pofi_benign_midcap_v1/    # Reference SIGNAL (Phase-3 canonical)
-│   ├── pofi_xsect_v1/            # Reference PORTFOLIO (decay OFF baseline)
-│   └── pofi_xsect_mixed_mechanism_v1/  # Reference PORTFOLIO (multi-mechanism cap)
-├── grok/                         # Grok REPL prompts
-│   ├── 03_ALPHA_DEVELOPMENT.md   # Embedded sensor catalog + reference-alpha flow
-│   ├── 06_EVOLUTION.md           # Embedded mutation protocol + adoption semantics
-│   └── 07_HYPOTHESIS_REASONING.md # Embedded reasoning protocol, hard gates, REPL contract
+│   ├── sig_kyle_drift_v1/       # Reference SIGNAL (KYLE_INFO)
+│   ├── sig_inventory_revert_v1/ # Reference SIGNAL (INVENTORY)
+│   ├── sig_hawkes_burst_v1/     # Reference SIGNAL (HAWKES_SELF_EXCITE)
+│   ├── sig_moc_imbalance_v1/    # Reference SIGNAL (SCHEDULED_FLOW)
+│   ├── sig_benign_midcap_v1/    # Reference SIGNAL (Phase-3 canonical)
+│   ├── pro_xsect_v1/            # Reference PORTFOLIO (decay OFF baseline)
+│   └── pro_xsect_mixed_mechanism_v1/  # Reference PORTFOLIO (multi-mechanism cap)
 ├── docs/                         # Architecture spec, migration, acceptance notes
 │   ├── three_layer_architecture.md
 │   ├── migration/
@@ -135,7 +132,9 @@ feelies/
 │   └── acceptance/
 ├── scripts/                      # CLI entry points
 │   ├── run_backtest.py           # Full pipeline backtest (incl. parity hash)
+│   ├── smoke_pipeline.py         # No-API-key micro-state smoke test (synthetic ticks)
 │   ├── run_validation.py         # Validation suite runner
+│   ├── record_perf_baseline.py   # Pin per-host throughput baselines for perf gates
 │   └── build_reference_factor_loadings.py  # PORTFOLIO factor loadings builder
 ├── tests/                        # Pytest suite (mirrors src/, plus determinism + perf)
 ├── platform.yaml                 # Reference platform configuration
@@ -149,6 +148,7 @@ feelies/
 
 - Python 3.12 or later
 - A Massive (Polygon.io) API key for market data
+- [`uv`](https://github.com/astral-sh/uv) package manager (`pip install uv`)
 
 ### Installation
 
@@ -156,18 +156,35 @@ feelies/
 git clone https://github.com/<org>/feelies.git
 cd feelies
 
+# Recommended: use uv (lockfile-backed, reproducible)
+uv sync --all-extras
+
+# Alternatively, install with pip:
 # Core install (backtest + live + sensors + composition; PORTFOLIO solver optional)
 pip install -e ".[dev,massive]"
 
 # To enable the PORTFOLIO turnover optimiser (cvxpy-based) and parquet
 # reference factor loadings, also install the [portfolio] extra:
 pip install -e ".[dev,massive,portfolio]"
+
+# To enable Parquet-backed research artefacts for the health gate, add [health]:
+pip install -e ".[dev,massive,health]"
 ```
 
 The `[portfolio]` extra pulls `cvxpy`, `ecos`, and `pyarrow`. Without
 it, PORTFOLIO alphas still load and run; only the optional
 turnover-optimisation step and parquet-reference factor loadings are
 disabled.
+
+The `[health]` extra pulls `pyarrow` for Parquet artefact loading in
+`feelies.health`. Without it, `.parquet` files in the health check run
+directory are skipped and a definition-category **WARN** is issued.
+
+All commands in this repo should be run via `uv run <cmd>` when using the
+`uv`-managed virtual environment (e.g. `uv run pytest`, `uv run python
+scripts/run_backtest.py`). For mypy strict-mode acceptance
+(`test_mypy_strict_clean_on_src_feelies`), all three extras — `dev`,
+`massive`, and `portfolio` — must be installed.
 
 ### Environment
 
@@ -254,6 +271,89 @@ The CLI is **read-only and forensic-only** — it never writes to the
 ledger and never imports orchestrator / risk-engine production code, so
 operator invocation cannot perturb replay determinism (audit A-DET-02).
 
+### `feelies health-check`
+
+The `health-check` subcommand runs the 10-category alpha health gate
+(`feelies.health`) against artefacts exported by `--export-health-dir`
+from `run_backtest.py`. It produces a deterministic, auditable report
+answering whether an alpha is causal, economically plausible after costs,
+reasonably robust, and safe enough for the next deployment stage.
+
+```bash
+# Step 1 — run backtest and export artefacts
+python scripts/run_backtest.py \
+    --symbol AAPL --date 2026-04-08 \
+    --export-health-dir ./runs/my_alpha/latest
+
+# Step 2 — run the health gate
+feelies health-check \
+    --backtest-output ./runs/my_alpha/latest \
+    --out-dir ./runs/my_alpha/latest/health \
+    --format both
+```
+
+**Health check categories** (each produces PASS / WARN / FAIL / SKIP):
+
+| Category | Module | Checks |
+|---|---|---|
+| Definition | `definition_checks.py` | Required metadata fields, artefact completeness |
+| Predictive | `predictive_checks.py` | IC, t-stat, monotonicity, signal coverage |
+| Execution | `execution_checks.py` | Edge-to-cost ratio, execution lens coverage |
+| Capacity | `capacity_checks.py` | Position-size vs. ADV constraints |
+| Regime | `regime_checks.py` | PnL concentration per regime, losing-regime fraction |
+| Robustness | `robustness_checks.py` | Parameter-neighbor stability, IS/OOS degradation |
+| Risk | `risk_checks.py` | Drawdown fraction, single-day loss/profit caps |
+| Causality | `causality_checks.py` | Look-ahead / causality flags |
+| Portfolio | `portfolio_checks.py` | Multi-symbol, factor-exposure constraints |
+| Production | `production_checks.py` | Kill-switch status, data-version staleness |
+
+**CLI flags**
+
+| Flag | Meaning |
+|---|---|
+| `--backtest-output DIR` | Run directory with `metadata.json` and tabular artefacts. **Required.** |
+| `--alpha NAME` | Override `alpha_name` from `metadata.json`. |
+| `--config PATH` | Optional health thresholds YAML. Omitted → built-in defaults. |
+| `--out-dir DIR` | Report output directory. Default: `<backtest-output>/health/`. |
+| `--format` | `json`, `markdown`, `both` (default), or `all` (also writes `alpha_health_checks.csv`). |
+| `--strict` | Exit `3` if decision is `KILL` or any check has status `FAIL`. |
+
+Exit codes match the `feelies promote` convention (`0` success, `1` user error, `2` data error, `3` validation failed).
+
+## Research Tools
+
+`feelies.research` provides pure-Python significance procedures consumed by
+the F-2 promotion-gate matrix and alpha lifecycle decisions:
+
+### Combinatorial Purged Cross-Validation (CPCV)
+
+```python
+from feelies.research import generate_cpcv_splits, build_cpcv_evidence
+
+splits = generate_cpcv_splits(n_obs=5000, n_splits=6, n_test_splits=2)
+evidence = build_cpcv_evidence(path_pnl_series, config=CPCVConfig())
+```
+
+`build_cpcv_evidence` emits a `CPCVEvidence` object accepted by the F-2
+`validate_gate` dispatcher. The combinatorial structure gives ~4–7×
+more test paths than walk-forward CV of the same length.
+
+### Deflated Sharpe Ratio (DSR)
+
+```python
+from feelies.research import build_dsr_evidence_from_returns
+
+evidence = build_dsr_evidence_from_returns(
+    returns=daily_returns,
+    n_trials=50,
+    strategy_id="my_alpha",
+)
+```
+
+`build_dsr_evidence_from_returns` applies the Bailey & López de Prado
+correction for multiple-testing bias and emits a `DSREvidence` object.
+Both procedures are deterministic (no RNG state) for reproducible CI checks.
+
 ## Writing an Alpha
 
 Two layer-specific templates ship under `alphas/_template/`. The
@@ -338,13 +438,13 @@ The `LayerValidator` enforces gates G2–G16 at load time. See
 
 ### Hypothesis authoring
 
-Use Grok with the embedded numbered prompt stack. Prompt 7
-(`grok/07_HYPOTHESIS_REASONING.md`) owns the 7-step reasoning
-discipline and hard gates, Prompt 3 (`grok/03_ALPHA_DEVELOPMENT.md`)
-owns the sensor vocabulary and reference-alpha authoring contract, and
-Prompt 6 (`grok/06_EVOLUTION.md`) owns mutation discipline and active
-adoption semantics. Together they emit machine-validated YAML matching
-the schema-1.1 contract.
+Follow the Cursor skills aligned to each layer: hypothesis and SIGNAL
+authoring in [`.cursor/skills/microstructure-alpha/SKILL.md`](.cursor/skills/microstructure-alpha/SKILL.md),
+sensor and horizon-feature design in
+[`.cursor/skills/feature-engine/SKILL.md`](.cursor/skills/feature-engine/SKILL.md),
+and research lifecycle / mutation discipline in
+[`.cursor/skills/research-workflow/SKILL.md`](.cursor/skills/research-workflow/SKILL.md).
+[`alphas/SCHEMA.md`](alphas/SCHEMA.md) remains the normative YAML gate reference.
 
 ## Platform Configuration
 
@@ -371,7 +471,7 @@ factor_loadings_max_age_seconds: 86400    # Stale factor loadings → bootstrap 
                                           # reject schema-1.1 SIGNAL/PORTFOLIO alphas missing
                                           # trend_mechanism: (G16 strict).  Pin to false only
                                           # if your alpha_spec_dir points at a v0.2 baseline
-                                          # alpha (e.g. pofi_benign_midcap_v1) that pre-dates
+                                          # alpha (e.g. sig_benign_midcap_v1) that pre-dates
                                           # the mechanism taxonomy — see
                                           # docs/migration/schema_1_0_to_1_1.md §10.5.
 
@@ -431,16 +531,25 @@ for the canonical wording and glossary.
 ## Testing
 
 ```bash
-# Full test suite
+# Full test suite (~2095 tests)
 pytest
+
+# Skip network/benchmark tests (recommended for local dev)
+pytest -m "not functional and not slow"
 
 # Coverage
 pytest --cov=feelies --cov-report=term-missing
 
 # Selective markers
 pytest -m "not slow"                  # skip benchmarks
-pytest -m functional                  # network-backed only
+pytest -m functional                  # network-backed only (requires MASSIVE_API_KEY)
 pytest -m backtest_validation         # full validation suite
+
+# Determinism parity hash tests
+pytest tests/determinism/
+
+# End-to-end pipeline (no API key needed)
+pytest tests/integration/test_phase4_e2e.py
 
 # Validation suite via script
 python scripts/run_validation.py
@@ -450,12 +559,13 @@ python scripts/run_validation.py --quick
 The test suite mirrors `src/feelies/` and includes:
 
 - Unit tests + property-based tests (Hypothesis).
-- **Determinism tests** (`tests/determinism/`) — five locked parity
+- **Determinism tests** (`tests/determinism/`, 54 tests) — five locked parity
   hashes (sensor / signal / sized-intent / portfolio-order /
-  hazard-exit), each subprocess-isolated to detect any non-determinism
+  hazard-exit) plus regime-hazard, horizon-tick, and v0.3 sensor
+  streams, each subprocess-isolated to detect any non-determinism
   introduced by ordering, RNG, or wall-clock.
 - **End-to-end integration tests** (`tests/integration/`) — multi-
-  symbol, multi-alpha, mixed-mechanism universes.
+  symbol, multi-alpha, mixed-mechanism universes (8 tests).
 - **Performance regression gates** (`tests/perf/`) — Phase 4 ≤ 12 %
   end-to-end throughput; Phase 4.1 ≤ 5 % decay-weighting overhead.
   Per-host pinned baselines (opt-in via `PERF_HOST_LABEL`) live in
@@ -468,6 +578,20 @@ The test suite mirrors `src/feelies/` and includes:
   (`margin_ratio`, factor exposures), G16 rule completeness,
   decay-divergence, strict-mode loading per mechanism family, and
   perf-baseline plumbing.
+
+### Known pre-existing test failures
+
+Two acceptance tests fail on the `main` branch because
+`alphas/sig_benign_midcap_v1/` already contains a `trend_mechanism:`
+block but the acceptance tests expect it to be absent (v0.2 baseline parity):
+
+- `tests/acceptance/test_strict_mode_default_true.py::TestV02ParityPreservedOnExplicitOptOut::test_v02_baseline_alpha_refused_under_default`
+- `tests/acceptance/test_v02_no_trend_mechanism_parity.py::test_baseline_alpha_yaml_has_no_trend_mechanism_block`
+- `tests/acceptance/test_v02_no_trend_mechanism_parity.py::test_baseline_alpha_loads_under_v03_default`
+
+These are not environment issues — they reflect an intentional drift
+between the reference alpha YAML and the v0.2 acceptance baseline.
+No other tests fail in a clean environment.
 
 ## Tooling
 

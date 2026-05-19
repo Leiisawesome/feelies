@@ -7,12 +7,10 @@ tracker — breach triggers per-alpha quarantine (REJECT), not
 platform lockdown (FORCE_FLATTEN).
 
 The inner engine handles aggregate-level checks and may return
-FORCE_FLATTEN for aggregate drawdown.  Historically the
-``MultiAlphaEvaluator`` distinguished this from per-alpha REJECT and
-short-circuited the evaluation loop; D.2 PR-2b-ii deleted that
-evaluator, so post-PR-2b-ii the FORCE_FLATTEN ladder is the
-``CompositionEngine`` (Phase-4 PORTFOLIO path) and the orchestrator's
-aggregate order gate (``check_order``).
+FORCE_FLATTEN for aggregate drawdown.  On the PORTFOLIO path,
+``check_sized_intent`` surfaces that verdict as
+``requires_global_risk_escalation`` so the orchestrator runs the same
+emergency flatten + macro lockdown as standalone SIGNAL breaches.
 
 Invariants preserved:
   - Inv 11 (fail-safe): per-alpha drawdown -> REJECT -> quarantine;
@@ -22,22 +20,26 @@ Invariants preserved:
 
 from __future__ import annotations
 
+import hashlib
 from decimal import Decimal
 
 from feelies.alpha.module import AlphaRiskBudget
 from feelies.alpha.registry import AlphaRegistry
 from feelies.core.events import (
     OrderRequest,
+    OrderType,
     RiskAction,
     RiskVerdict,
     Side,
     Signal,
     SignalDirection,
+    SizedPositionIntent,
 )
 from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.basic_risk import RiskConfig
 from feelies.risk.engine import RiskEngine
+from feelies.risk.sized_intent_result import SizedIntentRiskResult
 
 
 class AlphaBudgetRiskWrapper:
@@ -239,6 +241,133 @@ class AlphaBudgetRiskWrapper:
                     )
 
         return self._inner.check_order(order, positions)
+
+    def check_sized_intent(
+        self,
+        intent: SizedPositionIntent,
+        positions: PositionStore,
+    ) -> SizedIntentRiskResult:
+        """Translate a PORTFOLIO ``SizedPositionIntent`` to per-leg orders.
+
+        Mirrors :meth:`BasicRiskEngine.check_sized_intent` (sort by
+        symbol → mark-driven shares → SHA-256 order_id) but routes
+        each per-leg ``check_order`` through ``self`` so the per-alpha
+        budget gates run against the wrapper's
+        :class:`StrategyPositionStore`.  Without this override, the
+        inner engine's ``check_sized_intent`` would call
+        ``self._inner.check_order`` directly and silently skip
+        per-alpha enforcement on the only production-reachable order
+        path post-D.2 (audit R2 / R1.4).
+
+        Inv-5: lexicographic symbol order keeps the emitted tuple
+        bit-identical across replays.  Inv-11: per-leg veto drops only
+        the offending leg for ordinary rejects; aggregate
+        ``FORCE_FLATTEN`` aborts the intent and requests global
+        orchestrator escalation.  The inner engine's diagnostic Alert
+        path (audit R4) still fires for ordinary veto drops via
+        ``_emit_dropped_legs_alert``.
+        """
+        if not intent.target_positions:
+            return SizedIntentRiskResult(orders=())
+
+        orders: list[OrderRequest] = []
+        dropped: list[tuple[str, str]] = []
+        for symbol in sorted(intent.target_positions):
+            tgt = intent.target_positions[symbol]
+            current = positions.get(symbol)
+            mark = self._mark_for(symbol, current, positions)
+            if mark <= 0:
+                continue
+
+            target_shares = int(round(float(tgt.target_usd) / float(mark)))
+            delta_shares = target_shares - current.quantity
+            if delta_shares == 0:
+                continue
+
+            side = Side.BUY if delta_shares > 0 else Side.SELL
+            quantity = abs(delta_shares)
+
+            order_id = hashlib.sha256(
+                f"{intent.correlation_id}:{intent.sequence}:{symbol}".encode()
+            ).hexdigest()[:16]
+            disclosed_cost = intent.disclosed_cost_total_bps_by_symbol.get(
+                symbol, 0.0,
+            )
+            order = OrderRequest(
+                timestamp_ns=intent.timestamp_ns,
+                correlation_id=intent.correlation_id,
+                sequence=intent.sequence,
+                source_layer="PORTFOLIO",
+                order_id=order_id,
+                symbol=symbol,
+                side=side,
+                order_type=OrderType.MARKET,
+                quantity=quantity,
+                strategy_id=intent.strategy_id,
+                reason="PORTFOLIO",
+                g12_disclosed_cost_total_bps=disclosed_cost,
+            )
+
+            verdict = self.check_order(order, positions)
+            if verdict.action == RiskAction.FORCE_FLATTEN:
+                return SizedIntentRiskResult(
+                    orders=(),
+                    requires_global_risk_escalation=True,
+                )
+            if verdict.action == RiskAction.REJECT:
+                dropped.append((symbol, verdict.reason))
+                continue
+            if verdict.action == RiskAction.SCALE_DOWN:
+                scaled_qty = max(1, int(quantity * verdict.scaling_factor))
+                if scaled_qty != quantity:
+                    order = OrderRequest(
+                        timestamp_ns=intent.timestamp_ns,
+                        correlation_id=intent.correlation_id,
+                        sequence=intent.sequence,
+                        source_layer="PORTFOLIO",
+                        order_id=order_id,
+                        symbol=symbol,
+                        side=side,
+                        order_type=OrderType.MARKET,
+                        quantity=scaled_qty,
+                        strategy_id=intent.strategy_id,
+                        reason="PORTFOLIO",
+                        g12_disclosed_cost_total_bps=disclosed_cost,
+                    )
+            orders.append(order)
+
+        if dropped:
+            emit_alert = getattr(self._inner, "_emit_dropped_legs_alert", None)
+            if callable(emit_alert):
+                emit_alert(intent, dropped)
+
+        return SizedIntentRiskResult(orders=tuple(orders))
+
+    @staticmethod
+    def _mark_for(
+        symbol: str,
+        current: object,
+        positions: PositionStore,
+    ) -> Decimal:
+        """Return the live mark, falling back to avg_entry_price.
+
+        Mirrors :meth:`BasicRiskEngine._mark_for`.  Held here as a
+        static helper rather than imported because the wrapper composes
+        the inner engine instead of subclassing it (the protocol does
+        not expose a mark-resolution hook).
+        """
+        latest = getattr(positions, "latest_mark", None)
+        if callable(latest):
+            try:
+                m = latest(symbol)
+                if isinstance(m, Decimal) and m > 0:
+                    return m
+            except Exception:  # pragma: no cover - defensive
+                pass
+        avg = getattr(current, "avg_entry_price", Decimal("0"))
+        if isinstance(avg, Decimal) and avg > 0:
+            return avg
+        return Decimal("0")
 
     def _alpha_equity_and_exposure(
         self,

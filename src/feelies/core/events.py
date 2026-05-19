@@ -125,6 +125,11 @@ class RegimeState(Event):
       Phase 3+.
       ``stability`` — 0..1 stability of the dominant state over recent
       posteriors.  Default 1.0 is a no-op for legacy producers.
+      ``posterior_entropy_nats`` — Shannon entropy (natural log base) of
+      the posterior categorical; ``0`` when unused (legacy producers).
+
+    When ``posteriors`` tie, producers pick the lowest ``dominant_state``
+    index (deterministic replay).
     """
 
     symbol: str
@@ -135,6 +140,7 @@ class RegimeState(Event):
     dominant_name: str
     horizon_seconds: int = 0
     stability: float = 1.0
+    posterior_entropy_nats: float = 0.0
 
 
 # ── Signal Events ───────────────────────────────────────────────────────
@@ -559,6 +565,14 @@ class HorizonFeatureSnapshot(Event):
     ``parent_correlation_id`` carries the ``correlation_id`` of the
     ``HorizonTick`` that triggered this snapshot, restoring the
     audit-spine chain (S4 / A-DATA-04).
+
+    ``feature_versions`` records the ``feature_version`` string for each
+    feature_id present in this snapshot.  Combined with ``source_sensors``
+    (which records ``input_sensor_ids``) this closes the Inv-13 provenance
+    gap: a consumer reading an archived snapshot can reconstruct exactly
+    which feature *version* produced each value, even when the same
+    ``feature_id`` is registered at multiple horizons with different
+    versions.  Empty dict in passive mode (no features).
     """
 
     symbol: str
@@ -568,6 +582,7 @@ class HorizonFeatureSnapshot(Event):
     warm: dict[str, bool] = field(default_factory=dict)
     stale: dict[str, bool] = field(default_factory=dict)
     source_sensors: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    feature_versions: dict[str, str] = field(default_factory=dict)
     parent_correlation_id: str = ""
 
 
@@ -587,6 +602,13 @@ class CrossSectionalContext(Event):
     boundary_index: int
     universe: tuple[str, ...]
     signals_by_symbol: dict[str, "Signal | None"] = field(default_factory=dict)
+    # Per-symbol map strategy_id -> latest feeder Signal at the portfolio barrier.
+    # Populated when :class:`~feelies.composition.synchronizer.UniverseSynchronizer`
+    # is wired with ``upstream_strategy_ids`` so Layer-3 can aggregate SIGNAL
+    # alphas whose ``horizon_seconds`` differ from the PORTFOLIO decision horizon.
+    signals_by_strategy_by_symbol: dict[str, dict[str, "Signal | None"]] = field(
+        default_factory=dict,
+    )
     snapshots_by_symbol: dict[str, "HorizonFeatureSnapshot | None"] = field(
         default_factory=dict
     )
@@ -614,3 +636,16 @@ class SizedPositionIntent(Event):
     expected_turnover_usd: float = 0.0
     expected_gross_exposure_usd: float = 0.0
     mechanism_breakdown: dict[TrendMechanism, float] = field(default_factory=dict)
+    # Per-symbol disclosed one-way ``cost_total_bps`` carried over from
+    # the consumed SIGNAL events for each symbol in ``target_positions``.
+    # Populated by :class:`CompositionEngine` from
+    # :attr:`CrossSectionalContext.signals_by_symbol`; the risk engine
+    # stamps the corresponding entry onto each emitted PORTFOLIO
+    # ``OrderRequest.g12_disclosed_cost_total_bps`` so the post-fill G12
+    # cost-vs-disclosure stress alert (orchestrator §M9) fires for the
+    # PORTFOLIO path the same way it does for SIGNAL-driven orders.
+    # Empty default keeps v0.2 portfolio alphas bit-identical until the
+    # composition engine starts populating it (Inv-A).
+    disclosed_cost_total_bps_by_symbol: dict[str, float] = field(
+        default_factory=dict,
+    )

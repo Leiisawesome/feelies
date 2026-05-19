@@ -29,7 +29,7 @@ from feelies.risk.hazard_exit import HazardExitController, HazardPolicy
 
 
 _UNIVERSE = ("AAPL", "MSFT", "TSLA")
-_STRATEGY_ID = "pofi_xsect_v1"
+_STRATEGY_ID = "pro_xsect_v1"
 
 
 def _build_controller(

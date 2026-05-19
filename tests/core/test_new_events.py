@@ -91,6 +91,27 @@ def test_regime_state_legacy_defaults() -> None:
     )
     assert rs.horizon_seconds == 0
     assert rs.stability == 1.0
+    assert rs.posterior_entropy_nats == 0.0
+
+
+def test_regime_state_posterior_entropy_populated() -> None:
+    from feelies.services.regime_engine import regime_posterior_entropy_nats
+
+    probs = (0.5, 0.25, 0.25)
+    h = regime_posterior_entropy_nats(probs)
+    rs = RegimeState(
+        timestamp_ns=1,
+        correlation_id="c",
+        sequence=1,
+        symbol="AAPL",
+        engine_name="hmm_3state_fractional",
+        state_names=("compression", "normal", "vol_breakout"),
+        posteriors=probs,
+        dominant_state=0,
+        dominant_name="compression",
+        posterior_entropy_nats=h,
+    )
+    assert abs(rs.posterior_entropy_nats - h) < 1e-15
 
 
 def test_regime_state_horizon_anchored() -> None:
@@ -204,7 +225,7 @@ def test_sensor_reading_scalar_value() -> None:
         sequence=1,
         symbol="AAPL",
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         value=0.42,
     )
     assert reading.confidence == 1.0
@@ -285,6 +306,7 @@ def test_cross_sectional_context_completeness_default() -> None:
     )
     assert ctx.completeness == 0.0
     assert ctx.signals_by_symbol == {}
+    assert ctx.signals_by_strategy_by_symbol == {}
     assert ctx.snapshots_by_symbol == {}
 
 
@@ -296,7 +318,7 @@ def test_sized_position_intent_defaults() -> None:
         timestamp_ns=1,
         correlation_id="c",
         sequence=1,
-        strategy_id="pofi_xsect_v1",
+        strategy_id="pro_xsect_v1",
     )
     assert intent.layer == "PORTFOLIO"
     assert intent.target_positions == {}

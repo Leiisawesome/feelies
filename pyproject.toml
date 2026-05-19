@@ -21,6 +21,7 @@ feelies = "feelies.cli.main:main"
 
 [project.optional-dependencies]
 dev = [
+    "pyarrow>=15.0",
     "pytest>=8.0",
     "pytest-cov>=6.0",
     "hypothesis>=6.0",
@@ -32,6 +33,11 @@ dev = [
 massive = [
     "websockets>=13.0",
     "massive>=2.3",
+]
+health = [
+    # Parquet-backed research artefacts for ``feelies.health.load_run_directory``.
+    # Overlaps ``feelies[portfolio]`` which also pins pyarrow for factor loadings.
+    "pyarrow>=15.0",
 ]
 portfolio = [
     # Phase-4 PORTFOLIO layer optional dependencies.  Loaded lazily inside
@@ -71,7 +77,7 @@ python_version = "3.12"
 # `feelies.*` module without an explicit matrix amendment.
 
 [[tool.mypy.overrides]]
-module = ["cvxpy", "cvxpy.*", "numpy", "numpy.*"]
+module = ["cvxpy", "cvxpy.*", "numpy", "numpy.*", "pyarrow", "pyarrow.*"]
 ignore_missing_imports = true
 
 [tool.ruff]

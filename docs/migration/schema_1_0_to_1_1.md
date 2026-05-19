@@ -197,20 +197,20 @@ Mechanical mapping from a typical 1.0 signal:
   by `HorizonAggregator` from `depends_on_sensors` and exposes
   `<sensor_id>`, `<sensor_id>_zscore`, `<sensor_id>_percentile`
   bindings (and tuple-component bindings for tuple-valued sensors —
-  see `grok/03_ALPHA_DEVELOPMENT.md` for the embedded sensor catalog).
+  see `.cursor/skills/feature-engine/SKILL.md` for the sensor framework).
 - Replace `features.timestamp_ns` / `correlation_id` / `sequence` /
   `symbol` with the same fields on `snapshot`. The Signal constructor
   signature is unchanged.
 - Drop the `features:` block entirely. If the legacy alpha computed a
   feature that does not exist as a sensor, you must:
-  - either find a sensor in `grok/03_ALPHA_DEVELOPMENT.md` that
+  - either find a shipped sensor (see `.cursor/skills/feature-engine/SKILL.md`) that
     measures the same latent variable, or
   - author a SENSOR hypothesis first and add it to the registry, then
     reference it from `depends_on_sensors`.
 - Add a `regime_gate:` block. The DSL is documented in §5.
 
 The reference SIGNAL alpha is
-[`alphas/pofi_kyle_drift_v1`](../../alphas/pofi_kyle_drift_v1/) — copy
+[`alphas/sig_kyle_drift_v1`](../../alphas/sig_kyle_drift_v1/) — copy
 its structure verbatim and edit the mechanism story.
 
 ---
@@ -304,11 +304,12 @@ Every entry must resolve to a registered sensor in
 dependencies (declared on `SensorSpec.input_sensor_ids`) raise
 `SensorTopologyError`.
 
-The canonical catalog ships in
-[`grok/03_ALPHA_DEVELOPMENT.md`](../../grok/03_ALPHA_DEVELOPMENT.md).
+The canonical catalog is documented in
+[`feature-engine` skill](../../.cursor/skills/feature-engine/SKILL.md)
+and the implementations under `src/feelies/sensors/impl/`.
 Adding a sensor is a deliberate platform-level change — a new
 implementation under `src/feelies/sensors/impl/`, a registry entry
-(`SensorSpec`), a catalog row, and a SENSOR hypothesis YAML.
+(`SensorSpec`), platform `sensor_specs` wiring, and provenance.
 
 ---
 
@@ -461,8 +462,8 @@ Validation at load time (G16):
 2. `expected_half_life_seconds` within per-family envelope (§10.4).
 3. `horizon_seconds / expected_half_life_seconds ∈ [0.5, 4.0]`.
 4. Every `l1_signature_sensors` entry is a registered sensor.
-5. The family's primary fingerprint sensor (per
-  `grok/03_ALPHA_DEVELOPMENT.md`) appears in
+5. The family's primary fingerprint sensor (per the feature-engine skill
+  and `alphas/SCHEMA.md`) appears in
    `l1_signature_sensors`.
 6. `failure_signature` is a non-empty list of strings.
 7. **`LIQUIDITY_STRESS` is exit-only** — the `signal:` body is
@@ -528,7 +529,7 @@ rejected at load time via `MissingTrendMechanismError`. This is
 the recommended setting for production deployments — it catches
 "drift back to v0.2" at load time rather than at promotion review.
 
-Operators relying on a v0.2-baseline alpha (e.g. `pofi_benign_midcap_v1`,
+Operators relying on a v0.2-baseline alpha (e.g. `sig_benign_midcap_v1`,
 the §20.12.3 #2 reference alpha that pre-dates the mechanism
 taxonomy) must explicitly pin the opt-out:
 
@@ -539,8 +540,8 @@ enforce_trend_mechanism: false    # legacy opt-out for v0.2 baseline alphas
 
 The reference `platform.yaml` at the repo root carries this
 opt-out and a comment pointing at the v0.3 reference alphas
-(`pofi_kyle_drift_v1`, `pofi_inventory_revert_v1`,
-`pofi_hawkes_burst_v1`, `pofi_moc_imbalance_v1`) for operators
+(`sig_kyle_drift_v1`, `sig_inventory_revert_v1`,
+`sig_hawkes_burst_v1`, `sig_moc_imbalance_v1`) for operators
 ready to switch.
 
 ---
@@ -808,7 +809,7 @@ Recommended migration order for a portfolio of legacy alphas
    it to a `layer: SIGNAL` spec. Author a sibling
    `<alpha_id>_v2.alpha.yaml`; preserve the v1 file under
    `alphas/_deprecated/` (mutation parity rules,
-  `grok/06_EVOLUTION.md`).
+  `.cursor/skills/research-workflow/SKILL.md`).
 3. **Cross-sectional**: once two or more SIGNAL alphas exist that you
    want to compose, author a PORTFOLIO alpha per §8.
 4. **v0.3 opt-in**: add `trend_mechanism:` blocks per §10 once you can
@@ -817,10 +818,10 @@ Recommended migration order for a portfolio of legacy alphas
    the platform default is already `enforce_trend_mechanism: true`,
    so a fresh deployment lands in strict mode automatically. If you
    need to keep loading a v0.2 alpha without a `trend_mechanism:`
-   block (e.g. the reference `pofi_benign_midcap_v1`), pin
+   block (e.g. the reference `sig_benign_midcap_v1`), pin
    `platform.yaml: enforce_trend_mechanism: false` explicitly and
    plan the migration to one of the v0.3 reference alphas
-   (`pofi_kyle_drift_v1`, `pofi_inventory_revert_v1`,
-   `pofi_hawkes_burst_v1`, `pofi_moc_imbalance_v1`).
+   (`sig_kyle_drift_v1`, `sig_inventory_revert_v1`,
+   `sig_hawkes_burst_v1`, `sig_moc_imbalance_v1`).
 
 End of cookbook.
