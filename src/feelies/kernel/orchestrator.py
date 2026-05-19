@@ -1593,6 +1593,19 @@ class Orchestrator:
                 refresh_hwm(self._positions)
             if self._strategy_positions is not None:
                 self._strategy_positions.update_mark(quote.symbol, mid)
+            # Advance the risk engine's drawdown high-water mark from
+            # the freshly updated marks so peak equity reflects open
+            # appreciation between order checks.  Without this, the HWM
+            # only ratchets when ``check_signal`` / ``check_order`` run,
+            # which biases drawdown verdicts to be order-arrival
+            # dependent (BasicRiskEngine.refresh_high_water_mark).  The
+            # capability is optional on the ``RiskEngine`` protocol so
+            # legacy stubs without the hook are silently skipped.
+            refresh_hwm = getattr(
+                self._risk_engine, "refresh_high_water_mark", None,
+            )
+            if refresh_hwm is not None:
+                refresh_hwm(self._positions)
 
         # ── Quote-driven router ack drain ────────────────────────
         # bus.publish(quote) triggered on_quote() on the router, which
