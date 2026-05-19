@@ -1581,11 +1581,6 @@ class Orchestrator:
         mid = (quote.bid + quote.ask) / Decimal("2")
         if mid > 0:
             self._positions.update_mark(quote.symbol, mid)
-            refresh_hwm = getattr(self._risk_engine, "refresh_high_water_mark", None)
-            if callable(refresh_hwm):
-                refresh_hwm(self._positions)
-            if self._strategy_positions is not None:
-                self._strategy_positions.update_mark(quote.symbol, mid)
             # Advance the platform-level HWM on every mark update so the
             # drawdown guard sees the true peak equity, not the
             # equity-at-last-order-check.  Optional on the protocol;
@@ -1596,6 +1591,8 @@ class Orchestrator:
             )
             if callable(refresh_hwm):
                 refresh_hwm(self._positions)
+            if self._strategy_positions is not None:
+                self._strategy_positions.update_mark(quote.symbol, mid)
 
         # ── Quote-driven router ack drain ────────────────────────
         # bus.publish(quote) triggered on_quote() on the router, which
