@@ -116,7 +116,15 @@ class OFIEwmaSensor:
         last_ask_sz = state["last_ask_size"]
 
         if last_bid is None or last_ask is None:
-            ofi = 0.0
+            # First-quote bootstrap: no prior level to diff against.  Skip
+            # the EWMA update so a checkpoint-restored ``state["ewma"]`` is
+            # not silently re-seeded toward 0 by folding in a synthetic
+            # zero-OFI sample.  Just capture the level for next call.
+            state["last_bid"] = bid
+            state["last_ask"] = ask
+            state["last_bid_size"] = bid_sz
+            state["last_ask_size"] = ask_sz
+            new_ewma = state["ewma"]
         else:
             if bid > last_bid:
                 bid_contrib = float(bid_sz)
@@ -132,13 +140,13 @@ class OFIEwmaSensor:
                 ask_contrib = -float(ask_sz - last_ask_sz)
             ofi = bid_contrib + ask_contrib
 
-        alpha = self._alpha
-        new_ewma = alpha * ofi + (1.0 - alpha) * state["ewma"]
-        state["ewma"] = new_ewma
-        state["last_bid"] = bid
-        state["last_ask"] = ask
-        state["last_bid_size"] = bid_sz
-        state["last_ask_size"] = ask_sz
+            alpha = self._alpha
+            new_ewma = alpha * ofi + (1.0 - alpha) * state["ewma"]
+            state["ewma"] = new_ewma
+            state["last_bid"] = bid
+            state["last_ask"] = ask
+            state["last_bid_size"] = bid_sz
+            state["last_ask_size"] = ask_sz
 
         # S3: sliding-window warm check — reverts to cold after data gaps
         ts_ns = event.timestamp_ns

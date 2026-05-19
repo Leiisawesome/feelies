@@ -60,6 +60,7 @@ from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import Position
 from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
+from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
 from feelies.risk.escalation import RiskLevel
 from feelies.storage.memory_event_log import InMemoryEventLog
 
@@ -223,6 +224,19 @@ class _StubRiskEngine:
             action=self._action,
             reason="test",
         )
+
+
+class _CountingHwmRiskEngine(_StubRiskEngine):
+    def __init__(self) -> None:
+        super().__init__(RiskAction.ALLOW)
+        self.refresh_calls: list[PositionStore] = []
+
+    def refresh_high_water_mark(self, positions: PositionStore) -> None:
+        self.refresh_calls.append(positions)
+
+
+class _NonCallableHwmRiskEngine(_StubRiskEngine):
+    refresh_high_water_mark = object()
 
 
 class _RaisingRiskEngine:
@@ -525,6 +539,71 @@ class TestOrchestratorFullPipeline:
 
         _boot_to_backtest(orch)
         orch._process_tick(quote)
+
+        assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
+        assert orch.macro_state == MacroState.BACKTEST_MODE
+
+    def test_mark_only_tick_refreshes_risk_high_water_mark(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        rally_quote = _make_quote(ts=1000, bid="119.50", ask="120.50", seq=1)
+        drawdown_quote = _make_quote(ts=2000, bid="99.50", ask="100.50", seq=2)
+        position_store = MemoryPositionStore()
+        position_store.update("AAPL", 100, Decimal("100"))
+        risk_engine = BasicRiskEngine(RiskConfig(
+            max_position_per_symbol=100_000,
+            max_gross_exposure_pct=100.0,
+            max_drawdown_pct=1.0,
+            account_equity=Decimal("100000"),
+        ))
+
+        bus = EventBus()
+        verdicts: list[RiskVerdict] = []
+        bus.subscribe(RiskVerdict, verdicts.append)
+
+        def emit_second_quote_signal(quote: NBBOQuote) -> None:
+            if quote.sequence == drawdown_quote.sequence:
+                bus.publish(_make_signal(quote, direction=SignalDirection.SHORT))
+
+        bus.subscribe(NBBOQuote, emit_second_quote_signal)
+
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=risk_engine,
+            position_store=position_store,
+        )
+        _boot_to_backtest(orch)
+
+        orch._process_tick(rally_quote)
+        orch._process_tick(drawdown_quote)
+
+        assert verdicts[-1].action == RiskAction.FORCE_FLATTEN
+        assert "drawdown" in verdicts[-1].reason
+
+    def test_mark_only_tick_refreshes_risk_high_water_mark_once(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        position_store = MemoryPositionStore()
+        risk_engine = _CountingHwmRiskEngine()
+        orch = _build_orchestrator(
+            clock,
+            risk_engine=risk_engine,
+            position_store=position_store,
+        )
+        _boot_to_backtest(orch)
+
+        orch._process_tick(_make_quote())
+
+        assert risk_engine.refresh_calls == [position_store]
+
+    def test_non_callable_hwm_hook_is_skipped(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(
+            clock,
+            risk_engine=_NonCallableHwmRiskEngine(),
+        )
+        _boot_to_backtest(orch)
+
+        orch._process_tick(_make_quote())
 
         assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
         assert orch.macro_state == MacroState.BACKTEST_MODE

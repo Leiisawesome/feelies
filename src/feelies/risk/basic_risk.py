@@ -640,6 +640,20 @@ class BasicRiskEngine:
         if current_equity > self._high_water_mark:
             self._high_water_mark = current_equity
 
+    def refresh_high_water_mark(self, positions: PositionStore) -> None:
+        """Public mark-driven HWM bump for use outside the risk check path.
+
+        Without this hook, the HWM is only advanced inside
+        ``check_signal`` / ``check_order``.  Positions that appreciate
+        between risk checks (no new orders) leave the HWM stale, and the
+        next order check then computes drawdown against an artificially
+        low peak — under-reporting peak equity and over-reporting
+        drawdown for a brief window.  Orchestrator should call this on
+        each position-mark update so drawdown verdicts are not
+        order-arrival-dependent.
+        """
+        self._update_high_water_mark(self._compute_current_equity(positions))
+
     def _is_drawdown_breached(self, current_equity: Decimal) -> bool:
         """Pure predicate over (current_equity, self._high_water_mark).
 

@@ -265,7 +265,11 @@ def _parse_window(
     )
 
 
-def load_event_calendar(path: str | Path) -> EventCalendar:
+def load_event_calendar(
+    path: str | Path,
+    *,
+    expected_session_date: date | None = None,
+) -> EventCalendar:
     """Load a per-session calendar YAML from disk.
 
     Schema (top-level keys, all required unless noted):
@@ -285,6 +289,13 @@ def load_event_calendar(path: str | Path) -> EventCalendar:
     The function validates the schema, pre-computes integer
     nanosecond bounds, and returns a frozen :class:`EventCalendar`
     with windows sorted by ``(start_ns, kind, window_id)``.
+
+    When ``expected_session_date`` is supplied, the loader raises
+    ``ValueError`` if the YAML's ``session_date`` does not match.  This
+    catches calendar/--date scope misconfigurations where the YAML's
+    NY-time-on-session-date windows would resolve to nanosecond bounds
+    in a different day and silently produce ``active=0.0`` for every
+    event of the actual backtest.
     """
     p = Path(path)
     raw = yaml.safe_load(p.read_text(encoding="utf-8"))
@@ -299,6 +310,18 @@ def load_event_calendar(path: str | Path) -> EventCalendar:
         session_date = sd_raw
     else:
         session_date = date.fromisoformat(str(sd_raw))
+
+    if (
+        expected_session_date is not None
+        and session_date != expected_session_date
+    ):
+        raise ValueError(
+            f"{p}: calendar session_date={session_date.isoformat()} does "
+            f"not match expected {expected_session_date.isoformat()}. "
+            "Calendar windows are anchored to NY-time-on-session-date; a "
+            "mismatched file would silently produce active=0.0 for every "
+            "event of the backtest."
+        )
 
     windows_raw = raw["windows"]
     if not isinstance(windows_raw, list):

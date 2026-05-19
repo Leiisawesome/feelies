@@ -190,10 +190,13 @@ sensor_specs:
     sensor_version: "1.2.0"
     cls: feelies.sensors.impl.kyle_lambda_60s.KyleLambda60sSensor
     params:
-      min_samples: 5
+      # 30 samples is the sensor's documented default; the prior value of
+      # 5 produced high-variance OLS slopes that the downstream z-score
+      # feature standardized into spuriously large signals.
+      min_samples: 30
     subscribes_to: [NBBOQuote, Trade]
     input_sensor_ids: []
-    min_history: 5
+    min_history: 30
     throttled_ms: null
 
   - sensor_id: trade_through_rate

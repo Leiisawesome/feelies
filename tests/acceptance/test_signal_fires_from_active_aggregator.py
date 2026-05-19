@@ -355,12 +355,18 @@ def test_signal_direction_is_long_for_positive_ofi() -> None:
 
 
 def test_signal_strength_within_bounds() -> None:
-    """strength is in (0, 1] — evaluate() formula: min(|z| / (2 * threshold), 1.0)."""
+    """strength is in (0, strength_cap] for sig_benign_midcap_v1.
+
+    Below saturation (|z| <= 2 * entry_threshold) strength is linear in
+    |z|; above saturation it follows convex scaling capped at
+    ``parameters.strength_cap`` (default 2.0).
+    """
+    strength_cap = 2.0  # sig_benign_midcap_v1.parameters.strength_cap default
     signals = _fire_signals()
     assert len(signals) >= 1
     for s in signals:
-        assert 0.0 < s.strength <= 1.0, (
-            f"strength={s.strength!r} out of expected (0, 1]"
+        assert 0.0 < s.strength <= strength_cap, (
+            f"strength={s.strength!r} out of expected (0, {strength_cap}]"
         )
 
 

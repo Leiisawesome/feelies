@@ -254,6 +254,32 @@ def build_platform(
         regime_compression_scale=config.risk_regime_compression_scale,
         regime_normal_scale=config.risk_regime_normal_scale,
     )
+    # Sanity-check: warn when ``risk_max_position_per_symbol`` is so
+    # large vs the gross-exposure cap that it is vacuously non-binding
+    # for the configured universe.  At AAPL $200/share, 50_000 shares
+    # is $10M — far above 200% of a $100k account — so the per-symbol
+    # cap silently does nothing.  Future operator edits to the gross
+    # cap could then surprise-promote the per-symbol cap to the binding
+    # constraint with no logical link between the two.
+    _max_gross = (
+        config.account_equity * config.risk_max_gross_exposure_pct / 100.0
+    )
+    # Use $1 as a conservative price floor when the universe price is
+    # unknown at boot; operators on penny-stock universes are expected
+    # to set the cap explicitly.
+    _vacuous_threshold_shares = _max_gross / 1.0
+    if config.risk_max_position_per_symbol > _vacuous_threshold_shares:
+        logger.warning(
+            "risk_max_position_per_symbol=%d shares is vacuously "
+            "non-binding under the gross-exposure cap "
+            "(max_gross=$%.0f, equivalent to %.0f shares at $1/share). "
+            "Set the per-symbol cap below the gross-equivalent share "
+            "count for the lowest-priced symbol in the universe, or "
+            "treat the gross cap as the binding constraint.",
+            config.risk_max_position_per_symbol,
+            _max_gross,
+            _vacuous_threshold_shares,
+        )
     # The dedicated alert sequence generator keeps risk-engine
     # diagnostics (e.g. the per-leg PORTFOLIO veto Alert) on a
     # separate sequence stream from the orchestrator's own ``_seq`` so
@@ -1374,7 +1400,18 @@ def _enforce_factor_loadings_freshness(
             f"factor loadings file not found: {path}"
         )
 
-    age_seconds = time.time() - path.stat().st_mtime
+    # Prefer ``session_open_ns`` as the freshness reference so the check
+    # is bit-deterministic across replays.  Wall-clock ``time.time()`` is
+    # only used as a fallback when no session anchor is configured; in
+    # that path the staleness verdict depends on the system clock at
+    # boot, which breaks bit-identical replay (a backtest passing today
+    # may fail tomorrow with no code change).
+    file_mtime = path.stat().st_mtime
+    if config.session_open_ns is not None:
+        reference_time = config.session_open_ns / 1_000_000_000
+    else:
+        reference_time = time.time()
+    age_seconds = reference_time - file_mtime
     if age_seconds > config.factor_loadings_max_age_seconds:
         raise StaleFactorLoadingsError(
             f"factor loadings file {path} is {age_seconds:.0f}s old, "

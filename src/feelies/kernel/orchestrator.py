@@ -466,6 +466,8 @@ class Orchestrator:
 
         self._stop_loss_per_share: float = 0.0
         self._trail_activate_per_share: float = 0.0
+        self._stop_loss_pct: float = 0.0
+        self._trail_activate_pct: float = 0.0
         self._trail_pct: float = 0.5
         self._peak_pnl_per_share: dict[str, float] = {}
         self._min_order_shares: int = 1
@@ -713,6 +715,14 @@ class Orchestrator:
                 self._stop_loss_per_share = config.stop_loss_per_share
             if hasattr(config, "trail_activate_per_share"):
                 self._trail_activate_per_share = config.trail_activate_per_share
+            # Percentage-based stops override the per-share fields when set.
+            # The actual per-share threshold can only be derived at fill time
+            # (it depends on entry price), so we cache the pct and convert in
+            # ``_check_stop_exit`` against the position's ``avg_entry_price``.
+            if hasattr(config, "stop_loss_pct"):
+                self._stop_loss_pct = config.stop_loss_pct
+            if hasattr(config, "trail_activate_pct"):
+                self._trail_activate_pct = config.trail_activate_pct
             if hasattr(config, "trail_pct"):
                 self._trail_pct = config.trail_pct
             if hasattr(config, "execution_mode"):
@@ -1571,6 +1581,19 @@ class Orchestrator:
         mid = (quote.bid + quote.ask) / Decimal("2")
         if mid > 0:
             self._positions.update_mark(quote.symbol, mid)
+            # Advance the risk engine's drawdown high-water mark from
+            # the freshly updated marks so peak equity reflects open
+            # appreciation between order checks.  Without this, the HWM
+            # only ratchets when ``check_signal`` / ``check_order`` run,
+            # which biases drawdown verdicts to be order-arrival
+            # dependent (BasicRiskEngine.refresh_high_water_mark).  The
+            # capability is optional on the ``RiskEngine`` protocol so
+            # legacy stubs without the hook are silently skipped.
+            refresh_hwm = getattr(
+                self._risk_engine, "refresh_high_water_mark", None,
+            )
+            if callable(refresh_hwm):
+                refresh_hwm(self._positions)
             if self._strategy_positions is not None:
                 self._strategy_positions.update_mark(quote.symbol, mid)
 
@@ -2110,10 +2133,32 @@ class Orchestrator:
 
         max_q = self._regime_calibration_max_quotes
         if max_q is None:
-            logger.info(
+            # Uncalibrated regime engines fall through to placeholder
+            # emission params that barely discriminate ``compression``
+            # vs ``normal`` vs ``vol_breakout``, silently making every
+            # ``P(<state>)`` gate near-equal.  Emit a CRITICAL alert so
+            # operators see this on the bus instead of buried in a log
+            # line (matches the calibrate-fail path below).
+            logger.warning(
                 "Regime calibration skipped — regime_calibration_max_quotes "
-                "is unset (no lookahead calibration from the full event log)"
+                "is unset.  Engine will run with placeholder emission "
+                "parameters; downstream P(state) gates will be near-uniform."
             )
+            self._bus.publish(Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id="regime_calibration",
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="regime_calibration_unset",
+                message=(
+                    "RegimeEngine has no calibration prefix configured "
+                    "(regime_calibration_max_quotes is None). Posteriors "
+                    "will use placeholder emission parameters; configure a "
+                    "positive integer for a causal warmup prefix."
+                ),
+                context={},
+            ))
             return
 
         quote_stream = (
@@ -2472,8 +2517,19 @@ class Orchestrator:
 
         Returns a synthetic FLAT Signal if a stop triggers, None otherwise.
         Also updates peak unrealized P&L tracking for trailing stops.
+
+        Percentage-based thresholds (``stop_loss_pct``,
+        ``trail_activate_pct``) take precedence over per-share fields when
+        non-zero, converted against ``avg_entry_price`` at check time so a
+        single config value applies across the universe regardless of
+        per-symbol price level.
         """
-        if self._stop_loss_per_share <= 0 and self._trail_activate_per_share <= 0:
+        if (
+            self._stop_loss_per_share <= 0
+            and self._trail_activate_per_share <= 0
+            and self._stop_loss_pct <= 0
+            and self._trail_activate_pct <= 0
+        ):
             return None
 
         pos = self._positions.get(quote.symbol)
@@ -2494,13 +2550,25 @@ class Orchestrator:
             peak = unrealized_per_share
         self._peak_pnl_per_share[quote.symbol] = peak
 
+        # Percentage thresholds override per-share fields when set.
+        stop_threshold = (
+            entry * self._stop_loss_pct
+            if self._stop_loss_pct > 0
+            else self._stop_loss_per_share
+        )
+        trail_activate_threshold = (
+            entry * self._trail_activate_pct
+            if self._trail_activate_pct > 0
+            else self._trail_activate_per_share
+        )
+
         triggered = False
 
-        if self._stop_loss_per_share > 0 and unrealized_per_share < -self._stop_loss_per_share:
+        if stop_threshold > 0 and unrealized_per_share < -stop_threshold:
             triggered = True
 
-        if (self._trail_activate_per_share > 0
-                and peak >= self._trail_activate_per_share
+        if (trail_activate_threshold > 0
+                and peak >= trail_activate_threshold
                 and unrealized_per_share < peak * self._trail_pct):
             triggered = True
 
@@ -2638,6 +2706,14 @@ class Orchestrator:
             )
             self._finalize_tick(t_wall_start, cid)
             return
+
+        # SCALE_DOWN on the exit verdict is intentionally a no-op here:
+        # the exit OrderRequest was built above with the full
+        # ``close_qty`` and that's what submits.  The scaling factor only
+        # governs the entry leg (computed from the outer signal-level
+        # ``verdict`` below).  Exits must always close the entire
+        # existing position; a partial close would leave the wrong-
+        # direction residual on the book during a reverse.
 
         # ── ENTRY leg: passive LIMIT (or MARKET if passive disabled) ─
         #
@@ -4107,6 +4183,12 @@ class Orchestrator:
                         )
                     return True
         if health == DataHealth.CORRUPTED:
+            # Force-flatten the affected symbol before transitioning macro.
+            # CORRUPTED is terminal — leaving an open position to mark at
+            # the last-known quote would carry stale risk through DEGRADED.
+            self._force_flatten_symbol_on_degrade(
+                symbol, correlation_id, reason="DATA_CORRUPTED",
+            )
             if self._macro.can_transition(MacroState.DEGRADED):
                 self._macro.transition(
                     MacroState.DEGRADED,
@@ -4116,6 +4198,13 @@ class Orchestrator:
             return True
         degrade_gap = getattr(self._config, "degrade_on_data_gap", False)
         if degrade_gap and health == DataHealth.GAP_DETECTED:
+            # GAP_DETECTED can recover to HEALTHY, but the macro DEGRADED
+            # transition is sticky (requires explicit operator command).
+            # Unwind the affected symbol at the last-known mark so the
+            # book doesn't carry stale exposure through the gap window.
+            self._force_flatten_symbol_on_degrade(
+                symbol, correlation_id, reason="DATA_GAP_DETECTED",
+            )
             if self._macro.can_transition(MacroState.DEGRADED):
                 self._macro.transition(
                     MacroState.DEGRADED,
@@ -4124,6 +4213,81 @@ class Orchestrator:
                 )
             return True
         return False
+
+    def _force_flatten_symbol_on_degrade(
+        self,
+        symbol: str,
+        correlation_id: str,
+        *,
+        reason: str,
+    ) -> None:
+        """Submit a MARKET flatten for ``symbol`` before macro DEGRADED.
+
+        Best-effort: any submit exception is logged and surfaced via
+        WARNING alert but does not raise, so a single broken symbol
+        cannot block the DEGRADED transition (Inv-11 fail-safe).  The
+        order_id is content-addressed on ``(reason, symbol, sequence)``
+        so replays produce bit-identical IDs.
+        """
+        pos = self._positions.get(symbol)
+        if pos.quantity == 0:
+            return
+        side = Side.SELL if pos.quantity > 0 else Side.BUY
+        qty = abs(pos.quantity)
+        seq = self._seq.next()
+        order_id = hashlib.sha256(
+            f"degrade_flatten:{reason}:{symbol}:{seq}".encode()
+        ).hexdigest()[:16]
+        order = OrderRequest(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            sequence=seq,
+            order_id=order_id,
+            symbol=symbol,
+            side=side,
+            order_type=OrderType.MARKET,
+            quantity=qty,
+            strategy_id="degrade_flatten",
+            reason=reason,
+        )
+        try:
+            self._track_order(order_id, side, order)
+            self._transition_order(
+                order_id,
+                OrderState.SUBMITTED,
+                f"degrade_flatten:{reason}",
+                correlation_id=correlation_id,
+            )
+            self._backend.order_router.submit(order)
+            self._bus.publish(order)
+            acks = self._poll_order_router_acks({order_id})
+            for ack in acks:
+                self._bus.publish(ack)
+                self._apply_ack_to_order(ack)
+            self._reconcile_fills(acks, correlation_id)
+        except Exception as exc:  # noqa: BLE001 — fail-safe; never raise
+            logger.exception(
+                "Force-flatten on %s failed for symbol=%s (qty=%d, side=%s); "
+                "position remains open and will require manual intervention.",
+                reason, symbol, qty, side.name,
+            )
+            self._bus.publish(Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.CRITICAL,
+                layer="kernel",
+                alert_name="degrade_flatten_failed",
+                message=(
+                    f"Force-flatten on {reason} failed for symbol={symbol!r} "
+                    f"(qty={qty}, side={side.name}). Position remains open."
+                ),
+                context={
+                    "symbol": symbol,
+                    "reason": reason,
+                    "exception": repr(exc),
+                },
+            ))
 
 
     def _verify_data_integrity(self) -> bool:

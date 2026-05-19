@@ -410,6 +410,21 @@ class AlphaBudgetRiskWrapper:
             sid: Decimal(val) for sid, val in state.items()
         }
 
+    def refresh_high_water_mark(self, positions: PositionStore) -> None:
+        """Delegate mark-driven HWM refresh to the inner engine.
+
+        Lets the orchestrator advance the platform-level HWM on
+        mark-to-market updates so drawdown verdicts are not stale
+        between order checks.  Per-alpha HWM tracking lives in this
+        wrapper (``_alpha_hwm``) and is bumped only at order time
+        because the wrapper does not see mid-tick mark updates; that
+        remains a known limitation and is documented in
+        :meth:`_check_alpha_drawdown`.
+        """
+        refresh = getattr(self._inner, "refresh_high_water_mark", None)
+        if callable(refresh):
+            refresh(positions)
+
 
 def _signal_reduces_position(
     current_qty: int,
