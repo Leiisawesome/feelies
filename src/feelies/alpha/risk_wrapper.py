@@ -242,20 +242,6 @@ class AlphaBudgetRiskWrapper:
 
         return self._inner.check_order(order, positions)
 
-    def refresh_high_water_mark(self, positions: PositionStore) -> None:
-        """Forward mark-driven HWM bumps to the inner engine.
-
-        The orchestrator calls this on every mark update so the
-        aggregate drawdown HWM advances continuously, not just at order
-        gates.  Per-alpha HWMs are realized-driven and remain bumped
-        inside ``_check_alpha_drawdown``.  Capability is optional on
-        the ``RiskEngine`` protocol — if the inner engine does not
-        implement it (e.g. a test stub), the call is silently skipped.
-        """
-        refresh = getattr(self._inner, "refresh_high_water_mark", None)
-        if refresh is not None:
-            refresh(positions)
-
     def check_sized_intent(
         self,
         intent: SizedPositionIntent,
