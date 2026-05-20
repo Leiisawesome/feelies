@@ -107,10 +107,10 @@ From `bootstrap._horizon_features_for` for **`scheduled_flow_window`**:
 ### 2.3 `evaluate()` logic (condensed)
 
 - All of **`scheduled_flow_window_active`**, **`seconds_to_window_close`**, **`scheduled_flow_window_direction_prior`**, **`ofi_ewma`** must be present.
-- **`active != 1.0`** → no signal.
+- **`active < 0.5`** → no signal (tolerance check, not strict equality, for forward-compat with fractional-active variants).
 - **`remaining < min_seconds_to_close`** → no new entry (default **60 s** “no trade into the auction tail” — aligns with hypothesis text).
 - **`abs(ofi) < ofi_agreement_threshold`** → no signal (weak confirmation).
-- **Sign agreement:** `(prior > 0 and ofi > 0) or (prior < 0 and ofi < 0)` else `None`.
+- **Sign agreement:** `(prior > 0.5 and ofi > 0) or (prior < -0.5 and ofi < 0)` else `None` (half-step tolerance on the prior for forward-compat with smoothed priors).
 - **Direction:** LONG if combined sign positive else SHORT.
 - **Edge:** scales with **remaining time in minutes**, capped by **`edge_cap_bps`**.
 

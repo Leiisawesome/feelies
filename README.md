@@ -55,10 +55,7 @@ horizon-bucketed snapshots.
 `LEGACY_SIGNAL` was a fourth (per-tick) layer that preserved the
 Phase-1 contract bit-identically.  It was retired in Workstream D.2;
 the loader rejects `layer: LEGACY_SIGNAL` outright with a pointer to
-the migration cookbook.  Every alpha must target SIGNAL or PORTFOLIO;
-see
-[`docs/migration/schema_1_0_to_1_1.md`](docs/migration/schema_1_0_to_1_1.md)
-for the migration path.
+the loader.  Every alpha must target SIGNAL or PORTFOLIO.
 
 ### State Machines
 
@@ -123,17 +120,14 @@ feelies/
 │   ├── sig_hawkes_burst_v1/     # Reference SIGNAL (HAWKES_SELF_EXCITE)
 │   ├── sig_moc_imbalance_v1/    # Reference SIGNAL (SCHEDULED_FLOW)
 │   ├── sig_benign_midcap_v1/    # Reference SIGNAL (Phase-3 canonical)
-│   ├── pro_xsect_v1/            # Reference PORTFOLIO (decay OFF baseline)
-│   └── pro_xsect_mixed_mechanism_v1/  # Reference PORTFOLIO (multi-mechanism cap)
-├── docs/                         # Architecture spec, migration, acceptance notes
+│   ├── pro_burst_revert_v1/     # Reference PORTFOLIO (HAWKES + INVENTORY)
+│   └── pro_kyle_benign_v1/      # Reference PORTFOLIO (KYLE_INFO dual-horizon)
+├── docs/                         # Architecture spec and alpha documentation
 │   ├── three_layer_architecture.md
-│   ├── migration/
-│   │   └── schema_1_0_to_1_1.md
-│   └── acceptance/
+│   └── alphas/
 ├── scripts/                      # CLI entry points
 │   ├── run_backtest.py           # Full pipeline backtest (incl. parity hash)
 │   ├── smoke_pipeline.py         # No-API-key micro-state smoke test (synthetic ticks)
-│   ├── run_validation.py         # Validation suite runner
 │   ├── record_perf_baseline.py   # Pin per-host throughput baselines for perf gates
 │   └── build_reference_factor_loadings.py  # PORTFOLIO factor loadings builder
 ├── tests/                        # Pytest suite (mirrors src/, plus determinism + perf)
@@ -376,9 +370,7 @@ held in a private fork that retains the per-tick code-path.
 | `PORTFOLIO` | `universe`, `depends_on_signals`, `factor_neutralization`, `cost_arithmetic`, `horizon_seconds` | `AlphaLoader._load_portfolio_layer` → `LoadedPortfolioLayerModule` | `CompositionEngine` | `tests/determinism/test_sized_intent_replay.py`, `test_portfolio_order_replay.py` |
 | `SENSOR` (reserved) | declared in `platform.yaml` (registry-driven, not alpha YAML) | n/a | `SensorRegistry` | per-sensor unit tests |
 
-See [`alphas/SCHEMA.md`](alphas/SCHEMA.md) for the full field reference
-and [`docs/migration/schema_1_0_to_1_1.md`](docs/migration/schema_1_0_to_1_1.md)
-for the upgrade cookbook.
+See [`alphas/SCHEMA.md`](alphas/SCHEMA.md) for the full field reference.
 
 ### Quick start (schema 1.1 SIGNAL)
 
@@ -472,8 +464,7 @@ factor_loadings_max_age_seconds: 86400    # Stale factor loadings → bootstrap 
                                           # trend_mechanism: (G16 strict).  Pin to false only
                                           # if your alpha_spec_dir points at a v0.2 baseline
                                           # alpha (e.g. sig_benign_midcap_v1) that pre-dates
-                                          # the mechanism taxonomy — see
-                                          # docs/migration/schema_1_0_to_1_1.md §10.5.
+                                          # the mechanism taxonomy — see alphas/SCHEMA.md.
 
 # Architectural gate enforcement (Phase 4)
 enforce_layer_gates: true                 # When false, G1/G3 violations log WARNING
@@ -551,9 +542,8 @@ pytest tests/determinism/
 # End-to-end pipeline (no API key needed)
 pytest tests/integration/test_phase4_e2e.py
 
-# Validation suite via script
-python scripts/run_validation.py
-python scripts/run_validation.py --quick
+# Validation suite
+pytest -m backtest_validation
 ```
 
 The test suite mirrors `src/feelies/` and includes:
@@ -572,8 +562,7 @@ The test suite mirrors `src/feelies/` and includes:
   `tests/perf/baselines/v02_baseline.json` and are recorded with
   `python scripts/record_perf_baseline.py --host-label <id>`.
 - **Acceptance sweep** (`tests/acceptance/`) — mechanical assertions
-  for the v0.2 + v0.3 acceptance matrix
-  ([`docs/acceptance/v02_v03_matrix.md`](docs/acceptance/v02_v03_matrix.md)),
+  for the v0.2 + v0.3 acceptance matrix,
   including mypy-strict scope, reference-alpha load invariants
   (`margin_ratio`, factor exposures), G16 rule completeness,
   decay-divergence, strict-mode loading per mechanism family, and

@@ -19,9 +19,11 @@ hypothesis: |
   Both upstream alphas share the KYLE_INFO mechanism but operate on
   different horizons and feature composites (120 s OFI-zscore
   footprint vs 300 s λ̂-weighted drift).  Their conditioning sets are
-  partially orthogonal: sig_benign_midcap_v1 gates on a tighter
-  normal-regime posterior and low spread; sig_kyle_drift_v1 gates
-  on λ̂ exceeding the 70th percentile.  Combining under a single
+  partially orthogonal: sig_kyle_drift_v1 gates on a tighter
+  normal-regime posterior (P(normal) > 0.6 vs 0.5) and tighter spread
+  threshold (≤ 1.0 vs < 1.5); sig_benign_midcap_v1 requires OFI and
+  micro-price alignment without a λ̂ percentile condition.  Combining
+  under a single
   PORTFOLIO layer prevents signal cancellation through arbitration
   and correctly sizes net exposure across both contributions before
   risk veto.

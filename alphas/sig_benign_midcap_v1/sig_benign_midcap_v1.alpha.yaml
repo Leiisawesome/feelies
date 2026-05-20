@@ -14,8 +14,8 @@ description: |
 # ── Hypothesis (causal mechanism) ─────────────────────────
 hypothesis: |
   When informed trading pressure is present but transient-impact
-  conditions remain orderly (low spread z-score, replenishment not
-  one-sided toxic), persistent same-sign OFI and micro-price tilt
+  conditions remain orderly (low spread z-score, HMM normal-regime
+  posterior elevated), persistent same-sign OFI and micro-price tilt
   relative to mid reveal a Kyle-style information footprint on L1.
   VWAP/TWAP parent slicing is a common *execution modality* that
   produces such footprints; the tradeable claim is the footprint
@@ -132,7 +132,8 @@ trend_mechanism:
     - ofi_ewma
     - spread_z_30d
   failure_signature:
-    - "Persistent informed-flow signature on OFI disappears in normal regime"
+    - "spread_z_30d > 3.0"
+    - "P(vol_breakout) > 0.5"
 
 # ── Signal (Layer-2 evaluate) ─────────────────────────────
 signal: |

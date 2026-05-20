@@ -3,30 +3,23 @@
 > **Acceptance status.** Schema-level invariants enforced by this
 > document (`margin_ratio` floors, `trend_mechanism` G16 binding
 > rules, factor-exposure tolerances, `enforce_trend_mechanism`
-> strict-mode behaviour) are tracked in
-> [`docs/acceptance/v02_v03_matrix.md`](../docs/acceptance/v02_v03_matrix.md).
-> See `tests/acceptance/` for the asserting tests that close each
-> matrix row.
+> strict-mode behaviour) are asserted in `tests/acceptance/`.
 
 > **Workstream D.1 (schema 1.0 hard-removal).** `schema_version: "1.0"`
 > is no longer accepted by the loader; the only supported value is
-> `"1.1"`, and `schema_version:` is now mandatory.  See
-> [docs/migration/schema_1_0_to_1_1.md](../docs/migration/schema_1_0_to_1_1.md)
-> for the verbatim migration recipe.
+> `"1.1"`, and `schema_version:` is now mandatory.
 >
 > **Workstream D.2 (LEGACY_SIGNAL retirement).** `layer: LEGACY_SIGNAL`
 > is no longer accepted by the loader. The per-tick legacy execution
 > path was retired; alphas must declare `layer: SIGNAL`
 > (horizon-anchored, regime-gated, cost-aware) or `layer: PORTFOLIO`
-> (cross-sectional construction). The migration cookbook remains the
-> authoritative step-by-step source for promoting a legacy alpha to
-> the SIGNAL layer.
+> (cross-sectional construction).
 
 ## Top-Level Fields
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `schema_version` | string | **Yes** | Schema version.  Only `"1.1"` is accepted (workstream D.1).  Legacy `"1.0"` specs and missing-version specs are rejected outright with a pointer to the [migration cookbook](../docs/migration/schema_1_0_to_1_1.md). |
+| `schema_version` | string | **Yes** | Schema version.  Only `"1.1"` is accepted (workstream D.1).  Legacy `"1.0"` specs and missing-version specs are rejected outright. |
 | `alpha_id` | string | Yes | Unique identifier. Must match `^[a-z][a-z0-9_]*$`. |
 | `version` | string | Yes | Semver string (e.g. `"1.0.0"`). Must match `^\d+\.\d+\.\d+$`. |
 | `description` | string | Yes | Human-readable description of the alpha. |
@@ -513,8 +506,8 @@ The loader does **not** perform cross-field invariant checks (e.g.
 `small_min_pnl_compression_ratio < small_max_pnl_compression_ratio`)
 — those are deferred to the consumer (the F-2 validators).  The
 override surface is purely structural.  See
-[`docs/migration/schema_1_0_to_1_1.md`](../docs/migration/schema_1_0_to_1_1.md)
-§ "Per-alpha promotion overrides" for the operator cookbook and
+`alphas/SCHEMA.md` § "Per-alpha promotion overrides" for the operator
+cookbook and
 [`tests/alpha/test_loader_promotion_block.py`](../tests/alpha/test_loader_promotion_block.py)
 for the asserting tests.
 
@@ -540,7 +533,7 @@ without the lifecycle state name changing.
 - Schema 1.0 specs are rejected (Workstream D.1 hard-removal).
 - Schema-1.1 specs declaring `layer: LEGACY_SIGNAL` are rejected
   (Workstream D.2 retirement); the rejection error includes a
-  pointer to the migration cookbook.
+  pointer to the backward-compatibility notes above.
 - A schema-1.1 spec without `layer:` is rejected — there is no
   implicit upgrade path (§8.7).
 - A schema-1.1 spec **without** a `promotion:` block continues to
@@ -552,15 +545,13 @@ without the lifecycle state name changing.
 
 ### Migration
 
-The dedicated migration guide ships at
-[`docs/migration/schema_1_0_to_1_1.md`](../docs/migration/schema_1_0_to_1_1.md).
 After Workstream D.2 the only accepted layer values are `SIGNAL` and
 `PORTFOLIO`; the previously documented mechanical
 ``layer: LEGACY_SIGNAL`` upgrade is no longer accepted by the loader.
 Authors must promote per-tick alphas to the SIGNAL layer (declaring
 `horizon_seconds`, `depends_on_sensors`, `regime_gate`,
 `cost_arithmetic`, and a 3-arg `evaluate(snapshot, regime, params)`
-signal block) — the cookbook walks through this end-to-end.
+signal block).
 
 **Workstream-D notes —** the in-repo LEGACY parity test
 (`tests/determinism/test_legacy_alpha_parity.py`) and its anchoring
@@ -575,12 +566,10 @@ As of Phase 5 + Workstream D.2, the platform's externally facing
 documentation is synchronised with the three-layer architecture and
 the LEGACY_SIGNAL retirement is complete:
 
-- **Migration cookbook live** at
-  [`docs/migration/schema_1_0_to_1_1.md`](../docs/migration/schema_1_0_to_1_1.md)
-  — covers the schema 1.0 → 1.1 upgrade, the per-tick → SIGNAL
-  promotion path, the `regime_gate` DSL, the `cost_arithmetic` block,
-  authoring a PORTFOLIO alpha, hazard exits, and the v0.3
-  `trend_mechanism` opt-in cookbook.
+- **Migration complete** — covers the schema 1.0 → 1.1 upgrade, the
+  per-tick → SIGNAL promotion path, the `regime_gate` DSL, the
+  `cost_arithmetic` block, authoring a PORTFOLIO alpha, hazard exits,
+  and the v0.3 `trend_mechanism` opt-in.
 - **Layer-specific templates** ship under
   [`alphas/_template/`](_template/): `template_signal.alpha.yaml` and
   `template_portfolio.alpha.yaml`.  The original
@@ -596,4 +585,4 @@ the LEGACY_SIGNAL retirement is complete:
 - **`LEGACY_SIGNAL` is hard-rejected.** The loader's once-per-process
   sunset banner has been removed; any spec carrying
   `layer: LEGACY_SIGNAL` raises an `AlphaLoadError` at parse time
-  with a stable pointer to the migration cookbook.
+  with a stable pointer to the backward-compatibility notes in SCHEMA.md.

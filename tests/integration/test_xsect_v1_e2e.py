@@ -1,7 +1,7 @@
-"""Wiring e2e for pro_xsect_v1 driven by its actual feeder alphas.
+"""Wiring e2e for pro_burst_revert_v1 driven by its actual feeder alphas.
 
-Boots ``sig_kyle_drift_v1`` + ``sig_inventory_revert_v1`` (SIGNAL
-feeders) and ``pro_xsect_v1`` (PORTFOLIO) through ``build_platform``
+Boots ``sig_hawkes_burst_v1`` + ``sig_inventory_revert_v1`` (SIGNAL
+feeders) and ``pro_burst_revert_v1`` (PORTFOLIO) through ``build_platform``
 over a 360-second deterministic multi-symbol synthetic stream.
 
 What this test guarantees
@@ -24,7 +24,7 @@ Active-aggregator note
 
 ``HorizonAggregator`` runs in passive mode (empty ``values``) in
 v0.2.  The SIGNAL evaluate functions (which gate on
-``kyle_lambda_60s_percentile``, ``ofi_ewma``, etc.) therefore return
+``hawkes_intensity_percentile``, ``ofi_ewma``, etc.) therefore return
 ``None`` for every snapshot and the composition cycle fires with zero
 effective cross-sectional signals.  ``SizedPositionIntent`` events are
 still emitted but with empty ``target_positions`` (the degenerate
@@ -60,8 +60,8 @@ from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.monitoring.horizon_metrics import HorizonMetricsCollector
 from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
-from feelies.sensors.impl.kyle_lambda_60s import KyleLambda60sSensor
-from feelies.sensors.impl.micro_price import MicroPriceSensor
+from feelies.sensors.impl.hawkes_intensity import HawkesIntensitySensor
+from feelies.sensors.impl.trade_through_rate import TradeThroughRateSensor
 from feelies.sensors.impl.realized_vol_30s import RealizedVol30sSensor
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
 from feelies.sensors.impl.quote_hazard_rate import QuoteHazardRateSensor
@@ -83,22 +83,23 @@ pytestmark = pytest.mark.backtest_validation
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
-_KYLE_ALPHA = (
-    _REPO_ROOT / "alphas" / "sig_kyle_drift_v1"
-    / "sig_kyle_drift_v1.alpha.yaml"
+_HAWKES_ALPHA = (
+    _REPO_ROOT / "alphas" / "sig_hawkes_burst_v1"
+    / "sig_hawkes_burst_v1.alpha.yaml"
 )
 _INVENTORY_ALPHA = (
     _REPO_ROOT / "alphas" / "sig_inventory_revert_v1"
     / "sig_inventory_revert_v1.alpha.yaml"
 )
-_XSECT_ALPHA = (
-    _REPO_ROOT / "alphas" / "pro_xsect_v1"
-    / "pro_xsect_v1.alpha.yaml"
+_BURST_ALPHA = (
+    _REPO_ROOT / "alphas" / "pro_burst_revert_v1"
+    / "pro_burst_revert_v1.alpha.yaml"
 )
 _FACTOR_LOADINGS_DIR = FACTOR_LOADINGS_DIR
 _SECTOR_MAP_PATH = SECTOR_MAP_PATH
 
-# 10-symbol reference universe — must match alphas/pro_xsect_v1/universe.
+# 10-symbol reference universe — wider than pro_burst_revert_v1's declared
+# universe (AAPL, MSFT, NVDA); the PORTFOLIO alpha filters internally.
 _UNIVERSE: tuple[str, ...] = (
     "AAPL", "AMZN", "BAC", "CVX", "GOOG",
     "JPM", "META", "MSFT", "NVDA", "XOM",
@@ -116,13 +117,6 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
         sensor_version="1.1.0",
         cls=OFIEwmaSensor,
         params={"alpha": 0.1, "warm_after": 5},
-        subscribes_to=(NBBOQuote,),
-    ),
-    SensorSpec(
-        sensor_id="micro_price",
-        sensor_version="1.1.0",
-        cls=MicroPriceSensor,
-        params={},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
@@ -146,20 +140,27 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
         params={"min_samples": 5},
         subscribes_to=(NBBOQuote,),
     ),
-    # Trade-priced impact / NBBO mids — mirrors production ``subscribes_to``.
-    SensorSpec(
-        sensor_id="kyle_lambda_60s",
-        sensor_version="1.2.0",
-        cls=KyleLambda60sSensor,
-        params={"min_samples": 5},
-        subscribes_to=(NBBOQuote, Trade),
-    ),
     SensorSpec(
         sensor_id="realized_vol_30s",
         sensor_version="1.3.0",
         cls=RealizedVol30sSensor,
         params={"window_seconds": 30, "warm_after": 8},
         subscribes_to=(NBBOQuote,),
+    ),
+    # Trade-based sensors — hawkes_burst feeder.
+    SensorSpec(
+        sensor_id="hawkes_intensity",
+        sensor_version="1.2.0",
+        cls=HawkesIntensitySensor,
+        params={"warm_trades_per_side": 3},
+        subscribes_to=(Trade,),
+    ),
+    SensorSpec(
+        sensor_id="trade_through_rate",
+        sensor_version="1.1.0",
+        cls=TradeThroughRateSensor,
+        params={"min_trades": 5},
+        subscribes_to=(NBBOQuote, Trade),
     ),
 )
 
@@ -237,7 +238,7 @@ def _make_xsect_config() -> PlatformConfig:
     return PlatformConfig(
         symbols=frozenset(_UNIVERSE),
         mode=OperatingMode.BACKTEST,
-        alpha_specs=[_KYLE_ALPHA, _INVENTORY_ALPHA, _XSECT_ALPHA],
+        alpha_specs=[_HAWKES_ALPHA, _INVENTORY_ALPHA, _BURST_ALPHA],
         regime_engine="hmm_3state_fractional",
         sensor_specs=_SENSOR_SPECS,
         horizons_seconds=frozenset({30, 120, 300}),
@@ -298,16 +299,16 @@ def _hash_intents(intents: list[SizedPositionIntent]) -> str:
 def test_xsect_v1_e2e_all_three_alphas_register() -> None:
     """All three layers must register without error.
 
-    ``sig_kyle_drift_v1`` and ``sig_inventory_revert_v1`` as SIGNAL
-    feeders, ``pro_xsect_v1`` as the PORTFOLIO consumer.
+    ``sig_hawkes_burst_v1`` and ``sig_inventory_revert_v1`` as SIGNAL
+    feeders, ``pro_burst_revert_v1`` as the PORTFOLIO consumer.
     """
     orchestrator, _s, _i, _o = _build()
     registry = orchestrator._alpha_registry
     assert registry is not None
     ids = registry.alpha_ids()
-    assert "sig_kyle_drift_v1" in ids
+    assert "sig_hawkes_burst_v1" in ids
     assert "sig_inventory_revert_v1" in ids
-    assert "pro_xsect_v1" in ids
+    assert "pro_burst_revert_v1" in ids
 
 
 def test_xsect_v1_e2e_composition_layer_is_wired() -> None:
@@ -320,7 +321,6 @@ def test_xsect_v1_e2e_composition_layer_is_wired() -> None:
         orchestrator._composition_metrics_collector,
         HorizonMetricsCollector,
     )
-    # pro_xsect_v1 does not opt into hazard_exit → controller is None.
     assert orchestrator._hazard_exit_controller is None
 
 
@@ -346,7 +346,7 @@ def test_xsect_v1_e2e_composition_cycle_fires() -> None:
         "360-second stream does not reach a 300-second boundary."
     )
     strategy_ids = {it.strategy_id for it in intents}
-    assert "pro_xsect_v1" in strategy_ids
+    assert "pro_burst_revert_v1" in strategy_ids
 
 
 def test_xsect_v1_e2e_per_strategy_positions_independent() -> None:
@@ -355,13 +355,13 @@ def test_xsect_v1_e2e_per_strategy_positions_independent() -> None:
     sp = orchestrator._strategy_positions
     assert sp is not None
     for sym in _UNIVERSE:
-        kyle_pos = sp.get("sig_kyle_drift_v1", sym)
+        hawkes_pos = sp.get("sig_hawkes_burst_v1", sym)
         inv_pos = sp.get("sig_inventory_revert_v1", sym)
-        xsect_pos = sp.get("pro_xsect_v1", sym)
+        burst_pos = sp.get("pro_burst_revert_v1", sym)
         # Distinct objects — StrategyPositionStore keys by (alpha, sym).
-        assert kyle_pos is not inv_pos
-        assert kyle_pos is not xsect_pos
-        assert inv_pos is not xsect_pos
+        assert hawkes_pos is not inv_pos
+        assert hawkes_pos is not burst_pos
+        assert inv_pos is not burst_pos
 
 
 # ── Determinism (Inv-5) ─────────────────────────────────────────────────
@@ -384,6 +384,6 @@ def test_xsect_v1_e2e_intent_stream_is_deterministic() -> None:
         f"{len(intents_a)} vs {len(intents_b)}"
     )
     assert _hash_intents(intents_a) == _hash_intents(intents_b), (
-        "pro_xsect_v1 SizedPositionIntent hash drift across identical "
+        "pro_burst_revert_v1 SizedPositionIntent hash drift across identical "
         "replays (Inv-5 violation)"
     )

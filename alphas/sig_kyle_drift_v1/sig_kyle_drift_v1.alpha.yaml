@@ -6,7 +6,7 @@ version: "1.0.0"
 description: |
   Kyle-style informed-trader drift — five-minute horizon alpha
   that follows the residual mid-price drift attributable to
-  measured order-flow toxicity (Kyle's λ).  When λ̂ rises in
+  measured order-flow impact (Kyle's λ).  When λ̂ rises in
   conjunction with same-sign OFI, the price impact of subsequent
   child orders is structurally biased; the alpha captures the
   remaining 5-minute drift before the informational footprint

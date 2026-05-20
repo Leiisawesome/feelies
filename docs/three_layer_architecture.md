@@ -127,7 +127,7 @@ the signal-generation path**, not a rewrite.
 
 ### 1.5 What breaks
 
-Nothing, if done correctly. All existing alphas in `alphas/trade_cluster_drift/`
+Nothing, if done correctly. Existing LEGACY_SIGNAL alphas
 continue to work via a compatibility shim (§11). New alphas opt into the
 three-layer model via a `layer:` field in their YAML. The single-horizon
 path is preserved as `layer: LEGACY_SIGNAL` and emits a deprecation warning
@@ -554,14 +554,14 @@ match the engine's published `state_names` verbatim (`compression`,
 `normal`, `vol_breakout` for the built-in HMM per
 `services/regime_engine.py:HMM3StateFractional`).
 
-**Implementer note:** the canonical example in
-`.cursor/skills/microstructure-alpha/SKILL.md` uses the names `benign`,
-`stressed`, `toxic` (from Appendix B of the prompt). These are the
-*aspirational* taxonomy, not the *current* engine's published names.
-Phase 3 must either (a) align the example to the engine's actual names
-or (b) rename the HMM's published states to match the prompt. (b) is
-backward-compatible if performed with care; (a) is a one-line YAML
-edit. Defer the choice to Phase 3 review.
+**Implementer note (RESOLVED in Phase 3):** the engine's published state
+names are `normal`, `vol_breakout`, and `compression_clustering` (per
+`services/regime_engine.py:HMM3StateFractional`). Option (a) was
+taken: the reference SIGNAL alphas shipped in Phase 3 use these names
+directly in their `regime_gate` conditions (e.g. `P(normal) > 0.6`,
+`P(vol_breakout) > 0.5`). Skill examples that still reference
+`benign` / `stressed` / `toxic` are illustrative placeholders only;
+production YAML must use the engine's actual state names.
 
 ### 5.5 `Signal` (EXTEND existing)
 
@@ -635,7 +635,7 @@ class SizedPositionIntent:
     timestamp_ns: int
     correlation_id: CorrelationId
     sequence: int
-    strategy_id: str                   # e.g., 'pro_xsect_v1'
+    strategy_id: str                   # e.g., 'pro_burst_revert_v1'
     layer: Literal['PORTFOLIO']
     horizon_seconds: int
     target_positions: dict[Symbol, TargetPosition]
@@ -1096,7 +1096,12 @@ optimization). Additional parameters with only `default` (no `range`) are
 allowed and unlimited. This constrains the overfitting surface without
 preventing configuration.
 
-### 8.6 Migration of existing `alphas/trade_cluster_drift/`
+### 8.6 Migration of LEGACY_SIGNAL alphas
+
+No LEGACY_SIGNAL alphas exist in `alphas/` as of the current implementation—all
+shipped alphas are schema 1.1 with `trend_mechanism:` blocks. The migration
+path is preserved for any future operator-authored alphas starting from a
+LEGACY_SIGNAL baseline:
 
 Immediate: tag with `layer: LEGACY_SIGNAL` via a one-line PR, add
 deprecation comment. Continues to work.
@@ -1228,7 +1233,7 @@ change.
 **Test gates:**
 - Existing test suite passes unchanged.
 - Parity hash of `scripts/run_backtest.py` output unchanged for
-  `alphas/trade_cluster_drift/`.
+  `sig_benign_midcap_v1` (canonical reference alpha).
 - New event types round-trip through bus serialization.
 
 **Estimated duration:** 1 week.
@@ -1354,8 +1359,8 @@ This is enforced by:
   functions without changing their behavior.
 - Legacy alphas never see `HorizonFeatureSnapshot` or `HorizonTick` — they operate
   on raw quote/trade events as today.
-- Parity hash CI check runs on every PR in the `alphas/trade_cluster_drift/`
-  reference alpha. A failure blocks merge.
+- Parity hash CI check runs on every PR against the canonical reference
+  alpha (`sig_benign_midcap_v1`). A failure blocks merge.
 
 ### 11.2 Contract: no event on the bus is removed or changed
 
@@ -1526,8 +1531,8 @@ Level-1–Level-4 parity hash.
 
 ### 13.5 End-to-end tests
 
-- `test_legacy_alpha_parity_preserved`: the
-  `alphas/trade_cluster_drift/` alpha produces the exact same trade
+- `test_legacy_alpha_parity_preserved`: the canonical reference alpha
+  (`sig_benign_midcap_v1`) produces the exact same trade
   sequence post-refactor as pre-refactor. Level-1 parity hash check.
 - `test_v2_alpha_deterministic`: reference
   `alphas/sig_benign_midcap_v1/` alpha produces a deterministic trade
@@ -1850,7 +1855,8 @@ This spec is accepted when ALL of the following are true:
 ### 18.2 Implementation acceptance (after Phase 5)
 
 - [ ] All Phase 1–5 test gates pass.
-- [ ] Level-1 parity hash on `alphas/trade_cluster_drift/` is
+- [ ] Level-1 parity hash on the canonical reference alpha
+      (`sig_benign_midcap_v1`) is
       bit-identical pre-and-post-refactor.
 - [ ] Levels 2–4 parity hash CI checks green on reference v2 alpha.
 - [ ] Single-symbol throughput regression ≤ 10% vs pre-refactor baseline.
@@ -1999,8 +2005,8 @@ mechanisms across consumed signals).
 |---|---|---|---|---|
 | `KYLE_INFO` | Informed trader slicing order over time; price drifts as info incorporates (Kyle 1985) | 60 s – 30 min | `ofi_ewma`, `kyle_lambda_60s`, `micro_price`, **stable** `spread_z_30d` (≤ 1) | `P(normal) > 0.6` AND `spread_z_30d <= 1.0` |
 | `INVENTORY` | MM rebalances after one-sided burst (Ho-Stoll, Amihud-Mendelson) | 5 s – 60 s | `quote_replenish_asymmetry`, `spread_z_30d` (transient widening), `quote_hazard_rate` | `quote_replenish_asymmetry > p70` after volume burst |
-| `HAWKES_SELF_EXCITE` | Trades beget trades; self-exciting point process | 5 s – 60 s | **`hawkes_intensity`** (NEW), `trade_through_rate`, `ofi_ewma` | `hawkes_intensity_zscore > 2.0` AND `P(toxic) < 0.4` |
-| `LIQUIDITY_STRESS` | MMs withdraw under toxic flow; phase transition; drift and σ rise jointly | Regime-conditional; can collapse | `vpin_50bucket` (high), `realized_vol_30s` (rising), `spread_z_30d` (widening), `quote_hazard_rate` | `P(toxic) > 0.7` AND `vpin_50bucket > p90`. **Discouraged for entry**; primarily an exit/de-leverage signal. |
+| `HAWKES_SELF_EXCITE` | Trades beget trades; self-exciting point process | 5 s – 60 s | **`hawkes_intensity`** (NEW), `trade_through_rate`, `ofi_ewma` | `hawkes_intensity_zscore > 2.0` AND `P(vol_breakout) < 0.4` |
+| `LIQUIDITY_STRESS` | MMs withdraw under toxic flow; phase transition; drift and σ rise jointly | Regime-conditional; can collapse | `vpin_50bucket` (high), `realized_vol_30s` (rising), `spread_z_30d` (widening), `quote_hazard_rate` | `P(vol_breakout) > 0.7` AND `vpin_50bucket > p90`. **Discouraged for entry**; primarily an exit/de-leverage signal. |
 | `SCHEDULED_FLOW` | Index rebalance, ETF create/redeem, options delta hedging, settlement flows | Window-bounded | **`scheduled_flow_window`** (NEW), `ofi_ewma`, time-of-day conditioning | `scheduled_flow_window.active == True` AND `time_to_window_close > min_hold_seconds` |
 
 The taxonomy is closed (no `OTHER`). An alpha whose mechanism does not
@@ -2244,7 +2250,7 @@ trend_mechanism:
       expected_state: "value > p70"
   failure_signature:                   # mechanism-specific invalidators
     - "spread_z_30d > 2.5"             # MM defenses kicked in early
-    - "P(toxic) > 0.5"                 # regime crossed into stress
+    - "P(vol_breakout) > 0.5"          # regime crossed into stress
 ```
 
 #### 20.5.2 `trend_mechanism:` block (PORTFOLIO alphas)
@@ -2273,8 +2279,8 @@ hazard_exit:
   enabled: true                        # consume RegimeHazardSpike events
   hazard_score_threshold: 0.7          # exit when hazard_score >= threshold
   applies_to_regimes:                  # which regime transitions trigger exit
-    - "normal -> toxic"
-    - "compression -> vol_breakout"
+    - "normal -> vol_breakout"
+    - "compression_clustering -> vol_breakout"
   hard_exit_seconds: null              # null = derive from 2 × expected_half_life_seconds
 ```
 
@@ -2802,7 +2808,7 @@ tests/determinism/test_sensor_reading_replay.py   | CREATE  | +150
 src/feelies/signals/engine.py                     | EXTEND  | +200
 src/feelies/signals/regime_gate.py                | CREATE  | +250
 src/feelies/alpha/layer_validator.py              | EXTEND  | +150
-alphas/sig_benign_midcap_v1/*.yaml               | CREATE  | reference alpha
+alphas/sig_benign_midcap_v1/*.yaml               | EXISTS  | reference SIGNAL alpha (KYLE_INFO family)
 tests/signals/test_regime_gate_dsl.py             | CREATE  | +200
 tests/signals/test_signal_engine_v2.py            | CREATE  | +250
 tests/determinism/test_signal_replay.py           | CREATE  | +150
@@ -2822,7 +2828,8 @@ src/feelies/composition/turnover_optimizer.py     | CREATE  | +300
 src/feelies/portfolio/cross_sectional_tracker.py  | CREATE  | +150
 src/feelies/monitoring/horizon_metrics.py         | CREATE  | +200
 src/feelies/forensics/multi_horizon_attribution.py| CREATE  | +400
-alphas/pro_xsect_v1/*.yaml                       | CREATE  | reference alpha
+alphas/pro_burst_revert_v1/*.yaml                 | EXISTS  | reference PORTFOLIO alpha (HAWKES_SELF_EXCITE + INVENTORY)
+alphas/pro_kyle_benign_v1/*.yaml                  | EXISTS  | reference PORTFOLIO alpha (KYLE_INFO)
 pyproject.toml                                    | EXTEND  | +5 (cvxpy extra)
 tests/composition/test_*.py                       | CREATE  | +1000
 tests/determinism/test_xsect_context_replay.py    | CREATE  | +200
@@ -2876,10 +2883,10 @@ tests/determinism/test_v03_sensor_replay.py       | CREATE  | +150
 ```
 src/feelies/services/regime_engine.py             | EXTEND  | +150 (RegimeHazardDetector)
 src/feelies/alpha/layer_validator.py              | EXTEND  | +330 (Gate G16 — 9 binding rules; rule 7 = AST-based stress entry check)
-alphas/sig_hawkes_burst_v1/*.yaml                | CREATE  | reference HAWKES alpha
-alphas/sig_kyle_drift_v1/*.yaml                  | CREATE  | reference KYLE_INFO alpha
-alphas/sig_inventory_revert_v1/*.yaml            | CREATE  | reference INVENTORY alpha
-alphas/sig_moc_imbalance_v1/*.yaml               | CREATE  | reference SCHEDULED_FLOW alpha
+alphas/sig_hawkes_burst_v1/*.yaml                | EXISTS  | reference HAWKES_SELF_EXCITE alpha
+alphas/sig_kyle_drift_v1/*.yaml                  | EXISTS  | reference KYLE_INFO alpha
+alphas/sig_inventory_revert_v1/*.yaml            | EXISTS  | reference INVENTORY alpha
+alphas/sig_moc_imbalance_v1/*.yaml               | EXISTS  | reference SCHEDULED_FLOW alpha
 tests/alpha/test_gate_g16.py                      | CREATE  | +320 (all 9 rules + property test; rule 7 = AST-inspection cases)
 tests/services/test_regime_hazard_detector.py     | CREATE  | +180
 tests/determinism/test_regime_hazard_replay.py    | CREATE  | +120 (Level-5 parity hash)

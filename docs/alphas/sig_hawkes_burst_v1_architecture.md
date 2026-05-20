@@ -157,7 +157,7 @@ Emitted `Signal.consumed_features` lists **sensor ids** from YAML (`depends_on_s
 
 ### 3.2 Gate ON vs burst `evaluate()`
 
-Even when the gate is ON and warm checks pass, **`evaluate()`** returns **`None`** if intensity z is below floor, **TTR** is below floor, or **`ofi_ewma`** is too small for a meaningful direction (the code uses **`LONG if ofi > 0 else SHORT`**, so **`ofi == 0`** maps to **SHORT** — usually filtered earlier by floors or treated as noise in research).
+Even when the gate is ON and warm checks pass, **`evaluate()`** returns **`None`** if intensity z is below floor, **TTR** is below floor, or **`abs(ofi) < 1e-9`** (near-zero OFI is explicitly guarded before the direction assignment, returning `None` rather than defaulting to SHORT).
 
 ---
 

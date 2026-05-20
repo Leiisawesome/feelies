@@ -36,7 +36,7 @@ falsification_criteria:
     Out-of-sample DSR < 1.0 across any single calendar quarter
     after promotion to LIVE.
   - |
-    Toxicity probability P(toxic) exceeds 0.5 for >= 30 trading
+    Toxicity probability P(vol_breakout) exceeds 0.5 for >= 30 trading
     days; failure_signature triggers and hazard-exit unwinds the
     book.
 
@@ -119,7 +119,7 @@ trend_mechanism:
     - ofi_ewma
   failure_signature:
     - "spread_z_30d > 2.5"
-    - "P(toxic) > 0.5"
+    - "P(vol_breakout) > 0.5"
 
 # ── Hazard-rate exit (v0.3 §20.7) ─────────────────────────
 hazard_exit:

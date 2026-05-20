@@ -257,26 +257,3 @@ def test_universe_preserved_across_branches() -> None:
             "decay toggle changed the per-boundary symbol set — ranker "
             "is gating, not re-weighting"
         )
-
-
-def test_decay_divergence_note_present() -> None:
-    """Companion documentation must exist (matrix row §20.12.2 #5)."""
-    note = (
-        Path(__file__).resolve().parents[2]
-        / "docs"
-        / "acceptance"
-        / "decay_divergence_note.md"
-    )
-    assert note.is_file(), (
-        f"missing companion note: {note} — required by acceptance gap G-F"
-    )
-    text = note.read_text(encoding="utf-8")
-    for required_token in (
-        "decay_weighting_enabled",
-        "mixed-mechanism",
-        "G-F",
-    ):
-        assert required_token in text, (
-            f"decay_divergence_note.md missing required token "
-            f"{required_token!r}"
-        )

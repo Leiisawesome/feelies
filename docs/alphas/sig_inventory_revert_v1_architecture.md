@@ -162,8 +162,8 @@ The loader sets `consumed_features` on the registered module to the **sensor id 
 - **`on_condition`:** `abs(quote_replenish_asymmetry_zscore) > 2.0 and P(normal) > 0.5`  
   Arms only when the inventory signature is already extreme **and** the HMM thinks the session is plausibly “normal.”
 
-- **`off_condition`:** `P(normal) < 0.3 or spread_z_30d > 2.0 or realized_vol_30s_zscore > 3.5`  
-  Disarms on **regime deterioration**, **wide spread vs history**, or **vol spike**.
+- **`off_condition`:** `P(normal) < 0.5 - posterior_margin or abs(quote_replenish_asymmetry_zscore) < 2.0 - percentile_margin or spread_z_30d > 2.0 or realized_vol_30s_zscore > 3.5 or quote_hazard_rate < 4.0`
+  Disarms on **regime deterioration** (P(normal) < 0.30 with defaults), **asymmetry loss** (signature falls below hysteresis band), **wide spread vs history**, **vol spike**, or **ladder thinning** (`quote_hazard_rate` drops back below the hazard floor).
 
 - **Hysteresis:** `posterior_margin` and `percentile_margin` are loaded and injected into the gate binding map so expressions *may* reference them (e.g. `P(normal) > 0.5 + posterior_margin`). **This spec’s conditions use numeric literals**, so those margins are **available but unused** until you rewrite thresholds to use them. Regardless, the gate is a **proper latch**: when ON, only `off_condition` is tested; when OFF, only `on_condition`; if neither fires, the prior state holds (deadband between on and off).
 
@@ -192,9 +192,12 @@ These are **merged at load** with optional **`platform.yaml` → `parameter_over
 | Parameter | Effect |
 |-----------|--------|
 | `asymmetry_z_threshold` | Minimum `abs(quote_replenish_asymmetry_zscore)` before a directional signal is considered. Higher ⇒ fewer, “cleaner” fades. |
-| `hazard_floor` | Minimum `quote_hazard_rate` from the snapshot; below ⇒ no signal (stale ladder guard). |
+| `hazard_floor` | Minimum `quote_hazard_rate` from the snapshot; below ⇒ no signal (stale ladder guard). Must stay in sync with the gate's `quote_hazard_rate < 4.0` literal. |
+| `hazard_band` | Width of the soft ramp above `hazard_floor` (events/s). Edge is scaled by `clip((hazard - hazard_floor) / hazard_band, 0, 1)` so marginally-active ladders contribute proportionally rather than clipping at the floor. |
 | `edge_per_z_bps` | Linear scaling of `edge_estimate_bps` in excess of the z-threshold. |
-| `edge_cap_bps` | Hard cap on reported edge (feeds strength of conviction metadata and downstream expectations; paired with risk / promotion semantics). |
+| `edge_cap_bps` | Hard cap on *theoretical peak* edge; runtime capturable edge is further reduced by `realized_capture_ratio`, `hazard_weight`, and `vol_weight`. |
+| `realized_capture_ratio` | Fraction of theoretical peak edge capturable over `horizon_seconds` given `expected_half_life_seconds`. Derived as `1 - 0.5^(horizon/half_life)` = **0.646** with defaults (30 s / 20 s). Must be recomputed if `trend_mechanism` fields change. |
+| `vol_taper_z_scale` | Linear taper scale on `realized_vol_30s_zscore`; edge decays smoothly to zero as vol z approaches the gate's hard disarm threshold. |
 | `cost_floor_bps` | Minimum modeled edge before emitting a signal; works with the alpha’s own `cost_arithmetic` disclosure narrative (see YAML comment on one-way vs round-trip). |
 
 **`cost_arithmetic` vs `cost_floor_bps`:** **G12** validates the **`cost_arithmetic:`** block at **load time** (margin ratio, component reconciliation). **`cost_floor_bps`** is a **runtime** threshold inside `evaluate()` only — it does **not** re-validate G12 and can be set independently (authors should keep the economics story coherent).

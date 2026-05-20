@@ -173,7 +173,7 @@ class MassiveNormalizer:
         enable_rest_sequence_gap_detection: bool = False,
     ) -> None:
         self._clock = clock
-        self._seq = SequenceGenerator()
+        self._seq = SequenceGenerator(start=1)
         self._health_machines: dict[
             tuple[str, str], StateMachine[DataHealth]
         ] = {}

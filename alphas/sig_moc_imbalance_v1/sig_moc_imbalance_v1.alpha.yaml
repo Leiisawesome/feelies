@@ -18,7 +18,7 @@ hypothesis: |
   flow-direction prior derived from exchange imbalance feeds.
   Within the active window — and while the realised OFI agrees
   in sign — child-order participation generates a predictable
-  micro-price drift that mean-reverts over the half-life of the
+  micro-price drift that decays over the half-life of the
   imbalance signature (~240 s).  We harvest the drift only when
   more than 60 seconds remain in the window so the alpha never
   trades into the closing seconds where slippage spikes.
