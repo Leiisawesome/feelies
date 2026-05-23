@@ -105,6 +105,7 @@ from feelies.execution.intent import (
 )
 from feelies.execution.order_state import OrderState, create_order_state_machine
 from feelies.ingestion.data_integrity import DataHealth
+from feelies.ingestion.idle_tick import IdleTick
 from feelies.ingestion.normalizer import MarketDataNormalizer
 from feelies.kernel.macro import (
     TRADING_MODES,
@@ -1045,6 +1046,14 @@ class Orchestrator:
         Allowed from **RISK_LOCKDOWN** via ``CMD_SHUTDOWN`` so operators
         can tear down the process without a prior unlock when needed.
         """
+        # Final fill drain (Inv-9 paper/live) — picks up any broker
+        # ack that landed between the last quote and the operator's
+        # halt() so the CANCEL_REQUESTED resolution + pending-orders
+        # scan below act on the freshest order state.  Defensive
+        # ``_backend is not None`` for partially-constructed test
+        # orchestrators; production paths always have a backend.
+        if self._backend is not None:
+            self._drain_async_fills(correlation_id="shutdown")
         self._checkpoint_feature_snapshots()
         # Resolve operator cancel intent when no broker ack will arrive
         # (e.g. mid backtest router has no cancel_order API).
@@ -1095,7 +1104,12 @@ class Orchestrator:
 
         Dispatches by event type: NBBOQuote drives the full signal
         pipeline; Trade events are logged and published for
-        observability but do not trigger signal evaluation.
+        observability but do not trigger signal evaluation;
+        :class:`IdleTick` triggers the async fill drain only (no
+        micro-SM transition, no bus publish, no EventLog append) so
+        broker-pushed fills from :class:`IBOrderRouter` are reconciled
+        when the live feed is between frames (Inv-9 paper/live;
+        BACKTEST feeds never emit ``IdleTick`` — Inv-A preserved).
         """
         for event in self._backend.market_data.events():
             if self._pipeline_abort_requested:
@@ -1106,6 +1120,10 @@ class Orchestrator:
                 self._process_tick(event)
             elif isinstance(event, Trade):
                 self._process_trade(event)
+            elif isinstance(event, IdleTick):
+                self._drain_async_fills(
+                    correlation_id=f"idle:{event.timestamp_ns}",
+                )
 
         if self._pipeline_abort_requested:
             raise OrchestratorPipelineAbortError(
@@ -1317,11 +1335,24 @@ class Orchestrator:
                     correlation_id=correlation_id,
                 )
                 continue
-            orders = sized.orders
+            orders: list[OrderRequest] = list(sized.orders)
             if not orders:
                 self._micro.transition(
                     MicroState.LOG_AND_METRICS,
                     trigger="portfolio_intent_no_orders",
+                    correlation_id=correlation_id,
+                )
+                continue
+
+            orders = self._filter_portfolio_orders_for_pending_conflicts(
+                orders,
+                intent=intent,
+                correlation_id=correlation_id,
+            )
+            if not orders:
+                self._micro.transition(
+                    MicroState.LOG_AND_METRICS,
+                    trigger="portfolio_intent_all_legs_skipped_pending",
                     correlation_id=correlation_id,
                 )
                 continue
@@ -1378,7 +1409,14 @@ class Orchestrator:
         if sized.requires_global_risk_escalation:
             self._escalate_risk(correlation_id)
             return
-        orders = sized.orders
+        orders: list[OrderRequest] = list(sized.orders)
+        if not orders:
+            return
+        orders = self._filter_portfolio_orders_for_pending_conflicts(
+            orders,
+            intent=intent,
+            correlation_id=correlation_id,
+        )
         if not orders:
             return
         for order in orders:
@@ -1937,9 +1975,15 @@ class Orchestrator:
         #    (prevents the duplicate-exit pile-up bug).  Stop-loss
         #    always passes.  REVERSE intents handled by
         #    _execute_reverse() and never reach this guard.
+        #
+        # The ``_use_passive_entries`` clause was removed because
+        # broker fills in PAPER / LIVE mode arrive asynchronously
+        # regardless of execution_mode.  A pending IB ack on the
+        # same symbol must block a duplicate SIGNAL submit; the
+        # ``__stop_exit__`` / ``TradingIntent.EXIT`` carve-out
+        # preserves Inv-11 (exits always race in).
         if (
-            self._use_passive_entries
-            and intent.signal.strategy_id != "__stop_exit__"
+            intent.signal.strategy_id != "__stop_exit__"
             and self._has_pending_order_for_symbol(order.symbol)
         ):
             if intent.intent != TradingIntent.EXIT or self._has_pending_exit_for_symbol(order.symbol):
@@ -3204,6 +3248,46 @@ class Orchestrator:
             for sm, _, order in self._active_orders.values()
         )
 
+    def _filter_portfolio_orders_for_pending_conflicts(
+        self,
+        orders: list[OrderRequest],
+        *,
+        intent: SizedPositionIntent,
+        correlation_id: str,
+    ) -> list[OrderRequest]:
+        """Drop PORTFOLIO legs that would duplicate an in-flight order.
+
+        Paper/live IB acks land asynchronously; backtest fills are
+        synchronous so this filter is usually a no-op there.  PORTFOLIO
+        has no native supersede-pending semantics — a later boundary's
+        leg is dropped rather than cancel-replaced.  Hazard-exit orders
+        bypass this path via :meth:`_on_bus_hazard_order` (Inv-11).
+        """
+        filtered: list[OrderRequest] = []
+        for order in orders:
+            if self._has_pending_order_for_symbol(order.symbol):
+                self._bus.publish(Alert(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=correlation_id,
+                    sequence=self._seq.next(),
+                    severity=AlertSeverity.WARNING,
+                    layer="kernel",
+                    alert_name="portfolio_leg_skipped_pending_order",
+                    message=(
+                        f"PORTFOLIO leg skipped: pending order on "
+                        f"{order.symbol!r} (order_id={order.order_id!r}, "
+                        f"strategy={intent.strategy_id!r})"
+                    ),
+                    context={
+                        "order_id": order.order_id,
+                        "symbol": order.symbol,
+                        "strategy_id": intent.strategy_id,
+                    },
+                ))
+                continue
+            filtered.append(order)
+        return filtered
+
     def _has_pending_exit_for_symbol(self, symbol: str) -> bool:
         """True if a non-terminal order would close the current position.
 
@@ -3373,14 +3457,25 @@ class Orchestrator:
             context,
         )
 
-    def _reconcile_resting_fills(self, cid: str) -> None:
-        """Poll and reconcile quote-driven router acknowledgements.
+    def _drain_async_fills(self, correlation_id: str) -> None:
+        """Drain pending router acks and reconcile fills.
 
-        Called at tick start (after the quote triggers ``on_quote`` on the
-        router) to process pending acks queued by the router — resting
-        passive fills/cancels and deferred aggressive fills when execution
-        latency is modeled.  Uses the same reconciliation path as submit-
-        time polls.
+        The single source of truth for async fill processing. Called from
+        three triggers:
+
+        * Tick start (via :meth:`_reconcile_resting_fills`) — quote-driven
+          fills from :class:`BacktestOrderRouter` /
+          :class:`PassiveLimitOrderRouter` / :class:`IBOrderRouter` (the
+          latter pushes asynchronously, so this is the dominant path for
+          paper trading).
+        * :class:`IdleTick` — live WS feed idle; no signal pipeline runs
+          (paper/live trading only).
+        * Shutdown — final drain so a fill between the last quote and the
+          operator's halt is not dropped.
+
+        Does NOT transition the micro SM and does NOT touch the macro SM.
+        Routes through :meth:`_poll_order_router_acks` so the deferred-ack
+        buffer (``_deferred_router_acks``) is honoured.
         """
         acks = self._poll_order_router_acks()
         if not acks:
@@ -3388,7 +3483,17 @@ class Orchestrator:
         for ack in acks:
             self._bus.publish(ack)
             self._apply_ack_to_order(ack)
-        self._reconcile_fills(acks, cid)
+        self._reconcile_fills(acks, correlation_id)
+
+    def _reconcile_resting_fills(self, cid: str) -> None:
+        """Poll and reconcile quote-driven router acknowledgements.
+
+        Tick-start trigger; delegates to :meth:`_drain_async_fills` so the
+        body is shared with the idle-tick and shutdown drain paths.  The
+        trigger name is kept distinct from ``_drain_async_fills`` so
+        metric / log attribution stays greppable.
+        """
+        self._drain_async_fills(cid)
 
     def _track_order(self, order_id: str, side: Side, order: OrderRequest) -> None:
         """Create an OrderState SM for a new order."""

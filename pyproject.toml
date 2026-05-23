@@ -51,6 +51,17 @@ portfolio = [
     "ecos>=2.0",
     "pyarrow>=15.0",
 ]
+ib = [
+    # OperatingMode.PAPER + LIVE: Interactive Brokers Gateway adapter.
+    # ``ibapi`` is not published on PyPI in the form we need; the
+    # community-maintained ``nautilus-ibapi`` mirror provides the same
+    # ``ibapi.*`` module tree.  ``protobuf`` is a transitive runtime
+    # dep of recent ``ibapi`` releases.  Install with
+    # ``pip install feelies[ib,massive]`` to get the full PAPER-mode
+    # tool-chain (the WS feed lives under ``massive``).
+    "nautilus-ibapi>=10.19",
+    "protobuf>=4.25",
+]
 
 [build-system]
 requires = ["hatchling"]

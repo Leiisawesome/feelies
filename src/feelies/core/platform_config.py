@@ -339,6 +339,20 @@ class PlatformConfig:
     # :mod:`feelies.alpha.promotion_ledger` for the consumer contract.
     promotion_ledger_path: Path | None = None
 
+    # ── PAPER mode connection settings (IB Gateway + Massive WS) ─────
+    #
+    # Consumed by ``bootstrap._create_backend`` when
+    # ``mode == OperatingMode.PAPER`` (or LIVE).  Default values
+    # target an IB Gateway paper account on the local machine; live
+    # deployments must override ``ib_port`` to 4001 explicitly.
+    # ``massive_ws_url`` is also the implicit default for
+    # :class:`MassiveLiveFeed` (kept in sync via the ``from_yaml``
+    # loader).  These fields are inert for BACKTEST mode.
+    ib_host: str = "127.0.0.1"
+    ib_port: int = 4002              # 4002 = paper, 4001 = live
+    ib_client_id: int = 1
+    massive_ws_url: str = "wss://socket.massive.com/stocks"
+
     # ── Workstream F-5 (per-platform gate-threshold overrides) ─────
     #
     # Optional flat-key mapping of
@@ -738,6 +752,13 @@ class PlatformConfig:
             "gate_thresholds_overrides": dict(
                 sorted(self.gate_thresholds_overrides.items())
             ),
+            # PAPER / LIVE connection settings — folded so config
+            # checksums change when an operator points the same
+            # platform at a different broker host or WS endpoint.
+            "ib_host": self.ib_host,
+            "ib_port": self.ib_port,
+            "ib_client_id": self.ib_client_id,
+            "massive_ws_url": self.massive_ws_url,
         }
 
     @classmethod
@@ -850,6 +871,32 @@ class PlatformConfig:
                     f"{path}: regime_engine_options must be a YAML mapping"
                 )
             regime_engine_options = {str(k): v for k, v in raw_regime_opts.items()}
+
+        # PAPER mode connection settings: accept either flat top-level
+        # keys (``ib_host: 127.0.0.1``) or a nested ``paper:`` block
+        # (``paper: {ib_host: 127.0.0.1, ...}``).  Top-level keys win
+        # when both are present.
+        paper_block = data.get("paper") or {}
+        if not isinstance(paper_block, dict):
+            raise ConfigurationError(
+                f"{path}: 'paper' must be a mapping, got "
+                f"{type(paper_block).__name__}"
+            )
+        ib_host = str(data.get(
+            "ib_host", paper_block.get("ib_host", "127.0.0.1"),
+        ))
+        ib_port = int(data.get(  # type: ignore[arg-type]
+            "ib_port", paper_block.get("ib_port", 4002),
+        ))
+        ib_client_id = int(data.get(  # type: ignore[arg-type]
+            "ib_client_id", paper_block.get("ib_client_id", 1),
+        ))
+        massive_ws_url = str(data.get(
+            "massive_ws_url",
+            paper_block.get(
+                "massive_ws_url", "wss://socket.massive.com/stocks",
+            ),
+        ))
 
         return cls(
             version=str(data.get("version", "0.1.0")),
@@ -1047,6 +1094,10 @@ class PlatformConfig:
             gate_thresholds_overrides=cls._parse_gate_thresholds_block(
                 data.get("gate_thresholds"), source=path
             ),
+            ib_host=ib_host,
+            ib_port=ib_port,
+            ib_client_id=ib_client_id,
+            massive_ws_url=massive_ws_url,
         )
 
     @staticmethod

@@ -430,8 +430,7 @@ live:
   verified by the cross-check in
   `tests/determinism/test_sized_intent_with_decay_replay.py`. The
   performance budget is **≤5% wall-clock end-to-end regression**
-  vs the same alpha with decay OFF
-  (`tests/perf/test_phase4_1_no_regression.py`).
+  vs the same alpha with decay OFF.
 - **Hazard exit (`HazardExitController`).** A PORTFOLIO alpha
   with `hazard_exit.enabled: true` participates in two exit paths:
   - On `RegimeHazardSpike`: if the spike's hazard score exceeds

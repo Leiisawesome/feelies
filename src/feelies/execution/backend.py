@@ -18,6 +18,7 @@ from enum import StrEnum
 from typing import Iterator, Protocol
 
 from feelies.core.events import NBBOQuote, OrderAck, OrderRequest, Trade
+from feelies.ingestion.idle_tick import IdleTick
 
 
 class ExecutionMode(StrEnum):
@@ -33,14 +34,21 @@ class ExecutionMode(StrEnum):
 class MarketDataSource(Protocol):
     """Provides market events — historical replay or live feed.
 
-    Yields both NBBO quotes and trade prints in timestamp order.
+    Yields NBBO quotes and trade prints in timestamp order.  Live
+    feeds may also yield :class:`IdleTick` sentinels when no market
+    event has arrived within the feed's internal poll timeout —
+    backtest feeds (:class:`ReplayFeed`) never yield ``IdleTick`` and
+    return a narrower ``Iterator[NBBOQuote | Trade]`` (a strict
+    subtype of the union below, LSP-safe).
+
     The orchestrator dispatches by type: quotes drive the full
-    signal pipeline; trades are logged and published for
-    observability and feature computation.
+    signal pipeline, trades are logged and published for
+    observability and feature computation, ``IdleTick`` triggers the
+    async fill drain only (no micro-SM transition).
     """
 
-    def events(self) -> Iterator[NBBOQuote | Trade]:
-        """Yield market events in timestamp order."""
+    def events(self) -> Iterator[NBBOQuote | Trade | IdleTick]:
+        """Yield market events (and idle sentinels) in timestamp order."""
         ...
 
 
@@ -48,8 +56,18 @@ class OrderRouter(Protocol):
     """Routes orders and returns acknowledgements.
 
     Backtest: simulated fill model.
-    Paper: broker sandbox.
+    Paper: broker sandbox (IB Gateway 4002).
     Live: real broker API.
+
+    Optional, duck-typed method::
+
+        def cancel_order(self, order_id: str) -> bool: ...
+
+    Implementations that support broker-initiated cancel define
+    ``cancel_order``.  Absence is explicit (no ``NotImplementedError``);
+    the orchestrator resolves cancels locally, emits a
+    ``cancel_order_router_unsupported`` WARNING alert, and transitions
+    the order SM through ``CANCEL_REQUESTED → CANCELLED`` immediately.
     """
 
     def submit(self, request: OrderRequest) -> None:

@@ -48,9 +48,12 @@ legacy execution path bit-for-bit (Inv-A).
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from feelies.alpha.discovery import load_and_register
 from feelies.alpha.fill_attribution import FillAttributionLedger
@@ -100,6 +103,7 @@ from feelies.execution.min_cost_policy import (
     MinimumCostExecutionPolicy,
 )
 from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
+from feelies.execution.paper_backend import build_paper_backend
 from feelies.features.aggregator import HorizonAggregator
 from feelies.features.impl.rolling_stats import (
     RollingPercentileFeature,
@@ -110,6 +114,7 @@ from feelies.features.impl.sensor_passthrough import (
     TupleComponentFeature,
 )
 from feelies.features.protocol import HorizonFeature
+from feelies.ingestion.massive_normalizer import MassiveNormalizer
 from feelies.ingestion.normalizer import MarketDataNormalizer
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.kernel.signal_order_trace import SignalOrderTraceRow
@@ -134,7 +139,29 @@ from feelies.storage.memory_event_log import InMemoryEventLog
 from feelies.storage.memory_feature_snapshot import InMemoryFeatureSnapshotStore
 from feelies.storage.memory_trade_journal import InMemoryTradeJournal
 
+if TYPE_CHECKING:
+    from feelies.broker.ib import IBGatewayConnection
+    from feelies.ingestion.massive_ws import MassiveLiveFeed
+
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _BackendBundle:
+    """Per-mode backend composition + auxiliary handles for the entry script.
+
+    ``backend`` is the orchestrator-facing facade.  ``backtest_router``
+    is returned for BACKTEST so the bootstrap can subscribe its
+    ``on_quote`` to the bus (Inv-D ordering).  ``live_feed`` and
+    ``ib_connection`` are returned for PAPER / LIVE so
+    ``scripts/run_paper.py`` can drive their lifecycles.  Unused
+    handles are ``None`` per mode.
+    """
+
+    backend: ExecutionBackend
+    backtest_router: BacktestOrderRouter | PassiveLimitOrderRouter | None
+    live_feed: "MassiveLiveFeed | None" = None
+    ib_connection: "IBGatewayConnection | None" = None
 
 
 class StaleFactorLoadingsError(RuntimeError):
@@ -195,6 +222,7 @@ def build_platform(
         )
 
     clock = _select_clock(config.mode)
+    config = _ensure_session_open_ns_for_live_modes(config, clock)
     bus = EventBus()
 
     regime_engine = _create_regime_engine(
@@ -307,7 +335,18 @@ def build_platform(
         max_commission_pct=_decimal(config.cost_max_commission_pct),
         htb_borrow_annual_bps=_decimal(config.cost_htb_borrow_annual_bps),
     ))
-    backend, backtest_router = _create_backend(
+
+    # PAPER / LIVE always need a normalizer (for DataHealth gating +
+    # WS frame decoding).  When the caller supplies one (tests,
+    # custom ingestors) we use it; otherwise we build the canonical
+    # one and thread the same instance into the live feed AND the
+    # orchestrator below (Inv-13 — single provenance source).
+    if normalizer is None and config.mode in (
+        OperatingMode.PAPER, OperatingMode.LIVE,
+    ):
+        normalizer = MassiveNormalizer(clock=clock)
+
+    bundle = _create_backend(
         config.mode, event_log, clock,
         fill_latency_ns=config.backtest_fill_latency_ns,
         cost_model=cost_model,
@@ -317,7 +356,11 @@ def build_platform(
         passive_queue_position_shares=config.passive_queue_position_shares,
         passive_cancel_fee_per_share=config.passive_cancel_fee_per_share,
         market_impact_factor=config.cost_market_impact_factor,
+        normalizer=normalizer,
+        config=config,
     )
+    backend = bundle.backend
+    backtest_router = bundle.backtest_router
 
     if backtest_router is not None:
         bus.subscribe(NBBOQuote, lambda e: backtest_router.on_quote(e))  # type: ignore[arg-type]
@@ -474,6 +517,14 @@ def build_platform(
     config_snapshot = config.snapshot()
     orchestrator.config_snapshot = config_snapshot  # type: ignore[attr-defined]
 
+    # Attach the PAPER/LIVE live-feed + IB connection handles to the
+    # orchestrator so the entry script (``scripts/run_paper.py``) can
+    # drive their lifecycles without re-resolving the bundle.  These
+    # are NEVER used by the orchestrator itself — pure operator
+    # plumbing.  For BACKTEST mode both attributes are ``None``.
+    orchestrator.live_feed = bundle.live_feed  # type: ignore[attr-defined]
+    orchestrator.ib_connection = bundle.ib_connection  # type: ignore[attr-defined]
+
     logger.info(
         "Platform composed: mode=%s, symbols=%s, alphas=%d, regime=%s, "
         "config_checksum=%s",
@@ -491,6 +542,35 @@ def _select_clock(mode: OperatingMode) -> Clock:
     if mode == OperatingMode.BACKTEST:
         return SimulatedClock()
     return WallClock()
+
+
+def _ensure_session_open_ns_for_live_modes(
+    config: PlatformConfig,
+    clock: Clock,
+) -> PlatformConfig:
+    """Anchor horizon boundaries for PAPER/LIVE when YAML omits ``session_open_ns``.
+
+    H10 forbids lazy-binding from the first market event in non-backtest
+    modes because arrival ordering would make boundary indices
+    non-deterministic.  When the operator omits ``session_open_ns`` we
+    pin the anchor to composition-time wall clock so ``run_paper.py`` (and
+    future live entry scripts) boot successfully without requiring a
+    hand-authored epoch in ``platform.yaml``.
+    """
+    if config.mode == OperatingMode.BACKTEST:
+        return config
+    if config.session_open_ns is not None:
+        return config
+    if not config.horizons_seconds or not config.sensor_specs:
+        return config
+    anchored_ns = clock.now_ns()
+    logger.info(
+        "H10: auto-anchoring session_open_ns=%d for mode=%s "
+        "(set platform.yaml: session_open_ns explicitly to override)",
+        anchored_ns,
+        config.mode.name,
+    )
+    return replace(config, session_open_ns=anchored_ns)
 
 
 def _build_platform_gate_thresholds(
@@ -592,7 +672,10 @@ def _create_backend(
     passive_queue_position_shares: int = 0,
     passive_cancel_fee_per_share: float = 0.0,
     market_impact_factor: float = 0.5,
-) -> tuple[ExecutionBackend, BacktestOrderRouter | PassiveLimitOrderRouter | None]:
+    normalizer: MarketDataNormalizer | None = None,
+    config: PlatformConfig | None = None,
+) -> _BackendBundle:
+    """Compose the per-mode :class:`ExecutionBackend` + auxiliary handles."""
     backend: ExecutionBackend
     router: BacktestOrderRouter | PassiveLimitOrderRouter | None
     if mode == OperatingMode.BACKTEST:
@@ -613,7 +696,7 @@ def _create_backend(
                 queue_position_shares=passive_queue_position_shares,
                 cancel_fee_per_share=_decimal(passive_cancel_fee_per_share),
             )
-            return backend, router
+            return _BackendBundle(backend=backend, backtest_router=router)
 
         backend, router = build_backtest_backend(
             event_log, clock,
@@ -622,11 +705,50 @@ def _create_backend(
             market_impact_factor=market_impact_factor,
             max_resting_ticks=passive_max_resting_ticks,
         )
-        return backend, router
+        return _BackendBundle(backend=backend, backtest_router=router)
+
+    if mode == OperatingMode.PAPER:
+        if config is None:
+            raise ConfigurationError(
+                "PAPER mode requires a PlatformConfig argument to "
+                "_create_backend (bug in bootstrap composition)"
+            )
+        api_key = (os.environ.get("MASSIVE_API_KEY") or "").strip()
+        if not api_key:
+            raise ConfigurationError(
+                "MASSIVE_API_KEY env var is required for "
+                "OperatingMode.PAPER"
+            )
+        if normalizer is None:
+            raise ConfigurationError(
+                "PAPER mode requires a MassiveNormalizer instance "
+                "(bootstrap auto-constructs one — this is a bug)"
+            )
+        if not isinstance(normalizer, MassiveNormalizer):
+            raise ConfigurationError(
+                "PAPER mode requires a MassiveNormalizer instance, got "
+                f"{type(normalizer).__name__}"
+            )
+        backend, live_feed, ib_conn = build_paper_backend(
+            massive_api_key=api_key,
+            symbols=sorted(config.symbols),
+            clock=clock,
+            normalizer=normalizer,
+            ib_host=config.ib_host,
+            ib_port=config.ib_port,
+            ib_client_id=config.ib_client_id,
+            massive_ws_url=config.massive_ws_url,
+        )
+        return _BackendBundle(
+            backend=backend,
+            backtest_router=None,
+            live_feed=live_feed,
+            ib_connection=ib_conn,
+        )
 
     raise NotImplementedError(
         f"ExecutionBackend for mode {mode.name} is not yet implemented. "
-        f"Paper and live routers are future work."
+        f"Live router is future work."
     )
 
 

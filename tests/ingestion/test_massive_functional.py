@@ -128,11 +128,14 @@ class _LimitedRESTClient:
 
 
 def _next_live_event(feed: MassiveLiveFeed, timeout_s: int) -> NBBOQuote | Trade:
-    def _read_one() -> NBBOQuote | Trade:
-        return next(feed.events())
+    def _read_until_market_event() -> NBBOQuote | Trade:
+        for event in feed.events():
+            if isinstance(event, (NBBOQuote, Trade)):
+                return event
+        raise RuntimeError("feed stopped before a market event arrived")
 
     with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_read_one)
+        future = executor.submit(_read_until_market_event)
         try:
             return future.result(timeout=timeout_s)
         except TimeoutError:
@@ -141,6 +144,9 @@ def _next_live_event(feed: MassiveLiveFeed, timeout_s: int) -> NBBOQuote | Trade
                 f"No live Massive stock quote/trade arrived for {_symbol()} within "
                 f"{timeout_s}s. The market may be closed or inactive."
             )
+        except RuntimeError as exc:
+            feed.stop()
+            pytest.skip(str(exc))
 
 
 def test_rest_ingest_uses_live_massive_data() -> None:

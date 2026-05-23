@@ -26,6 +26,7 @@ from typing import Any
 
 from feelies.core.clock import Clock
 from feelies.core.events import NBBOQuote, Trade
+from feelies.ingestion.idle_tick import IdleTick
 from feelies.ingestion.massive_normalizer import MassiveNormalizer
 
 logger = logging.getLogger(__name__)
@@ -82,11 +83,17 @@ class MassiveLiveFeed:
 
     # ── MarketDataSource protocol ────────────────────────────────────
 
-    def events(self) -> Iterator[NBBOQuote | Trade]:
-        """Yield market events as they arrive from the WebSocket.
+    def events(self) -> Iterator[NBBOQuote | Trade | IdleTick]:
+        """Yield market events (and idle sentinels) as they arrive.
 
-        Blocks when the queue is empty.  Terminates when ``stop()`` is
-        called and the sentinel is received.
+        Blocks up to ``1.0s`` on each queue read.  When the timeout
+        elapses without a frame, yields an :class:`IdleTick` carrying
+        ``self._clock.now_ns()`` so the orchestrator can drain
+        broker-pushed fills (Inv-9 paper/live).  Terminates when
+        :meth:`stop` is called and the sentinel is received.
+
+        ``IdleTick`` is data-path only — it is never published to the
+        bus or appended to the event log (see :mod:`feelies.ingestion.idle_tick`).
         """
         while True:
             try:
@@ -94,13 +101,16 @@ class MassiveLiveFeed:
             except queue.Empty:
                 if self._stop_event.is_set():
                     return
+                yield IdleTick(timestamp_ns=self._clock.now_ns())
                 continue
             if item is _SENTINEL:
                 return
             yield item  # type: ignore[misc]
+
     def on_health_transition(self, callback: Callable[..., None]) -> None:
         """Register a callback for DataHealth transitions on any ingested symbol."""
         self._normalizer.on_health_transition(callback)
+
     # ── Lifecycle ────────────────────────────────────────────────────
 
     def start(self) -> None:
@@ -108,6 +118,7 @@ class MassiveLiveFeed:
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop_event.clear()
+        self._drain_stale_sentinels()
         self._thread = threading.Thread(
             target=self._run_loop,
             name="massive-ws-feed",
@@ -123,7 +134,40 @@ class MassiveLiveFeed:
         self._enqueue_sentinel_nowait()
         if self._thread is not None:
             self._thread.join(timeout=10.0)
-            self._thread = None
+            if self._thread.is_alive():
+                logger.warning(
+                    "massive_ws: background thread did not exit within 10s; "
+                    "do not call start() on this feed until it terminates",
+                )
+            else:
+                self._thread = None
+
+    def _drain_stale_sentinels(self) -> None:
+        """Remove stop sentinels left from a prior ``stop()`` cycle.
+
+        ``stop()`` enqueues ``_SENTINEL`` so a blocked ``events()`` consumer
+        can exit; if the consumer already left via ``queue.Empty`` +
+        ``_stop_event``, that sentinel survives until the next ``start()``.
+        Without draining, the next ``events()`` call would terminate
+        immediately.  Buffered market events are preserved.
+        """
+        retained: list[NBBOQuote | Trade | object] = []
+        while True:
+            try:
+                item = self._queue.get_nowait()
+            except queue.Empty:
+                break
+            if item is not _SENTINEL:
+                retained.append(item)
+        for item in retained:
+            try:
+                self._queue.put_nowait(item)
+            except queue.Full:
+                logger.warning(
+                    "massive_ws: queue full while restoring buffered events "
+                    "after sentinel drain",
+                )
+                break
 
     def _enqueue_sentinel_nowait(self) -> None:
         """Signal consumers without blocking the caller on a full queue."""
