@@ -34,6 +34,7 @@ import logging
 import os
 import signal
 import sys
+import threading
 from pathlib import Path
 from types import FrameType
 
@@ -44,6 +45,7 @@ sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 
 from feelies.bootstrap import build_platform
 from feelies.core.platform_config import OperatingMode, PlatformConfig
+from feelies.kernel.macro import MacroState
 
 logger = logging.getLogger("feelies.run_paper")
 
@@ -118,8 +120,11 @@ def main(argv: list[str] | None = None) -> int:
     assert live_feed is not None, "PAPER bootstrap must attach live_feed"
     assert ib_connection is not None, "PAPER bootstrap must attach ib_connection"
 
+    _halt_requested = threading.Event()
+
     def _handle_sigint(signum: int, frame: FrameType | None) -> None:
         logger.warning("SIGINT received → orchestrator.halt()")
+        _halt_requested.set()
         try:
             orchestrator.halt()
         except Exception:
@@ -129,9 +134,16 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         orchestrator.boot(config)
+        if orchestrator.macro_state != MacroState.READY:
+            logger.error(
+                "Boot failed — macro state is %s, expected READY",
+                orchestrator.macro_state.name,
+            )
+            return 1
         ib_connection.connect_and_start(ready_timeout_s=args.ib_ready_timeout_s)
         live_feed.start()
-        orchestrator.run_paper()
+        if not _halt_requested.is_set():
+            orchestrator.run_paper()
     except Exception:
         logger.exception("PAPER session failed")
         return 1

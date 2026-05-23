@@ -595,17 +595,22 @@ class TestMassiveLiveFeedBackpressure:
         assert not full_queue.put_called
         assert "queue full, dropping event for AAPL" in caplog.text
 
-    def test_stop_evicts_one_item_to_enqueue_sentinel_without_blocking(
+    def test_stop_on_full_queue_logs_and_does_not_block(
         self,
         normalizer: MassiveNormalizer,
         clock: SimulatedClock,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
+        # When the queue is full at stop() time we attempt put_nowait once,
+        # get queue.Full, log a warning, and do NOT fall back to blocking put.
+        # events() will exit within 1 s via the _stop_event timeout path.
         feed = MassiveLiveFeed("key", ["AAPL"], normalizer, clock)
-        full_queue = _FullSentinelQueue()
+        full_queue = _AlwaysFullQueue()
         feed._queue = full_queue  # type: ignore[assignment]
 
+        caplog.set_level("WARNING", logger="feelies.ingestion.massive_ws")
         feed.stop()
 
-        assert full_queue.put_nowait_calls == 2
+        assert full_queue.put_nowait_called
         assert not full_queue.put_called
-        assert len(full_queue.items) == 1
+        assert "queue full, sentinel not enqueued" in caplog.text

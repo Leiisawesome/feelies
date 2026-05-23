@@ -170,22 +170,24 @@ class MassiveLiveFeed:
                 break
 
     def _enqueue_sentinel_nowait(self) -> None:
-        """Signal consumers without blocking the caller on a full queue."""
-        try:
-            self._queue.put_nowait(_SENTINEL)
-            return
-        except queue.Full:
-            pass
+        """Signal consumers without blocking the caller on a full queue.
 
-        try:
-            self._queue.get_nowait()
-        except queue.Empty:
-            pass
-
+        The sentinel is a fast-path optimisation: ``events()`` already exits
+        within its 1-second ``queue.get`` timeout when ``_stop_event`` is set,
+        so the sentinel is only needed to wake a blocked consumer sooner.
+        When the queue is full we therefore skip the sentinel entirely — the
+        consumer will exit on the next timeout — rather than dropping a market
+        event to make room.
+        """
         try:
             self._queue.put_nowait(_SENTINEL)
         except queue.Full:
-            logger.warning("massive_ws: queue full, unable to enqueue stop sentinel")
+            # _stop_event is already set by stop(); events() will exit
+            # within 1s via the queue.Empty + _stop_event.is_set() path.
+            logger.warning(
+                "massive_ws: queue full, sentinel not enqueued; "
+                "events() will exit within 1s via _stop_event",
+            )
 
     # ── Background event loop ────────────────────────────────────────
 

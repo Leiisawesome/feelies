@@ -84,7 +84,7 @@ from feelies.composition.sector_matcher import SectorMatcher
 from feelies.composition.synchronizer import UniverseSynchronizer
 from feelies.composition.turnover_optimizer import TurnoverOptimizer
 from feelies.core.clock import Clock, SimulatedClock, WallClock
-from feelies.core.events import NBBOQuote
+from feelies.core.events import Alert, AlertSeverity, NBBOQuote
 from feelies.core.errors import ConfigurationError
 from feelies.core.identifiers import SequenceGenerator
 from feelies.core.platform_config import OperatingMode, PlatformConfig
@@ -345,6 +345,7 @@ def build_platform(
         OperatingMode.PAPER, OperatingMode.LIVE,
     ):
         normalizer = MassiveNormalizer(clock=clock)
+        normalizer.register_symbols(config.symbols)
 
     bundle = _create_backend(
         config.mode, event_log, clock,
@@ -524,6 +525,29 @@ def build_platform(
     # plumbing.  For BACKTEST mode both attributes are ``None``.
     orchestrator.live_feed = bundle.live_feed  # type: ignore[attr-defined]
     orchestrator.ib_connection = bundle.ib_connection  # type: ignore[attr-defined]
+
+    # Wire IB connectivity / unknown-status alerts onto the shared bus so
+    # operators have programmatic visibility into IB link-state events and
+    # unrecognised order-status strings during live/paper sessions.
+    if bundle.ib_connection is not None and hasattr(
+        bundle.ib_connection, "on_alert_event"
+    ):
+        _ib_alert_seq = SequenceGenerator()
+        _ib_clock = clock  # captured by closure
+
+        def _publish_ib_alert(error_code: int, error_msg: str) -> None:
+            bus.publish(Alert(
+                timestamp_ns=_ib_clock.now_ns(),
+                correlation_id="",
+                sequence=_ib_alert_seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="broker.ib",
+                alert_name="ib_connectivity_event",
+                message=error_msg,
+                context={"error_code": error_code},
+            ))
+
+        bundle.ib_connection.on_alert_event(_publish_ib_alert)
 
     logger.info(
         "Platform composed: mode=%s, symbols=%s, alphas=%d, regime=%s, "

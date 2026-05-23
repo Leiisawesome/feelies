@@ -855,6 +855,7 @@ class Orchestrator:
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:paper")
         self._pending_sized_intents.clear()
+        self._consumed_by_portfolio_ids = None
         self._reset_regime_session_state()
         self._macro.transition(
             MacroState.PAPER_TRADING_MODE,
@@ -4411,9 +4412,7 @@ class Orchestrator:
         if self._normalizer is not None:
             health = self._normalizer.all_health()
             for symbol in self._config.symbols:
-                if symbol not in health:
-                    return False
-                if health[symbol] != DataHealth.HEALTHY:
+                if symbol not in health or health[symbol] != DataHealth.HEALTHY:
                     return False
             return True
 

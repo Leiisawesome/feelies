@@ -291,6 +291,17 @@ class IBOrderRouter:
                 fill.status,
                 fill.ib_order_id,
             )
+            _alert_cb = getattr(self._connection, "_alert_callback", None)
+            if _alert_cb is not None:
+                try:
+                    _alert_cb(
+                        0,
+                        f"unrecognised_order_status:{fill.status!r} "
+                        f"ib_id={fill.ib_order_id} "
+                        f"platform_id={meta.platform_id}",
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("ib router: alert_callback raised")
             return None
 
         # PreSubmitted / Submitted — already emitted at submit time.

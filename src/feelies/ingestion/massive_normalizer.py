@@ -156,6 +156,7 @@ class MassiveNormalizer:
         "_clock",
         "_seq",
         "_health_machines",
+        "_registered_symbols",
         "_transition_callback",
         "_last_seen",
         "_duplicates_filtered",
@@ -177,6 +178,7 @@ class MassiveNormalizer:
         self._health_machines: dict[
             tuple[str, str], StateMachine[DataHealth]
         ] = {}
+        self._registered_symbols: frozenset[str] = frozenset()
         self._transition_callback = transition_callback
         # Keyed by (symbol, feed_type) — quotes and trades have independent
         # Massive sequence_number spaces and must be tracked separately to
@@ -226,8 +228,15 @@ class MassiveNormalizer:
             out = merge_worst_health(out, st)
         return out
 
+    def register_symbols(self, symbols: frozenset[str] | set[str]) -> None:
+        """Pre-register symbols so they appear in ``all_health()`` as
+        HEALTHY before any live data arrives (e.g. PAPER cold start).
+        """
+        self._registered_symbols = frozenset(symbols)
+
     def all_health(self) -> dict[str, DataHealth]:
-        symbols: set[str] = {k[0] for k in self._health_machines}
+        seen: set[str] = {k[0] for k in self._health_machines}
+        symbols = seen | self._registered_symbols
         return {sym: self.health(sym) for sym in sorted(symbols)}
 
     # ── WebSocket parsing ────────────────────────────────────────────

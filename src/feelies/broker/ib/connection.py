@@ -27,6 +27,7 @@ import logging
 import queue
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING
@@ -108,6 +109,22 @@ class IBGatewayConnection(EWrapper, EClient):  # type: ignore[misc]
         self._shutdown_event = threading.Event()
         self._connect_failed = threading.Event()
         self._connect_failed_reason: str = ""
+        # Optional callback for non-fatal connectivity events (e.g. IB
+        # disconnect / restore codes 1100–2110).  Called from the message
+        # thread; implementations must be thread-safe (e.g. bus.publish
+        # is internally lock-free).  Set via on_alert_event().
+        self._alert_callback: Callable[[int, str], None] | None = None
+
+    def on_alert_event(self, callback: Callable[[int, str], None]) -> None:
+        """Register a callback invoked for non-fatal IB connectivity events.
+
+        Called from the message thread (EWrapper context) with
+        ``(error_code, error_string)`` whenever IB sends a connection-level
+        error (``reqId <= 0``) that is not in ``_CONNECT_FATAL_ERROR_CODES``.
+        Typical codes: 1100 (connection lost), 1101/1102 (restored), 2110.
+        The callback must be thread-safe.
+        """
+        self._alert_callback = callback
 
     # ── Lifecycle (main thread) ──────────────────────────────────────
 
@@ -384,6 +401,17 @@ class IBGatewayConnection(EWrapper, EClient):  # type: ignore[misc]
                     f"code={errorCode}: {errorString}"
                 )
                 self._connect_failed.set()
+            elif self._alert_callback is not None:
+                # Non-fatal connectivity event (e.g. 1100 disconnect,
+                # 1101/1102/2110 restore) — surface on the bus so operators
+                # have programmatic visibility into IB link state.
+                try:
+                    self._alert_callback(int(errorCode), str(errorString))
+                except Exception:  # noqa: BLE001 — never crash the msg thread
+                    logger.exception(
+                        "ib connection: alert_callback raised for code=%d",
+                        errorCode,
+                    )
             return
         self._fill_queue.put(IBFillEvent(
             ib_order_id=reqId,
