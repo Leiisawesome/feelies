@@ -82,8 +82,10 @@ composed at startup:
 |---|---|---|---|
 | Backtest (`execution_mode: market`) | `ReplayFeed(EventLog)` | `BacktestOrderRouter` (mid-price fills) | `SimulatedClock` |
 | Backtest (`execution_mode: passive_limit`) | `ReplayFeed(EventLog)` | `PassiveLimitOrderRouter` (queue-position fills) | `SimulatedClock` |
-| Paper | `MassiveLiveFeed` | *(not yet implemented)* | `WallClock` |
-| Live | `MassiveLiveFeed` | *(not yet implemented)* | `WallClock` |
+| Paper | `MassiveLiveFeed` (WebSocket, yields `IdleTick` between frames) | `IBOrderRouter` → `IBGatewayConnection` (IB Gateway @ 4002) | `WallClock` |
+| Live | `MassiveLiveFeed` | *(not yet implemented — bootstrap raises `NotImplementedError`)* | `WallClock` |
+
+The live `MassiveLiveFeed` emits `IdleTick` sentinels (1 s default poll) so the orchestrator can drain broker-pushed fills between WebSocket frames; backtest `ReplayFeed` never yields `IdleTick`, preserving bit-identical determinism (Inv-9 / Inv-A).
 
 ## Project Structure
 
@@ -93,23 +95,23 @@ feelies/
 │   ├── core/                     # Events, clock, state machine, identifiers, config
 │   ├── kernel/                   # Orchestrator, macro/micro state machines
 │   ├── bus/                      # Synchronous deterministic event bus
-│   ├── ingestion/                # Massive normalizer, historical ingestor, replay feed
+│   ├── ingestion/                # Massive normalizer, historical ingestor, replay feed, live WS, IdleTick
 │   ├── sensors/                  # Layer-1 sensor framework (13 sensors in impl/)
-│   ├── features/                 # Horizon aggregator + legacy per-tick feature engine
+│   ├── features/                 # Horizon aggregator + horizon feature engine
 │   ├── signals/                  # Layer-2 horizon signal engine + regime gate DSL
 │   ├── composition/              # Layer-3 cross-sectional construction pipeline
-│   ├── alpha/                    # Alpha module loader (1.0 + 1.1), registry, validator
+│   ├── alpha/                    # Alpha module loader (1.0 + 1.1), registry, validator, promotion ledger
 │   ├── risk/                     # Risk engine, escalation SM, sizer, hazard-exit controller
-│   ├── execution/                # Backend abstraction, intent translator, order SM, routers
+│   ├── execution/                # Backend abstraction, intent translator, order SM, routers, paper_backend
+│   ├── broker/                   # External-broker adapters (PAPER/LIVE): `broker/ib/` — IB Gateway connection + router
 │   ├── portfolio/                # Position store, per-strategy + cross-sectional trackers
 │   ├── storage/                  # Event log, disk cache, bundled reference YAML/JSON
-│   ├── health/                   # Alpha health-check framework (10 check categories)
 │   ├── monitoring/               # Metrics (incl. horizon metrics), alerting, kill switch
-│   ├── forensics/                # Multi-horizon attribution, post-trade analysis
+│   ├── forensics/                # Multi-horizon attribution, post-trade analysis, decay detector
 │   ├── research/                 # Experiment tracking, CPCV, DSR significance tools
 │   ├── services/                 # Regime engine + regime-hazard detector
 │   ├── cli/                      # Operator CLI (`feelies promote ...` ledger forensics)
-│   └── bootstrap.py              # One-call platform composition from config
+│   └── bootstrap.py              # One-call platform composition from config (BACKTEST + PAPER)
 ├── alphas/                       # Alpha strategy specs
 │   ├── SCHEMA.md                 # YAML schema reference (1.1)
 │   ├── _template/                # Layer-specific templates
@@ -127,10 +129,12 @@ feelies/
 │   └── alphas/
 ├── scripts/                      # CLI entry points
 │   ├── run_backtest.py           # Full pipeline backtest (incl. parity hash)
+│   ├── run_paper.py              # Paper-trading runner — wires Massive WS + IB Gateway end-to-end
+│   ├── verify_ib_broker.py       # IB Gateway connectivity / submit / cancel smoke check
 │   ├── smoke_pipeline.py         # No-API-key micro-state smoke test (synthetic ticks)
 │   ├── record_perf_baseline.py   # Pin per-host throughput baselines for perf gates
 │   └── build_reference_factor_loadings.py  # PORTFOLIO factor loadings builder
-├── tests/                        # Pytest suite (mirrors src/, plus determinism + perf)
+├── tests/                        # Pytest suite (mirrors src/, plus determinism + perf + broker)
 ├── platform.yaml                 # Reference platform configuration
 ├── pyproject.toml                # Build, deps, tooling
 └── .env.example                  # Environment variable template
@@ -154,15 +158,19 @@ cd feelies
 uv sync --all-extras
 
 # Alternatively, install with pip:
-# Core install (backtest + live + sensors + composition; PORTFOLIO solver optional)
+# Core install (backtest + sensors + composition; PORTFOLIO solver optional)
 pip install -e ".[dev,massive]"
 
 # To enable the PORTFOLIO turnover optimiser (cvxpy-based) and parquet
 # reference factor loadings, also install the [portfolio] extra:
 pip install -e ".[dev,massive,portfolio]"
 
-# To enable Parquet-backed research artefacts for the health gate, add [health]:
-pip install -e ".[dev,massive,health]"
+# To enable PAPER (and future LIVE) mode — adds the Interactive Brokers
+# Gateway adapter (ibapi) used by ``IBOrderRouter``:
+pip install -e ".[dev,massive,ib]"
+
+# Full developer install (everything the test + mypy-strict gates need):
+pip install -e ".[dev,massive,portfolio,ib]"
 ```
 
 The `[portfolio]` extra pulls `cvxpy`, `ecos`, and `pyarrow`. Without
@@ -170,15 +178,16 @@ it, PORTFOLIO alphas still load and run; only the optional
 turnover-optimisation step and parquet-reference factor loadings are
 disabled.
 
-The `[health]` extra pulls `pyarrow` for Parquet artefact loading in
-`feelies.health`. Without it, `.parquet` files in the health check run
-directory are skipped and a definition-category **WARN** is issued.
+The `[ib]` extra pulls `nautilus-ibapi` (the community mirror of the
+official `ibapi` TWS API) plus `protobuf`. It is required only when
+launching `OperatingMode.PAPER` (or `LIVE`, once implemented); BACKTEST
+runs never import it.
 
 All commands in this repo should be run via `uv run <cmd>` when using the
 `uv`-managed virtual environment (e.g. `uv run pytest`, `uv run python
 scripts/run_backtest.py`). For mypy strict-mode acceptance
-(`test_mypy_strict_clean_on_src_feelies`), all three extras — `dev`,
-`massive`, and `portfolio` — must be installed.
+(`test_mypy_strict_clean_on_src_feelies`), all the optional extras —
+`dev`, `massive`, `portfolio`, and `ib` — must be installed.
 
 ### Environment
 
@@ -223,6 +232,65 @@ across environments. The platform locks five parity baselines —
 sensors, snapshots, signals, sized intents, and hazard exits — under
 `tests/determinism/`.
 
+## Running Paper Trading
+
+`OperatingMode.PAPER` runs the *identical* orchestrator tick pipeline
+that backtest uses — only the `ExecutionBackend` is swapped: market
+data flows from `MassiveLiveFeed` (WebSocket) and orders route through
+`IBOrderRouter` to a locally-running IB Gateway (paper account, port
+4002 by default).
+
+```bash
+# Prereqs
+#   1. IB Gateway / TWS running in paper mode (default port 4002)
+#   2. MASSIVE_API_KEY in environment or .env
+#   3. pip install -e ".[dev,massive,ib]"
+
+# Smoke-test the IB Gateway connection (submit + cancel a tiny test order)
+python scripts/verify_ib_broker.py --port 4002 --client-id 7
+
+# Run the live paper-trading pipeline
+python scripts/run_paper.py --config platform.yaml
+```
+
+`scripts/run_paper.py` lifecycle:
+
+1. Loads `PlatformConfig` with `mode: PAPER` (or overlay flag).
+2. Calls `build_platform(...)` — bootstrap composes `MassiveLiveFeed` +
+   `IBOrderRouter` via `build_paper_backend(...)`, auto-anchors
+   `session_open_ns` to wall clock (H10), and validates `MASSIVE_API_KEY`.
+3. Connects to IB Gateway, starts the WebSocket feed.
+4. Runs the orchestrator pipeline — broker-pushed fills are drained
+   between WS frames via the `IdleTick` sentinel.
+5. SIGINT triggers graceful shutdown: orchestrator drains in-flight
+   acks, WebSocket closes, IB connection disconnects.
+
+PAPER-specific configuration (defaults shown):
+
+```yaml
+mode: PAPER
+
+# IB Gateway connection (paper @ 4002; live @ 4001).  May also be
+# nested under a top-level ``paper:`` block.
+ib_host: "127.0.0.1"
+ib_port: 4002
+ib_client_id: 7
+
+# Massive WebSocket endpoint (override only for replays / staging)
+massive_ws_url: "wss://socket.polygon.io/stocks"
+
+# Optional: pin session_open_ns explicitly; omit to let bootstrap
+# anchor to WallClock.now_ns() at startup (logged at INFO).
+# session_open_ns: 1735741800000000000
+```
+
+**Backtest/Paper parity (Inv-9).** The macro/micro state machines, sensor
+registry, signal engine, composition pipeline, risk engine, order state
+machine, position store, and event bus are bit-identical across modes.
+The only behavioural difference is that paper-mode `OrderRouter.poll_acks()`
+returns asynchronously (broker round-trip), so the orchestrator
+additionally drains acks on every `IdleTick` and at shutdown.
+
 ## Operator CLI
 
 The `feelies` console-script (registered via `[project.scripts]` in
@@ -264,55 +332,6 @@ YAML / schema-version mismatch), `3` validation failure
 The CLI is **read-only and forensic-only** — it never writes to the
 ledger and never imports orchestrator / risk-engine production code, so
 operator invocation cannot perturb replay determinism (audit A-DET-02).
-
-### `feelies health-check`
-
-The `health-check` subcommand runs the 10-category alpha health gate
-(`feelies.health`) against artefacts exported by `--export-health-dir`
-from `run_backtest.py`. It produces a deterministic, auditable report
-answering whether an alpha is causal, economically plausible after costs,
-reasonably robust, and safe enough for the next deployment stage.
-
-```bash
-# Step 1 — run backtest and export artefacts
-python scripts/run_backtest.py \
-    --symbol AAPL --date 2026-04-08 \
-    --export-health-dir ./runs/my_alpha/latest
-
-# Step 2 — run the health gate
-feelies health-check \
-    --backtest-output ./runs/my_alpha/latest \
-    --out-dir ./runs/my_alpha/latest/health \
-    --format both
-```
-
-**Health check categories** (each produces PASS / WARN / FAIL / SKIP):
-
-| Category | Module | Checks |
-|---|---|---|
-| Definition | `definition_checks.py` | Required metadata fields, artefact completeness |
-| Predictive | `predictive_checks.py` | IC, t-stat, monotonicity, signal coverage |
-| Execution | `execution_checks.py` | Edge-to-cost ratio, execution lens coverage |
-| Capacity | `capacity_checks.py` | Position-size vs. ADV constraints |
-| Regime | `regime_checks.py` | PnL concentration per regime, losing-regime fraction |
-| Robustness | `robustness_checks.py` | Parameter-neighbor stability, IS/OOS degradation |
-| Risk | `risk_checks.py` | Drawdown fraction, single-day loss/profit caps |
-| Causality | `causality_checks.py` | Look-ahead / causality flags |
-| Portfolio | `portfolio_checks.py` | Multi-symbol, factor-exposure constraints |
-| Production | `production_checks.py` | Kill-switch status, data-version staleness |
-
-**CLI flags**
-
-| Flag | Meaning |
-|---|---|
-| `--backtest-output DIR` | Run directory with `metadata.json` and tabular artefacts. **Required.** |
-| `--alpha NAME` | Override `alpha_name` from `metadata.json`. |
-| `--config PATH` | Optional health thresholds YAML. Omitted → built-in defaults. |
-| `--out-dir DIR` | Report output directory. Default: `<backtest-output>/health/`. |
-| `--format` | `json`, `markdown`, `both` (default), or `all` (also writes `alpha_health_checks.csv`). |
-| `--strict` | Exit `3` if decision is `KILL` or any check has status `FAIL`. |
-
-Exit codes match the `feelies promote` convention (`0` success, `1` user error, `2` data error, `3` validation failed).
 
 ## Research Tools
 
@@ -522,7 +541,7 @@ for the canonical wording and glossary.
 ## Testing
 
 ```bash
-# Full test suite (~2095 tests)
+# Full test suite (~2356 tests)
 pytest
 
 # Skip network/benchmark tests (recommended for local dev)
@@ -549,13 +568,17 @@ pytest -m backtest_validation
 The test suite mirrors `src/feelies/` and includes:
 
 - Unit tests + property-based tests (Hypothesis).
-- **Determinism tests** (`tests/determinism/`, 54 tests) — five locked parity
+- **Determinism tests** (`tests/determinism/`, 57 tests) — five locked parity
   hashes (sensor / signal / sized-intent / portfolio-order /
   hazard-exit) plus regime-hazard, horizon-tick, and v0.3 sensor
   streams, each subprocess-isolated to detect any non-determinism
   introduced by ordering, RNG, or wall-clock.
-- **End-to-end integration tests** (`tests/integration/`) — multi-
-  symbol, multi-alpha, mixed-mechanism universes (8 tests).
+- **End-to-end integration tests** (`tests/integration/`, 32 tests) —
+  multi-symbol, multi-alpha, mixed-mechanism universes.
+- **Broker integration tests** (`tests/broker/ib/`) — unit-level
+  `IBOrderRouter` / `IBGatewayConnection` coverage plus a `functional`-
+  marked smoke suite that submits/cancels a real IB Gateway paper order
+  (skipped unless gateway is running on port 4002).
 - **Performance regression gates** (`tests/perf/`) — Phase 4 ≤ 12 %
   end-to-end throughput; Phase 4.1 ≤ 5 % decay-weighting overhead.
   Per-host pinned baselines (opt-in via `PERF_HOST_LABEL`) live in
@@ -599,19 +622,26 @@ ruff format src/ tests/
 
 ## Data Pipeline
 
-Market data flows through a two-stage pipeline:
+Market data flows through one of two interchangeable sources, both
+producing the *same* canonical `NBBOQuote` / `Trade` event types via
+`MassiveNormalizer`:
 
-1. **Historical ingest** — `MassiveHistoricalIngestor` downloads L1
-   NBBO quotes and trades via Massive REST API, normalises through
-   `MassiveNormalizer` into canonical `NBBOQuote` and `Trade` events,
-   and stores them in an `EventLog`. Cached to `~/.feelies/cache/`.
-2. **Replay** — `ReplayFeed` iterates the `EventLog` in timestamp
-   order, feeding the orchestrator's tick pipeline. `SimulatedClock`
-   advances to each event's timestamp, preserving causality.
+1. **Historical replay (BACKTEST)** — `MassiveHistoricalIngestor`
+   downloads L1 NBBO quotes and trades via Massive REST API, normalises
+   them, and stores them in an `EventLog` cached under
+   `~/.feelies/cache/`. `ReplayFeed` then iterates the log in timestamp
+   order, with `SimulatedClock` advancing to each event's timestamp
+   (Inv-6, causality).
+2. **Live stream (PAPER / LIVE)** — `MassiveLiveFeed` connects to the
+   Massive WebSocket, normalises frames into the same event types, and
+   yields them in arrival order. Between frames it emits `IdleTick`
+   sentinels so the orchestrator can drain asynchronous broker fills
+   from `IBOrderRouter` without blocking on the WS read. The wall clock
+   (`WallClock`) drives timestamps.
 
-For live operation (future), `MassiveLiveFeed` provides real-time
-WebSocket streaming through the same normaliser, ensuring identical
-event types flow through the same pipeline.
+The orchestrator's tick pipeline, sensor registry, signal engine, and
+risk engine are agnostic to which source is wired — backtest/live parity
+(Inv-9) is enforced behind the single `ExecutionBackend` seam.
 
 ## License
 
