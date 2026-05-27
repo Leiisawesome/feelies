@@ -38,23 +38,19 @@ from feelies.broker.ib.router import IBOrderRouter
 from feelies.core.clock import WallClock
 from feelies.core.events import OrderAckStatus, OrderRequest, OrderType, Side
 
+from tests._ib_client_id import unique_ib_client_id
+
 pytestmark = pytest.mark.functional
 
 _DEFAULT_HOST = "127.0.0.1"
 _DEFAULT_PORT = 4002
-_DEFAULT_CLIENT_ID = 500
 _DEFAULT_SYMBOL = "SPY"
 _DEFAULT_POLL_TIMEOUT_S = 20.0
 _POLL_INTERVAL_S = 0.2
-_client_id_seq = 0
 
 
 def _unique_client_id() -> int:
-    """Allocate a unique IB client id per connection (avoids error 326)."""
-    global _client_id_seq
-    _client_id_seq += 1
-    base = int(os.getenv("IB_FUNCTIONAL_CLIENT_ID", str(_DEFAULT_CLIENT_ID)))
-    return base + _client_id_seq
+    return unique_ib_client_id()
 
 
 def _host() -> str:
@@ -378,3 +374,135 @@ class TestIBGatewayReconnect:
                 conn.connect_and_start(ready_timeout_s=10.0)
         finally:
             conn.disconnect_and_stop()
+
+
+@pytest.mark.paper_rth
+class TestIBGatewayRTHFills:
+    def test_market_order_submit_and_cancel(
+        self, ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
+    ) -> None:
+        from tests.paper.conftest import require_rth_window
+        require_rth_window()
+        _, router, clock = ib_session
+        order_id = f"mkt-{clock.now_ns()}"
+        req = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id=f"ib-func:{order_id}",
+            sequence=1,
+            order_id=order_id,
+            symbol=_symbol(),
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=1,
+            strategy_id="ib_functional_test",
+        )
+        router.submit(req)
+        router.poll_acks()
+        seen = _poll_until_terminal_cleanup(
+            router, order_ids={order_id}, timeout_s=_poll_timeout_s(),
+        )
+        statuses = {a.status for a in seen if a.order_id == order_id}
+        assert statuses & {
+            OrderAckStatus.FILLED,
+            OrderAckStatus.CANCELLED,
+            OrderAckStatus.REJECTED,
+        }
+
+    def test_etradeonly_defaults_regression_unit_side(self) -> None:
+        """Error 10268 guard covered in test_ib_router; RTH class references it."""
+        from feelies.broker.ib.router import IBOrderRouter
+        from feelies.core.clock import WallClock
+        from feelies.core.events import OrderRequest, OrderType, Side
+
+        class _Conn:
+            def next_order_id(self) -> int:
+                return 1
+
+            def enqueue_order(self, ib_order_id: int, contract: object, order: object) -> None:
+                self.last_order = order
+
+        conn = _Conn()
+        router = IBOrderRouter(connection=conn, clock=WallClock())  # type: ignore[arg-type]
+        req = OrderRequest(
+            timestamp_ns=1,
+            correlation_id="c",
+            sequence=1,
+            order_id="o",
+            symbol="SPY",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=1,
+            strategy_id="t",
+        )
+        router.submit(req)
+        assert conn.last_order.eTradeOnly is False
+        assert conn.last_order.firmQuoteOnly is False
+
+    def test_ten_orders_rapid_submit_cancel(
+        self, ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
+    ) -> None:
+        from tests.paper.conftest import require_rth_window
+        require_rth_window()
+        _, router, clock = ib_session
+        order_ids: list[str] = []
+        for i in range(10):
+            oid = f"rapid-{clock.now_ns()}-{i}"
+            order_ids.append(oid)
+            req = _make_limit_request(clock, oid, limit_price=Decimal("1.00"))
+            router.submit(req)
+        for oid in order_ids:
+            _cleanup_order(router, oid, timeout_s=_poll_timeout_s())
+
+    def test_partial_fill_then_cancel(
+        self, ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
+    ) -> None:
+        from tests.paper.conftest import require_rth_window
+        require_rth_window()
+        _, router, clock = ib_session
+        order_id = f"partial-{clock.now_ns()}"
+        req = _make_limit_request(
+            clock, order_id, limit_price=Decimal("500000.00"),
+        )
+        router.submit(req)
+        seen = _poll_until_terminal_cleanup(
+            router, order_ids={order_id}, timeout_s=_poll_timeout_s(),
+        )
+        statuses = {a.status for a in seen if a.order_id == order_id}
+        assert statuses & {
+            OrderAckStatus.CANCELLED,
+            OrderAckStatus.REJECTED,
+            OrderAckStatus.FILLED,
+            OrderAckStatus.PARTIALLY_FILLED,
+        }
+
+    def test_fill_ack_lag_exceeds_idle_tick_interval(
+        self, ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
+    ) -> None:
+        from tests.paper.conftest import require_rth_window
+        require_rth_window()
+        _, router, clock = ib_session
+        order_id = f"lag-{clock.now_ns()}"
+        req = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id=f"ib-func:{order_id}",
+            sequence=1,
+            order_id=order_id,
+            symbol=_symbol(),
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=1,
+            strategy_id="ib_functional_test",
+        )
+        router.submit(req)
+        deadline = time.monotonic() + _poll_timeout_s()
+        terminal = {
+            OrderAckStatus.FILLED,
+            OrderAckStatus.CANCELLED,
+            OrderAckStatus.REJECTED,
+        }
+        while time.monotonic() < deadline:
+            time.sleep(1.5)
+            batch = router.poll_acks()
+            if any(a.order_id == order_id and a.status in terminal for a in batch):
+                return
+        pytest.fail("no terminal ack within poll window")

@@ -280,6 +280,75 @@ class TestBuildPlatformPaperBranch:
         assert out_config.session_open_ns is not None
         assert out_config.session_open_ns > 0
 
+    def test_nested_paper_yaml_block_parses_connection_fields(
+        self, tmp_path: Path,
+    ) -> None:
+        yaml_path = tmp_path / "platform.yaml"
+        yaml_path.write_text(
+            textwrap.dedent(
+                """\
+                symbols: [SPY]
+                mode: PAPER
+                alpha_specs: [alpha.yaml]
+                paper:
+                  ib_host: 10.0.0.1
+                  ib_port: 4002
+                  ib_client_id: 55
+                  massive_ws_url: wss://example.test/stocks
+                """
+            ),
+            encoding="utf-8",
+        )
+        config = PlatformConfig.from_yaml(yaml_path)
+        assert config.ib_host == "10.0.0.1"
+        assert config.ib_port == 4002
+        assert config.ib_client_id == 55
+        assert config.massive_ws_url == "wss://example.test/stocks"
+
+    def test_top_level_ib_port_overrides_nested_paper_block(
+        self, tmp_path: Path,
+    ) -> None:
+        yaml_path = tmp_path / "platform.yaml"
+        yaml_path.write_text(
+            textwrap.dedent(
+                """\
+                symbols: [SPY]
+                mode: PAPER
+                alpha_specs: [alpha.yaml]
+                ib_port: 4002
+                paper:
+                  ib_port: 4001
+                """
+            ),
+            encoding="utf-8",
+        )
+        config = PlatformConfig.from_yaml(yaml_path)
+        assert config.ib_port == 4002
+
+
+class TestPaperIbPortWarning:
+    def test_paper_mode_ib_port_4001_emits_warning(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        import logging
+        from dataclasses import replace
+
+        monkeypatch.setenv("MASSIVE_API_KEY", "fake_key")
+        _write_paper_alpha(tmp_path)
+        config = replace(_paper_platform_config(tmp_path), ib_port=4001)
+
+        with caplog.at_level(logging.WARNING):
+            with patch(
+                "feelies.bootstrap.build_paper_backend",
+                return_value=(object(), object(), object()),
+            ):
+                build_platform(config)
+
+        assert any(
+            "ib_port=4001" in rec.message for rec in caplog.records
+        )
+
 
 # Note: end-to-end ``build_platform(PAPER)`` session lifecycle is
 # exercised by ``scripts/run_paper.py`` smoke-tests; here we lock the

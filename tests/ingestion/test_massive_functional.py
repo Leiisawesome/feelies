@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import itertools
 import os
+import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from datetime import UTC, date, datetime, timedelta
@@ -217,3 +218,75 @@ def test_websocket_feed_emits_live_massive_event() -> None:
         assert event.price > 0
         assert event.size > 0
         assert event.exchange_timestamp_ns > 0
+
+
+@pytest.mark.paper_rth
+def test_multi_symbol_subscribe() -> None:
+    pytest.importorskip("websockets")
+    from tests.paper.conftest import require_rth_window
+    require_rth_window()
+
+    api_key = _require_api_key()
+    symbols = ["SPY", "AAPL"]
+    feed = MassiveLiveFeed(
+        api_key=api_key,
+        symbols=symbols,
+        normalizer=MassiveNormalizer(WallClock()),
+        clock=WallClock(),
+    )
+    seen: set[str] = set()
+    feed.start()
+    try:
+        deadline = time.monotonic() + 30.0
+        while time.monotonic() < deadline and len(seen) < len(symbols):
+            try:
+                event = next(feed.events())
+            except StopIteration:
+                break
+            if isinstance(event, NBBOQuote):
+                seen.add(event.symbol)
+    finally:
+        feed.stop()
+    assert seen, f"expected quotes for {symbols}, got {seen}"
+
+
+@pytest.mark.paper_rth
+@pytest.mark.slow
+def test_sustained_quotes_with_idle_ticks() -> None:
+    pytest.importorskip("websockets")
+    from tests.paper.conftest import require_rth_window
+    require_rth_window()
+
+    api_key = _require_api_key()
+    symbol = _symbol()
+    duration_s = float(os.getenv("MASSIVE_FUNCTIONAL_SUSTAINED_S", "60"))
+    feed = MassiveLiveFeed(
+        api_key=api_key,
+        symbols=[symbol],
+        normalizer=MassiveNormalizer(WallClock()),
+        clock=WallClock(),
+    )
+    quote_count = 0
+    feed.start()
+    try:
+        deadline = time.monotonic() + duration_s
+        while time.monotonic() < deadline:
+            try:
+                event = next(feed.events())
+            except StopIteration:
+                break
+            if isinstance(event, NBBOQuote):
+                quote_count += 1
+    finally:
+        feed.stop()
+    assert quote_count >= 5, f"expected sustained quotes over {duration_s}s, got {quote_count}"
+
+
+def test_normalizer_data_health_on_gap() -> None:
+    from feelies.ingestion.data_integrity import DataHealth
+
+    symbol = _symbol()
+    normalizer = MassiveNormalizer(WallClock())
+    assert normalizer.health(symbol) == DataHealth.HEALTHY
+    normalizer.notify_feed_interrupted([symbol])
+    assert normalizer.health(symbol) == DataHealth.GAP_DETECTED

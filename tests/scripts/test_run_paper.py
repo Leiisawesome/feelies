@@ -82,3 +82,61 @@ class TestRunPaperGuards:
         rc = mod.main(["--config", str(cfg)])  # type: ignore[attr-defined]
         assert rc == 1
         assert "requires mode: PAPER" in capsys.readouterr().err
+
+
+class TestRunPaperTeardownOrder:
+    def test_finally_shutdown_before_feed_and_ib(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        mod = _load_module()
+        calls: list[str] = []
+
+        class _LiveFeed:
+            def start(self) -> None:
+                calls.append("feed.start")
+
+            def stop(self) -> None:
+                calls.append("feed.stop")
+
+        class _IB:
+            def connect_and_start(self, **kwargs: object) -> None:
+                calls.append("ib.connect")
+
+            def disconnect_and_stop(self) -> None:
+                calls.append("ib.disconnect")
+
+        class _Orch:
+            macro_state = None
+
+            def __init__(self) -> None:
+                from feelies.kernel.macro import MacroState
+                self.macro_state = MacroState.READY
+                self.live_feed = _LiveFeed()
+                self.ib_connection = _IB()
+
+            def boot(self, config: object) -> None:
+                calls.append("boot")
+
+            def run_paper(self) -> None:
+                calls.append("run_paper")
+
+            def halt(self) -> None:
+                calls.append("halt")
+
+            def shutdown(self) -> None:
+                calls.append("shutdown")
+
+        def _fake_build(config: object) -> tuple[_Orch, object]:
+            return _Orch(), config
+
+        monkeypatch.setenv("MASSIVE_API_KEY", "fake")
+        monkeypatch.setattr(mod, "build_platform", _fake_build)
+
+        cfg = Path(__file__).resolve().parents[2] / "configs" / "paper_smoke_rth.yaml"
+        if not cfg.is_file():
+            pytest.skip("configs/paper_smoke_rth.yaml not present")
+
+        rc = mod.main(["--config", str(cfg)])  # type: ignore[attr-defined]
+        assert rc == 0
+        assert calls.index("shutdown") < calls.index("feed.stop")
+        assert calls.index("shutdown") < calls.index("ib.disconnect")

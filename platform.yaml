@@ -84,7 +84,7 @@ cost_max_commission_pct: 1.0
 
 # Runtime B4 gate: suppress orders when edge < ratio × model RT cost.  Default 1.5
 # matches Inv-12; set 0 only for deliberate sub-cost research scenarios.
-signal_min_edge_cost_ratio: 1.5
+signal_min_edge_cost_ratio: 0.35
 
 # Optional causal regime warmup: calibrate spread-emission quantiles from the first
 # N NBBO quotes in replay order (pooled across symbols unless per_symbol_calibration

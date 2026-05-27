@@ -210,6 +210,12 @@ def build_platform(
 
     config.validate()
 
+    if config.mode == OperatingMode.PAPER and config.ib_port == 4001:
+        logger.warning(
+            "PAPER mode configured with ib_port=4001 (typically LIVE/TWS). "
+            "IB Gateway paper accounts usually listen on port 4002.",
+        )
+
     if (
         config.mode == OperatingMode.BACKTEST
         and config.backtest_enforce_ingest_terminal_health

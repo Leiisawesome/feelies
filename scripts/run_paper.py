@@ -10,6 +10,8 @@ Usage::
     # Standard run (uses ``platform.yaml`` from CWD):
     python scripts/run_paper.py
     python scripts/run_paper.py --config configs/paper_run.yaml
+    python scripts/run_paper.py --config configs/paper_smoke_rth.yaml \\
+        --max-runtime-s 600 --run-dir runs/paper_$(date +%F)
 
 The script wires the platform like ``run_backtest.py`` does, then:
 
@@ -18,8 +20,8 @@ The script wires the platform like ``run_backtest.py`` does, then:
     3. ``orchestrator.live_feed.start()``                  — Massive WS start
     4. ``orchestrator.run_paper()``                        — drive pipeline
     5. SIGINT handler → ``orchestrator.halt()`` (CMD_STOP → READY)
-    6. ``finally:`` teardown — feed.stop → ib.disconnect_and_stop →
-       ``orchestrator.shutdown()`` (which itself drains any final acks)
+    6. ``finally:`` teardown — ``orchestrator.shutdown()`` (drains IB
+       acks while connected) → feed.stop → ib.disconnect_and_stop
 
 Note: this script is the *only* place the platform's wall-clock-driven
 threads are spun up.  Backtest replay never touches this code path
@@ -30,11 +32,13 @@ threads are spun up.  Backtest replay never touches this code path
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import signal
 import sys
 import threading
+from datetime import UTC, datetime
 from pathlib import Path
 from types import FrameType
 
@@ -44,8 +48,13 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 
 from feelies.bootstrap import build_platform
+from feelies.core.events import OrderAck, Signal
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.kernel.macro import MacroState
+from feelies.monitoring.paper_session_recorder import (
+    PaperSessionRecorder,
+    trade_records_to_dicts,
+)
 
 logger = logging.getLogger("feelies.run_paper")
 
@@ -72,7 +81,90 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Seconds to wait for IB ``nextValidId`` handshake "
              "(default: 10.0)",
     )
+    p.add_argument(
+        "--max-runtime-s", type=float, default=None,
+        help="Auto-halt after N seconds (calls orchestrator.halt())",
+    )
+    p.add_argument(
+        "--run-dir", type=Path, default=None,
+        help="Session output directory for JSONL artefacts",
+    )
+    p.add_argument(
+        "--emit-order-acks-jsonl", action="store_true",
+        help="Write order_acks.jsonl to --run-dir",
+    )
+    p.add_argument(
+        "--emit-signals-jsonl", action="store_true",
+        help="Write signals.jsonl to --run-dir",
+    )
+    p.add_argument(
+        "--emit-fills-jsonl", action="store_true",
+        help="Write fills.jsonl from trade journal to --run-dir",
+    )
+    p.add_argument(
+        "--emit-timing-jsonl", action="store_true",
+        help="Write timing.jsonl to --run-dir",
+    )
     return p.parse_args(argv)
+
+
+def _wire_session_recorder(
+    orchestrator: object,
+    args: argparse.Namespace,
+    config: PlatformConfig,
+) -> PaperSessionRecorder | None:
+    if args.run_dir is None:
+        return None
+    run_dir = args.run_dir
+    run_dir.mkdir(parents=True, exist_ok=True)
+    recorder = PaperSessionRecorder(
+        run_dir=run_dir,
+        emit_signals=args.emit_signals_jsonl,
+        emit_order_acks=args.emit_order_acks_jsonl,
+        emit_timing=args.emit_timing_jsonl,
+    )
+    metadata = {
+        "mode": config.mode.name,
+        "symbols": sorted(config.symbols),
+        "session_start_ns": datetime.now(UTC).timestamp() * 1_000_000_000,
+        "config_path": str(args.config),
+        "session_open_ns": config.session_open_ns,
+    }
+    recorder.write_metadata(metadata)
+    orchestrator.set_paper_session_recorder(recorder)  # type: ignore[attr-defined]
+    bus = orchestrator._bus  # type: ignore[attr-defined]
+
+    def _on_event(event: object) -> None:
+        recorder.on_event(event)  # type: ignore[arg-type]
+
+    if args.emit_signals_jsonl:
+        bus.subscribe(Signal, _on_event)
+    if args.emit_order_acks_jsonl:
+        bus.subscribe(OrderAck, _on_event)
+    return recorder
+
+
+def _flush_session_recorder(
+    orchestrator: object,
+    recorder: PaperSessionRecorder | None,
+    args: argparse.Namespace,
+) -> None:
+    if recorder is None:
+        return
+    if args.emit_fills_jsonl:
+        journal = orchestrator.trade_journal  # type: ignore[attr-defined]
+        if journal is not None:
+            records = list(journal.query())
+            recorder.write_fills(trade_records_to_dicts(records))
+    metadata_path = args.run_dir / "metadata.json"  # type: ignore[union-attr]
+    if metadata_path.is_file():
+        data = json.loads(metadata_path.read_text(encoding="utf-8"))
+        data["session_end_ns"] = datetime.now(UTC).timestamp() * 1_000_000_000
+        metadata_path.write_text(
+            json.dumps(data, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    recorder.flush()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -120,7 +212,10 @@ def main(argv: list[str] | None = None) -> int:
     assert live_feed is not None, "PAPER bootstrap must attach live_feed"
     assert ib_connection is not None, "PAPER bootstrap must attach ib_connection"
 
+    session_recorder = _wire_session_recorder(orchestrator, args, config)
+
     _halt_requested = threading.Event()
+    _max_runtime_timer: threading.Timer | None = None
 
     def _handle_sigint(signum: int, frame: FrameType | None) -> None:
         logger.warning("SIGINT received → orchestrator.halt()")
@@ -130,7 +225,10 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:
             logger.exception("halt() raised")
 
-    signal.signal(signal.SIGINT, _handle_sigint)
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGINT, _handle_sigint)
+    else:
+        logger.debug("Skipping SIGINT handler (not main thread)")
 
     try:
         orchestrator.boot(config)
@@ -142,15 +240,36 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         ib_connection.connect_and_start(ready_timeout_s=args.ib_ready_timeout_s)
         live_feed.start()
+        if args.max_runtime_s is not None and args.max_runtime_s > 0:
+            def _timer_halt() -> None:
+                logger.info(
+                    "max-runtime-s=%s elapsed → orchestrator.halt()",
+                    args.max_runtime_s,
+                )
+                _halt_requested.set()
+                try:
+                    orchestrator.halt()
+                except Exception:
+                    logger.exception("max-runtime timer halt() raised")
+
+            _max_runtime_timer = threading.Timer(
+                args.max_runtime_s,
+                _timer_halt,
+            )
+            _max_runtime_timer.daemon = True
+            _max_runtime_timer.start()
         if not _halt_requested.is_set():
             orchestrator.run_paper()
     except Exception:
         logger.exception("PAPER session failed")
         return 1
     finally:
-        # Tear down in reverse start order.  Drain happens at the top
-        # of ``orchestrator.shutdown`` so any in-flight IB fills land
-        # in the trade journal before we disconnect.
+        if _max_runtime_timer is not None:
+            _max_runtime_timer.cancel()
+        try:
+            orchestrator.shutdown()
+        except Exception:
+            logger.exception("orchestrator.shutdown() raised")
         try:
             live_feed.stop()
         except Exception:
@@ -160,9 +279,9 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:
             logger.exception("ib_connection.disconnect_and_stop() raised")
         try:
-            orchestrator.shutdown()
+            _flush_session_recorder(orchestrator, session_recorder, args)
         except Exception:
-            logger.exception("orchestrator.shutdown() raised")
+            logger.exception("session recorder flush raised")
 
     logger.info("PAPER session complete; exit 0")
     return 0

@@ -116,6 +116,7 @@ from feelies.kernel.micro import MicroState, create_micro_state_machine
 from feelies.kernel.signal_order_trace import SignalOrderTraceRow
 from feelies.monitoring.alerting import AlertManager
 from feelies.monitoring.kill_switch import KillSwitch
+from feelies.monitoring.paper_session_recorder import PaperSessionRecorder
 from feelies.monitoring.telemetry import MetricCollector
 from feelies.portfolio.position_store import PositionStore
 from feelies.risk.engine import RiskEngine
@@ -437,6 +438,7 @@ class Orchestrator:
         self._signal_order_trace_sink: list[SignalOrderTraceRow] | None = (
             signal_order_trace_sink
         )
+        self._paper_session_recorder: PaperSessionRecorder | None = None
         self._quote_tick_in_flight: bool = False
         self._tick_quote_for_trace: NBBOQuote | None = None
         # Last quote that completed M1 with tracing enabled — survives the
@@ -682,6 +684,16 @@ class Orchestrator:
     @property
     def risk_level(self) -> RiskLevel:
         return self._risk_escalation.state
+
+    @property
+    def trade_journal(self) -> TradeJournal | None:
+        return self._trade_journal
+
+    def set_paper_session_recorder(
+        self, recorder: PaperSessionRecorder | None,
+    ) -> None:
+        """Attach a forensic session recorder (PAPER mode only)."""
+        self._paper_session_recorder = recorder
 
     def _require_safe_session_entry(self) -> None:
         """Fail closed before operational macro modes (Inv-11).
@@ -1122,6 +1134,8 @@ class Orchestrator:
             elif isinstance(event, Trade):
                 self._process_trade(event)
             elif isinstance(event, IdleTick):
+                if self._paper_session_recorder is not None:
+                    self._paper_session_recorder.record_idle_tick()
                 self._drain_async_fills(
                     correlation_id=f"idle:{event.timestamp_ns}",
                 )
@@ -2100,6 +2114,13 @@ class Orchestrator:
         """Emit tick latency and per-segment timing metrics, then M10 → M0."""
         latency_ns = time.perf_counter_ns() - t_wall_start_ns
         now_ns = self._clock.now_ns()
+
+        if self._paper_session_recorder is not None:
+            self._paper_session_recorder.record_timing(
+                kind="tick_process",
+                duration_ns=latency_ns,
+                correlation_id=correlation_id,
+            )
 
         self._bus.publish(MetricEvent(
             timestamp_ns=now_ns,
@@ -3478,13 +3499,20 @@ class Orchestrator:
         Routes through :meth:`_poll_order_router_acks` so the deferred-ack
         buffer (``_deferred_router_acks``) is honoured.
         """
+        t0 = time.perf_counter_ns()
         acks = self._poll_order_router_acks()
-        if not acks:
-            return
-        for ack in acks:
-            self._bus.publish(ack)
-            self._apply_ack_to_order(ack)
-        self._reconcile_fills(acks, correlation_id)
+        if acks:
+            for ack in acks:
+                self._bus.publish(ack)
+                self._apply_ack_to_order(ack)
+            self._reconcile_fills(acks, correlation_id)
+        if self._paper_session_recorder is not None:
+            self._paper_session_recorder.record_timing(
+                kind="drain_async_fills",
+                duration_ns=time.perf_counter_ns() - t0,
+                correlation_id=correlation_id,
+                extra={"ack_count": len(acks)},
+            )
 
     def _reconcile_resting_fills(self, cid: str) -> None:
         """Poll and reconcile quote-driven router acknowledgements.

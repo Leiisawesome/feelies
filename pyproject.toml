@@ -136,6 +136,7 @@ markers = [
     "functional: network-backed tests against live external services",
     "backtest_validation: full backtest pipe validation suite",
     "slow: performance benchmarks and long-running tests",
+    "paper_rth: requires US RTH + IB Gateway paper @ 4002 + MASSIVE_API_KEY",
 ]
 
 [tool.coverage.run]
