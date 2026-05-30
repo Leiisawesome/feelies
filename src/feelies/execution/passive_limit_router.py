@@ -68,6 +68,7 @@ from feelies.execution.cost_model import CostModel, ZeroCostModel
 from feelies.execution.market_fill import append_market_fill_acks, to_decimal
 from feelies.execution.moc_fill import MocFillController
 from feelies.execution.moc_session import MocSessionBounds
+from feelies.execution.tick_size import snap_limit_price
 
 
 class PassiveFillOutcome(Enum):
@@ -444,15 +445,18 @@ class PassiveLimitOrderRouter:
         if limit_price is None:
             limit_price = quote.bid if request.side == Side.BUY else quote.ask
 
-        # D13: marketability guard — if the limit price would immediately
-        # cross the spread, redirect to aggressive fill to avoid posting
-        # a marketable limit order (which exchanges reject or fill as taker).
+        # D13: marketability guard — evaluate against the *submitted*
+        # limit price (pre-snap) so a sub-penny marketable limit (e.g.
+        # BUY 100.072 vs ask 100.071) isn't floored below the cross by
+        # ``snap_limit_price`` and then mis-classified as passive.
         if request.side == Side.BUY and limit_price >= quote.ask:
             self._submit_aggressive_market(request, quote)
             return
         if request.side == Side.SELL and limit_price <= quote.bid:
             self._submit_aggressive_market(request, quote)
             return
+
+        limit_price = snap_limit_price(request.side, limit_price)
 
         ack_ts = self._clock.now_ns()
         pending = _PendingOrder(
@@ -764,6 +768,12 @@ class PassiveLimitOrderRouter:
         """
         if fill_price is None:
             fill_price = pending.limit_price
+        # Maker rounding: a passive fill must be at the resting limit
+        # OR BETTER (BUY pays no more, SELL receives no less).  Taker
+        # rounding (``snap_fill_price``) would round *against* the
+        # resting order on through-fills and erase the documented
+        # price improvement, so snap on the limit-price grid instead.
+        fill_price = snap_limit_price(pending.side, fill_price)
         fill_ts = self._clock.now_ns() + self._latency_ns
 
         costs = self._cost_model.compute(
