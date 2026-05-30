@@ -258,6 +258,10 @@ def build_platform(
             "build_platform (e.g. scripts/run_backtest.py after ingest).",
         )
 
+    if event_log is None:
+        event_log = InMemoryEventLog()
+    _enforce_ex_date_replay_guard(config, event_log)
+
     clock = _select_clock(config.mode)
     config = _ensure_session_open_ns_for_live_modes(config, clock)
     bus = EventBus()
@@ -383,9 +387,6 @@ def build_platform(
         buying_power_config=buying_power_config,
         account_id=config.account_id,
     )
-
-    if event_log is None:
-        event_log = InMemoryEventLog()
 
     cost_model = DefaultCostModel(DefaultCostModelConfig(
         min_spread_cost_bps=_decimal(config.cost_min_spread_bps),
@@ -1622,6 +1623,37 @@ def _hazard_block_enabled(block: object | None) -> bool:
     return bool(block.get("enabled", False)) is True
 
 
+
+
+def _enforce_ex_date_replay_guard(
+    config: PlatformConfig,
+    event_log: InMemoryEventLog,
+) -> None:
+    """BT-18: refuse backtests whose replay span crosses a known ex-date."""
+    if not config.backtest_enforce_ex_date_guard:
+        return
+    if config.mode != OperatingMode.BACKTEST:
+        return
+    if config.ex_date_calendar_path is None:
+        return
+    from feelies.storage.reference.corporate_actions import (
+        RAW_UNADJUSTED_L1_POLICY,
+        check_ex_date_replay_window,
+        load_ex_date_calendar,
+    )
+
+    calendar = load_ex_date_calendar(config.ex_date_calendar_path)
+    violations = check_ex_date_replay_window(
+        config.symbols,
+        event_log,
+        calendar,
+    )
+    if not violations:
+        return
+    detail = "; ".join(v.message() for v in violations)
+    raise ConfigurationError(
+        f"BT-18 ex-date replay guard ({RAW_UNADJUSTED_L1_POLICY}): {detail}"
+    )
 def _enforce_factor_loadings_freshness(
     config: PlatformConfig,
     universe_sorted: list[str],
