@@ -210,6 +210,27 @@ def build_platform(
 
     config.validate()
 
+    # BT-0: cost-gate honesty assertion (Inv-12).  ``0.0`` is the documented
+    # "gate explicitly disabled" sentinel (sub-cost research only); any other
+    # positive-but-sub-unity value is almost always a misconfiguration that
+    # understates round-trip cost (the historical 0.35 shipping default
+    # effectively disabled the gate while looking enabled), so reject it.  A
+    # ratio in [1.0, 1.5) is permitted but warned — Inv-12 targets >= 1.5.
+    _edge_ratio = config.signal_min_edge_cost_ratio
+    if _edge_ratio != 0.0 and _edge_ratio < 1.0:
+        raise ConfigurationError(
+            f"signal_min_edge_cost_ratio={_edge_ratio} is a positive but "
+            "sub-unity cost gate, which understates round-trip cost (Inv-12). "
+            "Use >= 1.0 (>= 1.5 recommended), or exactly 0 to explicitly "
+            "disable the gate for deliberate sub-cost research."
+        )
+    if 1.0 <= _edge_ratio < 1.5:
+        logger.warning(
+            "signal_min_edge_cost_ratio=%s is below the Inv-12 target of 1.5; "
+            "the runtime cost gate is active but looser than recommended.",
+            _edge_ratio,
+        )
+
     if config.mode == OperatingMode.PAPER and config.ib_port == 4001:
         logger.warning(
             "PAPER mode configured with ib_port=4001 (typically LIVE/TWS). "
@@ -363,6 +384,7 @@ def build_platform(
         passive_queue_position_shares=config.passive_queue_position_shares,
         passive_cancel_fee_per_share=config.passive_cancel_fee_per_share,
         market_impact_factor=config.cost_market_impact_factor,
+        max_impact_half_spreads=config.cost_max_impact_half_spreads,
         normalizer=normalizer,
         config=config,
     )
@@ -702,6 +724,7 @@ def _create_backend(
     passive_queue_position_shares: int = 0,
     passive_cancel_fee_per_share: float = 0.0,
     market_impact_factor: float = 0.5,
+    max_impact_half_spreads: float = 10.0,
     normalizer: MarketDataNormalizer | None = None,
     config: PlatformConfig | None = None,
 ) -> _BackendBundle:
@@ -721,6 +744,7 @@ def _create_backend(
                 latency_ns=fill_latency_ns,
                 cost_model=cost_model,
                 market_impact_factor=market_impact_factor,
+                max_impact_half_spreads=max_impact_half_spreads,
                 fill_delay_ticks=passive_fill_delay_ticks,
                 max_resting_ticks=passive_max_resting_ticks,
                 queue_position_shares=passive_queue_position_shares,
@@ -733,6 +757,7 @@ def _create_backend(
             latency_ns=fill_latency_ns,
             cost_model=cost_model,
             market_impact_factor=market_impact_factor,
+            max_impact_half_spreads=max_impact_half_spreads,
             max_resting_ticks=passive_max_resting_ticks,
         )
         return _BackendBundle(backend=backend, backtest_router=router)

@@ -82,7 +82,9 @@ class PlatformConfig:
     disk_cache_ingestion_health_rows: tuple[tuple[str, str, str], ...] = ()
     # When True and a Massive normalizer is wired, GAP_DETECTED halts ticks/trades
     # for that symbol the same way CORRUPTED does (strict streaming policy).
-    degrade_on_data_gap: bool = False
+    # BT-0: defaults to True (fail-safe, Inv-11/Inv-8) — a backtest replaying gappy
+    # historical data should suppress signals on a stale feed, not trade through it.
+    degrade_on_data_gap: bool = True
     # Log WARNING at boot when disk_cache_ingestion_health_rows carries non-HEALTHY
     # rows while require_healthy_disk_cache_manifests is False (advisory path).
     warn_on_unhealthy_disk_cache: bool = True
@@ -197,6 +199,13 @@ class PlatformConfig:
     #   fill_price ± impact_factor × (excess / depth) × half_spread.
     # Default 0.5 (half a spread per full-depth multiple of excess).
     cost_market_impact_factor: float = 0.5
+
+    # Cap on the walk-the-book market-impact premium, expressed in multiples
+    # of the half-spread.  Threaded into the backtest routers (which otherwise
+    # default to 10).  Default 10.0 preserves prior router behaviour for
+    # callers that do not set it; platform.yaml tightens this to 4.0 for the
+    # L1-only retail book (BT-0).
+    cost_max_impact_half_spreads: float = 10.0
 
     # 2g: annualised hard-to-borrow fee in basis points for short-side fills.
     # Applied as a daily cost (annual_bps / 252) on SELL fills flagged as_short.
@@ -683,6 +692,7 @@ class PlatformConfig:
                 self.enforce_regime_state_scale_alignment
             ),
             "cost_market_impact_factor": self.cost_market_impact_factor,
+            "cost_max_impact_half_spreads": self.cost_max_impact_half_spreads,
             "cost_htb_borrow_annual_bps": self.cost_htb_borrow_annual_bps,
             # Phase-2 fields (folded into the snapshot so determinism
             # checksums change when sensor configuration changes — but
@@ -931,7 +941,7 @@ class PlatformConfig:
             require_healthy_disk_cache_manifests=bool(
                 data.get("require_healthy_disk_cache_manifests", False)
             ),
-            degrade_on_data_gap=bool(data.get("degrade_on_data_gap", False)),
+            degrade_on_data_gap=bool(data.get("degrade_on_data_gap", True)),
             warn_on_unhealthy_disk_cache=bool(
                 data.get("warn_on_unhealthy_disk_cache", True)
             ),
@@ -1037,6 +1047,9 @@ class PlatformConfig:
             ),
             cost_market_impact_factor=float(
                 data.get("cost_market_impact_factor", 0.5)
+            ),
+            cost_max_impact_half_spreads=float(
+                data.get("cost_max_impact_half_spreads", 10.0)
             ),
             cost_htb_borrow_annual_bps=float(
                 data.get("cost_htb_borrow_annual_bps", 0.0)

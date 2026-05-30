@@ -30,6 +30,7 @@ def build_backtest_backend(
     latency_ns: int = 0,
     cost_model: CostModel | None = None,
     market_impact_factor: float = 0.5,
+    max_impact_half_spreads: float = 10.0,
     *,
     max_resting_ticks: int = 50,
 ) -> tuple[ExecutionBackend, BacktestOrderRouter]:
@@ -54,6 +55,7 @@ def build_backtest_backend(
         latency_ns=latency_ns,
         cost_model=cost_model,
         market_impact_factor=market_impact_factor,
+        max_impact_half_spreads=max_impact_half_spreads,
         max_resting_ticks=max_resting_ticks,
     )
 
@@ -73,6 +75,7 @@ def build_passive_limit_backend(
     latency_ns: int = 0,
     cost_model: CostModel | None = None,
     market_impact_factor: float = 0.5,
+    max_impact_half_spreads: float = 10.0,
     *,
     fill_delay_ticks: int = 3,
     max_resting_ticks: int = 50,
@@ -105,6 +108,7 @@ def build_passive_limit_backend(
         latency_ns=latency_ns,
         cost_model=cost_model,
         market_impact_factor=market_impact_factor,
+        max_impact_half_spreads=max_impact_half_spreads,
         fill_delay_ticks=fill_delay_ticks,
         max_resting_ticks=max_resting_ticks,
         queue_position_shares=queue_position_shares,

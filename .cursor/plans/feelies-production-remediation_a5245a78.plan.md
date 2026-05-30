@@ -1,326 +1,275 @@
 ---
-name: feelies-production-remediation
-overview: Cross-checked remediation plan combining my CTO-grade review with the outside expert review, scoped for sub-$250k personal-capital deployment with a willingness to break parity hashes for backtest honesty. Sequenced by the platform's own capital-deployment gates (BACKTEST -> PAPER -> LIVE@SMALL).
+name: feelies-backtest-fidelity-remediation
+overview: Backtest-repo-only remediation. Scoped to making a passing backtest a faithful predictor of live behavior on the IB-mediated retail equity surface. Live/paper deployment ops (IB Gateway lifecycle, pacing guard, account sync, kill-switch/lockdown CLIs, persistent live state, 30-day paper soak) are OUT of scope and belong to the separate live repo. Regulatory/structural constraints (PDT, LULD halts, Reg-SHO/SSR, borrow availability) are NOT dropped — they are reframed from live pre-route gates into in-backtest fill/constraint models, because a backtest that ignores them overstates achievable PnL.
 todos:
-  - id: t0-1
-    content: "T0-1: Fix shipping config defaults (signal_min_edge_cost_ratio, cost_stress_multiplier, regulatory bps)"
+  - id: bt-0
+    content: "BT-0: Fix backtest-relevant shipping config defaults (signal_min_edge_cost_ratio, cost_stress_multiplier, degrade_on_data_gap, regulatory/impact bps) + startup assertion"
+    status: completed
+  - id: bt-1
+    content: "BT-1: Through-fill / queue-drain adverse-selection split in cost_model.py + passive_limit_router.py"
+    status: in_progress
+  - id: bt-2
+    content: "BT-2: Replace deterministic tick-count fill with seeded-Bernoulli fill-probability model in the passive router"
     status: pending
-  - id: t0-2
-    content: "T0-2: Through-fill / queue-drain adverse-selection split in cost_model.py + passive_limit_router.py"
+  - id: bt-3
+    content: "BT-3: Backtest avg_entry_price=MID convention — verify/switch to executed cross price for live parity, or lock the documented convention"
     status: pending
-  - id: t0-3
-    content: "T0-3: Replace deterministic tick-count fill with seeded-Bernoulli fill-probability model; re-baseline parity hashes"
+  - id: bt-4
+    content: "BT-4: Model PDT / day-trade-count + cash-account T+2 settlement as a backtest trade-cadence constraint (not a live gate)"
     status: pending
-  - id: t0-4
-    content: "T0-4: Re-run G12 + CPCV + DSR on all 5 SIGNAL alphas; retire or recalibrate failures"
+  - id: bt-5
+    content: "BT-5: Ingest LULD halt data and model halts in the backtest fill engine (no fills during halt + halt-resolution blackout)"
     status: pending
-  - id: t0-5
-    content: "T0-5: Move PORTFOLIO alphas to RESEARCH-only state (universe too small at sub-$250k)"
+  - id: bt-6
+    content: "BT-6: Ingest SSR list/trigger and model Reg-SHO uptick constraint on SHORT fills in the backtest"
     status: pending
-  - id: t1-1
-    content: "T1-1: IB account-type Pro-Tiered prerequisite check in verify_ib_broker.py"
+  - id: bt-7
+    content: "BT-7: Model short-locate / borrow-availability gate in the backtest (availability, not HTB fee)"
     status: pending
-  - id: t1-2
-    content: "T1-2: IBPacingGuard token bucket (45 orders/sec/client_id)"
+  - id: bt-8
+    content: "BT-8: Model MOC / closing-auction fills for sig_moc_imbalance_v1 (auction print + 3:50 ET cutoff), not MKT-in-window"
     status: pending
-  - id: t1-3
-    content: "T1-3: IBAccountSync daemon (NAV + positions reconciliation, AvailableFunds wired into risk engine)"
+  - id: bt-9
+    content: "BT-9: Cost + latency stress gate harness (Inv-12: survive 1.5x cost AND 2x latency) wired into the backtest acceptance suite"
     status: pending
-  - id: t1-4
-    content: "T1-4: IB Gateway daily-restart resilience (DEGRADED transition + reconcile-on-reconnect + automated test)"
+  - id: bt-14
+    content: "BT-14: Tick-size / sub-penny price rounding in the fill model — snap fill + limit prices to $0.01 (>=$1) / $0.0001 (<$1); MID fills currently produce sub-penny prices"
     status: pending
-  - id: t1-5
-    content: "T1-5: Document required IB market-data permission subscriptions"
+  - id: bt-15
+    content: "BT-15: Buying-power / margin model — set account_equity to real deployed capital; enforce Reg-T intraday/overnight/cash buying power as an order-reject; not just the 20% gross cap"
     status: pending
-  - id: t1-6
-    content: "T1-6: Clean up LiveOrderRouter stub naming; wire IBOrderRouter for OperatingMode.LIVE"
+  - id: bt-16
+    content: "BT-16: RTH session gating + holiday/early-close trading calendar + open/close edge guards (no market-hours model exists today)"
     status: pending
-  - id: t15-1
-    content: "T1.5-1 (G1): Pattern Day Trader (PDT) compliance counter and pre-route gate; rolling 5-business-day round-trip tracking; cash-account T+2 settlement model"
+  - id: bt-17
+    content: "BT-17: Market-data propagation latency — model feed delay between exchange_timestamp and decision availability, separate from the 30ms order-submission latency"
     status: pending
-  - id: t15-2
-    content: "T1.5-2 (G2): LULD halt detection wired into data-integrity SM as HALTED state; per-symbol halt-aware signal/order suppression; halt-resolution auction guard"
+  - id: bt-18
+    content: "BT-18: Data-adjustment policy — confirm/document raw vs split-dividend-adjusted L1 data; guard against ex-date discontinuities distorting sensor scales"
     status: pending
-  - id: t15-3
-    content: "T1.5-3 (G3): Reg SHO / SSR uptick-rule compliance; SSR-list ingestion; SSR-aware order-routing for SHORT entries (LMT-relative or hold)"
+  - id: bt-10
+    content: "BT-10: Lookahead / causality audit (Inv-6): features/signals/fills at T use only events <= T; add/confirm anti-lookahead tests"
     status: pending
-  - id: t15-4
-    content: "T1.5-4 (G5): Risk-lockdown recovery runbook + operator CLI surface (`feelies unlock-lockdown` with audit-token gate)"
+  - id: bt-11
+    content: "BT-11: Re-baseline all parity hashes in tests/determinism/ and confirm bit-identical replay after the fill-model changes (Inv-5)"
     status: pending
-  - id: t15-5
-    content: "T1.5-5 (G7): Operator-facing kill-switch CLI (`feelies kill --reason ...`) with sentinel-file/socket trigger and full shutdown sequence"
+  - id: bt-12
+    content: "BT-12: Re-run G12 + CPCV + DSR on all 5 SIGNAL alphas against the post-fix backtest; retire or recalibrate failures"
     status: pending
-  - id: t15-6
-    content: "T1.5-6: Pre-LIVE single-trade end-to-end smoke: $10 round-trip on IB paper validating submit / ack / fill / cancel cycle"
-    status: pending
-  - id: t2-1
-    content: "T2-1: 30-day PAPER-mode soak with daily parity-hash validation against backtest replay"
-    status: pending
-  - id: t2-2
-    content: "T2-2: SQLite WAL-mode persistent state for orders, positions, alpha lifecycle; restart-recovery tests"
-    status: pending
-  - id: t2-3
-    content: "T2-3: Native IB broker-side stops, brackets, MOC orders (replace orchestrator-memory stop-watch)"
-    status: pending
-  - id: t2-4
-    content: "T2-4: OrderRoutingPolicy module (Pegged-to-Mid, Adaptive variants, MKT only on emergency)"
-    status: pending
-  - id: t2-5
-    content: "T2-5: Live realized-vs-disclosed cost-drift monitor wired into DecayDetector / auto-quarantine"
-    status: pending
-  - id: t2-6
-    content: "T2-6: Real-time CPCV+DSR forensic monitor on rolling 30-day live window"
+  - id: bt-13
+    content: "BT-13: Move PORTFOLIO alphas to RESEARCH-only state (universe too small at sub-$250k)"
     status: pending
   - id: open-decisions
-    content: "Resolve four open decisions before execution: MOC alpha retention, inventory alpha retention, hazard-exit default, PAPER soak duration"
-    status: pending
+    content: "LOCKED (2026-05-29): margin>=$25k PDT-exempt (4x/2x); equity $25-100k (placeholder $50k); SSR conservative; keep+model MOC; keep inventory w/ tighter gate; executed-cross entry price; latency 50ms fill/20ms feed. Only exact equity figure remains (non-blocking)."
+    status: completed
 isProject: false
 ---
 
-# Feelies Production-Readiness Remediation
+# Feelies Backtest-Fidelity Remediation (backtest repo only)
 
-## 1. Cross-check synthesis
+## 0. Scope boundary (what this revision changed)
 
-The two reviews are ~85% aligned. Both identified the cost model as institutionally rigorous, the IB router's delta-VWAP handling as correct, and the determinism guarantees as real. Material non-overlaps:
+This plan was rescoped from a full BACKTEST -> PAPER -> LIVE deployment plan to **backtest repo only**. The single governing question for every task below is: *does a passing backtest faithfully predict live PnL on the IB-mediated retail equity surface?* If a gap distorts simulated PnL, it is in scope. If it is purely a live-deployment operational concern, it moved to the separate live repo.
 
-- **Outside reviewer caught** (and I missed): through-fill / queue-drain adverse-selection split as a code-level fix; OFI residualization gap in `FactorNeutralizer`; IB account-type (Pro Tiered vs Lite vs Fixed) prerequisite check.
-- **I caught** (and outside reviewer missed): `signal_min_edge_cost_ratio: 0.35` shipping default in [platform.yaml](platform.yaml) effectively disables the B4 cost gate; `cost_stress_multiplier: 1.0` ships default vs Inv-12's stated 1.5x stress; hazard exits and PORTFOLIO legs hard-coded `MARKET` in [src/feelies/risk/hazard_exit.py](src/feelies/risk/hazard_exit.py) and [src/feelies/risk/basic_risk.py](src/feelies/risk/basic_risk.py); in-memory `_active_orders` dict and `MemoryPositionStore` with no restart safety; backtest's `avg_entry_price = MID` convention discontinuity vs IB-reported fills.
-- **Outside reviewer corrected me on**: `LiveOrderRouter = NotImplementedError` is misleading-naming, not a structural blocker — `IBOrderRouter` is the live path that bootstrap.py wires for both PAPER and (mode-flag away) LIVE.
+**Moved OUT of scope (now owned by the live repo):**
+- IB account-type prerequisite check, `IBPacingGuard`, `IBAccountSync` daemon, IB Gateway daily-restart resilience, MDF-subscription docs, `LiveOrderRouter` wiring (original T1-1..T1-6).
+- Risk-lockdown recovery CLI, operator kill-switch CLI, pre-LIVE single-trade smoke (original T1.5-4/-5/-6).
+- 30-day PAPER soak, SQLite WAL persistent *live* state + restart-recovery tests, native IB broker-side stops/brackets, live `OrderRoutingPolicy` wiring, live realized-vs-disclosed cost-drift monitor, real-time CPCV+DSR live monitor (original T2-1..T2-6), LIVE @ SMALL_CAPITAL deployment (original Tier 3).
 
-Confirmed via direct read: [src/feelies/execution/cost_model.py:123,274](src/feelies/execution/cost_model.py) has only flat `passive_adverse_selection_bps = 0.5` (no through-fill split exists in code). [src/feelies/composition/factor_neutralizer.py:59-72](src/feelies/composition/factor_neutralizer.py) hard-codes FF5+mom+STR with no OFI factor. [src/feelies/alpha/arbitration.py:60-79](src/feelies/alpha/arbitration.py) does per-(symbol, tick) winner-takes-all but no cross-alpha intent netting.
+**Reframed and KEPT in scope (the "nothing important missed" move):** the original Tier 1.5 regulatory gates (PDT, LULD halts, Reg-SHO/SSR) were filed as *live pre-route gates*. They are equally **backtest-fidelity** requirements: a backtest that lets the strategy day-trade past the PDT cap, fill through a LULD halt, or short on a downtick during SSR is dishonest and overstates the edge. They are reframed into in-backtest fill/constraint models. Borrow-availability (a short-locate gate) is added as a new item — the original plan deferred HTB *fees* but never modeled short *availability*, which is the larger honesty gap for a long/short retail book.
 
-## 2. Scope reframing for sub-$250k personal capital
+**Confirmed via direct read of the repo:**
+- Three execution backends sit behind the single `ExecutionBackend` protocol ([src/feelies/execution/backend.py](src/feelies/execution/backend.py)); the backtest path is `ReplayFeed` + `BacktestOrderRouter` / `PassiveLimitOrderRouter` ([src/feelies/execution/backtest_backend.py](src/feelies/execution/backtest_backend.py)).
+- The cost model has only flat `passive_adverse_selection_bps` — no through-fill split ([src/feelies/execution/cost_model.py](src/feelies/execution/cost_model.py)).
+- **No halt / LULD / SSR / PDT / borrow-availability modeling exists anywhere in the backtest fill path** (only an incidental "halt" mention in the `_DeferredMarketFill` docstring and unrelated `platform_config` matches).
+- `BacktestOrderRouter` documents `avg_entry_price = MID` as an intentional convention (audit R6), routing the half-spread through `Position.cumulative_fees` ([src/feelies/execution/backtest_router.py:14-33](src/feelies/execution/backtest_router.py)).
+- Shipping defaults diverge from intent: [platform.yaml](platform.yaml) sets `signal_min_edge_cost_ratio: 0.35` and `cost_stress_multiplier: 1.0`; `platform_config.from_dict` defaults `degrade_on_data_gap=False` ([src/feelies/core/platform_config.py:85,123](src/feelies/core/platform_config.py)).
 
-Given the user's stated ceiling, the following are **out of scope** (deferred indefinitely, not deferred to a tier):
-
-- Almgren-Chriss impact modeling (sub-1% of 5-min ADV always; the L1 walk-the-book model is sufficient).
-- Universe expansion to 50-100 symbols (operational cost cannot be amortized).
-- Cross-alpha internal crossing (collision frequency too low at 5 SIGNAL alphas on 3 symbols).
-- HTB locate fee / rate-spike modeling (only relevant for non-large-cap shorts).
-- Multi-day HTB accrual (intraday-only deployment).
-- IBKR Lite / Fixed account support abstraction.
-- Dynamic intra-day factor exposure (static daily β is sufficient at 3 symbols).
-
-A consequential implication: the **two PORTFOLIO-layer alphas should not deploy** at this scale. `IR = IC * sqrt(N)` with N=3 gives only 1.73x amplification, which does not justify the composition-layer operational complexity (universe synchronizer, factor neutralizer, sector matcher, CVXPY turnover optimizer). Mark `pro_kyle_benign_v1` and `pro_burst_revert_v1` as RESEARCH-only and deploy SIGNAL alphas directly through the orchestrator's signal-path. This also retires the OFI-residualization concern (it only mattered through the PORTFOLIO layer).
-
-## 3. Capital-deployment gate flow
+## 1. Backtest-fidelity gate flow
 
 ```mermaid
 flowchart TD
-    Now["Today<br/>(main branch)"] --> T0
-    T0["TIER 0<br/>Backtest Honesty<br/>~3-4 weeks"] --> T0Gate{"All G12 +<br/>DSR pass?"}
-    T0Gate -->|"no"| Retire["Retire or<br/>recalibrate alpha"]
-    T0Gate -->|"yes"| T1
-    T1["TIER 1<br/>Pre-PAPER<br/>IB ops complete<br/>~1 week"] --> T2
-    T2["TIER 2<br/>30-day PAPER soak<br/>parity-hash equality<br/>30 days wall-clock"] --> T2Gate{"Parity OK +<br/>3 restart tests<br/>green?"}
-    T2Gate -->|"no"| Debug["Real bug<br/>per Inv-9"]
-    T2Gate -->|"yes"| Live["LIVE @ SMALL_CAPITAL<br/>capped at 1% target<br/>for 10 trading days"]
-    Live --> ScaleGate{"Forensics<br/>nominal?"}
-    ScaleGate -->|"no"| Quarantine["AlphaLifecycle<br/>QUARANTINED"]
-    ScaleGate -->|"yes"| Stop["STOP<br/>(sub-$250k ceiling)"]
+    Now["Today<br/>(main branch)"] --> Cfg
+    Cfg["BT-0<br/>Config honesty"] --> Fill
+    Fill["BT-1..BT-3<br/>Fill/cost realism"] --> Reg
+    Reg["BT-4..BT-8<br/>Regulatory/structural<br/>constraints in-backtest"] --> Stress
+    Stress["BT-9..BT-11<br/>Stress + lookahead +<br/>determinism re-baseline"] --> Gate
+    Gate{"BT-12<br/>G12 + CPCV +<br/>DSR pass per alpha?"}
+    Gate -->|"no"| Retire["Retire or<br/>recalibrate alpha"]
+    Gate -->|"yes"| Handoff["Backtest-honest artifact<br/>-> hand to live repo"]
 ```
 
-## 4. TIER 0 — Backtest Honesty (~3-4 weeks)
+## 2. Out-of-scope at sub-$250k (deferred indefinitely, not to a tier)
 
-**Gate goal**: A passing backtest faithfully predicts live behavior on the IB-mediated retail equity surface. *Do not deploy any alpha to PAPER until Tier 0 is complete and the alpha still passes G12 + DSR > 1.0 against the post-fix backtest.*
+- Almgren-Chriss impact modeling (sub-1% of 5-min ADV always; the L1 walk-the-book model is sufficient).
+- Universe expansion to 50-100 symbols.
+- Cross-alpha internal crossing (collision frequency too low at 5 SIGNAL alphas on 3 symbols).
+- HTB locate *fee* / rate-spike modeling and multi-day HTB accrual (intraday-only, large-cap focus) — but short *availability* IS modeled (BT-7).
+- Dynamic intra-day factor exposure (static daily beta is sufficient at 3 symbols).
 
-**T0-1 — Fix shipping config defaults** *(mine, ~2 hours, low risk)*
-- [platform.yaml](platform.yaml): `signal_min_edge_cost_ratio: 0.35 -> 1.5` (matches paper configs and Inv-12 intent).
-- [platform.yaml](platform.yaml): `cost_stress_multiplier: 1.0 -> 1.5` (matches Inv-12's "1.5x cost stress" requirement).
-- [src/feelies/core/platform_config.py:85](src/feelies/core/platform_config.py): change shipping default `degrade_on_data_gap: bool = False` -> `True` (G8). Currently the LIVE default keeps trading on a stale Polygon feed; only `paper_smoke_rth.yaml` overrides to `True`. Fail-safe Inv-11 demands the inverse default.
-- Audit and tighten `cost_sell_regulatory_bps`, `cost_htb_*`, `cost_max_impact_half_spreads` (currently 10 — review whether 4 is more realistic for L1-only).
-- Add a startup assertion that `signal_min_edge_cost_ratio >= 1.0` and warn if `< 1.5`.
+Consequence (BT-13): the two PORTFOLIO-layer alphas should not deploy at this scale. `IR = IC * sqrt(N)` with N=3 gives only 1.73x amplification, which does not justify the composition-layer complexity. Mark `pro_kyle_benign_v1` and `pro_burst_revert_v1` RESEARCH-only and deploy SIGNAL alphas directly through the orchestrator's signal-path. This also retires the OFI-residualization concern (it only mattered through the PORTFOLIO layer).
 
-**T0-2 — Through-fill / queue-drain adverse selection split** *(outside R-1, ~1 week, medium risk)*
-- [src/feelies/execution/cost_model.py](src/feelies/execution/cost_model.py): replace `passive_adverse_selection_bps: Decimal` with `adverse_selection_through_bps: Decimal = 3.0` and `adverse_selection_drain_bps: Decimal = 0.3`.
-- Cost-model API change: `compute_costs(...)` accepts new `is_through_fill: bool` parameter (default False = drain semantics for safety).
-- [src/feelies/execution/passive_limit_router.py](src/feelies/execution/passive_limit_router.py): the through-fill semantic already exists in `_emit_passive_fill`'s docstring — wire it through to the cost model call as `is_through_fill=True` for the through-fill branch and `False` for queue-drain.
-- Update `estimate_round_trip_cost_bps` to take an `is_through_fill_entry`/`is_through_fill_exit` pair (default both False = conservative drain assumption).
-- Update [src/feelies/core/platform_config.py:121](src/feelies/core/platform_config.py) and [src/feelies/bootstrap.py:337](src/feelies/bootstrap.py) for the new fields.
-- Re-run G12 disclosed-vs-modeled reconciliation on all 5 SIGNAL alphas in [alphas/](alphas). Expect ~1.5-3 bps cost-model increase. Some alphas may fail the 1.5x margin floor; this is the intended outcome.
+## 3. Config honesty
 
-**T0-3 — Passive fill-probability model** *(outside R-2, ~2 weeks, high risk on parity hashes)*
-- [src/feelies/execution/passive_limit_router.py](src/feelies/execution/passive_limit_router.py): replace the deterministic `fill_delay_ticks` + `passive_queue_position_shares` drain with a seeded Bernoulli per-tick model: `fill_prob_per_tick = f(opposite_side_aggression_count, queue_position, ticks_at_level)`.
-- Determinism preservation: seed from `SHA256(symbol, sequence_no, side, level_id)` and threshold against the resulting uniform — no true Poisson sampling. Inv-5 preserved.
-- Emit a new `passive_fill_outcome` event per resting order: `{FILLED_BY_DRAIN, FILLED_BY_THROUGH, CANCELLED_MAX_RESTING_TICKS, CANCELLED_LEVEL_LEFT_BBO}`.
-- Track `passive_fill_rate` and `mean_resting_ticks_to_fill` metrics into the existing monitoring layer.
-- **Re-baseline all 54 parity hashes in [tests/determinism/](tests/determinism)**. This is the single largest test-suite churn in the plan; budget ~2-3 days for re-baselining alone.
+**BT-0 — Fix backtest-relevant shipping config defaults** *(~2 hours, low risk)*
+- [platform.yaml](platform.yaml): `signal_min_edge_cost_ratio: 0.35 -> 1.5` (matches paper configs, the `from_dict` loader default, and Inv-12 intent; the 0.35 shipping value effectively disables the cost gate in backtest acceptance).
+- [platform.yaml](platform.yaml): `cost_stress_multiplier: 1.0 -> 1.5` (matches Inv-12's 1.5x cost-stress requirement; the cost model already documents the 1.5x/2x stress contract in its module docstring).
+- [src/feelies/core/platform_config.py:85](src/feelies/core/platform_config.py): change the dataclass default `degrade_on_data_gap: bool = False -> True`. A backtest replaying gappy historical data should suppress signals on a stale feed, not trade through it (Inv-11 fail-safe; Inv-8 data integrity). Only `paper_smoke_rth.yaml` currently overrides to `True`.
+- Audit and tighten `cost_sell_regulatory_bps` (currently 0.0 — set the real SEC+TAF round-trip estimate), `cost_htb_borrow_annual_bps`, and `cost_max_impact_half_spreads` (currently 10 in the router — review whether 4 is more realistic for an L1-only book).
+- Add a startup assertion: `signal_min_edge_cost_ratio >= 1.0`, warn if `< 1.5`.
 
-**T0-4 — Re-run G12, CPCV, DSR on every alpha post-Tier-0** *(both, ~1 week, low risk)*
-- For each of the 5 SIGNAL alphas: re-run [src/feelies/research/cpcv.py](src/feelies/research/cpcv.py) and [src/feelies/research/dsr.py](src/feelies/research/dsr.py) against the post-T0-2/T0-3 backtests.
-- Acceptance bar: `cpcv_min_mean_sharpe >= 1.0`, `dsr >= 1.0`, `margin_ratio >= 1.5x`.
-- Alphas failing the bar: re-calibrate (preferred) or retire. Document each decision in the alpha YAML's `falsification_criteria` block.
-- Update each alpha's `cost_arithmetic:` block to reflect the post-fix modeled cost.
+## 4. Fill and cost realism
 
-**T0-5 — Decommission PORTFOLIO alphas at this capital scale** *(scope-driven, ~1 hour, low risk)*
-- Move [alphas/pro_kyle_benign_v1/](alphas/pro_kyle_benign_v1) and [alphas/pro_burst_revert_v1/](alphas/pro_burst_revert_v1) to a `research/` subtree or mark with `lifecycle_state: RESEARCH` so they cannot promote to PAPER.
-- Document rationale in each YAML's notes section. Keep the composition-layer code path live (no deletion) — the universe synchronizer is correct, just unused at this scale.
+**BT-1 — Through-fill / queue-drain adverse-selection split** *(~1 week, medium risk)*
+- [src/feelies/execution/cost_model.py](src/feelies/execution/cost_model.py): replace flat `passive_adverse_selection_bps` with `adverse_selection_through_bps = 3.0` and `adverse_selection_drain_bps = 0.3`.
+- API change: `compute(...)` accepts `is_through_fill: bool` (default `False` = drain semantics = conservative).
+- [src/feelies/execution/passive_limit_router.py](src/feelies/execution/passive_limit_router.py): the through-fill semantic already exists in `_emit_passive_fill`'s docstring — wire it to the cost-model call as `is_through_fill=True` on the through branch and `False` on the queue-drain branch.
+- Update `estimate_round_trip_cost_bps` to take an `is_through_fill_entry`/`is_through_fill_exit` pair (default both `False`).
+- Wire the new fields through [src/feelies/core/platform_config.py](src/feelies/core/platform_config.py) and [src/feelies/bootstrap.py](src/feelies/bootstrap.py).
 
-## 5. TIER 1 — Pre-PAPER (~1 week)
+**BT-2 — Seeded-Bernoulli passive fill-probability model** *(~2 weeks, high parity churn)*
+- [src/feelies/execution/passive_limit_router.py](src/feelies/execution/passive_limit_router.py): replace the deterministic `fill_delay_ticks` + `queue_position_shares` drain with a per-tick fill probability `f(opposite_side_aggression, queue_position, ticks_at_level)`.
+- Determinism preserved (Inv-5): seed from `SHA256(symbol, sequence_no, side, level_id)`, threshold a derived uniform — no live RNG, no Poisson sampling.
+- Emit a `passive_fill_outcome` per resting order: `{FILLED_BY_DRAIN, FILLED_BY_THROUGH, CANCELLED_MAX_RESTING_TICKS, CANCELLED_LEVEL_LEFT_BBO}`; track `passive_fill_rate` and `mean_resting_ticks_to_fill`.
+- Parity-hash re-baseline lands in BT-11 (single batched re-baseline after all fill-model changes, to avoid re-baselining twice).
 
-**Gate goal**: IB integration is operationally complete; the platform can survive the IB Gateway's daily restart and detect NAV/position drift.
+**BT-3 — `avg_entry_price = MID` convention decision** *(~1 day, low risk, parity-relevant)*
+- [src/feelies/execution/backtest_router.py:14-33](src/feelies/execution/backtest_router.py) records fills at MID and routes the half-spread cross through `Position.cumulative_fees`; IB reports the *executed cross price* as the fill. This is documented as internally consistent (NAV and forensics subtract fees), but it is a discontinuity vs the eventual live-repo fill semantics.
+- **LOCKED: switch to executed cross price.** Record `avg_entry_price` = the executed cross price (tick-rounded per BT-14), dropping the synthetic MID + spread-as-fee split, so the backtest entry-price tape matches what IB will report. This removes the `spread_cost` component double-handling: the half-spread is now embedded in the fill price, not added to `cumulative_fees` — audit every consumer of `realized_pnl` / `cumulative_fees` (`BasicRiskEngine._compute_current_equity`, forensics) so the NAV identity still holds and no cost is double-counted. Re-baseline lands with BT-11.
 
-**T1-1 — IB account-type prerequisite check** *(outside R-4, ~2 hours, trivial risk)*
-- [scripts/verify_ib_broker.py](scripts/verify_ib_broker.py): query `reqAccountSummary` for `AccountType`. Refuse to wire LIVE/PAPER unless account is "Pro Tiered". Print explicit error explaining the cost model is calibrated to Pro Tiered fees.
+## 5. Regulatory / structural constraints — modeled in-backtest
 
-**T1-2 — IBPacingGuard pre-route gate** *(outside R-5, ~1 day, low risk)*
-- New module [src/feelies/broker/ib/pacing_guard.py](src/feelies/broker/ib/pacing_guard.py): token bucket, default 45 orders/sec/client_id (IB Gateway documented limit ~50/sec).
-- Insert in `IBOrderRouter.submit()` before `placeOrder` call. Queue (don't drop) when bucket empty.
-- Emit `pacing_throttle` metric on every queue event.
+These three were live pre-route gates in the prior plan; here they are backtest fill/constraint models. None require IB; all are driven from the historical Polygon/Massive tape plus published reference lists. **All raise simulated cost or suppress simulated fills — never the reverse.**
 
-**T1-3 — IBAccountSync daemon** *(outside R-3, mine, ~2 days, low risk)*
-- New component [src/feelies/broker/ib/account_sync.py](src/feelies/broker/ib/account_sync.py): periodic (15s) `reqAccountSummary` + `reqPositions`.
-- Reconcile IB-reported positions vs `MemoryPositionStore.positions()`. Alert on >1-share mismatch per symbol.
-- Use IB's `AvailableFunds` for the risk engine's equity gate — *not* the static `account_equity` config value. Adds an event-bus `AccountStateUpdate` event consumed by [src/feelies/risk/basic_risk.py](src/feelies/risk/basic_risk.py).
-- This makes T1-2 and T1-3 the explicit answer to my report's "no persistent state" concern at the live-broker boundary (Tier 2 closes the rest).
+**BT-4 — PDT flag tracking + $25k minimum-equity maintenance** *(~1.5 days, medium impact)* — **LOCKED: margin >= $25k, PDT-EXEMPT**
+- The locked account type (margin >= $25k) is PDT-*exempt*, so the 3-round-trip/5-day **hard cap is NOT modeled** and the cash-account T+2 settlement branch is **dropped**. Scope shrinks from the original ~3-day estimate.
+- New module [src/feelies/execution/regulatory/pdt_constraint.py](src/feelies/execution/regulatory/pdt_constraint.py): rolling 5-business-day round-trip *counter* keyed by `account_id` — used only to set the PDT flag (4+ round-trips in 5 days) for forensics, not to suppress fills.
+- The one real backtest constraint at this tier: a PDT-flagged account that drops **below $25,000 equity** is restricted from opening new day trades until equity is restored. Wire this against the BT-15 live-equity computation: if `current_equity < $25,000` and the account is PDT-flagged, refuse new ENTRY fills (`PDT_MIN_EQUITY`) and emit a forensic event. Exits always permitted (fail-safe).
+- Driven by `platform.account_type: margin_25k` (locked). Keep the enum extensible (`margin_under_25k`, `cash`) but only the `margin_25k` path is implemented now.
+- Acceptance test: replay a tape that draws a PDT-flagged account below $25k; expect new entries suppressed and exits still permitted.
 
-**T1-4 — IB Gateway daily-restart resilience** *(outside R-10, mine, ~1 day + automated test)*
-- [src/feelies/broker/ib/connection.py](src/feelies/broker/ib/connection.py): on disconnect, emit `BrokerDisconnected` event -> Macro SM transitions to DEGRADED -> orchestrator suspends new entries (Inv-11 fail-safe), holds existing positions, cancels pending passive orders.
-- On reconnect: run T1-3 reconciliation before any new entry is allowed. Macro SM transitions DEGRADED -> RUNNING only after reconciliation succeeds.
-- New test [tests/broker/ib/test_restart_resilience.py](tests/broker/ib/test_restart_resilience.py): kill IB Gateway mid-test, expect DEGRADED, restart, expect re-RUNNING with reconciled positions.
+**BT-5 — LULD halt modeling in the backtest fill engine** *(~3 days, high impact)*
+- Extend [src/feelies/ingestion/data_integrity.py](src/feelies/ingestion/data_integrity.py) `DataHealth` with `HALTED` (parallel to `GAP_DETECTED`); transition the per-symbol DI machine on halt-on / halt-off from the tape.
+- [src/feelies/ingestion/massive_normalizer.py](src/feelies/ingestion/massive_normalizer.py): surface halt-status from the Polygon/Massive event stream.
+- Backtest fill behavior on `HALTED`: no fills (entry or exit) for the symbol; cancel any resting passive orders; emit `SymbolHalted` for forensics.
+- Halt-resolution blackout: after halt-off, suppress new entry fills for `halt_resolution_blackout_seconds` (default 60s) so the reopening-auction print stabilizes. Existing positions held.
+- Acceptance test: synthetic halt mid-replay; expect fills suppressed during halt and during the post-resolution blackout.
 
-**T1-5 — Document IB market-data permission requirements** *(outside R-5.2.5, ~30 min)*
-- Add to [README.md](README.md) deployment section: required IB MDF subscriptions (NYSE+ARCA+NASDAQ+BATS minimum for the equities universe). The Polygon/Massive feed is for *strategy data*; IB still needs MDF subscriptions to *accept orders* on those symbols.
+**BT-6 — Reg-SHO / SSR uptick constraint on SHORT fills** *(~3 days, medium impact)* — **LOCKED: conservative refuse-short**
+- New ingestion: daily SSR list + intraday SSR-trigger from the tape (Polygon `T.ssr` field).
+- Backtest fill behavior (locked conservative): when a simulated ENTRY is SHORT and the symbol is SSR-active, **refuse the short entry fill** (`SSR_SUPPRESSED`); the entry retries next horizon boundary. The permissive uptick-routed variant is **not** implemented now (deferred; keep a config hook so it can be added without rework).
+- Acceptance test: synthetic SSR trigger mid-replay; expect short entries suppressed.
 
-**T1-6 — Clean up the LiveOrderRouter naming** *(mine, corrected by outside, ~30 min)*
-- [src/feelies/execution/live_router.py](src/feelies/execution/live_router.py) is a `NotImplementedError` stub. The IB router is the actual live router. Either delete the stub or rename it to make the relationship explicit (e.g., `LegacyLiveOrderRouterStub` with a clear deprecation comment), and update [src/feelies/bootstrap.py](src/feelies/bootstrap.py) to wire `IBOrderRouter` for `OperatingMode.LIVE` instead of raising.
+**BT-7 — Short-locate / borrow-availability gate** *(~2 days, medium impact, NEW)*
+- The prior plan deferred HTB *fees* but never modeled short *availability*. For an intraday long/short book, the larger honesty gap is whether a borrow exists at all.
+- Add a per-symbol borrow-availability table (static `available | hard | unavailable` per symbol, conservative default `available` for the large-cap universe; flag mid-caps `hard`). When a simulated SHORT entry hits an `unavailable` symbol, the backtest refuses the fill (`LOCATE_UNAVAILABLE`); `hard` applies the existing HTB fee path if configured.
+- Keep deliberately lightweight (static table, no rate-spike modeling) — sufficient for a 3-symbol large-cap universe; revisit only if the universe expands.
 
-## 5.5. TIER 1.5 — Regulatory + Fail-safe Blockers (~2 weeks)
+**BT-8 — MOC / closing-auction fill modeling for `sig_moc_imbalance_v1`** *(~3 days, medium risk, NEW)* — **LOCKED: keep + model the auction**
+- The MOC-imbalance alpha currently relies on MKT-in-window fills, which do not represent a closing-auction execution. Model the closing-auction print: a single MOC fill at the official close, with the IB MOC cutoff (3:50 PM ET; 12:50 PM ET on early-close half-days per BT-16) enforced — entries submitted after the cutoff do not fill.
+- Add an `attached_order_type` / `is_moc` flag on the simulated order so the backtest fill engine routes it to the auction-fill path rather than the continuous walk-the-book path.
+- This makes the alpha's backtested PnL reflect auction execution, not a continuous-session approximation. The alpha is **retained** (locked); its survival is still subject to BT-12 re-validation.
 
-**Gate goal**: Close five gaps that are mechanically incompatible with running the strategy at the user's stated scale. None of these were in the original plan; all surfaced from the proof review. **All five are blockers for PAPER, not just LIVE** — paper-trading PDT-violating behavior or trading through a halt teaches the wrong distribution.
+## 5.5. Price, capital, and session realism (added in review pass 2)
 
-**T1.5-1 — PDT compliance counter and pre-route gate (G1)** *(proof review, ~3 days, high impact)*
-- New module [src/feelies/risk/pdt_counter.py](src/feelies/risk/pdt_counter.py): persistent rolling 5-business-day round-trip counter, keyed by `(symbol, account_id)`. Reads from the SQLite state store (T2-2 dependency — schedule T1.5-1 immediately after T2-2 if cash-account, or before if margin ≥$25k).
-- Pre-route gate in [src/feelies/kernel/orchestrator.py](src/feelies/kernel/orchestrator.py)'s `_try_build_order_from_intent`: refuse new ENTRY if the resulting trade would be the 4th round-trip in the 5-day window for an account <$25k, or the 4th in 5 days for an account ≥$25k (PDT flag).
-- Cash-account branch: T+2 settlement model. Track unsettled-proceeds-by-day; refuse use of unsettled cash for new entries (free-rider rule).
-- Account-type comes from `T1-1` IB prerequisite check + a config field `platform.account_type: margin_25k|margin_under_25k|cash`.
-- Acceptance test: simulate 5 round-trips in one day on a margin-under-25k account; expect the 4th to be refused with a `PDTViolationError`.
+Review pass 2 audited the fill/risk/ingestion code against the dimensions a faithful IB retail-equity sim requires and found five gaps the plan had not captured. Each one systematically biases backtested PnL; none are modeled today.
 
-**T1.5-2 — LULD halt detection wired into the data-integrity SM (G2)** *(proof review, ~3 days, high impact)*
-- Extend [src/feelies/ingestion/data_integrity.py:25](src/feelies/ingestion/data_integrity.py) `DataHealth` enum with `HALTED` (parallel to `GAP_DETECTED`).
-- [src/feelies/ingestion/massive_normalizer.py](src/feelies/ingestion/massive_normalizer.py): subscribe to Polygon's halt-status events; transition the per-symbol DI machine on halt-on, halt-off.
-- Orchestrator behavior on `HALTED`: suppress entries and exits (cannot trade); cancel any resting orders for the symbol; emit a `SymbolHalted` event for forensics.
-- Halt-resolution guard: after halt-off, suspend new entries for `halt_resolution_blackout_seconds` (default 60s) so the auction print stabilizes before re-enabling. Existing positions remain held; the operator-facing flag is the absence of new entries during the blackout.
-- Acceptance test: synthetic halt event mid-replay; expect entries suppressed; expect blackout enforced post-resolution.
+**BT-14 — Tick-size / sub-penny price rounding** *(~2 days, HIGH priority — affects every fill)*
+- [src/feelies/execution/market_fill.py:67](src/feelies/execution/market_fill.py) fills at `mid = (quote.bid + quote.ask) / 2`. For a 1-cent-wide spread this yields a **half-penny fill price** (e.g. bid 100.01 / ask 100.02 -> 100.015) that no US equity venue can produce. Every backtested fill price is currently off the achievable grid, and the error is directionally small but pervasive — it contaminates spread-cost attribution and the avg-entry-price tape (BT-3).
+- Add a `tick_size(price)` helper (Reg NMS sub-penny rule: `$0.01` for prices `>= $1.00`, `$0.0001` below `$1.00`) and snap **both** simulated fill prices and any LIMIT/STP/peg limit price to the tick. Round *conservatively* (against the taker: buys round up, sells round down) so the model never invents price improvement.
+- Apply at the single fill-price chokepoint in `market_fill.py` and in the passive router's resting-price logic so BT-2's probability model also rests on valid ticks.
+- Re-baseline lands with BT-11.
 
-**T1.5-3 — Reg SHO / SSR uptick-rule compliance (G3)** *(proof review, ~3 days, medium impact)*
-- New ingestion: NYSE SSR list (publicly available daily; [https://www.nyse.com/regulation/threshold-securities](https://www.nyse.com/regulation/threshold-securities) plus intraday-trigger feed via Polygon's `T.ssr` field).
-- Pre-route gate: when an ENTRY is SHORT and the symbol is on the SSR list, take one of two paths:
-  - Conservative (default): refuse the SHORT entry. The entry will retry next horizon boundary.
-  - Permissive: route via IB `RELATIVE` order type with a small offset above the bid (auto-uptick). Configurable per-alpha.
-- Acceptance test: synthetic SSR trigger mid-replay; expect SHORT entries refused (conservative) or RELATIVE-routed (permissive).
+**BT-15 — Buying-power / margin model + real account equity** *(~2.5 days, HIGH priority)* — **LOCKED: margin >= $25k, 4x intraday / 2x overnight**
+- The risk engine ([src/feelies/risk/basic_risk.py:50,52](src/feelies/risk/basic_risk.py)) enforces only a self-imposed `max_gross_exposure_pct = 20%` cap on a static `account_equity = $1,000,000`. The **binding** constraint is the broker's Reg-T buying power, not the 20% cap — and `account_equity` is a placeholder, not the real deployed capital.
+- Set `account_equity` in `platform.yaml` to the real deployed figure. **Locked bracket: $25,000–$100,000; placeholder default `$50,000` pending the exact figure from the operator** (one open input below). The cost model is already calibrated to IB Tiered, so only equity + buying power need wiring.
+- Buying-power model (locked `margin_25k` tier): **4x intraday / 2x overnight** Reg-T. Reject simulated entries whose post-fill gross would exceed intraday buying power (`INSUFFICIENT_BUYING_POWER`); flatten-or-block any position that would exceed 2x into the close (interacts with BT-16 session boundary). The `margin_under_25k` (2x) and `cash` (1x settled) tiers are **not** implemented now — keep the enum extensible.
+- Feeds BT-4: the same live-equity computation drives the `< $25,000` PDT-min-equity guard.
+- This makes the backtest's *position-size distribution* faithful — without it the backtest silently assumes $1M of capacity and overstates absolute PnL.
+- Acceptance test: size an entry beyond 4x intraday buying power; expect `INSUFFICIENT_BUYING_POWER` and a position trajectory consistent with the funded size; verify the 2x overnight reduction at the session boundary.
 
-**T1.5-4 — Risk-lockdown recovery runbook + operator CLI (G5)** *(proof review, ~1 day, medium impact)*
-- [src/feelies/cli/main.py](src/feelies/cli/main.py): add `feelies risk unlock-lockdown --audit-token <token> --operator <name>` subcommand. Wraps the existing `Orchestrator.unlock_from_lockdown` programmatic call.
-- Pre-conditions enforced by the CLI: `position_count == 0` (verified via T1-3 IB account sync, not just the in-memory store), audit-token present, lockdown reason recorded in the event log.
-- Document the lockdown recovery procedure in [README.md](README.md):
-  1. Investigate cause via the most recent `RiskEscalation` event.
-  2. Confirm flat positions on IB side via `feelies broker positions`.
-  3. Issue `feelies risk unlock-lockdown --audit-token <signed-token> --operator <you>`.
-  4. Verify state resets to NORMAL via `feelies status`.
+**BT-16 — RTH session gating + holiday/early-close calendar** *(~3 days, medium priority)*
+- There is **no trading-session model**. The `EventCalendar` ([src/feelies/storage/reference/event_calendar/](src/feelies/storage/reference/event_calendar)) is a scheduled-flow *window* registry for sensors, not a market-hours/holiday calendar; `orchestrator.halt()` is an operator command, not a session boundary.
+- Add an RTH session model (09:30–16:00 ET) with a holiday + early-close (13:00 ET half-day) calendar. Suppress entry fills outside RTH; permit exits (fail-safe — an open position near the close must be exitable). Shift the MOC cutoff (BT-8) to 12:50 ET on half-days.
+- Add optional open/close edge guards: `no_entry_first_seconds` (opening-auction volatility) and `no_entry_last_seconds` (handled by MOC routing). Conservative defaults; documented.
+- Acceptance test: replay events spanning 16:00 ET and an early-close day; expect entry suppression outside RTH and the correct half-day cutoff.
 
-**T1.5-5 — Operator-facing kill-switch CLI (G7)** *(proof review, ~1 day, high reliability impact)*
-- [src/feelies/monitoring/kill_switch.py](src/feelies/monitoring/kill_switch.py) is currently a Protocol with programmatic `activate(reason, activated_by)`. Add a file-trigger concrete implementation: orchestrator main loop polls a sentinel path (`platform.kill_switch_sentinel_path`) once per tick; presence of the file activates the switch with the file's contents as the reason.
-- New CLI subcommand: `feelies kill --reason "..."` writes the sentinel file (atomic rename pattern) and waits up to 5 seconds for orchestrator confirmation via a status file.
-- Activation path: cancel all open IB orders, await ACKs, emit `KillSwitchActivation` event, transition Macro SM to RISK_LOCKDOWN, exit gracefully (no SIGTERM-induced orphaned orders).
-- Acceptance test: launch orchestrator, wait for warm-up, write the sentinel file, expect cancel-all + lockdown within 1 second.
+**BT-17 — Market-data propagation latency** *(~2 days, medium priority)* — **LOCKED: conservative defaults until measured**
+- The deferred-fill model models order-submission latency (`backtest_fill_latency_ns = 30ms`) but the **decision** is made on the quote's `exchange_timestamp_ns` directly. Live, that quote reaches the strategy only after feed-propagation delay, so the strategy acts on staler data than the backtest assumes — a subtle lookahead that flatters fast signals.
+- Model a `market_data_latency_ns` (the delay from `exchange_timestamp_ns` to decision availability) distinct from fill latency. The signal pipeline should treat a quote as visible at `exchange_timestamp_ns + market_data_latency_ns`.
+- **Locked baselines: `backtest_fill_latency_ns = 50ms`, `market_data_latency_ns = 20ms`** (conservative literature defaults; the current 30ms fill value is raised to 50ms). Revisit when measured IB round-trip / Polygon feed numbers are available.
+- Fold into BT-10's lookahead audit and BT-9's latency stress (stress both legs jointly at 2x).
 
-**T1.5-6 — Pre-LIVE single-trade end-to-end smoke** *(proof review, ~half-day)*
-- New script [scripts/ib_paper_smoke_trade.py](scripts/ib_paper_smoke_trade.py): submits one $10 round-trip (BUY 1 share SPY, wait for fill, SELL 1 share SPY, wait for fill) through the full orchestrator path against IB paper port.
-- Validates: connection, account-type check (T1-1), pacing guard (T1-2), account sync (T1-3), order routing (T2-4 if shipped), cost reconciliation (T2-5).
-- This is the gate before the 30-day PAPER soak: if a single round-trip cannot complete clean, the soak should not start.
+**BT-18 — Data-adjustment policy + corporate actions** *(~1 day, low priority intraday, but must be stated)*
+- Ingestion performs **no** split/dividend handling ([src/feelies/ingestion/](src/feelies/ingestion) has zero corporate-action logic). For intraday-only replay this is usually benign, but a split or dividend ex-date inside a replay window produces a genuine price discontinuity that will corrupt level-anchored sensor scales (Kyle-lambda, realized-vol) if the data is silently switched between raw and adjusted.
+- Document the policy: backtests use **raw, unadjusted** L1 within a single session; replays must not straddle an ex-date for a held symbol, or must apply the adjustment factor at the boundary. Add a load-time guard that flags any replay window containing a known ex-date for a universe symbol (reuse the calendar surface).
+- No fill-model change — this is a data-integrity guard, sequenced with BT-10.
 
-## 6. TIER 2 — Pre-LIVE @ SMALL_CAPITAL (~6 weeks: 30-day soak + ~1.5 weeks code)
+## 6. Stress, lookahead, and determinism
 
-**Gate goal**: The platform survives a process restart, broker disconnect, and a bad day without losing money to operational failure modes.
+**BT-9 — Cost + latency stress gate** *(~3 days, low risk)*
+- Inv-12 requires every edge to survive **1.5x cost AND 2x latency**. The cost-stress multiplier is set in BT-0; add the latency leg.
+- Harness: re-run each alpha's backtest at `latency_ns x2` (the router already takes `latency_ns`; `_DeferredMarketFill` models latency-eligible fills) and at `cost_stress_multiplier x1.5`, jointly.
+- Acceptance: alpha's `margin_ratio` and DSR must remain above the floor under the stressed run. Wire as a backtest acceptance test (alongside G12/CPCV/DSR in BT-12).
 
-**T2-1 — 30-day PAPER-mode soak with parity-hash validation** *(both, 30 days wall-clock)*
-- Run `mode: PAPER` against IB Gateway paper port (4002) on the deployed SIGNAL alphas.
-- Daily harness: capture the PAPER event log (NBBOQuote, Trade, Signal, OrderRequest, OrderAck-with-real-IB-fills, StateTransition events). Replay this captured log through the BACKTEST `ExecutionBackend` substituting only the broker (i.e., feed IB's recorded fills back as deterministic responses). Verify:
-  - **Signal/intent tape** SHA-256 byte-identical (Inv-9: backtest/live parity is over the *strategy* code, not the fills).
-  - **Post-fill PnL trajectory** equivalent within tolerance (`<=0.5 bps cumulative drift`).
-  - **Position trajectory** byte-identical at every fill timestamp.
-- IB-driven fills are non-deterministic and cannot be byte-identical to a backtest replay; the parity contract is over deterministic strategy decisions, not over the broker's stochastic responses (G6 clarification from proof review).
-- ANY signal-tape divergence is a real bug — backtest/live parity invariant violated.
+**BT-10 — Lookahead / causality audit** *(~2 days, low risk)*
+- Inv-6: features/signals/fills at time T use only events with timestamp <= T. The deferred-fill model already fills from the first latency-eligible quote (causal), but the audit has never been made explicit for the new fill-probability path (BT-2) and the regulatory models (BT-4..BT-8 must read only as-of-T halt/SSR/borrow state).
+- Audit the fill, cost, regulatory, and aggregation paths; add anti-lookahead tests that perturb a future-timestamped event and assert no change to any signal/fill at or before T.
 
-**T2-1b — Cold-start warm-up handling on restart (G4)** *(proof review, ~2 days)*
-- Verify behavior: after T2-2 restores positions/orders from SQLite, sensors lose their windowed state and need wall-clock time to warm. Required behavior per Inv-11:
-  - Suppress entries during warm-up (Inv-11 fail-safe; entry on cold sensors uses uninitialized state).
-  - **Permit exits during warm-up** (existing positions must be exitable; staleness should not strand a position).
-  - Block hazard-spike exits driven by uninitialized regime posteriors (different code path).
-- [src/feelies/kernel/orchestrator.py](src/feelies/kernel/orchestrator.py): audit `_check_stop_exit` and the regime-gate evaluation for cold-sensor handling. Tighten if necessary.
-- Document expected wall-clock-blackout window per (sensor, horizon) combination in [README.md](README.md). Worst case is `realized_vol_30s` + `kyle_lambda_60s` + 1800s horizon -> ~30 min full warm.
-- Add an explicit `cold_start_blackout_seconds` config field with conservative default (`max(sensor_warm_periods)`).
-- Acceptance test: restart mid-position; expect existing position exitable, expect new entries blocked until all sensors report `warm=True`.
+**BT-11 — Determinism re-baseline** *(~2-3 days, mechanical)*
+- After BT-1/BT-2/BT-5/BT-6/BT-8/BT-14 change fill outputs, re-baseline all parity hashes in [tests/determinism/](tests/determinism) in one batched pass.
+- Confirm bit-identical replay (Inv-5): same event log + parameters -> identical signals, orders, fills, PnL. The five locked parity-hash baselines (sensor, signal, sized-intent, portfolio-order, hazard-exit) are re-pinned together so a single PR carries the churn.
 
-**T2-2 — Persistent state for orders, positions, alpha lifecycle** *(mine, ~1 week, medium risk)*
-- New module [src/feelies/storage/sqlite_state.py](src/feelies/storage/sqlite_state.py): SQLite WAL-mode store for `open_orders`, `positions`, `alpha_lifecycle_state`.
-- Replace `_active_orders: dict[str, OrderRequest]` in [src/feelies/kernel/orchestrator.py](src/feelies/kernel/orchestrator.py) with a persistent-backed view.
-- Replace `MemoryPositionStore` with a persistent variant gated by config flag (`storage.position_store: memory|sqlite`).
-- Startup recovery path: on process boot, reconcile persistent state vs IB (T1-3 daemon).
-- Three deliberate restart tests: mid-fill, mid-stop-watch, mid-disconnect. All three must recover bit-clean.
+## 7. Alpha re-validation against the post-fix backtest
 
-**T2-3 — Native broker-side stops, brackets, MOC** *(mine, ~3 days, medium risk)*
-- Currently stop-loss is enforced inside [src/feelies/kernel/orchestrator.py](src/feelies/kernel/orchestrator.py) via `_check_stop_exit()` which polls the latest mid each tick. If the orchestrator process dies, no stop fires. Move stops to broker-side IB STP/STP TRAIL orders attached at entry time as bracket children.
-- For `sig_moc_imbalance_v1`: use IB's MOC order type instead of MKT-in-window. Also exposes the documented IB cutoff (3:50 PM ET).
-- Bracket attachment: `OrderRequest` gains `attached_stop_price: Decimal | None` and `attached_take_profit_price: Decimal | None`. The IB router translates these to an OCO bracket on submit.
+**BT-12 — Re-run G12 + CPCV + DSR on every SIGNAL alpha** *(~1 week, low risk)*
+- For each of the 5 SIGNAL alphas: re-run [src/feelies/research/cpcv.py](src/feelies/research/cpcv.py) and [src/feelies/research/dsr.py](src/feelies/research/dsr.py) against the post-BT-1..BT-9 / BT-14..BT-18 backtest.
+- Acceptance bar: `cpcv_min_mean_sharpe >= 1.0`, `dsr >= 1.0`, `margin_ratio >= 1.5x`, and survival under the BT-9 cost+latency stress run.
+- **LOCKED for `sig_inventory_revert_v1`: keep with a tighter regime gate**, then re-validate here. The author's falsification block flags inventory-vs-informed-flow sign confusion; tighten the regime gate so the alpha only fires in the inventory-dominant regime before re-running the bar. If it still fails post-tightening, retire it.
+- Alphas failing the bar: recalibrate (preferred) or retire. Document each decision in the alpha YAML's `falsification_criteria` block; update each `cost_arithmetic:` block to the post-fix modeled cost.
 
-**T2-4 — OrderRoutingPolicy module** *(outside R-6, mine, ~3 days, low risk)*
-- New module [src/feelies/execution/order_routing_policy.py](src/feelies/execution/order_routing_policy.py): decides IB order type from `(intent_kind, urgency, horizon_seconds)`.
-- Routing matrix:
-  - Passive entry, 30-300s horizon -> `PEG MID` (Pegged-to-Midpoint, auto-reprices).
-  - Passive entry, 300-1800s horizon -> `LMT @ BBO` with periodic re-peg.
-  - Aggressive entry (cost-policy decided) -> `Adaptive Market (Patient)` algo.
-  - Stop-loss / hazard-spike / forced-flatten exit -> `Adaptive Market (Urgent)`.
-  - Risk-lockdown emergency flatten -> `MKT` (no optimization on safety path).
-- [src/feelies/risk/hazard_exit.py:237](src/feelies/risk/hazard_exit.py) and [src/feelies/risk/basic_risk.py:318](src/feelies/risk/basic_risk.py): replace hard-coded `OrderType.MARKET` with `OrderRoutingPolicy.choose(intent)`.
+**BT-13 — Decommission PORTFOLIO alphas at this capital scale** *(~1 hour, low risk)*
+- Move [alphas/pro_kyle_benign_v1/](alphas/pro_kyle_benign_v1) and [alphas/pro_burst_revert_v1/](alphas/pro_burst_revert_v1) to a `research/` subtree or set `lifecycle_state: RESEARCH` so they cannot promote.
+- Keep the composition-layer code path live (no deletion) — the universe synchronizer is correct, just unused at this scale. Document the rationale in each YAML's notes.
 
-**T2-5 — Live realized-vs-disclosed cost reconciliation** *(both, ~3 days, low risk)*
-- New forensic monitor [src/feelies/forensics/cost_drift.py](src/feelies/forensics/cost_drift.py): per-fill, compare modeled cost from `estimate_round_trip_cost_bps` vs realized `(fill_price - mid_at_decision)`.
-- Daily report: rolling 5-day mean realized vs disclosed. Alert when `realized > 2.0 * disclosed`.
-- Wires into the existing `DecayDetector` -> `AlphaLifecycle.quarantine()` path so a slippage-drifted alpha auto-quarantines.
+## 8. Backtest acceptance criteria (binding handoff to the live repo)
 
-**T2-6 — Real-time CPCV+DSR forensic monitor** *(outside R-13, mine, ~3 days, medium risk)*
-- The research module ([src/feelies/research/cpcv.py](src/feelies/research/cpcv.py), [src/feelies/research/dsr.py](src/feelies/research/dsr.py)) computes these offline. Wire them into [src/feelies/forensics/](src/feelies/forensics) on a rolling 30-day live trade window. Alert on DSR < 1.0; auto-quarantine on DSR < 0.5.
-- This is the alpha-discipline gate for SCALED escalation, but worth wiring before LIVE @ SMALL_CAPITAL because the same discipline catches edge decay early.
+The backtest artifact is honest enough to hand to the live repo only when ALL of:
+1. BT-0 shipped: `signal_min_edge_cost_ratio >= 1.5`, `cost_stress_multiplier = 1.5`, `degrade_on_data_gap = true` default, regulatory/impact bps tightened, startup assertion present.
+2. BT-1..BT-3 shipped: through-fill/drain cost split, fill-probability model, entry-price convention decided and locked.
+3. BT-4..BT-8 shipped: PDT min-equity guard (margin >= $25k tier), LULD halt, SSR refuse-short, borrow-availability, and MOC/closing-auction constraints all model their suppression/cost effects in the backtest fill path, each with an acceptance test.
+4. BT-14..BT-18 shipped: prices snap to the tick grid; orders respect real account equity + buying power; trades respect RTH/holiday/early-close session bounds; market-data latency is modeled distinctly from fill latency; data-adjustment/ex-date policy documented and guarded.
+5. BT-9..BT-11 green: 1.5x-cost + 2x-latency stress gate (both latency legs), lookahead/causality audit, parity hashes re-baselined and bit-identical replay confirmed.
+6. BT-12: every deployed (SIGNAL-only) alpha passes G12 (margin >= 1.5x), CPCV (Sharpe >= 1.0), DSR (>= 1.0) against the post-fix backtest, and survives stress.
+7. BT-13: PORTFOLIO alphas RESEARCH-only.
 
-## 7. TIER 3 — LIVE @ SMALL_CAPITAL itself
+## 9. Locked decisions (resolved 2026-05-29)
 
-After all of Tier 2 is green:
+All execution-blocking decisions are now locked, so BT-4 and BT-15 can land together.
 
-- Deploy SIGNAL alphas only at the configured 1% / 10-trading-day SMALL_CAPITAL tier.
-- Use the F-6 capital-tier escalation only after `CapitalStageEvidence` is satisfied — but per the user's stated ceiling, **STOP after SMALL_CAPITAL**. Do not escalate to SCALED. The platform's own promotion machinery is the correct gate.
+1. **Account type (BT-4 / BT-15)** — **LOCKED: margin >= $25k, PDT-EXEMPT.** Buying power 4x intraday / 2x overnight. No 3-RT/5-day hard cap; no cash T+2 model. Only the `< $25k` minimum-equity-to-day-trade guard is modeled (BT-4). The `margin_under_25k` / `cash` enum values are kept extensible but unimplemented.
+2. **Deployed capital (BT-15)** — **LOCKED: $25,000–$100,000 bracket; placeholder `account_equity = $50,000`.** *One remaining input:* the operator should confirm the exact figure so absolute PnL and position-size faithfulness are exact (the bracket is sufficient to build against; the exact number only re-scales results).
+3. **SSR posture (BT-6)** — **LOCKED: conservative refuse-short.** Permissive uptick-routed variant deferred (config hook retained).
+4. **`sig_moc_imbalance_v1` retention (BT-8)** — **LOCKED: keep + model the closing auction** (3:50 ET cutoff; 12:50 ET on half-days). Subject to BT-12 re-validation.
+5. **`sig_inventory_revert_v1` retention (BT-12)** — **LOCKED: keep with a tighter regime gate**, then re-validate; retire only if it fails the post-fix bar.
+6. **Entry-price convention (BT-3)** — **LOCKED: switch to executed cross price** (tick-rounded), matching IB-reported fills.
+7. **Latency baselines (BT-17)** — **LOCKED: conservative defaults** (`fill = 50ms`, `feed = 20ms`) until measured IB/Polygon numbers are available.
 
-## 8. TIER 4 — Long-term quality (deferred / opportunistic)
+**Only remaining input (non-blocking):** the exact `account_equity` within the $25k–$100k bracket. BT-15 builds against the `$50,000` placeholder; supplying the exact figure later only re-scales absolute PnL and the buying-power ceiling — no code rework.
 
-Items that improve the codebase but are not blockers at sub-$250k:
+## 10. Review-pass-2 findings (priority-ordered)
 
-- Orchestrator refactor: split [src/feelies/kernel/orchestrator.py](src/feelies/kernel/orchestrator.py) (~4.2k LOC) into `OrderManager`, `StopLossWatcher`, `BusBridge`, retaining the orchestrator as a coordinator only. Reduces coupling and improves testability.
-- Online cost-model recalibration: feed T2-5's realized fills back into a Bayesian update of `adverse_selection_*_bps` parameters. Closes the loop on the cost model.
-- Acceptance gate that asserts no `OrderType.MARKET` literal exists outside [src/feelies/risk/escalation.py](src/feelies/risk/escalation.py)'s emergency flatten path. Forces routing decisions through the policy module.
+The second review pass validated the plan against the live-fidelity goal by auditing the fill, cost, risk, ingestion, and calendar code directly. The cost model ([src/feelies/execution/cost_model.py](src/feelies/execution/cost_model.py)) is already faithful (IB Tiered commission with floor/cap, SEC §31 + FINRA TAF with cap, maker/taker split, HTB, and a correct variable-only stress multiplier) and needs only the through/drain split (BT-1). The fill model has sound bones (partial fills, walk-the-book impact, causal deferred-latency fills). The gaps that block faithful live-PnL prediction, in priority order:
 
-## 9. Capital-deployment gate criteria (binding)
+1. **BT-14 tick-size rounding** — every fill price is currently off the legal price grid (sub-penny MID). Highest pervasiveness, lowest effort. Do first.
+2. **BT-15 buying-power + real equity** — without it, absolute PnL and position sizing assume phantom $1M capacity. Blocks any faithful sub-$250k claim.
+3. **BT-1 through/drain adverse-selection split** — the single biggest *cost*-model fidelity item; already in the plan.
+4. **BT-4/BT-5/BT-6/BT-7 regulatory constraints** — PDT, halts, SSR, locate; each suppresses trades the live account couldn't make.
+5. **BT-16 session gating** + **BT-8 MOC/auction** — session bounds and auction execution.
+6. **BT-17 market-data latency** + **BT-2 fill-probability** + **BT-10 lookahead audit** — remove the residual optimism in fast-signal fills.
+7. **BT-3 entry-price convention**, **BT-18 data-adjustment** — parity-locking and data-integrity guards.
+8. **BT-9 stress**, **BT-11 determinism**, **BT-12 re-validation** — the gates that prove the above held.
 
-Do **not** wire any real-money client_id until *all* of:
+## 11. Revision note
 
-1. Tier 0 complete: `cost_stress_multiplier=1.5`, `degrade_on_data_gap=true` default, through-fill split shipped, fill-probability model shipped, parity hashes re-baselined.
-2. All deployed alphas pass G12 (margin >= 1.5x) and CPCV+DSR (Sharpe >= 1.0, DSR >= 1.0) against the post-Tier-0 backtest.
-3. Tier 1 complete: account-type check, pacing guard, account sync, restart resilience, MDF subs documented.
-4. **Tier 1.5 complete: PDT counter active, halt detection wired, SSR-aware short routing, lockdown CLI + kill-switch CLI shipped, single-trade smoke green.**
-5. Tier 2 complete: 30-day PAPER soak with signal-tape parity equality every day, persistent state, broker-side stops, routing policy, cost-drift monitor, cold-start warm-up behavior verified.
-6. Three deliberate restart tests pass clean (mid-fill, mid-stop-watch, mid-disconnect).
-
-## 10. Open decisions (need user input before execution)
-
-1. **`sig_moc_imbalance_v1` retention** — depends on `event_calendar_path` for SCHEDULED_FLOW timing. Operationally maintainable for personal deployment, or retire?
-2. **`sig_inventory_revert_v1` retention** — author's own falsification block acknowledges the inventory-vs-informed-flow sign confusion is a fragility. Keep with tighter regime gate, or retire?
-3. **Hazard exit default** — currently OFF except for `sig_hawkes_burst_v1`. Enable platform-wide default-ON given the personal-capital risk profile?
-4. **PAPER soak duration** — 30 days is the default. Acceptable to stop at 15 if Tier 0+1 churn delays the start?
-5. **Account type and PDT path (T1.5-1)** — is the IB account a margin account ≥$25k (PDT counter only), margin <$25k (3-RT/5-day hard cap), or cash (T+2 settlement model)? The PDT module's complexity scales with this answer; cash-account is the most invasive (requires per-day unsettled-cash tracking).
-6. **SSR routing posture (T1.5-3)** — conservative refuse-SHORT default, or permissive RELATIVE-routed default? The conservative default is fail-safe; the permissive default trades the SSR-day signal at increased operational complexity.
-
-## 11. Proof-review summary
-
-This plan was hardened by an explicit proof-review pass that cross-checked the original plan against the codebase for blind spots. Eight gaps were identified; five (G1-G5) became Tier 1.5 because they are mechanically incompatible with the user's stated scale (PDT, halts, SSR, warm-up, lockdown recovery). Three (G6-G8) tightened existing tiers (parity-hash semantics, kill-switch CLI, data-gap default). One non-issue was retired (order-ID collision is handled broker-side by IB's `next_order_id`).
-
-The critical insight from the proof review: **PAPER-mode trading itself can violate PDT and trade-through-halts.** PDT compliance and halt detection cannot be deferred to LIVE — they are blockers for honest paper-soak data, because paper-trading the wrong distribution gives the wrong confidence signal. This moved them from "Tier 3 polish" (where I had implicitly placed them) to Tier 1.5 (blocker for PAPER).
+This plan was rewritten from the original full-deployment remediation (`feelies-production-remediation`), then hardened by a second review pass. Pass 1 scoped to the backtest repo (removed live/paper ops; reframed PDT/LULD/SSR as in-backtest models; added borrow-availability BT-7, MOC/auction BT-8, stress BT-9, lookahead BT-10). Pass 2 added five fidelity items found by auditing the code against the live-PnL-prediction goal: tick-size rounding (BT-14), buying-power/real-equity (BT-15), RTH/holiday/early-close session gating (BT-16), market-data propagation latency (BT-17), and a data-adjustment/ex-date guard (BT-18) — none of which were modeled in the codebase.
