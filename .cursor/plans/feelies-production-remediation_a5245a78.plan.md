@@ -34,10 +34,10 @@ todos:
     status: pending
   - id: bt-14
     content: "BT-14: Tick-size / sub-penny price rounding in the fill model — snap fill + limit prices to $0.01 (>=$1) / $0.0001 (<$1); MID fills currently produce sub-penny prices"
-    status: completed
+    status: pending
   - id: bt-15
     content: "BT-15: Buying-power / margin model — set account_equity to real deployed capital; enforce Reg-T intraday/overnight/cash buying power as an order-reject; not just the 20% gross cap"
-    status: completed
+    status: pending
   - id: bt-16
     content: "BT-16: RTH session gating + holiday/early-close trading calendar + open/close edge guards (no market-hours model exists today)"
     status: pending
@@ -52,7 +52,7 @@ todos:
     status: pending
   - id: bt-11
     content: "BT-11: Re-baseline all parity hashes in tests/determinism/ and confirm bit-identical replay after the fill-model changes (Inv-5)"
-    status: pending
+    status: completed
   - id: bt-12
     content: "BT-12: Re-run G12 + CPCV + DSR on all 5 SIGNAL alphas against the post-fix backtest; retire or recalibrate failures"
     status: pending
