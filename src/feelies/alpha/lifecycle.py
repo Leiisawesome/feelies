@@ -754,6 +754,16 @@ class AlphaLifecycle:
                 f"for '{self._alpha_id}'"
             )
 
+        # BT-13: enforce the research-only cap on rehydration too, so a
+        # checkpoint blob cannot bypass the promotion-API guard and
+        # leave a research-only alpha in an ``is_active`` state.
+        cap_errors = self._lifecycle_promotion_errors(target)
+        if cap_errors:
+            raise ValueError(
+                f"Cannot restore '{self._alpha_id}' to {target.name}: "
+                f"{cap_errors[0]}"
+            )
+
         # Rehydrate the F-6 capital-tier hint *before* the state is
         # actually flipped: ``current_capital_tier`` consults the hint
         # only after exhausting history, so the order doesn't change
