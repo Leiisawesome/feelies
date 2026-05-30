@@ -14,12 +14,14 @@ in the same commit.  Then run::
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
+os.chdir(_REPO_ROOT)
 
 from tests.determinism.test_hazard_exit_replay import _replay as hazard_exit_replay
 from tests.determinism.test_horizon_feature_snapshot_replay import _replay as snapshot_replay
