@@ -263,6 +263,13 @@ class PassiveLimitOrderRouter:
             self._reject(request, "no quote available for symbol")
             return
 
+        if self._moc is not None and self._moc.submit(
+            request,
+            exchange_timestamp_ns=quote.exchange_timestamp_ns,
+            reject_fn=self._reject,
+        ):
+            return
+
         # Crossed (bid > ask) quotes are data errors; locked (bid == ask)
         # leaves no passive side and breaks the marketability guard.
         if quote.bid >= quote.ask:

@@ -544,6 +544,15 @@ class Orchestrator:
         # symbols default to AVAILABLE.  Cached from config in boot().
         self._borrow_tier: dict[str, BorrowTier] = {}
 
+        # ── BT-8: MOC strategy routing ────────────────────────────────
+        # Set of strategy_ids whose entries route as MOC orders, and a
+        # flag indicating whether MOC session bounds were successfully
+        # resolved at boot().  Defaulted to empty/False here so configs
+        # without ``moc_strategy_ids`` (and tests using minimal configs)
+        # do not raise AttributeError on the entry-order path.
+        self._moc_strategy_ids: frozenset[str] = frozenset()
+        self._moc_bounds_configured: bool = False
+
         # When True, entry/exit orders use LIMIT at BBO instead of
         # MARKET.  Stop-loss exits always use MARKET (fail-safe).
         # Set from config via boot().
