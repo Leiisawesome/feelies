@@ -218,7 +218,7 @@ def load_ex_date_calendar(path: str | Path) -> ExDateCalendar:
         raise ValueError(
             f"{p}: unsupported schema_version {version!r}; expected '1.0'"
         )
-    entries_raw = raw_data.get("entries", ())
+    entries_raw = raw_data.get("entries", [])
     if not isinstance(entries_raw, list):
         raise ValueError(f"{p}: entries must be a list")
     entries: list[ExDateEntry] = []
