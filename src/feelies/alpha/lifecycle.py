@@ -454,6 +454,11 @@ class AlphaLifecycle:
         types — :class:`RevalidationEvidence`).  Supplying both or
         neither raises :class:`ValueError`.
         """
+        cap_errors = self._lifecycle_promotion_errors(
+            AlphaLifecycleState.PAPER,
+        )
+        if cap_errors:
+            return cap_errors
         legacy_ev, errors = self._select_evidence(
             evidence,
             structured_evidence,
