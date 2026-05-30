@@ -1935,6 +1935,11 @@ def main(argv: list[str] | None = None) -> int:
         from dataclasses import replace as _replace
         config = _replace(config, cost_stress_multiplier=args.stress_cost)
 
+    # Apply Inv-12 joint cost + latency stress (BT-9). Supersedes --stress-cost.
+    if args.inv12_stress:
+        from feelies.core.inv12_stress import apply_inv12_stress
+        config = apply_inv12_stress(config)
+
     # Override symbols if provided via CLI
     if args.symbol:
         config.symbols = frozenset(s.upper() for s in args.symbol)
