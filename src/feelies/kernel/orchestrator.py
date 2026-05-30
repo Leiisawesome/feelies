@@ -824,6 +824,23 @@ class Orchestrator:
         set_phase(BuyingPowerPhase.OVERNIGHT)
         self._rth_close_bp_flipped = True
 
+    def _reset_buying_power_phase_for_session(self) -> None:
+        """BT-16: reset the once-per-session RTH-close BP flip state.
+
+        Clears the latch that gates :meth:`_maybe_flip_buying_power_at_rth_close`
+        and forces the risk engine back onto
+        :attr:`BuyingPowerPhase.INTRADAY` so a new session always opens
+        on the 4× intraday cap — even when the same orchestrator
+        instance is reused across runs and the previous run left the
+        engine flipped to ``OVERNIGHT`` after crossing the close.
+        """
+        self._rth_close_bp_flipped = False
+        set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
+        if callable(set_phase):
+            from feelies.risk.buying_power import BuyingPowerPhase
+
+            set_phase(BuyingPowerPhase.INTRADAY)
+
     # ── Lifecycle: boot / run / shutdown ────────────────────────────
 
     def boot(self, config: Configuration) -> None:
@@ -1027,7 +1044,7 @@ class Orchestrator:
         self._require_safe_session_entry()
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:backtest")
-        self._rth_close_bp_flipped = False
+        self._reset_buying_power_phase_for_session()
         self._bind_router_position_qty_for_rth()
         self._pending_sized_intents.clear()
         self._consumed_by_portfolio_ids = None
@@ -1065,7 +1082,7 @@ class Orchestrator:
         self._require_safe_session_entry()
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:paper")
-        self._rth_close_bp_flipped = False
+        self._reset_buying_power_phase_for_session()
         self._bind_router_position_qty_for_rth()
         self._pending_sized_intents.clear()
         self._consumed_by_portfolio_ids = None
@@ -1102,7 +1119,7 @@ class Orchestrator:
         self._require_safe_session_entry()
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:live")
-        self._rth_close_bp_flipped = False
+        self._reset_buying_power_phase_for_session()
         self._bind_router_position_qty_for_rth()
         self._pending_sized_intents.clear()
         self._reset_regime_session_state()
@@ -1876,7 +1893,13 @@ class Orchestrator:
                 refresh_hwm(self._positions)
             if self._strategy_positions is not None:
                 self._strategy_positions.update_mark(quote.symbol, mid)
-            self._maybe_flip_buying_power_at_rth_close(quote)
+        # BT-16: drive the RTH-close buying-power flip purely from the
+        # quote's exchange timestamp so it always aligns with router-side
+        # entry gating, even on ticks that fail the mid guard (zeroed or
+        # invalid BBO).  Otherwise the engine could remain on intraday
+        # buying power past the close while the router already treats
+        # the session as closed — inconsistent risk vs execution.
+        self._maybe_flip_buying_power_at_rth_close(quote)
 
         # ── Quote-driven router ack drain ────────────────────────
         # bus.publish(quote) triggered on_quote() on the router, which
