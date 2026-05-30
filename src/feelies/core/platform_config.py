@@ -756,6 +756,12 @@ class PlatformConfig:
             "account_type": self.account_type,
             "account_id": self.account_id,
             "pdt_min_equity_usd": self.pdt_min_equity_usd,
+            "risk_margin_intraday_buying_power_multiplier": (
+                self.risk_margin_intraday_buying_power_multiplier
+            ),
+            "risk_margin_overnight_buying_power_multiplier": (
+                self.risk_margin_overnight_buying_power_multiplier
+            ),
             "backtest_fill_latency_ns": self.backtest_fill_latency_ns,
             "stop_loss_per_share": self.stop_loss_per_share,
             "trail_activate_per_share": self.trail_activate_per_share,
