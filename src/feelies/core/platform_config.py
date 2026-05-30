@@ -142,7 +142,8 @@ class PlatformConfig:
     early_close_moc_cutoff_et: str = "12:50"
     early_close_official_close_et: str = "13:00"
 
-    account_equity: float = 1_000_000.0
+    # BT-15: deployed-capital placeholder ($25k–$100k bracket).
+    account_equity: float = 50_000.0
     backtest_fill_latency_ns: int = 0
 
     # BT-4: account type + PDT (Pattern Day Trader) minimum-equity gate.
@@ -154,6 +155,10 @@ class PlatformConfig:
     # Maintenance floor below which a PDT-flagged account is barred from
     # opening new day trades (entries suppressed, exits always permitted).
     pdt_min_equity_usd: float = 25_000.0
+
+    # BT-15: Reg-T buying-power multipliers (margin_25k only).
+    risk_margin_intraday_buying_power_multiplier: float = 4.0
+    risk_margin_overnight_buying_power_multiplier: float = 2.0
 
     stop_loss_per_share: float = 0.0
     trail_activate_per_share: float = 0.0
@@ -767,6 +772,12 @@ class PlatformConfig:
             "account_type": self.account_type,
             "account_id": self.account_id,
             "pdt_min_equity_usd": self.pdt_min_equity_usd,
+            "risk_margin_intraday_buying_power_multiplier": (
+                self.risk_margin_intraday_buying_power_multiplier
+            ),
+            "risk_margin_overnight_buying_power_multiplier": (
+                self.risk_margin_overnight_buying_power_multiplier
+            ),
             "backtest_fill_latency_ns": self.backtest_fill_latency_ns,
             "stop_loss_per_share": self.stop_loss_per_share,
             "trail_activate_per_share": self.trail_activate_per_share,
@@ -1115,10 +1126,16 @@ class PlatformConfig:
             early_close_official_close_et=str(
                 data.get("early_close_official_close_et", "13:00")
             ),
-            account_equity=float(data.get("account_equity", 1_000_000.0)),
+            account_equity=float(data.get("account_equity", 50_000.0)),
             account_type=str(data.get("account_type", "margin_25k")),
             account_id=str(data.get("account_id", "default")),
             pdt_min_equity_usd=float(data.get("pdt_min_equity_usd", 25_000.0)),
+            risk_margin_intraday_buying_power_multiplier=float(
+                data.get("risk_margin_intraday_buying_power_multiplier", 4.0)
+            ),
+            risk_margin_overnight_buying_power_multiplier=float(
+                data.get("risk_margin_overnight_buying_power_multiplier", 2.0)
+            ),
             backtest_fill_latency_ns=int(
                 data.get("backtest_fill_latency_ns", 0)
             ),

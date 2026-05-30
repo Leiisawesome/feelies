@@ -78,21 +78,8 @@ ssr_mode: refuse_short
 # cost_htb_borrow_annual_bps > 0.
 borrow_availability: {}
 
-# BT-8: MOC / closing-auction fills for sig_moc_imbalance_v1. Orders from
-# moc_strategy_ids are tagged is_moc and fill once at the official close mid
-# (not continuous MKT). Requires moc_session_date or event_calendar_path with
-# a YYYY-MM-DD filename. IB cutoff: 15:50 ET (12:50 on early_close_dates).
-# moc_strategy_ids:
-#   - sig_moc_imbalance_v1
-# moc_session_date: "2026-03-24"
-# moc_cutoff_et: "15:50"
-# official_close_et: "16:00"
-# early_close_dates: []
-# early_close_moc_cutoff_et: "12:50"
-# early_close_official_close_et: "13:00"
-
-# Sandbox backtest equity; overlays must set real limits for PAPER/LIVE.
-account_equity: 100000.0
+# BT-15: deployed capital ($25k–$100k bracket; $50k placeholder). Overlays may override.
+account_equity: 50000.0
 
 # BT-4: account type drives the PDT (Pattern Day Trader) constraint model.
 # Locked to margin_25k (opens above $25k, PDT-exempt: no 3-round-trip hard cap,
@@ -135,8 +122,6 @@ cost_adverse_selection_drain_bps: 0.3
 # or it double-counts. BT-0: raised from 0.0 (which understated round-trip cost).
 cost_sell_regulatory_bps: 0.5
 # BT-0: 1.5x matches Inv-12's cost-stress requirement (was 1.0, no stress).
-# Inv-12 nominal variable-cost stress (BT-0). Joint 1.5× cost + 2× fill latency
-# for promotion re-validation: ``run_backtest.py --inv12-stress`` (BT-9).
 cost_stress_multiplier: 1.5
 cost_min_commission: 0.35
 cost_max_commission_pct: 1.0

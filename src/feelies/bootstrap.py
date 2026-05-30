@@ -137,6 +137,7 @@ from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
+from feelies.risk.buying_power import BuyingPowerConfig
 from feelies.risk.engine import RiskEngine
 from feelies.risk.hazard_exit import HazardExitController, HazardPolicy
 from feelies.risk.position_sizer import BudgetBasedSizer
@@ -364,12 +365,22 @@ def build_platform(
         account_id=config.account_id,
         min_equity=_decimal(config.pdt_min_equity_usd),
     ))
+    buying_power_config = BuyingPowerConfig(
+        account_type=config.account_type,
+        intraday_multiplier=_decimal(
+            config.risk_margin_intraday_buying_power_multiplier
+        ),
+        overnight_multiplier=_decimal(
+            config.risk_margin_overnight_buying_power_multiplier
+        ),
+    )
     risk_engine = BasicRiskEngine(
         config=risk_config,
         regime_engine=regime_engine,
         bus=bus,
         alert_sequence_generator=risk_alert_seq,
         pdt_constraint=pdt_constraint,
+        buying_power_config=buying_power_config,
         account_id=config.account_id,
     )
 
@@ -741,7 +752,6 @@ def _load_alphas(
         module = loader.load(spec_path, param_overrides=overrides)
         registry.register(module)
         logger.info("Registered alpha '%s' from explicit path %s", module.manifest.alpha_id, spec_path)
-
 
 
 def _resolve_moc_bounds(config: PlatformConfig) -> MocSessionBounds | None:

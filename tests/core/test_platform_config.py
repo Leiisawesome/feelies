@@ -35,7 +35,7 @@ class TestDefaults:
 
     def test_default_account_equity(self) -> None:
         cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
-        assert cfg.account_equity == 1_000_000.0
+        assert cfg.account_equity == 50_000.0
 
 
 # ── Validation ──────────────────────────────────────────────────────

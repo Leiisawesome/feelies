@@ -39,6 +39,12 @@ from feelies.core.events import (
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.regulatory.pdt_constraint import PDTConstraint
 from feelies.portfolio.position_store import PositionStore
+from feelies.risk.buying_power import (
+    INSUFFICIENT_BUYING_POWER,
+    BuyingPowerConfig,
+    BuyingPowerPhase,
+    buying_power_limit,
+)
 from feelies.risk.sized_intent_result import SizedIntentRiskResult
 from feelies.services.regime_engine import RegimeEngine
 
@@ -50,7 +56,7 @@ class RiskConfig:
     max_position_per_symbol: int = 1000
     max_gross_exposure_pct: float = 20.0
     max_drawdown_pct: float = 5.0
-    account_equity: Decimal = Decimal("1000000")
+    account_equity: Decimal = Decimal("50000")
 
     regime_vol_breakout_scale: float = 0.5
     regime_compression_scale: float = 0.75
@@ -84,6 +90,7 @@ class BasicRiskEngine:
         bus: EventBus | None = None,
         alert_sequence_generator: SequenceGenerator | None = None,
         pdt_constraint: PDTConstraint | None = None,
+        buying_power_config: BuyingPowerConfig | None = None,
         account_id: str = "default",
     ) -> None:
         self._config = config
@@ -114,7 +121,17 @@ class BasicRiskEngine:
         # When None the gate is inert (e.g. test fixtures, non-margin_25k
         # account types that bootstrap declines to wire).
         self._pdt_constraint = pdt_constraint
+        self._buying_power_config = buying_power_config
+        self._buying_power_phase = BuyingPowerPhase.INTRADAY
         self._account_id = account_id
+
+    def set_buying_power_phase(self, phase: BuyingPowerPhase) -> None:
+        """Switch intraday (4×) vs overnight (2×) Reg-T caps (BT-15)."""
+        self._buying_power_phase = phase
+
+    @property
+    def buying_power_phase(self) -> BuyingPowerPhase:
+        return self._buying_power_phase
 
     def check_signal(
         self,
@@ -204,6 +221,12 @@ class BasicRiskEngine:
         )
         if pdt_verdict is not None:
             return pdt_verdict
+
+        bp_verdict = self._check_buying_power(
+            order, current.quantity, post_signed, positions,
+        )
+        if bp_verdict is not None:
+            return bp_verdict
 
         if post_fill_qty > adjusted_max:
             return RiskVerdict(
@@ -456,6 +479,22 @@ class BasicRiskEngine:
             self._account_id, symbol, prev_qty, new_qty, timestamp_ns,
         )
 
+    @staticmethod
+    def _opens_or_increases(current_qty: int, post_signed: int) -> bool:
+        """Entry detection: True iff the order grows exposure or flips sign.
+
+        Shared by the PDT min-equity (BT-4) and Reg-T buying-power (BT-15)
+        ENTRY gates so a future edge-case fix lands in exactly one place.
+        """
+        return (
+            abs(post_signed) > abs(current_qty)
+            or (
+                current_qty != 0
+                and post_signed != 0
+                and (current_qty > 0) != (post_signed > 0)
+            )
+        )
+
     def _check_pdt_min_equity(
         self,
         order: OrderRequest,
@@ -473,15 +512,7 @@ class BasicRiskEngine:
         """
         if self._pdt_constraint is None:
             return None
-        opens_or_increases = (
-            abs(post_signed) > abs(current_qty)
-            or (
-                current_qty != 0
-                and post_signed != 0
-                and (current_qty > 0) != (post_signed > 0)
-            )
-        )
-        if not opens_or_increases:
+        if not self._opens_or_increases(current_qty, post_signed):
             return None
         current_equity = self._compute_current_equity(positions)
         if not self._pdt_constraint.should_suppress_entry(
@@ -497,6 +528,55 @@ class BasicRiskEngine:
             action=RiskAction.REJECT,
             reason="PDT_MIN_EQUITY",
         )
+
+    def _check_buying_power(
+        self,
+        order: OrderRequest,
+        current_qty: int,
+        post_signed: int,
+        positions: PositionStore,
+    ) -> RiskVerdict | None:
+        """Reg-T buying-power ENTRY gate (BT-15).
+
+        Rejects orders that would *open or increase* exposure when post-fill
+        gross exceeds the phase limit (4× intraday / 2× overnight on live NAV).
+        Exits and reductions return ``None`` (Inv-11 fail-safe).
+        """
+        if self._buying_power_config is None:
+            return None
+        if not self._opens_or_increases(current_qty, post_signed):
+            return None
+        current = positions.get(order.symbol)
+        current_equity = self._compute_current_equity(positions)
+        limit = buying_power_limit(
+            current_equity,
+            self._buying_power_phase,
+            self._buying_power_config,
+        )
+        prospective = self._prospective_total_exposure(
+            order, positions, current,
+        )
+        if prospective > limit:
+            _logger.warning(
+                "Buying-power gate rejected ENTRY "
+                "(account_id=%s, symbol=%s, phase=%s): prospective gross %s "
+                "> limit %s (equity %s).",
+                self._account_id,
+                order.symbol,
+                self._buying_power_phase.name,
+                prospective,
+                limit,
+                current_equity,
+            )
+            return RiskVerdict(
+                timestamp_ns=order.timestamp_ns,
+                correlation_id=order.correlation_id,
+                sequence=order.sequence,
+                symbol=order.symbol,
+                action=RiskAction.REJECT,
+                reason=INSUFFICIENT_BUYING_POWER,
+            )
+        return None
 
     def _emit_pdt_suppression_alert(
         self,
