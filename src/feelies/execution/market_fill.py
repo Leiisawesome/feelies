@@ -35,6 +35,7 @@ from decimal import Decimal
 from feelies.core.events import NBBOQuote, OrderAck, OrderAckStatus, OrderRequest, Side
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.cost_model import CostModel
+from feelies.execution.tick_size import snap_fill_price, snap_limit_price
 
 
 def _clamp_fill_price_to_limit(
@@ -85,13 +86,18 @@ def append_market_fill_acks(
     side is strictly positive.
     """
     limit_px = request.limit_price
+    if limit_px is not None:
+        limit_px = snap_limit_price(request.side, limit_px)
     # BT-3: fill at the executed cross price (BUY lifts the ask, SELL hits
     # the bid), not the synthetic mid.  The half-spread is embedded in the
     # price, so the cost model is called with half_spread=0 (no separate
     # spread_cost fee).  ``half_spread`` is still used to *size* the
     # walk-the-book impact below, which is measured in half-spread units.
     cross = quote.ask if request.side == Side.BUY else quote.bid
-    fill_price = _clamp_fill_price_to_limit(request.side, cross, limit_px)
+    fill_price = snap_fill_price(
+        request.side,
+        _clamp_fill_price_to_limit(request.side, cross, limit_px),
+    )
     half_spread = (quote.ask - quote.bid) / Decimal("2")
 
     available_depth = (
@@ -137,10 +143,13 @@ def append_market_fill_acks(
             raw_impact_px = cross + impact
         else:
             raw_impact_px = max(cross - impact, Decimal("0.01"))
-        impact_price = _clamp_fill_price_to_limit(
+        impact_price = snap_fill_price(
             request.side,
-            raw_impact_px,
-            limit_px,
+            _clamp_fill_price_to_limit(
+                request.side,
+                raw_impact_px,
+                limit_px,
+            ),
         )
 
         excess_costs = cost_model.compute(
