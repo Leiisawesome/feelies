@@ -136,6 +136,13 @@ def _hash_reading_stream(recorder_readings: list[Any]) -> str:
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
+
+EXPECTED_V03_READING_HASH = (
+    "e994160b2d26c836f8104b53815628bc38ebfe9cf34b8d1fed86caba0cd6c7f8"
+)
+EXPECTED_V03_READING_COUNT = 9428
+
+
 def _replay() -> tuple[str, int]:
     recorder = replay_through_registry(sensor_specs=_SENSOR_SPECS)
     readings = recorder.sensor_readings
@@ -168,11 +175,6 @@ def test_v03_sensor_reading_stream_matches_locked_baseline() -> None:
     #   * ``structural_break_score`` 1.1.0 → 1.2.0 — invalidate
     #     carry-forward mid on bad quote (#A2), Kahan-compensated running
     #     sum for the rolling-mean baseline (#15).
-    EXPECTED_V03_READING_HASH = (
-        "e994160b2d26c836f8104b53815628bc38ebfe9cf34b8d1fed86caba0cd6c7f8"
-    )
-    EXPECTED_V03_READING_COUNT = 9428
-
     assert actual_count == EXPECTED_V03_READING_COUNT, (
         f"v0.3 reading count drift: expected {EXPECTED_V03_READING_COUNT}, "
         f"got {actual_count}"

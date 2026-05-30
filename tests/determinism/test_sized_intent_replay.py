@@ -199,6 +199,30 @@ def _hash_intent_stream(intents: list[SizedPositionIntent]) -> str:
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
+
+# Locked Level-3 baseline (decay OFF).  Re-baseline only in a batched
+# determinism pass (BT-11) with explicit justification in the commit.
+EXPECTED_LEVEL3_INTENT_DECAY_OFF_HASH = (
+    "eca21cb190b593ac388707e3246e3e4f7de784a2dc1bfc858faa0425a3918717"
+)
+EXPECTED_LEVEL3_INTENT_DECAY_OFF_COUNT = 4
+
+
+def test_intent_stream_matches_locked_baseline_decay_off() -> None:
+    actual_hash, actual_count = _replay(decay=False)
+    assert actual_count == EXPECTED_LEVEL3_INTENT_DECAY_OFF_COUNT, (
+        f"intent count drift: expected {EXPECTED_LEVEL3_INTENT_DECAY_OFF_COUNT}, "
+        f"got {actual_count}"
+    )
+    assert actual_hash == EXPECTED_LEVEL3_INTENT_DECAY_OFF_HASH, (
+        "Level-3 SizedPositionIntent (decay OFF) hash drift!\n"
+        f"  Expected: {EXPECTED_LEVEL3_INTENT_DECAY_OFF_HASH}\n"
+        f"  Actual:   {actual_hash}\n"
+        "If intentional, update the constant in the same commit and "
+        "justify in the commit message."
+    )
+
+
 # ── Determinism (replay twice → same hash) ──────────────────────────────
 
 

@@ -28,10 +28,10 @@ todos:
     status: completed
   - id: bt-8
     content: "BT-8: Model MOC / closing-auction fills for sig_moc_imbalance_v1 (auction print + 3:50 ET cutoff), not MKT-in-window"
-    status: completed
+    status: pending
   - id: bt-9
     content: "BT-9: Cost + latency stress gate harness (Inv-12: survive 1.5x cost AND 2x latency) wired into the backtest acceptance suite"
-    status: completed
+    status: pending
   - id: bt-14
     content: "BT-14: Tick-size / sub-penny price rounding in the fill model — snap fill + limit prices to $0.01 (>=$1) / $0.0001 (<$1); MID fills currently produce sub-penny prices"
     status: pending
@@ -52,7 +52,7 @@ todos:
     status: pending
   - id: bt-11
     content: "BT-11: Re-baseline all parity hashes in tests/determinism/ and confirm bit-identical replay after the fill-model changes (Inv-5)"
-    status: pending
+    status: completed
   - id: bt-12
     content: "BT-12: Re-run G12 + CPCV + DSR on all 5 SIGNAL alphas against the post-fix backtest; retire or recalibrate failures"
     status: pending
