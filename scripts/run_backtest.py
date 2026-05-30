@@ -516,6 +516,14 @@ def parse_cache_replay_args(argv: list[str] | None = None) -> argparse.Namespace
         metavar="MULT",
         help="Cost stress multiplier (same as run_backtest.py)",
     )
+    p.add_argument(
+        "--inv12-stress",
+        action="store_true",
+        help=(
+            "Apply Inv-12 joint stress: 1.5× cost_stress_multiplier and "
+            "2× backtest_fill_latency_ns (BT-9). Supersedes --stress-cost."
+        ),
+    )
     args = p.parse_args(argv)
     # Shared Phase-2 JSONL emit hooks default off for this entry-point.
     args.emit_fills_jsonl = False
@@ -2028,7 +2036,10 @@ def main_cache_replay(argv: list[str] | None = None) -> int:
 
     config = PlatformConfig.from_yaml(config_path)
 
-    if args.stress_cost != 1.0:
+    if args.inv12_stress:
+        from feelies.core.inv12_stress import apply_inv12_stress
+        config = apply_inv12_stress(config)
+    elif args.stress_cost != 1.0:
         from dataclasses import replace as _replace
 
         config = _replace(config, cost_stress_multiplier=args.stress_cost)

@@ -32,6 +32,7 @@ from feelies.core.inv12_stress import (
     INV12_COST_STRESS_MULTIPLIER,
     INV12_LATENCY_STRESS_MULTIPLIER,
     apply_inv12_stress,
+    stressed_fill_latency_ns,
 )
 from feelies.core.platform_config import PlatformConfig
 from feelies.execution.backtest_router import BacktestOrderRouter
@@ -76,11 +77,37 @@ def test_stressed_cost_model_raises_variable_fees() -> None:
 
 
 def test_router_deferred_fill_uses_doubled_latency() -> None:
+    """Deferred MARKET fills must honour 2× ``backtest_fill_latency_ns``.
+
+    Discriminative construction: the intermediate quote sits at exactly
+    the *baseline* deadline (``quote_ts + baseline_latency``).  Under
+    baseline latency the router would fill there; under 2× latency the
+    deadline is ``quote_ts + 2*baseline`` so the intermediate quote
+    stays below the gate and only the final quote (at the stressed
+    deadline) clears it.  A regression that stopped doubling latency in
+    ``apply_inv12_stress`` / ``stressed_fill_latency_ns`` would fill at
+    the intermediate quote and break the empty ``poll_acks()``
+    assertion below.
+    """
+    cfg = PlatformConfig.from_yaml(Path("platform.yaml"))
+    baseline_latency_ns = cfg.backtest_fill_latency_ns
+    if baseline_latency_ns <= 0:
+        pytest.skip("baseline backtest_fill_latency_ns is 0; latency leg inert")
+
+    stressed_cfg = apply_inv12_stress(cfg)
+    latency_ns = stressed_cfg.backtest_fill_latency_ns
+    assert latency_ns == stressed_fill_latency_ns(baseline_latency_ns)
+    assert latency_ns == baseline_latency_ns * INV12_LATENCY_STRESS_MULTIPLIER
+
+    quote_ex_ts = 1_000
+    intermediate_ex_ts = quote_ex_ts + baseline_latency_ns
+    final_ex_ts = quote_ex_ts + latency_ns
+
     clock = SimulatedClock(start_ns=0)
-    router = BacktestOrderRouter(clock, latency_ns=2_000)
+    router = BacktestOrderRouter(clock, latency_ns=latency_ns)
     router.on_quote(
         NBBOQuote(
-            timestamp_ns=1000,
+            timestamp_ns=quote_ex_ts,
             correlation_id="q",
             sequence=1,
             symbol="AAPL",
@@ -88,12 +115,12 @@ def test_router_deferred_fill_uses_doubled_latency() -> None:
             ask=Decimal("101"),
             bid_size=100,
             ask_size=100,
-            exchange_timestamp_ns=1000,
+            exchange_timestamp_ns=quote_ex_ts,
         ),
     )
     router.submit(
         OrderRequest(
-            timestamp_ns=2000,
+            timestamp_ns=quote_ex_ts + 1,
             correlation_id="o",
             sequence=2,
             order_id="ord1",
@@ -107,7 +134,7 @@ def test_router_deferred_fill_uses_doubled_latency() -> None:
     assert [a.status for a in acks] == [OrderAckStatus.ACKNOWLEDGED]
     router.on_quote(
         NBBOQuote(
-            timestamp_ns=2500,
+            timestamp_ns=intermediate_ex_ts + 100,
             correlation_id="q2",
             sequence=2,
             symbol="AAPL",
@@ -115,13 +142,13 @@ def test_router_deferred_fill_uses_doubled_latency() -> None:
             ask=Decimal("101"),
             bid_size=100,
             ask_size=100,
-            exchange_timestamp_ns=1999,
+            exchange_timestamp_ns=intermediate_ex_ts,
         ),
     )
     assert router.poll_acks() == []
     router.on_quote(
         NBBOQuote(
-            timestamp_ns=3500,
+            timestamp_ns=final_ex_ts + 100,
             correlation_id="q3",
             sequence=3,
             symbol="AAPL",
@@ -129,7 +156,7 @@ def test_router_deferred_fill_uses_doubled_latency() -> None:
             ask=Decimal("101"),
             bid_size=100,
             ask_size=100,
-            exchange_timestamp_ns=3000,
+            exchange_timestamp_ns=final_ex_ts,
         ),
     )
     acks = router.poll_acks()
