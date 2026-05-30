@@ -35,7 +35,7 @@ from decimal import Decimal
 from feelies.core.events import NBBOQuote, OrderAck, OrderAckStatus, OrderRequest, Side
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.cost_model import CostModel
-from feelies.execution.tick_size import snap_fill_price, snap_limit_price
+from feelies.execution.tick_size import snap_fill_price
 
 
 def _clamp_fill_price_to_limit(
@@ -87,7 +87,12 @@ def append_market_fill_acks(
     """
     limit_px = request.limit_price
     if limit_px is not None:
-        limit_px = snap_limit_price(request.side, limit_px)
+        # Snap the limit on the *taker* grid (BUY-ceil / SELL-floor) — the
+        # passive-side ``snap_limit_price`` (BUY-floor / SELL-ceil) would
+        # cap the BUY clamp *below* the lifted ask (and the SELL clamp
+        # *above* the hit bid) for sub-penny marketable limits, inventing
+        # price improvement the taker shouldn't receive.
+        limit_px = snap_fill_price(request.side, limit_px)
     # BT-3: fill at the executed cross price (BUY lifts the ask, SELL hits
     # the bid), not the synthetic mid.  The half-spread is embedded in the
     # price, so the cost model is called with half_spread=0 (no separate
