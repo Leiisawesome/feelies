@@ -48,6 +48,8 @@ from feelies.core.events import (
     Signal,
     SignalDirection,
     StateTransition,
+    SymbolHalted,
+    Trade,
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
@@ -1886,4 +1888,140 @@ class TestExitBypassesEdgeCostGate:
         orch._process_tick(quote)
 
         # EXIT must bypass B4 gate → position fully closed.
+        assert position_store.get("AAPL").quantity == 0
+
+
+class TestHaltModeling:
+    """BT-5: LULD halt suppression + post-resolution entry blackout."""
+
+    _HALT_ON = (5,)
+    _HALT_OFF = (6,)
+
+    @staticmethod
+    def _trade(ts: int, seq: int, conditions: tuple[int, ...]) -> Trade:
+        return Trade(
+            timestamp_ns=ts,
+            correlation_id=f"AAPL:{ts}:{seq}",
+            sequence=seq,
+            symbol="AAPL",
+            price=Decimal("150.00"),
+            size=100,
+            exchange_timestamp_ns=ts - 100,
+            conditions=conditions,
+        )
+
+    @staticmethod
+    def _build(
+        clock: SimulatedClock,
+        bus: EventBus,
+        position_store: MemoryPositionStore,
+        *,
+        blackout_ns: int,
+    ) -> tuple[Orchestrator, BacktestOrderRouter]:
+        bt_router = BacktestOrderRouter(clock=clock)
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(action=RiskAction.ALLOW),
+            position_store=position_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+        _boot_to_backtest(orch)
+        # _MinimalConfig carries no halt fields, so set the cached codes
+        # directly (bootstrap threads these from PlatformConfig in prod).
+        orch._halt_on_codes = frozenset({5})
+        orch._halt_off_codes = frozenset({6})
+        orch._halt_blackout_ns = blackout_ns
+        return orch, bt_router
+
+    def test_halt_on_suppresses_entry_and_emits_event(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        halts: list[SymbolHalted] = []
+        bus.subscribe(SymbolHalted, halts.append)  # type: ignore[arg-type]
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(
+            clock, bus, position_store, blackout_ns=1000,
+        )
+        # Absent the halt gate, every quote would emit a LONG entry signal.
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.LONG),
+        )
+
+        orch._process_trade(self._trade(ts=1500, seq=2, conditions=self._HALT_ON))
+        assert "AAPL" in orch._halted_symbols
+        assert [h.halted for h in halts] == [True]
+
+        q = _make_quote(ts=1700, seq=3)
+        bt_router.on_quote(q)
+        orch._process_tick(q)
+
+        # Halted → quote skipped, no entry fill, position stays flat.
+        assert position_store.get("AAPL").quantity == 0
+
+    def test_resume_blackout_suppresses_entry_then_lifts(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(
+            clock, bus, position_store, blackout_ns=1000,
+        )
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.LONG),
+        )
+
+        orch._process_trade(self._trade(ts=1500, seq=2, conditions=self._HALT_ON))
+        orch._process_trade(self._trade(ts=2000, seq=4, conditions=self._HALT_OFF))
+        assert "AAPL" not in orch._halted_symbols
+        assert orch._in_halt_blackout("AAPL", 2500)        # inside window
+        assert not orch._in_halt_blackout("AAPL", 3000)    # deadline = 2000+1000
+
+        # Entry during blackout → suppressed.
+        q_bl = _make_quote(ts=2500, seq=5)
+        bt_router.on_quote(q_bl)
+        orch._process_tick(q_bl)
+        assert position_store.get("AAPL").quantity == 0
+
+        # Entry after the blackout lifts → fills.
+        q_after = _make_quote(ts=3500, seq=6)
+        bt_router.on_quote(q_after)
+        orch._process_tick(q_after)
+        assert position_store.get("AAPL").quantity > 0
+
+    def test_exit_permitted_during_blackout(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(
+            clock, bus, position_store, blackout_ns=1000,
+        )
+
+        # Open long on the first quote, flatten on the blackout-window quote.
+        def emit(quote: NBBOQuote) -> None:
+            direction = (
+                SignalDirection.LONG if quote.sequence == 1
+                else SignalDirection.FLAT
+            )
+            bus.publish(_make_signal(quote, direction))
+        bus.subscribe(NBBOQuote, emit)  # type: ignore[arg-type]
+
+        q0 = _make_quote(ts=1000, seq=1)
+        bt_router.on_quote(q0)
+        orch._process_tick(q0)
+        assert position_store.get("AAPL").quantity > 0
+
+        orch._process_trade(self._trade(ts=1500, seq=2, conditions=self._HALT_ON))
+        orch._process_trade(self._trade(ts=2000, seq=3, conditions=self._HALT_OFF))
+        assert orch._in_halt_blackout("AAPL", 2500)
+
+        # Exit during the blackout is always permitted → position closes.
+        q_exit = _make_quote(ts=2500, seq=5)
+        bt_router.on_quote(q_exit)
+        orch._process_tick(q_exit)
         assert position_store.get("AAPL").quantity == 0

@@ -87,6 +87,7 @@ from feelies.core.events import (
     Side,
     SizedPositionIntent,
     StateTransition,
+    SymbolHalted,
     Trade,
 )
 from feelies.core.identifiers import SequenceGenerator
@@ -104,7 +105,11 @@ from feelies.execution.intent import (
     TradingIntent,
 )
 from feelies.execution.order_state import OrderState, create_order_state_machine
-from feelies.ingestion.data_integrity import DataHealth
+from feelies.ingestion.data_integrity import (
+    DataHealth,
+    HaltSignal,
+    classify_halt_status,
+)
 from feelies.ingestion.idle_tick import IdleTick
 from feelies.ingestion.normalizer import MarketDataNormalizer
 from feelies.kernel.macro import (
@@ -235,6 +240,17 @@ _TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset({
     OrderState.CANCELLED,
     OrderState.REJECTED,
     OrderState.EXPIRED,
+})
+
+# BT-5: intents that open or increase exposure (a "new entry").  These are
+# suppressed during the post-halt resolution blackout; EXIT and NO_ACTION
+# are always permitted (existing positions may always be unwound).
+_ENTRY_OPENING_INTENTS: frozenset[TradingIntent] = frozenset({
+    TradingIntent.ENTRY_LONG,
+    TradingIntent.ENTRY_SHORT,
+    TradingIntent.SCALE_UP,
+    TradingIntent.REVERSE_LONG_TO_SHORT,
+    TradingIntent.REVERSE_SHORT_TO_LONG,
 })
 
 
@@ -496,6 +512,18 @@ class Orchestrator:
         # unknown macro/micro pairing).
         self._pipeline_abort_requested = False
 
+        # ── BT-5: LULD halt modeling ─────────────────────────────────
+        # Symbols currently halted (no fills, entry or exit).  Driven from
+        # the Trade tape's halt-on / halt-off condition codes.  The blackout
+        # map records, per symbol, the event-time ns until which new ENTRY
+        # fills remain suppressed after a resume.  Codes / blackout cached
+        # from config in boot(); empty codes ⇒ halt modeling is inert.
+        self._halted_symbols: set[str] = set()
+        self._halt_blackout_until_ns: dict[str, int] = {}
+        self._halt_on_codes: frozenset[int] = frozenset()
+        self._halt_off_codes: frozenset[int] = frozenset()
+        self._halt_blackout_ns: int = 0
+
         # When True, entry/exit orders use LIMIT at BBO instead of
         # MARKET.  Stop-loss exits always use MARKET (fail-safe).
         # Set from config via boot().
@@ -738,6 +766,15 @@ class Orchestrator:
                 self._trail_activate_pct = config.trail_activate_pct
             if hasattr(config, "trail_pct"):
                 self._trail_pct = config.trail_pct
+            # BT-5: cache halt-detection config (empty codes ⇒ inert).
+            if hasattr(config, "halt_on_condition_codes"):
+                self._halt_on_codes = frozenset(config.halt_on_condition_codes)
+            if hasattr(config, "halt_off_condition_codes"):
+                self._halt_off_codes = frozenset(config.halt_off_condition_codes)
+            if hasattr(config, "halt_resolution_blackout_seconds"):
+                self._halt_blackout_ns = (
+                    int(config.halt_resolution_blackout_seconds) * 1_000_000_000
+                )
             if hasattr(config, "execution_mode"):
                 # passive_limit and minimum_cost both wire through the
                 # passive-limit backend.  The static flag tells the
@@ -1170,6 +1207,11 @@ class Orchestrator:
         sensors and any time-bucket boundaries crossed by the trade
         timestamp are observed.
         """
+        # BT-5: detect halt-on / resume from the trade tape before the
+        # data-health gate so a halt is registered even when the symbol's
+        # quote feed is otherwise quiet.
+        self._update_halt_state(trade)
+
         if self._data_health_blocks_trading(trade.symbol, trade.correlation_id):
             return
 
@@ -1613,6 +1655,15 @@ class Orchestrator:
         if self._data_health_blocks_trading(quote.symbol, cid):
             return
 
+        # ── BT-5: LULD halt gate ───────────────────────────────
+        # While a symbol is halted there are no fills (entry or exit):
+        # skip the quote entirely so the router never sees ``on_quote``
+        # (no resting/deferred fills) and the mark freezes at its last
+        # value (existing positions are held).  Resting passive orders
+        # were cancelled at halt-on (see ``_update_halt_state``).
+        if quote.symbol in self._halted_symbols:
+            return
+
         # ── M0 → M1: MARKET_EVENT_RECEIVED ─────────────────────
         self._micro.transition(
             MicroState.MARKET_EVENT_RECEIVED,
@@ -1855,6 +1906,32 @@ class Orchestrator:
             trigger="risk_pass_order_warranted",
             correlation_id=cid,
         )
+
+        # BT-5: post-halt resolution blackout — suppress new ENTRY-opening
+        # orders for ``halt_resolution_blackout_seconds`` after a resume so
+        # the reopening-auction print can stabilize.  Exits (and NO_ACTION)
+        # are always permitted — an existing position may always unwind.
+        if (
+            intent.intent in _ENTRY_OPENING_INTENTS
+            and self._in_halt_blackout(intent.symbol, quote.timestamp_ns)
+        ):
+            self._append_signal_order_trace(
+                quote,
+                signal,
+                outcome="NO_ORDER",
+                reasons=(
+                    "halt_resolution_blackout",
+                    f"symbol={intent.symbol}",
+                ),
+                trading_intent=intent.intent.name,
+            )
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="halt_resolution_blackout",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
 
         # H2/H3/H7: REVERSE intents decompose into EXIT(MARKET) +
         # ENTRY(LIMIT) — aggressive close guarantees fill, passive
@@ -4300,6 +4377,77 @@ class Orchestrator:
         self._reconcile_fills(acks, event.correlation_id)
 
     # ── Configuration and data integrity ────────────────────────────
+
+    # ── BT-5: LULD halt modeling ────────────────────────────────────
+
+    def _update_halt_state(self, trade: Trade) -> None:
+        """Register halt-on / resume edges from the Trade tape (BT-5).
+
+        On halt-on for a symbol not already halted: mark it halted, cancel
+        any resting orders (Inv-11), and emit ``SymbolHalted``.  On resume:
+        clear the halt, open the entry blackout window, and emit the resume
+        ``SymbolHalted``.  Inert when no halt codes are configured.
+        """
+        if not self._halt_on_codes and not self._halt_off_codes:
+            return
+        status = classify_halt_status(
+            trade.conditions, self._halt_on_codes, self._halt_off_codes,
+        )
+        if status is None:
+            return
+        symbol = trade.symbol
+        if status is HaltSignal.HALT_ON:
+            if symbol not in self._halted_symbols:
+                self._halted_symbols.add(symbol)
+                self._halt_blackout_until_ns.pop(symbol, None)
+                self._cancel_resting_for_symbol(symbol, trade.correlation_id)
+                self._emit_symbol_halted(
+                    symbol,
+                    halted=True,
+                    reason="LULD_HALT",
+                    ts=trade.timestamp_ns,
+                    correlation_id=trade.correlation_id,
+                    blackout_until_ns=0,
+                )
+        elif symbol in self._halted_symbols:
+            self._halted_symbols.discard(symbol)
+            deadline = trade.timestamp_ns + self._halt_blackout_ns
+            self._halt_blackout_until_ns[symbol] = deadline
+            self._emit_symbol_halted(
+                symbol,
+                halted=False,
+                reason="LULD_RESUME",
+                ts=trade.timestamp_ns,
+                correlation_id=trade.correlation_id,
+                blackout_until_ns=deadline,
+            )
+
+    def _in_halt_blackout(self, symbol: str, now_ns: int) -> bool:
+        """True while a symbol is inside its post-resume entry blackout."""
+        deadline = self._halt_blackout_until_ns.get(symbol)
+        return deadline is not None and now_ns < deadline
+
+    def _emit_symbol_halted(
+        self,
+        symbol: str,
+        *,
+        halted: bool,
+        reason: str,
+        ts: int,
+        correlation_id: str,
+        blackout_until_ns: int,
+    ) -> None:
+        """Publish the forensic ``SymbolHalted`` marker."""
+        self._bus.publish(SymbolHalted(
+            timestamp_ns=ts,
+            correlation_id=correlation_id,
+            sequence=self._seq.next(),
+            source_layer="kernel",
+            symbol=symbol,
+            halted=halted,
+            reason=reason,
+            blackout_until_ns=blackout_until_ns,
+        ))
 
     def _data_health_blocks_trading(self, symbol: str, correlation_id: str) -> bool:
         """Return True when the Massive normalizer forbids consuming this symbol.

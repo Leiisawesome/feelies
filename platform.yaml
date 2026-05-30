@@ -52,6 +52,16 @@ regime_engine: hmm_3state_fractional
 # data_dir: data/
 # event_log_path: data/event_log.jsonl
 
+# BT-5: LULD / regulatory halt modeling. Condition codes on the Trade tape that
+# mark a halt-on / resume. Empty (default) = halt modeling inert. Set these to
+# the halt/resume condition encoding of your historical tape to enable: during a
+# halt no fills occur and resting passive orders are cancelled; after resume new
+# ENTRY fills stay suppressed for halt_resolution_blackout_seconds (exits always
+# permitted).
+halt_on_condition_codes: []
+halt_off_condition_codes: []
+halt_resolution_blackout_seconds: 60
+
 # Sandbox backtest equity; overlays must set real limits for PAPER/LIVE.
 account_equity: 100000.0
 

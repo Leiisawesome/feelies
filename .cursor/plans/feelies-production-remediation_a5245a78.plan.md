@@ -19,7 +19,7 @@ todos:
     status: completed
   - id: bt-5
     content: "BT-5: Ingest LULD halt data and model halts in the backtest fill engine (no fills during halt + halt-resolution blackout)"
-    status: pending
+    status: completed
   - id: bt-6
     content: "BT-6: Ingest SSR list/trigger and model Reg-SHO uptick constraint on SHORT fills in the backtest"
     status: pending

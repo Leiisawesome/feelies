@@ -104,6 +104,16 @@ class PlatformConfig:
     # the REST stream is full-tick contiguous so gap detection matches WS.
     enable_rest_sequence_gap_detection: bool = False
 
+    # BT-5: LULD / regulatory halt modeling. Tape condition codes that mark a
+    # halt-on / resume on the Trade stream. Empty ⇒ halt modeling is inert (no
+    # DataHealth.HALTED transitions, no fill suppression) — set these to match
+    # the halt/resume condition encoding of the deployment's historical tape.
+    # On resume, new ENTRY fills stay suppressed for the blackout window so the
+    # reopening-auction print can stabilize; exits are always permitted.
+    halt_on_condition_codes: tuple[int, ...] = ()
+    halt_off_condition_codes: tuple[int, ...] = ()
+    halt_resolution_blackout_seconds: int = 60
+
     account_equity: float = 1_000_000.0
     backtest_fill_latency_ns: int = 0
 
@@ -439,6 +449,15 @@ class PlatformConfig:
             )
         if self.pdt_min_equity_usd <= 0:
             raise ConfigurationError("pdt_min_equity_usd must be positive")
+        if self.halt_resolution_blackout_seconds < 0:
+            raise ConfigurationError(
+                "halt_resolution_blackout_seconds must be non-negative"
+            )
+        if set(self.halt_on_condition_codes) & set(self.halt_off_condition_codes):
+            raise ConfigurationError(
+                "halt_on_condition_codes and halt_off_condition_codes must be "
+                "disjoint (a code cannot mean both halt and resume)"
+            )
 
         if not isinstance(self.regime_engine_options, dict):
             raise ConfigurationError(
@@ -679,6 +698,11 @@ class PlatformConfig:
             ),
             "enable_rest_sequence_gap_detection": (
                 self.enable_rest_sequence_gap_detection
+            ),
+            "halt_on_condition_codes": list(self.halt_on_condition_codes),
+            "halt_off_condition_codes": list(self.halt_off_condition_codes),
+            "halt_resolution_blackout_seconds": (
+                self.halt_resolution_blackout_seconds
             ),
             "account_equity": self.account_equity,
             "account_type": self.account_type,
@@ -992,6 +1016,15 @@ class PlatformConfig:
             ),
             enable_rest_sequence_gap_detection=bool(
                 data.get("enable_rest_sequence_gap_detection", False)
+            ),
+            halt_on_condition_codes=tuple(
+                int(x) for x in data.get("halt_on_condition_codes", ())
+            ),
+            halt_off_condition_codes=tuple(
+                int(x) for x in data.get("halt_off_condition_codes", ())
+            ),
+            halt_resolution_blackout_seconds=int(
+                data.get("halt_resolution_blackout_seconds", 60)
             ),
             account_equity=float(data.get("account_equity", 1_000_000.0)),
             account_type=str(data.get("account_type", "margin_25k")),

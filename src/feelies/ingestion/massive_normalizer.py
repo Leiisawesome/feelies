@@ -27,6 +27,8 @@ from feelies.core.identifiers import SequenceGenerator, make_correlation_id
 from feelies.core.state_machine import StateMachine, TransitionRecord
 from feelies.ingestion.data_integrity import (
     DataHealth,
+    HaltSignal,
+    classify_halt_status,
     create_data_integrity_machine,
 )
 from feelies.ingestion.ingest_health import merge_worst_health
@@ -161,6 +163,8 @@ class MassiveNormalizer:
         "_last_seen",
         "_duplicates_filtered",
         "_enable_rest_sequence_gap_detection",
+        "_halt_on_codes",
+        "_halt_off_codes",
     )
 
     _FEED_QUOTE = "quote"
@@ -172,9 +176,16 @@ class MassiveNormalizer:
         transition_callback: Callable[[TransitionRecord], None] | None = None,
         *,
         enable_rest_sequence_gap_detection: bool = False,
+        halt_on_codes: frozenset[int] | None = None,
+        halt_off_codes: frozenset[int] | None = None,
     ) -> None:
         self._clock = clock
         self._seq = SequenceGenerator(start=1)
+        # BT-5: tape condition codes that mark an LULD / regulatory halt
+        # on (``halt_on_codes``) and resume (``halt_off_codes``).  Empty ⇒
+        # halt detection is inert (no DataHealth.HALTED transitions).
+        self._halt_on_codes: frozenset[int] = halt_on_codes or frozenset()
+        self._halt_off_codes: frozenset[int] = halt_off_codes or frozenset()
         self._health_machines: dict[
             tuple[str, str], StateMachine[DataHealth]
         ] = {}
@@ -361,6 +372,8 @@ class MassiveNormalizer:
             corr_raw = msg.get("correction")
             correction = int(corr_raw) if corr_raw is not None else None
 
+            self._apply_halt_status(symbol, conditions)
+
             return Trade(
                 timestamp_ns=exchange_ts_ns,
                 correlation_id=cid,
@@ -494,6 +507,8 @@ class MassiveNormalizer:
             raw_trf = rec.get("trf_timestamp")
             trf_ts = int(raw_trf) if raw_trf is not None else None
 
+            self._apply_halt_status(symbol, conditions)
+
             return Trade(
                 timestamp_ns=sip_ts,
                 correlation_id=cid,
@@ -620,6 +635,34 @@ class MassiveNormalizer:
     ) -> None:
         self._last_seen[(symbol, feed_type)] = (seq_num, exchange_ts_ns, content_fp)
         self._ensure_health_machine(symbol, feed_type)
+
+    def _apply_halt_status(
+        self,
+        symbol: str,
+        conditions: tuple[int, ...],
+    ) -> None:
+        """Transition the trade-feed DataHealth machine on halt-on / off (BT-5).
+
+        Halts arrive on the trade tape, so only the trade-feed machine is
+        driven; ``health(symbol)`` reports HALTED via ``merge_worst_health``
+        regardless of the quote feed's state, and a resume cleanly returns
+        the symbol to its quote-feed health.  Inert when no codes configured.
+        """
+        status = classify_halt_status(
+            conditions, self._halt_on_codes, self._halt_off_codes,
+        )
+        if status is None:
+            return
+        sm = self._ensure_health_machine(symbol, self._FEED_TRADE)
+        if status is HaltSignal.HALT_ON:
+            if sm.state != DataHealth.HALTED and sm.can_transition(
+                DataHealth.HALTED,
+            ):
+                sm.transition(DataHealth.HALTED, trigger="luld_halt_on")
+        elif sm.state == DataHealth.HALTED and sm.can_transition(
+            DataHealth.HEALTHY,
+        ):
+            sm.transition(DataHealth.HEALTHY, trigger="luld_halt_off")
 
     def _mark_corrupted(self, symbol: str, trigger: str = "parse_error") -> None:
         if not symbol or symbol == "UNKNOWN":

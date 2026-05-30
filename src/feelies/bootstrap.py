@@ -394,7 +394,11 @@ def build_platform(
     if normalizer is None and config.mode in (
         OperatingMode.PAPER, OperatingMode.LIVE,
     ):
-        normalizer = MassiveNormalizer(clock=clock)
+        normalizer = MassiveNormalizer(
+            clock=clock,
+            halt_on_codes=frozenset(config.halt_on_condition_codes),
+            halt_off_codes=frozenset(config.halt_off_condition_codes),
+        )
         normalizer.register_symbols(config.symbols)
 
     bundle = _create_backend(

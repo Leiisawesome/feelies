@@ -614,3 +614,53 @@ class TestMassiveLiveFeedBackpressure:
         assert full_queue.put_nowait_called
         assert not full_queue.put_called
         assert "queue full, sentinel not enqueued" in caplog.text
+
+
+class TestHaltStatusDetection:
+    """BT-5: normalizer surfaces DataHealth.HALTED from trade condition codes."""
+
+    @staticmethod
+    def _halt_normalizer(clock: SimulatedClock) -> MassiveNormalizer:
+        return MassiveNormalizer(
+            clock=clock,
+            halt_on_codes=frozenset({5}),
+            halt_off_codes=frozenset({6}),
+        )
+
+    @staticmethod
+    def _ws_trade(symbol: str, seq: int, conditions: list[int]) -> bytes:
+        return json.dumps({
+            "ev": "T",
+            "sym": symbol,
+            "p": 150.0,
+            "s": 100,
+            "t": 1700000000000 + seq,
+            "q": seq,
+            "c": conditions,
+            "z": 3,
+        }).encode("utf-8")
+
+    def test_default_normalizer_ignores_halt_codes(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+    ) -> None:
+        normalizer.on_message(self._ws_trade("AAPL", 1, [5]), clock.now_ns(), "massive_ws")
+        assert normalizer.health("AAPL") == DataHealth.HEALTHY
+
+    def test_halt_on_transitions_to_halted(self, clock: SimulatedClock) -> None:
+        norm = self._halt_normalizer(clock)
+        norm.on_message(self._ws_trade("AAPL", 1, [5]), clock.now_ns(), "massive_ws")
+        assert norm.health("AAPL") == DataHealth.HALTED
+
+    def test_resume_returns_to_healthy(self, clock: SimulatedClock) -> None:
+        norm = self._halt_normalizer(clock)
+        norm.on_message(self._ws_trade("AAPL", 1, [5]), clock.now_ns(), "massive_ws")
+        assert norm.health("AAPL") == DataHealth.HALTED
+        norm.on_message(self._ws_trade("AAPL", 2, [6]), clock.now_ns(), "massive_ws")
+        assert norm.health("AAPL") == DataHealth.HEALTHY
+
+    def test_ordinary_trade_does_not_clear_halt(self, clock: SimulatedClock) -> None:
+        norm = self._halt_normalizer(clock)
+        norm.on_message(self._ws_trade("AAPL", 1, [5]), clock.now_ns(), "massive_ws")
+        # A trade without the resume code keeps the symbol halted.
+        norm.on_message(self._ws_trade("AAPL", 2, [9]), clock.now_ns(), "massive_ws")
+        assert norm.health("AAPL") == DataHealth.HALTED
