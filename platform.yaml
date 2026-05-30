@@ -72,6 +72,12 @@ ssr_active_symbols: []
 ssr_trigger_condition_codes: []
 ssr_mode: refuse_short
 
+# BT-7: per-symbol short-locate availability (static table). Omitted symbols
+# default to available (easy to borrow). unavailable refuses short ENTRY fills
+# (LOCATE_UNAVAILABLE); hard applies the HTB fee path when
+# cost_htb_borrow_annual_bps > 0.
+borrow_availability: {}
+
 # Sandbox backtest equity; overlays must set real limits for PAPER/LIVE.
 account_equity: 100000.0
 

@@ -126,6 +126,13 @@ class PlatformConfig:
     ssr_trigger_condition_codes: tuple[int, ...] = ()
     ssr_mode: str = "refuse_short"
 
+    # BT-7: static per-symbol short-locate availability. Keys are symbols;
+    # values are ``available`` (default when omitted — easy to borrow, no HTB
+    # fee), ``hard`` (HTB fee path when cost_htb_borrow_annual_bps > 0), or
+    # ``unavailable`` (short entries refused with LOCATE_UNAVAILABLE). Empty
+    # table ⇒ every symbol treated as available.
+    borrow_availability: dict[str, str] = field(default_factory=dict)
+
     account_equity: float = 1_000_000.0
     backtest_fill_latency_ns: int = 0
 
@@ -478,6 +485,18 @@ class PlatformConfig:
                 "'refuse_short' is supported (the uptick-routed variant is "
                 "deferred)"
             )
+        for sym, tier in self.borrow_availability.items():
+            sym_u = str(sym).strip().upper()
+            if not sym_u:
+                raise ConfigurationError(
+                    "borrow_availability keys must be non-empty symbols"
+                )
+            label = str(tier).strip().lower()
+            if label not in ("available", "hard", "unavailable"):
+                raise ConfigurationError(
+                    f"borrow_availability[{sym!r}]={tier!r} is invalid; "
+                    "expected available, hard, or unavailable"
+                )
 
         if not isinstance(self.regime_engine_options, dict):
             raise ConfigurationError(
@@ -727,6 +746,7 @@ class PlatformConfig:
             "ssr_active_symbols": list(self.ssr_active_symbols),
             "ssr_trigger_condition_codes": list(self.ssr_trigger_condition_codes),
             "ssr_mode": self.ssr_mode,
+            "borrow_availability": dict(self.borrow_availability),
             "account_equity": self.account_equity,
             "account_type": self.account_type,
             "account_id": self.account_id,
@@ -1056,6 +1076,10 @@ class PlatformConfig:
                 int(x) for x in data.get("ssr_trigger_condition_codes", ())
             ),
             ssr_mode=str(data.get("ssr_mode", "refuse_short")),
+            borrow_availability={
+                str(k).upper(): str(v).lower()
+                for k, v in (data.get("borrow_availability") or {}).items()
+            },
             account_equity=float(data.get("account_equity", 1_000_000.0)),
             account_type=str(data.get("account_type", "margin_25k")),
             account_id=str(data.get("account_id", "default")),

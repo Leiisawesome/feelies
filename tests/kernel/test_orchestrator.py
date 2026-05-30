@@ -55,6 +55,7 @@ from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.execution.intent import OrderIntent, TradingIntent
 from feelies.execution.order_state import OrderState
+from feelies.execution.regulatory.borrow_availability import BorrowTier
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
 from feelies.kernel.orchestrator import Orchestrator
@@ -2241,3 +2242,109 @@ class TestSSRRefuseShort:
         bt_router.on_quote(q1)
         orch._process_tick(q1)
         assert position_store.get("AAPL").quantity == 0
+
+
+class TestBorrowAvailability:
+    """BT-7: locate-unavailable suppression + hard-tier HTB flag."""
+
+    @staticmethod
+    def _build(
+        clock: SimulatedClock,
+        bus: EventBus,
+        position_store: MemoryPositionStore,
+    ) -> tuple[Orchestrator, BacktestOrderRouter]:
+        bt_router = BacktestOrderRouter(clock=clock)
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(action=RiskAction.ALLOW),
+            position_store=position_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+        _boot_to_backtest(orch)
+        return orch, bt_router
+
+    def test_unavailable_suppresses_short_entry(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)  # type: ignore[arg-type]
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(clock, bus, position_store)
+        orch._borrow_tier = {"AAPL": BorrowTier.UNAVAILABLE}
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.SHORT),
+        )
+        q = _make_quote(ts=1000, seq=1)
+        bt_router.on_quote(q)
+        orch._process_tick(q)
+        assert position_store.get("AAPL").quantity == 0
+        assert any(a.alert_name == "locate_unavailable" for a in alerts)
+
+    def test_available_allows_short_fill(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(clock, bus, position_store)
+        orch._borrow_tier = {"AAPL": BorrowTier.AVAILABLE}
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.SHORT),
+        )
+        q = _make_quote(ts=1000, seq=1)
+        bt_router.on_quote(q)
+        orch._process_tick(q)
+        assert position_store.get("AAPL").quantity < 0
+
+    def test_hard_tier_sets_is_short_on_order(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(clock, bus, position_store)
+        orch._borrow_tier = {"AAPL": BorrowTier.HARD}
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.SHORT),
+        )
+        q = _make_quote(ts=1000, seq=1)
+        bt_router.on_quote(q)
+        orch._process_tick(q)
+        assert orders
+        assert orders[0].is_short is True
+
+    def test_available_tier_omits_is_short_on_short_entry(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(clock, bus, position_store)
+        orch._borrow_tier = {"AAPL": BorrowTier.AVAILABLE}
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.SHORT),
+        )
+        q = _make_quote(ts=1000, seq=1)
+        bt_router.on_quote(q)
+        orch._process_tick(q)
+        assert orders
+        assert orders[0].is_short is False
+
+    def test_long_entry_allowed_when_unavailable(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(clock, bus, position_store)
+        orch._borrow_tier = {"AAPL": BorrowTier.UNAVAILABLE}
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.LONG),
+        )
+        q = _make_quote(ts=1000, seq=1)
+        bt_router.on_quote(q)
+        orch._process_tick(q)
+        assert position_store.get("AAPL").quantity > 0

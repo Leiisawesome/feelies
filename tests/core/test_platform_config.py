@@ -516,6 +516,31 @@ paper: not_a_mapping
         assert snap.data["massive_ws_url"] == "wss://prod.example/stocks"
 
 
+class TestBorrowAvailabilityConfig:
+    def test_invalid_borrow_tier_rejected(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            borrow_availability={"AAPL": "maybe"},
+        )
+        with pytest.raises(ConfigurationError, match="borrow_availability"):
+            cfg.validate()
+
+    def test_borrow_table_round_trips_through_yaml(self, tmp_path: Path) -> None:
+        yaml_path = tmp_path / "cfg.yaml"
+        yaml_path.write_text(
+            "symbols: [AAPL]\n"
+            "alpha_specs: [x.yaml]\n"
+            "borrow_availability:\n"
+            "  aapl: available\n"
+            "  xyz: hard\n",
+            encoding="utf-8",
+        )
+        cfg = PlatformConfig.from_yaml(yaml_path)
+        assert cfg.borrow_availability == {"AAPL": "available", "XYZ": "hard"}
+        cfg.validate()
+
+
 # ── Configuration protocol compliance ──────────────────────────────
 
 

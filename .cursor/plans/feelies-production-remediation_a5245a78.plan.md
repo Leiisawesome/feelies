@@ -25,7 +25,7 @@ todos:
     status: completed
   - id: bt-7
     content: "BT-7: Model short-locate / borrow-availability gate in the backtest (availability, not HTB fee)"
-    status: pending
+    status: completed
   - id: bt-8
     content: "BT-8: Model MOC / closing-auction fills for sig_moc_imbalance_v1 (auction print + 3:50 ET cutoff), not MKT-in-window"
     status: pending

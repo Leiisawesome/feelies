@@ -105,6 +105,12 @@ from feelies.execution.intent import (
     TradingIntent,
 )
 from feelies.execution.order_state import OrderState, create_order_state_machine
+from feelies.execution.regulatory.borrow_availability import (
+    BorrowTier,
+    build_borrow_table,
+    htb_fee_applies,
+    is_short_sale_intent,
+)
 from feelies.ingestion.data_integrity import (
     DataHealth,
     HaltSignal,
@@ -533,6 +539,11 @@ class Orchestrator:
         self._ssr_codes: frozenset[int] = frozenset()
         self._ssr_mode: str = "refuse_short"
 
+        # ── BT-7: static borrow-availability table ────────────────────
+        # Per-symbol locate tier (available / hard / unavailable).  Omitted
+        # symbols default to AVAILABLE.  Cached from config in boot().
+        self._borrow_tier: dict[str, BorrowTier] = {}
+
         # When True, entry/exit orders use LIMIT at BBO instead of
         # MARKET.  Stop-loss exits always use MARKET (fail-safe).
         # Set from config via boot().
@@ -793,6 +804,8 @@ class Orchestrator:
                 self._ssr_codes = frozenset(config.ssr_trigger_condition_codes)
             if hasattr(config, "ssr_mode"):
                 self._ssr_mode = config.ssr_mode
+            if hasattr(config, "borrow_availability"):
+                self._borrow_tier = build_borrow_table(config.borrow_availability)
             if hasattr(config, "execution_mode"):
                 # passive_limit and minimum_cost both wire through the
                 # passive-limit backend.  The static flag tells the
@@ -1974,6 +1987,26 @@ class Orchestrator:
             self._finalize_tick(t_wall_start, cid)
             return
 
+        # BT-7: short-locate gate — refuse short sales when borrow is
+        # unavailable.  ``hard`` tier still fills but routes HTB fees via
+        # ``OrderRequest.is_short``; ``available`` short entries omit HTB.
+        if self._borrow_blocks_intent(intent):
+            self._emit_locate_unavailable_alert(intent, cid)
+            self._append_signal_order_trace(
+                quote,
+                signal,
+                outcome="NO_ORDER",
+                reasons=("locate_unavailable", f"symbol={intent.symbol}"),
+                trading_intent=intent.intent.name,
+            )
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="locate_unavailable",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
         # H2/H3/H7: REVERSE intents decompose into EXIT(MARKET) +
         # ENTRY(LIMIT) — aggressive close guarantees fill, passive
         # entry saves spread.
@@ -2918,9 +2951,9 @@ class Orchestrator:
 
         if entry_qty >= self._min_order_shares:
             entry_side = exit_side  # same direction for both legs
-            is_short = (
-                intent.intent == TradingIntent.REVERSE_LONG_TO_SHORT
-            )
+            short_sale = intent.intent == TradingIntent.REVERSE_LONG_TO_SHORT
+            tier = self._borrow_tier_for(intent.symbol)
+            is_short = htb_fee_applies(tier, short_sale)
 
             # B4: edge vs cost gate for the entry leg.
             entry_passes_edge_gate = True
@@ -3161,14 +3194,12 @@ class Orchestrator:
         if not is_exit_or_stop and quantity < self._min_order_shares:
             return None, "quantity_below_platform_min_order_shares"
 
-        # Short-entry routing for HTB (B4 below + order construction).
-        is_short = intent.intent in (
-            TradingIntent.ENTRY_SHORT,
-            TradingIntent.REVERSE_LONG_TO_SHORT,
-        ) or (
-            intent.intent == TradingIntent.SCALE_UP
-            and intent.current_quantity < 0
-        )
+        # BT-7: HTB fee flag — only ``hard``-tier short sales carry
+        # ``OrderRequest.is_short``; ``available`` omits HTB even when
+        # cost_htb_borrow_annual_bps is configured.
+        short_sale = is_short_sale_intent(intent)
+        tier = self._borrow_tier_for(intent.symbol)
+        is_short = htb_fee_applies(tier, short_sale)
 
         # B4: signal edge vs round-trip cost gate (model-computed legs).
         # Skip exits and stop-losses (always allow for safety) and when
@@ -4517,25 +4548,42 @@ class Orchestrator:
             context={"symbol": symbol},
         ))
 
-    def _ssr_blocks_intent(self, intent: OrderIntent) -> bool:
-        """True when SSR (refuse_short) must refuse this short-opening order.
+    # ── BT-7: static borrow-availability ────────────────────────────
 
-        Restricts only orders that open or increase SHORT exposure: a flat→
-        short entry, a long→short reversal, or a scale-up of an existing short.
-        Buys (covers, long entries, short→long reversals) and long-side exits
-        are never short sales and pass through.
-        """
+    def _borrow_tier_for(self, symbol: str) -> BorrowTier:
+        """Locate tier for ``symbol``; omitted symbols default to AVAILABLE."""
+        return self._borrow_tier.get(symbol.upper(), BorrowTier.AVAILABLE)
+
+    def _borrow_blocks_intent(self, intent: OrderIntent) -> bool:
+        """True when locate is unavailable and this intent is a short sale."""
+        return (
+            self._borrow_tier_for(intent.symbol) == BorrowTier.UNAVAILABLE
+            and is_short_sale_intent(intent)
+        )
+
+    def _emit_locate_unavailable_alert(
+        self, intent: OrderIntent, correlation_id: str,
+    ) -> None:
+        """Publish the forensic marker for a refused short entry (no locate)."""
+        self._bus.publish(Alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            sequence=self._seq.next(),
+            severity=AlertSeverity.WARNING,
+            layer="kernel",
+            alert_name="locate_unavailable",
+            message=(
+                f"No borrow locate for {intent.symbol!r}: refused short entry "
+                f"({intent.intent.name}); retries next boundary."
+            ),
+            context={"symbol": intent.symbol, "intent": intent.intent.name},
+        ))
+
+    def _ssr_blocks_intent(self, intent: OrderIntent) -> bool:
+        """True when SSR (refuse_short) must refuse this short-opening order."""
         if intent.symbol.upper() not in self._ssr_active:
             return False
-        if intent.intent in (
-            TradingIntent.ENTRY_SHORT,
-            TradingIntent.REVERSE_LONG_TO_SHORT,
-        ):
-            return True
-        return (
-            intent.intent == TradingIntent.SCALE_UP
-            and intent.signal.direction == SignalDirection.SHORT
-        )
+        return is_short_sale_intent(intent)
 
     def _emit_ssr_suppression_alert(
         self, intent: OrderIntent, correlation_id: str,
