@@ -81,6 +81,7 @@ def build_passive_limit_backend(
     max_resting_ticks: int = 50,
     queue_position_shares: int = 0,
     cancel_fee_per_share: Decimal = Decimal("0.0"),
+    fill_hazard_max: Decimal | float = Decimal("0.5"),
 ) -> tuple[ExecutionBackend, PassiveLimitOrderRouter]:
     """Build a backtest backend with passive limit order fill model.
 
@@ -113,6 +114,7 @@ def build_passive_limit_backend(
         max_resting_ticks=max_resting_ticks,
         queue_position_shares=queue_position_shares,
         cancel_fee_per_share=cancel_fee_per_share,
+        fill_hazard_max=fill_hazard_max,
     )
 
     backend = ExecutionBackend(

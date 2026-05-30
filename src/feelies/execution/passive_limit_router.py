@@ -12,13 +12,21 @@ Fill model (L1-only, conservative):
   1. **Through fill**: the opposite BBO crosses our level.
      - BUY:  ``ask <= limit_price`` (sellers met us)
      - SELL: ``bid >= limit_price`` (buyers met us)
-     Fill is guaranteed at ``limit_price``.
+     Fill is guaranteed (price-improved to the crossed BBO).
 
-  2. **Level fill**: our level remains the BBO for ``fill_delay_ticks``
-     consecutive quotes, modeling the queue ahead of us draining.
-     Counter resets if the BBO moves away from our level.
+  2. **Level (drain) fill**: while our level is the BBO, each quote tick
+     is a *seeded Bernoulli trial* against a per-tick fill hazard ``h``
+     (``PassiveLimitOrderRouter._fill_hazard``).  The hazard rises with
+     the observed fraction of the queue ahead that trades have drained
+     (queue-depth regime) or with order-flow imbalance against the
+     resting side (quote-imbalance regime, ``h0 = 1/fill_delay_ticks``).
+     This replaces the old deterministic ``fill_delay_ticks`` /
+     ``queue_position_shares`` thresholds: queue position is unobservable
+     on L1, so the fill is probabilistic.
 
   Unfilled orders are cancelled after ``max_resting_ticks`` quotes.
+  Each terminal resting order is classified by a ``PassiveFillOutcome``
+  (stamped on the ack ``reason`` and tallied by ``passive_fill_stats``).
 
   MARKET orders use the same causal latency model and D14 mid-price +
   walk-the-book partial-fill semantics as :class:`~feelies.execution.backtest_router.BacktestOrderRouter`:
@@ -26,8 +34,9 @@ Fill model (L1-only, conservative):
   ``latency_ns > 0``, fills price off the first latency-eligible quote.
 
 Invariants preserved:
-  - Inv 5 (deterministic replay): no randomness — queue drain is a
-    deterministic tick counter.
+  - Inv 5 (deterministic replay): the level-fill Bernoulli trial uses no
+    RNG — the uniform is a SHA-256 hash of replay-stable quote/order keys
+    (``_seeded_uniform``), so identical event logs replay bit-identically.
   - Inv 9 (backtest/live parity): implements the same OrderRouter
     protocol used by live and paper routers.
   - Inv 11 (fail-safe): MARKET orders fill once latency-eligible quotes
@@ -39,8 +48,10 @@ Invariants preserved:
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, replace
 from decimal import ROUND_HALF_UP, Decimal
+from enum import Enum
 
 from feelies.core.clock import Clock
 from feelies.core.events import (
@@ -55,6 +66,20 @@ from feelies.core.events import (
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.cost_model import CostModel, ZeroCostModel
 from feelies.execution.market_fill import append_market_fill_acks, to_decimal
+
+
+class PassiveFillOutcome(Enum):
+    """Terminal classification of a resting passive limit order.
+
+    Stamped onto the FILLED / CANCELLED ``OrderAck.reason`` and tallied
+    by :meth:`PassiveLimitOrderRouter.passive_fill_stats` for backtest
+    fill-quality forensics.
+    """
+
+    FILLED_BY_THROUGH = "FILLED_BY_THROUGH"
+    FILLED_BY_DRAIN = "FILLED_BY_DRAIN"
+    CANCELLED_MAX_RESTING_TICKS = "CANCELLED_MAX_RESTING_TICKS"
+    CANCELLED_LEVEL_LEFT_BBO = "CANCELLED_LEVEL_LEFT_BBO"
 
 
 @dataclass
@@ -77,6 +102,11 @@ class _PendingOrder:
     ticks_at_level: int = 0
     total_ticks: int = 0
     shares_traded_at_level: int = 0
+    # Whether the order was resting at the BBO on the most recent quote
+    # evaluation — used to classify a timeout cancel as
+    # CANCELLED_MAX_RESTING_TICKS (competitive at cancel) vs
+    # CANCELLED_LEVEL_LEFT_BBO (behind the market at cancel).
+    at_bbo: bool = False
 
 
 @dataclass(frozen=True)
@@ -126,6 +156,7 @@ class PassiveLimitOrderRouter:
         max_resting_ticks: int = 50,
         queue_position_shares: int = 0,
         cancel_fee_per_share: Decimal = Decimal("0.0"),
+        fill_hazard_max: Decimal | int | str | float = Decimal("0.5"),
     ) -> None:
         self._clock = clock
         self._latency_ns = latency_ns
@@ -140,6 +171,25 @@ class PassiveLimitOrderRouter:
         self._max_resting_ticks = max_resting_ticks
         self._queue_position_shares = queue_position_shares
         self._cancel_fee_per_share = cancel_fee_per_share
+        self._fill_hazard_max = to_decimal(
+            fill_hazard_max, "fill_hazard_max"
+        )
+        # Base per-tick fill hazard for the quote-imbalance regime,
+        # h0 = 1 / fill_delay_ticks (so mean ticks-to-fill ≈
+        # fill_delay_ticks at a balanced book).  fill_delay_ticks <= 0
+        # collapses to the hazard cap (near-immediate level fills).
+        self._base_hazard = (
+            Decimal(1) / Decimal(fill_delay_ticks)
+            if fill_delay_ticks > 0
+            else self._fill_hazard_max
+        )
+
+        # ── Passive fill-quality forensics (BT-2) ────────────────────
+        self._fills_by_through = 0
+        self._fills_by_drain = 0
+        self._cancels_max_resting = 0
+        self._cancels_level_left = 0
+        self._sum_ticks_to_fill = 0
 
         self._last_quotes: dict[str, NBBOQuote] = {}
         self._pending_acks: list[OrderAck] = []
@@ -432,43 +482,48 @@ class PassiveLimitOrderRouter:
             pending.total_ticks += 1
             action = self._evaluate_fill(pending, quote)
 
-            if action == "fill":
-                # Price improvement on through-fills: IBKR (and the
-                # NMS rule) fills limit orders at the limit price OR
-                # BETTER, never worse.  When the opposite-side BBO has
-                # gapped through our limit (BUY: ask < limit, SELL:
-                # bid > limit), the realistic fill price is the new
-                # BBO, not the resting limit.  Without this, a passive
-                # BUY at $100 with ask=$99.99 records as a $100 fill
-                # — overstating the trader's cost by one tick per
-                # share, conservative for backtest but wrong vs IBKR.
-                # Level-fills (queue drain) still fill at the limit.
-                # A gap-through (BUY ask < limit, SELL bid > limit) means
-                # the market traded *through* the resting order: it is a
-                # through-fill, adversely selected, and priced with the
-                # higher adverse-selection regime in the cost model.
+            if action == "through":
+                # Price improvement on through-fills: IBKR (and the NMS
+                # rule) fills limit orders at the limit price OR BETTER,
+                # never worse.  When the opposite-side BBO has gapped
+                # through our limit (BUY: ask < limit, SELL: bid > limit),
+                # the realistic fill price is the new BBO, not the resting
+                # limit.  The market traded *through* the resting order,
+                # so this is the adversely-selected regime in the cost
+                # model (is_through_fill=True).
                 fill_price = pending.limit_price
-                is_through_fill = False
-                if (
-                    pending.side == Side.BUY
-                    and quote.ask < pending.limit_price
-                ):
+                if pending.side == Side.BUY and quote.ask < pending.limit_price:
                     fill_price = quote.ask
-                    is_through_fill = True
-                elif (
-                    pending.side == Side.SELL
-                    and quote.bid > pending.limit_price
-                ):
+                elif pending.side == Side.SELL and quote.bid > pending.limit_price:
                     fill_price = quote.bid
-                    is_through_fill = True
                 self._emit_passive_fill(
                     pending,
                     fill_price=fill_price,
-                    is_through_fill=is_through_fill,
+                    is_through_fill=True,
+                    outcome=PassiveFillOutcome.FILLED_BY_THROUGH,
                 )
+                self._record_fill(pending, PassiveFillOutcome.FILLED_BY_THROUGH)
+                to_remove.append(order_id)
+            elif action == "drain":
+                # Queue-drain fill: the queue ahead drained at a stable
+                # price.  Fill at the resting limit, benign adverse
+                # selection (is_through_fill=False).
+                self._emit_passive_fill(
+                    pending,
+                    fill_price=pending.limit_price,
+                    is_through_fill=False,
+                    outcome=PassiveFillOutcome.FILLED_BY_DRAIN,
+                )
+                self._record_fill(pending, PassiveFillOutcome.FILLED_BY_DRAIN)
                 to_remove.append(order_id)
             elif action == "cancel":
-                self._emit_timeout_cancel(pending)
+                outcome = (
+                    PassiveFillOutcome.CANCELLED_MAX_RESTING_TICKS
+                    if pending.at_bbo
+                    else PassiveFillOutcome.CANCELLED_LEVEL_LEFT_BBO
+                )
+                self._emit_timeout_cancel(pending, outcome=outcome)
+                self._record_cancel(outcome)
                 to_remove.append(order_id)
 
         for oid in to_remove:
@@ -477,50 +532,157 @@ class PassiveLimitOrderRouter:
     def _evaluate_fill(self, pending: _PendingOrder, quote: NBBOQuote) -> str:
         """Determine whether a resting order fills, cancels, or continues.
 
-        Returns "fill", "cancel", or "wait".
+        Returns ``"through"``, ``"drain"``, ``"cancel"``, or ``"wait"``.
 
-        Two fill trigger modes:
-          - Queue-position: if the order's ``queue_ahead_shares > 0``,
-            the level-fill triggers when accumulated trade volume at
-            our level reaches that threshold.  More realistic than
-            tick counting on high-frequency quote streams.
-          - Tick-based (legacy): if ``queue_ahead_shares == 0``, the
-            original counter fires after ``fill_delay_ticks`` consecutive
-            quotes at our level.
+        Fill model (BT-2): a through-fill (the opposite-side BBO crosses
+        the resting level) is still a guaranteed fill.  A level fill is a
+        *seeded Bernoulli trial per quote tick* against a per-tick fill
+        hazard ``h`` (see :meth:`_fill_hazard`): the queue ahead drains
+        probabilistically rather than after a fixed tick count or share
+        threshold.  Determinism (Inv-5) is preserved because the uniform
+        is derived from a SHA-256 of the replay-stable quote/order keys
+        (no RNG) — see :meth:`_seeded_uniform`.
         """
+        at_level = False
         if pending.side == Side.BUY:
             if quote.ask <= pending.limit_price:
-                return "fill"
+                pending.at_bbo = True
+                return "through"
             if quote.bid <= pending.limit_price:
-                if pending.queue_ahead_shares > 0:
-                    if pending.shares_traded_at_level >= pending.queue_ahead_shares:
-                        return "fill"
-                else:
-                    pending.ticks_at_level += 1
-                    if pending.ticks_at_level >= self._fill_delay_ticks:
-                        return "fill"
+                at_level = True
             else:
                 pending.ticks_at_level = 0
                 pending.shares_traded_at_level = 0
         else:
             if quote.bid >= pending.limit_price:
-                return "fill"
+                pending.at_bbo = True
+                return "through"
             if quote.ask >= pending.limit_price:
-                if pending.queue_ahead_shares > 0:
-                    if pending.shares_traded_at_level >= pending.queue_ahead_shares:
-                        return "fill"
-                else:
-                    pending.ticks_at_level += 1
-                    if pending.ticks_at_level >= self._fill_delay_ticks:
-                        return "fill"
+                at_level = True
             else:
                 pending.ticks_at_level = 0
                 pending.shares_traded_at_level = 0
+
+        pending.at_bbo = at_level
+        if at_level:
+            pending.ticks_at_level += 1
+            hazard = self._fill_hazard(pending, quote)
+            if hazard > 0 and self._seeded_uniform(pending, quote) < hazard:
+                return "drain"
 
         if pending.total_ticks >= self._max_resting_ticks:
             return "cancel"
 
         return "wait"
+
+    def _fill_hazard(
+        self, pending: _PendingOrder, quote: NBBOQuote,
+    ) -> Decimal:
+        """Per-tick level-fill hazard ``h ∈ [0, fill_hazard_max]``.
+
+        Two regimes, selected by whether a queue depth was supplied:
+
+        * **Queue-depth** (``queue_ahead_shares > 0``): the order sits
+          behind ``queue_ahead_shares`` at its level and cannot fill until
+          observed trades have drained the queue ahead
+          (``shares_traded_at_level >= queue_ahead_shares``, fed by
+          :meth:`on_trade`).  Once at the front, each tick fills at the
+          hazard cap — the residual queue-position uncertainty (you are at
+          the front but not guaranteed the next print).  Below the
+          threshold the hazard is exactly 0, so a not-yet-drained queue
+          never fills (deterministic).
+
+        * **Quote-imbalance** (``queue_ahead_shares == 0``): a base hazard
+          ``h0 = 1 / fill_delay_ticks`` modulated by the order-flow
+          imbalance — the share of size resting on the *opposite* side,
+          ``imbalance = opp_size / (our_size + opp_size)``.  A book tilted
+          against the resting side (heavy opposite size) predicts the
+          resting level getting hit, so ``aggression = 2 · imbalance``
+          (neutral 1.0 at a balanced book): ``h = h0 · aggression``.
+
+        ``ticks_at_level`` enters through the repeated per-tick Bernoulli
+        trials: the cumulative fill probability by tick ``n`` is
+        ``1 − ∏(1 − h_i)``, an increasing function of time at the level.
+        """
+        if pending.queue_ahead_shares > 0:
+            if pending.shares_traded_at_level >= pending.queue_ahead_shares:
+                return self._fill_hazard_max
+            return Decimal(0)
+
+        our_size = quote.bid_size if pending.side == Side.BUY else quote.ask_size
+        opp_size = quote.ask_size if pending.side == Side.BUY else quote.bid_size
+        total_size = our_size + opp_size
+        if total_size > 0:
+            imbalance = Decimal(opp_size) / Decimal(total_size)
+        else:
+            imbalance = Decimal("0.5")
+        aggression = Decimal(2) * imbalance
+        hazard = self._base_hazard * aggression
+
+        if hazard < 0:
+            return Decimal(0)
+        if hazard > self._fill_hazard_max:
+            return self._fill_hazard_max
+        return hazard
+
+    def _seeded_uniform(
+        self, pending: _PendingOrder, quote: NBBOQuote,
+    ) -> Decimal:
+        """Deterministic per-tick uniform in ``[0, 1)`` for the fill trial.
+
+        Derived from a SHA-256 over replay-stable keys (symbol, quote
+        sequence number, exchange timestamp, the order's resting-tick
+        count, side, level price, order id) so the draw varies per tick
+        and per order yet replays bit-identically (Inv-5) — no live RNG,
+        no sampling.
+        """
+        seed = (
+            f"{quote.symbol}|{quote.sequence_number}|"
+            f"{quote.exchange_timestamp_ns}|{pending.total_ticks}|"
+            f"{pending.side.name}|{pending.limit_price}|"
+            f"{pending.request.order_id}"
+        )
+        digest = hashlib.sha256(seed.encode("utf-8")).digest()
+        value = int.from_bytes(digest[:8], "big")
+        return Decimal(value) / Decimal(1 << 64)
+
+    def _record_fill(
+        self, pending: _PendingOrder, outcome: PassiveFillOutcome,
+    ) -> None:
+        if outcome is PassiveFillOutcome.FILLED_BY_THROUGH:
+            self._fills_by_through += 1
+        else:
+            self._fills_by_drain += 1
+        self._sum_ticks_to_fill += pending.total_ticks
+
+    def _record_cancel(self, outcome: PassiveFillOutcome) -> None:
+        if outcome is PassiveFillOutcome.CANCELLED_MAX_RESTING_TICKS:
+            self._cancels_max_resting += 1
+        else:
+            self._cancels_level_left += 1
+
+    def passive_fill_stats(self) -> dict[str, float | int]:
+        """Backtest fill-quality forensics (BT-2).
+
+        Returns counts per :class:`PassiveFillOutcome`, the
+        ``passive_fill_rate`` (fills / terminal resting orders), and
+        ``mean_resting_ticks_to_fill`` (0.0 when nothing has filled).
+        """
+        filled = self._fills_by_through + self._fills_by_drain
+        cancelled = self._cancels_max_resting + self._cancels_level_left
+        terminal = filled + cancelled
+        return {
+            "filled": filled,
+            "fills_by_through": self._fills_by_through,
+            "fills_by_drain": self._fills_by_drain,
+            "cancelled": cancelled,
+            "cancels_max_resting_ticks": self._cancels_max_resting,
+            "cancels_level_left_bbo": self._cancels_level_left,
+            "passive_fill_rate": (filled / terminal) if terminal > 0 else 0.0,
+            "mean_resting_ticks_to_fill": (
+                self._sum_ticks_to_fill / filled if filled > 0 else 0.0
+            ),
+        }
 
     # ── Ack emission helpers ─────────────────────────────────────
     def _reject(
@@ -556,6 +718,7 @@ class PassiveLimitOrderRouter:
         pending: _PendingOrder,
         fill_price: Decimal | None = None,
         is_through_fill: bool = False,
+        outcome: PassiveFillOutcome = PassiveFillOutcome.FILLED_BY_DRAIN,
     ) -> None:
         """Emit a FILLED ack for a passive limit order.
 
@@ -571,6 +734,9 @@ class PassiveLimitOrderRouter:
         ``is_through_fill`` selects the cost model's adverse-selection
         regime: ``True`` for a market-through (gapped) fill, ``False``
         (default) for a queue-drain / level fill.
+
+        ``outcome`` is stamped onto the FILLED ack ``reason`` for
+        fill-quality forensics (BT-2).
         """
         if fill_price is None:
             fill_price = pending.limit_price
@@ -598,6 +764,7 @@ class PassiveLimitOrderRouter:
             fill_price=fill_price,
             fees=costs.total_fees,
             cost_bps=costs.cost_bps,
+            reason=outcome.value,
             request_sequence=pending.request.sequence,
         ))
 
@@ -607,13 +774,23 @@ class PassiveLimitOrderRouter:
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )
 
-    def _emit_timeout_cancel(self, pending: _PendingOrder) -> None:
+    def _emit_timeout_cancel(
+        self,
+        pending: _PendingOrder,
+        outcome: PassiveFillOutcome = (
+            PassiveFillOutcome.CANCELLED_MAX_RESTING_TICKS
+        ),
+    ) -> None:
         """Emit a CANCELLED ack for a timed-out resting order.
 
         Floors at ``pending.ack_timestamp_ns`` so the CANCELLED ack never
         timestamps before ACKNOWLEDGED — matches the same guard the
         aggressive-deferred-timeout path applies in
         ``_flush_deferred_aggressive``.
+
+        ``outcome`` (CANCELLED_MAX_RESTING_TICKS when the order was still
+        at the BBO, CANCELLED_LEVEL_LEFT_BBO when it had fallen behind the
+        market) is prepended to the ``reason`` for fill-quality forensics.
         """
         cancel_fees = self._cancel_fees(pending.request.quantity)
         cancel_ts = max(self._clock.now_ns(), pending.ack_timestamp_ns)
@@ -625,7 +802,8 @@ class PassiveLimitOrderRouter:
             symbol=pending.request.symbol,
             status=OrderAckStatus.CANCELLED,
             reason=(
-                f"passive limit timeout after {pending.total_ticks} ticks"
+                f"{outcome.value}: passive limit timeout after "
+                f"{pending.total_ticks} ticks"
             ),
             fees=cancel_fees if cancel_fees > 0 else Decimal("0"),
             request_sequence=pending.request.sequence,

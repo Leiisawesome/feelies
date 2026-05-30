@@ -157,6 +157,10 @@ class PlatformConfig:
     # Shares traded at our level before queue-drain fill triggers (D10 mode).
     # 0 = disabled, use tick-based fill_delay_ticks instead.
     passive_queue_position_shares: int = 0
+    # BT-2: cap on the per-tick seeded-Bernoulli level-fill hazard.  Bounds
+    # the residual queue-position uncertainty so no single quote tick is a
+    # near-certain fill (1.0 = no cap, deterministic fill once at the front).
+    passive_fill_hazard_max: float = 0.5
     # Cancel fee charged per share when a resting order times out (default 0).
     passive_cancel_fee_per_share: float = 0.0
 
@@ -693,6 +697,7 @@ class PlatformConfig:
             "passive_fill_delay_ticks": self.passive_fill_delay_ticks,
             "passive_max_resting_ticks": self.passive_max_resting_ticks,
             "passive_queue_position_shares": self.passive_queue_position_shares,
+            "passive_fill_hazard_max": self.passive_fill_hazard_max,
             "passive_cancel_fee_per_share": self.passive_cancel_fee_per_share,
             "platform_min_order_shares": self.platform_min_order_shares,
             "signal_min_edge_cost_ratio": self.signal_min_edge_cost_ratio,
@@ -1043,6 +1048,9 @@ class PlatformConfig:
             ),
             passive_queue_position_shares=int(
                 data.get("passive_queue_position_shares", 0)
+            ),
+            passive_fill_hazard_max=float(
+                data.get("passive_fill_hazard_max", 0.5)
             ),
             passive_cancel_fee_per_share=float(
                 data.get("passive_cancel_fee_per_share", 0.0)

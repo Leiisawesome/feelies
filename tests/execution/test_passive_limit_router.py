@@ -326,109 +326,101 @@ class TestThroughFillPriceImprovement:
 
 
 class TestLevelFill:
-    """Test the level-fill condition: N ticks at our level."""
+    """Test the level (queue-drain) fill: seeded-Bernoulli per quote tick.
 
-    def test_buy_fills_after_delay_ticks_at_level(self):
-        """BUY limit fills after fill_delay_ticks at bid level."""
+    A balanced book (bid_size == ask_size) gives order-flow imbalance 0.5
+    → aggression 1.0, so h = h0 = 1/fill_delay_ticks.  Setting
+    fill_delay_ticks=1 with fill_hazard_max=1.0 forces h=1.0 → the level
+    fill is guaranteed on the first at-level tick, making the fill price /
+    outcome deterministic for assertion.
+    """
+
+    def test_buy_drain_fill_at_level(self):
+        """BUY limit drain-fills at the bid level (h=1.0)."""
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=3)
+        router = PassiveLimitOrderRouter(
+            clock, fill_delay_ticks=1, fill_hazard_max=Decimal("1.0"),
+        )
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         router.submit(_limit_buy("AAPL"))
         router.poll_acks()
 
-        # Tick 1: bid at our level — ticks_at_level = 1
         clock.set_time(6000)
         router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6000))
-        assert router.poll_acks() == []
-
-        # Tick 2: bid at our level — ticks_at_level = 2
-        clock.set_time(7000)
-        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=7000))
-        assert router.poll_acks() == []
-
-        # Tick 3: bid at our level — ticks_at_level = 3 → FILL
-        clock.set_time(8000)
-        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=8000))
         acks = router.poll_acks()
         assert len(acks) == 1
         assert acks[0].status == OrderAckStatus.FILLED
         assert acks[0].fill_price == Decimal("150.00")
+        assert acks[0].reason == "FILLED_BY_DRAIN"
 
-    def test_sell_fills_after_delay_ticks_at_level(self):
-        """SELL limit fills after fill_delay_ticks at ask level."""
+    def test_sell_drain_fill_at_level(self):
+        """SELL limit drain-fills at the ask level (h=1.0)."""
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=2)
+        router = PassiveLimitOrderRouter(
+            clock, fill_delay_ticks=1, fill_hazard_max=Decimal("1.0"),
+        )
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         router.submit(_limit_sell("AAPL"))
         router.poll_acks()
 
-        # Tick 1
-        clock.set_time(6000)
-        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6000))
-        assert router.poll_acks() == []
-
-        # Tick 2 → FILL
         clock.set_time(7000)
         router.on_quote(_quote("AAPL", "150.00", "150.02", ts=7000))
         acks = router.poll_acks()
         assert len(acks) == 1
         assert acks[0].status == OrderAckStatus.FILLED
         assert acks[0].fill_price == Decimal("150.02")
+        assert acks[0].reason == "FILLED_BY_DRAIN"
 
-    def test_level_counter_resets_when_price_moves_away(self):
-        """ticks_at_level resets if price moves away from our level."""
+    def test_no_drain_fill_while_off_level(self):
+        """No drain fill while the BBO has moved away from our level.
+
+        With h=1.0 a fill is certain *whenever at the level*, so the only
+        way no fill occurs is the order being off the BBO (behind the
+        market).  BUY at 150.00 with bid=150.01 (> limit) is off-level.
+        """
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=3)
-
-        router.on_quote(_quote("AAPL", "150.00", "150.02"))
-        router.submit(_limit_buy("AAPL"))
-        router.poll_acks()
-
-        # 2 ticks at level
-        for i in range(2):
-            clock.set_time(6000 + i * 1000)
-            router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6000 + i * 1000))
-            router.poll_acks()
-
-        # Price moves up — our level no longer at BBO → reset
-        clock.set_time(8000)
-        router.on_quote(_quote("AAPL", "150.01", "150.03", ts=8000))
-        router.poll_acks()
-
-        # 2 more ticks at level (should NOT fill — counter was reset)
-        for i in range(2):
-            clock.set_time(9000 + i * 1000)
-            router.on_quote(_quote("AAPL", "150.00", "150.02", ts=9000 + i * 1000))
-            assert router.poll_acks() == []
-
-        # 3rd tick at level after reset → FILL
-        clock.set_time(11000)
-        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=11000))
-        acks = router.poll_acks()
-        assert len(acks) == 1
-        assert acks[0].status == OrderAckStatus.FILLED
-
-    def test_buy_fills_when_bid_below_limit(self):
-        """BUY at $150.00: if bid drops to $149.99 we're still at level."""
-        clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=2)
+        router = PassiveLimitOrderRouter(
+            clock, fill_delay_ticks=1, fill_hazard_max=Decimal("1.0"),
+        )
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         router.submit(_limit_buy("AAPL", limit_price="150.00"))
         router.poll_acks()
 
-        # bid < limit → bid <= limit_price is True → tick counts
-        clock.set_time(6000)
-        router.on_quote(_quote("AAPL", "149.99", "150.01", ts=6000))
-        assert router.poll_acks() == []
+        # Off level (bid above our limit, ask above our limit → no through)
+        for i in range(3):
+            ts = 6000 + i * 1000
+            clock.set_time(ts)
+            router.on_quote(_quote("AAPL", "150.01", "150.03", ts=ts))
+            assert router.poll_acks() == []
 
-        clock.set_time(7000)
-        router.on_quote(_quote("AAPL", "149.99", "150.01", ts=7000))
+        # Back at level → guaranteed drain fill
+        clock.set_time(9000)
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=9000))
         acks = router.poll_acks()
         assert len(acks) == 1
         assert acks[0].status == OrderAckStatus.FILLED
+        assert acks[0].reason == "FILLED_BY_DRAIN"
+
+    def test_buy_at_level_when_bid_below_limit(self):
+        """BUY at $150.00 with bid at $149.99 is still at the level → fills."""
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(
+            clock, fill_delay_ticks=1, fill_hazard_max=Decimal("1.0"),
+        )
+
+        router.on_quote(_quote("AAPL", "150.00", "150.02"))
+        router.submit(_limit_buy("AAPL", limit_price="150.00"))
+        router.poll_acks()
+
+        clock.set_time(6000)
+        router.on_quote(_quote("AAPL", "149.99", "150.01", ts=6000))
+        acks = router.poll_acks()
+        assert len(acks) == 1
+        assert acks[0].status == OrderAckStatus.FILLED
+        assert acks[0].fill_price == Decimal("150.00")
 
 
 class TestTimeout:
@@ -621,10 +613,16 @@ class TestVolumeBasedQueueDrain:
         )
 
     def test_buy_fills_when_enough_volume_at_level(self):
-        """BUY limit fills when shares_traded_at_level >= queue_position_shares."""
+        """BUY drain-fills once shares_traded_at_level >= queue_position_shares.
+
+        Below the queue threshold the hazard is exactly 0 (deterministic
+        no-fill); at the front it is the hazard cap, set to 1.0 here so the
+        fill is guaranteed on the next at-level tick.
+        """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(
             clock, queue_position_shares=500, fill_delay_ticks=9999,
+            fill_hazard_max=Decimal("1.0"),
         )
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
@@ -646,10 +644,11 @@ class TestVolumeBasedQueueDrain:
         assert acks[0].status == OrderAckStatus.FILLED
 
     def test_sell_fills_when_enough_volume_at_level(self):
-        """SELL limit fills when shares_traded_at_level >= queue_position_shares."""
+        """SELL drain-fills once shares_traded_at_level >= queue_position_shares."""
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(
             clock, queue_position_shares=200, fill_delay_ticks=9999,
+            fill_hazard_max=Decimal("1.0"),
         )
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
@@ -698,26 +697,39 @@ class TestVolumeBasedQueueDrain:
         router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6001))
         assert router.poll_acks() == []
 
-    def test_tick_based_mode_unchanged_when_queue_shares_zero(self):
-        """Legacy tick-based mode still works when queue_position_shares=0."""
+    def test_quote_imbalance_regime_when_queue_shares_zero(self):
+        """With queue_position_shares=0 the hazard uses the quote-imbalance
+        regime (no queue threshold): each at-level tick is a seeded Bernoulli
+        trial against h = h0 * aggression.  At a balanced book h = h0 = 0.5,
+        so the order fills at some tick (deterministically, per the seed)
+        rather than after a fixed counter.  We loop until the seeded fill
+        lands and assert it is a drain fill at the limit price.
+        """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(
             clock, fill_delay_ticks=2, queue_position_shares=0,
+            max_resting_ticks=1000,
         )
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         router.submit(_limit_buy("AAPL", qty=100))
         router.poll_acks()
 
-        clock.set_time(6000)
-        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6000))
-        assert router.poll_acks() == []
+        fill_ack = None
+        for i in range(40):
+            ts = 6000 + i * 1000
+            clock.set_time(ts)
+            router.on_quote(_quote("AAPL", "150.00", "150.02", ts=ts))
+            acks = router.poll_acks()
+            if acks:
+                assert len(acks) == 1
+                fill_ack = acks[0]
+                break
 
-        clock.set_time(7000)
-        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=7000))
-        acks = router.poll_acks()
-        assert len(acks) == 1
-        assert acks[0].status == OrderAckStatus.FILLED
+        assert fill_ack is not None, "balanced-book order should fill within 40 ticks"
+        assert fill_ack.status == OrderAckStatus.FILLED
+        assert fill_ack.fill_price == Decimal("150.00")
+        assert fill_ack.reason == "FILLED_BY_DRAIN"
 
     def test_shares_traded_at_level_resets_on_price_away_buy(self):
         """F6: BUY — accumulated volume resets when BBO moves away from limit price.
@@ -822,7 +834,12 @@ class TestMultipleOrders:
 
     def test_same_symbol_fills_follow_submission_order(self):
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=1)
+        # h_max=1.0 + fill_delay_ticks=1 forces both orders to drain-fill on
+        # the first at-level tick, so the only ordering signal is the
+        # insertion (submission) order the router iterates in.
+        router = PassiveLimitOrderRouter(
+            clock, fill_delay_ticks=1, fill_hazard_max=Decimal("1.0"),
+        )
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         router.submit(_limit_buy("AAPL", order_id="aapl_first"))
@@ -1174,3 +1191,147 @@ class TestDeterminism:
             assert a.filled_quantity == b.filled_quantity
             assert a.fees == b.fees
             assert a.timestamp_ns == b.timestamp_ns
+
+    def test_probabilistic_drain_fill_tick_is_deterministic(self):
+        """A sub-certain hazard (balanced book, h=0.5) fills at the *same*
+        seeded tick across two runs — the Bernoulli trial is reproducible.
+        """
+        fill_ticks = []
+        for _ in range(2):
+            clock = SimulatedClock(start_ns=5000)
+            router = PassiveLimitOrderRouter(
+                clock, fill_delay_ticks=2, max_resting_ticks=1000,
+            )
+            router.on_quote(_quote("AAPL", "150.00", "150.02"))
+            router.submit(_limit_buy("AAPL"))
+            router.poll_acks()
+            tick = None
+            for i in range(100):
+                ts = 6000 + i * 1000
+                clock.set_time(ts)
+                router.on_quote(_quote("AAPL", "150.00", "150.02", ts=ts))
+                if router.poll_acks():
+                    tick = i
+                    break
+            fill_ticks.append(tick)
+
+        assert fill_ticks[0] is not None
+        assert fill_ticks[0] == fill_ticks[1]
+
+
+class TestPassiveFillOutcomes:
+    """BT-2: PassiveFillOutcome classification + passive_fill_stats()."""
+
+    def _trade(self, symbol: str, price: str, size: int, ts: int) -> "Trade":
+        from feelies.core.events import Trade
+        return Trade(
+            timestamp_ns=ts, exchange_timestamp_ns=ts,
+            correlation_id=f"t-{ts}", sequence=99,
+            symbol=symbol, price=Decimal(price), size=size,
+        )
+
+    def test_empty_stats(self):
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(clock)
+        stats = router.passive_fill_stats()
+        assert stats["filled"] == 0
+        assert stats["cancelled"] == 0
+        assert stats["passive_fill_rate"] == 0.0
+        assert stats["mean_resting_ticks_to_fill"] == 0.0
+
+    def test_through_fill_outcome_and_stats(self):
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
+
+        router.on_quote(_quote("AAPL", "150.00", "150.02"))
+        router.submit(_limit_buy("AAPL", limit_price="150.00"))
+        router.poll_acks()
+
+        # Ask gaps through our limit → through fill.
+        clock.set_time(6000)
+        router.on_quote(_quote("AAPL", "149.98", "149.99", ts=6000))
+        acks = router.poll_acks()
+        assert len(acks) == 1
+        assert acks[0].status == OrderAckStatus.FILLED
+        assert acks[0].reason == "FILLED_BY_THROUGH"
+        assert acks[0].fill_price == Decimal("149.99")
+
+        stats = router.passive_fill_stats()
+        assert stats["fills_by_through"] == 1
+        assert stats["fills_by_drain"] == 0
+        assert stats["passive_fill_rate"] == 1.0
+        assert stats["mean_resting_ticks_to_fill"] == 1.0
+
+    def test_drain_fill_outcome_and_stats(self):
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(
+            clock, fill_delay_ticks=1, fill_hazard_max=Decimal("1.0"),
+        )
+
+        router.on_quote(_quote("AAPL", "150.00", "150.02"))
+        router.submit(_limit_buy("AAPL"))
+        router.poll_acks()
+
+        clock.set_time(6000)
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6000))
+        acks = router.poll_acks()
+        assert acks[0].reason == "FILLED_BY_DRAIN"
+
+        stats = router.passive_fill_stats()
+        assert stats["fills_by_drain"] == 1
+        assert stats["fills_by_through"] == 0
+        assert stats["passive_fill_rate"] == 1.0
+
+    def test_cancel_max_resting_ticks_outcome(self):
+        """At the level but hazard 0 (never drains) → timeout while still
+        competitive → CANCELLED_MAX_RESTING_TICKS.
+        """
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(
+            clock, max_resting_ticks=3, fill_hazard_max=Decimal("0"),
+        )
+
+        router.on_quote(_quote("AAPL", "150.00", "150.02"))
+        router.submit(_limit_buy("AAPL", limit_price="150.00"))
+        router.poll_acks()
+
+        acks: list = []
+        for i in range(3):
+            ts = 6000 + i * 1000
+            clock.set_time(ts)
+            router.on_quote(_quote("AAPL", "150.00", "150.02", ts=ts))
+            acks = router.poll_acks()
+
+        assert len(acks) == 1
+        assert acks[0].status == OrderAckStatus.CANCELLED
+        assert acks[0].reason.startswith("CANCELLED_MAX_RESTING_TICKS")
+
+        stats = router.passive_fill_stats()
+        assert stats["cancels_max_resting_ticks"] == 1
+        assert stats["cancels_level_left_bbo"] == 0
+        assert stats["passive_fill_rate"] == 0.0
+
+    def test_cancel_level_left_bbo_outcome(self):
+        """Off the BBO (behind the market) at timeout → CANCELLED_LEVEL_LEFT_BBO."""
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(clock, max_resting_ticks=3)
+
+        router.on_quote(_quote("AAPL", "150.00", "150.02"))
+        router.submit(_limit_buy("AAPL", limit_price="150.00"))
+        router.poll_acks()
+
+        acks: list = []
+        for i in range(3):
+            ts = 6000 + i * 1000
+            clock.set_time(ts)
+            # bid above our limit → off level, ask above → no through fill
+            router.on_quote(_quote("AAPL", "150.01", "150.03", ts=ts))
+            acks = router.poll_acks()
+
+        assert len(acks) == 1
+        assert acks[0].status == OrderAckStatus.CANCELLED
+        assert acks[0].reason.startswith("CANCELLED_LEVEL_LEFT_BBO")
+
+        stats = router.passive_fill_stats()
+        assert stats["cancels_level_left_bbo"] == 1
+        assert stats["cancels_max_resting_ticks"] == 0
