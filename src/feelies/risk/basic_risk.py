@@ -479,6 +479,22 @@ class BasicRiskEngine:
             self._account_id, symbol, prev_qty, new_qty, timestamp_ns,
         )
 
+    @staticmethod
+    def _opens_or_increases(current_qty: int, post_signed: int) -> bool:
+        """Entry detection: True iff the order grows exposure or flips sign.
+
+        Shared by the PDT min-equity (BT-4) and Reg-T buying-power (BT-15)
+        ENTRY gates so a future edge-case fix lands in exactly one place.
+        """
+        return (
+            abs(post_signed) > abs(current_qty)
+            or (
+                current_qty != 0
+                and post_signed != 0
+                and (current_qty > 0) != (post_signed > 0)
+            )
+        )
+
     def _check_pdt_min_equity(
         self,
         order: OrderRequest,
@@ -496,15 +512,7 @@ class BasicRiskEngine:
         """
         if self._pdt_constraint is None:
             return None
-        opens_or_increases = (
-            abs(post_signed) > abs(current_qty)
-            or (
-                current_qty != 0
-                and post_signed != 0
-                and (current_qty > 0) != (post_signed > 0)
-            )
-        )
-        if not opens_or_increases:
+        if not self._opens_or_increases(current_qty, post_signed):
             return None
         current_equity = self._compute_current_equity(positions)
         if not self._pdt_constraint.should_suppress_entry(
@@ -536,15 +544,7 @@ class BasicRiskEngine:
         """
         if self._buying_power_config is None:
             return None
-        opens_or_increases = (
-            abs(post_signed) > abs(current_qty)
-            or (
-                current_qty != 0
-                and post_signed != 0
-                and (current_qty > 0) != (post_signed > 0)
-            )
-        )
-        if not opens_or_increases:
+        if not self._opens_or_increases(current_qty, post_signed):
             return None
         current = positions.get(order.symbol)
         current_equity = self._compute_current_equity(positions)
