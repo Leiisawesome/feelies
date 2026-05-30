@@ -1930,15 +1930,13 @@ def main(argv: list[str] | None = None) -> int:
 
     config = PlatformConfig.from_yaml(config_path)
 
-    # Apply CLI cost stress multiplier if provided
-    if args.stress_cost != 1.0:
-        from dataclasses import replace as _replace
-        config = _replace(config, cost_stress_multiplier=args.stress_cost)
-
     # Apply Inv-12 joint cost + latency stress (BT-9). Supersedes --stress-cost.
     if args.inv12_stress:
         from feelies.core.inv12_stress import apply_inv12_stress
         config = apply_inv12_stress(config)
+    elif args.stress_cost != 1.0:
+        from dataclasses import replace as _replace
+        config = _replace(config, cost_stress_multiplier=args.stress_cost)
 
     # Override symbols if provided via CLI
     if args.symbol:
