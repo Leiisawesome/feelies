@@ -91,16 +91,33 @@ def should_suppress_entry(
     """
     if not opens_or_increases:
         return False, ""
-    if bounds.is_holiday:
-        return True, MARKET_HOLIDAY
     if not bounds.covers_ns(exchange_ts_ns):
         return True, RTH_ENTRY_SUPPRESSED
+    if bounds.is_holiday:
+        return True, MARKET_HOLIDAY
     if exchange_ts_ns < bounds.no_entry_before_ns():
         return True, RTH_ENTRY_SUPPRESSED
     if exchange_ts_ns >= bounds.rth_close_ns:
         return True, RTH_ENTRY_SUPPRESSED
     return False, ""
 
+
+
+def opens_or_increases_signed(current_qty: int, post_signed: int) -> bool:
+    """Entry detection: True iff the resulting position grows or flips sign.
+
+    Single source of truth for ENTRY classification across the BT-4 PDT
+    min-equity gate, the BT-15 Reg-T buying-power gate, and the BT-16
+    RTH router-side suppression — a future edge-case fix lands here.
+    """
+    return (
+        abs(post_signed) > abs(current_qty)
+        or (
+            current_qty != 0
+            and post_signed != 0
+            and (current_qty > 0) != (post_signed > 0)
+        )
+    )
 
 
 def order_opens_or_increases(
@@ -110,15 +127,7 @@ def order_opens_or_increases(
 ) -> bool:
     """Whether applying ``(side, quantity)`` opens or increases exposure."""
     signed = quantity if side is Side.BUY else -quantity
-    post_signed = current_qty + signed
-    return (
-        abs(post_signed) > abs(current_qty)
-        or (
-            current_qty != 0
-            and post_signed != 0
-            and (current_qty > 0) != (post_signed > 0)
-        )
-    )
+    return opens_or_increases_signed(current_qty, current_qty + signed)
 
 
 @dataclass
@@ -203,5 +212,6 @@ __all__ = [
     "build_trading_session_from_platform",
     "resolve_trading_session_bounds",
     "order_opens_or_increases",
+    "opens_or_increases_signed",
     "should_suppress_entry",
 ]

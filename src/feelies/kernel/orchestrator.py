@@ -797,18 +797,23 @@ class Orchestrator:
         """BT-16: flip risk-engine buying-power phase at RTH close.
 
         Once-per-session: the first quote with
-        ``timestamp_ns >= rth_close_ns`` transitions the risk engine to
-        :attr:`BuyingPowerPhase.OVERNIGHT` so the 2× overnight multiplier
-        is applied to any exits that linger past the close.  No-op when
-        RTH gating is disabled, the flip has already fired this session,
-        or the risk engine does not expose ``set_buying_power_phase``.
+        ``exchange_timestamp_ns >= rth_close_ns`` transitions the risk
+        engine to :attr:`BuyingPowerPhase.OVERNIGHT` so the 2× overnight
+        multiplier is applied to any exits that linger past the close.
+        Compared against ``exchange_timestamp_ns`` rather than
+        ``timestamp_ns`` so the flip aligns with the exchange-time RTH
+        close used by router-side entry gating
+        (``BacktestOrderRouter`` / ``PassiveLimitOrderRouter`` and
+        :class:`TradingSessionBounds`).  No-op when RTH gating is
+        disabled, the flip has already fired this session, or the risk
+        engine does not expose ``set_buying_power_phase``.
         """
         if self._rth_close_bp_flipped:
             return
         bounds = self._trading_session_bounds
         if bounds is None:
             return
-        if quote.timestamp_ns < bounds.rth_close_ns:
+        if quote.exchange_timestamp_ns < bounds.rth_close_ns:
             return
         set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
         if not callable(set_phase):

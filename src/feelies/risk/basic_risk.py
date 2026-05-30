@@ -41,6 +41,7 @@ from feelies.execution.regulatory.pdt_constraint import PDTConstraint
 from feelies.portfolio.position_store import PositionStore
 from feelies.execution.trading_session import (
     TradingSessionBounds,
+    opens_or_increases_signed,
     should_suppress_entry,
 )
 from feelies.risk.buying_power import (
@@ -495,17 +496,12 @@ class BasicRiskEngine:
     def _opens_or_increases(current_qty: int, post_signed: int) -> bool:
         """Entry detection: True iff the order grows exposure or flips sign.
 
-        Shared by the PDT min-equity (BT-4) and Reg-T buying-power (BT-15)
-        ENTRY gates so a future edge-case fix lands in exactly one place.
+        Thin delegate to :func:`feelies.execution.trading_session.opens_or_increases_signed`
+        so the BT-4 PDT min-equity gate, the BT-15 Reg-T buying-power gate,
+        and the BT-16 RTH router-side suppression share a single
+        implementation — a future edge-case fix lands in exactly one place.
         """
-        return (
-            abs(post_signed) > abs(current_qty)
-            or (
-                current_qty != 0
-                and post_signed != 0
-                and (current_qty > 0) != (post_signed > 0)
-            )
-        )
+        return opens_or_increases_signed(current_qty, post_signed)
 
     def _check_pdt_min_equity(
         self,
