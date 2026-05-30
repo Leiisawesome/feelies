@@ -28,7 +28,7 @@ Fill model (L1-only, conservative):
   Each terminal resting order is classified by a ``PassiveFillOutcome``
   (stamped on the ack ``reason`` and tallied by ``passive_fill_stats``).
 
-  MARKET orders use the same causal latency model and D14 mid-price +
+  MARKET orders use the same causal latency model and D14 cross-price +
   walk-the-book partial-fill semantics as :class:`~feelies.execution.backtest_router.BacktestOrderRouter`:
   ACKNOWLEDGED is always emitted before any fill or reject; with
   ``latency_ns > 0``, fills price off the first latency-eligible quote.
@@ -134,7 +134,7 @@ class PassiveLimitOrderRouter:
 
     Handles two order types:
       - ``LIMIT``: deferred fill via queue-position model (entries/exits)
-      - ``MARKET``: mid-price aggressive fill with the same ``latency_ns``
+      - ``MARKET``: cross-price aggressive fill with the same ``latency_ns``
         deferral and D14 depth walk as
         :class:`~feelies.execution.backtest_router.BacktestOrderRouter`
         (zero L1 depth rejects; no vacuum fills)

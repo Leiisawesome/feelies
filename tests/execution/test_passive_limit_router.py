@@ -93,8 +93,12 @@ def _market_order(symbol: str, order_id: str = "mkt1") -> OrderRequest:
 class TestPassiveLimitRouter:
     """Core passive limit order router tests."""
 
-    def test_market_order_fills_at_mid(self):
-        """MARKET orders: ACKNOWLEDGED then immediate FILLED at mid-price."""
+    def test_market_order_fills_at_cross(self):
+        """MARKET orders: ACKNOWLEDGED then immediate FILLED at the cross (BT-3).
+
+        A taker BUY lifts the ask (151.00), not the mid — the half-spread
+        is embedded in the fill price.
+        """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock)
 
@@ -107,7 +111,7 @@ class TestPassiveLimitRouter:
             OrderAckStatus.FILLED,
         ]
         filled = acks[1]
-        assert filled.fill_price == Decimal("150.00")
+        assert filled.fill_price == Decimal("151.00")
         assert filled.filled_quantity == 50
 
     def test_reject_on_missing_quote(self):
@@ -481,8 +485,13 @@ class TestCostModel:
         # No spread cost — only commission (min floor $0.35 for 100 shares at maker rate)
         assert fill.fees < Decimal("1.00")
 
-    def test_aggressive_fill_charges_spread(self):
-        """MARKET fills charge full spread cost."""
+    def test_aggressive_fill_crosses_spread_in_price(self):
+        """MARKET fills cross the spread in the PRICE, not as a fee (BT-3).
+
+        A taker BUY lifts the ask (150.10); the half-spread is embedded in
+        the fill price, so fees carry only commission + exchange (no
+        separate spread_cost component).
+        """
         clock = SimulatedClock(start_ns=5000)
         cost_model = DefaultCostModel(DefaultCostModelConfig())
         router = PassiveLimitOrderRouter(clock, cost_model=cost_model)
@@ -493,8 +502,11 @@ class TestCostModel:
         acks = router.poll_acks()
         fill = next(a for a in acks if a.status == OrderAckStatus.FILLED)
         assert fill.status == OrderAckStatus.FILLED
-        # Spread cost = 0.05 * 50 = $2.50 + commission
-        assert fill.fees > Decimal("2.00")
+        # Cross price = ask, not mid.
+        assert fill.fill_price == Decimal("150.10")
+        # Spread is in the price now; fees are commission + exchange only
+        # (well below the old $2.50 spread_cost charge).
+        assert fill.fees < Decimal("1.00")
 
     def test_maker_path_cheaper_than_taker_path(self):
         """Passive fills (maker) have lower fees than aggressive fills (taker) for equivalent notional."""
@@ -977,13 +989,15 @@ class TestLatency:
             OrderAckStatus.PARTIALLY_FILLED,
             OrderAckStatus.FILLED,
         ]
-        mid = Decimal("100")
+        # BT-3: the L1 leg fills at the cross (ask=101), the excess walks
+        # the book above the cross.
+        cross = Decimal("101")
         half_spread = Decimal("1")
         assert acks[0].filled_quantity == 50
-        assert acks[0].fill_price == mid
+        assert acks[0].fill_price == cross
         expected_impact = Decimal("0.5") * (Decimal("100") / Decimal("50")) * half_spread
         assert acks[1].filled_quantity == 100
-        assert acks[1].fill_price == mid + expected_impact
+        assert acks[1].fill_price == cross + expected_impact
 
     def test_marketable_limit_walk_the_book_caps_excess_at_limit_price(self) -> None:
         """Aggressive LIMIT fills cannot execute the excess leg above ``limit_price``."""
@@ -1010,8 +1024,10 @@ class TestLatency:
             OrderAckStatus.PARTIALLY_FILLED,
             OrderAckStatus.FILLED,
         ]
-        mid = Decimal("100.25")
-        assert acks[1].fill_price == mid
+        # BT-3: the L1 leg fills at the cross (ask=100.50), which equals
+        # the limit here; the excess would walk above the limit but is
+        # capped at it.
+        assert acks[1].fill_price == lim
         assert acks[1].filled_quantity == 50
         assert acks[2].filled_quantity == 500
         assert acks[2].fill_price == lim

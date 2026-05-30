@@ -1,9 +1,27 @@
-"""Shared mid-price MARKET simulation — D14 partial fill + walk-the-book impact.
+"""Shared cross-price MARKET simulation — D14 partial fill + walk-the-book impact.
 
 :class:`~feelies.execution.backtest_router.BacktestOrderRouter` and
 :class:`~feelies.execution.passive_limit_router.PassiveLimitOrderRouter` both
 delegate aggressive fills here so deferred MARKET paths cannot silently diverge
 under ``latency_ns > 0`` (Inv-9).
+
+Fill-price convention (BT-3)
+----------------------------
+A taker MARKET (or marketable-limit) order fills at the **executed cross
+price** — the touch the taker crosses to: a BUY lifts ``quote.ask``, a SELL
+hits ``quote.bid``.  The half-spread is therefore embedded in the recorded
+fill price (matching what IB reports as the fill), NOT debited as a separate
+``spread_cost`` fee.  The cost model is consequently called with
+``half_spread=0`` so the cross is not double-counted.  Walk-the-book impact
+for the excess quantity is added *on top of* the cross (above the ask for
+buys, below the bid for sells).
+
+This shifts the half-spread from ``Position.cumulative_fees`` into
+``avg_entry_price`` (and, since marks use the mid, into the immediate
+unrealized markdown).  NAV is invariant — ``_compute_current_equity`` sums
+``account_equity + realized − fees + unrealized`` — only the attribution
+changes.  Prior to BT-3 the fill priced at the mid with the half-spread
+carried as a fee.
 """
 
 from __future__ import annotations
@@ -64,8 +82,13 @@ def append_market_fill_acks(
     side is strictly positive.
     """
     limit_px = request.limit_price
-    mid = (quote.bid + quote.ask) / Decimal("2")
-    fill_price = _clamp_fill_price_to_limit(request.side, mid, limit_px)
+    # BT-3: fill at the executed cross price (BUY lifts the ask, SELL hits
+    # the bid), not the synthetic mid.  The half-spread is embedded in the
+    # price, so the cost model is called with half_spread=0 (no separate
+    # spread_cost fee).  ``half_spread`` is still used to *size* the
+    # walk-the-book impact below, which is measured in half-spread units.
+    cross = quote.ask if request.side == Side.BUY else quote.bid
+    fill_price = _clamp_fill_price_to_limit(request.side, cross, limit_px)
     half_spread = (quote.ask - quote.bid) / Decimal("2")
 
     available_depth = (
@@ -79,7 +102,7 @@ def append_market_fill_acks(
             side=request.side,
             quantity=partial_qty,
             fill_price=fill_price,
-            half_spread=half_spread,
+            half_spread=Decimal("0"),
             is_short=request.is_short,
         )
         pending_acks.append(OrderAck(
@@ -105,10 +128,12 @@ def append_market_fill_acks(
         )
         impact_cap = max_impact_half_spreads * half_spread
         impact = min(raw_impact, impact_cap)
+        # Walk-the-book impact stacks on top of the cross (above the ask
+        # for buys, below the bid for sells).
         if request.side == Side.BUY:
-            raw_impact_px = mid + impact
+            raw_impact_px = cross + impact
         else:
-            raw_impact_px = max(mid - impact, Decimal("0.01"))
+            raw_impact_px = max(cross - impact, Decimal("0.01"))
         impact_price = _clamp_fill_price_to_limit(
             request.side,
             raw_impact_px,
@@ -120,7 +145,7 @@ def append_market_fill_acks(
             side=request.side,
             quantity=excess_qty,
             fill_price=impact_price,
-            half_spread=half_spread,
+            half_spread=Decimal("0"),
             is_short=request.is_short,
         )
         pending_acks.append(OrderAck(
@@ -143,7 +168,7 @@ def append_market_fill_acks(
         side=request.side,
         quantity=request.quantity,
         fill_price=fill_price,
-        half_spread=half_spread,
+        half_spread=Decimal("0"),
         is_short=request.is_short,
     )
 

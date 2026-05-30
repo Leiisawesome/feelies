@@ -50,7 +50,8 @@ def _fills(acks):
 
 
 class TestBacktestOrderRouter:
-    def test_fill_at_mid_price(self):
+    def test_fill_at_cross_price(self):
+        """BT-3: a taker BUY fills at the cross (ask=151.00), not the mid."""
         clock = SimulatedClock(start_ns=5000)
         router = BacktestOrderRouter(clock)
 
@@ -64,7 +65,7 @@ class TestBacktestOrderRouter:
             OrderAckStatus.FILLED,
         ]
         fill = acks[1]
-        assert fill.fill_price == Decimal("150.00")
+        assert fill.fill_price == Decimal("151.00")
         assert fill.filled_quantity == 50
         assert fill.order_id == "ord1"
         assert fill.symbol == "AAPL"
@@ -258,8 +259,9 @@ class TestBacktestOrderRouter:
         fills = [a for a in router.poll_acks() if a.status == OrderAckStatus.FILLED]
         assert len(fills) == 2
         by_id = {a.order_id: a for a in fills}
-        assert by_id["o1"].fill_price == Decimal("150.00")
-        assert by_id["o2"].fill_price == Decimal("301.00")
+        # BT-3: taker BUYs fill at the ask (the cross).
+        assert by_id["o1"].fill_price == Decimal("151.00")
+        assert by_id["o2"].fill_price == Decimal("302.00")
 
     def test_quote_update_uses_latest(self):
         clock = SimulatedClock(start_ns=5000)
@@ -271,7 +273,8 @@ class TestBacktestOrderRouter:
         router.submit(_order("AAPL"))
 
         fills = [a for a in router.poll_acks() if a.status == OrderAckStatus.FILLED]
-        assert fills[0].fill_price == Decimal("200.10")
+        # BT-3: taker BUY fills at the latest ask (the cross).
+        assert fills[0].fill_price == Decimal("200.20")
 
     def test_fill_timestamp_without_latency(self):
         clock = SimulatedClock(start_ns=3000)
@@ -347,7 +350,7 @@ class TestPartialFillAndSlippage:
         ]
         fill = acks[1]
         assert fill.filled_quantity == 100
-        assert fill.fill_price == Decimal("100.00")  # mid
+        assert fill.fill_price == Decimal("101.00")  # cross (ask), BT-3
 
     def test_partial_fill_emits_ack_partial_filled(self) -> None:
         """Order qty > ask_size → ACKNOWLEDGED + PARTIALLY_FILLED + FILLED acks."""
@@ -365,28 +368,28 @@ class TestPartialFillAndSlippage:
         ]
         _, partial, filled = acks
         assert partial.filled_quantity == 50
-        assert partial.fill_price == Decimal("100.00")  # mid-price for L1 depth
+        assert partial.fill_price == Decimal("101.00")  # cross (ask) for L1 depth, BT-3
 
         assert filled.filled_quantity == 100  # excess = 150 - 50
         assert filled.order_id == partial.order_id
 
     def test_excess_price_raised_for_buy(self) -> None:
-        """Excess qty for a BUY is filled above mid (market-impact premium)."""
+        """Excess qty for a BUY is filled above the cross (ask) — impact premium."""
         clock = SimulatedClock(start_ns=5000)
-        # impact = 0.5 * (excess/depth) * half_spread = 0.5 * (100/50) * 1 = 1.0
+        # impact = 0.5 * (excess/depth) * half_spread = 0.5 * (100/50) * 2 = 2.0
         router = BacktestOrderRouter(clock, market_impact_factor=Decimal("0.5"))
 
         router.on_quote(_quote_with_depth("98.00", "102.00", bid_size=200, ask_size=50))
         router.submit(_order_qty(150, side=Side.BUY))
 
         _, _, filled = router.poll_acks()
-        mid = Decimal("100.00")
+        cross = Decimal("102.00")  # ask, BT-3
         half_spread = Decimal("2.00")
         expected_impact = Decimal("0.5") * (Decimal("100") / Decimal("50")) * half_spread
-        assert filled.fill_price == mid + expected_impact
+        assert filled.fill_price == cross + expected_impact
 
     def test_excess_price_lowered_for_sell(self) -> None:
-        """Excess qty for a SELL is filled below mid (receiver gets less)."""
+        """Excess qty for a SELL is filled below the cross (bid) — receiver gets less."""
         clock = SimulatedClock(start_ns=5000)
         router = BacktestOrderRouter(clock, market_impact_factor=Decimal("0.5"))
 
@@ -394,10 +397,10 @@ class TestPartialFillAndSlippage:
         router.submit(_order_qty(150, side=Side.SELL))
 
         _, _, filled = router.poll_acks()
-        mid = Decimal("100.00")
+        cross = Decimal("98.00")  # bid, BT-3
         half_spread = Decimal("2.00")
         expected_impact = Decimal("0.5") * (Decimal("100") / Decimal("50")) * half_spread
-        assert filled.fill_price == mid - expected_impact
+        assert filled.fill_price == cross - expected_impact
 
     def test_impact_is_capped(self) -> None:
         """Market-impact premium is capped at max_impact_half_spreads × half_spread."""
@@ -414,10 +417,10 @@ class TestPartialFillAndSlippage:
         router.submit(_order_qty(1001, side=Side.BUY))
 
         _, _, filled = router.poll_acks()
-        mid = Decimal("100.00")
+        cross = Decimal("102.00")  # ask, BT-3
         half_spread = Decimal("2.00")
-        # Cap: 10 × 2 = 20
-        assert filled.fill_price == mid + Decimal("10") * half_spread
+        # Cap: 10 × 2 = 20, stacked on the cross
+        assert filled.fill_price == cross + Decimal("10") * half_spread
 
     def test_zero_depth_rejects_order(self) -> None:
         """Zero L1 depth on the relevant side → REJECTED (no vacuum fills)."""
@@ -511,9 +514,47 @@ class TestExcessLegImpactNotDoubleCounted:
         router.on_quote(_quote_with_depth("98.00", "102.00", bid_size=200, ask_size=50))
         router.submit(_order_qty(150, side=Side.BUY))
         _, _, filled = router.poll_acks()
-        # mid=$100, impact = 0.5 * (100/50) * $2 = $2.00.  Excess
-        # leg fills at $102.00.  Unchanged from pre-fix behavior.
-        assert filled.fill_price == Decimal("102.00")
+        # BT-3: cross=ask=$102, impact = 0.5 * (100/50) * $2 = $2.00.
+        # Excess leg fills at $104.00 (cross + impact).
+        assert filled.fill_price == Decimal("104.00")
+
+
+class TestCrossPriceConvention:
+    """BT-3: the half-spread is embedded in the fill price, not a fee."""
+
+    def test_taker_buy_fills_at_ask_with_no_spread_fee(self) -> None:
+        """BUY fills at the ask; fees carry commission + exchange only — the
+        spread is in the price, not double-charged as a ``spread_cost`` fee.
+        """
+        from feelies.execution.cost_model import (
+            DefaultCostModel,
+            DefaultCostModelConfig,
+        )
+
+        clock = SimulatedClock(start_ns=5000)
+        # Zero adverse/regulatory so fees are commission + exchange only.
+        cfg = DefaultCostModelConfig(sell_regulatory_bps=Decimal("0"))
+        model = DefaultCostModel(cfg)
+        router = BacktestOrderRouter(clock, cost_model=model)
+
+        router.on_quote(_quote_with_depth("100.00", "100.10", bid_size=500, ask_size=500))
+        router.submit(_order_qty(100, side=Side.BUY))
+
+        fill = next(a for a in router.poll_acks() if a.status == OrderAckStatus.FILLED)
+        assert fill.fill_price == Decimal("100.10")  # ask, not mid (100.05)
+
+        # Fees == the cost model with half_spread=0 (no spread component).
+        # The half-spread ($0.05/share = $5 on 100 shares) lives in the
+        # price, not the fees.
+        expected = model.compute(
+            symbol="AAPL",
+            side=Side.BUY,
+            quantity=100,
+            fill_price=Decimal("100.10"),
+            half_spread=Decimal("0"),
+        )
+        assert fill.fees == expected.total_fees
+        assert fill.fees < Decimal("1.00")  # nowhere near the $5 half-spread
 
 
 class TestHTBFeeRouting:

@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: bt-3
     content: "BT-3: Backtest avg_entry_price=MID convention — verify/switch to executed cross price for live parity, or lock the documented convention"
-    status: pending
+    status: completed
   - id: bt-4
     content: "BT-4: Model PDT / day-trade-count + cash-account T+2 settlement as a backtest trade-cadence constraint (not a live gate)"
     status: pending

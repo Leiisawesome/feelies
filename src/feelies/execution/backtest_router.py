@@ -1,7 +1,7 @@
 """Backtest order router — simulated fills for backtest mode.
 
 Implements the ``OrderRouter`` protocol with a deterministic
-mid-price + walk-the-book partial-fill model.  Despite the historical
+cross-price + walk-the-book partial-fill model.  Despite the historical
 "v1 placeholder" framing, the implementation is the production
 backtest path: ACKNOWLEDGED + (optional) PARTIALLY_FILLED + FILLED
 with cost-model attribution and L1-depth-walk impact.  The
@@ -11,42 +11,48 @@ fill model is implemented separately by
 and is selected via ``execution_mode in {"passive_limit",
 "minimum_cost"}`` at bootstrap time.
 
-Cost-accounting convention (audit R6)
--------------------------------------
+Cost-accounting convention (audit R6, revised BT-3)
+---------------------------------------------------
 
-Market orders fill at the **mid** ``(bid + ask) / 2`` and the
-half-spread cross is debited as a separate ``spread_cost`` component
-inside the :class:`CostBreakdown` returned by the cost model.  The
-position's :attr:`Position.avg_entry_price` therefore records the
-mid (NOT the executed cross price) and the half-spread flows through
-:attr:`Position.cumulative_fees` instead.  This is internally
-consistent — NAV (`BasicRiskEngine._compute_current_equity`) and
-forensics both subtract fees explicitly — but consumers that read
-``realized_pnl`` directly without subtracting fees will overstate
-edge.  See :class:`feelies.portfolio.position_store.Position` for
-the canonical statement of this convention; live deployments must
-mirror it (or update both ends together) to preserve Inv-9 parity.
+Market orders fill at the **executed cross price** — the touch the
+taker crosses to (BUY lifts ``quote.ask``, SELL hits ``quote.bid``) —
+so :attr:`Position.avg_entry_price` records the price IB would report.
+The half-spread is embedded in that price, NOT debited as a separate
+``spread_cost`` fee (the cost model is called with ``half_spread=0``);
+see :mod:`feelies.execution.market_fill` for the single chokepoint.
 
-The ``walk-the-book`` excess-quantity branch is the one exception:
-the impact premium IS encoded into ``avg_entry_price`` (because the
-adverse impact is genuinely realized at fill time, not a synthetic
-spread cost).  See the inline comment in :meth:`submit`.
+Because marks use the mid, a taker entry shows an immediate
+half-spread unrealized markdown rather than a fee.  NAV is unchanged —
+``BasicRiskEngine._compute_current_equity`` sums
+``account_equity + realized − fees + unrealized`` — only the
+attribution moved (out of :attr:`Position.cumulative_fees`, into the
+entry price / unrealized line).  Consumers that read
+:attr:`Position.cumulative_fees` as "total transaction cost" no longer
+see the spread there; the spread now lives in realized/unrealized PnL.
+See :class:`feelies.portfolio.position_store.Position` for the
+canonical statement; live deployments already cross at the touch.
+
+The ``walk-the-book`` excess-quantity branch stacks its impact premium
+on top of the cross (above the ask for buys, below the bid for sells)
+and that premium is likewise encoded into ``avg_entry_price``.  See the
+inline comment in :meth:`submit`.
 
 Fill semantics:
   - Orders are acknowledged immediately on submit (ACKNOWLEDGED ack
     emitted first, for parity with the live-mode state machine).
-  - Orders are then filled at mid-price of the most recent quote
-    for that symbol; the half-spread cost is attributed via the
-    cost model (see convention above).
+  - Orders are then filled at the executed cross price of the most
+    recent quote for that symbol (BUY lifts the ask, SELL hits the
+    bid); the half-spread is embedded in the price (see convention
+    above), not attributed as a separate fee.
   - If no quote has been seen for the symbol, the order is rejected.
   - If the quote is crossed or locked (bid >= ask), the order is
-    rejected rather than silently filling at a dubious mid.
+    rejected rather than silently filling at a dubious cross.
   - If the relevant L1 depth is zero, the order is rejected rather
-    than silently filling at mid against a vacuum.
+    than silently filling against a vacuum.
   - When the requested quantity exceeds the L1 available depth
     (``bid_size`` for sells, ``ask_size`` for buys), the fill is
     split into two acks (D14 partial fill model):
-      1. ``PARTIALLY_FILLED`` for the available depth at mid-price.
+      1. ``PARTIALLY_FILLED`` for the available depth at the cross.
       2. ``FILLED`` for the remainder at a slippage-adjusted price
          modelling walk-the-book impact (2d).
     Slippage for the excess = market_impact_factor × (excess / depth)
@@ -130,9 +136,9 @@ class BacktestOrderRouter:
     depth multiple of excess).
     ``max_impact_half_spreads``: cap on the impact premium, expressed
     in multiples of the half-spread.  Default 10 — a single order
-    cannot move the fill price more than 10 half-spreads beyond mid,
-    even against a 1-lot book.  Protects against unbounded slippage
-    on thin quotes.
+    cannot move the fill price more than 10 half-spreads beyond the
+    cross, even against a 1-lot book.  Protects against unbounded
+    slippage on thin quotes.
     ``max_resting_ticks``: when ``latency_ns > 0``, deferred MARKET fills
     are rejected after this many quotes for the symbol while exchange
     time is still before the latency eligibility deadline (Inv 11).
