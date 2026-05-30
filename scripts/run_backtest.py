@@ -365,6 +365,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Cost stress multiplier (e.g. 1.5 = 50%% higher fees, default: 1.0)",
     )
     p.add_argument(
+        "--inv12-stress",
+        action="store_true",
+        help=(
+            "Apply Inv-12 joint stress: 1.5× cost_stress_multiplier and "
+            "2× backtest_fill_latency_ns (BT-9). Supersedes --stress-cost."
+        ),
+    )
+    p.add_argument(
         "--emit-fills-jsonl",
         action="store_true",
         help=(
