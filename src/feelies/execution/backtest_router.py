@@ -209,19 +209,21 @@ class BacktestOrderRouter:
             self._reject(request, "no quote available for symbol")
             return
 
-        if self._moc is not None and self._moc.submit(
-            request,
-            exchange_timestamp_ns=quote.exchange_timestamp_ns,
-            reject_fn=self._reject,
-        ):
-            return
-
         # Crossed/locked quotes produce nonsensical fills — reject.
+        # Applied before the MOC ack path so MOC orders share the same
+        # data-quality guard as MARKET orders at submit time.
         if quote.bid >= quote.ask:
             self._reject(
                 request,
                 f"crossed or locked quote bid={quote.bid} ask={quote.ask}",
             )
+            return
+
+        if self._moc is not None and self._moc.submit(
+            request,
+            exchange_timestamp_ns=quote.exchange_timestamp_ns,
+            reject_fn=self._reject,
+        ):
             return
 
         # Emit ACKNOWLEDGED first for live-mode SM parity (Inv 9).

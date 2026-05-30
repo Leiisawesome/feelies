@@ -9,7 +9,7 @@ Submissions at or after the IB MOC cutoff are rejected
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from decimal import Decimal
 
 from feelies.core.clock import Clock
@@ -123,19 +123,12 @@ class MocFillController:
             if pm.request.symbol != quote.symbol:
                 remaining.append(pm)
                 continue
-            ticks = pm.ticks_for_symbol + 1
+            # MOC orders rest from submit until the first post-close quote;
+            # the per-tick timeout that applies to deferred MARKET fills is
+            # not appropriate here (replays routinely emit hundreds of NBBO
+            # updates between submit and 16:00 ET).
             if quote.exchange_timestamp_ns < self._bounds.official_close_ns:
-                if ticks >= self._max_resting_ticks:
-                    reject_fn(  # type: ignore[operator]
-                        pm.request,
-                        "moc timeout before official close",
-                        timestamp_ns=max(
-                            self._clock.now_ns(),
-                            pm.ack_timestamp_ns,
-                        ),
-                    )
-                    continue
-                remaining.append(replace(pm, ticks_for_symbol=ticks))
+                remaining.append(pm)
                 continue
             if quote.bid >= quote.ask:
                 reject_fn(  # type: ignore[operator]
