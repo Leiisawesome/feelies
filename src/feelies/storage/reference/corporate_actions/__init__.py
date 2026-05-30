@@ -138,6 +138,35 @@ def replay_calendar_date_span(
     )
 
 
+def replay_calendar_date_span_by_symbol(
+    event_log: EventLog,
+) -> dict[str, tuple[date, date]]:
+    """Inclusive ET date span covered by market events, keyed by symbol.
+
+    Only symbols with at least one ``NBBOQuote`` / ``Trade`` row in the
+    log appear in the result. Symbol keys are uppercased to match the
+    casing convention used by :class:`ExDateCalendar`.
+    """
+    spans_ns: dict[str, tuple[int, int]] = {}
+    for event in event_log.replay():
+        if not isinstance(event, (NBBOQuote, Trade)):
+            continue
+        sym = event.symbol.upper()
+        ts = event.exchange_timestamp_ns
+        existing = spans_ns.get(sym)
+        if existing is None:
+            spans_ns[sym] = (ts, ts)
+        else:
+            spans_ns[sym] = (min(existing[0], ts), max(existing[1], ts))
+    return {
+        sym: (
+            exchange_timestamp_to_ny_date(lo),
+            exchange_timestamp_to_ny_date(hi),
+        )
+        for sym, (lo, hi) in spans_ns.items()
+    }
+
+
 def find_ex_date_violations(
     symbols: frozenset[str],
     replay_start: date,
@@ -168,12 +197,33 @@ def check_ex_date_replay_window(
     event_log: EventLog,
     calendar: ExDateCalendar,
 ) -> tuple[ExDateReplayViolation, ...]:
-    """Run the BT-18 guard for a populated replay log."""
-    span = replay_calendar_date_span(event_log)
-    if span is None:
+    """Run the BT-18 guard for a populated replay log.
+
+    A symbol can only be flagged for an ex-date that falls inside *its
+    own* per-symbol replay date span. Symbols listed in ``symbols`` but
+    absent from the event log produce no violations — without quotes or
+    trades on the tape they cannot introduce a price discontinuity that
+    the guard exists to prevent.
+    """
+    spans = replay_calendar_date_span_by_symbol(event_log)
+    if not spans:
         return ()
-    start, end = span
-    return find_ex_date_violations(symbols, start, end, calendar)
+    violations: list[ExDateReplayViolation] = []
+    for entry in calendar.entries_for_symbols(symbols):
+        span = spans.get(entry.symbol)
+        if span is None:
+            continue
+        start, end = span
+        if start <= entry.ex_date <= end:
+            violations.append(ExDateReplayViolation(
+                symbol=entry.symbol,
+                ex_date=entry.ex_date,
+                kind=entry.kind,
+                replay_start_date=start,
+                replay_end_date=end,
+                note=entry.note,
+            ))
+    return tuple(violations)
 
 
 def _parse_kind(raw: object, source: str) -> CorporateActionKind:
@@ -252,4 +302,5 @@ __all__ = [
     "find_ex_date_violations",
     "load_ex_date_calendar",
     "replay_calendar_date_span",
+    "replay_calendar_date_span_by_symbol",
 ]
