@@ -843,6 +843,14 @@ class PassiveLimitOrderRouter:
         """
         pending = self._resting_orders.get(order_id)
         if pending is None:
+            # Acknowledged-but-unfilled MOC orders live in the
+            # MocFillController queue, not ``_resting_orders``.  Halt
+            # cleanup walks active orders and calls ``cancel_order``
+            # on each, so MOC entries must be reachable here too.
+            if self._moc is not None and self._moc.cancel_pending(
+                order_id, "client_cancel",
+            ):
+                return True
             return False
         cancel_fees = self._cancel_fees(pending.request.quantity)
         cancel_ts = max(self._clock.now_ns(), pending.ack_timestamp_ns)
@@ -871,6 +879,20 @@ class PassiveLimitOrderRouter:
                 del self._resting_by_symbol[pending.request.symbol]
 
     # ── Diagnostics ──────────────────────────────────────────────
+
+    def expire_pending_moc(
+        self,
+        reason: str = "MOC_NO_CLOSE_PRINT",
+    ) -> int:
+        """Reject any acknowledged MOC orders that never received a
+        closing-auction print.  Called by the kernel at session /
+        replay end so an MOC cannot remain non-terminal indefinitely
+        when no qualifying post-close NBBO arrives in the feed.
+        Returns the number of orders expired.
+        """
+        if self._moc is None:
+            return 0
+        return self._moc.expire_unfilled(reason, reject_fn=self._reject)
 
     @property
     def resting_order_count(self) -> int:

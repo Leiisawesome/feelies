@@ -1179,6 +1179,14 @@ class Orchestrator:
         # ``_backend is not None`` for partially-constructed test
         # orchestrators; production paths always have a backend.
         if self._backend is not None:
+            # BT-8: terminate MOC orders that never received a
+            # closing-auction print so they don't survive shutdown
+            # as ACKNOWLEDGED-but-never-filled (Inv-4 hygiene).
+            expire_moc = getattr(
+                self._backend.order_router, "expire_pending_moc", None,
+            )
+            if expire_moc is not None:
+                expire_moc()
             self._drain_async_fills(correlation_id="shutdown")
         self._checkpoint_feature_snapshots()
         # Resolve operator cancel intent when no broker ack will arrive

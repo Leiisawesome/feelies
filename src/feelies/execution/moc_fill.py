@@ -144,6 +144,54 @@ class MocFillController:
             self._fill_at_close(pm.request, quote, fill_ts)
         self._pending = remaining
 
+    def cancel_pending(self, order_id: str, reason: str) -> bool:
+        """Cancel an acknowledged-but-unfilled MOC order by id.
+
+        Returns True when ``order_id`` was found in the pending queue
+        and a CANCELLED ack was emitted (parity with
+        :meth:`PassiveLimitOrderRouter.cancel_order` on resting limits,
+        so kernel halt-cleanup paths that walk active orders and call
+        ``cancel_order`` terminate MOC entries too).
+        """
+        for index, pm in enumerate(self._pending):
+            if pm.request.order_id != order_id:
+                continue
+            cancel_ts = max(self._clock.now_ns(), pm.ack_timestamp_ns)
+            self._pending_acks.append(OrderAck(
+                timestamp_ns=cancel_ts,
+                correlation_id=pm.request.correlation_id,
+                sequence=self._ack_seq.next(),
+                order_id=order_id,
+                symbol=pm.request.symbol,
+                status=OrderAckStatus.CANCELLED,
+                reason=reason,
+                request_sequence=pm.request.sequence,
+            ))
+            self._pending.pop(index)
+            return True
+        return False
+
+    def expire_unfilled(self, reason: str, *, reject_fn: object) -> int:
+        """Reject every pending MOC order that never saw a closing print.
+
+        Called at session/replay end so an acknowledged MOC cannot
+        remain non-terminal indefinitely when no qualifying post-close
+        NBBO ever arrives (e.g. data ends mid-session or the closing
+        print is missing from the feed).  Returns the number of
+        orders expired.
+        """
+        if not self._pending:
+            return 0
+        expired = self._pending
+        self._pending = []
+        for pm in expired:
+            reject_fn(  # type: ignore[operator]
+                pm.request,
+                reason,
+                timestamp_ns=max(self._clock.now_ns(), pm.ack_timestamp_ns),
+            )
+        return len(expired)
+
     def _fill_at_close(
         self,
         request: OrderRequest,

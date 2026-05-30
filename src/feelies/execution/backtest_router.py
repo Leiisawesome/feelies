@@ -349,6 +349,20 @@ class BacktestOrderRouter:
         self._pending_acks.clear()
         return acks
 
+    def expire_pending_moc(
+        self,
+        reason: str = "MOC_NO_CLOSE_PRINT",
+    ) -> int:
+        """Reject any acknowledged MOC orders that never received a
+        closing-auction print.  Called by the kernel at session /
+        replay end so an MOC cannot remain non-terminal indefinitely
+        when no qualifying post-close NBBO arrives in the feed.
+        Returns the number of orders expired.
+        """
+        if self._moc is None:
+            return 0
+        return self._moc.expire_unfilled(reason, reject_fn=self._reject)
+
     def _reject(
         self,
         request: OrderRequest,
