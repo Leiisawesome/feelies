@@ -774,6 +774,51 @@ class Orchestrator:
                 "use reset_risk_escalation() or unlock_from_lockdown()",
             )
 
+    def _bind_router_position_qty_for_rth(self) -> None:
+        """BT-16: wire signed live position qty into the router's RTH gate.
+
+        The router-side :class:`RthEntryFillGate` defaults ``current_qty``
+        to 0 when unbound, which would mis-classify exit fills as new
+        entries and suppress them after RTH close (violating Inv-11 for
+        the execution layer).  Binding is a no-op when RTH gating is
+        disabled (``_trading_session_bounds is None``) or when the
+        backend's router does not expose ``bind_position_qty``
+        (e.g. live broker routers without the hook).
+        """
+        if self._trading_session_bounds is None:
+            return
+        router = getattr(self._backend, "order_router", None)
+        bind = getattr(router, "bind_position_qty", None)
+        if not callable(bind):
+            return
+        bind(lambda sym: self._positions.get(sym).quantity)
+
+    def _maybe_flip_buying_power_at_rth_close(self, quote: NBBOQuote) -> None:
+        """BT-16: flip risk-engine buying-power phase at RTH close.
+
+        Once-per-session: the first quote with
+        ``timestamp_ns >= rth_close_ns`` transitions the risk engine to
+        :attr:`BuyingPowerPhase.OVERNIGHT` so the 2× overnight multiplier
+        is applied to any exits that linger past the close.  No-op when
+        RTH gating is disabled, the flip has already fired this session,
+        or the risk engine does not expose ``set_buying_power_phase``.
+        """
+        if self._rth_close_bp_flipped:
+            return
+        bounds = self._trading_session_bounds
+        if bounds is None:
+            return
+        if quote.timestamp_ns < bounds.rth_close_ns:
+            return
+        set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
+        if not callable(set_phase):
+            self._rth_close_bp_flipped = True
+            return
+        from feelies.risk.buying_power import BuyingPowerPhase
+
+        set_phase(BuyingPowerPhase.OVERNIGHT)
+        self._rth_close_bp_flipped = True
+
     # ── Lifecycle: boot / run / shutdown ────────────────────────────
 
     def boot(self, config: Configuration) -> None:
