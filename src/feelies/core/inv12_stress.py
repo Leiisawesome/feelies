@@ -39,7 +39,8 @@ def stressed_cost_multiplier(baseline_multiplier: float) -> float:
 
 
 def apply_inv12_stress(config: PlatformConfig) -> PlatformConfig:
-    """Return a copy with joint 1.5× cost-stress and 2× fill latency."""
+    """Return a copy with joint 1.5× cost-stress and 2× fill +
+    market-data latency (BT-17: both latency legs scale together)."""
     return replace(
         config,
         cost_stress_multiplier=stressed_cost_multiplier(
@@ -47,6 +48,9 @@ def apply_inv12_stress(config: PlatformConfig) -> PlatformConfig:
         ),
         backtest_fill_latency_ns=stressed_fill_latency_ns(
             config.backtest_fill_latency_ns,
+        ),
+        market_data_latency_ns=stressed_fill_latency_ns(
+            config.market_data_latency_ns,
         ),
     )
 

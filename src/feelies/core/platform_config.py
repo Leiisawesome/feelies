@@ -147,6 +147,15 @@ class PlatformConfig:
     # table ⇒ every symbol treated as available.
     borrow_availability: dict[str, str] = field(default_factory=dict)
 
+    # BT-8: MOC / closing-auction fill modeling.
+    moc_strategy_ids: tuple[str, ...] = ("sig_moc_imbalance_v1",)
+    moc_session_date: str | None = None
+    moc_cutoff_et: str = "15:50"
+    official_close_et: str = "16:00"
+    early_close_dates: tuple[str, ...] = ()
+    early_close_moc_cutoff_et: str = "12:50"
+    early_close_official_close_et: str = "13:00"
+
     account_equity: float = 1_000_000.0
     # BT-17: order-submission latency (exchange-time fill eligibility in routers).
     backtest_fill_latency_ns: int = DEFAULT_BACKTEST_FILL_LATENCY_NS
@@ -163,6 +172,10 @@ class PlatformConfig:
     # Maintenance floor below which a PDT-flagged account is barred from
     # opening new day trades (entries suppressed, exits always permitted).
     pdt_min_equity_usd: float = 25_000.0
+
+    # BT-15: Reg-T buying-power multipliers (margin_25k only).
+    risk_margin_intraday_buying_power_multiplier: float = 4.0
+    risk_margin_overnight_buying_power_multiplier: float = 2.0
 
     stop_loss_per_share: float = 0.0
     trail_activate_per_share: float = 0.0
@@ -775,10 +788,23 @@ class PlatformConfig:
             "ssr_trigger_condition_codes": list(self.ssr_trigger_condition_codes),
             "ssr_mode": self.ssr_mode,
             "borrow_availability": dict(self.borrow_availability),
+            "moc_strategy_ids": list(self.moc_strategy_ids),
+            "moc_session_date": self.moc_session_date,
+            "moc_cutoff_et": self.moc_cutoff_et,
+            "official_close_et": self.official_close_et,
+            "early_close_dates": list(self.early_close_dates),
+            "early_close_moc_cutoff_et": self.early_close_moc_cutoff_et,
+            "early_close_official_close_et": self.early_close_official_close_et,
             "account_equity": self.account_equity,
             "account_type": self.account_type,
             "account_id": self.account_id,
             "pdt_min_equity_usd": self.pdt_min_equity_usd,
+            "risk_margin_intraday_buying_power_multiplier": (
+                self.risk_margin_intraday_buying_power_multiplier
+            ),
+            "risk_margin_overnight_buying_power_multiplier": (
+                self.risk_margin_overnight_buying_power_multiplier
+            ),
             "backtest_fill_latency_ns": self.backtest_fill_latency_ns,
             "market_data_latency_ns": self.market_data_latency_ns,
             "stop_loss_per_share": self.stop_loss_per_share,
@@ -1109,10 +1135,35 @@ class PlatformConfig:
                 str(k).upper(): str(v).lower()
                 for k, v in (data.get("borrow_availability") or {}).items()
             },
+            moc_strategy_ids=tuple(
+                str(s) for s in data.get("moc_strategy_ids", ("sig_moc_imbalance_v1",))
+            ),
+            moc_session_date=(
+                str(data["moc_session_date"])
+                if data.get("moc_session_date") is not None
+                else None
+            ),
+            moc_cutoff_et=str(data.get("moc_cutoff_et", "15:50")),
+            official_close_et=str(data.get("official_close_et", "16:00")),
+            early_close_dates=tuple(
+                str(d) for d in data.get("early_close_dates", ())
+            ),
+            early_close_moc_cutoff_et=str(
+                data.get("early_close_moc_cutoff_et", "12:50")
+            ),
+            early_close_official_close_et=str(
+                data.get("early_close_official_close_et", "13:00")
+            ),
             account_equity=float(data.get("account_equity", 1_000_000.0)),
             account_type=str(data.get("account_type", "margin_25k")),
             account_id=str(data.get("account_id", "default")),
             pdt_min_equity_usd=float(data.get("pdt_min_equity_usd", 25_000.0)),
+            risk_margin_intraday_buying_power_multiplier=float(
+                data.get("risk_margin_intraday_buying_power_multiplier", 4.0)
+            ),
+            risk_margin_overnight_buying_power_multiplier=float(
+                data.get("risk_margin_overnight_buying_power_multiplier", 2.0)
+            ),
             backtest_fill_latency_ns=int(
                 data.get(
                     "backtest_fill_latency_ns",
