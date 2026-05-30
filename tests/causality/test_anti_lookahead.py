@@ -10,13 +10,15 @@ unchanged.  Paths covered:
   prefix ack stream identical when a future quote is appended after cutoff
 * **Regulatory (BT-5/6)** — halt / SSR state at ``T`` ignores trades processed
   only after ``T``
-* **Aggregation** — horizon snapshot at boundary ``T`` unchanged when a
-  sensor reading with ``timestamp_ns > T`` is processed only after the tick
+* **Aggregation** — horizon snapshot at boundary ``T`` excludes any sensor
+  reading with ``timestamp_ns > T`` even when that reading is fed to the
+  aggregator before the boundary tick at ``T`` (out-of-order arrival)
 """
 
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any, Mapping
 
 import pytest
 
@@ -24,12 +26,14 @@ from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
     Alert,
+    HorizonTick,
     RiskAction,
     NBBOQuote,
     OrderAck,
     OrderAckStatus,
     OrderRequest,
     OrderType,
+    SensorReading,
     Side,
     SignalDirection,
     Trade,
@@ -47,7 +51,7 @@ from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.storage.memory_event_log import InMemoryEventLog
 from feelies.core.errors import CausalityViolation
 
-from tests.features.test_aggregator import _SumFeature, _reading, _tick
+from tests.features.test_aggregator import _reading, _tick
 from tests.ingestion.test_replay_feed import (
     _UnsortedEventLog,
     _make_quote as _replay_quote,
@@ -240,40 +244,103 @@ class TestPassiveDrainAntiLookahead:
 # ── Horizon aggregation ───────────────────────────────────────────────
 
 
+class _CausalSumFeature:
+    """Test feature that respects event-time causality at finalize.
+
+    Records ``(ts_ns, value)`` tuples at ``observe`` time and, at
+    ``finalize`` time, sums only those whose ``ts_ns <= tick.timestamp_ns``.
+    This lets the BT-10 aggregation test verify the Inv-6 contract end-to-end
+    even when a future-time reading is fed to the aggregator before the
+    boundary tick at ``T`` arrives — exactly the perturbation that the
+    aggregator's pass-through ``observe()`` dispatch cannot defend against
+    on its own.
+    """
+
+    feature_id: str = "causal_sum_feat"
+    feature_version: str = "1.0.0"
+    input_sensor_ids: tuple[str, ...] = ("ofi_ewma",)
+    horizon_seconds: int = 30
+
+    def initial_state(self) -> dict[str, Any]:
+        return {"observations": []}
+
+    def observe(
+        self,
+        reading: SensorReading,
+        state: dict[str, Any],
+        params: Mapping[str, Any],
+    ) -> None:
+        v = reading.value
+        if isinstance(v, tuple):
+            v = v[0]
+        state["observations"].append((reading.timestamp_ns, float(v)))
+
+    def finalize(
+        self,
+        tick: HorizonTick,
+        state: dict[str, Any],
+        params: Mapping[str, Any],
+    ) -> tuple[float, bool, bool]:
+        cutoff = tick.timestamp_ns
+        causal = [v for ts, v in state["observations"] if ts <= cutoff]
+        # Retain post-cutoff observations for the next horizon; drop
+        # the ones we just folded into this snapshot.
+        state["observations"] = [
+            (ts, v) for ts, v in state["observations"] if ts > cutoff
+        ]
+        if not causal:
+            return 0.0, False, True
+        return sum(causal), True, False
+
+
 class TestHorizonAggregationAntiLookahead:
-    def test_boundary_snapshot_unchanged_by_later_sensor_reading(self) -> None:
-        """Snapshot at ``T`` is identical whether a reading at ``T' > T`` exists."""
-        feat = _SumFeature()
-        tick_t = _tick(boundary=1, ts_ns=3_000_000_000)
+    def test_boundary_snapshot_excludes_future_reading_processed_early(self) -> None:
+        """A reading with ``timestamp_ns > T`` ingested *before* the boundary
+        tick at ``T`` must not enter the snapshot at ``T``.
 
-        agg_a = HorizonAggregator(
+        Inv-6: features at time ``T`` use only events with ``timestamp_ns <= T``.
+        The aggregator dispatches ``feature.observe`` synchronously on every
+        ``SensorReading`` (without deferring to tick time), so the meaningful
+        anti-lookahead perturbation is to feed an out-of-order future-time
+        reading *before* finalizing at ``T`` and assert that the snapshot at
+        ``T`` reflects only readings at or before ``T``.  A baseline path
+        that omits the future reading entirely is compared to confirm both
+        paths produce the same boundary snapshot.
+        """
+        boundary_tick = _tick(boundary=1, ts_ns=3_000_000_000)
+        next_tick = _tick(boundary=2, ts_ns=12_000_000_000)
+
+        agg_baseline = HorizonAggregator(
             bus=EventBus(),
-            horizon_features={"sum_feat": feat},
+            horizon_features={"causal_sum_feat": _CausalSumFeature()},
             symbols=frozenset({"AAPL"}),
             sensor_buffer_seconds=600,
             sequence_generator=SequenceGenerator(),
         )
-        agg_a.on_sensor_reading(_reading(ts_ns=1_000_000_000, value=1.0))
-        agg_a.on_sensor_reading(_reading(ts_ns=2_000_000_000, value=2.0))
-        snap_a = agg_a.on_horizon_tick(tick_t)[0]
+        agg_baseline.on_sensor_reading(_reading(ts_ns=1_000_000_000, value=1.0))
+        agg_baseline.on_sensor_reading(_reading(ts_ns=2_000_000_000, value=2.0))
+        snap_baseline = agg_baseline.on_horizon_tick(boundary_tick)[0]
 
-        agg_b = HorizonAggregator(
+        agg_perturbed = HorizonAggregator(
             bus=EventBus(),
-            horizon_features={"sum_feat": _SumFeature()},
+            horizon_features={"causal_sum_feat": _CausalSumFeature()},
             symbols=frozenset({"AAPL"}),
             sensor_buffer_seconds=600,
             sequence_generator=SequenceGenerator(),
         )
-        agg_b.on_sensor_reading(_reading(ts_ns=1_000_000_000, value=1.0))
-        agg_b.on_sensor_reading(_reading(ts_ns=2_000_000_000, value=2.0))
-        snap_b = agg_b.on_horizon_tick(tick_t)[0]
-        agg_b.on_sensor_reading(_reading(ts_ns=9_000_000_000, value=999.0))
-        snap_after_future = agg_b.on_horizon_tick(
-            _tick(boundary=2, ts_ns=6_000_000_000),
-        )[0]
+        agg_perturbed.on_sensor_reading(_reading(ts_ns=1_000_000_000, value=1.0))
+        agg_perturbed.on_sensor_reading(_reading(ts_ns=2_000_000_000, value=2.0))
+        # Out-of-order arrival: future-time reading observed before the
+        # boundary tick at T.  Under Inv-6 it must not enter snap_perturbed.
+        agg_perturbed.on_sensor_reading(_reading(ts_ns=9_000_000_000, value=999.0))
+        snap_perturbed = agg_perturbed.on_horizon_tick(boundary_tick)[0]
 
-        assert snap_a.values == snap_b.values == {"sum_feat": 3.0}
-        assert snap_after_future.values["sum_feat"] == 999.0
+        assert snap_baseline.values == {"causal_sum_feat": 3.0}
+        assert snap_perturbed.values == snap_baseline.values
+
+        # The deferred future reading lands in the *next* horizon snapshot.
+        snap_after_future = agg_perturbed.on_horizon_tick(next_tick)[0]
+        assert snap_after_future.values == {"causal_sum_feat": 999.0}
 
 
 # ── Regulatory chokepoints (orchestrator) ───────────────────────────
