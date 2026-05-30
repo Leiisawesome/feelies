@@ -31,7 +31,7 @@ todos:
     status: completed
   - id: bt-9
     content: "BT-9: Cost + latency stress gate harness (Inv-12: survive 1.5x cost AND 2x latency) wired into the backtest acceptance suite"
-    status: pending
+    status: completed
   - id: bt-14
     content: "BT-14: Tick-size / sub-penny price rounding in the fill model — snap fill + limit prices to $0.01 (>=$1) / $0.0001 (<$1); MID fills currently produce sub-penny prices"
     status: pending

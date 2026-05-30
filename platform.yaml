@@ -135,6 +135,8 @@ cost_adverse_selection_drain_bps: 0.3
 # or it double-counts. BT-0: raised from 0.0 (which understated round-trip cost).
 cost_sell_regulatory_bps: 0.5
 # BT-0: 1.5x matches Inv-12's cost-stress requirement (was 1.0, no stress).
+# Inv-12 nominal variable-cost stress (BT-0). Joint 1.5× cost + 2× fill latency
+# for promotion re-validation: ``run_backtest.py --inv12-stress`` (BT-9).
 cost_stress_multiplier: 1.5
 cost_min_commission: 0.35
 cost_max_commission_pct: 1.0
