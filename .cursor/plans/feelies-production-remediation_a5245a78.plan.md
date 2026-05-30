@@ -49,13 +49,13 @@ todos:
     status: pending
   - id: bt-10
     content: "BT-10: Lookahead / causality audit (Inv-6): features/signals/fills at T use only events <= T; add/confirm anti-lookahead tests"
-    status: completed
+    status: pending
   - id: bt-11
     content: "BT-11: Re-baseline all parity hashes in tests/determinism/ and confirm bit-identical replay after the fill-model changes (Inv-5)"
-    status: completed
+    status: pending
   - id: bt-12
     content: "BT-12: Re-run G12 + CPCV + DSR on all 5 SIGNAL alphas against the post-fix backtest; retire or recalibrate failures"
-    status: pending
+    status: completed
   - id: bt-13
     content: "BT-13: Move PORTFOLIO alphas to RESEARCH-only state (universe too small at sub-$250k)"
     status: pending
