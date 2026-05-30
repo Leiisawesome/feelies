@@ -66,6 +66,17 @@ class MocFillController:
         if not request.is_moc:
             return False
 
+        if not self._bounds.covers_ns(exchange_timestamp_ns):
+            reject_fn(  # type: ignore[operator]
+                request,
+                "MOC_SESSION_DATE_MISMATCH",
+                timestamp_ns=max(
+                    self._clock.now_ns(),
+                    exchange_timestamp_ns,
+                ),
+            )
+            return True
+
         if exchange_timestamp_ns >= self._bounds.moc_cutoff_ns:
             reject_fn(  # type: ignore[operator]
                 request,
@@ -101,6 +112,11 @@ class MocFillController:
     ) -> None:
         """Try to fill or expire pending MOC orders on each quote."""
         if not self._pending:
+            return
+        if not self._bounds.covers_ns(quote.exchange_timestamp_ns):
+            # Quote is from a different calendar day than the configured
+            # session bounds — the cutoff/close anchors don't apply, so
+            # neither tick the resting counters nor trigger fills.
             return
         remaining: list[_PendingMoc] = []
         for pm in self._pending:

@@ -28,6 +28,22 @@ class MocSessionBounds:
     moc_cutoff_ns: int
     official_close_ns: int
 
+    def covers_ns(self, ts_ns: int) -> bool:
+        """Whether ``ts_ns`` falls on ``session_date`` in NY tz.
+
+        Used by :class:`MocFillController` to refuse cross-day submits
+        and ignore cross-day quotes — the configured cutoff/close are
+        only valid anchors for the configured calendar date.
+        """
+        return session_date_from_ns(ts_ns) == self.session_date
+
+
+def session_date_from_ns(timestamp_ns: int) -> date:
+    """ET calendar date for a UTC nanosecond timestamp."""
+    return datetime.fromtimestamp(
+        timestamp_ns / _NS_PER_SECOND, _NY_TZ,
+    ).date()
+
 
 def _parse_clock_time(spec: str) -> time:
     parts = spec.split(":")
