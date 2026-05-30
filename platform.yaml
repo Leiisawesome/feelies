@@ -75,7 +75,11 @@ cost_min_spread_bps: 0.0
 cost_commission_per_share: 0.0035
 cost_taker_exchange_per_share: 0.003
 cost_maker_exchange_per_share: -0.002
-cost_passive_adverse_selection_bps: 0.5
+# BT-1: adverse selection split by passive fill regime (was a flat 0.5 bps).
+# Through-fill = market traded through the resting order (adversely selected);
+# drain = queue ahead drained at a stable price (benign).
+cost_adverse_selection_through_bps: 3.0
+cost_adverse_selection_drain_bps: 0.3
 # SEC Section 31 fee on sells, in bps of notional (~0.278 bps current rate +
 # conservative headroom). FINRA TAF is modeled separately (per-share, capped)
 # in the cost model, so this is the SEC component only — do not fold TAF in here

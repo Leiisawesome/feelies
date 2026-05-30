@@ -107,7 +107,8 @@ class TestDefaultCostModel:
 
     def test_total_fees_is_sum(self) -> None:
         model = DefaultCostModel(DefaultCostModelConfig(
-            passive_adverse_selection_bps=Decimal("0"),
+            adverse_selection_through_bps=Decimal("0"),
+            adverse_selection_drain_bps=Decimal("0"),
             sell_regulatory_bps=Decimal("0"),
         ))
         result = model.compute("AAPL", Side.BUY, 1000, Decimal("100"), Decimal("0.005"))
@@ -321,7 +322,8 @@ class TestSellSideRegulatoryFees:
         """1000 shares SELL → TAF = 1000 * $0.000166 = $0.166 → $0.17 quantized."""
         cfg = DefaultCostModelConfig(
             sell_regulatory_bps=Decimal("0"),
-            passive_adverse_selection_bps=Decimal("0"),
+            adverse_selection_through_bps=Decimal("0"),
+            adverse_selection_drain_bps=Decimal("0"),
         )
         model = DefaultCostModel(cfg)
         buy = model.compute("AAPL", Side.BUY, 1000, Decimal("100"), Decimal("0"))
@@ -334,7 +336,8 @@ class TestSellSideRegulatoryFees:
         """Max TAF $8.30 per execution — million-share sell still caps."""
         cfg = DefaultCostModelConfig(
             sell_regulatory_bps=Decimal("0"),
-            passive_adverse_selection_bps=Decimal("0"),
+            adverse_selection_through_bps=Decimal("0"),
+            adverse_selection_drain_bps=Decimal("0"),
         )
         model = DefaultCostModel(cfg)
         buy = model.compute("AAPL", Side.BUY, 1_000_000, Decimal("100"), Decimal("0"))
@@ -347,7 +350,8 @@ class TestSellSideRegulatoryFees:
         cfg = DefaultCostModelConfig(
             finra_taf_per_share=Decimal("0"),
             sell_regulatory_bps=Decimal("0"),
-            passive_adverse_selection_bps=Decimal("0"),
+            adverse_selection_through_bps=Decimal("0"),
+            adverse_selection_drain_bps=Decimal("0"),
         )
         model = DefaultCostModel(cfg)
         buy = model.compute("AAPL", Side.BUY, 1000, Decimal("100"), Decimal("0"))
@@ -358,7 +362,8 @@ class TestSellSideRegulatoryFees:
         """Default sell_regulatory_bps>0 — sells cost more than buys."""
         cfg = DefaultCostModelConfig(
             finra_taf_per_share=Decimal("0"),
-            passive_adverse_selection_bps=Decimal("0"),
+            adverse_selection_through_bps=Decimal("0"),
+            adverse_selection_drain_bps=Decimal("0"),
         )
         model = DefaultCostModel(cfg)
         buy = model.compute("AAPL", Side.BUY, 1000, Decimal("100"), Decimal("0"))
@@ -403,7 +408,8 @@ class TestStressDoesNotInflateBrokerThresholds:
         cfg = DefaultCostModelConfig(
             stress_multiplier=Decimal("3"),
             sell_regulatory_bps=Decimal("0"),
-            passive_adverse_selection_bps=Decimal("0"),
+            adverse_selection_through_bps=Decimal("0"),
+            adverse_selection_drain_bps=Decimal("0"),
         )
         model = DefaultCostModel(cfg)
         buy = model.compute("AAPL", Side.BUY, 1_000_000, Decimal("100"), Decimal("0"))
@@ -440,6 +446,51 @@ class TestSmallOrderTieredFloor:
         )
         # 50 * $0.0035 = $0.175 → floored to $0.35; rebate -50 * $0.002 = -$0.10
         assert result.commission == Decimal("0.25")
+
+
+class TestAdverseSelectionSplit:
+    """BT-1: through-fill vs queue-drain adverse-selection split."""
+
+    def test_through_fill_costs_more_than_drain(self) -> None:
+        """A through-fill carries strictly higher adverse-selection cost
+        than a queue-drain fill of the same maker order."""
+        model = DefaultCostModel(DefaultCostModelConfig(
+            adverse_selection_through_bps=Decimal("3.0"),
+            adverse_selection_drain_bps=Decimal("0.3"),
+        ))
+        common = dict(
+            symbol="AAPL",
+            side=Side.BUY,
+            quantity=1000,
+            fill_price=Decimal("100"),
+            half_spread=Decimal("0"),
+            is_taker=False,
+        )
+        drain = model.compute(**common, is_through_fill=False)
+        through = model.compute(**common, is_through_fill=True)
+        # notional = $100,000; through adverse = 100000 * 3/10000 = $30,
+        # drain adverse = 100000 * 0.3/10000 = $3; both share the same
+        # maker rebate/commission, so the fee delta is exactly $27.
+        assert through.total_fees - drain.total_fees == Decimal("27.00")
+
+    def test_through_fill_regime_inert_on_taker(self) -> None:
+        """Adverse selection only applies to maker fills; the
+        ``is_through_fill`` flag is a no-op on taker fills."""
+        model = DefaultCostModel(DefaultCostModelConfig(
+            adverse_selection_through_bps=Decimal("3.0"),
+            adverse_selection_drain_bps=Decimal("0.3"),
+        ))
+        common = dict(
+            symbol="AAPL",
+            side=Side.BUY,
+            quantity=1000,
+            fill_price=Decimal("100"),
+            half_spread=Decimal("0.01"),
+            is_taker=True,
+        )
+        taker_drain = model.compute(**common, is_through_fill=False)
+        taker_through = model.compute(**common, is_through_fill=True)
+        assert taker_drain.total_fees == taker_through.total_fees
 
 
 class TestSpreadFloorTakerOnly:

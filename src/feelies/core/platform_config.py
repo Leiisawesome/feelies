@@ -120,7 +120,11 @@ class PlatformConfig:
     cost_exchange_per_share: float = 0.0005  # deprecated; use taker/maker fields below
     cost_taker_exchange_per_share: float = 0.003
     cost_maker_exchange_per_share: float = -0.002
-    cost_passive_adverse_selection_bps: float = 0.5
+    # Adverse-selection cost on passive (maker) fills, in bps, split by fill
+    # regime (BT-1): through-fills (market traded through the resting order)
+    # vs queue-drain fills.  The cost model selects the regime per fill.
+    cost_adverse_selection_through_bps: float = 3.0
+    cost_adverse_selection_drain_bps: float = 0.3
     cost_sell_regulatory_bps: float = 0.0
     cost_stress_multiplier: float = 1.0
     cost_min_commission: float = 0.35
@@ -665,7 +669,12 @@ class PlatformConfig:
             "cost_commission_per_share": self.cost_commission_per_share,
             "cost_taker_exchange_per_share": self.cost_taker_exchange_per_share,
             "cost_maker_exchange_per_share": self.cost_maker_exchange_per_share,
-            "cost_passive_adverse_selection_bps": self.cost_passive_adverse_selection_bps,
+            "cost_adverse_selection_through_bps": (
+                self.cost_adverse_selection_through_bps
+            ),
+            "cost_adverse_selection_drain_bps": (
+                self.cost_adverse_selection_drain_bps
+            ),
             "cost_sell_regulatory_bps": self.cost_sell_regulatory_bps,
             "cost_stress_multiplier": self.cost_stress_multiplier,
             "cost_min_commission": self.cost_min_commission,
@@ -992,8 +1001,11 @@ class PlatformConfig:
             cost_maker_exchange_per_share=float(
                 maker_exch_raw if maker_exch_raw is not None else -0.002
             ),
-            cost_passive_adverse_selection_bps=float(
-                data.get("cost_passive_adverse_selection_bps", 0.5)
+            cost_adverse_selection_through_bps=float(
+                data.get("cost_adverse_selection_through_bps", 3.0)
+            ),
+            cost_adverse_selection_drain_bps=float(
+                data.get("cost_adverse_selection_drain_bps", 0.3)
             ),
             cost_sell_regulatory_bps=float(
                 data.get("cost_sell_regulatory_bps", 0.0)

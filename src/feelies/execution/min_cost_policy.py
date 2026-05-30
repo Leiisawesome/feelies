@@ -13,12 +13,13 @@ Conservative defaults (IBKR-style, U.S. equities):
 * The cost comparison uses the *same* ``DefaultCostModel`` as the
   router so backtest routing decisions cannot become more optimistic
   than the cost the simulator actually charges.
-* On passive fills, the model includes the configured
-  ``passive_adverse_selection_bps`` *and* the maker rebate.  Passive
-  routing is therefore not a free lunch: the policy will refuse to go
-  passive on tight-spread / small-order regimes where the commission
-  floor + adverse-selection penalty dominates the would-be spread
-  saving.
+* On passive fills, the model includes the configured adverse-selection
+  penalty (the queue-drain regime, ``adverse_selection_drain_bps``, since
+  the policy estimates a benign level fill) *and* the maker rebate.
+  Passive routing is therefore not a free lunch: the policy will refuse
+  to go passive on tight-spread / small-order regimes where the
+  commission floor + adverse-selection penalty dominates the would-be
+  spread saving.
 * A configurable ``prefer_passive_bias_bps`` lets operators bias the
   decision (negative = require passive to beat aggressive by a margin
   before posting a limit, the more conservative direction).

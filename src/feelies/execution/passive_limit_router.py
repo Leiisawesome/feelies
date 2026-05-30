@@ -443,18 +443,29 @@ class PassiveLimitOrderRouter:
                 # — overstating the trader's cost by one tick per
                 # share, conservative for backtest but wrong vs IBKR.
                 # Level-fills (queue drain) still fill at the limit.
+                # A gap-through (BUY ask < limit, SELL bid > limit) means
+                # the market traded *through* the resting order: it is a
+                # through-fill, adversely selected, and priced with the
+                # higher adverse-selection regime in the cost model.
                 fill_price = pending.limit_price
+                is_through_fill = False
                 if (
                     pending.side == Side.BUY
                     and quote.ask < pending.limit_price
                 ):
                     fill_price = quote.ask
+                    is_through_fill = True
                 elif (
                     pending.side == Side.SELL
                     and quote.bid > pending.limit_price
                 ):
                     fill_price = quote.bid
-                self._emit_passive_fill(pending, fill_price=fill_price)
+                    is_through_fill = True
+                self._emit_passive_fill(
+                    pending,
+                    fill_price=fill_price,
+                    is_through_fill=is_through_fill,
+                )
                 to_remove.append(order_id)
             elif action == "cancel":
                 self._emit_timeout_cancel(pending)
@@ -544,6 +555,7 @@ class PassiveLimitOrderRouter:
         self,
         pending: _PendingOrder,
         fill_price: Decimal | None = None,
+        is_through_fill: bool = False,
     ) -> None:
         """Emit a FILLED ack for a passive limit order.
 
@@ -555,6 +567,10 @@ class PassiveLimitOrderRouter:
         drain / level fills).  Callers may pass a better price (BUY:
         a lower ask that gapped through, SELL: a higher bid) to model
         IBKR's price-improvement rule on through-fills.
+
+        ``is_through_fill`` selects the cost model's adverse-selection
+        regime: ``True`` for a market-through (gapped) fill, ``False``
+        (default) for a queue-drain / level fill.
         """
         if fill_price is None:
             fill_price = pending.limit_price
@@ -568,6 +584,7 @@ class PassiveLimitOrderRouter:
             half_spread=Decimal("0"),
             is_taker=False,
             is_short=pending.request.is_short,
+            is_through_fill=is_through_fill,
         )
 
         self._pending_acks.append(OrderAck(

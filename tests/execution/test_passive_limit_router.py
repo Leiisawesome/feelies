@@ -467,7 +467,8 @@ class TestCostModel:
         clock = SimulatedClock(start_ns=5000)
         # Disable adverse selection to isolate the spread-cost assertion.
         cost_model = DefaultCostModel(DefaultCostModelConfig(
-            passive_adverse_selection_bps=Decimal("0"),
+            adverse_selection_through_bps=Decimal("0"),
+            adverse_selection_drain_bps=Decimal("0"),
         ))
         router = PassiveLimitOrderRouter(
             clock, cost_model=cost_model,
@@ -508,7 +509,8 @@ class TestCostModel:
         clock = SimulatedClock(start_ns=5000)
         # Zero adverse selection to isolate taker vs maker exchange fee difference.
         cost_model = DefaultCostModel(DefaultCostModelConfig(
-            passive_adverse_selection_bps=Decimal("0"),
+            adverse_selection_through_bps=Decimal("0"),
+            adverse_selection_drain_bps=Decimal("0"),
         ))
         router = PassiveLimitOrderRouter(
             clock, cost_model=cost_model, fill_delay_ticks=1,

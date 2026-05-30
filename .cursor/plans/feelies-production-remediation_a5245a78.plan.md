@@ -7,10 +7,10 @@ todos:
     status: completed
   - id: bt-1
     content: "BT-1: Through-fill / queue-drain adverse-selection split in cost_model.py + passive_limit_router.py"
-    status: in_progress
+    status: completed
   - id: bt-2
     content: "BT-2: Replace deterministic tick-count fill with seeded-Bernoulli fill-probability model in the passive router"
-    status: pending
+    status: in_progress
   - id: bt-3
     content: "BT-3: Backtest avg_entry_price=MID convention — verify/switch to executed cross price for live parity, or lock the documented convention"
     status: pending

@@ -470,7 +470,8 @@ class TestExcessLegImpactNotDoubleCounted:
         # compare the per-share fees component cleanly between the L1
         # and excess legs.  Both legs are taker (default).
         cfg = DefaultCostModelConfig(
-            passive_adverse_selection_bps=Decimal("0"),
+            adverse_selection_through_bps=Decimal("0"),
+            adverse_selection_drain_bps=Decimal("0"),
             sell_regulatory_bps=Decimal("0"),
         )
         router = BacktestOrderRouter(
