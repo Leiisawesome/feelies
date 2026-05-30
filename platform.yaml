@@ -78,8 +78,8 @@ ssr_mode: refuse_short
 # cost_htb_borrow_annual_bps > 0.
 borrow_availability: {}
 
-# BT-15: deployed capital ($25k–$100k bracket; $50k placeholder). Overlays may override.
-account_equity: 50000.0
+# Sandbox backtest equity; overlays must set real limits for PAPER/LIVE.
+account_equity: 100000.0
 
 # BT-4: account type drives the PDT (Pattern Day Trader) constraint model.
 # Locked to margin_25k (opens above $25k, PDT-exempt: no 3-round-trip hard cap,
@@ -99,7 +99,9 @@ risk_max_gross_exposure_pct: 200.0
 
 risk_max_drawdown_pct: 5.0
 
-backtest_fill_latency_ns: 30000000
+# BT-17 locked baselines: 50 ms fill leg, 20 ms market-data propagation leg.
+backtest_fill_latency_ns: 50000000
+market_data_latency_ns: 20000000
 
 # Percentage-based stops (fraction of entry price). Takes precedence over per-share fields.
 # 0.01 = 1% stop-loss; 0.005 = 0.5% trail activation.
