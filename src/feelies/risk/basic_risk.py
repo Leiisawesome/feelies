@@ -39,6 +39,11 @@ from feelies.core.events import (
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.regulatory.pdt_constraint import PDTConstraint
 from feelies.portfolio.position_store import PositionStore
+from feelies.execution.trading_session import (
+    TradingSessionBounds,
+    opens_or_increases_signed,
+    should_suppress_entry,
+)
 from feelies.risk.buying_power import (
     INSUFFICIENT_BUYING_POWER,
     BuyingPowerConfig,
@@ -91,6 +96,7 @@ class BasicRiskEngine:
         alert_sequence_generator: SequenceGenerator | None = None,
         pdt_constraint: PDTConstraint | None = None,
         buying_power_config: BuyingPowerConfig | None = None,
+        trading_session_bounds: TradingSessionBounds | None = None,
         account_id: str = "default",
     ) -> None:
         self._config = config
@@ -123,6 +129,7 @@ class BasicRiskEngine:
         self._pdt_constraint = pdt_constraint
         self._buying_power_config = buying_power_config
         self._buying_power_phase = BuyingPowerPhase.INTRADAY
+        self._trading_session_bounds = trading_session_bounds
         self._account_id = account_id
 
     def set_buying_power_phase(self, phase: BuyingPowerPhase) -> None:
@@ -227,6 +234,12 @@ class BasicRiskEngine:
         )
         if bp_verdict is not None:
             return bp_verdict
+
+        rth_verdict = self._check_rth_session(
+            order, current.quantity, post_signed,
+        )
+        if rth_verdict is not None:
+            return rth_verdict
 
         if post_fill_qty > adjusted_max:
             return RiskVerdict(
@@ -483,17 +496,12 @@ class BasicRiskEngine:
     def _opens_or_increases(current_qty: int, post_signed: int) -> bool:
         """Entry detection: True iff the order grows exposure or flips sign.
 
-        Shared by the PDT min-equity (BT-4) and Reg-T buying-power (BT-15)
-        ENTRY gates so a future edge-case fix lands in exactly one place.
+        Thin delegate to :func:`feelies.execution.trading_session.opens_or_increases_signed`
+        so the BT-4 PDT min-equity gate, the BT-15 Reg-T buying-power gate,
+        and the BT-16 RTH router-side suppression share a single
+        implementation — a future edge-case fix lands in exactly one place.
         """
-        return (
-            abs(post_signed) > abs(current_qty)
-            or (
-                current_qty != 0
-                and post_signed != 0
-                and (current_qty > 0) != (post_signed > 0)
-            )
-        )
+        return opens_or_increases_signed(current_qty, post_signed)
 
     def _check_pdt_min_equity(
         self,
@@ -527,6 +535,43 @@ class BasicRiskEngine:
             symbol=order.symbol,
             action=RiskAction.REJECT,
             reason="PDT_MIN_EQUITY",
+        )
+
+
+    def _check_rth_session(
+        self,
+        order: OrderRequest,
+        current_qty: int,
+        post_signed: int,
+    ) -> RiskVerdict | None:
+        """RTH / holiday ENTRY gate (BT-16)."""
+        if self._trading_session_bounds is None:
+            return None
+        if not self._opens_or_increases(current_qty, post_signed):
+            return None
+        suppress, reason = should_suppress_entry(
+            order.timestamp_ns,
+            self._trading_session_bounds,
+            opens_or_increases=True,
+        )
+        if not suppress:
+            return None
+        _logger.warning(
+            "RTH session gate rejected ENTRY (symbol=%s, side=%s, qty=%d, "
+            "reason=%s, ts_ns=%d).",
+            order.symbol,
+            order.side.name,
+            order.quantity,
+            reason,
+            order.timestamp_ns,
+        )
+        return RiskVerdict(
+            timestamp_ns=order.timestamp_ns,
+            correlation_id=order.correlation_id,
+            sequence=order.sequence,
+            symbol=order.symbol,
+            action=RiskAction.REJECT,
+            reason=reason,
         )
 
     def _check_buying_power(

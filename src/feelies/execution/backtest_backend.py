@@ -18,6 +18,7 @@ from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.execution.cost_model import CostModel
 from feelies.execution.moc_session import MocSessionBounds
+from feelies.execution.trading_session import TradingSessionBounds
 from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
 from feelies.ingestion.replay_feed import ReplayFeed
 from feelies.storage.event_log import EventLog
@@ -35,6 +36,7 @@ def build_backtest_backend(
     *,
     max_resting_ticks: int = 50,
     moc_bounds: MocSessionBounds | None = None,
+    trading_session_bounds: TradingSessionBounds | None = None,
 ) -> tuple[ExecutionBackend, BacktestOrderRouter]:
     """Build a backtest ExecutionBackend from an event log.
 
@@ -60,6 +62,7 @@ def build_backtest_backend(
         max_impact_half_spreads=max_impact_half_spreads,
         max_resting_ticks=max_resting_ticks,
         moc_bounds=moc_bounds,
+        trading_session_bounds=trading_session_bounds,
     )
 
     backend = ExecutionBackend(
@@ -86,6 +89,7 @@ def build_passive_limit_backend(
     cancel_fee_per_share: Decimal = Decimal("0.0"),
     fill_hazard_max: Decimal | float = Decimal("0.5"),
     moc_bounds: MocSessionBounds | None = None,
+    trading_session_bounds: TradingSessionBounds | None = None,
 ) -> tuple[ExecutionBackend, PassiveLimitOrderRouter]:
     """Build a backtest backend with passive limit order fill model.
 
@@ -120,6 +124,7 @@ def build_passive_limit_backend(
         cancel_fee_per_share=cancel_fee_per_share,
         fill_hazard_max=fill_hazard_max,
         moc_bounds=moc_bounds,
+        trading_session_bounds=trading_session_bounds,
     )
 
     backend = ExecutionBackend(
