@@ -292,6 +292,9 @@ class OrderRequest(Event):
     limit_price: Decimal | None = None
     strategy_id: str = ""
     is_short: bool = False  # True for short-entry sells (HTB fee applies)
+    # BT-8: closing-auction (MOC) order — backtest routers queue until the
+    # official close print instead of filling on the continuous book.
+    is_moc: bool = False
     g12_disclosed_cost_total_bps: float = 0.0
     reason: str = ""
 

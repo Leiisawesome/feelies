@@ -92,6 +92,8 @@ from feelies.core.events import (
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.cost_model import CostModel, ZeroCostModel
 from feelies.execution.market_fill import append_market_fill_acks, to_decimal
+from feelies.execution.moc_fill import MocFillController
+from feelies.execution.moc_session import MocSessionBounds
 
 
 @dataclass(frozen=True)
@@ -153,6 +155,7 @@ class BacktestOrderRouter:
         max_impact_half_spreads: Decimal | int | str | float = Decimal("10"),
         *,
         max_resting_ticks: int = 50,
+        moc_bounds: MocSessionBounds | None = None,
     ) -> None:
         self._clock = clock
         self._latency_ns = latency_ns
@@ -169,6 +172,16 @@ class BacktestOrderRouter:
         self._submitted_order_ids: set[str] = set()
         self._ack_seq = SequenceGenerator()
         self._deferred_markets: list[_DeferredMarketFill] = []
+        self._moc: MocFillController | None = None
+        if moc_bounds is not None:
+            self._moc = MocFillController(
+                moc_bounds,
+                clock,
+                self._cost_model,
+                self._ack_seq,
+                self._pending_acks,
+                max_resting_ticks=max_resting_ticks,
+            )
 
     def on_quote(self, quote: NBBOQuote) -> None:
         """Update the latest quote for a symbol.
@@ -177,6 +190,8 @@ class BacktestOrderRouter:
         explicitly by the caller before each tick.
         """
         self._last_quotes[quote.symbol] = quote
+        if self._moc is not None:
+            self._moc.on_quote(quote)
         self._flush_deferred_market_fills(quote)
 
     def submit(self, request: OrderRequest) -> None:
@@ -195,11 +210,20 @@ class BacktestOrderRouter:
             return
 
         # Crossed/locked quotes produce nonsensical fills — reject.
+        # Applied before the MOC ack path so MOC orders share the same
+        # data-quality guard as MARKET orders at submit time.
         if quote.bid >= quote.ask:
             self._reject(
                 request,
                 f"crossed or locked quote bid={quote.bid} ask={quote.ask}",
             )
+            return
+
+        if self._moc is not None and self._moc.submit(
+            request,
+            exchange_timestamp_ns=quote.exchange_timestamp_ns,
+            reject_fn=self._reject,
+        ):
             return
 
         # Emit ACKNOWLEDGED first for live-mode SM parity (Inv 9).
@@ -324,6 +348,37 @@ class BacktestOrderRouter:
         acks = list(self._pending_acks)
         self._pending_acks.clear()
         return acks
+
+    def cancel_order(self, order_id: str) -> bool:
+        """Cancel an acknowledged-but-unfilled MOC order by id.
+
+        The market backtest router has no resting limit book of its
+        own — MARKET orders fill or reject inline at submit and
+        deferred-MARKET fills are flushed by ``on_quote``.  But MOC
+        orders sit in :class:`MocFillController` until the closing
+        print.  The kernel's halt / reverse cleanup walks active
+        orders and calls ``cancel_order`` on each (parity with the
+        passive router), so MOC entries must be reachable here too;
+        otherwise an acknowledged MOC could still fill at the close
+        after the kernel believed resting interest was cleared.
+        """
+        if self._moc is None:
+            return False
+        return self._moc.cancel_pending(order_id, "client_cancel")
+
+    def expire_pending_moc(
+        self,
+        reason: str = "MOC_NO_CLOSE_PRINT",
+    ) -> int:
+        """Reject any acknowledged MOC orders that never received a
+        closing-auction print.  Called by the kernel at session /
+        replay end so an MOC cannot remain non-terminal indefinitely
+        when no qualifying post-close NBBO arrives in the feed.
+        Returns the number of orders expired.
+        """
+        if self._moc is None:
+            return 0
+        return self._moc.expire_unfilled(reason, reject_fn=self._reject)
 
     def _reject(
         self,

@@ -28,7 +28,7 @@ todos:
     status: completed
   - id: bt-8
     content: "BT-8: Model MOC / closing-auction fills for sig_moc_imbalance_v1 (auction print + 3:50 ET cutoff), not MKT-in-window"
-    status: pending
+    status: completed
   - id: bt-9
     content: "BT-9: Cost + latency stress gate harness (Inv-12: survive 1.5x cost AND 2x latency) wired into the backtest acceptance suite"
     status: pending
