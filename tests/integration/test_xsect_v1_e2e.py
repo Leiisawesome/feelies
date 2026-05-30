@@ -92,7 +92,7 @@ _INVENTORY_ALPHA = (
     / "sig_inventory_revert_v1.alpha.yaml"
 )
 _BURST_ALPHA = (
-    _REPO_ROOT / "alphas" / "pro_burst_revert_v1"
+    _REPO_ROOT / "alphas" / "research" / "pro_burst_revert_v1"
     / "pro_burst_revert_v1.alpha.yaml"
 )
 _FACTOR_LOADINGS_DIR = FACTOR_LOADINGS_DIR

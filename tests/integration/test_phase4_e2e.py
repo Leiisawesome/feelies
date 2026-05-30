@@ -117,7 +117,7 @@ _KYLE_ALPHA = (
     / "sig_kyle_drift_v1.alpha.yaml"
 )
 _PORTFOLIO_ALPHA = (
-    _REPO_ROOT / "alphas" / "pro_kyle_benign_v1"
+    _REPO_ROOT / "alphas" / "research" / "pro_kyle_benign_v1"
     / "pro_kyle_benign_v1.alpha.yaml"
 )
 _FACTOR_LOADINGS_DIR = FACTOR_LOADINGS_DIR

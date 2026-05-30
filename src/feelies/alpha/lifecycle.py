@@ -251,11 +251,13 @@ class AlphaLifecycle:
         gate_requirements: GateRequirements | None = None,
         gate_thresholds: GateThresholds | None = None,
         ledger: PromotionLedger | None = None,
+        lifecycle_cap: str | None = None,
     ) -> None:
         self._alpha_id = alpha_id
         self._gate_requirements = gate_requirements or GateRequirements()
         self._gate_thresholds = gate_thresholds or GateThresholds()
         self._ledger = ledger
+        self._lifecycle_cap = lifecycle_cap
         # Workstream F-6 P1 fix: when ``restore()`` rehydrates an alpha
         # from a checkpoint, the in-memory ``StateMachine.history`` is
         # empty but the alpha may still have been at LIVE @ SCALED in
@@ -292,6 +294,17 @@ class AlphaLifecycle:
     def history(self) -> list[TransitionRecord]:
         return self._sm.history
 
+    def _lifecycle_promotion_errors(self, target):
+        if self._lifecycle_cap == "RESEARCH" and target in (
+            AlphaLifecycleState.PAPER,
+            AlphaLifecycleState.LIVE,
+        ):
+            return [
+                f"Alpha '{self._alpha_id}' has lifecycle_state=RESEARCH; "
+                "promotion is disabled (research-only reference alpha)."
+            ]
+        return []
+
     def promote_to_paper(
         self,
         evidence: PromotionEvidence | None = None,
@@ -310,6 +323,11 @@ class AlphaLifecycle:
         :data:`GateId.RESEARCH_TO_PAPER`'s required evidence types).
         Supplying both or neither raises :class:`ValueError`.
         """
+        cap_errors = self._lifecycle_promotion_errors(
+            AlphaLifecycleState.PAPER,
+        )
+        if cap_errors:
+            return cap_errors
         legacy_ev, errors = self._select_evidence(
             evidence,
             structured_evidence,
@@ -348,6 +366,11 @@ class AlphaLifecycle:
         + :class:`DSREvidence`).  Supplying both or neither raises
         :class:`ValueError`.
         """
+        cap_errors = self._lifecycle_promotion_errors(
+            AlphaLifecycleState.LIVE,
+        )
+        if cap_errors:
+            return cap_errors
         legacy_ev, errors = self._select_evidence(
             evidence,
             structured_evidence,

@@ -2828,8 +2828,8 @@ src/feelies/composition/turnover_optimizer.py     | CREATE  | +300
 src/feelies/portfolio/cross_sectional_tracker.py  | CREATE  | +150
 src/feelies/monitoring/horizon_metrics.py         | CREATE  | +200
 src/feelies/forensics/multi_horizon_attribution.py| CREATE  | +400
-alphas/pro_burst_revert_v1/*.yaml                 | EXISTS  | reference PORTFOLIO alpha (HAWKES_SELF_EXCITE + INVENTORY)
-alphas/pro_kyle_benign_v1/*.yaml                  | EXISTS  | reference PORTFOLIO alpha (KYLE_INFO)
+alphas/research/pro_burst_revert_v1/*.yaml                 | EXISTS  | reference PORTFOLIO alpha (HAWKES_SELF_EXCITE + INVENTORY)
+alphas/research/pro_kyle_benign_v1/*.yaml                  | EXISTS  | reference PORTFOLIO alpha (KYLE_INFO)
 pyproject.toml                                    | EXTEND  | +5 (cvxpy extra)
 tests/composition/test_*.py                       | CREATE  | +1000
 tests/determinism/test_xsect_context_replay.py    | CREATE  | +200

@@ -139,6 +139,7 @@ def test_portfolio_factor_exposure_within_tolerance() -> None:
 
     spec_path = (
         _ALPHAS_ROOT
+        / "research"
         / _PORTFOLIO_REFERENCE_ALPHA
         / f"{_PORTFOLIO_REFERENCE_ALPHA}.alpha.yaml"
     )
