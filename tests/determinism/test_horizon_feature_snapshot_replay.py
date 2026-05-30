@@ -78,6 +78,14 @@ def _hash_snapshot_stream(snapshots: list[HorizonFeatureSnapshot]) -> str:
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
+
+# Locked Level-3 HorizonFeatureSnapshot baseline (active aggregator slice).
+EXPECTED_LEVEL3_SNAPSHOT_HASH = (
+    "3fc89a4d800e86ad91567a870737957e3630e8be09c922696fdea94540b9d06c"
+)
+EXPECTED_LEVEL3_SNAPSHOT_COUNT = 14
+
+
 def _replay() -> tuple[str, int]:
     recorder = replay_through_aggregator(
         sensor_specs=_SENSOR_SPECS,
@@ -99,11 +107,6 @@ def test_snapshot_stream_matches_locked_baseline() -> None:
     # readings, so snapshots whose horizon window contains only cold
     # sensor output correctly report ``stale=True`` for those features
     # (previously they were incorrectly considered fresh).
-    EXPECTED_LEVEL3_SNAPSHOT_HASH = (
-        "3fc89a4d800e86ad91567a870737957e3630e8be09c922696fdea94540b9d06c"
-    )
-    EXPECTED_LEVEL3_SNAPSHOT_COUNT = 14
-
     assert actual_count == EXPECTED_LEVEL3_SNAPSHOT_COUNT, (
         f"snapshot count drift: expected "
         f"{EXPECTED_LEVEL3_SNAPSHOT_COUNT}, got {actual_count}"
