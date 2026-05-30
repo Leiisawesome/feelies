@@ -94,6 +94,10 @@ from feelies.execution.cost_model import CostModel, ZeroCostModel
 from feelies.execution.market_fill import append_market_fill_acks, to_decimal
 from feelies.execution.moc_fill import MocFillController
 from feelies.execution.moc_session import MocSessionBounds
+from feelies.execution.trading_session import (
+    RthEntryFillGate,
+    TradingSessionBounds,
+)
 
 
 @dataclass(frozen=True)
@@ -156,6 +160,7 @@ class BacktestOrderRouter:
         *,
         max_resting_ticks: int = 50,
         moc_bounds: MocSessionBounds | None = None,
+        trading_session_bounds: TradingSessionBounds | None = None,
     ) -> None:
         self._clock = clock
         self._latency_ns = latency_ns
@@ -182,6 +187,11 @@ class BacktestOrderRouter:
                 self._pending_acks,
                 max_resting_ticks=max_resting_ticks,
             )
+        self._rth_gate = RthEntryFillGate(trading_session_bounds)
+
+    def bind_position_qty(self, fn) -> None:
+        """Wire signed position qty for RTH entry/exit discrimination (BT-16)."""
+        self._rth_gate.bind_position_qty(fn)
 
     def on_quote(self, quote: NBBOQuote) -> None:
         """Update the latest quote for a symbol.
@@ -193,6 +203,19 @@ class BacktestOrderRouter:
         if self._moc is not None:
             self._moc.on_quote(quote)
         self._flush_deferred_market_fills(quote)
+
+    def _rth_reject_entry_if_needed(
+        self,
+        request: OrderRequest,
+        exchange_ts_ns: int,
+    ) -> bool:
+        suppress, reason = self._rth_gate.should_suppress(
+            request, exchange_ts_ns,
+        )
+        if not suppress:
+            return False
+        self._reject(request, reason)
+        return True
 
     def submit(self, request: OrderRequest) -> None:
         if request.order_id in self._submitted_order_ids:
@@ -217,6 +240,11 @@ class BacktestOrderRouter:
                 request,
                 f"crossed or locked quote bid={quote.bid} ask={quote.ask}",
             )
+            return
+
+        if self._rth_reject_entry_if_needed(
+            request, quote.exchange_timestamp_ns,
+        ):
             return
 
         if self._moc is not None and self._moc.submit(
@@ -321,6 +349,10 @@ class BacktestOrderRouter:
                     f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
                     timestamp_ns=reject_ts,
                 )
+                continue
+            if self._rth_reject_entry_if_needed(
+                dm.request, quote.exchange_timestamp_ns,
+            ):
                 continue
             fill_ts = max(dm.ack_timestamp_ns, quote.exchange_timestamp_ns)
             self._execute_market_fill(dm.request, quote, fill_ts)

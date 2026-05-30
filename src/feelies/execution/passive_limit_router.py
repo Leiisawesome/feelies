@@ -68,6 +68,10 @@ from feelies.execution.cost_model import CostModel, ZeroCostModel
 from feelies.execution.market_fill import append_market_fill_acks, to_decimal
 from feelies.execution.moc_fill import MocFillController
 from feelies.execution.moc_session import MocSessionBounds
+from feelies.execution.trading_session import (
+    RthEntryFillGate,
+    TradingSessionBounds,
+)
 from feelies.execution.tick_size import snap_limit_price
 
 
@@ -161,6 +165,7 @@ class PassiveLimitOrderRouter:
         cancel_fee_per_share: Decimal = Decimal("0.0"),
         fill_hazard_max: Decimal | int | str | float = Decimal("0.5"),
         moc_bounds: MocSessionBounds | None = None,
+        trading_session_bounds: TradingSessionBounds | None = None,
     ) -> None:
         self._clock = clock
         self._latency_ns = latency_ns
@@ -217,6 +222,11 @@ class PassiveLimitOrderRouter:
                 self._pending_acks,
                 max_resting_ticks=max_resting_ticks,
             )
+        self._rth_gate = RthEntryFillGate(trading_session_bounds)
+
+    def bind_position_qty(self, fn) -> None:
+        """Wire signed position qty for RTH entry/exit discrimination (BT-16)."""
+        self._rth_gate.bind_position_qty(fn)
 
     # ── Public interface (OrderRouter protocol) ──────────────────
 
@@ -249,6 +259,19 @@ class PassiveLimitOrderRouter:
             elif pending.side == Side.SELL and trade.price >= pending.limit_price:
                 pending.shares_traded_at_level += trade.size
 
+    def _rth_reject_entry_if_needed(
+        self,
+        request: OrderRequest,
+        exchange_ts_ns: int,
+    ) -> bool:
+        suppress, reason = self._rth_gate.should_suppress(
+            request, exchange_ts_ns,
+        )
+        if not suppress:
+            return False
+        self._reject(request, reason)
+        return True
+
     def submit(self, request: OrderRequest) -> None:
         if request.order_id in self._submitted_order_ids:
             self._reject(
@@ -273,6 +296,11 @@ class PassiveLimitOrderRouter:
                 request,
                 f"crossed or locked quote bid={quote.bid} ask={quote.ask}",
             )
+            return
+
+        if self._rth_reject_entry_if_needed(
+            request, quote.exchange_timestamp_ns,
+        ):
             return
 
         if self._moc is not None and self._moc.submit(
@@ -412,6 +440,10 @@ class PassiveLimitOrderRouter:
                         timestamp_ns=reject_ts,
                     )
                     continue
+            if self._rth_reject_entry_if_needed(
+                req, quote.exchange_timestamp_ns,
+            ):
+                continue
             fill_ts = max(dm.ack_timestamp_ns, quote.exchange_timestamp_ns)
             self._execute_market_fill(req, quote, fill_ts=fill_ts)
         self._deferred_aggressive = remaining
@@ -424,6 +456,10 @@ class PassiveLimitOrderRouter:
         fill_ts: int | None = None,
     ) -> None:
         """Aggressive fill at ``quote`` — shared D14 model with ``BacktestOrderRouter``."""
+        if self._rth_reject_entry_if_needed(
+            request, quote.exchange_timestamp_ns,
+        ):
+            return
         if fill_ts is None:
             fill_ts = self._clock.now_ns() + self._latency_ns
         append_market_fill_acks(
@@ -509,6 +545,21 @@ class PassiveLimitOrderRouter:
             pending = self._resting_orders[order_id]
             pending.total_ticks += 1
             action = self._evaluate_fill(pending, quote)
+
+            if action in ("through", "drain"):
+                suppress, rth_reason = self._rth_gate.should_suppress(
+                    pending.request, quote.exchange_timestamp_ns,
+                )
+                if suppress:
+                    self._reject(
+                        pending.request,
+                        rth_reason,
+                        timestamp_ns=max(
+                            self._clock.now_ns(), pending.ack_timestamp_ns,
+                        ),
+                    )
+                    to_remove.append(order_id)
+                    continue
 
             if action == "through":
                 # Price improvement on through-fills: IBKR (and the NMS

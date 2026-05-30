@@ -553,6 +553,10 @@ class Orchestrator:
         self._moc_strategy_ids: frozenset[str] = frozenset()
         self._moc_bounds_configured: bool = False
 
+        # BT-16: RTH entry-fill suppression + close buying-power phase flip.
+        self._trading_session_bounds = None
+        self._rth_close_bp_flipped: bool = False
+
         # When True, entry/exit orders use LIMIT at BBO instead of
         # MARKET.  Stop-loss exits always use MARKET (fail-safe).
         # Set from config via boot().
@@ -851,6 +855,36 @@ class Orchestrator:
                         )
                         is not None
                     )
+            if getattr(config, "rth_session_gating_enabled", False):
+                from feelies.execution.trading_session import (
+                    build_trading_session_from_platform,
+                )
+
+                cal_path = (
+                    str(config.event_calendar_path)
+                    if getattr(config, "event_calendar_path", None) is not None
+                    else None
+                )
+                self._trading_session_bounds = build_trading_session_from_platform(
+                    rth_session_gating_enabled=config.rth_session_gating_enabled,
+                    rth_session_date=(
+                        getattr(config, "rth_session_date", None)
+                        or getattr(config, "moc_session_date", None)
+                    ),
+                    event_calendar_path=cal_path,
+                    rth_open_et=getattr(config, "rth_open_et", "09:30"),
+                    rth_close_et=getattr(config, "rth_close_et", "16:00"),
+                    early_close_dates=getattr(config, "early_close_dates", ()),
+                    early_close_rth_close_et=getattr(
+                        config, "early_close_rth_close_et", "13:00",
+                    ),
+                    market_holiday_dates=getattr(
+                        config, "market_holiday_dates", (),
+                    ),
+                    no_entry_first_seconds=getattr(
+                        config, "no_entry_first_seconds", 0,
+                    ),
+                )
             if hasattr(config, "execution_mode"):
                 # passive_limit and minimum_cost both wire through the
                 # passive-limit backend.  The static flag tells the
@@ -943,6 +977,8 @@ class Orchestrator:
         self._require_safe_session_entry()
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:backtest")
+        self._rth_close_bp_flipped = False
+        self._bind_router_position_qty_for_rth()
         self._pending_sized_intents.clear()
         self._consumed_by_portfolio_ids = None
         self._reset_regime_session_state()
@@ -979,6 +1015,8 @@ class Orchestrator:
         self._require_safe_session_entry()
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:paper")
+        self._rth_close_bp_flipped = False
+        self._bind_router_position_qty_for_rth()
         self._pending_sized_intents.clear()
         self._consumed_by_portfolio_ids = None
         self._reset_regime_session_state()
@@ -1014,6 +1052,8 @@ class Orchestrator:
         self._require_safe_session_entry()
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:live")
+        self._rth_close_bp_flipped = False
+        self._bind_router_position_qty_for_rth()
         self._pending_sized_intents.clear()
         self._reset_regime_session_state()
         self._macro.transition(
@@ -1786,6 +1826,7 @@ class Orchestrator:
                 refresh_hwm(self._positions)
             if self._strategy_positions is not None:
                 self._strategy_positions.update_mark(quote.symbol, mid)
+            self._maybe_flip_buying_power_at_rth_close(quote)
 
         # ── Quote-driven router ack drain ────────────────────────
         # bus.publish(quote) triggered on_quote() on the router, which
