@@ -806,6 +806,42 @@ class Orchestrator:
                 self._ssr_mode = config.ssr_mode
             if hasattr(config, "borrow_availability"):
                 self._borrow_tier = build_borrow_table(config.borrow_availability)
+            if hasattr(config, "moc_strategy_ids"):
+                self._moc_strategy_ids = frozenset(config.moc_strategy_ids)
+                if config.moc_strategy_ids:
+                    from feelies.execution.moc_session import (
+                        build_moc_bounds_from_platform,
+                    )
+
+                    cal_path = (
+                        str(config.event_calendar_path)
+                        if getattr(config, "event_calendar_path", None) is not None
+                        else None
+                    )
+                    self._moc_bounds_configured = (
+                        build_moc_bounds_from_platform(
+                            moc_session_date=getattr(
+                                config, "moc_session_date", None,
+                            ),
+                            event_calendar_path=cal_path,
+                            moc_cutoff_et=getattr(
+                                config, "moc_cutoff_et", "15:50",
+                            ),
+                            official_close_et=getattr(
+                                config, "official_close_et", "16:00",
+                            ),
+                            early_close_dates=getattr(
+                                config, "early_close_dates", (),
+                            ),
+                            early_close_moc_cutoff_et=getattr(
+                                config, "early_close_moc_cutoff_et", "12:50",
+                            ),
+                            early_close_official_close_et=getattr(
+                                config, "early_close_official_close_et", "13:00",
+                            ),
+                        )
+                        is not None
+                    )
             if hasattr(config, "execution_mode"):
                 # passive_limit and minimum_cost both wire through the
                 # passive-limit backend.  The static flag tells the
@@ -2999,7 +3035,14 @@ class Orchestrator:
 
                 order_type = OrderType.MARKET
                 limit_price: Decimal | None = None
-                if self._use_passive_entries:
+                entry_is_moc = (
+                    intent.strategy_id in self._moc_strategy_ids
+                    and self._moc_bounds_configured
+                )
+                if entry_is_moc:
+                    order_type = OrderType.MARKET
+                    limit_price = None
+                elif self._use_passive_entries:
                     use_passive = True
                     if self._min_cost_policy is not None:
                         decision = self._min_cost_policy.decide(
@@ -3030,6 +3073,7 @@ class Orchestrator:
                     limit_price=limit_price,
                     strategy_id=intent.strategy_id,
                     is_short=is_short,
+                    is_moc=entry_is_moc,
                     g12_disclosed_cost_total_bps=(
                         intent.signal.disclosed_cost_total_bps
                     ),
@@ -3245,8 +3289,16 @@ class Orchestrator:
 
         order_type = OrderType.MARKET
         limit_price: Decimal | None = None
+        is_moc = (
+            intent.strategy_id in self._moc_strategy_ids
+            and self._moc_bounds_configured
+            and not is_exit_or_stop
+        )
 
-        if self._use_passive_entries and quote is not None:
+        if is_moc:
+            order_type = OrderType.MARKET
+            limit_price = None
+        elif self._use_passive_entries and quote is not None:
             is_stop_exit = intent.signal.strategy_id == "__stop_exit__"
             if not is_stop_exit:
                 # Default: post passive at the near BBO.  When the
@@ -3284,6 +3336,7 @@ class Orchestrator:
                 limit_price=limit_price,
                 strategy_id=intent.strategy_id,
                 is_short=is_short,
+                is_moc=is_moc,
                 g12_disclosed_cost_total_bps=(
                     intent.signal.disclosed_cost_total_bps
                 ),

@@ -92,6 +92,8 @@ from feelies.core.events import (
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.cost_model import CostModel, ZeroCostModel
 from feelies.execution.market_fill import append_market_fill_acks, to_decimal
+from feelies.execution.moc_fill import MocFillController
+from feelies.execution.moc_session import MocSessionBounds
 
 
 @dataclass(frozen=True)
@@ -153,6 +155,7 @@ class BacktestOrderRouter:
         max_impact_half_spreads: Decimal | int | str | float = Decimal("10"),
         *,
         max_resting_ticks: int = 50,
+        moc_bounds: MocSessionBounds | None = None,
     ) -> None:
         self._clock = clock
         self._latency_ns = latency_ns
@@ -169,6 +172,16 @@ class BacktestOrderRouter:
         self._submitted_order_ids: set[str] = set()
         self._ack_seq = SequenceGenerator()
         self._deferred_markets: list[_DeferredMarketFill] = []
+        self._moc: MocFillController | None = None
+        if moc_bounds is not None:
+            self._moc = MocFillController(
+                moc_bounds,
+                clock,
+                self._cost_model,
+                self._ack_seq,
+                self._pending_acks,
+                max_resting_ticks=max_resting_ticks,
+            )
 
     def on_quote(self, quote: NBBOQuote) -> None:
         """Update the latest quote for a symbol.
@@ -177,6 +190,8 @@ class BacktestOrderRouter:
         explicitly by the caller before each tick.
         """
         self._last_quotes[quote.symbol] = quote
+        if self._moc is not None:
+            self._moc.on_quote(quote, reject_fn=self._reject)
         self._flush_deferred_market_fills(quote)
 
     def submit(self, request: OrderRequest) -> None:
@@ -192,6 +207,13 @@ class BacktestOrderRouter:
         quote = self._last_quotes.get(request.symbol)
         if quote is None:
             self._reject(request, "no quote available for symbol")
+            return
+
+        if self._moc is not None and self._moc.submit(
+            request,
+            exchange_timestamp_ns=quote.exchange_timestamp_ns,
+            reject_fn=self._reject,
+        ):
             return
 
         # Crossed/locked quotes produce nonsensical fills — reject.

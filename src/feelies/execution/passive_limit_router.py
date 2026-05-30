@@ -66,6 +66,8 @@ from feelies.core.events import (
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.cost_model import CostModel, ZeroCostModel
 from feelies.execution.market_fill import append_market_fill_acks, to_decimal
+from feelies.execution.moc_fill import MocFillController
+from feelies.execution.moc_session import MocSessionBounds
 
 
 class PassiveFillOutcome(Enum):
@@ -157,6 +159,7 @@ class PassiveLimitOrderRouter:
         queue_position_shares: int = 0,
         cancel_fee_per_share: Decimal = Decimal("0.0"),
         fill_hazard_max: Decimal | int | str | float = Decimal("0.5"),
+        moc_bounds: MocSessionBounds | None = None,
     ) -> None:
         self._clock = clock
         self._latency_ns = latency_ns
@@ -203,12 +206,24 @@ class PassiveLimitOrderRouter:
         self._ack_seq = SequenceGenerator()
         # Deferred MARKET orders: see ``_DeferredAggressiveFill``.
         self._deferred_aggressive: list[_DeferredAggressiveFill] = []
+        self._moc: MocFillController | None = None
+        if moc_bounds is not None:
+            self._moc = MocFillController(
+                moc_bounds,
+                clock,
+                self._cost_model,
+                self._ack_seq,
+                self._pending_acks,
+                max_resting_ticks=max_resting_ticks,
+            )
 
     # ── Public interface (OrderRouter protocol) ──────────────────
 
     def on_quote(self, quote: NBBOQuote) -> None:
         """Update latest quote and check resting orders for fills."""
         self._last_quotes[quote.symbol] = quote
+        if self._moc is not None:
+            self._moc.on_quote(quote, reject_fn=self._reject)
         self._flush_deferred_aggressive(quote)
         self._check_resting_orders(quote)
 

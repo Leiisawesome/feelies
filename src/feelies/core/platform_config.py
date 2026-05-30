@@ -133,6 +133,15 @@ class PlatformConfig:
     # table ⇒ every symbol treated as available.
     borrow_availability: dict[str, str] = field(default_factory=dict)
 
+    # BT-8: MOC / closing-auction fill modeling.
+    moc_strategy_ids: tuple[str, ...] = ("sig_moc_imbalance_v1",)
+    moc_session_date: str | None = None
+    moc_cutoff_et: str = "15:50"
+    official_close_et: str = "16:00"
+    early_close_dates: tuple[str, ...] = ()
+    early_close_moc_cutoff_et: str = "12:50"
+    early_close_official_close_et: str = "13:00"
+
     account_equity: float = 1_000_000.0
     backtest_fill_latency_ns: int = 0
 
@@ -747,6 +756,13 @@ class PlatformConfig:
             "ssr_trigger_condition_codes": list(self.ssr_trigger_condition_codes),
             "ssr_mode": self.ssr_mode,
             "borrow_availability": dict(self.borrow_availability),
+            "moc_strategy_ids": list(self.moc_strategy_ids),
+            "moc_session_date": self.moc_session_date,
+            "moc_cutoff_et": self.moc_cutoff_et,
+            "official_close_et": self.official_close_et,
+            "early_close_dates": list(self.early_close_dates),
+            "early_close_moc_cutoff_et": self.early_close_moc_cutoff_et,
+            "early_close_official_close_et": self.early_close_official_close_et,
             "account_equity": self.account_equity,
             "account_type": self.account_type,
             "account_id": self.account_id,
@@ -1080,6 +1096,25 @@ class PlatformConfig:
                 str(k).upper(): str(v).lower()
                 for k, v in (data.get("borrow_availability") or {}).items()
             },
+            moc_strategy_ids=tuple(
+                str(s) for s in data.get("moc_strategy_ids", ("sig_moc_imbalance_v1",))
+            ),
+            moc_session_date=(
+                str(data["moc_session_date"])
+                if data.get("moc_session_date") is not None
+                else None
+            ),
+            moc_cutoff_et=str(data.get("moc_cutoff_et", "15:50")),
+            official_close_et=str(data.get("official_close_et", "16:00")),
+            early_close_dates=tuple(
+                str(d) for d in data.get("early_close_dates", ())
+            ),
+            early_close_moc_cutoff_et=str(
+                data.get("early_close_moc_cutoff_et", "12:50")
+            ),
+            early_close_official_close_et=str(
+                data.get("early_close_official_close_et", "13:00")
+            ),
             account_equity=float(data.get("account_equity", 1_000_000.0)),
             account_type=str(data.get("account_type", "margin_25k")),
             account_id=str(data.get("account_id", "default")),

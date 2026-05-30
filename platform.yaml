@@ -78,6 +78,19 @@ ssr_mode: refuse_short
 # cost_htb_borrow_annual_bps > 0.
 borrow_availability: {}
 
+# BT-8: MOC / closing-auction fills for sig_moc_imbalance_v1. Orders from
+# moc_strategy_ids are tagged is_moc and fill once at the official close mid
+# (not continuous MKT). Requires moc_session_date or event_calendar_path with
+# a YYYY-MM-DD filename. IB cutoff: 15:50 ET (12:50 on early_close_dates).
+# moc_strategy_ids:
+#   - sig_moc_imbalance_v1
+# moc_session_date: "2026-03-24"
+# moc_cutoff_et: "15:50"
+# official_close_et: "16:00"
+# early_close_dates: []
+# early_close_moc_cutoff_et: "12:50"
+# early_close_official_close_et: "13:00"
+
 # Sandbox backtest equity; overlays must set real limits for PAPER/LIVE.
 account_equity: 100000.0
 
