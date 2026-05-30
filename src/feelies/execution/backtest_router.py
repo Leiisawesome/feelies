@@ -109,14 +109,17 @@ class _DeferredMarketFill:
 
     ``ack_timestamp_ns`` is the ACKNOWLEDGED ack timestamp emitted at
     submit (``clock.now_ns() + latency_ns`` at submit time).  It is stored
-    so the deferred FILLED timestamp can be ``max(ack, fill_quote_ts)``
+    so the deferred FILLED timestamp can be ``max(clock.now_ns(), ack)``
     instead of ``fill_quote_ts + latency_ns``: the eligibility gate already
-    waited ``latency_ns`` on the exchange clock — adding latency again when
-    ``ReplayFeed`` keeps ``clock.now_ns()`` aligned with
-    ``exchange_timestamp_ns`` would double-count one-way delay (Inv 9).
-    The same floor applies to ``max_resting_ticks`` timeout rejects so
-    REJECTED never timestamps before ACKNOWLEDGED while exchange time is
-    still short of the latency deadline.
+    waited ``latency_ns`` on the exchange clock, and flooring at
+    ``clock.now_ns()`` keeps FILLED aligned with the simulated decision
+    clock under any ``ReplayFeed`` ``market_data_latency_ns`` setting (the
+    BT-17 default advances the clock to ``exchange_ts + md_latency`` before
+    yielding the eligible quote, so a raw ``quote.exchange_timestamp_ns``
+    floor would trail ``now_ns()`` by ``md_latency`` and break ack-stream
+    monotonicity — Inv 9).  The same floor applies to ``max_resting_ticks``
+    timeout rejects so REJECTED never timestamps before ACKNOWLEDGED while
+    exchange time is still short of the latency deadline.
     """
 
     request: OrderRequest
@@ -273,10 +276,12 @@ class BacktestOrderRouter:
         if not self._deferred_markets:
             return
         remaining: list[_DeferredMarketFill] = []
-        # FILLED must be >= the stored ACKNOWLEDGED timestamp.  When the
-        # injected clock tracks exchange time (``ReplayFeed``), using
-        # ``clock.now_ns() + latency_ns`` here would add a second copy of
-        # one-way latency on top of the exchange-time eligibility gate below.
+        # FILLED is floored at ``max(clock.now_ns(), ack_timestamp_ns)``:
+        # ``ack_timestamp_ns`` keeps FILLED >= ACKNOWLEDGED, and
+        # ``clock.now_ns()`` keeps it aligned with the simulated decision
+        # clock under any ``ReplayFeed`` ``market_data_latency_ns`` setting
+        # (raw ``quote.exchange_timestamp_ns`` would trail ``now_ns()`` by
+        # ``md_latency`` under the BT-17 default, breaking monotonicity).
         for dm in self._deferred_markets:
             if dm.request.symbol != quote.symbol:
                 remaining.append(dm)
@@ -322,7 +327,7 @@ class BacktestOrderRouter:
                     timestamp_ns=reject_ts,
                 )
                 continue
-            fill_ts = max(dm.ack_timestamp_ns, quote.exchange_timestamp_ns)
+            fill_ts = max(self._clock.now_ns(), dm.ack_timestamp_ns)
             self._execute_market_fill(dm.request, quote, fill_ts)
         self._deferred_markets = remaining
 

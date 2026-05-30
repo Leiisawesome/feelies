@@ -117,11 +117,12 @@ class _DeferredAggressiveFill:
     """MARKET order deferred until exchange time reaches ``deadline_ns``.
 
     ``ack_timestamp_ns`` matches the ACKNOWLEDGED ack emitted at submit.
-    The FILLED timestamp uses ``max(ack_timestamp_ns,
-    fill_quote.exchange_timestamp_ns)`` so we do not add ``latency_ns``
-    again when the injected clock tracks exchange time (``ReplayFeed``) —
-    the eligibility deadline already advanced exchange time by one latency
-    slice (parity with :class:`~feelies.execution.backtest_router.BacktestOrderRouter`).
+    The FILLED timestamp uses ``max(clock.now_ns(), ack_timestamp_ns)`` so
+    we do not add ``latency_ns`` again — the eligibility deadline already
+    advanced exchange time by one latency slice — while staying aligned
+    with the simulated decision clock under any ``ReplayFeed``
+    ``market_data_latency_ns`` setting (parity with
+    :class:`~feelies.execution.backtest_router.BacktestOrderRouter`).
     ``max_resting_ticks`` timeout rejects use the same floor so REJECTED
     does not precede ACKNOWLEDGED before the latency deadline.
     """
@@ -412,7 +413,7 @@ class PassiveLimitOrderRouter:
                         timestamp_ns=reject_ts,
                     )
                     continue
-            fill_ts = max(dm.ack_timestamp_ns, quote.exchange_timestamp_ns)
+            fill_ts = max(self._clock.now_ns(), dm.ack_timestamp_ns)
             self._execute_market_fill(req, quote, fill_ts=fill_ts)
         self._deferred_aggressive = remaining
 
