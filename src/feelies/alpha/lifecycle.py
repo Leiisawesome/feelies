@@ -294,7 +294,10 @@ class AlphaLifecycle:
     def history(self) -> list[TransitionRecord]:
         return self._sm.history
 
-    def _lifecycle_promotion_errors(self, target):
+    def _lifecycle_promotion_errors(
+        self,
+        target: AlphaLifecycleState,
+    ) -> list[str]:
         if self._lifecycle_cap == "RESEARCH" and target in (
             AlphaLifecycleState.PAPER,
             AlphaLifecycleState.LIVE,
