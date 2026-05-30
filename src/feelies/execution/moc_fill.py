@@ -104,12 +104,7 @@ class MocFillController:
         ))
         return True
 
-    def on_quote(
-        self,
-        quote: NBBOQuote,
-        *,
-        reject_fn: object,
-    ) -> None:
+    def on_quote(self, quote: NBBOQuote) -> None:
         """Try to fill or expire pending MOC orders on each quote."""
         if not self._pending:
             return
@@ -131,14 +126,12 @@ class MocFillController:
                 remaining.append(pm)
                 continue
             if quote.bid >= quote.ask:
-                reject_fn(  # type: ignore[operator]
-                    pm.request,
-                    f"crossed or locked quote at close bid={quote.bid} ask={quote.ask}",
-                    timestamp_ns=max(
-                        self._clock.now_ns(),
-                        pm.ack_timestamp_ns,
-                    ),
-                )
+                # Skip a single crossed/locked tick at the close — replays
+                # routinely emit several NBBO updates in a row at 16:00 ET
+                # and a transient bad print should not retire the order.
+                # ``expire_pending_moc`` at session end is the terminal
+                # backstop when no clean post-close quote ever arrives.
+                remaining.append(pm)
                 continue
             fill_ts = max(pm.ack_timestamp_ns, quote.exchange_timestamp_ns)
             self._fill_at_close(pm.request, quote, fill_ts)

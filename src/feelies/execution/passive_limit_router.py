@@ -223,7 +223,7 @@ class PassiveLimitOrderRouter:
         """Update latest quote and check resting orders for fills."""
         self._last_quotes[quote.symbol] = quote
         if self._moc is not None:
-            self._moc.on_quote(quote, reject_fn=self._reject)
+            self._moc.on_quote(quote)
         self._flush_deferred_aggressive(quote)
         self._check_resting_orders(quote)
 

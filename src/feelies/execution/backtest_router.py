@@ -191,7 +191,7 @@ class BacktestOrderRouter:
         """
         self._last_quotes[quote.symbol] = quote
         if self._moc is not None:
-            self._moc.on_quote(quote, reject_fn=self._reject)
+            self._moc.on_quote(quote)
         self._flush_deferred_market_fills(quote)
 
     def submit(self, request: OrderRequest) -> None:
@@ -348,6 +348,23 @@ class BacktestOrderRouter:
         acks = list(self._pending_acks)
         self._pending_acks.clear()
         return acks
+
+    def cancel_order(self, order_id: str) -> bool:
+        """Cancel an acknowledged-but-unfilled MOC order by id.
+
+        The market backtest router has no resting limit book of its
+        own — MARKET orders fill or reject inline at submit and
+        deferred-MARKET fills are flushed by ``on_quote``.  But MOC
+        orders sit in :class:`MocFillController` until the closing
+        print.  The kernel's halt / reverse cleanup walks active
+        orders and calls ``cancel_order`` on each (parity with the
+        passive router), so MOC entries must be reachable here too;
+        otherwise an acknowledged MOC could still fill at the close
+        after the kernel believed resting interest was cleared.
+        """
+        if self._moc is None:
+            return False
+        return self._moc.cancel_pending(order_id, "client_cancel")
 
     def expire_pending_moc(
         self,
