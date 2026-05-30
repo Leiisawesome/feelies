@@ -122,9 +122,8 @@ feelies/
 │   ├── sig_hawkes_burst_v1/     # Reference SIGNAL (HAWKES_SELF_EXCITE)
 │   ├── sig_moc_imbalance_v1/    # Reference SIGNAL (SCHEDULED_FLOW)
 │   ├── sig_benign_midcap_v1/    # Reference SIGNAL (Phase-3 canonical)
-│   └── research/                # BT-13: PORTFOLIO refs (not production-discovered)
-│       ├── pro_burst_revert_v1/ # HAWKES + INVENTORY (lifecycle_state: RESEARCH)
-│       └── pro_kyle_benign_v1/  # KYLE_INFO dual-horizon (lifecycle_state: RESEARCH)
+│   ├── pro_burst_revert_v1/     # Reference PORTFOLIO (HAWKES + INVENTORY)
+│   └── pro_kyle_benign_v1/      # Reference PORTFOLIO (KYLE_INFO dual-horizon)
 ├── docs/                         # Architecture spec and alpha documentation
 │   ├── three_layer_architecture.md
 │   └── alphas/
@@ -468,7 +467,7 @@ mode: BACKTEST                            # BACKTEST | PAPER | LIVE
 symbols: [AAPL, MSFT, NVDA]
 alpha_spec_dir: alphas/                   # Scanned for *.alpha.yaml at boot
 regime_engine: hmm_3state_fractional
-account_equity: 100000.0
+account_equity: 50000.0
 
 # Horizon registry (Phase 2)
 horizons_seconds: [30, 120, 300, 900, 1800]
