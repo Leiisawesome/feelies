@@ -22,6 +22,9 @@ unrealized markdown).  NAV is invariant — ``_compute_current_equity`` sums
 ``account_equity + realized − fees + unrealized`` — only the attribution
 changes.  Prior to BT-3 the fill priced at the mid with the half-spread
 carried as a fee.
+
+BT-14 snaps all fill and limit prices to the Reg NMS tick grid (see
+:mod:`feelies.execution.tick_size`).
 """
 
 from __future__ import annotations

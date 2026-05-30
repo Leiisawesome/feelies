@@ -66,8 +66,7 @@ from feelies.core.events import (
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.cost_model import CostModel, ZeroCostModel
 from feelies.execution.market_fill import append_market_fill_acks, to_decimal
-from feelies.execution.moc_fill import MocFillController
-from feelies.execution.moc_session import MocSessionBounds
+from feelies.execution.tick_size import snap_fill_price, snap_limit_price
 
 
 class PassiveFillOutcome(Enum):
@@ -159,7 +158,6 @@ class PassiveLimitOrderRouter:
         queue_position_shares: int = 0,
         cancel_fee_per_share: Decimal = Decimal("0.0"),
         fill_hazard_max: Decimal | int | str | float = Decimal("0.5"),
-        moc_bounds: MocSessionBounds | None = None,
     ) -> None:
         self._clock = clock
         self._latency_ns = latency_ns
@@ -206,24 +204,12 @@ class PassiveLimitOrderRouter:
         self._ack_seq = SequenceGenerator()
         # Deferred MARKET orders: see ``_DeferredAggressiveFill``.
         self._deferred_aggressive: list[_DeferredAggressiveFill] = []
-        self._moc: MocFillController | None = None
-        if moc_bounds is not None:
-            self._moc = MocFillController(
-                moc_bounds,
-                clock,
-                self._cost_model,
-                self._ack_seq,
-                self._pending_acks,
-                max_resting_ticks=max_resting_ticks,
-            )
 
     # ── Public interface (OrderRouter protocol) ──────────────────
 
     def on_quote(self, quote: NBBOQuote) -> None:
         """Update latest quote and check resting orders for fills."""
         self._last_quotes[quote.symbol] = quote
-        if self._moc is not None:
-            self._moc.on_quote(quote)
         self._flush_deferred_aggressive(quote)
         self._check_resting_orders(quote)
 
@@ -265,20 +251,11 @@ class PassiveLimitOrderRouter:
 
         # Crossed (bid > ask) quotes are data errors; locked (bid == ask)
         # leaves no passive side and breaks the marketability guard.
-        # Applied before the MOC ack path so MOC orders share the same
-        # data-quality guard as MARKET/LIMIT orders at submit time.
         if quote.bid >= quote.ask:
             self._reject(
                 request,
                 f"crossed or locked quote bid={quote.bid} ask={quote.ask}",
             )
-            return
-
-        if self._moc is not None and self._moc.submit(
-            request,
-            exchange_timestamp_ns=quote.exchange_timestamp_ns,
-            reject_fn=self._reject,
-        ):
             return
 
         if request.order_type == OrderType.MARKET:
@@ -443,6 +420,9 @@ class PassiveLimitOrderRouter:
         limit_price = request.limit_price
         if limit_price is None:
             limit_price = quote.bid if request.side == Side.BUY else quote.ask
+        else:
+            limit_price = snap_limit_price(request.side, limit_price)
+        limit_price = snap_limit_price(request.side, limit_price)
 
         # D13: marketability guard — if the limit price would immediately
         # cross the spread, redirect to aggressive fill to avoid posting
@@ -764,6 +744,7 @@ class PassiveLimitOrderRouter:
         """
         if fill_price is None:
             fill_price = pending.limit_price
+        fill_price = snap_fill_price(pending.side, fill_price)
         fill_ts = self._clock.now_ns() + self._latency_ns
 
         costs = self._cost_model.compute(
@@ -843,14 +824,6 @@ class PassiveLimitOrderRouter:
         """
         pending = self._resting_orders.get(order_id)
         if pending is None:
-            # Acknowledged-but-unfilled MOC orders live in the
-            # MocFillController queue, not ``_resting_orders``.  Halt
-            # cleanup walks active orders and calls ``cancel_order``
-            # on each, so MOC entries must be reachable here too.
-            if self._moc is not None and self._moc.cancel_pending(
-                order_id, "client_cancel",
-            ):
-                return True
             return False
         cancel_fees = self._cancel_fees(pending.request.quantity)
         cancel_ts = max(self._clock.now_ns(), pending.ack_timestamp_ns)
@@ -879,20 +852,6 @@ class PassiveLimitOrderRouter:
                 del self._resting_by_symbol[pending.request.symbol]
 
     # ── Diagnostics ──────────────────────────────────────────────
-
-    def expire_pending_moc(
-        self,
-        reason: str = "MOC_NO_CLOSE_PRINT",
-    ) -> int:
-        """Reject any acknowledged MOC orders that never received a
-        closing-auction print.  Called by the kernel at session /
-        replay end so an MOC cannot remain non-terminal indefinitely
-        when no qualifying post-close NBBO arrives in the feed.
-        Returns the number of orders expired.
-        """
-        if self._moc is None:
-            return 0
-        return self._moc.expire_unfilled(reason, reject_fn=self._reject)
 
     @property
     def resting_order_count(self) -> int:
