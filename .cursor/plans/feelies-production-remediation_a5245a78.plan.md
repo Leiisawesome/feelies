@@ -34,7 +34,7 @@ todos:
     status: pending
   - id: bt-14
     content: "BT-14: Tick-size / sub-penny price rounding in the fill model — snap fill + limit prices to $0.01 (>=$1) / $0.0001 (<$1); MID fills currently produce sub-penny prices"
-    status: completed
+    status: pending
   - id: bt-15
     content: "BT-15: Buying-power / margin model — set account_equity to real deployed capital; enforce Reg-T intraday/overnight/cash buying power as an order-reject; not just the 20% gross cap"
     status: completed

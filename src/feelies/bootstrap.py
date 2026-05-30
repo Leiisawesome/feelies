@@ -102,10 +102,6 @@ from feelies.execution.min_cost_policy import (
     MinCostPolicyConfig,
     MinimumCostExecutionPolicy,
 )
-from feelies.execution.moc_session import (
-    MocSessionBounds,
-    build_moc_bounds_from_platform,
-)
 from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
 from feelies.execution.paper_backend import build_paper_backend
 from feelies.execution.regulatory.pdt_constraint import (
@@ -137,6 +133,7 @@ from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
+from feelies.risk.buying_power import BuyingPowerConfig
 from feelies.risk.engine import RiskEngine
 from feelies.risk.hazard_exit import HazardExitController, HazardPolicy
 from feelies.risk.position_sizer import BudgetBasedSizer
@@ -364,12 +361,22 @@ def build_platform(
         account_id=config.account_id,
         min_equity=_decimal(config.pdt_min_equity_usd),
     ))
+    buying_power_config = BuyingPowerConfig(
+        account_type=config.account_type,
+        intraday_multiplier=_decimal(
+            config.risk_margin_intraday_buying_power_multiplier
+        ),
+        overnight_multiplier=_decimal(
+            config.risk_margin_overnight_buying_power_multiplier
+        ),
+    )
     risk_engine = BasicRiskEngine(
         config=risk_config,
         regime_engine=regime_engine,
         bus=bus,
         alert_sequence_generator=risk_alert_seq,
         pdt_constraint=pdt_constraint,
+        buying_power_config=buying_power_config,
         account_id=config.account_id,
     )
 
@@ -743,27 +750,6 @@ def _load_alphas(
         logger.info("Registered alpha '%s' from explicit path %s", module.manifest.alpha_id, spec_path)
 
 
-
-def _resolve_moc_bounds(config: PlatformConfig) -> MocSessionBounds | None:
-    """BT-8: session bounds for closing-auction fills (None ⇒ MOC inert)."""
-    if not config.moc_strategy_ids:
-        return None
-    cal_path = (
-        str(config.event_calendar_path)
-        if config.event_calendar_path is not None
-        else None
-    )
-    return build_moc_bounds_from_platform(
-        moc_session_date=config.moc_session_date,
-        event_calendar_path=cal_path,
-        moc_cutoff_et=config.moc_cutoff_et,
-        official_close_et=config.official_close_et,
-        early_close_dates=config.early_close_dates,
-        early_close_moc_cutoff_et=config.early_close_moc_cutoff_et,
-        early_close_official_close_et=config.early_close_official_close_et,
-    )
-
-
 def _create_backend(
     mode: OperatingMode,
     event_log: InMemoryEventLog,
@@ -785,9 +771,6 @@ def _create_backend(
     """Compose the per-mode :class:`ExecutionBackend` + auxiliary handles."""
     backend: ExecutionBackend
     router: BacktestOrderRouter | PassiveLimitOrderRouter | None
-    moc_bounds: MocSessionBounds | None = (
-        _resolve_moc_bounds(config) if config is not None else None
-    )
     if mode == OperatingMode.BACKTEST:
         # ``minimum_cost`` runs through the passive-limit backend
         # because the per-order policy must be able to post a LIMIT
@@ -807,7 +790,6 @@ def _create_backend(
                 queue_position_shares=passive_queue_position_shares,
                 cancel_fee_per_share=_decimal(passive_cancel_fee_per_share),
                 fill_hazard_max=_decimal(passive_fill_hazard_max),
-                moc_bounds=moc_bounds,
             )
             return _BackendBundle(backend=backend, backtest_router=router)
 
@@ -818,7 +800,6 @@ def _create_backend(
             market_impact_factor=market_impact_factor,
             max_impact_half_spreads=max_impact_half_spreads,
             max_resting_ticks=passive_max_resting_ticks,
-            moc_bounds=moc_bounds,
         )
         return _BackendBundle(backend=backend, backtest_router=router)
 
