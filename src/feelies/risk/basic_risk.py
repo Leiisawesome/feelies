@@ -37,6 +37,7 @@ from feelies.core.events import (
     SizedPositionIntent,
 )
 from feelies.core.identifiers import SequenceGenerator
+from feelies.execution.regulatory.pdt_constraint import PDTConstraint
 from feelies.portfolio.position_store import PositionStore
 from feelies.risk.sized_intent_result import SizedIntentRiskResult
 from feelies.services.regime_engine import RegimeEngine
@@ -82,6 +83,8 @@ class BasicRiskEngine:
         *,
         bus: EventBus | None = None,
         alert_sequence_generator: SequenceGenerator | None = None,
+        pdt_constraint: PDTConstraint | None = None,
+        account_id: str = "default",
     ) -> None:
         self._config = config
         self._regime_engine = regime_engine
@@ -107,6 +110,11 @@ class BasicRiskEngine:
         # backwards-compatibility for existing test fixtures.
         self._bus = bus
         self._alert_seq = alert_sequence_generator
+        # BT-4: PDT round-trip tracking + $25k minimum-equity entry gate.
+        # When None the gate is inert (e.g. test fixtures, non-margin_25k
+        # account types that bootstrap declines to wire).
+        self._pdt_constraint = pdt_constraint
+        self._account_id = account_id
 
     def check_signal(
         self,
@@ -188,7 +196,15 @@ class BasicRiskEngine:
 
         current = positions.get(order.symbol)
         signed_qty = order.quantity if order.side == Side.BUY else -order.quantity
-        post_fill_qty = abs(current.quantity + signed_qty)
+        post_signed = current.quantity + signed_qty
+        post_fill_qty = abs(post_signed)
+
+        pdt_verdict = self._check_pdt_min_equity(
+            order, current.quantity, post_signed, positions,
+        )
+        if pdt_verdict is not None:
+            return pdt_verdict
+
         if post_fill_qty > adjusted_max:
             return RiskVerdict(
                 timestamp_ns=order.timestamp_ns,
@@ -418,6 +434,116 @@ class BasicRiskEngine:
                     {"symbol": sym, "reason": reason}
                     for sym, reason in dropped
                 ],
+            },
+        ))
+
+    def record_fill(
+        self,
+        symbol: str,
+        prev_qty: int,
+        new_qty: int,
+        timestamp_ns: int,
+    ) -> None:
+        """Feed an applied fill to the PDT round-trip counter (BT-4).
+
+        No-op when no PDT constraint is wired.  Called by the
+        orchestrator after each fill mutates the position store; pure
+        bookkeeping, emits nothing, so replay stays bit-identical.
+        """
+        if self._pdt_constraint is None:
+            return
+        self._pdt_constraint.record_fill(
+            self._account_id, symbol, prev_qty, new_qty, timestamp_ns,
+        )
+
+    def _check_pdt_min_equity(
+        self,
+        order: OrderRequest,
+        current_qty: int,
+        post_signed: int,
+        positions: PositionStore,
+    ) -> RiskVerdict | None:
+        """PDT $25k minimum-equity ENTRY gate (BT-4).
+
+        Returns a ``REJECT`` verdict (reason ``PDT_MIN_EQUITY``) when the
+        order would *open or increase* a position (or reverse across zero)
+        and the PDT-flagged account is below the maintenance floor.
+        Pure exits / reductions return ``None`` (always permitted —
+        Inv-11 fail-safe).
+        """
+        if self._pdt_constraint is None:
+            return None
+        opens_or_increases = (
+            abs(post_signed) > abs(current_qty)
+            or (
+                current_qty != 0
+                and post_signed != 0
+                and (current_qty > 0) != (post_signed > 0)
+            )
+        )
+        if not opens_or_increases:
+            return None
+        current_equity = self._compute_current_equity(positions)
+        if not self._pdt_constraint.should_suppress_entry(
+            self._account_id, current_equity, order.timestamp_ns,
+        ):
+            return None
+        self._emit_pdt_suppression_alert(order, current_equity)
+        return RiskVerdict(
+            timestamp_ns=order.timestamp_ns,
+            correlation_id=order.correlation_id,
+            sequence=order.sequence,
+            symbol=order.symbol,
+            action=RiskAction.REJECT,
+            reason="PDT_MIN_EQUITY",
+        )
+
+    def _emit_pdt_suppression_alert(
+        self,
+        order: OrderRequest,
+        current_equity: Decimal,
+    ) -> None:
+        """Surface a PDT-min-equity entry suppression for forensics."""
+        _logger.warning(
+            "PDT min-equity gate suppressed ENTRY order "
+            "(account_id=%s, symbol=%s, side=%s, qty=%d): equity %s < "
+            "$%s floor while PDT-flagged.",
+            self._account_id,
+            order.symbol,
+            order.side.name,
+            order.quantity,
+            current_equity,
+            self._pdt_constraint.config.min_equity
+            if self._pdt_constraint is not None else "?",
+        )
+        if self._bus is None or self._alert_seq is None:
+            return
+        floor = (
+            self._pdt_constraint.config.min_equity
+            if self._pdt_constraint is not None else Decimal("0")
+        )
+        self._bus.publish(Alert(
+            timestamp_ns=order.timestamp_ns,
+            correlation_id=order.correlation_id,
+            sequence=self._alert_seq.next(),
+            source_layer="RISK",
+            severity=AlertSeverity.WARNING,
+            layer="risk",
+            alert_name="pdt_min_equity_suppressed",
+            message=(
+                f"PDT-flagged account {self._account_id!r} below the "
+                f"${floor} maintenance floor (equity={current_equity}); "
+                f"new ENTRY fill on {order.symbol!r} "
+                f"({order.side.name} {order.quantity}) refused. "
+                f"Exits remain permitted."
+            ),
+            context={
+                "account_id": self._account_id,
+                "symbol": order.symbol,
+                "side": order.side.name,
+                "quantity": order.quantity,
+                "current_equity": str(current_equity),
+                "min_equity": str(floor),
             },
         ))
 

@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: bt-4
     content: "BT-4: Model PDT / day-trade-count + cash-account T+2 settlement as a backtest trade-cadence constraint (not a live gate)"
-    status: pending
+    status: completed
   - id: bt-5
     content: "BT-5: Ingest LULD halt data and model halts in the backtest fill engine (no fills during halt + halt-resolution blackout)"
     status: pending

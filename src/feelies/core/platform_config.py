@@ -107,6 +107,16 @@ class PlatformConfig:
     account_equity: float = 1_000_000.0
     backtest_fill_latency_ns: int = 0
 
+    # BT-4: account type + PDT (Pattern Day Trader) minimum-equity gate.
+    # Locked to ``margin_25k`` (PDT-exempt). The enum is forward-compatible
+    # with ``margin_under_25k`` / ``cash`` but only the ``margin_25k`` path
+    # is implemented; bootstrap refuses to wire the others.
+    account_type: str = "margin_25k"
+    account_id: str = "default"
+    # Maintenance floor below which a PDT-flagged account is barred from
+    # opening new day trades (entries suppressed, exits always permitted).
+    pdt_min_equity_usd: float = 25_000.0
+
     stop_loss_per_share: float = 0.0
     trail_activate_per_share: float = 0.0
     trail_pct: float = 0.5
@@ -421,6 +431,14 @@ class PlatformConfig:
             raise ConfigurationError("risk_max_drawdown_pct must be positive")
         if self.account_equity <= 0:
             raise ConfigurationError("account_equity must be positive")
+        _valid_account_types = {"margin_25k", "margin_under_25k", "cash"}
+        if self.account_type not in _valid_account_types:
+            raise ConfigurationError(
+                f"account_type must be one of {sorted(_valid_account_types)}, "
+                f"got {self.account_type!r}"
+            )
+        if self.pdt_min_equity_usd <= 0:
+            raise ConfigurationError("pdt_min_equity_usd must be positive")
 
         if not isinstance(self.regime_engine_options, dict):
             raise ConfigurationError(
@@ -663,6 +681,9 @@ class PlatformConfig:
                 self.enable_rest_sequence_gap_detection
             ),
             "account_equity": self.account_equity,
+            "account_type": self.account_type,
+            "account_id": self.account_id,
+            "pdt_min_equity_usd": self.pdt_min_equity_usd,
             "backtest_fill_latency_ns": self.backtest_fill_latency_ns,
             "stop_loss_per_share": self.stop_loss_per_share,
             "trail_activate_per_share": self.trail_activate_per_share,
@@ -973,6 +994,9 @@ class PlatformConfig:
                 data.get("enable_rest_sequence_gap_detection", False)
             ),
             account_equity=float(data.get("account_equity", 1_000_000.0)),
+            account_type=str(data.get("account_type", "margin_25k")),
+            account_id=str(data.get("account_id", "default")),
+            pdt_min_equity_usd=float(data.get("pdt_min_equity_usd", 25_000.0)),
             backtest_fill_latency_ns=int(
                 data.get("backtest_fill_latency_ns", 0)
             ),

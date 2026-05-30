@@ -55,6 +55,16 @@ regime_engine: hmm_3state_fractional
 # Sandbox backtest equity; overlays must set real limits for PAPER/LIVE.
 account_equity: 100000.0
 
+# BT-4: account type drives the PDT (Pattern Day Trader) constraint model.
+# Locked to margin_25k (opens above $25k, PDT-exempt: no 3-round-trip hard cap,
+# no cash T+2 settlement branch). Only margin_25k is implemented; the
+# margin_under_25k / cash values are accepted by config but refused at bootstrap.
+account_type: margin_25k
+account_id: default
+# Maintenance floor: a PDT-flagged account below this equity is barred from
+# opening new day trades (entries suppressed, exits always permitted).
+pdt_min_equity_usd: 25000.0
+
 # Per-symbol cap in shares (not USD). High value here; gross cap below binds for this universe.
 risk_max_position_per_symbol: 50000
 

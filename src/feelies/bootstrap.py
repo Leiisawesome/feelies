@@ -104,6 +104,11 @@ from feelies.execution.min_cost_policy import (
 )
 from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
 from feelies.execution.paper_backend import build_paper_backend
+from feelies.execution.regulatory.pdt_constraint import (
+    AccountType,
+    PDTConfig,
+    PDTConstraint,
+)
 from feelies.features.aggregator import HorizonAggregator
 from feelies.features.impl.rolling_stats import (
     RollingPercentileFeature,
@@ -340,11 +345,28 @@ def build_platform(
     # separate sequence stream from the orchestrator's own ``_seq`` so
     # neither can disturb the other's bit-identical replay (Inv-5).
     risk_alert_seq = SequenceGenerator()
+    # BT-4: PDT round-trip tracking + $25k minimum-equity entry gate.
+    # Only the locked ``margin_25k`` (PDT-exempt) path is implemented; the
+    # enum's other members are accepted by config but refused here so an
+    # operator cannot silently run an unmodeled account type.
+    account_type = AccountType(config.account_type)
+    if account_type is not AccountType.MARGIN_25K:
+        raise NotImplementedError(
+            f"account_type={config.account_type!r} is not implemented; "
+            "only 'margin_25k' is wired (BT-4). Set account_type: margin_25k."
+        )
+    pdt_constraint = PDTConstraint(PDTConfig(
+        account_type=account_type,
+        account_id=config.account_id,
+        min_equity=_decimal(config.pdt_min_equity_usd),
+    ))
     risk_engine = BasicRiskEngine(
         config=risk_config,
         regime_engine=regime_engine,
         bus=bus,
         alert_sequence_generator=risk_alert_seq,
+        pdt_constraint=pdt_constraint,
+        account_id=config.account_id,
     )
 
     if event_log is None:

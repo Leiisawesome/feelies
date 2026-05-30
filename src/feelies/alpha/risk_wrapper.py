@@ -425,6 +425,22 @@ class AlphaBudgetRiskWrapper:
         if callable(refresh):
             refresh(positions)
 
+    def record_fill(
+        self,
+        symbol: str,
+        prev_qty: int,
+        new_qty: int,
+        timestamp_ns: int,
+    ) -> None:
+        """Delegate PDT round-trip bookkeeping to the inner engine (BT-4).
+
+        The orchestrator calls this after each applied fill; the inner
+        ``BasicRiskEngine`` owns the ``PDTConstraint``.
+        """
+        record = getattr(self._inner, "record_fill", None)
+        if callable(record):
+            record(symbol, prev_qty, new_qty, timestamp_ns)
+
 
 def _signal_reduces_position(
     current_qty: int,

@@ -3815,7 +3815,9 @@ class Orchestrator:
             if side == Side.SELL:
                 signed_qty = -signed_qty
 
-            prev_realized = self._positions.get(ack.symbol).realized_pnl
+            prev_position = self._positions.get(ack.symbol)
+            prev_realized = prev_position.realized_pnl
+            prev_qty = prev_position.quantity
             position = self._positions.update(
                 ack.symbol,
                 signed_qty,
@@ -3826,6 +3828,15 @@ class Orchestrator:
 
             if position.quantity == 0:
                 self._peak_pnl_per_share.pop(ack.symbol, None)
+
+            # BT-4: feed the PDT round-trip counter (duck-typed; no-op
+            # when the risk engine carries no PDT constraint).  Pure
+            # bookkeeping — emits nothing, so replay stays bit-identical.
+            record_fill = getattr(self._risk_engine, "record_fill", None)
+            if callable(record_fill):
+                record_fill(
+                    ack.symbol, prev_qty, position.quantity, ack.timestamp_ns,
+                )
 
             # ── Per-alpha fill attribution (multi-alpha mode) ──
             if (
