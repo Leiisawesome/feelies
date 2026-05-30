@@ -94,9 +94,14 @@ def append_market_fill_acks(
     # spread_cost fee).  ``half_spread`` is still used to *size* the
     # walk-the-book impact below, which is measured in half-spread units.
     cross = quote.ask if request.side == Side.BUY else quote.bid
-    fill_price = snap_fill_price(
+    # Snap first, then clamp: ``snap_fill_price`` ceils BUY / floors SELL,
+    # which can push a clamped sub-tick price *across* the limit.  Snapping
+    # before clamping ensures the final price is bounded by the on-grid
+    # ``limit_px`` (BT-14 limit-violation guard).
+    fill_price = _clamp_fill_price_to_limit(
         request.side,
-        _clamp_fill_price_to_limit(request.side, cross, limit_px),
+        snap_fill_price(request.side, cross),
+        limit_px,
     )
     half_spread = (quote.ask - quote.bid) / Decimal("2")
 
@@ -143,13 +148,10 @@ def append_market_fill_acks(
             raw_impact_px = cross + impact
         else:
             raw_impact_px = max(cross - impact, Decimal("0.01"))
-        impact_price = snap_fill_price(
+        impact_price = _clamp_fill_price_to_limit(
             request.side,
-            _clamp_fill_price_to_limit(
-                request.side,
-                raw_impact_px,
-                limit_px,
-            ),
+            snap_fill_price(request.side, raw_impact_px),
+            limit_px,
         )
 
         excess_costs = cost_model.compute(
