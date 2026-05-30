@@ -62,6 +62,16 @@ halt_on_condition_codes: []
 halt_off_condition_codes: []
 halt_resolution_blackout_seconds: 60
 
+# BT-6: Reg-SHO / SSR (short-sale restriction). ssr_active_symbols is the daily
+# SSR list (symbols SSR-active all session). ssr_trigger_condition_codes are tape
+# condition codes that flip a symbol SSR-active intraday (sticky; no intraday
+# clear). Under SSR a short ENTRY fill is refused (SSR_SUPPRESSED) and retries
+# next boundary; long entries, covers, and long-exits are unaffected. ssr_mode
+# is locked to "refuse_short" (the permissive uptick-routed variant is deferred).
+ssr_active_symbols: []
+ssr_trigger_condition_codes: []
+ssr_mode: refuse_short
+
 # Sandbox backtest equity; overlays must set real limits for PAPER/LIVE.
 account_equity: 100000.0
 

@@ -53,6 +53,7 @@ from feelies.core.events import (
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
+from feelies.execution.intent import OrderIntent, TradingIntent
 from feelies.execution.order_state import OrderState
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
@@ -2024,4 +2025,219 @@ class TestHaltModeling:
         q_exit = _make_quote(ts=2500, seq=5)
         bt_router.on_quote(q_exit)
         orch._process_tick(q_exit)
+        assert position_store.get("AAPL").quantity == 0
+
+
+def _ssr_intent(
+    intent: TradingIntent,
+    direction: SignalDirection,
+    *,
+    current_quantity: int = 0,
+    symbol: str = "AAPL",
+) -> OrderIntent:
+    sig = Signal(
+        timestamp_ns=1000,
+        correlation_id="c",
+        sequence=1,
+        symbol=symbol,
+        strategy_id="s",
+        direction=direction,
+        strength=0.8,
+        edge_estimate_bps=5.0,
+    )
+    return OrderIntent(
+        intent=intent,
+        symbol=symbol,
+        strategy_id="s",
+        target_quantity=10,
+        current_quantity=current_quantity,
+        signal=sig,
+    )
+
+
+class TestSSRBlocksIntent:
+    """BT-6: _ssr_blocks_intent only refuses short-opening orders."""
+
+    def _orch(self) -> Orchestrator:
+        orch = _build_orchestrator(SimulatedClock(start_ns=1000))
+        _boot_to_backtest(orch)
+        orch._ssr_active = {"AAPL"}
+        return orch
+
+    def test_inactive_symbol_never_blocked(self) -> None:
+        orch = _build_orchestrator(SimulatedClock(start_ns=1000))
+        _boot_to_backtest(orch)  # _ssr_active empty
+        assert not orch._ssr_blocks_intent(
+            _ssr_intent(TradingIntent.ENTRY_SHORT, SignalDirection.SHORT),
+        )
+
+    def test_entry_short_blocked(self) -> None:
+        assert self._orch()._ssr_blocks_intent(
+            _ssr_intent(TradingIntent.ENTRY_SHORT, SignalDirection.SHORT),
+        )
+
+    def test_reverse_long_to_short_blocked(self) -> None:
+        assert self._orch()._ssr_blocks_intent(
+            _ssr_intent(
+                TradingIntent.REVERSE_LONG_TO_SHORT,
+                SignalDirection.SHORT,
+                current_quantity=50,
+            ),
+        )
+
+    def test_scale_up_short_blocked(self) -> None:
+        assert self._orch()._ssr_blocks_intent(
+            _ssr_intent(
+                TradingIntent.SCALE_UP,
+                SignalDirection.SHORT,
+                current_quantity=-50,
+            ),
+        )
+
+    def test_entry_long_allowed(self) -> None:
+        assert not self._orch()._ssr_blocks_intent(
+            _ssr_intent(TradingIntent.ENTRY_LONG, SignalDirection.LONG),
+        )
+
+    def test_exit_allowed(self) -> None:
+        assert not self._orch()._ssr_blocks_intent(
+            _ssr_intent(
+                TradingIntent.EXIT, SignalDirection.FLAT, current_quantity=50,
+            ),
+        )
+
+    def test_scale_up_long_allowed(self) -> None:
+        assert not self._orch()._ssr_blocks_intent(
+            _ssr_intent(
+                TradingIntent.SCALE_UP,
+                SignalDirection.LONG,
+                current_quantity=50,
+            ),
+        )
+
+    def test_reverse_short_to_long_allowed(self) -> None:
+        assert not self._orch()._ssr_blocks_intent(
+            _ssr_intent(
+                TradingIntent.REVERSE_SHORT_TO_LONG,
+                SignalDirection.LONG,
+                current_quantity=-50,
+            ),
+        )
+
+
+class TestSSRRefuseShort:
+    """BT-6: end-to-end short-entry suppression under SSR."""
+
+    @staticmethod
+    def _trade(ts: int, seq: int, conditions: tuple[int, ...]) -> Trade:
+        return Trade(
+            timestamp_ns=ts,
+            correlation_id=f"AAPL:{ts}:{seq}",
+            sequence=seq,
+            symbol="AAPL",
+            price=Decimal("150.00"),
+            size=100,
+            exchange_timestamp_ns=ts - 100,
+            conditions=conditions,
+        )
+
+    @staticmethod
+    def _build(
+        clock: SimulatedClock,
+        bus: EventBus,
+        position_store: MemoryPositionStore,
+    ) -> tuple[Orchestrator, BacktestOrderRouter]:
+        bt_router = BacktestOrderRouter(clock=clock)
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(action=RiskAction.ALLOW),
+            position_store=position_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+        _boot_to_backtest(orch)
+        return orch, bt_router
+
+    def test_short_fills_when_ssr_inactive(self) -> None:
+        # Control: without SSR a short entry fills (proves the gate is the
+        # cause of suppression in the other tests).
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(clock, bus, position_store)
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.SHORT),
+        )
+        q = _make_quote(ts=1000, seq=1)
+        bt_router.on_quote(q)
+        orch._process_tick(q)
+        assert position_store.get("AAPL").quantity < 0
+
+    def test_daily_list_suppresses_short_entry(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)  # type: ignore[arg-type]
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(clock, bus, position_store)
+        orch._ssr_active = {"AAPL"}  # daily SSR list seed
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.SHORT),
+        )
+        q = _make_quote(ts=1000, seq=1)
+        bt_router.on_quote(q)
+        orch._process_tick(q)
+        assert position_store.get("AAPL").quantity == 0
+        assert any(a.alert_name == "ssr_short_suppressed" for a in alerts)
+
+    def test_intraday_trigger_then_short_suppressed(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(clock, bus, position_store)
+        orch._ssr_codes = frozenset({7})
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.SHORT),
+        )
+
+        # Tape trigger flips AAPL SSR-active.
+        orch._process_trade(self._trade(ts=900, seq=1, conditions=(7,)))
+        assert "AAPL" in orch._ssr_active
+
+        q = _make_quote(ts=1000, seq=2)
+        bt_router.on_quote(q)
+        orch._process_tick(q)
+        assert position_store.get("AAPL").quantity == 0
+
+    def test_long_entry_and_long_exit_allowed_under_ssr(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(clock, bus, position_store)
+        orch._ssr_active = {"AAPL"}
+
+        # LONG entry is a BUY → never an SSR short sale → fills.
+        def emit(quote: NBBOQuote) -> None:
+            direction = (
+                SignalDirection.LONG if quote.sequence == 1
+                else SignalDirection.FLAT
+            )
+            bus.publish(_make_signal(quote, direction))
+        bus.subscribe(NBBOQuote, emit)  # type: ignore[arg-type]
+
+        q0 = _make_quote(ts=1000, seq=1)
+        bt_router.on_quote(q0)
+        orch._process_tick(q0)
+        assert position_store.get("AAPL").quantity > 0
+
+        # Long-side EXIT (a sell to close a long) is not a short sale → fills.
+        q1 = _make_quote(ts=2000, seq=2)
+        bt_router.on_quote(q1)
+        orch._process_tick(q1)
         assert position_store.get("AAPL").quantity == 0

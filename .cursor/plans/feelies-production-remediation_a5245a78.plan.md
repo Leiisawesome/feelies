@@ -22,7 +22,7 @@ todos:
     status: completed
   - id: bt-6
     content: "BT-6: Ingest SSR list/trigger and model Reg-SHO uptick constraint on SHORT fills in the backtest"
-    status: pending
+    status: completed
   - id: bt-7
     content: "BT-7: Model short-locate / borrow-availability gate in the backtest (availability, not HTB fee)"
     status: pending

@@ -524,6 +524,15 @@ class Orchestrator:
         self._halt_off_codes: frozenset[int] = frozenset()
         self._halt_blackout_ns: int = 0
 
+        # ── BT-6: Reg-SHO / SSR short-sale restriction ───────────────
+        # Symbols currently SSR-active (sticky for the session): seeded from
+        # the daily SSR list at boot, then added to when the Trade tape's
+        # SSR-trigger condition codes fire intraday.  Under SSR (refuse_short
+        # mode) a short ENTRY fill is refused.  Empty codes + list ⇒ inert.
+        self._ssr_active: set[str] = set()
+        self._ssr_codes: frozenset[int] = frozenset()
+        self._ssr_mode: str = "refuse_short"
+
         # When True, entry/exit orders use LIMIT at BBO instead of
         # MARKET.  Stop-loss exits always use MARKET (fail-safe).
         # Set from config via boot().
@@ -775,6 +784,15 @@ class Orchestrator:
                 self._halt_blackout_ns = (
                     int(config.halt_resolution_blackout_seconds) * 1_000_000_000
                 )
+            # BT-6: seed the daily SSR list + cache the intraday trigger codes.
+            if hasattr(config, "ssr_active_symbols"):
+                self._ssr_active = {
+                    s.upper() for s in config.ssr_active_symbols
+                }
+            if hasattr(config, "ssr_trigger_condition_codes"):
+                self._ssr_codes = frozenset(config.ssr_trigger_condition_codes)
+            if hasattr(config, "ssr_mode"):
+                self._ssr_mode = config.ssr_mode
             if hasattr(config, "execution_mode"):
                 # passive_limit and minimum_cost both wire through the
                 # passive-limit backend.  The static flag tells the
@@ -1211,6 +1229,8 @@ class Orchestrator:
         # data-health gate so a halt is registered even when the symbol's
         # quote feed is otherwise quiet.
         self._update_halt_state(trade)
+        # BT-6: detect an intraday SSR trigger from the same tape.
+        self._update_ssr_state(trade)
 
         if self._data_health_blocks_trading(trade.symbol, trade.correlation_id):
             return
@@ -1928,6 +1948,27 @@ class Orchestrator:
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
                 trigger="halt_resolution_blackout",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
+        # BT-6: Reg-SHO / SSR conservative refuse-short.  Under an active
+        # short-sale restriction, an order that opens or increases SHORT
+        # exposure (a short sale) is refused; the entry retries next horizon
+        # boundary.  Buys, covers, and long-side exits are unaffected.
+        if self._ssr_blocks_intent(intent):
+            self._emit_ssr_suppression_alert(intent, cid)
+            self._append_signal_order_trace(
+                quote,
+                signal,
+                outcome="NO_ORDER",
+                reasons=("ssr_suppressed", f"symbol={intent.symbol}"),
+                trading_intent=intent.intent.name,
+            )
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="ssr_suppressed",
                 correlation_id=cid,
             )
             self._finalize_tick(t_wall_start, cid)
@@ -4447,6 +4488,71 @@ class Orchestrator:
             halted=halted,
             reason=reason,
             blackout_until_ns=blackout_until_ns,
+        ))
+
+    # ── BT-6: Reg-SHO / SSR short-sale restriction ──────────────────
+
+    def _update_ssr_state(self, trade: Trade) -> None:
+        """Flip a symbol SSR-active when the tape's trigger codes fire (BT-6).
+
+        SSR is sticky for the session — once active it never clears intraday —
+        so this only ever adds.  Inert when no trigger codes are configured.
+        """
+        if not self._ssr_codes:
+            return
+        if not (set(trade.conditions) & self._ssr_codes):
+            return
+        symbol = trade.symbol.upper()
+        if symbol in self._ssr_active:
+            return
+        self._ssr_active.add(symbol)
+        self._bus.publish(Alert(
+            timestamp_ns=trade.timestamp_ns,
+            correlation_id=trade.correlation_id,
+            sequence=self._seq.next(),
+            severity=AlertSeverity.INFO,
+            layer="kernel",
+            alert_name="ssr_triggered",
+            message=f"SSR became active intraday for {symbol} (Reg-SHO 201).",
+            context={"symbol": symbol},
+        ))
+
+    def _ssr_blocks_intent(self, intent: OrderIntent) -> bool:
+        """True when SSR (refuse_short) must refuse this short-opening order.
+
+        Restricts only orders that open or increase SHORT exposure: a flat→
+        short entry, a long→short reversal, or a scale-up of an existing short.
+        Buys (covers, long entries, short→long reversals) and long-side exits
+        are never short sales and pass through.
+        """
+        if intent.symbol.upper() not in self._ssr_active:
+            return False
+        if intent.intent in (
+            TradingIntent.ENTRY_SHORT,
+            TradingIntent.REVERSE_LONG_TO_SHORT,
+        ):
+            return True
+        return (
+            intent.intent == TradingIntent.SCALE_UP
+            and intent.signal.direction == SignalDirection.SHORT
+        )
+
+    def _emit_ssr_suppression_alert(
+        self, intent: OrderIntent, correlation_id: str,
+    ) -> None:
+        """Publish the forensic marker for a refused SSR short entry."""
+        self._bus.publish(Alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            sequence=self._seq.next(),
+            severity=AlertSeverity.WARNING,
+            layer="kernel",
+            alert_name="ssr_short_suppressed",
+            message=(
+                f"SSR active for {intent.symbol!r}: refused short entry "
+                f"({intent.intent.name}); retries next boundary (Reg-SHO 201)."
+            ),
+            context={"symbol": intent.symbol, "intent": intent.intent.name},
         ))
 
     def _data_health_blocks_trading(self, symbol: str, correlation_id: str) -> bool:

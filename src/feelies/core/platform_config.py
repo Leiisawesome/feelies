@@ -114,6 +114,18 @@ class PlatformConfig:
     halt_off_condition_codes: tuple[int, ...] = ()
     halt_resolution_blackout_seconds: int = 60
 
+    # BT-6: Reg-SHO / SSR (short-sale restriction) modeling. ``ssr_active_symbols``
+    # is the daily SSR list — symbols SSR-active for the whole session (carried
+    # over from a prior-day trigger). ``ssr_trigger_condition_codes`` are tape
+    # condition codes that flip a symbol SSR-active intraday; SSR is sticky (no
+    # intraday clear). ``ssr_mode`` is the (locked) conservative posture: under
+    # SSR a short ENTRY fill is refused (SSR_SUPPRESSED); the entry retries next
+    # horizon boundary. The permissive uptick-routed variant is deferred — the
+    # field is the config hook so it can be added later without rework.
+    ssr_active_symbols: tuple[str, ...] = ()
+    ssr_trigger_condition_codes: tuple[int, ...] = ()
+    ssr_mode: str = "refuse_short"
+
     account_equity: float = 1_000_000.0
     backtest_fill_latency_ns: int = 0
 
@@ -458,6 +470,14 @@ class PlatformConfig:
                 "halt_on_condition_codes and halt_off_condition_codes must be "
                 "disjoint (a code cannot mean both halt and resume)"
             )
+        if self.ssr_mode != "refuse_short":
+            # The permissive uptick-routed variant is deferred (BT-6 LOCKED:
+            # conservative refuse-short). The field exists as the forward hook.
+            raise ConfigurationError(
+                f"ssr_mode={self.ssr_mode!r} is not implemented; only "
+                "'refuse_short' is supported (the uptick-routed variant is "
+                "deferred)"
+            )
 
         if not isinstance(self.regime_engine_options, dict):
             raise ConfigurationError(
@@ -704,6 +724,9 @@ class PlatformConfig:
             "halt_resolution_blackout_seconds": (
                 self.halt_resolution_blackout_seconds
             ),
+            "ssr_active_symbols": list(self.ssr_active_symbols),
+            "ssr_trigger_condition_codes": list(self.ssr_trigger_condition_codes),
+            "ssr_mode": self.ssr_mode,
             "account_equity": self.account_equity,
             "account_type": self.account_type,
             "account_id": self.account_id,
@@ -1026,6 +1049,13 @@ class PlatformConfig:
             halt_resolution_blackout_seconds=int(
                 data.get("halt_resolution_blackout_seconds", 60)
             ),
+            ssr_active_symbols=tuple(
+                str(s) for s in data.get("ssr_active_symbols", ())
+            ),
+            ssr_trigger_condition_codes=tuple(
+                int(x) for x in data.get("ssr_trigger_condition_codes", ())
+            ),
+            ssr_mode=str(data.get("ssr_mode", "refuse_short")),
             account_equity=float(data.get("account_equity", 1_000_000.0)),
             account_type=str(data.get("account_type", "margin_25k")),
             account_id=str(data.get("account_id", "default")),
