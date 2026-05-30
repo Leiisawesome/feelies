@@ -307,6 +307,10 @@ class PlatformConfig:
     )
     sensor_specs: tuple[SensorSpec, ...] = ()
     event_calendar_path: Path | None = None
+    # BT-18: split/dividend ex-date calendar for replay integrity (see
+    # docs/data_adjustment_policy.md). None ⇒ ex-date guard is inert.
+    ex_date_calendar_path: Path | None = None
+    backtest_enforce_ex_date_guard: bool = True
     market_id: str = "US_EQUITY"
     session_kind: str = "RTH"
 
@@ -658,6 +662,12 @@ class PlatformConfig:
                 f"{self.event_calendar_path}"
             )
 
+        if self.ex_date_calendar_path is not None and not self.ex_date_calendar_path.is_file():
+            raise ConfigurationError(
+                f"ex_date_calendar_path does not exist: "
+                f"{self.ex_date_calendar_path}"
+            )
+
         # ── Phase-4 validation ────────────────────────────────────────
         if not 0.0 <= self.composition_completeness_threshold <= 1.0:
             raise ConfigurationError(
@@ -863,6 +873,12 @@ class PlatformConfig:
                 if self.event_calendar_path
                 else None
             ),
+            "ex_date_calendar_path": (
+                self.ex_date_calendar_path.name
+                if self.ex_date_calendar_path
+                else None
+            ),
+            "backtest_enforce_ex_date_guard": self.backtest_enforce_ex_date_guard,
             "market_id": self.market_id,
             "session_kind": self.session_kind,
             "enforce_trend_mechanism": self.enforce_trend_mechanism,
@@ -1275,6 +1291,14 @@ class PlatformConfig:
             horizons_seconds=horizons_seconds,
             sensor_specs=sensor_specs,
             event_calendar_path=event_calendar_path,
+            ex_date_calendar_path=(
+                Path(str(data["ex_date_calendar_path"]))
+                if data.get("ex_date_calendar_path") is not None
+                else None
+            ),
+            backtest_enforce_ex_date_guard=bool(
+                data.get("backtest_enforce_ex_date_guard", True)
+            ),
             market_id=str(data.get("market_id", "US_EQUITY")),
             session_kind=str(data.get("session_kind", "RTH")),
             enforce_trend_mechanism=bool(

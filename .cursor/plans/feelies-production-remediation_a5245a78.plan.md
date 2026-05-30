@@ -52,7 +52,7 @@ todos:
     status: pending
   - id: bt-11
     content: "BT-11: Re-baseline all parity hashes in tests/determinism/ and confirm bit-identical replay after the fill-model changes (Inv-5)"
-    status: completed
+    status: pending
   - id: bt-12
     content: "BT-12: Re-run G12 + CPCV + DSR on all 5 SIGNAL alphas against the post-fix backtest; retire or recalibrate failures"
     status: pending
@@ -200,7 +200,7 @@ Review pass 2 audited the fill/risk/ingestion code against the dimensions a fait
 - **Locked baselines: `backtest_fill_latency_ns = 50ms`, `market_data_latency_ns = 20ms`** (conservative literature defaults; the current 30ms fill value is raised to 50ms). Revisit when measured IB round-trip / Polygon feed numbers are available.
 - Fold into BT-10's lookahead audit and BT-9's latency stress (stress both legs jointly at 2x).
 
-**BT-18 — Data-adjustment policy + corporate actions** *(~1 day, low priority intraday, but must be stated)*
+**BT-18 — Data-adjustment policy + corporate actions** *(~1 day, low priority intraday, but must be stated)* — **DONE**
 - Ingestion performs **no** split/dividend handling ([src/feelies/ingestion/](src/feelies/ingestion) has zero corporate-action logic). For intraday-only replay this is usually benign, but a split or dividend ex-date inside a replay window produces a genuine price discontinuity that will corrupt level-anchored sensor scales (Kyle-lambda, realized-vol) if the data is silently switched between raw and adjusted.
 - Document the policy: backtests use **raw, unadjusted** L1 within a single session; replays must not straddle an ex-date for a held symbol, or must apply the adjustment factor at the boundary. Add a load-time guard that flags any replay window containing a known ex-date for a universe symbol (reuse the calendar surface).
 - No fill-model change — this is a data-integrity guard, sequenced with BT-10.
