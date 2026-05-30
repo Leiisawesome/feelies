@@ -4,6 +4,13 @@ layer: PORTFOLIO
 
 alpha_id: pro_burst_revert_v1
 version: "1.0.0"
+
+# BT-13: research-only at sub-$250k scale (N=3 universe; deploy SIGNAL alphas directly).
+lifecycle_state: RESEARCH
+notes: |
+  Decommissioned from production discovery (alphas/research/). IR = IC * sqrt(N)
+  with N=3 does not justify composition-layer complexity at this capital scale.
+  Composition code remains for integration tests and future scale-up.
 description: |
   Cross-sectional coordinator for two complementary short-horizon
   microstructure mechanisms: Hawkes self-exciting burst momentum

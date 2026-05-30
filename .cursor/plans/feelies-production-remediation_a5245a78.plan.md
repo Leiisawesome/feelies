@@ -52,13 +52,13 @@ todos:
     status: pending
   - id: bt-11
     content: "BT-11: Re-baseline all parity hashes in tests/determinism/ and confirm bit-identical replay after the fill-model changes (Inv-5)"
-    status: pending
+    status: completed
   - id: bt-12
     content: "BT-12: Re-run G12 + CPCV + DSR on all 5 SIGNAL alphas against the post-fix backtest; retire or recalibrate failures"
-    status: completed
+    status: pending
   - id: bt-13
     content: "BT-13: Move PORTFOLIO alphas to RESEARCH-only state (universe too small at sub-$250k)"
-    status: pending
+    status: completed
   - id: open-decisions
     content: "LOCKED (2026-05-29): margin>=$25k PDT-exempt (4x/2x); equity $25-100k (placeholder $50k); SSR conservative; keep+model MOC; keep inventory w/ tighter gate; executed-cross entry price; latency 50ms fill/20ms feed. Only exact equity figure remains (non-blocking)."
     status: completed

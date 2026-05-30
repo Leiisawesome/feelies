@@ -122,8 +122,9 @@ feelies/
 │   ├── sig_hawkes_burst_v1/     # Reference SIGNAL (HAWKES_SELF_EXCITE)
 │   ├── sig_moc_imbalance_v1/    # Reference SIGNAL (SCHEDULED_FLOW)
 │   ├── sig_benign_midcap_v1/    # Reference SIGNAL (Phase-3 canonical)
-│   ├── pro_burst_revert_v1/     # Reference PORTFOLIO (HAWKES + INVENTORY)
-│   └── pro_kyle_benign_v1/      # Reference PORTFOLIO (KYLE_INFO dual-horizon)
+│   └── research/                # BT-13: PORTFOLIO refs (not production-discovered)
+│       ├── pro_burst_revert_v1/ # HAWKES + INVENTORY (lifecycle_state: RESEARCH)
+│       └── pro_kyle_benign_v1/  # KYLE_INFO dual-horizon (lifecycle_state: RESEARCH)
 ├── docs/                         # Architecture spec and alpha documentation
 │   ├── three_layer_architecture.md
 │   └── alphas/

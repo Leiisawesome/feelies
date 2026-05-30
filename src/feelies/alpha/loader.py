@@ -624,6 +624,9 @@ class AlphaLoader:
         promotion_overrides = self._parse_promotion_block(
             spec.get("promotion"), source
         )
+        lifecycle_cap = self._parse_lifecycle_state(
+            spec.get("lifecycle_state"), source
+        )
         trend_enum, expected_half_life = self._extract_trend_metadata(
             trend_mechanism_block, source,
         )
@@ -659,6 +662,7 @@ class AlphaLoader:
             trend_mechanism=trend_mechanism_block,
             hazard_exit=hazard_exit_block,
             gate_thresholds_overrides=promotion_overrides,
+            lifecycle_cap=lifecycle_cap,
         )
 
         return LoadedSignalLayerModule(
@@ -722,6 +726,9 @@ class AlphaLoader:
         )
         promotion_overrides = self._parse_promotion_block(
             spec.get("promotion"), source
+        )
+        lifecycle_cap = self._parse_lifecycle_state(
+            spec.get("lifecycle_state"), source
         )
 
         consumes_raw = (
@@ -792,6 +799,7 @@ class AlphaLoader:
             trend_mechanism=trend_mechanism_block,
             hazard_exit=hazard_exit_block,
             gate_thresholds_overrides=promotion_overrides,
+            lifecycle_cap=lifecycle_cap,
         )
 
         return LoadedPortfolioLayerModule(
@@ -1277,6 +1285,28 @@ class AlphaLoader:
             raise AlphaLoadError(
                 f"{source}: promotion.gate_thresholds: {exc}"
             ) from exc
+
+    @staticmethod
+    def _parse_lifecycle_state(raw: Any, source: str) -> str | None:
+        """Parse optional ``lifecycle_state`` (BT-13 research-only cap).
+
+        Only ``RESEARCH`` is supported today: it blocks PAPER/LIVE promotion
+        while still allowing the alpha to load for integration tests.
+        """
+        if raw is None:
+            return None
+        if not isinstance(raw, str):
+            raise AlphaLoadError(
+                f"{source}: 'lifecycle_state' must be a string, got "
+                f"{type(raw).__name__}"
+            )
+        normalized = raw.strip().upper()
+        if normalized != "RESEARCH":
+            raise AlphaLoadError(
+                f"{source}: unsupported lifecycle_state {raw!r}; "
+                "only 'RESEARCH' is supported"
+            )
+        return normalized
 
     @staticmethod
     def _validate_risk_budget(budget: AlphaRiskBudget, source: str) -> None:

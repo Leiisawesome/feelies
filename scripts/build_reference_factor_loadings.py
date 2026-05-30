@@ -22,7 +22,7 @@ Outputs (idempotent — safe to re-run):
 
 The fixture is intentionally *small* (10 symbols × 7 factors); the
 universe matches the reference deployment used by
-``alphas/pro_burst_revert_v1/``, ``alphas/pro_kyle_benign_v1/``, and
+``alphas/research/pro_burst_revert_v1/``, ``alphas/research/pro_kyle_benign_v1/``, and
 the Phase-4 end-to-end tests.
 
 Determinism contract
