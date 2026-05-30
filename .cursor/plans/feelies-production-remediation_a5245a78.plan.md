@@ -52,7 +52,7 @@ todos:
     status: pending
   - id: bt-11
     content: "BT-11: Re-baseline all parity hashes in tests/determinism/ and confirm bit-identical replay after the fill-model changes (Inv-5)"
-    status: pending
+    status: completed
   - id: bt-12
     content: "BT-12: Re-run G12 + CPCV + DSR on all 5 SIGNAL alphas against the post-fix backtest; retire or recalibrate failures"
     status: pending
