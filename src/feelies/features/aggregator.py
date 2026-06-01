@@ -105,6 +105,7 @@ class HorizonAggregator:
         "_bus",
         "_features_sorted",
         "_features_by_horizon",
+        "_features_by_sensor",
         "_symbols_sorted",
         "_buffer_window_ns",
         "_sequence_generator",
@@ -247,6 +248,20 @@ class HorizonAggregator:
                     (feature.feature_id, feature.horizon_seconds, symbol)
                 ] = feature.initial_state()
 
+        # Reverse index sensor_id -> features that consume it, built once
+        # at construction in ``_features_sorted`` order.  ``_on_sensor_reading``
+        # dispatches through this instead of scanning every feature per
+        # reading: on a wide feature set the old O(features) membership test
+        # ran for every one of ~10^7 readings/session.  Preserving the
+        # sorted order within each bucket keeps observe() dispatch
+        # byte-identical to the full-scan version (features own disjoint
+        # per-(feature_id, horizon, symbol) state, so cross-feature order is
+        # irrelevant, but pinning it costs nothing and avoids surprise).
+        self._features_by_sensor: dict[str, list[HorizonFeature]] = {}
+        for feature in self._features_sorted:
+            for sid in feature.input_sensor_ids:
+                self._features_by_sensor.setdefault(sid, []).append(feature)
+
         # H1 / M3: per-(horizon_seconds, symbol) last boundary index for
         # which a snapshot has already been emitted.  Prevents either
         # tick scope from producing a second identical snapshot for
@@ -375,11 +390,10 @@ class HorizonAggregator:
                 )
 
         # Notify any feature whose ``input_sensor_ids`` contains this
-        # sensor_id.  Passive mode (no features) skips this loop
-        # entirely with zero cost.
-        for feature in self._features_sorted:
-            if reading.sensor_id not in feature.input_sensor_ids:
-                continue
+        # sensor_id, via the precomputed reverse index.  Passive mode
+        # (no features) and readings from sensors no feature consumes
+        # both resolve to an empty list with zero per-feature cost.
+        for feature in self._features_by_sensor.get(reading.sensor_id, ()):
             state_key = (feature.feature_id, feature.horizon_seconds, symbol)
             state = self._feature_state.get(state_key)
             if state is None:
