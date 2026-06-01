@@ -105,6 +105,7 @@ from feelies.execution.intent import (
     TradingIntent,
 )
 from feelies.execution.order_state import OrderState, create_order_state_machine
+from feelies.execution.trading_session import TradingSessionBounds
 from feelies.execution.regulatory.borrow_availability import (
     BorrowTier,
     build_borrow_table,
@@ -554,7 +555,7 @@ class Orchestrator:
         self._moc_bounds_configured: bool = False
 
         # BT-16: RTH entry-fill suppression + close buying-power phase flip.
-        self._trading_session_bounds = None
+        self._trading_session_bounds: TradingSessionBounds | None = None
         self._rth_close_bp_flipped: bool = False
 
         # When True, entry/exit orders use LIMIT at BBO instead of
@@ -893,10 +894,9 @@ class Orchestrator:
                         build_moc_bounds_from_platform,
                     )
 
+                    _event_cal = getattr(config, "event_calendar_path", None)
                     cal_path = (
-                        str(config.event_calendar_path)
-                        if getattr(config, "event_calendar_path", None) is not None
-                        else None
+                        str(_event_cal) if _event_cal is not None else None
                     )
                     self._moc_bounds_configured = (
                         build_moc_bounds_from_platform(
@@ -927,13 +927,12 @@ class Orchestrator:
                     build_trading_session_from_platform,
                 )
 
+                _event_cal = getattr(config, "event_calendar_path", None)
                 cal_path = (
-                    str(config.event_calendar_path)
-                    if getattr(config, "event_calendar_path", None) is not None
-                    else None
+                    str(_event_cal) if _event_cal is not None else None
                 )
                 self._trading_session_bounds = build_trading_session_from_platform(
-                    rth_session_gating_enabled=config.rth_session_gating_enabled,
+                    rth_session_gating_enabled=True,
                     rth_session_date=(
                         getattr(config, "rth_session_date", None)
                         or getattr(config, "moc_session_date", None)
