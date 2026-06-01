@@ -3587,13 +3587,19 @@ class Orchestrator:
                 )
             self._prune_terminal_orders()
             return True
-        cancel_fn(order_id)
+        accepted = cancel_fn(order_id)
         acks = self._poll_order_router_acks({order_id})
         for ack in acks:
             self._bus.publish(ack)
             self._apply_ack_to_order(ack)
         self._reconcile_fills(acks, order.correlation_id)
-        if order_id in self._active_orders:
+        # Only resolve locally when the router rejected the cancel
+        # (e.g. unknown id, or backtest non-MOC paths with no resting
+        # interest).  When the router accepted the cancel (True), the
+        # terminal ack may arrive asynchronously on a later poll — for
+        # IB the cancel is fire-and-forget — so forcing CANCELLED here
+        # would desync kernel state from a still-live broker order.
+        if not accepted and order_id in self._active_orders:
             sm_post = self._active_orders[order_id][0]
             if sm_post.state == OrderState.CANCEL_REQUESTED:
                 if sm_post.can_transition(OrderState.CANCELLED):
