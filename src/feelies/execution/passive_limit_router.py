@@ -54,7 +54,12 @@ from feelies.core.events import (
 )
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.cost_model import CostModel, ZeroCostModel
-from feelies.execution.market_fill import append_market_fill_acks, to_decimal
+from feelies.execution.market_fill import (
+    DeferredFill,
+    append_market_fill_acks,
+    append_reject_ack,
+    to_decimal,
+)
 
 
 @dataclass
@@ -79,24 +84,11 @@ class _PendingOrder:
     shares_traded_at_level: int = 0
 
 
-@dataclass(frozen=True)
-class _DeferredAggressiveFill:
-    """MARKET order deferred until exchange time reaches ``deadline_ns``.
-
-    ``ack_timestamp_ns`` matches the ACKNOWLEDGED ack emitted at submit.
-    The FILLED timestamp uses ``max(ack_timestamp_ns,
-    fill_quote.exchange_timestamp_ns)`` so we do not add ``latency_ns``
-    again when the injected clock tracks exchange time (``ReplayFeed``) —
-    the eligibility deadline already advanced exchange time by one latency
-    slice (parity with :class:`~feelies.execution.backtest_router.BacktestOrderRouter`).
-    ``max_resting_ticks`` timeout rejects use the same floor so REJECTED
-    does not precede ACKNOWLEDGED before the latency deadline.
-    """
-
-    request: OrderRequest
-    fill_deadline_exchange_ns: int
-    ack_timestamp_ns: int
-    ticks_for_symbol: int = 0
+# Deferred aggressive (MARKET / marketable-limit) fills share the
+# :class:`~feelies.execution.market_fill.DeferredFill` record with the backtest
+# router so the latency / monotonic-ack contract cannot drift between the two
+# paths (Inv 9).  Aliased to the historical name for call-site readability.
+_DeferredAggressiveFill = DeferredFill
 
 
 class PassiveLimitOrderRouter:
@@ -526,19 +518,16 @@ class PassiveLimitOrderRouter:
         ``release_submitted_id=False`` (duplicate submissions — the id may
         still belong to an in-flight resting or deferred aggressive order).
         """
-        ts = self._clock.now_ns() if timestamp_ns is None else timestamp_ns
-        self._pending_acks.append(OrderAck(
-            timestamp_ns=ts,
-            correlation_id=request.correlation_id,
-            sequence=self._ack_seq.next(),
-            order_id=request.order_id,
-            symbol=request.symbol,
-            status=OrderAckStatus.REJECTED,
-            reason=reason,
-            request_sequence=request.sequence,
-        ))
-        if release_submitted_id:
-            self._submitted_order_ids.discard(request.order_id)
+        append_reject_ack(
+            self._pending_acks,
+            self._ack_seq,
+            self._submitted_order_ids,
+            self._clock.now_ns(),
+            request,
+            reason,
+            timestamp_ns=timestamp_ns,
+            release_submitted_id=release_submitted_id,
+        )
 
     def _emit_passive_fill(
         self,
@@ -590,13 +579,13 @@ class PassiveLimitOrderRouter:
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )
 
-    def _emit_timeout_cancel(self, pending: _PendingOrder) -> None:
-        """Emit a CANCELLED ack for a timed-out resting order.
+    def _append_cancel_ack(self, pending: _PendingOrder, *, reason: str) -> None:
+        """Append a CANCELLED ack for ``pending`` with the given ``reason``.
 
-        Floors at ``pending.ack_timestamp_ns`` so the CANCELLED ack never
-        timestamps before ACKNOWLEDGED — matches the same guard the
-        aggressive-deferred-timeout path applies in
-        ``_flush_deferred_aggressive``.
+        Shared by the timeout-cancel and explicit-cancel paths.  Floors the
+        timestamp at ``pending.ack_timestamp_ns`` so the CANCELLED ack never
+        precedes ACKNOWLEDGED — the same guard the aggressive-deferred-timeout
+        path applies in ``_flush_deferred_aggressive``.
         """
         cancel_fees = self._cancel_fees(pending.request.quantity)
         cancel_ts = max(self._clock.now_ns(), pending.ack_timestamp_ns)
@@ -607,12 +596,17 @@ class PassiveLimitOrderRouter:
             order_id=pending.request.order_id,
             symbol=pending.request.symbol,
             status=OrderAckStatus.CANCELLED,
-            reason=(
-                f"passive limit timeout after {pending.total_ticks} ticks"
-            ),
+            reason=reason,
             fees=cancel_fees if cancel_fees > 0 else Decimal("0"),
             request_sequence=pending.request.sequence,
         ))
+
+    def _emit_timeout_cancel(self, pending: _PendingOrder) -> None:
+        """Emit a CANCELLED ack for a timed-out resting order."""
+        self._append_cancel_ack(
+            pending,
+            reason=f"passive limit timeout after {pending.total_ticks} ticks",
+        )
 
     # ── Explicit cancellation ───────────────────────────────────
 
@@ -625,19 +619,7 @@ class PassiveLimitOrderRouter:
         pending = self._resting_orders.get(order_id)
         if pending is None:
             return False
-        cancel_fees = self._cancel_fees(pending.request.quantity)
-        cancel_ts = max(self._clock.now_ns(), pending.ack_timestamp_ns)
-        self._pending_acks.append(OrderAck(
-            timestamp_ns=cancel_ts,
-            correlation_id=pending.request.correlation_id,
-            sequence=self._ack_seq.next(),
-            order_id=order_id,
-            symbol=pending.request.symbol,
-            status=OrderAckStatus.CANCELLED,
-            reason="client_cancel",
-            fees=cancel_fees if cancel_fees > 0 else Decimal("0"),
-            request_sequence=pending.request.sequence,
-        ))
+        self._append_cancel_ack(pending, reason="client_cancel")
         self._remove_resting(order_id)
         return True
 

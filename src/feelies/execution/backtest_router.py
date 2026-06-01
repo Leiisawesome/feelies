@@ -72,7 +72,7 @@ Invariants preserved:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from decimal import Decimal
 
 from feelies.core.clock import Clock
@@ -85,36 +85,20 @@ from feelies.core.events import (
 )
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.cost_model import CostModel, ZeroCostModel
-from feelies.execution.market_fill import append_market_fill_acks, to_decimal
+from feelies.execution.market_fill import (
+    DeferredFill,
+    append_market_fill_acks,
+    append_reject_ack,
+    to_decimal,
+)
 
 
-@dataclass(frozen=True)
-class _DeferredMarketFill:
-    """MARKET order waiting until exchange time reaches fill deadline.
-
-    ``ticks_for_symbol`` is incremented every time a matching-symbol quote
-    arrives so the deferred order can be cancelled after
-    ``max_resting_ticks`` quotes — mirroring the safety net the passive
-    router applies to deferred aggressive fills.  Without this cap, a halt
-    or thinly-traded symbol could leave a MARKET order pending indefinitely
-    (Inv 11: fail-safe default).
-
-    ``ack_timestamp_ns`` is the ACKNOWLEDGED ack timestamp emitted at
-    submit (``clock.now_ns() + latency_ns`` at submit time).  It is stored
-    so the deferred FILLED timestamp can be ``max(ack, fill_quote_ts)``
-    instead of ``fill_quote_ts + latency_ns``: the eligibility gate already
-    waited ``latency_ns`` on the exchange clock — adding latency again when
-    ``ReplayFeed`` keeps ``clock.now_ns()`` aligned with
-    ``exchange_timestamp_ns`` would double-count one-way delay (Inv 9).
-    The same floor applies to ``max_resting_ticks`` timeout rejects so
-    REJECTED never timestamps before ACKNOWLEDGED while exchange time is
-    still short of the latency deadline.
-    """
-
-    request: OrderRequest
-    fill_deadline_exchange_ns: int
-    ack_timestamp_ns: int
-    ticks_for_symbol: int = 0
+# MARKET orders deferred until exchange time reaches the latency deadline use
+# the shared :class:`~feelies.execution.market_fill.DeferredFill` record so the
+# backtest and passive routers cannot drift on the latency / monotonic-ack
+# contract (Inv 9).  Aliased to the historical name for readability at the
+# call sites below.
+_DeferredMarketFill = DeferredFill
 
 
 class BacktestOrderRouter:
@@ -327,16 +311,13 @@ class BacktestOrderRouter:
         timestamp_ns: int | None = None,
         release_submitted_id: bool = True,
     ) -> None:
-        ts = self._clock.now_ns() if timestamp_ns is None else timestamp_ns
-        self._pending_acks.append(OrderAck(
-            timestamp_ns=ts,
-            correlation_id=request.correlation_id,
-            sequence=self._ack_seq.next(),
-            order_id=request.order_id,
-            symbol=request.symbol,
-            status=OrderAckStatus.REJECTED,
-            reason=reason,
-            request_sequence=request.sequence,
-        ))
-        if release_submitted_id:
-            self._submitted_order_ids.discard(request.order_id)
+        append_reject_ack(
+            self._pending_acks,
+            self._ack_seq,
+            self._submitted_order_ids,
+            self._clock.now_ns(),
+            request,
+            reason,
+            timestamp_ns=timestamp_ns,
+            release_submitted_id=release_submitted_id,
+        )
