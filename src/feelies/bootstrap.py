@@ -48,10 +48,14 @@ legacy execution path bit-for-bit (Inv-A).
 from __future__ import annotations
 
 import logging
+<<<<<<< HEAD
+from collections.abc import Callable, Sequence
+=======
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import date
+>>>>>>> origin/main
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -965,69 +969,73 @@ def _derive_session_id(config: PlatformConfig) -> str:
 # For each sensor_id that may appear in platform.yaml, declare which
 # HorizonFeature implementations to construct at each registered horizon.
 # Features for sensors that are NOT in config.sensor_specs are skipped.
-# Adding a new sensor here is the only change needed to surface its
-# readings in HorizonFeatureSnapshot.values for new alphas.
+# Adding a new sensor is a single entry in the registry below — no edit
+# to the lookup function or its callers is needed.
+
+# sensor_id -> factory(horizon) -> the HorizonFeatures that sensor drives.
+# A sensor absent from this map (e.g. ``spread_z_30d``) contributes no
+# Layer-2 features; the gate DSL resolves it via the sensor_cache path in
+# HorizonSignalEngine._build_bindings.
+_HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
+    "ofi_ewma": lambda h: [
+        SensorPassthroughFeature("ofi_ewma", h),
+        # Short rolling window (200 samples) so z-score reflects recent
+        # OFI regime rather than whole-session history.
+        RollingZscoreFeature("ofi_ewma", h, max_samples=200),
+    ],
+    "kyle_lambda_60s": lambda h: [
+        RollingZscoreFeature("kyle_lambda_60s", h),
+        RollingPercentileFeature("kyle_lambda_60s", h),
+    ],
+    "quote_replenish_asymmetry": lambda h: [
+        RollingZscoreFeature("quote_replenish_asymmetry", h),
+    ],
+    "quote_hazard_rate": lambda h: [
+        SensorPassthroughFeature("quote_hazard_rate", h),
+    ],
+    # Sensor emits a 4-tuple; sum λ_buy+λ_sell as burst-intensity scalar.
+    "hawkes_intensity": lambda h: [
+        RollingZscoreFeature(
+            "hawkes_intensity", h, tuple_sum_component_indices=(0, 1),
+        ),
+    ],
+    "trade_through_rate": lambda h: [
+        SensorPassthroughFeature("trade_through_rate", h),
+    ],
+    "scheduled_flow_window": lambda h: [
+        TupleComponentFeature(
+            "scheduled_flow_window", 0,
+            "scheduled_flow_window_active", h,
+        ),
+        TupleComponentFeature(
+            "scheduled_flow_window", 1,
+            "seconds_to_window_close", h,
+        ),
+        TupleComponentFeature(
+            "scheduled_flow_window", 3,
+            "scheduled_flow_window_direction_prior", h,
+        ),
+    ],
+    "micro_price": lambda h: [
+        SensorPassthroughFeature("micro_price", h),
+        RollingZscoreFeature("micro_price", h),
+    ],
+    "realized_vol_30s": lambda h: [
+        SensorPassthroughFeature("realized_vol_30s", h),
+        RollingZscoreFeature("realized_vol_30s", h),
+    ],
+}
+
 
 def _horizon_features_for(
     sensor_id: str,
     horizon: int,
 ) -> list[HorizonFeature]:
     """Return the HorizonFeature instances for *sensor_id* at *horizon*."""
-    if sensor_id == "ofi_ewma":
-        return [
-            SensorPassthroughFeature("ofi_ewma", horizon),
-            # Short rolling window (200 samples) so z-score reflects
-            # recent OFI regime rather than whole-session history.
-            RollingZscoreFeature("ofi_ewma", horizon, max_samples=200),
-        ]
-    if sensor_id == "kyle_lambda_60s":
-        return [
-            RollingZscoreFeature("kyle_lambda_60s", horizon),
-            RollingPercentileFeature("kyle_lambda_60s", horizon),
-        ]
-    if sensor_id == "quote_replenish_asymmetry":
-        return [RollingZscoreFeature("quote_replenish_asymmetry", horizon)]
-    if sensor_id == "quote_hazard_rate":
-        return [SensorPassthroughFeature("quote_hazard_rate", horizon)]
-    if sensor_id == "hawkes_intensity":
-        # Sensor emits a 4-tuple; sum λ_buy+λ_sell as burst-intensity scalar.
-        return [
-            RollingZscoreFeature(
-                "hawkes_intensity",
-                horizon,
-                tuple_sum_component_indices=(0, 1),
-            ),
-        ]
-    if sensor_id == "trade_through_rate":
-        return [SensorPassthroughFeature("trade_through_rate", horizon)]
-    if sensor_id == "scheduled_flow_window":
-        return [
-            TupleComponentFeature(
-                "scheduled_flow_window", 0,
-                "scheduled_flow_window_active", horizon,
-            ),
-            TupleComponentFeature(
-                "scheduled_flow_window", 1,
-                "seconds_to_window_close", horizon,
-            ),
-            TupleComponentFeature(
-                "scheduled_flow_window", 3,
-                "scheduled_flow_window_direction_prior", horizon,
-            ),
-        ]
-    if sensor_id == "micro_price":
-        return [
-            SensorPassthroughFeature("micro_price", horizon),
-            RollingZscoreFeature("micro_price", horizon),
-        ]
-    if sensor_id == "realized_vol_30s":
-        return [
-            SensorPassthroughFeature("realized_vol_30s", horizon),
-            RollingZscoreFeature("realized_vol_30s", horizon),
-        ]
-    # Sensors that produce stats already (e.g. spread_z_30d)
-    # skip horizon features — gate resolves them via sensor_cache.
-    return []
+    factory = _HORIZON_FEATURE_FACTORIES.get(sensor_id)
+    if factory is None:
+        return []
+    return factory(horizon)
 
 
 def _build_horizon_features(

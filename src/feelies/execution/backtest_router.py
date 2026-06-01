@@ -78,9 +78,13 @@ Invariants preserved:
 
 from __future__ import annotations
 
+<<<<<<< HEAD
+from dataclasses import replace
+=======
 from collections.abc import Callable
 
 from dataclasses import dataclass, replace
+>>>>>>> origin/main
 from decimal import Decimal
 
 from feelies.core.clock import Clock
@@ -93,6 +97,22 @@ from feelies.core.events import (
 )
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.cost_model import CostModel, ZeroCostModel
+<<<<<<< HEAD
+from feelies.execution.market_fill import (
+    DeferredFill,
+    append_market_fill_acks,
+    append_reject_ack,
+    to_decimal,
+)
+
+
+# MARKET orders deferred until exchange time reaches the latency deadline use
+# the shared :class:`~feelies.execution.market_fill.DeferredFill` record so the
+# backtest and passive routers cannot drift on the latency / monotonic-ack
+# contract (Inv 9).  Aliased to the historical name for readability at the
+# call sites below.
+_DeferredMarketFill = DeferredFill
+=======
 from feelies.execution.market_fill import append_market_fill_acks, to_decimal
 from feelies.execution.moc_fill import MocFillController
 from feelies.execution.moc_session import MocSessionBounds
@@ -132,6 +152,7 @@ class _DeferredMarketFill:
     fill_deadline_exchange_ns: int
     ack_timestamp_ns: int
     ticks_for_symbol: int = 0
+>>>>>>> origin/main
 
 
 class BacktestOrderRouter:
@@ -427,16 +448,13 @@ class BacktestOrderRouter:
         timestamp_ns: int | None = None,
         release_submitted_id: bool = True,
     ) -> None:
-        ts = self._clock.now_ns() if timestamp_ns is None else timestamp_ns
-        self._pending_acks.append(OrderAck(
-            timestamp_ns=ts,
-            correlation_id=request.correlation_id,
-            sequence=self._ack_seq.next(),
-            order_id=request.order_id,
-            symbol=request.symbol,
-            status=OrderAckStatus.REJECTED,
-            reason=reason,
-            request_sequence=request.sequence,
-        ))
-        if release_submitted_id:
-            self._submitted_order_ids.discard(request.order_id)
+        append_reject_ack(
+            self._pending_acks,
+            self._ack_seq,
+            self._submitted_order_ids,
+            self._clock.now_ns(),
+            request,
+            reason,
+            timestamp_ns=timestamp_ns,
+            release_submitted_id=release_submitted_id,
+        )

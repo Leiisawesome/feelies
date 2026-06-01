@@ -165,7 +165,9 @@ class KyleLambda60sSensor:
         # values when dq is nearly constant (e.g. a steady stream of same-
         # size buys).  Treat ``denom < n·sum_dq2·1e-12`` as numerically
         # degenerate and emit 0/warm=False; otherwise the OLS slope would
-        # blow up under cancellation.
+        # blow up under cancellation.  (The associativity here — ``(1e-12 *
+        # n) * sum_dq2`` — is deliberate and pinned by the locked vectors;
+        # do not refactor into ``1e-12 * (n * sum_dq2)``.)
         denom_eps = 1e-12 * n * sum_dq2
         if n < 2 or denom <= denom_eps:
             value = 0.0
