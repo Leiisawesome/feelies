@@ -27,7 +27,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 
-from feelies.cli import promote
+from feelies.cli import backtest, promote
 
 
 EXIT_OK = 0
@@ -60,6 +60,8 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     promote.register(promote_parser)
+
+    backtest.register(subparsers)
 
     return parser
 

@@ -20,6 +20,13 @@ from pathlib import Path
 import pytest
 
 from feelies.core.platform_config import PlatformConfig
+from feelies.harness import (
+    compute_combined_parity_hash,
+    compute_config_hash,
+    compute_parity_hash,
+    prepare_backtest_event_log,
+)
+from feelies.kernel.orchestrator import Orchestrator
 from feelies.storage.cache_replay import CacheReplayError, load_event_log_from_disk_cache
 
 _BASELINE_SYMBOL = "APP"
@@ -44,15 +51,15 @@ def _load_runner():
     return mod
 
 
-def _net_pnl_from_orchestrator(orchestrator: object) -> Decimal:
+def _net_pnl_from_orchestrator(orchestrator: Orchestrator) -> Decimal:
     """Mirror ``generate_report`` net PnL at flat book (gross − journal fees)."""
-    positions = orchestrator._positions  # type: ignore[attr-defined]
-    all_pos = positions.all_positions()
+    all_pos = orchestrator.position_store.all_positions()
     gross_pnl = sum(
         (p.realized_pnl + p.unrealized_pnl for p in all_pos.values()),
         Decimal("0"),
     )
-    journal = orchestrator._trade_journal  # type: ignore[attr-defined]
+    journal = orchestrator.trade_journal
+    assert journal is not None
     fees = sum((r.fees for r in journal.query()), Decimal("0"))
     return gross_pnl - fees
 
@@ -111,7 +118,7 @@ def test_app_20260326_backtest_baseline_from_disk_cache(runner) -> None:
         for m in day_meta
     ]
 
-    prep = runner.prepare_backtest_event_log(config, event_log)
+    prep = prepare_backtest_event_log(config, event_log)
     rc = runner._enforce_ingest_event_mix(
         config,
         prep.event_log,
@@ -138,12 +145,14 @@ def test_app_20260326_backtest_baseline_from_disk_cache(runner) -> None:
 
     assert outcome.exit_code == 0
 
-    records = list(outcome.orchestrator._trade_journal.query())  # type: ignore[attr-defined]
+    journal = outcome.orchestrator.trade_journal
+    assert journal is not None
+    records = list(journal.query())
     assert len(records) == _BASELINE_FILL_COUNT
 
-    parity_hash = runner.compute_combined_parity_hash(
-        runner.compute_parity_hash(outcome.orchestrator),
-        runner.compute_config_hash(outcome.config),
+    parity_hash = compute_combined_parity_hash(
+        compute_parity_hash(outcome.orchestrator),
+        compute_config_hash(outcome.config),
     )
     assert parity_hash == _BASELINE_PARITY_HASH
     assert _net_pnl_from_orchestrator(outcome.orchestrator) == _BASELINE_NET_PNL

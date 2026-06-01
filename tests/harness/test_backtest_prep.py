@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 from feelies.core.events import NBBOQuote, Trade
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.harness.backtest_prep import (
+    QuoteReplayObserver,
     QuoteTraceIndex,
     prepare_backtest_event_log,
 )
@@ -111,6 +112,16 @@ def test_prepare_backtest_event_log_calibration_respects_cap() -> None:
     )
     prep = prepare_backtest_event_log(config, log)
     assert len(prep.regime_calibration_quotes) == 3
+
+
+def test_quote_replay_observer_shares_trace_with_progress() -> None:
+    observer = QuoteReplayObserver(total_events=2, interval=10_000)
+    q1 = _quote(ts_ns=1, seq=1)
+    q2 = _quote(ts_ns=2, seq=2)
+    observer(q1)
+    observer(q2)
+    assert observer.trace.quote_count == 2
+    assert "2 quotes" in observer.summary()
 
 
 def test_quote_trace_index_tracks_tick_index() -> None:
