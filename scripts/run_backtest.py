@@ -14,7 +14,9 @@ end-to-end suite directly: ``pytest tests/integration/test_phase4_e2e.py``.
 
 Offline replay from gzipped JSONL disk cache (no Massive API key)::
 
-    python scripts/replay_backtest_from_cache.py --symbol SNDU --date 2026-05-01
+    Import and call ``main_cache_replay`` from this module (see
+    ``parse_cache_replay_args``).  Populate cache first with a normal API
+    run using ``--cache-dir``; see ``feelies.storage.cache_replay``.
 """
 
 from __future__ import annotations
@@ -23,18 +25,17 @@ import argparse
 import hashlib
 import json
 import logging
-import os
 import sys
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 _TZ_ET = ZoneInfo("America/New_York")
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Sequence, TypeVar
+from typing import Sequence, TypeVar
 
 # Ensure the project root is on sys.path so `feelies` is importable
 # when running the script directly (e.g. `python scripts/run_backtest.py`).
@@ -42,7 +43,25 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 
 from feelies.bootstrap import build_platform
-from feelies.kernel.signal_order_trace import SignalOrderTraceRow
+from feelies.cli.env import MASSIVE_API_KEY_ERROR, load_dotenv_optional, massive_api_key_from_env
+from feelies.harness.backtest_cli import (
+    ConfigNotFoundError,
+    add_common_backtest_arguments,
+    apply_backtest_cli_overrides,
+    disable_backtest_jsonl_emit_flags,
+    load_platform_config,
+    resolve_backtest_symbols,
+)
+from feelies.harness.backtest_prep import (
+    BacktestEventLogPrep,
+    QuoteTraceIndex,
+    prepare_backtest_event_log,
+)
+from feelies.kernel.orchestrator import Orchestrator
+from feelies.kernel.signal_order_trace import (
+    SignalOrderTraceRow,
+    print_signal_order_trace,
+)
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
     CrossSectionalContext,
@@ -68,6 +87,7 @@ from feelies.ingestion.ingest_health import terminal_symbol_health_rows
 from feelies.ingestion.massive_ingestor import IngestResult
 from feelies.kernel.macro import MacroState
 from feelies.monitoring.in_memory import InMemoryMetricCollector
+from feelies.storage.cache_replay import IngestDayMeta, iter_calendar_dates
 from feelies.storage.disk_event_cache import DiskEventCache
 from feelies.storage.event_resequence import resequence_event_list
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -81,50 +101,43 @@ _RULE_HEAVY = "=" * _W
 _RULE_LIGHT = "-" * _W
 
 
-def _replay_scan_meta(event_log: InMemoryEventLog) -> tuple[int | None, int]:
-    """First replay timestamp (session anchor) + ``NBBOQuote`` count in one pass."""
+def _scan_event_log(
+    event_log: InMemoryEventLog,
+) -> tuple[int | None, int, int]:
+    """First replay timestamp, quote count, and trade count in one pass."""
     first_ts: int | None = None
     n_quotes = 0
+    n_trades = 0
     for ev in event_log.replay():
         if first_ts is None:
             first_ts = int(ev.timestamp_ns)
         if isinstance(ev, NBBOQuote):
             n_quotes += 1
-    return first_ts, n_quotes
-
-
-def _count_event_types(event_log: InMemoryEventLog) -> tuple[int, int]:
-    """Return ``(quote_count, trade_count)`` for the event log.
-
-    Used by ``backtest_reject_zero_ingest_events`` to surface the
-    quote-only or trade-only failure mode that a bare total-count check
-    misses (trade-dependent sensors like ``kyle_lambda_60s`` would never
-    warm if the trade stream is empty).
-    """
-    n_quotes = 0
-    n_trades = 0
-    for ev in event_log.replay():
-        if isinstance(ev, NBBOQuote):
-            n_quotes += 1
         elif isinstance(ev, Trade):
             n_trades += 1
-    return n_quotes, n_trades
+    return first_ts, n_quotes, n_trades
 
 
 def _enforce_ingest_event_mix(
-    config: Any,
+    config: PlatformConfig,
     event_log: InMemoryEventLog,
     *,
     source_label: str,
+    n_quotes: int | None = None,
+    n_trades: int | None = None,
 ) -> int:
     """Apply ``backtest_reject_zero_ingest_events`` per event type.
 
     Returns ``0`` on success or ``1`` if the run should abort.  Logs to
     stderr with the same shape as the legacy total-only check.
+
+    When ``n_quotes`` / ``n_trades`` are supplied (from a fused pre-replay
+    scan), the event log is not rescanned.
     """
     if not config.backtest_reject_zero_ingest_events:
         return 0
-    n_quotes, n_trades = _count_event_types(event_log)
+    if n_quotes is None or n_trades is None:
+        _first_ts, n_quotes, n_trades = _scan_event_log(event_log)
     if n_quotes == 0 and n_trades == 0:
         print(
             f"\n  ERROR: Zero events {source_label} — "
@@ -160,40 +173,6 @@ def _enforce_ingest_event_mix(
             )
             return 1
     return 0
-
-
-def _filter_to_rth(
-    event_log: InMemoryEventLog,
-) -> tuple[InMemoryEventLog, int]:
-    """Return a new EventLog containing only RTH events (09:30–16:00 ET).
-
-    Events are gated on ``exchange_timestamp_ns``.  Events without that
-    attribute (non-market events) are passed through unchanged so the
-    log stays internally consistent.
-
-    Returns the filtered log and the number of events dropped.
-    """
-    _RTH_OPEN_H, _RTH_OPEN_M = 9, 30
-    _RTH_CLOSE_H, _RTH_CLOSE_M = 16, 0
-
-    kept: list[Event] = []
-    dropped = 0
-    for ev in event_log.replay():
-        ts_ns: int | None = getattr(ev, "exchange_timestamp_ns", None)
-        if ts_ns is None:
-            kept.append(ev)
-            continue
-        dt = datetime.fromtimestamp(ts_ns / 1e9, tz=_TZ_ET)
-        open_secs = _RTH_OPEN_H * 3600 + _RTH_OPEN_M * 60
-        close_secs = _RTH_CLOSE_H * 3600 + _RTH_CLOSE_M * 60
-        event_secs = dt.hour * 3600 + dt.minute * 60 + dt.second
-        if open_secs <= event_secs < close_secs:
-            kept.append(ev)
-        else:
-            dropped += 1
-    filtered = InMemoryEventLog()
-    filtered.append_batch(kept)
-    return filtered, dropped
 
 
 def _ensure_backtest_session_anchor(
@@ -274,7 +253,6 @@ class _ProgressReporter:
         self._interval = interval
         self._count = 0
         self._t0 = time.monotonic()
-        self._last_print = self._t0
 
     def __call__(self, event: Event) -> None:
         if not isinstance(event, NBBOQuote):
@@ -290,7 +268,6 @@ class _ProgressReporter:
                 f"({rate:,.0f} q/s, ~{remaining:.0f}s remaining)",
                 flush=True,
             )
-            self._last_print = time.monotonic()
 
     def summary(self) -> str:
         elapsed = time.monotonic() - self._t0
@@ -317,17 +294,30 @@ def _step(msg: str, t0: float | None = None) -> float:
 # ── CLI ──────────────────────────────────────────────────────────────
 
 
+# Backward-compatible alias for tests and report helpers that import ``DaySource``.
+DaySource = IngestDayMeta
+
+
+def _load_backtest_config(args: argparse.Namespace) -> PlatformConfig | None:
+    """Load platform YAML and apply CLI stress / symbol overrides."""
+    try:
+        config = load_platform_config(args.config)
+    except ConfigNotFoundError as exc:
+        print(f"ERROR: Config file not found: {exc.path}", file=sys.stderr)
+        return None
+    return apply_backtest_cli_overrides(
+        config,
+        inv12_stress=args.inv12_stress,
+        stress_cost=args.stress_cost,
+        symbols=args.symbol,
+    )
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Run a historical backtest with real Massive L1 data.",
     )
-    p.add_argument(
-        "--symbol",
-        type=str,
-        nargs="+",
-        default=None,
-        help="Trading symbol(s), space-separated (default: from platform.yaml)",
-    )
+    add_common_backtest_arguments(p)
     p.add_argument(
         "--date",
         type=str,
@@ -335,42 +325,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Start date in YYYY-MM-DD format (required)",
     )
     p.add_argument(
-        "--end-date",
-        type=str,
-        default=None,
-        help="End date in YYYY-MM-DD (default: same as --date)",
-    )
-    p.add_argument(
-        "--config",
-        type=str,
-        default="platform.yaml",
-        help="Path to platform.yaml (default: platform.yaml)",
-    )
-    p.add_argument(
-        "--cache-dir",
-        type=str,
-        default=None,
-        help="Disk cache directory (default: ~/.feelies/cache/)",
-    )
-    p.add_argument(
         "--no-cache",
         action="store_true",
         help="Force re-download, skip disk cache",
-    )
-    p.add_argument(
-        "--stress-cost",
-        type=float,
-        default=1.0,
-        metavar="MULT",
-        help="Cost stress multiplier (e.g. 1.5 = 50%% higher fees, default: 1.0)",
-    )
-    p.add_argument(
-        "--inv12-stress",
-        action="store_true",
-        help=(
-            "Apply Inv-12 joint stress: 1.5× cost_stress_multiplier and "
-            "2× backtest_fill_latency_ns (BT-9). Supersedes --stress-cost."
-        ),
     )
     p.add_argument(
         "--emit-fills-jsonl",
@@ -387,9 +344,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     # ── Phase-2 emit flags (composable with --emit-fills-jsonl) ─────
-    # Each flag dumps one JSON object per relevant event in arrival
-    # order, prefixed with a tag so consumers can grep / split a
-    # single run's stdout into separate Level-N parity streams.
     p.add_argument(
         "--emit-sensor-readings-jsonl",
         action="store_true",
@@ -417,7 +371,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "parity test (Phase-2 plan §3.7)."
         ),
     )
-    # ── Phase-3 emit flags (composable with Phase-1/2 emitters) ─────
     p.add_argument(
         "--emit-signals-jsonl",
         action="store_true",
@@ -429,7 +382,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "(docs/three_layer_architecture.md §11.2)."
         ),
     )
-    # ── Phase-3.1 emit flags (composable with all prior emitters) ───
     p.add_argument(
         "--emit-hazard-spikes-jsonl",
         action="store_true",
@@ -440,7 +392,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "§20.11.2)."
         ),
     )
-    # ── Phase-4 emit flags (composable with all prior emitters) ────
     p.add_argument(
         "--emit-cross-sectional-jsonl",
         action="store_true",
@@ -469,18 +420,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Level-4 hazard-exit determinism tests."
         ),
     )
-    p.add_argument(
-        "--trace-signal-orders",
-        action="store_true",
-        help=(
-            "After the run, print a diagnostic table for standalone SIGNAL "
-            "→ order handling: alpha id (strategy_id), signal timestamp "
-            "(ET), translated TradingIntent when evaluated, outcome, and "
-            "reasons. Includes arbitration losers and bus-filtered Signals "
-            "(wrong layer / portfolio-consumed); horizon alphas never "
-            "published do not appear."
-        ),
-    )
     return p.parse_args(argv)
 
 
@@ -492,49 +431,10 @@ def parse_cache_replay_args(argv: list[str] | None = None) -> argparse.Namespace
             "(see DiskEventCache layout under ~/.feelies/cache by default)."
         ),
     )
-    p.add_argument(
-        "--symbol",
-        type=str,
-        nargs="+",
-        default=None,
-        help="Symbols (default: from platform.yaml)",
-    )
+    add_common_backtest_arguments(p)
     p.add_argument("--date", type=str, required=True, help="YYYY-MM-DD")
-    p.add_argument("--end-date", type=str, default=None, help="YYYY-MM-DD inclusive")
-    p.add_argument("--config", type=str, default="platform.yaml")
-    p.add_argument(
-        "--cache-dir",
-        type=str,
-        default=None,
-        help="Disk cache root (default: ~/.feelies/cache)",
-    )
-    p.add_argument("--trace-signal-orders", action="store_true")
-    p.add_argument(
-        "--stress-cost",
-        type=float,
-        default=1.0,
-        metavar="MULT",
-        help="Cost stress multiplier (same as run_backtest.py)",
-    )
-    p.add_argument(
-        "--inv12-stress",
-        action="store_true",
-        help=(
-            "Apply Inv-12 joint stress: 1.5× cost_stress_multiplier and "
-            "2× backtest_fill_latency_ns (BT-9). Supersedes --stress-cost."
-        ),
-    )
     args = p.parse_args(argv)
-    # Shared Phase-2 JSONL emit hooks default off for this entry-point.
-    args.emit_fills_jsonl = False
-    args.emit_sensor_readings_jsonl = False
-    args.emit_horizon_ticks_jsonl = False
-    args.emit_snapshots_jsonl = False
-    args.emit_signals_jsonl = False
-    args.emit_hazard_spikes_jsonl = False
-    args.emit_cross_sectional_jsonl = False
-    args.emit_sized_intents_jsonl = False
-    args.emit_hazard_exits_jsonl = False
+    disable_backtest_jsonl_emit_flags(args)
     return args
 
 
@@ -836,35 +736,6 @@ def _emit_phase2_jsonl(args: argparse.Namespace, recorder: BusRecorder) -> None:
 # ── Ingestion ────────────────────────────────────────────────────────
 
 
-def _iter_dates(start_date: str, end_date: str) -> list[str]:
-    """Generate YYYY-MM-DD strings for each calendar date in [start, end]."""
-    start = date.fromisoformat(start_date)
-    end = date.fromisoformat(end_date)
-    dates: list[str] = []
-    current = start
-    while current <= end:
-        dates.append(current.isoformat())
-        current += timedelta(days=1)
-    return dates
-
-
-def _resequence(
-    events: list[NBBOQuote | Trade],
-) -> list[NBBOQuote | Trade]:
-    """Sort by exchange time (deterministic tie-breakers) and re-sequence."""
-    return resequence_event_list(events)
-
-
-@dataclass(frozen=True)
-class DaySource:
-    """Provenance for a single (symbol, date) ingestion."""
-    symbol: str
-    date: str
-    source: str
-    event_count: int
-    ingestion_health: str | None = None
-
-
 def ingest_data(
     api_key: str,
     symbols: list[str],
@@ -884,7 +755,7 @@ def ingest_data(
         resolved_dir = cache_dir or Path.home() / ".feelies" / "cache"
         cache = DiskEventCache(resolved_dir)
 
-    dates = _iter_dates(start_date, end_date)
+    dates = iter_calendar_dates(start_date, end_date)
     multi_day_or_symbol = len(symbols) * len(dates) > 1
     all_events: list[NBBOQuote | Trade] = []
     day_sources: list[DaySource] = []
@@ -933,7 +804,6 @@ def ingest_data(
             )
 
             print(f"  {symbol} {day}: fetching from API ...", flush=True)
-            _fetch_t0 = time.monotonic()
 
             def _on_page(
                 feed_type: str, page_num: int, total: int, elapsed: float,
@@ -982,7 +852,7 @@ def ingest_data(
                     flush=True,
                 )
 
-    resequenced = _resequence(all_events)
+    resequenced = resequence_event_list(all_events)
 
     event_log = InMemoryEventLog()
     event_log.append_batch(resequenced)
@@ -1001,18 +871,17 @@ def ingest_data(
     return event_log, ingest_result, day_sources
 
 
-def _warn_if_unhealthy_manifest_days(day_sources: Sequence[Any]) -> None:
+def _warn_if_unhealthy_manifest_days(day_sources: Sequence[DaySource]) -> None:
     """Advisory banner when ingest/cache metadata reports degraded health."""
-    bad: list[Any] = []
+    bad: list[DaySource] = []
     for ds in day_sources:
-        h = getattr(ds, "ingestion_health", None)
+        h = ds.ingestion_health
         if h is not None and h != "HEALTHY":
             bad.append(ds)
     if not bad:
         return
     lines = [
-        f"    {getattr(ds, 'symbol', '?')} {getattr(ds, 'date', '?')}: "
-        f"{getattr(ds, 'ingestion_health', '?')!r}"
+        f"    {ds.symbol} {ds.date}: {ds.ingestion_health!r}"
         for ds in bad[:20]
     ]
     extra = "" if len(bad) <= 20 else f"\n    ... and {len(bad) - 20} more day(s)"
@@ -1111,16 +980,17 @@ def generate_report(
     tick_latency_events: list[MetricEvent] | None = None,
     ingest_result: IngestResult,
     config: PlatformConfig,
-    orchestrator: object,
+    orchestrator: Orchestrator,
     symbol_str: str,
     date_range: str,
     day_sources: list[DaySource] | None = None,
     data_version: str | None = None,
+    quote_trace: QuoteTraceIndex | None = None,
+    n_quotes: int | None = None,
 ) -> str:
     """Build the full backtest report string."""
     from feelies.storage.trade_journal import TradeRecord
 
-    quotes = recorder.of_type(NBBOQuote)
     raw_signals = recorder.of_type(Signal)
     signals = _dedupe_republished_signal_events(raw_signals)
     orders = recorder.of_type(OrderRequest)
@@ -1136,6 +1006,13 @@ def generate_report(
     flat_signals = [s for s in signals if s.direction == SignalDirection.FLAT]
 
     horizon_snapshots = recorder.of_type(HorizonFeatureSnapshot)
+
+    if quote_trace is not None:
+        quote_count = quote_trace.quote_count
+    elif n_quotes is not None:
+        quote_count = n_quotes
+    else:
+        quote_count = len(recorder.of_type(NBBOQuote))
 
     total_shares = sum(abs(a.filled_quantity) for a in filled_acks)
 
@@ -1162,7 +1039,8 @@ def generate_report(
     return_pct = float(net_pnl) / starting_equity * 100.0 if starting_equity else 0.0
 
     # ── Trade summary ────────────────────────────────────────────
-    journal = orchestrator._trade_journal  # type: ignore[attr-defined]
+    journal = orchestrator.trade_journal
+    assert journal is not None, "backtest orchestrator must attach trade_journal"
     records: list[TradeRecord] = list(journal.query())
 
     open_positions = sum(1 for p in all_pos.values() if p.quantity != 0)
@@ -1260,24 +1138,45 @@ def generate_report(
             p99_tick_ns = values[min(len(values) - 1, int(0.99 * len(values)))]
 
             spike = max(tick_metrics, key=lambda e: e.value)
-            quote_by_cid = {q.correlation_id: q for q in quotes}
-            originating = quote_by_cid.get(spike.correlation_id)
-            tick_index_by_cid = {
-                q.correlation_id: i for i, q in enumerate(quotes, start=1)
-            }
-            tick_idx = tick_index_by_cid.get(spike.correlation_id)
-            max_tick_meta = {
-                "value_ns":          spike.value,
-                "correlation_id":    spike.correlation_id,
-                "kernel_sequence":   spike.sequence,
-                "tick_index":        tick_idx,
-                "n_total_ticks":     len(quotes),
-                "symbol":            originating.symbol if originating else "?",
-                "exchange_ts_ns":    (originating.exchange_timestamp_ns
-                                      if originating else None),
-                "is_first_5_pct":    (tick_idx is not None
-                                      and tick_idx <= max(1, len(quotes) // 20)),
-            }
+            trace_entry = (
+                quote_trace.by_correlation_id.get(spike.correlation_id)
+                if quote_trace is not None
+                else None
+            )
+            if trace_entry is not None:
+                tick_idx = trace_entry.tick_index
+                max_tick_meta = {
+                    "value_ns": spike.value,
+                    "correlation_id": spike.correlation_id,
+                    "kernel_sequence": spike.sequence,
+                    "tick_index": tick_idx,
+                    "n_total_ticks": quote_count,
+                    "symbol": trace_entry.symbol,
+                    "exchange_ts_ns": trace_entry.exchange_timestamp_ns,
+                    "is_first_5_pct": (
+                        tick_idx <= max(1, quote_count // 20)
+                    ),
+                }
+            else:
+                quotes = recorder.of_type(NBBOQuote)
+                quote_by_cid = {q.correlation_id: q for q in quotes}
+                originating = quote_by_cid.get(spike.correlation_id)
+                tick_index_by_cid = {
+                    q.correlation_id: i for i, q in enumerate(quotes, start=1)
+                }
+                tick_idx = tick_index_by_cid.get(spike.correlation_id)
+                max_tick_meta = {
+                    "value_ns":          spike.value,
+                    "correlation_id":    spike.correlation_id,
+                    "kernel_sequence":   spike.sequence,
+                    "tick_index":        tick_idx,
+                    "n_total_ticks":     quote_count,
+                    "symbol":            originating.symbol if originating else "?",
+                    "exchange_ts_ns":    (originating.exchange_timestamp_ns
+                                          if originating else None),
+                    "is_first_5_pct":    (tick_idx is not None
+                                          and tick_idx <= max(1, quote_count // 20)),
+                }
 
     # ── Assemble report ──────────────────────────────────────────
     lines: list[str] = []
@@ -1298,7 +1197,7 @@ def generate_report(
 
     # Pipeline
     lines.append(_section("Signal Pipeline"))
-    lines.append(_kv("Quotes processed", f"{len(quotes):,}"))
+    lines.append(_kv("Quotes processed", f"{quote_count:,}"))
     lines.append(_kv("Feature snapshots", f"{len(horizon_snapshots):,}"))
     lines.append(_kv("Signals emitted", f"{len(signals):,}"))
     if len(raw_signals) != len(signals):
@@ -1456,7 +1355,7 @@ def generate_report(
 # ── Parity hashes (three-hash contract — trade journal + config snapshot) ──
 
 
-def compute_parity_hash(orchestrator: object) -> str:
+def compute_parity_hash(orchestrator: Orchestrator) -> str:
     """SHA-256 over the ordered trade sequence (canonical JSON representation).
 
     Identical inputs MUST yield identical hashes for the same alpha + date range
@@ -1464,7 +1363,8 @@ def compute_parity_hash(orchestrator: object) -> str:
     """
     from feelies.storage.trade_journal import TradeRecord
 
-    journal = orchestrator._trade_journal  # type: ignore[attr-defined]
+    journal = orchestrator.trade_journal
+    assert journal is not None, "backtest orchestrator must attach trade_journal"
     records: list[TradeRecord] = list(journal.query())
     trade_seq = [
         {
@@ -1506,7 +1406,7 @@ ENGINE_VERSION = "0.1.0"
 
 
 def compute_artifact_id(
-    orchestrator: object,
+    orchestrator: Orchestrator,
     config: PlatformConfig,
     *,
     data_version: str,
@@ -1568,7 +1468,7 @@ def run_verification(
     *,
     recorder: BusRecorder,
     ingest_result: IngestResult,
-    orchestrator: object,
+    orchestrator: Orchestrator,
 ) -> list[tuple[str, bool, str]]:
     """Run moderate verification criteria. Returns (name, passed, detail)."""
     results: list[tuple[str, bool, str]] = []
@@ -1600,8 +1500,8 @@ def run_verification(
     results.append(("P&L computable", has_pnl, "realized_pnl tracked" if has_pnl else "missing"))
 
     # 5. Trade journal >= 1
-    journal = orchestrator._trade_journal  # type: ignore[attr-defined]
-    n_records = len(journal)
+    journal = orchestrator.trade_journal
+    n_records = len(journal) if journal is not None else 0
     results.append(("Trade journal", n_records >= 1, f"{n_records} records"))
 
     # 6. Macro state == READY
@@ -1633,49 +1533,6 @@ def print_verification(results: list[tuple[str, bool, str]]) -> bool:
         print(f"    Result: {passed_count}/{total} checks passed. Review failures above.")
     print()
     return all_passed
-
-
-def _signal_ts_iso_et(ns: int) -> str:
-    return datetime.fromtimestamp(
-        ns / 1e9, tz=_TZ_ET,
-    ).strftime("%Y-%m-%d %H:%M:%S.%f ET")
-
-
-def _print_signal_order_trace(rows: list[SignalOrderTraceRow]) -> None:
-    """Human-readable audit of standalone SIGNAL → OrderRequest outcomes."""
-    print(_section("Signal → order trace"), flush=True)
-    if not rows:
-        print(
-            "    (empty — enable with --trace-signal-orders; bus Signals "
-            "that never reached the orchestrator filter are not listed)",
-            flush=True,
-        )
-        print()
-        return
-    w = 118
-    print(
-        f"    {'#':>4}  {'alpha (strategy_id)':^28}  "
-        f"{'signal_timestamp_et':^27}  {'intent':^22}  {'outcome':^16}",
-        flush=True,
-    )
-    print(f"    {'-' * w}", flush=True)
-    for i, r in enumerate(rows, 1):
-        rs = " | ".join(r.reasons)
-        ts_s = _signal_ts_iso_et(r.signal_timestamp_ns)
-        print(
-            f"    {i:4d}  {r.strategy_id:28s}  {ts_s:27s}  "
-            f"{r.trading_intent:22s}  {r.outcome:16s}",
-            flush=True,
-        )
-        print(
-            f"          symbol={r.symbol}  signal_dir={r.signal_direction}  "
-            f"sig_seq={r.signal_sequence}  quote_ts={_signal_ts_iso_et(r.quote_timestamp_ns)}",
-            flush=True,
-        )
-        print(f"          reasons: {rs}", flush=True)
-    print(f"    {'-' * w}", flush=True)
-    print(f"    Total rows: {len(rows)}", flush=True)
-    print()
 
 
 # ── Main ─────────────────────────────────────────────────────────────
@@ -1714,39 +1571,44 @@ def _configure_logging_for_cli() -> None:
     )
 
 
+@dataclass(frozen=True)
+class BacktestRunOutcome:
+    """Result of ``_run_backtest_phases_2_7`` for CLI exit codes and tests."""
+
+    exit_code: int
+    orchestrator: Orchestrator
+    config: PlatformConfig
+
+
 def _run_backtest_phases_2_7(
     args: argparse.Namespace,
     event_log: InMemoryEventLog,
     ingest_result: IngestResult,
-    day_sources: Sequence[Any],
+    day_sources: Sequence[DaySource],
     config: PlatformConfig,
     symbols: list[str],
     symbol_str: str,
     date_range: str,
     run_t0: float,
-) -> int:
+    *,
+    prep: BacktestEventLogPrep | None = None,
+) -> BacktestRunOutcome:
     """Bootstrap → replay → report → verification (shared by API and cache harness)."""
     _warn_if_unhealthy_manifest_days(day_sources)
 
-    # ── RTH filter ────────────────────────────────────────────
-    # When session_kind is "RTH", drop pre-market and after-hours events
-    # before replay.  The pipeline has no timestamp gate of its own;
-    # without this filter the orchestrator processes every event in the
-    # cache (03:59–19:58 ET on 2026-04-08), leading to the last
-    # after-hours tick being measured as the latency spike.
-    if config.session_kind == "RTH":
-        event_log, _dropped = _filter_to_rth(event_log)
-        if _dropped:
-            from dataclasses import replace as _dc_replace
-            ingest_result = _dc_replace(
-                ingest_result,
-                events_ingested=ingest_result.events_ingested - _dropped,
-            )
+    if prep is None:
+        prep = prepare_backtest_event_log(config, event_log)
+    event_log = prep.event_log
+    if prep.rth_dropped:
+        ingest_result = replace(
+            ingest_result,
+            events_ingested=ingest_result.events_ingested - prep.rth_dropped,
+        )
 
-    first_ts, n_quotes = _replay_scan_meta(event_log)
     config = _ensure_backtest_session_anchor(
-        config, first_event_ts_ns=first_ts,
+        config, first_event_ts_ns=prep.first_event_ts_ns,
     )
+    n_quotes = prep.n_quotes
 
     # ── Phase 2: Platform bootstrap ───────────────────────────
     step_t = _step("Composing platform (alphas, engines, risk)")
@@ -1757,6 +1619,8 @@ def _run_backtest_phases_2_7(
         config,
         event_log=event_log,
         signal_order_trace_sink=signal_trace_sink,
+        precomputed_ex_date_spans=prep.calendar_spans,
+        regime_calibration_quotes=prep.regime_calibration_quotes,
     )
     alpha_count = len(orchestrator._alpha_registry) if orchestrator._alpha_registry else 0  # type: ignore[attr-defined]
     dt = time.monotonic() - step_t
@@ -1769,15 +1633,14 @@ def _run_backtest_phases_2_7(
     _skip: set[type] = set()
     if not getattr(args, "emit_sensor_readings_jsonl", False):
         _skip.add(SensorReading)
-    # Skip MetricEvent from the BusRecorder entirely: the sensor registry
-    # emits ~10.4 M «feelies.sensor.reading.count» MetricEvents during
-    # replay, and accumulating them in a flat list triggers a Windows
-    # VirtualAlloc/copy realloc of a ~83 MB buffer late in the session.
-    # The report only needs the ~965 K tick_to_decision_latency_ns entries;
-    # those are captured below via a dedicated subscriber.
+    # Skip NBBOQuote and MetricEvent from the BusRecorder: quotes are indexed
+    # lightly via QuoteTraceIndex; metrics use dedicated subscribers / summaries.
+    _skip.add(NBBOQuote)
     _skip.add(MetricEvent)
     recorder = BusRecorder(skip_types=frozenset(_skip))
+    quote_trace = QuoteTraceIndex()
     orchestrator._bus.subscribe_all(recorder)  # type: ignore[attr-defined]
+    orchestrator._bus.subscribe(NBBOQuote, quote_trace)  # type: ignore[attr-defined]
 
     # Dedicated latency recorder — captures only tick_to_decision_latency_ns
     # MetricEvents so the report can compute p95/p99 and locate the spike
@@ -1802,7 +1665,7 @@ def _run_backtest_phases_2_7(
             f"  ERROR: Boot failed — macro state is {macro.name}, expected READY",
             file=sys.stderr,
         )
-        return 1
+        return BacktestRunOutcome(exit_code=1, orchestrator=orchestrator, config=config_out)
 
     # ── Phase 5: Run pipeline ─────────────────────────────────
     progress = _ProgressReporter(total_events=n_quotes, interval=100_000)
@@ -1817,16 +1680,11 @@ def _run_backtest_phases_2_7(
     # the duration and do a single collection at the end.
     import gc as _gc
     import sys as _sys
-    # Disable raw MetricEvent storage in the InMemoryMetricCollector.
-    # The sensor registry emits ~10.4 M MetricEvents during replay;
-    # accumulating them in a flat list triggers a Windows VirtualAlloc
-    # + memcpy realloc of a ~91 MB buffer near the end of the session.
-    # The report only uses metrics.get_summary() (incremental summaries
-    # in a dict), so the raw list is never read and can be safely discarded.
+    # Bootstrap disables raw MetricEvent storage for BACKTEST; clear any
+    # warmup events accumulated before replay starts.
     _metrics_collector = getattr(orchestrator, "_metrics", None)
-    if _metrics_collector is not None and hasattr(_metrics_collector, "_store_raw_events"):
-        _metrics_collector._store_raw_events = False
-        _metrics_collector._events.clear()  # free warmup events already accumulated
+    if _metrics_collector is not None and hasattr(_metrics_collector, "_events"):
+        _metrics_collector._events.clear()
     _gc.collect()
     _gc.freeze()
     _gc.disable()
@@ -1868,13 +1726,15 @@ def _run_backtest_phases_2_7(
         date_range=date_range,
         day_sources=list(day_sources),
         data_version=_live_data_version(symbols, date_range),
+        quote_trace=quote_trace,
+        n_quotes=n_quotes,
     )
     dt = time.monotonic() - step_t
     print(f"  OK [{dt:.1f}s]", flush=True)
     print(report)
 
     if args.trace_signal_orders and signal_trace_sink is not None:
-        _print_signal_order_trace(signal_trace_sink)
+        print_signal_order_trace(signal_trace_sink)
 
     # ── Phase 7: Verification ─────────────────────────────────
     results = run_verification(
@@ -1891,7 +1751,11 @@ def _run_backtest_phases_2_7(
         _emit_fills_jsonl(recorder)
     _emit_phase2_jsonl(args, recorder)
 
-    return 0 if all_passed else 2
+    return BacktestRunOutcome(
+        exit_code=0 if all_passed else 2,
+        orchestrator=orchestrator,
+        config=config_out,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1913,44 +1777,18 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    # 1. Load .env
-    try:
-        from dotenv import load_dotenv  # pyright: ignore[reportMissingImports]
-        load_dotenv()
-    except ImportError:
-        pass  # dotenv is optional; env vars can be set directly
-
-    api_key = os.getenv("MASSIVE_API_KEY")
-    if not api_key:
-        print(
-            "ERROR: MASSIVE_API_KEY not set.\n"
-            "Set it in your environment or in a .env file.\n"
-            "  export MASSIVE_API_KEY=your_key_here",
-            file=sys.stderr,
-        )
+    # 1. Load .env and API key
+    load_dotenv_optional()
+    api_key = massive_api_key_from_env()
+    if api_key is None:
+        print(MASSIVE_API_KEY_ERROR, file=sys.stderr)
         return 1
 
-    # 2. Load platform config
-    config_path = Path(args.config)
-    if not config_path.exists():
-        print(f"ERROR: Config file not found: {config_path}", file=sys.stderr)
+    config = _load_backtest_config(args)
+    if config is None:
         return 1
 
-    config = PlatformConfig.from_yaml(config_path)
-
-    # Apply Inv-12 joint cost + latency stress (BT-9). Supersedes --stress-cost.
-    if args.inv12_stress:
-        from feelies.core.inv12_stress import apply_inv12_stress
-        config = apply_inv12_stress(config)
-    elif args.stress_cost != 1.0:
-        from dataclasses import replace as _replace
-        config = _replace(config, cost_stress_multiplier=args.stress_cost)
-
-    # Override symbols if provided via CLI
-    if args.symbol:
-        config.symbols = frozenset(s.upper() for s in args.symbol)
-
-    symbols = sorted(config.symbols)
+    symbols = resolve_backtest_symbols(config)
     if not symbols:
         print("ERROR: No symbols specified (use --symbol or set in platform.yaml)", file=sys.stderr)
         return 1
@@ -2004,7 +1842,14 @@ def main(argv: list[str] | None = None) -> int:
         flush=True,
     )
 
-    rc = _enforce_ingest_event_mix(config, event_log, source_label="ingested")
+    prep = prepare_backtest_event_log(config, event_log)
+    rc = _enforce_ingest_event_mix(
+        config,
+        event_log,
+        source_label="ingested",
+        n_quotes=prep.n_quotes,
+        n_trades=prep.n_trades,
+    )
     if rc != 0:
         return rc
 
@@ -2020,7 +1865,8 @@ def main(argv: list[str] | None = None) -> int:
         symbol_str,
         date_range,
         run_t0,
-    )
+        prep=prep,
+    ).exit_code
 
 
 def main_cache_replay(argv: list[str] | None = None) -> int:
@@ -2029,25 +1875,11 @@ def main_cache_replay(argv: list[str] | None = None) -> int:
     _configure_logging_for_cli()
     args = parse_cache_replay_args(argv)
 
-    config_path = Path(args.config)
-    if not config_path.exists():
-        print(f"ERROR: Config file not found: {config_path}", file=sys.stderr)
+    config = _load_backtest_config(args)
+    if config is None:
         return 1
 
-    config = PlatformConfig.from_yaml(config_path)
-
-    if args.inv12_stress:
-        from feelies.core.inv12_stress import apply_inv12_stress
-        config = apply_inv12_stress(config)
-    elif args.stress_cost != 1.0:
-        from dataclasses import replace as _replace
-
-        config = _replace(config, cost_stress_multiplier=args.stress_cost)
-
-    if args.symbol:
-        config.symbols = frozenset(s.upper() for s in args.symbol)
-
-    symbols = sorted(config.symbols)
+    symbols = resolve_backtest_symbols(config)
     if not symbols:
         print(
             "ERROR: No symbols specified (use --symbol or set in platform.yaml)",
@@ -2092,18 +1924,14 @@ def main_cache_replay(argv: list[str] | None = None) -> int:
         flush=True,
     )
 
-    day_sources = [
-        DaySource(
-            symbol=m.symbol,
-            date=m.date,
-            source=m.source,
-            event_count=m.event_count,
-            ingestion_health=m.ingestion_health,
-        )
-        for m in day_meta
-    ]
+    day_sources = list(day_meta)
+    prep = prepare_backtest_event_log(config, event_log)
     rc = _enforce_ingest_event_mix(
-        config, event_log, source_label="loaded from disk cache",
+        config,
+        event_log,
+        source_label="loaded from disk cache",
+        n_quotes=prep.n_quotes,
+        n_trades=prep.n_trades,
     )
     if rc != 0:
         return rc
@@ -2120,7 +1948,8 @@ def main_cache_replay(argv: list[str] | None = None) -> int:
         symbol_str,
         date_range,
         run_t0,
-    )
+        prep=prep,
+    ).exit_code
 
 
 if __name__ == "__main__":

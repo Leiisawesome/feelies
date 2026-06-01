@@ -1,0 +1,149 @@
+"""Locked APP 2026-03-26 backtest regression baseline (Phase 0).
+
+Requires a populated disk cache for ``APP/2026-03-26`` (run once with
+``run_backtest.py`` and ``--cache-dir``).  Uses ``configs/backtest_app.yaml``
+parameter overrides for ``sig_benign_midcap_v1``.
+
+Re-baseline only when the trade path, config contract, or input dataset
+changes intentionally — update constants and ``parity_hash`` in one commit.
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import sys
+import time
+from decimal import Decimal
+from pathlib import Path
+
+import pytest
+
+from feelies.core.platform_config import PlatformConfig
+from feelies.storage.cache_replay import CacheReplayError, load_event_log_from_disk_cache
+
+_BASELINE_SYMBOL = "APP"
+_BASELINE_DATE = "2026-03-26"
+_BASELINE_CONFIG = Path("configs/backtest_app.yaml")
+_BASELINE_PARITY_HASH = (
+    "f726c1754c2478ba26aba9b28bbf6cfc6549ec6c7c6b22fc9d19892c4ce21cc0"
+)
+_BASELINE_NET_PNL = Decimal("22.27")
+_BASELINE_FILL_COUNT = 2
+
+
+def _load_runner():
+    spec = importlib.util.spec_from_file_location(
+        "_backtest_app_baseline_runner",
+        Path("scripts/run_backtest.py").resolve(),
+    )
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_backtest_app_baseline_runner"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _net_pnl_from_orchestrator(orchestrator: object) -> Decimal:
+    """Mirror ``generate_report`` net PnL at flat book (gross − journal fees)."""
+    positions = orchestrator._positions  # type: ignore[attr-defined]
+    all_pos = positions.all_positions()
+    gross_pnl = sum(
+        (p.realized_pnl + p.unrealized_pnl for p in all_pos.values()),
+        Decimal("0"),
+    )
+    journal = orchestrator._trade_journal  # type: ignore[attr-defined]
+    fees = sum((r.fees for r in journal.query()), Decimal("0"))
+    return gross_pnl - fees
+
+
+@pytest.fixture(scope="module")
+def runner():
+    return _load_runner()
+
+
+def _cache_args() -> argparse.Namespace:
+    return argparse.Namespace(
+        trace_signal_orders=False,
+        emit_fills_jsonl=False,
+        emit_sensor_readings_jsonl=False,
+        emit_horizon_ticks_jsonl=False,
+        emit_snapshots_jsonl=False,
+        emit_signals_jsonl=False,
+        emit_hazard_spikes_jsonl=False,
+        emit_cross_sectional_jsonl=False,
+        emit_sized_intents_jsonl=False,
+        emit_hazard_exits_jsonl=False,
+    )
+
+
+@pytest.mark.functional
+def test_app_20260326_backtest_baseline_from_disk_cache(runner) -> None:
+    """Replay APP 2026-03-26 from disk cache; pin parity_hash and PnL."""
+    if not _BASELINE_CONFIG.exists():
+        pytest.fail(f"Missing baseline config: {_BASELINE_CONFIG}")
+
+    try:
+        event_log, ingest_result, day_meta = load_event_log_from_disk_cache(
+            [_BASELINE_SYMBOL],
+            _BASELINE_DATE,
+            _BASELINE_DATE,
+        )
+    except CacheReplayError as exc:
+        pytest.skip(
+            "Disk cache miss for APP/2026-03-26 — populate with:\n"
+            "  uv run python scripts/run_backtest.py "
+            f"--config {_BASELINE_CONFIG} --symbol {_BASELINE_SYMBOL} "
+            f"--date {_BASELINE_DATE}\n"
+            f"  ({exc})"
+        )
+
+    config = PlatformConfig.from_yaml(_BASELINE_CONFIG)
+    symbols = sorted(config.symbols)
+    day_sources = [
+        runner.DaySource(
+            symbol=m.symbol,
+            date=m.date,
+            source=m.source,
+            event_count=m.event_count,
+            ingestion_health=m.ingestion_health,
+        )
+        for m in day_meta
+    ]
+
+    prep = runner.prepare_backtest_event_log(config, event_log)
+    rc = runner._enforce_ingest_event_mix(
+        config,
+        prep.event_log,
+        source_label="loaded from disk cache (baseline test)",
+        n_quotes=prep.n_quotes,
+        n_trades=prep.n_trades,
+    )
+    assert rc == 0
+
+    config = runner._attach_day_source_provenance(config, symbols, day_sources)
+
+    outcome = runner._run_backtest_phases_2_7(
+        _cache_args(),
+        event_log,
+        ingest_result,
+        day_sources,
+        config,
+        symbols,
+        _BASELINE_SYMBOL,
+        _BASELINE_DATE,
+        time.monotonic(),
+        prep=prep,
+    )
+
+    assert outcome.exit_code == 0
+
+    records = list(outcome.orchestrator._trade_journal.query())  # type: ignore[attr-defined]
+    assert len(records) == _BASELINE_FILL_COUNT
+
+    parity_hash = runner.compute_combined_parity_hash(
+        runner.compute_parity_hash(outcome.orchestrator),
+        runner.compute_config_hash(outcome.config),
+    )
+    assert parity_hash == _BASELINE_PARITY_HASH
+    assert _net_pnl_from_orchestrator(outcome.orchestrator) == _BASELINE_NET_PNL

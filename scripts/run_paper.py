@@ -34,7 +34,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import signal
 import sys
 import threading
@@ -48,8 +47,10 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 
 from feelies.bootstrap import build_platform
+from feelies.cli.env import MASSIVE_API_KEY_ERROR, load_dotenv_optional, massive_api_key_from_env
 from feelies.core.events import OrderAck, Signal
 from feelies.core.platform_config import OperatingMode, PlatformConfig
+from feelies.harness.backtest_cli import ConfigNotFoundError, load_platform_config
 from feelies.kernel.macro import MacroState
 from feelies.monitoring.paper_session_recorder import (
     PaperSessionRecorder,
@@ -171,29 +172,20 @@ def main(argv: list[str] | None = None) -> int:
     _configure_logging()
     args = _parse_args(argv)
 
+    load_dotenv_optional()
+
+    if massive_api_key_from_env() is None:
+        print(MASSIVE_API_KEY_ERROR, file=sys.stderr)
+        return 1
+
     try:
-        from dotenv import load_dotenv  # pyright: ignore[reportMissingImports]
-        load_dotenv()
-    except ImportError:
-        pass
-
-    if not os.getenv("MASSIVE_API_KEY"):
-        print(
-            "ERROR: MASSIVE_API_KEY not set.\n"
-            "Set it in your environment or in a .env file.",
-            file=sys.stderr,
-        )
+        config = load_platform_config(args.config)
+    except ConfigNotFoundError as exc:
+        print(f"ERROR: Config file not found: {exc.path}", file=sys.stderr)
         return 1
-
-    config_path = Path(args.config)
-    if not config_path.exists():
-        print(f"ERROR: Config file not found: {config_path}", file=sys.stderr)
-        return 1
-
-    config = PlatformConfig.from_yaml(config_path)
     if config.mode != OperatingMode.PAPER:
         print(
-            f"ERROR: {config_path} has mode={config.mode.name}; "
+            f"ERROR: {args.config} has mode={config.mode.name}; "
             "run_paper.py requires mode: PAPER",
             file=sys.stderr,
         )
