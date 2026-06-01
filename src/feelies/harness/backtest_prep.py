@@ -70,7 +70,7 @@ class BacktestEventLogPrep:
     n_trades: int
     rth_dropped: int
     calendar_spans: dict[str, tuple[date, date]]
-    regime_calibration_quotes: tuple[NBBOQuote, ...]
+    regime_calibration_quotes: tuple[NBBOQuote, ...] | None
 
 
 def _in_rth(exchange_timestamp_ns: int) -> bool:
@@ -157,5 +157,5 @@ def prepare_backtest_event_log(
         n_trades=n_trades,
         rth_dropped=rth_dropped,
         calendar_spans=calendar_spans,
-        regime_calibration_quotes=tuple(cal_quotes),
+        regime_calibration_quotes=tuple(cal_quotes) if max_cal is not None else None,
     )
