@@ -78,6 +78,8 @@ Invariants preserved:
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from dataclasses import dataclass, replace
 from decimal import Decimal
 
@@ -192,7 +194,7 @@ class BacktestOrderRouter:
             )
         self._rth_gate = RthEntryFillGate(trading_session_bounds)
 
-    def bind_position_qty(self, fn) -> None:
+    def bind_position_qty(self, fn: Callable[[str], int]) -> None:
         """Wire signed position qty for RTH entry/exit discrimination (BT-16)."""
         self._rth_gate.bind_position_qty(fn)
 
