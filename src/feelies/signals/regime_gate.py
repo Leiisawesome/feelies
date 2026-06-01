@@ -651,7 +651,7 @@ class RegimeGate:
             )
         spec_map: Mapping[str, Any] = spec
         on_condition = spec_map.get("on_condition")
-        off_condition = spec.get("off_condition")
+        off_condition = spec_map.get("off_condition")
         if not isinstance(on_condition, str) or not on_condition.strip():
             raise RegimeGateError(
                 f"alpha {alpha_id!r}: regime_gate.on_condition must be "
