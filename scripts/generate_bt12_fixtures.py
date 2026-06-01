@@ -37,6 +37,7 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     meta = {
         "schema": "bt12_post_fix_backtest_surrogate_v1",
+        "source": "surrogate_v1",
         "description": (
             "Per-alpha OOS daily return surrogate for BT-12 acceptance. "
             "Replace with artefact-store curves from post-fix replay when ready."

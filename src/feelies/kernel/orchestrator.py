@@ -105,7 +105,6 @@ from feelies.execution.intent import (
     TradingIntent,
 )
 from feelies.execution.order_state import OrderState, create_order_state_machine
-from feelies.execution.trading_session import TradingSessionBounds
 from feelies.execution.regulatory.borrow_availability import (
     BorrowTier,
     build_borrow_table,
@@ -545,19 +544,6 @@ class Orchestrator:
         # symbols default to AVAILABLE.  Cached from config in boot().
         self._borrow_tier: dict[str, BorrowTier] = {}
 
-        # ── BT-8: MOC strategy routing ────────────────────────────────
-        # Set of strategy_ids whose entries route as MOC orders, and a
-        # flag indicating whether MOC session bounds were successfully
-        # resolved at boot().  Defaulted to empty/False here so configs
-        # without ``moc_strategy_ids`` (and tests using minimal configs)
-        # do not raise AttributeError on the entry-order path.
-        self._moc_strategy_ids: frozenset[str] = frozenset()
-        self._moc_bounds_configured: bool = False
-
-        # BT-16: RTH entry-fill suppression + close buying-power phase flip.
-        self._trading_session_bounds: TradingSessionBounds | None = None
-        self._rth_close_bp_flipped: bool = False
-
         # When True, entry/exit orders use LIMIT at BBO instead of
         # MARKET.  Stop-loss exits always use MARKET (fail-safe).
         # Set from config via boot().
@@ -775,73 +761,6 @@ class Orchestrator:
                 "use reset_risk_escalation() or unlock_from_lockdown()",
             )
 
-    def _bind_router_position_qty_for_rth(self) -> None:
-        """BT-16: wire signed live position qty into the router's RTH gate.
-
-        The router-side :class:`RthEntryFillGate` defaults ``current_qty``
-        to 0 when unbound, which would mis-classify exit fills as new
-        entries and suppress them after RTH close (violating Inv-11 for
-        the execution layer).  Binding is a no-op when RTH gating is
-        disabled (``_trading_session_bounds is None``) or when the
-        backend's router does not expose ``bind_position_qty``
-        (e.g. live broker routers without the hook).
-        """
-        if self._trading_session_bounds is None:
-            return
-        router = getattr(self._backend, "order_router", None)
-        bind = getattr(router, "bind_position_qty", None)
-        if not callable(bind):
-            return
-        bind(lambda sym: self._positions.get(sym).quantity)
-
-    def _maybe_flip_buying_power_at_rth_close(self, quote: NBBOQuote) -> None:
-        """BT-16: flip risk-engine buying-power phase at RTH close.
-
-        Once-per-session: the first quote with
-        ``exchange_timestamp_ns >= rth_close_ns`` transitions the risk
-        engine to :attr:`BuyingPowerPhase.OVERNIGHT` so the 2× overnight
-        multiplier is applied to any exits that linger past the close.
-        Compared against ``exchange_timestamp_ns`` rather than
-        ``timestamp_ns`` so the flip aligns with the exchange-time RTH
-        close used by router-side entry gating
-        (``BacktestOrderRouter`` / ``PassiveLimitOrderRouter`` and
-        :class:`TradingSessionBounds`).  No-op when RTH gating is
-        disabled, the flip has already fired this session, or the risk
-        engine does not expose ``set_buying_power_phase``.
-        """
-        if self._rth_close_bp_flipped:
-            return
-        bounds = self._trading_session_bounds
-        if bounds is None:
-            return
-        if quote.exchange_timestamp_ns < bounds.rth_close_ns:
-            return
-        set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
-        if not callable(set_phase):
-            self._rth_close_bp_flipped = True
-            return
-        from feelies.risk.buying_power import BuyingPowerPhase
-
-        set_phase(BuyingPowerPhase.OVERNIGHT)
-        self._rth_close_bp_flipped = True
-
-    def _reset_buying_power_phase_for_session(self) -> None:
-        """BT-16: reset the once-per-session RTH-close BP flip state.
-
-        Clears the latch that gates :meth:`_maybe_flip_buying_power_at_rth_close`
-        and forces the risk engine back onto
-        :attr:`BuyingPowerPhase.INTRADAY` so a new session always opens
-        on the 4× intraday cap — even when the same orchestrator
-        instance is reused across runs and the previous run left the
-        engine flipped to ``OVERNIGHT`` after crossing the close.
-        """
-        self._rth_close_bp_flipped = False
-        set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
-        if callable(set_phase):
-            from feelies.risk.buying_power import BuyingPowerPhase
-
-            set_phase(BuyingPowerPhase.INTRADAY)
-
     # ── Lifecycle: boot / run / shutdown ────────────────────────────
 
     def boot(self, config: Configuration) -> None:
@@ -887,70 +806,6 @@ class Orchestrator:
                 self._ssr_mode = config.ssr_mode
             if hasattr(config, "borrow_availability"):
                 self._borrow_tier = build_borrow_table(config.borrow_availability)
-            if hasattr(config, "moc_strategy_ids"):
-                self._moc_strategy_ids = frozenset(config.moc_strategy_ids)
-                if config.moc_strategy_ids:
-                    from feelies.execution.moc_session import (
-                        build_moc_bounds_from_platform,
-                    )
-
-                    _event_cal = getattr(config, "event_calendar_path", None)
-                    cal_path = (
-                        str(_event_cal) if _event_cal is not None else None
-                    )
-                    self._moc_bounds_configured = (
-                        build_moc_bounds_from_platform(
-                            moc_session_date=getattr(
-                                config, "moc_session_date", None,
-                            ),
-                            event_calendar_path=cal_path,
-                            moc_cutoff_et=getattr(
-                                config, "moc_cutoff_et", "15:50",
-                            ),
-                            official_close_et=getattr(
-                                config, "official_close_et", "16:00",
-                            ),
-                            early_close_dates=getattr(
-                                config, "early_close_dates", (),
-                            ),
-                            early_close_moc_cutoff_et=getattr(
-                                config, "early_close_moc_cutoff_et", "12:50",
-                            ),
-                            early_close_official_close_et=getattr(
-                                config, "early_close_official_close_et", "13:00",
-                            ),
-                        )
-                        is not None
-                    )
-            if getattr(config, "rth_session_gating_enabled", False):
-                from feelies.execution.trading_session import (
-                    build_trading_session_from_platform,
-                )
-
-                _event_cal = getattr(config, "event_calendar_path", None)
-                cal_path = (
-                    str(_event_cal) if _event_cal is not None else None
-                )
-                self._trading_session_bounds = build_trading_session_from_platform(
-                    rth_session_gating_enabled=True,
-                    rth_session_date=(
-                        getattr(config, "rth_session_date", None)
-                        or getattr(config, "moc_session_date", None)
-                    ),
-                    event_calendar_path=cal_path,
-                    rth_open_et=getattr(config, "rth_open_et", "09:30"),
-                    rth_close_et=getattr(config, "rth_close_et", "16:00"),
-                    early_close_dates=getattr(config, "early_close_dates", ()),
-                    early_close_rth_close_et=getattr(
-                        config, "early_close_rth_close_et", "13:00",
-                    ),
-                    market_holiday_dates=getattr(
-                        config, "market_holiday_dates", (),
-                    ),
-                    no_entry_first_seconds=getattr(
-                        config, "no_entry_first_seconds", 0,
-                    ),
-                )
             if hasattr(config, "execution_mode"):
                 # passive_limit and minimum_cost both wire through the
                 # passive-limit backend.  The static flag tells the
@@ -1043,8 +898,6 @@ class Orchestrator:
         self._require_safe_session_entry()
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:backtest")
-        self._reset_buying_power_phase_for_session()
-        self._bind_router_position_qty_for_rth()
         self._pending_sized_intents.clear()
         self._consumed_by_portfolio_ids = None
         self._reset_regime_session_state()
@@ -1081,8 +934,6 @@ class Orchestrator:
         self._require_safe_session_entry()
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:paper")
-        self._reset_buying_power_phase_for_session()
-        self._bind_router_position_qty_for_rth()
         self._pending_sized_intents.clear()
         self._consumed_by_portfolio_ids = None
         self._reset_regime_session_state()
@@ -1118,8 +969,6 @@ class Orchestrator:
         self._require_safe_session_entry()
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:live")
-        self._reset_buying_power_phase_for_session()
-        self._bind_router_position_qty_for_rth()
         self._pending_sized_intents.clear()
         self._reset_regime_session_state()
         self._macro.transition(
@@ -1285,14 +1134,6 @@ class Orchestrator:
         # ``_backend is not None`` for partially-constructed test
         # orchestrators; production paths always have a backend.
         if self._backend is not None:
-            # BT-8: terminate MOC orders that never received a
-            # closing-auction print so they don't survive shutdown
-            # as ACKNOWLEDGED-but-never-filled (Inv-4 hygiene).
-            expire_moc = getattr(
-                self._backend.order_router, "expire_pending_moc", None,
-            )
-            if expire_moc is not None:
-                expire_moc()
             self._drain_async_fills(correlation_id="shutdown")
         self._checkpoint_feature_snapshots()
         # Resolve operator cancel intent when no broker ack will arrive
@@ -1892,13 +1733,6 @@ class Orchestrator:
                 refresh_hwm(self._positions)
             if self._strategy_positions is not None:
                 self._strategy_positions.update_mark(quote.symbol, mid)
-        # BT-16: drive the RTH-close buying-power flip purely from the
-        # quote's exchange timestamp so it always aligns with router-side
-        # entry gating, even on ticks that fail the mid guard (zeroed or
-        # invalid BBO).  Otherwise the engine could remain on intraday
-        # buying power past the close while the router already treats
-        # the session as closed — inconsistent risk vs execution.
-        self._maybe_flip_buying_power_at_rth_close(quote)
 
         # ── Quote-driven router ack drain ────────────────────────
         # bus.publish(quote) triggered on_quote() on the router, which
@@ -3165,14 +2999,7 @@ class Orchestrator:
 
                 order_type = OrderType.MARKET
                 limit_price: Decimal | None = None
-                entry_is_moc = (
-                    intent.strategy_id in self._moc_strategy_ids
-                    and self._moc_bounds_configured
-                )
-                if entry_is_moc:
-                    order_type = OrderType.MARKET
-                    limit_price = None
-                elif self._use_passive_entries:
+                if self._use_passive_entries:
                     use_passive = True
                     if self._min_cost_policy is not None:
                         decision = self._min_cost_policy.decide(
@@ -3203,7 +3030,6 @@ class Orchestrator:
                     limit_price=limit_price,
                     strategy_id=intent.strategy_id,
                     is_short=is_short,
-                    is_moc=entry_is_moc,
                     g12_disclosed_cost_total_bps=(
                         intent.signal.disclosed_cost_total_bps
                     ),
@@ -3419,16 +3245,8 @@ class Orchestrator:
 
         order_type = OrderType.MARKET
         limit_price: Decimal | None = None
-        is_moc = (
-            intent.strategy_id in self._moc_strategy_ids
-            and self._moc_bounds_configured
-            and not is_exit_or_stop
-        )
 
-        if is_moc:
-            order_type = OrderType.MARKET
-            limit_price = None
-        elif self._use_passive_entries and quote is not None:
+        if self._use_passive_entries and quote is not None:
             is_stop_exit = intent.signal.strategy_id == "__stop_exit__"
             if not is_stop_exit:
                 # Default: post passive at the near BBO.  When the
@@ -3466,7 +3284,6 @@ class Orchestrator:
                 limit_price=limit_price,
                 strategy_id=intent.strategy_id,
                 is_short=is_short,
-                is_moc=is_moc,
                 g12_disclosed_cost_total_bps=(
                     intent.signal.disclosed_cost_total_bps
                 ),
@@ -3593,6 +3410,16 @@ class Orchestrator:
             self._bus.publish(ack)
             self._apply_ack_to_order(ack)
         self._reconcile_fills(acks, order.correlation_id)
+        if order_id in self._active_orders:
+            sm_post = self._active_orders[order_id][0]
+            if sm_post.state == OrderState.CANCEL_REQUESTED:
+                if sm_post.can_transition(OrderState.CANCELLED):
+                    sm_post.transition(
+                        OrderState.CANCELLED,
+                        trigger="cancel_no_broker_ack_local_terminal",
+                        correlation_id=order.correlation_id,
+                    )
+        self._prune_terminal_orders()
         return True
 
     def _has_pending_order_for_symbol(self, symbol: str) -> bool:
