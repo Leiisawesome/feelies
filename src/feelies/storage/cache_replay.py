@@ -18,7 +18,13 @@ from feelies.storage.disk_event_cache import DiskEventCache
 from feelies.storage.event_resequence import resequence_event_list
 from feelies.storage.memory_event_log import InMemoryEventLog
 
-__all__ = ["CacheReplayError", "DiskCacheDayMeta", "load_event_log_from_disk_cache"]
+__all__ = [
+    "CacheReplayError",
+    "DiskCacheDayMeta",
+    "IngestDayMeta",
+    "iter_calendar_dates",
+    "load_event_log_from_disk_cache",
+]
 
 
 class CacheReplayError(RuntimeError):
@@ -26,17 +32,22 @@ class CacheReplayError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class DiskCacheDayMeta:
-    """Provenance for one loaded cache file (mirrors scripts/run_backtest DaySource)."""
+class IngestDayMeta:
+    """Provenance for a single (symbol, date) ingestion or cache load."""
 
     symbol: str
     date: str
-    source: Literal["cache"]
+    source: Literal["cache", "api"] | str
     event_count: int
     ingestion_health: str | None = None
 
 
-def _iter_dates(start_date: str, end_date: str) -> list[str]:
+# Backward-compatible alias for callers that predated ``IngestDayMeta``.
+DiskCacheDayMeta = IngestDayMeta
+
+
+def iter_calendar_dates(start_date: str, end_date: str) -> list[str]:
+    """Return YYYY-MM-DD strings for each calendar date in ``[start, end]``."""
     start = date.fromisoformat(start_date)
     end = date.fromisoformat(end_date)
     dates: list[str] = []
@@ -54,7 +65,7 @@ def load_event_log_from_disk_cache(
     *,
     cache_dir: Path | None = None,
     require_healthy_ingestion_manifests: bool = False,
-) -> tuple[InMemoryEventLog, IngestResult, list[DiskCacheDayMeta]]:
+) -> tuple[InMemoryEventLog, IngestResult, list[IngestDayMeta]]:
     """Load and merge cached JSONL.gz days; fail fast if any day is absent.
 
     No network I/O.  Re-sequences identically to
@@ -66,7 +77,7 @@ def load_event_log_from_disk_cache(
     """
     resolved = cache_dir if cache_dir is not None else Path.home() / ".feelies" / "cache"
     cache = DiskEventCache(resolved)
-    dates = _iter_dates(start_date, end_date)
+    dates = iter_calendar_dates(start_date, end_date)
     syms = [s.upper() for s in symbols]
 
     missing: list[str] = []
@@ -83,7 +94,7 @@ def load_event_log_from_disk_cache(
         )
 
     all_events: list[NBBOQuote | Trade] = []
-    day_meta: list[DiskCacheDayMeta] = []
+    day_meta: list[IngestDayMeta] = []
 
     for sym in syms:
         for day in dates:
@@ -104,7 +115,7 @@ def load_event_log_from_disk_cache(
                     )
             all_events.extend(loaded)
             day_meta.append(
-                DiskCacheDayMeta(
+                IngestDayMeta(
                     symbol=sym,
                     date=day,
                     source="cache",

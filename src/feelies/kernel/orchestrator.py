@@ -37,7 +37,7 @@ import itertools
 import logging
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Literal
@@ -369,6 +369,7 @@ class Orchestrator:
         hazard_exit_controller: "HazardExitController | None" = None,
         signal_arbitrator: SignalArbitrator | None = None,
         signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
+        regime_calibration_quotes: Sequence[NBBOQuote] | None = None,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -499,6 +500,11 @@ class Orchestrator:
         self._min_order_shares: int = 1
         self._signal_min_edge_cost_ratio: float = 1.5  # 0 = gate disabled
         self._regime_calibration_max_quotes: int | None = None
+        self._regime_calibration_quotes: tuple[NBBOQuote, ...] | None = (
+            tuple(regime_calibration_quotes)
+            if regime_calibration_quotes is not None
+            else None
+        )
 
         self._config: Configuration | None = None
 
@@ -2544,11 +2550,15 @@ class Orchestrator:
             ))
             return
 
-        quote_stream = (
-            event for event in self._event_log.replay()
-            if isinstance(event, NBBOQuote)
-        )
-        quotes = list(itertools.islice(quote_stream, max_q))
+        precomputed = self._regime_calibration_quotes
+        if precomputed is not None:
+            quotes = list(precomputed)
+        else:
+            quote_stream = (
+                event for event in self._event_log.replay()
+                if isinstance(event, NBBOQuote)
+            )
+            quotes = list(itertools.islice(quote_stream, max_q))
         if not quotes:
             logger.info(
                 "Regime calibration skipped — no quotes in event log"
@@ -2558,7 +2568,9 @@ class Orchestrator:
         prefix_n = len(quotes)
         # Exact total only when the prefix exhausts the quote stream; otherwise
         # counting the suffix is O(full log) at boot — report a lower bound.
-        exact_total = prefix_n < max_q
+        exact_total = (
+            precomputed is not None or prefix_n < max_q
+        )
 
         ok = calibrate_fn(quotes)
         if ok:

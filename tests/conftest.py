@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import os
 
+from feelies.cli.env import load_dotenv_optional
+
 
 def pytest_configure() -> None:
     """Load .env before test collection so MASSIVE_API_KEY is available."""
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-    except ImportError:
-        pass
+    load_dotenv_optional()
 
     if os.getenv("PYTHONIOENCODING") is None:
         os.environ["PYTHONIOENCODING"] = "utf-8"

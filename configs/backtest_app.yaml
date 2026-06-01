@@ -1,0 +1,315 @@
+# APP research backtest — tuned sig_benign_midcap_v1 entry gate overrides.
+#
+# Usage:
+#   uv run python scripts/run_backtest.py --config configs/backtest_app.yaml \
+#       --symbol APP --date 2026-03-26
+#
+# Locked regression baseline: tests/acceptance/test_backtest_app_baseline.py
+#
+# Platform reference config (v0.2.0-dev). PlatformConfig snapshots a checksum
+# from the normalized dict (paths baselined) for audit/replay.
+version: "0.2.0-dev"
+author: "system"
+
+# BACKTEST | PAPER | LIVE
+mode: BACKTEST
+
+symbols:
+  - APP
+
+# Scanned for *.alpha.yaml if set; here we use explicit paths below.
+alpha_spec_dir: null
+
+alpha_specs:
+  - alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml
+
+parameter_overrides:
+  sig_benign_midcap_v1:
+    entry_threshold_z: 1.5
+    edge_per_z_bps: 6.0
+
+# Reference alpha ships a schema-1.1 ``trend_mechanism:`` block (G16).
+# This pin stays ``false`` so local smoke runs match historical v0.2-style
+# operator configs that pointed at the same id before strict-by-default.
+enforce_trend_mechanism: false
+
+# When a Massive normalizer is wired (e.g. live WS), GAP_DETECTED is treated like
+# CORRUPTED: macro DEGRADED and no further ticks/trades for that symbol. Standard
+# backtest replay has no normalizer; use ingest terminal health enforcement below
+# for strict offline runs.
+degrade_on_data_gap: true
+
+# After ingest/cache load, ``run_backtest.py`` attaches worst-case per-symbol health.
+# When true, ``validate()`` requires every config symbol to be HEALTHY or boot fails.
+backtest_enforce_ingest_terminal_health: true
+backtest_reject_zero_ingest_events: true
+# Live/paper with ``build_platform(..., normalizer=...)``: require symbols in universe
+# to appear in normalizer.all_health() before consumption (catches replay/normalizer skew).
+strict_normalizer_symbol_coverage: false
+# Historical REST rows are usually thinned; enable only for full contiguous SIP dumps.
+enable_rest_sequence_gap_detection: false
+
+regime_engine: hmm_3state_fractional
+# Alias: hmm_3state_spread_filter (same implementation).
+
+# Optional engine kwargs (forwarded at bootstrap). Defaults preserve tick-based
+# transitions and pooled prefix calibration only.
+# regime_engine_options:
+#   transition_time_scaling_enabled: true
+#   transition_dt_reference_seconds: 0.05
+#   per_symbol_calibration: true   # needs >=30 quotes/symbol in calibration prefix
+#   enforce_min_pairwise_emission_separation: false
+
+# data_dir: data/
+# event_log_path: data/event_log.jsonl
+
+# BT-5: LULD / regulatory halt modeling. Condition codes on the Trade tape that
+# mark a halt-on / resume. Empty (default) = halt modeling inert. Set these to
+# the halt/resume condition encoding of your historical tape to enable: during a
+# halt no fills occur and resting passive orders are cancelled; after resume new
+# ENTRY fills stay suppressed for halt_resolution_blackout_seconds (exits always
+# permitted).
+halt_on_condition_codes: []
+halt_off_condition_codes: []
+halt_resolution_blackout_seconds: 60
+
+# BT-6: Reg-SHO / SSR (short-sale restriction). ssr_active_symbols is the daily
+# SSR list (symbols SSR-active all session). ssr_trigger_condition_codes are tape
+# condition codes that flip a symbol SSR-active intraday (sticky; no intraday
+# clear). Under SSR a short ENTRY fill is refused (SSR_SUPPRESSED) and retries
+# next boundary; long entries, covers, and long-exits are unaffected. ssr_mode
+# is locked to "refuse_short" (the permissive uptick-routed variant is deferred).
+ssr_active_symbols: []
+ssr_trigger_condition_codes: []
+ssr_mode: refuse_short
+
+# BT-7: per-symbol short-locate availability (static table). Omitted symbols
+# default to available (easy to borrow). unavailable refuses short ENTRY fills
+# (LOCATE_UNAVAILABLE); hard applies the HTB fee path when
+# cost_htb_borrow_annual_bps > 0.
+borrow_availability: {}
+
+# Sandbox backtest equity; overlays must set real limits for PAPER/LIVE.
+# BT-15 deployed capital (locked placeholder $50k; override for your book).
+account_equity: 50000.0
+
+# BT-4: account type drives the PDT (Pattern Day Trader) constraint model.
+# Locked to margin_25k (opens above $25k, PDT-exempt: no 3-round-trip hard cap,
+# no cash T+2 settlement branch). Only margin_25k is implemented; the
+# margin_under_25k / cash values are accepted by config but refused at bootstrap.
+account_type: margin_25k
+account_id: default
+# Maintenance floor: a PDT-flagged account below this equity is barred from
+# opening new day trades (entries suppressed, exits always permitted).
+pdt_min_equity_usd: 25000.0
+
+# Per-symbol cap in shares (not USD). High value here; gross cap below binds for this universe.
+risk_max_position_per_symbol: 50000
+
+# Gross as % of equity (200 = 2×). Research-only; production should lower per policy.
+risk_max_gross_exposure_pct: 200.0
+
+risk_max_drawdown_pct: 5.0
+
+# BT-17 locked baselines: 50 ms fill leg, 20 ms market-data propagation leg.
+backtest_fill_latency_ns: 50000000
+market_data_latency_ns: 20000000
+
+# Percentage-based stops (fraction of entry price). Takes precedence over per-share fields.
+# 0.01 = 1% stop-loss; 0.005 = 0.5% trail activation.
+stop_loss_pct: 0.01
+trail_activate_pct: 0.005
+trail_pct: 0.50
+
+cost_min_spread_bps: 0.0
+cost_commission_per_share: 0.0035
+cost_taker_exchange_per_share: 0.003
+cost_maker_exchange_per_share: -0.002
+# BT-1: adverse selection split by passive fill regime (was a flat 0.5 bps).
+# Through-fill = market traded through the resting order (adversely selected);
+# drain = queue ahead drained at a stable price (benign).
+cost_adverse_selection_through_bps: 3.0
+cost_adverse_selection_drain_bps: 0.3
+# SEC Section 31 fee on sells, in bps of notional (~0.278 bps current rate +
+# conservative headroom). FINRA TAF is modeled separately (per-share, capped)
+# in the cost model, so this is the SEC component only — do not fold TAF in here
+# or it double-counts. BT-0: raised from 0.0 (which understated round-trip cost).
+cost_sell_regulatory_bps: 0.5
+# BT-0: 1.5x matches Inv-12's cost-stress requirement (was 1.0, no stress).
+cost_stress_multiplier: 1.5
+cost_min_commission: 0.35
+cost_max_commission_pct: 1.0
+
+# Runtime B4 gate: suppress orders when edge < ratio × model RT cost.  Default 1.5
+# matches Inv-12; set 0 only for deliberate sub-cost research scenarios.
+# BT-0: raised from 0.35 (which effectively disabled the cost gate in backtest
+# acceptance) to 1.5, matching the from_yaml loader default and the paper configs.
+signal_min_edge_cost_ratio: 1.5
+
+# Optional causal regime warmup: calibrate spread-emission quantiles from the first
+# N NBBO quotes in replay order (pooled across symbols unless per_symbol_calibration
+# is enabled in regime_engine_options). Omit or null to skip boot calibration.
+regime_calibration_max_quotes: 100000
+
+# Short borrow annual bps; 0 = off (optimistic for SHORT alphas like benign).
+# Audited (BT-0): HTB *fee* modeling is deferred per plan §2 for the intraday
+# large-cap universe; short *availability* is modeled separately (BT-7).
+cost_htb_borrow_annual_bps: 0.0
+
+# Cap on walk-the-book market-impact premium, in multiples of the half-spread.
+# BT-0: tightened from the router default 10 to 4 — for an L1-only book a single
+# retail-size order rarely walks more than ~4 half-spreads, so a 10x cap let the
+# model assign implausibly large slippage on thin quotes.
+cost_max_impact_half_spreads: 4.0
+
+execution_mode: passive_limit
+passive_fill_delay_ticks: 3
+passive_max_resting_ticks: 8000
+# Aggressive volume through limit before level fill (L1 queue proxy). 0 = delay-ticks only.
+passive_queue_position_shares: 200
+# BT-2: cap on the per-tick seeded-Bernoulli level-fill hazard. Bounds residual
+# queue-position uncertainty so no single quote tick is a near-certain fill.
+passive_fill_hazard_max: 0.5
+passive_cancel_fee_per_share: 0.0
+
+platform_min_order_shares: 50
+
+# Explicit no-op overrides; PAPER/LIVE often set promotion_ledger_path.
+gate_thresholds: {}
+promotion_ledger_path: null
+
+# Phase-2: optional; omit for legacy path. See docs/three_layer_architecture.md.
+
+market_id: US_EQUITY
+session_kind: RTH
+
+# Alpha horizon_seconds must be in this set (G7).
+horizons_seconds:
+  - 30
+  - 120
+  - 300
+  - 900
+  - 1800
+
+# session_open_ns: null  # else first event anchors backtests
+
+# For scheduled_flow_window sensor (e.g. sig_moc_imbalance_v1); bootstrap injects calendar.
+event_calendar_path: src/feelies/storage/reference/event_calendar/2026-03-26.yaml
+
+# BT-18: split/dividend ex-date guard (see docs/data_adjustment_policy.md).
+ex_date_calendar_path: src/feelies/storage/reference/corporate_actions/ex_dates.yaml
+
+# Sensors for sig_benign_midcap_v1 (depends_on_sensors: ofi_ewma, micro_price, spread_z_30d, realized_vol_30s).
+sensor_specs:
+
+  - sensor_id: spread_z_30d
+    sensor_version: "1.1.0"
+    cls: feelies.sensors.impl.spread_z_30d.SpreadZScoreSensor
+    params:
+      window: 6000
+      min_std: 1.0e-9
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 6000
+    throttled_ms: null
+
+  - sensor_id: quote_replenish_asymmetry
+    sensor_version: "1.1.0"
+    cls: feelies.sensors.impl.quote_replenish_asymmetry.QuoteReplenishAsymmetrySensor
+    params:
+      window_seconds: 5
+      min_observations: 20
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 20
+    throttled_ms: null
+
+  - sensor_id: quote_hazard_rate
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.quote_hazard_rate.QuoteHazardRateSensor
+    params:
+      window_seconds: 5
+      min_samples: 20
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 20
+    throttled_ms: null
+
+  - sensor_id: ofi_ewma
+    sensor_version: "1.1.0"
+    cls: feelies.sensors.impl.ofi_ewma.OFIEwmaSensor
+    params:
+      alpha: 0.1
+      warm_after: 50
+      warm_window_seconds: 300
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 50
+    throttled_ms: null
+
+  - sensor_id: micro_price
+    sensor_version: "1.1.0"
+    cls: feelies.sensors.impl.micro_price.MicroPriceSensor
+    params:
+      warm_after: 1
+      warm_window_seconds: 60
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 1
+    throttled_ms: null
+
+  # Trade-backed sensors for Kyle / Hawkes / trade-through reference alphas.
+  # Extend this block when wiring additional shipped SIGNAL specs locally.
+  - sensor_id: kyle_lambda_60s
+    sensor_version: "1.2.0"
+    cls: feelies.sensors.impl.kyle_lambda_60s.KyleLambda60sSensor
+    params:
+      # 30 samples is the sensor's documented default; the prior value of
+      # 5 produced high-variance OLS slopes that the downstream z-score
+      # feature standardized into spuriously large signals.
+      min_samples: 30
+    subscribes_to: [NBBOQuote, Trade]
+    input_sensor_ids: []
+    min_history: 30
+    throttled_ms: null
+
+  - sensor_id: trade_through_rate
+    sensor_version: "1.1.0"
+    cls: feelies.sensors.impl.trade_through_rate.TradeThroughRateSensor
+    params:
+      min_trades: 5
+    subscribes_to: [NBBOQuote, Trade]
+    input_sensor_ids: []
+    min_history: 5
+    throttled_ms: null
+
+  - sensor_id: hawkes_intensity
+    sensor_version: "1.2.0"
+    cls: feelies.sensors.impl.hawkes_intensity.HawkesIntensitySensor
+    params:
+      warm_trades_per_side: 3
+    subscribes_to: [Trade]
+    input_sensor_ids: []
+    min_history: 3
+    throttled_ms: null
+
+  - sensor_id: scheduled_flow_window
+    sensor_version: "1.2.0"
+    cls: feelies.sensors.impl.scheduled_flow_window.ScheduledFlowWindowSensor
+    params: {}
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 0
+    throttled_ms: null
+
+  - sensor_id: realized_vol_30s
+    sensor_version: "1.3.0"
+    cls: feelies.sensors.impl.realized_vol_30s.RealizedVol30sSensor
+    params:
+      window_seconds: 30
+      warm_after: 16
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 16
+    throttled_ms: null
+

@@ -109,6 +109,7 @@ class SensorRegistry:
         "_publish_target",
         "_metric_collector",
         "_metrics_seq",
+        "_emit_reading_metrics_enabled",
     )
 
     def __init__(
@@ -118,6 +119,7 @@ class SensorRegistry:
         sequence_generator: SequenceGenerator,
         symbols: frozenset[str],
         metric_collector: MetricCollector | None = None,
+        emit_reading_metrics: bool = True,
     ) -> None:
         self._bus = bus
         self._sequence_generator = sequence_generator
@@ -140,6 +142,7 @@ class SensorRegistry:
         # separate from SensorReading sequences so adding metrics never perturbs
         # the locked Level-2 hash (Inv-A / C1).
         self._metric_collector = metric_collector
+        self._emit_reading_metrics_enabled = emit_reading_metrics
         self._metrics_seq: SequenceGenerator | None = (
             SequenceGenerator() if metric_collector is not None else None
         )
@@ -306,7 +309,7 @@ class SensorRegistry:
             if published is not None:
                 published.append(reading)
 
-            if self._metric_collector is not None:
+            if self._metric_collector is not None and self._emit_reading_metrics_enabled:
                 self._emit_reading_metrics(
                     spec=spec,
                     symbol=symbol,

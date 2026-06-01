@@ -51,6 +51,7 @@ import logging
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -200,6 +201,8 @@ def build_platform(
     *,
     signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
     normalizer: MarketDataNormalizer | None = None,
+    precomputed_ex_date_spans: dict[str, tuple[date, date]] | None = None,
+    regime_calibration_quotes: tuple[NBBOQuote, ...] | None = None,
 ) -> tuple[Orchestrator, PlatformConfig]:
     """Compose the full platform from configuration.
 
@@ -214,6 +217,10 @@ def build_platform(
         normalizer: Optional live Massive normalizer for streaming feeds. When
             wired, orchestrator enforces :class:`~feelies.ingestion.data_integrity.DataHealth`
             gates on each market event (backtests normally omit this).
+        precomputed_ex_date_spans: Optional per-symbol ET date spans from a
+            fused pre-replay scan; skips rescanning the log for BT-18.
+        regime_calibration_quotes: Optional causal calibration prefix collected
+            during the same pre-replay scan; skips rescanning at boot.
 
     Returns:
         ``(orchestrator, config)`` — caller does
@@ -264,7 +271,11 @@ def build_platform(
 
     if event_log is None:
         event_log = InMemoryEventLog()
-    _enforce_ex_date_replay_guard(config, event_log)
+    _enforce_ex_date_replay_guard(
+        config,
+        event_log,
+        precomputed_spans=precomputed_ex_date_spans,
+    )
 
     clock = _select_clock(config.mode)
     config = _ensure_session_open_ns_for_live_modes(config, clock)
@@ -463,6 +474,8 @@ def build_platform(
     kill_switch = InMemoryKillSwitch()
     alert_manager = InMemoryAlertManager(kill_switch=kill_switch)
     metric_collector = InMemoryMetricCollector()
+    if config.mode == OperatingMode.BACKTEST:
+        metric_collector._store_raw_events = False
 
     # Compose the Phase-2 sensor layer *after* the metric collector
     # exists so monitoring metrics (plan §4.5) wire automatically.
@@ -592,6 +605,7 @@ def build_platform(
         hazard_exit_controller=hazard_exit_controller,
         signal_order_trace_sink=signal_order_trace_sink,
         normalizer=normalizer,
+        regime_calibration_quotes=regime_calibration_quotes,
     )
 
     config_snapshot = config.snapshot()
@@ -1120,6 +1134,7 @@ def _create_sensor_layer(
             sequence_generator=sensor_seq,
             symbols=frozenset(config.symbols),
             metric_collector=metric_collector,
+            emit_reading_metrics=config.mode != OperatingMode.BACKTEST,
         )
         # ── Calendar injection for ScheduledFlowWindowSensor ──────────
         # ScheduledFlowWindowSensor requires a live EventCalendar object
@@ -1666,6 +1681,8 @@ def _hazard_block_enabled(block: object | None) -> bool:
 def _enforce_ex_date_replay_guard(
     config: PlatformConfig,
     event_log: InMemoryEventLog,
+    *,
+    precomputed_spans: dict[str, tuple[date, date]] | None = None,
 ) -> None:
     """BT-18: refuse backtests whose replay span crosses a known ex-date."""
     if not config.backtest_enforce_ex_date_guard:
@@ -1685,6 +1702,7 @@ def _enforce_ex_date_replay_guard(
         config.symbols,
         event_log,
         calendar,
+        precomputed_spans=precomputed_spans,
     )
     if not violations:
         return

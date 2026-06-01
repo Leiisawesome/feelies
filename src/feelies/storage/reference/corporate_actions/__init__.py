@@ -196,6 +196,8 @@ def check_ex_date_replay_window(
     symbols: frozenset[str],
     event_log: EventLog,
     calendar: ExDateCalendar,
+    *,
+    precomputed_spans: dict[str, tuple[date, date]] | None = None,
 ) -> tuple[ExDateReplayViolation, ...]:
     """Run the BT-18 guard for a populated replay log.
 
@@ -204,8 +206,15 @@ def check_ex_date_replay_window(
     absent from the event log produce no violations — without quotes or
     trades on the tape they cannot introduce a price discontinuity that
     the guard exists to prevent.
+
+    When ``precomputed_spans`` is supplied (e.g. from a fused pre-replay
+    scan), the event log is not rescanned.
     """
-    spans = replay_calendar_date_span_by_symbol(event_log)
+    spans = (
+        precomputed_spans
+        if precomputed_spans is not None
+        else replay_calendar_date_span_by_symbol(event_log)
+    )
     if not spans:
         return ()
     violations: list[ExDateReplayViolation] = []
