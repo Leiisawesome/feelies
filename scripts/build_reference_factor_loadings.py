@@ -21,8 +21,9 @@ Outputs (idempotent — safe to re-run):
       installed (see ``[project.optional-dependencies].portfolio``).
 
 The fixture is intentionally *small* (10 symbols × 7 factors); the
-universe matches the v0.2 reference deployment used by
-``alphas/pro_xsect_v1/`` and the Phase-4 end-to-end tests.
+universe matches the reference deployment used by
+``alphas/research/pro_burst_revert_v1/``, ``alphas/research/pro_kyle_benign_v1/``, and
+the Phase-4 end-to-end tests.
 
 Determinism contract
 --------------------

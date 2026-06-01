@@ -9,7 +9,8 @@ from feelies.ingestion.data_integrity import DataHealth
 _HEALTH_RANK: dict[DataHealth, int] = {
     DataHealth.HEALTHY: 0,
     DataHealth.GAP_DETECTED: 1,
-    DataHealth.CORRUPTED: 2,
+    DataHealth.HALTED: 2,
+    DataHealth.CORRUPTED: 3,
 }
 
 
@@ -24,7 +25,7 @@ def parse_ingestion_health_label(label: str | None) -> DataHealth:
 
 
 def merge_worst_health(current: DataHealth, incoming: DataHealth) -> DataHealth:
-    """Pick the more severe of two states (CORRUPTED > GAP_DETECTED > HEALTHY)."""
+    """Pick the more severe state (CORRUPTED > HALTED > GAP_DETECTED > HEALTHY)."""
     if _HEALTH_RANK[incoming] > _HEALTH_RANK[current]:
         return incoming
     return current

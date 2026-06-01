@@ -40,7 +40,11 @@ orchestrator's bus subscribers (``_on_bus_signal`` /
 
 from feelies.alpha.aggregation import AggregatedOrders, aggregate_intents
 from feelies.alpha.arbitration import EdgeWeightedArbitrator, SignalArbitrator
-from feelies.alpha.discovery import discover_alpha_specs, load_and_register
+from feelies.alpha.discovery import (
+    discover_alpha_specs,
+    discover_research_alpha_specs,
+    load_and_register,
+)
 from feelies.alpha.fill_attribution import (
     AlphaContribution,
     AttributionRecord,
@@ -102,6 +106,7 @@ __all__ = [
     "CapitalStageTier",
     "CPCVEvidence",
     "discover_alpha_specs",
+    "discover_research_alpha_specs",
     "DSREvidence",
     "EdgeWeightedArbitrator",
     "evidence_to_metadata",

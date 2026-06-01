@@ -120,6 +120,7 @@ class AlphaRegistry:
                 gate_requirements=self._gate_requirements,
                 gate_thresholds=per_alpha_thresholds,
                 ledger=self._promotion_ledger,
+                lifecycle_cap=manifest.lifecycle_cap,
             )
         self._feature_cache = None
 

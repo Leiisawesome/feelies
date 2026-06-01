@@ -35,7 +35,7 @@ class TestDefaults:
 
     def test_default_account_equity(self) -> None:
         cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
-        assert cfg.account_equity == 1_000_000.0
+        assert cfg.account_equity == 50_000.0
 
 
 # ── Validation ──────────────────────────────────────────────────────
@@ -261,14 +261,17 @@ backtest_fill_latency_ns: 5000
         cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
         assert cfg.backtest_fill_latency_ns == 5000
 
-    def test_backtest_fill_latency_ns_defaults_to_zero(self, tmp_path: Path) -> None:
+    def test_backtest_fill_latency_ns_yaml_omitted_uses_bt17_defaults(
+        self, tmp_path: Path,
+    ) -> None:
         yaml_content = """\
 symbols: [AAPL]
 alpha_specs: [x.yaml]
 """
         (tmp_path / "config.yaml").write_text(yaml_content)
         cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
-        assert cfg.backtest_fill_latency_ns == 0
+        assert cfg.backtest_fill_latency_ns == 50_000_000
+        assert cfg.market_data_latency_ns == 20_000_000
 
     def test_backtest_fill_latency_ns_in_snapshot(self) -> None:
         cfg = PlatformConfig(
@@ -425,6 +428,119 @@ class TestBacktestIngestTerminalHealth:
                 ("MSFT", "HEALTHY"),
             ),
         )
+        cfg.validate()
+
+
+# ── PAPER mode connection settings ─────────────────────────────────
+
+
+class TestPaperConnectionSettings:
+    def test_default_ib_paper_settings(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")],
+        )
+        assert cfg.ib_host == "127.0.0.1"
+        assert cfg.ib_port == 4002
+        assert cfg.ib_client_id == 1
+        assert cfg.massive_ws_url == "wss://socket.massive.com/stocks"
+
+    def test_paper_block_lifted_to_top_level(self, tmp_path: Path) -> None:
+        yaml_content = """\
+symbols: [AAPL]
+mode: PAPER
+alpha_specs: [x.yaml]
+paper:
+  ib_host: 10.0.0.5
+  ib_port: 4003
+  ib_client_id: 42
+  massive_ws_url: wss://test.example/stocks
+"""
+        (tmp_path / "config.yaml").write_text(yaml_content)
+        cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
+        assert cfg.ib_host == "10.0.0.5"
+        assert cfg.ib_port == 4003
+        assert cfg.ib_client_id == 42
+        assert cfg.massive_ws_url == "wss://test.example/stocks"
+
+    def test_flat_keys_also_supported(self, tmp_path: Path) -> None:
+        yaml_content = """\
+symbols: [AAPL]
+mode: PAPER
+alpha_specs: [x.yaml]
+ib_host: 1.2.3.4
+ib_port: 4001
+ib_client_id: 7
+"""
+        (tmp_path / "config.yaml").write_text(yaml_content)
+        cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
+        assert cfg.ib_host == "1.2.3.4"
+        assert cfg.ib_port == 4001
+        assert cfg.ib_client_id == 7
+
+    def test_flat_keys_win_over_paper_block(self, tmp_path: Path) -> None:
+        yaml_content = """\
+symbols: [AAPL]
+mode: PAPER
+alpha_specs: [x.yaml]
+ib_port: 5000
+paper:
+  ib_port: 4002
+  ib_host: 192.168.1.1
+"""
+        (tmp_path / "config.yaml").write_text(yaml_content)
+        cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
+        assert cfg.ib_port == 5000  # flat key wins
+        assert cfg.ib_host == "192.168.1.1"  # falls through to paper block
+
+    def test_paper_block_non_mapping_raises(self, tmp_path: Path) -> None:
+        yaml_content = """\
+symbols: [AAPL]
+mode: PAPER
+alpha_specs: [x.yaml]
+paper: not_a_mapping
+"""
+        (tmp_path / "bad.yaml").write_text(yaml_content)
+        with pytest.raises(ConfigurationError, match="'paper' must be a mapping"):
+            PlatformConfig.from_yaml(tmp_path / "bad.yaml")
+
+    def test_paper_settings_folded_into_snapshot(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            ib_host="2.3.4.5",
+            ib_port=4001,
+            ib_client_id=99,
+            massive_ws_url="wss://prod.example/stocks",
+        )
+        snap = cfg.snapshot()
+        assert snap.data["ib_host"] == "2.3.4.5"
+        assert snap.data["ib_port"] == 4001
+        assert snap.data["ib_client_id"] == 99
+        assert snap.data["massive_ws_url"] == "wss://prod.example/stocks"
+
+
+class TestBorrowAvailabilityConfig:
+    def test_invalid_borrow_tier_rejected(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            borrow_availability={"AAPL": "maybe"},
+        )
+        with pytest.raises(ConfigurationError, match="borrow_availability"):
+            cfg.validate()
+
+    def test_borrow_table_round_trips_through_yaml(self, tmp_path: Path) -> None:
+        yaml_path = tmp_path / "cfg.yaml"
+        yaml_path.write_text(
+            "symbols: [AAPL]\n"
+            "alpha_specs: [x.yaml]\n"
+            "borrow_availability:\n"
+            "  aapl: available\n"
+            "  xyz: hard\n",
+            encoding="utf-8",
+        )
+        cfg = PlatformConfig.from_yaml(yaml_path)
+        assert cfg.borrow_availability == {"AAPL": "available", "XYZ": "hard"}
         cfg.validate()
 
 

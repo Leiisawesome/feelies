@@ -19,12 +19,13 @@ def test_create_backend_passive_paths_forward_market_impact_factor(
     """``cost_market_impact_factor`` must reach PassiveLimitOrderRouter (not default)."""
     clock = SimulatedClock()
     log = InMemoryEventLog()
-    _, router = _create_backend(
+    bundle = _create_backend(
         OperatingMode.BACKTEST,
         log,
         clock,
         execution_mode=execution_mode,
         market_impact_factor=0.33,
     )
+    router = bundle.backtest_router
     assert router is not None
     assert router._market_impact_factor == Decimal("0.33")

@@ -87,6 +87,14 @@ def _hash_reading_stream(recorder_readings: list[Any]) -> str:
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
+
+# Locked Level-1 SensorReading baseline (canonical synth fixture).
+EXPECTED_LEVEL4_READING_HASH = (
+    "1cb37e110cacd693b0c0e14a4ce99cb87169848a1e9ceb5c273ba4f974f27152"
+)
+EXPECTED_LEVEL4_READING_COUNT = 12_000
+
+
 def _replay() -> tuple[str, int]:
     recorder = replay_through_registry(sensor_specs=_SENSOR_SPECS)
     readings = recorder.sensor_readings
@@ -104,31 +112,6 @@ def test_sensor_reading_stream_matches_locked_baseline() -> None:
     drift will then fail with the diff.
     """
     actual_hash, actual_count = _replay()
-
-    # Recorded at Phase-2-β tip.  Re-baseline only with explicit
-    # justification (see module docstring).
-    # Re-baselined 2026-05-16: ``realized_vol_30s`` 1.1.0 → 1.2.0
-    # switched from the numerically unstable Σr² − (Σr)²/n shortcut
-    # formula to Welford forward + reverse accumulation, matching the
-    # pattern already used by ``spread_z_30d``.  Output values are
-    # mathematically equivalent but differ in floating-point last bits
-    # due to different operation ordering — the count is unchanged.
-    # Re-baselined 2026-05-17 (audit pass 2):
-    #   * ``ofi_ewma`` 1.0.0 → 1.1.0 — added bid/ask > 0 validation,
-    #     dropped dead ``count`` field;
-    #   * ``micro_price`` 1.0.0 → 1.1.0 — added bid/ask > 0 validation,
-    #     dropped dead ``count`` field;
-    #   * ``spread_z_30d`` 1.0.0 → 1.1.0 — added bid/ask > 0 validation,
-    #     dropped dead ``count`` field, removed unreachable n_cur==1 branch;
-    #   * ``realized_vol_30s`` 1.2.0 → 1.3.0 — invalidate carry-forward mid
-    #     on bad quote (#A2), consolidated n vs len(history) (#12).
-    # The version-string contribution + the value updates from validation
-    # together change the per-reading line content, so the SHA-256 over
-    # the canonical reading stream rolls forward.
-    EXPECTED_LEVEL4_READING_HASH = (
-        "1cb37e110cacd693b0c0e14a4ce99cb87169848a1e9ceb5c273ba4f974f27152"
-    )
-    EXPECTED_LEVEL4_READING_COUNT = 12_000
 
     assert actual_count == EXPECTED_LEVEL4_READING_COUNT, (
         f"reading count drift: expected {EXPECTED_LEVEL4_READING_COUNT}, "

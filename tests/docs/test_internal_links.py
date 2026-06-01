@@ -39,7 +39,6 @@ _REPO_ROOT = Path(".").resolve()
 _DOC_FILES: tuple[Path, ...] = (
     Path("README.md"),
     Path("alphas/SCHEMA.md"),
-    Path("docs/migration/schema_1_0_to_1_1.md"),
 )
 
 
@@ -75,10 +74,8 @@ _PLACEHOLDER_PATH_TOKENS: frozenset[str] = frozenset({
     "src/feelies/research/hypothesis_status.py",
     # Workstream-D.2 retired this parity test alongside the
     # ``alphas/trade_cluster_drift/`` reference alpha.  The path is
-    # intentionally cited from SCHEMA.md and the migration cookbook
-    # so operators reading those docs can grep their own forks for
-    # the now-defunct anchor.  See ``docs/migration/schema_1_0_to_1_1.md``
-    # §"Workstream-D update" for the retirement note.
+    # intentionally cited from SCHEMA.md so operators reading those
+    # docs can grep their own forks for the now-defunct anchor.
     "tests/determinism/test_legacy_alpha_parity.py",
 })
 

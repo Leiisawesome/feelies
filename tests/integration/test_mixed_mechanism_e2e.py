@@ -1,19 +1,19 @@
-"""Wiring e2e for pro_xsect_mixed_mechanism_v1 driven by all three feeders.
+"""Wiring e2e for pro_burst_revert_v1 driven by both of its feeder alphas.
 
-Boots ``sig_kyle_drift_v1``, ``sig_inventory_revert_v1``, and
-``sig_hawkes_burst_v1`` (SIGNAL feeders) alongside
-``pro_xsect_mixed_mechanism_v1`` (PORTFOLIO) through ``build_platform``
-over a 360-second deterministic multi-symbol synthetic stream.
+Boots ``sig_inventory_revert_v1`` and ``sig_hawkes_burst_v1`` (SIGNAL
+feeders) alongside ``pro_burst_revert_v1`` (PORTFOLIO) through
+``build_platform`` over a 360-second deterministic multi-symbol synthetic
+stream.
 
 What this test guarantees
 --------------------------
 
-* All four alphas register without ``AlphaLoadError``,
+* All three alphas register without ``AlphaLoadError``,
   ``LayerValidationError``, or wiring failures.
 * The composition layer is fully wired.
 * At least one 300-second boundary fires at least one
   ``SizedPositionIntent`` tagged with
-  ``strategy_id == "pro_xsect_mixed_mechanism_v1"``.
+  ``strategy_id == "pro_burst_revert_v1"``.
 * A full backtest reaches ``MacroState.READY`` without exception.
 * Two replays of the same fixture produce byte-identical
   ``SizedPositionIntent`` streams (Inv-5 determinism), verifying that
@@ -27,7 +27,7 @@ Relationship to test_mixed_mechanism_universe
 ``CompositionEngine`` directly with hand-crafted
 ``CrossSectionalContext`` events to isolate the mechanism-cap path.
 This test is the complementary full-stack counterpart: it verifies
-that the three sensor pipelines register and the bus wiring from
+that the two sensor pipelines register and the bus wiring from
 L1 → L2 → L3 holds end-to-end.
 
 Active-aggregator note
@@ -64,9 +64,7 @@ from feelies.kernel.orchestrator import Orchestrator
 from feelies.monitoring.horizon_metrics import HorizonMetricsCollector
 from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
 from feelies.sensors.impl.hawkes_intensity import HawkesIntensitySensor
-from feelies.sensors.impl.kyle_lambda_60s import KyleLambda60sSensor
 from feelies.sensors.impl.realized_vol_30s import RealizedVol30sSensor
-from feelies.sensors.impl.micro_price import MicroPriceSensor
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
 from feelies.sensors.impl.quote_hazard_rate import QuoteHazardRateSensor
 from feelies.sensors.impl.quote_replenish_asymmetry import (
@@ -88,10 +86,6 @@ pytestmark = pytest.mark.backtest_validation
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
-_KYLE_ALPHA = (
-    _REPO_ROOT / "alphas" / "sig_kyle_drift_v1"
-    / "sig_kyle_drift_v1.alpha.yaml"
-)
 _INVENTORY_ALPHA = (
     _REPO_ROOT / "alphas" / "sig_inventory_revert_v1"
     / "sig_inventory_revert_v1.alpha.yaml"
@@ -100,14 +94,15 @@ _HAWKES_ALPHA = (
     _REPO_ROOT / "alphas" / "sig_hawkes_burst_v1"
     / "sig_hawkes_burst_v1.alpha.yaml"
 )
-_MIXED_ALPHA = (
-    _REPO_ROOT / "alphas" / "pro_xsect_mixed_mechanism_v1"
-    / "pro_xsect_mixed_mechanism_v1.alpha.yaml"
+_BURST_ALPHA = (
+    _REPO_ROOT / "alphas" / "research" / "pro_burst_revert_v1"
+    / "pro_burst_revert_v1.alpha.yaml"
 )
 _FACTOR_LOADINGS_DIR = FACTOR_LOADINGS_DIR
 _SECTOR_MAP_PATH = SECTOR_MAP_PATH
 
-# 10-symbol universe matching alphas/pro_xsect_mixed_mechanism_v1/universe.
+# 10-symbol universe — wider than pro_burst_revert_v1's declared universe
+# (AAPL, MSFT, NVDA); the PORTFOLIO alpha filters to its universe internally.
 _UNIVERSE: tuple[str, ...] = (
     "AAPL", "AMZN", "BAC", "CVX", "GOOG",
     "JPM", "META", "MSFT", "NVDA", "XOM",
@@ -124,13 +119,6 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
         sensor_version="1.1.0",
         cls=OFIEwmaSensor,
         params={"alpha": 0.1, "warm_after": 5},
-        subscribes_to=(NBBOQuote,),
-    ),
-    SensorSpec(
-        sensor_id="micro_price",
-        sensor_version="1.1.0",
-        cls=MicroPriceSensor,
-        params={},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
@@ -161,13 +149,6 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
         sensor_version="1.1.0",
         cls=TradeThroughRateSensor,
         params={"min_trades": 5},
-        subscribes_to=(NBBOQuote, Trade),
-    ),
-    SensorSpec(
-        sensor_id="kyle_lambda_60s",
-        sensor_version="1.2.0",
-        cls=KyleLambda60sSensor,
-        params={"min_samples": 5},
         subscribes_to=(NBBOQuote, Trade),
     ),
     SensorSpec(
@@ -259,7 +240,7 @@ def _make_mixed_config() -> PlatformConfig:
         symbols=frozenset(_UNIVERSE),
         mode=OperatingMode.BACKTEST,
         alpha_specs=[
-            _KYLE_ALPHA, _INVENTORY_ALPHA, _HAWKES_ALPHA, _MIXED_ALPHA,
+            _INVENTORY_ALPHA, _HAWKES_ALPHA, _BURST_ALPHA,
         ],
         regime_engine="hmm_3state_fractional",
         sensor_specs=_SENSOR_SPECS,
@@ -317,20 +298,19 @@ def _hash_intents(intents: list[SizedPositionIntent]) -> str:
 # ── Wiring ──────────────────────────────────────────────────────────────
 
 
-def test_mixed_mechanism_e2e_all_four_alphas_register() -> None:
-    """All four layers must register without error.
+def test_mixed_mechanism_e2e_all_three_alphas_register() -> None:
+    """All three layers must register without error.
 
-    Three SIGNAL feeders (kyle_drift, inventory_revert, hawkes_burst)
-    and one PORTFOLIO consumer (xsect_mixed_mechanism_v1).
+    Two SIGNAL feeders (inventory_revert, hawkes_burst)
+    and one PORTFOLIO consumer (pro_burst_revert_v1).
     """
     orchestrator, _s, _i, _o = _build()
     registry = orchestrator._alpha_registry
     assert registry is not None
     ids = registry.alpha_ids()
-    assert "sig_kyle_drift_v1" in ids
     assert "sig_inventory_revert_v1" in ids
     assert "sig_hawkes_burst_v1" in ids
-    assert "pro_xsect_mixed_mechanism_v1" in ids
+    assert "pro_burst_revert_v1" in ids
 
 
 def test_mixed_mechanism_e2e_composition_layer_is_wired() -> None:
@@ -356,7 +336,7 @@ def test_mixed_mechanism_e2e_composition_cycle_fires() -> None:
 
     360 seconds of event-time data crosses the 300-second decision
     horizon, triggering at least one composition cycle for
-    ``pro_xsect_mixed_mechanism_v1``.
+    ``pro_burst_revert_v1``.
     """
     _o, _s, intents, _orders = _build()
     assert len(intents) >= 1, (
@@ -365,7 +345,7 @@ def test_mixed_mechanism_e2e_composition_cycle_fires() -> None:
         "to HorizonTick for the 300-second horizon."
     )
     strategy_ids = {it.strategy_id for it in intents}
-    assert "pro_xsect_mixed_mechanism_v1" in strategy_ids
+    assert "pro_burst_revert_v1" in strategy_ids
 
 
 def test_mixed_mechanism_e2e_per_strategy_positions_independent() -> None:
@@ -374,16 +354,12 @@ def test_mixed_mechanism_e2e_per_strategy_positions_independent() -> None:
     sp = orchestrator._strategy_positions
     assert sp is not None
     for sym in _UNIVERSE:
-        kyle_pos = sp.get("sig_kyle_drift_v1", sym)
         inv_pos = sp.get("sig_inventory_revert_v1", sym)
         hawkes_pos = sp.get("sig_hawkes_burst_v1", sym)
-        mixed_pos = sp.get("pro_xsect_mixed_mechanism_v1", sym)
-        assert kyle_pos is not inv_pos
-        assert kyle_pos is not hawkes_pos
-        assert kyle_pos is not mixed_pos
+        burst_pos = sp.get("pro_burst_revert_v1", sym)
         assert inv_pos is not hawkes_pos
-        assert inv_pos is not mixed_pos
-        assert hawkes_pos is not mixed_pos
+        assert inv_pos is not burst_pos
+        assert hawkes_pos is not burst_pos
 
 
 # ── Determinism (Inv-5) ─────────────────────────────────────────────────
@@ -407,6 +383,6 @@ def test_mixed_mechanism_e2e_intent_stream_is_deterministic() -> None:
         f"{len(intents_a)} vs {len(intents_b)}"
     )
     assert _hash_intents(intents_a) == _hash_intents(intents_b), (
-        "pro_xsect_mixed_mechanism_v1 intent hash drift across identical "
+        "pro_burst_revert_v1 intent hash drift across identical "
         "replays (Inv-5 violation)"
     )

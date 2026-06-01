@@ -25,6 +25,7 @@ class CostModel(Protocol):
         half_spread: Decimal,
         is_taker: bool = True,
         is_short: bool = False,
+        is_through_fill: bool = False,
     ) -> CostBreakdown:
         """Return cost components for a single fill.
 
@@ -33,6 +34,11 @@ class CostModel(Protocol):
         liquidity) and the passive adverse-selection penalty.
         ``is_short=True`` applies the hard-to-borrow (HTB) daily fee
         on SELL-side fills when ``htb_borrow_annual_bps > 0``.
+        ``is_through_fill`` (maker fills only) selects the adverse-selection
+        regime: ``True`` for a through-fill (the market traded *through* the
+        resting order — high adverse selection), ``False`` (default) for a
+        queue-drain / level fill (the queue ahead drained at a stable price —
+        low adverse selection).
         """
         ...
 
@@ -71,11 +77,18 @@ class DefaultCostModelConfig:
         is enforced when ``min_commission_applies_to_per_share_only=True``;
         in legacy bundled-floor mode the cap is applied to the bundled
         total (consistent with the bundled floor).
-    ``passive_adverse_selection_bps``: additional cost on passive
-        (maker) fills to model adverse selection risk in basis points.
-        A flat per-fill proxy — real adverse selection is direction-
-        and event-dependent (through-fills are typically worse than
-        queue-drain fills).  See module docstring for limitations.
+    ``adverse_selection_through_bps`` / ``adverse_selection_drain_bps``:
+        adverse-selection cost on passive (maker) fills, in basis points,
+        split by fill regime.  A *through-fill* (the opposite-side BBO
+        gapped through the resting limit so the market traded through the
+        order) carries high adverse selection — the price moved against
+        the resting side as it filled — and uses
+        ``adverse_selection_through_bps`` (default 3.0).  A *queue-drain*
+        fill (the queue ahead drained while price held at the resting
+        level) carries low adverse selection and uses
+        ``adverse_selection_drain_bps`` (default 0.3).  The caller selects
+        the regime via ``compute(..., is_through_fill=...)``; the default
+        (``False``) is the drain regime.
     ``sell_regulatory_bps``: combined SEC Section 31 fee + small
         operator-conservativeness margin, in basis points of notional,
         applied on SELL fills only.  Default 0.5 bps approximates the
@@ -120,7 +133,8 @@ class DefaultCostModelConfig:
     maker_exchange_per_share: Decimal = Decimal("-0.002")
     min_commission: Decimal = Decimal("0.35")
     max_commission_pct: Decimal = Decimal("1.0")
-    passive_adverse_selection_bps: Decimal = Decimal("0.5")
+    adverse_selection_through_bps: Decimal = Decimal("3.0")
+    adverse_selection_drain_bps: Decimal = Decimal("0.3")
     sell_regulatory_bps: Decimal = Decimal("0.5")
     finra_taf_per_share: Decimal = Decimal("0.000166")
     finra_taf_max_per_order: Decimal = Decimal("8.30")
@@ -143,7 +157,8 @@ class DefaultCostModel:
         ``taker_exchange_per_share`` on top of commission.
       - Maker fills (passive limit orders) receive
         ``maker_exchange_per_share`` rebate (negative value) and incur
-        ``passive_adverse_selection_bps`` for adverse selection risk.
+        an adverse-selection penalty selected by ``is_through_fill``
+        (``adverse_selection_through_bps`` vs ``adverse_selection_drain_bps``).
 
     A ``stress_multiplier > 1.0`` scales all variable costs proportionally
     for worst-case scenario analysis.
@@ -161,6 +176,7 @@ class DefaultCostModel:
         half_spread: Decimal,
         is_taker: bool = True,
         is_short: bool = False,
+        is_through_fill: bool = False,
     ) -> CostBreakdown:
         notional = fill_price * quantity
         stress = self._cfg.stress_multiplier
@@ -268,10 +284,19 @@ class DefaultCostModel:
                 )
                 commission = min(commission, max_commission)
 
-        # Passive adverse-selection penalty (maker fills only)
+        # Passive adverse-selection penalty (maker fills only), split by
+        # fill regime: through-fills (market traded through the resting
+        # order) are adversely selected and cost more than queue-drain
+        # fills (queue ahead drained at a stable price).  Both are
+        # variable costs and are stressed.
         adverse_cost = Decimal("0")
         if not is_taker:
-            adverse_cost = notional * self._cfg.passive_adverse_selection_bps * stress / Decimal("10000")
+            adverse_bps = (
+                self._cfg.adverse_selection_through_bps
+                if is_through_fill
+                else self._cfg.adverse_selection_drain_bps
+            )
+            adverse_cost = notional * adverse_bps * stress / Decimal("10000")
 
         # Sell-side regulatory fees.
         #   - SEC Section 31 fee: bps of notional on sells (modeled
@@ -334,6 +359,7 @@ class ZeroCostModel:
         half_spread: Decimal,
         is_taker: bool = True,
         is_short: bool = False,
+        is_through_fill: bool = False,
     ) -> CostBreakdown:
         notional = fill_price * quantity
         return CostBreakdown(
@@ -356,6 +382,8 @@ def estimate_round_trip_cost_bps(
     is_taker: bool,
     is_short_entry: bool,
     is_taker_exit: bool | None = None,
+    is_through_fill_entry: bool = False,
+    is_through_fill_exit: bool = False,
 ) -> float:
     """Sum model one-way ``cost_bps`` for an entry + flat-to-flat exit leg.
 
@@ -367,6 +395,10 @@ def estimate_round_trip_cost_bps(
     when provided, controls the exit-leg assumption independently.  When
     ``is_taker_exit is None`` the legacy symmetric behavior is preserved
     (``is_taker_exit = is_taker``).
+
+    ``is_through_fill_entry`` / ``is_through_fill_exit`` select the
+    maker adverse-selection regime per leg (default both ``False`` =
+    queue-drain).  They are inert on taker legs.
 
     Why an asymmetric option matters: in the platform's passive-limit
     execution mode the entry is posted as a maker (``is_taker=False``)
@@ -390,6 +422,7 @@ def estimate_round_trip_cost_bps(
         half_spread,
         is_taker=is_taker,
         is_short=entry_short,
+        is_through_fill=is_through_fill_entry,
     )
     exit_side = Side.SELL if entry_side == Side.BUY else Side.BUY
     exit_leg = model.compute(
@@ -400,5 +433,6 @@ def estimate_round_trip_cost_bps(
         half_spread,
         is_taker=is_taker_exit,
         is_short=False,
+        is_through_fill=is_through_fill_exit,
     )
     return float(entry.cost_bps + exit_leg.cost_bps)

@@ -1,7 +1,7 @@
 """Backtest order router — simulated fills for backtest mode.
 
 Implements the ``OrderRouter`` protocol with a deterministic
-mid-price + walk-the-book partial-fill model.  Despite the historical
+cross-price + walk-the-book partial-fill model.  Despite the historical
 "v1 placeholder" framing, the implementation is the production
 backtest path: ACKNOWLEDGED + (optional) PARTIALLY_FILLED + FILLED
 with cost-model attribution and L1-depth-walk impact.  The
@@ -11,42 +11,48 @@ fill model is implemented separately by
 and is selected via ``execution_mode in {"passive_limit",
 "minimum_cost"}`` at bootstrap time.
 
-Cost-accounting convention (audit R6)
--------------------------------------
+Cost-accounting convention (audit R6, revised BT-3)
+---------------------------------------------------
 
-Market orders fill at the **mid** ``(bid + ask) / 2`` and the
-half-spread cross is debited as a separate ``spread_cost`` component
-inside the :class:`CostBreakdown` returned by the cost model.  The
-position's :attr:`Position.avg_entry_price` therefore records the
-mid (NOT the executed cross price) and the half-spread flows through
-:attr:`Position.cumulative_fees` instead.  This is internally
-consistent — NAV (`BasicRiskEngine._compute_current_equity`) and
-forensics both subtract fees explicitly — but consumers that read
-``realized_pnl`` directly without subtracting fees will overstate
-edge.  See :class:`feelies.portfolio.position_store.Position` for
-the canonical statement of this convention; live deployments must
-mirror it (or update both ends together) to preserve Inv-9 parity.
+Market orders fill at the **executed cross price** — the touch the
+taker crosses to (BUY lifts ``quote.ask``, SELL hits ``quote.bid``) —
+so :attr:`Position.avg_entry_price` records the price IB would report.
+The half-spread is embedded in that price, NOT debited as a separate
+``spread_cost`` fee (the cost model is called with ``half_spread=0``);
+see :mod:`feelies.execution.market_fill` for the single chokepoint.
 
-The ``walk-the-book`` excess-quantity branch is the one exception:
-the impact premium IS encoded into ``avg_entry_price`` (because the
-adverse impact is genuinely realized at fill time, not a synthetic
-spread cost).  See the inline comment in :meth:`submit`.
+Because marks use the mid, a taker entry shows an immediate
+half-spread unrealized markdown rather than a fee.  NAV is unchanged —
+``BasicRiskEngine._compute_current_equity`` sums
+``account_equity + realized − fees + unrealized`` — only the
+attribution moved (out of :attr:`Position.cumulative_fees`, into the
+entry price / unrealized line).  Consumers that read
+:attr:`Position.cumulative_fees` as "total transaction cost" no longer
+see the spread there; the spread now lives in realized/unrealized PnL.
+See :class:`feelies.portfolio.position_store.Position` for the
+canonical statement; live deployments already cross at the touch.
+
+The ``walk-the-book`` excess-quantity branch stacks its impact premium
+on top of the cross (above the ask for buys, below the bid for sells)
+and that premium is likewise encoded into ``avg_entry_price``.  See the
+inline comment in :meth:`submit`.
 
 Fill semantics:
   - Orders are acknowledged immediately on submit (ACKNOWLEDGED ack
     emitted first, for parity with the live-mode state machine).
-  - Orders are then filled at mid-price of the most recent quote
-    for that symbol; the half-spread cost is attributed via the
-    cost model (see convention above).
+  - Orders are then filled at the executed cross price of the most
+    recent quote for that symbol (BUY lifts the ask, SELL hits the
+    bid); the half-spread is embedded in the price (see convention
+    above), not attributed as a separate fee.
   - If no quote has been seen for the symbol, the order is rejected.
   - If the quote is crossed or locked (bid >= ask), the order is
-    rejected rather than silently filling at a dubious mid.
+    rejected rather than silently filling at a dubious cross.
   - If the relevant L1 depth is zero, the order is rejected rather
-    than silently filling at mid against a vacuum.
+    than silently filling against a vacuum.
   - When the requested quantity exceeds the L1 available depth
     (``bid_size`` for sells, ``ask_size`` for buys), the fill is
     split into two acks (D14 partial fill model):
-      1. ``PARTIALLY_FILLED`` for the available depth at mid-price.
+      1. ``PARTIALLY_FILLED`` for the available depth at the cross.
       2. ``FILLED`` for the remainder at a slippage-adjusted price
          modelling walk-the-book impact (2d).
     Slippage for the excess = market_impact_factor × (excess / depth)
@@ -72,7 +78,13 @@ Invariants preserved:
 
 from __future__ import annotations
 
+<<<<<<< HEAD
 from dataclasses import replace
+=======
+from collections.abc import Callable
+
+from dataclasses import dataclass, replace
+>>>>>>> origin/main
 from decimal import Decimal
 
 from feelies.core.clock import Clock
@@ -85,6 +97,7 @@ from feelies.core.events import (
 )
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.cost_model import CostModel, ZeroCostModel
+<<<<<<< HEAD
 from feelies.execution.market_fill import (
     DeferredFill,
     append_market_fill_acks,
@@ -99,6 +112,47 @@ from feelies.execution.market_fill import (
 # contract (Inv 9).  Aliased to the historical name for readability at the
 # call sites below.
 _DeferredMarketFill = DeferredFill
+=======
+from feelies.execution.market_fill import append_market_fill_acks, to_decimal
+from feelies.execution.moc_fill import MocFillController
+from feelies.execution.moc_session import MocSessionBounds
+from feelies.execution.trading_session import (
+    RthEntryFillGate,
+    TradingSessionBounds,
+)
+
+
+@dataclass(frozen=True)
+class _DeferredMarketFill:
+    """MARKET order waiting until exchange time reaches fill deadline.
+
+    ``ticks_for_symbol`` is incremented every time a matching-symbol quote
+    arrives so the deferred order can be cancelled after
+    ``max_resting_ticks`` quotes — mirroring the safety net the passive
+    router applies to deferred aggressive fills.  Without this cap, a halt
+    or thinly-traded symbol could leave a MARKET order pending indefinitely
+    (Inv 11: fail-safe default).
+
+    ``ack_timestamp_ns`` is the ACKNOWLEDGED ack timestamp emitted at
+    submit (``clock.now_ns() + latency_ns`` at submit time).  It is stored
+    so the deferred FILLED timestamp can be ``max(clock.now_ns(), ack)``
+    instead of ``fill_quote_ts + latency_ns``: the eligibility gate already
+    waited ``latency_ns`` on the exchange clock, and flooring at
+    ``clock.now_ns()`` keeps FILLED aligned with the simulated decision
+    clock under any ``ReplayFeed`` ``market_data_latency_ns`` setting (the
+    BT-17 default advances the clock to ``exchange_ts + md_latency`` before
+    yielding the eligible quote, so a raw ``quote.exchange_timestamp_ns``
+    floor would trail ``now_ns()`` by ``md_latency`` and break ack-stream
+    monotonicity — Inv 9).  The same floor applies to ``max_resting_ticks``
+    timeout rejects so REJECTED never timestamps before ACKNOWLEDGED while
+    exchange time is still short of the latency deadline.
+    """
+
+    request: OrderRequest
+    fill_deadline_exchange_ns: int
+    ack_timestamp_ns: int
+    ticks_for_symbol: int = 0
+>>>>>>> origin/main
 
 
 class BacktestOrderRouter:
@@ -114,9 +168,9 @@ class BacktestOrderRouter:
     depth multiple of excess).
     ``max_impact_half_spreads``: cap on the impact premium, expressed
     in multiples of the half-spread.  Default 10 — a single order
-    cannot move the fill price more than 10 half-spreads beyond mid,
-    even against a 1-lot book.  Protects against unbounded slippage
-    on thin quotes.
+    cannot move the fill price more than 10 half-spreads beyond the
+    cross, even against a 1-lot book.  Protects against unbounded
+    slippage on thin quotes.
     ``max_resting_ticks``: when ``latency_ns > 0``, deferred MARKET fills
     are rejected after this many quotes for the symbol while exchange
     time is still before the latency eligibility deadline (Inv 11).
@@ -131,6 +185,8 @@ class BacktestOrderRouter:
         max_impact_half_spreads: Decimal | int | str | float = Decimal("10"),
         *,
         max_resting_ticks: int = 50,
+        moc_bounds: MocSessionBounds | None = None,
+        trading_session_bounds: TradingSessionBounds | None = None,
     ) -> None:
         self._clock = clock
         self._latency_ns = latency_ns
@@ -147,6 +203,21 @@ class BacktestOrderRouter:
         self._submitted_order_ids: set[str] = set()
         self._ack_seq = SequenceGenerator()
         self._deferred_markets: list[_DeferredMarketFill] = []
+        self._moc: MocFillController | None = None
+        if moc_bounds is not None:
+            self._moc = MocFillController(
+                moc_bounds,
+                clock,
+                self._cost_model,
+                self._ack_seq,
+                self._pending_acks,
+                max_resting_ticks=max_resting_ticks,
+            )
+        self._rth_gate = RthEntryFillGate(trading_session_bounds)
+
+    def bind_position_qty(self, fn: Callable[[str], int]) -> None:
+        """Wire signed position qty for RTH entry/exit discrimination (BT-16)."""
+        self._rth_gate.bind_position_qty(fn)
 
     def on_quote(self, quote: NBBOQuote) -> None:
         """Update the latest quote for a symbol.
@@ -155,7 +226,22 @@ class BacktestOrderRouter:
         explicitly by the caller before each tick.
         """
         self._last_quotes[quote.symbol] = quote
+        if self._moc is not None:
+            self._moc.on_quote(quote)
         self._flush_deferred_market_fills(quote)
+
+    def _rth_reject_entry_if_needed(
+        self,
+        request: OrderRequest,
+        exchange_ts_ns: int,
+    ) -> bool:
+        suppress, reason = self._rth_gate.should_suppress(
+            request, exchange_ts_ns,
+        )
+        if not suppress:
+            return False
+        self._reject(request, reason)
+        return True
 
     def submit(self, request: OrderRequest) -> None:
         if request.order_id in self._submitted_order_ids:
@@ -173,11 +259,25 @@ class BacktestOrderRouter:
             return
 
         # Crossed/locked quotes produce nonsensical fills — reject.
+        # Applied before the MOC ack path so MOC orders share the same
+        # data-quality guard as MARKET orders at submit time.
         if quote.bid >= quote.ask:
             self._reject(
                 request,
                 f"crossed or locked quote bid={quote.bid} ask={quote.ask}",
             )
+            return
+
+        if self._rth_reject_entry_if_needed(
+            request, quote.exchange_timestamp_ns,
+        ):
+            return
+
+        if self._moc is not None and self._moc.submit(
+            request,
+            exchange_timestamp_ns=quote.exchange_timestamp_ns,
+            reject_fn=self._reject,
+        ):
             return
 
         # Emit ACKNOWLEDGED first for live-mode SM parity (Inv 9).
@@ -227,10 +327,12 @@ class BacktestOrderRouter:
         if not self._deferred_markets:
             return
         remaining: list[_DeferredMarketFill] = []
-        # FILLED must be >= the stored ACKNOWLEDGED timestamp.  When the
-        # injected clock tracks exchange time (``ReplayFeed``), using
-        # ``clock.now_ns() + latency_ns`` here would add a second copy of
-        # one-way latency on top of the exchange-time eligibility gate below.
+        # FILLED is floored at ``max(clock.now_ns(), ack_timestamp_ns)``:
+        # ``ack_timestamp_ns`` keeps FILLED >= ACKNOWLEDGED, and
+        # ``clock.now_ns()`` keeps it aligned with the simulated decision
+        # clock under any ``ReplayFeed`` ``market_data_latency_ns`` setting
+        # (raw ``quote.exchange_timestamp_ns`` would trail ``now_ns()`` by
+        # ``md_latency`` under the BT-17 default, breaking monotonicity).
         for dm in self._deferred_markets:
             if dm.request.symbol != quote.symbol:
                 remaining.append(dm)
@@ -276,7 +378,11 @@ class BacktestOrderRouter:
                     timestamp_ns=reject_ts,
                 )
                 continue
-            fill_ts = max(dm.ack_timestamp_ns, quote.exchange_timestamp_ns)
+            if self._rth_reject_entry_if_needed(
+                dm.request, quote.exchange_timestamp_ns,
+            ):
+                continue
+            fill_ts = max(self._clock.now_ns(), dm.ack_timestamp_ns)
             self._execute_market_fill(dm.request, quote, fill_ts)
         self._deferred_markets = remaining
 
@@ -302,6 +408,37 @@ class BacktestOrderRouter:
         acks = list(self._pending_acks)
         self._pending_acks.clear()
         return acks
+
+    def cancel_order(self, order_id: str) -> bool:
+        """Cancel an acknowledged-but-unfilled MOC order by id.
+
+        The market backtest router has no resting limit book of its
+        own — MARKET orders fill or reject inline at submit and
+        deferred-MARKET fills are flushed by ``on_quote``.  But MOC
+        orders sit in :class:`MocFillController` until the closing
+        print.  The kernel's halt / reverse cleanup walks active
+        orders and calls ``cancel_order`` on each (parity with the
+        passive router), so MOC entries must be reachable here too;
+        otherwise an acknowledged MOC could still fill at the close
+        after the kernel believed resting interest was cleared.
+        """
+        if self._moc is None:
+            return False
+        return self._moc.cancel_pending(order_id, "client_cancel")
+
+    def expire_pending_moc(
+        self,
+        reason: str = "MOC_NO_CLOSE_PRINT",
+    ) -> int:
+        """Reject any acknowledged MOC orders that never received a
+        closing-auction print.  Called by the kernel at session /
+        replay end so an MOC cannot remain non-terminal indefinitely
+        when no qualifying post-close NBBO arrives in the feed.
+        Returns the number of orders expired.
+        """
+        if self._moc is None:
+            return 0
+        return self._moc.expire_unfilled(reason, reject_fn=self._reject)
 
     def _reject(
         self,

@@ -122,4 +122,38 @@ def load_pinned_baseline(
         return None
 
 
-__all__ = ["PinnedBaseline", "load_pinned_baseline"]
+__all__ = ["PinnedBaseline", "load_pinned_baseline", "load_paper_rth_baseline"]
+
+
+def load_paper_rth_baseline() -> dict[str, float] | None:
+    """Load ``hosts[PERF_HOST_LABEL].paper_rth`` metrics or return None."""
+    host_label = os.environ.get("PERF_HOST_LABEL", "").strip()
+    if not host_label:
+        return None
+    data = _load_json()
+    host_blob = data["hosts"].get(host_label)
+    if host_blob is None:
+        print(
+            f"PERF_BASELINE_MISS host_label={host_label!r} "
+            "section=paper_rth reason=host_not_in_baseline_file"
+        )
+        return None
+    section = host_blob.get("paper_rth")
+    if not isinstance(section, dict):
+        print(
+            f"PERF_BASELINE_MISS host_label={host_label!r} "
+            "section=paper_rth reason=section_missing"
+        )
+        return None
+    try:
+        return {
+            "tick_processing_p99_s": float(section["tick_processing_p99_s"]),
+            "drain_p99_s": float(section["drain_p99_s"]),
+            "fill_to_position_p99_s": float(section["fill_to_position_p99_s"]),
+        }
+    except (KeyError, TypeError, ValueError) as exc:
+        print(
+            f"PERF_BASELINE_MISS host_label={host_label!r} "
+            f"section=paper_rth reason=malformed:{exc}"
+        )
+        return None

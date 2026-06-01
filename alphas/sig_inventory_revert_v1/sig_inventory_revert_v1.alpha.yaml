@@ -162,10 +162,12 @@ risk_budget:
 # over divergent literals here.
 regime_gate:
   regime_engine: hmm_3state_fractional
+  # BT-12: inventory-dominant only — require normal dominant state, higher
+  # P(normal), and suppress when vol-breakout mass rises (informed-flow proxy).
   on_condition: |
-    abs(quote_replenish_asymmetry_zscore) > 2.0 and P(normal) > 0.5
+    abs(quote_replenish_asymmetry_zscore) > 2.0 and dominant == "normal" and P(normal) > 0.65 and P(vol_breakout) < 0.20
   off_condition: |
-    P(normal) < 0.5 - posterior_margin or abs(quote_replenish_asymmetry_zscore) < 2.0 - percentile_margin or spread_z_30d > 2.0 or realized_vol_30s_zscore > 3.5 or quote_hazard_rate < 4.0
+    dominant != "normal" or P(normal) < 0.5 - posterior_margin or P(vol_breakout) > 0.30 or abs(quote_replenish_asymmetry_zscore) < 2.0 - percentile_margin or spread_z_30d > 2.0 or realized_vol_30s_zscore > 3.5 or quote_hazard_rate < 4.0
   hysteresis:
     posterior_margin: 0.20
     percentile_margin: 0.30

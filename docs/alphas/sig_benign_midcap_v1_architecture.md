@@ -157,6 +157,7 @@ Overridable via **`platform.yaml` → `parameter_overrides:`** under key **`sig_
 | `entry_threshold_z` | Minimum `\|ofi_ewma_zscore\|` before entry; higher ⇒ fewer signals. |
 | `edge_per_z_bps` | Scales `edge_estimate_bps` linearly with `\|z\|` (capped below). |
 | `edge_cap_bps` | Hard cap on reported edge (bps). |
+| `strength_cap` | Ceiling for convex strength scaling; signals at `\|z\| == threshold×2` produce `strength==1.0`; higher-z signals scale superlinearly up to this cap. |
 
 ### 4.2 `platform.yaml` sensor `params`
 

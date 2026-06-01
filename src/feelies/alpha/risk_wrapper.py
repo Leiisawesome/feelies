@@ -38,6 +38,7 @@ from feelies.core.events import (
 from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.basic_risk import RiskConfig
+from feelies.risk.buying_power import BuyingPowerPhase
 from feelies.risk.engine import RiskEngine
 from feelies.risk.sized_intent_result import SizedIntentRiskResult
 
@@ -427,6 +428,37 @@ class AlphaBudgetRiskWrapper:
         refresh = getattr(self._inner, "refresh_high_water_mark", None)
         if callable(refresh):
             refresh(positions)
+
+    def record_fill(
+        self,
+        symbol: str,
+        prev_qty: int,
+        new_qty: int,
+        timestamp_ns: int,
+    ) -> None:
+        """Delegate PDT round-trip bookkeeping to the inner engine (BT-4).
+
+        The orchestrator calls this after each applied fill; the inner
+        ``BasicRiskEngine`` owns the ``PDTConstraint``.
+        """
+        record = getattr(self._inner, "record_fill", None)
+        if callable(record):
+            record(symbol, prev_qty, new_qty, timestamp_ns)
+
+    def set_buying_power_phase(self, phase: BuyingPowerPhase) -> None:
+        """Delegate intraday/overnight buying-power flip to the inner engine.
+
+        BT-15/BT-16: the orchestrator calls this on the engine it holds
+        (which is *this* wrapper when per-alpha budgets are enforced)
+        when exchange time crosses the RTH close.  Without this
+        forwarder, ``getattr(self._risk_engine, "set_buying_power_phase",
+        None)`` would return ``None`` on the wrapper and the inner
+        ``BasicRiskEngine`` would stay on the 4× intraday cap past the
+        close — the opposite of the BT-16 acceptance intent.
+        """
+        set_phase = getattr(self._inner, "set_buying_power_phase", None)
+        if callable(set_phase):
+            set_phase(phase)
 
 
 def _signal_reduces_position(

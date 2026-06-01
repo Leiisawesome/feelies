@@ -33,6 +33,8 @@ There are no long-running services. The platform is a library + CLI; the "applic
 - `uv run pytest -m "not functional and not slow"` — skip network/benchmark tests
 - `uv run pytest tests/determinism/` — determinism parity hash tests (54 tests)
 - `uv run pytest tests/integration/test_phase4_e2e.py` — e2e pipeline test (8 tests)
+- **Paper RTH (Tier 2–3, requires IB Gateway + MASSIVE_API_KEY + RTH):** `uv run pytest tests/broker/ib/test_ib_functional.py tests/integration/test_paper_rth_e2e.py -m paper_rth`
+- **Paper smoke config:** `uv run python scripts/run_paper.py --config configs/paper_smoke_rth.yaml --max-runtime-s 60 --run-dir /tmp/paper_smoke`
 
 ### Known pre-existing acceptance test failures (as of main)
 

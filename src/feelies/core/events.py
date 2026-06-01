@@ -98,6 +98,27 @@ class Trade(Event):
     received_ns: int | None = None
 
 
+@dataclass(frozen=True, kw_only=True)
+class SymbolHalted(Event):
+    """Forensic marker for a per-symbol trading halt / resume (BT-5).
+
+    Emitted by the orchestrator when a symbol's tape signals an LULD /
+    regulatory halt (``halted=True``) or a resume (``halted=False``).
+    Carries no control semantics itself — fill suppression is enforced
+    separately by the orchestrator's halt gate — but lets post-trade
+    forensics reconstruct which fills were suppressed and why.
+
+    ``blackout_until_ns`` is populated only on resume (``halted=False``):
+    new *entry* fills remain suppressed until this event-time deadline so
+    the reopening-auction print can stabilise.  ``0`` on a halt-on event.
+    """
+
+    symbol: str
+    halted: bool
+    reason: str = ""
+    blackout_until_ns: int = 0
+
+
 # ── Feature Events ──────────────────────────────────────────────────────
 #
 # Workstream D.2 PR-2b-iv deleted the per-tick ``FeatureVector`` event
@@ -271,6 +292,9 @@ class OrderRequest(Event):
     limit_price: Decimal | None = None
     strategy_id: str = ""
     is_short: bool = False  # True for short-entry sells (HTB fee applies)
+    # BT-8: closing-auction (MOC) order — backtest routers queue until the
+    # official close print instead of filling on the continuous book.
+    is_moc: bool = False
     g12_disclosed_cost_total_bps: float = 0.0
     reason: str = ""
 

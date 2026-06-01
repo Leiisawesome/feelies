@@ -19,43 +19,43 @@ from typing import Protocol
 class Position:
     """Current position in a single symbol.
 
-    Cost-accounting convention (audit R6)
-    -------------------------------------
+    Cost-accounting convention (audit R6, revised BT-3)
+    ---------------------------------------------------
 
     The platform's :class:`feelies.execution.backtest_router.BacktestOrderRouter`
-    fills market orders at the **mid-price** ``(bid + ask) / 2`` and
-    records the spread-cross cost separately as a ``spread_cost``
-    component inside :class:`feelies.execution.cost_model.CostBreakdown`,
-    which the orchestrator debits to :attr:`cumulative_fees` via
-    ``MemoryPositionStore.update``.  This means:
+    fills market orders at the **executed cross price** (ask for taker
+    buys, bid for taker sells) — the price IB reports — embedding the
+    half-spread in the fill price rather than recording it as a separate
+    ``spread_cost`` fee (the cost model is called with ``half_spread=0``).
+    This means:
 
-    * :attr:`avg_entry_price` is recorded at the **mid**, NOT at the
-      executed cross price (i.e. ask for taker buys, bid for taker
-      sells).  It does NOT include the half-spread cost.
+    * :attr:`avg_entry_price` is recorded at the **executed cross
+      price**, so it INCLUDES the half-spread cost.
 
     * :attr:`realized_pnl` is computed against ``avg_entry_price`` and
-      therefore EXCLUDES the half-spread cost component.  Any consumer
-      that uses :attr:`realized_pnl` *without* subtracting
-      :attr:`cumulative_fees` will systematically overstate net edge.
+      therefore now INCLUDES the half-spread (a taker round trip realizes
+      the full spread in PnL).  ``spread_cost`` no longer flows through
+      :attr:`cumulative_fees`, so a consumer reading
+      :attr:`cumulative_fees` as "total transaction cost" will *understate*
+      cost by the spread; the spread lives in realized/unrealized PnL.
       The platform's NAV calculation (`BasicRiskEngine._compute_current_equity`)
       and the post-trade-forensics analyzer both subtract fees explicitly,
       so platform-internal accounting is self-consistent — but external
       reporting code that pulls :attr:`realized_pnl` directly must
       apply the same fee subtraction.
 
-    * The ``walk-the-book`` partial-fill remainder branch is the one
-      exception: when an order's quantity exceeds the available L1
-      depth, the excess fills at a market-impact-adjusted price (above
-      mid for buys, below mid for sells) and that adverse component IS
-      reflected in :attr:`avg_entry_price`.  See
+    * The ``walk-the-book`` partial-fill remainder stacks its
+      market-impact premium on top of the cross (above the ask for
+      buys, below the bid for sells) and that adverse component is
+      likewise reflected in :attr:`avg_entry_price`.  See
       :meth:`BacktestOrderRouter.submit` for the explicit comment.
 
     * Mark-to-market via :meth:`PositionStore.update_mark` uses the
-      next quote's mid, so the unrealized-PnL line is symmetric with
-      the entry convention: a flat-to-flat round trip on a quote that
-      never moved produces zero unrealized PnL while
-      :attr:`cumulative_fees` carries the round-trip half-spread +
-      commission + regulatory charges.
+      next quote's mid.  Because a taker enters at the cross but marks
+      at the mid, a flat-to-flat round trip on a quote that never moved
+      shows the round-trip spread as a (un)realized PnL loss while
+      :attr:`cumulative_fees` carries only commission + regulatory
+      charges (the half-spread is now in the price, not the fees).
 
     Live deployments must mirror this convention (or update both the
     fill model and this docstring together) to preserve Inv-9

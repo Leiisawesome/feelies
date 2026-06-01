@@ -131,28 +131,28 @@ _STARTING_PRICES_CENTS: dict[str, int] = {
 _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     SensorSpec(
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=OFIEwmaSensor,
         params={"alpha": 0.1, "warm_after": 5},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="micro_price",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=MicroPriceSensor,
         params={},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="spread_z_30d",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=SpreadZScoreSensor,
         params={},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="kyle_lambda_60s",
-        sensor_version="1.1.0",
+        sensor_version="1.2.0",
         cls=KyleLambda60sSensor,
         # Use min_samples=5 so the sensor warms up quickly within the
         # smoke run (default is 30; 5 trades arrive within seconds).

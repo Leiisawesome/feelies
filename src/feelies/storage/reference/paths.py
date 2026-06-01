@@ -25,8 +25,12 @@ FACTOR_LOADINGS_DIR: Path = _ROOT / "factor_loadings"
 # Flat ``{symbol: sector_id}`` JSON consumed by :class:`SectorMatcher`.
 SECTOR_MAP_PATH: Path = _ROOT / "sector_map" / "sector_map.json"
 
+# BT-18: split/dividend ex-date table for replay integrity guards.
+EX_DATE_CALENDAR_PATH: Path = _ROOT / "corporate_actions" / "ex_dates.yaml"
+
 __all__ = [
     "EVENT_CALENDAR_DIR",
+    "EX_DATE_CALENDAR_PATH",
     "FACTOR_LOADINGS_DIR",
     "SECTOR_MAP_PATH",
 ]

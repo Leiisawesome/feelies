@@ -166,6 +166,7 @@ class AlphaManifest:
     trend_mechanism: dict[str, Any] | None = None
     hazard_exit: dict[str, Any] | None = None
     gate_thresholds_overrides: dict[str, Any] | None = None
+    lifecycle_cap: str | None = None
 
 
 # ── Alpha module protocol ───────────────────────────────────────────

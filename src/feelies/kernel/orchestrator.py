@@ -37,7 +37,7 @@ import itertools
 import logging
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Literal
@@ -87,6 +87,7 @@ from feelies.core.events import (
     Side,
     SizedPositionIntent,
     StateTransition,
+    SymbolHalted,
     Trade,
 )
 from feelies.core.identifiers import SequenceGenerator
@@ -104,7 +105,19 @@ from feelies.execution.intent import (
     TradingIntent,
 )
 from feelies.execution.order_state import OrderState, create_order_state_machine
-from feelies.ingestion.data_integrity import DataHealth
+from feelies.execution.trading_session import TradingSessionBounds
+from feelies.execution.regulatory.borrow_availability import (
+    BorrowTier,
+    build_borrow_table,
+    htb_fee_applies,
+    is_short_sale_intent,
+)
+from feelies.ingestion.data_integrity import (
+    DataHealth,
+    HaltSignal,
+    classify_halt_status,
+)
+from feelies.ingestion.idle_tick import IdleTick
 from feelies.ingestion.normalizer import MarketDataNormalizer
 from feelies.kernel.macro import (
     TRADING_MODES,
@@ -115,6 +128,7 @@ from feelies.kernel.micro import MicroState, create_micro_state_machine
 from feelies.kernel.signal_order_trace import SignalOrderTraceRow
 from feelies.monitoring.alerting import AlertManager
 from feelies.monitoring.kill_switch import KillSwitch
+from feelies.monitoring.paper_session_recorder import PaperSessionRecorder
 from feelies.monitoring.telemetry import MetricCollector
 from feelies.portfolio.position_store import PositionStore
 from feelies.risk.engine import RiskEngine
@@ -235,6 +249,17 @@ _TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset({
     OrderState.EXPIRED,
 })
 
+# BT-5: intents that open or increase exposure (a "new entry").  These are
+# suppressed during the post-halt resolution blackout; EXIT and NO_ACTION
+# are always permitted (existing positions may always be unwound).
+_ENTRY_OPENING_INTENTS: frozenset[TradingIntent] = frozenset({
+    TradingIntent.ENTRY_LONG,
+    TradingIntent.ENTRY_SHORT,
+    TradingIntent.SCALE_UP,
+    TradingIntent.REVERSE_LONG_TO_SHORT,
+    TradingIntent.REVERSE_SHORT_TO_LONG,
+})
+
 
 class Orchestrator:
     """Central coordinator for the deterministic tick-processing pipeline.
@@ -344,6 +369,7 @@ class Orchestrator:
         hazard_exit_controller: "HazardExitController | None" = None,
         signal_arbitrator: SignalArbitrator | None = None,
         signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
+        regime_calibration_quotes: Sequence[NBBOQuote] | None = None,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -436,6 +462,7 @@ class Orchestrator:
         self._signal_order_trace_sink: list[SignalOrderTraceRow] | None = (
             signal_order_trace_sink
         )
+        self._paper_session_recorder: PaperSessionRecorder | None = None
         self._quote_tick_in_flight: bool = False
         self._tick_quote_for_trace: NBBOQuote | None = None
         # Last quote that completed M1 with tracing enabled — survives the
@@ -473,6 +500,11 @@ class Orchestrator:
         self._min_order_shares: int = 1
         self._signal_min_edge_cost_ratio: float = 1.5  # 0 = gate disabled
         self._regime_calibration_max_quotes: int | None = None
+        self._regime_calibration_quotes: tuple[NBBOQuote, ...] | None = (
+            tuple(regime_calibration_quotes)
+            if regime_calibration_quotes is not None
+            else None
+        )
 
         self._config: Configuration | None = None
 
@@ -492,6 +524,45 @@ class Orchestrator:
         # stop consuming market events (fail-safe — avoids trading in an
         # unknown macro/micro pairing).
         self._pipeline_abort_requested = False
+
+        # ── BT-5: LULD halt modeling ─────────────────────────────────
+        # Symbols currently halted (no fills, entry or exit).  Driven from
+        # the Trade tape's halt-on / halt-off condition codes.  The blackout
+        # map records, per symbol, the event-time ns until which new ENTRY
+        # fills remain suppressed after a resume.  Codes / blackout cached
+        # from config in boot(); empty codes ⇒ halt modeling is inert.
+        self._halted_symbols: set[str] = set()
+        self._halt_blackout_until_ns: dict[str, int] = {}
+        self._halt_on_codes: frozenset[int] = frozenset()
+        self._halt_off_codes: frozenset[int] = frozenset()
+        self._halt_blackout_ns: int = 0
+
+        # ── BT-6: Reg-SHO / SSR short-sale restriction ───────────────
+        # Symbols currently SSR-active (sticky for the session): seeded from
+        # the daily SSR list at boot, then added to when the Trade tape's
+        # SSR-trigger condition codes fire intraday.  Under SSR (refuse_short
+        # mode) a short ENTRY fill is refused.  Empty codes + list ⇒ inert.
+        self._ssr_active: set[str] = set()
+        self._ssr_codes: frozenset[int] = frozenset()
+        self._ssr_mode: str = "refuse_short"
+
+        # ── BT-7: static borrow-availability table ────────────────────
+        # Per-symbol locate tier (available / hard / unavailable).  Omitted
+        # symbols default to AVAILABLE.  Cached from config in boot().
+        self._borrow_tier: dict[str, BorrowTier] = {}
+
+        # ── BT-8: MOC strategy routing ────────────────────────────────
+        # Set of strategy_ids whose entries route as MOC orders, and a
+        # flag indicating whether MOC session bounds were successfully
+        # resolved at boot().  Defaulted to empty/False here so configs
+        # without ``moc_strategy_ids`` (and tests using minimal configs)
+        # do not raise AttributeError on the entry-order path.
+        self._moc_strategy_ids: frozenset[str] = frozenset()
+        self._moc_bounds_configured: bool = False
+
+        # BT-16: RTH entry-fill suppression + close buying-power phase flip.
+        self._trading_session_bounds: TradingSessionBounds | None = None
+        self._rth_close_bp_flipped: bool = False
 
         # When True, entry/exit orders use LIMIT at BBO instead of
         # MARKET.  Stop-loss exits always use MARKET (fail-safe).
@@ -682,6 +753,36 @@ class Orchestrator:
     def risk_level(self) -> RiskLevel:
         return self._risk_escalation.state
 
+    @property
+    def trade_journal(self) -> TradeJournal | None:
+        return self._trade_journal
+
+    @property
+    def position_store(self) -> PositionStore:
+        return self._positions
+
+    @property
+    def account_equity(self) -> Decimal:
+        return self._account_equity
+
+    @property
+    def metric_collector(self) -> MetricCollector:
+        return self._metrics
+
+    @property
+    def kill_switch(self) -> KillSwitch | None:
+        return self._kill_switch
+
+    @property
+    def alpha_registry(self) -> AlphaRegistry | None:
+        return self._alpha_registry
+
+    def set_paper_session_recorder(
+        self, recorder: PaperSessionRecorder | None,
+    ) -> None:
+        """Attach a forensic session recorder (PAPER mode only)."""
+        self._paper_session_recorder = recorder
+
     def _require_safe_session_entry(self) -> None:
         """Fail closed before operational macro modes (Inv-11).
 
@@ -699,6 +800,73 @@ class Orchestrator:
                 f"{self._risk_escalation.state.name}, must be NORMAL — "
                 "use reset_risk_escalation() or unlock_from_lockdown()",
             )
+
+    def _bind_router_position_qty_for_rth(self) -> None:
+        """BT-16: wire signed live position qty into the router's RTH gate.
+
+        The router-side :class:`RthEntryFillGate` defaults ``current_qty``
+        to 0 when unbound, which would mis-classify exit fills as new
+        entries and suppress them after RTH close (violating Inv-11 for
+        the execution layer).  Binding is a no-op when RTH gating is
+        disabled (``_trading_session_bounds is None``) or when the
+        backend's router does not expose ``bind_position_qty``
+        (e.g. live broker routers without the hook).
+        """
+        if self._trading_session_bounds is None:
+            return
+        router = getattr(self._backend, "order_router", None)
+        bind = getattr(router, "bind_position_qty", None)
+        if not callable(bind):
+            return
+        bind(lambda sym: self._positions.get(sym).quantity)
+
+    def _maybe_flip_buying_power_at_rth_close(self, quote: NBBOQuote) -> None:
+        """BT-16: flip risk-engine buying-power phase at RTH close.
+
+        Once-per-session: the first quote with
+        ``exchange_timestamp_ns >= rth_close_ns`` transitions the risk
+        engine to :attr:`BuyingPowerPhase.OVERNIGHT` so the 2× overnight
+        multiplier is applied to any exits that linger past the close.
+        Compared against ``exchange_timestamp_ns`` rather than
+        ``timestamp_ns`` so the flip aligns with the exchange-time RTH
+        close used by router-side entry gating
+        (``BacktestOrderRouter`` / ``PassiveLimitOrderRouter`` and
+        :class:`TradingSessionBounds`).  No-op when RTH gating is
+        disabled, the flip has already fired this session, or the risk
+        engine does not expose ``set_buying_power_phase``.
+        """
+        if self._rth_close_bp_flipped:
+            return
+        bounds = self._trading_session_bounds
+        if bounds is None:
+            return
+        if quote.exchange_timestamp_ns < bounds.rth_close_ns:
+            return
+        set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
+        if not callable(set_phase):
+            self._rth_close_bp_flipped = True
+            return
+        from feelies.risk.buying_power import BuyingPowerPhase
+
+        set_phase(BuyingPowerPhase.OVERNIGHT)
+        self._rth_close_bp_flipped = True
+
+    def _reset_buying_power_phase_for_session(self) -> None:
+        """BT-16: reset the once-per-session RTH-close BP flip state.
+
+        Clears the latch that gates :meth:`_maybe_flip_buying_power_at_rth_close`
+        and forces the risk engine back onto
+        :attr:`BuyingPowerPhase.INTRADAY` so a new session always opens
+        on the 4× intraday cap — even when the same orchestrator
+        instance is reused across runs and the previous run left the
+        engine flipped to ``OVERNIGHT`` after crossing the close.
+        """
+        self._rth_close_bp_flipped = False
+        set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
+        if callable(set_phase):
+            from feelies.risk.buying_power import BuyingPowerPhase
+
+            set_phase(BuyingPowerPhase.INTRADAY)
 
     # ── Lifecycle: boot / run / shutdown ────────────────────────────
 
@@ -725,6 +893,90 @@ class Orchestrator:
                 self._trail_activate_pct = config.trail_activate_pct
             if hasattr(config, "trail_pct"):
                 self._trail_pct = config.trail_pct
+            # BT-5: cache halt-detection config (empty codes ⇒ inert).
+            if hasattr(config, "halt_on_condition_codes"):
+                self._halt_on_codes = frozenset(config.halt_on_condition_codes)
+            if hasattr(config, "halt_off_condition_codes"):
+                self._halt_off_codes = frozenset(config.halt_off_condition_codes)
+            if hasattr(config, "halt_resolution_blackout_seconds"):
+                self._halt_blackout_ns = (
+                    int(config.halt_resolution_blackout_seconds) * 1_000_000_000
+                )
+            # BT-6: seed the daily SSR list + cache the intraday trigger codes.
+            if hasattr(config, "ssr_active_symbols"):
+                self._ssr_active = {
+                    s.upper() for s in config.ssr_active_symbols
+                }
+            if hasattr(config, "ssr_trigger_condition_codes"):
+                self._ssr_codes = frozenset(config.ssr_trigger_condition_codes)
+            if hasattr(config, "ssr_mode"):
+                self._ssr_mode = config.ssr_mode
+            if hasattr(config, "borrow_availability"):
+                self._borrow_tier = build_borrow_table(config.borrow_availability)
+            if hasattr(config, "moc_strategy_ids"):
+                self._moc_strategy_ids = frozenset(config.moc_strategy_ids)
+                if config.moc_strategy_ids:
+                    from feelies.execution.moc_session import (
+                        build_moc_bounds_from_platform,
+                    )
+
+                    _event_cal = getattr(config, "event_calendar_path", None)
+                    cal_path = (
+                        str(_event_cal) if _event_cal is not None else None
+                    )
+                    self._moc_bounds_configured = (
+                        build_moc_bounds_from_platform(
+                            moc_session_date=getattr(
+                                config, "moc_session_date", None,
+                            ),
+                            event_calendar_path=cal_path,
+                            moc_cutoff_et=getattr(
+                                config, "moc_cutoff_et", "15:50",
+                            ),
+                            official_close_et=getattr(
+                                config, "official_close_et", "16:00",
+                            ),
+                            early_close_dates=getattr(
+                                config, "early_close_dates", (),
+                            ),
+                            early_close_moc_cutoff_et=getattr(
+                                config, "early_close_moc_cutoff_et", "12:50",
+                            ),
+                            early_close_official_close_et=getattr(
+                                config, "early_close_official_close_et", "13:00",
+                            ),
+                        )
+                        is not None
+                    )
+            if getattr(config, "rth_session_gating_enabled", False):
+                from feelies.execution.trading_session import (
+                    build_trading_session_from_platform,
+                )
+
+                _event_cal = getattr(config, "event_calendar_path", None)
+                cal_path = (
+                    str(_event_cal) if _event_cal is not None else None
+                )
+                self._trading_session_bounds = build_trading_session_from_platform(
+                    rth_session_gating_enabled=True,
+                    rth_session_date=(
+                        getattr(config, "rth_session_date", None)
+                        or getattr(config, "moc_session_date", None)
+                    ),
+                    event_calendar_path=cal_path,
+                    rth_open_et=getattr(config, "rth_open_et", "09:30"),
+                    rth_close_et=getattr(config, "rth_close_et", "16:00"),
+                    early_close_dates=getattr(config, "early_close_dates", ()),
+                    early_close_rth_close_et=getattr(
+                        config, "early_close_rth_close_et", "13:00",
+                    ),
+                    market_holiday_dates=getattr(
+                        config, "market_holiday_dates", (),
+                    ),
+                    no_entry_first_seconds=getattr(
+                        config, "no_entry_first_seconds", 0,
+                    ),
+                )
             if hasattr(config, "execution_mode"):
                 # passive_limit and minimum_cost both wire through the
                 # passive-limit backend.  The static flag tells the
@@ -817,6 +1069,8 @@ class Orchestrator:
         self._require_safe_session_entry()
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:backtest")
+        self._reset_buying_power_phase_for_session()
+        self._bind_router_position_qty_for_rth()
         self._pending_sized_intents.clear()
         self._consumed_by_portfolio_ids = None
         self._reset_regime_session_state()
@@ -853,7 +1107,10 @@ class Orchestrator:
         self._require_safe_session_entry()
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:paper")
+        self._reset_buying_power_phase_for_session()
+        self._bind_router_position_qty_for_rth()
         self._pending_sized_intents.clear()
+        self._consumed_by_portfolio_ids = None
         self._reset_regime_session_state()
         self._macro.transition(
             MacroState.PAPER_TRADING_MODE,
@@ -887,6 +1144,8 @@ class Orchestrator:
         self._require_safe_session_entry()
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:live")
+        self._reset_buying_power_phase_for_session()
+        self._bind_router_position_qty_for_rth()
         self._pending_sized_intents.clear()
         self._reset_regime_session_state()
         self._macro.transition(
@@ -1045,6 +1304,22 @@ class Orchestrator:
         Allowed from **RISK_LOCKDOWN** via ``CMD_SHUTDOWN`` so operators
         can tear down the process without a prior unlock when needed.
         """
+        # Final fill drain (Inv-9 paper/live) — picks up any broker
+        # ack that landed between the last quote and the operator's
+        # halt() so the CANCEL_REQUESTED resolution + pending-orders
+        # scan below act on the freshest order state.  Defensive
+        # ``_backend is not None`` for partially-constructed test
+        # orchestrators; production paths always have a backend.
+        if self._backend is not None:
+            # BT-8: terminate MOC orders that never received a
+            # closing-auction print so they don't survive shutdown
+            # as ACKNOWLEDGED-but-never-filled (Inv-4 hygiene).
+            expire_moc = getattr(
+                self._backend.order_router, "expire_pending_moc", None,
+            )
+            if expire_moc is not None:
+                expire_moc()
+            self._drain_async_fills(correlation_id="shutdown")
         self._checkpoint_feature_snapshots()
         # Resolve operator cancel intent when no broker ack will arrive
         # (e.g. mid backtest router has no cancel_order API).
@@ -1095,7 +1370,12 @@ class Orchestrator:
 
         Dispatches by event type: NBBOQuote drives the full signal
         pipeline; Trade events are logged and published for
-        observability but do not trigger signal evaluation.
+        observability but do not trigger signal evaluation;
+        :class:`IdleTick` triggers the async fill drain only (no
+        micro-SM transition, no bus publish, no EventLog append) so
+        broker-pushed fills from :class:`IBOrderRouter` are reconciled
+        when the live feed is between frames (Inv-9 paper/live;
+        BACKTEST feeds never emit ``IdleTick`` — Inv-A preserved).
         """
         for event in self._backend.market_data.events():
             if self._pipeline_abort_requested:
@@ -1106,6 +1386,12 @@ class Orchestrator:
                 self._process_tick(event)
             elif isinstance(event, Trade):
                 self._process_trade(event)
+            elif isinstance(event, IdleTick):
+                if self._paper_session_recorder is not None:
+                    self._paper_session_recorder.record_idle_tick()
+                self._drain_async_fills(
+                    correlation_id=f"idle:{event.timestamp_ns}",
+                )
 
         if self._pipeline_abort_requested:
             raise OrchestratorPipelineAbortError(
@@ -1137,6 +1423,13 @@ class Orchestrator:
         sensors and any time-bucket boundaries crossed by the trade
         timestamp are observed.
         """
+        # BT-5: detect halt-on / resume from the trade tape before the
+        # data-health gate so a halt is registered even when the symbol's
+        # quote feed is otherwise quiet.
+        self._update_halt_state(trade)
+        # BT-6: detect an intraday SSR trigger from the same tape.
+        self._update_ssr_state(trade)
+
         if self._data_health_blocks_trading(trade.symbol, trade.correlation_id):
             return
 
@@ -1317,11 +1610,24 @@ class Orchestrator:
                     correlation_id=correlation_id,
                 )
                 continue
-            orders = sized.orders
+            orders: list[OrderRequest] = list(sized.orders)
             if not orders:
                 self._micro.transition(
                     MicroState.LOG_AND_METRICS,
                     trigger="portfolio_intent_no_orders",
+                    correlation_id=correlation_id,
+                )
+                continue
+
+            orders = self._filter_portfolio_orders_for_pending_conflicts(
+                orders,
+                intent=intent,
+                correlation_id=correlation_id,
+            )
+            if not orders:
+                self._micro.transition(
+                    MicroState.LOG_AND_METRICS,
+                    trigger="portfolio_intent_all_legs_skipped_pending",
                     correlation_id=correlation_id,
                 )
                 continue
@@ -1378,7 +1684,14 @@ class Orchestrator:
         if sized.requires_global_risk_escalation:
             self._escalate_risk(correlation_id)
             return
-        orders = sized.orders
+        orders: list[OrderRequest] = list(sized.orders)
+        if not orders:
+            return
+        orders = self._filter_portfolio_orders_for_pending_conflicts(
+            orders,
+            intent=intent,
+            correlation_id=correlation_id,
+        )
         if not orders:
             return
         for order in orders:
@@ -1560,6 +1873,15 @@ class Orchestrator:
         if self._data_health_blocks_trading(quote.symbol, cid):
             return
 
+        # ── BT-5: LULD halt gate ───────────────────────────────
+        # While a symbol is halted there are no fills (entry or exit):
+        # skip the quote entirely so the router never sees ``on_quote``
+        # (no resting/deferred fills) and the mark freezes at its last
+        # value (existing positions are held).  Resting passive orders
+        # were cancelled at halt-on (see ``_update_halt_state``).
+        if quote.symbol in self._halted_symbols:
+            return
+
         # ── M0 → M1: MARKET_EVENT_RECEIVED ─────────────────────
         self._micro.transition(
             MicroState.MARKET_EVENT_RECEIVED,
@@ -1596,6 +1918,13 @@ class Orchestrator:
                 refresh_hwm(self._positions)
             if self._strategy_positions is not None:
                 self._strategy_positions.update_mark(quote.symbol, mid)
+        # BT-16: drive the RTH-close buying-power flip purely from the
+        # quote's exchange timestamp so it always aligns with router-side
+        # entry gating, even on ticks that fail the mid guard (zeroed or
+        # invalid BBO).  Otherwise the engine could remain on intraday
+        # buying power past the close while the router already treats
+        # the session as closed — inconsistent risk vs execution.
+        self._maybe_flip_buying_power_at_rth_close(quote)
 
         # ── Quote-driven router ack drain ────────────────────────
         # bus.publish(quote) triggered on_quote() on the router, which
@@ -1803,6 +2132,73 @@ class Orchestrator:
             correlation_id=cid,
         )
 
+        # BT-5: post-halt resolution blackout — suppress new ENTRY-opening
+        # orders for ``halt_resolution_blackout_seconds`` after a resume so
+        # the reopening-auction print can stabilize.  Exits (and NO_ACTION)
+        # are always permitted — an existing position may always unwind.
+        if (
+            intent.intent in _ENTRY_OPENING_INTENTS
+            and self._in_halt_blackout(intent.symbol, quote.timestamp_ns)
+        ):
+            self._append_signal_order_trace(
+                quote,
+                signal,
+                outcome="NO_ORDER",
+                reasons=(
+                    "halt_resolution_blackout",
+                    f"symbol={intent.symbol}",
+                ),
+                trading_intent=intent.intent.name,
+            )
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="halt_resolution_blackout",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
+        # BT-6: Reg-SHO / SSR conservative refuse-short.  Under an active
+        # short-sale restriction, an order that opens or increases SHORT
+        # exposure (a short sale) is refused; the entry retries next horizon
+        # boundary.  Buys, covers, and long-side exits are unaffected.
+        if self._ssr_blocks_intent(intent):
+            self._emit_ssr_suppression_alert(intent, cid)
+            self._append_signal_order_trace(
+                quote,
+                signal,
+                outcome="NO_ORDER",
+                reasons=("ssr_suppressed", f"symbol={intent.symbol}"),
+                trading_intent=intent.intent.name,
+            )
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="ssr_suppressed",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
+        # BT-7: short-locate gate — refuse short sales when borrow is
+        # unavailable.  ``hard`` tier still fills but routes HTB fees via
+        # ``OrderRequest.is_short``; ``available`` short entries omit HTB.
+        if self._borrow_blocks_intent(intent):
+            self._emit_locate_unavailable_alert(intent, cid)
+            self._append_signal_order_trace(
+                quote,
+                signal,
+                outcome="NO_ORDER",
+                reasons=("locate_unavailable", f"symbol={intent.symbol}"),
+                trading_intent=intent.intent.name,
+            )
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="locate_unavailable",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
         # H2/H3/H7: REVERSE intents decompose into EXIT(MARKET) +
         # ENTRY(LIMIT) — aggressive close guarantees fill, passive
         # entry saves spread.
@@ -1937,9 +2333,15 @@ class Orchestrator:
         #    (prevents the duplicate-exit pile-up bug).  Stop-loss
         #    always passes.  REVERSE intents handled by
         #    _execute_reverse() and never reach this guard.
+        #
+        # The ``_use_passive_entries`` clause was removed because
+        # broker fills in PAPER / LIVE mode arrive asynchronously
+        # regardless of execution_mode.  A pending IB ack on the
+        # same symbol must block a duplicate SIGNAL submit; the
+        # ``__stop_exit__`` / ``TradingIntent.EXIT`` carve-out
+        # preserves Inv-11 (exits always race in).
         if (
-            self._use_passive_entries
-            and intent.signal.strategy_id != "__stop_exit__"
+            intent.signal.strategy_id != "__stop_exit__"
             and self._has_pending_order_for_symbol(order.symbol)
         ):
             if intent.intent != TradingIntent.EXIT or self._has_pending_exit_for_symbol(order.symbol):
@@ -2056,6 +2458,13 @@ class Orchestrator:
         latency_ns = time.perf_counter_ns() - t_wall_start_ns
         now_ns = self._clock.now_ns()
 
+        if self._paper_session_recorder is not None:
+            self._paper_session_recorder.record_timing(
+                kind="tick_process",
+                duration_ns=latency_ns,
+                correlation_id=correlation_id,
+            )
+
         self._bus.publish(MetricEvent(
             timestamp_ns=now_ns,
             correlation_id=correlation_id,
@@ -2114,6 +2523,47 @@ class Orchestrator:
             },
         ))
 
+    def _signal_passes_edge_cost_gate(
+        self,
+        signal: Signal,
+        *,
+        symbol: str,
+        entry_side: Side,
+        quantity: int,
+        quote: NBBOQuote,
+        is_taker_entry: bool,
+        is_short_entry: bool,
+        correlation_id: str,
+        detail: str,
+    ) -> bool:
+        """Return True when B4 edge estimate clears model round-trip cost."""
+        if self._signal_min_edge_cost_ratio <= 0 or self._cost_model is None:
+            return True
+        gate_price = (quote.bid + quote.ask) / Decimal("2")
+        gate_spread = (quote.ask - quote.bid) / Decimal("2")
+        round_trip_cost_bps = estimate_round_trip_cost_bps(
+            self._cost_model,
+            symbol=symbol,
+            entry_side=entry_side,
+            quantity=quantity,
+            mid_price=gate_price,
+            half_spread=gate_spread,
+            is_taker=is_taker_entry,
+            is_taker_exit=True,
+            is_short_entry=is_short_entry,
+        )
+        if signal.edge_estimate_bps < (
+            self._signal_min_edge_cost_ratio * round_trip_cost_bps
+        ):
+            self._emit_signal_edge_gate_suppression_alert(
+                signal,
+                symbol,
+                correlation_id,
+                detail=detail,
+            )
+            return False
+        return True
+
     def _calibrate_regime_engine(self) -> None:
         """Calibrate regime emission parameters from a *prefix* of the log.
 
@@ -2161,11 +2611,15 @@ class Orchestrator:
             ))
             return
 
-        quote_stream = (
-            event for event in self._event_log.replay()
-            if isinstance(event, NBBOQuote)
-        )
-        quotes = list(itertools.islice(quote_stream, max_q))
+        precomputed = self._regime_calibration_quotes
+        if precomputed is not None:
+            quotes = list(precomputed)
+        else:
+            quote_stream = (
+                event for event in self._event_log.replay()
+                if isinstance(event, NBBOQuote)
+            )
+            quotes = list(itertools.islice(quote_stream, max_q))
         if not quotes:
             logger.info(
                 "Regime calibration skipped — no quotes in event log"
@@ -2175,7 +2629,9 @@ class Orchestrator:
         prefix_n = len(quotes)
         # Exact total only when the prefix exhausts the quote stream; otherwise
         # counting the suffix is O(full log) at boot — report a lower bound.
-        exact_total = prefix_n < max_q
+        exact_total = (
+            precomputed is not None or prefix_n < max_q
+        )
 
         ok = calibrate_fn(quotes)
         if ok:
@@ -2734,45 +3190,22 @@ class Orchestrator:
 
         if entry_qty >= self._min_order_shares:
             entry_side = exit_side  # same direction for both legs
-            is_short = (
-                intent.intent == TradingIntent.REVERSE_LONG_TO_SHORT
-            )
+            short_sale = intent.intent == TradingIntent.REVERSE_LONG_TO_SHORT
+            tier = self._borrow_tier_for(intent.symbol)
+            is_short = htb_fee_applies(tier, short_sale)
 
             # B4: edge vs cost gate for the entry leg.
-            entry_passes_edge_gate = True
-            if (
-                self._signal_min_edge_cost_ratio > 0
-                and self._cost_model is not None
-            ):
-                gate_price = (quote.bid + quote.ask) / Decimal("2")
-                gate_spread = (quote.ask - quote.bid) / Decimal("2")
-                # Reverse always submits the EXIT leg as MARKET (taker)
-                # — guaranteed-fill close — regardless of execution mode.
-                # The ENTRY leg follows ``_use_passive_entries``.  The
-                # gate must therefore use asymmetric is_taker for the
-                # two legs or it under-prices the round-trip.
-                is_taker_entry = not self._use_passive_entries
-                round_trip_cost_bps = estimate_round_trip_cost_bps(
-                    self._cost_model,
-                    symbol=intent.symbol,
-                    entry_side=entry_side,
-                    quantity=entry_qty,
-                    mid_price=gate_price,
-                    half_spread=gate_spread,
-                    is_taker=is_taker_entry,
-                    is_taker_exit=True,
-                    is_short_entry=is_short,
-                )
-                if intent.signal.edge_estimate_bps < (
-                    self._signal_min_edge_cost_ratio * round_trip_cost_bps
-                ):
-                    entry_passes_edge_gate = False
-                    self._emit_signal_edge_gate_suppression_alert(
-                        intent.signal,
-                        intent.symbol,
-                        cid,
-                        detail="reverse_entry_leg_suppressed",
-                    )
+            entry_passes_edge_gate = self._signal_passes_edge_cost_gate(
+                intent.signal,
+                symbol=intent.symbol,
+                entry_side=entry_side,
+                quantity=entry_qty,
+                quote=quote,
+                is_taker_entry=not self._use_passive_entries,
+                is_short_entry=is_short,
+                correlation_id=cid,
+                detail="reverse_entry_leg_suppressed",
+            )
 
             if entry_passes_edge_gate:
                 seq_entry = self._seq.next()
@@ -2782,7 +3215,14 @@ class Orchestrator:
 
                 order_type = OrderType.MARKET
                 limit_price: Decimal | None = None
-                if self._use_passive_entries:
+                entry_is_moc = (
+                    intent.strategy_id in self._moc_strategy_ids
+                    and self._moc_bounds_configured
+                )
+                if entry_is_moc:
+                    order_type = OrderType.MARKET
+                    limit_price = None
+                elif self._use_passive_entries:
                     use_passive = True
                     if self._min_cost_policy is not None:
                         decision = self._min_cost_policy.decide(
@@ -2813,6 +3253,7 @@ class Orchestrator:
                     limit_price=limit_price,
                     strategy_id=intent.strategy_id,
                     is_short=is_short,
+                    is_moc=entry_is_moc,
                     g12_disclosed_cost_total_bps=(
                         intent.signal.disclosed_cost_total_bps
                     ),
@@ -2977,61 +3418,42 @@ class Orchestrator:
         if not is_exit_or_stop and quantity < self._min_order_shares:
             return None, "quantity_below_platform_min_order_shares"
 
-        # Short-entry routing for HTB (B4 below + order construction).
-        is_short = intent.intent in (
-            TradingIntent.ENTRY_SHORT,
-            TradingIntent.REVERSE_LONG_TO_SHORT,
-        ) or (
-            intent.intent == TradingIntent.SCALE_UP
-            and intent.current_quantity < 0
-        )
+        # BT-7: HTB fee flag — only ``hard``-tier short sales carry
+        # ``OrderRequest.is_short``; ``available`` omits HTB even when
+        # cost_htb_borrow_annual_bps is configured.
+        short_sale = is_short_sale_intent(intent)
+        tier = self._borrow_tier_for(intent.symbol)
+        is_short = htb_fee_applies(tier, short_sale)
 
-        # B4: signal edge vs round-trip cost gate (model-computed legs).
-        # Skip exits and stop-losses (always allow for safety) and when
-        # the gate is disabled (ratio == 0) or no cost model / quote.
         if (
             not is_exit_or_stop
-            and self._signal_min_edge_cost_ratio > 0
-            and self._cost_model is not None
             and quote is not None
-        ):
-            gate_price = (quote.bid + quote.ask) / Decimal("2")
-            gate_spread = (quote.ask - quote.bid) / Decimal("2")
-            # Entry leg: passive when in passive mode, else taker.
-            # Exit leg: always priced as taker for the gate.  Stop-loss
-            # exits, forced-flatten escalation, and any maker that the
-            # marketability guard reclassifies as taker all bypass the
-            # passive path — pricing the exit as maker would silently
-            # admit trades whose realized round-trip cost exceeds the
-            # disclosed edge.  Conservative (worst-case exit) is the
-            # documented default for IBKR-style realism.
-            is_taker_entry = not self._use_passive_entries
-            round_trip_cost_bps = estimate_round_trip_cost_bps(
-                self._cost_model,
+            and not self._signal_passes_edge_cost_gate(
+                intent.signal,
                 symbol=intent.symbol,
                 entry_side=side,
                 quantity=quantity,
-                mid_price=gate_price,
-                half_spread=gate_spread,
-                is_taker=is_taker_entry,
-                is_taker_exit=True,
+                quote=quote,
+                is_taker_entry=not self._use_passive_entries,
                 is_short_entry=is_short,
+                correlation_id=correlation_id,
+                detail="standalone_intent_suppressed",
             )
-            if intent.signal.edge_estimate_bps < (
-                self._signal_min_edge_cost_ratio * round_trip_cost_bps
-            ):
-                self._emit_signal_edge_gate_suppression_alert(
-                    intent.signal,
-                    intent.symbol,
-                    correlation_id,
-                    detail="standalone_intent_suppressed",
-                )
-                return None, "signal_edge_below_min_edge_cost_ratio_gate"
+        ):
+            return None, "signal_edge_below_min_edge_cost_ratio_gate"
 
         order_type = OrderType.MARKET
         limit_price: Decimal | None = None
+        is_moc = (
+            intent.strategy_id in self._moc_strategy_ids
+            and self._moc_bounds_configured
+            and not is_exit_or_stop
+        )
 
-        if self._use_passive_entries and quote is not None:
+        if is_moc:
+            order_type = OrderType.MARKET
+            limit_price = None
+        elif self._use_passive_entries and quote is not None:
             is_stop_exit = intent.signal.strategy_id == "__stop_exit__"
             if not is_stop_exit:
                 # Default: post passive at the near BBO.  When the
@@ -3069,6 +3491,7 @@ class Orchestrator:
                 limit_price=limit_price,
                 strategy_id=intent.strategy_id,
                 is_short=is_short,
+                is_moc=is_moc,
                 g12_disclosed_cost_total_bps=(
                     intent.signal.disclosed_cost_total_bps
                 ),
@@ -3189,12 +3612,28 @@ class Orchestrator:
                 )
             self._prune_terminal_orders()
             return True
-        cancel_fn(order_id)
+        accepted = cancel_fn(order_id)
         acks = self._poll_order_router_acks({order_id})
         for ack in acks:
             self._bus.publish(ack)
             self._apply_ack_to_order(ack)
         self._reconcile_fills(acks, order.correlation_id)
+        # Only resolve locally when the router rejected the cancel
+        # (e.g. unknown id, or backtest non-MOC paths with no resting
+        # interest).  When the router accepted the cancel (True), the
+        # terminal ack may arrive asynchronously on a later poll — for
+        # IB the cancel is fire-and-forget — so forcing CANCELLED here
+        # would desync kernel state from a still-live broker order.
+        if not accepted and order_id in self._active_orders:
+            sm_post = self._active_orders[order_id][0]
+            if sm_post.state == OrderState.CANCEL_REQUESTED:
+                if sm_post.can_transition(OrderState.CANCELLED):
+                    sm_post.transition(
+                        OrderState.CANCELLED,
+                        trigger="cancel_no_broker_ack_local_terminal",
+                        correlation_id=order.correlation_id,
+                    )
+        self._prune_terminal_orders()
         return True
 
     def _has_pending_order_for_symbol(self, symbol: str) -> bool:
@@ -3203,6 +3642,46 @@ class Orchestrator:
             order.symbol == symbol and sm.state not in _TERMINAL_ORDER_STATES
             for sm, _, order in self._active_orders.values()
         )
+
+    def _filter_portfolio_orders_for_pending_conflicts(
+        self,
+        orders: list[OrderRequest],
+        *,
+        intent: SizedPositionIntent,
+        correlation_id: str,
+    ) -> list[OrderRequest]:
+        """Drop PORTFOLIO legs that would duplicate an in-flight order.
+
+        Paper/live IB acks land asynchronously; backtest fills are
+        synchronous so this filter is usually a no-op there.  PORTFOLIO
+        has no native supersede-pending semantics — a later boundary's
+        leg is dropped rather than cancel-replaced.  Hazard-exit orders
+        bypass this path via :meth:`_on_bus_hazard_order` (Inv-11).
+        """
+        filtered: list[OrderRequest] = []
+        for order in orders:
+            if self._has_pending_order_for_symbol(order.symbol):
+                self._bus.publish(Alert(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=correlation_id,
+                    sequence=self._seq.next(),
+                    severity=AlertSeverity.WARNING,
+                    layer="kernel",
+                    alert_name="portfolio_leg_skipped_pending_order",
+                    message=(
+                        f"PORTFOLIO leg skipped: pending order on "
+                        f"{order.symbol!r} (order_id={order.order_id!r}, "
+                        f"strategy={intent.strategy_id!r})"
+                    ),
+                    context={
+                        "order_id": order.order_id,
+                        "symbol": order.symbol,
+                        "strategy_id": intent.strategy_id,
+                    },
+                ))
+                continue
+            filtered.append(order)
+        return filtered
 
     def _has_pending_exit_for_symbol(self, symbol: str) -> bool:
         """True if a non-terminal order would close the current position.
@@ -3373,22 +3852,50 @@ class Orchestrator:
             context,
         )
 
+    def _drain_async_fills(self, correlation_id: str) -> None:
+        """Drain pending router acks and reconcile fills.
+
+        The single source of truth for async fill processing. Called from
+        three triggers:
+
+        * Tick start (via :meth:`_reconcile_resting_fills`) — quote-driven
+          fills from :class:`BacktestOrderRouter` /
+          :class:`PassiveLimitOrderRouter` / :class:`IBOrderRouter` (the
+          latter pushes asynchronously, so this is the dominant path for
+          paper trading).
+        * :class:`IdleTick` — live WS feed idle; no signal pipeline runs
+          (paper/live trading only).
+        * Shutdown — final drain so a fill between the last quote and the
+          operator's halt is not dropped.
+
+        Does NOT transition the micro SM and does NOT touch the macro SM.
+        Routes through :meth:`_poll_order_router_acks` so the deferred-ack
+        buffer (``_deferred_router_acks``) is honoured.
+        """
+        t0 = time.perf_counter_ns()
+        acks = self._poll_order_router_acks()
+        if acks:
+            for ack in acks:
+                self._bus.publish(ack)
+                self._apply_ack_to_order(ack)
+            self._reconcile_fills(acks, correlation_id)
+        if self._paper_session_recorder is not None:
+            self._paper_session_recorder.record_timing(
+                kind="drain_async_fills",
+                duration_ns=time.perf_counter_ns() - t0,
+                correlation_id=correlation_id,
+                extra={"ack_count": len(acks)},
+            )
+
     def _reconcile_resting_fills(self, cid: str) -> None:
         """Poll and reconcile quote-driven router acknowledgements.
 
-        Called at tick start (after the quote triggers ``on_quote`` on the
-        router) to process pending acks queued by the router — resting
-        passive fills/cancels and deferred aggressive fills when execution
-        latency is modeled.  Uses the same reconciliation path as submit-
-        time polls.
+        Tick-start trigger; delegates to :meth:`_drain_async_fills` so the
+        body is shared with the idle-tick and shutdown drain paths.  The
+        trigger name is kept distinct from ``_drain_async_fills`` so
+        metric / log attribution stays greppable.
         """
-        acks = self._poll_order_router_acks()
-        if not acks:
-            return
-        for ack in acks:
-            self._bus.publish(ack)
-            self._apply_ack_to_order(ack)
-        self._reconcile_fills(acks, cid)
+        self._drain_async_fills(cid)
 
     def _track_order(self, order_id: str, side: Side, order: OrderRequest) -> None:
         """Create an OrderState SM for a new order."""
@@ -3681,7 +4188,9 @@ class Orchestrator:
             if side == Side.SELL:
                 signed_qty = -signed_qty
 
-            prev_realized = self._positions.get(ack.symbol).realized_pnl
+            prev_position = self._positions.get(ack.symbol)
+            prev_realized = prev_position.realized_pnl
+            prev_qty = prev_position.quantity
             position = self._positions.update(
                 ack.symbol,
                 signed_qty,
@@ -3692,6 +4201,15 @@ class Orchestrator:
 
             if position.quantity == 0:
                 self._peak_pnl_per_share.pop(ack.symbol, None)
+
+            # BT-4: feed the PDT round-trip counter (duck-typed; no-op
+            # when the risk engine carries no PDT constraint).  Pure
+            # bookkeeping — emits nothing, so replay stays bit-identical.
+            record_fill = getattr(self._risk_engine, "record_fill", None)
+            if callable(record_fill):
+                record_fill(
+                    ack.symbol, prev_qty, position.quantity, ack.timestamp_ns,
+                )
 
             # ── Per-alpha fill attribution (multi-alpha mode) ──
             if (
@@ -4156,6 +4674,159 @@ class Orchestrator:
 
     # ── Configuration and data integrity ────────────────────────────
 
+    # ── BT-5: LULD halt modeling ────────────────────────────────────
+
+    def _update_halt_state(self, trade: Trade) -> None:
+        """Register halt-on / resume edges from the Trade tape (BT-5).
+
+        On halt-on for a symbol not already halted: mark it halted, cancel
+        any resting orders (Inv-11), and emit ``SymbolHalted``.  On resume:
+        clear the halt, open the entry blackout window, and emit the resume
+        ``SymbolHalted``.  Inert when no halt codes are configured.
+        """
+        if not self._halt_on_codes and not self._halt_off_codes:
+            return
+        status = classify_halt_status(
+            trade.conditions, self._halt_on_codes, self._halt_off_codes,
+        )
+        if status is None:
+            return
+        symbol = trade.symbol
+        if status is HaltSignal.HALT_ON:
+            if symbol not in self._halted_symbols:
+                self._halted_symbols.add(symbol)
+                self._halt_blackout_until_ns.pop(symbol, None)
+                self._cancel_resting_for_symbol(symbol, trade.correlation_id)
+                self._emit_symbol_halted(
+                    symbol,
+                    halted=True,
+                    reason="LULD_HALT",
+                    ts=trade.timestamp_ns,
+                    correlation_id=trade.correlation_id,
+                    blackout_until_ns=0,
+                )
+        elif symbol in self._halted_symbols:
+            self._halted_symbols.discard(symbol)
+            deadline = trade.timestamp_ns + self._halt_blackout_ns
+            self._halt_blackout_until_ns[symbol] = deadline
+            self._emit_symbol_halted(
+                symbol,
+                halted=False,
+                reason="LULD_RESUME",
+                ts=trade.timestamp_ns,
+                correlation_id=trade.correlation_id,
+                blackout_until_ns=deadline,
+            )
+
+    def _in_halt_blackout(self, symbol: str, now_ns: int) -> bool:
+        """True while a symbol is inside its post-resume entry blackout."""
+        deadline = self._halt_blackout_until_ns.get(symbol)
+        return deadline is not None and now_ns < deadline
+
+    def _emit_symbol_halted(
+        self,
+        symbol: str,
+        *,
+        halted: bool,
+        reason: str,
+        ts: int,
+        correlation_id: str,
+        blackout_until_ns: int,
+    ) -> None:
+        """Publish the forensic ``SymbolHalted`` marker."""
+        self._bus.publish(SymbolHalted(
+            timestamp_ns=ts,
+            correlation_id=correlation_id,
+            sequence=self._seq.next(),
+            source_layer="kernel",
+            symbol=symbol,
+            halted=halted,
+            reason=reason,
+            blackout_until_ns=blackout_until_ns,
+        ))
+
+    # ── BT-6: Reg-SHO / SSR short-sale restriction ──────────────────
+
+    def _update_ssr_state(self, trade: Trade) -> None:
+        """Flip a symbol SSR-active when the tape's trigger codes fire (BT-6).
+
+        SSR is sticky for the session — once active it never clears intraday —
+        so this only ever adds.  Inert when no trigger codes are configured.
+        """
+        if not self._ssr_codes:
+            return
+        if not (set(trade.conditions) & self._ssr_codes):
+            return
+        symbol = trade.symbol.upper()
+        if symbol in self._ssr_active:
+            return
+        self._ssr_active.add(symbol)
+        self._bus.publish(Alert(
+            timestamp_ns=trade.timestamp_ns,
+            correlation_id=trade.correlation_id,
+            sequence=self._seq.next(),
+            severity=AlertSeverity.INFO,
+            layer="kernel",
+            alert_name="ssr_triggered",
+            message=f"SSR became active intraday for {symbol} (Reg-SHO 201).",
+            context={"symbol": symbol},
+        ))
+
+    # ── BT-7: static borrow-availability ────────────────────────────
+
+    def _borrow_tier_for(self, symbol: str) -> BorrowTier:
+        """Locate tier for ``symbol``; omitted symbols default to AVAILABLE."""
+        return self._borrow_tier.get(symbol.upper(), BorrowTier.AVAILABLE)
+
+    def _borrow_blocks_intent(self, intent: OrderIntent) -> bool:
+        """True when locate is unavailable and this intent is a short sale."""
+        return (
+            self._borrow_tier_for(intent.symbol) == BorrowTier.UNAVAILABLE
+            and is_short_sale_intent(intent)
+        )
+
+    def _emit_locate_unavailable_alert(
+        self, intent: OrderIntent, correlation_id: str,
+    ) -> None:
+        """Publish the forensic marker for a refused short entry (no locate)."""
+        self._bus.publish(Alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            sequence=self._seq.next(),
+            severity=AlertSeverity.WARNING,
+            layer="kernel",
+            alert_name="locate_unavailable",
+            message=(
+                f"No borrow locate for {intent.symbol!r}: refused short entry "
+                f"({intent.intent.name}); retries next boundary."
+            ),
+            context={"symbol": intent.symbol, "intent": intent.intent.name},
+        ))
+
+    def _ssr_blocks_intent(self, intent: OrderIntent) -> bool:
+        """True when SSR (refuse_short) must refuse this short-opening order."""
+        if intent.symbol.upper() not in self._ssr_active:
+            return False
+        return is_short_sale_intent(intent)
+
+    def _emit_ssr_suppression_alert(
+        self, intent: OrderIntent, correlation_id: str,
+    ) -> None:
+        """Publish the forensic marker for a refused SSR short entry."""
+        self._bus.publish(Alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            sequence=self._seq.next(),
+            severity=AlertSeverity.WARNING,
+            layer="kernel",
+            alert_name="ssr_short_suppressed",
+            message=(
+                f"SSR active for {intent.symbol!r}: refused short entry "
+                f"({intent.intent.name}); retries next boundary (Reg-SHO 201)."
+            ),
+            context={"symbol": intent.symbol, "intent": intent.intent.name},
+        ))
+
     def _data_health_blocks_trading(self, symbol: str, correlation_id: str) -> bool:
         """Return True when the Massive normalizer forbids consuming this symbol.
 
@@ -4306,9 +4977,7 @@ class Orchestrator:
         if self._normalizer is not None:
             health = self._normalizer.all_health()
             for symbol in self._config.symbols:
-                if symbol not in health:
-                    return False
-                if health[symbol] != DataHealth.HEALTHY:
+                if symbol not in health or health[symbol] != DataHealth.HEALTHY:
                     return False
             return True
 

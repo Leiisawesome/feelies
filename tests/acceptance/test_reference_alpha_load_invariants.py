@@ -109,7 +109,7 @@ def test_margin_ratio_floor(alpha_id: str) -> None:
 
 
 # G-B — reference PORTFOLIO alpha factor exposures.
-_PORTFOLIO_REFERENCE_ALPHA = "pro_xsect_v1"
+_PORTFOLIO_REFERENCE_ALPHA = "pro_burst_revert_v1"
 _FACTOR_EXPOSURE_TOLERANCE: float = 1e-9
 
 
@@ -139,6 +139,7 @@ def test_portfolio_factor_exposure_within_tolerance() -> None:
 
     spec_path = (
         _ALPHAS_ROOT
+        / "research"
         / _PORTFOLIO_REFERENCE_ALPHA
         / f"{_PORTFOLIO_REFERENCE_ALPHA}.alpha.yaml"
     )

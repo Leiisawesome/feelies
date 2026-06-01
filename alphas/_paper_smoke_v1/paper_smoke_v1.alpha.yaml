@@ -1,0 +1,84 @@
+# ── Identity & Provenance ─────────────────────────────────
+schema_version: "1.1"
+layer: SIGNAL
+alpha_id: paper_smoke_v1
+version: "1.0.0"
+description: |
+  Minimal smoke alpha for paper-RTH E2E validation.  Fires on
+  realized-vol z-score excursions with micro-price direction tie-break.
+
+# ── Hypothesis (causal mechanism) ─────────────────────────
+hypothesis: |
+  Short-horizon realized-vol z-score excursions on SPY during RTH
+  correlate with micro-price displacement; a permissive threshold
+  guarantees occasional entries for pipeline smoke testing.
+
+falsification_criteria:
+  - Signal rate falls to zero for 5 consecutive RTH sessions.
+  - Realized vol sensor fails to warm within 120s during RTH.
+
+# ── Layer-1 sensor dependencies ───────────────────────────
+depends_on_sensors:
+  - micro_price
+  - realized_vol_30s
+
+# ── Parameters ────────────────────────────────────────────
+parameters:
+  entry_threshold_z:
+    type: float
+    default: 0.3
+    min: 0.1
+    max: 2.0
+    description: Minimum |realized_vol_30s_zscore| to trigger entry.
+  edge_bps:
+    type: float
+    default: 10.0
+    min: 5.0
+    max: 30.0
+    description: Reported edge estimate in bps for smoke runs.
+
+# ── Horizon (Layer-2 boundary) ────────────────────────────
+horizon_seconds: 30
+
+# ── Risk Budget ───────────────────────────────────────────
+risk_budget:
+  max_position_per_symbol: 5
+  max_gross_exposure_pct: 25.0
+  max_drawdown_pct: 1.0
+  capital_allocation_pct: 5.0
+
+# ── Regime Gate (regime-independent for smoke) ────────────
+regime_gate:
+  regime_engine: hmm_3state_fractional
+  on_condition: "True"
+  off_condition: "False"
+
+# ── Cost Arithmetic Disclosure (G12) ──────────────────────
+cost_arithmetic:
+  edge_estimate_bps: 10.0
+  half_spread_bps: 1.0
+  impact_bps: 1.0
+  fee_bps: 0.5
+  margin_ratio: 4.0
+
+# ── Signal (Layer-2 evaluate) ─────────────────────────────
+signal: |
+  def evaluate(snapshot, regime, params):
+      rv_z = snapshot.values.get("realized_vol_30s_zscore")
+      if rv_z is None:
+          return None
+      thr = params["entry_threshold_z"]
+      if abs(rv_z) < thr:
+          return None
+      direction = LONG if rv_z > 0 else SHORT
+      edge = params["edge_bps"]
+      return Signal(
+          timestamp_ns=snapshot.timestamp_ns,
+          correlation_id=snapshot.correlation_id,
+          sequence=snapshot.sequence,
+          symbol=snapshot.symbol,
+          strategy_id="paper_smoke_v1",
+          direction=direction,
+          strength=min(abs(rv_z) / thr, 2.0),
+          edge_estimate_bps=edge,
+      )

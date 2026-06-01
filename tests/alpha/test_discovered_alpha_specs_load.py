@@ -12,7 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from feelies.alpha.discovery import discover_alpha_specs
+from feelies.alpha.discovery import (
+    discover_alpha_specs,
+    discover_research_alpha_specs,
+)
 from feelies.alpha.loader import AlphaLoader
 from feelies.alpha.portfolio_layer_module import LoadedPortfolioLayerModule
 from feelies.alpha.signal_layer_module import LoadedSignalLayerModule
@@ -26,8 +29,14 @@ def test_discovery_excludes_template_and_underscore_paths() -> None:
     paths = discover_alpha_specs(_ALPHAS_DIR)
     rel = {p.relative_to(_ALPHAS_DIR).as_posix() for p in paths}
     assert not any(part.startswith("_") for p in rel for part in p.split("/"))
-    assert "pro_xsect_v1/pro_xsect_v1.alpha.yaml" in rel
-    assert "pro_xsect_v1/pro_xsect_v1.with_decay.alpha.yaml" in rel
+    assert not any("research/" in p for p in rel)
+
+    research_rel = {
+        p.relative_to(_ALPHAS_DIR).as_posix()
+        for p in discover_research_alpha_specs(_ALPHAS_DIR)
+    }
+    assert "research/pro_burst_revert_v1/pro_burst_revert_v1.alpha.yaml" in research_rel
+    assert "research/pro_kyle_benign_v1/pro_kyle_benign_v1.alpha.yaml" in research_rel
 
 
 @pytest.mark.parametrize(

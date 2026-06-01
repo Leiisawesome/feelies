@@ -10,7 +10,7 @@ import pytest
 from feelies.core.clock import SimulatedClock
 from feelies.core.errors import CausalityViolation
 from feelies.core.events import Event, NBBOQuote, Trade
-from feelies.ingestion.replay_feed import ReplayFeed
+from feelies.ingestion.replay_feed import ReplayFeed, market_data_visible_at_ns
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 
