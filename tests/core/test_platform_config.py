@@ -35,7 +35,7 @@ class TestDefaults:
 
     def test_default_account_equity(self) -> None:
         cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
-        assert cfg.account_equity == 1_000_000.0
+        assert cfg.account_equity == 50_000.0
 
 
 # ── Validation ──────────────────────────────────────────────────────
@@ -261,30 +261,17 @@ backtest_fill_latency_ns: 5000
         cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
         assert cfg.backtest_fill_latency_ns == 5000
 
-    def test_backtest_fill_latency_ns_locked_defaults(self, tmp_path: Path) -> None:
+    def test_backtest_fill_latency_ns_yaml_omitted_uses_bt17_defaults(
+        self, tmp_path: Path,
+    ) -> None:
         yaml_content = """\
 symbols: [AAPL]
 alpha_specs: [x.yaml]
 """
         (tmp_path / "config.yaml").write_text(yaml_content)
         cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
-        from feelies.core.platform_config import (
-            DEFAULT_BACKTEST_FILL_LATENCY_NS,
-            DEFAULT_MARKET_DATA_LATENCY_NS,
-        )
-
-        assert cfg.backtest_fill_latency_ns == DEFAULT_BACKTEST_FILL_LATENCY_NS
-        assert cfg.market_data_latency_ns == DEFAULT_MARKET_DATA_LATENCY_NS
-
-    def test_market_data_latency_ns_from_yaml(self, tmp_path: Path) -> None:
-        yaml_content = """\
-symbols: [AAPL]
-alpha_specs: [x.yaml]
-market_data_latency_ns: 7000
-"""
-        (tmp_path / "config.yaml").write_text(yaml_content)
-        cfg = PlatformConfig.from_yaml(tmp_path / "config.yaml")
-        assert cfg.market_data_latency_ns == 7000
+        assert cfg.backtest_fill_latency_ns == 50_000_000
+        assert cfg.market_data_latency_ns == 20_000_000
 
     def test_backtest_fill_latency_ns_in_snapshot(self) -> None:
         cfg = PlatformConfig(

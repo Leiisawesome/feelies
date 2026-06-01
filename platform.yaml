@@ -79,7 +79,8 @@ ssr_mode: refuse_short
 borrow_availability: {}
 
 # Sandbox backtest equity; overlays must set real limits for PAPER/LIVE.
-account_equity: 100000.0
+# BT-15 deployed capital (locked placeholder $50k; override for your book).
+account_equity: 50000.0
 
 # BT-4: account type drives the PDT (Pattern Day Trader) constraint model.
 # Locked to margin_25k (opens above $25k, PDT-exempt: no 3-round-trip hard cap,
@@ -185,7 +186,7 @@ horizons_seconds:
 event_calendar_path: src/feelies/storage/reference/event_calendar/2026-03-26.yaml
 
 # BT-18: split/dividend ex-date guard (see docs/data_adjustment_policy.md).
-# ex_date_calendar_path: src/feelies/storage/reference/corporate_actions/ex_dates.yaml
+ex_date_calendar_path: src/feelies/storage/reference/corporate_actions/ex_dates.yaml
 
 # Sensors for sig_benign_midcap_v1 (depends_on_sensors: ofi_ewma, micro_price, spread_z_30d, realized_vol_30s).
 sensor_specs:

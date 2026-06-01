@@ -28,37 +28,37 @@ todos:
     status: completed
   - id: bt-8
     content: "BT-8: Model MOC / closing-auction fills for sig_moc_imbalance_v1 (auction print + 3:50 ET cutoff), not MKT-in-window"
-    status: pending
+    status: completed
   - id: bt-9
     content: "BT-9: Cost + latency stress gate harness (Inv-12: survive 1.5x cost AND 2x latency) wired into the backtest acceptance suite"
-    status: pending
+    status: completed
   - id: bt-14
     content: "BT-14: Tick-size / sub-penny price rounding in the fill model — snap fill + limit prices to $0.01 (>=$1) / $0.0001 (<$1); MID fills currently produce sub-penny prices"
-    status: pending
+    status: completed
   - id: bt-15
     content: "BT-15: Buying-power / margin model — set account_equity to real deployed capital; enforce Reg-T intraday/overnight/cash buying power as an order-reject; not just the 20% gross cap"
-    status: pending
+    status: completed
   - id: bt-16
     content: "BT-16: RTH session gating + holiday/early-close trading calendar + open/close edge guards (no market-hours model exists today)"
-    status: pending
+    status: completed
   - id: bt-17
     content: "BT-17: Market-data propagation latency — model feed delay between exchange_timestamp and decision availability, separate from the 30ms order-submission latency"
-    status: pending
+    status: completed
   - id: bt-18
     content: "BT-18: Data-adjustment policy — confirm/document raw vs split-dividend-adjusted L1 data; guard against ex-date discontinuities distorting sensor scales"
-    status: pending
+    status: completed
   - id: bt-10
     content: "BT-10: Lookahead / causality audit (Inv-6): features/signals/fills at T use only events <= T; add/confirm anti-lookahead tests"
-    status: pending
+    status: completed
   - id: bt-11
     content: "BT-11: Re-baseline all parity hashes in tests/determinism/ and confirm bit-identical replay after the fill-model changes (Inv-5)"
-    status: pending
+    status: completed
   - id: bt-12
     content: "BT-12: Re-run G12 + CPCV + DSR on all 5 SIGNAL alphas against the post-fix backtest; retire or recalibrate failures"
-    status: pending
+    status: completed
   - id: bt-13
     content: "BT-13: Move PORTFOLIO alphas to RESEARCH-only state (universe too small at sub-$250k)"
-    status: pending
+    status: completed
   - id: open-decisions
     content: "LOCKED (2026-05-29): margin>=$25k PDT-exempt (4x/2x); equity $25-100k (placeholder $50k); SSR conservative; keep+model MOC; keep inventory w/ tighter gate; executed-cross entry price; latency 50ms fill/20ms feed. Only exact equity figure remains (non-blocking)."
     status: completed

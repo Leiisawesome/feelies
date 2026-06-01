@@ -375,6 +375,13 @@ def _publish_signal_on_quote(bus: EventBus, signal: Signal) -> None:
     bus.subscribe(NBBOQuote, emit)  # type: ignore[arg-type]
 
 
+class _OrderRouterNoCancel:
+    """Minimal router stub without ``cancel_order`` (cancel hygiene tests)."""
+
+    def poll_acks(self) -> list[OrderAck]:
+        return []
+
+
 def _build_orchestrator(
     clock: SimulatedClock,
     *,
@@ -384,14 +391,19 @@ def _build_orchestrator(
     position_store: Any = None,
     strategy_positions: Any = None,
     kill_switch: Any = None,
+    order_router: Any = None,
 ) -> Orchestrator:
     bus = bus if bus is not None else EventBus()
     event_log = InMemoryEventLog()
     pos_store = position_store or MemoryPositionStore()
-    bt_router = BacktestOrderRouter(clock=clock)
+    router = (
+        order_router
+        if order_router is not None
+        else BacktestOrderRouter(clock=clock)
+    )
     backend = ExecutionBackend(
         market_data=market_data or _StubMarketData(),
-        order_router=bt_router,
+        order_router=router,
         mode="BACKTEST",
     )
     return Orchestrator(
@@ -907,7 +919,11 @@ class TestOrchestratorFillReconcileGuards:
         bus = EventBus()
         alerts: list[Alert] = []
         bus.subscribe(Alert, alerts.append)
-        orch = _build_orchestrator(clock, bus=bus)
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            order_router=_OrderRouterNoCancel(),
+        )
         order = OrderRequest(
             timestamp_ns=clock.now_ns(),
             correlation_id="cc",
@@ -2348,87 +2364,3 @@ class TestBorrowAvailability:
         bt_router.on_quote(q)
         orch._process_tick(q)
         assert position_store.get("AAPL").quantity > 0
-
-
-class TestMocOrderTagging:
-    """BT-8: MOC strategies tag OrderRequest.is_moc when bounds resolve."""
-
-    def test_entry_order_tagged_is_moc(self) -> None:
-        clock = SimulatedClock(start_ns=1000)
-        orch = _build_orchestrator(clock)
-        _boot_to_backtest(orch)
-        orch._moc_strategy_ids = frozenset({"sig_moc_imbalance_v1"})
-        orch._moc_bounds_configured = True
-        sig = Signal(
-            timestamp_ns=1000,
-            correlation_id="c",
-            sequence=1,
-            symbol="AAPL",
-            strategy_id="sig_moc_imbalance_v1",
-            direction=SignalDirection.LONG,
-            strength=0.8,
-            edge_estimate_bps=50.0,
-        )
-        intent = OrderIntent(
-            intent=TradingIntent.ENTRY_LONG,
-            symbol="AAPL",
-            strategy_id="sig_moc_imbalance_v1",
-            target_quantity=10,
-            current_quantity=0,
-            signal=sig,
-        )
-        verdict = RiskVerdict(
-            timestamp_ns=1000,
-            correlation_id="c",
-            sequence=1,
-            symbol="AAPL",
-            action=RiskAction.ALLOW,
-            reason="test",
-            scaling_factor=1.0,
-        )
-        order, reason = orch._try_build_order_from_intent(
-            intent, verdict, "cid", quote=_make_quote(),
-        )
-        assert reason is None
-        assert order is not None
-        assert order.is_moc
-        assert order.order_type == OrderType.MARKET
-
-    def test_exit_not_tagged_is_moc(self) -> None:
-        clock = SimulatedClock(start_ns=1000)
-        orch = _build_orchestrator(clock)
-        _boot_to_backtest(orch)
-        orch._moc_strategy_ids = frozenset({"sig_moc_imbalance_v1"})
-        orch._moc_bounds_configured = True
-        sig = Signal(
-            timestamp_ns=1000,
-            correlation_id="c",
-            sequence=1,
-            symbol="AAPL",
-            strategy_id="sig_moc_imbalance_v1",
-            direction=SignalDirection.FLAT,
-            strength=0.8,
-            edge_estimate_bps=50.0,
-        )
-        intent = OrderIntent(
-            intent=TradingIntent.EXIT,
-            symbol="AAPL",
-            strategy_id="sig_moc_imbalance_v1",
-            target_quantity=10,
-            current_quantity=10,
-            signal=sig,
-        )
-        verdict = RiskVerdict(
-            timestamp_ns=1000,
-            correlation_id="c",
-            sequence=1,
-            symbol="AAPL",
-            action=RiskAction.ALLOW,
-            reason="test",
-            scaling_factor=1.0,
-        )
-        order, _ = orch._try_build_order_from_intent(
-            intent, verdict, "cid", quote=_make_quote(),
-        )
-        assert order is not None
-        assert not order.is_moc

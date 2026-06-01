@@ -15,3 +15,18 @@ Regenerate (after intentional algorithm change):
 uv run python scripts/generate_bt12_fixtures.py
 uv run pytest tests/acceptance/test_bt12_reference_alpha_validation.py -q
 ```
+
+## Replay-derived fixtures (operator)
+
+Short synth replays produce zero PnL for most reference alphas; CI keeps
+**surrogate** series (`source: surrogate_v1`) for gate wiring.
+
+When disk-cache backtests are available::
+
+    uv run python scripts/collect_bt12_replay_returns.py   # probe only
+    # After gates pass on full-session curves:
+    uv run python scripts/collect_bt12_replay_returns.py --write-fixtures
+
+Then re-pin ``_FIXTURE_GOLDEN_HASHES`` in
+``tests/acceptance/test_bt12_reference_alpha_validation.py``.
+
