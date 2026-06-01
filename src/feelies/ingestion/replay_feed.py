@@ -5,8 +5,14 @@ events tick-by-tick.  Provider-agnostic — works with any EventLog that was
 populated through any ingestor.
 
 When a ``SimulatedClock`` is provided, advances the clock to each event's
-``exchange_timestamp_ns`` before yielding, enabling deterministic backtest
-replay with latency injection.
+**visibility time** before yielding:
+
+  ``exchange_timestamp_ns + market_data_latency_ns`` (BT-17).
+
+That models feed-propagation delay separately from order-submission /
+fill latency (``backtest_fill_latency_ns`` in the execution routers).
+Downstream sensors, signals, and risk gates therefore cannot react to a
+quote until the simulated decision clock reaches visibility time (Inv-6).
 """
 
 from __future__ import annotations
@@ -20,6 +26,14 @@ from feelies.storage.event_log import EventLog
 from feelies.storage.event_resequence import event_merge_sort_key
 
 
+def market_data_visible_at_ns(
+    exchange_timestamp_ns: int,
+    market_data_latency_ns: int,
+) -> int:
+    """When a market event becomes visible to the strategy pipeline."""
+    return exchange_timestamp_ns + market_data_latency_ns
+
+
 class ReplayFeed:
     """Tick-by-tick market data source backed by a persisted EventLog.
 
@@ -28,7 +42,13 @@ class ReplayFeed:
     interface, same ``_process_tick()`` path (invariant 9).
     """
 
-    __slots__ = ("_event_log", "_clock", "_start_sequence", "_end_sequence")
+    __slots__ = (
+        "_event_log",
+        "_clock",
+        "_start_sequence",
+        "_end_sequence",
+        "_market_data_latency_ns",
+    )
 
     def __init__(
         self,
@@ -36,11 +56,14 @@ class ReplayFeed:
         clock: Clock | None = None,
         start_sequence: int = 0,
         end_sequence: int | None = None,
+        *,
+        market_data_latency_ns: int = 0,
     ) -> None:
         self._event_log = event_log
         self._clock = clock
         self._start_sequence = start_sequence
         self._end_sequence = end_sequence
+        self._market_data_latency_ns = market_data_latency_ns
 
     def events(self) -> Iterator[NBBOQuote | Trade]:
         """Yield market events in exchange-timestamp order from the EventLog.
@@ -54,9 +77,9 @@ class ReplayFeed:
         order.  Raises ``CausalityViolation`` if the EventLog was not
         merge-sorted before replay (invariant 6).
 
-        If a ``SimulatedClock`` was provided, sets its time to the
-        event's ``exchange_timestamp_ns`` before yielding, so that
-        downstream components see deterministic time progression.
+        If a ``SimulatedClock`` was provided, sets its time to
+        :func:`market_data_visible_at_ns` for the event (monotonic non-
+        decreasing) before yielding.
         """
         last_key: tuple[int, str, int, int] | None = None
         for event in self._event_log.replay(
@@ -76,6 +99,9 @@ class ReplayFeed:
                 last_key = key
                 ts = event.exchange_timestamp_ns
                 if isinstance(self._clock, SimulatedClock):
-                    if ts > self._clock.now_ns():
-                        self._clock.set_time(ts)
+                    visible_ns = market_data_visible_at_ns(
+                        ts, self._market_data_latency_ns,
+                    )
+                    if visible_ns > self._clock.now_ns():
+                        self._clock.set_time(visible_ns)
                 yield event

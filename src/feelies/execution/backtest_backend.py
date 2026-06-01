@@ -35,6 +35,7 @@ def build_backtest_backend(
     max_impact_half_spreads: float = 10.0,
     *,
     max_resting_ticks: int = 50,
+    market_data_latency_ns: int = 0,
     moc_bounds: MocSessionBounds | None = None,
     trading_session_bounds: TradingSessionBounds | None = None,
 ) -> tuple[ExecutionBackend, BacktestOrderRouter]:
@@ -53,6 +54,7 @@ def build_backtest_backend(
         clock=clock,
         start_sequence=start_sequence,
         end_sequence=end_sequence,
+        market_data_latency_ns=market_data_latency_ns,
     )
     router = BacktestOrderRouter(
         clock=clock,
@@ -88,6 +90,7 @@ def build_passive_limit_backend(
     queue_position_shares: int = 0,
     cancel_fee_per_share: Decimal = Decimal("0.0"),
     fill_hazard_max: Decimal | float = Decimal("0.5"),
+    market_data_latency_ns: int = 0,
     moc_bounds: MocSessionBounds | None = None,
     trading_session_bounds: TradingSessionBounds | None = None,
 ) -> tuple[ExecutionBackend, PassiveLimitOrderRouter]:
@@ -111,6 +114,7 @@ def build_passive_limit_backend(
         clock=clock,
         start_sequence=start_sequence,
         end_sequence=end_sequence,
+        market_data_latency_ns=market_data_latency_ns,
     )
     router = PassiveLimitOrderRouter(
         clock=clock,

@@ -31,6 +31,20 @@ from feelies.core.errors import ConfigurationError
 from feelies.core.events import NBBOQuote, Trade
 from feelies.sensors.spec import SensorSpec
 
+# BT-17 locked conservative baselines until measured IB / feed RTT exists.
+DEFAULT_BACKTEST_FILL_LATENCY_NS: int = 50_000_000  # 50 ms order-submission leg
+DEFAULT_MARKET_DATA_LATENCY_NS: int = 20_000_000  # 20 ms feed-propagation leg
+
+
+def latency_stress_ns(
+    fill_latency_ns: int,
+    market_data_latency_ns: int,
+    *,
+    multiplier: int = 2,
+) -> tuple[int, int]:
+    """Scale both latency legs for Inv-12 stress (BT-9 harness)."""
+    return fill_latency_ns * multiplier, market_data_latency_ns * multiplier
+
 
 class OperatingMode(Enum):
     BACKTEST = auto()
@@ -153,7 +167,10 @@ class PlatformConfig:
 
     # BT-15: deployed-capital placeholder ($25k–$100k bracket).
     account_equity: float = 50_000.0
-    backtest_fill_latency_ns: int = 0
+    # BT-17: order-submission latency (exchange-time fill eligibility in routers).
+    backtest_fill_latency_ns: int = DEFAULT_BACKTEST_FILL_LATENCY_NS
+    # BT-17: feed-propagation delay before a quote/trade is visible to the pipeline.
+    market_data_latency_ns: int = DEFAULT_MARKET_DATA_LATENCY_NS
 
     # BT-4: account type + PDT (Pattern Day Trader) minimum-equity gate.
     # Locked to ``margin_25k`` (PDT-exempt). The enum is forward-compatible
@@ -495,6 +512,16 @@ class PlatformConfig:
             )
         if self.pdt_min_equity_usd <= 0:
             raise ConfigurationError("pdt_min_equity_usd must be positive")
+        if self.backtest_fill_latency_ns < 0:
+            raise ConfigurationError(
+                f"backtest_fill_latency_ns must be non-negative, "
+                f"got {self.backtest_fill_latency_ns}"
+            )
+        if self.market_data_latency_ns < 0:
+            raise ConfigurationError(
+                f"market_data_latency_ns must be non-negative, "
+                f"got {self.market_data_latency_ns}"
+            )
         if self.halt_resolution_blackout_seconds < 0:
             raise ConfigurationError(
                 "halt_resolution_blackout_seconds must be non-negative"
@@ -805,6 +832,7 @@ class PlatformConfig:
                 self.risk_margin_overnight_buying_power_multiplier
             ),
             "backtest_fill_latency_ns": self.backtest_fill_latency_ns,
+            "market_data_latency_ns": self.market_data_latency_ns,
             "stop_loss_per_share": self.stop_loss_per_share,
             "trail_activate_per_share": self.trail_activate_per_share,
             "trail_pct": self.trail_pct,
@@ -1186,7 +1214,16 @@ class PlatformConfig:
                 data.get("risk_margin_overnight_buying_power_multiplier", 2.0)
             ),
             backtest_fill_latency_ns=int(
-                data.get("backtest_fill_latency_ns", 0)
+                data.get(
+                    "backtest_fill_latency_ns",
+                    DEFAULT_BACKTEST_FILL_LATENCY_NS,
+                )
+            ),
+            market_data_latency_ns=int(
+                data.get(
+                    "market_data_latency_ns",
+                    DEFAULT_MARKET_DATA_LATENCY_NS,
+                )
             ),
             stop_loss_per_share=float(
                 data.get("stop_loss_per_share", 0.0)

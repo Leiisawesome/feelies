@@ -426,6 +426,7 @@ def build_platform(
     bundle = _create_backend(
         config.mode, event_log, clock,
         fill_latency_ns=config.backtest_fill_latency_ns,
+        market_data_latency_ns=config.market_data_latency_ns,
         cost_model=cost_model,
         execution_mode=config.execution_mode,
         passive_fill_delay_ticks=config.passive_fill_delay_ticks,
@@ -810,6 +811,7 @@ def _create_backend(
     clock: Clock,
     *,
     fill_latency_ns: int = 0,
+    market_data_latency_ns: int = 0,
     cost_model: DefaultCostModel | None = None,
     execution_mode: str = "market",
     passive_fill_delay_ticks: int = 3,
@@ -842,6 +844,7 @@ def _create_backend(
             backend, router = build_passive_limit_backend(
                 event_log, clock,
                 latency_ns=fill_latency_ns,
+                market_data_latency_ns=market_data_latency_ns,
                 cost_model=cost_model,
                 market_impact_factor=market_impact_factor,
                 max_impact_half_spreads=max_impact_half_spreads,
@@ -858,6 +861,7 @@ def _create_backend(
         backend, router = build_backtest_backend(
             event_log, clock,
             latency_ns=fill_latency_ns,
+            market_data_latency_ns=market_data_latency_ns,
             cost_model=cost_model,
             market_impact_factor=market_impact_factor,
             max_impact_half_spreads=max_impact_half_spreads,

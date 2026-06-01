@@ -99,7 +99,9 @@ risk_max_gross_exposure_pct: 200.0
 
 risk_max_drawdown_pct: 5.0
 
-backtest_fill_latency_ns: 30000000
+# BT-17 locked baselines: 50 ms fill leg, 20 ms market-data propagation leg.
+backtest_fill_latency_ns: 50000000
+market_data_latency_ns: 20000000
 
 # Percentage-based stops (fraction of entry price). Takes precedence over per-share fields.
 # 0.01 = 1% stop-loss; 0.005 = 0.5% trail activation.
