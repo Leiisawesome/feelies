@@ -968,9 +968,12 @@ class PlatformConfig:
         contains invalid structure.
         """
         path = Path(path)
+        from feelies.core.config_yaml import load_yaml_mapping
+
         try:
-            raw = path.read_text(encoding="utf-8")
-            data = yaml.safe_load(raw)
+            data = load_yaml_mapping(path)
+        except ConfigurationError:
+            raise
         except Exception as exc:
             raise ConfigurationError(f"Failed to read config {path}: {exc}") from exc
 

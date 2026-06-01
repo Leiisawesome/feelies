@@ -101,6 +101,67 @@ def add_common_backtest_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def add_backtest_api_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register flags for the Massive API backtest entry point."""
+    add_common_backtest_arguments(parser)
+    parser.add_argument(
+        "--date",
+        type=str,
+        default=None,
+        help="Start date in YYYY-MM-DD format (required)",
+    )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Force re-download, skip disk cache",
+    )
+    parser.add_argument(
+        "--emit-fills-jsonl",
+        action="store_true",
+        help="Emit one FILLED OrderAck JSON object per line (prefix FILL_JSONL).",
+    )
+    parser.add_argument(
+        "--emit-sensor-readings-jsonl",
+        action="store_true",
+        help="Emit SensorReading rows (prefix SENSOR_JSONL).",
+    )
+    parser.add_argument(
+        "--emit-horizon-ticks-jsonl",
+        action="store_true",
+        help="Emit HorizonTick rows (prefix HTICK_JSONL).",
+    )
+    parser.add_argument(
+        "--emit-snapshots-jsonl",
+        action="store_true",
+        help="Emit HorizonFeatureSnapshot rows (prefix SNAP_JSONL).",
+    )
+    parser.add_argument(
+        "--emit-signals-jsonl",
+        action="store_true",
+        help="Emit Signal rows (prefix SIGNAL_JSONL).",
+    )
+    parser.add_argument(
+        "--emit-hazard-spikes-jsonl",
+        action="store_true",
+        help="Emit RegimeHazardSpike rows (prefix HAZARD_JSONL).",
+    )
+    parser.add_argument(
+        "--emit-cross-sectional-jsonl",
+        action="store_true",
+        help="Emit CrossSectionalContext rows (prefix XSECT_JSONL).",
+    )
+    parser.add_argument(
+        "--emit-sized-intents-jsonl",
+        action="store_true",
+        help="Emit SizedPositionIntent rows (prefix INTENT_JSONL).",
+    )
+    parser.add_argument(
+        "--emit-hazard-exits-jsonl",
+        action="store_true",
+        help="Emit hazard exit OrderRequest rows (prefix HAZARD_EXIT_JSONL).",
+    )
+
+
 def disable_backtest_jsonl_emit_flags(args: argparse.Namespace) -> None:
     """Default all JSONL emit hooks off (cache-replay entry point)."""
     args.emit_fills_jsonl = False

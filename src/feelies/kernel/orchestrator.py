@@ -757,6 +757,26 @@ class Orchestrator:
     def trade_journal(self) -> TradeJournal | None:
         return self._trade_journal
 
+    @property
+    def position_store(self) -> PositionStore:
+        return self._positions
+
+    @property
+    def account_equity(self) -> Decimal:
+        return self._account_equity
+
+    @property
+    def metric_collector(self) -> MetricCollector:
+        return self._metrics
+
+    @property
+    def kill_switch(self) -> KillSwitch | None:
+        return self._kill_switch
+
+    @property
+    def alpha_registry(self) -> AlphaRegistry | None:
+        return self._alpha_registry
+
     def set_paper_session_recorder(
         self, recorder: PaperSessionRecorder | None,
     ) -> None:
@@ -2503,6 +2523,47 @@ class Orchestrator:
             },
         ))
 
+    def _signal_passes_edge_cost_gate(
+        self,
+        signal: Signal,
+        *,
+        symbol: str,
+        entry_side: Side,
+        quantity: int,
+        quote: NBBOQuote,
+        is_taker_entry: bool,
+        is_short_entry: bool,
+        correlation_id: str,
+        detail: str,
+    ) -> bool:
+        """Return True when B4 edge estimate clears model round-trip cost."""
+        if self._signal_min_edge_cost_ratio <= 0 or self._cost_model is None:
+            return True
+        gate_price = (quote.bid + quote.ask) / Decimal("2")
+        gate_spread = (quote.ask - quote.bid) / Decimal("2")
+        round_trip_cost_bps = estimate_round_trip_cost_bps(
+            self._cost_model,
+            symbol=symbol,
+            entry_side=entry_side,
+            quantity=quantity,
+            mid_price=gate_price,
+            half_spread=gate_spread,
+            is_taker=is_taker_entry,
+            is_taker_exit=True,
+            is_short_entry=is_short_entry,
+        )
+        if signal.edge_estimate_bps < (
+            self._signal_min_edge_cost_ratio * round_trip_cost_bps
+        ):
+            self._emit_signal_edge_gate_suppression_alert(
+                signal,
+                symbol,
+                correlation_id,
+                detail=detail,
+            )
+            return False
+        return True
+
     def _calibrate_regime_engine(self) -> None:
         """Calibrate regime emission parameters from a *prefix* of the log.
 
@@ -3134,40 +3195,17 @@ class Orchestrator:
             is_short = htb_fee_applies(tier, short_sale)
 
             # B4: edge vs cost gate for the entry leg.
-            entry_passes_edge_gate = True
-            if (
-                self._signal_min_edge_cost_ratio > 0
-                and self._cost_model is not None
-            ):
-                gate_price = (quote.bid + quote.ask) / Decimal("2")
-                gate_spread = (quote.ask - quote.bid) / Decimal("2")
-                # Reverse always submits the EXIT leg as MARKET (taker)
-                # — guaranteed-fill close — regardless of execution mode.
-                # The ENTRY leg follows ``_use_passive_entries``.  The
-                # gate must therefore use asymmetric is_taker for the
-                # two legs or it under-prices the round-trip.
-                is_taker_entry = not self._use_passive_entries
-                round_trip_cost_bps = estimate_round_trip_cost_bps(
-                    self._cost_model,
-                    symbol=intent.symbol,
-                    entry_side=entry_side,
-                    quantity=entry_qty,
-                    mid_price=gate_price,
-                    half_spread=gate_spread,
-                    is_taker=is_taker_entry,
-                    is_taker_exit=True,
-                    is_short_entry=is_short,
-                )
-                if intent.signal.edge_estimate_bps < (
-                    self._signal_min_edge_cost_ratio * round_trip_cost_bps
-                ):
-                    entry_passes_edge_gate = False
-                    self._emit_signal_edge_gate_suppression_alert(
-                        intent.signal,
-                        intent.symbol,
-                        cid,
-                        detail="reverse_entry_leg_suppressed",
-                    )
+            entry_passes_edge_gate = self._signal_passes_edge_cost_gate(
+                intent.signal,
+                symbol=intent.symbol,
+                entry_side=entry_side,
+                quantity=entry_qty,
+                quote=quote,
+                is_taker_entry=not self._use_passive_entries,
+                is_short_entry=is_short,
+                correlation_id=cid,
+                detail="reverse_entry_leg_suppressed",
+            )
 
             if entry_passes_edge_gate:
                 seq_entry = self._seq.next()
@@ -3387,47 +3425,22 @@ class Orchestrator:
         tier = self._borrow_tier_for(intent.symbol)
         is_short = htb_fee_applies(tier, short_sale)
 
-        # B4: signal edge vs round-trip cost gate (model-computed legs).
-        # Skip exits and stop-losses (always allow for safety) and when
-        # the gate is disabled (ratio == 0) or no cost model / quote.
         if (
             not is_exit_or_stop
-            and self._signal_min_edge_cost_ratio > 0
-            and self._cost_model is not None
             and quote is not None
-        ):
-            gate_price = (quote.bid + quote.ask) / Decimal("2")
-            gate_spread = (quote.ask - quote.bid) / Decimal("2")
-            # Entry leg: passive when in passive mode, else taker.
-            # Exit leg: always priced as taker for the gate.  Stop-loss
-            # exits, forced-flatten escalation, and any maker that the
-            # marketability guard reclassifies as taker all bypass the
-            # passive path — pricing the exit as maker would silently
-            # admit trades whose realized round-trip cost exceeds the
-            # disclosed edge.  Conservative (worst-case exit) is the
-            # documented default for IBKR-style realism.
-            is_taker_entry = not self._use_passive_entries
-            round_trip_cost_bps = estimate_round_trip_cost_bps(
-                self._cost_model,
+            and not self._signal_passes_edge_cost_gate(
+                intent.signal,
                 symbol=intent.symbol,
                 entry_side=side,
                 quantity=quantity,
-                mid_price=gate_price,
-                half_spread=gate_spread,
-                is_taker=is_taker_entry,
-                is_taker_exit=True,
+                quote=quote,
+                is_taker_entry=not self._use_passive_entries,
                 is_short_entry=is_short,
+                correlation_id=correlation_id,
+                detail="standalone_intent_suppressed",
             )
-            if intent.signal.edge_estimate_bps < (
-                self._signal_min_edge_cost_ratio * round_trip_cost_bps
-            ):
-                self._emit_signal_edge_gate_suppression_alert(
-                    intent.signal,
-                    intent.symbol,
-                    correlation_id,
-                    detail="standalone_intent_suppressed",
-                )
-                return None, "signal_edge_below_min_edge_cost_ratio_gate"
+        ):
+            return None, "signal_edge_below_min_edge_cost_ratio_gate"
 
         order_type = OrderType.MARKET
         limit_price: Decimal | None = None

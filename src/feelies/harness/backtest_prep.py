@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
+import time
+
 from feelies.core.events import Event, NBBOQuote, Trade
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -20,6 +22,7 @@ from feelies.storage.reference.corporate_actions import (
 
 __all__ = [
     "BacktestEventLogPrep",
+    "QuoteReplayObserver",
     "QuoteTraceEntry",
     "QuoteTraceIndex",
     "prepare_backtest_event_log",
@@ -58,6 +61,40 @@ class QuoteTraceIndex:
                 exchange_timestamp_ns=event.exchange_timestamp_ns,
                 tick_index=self.quote_count,
             )
+
+
+class QuoteReplayObserver:
+    """Single NBBO subscriber: quote trace index + CLI progress lines."""
+
+    __slots__ = ("trace", "_total", "_interval", "_count", "_t0")
+
+    def __init__(self, total_events: int, interval: int = 100_000) -> None:
+        self.trace = QuoteTraceIndex()
+        self._total = total_events
+        self._interval = interval
+        self._count = 0
+        self._t0 = time.monotonic()
+
+    def __call__(self, event: Event) -> None:
+        if not isinstance(event, NBBOQuote):
+            return
+        self.trace(event)
+        self._count += 1
+        if self._count % self._interval == 0:
+            elapsed = time.monotonic() - self._t0
+            pct = self._count / self._total * 100.0 if self._total else 0.0
+            rate = self._count / elapsed if elapsed > 0 else 0.0
+            remaining = (self._total - self._count) / rate if rate > 0 else 0.0
+            print(
+                f"  [{pct:5.1f}%]  {self._count:>10,} / {self._total:,} quotes  "
+                f"({rate:,.0f} q/s, ~{remaining:.0f}s remaining)",
+                flush=True,
+            )
+
+    def summary(self) -> str:
+        elapsed = time.monotonic() - self._t0
+        rate = self._count / elapsed if elapsed > 0 else 0.0
+        return f"{self._count:,} quotes in {elapsed:.1f}s ({rate:,.0f} q/s)"
 
 
 @dataclass(frozen=True, slots=True)
