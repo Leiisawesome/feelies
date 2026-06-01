@@ -156,12 +156,21 @@ class PlatformConfig:
     early_close_moc_cutoff_et: str = "12:50"
     early_close_official_close_et: str = "13:00"
 
-    account_equity: float = 1_000_000.0
+    # BT-16: RTH session gating (09:30–16:00 ET; 13:00 on early-close days).
+    rth_session_gating_enabled: bool = True
+    rth_session_date: str | None = None
+    rth_open_et: str = "09:30"
+    rth_close_et: str = "16:00"
+    early_close_rth_close_et: str = "13:00"
+    market_holiday_dates: tuple[str, ...] = ()
+    no_entry_first_seconds: int = 0
+
+    # BT-15: deployed-capital placeholder ($25k–$100k bracket).
+    account_equity: float = 50_000.0
     # BT-17: order-submission latency (exchange-time fill eligibility in routers).
     backtest_fill_latency_ns: int = DEFAULT_BACKTEST_FILL_LATENCY_NS
     # BT-17: feed-propagation delay before a quote/trade is visible to the pipeline.
     market_data_latency_ns: int = DEFAULT_MARKET_DATA_LATENCY_NS
-
 
     # BT-4: account type + PDT (Pattern Day Trader) minimum-equity gate.
     # Locked to ``margin_25k`` (PDT-exempt). The enum is forward-compatible
@@ -315,6 +324,10 @@ class PlatformConfig:
     )
     sensor_specs: tuple[SensorSpec, ...] = ()
     event_calendar_path: Path | None = None
+    # BT-18: split/dividend ex-date calendar for replay integrity (see
+    # docs/data_adjustment_policy.md). None ⇒ ex-date guard is inert.
+    ex_date_calendar_path: Path | None = None
+    backtest_enforce_ex_date_guard: bool = True
     market_id: str = "US_EQUITY"
     session_kind: str = "RTH"
 
@@ -676,6 +689,12 @@ class PlatformConfig:
                 f"{self.event_calendar_path}"
             )
 
+        if self.ex_date_calendar_path is not None and not self.ex_date_calendar_path.is_file():
+            raise ConfigurationError(
+                f"ex_date_calendar_path does not exist: "
+                f"{self.ex_date_calendar_path}"
+            )
+
         # ── Phase-4 validation ────────────────────────────────────────
         if not 0.0 <= self.composition_completeness_threshold <= 1.0:
             raise ConfigurationError(
@@ -795,6 +814,13 @@ class PlatformConfig:
             "early_close_dates": list(self.early_close_dates),
             "early_close_moc_cutoff_et": self.early_close_moc_cutoff_et,
             "early_close_official_close_et": self.early_close_official_close_et,
+            "rth_session_gating_enabled": self.rth_session_gating_enabled,
+            "rth_session_date": self.rth_session_date,
+            "rth_open_et": self.rth_open_et,
+            "rth_close_et": self.rth_close_et,
+            "early_close_rth_close_et": self.early_close_rth_close_et,
+            "market_holiday_dates": list(self.market_holiday_dates),
+            "no_entry_first_seconds": self.no_entry_first_seconds,
             "account_equity": self.account_equity,
             "account_type": self.account_type,
             "account_id": self.account_id,
@@ -875,6 +901,12 @@ class PlatformConfig:
                 if self.event_calendar_path
                 else None
             ),
+            "ex_date_calendar_path": (
+                self.ex_date_calendar_path.name
+                if self.ex_date_calendar_path
+                else None
+            ),
+            "backtest_enforce_ex_date_guard": self.backtest_enforce_ex_date_guard,
             "market_id": self.market_id,
             "session_kind": self.session_kind,
             "enforce_trend_mechanism": self.enforce_trend_mechanism,
@@ -1154,7 +1186,24 @@ class PlatformConfig:
             early_close_official_close_et=str(
                 data.get("early_close_official_close_et", "13:00")
             ),
-            account_equity=float(data.get("account_equity", 1_000_000.0)),
+            rth_session_gating_enabled=bool(
+                data.get("rth_session_gating_enabled", True)
+            ),
+            rth_session_date=(
+                str(data["rth_session_date"])
+                if data.get("rth_session_date") is not None
+                else None
+            ),
+            rth_open_et=str(data.get("rth_open_et", "09:30")),
+            rth_close_et=str(data.get("rth_close_et", "16:00")),
+            early_close_rth_close_et=str(
+                data.get("early_close_rth_close_et", "13:00")
+            ),
+            market_holiday_dates=tuple(
+                str(d) for d in data.get("market_holiday_dates", ())
+            ),
+            no_entry_first_seconds=int(data.get("no_entry_first_seconds", 0)),
+            account_equity=float(data.get("account_equity", 50_000.0)),
             account_type=str(data.get("account_type", "margin_25k")),
             account_id=str(data.get("account_id", "default")),
             pdt_min_equity_usd=float(data.get("pdt_min_equity_usd", 25_000.0)),
@@ -1279,6 +1328,14 @@ class PlatformConfig:
             horizons_seconds=horizons_seconds,
             sensor_specs=sensor_specs,
             event_calendar_path=event_calendar_path,
+            ex_date_calendar_path=(
+                Path(str(data["ex_date_calendar_path"]))
+                if data.get("ex_date_calendar_path") is not None
+                else None
+            ),
+            backtest_enforce_ex_date_guard=bool(
+                data.get("backtest_enforce_ex_date_guard", True)
+            ),
             market_id=str(data.get("market_id", "US_EQUITY")),
             session_kind=str(data.get("session_kind", "RTH")),
             enforce_trend_mechanism=bool(

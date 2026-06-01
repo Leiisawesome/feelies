@@ -184,6 +184,9 @@ horizons_seconds:
 # For scheduled_flow_window sensor (e.g. sig_moc_imbalance_v1); bootstrap injects calendar.
 event_calendar_path: src/feelies/storage/reference/event_calendar/2026-03-26.yaml
 
+# BT-18: split/dividend ex-date guard (see docs/data_adjustment_policy.md).
+# ex_date_calendar_path: src/feelies/storage/reference/corporate_actions/ex_dates.yaml
+
 # Sensors for sig_benign_midcap_v1 (depends_on_sensors: ofi_ewma, micro_price, spread_z_30d, realized_vol_30s).
 sensor_specs:
 

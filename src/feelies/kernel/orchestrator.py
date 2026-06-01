@@ -553,6 +553,10 @@ class Orchestrator:
         self._moc_strategy_ids: frozenset[str] = frozenset()
         self._moc_bounds_configured: bool = False
 
+        # BT-16: RTH entry-fill suppression + close buying-power phase flip.
+        self._trading_session_bounds = None
+        self._rth_close_bp_flipped: bool = False
+
         # When True, entry/exit orders use LIMIT at BBO instead of
         # MARKET.  Stop-loss exits always use MARKET (fail-safe).
         # Set from config via boot().
@@ -770,6 +774,73 @@ class Orchestrator:
                 "use reset_risk_escalation() or unlock_from_lockdown()",
             )
 
+    def _bind_router_position_qty_for_rth(self) -> None:
+        """BT-16: wire signed live position qty into the router's RTH gate.
+
+        The router-side :class:`RthEntryFillGate` defaults ``current_qty``
+        to 0 when unbound, which would mis-classify exit fills as new
+        entries and suppress them after RTH close (violating Inv-11 for
+        the execution layer).  Binding is a no-op when RTH gating is
+        disabled (``_trading_session_bounds is None``) or when the
+        backend's router does not expose ``bind_position_qty``
+        (e.g. live broker routers without the hook).
+        """
+        if self._trading_session_bounds is None:
+            return
+        router = getattr(self._backend, "order_router", None)
+        bind = getattr(router, "bind_position_qty", None)
+        if not callable(bind):
+            return
+        bind(lambda sym: self._positions.get(sym).quantity)
+
+    def _maybe_flip_buying_power_at_rth_close(self, quote: NBBOQuote) -> None:
+        """BT-16: flip risk-engine buying-power phase at RTH close.
+
+        Once-per-session: the first quote with
+        ``exchange_timestamp_ns >= rth_close_ns`` transitions the risk
+        engine to :attr:`BuyingPowerPhase.OVERNIGHT` so the 2× overnight
+        multiplier is applied to any exits that linger past the close.
+        Compared against ``exchange_timestamp_ns`` rather than
+        ``timestamp_ns`` so the flip aligns with the exchange-time RTH
+        close used by router-side entry gating
+        (``BacktestOrderRouter`` / ``PassiveLimitOrderRouter`` and
+        :class:`TradingSessionBounds`).  No-op when RTH gating is
+        disabled, the flip has already fired this session, or the risk
+        engine does not expose ``set_buying_power_phase``.
+        """
+        if self._rth_close_bp_flipped:
+            return
+        bounds = self._trading_session_bounds
+        if bounds is None:
+            return
+        if quote.exchange_timestamp_ns < bounds.rth_close_ns:
+            return
+        set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
+        if not callable(set_phase):
+            self._rth_close_bp_flipped = True
+            return
+        from feelies.risk.buying_power import BuyingPowerPhase
+
+        set_phase(BuyingPowerPhase.OVERNIGHT)
+        self._rth_close_bp_flipped = True
+
+    def _reset_buying_power_phase_for_session(self) -> None:
+        """BT-16: reset the once-per-session RTH-close BP flip state.
+
+        Clears the latch that gates :meth:`_maybe_flip_buying_power_at_rth_close`
+        and forces the risk engine back onto
+        :attr:`BuyingPowerPhase.INTRADAY` so a new session always opens
+        on the 4× intraday cap — even when the same orchestrator
+        instance is reused across runs and the previous run left the
+        engine flipped to ``OVERNIGHT`` after crossing the close.
+        """
+        self._rth_close_bp_flipped = False
+        set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
+        if callable(set_phase):
+            from feelies.risk.buying_power import BuyingPowerPhase
+
+            set_phase(BuyingPowerPhase.INTRADAY)
+
     # ── Lifecycle: boot / run / shutdown ────────────────────────────
 
     def boot(self, config: Configuration) -> None:
@@ -851,6 +922,36 @@ class Orchestrator:
                         )
                         is not None
                     )
+            if getattr(config, "rth_session_gating_enabled", False):
+                from feelies.execution.trading_session import (
+                    build_trading_session_from_platform,
+                )
+
+                cal_path = (
+                    str(config.event_calendar_path)
+                    if getattr(config, "event_calendar_path", None) is not None
+                    else None
+                )
+                self._trading_session_bounds = build_trading_session_from_platform(
+                    rth_session_gating_enabled=config.rth_session_gating_enabled,
+                    rth_session_date=(
+                        getattr(config, "rth_session_date", None)
+                        or getattr(config, "moc_session_date", None)
+                    ),
+                    event_calendar_path=cal_path,
+                    rth_open_et=getattr(config, "rth_open_et", "09:30"),
+                    rth_close_et=getattr(config, "rth_close_et", "16:00"),
+                    early_close_dates=getattr(config, "early_close_dates", ()),
+                    early_close_rth_close_et=getattr(
+                        config, "early_close_rth_close_et", "13:00",
+                    ),
+                    market_holiday_dates=getattr(
+                        config, "market_holiday_dates", (),
+                    ),
+                    no_entry_first_seconds=getattr(
+                        config, "no_entry_first_seconds", 0,
+                    ),
+                )
             if hasattr(config, "execution_mode"):
                 # passive_limit and minimum_cost both wire through the
                 # passive-limit backend.  The static flag tells the
@@ -943,6 +1044,8 @@ class Orchestrator:
         self._require_safe_session_entry()
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:backtest")
+        self._reset_buying_power_phase_for_session()
+        self._bind_router_position_qty_for_rth()
         self._pending_sized_intents.clear()
         self._consumed_by_portfolio_ids = None
         self._reset_regime_session_state()
@@ -979,6 +1082,8 @@ class Orchestrator:
         self._require_safe_session_entry()
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:paper")
+        self._reset_buying_power_phase_for_session()
+        self._bind_router_position_qty_for_rth()
         self._pending_sized_intents.clear()
         self._consumed_by_portfolio_ids = None
         self._reset_regime_session_state()
@@ -1014,6 +1119,8 @@ class Orchestrator:
         self._require_safe_session_entry()
         self._pipeline_abort_requested = False
         self._micro.reset(trigger="session_start:live")
+        self._reset_buying_power_phase_for_session()
+        self._bind_router_position_qty_for_rth()
         self._pending_sized_intents.clear()
         self._reset_regime_session_state()
         self._macro.transition(
@@ -1786,6 +1893,13 @@ class Orchestrator:
                 refresh_hwm(self._positions)
             if self._strategy_positions is not None:
                 self._strategy_positions.update_mark(quote.symbol, mid)
+        # BT-16: drive the RTH-close buying-power flip purely from the
+        # quote's exchange timestamp so it always aligns with router-side
+        # entry gating, even on ticks that fail the mid guard (zeroed or
+        # invalid BBO).  Otherwise the engine could remain on intraday
+        # buying power past the close while the router already treats
+        # the session as closed — inconsistent risk vs execution.
+        self._maybe_flip_buying_power_at_rth_close(quote)
 
         # ── Quote-driven router ack drain ────────────────────────
         # bus.publish(quote) triggered on_quote() on the router, which
