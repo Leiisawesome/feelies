@@ -448,7 +448,7 @@ Methodology only (no L2 book, per platform constraint):
    former is flat in h, P1-1 is confirmed quantitatively.
    *(Symbol: AAPL; date: a normal-regime RTH session; metric: RankIC ± SE.)*
 2. **Kyle alignment.** Re-estimate λ with `dq` lagged 0 vs 1 trade; report sign
-   stability and IC vs forward return. Confirms/【refutes】 P1-5.
+   stability and IC vs forward return. Confirms/[refutes] P1-5.
 3. **z-baseline length sweep.** RankIC of `ofi_ewma_zscore` for
    max_samples ∈ {200, 1000, 2000, horizon-scaled}. Picks the P1-7 default.
 4. **spread_z staleness.** Inject a synthetic 1 h gap into a replay; measure how
