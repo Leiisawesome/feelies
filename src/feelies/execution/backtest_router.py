@@ -1,9 +1,21 @@
 """Backtest order router — simulated fills for backtest mode.
 
-Implements the ``OrderRouter`` protocol with an immediate mid-price
-fill model.  This is a v1 placeholder; the backtest-engine skill
-specifies a full queue-priority fill model with adverse selection
-and partial fills.
+Implements the ``OrderRouter`` protocol with a latency-deferred
+mid-price fill model.
+
+Latency model (audit F-H-07):
+  - ``latency_ns`` defines the gap between submit time and fill
+    eligibility.  ACKNOWLEDGED acks are emitted immediately at
+    ``submit_time + latency_ns``.
+  - The FILL itself is deferred until a quote arrives whose
+    ``timestamp_ns >= eligible_at_ns``.  The fill executes against
+    THAT later quote — not the submit-time quote.  This models the
+    realistic case where additional ticks arrive during the latency
+    window and the order fills against a (possibly worse) post-
+    latency quote.
+  - When ``latency_ns == 0``, the order matures immediately and
+    fills synchronously against the submit-time quote (legacy
+    behaviour preserved for tests / zero-latency configurations).
 
 Fill semantics:
   - Orders are acknowledged immediately on submit (ACKNOWLEDGED ack
@@ -40,6 +52,7 @@ Invariants preserved:
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from decimal import Decimal
 
 from feelies.core.clock import Clock
@@ -52,6 +65,14 @@ from feelies.core.events import (
 )
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.cost_model import CostModel
+
+
+@dataclass
+class _PendingSubmit:
+    """A submitted order awaiting fill-time eligibility (audit F-H-07)."""
+
+    request: OrderRequest
+    eligible_at_ns: int
 
 
 def _to_decimal(value: Decimal | int | str | float, name: str) -> Decimal:
@@ -107,14 +128,44 @@ class BacktestOrderRouter:
         self._pending_acks: list[OrderAck] = []
         self._submitted_order_ids: set[str] = set()
         self._ack_seq = SequenceGenerator()
+        # Audit F-H-07: FIFO queue of orders awaiting fill-time
+        # eligibility.  Drained on every ``on_quote`` and on ``submit``
+        # itself when ``latency_ns == 0`` (so the zero-latency fast
+        # path keeps its same-tick semantics).
+        self._pending_submits: list[_PendingSubmit] = []
 
     def on_quote(self, quote: NBBOQuote) -> None:
-        """Update the latest quote for a symbol.
+        """Update the latest quote and drain any mature pending orders.
 
-        Called by the bootstrap wiring (bus subscription) or
-        explicitly by the caller before each tick.
+        Audit F-H-07: orders submitted with ``latency_ns > 0`` are
+        queued in ``_pending_submits`` and only fill against a quote
+        whose ``timestamp_ns >= eligible_at_ns``.  This is the
+        realistic behavior — a market order submitted at T sees
+        additional ticks during the latency window and fills against
+        a (possibly worse) post-latency quote.
         """
         self._last_quotes[quote.symbol] = quote
+        self._drain_pending_submits(quote)
+
+    def _drain_pending_submits(self, quote: NBBOQuote) -> None:
+        """Fill pending orders whose eligibility time has elapsed.
+
+        Orders for *quote.symbol* whose ``eligible_at_ns <=
+        quote.timestamp_ns`` fill against ``quote``.  FIFO order is
+        preserved (determinism, Inv-5).  Other symbols are unaffected.
+        """
+        if not self._pending_submits:
+            return
+        still_pending: list[_PendingSubmit] = []
+        for entry in self._pending_submits:
+            if (
+                entry.request.symbol == quote.symbol
+                and entry.eligible_at_ns <= quote.timestamp_ns
+            ):
+                self._fill_against_quote(entry.request, quote, entry.eligible_at_ns)
+            else:
+                still_pending.append(entry)
+        self._pending_submits = still_pending
 
     def submit(self, request: OrderRequest) -> None:
         if request.order_id in self._submitted_order_ids:
@@ -147,9 +198,43 @@ class BacktestOrderRouter:
             request_sequence=request.sequence,
         ))
 
+        # Audit F-H-07: when latency_ns > 0, defer the fill until a
+        # quote arrives at or after eligibility.  When latency_ns == 0,
+        # the order is immediately eligible against the submit-time
+        # quote (legacy synchronous fast path).
+        eligible_at_ns = ack_ts
+        if eligible_at_ns > self._clock.now_ns():
+            self._pending_submits.append(_PendingSubmit(
+                request=request,
+                eligible_at_ns=eligible_at_ns,
+            ))
+            return
+
+        self._fill_against_quote(request, quote, eligible_at_ns)
+
+    def _fill_against_quote(
+        self,
+        request: OrderRequest,
+        quote: NBBOQuote,
+        fill_ts: int,
+    ) -> None:
+        """Execute the fill for *request* against *quote*.
+
+        Extracted from ``submit`` so the fill logic can run from both
+        the synchronous (latency=0) and deferred (latency>0) paths.
+        Emits PARTIAL+FILLED on walk-the-book, FILLED otherwise.
+        """
+        # Re-check quote sanity at fill time — the quote may have
+        # changed since submit if we waited for eligibility.
+        if quote.bid >= quote.ask:
+            self._reject(
+                request,
+                f"crossed or locked quote at fill time bid={quote.bid} ask={quote.ask}",
+            )
+            return
+
         fill_price = (quote.bid + quote.ask) / Decimal("2")
         half_spread = (quote.ask - quote.bid) / Decimal("2")
-        fill_ts = ack_ts
 
         # Available L1 depth on the relevant side.
         available_depth = (

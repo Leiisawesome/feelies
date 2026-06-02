@@ -122,16 +122,28 @@ class TestBacktestOrderRouter:
         assert second_poll == []
 
     def test_latency_injection(self):
+        """Audit F-H-07: latency defers the FILL to the first post-
+        latency quote.  ACK is emitted immediately at submit+latency,
+        but the fill waits for a quote whose ts ≥ eligible_at_ns."""
         clock = SimulatedClock(start_ns=5000)
         router = BacktestOrderRouter(clock, cost_model=ZeroCostModel(), latency_ns=1000)
 
-        router.on_quote(_quote("AAPL", "100.00", "100.10"))
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=4500))
         router.submit(_order("AAPL"))
 
-        acks = router.poll_acks()
-        # ACK and FILL both carry now + latency.
-        assert acks[0].timestamp_ns == 6000
-        assert acks[1].timestamp_ns == 6000
+        # Initial poll: ACK only (eligible_at_ns = 6000 > now = 5000).
+        first = router.poll_acks()
+        assert [a.status for a in first] == [OrderAckStatus.ACKNOWLEDGED]
+        assert first[0].timestamp_ns == 6000
+
+        # New quote at ts=6500 (past eligibility) → fill emerges.
+        clock.set_time(6500)
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=6500))
+        late = router.poll_acks()
+        fills = [a for a in late if a.status == OrderAckStatus.FILLED]
+        assert len(fills) == 1
+        # Fill timestamp is the recorded eligible_at_ns.
+        assert fills[0].timestamp_ns == 6000
 
     def test_multiple_symbols_independent(self):
         clock = SimulatedClock(start_ns=5000)

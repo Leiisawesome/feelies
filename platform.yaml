@@ -38,7 +38,9 @@ risk_max_gross_exposure_pct: 200.0
 
 risk_max_drawdown_pct: 5.0
 
-backtest_fill_latency_ns: 30000000
+# IBKR retail-floor latency (50 ms).  Orders submitted at T fill against
+# a quote arriving at T + latency or later (audit F-H-07).
+backtest_fill_latency_ns: 50000000
 
 # Fixed dollars/share — BACKTEST reference only; vol-scaled overrides better for production.
 stop_loss_per_share: 0.005

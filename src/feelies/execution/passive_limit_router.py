@@ -71,6 +71,14 @@ class _PendingOrder:
     shares_traded_at_level: int = 0
 
 
+@dataclass
+class _PendingAggressive:
+    """A market-order submission deferred under latency (audit F-H-07)."""
+
+    request: OrderRequest
+    eligible_at_ns: int
+
+
 class PassiveLimitOrderRouter:
     """Simulated order router with passive limit order fill model.
 
@@ -104,6 +112,12 @@ class PassiveLimitOrderRouter:
 
         self._last_quotes: dict[str, NBBOQuote] = {}
         self._pending_acks: list[OrderAck] = []
+        # Audit F-H-07: aggressive (market) submissions are queued
+        # under non-zero latency; drained when a quote arrives whose
+        # timestamp_ns >= eligible_at_ns.  Resting LIMIT orders keep
+        # their existing on_quote-driven fill semantics (no submit→
+        # fill latency to wait — the limit is already at the BBO).
+        self._pending_aggressive: list[_PendingAggressive] = []
         self._resting_orders: dict[str, _PendingOrder] = {}
         # Symbol → insertion-ordered order_ids index so on_quote() is O(k)
         # in the number of orders for that symbol rather than O(n) across
@@ -116,9 +130,29 @@ class PassiveLimitOrderRouter:
     # ── Public interface (OrderRouter protocol) ──────────────────
 
     def on_quote(self, quote: NBBOQuote) -> None:
-        """Update latest quote and check resting orders for fills."""
+        """Update latest quote and check resting / pending orders for fills."""
         self._last_quotes[quote.symbol] = quote
+        # Audit F-H-07: drain latency-deferred aggressive submissions
+        # BEFORE the resting-order pass so an aggressive fill emitted
+        # at this quote is reconciled before a passive level/through
+        # fill on the same symbol.  FIFO determinism preserved.
+        self._drain_pending_aggressive(quote)
         self._check_resting_orders(quote)
+
+    def _drain_pending_aggressive(self, quote: NBBOQuote) -> None:
+        """Fill aggressive submissions whose latency window has elapsed."""
+        if not self._pending_aggressive:
+            return
+        still_pending: list[_PendingAggressive] = []
+        for entry in self._pending_aggressive:
+            if (
+                entry.request.symbol == quote.symbol
+                and entry.eligible_at_ns <= quote.timestamp_ns
+            ):
+                self._fill_aggressive(entry.request, quote, fill_ts=entry.eligible_at_ns)
+            else:
+                still_pending.append(entry)
+        self._pending_aggressive = still_pending
 
     def on_trade(self, trade: Trade) -> None:
         """Accumulate traded volume for the queue-position fill model.
@@ -162,7 +196,18 @@ class PassiveLimitOrderRouter:
             return
 
         if request.order_type == OrderType.MARKET:
-            self._fill_aggressive(request, quote)
+            # Audit F-H-07: defer aggressive fill when latency_ns > 0
+            # so the fill executes against a post-latency quote.  Same-
+            # tick (zero-latency) fast path preserved for legacy
+            # configurations and unit tests.
+            eligible_at_ns = self._clock.now_ns() + self._latency_ns
+            if eligible_at_ns > self._clock.now_ns():
+                self._pending_aggressive.append(_PendingAggressive(
+                    request=request,
+                    eligible_at_ns=eligible_at_ns,
+                ))
+            else:
+                self._fill_aggressive(request, quote)
         elif request.order_type == OrderType.LIMIT:
             self._post_passive(request, quote)
         else:
@@ -175,15 +220,32 @@ class PassiveLimitOrderRouter:
 
     # ── Aggressive (market) fills ────────────────────────────────
 
-    def _fill_aggressive(self, request: OrderRequest, quote: NBBOQuote) -> None:
+    def _fill_aggressive(
+        self,
+        request: OrderRequest,
+        quote: NBBOQuote,
+        fill_ts: int | None = None,
+    ) -> None:
         """Immediate fill at mid-price — same economics as BacktestOrderRouter.
 
-        ``submit()`` is the only caller and has already validated that the
-        quote is non-crossed, so we do not re-check here.
+        Called synchronously by ``submit()`` when latency is zero, or
+        by ``_drain_pending_aggressive`` when a post-latency quote
+        arrives.  ``fill_ts`` defaults to ``now + latency_ns`` for the
+        synchronous path; the deferred path passes the pre-recorded
+        ``eligible_at_ns``.  Audit F-H-07.
         """
+        # Audit F-H-07: re-check quote sanity on the deferred path —
+        # the quote may have crossed/locked since submit time.
+        if quote.bid >= quote.ask:
+            self._reject(
+                request,
+                f"crossed or locked quote at fill time bid={quote.bid} ask={quote.ask}",
+            )
+            return
         fill_price = (quote.bid + quote.ask) / Decimal("2")
         half_spread = (quote.ask - quote.bid) / Decimal("2")
-        fill_ts = self._clock.now_ns() + self._latency_ns
+        if fill_ts is None:
+            fill_ts = self._clock.now_ns() + self._latency_ns
 
         costs = self._cost_model.compute(
             symbol=request.symbol,

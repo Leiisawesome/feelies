@@ -69,7 +69,11 @@ class PlatformConfig:
     risk_max_drawdown_pct: float = 5.0
 
     account_equity: float = 1_000_000.0
-    backtest_fill_latency_ns: int = 0
+    # Audit F-H-07: IBKR retail-floor fill latency.  Orders submitted
+    # at T fill against a quote arriving at T + latency_ns or later.
+    # 50 ms is a conservative IBKR retail default; co-located /
+    # paper accounts can override down.
+    backtest_fill_latency_ns: int = 50_000_000
 
     stop_loss_per_share: float = 0.0
     trail_activate_per_share: float = 0.0

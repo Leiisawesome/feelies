@@ -857,14 +857,25 @@ class TestLatency:
         assert acks[0].timestamp_ns == 8000  # 6000 + 2000
 
     def test_market_fill_latency(self):
+        """Audit F-H-07: under non-zero latency the market fill is
+        deferred until a quote arrives past the eligibility window."""
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), latency_ns=1000)
 
-        router.on_quote(_quote("AAPL", "150.00", "150.02"))
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=4500))
         router.submit(_market_order("AAPL"))
 
-        acks = router.poll_acks()
-        assert acks[0].timestamp_ns == 6000  # 5000 + 1000
+        # Initial poll: no fill yet — eligible_at_ns = 6000 > now = 5000.
+        first = router.poll_acks()
+        assert not any(a.status == OrderAckStatus.FILLED for a in first)
+
+        clock.set_time(6500)
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6500))
+        late = router.poll_acks()
+        fills = [a for a in late if a.status == OrderAckStatus.FILLED]
+        assert len(fills) == 1
+        # Fill timestamp = eligible_at_ns recorded at submit time.
+        assert fills[0].timestamp_ns == 6000
 
 
 class TestDeterminism:
