@@ -533,6 +533,8 @@ def _create_backend(
                 max_resting_ticks=passive_max_resting_ticks,
                 queue_position_shares=passive_queue_position_shares,
                 cancel_fee_per_share=_decimal(passive_cancel_fee_per_share),
+                market_impact_factor=market_impact_factor,
+                max_impact_half_spreads=max_impact_half_spreads,
             )
             return backend, router
 

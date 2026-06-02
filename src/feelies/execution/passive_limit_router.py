@@ -51,6 +51,7 @@ from feelies.core.events import (
     Trade,
 )
 from feelies.core.identifiers import SequenceGenerator
+from feelies.execution._fill_helpers import emit_aggressive_fill
 from feelies.execution.cost_model import CostModel
 
 
@@ -101,6 +102,8 @@ class PassiveLimitOrderRouter:
         max_resting_ticks: int = 50,
         queue_position_shares: int = 0,
         cancel_fee_per_share: Decimal = Decimal("0.0"),
+        market_impact_factor: Decimal = Decimal("0.5"),
+        max_impact_half_spreads: Decimal = Decimal("10"),
     ) -> None:
         self._clock = clock
         self._latency_ns = latency_ns
@@ -109,6 +112,12 @@ class PassiveLimitOrderRouter:
         self._max_resting_ticks = max_resting_ticks
         self._queue_position_shares = queue_position_shares
         self._cancel_fee_per_share = cancel_fee_per_share
+        # Audit F-H-11: aggressive-fallback fills now walk the book in
+        # parity with BacktestOrderRouter.  Knobs flow through from
+        # platform config (cost_market_impact_factor /
+        # cost_max_impact_half_spreads).
+        self._market_impact_factor = market_impact_factor
+        self._max_impact_half_spreads = max_impact_half_spreads
 
         self._last_quotes: dict[str, NBBOQuote] = {}
         self._pending_acks: list[OrderAck] = []
@@ -226,49 +235,27 @@ class PassiveLimitOrderRouter:
         quote: NBBOQuote,
         fill_ts: int | None = None,
     ) -> None:
-        """Immediate fill at mid-price — same economics as BacktestOrderRouter.
+        """Aggressive (market) fill via the shared L1+excess helper.
 
-        Called synchronously by ``submit()`` when latency is zero, or
-        by ``_drain_pending_aggressive`` when a post-latency quote
-        arrives.  ``fill_ts`` defaults to ``now + latency_ns`` for the
-        synchronous path; the deferred path passes the pre-recorded
-        ``eligible_at_ns``.  Audit F-H-07.
+        Audit F-H-11: this used to fill the full quantity at mid with
+        one half-spread of cost regardless of order size vs. L1 depth
+        — silently cheaper than BacktestOrderRouter for large orders
+        in passive_limit / minimum_cost modes.  Now both routers walk
+        the book through the same ``emit_aggressive_fill`` helper.
         """
-        # Audit F-H-07: re-check quote sanity on the deferred path —
-        # the quote may have crossed/locked since submit time.
-        if quote.bid >= quote.ask:
-            self._reject(
-                request,
-                f"crossed or locked quote at fill time bid={quote.bid} ask={quote.ask}",
-            )
-            return
-        fill_price = (quote.bid + quote.ask) / Decimal("2")
-        half_spread = (quote.ask - quote.bid) / Decimal("2")
         if fill_ts is None:
             fill_ts = self._clock.now_ns() + self._latency_ns
-
-        costs = self._cost_model.compute(
-            symbol=request.symbol,
-            side=request.side,
-            quantity=request.quantity,
-            fill_price=fill_price,
-            half_spread=half_spread,
-            is_short=request.is_short,
+        emit_aggressive_fill(
+            request=request,
+            quote=quote,
+            fill_ts=fill_ts,
+            cost_model=self._cost_model,
+            market_impact_factor=self._market_impact_factor,
+            max_impact_half_spreads=self._max_impact_half_spreads,
+            pending_acks=self._pending_acks,
+            ack_seq=self._ack_seq,
+            reject=self._reject,
         )
-
-        self._pending_acks.append(OrderAck(
-            timestamp_ns=fill_ts,
-            correlation_id=request.correlation_id,
-            sequence=self._ack_seq.next(),
-            order_id=request.order_id,
-            symbol=request.symbol,
-            status=OrderAckStatus.FILLED,
-            filled_quantity=request.quantity,
-            fill_price=fill_price,
-            fees=costs.total_fees,
-            cost_bps=costs.cost_bps,
-            request_sequence=request.sequence,
-        ))
 
     # ── Passive (limit) order posting ────────────────────────────
 

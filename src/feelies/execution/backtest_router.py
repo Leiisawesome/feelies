@@ -64,6 +64,7 @@ from feelies.core.events import (
     Side,
 )
 from feelies.core.identifiers import SequenceGenerator
+from feelies.execution._fill_helpers import emit_aggressive_fill
 from feelies.execution.cost_model import CostModel
 
 
@@ -218,141 +219,18 @@ class BacktestOrderRouter:
         quote: NBBOQuote,
         fill_ts: int,
     ) -> None:
-        """Execute the fill for *request* against *quote*.
-
-        Extracted from ``submit`` so the fill logic can run from both
-        the synchronous (latency=0) and deferred (latency>0) paths.
-        Emits PARTIAL+FILLED on walk-the-book, FILLED otherwise.
-        """
-        # Re-check quote sanity at fill time — the quote may have
-        # changed since submit if we waited for eligibility.
-        if quote.bid >= quote.ask:
-            self._reject(
-                request,
-                f"crossed or locked quote at fill time bid={quote.bid} ask={quote.ask}",
-            )
-            return
-
-        fill_price = (quote.bid + quote.ask) / Decimal("2")
-        half_spread = (quote.ask - quote.bid) / Decimal("2")
-
-        # Available L1 depth on the relevant side.
-        available_depth = (
-            quote.ask_size if request.side == Side.BUY else quote.bid_size
+        """Execute the fill for *request* against *quote* via the shared helper."""
+        emit_aggressive_fill(
+            request=request,
+            quote=quote,
+            fill_ts=fill_ts,
+            cost_model=self._cost_model,
+            market_impact_factor=self._market_impact_factor,
+            max_impact_half_spreads=self._max_impact_half_spreads,
+            pending_acks=self._pending_acks,
+            ack_seq=self._ack_seq,
+            reject=self._reject,
         )
-
-        # Zero-depth on the relevant side means no reasonable fill is
-        # possible — reject rather than silently filling at mid against
-        # a vacuum.
-        if available_depth <= 0:
-            self._reject(
-                request,
-                f"zero depth on {request.side.name} side "
-                f"(bid_size={quote.bid_size}, ask_size={quote.ask_size})",
-            )
-            return
-
-        if request.quantity > available_depth:
-            # ── Part 1: fill available depth at mid-price ──────
-            partial_qty = available_depth
-            partial_costs = self._cost_model.compute(
-                symbol=request.symbol,
-                side=request.side,
-                quantity=partial_qty,
-                fill_price=fill_price,
-                half_spread=half_spread,
-                is_short=request.is_short,
-            )
-            self._pending_acks.append(OrderAck(
-                timestamp_ns=fill_ts,
-                correlation_id=request.correlation_id,
-                sequence=self._ack_seq.next(),
-                order_id=request.order_id,
-                symbol=request.symbol,
-                status=OrderAckStatus.PARTIALLY_FILLED,
-                filled_quantity=partial_qty,
-                fill_price=fill_price,
-                fees=partial_costs.total_fees,
-                cost_bps=partial_costs.cost_bps,
-                request_sequence=request.sequence,
-            ))
-
-            # ── Part 2: fill remainder with market-impact premium ──
-            # Capped at max_impact_half_spreads × half_spread so a
-            # single large order against a thin book cannot produce
-            # unbounded prices.
-            excess_qty = request.quantity - available_depth
-            raw_impact = (
-                self._market_impact_factor
-                * Decimal(str(excess_qty))
-                / Decimal(str(available_depth))
-                * half_spread
-            )
-            impact_cap = self._max_impact_half_spreads * half_spread
-            impact = min(raw_impact, impact_cap)
-            if request.side == Side.BUY:
-                impact_price = fill_price + impact
-            else:
-                impact_price = max(fill_price - impact, Decimal("0.01"))
-
-            # The walk-the-book impact premium is already encoded in
-            # ``impact_price`` (the position records its cost basis at
-            # the worse-than-mid price) — so the cost model must NOT
-            # add the impact a second time as a spread component.
-            # Pass plain ``half_spread`` here; ``cost_bps`` will then
-            # reflect the half-spread cross + commission + adverse
-            # selection, while the impact is captured economically via
-            # the position's avg-entry price.  The earlier code passed
-            # ``half_spread + impact`` and so charged the impact twice
-            # (once via fill_price, once via the spread component),
-            # producing a spuriously punitive cost on thin-book partial
-            # fills.
-            excess_costs = self._cost_model.compute(
-                symbol=request.symbol,
-                side=request.side,
-                quantity=excess_qty,
-                fill_price=impact_price,
-                half_spread=half_spread,
-                is_short=request.is_short,
-            )
-            self._pending_acks.append(OrderAck(
-                timestamp_ns=fill_ts,
-                correlation_id=request.correlation_id,
-                sequence=self._ack_seq.next(),
-                order_id=request.order_id,
-                symbol=request.symbol,
-                status=OrderAckStatus.FILLED,
-                filled_quantity=excess_qty,
-                fill_price=impact_price,
-                fees=excess_costs.total_fees,
-                cost_bps=excess_costs.cost_bps,
-                request_sequence=request.sequence,
-            ))
-            return
-
-        # Normal path: full fill at mid-price.
-        costs = self._cost_model.compute(
-            symbol=request.symbol,
-            side=request.side,
-            quantity=request.quantity,
-            fill_price=fill_price,
-            half_spread=half_spread,
-            is_short=request.is_short,
-        )
-
-        self._pending_acks.append(OrderAck(
-            timestamp_ns=fill_ts,
-            correlation_id=request.correlation_id,
-            sequence=self._ack_seq.next(),
-            order_id=request.order_id,
-            symbol=request.symbol,
-            status=OrderAckStatus.FILLED,
-            filled_quantity=request.quantity,
-            fill_price=fill_price,
-            fees=costs.total_fees,
-            cost_bps=costs.cost_bps,
-            request_sequence=request.sequence,
-        ))
 
     def poll_acks(self) -> list[OrderAck]:
         acks = list(self._pending_acks)
