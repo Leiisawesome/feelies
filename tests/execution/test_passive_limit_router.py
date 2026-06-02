@@ -435,7 +435,8 @@ class TestLevelFill:
 class TestTimeout:
     """Test order cancellation after max_resting_ticks."""
 
-    def test_limit_cancelled_after_timeout(self):
+    def test_limit_expired_after_timeout(self):
+        """Audit F-L-31: passive timeouts now emit EXPIRED (was CANCELLED)."""
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(            clock, cost_model=ZeroCostModel(), fill_delay_ticks=100, max_resting_ticks=5,
         )
@@ -454,7 +455,7 @@ class TestTimeout:
 
         acks = router.poll_acks()
         assert len(acks) == 1
-        assert acks[0].status == OrderAckStatus.CANCELLED
+        assert acks[0].status == OrderAckStatus.EXPIRED
         assert "timeout" in acks[0].reason.lower()
         assert router.resting_order_count == 0
 

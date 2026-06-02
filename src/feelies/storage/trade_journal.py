@@ -48,6 +48,18 @@ class TradeRecord:
     correlation_id: str
     metadata: dict[str, str] = field(default_factory=dict)
 
+    @property
+    def net_pnl(self) -> Decimal:
+        """Audit F-M-21: realized PnL net of fees.
+
+        ``realized_pnl`` is mid-to-mid by convention (the cost model
+        records spread cost into ``fees``, not into the fill_price).
+        Consumers computing economic P&L must subtract fees; this
+        property does it correctly so naive consumers don't over-state
+        net P&L by the spread component.
+        """
+        return self.realized_pnl - self.fees
+
 
 class TradeJournal(Protocol):
     """Structured, queryable trade lifecycle store.

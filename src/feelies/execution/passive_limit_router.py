@@ -38,7 +38,7 @@ Invariants preserved:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 
 from feelies.core.clock import Clock
 from feelies.core.events import (
@@ -137,6 +137,11 @@ class PassiveLimitOrderRouter:
         # Full set of order_ids ever submitted — used for idempotent reject.
         self._submitted_order_ids: set[str] = set()
         self._ack_seq = SequenceGenerator()
+        # Audit F-M-26: per-cause reject counters.
+        self.locked_quote_reject_count: int = 0
+        self.no_quote_reject_count: int = 0
+        self.duplicate_id_reject_count: int = 0
+        self.zero_depth_reject_count: int = 0
 
     # ── Public interface (OrderRouter protocol) ──────────────────
 
@@ -188,18 +193,21 @@ class PassiveLimitOrderRouter:
 
     def submit(self, request: OrderRequest) -> None:
         if request.order_id in self._submitted_order_ids:
+            self.duplicate_id_reject_count += 1
             self._reject(request, f"duplicate order_id: {request.order_id}")
             return
         self._submitted_order_ids.add(request.order_id)
 
         quote = self._last_quotes.get(request.symbol)
         if quote is None:
+            self.no_quote_reject_count += 1
             self._reject(request, "no quote available for symbol")
             return
 
         # Crossed (bid > ask) quotes are data errors; locked (bid == ask)
         # leaves no passive side and breaks the marketability guard.
         if quote.bid >= quote.ask:
+            self.locked_quote_reject_count += 1
             self._reject(
                 request,
                 f"crossed or locked quote bid={quote.bid} ask={quote.ask}",
@@ -496,13 +504,23 @@ class PassiveLimitOrderRouter:
         ))
 
     def _cancel_fees(self, quantity: int) -> Decimal:
-        """Deterministically quantized cancel-fee computation."""
+        """Deterministically quantized cancel-fee computation.
+
+        Audit F-L-30: use Decimal's default rounding (ROUND_HALF_EVEN /
+        banker's rounding) so the cancel-fee quantization matches the
+        cost model's quantize() rule.
+        """
         return (self._cancel_fee_per_share * quantity).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
+            Decimal("0.01")
         )
 
     def _emit_timeout_cancel(self, pending: _PendingOrder) -> None:
-        """Emit a CANCELLED ack for a timed-out resting order."""
+        """Emit an EXPIRED ack for a timed-out resting order.
+
+        Audit F-L-31: distinguished from client-initiated cancels via
+        ``OrderAckStatus.EXPIRED`` so downstream consumers can branch
+        on status (was previously CANCELLED with reason="timeout").
+        """
         cancel_fees = self._cancel_fees(pending.request.quantity)
         self._pending_acks.append(OrderAck(
             timestamp_ns=self._clock.now_ns(),
@@ -510,7 +528,7 @@ class PassiveLimitOrderRouter:
             sequence=self._ack_seq.next(),
             order_id=pending.request.order_id,
             symbol=pending.request.symbol,
-            status=OrderAckStatus.CANCELLED,
+            status=OrderAckStatus.EXPIRED,
             reason=(
                 f"passive limit timeout after {pending.total_ticks} ticks"
             ),

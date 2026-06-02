@@ -380,7 +380,7 @@ class DefaultCostModel:
             commission=commission.quantize(Decimal("0.01")),
             total_fees=total_fees.quantize(Decimal("0.01")),
             cost_bps=cost_bps.quantize(Decimal("0.01")),
-            notional=notional,
+            notional=notional.quantize(Decimal("0.01")),
             raw_cost_bps=cost_bps,
         )
 

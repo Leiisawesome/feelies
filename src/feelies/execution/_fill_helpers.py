@@ -106,8 +106,13 @@ def emit_aggressive_fill(
             half_spread=half_spread,
             is_short=request.is_short,
         )
+        # Audit F-M-27: distinct timestamps for partial vs final fill so
+        # forensic timelines can distinguish the two events.  1 ns
+        # monotonic offset preserves ordering and determinism.
+        partial_ts = fill_ts
+        final_ts = fill_ts + 1
         pending_acks.append(OrderAck(
-            timestamp_ns=fill_ts,
+            timestamp_ns=partial_ts,
             correlation_id=request.correlation_id,
             sequence=ack_seq.next(),
             order_id=request.order_id,
@@ -145,7 +150,7 @@ def emit_aggressive_fill(
             is_short=request.is_short,
         )
         pending_acks.append(OrderAck(
-            timestamp_ns=fill_ts,
+            timestamp_ns=final_ts,
             correlation_id=request.correlation_id,
             sequence=ack_seq.next(),
             order_id=request.order_id,

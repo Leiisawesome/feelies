@@ -138,6 +138,14 @@ class BacktestOrderRouter:
         # itself when ``latency_ns == 0`` (so the zero-latency fast
         # path keeps its same-tick semantics).
         self._pending_submits: list[_PendingSubmit] = []
+        # Audit F-M-26: per-cause reject counters so operators can
+        # monitor the rate of skipped orders (locked/crossed quotes,
+        # missing quotes, duplicate IDs, zero depth) without parsing
+        # the ack stream.
+        self.locked_quote_reject_count: int = 0
+        self.no_quote_reject_count: int = 0
+        self.duplicate_id_reject_count: int = 0
+        self.zero_depth_reject_count: int = 0
 
     def on_quote(self, quote: NBBOQuote) -> None:
         """Update the latest quote and drain any mature pending orders.
@@ -174,17 +182,20 @@ class BacktestOrderRouter:
 
     def submit(self, request: OrderRequest) -> None:
         if request.order_id in self._submitted_order_ids:
+            self.duplicate_id_reject_count += 1
             self._reject(request, f"duplicate order_id: {request.order_id}")
             return
         self._submitted_order_ids.add(request.order_id)
 
         quote = self._last_quotes.get(request.symbol)
         if quote is None:
+            self.no_quote_reject_count += 1
             self._reject(request, "no quote available for symbol")
             return
 
         # Crossed/locked quotes produce nonsensical fills — reject.
         if quote.bid >= quote.ask:
+            self.locked_quote_reject_count += 1
             self._reject(
                 request,
                 f"crossed or locked quote bid={quote.bid} ask={quote.ask}",
