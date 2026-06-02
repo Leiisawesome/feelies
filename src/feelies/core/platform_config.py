@@ -675,7 +675,7 @@ class PlatformConfig:
         if self.cost_max_impact_half_spreads < 1.0:
             raise ConfigurationError(
                 "cost_max_impact_half_spreads must be >= 1 "
-                "(< 1 produces no impact at all on excess legs)"
+                "(< 1 caps impact below one half-spread on excess legs)"
             )
         if not 0.0 <= self.cost_min_passive_non_fill_probability <= 1.0:
             raise ConfigurationError(
