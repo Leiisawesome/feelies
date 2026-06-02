@@ -78,13 +78,9 @@ Invariants preserved:
 
 from __future__ import annotations
 
-<<<<<<< HEAD
-from dataclasses import replace
-=======
 from collections.abc import Callable
 
-from dataclasses import dataclass, replace
->>>>>>> origin/main
+from dataclasses import replace
 from decimal import Decimal
 
 from feelies.core.clock import Clock
@@ -97,12 +93,17 @@ from feelies.core.events import (
 )
 from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.cost_model import CostModel, ZeroCostModel
-<<<<<<< HEAD
 from feelies.execution.market_fill import (
     DeferredFill,
     append_market_fill_acks,
     append_reject_ack,
     to_decimal,
+)
+from feelies.execution.moc_fill import MocFillController
+from feelies.execution.moc_session import MocSessionBounds
+from feelies.execution.trading_session import (
+    RthEntryFillGate,
+    TradingSessionBounds,
 )
 
 
@@ -112,47 +113,6 @@ from feelies.execution.market_fill import (
 # contract (Inv 9).  Aliased to the historical name for readability at the
 # call sites below.
 _DeferredMarketFill = DeferredFill
-=======
-from feelies.execution.market_fill import append_market_fill_acks, to_decimal
-from feelies.execution.moc_fill import MocFillController
-from feelies.execution.moc_session import MocSessionBounds
-from feelies.execution.trading_session import (
-    RthEntryFillGate,
-    TradingSessionBounds,
-)
-
-
-@dataclass(frozen=True)
-class _DeferredMarketFill:
-    """MARKET order waiting until exchange time reaches fill deadline.
-
-    ``ticks_for_symbol`` is incremented every time a matching-symbol quote
-    arrives so the deferred order can be cancelled after
-    ``max_resting_ticks`` quotes — mirroring the safety net the passive
-    router applies to deferred aggressive fills.  Without this cap, a halt
-    or thinly-traded symbol could leave a MARKET order pending indefinitely
-    (Inv 11: fail-safe default).
-
-    ``ack_timestamp_ns`` is the ACKNOWLEDGED ack timestamp emitted at
-    submit (``clock.now_ns() + latency_ns`` at submit time).  It is stored
-    so the deferred FILLED timestamp can be ``max(clock.now_ns(), ack)``
-    instead of ``fill_quote_ts + latency_ns``: the eligibility gate already
-    waited ``latency_ns`` on the exchange clock, and flooring at
-    ``clock.now_ns()`` keeps FILLED aligned with the simulated decision
-    clock under any ``ReplayFeed`` ``market_data_latency_ns`` setting (the
-    BT-17 default advances the clock to ``exchange_ts + md_latency`` before
-    yielding the eligible quote, so a raw ``quote.exchange_timestamp_ns``
-    floor would trail ``now_ns()`` by ``md_latency`` and break ack-stream
-    monotonicity — Inv 9).  The same floor applies to ``max_resting_ticks``
-    timeout rejects so REJECTED never timestamps before ACKNOWLEDGED while
-    exchange time is still short of the latency deadline.
-    """
-
-    request: OrderRequest
-    fill_deadline_exchange_ns: int
-    ack_timestamp_ns: int
-    ticks_for_symbol: int = 0
->>>>>>> origin/main
 
 
 class BacktestOrderRouter:

@@ -48,14 +48,10 @@ legacy execution path bit-for-bit (Inv-A).
 from __future__ import annotations
 
 import logging
-<<<<<<< HEAD
-from collections.abc import Callable, Sequence
-=======
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
->>>>>>> origin/main
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
