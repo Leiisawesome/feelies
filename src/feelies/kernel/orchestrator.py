@@ -1258,9 +1258,18 @@ class Orchestrator:
         # these for the gross-exposure cap and drawdown guard.
         mid = (quote.bid + quote.ask) / Decimal("2")
         if mid > 0:
-            self._positions.update_mark(quote.symbol, mid)
+            # Audit F-H-03: pass BBO so unrealized PnL marks at the
+            # realistic liquidation price (bid for longs, ask for
+            # shorts) rather than mid.  The drawdown guard reads
+            # unrealized PnL, so this removes a half-spread × |qty|
+            # optimistic bias that delayed the gate.
+            self._positions.update_mark(
+                quote.symbol, mid, bid=quote.bid, ask=quote.ask,
+            )
             if self._strategy_positions is not None:
-                self._strategy_positions.update_mark(quote.symbol, mid)
+                self._strategy_positions.update_mark(
+                    quote.symbol, mid, bid=quote.bid, ask=quote.ask,
+                )
 
         # ── Resting order fill check ─────────────────────────────
         # bus.publish(quote) triggered on_quote() on the router,

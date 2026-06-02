@@ -20,6 +20,14 @@ class MemoryPositionStore:
     def __init__(self) -> None:
         self._positions: dict[str, Position] = {}
         self._marks: dict[str, Decimal] = {}
+        # Audit F-H-03: spread-aware liquidation marks.  When
+        # ``update_mark`` is called with the BBO, ``_bids`` / ``_asks``
+        # store the side-specific liquidation prices so that
+        # ``_recompute_unrealized`` can use bid for longs and ask for
+        # shorts (the realistic close price).  Falls back to mid when
+        # not supplied (legacy callers preserve their existing values).
+        self._bids: dict[str, Decimal] = {}
+        self._asks: dict[str, Decimal] = {}
         # Phase-4-finalize: per-symbol "opened-at" shadow map used by
         # the hazard-exit min-age safeguard and optional hard-exit-age
         # reconciliation guard.  Set when an update starts a new open
@@ -92,17 +100,48 @@ class MemoryPositionStore:
 
         return pos
 
-    def update_mark(self, symbol: str, mark_price: Decimal) -> None:
+    def update_mark(
+        self,
+        symbol: str,
+        mark_price: Decimal,
+        *,
+        bid: Decimal | None = None,
+        ask: Decimal | None = None,
+    ) -> None:
+        """Refresh the mark for a symbol.
+
+        ``mark_price`` is the mid (used as a fallback liquidation
+        price).  When ``bid`` and ``ask`` are supplied, the position
+        store records them and ``_recompute_unrealized`` uses the
+        side-specific liquidation price: longs mark to bid, shorts
+        mark to ask.  This matches the realistic exit price (you
+        sell at the bid; you cover at the ask) and removes the
+        ~half-spread × |qty| optimistic bias in unrealized PnL that
+        caused the drawdown guard to fire late (audit F-H-03).
+        """
         if mark_price <= 0:
             return
         self._marks[symbol] = mark_price
+        if bid is not None and bid > 0:
+            self._bids[symbol] = bid
+        if ask is not None and ask > 0:
+            self._asks[symbol] = ask
         pos = self._positions.get(symbol)
         if pos is not None:
             self._recompute_unrealized(pos)
 
     def _recompute_unrealized(self, pos: Position) -> None:
-        mark = self._marks.get(pos.symbol)
-        if mark is None or pos.quantity == 0:
+        if pos.quantity == 0:
+            pos.unrealized_pnl = Decimal("0")
+            return
+        # Spread-aware liquidation mark when BBO is recorded; otherwise
+        # fall back to the legacy mid mark (no behavioural change for
+        # callers that don't pass BBO into ``update_mark``).
+        if pos.quantity > 0:
+            mark = self._bids.get(pos.symbol) or self._marks.get(pos.symbol)
+        else:
+            mark = self._asks.get(pos.symbol) or self._marks.get(pos.symbol)
+        if mark is None:
             pos.unrealized_pnl = Decimal("0")
             return
         pos.unrealized_pnl = (mark - pos.avg_entry_price) * pos.quantity
