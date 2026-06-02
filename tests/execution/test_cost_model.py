@@ -314,6 +314,18 @@ class TestHTBBorrowFee:
         assert buy_with_flag.total_fees == buy_without.total_fees
 
 
+class TestConservativeDefaults:
+    """Audit PR-2: conservative IBKR-style defaults at the cost-model level."""
+
+    def test_default_maker_exchange_is_zero(self) -> None:
+        """SmartRouter venue blend → 0 average rebate for retail."""
+        assert DefaultCostModelConfig().maker_exchange_per_share == Decimal("0.0")
+
+    def test_default_sell_regulatory_bps_is_05(self) -> None:
+        """Current SEC fee ~0.278 bps + conservative headroom = 0.5."""
+        assert DefaultCostModelConfig().sell_regulatory_bps == Decimal("0.5")
+
+
 class TestSellSideRegulatoryFees:
     """Audit fix P2: SEC Section 31 + FINRA TAF on sell-side fills."""
 
@@ -431,9 +443,22 @@ class TestSmallOrderTieredFloor:
         )
         assert result.commission == Decimal("0.50")
 
-    def test_maker_small_order_floor_plus_rebate(self) -> None:
-        """Maker: $0.35 IB fee floor minus the $0.10 rebate = $0.25 net."""
+    def test_maker_small_order_floor_with_zero_default_rebate(self) -> None:
+        """Default maker_exchange_per_share=0.0 → small maker order
+        sees floor + zero rebate.  50 * $0.0035 = $0.175 → floored to
+        $0.35; default rebate 0 → commission = $0.35."""
         model = DefaultCostModel()
+        result = model.compute(
+            "AAPL", Side.BUY, 50, Decimal("100"), Decimal("0"),
+            is_taker=False,
+        )
+        assert result.commission == Decimal("0.35")
+
+    def test_maker_small_order_floor_with_explicit_rebate(self) -> None:
+        """Operators with venue-controlled routing can opt back in to a
+        positive rebate; the floor + rebate produces a $0.25 commission."""
+        cfg = DefaultCostModelConfig(maker_exchange_per_share=Decimal("-0.002"))
+        model = DefaultCostModel(cfg)
         result = model.compute(
             "AAPL", Side.BUY, 50, Decimal("100"), Decimal("0"),
             is_taker=False,

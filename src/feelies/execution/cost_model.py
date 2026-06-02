@@ -117,7 +117,7 @@ class DefaultCostModelConfig:
     min_spread_cost_bps: Decimal = Decimal("0")
     commission_per_share: Decimal = Decimal("0.0035")
     taker_exchange_per_share: Decimal = Decimal("0.003")
-    maker_exchange_per_share: Decimal = Decimal("-0.002")
+    maker_exchange_per_share: Decimal = Decimal("0.0")
     min_commission: Decimal = Decimal("0.35")
     max_commission_pct: Decimal = Decimal("1.0")
     passive_adverse_selection_bps: Decimal = Decimal("0.5")

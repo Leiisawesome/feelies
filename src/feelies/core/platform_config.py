@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import logging
 import json
 import time
 from dataclasses import dataclass, field
@@ -30,6 +31,9 @@ from feelies.core.config import ConfigSnapshot
 from feelies.core.errors import ConfigurationError
 from feelies.core.events import NBBOQuote, Trade
 from feelies.sensors.spec import SensorSpec
+
+
+logger = logging.getLogger(__name__)
 
 
 class OperatingMode(Enum):
@@ -71,13 +75,20 @@ class PlatformConfig:
     trail_activate_per_share: float = 0.0
     trail_pct: float = 0.5
 
-    cost_min_spread_bps: float = 0.0
+    # IBKR-conservative defaults (audit F-H-08, F-M-25, F-C-01):
+    #   - min_spread_bps: 0.3 floor on taker spread (tight tape proxy).
+    #   - maker_exchange_per_share: 0.0 — SmartRouter blends positive
+    #     and negative venue maker fees; net for a personal account is
+    #     ≈ 0.  Operators with venue-controlled routing can opt back in.
+    #   - sell_regulatory_bps: 0.5 — current SEC Section 31 fee (~0.278
+    #     bps) with conservative headroom for rate changes.
+    cost_min_spread_bps: float = 0.3
     cost_commission_per_share: float = 0.0035
     cost_exchange_per_share: float = 0.0005  # deprecated; use taker/maker fields below
     cost_taker_exchange_per_share: float = 0.003
-    cost_maker_exchange_per_share: float = -0.002
+    cost_maker_exchange_per_share: float = 0.0
     cost_passive_adverse_selection_bps: float = 0.5
-    cost_sell_regulatory_bps: float = 0.0
+    cost_sell_regulatory_bps: float = 0.5
     cost_stress_multiplier: float = 1.0
     cost_min_commission: float = 0.35
     cost_max_commission_pct: float = 1.0
@@ -632,6 +643,17 @@ class PlatformConfig:
 
         if not isinstance(data, dict):
             raise ConfigurationError(f"{path}: root must be a YAML mapping")
+
+        # Audit F-L-34: warn on deprecated cost fields that are loaded
+        # for backward compat but no longer threaded into the cost model.
+        for deprecated in ("cost_exchange_per_share", "passive_rebate_per_share"):
+            if deprecated in data:
+                logger.warning(
+                    "platform.yaml %s sets deprecated field %r (ignored). "
+                    "Use cost_taker_exchange_per_share / "
+                    "cost_maker_exchange_per_share instead.",
+                    path, deprecated,
+                )
 
         symbols_raw = data.get("symbols", [])
         symbols = frozenset(symbols_raw) if symbols_raw else frozenset()
