@@ -190,6 +190,9 @@ class DefaultCostModelConfig:
     spread_floor_taker_only: bool = True
 
 
+_DEFAULT_COST_MODEL_CONFIG: DefaultCostModelConfig = DefaultCostModelConfig()
+
+
 class DefaultCostModel:
     """Cost model: actual half-spread (with optional floor) + IB Tiered commission.
 
@@ -342,7 +345,7 @@ class DefaultCostModel:
         # gate and realised path agree on the basis); else ``fill_price``.
         adverse_cost = Decimal("0")
         if not is_taker:
-            default_cfg = DefaultCostModelConfig()
+            default_cfg = _DEFAULT_COST_MODEL_CONFIG
             through_bps = self._cfg.through_fill_adverse_selection_bps
             if (
                 through_bps == default_cfg.through_fill_adverse_selection_bps

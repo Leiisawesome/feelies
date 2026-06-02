@@ -498,7 +498,9 @@ class Orchestrator:
         self._trail_pct: float = 0.5
         self._peak_pnl_per_share: dict[str, float] = {}
         self._min_order_shares: int = 1
-        self._signal_min_edge_cost_ratio: float = 0.0  # 0 = gate disabled
+        # Audit F-H-14: default 1.0 (round-trip breakeven) matches
+        # ``PlatformConfig.signal_min_edge_cost_ratio``.  0 = gate disabled.
+        self._signal_min_edge_cost_ratio: float = 1.0
         # Audit F-H-13: ``"one_way"`` keeps the legacy edge-vs-RT-cost
         # comparison; ``"round_trip"`` (the new default) multiplies the
         # disclosed one-way edge by 2 inside the gate so both sides
