@@ -460,6 +460,11 @@ class Orchestrator:
         self._peak_pnl_per_share: dict[str, float] = {}
         self._min_order_shares: int = 1
         self._signal_min_edge_cost_ratio: float = 0.0  # 0 = gate disabled
+        # Audit F-H-13: ``"one_way"`` keeps the legacy edge-vs-RT-cost
+        # comparison; ``"round_trip"`` (the new default) multiplies the
+        # disclosed one-way edge by 2 inside the gate so both sides
+        # share the round-trip basis explicitly.
+        self._signal_edge_cost_basis: str = "round_trip"
 
         self._config: Configuration | None = None
 
@@ -712,6 +717,8 @@ class Orchestrator:
                 self._min_order_shares = config.platform_min_order_shares
             if hasattr(config, "signal_min_edge_cost_ratio"):
                 self._signal_min_edge_cost_ratio = config.signal_min_edge_cost_ratio
+            if hasattr(config, "signal_edge_cost_basis"):
+                self._signal_edge_cost_basis = config.signal_edge_cost_basis
             self._macro.transition(
                 MacroState.DATA_SYNC,
                 trigger="CONFIG_VALIDATED",
@@ -2190,14 +2197,17 @@ class Orchestrator:
                 gate_spread = (quote.ask - quote.bid) / Decimal("2")
                 # Reverse always submits the EXIT leg as MARKET (taker)
                 # — guaranteed-fill close — regardless of execution mode.
-                # The ENTRY leg follows ``_use_passive_entries``.  The
-                # gate must therefore use asymmetric is_taker for the
-                # two legs or it under-prices the round-trip.
-                # Audit F-H-04: pass depth + impact knobs so the
-                # taker leg(s) of the round-trip walk the book when
-                # qty exceeds L1.  Falls back to flat-L1 if knobs
-                # aren't available (parity with legacy gate).
-                is_taker_entry = not self._use_passive_entries
+                # The ENTRY leg follows ``_use_passive_entries``, EXCEPT
+                # in minimum_cost mode where the policy may pick
+                # aggressive at decide time (audit F-H-05): pricing the
+                # entry as maker would silently admit trades the policy
+                # then routes via the more expensive taker path.
+                # Conservative: worst-case (taker) entry when the
+                # minimum-cost policy is wired.
+                in_min_cost_mode = self._min_cost_policy is not None
+                is_taker_entry = (
+                    not self._use_passive_entries or in_min_cost_mode
+                )
                 round_trip_cost_bps = estimate_round_trip_cost_bps(
                     self._cost_model,
                     symbol=intent.symbol,
@@ -2217,7 +2227,15 @@ class Orchestrator:
                         self._config, "cost_max_impact_half_spreads", 10.0,
                     ))) if self._config else None,
                 )
-                if intent.signal.edge_estimate_bps < (
+                # Audit F-H-13: scale one-way edge to round-trip basis
+                # when configured.  ``edge_estimate_bps`` is disclosed
+                # per the cost-arithmetic schema's one-way convention;
+                # round-trip cost is two legs.  Scale × 2 unless basis
+                # is explicitly "one_way".
+                edge_bps_basis = intent.signal.edge_estimate_bps
+                if self._signal_edge_cost_basis == "round_trip":
+                    edge_bps_basis = edge_bps_basis * 2.0
+                if edge_bps_basis < (
                     self._signal_min_edge_cost_ratio * round_trip_cost_bps
                 ):
                     entry_passes_edge_gate = False
@@ -2418,7 +2436,14 @@ class Orchestrator:
             # admit trades whose realized round-trip cost exceeds the
             # disclosed edge.  Conservative (worst-case exit) is the
             # documented default for IBKR-style realism.
-            is_taker_entry = not self._use_passive_entries
+            # Audit F-H-05: in minimum_cost mode the policy may pick
+            # aggressive at decide time; price the entry as taker
+            # (worst case) so the gate doesn't admit trades the policy
+            # then routes via the more expensive taker path.
+            in_min_cost_mode = self._min_cost_policy is not None
+            is_taker_entry = (
+                not self._use_passive_entries or in_min_cost_mode
+            )
             round_trip_cost_bps = estimate_round_trip_cost_bps(
                 self._cost_model,
                 symbol=intent.symbol,
@@ -2438,7 +2463,11 @@ class Orchestrator:
                     self._config, "cost_max_impact_half_spreads", 10.0,
                 ))) if self._config else None,
             )
-            if intent.signal.edge_estimate_bps < (
+            # Audit F-H-13: scale one-way edge to round-trip basis.
+            edge_bps_basis = intent.signal.edge_estimate_bps
+            if self._signal_edge_cost_basis == "round_trip":
+                edge_bps_basis = edge_bps_basis * 2.0
+            if edge_bps_basis < (
                 self._signal_min_edge_cost_ratio * round_trip_cost_bps
             ):
                 return None, "signal_edge_below_min_edge_cost_ratio_gate"

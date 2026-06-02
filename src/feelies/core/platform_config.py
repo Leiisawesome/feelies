@@ -157,21 +157,20 @@ class PlatformConfig:
     # — conservative direction; see estimate_round_trip_cost_bps).
     # HTB is applied on short-entry sells when configured.
     #
-    # SEMANTIC: this ratio is on *round-trip* cost, not one-way cost.
-    # The load-time G12 gate (alpha/cost_arithmetic.MIN_MARGIN_RATIO=1.5)
-    # compares edge to *one-way* cost; the runtime gate compares edge
-    # to *round-trip* cost.  So ``signal_min_edge_cost_ratio=0.75``
-    # is the runtime-equivalent of G12's 1.5× one-way margin, and
-    # ``signal_min_edge_cost_ratio=1.5`` is roughly 2× stricter than
-    # G12 (requires edge ≥ 3× one-way cost ≈ 1.5× round-trip).  Set
-    # 0 to disable.  Default 0.0 (gate off in research backtests).
-    # This is a *runtime* filter that complements — but does not
-    # replace — the load-time G12 / cost_arithmetic discipline on the
-    # alpha spec (Inv-12).  Operators picking a runtime threshold
-    # should reason in round-trip units explicitly; the merge default
-    # leaves the gate off so research backtests don't silently
-    # suppress sub-cost edges that the alpha spec already discloses.
-    signal_min_edge_cost_ratio: float = 0.0
+    # SEMANTIC (audit F-H-13): the gate compares ``edge_estimate_bps``
+    # (interpreted per ``signal_edge_cost_basis``) to round-trip cost.
+    # When ``signal_edge_cost_basis == "round_trip"`` (the default) the
+    # disclosed one-way edge is scaled by 2 inside the gate to bring
+    # both sides onto the round-trip basis explicitly.  When the basis
+    # is ``"one_way"`` the gate skips the scaling (legacy behaviour).
+    #
+    # Audit F-H-14: default flipped 0.0 → 1.0.  Round-trip-breakeven is
+    # the minimum useful gate (edge must at least cover round-trip
+    # cost to be worth executing).  Operators wanting research-mode
+    # disable can explicitly set 0; operators wanting G12-equivalent
+    # 1.5× one-way (≈ 0.75× round-trip) margin can set 0.75.
+    signal_min_edge_cost_ratio: float = 1.0
+    signal_edge_cost_basis: str = "round_trip"
 
     # 2d: market-impact factor for walk-the-book slippage on large orders.
     # Excess beyond L1 available depth is priced at
@@ -392,6 +391,15 @@ class PlatformConfig:
             raise ConfigurationError(
                 "cost_stop_slippage_half_spreads must be >= 1"
             )
+        if self.signal_edge_cost_basis not in ("one_way", "round_trip"):
+            raise ConfigurationError(
+                f"signal_edge_cost_basis must be 'one_way' or "
+                f"'round_trip', got {self.signal_edge_cost_basis!r}"
+            )
+        if self.signal_min_edge_cost_ratio < 0.0:
+            raise ConfigurationError(
+                "signal_min_edge_cost_ratio must be >= 0"
+            )
         if self.cost_passive_adverse_selection_bps < 0.0:
             raise ConfigurationError(
                 "cost_passive_adverse_selection_bps must be >= 0"
@@ -587,6 +595,7 @@ class PlatformConfig:
             "passive_cancel_fee_per_share": self.passive_cancel_fee_per_share,
             "platform_min_order_shares": self.platform_min_order_shares,
             "signal_min_edge_cost_ratio": self.signal_min_edge_cost_ratio,
+            "signal_edge_cost_basis": self.signal_edge_cost_basis,
             "cost_market_impact_factor": self.cost_market_impact_factor,
             "cost_htb_borrow_annual_bps": self.cost_htb_borrow_annual_bps,
             # Phase-2 fields (folded into the snapshot so determinism
@@ -853,7 +862,10 @@ class PlatformConfig:
                 data.get("platform_min_order_shares", 1)
             ),
             signal_min_edge_cost_ratio=float(
-                data.get("signal_min_edge_cost_ratio", 0.0)
+                data.get("signal_min_edge_cost_ratio", 1.0)
+            ),
+            signal_edge_cost_basis=str(
+                data.get("signal_edge_cost_basis", "round_trip")
             ),
             cost_market_impact_factor=float(
                 data.get("cost_market_impact_factor", 0.5)
