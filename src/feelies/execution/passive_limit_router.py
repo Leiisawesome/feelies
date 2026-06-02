@@ -266,7 +266,11 @@ class PassiveLimitOrderRouter:
             ack_seq=self._ack_seq,
             reject=self._reject,
             stop_slippage_half_spreads=self._stop_slippage_half_spreads,
+            on_zero_depth_reject=self._bump_zero_depth_reject,
         )
+
+    def _bump_zero_depth_reject(self) -> None:
+        self.zero_depth_reject_count += 1
 
     # ── Passive (limit) order posting ────────────────────────────
 

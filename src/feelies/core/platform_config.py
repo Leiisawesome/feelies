@@ -803,7 +803,7 @@ class PlatformConfig:
                 data.get("trail_pct", 0.5)
             ),
             cost_min_spread_bps=float(
-                data.get("cost_min_spread_bps", 0.0)
+                data.get("cost_min_spread_bps", 0.3)
             ),
             cost_commission_per_share=float(
                 data.get("cost_commission_per_share", 0.0035)
@@ -815,7 +815,7 @@ class PlatformConfig:
                 data.get("cost_taker_exchange_per_share", 0.003)
             ),
             cost_maker_exchange_per_share=float(
-                data.get("cost_maker_exchange_per_share", -0.002)
+                data.get("cost_maker_exchange_per_share", 0.0)
             ),
             cost_passive_adverse_selection_bps=float(
                 data.get("cost_passive_adverse_selection_bps", 2.0)
@@ -824,7 +824,7 @@ class PlatformConfig:
                 data.get("cost_through_fill_adverse_selection_bps", 5.0)
             ),
             cost_sell_regulatory_bps=float(
-                data.get("cost_sell_regulatory_bps", 0.0)
+                data.get("cost_sell_regulatory_bps", 0.5)
             ),
             cost_stress_multiplier=float(
                 data.get("cost_stress_multiplier", 1.0)

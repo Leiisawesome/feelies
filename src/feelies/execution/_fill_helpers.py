@@ -53,6 +53,7 @@ def emit_aggressive_fill(
     ack_seq: SequenceGenerator,
     reject: Callable[[OrderRequest, str], None],
     stop_slippage_half_spreads: Decimal = Decimal("1"),
+    on_zero_depth_reject: Callable[[], None] | None = None,
 ) -> None:
     """Execute an aggressive (market) fill against ``quote``.
 
@@ -66,6 +67,11 @@ def emit_aggressive_fill(
     in depleted depth.  Fill price stays at mid; the extra slippage
     flows through ``fees`` (consistent with the spread-in-fees
     convention).  Multiplier defaults to 1 for non-stop fills.
+
+    Audit F-M-26: ``on_zero_depth_reject`` is invoked (when provided)
+    immediately before the zero-depth rejection is emitted, so the
+    caller can bump its ``zero_depth_reject_count`` telemetry counter
+    without parsing the ack stream.
     """
     if quote.bid >= quote.ask:
         reject(
@@ -88,6 +94,8 @@ def emit_aggressive_fill(
         quote.ask_size if request.side == Side.BUY else quote.bid_size
     )
     if available_depth <= 0:
+        if on_zero_depth_reject is not None:
+            on_zero_depth_reject()
         reject(
             request,
             f"zero depth on {request.side.name} side "
