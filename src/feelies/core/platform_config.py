@@ -139,6 +139,12 @@ class PlatformConfig:
     # MinimumCostExecutionPolicy as ``probability × edge_bps``.  0.30
     # is a conservative starting point (~70% expected fill).
     cost_min_passive_non_fill_probability: float = 0.30
+    # Audit F-M-22: dedicated ratio for the realized-cost alert.  The
+    # previous orchestrator code reused MIN_MARGIN_RATIO (a load-time
+    # G12 margin) as the alert threshold, labelling it
+    # "stress_multiplier" in the alert context — both confusing and
+    # ambiguous.  This field decouples the two semantics.
+    realized_cost_alert_ratio: float = 1.5
     # Ticks at our level before queue-drain fill triggers (legacy tick-based mode).
     passive_fill_delay_ticks: int = 3
     # Cancel unfilled resting orders after this many ticks.
@@ -395,6 +401,11 @@ class PlatformConfig:
             raise ConfigurationError(
                 "cost_min_passive_non_fill_probability must be in [0, 1]"
             )
+        if self.realized_cost_alert_ratio < 1.0:
+            raise ConfigurationError(
+                "realized_cost_alert_ratio must be >= 1 "
+                "(< 1 would fire on every realized cost)"
+            )
         if self.cost_stop_slippage_half_spreads < 1.0:
             raise ConfigurationError(
                 "cost_stop_slippage_half_spreads must be >= 1"
@@ -600,6 +611,7 @@ class PlatformConfig:
             "cost_min_passive_non_fill_probability": (
                 self.cost_min_passive_non_fill_probability
             ),
+            "realized_cost_alert_ratio": self.realized_cost_alert_ratio,
             "passive_fill_delay_ticks": self.passive_fill_delay_ticks,
             "passive_max_resting_ticks": self.passive_max_resting_ticks,
             "passive_queue_position_shares": self.passive_queue_position_shares,
@@ -856,6 +868,9 @@ class PlatformConfig:
             ),
             cost_min_passive_non_fill_probability=float(
                 data.get("cost_min_passive_non_fill_probability", 0.30)
+            ),
+            realized_cost_alert_ratio=float(
+                data.get("realized_cost_alert_ratio", 1.5)
             ),
             passive_fill_delay_ticks=int(
                 data.get("passive_fill_delay_ticks", 3)

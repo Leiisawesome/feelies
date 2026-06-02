@@ -465,6 +465,9 @@ class Orchestrator:
         # disclosed one-way edge by 2 inside the gate so both sides
         # share the round-trip basis explicitly.
         self._signal_edge_cost_basis: str = "round_trip"
+        # Audit F-M-22: dedicated threshold for the realized-vs-disclosed
+        # cost alert, decoupled from MIN_MARGIN_RATIO.
+        self._realized_cost_alert_ratio: float = 1.5
 
         self._config: Configuration | None = None
 
@@ -724,6 +727,8 @@ class Orchestrator:
                 self._signal_min_edge_cost_ratio = config.signal_min_edge_cost_ratio
             if hasattr(config, "signal_edge_cost_basis"):
                 self._signal_edge_cost_basis = config.signal_edge_cost_basis
+            if hasattr(config, "realized_cost_alert_ratio"):
+                self._realized_cost_alert_ratio = config.realized_cost_alert_ratio
             self._macro.transition(
                 MacroState.DATA_SYNC,
                 trigger="CONFIG_VALIDATED",
@@ -2954,17 +2959,18 @@ class Orchestrator:
             ))
 
             disclosed = order.g12_disclosed_cost_total_bps
-            if disclosed > 0 and float(ack.cost_bps) > disclosed * MIN_MARGIN_RATIO:
+            alert_ratio = self._realized_cost_alert_ratio
+            if disclosed > 0 and float(ack.cost_bps) > disclosed * alert_ratio:
                 self._bus.publish(Alert(
                     timestamp_ns=self._clock.now_ns(),
                     correlation_id=correlation_id,
                     sequence=self._seq.next(),
                     severity=AlertSeverity.WARNING,
                     layer="kernel",
-                    alert_name="g12_realized_cost_exceeds_disclosure_stress",
+                    alert_name="g12_realized_cost_exceeds_disclosure",
                     message=(
                         f"Fill cost_bps={float(ack.cost_bps):.4f} exceeds "
-                        f"{MIN_MARGIN_RATIO}× G12 disclosed one-way "
+                        f"{alert_ratio}× G12 disclosed one-way "
                         f"cost_total_bps={disclosed:.4f} "
                         f"(strategy_id={order.strategy_id!r}, "
                         f"symbol={ack.symbol!r}, order_id={ack.order_id!r})"
@@ -2975,7 +2981,7 @@ class Orchestrator:
                         "order_id": ack.order_id,
                         "realized_cost_bps": float(ack.cost_bps),
                         "g12_disclosed_cost_total_bps": disclosed,
-                        "stress_multiplier": MIN_MARGIN_RATIO,
+                        "alert_ratio": alert_ratio,
                     },
                 ))
 
