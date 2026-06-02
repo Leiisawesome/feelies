@@ -498,7 +498,6 @@ class Orchestrator:
         self._trail_pct: float = 0.5
         self._peak_pnl_per_share: dict[str, float] = {}
         self._min_order_shares: int = 1
-<<<<<<< HEAD
         self._signal_min_edge_cost_ratio: float = 0.0  # 0 = gate disabled
         # Audit F-H-13: ``"one_way"`` keeps the legacy edge-vs-RT-cost
         # comparison; ``"round_trip"`` (the new default) multiplies the
@@ -508,15 +507,12 @@ class Orchestrator:
         # Audit F-M-22: dedicated threshold for the realized-vs-disclosed
         # cost alert, decoupled from MIN_MARGIN_RATIO.
         self._realized_cost_alert_ratio: float = 1.5
-=======
-        self._signal_min_edge_cost_ratio: float = 1.5  # 0 = gate disabled
         self._regime_calibration_max_quotes: int | None = None
         self._regime_calibration_quotes: tuple[NBBOQuote, ...] | None = (
             tuple(regime_calibration_quotes)
             if regime_calibration_quotes is not None
             else None
         )
->>>>>>> origin/main
 
         self._config: Configuration | None = None
 
@@ -1050,17 +1046,14 @@ class Orchestrator:
                 self._min_order_shares = config.platform_min_order_shares
             if hasattr(config, "signal_min_edge_cost_ratio"):
                 self._signal_min_edge_cost_ratio = config.signal_min_edge_cost_ratio
-<<<<<<< HEAD
             if hasattr(config, "signal_edge_cost_basis"):
                 self._signal_edge_cost_basis = config.signal_edge_cost_basis
             if hasattr(config, "realized_cost_alert_ratio"):
                 self._realized_cost_alert_ratio = config.realized_cost_alert_ratio
-=======
             if hasattr(config, "regime_calibration_max_quotes"):
                 self._regime_calibration_max_quotes = (
                     config.regime_calibration_max_quotes
                 )
->>>>>>> origin/main
             self._macro.transition(
                 MacroState.DATA_SYNC,
                 trigger="CONFIG_VALIDATED",
@@ -1932,7 +1925,6 @@ class Orchestrator:
         # these for the gross-exposure cap and drawdown guard.
         mid = (quote.bid + quote.ask) / Decimal("2")
         if mid > 0:
-<<<<<<< HEAD
             # Audit F-H-03: pass BBO so unrealized PnL marks at the
             # realistic liquidation price (bid for longs, ask for
             # shorts) rather than mid.  The drawdown guard reads
@@ -1941,12 +1933,6 @@ class Orchestrator:
             self._positions.update_mark(
                 quote.symbol, mid, bid=quote.bid, ask=quote.ask,
             )
-            if self._strategy_positions is not None:
-                self._strategy_positions.update_mark(
-                    quote.symbol, mid, bid=quote.bid, ask=quote.ask,
-                )
-=======
-            self._positions.update_mark(quote.symbol, mid)
             # Advance the risk engine's drawdown high-water mark from
             # the freshly updated marks so peak equity reflects open
             # appreciation between order checks.  Without this, the HWM
@@ -1961,7 +1947,9 @@ class Orchestrator:
             if callable(refresh_hwm):
                 refresh_hwm(self._positions)
             if self._strategy_positions is not None:
-                self._strategy_positions.update_mark(quote.symbol, mid)
+                self._strategy_positions.update_mark(
+                    quote.symbol, mid, bid=quote.bid, ask=quote.ask,
+                )
         # BT-16: drive the RTH-close buying-power flip purely from the
         # quote's exchange timestamp so it always aligns with router-side
         # entry gating, even on ticks that fail the mid guard (zeroed or
@@ -1969,7 +1957,6 @@ class Orchestrator:
         # buying power past the close while the router already treats
         # the session as closed — inconsistent risk vs execution.
         self._maybe_flip_buying_power_at_rth_close(quote)
->>>>>>> origin/main
 
         # ── Quote-driven router ack drain ────────────────────────
         # bus.publish(quote) triggered on_quote() on the router, which
@@ -2596,8 +2583,19 @@ class Orchestrator:
             is_taker=is_taker_entry,
             is_taker_exit=True,
             is_short_entry=is_short_entry,
+            bid_size=quote.bid_size,
+            ask_size=quote.ask_size,
+            market_impact_factor=Decimal(str(getattr(
+                self._config, "cost_market_impact_factor", 0.5,
+            ))) if self._config else None,
+            max_impact_half_spreads=Decimal(str(getattr(
+                self._config, "cost_max_impact_half_spreads", 10.0,
+            ))) if self._config else None,
         )
-        if signal.edge_estimate_bps < (
+        edge_bps_basis = signal.edge_estimate_bps
+        if self._signal_edge_cost_basis == "round_trip":
+            edge_bps_basis = edge_bps_basis * 2.0
+        if edge_bps_basis < (
             self._signal_min_edge_cost_ratio * round_trip_cost_bps
         ):
             self._emit_signal_edge_gate_suppression_alert(
@@ -3240,71 +3238,20 @@ class Orchestrator:
             is_short = htb_fee_applies(tier, short_sale)
 
             # B4: edge vs cost gate for the entry leg.
-<<<<<<< HEAD
-            entry_passes_edge_gate = True
-            if (
-                self._signal_min_edge_cost_ratio > 0
-                and self._cost_model is not None
-            ):
-                gate_price = (quote.bid + quote.ask) / Decimal("2")
-                gate_spread = (quote.ask - quote.bid) / Decimal("2")
-                # Reverse always submits the EXIT leg as MARKET (taker)
-                # — guaranteed-fill close — regardless of execution mode.
-                # The ENTRY leg follows ``_use_passive_entries``, EXCEPT
-                # in minimum_cost mode where the policy may pick
-                # aggressive at decide time (audit F-H-05): pricing the
-                # entry as maker would silently admit trades the policy
-                # then routes via the more expensive taker path.
-                # Conservative: worst-case (taker) entry when the
-                # minimum-cost policy is wired.
-                in_min_cost_mode = self._min_cost_policy is not None
-                is_taker_entry = (
-                    not self._use_passive_entries or in_min_cost_mode
-                )
-                round_trip_cost_bps = estimate_round_trip_cost_bps(
-                    self._cost_model,
-                    symbol=intent.symbol,
-                    entry_side=entry_side,
-                    quantity=entry_qty,
-                    mid_price=gate_price,
-                    half_spread=gate_spread,
-                    is_taker=is_taker_entry,
-                    is_taker_exit=True,
-                    is_short_entry=is_short,
-                    bid_size=quote.bid_size,
-                    ask_size=quote.ask_size,
-                    market_impact_factor=Decimal(str(getattr(
-                        self._config, "cost_market_impact_factor", 0.5,
-                    ))) if self._config else None,
-                    max_impact_half_spreads=Decimal(str(getattr(
-                        self._config, "cost_max_impact_half_spreads", 10.0,
-                    ))) if self._config else None,
-                )
-                # Audit F-H-13: scale one-way edge to round-trip basis
-                # when configured.  ``edge_estimate_bps`` is disclosed
-                # per the cost-arithmetic schema's one-way convention;
-                # round-trip cost is two legs.  Scale × 2 unless basis
-                # is explicitly "one_way".
-                edge_bps_basis = intent.signal.edge_estimate_bps
-                if self._signal_edge_cost_basis == "round_trip":
-                    edge_bps_basis = edge_bps_basis * 2.0
-                if edge_bps_basis < (
-                    self._signal_min_edge_cost_ratio * round_trip_cost_bps
-                ):
-                    entry_passes_edge_gate = False
-=======
             entry_passes_edge_gate = self._signal_passes_edge_cost_gate(
                 intent.signal,
                 symbol=intent.symbol,
                 entry_side=entry_side,
                 quantity=entry_qty,
                 quote=quote,
-                is_taker_entry=not self._use_passive_entries,
+                is_taker_entry=(
+                    not self._use_passive_entries
+                    or self._min_cost_policy is not None
+                ),
                 is_short_entry=is_short,
                 correlation_id=cid,
                 detail="reverse_entry_leg_suppressed",
             )
->>>>>>> origin/main
 
             if entry_passes_edge_gate:
                 seq_entry = self._seq.next()
@@ -3530,63 +3477,22 @@ class Orchestrator:
         if (
             not is_exit_or_stop
             and quote is not None
-<<<<<<< HEAD
-        ):
-            gate_price = (quote.bid + quote.ask) / Decimal("2")
-            gate_spread = (quote.ask - quote.bid) / Decimal("2")
-            # Entry leg: passive when in passive mode, else taker.
-            # Exit leg: always priced as taker for the gate.  Stop-loss
-            # exits, forced-flatten escalation, and any maker that the
-            # marketability guard reclassifies as taker all bypass the
-            # passive path — pricing the exit as maker would silently
-            # admit trades whose realized round-trip cost exceeds the
-            # disclosed edge.  Conservative (worst-case exit) is the
-            # documented default for IBKR-style realism.
-            # Audit F-H-05: in minimum_cost mode the policy may pick
-            # aggressive at decide time; price the entry as taker
-            # (worst case) so the gate doesn't admit trades the policy
-            # then routes via the more expensive taker path.
-            in_min_cost_mode = self._min_cost_policy is not None
-            is_taker_entry = (
-                not self._use_passive_entries or in_min_cost_mode
-            )
-            round_trip_cost_bps = estimate_round_trip_cost_bps(
-                self._cost_model,
-=======
             and not self._signal_passes_edge_cost_gate(
                 intent.signal,
->>>>>>> origin/main
                 symbol=intent.symbol,
                 entry_side=side,
                 quantity=quantity,
                 quote=quote,
-                is_taker_entry=not self._use_passive_entries,
+                is_taker_entry=(
+                    not self._use_passive_entries
+                    or self._min_cost_policy is not None
+                ),
                 is_short_entry=is_short,
-<<<<<<< HEAD
-                bid_size=quote.bid_size,
-                ask_size=quote.ask_size,
-                market_impact_factor=Decimal(str(getattr(
-                    self._config, "cost_market_impact_factor", 0.5,
-                ))) if self._config else None,
-                max_impact_half_spreads=Decimal(str(getattr(
-                    self._config, "cost_max_impact_half_spreads", 10.0,
-                ))) if self._config else None,
-            )
-            # Audit F-H-13: scale one-way edge to round-trip basis.
-            edge_bps_basis = intent.signal.edge_estimate_bps
-            if self._signal_edge_cost_basis == "round_trip":
-                edge_bps_basis = edge_bps_basis * 2.0
-            if edge_bps_basis < (
-                self._signal_min_edge_cost_ratio * round_trip_cost_bps
-            ):
-                return None, "signal_edge_below_min_edge_cost_ratio_gate"
-=======
                 correlation_id=correlation_id,
                 detail="standalone_intent_suppressed",
             )
         ):
             return None, "signal_edge_below_min_edge_cost_ratio_gate"
->>>>>>> origin/main
 
         order_type = OrderType.MARKET
         limit_price: Decimal | None = None

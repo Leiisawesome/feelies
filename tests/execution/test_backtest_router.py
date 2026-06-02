@@ -129,24 +129,6 @@ class TestBacktestOrderRouter:
         clock = SimulatedClock(start_ns=5000)
         router = BacktestOrderRouter(clock, cost_model=ZeroCostModel(), latency_ns=1000)
 
-<<<<<<< HEAD
-        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=4500))
-        router.submit(_order("AAPL"))
-
-        # Initial poll: ACK only (eligible_at_ns = 6000 > now = 5000).
-        first = router.poll_acks()
-        assert [a.status for a in first] == [OrderAckStatus.ACKNOWLEDGED]
-        assert first[0].timestamp_ns == 6000
-
-        # New quote at ts=6500 (past eligibility) → fill emerges.
-        clock.set_time(6500)
-        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=6500))
-        late = router.poll_acks()
-        fills = [a for a in late if a.status == OrderAckStatus.FILLED]
-        assert len(fills) == 1
-        # Fill timestamp is the recorded eligible_at_ns.
-        assert fills[0].timestamp_ns == 6000
-=======
         router.on_quote(_quote("AAPL", "100.00", "100.10", ts=1000))
         router.submit(_order("AAPL"))
 
@@ -154,13 +136,15 @@ class TestBacktestOrderRouter:
         assert [a.status for a in acks] == [OrderAckStatus.ACKNOWLEDGED]
         assert acks[0].timestamp_ns == 6000
 
-        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=2000))
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=5500))
+        assert router.poll_acks() == []
+
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=6500))
         acks2 = router.poll_acks()
         assert len(acks2) == 1
         assert acks2[0].status == OrderAckStatus.FILLED
-        # Deferred FILLED uses max(ack_ts, fill_quote.exchange_timestamp_ns).
-        # Here the injected clock stays at 5000 while exchange timestamps run
-        # 1000 → 2000, so ack_ts=6000 dominates (tests ACK ≤ FILLED ordering).
+        # Deferred FILLED uses max(ack_ts, clock.now_ns()) after the first
+        # quote whose exchange timestamp reaches the submit-time eligibility.
         assert acks2[0].timestamp_ns == 6000
 
     def test_deferred_market_fill_ts_no_double_latency_when_clock_tracks_exchange(
@@ -240,7 +224,10 @@ class TestBacktestOrderRouter:
             OrderAckStatus.ACKNOWLEDGED,
         ]
 
-        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=2000))
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=5500))
+        assert router.poll_acks() == []
+
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=6500))
         acks2 = router.poll_acks()
         assert len(acks2) == 1
         assert acks2[0].status == OrderAckStatus.FILLED
@@ -255,19 +242,18 @@ class TestBacktestOrderRouter:
         router.poll_acks()
 
         router.on_quote(_quote_with_depth(
-            "100.00", "100.10", bid_size=100, ask_size=0, ts=2000,
+            "100.00", "100.10", bid_size=100, ask_size=0, ts=6500,
         ))
         assert router.poll_acks()[0].status == OrderAckStatus.REJECTED
 
-        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=3000))
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=7500))
         router.submit(_order("AAPL", order_id="reuse-1"))
         assert [a.status for a in router.poll_acks()] == [
             OrderAckStatus.ACKNOWLEDGED,
         ]
 
-        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=4000))
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=8500))
         assert router.poll_acks()[0].status == OrderAckStatus.FILLED
->>>>>>> origin/main
 
     def test_multiple_symbols_independent(self):
         clock = SimulatedClock(start_ns=5000)
@@ -399,13 +385,12 @@ class TestPartialFillAndSlippage:
     def test_excess_price_raised_for_buy(self) -> None:
         """Excess qty for a BUY is filled above the cross (ask) — impact premium."""
         clock = SimulatedClock(start_ns=5000)
-<<<<<<< HEAD
-        # impact = 0.5 * (excess/depth) * half_spread = 0.5 * (100/50) * 1 = 1.0
-        router = BacktestOrderRouter(clock, cost_model=ZeroCostModel(), market_impact_factor=Decimal("0.5"))
-=======
         # impact = 0.5 * (excess/depth) * half_spread = 0.5 * (100/50) * 2 = 2.0
-        router = BacktestOrderRouter(clock, market_impact_factor=Decimal("0.5"))
->>>>>>> origin/main
+        router = BacktestOrderRouter(
+            clock,
+            cost_model=ZeroCostModel(),
+            market_impact_factor=Decimal("0.5"),
+        )
 
         router.on_quote(_quote_with_depth("98.00", "102.00", bid_size=200, ask_size=50))
         router.submit(_order_qty(150, side=Side.BUY))

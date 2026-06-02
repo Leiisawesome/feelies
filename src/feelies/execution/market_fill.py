@@ -35,6 +35,7 @@ from decimal import Decimal
 
 from feelies.core.events import NBBOQuote, OrderAck, OrderAckStatus, OrderRequest, Side
 from feelies.core.identifiers import SequenceGenerator
+from feelies.execution._fill_helpers import STOP_EXIT_REASONS
 from feelies.execution.cost_model import CostModel
 from feelies.execution.tick_size import snap_fill_price
 
@@ -144,6 +145,7 @@ def append_market_fill_acks(
     *,
     market_impact_factor: Decimal,
     max_impact_half_spreads: Decimal,
+    stop_slippage_half_spreads: Decimal = Decimal("1"),
 ) -> None:
     """Append FILLED / PARTIALLY_FILLED acks for a MARKET-style fill at L1.
 
@@ -173,7 +175,12 @@ def append_market_fill_acks(
         snap_fill_price(request.side, cross),
         limit_px,
     )
-    half_spread = (quote.ask - quote.bid) / Decimal("2")
+    raw_half_spread = (quote.ask - quote.bid) / Decimal("2")
+    is_stop_exit = request.reason in STOP_EXIT_REASONS
+    if is_stop_exit and stop_slippage_half_spreads > Decimal("1"):
+        fee_half_spread = raw_half_spread * (stop_slippage_half_spreads - Decimal("1"))
+    else:
+        fee_half_spread = Decimal("0")
 
     available_depth = (
         quote.ask_size if request.side == Side.BUY else quote.bid_size
@@ -186,11 +193,13 @@ def append_market_fill_acks(
             side=request.side,
             quantity=partial_qty,
             fill_price=fill_price,
-            half_spread=Decimal("0"),
+            half_spread=fee_half_spread,
             is_short=request.is_short,
         )
+        partial_ts = fill_ts
+        final_ts = fill_ts + 1
         pending_acks.append(OrderAck(
-            timestamp_ns=fill_ts,
+            timestamp_ns=partial_ts,
             correlation_id=request.correlation_id,
             sequence=ack_seq.next(),
             order_id=request.order_id,
@@ -208,9 +217,9 @@ def append_market_fill_acks(
             market_impact_factor
             * Decimal(str(excess_qty))
             / Decimal(str(available_depth))
-            * half_spread
+            * raw_half_spread
         )
-        impact_cap = max_impact_half_spreads * half_spread
+        impact_cap = max_impact_half_spreads * raw_half_spread
         impact = min(raw_impact, impact_cap)
         # Walk-the-book impact stacks on top of the cross (above the ask
         # for buys, below the bid for sells).
@@ -229,11 +238,11 @@ def append_market_fill_acks(
             side=request.side,
             quantity=excess_qty,
             fill_price=impact_price,
-            half_spread=Decimal("0"),
+            half_spread=fee_half_spread,
             is_short=request.is_short,
         )
         pending_acks.append(OrderAck(
-            timestamp_ns=fill_ts,
+            timestamp_ns=final_ts,
             correlation_id=request.correlation_id,
             sequence=ack_seq.next(),
             order_id=request.order_id,
@@ -252,7 +261,7 @@ def append_market_fill_acks(
         side=request.side,
         quantity=request.quantity,
         fill_price=fill_price,
-        half_spread=Decimal("0"),
+        half_spread=fee_half_spread,
         is_short=request.is_short,
     )
 

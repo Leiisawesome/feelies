@@ -84,14 +84,6 @@ class PlatformConfig:
     risk_max_gross_exposure_pct: float = 20.0
     risk_max_drawdown_pct: float = 5.0
 
-<<<<<<< HEAD
-    account_equity: float = 1_000_000.0
-    # Audit F-H-07: IBKR retail-floor fill latency.  Orders submitted
-    # at T fill against a quote arriving at T + latency_ns or later.
-    # 50 ms is a conservative IBKR retail default; co-located /
-    # paper accounts can override down.
-    backtest_fill_latency_ns: int = 50_000_000
-=======
     # Regime-aware position-limit scaling (BasicRiskEngine expected-value gate).
     # Keys correspond to built-in HMM state_names (vol_breakout /
     # compression_clustering / normal).  Tune via YAML; defaults match
@@ -197,7 +189,6 @@ class PlatformConfig:
     # BT-15: Reg-T buying-power multipliers (margin_25k only).
     risk_margin_intraday_buying_power_multiplier: float = 4.0
     risk_margin_overnight_buying_power_multiplier: float = 2.0
->>>>>>> origin/main
 
     stop_loss_per_share: float = 0.0
     trail_activate_per_share: float = 0.0
@@ -218,7 +209,6 @@ class PlatformConfig:
     cost_commission_per_share: float = 0.0035
     cost_exchange_per_share: float = 0.0005  # deprecated; use taker/maker fields below
     cost_taker_exchange_per_share: float = 0.003
-<<<<<<< HEAD
     cost_maker_exchange_per_share: float = 0.0
     # Audit F-H-09: per-fill-type passive adverse selection.
     # ``cost_passive_adverse_selection_bps`` is LEVEL (queue-drain).
@@ -227,16 +217,11 @@ class PlatformConfig:
     # are conservative for liquid US large-caps.
     cost_passive_adverse_selection_bps: float = 2.0
     cost_through_fill_adverse_selection_bps: float = 5.0
+    # Legacy alias fields kept for compatibility with the refactored
+    # minimum-cost / snapshot paths on main.
+    cost_adverse_selection_through_bps: float = 5.0
+    cost_adverse_selection_drain_bps: float = 2.0
     cost_sell_regulatory_bps: float = 0.5
-=======
-    cost_maker_exchange_per_share: float = -0.002
-    # Adverse-selection cost on passive (maker) fills, in bps, split by fill
-    # regime (BT-1): through-fills (market traded through the resting order)
-    # vs queue-drain fills.  The cost model selects the regime per fill.
-    cost_adverse_selection_through_bps: float = 3.0
-    cost_adverse_selection_drain_bps: float = 0.3
-    cost_sell_regulatory_bps: float = 0.0
->>>>>>> origin/main
     cost_stress_multiplier: float = 1.0
     cost_min_commission: float = 0.35
     cost_max_commission_pct: float = 1.0
@@ -948,17 +933,17 @@ class PlatformConfig:
             "cost_commission_per_share": self.cost_commission_per_share,
             "cost_taker_exchange_per_share": self.cost_taker_exchange_per_share,
             "cost_maker_exchange_per_share": self.cost_maker_exchange_per_share,
-<<<<<<< HEAD
-            "cost_passive_adverse_selection_bps": self.cost_passive_adverse_selection_bps,
+            "cost_passive_adverse_selection_bps": (
+                self.cost_passive_adverse_selection_bps
+            ),
             "cost_through_fill_adverse_selection_bps": (
                 self.cost_through_fill_adverse_selection_bps
-=======
+            ),
             "cost_adverse_selection_through_bps": (
                 self.cost_adverse_selection_through_bps
             ),
             "cost_adverse_selection_drain_bps": (
                 self.cost_adverse_selection_drain_bps
->>>>>>> origin/main
             ),
             "cost_sell_regulatory_bps": self.cost_sell_regulatory_bps,
             "cost_stress_multiplier": self.cost_stress_multiplier,
@@ -996,14 +981,11 @@ class PlatformConfig:
             "passive_cancel_fee_per_share": self.passive_cancel_fee_per_share,
             "platform_min_order_shares": self.platform_min_order_shares,
             "signal_min_edge_cost_ratio": self.signal_min_edge_cost_ratio,
-<<<<<<< HEAD
             "signal_edge_cost_basis": self.signal_edge_cost_basis,
-=======
             "regime_calibration_max_quotes": self.regime_calibration_max_quotes,
             "enforce_regime_state_scale_alignment": (
                 self.enforce_regime_state_scale_alignment
             ),
->>>>>>> origin/main
             "cost_market_impact_factor": self.cost_market_impact_factor,
             "cost_max_impact_half_spreads": self.cost_max_impact_half_spreads,
             "cost_htb_borrow_annual_bps": self.cost_htb_borrow_annual_bps,
@@ -1397,23 +1379,31 @@ class PlatformConfig:
                 taker_exch_raw if taker_exch_raw is not None else 0.003
             ),
             cost_maker_exchange_per_share=float(
-<<<<<<< HEAD
-                data.get("cost_maker_exchange_per_share", 0.0)
+                maker_exch_raw if maker_exch_raw is not None else 0.0
             ),
             cost_passive_adverse_selection_bps=float(
-                data.get("cost_passive_adverse_selection_bps", 2.0)
+                data.get(
+                    "cost_passive_adverse_selection_bps",
+                    data.get("cost_adverse_selection_drain_bps", 2.0),
+                )
             ),
             cost_through_fill_adverse_selection_bps=float(
-                data.get("cost_through_fill_adverse_selection_bps", 5.0)
-=======
-                maker_exch_raw if maker_exch_raw is not None else -0.002
+                data.get(
+                    "cost_through_fill_adverse_selection_bps",
+                    data.get("cost_adverse_selection_through_bps", 5.0),
+                )
             ),
             cost_adverse_selection_through_bps=float(
-                data.get("cost_adverse_selection_through_bps", 3.0)
+                data.get(
+                    "cost_adverse_selection_through_bps",
+                    data.get("cost_through_fill_adverse_selection_bps", 5.0),
+                )
             ),
             cost_adverse_selection_drain_bps=float(
-                data.get("cost_adverse_selection_drain_bps", 0.3)
->>>>>>> origin/main
+                data.get(
+                    "cost_adverse_selection_drain_bps",
+                    data.get("cost_passive_adverse_selection_bps", 2.0),
+                )
             ),
             cost_sell_regulatory_bps=float(
                 data.get("cost_sell_regulatory_bps", 0.5)
@@ -1486,24 +1476,17 @@ class PlatformConfig:
                 data.get("platform_min_order_shares", 1)
             ),
             signal_min_edge_cost_ratio=float(
-<<<<<<< HEAD
                 data.get("signal_min_edge_cost_ratio", 1.0)
             ),
             signal_edge_cost_basis=str(
                 data.get("signal_edge_cost_basis", "round_trip")
-=======
-                data.get("signal_min_edge_cost_ratio", 1.5)
             ),
             regime_calibration_max_quotes=regime_calibration_max_quotes,
             enforce_regime_state_scale_alignment=bool(
                 data.get("enforce_regime_state_scale_alignment", False)
->>>>>>> origin/main
             ),
             cost_market_impact_factor=float(
                 data.get("cost_market_impact_factor", 0.5)
-            ),
-            cost_max_impact_half_spreads=float(
-                data.get("cost_max_impact_half_spreads", 10.0)
             ),
             cost_htb_borrow_annual_bps=float(
                 data.get("cost_htb_borrow_annual_bps", 0.0)

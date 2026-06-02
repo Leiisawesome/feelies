@@ -48,17 +48,12 @@ Invariants preserved:
 
 from __future__ import annotations
 
-<<<<<<< HEAD
-from dataclasses import dataclass
-from decimal import Decimal
-=======
 from collections.abc import Callable
 
 import hashlib
 from dataclasses import dataclass, replace
 from decimal import ROUND_HALF_UP, Decimal
 from enum import Enum
->>>>>>> origin/main
 
 from feelies.core.clock import Clock
 from feelies.core.events import (
@@ -71,10 +66,6 @@ from feelies.core.events import (
     Trade,
 )
 from feelies.core.identifiers import SequenceGenerator
-<<<<<<< HEAD
-from feelies.execution._fill_helpers import emit_aggressive_fill
-from feelies.execution.cost_model import CostModel
-=======
 from feelies.execution.cost_model import CostModel, ZeroCostModel
 from feelies.execution.market_fill import (
     DeferredFill,
@@ -94,7 +85,7 @@ from feelies.execution.tick_size import snap_limit_price
 class PassiveFillOutcome(Enum):
     """Terminal classification of a resting passive limit order.
 
-    Stamped onto the FILLED / CANCELLED ``OrderAck.reason`` and tallied
+    Stamped onto the FILLED / CANCELLED/EXPIRED ``OrderAck.reason`` and tallied
     by :meth:`PassiveLimitOrderRouter.passive_fill_stats` for backtest
     fill-quality forensics.
     """
@@ -103,7 +94,6 @@ class PassiveFillOutcome(Enum):
     FILLED_BY_DRAIN = "FILLED_BY_DRAIN"
     CANCELLED_MAX_RESTING_TICKS = "CANCELLED_MAX_RESTING_TICKS"
     CANCELLED_LEVEL_LEFT_BBO = "CANCELLED_LEVEL_LEFT_BBO"
->>>>>>> origin/main
 
 
 @dataclass
@@ -167,28 +157,16 @@ class PassiveLimitOrderRouter:
         self,
         clock: Clock,
         latency_ns: int = 0,
-<<<<<<< HEAD
-=======
-        cost_model: CostModel | None = None,
         market_impact_factor: Decimal | int | str | float = Decimal("0.5"),
         max_impact_half_spreads: Decimal | int | str | float = Decimal("10"),
->>>>>>> origin/main
         *,
-        cost_model: CostModel,
+        cost_model: CostModel | None = None,
         fill_delay_ticks: int = 3,
         max_resting_ticks: int = 50,
         queue_position_shares: int = 0,
         cancel_fee_per_share: Decimal = Decimal("0.0"),
-<<<<<<< HEAD
-        market_impact_factor: Decimal = Decimal("0.5"),
-        max_impact_half_spreads: Decimal = Decimal("10"),
-        stop_slippage_half_spreads: Decimal = Decimal("2.0"),
-    ) -> None:
-        self._clock = clock
-        self._latency_ns = latency_ns
-        self._cost_model: CostModel = cost_model
-=======
         fill_hazard_max: Decimal | int | str | float = Decimal("0.5"),
+        stop_slippage_half_spreads: Decimal | int | str | float = Decimal("2.0"),
         moc_bounds: MocSessionBounds | None = None,
         trading_session_bounds: TradingSessionBounds | None = None,
     ) -> None:
@@ -201,20 +179,13 @@ class PassiveLimitOrderRouter:
         self._max_impact_half_spreads = to_decimal(
             max_impact_half_spreads, "max_impact_half_spreads"
         )
->>>>>>> origin/main
         self._fill_delay_ticks = fill_delay_ticks
         self._max_resting_ticks = max_resting_ticks
         self._queue_position_shares = queue_position_shares
         self._cancel_fee_per_share = cancel_fee_per_share
-<<<<<<< HEAD
-        # Audit F-H-11: aggressive-fallback fills now walk the book in
-        # parity with BacktestOrderRouter.  Knobs flow through from
-        # platform config (cost_market_impact_factor /
-        # cost_max_impact_half_spreads).
-        self._market_impact_factor = market_impact_factor
-        self._max_impact_half_spreads = max_impact_half_spreads
-        self._stop_slippage_half_spreads = stop_slippage_half_spreads
-=======
+        self._stop_slippage_half_spreads = to_decimal(
+            stop_slippage_half_spreads, "stop_slippage_half_spreads"
+        )
         self._fill_hazard_max = to_decimal(
             fill_hazard_max, "fill_hazard_max"
         )
@@ -234,7 +205,6 @@ class PassiveLimitOrderRouter:
         self._cancels_max_resting = 0
         self._cancels_level_left = 0
         self._sum_ticks_to_fill = 0
->>>>>>> origin/main
 
         self._last_quotes: dict[str, NBBOQuote] = {}
         self._pending_acks: list[OrderAck] = []
@@ -252,13 +222,10 @@ class PassiveLimitOrderRouter:
         # Full set of order_ids ever submitted — used for idempotent reject.
         self._submitted_order_ids: set[str] = set()
         self._ack_seq = SequenceGenerator()
-<<<<<<< HEAD
-        # Audit F-M-26: per-cause reject counters.
         self.locked_quote_reject_count: int = 0
         self.no_quote_reject_count: int = 0
         self.duplicate_id_reject_count: int = 0
         self.zero_depth_reject_count: int = 0
-=======
         # Deferred MARKET orders: see ``_DeferredAggressiveFill``.
         self._deferred_aggressive: list[_DeferredAggressiveFill] = []
         self._moc: MocFillController | None = None
@@ -276,24 +243,15 @@ class PassiveLimitOrderRouter:
     def bind_position_qty(self, fn: Callable[[str], int]) -> None:
         """Wire signed position qty for RTH entry/exit discrimination (BT-16)."""
         self._rth_gate.bind_position_qty(fn)
->>>>>>> origin/main
 
     # ── Public interface (OrderRouter protocol) ──────────────────
 
     def on_quote(self, quote: NBBOQuote) -> None:
         """Update latest quote and check resting / pending orders for fills."""
         self._last_quotes[quote.symbol] = quote
-<<<<<<< HEAD
-        # Audit F-H-07: drain latency-deferred aggressive submissions
-        # BEFORE the resting-order pass so an aggressive fill emitted
-        # at this quote is reconciled before a passive level/through
-        # fill on the same symbol.  FIFO determinism preserved.
-        self._drain_pending_aggressive(quote)
-=======
         if self._moc is not None:
             self._moc.on_quote(quote)
         self._flush_deferred_aggressive(quote)
->>>>>>> origin/main
         self._check_resting_orders(quote)
 
     def _drain_pending_aggressive(self, quote: NBBOQuote) -> None:
@@ -347,16 +305,12 @@ class PassiveLimitOrderRouter:
 
     def submit(self, request: OrderRequest) -> None:
         if request.order_id in self._submitted_order_ids:
-<<<<<<< HEAD
             self.duplicate_id_reject_count += 1
-            self._reject(request, f"duplicate order_id: {request.order_id}")
-=======
             self._reject(
                 request,
                 f"duplicate order_id: {request.order_id}",
                 release_submitted_id=False,
             )
->>>>>>> origin/main
             return
         self._submitted_order_ids.add(request.order_id)
 
@@ -391,22 +345,7 @@ class PassiveLimitOrderRouter:
             return
 
         if request.order_type == OrderType.MARKET:
-<<<<<<< HEAD
-            # Audit F-H-07: defer aggressive fill when latency_ns > 0
-            # so the fill executes against a post-latency quote.  Same-
-            # tick (zero-latency) fast path preserved for legacy
-            # configurations and unit tests.
-            eligible_at_ns = self._clock.now_ns() + self._latency_ns
-            if eligible_at_ns > self._clock.now_ns():
-                self._pending_aggressive.append(_PendingAggressive(
-                    request=request,
-                    eligible_at_ns=eligible_at_ns,
-                ))
-            else:
-                self._fill_aggressive(request, quote)
-=======
             self._submit_aggressive_market(request, quote)
->>>>>>> origin/main
         elif request.order_type == OrderType.LIMIT:
             self._post_passive(request, quote)
         else:
@@ -419,40 +358,6 @@ class PassiveLimitOrderRouter:
 
     # ── Aggressive (market) fills ────────────────────────────────
 
-<<<<<<< HEAD
-    def _fill_aggressive(
-        self,
-        request: OrderRequest,
-        quote: NBBOQuote,
-        fill_ts: int | None = None,
-    ) -> None:
-        """Aggressive (market) fill via the shared L1+excess helper.
-
-        Audit F-H-11: this used to fill the full quantity at mid with
-        one half-spread of cost regardless of order size vs. L1 depth
-        — silently cheaper than BacktestOrderRouter for large orders
-        in passive_limit / minimum_cost modes.  Now both routers walk
-        the book through the same ``emit_aggressive_fill`` helper.
-        """
-        if fill_ts is None:
-            fill_ts = self._clock.now_ns() + self._latency_ns
-        emit_aggressive_fill(
-            request=request,
-            quote=quote,
-            fill_ts=fill_ts,
-            cost_model=self._cost_model,
-            market_impact_factor=self._market_impact_factor,
-            max_impact_half_spreads=self._max_impact_half_spreads,
-            pending_acks=self._pending_acks,
-            ack_seq=self._ack_seq,
-            reject=self._reject,
-            stop_slippage_half_spreads=self._stop_slippage_half_spreads,
-            on_zero_depth_reject=self._bump_zero_depth_reject,
-        )
-
-    def _bump_zero_depth_reject(self) -> None:
-        self.zero_depth_reject_count += 1
-=======
     def _submit_aggressive_market(
         self,
         request: OrderRequest,
@@ -473,13 +378,13 @@ class PassiveLimitOrderRouter:
             status=OrderAckStatus.ACKNOWLEDGED,
             request_sequence=request.sequence,
         ))
->>>>>>> origin/main
 
         if self._latency_ns <= 0:
             depth = (
                 quote.ask_size if request.side == Side.BUY else quote.bid_size
             )
             if depth <= 0:
+                self.zero_depth_reject_count += 1
                 self._reject(
                     request,
                     f"zero depth on {request.side.name} side "
@@ -495,7 +400,8 @@ class PassiveLimitOrderRouter:
             _DeferredAggressiveFill(
                 request=request,
                 fill_deadline_exchange_ns=(
-                    quote.exchange_timestamp_ns + self._latency_ns
+                    max(self._clock.now_ns(), quote.exchange_timestamp_ns)
+                    + self._latency_ns
                 ),
                 ack_timestamp_ns=ack_ts,
             ),
@@ -601,6 +507,7 @@ class PassiveLimitOrderRouter:
             fill_ts,
             market_impact_factor=self._market_impact_factor,
             max_impact_half_spreads=self._max_impact_half_spreads,
+            stop_slippage_half_spreads=self._stop_slippage_half_spreads,
         )
 
     # ── Passive (limit) order posting ────────────────────────────
@@ -676,51 +583,6 @@ class PassiveLimitOrderRouter:
             pending.total_ticks += 1
             action = self._evaluate_fill(pending, quote)
 
-<<<<<<< HEAD
-            if action == "fill":
-                # Price improvement on through-fills: IBKR (and the
-                # NMS rule) fills limit orders at the limit price OR
-                # BETTER, never worse.  When the opposite-side BBO has
-                # gapped through our limit (BUY: ask < limit, SELL:
-                # bid > limit), the realistic fill price is the new
-                # BBO, not the resting limit.  Without this, a passive
-                # BUY at $100 with ask=$99.99 records as a $100 fill
-                # — overstating the trader's cost by one tick per
-                # share, conservative for backtest but wrong vs IBKR.
-                # Level-fills (queue drain) still fill at the limit.
-                #
-                # Audit F-H-09: through-fills are the textbook adverse-
-                # selection scenario.  Tag the fill_type so the cost
-                # model charges the higher through-fill bps; level fills
-                # keep the gentler LEVEL bps.
-                fill_price = pending.limit_price
-                fill_type = "LEVEL"
-                if (
-                    pending.side == Side.BUY
-                    and quote.ask < pending.limit_price
-                ):
-                    fill_price = quote.ask
-                    fill_type = "THROUGH"
-                elif (
-                    pending.side == Side.SELL
-                    and quote.bid > pending.limit_price
-                ):
-                    fill_price = quote.bid
-                    fill_type = "THROUGH"
-                # Audit F-M-24: adverse-selection notional uses the
-                # worse-side BBO (ask for BUY, bid for SELL) — the
-                # price an aggressor would have paid — keeping the
-                # router and the round-trip estimator on the same basis.
-                adverse_notional_price = (
-                    quote.ask if pending.side == Side.BUY else quote.bid
-                )
-                self._emit_passive_fill(
-                    pending,
-                    fill_price=fill_price,
-                    fill_type=fill_type,
-                    adverse_notional_price=adverse_notional_price,
-                )
-=======
             if action in ("through", "drain"):
                 suppress, rth_reason = self._rth_gate.should_suppress(
                     pending.request, quote.exchange_timestamp_ns,
@@ -742,34 +604,36 @@ class PassiveLimitOrderRouter:
                 # never worse.  When the opposite-side BBO has gapped
                 # through our limit (BUY: ask < limit, SELL: bid > limit),
                 # the realistic fill price is the new BBO, not the resting
-                # limit.  The market traded *through* the resting order,
-                # so this is the adversely-selected regime in the cost
-                # model (is_through_fill=True).
+                # limit.  The market traded *through* the resting order.
                 fill_price = pending.limit_price
                 if pending.side == Side.BUY and quote.ask < pending.limit_price:
                     fill_price = quote.ask
                 elif pending.side == Side.SELL and quote.bid > pending.limit_price:
                     fill_price = quote.bid
+                adverse_notional_price = (
+                    quote.ask if pending.side == Side.BUY else quote.bid
+                )
                 self._emit_passive_fill(
                     pending,
                     fill_price=fill_price,
-                    is_through_fill=True,
+                    fill_type="THROUGH",
+                    adverse_notional_price=adverse_notional_price,
                     outcome=PassiveFillOutcome.FILLED_BY_THROUGH,
                 )
                 self._record_fill(pending, PassiveFillOutcome.FILLED_BY_THROUGH)
                 to_remove.append(order_id)
             elif action == "drain":
-                # Queue-drain fill: the queue ahead drained at a stable
-                # price.  Fill at the resting limit, benign adverse
-                # selection (is_through_fill=False).
+                adverse_notional_price = (
+                    quote.ask if pending.side == Side.BUY else quote.bid
+                )
                 self._emit_passive_fill(
                     pending,
                     fill_price=pending.limit_price,
-                    is_through_fill=False,
+                    fill_type="LEVEL",
+                    adverse_notional_price=adverse_notional_price,
                     outcome=PassiveFillOutcome.FILLED_BY_DRAIN,
                 )
                 self._record_fill(pending, PassiveFillOutcome.FILLED_BY_DRAIN)
->>>>>>> origin/main
                 to_remove.append(order_id)
             elif action == "cancel":
                 outcome = (
@@ -893,7 +757,7 @@ class PassiveLimitOrderRouter:
         """
         seed = (
             f"{quote.symbol}|{quote.sequence_number}|"
-            f"{quote.exchange_timestamp_ns}|{pending.total_ticks}|"
+            f"{quote.exchange_timestamp_ns}|{pending.ticks_at_level}|"
             f"{pending.side.name}|{pending.limit_price}|"
             f"{pending.request.order_id}"
         )
@@ -969,13 +833,9 @@ class PassiveLimitOrderRouter:
         self,
         pending: _PendingOrder,
         fill_price: Decimal | None = None,
-<<<<<<< HEAD
         fill_type: str = "LEVEL",
         adverse_notional_price: Decimal | None = None,
-=======
-        is_through_fill: bool = False,
         outcome: PassiveFillOutcome = PassiveFillOutcome.FILLED_BY_DRAIN,
->>>>>>> origin/main
     ) -> None:
         """Emit a FILLED ack for a passive limit order.
 
@@ -988,20 +848,14 @@ class PassiveLimitOrderRouter:
         a lower ask that gapped through, SELL: a higher bid) to model
         IBKR's price-improvement rule on through-fills.
 
-<<<<<<< HEAD
         ``fill_type`` (``"LEVEL"`` default, ``"THROUGH"`` on price
         improvement) controls the adverse-selection bps.
 
         ``adverse_notional_price`` (audit F-M-24) is forwarded as the
         adverse-selection notional basis when provided.
-=======
-        ``is_through_fill`` selects the cost model's adverse-selection
-        regime: ``True`` for a market-through (gapped) fill, ``False``
-        (default) for a queue-drain / level fill.
 
         ``outcome`` is stamped onto the FILLED ack ``reason`` for
         fill-quality forensics (BT-2).
->>>>>>> origin/main
         """
         if fill_price is None:
             fill_price = pending.limit_price
@@ -1021,12 +875,9 @@ class PassiveLimitOrderRouter:
             half_spread=Decimal("0"),
             is_taker=False,
             is_short=pending.request.is_short,
-<<<<<<< HEAD
             fill_type=fill_type,
             adverse_notional_price=adverse_notional_price,
-=======
-            is_through_fill=is_through_fill,
->>>>>>> origin/main
+            is_through_fill=(fill_type == "THROUGH"),
         )
 
         self._pending_acks.append(OrderAck(
@@ -1055,22 +906,18 @@ class PassiveLimitOrderRouter:
             Decimal("0.01")
         )
 
-<<<<<<< HEAD
-    def _emit_timeout_cancel(self, pending: _PendingOrder) -> None:
-        """Emit an EXPIRED ack for a timed-out resting order.
+    def _append_cancel_ack(
+        self,
+        pending: _PendingOrder,
+        *,
+        reason: str,
+        status: OrderAckStatus = OrderAckStatus.CANCELLED,
+    ) -> None:
+        """Append a terminal cancel-style ack for ``pending`` with ``reason``.
 
-        Audit F-L-31: distinguished from client-initiated cancels via
-        ``OrderAckStatus.EXPIRED`` so downstream consumers can branch
-        on status (was previously CANCELLED with reason="timeout").
-=======
-    def _append_cancel_ack(self, pending: _PendingOrder, *, reason: str) -> None:
-        """Append a CANCELLED ack for ``pending`` with the given ``reason``.
-
-        Shared by the timeout-cancel and explicit-cancel paths.  Floors the
-        timestamp at ``pending.ack_timestamp_ns`` so the CANCELLED ack never
-        precedes ACKNOWLEDGED — the same guard the aggressive-deferred-timeout
-        path applies in ``_flush_deferred_aggressive``.
->>>>>>> origin/main
+        Shared by the timeout-cancel and explicit-cancel paths. Floors the
+        timestamp at ``pending.ack_timestamp_ns`` so the terminal ack never
+        precedes ACKNOWLEDGED.
         """
         cancel_fees = self._cancel_fees(pending.request.quantity)
         cancel_ts = max(self._clock.now_ns(), pending.ack_timestamp_ns)
@@ -1080,15 +927,8 @@ class PassiveLimitOrderRouter:
             sequence=self._ack_seq.next(),
             order_id=pending.request.order_id,
             symbol=pending.request.symbol,
-<<<<<<< HEAD
-            status=OrderAckStatus.EXPIRED,
-            reason=(
-                f"passive limit timeout after {pending.total_ticks} ticks"
-            ),
-=======
-            status=OrderAckStatus.CANCELLED,
+            status=status,
             reason=reason,
->>>>>>> origin/main
             fees=cancel_fees if cancel_fees > 0 else Decimal("0"),
             request_sequence=pending.request.sequence,
         ))
@@ -1100,13 +940,14 @@ class PassiveLimitOrderRouter:
             PassiveFillOutcome.CANCELLED_MAX_RESTING_TICKS
         ),
     ) -> None:
-        """Emit a CANCELLED ack for a timed-out resting order."""
+        """Emit an EXPIRED ack for a timed-out resting order."""
         self._append_cancel_ack(
             pending,
             reason=(
                 f"{outcome.value}: passive limit timeout after "
                 f"{pending.total_ticks} ticks"
             ),
+            status=OrderAckStatus.EXPIRED,
         )
 
     # ── Explicit cancellation ───────────────────────────────────

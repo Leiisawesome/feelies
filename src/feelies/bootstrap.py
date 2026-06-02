@@ -410,15 +410,16 @@ def build_platform(
         commission_per_share=_decimal(config.cost_commission_per_share),
         taker_exchange_per_share=_decimal(config.cost_taker_exchange_per_share),
         maker_exchange_per_share=_decimal(config.cost_maker_exchange_per_share),
-<<<<<<< HEAD
         passive_adverse_selection_bps=_decimal(config.cost_passive_adverse_selection_bps),
         through_fill_adverse_selection_bps=_decimal(
             config.cost_through_fill_adverse_selection_bps
         ),
-=======
-        adverse_selection_through_bps=_decimal(config.cost_adverse_selection_through_bps),
-        adverse_selection_drain_bps=_decimal(config.cost_adverse_selection_drain_bps),
->>>>>>> origin/main
+        adverse_selection_through_bps=_decimal(
+            config.cost_adverse_selection_through_bps
+        ),
+        adverse_selection_drain_bps=_decimal(
+            config.cost_adverse_selection_drain_bps
+        ),
         sell_regulatory_bps=_decimal(config.cost_sell_regulatory_bps),
         stress_multiplier=_decimal(config.cost_stress_multiplier),
         min_commission=_decimal(config.cost_min_commission),
@@ -431,13 +432,10 @@ def build_platform(
         ),
         spread_floor_taker_only=config.cost_spread_floor_taker_only,
     ))
-<<<<<<< HEAD
     # Wiring safety: every router path must receive an explicit cost model.
     # ZeroCostModel was removed as a silent fallback (audit F-H-12); a None
     # here is a wiring bug, not a benign zero-cost path.
     assert cost_model is not None, "cost_model construction returned None"
-    backend, backtest_router = _create_backend(
-=======
 
     # PAPER / LIVE always need a normalizer (for DataHealth gating +
     # WS frame decoding).  When the caller supplies one (tests,
@@ -455,7 +453,6 @@ def build_platform(
         normalizer.register_symbols(config.symbols)
 
     bundle = _create_backend(
->>>>>>> origin/main
         config.mode, event_log, clock,
         fill_latency_ns=config.backtest_fill_latency_ns,
         market_data_latency_ns=config.market_data_latency_ns,
@@ -468,12 +465,9 @@ def build_platform(
         passive_cancel_fee_per_share=config.passive_cancel_fee_per_share,
         market_impact_factor=config.cost_market_impact_factor,
         max_impact_half_spreads=config.cost_max_impact_half_spreads,
-<<<<<<< HEAD
         stop_slippage_half_spreads=config.cost_stop_slippage_half_spreads,
-=======
         normalizer=normalizer,
         config=config,
->>>>>>> origin/main
     )
     backend = bundle.backend
     backtest_router = bundle.backtest_router
@@ -851,11 +845,7 @@ def _create_backend(
     *,
     cost_model: DefaultCostModel,
     fill_latency_ns: int = 0,
-<<<<<<< HEAD
-=======
     market_data_latency_ns: int = 0,
-    cost_model: DefaultCostModel | None = None,
->>>>>>> origin/main
     execution_mode: str = "market",
     passive_fill_delay_ticks: int = 3,
     passive_max_resting_ticks: int = 50,
@@ -864,15 +854,11 @@ def _create_backend(
     passive_cancel_fee_per_share: float = 0.0,
     market_impact_factor: float = 0.5,
     max_impact_half_spreads: float = 10.0,
-<<<<<<< HEAD
     stop_slippage_half_spreads: float = 2.0,
-) -> tuple[ExecutionBackend, BacktestOrderRouter | PassiveLimitOrderRouter | None]:
-=======
     normalizer: MarketDataNormalizer | None = None,
     config: PlatformConfig | None = None,
 ) -> _BackendBundle:
     """Compose the per-mode :class:`ExecutionBackend` + auxiliary handles."""
->>>>>>> origin/main
     backend: ExecutionBackend
     router: BacktestOrderRouter | PassiveLimitOrderRouter | None
     moc_bounds: MocSessionBounds | None = (
@@ -900,15 +886,10 @@ def _create_backend(
                 max_resting_ticks=passive_max_resting_ticks,
                 queue_position_shares=passive_queue_position_shares,
                 cancel_fee_per_share=_decimal(passive_cancel_fee_per_share),
-<<<<<<< HEAD
-                market_impact_factor=market_impact_factor,
-                max_impact_half_spreads=max_impact_half_spreads,
-                stop_slippage_half_spreads=stop_slippage_half_spreads,
-=======
                 fill_hazard_max=_decimal(passive_fill_hazard_max),
+                stop_slippage_half_spreads=stop_slippage_half_spreads,
                 moc_bounds=moc_bounds,
                 trading_session_bounds=trading_session_bounds,
->>>>>>> origin/main
             )
             return _BackendBundle(backend=backend, backtest_router=router)
 
@@ -919,9 +900,7 @@ def _create_backend(
             cost_model=cost_model,
             market_impact_factor=market_impact_factor,
             max_impact_half_spreads=max_impact_half_spreads,
-<<<<<<< HEAD
             stop_slippage_half_spreads=stop_slippage_half_spreads,
-=======
             max_resting_ticks=passive_max_resting_ticks,
             moc_bounds=moc_bounds,
             trading_session_bounds=trading_session_bounds,
@@ -965,7 +944,7 @@ def _create_backend(
             backtest_router=None,
             live_feed=live_feed,
             ib_connection=ib_conn,
->>>>>>> origin/main
+        )
         )
 
     raise NotImplementedError(

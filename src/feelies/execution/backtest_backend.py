@@ -34,15 +34,11 @@ def build_backtest_backend(
     latency_ns: int = 0,
     market_impact_factor: float = 0.5,
     max_impact_half_spreads: float = 10.0,
-<<<<<<< HEAD
     stop_slippage_half_spreads: float = 2.0,
-=======
-    *,
     max_resting_ticks: int = 50,
     market_data_latency_ns: int = 0,
     moc_bounds: MocSessionBounds | None = None,
     trading_session_bounds: TradingSessionBounds | None = None,
->>>>>>> origin/main
 ) -> tuple[ExecutionBackend, BacktestOrderRouter]:
     """Build a backtest ExecutionBackend from an event log.
 
@@ -67,13 +63,10 @@ def build_backtest_backend(
         cost_model=cost_model,
         market_impact_factor=market_impact_factor,
         max_impact_half_spreads=max_impact_half_spreads,
-<<<<<<< HEAD
         stop_slippage_half_spreads=stop_slippage_half_spreads,
-=======
         max_resting_ticks=max_resting_ticks,
         moc_bounds=moc_bounds,
         trading_session_bounds=trading_session_bounds,
->>>>>>> origin/main
     )
 
     backend = ExecutionBackend(
@@ -92,27 +85,17 @@ def build_passive_limit_backend(
     start_sequence: int = 0,
     end_sequence: int | None = None,
     latency_ns: int = 0,
-<<<<<<< HEAD
-=======
-    cost_model: CostModel | None = None,
-    market_impact_factor: float = 0.5,
-    max_impact_half_spreads: float = 10.0,
-    *,
->>>>>>> origin/main
     fill_delay_ticks: int = 3,
     max_resting_ticks: int = 50,
     queue_position_shares: int = 0,
     cancel_fee_per_share: Decimal = Decimal("0.0"),
-<<<<<<< HEAD
     market_impact_factor: float = 0.5,
     max_impact_half_spreads: float = 10.0,
     stop_slippage_half_spreads: float = 2.0,
-=======
     fill_hazard_max: Decimal | float = Decimal("0.5"),
     market_data_latency_ns: int = 0,
     moc_bounds: MocSessionBounds | None = None,
     trading_session_bounds: TradingSessionBounds | None = None,
->>>>>>> origin/main
 ) -> tuple[ExecutionBackend, PassiveLimitOrderRouter]:
     """Build a backtest backend with passive limit order fill model.
 
@@ -146,15 +129,10 @@ def build_passive_limit_backend(
         max_resting_ticks=max_resting_ticks,
         queue_position_shares=queue_position_shares,
         cancel_fee_per_share=cancel_fee_per_share,
-<<<<<<< HEAD
-        market_impact_factor=Decimal(str(market_impact_factor)),
-        max_impact_half_spreads=Decimal(str(max_impact_half_spreads)),
-        stop_slippage_half_spreads=Decimal(str(stop_slippage_half_spreads)),
-=======
         fill_hazard_max=fill_hazard_max,
+        stop_slippage_half_spreads=Decimal(str(stop_slippage_half_spreads)),
         moc_bounds=moc_bounds,
         trading_session_bounds=trading_session_bounds,
->>>>>>> origin/main
     )
 
     backend = ExecutionBackend(

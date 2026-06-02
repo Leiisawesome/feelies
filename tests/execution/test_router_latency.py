@@ -96,8 +96,8 @@ class TestBacktestRouterLatencyQueue:
         late_acks = router.poll_acks()
         fills = [a for a in late_acks if a.status == OrderAckStatus.FILLED]
         assert len(fills) == 1
-        # Fill price = (99.00 + 99.10) / 2 = 99.05 (post-latency quote).
-        assert fills[0].fill_price == Decimal("99.05")
+        # Deferred MARKET orders still execute at the later quote's cross.
+        assert fills[0].fill_price == Decimal("99.10")
 
     def test_fifo_eligibility_two_orders_same_symbol(self) -> None:
         clock = SimulatedClock(start_ns=5000)
@@ -163,7 +163,7 @@ class TestPassiveLimitRouterLatencyQueue:
             a for a in router.poll_acks() if a.status == OrderAckStatus.FILLED
         ]
         assert len(fills) == 1
-        assert fills[0].fill_price == Decimal("99.05")
+        assert fills[0].fill_price == Decimal("99.10")
 
     def test_resting_limit_fill_uses_post_eligibility_quote_too(self) -> None:
         """Resting LIMIT orders also wait for the latency window."""

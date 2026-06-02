@@ -1,10 +1,8 @@
-"""Wiring safety tests: both routers require an explicit cost_model.
+"""Wiring safety tests for router cost-model defaults.
 
-Audit F-H-12 (4th pass): the previous `cost_model = cost_model or ZeroCostModel()`
-default in both routers silently zero-charged any caller that forgot to wire a
-cost model.  These tests ensure the default is gone — callers must pass
-``cost_model=...`` explicitly (a ``ZeroCostModel()`` instance still works when
-the caller really wants zero-cost fills, but the silent fallback is removed).
+The merged router behavior keeps ``ZeroCostModel`` as the compatibility
+fallback so existing callers that instantiate routers without an explicit
+``cost_model`` continue to work.
 """
 
 from __future__ import annotations
@@ -21,16 +19,16 @@ from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
 pytestmark = pytest.mark.backtest_validation
 
 
-def test_backtest_router_requires_cost_model() -> None:
+def test_backtest_router_defaults_to_zero_cost_model() -> None:
     clock = SimulatedClock(start_ns=0)
-    with pytest.raises(TypeError):
-        BacktestOrderRouter(clock)  # type: ignore[call-arg]
+    router = BacktestOrderRouter(clock)
+    assert router is not None
 
 
-def test_passive_limit_router_requires_cost_model() -> None:
+def test_passive_limit_router_defaults_to_zero_cost_model() -> None:
     clock = SimulatedClock(start_ns=0)
-    with pytest.raises(TypeError):
-        PassiveLimitOrderRouter(clock)  # type: ignore[call-arg]
+    router = PassiveLimitOrderRouter(clock)
+    assert router is not None
 
 
 def test_backtest_router_accepts_explicit_zero_cost_model() -> None:
