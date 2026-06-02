@@ -247,7 +247,17 @@ def build_platform(
         min_commission=_decimal(config.cost_min_commission),
         max_commission_pct=_decimal(config.cost_max_commission_pct),
         htb_borrow_annual_bps=_decimal(config.cost_htb_borrow_annual_bps),
+        finra_taf_per_share=_decimal(config.cost_finra_taf_per_share),
+        finra_taf_max_per_order=_decimal(config.cost_finra_taf_max_per_order),
+        min_commission_applies_to_per_share_only=(
+            config.cost_min_commission_applies_to_per_share_only
+        ),
+        spread_floor_taker_only=config.cost_spread_floor_taker_only,
     ))
+    # Wiring safety: every router path must receive an explicit cost model.
+    # ZeroCostModel was removed as a silent fallback (audit F-H-12); a None
+    # here is a wiring bug, not a benign zero-cost path.
+    assert cost_model is not None, "cost_model construction returned None"
     backend, backtest_router = _create_backend(
         config.mode, event_log, clock,
         fill_latency_ns=config.backtest_fill_latency_ns,
@@ -258,6 +268,7 @@ def build_platform(
         passive_queue_position_shares=config.passive_queue_position_shares,
         passive_cancel_fee_per_share=config.passive_cancel_fee_per_share,
         market_impact_factor=config.cost_market_impact_factor,
+        max_impact_half_spreads=config.cost_max_impact_half_spreads,
     )
 
     if backtest_router is not None:
@@ -491,14 +502,15 @@ def _create_backend(
     event_log: InMemoryEventLog,
     clock: Clock,
     *,
+    cost_model: DefaultCostModel,
     fill_latency_ns: int = 0,
-    cost_model: DefaultCostModel | None = None,
     execution_mode: str = "market",
     passive_fill_delay_ticks: int = 3,
     passive_max_resting_ticks: int = 50,
     passive_queue_position_shares: int = 0,
     passive_cancel_fee_per_share: float = 0.0,
     market_impact_factor: float = 0.5,
+    max_impact_half_spreads: float = 10.0,
 ) -> tuple[ExecutionBackend, BacktestOrderRouter | PassiveLimitOrderRouter | None]:
     backend: ExecutionBackend
     router: BacktestOrderRouter | PassiveLimitOrderRouter | None
@@ -526,6 +538,7 @@ def _create_backend(
             latency_ns=fill_latency_ns,
             cost_model=cost_model,
             market_impact_factor=market_impact_factor,
+            max_impact_half_spreads=max_impact_half_spreads,
         )
         return backend, router
 

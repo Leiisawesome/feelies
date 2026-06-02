@@ -15,6 +15,7 @@ from feelies.core.events import (
     Side,
 )
 from feelies.execution.backtest_router import BacktestOrderRouter
+from feelies.execution.cost_model import ZeroCostModel
 
 
 def _quote(symbol: str, bid: str, ask: str, ts: int = 1000) -> NBBOQuote:
@@ -52,7 +53,7 @@ def _fills(acks):
 class TestBacktestOrderRouter:
     def test_fill_at_mid_price(self):
         clock = SimulatedClock(start_ns=5000)
-        router = BacktestOrderRouter(clock)
+        router = BacktestOrderRouter(clock, cost_model=ZeroCostModel())
 
         router.on_quote(_quote("AAPL", "149.00", "151.00"))
         router.submit(_order("AAPL"))
@@ -71,7 +72,7 @@ class TestBacktestOrderRouter:
 
     def test_reject_on_missing_quote(self):
         clock = SimulatedClock(start_ns=5000)
-        router = BacktestOrderRouter(clock)
+        router = BacktestOrderRouter(clock, cost_model=ZeroCostModel())
 
         router.submit(_order("MSFT"))
 
@@ -83,7 +84,7 @@ class TestBacktestOrderRouter:
     def test_reject_on_duplicate_order_id(self):
         """Submitting the same order_id twice yields a REJECTED ack on the second."""
         clock = SimulatedClock(start_ns=5000)
-        router = BacktestOrderRouter(clock)
+        router = BacktestOrderRouter(clock, cost_model=ZeroCostModel())
 
         router.on_quote(_quote("AAPL", "100.00", "100.10"))
         router.submit(_order("AAPL"))
@@ -98,7 +99,7 @@ class TestBacktestOrderRouter:
     def test_reject_on_crossed_quote(self):
         """Bid >= ask produces a REJECTED ack rather than a dubious mid fill."""
         clock = SimulatedClock(start_ns=5000)
-        router = BacktestOrderRouter(clock)
+        router = BacktestOrderRouter(clock, cost_model=ZeroCostModel())
 
         router.on_quote(_quote("AAPL", "100.05", "100.00"))  # crossed
         router.submit(_order("AAPL"))
@@ -109,7 +110,7 @@ class TestBacktestOrderRouter:
 
     def test_poll_acks_clears(self):
         clock = SimulatedClock(start_ns=5000)
-        router = BacktestOrderRouter(clock)
+        router = BacktestOrderRouter(clock, cost_model=ZeroCostModel())
 
         router.on_quote(_quote("AAPL", "100.00", "100.10"))
         router.submit(_order("AAPL"))
@@ -122,7 +123,7 @@ class TestBacktestOrderRouter:
 
     def test_latency_injection(self):
         clock = SimulatedClock(start_ns=5000)
-        router = BacktestOrderRouter(clock, latency_ns=1000)
+        router = BacktestOrderRouter(clock, cost_model=ZeroCostModel(), latency_ns=1000)
 
         router.on_quote(_quote("AAPL", "100.00", "100.10"))
         router.submit(_order("AAPL"))
@@ -134,7 +135,7 @@ class TestBacktestOrderRouter:
 
     def test_multiple_symbols_independent(self):
         clock = SimulatedClock(start_ns=5000)
-        router = BacktestOrderRouter(clock)
+        router = BacktestOrderRouter(clock, cost_model=ZeroCostModel())
 
         router.on_quote(_quote("AAPL", "149.00", "151.00"))
         router.on_quote(_quote("MSFT", "300.00", "302.00"))
@@ -150,7 +151,7 @@ class TestBacktestOrderRouter:
 
     def test_quote_update_uses_latest(self):
         clock = SimulatedClock(start_ns=5000)
-        router = BacktestOrderRouter(clock)
+        router = BacktestOrderRouter(clock, cost_model=ZeroCostModel())
 
         router.on_quote(_quote("AAPL", "100.00", "100.10"))
         router.on_quote(_quote("AAPL", "200.00", "200.20"))
@@ -162,7 +163,7 @@ class TestBacktestOrderRouter:
 
     def test_fill_timestamp_without_latency(self):
         clock = SimulatedClock(start_ns=3000)
-        router = BacktestOrderRouter(clock, latency_ns=0)
+        router = BacktestOrderRouter(clock, cost_model=ZeroCostModel(), latency_ns=0)
 
         router.on_quote(_quote("AAPL", "100.00", "100.10"))
         router.submit(_order("AAPL"))
@@ -173,7 +174,7 @@ class TestBacktestOrderRouter:
 
     def test_ack_sequences_are_monotonic_and_preserve_request_sequence(self):
         clock = SimulatedClock(start_ns=5000)
-        router = BacktestOrderRouter(clock)
+        router = BacktestOrderRouter(clock, cost_model=ZeroCostModel())
 
         router.on_quote(_quote_with_depth("99.00", "101.00", bid_size=200, ask_size=50))
         request = _order_qty(150, side=Side.BUY)
@@ -222,7 +223,7 @@ class TestPartialFillAndSlippage:
     def test_full_fill_when_qty_within_depth(self) -> None:
         """Order qty ≤ available depth → ACKNOWLEDGED + FILLED, no slippage."""
         clock = SimulatedClock(start_ns=5000)
-        router = BacktestOrderRouter(clock)
+        router = BacktestOrderRouter(clock, cost_model=ZeroCostModel())
 
         router.on_quote(_quote_with_depth("99.00", "101.00", bid_size=200, ask_size=200))
         router.submit(_order_qty(100, side=Side.BUY))
@@ -239,7 +240,7 @@ class TestPartialFillAndSlippage:
     def test_partial_fill_emits_ack_partial_filled(self) -> None:
         """Order qty > ask_size → ACKNOWLEDGED + PARTIALLY_FILLED + FILLED acks."""
         clock = SimulatedClock(start_ns=5000)
-        router = BacktestOrderRouter(clock)
+        router = BacktestOrderRouter(clock, cost_model=ZeroCostModel())
 
         router.on_quote(_quote_with_depth("99.00", "101.00", bid_size=200, ask_size=50))
         router.submit(_order_qty(150, side=Side.BUY))
@@ -261,7 +262,7 @@ class TestPartialFillAndSlippage:
         """Excess qty for a BUY is filled above mid (market-impact premium)."""
         clock = SimulatedClock(start_ns=5000)
         # impact = 0.5 * (excess/depth) * half_spread = 0.5 * (100/50) * 1 = 1.0
-        router = BacktestOrderRouter(clock, market_impact_factor=Decimal("0.5"))
+        router = BacktestOrderRouter(clock, cost_model=ZeroCostModel(), market_impact_factor=Decimal("0.5"))
 
         router.on_quote(_quote_with_depth("98.00", "102.00", bid_size=200, ask_size=50))
         router.submit(_order_qty(150, side=Side.BUY))
@@ -275,7 +276,7 @@ class TestPartialFillAndSlippage:
     def test_excess_price_lowered_for_sell(self) -> None:
         """Excess qty for a SELL is filled below mid (receiver gets less)."""
         clock = SimulatedClock(start_ns=5000)
-        router = BacktestOrderRouter(clock, market_impact_factor=Decimal("0.5"))
+        router = BacktestOrderRouter(clock, cost_model=ZeroCostModel(), market_impact_factor=Decimal("0.5"))
 
         router.on_quote(_quote_with_depth("98.00", "102.00", bid_size=50, ask_size=200))
         router.submit(_order_qty(150, side=Side.SELL))
@@ -293,6 +294,7 @@ class TestPartialFillAndSlippage:
         # Cap defaults to 10 half-spreads.
         router = BacktestOrderRouter(
             clock,
+            cost_model=ZeroCostModel(),
             market_impact_factor=Decimal("0.5"),
             max_impact_half_spreads=Decimal("10"),
         )
@@ -309,7 +311,7 @@ class TestPartialFillAndSlippage:
     def test_zero_depth_rejects_order(self) -> None:
         """Zero L1 depth on the relevant side → REJECTED (no vacuum fills)."""
         clock = SimulatedClock(start_ns=5000)
-        router = BacktestOrderRouter(clock)
+        router = BacktestOrderRouter(clock, cost_model=ZeroCostModel())
 
         router.on_quote(_quote_with_depth("99.00", "101.00", bid_size=0, ask_size=0))
         router.submit(_order_qty(100, side=Side.BUY))
@@ -325,7 +327,7 @@ class TestPartialFillAndSlippage:
     def test_all_acks_share_same_order_id(self) -> None:
         """ACK + partial + final fill acks must reference the same order_id."""
         clock = SimulatedClock(start_ns=5000)
-        router = BacktestOrderRouter(clock)
+        router = BacktestOrderRouter(clock, cost_model=ZeroCostModel())
 
         router.on_quote(_quote_with_depth("99.00", "101.00", bid_size=200, ask_size=30))
         router.submit(_order_qty(100, order_id="my-order"))
@@ -393,7 +395,7 @@ class TestExcessLegImpactNotDoubleCounted:
     def test_excess_fill_price_still_includes_impact(self) -> None:
         """Sanity: the impact is still encoded in fill_price (Inv-12 realism)."""
         clock = SimulatedClock(start_ns=5000)
-        router = BacktestOrderRouter(clock, market_impact_factor=Decimal("0.5"))
+        router = BacktestOrderRouter(clock, cost_model=ZeroCostModel(), market_impact_factor=Decimal("0.5"))
         router.on_quote(_quote_with_depth("98.00", "102.00", bid_size=200, ask_size=50))
         router.submit(_order_qty(150, side=Side.BUY))
         _, _, filled = router.poll_acks()

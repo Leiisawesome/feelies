@@ -81,6 +81,15 @@ class PlatformConfig:
     cost_stress_multiplier: float = 1.0
     cost_min_commission: float = 0.35
     cost_max_commission_pct: float = 1.0
+    # IBKR-realism cost knobs (mirror of DefaultCostModelConfig fields).
+    # Exposed at platform level for snapshot completeness (Inv-13) and
+    # operator override.  Defaults match the cost model's published
+    # IBKR-conservative values (see DefaultCostModelConfig docstring).
+    cost_finra_taf_per_share: float = 0.000166
+    cost_finra_taf_max_per_order: float = 8.30
+    cost_min_commission_applies_to_per_share_only: bool = True
+    cost_spread_floor_taker_only: bool = True
+    cost_max_impact_half_spreads: float = 10.0
 
     # Execution mode:
     #   "market"        — every order routes as MARKET (mid-price fill,
@@ -340,6 +349,31 @@ class PlatformConfig:
             raise ConfigurationError(
                 "cost_min_half_spread_threshold must be >= 0"
             )
+        if self.cost_finra_taf_per_share < 0.0:
+            raise ConfigurationError(
+                "cost_finra_taf_per_share must be >= 0"
+            )
+        if self.cost_finra_taf_max_per_order < 0.0:
+            raise ConfigurationError(
+                "cost_finra_taf_max_per_order must be >= 0"
+            )
+        if self.cost_max_impact_half_spreads < 1.0:
+            raise ConfigurationError(
+                "cost_max_impact_half_spreads must be >= 1 "
+                "(< 1 produces no impact at all on excess legs)"
+            )
+        if self.cost_passive_adverse_selection_bps < 0.0:
+            raise ConfigurationError(
+                "cost_passive_adverse_selection_bps must be >= 0"
+            )
+        if self.cost_sell_regulatory_bps < 0.0:
+            raise ConfigurationError(
+                "cost_sell_regulatory_bps must be >= 0"
+            )
+        if self.cost_max_commission_pct <= 0.0:
+            raise ConfigurationError(
+                "cost_max_commission_pct must be > 0"
+            )
 
         # ── Phase-2 validation ────────────────────────────────────────
         for h in self.horizons_seconds:
@@ -489,6 +523,13 @@ class PlatformConfig:
             "cost_stress_multiplier": self.cost_stress_multiplier,
             "cost_min_commission": self.cost_min_commission,
             "cost_max_commission_pct": self.cost_max_commission_pct,
+            "cost_finra_taf_per_share": self.cost_finra_taf_per_share,
+            "cost_finra_taf_max_per_order": self.cost_finra_taf_max_per_order,
+            "cost_min_commission_applies_to_per_share_only": (
+                self.cost_min_commission_applies_to_per_share_only
+            ),
+            "cost_spread_floor_taker_only": self.cost_spread_floor_taker_only,
+            "cost_max_impact_half_spreads": self.cost_max_impact_half_spreads,
             "execution_mode": self.execution_mode,
             "cost_min_passive_bias_bps": self.cost_min_passive_bias_bps,
             "cost_min_small_order_threshold_shares": (
@@ -707,6 +748,21 @@ class PlatformConfig:
             ),
             cost_max_commission_pct=float(
                 data.get("cost_max_commission_pct", 1.0)
+            ),
+            cost_finra_taf_per_share=float(
+                data.get("cost_finra_taf_per_share", 0.000166)
+            ),
+            cost_finra_taf_max_per_order=float(
+                data.get("cost_finra_taf_max_per_order", 8.30)
+            ),
+            cost_min_commission_applies_to_per_share_only=bool(
+                data.get("cost_min_commission_applies_to_per_share_only", True)
+            ),
+            cost_spread_floor_taker_only=bool(
+                data.get("cost_spread_floor_taker_only", True)
+            ),
+            cost_max_impact_half_spreads=float(
+                data.get("cost_max_impact_half_spreads", 10.0)
             ),
             execution_mode=str(data.get("execution_mode", "market")),
             cost_min_passive_bias_bps=float(

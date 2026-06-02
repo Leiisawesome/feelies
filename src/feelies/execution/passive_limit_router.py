@@ -51,7 +51,7 @@ from feelies.core.events import (
     Trade,
 )
 from feelies.core.identifiers import SequenceGenerator
-from feelies.execution.cost_model import CostModel, ZeroCostModel
+from feelies.execution.cost_model import CostModel
 
 
 @dataclass
@@ -87,8 +87,8 @@ class PassiveLimitOrderRouter:
         self,
         clock: Clock,
         latency_ns: int = 0,
-        cost_model: CostModel | None = None,
         *,
+        cost_model: CostModel,
         fill_delay_ticks: int = 3,
         max_resting_ticks: int = 50,
         queue_position_shares: int = 0,
@@ -96,7 +96,7 @@ class PassiveLimitOrderRouter:
     ) -> None:
         self._clock = clock
         self._latency_ns = latency_ns
-        self._cost_model: CostModel = cost_model or ZeroCostModel()
+        self._cost_model: CostModel = cost_model
         self._fill_delay_ticks = fill_delay_ticks
         self._max_resting_ticks = max_resting_ticks
         self._queue_position_shares = queue_position_shares

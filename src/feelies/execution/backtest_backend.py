@@ -25,11 +25,13 @@ from feelies.storage.event_log import EventLog
 def build_backtest_backend(
     event_log: EventLog,
     clock: Clock,
+    *,
+    cost_model: CostModel,
     start_sequence: int = 0,
     end_sequence: int | None = None,
     latency_ns: int = 0,
-    cost_model: CostModel | None = None,
     market_impact_factor: float = 0.5,
+    max_impact_half_spreads: float = 10.0,
 ) -> tuple[ExecutionBackend, BacktestOrderRouter]:
     """Build a backtest ExecutionBackend from an event log.
 
@@ -47,6 +49,7 @@ def build_backtest_backend(
         latency_ns=latency_ns,
         cost_model=cost_model,
         market_impact_factor=market_impact_factor,
+        max_impact_half_spreads=max_impact_half_spreads,
     )
 
     backend = ExecutionBackend(
@@ -60,11 +63,11 @@ def build_backtest_backend(
 def build_passive_limit_backend(
     event_log: EventLog,
     clock: Clock,
+    *,
+    cost_model: CostModel,
     start_sequence: int = 0,
     end_sequence: int | None = None,
     latency_ns: int = 0,
-    cost_model: CostModel | None = None,
-    *,
     fill_delay_ticks: int = 3,
     max_resting_ticks: int = 50,
     queue_position_shares: int = 0,

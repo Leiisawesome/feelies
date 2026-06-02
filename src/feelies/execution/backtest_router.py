@@ -51,7 +51,7 @@ from feelies.core.events import (
     Side,
 )
 from feelies.core.identifiers import SequenceGenerator
-from feelies.execution.cost_model import CostModel, ZeroCostModel
+from feelies.execution.cost_model import CostModel
 
 
 def _to_decimal(value: Decimal | int | str | float, name: str) -> Decimal:
@@ -89,13 +89,14 @@ class BacktestOrderRouter:
         self,
         clock: Clock,
         latency_ns: int = 0,
-        cost_model: CostModel | None = None,
+        *,
+        cost_model: CostModel,
         market_impact_factor: Decimal | int | str | float = Decimal("0.5"),
         max_impact_half_spreads: Decimal | int | str | float = Decimal("10"),
     ) -> None:
         self._clock = clock
         self._latency_ns = latency_ns
-        self._cost_model: CostModel = cost_model or ZeroCostModel()
+        self._cost_model: CostModel = cost_model
         self._market_impact_factor = _to_decimal(
             market_impact_factor, "market_impact_factor"
         )
