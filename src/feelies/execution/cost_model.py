@@ -457,7 +457,7 @@ def estimate_aggressive_taker_cost_bps(
 ) -> float:
     """Estimate one-way taker ``cost_bps`` including walk-the-book impact.
 
-    Mirrors ``_fill_helpers.emit_aggressive_fill`` — splits the order
+    Mirrors ``market_fill.append_market_fill_acks`` — splits the order
     into an L1 leg (filling at mid against ``available_depth``) and an
     excess leg (filling at impact-adjusted mid).  Returns the
     weighted-by-quantity ``cost_bps`` summed across the two legs.

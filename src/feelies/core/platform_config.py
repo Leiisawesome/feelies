@@ -233,7 +233,6 @@ class PlatformConfig:
     cost_finra_taf_max_per_order: float = 8.30
     cost_min_commission_applies_to_per_share_only: bool = True
     cost_spread_floor_taker_only: bool = True
-    cost_max_impact_half_spreads: float = 10.0
     # Audit F-H-10: panic-slippage multiplier on stop / hazard exit /
     # force-flatten fills.  2× is conservative for IBKR retail; the
     # spread component (not the fill price) is multiplied, so the
@@ -955,7 +954,6 @@ class PlatformConfig:
                 self.cost_min_commission_applies_to_per_share_only
             ),
             "cost_spread_floor_taker_only": self.cost_spread_floor_taker_only,
-            "cost_max_impact_half_spreads": self.cost_max_impact_half_spreads,
             "cost_stop_slippage_half_spreads": (
                 self.cost_stop_slippage_half_spreads
             ),

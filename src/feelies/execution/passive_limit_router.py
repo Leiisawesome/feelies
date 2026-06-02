@@ -130,14 +130,6 @@ class _PendingOrder:
 _DeferredAggressiveFill = DeferredFill
 
 
-@dataclass
-class _PendingAggressive:
-    """A market-order submission deferred under latency (audit F-H-07)."""
-
-    request: OrderRequest
-    eligible_at_ns: int
-
-
 class PassiveLimitOrderRouter:
     """Simulated order router with passive limit order fill model.
 
@@ -208,12 +200,6 @@ class PassiveLimitOrderRouter:
 
         self._last_quotes: dict[str, NBBOQuote] = {}
         self._pending_acks: list[OrderAck] = []
-        # Audit F-H-07: aggressive (market) submissions are queued
-        # under non-zero latency; drained when a quote arrives whose
-        # timestamp_ns >= eligible_at_ns.  Resting LIMIT orders keep
-        # their existing on_quote-driven fill semantics (no submit→
-        # fill latency to wait — the limit is already at the BBO).
-        self._pending_aggressive: list[_PendingAggressive] = []
         self._resting_orders: dict[str, _PendingOrder] = {}
         # Symbol → insertion-ordered order_ids index so on_quote() is O(k)
         # in the number of orders for that symbol rather than O(n) across
@@ -253,21 +239,6 @@ class PassiveLimitOrderRouter:
             self._moc.on_quote(quote)
         self._flush_deferred_aggressive(quote)
         self._check_resting_orders(quote)
-
-    def _drain_pending_aggressive(self, quote: NBBOQuote) -> None:
-        """Fill aggressive submissions whose latency window has elapsed."""
-        if not self._pending_aggressive:
-            return
-        still_pending: list[_PendingAggressive] = []
-        for entry in self._pending_aggressive:
-            if (
-                entry.request.symbol == quote.symbol
-                and entry.eligible_at_ns <= quote.timestamp_ns
-            ):
-                self._fill_aggressive(entry.request, quote, fill_ts=entry.eligible_at_ns)
-            else:
-                still_pending.append(entry)
-        self._pending_aggressive = still_pending
 
     def on_trade(self, trade: Trade) -> None:
         """Accumulate traded volume for the queue-position fill model.
