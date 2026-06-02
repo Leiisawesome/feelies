@@ -468,9 +468,9 @@ def estimate_aggressive_taker_cost_bps(
     under-price large orders against thin books.
     """
     if quantity <= 0 or available_depth <= 0:
-        # No fill possible — degenerate; return 0 to let the caller
-        # decide (the router itself will reject on zero depth).
-        return 0.0
+        # No fill possible — treat as prohibitively expensive so gating/policy
+        # does not under-price aggressive fills on zero depth.
+        return float("inf")
 
     if quantity <= available_depth:
         breakdown = model.compute(
