@@ -36,6 +36,11 @@ from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.cost_model import CostModel
 
 
+STOP_EXIT_REASONS: frozenset[str] = frozenset({
+    "STOP_EXIT", "HARD_EXIT_AGE", "HAZARD_SPIKE", "FORCE_FLATTEN",
+})
+
+
 def emit_aggressive_fill(
     *,
     request: OrderRequest,
@@ -47,12 +52,20 @@ def emit_aggressive_fill(
     pending_acks: list[OrderAck],
     ack_seq: SequenceGenerator,
     reject: Callable[[OrderRequest, str], None],
+    stop_slippage_half_spreads: Decimal = Decimal("1"),
 ) -> None:
     """Execute an aggressive (market) fill against ``quote``.
 
     Emits PARTIAL_FILLED + FILLED on walk-the-book; FILLED otherwise.
     Rejects via ``reject`` callback on locked/crossed quote or zero
     L1 depth.  Determinism preserved via the caller's ``ack_seq``.
+
+    Audit F-H-10: when ``request.reason`` is in ``STOP_EXIT_REASONS``,
+    the spread component is inflated by ``stop_slippage_half_spreads``
+    to model the panic-slippage that real stop-loss / hazard exits pay
+    in depleted depth.  Fill price stays at mid; the extra slippage
+    flows through ``fees`` (consistent with the spread-in-fees
+    convention).  Multiplier defaults to 1 for non-stop fills.
     """
     if quote.bid >= quote.ask:
         reject(
@@ -62,7 +75,14 @@ def emit_aggressive_fill(
         return
 
     fill_price = (quote.bid + quote.ask) / Decimal("2")
-    half_spread = (quote.ask - quote.bid) / Decimal("2")
+    raw_half_spread = (quote.ask - quote.bid) / Decimal("2")
+
+    # Audit F-H-10: stop-exit / forced-flatten fills pay panic slippage.
+    is_stop_exit = request.reason in STOP_EXIT_REASONS
+    if is_stop_exit and stop_slippage_half_spreads > Decimal("1"):
+        half_spread = raw_half_spread * stop_slippage_half_spreads
+    else:
+        half_spread = raw_half_spread
 
     available_depth = (
         quote.ask_size if request.side == Side.BUY else quote.bid_size

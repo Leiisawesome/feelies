@@ -115,6 +115,7 @@ class BacktestOrderRouter:
         cost_model: CostModel,
         market_impact_factor: Decimal | int | str | float = Decimal("0.5"),
         max_impact_half_spreads: Decimal | int | str | float = Decimal("10"),
+        stop_slippage_half_spreads: Decimal | int | str | float = Decimal("2.0"),
     ) -> None:
         self._clock = clock
         self._latency_ns = latency_ns
@@ -124,6 +125,9 @@ class BacktestOrderRouter:
         )
         self._max_impact_half_spreads = _to_decimal(
             max_impact_half_spreads, "max_impact_half_spreads"
+        )
+        self._stop_slippage_half_spreads = _to_decimal(
+            stop_slippage_half_spreads, "stop_slippage_half_spreads"
         )
         self._last_quotes: dict[str, NBBOQuote] = {}
         self._pending_acks: list[OrderAck] = []
@@ -230,6 +234,7 @@ class BacktestOrderRouter:
             pending_acks=self._pending_acks,
             ack_seq=self._ack_seq,
             reject=self._reject,
+            stop_slippage_half_spreads=self._stop_slippage_half_spreads,
         )
 
     def poll_acks(self) -> list[OrderAck]:

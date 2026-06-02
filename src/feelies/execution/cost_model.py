@@ -153,6 +153,12 @@ class DefaultCostModelConfig:
     finra_taf_max_per_order: Decimal = Decimal("8.30")
     stress_multiplier: Decimal = Decimal("1.0")
     htb_borrow_annual_bps: Decimal = Decimal("0.0")
+    # Audit F-H-10: forced-exit slippage multiplier.  Stop-losses /
+    # hazard exits / forced-flattens fill in depleted depth and widened
+    # spread that the cost model would otherwise miss.  Applied as a
+    # multiplier on ``half_spread`` for the spread component only when
+    # the caller signals a stop/forced-exit fill_type.
+    stop_slippage_half_spreads: Decimal = Decimal("2.0")
     min_commission_applies_to_per_share_only: bool = True
     # When True (default), the spread-floor (``min_spread_cost_bps``)
     # only applies on taker fills.  Maker/passive fills don't cross

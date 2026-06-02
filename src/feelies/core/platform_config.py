@@ -111,6 +111,11 @@ class PlatformConfig:
     cost_min_commission_applies_to_per_share_only: bool = True
     cost_spread_floor_taker_only: bool = True
     cost_max_impact_half_spreads: float = 10.0
+    # Audit F-H-10: panic-slippage multiplier on stop / hazard exit /
+    # force-flatten fills.  2× is conservative for IBKR retail; the
+    # spread component (not the fill price) is multiplied, so the
+    # extra slippage flows through ``fees``.
+    cost_stop_slippage_half_spreads: float = 2.0
 
     # Execution mode:
     #   "market"        — every order routes as MARKET (mid-price fill,
@@ -383,6 +388,10 @@ class PlatformConfig:
                 "cost_max_impact_half_spreads must be >= 1 "
                 "(< 1 produces no impact at all on excess legs)"
             )
+        if self.cost_stop_slippage_half_spreads < 1.0:
+            raise ConfigurationError(
+                "cost_stop_slippage_half_spreads must be >= 1"
+            )
         if self.cost_passive_adverse_selection_bps < 0.0:
             raise ConfigurationError(
                 "cost_passive_adverse_selection_bps must be >= 0"
@@ -558,6 +567,9 @@ class PlatformConfig:
             ),
             "cost_spread_floor_taker_only": self.cost_spread_floor_taker_only,
             "cost_max_impact_half_spreads": self.cost_max_impact_half_spreads,
+            "cost_stop_slippage_half_spreads": (
+                self.cost_stop_slippage_half_spreads
+            ),
             "execution_mode": self.execution_mode,
             "cost_min_passive_bias_bps": self.cost_min_passive_bias_bps,
             "cost_min_small_order_threshold_shares": (
@@ -805,6 +817,9 @@ class PlatformConfig:
             ),
             cost_max_impact_half_spreads=float(
                 data.get("cost_max_impact_half_spreads", 10.0)
+            ),
+            cost_stop_slippage_half_spreads=float(
+                data.get("cost_stop_slippage_half_spreads", 2.0)
             ),
             execution_mode=str(data.get("execution_mode", "market")),
             cost_min_passive_bias_bps=float(

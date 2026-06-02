@@ -104,6 +104,7 @@ class PassiveLimitOrderRouter:
         cancel_fee_per_share: Decimal = Decimal("0.0"),
         market_impact_factor: Decimal = Decimal("0.5"),
         max_impact_half_spreads: Decimal = Decimal("10"),
+        stop_slippage_half_spreads: Decimal = Decimal("2.0"),
     ) -> None:
         self._clock = clock
         self._latency_ns = latency_ns
@@ -118,6 +119,7 @@ class PassiveLimitOrderRouter:
         # cost_max_impact_half_spreads).
         self._market_impact_factor = market_impact_factor
         self._max_impact_half_spreads = max_impact_half_spreads
+        self._stop_slippage_half_spreads = stop_slippage_half_spreads
 
         self._last_quotes: dict[str, NBBOQuote] = {}
         self._pending_acks: list[OrderAck] = []
@@ -255,6 +257,7 @@ class PassiveLimitOrderRouter:
             pending_acks=self._pending_acks,
             ack_seq=self._ack_seq,
             reject=self._reject,
+            stop_slippage_half_spreads=self._stop_slippage_half_spreads,
         )
 
     # ── Passive (limit) order posting ────────────────────────────

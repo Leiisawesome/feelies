@@ -32,6 +32,7 @@ def build_backtest_backend(
     latency_ns: int = 0,
     market_impact_factor: float = 0.5,
     max_impact_half_spreads: float = 10.0,
+    stop_slippage_half_spreads: float = 2.0,
 ) -> tuple[ExecutionBackend, BacktestOrderRouter]:
     """Build a backtest ExecutionBackend from an event log.
 
@@ -50,6 +51,7 @@ def build_backtest_backend(
         cost_model=cost_model,
         market_impact_factor=market_impact_factor,
         max_impact_half_spreads=max_impact_half_spreads,
+        stop_slippage_half_spreads=stop_slippage_half_spreads,
     )
 
     backend = ExecutionBackend(
@@ -74,6 +76,7 @@ def build_passive_limit_backend(
     cancel_fee_per_share: Decimal = Decimal("0.0"),
     market_impact_factor: float = 0.5,
     max_impact_half_spreads: float = 10.0,
+    stop_slippage_half_spreads: float = 2.0,
 ) -> tuple[ExecutionBackend, PassiveLimitOrderRouter]:
     """Build a backtest backend with passive limit order fill model.
 
@@ -103,6 +106,7 @@ def build_passive_limit_backend(
         cancel_fee_per_share=cancel_fee_per_share,
         market_impact_factor=Decimal(str(market_impact_factor)),
         max_impact_half_spreads=Decimal(str(max_impact_half_spreads)),
+        stop_slippage_half_spreads=Decimal(str(stop_slippage_half_spreads)),
     )
 
     backend = ExecutionBackend(

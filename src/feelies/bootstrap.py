@@ -272,6 +272,7 @@ def build_platform(
         passive_cancel_fee_per_share=config.passive_cancel_fee_per_share,
         market_impact_factor=config.cost_market_impact_factor,
         max_impact_half_spreads=config.cost_max_impact_half_spreads,
+        stop_slippage_half_spreads=config.cost_stop_slippage_half_spreads,
     )
 
     if backtest_router is not None:
@@ -514,6 +515,7 @@ def _create_backend(
     passive_cancel_fee_per_share: float = 0.0,
     market_impact_factor: float = 0.5,
     max_impact_half_spreads: float = 10.0,
+    stop_slippage_half_spreads: float = 2.0,
 ) -> tuple[ExecutionBackend, BacktestOrderRouter | PassiveLimitOrderRouter | None]:
     backend: ExecutionBackend
     router: BacktestOrderRouter | PassiveLimitOrderRouter | None
@@ -535,6 +537,7 @@ def _create_backend(
                 cancel_fee_per_share=_decimal(passive_cancel_fee_per_share),
                 market_impact_factor=market_impact_factor,
                 max_impact_half_spreads=max_impact_half_spreads,
+                stop_slippage_half_spreads=stop_slippage_half_spreads,
             )
             return backend, router
 
@@ -544,6 +547,7 @@ def _create_backend(
             cost_model=cost_model,
             market_impact_factor=market_impact_factor,
             max_impact_half_spreads=max_impact_half_spreads,
+            stop_slippage_half_spreads=stop_slippage_half_spreads,
         )
         return backend, router
 
