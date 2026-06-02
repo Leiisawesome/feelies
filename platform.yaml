@@ -51,7 +51,10 @@ cost_taker_exchange_per_share: 0.003
 # IBKR-realistic default 0.0 — SmartRouter blends positive (NASDAQ) and
 # negative (BATS EDGA / inverted) maker fees; net for personal account ≈ 0.
 cost_maker_exchange_per_share: 0.0
-cost_passive_adverse_selection_bps: 0.5
+# Per-fill-type adverse selection (audit F-H-09): LEVEL = queue-drain
+# fills; THROUGH = opposite-side BBO crossed our limit.
+cost_passive_adverse_selection_bps: 2.0
+cost_through_fill_adverse_selection_bps: 5.0
 # SEC Section 31 fee (~0.278 bps current rate) + headroom for adjustments.
 cost_sell_regulatory_bps: 0.5
 cost_stress_multiplier: 1.0

@@ -242,6 +242,9 @@ def build_platform(
         taker_exchange_per_share=_decimal(config.cost_taker_exchange_per_share),
         maker_exchange_per_share=_decimal(config.cost_maker_exchange_per_share),
         passive_adverse_selection_bps=_decimal(config.cost_passive_adverse_selection_bps),
+        through_fill_adverse_selection_bps=_decimal(
+            config.cost_through_fill_adverse_selection_bps
+        ),
         sell_regulatory_bps=_decimal(config.cost_sell_regulatory_bps),
         stress_multiplier=_decimal(config.cost_stress_multiplier),
         min_commission=_decimal(config.cost_min_commission),

@@ -8,9 +8,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Protocol
+from typing import Literal, Protocol
 
 from feelies.core.events import Side
+
+
+FillType = Literal["TAKER", "LEVEL", "THROUGH"]
 
 
 class CostModel(Protocol):
@@ -25,6 +28,8 @@ class CostModel(Protocol):
         half_spread: Decimal,
         is_taker: bool = True,
         is_short: bool = False,
+        fill_type: FillType | None = None,
+        adverse_notional_price: Decimal | None = None,
     ) -> CostBreakdown:
         """Return cost components for a single fill.
 
@@ -33,6 +38,20 @@ class CostModel(Protocol):
         liquidity) and the passive adverse-selection penalty.
         ``is_short=True`` applies the hard-to-borrow (HTB) daily fee
         on SELL-side fills when ``htb_borrow_annual_bps > 0``.
+
+        ``fill_type`` (audit F-H-09): distinguishes through-fills from
+        level (queue-drain) fills.  When ``is_taker=False`` and
+        ``fill_type="THROUGH"``, the model charges
+        ``through_fill_adverse_selection_bps`` rather than the gentler
+        ``passive_adverse_selection_bps``.  Defaults: ``"TAKER"`` when
+        ``is_taker=True``, else ``"LEVEL"``.
+
+        ``adverse_notional_price`` (audit F-M-24): when supplied, the
+        adverse-selection penalty is computed against
+        ``adverse_notional_price × quantity`` rather than ``fill_price
+        × quantity``.  Used by the router to bill adverse cost against
+        the opposite-side BBO (the price an aggressor would have paid),
+        keeping router and round-trip estimator internally consistent.
         """
         ...
 
@@ -120,7 +139,15 @@ class DefaultCostModelConfig:
     maker_exchange_per_share: Decimal = Decimal("0.0")
     min_commission: Decimal = Decimal("0.35")
     max_commission_pct: Decimal = Decimal("1.0")
-    passive_adverse_selection_bps: Decimal = Decimal("0.5")
+    # Audit F-H-09: per-fill-type passive adverse selection.
+    # ``passive_adverse_selection_bps`` applies to LEVEL (queue-drain)
+    # fills where the BBO never crossed our limit.  Through-fills
+    # (BBO gapped through our level — textbook adverse-selection
+    # scenario) carry a strictly higher charge.
+    # Defaults 2.0 / 5.0 are conservative for liquid US large-caps;
+    # operators should tune by symbol class.
+    passive_adverse_selection_bps: Decimal = Decimal("2.0")
+    through_fill_adverse_selection_bps: Decimal = Decimal("5.0")
     sell_regulatory_bps: Decimal = Decimal("0.5")
     finra_taf_per_share: Decimal = Decimal("0.000166")
     finra_taf_max_per_order: Decimal = Decimal("8.30")
@@ -161,9 +188,15 @@ class DefaultCostModel:
         half_spread: Decimal,
         is_taker: bool = True,
         is_short: bool = False,
+        fill_type: FillType | None = None,
+        adverse_notional_price: Decimal | None = None,
     ) -> CostBreakdown:
         notional = fill_price * quantity
         stress = self._cfg.stress_multiplier
+
+        # Default fill_type from is_taker when not supplied.
+        if fill_type is None:
+            fill_type = "TAKER" if is_taker else "LEVEL"
 
         # Zero-quantity / zero-notional safe-no-op.  IBKR doesn't
         # commission a zero-share fill, and applying the floor in this
@@ -268,10 +301,26 @@ class DefaultCostModel:
                 )
                 commission = min(commission, max_commission)
 
-        # Passive adverse-selection penalty (maker fills only)
+        # Passive adverse-selection penalty (maker fills only).
+        # Through-fills (BBO crossed our limit) are the textbook
+        # adverse-selection scenario and carry a higher bps charge
+        # (F-H-09).  Notional is computed against ``adverse_notional_price``
+        # when supplied (F-M-24: routers use the worse-side BBO so the
+        # gate and realised path agree on the basis); else ``fill_price``.
         adverse_cost = Decimal("0")
         if not is_taker:
-            adverse_cost = notional * self._cfg.passive_adverse_selection_bps * stress / Decimal("10000")
+            adverse_bps = (
+                self._cfg.through_fill_adverse_selection_bps
+                if fill_type == "THROUGH"
+                else self._cfg.passive_adverse_selection_bps
+            )
+            adverse_basis_price = (
+                adverse_notional_price
+                if adverse_notional_price is not None
+                else fill_price
+            )
+            adverse_notional = adverse_basis_price * quantity
+            adverse_cost = adverse_notional * adverse_bps * stress / Decimal("10000")
 
         # Sell-side regulatory fees.
         #   - SEC Section 31 fee: bps of notional on sells (modeled
@@ -334,6 +383,8 @@ class ZeroCostModel:
         half_spread: Decimal,
         is_taker: bool = True,
         is_short: bool = False,
+        fill_type: FillType | None = None,
+        adverse_notional_price: Decimal | None = None,
     ) -> CostBreakdown:
         notional = fill_price * quantity
         return CostBreakdown(

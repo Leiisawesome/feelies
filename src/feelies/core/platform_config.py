@@ -87,7 +87,13 @@ class PlatformConfig:
     cost_exchange_per_share: float = 0.0005  # deprecated; use taker/maker fields below
     cost_taker_exchange_per_share: float = 0.003
     cost_maker_exchange_per_share: float = 0.0
-    cost_passive_adverse_selection_bps: float = 0.5
+    # Audit F-H-09: per-fill-type passive adverse selection.
+    # ``cost_passive_adverse_selection_bps`` is LEVEL (queue-drain).
+    # ``cost_through_fill_adverse_selection_bps`` is THROUGH (BBO
+    # crossed our limit — strictly more adverse).  Defaults 2.0 / 5.0
+    # are conservative for liquid US large-caps.
+    cost_passive_adverse_selection_bps: float = 2.0
+    cost_through_fill_adverse_selection_bps: float = 5.0
     cost_sell_regulatory_bps: float = 0.5
     cost_stress_multiplier: float = 1.0
     cost_min_commission: float = 0.35
@@ -377,6 +383,10 @@ class PlatformConfig:
             raise ConfigurationError(
                 "cost_passive_adverse_selection_bps must be >= 0"
             )
+        if self.cost_through_fill_adverse_selection_bps < 0.0:
+            raise ConfigurationError(
+                "cost_through_fill_adverse_selection_bps must be >= 0"
+            )
         if self.cost_sell_regulatory_bps < 0.0:
             raise ConfigurationError(
                 "cost_sell_regulatory_bps must be >= 0"
@@ -530,6 +540,9 @@ class PlatformConfig:
             "cost_taker_exchange_per_share": self.cost_taker_exchange_per_share,
             "cost_maker_exchange_per_share": self.cost_maker_exchange_per_share,
             "cost_passive_adverse_selection_bps": self.cost_passive_adverse_selection_bps,
+            "cost_through_fill_adverse_selection_bps": (
+                self.cost_through_fill_adverse_selection_bps
+            ),
             "cost_sell_regulatory_bps": self.cost_sell_regulatory_bps,
             "cost_stress_multiplier": self.cost_stress_multiplier,
             "cost_min_commission": self.cost_min_commission,
@@ -757,7 +770,10 @@ class PlatformConfig:
                 data.get("cost_maker_exchange_per_share", -0.002)
             ),
             cost_passive_adverse_selection_bps=float(
-                data.get("cost_passive_adverse_selection_bps", 0.5)
+                data.get("cost_passive_adverse_selection_bps", 2.0)
+            ),
+            cost_through_fill_adverse_selection_bps=float(
+                data.get("cost_through_fill_adverse_selection_bps", 5.0)
             ),
             cost_sell_regulatory_bps=float(
                 data.get("cost_sell_regulatory_bps", 0.0)

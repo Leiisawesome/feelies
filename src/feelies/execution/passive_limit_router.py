@@ -287,18 +287,38 @@ class PassiveLimitOrderRouter:
                 # — overstating the trader's cost by one tick per
                 # share, conservative for backtest but wrong vs IBKR.
                 # Level-fills (queue drain) still fill at the limit.
+                #
+                # Audit F-H-09: through-fills are the textbook adverse-
+                # selection scenario.  Tag the fill_type so the cost
+                # model charges the higher through-fill bps; level fills
+                # keep the gentler LEVEL bps.
                 fill_price = pending.limit_price
+                fill_type = "LEVEL"
                 if (
                     pending.side == Side.BUY
                     and quote.ask < pending.limit_price
                 ):
                     fill_price = quote.ask
+                    fill_type = "THROUGH"
                 elif (
                     pending.side == Side.SELL
                     and quote.bid > pending.limit_price
                 ):
                     fill_price = quote.bid
-                self._emit_passive_fill(pending, fill_price=fill_price)
+                    fill_type = "THROUGH"
+                # Audit F-M-24: adverse-selection notional uses the
+                # worse-side BBO (ask for BUY, bid for SELL) — the
+                # price an aggressor would have paid — keeping the
+                # router and the round-trip estimator on the same basis.
+                adverse_notional_price = (
+                    quote.ask if pending.side == Side.BUY else quote.bid
+                )
+                self._emit_passive_fill(
+                    pending,
+                    fill_price=fill_price,
+                    fill_type=fill_type,
+                    adverse_notional_price=adverse_notional_price,
+                )
                 to_remove.append(order_id)
             elif action == "cancel":
                 self._emit_timeout_cancel(pending)
@@ -373,6 +393,8 @@ class PassiveLimitOrderRouter:
         self,
         pending: _PendingOrder,
         fill_price: Decimal | None = None,
+        fill_type: str = "LEVEL",
+        adverse_notional_price: Decimal | None = None,
     ) -> None:
         """Emit a FILLED ack for a passive limit order.
 
@@ -384,6 +406,12 @@ class PassiveLimitOrderRouter:
         drain / level fills).  Callers may pass a better price (BUY:
         a lower ask that gapped through, SELL: a higher bid) to model
         IBKR's price-improvement rule on through-fills.
+
+        ``fill_type`` (``"LEVEL"`` default, ``"THROUGH"`` on price
+        improvement) controls the adverse-selection bps.
+
+        ``adverse_notional_price`` (audit F-M-24) is forwarded as the
+        adverse-selection notional basis when provided.
         """
         if fill_price is None:
             fill_price = pending.limit_price
@@ -397,6 +425,8 @@ class PassiveLimitOrderRouter:
             half_spread=Decimal("0"),
             is_taker=False,
             is_short=pending.request.is_short,
+            fill_type=fill_type,
+            adverse_notional_price=adverse_notional_price,
         )
 
         self._pending_acks.append(OrderAck(
