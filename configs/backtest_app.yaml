@@ -13,6 +13,9 @@ extends: ../platform.yaml
 symbols:
   - APP
 
+# Inv-12 margin gate for APP research (G12-equivalent 1.5× round-trip floor).
+signal_min_edge_cost_ratio: 1.5
+
 parameter_overrides:
   sig_benign_midcap_v1:
     entry_threshold_z: 1.5

@@ -18,7 +18,12 @@ from feelies.core.platform_config import PlatformConfig
 _PLATFORM_YAML = Path("platform.yaml")
 _BACKTEST_APP_YAML = Path("configs/backtest_app.yaml")
 
-_ALLOWED_DELTA_KEYS = frozenset({"extends", "symbols", "parameter_overrides"})
+_ALLOWED_DELTA_KEYS = frozenset({
+    "extends",
+    "symbols",
+    "signal_min_edge_cost_ratio",
+    "parameter_overrides",
+})
 
 
 def test_backtest_app_yaml_declares_extends_and_only_allowed_deltas() -> None:
@@ -45,6 +50,7 @@ def test_backtest_app_merged_config_loads_and_matches_expected_deltas() -> None:
         platform,
         {
             "symbols": ["APP"],
+            "signal_min_edge_cost_ratio": 1.5,
             "parameter_overrides": {
                 "sig_benign_midcap_v1": {
                     "entry_threshold_z": 1.5,
@@ -54,10 +60,12 @@ def test_backtest_app_merged_config_loads_and_matches_expected_deltas() -> None:
         },
     )
     assert merged["symbols"] == expected["symbols"]
+    assert merged["signal_min_edge_cost_ratio"] == expected["signal_min_edge_cost_ratio"]
     assert merged["parameter_overrides"] == expected["parameter_overrides"]
 
     cfg = PlatformConfig.from_yaml(_BACKTEST_APP_YAML)
     assert sorted(cfg.symbols) == ["APP"]
+    assert cfg.signal_min_edge_cost_ratio == 1.5
     assert cfg.parameter_overrides["sig_benign_midcap_v1"] == {
         "entry_threshold_z": 1.5,
         "edge_per_z_bps": 6.0,

@@ -945,7 +945,6 @@ def _create_backend(
             live_feed=live_feed,
             ib_connection=ib_conn,
         )
-        )
 
     raise NotImplementedError(
         f"ExecutionBackend for mode {mode.name} is not yet implemented. "
