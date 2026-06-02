@@ -480,7 +480,10 @@ def estimate_aggressive_taker_cost_bps(
             symbol, side, quantity, mid_price, half_spread,
             is_taker=True, is_short=is_short,
         )
-        return float(breakdown.cost_bps)
+        # Audit F-M-20: return the un-quantized cost so callers (notably
+        # the minimum-cost policy) compare on the same grain as the
+        # non-depth-aware path's ``aggressive_breakdown.raw_cost_bps``.
+        return float(breakdown.raw_cost_bps)
 
     # Walk-the-book: L1 + excess.
     partial_qty = available_depth
