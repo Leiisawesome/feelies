@@ -700,6 +700,12 @@ class Orchestrator:
                                     True,
                                 )
                             ),
+                            market_impact_factor=Decimal(str(getattr(
+                                config, "cost_market_impact_factor", 0.5,
+                            ))),
+                            max_impact_half_spreads=Decimal(str(getattr(
+                                config, "cost_max_impact_half_spreads", 10.0,
+                            ))),
                         ),
                     )
             if hasattr(config, "platform_min_order_shares"):
@@ -2187,6 +2193,10 @@ class Orchestrator:
                 # The ENTRY leg follows ``_use_passive_entries``.  The
                 # gate must therefore use asymmetric is_taker for the
                 # two legs or it under-prices the round-trip.
+                # Audit F-H-04: pass depth + impact knobs so the
+                # taker leg(s) of the round-trip walk the book when
+                # qty exceeds L1.  Falls back to flat-L1 if knobs
+                # aren't available (parity with legacy gate).
                 is_taker_entry = not self._use_passive_entries
                 round_trip_cost_bps = estimate_round_trip_cost_bps(
                     self._cost_model,
@@ -2198,6 +2208,14 @@ class Orchestrator:
                     is_taker=is_taker_entry,
                     is_taker_exit=True,
                     is_short_entry=is_short,
+                    bid_size=quote.bid_size,
+                    ask_size=quote.ask_size,
+                    market_impact_factor=Decimal(str(getattr(
+                        self._config, "cost_market_impact_factor", 0.5,
+                    ))) if self._config else None,
+                    max_impact_half_spreads=Decimal(str(getattr(
+                        self._config, "cost_max_impact_half_spreads", 10.0,
+                    ))) if self._config else None,
                 )
                 if intent.signal.edge_estimate_bps < (
                     self._signal_min_edge_cost_ratio * round_trip_cost_bps
@@ -2223,6 +2241,8 @@ class Orchestrator:
                             half_spread=(quote.ask - quote.bid) / Decimal("2"),
                             is_short=is_short,
                             force_aggressive=False,
+                            bid_size=quote.bid_size,
+                            ask_size=quote.ask_size,
                         )
                         use_passive = decision == "passive"
                     if use_passive:
@@ -2409,6 +2429,14 @@ class Orchestrator:
                 is_taker=is_taker_entry,
                 is_taker_exit=True,
                 is_short_entry=is_short,
+                bid_size=quote.bid_size,
+                ask_size=quote.ask_size,
+                market_impact_factor=Decimal(str(getattr(
+                    self._config, "cost_market_impact_factor", 0.5,
+                ))) if self._config else None,
+                max_impact_half_spreads=Decimal(str(getattr(
+                    self._config, "cost_max_impact_half_spreads", 10.0,
+                ))) if self._config else None,
             )
             if intent.signal.edge_estimate_bps < (
                 self._signal_min_edge_cost_ratio * round_trip_cost_bps
@@ -2437,6 +2465,8 @@ class Orchestrator:
                         half_spread=(quote.ask - quote.bid) / Decimal("2"),
                         is_short=is_short,
                         force_aggressive=is_exit_or_stop,
+                        bid_size=quote.bid_size,
+                        ask_size=quote.ask_size,
                     )
                     use_passive = decision == "passive"
                 if use_passive:

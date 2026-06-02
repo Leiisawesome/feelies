@@ -402,6 +402,79 @@ class ZeroCostModel:
         )
 
 
+def estimate_aggressive_taker_cost_bps(
+    model: CostModel,
+    *,
+    symbol: str,
+    side: Side,
+    quantity: int,
+    mid_price: Decimal,
+    half_spread: Decimal,
+    available_depth: int,
+    market_impact_factor: Decimal,
+    max_impact_half_spreads: Decimal,
+    is_short: bool = False,
+) -> float:
+    """Estimate one-way taker ``cost_bps`` including walk-the-book impact.
+
+    Mirrors ``_fill_helpers.emit_aggressive_fill`` — splits the order
+    into an L1 leg (filling at mid against ``available_depth``) and an
+    excess leg (filling at impact-adjusted mid).  Returns the
+    weighted-by-quantity ``cost_bps`` summed across the two legs.
+
+    Used by the orchestrator's B4 gate and the minimum-cost policy to
+    price the aggressive route depth-aware (audit F-H-04).  Without
+    this helper, both consumers assume a full L1 fill and silently
+    under-price large orders against thin books.
+    """
+    if quantity <= 0 or available_depth <= 0:
+        # No fill possible — degenerate; return 0 to let the caller
+        # decide (the router itself will reject on zero depth).
+        return 0.0
+
+    if quantity <= available_depth:
+        breakdown = model.compute(
+            symbol, side, quantity, mid_price, half_spread,
+            is_taker=True, is_short=is_short,
+        )
+        return float(breakdown.cost_bps)
+
+    # Walk-the-book: L1 + excess.
+    partial_qty = available_depth
+    excess_qty = quantity - available_depth
+    raw_impact = (
+        market_impact_factor
+        * Decimal(str(excess_qty))
+        / Decimal(str(available_depth))
+        * half_spread
+    )
+    impact_cap = max_impact_half_spreads * half_spread
+    impact = min(raw_impact, impact_cap)
+    if side == Side.BUY:
+        impact_price = mid_price + impact
+    else:
+        impact_price = max(mid_price - impact, Decimal("0.01"))
+
+    # Both legs evaluated against mid-notional so the impact is the
+    # only side-dependent cost line.  ``impact * excess_qty`` is the
+    # economic slippage on the walk-the-book leg; positive cost
+    # regardless of side (BUY pays more, SELL receives less).
+    partial = model.compute(
+        symbol, side, partial_qty, mid_price, half_spread,
+        is_taker=True, is_short=is_short,
+    )
+    excess = model.compute(
+        symbol, side, excess_qty, mid_price, half_spread,
+        is_taker=True, is_short=is_short,
+    )
+    total_notional = mid_price * Decimal(str(quantity))
+    impact_cost = impact * Decimal(str(excess_qty))
+    total_fees = partial.total_fees + excess.total_fees + impact_cost
+    if total_notional <= 0:
+        return 0.0
+    return float(total_fees / total_notional * Decimal("10000"))
+
+
 def estimate_round_trip_cost_bps(
     model: CostModel,
     *,
@@ -413,6 +486,10 @@ def estimate_round_trip_cost_bps(
     is_taker: bool,
     is_short_entry: bool,
     is_taker_exit: bool | None = None,
+    bid_size: int | None = None,
+    ask_size: int | None = None,
+    market_impact_factor: Decimal | None = None,
+    max_impact_half_spreads: Decimal | None = None,
 ) -> float:
     """Sum model one-way ``cost_bps`` for an entry + flat-to-flat exit leg.
 
@@ -439,23 +516,56 @@ def estimate_round_trip_cost_bps(
     if is_taker_exit is None:
         is_taker_exit = is_taker
     entry_short = bool(is_short_entry and entry_side == Side.SELL)
-    entry = model.compute(
-        symbol,
-        entry_side,
-        quantity,
-        mid_price,
-        half_spread,
-        is_taker=is_taker,
-        is_short=entry_short,
-    )
     exit_side = Side.SELL if entry_side == Side.BUY else Side.BUY
-    exit_leg = model.compute(
-        symbol,
-        exit_side,
-        quantity,
-        mid_price,
-        half_spread,
-        is_taker=is_taker_exit,
-        is_short=False,
+
+    # Audit F-H-04: when depth + impact knobs are supplied, taker legs
+    # use the depth-aware estimator (walks the book on excess qty).
+    # Otherwise fall back to the legacy single-fill model.compute path.
+    use_depth_aware = (
+        bid_size is not None
+        and ask_size is not None
+        and market_impact_factor is not None
+        and max_impact_half_spreads is not None
     )
-    return float(entry.cost_bps + exit_leg.cost_bps)
+
+    def _entry_bps() -> float:
+        if is_taker and use_depth_aware:
+            depth = ask_size if entry_side == Side.BUY else bid_size
+            return estimate_aggressive_taker_cost_bps(
+                model,
+                symbol=symbol,
+                side=entry_side,
+                quantity=quantity,
+                mid_price=mid_price,
+                half_spread=half_spread,
+                available_depth=int(depth or 0),
+                market_impact_factor=market_impact_factor,  # type: ignore[arg-type]
+                max_impact_half_spreads=max_impact_half_spreads,  # type: ignore[arg-type]
+                is_short=entry_short,
+            )
+        return float(model.compute(
+            symbol, entry_side, quantity, mid_price, half_spread,
+            is_taker=is_taker, is_short=entry_short,
+        ).cost_bps)
+
+    def _exit_bps() -> float:
+        if is_taker_exit and use_depth_aware:
+            depth = ask_size if exit_side == Side.BUY else bid_size
+            return estimate_aggressive_taker_cost_bps(
+                model,
+                symbol=symbol,
+                side=exit_side,
+                quantity=quantity,
+                mid_price=mid_price,
+                half_spread=half_spread,
+                available_depth=int(depth or 0),
+                market_impact_factor=market_impact_factor,  # type: ignore[arg-type]
+                max_impact_half_spreads=max_impact_half_spreads,  # type: ignore[arg-type]
+                is_short=False,
+            )
+        return float(model.compute(
+            symbol, exit_side, quantity, mid_price, half_spread,
+            is_taker=is_taker_exit, is_short=False,
+        ).cost_bps)
+
+    return _entry_bps() + _exit_bps()
