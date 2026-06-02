@@ -122,9 +122,9 @@ def build_passive_limit_backend(
     router = PassiveLimitOrderRouter(
         clock=clock,
         latency_ns=latency_ns,
+        market_impact_factor=Decimal(str(market_impact_factor)),
+        max_impact_half_spreads=Decimal(str(max_impact_half_spreads)),
         cost_model=cost_model,
-        market_impact_factor=market_impact_factor,
-        max_impact_half_spreads=max_impact_half_spreads,
         fill_delay_ticks=fill_delay_ticks,
         max_resting_ticks=max_resting_ticks,
         queue_position_shares=queue_position_shares,
