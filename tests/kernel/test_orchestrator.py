@@ -53,6 +53,7 @@ from feelies.core.events import (
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
+from feelies.execution.cost_model import ZeroCostModel
 from feelies.execution.intent import OrderIntent, TradingIntent
 from feelies.execution.order_state import OrderState
 from feelies.execution.regulatory.borrow_availability import BorrowTier
@@ -399,7 +400,7 @@ def _build_orchestrator(
     router = (
         order_router
         if order_router is not None
-        else BacktestOrderRouter(clock=clock)
+        else BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
     )
     backend = ExecutionBackend(
         market_data=market_data or _StubMarketData(),
@@ -535,7 +536,7 @@ class TestOrchestratorFullPipeline:
         signal = _make_signal(quote)
 
         bus = EventBus()
-        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
@@ -631,7 +632,7 @@ class TestOrchestratorFullPipeline:
 
         bus = EventBus()
         position_store = MemoryPositionStore()
-        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
@@ -662,7 +663,7 @@ class TestOrchestratorFullPipeline:
 
         bus = EventBus()
         position_store = MemoryPositionStore()
-        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
@@ -1044,7 +1045,7 @@ class TestOrchestratorFlatSignalExit:
         position_store.update("AAPL", 100, Decimal("150.00"))
 
         bus = EventBus()
-        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
@@ -1588,7 +1589,7 @@ class TestScaleDownToZeroSuppression:
         signal = _make_signal(quote)
 
         position_store = MemoryPositionStore()
-        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
@@ -1647,7 +1648,7 @@ class TestEdgeCostGate:
         bus = EventBus()
         event_log = InMemoryEventLog()
         pos_store = MemoryPositionStore()
-        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         backend = ExecutionBackend(
             market_data=_StubMarketData(),
             order_router=bt_router,
@@ -1726,7 +1727,7 @@ class TestRestingOrderGuardAfterRisk:
     ) -> tuple[Orchestrator, EventBus]:
         bus = EventBus()
         pos_store = position_store or MemoryPositionStore()
-        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         backend = ExecutionBackend(
             market_data=_StubMarketData(),
             order_router=bt_router,
@@ -1827,7 +1828,7 @@ class TestExitBypassesMinOrderShares:
         position_store = MemoryPositionStore()
         position_store.update("AAPL", 50, Decimal("150.00"))
 
-        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         bt_router.on_quote(quote)
         orch = Orchestrator(
             clock=clock,
@@ -1882,7 +1883,7 @@ class TestExitBypassesEdgeCostGate:
         position_store = MemoryPositionStore()
         position_store.update("AAPL", 50, Decimal("150.00"))
 
-        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         bt_router.on_quote(quote)
         cost_model = DefaultCostModel(DefaultCostModelConfig())
         orch = Orchestrator(

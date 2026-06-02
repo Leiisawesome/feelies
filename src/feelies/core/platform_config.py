@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import logging
 import json
 import time
 from dataclasses import dataclass, field
@@ -44,6 +45,9 @@ def latency_stress_ns(
 ) -> tuple[int, int]:
     """Scale both latency legs for Inv-12 stress (BT-9 harness)."""
     return fill_latency_ns * multiplier, market_data_latency_ns * multiplier
+
+
+logger = logging.getLogger(__name__)
 
 
 class OperatingMode(Enum):
@@ -194,20 +198,46 @@ class PlatformConfig:
     stop_loss_pct: float = 0.0
     trail_activate_pct: float = 0.0
 
-    cost_min_spread_bps: float = 0.0
+    # IBKR-conservative defaults (audit F-H-08, F-M-25, F-C-01):
+    #   - min_spread_bps: 0.3 floor on taker spread (tight tape proxy).
+    #   - maker_exchange_per_share: 0.0 — SmartRouter blends positive
+    #     and negative venue maker fees; net for a personal account is
+    #     ≈ 0.  Operators with venue-controlled routing can opt back in.
+    #   - sell_regulatory_bps: 0.5 — current SEC Section 31 fee (~0.278
+    #     bps) with conservative headroom for rate changes.
+    cost_min_spread_bps: float = 0.3
     cost_commission_per_share: float = 0.0035
     cost_exchange_per_share: float = 0.0005  # deprecated; use taker/maker fields below
     cost_taker_exchange_per_share: float = 0.003
-    cost_maker_exchange_per_share: float = -0.002
-    # Adverse-selection cost on passive (maker) fills, in bps, split by fill
-    # regime (BT-1): through-fills (market traded through the resting order)
-    # vs queue-drain fills.  The cost model selects the regime per fill.
-    cost_adverse_selection_through_bps: float = 3.0
-    cost_adverse_selection_drain_bps: float = 0.3
-    cost_sell_regulatory_bps: float = 0.0
+    cost_maker_exchange_per_share: float = 0.0
+    # Audit F-H-09: per-fill-type passive adverse selection.
+    # ``cost_passive_adverse_selection_bps`` is LEVEL (queue-drain).
+    # ``cost_through_fill_adverse_selection_bps`` is THROUGH (BBO
+    # crossed our limit — strictly more adverse).  Defaults 2.0 / 5.0
+    # are conservative for liquid US large-caps.
+    cost_passive_adverse_selection_bps: float = 2.0
+    cost_through_fill_adverse_selection_bps: float = 5.0
+    # Legacy alias fields kept for compatibility with the refactored
+    # minimum-cost / snapshot paths on main.
+    cost_adverse_selection_through_bps: float = 5.0
+    cost_adverse_selection_drain_bps: float = 2.0
+    cost_sell_regulatory_bps: float = 0.5
     cost_stress_multiplier: float = 1.0
     cost_min_commission: float = 0.35
     cost_max_commission_pct: float = 1.0
+    # IBKR-realism cost knobs (mirror of DefaultCostModelConfig fields).
+    # Exposed at platform level for snapshot completeness (Inv-13) and
+    # operator override.  Defaults match the cost model's published
+    # IBKR-conservative values (see DefaultCostModelConfig docstring).
+    cost_finra_taf_per_share: float = 0.000166
+    cost_finra_taf_max_per_order: float = 8.30
+    cost_min_commission_applies_to_per_share_only: bool = True
+    cost_spread_floor_taker_only: bool = True
+    # Audit F-H-10: panic-slippage multiplier on stop / hazard exit /
+    # force-flatten fills.  2× is conservative for IBKR retail; the
+    # spread component (not the fill price) is multiplied, so the
+    # extra slippage flows through ``fees``.
+    cost_stop_slippage_half_spreads: float = 2.0
 
     # Execution mode:
     #   "market"        — every order routes as MARKET (mid-price fill,
@@ -227,6 +257,16 @@ class PlatformConfig:
     cost_min_small_order_threshold_shares: int = 0
     cost_min_half_spread_threshold: float = 0.0
     cost_min_allow_passive_short_entry: bool = True
+    # Audit F-M-19: opportunity cost of a passive non-fill, applied by
+    # MinimumCostExecutionPolicy as ``probability × edge_bps``.  0.30
+    # is a conservative starting point (~70% expected fill).
+    cost_min_passive_non_fill_probability: float = 0.30
+    # Audit F-M-22: dedicated ratio for the realized-cost alert.  The
+    # previous orchestrator code reused MIN_MARGIN_RATIO (a load-time
+    # G12 margin) as the alert threshold, labelling it
+    # "stress_multiplier" in the alert context — both confusing and
+    # ambiguous.  This field decouples the two semantics.
+    realized_cost_alert_ratio: float = 1.5
     # Ticks at our level before queue-drain fill triggers (legacy tick-based mode).
     passive_fill_delay_ticks: int = 3
     # Cancel unfilled resting orders after this many ticks.
@@ -253,21 +293,20 @@ class PlatformConfig:
     # — conservative direction; see estimate_round_trip_cost_bps).
     # HTB is applied on short-entry sells when configured.
     #
-    # SEMANTIC: this ratio is on *round-trip* cost, not one-way cost.
-    # The load-time G12 gate (alpha/cost_arithmetic.MIN_MARGIN_RATIO=1.5)
-    # compares edge to *one-way* cost; the runtime gate compares edge
-    # to *round-trip* cost.  So ``signal_min_edge_cost_ratio=0.75``
-    # is the runtime-equivalent of G12's 1.5× one-way margin, and
-    # ``signal_min_edge_cost_ratio=1.5`` is roughly 2× stricter than
-    # G12 (requires edge ≥ 3× one-way cost ≈ 1.5× round-trip).  Set
-    # 0 to disable.  Default 0.0 (gate off in research backtests).
-    # This is a *runtime* filter that complements — but does not
-    # replace — the load-time G12 / cost_arithmetic discipline on the
-    # alpha spec (Inv-12).  Operators picking a runtime threshold
-    # should reason in round-trip units explicitly; the merge default
-    # leaves the gate off so research backtests don't silently
-    # suppress sub-cost edges that the alpha spec already discloses.
-    signal_min_edge_cost_ratio: float = 0.0
+    # SEMANTIC (audit F-H-13): the gate compares ``edge_estimate_bps``
+    # (interpreted per ``signal_edge_cost_basis``) to round-trip cost.
+    # When ``signal_edge_cost_basis == "round_trip"`` (the default) the
+    # disclosed one-way edge is scaled by 2 inside the gate to bring
+    # both sides onto the round-trip basis explicitly.  When the basis
+    # is ``"one_way"`` the gate skips the scaling (legacy behaviour).
+    #
+    # Audit F-H-14: default flipped 0.0 → 1.0.  Round-trip-breakeven is
+    # the minimum useful gate (edge must at least cover round-trip
+    # cost to be worth executing).  Operators wanting research-mode
+    # disable can explicitly set 0; operators wanting G12-equivalent
+    # 1.5× one-way (≈ 0.75× round-trip) margin can set 0.75.
+    signal_min_edge_cost_ratio: float = 1.0
+    signal_edge_cost_basis: str = "round_trip"
 
     # Regime engine boot-time calibration (lookahead avoidance).  ``None``
     # skips feeding the trading event log into ``calibrate()`` entirely
@@ -624,6 +663,57 @@ class PlatformConfig:
             raise ConfigurationError(
                 "cost_min_half_spread_threshold must be >= 0"
             )
+        if self.cost_finra_taf_per_share < 0.0:
+            raise ConfigurationError(
+                "cost_finra_taf_per_share must be >= 0"
+            )
+        if self.cost_finra_taf_max_per_order < 0.0:
+            raise ConfigurationError(
+                "cost_finra_taf_max_per_order must be >= 0"
+            )
+        if self.cost_max_impact_half_spreads < 1.0:
+            raise ConfigurationError(
+                "cost_max_impact_half_spreads must be >= 1 "
+                "(< 1 caps impact below one half-spread on excess legs)"
+            )
+        if not 0.0 <= self.cost_min_passive_non_fill_probability <= 1.0:
+            raise ConfigurationError(
+                "cost_min_passive_non_fill_probability must be in [0, 1]"
+            )
+        if self.realized_cost_alert_ratio < 1.0:
+            raise ConfigurationError(
+                "realized_cost_alert_ratio must be >= 1 "
+                "(< 1 would fire on every realized cost)"
+            )
+        if self.cost_stop_slippage_half_spreads < 1.0:
+            raise ConfigurationError(
+                "cost_stop_slippage_half_spreads must be >= 1"
+            )
+        if self.signal_edge_cost_basis not in ("one_way", "round_trip"):
+            raise ConfigurationError(
+                f"signal_edge_cost_basis must be 'one_way' or "
+                f"'round_trip', got {self.signal_edge_cost_basis!r}"
+            )
+        if self.signal_min_edge_cost_ratio < 0.0:
+            raise ConfigurationError(
+                "signal_min_edge_cost_ratio must be >= 0"
+            )
+        if self.cost_passive_adverse_selection_bps < 0.0:
+            raise ConfigurationError(
+                "cost_passive_adverse_selection_bps must be >= 0"
+            )
+        if self.cost_through_fill_adverse_selection_bps < 0.0:
+            raise ConfigurationError(
+                "cost_through_fill_adverse_selection_bps must be >= 0"
+            )
+        if self.cost_sell_regulatory_bps < 0.0:
+            raise ConfigurationError(
+                "cost_sell_regulatory_bps must be >= 0"
+            )
+        if self.cost_max_commission_pct <= 0.0:
+            raise ConfigurationError(
+                "cost_max_commission_pct must be > 0"
+            )
 
         # ── Phase-2 validation ────────────────────────────────────────
         for h in self.horizons_seconds:
@@ -842,6 +932,12 @@ class PlatformConfig:
             "cost_commission_per_share": self.cost_commission_per_share,
             "cost_taker_exchange_per_share": self.cost_taker_exchange_per_share,
             "cost_maker_exchange_per_share": self.cost_maker_exchange_per_share,
+            "cost_passive_adverse_selection_bps": (
+                self.cost_passive_adverse_selection_bps
+            ),
+            "cost_through_fill_adverse_selection_bps": (
+                self.cost_through_fill_adverse_selection_bps
+            ),
             "cost_adverse_selection_through_bps": (
                 self.cost_adverse_selection_through_bps
             ),
@@ -852,6 +948,15 @@ class PlatformConfig:
             "cost_stress_multiplier": self.cost_stress_multiplier,
             "cost_min_commission": self.cost_min_commission,
             "cost_max_commission_pct": self.cost_max_commission_pct,
+            "cost_finra_taf_per_share": self.cost_finra_taf_per_share,
+            "cost_finra_taf_max_per_order": self.cost_finra_taf_max_per_order,
+            "cost_min_commission_applies_to_per_share_only": (
+                self.cost_min_commission_applies_to_per_share_only
+            ),
+            "cost_spread_floor_taker_only": self.cost_spread_floor_taker_only,
+            "cost_stop_slippage_half_spreads": (
+                self.cost_stop_slippage_half_spreads
+            ),
             "execution_mode": self.execution_mode,
             "cost_min_passive_bias_bps": self.cost_min_passive_bias_bps,
             "cost_min_small_order_threshold_shares": (
@@ -863,6 +968,10 @@ class PlatformConfig:
             "cost_min_allow_passive_short_entry": (
                 self.cost_min_allow_passive_short_entry
             ),
+            "cost_min_passive_non_fill_probability": (
+                self.cost_min_passive_non_fill_probability
+            ),
+            "realized_cost_alert_ratio": self.realized_cost_alert_ratio,
             "passive_fill_delay_ticks": self.passive_fill_delay_ticks,
             "passive_max_resting_ticks": self.passive_max_resting_ticks,
             "passive_queue_position_shares": self.passive_queue_position_shares,
@@ -870,6 +979,7 @@ class PlatformConfig:
             "passive_cancel_fee_per_share": self.passive_cancel_fee_per_share,
             "platform_min_order_shares": self.platform_min_order_shares,
             "signal_min_edge_cost_ratio": self.signal_min_edge_cost_ratio,
+            "signal_edge_cost_basis": self.signal_edge_cost_basis,
             "regime_calibration_max_quotes": self.regime_calibration_max_quotes,
             "enforce_regime_state_scale_alignment": (
                 self.enforce_regime_state_scale_alignment
@@ -979,6 +1089,17 @@ class PlatformConfig:
 
         if not isinstance(data, dict):
             raise ConfigurationError(f"{path}: root must be a YAML mapping")
+
+        # Audit F-L-34: warn on deprecated cost fields that are loaded
+        # for backward compat but no longer threaded into the cost model.
+        for deprecated in ("cost_exchange_per_share", "passive_rebate_per_share"):
+            if deprecated in data:
+                logger.warning(
+                    "platform.yaml %s sets deprecated field %r (ignored). "
+                    "Use cost_taker_exchange_per_share / "
+                    "cost_maker_exchange_per_share instead.",
+                    path, deprecated,
+                )
 
         symbols_raw = data.get("symbols", [])
         symbols = frozenset(symbols_raw) if symbols_raw else frozenset()
@@ -1244,7 +1365,7 @@ class PlatformConfig:
                 data.get("trail_activate_pct", 0.0)
             ),
             cost_min_spread_bps=float(
-                data.get("cost_min_spread_bps", 0.0)
+                data.get("cost_min_spread_bps", 0.3)
             ),
             cost_commission_per_share=float(
                 data.get("cost_commission_per_share", 0.0035)
@@ -1256,16 +1377,34 @@ class PlatformConfig:
                 taker_exch_raw if taker_exch_raw is not None else 0.003
             ),
             cost_maker_exchange_per_share=float(
-                maker_exch_raw if maker_exch_raw is not None else -0.002
+                maker_exch_raw if maker_exch_raw is not None else 0.0
+            ),
+            cost_passive_adverse_selection_bps=float(
+                data.get(
+                    "cost_passive_adverse_selection_bps",
+                    data.get("cost_adverse_selection_drain_bps", 2.0),
+                )
+            ),
+            cost_through_fill_adverse_selection_bps=float(
+                data.get(
+                    "cost_through_fill_adverse_selection_bps",
+                    data.get("cost_adverse_selection_through_bps", 5.0),
+                )
             ),
             cost_adverse_selection_through_bps=float(
-                data.get("cost_adverse_selection_through_bps", 3.0)
+                data.get(
+                    "cost_adverse_selection_through_bps",
+                    data.get("cost_through_fill_adverse_selection_bps", 5.0),
+                )
             ),
             cost_adverse_selection_drain_bps=float(
-                data.get("cost_adverse_selection_drain_bps", 0.3)
+                data.get(
+                    "cost_adverse_selection_drain_bps",
+                    data.get("cost_passive_adverse_selection_bps", 2.0),
+                )
             ),
             cost_sell_regulatory_bps=float(
-                data.get("cost_sell_regulatory_bps", 0.0)
+                data.get("cost_sell_regulatory_bps", 0.5)
             ),
             cost_stress_multiplier=float(
                 data.get("cost_stress_multiplier", 1.0)
@@ -1275,6 +1414,24 @@ class PlatformConfig:
             ),
             cost_max_commission_pct=float(
                 data.get("cost_max_commission_pct", 1.0)
+            ),
+            cost_finra_taf_per_share=float(
+                data.get("cost_finra_taf_per_share", 0.000166)
+            ),
+            cost_finra_taf_max_per_order=float(
+                data.get("cost_finra_taf_max_per_order", 8.30)
+            ),
+            cost_min_commission_applies_to_per_share_only=bool(
+                data.get("cost_min_commission_applies_to_per_share_only", True)
+            ),
+            cost_spread_floor_taker_only=bool(
+                data.get("cost_spread_floor_taker_only", True)
+            ),
+            cost_max_impact_half_spreads=float(
+                data.get("cost_max_impact_half_spreads", 10.0)
+            ),
+            cost_stop_slippage_half_spreads=float(
+                data.get("cost_stop_slippage_half_spreads", 2.0)
             ),
             execution_mode=str(data.get("execution_mode", "market")),
             cost_min_passive_bias_bps=float(
@@ -1288,6 +1445,12 @@ class PlatformConfig:
             ),
             cost_min_allow_passive_short_entry=bool(
                 data.get("cost_min_allow_passive_short_entry", True)
+            ),
+            cost_min_passive_non_fill_probability=float(
+                data.get("cost_min_passive_non_fill_probability", 0.30)
+            ),
+            realized_cost_alert_ratio=float(
+                data.get("realized_cost_alert_ratio", 1.5)
             ),
             passive_fill_delay_ticks=int(
                 data.get("passive_fill_delay_ticks", 3)
@@ -1311,7 +1474,10 @@ class PlatformConfig:
                 data.get("platform_min_order_shares", 1)
             ),
             signal_min_edge_cost_ratio=float(
-                data.get("signal_min_edge_cost_ratio", 1.5)
+                data.get("signal_min_edge_cost_ratio", 1.0)
+            ),
+            signal_edge_cost_basis=str(
+                data.get("signal_edge_cost_basis", "round_trip")
             ),
             regime_calibration_max_quotes=regime_calibration_max_quotes,
             enforce_regime_state_scale_alignment=bool(
@@ -1319,9 +1485,6 @@ class PlatformConfig:
             ),
             cost_market_impact_factor=float(
                 data.get("cost_market_impact_factor", 0.5)
-            ),
-            cost_max_impact_half_spreads=float(
-                data.get("cost_max_impact_half_spreads", 10.0)
             ),
             cost_htb_borrow_annual_bps=float(
                 data.get("cost_htb_borrow_annual_bps", 0.0)

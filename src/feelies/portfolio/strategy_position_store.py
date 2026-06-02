@@ -69,18 +69,28 @@ class StrategyPositionStore:
         """Record fees for a specific strategy + symbol without a fill."""
         self._get_store(strategy_id).debit_fees(symbol, fees)
 
-    def update_mark(self, symbol: str, mark_price: Decimal) -> None:
+    def update_mark(
+        self,
+        symbol: str,
+        mark_price: Decimal,
+        *,
+        bid: Decimal | None = None,
+        ask: Decimal | None = None,
+    ) -> None:
         """Propagate a mark price to every per-strategy book.
 
         Marks are a symbol-level concept — they do not depend on which
         strategy holds the position.  Pushing to each sub-store keeps
         per-strategy ``unrealized_pnl`` and ``total_exposure`` coherent
         with the aggregate view consumed by the risk engine.
+
+        ``bid`` / ``ask`` (when supplied) are forwarded so each sub-
+        store can use spread-aware liquidation marks (audit F-H-03).
         """
         if mark_price <= 0:
             return
         for store in self._stores.values():
-            store.update_mark(symbol, mark_price)
+            store.update_mark(symbol, mark_price, bid=bid, ask=ask)
 
     def get_aggregate(self, symbol: str) -> Position:
         """Net position across all strategies for a symbol.
@@ -230,8 +240,15 @@ class _AggregateView:
             "StrategyPositionStore.update(strategy_id, symbol, ...) instead"
         )
 
-    def update_mark(self, symbol: str, mark_price: Decimal) -> None:
-        self._parent.update_mark(symbol, mark_price)
+    def update_mark(
+        self,
+        symbol: str,
+        mark_price: Decimal,
+        *,
+        bid: Decimal | None = None,
+        ask: Decimal | None = None,
+    ) -> None:
+        self._parent.update_mark(symbol, mark_price, bid=bid, ask=ask)
 
     def all_positions(self) -> dict[str, Position]:
         return self._parent.all_aggregate_positions()

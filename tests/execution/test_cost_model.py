@@ -315,6 +315,86 @@ class TestHTBBorrowFee:
         assert buy_with_flag.total_fees == buy_without.total_fees
 
 
+class TestThroughFillAdverseSelection:
+    """Audit F-H-09: through-fills carry higher adverse-selection bps."""
+
+    def test_through_fill_adverse_higher_than_level(self) -> None:
+        cfg = DefaultCostModelConfig(
+            passive_adverse_selection_bps=Decimal("2.0"),
+            through_fill_adverse_selection_bps=Decimal("5.0"),
+            sell_regulatory_bps=Decimal("0"),
+            finra_taf_per_share=Decimal("0"),
+        )
+        model = DefaultCostModel(cfg)
+        level = model.compute(
+            "AAPL", Side.BUY, 1000, Decimal("100"), Decimal("0"),
+            is_taker=False, fill_type="LEVEL",
+        )
+        through = model.compute(
+            "AAPL", Side.BUY, 1000, Decimal("100"), Decimal("0"),
+            is_taker=False, fill_type="THROUGH",
+        )
+        assert through.total_fees > level.total_fees
+
+    def test_fill_type_defaults_match_is_taker(self) -> None:
+        """Backward compat: omitted fill_type → TAKER on taker, LEVEL on maker."""
+        model = DefaultCostModel()
+        taker_no_type = model.compute(
+            "AAPL", Side.BUY, 100, Decimal("100"), Decimal("0.01"),
+            is_taker=True,
+        )
+        taker_explicit = model.compute(
+            "AAPL", Side.BUY, 100, Decimal("100"), Decimal("0.01"),
+            is_taker=True, fill_type="TAKER",
+        )
+        assert taker_no_type.total_fees == taker_explicit.total_fees
+        maker_no_type = model.compute(
+            "AAPL", Side.BUY, 100, Decimal("100"), Decimal("0"),
+            is_taker=False,
+        )
+        maker_explicit = model.compute(
+            "AAPL", Side.BUY, 100, Decimal("100"), Decimal("0"),
+            is_taker=False, fill_type="LEVEL",
+        )
+        assert maker_no_type.total_fees == maker_explicit.total_fees
+
+    def test_adverse_notional_price_overrides_basis(self) -> None:
+        """F-M-24: when supplied, adverse uses the override notional."""
+        cfg = DefaultCostModelConfig(
+            passive_adverse_selection_bps=Decimal("10"),
+            sell_regulatory_bps=Decimal("0"),
+            finra_taf_per_share=Decimal("0"),
+            maker_exchange_per_share=Decimal("0"),
+        )
+        model = DefaultCostModel(cfg)
+        # fill_price $99 vs override $100 — adverse charged against $100.
+        a = model.compute(
+            "AAPL", Side.BUY, 1000, Decimal("99"), Decimal("0"),
+            is_taker=False, fill_type="LEVEL",
+        )
+        b = model.compute(
+            "AAPL", Side.BUY, 1000, Decimal("99"), Decimal("0"),
+            is_taker=False, fill_type="LEVEL",
+            adverse_notional_price=Decimal("100"),
+        )
+        # 10 bps of $99 * 1000 = $99 adverse; 10 bps of $100 * 1000 = $100 adverse.
+        assert b.total_fees - a.total_fees == pytest.approx(
+            Decimal("1.00"), abs=Decimal("0.01"),
+        )
+
+
+class TestConservativeDefaults:
+    """Audit PR-2: conservative IBKR-style defaults at the cost-model level."""
+
+    def test_default_maker_exchange_is_zero(self) -> None:
+        """SmartRouter venue blend → 0 average rebate for retail."""
+        assert DefaultCostModelConfig().maker_exchange_per_share == Decimal("0.0")
+
+    def test_default_sell_regulatory_bps_is_05(self) -> None:
+        """Current SEC fee ~0.278 bps + conservative headroom = 0.5."""
+        assert DefaultCostModelConfig().sell_regulatory_bps == Decimal("0.5")
+
+
 class TestSellSideRegulatoryFees:
     """Audit fix P2: SEC Section 31 + FINRA TAF on sell-side fills."""
 
@@ -437,9 +517,22 @@ class TestSmallOrderTieredFloor:
         )
         assert result.commission == Decimal("0.50")
 
-    def test_maker_small_order_floor_plus_rebate(self) -> None:
-        """Maker: $0.35 IB fee floor minus the $0.10 rebate = $0.25 net."""
+    def test_maker_small_order_floor_with_zero_default_rebate(self) -> None:
+        """Default maker_exchange_per_share=0.0 → small maker order
+        sees floor + zero rebate.  50 * $0.0035 = $0.175 → floored to
+        $0.35; default rebate 0 → commission = $0.35."""
         model = DefaultCostModel()
+        result = model.compute(
+            "AAPL", Side.BUY, 50, Decimal("100"), Decimal("0"),
+            is_taker=False,
+        )
+        assert result.commission == Decimal("0.35")
+
+    def test_maker_small_order_floor_with_explicit_rebate(self) -> None:
+        """Operators with venue-controlled routing can opt back in to a
+        positive rebate; the floor + rebate produces a $0.25 commission."""
+        cfg = DefaultCostModelConfig(maker_exchange_per_share=Decimal("-0.002"))
+        model = DefaultCostModel(cfg)
         result = model.compute(
             "AAPL", Side.BUY, 50, Decimal("100"), Decimal("0"),
             is_taker=False,

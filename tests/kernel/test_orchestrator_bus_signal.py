@@ -55,6 +55,7 @@ from feelies.core.events import (
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
+from feelies.execution.cost_model import ZeroCostModel
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
 from feelies.kernel.orchestrator import Orchestrator
@@ -299,7 +300,7 @@ def _build_orchestrator(
 ) -> Orchestrator:
     bus = bus if bus is not None else EventBus()
     pos = position_store or MemoryPositionStore()
-    bt_router = BacktestOrderRouter(clock=clock)
+    bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
     backend = ExecutionBackend(
         market_data=_StubMarketData(),
         order_router=bt_router,

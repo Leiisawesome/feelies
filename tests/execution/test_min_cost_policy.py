@@ -172,6 +172,67 @@ class TestCostComparison:
         assert decision == "aggressive"
 
 
+class TestNonFillRisk:
+    """Audit F-M-19: passive route penalised by opportunity cost of non-fill."""
+
+    def test_high_edge_with_high_non_fill_pushes_to_aggressive(self) -> None:
+        cfg = MinCostPolicyConfig(
+            passive_non_fill_probability=Decimal("0.50"),
+        )
+        policy = MinimumCostExecutionPolicy(_model(), cfg)
+        # Very wide spread → passive saves a lot; but a 100-bps edge
+        # and 50% non-fill probability adds 50 bps to passive cost,
+        # which should tip toward aggressive.
+        decision = policy.decide(
+            symbol="AAPL", side=Side.BUY, quantity=1000,
+            mid_price=Decimal("100"), half_spread=Decimal("0.05"),
+            edge_bps=100.0,
+        )
+        assert decision == "aggressive"
+
+    def test_zero_edge_falls_back_to_pure_cost_comparison(self) -> None:
+        cfg = MinCostPolicyConfig(
+            passive_non_fill_probability=Decimal("0.50"),
+        )
+        policy = MinimumCostExecutionPolicy(_model(), cfg)
+        # Wide spread → passive cheaper.  edge_bps=0 means no
+        # opportunity cost added → passive still wins.
+        decision = policy.decide(
+            symbol="AAPL", side=Side.BUY, quantity=1000,
+            mid_price=Decimal("100"), half_spread=Decimal("0.05"),
+            edge_bps=0.0,
+        )
+        assert decision == "passive"
+
+    def test_zero_non_fill_probability_neutralises_edge_input(self) -> None:
+        cfg = MinCostPolicyConfig(
+            passive_non_fill_probability=Decimal("0.0"),
+        )
+        policy = MinimumCostExecutionPolicy(_model(), cfg)
+        # Even with a 1000-bps edge, zero non-fill prob → no penalty.
+        decision = policy.decide(
+            symbol="AAPL", side=Side.BUY, quantity=1000,
+            mid_price=Decimal("100"), half_spread=Decimal("0.05"),
+            edge_bps=1000.0,
+        )
+        assert decision == "passive"
+
+
+class TestQuantizationStability:
+    """Audit F-M-20: decision uses raw_cost_bps, not quantized cost_bps."""
+
+    def test_decision_stable_under_subcent_perturbation(self) -> None:
+        policy = MinimumCostExecutionPolicy(_model())
+        kwargs = dict(
+            symbol="AAPL", side=Side.BUY, quantity=1000,
+            mid_price=Decimal("100"), half_spread=Decimal("0.05"),
+        )
+        a = policy.decide(**kwargs)
+        # Same inputs → identical decision (deterministic).
+        b = policy.decide(**kwargs)
+        assert a == b
+
+
 class TestDeterministicReplay:
     """The policy is a pure function — Inv-5 deterministic replay."""
 

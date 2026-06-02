@@ -410,14 +410,32 @@ def build_platform(
         commission_per_share=_decimal(config.cost_commission_per_share),
         taker_exchange_per_share=_decimal(config.cost_taker_exchange_per_share),
         maker_exchange_per_share=_decimal(config.cost_maker_exchange_per_share),
-        adverse_selection_through_bps=_decimal(config.cost_adverse_selection_through_bps),
-        adverse_selection_drain_bps=_decimal(config.cost_adverse_selection_drain_bps),
+        passive_adverse_selection_bps=_decimal(config.cost_passive_adverse_selection_bps),
+        through_fill_adverse_selection_bps=_decimal(
+            config.cost_through_fill_adverse_selection_bps
+        ),
+        adverse_selection_through_bps=_decimal(
+            config.cost_adverse_selection_through_bps
+        ),
+        adverse_selection_drain_bps=_decimal(
+            config.cost_adverse_selection_drain_bps
+        ),
         sell_regulatory_bps=_decimal(config.cost_sell_regulatory_bps),
         stress_multiplier=_decimal(config.cost_stress_multiplier),
         min_commission=_decimal(config.cost_min_commission),
         max_commission_pct=_decimal(config.cost_max_commission_pct),
         htb_borrow_annual_bps=_decimal(config.cost_htb_borrow_annual_bps),
+        finra_taf_per_share=_decimal(config.cost_finra_taf_per_share),
+        finra_taf_max_per_order=_decimal(config.cost_finra_taf_max_per_order),
+        min_commission_applies_to_per_share_only=(
+            config.cost_min_commission_applies_to_per_share_only
+        ),
+        spread_floor_taker_only=config.cost_spread_floor_taker_only,
     ))
+    # Wiring safety: every router path must receive an explicit cost model.
+    # ZeroCostModel was removed as a silent fallback (audit F-H-12); a None
+    # here is a wiring bug, not a benign zero-cost path.
+    assert cost_model is not None, "cost_model construction returned None"
 
     # PAPER / LIVE always need a normalizer (for DataHealth gating +
     # WS frame decoding).  When the caller supplies one (tests,
@@ -447,6 +465,7 @@ def build_platform(
         passive_cancel_fee_per_share=config.passive_cancel_fee_per_share,
         market_impact_factor=config.cost_market_impact_factor,
         max_impact_half_spreads=config.cost_max_impact_half_spreads,
+        stop_slippage_half_spreads=config.cost_stop_slippage_half_spreads,
         normalizer=normalizer,
         config=config,
     )
@@ -824,9 +843,9 @@ def _create_backend(
     event_log: InMemoryEventLog,
     clock: Clock,
     *,
+    cost_model: DefaultCostModel,
     fill_latency_ns: int = 0,
     market_data_latency_ns: int = 0,
-    cost_model: DefaultCostModel | None = None,
     execution_mode: str = "market",
     passive_fill_delay_ticks: int = 3,
     passive_max_resting_ticks: int = 50,
@@ -835,6 +854,7 @@ def _create_backend(
     passive_cancel_fee_per_share: float = 0.0,
     market_impact_factor: float = 0.5,
     max_impact_half_spreads: float = 10.0,
+    stop_slippage_half_spreads: float = 2.0,
     normalizer: MarketDataNormalizer | None = None,
     config: PlatformConfig | None = None,
 ) -> _BackendBundle:
@@ -867,6 +887,7 @@ def _create_backend(
                 queue_position_shares=passive_queue_position_shares,
                 cancel_fee_per_share=_decimal(passive_cancel_fee_per_share),
                 fill_hazard_max=_decimal(passive_fill_hazard_max),
+                stop_slippage_half_spreads=stop_slippage_half_spreads,
                 moc_bounds=moc_bounds,
                 trading_session_bounds=trading_session_bounds,
             )
@@ -879,6 +900,7 @@ def _create_backend(
             cost_model=cost_model,
             market_impact_factor=market_impact_factor,
             max_impact_half_spreads=max_impact_half_spreads,
+            stop_slippage_half_spreads=stop_slippage_half_spreads,
             max_resting_ticks=passive_max_resting_ticks,
             moc_bounds=moc_bounds,
             trading_session_bounds=trading_session_bounds,
@@ -922,6 +944,7 @@ def _create_backend(
             backtest_router=None,
             live_feed=live_feed,
             ib_connection=ib_conn,
+        )
         )
 
     raise NotImplementedError(

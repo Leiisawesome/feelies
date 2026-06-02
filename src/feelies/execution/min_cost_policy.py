@@ -39,7 +39,10 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from feelies.core.events import Side
-from feelies.execution.cost_model import CostModel
+from feelies.execution.cost_model import (
+    CostModel,
+    estimate_aggressive_taker_cost_bps,
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -76,6 +79,21 @@ class MinCostPolicyConfig:
     small_order_aggressive_threshold_shares: int = 0
     min_half_spread_for_passive: Decimal = Decimal("0")
     allow_passive_short_entry: bool = True
+    # Audit F-H-04: depth-aware aggressive cost estimation.  When the
+    # impact knobs are non-zero, decide() will price the aggressive
+    # route through estimate_aggressive_taker_cost_bps (walks the book
+    # on excess qty) instead of assuming a flat L1 fill.  Defaults
+    # mirror the routers' defaults so the policy and the router agree
+    # on realised aggressive cost.
+    market_impact_factor: Decimal = Decimal("0.5")
+    max_impact_half_spreads: Decimal = Decimal("10")
+    # Audit F-M-19: opportunity cost of a passive non-fill.  When the
+    # caller supplies an ``edge_bps`` to ``decide()``, the passive
+    # route's effective cost is inflated by
+    # ``passive_non_fill_probability × edge_bps``.  Default 0.30
+    # corresponds to ~70% expected fill within ``max_resting_ticks``
+    # — a conservative starting point.
+    passive_non_fill_probability: Decimal = Decimal("0.30")
 
 
 class MinimumCostExecutionPolicy:
@@ -121,6 +139,9 @@ class MinimumCostExecutionPolicy:
         half_spread: Decimal,
         is_short: bool = False,
         force_aggressive: bool = False,
+        bid_size: int | None = None,
+        ask_size: int | None = None,
+        edge_bps: float = 0.0,
     ) -> str:
         """Return ``"passive"`` or ``"aggressive"`` for this order.
 
@@ -169,6 +190,9 @@ class MinimumCostExecutionPolicy:
         # spread (matching the passive router's
         # ``_emit_passive_fill`` semantics).  Aggressive crosses to
         # the opposite-side BBO and pays ``half_spread``.
+        # Audit F-M-20: use raw (un-quantized) cost_bps inside the
+        # comparison so the routing decision doesn't flip on the
+        # 0.01-bps quantization grain.
         passive_breakdown = self._cost_model.compute(
             symbol=symbol,
             side=side,
@@ -178,18 +202,53 @@ class MinimumCostExecutionPolicy:
             is_taker=False,
             is_short=is_short,
         )
-        aggressive_breakdown = self._cost_model.compute(
-            symbol=symbol,
-            side=side,
-            quantity=quantity,
-            fill_price=mid_price,
-            half_spread=half_spread,
-            is_taker=True,
-            is_short=is_short,
-        )
 
-        passive_cost_bps = passive_breakdown.cost_bps - self._cfg.prefer_passive_bias_bps
-        if passive_cost_bps < aggressive_breakdown.cost_bps:
+        # Audit F-H-04: when BBO depth is supplied, the aggressive
+        # route is priced via the walk-the-book estimator (matches the
+        # router's actual fill).  Without depth we fall back to the
+        # flat-L1 estimate (legacy behaviour preserved for callers
+        # that don't pass bid_size / ask_size).
+        if bid_size is not None and ask_size is not None:
+            depth = ask_size if side == Side.BUY else bid_size
+            aggressive_cost_bps = Decimal(str(estimate_aggressive_taker_cost_bps(
+                self._cost_model,
+                symbol=symbol,
+                side=side,
+                quantity=quantity,
+                mid_price=mid_price,
+                half_spread=half_spread,
+                available_depth=int(depth),
+                market_impact_factor=self._cfg.market_impact_factor,
+                max_impact_half_spreads=self._cfg.max_impact_half_spreads,
+                is_short=is_short,
+            )))
+        else:
+            aggressive_breakdown = self._cost_model.compute(
+                symbol=symbol,
+                side=side,
+                quantity=quantity,
+                fill_price=mid_price,
+                half_spread=half_spread,
+                is_taker=True,
+                is_short=is_short,
+            )
+            aggressive_cost_bps = aggressive_breakdown.raw_cost_bps
+
+        # Audit F-M-19: penalise the passive route by the expected
+        # opportunity cost of a non-fill (probability of cancel × edge
+        # forgone).  Without this, the policy picks passive even when
+        # the spread saving is dwarfed by the chance of missing the
+        # trade entirely.
+        passive_raw = passive_breakdown.raw_cost_bps
+        opportunity_cost = (
+            self._cfg.passive_non_fill_probability * Decimal(str(edge_bps))
+        )
+        passive_cost_bps = (
+            passive_raw
+            - self._cfg.prefer_passive_bias_bps
+            + opportunity_cost
+        )
+        if passive_cost_bps < aggressive_cost_bps:
             return "passive"
         return "aggressive"
 

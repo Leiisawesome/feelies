@@ -498,7 +498,17 @@ class Orchestrator:
         self._trail_pct: float = 0.5
         self._peak_pnl_per_share: dict[str, float] = {}
         self._min_order_shares: int = 1
-        self._signal_min_edge_cost_ratio: float = 1.5  # 0 = gate disabled
+        # Audit F-H-14: default 1.0 (round-trip breakeven) matches
+        # ``PlatformConfig.signal_min_edge_cost_ratio``.  0 = gate disabled.
+        self._signal_min_edge_cost_ratio: float = 1.0
+        # Audit F-H-13: ``"one_way"`` keeps the legacy edge-vs-RT-cost
+        # comparison; ``"round_trip"`` (the new default) multiplies the
+        # disclosed one-way edge by 2 inside the gate so both sides
+        # share the round-trip basis explicitly.
+        self._signal_edge_cost_basis: str = "round_trip"
+        # Audit F-M-22: dedicated threshold for the realized-vs-disclosed
+        # cost alert, decoupled from MIN_MARGIN_RATIO.
+        self._realized_cost_alert_ratio: float = 1.5
         self._regime_calibration_max_quotes: int | None = None
         self._regime_calibration_quotes: tuple[NBBOQuote, ...] | None = (
             tuple(regime_calibration_quotes)
@@ -1021,12 +1031,27 @@ class Orchestrator:
                                     True,
                                 )
                             ),
+                            market_impact_factor=Decimal(str(getattr(
+                                config, "cost_market_impact_factor", 0.5,
+                            ))),
+                            max_impact_half_spreads=Decimal(str(getattr(
+                                config, "cost_max_impact_half_spreads", 10.0,
+                            ))),
+                            passive_non_fill_probability=Decimal(str(getattr(
+                                config,
+                                "cost_min_passive_non_fill_probability",
+                                0.30,
+                            ))),
                         ),
                     )
             if hasattr(config, "platform_min_order_shares"):
                 self._min_order_shares = config.platform_min_order_shares
             if hasattr(config, "signal_min_edge_cost_ratio"):
                 self._signal_min_edge_cost_ratio = config.signal_min_edge_cost_ratio
+            if hasattr(config, "signal_edge_cost_basis"):
+                self._signal_edge_cost_basis = config.signal_edge_cost_basis
+            if hasattr(config, "realized_cost_alert_ratio"):
+                self._realized_cost_alert_ratio = config.realized_cost_alert_ratio
             if hasattr(config, "regime_calibration_max_quotes"):
                 self._regime_calibration_max_quotes = (
                     config.regime_calibration_max_quotes
@@ -1902,7 +1927,14 @@ class Orchestrator:
         # these for the gross-exposure cap and drawdown guard.
         mid = (quote.bid + quote.ask) / Decimal("2")
         if mid > 0:
-            self._positions.update_mark(quote.symbol, mid)
+            # Audit F-H-03: pass BBO so unrealized PnL marks at the
+            # realistic liquidation price (bid for longs, ask for
+            # shorts) rather than mid.  The drawdown guard reads
+            # unrealized PnL, so this removes a half-spread × |qty|
+            # optimistic bias that delayed the gate.
+            self._positions.update_mark(
+                quote.symbol, mid, bid=quote.bid, ask=quote.ask,
+            )
             # Advance the risk engine's drawdown high-water mark from
             # the freshly updated marks so peak equity reflects open
             # appreciation between order checks.  Without this, the HWM
@@ -1917,7 +1949,9 @@ class Orchestrator:
             if callable(refresh_hwm):
                 refresh_hwm(self._positions)
             if self._strategy_positions is not None:
-                self._strategy_positions.update_mark(quote.symbol, mid)
+                self._strategy_positions.update_mark(
+                    quote.symbol, mid, bid=quote.bid, ask=quote.ask,
+                )
         # BT-16: drive the RTH-close buying-power flip purely from the
         # quote's exchange timestamp so it always aligns with router-side
         # entry gating, even on ticks that fail the mid guard (zeroed or
@@ -2551,8 +2585,19 @@ class Orchestrator:
             is_taker=is_taker_entry,
             is_taker_exit=True,
             is_short_entry=is_short_entry,
+            bid_size=quote.bid_size,
+            ask_size=quote.ask_size,
+            market_impact_factor=Decimal(str(getattr(
+                self._config, "cost_market_impact_factor", 0.5,
+            ))) if self._config else None,
+            max_impact_half_spreads=Decimal(str(getattr(
+                self._config, "cost_max_impact_half_spreads", 10.0,
+            ))) if self._config else None,
         )
-        if signal.edge_estimate_bps < (
+        edge_bps_basis = signal.edge_estimate_bps
+        if self._signal_edge_cost_basis == "round_trip":
+            edge_bps_basis = edge_bps_basis * 2.0
+        if edge_bps_basis < (
             self._signal_min_edge_cost_ratio * round_trip_cost_bps
         ):
             self._emit_signal_edge_gate_suppression_alert(
@@ -3201,7 +3246,10 @@ class Orchestrator:
                 entry_side=entry_side,
                 quantity=entry_qty,
                 quote=quote,
-                is_taker_entry=not self._use_passive_entries,
+                is_taker_entry=(
+                    not self._use_passive_entries
+                    or self._min_cost_policy is not None
+                ),
                 is_short_entry=is_short,
                 correlation_id=cid,
                 detail="reverse_entry_leg_suppressed",
@@ -3233,6 +3281,9 @@ class Orchestrator:
                             half_spread=(quote.ask - quote.bid) / Decimal("2"),
                             is_short=is_short,
                             force_aggressive=False,
+                            bid_size=quote.bid_size,
+                            ask_size=quote.ask_size,
+                            edge_bps=intent.signal.edge_estimate_bps,
                         )
                         use_passive = decision == "passive"
                     if use_passive:
@@ -3434,7 +3485,10 @@ class Orchestrator:
                 entry_side=side,
                 quantity=quantity,
                 quote=quote,
-                is_taker_entry=not self._use_passive_entries,
+                is_taker_entry=(
+                    not self._use_passive_entries
+                    or self._min_cost_policy is not None
+                ),
                 is_short_entry=is_short,
                 correlation_id=correlation_id,
                 detail="standalone_intent_suppressed",
@@ -3472,6 +3526,9 @@ class Orchestrator:
                         half_spread=(quote.ask - quote.bid) / Decimal("2"),
                         is_short=is_short,
                         force_aggressive=is_exit_or_stop,
+                        bid_size=quote.bid_size,
+                        ask_size=quote.ask_size,
+                        edge_bps=intent.signal.edge_estimate_bps,
                     )
                     use_passive = decision == "passive"
                 if use_passive:
@@ -4267,17 +4324,18 @@ class Orchestrator:
             ))
 
             disclosed = order.g12_disclosed_cost_total_bps
-            if disclosed > 0 and float(ack.cost_bps) > disclosed * MIN_MARGIN_RATIO:
+            alert_ratio = self._realized_cost_alert_ratio
+            if disclosed > 0 and float(ack.cost_bps) > disclosed * alert_ratio:
                 self._bus.publish(Alert(
                     timestamp_ns=self._clock.now_ns(),
                     correlation_id=correlation_id,
                     sequence=self._seq.next(),
                     severity=AlertSeverity.WARNING,
                     layer="kernel",
-                    alert_name="g12_realized_cost_exceeds_disclosure_stress",
+                    alert_name="g12_realized_cost_exceeds_disclosure",
                     message=(
                         f"Fill cost_bps={float(ack.cost_bps):.4f} exceeds "
-                        f"{MIN_MARGIN_RATIO}× G12 disclosed one-way "
+                        f"{alert_ratio}× G12 disclosed one-way "
                         f"cost_total_bps={disclosed:.4f} "
                         f"(strategy_id={order.strategy_id!r}, "
                         f"symbol={ack.symbol!r}, order_id={ack.order_id!r})"
@@ -4288,7 +4346,7 @@ class Orchestrator:
                         "order_id": ack.order_id,
                         "realized_cost_bps": float(ack.cost_bps),
                         "g12_disclosed_cost_total_bps": disclosed,
-                        "stress_multiplier": MIN_MARGIN_RATIO,
+                        "alert_ratio": alert_ratio,
                     },
                 ))
 

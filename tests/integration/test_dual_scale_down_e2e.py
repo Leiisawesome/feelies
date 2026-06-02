@@ -31,6 +31,7 @@ from feelies.core.clock import SimulatedClock
 from feelies.core.events import NBBOQuote, OrderRequest, RiskAction, RiskVerdict, Signal, SignalDirection
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
+from feelies.execution.cost_model import ZeroCostModel
 from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
@@ -120,7 +121,7 @@ def test_signal_gate_scale_down_can_still_fail_order_gate_on_prospective_exposur
         scale_down_threshold_pct=0.8,
     ))
 
-    router = BacktestOrderRouter(clock=clock)
+    router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
     backend = ExecutionBackend(
         market_data=_ReplayMarketData([quote]),
         order_router=router,

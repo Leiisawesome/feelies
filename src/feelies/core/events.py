@@ -291,7 +291,10 @@ class OrderRequest(Event):
     quantity: int
     limit_price: Decimal | None = None
     strategy_id: str = ""
-    is_short: bool = False  # True for short-entry sells (HTB fee applies)
+    # True for short-entry sells.  HTB fee applies on the fill day only;
+    # multi-day accrual over the holding period is a position-store
+    # concern and is documented as a remaining gap in cost_model.py.
+    is_short: bool = False
     # BT-8: closing-auction (MOC) order — backtest routers queue until the
     # official close print instead of filling on the continuous book.
     is_moc: bool = False

@@ -140,10 +140,11 @@ class BacktestOrderRouter:
         self,
         clock: Clock,
         latency_ns: int = 0,
+        *,
         cost_model: CostModel | None = None,
         market_impact_factor: Decimal | int | str | float = Decimal("0.5"),
         max_impact_half_spreads: Decimal | int | str | float = Decimal("10"),
-        *,
+        stop_slippage_half_spreads: Decimal | int | str | float = Decimal("2.0"),
         max_resting_ticks: int = 50,
         moc_bounds: MocSessionBounds | None = None,
         trading_session_bounds: TradingSessionBounds | None = None,
@@ -157,11 +158,18 @@ class BacktestOrderRouter:
         self._max_impact_half_spreads = to_decimal(
             max_impact_half_spreads, "max_impact_half_spreads"
         )
+        self._stop_slippage_half_spreads = to_decimal(
+            stop_slippage_half_spreads, "stop_slippage_half_spreads"
+        )
         self._max_resting_ticks = max_resting_ticks
         self._last_quotes: dict[str, NBBOQuote] = {}
         self._pending_acks: list[OrderAck] = []
         self._submitted_order_ids: set[str] = set()
         self._ack_seq = SequenceGenerator()
+        self.locked_quote_reject_count: int = 0
+        self.no_quote_reject_count: int = 0
+        self.duplicate_id_reject_count: int = 0
+        self.zero_depth_reject_count: int = 0
         self._deferred_markets: list[_DeferredMarketFill] = []
         self._moc: MocFillController | None = None
         if moc_bounds is not None:
@@ -180,10 +188,14 @@ class BacktestOrderRouter:
         self._rth_gate.bind_position_qty(fn)
 
     def on_quote(self, quote: NBBOQuote) -> None:
-        """Update the latest quote for a symbol.
+        """Update the latest quote and drain any mature pending orders.
 
-        Called by the bootstrap wiring (bus subscription) or
-        explicitly by the caller before each tick.
+        Audit F-H-07: orders submitted with ``latency_ns > 0`` are
+        queued in ``_pending_submits`` and only fill against a quote
+        whose ``timestamp_ns >= eligible_at_ns``.  This is the
+        realistic behavior — a market order submitted at T sees
+        additional ticks during the latency window and fills against
+        a (possibly worse) post-latency quote.
         """
         self._last_quotes[quote.symbol] = quote
         if self._moc is not None:
@@ -205,6 +217,7 @@ class BacktestOrderRouter:
 
     def submit(self, request: OrderRequest) -> None:
         if request.order_id in self._submitted_order_ids:
+            self.duplicate_id_reject_count += 1
             self._reject(
                 request,
                 f"duplicate order_id: {request.order_id}",
@@ -215,6 +228,7 @@ class BacktestOrderRouter:
 
         quote = self._last_quotes.get(request.symbol)
         if quote is None:
+            self.no_quote_reject_count += 1
             self._reject(request, "no quote available for symbol")
             return
 
@@ -222,6 +236,7 @@ class BacktestOrderRouter:
         # Applied before the MOC ack path so MOC orders share the same
         # data-quality guard as MARKET orders at submit time.
         if quote.bid >= quote.ask:
+            self.locked_quote_reject_count += 1
             self._reject(
                 request,
                 f"crossed or locked quote bid={quote.bid} ask={quote.ask}",
@@ -257,6 +272,7 @@ class BacktestOrderRouter:
                 quote.ask_size if request.side == Side.BUY else quote.bid_size
             )
             if available_depth <= 0:
+                self.zero_depth_reject_count += 1
                 self._reject(
                     request,
                     f"zero depth on {request.side.name} side "
@@ -272,7 +288,8 @@ class BacktestOrderRouter:
                 _DeferredMarketFill(
                     request=request,
                     fill_deadline_exchange_ns=(
-                        quote.exchange_timestamp_ns + self._latency_ns
+                        max(self._clock.now_ns(), quote.exchange_timestamp_ns)
+                        + self._latency_ns
                     ),
                     ack_timestamp_ns=ack_ts,
                     ticks_for_symbol=0,
@@ -287,12 +304,6 @@ class BacktestOrderRouter:
         if not self._deferred_markets:
             return
         remaining: list[_DeferredMarketFill] = []
-        # FILLED is floored at ``max(clock.now_ns(), ack_timestamp_ns)``:
-        # ``ack_timestamp_ns`` keeps FILLED >= ACKNOWLEDGED, and
-        # ``clock.now_ns()`` keeps it aligned with the simulated decision
-        # clock under any ``ReplayFeed`` ``market_data_latency_ns`` setting
-        # (raw ``quote.exchange_timestamp_ns`` would trail ``now_ns()`` by
-        # ``md_latency`` under the BT-17 default, breaking monotonicity).
         for dm in self._deferred_markets:
             if dm.request.symbol != quote.symbol:
                 remaining.append(dm)
@@ -300,25 +311,15 @@ class BacktestOrderRouter:
             ticks_for_symbol = dm.ticks_for_symbol + 1
             if quote.exchange_timestamp_ns < dm.fill_deadline_exchange_ns:
                 if ticks_for_symbol >= self._max_resting_ticks:
-                    # Preserve monotonic ordering of the order's ack stream:
-                    # the timeout fires precisely because exchange time has
-                    # not yet reached the latency deadline, so ``clock.now_ns()``
-                    # may be < the stored ACKNOWLEDGED timestamp.
                     self._reject(
                         dm.request,
                         f"deferred market timeout after "
                         f"{ticks_for_symbol} ticks (no latency-eligible quote)",
-                        timestamp_ns=max(
-                            self._clock.now_ns(),
-                            dm.ack_timestamp_ns,
-                        ),
+                        timestamp_ns=max(self._clock.now_ns(), dm.ack_timestamp_ns),
                     )
                     continue
                 remaining.append(replace(dm, ticks_for_symbol=ticks_for_symbol))
                 continue
-            # Post-ACK reject paths must floor at ``ack_timestamp_ns`` so
-            # REJECTED never timestamps before ACKNOWLEDGED (mirrors the
-            # ``max_resting_ticks`` timeout path above).
             reject_ts = max(self._clock.now_ns(), dm.ack_timestamp_ns)
             if quote.bid >= quote.ask:
                 self._reject(
@@ -331,6 +332,7 @@ class BacktestOrderRouter:
                 quote.ask_size if dm.request.side == Side.BUY else quote.bid_size
             )
             if depth <= 0:
+                self.zero_depth_reject_count += 1
                 self._reject(
                     dm.request,
                     f"zero depth on {dm.request.side.name} side "
@@ -362,6 +364,7 @@ class BacktestOrderRouter:
             fill_ts,
             market_impact_factor=self._market_impact_factor,
             max_impact_half_spreads=self._max_impact_half_spreads,
+            stop_slippage_half_spreads=self._stop_slippage_half_spreads,
         )
 
     def poll_acks(self) -> list[OrderAck]:

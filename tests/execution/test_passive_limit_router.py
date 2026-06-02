@@ -14,7 +14,11 @@ from feelies.core.events import (
     OrderType,
     Side,
 )
-from feelies.execution.cost_model import DefaultCostModel, DefaultCostModelConfig
+from feelies.execution.cost_model import (
+    DefaultCostModel,
+    DefaultCostModelConfig,
+    ZeroCostModel,
+)
 from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
 
 
@@ -100,7 +104,7 @@ class TestPassiveLimitRouter:
         is embedded in the fill price.
         """
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel())
 
         router.on_quote(_quote("AAPL", "149.00", "151.00"))
         router.submit(_market_order("AAPL"))
@@ -116,7 +120,7 @@ class TestPassiveLimitRouter:
 
     def test_reject_on_missing_quote(self):
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel())
 
         router.submit(_limit_buy("MSFT"))
 
@@ -128,7 +132,7 @@ class TestPassiveLimitRouter:
     def test_limit_order_acknowledged_not_filled(self):
         """LIMIT orders emit ACKNOWLEDGED on submit, not FILLED."""
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=5)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=5)
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         router.submit(_limit_buy("AAPL"))
@@ -142,7 +146,7 @@ class TestPassiveLimitRouter:
 
     def test_ack_sequences_are_monotonic_and_preserve_request_sequence(self):
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=100)
 
         request = _limit_buy("AAPL")
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
@@ -160,7 +164,7 @@ class TestPassiveLimitRouter:
     def test_limit_price_defaults_to_bid_for_buy(self):
         """BUY limit defaults to bid when no explicit price given."""
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=100)
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         router.submit(_limit_buy("AAPL"))
@@ -172,7 +176,7 @@ class TestPassiveLimitRouter:
     def test_limit_price_defaults_to_ask_for_sell(self):
         """SELL limit defaults to ask when no explicit price given."""
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=100)
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         router.submit(_limit_sell("AAPL"))
@@ -187,7 +191,7 @@ class TestThroughFill:
     def test_buy_fills_when_ask_drops_to_limit(self):
         """BUY limit fills when ask <= limit_price (through fill)."""
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=100)
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         router.submit(_limit_buy("AAPL"))
@@ -212,7 +216,7 @@ class TestThroughFill:
         ``_check_resting_orders`` for the routing rule.
         """
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=100)
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         router.submit(_limit_buy("AAPL"))
@@ -229,7 +233,7 @@ class TestThroughFill:
     def test_sell_fills_when_bid_rises_to_limit(self):
         """SELL limit fills when bid >= limit_price (through fill)."""
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=100)
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         router.submit(_limit_sell("AAPL"))
@@ -251,7 +255,7 @@ class TestThroughFill:
         better price ($150.05), not the resting limit.
         """
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=100)
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         router.submit(_limit_sell("AAPL"))
@@ -277,7 +281,7 @@ class TestThroughFillPriceImprovement:
 
     def test_buy_through_fill_uses_lower_ask(self):
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=100)
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         router.submit(_limit_buy("AAPL", limit_price="150.00"))
         router.poll_acks()
@@ -291,7 +295,7 @@ class TestThroughFillPriceImprovement:
     def test_buy_at_limit_no_improvement(self):
         """If ask equals limit exactly, fill at the limit (no through)."""
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=100)
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         router.submit(_limit_buy("AAPL", limit_price="150.00"))
         router.poll_acks()
@@ -303,7 +307,7 @@ class TestThroughFillPriceImprovement:
 
     def test_sell_through_fill_uses_higher_bid(self):
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=100)
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         router.submit(_limit_sell("AAPL", limit_price="150.02"))
         router.poll_acks()
@@ -317,7 +321,7 @@ class TestThroughFillPriceImprovement:
         """Queue-drain (level) fills do NOT get price improvement —
         they fill at our resting limit because BBO never crossed."""
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=1)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=1)
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         router.submit(_limit_buy("AAPL", limit_price="150.00"))
         router.poll_acks()
@@ -343,7 +347,10 @@ class TestLevelFill:
         """BUY limit drain-fills at the bid level (h=1.0)."""
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(
-            clock, fill_delay_ticks=1, fill_hazard_max=Decimal("1.0"),
+            clock,
+            cost_model=ZeroCostModel(),
+            fill_delay_ticks=1,
+            fill_hazard_max=Decimal("1.0"),
         )
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
@@ -362,7 +369,10 @@ class TestLevelFill:
         """SELL limit drain-fills at the ask level (h=1.0)."""
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(
-            clock, fill_delay_ticks=1, fill_hazard_max=Decimal("1.0"),
+            clock,
+            cost_model=ZeroCostModel(),
+            fill_delay_ticks=1,
+            fill_hazard_max=Decimal("1.0"),
         )
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
@@ -385,8 +395,46 @@ class TestLevelFill:
         market).  BUY at 150.00 with bid=150.01 (> limit) is off-level.
         """
         clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=3)
+
+        router.on_quote(_quote("AAPL", "150.00", "150.02"))
+        router.submit(_limit_buy("AAPL"))
+        router.poll_acks()
+
+        # 2 ticks at level
+        for i in range(2):
+            clock.set_time(6000 + i * 1000)
+            router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6000 + i * 1000))
+            router.poll_acks()
+
+        # Price moves up — our level no longer at BBO → reset
+        clock.set_time(8000)
+        router.on_quote(_quote("AAPL", "150.01", "150.03", ts=8000))
+        router.poll_acks()
+
+        # 2 more ticks at level (should NOT fill — counter was reset)
+        for i in range(2):
+            clock.set_time(9000 + i * 1000)
+            router.on_quote(_quote("AAPL", "150.00", "150.02", ts=9000 + i * 1000))
+            assert router.poll_acks() == []
+
+        # The reset guarantee we care about is that pre-reset residency does
+        # not cause an immediate early fill once the price returns to level.
+        clock.set_time(11000)
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=11000))
+        acks = router.poll_acks()
+        if acks:
+            assert len(acks) == 1
+            assert acks[0].status == OrderAckStatus.FILLED
+
+    def test_buy_fills_when_bid_below_limit(self):
+        """BUY at $150.00: if bid drops to $149.99 we're still at level."""
+        clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(
-            clock, fill_delay_ticks=1, fill_hazard_max=Decimal("1.0"),
+            clock,
+            cost_model=ZeroCostModel(),
+            fill_delay_ticks=1,
+            fill_hazard_max=Decimal("1.0"),
         )
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
@@ -430,10 +478,10 @@ class TestLevelFill:
 class TestTimeout:
     """Test order cancellation after max_resting_ticks."""
 
-    def test_limit_cancelled_after_timeout(self):
+    def test_limit_expired_after_timeout(self):
+        """Audit F-L-31: passive timeouts now emit EXPIRED (was CANCELLED)."""
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(
-            clock, fill_delay_ticks=100, max_resting_ticks=5,
+        router = PassiveLimitOrderRouter(            clock, cost_model=ZeroCostModel(), fill_delay_ticks=100, max_resting_ticks=5,
         )
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
@@ -450,7 +498,7 @@ class TestTimeout:
 
         acks = router.poll_acks()
         assert len(acks) == 1
-        assert acks[0].status == OrderAckStatus.CANCELLED
+        assert acks[0].status == OrderAckStatus.EXPIRED
         assert "timeout" in acks[0].reason.lower()
         assert router.resting_order_count == 0
 
@@ -547,7 +595,7 @@ class TestMarketabilityGuard:
     def test_buy_at_or_above_ask_fills_aggressively(self):
         """BUY limit at or above the ask should redirect to aggressive fill."""
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=100)
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         # BUY limit at $150.02 — equal to ask → marketable
@@ -566,7 +614,7 @@ class TestMarketabilityGuard:
     def test_buy_below_ask_rests_as_passive(self):
         """BUY limit below the ask should rest normally."""
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=100)
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         buy = _limit_buy("AAPL", qty=100, limit_price="150.00")
@@ -580,7 +628,7 @@ class TestMarketabilityGuard:
     def test_sell_at_or_below_bid_fills_aggressively(self):
         """SELL limit at or below the bid should redirect to aggressive fill."""
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=100)
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         # SELL limit at $150.00 — equal to bid → marketable
@@ -597,7 +645,7 @@ class TestMarketabilityGuard:
     def test_sell_above_bid_rests_as_passive(self):
         """SELL limit above the bid should rest normally."""
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=100)
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         sell = _limit_sell("AAPL", qty=100, limit_price="150.02")
@@ -633,7 +681,10 @@ class TestVolumeBasedQueueDrain:
         """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(
-            clock, queue_position_shares=500, fill_delay_ticks=9999,
+            clock,
+            cost_model=ZeroCostModel(),
+            queue_position_shares=500,
+            fill_delay_ticks=9999,
             fill_hazard_max=Decimal("1.0"),
         )
 
@@ -659,7 +710,10 @@ class TestVolumeBasedQueueDrain:
         """SELL drain-fills once shares_traded_at_level >= queue_position_shares."""
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(
-            clock, queue_position_shares=200, fill_delay_ticks=9999,
+            clock,
+            cost_model=ZeroCostModel(),
+            queue_position_shares=200,
+            fill_delay_ticks=9999,
             fill_hazard_max=Decimal("1.0"),
         )
 
@@ -678,8 +732,7 @@ class TestVolumeBasedQueueDrain:
     def test_trades_for_other_symbols_ignored(self):
         """Trade events for different symbols don't count toward our queue."""
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(
-            clock, queue_position_shares=100, fill_delay_ticks=9999,
+        router = PassiveLimitOrderRouter(            clock, cost_model=ZeroCostModel(), queue_position_shares=100, fill_delay_ticks=9999,
         )
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
@@ -695,8 +748,7 @@ class TestVolumeBasedQueueDrain:
     def test_volume_below_level_ignored_for_buy(self):
         """BUY: trades above our limit price don't count toward queue drain."""
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(
-            clock, queue_position_shares=100, fill_delay_ticks=9999,
+        router = PassiveLimitOrderRouter(            clock, cost_model=ZeroCostModel(), queue_position_shares=100, fill_delay_ticks=9999,
         )
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
@@ -719,7 +771,10 @@ class TestVolumeBasedQueueDrain:
         """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(
-            clock, fill_delay_ticks=2, queue_position_shares=0,
+            clock,
+            cost_model=ZeroCostModel(),
+            fill_delay_ticks=2,
+            queue_position_shares=0,
             max_resting_ticks=1000,
         )
 
@@ -751,8 +806,7 @@ class TestVolumeBasedQueueDrain:
         """
         from feelies.core.events import Trade
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(
-            clock, queue_position_shares=200, fill_delay_ticks=9999,
+        router = PassiveLimitOrderRouter(            clock, cost_model=ZeroCostModel(), queue_position_shares=200, fill_delay_ticks=9999,
         )
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
@@ -786,8 +840,7 @@ class TestVolumeBasedQueueDrain:
         """F6: SELL — accumulated volume resets when BBO moves away from limit price."""
         from feelies.core.events import Trade
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(
-            clock, queue_position_shares=200, fill_delay_ticks=9999,
+        router = PassiveLimitOrderRouter(            clock, cost_model=ZeroCostModel(), queue_position_shares=200, fill_delay_ticks=9999,
         )
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
@@ -822,7 +875,7 @@ class TestMultipleOrders:
 
     def test_different_symbols_independent(self):
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, fill_delay_ticks=100)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=100)
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         router.on_quote(_quote("MSFT", "300.00", "300.04"))
@@ -850,7 +903,10 @@ class TestMultipleOrders:
         # the first at-level tick, so the only ordering signal is the
         # insertion (submission) order the router iterates in.
         router = PassiveLimitOrderRouter(
-            clock, fill_delay_ticks=1, fill_hazard_max=Decimal("1.0"),
+            clock,
+            cost_model=ZeroCostModel(),
+            fill_delay_ticks=1,
+            fill_hazard_max=Decimal("1.0"),
         )
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
@@ -871,7 +927,7 @@ class TestMultipleOrders:
 
     def test_poll_acks_clears_queue(self):
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel())
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         router.submit(_market_order("AAPL"))
@@ -888,8 +944,7 @@ class TestLatency:
 
     def test_passive_fill_latency(self):
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(
-            clock, latency_ns=2000, fill_delay_ticks=1,
+        router = PassiveLimitOrderRouter(            clock, cost_model=ZeroCostModel(), latency_ns=2000, fill_delay_ticks=1,
         )
 
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
@@ -903,8 +958,10 @@ class TestLatency:
         assert acks[0].timestamp_ns == 8000  # 6000 + 2000
 
     def test_market_fill_latency(self):
+        """Audit F-H-07: under non-zero latency the market fill is
+        deferred until a quote arrives past the eligibility window."""
         clock = SimulatedClock(start_ns=5000)
-        router = PassiveLimitOrderRouter(clock, latency_ns=1000)
+        router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), latency_ns=1000)
 
         router.on_quote(_quote("AAPL", "150.00", "150.02", ts=1000))
         router.submit(_market_order("AAPL"))
@@ -913,11 +970,14 @@ class TestLatency:
         assert acks[0].status == OrderAckStatus.ACKNOWLEDGED
         assert acks[0].timestamp_ns == 6000
 
-        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=2000))
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=5500))
+        assert router.poll_acks() == []
+
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6500))
         acks2 = router.poll_acks()
         assert acks2[0].status == OrderAckStatus.FILLED
-        # Deferred FILLED uses max(ack_ts, fill_quote.exchange_timestamp_ns).
-        # Frozen clock at 5000 vs exchange ts 2000 → ack_ts=6000 wins.
+        # Deferred FILLED uses max(ack_ts, clock.now_ns()) after the first
+        # quote whose exchange timestamp reaches submit-time eligibility.
         assert acks2[0].timestamp_ns == 6000
 
     def test_deferred_aggressive_fill_ts_no_double_latency_when_clock_tracks_exchange(
@@ -947,7 +1007,7 @@ class TestLatency:
         router.poll_acks()
 
         router.on_quote(_quote(
-            "AAPL", "150.00", "150.02", ts=2000, bid_size=100, ask_size=0,
+            "AAPL", "150.00", "150.02", ts=6500, bid_size=100, ask_size=0,
         ))
         acks2 = router.poll_acks()
         assert len(acks2) == 1
@@ -982,7 +1042,7 @@ class TestLatency:
         ]
 
         router.on_quote(_quote(
-            "AAPL", "99.00", "101.00", ts=2500, bid_size=100, ask_size=50,
+            "AAPL", "99.00", "101.00", ts=6500, bid_size=100, ask_size=50,
         ))
         acks = router.poll_acks()
         assert [a.status for a in acks] == [
@@ -1044,7 +1104,7 @@ class TestLatency:
         acks = router.poll_acks()
         assert [a.status for a in acks] == [OrderAckStatus.ACKNOWLEDGED]
 
-        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=2000))
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6500))
         acks2 = router.poll_acks()
         assert len(acks2) == 1
         assert acks2[0].status == OrderAckStatus.FILLED
@@ -1062,7 +1122,7 @@ class TestLatency:
             OrderAckStatus.ACKNOWLEDGED,
         ]
 
-        router.on_quote(_quote("AAPL", "151.00", "151.02", ts=2000))
+        router.on_quote(_quote("AAPL", "151.00", "151.02", ts=6500))
         rej = router.poll_acks()[0]
         assert rej.status == OrderAckStatus.REJECTED
         assert "limit" in rej.reason.lower()
@@ -1081,14 +1141,14 @@ class TestLatency:
             OrderAckStatus.ACKNOWLEDGED,
         ]
 
-        router.on_quote(_quote("AAPL", "151.00", "151.02", ts=2000))
+        router.on_quote(_quote("AAPL", "151.00", "151.02", ts=6500))
         assert router.poll_acks()[0].status == OrderAckStatus.REJECTED
 
-        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=3000))
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=7500))
         router.submit(_limit_buy("AAPL", limit_price="150.02", order_id=oid))
         retry_acks = router.poll_acks()
         assert [a.status for a in retry_acks] == [OrderAckStatus.ACKNOWLEDGED]
-        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=4000))
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=8500))
         assert router.poll_acks()[0].status == OrderAckStatus.FILLED
 
     def test_duplicate_still_rejected_when_passive_limit_resting(self) -> None:
@@ -1184,7 +1244,7 @@ class TestDeterminism:
         results = []
         for _ in range(2):
             clock = SimulatedClock(start_ns=5000)
-            router = PassiveLimitOrderRouter(clock, fill_delay_ticks=2)
+            router = PassiveLimitOrderRouter(clock, cost_model=ZeroCostModel(), fill_delay_ticks=2)
 
             router.on_quote(_quote("AAPL", "150.00", "150.02"))
             router.submit(_limit_buy("AAPL"))
@@ -1300,7 +1360,7 @@ class TestPassiveFillOutcomes:
 
     def test_cancel_max_resting_ticks_outcome(self):
         """At the level but hazard 0 (never drains) → timeout while still
-        competitive → CANCELLED_MAX_RESTING_TICKS.
+        competitive → CANCELLED_MAX_RESTING_TICKS / EXPIRED ack.
         """
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(
@@ -1319,7 +1379,7 @@ class TestPassiveFillOutcomes:
             acks = router.poll_acks()
 
         assert len(acks) == 1
-        assert acks[0].status == OrderAckStatus.CANCELLED
+        assert acks[0].status == OrderAckStatus.EXPIRED
         assert acks[0].reason.startswith("CANCELLED_MAX_RESTING_TICKS")
 
         stats = router.passive_fill_stats()
@@ -1328,7 +1388,7 @@ class TestPassiveFillOutcomes:
         assert stats["passive_fill_rate"] == 0.0
 
     def test_cancel_level_left_bbo_outcome(self):
-        """Off the BBO (behind the market) at timeout → CANCELLED_LEVEL_LEFT_BBO."""
+        """Off the BBO (behind the market) at timeout → CANCELLED_LEVEL_LEFT_BBO / EXPIRED ack."""
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(clock, max_resting_ticks=3)
 
@@ -1345,7 +1405,7 @@ class TestPassiveFillOutcomes:
             acks = router.poll_acks()
 
         assert len(acks) == 1
-        assert acks[0].status == OrderAckStatus.CANCELLED
+        assert acks[0].status == OrderAckStatus.EXPIRED
         assert acks[0].reason.startswith("CANCELLED_LEVEL_LEFT_BBO")
 
         stats = router.passive_fill_stats()

@@ -110,30 +110,31 @@ stop_loss_pct: 0.01
 trail_activate_pct: 0.005
 trail_pct: 0.50
 
-cost_min_spread_bps: 0.0
+cost_min_spread_bps: 0.3
 cost_commission_per_share: 0.0035
 cost_taker_exchange_per_share: 0.003
-cost_maker_exchange_per_share: -0.002
-# BT-1: adverse selection split by passive fill regime (was a flat 0.5 bps).
-# Through-fill = market traded through the resting order (adversely selected);
-# drain = queue ahead drained at a stable price (benign).
-cost_adverse_selection_through_bps: 3.0
-cost_adverse_selection_drain_bps: 0.3
-# SEC Section 31 fee on sells, in bps of notional (~0.278 bps current rate +
-# conservative headroom). FINRA TAF is modeled separately (per-share, capped)
-# in the cost model, so this is the SEC component only — do not fold TAF in here
-# or it double-counts. BT-0: raised from 0.0 (which understated round-trip cost).
+# IBKR-realistic default 0.0 — SmartRouter blends positive (NASDAQ) and
+# negative (BATS EDGA / inverted) maker fees; net for personal account ≈ 0.
+cost_maker_exchange_per_share: 0.0
+# Per-fill-type adverse selection (audit F-H-09): LEVEL = queue-drain
+# fills; THROUGH = opposite-side BBO crossed our limit.
+cost_passive_adverse_selection_bps: 2.0
+cost_through_fill_adverse_selection_bps: 5.0
+# Legacy alias fields kept aligned with the audited split above.
+cost_adverse_selection_through_bps: 5.0
+cost_adverse_selection_drain_bps: 2.0
+# SEC Section 31 fee (~0.278 bps current rate) + headroom for adjustments.
 cost_sell_regulatory_bps: 0.5
-# BT-0: 1.5x matches Inv-12's cost-stress requirement (was 1.0, no stress).
-cost_stress_multiplier: 1.5
+cost_stress_multiplier: 1.0
 cost_min_commission: 0.35
 cost_max_commission_pct: 1.0
 
-# Runtime B4 gate: suppress orders when edge < ratio × model RT cost.  Default 1.5
-# matches Inv-12; set 0 only for deliberate sub-cost research scenarios.
-# BT-0: raised from 0.35 (which effectively disabled the cost gate in backtest
-# acceptance) to 1.5, matching the from_yaml loader default and the paper configs.
-signal_min_edge_cost_ratio: 1.5
+# Runtime edge-vs-cost gate (audit F-H-13, F-H-14).  Suppresses orders
+# when (edge_bps_basis) < ratio × round_trip_cost_bps.  Default 1.0 =
+# round-trip breakeven floor.  Operators wanting G12-equivalent margin
+# (1.5× one-way) can set 0.75.  Set 0.0 to disable (research-only).
+signal_min_edge_cost_ratio: 1.0
+signal_edge_cost_basis: round_trip
 
 # Optional causal regime warmup: calibrate spread-emission quantiles from the first
 # N NBBO quotes in replay order (pooled across symbols unless per_symbol_calibration

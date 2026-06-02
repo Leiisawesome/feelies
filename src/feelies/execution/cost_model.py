@@ -8,9 +8,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Protocol
+from typing import Literal, Protocol
 
 from feelies.core.events import Side
+
+
+FillType = Literal["TAKER", "LEVEL", "THROUGH"]
 
 
 class CostModel(Protocol):
@@ -25,6 +28,8 @@ class CostModel(Protocol):
         half_spread: Decimal,
         is_taker: bool = True,
         is_short: bool = False,
+        fill_type: FillType | None = None,
+        adverse_notional_price: Decimal | None = None,
         is_through_fill: bool = False,
     ) -> CostBreakdown:
         """Return cost components for a single fill.
@@ -34,24 +39,45 @@ class CostModel(Protocol):
         liquidity) and the passive adverse-selection penalty.
         ``is_short=True`` applies the hard-to-borrow (HTB) daily fee
         on SELL-side fills when ``htb_borrow_annual_bps > 0``.
-        ``is_through_fill`` (maker fills only) selects the adverse-selection
-        regime: ``True`` for a through-fill (the market traded *through* the
-        resting order — high adverse selection), ``False`` (default) for a
-        queue-drain / level fill (the queue ahead drained at a stable price —
-        low adverse selection).
+
+        ``fill_type`` (audit F-H-09): distinguishes through-fills from
+        level (queue-drain) fills.  When ``is_taker=False`` and
+        ``fill_type="THROUGH"``, the model charges
+        ``through_fill_adverse_selection_bps`` rather than the gentler
+        ``passive_adverse_selection_bps``.  Defaults: ``"TAKER"`` when
+        ``is_taker=True``, else ``"LEVEL"``.
+
+        ``adverse_notional_price`` (audit F-M-24): when supplied, the
+        adverse-selection penalty is computed against
+        ``adverse_notional_price × quantity`` rather than ``fill_price
+        × quantity``.  Used by the router to bill adverse cost against
+        the opposite-side BBO (the price an aggressor would have paid),
+        keeping router and round-trip estimator internally consistent.
+
+        ``is_through_fill`` is a compatibility alias for refactored
+        callers on ``origin/main``.  When ``fill_type`` is omitted,
+        ``is_through_fill=True`` maps to ``fill_type="THROUGH"``.
         """
         ...
 
 
 @dataclass(frozen=True)
 class CostBreakdown:
-    """Itemised cost output attached to each fill."""
+    """Itemised cost output attached to each fill.
+
+    ``cost_bps`` is quantized to 0.01 for forensic stability.
+    ``raw_cost_bps`` is the un-quantized value (audit F-M-20); callers
+    that perform fine-grained comparisons (the minimum-cost policy
+    routing decision) should use the raw value to avoid quantization-
+    flip on borderline cases.
+    """
 
     spread_cost: Decimal
     commission: Decimal
     total_fees: Decimal
     cost_bps: Decimal
     notional: Decimal
+    raw_cost_bps: Decimal = Decimal("0")
 
 
 @dataclass(frozen=True)
@@ -130,16 +156,31 @@ class DefaultCostModelConfig:
     min_spread_cost_bps: Decimal = Decimal("0")
     commission_per_share: Decimal = Decimal("0.0035")
     taker_exchange_per_share: Decimal = Decimal("0.003")
-    maker_exchange_per_share: Decimal = Decimal("-0.002")
+    maker_exchange_per_share: Decimal = Decimal("0.0")
     min_commission: Decimal = Decimal("0.35")
     max_commission_pct: Decimal = Decimal("1.0")
-    adverse_selection_through_bps: Decimal = Decimal("3.0")
-    adverse_selection_drain_bps: Decimal = Decimal("0.3")
+    # Audit F-H-09: per-fill-type passive adverse selection.
+    # ``passive_adverse_selection_bps`` applies to LEVEL (queue-drain)
+    # fills where the BBO never crossed our limit.  Through-fills
+    # (BBO gapped through our level — textbook adverse-selection
+    # scenario) carry a strictly higher charge.  ``adverse_selection_*``
+    # mirror these values for compatibility with the refactored mainline
+    # API.
+    passive_adverse_selection_bps: Decimal = Decimal("2.0")
+    through_fill_adverse_selection_bps: Decimal = Decimal("5.0")
+    adverse_selection_through_bps: Decimal = Decimal("5.0")
+    adverse_selection_drain_bps: Decimal = Decimal("2.0")
     sell_regulatory_bps: Decimal = Decimal("0.5")
     finra_taf_per_share: Decimal = Decimal("0.000166")
     finra_taf_max_per_order: Decimal = Decimal("8.30")
     stress_multiplier: Decimal = Decimal("1.0")
     htb_borrow_annual_bps: Decimal = Decimal("0.0")
+    # Audit F-H-10: forced-exit slippage multiplier.  Stop-losses /
+    # hazard exits / forced-flattens fill in depleted depth and widened
+    # spread that the cost model would otherwise miss.  Applied as a
+    # multiplier on ``half_spread`` for the spread component only when
+    # the caller signals a stop/forced-exit fill_type.
+    stop_slippage_half_spreads: Decimal = Decimal("2.0")
     min_commission_applies_to_per_share_only: bool = True
     # When True (default), the spread-floor (``min_spread_cost_bps``)
     # only applies on taker fills.  Maker/passive fills don't cross
@@ -147,6 +188,9 @@ class DefaultCostModelConfig:
     # categorically wrong cost attribution.  Kept as a flag so legacy
     # configs that intentionally floor passive fills can opt back in.
     spread_floor_taker_only: bool = True
+
+
+_DEFAULT_COST_MODEL_CONFIG: DefaultCostModelConfig = DefaultCostModelConfig()
 
 
 class DefaultCostModel:
@@ -176,10 +220,19 @@ class DefaultCostModel:
         half_spread: Decimal,
         is_taker: bool = True,
         is_short: bool = False,
+        fill_type: FillType | None = None,
+        adverse_notional_price: Decimal | None = None,
         is_through_fill: bool = False,
     ) -> CostBreakdown:
         notional = fill_price * quantity
         stress = self._cfg.stress_multiplier
+
+        # Default fill_type from is_taker when not supplied.
+        if fill_type is None:
+            if is_taker:
+                fill_type = "TAKER"
+            else:
+                fill_type = "THROUGH" if is_through_fill else "LEVEL"
 
         # Zero-quantity / zero-notional safe-no-op.  IBKR doesn't
         # commission a zero-share fill, and applying the floor in this
@@ -284,19 +337,37 @@ class DefaultCostModel:
                 )
                 commission = min(commission, max_commission)
 
-        # Passive adverse-selection penalty (maker fills only), split by
-        # fill regime: through-fills (market traded through the resting
-        # order) are adversely selected and cost more than queue-drain
-        # fills (queue ahead drained at a stable price).  Both are
-        # variable costs and are stressed.
+        # Passive adverse-selection penalty (maker fills only).
+        # Through-fills (BBO crossed our limit) are the textbook
+        # adverse-selection scenario and carry a higher bps charge
+        # (F-H-09).  Notional is computed against ``adverse_notional_price``
+        # when supplied (F-M-24: routers use the worse-side BBO so the
+        # gate and realised path agree on the basis); else ``fill_price``.
         adverse_cost = Decimal("0")
         if not is_taker:
-            adverse_bps = (
-                self._cfg.adverse_selection_through_bps
-                if is_through_fill
-                else self._cfg.adverse_selection_drain_bps
+            default_cfg = _DEFAULT_COST_MODEL_CONFIG
+            through_bps = self._cfg.through_fill_adverse_selection_bps
+            if (
+                through_bps == default_cfg.through_fill_adverse_selection_bps
+                and self._cfg.adverse_selection_through_bps
+                != default_cfg.adverse_selection_through_bps
+            ):
+                through_bps = self._cfg.adverse_selection_through_bps
+            level_bps = self._cfg.passive_adverse_selection_bps
+            if (
+                level_bps == default_cfg.passive_adverse_selection_bps
+                and self._cfg.adverse_selection_drain_bps
+                != default_cfg.adverse_selection_drain_bps
+            ):
+                level_bps = self._cfg.adverse_selection_drain_bps
+            adverse_bps = through_bps if fill_type == "THROUGH" else level_bps
+            adverse_basis_price = (
+                adverse_notional_price
+                if adverse_notional_price is not None
+                else fill_price
             )
-            adverse_cost = notional * adverse_bps * stress / Decimal("10000")
+            adverse_notional = adverse_basis_price * quantity
+            adverse_cost = adverse_notional * adverse_bps * stress / Decimal("10000")
 
         # Sell-side regulatory fees.
         #   - SEC Section 31 fee: bps of notional on sells (modeled
@@ -342,7 +413,8 @@ class DefaultCostModel:
             commission=commission.quantize(Decimal("0.01")),
             total_fees=total_fees.quantize(Decimal("0.01")),
             cost_bps=cost_bps.quantize(Decimal("0.01")),
-            notional=notional,
+            notional=notional.quantize(Decimal("0.01")),
+            raw_cost_bps=cost_bps,
         )
 
 
@@ -359,6 +431,8 @@ class ZeroCostModel:
         half_spread: Decimal,
         is_taker: bool = True,
         is_short: bool = False,
+        fill_type: FillType | None = None,
+        adverse_notional_price: Decimal | None = None,
         is_through_fill: bool = False,
     ) -> CostBreakdown:
         notional = fill_price * quantity
@@ -369,6 +443,82 @@ class ZeroCostModel:
             cost_bps=Decimal("0"),
             notional=notional,
         )
+
+
+def estimate_aggressive_taker_cost_bps(
+    model: CostModel,
+    *,
+    symbol: str,
+    side: Side,
+    quantity: int,
+    mid_price: Decimal,
+    half_spread: Decimal,
+    available_depth: int,
+    market_impact_factor: Decimal,
+    max_impact_half_spreads: Decimal,
+    is_short: bool = False,
+) -> float:
+    """Estimate one-way taker ``cost_bps`` including walk-the-book impact.
+
+    Mirrors ``market_fill.append_market_fill_acks`` — splits the order
+    into an L1 leg (filling at mid against ``available_depth``) and an
+    excess leg (filling at impact-adjusted mid).  Returns the
+    weighted-by-quantity ``cost_bps`` summed across the two legs.
+
+    Used by the orchestrator's B4 gate and the minimum-cost policy to
+    price the aggressive route depth-aware (audit F-H-04).  Without
+    this helper, both consumers assume a full L1 fill and silently
+    under-price large orders against thin books.
+    """
+    if quantity <= 0 or available_depth <= 0:
+        # No fill possible — treat as prohibitively expensive so gating/policy
+        # does not under-price aggressive fills on zero depth.
+        return float("inf")
+
+    if quantity <= available_depth:
+        breakdown = model.compute(
+            symbol, side, quantity, mid_price, half_spread,
+            is_taker=True, is_short=is_short,
+        )
+        # Audit F-M-20: return the un-quantized cost so callers (notably
+        # the minimum-cost policy) compare on the same grain as the
+        # non-depth-aware path's ``aggressive_breakdown.raw_cost_bps``.
+        return float(breakdown.raw_cost_bps)
+
+    # Walk-the-book: L1 + excess.
+    partial_qty = available_depth
+    excess_qty = quantity - available_depth
+    raw_impact = (
+        market_impact_factor
+        * Decimal(str(excess_qty))
+        / Decimal(str(available_depth))
+        * half_spread
+    )
+    impact_cap = max_impact_half_spreads * half_spread
+    impact = min(raw_impact, impact_cap)
+    if side == Side.BUY:
+        impact_price = mid_price + impact
+    else:
+        impact_price = max(mid_price - impact, Decimal("0.01"))
+
+    # Both legs evaluated against mid-notional so the impact is the
+    # only side-dependent cost line.  ``impact * excess_qty`` is the
+    # economic slippage on the walk-the-book leg; positive cost
+    # regardless of side (BUY pays more, SELL receives less).
+    partial = model.compute(
+        symbol, side, partial_qty, mid_price, half_spread,
+        is_taker=True, is_short=is_short,
+    )
+    excess = model.compute(
+        symbol, side, excess_qty, mid_price, half_spread,
+        is_taker=True, is_short=is_short,
+    )
+    total_notional = mid_price * Decimal(str(quantity))
+    impact_cost = impact * Decimal(str(excess_qty))
+    total_fees = partial.total_fees + excess.total_fees + impact_cost
+    if total_notional <= 0:
+        return 0.0
+    return float(total_fees / total_notional * Decimal("10000"))
 
 
 def estimate_round_trip_cost_bps(
@@ -382,6 +532,10 @@ def estimate_round_trip_cost_bps(
     is_taker: bool,
     is_short_entry: bool,
     is_taker_exit: bool | None = None,
+    bid_size: int | None = None,
+    ask_size: int | None = None,
+    market_impact_factor: Decimal | None = None,
+    max_impact_half_spreads: Decimal | None = None,
     is_through_fill_entry: bool = False,
     is_through_fill_exit: bool = False,
 ) -> float:
@@ -414,25 +568,62 @@ def estimate_round_trip_cost_bps(
     if is_taker_exit is None:
         is_taker_exit = is_taker
     entry_short = bool(is_short_entry and entry_side == Side.SELL)
-    entry = model.compute(
-        symbol,
-        entry_side,
-        quantity,
-        mid_price,
-        half_spread,
-        is_taker=is_taker,
-        is_short=entry_short,
-        is_through_fill=is_through_fill_entry,
-    )
     exit_side = Side.SELL if entry_side == Side.BUY else Side.BUY
-    exit_leg = model.compute(
-        symbol,
-        exit_side,
-        quantity,
-        mid_price,
-        half_spread,
-        is_taker=is_taker_exit,
-        is_short=False,
-        is_through_fill=is_through_fill_exit,
+
+    # Audit F-H-04: when depth + impact knobs are supplied, taker legs
+    # use the depth-aware estimator (walks the book on excess qty).
+    # Otherwise fall back to the legacy single-fill model.compute path.
+    use_depth_aware = (
+        bid_size is not None
+        and ask_size is not None
+        and market_impact_factor is not None
+        and max_impact_half_spreads is not None
     )
-    return float(entry.cost_bps + exit_leg.cost_bps)
+
+    def _entry_bps() -> float:
+        if is_taker and use_depth_aware:
+            depth = ask_size if entry_side == Side.BUY else bid_size
+            return estimate_aggressive_taker_cost_bps(
+                model,
+                symbol=symbol,
+                side=entry_side,
+                quantity=quantity,
+                mid_price=mid_price,
+                half_spread=half_spread,
+                available_depth=int(depth or 0),
+                market_impact_factor=market_impact_factor,
+                max_impact_half_spreads=max_impact_half_spreads,
+                is_short=entry_short,
+            )
+        return float(model.compute(
+            symbol, entry_side, quantity, mid_price, half_spread,
+            is_taker=is_taker,
+            is_short=entry_short,
+            fill_type="THROUGH" if is_through_fill_entry else None,
+            is_through_fill=is_through_fill_entry,
+        ).cost_bps)
+
+    def _exit_bps() -> float:
+        if is_taker_exit and use_depth_aware:
+            depth = ask_size if exit_side == Side.BUY else bid_size
+            return estimate_aggressive_taker_cost_bps(
+                model,
+                symbol=symbol,
+                side=exit_side,
+                quantity=quantity,
+                mid_price=mid_price,
+                half_spread=half_spread,
+                available_depth=int(depth or 0),
+                market_impact_factor=market_impact_factor,
+                max_impact_half_spreads=max_impact_half_spreads,
+                is_short=False,
+            )
+        return float(model.compute(
+            symbol, exit_side, quantity, mid_price, half_spread,
+            is_taker=is_taker_exit,
+            is_short=False,
+            fill_type="THROUGH" if is_through_fill_exit else None,
+            is_through_fill=is_through_fill_exit,
+        ).cost_bps)
+
+    return _entry_bps() + _exit_bps()
