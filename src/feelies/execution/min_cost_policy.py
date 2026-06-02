@@ -86,6 +86,13 @@ class MinCostPolicyConfig:
     # on realised aggressive cost.
     market_impact_factor: Decimal = Decimal("0.5")
     max_impact_half_spreads: Decimal = Decimal("10")
+    # Audit F-M-19: opportunity cost of a passive non-fill.  When the
+    # caller supplies an ``edge_bps`` to ``decide()``, the passive
+    # route's effective cost is inflated by
+    # ``passive_non_fill_probability × edge_bps``.  Default 0.30
+    # corresponds to ~70% expected fill within ``max_resting_ticks``
+    # — a conservative starting point.
+    passive_non_fill_probability: Decimal = Decimal("0.30")
 
 
 class MinimumCostExecutionPolicy:
@@ -133,6 +140,7 @@ class MinimumCostExecutionPolicy:
         force_aggressive: bool = False,
         bid_size: int | None = None,
         ask_size: int | None = None,
+        edge_bps: float = 0.0,
     ) -> str:
         """Return ``"passive"`` or ``"aggressive"`` for this order.
 
@@ -181,6 +189,9 @@ class MinimumCostExecutionPolicy:
         # spread (matching the passive router's
         # ``_emit_passive_fill`` semantics).  Aggressive crosses to
         # the opposite-side BBO and pays ``half_spread``.
+        # Audit F-M-20: use raw (un-quantized) cost_bps inside the
+        # comparison so the routing decision doesn't flip on the
+        # 0.01-bps quantization grain.
         passive_breakdown = self._cost_model.compute(
             symbol=symbol,
             side=side,
@@ -220,9 +231,22 @@ class MinimumCostExecutionPolicy:
                 is_taker=True,
                 is_short=is_short,
             )
-            aggressive_cost_bps = aggressive_breakdown.cost_bps
+            aggressive_cost_bps = aggressive_breakdown.raw_cost_bps
 
-        passive_cost_bps = passive_breakdown.cost_bps - self._cfg.prefer_passive_bias_bps
+        # Audit F-M-19: penalise the passive route by the expected
+        # opportunity cost of a non-fill (probability of cancel × edge
+        # forgone).  Without this, the policy picks passive even when
+        # the spread saving is dwarfed by the chance of missing the
+        # trade entirely.
+        passive_raw = passive_breakdown.raw_cost_bps
+        opportunity_cost = (
+            self._cfg.passive_non_fill_probability * Decimal(str(edge_bps))
+        )
+        passive_cost_bps = (
+            passive_raw
+            - self._cfg.prefer_passive_bias_bps
+            + opportunity_cost
+        )
         if passive_cost_bps < aggressive_cost_bps:
             return "passive"
         return "aggressive"

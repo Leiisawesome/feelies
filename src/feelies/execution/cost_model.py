@@ -58,13 +58,21 @@ class CostModel(Protocol):
 
 @dataclass(frozen=True)
 class CostBreakdown:
-    """Itemised cost output attached to each fill."""
+    """Itemised cost output attached to each fill.
+
+    ``cost_bps`` is quantized to 0.01 for forensic stability.
+    ``raw_cost_bps`` is the un-quantized value (audit F-M-20); callers
+    that perform fine-grained comparisons (the minimum-cost policy
+    routing decision) should use the raw value to avoid quantization-
+    flip on borderline cases.
+    """
 
     spread_cost: Decimal
     commission: Decimal
     total_fees: Decimal
     cost_bps: Decimal
     notional: Decimal
+    raw_cost_bps: Decimal = Decimal("0")
 
 
 @dataclass(frozen=True)
@@ -373,6 +381,7 @@ class DefaultCostModel:
             total_fees=total_fees.quantize(Decimal("0.01")),
             cost_bps=cost_bps.quantize(Decimal("0.01")),
             notional=notional,
+            raw_cost_bps=cost_bps,
         )
 
 

@@ -711,6 +711,11 @@ class Orchestrator:
                             max_impact_half_spreads=Decimal(str(getattr(
                                 config, "cost_max_impact_half_spreads", 10.0,
                             ))),
+                            passive_non_fill_probability=Decimal(str(getattr(
+                                config,
+                                "cost_min_passive_non_fill_probability",
+                                0.30,
+                            ))),
                         ),
                     )
             if hasattr(config, "platform_min_order_shares"):
@@ -2261,6 +2266,7 @@ class Orchestrator:
                             force_aggressive=False,
                             bid_size=quote.bid_size,
                             ask_size=quote.ask_size,
+                            edge_bps=intent.signal.edge_estimate_bps,
                         )
                         use_passive = decision == "passive"
                     if use_passive:
@@ -2496,6 +2502,7 @@ class Orchestrator:
                         force_aggressive=is_exit_or_stop,
                         bid_size=quote.bid_size,
                         ask_size=quote.ask_size,
+                        edge_bps=intent.signal.edge_estimate_bps,
                     )
                     use_passive = decision == "passive"
                 if use_passive:

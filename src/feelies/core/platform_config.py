@@ -135,6 +135,10 @@ class PlatformConfig:
     cost_min_small_order_threshold_shares: int = 0
     cost_min_half_spread_threshold: float = 0.0
     cost_min_allow_passive_short_entry: bool = True
+    # Audit F-M-19: opportunity cost of a passive non-fill, applied by
+    # MinimumCostExecutionPolicy as ``probability × edge_bps``.  0.30
+    # is a conservative starting point (~70% expected fill).
+    cost_min_passive_non_fill_probability: float = 0.30
     # Ticks at our level before queue-drain fill triggers (legacy tick-based mode).
     passive_fill_delay_ticks: int = 3
     # Cancel unfilled resting orders after this many ticks.
@@ -387,6 +391,10 @@ class PlatformConfig:
                 "cost_max_impact_half_spreads must be >= 1 "
                 "(< 1 produces no impact at all on excess legs)"
             )
+        if not 0.0 <= self.cost_min_passive_non_fill_probability <= 1.0:
+            raise ConfigurationError(
+                "cost_min_passive_non_fill_probability must be in [0, 1]"
+            )
         if self.cost_stop_slippage_half_spreads < 1.0:
             raise ConfigurationError(
                 "cost_stop_slippage_half_spreads must be >= 1"
@@ -588,6 +596,9 @@ class PlatformConfig:
             ),
             "cost_min_allow_passive_short_entry": (
                 self.cost_min_allow_passive_short_entry
+            ),
+            "cost_min_passive_non_fill_probability": (
+                self.cost_min_passive_non_fill_probability
             ),
             "passive_fill_delay_ticks": self.passive_fill_delay_ticks,
             "passive_max_resting_ticks": self.passive_max_resting_ticks,
@@ -842,6 +853,9 @@ class PlatformConfig:
             ),
             cost_min_allow_passive_short_entry=bool(
                 data.get("cost_min_allow_passive_short_entry", True)
+            ),
+            cost_min_passive_non_fill_probability=float(
+                data.get("cost_min_passive_non_fill_probability", 0.30)
             ),
             passive_fill_delay_ticks=int(
                 data.get("passive_fill_delay_ticks", 3)
