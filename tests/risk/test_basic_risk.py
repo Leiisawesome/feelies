@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 
@@ -10,6 +11,7 @@ from feelies.core.events import (
     OrderRequest,
     OrderType,
     RiskAction,
+    RiskVerdict,
     Side,
     Signal,
     SignalDirection,
@@ -344,10 +346,215 @@ class TestSizedIntentMarkSelection:
         orders = engine.check_sized_intent(
             _make_sized_intent(targets={"AAPL": 50_000.0}),
             store,
-        )
+        ).orders
 
         assert len(orders) == 1
         order = orders[0]
         assert order.symbol == "AAPL"
         assert order.side == Side.BUY
         assert order.quantity == 200
+
+
+class TestSizedIntentDroppedLegAlert:
+    """Audit R4: per-leg PORTFOLIO veto must surface a diagnostic Alert.
+
+    Without the Alert, a partial portfolio-construction execution
+    silently executes the surviving legs without re-validating any
+    cross-sectional invariant (dollar-neutral, sector-matched,
+    mechanism-capped) the alpha intended.
+    """
+
+    def test_dropped_leg_publishes_alert_with_full_attribution(
+        self, store: MemoryPositionStore
+    ) -> None:
+        from feelies.bus.event_bus import EventBus
+        from feelies.core.events import Alert
+        from feelies.core.identifiers import SequenceGenerator
+
+        bus = EventBus()
+        captured: list[Alert] = []
+        bus.subscribe(Alert, captured.append)  # type: ignore[arg-type]
+
+        # Tight per-symbol cap so MSFT will be vetoed; AAPL passes.
+        cfg = RiskConfig(
+            max_position_per_symbol=100,
+            max_gross_exposure_pct=100.0,
+            account_equity=Decimal("1000000"),
+        )
+        engine = BasicRiskEngine(
+            cfg,
+            bus=bus,
+            alert_sequence_generator=SequenceGenerator(),
+        )
+        store.update("AAPL", 0, Decimal("100"))
+        store.update_mark("AAPL", Decimal("100"))
+        store.update("MSFT", 0, Decimal("200"))
+        store.update_mark("MSFT", Decimal("200"))
+
+        intent = _make_sized_intent(
+            targets={"AAPL": 5_000.0, "MSFT": 60_000.0},
+        )
+        orders = engine.check_sized_intent(intent, store).orders
+
+        assert {o.symbol for o in orders} == {"AAPL"}
+        assert len(captured) == 1
+        alert = captured[0]
+        assert alert.alert_name == "portfolio_intent_partial_execution"
+        assert alert.context["strategy_id"] == intent.strategy_id
+        assert alert.context["total_legs"] == 2
+        dropped_syms = {d["symbol"] for d in alert.context["dropped_legs"]}
+        assert dropped_syms == {"MSFT"}
+
+    def test_no_alert_when_all_legs_execute(
+        self, config: RiskConfig, store: MemoryPositionStore
+    ) -> None:
+        from feelies.bus.event_bus import EventBus
+        from feelies.core.events import Alert
+        from feelies.core.identifiers import SequenceGenerator
+
+        bus = EventBus()
+        captured: list[Alert] = []
+        bus.subscribe(Alert, captured.append)  # type: ignore[arg-type]
+
+        engine = BasicRiskEngine(
+            config,
+            bus=bus,
+            alert_sequence_generator=SequenceGenerator(),
+        )
+        store.update("AAPL", 0, Decimal("100"))
+        store.update_mark("AAPL", Decimal("100"))
+
+        engine.check_sized_intent(
+            _make_sized_intent(targets={"AAPL": 5_000.0}),
+            store,
+        )
+
+        assert captured == []
+
+    def test_engine_works_without_bus_wired(
+        self, config: RiskConfig, store: MemoryPositionStore
+    ) -> None:
+        """Backwards-compat: bus + seq are optional; logging still fires."""
+        engine = BasicRiskEngine(config)
+        store.update("AAPL", 0, Decimal("100"))
+        store.update_mark("AAPL", Decimal("100"))
+
+        orders = engine.check_sized_intent(
+            _make_sized_intent(targets={"AAPL": 5_000.0}),
+            store,
+        ).orders
+        assert len(orders) == 1
+
+
+class TestSizedIntentDrawdownAbortsWholeIntent:
+    def test_force_flatten_on_one_leg_returns_empty_orders_and_flag(self) -> None:
+        cfg = RiskConfig(
+            max_position_per_symbol=100_000,
+            max_gross_exposure_pct=100.0,
+            max_drawdown_pct=1.0,
+            account_equity=Decimal("100000"),
+        )
+        engine = BasicRiskEngine(cfg)
+        store = MemoryPositionStore()
+        store.update("AAPL", 100, Decimal("100"))
+        store.update("AAPL", -100, Decimal("90"))
+        store.update_mark("AAPL", Decimal("90"))
+        store.update("MSFT", 0, Decimal("200"))
+        store.update_mark("MSFT", Decimal("200"))
+
+        intent = _make_sized_intent(
+            targets={"AAPL": 5_000.0, "MSFT": 10_000.0},
+        )
+        result = engine.check_sized_intent(intent, store)
+        assert result.orders == ()
+        assert result.requires_global_risk_escalation is True
+
+
+class TestPortfolioOrderG12Disclosure:
+    """Audit R3: PORTFOLIO orders must carry the per-symbol disclosed cost.
+
+    Without the stamp, the post-fill cost-vs-disclosure stress alert
+    in the orchestrator (only fires when ``g12_disclosed_cost_total_bps
+    > 0``) is silently disabled for every PORTFOLIO leg — and PORTFOLIO
+    is the only production-reachable order path post-D.2.
+    """
+
+    def test_portfolio_order_carries_disclosed_cost_per_symbol(
+        self, config: RiskConfig, store: MemoryPositionStore
+    ) -> None:
+        engine = BasicRiskEngine(config)
+        store.update("AAPL", 0, Decimal("100"))
+        store.update_mark("AAPL", Decimal("100"))
+        store.update("MSFT", 0, Decimal("200"))
+        store.update_mark("MSFT", Decimal("200"))
+
+        intent = SizedPositionIntent(
+            timestamp_ns=1_000_000_000,
+            correlation_id="corr-1",
+            sequence=1,
+            strategy_id="portfolio_alpha",
+            target_positions={
+                "AAPL": TargetPosition(symbol="AAPL", target_usd=5_000.0),
+                "MSFT": TargetPosition(symbol="MSFT", target_usd=8_000.0),
+            },
+            disclosed_cost_total_bps_by_symbol={
+                "AAPL": 3.5,
+                "MSFT": 4.25,
+            },
+        )
+        orders = engine.check_sized_intent(intent, store).orders
+
+        by_symbol = {o.symbol: o for o in orders}
+        assert by_symbol["AAPL"].g12_disclosed_cost_total_bps == 3.5
+        assert by_symbol["MSFT"].g12_disclosed_cost_total_bps == 4.25
+
+    def test_missing_per_symbol_disclosure_defaults_to_zero(
+        self, config: RiskConfig, store: MemoryPositionStore
+    ) -> None:
+        """Backwards-compat: empty map → 0.0, alert remains gated off."""
+        engine = BasicRiskEngine(config)
+        store.update("AAPL", 0, Decimal("100"))
+        store.update_mark("AAPL", Decimal("100"))
+
+        orders = engine.check_sized_intent(
+            _make_sized_intent(targets={"AAPL": 5_000.0}),
+            store,
+        ).orders
+        assert len(orders) == 1
+        assert orders[0].g12_disclosed_cost_total_bps == 0.0
+
+
+class TestSizedIntentScaleDownDecimal:
+    def test_scale_down_quantity_uses_half_up_not_float_truncation(
+        self, config: RiskConfig, store: MemoryPositionStore,
+    ) -> None:
+        """10 × 0.45 = 4.5 → 5 shares (Decimal); int(10*0.45) truncates to 4."""
+
+        engine = BasicRiskEngine(config)
+        store.update("AAPL", 0, Decimal("100"))
+        store.update_mark("AAPL", Decimal("100"))
+
+        def fake_check_order(
+            self: BasicRiskEngine,
+            order: OrderRequest,
+            positions: MemoryPositionStore,
+        ) -> RiskVerdict:
+            if order.symbol == "AAPL" and order.quantity == 10:
+                return RiskVerdict(
+                    timestamp_ns=order.timestamp_ns,
+                    correlation_id=order.correlation_id,
+                    sequence=order.sequence,
+                    symbol=order.symbol,
+                    action=RiskAction.SCALE_DOWN,
+                    reason="test_scale_down",
+                    scaling_factor=0.45,
+                )
+            return BasicRiskEngine.check_order(self, order, positions)
+
+        with patch.object(BasicRiskEngine, "check_order", fake_check_order):
+            orders = engine.check_sized_intent(
+                _make_sized_intent(targets={"AAPL": 1_000.0}),
+                store,
+            ).orders
+        assert len(orders) == 1
+        assert orders[0].quantity == 5

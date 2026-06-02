@@ -10,6 +10,7 @@ from feelies.services.regime_engine import (
     HMM3StateFractional,
     RegimeEngine,
     get_regime_engine,
+    regime_posterior_entropy_nats,
 )
 from feelies.services.regime_hazard_detector import (
     DEFAULT_HYSTERESIS_THRESHOLD,
@@ -26,4 +27,5 @@ __all__ = [
     "RegimeHazardDetector",
     "detect_hazard_spike",
     "get_regime_engine",
+    "regime_posterior_entropy_nats",
 ]

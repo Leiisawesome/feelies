@@ -34,6 +34,15 @@ class EventLog(Protocol):
         """
         ...
 
+    def replace_events(self, events: Sequence[Event]) -> None:
+        """Replace the persisted stream with *events*.
+
+        Used when multi-symbol ingestion merge-sorts NBBO/trade rows before
+        replay.  Callers must pass exchange-time-sorted events consistent with
+        :meth:`append_batch` causality rules.
+        """
+        ...
+
     def replay(
         self,
         start_sequence: int = 0,

@@ -74,7 +74,7 @@ def test_registry_emits_reading_count_and_latency_per_reading() -> None:
     )
     registry.register(SensorSpec(
         sensor_id="micro_price",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=MicroPriceSensor,
         params={},
         subscribes_to=(NBBOQuote,),
@@ -124,7 +124,7 @@ def test_registry_metrics_dont_perturb_sensor_reading_sequence() -> None:
     )
     registry.register(SensorSpec(
         sensor_id="micro_price",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=MicroPriceSensor,
         params={},
         subscribes_to=(NBBOQuote,),
@@ -147,7 +147,7 @@ def test_registry_without_metric_collector_emits_nothing() -> None:
     )
     registry.register(SensorSpec(
         sensor_id="micro_price",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=MicroPriceSensor,
         params={},
         subscribes_to=(NBBOQuote,),
@@ -307,7 +307,7 @@ def test_metric_collector_summary_keys_match_plan() -> None:
     )
     registry.register(SensorSpec(
         sensor_id="micro_price",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=MicroPriceSensor,
         params={},
         subscribes_to=(NBBOQuote,),

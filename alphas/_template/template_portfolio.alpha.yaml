@@ -20,8 +20,8 @@
 #     - parameters.decay_weighting_enabled (Phase 4.1)
 #
 #   See:
-#     - grok/07_HYPOTHESIS_REASONING.md          (reasoning contract, hard gates)
-#     - grok/06_EVOLUTION.md                     (portfolio mutation and adoption)
+#     - .cursor/skills/microstructure-alpha/SKILL.md (reasoning contract, hard gates)
+#     - .cursor/skills/research-workflow/SKILL.md                     (portfolio mutation)
 #     - alphas/SCHEMA.md                         (canonical field reference)
 #     - docs/migration/schema_1_0_to_1_1.md      (PORTFOLIO authoring guide)
 # =============================================================
@@ -68,7 +68,7 @@ universe:                             # concrete symbol list (G10)
 
 depends_on_signals:                   # upstream SIGNAL alpha_ids
   - my_signal_alpha
-  # - pofi_inventory_revert_v1
+  # - sig_inventory_revert_v1
 
 factor_neutralization: true           # G11; reference factor loadings parquet must be available
 

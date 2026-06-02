@@ -1,0 +1,7 @@
+# Reference corporate-action ex-dates for BT-18 replay integrity guards.
+#
+# Backtests use raw, unadjusted L1. Replays must not span an ex-date for a
+# universe symbol unless prices are explicitly adjusted at the boundary.
+# See docs/data_adjustment_policy.md.
+schema_version: "1.0"
+entries: []

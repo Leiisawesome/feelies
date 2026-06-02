@@ -2,13 +2,13 @@
 
 Phase 3-α locks a deterministic Level-2 fingerprint of the
 ``Signal(layer="SIGNAL")`` stream produced by the reference alpha
-``alphas/pofi_benign_midcap_v1`` when driven through the canonical
+``alphas/sig_benign_midcap_v1`` when driven through the canonical
 synthetic event-log fixture under the standard sensor / scheduler /
 aggregator wiring.
 
 Phase 3.1 extends the lock-down to the four v0.3 reference alphas
-(``pofi_hawkes_burst_v1``, ``pofi_kyle_drift_v1``,
-``pofi_inventory_revert_v1``, ``pofi_moc_imbalance_v1``).  Each is
+(``sig_hawkes_burst_v1``, ``sig_kyle_drift_v1``,
+``sig_inventory_revert_v1``, ``sig_moc_imbalance_v1``).  Each is
 driven through the same fixture and its Signal stream is hashed
 independently so any future drift is attributable to the specific
 alpha that introduced it.
@@ -65,27 +65,27 @@ from tests.fixtures.event_logs._generate import (
 
 
 REFERENCE_PATH = Path(
-    "alphas/pofi_benign_midcap_v1/pofi_benign_midcap_v1.alpha.yaml"
+    "alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml"
 )
 
 _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     SensorSpec(
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=OFIEwmaSensor,
         params={"alpha": 0.1, "warm_after": 5},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="micro_price",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=MicroPriceSensor,
         params={},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="spread_z_30d",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=SpreadZScoreSensor,
         params={},
         subscribes_to=(NBBOQuote,),
@@ -240,20 +240,20 @@ def test_signal_stream_matches_locked_baseline() -> None:
 # only has to touch this list and bump the (per-alpha) hash + count.
 _V03_REFERENCE_ALPHAS: tuple[tuple[str, str], ...] = (
     (
-        "pofi_hawkes_burst_v1",
-        "alphas/pofi_hawkes_burst_v1/pofi_hawkes_burst_v1.alpha.yaml",
+        "sig_hawkes_burst_v1",
+        "alphas/sig_hawkes_burst_v1/sig_hawkes_burst_v1.alpha.yaml",
     ),
     (
-        "pofi_kyle_drift_v1",
-        "alphas/pofi_kyle_drift_v1/pofi_kyle_drift_v1.alpha.yaml",
+        "sig_kyle_drift_v1",
+        "alphas/sig_kyle_drift_v1/sig_kyle_drift_v1.alpha.yaml",
     ),
     (
-        "pofi_inventory_revert_v1",
-        "alphas/pofi_inventory_revert_v1/pofi_inventory_revert_v1.alpha.yaml",
+        "sig_inventory_revert_v1",
+        "alphas/sig_inventory_revert_v1/sig_inventory_revert_v1.alpha.yaml",
     ),
     (
-        "pofi_moc_imbalance_v1",
-        "alphas/pofi_moc_imbalance_v1/pofi_moc_imbalance_v1.alpha.yaml",
+        "sig_moc_imbalance_v1",
+        "alphas/sig_moc_imbalance_v1/sig_moc_imbalance_v1.alpha.yaml",
     ),
 )
 

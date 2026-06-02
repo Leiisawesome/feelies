@@ -178,6 +178,14 @@ class TestMacroRiskLockdown:
         sm.transition(MacroState.READY, trigger="FORCED_FLATTEN_COMPLETE")
         assert sm.state == MacroState.READY
 
+    def test_lockdown_to_shutdown(self, clock: SimulatedClock) -> None:
+        sm = create_macro_state_machine(clock)
+        _advance_to_ready(sm, clock)
+        sm.transition(MacroState.LIVE_TRADING_MODE, trigger="CMD_LIVE_DEPLOY")
+        sm.transition(MacroState.RISK_LOCKDOWN, trigger="RISK_BREACH")
+        sm.transition(MacroState.SHUTDOWN, trigger="CMD_SHUTDOWN")
+        assert sm.state == MacroState.SHUTDOWN
+
 
 class TestMacroIllegalTransitions:
     def test_init_to_ready_illegal(self, clock: SimulatedClock) -> None:

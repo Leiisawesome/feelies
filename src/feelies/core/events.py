@@ -98,6 +98,27 @@ class Trade(Event):
     received_ns: int | None = None
 
 
+@dataclass(frozen=True, kw_only=True)
+class SymbolHalted(Event):
+    """Forensic marker for a per-symbol trading halt / resume (BT-5).
+
+    Emitted by the orchestrator when a symbol's tape signals an LULD /
+    regulatory halt (``halted=True``) or a resume (``halted=False``).
+    Carries no control semantics itself — fill suppression is enforced
+    separately by the orchestrator's halt gate — but lets post-trade
+    forensics reconstruct which fills were suppressed and why.
+
+    ``blackout_until_ns`` is populated only on resume (``halted=False``):
+    new *entry* fills remain suppressed until this event-time deadline so
+    the reopening-auction print can stabilise.  ``0`` on a halt-on event.
+    """
+
+    symbol: str
+    halted: bool
+    reason: str = ""
+    blackout_until_ns: int = 0
+
+
 # ── Feature Events ──────────────────────────────────────────────────────
 #
 # Workstream D.2 PR-2b-iv deleted the per-tick ``FeatureVector`` event
@@ -125,6 +146,11 @@ class RegimeState(Event):
       Phase 3+.
       ``stability`` — 0..1 stability of the dominant state over recent
       posteriors.  Default 1.0 is a no-op for legacy producers.
+      ``posterior_entropy_nats`` — Shannon entropy (natural log base) of
+      the posterior categorical; ``0`` when unused (legacy producers).
+
+    When ``posteriors`` tie, producers pick the lowest ``dominant_state``
+    index (deterministic replay).
     """
 
     symbol: str
@@ -135,6 +161,7 @@ class RegimeState(Event):
     dominant_name: str
     horizon_seconds: int = 0
     stability: float = 1.0
+    posterior_entropy_nats: float = 0.0
 
 
 # ── Signal Events ───────────────────────────────────────────────────────
@@ -264,10 +291,17 @@ class OrderRequest(Event):
     quantity: int
     limit_price: Decimal | None = None
     strategy_id: str = ""
+<<<<<<< HEAD
     # True for short-entry sells.  HTB fee applies on the fill day only;
     # multi-day accrual over the holding period is a position-store
     # concern and is documented as a remaining gap in cost_model.py.
     is_short: bool = False
+=======
+    is_short: bool = False  # True for short-entry sells (HTB fee applies)
+    # BT-8: closing-auction (MOC) order — backtest routers queue until the
+    # official close print instead of filling on the continuous book.
+    is_moc: bool = False
+>>>>>>> origin/main
     g12_disclosed_cost_total_bps: float = 0.0
     reason: str = ""
 
@@ -562,6 +596,14 @@ class HorizonFeatureSnapshot(Event):
     ``parent_correlation_id`` carries the ``correlation_id`` of the
     ``HorizonTick`` that triggered this snapshot, restoring the
     audit-spine chain (S4 / A-DATA-04).
+
+    ``feature_versions`` records the ``feature_version`` string for each
+    feature_id present in this snapshot.  Combined with ``source_sensors``
+    (which records ``input_sensor_ids``) this closes the Inv-13 provenance
+    gap: a consumer reading an archived snapshot can reconstruct exactly
+    which feature *version* produced each value, even when the same
+    ``feature_id`` is registered at multiple horizons with different
+    versions.  Empty dict in passive mode (no features).
     """
 
     symbol: str
@@ -571,6 +613,7 @@ class HorizonFeatureSnapshot(Event):
     warm: dict[str, bool] = field(default_factory=dict)
     stale: dict[str, bool] = field(default_factory=dict)
     source_sensors: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    feature_versions: dict[str, str] = field(default_factory=dict)
     parent_correlation_id: str = ""
 
 
@@ -590,6 +633,13 @@ class CrossSectionalContext(Event):
     boundary_index: int
     universe: tuple[str, ...]
     signals_by_symbol: dict[str, "Signal | None"] = field(default_factory=dict)
+    # Per-symbol map strategy_id -> latest feeder Signal at the portfolio barrier.
+    # Populated when :class:`~feelies.composition.synchronizer.UniverseSynchronizer`
+    # is wired with ``upstream_strategy_ids`` so Layer-3 can aggregate SIGNAL
+    # alphas whose ``horizon_seconds`` differ from the PORTFOLIO decision horizon.
+    signals_by_strategy_by_symbol: dict[str, dict[str, "Signal | None"]] = field(
+        default_factory=dict,
+    )
     snapshots_by_symbol: dict[str, "HorizonFeatureSnapshot | None"] = field(
         default_factory=dict
     )
@@ -617,3 +667,16 @@ class SizedPositionIntent(Event):
     expected_turnover_usd: float = 0.0
     expected_gross_exposure_usd: float = 0.0
     mechanism_breakdown: dict[TrendMechanism, float] = field(default_factory=dict)
+    # Per-symbol disclosed one-way ``cost_total_bps`` carried over from
+    # the consumed SIGNAL events for each symbol in ``target_positions``.
+    # Populated by :class:`CompositionEngine` from
+    # :attr:`CrossSectionalContext.signals_by_symbol`; the risk engine
+    # stamps the corresponding entry onto each emitted PORTFOLIO
+    # ``OrderRequest.g12_disclosed_cost_total_bps`` so the post-fill G12
+    # cost-vs-disclosure stress alert (orchestrator §M9) fires for the
+    # PORTFOLIO path the same way it does for SIGNAL-driven orders.
+    # Empty default keeps v0.2 portfolio alphas bit-identical until the
+    # composition engine starts populating it (Inv-A).
+    disclosed_cost_total_bps_by_symbol: dict[str, float] = field(
+        default_factory=dict,
+    )

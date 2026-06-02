@@ -123,11 +123,11 @@ to `CANCEL_REQUESTED` and submits a cancel to the `OrderRouter`.
 
 ## Order Journal
 
-The `TradeJournal` protocol (`storage/trade_journal.py`) provides the
+The `TradeJournal` protocol (`src/feelies/storage/trade_journal.py`) provides the
 append-only log for completed trades as `TradeRecord` dataclasses. For
 full order state transition history, every SM transition is emitted as
 a `StateTransition` event and persisted by the `EventLog` protocol
-(`storage/event_log.py`). Together they support:
+(`src/feelies/storage/event_log.py`). Together they support:
 
 - **Audit**: reconstruct the full history of any order via `StateTransition` events
 - **Replay**: reproduce order flow for debugging (deterministic replay invariant)

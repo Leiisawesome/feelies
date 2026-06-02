@@ -65,11 +65,6 @@ from feelies.core.events import (
     Trade,
     TrendMechanism,
 )
-from feelies.features.definition import (
-    FeatureComputation,
-    FeatureDefinition,
-    WarmUpSpec,
-)
 from feelies.services.regime_engine import RegimeEngine, get_regime_engine
 from feelies.signals.regime_gate import RegimeGate, RegimeGateError
 
@@ -165,8 +160,6 @@ _SIGNAL_MIN_HORIZON_SECONDS = 30
 _ALPHA_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
-_REQUIRED_FEATURE_KEYS = {"version", "description", "computation"}
-
 _SAFE_BUILTINS = {
     "abs": abs,
     "min": min,
@@ -201,9 +194,6 @@ _SAFE_BUILTINS = {
     "StopIteration": StopIteration,
     "OverflowError": OverflowError,
 }
-
-_LIST_RETURN_RE = re.compile(r"^list\[(\d+)]$")
-
 
 def _check_arity(
     fn: Callable[..., Any],
@@ -307,154 +297,16 @@ class AlphaLoadError(Exception):
     """Raised when an .alpha.yaml file fails validation or compilation."""
 
 
-# ── YAML feature computation adapter ─────────────────────────────────
-
-
-class _YAMLFeatureComputation:
-    """Wraps compiled initial_state/update/update_trade callables into FeatureComputation."""
-
-    __slots__ = ("_initial_state_fn", "_update_fn", "_update_trade_fn", "_params")
-
-    def __init__(
-        self,
-        initial_state_fn: Callable[[], dict[str, Any]],
-        update_fn: Callable[..., Any],
-        params: dict[str, Any],
-        update_trade_fn: Callable[..., Any] | None = None,
-    ) -> None:
-        self._initial_state_fn = initial_state_fn
-        self._update_fn = update_fn
-        self._update_trade_fn = update_trade_fn
-        self._params = params
-
-    def initial_state(self) -> dict[str, Any]:
-        return self._initial_state_fn()
-
-    def update(self, quote: NBBOQuote, state: dict[str, Any]) -> float:
-        result = self._update_fn(quote, state, self._params)
-        return float(result)
-
-    def update_trade(self, trade: Trade, state: dict[str, Any]) -> float | None:
-        if self._update_trade_fn is None:
-            return None
-        result = self._update_trade_fn(trade, state, self._params)
-        return float(result) if result is not None else None
-
-
-class _CompoundElementComputation:
-    """Wraps one element of a compound (list-returning) feature.
-
-    Element 0 is the "state owner": its ``initial_state()`` returns
-    the shared computation's initial state, and its ``update()`` drives
-    the actual computation.  Elements 1..N-1 are "cache readers" that
-    read the cached result from the same tick.
-
-    This design ensures the composite engine's ``checkpoint()``,
-    ``restore()``, and ``reset()`` capture compound feature state via
-    element 0's state dict — no shadow state outside the engine's
-    control (invariant 5).
-    """
-
-    __slots__ = ("_shared", "_index", "_params")
-
-    def __init__(
-        self,
-        shared: _SharedCompoundComputation,
-        index: int,
-        params: dict[str, Any],
-    ) -> None:
-        self._shared = shared
-        self._index = index
-        self._params = params
-
-    def initial_state(self) -> dict[str, Any]:
-        if self._index == 0:
-            return self._shared.create_initial_state()
-        return {}
-
-    def update(self, quote: NBBOQuote, state: dict[str, Any]) -> float:
-        if self._index == 0:
-            result = self._shared.compute_once(quote, state, self._params)
-        else:
-            result = self._shared.get_cached(quote.symbol)
-        return float(result[self._index])
-
-    def update_trade(
-        self, trade: Trade, state: dict[str, Any]
-    ) -> float | None:
-        return None
-
-    def reset_symbol(self, symbol: str) -> None:
-        """Clear per-tick cache for this symbol (called by composite reset)."""
-        if self._index == 0:
-            self._shared.reset_symbol(symbol)
-
-
-class _SharedCompoundComputation:
-    """Shared computation for a compound feature that returns list[N].
-
-    State is owned externally by the composite engine (passed in via
-    element 0's state dict).  This class only manages per-tick caching
-    keyed on the quote's monotonic ``sequence`` number to guarantee
-    exactly-once execution per symbol per tick.
-    """
-
-    __slots__ = ("_initial_state_fn", "_update_fn", "_n_elements",
-                 "_last_computed_seq", "_last_results")
-
-    def __init__(
-        self,
-        initial_state_fn: Callable[[], dict[str, Any]],
-        update_fn: Callable[..., Any],
-        n_elements: int,
-    ) -> None:
-        self._initial_state_fn = initial_state_fn
-        self._update_fn = update_fn
-        self._n_elements = n_elements
-        self._last_computed_seq: dict[str, int] = {}
-        self._last_results: dict[str, list[float]] = {}
-
-    def create_initial_state(self) -> dict[str, Any]:
-        """Return fresh state from the YAML-compiled initial_state()."""
-        return self._initial_state_fn()
-
-    def default_value(self) -> list[float]:
-        return [0.0] * self._n_elements
-
-    def compute_once(
-        self, quote: NBBOQuote, state: dict[str, Any],
-        params: dict[str, Any],
-    ) -> list[float]:
-        """Run the shared computation using externally-owned state.
-
-        Called by element 0 only.  Per-tick caching prevents
-        re-execution when subsequent elements read their values.
-        """
-        symbol = quote.symbol
-        if self._last_computed_seq.get(symbol) == quote.sequence:
-            return self._last_results[symbol]
-
-        result = self._update_fn(quote, state, params)
-        result_list = [float(v) for v in result]
-        self._last_results[symbol] = result_list
-        self._last_computed_seq[symbol] = quote.sequence
-        return result_list
-
-    def get_cached(self, symbol: str) -> list[float]:
-        """Return cached result for elements 1..N-1 (must follow element 0)."""
-        return self._last_results.get(symbol, self.default_value())
-
-    def reset_symbol(self, symbol: str) -> None:
-        """Clear per-tick cache for a symbol (called on engine reset)."""
-        self._last_computed_seq.pop(symbol, None)
-        self._last_results.pop(symbol, None)
-
-
 # ── AlphaLoader ──────────────────────────────────────────────────────
 
 
 class AlphaLoader:
     """Parse ``.alpha.yaml`` files into layer-specialised loaded modules.
+
+    Optional ``regime_engine_options`` are forwarded as ``**kwargs`` to
+    :func:`feelies.services.regime_engine.get_regime_engine` when this
+    loader must instantiate a standalone regime engine (no shared
+    ``regime_engine`` instance was supplied at construction).
 
     Each accepted ``layer:`` value resolves to a dedicated loaded-module
     class via a deterministic dispatch branch in :meth:`load_from_dict`:
@@ -474,10 +326,12 @@ class AlphaLoader:
         *,
         enforce_trend_mechanism: bool = False,
         enforce_layer_gates: bool = True,
+        regime_engine_options: dict[str, object] | None = None,
     ) -> None:
         self._regime_engine = regime_engine
         self._enforce_trend_mechanism = bool(enforce_trend_mechanism)
         self._enforce_layer_gates = bool(enforce_layer_gates)
+        self._regime_engine_options = dict(regime_engine_options or {})
 
     def load(
         self,
@@ -617,6 +471,9 @@ class AlphaLoader:
         promotion_overrides = self._parse_promotion_block(
             spec.get("promotion"), source
         )
+        lifecycle_cap = self._parse_lifecycle_state(
+            spec.get("lifecycle_state"), source
+        )
         trend_enum, expected_half_life = self._extract_trend_metadata(
             trend_mechanism_block, source,
         )
@@ -652,6 +509,7 @@ class AlphaLoader:
             trend_mechanism=trend_mechanism_block,
             hazard_exit=hazard_exit_block,
             gate_thresholds_overrides=promotion_overrides,
+            lifecycle_cap=lifecycle_cap,
         )
 
         return LoadedSignalLayerModule(
@@ -716,6 +574,9 @@ class AlphaLoader:
         promotion_overrides = self._parse_promotion_block(
             spec.get("promotion"), source
         )
+        lifecycle_cap = self._parse_lifecycle_state(
+            spec.get("lifecycle_state"), source
+        )
 
         consumes_raw = (
             (trend_mechanism_block or {}).get("consumes")
@@ -758,6 +619,7 @@ class AlphaLoader:
             constructor = _DefaultPortfolioConstructor(
                 engine_thunk=lambda: None,
                 strategy_id=alpha_id,
+                feeder_strategy_ids=depends_on_signals,
             )
 
         risk_budget_raw = spec.get("risk_budget", {}) or {}
@@ -784,6 +646,7 @@ class AlphaLoader:
             trend_mechanism=trend_mechanism_block,
             hazard_exit=hazard_exit_block,
             gate_thresholds_overrides=promotion_overrides,
+            lifecycle_cap=lifecycle_cap,
         )
 
         return LoadedPortfolioLayerModule(
@@ -1271,6 +1134,28 @@ class AlphaLoader:
             ) from exc
 
     @staticmethod
+    def _parse_lifecycle_state(raw: Any, source: str) -> str | None:
+        """Parse optional ``lifecycle_state`` (BT-13 research-only cap).
+
+        Only ``RESEARCH`` is supported today: it blocks PAPER/LIVE promotion
+        while still allowing the alpha to load for integration tests.
+        """
+        if raw is None:
+            return None
+        if not isinstance(raw, str):
+            raise AlphaLoadError(
+                f"{source}: 'lifecycle_state' must be a string, got "
+                f"{type(raw).__name__}"
+            )
+        normalized = raw.strip().upper()
+        if normalized != "RESEARCH":
+            raise AlphaLoadError(
+                f"{source}: unsupported lifecycle_state {raw!r}; "
+                "only 'RESEARCH' is supported"
+            )
+        return normalized
+
+    @staticmethod
     def _validate_risk_budget(budget: AlphaRiskBudget, source: str) -> None:
         errors: list[str] = []
         if budget.max_position_per_symbol <= 0:
@@ -1328,6 +1213,15 @@ class AlphaLoader:
     ) -> dict[str, Any]:
         params: dict[str, Any] = {}
         errors: list[str] = []
+        override_keys = set(overrides)
+        declared = {p.name for p in param_defs}
+        unknown = sorted(override_keys - declared)
+        if unknown:
+            raise AlphaLoadError(
+                f"{source}: unknown parameter_overrides key(s): "
+                f"{unknown} — refusing silent drops"
+            )
+
         for pdef in param_defs:
             value = overrides.get(pdef.name, pdef.default)
             errs = pdef.validate_value(value)
@@ -1359,9 +1253,17 @@ class AlphaLoader:
             return self._regime_engine
 
         try:
-            return get_regime_engine(engine_name)
+            return get_regime_engine(
+                engine_name,
+                **dict(self._regime_engine_options),
+            )
         except KeyError as exc:
             raise AlphaLoadError(f"{source}: {exc}") from exc
+        except TypeError as exc:
+            raise AlphaLoadError(
+                f"{source}: invalid regime_engine_options for engine "
+                f"{engine_name!r}: {exc}"
+            ) from exc
 
     # ── Namespace construction ────────────────────────────────
 
@@ -1387,189 +1289,6 @@ class AlphaLoader:
             ns["regime_state_names"] = regime_engine.state_names
         return ns
 
-    # ── Feature normalization (list or dict) ──────────────────
-
-    def _normalize_features(
-        self,
-        features_raw: Any,
-        source: str,
-    ) -> list[dict[str, Any]]:
-        if isinstance(features_raw, list):
-            for i, item in enumerate(features_raw):
-                if not isinstance(item, dict):
-                    raise AlphaLoadError(
-                        f"{source}: features[{i}] must be a mapping"
-                    )
-                if "feature_id" not in item:
-                    raise AlphaLoadError(
-                        f"{source}: features[{i}] missing 'feature_id'"
-                    )
-            return features_raw
-
-        if isinstance(features_raw, dict):
-            normalized: list[dict[str, Any]] = []
-            for name, fspec in features_raw.items():
-                if not isinstance(fspec, dict):
-                    raise AlphaLoadError(
-                        f"{source}: feature '{name}' must be a mapping"
-                    )
-                entry = {"feature_id": name, **fspec}
-                normalized.append(entry)
-            return normalized
-
-        raise AlphaLoadError(
-            f"{source}: 'features' must be a list or mapping"
-        )
-
-    # ── Feature compilation ───────────────────────────────────
-
-    def _compile_features(
-        self,
-        feature_list: list[dict[str, Any]],
-        params: dict[str, Any],
-        namespace: dict[str, Any],
-        source: str,
-    ) -> list[FeatureDefinition]:
-        all_defs: list[FeatureDefinition] = []
-
-        for fspec in feature_list:
-            fid = fspec["feature_id"]
-
-            has_computation = "computation" in fspec
-            has_module = "computation_module" in fspec
-
-            if not has_computation and not has_module:
-                raise AlphaLoadError(
-                    f"{source}: feature '{fid}' must define "
-                    f"'computation' or 'computation_module'"
-                )
-
-            if has_module:
-                module_path = Path(fspec["computation_module"])
-                alpha_dir = Path(source).parent.resolve()
-                resolved = (alpha_dir / module_path).resolve()
-                try:
-                    resolved.relative_to(alpha_dir)
-                except ValueError:
-                    raise AlphaLoadError(
-                        f"{source}: computation_module '{module_path}' "
-                        f"escapes alpha directory"
-                    )
-                code = resolved.read_text(encoding="utf-8")
-            else:
-                missing = _REQUIRED_FEATURE_KEYS - set(fspec.keys())
-                if missing:
-                    raise AlphaLoadError(
-                        f"{source}: feature '{fid}' missing keys: "
-                        + ", ".join(sorted(missing))
-                    )
-                code = fspec["computation"]
-
-            ns = dict(namespace)
-            try:
-                compiled = compile(code, f"<{source}:{fid}>", "exec")
-                exec(compiled, ns)  # noqa: S102
-            except SyntaxError as exc:
-                raise AlphaLoadError(
-                    f"{source}: feature '{fid}' syntax error: {exc}"
-                ) from exc
-
-            init_fn = ns.get("initial_state")
-            update_fn = ns.get("update")
-            if init_fn is None or update_fn is None:
-                raise AlphaLoadError(
-                    f"{source}: feature '{fid}' must define "
-                    f"initial_state() and update(quote, state, params)"
-                )
-            _check_arity(init_fn, 0, "initial_state", source, fid)
-            _check_arity(update_fn, 3, "update", source, fid)
-
-            update_trade_fn = ns.get("update_trade")
-            if update_trade_fn is not None:
-                _check_arity(update_trade_fn, 3, "update_trade", source, fid)
-
-            warm_up = self._resolve_warm_up(
-                fspec.get("warm_up", {}), params, source, fid
-            )
-            depends_on = frozenset(fspec.get("depends_on", []))
-            version = str(fspec.get("version", "1.0.0"))
-            description = str(fspec.get("description", ""))
-
-            return_type = str(fspec.get("return_type", "float"))
-            m = _LIST_RETURN_RE.match(return_type)
-
-            if m:
-                n_elements = int(m.group(1))
-                if update_trade_fn is not None:
-                    raise AlphaLoadError(
-                        f"{source}: compound feature '{fid}' (return_type: "
-                        f"list[{n_elements}]) does not support update_trade "
-                        f"-- use separate scalar features instead"
-                    )
-                shared = _SharedCompoundComputation(init_fn, update_fn, n_elements)
-                for idx in range(n_elements):
-                    sub_id = f"{fid}_{idx}"
-                    element_comp: FeatureComputation = (
-                        _CompoundElementComputation(shared, idx, params)
-                    )
-                    all_defs.append(FeatureDefinition(
-                        feature_id=sub_id,
-                        version=version,
-                        description=f"{description} [element {idx}]",
-                        depends_on=depends_on,
-                        warm_up=warm_up,
-                        compute=element_comp,
-                    ))
-            else:
-                scalar_comp: FeatureComputation = _YAMLFeatureComputation(
-                    init_fn, update_fn, params,
-                    update_trade_fn=update_trade_fn,
-                )
-                all_defs.append(FeatureDefinition(
-                    feature_id=fid,
-                    version=version,
-                    description=description,
-                    depends_on=depends_on,
-                    warm_up=warm_up,
-                    compute=scalar_comp,
-                ))
-
-        return all_defs
-
-    def _resolve_warm_up(
-        self,
-        warm_up_raw: dict[str, Any],
-        params: dict[str, Any],
-        source: str,
-        feature_id: str,
-    ) -> WarmUpSpec:
-        min_events_raw = warm_up_raw.get("min_events", 0)
-        min_duration_ns = int(warm_up_raw.get("min_duration_ns", 0))
-
-        if isinstance(min_events_raw, str):
-            min_events = _resolve_min_events(
-                min_events_raw, params, source, feature_id,
-            )
-        else:
-            min_events = int(min_events_raw)
-
-        if min_events > 0 and min_duration_ns > 0:
-            # Advisory: 1 event per millisecond is a generous upper bound
-            # for NBBO data.  If the duration requires more time than
-            # the event count implies at this rate, the configuration may
-            # be inconsistent.
-            implied_min_ns = min_events * 1_000_000
-            if min_duration_ns > implied_min_ns * 100:
-                logger.warning(
-                    "%s: feature '%s' warm-up looks inconsistent: "
-                    "min_events=%d implies ~%dms, but min_duration_ns=%d "
-                    "(~%dms). Check configuration.",
-                    source, feature_id, min_events,
-                    implied_min_ns // 1_000_000, min_duration_ns,
-                    min_duration_ns // 1_000_000,
-                )
-
-        return WarmUpSpec(min_events=min_events, min_duration_ns=min_duration_ns)
 
 # ── Lazy event imports for PORTFOLIO inline construct() namespaces ─────
 

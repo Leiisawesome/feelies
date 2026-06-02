@@ -45,11 +45,22 @@ following hold at barrier time:
 Symbols whose latest signal is from a prior boundary are similarly
 mapped to ``None`` in ``signals_by_symbol``.
 
+Cross-horizon feeder fan-in (Phase 4.1)
+---------------------------------------
+
+When ``upstream_strategy_ids`` is non-empty, ``Signal`` events are
+cached for every horizon in ``signal_horizons`` (typically the union of
+the PORTFOLIO decision horizon and each upstream SIGNAL alpha's
+``horizon_seconds``).  At a PORTFOLIO barrier the synchronizer fills
+``CrossSectionalContext.signals_by_strategy_by_symbol`` with the latest
+causal ``Signal`` per ``(symbol, strategy_id)``, applying snapshot
+timestamp alignment only when the feeder shares the portfolio horizon.
+
 Completeness
 ------------
 
 ``completeness`` is computed as
-``len(non_None_signals) / len(universe)`` — a float in ``[0, 1]``
+``len(symbols_with_any_feeder_signal) / len(universe)`` — a float in ``[0, 1]``
 that the consumer can compare against
 :class:`feelies.core.platform_config.PlatformConfig.composition_completeness_threshold`.
 """
@@ -82,9 +93,16 @@ class UniverseSynchronizer:
     - ``universe`` — the lex-sorted symbol tuple participating in the
       cross-section.  Empty universe makes :meth:`attach` a no-op
       (zero overhead — the LEGACY fast-path stays bit-stable).
-    - ``horizons`` — the registered cross-sectional horizons.  Only
-      UNIVERSE-scope :class:`HorizonTick` events whose
+    - ``horizons`` — the registered **portfolio decision** horizons.
+      Only UNIVERSE-scope :class:`HorizonTick` events whose
       ``horizon_seconds`` is in this set trigger context emission.
+    - ``signal_horizons`` — horizons for which Layer-2 ``Signal`` events
+      are cached (defaults to ``horizons``).  Pass the union of portfolio
+      horizons and every upstream SIGNAL ``horizon_seconds`` referenced
+      by ``depends_on_signals`` when feeders operate on shorter horizons.
+    - ``upstream_strategy_ids`` — sorted union of SIGNAL ``strategy_id``
+      values (alpha_ids) declared across PORTFOLIO ``depends_on_signals``.
+      When empty, behaviour matches the pre–fan-in synchronizer.
     - ``ctx_sequence_generator`` — *dedicated*
       :class:`SequenceGenerator`; never shared with any other emitter.
     """
@@ -92,7 +110,10 @@ class UniverseSynchronizer:
     __slots__ = (
         "_bus",
         "_universe_sorted",
-        "_horizons",
+        "_context_horizons",
+        "_signal_horizons",
+        "_signal_horizons_sorted",
+        "_upstream_strategy_ids",
         "_ctx_seq",
         "_snapshot_cache",
         "_signal_cache",
@@ -107,14 +128,33 @@ class UniverseSynchronizer:
         universe: Iterable[str],
         horizons: Iterable[int],
         ctx_sequence_generator: SequenceGenerator,
+        signal_horizons: Iterable[int] | None = None,
+        upstream_strategy_ids: tuple[str, ...] | None = None,
     ) -> None:
         self._bus = bus
         self._universe_sorted: tuple[str, ...] = tuple(sorted(set(universe)))
-        self._horizons: frozenset[int] = frozenset(horizons)
-        for h in self._horizons:
+        self._context_horizons: frozenset[int] = frozenset(horizons)
+        self._signal_horizons: frozenset[int] = (
+            frozenset(signal_horizons)
+            if signal_horizons is not None
+            else frozenset(self._context_horizons)
+        )
+        self._signal_horizons_sorted: tuple[int, ...] = tuple(
+            sorted(self._signal_horizons),
+        )
+        self._upstream_strategy_ids: tuple[str, ...] = tuple(
+            sorted(set(upstream_strategy_ids or ())),
+        )
+        for h in self._context_horizons:
             if h <= 0:
                 raise ValueError(
                     f"UniverseSynchronizer.horizons must be positive, got {h}"
+                )
+        for h in self._signal_horizons:
+            if h <= 0:
+                raise ValueError(
+                    f"UniverseSynchronizer.signal_horizons must be positive, "
+                    f"got {h}"
                 )
         self._ctx_seq = ctx_sequence_generator
         # Latest snapshot per (horizon_seconds, symbol).
@@ -122,12 +162,6 @@ class UniverseSynchronizer:
             tuple[int, str], HorizonFeatureSnapshot
         ] = {}
         # Latest signal per (horizon_seconds, symbol, strategy_id).
-        # Note: a single barrier may surface multiple alphas per symbol;
-        # the synchronizer keeps the most recent signal *per strategy_id*
-        # and surfaces only the lex-first alpha for a given symbol in
-        # ``signals_by_symbol`` — extending to a richer mapping is a
-        # future deliverable.  v0.2 expects a single PORTFOLIO alpha
-        # per universe so this is loss-less in practice.
         self._signal_cache: dict[tuple[int, str, str], Signal] = {}
         # ``(horizon_seconds, boundary_index)`` we have already emitted.
         self._emitted: set[tuple[int, int]] = set()
@@ -142,11 +176,12 @@ class UniverseSynchronizer:
 
     @property
     def horizons(self) -> frozenset[int]:
-        return self._horizons
+        """Portfolio decision horizons that emit contexts."""
+        return self._context_horizons
 
     @property
     def is_empty(self) -> bool:
-        return not self._universe_sorted or not self._horizons
+        return not self._universe_sorted or not self._context_horizons
 
     def attach(self) -> None:
         """Install bus subscriptions.  No-op when ``is_empty``."""
@@ -168,7 +203,7 @@ class UniverseSynchronizer:
     # ── Bus handlers ─────────────────────────────────────────────────
 
     def _on_snapshot(self, snap: HorizonFeatureSnapshot) -> None:
-        if snap.horizon_seconds not in self._horizons:
+        if snap.horizon_seconds not in self._context_horizons:
             return
         if snap.symbol not in set(self._universe_sorted):
             return
@@ -182,12 +217,9 @@ class UniverseSynchronizer:
         self._snapshot_cache[key] = snap
 
     def _on_signal(self, sig: Signal) -> None:
-        # Layer-2 SIGNAL events carry horizon_seconds; any non-SIGNAL
-        # signal (legacy or otherwise) is filtered out before reaching
-        # the cross-sectional pipeline.
         if sig.layer != "SIGNAL":
             return
-        if sig.horizon_seconds not in self._horizons:
+        if sig.horizon_seconds not in self._signal_horizons:
             return
         if sig.symbol not in set(self._universe_sorted):
             return
@@ -200,7 +232,7 @@ class UniverseSynchronizer:
     def _on_tick(self, tick: HorizonTick) -> None:
         if tick.scope != "UNIVERSE":
             return
-        if tick.horizon_seconds not in self._horizons:
+        if tick.horizon_seconds not in self._context_horizons:
             return
         key = (tick.horizon_seconds, tick.boundary_index)
         if key in self._emitted:
@@ -208,16 +240,52 @@ class UniverseSynchronizer:
         self._emitted.add(key)
         self._emit_context(tick)
 
-    # ── Context construction ────────────────────────────────────────
+    def _pick_feeder_signal(
+        self,
+        *,
+        symbol: str,
+        strategy_id: str,
+        portfolio_h: int,
+        boundary_ts_ns: int,
+        snap: HorizonFeatureSnapshot | None,
+        boundary_index: int,
+    ) -> Signal | None:
+        """Latest causal ``Signal`` for *strategy_id* at the portfolio barrier."""
+        candidates: list[tuple[int, Signal]] = []
+        for kh in self._signal_horizons_sorted:
+            s = self._signal_cache.get((kh, symbol, strategy_id))
+            if s is not None:
+                candidates.append((kh, s))
+        if not candidates:
+            return None
+        candidates = [
+            (kh, s) for kh, s in candidates if s.timestamp_ns <= boundary_ts_ns
+        ]
+        if not candidates:
+            return None
+
+        same_h = [(kh, s) for kh, s in candidates if kh == portfolio_h]
+        if (
+            same_h
+            and snap is not None
+            and snap.boundary_index >= boundary_index
+        ):
+            aligned = [
+                s for kh, s in same_h if s.timestamp_ns >= snap.timestamp_ns
+            ]
+            if aligned:
+                return max(aligned, key=lambda s: s.timestamp_ns)
+
+        # Cross-horizon feeders: latest observation at or before the barrier.
+        return max((s for _, s in candidates), key=lambda s: s.timestamp_ns)
+
+    # ── Context construction ───────────────────────────────────────
 
     def _emit_context(self, tick: HorizonTick) -> None:
         h = tick.horizon_seconds
         bi = tick.boundary_index
 
         snapshots: dict[str, HorizonFeatureSnapshot | None] = {}
-        signals: dict[str, Signal | None] = {}
-        non_none = 0
-
         for symbol in self._universe_sorted:
             snap = self._snapshot_cache.get((h, symbol))
             if snap is None or snap.boundary_index < bi:
@@ -225,14 +293,46 @@ class UniverseSynchronizer:
             else:
                 snapshots[symbol] = snap
 
-            # Pick the lex-first alpha_id whose signal is at this barrier
-            # for this (horizon, symbol).
-            chosen: Signal | None = None
+        signals_by_strategy: dict[str, dict[str, Signal | None]] = {}
+        if self._upstream_strategy_ids:
+            for symbol in self._universe_sorted:
+                snap = snapshots[symbol]
+                signals_by_strategy[symbol] = {
+                    sid: self._pick_feeder_signal(
+                        symbol=symbol,
+                        strategy_id=sid,
+                        portfolio_h=h,
+                        boundary_ts_ns=tick.timestamp_ns,
+                        snap=snap,
+                        boundary_index=bi,
+                    )
+                    for sid in self._upstream_strategy_ids
+                }
+
+        signals: dict[str, Signal | None] = {}
+        non_none = 0
+
+        for symbol in self._universe_sorted:
+            snap = snapshots[symbol]
+
+            if self._upstream_strategy_ids:
+                row = signals_by_strategy[symbol]
+                chosen: Signal | None = None
+                for sid in self._upstream_strategy_ids:
+                    s = row.get(sid)
+                    if s is not None:
+                        chosen = s
+                        break
+                signals[symbol] = chosen
+                if any(v is not None for v in row.values()):
+                    non_none += 1
+                continue
+
+            chosen = None
             for (kh, ksym, _strategy_id), s in sorted(self._signal_cache.items()):
                 if kh != h or ksym != symbol:
                     continue
                 if snap is not None and s.timestamp_ns < snap.timestamp_ns:
-                    # Stale signal from an earlier boundary.
                     continue
                 chosen = s
                 break
@@ -254,6 +354,7 @@ class UniverseSynchronizer:
             boundary_index=bi,
             universe=self._universe_sorted,
             signals_by_symbol=signals,
+            signals_by_strategy_by_symbol=signals_by_strategy,
             snapshots_by_symbol=snapshots,
             completeness=completeness,
         )

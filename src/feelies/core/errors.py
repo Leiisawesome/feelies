@@ -37,3 +37,16 @@ class ExecutionError(FeeliesError):
 
 class StaleDataError(FeeliesError):
     """Degraded: data is stale beyond tolerance (never silently consumed)."""
+
+
+class OrchestratorPipelineAbortError(FeeliesError):
+    """Pipeline stopped after tick-failure recovery could not reach DEGRADED.
+
+    Raised when ``_pipeline_abort_requested`` is set (macro transition to
+    ``DEGRADED`` failed inside :meth:`Orchestrator._handle_tick_failure`) so
+    callers do not mis-classify an aborted loop as normal feed exhaustion.
+    """
+
+
+class SessionEntryBlockedError(FeeliesError):
+    """Cannot enter RESEARCH/BACKTEST/PAPER/LIVE — kill switch or risk interlock."""

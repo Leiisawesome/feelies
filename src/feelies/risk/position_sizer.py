@@ -87,7 +87,7 @@ class BudgetBasedSizer:
 
         allocated = account_equity * Decimal(str(risk_budget.capital_allocation_pct)) / Decimal("100")
 
-        strength = max(0.0, min(1.0, signal.strength))
+        strength = max(0.0, signal.strength)
         conviction_capital = allocated * Decimal(str(strength))
 
         regime_factor = self._get_regime_factor(signal.symbol)

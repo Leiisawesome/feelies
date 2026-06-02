@@ -1,0 +1,187 @@
+# ── Identity & Provenance ─────────────────────────────────
+schema_version: "1.1"
+layer: SIGNAL
+alpha_id: sig_benign_midcap_v1
+version: "1.0.0"
+description: |
+  Kyle-style informed-flow footprint on L1 (OFI + micro-price vs mid)
+  in the benign / normal microstructure regime for mid-cap names.
+  Institutional parent fills often arrive as VWAP/TWAP slices; those
+  waves imprint the same directional imbalance this alpha reads.  The
+  regime gate suppresses toxic / breakout states where the footprint
+  mean-reverts or inverts.
+
+# ── Hypothesis (causal mechanism) ─────────────────────────
+hypothesis: |
+  When informed trading pressure is present but transient-impact
+  conditions remain orderly (low spread z-score, HMM normal-regime
+  posterior elevated), persistent same-sign OFI and micro-price tilt
+  relative to mid reveal a Kyle-style information footprint on L1.
+  VWAP/TWAP parent slicing is a common *execution modality* that
+  produces such footprints; the tradeable claim is the footprint
+  itself, not the algorithm tag.  Conditional on the HMM ``normal``
+  posterior and mild spreads, residual mid drift over the 120-second
+  horizon aligns with the signed imbalance; the signal sizes exposure
+  by standardised OFI rather than by parent-order identifiers (which
+  are unobserved).
+
+falsification_criteria:
+  - |
+    Spearman correlation between ofi_ewma over the prior 120s and
+    return over the next 120s drops below 0.05 in the normal regime
+    for >= 4 consecutive weeks.  (Mechanism requires sustained
+    positive correlation; loss indicates parent-order behaviour
+    has changed or the signature is saturated.)
+  - |
+    Out-of-sample DSR (deflated Sharpe ratio) below 1.0 across any
+    single calendar quarter after promotion to LIVE.
+  - |
+    SEC/FINRA mandates execution transparency that eliminates the
+    VWAP/TWAP slicing advantage; the parent-order leakage signature
+    disappears from L1 entirely.
+  - |
+    Realised volatility enters a sustained high regime (HMM
+    posterior P(vol_breakout) > 0.5 for > 30 trading days); the
+    on-condition becomes unreachable and the strategy is inactive.
+
+# ── Layer-1 sensor dependencies (Phase 3) ─────────────────
+# All three sensors ship with the platform and are wired via the
+# platform.yaml ``sensors:`` block.  G6 (feature/sensor dependency
+# DAG) verifies every entry resolves at boot.
+depends_on_sensors:
+  - ofi_ewma
+  - micro_price
+  - spread_z_30d
+  - realized_vol_30s
+
+# ── Universe ──────────────────────────────────────────────
+# Universe selection is config-driven (mid-cap subset of the
+# active platform symbols).  No static list is pinned here; the
+# operator restricts via ``platform.yaml`` for the deployment.
+
+# ── Parameters ────────────────────────────────────────────
+parameters:
+  entry_threshold_z:
+    type: float
+    default: 0.8
+    min: 0.5
+    max: 3.0
+    description: |
+      Entry trigger on |ofi_ewma_zscore|.  ~2.5% tail of the
+      normal-regime OFI z-score distribution at the default value.
+  edge_per_z_bps:
+    type: float
+    default: 4.0
+    min: 1.0
+    max: 8.0
+    description: |
+      Linear extrapolation slope from |z| to expected edge in bps.
+      Capped at edge_cap_bps to avoid extrapolation tail risk.
+  edge_cap_bps:
+    type: float
+    default: 20.0
+    min: 5.0
+    max: 50.0
+    description: |
+      Maximum reported ``edge_estimate_bps``; safety cap.
+  strength_cap:
+    type: float
+    default: 2.0
+    min: 1.0
+    max: 4.0
+    description: |
+      Ceiling for convex strength scaling.  Signals at |z| == threshold*2
+      still produce strength==1.0 (backward-compatible floor); the cap
+      allows high-z signals to size proportionally larger up to this
+      multiple of the base unit size.
+# ── Horizon (Layer-2 boundary) ────────────────────────────
+horizon_seconds: 120
+
+# ── Risk Budget ───────────────────────────────────────────
+risk_budget:
+  max_position_per_symbol: 500
+  max_gross_exposure_pct: 25.0
+  max_drawdown_pct: 1.0
+  capital_allocation_pct: 25.0
+
+# ── Regime Gate (Phase 3 DSL — §8.4) ──────────────────────
+regime_gate:
+  regime_engine: hmm_3state_fractional
+  on_condition: |
+    P(normal) > 0.5 and spread_z_30d < 1.5
+  off_condition: |
+    P(normal) < 0.35 or spread_z_30d > 3.0 or realized_vol_30s_zscore > 4.5
+  hysteresis:
+    posterior_margin: 0.20
+    percentile_margin: 0.30
+
+# ── Cost Arithmetic Disclosure (G12) ──────────────────────
+cost_arithmetic:
+  edge_estimate_bps: 9.0
+  half_spread_bps: 2.0
+  impact_bps: 2.0
+  fee_bps: 1.0
+  margin_ratio: 1.8
+
+trend_mechanism:
+  family: KYLE_INFO
+  expected_half_life_seconds: 120
+  l1_signature_sensors:
+    - kyle_lambda_60s
+    - micro_price
+    - ofi_ewma
+    - spread_z_30d
+  failure_signature:
+    - "spread_z_30d > 3.0"
+    - "P(vol_breakout) > 0.5"
+
+# ── Signal (Layer-2 evaluate) ─────────────────────────────
+signal: |
+  def evaluate(snapshot, regime, params):
+      threshold = params["entry_threshold_z"]
+      slope_bps = params["edge_per_z_bps"]
+      edge_cap = params["edge_cap_bps"]
+      str_cap = params["strength_cap"]
+
+      z = snapshot.values.get("ofi_ewma_zscore")
+      z_mp = snapshot.values.get("micro_price_zscore")
+      if z is None or z_mp is None:
+          return None
+
+      mag = abs(z)
+      if mag < threshold:
+          return None
+
+      # Require micro-price pressure aligned with signed OFI (L1 footprint).
+      # Strict inequality so an exactly-zero z_mp is treated as neutral
+      # (insufficient evidence) rather than as contradicting either side.
+      if (z > 0.0 and z_mp < 0.0) or (z < 0.0 and z_mp > 0.0):
+          return None
+      # Zero micro-price pressure carries no L1 confirmation of OFI.
+      if z_mp == 0.0:
+          return None
+
+      direction = LONG if z > 0 else SHORT
+      edge_bps = min(mag * slope_bps, edge_cap)
+
+      # Convex strength: superlinear above the old saturation point
+      # (mag == threshold*2 => norm==1.0 => same strength as before).
+      norm = mag / (threshold * 2.0)
+      # Below saturation (norm <= 1.0): original linear scaling — no change
+      # to existing signal sizes.  Above saturation (norm > 1.0): convex
+      # upside capped at str_cap, rewarding high-conviction moments.
+      if norm <= 1.0:
+          strength = norm
+      else:
+          strength = min(1.0 + (norm - 1.0) ** 1.2, str_cap)
+
+      return Signal(
+          timestamp_ns=snapshot.timestamp_ns,
+          correlation_id=snapshot.correlation_id,
+          sequence=snapshot.sequence,
+          symbol=snapshot.symbol,
+          strategy_id="sig_benign_midcap_v1",
+          direction=direction,
+          strength=strength,
+          edge_estimate_bps=edge_bps,
+      )

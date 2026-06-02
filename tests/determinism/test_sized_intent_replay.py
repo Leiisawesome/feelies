@@ -44,7 +44,7 @@ from feelies.core.identifiers import SequenceGenerator
 
 _UNIVERSE: tuple[str, ...] = ("AAPL", "AMZN", "GOOG", "META", "MSFT")
 _HORIZON_SECONDS: int = 300
-_STRATEGY_ID: str = "pofi_xsect_v1"
+_STRATEGY_ID: str = "pro_xsect_v1"
 _NUM_BOUNDARIES: int = 4
 
 # Deterministic per-(boundary, symbol) signal book.  Mix LONG/SHORT,
@@ -75,7 +75,7 @@ def _make_signal(
         correlation_id=f"sig:{symbol}:{seq}",
         source_layer="SIGNAL",
         symbol=symbol,
-        strategy_id="pofi_kyle_drift_v1",
+        strategy_id="sig_kyle_drift_v1",
         direction=direction,
         strength=strength,
         edge_estimate_bps=edge_bps,
@@ -197,6 +197,30 @@ def _hash_intent_stream(intents: list[SizedPositionIntent]) -> str:
             f"TGT[{targets}]|FX[{factors}]|MECH[{mech}]"
         )
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+
+
+
+# Locked Level-3 baseline (decay OFF).  Re-baseline only in a batched
+# determinism pass (BT-11) with explicit justification in the commit.
+EXPECTED_LEVEL3_INTENT_DECAY_OFF_HASH = (
+    "eca21cb190b593ac388707e3246e3e4f7de784a2dc1bfc858faa0425a3918717"
+)
+EXPECTED_LEVEL3_INTENT_DECAY_OFF_COUNT = 4
+
+
+def test_intent_stream_matches_locked_baseline_decay_off() -> None:
+    actual_hash, actual_count = _replay(decay=False)
+    assert actual_count == EXPECTED_LEVEL3_INTENT_DECAY_OFF_COUNT, (
+        f"intent count drift: expected {EXPECTED_LEVEL3_INTENT_DECAY_OFF_COUNT}, "
+        f"got {actual_count}"
+    )
+    assert actual_hash == EXPECTED_LEVEL3_INTENT_DECAY_OFF_HASH, (
+        "Level-3 SizedPositionIntent (decay OFF) hash drift!\n"
+        f"  Expected: {EXPECTED_LEVEL3_INTENT_DECAY_OFF_HASH}\n"
+        f"  Actual:   {actual_hash}\n"
+        "If intentional, update the constant in the same commit and "
+        "justify in the commit message."
+    )
 
 
 # ── Determinism (replay twice → same hash) ──────────────────────────────

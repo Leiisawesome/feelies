@@ -55,10 +55,7 @@ horizon-bucketed snapshots.
 `LEGACY_SIGNAL` was a fourth (per-tick) layer that preserved the
 Phase-1 contract bit-identically.  It was retired in Workstream D.2;
 the loader rejects `layer: LEGACY_SIGNAL` outright with a pointer to
-the migration cookbook.  Every alpha must target SIGNAL or PORTFOLIO;
-see
-[`docs/migration/schema_1_0_to_1_1.md`](docs/migration/schema_1_0_to_1_1.md)
-for the migration path.
+the loader.  Every alpha must target SIGNAL or PORTFOLIO.
 
 ### State Machines
 
@@ -66,13 +63,13 @@ Five state machines govern all system behaviour:
 
 | Machine | States | Scope |
 |---|---|---|
-| **Macro** (global lifecycle) | INIT → DATA_SYNC → READY → BACKTEST/PAPER/LIVE → DEGRADED → RISK_LOCKDOWN → SHUTDOWN | System-wide |
+| **Macro** (global lifecycle) | INIT → DATA_SYNC → READY → RESEARCH or BACKTEST/PAPER/LIVE → DEGRADED; PAPER/LIVE → RISK_LOCKDOWN on SIGNAL-path breach; RISK_LOCKDOWN → READY (unlock) or SHUTDOWN | System-wide |
 | **Micro** (tick pipeline) | WAITING → MARKET_EVENT → STATE_UPDATE → SENSOR → AGGREGATOR → SIGNAL → COMPOSITION → RISK → ORDER → ACK → POSITION → LOG | Per-tick |
 | **Order** lifecycle | CREATED → SUBMITTED → ACKNOWLEDGED → FILLED/CANCELLED/REJECTED/EXPIRED | Per-order |
 | **Risk** escalation | NORMAL → WARNING → BREACH → FORCED_FLATTEN → LOCKED | Monotonic safety |
-| **Data** integrity | HEALTHY → GAP_DETECTED → CORRUPTED → RECOVERING | Per-symbol stream |
+| **Data** integrity | HEALTHY ↔ GAP_DETECTED (WS sequence / feed loss); CORRUPTED (terminal). Historical REST omits seq-gap detection (thinned feeds). | Per-symbol stream |
 
-Every transition emits a `StateTransition` event for full auditability.
+Kernel/wiring surfaces emit `StateTransition` on the bus where subscribed (ingestion `DataHealth` transitions use `TransitionRecord` on the normalizer unless a bridge callback is registered).
 
 ### Backtest/Live Parity
 
@@ -85,8 +82,10 @@ composed at startup:
 |---|---|---|---|
 | Backtest (`execution_mode: market`) | `ReplayFeed(EventLog)` | `BacktestOrderRouter` (mid-price fills) | `SimulatedClock` |
 | Backtest (`execution_mode: passive_limit`) | `ReplayFeed(EventLog)` | `PassiveLimitOrderRouter` (queue-position fills) | `SimulatedClock` |
-| Paper | `MassiveLiveFeed` | *(not yet implemented)* | `WallClock` |
-| Live | `MassiveLiveFeed` | *(not yet implemented)* | `WallClock` |
+| Paper | `MassiveLiveFeed` (WebSocket, yields `IdleTick` between frames) | `IBOrderRouter` → `IBGatewayConnection` (IB Gateway @ 4002) | `WallClock` |
+| Live | `MassiveLiveFeed` | *(not yet implemented — bootstrap raises `NotImplementedError`)* | `WallClock` |
+
+The live `MassiveLiveFeed` emits `IdleTick` sentinels (1 s default poll) so the orchestrator can drain broker-pushed fills between WebSocket frames; backtest `ReplayFeed` never yields `IdleTick`, preserving bit-identical determinism (Inv-9 / Inv-A).
 
 ## Project Structure
 
@@ -96,48 +95,46 @@ feelies/
 │   ├── core/                     # Events, clock, state machine, identifiers, config
 │   ├── kernel/                   # Orchestrator, macro/micro state machines
 │   ├── bus/                      # Synchronous deterministic event bus
-│   ├── ingestion/                # Massive normalizer, historical ingestor, replay feed
+│   ├── ingestion/                # Massive normalizer, historical ingestor, replay feed, live WS, IdleTick
 │   ├── sensors/                  # Layer-1 sensor framework (13 sensors in impl/)
-│   ├── features/                 # Horizon aggregator + legacy per-tick feature engine
+│   ├── features/                 # Horizon aggregator + horizon feature engine
 │   ├── signals/                  # Layer-2 horizon signal engine + regime gate DSL
 │   ├── composition/              # Layer-3 cross-sectional construction pipeline
-│   ├── alpha/                    # Alpha module loader (1.0 + 1.1), registry, validator
+│   ├── alpha/                    # Alpha module loader (1.0 + 1.1), registry, validator, promotion ledger
 │   ├── risk/                     # Risk engine, escalation SM, sizer, hazard-exit controller
-│   ├── execution/                # Backend abstraction, intent translator, order SM, routers
+│   ├── execution/                # Backend abstraction, intent translator, order SM, routers, paper_backend
+│   ├── broker/                   # External-broker adapters (PAPER/LIVE): `broker/ib/` — IB Gateway connection + router
 │   ├── portfolio/                # Position store, per-strategy + cross-sectional trackers
-│   ├── storage/                  # Event log, disk cache, reference factor loadings
+│   ├── storage/                  # Event log, disk cache, bundled reference YAML/JSON
 │   ├── monitoring/               # Metrics (incl. horizon metrics), alerting, kill switch
-│   ├── forensics/                # Multi-horizon attribution, post-trade analysis
-│   ├── research/                 # Experiment tracking, hypothesis management
+│   ├── forensics/                # Multi-horizon attribution, post-trade analysis, decay detector
+│   ├── research/                 # Experiment tracking, CPCV, DSR significance tools
 │   ├── services/                 # Regime engine + regime-hazard detector
 │   ├── cli/                      # Operator CLI (`feelies promote ...` ledger forensics)
-│   └── bootstrap.py              # One-call platform composition from config
+│   └── bootstrap.py              # One-call platform composition from config (BACKTEST + PAPER)
 ├── alphas/                       # Alpha strategy specs
 │   ├── SCHEMA.md                 # YAML schema reference (1.1)
 │   ├── _template/                # Layer-specific templates
 │   │   ├── template_signal.alpha.yaml           # 1.1 SIGNAL (recommended)
 │   │   └── template_portfolio.alpha.yaml        # 1.1 PORTFOLIO
-│   ├── pofi_kyle_drift_v1/       # Reference SIGNAL (KYLE_INFO)
-│   ├── pofi_inventory_revert_v1/ # Reference SIGNAL (INVENTORY)
-│   ├── pofi_hawkes_burst_v1/     # Reference SIGNAL (HAWKES_SELF_EXCITE)
-│   ├── pofi_moc_imbalance_v1/    # Reference SIGNAL (SCHEDULED_FLOW)
-│   ├── pofi_benign_midcap_v1/    # Reference SIGNAL (Phase-3 canonical)
-│   ├── pofi_xsect_v1/            # Reference PORTFOLIO (decay OFF baseline)
-│   └── pofi_xsect_mixed_mechanism_v1/  # Reference PORTFOLIO (multi-mechanism cap)
-├── grok/                         # Grok REPL prompts
-│   ├── 03_ALPHA_DEVELOPMENT.md   # Embedded sensor catalog + reference-alpha flow
-│   ├── 06_EVOLUTION.md           # Embedded mutation protocol + adoption semantics
-│   └── 07_HYPOTHESIS_REASONING.md # Embedded reasoning protocol, hard gates, REPL contract
-├── docs/                         # Architecture spec, migration, acceptance notes
+│   ├── sig_kyle_drift_v1/       # Reference SIGNAL (KYLE_INFO)
+│   ├── sig_inventory_revert_v1/ # Reference SIGNAL (INVENTORY)
+│   ├── sig_hawkes_burst_v1/     # Reference SIGNAL (HAWKES_SELF_EXCITE)
+│   ├── sig_moc_imbalance_v1/    # Reference SIGNAL (SCHEDULED_FLOW)
+│   ├── sig_benign_midcap_v1/    # Reference SIGNAL (Phase-3 canonical)
+│   ├── pro_burst_revert_v1/     # Reference PORTFOLIO (HAWKES + INVENTORY)
+│   └── pro_kyle_benign_v1/      # Reference PORTFOLIO (KYLE_INFO dual-horizon)
+├── docs/                         # Architecture spec and alpha documentation
 │   ├── three_layer_architecture.md
-│   ├── migration/
-│   │   └── schema_1_0_to_1_1.md
-│   └── acceptance/
+│   └── alphas/
 ├── scripts/                      # CLI entry points
 │   ├── run_backtest.py           # Full pipeline backtest (incl. parity hash)
-│   ├── run_validation.py         # Validation suite runner
+│   ├── run_paper.py              # Paper-trading runner — wires Massive WS + IB Gateway end-to-end
+│   ├── verify_ib_broker.py       # IB Gateway connectivity / submit / cancel smoke check
+│   ├── smoke_pipeline.py         # No-API-key micro-state smoke test (synthetic ticks)
+│   ├── record_perf_baseline.py   # Pin per-host throughput baselines for perf gates
 │   └── build_reference_factor_loadings.py  # PORTFOLIO factor loadings builder
-├── tests/                        # Pytest suite (mirrors src/, plus determinism + perf)
+├── tests/                        # Pytest suite (mirrors src/, plus determinism + perf + broker)
 ├── platform.yaml                 # Reference platform configuration
 ├── pyproject.toml                # Build, deps, tooling
 └── .env.example                  # Environment variable template
@@ -149,6 +146,7 @@ feelies/
 
 - Python 3.12 or later
 - A Massive (Polygon.io) API key for market data
+- [`uv`](https://github.com/astral-sh/uv) package manager (`pip install uv`)
 
 ### Installation
 
@@ -156,18 +154,40 @@ feelies/
 git clone https://github.com/<org>/feelies.git
 cd feelies
 
-# Core install (backtest + live + sensors + composition; PORTFOLIO solver optional)
+# Recommended: use uv (lockfile-backed, reproducible)
+uv sync --all-extras
+
+# Alternatively, install with pip:
+# Core install (backtest + sensors + composition; PORTFOLIO solver optional)
 pip install -e ".[dev,massive]"
 
 # To enable the PORTFOLIO turnover optimiser (cvxpy-based) and parquet
 # reference factor loadings, also install the [portfolio] extra:
 pip install -e ".[dev,massive,portfolio]"
+
+# To enable PAPER (and future LIVE) mode — adds the Interactive Brokers
+# Gateway adapter (ibapi) used by ``IBOrderRouter``:
+pip install -e ".[dev,massive,ib]"
+
+# Full developer install (everything the test + mypy-strict gates need):
+pip install -e ".[dev,massive,portfolio,ib]"
 ```
 
 The `[portfolio]` extra pulls `cvxpy`, `ecos`, and `pyarrow`. Without
 it, PORTFOLIO alphas still load and run; only the optional
 turnover-optimisation step and parquet-reference factor loadings are
 disabled.
+
+The `[ib]` extra pulls `nautilus-ibapi` (the community mirror of the
+official `ibapi` TWS API) plus `protobuf`. It is required only when
+launching `OperatingMode.PAPER` (or `LIVE`, once implemented); BACKTEST
+runs never import it.
+
+All commands in this repo should be run via `uv run <cmd>` when using the
+`uv`-managed virtual environment (e.g. `uv run pytest`, `uv run python
+scripts/run_backtest.py`). For mypy strict-mode acceptance
+(`test_mypy_strict_clean_on_src_feelies`), all the optional extras —
+`dev`, `massive`, `portfolio`, and `ib` — must be installed.
 
 ### Environment
 
@@ -212,6 +232,65 @@ across environments. The platform locks five parity baselines —
 sensors, snapshots, signals, sized intents, and hazard exits — under
 `tests/determinism/`.
 
+## Running Paper Trading
+
+`OperatingMode.PAPER` runs the *identical* orchestrator tick pipeline
+that backtest uses — only the `ExecutionBackend` is swapped: market
+data flows from `MassiveLiveFeed` (WebSocket) and orders route through
+`IBOrderRouter` to a locally-running IB Gateway (paper account, port
+4002 by default).
+
+```bash
+# Prereqs
+#   1. IB Gateway / TWS running in paper mode (default port 4002)
+#   2. MASSIVE_API_KEY in environment or .env
+#   3. pip install -e ".[dev,massive,ib]"
+
+# Smoke-test the IB Gateway connection (submit + cancel a tiny test order)
+python scripts/verify_ib_broker.py --port 4002 --client-id 7
+
+# Run the live paper-trading pipeline
+python scripts/run_paper.py --config platform.yaml
+```
+
+`scripts/run_paper.py` lifecycle:
+
+1. Loads `PlatformConfig` with `mode: PAPER` (or overlay flag).
+2. Calls `build_platform(...)` — bootstrap composes `MassiveLiveFeed` +
+   `IBOrderRouter` via `build_paper_backend(...)`, auto-anchors
+   `session_open_ns` to wall clock (H10), and validates `MASSIVE_API_KEY`.
+3. Connects to IB Gateway, starts the WebSocket feed.
+4. Runs the orchestrator pipeline — broker-pushed fills are drained
+   between WS frames via the `IdleTick` sentinel.
+5. SIGINT triggers graceful shutdown: orchestrator drains in-flight
+   acks, WebSocket closes, IB connection disconnects.
+
+PAPER-specific configuration (defaults shown):
+
+```yaml
+mode: PAPER
+
+# IB Gateway connection (paper @ 4002; live @ 4001).  May also be
+# nested under a top-level ``paper:`` block.
+ib_host: "127.0.0.1"
+ib_port: 4002
+ib_client_id: 7
+
+# Massive WebSocket endpoint (override only for replays / staging)
+massive_ws_url: "wss://socket.polygon.io/stocks"
+
+# Optional: pin session_open_ns explicitly; omit to let bootstrap
+# anchor to WallClock.now_ns() at startup (logged at INFO).
+# session_open_ns: 1735741800000000000
+```
+
+**Backtest/Paper parity (Inv-9).** The macro/micro state machines, sensor
+registry, signal engine, composition pipeline, risk engine, order state
+machine, position store, and event bus are bit-identical across modes.
+The only behavioural difference is that paper-mode `OrderRouter.poll_acks()`
+returns asynchronously (broker round-trip), so the orchestrator
+additionally drains acks on every `IdleTick` and at shutdown.
+
 ## Operator CLI
 
 The `feelies` console-script (registered via `[project.scripts]` in
@@ -254,6 +333,40 @@ The CLI is **read-only and forensic-only** — it never writes to the
 ledger and never imports orchestrator / risk-engine production code, so
 operator invocation cannot perturb replay determinism (audit A-DET-02).
 
+## Research Tools
+
+`feelies.research` provides pure-Python significance procedures consumed by
+the F-2 promotion-gate matrix and alpha lifecycle decisions:
+
+### Combinatorial Purged Cross-Validation (CPCV)
+
+```python
+from feelies.research import generate_cpcv_splits, build_cpcv_evidence
+
+splits = generate_cpcv_splits(n_obs=5000, n_splits=6, n_test_splits=2)
+evidence = build_cpcv_evidence(path_pnl_series, config=CPCVConfig())
+```
+
+`build_cpcv_evidence` emits a `CPCVEvidence` object accepted by the F-2
+`validate_gate` dispatcher. The combinatorial structure gives ~4–7×
+more test paths than walk-forward CV of the same length.
+
+### Deflated Sharpe Ratio (DSR)
+
+```python
+from feelies.research import build_dsr_evidence_from_returns
+
+evidence = build_dsr_evidence_from_returns(
+    returns=daily_returns,
+    n_trials=50,
+    strategy_id="my_alpha",
+)
+```
+
+`build_dsr_evidence_from_returns` applies the Bailey & López de Prado
+correction for multiple-testing bias and emits a `DSREvidence` object.
+Both procedures are deterministic (no RNG state) for reproducible CI checks.
+
 ## Writing an Alpha
 
 Two layer-specific templates ship under `alphas/_template/`. The
@@ -276,9 +389,7 @@ held in a private fork that retains the per-tick code-path.
 | `PORTFOLIO` | `universe`, `depends_on_signals`, `factor_neutralization`, `cost_arithmetic`, `horizon_seconds` | `AlphaLoader._load_portfolio_layer` → `LoadedPortfolioLayerModule` | `CompositionEngine` | `tests/determinism/test_sized_intent_replay.py`, `test_portfolio_order_replay.py` |
 | `SENSOR` (reserved) | declared in `platform.yaml` (registry-driven, not alpha YAML) | n/a | `SensorRegistry` | per-sensor unit tests |
 
-See [`alphas/SCHEMA.md`](alphas/SCHEMA.md) for the full field reference
-and [`docs/migration/schema_1_0_to_1_1.md`](docs/migration/schema_1_0_to_1_1.md)
-for the upgrade cookbook.
+See [`alphas/SCHEMA.md`](alphas/SCHEMA.md) for the full field reference.
 
 ### Quick start (schema 1.1 SIGNAL)
 
@@ -338,13 +449,13 @@ The `LayerValidator` enforces gates G2–G16 at load time. See
 
 ### Hypothesis authoring
 
-Use Grok with the embedded numbered prompt stack. Prompt 7
-(`grok/07_HYPOTHESIS_REASONING.md`) owns the 7-step reasoning
-discipline and hard gates, Prompt 3 (`grok/03_ALPHA_DEVELOPMENT.md`)
-owns the sensor vocabulary and reference-alpha authoring contract, and
-Prompt 6 (`grok/06_EVOLUTION.md`) owns mutation discipline and active
-adoption semantics. Together they emit machine-validated YAML matching
-the schema-1.1 contract.
+Follow the Cursor skills aligned to each layer: hypothesis and SIGNAL
+authoring in [`.cursor/skills/microstructure-alpha/SKILL.md`](.cursor/skills/microstructure-alpha/SKILL.md),
+sensor and horizon-feature design in
+[`.cursor/skills/feature-engine/SKILL.md`](.cursor/skills/feature-engine/SKILL.md),
+and research lifecycle / mutation discipline in
+[`.cursor/skills/research-workflow/SKILL.md`](.cursor/skills/research-workflow/SKILL.md).
+[`alphas/SCHEMA.md`](alphas/SCHEMA.md) remains the normative YAML gate reference.
 
 ## Platform Configuration
 
@@ -356,7 +467,7 @@ mode: BACKTEST                            # BACKTEST | PAPER | LIVE
 symbols: [AAPL, MSFT, NVDA]
 alpha_spec_dir: alphas/                   # Scanned for *.alpha.yaml at boot
 regime_engine: hmm_3state_fractional
-account_equity: 100000.0
+account_equity: 50000.0
 
 # Horizon registry (Phase 2)
 horizons_seconds: [30, 120, 300, 900, 1800]
@@ -371,9 +482,8 @@ factor_loadings_max_age_seconds: 86400    # Stale factor loadings → bootstrap 
                                           # reject schema-1.1 SIGNAL/PORTFOLIO alphas missing
                                           # trend_mechanism: (G16 strict).  Pin to false only
                                           # if your alpha_spec_dir points at a v0.2 baseline
-                                          # alpha (e.g. pofi_benign_midcap_v1) that pre-dates
-                                          # the mechanism taxonomy — see
-                                          # docs/migration/schema_1_0_to_1_1.md §10.5.
+                                          # alpha (e.g. sig_benign_midcap_v1) that pre-dates
+                                          # the mechanism taxonomy — see alphas/SCHEMA.md.
 
 # Architectural gate enforcement (Phase 4)
 enforce_layer_gates: true                 # When false, G1/G3 violations log WARNING
@@ -431,43 +541,69 @@ for the canonical wording and glossary.
 ## Testing
 
 ```bash
-# Full test suite
+# Full test suite (~2356 tests)
 pytest
+
+# Skip network/benchmark tests (recommended for local dev)
+pytest -m "not functional and not slow"
 
 # Coverage
 pytest --cov=feelies --cov-report=term-missing
 
 # Selective markers
 pytest -m "not slow"                  # skip benchmarks
-pytest -m functional                  # network-backed only
+pytest -m functional                  # network-backed only (requires MASSIVE_API_KEY)
 pytest -m backtest_validation         # full validation suite
 
-# Validation suite via script
-python scripts/run_validation.py
-python scripts/run_validation.py --quick
+# Determinism parity hash tests
+pytest tests/determinism/
+
+# End-to-end pipeline (no API key needed)
+pytest tests/integration/test_phase4_e2e.py
+
+# Validation suite
+pytest -m backtest_validation
 ```
 
 The test suite mirrors `src/feelies/` and includes:
 
 - Unit tests + property-based tests (Hypothesis).
-- **Determinism tests** (`tests/determinism/`) — five locked parity
+- **Determinism tests** (`tests/determinism/`, 57 tests) — five locked parity
   hashes (sensor / signal / sized-intent / portfolio-order /
-  hazard-exit), each subprocess-isolated to detect any non-determinism
+  hazard-exit) plus regime-hazard, horizon-tick, and v0.3 sensor
+  streams, each subprocess-isolated to detect any non-determinism
   introduced by ordering, RNG, or wall-clock.
-- **End-to-end integration tests** (`tests/integration/`) — multi-
-  symbol, multi-alpha, mixed-mechanism universes.
+- **End-to-end integration tests** (`tests/integration/`, 32 tests) —
+  multi-symbol, multi-alpha, mixed-mechanism universes.
+- **Broker integration tests** (`tests/broker/ib/`) — unit-level
+  `IBOrderRouter` / `IBGatewayConnection` coverage plus a `functional`-
+  marked smoke suite that submits/cancels a real IB Gateway paper order
+  (skipped unless gateway is running on port 4002).
 - **Performance regression gates** (`tests/perf/`) — Phase 4 ≤ 12 %
   end-to-end throughput; Phase 4.1 ≤ 5 % decay-weighting overhead.
   Per-host pinned baselines (opt-in via `PERF_HOST_LABEL`) live in
   `tests/perf/baselines/v02_baseline.json` and are recorded with
   `python scripts/record_perf_baseline.py --host-label <id>`.
 - **Acceptance sweep** (`tests/acceptance/`) — mechanical assertions
-  for the v0.2 + v0.3 acceptance matrix
-  ([`docs/acceptance/v02_v03_matrix.md`](docs/acceptance/v02_v03_matrix.md)),
+  for the v0.2 + v0.3 acceptance matrix,
   including mypy-strict scope, reference-alpha load invariants
   (`margin_ratio`, factor exposures), G16 rule completeness,
   decay-divergence, strict-mode loading per mechanism family, and
   perf-baseline plumbing.
+
+### Known pre-existing test failures
+
+Two acceptance tests fail on the `main` branch because
+`alphas/sig_benign_midcap_v1/` already contains a `trend_mechanism:`
+block but the acceptance tests expect it to be absent (v0.2 baseline parity):
+
+- `tests/acceptance/test_strict_mode_default_true.py::TestV02ParityPreservedOnExplicitOptOut::test_v02_baseline_alpha_refused_under_default`
+- `tests/acceptance/test_v02_no_trend_mechanism_parity.py::test_baseline_alpha_yaml_has_no_trend_mechanism_block`
+- `tests/acceptance/test_v02_no_trend_mechanism_parity.py::test_baseline_alpha_loads_under_v03_default`
+
+These are not environment issues — they reflect an intentional drift
+between the reference alpha YAML and the v0.2 acceptance baseline.
+No other tests fail in a clean environment.
 
 ## Tooling
 
@@ -486,19 +622,26 @@ ruff format src/ tests/
 
 ## Data Pipeline
 
-Market data flows through a two-stage pipeline:
+Market data flows through one of two interchangeable sources, both
+producing the *same* canonical `NBBOQuote` / `Trade` event types via
+`MassiveNormalizer`:
 
-1. **Historical ingest** — `MassiveHistoricalIngestor` downloads L1
-   NBBO quotes and trades via Massive REST API, normalises through
-   `MassiveNormalizer` into canonical `NBBOQuote` and `Trade` events,
-   and stores them in an `EventLog`. Cached to `~/.feelies/cache/`.
-2. **Replay** — `ReplayFeed` iterates the `EventLog` in timestamp
-   order, feeding the orchestrator's tick pipeline. `SimulatedClock`
-   advances to each event's timestamp, preserving causality.
+1. **Historical replay (BACKTEST)** — `MassiveHistoricalIngestor`
+   downloads L1 NBBO quotes and trades via Massive REST API, normalises
+   them, and stores them in an `EventLog` cached under
+   `~/.feelies/cache/`. `ReplayFeed` then iterates the log in timestamp
+   order, with `SimulatedClock` advancing to each event's timestamp
+   (Inv-6, causality).
+2. **Live stream (PAPER / LIVE)** — `MassiveLiveFeed` connects to the
+   Massive WebSocket, normalises frames into the same event types, and
+   yields them in arrival order. Between frames it emits `IdleTick`
+   sentinels so the orchestrator can drain asynchronous broker fills
+   from `IBOrderRouter` without blocking on the WS read. The wall clock
+   (`WallClock`) drives timestamps.
 
-For live operation (future), `MassiveLiveFeed` provides real-time
-WebSocket streaming through the same normaliser, ensuring identical
-event types flow through the same pipeline.
+The orchestrator's tick pipeline, sensor registry, signal engine, and
+risk engine are agnostic to which source is wired — backtest/live parity
+(Inv-9) is enforced behind the single `ExecutionBackend` seam.
 
 ## License
 

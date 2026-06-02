@@ -51,6 +51,7 @@ from feelies.core.events import (
     RiskVerdict,
     Signal,
     SignalDirection,
+    SizedPositionIntent,
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
@@ -59,9 +60,12 @@ from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.kernel.signal_order_trace import SignalOrderTraceRow
+from feelies.monitoring.in_memory import InMemoryKillSwitch
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import PositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
+from feelies.risk.escalation import RiskLevel
+from feelies.risk.sized_intent_result import SizedIntentRiskResult
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 
@@ -108,6 +112,14 @@ class _StubRiskEngine:
             reason="bus-signal-test",
         )
 
+    def check_sized_intent(
+        self,
+        intent: SizedPositionIntent,
+        _positions: PositionStore,
+    ) -> SizedIntentRiskResult:
+        del intent
+        return SizedIntentRiskResult(orders=())
+
 
 class _DualScaleDownRiskEngine:
     """Emit SCALE_DOWN at both gates to verify single-application."""
@@ -136,6 +148,59 @@ class _DualScaleDownRiskEngine:
             reason="dual-scale-down-test:order",
             scaling_factor=self._factor,
         )
+
+    def check_sized_intent(
+        self,
+        intent: SizedPositionIntent,
+        _positions: PositionStore,
+    ) -> SizedIntentRiskResult:
+        del intent
+        return SizedIntentRiskResult(orders=())
+
+
+class _ForceFlattenOnFirstCheckOrderEngine:
+    """First :meth:`check_order` in the tick returns FORCE_FLATTEN (reverse exit)."""
+
+    def __init__(self) -> None:
+        self._check_order_calls = 0
+
+    def check_signal(self, signal: Signal, _positions: PositionStore) -> RiskVerdict:
+        return RiskVerdict(
+            timestamp_ns=signal.timestamp_ns,
+            correlation_id=signal.correlation_id,
+            sequence=signal.sequence,
+            symbol=signal.symbol,
+            action=RiskAction.ALLOW,
+            reason="force-flatten-first-order-test:signal",
+        )
+
+    def check_order(self, order: OrderRequest, _positions: PositionStore) -> RiskVerdict:
+        self._check_order_calls += 1
+        if self._check_order_calls == 1:
+            return RiskVerdict(
+                timestamp_ns=order.timestamp_ns,
+                correlation_id=order.correlation_id,
+                sequence=order.sequence,
+                symbol=order.symbol,
+                action=RiskAction.FORCE_FLATTEN,
+                reason="test_reverse_exit_drawdown",
+            )
+        return RiskVerdict(
+            timestamp_ns=order.timestamp_ns,
+            correlation_id=order.correlation_id,
+            sequence=order.sequence,
+            symbol=order.symbol,
+            action=RiskAction.ALLOW,
+            reason="force-flatten-first-order-test:pass",
+        )
+
+    def check_sized_intent(
+        self,
+        intent: SizedPositionIntent,
+        _positions: PositionStore,
+    ) -> SizedIntentRiskResult:
+        del intent
+        return SizedIntentRiskResult(orders=())
 
 
 class _MinimalConfig:
@@ -177,6 +242,9 @@ class _StaticAlphaRegistry:
 
     def portfolio_alphas(self) -> tuple[_StaticPortfolioModule, ...]:
         return self._portfolio_modules
+
+    def has_portfolio_alphas(self) -> bool:
+        return bool(self._portfolio_modules)
 
     def get(self, alpha_id: str) -> Any:
         raise KeyError(alpha_id)
@@ -228,6 +296,7 @@ def _build_orchestrator(
     risk_engine: Any | None = None,
     alpha_registry: Any | None = None,
     position_store: MemoryPositionStore | None = None,
+    kill_switch: Any | None = None,
 ) -> Orchestrator:
     bus = bus if bus is not None else EventBus()
     pos = position_store or MemoryPositionStore()
@@ -246,6 +315,7 @@ def _build_orchestrator(
         event_log=InMemoryEventLog(),
         metric_collector=_NoOpMetricCollector(),
         alpha_registry=alpha_registry,
+        kill_switch=kill_switch,
     )
 
 
@@ -384,6 +454,39 @@ class TestBusDrivenSignalProducesOrder:
             "expected 100-share short cover plus 50-share new long entry; "
             f"got quantities={quantities!r}"
         )
+
+    def test_reverse_exit_force_flatten_triggers_global_escalation(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        quote = _make_quote()
+        signal = _make_signal(quote, strategy_id="reverse_ff_escalate", direction=SignalDirection.LONG)
+        pos = MemoryPositionStore()
+        pos.update("AAPL", -100, Decimal("150"))
+
+        kill = InMemoryKillSwitch()
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=_ForceFlattenOnFirstCheckOrderEngine(),
+            position_store=pos,
+            kill_switch=kill,
+        )
+        captured = _capture_orders(bus)
+        _signal_from_bus(bus, signal)
+
+        BacktestOrderRouter.on_quote(orch._backend.order_router, quote)
+        orch.boot(_MinimalConfig())
+        orch._macro.transition(MacroState.LIVE_TRADING_MODE, trigger="CMD_LIVE_DEPLOY")
+        orch._micro.reset(trigger="session_start:test")
+        orch._process_tick(quote)
+
+        non_emergency = [o for o in captured if o.strategy_id != "emergency_flatten"]
+        assert non_emergency == [], (
+            "reverse exit and entry must not submit; only emergency_flatten orders OK"
+        )
+        assert orch.risk_level == RiskLevel.LOCKED
+        assert orch.macro_state == MacroState.RISK_LOCKDOWN
+        assert kill.is_active
 
     def test_reverse_entry_counts_prospective_exposure(self) -> None:
         clock = SimulatedClock(start_ns=1000)

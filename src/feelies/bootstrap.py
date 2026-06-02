@@ -48,9 +48,13 @@ legacy execution path bit-for-bit (Inv-A).
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+import os
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from feelies.alpha.discovery import load_and_register
 from feelies.alpha.fill_attribution import FillAttributionLedger
@@ -81,7 +85,7 @@ from feelies.composition.sector_matcher import SectorMatcher
 from feelies.composition.synchronizer import UniverseSynchronizer
 from feelies.composition.turnover_optimizer import TurnoverOptimizer
 from feelies.core.clock import Clock, SimulatedClock, WallClock
-from feelies.core.events import NBBOQuote
+from feelies.core.events import Alert, AlertSeverity, NBBOQuote
 from feelies.core.errors import ConfigurationError
 from feelies.core.identifiers import SequenceGenerator
 from feelies.core.platform_config import OperatingMode, PlatformConfig
@@ -99,7 +103,21 @@ from feelies.execution.min_cost_policy import (
     MinCostPolicyConfig,
     MinimumCostExecutionPolicy,
 )
+from feelies.execution.moc_session import (
+    MocSessionBounds,
+    build_moc_bounds_from_platform,
+)
+from feelies.execution.trading_session import (
+    TradingSessionBounds,
+    build_trading_session_from_platform,
+)
 from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
+from feelies.execution.paper_backend import build_paper_backend
+from feelies.execution.regulatory.pdt_constraint import (
+    AccountType,
+    PDTConfig,
+    PDTConstraint,
+)
 from feelies.features.aggregator import HorizonAggregator
 from feelies.features.impl.rolling_stats import (
     RollingPercentileFeature,
@@ -110,6 +128,8 @@ from feelies.features.impl.sensor_passthrough import (
     TupleComponentFeature,
 )
 from feelies.features.protocol import HorizonFeature
+from feelies.ingestion.massive_normalizer import MassiveNormalizer
+from feelies.ingestion.normalizer import MarketDataNormalizer
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.kernel.signal_order_trace import SignalOrderTraceRow
 from feelies.monitoring.in_memory import (
@@ -122,6 +142,8 @@ from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.strategy_position_store import StrategyPositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
+from feelies.risk.buying_power import BuyingPowerConfig
+from feelies.risk.engine import RiskEngine
 from feelies.risk.hazard_exit import HazardExitController, HazardPolicy
 from feelies.risk.position_sizer import BudgetBasedSizer
 from feelies.services.regime_engine import RegimeEngine, get_regime_engine
@@ -132,7 +154,29 @@ from feelies.storage.memory_event_log import InMemoryEventLog
 from feelies.storage.memory_feature_snapshot import InMemoryFeatureSnapshotStore
 from feelies.storage.memory_trade_journal import InMemoryTradeJournal
 
+if TYPE_CHECKING:
+    from feelies.broker.ib import IBGatewayConnection
+    from feelies.ingestion.massive_ws import MassiveLiveFeed
+
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _BackendBundle:
+    """Per-mode backend composition + auxiliary handles for the entry script.
+
+    ``backend`` is the orchestrator-facing facade.  ``backtest_router``
+    is returned for BACKTEST so the bootstrap can subscribe its
+    ``on_quote`` to the bus (Inv-D ordering).  ``live_feed`` and
+    ``ib_connection`` are returned for PAPER / LIVE so
+    ``scripts/run_paper.py`` can drive their lifecycles.  Unused
+    handles are ``None`` per mode.
+    """
+
+    backend: ExecutionBackend
+    backtest_router: BacktestOrderRouter | PassiveLimitOrderRouter | None
+    live_feed: "MassiveLiveFeed | None" = None
+    ib_connection: "IBGatewayConnection | None" = None
 
 
 class StaleFactorLoadingsError(RuntimeError):
@@ -156,6 +200,9 @@ def build_platform(
     event_log: InMemoryEventLog | None = None,
     *,
     signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
+    normalizer: MarketDataNormalizer | None = None,
+    precomputed_ex_date_spans: dict[str, tuple[date, date]] | None = None,
+    regime_calibration_quotes: tuple[NBBOQuote, ...] | None = None,
 ) -> tuple[Orchestrator, PlatformConfig]:
     """Compose the full platform from configuration.
 
@@ -167,6 +214,13 @@ def build_platform(
             :class:`~feelies.kernel.signal_order_trace.SignalOrderTraceRow`
             records explaining why each bus :class:`~feelies.core.events.Signal`
             did or did not yield a standalone ``OrderRequest`` on its quote tick.
+        normalizer: Optional live Massive normalizer for streaming feeds. When
+            wired, orchestrator enforces :class:`~feelies.ingestion.data_integrity.DataHealth`
+            gates on each market event (backtests normally omit this).
+        precomputed_ex_date_spans: Optional per-symbol ET date spans from a
+            fused pre-replay scan; skips rescanning the log for BT-18.
+        regime_calibration_quotes: Optional causal calibration prefix collected
+            during the same pre-replay scan; skips rescanning at boot.
 
     Returns:
         ``(orchestrator, config)`` — caller does
@@ -177,10 +231,62 @@ def build_platform(
 
     config.validate()
 
+    # BT-0: cost-gate honesty assertion (Inv-12).  ``0.0`` is the documented
+    # "gate explicitly disabled" sentinel (sub-cost research only); any other
+    # positive-but-sub-unity value is almost always a misconfiguration that
+    # understates round-trip cost (the historical 0.35 shipping default
+    # effectively disabled the gate while looking enabled), so reject it.  A
+    # ratio in [1.0, 1.5) is permitted but warned — Inv-12 targets >= 1.5.
+    _edge_ratio = config.signal_min_edge_cost_ratio
+    if _edge_ratio != 0.0 and _edge_ratio < 1.0:
+        raise ConfigurationError(
+            f"signal_min_edge_cost_ratio={_edge_ratio} is a positive but "
+            "sub-unity cost gate, which understates round-trip cost (Inv-12). "
+            "Use >= 1.0 (>= 1.5 recommended), or exactly 0 to explicitly "
+            "disable the gate for deliberate sub-cost research."
+        )
+    if 1.0 <= _edge_ratio < 1.5:
+        logger.warning(
+            "signal_min_edge_cost_ratio=%s is below the Inv-12 target of 1.5; "
+            "the runtime cost gate is active but looser than recommended.",
+            _edge_ratio,
+        )
+
+    if config.mode == OperatingMode.PAPER and config.ib_port == 4001:
+        logger.warning(
+            "PAPER mode configured with ib_port=4001 (typically LIVE/TWS). "
+            "IB Gateway paper accounts usually listen on port 4002.",
+        )
+
+    if (
+        config.mode == OperatingMode.BACKTEST
+        and config.backtest_enforce_ingest_terminal_health
+        and not config.ingest_terminal_symbol_health
+    ):
+        raise ConfigurationError(
+            "backtest_enforce_ingest_terminal_health=True requires "
+            "ingest_terminal_symbol_health to be populated before "
+            "build_platform (e.g. scripts/run_backtest.py after ingest).",
+        )
+
+    if event_log is None:
+        event_log = InMemoryEventLog()
+    _enforce_ex_date_replay_guard(
+        config,
+        event_log,
+        precomputed_spans=precomputed_ex_date_spans,
+    )
+
     clock = _select_clock(config.mode)
+    config = _ensure_session_open_ns_for_live_modes(config, clock)
     bus = EventBus()
 
-    regime_engine = _create_regime_engine(config.regime_engine)
+    regime_engine = _create_regime_engine(
+        config.regime_engine,
+        config.regime_engine_options,
+    )
+    if config.enforce_regime_state_scale_alignment and regime_engine is not None:
+        _validate_regime_engine_risk_scale_alignment(regime_engine)
 
     registry_clock = None if config.mode == OperatingMode.BACKTEST else clock
     promotion_ledger = (
@@ -207,6 +313,7 @@ def build_platform(
         regime_engine=regime_engine,
         enforce_trend_mechanism=config.enforce_trend_mechanism,
         enforce_layer_gates=config.enforce_layer_gates,
+        regime_engine_options=config.regime_engine_options,
     )
 
     _load_alphas(config, registry, loader)
@@ -227,24 +334,91 @@ def build_platform(
         max_gross_exposure_pct=config.risk_max_gross_exposure_pct,
         max_drawdown_pct=config.risk_max_drawdown_pct,
         account_equity=_decimal(config.account_equity),
+        regime_vol_breakout_scale=config.risk_regime_vol_breakout_scale,
+        regime_compression_scale=config.risk_regime_compression_scale,
+        regime_normal_scale=config.risk_regime_normal_scale,
     )
+    # Sanity-check: warn when ``risk_max_position_per_symbol`` is so
+    # large vs the gross-exposure cap that it is vacuously non-binding
+    # for the configured universe.  At AAPL $200/share, 50_000 shares
+    # is $10M — far above 200% of a $100k account — so the per-symbol
+    # cap silently does nothing.  Future operator edits to the gross
+    # cap could then surprise-promote the per-symbol cap to the binding
+    # constraint with no logical link between the two.
+    _max_gross = (
+        config.account_equity * config.risk_max_gross_exposure_pct / 100.0
+    )
+    # Use $1 as a conservative price floor when the universe price is
+    # unknown at boot; operators on penny-stock universes are expected
+    # to set the cap explicitly.
+    _vacuous_threshold_shares = _max_gross / 1.0
+    if config.risk_max_position_per_symbol > _vacuous_threshold_shares:
+        logger.warning(
+            "risk_max_position_per_symbol=%d shares is vacuously "
+            "non-binding under the gross-exposure cap "
+            "(max_gross=$%.0f, equivalent to %.0f shares at $1/share). "
+            "Set the per-symbol cap below the gross-equivalent share "
+            "count for the lowest-priced symbol in the universe, or "
+            "treat the gross cap as the binding constraint.",
+            config.risk_max_position_per_symbol,
+            _max_gross,
+            _vacuous_threshold_shares,
+        )
+    # The dedicated alert sequence generator keeps risk-engine
+    # diagnostics (e.g. the per-leg PORTFOLIO veto Alert) on a
+    # separate sequence stream from the orchestrator's own ``_seq`` so
+    # neither can disturb the other's bit-identical replay (Inv-5).
+    risk_alert_seq = SequenceGenerator()
+    # BT-4: PDT round-trip tracking + $25k minimum-equity entry gate.
+    # Only the locked ``margin_25k`` (PDT-exempt) path is implemented; the
+    # enum's other members are accepted by config but refused here so an
+    # operator cannot silently run an unmodeled account type.
+    account_type = AccountType(config.account_type)
+    if account_type is not AccountType.MARGIN_25K:
+        raise NotImplementedError(
+            f"account_type={config.account_type!r} is not implemented; "
+            "only 'margin_25k' is wired (BT-4). Set account_type: margin_25k."
+        )
+    pdt_constraint = PDTConstraint(PDTConfig(
+        account_type=account_type,
+        account_id=config.account_id,
+        min_equity=_decimal(config.pdt_min_equity_usd),
+    ))
+    buying_power_config = BuyingPowerConfig(
+        account_type=config.account_type,
+        intraday_multiplier=_decimal(
+            config.risk_margin_intraday_buying_power_multiplier
+        ),
+        overnight_multiplier=_decimal(
+            config.risk_margin_overnight_buying_power_multiplier
+        ),
+    )
+    trading_session_bounds = _resolve_trading_session_bounds(config)
     risk_engine = BasicRiskEngine(
         config=risk_config,
         regime_engine=regime_engine,
+        bus=bus,
+        alert_sequence_generator=risk_alert_seq,
+        pdt_constraint=pdt_constraint,
+        buying_power_config=buying_power_config,
+        trading_session_bounds=trading_session_bounds,
+        account_id=config.account_id,
     )
-
-    if event_log is None:
-        event_log = InMemoryEventLog()
 
     cost_model = DefaultCostModel(DefaultCostModelConfig(
         min_spread_cost_bps=_decimal(config.cost_min_spread_bps),
         commission_per_share=_decimal(config.cost_commission_per_share),
         taker_exchange_per_share=_decimal(config.cost_taker_exchange_per_share),
         maker_exchange_per_share=_decimal(config.cost_maker_exchange_per_share),
+<<<<<<< HEAD
         passive_adverse_selection_bps=_decimal(config.cost_passive_adverse_selection_bps),
         through_fill_adverse_selection_bps=_decimal(
             config.cost_through_fill_adverse_selection_bps
         ),
+=======
+        adverse_selection_through_bps=_decimal(config.cost_adverse_selection_through_bps),
+        adverse_selection_drain_bps=_decimal(config.cost_adverse_selection_drain_bps),
+>>>>>>> origin/main
         sell_regulatory_bps=_decimal(config.cost_sell_regulatory_bps),
         stress_multiplier=_decimal(config.cost_stress_multiplier),
         min_commission=_decimal(config.cost_min_commission),
@@ -257,23 +431,52 @@ def build_platform(
         ),
         spread_floor_taker_only=config.cost_spread_floor_taker_only,
     ))
+<<<<<<< HEAD
     # Wiring safety: every router path must receive an explicit cost model.
     # ZeroCostModel was removed as a silent fallback (audit F-H-12); a None
     # here is a wiring bug, not a benign zero-cost path.
     assert cost_model is not None, "cost_model construction returned None"
     backend, backtest_router = _create_backend(
+=======
+
+    # PAPER / LIVE always need a normalizer (for DataHealth gating +
+    # WS frame decoding).  When the caller supplies one (tests,
+    # custom ingestors) we use it; otherwise we build the canonical
+    # one and thread the same instance into the live feed AND the
+    # orchestrator below (Inv-13 — single provenance source).
+    if normalizer is None and config.mode in (
+        OperatingMode.PAPER, OperatingMode.LIVE,
+    ):
+        normalizer = MassiveNormalizer(
+            clock=clock,
+            halt_on_codes=frozenset(config.halt_on_condition_codes),
+            halt_off_codes=frozenset(config.halt_off_condition_codes),
+        )
+        normalizer.register_symbols(config.symbols)
+
+    bundle = _create_backend(
+>>>>>>> origin/main
         config.mode, event_log, clock,
         fill_latency_ns=config.backtest_fill_latency_ns,
+        market_data_latency_ns=config.market_data_latency_ns,
         cost_model=cost_model,
         execution_mode=config.execution_mode,
         passive_fill_delay_ticks=config.passive_fill_delay_ticks,
         passive_max_resting_ticks=config.passive_max_resting_ticks,
         passive_queue_position_shares=config.passive_queue_position_shares,
+        passive_fill_hazard_max=config.passive_fill_hazard_max,
         passive_cancel_fee_per_share=config.passive_cancel_fee_per_share,
         market_impact_factor=config.cost_market_impact_factor,
         max_impact_half_spreads=config.cost_max_impact_half_spreads,
+<<<<<<< HEAD
         stop_slippage_half_spreads=config.cost_stop_slippage_half_spreads,
+=======
+        normalizer=normalizer,
+        config=config,
+>>>>>>> origin/main
     )
+    backend = bundle.backend
+    backtest_router = bundle.backtest_router
 
     if backtest_router is not None:
         bus.subscribe(NBBOQuote, lambda e: backtest_router.on_quote(e))  # type: ignore[arg-type]
@@ -296,6 +499,8 @@ def build_platform(
     kill_switch = InMemoryKillSwitch()
     alert_manager = InMemoryAlertManager(kill_switch=kill_switch)
     metric_collector = InMemoryMetricCollector()
+    if config.mode == OperatingMode.BACKTEST:
+        metric_collector._store_raw_events = False
 
     # Compose the Phase-2 sensor layer *after* the metric collector
     # exists so monitoring metrics (plan §4.5) wire automatically.
@@ -366,12 +571,20 @@ def build_platform(
     hazard_seq, regime_hazard_detector = _create_hazard_detector(registry)
 
     # ── Multi-alpha execution components ──
+    # Audit R2: default-on wraps the risk engine so each alpha's
+    # risk_budget block is enforced alongside platform caps; operators
+    # opt out via platform.yaml: enforce_per_alpha_risk_budget: false.
     risk_wrapper = AlphaBudgetRiskWrapper(
         inner=risk_engine,
         registry=registry,
         strategy_positions=strategy_positions,
         platform_config=risk_config,
         account_equity=_decimal(config.account_equity),
+    )
+    effective_risk_engine: RiskEngine = (
+        risk_wrapper
+        if config.enforce_per_alpha_risk_budget
+        else risk_engine
     )
     fill_ledger = FillAttributionLedger()
     # Workstream D.2 PR-2b-ii: ``MultiAlphaEvaluator`` was deleted along
@@ -385,7 +598,7 @@ def build_platform(
         clock=clock,
         bus=bus,
         backend=backend,
-        risk_engine=risk_engine,
+        risk_engine=effective_risk_engine,
         position_store=position_store,
         event_log=event_log,
         metric_collector=metric_collector,
@@ -416,10 +629,43 @@ def build_platform(
         composition_metrics_collector=composition_metrics,
         hazard_exit_controller=hazard_exit_controller,
         signal_order_trace_sink=signal_order_trace_sink,
+        normalizer=normalizer,
+        regime_calibration_quotes=regime_calibration_quotes,
     )
 
     config_snapshot = config.snapshot()
     orchestrator.config_snapshot = config_snapshot  # type: ignore[attr-defined]
+
+    # Attach the PAPER/LIVE live-feed + IB connection handles to the
+    # orchestrator so the entry script (``scripts/run_paper.py``) can
+    # drive their lifecycles without re-resolving the bundle.  These
+    # are NEVER used by the orchestrator itself — pure operator
+    # plumbing.  For BACKTEST mode both attributes are ``None``.
+    orchestrator.live_feed = bundle.live_feed  # type: ignore[attr-defined]
+    orchestrator.ib_connection = bundle.ib_connection  # type: ignore[attr-defined]
+
+    # Wire IB connectivity / unknown-status alerts onto the shared bus so
+    # operators have programmatic visibility into IB link-state events and
+    # unrecognised order-status strings during live/paper sessions.
+    if bundle.ib_connection is not None and hasattr(
+        bundle.ib_connection, "on_alert_event"
+    ):
+        _ib_alert_seq = SequenceGenerator()
+        _ib_clock = clock  # captured by closure
+
+        def _publish_ib_alert(error_code: int, error_msg: str) -> None:
+            bus.publish(Alert(
+                timestamp_ns=_ib_clock.now_ns(),
+                correlation_id="",
+                sequence=_ib_alert_seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="broker.ib",
+                alert_name="ib_connectivity_event",
+                message=error_msg,
+                context={"error_code": error_code},
+            ))
+
+        bundle.ib_connection.on_alert_event(_publish_ib_alert)
 
     logger.info(
         "Platform composed: mode=%s, symbols=%s, alphas=%d, regime=%s, "
@@ -438,6 +684,35 @@ def _select_clock(mode: OperatingMode) -> Clock:
     if mode == OperatingMode.BACKTEST:
         return SimulatedClock()
     return WallClock()
+
+
+def _ensure_session_open_ns_for_live_modes(
+    config: PlatformConfig,
+    clock: Clock,
+) -> PlatformConfig:
+    """Anchor horizon boundaries for PAPER/LIVE when YAML omits ``session_open_ns``.
+
+    H10 forbids lazy-binding from the first market event in non-backtest
+    modes because arrival ordering would make boundary indices
+    non-deterministic.  When the operator omits ``session_open_ns`` we
+    pin the anchor to composition-time wall clock so ``run_paper.py`` (and
+    future live entry scripts) boot successfully without requiring a
+    hand-authored epoch in ``platform.yaml``.
+    """
+    if config.mode == OperatingMode.BACKTEST:
+        return config
+    if config.session_open_ns is not None:
+        return config
+    if not config.horizons_seconds or not config.sensor_specs:
+        return config
+    anchored_ns = clock.now_ns()
+    logger.info(
+        "H10: auto-anchoring session_open_ns=%d for mode=%s "
+        "(set platform.yaml: session_open_ns explicitly to override)",
+        anchored_ns,
+        config.mode.name,
+    )
+    return replace(config, session_open_ns=anchored_ns)
 
 
 def _build_platform_gate_thresholds(
@@ -465,11 +740,32 @@ def _build_platform_gate_thresholds(
     return apply_gate_thresholds_overrides(GateThresholds(), overrides)
 
 
-def _create_regime_engine(engine_name: str | None) -> RegimeEngine | None:
+def _validate_regime_engine_risk_scale_alignment(engine: RegimeEngine) -> None:
+    """Fail boot when regime posteriors use names BasicRiskEngine cannot scale."""
+    # Read the single source of truth from BasicRiskEngine so the validation
+    # cannot drift if the risk engine adds, renames, or removes a regime
+    # scale key.
+    valid = BasicRiskEngine.REGIME_SCALE_STATE_NAMES
+    unknown = frozenset(engine.state_names) - valid
+    if unknown:
+        raise ConfigurationError(
+            "RegimeEngine state_names contain entries not mapped by "
+            "BasicRiskEngine regime scaling: "
+            f"{sorted(unknown)}. Expected subset of {valid}. "
+            "Extend RiskConfig / regime_vol_*_scale or disable "
+            "enforce_regime_state_scale_alignment."
+        )
+
+
+def _create_regime_engine(
+    engine_name: str | None,
+    options: dict[str, object] | None = None,
+) -> RegimeEngine | None:
     if engine_name is None:
         return None
     try:
-        engine = get_regime_engine(engine_name)
+        kwargs = dict(options or {})
+        engine = get_regime_engine(engine_name, **kwargs)
         logger.info("Created shared RegimeEngine: %s", engine_name)
         return engine
     except KeyError:
@@ -477,6 +773,10 @@ def _create_regime_engine(engine_name: str | None) -> RegimeEngine | None:
             f"Unknown regime engine '{engine_name}': not found in registry. "
             "Check the 'regime_engine' field in your platform configuration."
         ) from None
+    except TypeError as exc:
+        raise ConfigurationError(
+            f"Invalid regime_engine_options for engine {engine_name!r}: {exc}"
+        ) from exc
 
 
 def _load_alphas(
@@ -501,6 +801,49 @@ def _load_alphas(
         logger.info("Registered alpha '%s' from explicit path %s", module.manifest.alpha_id, spec_path)
 
 
+def _resolve_trading_session_bounds(
+    config: PlatformConfig,
+) -> TradingSessionBounds | None:
+    """BT-16: RTH open/close bounds for entry-fill suppression."""
+    cal_path = (
+        str(config.event_calendar_path)
+        if config.event_calendar_path is not None
+        else None
+    )
+    session_date = config.rth_session_date or config.moc_session_date
+    return build_trading_session_from_platform(
+        rth_session_gating_enabled=config.rth_session_gating_enabled,
+        rth_session_date=session_date,
+        event_calendar_path=cal_path,
+        rth_open_et=config.rth_open_et,
+        rth_close_et=config.rth_close_et,
+        early_close_dates=config.early_close_dates,
+        early_close_rth_close_et=config.early_close_rth_close_et,
+        market_holiday_dates=config.market_holiday_dates,
+        no_entry_first_seconds=config.no_entry_first_seconds,
+    )
+
+
+def _resolve_moc_bounds(config: PlatformConfig) -> MocSessionBounds | None:
+    """BT-8: session bounds for closing-auction fills (None ⇒ MOC inert)."""
+    if not config.moc_strategy_ids:
+        return None
+    cal_path = (
+        str(config.event_calendar_path)
+        if config.event_calendar_path is not None
+        else None
+    )
+    return build_moc_bounds_from_platform(
+        moc_session_date=config.moc_session_date,
+        event_calendar_path=cal_path,
+        moc_cutoff_et=config.moc_cutoff_et,
+        official_close_et=config.official_close_et,
+        early_close_dates=config.early_close_dates,
+        early_close_moc_cutoff_et=config.early_close_moc_cutoff_et,
+        early_close_official_close_et=config.early_close_official_close_et,
+    )
+
+
 def _create_backend(
     mode: OperatingMode,
     event_log: InMemoryEventLog,
@@ -508,17 +851,36 @@ def _create_backend(
     *,
     cost_model: DefaultCostModel,
     fill_latency_ns: int = 0,
+<<<<<<< HEAD
+=======
+    market_data_latency_ns: int = 0,
+    cost_model: DefaultCostModel | None = None,
+>>>>>>> origin/main
     execution_mode: str = "market",
     passive_fill_delay_ticks: int = 3,
     passive_max_resting_ticks: int = 50,
     passive_queue_position_shares: int = 0,
+    passive_fill_hazard_max: float = 0.5,
     passive_cancel_fee_per_share: float = 0.0,
     market_impact_factor: float = 0.5,
     max_impact_half_spreads: float = 10.0,
+<<<<<<< HEAD
     stop_slippage_half_spreads: float = 2.0,
 ) -> tuple[ExecutionBackend, BacktestOrderRouter | PassiveLimitOrderRouter | None]:
+=======
+    normalizer: MarketDataNormalizer | None = None,
+    config: PlatformConfig | None = None,
+) -> _BackendBundle:
+    """Compose the per-mode :class:`ExecutionBackend` + auxiliary handles."""
+>>>>>>> origin/main
     backend: ExecutionBackend
     router: BacktestOrderRouter | PassiveLimitOrderRouter | None
+    moc_bounds: MocSessionBounds | None = (
+        _resolve_moc_bounds(config) if config is not None else None
+    )
+    trading_session_bounds: TradingSessionBounds | None = (
+        _resolve_trading_session_bounds(config) if config is not None else None
+    )
     if mode == OperatingMode.BACKTEST:
         # ``minimum_cost`` runs through the passive-limit backend
         # because the per-order policy must be able to post a LIMIT
@@ -530,30 +892,85 @@ def _create_backend(
             backend, router = build_passive_limit_backend(
                 event_log, clock,
                 latency_ns=fill_latency_ns,
+                market_data_latency_ns=market_data_latency_ns,
                 cost_model=cost_model,
+                market_impact_factor=market_impact_factor,
+                max_impact_half_spreads=max_impact_half_spreads,
                 fill_delay_ticks=passive_fill_delay_ticks,
                 max_resting_ticks=passive_max_resting_ticks,
                 queue_position_shares=passive_queue_position_shares,
                 cancel_fee_per_share=_decimal(passive_cancel_fee_per_share),
+<<<<<<< HEAD
                 market_impact_factor=market_impact_factor,
                 max_impact_half_spreads=max_impact_half_spreads,
                 stop_slippage_half_spreads=stop_slippage_half_spreads,
+=======
+                fill_hazard_max=_decimal(passive_fill_hazard_max),
+                moc_bounds=moc_bounds,
+                trading_session_bounds=trading_session_bounds,
+>>>>>>> origin/main
             )
-            return backend, router
+            return _BackendBundle(backend=backend, backtest_router=router)
 
         backend, router = build_backtest_backend(
             event_log, clock,
             latency_ns=fill_latency_ns,
+            market_data_latency_ns=market_data_latency_ns,
             cost_model=cost_model,
             market_impact_factor=market_impact_factor,
             max_impact_half_spreads=max_impact_half_spreads,
+<<<<<<< HEAD
             stop_slippage_half_spreads=stop_slippage_half_spreads,
+=======
+            max_resting_ticks=passive_max_resting_ticks,
+            moc_bounds=moc_bounds,
+            trading_session_bounds=trading_session_bounds,
         )
-        return backend, router
+        return _BackendBundle(backend=backend, backtest_router=router)
+
+    if mode == OperatingMode.PAPER:
+        if config is None:
+            raise ConfigurationError(
+                "PAPER mode requires a PlatformConfig argument to "
+                "_create_backend (bug in bootstrap composition)"
+            )
+        api_key = (os.environ.get("MASSIVE_API_KEY") or "").strip()
+        if not api_key:
+            raise ConfigurationError(
+                "MASSIVE_API_KEY env var is required for "
+                "OperatingMode.PAPER"
+            )
+        if normalizer is None:
+            raise ConfigurationError(
+                "PAPER mode requires a MassiveNormalizer instance "
+                "(bootstrap auto-constructs one — this is a bug)"
+            )
+        if not isinstance(normalizer, MassiveNormalizer):
+            raise ConfigurationError(
+                "PAPER mode requires a MassiveNormalizer instance, got "
+                f"{type(normalizer).__name__}"
+            )
+        backend, live_feed, ib_conn = build_paper_backend(
+            massive_api_key=api_key,
+            symbols=sorted(config.symbols),
+            clock=clock,
+            normalizer=normalizer,
+            ib_host=config.ib_host,
+            ib_port=config.ib_port,
+            ib_client_id=config.ib_client_id,
+            massive_ws_url=config.massive_ws_url,
+        )
+        return _BackendBundle(
+            backend=backend,
+            backtest_router=None,
+            live_feed=live_feed,
+            ib_connection=ib_conn,
+>>>>>>> origin/main
+        )
 
     raise NotImplementedError(
         f"ExecutionBackend for mode {mode.name} is not yet implemented. "
-        f"Paper and live routers are future work."
+        f"Live router is future work."
     )
 
 
@@ -592,50 +1009,73 @@ def _derive_session_id(config: PlatformConfig) -> str:
 # For each sensor_id that may appear in platform.yaml, declare which
 # HorizonFeature implementations to construct at each registered horizon.
 # Features for sensors that are NOT in config.sensor_specs are skipped.
-# Adding a new sensor here is the only change needed to surface its
-# readings in HorizonFeatureSnapshot.values for new alphas.
+# Adding a new sensor is a single entry in the registry below — no edit
+# to the lookup function or its callers is needed.
+
+# sensor_id -> factory(horizon) -> the HorizonFeatures that sensor drives.
+# A sensor absent from this map (e.g. ``spread_z_30d``) contributes no
+# Layer-2 features; the gate DSL resolves it via the sensor_cache path in
+# HorizonSignalEngine._build_bindings.
+_HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
+    "ofi_ewma": lambda h: [
+        SensorPassthroughFeature("ofi_ewma", h),
+        # Short rolling window (200 samples) so z-score reflects recent
+        # OFI regime rather than whole-session history.
+        RollingZscoreFeature("ofi_ewma", h, max_samples=200),
+    ],
+    "kyle_lambda_60s": lambda h: [
+        RollingZscoreFeature("kyle_lambda_60s", h),
+        RollingPercentileFeature("kyle_lambda_60s", h),
+    ],
+    "quote_replenish_asymmetry": lambda h: [
+        RollingZscoreFeature("quote_replenish_asymmetry", h),
+    ],
+    "quote_hazard_rate": lambda h: [
+        SensorPassthroughFeature("quote_hazard_rate", h),
+    ],
+    # Sensor emits a 4-tuple; sum λ_buy+λ_sell as burst-intensity scalar.
+    "hawkes_intensity": lambda h: [
+        RollingZscoreFeature(
+            "hawkes_intensity", h, tuple_sum_component_indices=(0, 1),
+        ),
+    ],
+    "trade_through_rate": lambda h: [
+        SensorPassthroughFeature("trade_through_rate", h),
+    ],
+    "scheduled_flow_window": lambda h: [
+        TupleComponentFeature(
+            "scheduled_flow_window", 0,
+            "scheduled_flow_window_active", h,
+        ),
+        TupleComponentFeature(
+            "scheduled_flow_window", 1,
+            "seconds_to_window_close", h,
+        ),
+        TupleComponentFeature(
+            "scheduled_flow_window", 3,
+            "scheduled_flow_window_direction_prior", h,
+        ),
+    ],
+    "micro_price": lambda h: [
+        SensorPassthroughFeature("micro_price", h),
+        RollingZscoreFeature("micro_price", h),
+    ],
+    "realized_vol_30s": lambda h: [
+        SensorPassthroughFeature("realized_vol_30s", h),
+        RollingZscoreFeature("realized_vol_30s", h),
+    ],
+}
+
 
 def _horizon_features_for(
     sensor_id: str,
     horizon: int,
 ) -> list[HorizonFeature]:
     """Return the HorizonFeature instances for *sensor_id* at *horizon*."""
-    if sensor_id == "ofi_ewma":
-        return [
-            SensorPassthroughFeature("ofi_ewma", horizon),
-            RollingZscoreFeature("ofi_ewma", horizon),
-        ]
-    if sensor_id == "kyle_lambda_60s":
-        return [
-            RollingZscoreFeature("kyle_lambda_60s", horizon),
-            RollingPercentileFeature("kyle_lambda_60s", horizon),
-        ]
-    if sensor_id == "quote_replenish_asymmetry":
-        return [RollingZscoreFeature("quote_replenish_asymmetry", horizon)]
-    if sensor_id == "quote_hazard_rate":
-        return [SensorPassthroughFeature("quote_hazard_rate", horizon)]
-    if sensor_id == "hawkes_intensity":
-        return [RollingZscoreFeature("hawkes_intensity", horizon)]
-    if sensor_id == "trade_through_rate":
-        return [SensorPassthroughFeature("trade_through_rate", horizon)]
-    if sensor_id == "scheduled_flow_window":
-        return [
-            TupleComponentFeature(
-                "scheduled_flow_window", 0,
-                "scheduled_flow_window_active", horizon,
-            ),
-            TupleComponentFeature(
-                "scheduled_flow_window", 1,
-                "seconds_to_window_close", horizon,
-            ),
-            TupleComponentFeature(
-                "scheduled_flow_window", 3,
-                "scheduled_flow_window_direction_prior", horizon,
-            ),
-        ]
-    # Sensors that produce stats already (e.g. spread_z_30d, micro_price)
-    # do not yet have evaluate()-level consumers — no features needed.
-    return []
+    factory = _HORIZON_FEATURE_FACTORIES.get(sensor_id)
+    if factory is None:
+        return []
+    return factory(horizon)
 
 
 def _build_horizon_features(
@@ -742,6 +1182,7 @@ def _create_sensor_layer(
             sequence_generator=sensor_seq,
             symbols=frozenset(config.symbols),
             metric_collector=metric_collector,
+            emit_reading_metrics=config.mode != OperatingMode.BACKTEST,
         )
         # ── Calendar injection for ScheduledFlowWindowSensor ──────────
         # ScheduledFlowWindowSensor requires a live EventCalendar object
@@ -1013,6 +1454,34 @@ def _create_signal_layer(
     return signal_seq, engine
 
 
+def _union_portfolio_upstream_strategy_ids(
+    portfolio_modules: Sequence[LoadedPortfolioLayerModule],
+) -> tuple[str, ...]:
+    """Sorted union of SIGNAL alpha_ids referenced by PORTFOLIO specs."""
+    ids: set[str] = set()
+    for m in portfolio_modules:
+        ids.update(m.depends_on_signals)
+    return tuple(sorted(ids))
+
+
+def _composition_signal_horizons(
+    registry: AlphaRegistry,
+    context_horizons: frozenset[int],
+    upstream_strategy_ids: tuple[str, ...],
+) -> frozenset[int]:
+    """Horizons for which the synchronizer caches Layer-2 ``Signal`` events."""
+    hs: set[int] = set(context_horizons)
+    for sid in upstream_strategy_ids:
+        try:
+            mod = registry.get(sid)
+        except KeyError:
+            continue
+        h = getattr(mod, "horizon_seconds", None)
+        if isinstance(h, int) and h > 0:
+            hs.add(h)
+    return frozenset(hs)
+
+
 def _create_composition_layer(
     *,
     config: PlatformConfig,
@@ -1097,11 +1566,19 @@ def _create_composition_layer(
     ctx_seq = SequenceGenerator()
     metric_seq = SequenceGenerator()
 
+    upstream_ids = _union_portfolio_upstream_strategy_ids(portfolio_modules)
+    signal_horizons = _composition_signal_horizons(
+        registry,
+        frozenset(horizons),
+        upstream_ids,
+    )
     synchronizer = UniverseSynchronizer(
         bus=bus,
         universe=universe,
         horizons=horizons,
         ctx_sequence_generator=ctx_seq,
+        signal_horizons=signal_horizons,
+        upstream_strategy_ids=upstream_ids,
     )
     synchronizer.attach()
 
@@ -1161,6 +1638,7 @@ def _create_composition_layer(
             module._construct = _DefaultPortfolioConstructor(  # noqa: SLF001
                 engine_thunk=lambda e=engine: e,
                 strategy_id=module.alpha_id,
+                feeder_strategy_ids=module.depends_on_signals,
             )
         engine.register(RegisteredPortfolioAlpha(
             alpha_id=module.alpha_id,
@@ -1246,6 +1724,40 @@ def _hazard_block_enabled(block: object | None) -> bool:
     return bool(block.get("enabled", False)) is True
 
 
+
+
+def _enforce_ex_date_replay_guard(
+    config: PlatformConfig,
+    event_log: InMemoryEventLog,
+    *,
+    precomputed_spans: dict[str, tuple[date, date]] | None = None,
+) -> None:
+    """BT-18: refuse backtests whose replay span crosses a known ex-date."""
+    if not config.backtest_enforce_ex_date_guard:
+        return
+    if config.mode != OperatingMode.BACKTEST:
+        return
+    if config.ex_date_calendar_path is None:
+        return
+    from feelies.storage.reference.corporate_actions import (
+        RAW_UNADJUSTED_L1_POLICY,
+        check_ex_date_replay_window,
+        load_ex_date_calendar,
+    )
+
+    calendar = load_ex_date_calendar(config.ex_date_calendar_path)
+    violations = check_ex_date_replay_window(
+        config.symbols,
+        event_log,
+        calendar,
+        precomputed_spans=precomputed_spans,
+    )
+    if not violations:
+        return
+    detail = "; ".join(v.message() for v in violations)
+    raise ConfigurationError(
+        f"BT-18 ex-date replay guard ({RAW_UNADJUSTED_L1_POLICY}): {detail}"
+    )
 def _enforce_factor_loadings_freshness(
     config: PlatformConfig,
     universe_sorted: list[str],
@@ -1271,7 +1783,18 @@ def _enforce_factor_loadings_freshness(
             f"factor loadings file not found: {path}"
         )
 
-    age_seconds = time.time() - path.stat().st_mtime
+    # Prefer ``session_open_ns`` as the freshness reference so the check
+    # is bit-deterministic across replays.  Wall-clock ``time.time()`` is
+    # only used as a fallback when no session anchor is configured; in
+    # that path the staleness verdict depends on the system clock at
+    # boot, which breaks bit-identical replay (a backtest passing today
+    # may fail tomorrow with no code change).
+    file_mtime = path.stat().st_mtime
+    if config.session_open_ns is not None:
+        reference_time = config.session_open_ns / 1_000_000_000
+    else:
+        reference_time = time.time()
+    age_seconds = reference_time - file_mtime
     if age_seconds > config.factor_loadings_max_age_seconds:
         raise StaleFactorLoadingsError(
             f"factor loadings file {path} is {age_seconds:.0f}s old, "

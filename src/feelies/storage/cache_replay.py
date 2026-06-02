@@ -7,18 +7,24 @@ Used by offline replay harnesses after a first run has populated::
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Literal, Sequence
 
 from feelies.core.events import NBBOQuote, Trade
-from feelies.core.identifiers import SequenceGenerator, make_correlation_id
 from feelies.ingestion.massive_ingestor import IngestResult
 from feelies.storage.disk_event_cache import DiskEventCache
+from feelies.storage.event_resequence import resequence_event_list
 from feelies.storage.memory_event_log import InMemoryEventLog
 
-__all__ = ["CacheReplayError", "DiskCacheDayMeta", "load_event_log_from_disk_cache"]
+__all__ = [
+    "CacheReplayError",
+    "DiskCacheDayMeta",
+    "IngestDayMeta",
+    "iter_calendar_dates",
+    "load_event_log_from_disk_cache",
+]
 
 
 class CacheReplayError(RuntimeError):
@@ -26,16 +32,22 @@ class CacheReplayError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class DiskCacheDayMeta:
-    """Provenance for one loaded cache file (mirrors scripts/run_backtest DaySource)."""
+class IngestDayMeta:
+    """Provenance for a single (symbol, date) ingestion or cache load."""
 
     symbol: str
     date: str
-    source: Literal["cache"]
+    source: Literal["cache", "api"] | str
     event_count: int
+    ingestion_health: str | None = None
 
 
-def _iter_dates(start_date: str, end_date: str) -> list[str]:
+# Backward-compatible alias for callers that predated ``IngestDayMeta``.
+DiskCacheDayMeta = IngestDayMeta
+
+
+def iter_calendar_dates(start_date: str, end_date: str) -> list[str]:
+    """Return YYYY-MM-DD strings for each calendar date in ``[start, end]``."""
     start = date.fromisoformat(start_date)
     end = date.fromisoformat(end_date)
     dates: list[str] = []
@@ -46,35 +58,26 @@ def _iter_dates(start_date: str, end_date: str) -> list[str]:
     return dates
 
 
-def _resequence(events: list[NBBOQuote | Trade]) -> list[NBBOQuote | Trade]:
-    """Sort by exchange time and assign globally monotonic sequences."""
-    events.sort(key=lambda e: e.exchange_timestamp_ns)
-    seq = SequenceGenerator()
-    result: list[NBBOQuote | Trade] = []
-    for event in events:
-        new_seq = seq.next()
-        new_cid = make_correlation_id(
-            event.symbol, event.exchange_timestamp_ns, new_seq,
-        )
-        result.append(replace(event, sequence=new_seq, correlation_id=new_cid))
-    return result
-
-
 def load_event_log_from_disk_cache(
     symbols: Sequence[str],
     start_date: str,
     end_date: str,
     *,
     cache_dir: Path | None = None,
-) -> tuple[InMemoryEventLog, IngestResult, list[DiskCacheDayMeta]]:
+    require_healthy_ingestion_manifests: bool = False,
+) -> tuple[InMemoryEventLog, IngestResult, list[IngestDayMeta]]:
     """Load and merge cached JSONL.gz days; fail fast if any day is absent.
 
     No network I/O.  Re-sequences identically to
     :func:`scripts.run_backtest.ingest_data` after cache hits.
+
+    When ``require_healthy_ingestion_manifests`` is True, every manifest must
+    carry ``ingestion_health == \"HEALTHY\"`` (fail-closed for stale cache
+    written before ingestion-health tagging or degraded normalizer runs).
     """
     resolved = cache_dir if cache_dir is not None else Path.home() / ".feelies" / "cache"
     cache = DiskEventCache(resolved)
-    dates = _iter_dates(start_date, end_date)
+    dates = iter_calendar_dates(start_date, end_date)
     syms = [s.upper() for s in symbols]
 
     missing: list[str] = []
@@ -91,7 +94,7 @@ def load_event_log_from_disk_cache(
         )
 
     all_events: list[NBBOQuote | Trade] = []
-    day_meta: list[DiskCacheDayMeta] = []
+    day_meta: list[IngestDayMeta] = []
 
     for sym in syms:
         for day in dates:
@@ -100,14 +103,30 @@ def load_event_log_from_disk_cache(
                 raise CacheReplayError(
                     f"Cache entry unreadable or checksum/schema mismatch: {sym}/{day}"
                 )
+            manifest = cache.read_manifest(sym, day)
+            ing_health = (
+                manifest.get("ingestion_health") if manifest else None
+            )
+            if require_healthy_ingestion_manifests:
+                if ing_health != "HEALTHY":
+                    raise CacheReplayError(
+                        f"{sym}/{day}: disk cache manifest ingestion_health="
+                        f"{ing_health!r} (require HEALTHY — re-ingest this day)"
+                    )
             all_events.extend(loaded)
             day_meta.append(
-                DiskCacheDayMeta(
-                    symbol=sym, date=day, source="cache", event_count=len(loaded),
+                IngestDayMeta(
+                    symbol=sym,
+                    date=day,
+                    source="cache",
+                    event_count=len(loaded),
+                    ingestion_health=(
+                        str(ing_health) if ing_health is not None else None
+                    ),
                 )
             )
 
-    resequenced = _resequence(all_events)
+    resequenced = resequence_event_list(all_events)
     event_log = InMemoryEventLog()
     event_log.append_batch(resequenced)
 

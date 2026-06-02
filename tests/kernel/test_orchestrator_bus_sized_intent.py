@@ -42,6 +42,7 @@ from feelies.composition.synchronizer import UniverseSynchronizer
 from feelies.composition.turnover_optimizer import TurnoverOptimizer
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
+    Alert,
     CrossSectionalContext,
     HorizonTick,
     NBBOQuote,
@@ -323,10 +324,11 @@ def _seed_position(
 class TestBusDrivenSizedIntentProducesOrders:
     """Bus-published SizedPositionIntent is the production PORTFOLIO path.
 
-    This is the core PR-2b-iv contract: PORTFOLIO alphas publish
-    SizedPositionIntent on the bus and the orchestrator translates that
-    into per-symbol OrderRequest events without requiring any per-tick
-    micro-SM walk for the PORTFOLIO contribution.
+    PR-2b-iv: composition publishes ``SizedPositionIntent`` on the bus and the
+    orchestrator translates it into per-symbol ``OrderRequest`` events.
+    Out-of-tick publishes execute immediately (micro unchanged); under
+    ``_process_tick`` the same work is flushed after the ``CROSS_SECTIONAL``
+    bookend with micro M5–M10 transitions.
     """
 
     def test_intent_with_single_target_emits_single_order(self) -> None:
@@ -416,6 +418,46 @@ class TestBusDrivenSizedIntentProducesOrders:
 
         _ = orch
         assert captured == []
+
+    def test_fail_safe_portfolio_submit_skips_pending_symbol(self) -> None:
+        """``_submit_portfolio_leg_without_micro_walk`` honours pending guard."""
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        _seed_position(positions, "AAPL", 0, "150.00")
+        router = _ScriptedOrderRouter()
+        orch = _build_orchestrator(
+            clock, bus=bus, position_store=positions, order_router=router,
+        )
+        _boot_to_backtest(orch)
+
+        pending = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="pending-cid",
+            sequence=999,
+            order_id="pending-aapl",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=50,
+            limit_price=Decimal("149.50"),
+            strategy_id="prior_signal",
+        )
+        orch._track_order(pending.order_id, pending.side, pending)
+
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)  # type: ignore[arg-type]
+
+        orch._submit_portfolio_leg_without_micro_walk(
+            _make_intent(targets={"AAPL": 15_000.0}),
+            "fail-safe-cid",
+        )
+
+        assert router.submitted == []
+        assert any(
+            a.alert_name == "portfolio_leg_skipped_pending_order"
+            for a in alerts
+        )
 
     def test_intent_runs_outside_per_tick_micro_sm_walk(self) -> None:
         """Intent dispatch does not advance the SIGNAL-reserved M5..M10 walk.
@@ -795,7 +837,7 @@ class TestPortfolioCoexistsWithStandaloneSignal:
         orch._process_tick(_make_quote())
 
         assert intent_states == [MicroState.HORIZON_CHECK]
-        assert order_states == [MicroState.HORIZON_CHECK]
+        assert order_states == [MicroState.ORDER_SUBMIT]
 
 
 class TestFiltering:

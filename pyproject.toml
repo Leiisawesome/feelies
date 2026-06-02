@@ -21,6 +21,7 @@ feelies = "feelies.cli.main:main"
 
 [project.optional-dependencies]
 dev = [
+    "pyarrow>=15.0",
     "pytest>=8.0",
     "pytest-cov>=6.0",
     "hypothesis>=6.0",
@@ -33,6 +34,11 @@ massive = [
     "websockets>=13.0",
     "massive>=2.3",
 ]
+health = [
+    # Parquet-backed research artefacts for ``feelies.health.load_run_directory``.
+    # Overlaps ``feelies[portfolio]`` which also pins pyarrow for factor loadings.
+    "pyarrow>=15.0",
+]
 portfolio = [
     # Phase-4 PORTFOLIO layer optional dependencies.  Loaded lazily inside
     # composition modules; the pure-Python fallbacks (numpy z-scoring +
@@ -44,6 +50,17 @@ portfolio = [
     "cvxpy>=1.5",
     "ecos>=2.0",
     "pyarrow>=15.0",
+]
+ib = [
+    # OperatingMode.PAPER + LIVE: Interactive Brokers Gateway adapter.
+    # ``ibapi`` is not published on PyPI in the form we need; the
+    # community-maintained ``nautilus-ibapi`` mirror provides the same
+    # ``ibapi.*`` module tree.  ``protobuf`` is a transitive runtime
+    # dep of recent ``ibapi`` releases.  Install with
+    # ``pip install feelies[ib,massive]`` to get the full PAPER-mode
+    # tool-chain (the WS feed lives under ``massive``).
+    "nautilus-ibapi>=10.19",
+    "protobuf>=4.25",
 ]
 
 [build-system]
@@ -71,7 +88,7 @@ python_version = "3.12"
 # `feelies.*` module without an explicit matrix amendment.
 
 [[tool.mypy.overrides]]
-module = ["cvxpy", "cvxpy.*", "numpy", "numpy.*"]
+module = ["cvxpy", "cvxpy.*", "numpy", "numpy.*", "pyarrow", "pyarrow.*"]
 ignore_missing_imports = true
 
 [tool.ruff]
@@ -119,6 +136,7 @@ markers = [
     "functional: network-backed tests against live external services",
     "backtest_validation: full backtest pipe validation suite",
     "slow: performance benchmarks and long-running tests",
+    "paper_rth: requires US RTH + IB Gateway paper @ 4002 + MASSIVE_API_KEY",
 ]
 
 [tool.coverage.run]

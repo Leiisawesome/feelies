@@ -42,7 +42,11 @@ class KillSwitch(Protocol):
     def activate(self, reason: str, *, activated_by: str = "automated") -> None:
         """Activate the kill switch.
 
-        Emits a ``KillSwitchActivation`` event on the bus.
+        Implementations record activation locally.  Typed
+        ``KillSwitchActivation`` bus events are emitted by orchestration
+        paths that activate the switch (e.g. risk escalation), not by every
+        concrete ``KillSwitch`` adapter.
+
         Irreversible without manual re-enable via ``reset()``.
         """
         ...

@@ -38,6 +38,7 @@ class _FakeRegime:
     state_names: tuple[str, ...]
     posteriors: tuple[float, ...]
     dominant_name: str
+    posterior_entropy_nats: float = 0.0
 
 
 def _bindings(
@@ -144,6 +145,27 @@ def test_evaluate_dominant_without_regime_raises() -> None:
     tree = compile_expression("dominant == \"normal\"")
     with pytest.raises(UnknownIdentifierError, match="dominant"):
         evaluate(tree, _bindings())
+
+
+def test_evaluate_entropy_binding() -> None:
+    tree = compile_expression("entropy < 0.5")
+    regime = _FakeRegime(
+        state_names=("compression_clustering", "normal", "vol_breakout"),
+        posteriors=(0.10, 0.80, 0.10),
+        dominant_name="normal",
+        posterior_entropy_nats=0.3,
+    )
+    assert evaluate(tree, _bindings(regime=regime)) is True
+
+
+def test_evaluate_entropy_without_regime_raises() -> None:
+    tree = compile_expression("entropy < 1.0")
+    with pytest.raises(UnknownIdentifierError, match="entropy"):
+        evaluate(tree, _bindings())
+
+
+def test_compile_accepts_entropy_in_condition() -> None:
+    compile_expression("P(normal) > 0.7 AND entropy < 1.0")
 
 
 def test_evaluate_sensor_value() -> None:

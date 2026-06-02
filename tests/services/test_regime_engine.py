@@ -235,6 +235,7 @@ class TestCalibrate:
 
         blob = engine.checkpoint()
         payload = json.loads(blob)
+        assert payload.get("checkpoint_schema_version") == 1
         assert "emission" in payload
 
         engine2 = HMM3StateFractional()
@@ -261,14 +262,14 @@ class TestNaNInfRecovery:
         engine.posterior(_make_quote(sequence=1))
 
         # Monkey-patch emission to produce NaN likelihoods
-        original_emission = engine._emission_likelihood
+        original_emission = engine._emission_likelihood_for_symbol
 
-        def _nan_likelihoods(log_spread: float) -> list[float]:
+        def _nan_likelihoods(*args: object, **kwargs: object) -> list[float]:
             return [float("nan")] * engine.n_states
 
-        engine._emission_likelihood = _nan_likelihoods  # type: ignore[assignment]
+        engine._emission_likelihood_for_symbol = _nan_likelihoods  # type: ignore[method-assign]
         posteriors = engine.posterior(_make_quote(sequence=2))
-        engine._emission_likelihood = original_emission  # type: ignore[assignment]
+        engine._emission_likelihood_for_symbol = original_emission  # type: ignore[method-assign]
 
         # Should reset to uniform prior
         expected = 1.0 / engine.n_states
@@ -280,14 +281,14 @@ class TestNaNInfRecovery:
         )
         engine.posterior(_make_quote(sequence=1))
 
-        original_emission = engine._emission_likelihood
+        original_emission = engine._emission_likelihood_for_symbol
 
-        def _inf_likelihoods(log_spread: float) -> list[float]:
+        def _inf_likelihoods(*args: object, **kwargs: object) -> list[float]:
             return [float("inf")] * engine.n_states
 
-        engine._emission_likelihood = _inf_likelihoods  # type: ignore[assignment]
+        engine._emission_likelihood_for_symbol = _inf_likelihoods  # type: ignore[method-assign]
         posteriors = engine.posterior(_make_quote(sequence=2))
-        engine._emission_likelihood = original_emission  # type: ignore[assignment]
+        engine._emission_likelihood_for_symbol = original_emission  # type: ignore[method-assign]
 
         expected = 1.0 / engine.n_states
         assert all(abs(p - expected) < 1e-10 for p in posteriors)
@@ -309,12 +310,12 @@ class TestUpdateAtomicity:
         baseline = engine.posterior(_make_quote(sequence=1))
 
         # Force the seq=2 update to raise after _predict but before commit.
-        original_emission = engine._emission_likelihood
+        original_emission = engine._emission_likelihood_for_symbol
 
-        def _raising(log_spread: float) -> list[float]:
+        def _raising(*args: object, **kwargs: object) -> list[float]:
             raise RuntimeError("synthetic emission failure")
 
-        engine._emission_likelihood = _raising  # type: ignore[assignment]
+        engine._emission_likelihood_for_symbol = _raising  # type: ignore[method-assign]
         with pytest.raises(RuntimeError):
             engine.posterior(_make_quote(sequence=2))
 
@@ -327,7 +328,7 @@ class TestUpdateAtomicity:
         # Restore emission and re-attempt seq=2 — the engine must
         # actually run the update rather than short-circuit on a
         # spurious watermark match.
-        engine._emission_likelihood = original_emission  # type: ignore[assignment]
+        engine._emission_likelihood_for_symbol = original_emission  # type: ignore[method-assign]
         retry = engine.posterior(_make_quote(sequence=2))
         assert retry != baseline
         assert engine._last_update_seq.get("AAPL") == 2

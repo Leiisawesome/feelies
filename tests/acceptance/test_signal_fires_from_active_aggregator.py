@@ -29,8 +29,8 @@ Pipeline under test
 3. ``HorizonSignalEngine._on_snapshot()``:
    - gate: ``P(normal)=0.85 > 0.7 ✓`` and
      ``abs(spread_z_30d)=0.05 < 0.5 ✓``
-   - ``evaluate()``: ``z≈4.9 > entry_threshold_z=2.0`` →
-     ``Signal(direction=LONG, strategy_id="pofi_benign_midcap_v1")``
+   - ``evaluate()``: ``z≈4.9 > entry_threshold_z=0.8`` →
+     ``Signal(direction=LONG, strategy_id="sig_benign_midcap_v1")``
 
 4. Signal published on bus → captured by test subscriber.
 
@@ -66,6 +66,7 @@ from feelies.core.events import (
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.sensors.impl.micro_price import MicroPriceSensor
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
+from feelies.sensors.impl.realized_vol_30s import RealizedVol30sSensor
 from feelies.sensors.impl.spread_z_30d import SpreadZScoreSensor
 from feelies.sensors.spec import SensorSpec
 from feelies.storage.memory_event_log import InMemoryEventLog
@@ -78,37 +79,44 @@ pytestmark = pytest.mark.backtest_validation
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 _SIGNAL_ALPHA = (
-    _REPO_ROOT / "alphas" / "pofi_benign_midcap_v1"
-    / "pofi_benign_midcap_v1.alpha.yaml"
+    _REPO_ROOT / "alphas" / "sig_benign_midcap_v1"
+    / "sig_benign_midcap_v1.alpha.yaml"
 )
 
 # Single-symbol universe — sufficient to prove the chain end-to-end.
 _UNIVERSE: tuple[str, ...] = ("AAPL",)
 
-# pofi_benign_midcap_v1 declares depends_on_sensors: [ofi_ewma, micro_price,
-# spread_z_30d].  All three must be registered for G6 to pass at load.
+# sig_benign_midcap_v1 declares depends_on_sensors including ofi_ewma,
+# micro_price, spread_z_30d, realized_vol_30s — all must be registered.
 # warm_after=5 speeds warm-up; the test pre-warms by direct SensorReading
 # injection, not through real quotes.
 _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     SensorSpec(
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=OFIEwmaSensor,
         params={"alpha": 0.1, "warm_after": 5},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="micro_price",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=MicroPriceSensor,
         params={},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="spread_z_30d",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=SpreadZScoreSensor,
         params={},
+        subscribes_to=(NBBOQuote,),
+    ),
+    SensorSpec(
+        sensor_id="realized_vol_30s",
+        sensor_version="1.3.0",
+        cls=RealizedVol30sSensor,
+        params={"window_seconds": 30, "warm_after": 8},
         subscribes_to=(NBBOQuote,),
     ),
 )
@@ -121,12 +129,12 @@ def _make_config() -> PlatformConfig:
         alpha_specs=[_SIGNAL_ALPHA],
         regime_engine="hmm_3state_fractional",
         sensor_specs=_SENSOR_SPECS,
-        # Only horizon=120 to match pofi_benign_midcap_v1 (horizon_seconds=120)
+        # Only horizon=120 to match sig_benign_midcap_v1 (horizon_seconds=120)
         # and keep the test fast.
         horizons_seconds=frozenset({120}),
         session_open_ns=SESSION_OPEN_NS,
         account_equity=1_000_000.0,
-        # pofi_benign_midcap_v1 has no trend_mechanism: block; this is the
+        # sig_benign_midcap_v1 has no trend_mechanism: block; this is the
         # designated v0.2 parity anchor.  Workstream-E made True the
         # platform default, so the test must opt out explicitly.
         enforce_trend_mechanism=False,
@@ -160,6 +168,8 @@ def _reading(
     sensor_id: str,
     value: float,
     ts_ns: int,
+    *,
+    sensor_version: str = "1.0.0",
 ) -> SensorReading:
     return SensorReading(
         timestamp_ns=ts_ns,
@@ -167,7 +177,7 @@ def _reading(
         sequence=seq,
         symbol=symbol,
         sensor_id=sensor_id,
-        sensor_version="1.0.0",
+        sensor_version=sensor_version,
         value=value,
         warm=True,
     )
@@ -198,7 +208,7 @@ def _fire_signals(
     ----------
     ofi_spike:
         The OFI reading appended after the 30-sample warm-up window.
-        Default 3.0 → z ≈ 4.9 >> entry_threshold_z=2.0.
+        Default 3.0 → z ≈ 4.9 >> entry_threshold_z=0.8.
         Set to 1.0 to produce z ≈ 1.65 < 2.0 (below-threshold case).
     regime_p_normal:
         Posterior probability assigned to "normal" in the injected
@@ -250,17 +260,44 @@ def _fire_signals(
     n_warmup = 30
     for i in range(n_warmup):
         v = (i / (n_warmup - 1)) * 2.0 - 1.0  # -1.0 … +1.0
+        micro = 100.0 + (i / max(n_warmup - 1, 1)) * 1.0  # gentle uptrend
         ts = SESSION_OPEN_NS + i * 1_000_000_000
         for symbol in _UNIVERSE:
             bus.publish(_reading(symbol, seq, "ofi_ewma", v, ts))
             seq += 1
+            bus.publish(_reading(symbol, seq, "micro_price", micro, ts))
+            seq += 1
+            bus.publish(
+                _reading(
+                    symbol,
+                    seq,
+                    "realized_vol_30s",
+                    0.0005,
+                    ts,
+                    sensor_version="1.2.0",
+                ),
+            )
+            seq += 1
 
     # ── 4. Spike OFI — this is the reading that drives z above threshold ─
     # After 30 symmetric readings (mean≈0, std≈0.607) a reading of +3.0
-    # produces z = (3.0 - 0) / 0.607 ≈ 4.94 >> entry_threshold_z=2.0.
+    # produces z = (3.0 - 0) / 0.607 ≈ 4.94 >> entry_threshold_z=0.8.
     spike_ts = SESSION_OPEN_NS + n_warmup * 1_000_000_000
     for symbol in _UNIVERSE:
         bus.publish(_reading(symbol, seq, "ofi_ewma", ofi_spike, spike_ts))
+        seq += 1
+        bus.publish(_reading(symbol, seq, "micro_price", 103.0, spike_ts))
+        seq += 1
+        bus.publish(
+            _reading(
+                symbol,
+                seq,
+                "realized_vol_30s",
+                0.0005,
+                spike_ts,
+                sensor_version="1.2.0",
+            ),
+        )
         seq += 1
 
     # ── 5. Trigger the 120-second horizon boundary ─────────────────────
@@ -301,7 +338,7 @@ def test_signal_fires_nonvacuously() -> None:
         "snapshot.values may still be empty (passive aggregator)."
     )
     sig = signals[0]
-    assert sig.strategy_id == "pofi_benign_midcap_v1"
+    assert sig.strategy_id == "sig_benign_midcap_v1"
     assert sig.layer == "SIGNAL"
     assert sig.horizon_seconds == 120
     assert sig.regime_gate_state == "ON"
@@ -318,12 +355,18 @@ def test_signal_direction_is_long_for_positive_ofi() -> None:
 
 
 def test_signal_strength_within_bounds() -> None:
-    """strength is in (0, 1] — evaluate() formula: min(|z| / (2 * threshold), 1.0)."""
+    """strength is in (0, strength_cap] for sig_benign_midcap_v1.
+
+    Below saturation (|z| <= 2 * entry_threshold) strength is linear in
+    |z|; above saturation it follows convex scaling capped at
+    ``parameters.strength_cap`` (default 2.0).
+    """
+    strength_cap = 2.0  # sig_benign_midcap_v1.parameters.strength_cap default
     signals = _fire_signals()
     assert len(signals) >= 1
     for s in signals:
-        assert 0.0 < s.strength <= 1.0, (
-            f"strength={s.strength!r} out of expected (0, 1]"
+        assert 0.0 < s.strength <= strength_cap, (
+            f"strength={s.strength!r} out of expected (0, {strength_cap}]"
         )
 
 
@@ -345,12 +388,12 @@ def test_signal_determinism_inv5() -> None:
 
 
 def test_below_threshold_no_signal() -> None:
-    """OFI z-score below entry_threshold_z=2.0 produces no signals.
+    """OFI z-score below entry_threshold_z=0.8 produces no signals.
 
     With the same 30-sample warm-up window (mean≈0, std≈0.607) and
-    spike value 1.0, z = 1.0 / 0.607 ≈ 1.65 < 2.0 → evaluate() returns None.
+    spike value 0.3, z = 0.3 / 0.607 ≈ 0.49 < 0.8 → evaluate() returns None.
     """
-    signals = _fire_signals(ofi_spike=1.0)
+    signals = _fire_signals(ofi_spike=0.3)
     assert len(signals) == 0, (
         f"Expected 0 signals below threshold but got {len(signals)}: "
         f"{[(s.strategy_id, s.direction) for s in signals]}"
@@ -358,10 +401,10 @@ def test_below_threshold_no_signal() -> None:
 
 
 def test_gate_closed_no_signal() -> None:
-    """Closed regime gate (P(normal) < 0.7) suppresses signals entirely.
+    """Closed regime gate (P(normal) < 0.5) suppresses signals entirely.
 
     Regardless of the OFI z-score, the gate on_condition
-    'P(normal) > 0.7 and abs(spread_z_30d) < 0.5' is not satisfied
+    'P(normal) > 0.5 and spread_z_30d < 1.5' is not satisfied
     when P(normal)=0.30.
     """
     signals = _fire_signals(regime_p_normal=0.30)

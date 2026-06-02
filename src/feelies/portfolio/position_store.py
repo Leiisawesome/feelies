@@ -17,7 +17,50 @@ from typing import Protocol
 
 @dataclass
 class Position:
-    """Current position in a single symbol."""
+    """Current position in a single symbol.
+
+    Cost-accounting convention (audit R6, revised BT-3)
+    ---------------------------------------------------
+
+    The platform's :class:`feelies.execution.backtest_router.BacktestOrderRouter`
+    fills market orders at the **executed cross price** (ask for taker
+    buys, bid for taker sells) — the price IB reports — embedding the
+    half-spread in the fill price rather than recording it as a separate
+    ``spread_cost`` fee (the cost model is called with ``half_spread=0``).
+    This means:
+
+    * :attr:`avg_entry_price` is recorded at the **executed cross
+      price**, so it INCLUDES the half-spread cost.
+
+    * :attr:`realized_pnl` is computed against ``avg_entry_price`` and
+      therefore now INCLUDES the half-spread (a taker round trip realizes
+      the full spread in PnL).  ``spread_cost`` no longer flows through
+      :attr:`cumulative_fees`, so a consumer reading
+      :attr:`cumulative_fees` as "total transaction cost" will *understate*
+      cost by the spread; the spread lives in realized/unrealized PnL.
+      The platform's NAV calculation (`BasicRiskEngine._compute_current_equity`)
+      and the post-trade-forensics analyzer both subtract fees explicitly,
+      so platform-internal accounting is self-consistent — but external
+      reporting code that pulls :attr:`realized_pnl` directly must
+      apply the same fee subtraction.
+
+    * The ``walk-the-book`` partial-fill remainder stacks its
+      market-impact premium on top of the cross (above the ask for
+      buys, below the bid for sells) and that adverse component is
+      likewise reflected in :attr:`avg_entry_price`.  See
+      :meth:`BacktestOrderRouter.submit` for the explicit comment.
+
+    * Mark-to-market via :meth:`PositionStore.update_mark` uses the
+      next quote's mid.  Because a taker enters at the cross but marks
+      at the mid, a flat-to-flat round trip on a quote that never moved
+      shows the round-trip spread as a (un)realized PnL loss while
+      :attr:`cumulative_fees` carries only commission + regulatory
+      charges (the half-spread is now in the price, not the fees).
+
+    Live deployments must mirror this convention (or update both the
+    fill model and this docstring together) to preserve Inv-9
+    backtest/live parity.
+    """
 
     symbol: str
     quantity: int = 0

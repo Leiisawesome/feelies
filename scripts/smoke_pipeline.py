@@ -40,13 +40,15 @@ Additional sub-runs:
   run_risk_rejection_scenario — platform limit set to 1 share to confirm
                                  check_order returns RiskAction.REJECT.
 
-Notes on two architectural invariants visible in the report:
+Notes on architectural invariants visible in the report:
 
-  ORDER_AGGREGATION micro-state — defined in micro.py but has no live
-    code path in the current implementation; the standalone-SIGNAL path
-    goes SIGNAL_EVALUATE → RISK_CHECK directly, and PORTFOLIO orders are
-    dispatched outside the micro-SM via _on_bus_sized_intent. Flagged as
-    "dead state" in the report; not a bug.
+  ``ORDER_AGGREGATION`` was removed from :class:`~feelies.kernel.micro.MicroState`
+  after Workstream D.2 — multi-alpha arbitration is bus-side before M4.
+
+  ``MicroState.CROSS_SECTIONAL`` is recorded on ticks that cross a horizon
+  boundary when at least one PORTFOLIO alpha is registered; PORTFOLIO
+  ``OrderRequest`` submission still runs inside ``_on_bus_sized_intent``
+  (outside the SIGNAL ``RISK_CHECK`` → ``ORDER_SUBMIT`` walk).
 
   Signal/order drop ratio — the micro-SM permits at most ONE standalone
     Signal → Order walk per tick. When multiple standalone SIGNAL alphas
@@ -129,28 +131,28 @@ _STARTING_PRICES_CENTS: dict[str, int] = {
 _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     SensorSpec(
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=OFIEwmaSensor,
         params={"alpha": 0.1, "warm_after": 5},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="micro_price",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=MicroPriceSensor,
         params={},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="spread_z_30d",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=SpreadZScoreSensor,
         params={},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="kyle_lambda_60s",
-        sensor_version="1.1.0",
+        sensor_version="1.2.0",
         cls=KyleLambda60sSensor,
         # Use min_samples=5 so the sensor warms up quickly within the
         # smoke run (default is 30; 5 trades arrive within seconds).
@@ -631,11 +633,9 @@ def run_smoke(alpha_yaml_paths: list[Path]) -> bool:
     silence_ok = not kernel_alerts and not c["killswitch"] and not c["hazard"]
     print(f"  [{'PASS' if silence_ok else 'WARN'}] hard monitoring channels silent")
 
-    print(f"\n── DEAD-STATE INVENTORY ────────────────────────────────────────")
-    print(f"  ORDER_AGGREGATION — no live code path in current implementation.")
-    print(f"  Standalone-SIGNAL goes SIGNAL_EVALUATE→RISK_CHECK directly.")
-    print(f"  PORTFOLIO orders dispatched via _on_bus_sized_intent, not SM.")
-    print(f"  Flagged as dead micro-state; not a bug.")
+    print(f"\n── MICRO-SM NOTES ───────────────────────────────────────────────")
+    print(f"  CROSS_SECTIONAL — bookend when PORTFOLIO + horizon boundary.")
+    print(f"  PORTFOLIO orders still via _on_bus_sized_intent (not M5–M10 SM).")
 
     print("\n── FINAL STATE ─────────────────────────────────────────────────")
     final_state = orch.macro_state

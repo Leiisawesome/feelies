@@ -10,11 +10,12 @@ Responsibilities (per data-engineering skill):
   - Assign correlation IDs at the ingestion boundary (invariant 13)
   - Track per-symbol sequence numbers for gap detection
   - Eliminate exact duplicates
-  - Drive per-symbol DataHealth state machines
+  - Drive per-(symbol × feed-channel) DataHealth state machines, aggregated for API consumers
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from collections.abc import Callable, Sequence
@@ -26,14 +27,121 @@ from feelies.core.identifiers import SequenceGenerator, make_correlation_id
 from feelies.core.state_machine import StateMachine, TransitionRecord
 from feelies.ingestion.data_integrity import (
     DataHealth,
+    HaltSignal,
+    classify_halt_status,
     create_data_integrity_machine,
 )
+from feelies.ingestion.ingest_health import merge_worst_health
 
 logger = logging.getLogger(__name__)
 
 _WS_SOURCE = "massive_ws"
 _REST_SOURCE = "massive_rest"
 _MS_TO_NS = 1_000_000
+
+
+def _optional_wire_ts_ns(raw: object) -> int | None:
+    """Coerce vendor timestamp to ns: values above 1e16 treated as ns, else ms."""
+    if raw is None or isinstance(raw, bool):
+        return None
+    n: int
+    if isinstance(raw, int):
+        n = raw
+    elif isinstance(raw, str):
+        try:
+            n = int(raw)
+        except ValueError:
+            return None
+    else:
+        return None
+    if n > 10**16:
+        return n
+    return n * _MS_TO_NS
+
+
+def _fingerprint_ws_quote(msg: dict) -> str:  # type: ignore[type-arg]
+    """Stable hash of WS quote payload fields (sequence reuse detection)."""
+    raw_c = msg.get("c")
+    conditions: tuple[int, ...]
+    if raw_c is not None and not isinstance(raw_c, list):
+        conditions = (int(raw_c),)
+    elif isinstance(raw_c, list):
+        conditions = tuple(int(x) for x in raw_c)
+    else:
+        conditions = ()
+    raw_i = msg.get("i")
+    indicators = tuple(int(x) for x in raw_i) if isinstance(raw_i, list) else ()
+    parts = (
+        str(msg["bp"]),
+        str(msg["ap"]),
+        str(msg["bs"]),
+        str(msg["as"]),
+        int(msg.get("bx", 0)),
+        int(msg.get("ax", 0)),
+        int(msg.get("z", 0)),
+        conditions,
+        indicators,
+        str(msg.get("participant_timestamp", "")),
+        str(msg.get("trf_timestamp", "")),
+        str(msg.get("ft", "")),
+        str(msg.get("y", "")),
+    )
+    return hashlib.sha256(repr(parts).encode()).hexdigest()
+
+
+def _fingerprint_ws_trade(msg: dict) -> str:  # type: ignore[type-arg]
+    raw_c = msg.get("c")
+    conditions = tuple(int(x) for x in raw_c) if isinstance(raw_c, list) else ()
+    parts = (
+        str(msg["p"]),
+        str(msg["s"]),
+        int(msg.get("x", 0)),
+        str(msg.get("i", "")),
+        int(msg.get("z", 0)),
+        conditions,
+        str(msg.get("trfi", "")),
+        str(msg.get("trft", "")),
+        str(msg.get("participant_timestamp", "")),
+        str(msg.get("ft", "")),
+        str(msg.get("correction", "")),
+    )
+    return hashlib.sha256(repr(parts).encode()).hexdigest()
+
+
+def _fingerprint_rest_quote(rec: dict) -> str:  # type: ignore[type-arg]
+    raw_cond = rec.get("conditions")
+    conditions = tuple(int(x) for x in raw_cond) if isinstance(raw_cond, list) else ()
+    raw_ind = rec.get("indicators")
+    indicators = tuple(int(x) for x in raw_ind) if isinstance(raw_ind, list) else ()
+    parts = (
+        str(rec["bid_price"]),
+        str(rec["ask_price"]),
+        str(rec["bid_size"]),
+        str(rec["ask_size"]),
+        int(rec.get("bid_exchange", 0)),
+        int(rec.get("ask_exchange", 0)),
+        int(rec.get("tape", 0)),
+        conditions,
+        indicators,
+    )
+    return hashlib.sha256(repr(parts).encode()).hexdigest()
+
+
+def _fingerprint_rest_trade(rec: dict) -> str:  # type: ignore[type-arg]
+    raw_cond = rec.get("conditions")
+    conditions = tuple(int(x) for x in raw_cond) if isinstance(raw_cond, list) else ()
+    parts = (
+        str(rec["price"]),
+        str(rec["size"]),
+        int(rec.get("exchange", 0)),
+        str(rec.get("id", "")),
+        int(rec.get("tape", 0)),
+        conditions,
+        str(rec.get("trf_id", "")),
+        str(rec.get("correction", "")),
+        str(rec.get("participant_timestamp", "")),
+    )
+    return hashlib.sha256(repr(parts).encode()).hexdigest()
 
 
 class MassiveNormalizer:
@@ -50,9 +158,13 @@ class MassiveNormalizer:
         "_clock",
         "_seq",
         "_health_machines",
+        "_registered_symbols",
         "_transition_callback",
         "_last_seen",
         "_duplicates_filtered",
+        "_enable_rest_sequence_gap_detection",
+        "_halt_on_codes",
+        "_halt_off_codes",
     )
 
     _FEED_QUOTE = "quote"
@@ -62,16 +174,33 @@ class MassiveNormalizer:
         self,
         clock: Clock,
         transition_callback: Callable[[TransitionRecord], None] | None = None,
+        *,
+        enable_rest_sequence_gap_detection: bool = False,
+        halt_on_codes: frozenset[int] | None = None,
+        halt_off_codes: frozenset[int] | None = None,
     ) -> None:
         self._clock = clock
-        self._seq = SequenceGenerator()
-        self._health_machines: dict[str, StateMachine[DataHealth]] = {}
+        self._seq = SequenceGenerator(start=1)
+        # BT-5: tape condition codes that mark an LULD / regulatory halt
+        # on (``halt_on_codes``) and resume (``halt_off_codes``).  Empty ⇒
+        # halt detection is inert (no DataHealth.HALTED transitions).
+        self._halt_on_codes: frozenset[int] = halt_on_codes or frozenset()
+        self._halt_off_codes: frozenset[int] = halt_off_codes or frozenset()
+        self._health_machines: dict[
+            tuple[str, str], StateMachine[DataHealth]
+        ] = {}
+        self._registered_symbols: frozenset[str] = frozenset()
         self._transition_callback = transition_callback
         # Keyed by (symbol, feed_type) — quotes and trades have independent
         # Massive sequence_number spaces and must be tracked separately to
         # avoid false dedup and spurious gap detection when interleaved.
-        self._last_seen: dict[tuple[str, str], tuple[int, int]] = {}
+        # Value: (sequence_number, exchange_timestamp_ns, content_fingerprint).
+        self._last_seen: dict[tuple[str, str], tuple[int, int, str]] = {}
         self._duplicates_filtered: int = 0
+        # Historical REST rows are usually *thinned* (non-contiguous vendor
+        # sequence_number).  Default False keeps ingest usable; set True only when
+        # the REST stream is full-tick contiguous (or for experiments).
+        self._enable_rest_sequence_gap_detection = enable_rest_sequence_gap_detection
 
     # ── MarketDataNormalizer protocol ────────────────────────────────
 
@@ -96,13 +225,30 @@ class MassiveNormalizer:
         return []
 
     def health(self, symbol: str) -> DataHealth:
-        sm = self._health_machines.get(symbol)
-        if sm is None:
+        q = self._health_machines.get((symbol, self._FEED_QUOTE))
+        t = self._health_machines.get((symbol, self._FEED_TRADE))
+        states: list[DataHealth] = []
+        if q is not None:
+            states.append(q.state)
+        if t is not None:
+            states.append(t.state)
+        if not states:
             return DataHealth.HEALTHY
-        return sm.state
+        out = states[0]
+        for st in states[1:]:
+            out = merge_worst_health(out, st)
+        return out
+
+    def register_symbols(self, symbols: frozenset[str] | set[str]) -> None:
+        """Pre-register symbols so they appear in ``all_health()`` as
+        HEALTHY before any live data arrives (e.g. PAPER cold start).
+        """
+        self._registered_symbols = frozenset(symbols)
 
     def all_health(self) -> dict[str, DataHealth]:
-        return {sym: sm.state for sym, sm in self._health_machines.items()}
+        seen: set[str] = {k[0] for k in self._health_machines}
+        symbols = seen | self._registered_symbols
+        return {sym: self.health(sym) for sym in sorted(symbols)}
 
     # ── WebSocket parsing ────────────────────────────────────────────
 
@@ -135,12 +281,13 @@ class MassiveNormalizer:
             symbol: str = msg["sym"]
             exchange_ts_ns = int(msg["t"]) * _MS_TO_NS
             seq_num = int(msg.get("q", 0))
+            fp = _fingerprint_ws_quote(msg)
 
-            if self._is_duplicate(symbol, self._FEED_QUOTE, seq_num, exchange_ts_ns):
+            if self._reject_sequence_reuse(symbol, self._FEED_QUOTE, seq_num, fp):
                 return None
             prev = self._last_seen.get((symbol, self._FEED_QUOTE))
             prev_seq = prev[0] if prev is not None else 0
-            self._update_last_seen(symbol, self._FEED_QUOTE, seq_num, exchange_ts_ns)
+            self._update_last_seen(symbol, self._FEED_QUOTE, seq_num, exchange_ts_ns, fp)
             self._check_gap(symbol, self._FEED_QUOTE, seq_num, prev_seq)
 
             internal_seq = self._seq.next()
@@ -158,6 +305,17 @@ class MassiveNormalizer:
             raw_i = msg.get("i")
             indicators = tuple(int(x) for x in raw_i) if isinstance(raw_i, list) else ()
 
+            part_ns: int | None = None
+            for key in ("participant_timestamp", "ft"):
+                part_ns = _optional_wire_ts_ns(msg.get(key))
+                if part_ns is not None:
+                    break
+            trf_quote_ns: int | None = None
+            for key in ("trf_timestamp", "y"):
+                trf_quote_ns = _optional_wire_ts_ns(msg.get(key))
+                if trf_quote_ns is not None:
+                    break
+
             return NBBOQuote(
                 timestamp_ns=exchange_ts_ns,
                 correlation_id=cid,
@@ -174,6 +332,8 @@ class MassiveNormalizer:
                 indicators=indicators,
                 sequence_number=seq_num,
                 tape=int(msg.get("z", 0)),
+                participant_timestamp_ns=part_ns,
+                trf_timestamp_ns=trf_quote_ns,
                 received_ns=received_ns,
             )
         except (KeyError, ValueError, TypeError) as exc:
@@ -186,12 +346,13 @@ class MassiveNormalizer:
             symbol: str = msg["sym"]
             exchange_ts_ns = int(msg["t"]) * _MS_TO_NS
             seq_num = int(msg.get("q", 0))
+            fp = _fingerprint_ws_trade(msg)
 
-            if self._is_duplicate(symbol, self._FEED_TRADE, seq_num, exchange_ts_ns):
+            if self._reject_sequence_reuse(symbol, self._FEED_TRADE, seq_num, fp):
                 return None
             prev = self._last_seen.get((symbol, self._FEED_TRADE))
             prev_seq = prev[0] if prev is not None else 0
-            self._update_last_seen(symbol, self._FEED_TRADE, seq_num, exchange_ts_ns)
+            self._update_last_seen(symbol, self._FEED_TRADE, seq_num, exchange_ts_ns, fp)
             self._check_gap(symbol, self._FEED_TRADE, seq_num, prev_seq)
 
             internal_seq = self._seq.next()
@@ -202,6 +363,16 @@ class MassiveNormalizer:
 
             raw_trft = msg.get("trft")
             trf_ts = int(raw_trft) * _MS_TO_NS if raw_trft is not None else None
+
+            part_trade: int | None = None
+            for key in ("participant_timestamp", "ft"):
+                part_trade = _optional_wire_ts_ns(msg.get(key))
+                if part_trade is not None:
+                    break
+            corr_raw = msg.get("correction")
+            correction = int(corr_raw) if corr_raw is not None else None
+
+            self._apply_halt_status(symbol, conditions)
 
             return Trade(
                 timestamp_ns=exchange_ts_ns,
@@ -219,6 +390,8 @@ class MassiveNormalizer:
                 tape=int(msg.get("z", 0)),
                 trf_id=int(msg["trfi"]) if "trfi" in msg else None,
                 trf_timestamp_ns=trf_ts,
+                participant_timestamp_ns=part_trade,
+                correction=correction,
                 received_ns=received_ns,
             )
         except (KeyError, ValueError, TypeError) as exc:
@@ -257,14 +430,15 @@ class MassiveNormalizer:
             symbol: str = rec["ticker"]
             sip_ts = int(rec["sip_timestamp"])
             seq_num = int(rec.get("sequence_number", 0))
+            fp = _fingerprint_rest_quote(rec)
 
-            if self._is_duplicate(symbol, self._FEED_QUOTE, seq_num, sip_ts):
+            if self._reject_sequence_reuse(symbol, self._FEED_QUOTE, seq_num, fp):
                 return None
-            # REST historical responses are thinned: each row keeps the original
-            # SIP sequence_number but omits intervening ticks, so consecutive rows
-            # routinely jump by ≫1 — unlike the live WebSocket feed. Gap detection
-            # would falsely flag almost every symbol (see AUDIT / data_integrity).
-            self._update_last_seen(symbol, self._FEED_QUOTE, seq_num, sip_ts)
+            prev = self._last_seen.get((symbol, self._FEED_QUOTE))
+            prev_seq = prev[0] if prev is not None else 0
+            self._update_last_seen(symbol, self._FEED_QUOTE, seq_num, sip_ts, fp)
+            if self._enable_rest_sequence_gap_detection:
+                self._check_gap(symbol, self._FEED_QUOTE, seq_num, prev_seq)
 
             internal_seq = self._seq.next()
             cid = make_correlation_id(symbol, sip_ts, internal_seq)
@@ -311,11 +485,15 @@ class MassiveNormalizer:
             symbol: str = rec["ticker"]
             sip_ts = int(rec["sip_timestamp"])
             seq_num = int(rec.get("sequence_number", 0))
+            fp = _fingerprint_rest_trade(rec)
 
-            if self._is_duplicate(symbol, self._FEED_TRADE, seq_num, sip_ts):
+            if self._reject_sequence_reuse(symbol, self._FEED_TRADE, seq_num, fp):
                 return None
-            # Same thinned-stream semantics as quotes (``_rest_quote``).
-            self._update_last_seen(symbol, self._FEED_TRADE, seq_num, sip_ts)
+            prev = self._last_seen.get((symbol, self._FEED_TRADE))
+            prev_seq = prev[0] if prev is not None else 0
+            self._update_last_seen(symbol, self._FEED_TRADE, seq_num, sip_ts, fp)
+            if self._enable_rest_sequence_gap_detection:
+                self._check_gap(symbol, self._FEED_TRADE, seq_num, prev_seq)
 
             internal_seq = self._seq.next()
             cid = make_correlation_id(symbol, sip_ts, internal_seq)
@@ -325,6 +503,11 @@ class MassiveNormalizer:
 
             raw_part = rec.get("participant_timestamp")
             part_ts = int(raw_part) if raw_part is not None else None
+
+            raw_trf = rec.get("trf_timestamp")
+            trf_ts = int(raw_trf) if raw_trf is not None else None
+
+            self._apply_halt_status(symbol, conditions)
 
             return Trade(
                 timestamp_ns=sip_ts,
@@ -341,7 +524,7 @@ class MassiveNormalizer:
                 sequence_number=seq_num,
                 tape=int(rec.get("tape", 0)),
                 trf_id=int(rec["trf_id"]) if "trf_id" in rec else None,
-                trf_timestamp_ns=None,
+                trf_timestamp_ns=trf_ts,
                 participant_timestamp_ns=part_ts,
                 correction=int(rec["correction"]) if "correction" in rec else None,
                 received_ns=received_ns,
@@ -353,13 +536,20 @@ class MassiveNormalizer:
 
     # ── Gap detection / dedup / health ───────────────────────────────
 
-    def _ensure_health_machine(self, symbol: str) -> StateMachine[DataHealth]:
-        sm = self._health_machines.get(symbol)
+    def _ensure_health_machine(
+        self,
+        symbol: str,
+        feed_type: str,
+    ) -> StateMachine[DataHealth]:
+        key = (symbol, feed_type)
+        sm = self._health_machines.get(key)
         if sm is None:
-            sm = create_data_integrity_machine(symbol, self._clock)
+            sm = create_data_integrity_machine(
+                symbol, self._clock, channel=feed_type,
+            )
             if self._transition_callback is not None:
                 sm.on_transition(self._transition_callback)
-            self._health_machines[symbol] = sm
+            self._health_machines[key] = sm
         return sm
 
     @property
@@ -367,18 +557,41 @@ class MassiveNormalizer:
         """Total number of exact-duplicate messages filtered across all symbols."""
         return self._duplicates_filtered
 
-    def _is_duplicate(self, symbol: str, feed_type: str, seq_num: int, exchange_ts_ns: int) -> bool:
+    def _reject_sequence_reuse(
+        self,
+        symbol: str,
+        feed_type: str,
+        seq_num: int,
+        content_fp: str,
+    ) -> bool:
+        """Drop replays of the same vendor sequence (exact dup) or flag corruption.
+
+        When ``sequence_number`` matches the previous row for this feed but the
+        fingerprint differs, the stream is inconsistent — emit nothing and
+        transition to ``CORRUPTED``.
+
+        Returns True when this message must not produce an event.
+        """
+        if seq_num == 0:
+            return False
         prev = self._last_seen.get((symbol, feed_type))
         if prev is None:
             return False
-        # Match on seq_num alone: REST retransmissions reuse the same
-        # sequence number but may carry a different exchange timestamp,
-        # so including exchange_ts_ns in the key would let retransmissions
-        # pass dedup as new events.
-        if prev[0] == seq_num:
+        prev_seq, _prev_ts, prev_fp = prev
+        if prev_seq == 0 or prev_seq != seq_num:
+            return False
+        if prev_fp == content_fp:
             self._duplicates_filtered += 1
             return True
-        return False
+        logger.warning(
+            "massive_normalizer: sequence_number %s reused with differing payload "
+            "(%s %s)",
+            seq_num,
+            symbol,
+            feed_type,
+        )
+        self._mark_corrupted(symbol, trigger="sequence_reuse_payload_mismatch")
+        return True
 
     def _check_gap(self, symbol: str, feed_type: str, seq_num: int, prev_seq: int) -> None:
         """Fire DataHealth transitions based on sequence-number continuity.
@@ -390,7 +603,7 @@ class MassiveNormalizer:
         if seq_num == 0 or prev_seq == 0:
             return
 
-        sm = self._ensure_health_machine(symbol)
+        sm = self._ensure_health_machine(symbol, feed_type)
 
         if seq_num > prev_seq + 1:
             if sm.state == DataHealth.HEALTHY:
@@ -412,14 +625,56 @@ class MassiveNormalizer:
                 symbol, feed_type, seq_num,
             )
 
-    def _update_last_seen(self, symbol: str, feed_type: str, seq_num: int, exchange_ts_ns: int) -> None:
-        self._last_seen[(symbol, feed_type)] = (seq_num, exchange_ts_ns)
-        self._ensure_health_machine(symbol)
+    def _update_last_seen(
+        self,
+        symbol: str,
+        feed_type: str,
+        seq_num: int,
+        exchange_ts_ns: int,
+        content_fp: str,
+    ) -> None:
+        self._last_seen[(symbol, feed_type)] = (seq_num, exchange_ts_ns, content_fp)
+        self._ensure_health_machine(symbol, feed_type)
 
-    def _mark_corrupted(self, symbol: str) -> None:
-        sm = self._ensure_health_machine(symbol)
-        if sm.can_transition(DataHealth.CORRUPTED):
-            sm.transition(DataHealth.CORRUPTED, trigger="parse_error")
+    def _apply_halt_status(
+        self,
+        symbol: str,
+        conditions: tuple[int, ...],
+    ) -> None:
+        """Transition the trade-feed DataHealth machine on halt-on / off (BT-5).
+
+        Halts arrive on the trade tape, so only the trade-feed machine is
+        driven; ``health(symbol)`` reports HALTED via ``merge_worst_health``
+        regardless of the quote feed's state, and a resume cleanly returns
+        the symbol to its quote-feed health.  Inert when no codes configured.
+        """
+        status = classify_halt_status(
+            conditions, self._halt_on_codes, self._halt_off_codes,
+        )
+        if status is None:
+            return
+        sm = self._ensure_health_machine(symbol, self._FEED_TRADE)
+        if status is HaltSignal.HALT_ON:
+            if sm.state != DataHealth.HALTED and sm.can_transition(
+                DataHealth.HALTED,
+            ):
+                sm.transition(DataHealth.HALTED, trigger="luld_halt_on")
+        elif sm.state == DataHealth.HALTED and sm.can_transition(
+            DataHealth.HEALTHY,
+        ):
+            sm.transition(DataHealth.HEALTHY, trigger="luld_halt_off")
+
+    def _mark_corrupted(self, symbol: str, trigger: str = "parse_error") -> None:
+        if not symbol or symbol == "UNKNOWN":
+            logger.warning(
+                "massive_normalizer: parse error for indeterminate symbol — "
+                "skipping DataHealth CORRUPTED (no usable ticker/sym)",
+            )
+            return
+        for ft in (self._FEED_QUOTE, self._FEED_TRADE):
+            sm = self._ensure_health_machine(symbol, ft)
+            if sm.can_transition(DataHealth.CORRUPTED):
+                sm.transition(DataHealth.CORRUPTED, trigger=trigger)
 
     def on_health_transition(self, callback: Callable[[TransitionRecord], None]) -> None:
         """Register a callback for DataHealth state transitions on any symbol.
@@ -439,6 +694,10 @@ class MassiveNormalizer:
         the gap via sequence-number discontinuity.
         """
         for sym in symbols:
-            sm = self._health_machines.get(sym)
-            if sm is not None and sm.state == DataHealth.HEALTHY:
-                sm.transition(DataHealth.GAP_DETECTED, trigger="feed_connection_lost")
+            for ft in (self._FEED_QUOTE, self._FEED_TRADE):
+                sm = self._ensure_health_machine(sym, ft)
+                if sm.state == DataHealth.HEALTHY:
+                    sm.transition(
+                        DataHealth.GAP_DETECTED,
+                        trigger="feed_connection_lost",
+                    )

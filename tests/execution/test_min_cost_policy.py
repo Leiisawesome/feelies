@@ -151,8 +151,9 @@ class TestCostComparison:
         # When the spread is locked at zero, the only thing the passive
         # path adds is the adverse-selection penalty + the maker rebate.
         # Make adverse selection larger than the rebate's bps-equivalent
-        # so aggressive wins.
-        model = _model(passive_adverse_selection_bps=Decimal("5"))
+        # so aggressive wins.  The policy estimates the passive leg in the
+        # queue-drain regime, so set the drain bps high.
+        model = _model(adverse_selection_drain_bps=Decimal("5"))
         policy = MinimumCostExecutionPolicy(model)
         decision = policy.decide(
             symbol="AAPL", side=Side.BUY, quantity=1000,

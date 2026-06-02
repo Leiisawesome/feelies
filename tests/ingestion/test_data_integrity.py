@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 
 from feelies.core.clock import SimulatedClock
-from feelies.ingestion.data_integrity import DataHealth, create_data_integrity_machine
+from feelies.ingestion.data_integrity import (
+    DataHealth,
+    HaltSignal,
+    classify_halt_status,
+    create_data_integrity_machine,
+)
 
 
 class TestDataHealth:
@@ -27,6 +32,11 @@ class TestCreateDataIntegrityMachine:
         clock = SimulatedClock(0)
         sm = create_data_integrity_machine("AAPL", clock)
         assert sm.name == "data_integrity:AAPL"
+
+    def test_channel_suffix_in_name(self) -> None:
+        clock = SimulatedClock(0)
+        sm = create_data_integrity_machine("AAPL", clock, channel="quote")
+        assert sm.name == "data_integrity:AAPL:quote"
 
     def test_initial_state_is_healthy(self) -> None:
         clock = SimulatedClock(0)
@@ -52,3 +62,55 @@ class TestCreateDataIntegrityMachine:
         sm.transition(DataHealth.GAP_DETECTED, trigger="gap")
         sm.transition(DataHealth.HEALTHY, trigger="gap_resolved")
         assert sm.state == DataHealth.HEALTHY
+
+
+class TestHaltedState:
+    """BT-5: DataHealth.HALTED transitions."""
+
+    def test_healthy_to_halted_and_back(self) -> None:
+        clock = SimulatedClock(0)
+        sm = create_data_integrity_machine("AAPL", clock)
+        assert sm.can_transition(DataHealth.HALTED)
+        sm.transition(DataHealth.HALTED, trigger="luld_halt_on")
+        assert sm.state == DataHealth.HALTED
+        # Resume back to HEALTHY (recoverable, unlike CORRUPTED).
+        assert sm.can_transition(DataHealth.HEALTHY)
+        sm.transition(DataHealth.HEALTHY, trigger="luld_halt_off")
+        assert sm.state == DataHealth.HEALTHY
+
+    def test_halted_cannot_be_terminal(self) -> None:
+        clock = SimulatedClock(0)
+        sm = create_data_integrity_machine("AAPL", clock)
+        sm.transition(DataHealth.HALTED, trigger="halt")
+        # HALTED is recoverable to HEALTHY and escalatable to CORRUPTED,
+        # but never directly to GAP_DETECTED.
+        assert sm.can_transition(DataHealth.HEALTHY)
+        assert sm.can_transition(DataHealth.CORRUPTED)
+        assert not sm.can_transition(DataHealth.GAP_DETECTED)
+
+
+class TestClassifyHaltStatus:
+    """BT-5: shared condition-code classifier."""
+
+    def test_no_codes_configured_is_inert(self) -> None:
+        assert classify_halt_status((1, 2, 3), frozenset(), frozenset()) is None
+
+    def test_halt_on_code_detected(self) -> None:
+        assert classify_halt_status(
+            (5,), frozenset({5}), frozenset({6}),
+        ) is HaltSignal.HALT_ON
+
+    def test_halt_off_code_detected(self) -> None:
+        assert classify_halt_status(
+            (6,), frozenset({5}), frozenset({6}),
+        ) is HaltSignal.HALT_OFF
+
+    def test_no_matching_code(self) -> None:
+        assert classify_halt_status(
+            (9,), frozenset({5}), frozenset({6}),
+        ) is None
+
+    def test_both_present_prefers_halt_on_failsafe(self) -> None:
+        assert classify_halt_status(
+            (5, 6), frozenset({5}), frozenset({6}),
+        ) is HaltSignal.HALT_ON
