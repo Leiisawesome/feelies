@@ -398,6 +398,20 @@ class PassiveLimitOrderRouter:
             # configurations and unit tests.
             eligible_at_ns = self._clock.now_ns() + self._latency_ns
             if eligible_at_ns > self._clock.now_ns():
+                # Audit F-H-11: emit ACKNOWLEDGED first for live-mode
+                # SM parity with BacktestOrderRouter (Inv 9).  Without
+                # this, downstream consumers see FILLED arrive on the
+                # post-latency quote with no preceding acknowledgement,
+                # breaking the order-state-machine trace.
+                self._pending_acks.append(OrderAck(
+                    timestamp_ns=eligible_at_ns,
+                    correlation_id=request.correlation_id,
+                    sequence=self._ack_seq.next(),
+                    order_id=request.order_id,
+                    symbol=request.symbol,
+                    status=OrderAckStatus.ACKNOWLEDGED,
+                    request_sequence=request.sequence,
+                ))
                 self._pending_aggressive.append(_PendingAggressive(
                     request=request,
                     eligible_at_ns=eligible_at_ns,
