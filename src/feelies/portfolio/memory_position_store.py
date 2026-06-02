@@ -124,8 +124,12 @@ class MemoryPositionStore:
         self._marks[symbol] = mark_price
         if bid is not None and bid > 0:
             self._bids[symbol] = bid
+        else:
+            self._bids.pop(symbol, None)
         if ask is not None and ask > 0:
             self._asks[symbol] = ask
+        else:
+            self._asks.pop(symbol, None)
         pos = self._positions.get(symbol)
         if pos is not None:
             self._recompute_unrealized(pos)
