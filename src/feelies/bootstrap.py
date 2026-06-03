@@ -89,6 +89,7 @@ from feelies.core.events import Alert, AlertSeverity, NBBOQuote
 from feelies.core.errors import ConfigurationError
 from feelies.core.identifiers import SequenceGenerator
 from feelies.core.platform_config import OperatingMode, PlatformConfig
+from feelies.core.session_clock import rth_open_ns
 from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
 from feelies.execution.backend import ExecutionBackend
@@ -1279,6 +1280,19 @@ def _create_sensor_layer(
         # the void and inflate the bus traffic for no benefit.  This
         # also keeps the legacy demo (no sensors) free of any
         # HorizonTick events.
+        # Audit P1-8: when session_open_ns is not pinned in config, anchor the
+        # horizon grid to the RTH open (09:30 ET) for RTH equity sessions
+        # rather than the raw first event — otherwise the first bucket of the
+        # day is truncated and boundaries drift off the session structure.
+        _anchor_fn = (
+            rth_open_ns
+            if (
+                config.session_open_ns is None
+                and config.session_kind == "RTH"
+                and config.market_id == "US_EQUITY"
+            )
+            else None
+        )
         horizon_scheduler = HorizonScheduler(
             horizons=config.horizons_seconds,
             session_id=_derive_session_id(config),
@@ -1286,6 +1300,7 @@ def _create_sensor_layer(
             session_open_ns=config.session_open_ns,
             sequence_generator=horizon_seq,
             metric_collector=metric_collector,
+            session_open_anchor_fn=_anchor_fn,
         )
         logger.info(
             "HorizonScheduler composed: horizons=%s, session_id=%s, "

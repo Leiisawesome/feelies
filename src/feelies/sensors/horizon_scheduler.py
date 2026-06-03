@@ -26,7 +26,7 @@ config; the lazy path exists only to keep the demo ergonomic.
 from __future__ import annotations
 
 import logging
-from typing import Iterable
+from typing import Callable, Iterable
 
 from feelies.core.events import Event, HorizonTick, MetricEvent, MetricType
 from feelies.core.identifiers import SequenceGenerator, make_correlation_id
@@ -80,6 +80,7 @@ class HorizonScheduler:
         "_last_boundary_universe",
         "_metric_collector",
         "_metrics_seq",
+        "_auto_bind_anchor",
     )
 
     def __init__(
@@ -91,6 +92,7 @@ class HorizonScheduler:
         session_open_ns: int | None = None,
         sequence_generator: SequenceGenerator,
         metric_collector: MetricCollector | None = None,
+        session_open_anchor_fn: Callable[[int], int] | None = None,
     ) -> None:
         for h in horizons:
             if h <= 0:
@@ -118,6 +120,13 @@ class HorizonScheduler:
         # the first event.  Once locked, ``bind_session_open()`` raises.
         self._session_open_locked = session_open_ns is not None
         self._sequence_generator = sequence_generator
+        # Audit P1-8: when no explicit ``session_open_ns`` is configured and
+        # this hook is provided, the lazy first-event bind passes the event
+        # timestamp through it to snap the anchor to (e.g.) the RTH open
+        # instead of the raw first-event time.  ``None`` preserves the
+        # legacy first-event-timestamp behaviour.  Must be a pure function
+        # of the timestamp to keep replay bit-identical (Inv-5).
+        self._auto_bind_anchor = session_open_anchor_fn
 
         # Per-(horizon, symbol) and per-(horizon,) for UNIVERSE scope:
         # the last boundary index we have already emitted.  The first
@@ -172,14 +181,19 @@ class HorizonScheduler:
             return ()
 
         if not self._session_open_locked:
-            self._session_open_ns = event.timestamp_ns
+            if self._auto_bind_anchor is not None:
+                self._session_open_ns = self._auto_bind_anchor(event.timestamp_ns)
+            else:
+                self._session_open_ns = event.timestamp_ns
             self._session_open_locked = True
             _logger.info(
-                "HorizonScheduler.session_open_ns auto-bound to "
-                "first-event timestamp %d (no explicit session_open_ns "
-                "configured); production deployments should set this "
-                "from PlatformConfig",
+                "HorizonScheduler.session_open_ns auto-bound to %d from "
+                "first-event timestamp %d (%s); production deployments "
+                "should set this from PlatformConfig",
+                self._session_open_ns,
                 event.timestamp_ns,
+                "RTH-open anchored" if self._auto_bind_anchor is not None
+                else "raw first-event",
             )
 
         assert self._session_open_ns is not None
