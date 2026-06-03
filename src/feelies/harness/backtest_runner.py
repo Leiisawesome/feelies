@@ -258,11 +258,14 @@ def _load_backtest_config(args: argparse.Namespace) -> PlatformConfig | None:
     except ConfigNotFoundError as exc:
         print(f"ERROR: Config file not found: {exc.path}", file=sys.stderr)
         return None
+    end_date = getattr(args, "end_date", None) or getattr(args, "date", None)
     return apply_backtest_cli_overrides(
         config,
         inv12_stress=args.inv12_stress,
         stress_cost=args.stress_cost,
         symbols=args.symbol,
+        start_date=getattr(args, "date", None),
+        end_date=end_date,
     )
 
 

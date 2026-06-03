@@ -27,21 +27,73 @@ def load_platform_config(path: Path | str) -> PlatformConfig:
     return PlatformConfig.from_yaml(config_path)
 
 
+def _reference_event_calendar_for_date(
+    session_date: str,
+    hint: Path | None,
+) -> Path | None:
+    """Resolve ``event_calendar/YYYY-MM-DD.yaml`` when a reference file exists."""
+    candidates: list[Path] = []
+    if hint is not None:
+        candidates.append(hint.parent / f"{session_date}.yaml")
+    candidates.append(
+        Path("src/feelies/storage/reference/event_calendar") / f"{session_date}.yaml",
+    )
+    for path in candidates:
+        if path.is_file():
+            return path
+    return None
+
+
+def apply_backtest_session_dates_from_cli(
+    config: PlatformConfig,
+    *,
+    start_date: str | None,
+    end_date: str | None = None,
+) -> PlatformConfig:
+    """Align RTH/MOC session bounds (and calendar path) with a single-day CLI run.
+
+    When ``start_date == end_date``, set ``rth_session_date`` and
+    ``moc_session_date`` so BT-16 gating matches the replayed tape instead of
+    a stale ``event_calendar_path`` filename (e.g. platform.yaml pinned to
+    ``2026-03-26.yaml`` while ``--date 2026-04-02``).  Multi-day ranges are
+    left unchanged — per-day RTH rebinding is not implemented yet.
+    """
+    if start_date is None:
+        return config
+    end = end_date or start_date
+    if start_date != end:
+        return config
+    cal_path = _reference_event_calendar_for_date(
+        start_date, config.event_calendar_path,
+    )
+    updates: dict[str, object] = {
+        "rth_session_date": start_date,
+        "moc_session_date": start_date,
+    }
+    if cal_path is not None:
+        updates["event_calendar_path"] = cal_path
+    return replace(config, **updates)
+
+
 def apply_backtest_cli_overrides(
     config: PlatformConfig,
     *,
     inv12_stress: bool = False,
     stress_cost: float = 1.0,
     symbols: Sequence[str] | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> PlatformConfig:
-    """Apply Inv-12 stress, cost multiplier, and symbol CLI overrides."""
+    """Apply Inv-12 stress, cost multiplier, symbol, and session-date CLI overrides."""
     if inv12_stress:
         config = apply_inv12_stress(config)
     elif stress_cost != 1.0:
         config = replace(config, cost_stress_multiplier=stress_cost)
     if symbols:
         config = replace(config, symbols=frozenset(s.upper() for s in symbols))
-    return config
+    return apply_backtest_session_dates_from_cli(
+        config, start_date=start_date, end_date=end_date,
+    )
 
 
 def resolve_backtest_symbols(config: PlatformConfig) -> list[str]:
