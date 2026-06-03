@@ -11,6 +11,31 @@
 > Severity legend: **P0** correctness (math/sign/lookahead/non-determinism),
 > **P1** feature strength / contract drift, **P2** research. Effort S/M/L.
 
+## 0. Remediation status (this PR)
+
+Landed the **parity-safe** subset — fixes that do not alter any emitted
+sensor/feature value and therefore do not touch the locked Inv-5 parity
+hashes (`tests/determinism/parity_manifest.py`). Full suite: no new
+failures (9 pre-existing failures in `bootstrap/test_paper_branch.py`,
+`test_execution_backend_wiring.py`, `test_mypy_strict_scope.py` are
+unrelated to this work).
+
+| Item | Status | Notes |
+|---|---|---|
+| **P0-1** G16 fingerprint table cites unimplemented sensors | ✅ fixed | feature-engine + microstructure-alpha skills now list only implemented ids + flag the coverage gap |
+| **P0-2** snapshot contract docstrings wrong (`warm: bool`, fake `z_scores`) | ✅ fixed | both skills corrected to `warm/stale: dict`, `feature_id` keys, real staleness semantics |
+| **P1-2** `stateful` unreachable from YAML (silent estimator bias) | ✅ fixed | `platform_config.py` loader plumbs + serializes `stateful`; warns when `throttled_ms` set without it; new round-trip test |
+| **P1-3** Hawkes direction discarded | ✅ fixed | new `TupleSignedImbalanceFeature` → additive `hawkes_intensity_imbalance` feature; new unit tests |
+| **P1-1** horizon-windowed aggregation | ⏸ deferred | **changes feature values → requires Inv-5 parity rebaseline + sign-off** |
+| **P1-4** Hawkes α/β=8.0 default | ⏸ deferred | changes sensor values → parity rebaseline |
+| **P1-5** Kyle dp/dq time alignment | ⏸ deferred | explicitly locked-vector-pinned; parity rebaseline |
+| **P1-6/7/8/9** staleness, z-window, session-open, micro-price | ⏸ deferred | all change emitted values → parity rebaseline |
+| **P2-1..5** | ⏸ deferred | research / new-sensor scope |
+
+Deferred items are held pending explicit approval to rebaseline the
+locked determinism hashes (`scripts/rebaseline_parity_hashes.py`), since
+that is an Inv-5-governed action.
+
 ---
 
 ## 1. Executive summary

@@ -126,6 +126,7 @@ from feelies.features.impl.rolling_stats import (
 from feelies.features.impl.sensor_passthrough import (
     SensorPassthroughFeature,
     TupleComponentFeature,
+    TupleSignedImbalanceFeature,
 )
 from feelies.features.protocol import HorizonFeature
 from feelies.ingestion.massive_normalizer import MassiveNormalizer
@@ -1011,10 +1012,18 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
     "quote_hazard_rate": lambda h: [
         SensorPassthroughFeature("quote_hazard_rate", h),
     ],
-    # Sensor emits a 4-tuple; sum λ_buy+λ_sell as burst-intensity scalar.
+    # Sensor emits a 4-tuple (λ_buy, λ_sell, intensity_ratio, branching).
+    # ``hawkes_intensity_zscore`` is the *undirected* burst magnitude
+    # (z-score of λ_buy+λ_sell); ``hawkes_intensity_imbalance`` (audit
+    # P1-3) adds the *signed* buy/sell imbalance so a directional
+    # HAWKES_SELF_EXCITE alpha has a usable L1 fingerprint.
     "hawkes_intensity": lambda h: [
         RollingZscoreFeature(
             "hawkes_intensity", h, tuple_sum_component_indices=(0, 1),
+        ),
+        TupleSignedImbalanceFeature(
+            "hawkes_intensity", 0, 1,
+            "hawkes_intensity_imbalance", h,
         ),
     ],
     "trade_through_rate": lambda h: [

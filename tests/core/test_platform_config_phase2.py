@@ -174,3 +174,47 @@ class TestYamlLoader:
         assert cfg.session_open_ns is None
         assert cfg.sensor_specs == ()
         assert cfg.market_id == "US_EQUITY"
+
+    def test_yaml_plumbs_stateful_flag(self, tmp_path: Path) -> None:
+        """Audit P1-2: ``stateful`` is reachable from YAML (was dropped).
+
+        Without plumbing, a throttled accumulator silently advances its
+        estimator only on emissions.  The loader must round-trip the
+        flag and the snapshot must serialize it for audit/replay.
+        """
+        yaml_text = dedent("""
+            version: "0.2.0"
+            author: tests
+            symbols: ["AAPL"]
+            mode: BACKTEST
+            alpha_specs: ["dummy.alpha.yaml"]
+            horizons_seconds: [30, 120]
+            sensor_specs:
+              - sensor_id: ofi_ewma
+                sensor_version: "1.1.0"
+                cls: feelies.sensors.impl.ofi_ewma.OFIEwmaSensor
+                params: {alpha: 0.1}
+                subscribes_to: [NBBOQuote]
+                throttled_ms: 100
+                stateful: true
+              - sensor_id: micro_price
+                sensor_version: "1.1.0"
+                cls: feelies.sensors.impl.micro_price.MicroPriceSensor
+                params: {}
+                subscribes_to: [NBBOQuote]
+        """).strip()
+        path = tmp_path / "cfg.yaml"
+        path.write_text(yaml_text, encoding="utf-8")
+        cfg = PlatformConfig.from_yaml(path)
+        by_id = {s.sensor_id: s for s in cfg.sensor_specs}
+        assert by_id["ofi_ewma"].stateful is True
+        assert by_id["ofi_ewma"].throttled_ms == 100
+        # Omitted ⇒ backward-compatible default.
+        assert by_id["micro_price"].stateful is False
+        # Audit/replay provenance: the snapshot serializes the flag.
+        serialized = {
+            row["sensor_id"]: row
+            for row in cfg.snapshot().data["sensor_specs"]
+        }
+        assert serialized["ofi_ewma"]["stateful"] is True
+        assert serialized["micro_price"]["stateful"] is False

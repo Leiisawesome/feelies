@@ -156,4 +156,93 @@ class TupleComponentFeature:
         return state["value"], state["warm"], False
 
 
-__all__ = ["SensorPassthroughFeature", "TupleComponentFeature"]
+class TupleSignedImbalanceFeature:
+    """Signed imbalance between two components of a tuple-valued sensor.
+
+    Computes ``(v[pos] - v[neg]) / (v[pos] + v[neg])`` from the latest
+    warm reading, bounded to ``[-1, 1]`` and returning ``0.0`` when the
+    denominator is below ``eps`` (no-information state).
+
+    Motivation (audit P1-3): :class:`HawkesIntensitySensor` emits a
+    ``(lambda_buy, lambda_sell, intensity_ratio, branching_ratio)``
+    tuple.  The only feature wired over it sums ``lambda_buy +
+    lambda_sell`` — an *undirected* burst magnitude that discards which
+    side is excited.  This feature exposes the **signed** buy/sell
+    imbalance so a directional HAWKES_SELF_EXCITE alpha has a usable
+    L1 fingerprint (positive ⇒ buy-side excitation dominates).
+
+    Parameters
+    ----------
+    sensor_id:
+        The ``SensorReading.sensor_id`` to observe.
+    pos_index, neg_index:
+        Zero-based indices of the positive / negative tuple components
+        (e.g. ``0`` = ``lambda_buy``, ``1`` = ``lambda_sell``).
+    feature_id:
+        Key used in ``HorizonFeatureSnapshot.values``.
+    horizon_seconds:
+        Which horizon boundary this feature contributes to.
+    eps:
+        Denominator floor below which the imbalance is reported as 0.0.
+    """
+
+    feature_version: str = "1.0.0"
+
+    def __init__(
+        self,
+        sensor_id: str,
+        pos_index: int,
+        neg_index: int,
+        feature_id: str,
+        horizon_seconds: int,
+        *,
+        eps: float = 1e-12,
+    ) -> None:
+        self.feature_id: str = feature_id
+        self.horizon_seconds: int = horizon_seconds
+        self.input_sensor_ids: tuple[str, ...] = (sensor_id,)
+        self._pos_index = pos_index
+        self._neg_index = neg_index
+        self._eps = eps
+
+    def initial_state(self) -> dict[str, Any]:
+        return {"value": None, "warm": False}
+
+    def observe(
+        self,
+        reading: SensorReading,
+        state: dict[str, Any],
+        params: Mapping[str, Any],
+    ) -> None:
+        if not reading.warm:
+            return
+        v = reading.value
+        if not isinstance(v, tuple):
+            return
+        if self._pos_index >= len(v) or self._neg_index >= len(v):
+            return
+        pos = float(v[self._pos_index])
+        neg = float(v[self._neg_index])
+        denom = pos + neg
+        if denom < self._eps:
+            state["value"] = 0.0
+        else:
+            state["value"] = (pos - neg) / denom
+        state["warm"] = True
+
+    def finalize(
+        self,
+        tick: HorizonTick,
+        state: dict[str, Any],
+        params: Mapping[str, Any],
+    ) -> tuple[float, bool, bool]:
+        if state["value"] is None:
+            return 0.0, False, False
+        return state["value"], state["warm"], False
+
+
+__all__ = [
+    "SensorPassthroughFeature",
+    "TupleComponentFeature",
+    "TupleSignedImbalanceFeature",
+]
