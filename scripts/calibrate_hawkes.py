@@ -160,7 +160,7 @@ def _fit(ts_ns: Sequence[int], label: str) -> _Fit | None:
     # Initial guess: μ ≈ baseline rate, β ≈ 1/median gap, α ≈ 0.5 β.
     gaps = sorted(ts[i] - ts[i - 1] for i in range(1, n) if ts[i] > ts[i - 1])
     med_gap = gaps[len(gaps) // 2] if gaps else 1.0
-    mu0 = max(n / T * 0.5, 1e-6)
+    mu0 = max(n / ts[-1] * 0.5, 1e-6)
     beta0 = 1.0 / max(med_gap, 1e-3)
     alpha0 = 0.5 * beta0
     x0 = [math.log(mu0), math.log(alpha0), math.log(beta0)]
