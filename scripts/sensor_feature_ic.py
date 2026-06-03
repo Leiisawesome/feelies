@@ -399,15 +399,29 @@ def _aggregate_across_days(rows: list[_Row]) -> list[_Row]:
         buckets.setdefault((r.feature, r.horizon, r.variant), []).append(r)
     pooled: list[_Row] = []
     for (feature, horizon, variant), rs in buckets.items():
-        n_tot = sum(r.n for r in rs)
-        if n_tot == 0:
-            ric = ic = None
-        else:
-            ric = sum((r.rank_ic or 0.0) * r.n for r in rs) / n_tot
-            ic = sum((r.ic or 0.0) * r.n for r in rs) / n_tot
+        ric_rows = [r for r in rs if r.rank_ic is not None]
+        ic_rows = [r for r in rs if r.ic is not None]
+
+        n_ric = sum(r.n for r in ric_rows)
+        n_ic = sum(r.n for r in ic_rows)
+
+        ric = (
+            sum(r.rank_ic * r.n for r in ric_rows) / n_ric  # type: ignore[operator]
+            if n_ric
+            else None
+        )
+        ic = (
+            sum(r.ic * r.n for r in ic_rows) / n_ic  # type: ignore[operator]
+            if n_ic
+            else None
+        )
+
         pooled.append(_Row(
             symbol="*", date="*", feature=feature, horizon=horizon,
-            variant=variant, n=n_tot, rank_ic=ric, ic=ic,
+            variant=variant,
+            n=max(n_ric, n_ic),
+            rank_ic=ric,
+            ic=ic,
         ))
     return pooled
 
