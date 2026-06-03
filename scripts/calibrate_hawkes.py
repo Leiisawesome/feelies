@@ -154,9 +154,8 @@ def _fit(ts_ns: Sequence[int], label: str) -> _Fit | None:
         return None
     t0 = ts_ns[0]
     ts = [(t - t0) / _NS_PER_SECOND for t in ts_ns]
-    # Drop exact-duplicate timestamps' zero gaps would not break the recursion,
-    # but ensure strictly nondecreasing.
-    T = ts[-1] if ts[-1] > 0 else 1.0
+    # Note: exact-duplicate timestamps yield dt=0.0 gaps; the recursion remains
+    # well-defined under dt=0, so we keep the full series as-is.
     n = len(ts)
     # Initial guess: μ ≈ baseline rate, β ≈ 1/median gap, α ≈ 0.5 β.
     gaps = sorted(ts[i] - ts[i - 1] for i in range(1, n) if ts[i] > ts[i - 1])
