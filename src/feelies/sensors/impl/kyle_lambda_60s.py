@@ -48,6 +48,22 @@ class KyleLambda60sSensor:
     sensor_id: str = "kyle_lambda_60s"
     sensor_version: str = "1.2.0"
 
+    # Audit P1-5: ``alignment`` selects how ``Δp`` and ``Δq`` are paired.
+    #
+    # * ``"legacy"`` (default, sensor_version 1.2.0): ``Δp`` over the interval
+    #   ``[t-1, t)`` is paired with the *current* trade's signed size ``Δq_t``.
+    #   This regresses *past* mid drift on *current* flow — closer to a
+    #   flow-autocorrelation statistic than Kyle's contemporaneous impact λ.
+    #   Preserved byte-identically for the locked 1.2.0 golden vector.
+    #
+    # * ``"causal"`` (sensor_version 2.0.0): ``Δp`` over ``[t-1, t)`` is paired
+    #   with ``Δq_{t-1}`` — the flow that occurred at the *start* of that
+    #   interval and whose permanent impact the move realises.  This is the
+    #   correct Kyle alignment and remains causal (at trade ``t`` both the
+    #   previous trade's size and the current mid are known; no lookahead,
+    #   Inv-6 holds).
+    _VALID_ALIGNMENTS = ("legacy", "causal")
+
     def __init__(
         self,
         *,
@@ -55,6 +71,7 @@ class KyleLambda60sSensor:
         sensor_version: str | None = None,
         window_seconds: int = 60,
         min_samples: int = 30,
+        alignment: str = "legacy",
     ) -> None:
         if window_seconds <= 0:
             raise ValueError(
@@ -65,12 +82,18 @@ class KyleLambda60sSensor:
                 f"min_samples must be >= 2 (need 2+ for OLS slope), "
                 f"got {min_samples}"
             )
+        if alignment not in self._VALID_ALIGNMENTS:
+            raise ValueError(
+                f"alignment must be one of {self._VALID_ALIGNMENTS}, "
+                f"got {alignment!r}"
+            )
         if sensor_id is not None:
             self.sensor_id = sensor_id
         if sensor_version is not None:
             self.sensor_version = sensor_version
         self._window_ns = window_seconds * 1_000_000_000
         self._min_samples = min_samples
+        self._alignment = alignment
 
     def initial_state(self) -> dict[str, Any]:
         return {
@@ -83,6 +106,9 @@ class KyleLambda60sSensor:
             "last_side": +1,
             "last_nbbo_mid": None,
             "mid_at_prev_trade": None,
+            # Causal alignment only: signed size of the *previous* trade,
+            # which is the flow paired with the next interval's Δp.
+            "prev_signed_size": None,
         }
 
     def update(
@@ -119,6 +145,10 @@ class KyleLambda60sSensor:
         if last_trade_price is None:
             state["last_trade_price"] = price
             state["mid_at_prev_trade"] = mid_now
+            # Seed the previous-trade flow for the causal alignment: the
+            # first trade's side defaults to ``last_side`` (+1) under the
+            # tick rule, exactly as the legacy classifier would assign it.
+            state["prev_signed_size"] = state["last_side"] * size
             return None
 
         if price > last_trade_price:
@@ -133,7 +163,11 @@ class KyleLambda60sSensor:
         # always pairs setting ``last_trade_price`` with setting it.
         mid_prev = state["mid_at_prev_trade"]
         dp = mid_now - mid_prev
-        dq = side * size
+        if self._alignment == "causal":
+            # Pair Δp over [t-1, t) with the flow that drove it: trade t-1.
+            dq = state["prev_signed_size"]
+        else:
+            dq = side * size  # legacy: current trade's flow (1.2.0 vector)
 
         samples = state["samples"]
         samples.append((event.timestamp_ns, dp, dq))
@@ -157,6 +191,9 @@ class KyleLambda60sSensor:
 
         state["mid_at_prev_trade"] = mid_now
         state["last_trade_price"] = price
+        # The current trade becomes "previous" for the next interval's Δq
+        # under the causal alignment.
+        state["prev_signed_size"] = side * size
 
         sum_dq2 = state["sum_dq2"]
         denom = n * sum_dq2 - state["sum_dq"] * state["sum_dq"]

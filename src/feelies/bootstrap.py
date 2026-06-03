@@ -89,6 +89,7 @@ from feelies.core.events import Alert, AlertSeverity, NBBOQuote
 from feelies.core.errors import ConfigurationError
 from feelies.core.identifiers import SequenceGenerator
 from feelies.core.platform_config import OperatingMode, PlatformConfig
+from feelies.core.session_clock import rth_open_ns
 from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
 from feelies.execution.backend import ExecutionBackend
@@ -120,10 +121,6 @@ from feelies.execution.regulatory.pdt_constraint import (
 )
 from feelies.features.aggregator import HorizonAggregator
 from feelies.features.impl.horizon_windowed import HorizonWindowedFeature
-from feelies.features.impl.rolling_stats import (
-    RollingPercentileFeature,
-    RollingZscoreFeature,
-)
 from feelies.features.impl.sensor_passthrough import (
     SensorPassthroughFeature,
     TupleComponentFeature,
@@ -997,6 +994,18 @@ def _derive_session_id(config: PlatformConfig) -> str:
 # Layer-2 features; the gate DSL resolves it via the sensor_cache path in
 # HorizonSignalEngine._build_bindings.
 _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
+    # Audit P1-6: ``spread_z_30d`` previously wired no Layer-2 feature, so it
+    # reached alphas only through the engine's event-time ``_sensor_cache`` —
+    # which has no horizon-staleness path and is invalidated only on a *cold*
+    # reading (and spread_z_30d never un-warms).  Wiring a passthrough puts it
+    # in the snapshot so (a) the aggregator's horizon-staleness override marks
+    # it stale when the sensor goes silent within the window, and (b) the gate
+    # binding resolves from the horizon-boundary value, unifying the gate/
+    # snapshot time-base (audit finding #8).  ``feature_id`` is the bare
+    # ``spread_z_30d`` so the regime-gate identifier resolves unchanged.
+    "spread_z_30d": lambda h: [
+        SensorPassthroughFeature("spread_z_30d", h),
+    ],
     # Audit P1-1: the z-score baseline is now a genuine event-time window
     # of width ``h`` (not a horizon-blind 200-sample count window), so a
     # KYLE_INFO alpha at horizon ``h`` measures persistent OFI drift over
@@ -1007,12 +1016,24 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             "ofi_ewma", h, reducer="zscore", feature_id="ofi_ewma_zscore",
         ),
     ],
+    # Audit P1-7/P1-11: horizon-window these too so every rolling feature
+    # uses a consistent event-time window of width ``h`` rather than a
+    # mix of 200- / 2000-sample count windows.
     "kyle_lambda_60s": lambda h: [
-        RollingZscoreFeature("kyle_lambda_60s", h),
-        RollingPercentileFeature("kyle_lambda_60s", h),
+        HorizonWindowedFeature(
+            "kyle_lambda_60s", h, reducer="zscore",
+            feature_id="kyle_lambda_60s_zscore",
+        ),
+        HorizonWindowedFeature(
+            "kyle_lambda_60s", h, reducer="percentile",
+            feature_id="kyle_lambda_60s_percentile",
+        ),
     ],
     "quote_replenish_asymmetry": lambda h: [
-        RollingZscoreFeature("quote_replenish_asymmetry", h),
+        HorizonWindowedFeature(
+            "quote_replenish_asymmetry", h, reducer="zscore",
+            feature_id="quote_replenish_asymmetry_zscore",
+        ),
     ],
     "quote_hazard_rate": lambda h: [
         SensorPassthroughFeature("quote_hazard_rate", h),
@@ -1023,8 +1044,10 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
     # P1-3) adds the *signed* buy/sell imbalance so a directional
     # HAWKES_SELF_EXCITE alpha has a usable L1 fingerprint.
     "hawkes_intensity": lambda h: [
-        RollingZscoreFeature(
-            "hawkes_intensity", h, tuple_sum_component_indices=(0, 1),
+        HorizonWindowedFeature(
+            "hawkes_intensity", h, reducer="zscore",
+            feature_id="hawkes_intensity_zscore",
+            tuple_sum_component_indices=(0, 1),
         ),
         TupleSignedImbalanceFeature(
             "hawkes_intensity", 0, 1,
@@ -1053,6 +1076,14 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
         HorizonWindowedFeature(
             "micro_price", h, reducer="zscore",
             feature_id="micro_price_zscore",
+        ),
+        # Audit P1-9: a z-score of the raw micro-price *level* leaks the
+        # absolute price (momentum).  ``micro_price_drift`` is the signed
+        # change of the micro-price across the horizon — level-invariant,
+        # so it isolates the directional tilt an alpha actually wants.
+        HorizonWindowedFeature(
+            "micro_price", h, reducer="delta",
+            feature_id="micro_price_drift",
         ),
     ],
     "realized_vol_30s": lambda h: [
@@ -1249,6 +1280,19 @@ def _create_sensor_layer(
         # the void and inflate the bus traffic for no benefit.  This
         # also keeps the legacy demo (no sensors) free of any
         # HorizonTick events.
+        # Audit P1-8: when session_open_ns is not pinned in config, anchor the
+        # horizon grid to the RTH open (09:30 ET) for RTH equity sessions
+        # rather than the raw first event — otherwise the first bucket of the
+        # day is truncated and boundaries drift off the session structure.
+        _anchor_fn = (
+            rth_open_ns
+            if (
+                config.session_open_ns is None
+                and config.session_kind == "RTH"
+                and config.market_id == "US_EQUITY"
+            )
+            else None
+        )
         horizon_scheduler = HorizonScheduler(
             horizons=config.horizons_seconds,
             session_id=_derive_session_id(config),
@@ -1256,6 +1300,7 @@ def _create_sensor_layer(
             session_open_ns=config.session_open_ns,
             sequence_generator=horizon_seq,
             metric_collector=metric_collector,
+            session_open_anchor_fn=_anchor_fn,
         )
         logger.info(
             "HorizonScheduler composed: horizons=%s, session_id=%s, "

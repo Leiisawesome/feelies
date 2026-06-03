@@ -28,10 +28,13 @@ this work and reproduce on a clean checkout).
 | **P0-2** snapshot contract docstrings wrong (`warm: bool`, fake `z_scores`) | ✅ fixed | both skills corrected to `warm/stale: dict`, `feature_id` keys, real staleness semantics |
 | **P1-2** `stateful` unreachable from YAML (silent estimator bias) | ✅ fixed | `platform_config.py` loader plumbs + serializes `stateful`; warns when `throttled_ms` set without it; new round-trip test |
 | **P1-3** Hawkes direction discarded | ✅ fixed | new `TupleSignedImbalanceFeature` → additive `hawkes_intensity_imbalance` feature; new unit tests |
-| **P1-1** horizon-windowed aggregation | ✅ fixed | new `HorizonWindowedFeature` (Welford event-time window keyed on `horizon_seconds`, reducers last/mean/sum/rms/zscore); production `ofi_ewma_zscore` / `micro_price_zscore` / `realized_vol_30s_zscore` now horizon-windowed so the G16 ratio has real effect. Level-3 snapshot parity hash **rebaselined** (count unchanged at 14); rationale in `test_horizon_feature_snapshot_replay.py` + commit |
-| **P1-4** Hawkes α/β=8.0 default | ⏸ deferred | changes sensor values → parity rebaseline |
-| **P1-5** Kyle dp/dq time alignment | ⏸ deferred | explicitly locked-vector-pinned; parity rebaseline |
-| **P1-6/7/8/9** staleness, z-window, session-open, micro-price | ⏸ deferred | all change emitted values → parity rebaseline |
+| **P1-1** horizon-windowed aggregation | ✅ fixed | new `HorizonWindowedFeature` (Welford event-time window keyed on `horizon_seconds`); production `ofi_ewma_zscore` / `micro_price_zscore` / `realized_vol_30s_zscore` now horizon-windowed so the G16 ratio has real effect. Level-3 snapshot parity hash **rebaselined** (count unchanged at 14); rationale in `test_horizon_feature_snapshot_replay.py` + commit |
+| **P1-7** z-window inconsistent / horizon-blind (also exec-summary #11) | ✅ fixed | all remaining rolling features (`kyle_lambda_60s` z+percentile, `quote_replenish_asymmetry` z, `hawkes_intensity` z) converted to `HorizonWindowedFeature`; added a `percentile` reducer; every rolling feature now uses a consistent event-time window of width `h` |
+| **P1-6** spread_z staleness / gate time-base (#8) | ✅ fixed | additive `spread_z_30d` passthrough feature → aggregator horizon-staleness override now covers it and the gate binding resolves from the boundary value (unifies gate/snapshot time-base); parity-safe |
+| **P1-9** micro_price level → drift | ✅ fixed | added a level-invariant `delta` reducer to `HorizonWindowedFeature` and wired `micro_price_drift` (signed micro-price change over the horizon) as an additive feature; migrating the reference alpha to consume it instead of the level z is a follow-up pending the IC run |
+| **P1-4** Hawkes α/β + thin warm | ✅ fixed | relabeled `impulse_decay_ratio` (value-neutral; v03 vector intact), raised `warm_trades_per_side` 3→10, added `scripts/calibrate_hawkes.py` MLE fitter for the data-driven α/β (P1-4b) |
+| **P1-5** Kyle dp/dq alignment | ✅ fixed | causal lag-one alignment shipped as `kyle_lambda_60s` **2.0.0** (1.2.0 legacy retained for the golden vector); platform.yaml registers the causal variant. Promote over 1.2.0 once `sensor_feature_ic.py` confirms an IC win |
+| **P1-8** session-open anchor | ✅ fixed | `core/session_clock.rth_open_ns` + scheduler `session_open_anchor_fn`; bootstrap anchors the grid to 09:30 ET for RTH equity sessions when `session_open_ns` is unset (locked tick vector uses explicit anchor, unaffected) |
 | **P2-1..5** | ⏸ deferred | research / new-sensor scope |
 
 Deferred items are held pending explicit approval to rebaseline the
@@ -474,6 +477,12 @@ Methodology only (no L2 book, per platform constraint):
    the latter's |IC| rises monotonically toward the G16 envelope while the
    former is flat in h, P1-1 is confirmed quantitatively.
    *(Symbol: AAPL; date: a normal-regime RTH session; metric: RankIC ± SE.)*
+   **→ Runnable now:** `scripts/sensor_feature_ic.py` implements exactly this —
+   it replays cached events through the real registry→scheduler→aggregator
+   pipeline and reports `count_window` vs `horizon_window` RankIC/IC per
+   `(feature, horizon)`. Run:
+   `uv run python scripts/sensor_feature_ic.py --cache-dir <dir> --symbol AAPL --date <YYYY-MM-DD>`.
+   (Pure-Python stats; covered by `tests/scripts/test_sensor_feature_ic.py`.)
 2. **Kyle alignment.** Re-estimate λ with `dq` lagged 0 vs 1 trade; report sign
    stability and IC vs forward return. Confirms/[refutes] P1-5.
 3. **z-baseline length sweep.** RankIC of `ofi_ewma_zscore` for

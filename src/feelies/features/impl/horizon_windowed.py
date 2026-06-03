@@ -31,6 +31,13 @@ Reducers
 ``sum``    integrated value over the window (``mean * n``)
 ``rms``    ``sqrt(E[x²])`` over the window (realized-vol-style scale)
 ``zscore`` ``(latest - mean) / std`` clamped to ``±_MAX_ZSCORE``
+``percentile`` Hazen plotting position ``(rank - 0.5) / n`` of the
+           latest value within the window (rank-based; debiased CDF)
+``delta``  ``latest - oldest`` over the window: the signed *drift* of
+           the value across the horizon.  Level-invariant — for a
+           level-valued sensor like ``micro_price`` this captures the
+           directional tilt without leaking the absolute price level
+           that a z-score of the raw level does (audit P1-9).
 
 Determinism (Inv-5): insertion-ordered float arithmetic over the
 event-time deque; no wall-clock, no RNG.
@@ -51,7 +58,9 @@ _NS_PER_SECOND = 1_000_000_000
 # cannot emit an unbounded z that poisons downstream signals (audit #5).
 _MAX_ZSCORE = 10.0
 
-_REDUCERS = frozenset({"last", "mean", "sum", "rms", "zscore"})
+_REDUCERS = frozenset(
+    {"last", "mean", "sum", "rms", "zscore", "percentile", "delta"}
+)
 
 
 class HorizonWindowedFeature:
@@ -89,6 +98,8 @@ class HorizonWindowedFeature:
         "sum": "_hsum",
         "rms": "_hrms",
         "zscore": "_zscore",
+        "percentile": "_percentile",
+        "delta": "_delta",
     }
 
     def __init__(
@@ -256,13 +267,17 @@ class HorizonWindowedFeature:
         self._evict_before(state, tick.timestamp_ns - self._window_ns)
         win: deque[tuple[int, float]] = state["win"]
         n = state["n"]
+        reducer = self._reducer
         if n < self._min_samples or not win:
-            neutral = 0.0
+            # Percentile uses 0.5 (neutral prior) during warm-up, matching
+            # RollingPercentileFeature; other reducers use 0.0.  The value
+            # is unused while warm=False, but a meaningful neutral keeps
+            # archived cold snapshots interpretable.
+            neutral = 0.5 if reducer == "percentile" else 0.0
             return neutral, False, False
 
         latest = win[-1][1]
         mean = state["mean"]
-        reducer = self._reducer
 
         if reducer == "last":
             return latest, True, False
@@ -270,6 +285,14 @@ class HorizonWindowedFeature:
             return mean, True, False
         if reducer == "sum":
             return mean * n, True, False
+        if reducer == "delta":
+            # Signed drift across the window: latest - oldest.  n >= 1 here;
+            # a single-sample window has zero drift by definition.
+            return latest - win[0][1], True, False
+        if reducer == "percentile":
+            # Hazen plotting position over the in-window values (audit #9).
+            rank = sum(1 for (_ts, x) in win if x <= latest)
+            return (rank - 0.5) / n, True, False
 
         # Variance-based reducers (need n >= 2, guaranteed by min_samples).
         var = state["M2"] / (n - 1) if n >= 2 else 0.0

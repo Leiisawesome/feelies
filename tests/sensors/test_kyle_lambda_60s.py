@@ -149,6 +149,75 @@ def test_constant_price_lambda_is_zero() -> None:
     assert reading.warm is False
 
 
+def test_constructor_validates_alignment() -> None:
+    with pytest.raises(ValueError, match="alignment"):
+        KyleLambda60sSensor(alignment="bogus")
+
+
+def _drive(sensor: KyleLambda60sSensor, steps: list[tuple[str, str, int]]):
+    """Drive (kind, price/ask-or-mid, size) steps; return last reading.
+
+    kind 'q' → quote with bid=val, ask=val+0.02; 'm' → trade at price=val.
+    """
+    state = sensor.initial_state()
+    last = None
+    seq = 0
+    for kind, val, size in steps:
+        seq += 1
+        if kind == "q":
+            ev = _quote(ts_ns=seq * 1_000_000_000, bid=val,
+                        ask=str(round(float(val) + 0.02, 2)), sequence=seq)
+            sensor.update(ev, state, params={})
+        else:
+            r = sensor.update(
+                _trade(ts_ns=seq * 1_000_000_000, price=val, size=size, sequence=seq),
+                state, params={},
+            )
+            if r is not None:
+                last = r
+    return last, state
+
+
+def test_causal_alignment_pairs_dp_with_previous_trade_flow() -> None:
+    """Causal: Δp over [t-1,t) pairs with Δq_{t-1}.
+
+    Build 3 trades; the causal estimator must use the *previous* trade's
+    signed size as Δq, giving a different slope than legacy.  We verify the
+    sample tuples directly via state for an unambiguous, hand-checkable assertion.
+    """
+    legacy = KyleLambda60sSensor(window_seconds=60, min_samples=2, alignment="legacy")
+    causal = KyleLambda60sSensor(window_seconds=60, min_samples=2, alignment="causal")
+
+    # mids: 100.01 → 100.02 → 100.04 ; trades rising (all buy, +size).
+    steps = [
+        ("q", "100.00", 0),   # mid 100.01
+        ("m", "100.00", 100),  # trade 1 (buy, +100); seeds, no sample
+        ("q", "100.01", 0),   # mid 100.02
+        ("m", "100.01", 200),  # trade 2 (buy, +200); Δp=+0.01
+        ("q", "100.03", 0),   # mid 100.04
+        ("m", "100.03", 300),  # trade 3 (buy, +300); Δp=+0.02
+    ]
+    _, s_legacy = _drive(legacy, steps)
+    _, s_causal = _drive(causal, steps)
+
+    # samples = [(ts, dp, dq), ...]
+    legacy_dq = [dq for _ts, _dp, dq in s_legacy["samples"]]
+    causal_dq = [dq for _ts, _dp, dq in s_causal["samples"]]
+    # Legacy uses the CURRENT trade's size: +200, +300.
+    assert legacy_dq == [200.0, 300.0]
+    # Causal uses the PREVIOUS trade's size: +100 (trade1), +200 (trade2).
+    assert causal_dq == [100.0, 200.0]
+    # Δp is identical between the two (same mids).
+    assert [dp for _t, dp, _q in s_legacy["samples"]] == pytest.approx(
+        [dp for _t, dp, _q in s_causal["samples"]]
+    )
+
+
+def test_causal_reports_version_2() -> None:
+    s = KyleLambda60sSensor(alignment="causal", sensor_version="2.0.0")
+    assert s.sensor_version == "2.0.0"
+
+
 def test_locked_vector_replay() -> None:
     sensor = kyle_factory()
     state = sensor.initial_state()
