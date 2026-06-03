@@ -256,6 +256,15 @@ sensor_specs:
     # legacy alignment (Δp paired with the *current* trade's Δq, which
     # measured lagged drift vs current flow).  Semantic change ⇒ major bump;
     # 1.2.0 is retained (class default) for the locked golden vector.
+    #
+    # VALIDATED (cached AAPL IC, kyle_legacy_win vs kyle_causal_win RankIC):
+    #   horizon   legacy    causal
+    #   300s     -0.225    +0.145
+    #   900s     -0.155    +0.160
+    #   1800s    -0.194    +0.150
+    # Legacy carries the WRONG sign at the KYLE_INFO horizons (it reads
+    # reversal/flow-autocorrelation); causal flips it to correct positive
+    # impact.  Keep 2.0.0.
     sensor_version: "2.0.0"
     cls: feelies.sensors.impl.kyle_lambda_60s.KyleLambda60sSensor
     params:
