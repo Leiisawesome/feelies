@@ -121,6 +121,7 @@ from feelies.execution.regulatory.pdt_constraint import (
 )
 from feelies.features.aggregator import HorizonAggregator
 from feelies.features.impl.horizon_windowed import HorizonWindowedFeature
+from feelies.features.impl.rolling_stats import RollingZscoreFeature
 from feelies.features.impl.sensor_passthrough import (
     SensorPassthroughFeature,
     TupleComponentFeature,
@@ -1088,9 +1089,14 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
     ],
     "realized_vol_30s": lambda h: [
         SensorPassthroughFeature("realized_vol_30s", h),
-        HorizonWindowedFeature(
-            "realized_vol_30s", h, reducer="zscore",
-            feature_id="realized_vol_30s_zscore",
+        # Audit P1-1 follow-up (IC run): horizon-windowing the vol z-score
+        # *regressed* (count-window RankIC 0.523 vs windowed 0.191 at 1800s;
+        # neutral at 300/900).  Volatility normalisation is better against a
+        # longer count baseline than the event-time horizon window, so this
+        # sensor keeps the count-window z (unlike ofi/micro/kyle which win
+        # windowed).
+        RollingZscoreFeature(
+            "realized_vol_30s", h, feature_id="realized_vol_30s_zscore",
         ),
     ],
 }

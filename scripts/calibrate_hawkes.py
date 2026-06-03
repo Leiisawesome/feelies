@@ -177,6 +177,26 @@ def _fit(ts_ns: Sequence[int], label: str) -> _Fit | None:
 # ── Side classification (tick rule, matching the sensor) ─────────────────
 
 
+def _collapse_microbursts(ts_ns: Sequence[int], min_gap_ns: int) -> list[int]:
+    """Collapse runs of prints separated by < ``min_gap_ns`` into a single
+    event (keep the first timestamp of each run).
+
+    A single parent order is reported as many child prints at the same (or
+    sub-millisecond) timestamps.  An exp-kernel Hawkes fit on the raw prints
+    latches onto that microburst clustering (half-life ~0.2 ms on AAPL)
+    instead of the 5-120 s macro self-excitation envelope.  Collapsing
+    near-simultaneous prints first lets the MLE see the macro arrival
+    structure.
+    """
+    if min_gap_ns <= 0 or not ts_ns:
+        return list(ts_ns)
+    out = [ts_ns[0]]
+    for t in ts_ns[1:]:
+        if t - out[-1] >= min_gap_ns:
+            out.append(t)
+    return out
+
+
 def _split_sides(trades: list[Trade]) -> tuple[list[int], list[int]]:
     buys: list[int] = []
     sells: list[int] = []
@@ -222,7 +242,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--date", required=True)
     ap.add_argument("--target-half-life", type=float, default=30.0,
                     help="Target decay half-life in seconds (default 30).")
+    ap.add_argument("--min-gap-ms", type=float, default=0.0,
+                    help="Collapse prints closer than this (ms) into one event "
+                         "before fitting, to remove split-fill microbursts that "
+                         "otherwise dominate the kernel (try 50). Default 0 = off.")
     args = ap.parse_args(argv)
+    min_gap_ns = int(args.min_gap_ms * 1_000_000)
 
     cache = DiskEventCache(args.cache_dir)
     events = cache.load(args.symbol, args.date)
@@ -238,9 +263,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     buys, sells = _split_sides(trades)
-    all_ts = [t.timestamp_ns for t in trades]
+    all_ts = _collapse_microbursts([t.timestamp_ns for t in trades], min_gap_ns)
+    buys = _collapse_microbursts(buys, min_gap_ns)
+    sells = _collapse_microbursts(sells, min_gap_ns)
 
-    print(f"# Hawkes MLE fit — {args.symbol} {args.date} ({len(trades)} trades)")
+    note = (
+        f" (collapsed to {len(all_ts)} events at min_gap={args.min_gap_ms}ms)"
+        if min_gap_ns > 0 else
+        "  [raw prints — a tiny half-life here means split-fill microbursts "
+        "dominate; re-run with --min-gap-ms 50 for the macro envelope]"
+    )
+    print(f"# Hawkes MLE fit — {args.symbol} {args.date} ({len(trades)} trades){note}")
     _report(_fit(all_ts, "all"), args.target_half_life)
     _report(_fit(buys, "buy"), args.target_half_life)
     _report(_fit(sells, "sell"), args.target_half_life)

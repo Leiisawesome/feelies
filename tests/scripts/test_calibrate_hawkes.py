@@ -97,3 +97,13 @@ def test_fit_returns_sane_positive_params() -> None:
 
 def test_fit_none_when_too_few() -> None:
     assert ch._fit([0, 1, 2], "all") is None
+
+
+def test_collapse_microbursts() -> None:
+    NS = ch._NS_PER_SECOND
+    # Two macro events (0 s, 1 s); each is a burst of 3 sub-ms child prints.
+    ts = [0, 100, 200, 1 * NS, 1 * NS + 100, 1 * NS + 200]
+    out = ch._collapse_microbursts(ts, min_gap_ns=NS // 1000)  # 1 ms
+    assert out == [0, 1 * NS]  # one event per macro burst
+    assert ch._collapse_microbursts(ts, 0) == ts  # off → unchanged
+    assert ch._collapse_microbursts([], 1000) == []
