@@ -33,6 +33,11 @@ Reducers
 ``zscore`` ``(latest - mean) / std`` clamped to ``±_MAX_ZSCORE``
 ``percentile`` Hazen plotting position ``(rank - 0.5) / n`` of the
            latest value within the window (rank-based; debiased CDF)
+``delta``  ``latest - oldest`` over the window: the signed *drift* of
+           the value across the horizon.  Level-invariant — for a
+           level-valued sensor like ``micro_price`` this captures the
+           directional tilt without leaking the absolute price level
+           that a z-score of the raw level does (audit P1-9).
 
 Determinism (Inv-5): insertion-ordered float arithmetic over the
 event-time deque; no wall-clock, no RNG.
@@ -53,7 +58,9 @@ _NS_PER_SECOND = 1_000_000_000
 # cannot emit an unbounded z that poisons downstream signals (audit #5).
 _MAX_ZSCORE = 10.0
 
-_REDUCERS = frozenset({"last", "mean", "sum", "rms", "zscore", "percentile"})
+_REDUCERS = frozenset(
+    {"last", "mean", "sum", "rms", "zscore", "percentile", "delta"}
+)
 
 
 class HorizonWindowedFeature:
@@ -92,6 +99,7 @@ class HorizonWindowedFeature:
         "rms": "_hrms",
         "zscore": "_zscore",
         "percentile": "_percentile",
+        "delta": "_delta",
     }
 
     def __init__(
@@ -277,6 +285,10 @@ class HorizonWindowedFeature:
             return mean, True, False
         if reducer == "sum":
             return mean * n, True, False
+        if reducer == "delta":
+            # Signed drift across the window: latest - oldest.  n >= 1 here;
+            # a single-sample window has zero drift by definition.
+            return latest - win[0][1], True, False
         if reducer == "percentile":
             # Hazen plotting position over the in-window values (audit #9).
             rank = sum(1 for (_ts, x) in win if x <= latest)

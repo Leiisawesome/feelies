@@ -28,11 +28,13 @@ this work and reproduce on a clean checkout).
 | **P0-2** snapshot contract docstrings wrong (`warm: bool`, fake `z_scores`) | ✅ fixed | both skills corrected to `warm/stale: dict`, `feature_id` keys, real staleness semantics |
 | **P1-2** `stateful` unreachable from YAML (silent estimator bias) | ✅ fixed | `platform_config.py` loader plumbs + serializes `stateful`; warns when `throttled_ms` set without it; new round-trip test |
 | **P1-3** Hawkes direction discarded | ✅ fixed | new `TupleSignedImbalanceFeature` → additive `hawkes_intensity_imbalance` feature; new unit tests |
-| **P1-1** horizon-windowed aggregation | ✅ fixed | new `HorizonWindowedFeature` (Welford event-time window keyed on `horizon_seconds`, reducers last/mean/sum/rms/zscore); production `ofi_ewma_zscore` / `micro_price_zscore` / `realized_vol_30s_zscore` now horizon-windowed so the G16 ratio has real effect. Level-3 snapshot parity hash **rebaselined** (count unchanged at 14); rationale in `test_horizon_feature_snapshot_replay.py` + commit |
-| **P1-4** Hawkes α/β=8.0 default | ⏸ deferred | changes sensor values → parity rebaseline |
-| **P1-5** Kyle dp/dq time alignment | ⏸ deferred | explicitly locked-vector-pinned; parity rebaseline |
+| **P1-1** horizon-windowed aggregation | ✅ fixed | new `HorizonWindowedFeature` (Welford event-time window keyed on `horizon_seconds`); production `ofi_ewma_zscore` / `micro_price_zscore` / `realized_vol_30s_zscore` now horizon-windowed so the G16 ratio has real effect. Level-3 snapshot parity hash **rebaselined** (count unchanged at 14); rationale in `test_horizon_feature_snapshot_replay.py` + commit |
 | **P1-7** z-window inconsistent / horizon-blind (also exec-summary #11) | ✅ fixed | all remaining rolling features (`kyle_lambda_60s` z+percentile, `quote_replenish_asymmetry` z, `hawkes_intensity` z) converted to `HorizonWindowedFeature`; added a `percentile` reducer; every rolling feature now uses a consistent event-time window of width `h` |
-| **P1-6/8/9** staleness, session-open, micro-price level | ⏸ deferred | change emitted sensor values / boundaries → need version-bump or config-policy decision |
+| **P1-6** spread_z staleness / gate time-base (#8) | ✅ fixed | additive `spread_z_30d` passthrough feature → aggregator horizon-staleness override now covers it and the gate binding resolves from the boundary value (unifies gate/snapshot time-base); parity-safe |
+| **P1-9** micro_price level → drift | ✅ fixed | added a level-invariant `delta` reducer to `HorizonWindowedFeature` and wired `micro_price_drift` (signed micro-price change over the horizon) as an additive feature; migrating the reference alpha to consume it instead of the level z is a follow-up pending the IC run |
+| **P1-8** session-open anchor | ⏸ deferred | needs config policy (which RTH open) + APP backtest re-baseline |
+| **P1-4** Hawkes α/β=8.0 default | ⏸ deferred | parameter change → new `sensor_version` + data-driven β (no guessed values) |
+| **P1-5** Kyle dp/dq alignment | ⏸ deferred | semantic change to a locked-vector sensor; needs sign-off + IC validation |
 | **P2-1..5** | ⏸ deferred | research / new-sensor scope |
 
 Deferred items are held pending explicit approval to rebaseline the

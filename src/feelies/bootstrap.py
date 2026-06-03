@@ -993,6 +993,18 @@ def _derive_session_id(config: PlatformConfig) -> str:
 # Layer-2 features; the gate DSL resolves it via the sensor_cache path in
 # HorizonSignalEngine._build_bindings.
 _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
+    # Audit P1-6: ``spread_z_30d`` previously wired no Layer-2 feature, so it
+    # reached alphas only through the engine's event-time ``_sensor_cache`` —
+    # which has no horizon-staleness path and is invalidated only on a *cold*
+    # reading (and spread_z_30d never un-warms).  Wiring a passthrough puts it
+    # in the snapshot so (a) the aggregator's horizon-staleness override marks
+    # it stale when the sensor goes silent within the window, and (b) the gate
+    # binding resolves from the horizon-boundary value, unifying the gate/
+    # snapshot time-base (audit finding #8).  ``feature_id`` is the bare
+    # ``spread_z_30d`` so the regime-gate identifier resolves unchanged.
+    "spread_z_30d": lambda h: [
+        SensorPassthroughFeature("spread_z_30d", h),
+    ],
     # Audit P1-1: the z-score baseline is now a genuine event-time window
     # of width ``h`` (not a horizon-blind 200-sample count window), so a
     # KYLE_INFO alpha at horizon ``h`` measures persistent OFI drift over
@@ -1063,6 +1075,14 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
         HorizonWindowedFeature(
             "micro_price", h, reducer="zscore",
             feature_id="micro_price_zscore",
+        ),
+        # Audit P1-9: a z-score of the raw micro-price *level* leaks the
+        # absolute price (momentum).  ``micro_price_drift`` is the signed
+        # change of the micro-price across the horizon — level-invariant,
+        # so it isolates the directional tilt an alpha actually wants.
+        HorizonWindowedFeature(
+            "micro_price", h, reducer="delta",
+            feature_id="micro_price_drift",
         ),
     ],
     "realized_vol_30s": lambda h: [

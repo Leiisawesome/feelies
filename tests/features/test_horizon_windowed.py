@@ -155,6 +155,25 @@ def test_deterministic_across_two_runs() -> None:
     assert a == b
 
 
+def test_delta_reducer_is_level_invariant_drift() -> None:
+    """latest - oldest over the window; adding a constant offset to every
+    sample must not change the drift (the P1-9 point)."""
+    base = [(i * _NS, 100.0 + i * 0.1) for i in range(50)]  # rises 0.1/sec
+    feat = HorizonWindowedFeature(
+        "micro_price", 120, reducer="delta",
+        feature_id="micro_price_drift", min_samples=2,
+    )
+    drift, warm, _ = _drive(feat, base, tick_ts=49 * _NS)
+    assert warm
+    assert feat.feature_id == "micro_price_drift"
+    assert drift == pytest.approx(49 * 0.1)  # 100.0..104.9 → +4.9
+
+    # Same shape shifted up by $500: identical drift (level-invariant).
+    shifted = [(ts, v + 500.0) for ts, v in base]
+    drift2, _, _ = _drive(feat, shifted, tick_ts=49 * _NS)
+    assert drift2 == pytest.approx(drift)
+
+
 def test_percentile_reducer_hazen() -> None:
     # Window 0..9; latest is 9 (the max) → Hazen (10 - 0.5)/10 = 0.95.
     samples = [(i * _NS, float(i)) for i in range(10)]
