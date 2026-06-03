@@ -477,6 +477,12 @@ Methodology only (no L2 book, per platform constraint):
    the latter's |IC| rises monotonically toward the G16 envelope while the
    former is flat in h, P1-1 is confirmed quantitatively.
    *(Symbol: AAPL; date: a normal-regime RTH session; metric: RankIC ± SE.)*
+   **→ Runnable now:** `scripts/sensor_feature_ic.py` implements exactly this —
+   it replays cached events through the real registry→scheduler→aggregator
+   pipeline and reports `count_window` vs `horizon_window` RankIC/IC per
+   `(feature, horizon)`. Run:
+   `uv run python scripts/sensor_feature_ic.py --cache-dir <dir> --symbol AAPL --date <YYYY-MM-DD>`.
+   (Pure-Python stats; covered by `tests/scripts/test_sensor_feature_ic.py`.)
 2. **Kyle alignment.** Re-estimate λ with `dq` lagged 0 vs 1 trade; report sign
    stability and IC vs forward return. Confirms/[refutes] P1-5.
 3. **z-baseline length sweep.** RankIC of `ofi_ewma_zscore` for
