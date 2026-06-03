@@ -153,6 +153,7 @@ def _replay_snapshots(
     horizon_features: list[HorizonFeature],
     horizons: frozenset[int],
     session_open_ns: int,
+    sensor_specs: Sequence[SensorSpec] = _SENSOR_SPECS,
 ) -> list[HorizonFeatureSnapshot]:
     bus = EventBus()
     captured: list[HorizonFeatureSnapshot] = []
@@ -162,7 +163,7 @@ def _replay_snapshots(
         bus=bus, sequence_generator=SequenceGenerator(),
         symbols=frozenset({symbol}),
     )
-    for spec in _SENSOR_SPECS:
+    for spec in sensor_specs:
         registry.register(spec)
     scheduler = HorizonScheduler(
         horizons=horizons, session_id="IC_HARNESS",
@@ -370,6 +371,69 @@ def _run_one(
                     rank_ic=_spearman(p.values, p.fwd),
                     ic=_pearson(p.values, p.fwd),
                 ))
+
+    # Audit P1-5: A/B the Kyle *alignment* (legacy 1.2.0 vs causal 2.0.0),
+    # both under the horizon-window feature, isolating the alignment change
+    # from the windowing change.  The main loop above already tests windowing
+    # on whatever kyle version sits in _SENSOR_SPECS (currently causal);
+    # this answers the distinct question "did the causal re-alignment help?".
+    rows.extend(_kyle_alignment_ab(
+        events, mids, symbol, date, horizons, session_open_ns,
+    ))
+    return rows
+
+
+def _kyle_alignment_ab(
+    events: Sequence[NBBOQuote | Trade],
+    mids: "_MidSeries",
+    symbol: str,
+    date: str,
+    horizons: frozenset[int],
+    session_open_ns: int,
+) -> list[_Row]:
+    """Replay legacy- and causal-aligned Kyle (each horizon-windowed) and
+    report RankIC per horizon, so the P1-5 alignment can be settled directly.
+
+    Different sensor versions share a sensor_id and cannot co-register in one
+    registry (features are version-blind), so each runs under its own spec set.
+    """
+    feature_id = "kyle_lambda_60s_zscore"
+    base = tuple(s for s in _SENSOR_SPECS if s.sensor_id != "kyle_lambda_60s")
+    legacy_kyle = SensorSpec(
+        sensor_id="kyle_lambda_60s", sensor_version="1.2.0",
+        cls=KyleLambda60sSensor,
+        params={"min_samples": 30, "alignment": "legacy", "sensor_version": "1.2.0"},
+        subscribes_to=(NBBOQuote, Trade),
+    )
+    causal_kyle = SensorSpec(
+        sensor_id="kyle_lambda_60s", sensor_version="2.0.0",
+        cls=KyleLambda60sSensor,
+        params={"min_samples": 30, "alignment": "causal", "sensor_version": "2.0.0"},
+        subscribes_to=(NBBOQuote, Trade),
+    )
+    specsets = {
+        "kyle_legacy_win": base + (legacy_kyle,),
+        "kyle_causal_win": base + (causal_kyle,),
+    }
+    rows: list[_Row] = []
+    for variant, specs in specsets.items():
+        feats = [
+            f for h in sorted(horizons)
+            for f in _window_builder("kyle_lambda_60s")("kyle_lambda_60s", h)
+        ]
+        snaps = _replay_snapshots(
+            events, symbol=symbol, horizon_features=feats,
+            horizons=horizons, session_open_ns=session_open_ns,
+            sensor_specs=specs,
+        )
+        for h in sorted(horizons):
+            p = _collect_pairs(snaps, mids, feature_id, h)
+            rows.append(_Row(
+                symbol=symbol, date=date, feature="kyle_alignment", horizon=h,
+                variant=variant, n=len(p.values),
+                rank_ic=_spearman(p.values, p.fwd),
+                ic=_pearson(p.values, p.fwd),
+            ))
     return rows
 
 
