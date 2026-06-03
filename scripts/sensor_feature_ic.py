@@ -47,9 +47,10 @@ from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-os.chdir(_REPO_ROOT)
+if __name__ == "__main__":
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
+    os.chdir(_REPO_ROOT)
 
 from feelies.bus.event_bus import EventBus  # noqa: E402
 from feelies.core.events import (  # noqa: E402
