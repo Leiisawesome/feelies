@@ -277,10 +277,13 @@ sensor_specs:
     sensor_version: "1.2.0"
     cls: feelies.sensors.impl.hawkes_intensity.HawkesIntensitySensor
     params:
-      warm_trades_per_side: 3
+      # Audit P1-4: 3 trades/side is too thin for a stable per-side
+      # intensity estimate; raised to 10.  (Data-driven alpha/beta is the
+      # separate P1-4b step — see scripts/calibrate_hawkes.py.)
+      warm_trades_per_side: 10
     subscribes_to: [Trade]
     input_sensor_ids: []
-    min_history: 3
+    min_history: 10
     throttled_ms: null
 
   - sensor_id: scheduled_flow_window

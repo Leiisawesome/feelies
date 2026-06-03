@@ -20,8 +20,13 @@ Outputs (length-4 tuple):
         intensity_sell,        # λ_sell(t) per second
         intensity_ratio,       # ∈ [0.5, 1]; defaults to 0.5 when both sides
                                # are below ε (no information state)
-        branching_ratio_param, # configured α / β (NOT a runtime estimate);
-                               # constant under fixed params
+        impulse_decay_ratio,   # configured α / β (NOT a runtime estimate and
+                               # NOT a Hawkes branching-ratio stability metric:
+                               # this is an *additive-impulse EWMA* tracker, not
+                               # a fitted self-exciting process, so the impulse
+                               # never feeds back into arrival generation).  β
+                               # alone is meaningful: the decay half-life is
+                               # ln(2)/β seconds.
     )
 
 Determinism: pure float arithmetic; no RNG; ``math.exp`` over an
@@ -59,8 +64,13 @@ class HawkesIntensitySensor:
       ``[0.05, 1.0]``.
     - ``beta`` (float, default 0.05): exponential decay rate (per
       second) of the intensity between trades.  Typical range
-      ``[0.01, 0.5]``.  The branching ratio ``α/β`` must stay below 1
-      for stability; values near 1 indicate self-sustaining cascades.
+      ``[0.01, 0.5]``.  The decay half-life is ``ln(2)/β`` seconds
+      (≈ 13.9 s at the default).  ``α/β`` is emitted as a diagnostic
+      *impulse-decay ratio*, not a stability metric — see the module
+      docstring (this estimator is an additive-impulse EWMA tracker,
+      not a fitted Hawkes process, so the classical branching-ratio
+      ``< 1`` stability condition does not apply).  Use
+      ``scripts/calibrate_hawkes.py`` to fit ``α, β`` from data.
     - ``warm_window_seconds`` (int, default 60): event-time window
       used for the per-side trade-count warm-up criterion.
     - ``warm_trades_per_side`` (int, default 20): minimum trades on
@@ -106,9 +116,10 @@ class HawkesIntensitySensor:
         self._beta = float(beta)
         self._warm_window_ns = warm_window_seconds * 1_000_000_000
         self._warm_per_side = warm_trades_per_side
-        # Configured branching-ratio parameter (α / β), not an on-line
-        # estimate.  Emitted verbatim on every reading.
-        self._branching_ratio_param = self._alpha / self._beta
+        # Configured impulse-decay ratio (α / β), not an on-line estimate and
+        # not a Hawkes branching-ratio stability metric (see module docstring).
+        # Emitted verbatim on every reading.
+        self._impulse_decay_ratio = self._alpha / self._beta
         self._baseline_mu = float(baseline_mu)
 
     def initial_state(self) -> dict[str, Any]:
@@ -206,6 +217,6 @@ class HawkesIntensitySensor:
             symbol=event.symbol,
             sensor_id=self.sensor_id,
             sensor_version=self.sensor_version,
-            value=(lam_buy, lam_sell, intensity_ratio, self._branching_ratio_param),
+            value=(lam_buy, lam_sell, intensity_ratio, self._impulse_decay_ratio),
             warm=warm,
         )
