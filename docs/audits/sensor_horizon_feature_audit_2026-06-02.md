@@ -22,6 +22,20 @@ re-baseline of the single Level-3 snapshot parity hash via
 a `_create_backend(... cost_model)` signature drift — are unrelated to
 this work and reproduce on a clean checkout).
 
+**Cached-data validation (AAPL).** Three empirical findings settled the
+data-dependent items:
+- **P1-1 is a *selective* win** — horizon-windowing helps at 300s for
+  flow/info sensors (`ofi_ewma` RankIC 0.173 vs 0.044; `kyle` 0.145 vs
+  0.105) and at 30s for `micro_price` (0.092 vs 0.040), but **regressed
+  `realized_vol`** (count 0.523 vs windowed 0.191 at 1800s) → `realized_vol`
+  reverted to count-window. (Long-horizon n is small, ~16–20; treat 900/1800s
+  t-stats as noisy.)
+- **P1-5 causal Kyle validated** — legacy is *wrong-signed* at 300/900/1800s
+  (−0.225/−0.155/−0.194); causal is correct-positive (+0.145/+0.160/+0.150).
+- **P1-4b β validated** — `--min-gap-ms 50` MLE gives half-life 12–15s,
+  confirming the sensor's β=0.05; α is z-scored away in the consumed
+  features, so no parameter change.
+
 | Item | Status | Notes |
 |---|---|---|
 | **P0-1** G16 fingerprint table cites unimplemented sensors | ✅ fixed | feature-engine + microstructure-alpha skills now list only implemented ids + flag the coverage gap |
@@ -32,8 +46,8 @@ this work and reproduce on a clean checkout).
 | **P1-7** z-window inconsistent / horizon-blind (also exec-summary #11) | ✅ fixed | all remaining rolling features (`kyle_lambda_60s` z+percentile, `quote_replenish_asymmetry` z, `hawkes_intensity` z) converted to `HorizonWindowedFeature`; added a `percentile` reducer; every rolling feature now uses a consistent event-time window of width `h` |
 | **P1-6** spread_z staleness / gate time-base (#8) | ✅ fixed | additive `spread_z_30d` passthrough feature → aggregator horizon-staleness override now covers it and the gate binding resolves from the boundary value (unifies gate/snapshot time-base); parity-safe |
 | **P1-9** micro_price level → drift | ✅ fixed | added a level-invariant `delta` reducer to `HorizonWindowedFeature` and wired `micro_price_drift` (signed micro-price change over the horizon) as an additive feature; migrating the reference alpha to consume it instead of the level z is a follow-up pending the IC run |
-| **P1-4** Hawkes α/β + thin warm | ✅ fixed | relabeled `impulse_decay_ratio` (value-neutral; v03 vector intact), raised `warm_trades_per_side` 3→10, added `scripts/calibrate_hawkes.py` MLE fitter for the data-driven α/β (P1-4b) |
-| **P1-5** Kyle dp/dq alignment | ✅ fixed | causal lag-one alignment shipped as `kyle_lambda_60s` **2.0.0** (1.2.0 legacy retained for the golden vector); platform.yaml registers the causal variant. Promote over 1.2.0 once `sensor_feature_ic.py` confirms an IC win |
+| **P1-4** Hawkes α/β + thin warm | ✅ fixed + **validated** | relabeled `impulse_decay_ratio` (value-neutral; v03 intact), raised `warm_trades_per_side` 3→10. P1-4b MLE (`--min-gap-ms 50`) gives β≈0.057 (half-life 12–15s) → **validates the sensor's existing β=0.05**; fitted α/β≈0.98 is the *generative* branching ratio, but both wired features (z-score, imbalance ratio) are **scale-invariant in α**, so α is immaterial Layer-2. **No parameter change needed.** |
+| **P1-5** Kyle dp/dq alignment | ✅ fixed + **validated** | causal lag-one alignment shipped as `kyle_lambda_60s` **2.0.0** (1.2.0 retained for the golden vector). IC A/B **confirms causal**: legacy carries the *wrong sign* at 300/900/1800s (RankIC −0.225/−0.155/−0.194) while causal is correct-positive (+0.145/+0.160/+0.150). **Kept 2.0.0.** |
 | **P1-8** session-open anchor | ✅ fixed | `core/session_clock.rth_open_ns` + scheduler `session_open_anchor_fn`; bootstrap anchors the grid to 09:30 ET for RTH equity sessions when `session_open_ns` is unset (locked tick vector uses explicit anchor, unaffected) |
 | **P2-1..5** | ⏸ deferred | research / new-sensor scope |
 
