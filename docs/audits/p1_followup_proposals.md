@@ -1,13 +1,14 @@
 # P1 follow-up proposals — P1-4, P1-5, P1-8 (decision-ready)
 
 Companion to `sensor_horizon_feature_audit_2026-06-02.md`. These are the
-three remaining P1 findings that change **sensor-level outputs / boundaries**
-and therefore need a decision (version bump, calibration value, or config
+P1 findings that changed **sensor-level outputs / boundaries** and therefore
+needed an explicit decision (version bump, calibration value, or config
 policy) before implementation — they are *not* silent code changes.
 
 For each: the precise change, why it splits into a parity-safe part and a
 value-changing part, the locked-vector / backtest impact, and the guarding
-test. Nothing here is implemented yet.
+test. (Implementation status may have changed since this proposal; see the
+audit document for the current state.)
 
 ---
 
