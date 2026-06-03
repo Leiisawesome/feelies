@@ -7,16 +7,17 @@ horizon features are now registered in production and each
 (scope, ordering, sequence allocation, *and* feature values) so any
 drift in any of those dimensions surfaces immediately.
 
-Features wired for the two sensors in this test:
+Features wired for the two sensors in this test (mirrors
+``_horizon_features_for()`` in bootstrap.py after audit P1-1):
   ofi_ewma → SensorPassthroughFeature (feature_id=``ofi_ewma``) +
-             RollingZscoreFeature (feature_id=``ofi_ewma_zscore``)
+             HorizonWindowedFeature (feature_id=``ofi_ewma_zscore``)
   micro_price → (none)
 across horizons {30, 120, 300}.
 
-The synthetic fixture has fewer quotes than ``min_samples=30``, so
-both ofi_ewma and ofi_ewma_zscore are always cold (warm=False) and
-ofi_ewma_zscore always returns 0.0.  That is expected: the baseline
-locks the cold-path field shape, not warm-path values.
+The synthetic fixture has fewer quotes than ``min_samples`` for the
+windowed z-score, so both ofi_ewma and ofi_ewma_zscore are always cold
+(warm=False) and ofi_ewma_zscore always returns 0.0.  That is expected:
+the baseline locks the cold-path field shape, not warm-path values.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from __future__ import annotations
 import hashlib
 
 from feelies.core.events import HorizonFeatureSnapshot, NBBOQuote
-from feelies.features.impl.rolling_stats import RollingZscoreFeature
+from feelies.features.impl.horizon_windowed import HorizonWindowedFeature
 from feelies.features.impl.sensor_passthrough import SensorPassthroughFeature
 from feelies.features.protocol import HorizonFeature
 from feelies.sensors.impl.micro_price import MicroPriceSensor
@@ -60,7 +61,9 @@ _HORIZON_FEATURES: tuple[HorizonFeature, ...] = tuple(
     for h in sorted(_HORIZONS)
     for feature in (
         SensorPassthroughFeature("ofi_ewma", h),
-        RollingZscoreFeature("ofi_ewma", h),
+        HorizonWindowedFeature(
+            "ofi_ewma", h, reducer="zscore", feature_id="ofi_ewma_zscore",
+        ),
     )
 )
 
@@ -80,8 +83,14 @@ def _hash_snapshot_stream(snapshots: list[HorizonFeatureSnapshot]) -> str:
 
 
 # Locked Level-3 HorizonFeatureSnapshot baseline (active aggregator slice).
+# Re-baselined for audit P1-1: the ``ofi_ewma_zscore`` feature is now
+# produced by ``HorizonWindowedFeature`` (event-time horizon window)
+# instead of the count-window ``RollingZscoreFeature``, mirroring the
+# updated production wiring in bootstrap.  Snapshot count is unchanged
+# (14); the field-content hash changes because the windowed feature's
+# warm/value path differs from the count-window one on this fixture.
 EXPECTED_LEVEL3_SNAPSHOT_HASH = (
-    "3fc89a4d800e86ad91567a870737957e3630e8be09c922696fdea94540b9d06c"
+    "251cc109c25a4c1124c3dab32b7168c09b6a9126f4092d977df08a740c59d04b"
 )
 EXPECTED_LEVEL3_SNAPSHOT_COUNT = 14
 

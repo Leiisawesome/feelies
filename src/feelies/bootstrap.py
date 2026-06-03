@@ -119,6 +119,7 @@ from feelies.execution.regulatory.pdt_constraint import (
     PDTConstraint,
 )
 from feelies.features.aggregator import HorizonAggregator
+from feelies.features.impl.horizon_windowed import HorizonWindowedFeature
 from feelies.features.impl.rolling_stats import (
     RollingPercentileFeature,
     RollingZscoreFeature,
@@ -996,11 +997,15 @@ def _derive_session_id(config: PlatformConfig) -> str:
 # Layer-2 features; the gate DSL resolves it via the sensor_cache path in
 # HorizonSignalEngine._build_bindings.
 _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
+    # Audit P1-1: the z-score baseline is now a genuine event-time window
+    # of width ``h`` (not a horizon-blind 200-sample count window), so a
+    # KYLE_INFO alpha at horizon ``h`` measures persistent OFI drift over
+    # *its own* horizon rather than deviation from the last few seconds.
     "ofi_ewma": lambda h: [
         SensorPassthroughFeature("ofi_ewma", h),
-        # Short rolling window (200 samples) so z-score reflects recent
-        # OFI regime rather than whole-session history.
-        RollingZscoreFeature("ofi_ewma", h, max_samples=200),
+        HorizonWindowedFeature(
+            "ofi_ewma", h, reducer="zscore", feature_id="ofi_ewma_zscore",
+        ),
     ],
     "kyle_lambda_60s": lambda h: [
         RollingZscoreFeature("kyle_lambda_60s", h),
@@ -1045,11 +1050,17 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
     ],
     "micro_price": lambda h: [
         SensorPassthroughFeature("micro_price", h),
-        RollingZscoreFeature("micro_price", h),
+        HorizonWindowedFeature(
+            "micro_price", h, reducer="zscore",
+            feature_id="micro_price_zscore",
+        ),
     ],
     "realized_vol_30s": lambda h: [
         SensorPassthroughFeature("realized_vol_30s", h),
-        RollingZscoreFeature("realized_vol_30s", h),
+        HorizonWindowedFeature(
+            "realized_vol_30s", h, reducer="zscore",
+            feature_id="realized_vol_30s_zscore",
+        ),
     ],
 }
 
