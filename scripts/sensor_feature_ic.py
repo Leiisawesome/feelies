@@ -58,6 +58,7 @@ from feelies.core.events import (  # noqa: E402
     Trade,
 )
 from feelies.core.identifiers import SequenceGenerator  # noqa: E402
+from feelies.core.session_clock import rth_open_ns  # noqa: E402
 from feelies.features.aggregator import HorizonAggregator  # noqa: E402
 from feelies.features.impl.horizon_windowed import HorizonWindowedFeature  # noqa: E402
 from feelies.features.impl.rolling_stats import RollingZscoreFeature  # noqa: E402
@@ -94,8 +95,13 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
-        sensor_id="kyle_lambda_60s", sensor_version="1.2.0",
-        cls=KyleLambda60sSensor, params={"min_samples": 30},
+        sensor_id="kyle_lambda_60s", sensor_version="2.0.0",
+        cls=KyleLambda60sSensor,
+        params={
+            "min_samples": 30,
+            "alignment": "causal",
+            "sensor_version": "2.0.0",
+        },
         subscribes_to=(NBBOQuote, Trade),
     ),
 )
@@ -327,7 +333,11 @@ def _run_one(
         print(f"  ! no cached events for {symbol}/{date} (skipping)", file=sys.stderr)
         return []
     events = sorted(events, key=lambda e: (e.timestamp_ns, e.sequence))
-    session_open_ns = events[0].timestamp_ns
+    # Audit P1-8 parity: production bootstrap anchors the horizon grid to the
+    # 09:30 ET RTH open when ``session_open_ns`` is unset for RTH US equity,
+    # not the raw first cached event.  Mirror that here so IC boundaries and
+    # snapshot pairing match a live replay of the same tape.
+    session_open_ns = rth_open_ns(events[0].timestamp_ns)
     mids = _MidSeries.from_events(events)
     if len(mids.ts) < 10:
         print(f"  ! too few quotes for {symbol}/{date}", file=sys.stderr)
