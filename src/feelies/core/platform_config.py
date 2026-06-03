@@ -1003,6 +1003,7 @@ class PlatformConfig:
                     "input_sensor_ids": list(s.input_sensor_ids),
                     "min_history": s.min_history,
                     "throttled_ms": s.throttled_ms,
+                    "stateful": s.stateful,
                 }
                 for s in self.sensor_specs
             ],
@@ -1675,6 +1676,27 @@ class PlatformConfig:
         throttled_ms = (
             None if throttled_ms_raw is None else int(throttled_ms_raw)
         )
+        # ``stateful`` was previously unreachable from YAML: the loader never
+        # read it, so any accumulator sensor (EWMA / Kyle-lambda / Hawkes)
+        # paired with a non-null ``throttled_ms`` silently advanced its
+        # estimator only on emissions — biasing it — with no way for an
+        # operator to opt into the documented unbiased path (audit P1-2 /
+        # SensorSpec.stateful contract).  Plumb it through now.
+        stateful = bool(entry.get("stateful", False))
+        if throttled_ms is not None and throttled_ms > 0 and not stateful:
+            # Surface the footgun loudly rather than silently biasing the
+            # estimator.  We keep this a warning (not a hard error) so
+            # genuinely stateless throttled sensors remain configurable.
+            logger.warning(
+                "%s: sensor %r sets throttled_ms=%d but stateful=False; "
+                "if this sensor is an accumulator (EWMA / Kyle-lambda / "
+                "Hawkes) its estimator will be biased because update() is "
+                "skipped inside the throttle window.  Set stateful: true "
+                "for accumulator sensors (SensorSpec.stateful contract).",
+                source,
+                sensor_id,
+                throttled_ms,
+            )
 
         return SensorSpec(
             sensor_id=sensor_id,
@@ -1685,4 +1707,5 @@ class PlatformConfig:
             input_sensor_ids=input_sensor_ids,
             min_history=min_history,
             throttled_ms=throttled_ms,
+            stateful=stateful,
         )
