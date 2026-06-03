@@ -124,8 +124,12 @@ class HorizonScheduler:
         # this hook is provided, the lazy first-event bind passes the event
         # timestamp through it to snap the anchor to (e.g.) the RTH open
         # instead of the raw first-event time.  ``None`` preserves the
-        # legacy first-event-timestamp behaviour.  Must be a pure function
-        # of the timestamp to keep replay bit-identical (Inv-5).
+        # legacy first-event-timestamp behaviour.
+        #
+        # Note: the anchor may be later than the first observed event; in that
+        # case, events with ``timestamp_ns < session_open_ns`` are ignored (no
+        # negative boundary indices).  Must be a pure function of the timestamp
+        # to keep replay bit-identical (Inv-5).
         self._auto_bind_anchor = session_open_anchor_fn
 
         # Per-(horizon, symbol) and per-(horizon,) for UNIVERSE scope:
