@@ -155,6 +155,27 @@ def test_deterministic_across_two_runs() -> None:
     assert a == b
 
 
+def test_percentile_reducer_hazen() -> None:
+    # Window 0..9; latest is 9 (the max) → Hazen (10 - 0.5)/10 = 0.95.
+    samples = [(i * _NS, float(i)) for i in range(10)]
+    feat = HorizonWindowedFeature(
+        "kyle_lambda_60s", 30, reducer="percentile", min_samples=1,
+    )
+    val, warm, _ = _drive(feat, samples, tick_ts=9 * _NS)
+    assert warm
+    assert val == pytest.approx(0.95)
+    assert feat.feature_id == "kyle_lambda_60s_percentile"
+
+
+def test_percentile_neutral_prior_during_warmup() -> None:
+    feat = HorizonWindowedFeature(
+        "kyle_lambda_60s", 30, reducer="percentile", min_samples=5,
+    )
+    val, warm, _ = _drive(feat, [(0, 1.0)], tick_ts=0)
+    assert warm is False
+    assert val == pytest.approx(0.5)  # neutral, not 0.0
+
+
 def test_tuple_sum_components() -> None:
     feat = HorizonWindowedFeature(
         "hawkes_intensity", 30, reducer="mean", min_samples=1,

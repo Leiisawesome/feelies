@@ -120,10 +120,6 @@ from feelies.execution.regulatory.pdt_constraint import (
 )
 from feelies.features.aggregator import HorizonAggregator
 from feelies.features.impl.horizon_windowed import HorizonWindowedFeature
-from feelies.features.impl.rolling_stats import (
-    RollingPercentileFeature,
-    RollingZscoreFeature,
-)
 from feelies.features.impl.sensor_passthrough import (
     SensorPassthroughFeature,
     TupleComponentFeature,
@@ -1007,12 +1003,24 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             "ofi_ewma", h, reducer="zscore", feature_id="ofi_ewma_zscore",
         ),
     ],
+    # Audit P1-7/P1-11: horizon-window these too so every rolling feature
+    # uses a consistent event-time window of width ``h`` rather than a
+    # mix of 200- / 2000-sample count windows.
     "kyle_lambda_60s": lambda h: [
-        RollingZscoreFeature("kyle_lambda_60s", h),
-        RollingPercentileFeature("kyle_lambda_60s", h),
+        HorizonWindowedFeature(
+            "kyle_lambda_60s", h, reducer="zscore",
+            feature_id="kyle_lambda_60s_zscore",
+        ),
+        HorizonWindowedFeature(
+            "kyle_lambda_60s", h, reducer="percentile",
+            feature_id="kyle_lambda_60s_percentile",
+        ),
     ],
     "quote_replenish_asymmetry": lambda h: [
-        RollingZscoreFeature("quote_replenish_asymmetry", h),
+        HorizonWindowedFeature(
+            "quote_replenish_asymmetry", h, reducer="zscore",
+            feature_id="quote_replenish_asymmetry_zscore",
+        ),
     ],
     "quote_hazard_rate": lambda h: [
         SensorPassthroughFeature("quote_hazard_rate", h),
@@ -1023,8 +1031,10 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
     # P1-3) adds the *signed* buy/sell imbalance so a directional
     # HAWKES_SELF_EXCITE alpha has a usable L1 fingerprint.
     "hawkes_intensity": lambda h: [
-        RollingZscoreFeature(
-            "hawkes_intensity", h, tuple_sum_component_indices=(0, 1),
+        HorizonWindowedFeature(
+            "hawkes_intensity", h, reducer="zscore",
+            feature_id="hawkes_intensity_zscore",
+            tuple_sum_component_indices=(0, 1),
         ),
         TupleSignedImbalanceFeature(
             "hawkes_intensity", 0, 1,
