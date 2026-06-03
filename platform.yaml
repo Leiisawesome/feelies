@@ -251,13 +251,22 @@ sensor_specs:
   # Trade-backed sensors for Kyle / Hawkes / trade-through reference alphas.
   # Extend this block when wiring additional shipped SIGNAL specs locally.
   - sensor_id: kyle_lambda_60s
-    sensor_version: "1.2.0"
+    # Audit P1-5: 2.0.0 uses the causal lag-one alignment (Δp over [t-1,t)
+    # paired with Δq_{t-1}, the flow that drove it) instead of the 1.2.0
+    # legacy alignment (Δp paired with the *current* trade's Δq, which
+    # measured lagged drift vs current flow).  Semantic change ⇒ major bump;
+    # 1.2.0 is retained (class default) for the locked golden vector.
+    sensor_version: "2.0.0"
     cls: feelies.sensors.impl.kyle_lambda_60s.KyleLambda60sSensor
     params:
       # 30 samples is the sensor's documented default; the prior value of
       # 5 produced high-variance OLS slopes that the downstream z-score
       # feature standardized into spuriously large signals.
       min_samples: 30
+      alignment: "causal"
+      # The instance must report the spec version (registry check); the
+      # class exposes ``sensor_version`` for exactly this versioned variant.
+      sensor_version: "2.0.0"
     subscribes_to: [NBBOQuote, Trade]
     input_sensor_ids: []
     min_history: 30
