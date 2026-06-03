@@ -242,14 +242,25 @@ class HorizonScheduler:
             last = self._last_boundary_symbol.get(key)
             if last is not None and current_boundary <= last:
                 continue
+            # Audit P1-8 late start: when this is the first emission for
+            # this (horizon, symbol) and the first event landed past
+            # boundary 0 (e.g. RTH-anchored auto-bind with the first
+            # event arriving well after 09:30 ET), backfill boundaries
+            # 0..current_boundary so the aggregator sees the full
+            # early-session grid instead of only the boundary the first
+            # event happened to land on.  Once ``last`` is set, the
+            # original semantics apply (one tick per newly-crossed
+            # boundary).
+            start = 0 if last is None else current_boundary
             self._last_boundary_symbol[key] = current_boundary
-            yield self._make_tick(
-                horizon=horizon,
-                boundary_index=current_boundary,
-                ts_ns=ts_ns,
-                scope="SYMBOL",
-                symbol=symbol,
-            )
+            for boundary in range(start, current_boundary + 1):
+                yield self._make_tick(
+                    horizon=horizon,
+                    boundary_index=boundary,
+                    ts_ns=ts_ns,
+                    scope="SYMBOL",
+                    symbol=symbol,
+                )
 
     def _emit_for_universe(
         self,
@@ -261,14 +272,19 @@ class HorizonScheduler:
         last = self._last_boundary_universe.get(horizon)
         if last is not None and current_boundary <= last:
             return
+        # Audit P1-8 late start (UNIVERSE scope): backfill boundaries
+        # 0..current_boundary on the first emission per horizon for the
+        # same reason as ``_emit_for_symbols``.
+        start = 0 if last is None else current_boundary
         self._last_boundary_universe[horizon] = current_boundary
-        yield self._make_tick(
-            horizon=horizon,
-            boundary_index=current_boundary,
-            ts_ns=ts_ns,
-            scope="UNIVERSE",
-            symbol=None,
-        )
+        for boundary in range(start, current_boundary + 1):
+            yield self._make_tick(
+                horizon=horizon,
+                boundary_index=boundary,
+                ts_ns=ts_ns,
+                scope="UNIVERSE",
+                symbol=None,
+            )
 
     def _make_tick(
         self,
