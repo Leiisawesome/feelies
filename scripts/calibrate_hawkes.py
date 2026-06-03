@@ -33,9 +33,10 @@ from pathlib import Path
 from typing import Callable, Sequence
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-os.chdir(_REPO_ROOT)
+if __name__ == "__main__":
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
+    os.chdir(_REPO_ROOT)
 
 from feelies.core.events import Trade  # noqa: E402
 from feelies.storage.disk_event_cache import DiskEventCache  # noqa: E402
