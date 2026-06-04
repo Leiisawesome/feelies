@@ -226,14 +226,20 @@ def summarise(reports: list[SymbolReport]) -> dict[str, float]:
     if not reports:
         return {"n_symbols": 0, "share_pass": float("nan")}
     n_pass = sum(1 for r in reports if r.all_pairs_separated)
+    calibrated_min_d = [
+        r.min_pairwise_d for r in reports if not math.isnan(r.min_pairwise_d)
+    ]
     return {
         "n_symbols": len(reports),
         "n_pass": n_pass,
         "share_pass": n_pass / len(UNIVERSE),
-        "median_min_d": statistics.median(r.min_pairwise_d for r in reports),
+        "median_min_d": (
+            statistics.median(calibrated_min_d)
+            if calibrated_min_d else float("nan")
+        ),
         "p10_min_d": statistics.quantiles(
-            (r.min_pairwise_d for r in reports), n=10
-        )[0] if len(reports) >= 10 else float("nan"),
+            calibrated_min_d, n=10
+        )[0] if len(calibrated_min_d) >= 10 else float("nan"),
     }
 
 
