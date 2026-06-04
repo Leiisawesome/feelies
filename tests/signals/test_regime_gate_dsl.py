@@ -353,3 +353,49 @@ def test_binding_identifier_names_keeps_zscore_identifiers() -> None:
         engine_name="hmm",
     )
     assert g.binding_identifier_names() == frozenset({"ofi_ewma_zscore"})
+
+
+# ── Audit P1 GC-1: warn on unreferenced hysteresis margins ──────────
+
+
+def test_from_spec_warns_when_hysteresis_unreferenced(caplog):
+    """A declared hysteresis block whose keys are not referenced by
+    either condition is dead config — surface a load-time warning."""
+    import logging
+    spec = {
+        "regime_engine": "hmm_3state_fractional",
+        "on_condition": "P(normal) > 0.6",
+        "off_condition": "P(normal) < 0.4",
+        "hysteresis": {
+            "posterior_margin": 0.20,
+            "percentile_margin": 0.30,
+        },
+    }
+    with caplog.at_level(logging.WARNING, logger="feelies.signals.regime_gate"):
+        from feelies.signals.regime_gate import RegimeGate
+        RegimeGate.from_spec(alpha_id="alpha_unref", spec=spec)
+    assert any(
+        "hysteresis declares" in r.message
+        and "dead config" in r.message
+        for r in caplog.records
+    ), [r.message for r in caplog.records]
+
+
+def test_from_spec_no_warning_when_hysteresis_referenced(caplog):
+    """When the expressions reference the declared margins the warning
+    must not fire (e.g. sig_inventory_revert_v1's pattern)."""
+    import logging
+    spec = {
+        "regime_engine": "hmm_3state_fractional",
+        "on_condition": "P(normal) > 0.6 + posterior_margin",
+        "off_condition": "P(normal) < 0.5 - posterior_margin",
+        "hysteresis": {
+            "posterior_margin": 0.10,
+        },
+    }
+    with caplog.at_level(logging.WARNING, logger="feelies.signals.regime_gate"):
+        from feelies.signals.regime_gate import RegimeGate
+        RegimeGate.from_spec(alpha_id="alpha_ref", spec=spec)
+    assert not any(
+        "dead config" in r.message for r in caplog.records
+    )

@@ -108,7 +108,15 @@ class BudgetBasedSizer:
 
         state_names = list(self._regime_engine.state_names)
         default = self._regime_factor_default
-        return sum(
+        ev = sum(
             posteriors[i] * self._regime_factors.get(state_names[i], default)
             for i in range(len(posteriors))
         )
+        # Audit P1 R-1: enforce Inv-11 ("regime state never amplifies
+        # exposure beyond the 1.0 baseline") at the value level rather
+        # than relying on operator config discipline.  An operator-
+        # supplied ``regime_factors={"normal": 1.5}`` (or a posterior
+        # tilt > 1.0 from a custom engine) would otherwise breach the
+        # invariant silently.  Clamp at 1.0; the EV can still drop
+        # arbitrarily low.
+        return min(1.0, ev)

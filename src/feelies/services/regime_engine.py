@@ -12,6 +12,7 @@ position sizing and drawdown gating.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
@@ -185,7 +186,12 @@ class HMM3StateFractional:
 
     _MIN_CALIBRATION_SAMPLES = 30
     _MIN_SIGMA = 0.01
-    _CHECKPOINT_SCHEMA_VERSION = 1
+    _CHECKPOINT_SCHEMA_VERSION = 2
+    # Audit P1 E-1: when the schema version is bumped, also update the
+    # restore() compatibility branch so old blobs still load (or fail
+    # with a clear migration error).  v1 had no ``flags_fingerprint``;
+    # v2 carries one and uses it to reject restores into a differently-
+    # configured engine.
 
     def __init__(
         self,
@@ -326,6 +332,25 @@ class HMM3StateFractional:
             global_fit = self._sort_emissions_by_mean(global_fit)
 
         if not self._emissions_pass_pairwise_gate(global_fit):
+            # Audit P2 E-4: with the separation gate enabled, a poorly-
+            # separated calibration would previously leave the engine
+            # uncalibrated forever (calibrate() returned False).  That's
+            # safe but operationally hostile — every subsequent posterior
+            # call fires the uncalibrated warning and the engine runs on
+            # placeholder defaults.  Soft-fail instead: warn, keep the
+            # constructor defaults but mark them as the "fallback after
+            # rejected calibration" so the caller can decide.  Return
+            # False so the bootstrap calibration log still says
+            # "calibration failed", but leave the engine in a sane state.
+            logger.warning(
+                "regime_engine: calibration produced emissions that "
+                "failed the pairwise-separation gate (min d < %.4f); "
+                "retaining constructor-default emissions.  Either "
+                "supply better calibration data, lower "
+                "min_pairwise_emission_separation, or disable "
+                "enforce_min_pairwise_emission_separation.",
+                self._min_pairwise_emission_separation,
+            )
             return False
 
         self._emission = global_fit
@@ -523,20 +548,68 @@ class HMM3StateFractional:
         self._last_update_seq.pop(symbol, None)
         self._last_quote_ts_ns.pop(symbol, None)
 
+    def _flags_fingerprint(self) -> str:
+        """Stable hash of the constructor flags that change posteriors.
+
+        Audit P1 E-1: every flag that materially changes how
+        :meth:`posterior` computes its update is canonicalized into a
+        single short string.  Two engines that share this fingerprint
+        produce identical posterior trajectories given identical
+        quotes (modulo emission/transition values that *are* in the
+        blob).  Two engines that disagree on it would silently diverge
+        — :meth:`restore` rejects the blob in that case.
+
+        The state-names tuple is included because the published
+        ``dominant_name`` (and therefore downstream gate / risk
+        decisions) is indexed by it.  The transition matrix itself is
+        included because it is constructor-frozen (not in the blob).
+        """
+        canonical = {
+            "schema": self._CHECKPOINT_SCHEMA_VERSION,
+            "n_states": self._n_states,
+            "state_names": list(self._state_names),
+            "transition": [list(row) for row in self._transition],
+            "transition_time_scaling_enabled": (
+                bool(self._transition_time_scaling_enabled)
+            ),
+            "transition_dt_reference_seconds": float(
+                self._transition_dt_reference_seconds
+            ),
+            "transition_dt_scale_min": float(self._transition_dt_scale_min),
+            "transition_dt_scale_max": float(self._transition_dt_scale_max),
+            "per_symbol_calibration": bool(self._per_symbol_calibration),
+            "order_emissions_by_increasing_mean": (
+                bool(self._order_emissions_by_increasing_mean)
+            ),
+            "enforce_min_pairwise_emission_separation": (
+                bool(self._enforce_min_pairwise_emission_separation)
+            ),
+            "min_pairwise_emission_separation": float(
+                self._min_pairwise_emission_separation
+            ),
+        }
+        raw = json.dumps(canonical, separators=(",", ":"), sort_keys=True)
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
     def checkpoint(self) -> bytes:
         """Serialize per-symbol filter state to JSON bytes.
 
         The blob carries posteriors, sequence watermarks, optional
-        calibrated emissions, per-symbol emissions, and last quote
-        timestamps for time-scaled transitions.  Constructor flags
-        (``transition_time_scaling_enabled``, scale bounds,
-        ``per_symbol_calibration``, etc.) are **not** included —
-        ``restore()`` must be used on an instance constructed with the
-        same flags as the engine that produced the checkpoint, or replay
-        may diverge.
+        calibrated emissions, per-symbol emissions, last quote
+        timestamps for time-scaled transitions, and a fingerprint of
+        the constructor flags / transition matrix.
+
+        Audit P1 E-1: previously, constructor flags were not part of
+        the blob and :meth:`restore` made no attempt to verify them.
+        Restoring into a differently-configured engine (e.g. with
+        ``transition_time_scaling_enabled`` flipped or a different
+        transition matrix) therefore silently diverged replay.  The
+        ``flags_fingerprint`` field added in schema v2 lets
+        :meth:`restore` detect and reject the mismatch up front.
         """
         payload: dict[str, object] = {
             "checkpoint_schema_version": self._CHECKPOINT_SCHEMA_VERSION,
+            "flags_fingerprint": self._flags_fingerprint(),
             "posteriors": self._posteriors,
             "last_update_seq": self._last_update_seq,
             "last_quote_ts_ns": self._last_quote_ts_ns,
@@ -565,12 +638,46 @@ class HMM3StateFractional:
         try:
             payload = json.loads(data)
             schema_raw = payload.get("checkpoint_schema_version")
+            schema_v = 1
             if schema_raw is not None:
                 schema_v = int(schema_raw)
                 if schema_v > self._CHECKPOINT_SCHEMA_VERSION:
                     raise ValueError(
                         f"Unsupported checkpoint_schema_version {schema_v} "
                         f"(engine supports <= {self._CHECKPOINT_SCHEMA_VERSION})"
+                    )
+            # Audit P1 E-1: schema v2 carries ``flags_fingerprint``; v1
+            # blobs predate the check and are accepted without it (with
+            # a one-shot warning) so existing checkpoints keep loading
+            # — but new checkpoints (v2+) MUST match the current
+            # engine's flags or the restore is rejected.
+            blob_fingerprint = payload.get("flags_fingerprint")
+            if blob_fingerprint is None:
+                if schema_v >= 2:
+                    raise ValueError(
+                        "checkpoint at schema_version "
+                        f"{schema_v} is missing 'flags_fingerprint'; "
+                        "blob is malformed"
+                    )
+                logger.warning(
+                    "regime_engine: restoring legacy checkpoint "
+                    "(schema_version=%d) without flags_fingerprint; "
+                    "this engine cannot verify that the producer's "
+                    "constructor flags match — replay determinism is "
+                    "not guaranteed",
+                    schema_v,
+                )
+            else:
+                current = self._flags_fingerprint()
+                if blob_fingerprint != current:
+                    raise ValueError(
+                        "checkpoint flags_fingerprint mismatch: "
+                        f"blob={blob_fingerprint} engine={current} — "
+                        "the engine restoring this checkpoint must be "
+                        "constructed with identical state_names, "
+                        "transition matrix, and *_enabled flags as the "
+                        "engine that produced it; otherwise replay is "
+                        "not deterministic"
                     )
             posteriors = payload["posteriors"]
             last_seq = payload["last_update_seq"]

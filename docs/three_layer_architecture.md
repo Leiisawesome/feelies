@@ -549,10 +549,12 @@ function form. The evaluator resolves these against the `RegimeState`
 parallel tuples by looking up `posteriors[state_names.index(name)]`,
 raising `UnknownRegimeStateError` if the name is absent. The dominant
 state is exposed as the identifier `dominant`; e.g.
-`dominant == "compression"` is a valid gate predicate. State names
-match the engine's published `state_names` verbatim (`compression`,
-`normal`, `vol_breakout` for the built-in HMM per
-`services/regime_engine.py:HMM3StateFractional`).
+`dominant == "compression_clustering"` is a valid gate predicate.
+State names match the engine's published `state_names` verbatim
+(`compression_clustering`, `normal`, `vol_breakout` for the built-in
+HMM per `services/regime_engine.py:HMM3StateFractional`).  An earlier
+revision of this paragraph used the bare `compression` — production
+gates must use the canonical `compression_clustering`.
 
 **Implementer note (RESOLVED in Phase 3):** the engine's published state
 names are `normal`, `vol_breakout`, and `compression_clustering` (per

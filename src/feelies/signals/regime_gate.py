@@ -54,8 +54,11 @@ hysteresis margin requirement in §8.4 / §6.4 of the design doc and
 from __future__ import annotations
 
 import ast
+import logging
 import re
 from typing import Any, Mapping
+
+_LOGGER = logging.getLogger(__name__)
 
 
 # ── Errors ──────────────────────────────────────────────────────────────
@@ -673,13 +676,49 @@ class RegimeGate:
             for k, v in hyst_block.items():
                 hyst[str(k)] = float(v)
         engine_name = spec_map.get("regime_engine")
-        return cls(
+        gate = cls(
             alpha_id=alpha_id,
             on_condition=on_condition,
             off_condition=off_condition,
             hysteresis=hyst,
             engine_name=str(engine_name) if engine_name is not None else None,
         )
+        # Audit P1 GC-1: warn when hysteresis margins are declared but
+        # never referenced inside the ON/OFF expressions.  Margins are
+        # only meaningful when an expression literally names them
+        # (e.g. ``P(normal) < 0.5 - posterior_margin``); they are NOT
+        # an automatic ON/OFF band derived from the threshold gap.
+        # Authors who write the block expecting automatic behavior
+        # get a quiet no-op today — surfacing this loudly at load
+        # time prevents that misuse without breaking the existing
+        # explicit-reference contract (e.g. sig_inventory_revert_v1).
+        if hyst:
+            referenced = gate._referenced_identifiers()
+            unreferenced = sorted(set(hyst) - referenced)
+            if unreferenced:
+                _LOGGER.warning(
+                    "alpha %r: regime_gate.hysteresis declares %s but "
+                    "neither on_condition nor off_condition references "
+                    "any of them; the margins are dead config and have "
+                    "no effect on the ON/OFF latch.  Either reference "
+                    "them in the expressions (e.g. "
+                    "'P(normal) > 0.5 + posterior_margin') or remove "
+                    "the hysteresis block",
+                    alpha_id, unreferenced,
+                )
+        return gate
+
+    def _referenced_identifiers(self) -> frozenset[str]:
+        """All bare Name identifiers referenced by either condition.
+
+        Used by :meth:`from_spec`'s P1 GC-1 dead-config warning.
+        """
+        seen: set[str] = set()
+        for tree in (self._on_tree, self._off_tree):
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Name):
+                    seen.add(node.id)
+        return frozenset(seen)
 
 
 __all__ = [

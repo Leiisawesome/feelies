@@ -1053,6 +1053,24 @@ class AlphaLoader:
             )
         return dict(block)
 
+    _HAZARD_EXIT_KNOWN_KEYS: frozenset[str] = frozenset({
+        "enabled",
+        "hazard_score_threshold",
+        "min_age_seconds",
+        "hard_exit_age_seconds",
+    })
+
+    # Legacy / mis-named keys we accept with a translation, to fail loudly
+    # when authors copy the design-doc spelling.  ``posterior_drop_threshold``
+    # was used by ``sig_hawkes_burst_v1`` in the field — silently ignored by
+    # bootstrap which only reads ``hazard_score_threshold`` — until audit
+    # P1 H-2.  The detector's ``hazard_score`` IS clip01((p_prev − p_now) /
+    # max(p_prev, ε)), i.e. a normalized posterior drop — same semantic
+    # field, mis-named, rename in place with a WARN.
+    _HAZARD_EXIT_LEGACY_KEYS: dict[str, str] = {
+        "posterior_drop_threshold": "hazard_score_threshold",
+    }
+
     def _parse_hazard_exit_block(
         self,
         block: Any,
@@ -1060,9 +1078,22 @@ class AlphaLoader:
     ) -> dict[str, Any] | None:
         """Parse the optional v0.3 ``hazard_exit:`` block (§20.5).
 
-        Phase 1.1 only enforces that the block is a mapping when present.
-        Field-level validation is deferred to Phase 4.1 when the
-        composition layer activates hazard-rate-driven exits.
+        Audit P1 H-2: strict schema.  Unknown keys raise
+        :class:`AlphaLoadError` (matching the discipline already used
+        by :meth:`_parse_promotion_block`).  Legacy / mis-named keys
+        listed in ``_HAZARD_EXIT_LEGACY_KEYS`` are renamed in place
+        with a WARNING — the field author's intent (e.g.
+        ``posterior_drop_threshold``) was silently dropped before this
+        fix.
+
+        Value types are coerced and range-checked so bootstrap can
+        trust the parsed block:
+
+        * ``enabled``                — bool-ish (only literal True opts in)
+        * ``hazard_score_threshold`` — float in (0.0, 1.0]
+        * ``min_age_seconds``        — int ≥ 0
+        * ``hard_exit_age_seconds``  — int > 0 (or omitted → derived
+          from ``2 × expected_half_life_seconds`` at composition time)
         """
         if block is None:
             return None
@@ -1071,7 +1102,84 @@ class AlphaLoader:
                 f"{source}: 'hazard_exit' must be a mapping, got "
                 f"{type(block).__name__}"
             )
-        return dict(block)
+
+        normalized: dict[str, Any] = {}
+        for key, value in block.items():
+            if key in self._HAZARD_EXIT_LEGACY_KEYS:
+                new_key = self._HAZARD_EXIT_LEGACY_KEYS[key]
+                logger.warning(
+                    "%s: hazard_exit.%s is a legacy spelling of "
+                    "hazard_exit.%s; rename to %s in the YAML to silence "
+                    "this warning",
+                    source, key, new_key, new_key,
+                )
+                if new_key in block:
+                    raise AlphaLoadError(
+                        f"{source}: hazard_exit declares both {key!r} "
+                        f"and {new_key!r}; remove the legacy key {key!r}"
+                    )
+                normalized[new_key] = value
+            elif key in self._HAZARD_EXIT_KNOWN_KEYS:
+                normalized[key] = value
+            else:
+                raise AlphaLoadError(
+                    f"{source}: hazard_exit block carries unknown key "
+                    f"{key!r}; supported keys are "
+                    f"{sorted(self._HAZARD_EXIT_KNOWN_KEYS)} "
+                    f"(legacy accepted with warning: "
+                    f"{sorted(self._HAZARD_EXIT_LEGACY_KEYS)})"
+                )
+
+        if "hazard_score_threshold" in normalized:
+            try:
+                threshold = float(normalized["hazard_score_threshold"])
+            except (TypeError, ValueError) as exc:
+                raise AlphaLoadError(
+                    f"{source}: hazard_exit.hazard_score_threshold must "
+                    f"be numeric, got {normalized['hazard_score_threshold']!r}"
+                ) from exc
+            if not 0.0 < threshold <= 1.0:
+                raise AlphaLoadError(
+                    f"{source}: hazard_exit.hazard_score_threshold must "
+                    f"be in (0.0, 1.0], got {threshold}"
+                )
+            normalized["hazard_score_threshold"] = threshold
+
+        if "min_age_seconds" in normalized:
+            try:
+                min_age = int(normalized["min_age_seconds"])
+            except (TypeError, ValueError) as exc:
+                raise AlphaLoadError(
+                    f"{source}: hazard_exit.min_age_seconds must be int, "
+                    f"got {normalized['min_age_seconds']!r}"
+                ) from exc
+            if min_age < 0:
+                raise AlphaLoadError(
+                    f"{source}: hazard_exit.min_age_seconds must be >= 0, "
+                    f"got {min_age}"
+                )
+            normalized["min_age_seconds"] = min_age
+
+        if (
+            "hard_exit_age_seconds" in normalized
+            and normalized["hard_exit_age_seconds"] is not None
+        ):
+            try:
+                hard_age = int(normalized["hard_exit_age_seconds"])
+            except (TypeError, ValueError) as exc:
+                raise AlphaLoadError(
+                    f"{source}: hazard_exit.hard_exit_age_seconds must "
+                    f"be int or null, got "
+                    f"{normalized['hard_exit_age_seconds']!r}"
+                ) from exc
+            if hard_age <= 0:
+                raise AlphaLoadError(
+                    f"{source}: hazard_exit.hard_exit_age_seconds must "
+                    f"be > 0, got {hard_age}"
+                )
+            normalized["hard_exit_age_seconds"] = hard_age
+
+        return normalized
 
     def _parse_promotion_block(
         self,

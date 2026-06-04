@@ -420,6 +420,31 @@ class HorizonSignalEngine:
                 registered.alpha_id, snapshot.symbol, exc,
             )
             return
+        except (
+            ZeroDivisionError, ArithmeticError, TypeError, ValueError,
+        ) as exc:
+            # Audit P1 G-1: the DSL whitelists `/ % //` and arbitrary
+            # comparisons, so an authored expression like
+            # ``x / sensor_y < 0.5`` can raise ZeroDivisionError, and
+            # ``dominant < 1`` can raise TypeError when ``dominant`` is
+            # a string.  These are neither UnknownIdentifierError nor
+            # RegimeGateError, so without this branch they escape the
+            # fail-safe path and break the per-tick walk.  Treat them
+            # as Inv-11: force OFF + unwind if previously ON.
+            registered.gate.reset(snapshot.symbol)
+            _logger.warning(
+                "HorizonSignalEngine: %s gate arithmetic/type error for "
+                "%s (%s: %s) — forcing OFF and unwinding any open "
+                "position; review the gate expression for divide-by-zero "
+                "or string-vs-number comparison",
+                registered.alpha_id,
+                snapshot.symbol,
+                type(exc).__name__,
+                exc,
+            )
+            if was_on:
+                self._publish_gate_close(snapshot, registered)
+            return
 
         if was_on and not on:
             self._publish_gate_close(snapshot, registered)

@@ -230,7 +230,9 @@ def test_checkpoint_includes_schema_version() -> None:
     )
     engine.posterior(_q(sequence=1))
     payload = json.loads(engine.checkpoint())
-    assert payload["checkpoint_schema_version"] == 1
+    # Audit P1 E-1 bumped the schema to 2 to carry flags_fingerprint.
+    assert payload["checkpoint_schema_version"] == 2
+    assert "flags_fingerprint" in payload
 
 
 def test_restore_rejects_unsupported_schema_version() -> None:

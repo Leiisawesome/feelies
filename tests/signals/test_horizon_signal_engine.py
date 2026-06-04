@@ -818,3 +818,72 @@ def test_alpha_supplied_mechanism_overrides_registered_default() -> None:
     assert len(captured) == 1
     assert captured[0].trend_mechanism is TrendMechanism.HAWKES_SELF_EXCITE
     assert captured[0].expected_half_life_seconds == 30
+
+
+# ── Audit P1 G-1: arithmetic / type errors in gate evaluation ───────
+
+
+def test_gate_zero_division_fails_safe_off(caplog) -> None:
+    """A whitelisted DSL expression can divide by a sensor value that
+    is zero at evaluation time.  This raises ZeroDivisionError — neither
+    UnknownIdentifierError nor RegimeGateError — and before audit P1
+    G-1 it escaped the fail-safe path.  Verify it now forces the
+    latch to OFF and continues the per-tick walk."""
+    import logging
+    boom_gate = _gate(
+        on_condition="(1.0 / ofi_ewma) > 0.5",
+        off_condition="(1.0 / ofi_ewma) < 0.0",
+    )
+    engine, bus, captured = _engine()
+    sig = _RecordingSignal()
+    engine.register(_registered(gate=boom_gate, signal=sig))
+    engine.attach()
+
+    # Publish a sensor reading of exactly 0 so the gate would divide
+    # by zero on evaluation.
+    bus.publish(_regime_normal_high())
+    bus.publish(SensorReading(
+        timestamp_ns=1_000,
+        correlation_id="corr",
+        sequence=1,
+        symbol="AAPL",
+        sensor_id="ofi_ewma",
+        sensor_version="1.1.0",
+        value=0.0,
+    ))
+    with caplog.at_level(logging.WARNING, logger="feelies.signals.horizon_engine"):
+        bus.publish(_snapshot())
+
+    # Fail-safe: gate is OFF, no signal emitted, dispatch continues.
+    assert sig.calls == []
+    assert captured == []
+    assert boom_gate.is_on("AAPL") is False
+    assert any(
+        "arithmetic/type error" in r.message and "ZeroDivisionError" in r.message
+        for r in caplog.records
+    )
+
+
+def test_gate_type_error_on_string_comparison_fails_safe_off(caplog) -> None:
+    """``dominant < 1`` compares a string to a number — TypeError on
+    Python 3 — and must be caught by the P1 G-1 fail-safe."""
+    import logging
+    boom_gate = _gate(
+        on_condition='dominant < 1',
+        off_condition='dominant > 1',
+    )
+    engine, bus, captured = _engine()
+    sig = _RecordingSignal()
+    engine.register(_registered(gate=boom_gate, signal=sig))
+    engine.attach()
+
+    bus.publish(_regime_normal_high())
+    with caplog.at_level(logging.WARNING, logger="feelies.signals.horizon_engine"):
+        bus.publish(_snapshot())
+
+    assert sig.calls == []
+    assert captured == []
+    assert any(
+        "arithmetic/type error" in r.message and "TypeError" in r.message
+        for r in caplog.records
+    )
