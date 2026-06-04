@@ -229,7 +229,7 @@ def summarise(reports: list[SymbolReport]) -> dict[str, float]:
     return {
         "n_symbols": len(reports),
         "n_pass": n_pass,
-        "share_pass": n_pass / len(reports),
+        "share_pass": n_pass / len(UNIVERSE),
         "median_min_d": statistics.median(r.min_pairwise_d for r in reports),
         "p10_min_d": statistics.quantiles(
             (r.min_pairwise_d for r in reports), n=10
