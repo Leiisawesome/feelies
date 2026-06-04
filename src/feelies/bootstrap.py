@@ -1790,6 +1790,16 @@ def _create_hazard_exit_controller(
         explicit_hard = block.get("hard_exit_age_seconds")
         if explicit_hard is None:
             half_life = int(getattr(module, "expected_half_life_seconds", 0) or 0)
+            if half_life <= 0:
+                # LoadedPortfolioLayerModule does not expose
+                # ``expected_half_life_seconds`` directly; fall back to the
+                # manifest's ``trend_mechanism:`` block so PORTFOLIO alphas
+                # also benefit from the HM-1 default.
+                tm_block = getattr(module.manifest, "trend_mechanism", None) or {}
+                try:
+                    half_life = int(tm_block.get("expected_half_life_seconds", 0) or 0)
+                except (TypeError, ValueError):
+                    half_life = 0
             derived_hard = 2 * half_life if half_life > 0 else None
             hard_exit = derived_hard
         else:
