@@ -178,16 +178,89 @@ def test_hazard_exit_absent_yields_none_on_manifest() -> None:
     assert loaded.manifest.hazard_exit is None
 
 
-def test_hazard_exit_block_accepted_verbatim() -> None:
+def test_hazard_exit_block_accepted_with_known_keys() -> None:
+    """Audit P1 H-2 schema: ``enabled`` + ``hazard_score_threshold``
+    + ``min_age_seconds`` + ``hard_exit_age_seconds`` are accepted and
+    coerced; values are range-checked."""
     block = {
-        "trigger": "regime_hazard_spike",
-        "min_hazard_score": 0.7,
-        "exit_urgency": 0.9,
+        "enabled": True,
+        "hazard_score_threshold": 0.7,
+        "min_age_seconds": 45,
+        "hard_exit_age_seconds": 600,
     }
     loaded = AlphaLoader().load_from_dict(
         _spec(hazard_exit=block), source="<test>"
     )
-    assert loaded.manifest.hazard_exit == block
+    assert loaded.manifest.hazard_exit == {
+        "enabled": True,
+        "hazard_score_threshold": 0.7,
+        "min_age_seconds": 45,
+        "hard_exit_age_seconds": 600,
+    }
+
+
+def test_hazard_exit_unknown_key_rejected() -> None:
+    """Audit P1 H-2: previously-silent unknown keys (e.g. legacy doc
+    spellings ``trigger`` / ``min_hazard_score``) must fail loudly."""
+    with pytest.raises(
+        _LOAD_REJECTED, match="hazard_exit block carries unknown key 'trigger'"
+    ):
+        AlphaLoader().load_from_dict(
+            _spec(hazard_exit={"enabled": True, "trigger": "regime_hazard_spike"}),
+            source="<test>",
+        )
+
+
+def test_hazard_exit_legacy_posterior_drop_threshold_renamed_with_warning(
+    caplog,
+) -> None:
+    """Audit P1 H-2: ``posterior_drop_threshold`` was the wording the
+    only opted-in alpha actually used; bootstrap silently ignored it
+    before this fix.  The loader now translates it to the canonical
+    ``hazard_score_threshold`` and logs a WARNING."""
+    import logging
+    with caplog.at_level(logging.WARNING, logger="feelies.alpha.loader"):
+        loaded = AlphaLoader().load_from_dict(
+            _spec(hazard_exit={
+                "enabled": True,
+                "posterior_drop_threshold": 0.3,
+            }),
+            source="<test>",
+        )
+    assert loaded.manifest.hazard_exit == {
+        "enabled": True,
+        "hazard_score_threshold": 0.3,
+    }
+    assert any("legacy spelling" in r.message for r in caplog.records)
+
+
+def test_hazard_exit_legacy_and_canonical_simultaneous_rejected() -> None:
+    """If both spellings are present the loader refuses (ambiguous)."""
+    with pytest.raises(_LOAD_REJECTED, match="legacy key 'posterior_drop_threshold'"):
+        AlphaLoader().load_from_dict(
+            _spec(hazard_exit={
+                "enabled": True,
+                "posterior_drop_threshold": 0.3,
+                "hazard_score_threshold": 0.5,
+            }),
+            source="<test>",
+        )
+
+
+def test_hazard_exit_out_of_range_threshold_rejected() -> None:
+    with pytest.raises(_LOAD_REJECTED, match="must be in"):
+        AlphaLoader().load_from_dict(
+            _spec(hazard_exit={"enabled": True, "hazard_score_threshold": 1.5}),
+            source="<test>",
+        )
+
+
+def test_hazard_exit_negative_min_age_rejected() -> None:
+    with pytest.raises(_LOAD_REJECTED, match="must be >= 0"):
+        AlphaLoader().load_from_dict(
+            _spec(hazard_exit={"enabled": True, "min_age_seconds": -1}),
+            source="<test>",
+        )
 
 
 def test_hazard_exit_non_mapping_rejected() -> None:
@@ -202,7 +275,8 @@ def test_hazard_exit_non_mapping_rejected() -> None:
 
 def test_both_v03_blocks_present_independently_stored() -> None:
     tm = copy.deepcopy(_TREND_MECHANISM_FIXTURES["HAWKES_SELF_EXCITE"])
-    he = {"trigger": "regime_hazard_spike"}
+    # Audit P1 H-2: hazard_exit now enforces a schema, so use known keys.
+    he = {"enabled": True, "hazard_score_threshold": 0.7}
     loaded = AlphaLoader().load_from_dict(
         _spec(trend_mechanism=tm, hazard_exit=he), source="<test>"
     )

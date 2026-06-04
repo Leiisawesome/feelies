@@ -40,9 +40,8 @@ from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.monitoring.horizon_metrics import HorizonMetricsCollector
 from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
 from feelies.risk.hazard_exit import HazardExitController
-from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
-from feelies.sensors.impl.spread_z_30d import SpreadZScoreSensor
 from feelies.sensors.spec import SensorSpec
+from tests._fixtures.sensor_specs import ALL_FINGERPRINT_SENSOR_SPECS
 
 
 # ── Sensor catalog the upstream SIGNAL fixture depends on ──────────────
@@ -51,22 +50,14 @@ from feelies.sensors.spec import SensorSpec
 # no sensor dependencies) for a horizon-anchored SIGNAL alpha.  SIGNAL
 # alphas declare ``depends_on_sensors:`` and the bootstrap layer
 # resolves those IDs against the configured ``sensor_specs`` tuple.
-# Pin the two-sensor catalog needed by ``_UPSTREAM_SIGNAL_ALPHA_YAML``
-# at module scope so every wiring test gets the same registration.
-_TEST_SENSOR_SPECS: tuple[SensorSpec, ...] = (
-    SensorSpec(
-        sensor_id="ofi_ewma",
-        sensor_version="1.1.0",
-        cls=OFIEwmaSensor,
-        subscribes_to=(NBBOQuote,),
-    ),
-    SensorSpec(
-        sensor_id="spread_z_30d",
-        sensor_version="1.1.0",
-        cls=SpreadZScoreSensor,
-        subscribes_to=(NBBOQuote,),
-    ),
-)
+#
+# Audit follow-up #6: ``ALL_FINGERPRINT_SENSOR_SPECS`` (shared fixture)
+# is the union of every G16 family fingerprint sensor plus the two
+# baseline sensors (``ofi_ewma`` / ``spread_z_30d``) the upstream
+# fixture's gate references.  Using the union lets SIGNAL fixtures
+# declare any ``trend_mechanism.family`` without G16's
+# ``MissingFingerprintSensorError`` blocking the load.
+_TEST_SENSOR_SPECS: tuple[SensorSpec, ...] = ALL_FINGERPRINT_SENSOR_SPECS
 
 
 _UPSTREAM_SIGNAL_ALPHA_YAML = textwrap.dedent(
@@ -169,6 +160,86 @@ def _portfolio_alpha_yaml(
     return "\n".join(lines) + "\n"
 
 
+def _signal_alpha_yaml(
+    *,
+    alpha_id: str,
+    horizon_seconds: int,
+    family: str,
+    expected_half_life_seconds: int,
+    depends_on_sensors: tuple[str, ...] = ("ofi_ewma", "spread_z_30d"),
+    l1_signature_sensors: tuple[str, ...] = (),
+    hazard_block: dict[str, object] | None = None,
+) -> str:
+    """Build a self-contained SIGNAL alpha YAML for hazard-wiring tests.
+
+    Lets each test pick (horizon, half_life, family, sensor deps) that
+    satisfy G16 simultaneously, without coupling to the shared
+    upstream fixture's horizon=300.
+    """
+    lines: list[str] = [
+        'schema_version: "1.1"',
+        "layer: SIGNAL",
+        f"alpha_id: {alpha_id}",
+        'version: "1.0.0"',
+        "author: test",
+        "description: hazard-wiring signal fixture",
+        "hypothesis: test",
+        "falsification_criteria:",
+        "  - test criterion",
+        "symbols:",
+        "  - AAPL",
+        "parameters: {}",
+        "risk_budget:",
+        "  max_position_per_symbol: 100",
+        "  max_gross_exposure_pct: 5.0",
+        "  max_drawdown_pct: 1.0",
+        "  capital_allocation_pct: 10.0",
+        f"horizon_seconds: {horizon_seconds}",
+        "depends_on_sensors:",
+    ]
+    lines.extend(f"  - {s}" for s in depends_on_sensors)
+    lines.extend([
+        "regime_gate:",
+        "  regime_engine: hmm_3state_fractional",
+        '  on_condition: "P(normal) > 0.7"',
+        '  off_condition: "P(normal) < 0.5"',
+        "cost_arithmetic:",
+        "  edge_estimate_bps: 9.0",
+        "  half_spread_bps: 2.0",
+        "  impact_bps: 2.0",
+        "  fee_bps: 1.0",
+        "  margin_ratio: 1.8",
+        "trend_mechanism:",
+        f"  family: {family}",
+        f"  expected_half_life_seconds: {expected_half_life_seconds}",
+        f"  expected_holding_period_seconds: {expected_half_life_seconds * 2}",
+    ])
+    if l1_signature_sensors:
+        lines.append("  l1_signature_sensors:")
+        lines.extend(f"    - {s}" for s in l1_signature_sensors)
+    # G16 rule 6: mechanism alphas must declare a non-empty
+    # ``failure_signature`` block (Inv-2 / mechanism falsifiers).  The
+    # specific content doesn't matter for wiring tests — it just has
+    # to be a non-empty list.
+    lines.extend([
+        "  failure_signature:",
+        '    - "spread_z_30d > 2.5"',
+    ])
+    if hazard_block is not None:
+        lines.append("hazard_exit:")
+        for k, v in hazard_block.items():
+            if isinstance(v, bool):
+                lines.append(f"  {k}: {'true' if v else 'false'}")
+            else:
+                lines.append(f"  {k}: {v}")
+    lines.extend([
+        "signal: |",
+        "  def evaluate(snapshot, regime, params):",
+        "      return None",
+    ])
+    return "\n".join(lines) + "\n"
+
+
 def _write_alpha(directory: Path, name: str, body: str) -> None:
     (directory / name).write_text(body, encoding="utf-8")
 
@@ -256,6 +327,78 @@ class TestCompositionWiring:
         policy = controller.policies["pofi_xsect_hazard_v1"]
         assert policy.hazard_score_threshold == pytest.approx(0.7)
         assert policy.min_age_seconds == 60
+
+    def test_signal_layer_hazard_exit_opt_in_wires_controller(
+        self, tmp_path: Path
+    ) -> None:
+        """Audit P0 H-1: SIGNAL-layer ``hazard_exit.enabled: true`` must
+        actually wire a controller.  Before the fix,
+        ``_create_composition_layer`` scanned only PORTFOLIO modules
+        and a SIGNAL opt-in produced spikes with no consumer.
+
+        Re-introduced after follow-up #6 added the shared fingerprint-
+        sensor catalog, which lets the SIGNAL fixture declare a
+        ``trend_mechanism:`` block without G16 blocking the load.
+        """
+        # KYLE_INFO has half-life range [60, 1800]; horizon 300 / half 150
+        # = ratio 2.0, within G16's [0.5, 4.0].  Its fingerprint sensors
+        # (kyle_lambda_60s, micro_price) ship in ALL_FINGERPRINT_SENSOR_SPECS
+        # and don't need event_calendar_path.
+        signal_with_hazard = _signal_alpha_yaml(
+            alpha_id="haz_test_alpha",
+            horizon_seconds=300,
+            family="KYLE_INFO",
+            expected_half_life_seconds=150,
+            depends_on_sensors=("ofi_ewma", "spread_z_30d",
+                                "kyle_lambda_60s", "micro_price"),
+            l1_signature_sensors=("kyle_lambda_60s", "micro_price"),
+            hazard_block={
+                "enabled": True,
+                "hazard_score_threshold": 0.4,
+                "min_age_seconds": 5,
+            },
+        )
+        _write_alpha(tmp_path, "haz_signal.alpha.yaml", signal_with_hazard)
+        config = _make_config(tmp_path, symbols=("AAPL",))
+        orchestrator, _ = build_platform(config)
+        controller = orchestrator._hazard_exit_controller
+        assert isinstance(controller, HazardExitController), (
+            "SIGNAL-layer hazard_exit.enabled must wire HazardExitController"
+        )
+        assert "haz_test_alpha" in controller.policies
+        policy = controller.policies["haz_test_alpha"]
+        assert policy.hazard_score_threshold == pytest.approx(0.4)
+        assert policy.min_age_seconds == 5
+        # HM-1 default: 2 × expected_half_life_seconds (150) = 300.
+        assert policy.hard_exit_age_seconds == 300
+        # SIGNAL alphas lack a per-alpha universe, so the policy falls
+        # back to the platform symbols.
+        assert policy.universe == ("AAPL",)
+
+    def test_signal_hazard_exit_uses_explicit_hard_exit_age_when_provided(
+        self, tmp_path: Path
+    ) -> None:
+        """HM-1 default applies only when the YAML omits the field; an
+        explicit value must be honored verbatim."""
+        signal_with_hazard = _signal_alpha_yaml(
+            alpha_id="haz_explicit_alpha",
+            horizon_seconds=300,
+            family="KYLE_INFO",
+            expected_half_life_seconds=150,
+            depends_on_sensors=("ofi_ewma", "spread_z_30d",
+                                "kyle_lambda_60s", "micro_price"),
+            l1_signature_sensors=("kyle_lambda_60s", "micro_price"),
+            hazard_block={
+                "enabled": True,
+                "hard_exit_age_seconds": 1234,
+            },
+        )
+        _write_alpha(tmp_path, "haz_explicit.alpha.yaml", signal_with_hazard)
+        config = _make_config(tmp_path, symbols=("AAPL",))
+        orchestrator, _ = build_platform(config)
+        controller = orchestrator._hazard_exit_controller
+        assert controller is not None
+        assert controller.policies["haz_explicit_alpha"].hard_exit_age_seconds == 1234
 
     def test_universe_scale_cap_fail_stop(self, tmp_path: Path) -> None:
         """Exceeding composition_max_universe_size raises UniverseScaleError."""

@@ -851,10 +851,15 @@ class BasicRiskEngine:
 
         state_names = list(self._regime_engine.state_names)
         default = self._regime_scale_default
-        return sum(
+        ev = sum(
             posteriors[i] * self._regime_scale_map.get(state_names[i], default)
             for i in range(len(posteriors))
         )
+        # Audit P1 R-1: enforce Inv-11 at the value level — never amplify
+        # position limits above the 1.0 baseline regardless of operator-
+        # supplied scale map.  EV may still drop arbitrarily low under
+        # stressed posteriors; only the upside is clamped.
+        return min(1.0, ev)
 
     def _compute_current_equity(self, positions: PositionStore) -> Decimal:
         """Live NAV: initial equity + realized − fees + unrealized.

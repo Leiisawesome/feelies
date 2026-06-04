@@ -49,7 +49,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
@@ -547,12 +547,25 @@ def build_platform(
         composition_engine,
         cross_sectional_tracker,
         composition_metrics,
-        hazard_exit_controller,
+        _unused_hazard_from_composition,
     ) = _create_composition_layer(
         config=config,
         bus=bus,
         registry=registry,
         position_store=position_store,
+    )
+
+    # Audit P0 H-1: hazard wiring scans ALL active alphas so SIGNAL-layer
+    # opt-ins (e.g. sig_hawkes_burst_v1, declared with hazard_exit.enabled:
+    # true) actually get a controller listening on the bus.  The detector
+    # was already wired registry-wide via ``_create_hazard_detector`` (see
+    # below); without this change the detector emitted RegimeHazardSpike
+    # events to a bus with no subscribers — a dead safety control.
+    hazard_exit_controller = _create_hazard_exit_controller(
+        bus=bus,
+        registry=registry,
+        position_store=position_store,
+        fallback_universe=config.symbols,
     )
 
     # Phase-3.1: hazard detector + dedicated _hazard_seq generator.
@@ -1706,56 +1719,12 @@ def _create_composition_layer(
     )
     horizon_metrics.attach()
 
-    hazard_exit_controller: HazardExitController | None = None
-    hazard_modules = [
-        m for m in portfolio_modules
-        if _hazard_block_enabled(getattr(m.manifest, "hazard_exit", None))
-    ]
-    if hazard_modules:
-        hazard_seq_local = SequenceGenerator()
-        hazard_exit_controller = HazardExitController(
-            bus=bus,
-            sequence_generator=hazard_seq_local,
-            position_store=position_store,
-        )
-        for module in sorted(hazard_modules, key=lambda m: m.alpha_id):
-            block = getattr(module.manifest, "hazard_exit", None) or {}
-            policy = HazardPolicy(
-                strategy_id=module.alpha_id,
-                hazard_score_threshold=float(
-                    block.get(
-                        "hazard_score_threshold",
-                        HazardPolicy.__dataclass_fields__[
-                            "hazard_score_threshold"
-                        ].default,
-                    )
-                ),
-                min_age_seconds=int(
-                    block.get(
-                        "min_age_seconds",
-                        HazardPolicy.__dataclass_fields__[
-                            "min_age_seconds"
-                        ].default,
-                    )
-                ),
-                hard_exit_age_seconds=(
-                    int(block["hard_exit_age_seconds"])
-                    if block.get("hard_exit_age_seconds") is not None
-                    else None
-                ),
-                universe=tuple(module.universe),
-            )
-            hazard_exit_controller.register_policy(policy)
-        hazard_exit_controller.attach()
-
     logger.info(
         "PORTFOLIO composition layer composed: %d alpha(s), "
-        "universe_size=%d, horizons=%s, hazard_exit=%s, "
-        "decay_weighting=%s",
+        "universe_size=%d, horizons=%s, decay_weighting=%s",
         len(portfolio_modules),
         len(universe),
         sorted(horizons),
-        hazard_exit_controller is not None,
         decay_enabled,
     )
 
@@ -1763,8 +1732,111 @@ def _create_composition_layer(
         engine,
         cross_sectional_tracker,
         horizon_metrics,
-        hazard_exit_controller,
+        None,
     )
+
+
+def _create_hazard_exit_controller(
+    *,
+    bus: EventBus,
+    registry: AlphaRegistry,
+    position_store: MemoryPositionStore,
+    fallback_universe: Iterable[str],
+) -> HazardExitController | None:
+    """Build a :class:`HazardExitController` from any active alpha's opt-in.
+
+    Audit P0 H-1: prior to this helper, the hazard wiring lived inside
+    :func:`_create_composition_layer` and scanned only PORTFOLIO modules.
+    The detector itself is wired from any active alpha (see
+    :func:`_create_hazard_detector`), so a SIGNAL alpha that declared
+    ``hazard_exit.enabled: true`` got spikes emitted on the bus with
+    nothing listening — a silently dead safety control.
+
+    Scanning the full registry here means the controller is wired
+    whenever any active alpha (SIGNAL **or** PORTFOLIO) opts in.
+
+    The HM-1 default applies here: when an alpha omits
+    ``hard_exit_age_seconds`` we derive ``2 × expected_half_life_seconds``
+    from its mechanism declaration (when positive) so age-based hard
+    exits are usable for short-half-life alphas without requiring
+    operators to copy-paste the math into every YAML.
+
+    Per-alpha ``universe`` falls back to ``fallback_universe`` (the
+    platform-wide symbols) for SIGNAL modules, which don't expose a
+    per-alpha universe — the PORTFOLIO-only universe attribute is only
+    surfaced by :class:`LoadedPortfolioLayerModule`.
+    """
+    fallback = tuple(sorted(fallback_universe))
+
+    candidates = [
+        m for m in registry.active_alphas()
+        if _hazard_block_enabled(getattr(m.manifest, "hazard_exit", None))
+    ]
+    if not candidates:
+        return None
+
+    seq = SequenceGenerator()
+    controller = HazardExitController(
+        bus=bus,
+        sequence_generator=seq,
+        position_store=position_store,
+    )
+    for module in sorted(candidates, key=lambda m: m.manifest.alpha_id):
+        block = getattr(module.manifest, "hazard_exit", None) or {}
+        alpha_id = module.manifest.alpha_id
+        per_universe = tuple(getattr(module, "universe", ()) or ())
+        universe = per_universe or fallback
+
+        explicit_hard = block.get("hard_exit_age_seconds")
+        if explicit_hard is None:
+            half_life = int(getattr(module, "expected_half_life_seconds", 0) or 0)
+            if half_life <= 0:
+                # LoadedPortfolioLayerModule does not expose
+                # ``expected_half_life_seconds`` directly; fall back to the
+                # manifest's ``trend_mechanism:`` block so PORTFOLIO alphas
+                # also benefit from the HM-1 default.
+                tm_block = getattr(module.manifest, "trend_mechanism", None) or {}
+                try:
+                    half_life = int(tm_block.get("expected_half_life_seconds", 0) or 0)
+                except (TypeError, ValueError):
+                    half_life = 0
+            derived_hard = 2 * half_life if half_life > 0 else None
+            hard_exit = derived_hard
+        else:
+            hard_exit = int(explicit_hard)
+
+        policy = HazardPolicy(
+            strategy_id=alpha_id,
+            hazard_score_threshold=float(
+                block.get(
+                    "hazard_score_threshold",
+                    HazardPolicy.__dataclass_fields__[
+                        "hazard_score_threshold"
+                    ].default,
+                )
+            ),
+            min_age_seconds=int(
+                block.get(
+                    "min_age_seconds",
+                    HazardPolicy.__dataclass_fields__[
+                        "min_age_seconds"
+                    ].default,
+                )
+            ),
+            hard_exit_age_seconds=hard_exit,
+            universe=universe,
+        )
+        controller.register_policy(policy)
+
+    controller.attach()
+    logger.info(
+        "HazardExitController wired: %d alpha(s) opted in (%s); "
+        "default hard_exit_age_seconds for missing values = "
+        "2 × expected_half_life_seconds",
+        len(candidates),
+        ", ".join(sorted(m.manifest.alpha_id for m in candidates)),
+    )
+    return controller
 
 
 def _hazard_block_enabled(block: object | None) -> bool:

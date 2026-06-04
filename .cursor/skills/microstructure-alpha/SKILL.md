@@ -280,15 +280,38 @@ exit is safer than hold when data is missing).
 
 ### Hazard-Driven Exit
 
-When `hazard_exit.enabled: true` is declared on the alpha manifest,
+When `hazard_exit.enabled: true` is declared on the alpha manifest
+(SIGNAL **or** PORTFOLIO layer — both are now wired; audit P0 H-1),
 `HazardExitController` consumes `RegimeHazardSpike` events and emits
 `OrderRequest.reason = "HAZARD_SPIKE"` to flatten open positions when
 the per-alpha `hazard_score_threshold` is exceeded (and the position
 has been open at least `min_age_seconds`). A separate `HARD_EXIT_AGE`
 branch fires when a position has been open longer than
-`hard_exit_age_seconds`. Suppression is per
-`(symbol, alpha_id, departing_state)`. Bit-identical replay is locked
-by the Level-4 hazard-exit parity test.
+`hard_exit_age_seconds`; when this field is omitted it is **derived
+from `2 × expected_half_life_seconds`** (audit P1 HM-1) so short-
+half-life mechanisms aren't silently age-uncapped.
+
+Schema (audit P1 H-2 — strict; unknown keys raise `AlphaLoadError`):
+
+```yaml
+hazard_exit:
+  enabled: true                  # bool — literal True opts in
+  hazard_score_threshold: 0.85   # float in (0, 1]; controller default 0.85
+  min_age_seconds: 30            # int ≥ 0; controller default 30
+  hard_exit_age_seconds: 1800    # int > 0; null → 2 × expected_half_life_seconds
+```
+
+`posterior_drop_threshold` is accepted as a legacy spelling of
+`hazard_score_threshold` (the detector's `hazard_score` IS a
+normalized posterior drop) and rewritten with a WARN at load time;
+use the canonical name in new specs.
+
+Suppression at the **controller** layer is per
+`(strategy_id, symbol, reason)`, cleared when the position returns
+to flat.  This is distinct from the **detector** suppression key
+`(symbol, engine_name, departing_state)` held inside
+`RegimeHazardDetector`.  Bit-identical replay is locked by the
+Level-5 hazard-replay parity test.
 
 ---
 
