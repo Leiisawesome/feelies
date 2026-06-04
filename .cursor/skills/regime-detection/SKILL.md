@@ -230,6 +230,43 @@ deterministic given the input sequence). Replay is bit-identical
 (Inv-5; locked by L5 hazard-parity test
 `tests/determinism/test_regime_hazard_replay.py`).
 
+### What `hazard_score` is — and is not
+
+`hazard_score` is the **normalized one-tick relative decay** of the
+departing state's posterior, **not** a survival-analysis hazard
+rate λ(t) = f(t) / S(t).  The exact formula is:
+
+```
+hazard_score = clip01( (p_prev − p_now) / max(p_prev, ε) ),  ε = 1e-12
+```
+
+so a drop from 0.95 → 0.45 scores ≈ 0.526 regardless of whether the
+two ticks were 1 ms or 30 s apart.  This is a deliberate design
+choice — the detector is purely a function of the two `RegimeState`
+events on the channel (Inv-5 replay determinism) and carries no
+clock dependency.  But it has three operational consequences that
+consumers should understand:
+
+1. **Not time-normalized.**  Two slow decays over different quote
+   gaps produce identical scores.  A score threshold therefore
+   gates a per-tick step, not a per-second event-rate — calibrate
+   `hazard_score_threshold` against your tick rate, not your
+   wall-clock horizon.
+2. **Not a probability of regime-end.**  It does not estimate
+   P(flip in next Δt).  Use the (separate) dominance flip /
+   `1.0 − hysteresis_threshold` floor checks the detector already
+   does for that semantic.
+3. **Bounded by `p_prev`.**  When the departing state is already
+   near zero (`p_prev < ε`), the divisor is floored at ε and the
+   score is clamped at 1.0 by the `clip01`; degenerate "decay from
+   already-near-zero" cases produce a small bounded score, not a
+   blow-up.
+
+If you need a real survival-analysis hazard rate (events per unit
+wall-clock time) for a downstream model, compute it externally from
+the published `RegimeHazardSpike` stream — the detector intentionally
+does not emit one.
+
 ### Wiring
 
 `HazardExitController` (risk-engine skill) consumes
