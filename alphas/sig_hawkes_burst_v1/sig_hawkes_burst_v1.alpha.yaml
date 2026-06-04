@@ -122,9 +122,14 @@ trend_mechanism:
     - "P(vol_breakout) > 0.5"
 
 # ── Hazard-rate exit (v0.3 §20.7) ─────────────────────────
+# Audit P1 H-2 rename: ``posterior_drop_threshold`` was the historical
+# spelling but bootstrap only ever read ``hazard_score_threshold``, so
+# the 0.30 declared here was silently ignored and the controller used
+# its 0.85 default.  The loader still accepts the legacy name with a
+# WARN, but use the canonical spelling in new specs.
 hazard_exit:
   enabled: true
-  posterior_drop_threshold: 0.30
+  hazard_score_threshold: 0.30
 
 # ── Signal (Layer-2 evaluate) ─────────────────────────────
 signal: |
