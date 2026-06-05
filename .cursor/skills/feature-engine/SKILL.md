@@ -89,7 +89,7 @@ and rejects cycles. Layer gate **G6** enforces sensor-DAG validity at
 alpha-load time — a SIGNAL alpha cannot declare a `depends_on_sensors`
 edge that would create a cycle or reference an unregistered sensor.
 
-### Implemented Sensors (v0.3, 13 total)
+### Implemented Sensors (v0.3, 16 total)
 
 Implementations live under `feelies.sensors.impl`. The list below is
 the **actual module catalog** (the `sensor_id` each class exposes);
@@ -97,9 +97,12 @@ keep it in sync with `feelies/sensors/impl/*.py`. Anchored to the
 trend-mechanism taxonomy (see microstructure-alpha):
 
 - `kyle_lambda_60s` — KYLE_INFO fingerprint
-- `quote_replenish_asymmetry` — INVENTORY-side proxy
+- `inventory_pressure` — INVENTORY fingerprint (trade-side MM-inventory proxy)
+- `quote_replenish_asymmetry` — INVENTORY fingerprint (quote-side)
 - `hawkes_intensity` — HAWKES_SELF_EXCITE fingerprint
-- `spread_z_30d`, `quote_hazard_rate` — LIQUIDITY_STRESS proxies
+- `liquidity_stress_score` — LIQUIDITY_STRESS fingerprint (spread×depth composite)
+- `quote_flicker_rate` — LIQUIDITY_STRESS fingerprint (best-price reversal fraction)
+- `spread_z_30d`, `quote_hazard_rate` — LIQUIDITY_STRESS (single-axis)
 - `trade_through_rate` — NBBO-aggression / HAWKES precursor
 - `scheduled_flow_window` — SCHEDULED_FLOW fingerprint
 - `ofi_ewma`, `micro_price`, `realized_vol_30s` — composite
@@ -109,12 +112,13 @@ but are **not** registered in the reference `platform.yaml`
 `sensor_specs:` (dormant until wired): `vpin_50bucket`,
 `snr_drift_diffusion`, `structural_break_score`.
 
-> Earlier drafts of this list named sensors that were never
-> implemented (`kyle_lambda_300s`, `inventory_pressure`,
-> `trade_clustering`, `liquidity_stress_score`, `quote_flicker_rate`,
-> `micro_price_drift`, `effective_spread`). An alpha must declare
-> `l1_signature_sensors` / `depends_on_sensors` only from the
-> **implemented** ids above, or G6 resolution fails at load.
+> `inventory_pressure`, `liquidity_stress_score`, and
+> `quote_flicker_rate` were specified-but-missing in earlier drafts and
+> shipped in the audit P2-3 pass; every G16 family now has a dedicated
+> implemented fingerprint. Sensor ids that were **never** implemented
+> (`kyle_lambda_300s`, `trade_clustering`, `micro_price_drift`,
+> `effective_spread`) must not appear in `l1_signature_sensors` /
+> `depends_on_sensors`, or G6 resolution fails at load.
 
 Per-sensor implementations expose `is_warm(symbol)` and emit
 `SensorReading.provenance.warm` so downstream consumers (the horizon

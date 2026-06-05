@@ -82,16 +82,19 @@ Fingerprint sensors below are the **implemented** `sensor_id`s only
 | Family | Half-life envelope | L1 fingerprint sensors (implemented) | Cost-arithmetic guidance |
 |--------|-------------------|-----------------------|------------------------|
 | `KYLE_INFO` | 60 – 1800 s | `kyle_lambda_60s`, `ofi_ewma`, `micro_price` | Edge ~ permanent impact; survive 1.5× spread |
-| `INVENTORY` | 10 – 120 s | `quote_replenish_asymmetry` | Mean-reverting; tight horizon, low cost margin |
+| `INVENTORY` | 10 – 120 s | `inventory_pressure`, `quote_replenish_asymmetry` | Mean-reverting; tight horizon, low cost margin |
 | `HAWKES_SELF_EXCITE` | 5 – 120 s | `hawkes_intensity` (use `hawkes_intensity_imbalance` for direction), `trade_through_rate` | Short half-life; latency-sensitive |
-| `LIQUIDITY_STRESS` | 30 – 600 s | `spread_z_30d`, `quote_hazard_rate` | **Exit-only** — entries forbidden by G16 |
+| `LIQUIDITY_STRESS` | 30 – 600 s | `liquidity_stress_score`, `spread_z_30d`, `quote_hazard_rate`, `quote_flicker_rate` | **Exit-only** — entries forbidden by G16 |
 | `SCHEDULED_FLOW` | 60 – 3600 s | `scheduled_flow_window` | MOC / open / close imbalance windows |
 
-> Coverage gap (tracked): `INVENTORY` and `LIQUIDITY_STRESS` currently
-> have only *proxy* observables — the originally-specified
-> `inventory_pressure`, `liquidity_stress_score`, and
-> `quote_flicker_rate` sensors are not yet implemented. `vpin_50bucket`
-> (flow toxicity) ships but is dormant (unregistered).
+> Coverage note: every family above now has at least one **dedicated,
+> implemented** fingerprint sensor — the previously-missing
+> `inventory_pressure` (trade-side MM-inventory proxy),
+> `liquidity_stress_score` (composite spread-widening + depth-thinning
+> alarm), and `quote_flicker_rate` (best-price reversal fraction) shipped
+> in the audit P2-3 pass. `vpin_50bucket` (flow toxicity) and
+> `snr_drift_diffusion` ship but remain dormant (not in the reference
+> `platform.yaml`).
 
 The alpha's `horizon_seconds / expected_half_life_seconds` ratio must
 lie in `[0.5, 4.0]` (G16 mechanism-horizon binding) — neither too
