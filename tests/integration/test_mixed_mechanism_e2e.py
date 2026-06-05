@@ -63,6 +63,7 @@ from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.monitoring.horizon_metrics import HorizonMetricsCollector
 from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
+from feelies.risk.hazard_exit import HazardExitController
 from feelies.sensors.impl.hawkes_intensity import HawkesIntensitySensor
 from feelies.sensors.impl.realized_vol_30s import RealizedVol30sSensor
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
@@ -323,7 +324,10 @@ def test_mixed_mechanism_e2e_composition_layer_is_wired() -> None:
         orchestrator._composition_metrics_collector,
         HorizonMetricsCollector,
     )
-    assert orchestrator._hazard_exit_controller is None
+    # sig_hawkes_burst_v1 opts into hazard_exit.enabled=true (audit P0 H-1).
+    assert isinstance(
+        orchestrator._hazard_exit_controller, HazardExitController
+    )
 
 
 def test_mixed_mechanism_e2e_run_completes_and_reaches_ready() -> None:

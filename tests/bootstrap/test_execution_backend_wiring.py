@@ -9,6 +9,7 @@ import pytest
 from feelies.bootstrap import _create_backend
 from feelies.core.clock import SimulatedClock
 from feelies.core.platform_config import OperatingMode
+from feelies.execution.cost_model import DefaultCostModel
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 
@@ -23,6 +24,7 @@ def test_create_backend_passive_paths_forward_market_impact_factor(
         OperatingMode.BACKTEST,
         log,
         clock,
+        cost_model=DefaultCostModel(),
         execution_mode=execution_mode,
         market_impact_factor=0.33,
     )

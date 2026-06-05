@@ -36,7 +36,7 @@ def test_raw_unadjusted_policy_documented() -> None:
     assert "unadjusted" in RAW_UNADJUSTED_L1_POLICY.lower()
     doc = Path(__file__).resolve().parents[2] / "docs" / "data_adjustment_policy.md"
     assert doc.is_file()
-    assert "ex-date" in doc.read_text().lower()
+    assert "ex-date" in doc.read_text(encoding="utf-8").lower()
 
 
 def test_replay_spanning_ex_date_produces_violation(tmp_path: Path) -> None:

@@ -66,13 +66,18 @@ def apply_backtest_session_dates_from_cli(
     cal_path = _reference_event_calendar_for_date(
         start_date, config.event_calendar_path,
     )
-    updates: dict[str, object] = {
-        "rth_session_date": start_date,
-        "moc_session_date": start_date,
-    }
     if cal_path is not None:
-        updates["event_calendar_path"] = cal_path
-    return replace(config, **updates)
+        return replace(
+            config,
+            rth_session_date=start_date,
+            moc_session_date=start_date,
+            event_calendar_path=cal_path,
+        )
+    return replace(
+        config,
+        rth_session_date=start_date,
+        moc_session_date=start_date,
+    )
 
 
 def apply_backtest_cli_overrides(

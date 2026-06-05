@@ -100,7 +100,14 @@ class PositionStore(Protocol):
         """Record fees without a fill (e.g. cancel fees)."""
         ...
 
-    def update_mark(self, symbol: str, mark_price: Decimal) -> None:
+    def update_mark(
+        self,
+        symbol: str,
+        mark_price: Decimal,
+        *,
+        bid: Decimal | None = None,
+        ask: Decimal | None = None,
+    ) -> None:
         """Record the latest mark price for a symbol.
 
         The mark price is used to compute unrealized PnL and a
@@ -108,6 +115,10 @@ class PositionStore(Protocol):
         a mark on every quote so risk checks see live exposure rather
         than cost-basis exposure.  Implementations must be cheap — this
         is called on the hot quote path.
+
+        When ``bid`` and ``ask`` are supplied, implementations may use
+        side-specific liquidation prices (longs mark to bid, shorts mark
+        to ask) instead of mid-only marks.
         """
         ...
 

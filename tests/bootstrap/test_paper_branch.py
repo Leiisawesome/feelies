@@ -34,6 +34,7 @@ from feelies.bootstrap import _BackendBundle, _create_backend, build_platform
 from feelies.core.clock import SimulatedClock
 from feelies.core.errors import ConfigurationError
 from feelies.core.platform_config import OperatingMode, PlatformConfig
+from feelies.execution.cost_model import DefaultCostModel
 from feelies.ingestion.massive_normalizer import MassiveNormalizer
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
 from feelies.sensors.impl.spread_z_30d import SpreadZScoreSensor
@@ -123,6 +124,7 @@ class TestCreateBackendPaperBranch:
                 OperatingMode.PAPER,
                 InMemoryEventLog(), clock,
                 config=config, normalizer=normalizer,
+                cost_model=DefaultCostModel(),
             )
 
     def test_missing_normalizer_raises_configuration_error(
@@ -135,6 +137,7 @@ class TestCreateBackendPaperBranch:
                 OperatingMode.PAPER,
                 InMemoryEventLog(), SimulatedClock(),
                 config=config, normalizer=None,
+                cost_model=DefaultCostModel(),
             )
 
     def test_missing_config_raises_configuration_error(
@@ -148,6 +151,7 @@ class TestCreateBackendPaperBranch:
                 InMemoryEventLog(), clock,
                 config=None,
                 normalizer=MassiveNormalizer(clock=clock),
+                cost_model=DefaultCostModel(),
             )
 
     def test_returns_populated_backend_bundle(
@@ -169,6 +173,7 @@ class TestCreateBackendPaperBranch:
                 OperatingMode.PAPER,
                 InMemoryEventLog(), clock,
                 config=config, normalizer=normalizer,
+                cost_model=DefaultCostModel(),
             )
 
         assert isinstance(bundle, _BackendBundle)
@@ -195,6 +200,7 @@ class TestCreateBackendPaperBranch:
                 OperatingMode.PAPER,
                 InMemoryEventLog(), clock,
                 config=config, normalizer=normalizer,
+                cost_model=DefaultCostModel(),
             )
 
         kwargs = mock_build.call_args.kwargs
@@ -218,6 +224,7 @@ class TestCreateBackendPaperBranch:
                 OperatingMode.PAPER,
                 InMemoryEventLog(), clock,
                 config=config, normalizer=MassiveNormalizer(clock=clock),
+                cost_model=DefaultCostModel(),
             )
 
 

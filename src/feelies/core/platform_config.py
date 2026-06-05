@@ -1381,28 +1381,24 @@ class PlatformConfig:
                 maker_exch_raw if maker_exch_raw is not None else 0.0
             ),
             cost_passive_adverse_selection_bps=float(
-                data.get(
-                    "cost_passive_adverse_selection_bps",
-                    data.get("cost_adverse_selection_drain_bps", 2.0),
-                )
+                data.get("cost_passive_adverse_selection_bps")
+                or data.get("cost_adverse_selection_drain_bps")
+                or 2.0
             ),
             cost_through_fill_adverse_selection_bps=float(
-                data.get(
-                    "cost_through_fill_adverse_selection_bps",
-                    data.get("cost_adverse_selection_through_bps", 5.0),
-                )
+                data.get("cost_through_fill_adverse_selection_bps")
+                or data.get("cost_adverse_selection_through_bps")
+                or 5.0
             ),
             cost_adverse_selection_through_bps=float(
-                data.get(
-                    "cost_adverse_selection_through_bps",
-                    data.get("cost_through_fill_adverse_selection_bps", 5.0),
-                )
+                data.get("cost_adverse_selection_through_bps")
+                or data.get("cost_through_fill_adverse_selection_bps")
+                or 5.0
             ),
             cost_adverse_selection_drain_bps=float(
-                data.get(
-                    "cost_adverse_selection_drain_bps",
-                    data.get("cost_passive_adverse_selection_bps", 2.0),
-                )
+                data.get("cost_adverse_selection_drain_bps")
+                or data.get("cost_passive_adverse_selection_bps")
+                or 2.0
             ),
             cost_sell_regulatory_bps=float(
                 data.get("cost_sell_regulatory_bps", 0.5)

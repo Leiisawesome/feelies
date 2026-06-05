@@ -582,6 +582,8 @@ def estimate_round_trip_cost_bps(
 
     def _entry_bps() -> float:
         if is_taker and use_depth_aware:
+            assert market_impact_factor is not None
+            assert max_impact_half_spreads is not None
             depth = ask_size if entry_side == Side.BUY else bid_size
             return estimate_aggressive_taker_cost_bps(
                 model,
@@ -605,6 +607,8 @@ def estimate_round_trip_cost_bps(
 
     def _exit_bps() -> float:
         if is_taker_exit and use_depth_aware:
+            assert market_impact_factor is not None
+            assert max_impact_half_spreads is not None
             depth = ask_size if exit_side == Side.BUY else bid_size
             return estimate_aggressive_taker_cost_bps(
                 model,

@@ -66,7 +66,7 @@ from feelies.core.events import (
     Trade,
 )
 from feelies.core.identifiers import SequenceGenerator
-from feelies.execution.cost_model import CostModel, ZeroCostModel
+from feelies.execution.cost_model import CostModel, FillType, ZeroCostModel
 from feelies.execution.market_fill import (
     DeferredFill,
     append_market_fill_acks,
@@ -804,7 +804,7 @@ class PassiveLimitOrderRouter:
         self,
         pending: _PendingOrder,
         fill_price: Decimal | None = None,
-        fill_type: str = "LEVEL",
+        fill_type: FillType = "LEVEL",
         adverse_notional_price: Decimal | None = None,
         outcome: PassiveFillOutcome = PassiveFillOutcome.FILLED_BY_DRAIN,
     ) -> None:
