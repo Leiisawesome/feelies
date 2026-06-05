@@ -49,7 +49,8 @@ data-dependent items:
 | **P1-4** Hawkes α/β + thin warm | ✅ fixed + **validated** | relabeled `impulse_decay_ratio` (value-neutral; v03 intact), raised `warm_trades_per_side` 3→10. P1-4b MLE (`--min-gap-ms 50`) gives β≈0.057 (half-life 12–15s) → **validates the sensor's existing β=0.05**; fitted α/β≈0.98 is the *generative* branching ratio, but both wired features (z-score, imbalance ratio) are **scale-invariant in α**, so α is immaterial Layer-2. **No parameter change needed.** |
 | **P1-5** Kyle dp/dq alignment | ✅ fixed + **validated** | causal lag-one alignment shipped as `kyle_lambda_60s` **2.0.0** (1.2.0 retained for the golden vector). IC A/B **confirms causal**: legacy carries the *wrong sign* at 300/900/1800s (RankIC −0.225/−0.155/−0.194) while causal is correct-positive (+0.145/+0.160/+0.150). **Kept 2.0.0.** |
 | **P1-8** session-open anchor | ✅ fixed | `core/session_clock.rth_open_ns` + scheduler `session_open_anchor_fn`; bootstrap anchors the grid to 09:30 ET for RTH equity sessions when `session_open_ns` is unset (locked tick vector uses explicit anchor, unaffected) |
-| **P2-1..5** | ⏸ deferred | research / new-sensor scope |
+| **P2-3** missing INVENTORY/LIQUIDITY_STRESS fingerprints | ✅ done | shipped `inventory_pressure` (trade-side MM-inventory proxy), `liquidity_stress_score` (spread×depth composite alarm), `quote_flicker_rate` (best-price reversal fraction); registered in `platform.yaml` + Layer-2 features wired; every G16 family now has a dedicated implemented fingerprint |
+| **P2-1/2/4/5** | ⏸ deferred | research / new-sensor scope (VPIN+SNR wiring, collinearity collapse, broader calibration) |
 
 Deferred items are held pending explicit approval to rebaseline the
 locked determinism hashes (`scripts/rebaseline_parity_hashes.py`), since

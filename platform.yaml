@@ -324,3 +324,38 @@ sensor_specs:
     min_history: 16
     throttled_ms: null
 
+  # P2-3: previously-missing G16 fingerprint sensors for the INVENTORY and
+  # LIQUIDITY_STRESS families (implemented in this pass; see audit report).
+  - sensor_id: inventory_pressure
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.inventory_pressure.InventoryPressureSensor
+    params:
+      window_seconds: 60
+      min_trades: 20
+    subscribes_to: [Trade]
+    input_sensor_ids: []
+    min_history: 20
+    throttled_ms: null
+
+  - sensor_id: liquidity_stress_score
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.liquidity_stress_score.LiquidityStressScoreSensor
+    params:
+      window: 6000
+      sensitivity: 2.0
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 6000
+    throttled_ms: null
+
+  - sensor_id: quote_flicker_rate
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.quote_flicker_rate.QuoteFlickerRateSensor
+    params:
+      window_seconds: 5
+      min_quotes: 20
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 20
+    throttled_ms: null
+

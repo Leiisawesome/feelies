@@ -1052,6 +1052,30 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
     "quote_hazard_rate": lambda h: [
         SensorPassthroughFeature("quote_hazard_rate", h),
     ],
+    # P2-3 INVENTORY fingerprint: signed, already-normalised [-1,1] MM-inventory
+    # pressure.  Passthrough = last-of-horizon (INVENTORY is fast/mean-reverting,
+    # the audit's recommended aggregation); the windowed z gives a
+    # regime-relative view for gating.
+    "inventory_pressure": lambda h: [
+        SensorPassthroughFeature("inventory_pressure", h),
+        HorizonWindowedFeature(
+            "inventory_pressure", h, reducer="zscore",
+            feature_id="inventory_pressure_zscore",
+        ),
+    ],
+    # P2-3 LIQUIDITY_STRESS fingerprints.  Both are already normalised
+    # ([0,1] alarm / [0,1] fraction), so passthrough (last-of-horizon) is the
+    # natural aggregation; quote_flicker also gets a regime-relative z.
+    "liquidity_stress_score": lambda h: [
+        SensorPassthroughFeature("liquidity_stress_score", h),
+    ],
+    "quote_flicker_rate": lambda h: [
+        SensorPassthroughFeature("quote_flicker_rate", h),
+        HorizonWindowedFeature(
+            "quote_flicker_rate", h, reducer="zscore",
+            feature_id="quote_flicker_rate_zscore",
+        ),
+    ],
     # Sensor emits a 4-tuple (λ_buy, λ_sell, intensity_ratio, branching).
     # ``hawkes_intensity_zscore`` is the *undirected* burst magnitude
     # (z-score of λ_buy+λ_sell); ``hawkes_intensity_imbalance`` (audit
