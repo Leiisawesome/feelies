@@ -3410,18 +3410,6 @@ class Orchestrator:
                         "order_id": exit_order.order_id,
                     },
                 ))
-                self._append_signal_order_trace(
-                    quote,
-                    reverse_signal,
-                    outcome="ORDER_SUBMITTED",
-                    reasons=(
-                        "reversal_edge_guard_flat_exit",
-                        f"exit_order_id={exit_order.order_id}",
-                        f"edge_bps={edge_bps:.4f}",
-                        f"required_bps={reversal_required_bps:.4f}",
-                    ),
-                    trading_intent=intent.intent.name,
-                )
 
             # B4: edge vs cost gate for the entry leg.  Short-circuited when
             # the B5 reversal guard already suppressed the flip.
