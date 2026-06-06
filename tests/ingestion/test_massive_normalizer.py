@@ -701,10 +701,33 @@ class TestMassiveNormalizerPriceValidation:
         assert events == []
         assert normalizer.health("AAPL") == DataHealth.CORRUPTED
 
-    def test_zero_price_is_rejected(
+    def test_zero_quote_price_is_accepted(
         self, normalizer: MassiveNormalizer, clock: SimulatedClock,
     ) -> None:
-        events = normalizer.on_message(self._ws_quote(0), clock.now_ns(), "massive_ws")
+        # Auction snapshots and indicator quotes legitimately carry bid=0 /
+        # ask=0 on the wire; the normalizer must surface them rather than
+        # marking the symbol CORRUPTED.
+        events = normalizer.on_message(
+            self._ws_quote(0, 0), clock.now_ns(), "massive_ws",
+        )
+        assert len(events) == 1
+        quote = events[0]
+        assert isinstance(quote, NBBOQuote)
+        assert quote.bid == Decimal("0")
+        assert quote.ask == Decimal("0")
+        assert normalizer.health("AAPL") == DataHealth.HEALTHY
+
+    def test_zero_trade_price_is_rejected(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+    ) -> None:
+        # Trade prints at zero remain invalid: equities never trade at zero
+        # and downstream cost / sizing math assumes ``price > 0``.
+        raw = json.dumps({
+            "ev": "T", "sym": "AAPL",
+            "p": 0, "s": 10, "x": 11,
+            "t": 1700000000000, "q": 1,
+        }).encode("utf-8")
+        events = normalizer.on_message(raw, clock.now_ns(), "massive_ws")
         assert events == []
         assert normalizer.health("AAPL") == DataHealth.CORRUPTED
 

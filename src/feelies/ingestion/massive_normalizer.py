@@ -40,8 +40,8 @@ _REST_SOURCE = "massive_rest"
 _MS_TO_NS = 1_000_000
 
 
-def _safe_price(value: object) -> Decimal:
-    """Parse a wire price into a strictly-positive, finite ``Decimal``.
+def _safe_price(value: object, *, allow_zero: bool = False) -> Decimal:
+    """Parse a wire price into a finite, non-negative ``Decimal``.
 
     Raises ``ValueError`` on every failure mode the upstream catch tuple
     already understands:
@@ -51,8 +51,13 @@ def _safe_price(value: object) -> Decimal:
     * ``NaN`` / ``Infinity`` — silently propagating these into
       ``NBBOQuote.bid`` poisons ``bid > ask`` checks (NaN comparisons
       always return False) and ``(bid + ask) / 2`` mid-price math.
-    * Non-positive prices — equities never trade at zero or negative
-      print and downstream cost / sizing math assumes ``price > 0``.
+    * Negative prices — always invalid for both trade prints and NBBO
+      sides.
+    * Zero prices when ``allow_zero=False`` (the default, used for trade
+      prints — equities never trade at zero and downstream cost / sizing
+      math assumes ``price > 0``).  Callers parsing NBBO bid/ask must
+      pass ``allow_zero=True``: auction snapshots and indicator quotes
+      legitimately carry ``bid=0`` / ``ask=0`` on the wire.
 
     Wire fields are JSON-decoded as ``float`` / ``int`` / ``str``;
     ``str(...)`` round-trips int/Decimal cleanly but loses precision on
@@ -65,7 +70,9 @@ def _safe_price(value: object) -> Decimal:
         raise ValueError(f"unparseable Decimal: {value!r}") from exc
     if not result.is_finite():
         raise ValueError(f"non-finite price: {result}")
-    if result <= 0:
+    if result < 0:
+        raise ValueError(f"negative price: {result}")
+    if not allow_zero and result == 0:
         raise ValueError(f"non-positive price: {result}")
     return result
 
@@ -359,10 +366,12 @@ class MassiveNormalizer:
                 if trf_quote_ns is not None:
                     break
 
-            # Price / size validation — raises on NaN, Infinity, non-positive
-            # price, or unparseable Decimal.  All before state mutation.
-            bid = _safe_price(msg["bp"])
-            ask = _safe_price(msg["ap"])
+            # Price / size validation — raises on NaN, Infinity, negative
+            # price, or unparseable Decimal.  ``allow_zero=True`` because
+            # auction snapshots and indicator quotes legitimately carry
+            # ``bid=0`` / ``ask=0`` on the wire.  All before state mutation.
+            bid = _safe_price(msg["bp"], allow_zero=True)
+            ask = _safe_price(msg["ap"], allow_zero=True)
             bid_size = _safe_size(msg["bs"])
             ask_size = _safe_size(msg["as"])
             bid_exchange = int(msg.get("bx", 0))
@@ -520,8 +529,8 @@ class MassiveNormalizer:
             raw_trf = rec.get("trf_timestamp")
             trf_ts = int(raw_trf) if raw_trf is not None else None
 
-            bid = _safe_price(rec["bid_price"])
-            ask = _safe_price(rec["ask_price"])
+            bid = _safe_price(rec["bid_price"], allow_zero=True)
+            ask = _safe_price(rec["ask_price"], allow_zero=True)
             bid_size = _safe_size(rec["bid_size"])
             ask_size = _safe_size(rec["ask_size"])
             bid_exchange = int(rec.get("bid_exchange", 0))
