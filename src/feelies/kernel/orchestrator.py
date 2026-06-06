@@ -1470,6 +1470,20 @@ class Orchestrator:
         self._update_ssr_state(trade)
 
         if self._data_health_blocks_trading(trade.symbol, trade.correlation_id):
+            # CORRUPTED / GAP_DETECTED drop the trade entirely (bad data
+            # must not pollute sensors or the EventLog).  HALTED is a
+            # real market event: the print that triggered the halt (and
+            # any subsequent in-halt prints) must remain visible in the
+            # EventLog and on the bus for forensic provenance.  Router
+            # and scheduler forwarding are still skipped so the halted
+            # symbol generates no fills.
+            if (
+                self._normalizer is not None
+                and self._normalizer.health(trade.symbol) == DataHealth.HALTED
+            ):
+                if not self._events_prelogged:
+                    self._event_log.append(trade)
+                self._bus.publish(trade)
             return
 
         if not self._events_prelogged:
