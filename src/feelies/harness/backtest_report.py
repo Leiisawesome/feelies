@@ -10,6 +10,7 @@ from typing import Protocol, TypeVar
 from zoneinfo import ZoneInfo
 
 from feelies.core.events import (
+    Alert,
     Event,
     HorizonFeatureSnapshot,
     MetricEvent,
@@ -218,6 +219,37 @@ def generate_report(
     largest_win = max(winning_pnls) if winning_pnls else Decimal("0")
     largest_loss = min(losing_pnls) if losing_pnls else Decimal("0")
     pnl_per_share = float(realized_pnl) / total_shares if total_shares else 0.0
+
+    # ── Reversal analysis (B5) ───────────────────────────────────
+    # Exit (flatten) legs of REVERSE intents carry the REVERSE_* intent
+    # name; entry legs are stamped ENTRY_* and are not counted here.  A
+    # reversal that fired the B5 edge guard appears as a fill whose
+    # order_id is recorded on a ``reversal_edge_insufficient`` alert.
+    _REVERSE_INTENTS = {"REVERSE_LONG_TO_SHORT", "REVERSE_SHORT_TO_LONG"}
+    reversal_records = [
+        r for r in records
+        if getattr(r, "trading_intent", "") in _REVERSE_INTENTS
+    ]
+    reversal_alerts = [
+        a for a in recorder.of_type(Alert)
+        if a.alert_name == "reversal_edge_insufficient"
+    ]
+    guard_order_ids = {
+        a.context.get("order_id")
+        for a in reversal_alerts
+        if a.context.get("order_id") is not None
+    }
+    reversals_attempted = len(reversal_records)
+    reversals_flat_exit = sum(
+        1 for r in reversal_records if r.order_id in guard_order_ids
+    )
+    reversals_full = reversals_attempted - reversals_flat_exit
+    exit_realized = [r.realized_pnl for r in reversal_records]
+    avg_exit_realized = (
+        sum(exit_realized, Decimal("0")) / len(exit_realized)
+        if exit_realized else Decimal("0")
+    )
+    worst_exit_realized = min(exit_realized) if exit_realized else Decimal("0")
 
     # ── Risk ─────────────────────────────────────────────────────
     # Track per-symbol exposure and sum for portfolio-wide max.
@@ -431,6 +463,16 @@ def generate_report(
     lines.append(_kv("Largest win", _money(largest_win)))
     lines.append(_kv("Largest loss", _money(largest_loss)))
     lines.append(_kv("P&L per share", f"${pnl_per_share:.4f}"))
+
+    # Reversals (B5 edge guard)
+    lines.append(_kv("Reversals", ""))
+    lines.append(_sub_kv("Attempted", f"{reversals_attempted}"))
+    lines.append(_sub_kv("Executed (full)", f"{reversals_full}"))
+    lines.append(_sub_kv(
+        "Flat-exit only", f"{reversals_flat_exit}  (edge guard triggered)",
+    ))
+    lines.append(_sub_kv("Avg exit-leg realized", _money(avg_exit_realized)))
+    lines.append(_sub_kv("Worst exit-leg realized", _money(worst_exit_realized)))
 
     lines.append(_divider())
 
