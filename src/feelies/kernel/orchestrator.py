@@ -5096,6 +5096,13 @@ class Orchestrator:
         CORRUPTED always halts trading for the symbol when a normalizer is wired.
         GAP_DETECTED does the same only when ``PlatformConfig.degrade_on_data_gap``
         is enabled (strict paper/live policy).
+
+        HALTED (BT-5) blocks the tick without escalating macro — LULD halts
+        are recoverable and ``DataHealth.HALTED → HEALTHY`` is the resume
+        path.  This sits alongside the orchestrator-side ``_halted_symbols``
+        edge tracker (which retains the cancel-resting + post-halt blackout
+        side effects) so the normalizer's view is *also* load-bearing here:
+        if the two ever drift, the more conservative gate wins (audit M1).
         """
         if self._normalizer is None:
             return False
@@ -5129,6 +5136,14 @@ class Orchestrator:
                     trigger=f"DATA_CORRUPTED:{symbol}",
                     correlation_id=correlation_id,
                 )
+            return True
+        if health == DataHealth.HALTED:
+            # Recoverable halt — block fills for this symbol but do NOT
+            # escalate macro (a real LULD pause is expected to resume).
+            # Side effects (cancel resting, blackout window) live in the
+            # orchestrator's ``_update_halt_state`` edge detector; this
+            # gate provides defense-in-depth in case that detector and
+            # the normalizer ever disagree.
             return True
         degrade_gap = getattr(self._config, "degrade_on_data_gap", False)
         if degrade_gap and health == DataHealth.GAP_DETECTED:

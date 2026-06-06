@@ -664,3 +664,165 @@ class TestHaltStatusDetection:
         # A trade without the resume code keeps the symbol halted.
         norm.on_message(self._ws_trade("AAPL", 2, [9]), clock.now_ns(), "massive_ws")
         assert norm.health("AAPL") == DataHealth.HALTED
+
+
+class TestMassiveNormalizerPriceValidation:
+    """Decimal hardening (M3): NaN / Infinity / non-positive / InvalidOperation."""
+
+    @staticmethod
+    def _ws_quote(bp: object, ap: object = 150.05) -> bytes:
+        return json.dumps({
+            "ev": "Q", "sym": "AAPL",
+            "bp": bp, "ap": ap, "bs": 10, "as": 20,
+            "t": 1700000000000, "q": 1,
+        }).encode("utf-8")
+
+    def test_nan_bid_is_rejected(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+    ) -> None:
+        events = normalizer.on_message(self._ws_quote("NaN"), clock.now_ns(), "massive_ws")
+        assert events == []
+        # CORRUPTED is reached because parse_error gates _mark_corrupted.
+        assert normalizer.health("AAPL") == DataHealth.CORRUPTED
+
+    def test_infinity_ask_is_rejected(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+    ) -> None:
+        events = normalizer.on_message(
+            self._ws_quote(150.0, "Infinity"), clock.now_ns(), "massive_ws",
+        )
+        assert events == []
+        assert normalizer.health("AAPL") == DataHealth.CORRUPTED
+
+    def test_negative_price_is_rejected(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+    ) -> None:
+        events = normalizer.on_message(self._ws_quote(-1.5), clock.now_ns(), "massive_ws")
+        assert events == []
+        assert normalizer.health("AAPL") == DataHealth.CORRUPTED
+
+    def test_zero_price_is_rejected(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+    ) -> None:
+        events = normalizer.on_message(self._ws_quote(0), clock.now_ns(), "massive_ws")
+        assert events == []
+        assert normalizer.health("AAPL") == DataHealth.CORRUPTED
+
+    def test_malformed_decimal_does_not_crash_thread(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+    ) -> None:
+        # "1.2.3" raises decimal.InvalidOperation, which the pre-fix catch
+        # tuple (KeyError, ValueError, TypeError) did NOT include.
+        events = normalizer.on_message(
+            self._ws_quote("1.2.3"), clock.now_ns(), "massive_ws",
+        )
+        assert events == []
+        assert normalizer.health("AAPL") == DataHealth.CORRUPTED
+
+
+class TestMassiveNormalizerSequenceContiguity:
+    """M4: failed event construction must not burn an internal sequence."""
+
+    @staticmethod
+    def _ws_quote(symbol: str, bp: object, seq: int = 1) -> bytes:
+        return json.dumps({
+            "ev": "Q", "sym": symbol,
+            "bp": bp, "ap": 150.05, "bs": 10, "as": 20,
+            "t": 1700000000000 + seq, "q": seq,
+        }).encode("utf-8")
+
+    def test_bad_payload_does_not_advance_internal_sequence(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+    ) -> None:
+        # First a healthy event so we observe what the next sequence would be.
+        events = normalizer.on_message(
+            self._ws_quote("AAPL", 150.0, seq=1), clock.now_ns(), "massive_ws",
+        )
+        assert len(events) == 1
+        first_seq = events[0].sequence
+
+        # Bad event between (NaN price) — must NOT consume a sequence number.
+        normalizer.on_message(
+            self._ws_quote("MSFT", "NaN", seq=1), clock.now_ns(), "massive_ws",
+        )
+
+        # Healthy event after the failure: its sequence must be exactly
+        # first_seq + 1 (no hole left by the failed event).
+        events = normalizer.on_message(
+            self._ws_quote("GOOG", 100.0, seq=1), clock.now_ns(), "massive_ws",
+        )
+        assert len(events) == 1
+        assert events[0].sequence == first_seq + 1
+
+
+class TestMassiveNormalizerCallbackBinding:
+    """M5: on_health_transition is idempotent and replaces, not appends."""
+
+    @staticmethod
+    def _gap_msgs(symbol: str) -> tuple[bytes, bytes]:
+        a = json.dumps({
+            "ev": "Q", "sym": symbol,
+            "bp": 100.0, "ap": 100.05, "bs": 10, "as": 20,
+            "t": 1700000000000, "q": 1,
+        }).encode("utf-8")
+        b = json.dumps({
+            "ev": "Q", "sym": symbol,
+            "bp": 100.0, "ap": 100.05, "bs": 10, "as": 20,
+            "t": 1700000000005, "q": 5,  # gap from seq=1 → seq=5
+        }).encode("utf-8")
+        return a, b
+
+    def test_callback_fires_for_symbols_seen_before_registration(
+        self, clock: SimulatedClock,
+    ) -> None:
+        norm = MassiveNormalizer(clock=clock)
+        seen: list[str] = []
+
+        # First message creates the SM under the default (no-op) callback.
+        a, b = self._gap_msgs("AAPL")
+        norm.on_message(a, clock.now_ns(), "massive_ws")
+
+        # Bind the callback AFTER the SM exists.  The dispatcher pattern
+        # makes this transparent — the next transition reaches our sink.
+        norm.on_health_transition(lambda rec: seen.append(rec.trigger))
+        norm.on_message(b, clock.now_ns(), "massive_ws")
+
+        assert any("seq_gap" in s for s in seen)
+
+    def test_rebind_replaces_prior_callback(self, clock: SimulatedClock) -> None:
+        a_calls: list[str] = []
+        b_calls: list[str] = []
+        norm = MassiveNormalizer(
+            clock=clock,
+            transition_callback=lambda rec: a_calls.append(rec.trigger),
+        )
+
+        # SM for AAPL gets created by the first quote.
+        a, b = self._gap_msgs("AAPL")
+        norm.on_message(a, clock.now_ns(), "massive_ws")
+
+        # Rebind to a new callback.  The old one must NOT fire any more.
+        norm.on_health_transition(lambda rec: b_calls.append(rec.trigger))
+        norm.on_message(b, clock.now_ns(), "massive_ws")
+
+        assert a_calls == []
+        assert any("seq_gap" in s for s in b_calls)
+
+    def test_rebind_is_idempotent(self, clock: SimulatedClock) -> None:
+        seen: list[str] = []
+        cb = lambda rec: seen.append(rec.trigger)  # noqa: E731
+
+        norm = MassiveNormalizer(clock=clock)
+        norm.on_health_transition(cb)
+        norm.on_health_transition(cb)  # second call must be a no-op
+        norm.on_health_transition(cb)  # and a third for good measure
+
+        a, b = self._gap_msgs("AAPL")
+        norm.on_message(a, clock.now_ns(), "massive_ws")
+        norm.on_message(b, clock.now_ns(), "massive_ws")
+
+        # Even with three identical binds, the callback fires exactly once
+        # per transition.  Pre-fix code would have fired three times because
+        # ``sm.on_transition`` appends rather than replacing.
+        gap_events = [s for s in seen if "seq_gap" in s]
+        assert len(gap_events) == 1
