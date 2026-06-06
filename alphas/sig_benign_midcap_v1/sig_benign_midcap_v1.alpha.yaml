@@ -111,9 +111,6 @@ regime_gate:
     P(normal) > 0.5 and spread_z_30d < 1.5
   off_condition: |
     P(normal) < 0.35 or spread_z_30d > 3.0 or realized_vol_30s_zscore > 4.5
-  hysteresis:
-    posterior_margin: 0.20
-    percentile_margin: 0.30
 
 # ── Cost Arithmetic Disclosure (G12) ──────────────────────
 cost_arithmetic:

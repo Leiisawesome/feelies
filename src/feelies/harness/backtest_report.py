@@ -222,34 +222,56 @@ def generate_report(
     # ── Risk ─────────────────────────────────────────────────────
     # Track per-symbol exposure and sum for portfolio-wide max.
     max_exposure = Decimal("0")
+    max_exposure_pct = 0.0
     per_symbol_exposure: dict[str, Decimal] = {}
+    per_symbol_realized: dict[str, Decimal] = {}
+    per_symbol_unrealized: dict[str, Decimal] = {}
+    per_symbol_fees: dict[str, Decimal] = {}
     for pu in pos_updates:
         per_symbol_exposure[pu.symbol] = abs(Decimal(str(pu.quantity)) * pu.avg_price)
+        per_symbol_realized[pu.symbol] = pu.realized_pnl
+        per_symbol_unrealized[pu.symbol] = pu.unrealized_pnl
+        per_symbol_fees[pu.symbol] = pu.cumulative_fees
+
         total_exposure = sum(per_symbol_exposure.values(), Decimal("0"))
+        current_equity = (
+            Decimal(str(starting_equity))
+            + sum(per_symbol_realized.values(), Decimal("0"))
+            - sum(per_symbol_fees.values(), Decimal("0"))
+            + sum(per_symbol_unrealized.values(), Decimal("0"))
+        )
         if total_exposure > max_exposure:
             max_exposure = total_exposure
-    max_exposure_pct = float(max_exposure) / starting_equity * 100.0 if starting_equity else 0.0
+            max_exposure_pct = (
+                float(total_exposure / current_equity * Decimal("100"))
+                if current_equity != 0 else 0.0
+            )
 
-    # Drawdown: track net equity curve from position updates.
-    # Net equity = starting + gross_pnl - cumulative_fees.
+    # Drawdown: track live NAV from position updates.
     peak_equity = Decimal(str(starting_equity))
     max_drawdown = Decimal("0")
     per_symbol_pnl: dict[str, Decimal] = {}
-    per_symbol_fees: dict[str, Decimal] = {}
+    per_symbol_fees = {}
+    per_symbol_unrealized = {}
     for pu in pos_updates:
         per_symbol_pnl[pu.symbol] = pu.realized_pnl
         per_symbol_fees[pu.symbol] = pu.cumulative_fees
+        per_symbol_unrealized[pu.symbol] = pu.unrealized_pnl
         current_equity = (
             Decimal(str(starting_equity))
-            + sum(per_symbol_pnl.values())
-            - sum(per_symbol_fees.values())
+            + sum(per_symbol_pnl.values(), Decimal("0"))
+            - sum(per_symbol_fees.values(), Decimal("0"))
+            + sum(per_symbol_unrealized.values(), Decimal("0"))
         )
         if current_equity > peak_equity:
             peak_equity = current_equity
         dd = current_equity - peak_equity
         if dd < max_drawdown:
             max_drawdown = dd
-    max_dd_pct = float(max_drawdown) / starting_equity * 100.0 if starting_equity else 0.0
+    max_dd_pct = (
+        float(max_drawdown / peak_equity * Decimal("100"))
+        if peak_equity != 0 else 0.0
+    )
 
     kill_switch = orchestrator.kill_switch
     ks_status = (

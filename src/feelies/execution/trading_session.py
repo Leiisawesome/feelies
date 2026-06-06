@@ -41,10 +41,39 @@ class TradingSessionBounds:
     is_holiday: bool = False
     is_early_close: bool = False
     no_entry_first_seconds: int = 0
+    rth_open_et: str = "09:30"
+    rth_close_et: str = "16:00"
+    early_close_rth_close_et: str = "13:00"
+    market_holiday_dates: frozenset[str] = frozenset()
+    early_close_dates: frozenset[str] = frozenset()
 
     def covers_ns(self, ts_ns: int) -> bool:
         """Whether ``ts_ns`` falls on ``session_date`` in America/New_York."""
         return session_date_from_ns(ts_ns) == self.session_date
+
+    def resolve_for_timestamp(self, ts_ns: int) -> "TradingSessionBounds":
+        """Resolve the effective RTH bounds for an event timestamp."""
+        session_date = session_date_from_ns(ts_ns)
+        early = self.is_early_close or (
+            session_date.isoformat() in self.early_close_dates
+        )
+        holiday = self.is_holiday or (
+            session_date.isoformat() in self.market_holiday_dates
+        )
+        close_et = self.early_close_rth_close_et if early else self.rth_close_et
+        return TradingSessionBounds(
+            session_date=session_date,
+            rth_open_ns=et_clock_to_ns(session_date, self.rth_open_et),
+            rth_close_ns=et_clock_to_ns(session_date, close_et),
+            is_holiday=holiday,
+            is_early_close=early,
+            no_entry_first_seconds=self.no_entry_first_seconds,
+            rth_open_et=self.rth_open_et,
+            rth_close_et=self.rth_close_et,
+            early_close_rth_close_et=self.early_close_rth_close_et,
+            market_holiday_dates=self.market_holiday_dates,
+            early_close_dates=self.early_close_dates,
+        )
 
     def no_entry_before_ns(self) -> int:
         """First exchange-time instant when new entries are allowed."""
@@ -66,6 +95,8 @@ def resolve_trading_session_bounds(
     early_close_rth_close_et: str = "13:00",
     is_holiday: bool = False,
     no_entry_first_seconds: int = 0,
+    early_close_dates: tuple[str, ...] = (),
+    market_holiday_dates: tuple[str, ...] = (),
 ) -> TradingSessionBounds:
     """Build RTH bounds for a single calendar session date."""
     close_et = early_close_rth_close_et if early_close else rth_close_et
@@ -76,6 +107,11 @@ def resolve_trading_session_bounds(
         is_holiday=is_holiday,
         is_early_close=early_close,
         no_entry_first_seconds=no_entry_first_seconds,
+        rth_open_et=rth_open_et,
+        rth_close_et=rth_close_et,
+        early_close_rth_close_et=early_close_rth_close_et,
+        market_holiday_dates=frozenset(market_holiday_dates),
+        early_close_dates=frozenset(early_close_dates),
     )
 
 
@@ -91,13 +127,14 @@ def should_suppress_entry(
     """
     if not opens_or_increases:
         return False, ""
-    if not bounds.covers_ns(exchange_ts_ns):
+    effective = bounds.resolve_for_timestamp(exchange_ts_ns)
+    if not effective.covers_ns(exchange_ts_ns):
         return True, RTH_ENTRY_SUPPRESSED
-    if bounds.is_holiday:
+    if effective.is_holiday:
         return True, MARKET_HOLIDAY
-    if exchange_ts_ns < bounds.no_entry_before_ns():
+    if exchange_ts_ns < effective.no_entry_before_ns():
         return True, RTH_ENTRY_SUPPRESSED
-    if exchange_ts_ns >= bounds.rth_close_ns:
+    if exchange_ts_ns >= effective.rth_close_ns:
         return True, RTH_ENTRY_SUPPRESSED
     return False, ""
 
@@ -201,6 +238,8 @@ def build_trading_session_from_platform(
         early_close_rth_close_et=early_close_rth_close_et,
         is_holiday=holiday,
         no_entry_first_seconds=no_entry_first_seconds,
+        early_close_dates=early_close_dates,
+        market_holiday_dates=market_holiday_dates,
     )
 
 

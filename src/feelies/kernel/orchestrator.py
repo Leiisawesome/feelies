@@ -2363,9 +2363,9 @@ class Orchestrator:
             )
 
         # ── Guard: suppress duplicate orders while a resting order
-        #    exists.  EXIT allowed only when no exit already resting
-        #    (prevents the duplicate-exit pile-up bug).  Stop-loss
-        #    always passes.  REVERSE intents handled by
+        #    exists.  EXIT is allowed to race in only when no identical
+        #    exit is already pending, which prevents stop-exit pile-ups
+        #    from overshooting the book.  REVERSE intents handled by
         #    _execute_reverse() and never reach this guard.
         #
         # The ``_use_passive_entries`` clause was removed because
@@ -2374,11 +2374,11 @@ class Orchestrator:
         # same symbol must block a duplicate SIGNAL submit; the
         # ``__stop_exit__`` / ``TradingIntent.EXIT`` carve-out
         # preserves Inv-11 (exits always race in).
-        if (
-            intent.signal.strategy_id != "__stop_exit__"
-            and self._has_pending_order_for_symbol(order.symbol)
-        ):
-            if intent.intent != TradingIntent.EXIT or self._has_pending_exit_for_symbol(order.symbol):
+        if self._has_pending_order_for_symbol(order.symbol):
+            if (
+                intent.intent != TradingIntent.EXIT
+                or self._has_pending_exit_for_symbol(order.symbol)
+            ):
                 self._append_signal_order_trace(
                     quote,
                     signal,

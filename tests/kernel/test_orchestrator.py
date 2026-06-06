@@ -1811,6 +1811,40 @@ class TestRestingOrderGuardAfterRisk:
         # EXIT bypasses guard → position is fully closed.
         assert position_store.get("AAPL").quantity == 0
 
+    def test_stop_exit_does_not_submit_duplicate_exit_while_pending(self) -> None:
+        """Synthetic stop-exit should not pile up another exit on top of one already pending."""
+        clock = SimulatedClock(start_ns=1000)
+        quote = _make_quote(ts=2000, bid="147.50", ask="148.50", seq=7)
+
+        position_store = MemoryPositionStore()
+        position_store.update("AAPL", 100, Decimal("150.00"))
+
+        orch = _build_orchestrator(clock, position_store=position_store)
+        orch._stop_loss_per_share = 1.0
+        _boot_to_backtest(orch)
+
+        fake_order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="fake-cid-stop",
+            sequence=999,
+            order_id="fake-stop-order",
+            symbol="AAPL",
+            side=Side.SELL,
+            order_type=OrderType.MARKET,
+            quantity=100,
+            limit_price=None,
+            strategy_id="__stop_exit__",
+        )
+        orch._track_order(fake_order.order_id, fake_order.side, fake_order)
+
+        new_orders: list[OrderRequest] = []
+        orch._bus.subscribe(OrderRequest, new_orders.append)
+
+        orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
+        orch._process_tick(quote)
+
+        assert new_orders == []
+
 
 # ── F2: EXIT bypasses min_order_shares gate ──────────────────────────────
 

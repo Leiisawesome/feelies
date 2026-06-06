@@ -128,19 +128,15 @@ Loader stamps **`consumed_features`** with the **sensor id tuple** from `depends
 
 - **`off_condition`:** `P(normal) < 0.35 or spread_z_30d > 3.0 or realized_vol_30s_zscore > 4.5` — disarm on weaker normal state, **wide spread**, or **vol spike**.
 
-### 3.2 Hysteresis block
-
-`posterior_margin` / `percentile_margin` are injected as named constants for the DSL; this spec’s strings use **fixed numeric literals** (constants unused until you refactor thresholds to reference them). The gate remains a **latch**: ON evaluates only `off_condition`; OFF evaluates only `on_condition`; simultaneous false → state unchanged.
-
-### 3.3 Warm / stale
+### 3.2 Warm / stale
 
 `required_warm_feature_ids` includes feature ids implied by **`depends_on_sensors`** at horizon **120** plus gate tokens ending in **`_zscore`** / **`_percentile`**. So **`realized_vol_30s_zscore`** must be warm/non-stale for dispatch even though `evaluate()` does not read it.
 
-### 3.4 Gate ON vs `evaluate()`
+### 3.3 Gate ON vs `evaluate()`
 
 **Gate ON** permits `evaluate()` to run; **`evaluate()`** still returns **`None`** when `\|ofi_ewma_zscore\| < entry_threshold_z` or when OFI and **micro-price z** disagree on sign — do not treat latch state as “will trade every 120 s boundary.”
 
-### 3.5 `spread_z_30d` and warm rows
+### 3.4 `spread_z_30d` and warm rows
 
 `spread_z_30d` appears in the gate but has **no** `_horizon_features_for` mapping, so it contributes **no** feature_id to **`required_warm_feature_ids`**. The gate reads the scalar from **`sensor_cache`** instead.
 

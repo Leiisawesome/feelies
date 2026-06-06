@@ -63,6 +63,17 @@ def test_order_opens_or_increases_long_and_exit() -> None:
     assert order_opens_or_increases(100, Side.SELL, 100) is False
 
 
+def test_should_suppress_entry_uses_timestamp_date_for_multi_day_runs() -> None:
+    stale_bounds = resolve_trading_session_bounds(
+        date(2026, 3, 26),
+        early_close_dates=("2026-05-27",),
+        market_holiday_dates=(),
+    )
+    ts_ns = et_clock_to_ns(date(2026, 5, 27), "10:00")
+
+    assert should_suppress_entry(ts_ns, stale_bounds, True) == (False, "")
+
+
 def test_build_from_platform_disabled() -> None:
     assert build_trading_session_from_platform(
         rth_session_gating_enabled=False,
