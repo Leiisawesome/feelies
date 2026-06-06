@@ -1710,6 +1710,129 @@ class TestEdgeCostGate:
         assert pos.quantity != 0  # gate disabled, order allowed
 
 
+# ── B5: reversal combined-edge guard ──────────────────────────────────
+
+
+def _make_short_signal_with_edge(quote: NBBOQuote, edge_bps: float) -> Signal:
+    """SHORT signal with explicit edge — drives a REVERSE_LONG_TO_SHORT."""
+    return Signal(
+        timestamp_ns=quote.timestamp_ns,
+        correlation_id=quote.correlation_id,
+        sequence=quote.sequence,
+        symbol=quote.symbol,
+        strategy_id="test_strat",
+        direction=SignalDirection.SHORT,
+        strength=0.8,
+        edge_estimate_bps=edge_bps,
+    )
+
+
+class TestReversalEdgeGuard:
+    """B5: a reversal flips only when edge clears combined exit+entry cost.
+
+    Against a +50 long, a SHORT signal translates to REVERSE_LONG_TO_SHORT
+    with default sizing (target 150 → exit 50, entry 100).  The guard prices
+    the round-trip cost of *both* legs and suppresses the entry (flatten-
+    only) unless the edge clears ``multiplier × combined_cost``.
+    """
+
+    def _build(
+        self,
+        clock: SimulatedClock,
+        signal: Signal,
+        *,
+        multiplier: float,
+    ) -> tuple[Orchestrator, EventBus, list[OrderRequest], list[Alert]]:
+        from feelies.execution.cost_model import (
+            DefaultCostModel,
+            DefaultCostModelConfig,
+        )
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        alerts: list[Alert] = []
+        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+        bus.subscribe(Alert, alerts.append)  # type: ignore[arg-type]
+        pos_store = MemoryPositionStore()
+        pos_store.update("AAPL", 50, Decimal("100"))  # +50 long
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        backend = ExecutionBackend(
+            market_data=_StubMarketData(),
+            order_router=bt_router,
+            mode="BACKTEST",
+        )
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=backend,
+            risk_engine=_StubRiskEngine(),
+            position_store=pos_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+            cost_model=DefaultCostModel(DefaultCostModelConfig()),
+        )
+        _publish_signal_on_quote(bus, signal)
+        orch._reversal_min_edge_cost_multiplier = multiplier
+        _boot_to_backtest(orch)
+        return orch, bus, orders, alerts
+
+    @staticmethod
+    def _quote() -> NBBOQuote:
+        # Tight spread → combined round-trip cost ≈ 8.3 bps, required ≈ 16.7
+        # bps at multiplier 2.0 (edge 5 fails, edge 30 passes).
+        return _make_quote(bid="99.99", ask="100.01")
+
+    def test_reversal_blocked_when_edge_insufficient(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        quote = self._quote()
+        signal = _make_short_signal_with_edge(quote, edge_bps=5.0)
+        orch, _bus, orders, alerts = self._build(clock, signal, multiplier=2.0)
+        orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
+        orch._process_tick(quote)
+
+        # Only the exit (flatten) leg of 50 shares is submitted; no entry.
+        assert len(orders) == 1
+        assert orders[0].quantity == 50
+        assert orders[0].side == Side.SELL
+        assert any(
+            a.alert_name == "reversal_edge_insufficient" for a in alerts
+        )
+
+    def test_reversal_allowed_when_edge_sufficient(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        quote = self._quote()
+        signal = _make_short_signal_with_edge(quote, edge_bps=30.0)
+        orch, _bus, orders, alerts = self._build(clock, signal, multiplier=2.0)
+        orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
+        orch._process_tick(quote)
+
+        # Both legs submit: exit 50 + entry 100.
+        assert len(orders) == 2
+        quantities = sorted(o.quantity for o in orders)
+        assert quantities == [50, 100]
+        assert not any(
+            a.alert_name == "reversal_edge_insufficient" for a in alerts
+        )
+
+    def test_reversal_exit_never_suppressed_by_edge_guard(self) -> None:
+        # Inv-11: extreme multiplier blocks the entry, but the exit must
+        # still flatten the existing position.
+        clock = SimulatedClock(start_ns=1000)
+        quote = self._quote()
+        signal = _make_short_signal_with_edge(quote, edge_bps=30.0)
+        orch, _bus, orders, alerts = self._build(clock, signal, multiplier=100.0)
+        orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
+        orch._process_tick(quote)
+
+        assert len(orders) == 1  # exit only
+        assert orders[0].quantity == 50
+        assert orders[0].side == Side.SELL
+        assert any(
+            a.alert_name == "reversal_edge_insufficient" for a in alerts
+        )
+        # The existing long was flattened (exit filled), not flipped short.
+        assert orch._positions.get("AAPL").quantity == 0
+
+
 # ── F1: Resting-order guard placed AFTER signal/risk evaluation ───────────
 
 

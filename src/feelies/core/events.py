@@ -210,6 +210,11 @@ class Signal(Event):
     strength: float
     edge_estimate_bps: float
     disclosed_cost_total_bps: float = 0.0
+    # B5: combined exit + entry round-trip cost (bps) estimated by the
+    # orchestrator's reversal edge guard in ``_execute_reverse``.  Additive
+    # and backward-compatible: all non-reversal producers leave it at 0.0,
+    # so it does not affect parity hashes by its presence alone.
+    reversal_cost_estimate_bps: float = 0.0
     disclosed_margin_ratio: float = 0.0
     metadata: dict[str, Any] = field(default_factory=dict)
     layer: Literal["SIGNAL", "PORTFOLIO"] = "SIGNAL"

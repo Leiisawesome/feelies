@@ -506,6 +506,11 @@ class Orchestrator:
         # disclosed one-way edge by 2 inside the gate so both sides
         # share the round-trip basis explicitly.
         self._signal_edge_cost_basis: str = "round_trip"
+        # B5: reversal edge guard multiplier.  The entry leg of a REVERSE
+        # intent is suppressed (flatten-only) unless the signal edge clears
+        # this multiple of the combined exit+entry round-trip cost.  0.0
+        # disables the guard (legacy flip-on-every-signal behaviour).
+        self._reversal_min_edge_cost_multiplier: float = 1.5
         # Audit F-M-22: dedicated threshold for the realized-vs-disclosed
         # cost alert, decoupled from MIN_MARGIN_RATIO.
         self._realized_cost_alert_ratio: float = 1.5
@@ -521,6 +526,11 @@ class Orchestrator:
         # Per-order lifecycle tracking for Inv-4 enforcement.
         # Maps order_id -> (OrderState SM, Side, OrderRequest).
         self._active_orders: dict[str, tuple[StateMachine[OrderState], Side, OrderRequest]] = {}
+        # Maps order_id -> TradingIntent.name at submission time so fill
+        # reconciliation can stamp each ``TradeRecord.trading_intent``
+        # without re-deriving the intent from fill order (Task 4).  Pruned
+        # alongside ``_active_orders``.
+        self._order_trading_intent: dict[str, str] = {}
         # Router acks that were drained while waiting for a different
         # order family.  The order-router queue is global, so targeted
         # pollers must buffer unrelated acks instead of stealing them.
@@ -1048,6 +1058,10 @@ class Orchestrator:
                 self._min_order_shares = config.platform_min_order_shares
             if hasattr(config, "signal_min_edge_cost_ratio"):
                 self._signal_min_edge_cost_ratio = config.signal_min_edge_cost_ratio
+            if hasattr(config, "reversal_min_edge_cost_multiplier"):
+                self._reversal_min_edge_cost_multiplier = (
+                    config.reversal_min_edge_cost_multiplier
+                )
             if hasattr(config, "signal_edge_cost_basis"):
                 self._signal_edge_cost_basis = config.signal_edge_cost_basis
             if hasattr(config, "realized_cost_alert_ratio"):
@@ -2398,7 +2412,10 @@ class Orchestrator:
                 return
 
         # ── Track order lifecycle (Inv-4) ───────────────────────
-        self._track_order(order.order_id, order.side, order)
+        self._track_order(
+            order.order_id, order.side, order,
+            trading_intent=intent.intent.name,
+        )
 
         # ── M6 → M7: ORDER_SUBMIT ──────────────────────────────
         self._micro.transition(
@@ -2573,9 +2590,51 @@ class Orchestrator:
         """Return True when B4 edge estimate clears model round-trip cost."""
         if self._signal_min_edge_cost_ratio <= 0 or self._cost_model is None:
             return True
+        round_trip_cost_bps = self._round_trip_cost_bps(
+            symbol=symbol,
+            entry_side=entry_side,
+            quantity=quantity,
+            quote=quote,
+            is_taker_entry=is_taker_entry,
+            is_short_entry=is_short_entry,
+        )
+        edge_bps_basis = signal.edge_estimate_bps
+        if self._signal_edge_cost_basis == "round_trip":
+            edge_bps_basis = edge_bps_basis * 2.0
+        if edge_bps_basis < (
+            self._signal_min_edge_cost_ratio * round_trip_cost_bps
+        ):
+            self._emit_signal_edge_gate_suppression_alert(
+                signal,
+                symbol,
+                correlation_id,
+                detail=detail,
+            )
+            return False
+        return True
+
+    def _round_trip_cost_bps(
+        self,
+        *,
+        symbol: str,
+        entry_side: Side,
+        quantity: int,
+        quote: NBBOQuote,
+        is_taker_entry: bool,
+        is_short_entry: bool,
+    ) -> float:
+        """Model round-trip (entry + taker exit) cost in bps for one leg.
+
+        Shared by the B4 entry edge gate (:meth:`_signal_passes_edge_cost_gate`)
+        and the B5 reversal edge gate
+        (:meth:`_reversal_passes_combined_edge_gate`) so both price legs with
+        an identical cost-model call.  Callers guarantee
+        ``self._cost_model is not None`` before invoking.
+        """
+        assert self._cost_model is not None
         gate_price = (quote.bid + quote.ask) / Decimal("2")
         gate_spread = (quote.ask - quote.bid) / Decimal("2")
-        round_trip_cost_bps = estimate_round_trip_cost_bps(
+        return estimate_round_trip_cost_bps(
             self._cost_model,
             symbol=symbol,
             entry_side=entry_side,
@@ -2594,20 +2653,72 @@ class Orchestrator:
                 self._config, "cost_max_impact_half_spreads", 10.0,
             ))) if self._config else None,
         )
-        edge_bps_basis = signal.edge_estimate_bps
-        if self._signal_edge_cost_basis == "round_trip":
-            edge_bps_basis = edge_bps_basis * 2.0
-        if edge_bps_basis < (
-            self._signal_min_edge_cost_ratio * round_trip_cost_bps
+
+    def _reversal_passes_combined_edge_gate(
+        self,
+        *,
+        edge_estimate_bps: float,
+        symbol: str,
+        exit_side: Side,
+        exit_qty: int,
+        entry_side: Side,
+        entry_qty: int,
+        quote: NBBOQuote,
+        is_short_entry: bool,
+    ) -> tuple[float, float, bool]:
+        """B5 reversal edge guard — price the cost of flipping the book.
+
+        A reversal first *crystallises* the existing opposite position
+        (exit leg) before re-establishing the new direction (entry leg).
+        That zero-crossing cost is paid immediately and is independent of
+        the new signal's edge.  The guard asks whether the raw signal edge
+        on the new direction clears the combined round-trip cost of both
+        legs::
+
+            edge_estimate_bps
+                > (exit_roundtrip_cost_bps + entry_roundtrip_cost_bps)
+                  * reversal_min_edge_cost_multiplier
+
+        Returns ``(combined_cost_bps, required_bps, passes)``.  The guard is
+        a no-op (returns ``(0.0, 0.0, True)``) when the multiplier is 0 or
+        when no cost model is wired — fail-safe: an unknown cost model
+        disables the guard rather than crashing or blocking the flip.
+        """
+        if (
+            self._reversal_min_edge_cost_multiplier <= 0
+            or self._cost_model is None
         ):
-            self._emit_signal_edge_gate_suppression_alert(
-                signal,
-                symbol,
-                correlation_id,
-                detail=detail,
-            )
-            return False
-        return True
+            return 0.0, 0.0, True
+        # Exit leg: aggressive MARKET close of the existing position (taker,
+        # never a short — closing a long is a plain sell, covering a short
+        # is a plain buy).
+        exit_roundtrip_cost_bps = self._round_trip_cost_bps(
+            symbol=symbol,
+            entry_side=exit_side,
+            quantity=exit_qty,
+            quote=quote,
+            is_taker_entry=True,
+            is_short_entry=False,
+        )
+        # Entry leg: same side as the exit (both close-then-open in the new
+        # direction); taker assumption mirrors the B4 entry gate.
+        entry_roundtrip_cost_bps = self._round_trip_cost_bps(
+            symbol=symbol,
+            entry_side=entry_side,
+            quantity=entry_qty,
+            quote=quote,
+            is_taker_entry=(
+                not self._use_passive_entries
+                or self._min_cost_policy is not None
+            ),
+            is_short_entry=is_short_entry,
+        )
+        combined_cost_bps = exit_roundtrip_cost_bps + entry_roundtrip_cost_bps
+        required_bps = (
+            combined_cost_bps * self._reversal_min_edge_cost_multiplier
+        )
+        passes = edge_estimate_bps > required_bps
+        return combined_cost_bps, required_bps, passes
 
     def _calibrate_regime_engine(self) -> None:
         """Calibrate regime emission parameters from a *prefix* of the log.
@@ -3226,6 +3337,10 @@ class Orchestrator:
         # (e.g. 0 instead of the actual new-entry quantity).
         entry_order: OrderRequest | None = None
         entry_qty = round(entry_qty_raw * verdict.scaling_factor)
+        # B5: replaced signal carrying the combined reversal cost estimate
+        # (Task 3).  Stays at the original signal (cost 0.0) when no entry
+        # leg is warranted or the guard is disabled.
+        reverse_signal: Signal = intent.signal
 
         # Signed adjustment: the exit leg removes close_qty from position.
         exit_signed_adj = -close_qty if exit_side == Side.SELL else close_qty
@@ -3239,20 +3354,81 @@ class Orchestrator:
             tier = self._borrow_tier_for(intent.symbol)
             is_short = htb_fee_applies(tier, short_sale)
 
-            # B4: edge vs cost gate for the entry leg.
-            entry_passes_edge_gate = self._signal_passes_edge_cost_gate(
-                intent.signal,
+            # B5: reversal combined-edge guard.  Flipping the book first
+            # crystallises the existing opposite position (exit leg); the
+            # round-trip cost of *both* legs is paid immediately and is
+            # independent of the new signal's edge.  Suppress the entry
+            # (flatten-only) unless the raw edge clears the combined cost.
+            # Inv-11: the exit leg below still always submits.
+            (
+                reversal_cost_bps,
+                reversal_required_bps,
+                reversal_edge_passes,
+            ) = self._reversal_passes_combined_edge_gate(
+                edge_estimate_bps=intent.signal.edge_estimate_bps,
                 symbol=intent.symbol,
+                exit_side=exit_side,
+                exit_qty=close_qty,
                 entry_side=entry_side,
-                quantity=entry_qty,
+                entry_qty=entry_qty,
                 quote=quote,
-                is_taker_entry=(
-                    not self._use_passive_entries
-                    or self._min_cost_policy is not None
-                ),
                 is_short_entry=is_short,
-                correlation_id=cid,
-                detail="reverse_entry_leg_suppressed",
+            )
+            # Task 3: expose the combined estimate on the signal so trace
+            # sinks / alerts can read it without recomputing.
+            reverse_signal = replace(
+                intent.signal,
+                reversal_cost_estimate_bps=reversal_cost_bps,
+            )
+
+            if not reversal_edge_passes:
+                edge_bps = intent.signal.edge_estimate_bps
+                deficit_bps = reversal_required_bps - edge_bps
+                self._bus.publish(Alert(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=cid,
+                    sequence=self._seq.next(),
+                    severity=AlertSeverity.WARNING,
+                    layer="kernel",
+                    alert_name="reversal_edge_insufficient",
+                    message=(
+                        f"Reversal entry suppressed (flatten-only): "
+                        f"edge_bps={edge_bps:.4f} below required "
+                        f"{reversal_required_bps:.4f} "
+                        f"({self._reversal_min_edge_cost_multiplier}× combined "
+                        f"round-trip cost {reversal_cost_bps:.4f}); "
+                        f"deficit={deficit_bps:.4f} bps "
+                        f"(symbol={intent.symbol!r}, "
+                        f"strategy_id={intent.strategy_id!r})."
+                    ),
+                    context={
+                        "edge_bps": edge_bps,
+                        "required_bps": reversal_required_bps,
+                        "deficit_bps": deficit_bps,
+                        "symbol": intent.symbol,
+                        "strategy_id": intent.strategy_id,
+                        "order_id": exit_order.order_id,
+                    },
+                ))
+
+            # B4: edge vs cost gate for the entry leg.  Short-circuited when
+            # the B5 reversal guard already suppressed the flip.
+            entry_passes_edge_gate = (
+                reversal_edge_passes
+                and self._signal_passes_edge_cost_gate(
+                    intent.signal,
+                    symbol=intent.symbol,
+                    entry_side=entry_side,
+                    quantity=entry_qty,
+                    quote=quote,
+                    is_taker_entry=(
+                        not self._use_passive_entries
+                        or self._min_cost_policy is not None
+                    ),
+                    is_short_entry=is_short,
+                    correlation_id=cid,
+                    detail="reverse_entry_leg_suppressed",
+                )
             )
 
             if entry_passes_edge_gate:
@@ -3339,8 +3515,14 @@ class Orchestrator:
             correlation_id=cid,
         )
 
-        # Submit EXIT leg.
-        self._track_order(exit_order.order_id, exit_order.side, exit_order)
+        # Submit EXIT leg.  The exit (flatten) leg carries the REVERSE_*
+        # intent — it is the leg the reversal report keys on (Task 5).  The
+        # entry leg below is stamped with its resulting ENTRY_* intent so it
+        # is not double-counted as a separate reversal attempt.
+        self._track_order(
+            exit_order.order_id, exit_order.side, exit_order,
+            trading_intent=intent.intent.name,
+        )
         self._transition_order(
             exit_order.order_id,
             OrderState.SUBMITTED,
@@ -3378,8 +3560,14 @@ class Orchestrator:
 
         entry_submitted_ok = False
         if entry_order is not None:
+            entry_intent_name = (
+                TradingIntent.ENTRY_SHORT.name
+                if intent.intent == TradingIntent.REVERSE_LONG_TO_SHORT
+                else TradingIntent.ENTRY_LONG.name
+            )
             self._track_order(
                 entry_order.order_id, entry_order.side, entry_order,
+                trading_intent=entry_intent_name,
             )
             self._transition_order(
                 entry_order.order_id,
@@ -3425,7 +3613,7 @@ class Orchestrator:
             )
             self._append_signal_order_trace(
                 quote,
-                intent.signal,
+                reverse_signal,
                 outcome="ORDER_SUBMITTED",
                 reasons=(
                     f"reverse_{leg}_submitted",
@@ -3954,11 +4142,24 @@ class Orchestrator:
         """
         self._drain_async_fills(cid)
 
-    def _track_order(self, order_id: str, side: Side, order: OrderRequest) -> None:
-        """Create an OrderState SM for a new order."""
+    def _track_order(
+        self,
+        order_id: str,
+        side: Side,
+        order: OrderRequest,
+        *,
+        trading_intent: str = "",
+    ) -> None:
+        """Create an OrderState SM for a new order.
+
+        ``trading_intent`` (``TradingIntent.name``) is recorded so the fill
+        reconciliation path can stamp ``TradeRecord.trading_intent`` (Task 4).
+        """
         sm = create_order_state_machine(order_id, self._clock)
         sm.on_transition(self._emit_state_transition)
         self._active_orders[order_id] = (sm, side, order)
+        if trading_intent:
+            self._order_trading_intent[order_id] = trading_intent
 
     def _transition_order(
         self,
@@ -4366,6 +4567,9 @@ class Orchestrator:
                     fees=ack.fees,
                     realized_pnl=position.realized_pnl - prev_realized,
                     correlation_id=order.correlation_id,
+                    trading_intent=self._order_trading_intent.get(
+                        ack.order_id, "",
+                    ),
                 ))
 
         self._prune_terminal_orders()
@@ -4459,6 +4663,7 @@ class Orchestrator:
         ]
         for oid in terminal_ids:
             del self._active_orders[oid]
+            self._order_trading_intent.pop(oid, None)
 
     # ── Observability ───────────────────────────────────────────────
 

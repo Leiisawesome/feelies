@@ -46,6 +46,7 @@ class TradeRecord:
     fees: Decimal
     realized_pnl: Decimal
     correlation_id: str
+    trading_intent: str = ""  # TradingIntent.name at order submission time
     metadata: dict[str, str] = field(default_factory=dict)
 
     @property

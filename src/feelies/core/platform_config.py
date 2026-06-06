@@ -308,6 +308,11 @@ class PlatformConfig:
     signal_min_edge_cost_ratio: float = 1.0
     signal_edge_cost_basis: str = "round_trip"
 
+    # B5: reversal edge guard. Entry leg of a REVERSE intent is suppressed
+    # unless signal.edge_estimate_bps exceeds this multiplier times the
+    # combined exit + entry round-trip cost. 0.0 = disabled (legacy).
+    reversal_min_edge_cost_multiplier: float = 1.5
+
     # Regime engine boot-time calibration (lookahead avoidance).  ``None``
     # skips feeding the trading event log into ``calibrate()`` entirely
     # (cold emission defaults + per-run warning).  A positive integer uses
@@ -698,6 +703,10 @@ class PlatformConfig:
             raise ConfigurationError(
                 "signal_min_edge_cost_ratio must be >= 0"
             )
+        if self.reversal_min_edge_cost_multiplier < 0.0:
+            raise ConfigurationError(
+                "reversal_min_edge_cost_multiplier must be >= 0"
+            )
         if self.cost_passive_adverse_selection_bps < 0.0:
             raise ConfigurationError(
                 "cost_passive_adverse_selection_bps must be >= 0"
@@ -979,6 +988,9 @@ class PlatformConfig:
             "passive_cancel_fee_per_share": self.passive_cancel_fee_per_share,
             "platform_min_order_shares": self.platform_min_order_shares,
             "signal_min_edge_cost_ratio": self.signal_min_edge_cost_ratio,
+            "reversal_min_edge_cost_multiplier": (
+                self.reversal_min_edge_cost_multiplier
+            ),
             "signal_edge_cost_basis": self.signal_edge_cost_basis,
             "regime_calibration_max_quotes": self.regime_calibration_max_quotes,
             "enforce_regime_state_scale_alignment": (
@@ -1472,6 +1484,9 @@ class PlatformConfig:
             ),
             signal_min_edge_cost_ratio=float(
                 data.get("signal_min_edge_cost_ratio", 1.0)
+            ),
+            reversal_min_edge_cost_multiplier=float(
+                data.get("reversal_min_edge_cost_multiplier", 1.5)
             ),
             signal_edge_cost_basis=str(
                 data.get("signal_edge_cost_basis", "round_trip")
