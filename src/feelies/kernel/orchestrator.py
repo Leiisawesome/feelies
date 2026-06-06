@@ -1470,6 +1470,20 @@ class Orchestrator:
         self._update_ssr_state(trade)
 
         if self._data_health_blocks_trading(trade.symbol, trade.correlation_id):
+            # CORRUPTED / GAP_DETECTED drop the trade entirely (bad data
+            # must not pollute sensors or the EventLog).  HALTED is a
+            # real market event: the print that triggered the halt (and
+            # any subsequent in-halt prints) must remain visible in the
+            # EventLog and on the bus for forensic provenance.  Router
+            # and scheduler forwarding are still skipped so the halted
+            # symbol generates no fills.
+            if (
+                self._normalizer is not None
+                and self._normalizer.health(trade.symbol) == DataHealth.HALTED
+            ):
+                if not self._events_prelogged:
+                    self._event_log.append(trade)
+                self._bus.publish(trade)
             return
 
         if not self._events_prelogged:
@@ -5096,6 +5110,13 @@ class Orchestrator:
         CORRUPTED always halts trading for the symbol when a normalizer is wired.
         GAP_DETECTED does the same only when ``PlatformConfig.degrade_on_data_gap``
         is enabled (strict paper/live policy).
+
+        HALTED (BT-5) blocks the tick without escalating macro — LULD halts
+        are recoverable and ``DataHealth.HALTED → HEALTHY`` is the resume
+        path.  This sits alongside the orchestrator-side ``_halted_symbols``
+        edge tracker (which retains the cancel-resting + post-halt blackout
+        side effects) so the normalizer's view is *also* load-bearing here:
+        if the two ever drift, the more conservative gate wins (audit M1).
         """
         if self._normalizer is None:
             return False
@@ -5129,6 +5150,14 @@ class Orchestrator:
                     trigger=f"DATA_CORRUPTED:{symbol}",
                     correlation_id=correlation_id,
                 )
+            return True
+        if health == DataHealth.HALTED:
+            # Recoverable halt — block fills for this symbol but do NOT
+            # escalate macro (a real LULD pause is expected to resume).
+            # Side effects (cancel resting, blackout window) live in the
+            # orchestrator's ``_update_halt_state`` edge detector; this
+            # gate provides defense-in-depth in case that detector and
+            # the normalizer ever disagree.
             return True
         degrade_gap = getattr(self._config, "degrade_on_data_gap", False)
         if degrade_gap and health == DataHealth.GAP_DETECTED:

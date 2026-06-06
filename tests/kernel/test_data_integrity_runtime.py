@@ -191,3 +191,33 @@ class TestStrictNormalizerSymbolCoverage:
 
         orch._process_tick_inner(_make_quote(ts=20_000, seq=1))
         assert orch.macro_state == MacroState.DEGRADED
+
+
+class TestHaltedGate:
+    """M1: normalizer's ``DataHealth.HALTED`` blocks the tick gate.
+
+    The orchestrator also tracks ``_halted_symbols`` from condition codes;
+    these two paths must agree.  Testing the normalizer-side gate alone
+    here proves that if the orchestrator's edge tracker is bypassed (e.g.
+    by an event injected directly into the M1 path), the normalizer's
+    HALTED state still suppresses the tick.
+    """
+
+    def test_normalizer_halted_blocks_quote_without_macro_escalation(self) -> None:
+        clock = SimulatedClock(start_ns=10_000)
+        norm = _MutableHealthNormalizer({"AAPL": DataHealth.HEALTHY})
+        orch = _orch_with_normalizer(clock, norm)
+        orch.boot(_ConfigWithGapPolicy())
+
+        orch._macro.transition(MacroState.BACKTEST_MODE, trigger="CMD_BACKTEST")
+        orch._micro.reset(trigger="session_start:test")
+
+        # Simulate the LULD halt path arriving at the normalizer only.
+        norm.set_health("AAPL", DataHealth.HALTED)
+
+        orch._process_tick_inner(_make_quote(ts=20_000, seq=1))
+
+        # Tick blocked, but macro stays in BACKTEST_MODE — LULD halts are
+        # recoverable and must NOT escalate to DEGRADED (unlike CORRUPTED
+        # / GAP).
+        assert orch.macro_state == MacroState.BACKTEST_MODE
