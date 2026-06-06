@@ -75,13 +75,26 @@ Every schema-1.1 SIGNAL alpha must declare one of the closed
 `TrendMechanism` family in `core/events.py` (Phase 3.1 strict-mode is
 the platform default since Workstream E):
 
-| Family | Half-life envelope | L1 fingerprint sensors | Cost-arithmetic guidance |
+Fingerprint sensors below are the **implemented** `sensor_id`s only
+(see feature-engine skill's catalog). Declaring an unimplemented id in
+`l1_signature_sensors` / `depends_on_sensors` fails G6 at load.
+
+| Family | Half-life envelope | L1 fingerprint sensors (implemented) | Cost-arithmetic guidance |
 |--------|-------------------|-----------------------|------------------------|
-| `KYLE_INFO` | 60 – 1800 s | `kyle_lambda_60s`, `kyle_lambda_300s`, OFI proxies | Edge ~ permanent impact; survive 1.5× spread |
-| `INVENTORY` | 10 – 120 s | `inventory_pressure`, `quote_replenishment_asym` | Mean-reverting; tight horizon, low cost margin |
-| `HAWKES_SELF_EXCITE` | 5 – 120 s | `hawkes_intensity`, `trade_clustering` | Short half-life; latency-sensitive |
-| `LIQUIDITY_STRESS` | 30 – 600 s | `liquidity_stress_score`, `spread_z_30d`, `quote_flicker_rate` | **Exit-only** — entries forbidden by G16 |
+| `KYLE_INFO` | 60 – 1800 s | `kyle_lambda_60s`, `ofi_ewma`, `micro_price` | Edge ~ permanent impact; survive 1.5× spread |
+| `INVENTORY` | 10 – 120 s | `inventory_pressure`, `quote_replenish_asymmetry` | Mean-reverting; tight horizon, low cost margin |
+| `HAWKES_SELF_EXCITE` | 5 – 120 s | `hawkes_intensity` (use `hawkes_intensity_imbalance` for direction), `trade_through_rate` | Short half-life; latency-sensitive |
+| `LIQUIDITY_STRESS` | 30 – 600 s | `liquidity_stress_score`, `spread_z_30d`, `quote_hazard_rate`, `quote_flicker_rate` | **Exit-only** — entries forbidden by G16 |
 | `SCHEDULED_FLOW` | 60 – 3600 s | `scheduled_flow_window` | MOC / open / close imbalance windows |
+
+> Coverage note: every family above now has at least one **dedicated,
+> implemented** fingerprint sensor — the previously-missing
+> `inventory_pressure` (trade-side MM-inventory proxy),
+> `liquidity_stress_score` (composite spread-widening + depth-thinning
+> alarm), and `quote_flicker_rate` (best-price reversal fraction) shipped
+> in the audit P2-3 pass. `vpin_50bucket` (flow toxicity) and
+> `snr_drift_diffusion` ship but remain dormant (not in the reference
+> `platform.yaml`).
 
 The alpha's `horizon_seconds / expected_half_life_seconds` ratio must
 lie in `[0.5, 4.0]` (G16 mechanism-horizon binding) — neither too
@@ -202,10 +215,21 @@ construction.
 
 `evaluate()` receives a `HorizonFeatureSnapshot` carrying:
 
-- `warm: bool` — False during warm-up; entry signals must be suppressed
-- `stale: bool` — True if no NBBO arrived within the staleness threshold;
-  exit signals allowed (conservative), entry signals suppressed
+- `warm: dict[str, bool]` — per `feature_id`; a key is `False` during
+  that feature's warm-up. The `HorizonSignalEngine` suppresses entry
+  when any of the alpha's `required_warm_feature_ids` is not warm —
+  the alpha body does **not** see the snapshot unless those are warm.
+- `stale: dict[str, bool]` — per `feature_id`; `True` when the feature's
+  input sensor produced no warm reading within the feature's horizon
+  window. Entry suppressed, exits permitted (conservative).
+- `values: dict[str, float]` — per `feature_id`, **warm features only**
+  (cold features are absent — use `.get(...)` and handle `None`). The
+  reference alpha reads e.g. `values.get("ofi_ewma_zscore")`.
 - `boundary_index: int` — deterministic ordering key
+
+Note: `warm` / `stale` are **dicts keyed by `feature_id`**, not
+booleans. Never gate on `if snapshot.warm:` (a non-empty dict is always
+truthy); gate on the specific keys you consume.
 
 ### Cost Arithmetic (G12)
 
@@ -259,15 +283,38 @@ exit is safer than hold when data is missing).
 
 ### Hazard-Driven Exit
 
-When `hazard_exit.enabled: true` is declared on the alpha manifest,
+When `hazard_exit.enabled: true` is declared on the alpha manifest
+(SIGNAL **or** PORTFOLIO layer — both are now wired; audit P0 H-1),
 `HazardExitController` consumes `RegimeHazardSpike` events and emits
 `OrderRequest.reason = "HAZARD_SPIKE"` to flatten open positions when
 the per-alpha `hazard_score_threshold` is exceeded (and the position
 has been open at least `min_age_seconds`). A separate `HARD_EXIT_AGE`
 branch fires when a position has been open longer than
-`hard_exit_age_seconds`. Suppression is per
-`(symbol, alpha_id, departing_state)`. Bit-identical replay is locked
-by the Level-4 hazard-exit parity test.
+`hard_exit_age_seconds`; when this field is omitted it is **derived
+from `2 × expected_half_life_seconds`** (audit P1 HM-1) so short-
+half-life mechanisms aren't silently age-uncapped.
+
+Schema (audit P1 H-2 — strict; unknown keys raise `AlphaLoadError`):
+
+```yaml
+hazard_exit:
+  enabled: true                  # bool — literal True opts in
+  hazard_score_threshold: 0.85   # float in (0, 1]; controller default 0.85
+  min_age_seconds: 30            # int ≥ 0; controller default 30
+  hard_exit_age_seconds: 1800    # int > 0; null → 2 × expected_half_life_seconds
+```
+
+`posterior_drop_threshold` is accepted as a legacy spelling of
+`hazard_score_threshold` (the detector's `hazard_score` IS a
+normalized posterior drop) and rewritten with a WARN at load time;
+use the canonical name in new specs.
+
+Suppression at the **controller** layer is per
+`(strategy_id, symbol, reason)`, cleared when the position returns
+to flat.  This is distinct from the **detector** suppression key
+`(symbol, engine_name, departing_state)` held inside
+`RegimeHazardDetector`.  Bit-identical replay is locked by the
+Level-5 hazard-replay parity test.
 
 ---
 

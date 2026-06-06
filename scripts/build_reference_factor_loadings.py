@@ -7,22 +7,23 @@ and a flat sector-map JSON consumed by
 
 Outputs (idempotent — safe to re-run):
 
-  ``storage/reference/factor_loadings/loadings.json``
+  ``src/feelies/storage/reference/factor_loadings/loadings.json``
       Per-symbol FF5 + momentum + STR betas.  Values are seeded from a
       ``hashlib.sha256(symbol)`` PRNG so reruns produce bit-identical
       bytes; this is critical for replay determinism (Inv-5).
 
-  ``storage/reference/sector_map/sector_map.json``
+  ``src/feelies/storage/reference/sector_map/sector_map.json``
       Flat ``{symbol: sector_id_str}`` mapping.
 
-  ``storage/reference/factor_loadings/loadings.parquet``  *(optional)*
+  ``src/feelies/storage/reference/factor_loadings/loadings.parquet``  *(optional)*
       Same content as ``loadings.json`` but in columnar parquet for
       research notebooks.  Skipped silently when ``pyarrow`` is not
       installed (see ``[project.optional-dependencies].portfolio``).
 
 The fixture is intentionally *small* (10 symbols × 7 factors); the
-universe matches the v0.2 reference deployment used by
-``alphas/pofi_xsect_v1/`` and the Phase-4 end-to-end tests.
+universe matches the reference deployment used by
+``alphas/research/pro_burst_revert_v1/``, ``alphas/research/pro_kyle_benign_v1/``, and
+the Phase-4 end-to-end tests.
 
 Determinism contract
 --------------------
@@ -44,6 +45,15 @@ import sys
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+_SCRIPT_PATH = Path(__file__).resolve()
+_DEFAULT_REFERENCE_ROOT = (
+    _SCRIPT_PATH.parent.parent
+    / "src"
+    / "feelies"
+    / "storage"
+    / "reference"
+)
 
 
 REFERENCE_UNIVERSE: tuple[str, ...] = (
@@ -147,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--output-root",
         type=Path,
-        default=Path("storage") / "reference",
+        default=_DEFAULT_REFERENCE_ROOT,
         help="Root directory for the emitted reference fixtures.",
     )
     parser.add_argument(

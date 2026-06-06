@@ -1,9 +1,9 @@
 """Verify internal repo paths cited from documentation actually exist.
 
 The Phase-5 documentation rewrite (README, alphas/SCHEMA.md, the
-migration cookbook, the embedded Grok prompts in ``grok/03_*``,
-``grok/06_*``, and ``grok/07_*``, and the source-code comments in
-``layer_validator.py`` / ``regime_gate.py``) carries dozens of
+migration cookbook, Cursor skill docs under ``.cursor/skills/``, and
+the source-code comments in ``layer_validator.py`` /
+``regime_gate.py``) carries dozens of
 cross-references to other repository paths.  When a file is renamed or
 moved without updating those references, the operator hits a 404 inside
 their own checkout — exactly the kind of silent doc rot Phase 5 was
@@ -39,10 +39,6 @@ _REPO_ROOT = Path(".").resolve()
 _DOC_FILES: tuple[Path, ...] = (
     Path("README.md"),
     Path("alphas/SCHEMA.md"),
-    Path("docs/migration/schema_1_0_to_1_1.md"),
-    Path("grok/03_ALPHA_DEVELOPMENT.md"),
-    Path("grok/06_EVOLUTION.md"),
-    Path("grok/07_HYPOTHESIS_REASONING.md"),
 )
 
 
@@ -71,17 +67,15 @@ _PLACEHOLDER_PATH_TOKENS: frozenset[str] = frozenset({
     # Prompt-7 mutation example (forward-looking
     # successor file the operator would create on a real mutation):
     "alphas/pofi_benign_midcap_v2/pofi_benign_midcap_v2.alpha.yaml",
-    "alphas/_deprecated/pofi_benign_midcap_v1_v1.0.0.yaml",
+    "alphas/_deprecated/sig_benign_midcap_v1_v1.0.0.yaml",
     # Forward-looking research infrastructure path referenced as a
     # design pointer for the hypothesis status taxonomy.  Not yet
     # implemented; tracked separately:
     "src/feelies/research/hypothesis_status.py",
     # Workstream-D.2 retired this parity test alongside the
     # ``alphas/trade_cluster_drift/`` reference alpha.  The path is
-    # intentionally cited from SCHEMA.md and the migration cookbook
-    # so operators reading those docs can grep their own forks for
-    # the now-defunct anchor.  See ``docs/migration/schema_1_0_to_1_1.md``
-    # §"Workstream-D update" for the retirement note.
+    # intentionally cited from SCHEMA.md so operators reading those
+    # docs can grep their own forks for the now-defunct anchor.
     "tests/determinism/test_legacy_alpha_parity.py",
 })
 
@@ -99,7 +93,7 @@ _BACKTICK_PATH_RE = re.compile(
 # accept them when the path component contains a slash and a known
 # extension).
 _BARE_PATH_RE = re.compile(
-    r"(?<![\w/`])((?:src|tests|docs|alphas|grok|\.cursor)/"
+    r"(?<![\w/`])((?:src|tests|docs|alphas|\.cursor)/"
     r"[a-zA-Z0-9_./\-]+\.(?:mdc|yaml|toml|md|py|yml))"
 )
 

@@ -48,7 +48,7 @@ class VPIN50BucketSensor:
     """
 
     sensor_id: str = "vpin_50bucket"
-    sensor_version: str = "1.0.0"
+    sensor_version: str = "1.1.0"
 
     def __init__(
         self,
@@ -86,6 +86,7 @@ class VPIN50BucketSensor:
             "last_price": None,
             "last_side": +1,
             "buckets": deque(maxlen=self._window_buckets),
+            "buckets_sum": 0.0,  # running sum of bucket imbalances (O(1) mean)
         }
 
     def update(
@@ -99,7 +100,11 @@ class VPIN50BucketSensor:
 
         price = float(event.price)
         size = int(event.size)
-        if size <= 0:
+        # Defensive: a non-positive trade price is malformed market data;
+        # while VPIN's tick rule only uses *relative* price direction, a
+        # zero/negative price would still update ``last_price`` and pollute
+        # subsequent tick-rule classifications.
+        if size <= 0 or price <= 0.0:
             return None
 
         last_price = state["last_price"]
@@ -118,6 +123,7 @@ class VPIN50BucketSensor:
         # buckets so total volume is conserved with no rounding.
         remaining = size
         bucket_vol = self._bucket_volume
+        buckets = state["buckets"]
         while remaining > 0:
             cur_total = state["buy_vol"] + state["sell_vol"]
             room = bucket_vol - cur_total
@@ -131,13 +137,18 @@ class VPIN50BucketSensor:
                 imbalance = abs(state["buy_vol"] - state["sell_vol"]) / float(
                     bucket_vol
                 )
-                state["buckets"].append(imbalance)
+                # Maintain ``buckets_sum`` in sync with the bounded deque.
+                # When the deque is at maxlen the append silently drops the
+                # oldest element — subtract it from the running sum first.
+                if len(buckets) == buckets.maxlen:
+                    state["buckets_sum"] -= buckets[0]
+                buckets.append(imbalance)
+                state["buckets_sum"] += imbalance
                 state["buy_vol"] = 0
                 state["sell_vol"] = 0
 
-        buckets = state["buckets"]
         if buckets:
-            value = sum(buckets) / float(len(buckets))
+            value = state["buckets_sum"] / float(len(buckets))
         else:
             value = 0.0
         warm = len(buckets) >= self._min_buckets

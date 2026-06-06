@@ -17,7 +17,50 @@ from typing import Protocol
 
 @dataclass
 class Position:
-    """Current position in a single symbol."""
+    """Current position in a single symbol.
+
+    Cost-accounting convention (audit R6, revised BT-3)
+    ---------------------------------------------------
+
+    The platform's :class:`feelies.execution.backtest_router.BacktestOrderRouter`
+    fills market orders at the **executed cross price** (ask for taker
+    buys, bid for taker sells) — the price IB reports — embedding the
+    half-spread in the fill price rather than recording it as a separate
+    ``spread_cost`` fee (the cost model is called with ``half_spread=0``).
+    This means:
+
+    * :attr:`avg_entry_price` is recorded at the **executed cross
+      price**, so it INCLUDES the half-spread cost.
+
+    * :attr:`realized_pnl` is computed against ``avg_entry_price`` and
+      therefore now INCLUDES the half-spread (a taker round trip realizes
+      the full spread in PnL).  ``spread_cost`` no longer flows through
+      :attr:`cumulative_fees`, so a consumer reading
+      :attr:`cumulative_fees` as "total transaction cost" will *understate*
+      cost by the spread; the spread lives in realized/unrealized PnL.
+      The platform's NAV calculation (`BasicRiskEngine._compute_current_equity`)
+      and the post-trade-forensics analyzer both subtract fees explicitly,
+      so platform-internal accounting is self-consistent — but external
+      reporting code that pulls :attr:`realized_pnl` directly must
+      apply the same fee subtraction.
+
+    * The ``walk-the-book`` partial-fill remainder stacks its
+      market-impact premium on top of the cross (above the ask for
+      buys, below the bid for sells) and that adverse component is
+      likewise reflected in :attr:`avg_entry_price`.  See
+      :meth:`BacktestOrderRouter.submit` for the explicit comment.
+
+    * Mark-to-market via :meth:`PositionStore.update_mark` uses the
+      next quote's mid.  Because a taker enters at the cross but marks
+      at the mid, a flat-to-flat round trip on a quote that never moved
+      shows the round-trip spread as a (un)realized PnL loss while
+      :attr:`cumulative_fees` carries only commission + regulatory
+      charges (the half-spread is now in the price, not the fees).
+
+    Live deployments must mirror this convention (or update both the
+    fill model and this docstring together) to preserve Inv-9
+    backtest/live parity.
+    """
 
     symbol: str
     quantity: int = 0
@@ -57,7 +100,14 @@ class PositionStore(Protocol):
         """Record fees without a fill (e.g. cancel fees)."""
         ...
 
-    def update_mark(self, symbol: str, mark_price: Decimal) -> None:
+    def update_mark(
+        self,
+        symbol: str,
+        mark_price: Decimal,
+        *,
+        bid: Decimal | None = None,
+        ask: Decimal | None = None,
+    ) -> None:
         """Record the latest mark price for a symbol.
 
         The mark price is used to compute unrealized PnL and a
@@ -65,6 +115,10 @@ class PositionStore(Protocol):
         a mark on every quote so risk checks see live exposure rather
         than cost-basis exposure.  Implementations must be cheap — this
         is called on the hot quote path.
+
+        When ``bid`` and ``ask`` are supplied, implementations may use
+        side-specific liquidation prices (longs mark to bid, shorts mark
+        to ask) instead of mid-only marks.
         """
         ...
 
@@ -82,12 +136,13 @@ class PositionStore(Protocol):
         ...
 
     def opened_at_ns(self, symbol: str) -> int | None:
-        """Timestamp (ns) of the fill that took ``symbol`` from flat → non-zero.
+        """Timestamp (ns) of the start of the current open episode.
 
         Returns ``None`` when the symbol is currently flat or has never
         been filled.  When a position is closed (``quantity → 0``) and
-        later reopened, the returned timestamp reflects the **most
-        recent** open — never the original.
+        later reopened, or when a single fill crosses through zero and
+        flips the position sign, the returned timestamp reflects the
+        **most recent** open episode — never the original.
 
         Phase-4-finalize uses this to enforce the hazard-exit
         ``min_age_seconds`` safeguard and the optional

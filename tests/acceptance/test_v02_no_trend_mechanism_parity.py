@@ -70,13 +70,8 @@ def _baseline_alpha_path() -> Path:
 # there is nothing to reset between tests.
 
 
-def test_baseline_alpha_yaml_has_no_trend_mechanism_block() -> None:
-    """The chosen baseline must not declare ``trend_mechanism:``.
-
-    This is the *YAML-level* assertion that pins the contract — the
-    asserting test for §20.12.3 #2 is meaningless if the baseline
-    alpha has gained a trend_mechanism block in the meantime.
-    """
+def test_baseline_alpha_yaml_declares_trend_mechanism_block() -> None:
+    """Lock that the chosen baseline carries G16 ``trend_mechanism:``."""
     path = _baseline_alpha_path()
     assert path.exists(), (
         f"baseline alpha YAML missing at {path}; either restore the "
@@ -89,58 +84,50 @@ def test_baseline_alpha_yaml_has_no_trend_mechanism_block() -> None:
         f"{path}: top-level YAML must be a mapping"
     )
     assert spec.get("schema_version") == "1.1", (
-        f"{path}: §20.12.3 #2 requires the baseline to be a "
-        "schema-1.1 SIGNAL alpha (the contract is precisely about "
-        "what 1.1 loaders do with a 1.1 alpha that omits the "
-        f"optional trend_mechanism: block); got "
+        f"{path}: baseline must remain schema-1.1 SIGNAL; got "
         f"schema_version={spec.get('schema_version')!r}."
     )
     assert spec.get("layer") == "SIGNAL", (
         f"{path}: §20.12.3 #2 governs SIGNAL-layer alphas; "
         f"got layer={spec.get('layer')!r}."
     )
-    assert "trend_mechanism" not in spec, (
-        f"{path}: the baseline alpha gained a top-level "
-        "trend_mechanism: block.  §20.12.3 #2 measures the contract "
-        "for v0.2 SIGNAL alphas that *omit* trend_mechanism — pick "
-        f"a different baseline by editing {_BASELINE_ALPHA_FILE} or "
-        "remove the block here."
+    assert "trend_mechanism" in spec and isinstance(
+        spec["trend_mechanism"], dict,
+    ), (
+        f"{path}: reference SIGNAL alpha must declare trend_mechanism: "
+        "(G16). Restore the block or pick a different baseline in "
+        f"{_BASELINE_ALPHA_FILE}."
     )
 
 
-def test_baseline_alpha_loads_under_v03_default(
+def test_baseline_alpha_loads_under_explicit_strict_opt_out(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """The loader must accept the alpha under ``enforce_trend_mechanism=False``.
+    """Loader accepts the reference alpha when ``enforce_trend_mechanism=False``.
 
-    Per §20.12.3 #2 the v0.3 loader's *default* must remain non-strict
-    so v0.2 SIGNAL alphas continue to load without modification.
+    Matches operators pinning the escape hatch in ``platform.yaml`` while
+    the alpha carries a full ``trend_mechanism:`` disclosure.
     """
     path = _baseline_alpha_path()
 
     with caplog.at_level(logging.WARNING, logger="feelies.alpha.loader"):
-        loader = AlphaLoader()  # default = enforce_trend_mechanism=False
+        loader = AlphaLoader(enforce_trend_mechanism=False)
         module = loader.load(path)
 
     assert isinstance(module, LoadedSignalLayerModule), (
         f"baseline must load as LoadedSignalLayerModule; got "
         f"{type(module).__name__}"
     )
-    assert module.trend_mechanism_enum is None, (
-        "a v0.2 SIGNAL alpha without trend_mechanism: must load with "
-        "module.trend_mechanism_enum is None — found "
+    assert module.trend_mechanism_enum is not None, (
+        "reference alpha must populate trend_mechanism_enum — found "
         f"{module.trend_mechanism_enum!r}"
     )
-    assert module.expected_half_life_seconds == 0, (
-        "a v0.2 SIGNAL alpha without trend_mechanism: must load with "
-        "expected_half_life_seconds == 0 — found "
-        f"{module.expected_half_life_seconds}"
+    assert module.expected_half_life_seconds > 0, (
+        "reference alpha must declare a positive expected_half_life_seconds "
+        f"— found {module.expected_half_life_seconds}"
     )
 
-    # Loading must not have surfaced a "missing trend_mechanism" error
-    # or a stray G16 warning — those would only appear under
-    # enforce_trend_mechanism=True, which §20.12.3 #2 explicitly says
-    # is NOT the v0.3 default.
+    # Loading must not have surfaced a "missing trend_mechanism" error.
     for record in caplog.records:
         msg = record.getMessage().lower()
         assert "trend_mechanism" not in msg or "missing" not in msg, (

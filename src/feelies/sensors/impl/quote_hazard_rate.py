@@ -12,8 +12,10 @@ Estimator (deterministic, event-time):
   ``window_seconds``.
 - ``hazard_t = len(window) / window_seconds`` (units: 1/second).
 
-Returns the hazard rate.  ``warm`` is true once the window has held
-``min_samples`` quotes for at least one full window.
+Returns the hazard rate.  ``warm`` is true once at least
+``min_samples`` quotes are currently inside the trailing window.
+(This is a count threshold, not an elapsed-time threshold — a burst
+that fills the window's count budget instantly satisfies it.)
 
 Determinism: pure integer timestamp comparisons; the float division
 at the end is the only floating-point operation.

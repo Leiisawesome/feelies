@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
 from feelies.core.clock import Clock
+from feelies.core.errors import DataIntegrityError
 from feelies.core.events import NBBOQuote, Trade
 from feelies.ingestion.data_integrity import DataHealth
 from feelies.ingestion.massive_normalizer import MassiveNormalizer
@@ -41,6 +42,38 @@ logger = logging.getLogger(__name__)
 _CHUNK_SIZE = 5_000
 _TYPE_RANK_QUOTE = 0
 _TYPE_RANK_TRADE = 1
+
+
+def _is_massive_rest_client_instance(client: object) -> bool:
+    """Best-effort check for real Massive REST client instances.
+
+    We only synthesize fresh per-thread clients for actual Massive
+    REST clients (or thin wrappers around one).  Test doubles such as
+    ``MagicMock`` and the limited wrapper fixtures used in ingestion
+    tests should keep their configured methods and therefore fall back
+    to the provided instance unless we can re-wrap a cloned inner
+    Massive client safely.
+    """
+    return type(client).__module__.startswith("massive")
+
+
+def _clone_parallel_clients(client: Any, api_key: str) -> tuple[Any, Any]:
+    """Return per-thread clients when safe, else reuse the provided one.
+
+    Real Massive REST clients get two fresh instances to avoid sharing
+    the same urllib3 pool across the quote/trade threads.  For mocks,
+    limited wrappers, and other test doubles, reusing the provided
+    object is intentional: their configured methods, credentials, and
+    record caps must stay attached to the instance the caller passed in.
+    """
+
+    if _is_massive_rest_client_instance(client):
+        try:
+            return type(client)(api_key=api_key), type(client)(api_key=api_key)
+        except TypeError:
+            pass
+
+    return client, client
 
 
 @dataclass(frozen=True)
@@ -191,6 +224,16 @@ class MassiveHistoricalIngestor:
             if h in (DataHealth.GAP_DETECTED, DataHealth.CORRUPTED)
         )
 
+        if len(symbols) > 1:
+            from feelies.storage.event_resequence import resequence_event_list
+
+            merged_raw = [
+                e for e in self._event_log.replay()
+                if isinstance(e, (NBBOQuote, Trade))
+            ]
+            sorted_events = resequence_event_list(merged_raw)
+            self._event_log.replace_events(sorted_events)
+
         return IngestResult(
             events_ingested=total_events,
             pages_processed=total_pages,
@@ -227,11 +270,11 @@ class MassiveHistoricalIngestor:
                 with _lock:
                     on_page("trades", page_num, total, time.monotonic() - _t0)
 
-        # Each thread gets its own RESTClient so their urllib3 connection pools
-        # never collide — prevents "Connection pool is full" warnings that fire
-        # when two threads return sockets simultaneously to a shared pool.
-        client_q = type(client)(api_key=self._api_key)
-        client_t = type(client)(api_key=self._api_key)
+        # Real Massive clients get distinct per-thread instances so their
+        # urllib3 pools never collide.  Mocks and test wrappers fall back to
+        # the configured client object unless we can safely clone and re-wrap
+        # an inner Massive client.
+        client_q, client_t = _clone_parallel_clients(client, self._api_key)
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             quotes_future = pool.submit(
@@ -246,8 +289,21 @@ class MassiveHistoricalIngestor:
             # ``TimeoutError`` has an empty ``str()``, so a too-tight bound looks
             # like an opaque ingestion failure in the backtest CLI.
             _DOWNLOAD_TIMEOUT_S = 900
-            raw_quotes, q_pages = quotes_future.result(timeout=_DOWNLOAD_TIMEOUT_S)
-            raw_trades, t_pages = trades_future.result(timeout=_DOWNLOAD_TIMEOUT_S)
+            raw_quotes, q_pages, q_ok = quotes_future.result(timeout=_DOWNLOAD_TIMEOUT_S)
+            raw_trades, t_pages, t_ok = trades_future.result(timeout=_DOWNLOAD_TIMEOUT_S)
+
+        if not q_ok:
+            raise DataIntegrityError(
+                f"massive_ingestor: quotes REST pagination did not complete cleanly "
+                f"for {symbol} ({start_date}–{end_date}) — refusing partial checkpoint "
+                "and refusing to normalize",
+            )
+        if not t_ok:
+            raise DataIntegrityError(
+                f"massive_ingestor: trades REST pagination did not complete cleanly "
+                f"for {symbol} ({start_date}–{end_date}) — refusing partial checkpoint "
+                "and refusing to normalize",
+            )
 
         total_pages = q_pages + t_pages
         logger.info(
@@ -268,13 +324,13 @@ class MassiveHistoricalIngestor:
             d.get("__type_rank__", 0),
         ))
 
-        received_ns = self._clock.now_ns()
         total_events_local = 0
         chunk: list[NBBOQuote | Trade] = []
 
         for rec_dict in merged:
             rec_dict.pop("__type_rank__", None)
             raw = json.dumps(rec_dict).encode("utf-8")
+            received_ns = self._clock.now_ns()
             events = self._normalizer.on_message(raw, received_ns, "massive_rest")
             chunk.extend(events)
             if len(chunk) >= _CHUNK_SIZE:
@@ -300,11 +356,15 @@ def _download_raw(
     list_fn: Callable[..., Any],
     data_label: str,
     _on_page: Callable[[int, int], None] | None = None,
-) -> tuple[list[dict[str, Any]], int]:
+) -> tuple[list[dict[str, Any]], int, bool]:
     """Paginate through a client list method, collecting raw dicts.
 
     ``list_fn`` is either ``client.list_quotes`` or ``client.list_trades``.
     ``data_label`` is used only for log messages.
+
+    Returns ``(records, pages, completed_ok)``.  ``completed_ok`` is False when
+    iteration aborted via exception — callers must not checkpoint or treat
+    the stream as complete (empty-but-successful downloads still yield True).
     """
     raw_dicts: list[dict[str, Any]] = []
     pages = 0
@@ -322,9 +382,10 @@ def _download_raw(
         logger.exception(
             "massive_ingestor: failed to start %s iteration for %s", data_label, symbol,
         )
-        return [], 0
+        return [], 0, False
 
     buf: list[Any] = []
+    completed_ok = True
     try:
         for obj in records_iter:
             buf.append(obj)
@@ -338,6 +399,7 @@ def _download_raw(
                     _on_page(pages, len(raw_dicts))
                 buf = []
     except Exception:
+        completed_ok = False
         logger.exception(
             "massive_ingestor: mid-pagination error for %s/%s after %d pages;"
             " partial data (%d records) retained",
@@ -353,7 +415,7 @@ def _download_raw(
         if _on_page is not None:
             _on_page(pages, len(raw_dicts))
 
-    return raw_dicts, pages
+    return raw_dicts, pages, completed_ok
 
 
 def _model_to_dict(record: Any, symbol: str) -> dict[str, Any]:

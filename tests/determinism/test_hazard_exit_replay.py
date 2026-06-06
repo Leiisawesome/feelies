@@ -38,7 +38,7 @@ from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.risk.hazard_exit import HazardExitController, HazardPolicy
 
 
-_STRATEGY_ID: str = "pofi_xsect_v1"
+_STRATEGY_ID: str = "pro_xsect_v1"
 _UNIVERSE: tuple[str, ...] = ("AAPL", "MSFT", "GOOG")
 _BASE_TS: int = 1_700_000_000_000_000_000
 _HAZARD_THRESHOLD: float = 0.85
@@ -145,6 +145,29 @@ def _hash_order_stream(orders: list[OrderRequest]) -> str:
             f"src={o.source_layer}"
         )
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+
+
+
+# Locked hazard-exit OrderRequest baseline (Phase 4.1).
+EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH = (
+    "79b35ea6d10038ec5e36b7844172afadda521734b298b3c8628bd98995bdbd81"
+)
+EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_COUNT = 3
+
+
+def test_hazard_exit_order_stream_matches_locked_baseline() -> None:
+    actual_hash, actual_count = _replay()
+    assert actual_count == EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_COUNT, (
+        f"hazard-exit order count drift: expected "
+        f"{EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_COUNT}, got {actual_count}"
+    )
+    assert actual_hash == EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH, (
+        "Level-4 hazard-exit OrderRequest hash drift!\n"
+        f"  Expected: {EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH}\n"
+        f"  Actual:   {actual_hash}\n"
+        "If intentional, update the constant in the same commit and "
+        "justify in the commit message."
+    )
 
 
 # ── Determinism (replay twice → same hash) ──────────────────────────────

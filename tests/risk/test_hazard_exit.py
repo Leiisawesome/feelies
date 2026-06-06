@@ -29,7 +29,7 @@ from feelies.risk.hazard_exit import HazardExitController, HazardPolicy
 
 
 _UNIVERSE = ("AAPL", "MSFT", "TSLA")
-_STRATEGY_ID = "pofi_xsect_v1"
+_STRATEGY_ID = "pro_xsect_v1"
 
 
 def _build_controller(
@@ -175,6 +175,45 @@ def test_min_age_safeguard_blocks_premature_exit():
     assert received == []
 
 
+def test_min_age_safeguard_allows_exit_at_exact_threshold():
+    bus = EventBus()
+    store = MemoryPositionStore()
+    store.update("AAPL", 100, Decimal("100"), timestamp_ns=2_000_000_000)
+    received: list[OrderRequest] = []
+    bus.subscribe(OrderRequest, received.append)  # type: ignore[arg-type]
+    controller = HazardExitController(
+        bus=bus,
+        sequence_generator=SequenceGenerator(),
+        position_store=store,
+        policies={
+            _STRATEGY_ID: HazardPolicy(
+                strategy_id=_STRATEGY_ID,
+                hazard_score_threshold=0.5,
+                min_age_seconds=60,
+                universe=_UNIVERSE,
+            ),
+        },
+    )
+    controller.attach()
+
+    bus.publish(RegimeHazardSpike(
+        timestamp_ns=2_000_000_000 + 60 * 1_000_000_000,
+        sequence=3,
+        correlation_id="cid:spike4",
+        source_layer="REGIME",
+        symbol="AAPL",
+        engine_name="hmm_3state_fractional",
+        departing_state="normal",
+        departing_posterior_prev=0.95,
+        departing_posterior_now=0.10,
+        incoming_state="vol_breakout",
+        hazard_score=0.9,
+    ))
+
+    assert len(received) == 1
+    assert received[0].reason == "HAZARD_SPIKE"
+
+
 def test_hard_exit_age_emits_on_trade_after_cap():
     _, store, bus, out = _build_controller(
         seed_positions={"AAPL": (100, 1_000_000_000)},
@@ -192,6 +231,79 @@ def test_hard_exit_age_emits_on_trade_after_cap():
     ))
     assert len(out) == 1
     assert out[0].reason == "HARD_EXIT_AGE"
+
+
+def test_hard_exit_age_emits_on_trade_at_exact_cap():
+    _, _, bus, out = _build_controller(
+        seed_positions={"AAPL": (100, 1_000_000_000)},
+    )
+    bus.publish(Trade(
+        timestamp_ns=1_000_000_000 + 600 * 1_000_000_000,
+        sequence=100,
+        correlation_id="cid:trade-exact-cap",
+        source_layer="DATA",
+        symbol="AAPL",
+        price=Decimal("101"),
+        size=10,
+        exchange_timestamp_ns=1_000_000_000 + 600 * 1_000_000_000,
+    ))
+
+    assert len(out) == 1
+    assert out[0].reason == "HARD_EXIT_AGE"
+
+
+def test_hard_exit_age_uses_new_open_episode_after_sign_flip():
+    bus = EventBus()
+    store = MemoryPositionStore()
+    store.update("AAPL", 100, Decimal("100"), timestamp_ns=0)
+    reverse_ts_ns = 700 * 1_000_000_000
+    store.update("AAPL", -200, Decimal("99"), timestamp_ns=reverse_ts_ns)
+
+    received: list[OrderRequest] = []
+    bus.subscribe(OrderRequest, received.append)  # type: ignore[arg-type]
+    controller = HazardExitController(
+        bus=bus,
+        sequence_generator=SequenceGenerator(),
+        position_store=store,
+        policies={
+            _STRATEGY_ID: HazardPolicy(
+                strategy_id=_STRATEGY_ID,
+                hazard_score_threshold=0.5,
+                min_age_seconds=0,
+                hard_exit_age_seconds=600,
+                universe=_UNIVERSE,
+            ),
+        },
+    )
+    controller.attach()
+
+    bus.publish(Trade(
+        timestamp_ns=800 * 1_000_000_000,
+        sequence=101,
+        correlation_id="cid:trade-too-early-after-flip",
+        source_layer="DATA",
+        symbol="AAPL",
+        price=Decimal("98"),
+        size=10,
+        exchange_timestamp_ns=800 * 1_000_000_000,
+    ))
+    bus.publish(Trade(
+        timestamp_ns=reverse_ts_ns + 600 * 1_000_000_000,
+        sequence=102,
+        correlation_id="cid:trade-at-cap-after-flip",
+        source_layer="DATA",
+        symbol="AAPL",
+        price=Decimal("97"),
+        size=10,
+        exchange_timestamp_ns=reverse_ts_ns + 600 * 1_000_000_000,
+    ))
+
+    assert store.opened_at_ns("AAPL") == reverse_ts_ns
+    assert len(received) == 1
+    assert received[0].reason == "HARD_EXIT_AGE"
+    assert received[0].timestamp_ns == reverse_ts_ns + 600 * 1_000_000_000
+    assert received[0].side.name == "BUY"
+    assert received[0].quantity == 100
 
 
 def test_episode_suppression_prevents_double_fire():

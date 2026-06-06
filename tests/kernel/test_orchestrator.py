@@ -21,6 +21,7 @@ Tests for behaviours that no longer exist were dropped:
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
 from dataclasses import replace
 from decimal import Decimal
 from typing import Any
@@ -29,24 +30,43 @@ import pytest
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
+from feelies.core.errors import OrchestratorPipelineAbortError, SessionEntryBlockedError
+from feelies.core.state_machine import TransitionRecord
 from feelies.core.events import (
+    Alert,
+    Event,
     MetricEvent,
     NBBOQuote,
     OrderAck,
     OrderAckStatus,
     OrderRequest,
+    OrderType,
+    PositionUpdate,
     RiskAction,
     RiskVerdict,
+    Side,
     Signal,
     SignalDirection,
+    StateTransition,
+    SymbolHalted,
+    Trade,
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
+from feelies.execution.cost_model import ZeroCostModel
+from feelies.execution.intent import OrderIntent, TradingIntent
+from feelies.execution.order_state import OrderState
+from feelies.execution.regulatory.borrow_availability import BorrowTier
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
 from feelies.kernel.orchestrator import Orchestrator
+from feelies.monitoring.in_memory import InMemoryKillSwitch
 from feelies.portfolio.memory_position_store import MemoryPositionStore
+from feelies.portfolio.position_store import Position
 from feelies.portfolio.position_store import PositionStore
+from feelies.portfolio.strategy_position_store import StrategyPositionStore
+from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
+from feelies.risk.escalation import RiskLevel
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 
@@ -61,6 +81,70 @@ class _NoOpMetricCollector:
         pass
 
 
+class _CountingReplayLog:
+    """Event log stub that exposes how far calibration iterated."""
+
+    def __init__(self, events: Sequence[Event]) -> None:
+        self._events = tuple(events)
+        self.events_yielded = 0
+
+    def append(self, event: Event) -> None:
+        raise NotImplementedError
+
+    def append_batch(self, events: Sequence[Event]) -> None:
+        raise NotImplementedError
+
+    def replace_events(self, _events: Sequence[Event]) -> None:
+        raise NotImplementedError
+
+    def replay(
+        self,
+        start_sequence: int = 0,
+        end_sequence: int | None = None,
+    ) -> Iterator[Event]:
+        del start_sequence, end_sequence
+        for event in self._events:
+            self.events_yielded += 1
+            yield event
+
+    def last_sequence(self) -> int:
+        return self._events[-1].sequence if self._events else -1
+
+
+class _StubRegimeEngine:
+    def __init__(self) -> None:
+        self.calibrated = False
+        self.calibration_count: int | None = None
+
+    @property
+    def state_names(self) -> Sequence[str]:
+        return ("normal",)
+
+    @property
+    def n_states(self) -> int:
+        return 1
+
+    def calibrate(self, quotes: Sequence[NBBOQuote]) -> bool:
+        self.calibrated = True
+        self.calibration_count = len(quotes)
+        return True
+
+    def posterior(self, quote: NBBOQuote) -> list[float]:
+        return [1.0]
+
+    def current_state(self, symbol: str) -> list[float] | None:
+        return None
+
+    def reset(self, symbol: str) -> None:
+        pass
+
+    def checkpoint(self) -> bytes:
+        return b"{}"
+
+    def restore(self, data: bytes) -> None:
+        pass
+
+
 class _StubMarketData:
     """Empty market data source — yields no events."""
 
@@ -69,6 +153,55 @@ class _StubMarketData:
 
     def events(self):
         return iter(self._events)
+
+
+class _SnapshotStrategyPositionStore:
+    """Minimal strategy store whose get() returns detached Position copies."""
+
+    def __init__(self) -> None:
+        self._positions: dict[str, Position] = {
+            "alpha_a": Position(symbol="AAPL", quantity=100),
+            "alpha_b": Position(symbol="AAPL", quantity=100),
+            "alpha_c": Position(symbol="AAPL", quantity=100),
+            "alpha_d": Position(symbol="AAPL", quantity=1),
+        }
+        self.debit_fee_calls: list[tuple[str, str, Decimal]] = []
+
+    def strategy_ids(self) -> tuple[str, ...]:
+        return ("alpha_a", "alpha_b", "alpha_c", "alpha_d")
+
+    def get(self, strategy_id: str, symbol: str) -> Position:
+        pos = self._positions.get(strategy_id)
+        if pos is None or pos.symbol != symbol:
+            return Position(symbol=symbol)
+        return Position(
+            symbol=pos.symbol,
+            quantity=pos.quantity,
+            avg_entry_price=pos.avg_entry_price,
+            realized_pnl=pos.realized_pnl,
+            unrealized_pnl=pos.unrealized_pnl,
+            cumulative_fees=pos.cumulative_fees,
+        )
+
+    def update(
+        self,
+        strategy_id: str,
+        symbol: str,
+        quantity_delta: int,
+        fill_price: Decimal,
+        fees: Decimal = Decimal("0"),
+        timestamp_ns: int | None = None,
+    ) -> Position:
+        pos = self._positions.setdefault(strategy_id, Position(symbol=symbol))
+        pos.quantity += quantity_delta
+        pos.avg_entry_price = fill_price
+        pos.cumulative_fees += fees
+        return pos
+
+    def debit_fees(self, strategy_id: str, symbol: str, fees: Decimal) -> None:
+        self.debit_fee_calls.append((strategy_id, symbol, fees))
+        pos = self._positions.setdefault(strategy_id, Position(symbol=symbol))
+        pos.cumulative_fees += fees
 
 
 class _StubRiskEngine:
@@ -96,6 +229,19 @@ class _StubRiskEngine:
             action=self._action,
             reason="test",
         )
+
+
+class _CountingHwmRiskEngine(_StubRiskEngine):
+    def __init__(self) -> None:
+        super().__init__(RiskAction.ALLOW)
+        self.refresh_calls: list[PositionStore] = []
+
+    def refresh_high_water_mark(self, positions: PositionStore) -> None:
+        self.refresh_calls.append(positions)
+
+
+class _NonCallableHwmRiskEngine(_StubRiskEngine):
+    refresh_high_water_mark = object()
 
 
 class _RaisingRiskEngine:
@@ -230,6 +376,13 @@ def _publish_signal_on_quote(bus: EventBus, signal: Signal) -> None:
     bus.subscribe(NBBOQuote, emit)  # type: ignore[arg-type]
 
 
+class _OrderRouterNoCancel:
+    """Minimal router stub without ``cancel_order`` (cancel hygiene tests)."""
+
+    def poll_acks(self) -> list[OrderAck]:
+        return []
+
+
 def _build_orchestrator(
     clock: SimulatedClock,
     *,
@@ -237,14 +390,21 @@ def _build_orchestrator(
     risk_engine: Any = None,
     market_data: Any = None,
     position_store: Any = None,
+    strategy_positions: Any = None,
+    kill_switch: Any = None,
+    order_router: Any = None,
 ) -> Orchestrator:
     bus = bus if bus is not None else EventBus()
     event_log = InMemoryEventLog()
     pos_store = position_store or MemoryPositionStore()
-    bt_router = BacktestOrderRouter(clock=clock)
+    router = (
+        order_router
+        if order_router is not None
+        else BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+    )
     backend = ExecutionBackend(
         market_data=market_data or _StubMarketData(),
-        order_router=bt_router,
+        order_router=router,
         mode="BACKTEST",
     )
     return Orchestrator(
@@ -255,6 +415,8 @@ def _build_orchestrator(
         position_store=pos_store,
         event_log=event_log,
         metric_collector=_NoOpMetricCollector(),
+        strategy_positions=strategy_positions,
+        kill_switch=kill_switch,
     )
 
 
@@ -280,6 +442,39 @@ class TestOrchestratorBoot:
         clock = SimulatedClock(start_ns=1000)
         orch = _build_orchestrator(clock)
         assert orch.macro_state == MacroState.INIT
+
+    def test_regime_calibration_does_not_scan_suffix_for_total_count(
+        self,
+    ) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        quotes = tuple(
+            _make_quote(ts=1000 + i, seq=i + 1)
+            for i in range(100)
+        )
+        event_log = _CountingReplayLog(quotes)
+        regime_engine = _StubRegimeEngine()
+        bt_router = BacktestOrderRouter(clock=clock)
+        backend = ExecutionBackend(
+            market_data=_StubMarketData(),
+            order_router=bt_router,
+            mode="BACKTEST",
+        )
+        orch = Orchestrator(
+            clock=clock,
+            bus=EventBus(),
+            backend=backend,
+            risk_engine=_StubRiskEngine(),
+            position_store=MemoryPositionStore(),
+            event_log=event_log,
+            metric_collector=_NoOpMetricCollector(),
+            regime_engine=regime_engine,
+        )
+        orch._regime_calibration_max_quotes = 3
+
+        orch._calibrate_regime_engine()
+
+        assert regime_engine.calibration_count == 3
+        assert event_log.events_yielded == 3
 
     def test_boot_transitions_to_ready(self) -> None:
         clock = SimulatedClock(start_ns=1000)
@@ -341,7 +536,7 @@ class TestOrchestratorFullPipeline:
         signal = _make_signal(quote)
 
         bus = EventBus()
-        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
@@ -365,6 +560,71 @@ class TestOrchestratorFullPipeline:
         assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
         assert orch.macro_state == MacroState.BACKTEST_MODE
 
+    def test_mark_only_tick_refreshes_risk_high_water_mark(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        rally_quote = _make_quote(ts=1000, bid="119.50", ask="120.50", seq=1)
+        drawdown_quote = _make_quote(ts=2000, bid="99.50", ask="100.50", seq=2)
+        position_store = MemoryPositionStore()
+        position_store.update("AAPL", 100, Decimal("100"))
+        risk_engine = BasicRiskEngine(RiskConfig(
+            max_position_per_symbol=100_000,
+            max_gross_exposure_pct=100.0,
+            max_drawdown_pct=1.0,
+            account_equity=Decimal("100000"),
+        ))
+
+        bus = EventBus()
+        verdicts: list[RiskVerdict] = []
+        bus.subscribe(RiskVerdict, verdicts.append)
+
+        def emit_second_quote_signal(quote: NBBOQuote) -> None:
+            if quote.sequence == drawdown_quote.sequence:
+                bus.publish(_make_signal(quote, direction=SignalDirection.SHORT))
+
+        bus.subscribe(NBBOQuote, emit_second_quote_signal)
+
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=risk_engine,
+            position_store=position_store,
+        )
+        _boot_to_backtest(orch)
+
+        orch._process_tick(rally_quote)
+        orch._process_tick(drawdown_quote)
+
+        assert verdicts[-1].action == RiskAction.FORCE_FLATTEN
+        assert "drawdown" in verdicts[-1].reason
+
+    def test_mark_only_tick_refreshes_risk_high_water_mark_once(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        position_store = MemoryPositionStore()
+        risk_engine = _CountingHwmRiskEngine()
+        orch = _build_orchestrator(
+            clock,
+            risk_engine=risk_engine,
+            position_store=position_store,
+        )
+        _boot_to_backtest(orch)
+
+        orch._process_tick(_make_quote())
+
+        assert risk_engine.refresh_calls == [position_store]
+
+    def test_non_callable_hwm_hook_is_skipped(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(
+            clock,
+            risk_engine=_NonCallableHwmRiskEngine(),
+        )
+        _boot_to_backtest(orch)
+
+        orch._process_tick(_make_quote())
+
+        assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
+        assert orch.macro_state == MacroState.BACKTEST_MODE
+
     def test_position_updated_after_fill(self) -> None:
         clock = SimulatedClock(start_ns=1000)
         quote = _make_quote()
@@ -372,7 +632,7 @@ class TestOrchestratorFullPipeline:
 
         bus = EventBus()
         position_store = MemoryPositionStore()
-        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
@@ -395,6 +655,355 @@ class TestOrchestratorFullPipeline:
 
         pos = position_store.get("AAPL")
         assert pos.quantity != 0
+
+    def test_fill_records_opened_at_timestamp(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        quote = _make_quote()
+        signal = _make_signal(quote)
+
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        bt_router.on_quote(quote)
+
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(action=RiskAction.ALLOW),
+            position_store=position_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+        _publish_signal_on_quote(bus, signal)
+
+        _boot_to_backtest(orch)
+        orch._process_tick(quote)
+
+        assert position_store.opened_at_ns("AAPL") == quote.timestamp_ns
+
+    def test_filled_position_update_uses_ack_timestamp(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        updates: list[PositionUpdate] = []
+        bus.subscribe(PositionUpdate, updates.append)
+
+        orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="fill-cid",
+            sequence=2,
+            order_id="filled-order",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            strategy_id="alpha_1",
+        )
+        orch._track_order(order.order_id, Side.BUY, order)
+
+        orch._reconcile_fills([
+            OrderAck(
+                timestamp_ns=2000,
+                correlation_id="fill-cid",
+                sequence=2,
+                order_id=order.order_id,
+                symbol="AAPL",
+                status=OrderAckStatus.FILLED,
+                filled_quantity=10,
+                fill_price=Decimal("150.00"),
+                fees=Decimal("0.10"),
+            ),
+        ], correlation_id="tick-cid")
+
+        assert len(updates) == 1
+        assert updates[0].timestamp_ns == 2000
+
+
+class TestOrchestratorFillReconcileGuards:
+    def test_reconcile_ignores_fill_fields_on_rejected_ack(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+        position_store = MemoryPositionStore()
+        orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="c1",
+            sequence=1,
+            order_id="ord-rej-fill",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            strategy_id="a",
+        )
+        orch._track_order(order.order_id, order.side, order)
+        orch._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=order.correlation_id,
+        )
+
+        orch._reconcile_fills([
+            OrderAck(
+                timestamp_ns=1100,
+                correlation_id="c1",
+                sequence=1,
+                order_id=order.order_id,
+                symbol="AAPL",
+                status=OrderAckStatus.REJECTED,
+                filled_quantity=10,
+                fill_price=Decimal("150"),
+                reason="simulated",
+            ),
+        ], correlation_id="tick-cid")
+
+        assert position_store.get("AAPL").quantity == 0
+        assert any(
+            a.alert_name == "fill_payload_inconsistent_with_ack_status"
+            for a in alerts
+        )
+
+    def test_reconcile_alerts_on_filled_missing_price(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+        position_store = MemoryPositionStore()
+        orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="c2",
+            sequence=1,
+            order_id="ord-bad-fill",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            strategy_id="a",
+        )
+        orch._track_order(order.order_id, order.side, order)
+        orch._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=order.correlation_id,
+        )
+
+        orch._reconcile_fills([
+            OrderAck(
+                timestamp_ns=1200,
+                correlation_id="c2",
+                sequence=1,
+                order_id=order.order_id,
+                symbol="AAPL",
+                status=OrderAckStatus.FILLED,
+                filled_quantity=10,
+                fill_price=None,
+            ),
+        ], correlation_id="tick-cid")
+
+        assert position_store.get("AAPL").quantity == 0
+        assert any(
+            a.alert_name == "fill_ack_missing_price_or_quantity"
+            for a in alerts
+        )
+
+    def test_duplicate_filled_ack_emits_warning_alert(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="c3",
+            sequence=1,
+            order_id="ord-dup-fill",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            strategy_id="a",
+        )
+        orch._track_order(order.order_id, order.side, order)
+        orch._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=order.correlation_id,
+        )
+        orch._apply_ack_to_order(OrderAck(
+            timestamp_ns=1300,
+            correlation_id="c3",
+            sequence=1,
+            order_id=order.order_id,
+            symbol="AAPL",
+            status=OrderAckStatus.ACKNOWLEDGED,
+        ))
+        orch._apply_ack_to_order(OrderAck(
+            timestamp_ns=1310,
+            correlation_id="c3",
+            sequence=2,
+            order_id=order.order_id,
+            symbol="AAPL",
+            status=OrderAckStatus.FILLED,
+            filled_quantity=10,
+            fill_price=Decimal("150"),
+        ))
+        orch._apply_ack_to_order(OrderAck(
+            timestamp_ns=1320,
+            correlation_id="c3",
+            sequence=3,
+            order_id=order.order_id,
+            symbol="AAPL",
+            status=OrderAckStatus.FILLED,
+            filled_quantity=10,
+            fill_price=Decimal("150"),
+        ))
+
+        assert any(
+            a.alert_name == "duplicate_terminal_fill_ack"
+            for a in alerts
+        )
+
+    def test_emergency_flatten_poll_failure_force_terminals_order(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+
+        class _PollFailsRouter(BacktestOrderRouter):
+            def poll_acks(self):  # type: ignore[override]
+                raise RuntimeError("poll boom")
+
+        quote = _make_quote()
+        router = _PollFailsRouter(clock=clock)
+        router.on_quote(quote)
+
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=MemoryPositionStore(),
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+        _boot_to_backtest(orch)
+        orch._positions.update("AAPL", 100, Decimal("150.00"))
+
+        failures, residual = orch._emergency_flatten_all("esc-cid")
+
+        assert "AAPL" in failures
+        assert residual["AAPL"] == 100
+        assert any(a.alert_name == "order_pipeline_exception" for a in alerts)
+        assert not any(
+            sm.state == OrderState.SUBMITTED
+            for sm, _, _ in orch._active_orders.values()
+        )
+
+    def test_cancel_order_without_router_resolves_to_cancelled(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            order_router=_OrderRouterNoCancel(),
+        )
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="cc",
+            sequence=1,
+            order_id="ord-cancel-local",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            strategy_id="a",
+        )
+        orch._track_order(order.order_id, order.side, order)
+        orch._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=order.correlation_id,
+        )
+        orch._apply_ack_to_order(OrderAck(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="cc",
+            sequence=1,
+            order_id=order.order_id,
+            symbol="AAPL",
+            status=OrderAckStatus.ACKNOWLEDGED,
+        ))
+
+        assert orch.cancel_order(order.order_id) is True
+        assert order.order_id not in orch._active_orders
+        assert any(
+            a.alert_name == "cancel_order_router_unsupported"
+            for a in alerts
+        )
+
+    def test_shutdown_resolves_cancel_requested(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="sd",
+            sequence=1,
+            order_id="ord-shut-cr",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=1,
+            strategy_id="a",
+        )
+        orch._track_order(order.order_id, order.side, order)
+        orch._transition_order(
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
+            correlation_id=order.correlation_id,
+        )
+        orch._apply_ack_to_order(OrderAck(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="sd",
+            sequence=1,
+            order_id=order.order_id,
+            symbol="AAPL",
+            status=OrderAckStatus.ACKNOWLEDGED,
+        ))
+        sm = orch._active_orders[order.order_id][0]
+        sm.transition(
+            OrderState.CANCEL_REQUESTED,
+            trigger="manual_test",
+            correlation_id=order.correlation_id,
+        )
+
+        orch.shutdown()
+
+        assert order.order_id not in orch._active_orders
+        assert not any(
+            a.alert_name == "pending_orders_at_shutdown" for a in alerts
+        )
 
 
 # ── Tests: No signal path ────────────────────────────────────────────
@@ -436,7 +1045,7 @@ class TestOrchestratorFlatSignalExit:
         position_store.update("AAPL", 100, Decimal("150.00"))
 
         bus = EventBus()
-        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
@@ -519,6 +1128,146 @@ class TestOrchestratorRiskReject:
         assert position_store.get("AAPL").quantity == 0
 
 
+class TestStopExitSignalMetadata:
+    def test_stop_exit_signal_uses_signal_sequence_family(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        published_signals: list[Signal] = []
+        bus.subscribe(Signal, published_signals.append)
+
+        position_store = MemoryPositionStore()
+        position_store.update("AAPL", 100, Decimal("150.00"))
+
+        orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
+        orch._stop_loss_per_share = 1.0
+        _boot_to_backtest(orch)
+
+        quote = _make_quote(ts=2000, bid="147.50", ask="148.50", seq=7)
+
+        orch._process_tick(quote)
+
+        stop_signals = [
+            signal for signal in published_signals
+            if signal.strategy_id == "__stop_exit__"
+        ]
+        assert len(stop_signals) == 1
+        stop_signal = stop_signals[0]
+        assert stop_signal.correlation_id == quote.correlation_id
+        assert stop_signal.sequence == 0
+        assert stop_signal.sequence != quote.sequence
+        assert stop_signal.source_layer == "SIGNAL"
+        assert stop_signal.layer == "SIGNAL"
+        assert stop_signal.regime_gate_state == "N/A"
+
+
+class TestCancelFeeAccounting:
+    def test_cancel_fee_without_fill_creates_fee_only_position_and_update(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        updates: list[PositionUpdate] = []
+        bus.subscribe(PositionUpdate, updates.append)
+
+        orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
+
+        orch._reconcile_fills([
+            OrderAck(
+                timestamp_ns=2000,
+                correlation_id="cancel-cid",
+                sequence=2,
+                order_id="never-filled",
+                symbol="AAPL",
+                status=OrderAckStatus.CANCELLED,
+                fees=Decimal("0.50"),
+                reason="client_cancel",
+            ),
+        ], correlation_id="tick-cid")
+
+        pos = position_store.all_positions()["AAPL"]
+        assert pos.quantity == 0
+        assert pos.cumulative_fees == Decimal("0.50")
+        assert len(updates) == 1
+        assert updates[0].symbol == "AAPL"
+        assert updates[0].quantity == 0
+        assert updates[0].cumulative_fees == Decimal("0.50")
+        assert updates[0].timestamp_ns == 2000
+
+    def test_cancel_fee_without_fill_updates_strategy_fees(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        strategy_positions = StrategyPositionStore()
+
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            position_store=position_store,
+            strategy_positions=strategy_positions,
+        )
+
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="cancel-cid",
+            sequence=2,
+            order_id="never-filled-alpha",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=50,
+            limit_price=Decimal("149.50"),
+            strategy_id="alpha_1",
+        )
+        orch._track_order(order.order_id, Side.BUY, order)
+
+        orch._reconcile_fills([
+            OrderAck(
+                timestamp_ns=2000,
+                correlation_id="cancel-cid",
+                sequence=2,
+                order_id=order.order_id,
+                symbol="AAPL",
+                status=OrderAckStatus.CANCELLED,
+                fees=Decimal("0.50"),
+                reason="client_cancel",
+            ),
+        ], correlation_id="tick-cid")
+
+        strat_pos = strategy_positions.get("alpha_1", "AAPL")
+        assert strat_pos.quantity == 0
+        assert strat_pos.cumulative_fees == Decimal("0.50")
+        assert strategy_positions.get_strategy_cumulative_fees("alpha_1") == Decimal("0.50")
+
+
+class TestStrategyFillDistribution:
+    def test_fee_remainder_uses_debit_fees_on_last_nonzero_allocation(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        strategy_positions = _SnapshotStrategyPositionStore()
+
+        orch = _build_orchestrator(
+            clock,
+            strategy_positions=strategy_positions,
+        )
+
+        orch._distribute_fill_to_strategies(
+            symbol="AAPL",
+            signed_qty=3,
+            fill_price=Decimal("150.00"),
+            fees=Decimal("0.01"),
+            timestamp_ns=2000,
+        )
+
+        assert strategy_positions.get("alpha_a", "AAPL").quantity == 101
+        assert strategy_positions.get("alpha_b", "AAPL").quantity == 101
+        assert strategy_positions.get("alpha_c", "AAPL").quantity == 101
+        assert strategy_positions.get("alpha_d", "AAPL").quantity == 1
+
+        assert strategy_positions.debit_fee_calls == [
+            ("alpha_c", "AAPL", Decimal("0.01")),
+        ]
+        assert strategy_positions.get("alpha_c", "AAPL").cumulative_fees == Decimal("0.01")
+        assert strategy_positions.get("alpha_d", "AAPL").cumulative_fees == Decimal("0")
+
+
 # ── Tests: Shutdown ──────────────────────────────────────────────────
 
 
@@ -576,12 +1325,234 @@ class TestOrchestratorHalt:
         orch.halt()
         assert orch.macro_state == MacroState.READY
 
+    def test_halt_resets_micro_state_machine(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_backtest(orch)
+        orch.halt()
+        assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
+
     def test_halt_noop_when_not_trading(self) -> None:
         clock = SimulatedClock(start_ns=1000)
         orch = _build_orchestrator(clock)
         _boot_to_ready(orch)
         orch.halt()
         assert orch.macro_state == MacroState.READY
+
+
+
+# ── Macro lifecycle remediation (global stack audit) ──────────────────
+
+
+class TestOrchestratorMacroLifecycleRemediation:
+    def test_shutdown_from_risk_lockdown_reaches_shutdown(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_ready(orch)
+        orch._macro.transition(
+            MacroState.LIVE_TRADING_MODE,
+            trigger="CMD_LIVE_DEPLOY",
+        )
+        orch._macro.transition(
+            MacroState.RISK_LOCKDOWN,
+            trigger="RISK_BREACH",
+        )
+        orch.shutdown()
+        assert orch.macro_state == MacroState.SHUTDOWN
+
+    def test_unlock_from_lockdown_clears_kill_switch(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        kill = InMemoryKillSwitch()
+        kill.activate("pre_unlock", activated_by="test")
+        bus = EventBus()
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=BacktestOrderRouter(clock=clock),
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=MemoryPositionStore(),
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+            kill_switch=kill,
+        )
+        _boot_to_ready(orch)
+        re = orch._risk_escalation
+        re.transition(RiskLevel.WARNING, trigger="t")
+        re.transition(RiskLevel.BREACH_DETECTED, trigger="t")
+        re.transition(RiskLevel.FORCED_FLATTEN, trigger="t")
+        re.transition(RiskLevel.LOCKED, trigger="t")
+        orch._macro.transition(
+            MacroState.LIVE_TRADING_MODE,
+            trigger="CMD_LIVE_DEPLOY",
+        )
+        orch._macro.transition(
+            MacroState.RISK_LOCKDOWN,
+            trigger="RISK_BREACH",
+        )
+        assert kill.is_active
+        orch.unlock_from_lockdown(audit_token="tok-audit")
+        assert not kill.is_active
+        assert orch.macro_state == MacroState.READY
+        assert orch.risk_level == RiskLevel.NORMAL
+
+    def test_run_paper_empty_feed_returns_ready(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_ready(orch)
+        orch.run_paper()
+        assert orch.macro_state == MacroState.READY
+
+    def test_run_live_empty_feed_returns_ready(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_ready(orch)
+        orch.run_live()
+        assert orch.macro_state == MacroState.READY
+
+    def test_run_backtest_refuses_active_kill_switch(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        kill = InMemoryKillSwitch()
+        kill.activate("test_halt", activated_by="test")
+        orch = _build_orchestrator(clock, kill_switch=kill)
+        _boot_to_ready(orch)
+        with pytest.raises(SessionEntryBlockedError, match="kill switch"):
+            orch.run_backtest()
+
+    def test_run_backtest_refuses_non_normal_risk(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        _boot_to_ready(orch)
+        orch._risk_escalation.transition(RiskLevel.WARNING, trigger="probe")
+        with pytest.raises(SessionEntryBlockedError, match="risk escalation"):
+            orch.run_backtest()
+
+    def test_live_mode_force_flatten_reaches_macro_risk_lockdown(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        quote = _make_quote()
+        signal = _make_signal(quote)
+        _publish_signal_on_quote(bus, signal)
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=_StubRiskEngine(RiskAction.FORCE_FLATTEN),
+        )
+        _boot_to_ready(orch)
+        orch._macro.transition(MacroState.LIVE_TRADING_MODE, trigger="CMD_LIVE_DEPLOY")
+        orch._process_tick(quote)
+        assert orch.macro_state == MacroState.RISK_LOCKDOWN
+        assert orch.risk_level == RiskLevel.LOCKED
+
+    def test_backtest_force_flatten_does_not_reach_macro_lockdown(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        quote = _make_quote()
+        signal = _make_signal(quote)
+        _publish_signal_on_quote(bus, signal)
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=_StubRiskEngine(RiskAction.FORCE_FLATTEN),
+        )
+        _boot_to_backtest(orch)
+        orch._process_tick(quote)
+        assert orch.macro_state == MacroState.BACKTEST_MODE
+        assert orch.risk_level == RiskLevel.NORMAL
+
+    def test_recover_from_degraded_refuses_when_kill_switch_active(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        signal = _make_signal(_make_quote())
+        kill = InMemoryKillSwitch()
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=_RaisingRiskEngine(),
+            kill_switch=kill,
+        )
+        _publish_signal_on_quote(bus, signal)
+        _boot_to_ready(orch)
+        orch._macro.transition(MacroState.BACKTEST_MODE, trigger="CMD_BACKTEST")
+        orch._micro.reset(trigger="session_start:test")
+        orch._process_tick(_make_quote())
+        assert orch.macro_state == MacroState.DEGRADED
+        kill.activate("during_degraded", activated_by="test")
+        assert orch.recover_from_degraded() is False
+        assert orch.macro_state == MacroState.DEGRADED
+
+    def test_shutdown_macro_transition_uses_correlation_id(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        st_events: list[StateTransition] = []
+        bus.subscribe(StateTransition, st_events.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        _boot_to_ready(orch)
+        orch.shutdown()
+        macro_shutdown = [
+            e for e in st_events
+            if e.machine_name == "global_stack" and e.to_state == "SHUTDOWN"
+        ]
+        assert macro_shutdown
+        assert macro_shutdown[-1].correlation_id == "orchestrator_shutdown"
+
+    def test_shutdown_warns_on_pending_orders(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)
+        orch = _build_orchestrator(clock, bus=bus)
+        _boot_to_ready(orch)
+        order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="pending-cid",
+            sequence=1,
+            order_id="pending-order-1",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=10,
+            limit_price=Decimal("150.00"),
+            strategy_id="alpha_1",
+        )
+        orch._track_order(order.order_id, Side.BUY, order)
+        orch.shutdown()
+        pending_alerts = [a for a in alerts if a.alert_name == "pending_orders_at_shutdown"]
+        assert len(pending_alerts) == 1
+        assert "pending-order-1" in pending_alerts[0].context.get("order_ids", [])
+
+    def test_run_paper_pipeline_abort_not_session_feed_complete(self) -> None:
+        """If DEGRADED transition fails inside tick recovery, do not → READY.
+
+        Regression: ``_pipeline_abort_requested`` broke the tick loop without
+        raising, so ``SESSION_FEED_COMPLETE`` looked like normal exhaustion.
+        """
+        clock = SimulatedClock(start_ns=1000)
+        quote = _make_quote()
+        orch = _build_orchestrator(
+            clock,
+            market_data=_StubMarketData([quote]),
+        )
+        _boot_to_ready(orch)
+
+        def veto_drift(record: TransitionRecord) -> None:
+            if record.trigger.startswith("EXECUTION_DRIFT_DETECTED"):
+                raise RuntimeError("macro transition subscriber boom")
+
+        orch._macro.on_transition(veto_drift)
+
+        def boom(_quote: NBBOQuote) -> None:
+            raise RuntimeError("tick boom")
+
+        orch._process_tick_inner = boom  # type: ignore[method-assign]
+
+        with pytest.raises(OrchestratorPipelineAbortError):
+            orch.run_paper()
+
+        assert orch.macro_state == MacroState.DEGRADED
 
 
 # ── Tests: Multiple ticks ────────────────────────────────────────────
@@ -618,7 +1589,7 @@ class TestScaleDownToZeroSuppression:
         signal = _make_signal(quote)
 
         position_store = MemoryPositionStore()
-        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         bt_router.on_quote(quote)
 
         orch = Orchestrator(
@@ -677,7 +1648,7 @@ class TestEdgeCostGate:
         bus = EventBus()
         event_log = InMemoryEventLog()
         pos_store = MemoryPositionStore()
-        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         backend = ExecutionBackend(
             market_data=_StubMarketData(),
             order_router=bt_router,
@@ -739,6 +1710,129 @@ class TestEdgeCostGate:
         assert pos.quantity != 0  # gate disabled, order allowed
 
 
+# ── B5: reversal combined-edge guard ──────────────────────────────────
+
+
+def _make_short_signal_with_edge(quote: NBBOQuote, edge_bps: float) -> Signal:
+    """SHORT signal with explicit edge — drives a REVERSE_LONG_TO_SHORT."""
+    return Signal(
+        timestamp_ns=quote.timestamp_ns,
+        correlation_id=quote.correlation_id,
+        sequence=quote.sequence,
+        symbol=quote.symbol,
+        strategy_id="test_strat",
+        direction=SignalDirection.SHORT,
+        strength=0.8,
+        edge_estimate_bps=edge_bps,
+    )
+
+
+class TestReversalEdgeGuard:
+    """B5: a reversal flips only when edge clears combined exit+entry cost.
+
+    Against a +50 long, a SHORT signal translates to REVERSE_LONG_TO_SHORT
+    with default sizing (target 150 → exit 50, entry 100).  The guard prices
+    the round-trip cost of *both* legs and suppresses the entry (flatten-
+    only) unless the edge clears ``multiplier × combined_cost``.
+    """
+
+    def _build(
+        self,
+        clock: SimulatedClock,
+        signal: Signal,
+        *,
+        multiplier: float,
+    ) -> tuple[Orchestrator, EventBus, list[OrderRequest], list[Alert]]:
+        from feelies.execution.cost_model import (
+            DefaultCostModel,
+            DefaultCostModelConfig,
+        )
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        alerts: list[Alert] = []
+        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+        bus.subscribe(Alert, alerts.append)  # type: ignore[arg-type]
+        pos_store = MemoryPositionStore()
+        pos_store.update("AAPL", 50, Decimal("100"))  # +50 long
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        backend = ExecutionBackend(
+            market_data=_StubMarketData(),
+            order_router=bt_router,
+            mode="BACKTEST",
+        )
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=backend,
+            risk_engine=_StubRiskEngine(),
+            position_store=pos_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+            cost_model=DefaultCostModel(DefaultCostModelConfig()),
+        )
+        _publish_signal_on_quote(bus, signal)
+        orch._reversal_min_edge_cost_multiplier = multiplier
+        _boot_to_backtest(orch)
+        return orch, bus, orders, alerts
+
+    @staticmethod
+    def _quote() -> NBBOQuote:
+        # Tight spread → combined round-trip cost ≈ 8.3 bps, required ≈ 16.7
+        # bps at multiplier 2.0 (edge 5 fails, edge 30 passes).
+        return _make_quote(bid="99.99", ask="100.01")
+
+    def test_reversal_blocked_when_edge_insufficient(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        quote = self._quote()
+        signal = _make_short_signal_with_edge(quote, edge_bps=5.0)
+        orch, _bus, orders, alerts = self._build(clock, signal, multiplier=2.0)
+        orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
+        orch._process_tick(quote)
+
+        # Only the exit (flatten) leg of 50 shares is submitted; no entry.
+        assert len(orders) == 1
+        assert orders[0].quantity == 50
+        assert orders[0].side == Side.SELL
+        assert any(
+            a.alert_name == "reversal_edge_insufficient" for a in alerts
+        )
+
+    def test_reversal_allowed_when_edge_sufficient(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        quote = self._quote()
+        signal = _make_short_signal_with_edge(quote, edge_bps=30.0)
+        orch, _bus, orders, alerts = self._build(clock, signal, multiplier=2.0)
+        orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
+        orch._process_tick(quote)
+
+        # Both legs submit: exit 50 + entry 100.
+        assert len(orders) == 2
+        quantities = sorted(o.quantity for o in orders)
+        assert quantities == [50, 100]
+        assert not any(
+            a.alert_name == "reversal_edge_insufficient" for a in alerts
+        )
+
+    def test_reversal_exit_never_suppressed_by_edge_guard(self) -> None:
+        # Inv-11: extreme multiplier blocks the entry, but the exit must
+        # still flatten the existing position.
+        clock = SimulatedClock(start_ns=1000)
+        quote = self._quote()
+        signal = _make_short_signal_with_edge(quote, edge_bps=30.0)
+        orch, _bus, orders, alerts = self._build(clock, signal, multiplier=100.0)
+        orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
+        orch._process_tick(quote)
+
+        assert len(orders) == 1  # exit only
+        assert orders[0].quantity == 50
+        assert orders[0].side == Side.SELL
+        assert any(
+            a.alert_name == "reversal_edge_insufficient" for a in alerts
+        )
+        # The existing long was flattened (exit filled), not flipped short.
+        assert orch._positions.get("AAPL").quantity == 0
+
+
 # ── F1: Resting-order guard placed AFTER signal/risk evaluation ───────────
 
 
@@ -756,7 +1850,7 @@ class TestRestingOrderGuardAfterRisk:
     ) -> tuple[Orchestrator, EventBus]:
         bus = EventBus()
         pos_store = position_store or MemoryPositionStore()
-        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         backend = ExecutionBackend(
             market_data=_StubMarketData(),
             order_router=bt_router,
@@ -840,6 +1934,40 @@ class TestRestingOrderGuardAfterRisk:
         # EXIT bypasses guard → position is fully closed.
         assert position_store.get("AAPL").quantity == 0
 
+    def test_stop_exit_does_not_submit_duplicate_exit_while_pending(self) -> None:
+        """Synthetic stop-exit should not pile up another exit on top of one already pending."""
+        clock = SimulatedClock(start_ns=1000)
+        quote = _make_quote(ts=2000, bid="147.50", ask="148.50", seq=7)
+
+        position_store = MemoryPositionStore()
+        position_store.update("AAPL", 100, Decimal("150.00"))
+
+        orch = _build_orchestrator(clock, position_store=position_store)
+        orch._stop_loss_per_share = 1.0
+        _boot_to_backtest(orch)
+
+        fake_order = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="fake-cid-stop",
+            sequence=999,
+            order_id="fake-stop-order",
+            symbol="AAPL",
+            side=Side.SELL,
+            order_type=OrderType.MARKET,
+            quantity=100,
+            limit_price=None,
+            strategy_id="__stop_exit__",
+        )
+        orch._track_order(fake_order.order_id, fake_order.side, fake_order)
+
+        new_orders: list[OrderRequest] = []
+        orch._bus.subscribe(OrderRequest, new_orders.append)
+
+        orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
+        orch._process_tick(quote)
+
+        assert new_orders == []
+
 
 # ── F2: EXIT bypasses min_order_shares gate ──────────────────────────────
 
@@ -857,7 +1985,7 @@ class TestExitBypassesMinOrderShares:
         position_store = MemoryPositionStore()
         position_store.update("AAPL", 50, Decimal("150.00"))
 
-        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         bt_router.on_quote(quote)
         orch = Orchestrator(
             clock=clock,
@@ -912,7 +2040,7 @@ class TestExitBypassesEdgeCostGate:
         position_store = MemoryPositionStore()
         position_store.update("AAPL", 50, Decimal("150.00"))
 
-        bt_router = BacktestOrderRouter(clock=clock)
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
         bt_router.on_quote(quote)
         cost_model = DefaultCostModel(DefaultCostModelConfig())
         orch = Orchestrator(
@@ -937,3 +2065,460 @@ class TestExitBypassesEdgeCostGate:
 
         # EXIT must bypass B4 gate → position fully closed.
         assert position_store.get("AAPL").quantity == 0
+
+
+class TestHaltModeling:
+    """BT-5: LULD halt suppression + post-resolution entry blackout."""
+
+    _HALT_ON = (5,)
+    _HALT_OFF = (6,)
+
+    @staticmethod
+    def _trade(ts: int, seq: int, conditions: tuple[int, ...]) -> Trade:
+        return Trade(
+            timestamp_ns=ts,
+            correlation_id=f"AAPL:{ts}:{seq}",
+            sequence=seq,
+            symbol="AAPL",
+            price=Decimal("150.00"),
+            size=100,
+            exchange_timestamp_ns=ts - 100,
+            conditions=conditions,
+        )
+
+    @staticmethod
+    def _build(
+        clock: SimulatedClock,
+        bus: EventBus,
+        position_store: MemoryPositionStore,
+        *,
+        blackout_ns: int,
+    ) -> tuple[Orchestrator, BacktestOrderRouter]:
+        bt_router = BacktestOrderRouter(clock=clock)
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(action=RiskAction.ALLOW),
+            position_store=position_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+        _boot_to_backtest(orch)
+        # _MinimalConfig carries no halt fields, so set the cached codes
+        # directly (bootstrap threads these from PlatformConfig in prod).
+        orch._halt_on_codes = frozenset({5})
+        orch._halt_off_codes = frozenset({6})
+        orch._halt_blackout_ns = blackout_ns
+        return orch, bt_router
+
+    def test_halt_on_suppresses_entry_and_emits_event(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        halts: list[SymbolHalted] = []
+        bus.subscribe(SymbolHalted, halts.append)  # type: ignore[arg-type]
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(
+            clock, bus, position_store, blackout_ns=1000,
+        )
+        # Absent the halt gate, every quote would emit a LONG entry signal.
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.LONG),
+        )
+
+        orch._process_trade(self._trade(ts=1500, seq=2, conditions=self._HALT_ON))
+        assert "AAPL" in orch._halted_symbols
+        assert [h.halted for h in halts] == [True]
+
+        q = _make_quote(ts=1700, seq=3)
+        bt_router.on_quote(q)
+        orch._process_tick(q)
+
+        # Halted → quote skipped, no entry fill, position stays flat.
+        assert position_store.get("AAPL").quantity == 0
+
+    def test_resume_blackout_suppresses_entry_then_lifts(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(
+            clock, bus, position_store, blackout_ns=1000,
+        )
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.LONG),
+        )
+
+        orch._process_trade(self._trade(ts=1500, seq=2, conditions=self._HALT_ON))
+        orch._process_trade(self._trade(ts=2000, seq=4, conditions=self._HALT_OFF))
+        assert "AAPL" not in orch._halted_symbols
+        assert orch._in_halt_blackout("AAPL", 2500)        # inside window
+        assert not orch._in_halt_blackout("AAPL", 3000)    # deadline = 2000+1000
+
+        # Entry during blackout → suppressed.
+        q_bl = _make_quote(ts=2500, seq=5)
+        bt_router.on_quote(q_bl)
+        orch._process_tick(q_bl)
+        assert position_store.get("AAPL").quantity == 0
+
+        # Entry after the blackout lifts → fills.
+        q_after = _make_quote(ts=3500, seq=6)
+        bt_router.on_quote(q_after)
+        orch._process_tick(q_after)
+        assert position_store.get("AAPL").quantity > 0
+
+    def test_exit_permitted_during_blackout(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(
+            clock, bus, position_store, blackout_ns=1000,
+        )
+
+        # Open long on the first quote, flatten on the blackout-window quote.
+        def emit(quote: NBBOQuote) -> None:
+            direction = (
+                SignalDirection.LONG if quote.sequence == 1
+                else SignalDirection.FLAT
+            )
+            bus.publish(_make_signal(quote, direction))
+        bus.subscribe(NBBOQuote, emit)  # type: ignore[arg-type]
+
+        q0 = _make_quote(ts=1000, seq=1)
+        bt_router.on_quote(q0)
+        orch._process_tick(q0)
+        assert position_store.get("AAPL").quantity > 0
+
+        orch._process_trade(self._trade(ts=1500, seq=2, conditions=self._HALT_ON))
+        orch._process_trade(self._trade(ts=2000, seq=3, conditions=self._HALT_OFF))
+        assert orch._in_halt_blackout("AAPL", 2500)
+
+        # Exit during the blackout is always permitted → position closes.
+        q_exit = _make_quote(ts=2500, seq=5)
+        bt_router.on_quote(q_exit)
+        orch._process_tick(q_exit)
+        assert position_store.get("AAPL").quantity == 0
+
+
+def _ssr_intent(
+    intent: TradingIntent,
+    direction: SignalDirection,
+    *,
+    current_quantity: int = 0,
+    symbol: str = "AAPL",
+) -> OrderIntent:
+    sig = Signal(
+        timestamp_ns=1000,
+        correlation_id="c",
+        sequence=1,
+        symbol=symbol,
+        strategy_id="s",
+        direction=direction,
+        strength=0.8,
+        edge_estimate_bps=5.0,
+    )
+    return OrderIntent(
+        intent=intent,
+        symbol=symbol,
+        strategy_id="s",
+        target_quantity=10,
+        current_quantity=current_quantity,
+        signal=sig,
+    )
+
+
+class TestSSRBlocksIntent:
+    """BT-6: _ssr_blocks_intent only refuses short-opening orders."""
+
+    def _orch(self) -> Orchestrator:
+        orch = _build_orchestrator(SimulatedClock(start_ns=1000))
+        _boot_to_backtest(orch)
+        orch._ssr_active = {"AAPL"}
+        return orch
+
+    def test_inactive_symbol_never_blocked(self) -> None:
+        orch = _build_orchestrator(SimulatedClock(start_ns=1000))
+        _boot_to_backtest(orch)  # _ssr_active empty
+        assert not orch._ssr_blocks_intent(
+            _ssr_intent(TradingIntent.ENTRY_SHORT, SignalDirection.SHORT),
+        )
+
+    def test_entry_short_blocked(self) -> None:
+        assert self._orch()._ssr_blocks_intent(
+            _ssr_intent(TradingIntent.ENTRY_SHORT, SignalDirection.SHORT),
+        )
+
+    def test_reverse_long_to_short_blocked(self) -> None:
+        assert self._orch()._ssr_blocks_intent(
+            _ssr_intent(
+                TradingIntent.REVERSE_LONG_TO_SHORT,
+                SignalDirection.SHORT,
+                current_quantity=50,
+            ),
+        )
+
+    def test_scale_up_short_blocked(self) -> None:
+        assert self._orch()._ssr_blocks_intent(
+            _ssr_intent(
+                TradingIntent.SCALE_UP,
+                SignalDirection.SHORT,
+                current_quantity=-50,
+            ),
+        )
+
+    def test_entry_long_allowed(self) -> None:
+        assert not self._orch()._ssr_blocks_intent(
+            _ssr_intent(TradingIntent.ENTRY_LONG, SignalDirection.LONG),
+        )
+
+    def test_exit_allowed(self) -> None:
+        assert not self._orch()._ssr_blocks_intent(
+            _ssr_intent(
+                TradingIntent.EXIT, SignalDirection.FLAT, current_quantity=50,
+            ),
+        )
+
+    def test_scale_up_long_allowed(self) -> None:
+        assert not self._orch()._ssr_blocks_intent(
+            _ssr_intent(
+                TradingIntent.SCALE_UP,
+                SignalDirection.LONG,
+                current_quantity=50,
+            ),
+        )
+
+    def test_reverse_short_to_long_allowed(self) -> None:
+        assert not self._orch()._ssr_blocks_intent(
+            _ssr_intent(
+                TradingIntent.REVERSE_SHORT_TO_LONG,
+                SignalDirection.LONG,
+                current_quantity=-50,
+            ),
+        )
+
+
+class TestSSRRefuseShort:
+    """BT-6: end-to-end short-entry suppression under SSR."""
+
+    @staticmethod
+    def _trade(ts: int, seq: int, conditions: tuple[int, ...]) -> Trade:
+        return Trade(
+            timestamp_ns=ts,
+            correlation_id=f"AAPL:{ts}:{seq}",
+            sequence=seq,
+            symbol="AAPL",
+            price=Decimal("150.00"),
+            size=100,
+            exchange_timestamp_ns=ts - 100,
+            conditions=conditions,
+        )
+
+    @staticmethod
+    def _build(
+        clock: SimulatedClock,
+        bus: EventBus,
+        position_store: MemoryPositionStore,
+    ) -> tuple[Orchestrator, BacktestOrderRouter]:
+        bt_router = BacktestOrderRouter(clock=clock)
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(action=RiskAction.ALLOW),
+            position_store=position_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+        _boot_to_backtest(orch)
+        return orch, bt_router
+
+    def test_short_fills_when_ssr_inactive(self) -> None:
+        # Control: without SSR a short entry fills (proves the gate is the
+        # cause of suppression in the other tests).
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(clock, bus, position_store)
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.SHORT),
+        )
+        q = _make_quote(ts=1000, seq=1)
+        bt_router.on_quote(q)
+        orch._process_tick(q)
+        assert position_store.get("AAPL").quantity < 0
+
+    def test_daily_list_suppresses_short_entry(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)  # type: ignore[arg-type]
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(clock, bus, position_store)
+        orch._ssr_active = {"AAPL"}  # daily SSR list seed
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.SHORT),
+        )
+        q = _make_quote(ts=1000, seq=1)
+        bt_router.on_quote(q)
+        orch._process_tick(q)
+        assert position_store.get("AAPL").quantity == 0
+        assert any(a.alert_name == "ssr_short_suppressed" for a in alerts)
+
+    def test_intraday_trigger_then_short_suppressed(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(clock, bus, position_store)
+        orch._ssr_codes = frozenset({7})
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.SHORT),
+        )
+
+        # Tape trigger flips AAPL SSR-active.
+        orch._process_trade(self._trade(ts=900, seq=1, conditions=(7,)))
+        assert "AAPL" in orch._ssr_active
+
+        q = _make_quote(ts=1000, seq=2)
+        bt_router.on_quote(q)
+        orch._process_tick(q)
+        assert position_store.get("AAPL").quantity == 0
+
+    def test_long_entry_and_long_exit_allowed_under_ssr(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(clock, bus, position_store)
+        orch._ssr_active = {"AAPL"}
+
+        # LONG entry is a BUY → never an SSR short sale → fills.
+        def emit(quote: NBBOQuote) -> None:
+            direction = (
+                SignalDirection.LONG if quote.sequence == 1
+                else SignalDirection.FLAT
+            )
+            bus.publish(_make_signal(quote, direction))
+        bus.subscribe(NBBOQuote, emit)  # type: ignore[arg-type]
+
+        q0 = _make_quote(ts=1000, seq=1)
+        bt_router.on_quote(q0)
+        orch._process_tick(q0)
+        assert position_store.get("AAPL").quantity > 0
+
+        # Long-side EXIT (a sell to close a long) is not a short sale → fills.
+        q1 = _make_quote(ts=2000, seq=2)
+        bt_router.on_quote(q1)
+        orch._process_tick(q1)
+        assert position_store.get("AAPL").quantity == 0
+
+
+class TestBorrowAvailability:
+    """BT-7: locate-unavailable suppression + hard-tier HTB flag."""
+
+    @staticmethod
+    def _build(
+        clock: SimulatedClock,
+        bus: EventBus,
+        position_store: MemoryPositionStore,
+    ) -> tuple[Orchestrator, BacktestOrderRouter]:
+        bt_router = BacktestOrderRouter(clock=clock)
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(action=RiskAction.ALLOW),
+            position_store=position_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+        _boot_to_backtest(orch)
+        return orch, bt_router
+
+    def test_unavailable_suppresses_short_entry(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)  # type: ignore[arg-type]
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(clock, bus, position_store)
+        orch._borrow_tier = {"AAPL": BorrowTier.UNAVAILABLE}
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.SHORT),
+        )
+        q = _make_quote(ts=1000, seq=1)
+        bt_router.on_quote(q)
+        orch._process_tick(q)
+        assert position_store.get("AAPL").quantity == 0
+        assert any(a.alert_name == "locate_unavailable" for a in alerts)
+
+    def test_available_allows_short_fill(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(clock, bus, position_store)
+        orch._borrow_tier = {"AAPL": BorrowTier.AVAILABLE}
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.SHORT),
+        )
+        q = _make_quote(ts=1000, seq=1)
+        bt_router.on_quote(q)
+        orch._process_tick(q)
+        assert position_store.get("AAPL").quantity < 0
+
+    def test_hard_tier_sets_is_short_on_order(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(clock, bus, position_store)
+        orch._borrow_tier = {"AAPL": BorrowTier.HARD}
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.SHORT),
+        )
+        q = _make_quote(ts=1000, seq=1)
+        bt_router.on_quote(q)
+        orch._process_tick(q)
+        assert orders
+        assert orders[0].is_short is True
+
+    def test_available_tier_omits_is_short_on_short_entry(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(clock, bus, position_store)
+        orch._borrow_tier = {"AAPL": BorrowTier.AVAILABLE}
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.SHORT),
+        )
+        q = _make_quote(ts=1000, seq=1)
+        bt_router.on_quote(q)
+        orch._process_tick(q)
+        assert orders
+        assert orders[0].is_short is False
+
+    def test_long_entry_allowed_when_unavailable(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        orch, bt_router = self._build(clock, bus, position_store)
+        orch._borrow_tier = {"AAPL": BorrowTier.UNAVAILABLE}
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.LONG),
+        )
+        q = _make_quote(ts=1000, seq=1)
+        bt_router.on_quote(q)
+        orch._process_tick(q)
+        assert position_store.get("AAPL").quantity > 0

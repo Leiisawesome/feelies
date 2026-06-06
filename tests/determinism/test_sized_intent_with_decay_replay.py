@@ -19,6 +19,30 @@ from tests.determinism.test_sized_intent_replay import (  # noqa: E501
 )
 
 
+
+# Locked Level-3 baseline (decay ON).  Paired with decay-OFF in
+# ``test_sized_intent_replay``; both re-baselined together (BT-11).
+EXPECTED_LEVEL3_INTENT_DECAY_ON_HASH = (
+    "16c13f4f674dd2f3b89e43d782dbecde714791f757d93d0ccf71ca0110cbe901"
+)
+EXPECTED_LEVEL3_INTENT_DECAY_ON_COUNT = 4
+
+
+def test_intent_stream_matches_locked_baseline_decay_on() -> None:
+    actual_hash, actual_count = _replay(decay=True)
+    assert actual_count == EXPECTED_LEVEL3_INTENT_DECAY_ON_COUNT, (
+        f"intent count drift (decay ON): expected "
+        f"{EXPECTED_LEVEL3_INTENT_DECAY_ON_COUNT}, got {actual_count}"
+    )
+    assert actual_hash == EXPECTED_LEVEL3_INTENT_DECAY_ON_HASH, (
+        "Level-3 SizedPositionIntent (decay ON) hash drift!\n"
+        f"  Expected: {EXPECTED_LEVEL3_INTENT_DECAY_ON_HASH}\n"
+        f"  Actual:   {actual_hash}\n"
+        "If intentional, update the constant in the same commit and "
+        "justify in the commit message."
+    )
+
+
 def test_two_replays_produce_identical_intent_hash_with_decay() -> None:
     hash_a, count_a = _replay(decay=True)
     hash_b, count_b = _replay(decay=True)

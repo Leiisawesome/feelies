@@ -13,7 +13,6 @@ import itertools
 import os
 import sys
 from collections.abc import Iterator
-from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -27,12 +26,13 @@ sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import NBBOQuote, Trade
-from feelies.core.identifiers import SequenceGenerator, make_correlation_id
+from feelies.core.identifiers import make_correlation_id
 from feelies.ingestion.massive_ingestor import (
     MassiveHistoricalIngestor,
     _download_raw,
 )
 from feelies.ingestion.massive_normalizer import MassiveNormalizer
+from feelies.storage.event_resequence import resequence_event_list as _resequence
 from feelies.storage.disk_event_cache import DiskEventCache
 from feelies.storage.memory_event_log import InMemoryEventLog
 
@@ -87,16 +87,6 @@ class _LimitedClient:
         return itertools.islice(self._client.list_trades(*a, **kw), self._max)
 
 
-def _resequence(events: list[NBBOQuote | Trade]) -> list[NBBOQuote | Trade]:
-    seq = SequenceGenerator()
-    result: list[NBBOQuote | Trade] = []
-    for event in events:
-        new_seq = seq.next()
-        new_cid = make_correlation_id(event.symbol, event.exchange_timestamp_ns, new_seq)
-        result.append(replace(event, sequence=new_seq, correlation_id=new_cid))
-    return result
-
-
 # ── Fixtures ─────────────────────────────────────────────────────────
 
 
@@ -126,10 +116,11 @@ class TestRawDownload:
     """Verify that _download_raw works for both quotes and trades."""
 
     def test_downloads_quotes(self, limited_client: _LimitedClient, trading_day: str) -> None:
-        raw_quotes, pages = _download_raw(
+        raw_quotes, pages, ok = _download_raw(
             limited_client, "AAPL", trading_day, trading_day,
             limited_client.list_quotes, "quotes",
         )
+        assert ok
         assert len(raw_quotes) > 0, "should download at least one quote"
         assert pages >= 1
         for d in raw_quotes:
@@ -137,10 +128,11 @@ class TestRawDownload:
             assert d.get("ticker") == "AAPL"
 
     def test_downloads_trades(self, limited_client: _LimitedClient, trading_day: str) -> None:
-        raw_trades, pages = _download_raw(
+        raw_trades, pages, ok = _download_raw(
             limited_client, "AAPL", trading_day, trading_day,
             limited_client.list_trades, "trades",
         )
+        assert ok
         assert len(raw_trades) > 0, "should download at least one trade"
         assert pages >= 1
         for d in raw_trades:
@@ -535,7 +527,13 @@ class TestFieldFidelity:
         trades = [e for e in loaded if isinstance(e, Trade)]
         assert len(trades) > 0
 
-        t = trades[0]
+        # Fractional-share trades may have size=0 with decimal_size set;
+        # find a whole-share trade to assert integer size fidelity.
+        whole_share_trades = [tr for tr in trades if tr.size > 0]
+        assert len(whole_share_trades) > 0, (
+            "expected at least one whole-share trade (size>0) in the loaded events"
+        )
+        t = whole_share_trades[0]
         assert isinstance(t.price, Decimal), f"price should be Decimal, got {type(t.price)}"
         assert t.price > 0
         assert t.size > 0

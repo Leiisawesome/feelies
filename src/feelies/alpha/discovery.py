@@ -21,24 +21,42 @@ from feelies.alpha.registry import AlphaRegistry, AlphaRegistryError
 logger = logging.getLogger(__name__)
 
 
-def discover_alpha_specs(spec_dir: Path) -> list[Path]:
-    """Find all ``.alpha.yaml`` files in a directory.
+def _iter_alpha_spec_paths(spec_dir: Path) -> list[Path]:
+    """All ``.alpha.yaml`` files under ``spec_dir``, excluding underscore paths."""
+    if not spec_dir.is_dir():
+        raise FileNotFoundError(f"Alpha spec directory not found: {spec_dir}")
+    return sorted(
+        p
+        for p in spec_dir.rglob("*.alpha.yaml")
+        if not any(
+            part.startswith("_")
+            for part in p.relative_to(spec_dir).parts
+        )
+    )
 
-    Supports both flat layout (``alphas/*.alpha.yaml``) and nested
-    per-alpha directories (``alphas/{alpha_id}/{alpha_id}.alpha.yaml``).
+
+def discover_alpha_specs(spec_dir: Path) -> list[Path]:
+    """Find production-shipped ``.alpha.yaml`` files under ``spec_dir``.
+
+    Supports flat (``alphas/*.alpha.yaml``), nested per-alpha dirs, and
+    deeper trees — but **excludes** anything under a ``research/`` segment
+    (BT-13: PORTFOLIO reference alphas are research-only at this scale).
 
     Returns paths sorted alphabetically for deterministic load order.
     """
-    if not spec_dir.is_dir():
-        raise FileNotFoundError(f"Alpha spec directory not found: {spec_dir}")
+    return [
+        p
+        for p in _iter_alpha_spec_paths(spec_dir)
+        if "research" not in p.relative_to(spec_dir).parts
+    ]
 
-    flat = set(spec_dir.glob("*.alpha.yaml"))
-    nested = set(spec_dir.glob("*/*.alpha.yaml"))
-    all_specs = flat | nested
-    specs = sorted(
-        p for p in all_specs if not any(part.startswith("_") for part in p.relative_to(spec_dir).parts)
-    )
-    return specs
+
+def discover_research_alpha_specs(spec_dir: Path) -> list[Path]:
+    """Find ``.alpha.yaml`` files under ``spec_dir/research/`` only."""
+    research_dir = spec_dir / "research"
+    if not research_dir.is_dir():
+        return []
+    return _iter_alpha_spec_paths(research_dir)
 
 
 def load_and_register(

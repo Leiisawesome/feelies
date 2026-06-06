@@ -13,7 +13,11 @@ from pathlib import Path
 
 import pytest
 
-from feelies.alpha.discovery import discover_alpha_specs, load_and_register
+from feelies.alpha.discovery import (
+    discover_alpha_specs,
+    discover_research_alpha_specs,
+    load_and_register,
+)
 from feelies.alpha.loader import AlphaLoader
 from feelies.alpha.registry import AlphaRegistry
 
@@ -114,6 +118,20 @@ class TestDiscoverAlphaSpecs:
 
         names = [s.name for s in specs]
         assert names == sorted(names)
+
+    def test_excludes_research_subtree_from_production_discovery(
+        self, tmp_path: Path
+    ) -> None:
+        _write_spec(tmp_path, "shipped.alpha.yaml", "shipped")
+        research_dir = tmp_path / "research" / "nested"
+        research_dir.mkdir(parents=True)
+        _write_spec(research_dir, "lab.alpha.yaml", "lab")
+
+        shipped = discover_alpha_specs(tmp_path)
+        assert [p.name for p in shipped] == ["shipped.alpha.yaml"]
+
+        research = discover_research_alpha_specs(tmp_path)
+        assert [p.name for p in research] == ["lab.alpha.yaml"]
 
 
 class TestLoadAndRegister:

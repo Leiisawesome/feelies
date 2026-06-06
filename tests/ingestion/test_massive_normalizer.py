@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import queue
 from decimal import Decimal
 
 import pytest
@@ -266,6 +268,75 @@ class TestMassiveNormalizerDuplicateCounting:
         assert normalizer.duplicates_filtered == 0
 
 
+class TestMassiveNormalizerSequenceCollision:
+    """Vendor sequence reuse with different payloads must surface CORRUPTED."""
+
+    def test_ws_quote_same_sequence_different_bid_corrupts(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock
+    ) -> None:
+        base = {
+            "ev": "Q",
+            "sym": "AAPL",
+            "bp": 150.0,
+            "ap": 150.05,
+            "bs": 10,
+            "as": 20,
+            "t": 1000,
+            "q": 5,
+        }
+        normalizer.on_message(json.dumps(base).encode("utf-8"), clock.now_ns(), "massive_ws")
+        alt = {**base, "bp": 151.0}
+        out = normalizer.on_message(json.dumps(alt).encode("utf-8"), clock.now_ns(), "massive_ws")
+        assert out == []
+        assert normalizer.health("AAPL") == DataHealth.CORRUPTED
+
+    @pytest.mark.parametrize(
+        ("field", "first_value", "second_value"),
+        [
+            ("correction", 0, 1),
+            (
+                "participant_timestamp",
+                1_700_000_000_001_234_567,
+                1_700_000_000_001_234_568,
+            ),
+            ("ft", 1_700_000_000_002_000_000, 1_700_000_000_002_000_001),
+        ],
+    )
+    def test_ws_trade_same_sequence_different_optional_field_corrupts(
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
+        field: str,
+        first_value: int,
+        second_value: int,
+    ) -> None:
+        base = {
+            "ev": "T",
+            "sym": "AAPL",
+            "p": 150.02,
+            "s": 100,
+            "t": 1000,
+            "q": 5,
+        }
+        first = {**base, field: first_value}
+        normalizer.on_message(json.dumps(first).encode("utf-8"), clock.now_ns(), "massive_ws")
+
+        alt = {**base, field: second_value}
+        out = normalizer.on_message(json.dumps(alt).encode("utf-8"), clock.now_ns(), "massive_ws")
+
+        assert out == []
+        assert normalizer.health("AAPL") == DataHealth.CORRUPTED
+        assert normalizer.duplicates_filtered == 0
+
+
+class TestMassiveNormalizerNotifyFeedInterrupted:
+    def test_disconnect_flags_gap_before_first_tick(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock
+    ) -> None:
+        normalizer.notify_feed_interrupted(["ZZZZ"])
+        assert normalizer.health("ZZZZ") == DataHealth.GAP_DETECTED
+
+
 class TestMassiveNormalizerGapRecovery:
     """Tests for gap detection and automatic recovery."""
 
@@ -325,6 +396,94 @@ class TestMassiveNormalizerGapRecovery:
         assert normalizer.health("AAPL") == DataHealth.GAP_DETECTED
 
 
+class TestMassiveNormalizerCrossFeedHealth:
+    """Quote vs trade sequence spaces must not false-clear each other's gaps."""
+
+    def test_trade_continuity_does_not_clear_quote_gap(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock
+    ) -> None:
+        msgs = [
+            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1000, "q": 1},
+            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1005, "q": 5},
+            {"ev": "T", "sym": "AAPL", "p": 150.02, "s": 50, "t": 1001, "q": 100},
+            {"ev": "T", "sym": "AAPL", "p": 150.03, "s": 50, "t": 1003, "q": 101},
+        ]
+        for msg in msgs:
+            normalizer.on_message(json.dumps(msg).encode("utf-8"), clock.now_ns(), "massive_ws")
+        assert normalizer.health("AAPL") == DataHealth.GAP_DETECTED
+
+
+class TestMassiveNormalizerWsOptionalTimestamps:
+    def test_ws_quote_optional_participant_trf_nanoseconds(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock
+    ) -> None:
+        msg = {
+            "ev": "Q",
+            "sym": "AAPL",
+            "bp": 150.0,
+            "ap": 150.05,
+            "bs": 10,
+            "as": 20,
+            "t": 1700000000000,
+            "q": 1,
+            "participant_timestamp": 1_700_000_000_001_234_567,
+            "trf_timestamp": 1_700_000_000_002_345_678,
+        }
+        raw = json.dumps(msg).encode("utf-8")
+        ev = normalizer.on_message(raw, clock.now_ns(), "massive_ws")[0]
+        assert isinstance(ev, NBBOQuote)
+        assert ev.participant_timestamp_ns == 1_700_000_000_001_234_567
+        assert ev.trf_timestamp_ns == 1_700_000_000_002_345_678
+
+
+class TestMassiveNormalizerRestTradeTrf:
+    def test_rest_trade_populates_trf_timestamp_ns(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock
+    ) -> None:
+        rec = {
+            "ticker": "AAPL",
+            "price": 150.02,
+            "size": 100,
+            "sip_timestamp": 1_700_000_000_000_000_000,
+            "sequence_number": 3,
+            "trf_timestamp": 1_700_000_000_000_000_099,
+        }
+        events = normalizer.on_message(
+            json.dumps(rec).encode("utf-8"),
+            clock.now_ns(),
+            "massive_rest",
+        )
+        assert len(events) == 1
+        tr = events[0]
+        assert isinstance(tr, Trade)
+        assert tr.trf_timestamp_ns == 1_700_000_000_000_000_099
+
+
+class TestMassiveNormalizerRestGapOptIn:
+    def test_rest_gap_detection_when_enabled(
+        self, clock: SimulatedClock,
+    ) -> None:
+        norm = MassiveNormalizer(
+            clock, enable_rest_sequence_gap_detection=True,
+        )
+        for seq in (1, 5):
+            rec = {
+                "ticker": "AAPL",
+                "bid_price": 150.0,
+                "ask_price": 150.05,
+                "bid_size": 10,
+                "ask_size": 20,
+                "sip_timestamp": 1_700_000_000_000_000_000 + seq,
+                "sequence_number": seq,
+            }
+            norm.on_message(
+                json.dumps(rec).encode("utf-8"),
+                clock.now_ns(),
+                "massive_rest",
+            )
+        assert norm.health("AAPL") == DataHealth.GAP_DETECTED
+
+
 class TestMassiveLiveFeedValidation:
     """Tests for _validate_status_response (WebSocket auth/subscribe checks)."""
 
@@ -353,3 +512,155 @@ class TestMassiveLiveFeedValidation:
         raw = json.dumps([])
         with pytest.raises(ConnectionError, match="authentication failed"):
             MassiveLiveFeed._validate_status_response(raw, "auth_success", "authentication")
+
+
+class _AsyncMessages:
+    def __init__(self, messages: list[str | bytes]) -> None:
+        self._messages = iter(messages)
+
+    def __aiter__(self) -> _AsyncMessages:
+        return self
+
+    async def __anext__(self) -> str | bytes:
+        try:
+            return next(self._messages)
+        except StopIteration as exc:
+            raise StopAsyncIteration from exc
+
+
+class _AlwaysFullQueue:
+    def __init__(self) -> None:
+        self.put_nowait_called = False
+        self.put_called = False
+
+    def put_nowait(self, _item: object) -> None:
+        self.put_nowait_called = True
+        raise queue.Full
+
+    def put(self, _item: object) -> None:
+        self.put_called = True
+        raise AssertionError("blocking queue.put must not be used")
+
+
+class _FullSentinelQueue:
+    def __init__(self) -> None:
+        self.items: list[object] = [object()]
+        self.put_nowait_calls = 0
+        self.put_called = False
+
+    def put_nowait(self, item: object) -> None:
+        self.put_nowait_calls += 1
+        if self.items:
+            raise queue.Full
+        self.items.append(item)
+
+    def get_nowait(self) -> object:
+        try:
+            return self.items.pop(0)
+        except IndexError as exc:
+            raise queue.Empty from exc
+
+    def put(self, _item: object) -> None:
+        self.put_called = True
+        raise AssertionError("blocking queue.put must not be used")
+
+
+class TestMassiveLiveFeedBackpressure:
+    def test_consume_drops_when_queue_full_without_blocking(
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        feed = MassiveLiveFeed("key", ["AAPL"], normalizer, clock)
+        full_queue = _AlwaysFullQueue()
+        feed._queue = full_queue  # type: ignore[assignment]
+        raw = json.dumps(
+            {
+                "ev": "Q",
+                "sym": "AAPL",
+                "bp": 150.0,
+                "ap": 150.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1000,
+                "q": 1,
+            }
+        ).encode("utf-8")
+
+        caplog.set_level("WARNING", logger="feelies.ingestion.massive_ws")
+        asyncio.run(feed._consume(_AsyncMessages([raw])))
+
+        assert full_queue.put_nowait_called
+        assert not full_queue.put_called
+        assert "queue full, dropping event for AAPL" in caplog.text
+
+    def test_stop_on_full_queue_logs_and_does_not_block(
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # When the queue is full at stop() time we attempt put_nowait once,
+        # get queue.Full, log a warning, and do NOT fall back to blocking put.
+        # events() will exit within 1 s via the _stop_event timeout path.
+        feed = MassiveLiveFeed("key", ["AAPL"], normalizer, clock)
+        full_queue = _AlwaysFullQueue()
+        feed._queue = full_queue  # type: ignore[assignment]
+
+        caplog.set_level("WARNING", logger="feelies.ingestion.massive_ws")
+        feed.stop()
+
+        assert full_queue.put_nowait_called
+        assert not full_queue.put_called
+        assert "queue full, sentinel not enqueued" in caplog.text
+
+
+class TestHaltStatusDetection:
+    """BT-5: normalizer surfaces DataHealth.HALTED from trade condition codes."""
+
+    @staticmethod
+    def _halt_normalizer(clock: SimulatedClock) -> MassiveNormalizer:
+        return MassiveNormalizer(
+            clock=clock,
+            halt_on_codes=frozenset({5}),
+            halt_off_codes=frozenset({6}),
+        )
+
+    @staticmethod
+    def _ws_trade(symbol: str, seq: int, conditions: list[int]) -> bytes:
+        return json.dumps({
+            "ev": "T",
+            "sym": symbol,
+            "p": 150.0,
+            "s": 100,
+            "t": 1700000000000 + seq,
+            "q": seq,
+            "c": conditions,
+            "z": 3,
+        }).encode("utf-8")
+
+    def test_default_normalizer_ignores_halt_codes(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+    ) -> None:
+        normalizer.on_message(self._ws_trade("AAPL", 1, [5]), clock.now_ns(), "massive_ws")
+        assert normalizer.health("AAPL") == DataHealth.HEALTHY
+
+    def test_halt_on_transitions_to_halted(self, clock: SimulatedClock) -> None:
+        norm = self._halt_normalizer(clock)
+        norm.on_message(self._ws_trade("AAPL", 1, [5]), clock.now_ns(), "massive_ws")
+        assert norm.health("AAPL") == DataHealth.HALTED
+
+    def test_resume_returns_to_healthy(self, clock: SimulatedClock) -> None:
+        norm = self._halt_normalizer(clock)
+        norm.on_message(self._ws_trade("AAPL", 1, [5]), clock.now_ns(), "massive_ws")
+        assert norm.health("AAPL") == DataHealth.HALTED
+        norm.on_message(self._ws_trade("AAPL", 2, [6]), clock.now_ns(), "massive_ws")
+        assert norm.health("AAPL") == DataHealth.HEALTHY
+
+    def test_ordinary_trade_does_not_clear_halt(self, clock: SimulatedClock) -> None:
+        norm = self._halt_normalizer(clock)
+        norm.on_message(self._ws_trade("AAPL", 1, [5]), clock.now_ns(), "massive_ws")
+        # A trade without the resume code keeps the symbol halted.
+        norm.on_message(self._ws_trade("AAPL", 2, [9]), clock.now_ns(), "massive_ws")
+        assert norm.health("AAPL") == DataHealth.HALTED

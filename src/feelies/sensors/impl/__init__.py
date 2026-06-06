@@ -38,4 +38,14 @@ P2.1 v0.3 mechanism-fingerprint catalog (4 sensors):
   exploitability gate (cross-cutting; consumed by alpha regime DSL).
 - :mod:`feelies.sensors.impl.structural_break_score` — page-Hinkley
   structural-break diagnostic (cross-cutting; consumed by forensics).
+
+P2-3 missing-fingerprint catalog (3 sensors; close the INVENTORY /
+LIQUIDITY_STRESS coverage gap):
+
+- :mod:`feelies.sensors.impl.inventory_pressure` — trade-side MM-inventory
+  proxy (INVENTORY family).
+- :mod:`feelies.sensors.impl.liquidity_stress_score` — composite
+  spread-widening + depth-thinning stress alarm (LIQUIDITY_STRESS family).
+- :mod:`feelies.sensors.impl.quote_flicker_rate` — best-price reversal
+  fraction (LIQUIDITY_STRESS family).
 """

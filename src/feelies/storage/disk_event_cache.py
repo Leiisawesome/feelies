@@ -21,7 +21,7 @@ import time
 from collections.abc import Sequence
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from feelies.core.events import NBBOQuote, Trade
 
@@ -110,6 +110,16 @@ class DiskEventCache:
     def _manifest_path(self, symbol: str, date: str) -> Path:
         return self._symbol_dir(symbol) / f"{date}.manifest.json"
 
+    def read_manifest(self, symbol: str, date: str) -> dict[str, Any] | None:
+        """Return parsed manifest JSON for a cache day, or None if unreadable."""
+        manifest_path = self._manifest_path(symbol, date)
+        if not manifest_path.exists():
+            return None
+        try:
+            return cast(dict[str, Any], json.loads(manifest_path.read_text(encoding="utf-8")))
+        except Exception:
+            return None
+
     def exists(self, symbol: str, date: str) -> bool:
         """Check if a valid cache entry exists for this (symbol, date).
 
@@ -193,7 +203,14 @@ class DiskEventCache:
         )
         return events
 
-    def save(self, symbol: str, date: str, events: Sequence[NBBOQuote | Trade]) -> None:
+    def save(
+        self,
+        symbol: str,
+        date: str,
+        events: Sequence[NBBOQuote | Trade],
+        *,
+        ingestion_health: str | None = None,
+    ) -> None:
         """Persist events to gzipped JSONL with atomic writes.
 
         Both the data file and manifest are written to temporary files
@@ -227,7 +244,7 @@ class DiskEventCache:
 
         checksum = f"sha256:{hashlib.sha256(compressed).hexdigest()}"
 
-        manifest = {
+        manifest: dict[str, Any] = {
             "symbol": symbol,
             "date": date,
             "event_count": len(events),
@@ -237,6 +254,8 @@ class DiskEventCache:
             "event_schema_hash": self._schema_hash,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
+        if ingestion_health is not None:
+            manifest["ingestion_health"] = ingestion_health
 
         manifest_tmp = manifest_path.with_suffix(".tmp")
         manifest_tmp.write_text(json.dumps(manifest, indent=2), encoding="utf-8")

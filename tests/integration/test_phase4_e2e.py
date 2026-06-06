@@ -1,10 +1,10 @@
 """Phase-4 e2e — SIGNAL + PORTFOLIO concurrent on a 10-symbol universe.
 
-Locks the structural invariants of mixed-mode operation when a
-SIGNAL alpha (``pofi_benign_midcap_v1``) and the v0.2 PORTFOLIO
-reference alpha (``pofi_xsect_v1``) coexist in a single
-``build_platform`` invocation driven by a deterministic multi-symbol
-synthetic event log.
+Locks the structural invariants of mixed-mode operation when
+SIGNAL alphas (``sig_benign_midcap_v1``, ``sig_kyle_drift_v1``) and
+the PORTFOLIO reference alpha (``pro_kyle_benign_v1``) coexist in a
+single ``build_platform`` invocation driven by a deterministic
+multi-symbol synthetic event log.
 
 Workstream-D update — the LEGACY arm (``trade_cluster_drift``) was
 retired with the alpha; the test still exercises the cross-layer
@@ -41,7 +41,7 @@ What this test guarantees
   path fails loudly.
 
   The current fixture's 36-second random walk does not trigger
-  ``pofi_benign_midcap_v1``'s entry gate (|OFI z| > 2.0 inside the
+  ``sig_benign_midcap_v1``'s entry gate (|OFI z| > 2.0 inside the
   benign regime), so the realised standalone-Signal count is zero and
   the assertion holds vacuously today.  A future enrichment of the
   synthetic stream (or addition of an "always-on" tracer SIGNAL alpha)
@@ -56,7 +56,7 @@ What this test guarantees
   in the same way the PR-2b-iii contract locks the SIGNAL path.
 
   As with the PR-2b-iii assertion, the current fixture's 36-second
-  random walk happens to leave ``pofi_xsect_v1``'s realised non-trivial
+  random walk happens to leave ``pro_kyle_benign_v1``'s realised non-trivial
   intent count at zero (every intent collapses to an empty
   ``target_positions`` because the cross-sectional gate rarely opens
   inside the benign synthetic regime).  The assertion is therefore
@@ -90,11 +90,14 @@ from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.monitoring.horizon_metrics import HorizonMetricsCollector
 from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
+from feelies.sensors.impl.kyle_lambda_60s import KyleLambda60sSensor
 from feelies.sensors.impl.micro_price import MicroPriceSensor
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
+from feelies.sensors.impl.realized_vol_30s import RealizedVol30sSensor
 from feelies.sensors.impl.spread_z_30d import SpreadZScoreSensor
 from feelies.sensors.spec import SensorSpec
 from feelies.storage.memory_event_log import InMemoryEventLog
+from feelies.storage.reference.paths import FACTOR_LOADINGS_DIR, SECTOR_MAP_PATH
 from tests.fixtures.event_logs._generate import SESSION_OPEN_NS
 from tests.integration.portfolio_test_constants import (
     FACTOR_LOADINGS_MAX_AGE_SECONDS_FIXTURE,
@@ -106,19 +109,22 @@ pytestmark = pytest.mark.backtest_validation
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SIGNAL_ALPHA = (
-    _REPO_ROOT / "alphas" / "pofi_benign_midcap_v1"
-    / "pofi_benign_midcap_v1.alpha.yaml"
+    _REPO_ROOT / "alphas" / "sig_benign_midcap_v1"
+    / "sig_benign_midcap_v1.alpha.yaml"
+)
+_KYLE_ALPHA = (
+    _REPO_ROOT / "alphas" / "sig_kyle_drift_v1"
+    / "sig_kyle_drift_v1.alpha.yaml"
 )
 _PORTFOLIO_ALPHA = (
-    _REPO_ROOT / "alphas" / "pofi_xsect_v1"
-    / "pofi_xsect_v1.alpha.yaml"
+    _REPO_ROOT / "alphas" / "research" / "pro_kyle_benign_v1"
+    / "pro_kyle_benign_v1.alpha.yaml"
 )
-_FACTOR_LOADINGS_DIR = _REPO_ROOT / "storage" / "reference" / "factor_loadings"
-_SECTOR_MAP_PATH = (
-    _REPO_ROOT / "storage" / "reference" / "sector_map" / "sector_map.json"
-)
+_FACTOR_LOADINGS_DIR = FACTOR_LOADINGS_DIR
+_SECTOR_MAP_PATH = SECTOR_MAP_PATH
 
-# 10-symbol reference universe — must match alphas/pofi_xsect_v1/.
+# 10-symbol reference universe — wider than pro_kyle_benign_v1's single-symbol
+# universe (AAPL); the PORTFOLIO alpha filters to its declared universe internally.
 _UNIVERSE: tuple[str, ...] = (
     "AAPL", "AMZN", "BAC", "CVX", "GOOG",
     "JPM", "META", "MSFT", "NVDA", "XOM",
@@ -129,24 +135,38 @@ _QUOTES_PER_SYMBOL: int = 360  # 36 seconds @ 10 Hz — short by design
 _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     SensorSpec(
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=OFIEwmaSensor,
         params={"alpha": 0.1, "warm_after": 5},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="micro_price",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=MicroPriceSensor,
         params={},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="spread_z_30d",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=SpreadZScoreSensor,
         params={},
         subscribes_to=(NBBOQuote,),
+    ),
+    SensorSpec(
+        sensor_id="realized_vol_30s",
+        sensor_version="1.3.0",
+        cls=RealizedVol30sSensor,
+        params={"window_seconds": 30, "warm_after": 8},
+        subscribes_to=(NBBOQuote,),
+    ),
+    SensorSpec(
+        sensor_id="kyle_lambda_60s",
+        sensor_version="1.2.0",
+        cls=KyleLambda60sSensor,
+        params={"min_samples": 5},
+        subscribes_to=(NBBOQuote, Trade),
     ),
 )
 
@@ -224,7 +244,7 @@ def _make_phase4_config() -> PlatformConfig:
     return PlatformConfig(
         symbols=frozenset(_UNIVERSE),
         mode=OperatingMode.BACKTEST,
-        alpha_specs=[_SIGNAL_ALPHA, _PORTFOLIO_ALPHA],
+        alpha_specs=[_SIGNAL_ALPHA, _KYLE_ALPHA, _PORTFOLIO_ALPHA],
         regime_engine="hmm_3state_fractional",
         sensor_specs=_SENSOR_SPECS,
         horizons_seconds=frozenset({30, 120, 300}),
@@ -233,11 +253,9 @@ def _make_phase4_config() -> PlatformConfig:
         factor_loadings_dir=_FACTOR_LOADINGS_DIR,
         factor_loadings_max_age_seconds=FACTOR_LOADINGS_MAX_AGE_SECONDS_FIXTURE,
         sector_map_path=_SECTOR_MAP_PATH,
-        # Workstream-E flipped the platform default to True; this
-        # integration test exercises the v0.2 baseline SIGNAL alpha
-        # (pofi_benign_midcap_v1) which ships *without* a
-        # trend_mechanism: block on purpose (§20.12.3 #2 parity
-        # anchor), so we explicitly opt back out of strict mode here.
+        # Reference SIGNAL alpha carries ``trend_mechanism:`` (G16); keep
+        # strict mechanism enforcement off here so the fixture focuses on
+        # Phase-4 wiring rather than loader strict-mode defaults.
         enforce_trend_mechanism=False,
     )
 
@@ -278,6 +296,48 @@ def _hash_signals(signals: list[Signal]) -> str:
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
+def _hash_orders(orders: list[OrderRequest]) -> str:
+    lines: list[str] = []
+    for o in sorted(orders, key=lambda x: (x.sequence, x.order_id)):
+        lp = "" if o.limit_price is None else str(o.limit_price)
+        lines.append(
+            f"{o.sequence}|{o.order_id}|{o.symbol}|{o.side.name}|"
+            f"{o.order_type.name}|{o.quantity}|{lp}|"
+            f"{o.strategy_id}|{o.timestamp_ns}|{o.correlation_id}"
+        )
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+
+
+def _hash_positions_book(orch: Orchestrator) -> str:
+    store = orch._positions
+    lines: list[str] = []
+    for sym in sorted(store.all_positions()):
+        p = store.get(sym)
+        lines.append(
+            f"{sym}|{p.quantity}|{p.avg_entry_price}|"
+            f"{p.realized_pnl}|{p.cumulative_fees}|{p.unrealized_pnl}"
+        )
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+
+
+def _hash_trade_journal(orch: Orchestrator) -> str:
+    tj = orch._trade_journal
+    if tj is None:
+        return hashlib.sha256(b"").hexdigest()
+    recs = list(tj.query())
+    lines: list[str] = []
+    for r in sorted(recs, key=lambda x: (x.fill_timestamp_ns or 0, x.order_id)):
+        fp = "" if r.fill_price is None else str(r.fill_price)
+        lines.append(
+            f"{r.order_id}|{r.symbol}|{r.strategy_id}|{r.side.name}|"
+            f"{r.requested_quantity}|{r.filled_quantity}|{fp}|"
+            f"{r.signal_timestamp_ns}|{r.submit_timestamp_ns}|"
+            f"{r.fill_timestamp_ns}|{r.cost_bps}|{r.fees}|"
+            f"{r.realized_pnl}|{r.correlation_id}"
+        )
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+
+
 def _hash_intents(intents: list[SizedPositionIntent]) -> str:
     lines: list[str] = []
     for it in intents:
@@ -310,8 +370,9 @@ def test_phase4_e2e_signal_and_portfolio_layers_register() -> None:
     registry = orchestrator._alpha_registry
     assert registry is not None
     ids = registry.alpha_ids()
-    assert "pofi_benign_midcap_v1" in ids
-    assert "pofi_xsect_v1" in ids
+    assert "sig_benign_midcap_v1" in ids
+    assert "sig_kyle_drift_v1" in ids
+    assert "pro_kyle_benign_v1" in ids
 
 
 def test_phase4_e2e_composition_layer_is_wired() -> None:
@@ -339,10 +400,13 @@ def test_phase4_e2e_per_strategy_positions_independent() -> None:
     sp = orchestrator._strategy_positions
     assert sp is not None
     for sym in _UNIVERSE:
-        signal_pos = sp.get("pofi_benign_midcap_v1", sym)
-        portfolio_pos = sp.get("pofi_xsect_v1", sym)
+        signal_pos = sp.get("sig_benign_midcap_v1", sym)
+        kyle_pos = sp.get("sig_kyle_drift_v1", sym)
+        portfolio_pos = sp.get("pro_kyle_benign_v1", sym)
         # Distinct objects (StrategyPositionStore keys by (alpha, sym)).
+        assert signal_pos is not kyle_pos
         assert signal_pos is not portfolio_pos
+        assert kyle_pos is not portfolio_pos
 
 
 # ── Determinism ─────────────────────────────────────────────────────────
@@ -372,6 +436,30 @@ def test_phase4_e2e_intent_stream_is_deterministic() -> None:
     )
 
 
+def test_phase4_e2e_order_stream_is_deterministic() -> None:
+    """Same synthetic log + config → identical OrderRequest bus stream."""
+    _o_a, _sa, _ia, orders_a = _build()
+    _o_b, _sb, _ib, orders_b = _build()
+    assert len(orders_a) == len(orders_b), (
+        f"OrderRequest count drift: {len(orders_a)} vs {len(orders_b)}"
+    )
+    assert _hash_orders(orders_a) == _hash_orders(orders_b), (
+        "Phase-4 e2e OrderRequest hash drift across identical replays"
+    )
+
+
+def test_phase4_e2e_final_positions_and_journal_are_deterministic() -> None:
+    """Full replay outcomes (positions + trade journal) are replay-stable."""
+    o_a, *_rest_a = _build()
+    o_b, *_rest_b = _build()
+    assert _hash_positions_book(o_a) == _hash_positions_book(o_b), (
+        "Position book hash drift across identical replays"
+    )
+    assert _hash_trade_journal(o_a) == _hash_trade_journal(o_b), (
+        "Trade journal hash drift across identical replays"
+    )
+
+
 # ── PR-2b-iii contract: standalone-SIGNAL → OrderRequest ───────────────
 
 
@@ -386,20 +474,17 @@ def test_phase4_e2e_standalone_signal_alphas_translate_to_orders() -> None:
     into ``SizedPositionIntent`` events instead, to be wired to orders by
     PR-2b-iv).
 
-    The reference fixture registers ``pofi_benign_midcap_v1`` as a SIGNAL
-    alpha and ``pofi_xsect_v1`` as a PORTFOLIO alpha; the latter's
-    ``depends_on_signals`` lists ``pofi_kyle_drift_v1`` and
-    ``pofi_inventory_revert_v1`` — *not* ``pofi_benign_midcap_v1``.  So
-    every Signal published by ``pofi_benign_midcap_v1`` is a "standalone
-    SIGNAL Signal" and must produce a corresponding order pipeline walk.
+    The reference fixture registers ``sig_benign_midcap_v1`` and
+    ``sig_kyle_drift_v1`` as SIGNAL alphas and ``pro_kyle_benign_v1``
+    as a PORTFOLIO alpha.  The latter's ``depends_on_signals`` lists
+    both SIGNAL alpha ids, so neither fires a standalone bus Signal.
 
-    The synthetic 36-second random walk does not satisfy
-    ``pofi_benign_midcap_v1``'s entry gate, so the realised count is zero
-    and the assertion is vacuously true.  This is a deliberate regression
-    guard: if a future change re-orphans the bus Signal → order path
-    (e.g. by mis-filtering, dropping the subscriber, or routing standalone
-    SIGNAL events through ``CompositionEngine``), the assertion will fire
-    the moment the fixture is enriched to actually trigger the alpha gate.
+    The synthetic 36-second random walk does not satisfy either SIGNAL
+    alpha's entry gate, so the realised count is zero and the assertion
+    is vacuously true.  This is a deliberate regression guard: if a
+    future change re-orphans the bus Signal → order path the assertion
+    will fire the moment the fixture is enriched to actually trigger an
+    alpha gate.
     """
     orchestrator, signals, _intents, orders = _build()
 

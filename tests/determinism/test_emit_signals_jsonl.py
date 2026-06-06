@@ -72,7 +72,7 @@ def _phase3_signal(seq: int) -> Signal:
         correlation_id=f"corr-h-{seq}",
         sequence=seq,
         symbol="MSFT",
-        strategy_id="pofi_benign_midcap_v1",
+        strategy_id="sig_benign_midcap_v1",
         direction=SignalDirection.SHORT,
         strength=-0.7,
         edge_estimate_bps=8.25,

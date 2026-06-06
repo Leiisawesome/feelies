@@ -28,7 +28,7 @@ This module locks the *default-True* contract from four angles:
    from gate G16.
 
 4. **v0.2 parity preserved on explicit opt-out** — the §20.12.3 #2
-   reference alpha ``pofi_benign_midcap_v1`` still loads under
+   reference alpha ``sig_benign_midcap_v1`` still loads under
    :class:`AlphaLoader` when the operator pins
    ``enforce_trend_mechanism=False`` (the documented escape hatch
    for v0.2-baseline alphas pre-dating the mechanism taxonomy).
@@ -63,8 +63,8 @@ from feelies.core.platform_config import PlatformConfig
 
 _V02_BASELINE_ALPHA = (
     Path("alphas")
-    / "pofi_benign_midcap_v1"
-    / "pofi_benign_midcap_v1.alpha.yaml"
+    / "sig_benign_midcap_v1"
+    / "sig_benign_midcap_v1.alpha.yaml"
 )
 
 
@@ -217,7 +217,7 @@ class TestLoaderRefusesMissingMechanismUnderDefault:
 
 class TestV02ParityPreservedOnExplicitOptOut:
     """The §20.12.3 #2 v0.2 baseline reference alpha
-    (``pofi_benign_midcap_v1``) still loads when the operator pins
+    (``sig_benign_midcap_v1``) still loads when the operator pins
     ``enforce_trend_mechanism=False`` — this is the documented
     escape hatch for v0.2-baseline alphas that pre-date the
     mechanism taxonomy.
@@ -236,13 +236,11 @@ class TestV02ParityPreservedOnExplicitOptOut:
             "expected LoadedSignalLayerModule."
         )
 
-    def test_v02_baseline_alpha_refused_under_default(self) -> None:
-        """Cross-check: the same alpha must be refused under the
-        new platform default.  Flipping the default and silently
-        accepting v0.2 alphas would be the worst-of-both-worlds
-        regression — strict mode advertised but not enforced.
+    def test_v02_baseline_alpha_loads_under_strict_platform_default(self) -> None:
+        """The reference alpha ships ``trend_mechanism:`` (G16); it must load
+        under strict mode — refusal is reserved for specs that omit the block.
         """
         platform_default = _base_config().enforce_trend_mechanism
         loader = AlphaLoader(enforce_trend_mechanism=platform_default)
-        with pytest.raises(MissingTrendMechanismError, match="strict-mode"):
-            loader.load(_V02_BASELINE_ALPHA)
+        module = loader.load(_V02_BASELINE_ALPHA)
+        assert isinstance(module, LoadedSignalLayerModule)

@@ -40,10 +40,14 @@ Additionally:
    once per tick at micro-state M2 (STATE_UPDATE). No other component
    may call `posterior()`.
 
-2. **Idempotency** — `posterior()` caches per `(symbol,
-   timestamp_ns)`. If called multiple times for the same symbol and
-   timestamp, the Bayesian update is applied only once; subsequent
-   calls return the cached result. Prevents double-update corruption.
+2. **Idempotency** — `posterior()` caches per `(symbol, sequence)`
+   (the per-event monotonic sequence number, not wall-clock).  If
+   called multiple times for the same symbol and sequence the
+   Bayesian update is applied only once; subsequent calls return the
+   cached result.  Prevents double-update corruption.  Note: an
+   earlier draft of this skill said `(symbol, timestamp_ns)` — the
+   implementation has always keyed on sequence (see
+   ``HMM3StateFractional.posterior``).
 
 3. **Read-only consumers** — risk engine, position sizer, regime-gate
    DSL bindings, and forensic consumers access regime state via
@@ -187,10 +191,17 @@ class RegimeHazardSpike(Event):
     symbol: str
     engine_name: str
     departing_state: str
-    incoming_state: str | None        # may be None if not yet dominant
-    posterior_drop: float             # signed drop in P(departing_state)
-    boundary_ts_ns: int
+    departing_posterior_prev: float   # P(departing) on the prior tick
+    departing_posterior_now: float    # P(departing) on this tick
+    incoming_state: str | None        # may be None on a tie of runners-up
+    hazard_score: float               # clip01((p_prev − p_now)/max(p_prev,ε))
 ```
+
+The event carries the raw `(p_prev, p_now)` pair (not a single
+`posterior_drop`) plus the normalized `hazard_score` consumers
+threshold on.  An earlier draft of this skill described a single
+`posterior_drop` field — see ``feelies.core.events.RegimeHazardSpike``
+for the authoritative schema.
 
 ### Detection Logic
 
@@ -201,10 +212,15 @@ class RegimeHazardSpike(Event):
   `curr` (a "departure episode")
 - A regime flip is therefore imminent
 
-Suppression is per `(symbol, engine_name, departing_state)`: at most
-one spike per departure episode; re-arms only when a different state
-becomes dominant or the departing posterior recovers above the
-`1.0 − hysteresis_threshold` floor.
+Suppression at the **detector** layer is keyed on
+``(symbol, engine_name, departing_state)``: at most one spike per
+departure episode on a given regime channel; re-arms only when a
+different state becomes dominant or the departing posterior recovers
+above the ``1.0 − hysteresis_threshold`` floor.  A second,
+**controller-side** suppression key (``(strategy_id, symbol,
+reason)``) lives in :class:`HazardExitController` and prevents
+re-firing an exit for the same open position.  The two are distinct
+keys at distinct layers — don't conflate them.
 
 ### Pure-Function Property
 
@@ -212,7 +228,44 @@ becomes dominant or the departing posterior recovers above the
 state is introduced beyond the suppression key cache (which is itself
 deterministic given the input sequence). Replay is bit-identical
 (Inv-5; locked by L5 hazard-parity test
-`tests/determinism/test_hazard_parity.py`).
+`tests/determinism/test_regime_hazard_replay.py`).
+
+### What `hazard_score` is — and is not
+
+`hazard_score` is the **normalized one-tick relative decay** of the
+departing state's posterior, **not** a survival-analysis hazard
+rate λ(t) = f(t) / S(t).  The exact formula is:
+
+```
+hazard_score = clip01( (p_prev − p_now) / max(p_prev, ε) ),  ε = 1e-12
+```
+
+so a drop from 0.95 → 0.45 scores ≈ 0.526 regardless of whether the
+two ticks were 1 ms or 30 s apart.  This is a deliberate design
+choice — the detector is purely a function of the two `RegimeState`
+events on the channel (Inv-5 replay determinism) and carries no
+clock dependency.  But it has three operational consequences that
+consumers should understand:
+
+1. **Not time-normalized.**  Two slow decays over different quote
+   gaps produce identical scores.  A score threshold therefore
+   gates a per-tick step, not a per-second event-rate — calibrate
+   `hazard_score_threshold` against your tick rate, not your
+   wall-clock horizon.
+2. **Not a probability of regime-end.**  It does not estimate
+   P(flip in next Δt).  Use the (separate) dominance flip /
+   `1.0 − hysteresis_threshold` floor checks the detector already
+   does for that semantic.
+3. **Bounded by `p_prev`.**  When the departing state is already
+   near zero (`p_prev < ε`), the divisor is floored at ε and the
+   score is clamped at 1.0 by the `clip01`; degenerate "decay from
+   already-near-zero" cases produce a small bounded score, not a
+   blow-up.
+
+If you need a real survival-analysis hazard rate (events per unit
+wall-clock time) for a downstream model, compute it externally from
+the published `RegimeHazardSpike` stream — the detector intentionally
+does not emit one.
 
 ### Wiring
 
@@ -236,14 +289,25 @@ it surfaces a microstructure signal that the controller may act on.
 
 ### Risk Engine
 
-Reads `current_state(symbol)` in `_regime_scaling()`. Maps the
-dominant state name to a position-limit multiplier. Unknown states
-default to `1.0×`.
+Reads `current_state(symbol)` in `_regime_scaling()`.  Computes an
+**expected value over the posterior** — `Σ pᵢ · scaleᵢ` — *not* a
+hard argmax-name lookup (an earlier draft of this doc described
+argmax; the implementation has always smoothed via EV to avoid
+limit thrash on diffuse posteriors).  Unknown state names default to
+the smallest configured scale (fail-safe).  Missing data → `1.0×`.
+
+Audit P1 R-1 also enforces Inv-11 at the value level: the returned
+factor is clamped to ``min(EV, 1.0)`` so a mis-configured scale map
+can only reduce exposure, never amplify above the baseline.
 
 ### Position Sizer
 
-`BudgetBasedSizer._get_regime_factor()` applies a regime-dependent
-capital scaling factor. Missing data defaults to `1.0×`.
+`BudgetBasedSizer._get_regime_factor()` uses the same EV-over-
+posteriors smoothing as the risk engine (`Σ pᵢ · scaleᵢ`) and the
+same `min(EV, 1.0)` Inv-11 clamp.  Missing data defaults to `1.0×`.
+The two consumers operate **in series** — the sizer proposes a
+quantity scaled by EV, the risk engine then caps the *limit* by EV
+— so the scaling never compounds.
 
 ### Regime-Gate DSL
 

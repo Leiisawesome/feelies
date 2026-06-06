@@ -16,10 +16,17 @@ above.
 Outputs (length-4 tuple):
 
     SensorReading.value = (
-        intensity_buy,        # λ_buy(t)  per second
-        intensity_sell,       # λ_sell(t) per second
-        intensity_ratio,      # max(buy, sell) / (buy + sell + ε); ∈ [0.5, 1]
-        branching_ratio_est,  # α / β; constant under fixed params
+        intensity_buy,         # λ_buy(t)  per second
+        intensity_sell,        # λ_sell(t) per second
+        intensity_ratio,       # ∈ [0.5, 1]; defaults to 0.5 when both sides
+                               # are below ε (no information state)
+        impulse_decay_ratio,   # configured α / β (NOT a runtime estimate and
+                               # NOT a Hawkes branching-ratio stability metric:
+                               # this is an *additive-impulse EWMA* tracker, not
+                               # a fitted self-exciting process, so the impulse
+                               # never feeds back into arrival generation).  β
+                               # alone is meaningful: the decay half-life is
+                               # ln(2)/β seconds.
     )
 
 Determinism: pure float arithmetic; no RNG; ``math.exp`` over an
@@ -57,8 +64,13 @@ class HawkesIntensitySensor:
       ``[0.05, 1.0]``.
     - ``beta`` (float, default 0.05): exponential decay rate (per
       second) of the intensity between trades.  Typical range
-      ``[0.01, 0.5]``.  The branching ratio ``α/β`` must stay below 1
-      for stability; values near 1 indicate self-sustaining cascades.
+      ``[0.01, 0.5]``.  The decay half-life is ``ln(2)/β`` seconds
+      (≈ 13.9 s at the default).  ``α/β`` is emitted as a diagnostic
+      *impulse-decay ratio*, not a stability metric — see the module
+      docstring (this estimator is an additive-impulse EWMA tracker,
+      not a fitted Hawkes process, so the classical branching-ratio
+      ``< 1`` stability condition does not apply).  Use
+      ``scripts/calibrate_hawkes.py`` to fit ``α, β`` from data.
     - ``warm_window_seconds`` (int, default 60): event-time window
       used for the per-side trade-count warm-up criterion.
     - ``warm_trades_per_side`` (int, default 20): minimum trades on
@@ -69,7 +81,7 @@ class HawkesIntensitySensor:
     """
 
     sensor_id: str = "hawkes_intensity"
-    sensor_version: str = "1.1.0"
+    sensor_version: str = "1.2.0"
 
     def __init__(
         self,
@@ -104,7 +116,10 @@ class HawkesIntensitySensor:
         self._beta = float(beta)
         self._warm_window_ns = warm_window_seconds * 1_000_000_000
         self._warm_per_side = warm_trades_per_side
-        self._branching_ratio = self._alpha / self._beta
+        # Configured impulse-decay ratio (α / β), not an on-line estimate and
+        # not a Hawkes branching-ratio stability metric (see module docstring).
+        # Emitted verbatim on every reading.
+        self._impulse_decay_ratio = self._alpha / self._beta
         self._baseline_mu = float(baseline_mu)
 
     def initial_state(self) -> dict[str, Any]:
@@ -121,8 +136,17 @@ class HawkesIntensitySensor:
 
     def _decay_to(self, state: dict[str, Any], ts_ns: int) -> None:
         last_ts = state["last_ts_ns"]
-        if last_ts is None or ts_ns <= last_ts:
+        if last_ts is None:
             state["last_ts_ns"] = ts_ns
+            return
+        if ts_ns == last_ts:
+            # Same-instant event: no decay to apply, no anchor to advance.
+            return
+        if ts_ns < last_ts:
+            # Strictly backwards event (shouldn't happen under monotonic
+            # per-symbol delivery, but guard regardless).  Rewinding
+            # ``last_ts_ns`` would double-count decay on the next forward
+            # event; leave state untouched.
             return
         dt_s = (ts_ns - last_ts) / _NS_PER_SECOND
         decay = math.exp(-self._beta * dt_s)
@@ -172,8 +196,15 @@ class HawkesIntensitySensor:
 
         lam_buy = state["lambda_buy"]
         lam_sell = state["lambda_sell"]
-        denom = lam_buy + lam_sell + _EPS
-        intensity_ratio = max(lam_buy, lam_sell) / denom
+        total = lam_buy + lam_sell
+        if total < _EPS:
+            # No-information state (both sides below ε; happens at startup
+            # when ``baseline_mu = 0`` and no trades have fired yet).
+            # ``max / total`` would give 0/ε = 0 which violates the
+            # documented [0.5, 1] range.  Emit the neutral midpoint.
+            intensity_ratio = 0.5
+        else:
+            intensity_ratio = max(lam_buy, lam_sell) / total
         warm = (
             len(state["buy_ts"]) >= self._warm_per_side
             and len(state["sell_ts"]) >= self._warm_per_side
@@ -186,6 +217,6 @@ class HawkesIntensitySensor:
             symbol=event.symbol,
             sensor_id=self.sensor_id,
             sensor_version=self.sensor_version,
-            value=(lam_buy, lam_sell, intensity_ratio, self._branching_ratio),
+            value=(lam_buy, lam_sell, intensity_ratio, self._impulse_decay_ratio),
             warm=warm,
         )

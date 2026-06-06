@@ -199,6 +199,7 @@ class TestSessionBoundaryReset:
         )
         from feelies.execution.backend import ExecutionBackend
         from feelies.execution.backtest_router import BacktestOrderRouter
+        from feelies.execution.cost_model import ZeroCostModel
         from feelies.kernel.orchestrator import Orchestrator
         from feelies.portfolio.memory_position_store import MemoryPositionStore
         from feelies.portfolio.position_store import PositionStore
@@ -241,7 +242,7 @@ class TestSessionBoundaryReset:
         bus = EventBus()
         backend = ExecutionBackend(
             market_data=_StubMarketData(),
-            order_router=BacktestOrderRouter(clock=clock),
+            order_router=BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel()),
             mode="BACKTEST",
         )
         return Orchestrator(

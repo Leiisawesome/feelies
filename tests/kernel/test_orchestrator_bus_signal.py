@@ -51,15 +51,21 @@ from feelies.core.events import (
     RiskVerdict,
     Signal,
     SignalDirection,
+    SizedPositionIntent,
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
+from feelies.execution.cost_model import ZeroCostModel
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.kernel.signal_order_trace import SignalOrderTraceRow
+from feelies.monitoring.in_memory import InMemoryKillSwitch
 from feelies.portfolio.memory_position_store import MemoryPositionStore
 from feelies.portfolio.position_store import PositionStore
+from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
+from feelies.risk.escalation import RiskLevel
+from feelies.risk.sized_intent_result import SizedIntentRiskResult
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 
@@ -106,6 +112,96 @@ class _StubRiskEngine:
             reason="bus-signal-test",
         )
 
+    def check_sized_intent(
+        self,
+        intent: SizedPositionIntent,
+        _positions: PositionStore,
+    ) -> SizedIntentRiskResult:
+        del intent
+        return SizedIntentRiskResult(orders=())
+
+
+class _DualScaleDownRiskEngine:
+    """Emit SCALE_DOWN at both gates to verify single-application."""
+
+    def __init__(self, factor: float = 0.5) -> None:
+        self._factor = factor
+
+    def check_signal(self, signal: Signal, _positions: PositionStore) -> RiskVerdict:
+        return RiskVerdict(
+            timestamp_ns=signal.timestamp_ns,
+            correlation_id=signal.correlation_id,
+            sequence=signal.sequence,
+            symbol=signal.symbol,
+            action=RiskAction.SCALE_DOWN,
+            reason="dual-scale-down-test:signal",
+            scaling_factor=self._factor,
+        )
+
+    def check_order(self, order: OrderRequest, _positions: PositionStore) -> RiskVerdict:
+        return RiskVerdict(
+            timestamp_ns=order.timestamp_ns,
+            correlation_id=order.correlation_id,
+            sequence=order.sequence,
+            symbol=order.symbol,
+            action=RiskAction.SCALE_DOWN,
+            reason="dual-scale-down-test:order",
+            scaling_factor=self._factor,
+        )
+
+    def check_sized_intent(
+        self,
+        intent: SizedPositionIntent,
+        _positions: PositionStore,
+    ) -> SizedIntentRiskResult:
+        del intent
+        return SizedIntentRiskResult(orders=())
+
+
+class _ForceFlattenOnFirstCheckOrderEngine:
+    """First :meth:`check_order` in the tick returns FORCE_FLATTEN (reverse exit)."""
+
+    def __init__(self) -> None:
+        self._check_order_calls = 0
+
+    def check_signal(self, signal: Signal, _positions: PositionStore) -> RiskVerdict:
+        return RiskVerdict(
+            timestamp_ns=signal.timestamp_ns,
+            correlation_id=signal.correlation_id,
+            sequence=signal.sequence,
+            symbol=signal.symbol,
+            action=RiskAction.ALLOW,
+            reason="force-flatten-first-order-test:signal",
+        )
+
+    def check_order(self, order: OrderRequest, _positions: PositionStore) -> RiskVerdict:
+        self._check_order_calls += 1
+        if self._check_order_calls == 1:
+            return RiskVerdict(
+                timestamp_ns=order.timestamp_ns,
+                correlation_id=order.correlation_id,
+                sequence=order.sequence,
+                symbol=order.symbol,
+                action=RiskAction.FORCE_FLATTEN,
+                reason="test_reverse_exit_drawdown",
+            )
+        return RiskVerdict(
+            timestamp_ns=order.timestamp_ns,
+            correlation_id=order.correlation_id,
+            sequence=order.sequence,
+            symbol=order.symbol,
+            action=RiskAction.ALLOW,
+            reason="force-flatten-first-order-test:pass",
+        )
+
+    def check_sized_intent(
+        self,
+        intent: SizedPositionIntent,
+        _positions: PositionStore,
+    ) -> SizedIntentRiskResult:
+        del intent
+        return SizedIntentRiskResult(orders=())
+
 
 class _MinimalConfig:
     version = "test-bus-signal"
@@ -146,6 +242,9 @@ class _StaticAlphaRegistry:
 
     def portfolio_alphas(self) -> tuple[_StaticPortfolioModule, ...]:
         return self._portfolio_modules
+
+    def has_portfolio_alphas(self) -> bool:
+        return bool(self._portfolio_modules)
 
     def get(self, alpha_id: str) -> Any:
         raise KeyError(alpha_id)
@@ -197,10 +296,11 @@ def _build_orchestrator(
     risk_engine: Any | None = None,
     alpha_registry: Any | None = None,
     position_store: MemoryPositionStore | None = None,
+    kill_switch: Any | None = None,
 ) -> Orchestrator:
     bus = bus if bus is not None else EventBus()
     pos = position_store or MemoryPositionStore()
-    bt_router = BacktestOrderRouter(clock=clock)
+    bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
     backend = ExecutionBackend(
         market_data=_StubMarketData(),
         order_router=bt_router,
@@ -215,6 +315,7 @@ def _build_orchestrator(
         event_log=InMemoryEventLog(),
         metric_collector=_NoOpMetricCollector(),
         alpha_registry=alpha_registry,
+        kill_switch=kill_switch,
     )
 
 
@@ -298,6 +399,157 @@ class TestBusDrivenSignalProducesOrder:
 
         assert captured == []
         assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
+
+    def test_scale_down_at_both_gates_applies_once_for_entry(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        quote = _make_quote()
+        signal = _make_signal(quote, strategy_id="double_scale_alpha")
+
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=_DualScaleDownRiskEngine(0.5),
+        )
+        captured = _capture_orders(bus)
+        _signal_from_bus(bus, signal)
+
+        BacktestOrderRouter.on_quote(orch._backend.order_router, quote)
+        _boot_to_backtest(orch)
+        orch._process_tick(quote)
+
+        assert len(captured) == 1
+        assert captured[0].strategy_id == "double_scale_alpha"
+        assert captured[0].quantity == 50, (
+            "expected 100-share default target scaled once by 0.5, "
+            f"got {captured[0].quantity}"
+        )
+
+    def test_scale_down_at_both_gates_applies_once_for_reverse_entry(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        quote = _make_quote()
+        signal = _make_signal(quote, strategy_id="double_scale_reverse")
+        pos = MemoryPositionStore()
+        pos.update("AAPL", -100, Decimal("150"))
+
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=_DualScaleDownRiskEngine(0.5),
+            position_store=pos,
+        )
+        captured = _capture_orders(bus)
+        _signal_from_bus(bus, signal)
+
+        BacktestOrderRouter.on_quote(orch._backend.order_router, quote)
+        _boot_to_backtest(orch)
+        orch._process_tick(quote)
+
+        assert len(captured) == 2, (
+            f"expected reverse path to submit exit + entry, got {captured!r}"
+        )
+        quantities = sorted(order.quantity for order in captured)
+        assert quantities == [50, 100], (
+            "expected 100-share short cover plus 50-share new long entry; "
+            f"got quantities={quantities!r}"
+        )
+
+    def test_reverse_exit_force_flatten_triggers_global_escalation(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        quote = _make_quote()
+        signal = _make_signal(quote, strategy_id="reverse_ff_escalate", direction=SignalDirection.LONG)
+        pos = MemoryPositionStore()
+        pos.update("AAPL", -100, Decimal("150"))
+
+        kill = InMemoryKillSwitch()
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=_ForceFlattenOnFirstCheckOrderEngine(),
+            position_store=pos,
+            kill_switch=kill,
+        )
+        captured = _capture_orders(bus)
+        _signal_from_bus(bus, signal)
+
+        BacktestOrderRouter.on_quote(orch._backend.order_router, quote)
+        orch.boot(_MinimalConfig())
+        orch._macro.transition(MacroState.LIVE_TRADING_MODE, trigger="CMD_LIVE_DEPLOY")
+        orch._micro.reset(trigger="session_start:test")
+        orch._process_tick(quote)
+
+        non_emergency = [o for o in captured if o.strategy_id != "emergency_flatten"]
+        assert non_emergency == [], (
+            "reverse exit and entry must not submit; only emergency_flatten orders OK"
+        )
+        assert orch.risk_level == RiskLevel.LOCKED
+        assert orch.macro_state == MacroState.RISK_LOCKDOWN
+        assert kill.is_active
+
+    def test_reverse_entry_counts_prospective_exposure(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        quote = _make_quote()
+        signal = _make_signal(quote, strategy_id="reverse_exposure_cap")
+        pos = MemoryPositionStore()
+        pos.update("AAPL", -50, Decimal("150"))
+
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=BasicRiskEngine(RiskConfig(
+                max_position_per_symbol=100_000,
+                max_gross_exposure_pct=10.0,
+                max_drawdown_pct=99.0,
+                account_equity=Decimal("100000"),
+            )),
+            position_store=pos,
+        )
+        captured = _capture_orders(bus)
+        _signal_from_bus(bus, signal)
+
+        BacktestOrderRouter.on_quote(orch._backend.order_router, quote)
+        _boot_to_backtest(orch)
+        orch._process_tick(quote)
+
+        assert len(captured) == 1, (
+            "expected only the exit leg when the reverse entry would "
+            f"breach the gross-exposure cap, got {captured!r}"
+        )
+        assert captured[0].quantity == 50
+
+    def test_reverse_entry_post_exit_exposure_uses_live_mark(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        quote = _make_quote()
+        signal = _make_signal(quote, strategy_id="reverse_live_mark")
+        pos = MemoryPositionStore()
+        pos.update("AAPL", -50, Decimal("100"))
+
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=BasicRiskEngine(RiskConfig(
+                max_position_per_symbol=100_000,
+                max_gross_exposure_pct=16.0,
+                max_drawdown_pct=99.0,
+                account_equity=Decimal("100000"),
+            )),
+            position_store=pos,
+        )
+        captured = _capture_orders(bus)
+        _signal_from_bus(bus, signal)
+
+        BacktestOrderRouter.on_quote(orch._backend.order_router, quote)
+        _boot_to_backtest(orch)
+        orch._process_tick(quote)
+
+        assert len(captured) == 2, (
+            "expected the reverse entry to pass when the live-mark-based "
+            f"post-exit exposure stays below the cap, got {captured!r}"
+        )
 
 
 class TestPortfolioConsumedSignalsSkipped:
@@ -467,7 +719,7 @@ class TestMultipleStandaloneSignalsPerTick:
         )
         assert captured[0].strategy_id == "alpha_first"
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-        assert any("standalone SIGNAL alphas fired" in r.message for r in warnings), (
+        assert any("standalone SIGNAL candidate(s)" in r.message for r in warnings), (
             "expected a once-per-process WARNING about multiple "
             "standalone Signals; got logs: "
             + str([r.message for r in warnings])
@@ -535,12 +787,47 @@ class TestMultipleStandaloneSignalsPerTick:
         warnings = [
             r for r in caplog.records
             if r.levelno == logging.WARNING
-            and "standalone SIGNAL alphas fired" in r.message
+            and "standalone SIGNAL candidate(s)" in r.message
         ]
         assert len(warnings) == 1, (
             f"expected exactly 1 WARNING across 3 ticks (once-per-process "
             f"latch), got {len(warnings)}"
         )
+
+    def test_warning_reports_candidate_count_vs_unique_alpha_ids(
+        self, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.WARNING, logger="feelies.kernel.orchestrator")
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        quote = _make_quote()
+        dup_a = _make_signal(quote, strategy_id="same_alpha")
+        dup_b = replace(dup_a, strength=0.9, edge_estimate_bps=8.0)
+
+        orch = _build_orchestrator(clock, bus=bus)
+
+        def emit_two_signals(q: NBBOQuote) -> None:
+            for s in (dup_a, dup_b):
+                bus.publish(replace(
+                    s,
+                    timestamp_ns=q.timestamp_ns,
+                    correlation_id=q.correlation_id,
+                    sequence=q.sequence,
+                ))
+        bus.subscribe(NBBOQuote, emit_two_signals)  # type: ignore[arg-type]
+
+        BacktestOrderRouter.on_quote(orch._backend.order_router, quote)
+        _boot_to_backtest(orch)
+        orch._process_tick(quote)
+
+        warnings = [
+            r.message for r in caplog.records
+            if r.levelno == logging.WARNING
+            and "standalone SIGNAL candidate(s)" in r.message
+        ]
+        assert len(warnings) == 1
+        assert "2 standalone SIGNAL candidate(s) from 1 alpha id(s)" in warnings[0]
+        assert "['same_alpha']" in warnings[0]
 
 
 def test_trace_sink_records_buffer_evicted_standalone_signals() -> None:
@@ -549,6 +836,9 @@ def test_trace_sink_records_buffer_evicted_standalone_signals() -> None:
     Mirrors Trade-driven ``HorizonTick`` paths: bus-visible Signals that were
     buffered but never drained by M4 must not disappear from
     ``signal_order_trace_sink`` when the next tick clears the buffer.
+
+    Signals with ``horizon_seconds == 0`` (non-horizon producers) are treated
+    as stale on every inter-tick carry-over — this test exercises that branch.
     """
     clock = SimulatedClock(start_ns=1000)
     bus = EventBus()
@@ -579,3 +869,146 @@ def test_trace_sink_records_buffer_evicted_standalone_signals() -> None:
     assert len(evicted) == 1
     assert evicted[0].quote_sequence == q1.sequence
     assert evicted[0].outcome == "NO_ORDER"
+
+
+# ── H1 regression tests ───────────────────────────────────────────────
+
+
+def test_trade_path_fresh_signal_reaches_m4() -> None:
+    """Trade-path Signal within its horizon window is NOT evicted — H1 fix.
+
+    A Signal with ``horizon_seconds=30`` emitted by the trade path (between
+    quote ticks) must survive the PR-2b-iii freshness partition and reach M4
+    when the next quote tick arrives within the 30 s window, producing an
+    order rather than a trace eviction row.
+    """
+    _BASE_NS = 1_000_000_000  # 1 s — large enough for realistic arithmetic
+    clock = SimulatedClock(start_ns=_BASE_NS)
+    bus = EventBus()
+    sink: list[SignalOrderTraceRow] = []
+    orch = _build_orchestrator(clock, bus=bus)
+    orch._signal_order_trace_sink = sink
+    captured = _capture_orders(bus)
+    _boot_to_backtest(orch)
+
+    q1 = _make_quote(ts=_BASE_NS, seq=1)
+    BacktestOrderRouter.on_quote(orch._backend.order_router, q1)
+    orch._process_tick(q1)
+
+    # Simulate a Signal produced by the trade path between q1 and q2.
+    trade_signal = replace(
+        _make_signal(q1, strategy_id="trade_path_alpha"),
+        sequence=99_001,
+        timestamp_ns=_BASE_NS,
+        horizon_seconds=30,
+    )
+    bus.publish(trade_signal)
+
+    # q2 arrives 10 s later — well within the 30 s horizon.
+    q2 = _make_quote(ts=_BASE_NS + 10_000_000_000, seq=2)
+    BacktestOrderRouter.on_quote(orch._backend.order_router, q2)
+    orch._process_tick(q2)
+
+    evicted = [
+        r
+        for r in sink
+        if r.signal_sequence == 99_001
+        and "signal_buffer_cleared_unprocessed_at_tick_boundary" in r.reasons
+    ]
+    assert evicted == [], (
+        "trade-path Signal within horizon window was evicted instead of "
+        f"reaching M4; evicted={evicted!r}"
+    )
+    assert any(o.strategy_id == "trade_path_alpha" for o in captured), (
+        "expected an OrderRequest from the carried-forward trade-path Signal "
+        f"but none was produced; orders={captured!r}"
+    )
+
+
+def test_trade_path_fresh_signal_is_drained_only_once() -> None:
+    """Carried trade-path Signal is consumed on the next quote only once.
+
+    The H1 fix must preserve an inter-quote Signal until the first quote can
+    run M4, but once that happens the same signal sequence must not be
+    reconsidered on later quote ticks inside the same horizon window.
+    """
+    _BASE_NS = 1_000_000_000
+    clock = SimulatedClock(start_ns=_BASE_NS)
+    bus = EventBus()
+    orch = _build_orchestrator(clock, bus=bus)
+    captured = _capture_orders(bus)
+    _boot_to_backtest(orch)
+
+    q1 = _make_quote(ts=_BASE_NS, seq=1)
+    BacktestOrderRouter.on_quote(orch._backend.order_router, q1)
+    orch._process_tick(q1)
+
+    trade_signal = replace(
+        _make_signal(q1, strategy_id="trade_once_alpha"),
+        sequence=99_010,
+        timestamp_ns=_BASE_NS,
+        horizon_seconds=30,
+    )
+    bus.publish(trade_signal)
+
+    q2 = _make_quote(ts=_BASE_NS + 10_000_000_000, seq=2)
+    BacktestOrderRouter.on_quote(orch._backend.order_router, q2)
+    orch._process_tick(q2)
+
+    q3 = _make_quote(ts=_BASE_NS + 20_000_000_000, seq=3)
+    BacktestOrderRouter.on_quote(orch._backend.order_router, q3)
+    orch._process_tick(q3)
+
+    trade_orders = [o for o in captured if o.strategy_id == "trade_once_alpha"]
+    assert len(trade_orders) == 1, (
+        "expected carried trade-path signal to be drained exactly once; "
+        f"orders={trade_orders!r}"
+    )
+
+
+def test_trade_path_expired_signal_is_evicted() -> None:
+    """Trade-path Signal past its horizon window IS evicted — H1 fix.
+
+    Complement of ``test_trade_path_fresh_signal_reaches_m4``: a Signal with
+    ``horizon_seconds=30`` whose timestamp is more than 30 s before the
+    incoming quote must still be discarded and traced, not forwarded to M4.
+    """
+    _BASE_NS = 1_000_000_000
+    clock = SimulatedClock(start_ns=_BASE_NS)
+    bus = EventBus()
+    sink: list[SignalOrderTraceRow] = []
+    orch = _build_orchestrator(clock, bus=bus)
+    orch._signal_order_trace_sink = sink
+    captured = _capture_orders(bus)
+    _boot_to_backtest(orch)
+
+    q1 = _make_quote(ts=_BASE_NS, seq=1)
+    BacktestOrderRouter.on_quote(orch._backend.order_router, q1)
+    orch._process_tick(q1)
+
+    stale_signal = replace(
+        _make_signal(q1, strategy_id="stale_alpha"),
+        sequence=99_002,
+        timestamp_ns=_BASE_NS,
+        horizon_seconds=30,
+    )
+    bus.publish(stale_signal)
+
+    # q2 arrives 31 s later — one second past the 30 s horizon.
+    q2 = _make_quote(ts=_BASE_NS + 31_000_000_000, seq=2)
+    BacktestOrderRouter.on_quote(orch._backend.order_router, q2)
+    orch._process_tick(q2)
+
+    evicted = [
+        r
+        for r in sink
+        if r.signal_sequence == 99_002
+        and "signal_buffer_cleared_unprocessed_at_tick_boundary" in r.reasons
+    ]
+    assert len(evicted) == 1, (
+        f"expected expired Signal to be evicted with trace row, got {evicted!r}"
+    )
+    assert evicted[0].outcome == "NO_ORDER"
+    assert not any(o.strategy_id == "stale_alpha" for o in captured), (
+        "expired trade-path Signal must not produce an order"
+    )

@@ -85,6 +85,32 @@ class TestRegimeFactor:
         # EV = 1.0*0.5 = 0.5, so 10000 * 0.5 / 100 = 50
         assert qty == 50
 
+    def test_factor_clamped_at_one_when_config_supplies_amplifier(
+        self, budget: AlphaRiskBudget
+    ) -> None:
+        """Audit P1 R-1: Inv-11 (regime state never amplifies exposure
+        beyond 1.0) is enforced at the value level — an operator-
+        supplied factor > 1.0 must NOT increase quantity above the
+        un-scaled baseline."""
+        regime = HMM3StateFractional()
+        regime._posteriors["AAPL"] = [0.0, 1.0, 0.0]  # 100% "normal"
+        # Misconfigured map: "normal" -> 2.0×.  EV would be 2.0; clamp
+        # caps it at 1.0.
+        sizer = BudgetBasedSizer(
+            regime_engine=regime,
+            regime_factors={"normal": 2.0, "vol_breakout": 0.5,
+                            "compression_clustering": 0.75},
+        )
+        qty = sizer.compute_target_quantity(
+            _make_signal(strength=1.0),
+            budget,
+            symbol_price=Decimal("100"),
+            account_equity=Decimal("100000"),
+        )
+        # Without the clamp this would be 200; with the clamp it's 100.
+        # 100000 * 10% (capital_allocation_pct) = 10000; 10000 * 1.0 / 100 = 100.
+        assert qty == 100
+
 
 class TestEdgeCases:
     def test_zero_price_returns_zero(self, budget: AlphaRiskBudget) -> None:

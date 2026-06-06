@@ -1,0 +1,251 @@
+# ── Identity & Provenance ─────────────────────────────────
+schema_version: "1.1"
+layer: SIGNAL
+alpha_id: sig_inventory_revert_v1
+version: "1.1.0"
+description: |
+  Inventory mean-reversion — short-horizon (30 s) alpha that
+  fades transient asymmetric quote replenishment.  A sharp,
+  one-sided depletion of resting liquidity that fails to
+  re-replenish symmetrically signals a temporary inventory
+  imbalance which mean-reverts as the affected side rebuilds.
+
+# ── Hypothesis (causal mechanism) ─────────────────────────
+hypothesis: |
+  When the bid (or ask) side of the L1 NBBO is rapidly drained
+  without a matching draw on the opposite side, the resulting
+  micro-price deviation is dominantly an inventory imbalance and
+  not informational.  The replenishment dynamics dictate a fast
+  reversion (~20 s half-life) once the affected side rebuilds.
+  We fade the displacement direction: long after bid-side depletion
+  (positive asym_z), short after ask-side depletion (negative asym_z).
+
+falsification_criteria:
+  - |
+    Realised half-life of the asymmetry signature falls outside
+    the family's normative envelope of [5, 60] s for >= 2
+    consecutive weeks (G16 INVENTORY empirical band).
+  - |
+    Realised hit rate on the contrarian leg falls below 50% for
+    >= 4 consecutive trading weeks.
+  - |
+    Quote replenishment regime structurally shifts (e.g., venue
+    tick-size change) — quote_hazard_rate distribution drift
+    > 3σ from the in-sample baseline.
+  - |
+    Out-of-sample DSR < 1.0 across any single calendar quarter
+    after promotion to LIVE.
+
+# ── Layer-1 sensor dependencies ───────────────────────────
+depends_on_sensors:
+  - quote_replenish_asymmetry
+  - spread_z_30d
+  - quote_hazard_rate
+  - realized_vol_30s
+
+# ── Parameters ────────────────────────────────────────────
+parameters:
+  asymmetry_z_threshold:
+    type: float
+    default: 2.0
+    min: 1.0
+    max: 4.0
+    description: |
+      Minimum |z-score| of replenishment asymmetry required to
+      trigger a contrarian fade.
+  hazard_floor:
+    type: float
+    default: 4.0
+    min: 0.0
+    max: 100.0
+    description: |
+      Hard minimum quote hazard rate, expressed in **events per second**
+      (matches the sensor's unit — see
+      ``feelies.sensors.impl.quote_hazard_rate``).  Below this floor the
+      ladder is stale and inventory inference is unreliable, so no
+      signal fires.  The sensor warms at ``min_samples`` quotes inside
+      ``window_seconds``; with the platform defaults (20 quotes in 5 s)
+      warm-time floor sits at ~4.0 events/s, so this value gates against
+      ladders that warm and then thin out below the warm floor.
+  hazard_band:
+    type: float
+    default: 2.0
+    min: 0.001
+    max: 100.0
+    description: |
+      Width of the soft ramp above ``hazard_floor``, in **events per
+      second**.  Edge is scaled by
+      ``clip((hazard - hazard_floor) / hazard_band, 0, 1)`` so
+      marginally active ladders contribute proportionally instead of
+      falling off a cliff at the floor.
+  edge_per_z_bps:
+    type: float
+    default: 3.5
+    min: 1.0
+    max: 8.0
+    description: Linear edge per σ of asymmetry above threshold.
+  edge_cap_bps:
+    type: float
+    default: 14.0
+    min: 5.0
+    max: 25.0
+    description: |
+      Hard cap on the *theoretical peak* edge per fade, before the
+      ``realized_capture_ratio`` decay tax is applied. At runtime,
+      capturable edge is further reduced by ``hazard_weight * vol_weight``;
+      the absolute ceiling ``edge_cap_bps * realized_capture_ratio``
+      (9.044 bps with defaults) is reached only when both weights are 1.
+      The disclosed ``edge_estimate_bps`` (8.8 bps) is a near-peak
+      reference value (asym_z ≈ 5.9, full hazard and vol weights).
+  realized_capture_ratio:
+    type: float
+    default: 0.646
+    min: 0.1
+    max: 1.0
+    description: |
+      Fraction of theoretical peak inventory edge actually realized over
+      ``horizon_seconds`` given the family's
+      ``expected_half_life_seconds``. Derived analytically as
+      ``1 - 0.5 ** (horizon_seconds / expected_half_life_seconds)``;
+      with horizon 30 and half-life 20 this is
+      ``1 - 0.5 ** 1.5 = 0.646`` (~65% of peak captured).
+
+      The platform pins ``_SIGNAL_MIN_HORIZON_SECONDS = 30`` so the
+      30/20 mismatch can't be fixed by shrinking the horizon; instead
+      the realized capture is made explicit here and flows into
+      ``edge_estimate_bps`` so the cost gate measures *capturable* edge,
+      not peak. MUST be recomputed if either trend_mechanism field
+      changes.
+  vol_taper_z_scale:
+    type: float
+    default: 3.5
+    min: 0.5
+    max: 10.0
+    description: |
+      Linear taper scale on ``realized_vol_30s_zscore``: edge is multiplied
+      by ``max(0, 1 - max(0, rv_z) / vol_taper_z_scale)``. Default 3.5
+      matches the gate's vol off-switch, so capture decays smoothly toward
+      zero as the gate disarm boundary is approached instead of being a
+      step function.
+  cost_floor_bps:
+    type: float
+    default: 5.5
+    min: 0.0
+    max: 30.0
+    description: |
+      One-way cost floor (bps): edge_bps must strictly exceed this to
+      generate a signal. Aligned with the cost_arithmetic disclosure
+      (one-way convention): half_spread_bps + impact_bps + fee_bps =
+      2.5 + 2.0 + 1.0 = 5.5. Authors changing this away from the
+      disclosure should also update cost_arithmetic to keep G12 coherent.
+
+# ── Horizon (Layer-2 boundary) ────────────────────────────
+horizon_seconds: 30
+
+# ── Risk Budget ───────────────────────────────────────────
+risk_budget:
+  max_position_per_symbol: 200
+  max_gross_exposure_pct: 20.0
+  max_drawdown_pct: 1.0
+  capital_allocation_pct: 15.0
+
+# ── Regime Gate (Phase 3 DSL) ─────────────────────────────
+# NOTE: the asymmetry literal (2.0) below MUST match the default of the
+# ``asymmetry_z_threshold`` parameter. The ``quote_hazard_rate < 4.0``
+# literal in off_condition MUST match the ``hazard_floor`` parameter
+# default (events/sec — see ``quote_hazard_rate`` sensor docstring). The
+# gate DSL binding map does not resolve YAML ``parameters:`` entries, so
+# gate thresholds cannot be parameterized without platform support;
+# sweeps on asymmetry_z_threshold below 2.0 are silently floored by the
+# gate. Keep these literals in sync with their parameter defaults, and
+# prefer a single platform change to inject params into the binding map
+# over divergent literals here.
+regime_gate:
+  regime_engine: hmm_3state_fractional
+  # BT-12: inventory-dominant only — require normal dominant state, higher
+  # P(normal), and suppress when vol-breakout mass rises (informed-flow proxy).
+  on_condition: |
+    abs(quote_replenish_asymmetry_zscore) > 2.0 and dominant == "normal" and P(normal) > 0.65 and P(vol_breakout) < 0.20
+  off_condition: |
+    dominant != "normal" or P(normal) < 0.5 - posterior_margin or P(vol_breakout) > 0.30 or abs(quote_replenish_asymmetry_zscore) < 2.0 - percentile_margin or spread_z_30d > 2.0 or realized_vol_30s_zscore > 3.5 or quote_hazard_rate < 4.0
+  hysteresis:
+    posterior_margin: 0.20
+    percentile_margin: 0.30
+
+# ── Cost Arithmetic Disclosure (G12) ──────────────────────
+cost_arithmetic:
+  edge_estimate_bps: 8.8
+  half_spread_bps: 2.5
+  impact_bps: 2.0
+  fee_bps: 1.0
+  margin_ratio: 1.6
+
+# ── Trend Mechanism (v0.3 §20.5 — gate G16) ───────────────
+trend_mechanism:
+  family: INVENTORY
+  expected_half_life_seconds: 20
+  l1_signature_sensors:
+    - quote_replenish_asymmetry
+    - spread_z_30d
+    - quote_hazard_rate
+  failure_signature:
+    - "spread_z_30d > 2.0"
+    - "quote_hazard_rate < 4.0"
+    - "realized_vol_30s_zscore > 3.5"
+
+# ── Signal (Layer-2 evaluate) ─────────────────────────────
+signal: |
+  def evaluate(snapshot, regime, params):
+      asym_z = snapshot.values.get("quote_replenish_asymmetry_zscore")
+      hazard = snapshot.values.get("quote_hazard_rate")
+      if asym_z is None or hazard is None:
+          return None
+      if hazard < params["hazard_floor"]:
+          return None
+      thr = params["asymmetry_z_threshold"]
+      if abs(asym_z) < thr:
+          return None
+
+      # Direction mapping: sensor convention is positive asym_z ⇒ bid-side
+      # replenishment is faster (architecture §2.1). Under the inventory
+      # hypothesis the affected side was previously drawn, so faster
+      # replenishment marks the displaced side and we fade with LONG.
+      # This sign assumption is empirical and must be re-confirmed against
+      # forward 30 s micro-price returns before relying on this alpha live.
+      direction = LONG if asym_z > 0.0 else SHORT
+      excess = abs(asym_z) - thr
+      peak_edge_bps = min(excess * params["edge_per_z_bps"], params["edge_cap_bps"])
+
+      # Realized capture: theoretical peak is taxed by the 30s horizon /
+      # 20s half-life gap. Without this factor, edge_estimate_bps is the
+      # peak displacement, not the bps actually capturable before the
+      # next snapshot boundary.
+      capturable_edge_bps = peak_edge_bps * params["realized_capture_ratio"]
+
+      # Soft hazard gate: continuous ramp above the floor instead of a step.
+      hazard_weight = max(
+          0.0,
+          min(1.0, (hazard - params["hazard_floor"]) / params["hazard_band"]),
+      )
+
+      # Vol stress taper: scales edge linearly to zero as realized_vol_30s_zscore
+      # approaches the gate's hard disarm threshold. Negative / low z ⇒ no taper.
+      # Missing sensor defaults to 0.0 (no taper) intentionally: vol is a
+      # softening overlay, not a hard gate like asym_z or hazard.
+      rv_z = snapshot.values.get("realized_vol_30s_zscore", 0.0)
+      vol_weight = max(0.0, 1.0 - max(0.0, rv_z) / params["vol_taper_z_scale"])
+
+      edge_bps = capturable_edge_bps * hazard_weight * vol_weight
+      if edge_bps <= params["cost_floor_bps"]:
+          return None
+
+      return Signal(
+          timestamp_ns=snapshot.timestamp_ns,
+          correlation_id=snapshot.correlation_id,
+          sequence=snapshot.sequence,
+          symbol=snapshot.symbol,
+          strategy_id="sig_inventory_revert_v1",
+          direction=direction,
+          strength=edge_bps / (params["edge_cap_bps"] * params["realized_capture_ratio"]),
+          edge_estimate_bps=edge_bps,
+      )

@@ -112,6 +112,14 @@ _TUPLE_SENSOR_COMPONENTS: dict[str, tuple[str, ...]] = {
         "scheduled_flow_window_id_hash",
         "scheduled_flow_window_direction_prior",
     ),
+    # design §20.4.1: (intensity_buy, intensity_sell,
+    # intensity_ratio, branching_ratio_est)
+    "hawkes_intensity": (
+        "hawkes_intensity_buy",
+        "hawkes_intensity_sell",
+        "hawkes_intensity_ratio",
+        "hawkes_branching_ratio_est",
+    ),
 }
 
 
@@ -270,24 +278,43 @@ class HorizonSignalEngine:
         outputs by their documented component names without breaking
         the scalar-only binding contract.  Tuple sensors not declared
         in the registry are skipped — preserving v0.2 behavior — and
-        a debug record is emitted so missing entries are easy to spot.
+        a **warning** is logged so missing entries surface in operator
+        telemetry.
+
+        Cold readings (``warm=False``) **invalidate** any previously-cached
+        value for the corresponding (symbol, sensor_id) — they do not
+        merely abstain.  Sensors with sliding-window warm-up criteria
+        (e.g. ``ofi_ewma``'s S3 path) revert to ``warm=False`` after
+        sustained data gaps; without invalidation, the cache would
+        silently retain a stale warm value forever and gate evaluation
+        would fire on data that no longer exists.  Dropping the entry
+        forces ``UnknownIdentifierError`` on the next gate evaluation
+        which routes through the H8 / M6 fail-safe (gate latch reset
+        to OFF) — Inv-11 (fail-safe default).
         """
-        if not event.warm:
-            return
         value = event.value
         if isinstance(value, tuple):
             components = _TUPLE_SENSOR_COMPONENTS.get(event.sensor_id)
             if components is None:
-                _logger.debug(
+                _logger.warning(
                     "HorizonSignalEngine: tuple sensor %r emitted "
-                    "without a registered component map; skipping",
+                    "without a registered component map in "
+                    "_TUPLE_SENSOR_COMPONENTS; skipping (add mapping for "
+                    "regime-gate bindings)",
                     event.sensor_id,
                 )
+                return
+            if not event.warm:
+                for name in components:
+                    self._sensor_cache.pop((event.symbol, name), None)
                 return
             for name, component_value in zip(components, value):
                 self._sensor_cache[(event.symbol, name)] = float(
                     component_value
                 )
+            return
+        if not event.warm:
+            self._sensor_cache.pop((event.symbol, event.sensor_id), None)
             return
         self._sensor_cache[(event.symbol, event.sensor_id)] = float(value)
 
@@ -347,6 +374,7 @@ class HorizonSignalEngine:
 
         regime = self._lookup_regime(snapshot.symbol, registered.gate)
         bindings = self._build_bindings(snapshot, regime, self._sensor_cache)
+        was_on = registered.gate.is_on(snapshot.symbol)
         try:
             on = registered.gate.evaluate(
                 symbol=snapshot.symbol, bindings=bindings,
@@ -377,6 +405,14 @@ class HorizonSignalEngine:
                 exc,
                 hint,
             )
+            # If the gate was previously ON we still need to unwind any
+            # open position even though the binding is now missing
+            # (Inv-11 fail-safe default).  Without this, sensors that
+            # revert to cold mid-run (e.g. ``ofi_ewma`` after a >300 s
+            # data gap) would silently orphan positions opened while
+            # the gate was latched ON.
+            if was_on:
+                self._publish_gate_close(snapshot, registered)
             return
         except RegimeGateError as exc:
             _logger.warning(
@@ -384,7 +420,35 @@ class HorizonSignalEngine:
                 registered.alpha_id, snapshot.symbol, exc,
             )
             return
+        except (
+            ZeroDivisionError, ArithmeticError, TypeError, ValueError,
+        ) as exc:
+            # Audit P1 G-1: the DSL whitelists `/ % //` and arbitrary
+            # comparisons, so an authored expression like
+            # ``x / sensor_y < 0.5`` can raise ZeroDivisionError, and
+            # ``dominant < 1`` can raise TypeError when ``dominant`` is
+            # a string.  These are neither UnknownIdentifierError nor
+            # RegimeGateError, so without this branch they escape the
+            # fail-safe path and break the per-tick walk.  Treat them
+            # as Inv-11: force OFF + unwind if previously ON.
+            registered.gate.reset(snapshot.symbol)
+            _logger.warning(
+                "HorizonSignalEngine: %s gate arithmetic/type error for "
+                "%s (%s: %s) — forcing OFF and unwinding any open "
+                "position; review the gate expression for divide-by-zero "
+                "or string-vs-number comparison",
+                registered.alpha_id,
+                snapshot.symbol,
+                type(exc).__name__,
+                exc,
+            )
+            if was_on:
+                self._publish_gate_close(snapshot, registered)
+            return
 
+        if was_on and not on:
+            self._publish_gate_close(snapshot, registered)
+            return
         if not on:
             return
 
@@ -418,6 +482,46 @@ class HorizonSignalEngine:
 
         emitted = self._patch_signal(raw, snapshot, registered)
         self._bus.publish(emitted)
+
+    def _publish_gate_close(
+        self,
+        snapshot: HorizonFeatureSnapshot,
+        registered: RegisteredSignal,
+    ) -> None:
+        """Emit a FLAT signal carrying full alpha-level provenance.
+
+        Used both on the normal ON → OFF gate transition and on the
+        H8 / M6 fail-safe path when a previously-ON gate cannot
+        re-evaluate (missing binding, sensor reverted to cold).  The
+        FLAT signal carries the same metadata as a regular entry
+        signal so post-trade forensics can attribute the unwind PnL
+        to the correct mechanism family (Inv-13).
+        """
+        self._bus.publish(Signal(
+            timestamp_ns=snapshot.timestamp_ns,
+            correlation_id=snapshot.correlation_id,
+            sequence=self._signal_seq.next(),
+            source_layer="SIGNAL",
+            symbol=snapshot.symbol,
+            strategy_id=registered.alpha_id,
+            direction=SignalDirection.FLAT,
+            strength=0.0,
+            edge_estimate_bps=0.0,
+            layer="SIGNAL",
+            horizon_seconds=registered.horizon_seconds,
+            regime_gate_state="OFF",
+            consumed_features=registered.consumed_features,
+            trend_mechanism=registered.trend_mechanism,
+            expected_half_life_seconds=(
+                registered.expected_half_life_seconds
+            ),
+            disclosed_cost_total_bps=(
+                registered.cost_arithmetic.cost_total_bps
+            ),
+            disclosed_margin_ratio=(
+                registered.cost_arithmetic.margin_ratio
+            ),
+        ))
 
     # ── Symbol lifecycle ───────────────────────────────────────────
 

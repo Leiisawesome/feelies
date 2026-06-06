@@ -33,24 +33,42 @@ from decimal import Decimal
 from typing import Any
 
 from feelies.bus.event_bus import EventBus
+from feelies.composition.cross_sectional import CrossSectionalRanker
+from feelies.composition.engine import CompositionEngine, RegisteredPortfolioAlpha
+from feelies.composition.factor_neutralizer import FactorNeutralizer
+from feelies.composition.protocol import PortfolioAlpha
+from feelies.composition.sector_matcher import SectorMatcher
+from feelies.composition.synchronizer import UniverseSynchronizer
+from feelies.composition.turnover_optimizer import TurnoverOptimizer
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
+    Alert,
+    CrossSectionalContext,
+    HorizonTick,
     NBBOQuote,
     OrderAck,
+    OrderAckStatus,
     OrderRequest,
+    OrderType,
+    PositionUpdate,
     RiskAction,
     RiskVerdict,
     Signal,
     SignalDirection,
+    Side,
     SizedPositionIntent,
     TargetPosition,
 )
+from feelies.core.identifiers import SequenceGenerator
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
+from feelies.execution.cost_model import ZeroCostModel
+from feelies.execution.order_state import OrderState
 from feelies.kernel.macro import MacroState
 from feelies.kernel.micro import MicroState
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
+from feelies.portfolio.position_store import PositionStore
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
 from feelies.storage.memory_event_log import InMemoryEventLog
 
@@ -74,6 +92,36 @@ class _StubMarketData:
         return iter(self._events)
 
 
+class _ScriptedOrderRouter:
+    def __init__(
+        self,
+        *,
+        initial_pending_acks: list[OrderAck] | None = None,
+        submit_fill_price: Decimal = Decimal("150.00"),
+    ) -> None:
+        self._pending_acks = list(initial_pending_acks or [])
+        self._submit_fill_price = submit_fill_price
+        self.submitted: list[OrderRequest] = []
+
+    def submit(self, request: OrderRequest) -> None:
+        self.submitted.append(request)
+        self._pending_acks.append(OrderAck(
+            timestamp_ns=request.timestamp_ns + 1,
+            correlation_id=request.correlation_id,
+            sequence=request.sequence,
+            order_id=request.order_id,
+            symbol=request.symbol,
+            status=OrderAckStatus.FILLED,
+            filled_quantity=request.quantity,
+            fill_price=self._submit_fill_price,
+        ))
+
+    def poll_acks(self) -> list[OrderAck]:
+        acks = list(self._pending_acks)
+        self._pending_acks.clear()
+        return acks
+
+
 class _MinimalConfig:
     version = "test-bus-sized-intent"
     symbols = frozenset({"AAPL", "MSFT", "NVDA"})
@@ -83,6 +131,70 @@ class _MinimalConfig:
 
     def snapshot(self) -> None:
         return None
+
+
+class _SingleTickScheduler:
+    def __init__(self, tick: HorizonTick) -> None:
+        self._tick = tick
+        self._emitted = False
+
+    def on_event(self, _event: Any) -> tuple[HorizonTick, ...]:
+        if self._emitted:
+            return ()
+        self._emitted = True
+        return (self._tick,)
+
+
+class _FixedTargetPortfolioAlpha:
+    alpha_id = "phase4_test_portfolio_alpha"
+    horizon_seconds = 30
+
+    def construct(
+        self,
+        ctx: CrossSectionalContext,
+        _params: dict[str, Any],
+    ) -> SizedPositionIntent:
+        return SizedPositionIntent(
+            timestamp_ns=ctx.timestamp_ns,
+            correlation_id="placeholder",
+            sequence=-1,
+            strategy_id=self.alpha_id,
+            target_positions={
+                "AAPL": TargetPosition(symbol="AAPL", target_usd=15_000.0, urgency=0.5),
+            },
+        )
+
+
+class _RecordingGateSnapshotRiskEngine(BasicRiskEngine):
+    def __init__(self, config: RiskConfig) -> None:
+        super().__init__(config)
+        self.signal_gate_snapshots: list[dict[str, int]] = []
+        self.order_gate_snapshots: list[dict[str, int]] = []
+
+    @staticmethod
+    def _snapshot(positions: PositionStore) -> dict[str, int]:
+        return {
+            "AAPL": positions.get("AAPL").quantity,
+            "MSFT": positions.get("MSFT").quantity,
+        }
+
+    def check_signal(
+        self,
+        signal: Signal,
+        positions: PositionStore,
+    ) -> RiskVerdict:
+        if signal.strategy_id == "standalone_signal_alpha":
+            self.signal_gate_snapshots.append(self._snapshot(positions))
+        return super().check_signal(signal, positions)
+
+    def check_order(
+        self,
+        order: OrderRequest,
+        positions: PositionStore,
+    ) -> RiskVerdict:
+        if order.strategy_id == "standalone_signal_alpha":
+            self.order_gate_snapshots.append(self._snapshot(positions))
+        return super().check_order(order, positions)
 
 
 # -- Helpers ----------------------------------------------------------
@@ -136,11 +248,12 @@ def _build_orchestrator(
     bus: EventBus | None = None,
     risk_engine: Any | None = None,
     position_store: MemoryPositionStore | None = None,
+    order_router: Any | None = None,
     account_equity: Decimal = Decimal("1000000"),
 ) -> Orchestrator:
     bus = bus if bus is not None else EventBus()
     pos = position_store or MemoryPositionStore()
-    bt_router = BacktestOrderRouter(clock=clock)
+    bt_router = order_router or BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
     backend = ExecutionBackend(
         market_data=_StubMarketData(),
         order_router=bt_router,
@@ -181,6 +294,12 @@ def _capture_acks(bus: EventBus) -> list[OrderAck]:
     return captured
 
 
+def _capture_position_updates(bus: EventBus) -> list[PositionUpdate]:
+    captured: list[PositionUpdate] = []
+    bus.subscribe(PositionUpdate, captured.append)  # type: ignore[arg-type]
+    return captured
+
+
 def _seed_position(
     positions: MemoryPositionStore,
     symbol: str,
@@ -205,10 +324,11 @@ def _seed_position(
 class TestBusDrivenSizedIntentProducesOrders:
     """Bus-published SizedPositionIntent is the production PORTFOLIO path.
 
-    This is the core PR-2b-iv contract: PORTFOLIO alphas publish
-    SizedPositionIntent on the bus and the orchestrator translates that
-    into per-symbol OrderRequest events without requiring any per-tick
-    micro-SM walk for the PORTFOLIO contribution.
+    PR-2b-iv: composition publishes ``SizedPositionIntent`` on the bus and the
+    orchestrator translates it into per-symbol ``OrderRequest`` events.
+    Out-of-tick publishes execute immediately (micro unchanged); under
+    ``_process_tick`` the same work is flushed after the ``CROSS_SECTIONAL``
+    bookend with micro M5–M10 transitions.
     """
 
     def test_intent_with_single_target_emits_single_order(self) -> None:
@@ -298,6 +418,46 @@ class TestBusDrivenSizedIntentProducesOrders:
 
         _ = orch
         assert captured == []
+
+    def test_fail_safe_portfolio_submit_skips_pending_symbol(self) -> None:
+        """``_submit_portfolio_leg_without_micro_walk`` honours pending guard."""
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        _seed_position(positions, "AAPL", 0, "150.00")
+        router = _ScriptedOrderRouter()
+        orch = _build_orchestrator(
+            clock, bus=bus, position_store=positions, order_router=router,
+        )
+        _boot_to_backtest(orch)
+
+        pending = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="pending-cid",
+            sequence=999,
+            order_id="pending-aapl",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=50,
+            limit_price=Decimal("149.50"),
+            strategy_id="prior_signal",
+        )
+        orch._track_order(pending.order_id, pending.side, pending)
+
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)  # type: ignore[arg-type]
+
+        orch._submit_portfolio_leg_without_micro_walk(
+            _make_intent(targets={"AAPL": 15_000.0}),
+            "fail-safe-cid",
+        )
+
+        assert router.submitted == []
+        assert any(
+            a.alert_name == "portfolio_leg_skipped_pending_order"
+            for a in alerts
+        )
 
     def test_intent_runs_outside_per_tick_micro_sm_walk(self) -> None:
         """Intent dispatch does not advance the SIGNAL-reserved M5..M10 walk.
@@ -426,6 +586,72 @@ class TestFillReconciliation:
             "reconciled into the position store"
         )
 
+    def test_intent_does_not_steal_unrelated_pending_resting_fill_ack(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        _seed_position(positions, "AAPL", 0, "150.00")
+        _seed_position(positions, "MSFT", 0, "300.00")
+
+        deferred_ack = OrderAck(
+            timestamp_ns=1500,
+            correlation_id="resting-cid",
+            sequence=9,
+            order_id="resting-order",
+            symbol="MSFT",
+            status=OrderAckStatus.FILLED,
+            filled_quantity=10,
+            fill_price=Decimal("300.00"),
+        )
+        router = _ScriptedOrderRouter(initial_pending_acks=[deferred_ack])
+
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            position_store=positions,
+            order_router=router,
+        )
+
+        resting_order = OrderRequest(
+            timestamp_ns=900,
+            correlation_id="resting-cid",
+            sequence=8,
+            order_id="resting-order",
+            symbol="MSFT",
+            side=Side.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=10,
+            limit_price=Decimal("299.50"),
+            strategy_id="standalone_signal_alpha",
+        )
+        orch._track_order(resting_order.order_id, resting_order.side, resting_order)
+        orch._transition_order(
+            resting_order.order_id,
+            OrderState.SUBMITTED,
+            "seed_resting_order",
+        )
+
+        acks = _capture_acks(bus)
+        updates = _capture_position_updates(bus)
+
+        _boot_to_backtest(orch)
+        bus.publish(_make_intent(targets={"AAPL": 15_000.0}, correlation_id="intent-cid"))
+
+        assert len(router.submitted) == 1
+        assert [ack.order_id for ack in acks] == [router.submitted[0].order_id]
+        assert positions.get("AAPL").quantity != 0
+        assert positions.get("MSFT").quantity == 0
+        assert [update.symbol for update in updates] == ["AAPL"]
+
+        orch._reconcile_resting_fills("quote-cid")
+
+        assert [ack.order_id for ack in acks] == [
+            router.submitted[0].order_id,
+            "resting-order",
+        ]
+        assert positions.get("MSFT").quantity == 10
+        assert [update.symbol for update in updates] == ["AAPL", "MSFT"]
+
 
 class TestPortfolioCoexistsWithStandaloneSignal:
     """A PORTFOLIO intent and a standalone SIGNAL on the same tick both fire.
@@ -479,6 +705,139 @@ class TestPortfolioCoexistsWithStandaloneSignal:
         assert "MSFT" in order_symbols, (
             "PORTFOLIO intent for MSFT must produce an OrderRequest"
         )
+
+    def test_portfolio_fill_completes_before_signal_gate_checks(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        _seed_position(positions, "AAPL", 0, "150.00")
+        _seed_position(positions, "MSFT", 0, "300.00")
+
+        risk = _RecordingGateSnapshotRiskEngine(RiskConfig(
+            account_equity=Decimal("1000000"),
+            max_position_per_symbol=10_000_000,
+            max_gross_exposure_pct=200.0,
+        ))
+        router = _ScriptedOrderRouter()
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            risk_engine=risk,
+            position_store=positions,
+            order_router=router,
+        )
+        captured = _capture_orders(bus)
+
+        signal = Signal(
+            timestamp_ns=1000,
+            correlation_id="AAPL:1000:1",
+            sequence=1,
+            symbol="AAPL",
+            strategy_id="standalone_signal_alpha",
+            direction=SignalDirection.LONG,
+            strength=1.0,
+            edge_estimate_bps=50.0,
+            layer="SIGNAL",
+        )
+        intent = _make_intent(
+            targets={"MSFT": 30_000.0},
+            strategy_id="standalone_portfolio_alpha",
+        )
+
+        def emit(_quote: NBBOQuote) -> None:
+            bus.publish(signal)
+            bus.publish(intent)
+
+        bus.subscribe(NBBOQuote, emit)  # type: ignore[arg-type]
+
+        _boot_to_backtest(orch)
+        orch._process_tick(_make_quote())
+
+        assert sorted(order.symbol for order in captured) == ["AAPL", "MSFT"]
+        assert risk.signal_gate_snapshots == [{"AAPL": 0, "MSFT": 100}]
+        assert risk.order_gate_snapshots == [{"AAPL": 0, "MSFT": 100}]
+
+    def test_portfolio_orders_dispatch_during_horizon_tick_fanout_before_feature_compute(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        _seed_position(positions, "AAPL", 0, "150.00")
+
+        tick = HorizonTick(
+            timestamp_ns=1000,
+            correlation_id="tick-cid",
+            sequence=11,
+            horizon_seconds=30,
+            boundary_index=1,
+            scope="UNIVERSE",
+            symbol=None,
+            session_id="TEST",
+        )
+        scheduler = _SingleTickScheduler(tick)
+
+        synchronizer = UniverseSynchronizer(
+            bus=bus,
+            universe=("AAPL",),
+            horizons=(30,),
+            ctx_sequence_generator=SequenceGenerator(),
+        )
+        synchronizer.attach()
+
+        engine = CompositionEngine(
+            bus=bus,
+            intent_sequence_generator=SequenceGenerator(),
+            ranker=CrossSectionalRanker(),
+            neutralizer=FactorNeutralizer(loadings_dir=None),
+            sector_matcher=SectorMatcher(sector_map_path=None),
+            optimizer=TurnoverOptimizer(capital_usd=1_000_000.0),
+            completeness_threshold=0.0,
+            position_lookup=None,
+        )
+        portfolio_alpha: PortfolioAlpha = _FixedTargetPortfolioAlpha()
+        engine.register(RegisteredPortfolioAlpha(
+            alpha_id=portfolio_alpha.alpha_id,
+            horizon_seconds=portfolio_alpha.horizon_seconds,
+            alpha=portfolio_alpha,
+            params={},
+        ))
+        engine.attach()
+
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=_ScriptedOrderRouter(),
+                mode="BACKTEST",
+            ),
+            risk_engine=BasicRiskEngine(RiskConfig(
+                account_equity=Decimal("1000000"),
+                max_position_per_symbol=10_000_000,
+                max_gross_exposure_pct=200.0,
+            )),
+            position_store=positions,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+            horizon_scheduler=scheduler,  # type: ignore[arg-type]
+            composition_engine=engine,
+        )
+
+        intent_states: list[MicroState] = []
+        order_states: list[MicroState] = []
+        bus.subscribe(
+            SizedPositionIntent,
+            lambda intent: intent_states.append(orch.micro_state),  # type: ignore[arg-type]
+        )
+        bus.subscribe(
+            OrderRequest,
+            lambda order: order_states.append(orch.micro_state),  # type: ignore[arg-type]
+        )
+
+        _boot_to_backtest(orch)
+        orch._process_tick(_make_quote())
+
+        assert intent_states == [MicroState.HORIZON_CHECK]
+        assert order_states == [MicroState.ORDER_SUBMIT]
 
 
 class TestFiltering:

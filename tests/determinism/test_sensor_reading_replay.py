@@ -43,28 +43,28 @@ from tests.fixtures.replay import replay_through_registry
 _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     SensorSpec(
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=OFIEwmaSensor,
         params={"alpha": 0.1, "warm_after": 5},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="micro_price",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=MicroPriceSensor,
         params={},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="spread_z_30d",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=SpreadZScoreSensor,
         params={"window": 30, "warm_after": 5},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="realized_vol_30s",
-        sensor_version="1.1.0",
+        sensor_version="1.3.0",
         cls=RealizedVol30sSensor,
         params={"window_seconds": 30, "warm_after": 5},
         subscribes_to=(NBBOQuote,),
@@ -87,6 +87,14 @@ def _hash_reading_stream(recorder_readings: list[Any]) -> str:
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
+
+# Locked Level-1 SensorReading baseline (canonical synth fixture).
+EXPECTED_LEVEL4_READING_HASH = (
+    "1cb37e110cacd693b0c0e14a4ce99cb87169848a1e9ceb5c273ba4f974f27152"
+)
+EXPECTED_LEVEL4_READING_COUNT = 12_000
+
+
 def _replay() -> tuple[str, int]:
     recorder = replay_through_registry(sensor_specs=_SENSOR_SPECS)
     readings = recorder.sensor_readings
@@ -104,13 +112,6 @@ def test_sensor_reading_stream_matches_locked_baseline() -> None:
     drift will then fail with the diff.
     """
     actual_hash, actual_count = _replay()
-
-    # Recorded at Phase-2-β tip.  Re-baseline only with explicit
-    # justification (see module docstring).
-    EXPECTED_LEVEL4_READING_HASH = (
-        "9299e59f143fae9b7e2afbe694e30583e2191cbb30b2779737727ffe36632fd4"
-    )
-    EXPECTED_LEVEL4_READING_COUNT = 12_000
 
     assert actual_count == EXPECTED_LEVEL4_READING_COUNT, (
         f"reading count drift: expected {EXPECTED_LEVEL4_READING_COUNT}, "

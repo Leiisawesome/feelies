@@ -378,7 +378,7 @@ Backtest output flows through the existing event and storage types:
 
 | Output | Type | Source |
 |--------|------|--------|
-| Trade lifecycle records | `TradeRecord` (`storage/trade_journal.py`) | `_reconcile_fills()` writes to `TradeJournal` |
+| Trade lifecycle records | `TradeRecord` (`src/feelies/storage/trade_journal.py`) | `_reconcile_fills()` writes to `TradeJournal` |
 | Position changes | `PositionUpdate` (`core/events.py`) | Published on bus at M9 |
 | State machine audit trail | `StateTransition` (`core/events.py`) | Every SM transition emitted via bus |
 | Tick latency | `MetricEvent` (`core/events.py`) | `tick_to_decision_latency_ns` histogram per tick |

@@ -7,16 +7,17 @@ horizon features are now registered in production and each
 (scope, ordering, sequence allocation, *and* feature values) so any
 drift in any of those dimensions surfaces immediately.
 
-Features wired for the two sensors in this test:
+Features wired for the two sensors in this test (mirrors
+``_horizon_features_for()`` in bootstrap.py after audit P1-1):
   ofi_ewma → SensorPassthroughFeature (feature_id=``ofi_ewma``) +
-             RollingZscoreFeature (feature_id=``ofi_ewma_zscore``)
+             HorizonWindowedFeature (feature_id=``ofi_ewma_zscore``)
   micro_price → (none)
 across horizons {30, 120, 300}.
 
-The synthetic fixture has fewer quotes than ``min_samples=30``, so
-both ofi_ewma and ofi_ewma_zscore are always cold (warm=False) and
-ofi_ewma_zscore always returns 0.0.  That is expected: the baseline
-locks the cold-path field shape, not warm-path values.
+The synthetic fixture has fewer quotes than ``min_samples`` for the
+windowed z-score, so both ofi_ewma and ofi_ewma_zscore are always cold
+(warm=False) and ofi_ewma_zscore always returns 0.0.  That is expected:
+the baseline locks the cold-path field shape, not warm-path values.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from __future__ import annotations
 import hashlib
 
 from feelies.core.events import HorizonFeatureSnapshot, NBBOQuote
-from feelies.features.impl.rolling_stats import RollingZscoreFeature
+from feelies.features.impl.horizon_windowed import HorizonWindowedFeature
 from feelies.features.impl.sensor_passthrough import SensorPassthroughFeature
 from feelies.features.protocol import HorizonFeature
 from feelies.sensors.impl.micro_price import MicroPriceSensor
@@ -36,14 +37,14 @@ from tests.fixtures.replay import replay_through_aggregator
 _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     SensorSpec(
         sensor_id="ofi_ewma",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=OFIEwmaSensor,
         params={"alpha": 0.1, "warm_after": 5},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
         sensor_id="micro_price",
-        sensor_version="1.0.0",
+        sensor_version="1.1.0",
         cls=MicroPriceSensor,
         params={},
         subscribes_to=(NBBOQuote,),
@@ -60,7 +61,9 @@ _HORIZON_FEATURES: tuple[HorizonFeature, ...] = tuple(
     for h in sorted(_HORIZONS)
     for feature in (
         SensorPassthroughFeature("ofi_ewma", h),
-        RollingZscoreFeature("ofi_ewma", h),
+        HorizonWindowedFeature(
+            "ofi_ewma", h, reducer="zscore", feature_id="ofi_ewma_zscore",
+        ),
     )
 )
 
@@ -76,6 +79,20 @@ def _hash_snapshot_stream(snapshots: list[HorizonFeatureSnapshot]) -> str:
             f"S={sorted(s.stale.items())}"
         )
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+
+
+
+# Locked Level-3 HorizonFeatureSnapshot baseline (active aggregator slice).
+# Re-baselined for audit P1-1: the ``ofi_ewma_zscore`` feature is now
+# produced by ``HorizonWindowedFeature`` (event-time horizon window)
+# instead of the count-window ``RollingZscoreFeature``, mirroring the
+# updated production wiring in bootstrap.  Snapshot count is unchanged
+# (14); the field-content hash changes because the windowed feature's
+# warm/value path differs from the count-window one on this fixture.
+EXPECTED_LEVEL3_SNAPSHOT_HASH = (
+    "251cc109c25a4c1124c3dab32b7168c09b6a9126f4092d977df08a740c59d04b"
+)
+EXPECTED_LEVEL3_SNAPSHOT_COUNT = 14
 
 
 def _replay() -> tuple[str, int]:
@@ -95,11 +112,10 @@ def test_snapshot_stream_matches_locked_baseline() -> None:
     # H1 fix (audit): dedup logic now emits exactly one snapshot per
     # (symbol, horizon, boundary_index); SYMBOL+UNIVERSE ticks no longer
     # produce duplicate snapshots, halving the count from 28 → 14.
-    EXPECTED_LEVEL3_SNAPSHOT_HASH = (
-        "464075c8f554c85cf5ae38d425ee35791a206da1827c9f5a5aef61ebcd7f1258"
-    )
-    EXPECTED_LEVEL3_SNAPSHOT_COUNT = 14
-
+    # Audit #6 re-lock: ``_last_reading_ns`` now updates only on warm
+    # readings, so snapshots whose horizon window contains only cold
+    # sensor output correctly report ``stale=True`` for those features
+    # (previously they were incorrectly considered fresh).
     assert actual_count == EXPECTED_LEVEL3_SNAPSHOT_COUNT, (
         f"snapshot count drift: expected "
         f"{EXPECTED_LEVEL3_SNAPSHOT_COUNT}, got {actual_count}"

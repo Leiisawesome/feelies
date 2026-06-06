@@ -31,6 +31,34 @@ def _make_scheduler(
     )
 
 
+def test_auto_bind_anchor_fn_snaps_session_open() -> None:
+    """Audit P1-8: with no explicit session_open_ns, the anchor fn snaps the
+    bound open (e.g. to an RTH open) instead of the raw first-event ts."""
+    sched = HorizonScheduler(
+        horizons=frozenset({30}),
+        session_id="TEST",
+        symbols=frozenset({"AAPL"}),
+        session_open_ns=None,
+        sequence_generator=SequenceGenerator(),
+        session_open_anchor_fn=lambda ts: (ts // 1000) * 1000,
+    )
+    first_ts = 5_000_000_000_000_000_567
+    sched.on_event(make_quote(symbol="AAPL", ts_ns=first_ts))
+    assert sched.session_open_ns == 5_000_000_000_000_000_000
+
+
+def test_auto_bind_without_anchor_uses_raw_first_event() -> None:
+    sched = HorizonScheduler(
+        horizons=frozenset({30}),
+        session_id="TEST",
+        symbols=frozenset({"AAPL"}),
+        session_open_ns=None,
+        sequence_generator=SequenceGenerator(),
+    )
+    sched.on_event(make_quote(symbol="AAPL", ts_ns=42_000_000_123))
+    assert sched.session_open_ns == 42_000_000_123
+
+
 def test_first_event_emits_boundary_zero_for_each_scope() -> None:
     sched = _make_scheduler()
     ticks = sched.on_event(make_quote(symbol="AAPL", ts_ns=SESSION_OPEN_NS))

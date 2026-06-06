@@ -162,7 +162,7 @@ def test_sized_position_intent_mechanism_breakdown_default_empty() -> None:
         timestamp_ns=1,
         correlation_id="c",
         sequence=1,
-        strategy_id="pofi_xsect_v1",
+        strategy_id="pro_xsect_v1",
     )
     assert intent.mechanism_breakdown == {}
 
@@ -177,7 +177,7 @@ def test_sized_position_intent_mechanism_breakdown_populated() -> None:
         timestamp_ns=1,
         correlation_id="c",
         sequence=1,
-        strategy_id="pofi_xsect_v1",
+        strategy_id="pro_xsect_v1",
         expected_gross_exposure_usd=100_000.0,
         mechanism_breakdown=breakdown,
     )

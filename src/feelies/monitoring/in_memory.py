@@ -112,9 +112,9 @@ class InMemoryAlertManager:
 
     Satisfies the AlertManager protocol.
 
-    For CRITICAL and EMERGENCY alerts, if a kill_switch is provided,
-    it is activated synchronously before returning from emit()
-    (invariant 11: fail-safe default).
+    For EMERGENCY alerts only, if a kill_switch is provided, it is
+    activated synchronously before returning from emit() (invariant 11:
+    fail-safe default — CRITICAL is surfaced but does not auto-trip).
     """
 
     __slots__ = ("_alerts", "_acknowledged", "_kill_switch")

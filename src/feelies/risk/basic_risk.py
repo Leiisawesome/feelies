@@ -17,10 +17,16 @@ Invariants preserved:
 from __future__ import annotations
 
 import hashlib
+import logging
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
+_logger = logging.getLogger(__name__)
+
+from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
+    Alert,
+    AlertSeverity,
     OrderRequest,
     OrderType,
     RiskAction,
@@ -30,7 +36,21 @@ from feelies.core.events import (
     SignalDirection,
     SizedPositionIntent,
 )
+from feelies.core.identifiers import SequenceGenerator
+from feelies.execution.regulatory.pdt_constraint import PDTConstraint
 from feelies.portfolio.position_store import PositionStore
+from feelies.execution.trading_session import (
+    TradingSessionBounds,
+    opens_or_increases_signed,
+    should_suppress_entry,
+)
+from feelies.risk.buying_power import (
+    INSUFFICIENT_BUYING_POWER,
+    BuyingPowerConfig,
+    BuyingPowerPhase,
+    buying_power_limit,
+)
+from feelies.risk.sized_intent_result import SizedIntentRiskResult
 from feelies.services.regime_engine import RegimeEngine
 
 
@@ -41,7 +61,7 @@ class RiskConfig:
     max_position_per_symbol: int = 1000
     max_gross_exposure_pct: float = 20.0
     max_drawdown_pct: float = 5.0
-    account_equity: Decimal = Decimal("1000000")
+    account_equity: Decimal = Decimal("50000")
 
     regime_vol_breakout_scale: float = 0.5
     regime_compression_scale: float = 0.75
@@ -56,10 +76,28 @@ class BasicRiskEngine:
     Satisfies the ``RiskEngine`` protocol.
     """
 
+    # Single source of truth for the regime state names that
+    # :meth:`__init__` knows how to map onto a ``RiskConfig`` scale field.
+    # ``bootstrap._validate_regime_engine_risk_scale_alignment`` reads this
+    # frozenset so adding/renaming a regime here propagates without a
+    # parallel constant drifting out of sync.
+    REGIME_SCALE_STATE_NAMES: frozenset[str] = frozenset({
+        "vol_breakout",
+        "compression_clustering",
+        "normal",
+    })
+
     def __init__(
         self,
         config: RiskConfig,
         regime_engine: RegimeEngine | None = None,
+        *,
+        bus: EventBus | None = None,
+        alert_sequence_generator: SequenceGenerator | None = None,
+        pdt_constraint: PDTConstraint | None = None,
+        buying_power_config: BuyingPowerConfig | None = None,
+        trading_session_bounds: TradingSessionBounds | None = None,
+        account_id: str = "default",
     ) -> None:
         self._config = config
         self._regime_engine = regime_engine
@@ -70,7 +108,37 @@ class BasicRiskEngine:
             "compression_clustering": config.regime_compression_scale,
             "normal": config.regime_normal_scale,
         }
+        assert (
+            self._regime_scale_map.keys()
+            == BasicRiskEngine.REGIME_SCALE_STATE_NAMES
+        ), (
+            "REGIME_SCALE_STATE_NAMES drifted from _regime_scale_map keys"
+        )
         self._regime_scale_default = min(self._regime_scale_map.values())
+        # Optional diagnostic emission for the per-leg PORTFOLIO veto.
+        # When ``bus`` is supplied an Alert is published listing the
+        # dropped legs so dollar-neutrality / sector-neutrality breaches
+        # are visible to operators (audit R4).  When omitted the
+        # WARNING log line is the only signal — preserves construction
+        # backwards-compatibility for existing test fixtures.
+        self._bus = bus
+        self._alert_seq = alert_sequence_generator
+        # BT-4: PDT round-trip tracking + $25k minimum-equity entry gate.
+        # When None the gate is inert (e.g. test fixtures, non-margin_25k
+        # account types that bootstrap declines to wire).
+        self._pdt_constraint = pdt_constraint
+        self._buying_power_config = buying_power_config
+        self._buying_power_phase = BuyingPowerPhase.INTRADAY
+        self._trading_session_bounds = trading_session_bounds
+        self._account_id = account_id
+
+    def set_buying_power_phase(self, phase: BuyingPowerPhase) -> None:
+        """Switch intraday (4×) vs overnight (2×) Reg-T caps (BT-15)."""
+        self._buying_power_phase = phase
+
+    @property
+    def buying_power_phase(self) -> BuyingPowerPhase:
+        return self._buying_power_phase
 
     def check_signal(
         self,
@@ -87,8 +155,10 @@ class BasicRiskEngine:
 
         The exposure and drawdown sub-checks via
         ``_check_exposure_and_drawdown`` are shared with gate 2.
-        In the single-alpha path these see the same position snapshot
-        (no mutation between gates).  This partial redundancy is
+        In the standalone SIGNAL walk these see the same position
+        snapshot. Same-tick PORTFOLIO orders, when present, reconcile
+        before gate 1 runs; no bus-driven position mutation occurs
+        between gate 1 and gate 2. This partial redundancy is
         acceptable: gate 1 provides an early-exit before order
         construction, and removing either gate would lose the unique
         check that only that gate performs.
@@ -150,7 +220,27 @@ class BasicRiskEngine:
 
         current = positions.get(order.symbol)
         signed_qty = order.quantity if order.side == Side.BUY else -order.quantity
-        post_fill_qty = abs(current.quantity + signed_qty)
+        post_signed = current.quantity + signed_qty
+        post_fill_qty = abs(post_signed)
+
+        pdt_verdict = self._check_pdt_min_equity(
+            order, current.quantity, post_signed, positions,
+        )
+        if pdt_verdict is not None:
+            return pdt_verdict
+
+        bp_verdict = self._check_buying_power(
+            order, current.quantity, post_signed, positions,
+        )
+        if bp_verdict is not None:
+            return bp_verdict
+
+        rth_verdict = self._check_rth_session(
+            order, current.quantity, post_signed,
+        )
+        if rth_verdict is not None:
+            return rth_verdict
+
         if post_fill_qty > adjusted_max:
             return RiskVerdict(
                 timestamp_ns=order.timestamp_ns,
@@ -164,9 +254,14 @@ class BasicRiskEngine:
                 ),
             )
 
+        prospective_exposure = self._prospective_total_exposure(
+            order, positions, current,
+        )
         shared = self._check_exposure_and_drawdown(
             order.timestamp_ns, order.correlation_id, order.sequence, order.symbol,
-            positions, scale_down_reason="approaching exposure limit at order gate",
+            positions,
+            scale_down_reason="approaching exposure limit at order gate",
+            exposure_override=prospective_exposure,
         )
         if shared is not None:
             return shared
@@ -184,7 +279,7 @@ class BasicRiskEngine:
         self,
         intent: SizedPositionIntent,
         positions: PositionStore,
-    ) -> tuple[OrderRequest, ...]:
+    ) -> SizedIntentRiskResult:
         """Translate a Phase-4 ``SizedPositionIntent`` to per-leg orders.
 
         Each non-zero ``TargetPosition`` delta vs the current position
@@ -205,20 +300,39 @@ class BasicRiskEngine:
         Per-leg veto (Inv-11)
         ---------------------
 
-        When the per-symbol order would breach an existing risk gate
-        (post-fill quantity over the cap, exposure breach, drawdown
-        breach) the offending leg is silently dropped from the returned
-        tuple — the rest of the intent proceeds.  The intent is never
-        rejected wholesale; degenerate intents (empty
-        ``target_positions``) trivially produce an empty tuple.
+        When the per-symbol order would breach post-fill quantity or gross
+        exposure limits, the offending leg is dropped and the rest of the
+        intent proceeds.
+
+        Drawdown breach (``RiskAction.FORCE_FLATTEN`` at ``check_order``)
+        aborts **the entire intent**: ``orders`` is empty and
+        ``requires_global_risk_escalation`` is true so the orchestrator
+        runs the same emergency flatten + LOCKED path as standalone SIGNAL.
+
+        Macro interaction (kernel audit)
+        ----------------------------------
+        A ``RiskAction.FORCE_FLATTEN`` verdict on a per-leg
+        :meth:`check_order` call is **not** promoted to orchestrator
+        global lockdown — the leg is veto-dropped like REJECT. Only the
+        standalone-SIGNAL per-tick path can drive macro
+        **RISK_LOCKDOWN** (see :mod:`feelies.kernel.macro`).
+
+        Diagnostic (audit R4)
+        ---------------------
+
+        Ordinary veto drops are surfaced via ``_emit_dropped_legs_alert``.
+        Global flatten intent does **not** emit the partial-execution
+        alert — the orchestrator owns flatten + CRITICAL residual alerts.
 
         Symbols whose ``target_usd`` matches the current notional
-        (within one cent) produce no order — the leg is a no-op.
+        (within one cent) produce no order — the leg is a no-op and is
+        NOT counted as a veto-dropped leg.
         """
         if not intent.target_positions:
-            return ()
+            return SizedIntentRiskResult(orders=())
 
         orders: list[OrderRequest] = []
+        dropped: list[tuple[str, str]] = []
         for symbol in sorted(intent.target_positions):
             tgt = intent.target_positions[symbol]
             current = positions.get(symbol)
@@ -226,7 +340,11 @@ class BasicRiskEngine:
             if mark <= 0:
                 continue
 
-            target_shares = int(round(float(tgt.target_usd) / float(mark)))
+            target_shares = int(
+                (Decimal(str(tgt.target_usd)) / mark).to_integral_value(
+                    rounding=ROUND_HALF_UP,
+                )
+            )
             delta_shares = target_shares - current.quantity
             if delta_shares == 0:
                 continue
@@ -238,6 +356,9 @@ class BasicRiskEngine:
                 f"{intent.correlation_id}:{intent.sequence}:{symbol}".encode()
             ).hexdigest()[:16]
 
+            disclosed_cost = intent.disclosed_cost_total_bps_by_symbol.get(
+                symbol, 0.0,
+            )
             order = OrderRequest(
                 timestamp_ns=intent.timestamp_ns,
                 correlation_id=intent.correlation_id,
@@ -250,14 +371,28 @@ class BasicRiskEngine:
                 quantity=quantity,
                 strategy_id=intent.strategy_id,
                 reason="PORTFOLIO",
+                g12_disclosed_cost_total_bps=disclosed_cost,
             )
 
             verdict = self.check_order(order, positions)
-            if verdict.action in (RiskAction.REJECT, RiskAction.FORCE_FLATTEN):
-                # Per-leg veto — drop this leg, continue with the rest.
+            if verdict.action == RiskAction.FORCE_FLATTEN:
+                return SizedIntentRiskResult(
+                    orders=(),
+                    requires_global_risk_escalation=True,
+                )
+            if verdict.action == RiskAction.REJECT:
+                dropped.append((symbol, verdict.reason))
                 continue
             if verdict.action == RiskAction.SCALE_DOWN:
-                scaled_qty = max(1, int(quantity * verdict.scaling_factor))
+                scaled_qty = max(
+                    1,
+                    int(
+                        (
+                            Decimal(quantity)
+                            * Decimal(str(verdict.scaling_factor))
+                        ).to_integral_value(rounding=ROUND_HALF_UP),
+                    ),
+                )
                 if scaled_qty == quantity:
                     pass
                 else:
@@ -273,11 +408,296 @@ class BasicRiskEngine:
                         quantity=scaled_qty,
                         strategy_id=intent.strategy_id,
                         reason="PORTFOLIO",
+                        g12_disclosed_cost_total_bps=disclosed_cost,
                     )
 
             orders.append(order)
 
-        return tuple(orders)
+        if dropped:
+            self._emit_dropped_legs_alert(intent, dropped)
+
+        return SizedIntentRiskResult(orders=tuple(orders))
+
+    def _emit_dropped_legs_alert(
+        self,
+        intent: SizedPositionIntent,
+        dropped: list[tuple[str, str]],
+    ) -> None:
+        """Surface per-leg PORTFOLIO veto drops to operators.
+
+        Always logs at WARNING; additionally publishes a single
+        ``Alert`` event when the engine was constructed with both a
+        bus and a sequence generator.  The Alert lists every dropped
+        symbol so a portfolio alpha that intended a dollar-neutral
+        construction can be reconciled against what actually executed.
+        """
+        symbols_summary = ", ".join(sym for sym, _ in dropped)
+        _logger.warning(
+            "PORTFOLIO per-leg veto dropped %d/%d legs from intent "
+            "(strategy_id=%s, correlation_id=%s): %s",
+            len(dropped),
+            len(intent.target_positions),
+            intent.strategy_id,
+            intent.correlation_id,
+            symbols_summary,
+        )
+        if self._bus is None or self._alert_seq is None:
+            return
+        self._bus.publish(Alert(
+            timestamp_ns=intent.timestamp_ns,
+            correlation_id=intent.correlation_id,
+            sequence=self._alert_seq.next(),
+            source_layer="RISK",
+            severity=AlertSeverity.WARNING,
+            layer="risk",
+            alert_name="portfolio_intent_partial_execution",
+            message=(
+                f"Per-leg PORTFOLIO veto dropped {len(dropped)} of "
+                f"{len(intent.target_positions)} legs from intent "
+                f"(strategy_id={intent.strategy_id!r}, "
+                f"correlation_id={intent.correlation_id!r}). "
+                f"Surviving legs execute as a partial portfolio; "
+                f"any dollar-neutral / sector-neutral / "
+                f"mechanism-cap invariant the alpha intended is "
+                f"NOT re-validated after the drop."
+            ),
+            context={
+                "strategy_id": intent.strategy_id,
+                "intent_correlation_id": intent.correlation_id,
+                "intent_sequence": intent.sequence,
+                "total_legs": len(intent.target_positions),
+                "dropped_legs": [
+                    {"symbol": sym, "reason": reason}
+                    for sym, reason in dropped
+                ],
+            },
+        ))
+
+    def record_fill(
+        self,
+        symbol: str,
+        prev_qty: int,
+        new_qty: int,
+        timestamp_ns: int,
+    ) -> None:
+        """Feed an applied fill to the PDT round-trip counter (BT-4).
+
+        No-op when no PDT constraint is wired.  Called by the
+        orchestrator after each fill mutates the position store; pure
+        bookkeeping, emits nothing, so replay stays bit-identical.
+        """
+        if self._pdt_constraint is None:
+            return
+        self._pdt_constraint.record_fill(
+            self._account_id, symbol, prev_qty, new_qty, timestamp_ns,
+        )
+
+    @staticmethod
+    def _opens_or_increases(current_qty: int, post_signed: int) -> bool:
+        """Entry detection: True iff the order grows exposure or flips sign.
+
+        Thin delegate to :func:`feelies.execution.trading_session.opens_or_increases_signed`
+        so the BT-4 PDT min-equity gate, the BT-15 Reg-T buying-power gate,
+        and the BT-16 RTH router-side suppression share a single
+        implementation — a future edge-case fix lands in exactly one place.
+        """
+        return opens_or_increases_signed(current_qty, post_signed)
+
+    def _check_pdt_min_equity(
+        self,
+        order: OrderRequest,
+        current_qty: int,
+        post_signed: int,
+        positions: PositionStore,
+    ) -> RiskVerdict | None:
+        """PDT $25k minimum-equity ENTRY gate (BT-4).
+
+        Returns a ``REJECT`` verdict (reason ``PDT_MIN_EQUITY``) when the
+        order would *open or increase* a position (or reverse across zero)
+        and the PDT-flagged account is below the maintenance floor.
+        Pure exits / reductions return ``None`` (always permitted —
+        Inv-11 fail-safe).
+        """
+        if self._pdt_constraint is None:
+            return None
+        if not self._opens_or_increases(current_qty, post_signed):
+            return None
+        current_equity = self._compute_current_equity(positions)
+        if not self._pdt_constraint.should_suppress_entry(
+            self._account_id, current_equity, order.timestamp_ns,
+        ):
+            return None
+        self._emit_pdt_suppression_alert(order, current_equity)
+        return RiskVerdict(
+            timestamp_ns=order.timestamp_ns,
+            correlation_id=order.correlation_id,
+            sequence=order.sequence,
+            symbol=order.symbol,
+            action=RiskAction.REJECT,
+            reason="PDT_MIN_EQUITY",
+        )
+
+
+    def _check_rth_session(
+        self,
+        order: OrderRequest,
+        current_qty: int,
+        post_signed: int,
+    ) -> RiskVerdict | None:
+        """RTH / holiday ENTRY gate (BT-16)."""
+        if self._trading_session_bounds is None:
+            return None
+        if not self._opens_or_increases(current_qty, post_signed):
+            return None
+        suppress, reason = should_suppress_entry(
+            order.timestamp_ns,
+            self._trading_session_bounds,
+            opens_or_increases=True,
+        )
+        if not suppress:
+            return None
+        _logger.warning(
+            "RTH session gate rejected ENTRY (symbol=%s, side=%s, qty=%d, "
+            "reason=%s, ts_ns=%d).",
+            order.symbol,
+            order.side.name,
+            order.quantity,
+            reason,
+            order.timestamp_ns,
+        )
+        return RiskVerdict(
+            timestamp_ns=order.timestamp_ns,
+            correlation_id=order.correlation_id,
+            sequence=order.sequence,
+            symbol=order.symbol,
+            action=RiskAction.REJECT,
+            reason=reason,
+        )
+
+    def _check_buying_power(
+        self,
+        order: OrderRequest,
+        current_qty: int,
+        post_signed: int,
+        positions: PositionStore,
+    ) -> RiskVerdict | None:
+        """Reg-T buying-power ENTRY gate (BT-15).
+
+        Rejects orders that would *open or increase* exposure when post-fill
+        gross exceeds the phase limit (4× intraday / 2× overnight on live NAV).
+        Exits and reductions return ``None`` (Inv-11 fail-safe).
+        """
+        if self._buying_power_config is None:
+            return None
+        if not self._opens_or_increases(current_qty, post_signed):
+            return None
+        current = positions.get(order.symbol)
+        current_equity = self._compute_current_equity(positions)
+        limit = buying_power_limit(
+            current_equity,
+            self._buying_power_phase,
+            self._buying_power_config,
+        )
+        prospective = self._prospective_total_exposure(
+            order, positions, current,
+        )
+        if prospective > limit:
+            _logger.warning(
+                "Buying-power gate rejected ENTRY "
+                "(account_id=%s, symbol=%s, phase=%s): prospective gross %s "
+                "> limit %s (equity %s).",
+                self._account_id,
+                order.symbol,
+                self._buying_power_phase.name,
+                prospective,
+                limit,
+                current_equity,
+            )
+            return RiskVerdict(
+                timestamp_ns=order.timestamp_ns,
+                correlation_id=order.correlation_id,
+                sequence=order.sequence,
+                symbol=order.symbol,
+                action=RiskAction.REJECT,
+                reason=INSUFFICIENT_BUYING_POWER,
+            )
+        return None
+
+    def _emit_pdt_suppression_alert(
+        self,
+        order: OrderRequest,
+        current_equity: Decimal,
+    ) -> None:
+        """Surface a PDT-min-equity entry suppression for forensics."""
+        _logger.warning(
+            "PDT min-equity gate suppressed ENTRY order "
+            "(account_id=%s, symbol=%s, side=%s, qty=%d): equity %s < "
+            "$%s floor while PDT-flagged.",
+            self._account_id,
+            order.symbol,
+            order.side.name,
+            order.quantity,
+            current_equity,
+            self._pdt_constraint.config.min_equity
+            if self._pdt_constraint is not None else "?",
+        )
+        if self._bus is None or self._alert_seq is None:
+            return
+        floor = (
+            self._pdt_constraint.config.min_equity
+            if self._pdt_constraint is not None else Decimal("0")
+        )
+        self._bus.publish(Alert(
+            timestamp_ns=order.timestamp_ns,
+            correlation_id=order.correlation_id,
+            sequence=self._alert_seq.next(),
+            source_layer="RISK",
+            severity=AlertSeverity.WARNING,
+            layer="risk",
+            alert_name="pdt_min_equity_suppressed",
+            message=(
+                f"PDT-flagged account {self._account_id!r} below the "
+                f"${floor} maintenance floor (equity={current_equity}); "
+                f"new ENTRY fill on {order.symbol!r} "
+                f"({order.side.name} {order.quantity}) refused. "
+                f"Exits remain permitted."
+            ),
+            context={
+                "account_id": self._account_id,
+                "symbol": order.symbol,
+                "side": order.side.name,
+                "quantity": order.quantity,
+                "current_equity": str(current_equity),
+                "min_equity": str(floor),
+            },
+        ))
+
+    def _prospective_total_exposure(
+        self,
+        order: OrderRequest,
+        positions: PositionStore,
+        current: object,
+    ) -> Decimal:
+        """Gross exposure after hypothetically applying ``order``.
+
+        Gate 2 must account for the candidate order's own notional, not
+        just the snapshot passed in.  This matters especially for reverse
+        entries, where the orchestrator supplies a post-exit view and the
+        new entry leg must still count against the gross cap.
+        """
+        exposure = positions.total_exposure()
+        mark = self._mark_for(order.symbol, current, positions)
+        if mark <= 0 and order.limit_price is not None and order.limit_price > 0:
+            mark = order.limit_price
+        if mark <= 0:
+            return exposure
+
+        current_qty_obj = getattr(current, "quantity", 0)
+        current_qty = current_qty_obj if isinstance(current_qty_obj, int) else 0
+        signed_qty = order.quantity if order.side == Side.BUY else -order.quantity
+        current_contrib = abs(current_qty) * mark
+        post_fill_contrib = abs(current_qty + signed_qty) * mark
+        return exposure - current_contrib + post_fill_contrib
 
     @staticmethod
     def _mark_for(
@@ -287,29 +707,35 @@ class BasicRiskEngine:
     ) -> Decimal:
         """Return the best-available mark price for translating USD → shares.
 
-        Uses ``avg_entry_price`` when no live mark is recorded — this is
-        the boot-time fallback and matches the same convention used by
-        :meth:`MemoryPositionStore.total_exposure`.  Returns ``0`` when
-        the position has never been marked AND has zero average entry —
-        the caller must treat zero as "skip this leg" (Inv-11 fail-safe).
+        Prefers the latest live mark when recorded; otherwise falls back
+        to ``avg_entry_price`` for the boot-time case before any quote has
+        flowed through.  Returns ``0`` when the position has never been
+        marked AND has zero average entry — the caller must treat zero as
+        "skip this leg" (Inv-11 fail-safe).
         """
-        # ``MemoryPositionStore`` exposes its mark map indirectly via
-        # ``total_exposure``; we read ``avg_entry_price`` here for the
-        # cheapest deterministic conversion.  A future v0.4 enhancement
-        # may pass an explicit mark dict to avoid this approximation.
-        avg = getattr(current, "avg_entry_price", Decimal("0"))
-        if isinstance(avg, Decimal) and avg > 0:
-            return avg
         # Try to read a live mark via the optional accessor introduced
-        # in Phase 4-finalize; fall back to zero on absence.
+        # in Phase 4-finalize; for already-open positions this must take
+        # priority over cost basis so USD targets track current notional.
         latest = getattr(positions, "latest_mark", None)
         if callable(latest):
             try:
                 m = latest(symbol)
                 if isinstance(m, Decimal) and m > 0:
                     return m
-            except Exception:  # pragma: no cover - defensive
-                pass
+            except Exception as exc:  # pragma: no cover - defensive
+                # Inv-11 fail-safe: fall back to cost basis rather than
+                # raising into the risk path.  But the swallow itself is
+                # a degraded mode (live-mark feed bug) — surface it via
+                # WARNING so the operator can see the slippage drift in
+                # promotion-window forensics.
+                _logger.warning(
+                    "_mark_for(%s): latest_mark accessor raised %s; "
+                    "falling back to avg_entry_price",
+                    symbol, exc,
+                )
+        avg = getattr(current, "avg_entry_price", Decimal("0"))
+        if isinstance(avg, Decimal) and avg > 0:
+            return avg
         return Decimal("0")
 
     def _check_exposure_and_drawdown(
@@ -321,6 +747,7 @@ class BasicRiskEngine:
         positions: PositionStore,
         *,
         scale_down_reason: str,
+        exposure_override: Decimal | None = None,
     ) -> RiskVerdict | None:
         """Check exposure cap, drawdown guard, and scale-down threshold.
 
@@ -334,7 +761,10 @@ class BasicRiskEngine:
         definition so the two checks stay internally consistent.
         """
         current_equity = self._compute_current_equity(positions)
-        exposure = positions.total_exposure()
+        exposure = (
+            positions.total_exposure()
+            if exposure_override is None else exposure_override
+        )
         equity_for_cap = current_equity if current_equity > 0 else self._config.account_equity
         max_exposure = equity_for_cap * Decimal(
             str(self._config.max_gross_exposure_pct)
@@ -349,6 +779,10 @@ class BasicRiskEngine:
                 reason=f"gross exposure limit: {exposure} >= {max_exposure}",
             )
 
+        # Bump the HWM as a separate, explicit step so the predicate
+        # below is a pure function of (current_equity, hwm) — see
+        # _is_drawdown_breached docstring for the rationale.
+        self._update_high_water_mark(current_equity)
         if self._is_drawdown_breached(current_equity):
             return RiskVerdict(
                 timestamp_ns=timestamp_ns,
@@ -417,10 +851,15 @@ class BasicRiskEngine:
 
         state_names = list(self._regime_engine.state_names)
         default = self._regime_scale_default
-        return sum(
+        ev = sum(
             posteriors[i] * self._regime_scale_map.get(state_names[i], default)
             for i in range(len(posteriors))
         )
+        # Audit P1 R-1: enforce Inv-11 at the value level — never amplify
+        # position limits above the 1.0 baseline regardless of operator-
+        # supplied scale map.  EV may still drop arbitrarily low under
+        # stressed posteriors; only the upside is clamped.
+        return min(1.0, ev)
 
     def _compute_current_equity(self, positions: PositionStore) -> Decimal:
         """Live NAV: initial equity + realized − fees + unrealized.
@@ -444,10 +883,39 @@ class BasicRiskEngine:
             + total_unrealized
         )
 
-    def _is_drawdown_breached(self, current_equity: Decimal) -> bool:
+    def _update_high_water_mark(self, current_equity: Decimal) -> None:
+        """Bump the HWM monotonically.
+
+        Split out from ``_is_drawdown_breached`` so that a "what-if"
+        caller (e.g. a speculative intent translator that probes
+        ``check_order`` without intending to submit) cannot silently
+        ratchet the HWM as a side effect of asking a boolean question.
+        Callers that must update the HWM call this *before* querying
+        ``_is_drawdown_breached`` (see ``_check_exposure_and_drawdown``).
+        """
         if current_equity > self._high_water_mark:
             self._high_water_mark = current_equity
 
+    def refresh_high_water_mark(self, positions: PositionStore) -> None:
+        """Public mark-driven HWM bump for use outside the risk check path.
+
+        Without this hook, the HWM is only advanced inside
+        ``check_signal`` / ``check_order``.  Positions that appreciate
+        between risk checks (no new orders) leave the HWM stale, and the
+        next order check then computes drawdown against an artificially
+        low peak — under-reporting peak equity and over-reporting
+        drawdown for a brief window.  Orchestrator should call this on
+        each position-mark update so drawdown verdicts are not
+        order-arrival-dependent.
+        """
+        self._update_high_water_mark(self._compute_current_equity(positions))
+
+    def _is_drawdown_breached(self, current_equity: Decimal) -> bool:
+        """Pure predicate over (current_equity, self._high_water_mark).
+
+        Does NOT mutate the HWM.  Call ``_update_high_water_mark`` first
+        if the caller represents a real (non-speculative) check.
+        """
         if self._high_water_mark <= 0:
             return True
 

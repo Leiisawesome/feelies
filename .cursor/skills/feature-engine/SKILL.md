@@ -89,18 +89,36 @@ and rejects cycles. Layer gate **G6** enforces sensor-DAG validity at
 alpha-load time — a SIGNAL alpha cannot declare a `depends_on_sensors`
 edge that would create a cycle or reference an unregistered sensor.
 
-### Implemented Sensors (v0.3, 13 total)
+### Implemented Sensors (v0.3, 16 total)
 
-Implementations live under `feelies.sensors.impl`. The v0.3 catalog
-is anchored to the trend-mechanism taxonomy (see
-microstructure-alpha):
+Implementations live under `feelies.sensors.impl`. The list below is
+the **actual module catalog** (the `sensor_id` each class exposes);
+keep it in sync with `feelies/sensors/impl/*.py`. Anchored to the
+trend-mechanism taxonomy (see microstructure-alpha):
 
-- `kyle_lambda_60s`, `kyle_lambda_300s` — KYLE_INFO fingerprint
-- `inventory_pressure`, `quote_replenishment_asym` — INVENTORY fingerprint
-- `hawkes_intensity`, `trade_clustering` — HAWKES_SELF_EXCITE fingerprint
-- `liquidity_stress_score`, `spread_z_30d`, `quote_flicker_rate` — LIQUIDITY_STRESS fingerprint
+- `kyle_lambda_60s` — KYLE_INFO fingerprint
+- `inventory_pressure` — INVENTORY fingerprint (trade-side MM-inventory proxy)
+- `quote_replenish_asymmetry` — INVENTORY fingerprint (quote-side)
+- `hawkes_intensity` — HAWKES_SELF_EXCITE fingerprint
+- `liquidity_stress_score` — LIQUIDITY_STRESS fingerprint (spread×depth composite)
+- `quote_flicker_rate` — LIQUIDITY_STRESS fingerprint (best-price reversal fraction)
+- `spread_z_30d`, `quote_hazard_rate` — LIQUIDITY_STRESS (single-axis)
+- `trade_through_rate` — NBBO-aggression / HAWKES precursor
 - `scheduled_flow_window` — SCHEDULED_FLOW fingerprint
-- `ofi_ewma`, `micro_price_drift`, `effective_spread` — composite
+- `ofi_ewma`, `micro_price`, `realized_vol_30s` — composite
+
+The following three ship under `sensors/impl/` and are fully tested
+but are **not** registered in the reference `platform.yaml`
+`sensor_specs:` (dormant until wired): `vpin_50bucket`,
+`snr_drift_diffusion`, `structural_break_score`.
+
+> `inventory_pressure`, `liquidity_stress_score`, and
+> `quote_flicker_rate` were specified-but-missing in earlier drafts and
+> shipped in the audit P2-3 pass; every G16 family now has a dedicated
+> implemented fingerprint. Sensor ids that were **never** implemented
+> (`kyle_lambda_300s`, `trade_clustering`, `micro_price_drift`,
+> `effective_spread`) must not appear in `l1_signature_sensors` /
+> `depends_on_sensors`, or G6 resolution fails at load.
 
 Per-sensor implementations expose `is_warm(symbol)` and emit
 `SensorReading.provenance.warm` so downstream consumers (the horizon
@@ -135,24 +153,46 @@ class HorizonFeatureSnapshot(Event):
     symbol: str
     horizon_seconds: int
     boundary_index: int
-    values: dict[str, float]          # {sensor_id: value}
-    z_scores: dict[str, float]        # {sensor_id: z_score}
-    percentiles: dict[str, float]     # {sensor_id: percentile}
-    warm: bool
-    stale: bool
+    values: dict[str, float]            # {feature_id: value}; warm only
+    warm: dict[str, bool]               # {feature_id: warm}; ALL features
+    stale: dict[str, bool]              # {feature_id: stale}; ALL features
+    source_sensors: dict[str, tuple[str, ...]]   # {feature_id: input_sensor_ids}
+    feature_versions: dict[str, str]    # {feature_id: feature_version}
 ```
 
-The snapshot is the **canonical Layer-2 input**. It carries warm/stale
-quality gates per sensor and z-score / percentile views (used by
-`RegimeGate` DSL bindings — see microstructure-alpha skill).
+The snapshot is the **canonical Layer-2 input**. Note the actual
+contract (`core/events.py`):
+
+- Keys are **`feature_id`**, not `sensor_id`. A passthrough feature
+  reuses the `sensor_id` as its `feature_id`; z-score / percentile
+  *views are themselves features* exposed under
+  `"<sensor_id>_zscore"` / `"<sensor_id>_percentile"` keys inside
+  **`values`** — there are **no** separate `z_scores` / `percentiles`
+  dicts on the event.
+- `warm` and `stale` are **per-feature dicts**, not scalars. `values`
+  contains only *warm* features (cold features are absent, not `0.0`),
+  while `warm` / `stale` include **every** registered feature so the
+  engine can detect active-mode snapshots even when all are cold.
+  A SIGNAL alpha must therefore check the specific `feature_id` keys
+  it consumes (the `HorizonSignalEngine` does this via each alpha's
+  `required_warm_feature_ids`), not truthiness of `snapshot.warm`.
 
 ### Snapshot Quality Gates
 
 | Field | Source | Layer-2 contract |
 |-------|--------|------------------|
-| `warm: bool` | All consumed sensors past their `warm_up` requirement | SIGNAL alphas suppress entry signals when `warm == False` |
-| `stale: bool` | No NBBO arrival for the symbol within the staleness threshold (default 5s) | Entry signals suppressed; exits permitted (conservative) |
+| `warm: dict[str, bool]` | Per `feature_id`: the feature is past its warm-up requirement | The engine suppresses entry when **any required** `feature_id` is `warm=False` |
+| `stale: dict[str, bool]` | Per `feature_id`: the feature's input sensor has not fired a *warm* reading within the feature's `horizon_seconds` window (`HorizonAggregator._build_snapshot`) | Entry suppressed when any required feature is stale; exits permitted (conservative) |
 | `boundary_index` | `HorizonScheduler` integer math | Used as the deterministic sequence key for parity hashing |
+
+Staleness is enforced by the aggregator's per-`(symbol, sensor_id)`
+warm-reading freshness clock, **not** a fixed 5 s wall-clock window:
+a feature is stale when `tick.timestamp_ns - last_warm_reading_ns >
+horizon_seconds * 1e9`. Sensors whose value reaches the gate only via
+the engine's event-time `_sensor_cache` (e.g. `spread_z_30d`, which
+wires no Layer-2 feature) are **not** covered by this horizon
+staleness path — they are invalidated only when the sensor emits a
+*cold* reading.
 
 ## Computation Patterns
 

@@ -3,30 +3,23 @@
 > **Acceptance status.** Schema-level invariants enforced by this
 > document (`margin_ratio` floors, `trend_mechanism` G16 binding
 > rules, factor-exposure tolerances, `enforce_trend_mechanism`
-> strict-mode behaviour) are tracked in
-> [`docs/acceptance/v02_v03_matrix.md`](../docs/acceptance/v02_v03_matrix.md).
-> See `tests/acceptance/` for the asserting tests that close each
-> matrix row.
+> strict-mode behaviour) are asserted in `tests/acceptance/`.
 
 > **Workstream D.1 (schema 1.0 hard-removal).** `schema_version: "1.0"`
 > is no longer accepted by the loader; the only supported value is
-> `"1.1"`, and `schema_version:` is now mandatory.  See
-> [docs/migration/schema_1_0_to_1_1.md](../docs/migration/schema_1_0_to_1_1.md)
-> for the verbatim migration recipe.
+> `"1.1"`, and `schema_version:` is now mandatory.
 >
 > **Workstream D.2 (LEGACY_SIGNAL retirement).** `layer: LEGACY_SIGNAL`
 > is no longer accepted by the loader. The per-tick legacy execution
 > path was retired; alphas must declare `layer: SIGNAL`
 > (horizon-anchored, regime-gated, cost-aware) or `layer: PORTFOLIO`
-> (cross-sectional construction). The migration cookbook remains the
-> authoritative step-by-step source for promoting a legacy alpha to
-> the SIGNAL layer.
+> (cross-sectional construction).
 
 ## Top-Level Fields
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `schema_version` | string | **Yes** | Schema version.  Only `"1.1"` is accepted (workstream D.1).  Legacy `"1.0"` specs and missing-version specs are rejected outright with a pointer to the [migration cookbook](../docs/migration/schema_1_0_to_1_1.md). |
+| `schema_version` | string | **Yes** | Schema version.  Only `"1.1"` is accepted (workstream D.1).  Legacy `"1.0"` specs and missing-version specs are rejected outright. |
 | `alpha_id` | string | Yes | Unique identifier. Must match `^[a-z][a-z0-9_]*$`. |
 | `version` | string | Yes | Semver string (e.g. `"1.0.0"`). Must match `^\d+\.\d+\.\d+$`. |
 | `description` | string | Yes | Human-readable description of the alpha. |
@@ -131,8 +124,8 @@ Alphas can be placed in either layout:
 > operator explicitly pins `enforce_trend_mechanism: false` in
 > `platform.yaml` (the documented v0.2 escape hatch). Four reference
 > alphas covering the non-stress families ship in this slice
-> (`pofi_hawkes_burst_v1`, `pofi_kyle_drift_v1`,
-> `pofi_inventory_revert_v1`, `pofi_moc_imbalance_v1`); the
+> (`sig_hawkes_burst_v1`, `sig_kyle_drift_v1`,
+> `sig_inventory_revert_v1`, `sig_moc_imbalance_v1`); the
 > `LIQUIDITY_STRESS` family is enforced **exit-only** — a stress-family
 > alpha may not emit an entry-direction `Signal`. See §20.10 (v0.3
 > Phased Delivery) for the full timeline.
@@ -200,7 +193,7 @@ hazard-rate exits via `RegimeHazardSpike` events.
 | G8 | **Active** (Phase 3-α) | No implicit lookahead — AST-scan rejects access to future-bucketed names. |
 | G9 | **Active** (Phase 4) | Cross-symbol staleness checks — `CrossSectionalContext.completeness` must clear the per-platform `composition_completeness_threshold` (default `0.7`) for the boundary to produce a `SizedPositionIntent`. Always blocks (data-integrity gate; not affected by `enforce_layer_gates`). |
 | G10 | **Active** (Phase 4) | PORTFOLIO `universe:` presence + scale cap — every PORTFOLIO alpha must declare a non-empty `universe:` list and the universe size must be ≤ `composition_max_universe_size` (v0.2 cap = 50 symbols). Always blocks. |
-| G11 | **Active** (Phase 4) | PORTFOLIO `factor_neutralization:` disclosure — every PORTFOLIO alpha must declare `factor_neutralization: true` (or list explicit excluded factor IDs). Reference factor loadings under `storage/reference/factor_loadings/` must exist and not exceed `factor_loadings_max_age_seconds`; missing or stale loadings raise `StaleFactorLoadingsError` at bootstrap. Always blocks. |
+| G11 | **Active** (Phase 4) | PORTFOLIO `factor_neutralization:` disclosure — every PORTFOLIO alpha must declare `factor_neutralization: true` (or list explicit excluded factor IDs). Reference factor loadings under `src/feelies/storage/reference/factor_loadings/` (or the path set in `PlatformConfig.factor_loadings_dir`) must exist and not exceed `factor_loadings_max_age_seconds`; missing or stale loadings raise `StaleFactorLoadingsError` at bootstrap. Always blocks. |
 | G12 | **Active** (Phase 3-α) | Cost-arithmetic disclosure — `cost_arithmetic` block required, `margin_ratio >= 1.5`, components reconcile within ±5%. |
 | G13 | **Active** (Phase 3-α) | Warm-up documentation — `SIGNAL` inherits warm-up from sensor warm-up by construction; the inline-features warm-up branch is unreachable post-D.2 (the loader rejects `LEGACY_SIGNAL` before validation). |
 | G14 | **Active** (Phase 1) | Alpha must declare no data dependency outside L1 NBBO + trades + reference data + session calendar. |
@@ -236,7 +229,7 @@ catalog and horizon-aware feature scaffolding, but alpha specs are
   built and tested against a stable contract before Phase 3 wires
   concrete `HorizonFeature` implementations.
 - The `scheduled_flow_window` sensor reads
-  ``storage/reference/event_calendar/<date>.yaml``; the calendar's
+  ``src/feelies/storage/reference/event_calendar/<date>.yaml`` (or any path passed via `PlatformConfig.event_calendar_path`); the calendar's
   `EventCalendar.hash()` is folded into the bootstrap provenance
   bundle (Inv-13).
 
@@ -268,7 +261,7 @@ Layer-2 contract:
   `evaluate(snapshot, regime, params)` is parsed and validated by
   gates G2–G13 at load time.
 - The reference alpha
-  [`alphas/pofi_benign_midcap_v1`](pofi_benign_midcap_v1/) ships as
+  [`alphas/sig_benign_midcap_v1`](sig_benign_midcap_v1/) ships as
   the canonical Phase-3 example. Its Level-2 SIGNAL parity hash is
   locked in `tests/determinism/test_signal_replay.py`. Drift in
   ordering, scope, or sequence allocation surfaces as a baseline
@@ -297,20 +290,20 @@ four reference alphas exercise the four non-stress families:
   default `true` since Workstream E, acceptance row 84)** rejects
   any schema-1.1 `SIGNAL`/`PORTFOLIO` spec *missing* a
   `trend_mechanism:` block at load time. Operators staying on a v0.2
-  baseline alpha (e.g. `pofi_benign_midcap_v1`) must pin
+  baseline alpha (e.g. `sig_benign_midcap_v1`) must pin
   `enforce_trend_mechanism: false` explicitly. This is the
   recommended setting once an operator has committed to the
   v0.3 mechanism contract; it catches "drift back to v0.2" at load
   time rather than at promotion review.
 - **Reference alphas (one per non-stress family):**
-  - [`alphas/pofi_hawkes_burst_v1`](pofi_hawkes_burst_v1/) —
+  - [`alphas/sig_hawkes_burst_v1`](sig_hawkes_burst_v1/) —
     `HAWKES_SELF_EXCITE`, 30 s horizon, hazard-exit enabled.
-  - [`alphas/pofi_kyle_drift_v1`](pofi_kyle_drift_v1/) — `KYLE_INFO`,
+  - [`alphas/sig_kyle_drift_v1`](sig_kyle_drift_v1/) — `KYLE_INFO`,
     300 s horizon, slow drift on informed-trader price impact.
-  - [`alphas/pofi_inventory_revert_v1`](pofi_inventory_revert_v1/) —
+  - [`alphas/sig_inventory_revert_v1`](sig_inventory_revert_v1/) —
     `INVENTORY`, 30 s horizon, contrarian on quote-replenish
     asymmetry (`abs(zscore) > 2.0`).
-  - [`alphas/pofi_moc_imbalance_v1`](pofi_moc_imbalance_v1/) —
+  - [`alphas/sig_moc_imbalance_v1`](sig_moc_imbalance_v1/) —
     `SCHEDULED_FLOW`, 120 s horizon, MOC-window flow tracking via the
     tuple-valued `scheduled_flow_window` sensor (component-expanded
     by `HorizonSignalEngine`).
@@ -391,9 +384,9 @@ side-by-side with `SIGNAL` alphas on the same universe:
   `max_gross_exposure_pct`, `capital_allocation_pct`) are
   inherited by per-leg `OrderRequest`s through the standard risk
   pipeline. Reference factor loadings live under
-  `storage/reference/factor_loadings/<universe_hash>/loadings.json`
+  `src/feelies/storage/reference/factor_loadings/<universe_hash>/loadings.json`
   (with optional `loadings.parquet`) and a sector map under
-  `storage/reference/sector_map/sector_map.json`; both are produced
+  `src/feelies/storage/reference/sector_map/sector_map.json`; both are produced
   by `scripts/build_reference_factor_loadings.py` and folded into
   the bootstrap provenance bundle (Inv-13).
 - Bootstrap is gated on `AlphaRegistry.has_portfolio_alphas()` —
@@ -405,10 +398,10 @@ side-by-side with `SIGNAL` alphas on the same universe:
   (12 composition + hazard metrics), and (if any alpha enables
   `hazard_exit.enabled: true`) `HazardExitController`.
 - The reference alpha
-  [`alphas/pofi_xsect_v1`](pofi_xsect_v1/) ships as the canonical
-  Phase-4 example, with a sibling `pofi_xsect_v1.with_decay.alpha.yaml`
+  [`alphas/pro_xsect_v1`](pro_xsect_v1/) ships as the canonical
+  Phase-4 example, with a sibling `pro_xsect_v1.with_decay.alpha.yaml`
   exercising the Phase-4.1 decay-weighting branch and
-  [`alphas/pofi_xsect_mixed_mechanism_v1`](pofi_xsect_mixed_mechanism_v1/)
+  [`alphas/pro_xsect_mixed_mechanism_v1`](pro_xsect_mixed_mechanism_v1/)
   exercising the multi-mechanism cap.
 - `scripts/run_backtest.py` exposes three new emission flags
   composable with the Phase-3 ones:
@@ -437,8 +430,7 @@ live:
   verified by the cross-check in
   `tests/determinism/test_sized_intent_with_decay_replay.py`. The
   performance budget is **≤5% wall-clock end-to-end regression**
-  vs the same alpha with decay OFF
-  (`tests/perf/test_phase4_1_no_regression.py`).
+  vs the same alpha with decay OFF.
 - **Hazard exit (`HazardExitController`).** A PORTFOLIO alpha
   with `hazard_exit.enabled: true` participates in two exit paths:
   - On `RegimeHazardSpike`: if the spike's hazard score exceeds
@@ -513,8 +505,8 @@ The loader does **not** perform cross-field invariant checks (e.g.
 `small_min_pnl_compression_ratio < small_max_pnl_compression_ratio`)
 — those are deferred to the consumer (the F-2 validators).  The
 override surface is purely structural.  See
-[`docs/migration/schema_1_0_to_1_1.md`](../docs/migration/schema_1_0_to_1_1.md)
-§ "Per-alpha promotion overrides" for the operator cookbook and
+`alphas/SCHEMA.md` § "Per-alpha promotion overrides" for the operator
+cookbook and
 [`tests/alpha/test_loader_promotion_block.py`](../tests/alpha/test_loader_promotion_block.py)
 for the asserting tests.
 
@@ -540,7 +532,7 @@ without the lifecycle state name changing.
 - Schema 1.0 specs are rejected (Workstream D.1 hard-removal).
 - Schema-1.1 specs declaring `layer: LEGACY_SIGNAL` are rejected
   (Workstream D.2 retirement); the rejection error includes a
-  pointer to the migration cookbook.
+  pointer to the backward-compatibility notes above.
 - A schema-1.1 spec without `layer:` is rejected — there is no
   implicit upgrade path (§8.7).
 - A schema-1.1 spec **without** a `promotion:` block continues to
@@ -552,15 +544,13 @@ without the lifecycle state name changing.
 
 ### Migration
 
-The dedicated migration guide ships at
-[`docs/migration/schema_1_0_to_1_1.md`](../docs/migration/schema_1_0_to_1_1.md).
 After Workstream D.2 the only accepted layer values are `SIGNAL` and
 `PORTFOLIO`; the previously documented mechanical
 ``layer: LEGACY_SIGNAL`` upgrade is no longer accepted by the loader.
 Authors must promote per-tick alphas to the SIGNAL layer (declaring
 `horizon_seconds`, `depends_on_sensors`, `regime_gate`,
 `cost_arithmetic`, and a 3-arg `evaluate(snapshot, regime, params)`
-signal block) — the cookbook walks through this end-to-end.
+signal block).
 
 **Workstream-D notes —** the in-repo LEGACY parity test
 (`tests/determinism/test_legacy_alpha_parity.py`) and its anchoring
@@ -575,12 +565,10 @@ As of Phase 5 + Workstream D.2, the platform's externally facing
 documentation is synchronised with the three-layer architecture and
 the LEGACY_SIGNAL retirement is complete:
 
-- **Migration cookbook live** at
-  [`docs/migration/schema_1_0_to_1_1.md`](../docs/migration/schema_1_0_to_1_1.md)
-  — covers the schema 1.0 → 1.1 upgrade, the per-tick → SIGNAL
-  promotion path, the `regime_gate` DSL, the `cost_arithmetic` block,
-  authoring a PORTFOLIO alpha, hazard exits, and the v0.3
-  `trend_mechanism` opt-in cookbook.
+- **Migration complete** — covers the schema 1.0 → 1.1 upgrade, the
+  per-tick → SIGNAL promotion path, the `regime_gate` DSL, the
+  `cost_arithmetic` block, authoring a PORTFOLIO alpha, hazard exits,
+  and the v0.3 `trend_mechanism` opt-in.
 - **Layer-specific templates** ship under
   [`alphas/_template/`](_template/): `template_signal.alpha.yaml` and
   `template_portfolio.alpha.yaml`.  The original
@@ -588,16 +576,12 @@ the LEGACY_SIGNAL retirement is complete:
   and `template_legacy_signal.alpha.yaml` was deleted in D.2 with
   the loader-side retirement.  No in-repo per-tick LEGACY template
   will be re-introduced.
-- **Hypothesis Reasoning Protocol** lives at
-  [`grok/07_HYPOTHESIS_REASONING.md`](../grok/07_HYPOTHESIS_REASONING.md).
-  The embedded sensor catalog and reference-alpha authoring contract
-  live in
-  [`grok/03_ALPHA_DEVELOPMENT.md`](../grok/03_ALPHA_DEVELOPMENT.md),
-  and the embedded mutation protocol and adoption semantics live in
-  [`grok/06_EVOLUTION.md`](../grok/06_EVOLUTION.md). The earlier
-  Prompt-7 planning draft has been retired; use the live numbered
-  prompt surfaces instead.
+- **Authoring guidance** — SIGNAL hypothesis discipline and mechanism
+  taxonomy: [`.cursor/skills/microstructure-alpha/SKILL.md`](../.cursor/skills/microstructure-alpha/SKILL.md).
+  Sensor / horizon-feature layer: [`.cursor/skills/feature-engine/SKILL.md`](../.cursor/skills/feature-engine/SKILL.md).
+  Research workflow and experiment hygiene:
+  [`.cursor/skills/research-workflow/SKILL.md`](../.cursor/skills/research-workflow/SKILL.md).
 - **`LEGACY_SIGNAL` is hard-rejected.** The loader's once-per-process
   sunset banner has been removed; any spec carrying
   `layer: LEGACY_SIGNAL` raises an `AlphaLoadError` at parse time
-  with a stable pointer to the migration cookbook.
+  with a stable pointer to the backward-compatibility notes in SCHEMA.md.

@@ -23,8 +23,7 @@ true once at least ``min_samples`` samples are in the window.
 
 Determinism: incremental running sums.  Numerical drift over long
 windows is bounded by the deque length cap (~window_seconds * trade
-rate); we recompute from scratch when the deque empties to anchor
-the sums to zero exactly.
+rate).
 """
 
 from __future__ import annotations
@@ -47,7 +46,23 @@ class KyleLambda60sSensor:
     """
 
     sensor_id: str = "kyle_lambda_60s"
-    sensor_version: str = "1.1.0"
+    sensor_version: str = "1.2.0"
+
+    # Audit P1-5: ``alignment`` selects how ``Δp`` and ``Δq`` are paired.
+    #
+    # * ``"legacy"`` (default, sensor_version 1.2.0): ``Δp`` over the interval
+    #   ``[t-1, t)`` is paired with the *current* trade's signed size ``Δq_t``.
+    #   This regresses *past* mid drift on *current* flow — closer to a
+    #   flow-autocorrelation statistic than Kyle's contemporaneous impact λ.
+    #   Preserved byte-identically for the locked 1.2.0 golden vector.
+    #
+    # * ``"causal"`` (sensor_version 2.0.0): ``Δp`` over ``[t-1, t)`` is paired
+    #   with ``Δq_{t-1}`` — the flow that occurred at the *start* of that
+    #   interval and whose permanent impact the move realises.  This is the
+    #   correct Kyle alignment and remains causal (at trade ``t`` both the
+    #   previous trade's size and the current mid are known; no lookahead,
+    #   Inv-6 holds).
+    _VALID_ALIGNMENTS = ("legacy", "causal")
 
     def __init__(
         self,
@@ -56,6 +71,7 @@ class KyleLambda60sSensor:
         sensor_version: str | None = None,
         window_seconds: int = 60,
         min_samples: int = 30,
+        alignment: str = "legacy",
     ) -> None:
         if window_seconds <= 0:
             raise ValueError(
@@ -66,12 +82,18 @@ class KyleLambda60sSensor:
                 f"min_samples must be >= 2 (need 2+ for OLS slope), "
                 f"got {min_samples}"
             )
+        if alignment not in self._VALID_ALIGNMENTS:
+            raise ValueError(
+                f"alignment must be one of {self._VALID_ALIGNMENTS}, "
+                f"got {alignment!r}"
+            )
         if sensor_id is not None:
             self.sensor_id = sensor_id
         if sensor_version is not None:
             self.sensor_version = sensor_version
         self._window_ns = window_seconds * 1_000_000_000
         self._min_samples = min_samples
+        self._alignment = alignment
 
     def initial_state(self) -> dict[str, Any]:
         return {
@@ -84,6 +106,9 @@ class KyleLambda60sSensor:
             "last_side": +1,
             "last_nbbo_mid": None,
             "mid_at_prev_trade": None,
+            # Causal alignment only: signed size of the *previous* trade,
+            # which is the flow paired with the next interval's Δp.
+            "prev_signed_size": None,
         }
 
     def update(
@@ -96,6 +121,10 @@ class KyleLambda60sSensor:
             bid = float(event.bid)
             ask = float(event.ask)
             if bid <= 0.0 or ask <= 0.0:
+                # A2: invalidate carry-forward mid so the next trade waits
+                # for a fresh NBBO snapshot rather than using a stale mid
+                # from before the bad-data gap.
+                state["last_nbbo_mid"] = None
                 return None
             state["last_nbbo_mid"] = (bid + ask) / 2.0
             return None
@@ -116,6 +145,10 @@ class KyleLambda60sSensor:
         if last_trade_price is None:
             state["last_trade_price"] = price
             state["mid_at_prev_trade"] = mid_now
+            # Seed the previous-trade flow for the causal alignment: the
+            # first trade's side defaults to ``last_side`` (+1) under the
+            # tick rule, exactly as the legacy classifier would assign it.
+            state["prev_signed_size"] = state["last_side"] * size
             return None
 
         if price > last_trade_price:
@@ -126,12 +159,15 @@ class KyleLambda60sSensor:
             side = state["last_side"]
         state["last_side"] = side
 
+        # ``mid_at_prev_trade`` is non-None here: the first-trade branch above
+        # always pairs setting ``last_trade_price`` with setting it.
         mid_prev = state["mid_at_prev_trade"]
-        if mid_prev is None:
-            return None
-
         dp = mid_now - mid_prev
-        dq = side * size
+        if self._alignment == "causal":
+            # Pair Δp over [t-1, t) with the flow that drove it: trade t-1.
+            dq = state["prev_signed_size"]
+        else:
+            dq = side * size  # legacy: current trade's flow (1.2.0 vector)
 
         samples = state["samples"]
         samples.append((event.timestamp_ns, dp, dq))
@@ -148,20 +184,29 @@ class KyleLambda60sSensor:
             state["sum_dp_dq"] -= old_dp * old_dq
             state["sum_dq2"] -= old_dq * old_dq
 
+        # ``n >= 1`` here: the just-appended sample has ts == event.timestamp_ns
+        # which equals ``cutoff + window_ns``, so it is never < cutoff and
+        # cannot be evicted.
         n = len(samples)
-        # Anchor sums to exactly zero when the window empties — keeps
-        # numerical drift bounded over long sessions.
-        if n == 0:
-            state["sum_dp"] = 0.0
-            state["sum_dq"] = 0.0
-            state["sum_dp_dq"] = 0.0
-            state["sum_dq2"] = 0.0
 
         state["mid_at_prev_trade"] = mid_now
         state["last_trade_price"] = price
+        # The current trade becomes "previous" for the next interval's Δq
+        # under the causal alignment.
+        state["prev_signed_size"] = side * size
 
-        denom = n * state["sum_dq2"] - state["sum_dq"] * state["sum_dq"]
-        if n < 2 or denom <= 0.0:
+        sum_dq2 = state["sum_dq2"]
+        denom = n * sum_dq2 - state["sum_dq"] * state["sum_dq"]
+        # Relative threshold: by Cauchy-Schwarz ``denom = n²·Var(dq) >= 0``
+        # in exact arithmetic, but FP cancellation can produce tiny positive
+        # values when dq is nearly constant (e.g. a steady stream of same-
+        # size buys).  Treat ``denom < n·sum_dq2·1e-12`` as numerically
+        # degenerate and emit 0/warm=False; otherwise the OLS slope would
+        # blow up under cancellation.  (The associativity here — ``(1e-12 *
+        # n) * sum_dq2`` — is deliberate and pinned by the locked vectors;
+        # do not refactor into ``1e-12 * (n * sum_dq2)``.)
+        denom_eps = 1e-12 * n * sum_dq2
+        if n < 2 or denom <= denom_eps:
             value = 0.0
             warm = False
         else:

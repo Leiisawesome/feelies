@@ -12,7 +12,7 @@ def _portfolio_spec(**overrides) -> dict:
     spec: dict = {
         "schema_version": "1.1",
         "layer": "PORTFOLIO",
-        "alpha_id": "pofi_xsect_v1",
+        "alpha_id": "pro_xsect_v1",
         "version": "1.0.0",
         "description": "test cross-sectional",
         "hypothesis": "h",
@@ -44,7 +44,7 @@ def test_loader_dispatches_portfolio_layer():
     spec = _portfolio_spec()
     module = AlphaLoader().load_from_dict(spec, source="<test>")
     assert isinstance(module, LoadedPortfolioLayerModule)
-    assert module.alpha_id == "pofi_xsect_v1"
+    assert module.alpha_id == "pro_xsect_v1"
     assert module.universe == ("AAPL", "GOOG", "MSFT")
     assert module.horizon_seconds == 300
     assert len(module.consumes_mechanisms) == 2

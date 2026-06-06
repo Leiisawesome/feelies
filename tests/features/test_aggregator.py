@@ -359,3 +359,183 @@ def test_snapshot_sequence_isolated_from_tick_sequence() -> None:
     bus.publish(_tick(boundary=2, ts_ns=1_060_000_000_000))
 
     assert [s.sequence for s in captured] == [0, 1]
+
+
+def test_same_boundary_dedup_prevents_snapshot_cid_collision() -> None:
+    bus = EventBus()
+    captured: list[HorizonFeatureSnapshot] = []
+    bus.subscribe(HorizonFeatureSnapshot, captured.append)
+
+    agg = HorizonAggregator(
+        bus=bus,
+        symbols=frozenset({"AAPL"}),
+        sensor_buffer_seconds=60,
+        sequence_generator=SequenceGenerator(),
+    )
+    agg.attach()
+
+    first_tick = _tick(boundary=7, ts_ns=7_030_000_000_000, symbol="AAPL")
+    duplicate_boundary_tick = _tick(
+        boundary=7,
+        ts_ns=7_030_000_000_000,
+        symbol=None,
+        scope="UNIVERSE",
+    )
+    next_tick = _tick(boundary=8, ts_ns=8_030_000_000_000, symbol="AAPL")
+
+    first = agg.on_horizon_tick(first_tick)
+    duplicate = agg.on_horizon_tick(duplicate_boundary_tick)
+    second = agg.on_horizon_tick(next_tick)
+
+    assert len(first) == 1
+    assert duplicate == ()
+    assert len(second) == 1
+    assert [snap.boundary_index for snap in captured] == [7, 8]
+    assert captured[0].correlation_id == "snap:AAPL:30:7030000000000:7"
+    assert captured[1].correlation_id == "snap:AAPL:30:8030000000000:8"
+    assert captured[0].correlation_id != captured[1].correlation_id
+
+
+def test_symbol_after_universe_dedup_symmetry() -> None:
+    """Audit #1 regression guard: dedup must hold even when SYMBOL arrives
+    after UNIVERSE at the same boundary.  The scheduler currently emits
+    SYMBOL before UNIVERSE, but anything publishing ticks directly to the
+    bus (replayers, tests) could invert that order — the aggregator must
+    still emit exactly one snapshot per (symbol, horizon, boundary)."""
+
+    bus = EventBus()
+    captured: list[HorizonFeatureSnapshot] = []
+    bus.subscribe(HorizonFeatureSnapshot, captured.append)
+
+    agg = HorizonAggregator(
+        bus=bus,
+        symbols=frozenset({"AAPL", "MSFT"}),
+        sensor_buffer_seconds=60,
+        sequence_generator=SequenceGenerator(),
+    )
+    agg.attach()
+
+    # UNIVERSE first (fans out to both symbols), then a SYMBOL tick at the
+    # same boundary for one of them — the SYMBOL tick must be suppressed.
+    universe_first = _tick(
+        boundary=3,
+        ts_ns=3_030_000_000_000,
+        symbol=None,
+        scope="UNIVERSE",
+    )
+    symbol_after = _tick(
+        boundary=3,
+        ts_ns=3_030_000_000_000,
+        symbol="AAPL",
+        scope="SYMBOL",
+    )
+
+    universe_emitted = agg.on_horizon_tick(universe_first)
+    late_symbol = agg.on_horizon_tick(symbol_after)
+
+    assert len(universe_emitted) == 2  # one snapshot per symbol
+    assert late_symbol == ()  # SYMBOL branch must suppress duplicate
+    assert [s.symbol for s in captured] == ["AAPL", "MSFT"]
+    assert all(s.boundary_index == 3 for s in captured)
+
+
+def test_feature_versions_in_snapshot_provenance() -> None:
+    """Audit #12 regression guard: snapshot.feature_versions records the
+    feature_version per feature_id so consumers can reconstruct exactly
+    which version produced each value."""
+
+    class _V1Feature:
+        feature_id: str = "demo"
+        feature_version: str = "1.2.3"
+        input_sensor_ids: tuple[str, ...] = ("ofi_ewma",)
+        horizon_seconds: int = 30
+
+        def initial_state(self) -> dict[str, Any]:
+            return {}
+
+        def observe(
+            self,
+            reading: SensorReading,
+            state: dict[str, Any],
+            params: Mapping[str, Any],
+        ) -> None:
+            state["last"] = float(reading.value) if not isinstance(reading.value, tuple) else 0.0
+
+        def finalize(
+            self,
+            tick: HorizonTick,
+            state: dict[str, Any],
+            params: Mapping[str, Any],
+        ) -> tuple[float, bool, bool]:
+            return state.get("last", 0.0), "last" in state, False
+
+    bus = EventBus()
+    captured: list[HorizonFeatureSnapshot] = []
+    bus.subscribe(HorizonFeatureSnapshot, captured.append)
+
+    agg = HorizonAggregator(
+        bus=bus,
+        horizon_features={"demo": _V1Feature()},
+        symbols=frozenset({"AAPL"}),
+        sensor_buffer_seconds=60,
+        sequence_generator=SequenceGenerator(),
+    )
+    agg.attach()
+
+    bus.publish(_reading(ts_ns=1_000_000_000, value=4.2))
+    bus.publish(_tick(boundary=1, ts_ns=30_000_000_000))
+
+    assert len(captured) == 1
+    assert captured[0].feature_versions == {"demo": "1.2.3"}
+    assert captured[0].values == {"demo": 4.2}
+
+
+def test_feature_params_plumbed_to_observe_and_finalize() -> None:
+    """Audit #7 regression guard: feature_params from construction reach
+    both observe() and finalize() instead of being hard-coded to {}."""
+
+    seen_params: list[Mapping[str, Any]] = []
+
+    class _ParamsRecordingFeature:
+        feature_id: str = "params_demo"
+        feature_version: str = "1.0.0"
+        input_sensor_ids: tuple[str, ...] = ("ofi_ewma",)
+        horizon_seconds: int = 30
+
+        def initial_state(self) -> dict[str, Any]:
+            return {}
+
+        def observe(
+            self,
+            reading: SensorReading,
+            state: dict[str, Any],
+            params: Mapping[str, Any],
+        ) -> None:
+            seen_params.append(dict(params))
+
+        def finalize(
+            self,
+            tick: HorizonTick,
+            state: dict[str, Any],
+            params: Mapping[str, Any],
+        ) -> tuple[float, bool, bool]:
+            seen_params.append(dict(params))
+            return 0.0, True, False
+
+    bus = EventBus()
+    agg = HorizonAggregator(
+        bus=bus,
+        horizon_features={"params_demo": _ParamsRecordingFeature()},
+        symbols=frozenset({"AAPL"}),
+        sensor_buffer_seconds=60,
+        sequence_generator=SequenceGenerator(),
+        feature_params={"params_demo": {"threshold": 0.5, "mode": "test"}},
+    )
+    agg.attach()
+
+    bus.publish(_reading(ts_ns=1_000_000_000, value=1.0))
+    bus.publish(_tick(boundary=1, ts_ns=30_000_000_000))
+
+    assert len(seen_params) == 2  # one observe + one finalize
+    for params in seen_params:
+        assert params == {"threshold": 0.5, "mode": "test"}

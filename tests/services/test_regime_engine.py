@@ -235,6 +235,9 @@ class TestCalibrate:
 
         blob = engine.checkpoint()
         payload = json.loads(blob)
+        # Audit P1 E-1: schema v2 adds ``flags_fingerprint``.
+        assert payload.get("checkpoint_schema_version") == 2
+        assert "flags_fingerprint" in payload
         assert "emission" in payload
 
         engine2 = HMM3StateFractional()
@@ -261,14 +264,14 @@ class TestNaNInfRecovery:
         engine.posterior(_make_quote(sequence=1))
 
         # Monkey-patch emission to produce NaN likelihoods
-        original_emission = engine._emission_likelihood
+        original_emission = engine._emission_likelihood_for_symbol
 
-        def _nan_likelihoods(log_spread: float) -> list[float]:
+        def _nan_likelihoods(*args: object, **kwargs: object) -> list[float]:
             return [float("nan")] * engine.n_states
 
-        engine._emission_likelihood = _nan_likelihoods  # type: ignore[assignment]
+        engine._emission_likelihood_for_symbol = _nan_likelihoods  # type: ignore[method-assign]
         posteriors = engine.posterior(_make_quote(sequence=2))
-        engine._emission_likelihood = original_emission  # type: ignore[assignment]
+        engine._emission_likelihood_for_symbol = original_emission  # type: ignore[method-assign]
 
         # Should reset to uniform prior
         expected = 1.0 / engine.n_states
@@ -280,14 +283,14 @@ class TestNaNInfRecovery:
         )
         engine.posterior(_make_quote(sequence=1))
 
-        original_emission = engine._emission_likelihood
+        original_emission = engine._emission_likelihood_for_symbol
 
-        def _inf_likelihoods(log_spread: float) -> list[float]:
+        def _inf_likelihoods(*args: object, **kwargs: object) -> list[float]:
             return [float("inf")] * engine.n_states
 
-        engine._emission_likelihood = _inf_likelihoods  # type: ignore[assignment]
+        engine._emission_likelihood_for_symbol = _inf_likelihoods  # type: ignore[method-assign]
         posteriors = engine.posterior(_make_quote(sequence=2))
-        engine._emission_likelihood = original_emission  # type: ignore[assignment]
+        engine._emission_likelihood_for_symbol = original_emission  # type: ignore[method-assign]
 
         expected = 1.0 / engine.n_states
         assert all(abs(p - expected) < 1e-10 for p in posteriors)
@@ -309,12 +312,12 @@ class TestUpdateAtomicity:
         baseline = engine.posterior(_make_quote(sequence=1))
 
         # Force the seq=2 update to raise after _predict but before commit.
-        original_emission = engine._emission_likelihood
+        original_emission = engine._emission_likelihood_for_symbol
 
-        def _raising(log_spread: float) -> list[float]:
+        def _raising(*args: object, **kwargs: object) -> list[float]:
             raise RuntimeError("synthetic emission failure")
 
-        engine._emission_likelihood = _raising  # type: ignore[assignment]
+        engine._emission_likelihood_for_symbol = _raising  # type: ignore[method-assign]
         with pytest.raises(RuntimeError):
             engine.posterior(_make_quote(sequence=2))
 
@@ -327,7 +330,7 @@ class TestUpdateAtomicity:
         # Restore emission and re-attempt seq=2 — the engine must
         # actually run the update rather than short-circuit on a
         # spurious watermark match.
-        engine._emission_likelihood = original_emission  # type: ignore[assignment]
+        engine._emission_likelihood_for_symbol = original_emission  # type: ignore[method-assign]
         retry = engine.posterior(_make_quote(sequence=2))
         assert retry != baseline
         assert engine._last_update_seq.get("AAPL") == 2
@@ -479,6 +482,66 @@ class TestRestoreValidation:
 
         # Engine should be in clean cold-start state
         assert engine.current_state("AAPL") is None
+
+
+class TestCheckpointFlagsFingerprint:
+    """Audit P1 E-1: restore rejects blobs from differently-configured engines."""
+
+    def test_round_trip_with_matching_flags_succeeds(self) -> None:
+        engine = HMM3StateFractional(
+            transition_time_scaling_enabled=True,
+            transition_dt_reference_seconds=0.1,
+        )
+        engine.posterior(_make_quote(sequence=1))
+        blob = engine.checkpoint()
+
+        target = HMM3StateFractional(
+            transition_time_scaling_enabled=True,
+            transition_dt_reference_seconds=0.1,
+        )
+        target.restore(blob)  # Must not raise
+        assert target.current_state("AAPL") is not None
+
+    def test_mismatched_transition_scaling_flag_rejected(self) -> None:
+        producer = HMM3StateFractional(transition_time_scaling_enabled=True)
+        producer.posterior(_make_quote(sequence=1))
+        blob = producer.checkpoint()
+
+        consumer = HMM3StateFractional(transition_time_scaling_enabled=False)
+        with pytest.raises(ValueError, match="flags_fingerprint mismatch"):
+            consumer.restore(blob)
+
+    def test_mismatched_transition_matrix_rejected(self) -> None:
+        producer = HMM3StateFractional()
+        producer.posterior(_make_quote(sequence=1))
+        blob = producer.checkpoint()
+
+        consumer = HMM3StateFractional(transition_matrix=[
+            (0.8, 0.1, 0.1),
+            (0.1, 0.8, 0.1),
+            (0.1, 0.1, 0.8),
+        ])
+        with pytest.raises(ValueError, match="flags_fingerprint mismatch"):
+            consumer.restore(blob)
+
+    def test_legacy_v1_blob_loads_with_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Pre-fingerprint blobs still load (with a warning) so existing
+        on-disk checkpoints aren't bricked by the schema bump."""
+        legacy_blob = json.dumps({
+            "checkpoint_schema_version": 1,
+            "posteriors": {"AAPL": [0.2, 0.5, 0.3]},
+            "last_update_seq": {"AAPL": 7},
+        }).encode()
+
+        engine = HMM3StateFractional()
+        with caplog.at_level(logging.WARNING, logger="feelies.services.regime_engine"):
+            engine.restore(legacy_blob)
+        assert engine.current_state("AAPL") == [0.2, 0.5, 0.3]
+        assert any(
+            "without flags_fingerprint" in r.message for r in caplog.records
+        )
 
 
 class TestTransitionMatrixValidation:
