@@ -222,14 +222,25 @@ def generate_report(
 
     # ── Reversal analysis (B5) ───────────────────────────────────
     # Exit (flatten) legs of REVERSE intents carry the REVERSE_* intent
-    # name; entry legs are stamped ENTRY_* and are not counted here.  A
-    # reversal that fired the B5 edge guard appears as a fill whose
-    # order_id is recorded on a ``reversal_edge_insufficient`` alert.
+    # name; entry legs are stamped ENTRY_* and are not counted as
+    # separate reversal attempts here.  Both legs of a reversal share
+    # the same ``correlation_id`` because ``Orchestrator._execute_reverse``
+    # builds them in the same tick, so a paired ENTRY_* fill on that
+    # correlation_id is the only reliable signal that the flip actually
+    # completed.  Without it the entry leg was suppressed somewhere
+    # along the path (B5 reversal-edge guard, B4 entry edge/cost gate,
+    # post-exit risk rejection, SCALE_DOWN below ``min_order_shares``,
+    # or entry-leg submission failure) and only the exit leg traded.
     _REVERSE_INTENTS = {"REVERSE_LONG_TO_SHORT", "REVERSE_SHORT_TO_LONG"}
+    _ENTRY_INTENTS = {"ENTRY_LONG", "ENTRY_SHORT"}
     reversal_records = [
         r for r in records
         if getattr(r, "trading_intent", "") in _REVERSE_INTENTS
     ]
+    entry_correlation_ids = {
+        r.correlation_id for r in records
+        if getattr(r, "trading_intent", "") in _ENTRY_INTENTS
+    }
     reversal_alerts = [
         a for a in recorder.of_type(Alert)
         if a.alert_name == "reversal_edge_insufficient"
@@ -240,10 +251,14 @@ def generate_report(
         if a.context.get("order_id") is not None
     }
     reversals_attempted = len(reversal_records)
-    reversals_flat_exit = sum(
+    reversals_full = sum(
+        1 for r in reversal_records
+        if r.correlation_id in entry_correlation_ids
+    )
+    reversals_flat_exit = reversals_attempted - reversals_full
+    reversals_edge_guard = sum(
         1 for r in reversal_records if r.order_id in guard_order_ids
     )
-    reversals_full = reversals_attempted - reversals_flat_exit
     exit_realized = [r.realized_pnl for r in reversal_records]
     avg_exit_realized = (
         sum(exit_realized, Decimal("0")) / len(exit_realized)
@@ -469,7 +484,8 @@ def generate_report(
     lines.append(_sub_kv("Attempted", f"{reversals_attempted}"))
     lines.append(_sub_kv("Executed (full)", f"{reversals_full}"))
     lines.append(_sub_kv(
-        "Flat-exit only", f"{reversals_flat_exit}  (edge guard triggered)",
+        "Flat-exit only",
+        f"{reversals_flat_exit}  ({reversals_edge_guard} edge-guard)",
     ))
     lines.append(_sub_kv("Avg exit-leg realized", _money(avg_exit_realized)))
     lines.append(_sub_kv("Worst exit-leg realized", _money(worst_exit_realized)))
