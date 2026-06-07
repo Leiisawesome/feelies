@@ -130,6 +130,28 @@ class TestModelToDict:
         out = _model_to_dict(d, "AAPL")
         assert out == {"ticker": "AAPL", "bid_price": 100.0, "sip_timestamp": 123}
 
+    def test_ticker_mismatch_is_dropped(
+        self, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """r3-INGEST-05: upstream returning ``ticker="MSFT"`` for an AAPL
+        request must not pollute the MSFT state machine.
+        """
+        d = {"ticker": "MSFT", "bid_price": 100.0, "sip_timestamp": 123}
+        with caplog.at_level("WARNING", "feelies.ingestion.massive_ingestor"):
+            out = _model_to_dict(d, "AAPL")
+        assert out == {}
+        assert any(
+            "ticker" in r.getMessage() and "does not match" in r.getMessage()
+            for r in caplog.records
+        )
+
+    def test_ticker_case_insensitive_match(self) -> None:
+        # ``"aapl"`` and ``"AAPL"`` are the same symbol per platform
+        # conventions; the mismatch guard must not over-match.
+        d = {"ticker": "aapl", "bid_price": 100.0, "sip_timestamp": 123}
+        out = _model_to_dict(d, "AAPL")
+        assert out["ticker"] == "aapl"  # original case preserved
+
 
 class TestMassiveHistoricalIngestor:
     """Tests for MassiveHistoricalIngestor with mocked REST client."""

@@ -47,6 +47,17 @@ class MassiveLiveFeed:
       2. Call ``start()`` to begin the background WS connection
       3. Iterate ``events()`` in the main thread (orchestrator pipeline)
       4. Call ``stop()`` for graceful shutdown
+
+    **Subscription degraded-mode policy.** ``_subscribe`` reads up to
+    ``len(channels)`` confirmation frames with a 5 s inter-frame timeout
+    and counts the ``status=="success"`` confirmations.  It raises
+    ``ConnectionError`` **only when zero are received** (treated as a
+    full subscription failure that the reconnect loop should handle).
+    Receiving fewer than the expected count is logged at WARNING and
+    the feed runs in degraded mode — a temporarily-unavailable channel
+    must not block the whole feed.  Operators monitoring the WARN line
+    are responsible for deciding whether to restart or accept the
+    partial coverage (audit r4-NEW-02).
     """
 
     __slots__ = (
@@ -59,6 +70,7 @@ class MassiveLiveFeed:
         "_thread",
         "_stop_event",
         "_loop",
+        "_events_dropped",
     )
 
     def __init__(
@@ -70,7 +82,9 @@ class MassiveLiveFeed:
         ws_url: str = _DEFAULT_WS_URL,
     ) -> None:
         self._api_key = api_key
-        self._symbols = list(symbols)
+        # Dedup so a caller's repeated ``["AAPL", "AAPL", "MSFT"]`` does
+        # not produce a doubled subscribe (audit r3-INGEST-10).
+        self._symbols = list(dict.fromkeys(symbols))
         self._normalizer = normalizer
         self._clock = clock
         self._ws_url = ws_url
@@ -80,6 +94,7 @@ class MassiveLiveFeed:
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._events_dropped: int = 0
 
     # ── MarketDataSource protocol ────────────────────────────────────
 
@@ -110,6 +125,17 @@ class MassiveLiveFeed:
     def on_health_transition(self, callback: Callable[..., None]) -> None:
         """Register a callback for DataHealth transitions on any ingested symbol."""
         self._normalizer.on_health_transition(callback)
+
+    @property
+    def events_dropped(self) -> int:
+        """Total events the bounded queue refused since startup (audit E2-MINOR).
+
+        A non-zero value means the downstream consumer fell behind hard
+        enough to overflow the 100 k-entry queue.  Surface this on the
+        operator dashboard alongside ``MassiveNormalizer.duplicates_filtered``
+        so a busy session is distinguishable from a stuck pipeline.
+        """
+        return self._events_dropped
 
     # ── Lifecycle ────────────────────────────────────────────────────
 
@@ -367,6 +393,7 @@ class MassiveLiveFeed:
                 try:
                     self._queue.put_nowait(event)
                 except queue.Full:
+                    self._events_dropped += 1
                     logger.warning(
                         "massive_ws: queue full, dropping event for %s",
                         getattr(event, "symbol", "?"),
