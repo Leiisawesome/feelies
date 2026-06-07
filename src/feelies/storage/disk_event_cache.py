@@ -77,7 +77,16 @@ def _event_to_dict(event: NBBOQuote | Trade) -> dict[str, Any]:
 
 
 def _dict_to_event(d: dict[str, Any]) -> NBBOQuote | Trade:
-    """Deserialize a dict back into a frozen NBBOQuote or Trade."""
+    """Deserialize a dict back into a frozen NBBOQuote or Trade.
+
+    Type-string matching is intentionally **substring-based** so
+    annotations such as ``"Decimal"``, ``"Decimal | None"``,
+    ``"tuple[int, ...]"``, and any future ``"tuple[int, ...] | None"``
+    are all reverse-mapped correctly without depending on the exact
+    spelling (audit D3-MINOR).  ``from __future__ import annotations``
+    makes every dataclass field type a string at this layer, so we
+    cannot rely on runtime ``isinstance`` of the declared type.
+    """
     type_tag = d.pop("__type__")
     cls = NBBOQuote if type_tag == _TYPE_QUOTE else Trade
 
@@ -86,11 +95,12 @@ def _dict_to_event(d: dict[str, Any]) -> NBBOQuote | Trade:
             continue
         val = d[name]
         ft = field_obj.type
+        ft_str = ft if isinstance(ft, str) else getattr(ft, "__name__", str(ft))
 
-        if ft == "Decimal" or (isinstance(ft, str) and "Decimal" in ft):
+        if "Decimal" in ft_str:
             if val is not None:
                 d[name] = Decimal(str(val))
-        elif ft == "tuple[int, ...]":
+        elif "tuple[int" in ft_str:
             if isinstance(val, list):
                 d[name] = tuple(val)
 

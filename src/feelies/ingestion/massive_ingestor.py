@@ -136,7 +136,14 @@ class MassiveHistoricalIngestor:
     safe to resume after interruption.
     """
 
-    __slots__ = ("_api_key", "_normalizer", "_event_log", "_clock", "_checkpoint")
+    __slots__ = (
+        "_api_key",
+        "_normalizer",
+        "_event_log",
+        "_clock",
+        "_checkpoint",
+        "_parallel_clients",
+    )
 
     def __init__(
         self,
@@ -151,6 +158,14 @@ class MassiveHistoricalIngestor:
         self._event_log = event_log
         self._clock = clock
         self._checkpoint = checkpoint or InMemoryCheckpoint()
+        # Lazy cache of (source_client, client_q, client_t) used by all
+        # ``ingest_symbol_parallel`` invocations sharing the same source
+        # ``client``.  Avoids constructing 2N urllib3 pools for an N-symbol
+        # backfill (audit B3-MINOR).  Keyed on the source ``client`` identity
+        # so a reused ingestor or a later call with a different client (test
+        # doubles, wrappers) rebuilds the pair instead of silently reusing
+        # the stale one.
+        self._parallel_clients: tuple[Any, Any, Any] | None = None
 
     def ingest(
         self,
@@ -273,8 +288,16 @@ class MassiveHistoricalIngestor:
         # Real Massive clients get distinct per-thread instances so their
         # urllib3 pools never collide.  Mocks and test wrappers fall back to
         # the configured client object unless we can safely clone and re-wrap
-        # an inner Massive client.
-        client_q, client_t = _clone_parallel_clients(client, self._api_key)
+        # an inner Massive client.  Cached on ``self`` keyed by the source
+        # ``client`` identity so a multi-symbol backfill reuses the same pair
+        # across calls (audit B3-MINOR), while a reused ingestor or a later
+        # call with a different client rebuilds the pair instead of silently
+        # routing through the stale one.
+        if self._parallel_clients is None or self._parallel_clients[0] is not client:
+            client_q, client_t = _clone_parallel_clients(client, self._api_key)
+            self._parallel_clients = (client, client_q, client_t)
+        else:
+            _, client_q, client_t = self._parallel_clients
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             quotes_future = pool.submit(
@@ -425,6 +448,13 @@ def _model_to_dict(record: Any, symbol: str) -> dict[str, Any]:
     fields in ``__dict__``; class-level ``None`` defaults are invisible.
     We iterate through ``__annotations__`` on the model class to capture
     all declared fields, including those left at their default ``None``.
+
+    Defense-in-depth: when the upstream returns a ``ticker`` that does
+    not match the requested ``symbol`` (Massive bug, proxy misconfig,
+    cache poisoning), drop the record with a warning so the wrong-symbol
+    data never pollutes the normalizer's state machines (audit
+    r3-INGEST-05).  Empty / missing ``ticker`` is back-filled to the
+    requested symbol — that is the documented contract.
     """
     cls = type(record)
     annotations = getattr(cls, "__annotations__", None)
@@ -445,7 +475,15 @@ def _model_to_dict(record: Any, symbol: str) -> dict[str, Any]:
     # Prune None values so the normalizer's .get() defaults work correctly
     rec_dict = {k: v for k, v in rec_dict.items() if v is not None}
 
-    if "ticker" not in rec_dict:
+    returned = rec_dict.get("ticker")
+    if returned is None or returned == "":
         rec_dict["ticker"] = symbol
+    elif str(returned).upper() != symbol.upper():
+        logger.warning(
+            "massive_ingestor: REST record ticker %r does not match "
+            "requested symbol %r — dropping record",
+            returned, symbol,
+        )
+        return {}
 
     return rec_dict

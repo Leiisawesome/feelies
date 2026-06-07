@@ -165,6 +165,11 @@ def _fingerprint_rest_quote(rec: dict) -> str:  # type: ignore[type-arg]
     conditions = tuple(int(x) for x in raw_cond) if isinstance(raw_cond, list) else ()
     raw_ind = rec.get("indicators")
     indicators = tuple(int(x) for x in raw_ind) if isinstance(raw_ind, list) else ()
+    # ``participant_timestamp`` and ``trf_timestamp`` are intentionally part
+    # of the fingerprint so that a REST retransmission carrying the same
+    # ``sequence_number`` but a corrected participant timestamp is treated
+    # as a payload mismatch (CORRUPTED) rather than as an exact-duplicate
+    # silent drop.  Mirrors the WS quote fingerprint (audit A4-MINOR).
     parts = (
         str(rec["bid_price"]),
         str(rec["ask_price"]),
@@ -175,6 +180,8 @@ def _fingerprint_rest_quote(rec: dict) -> str:  # type: ignore[type-arg]
         int(rec.get("tape", 0)),
         conditions,
         indicators,
+        str(rec.get("participant_timestamp", "")),
+        str(rec.get("trf_timestamp", "")),
     )
     return hashlib.sha256(repr(parts).encode()).hexdigest()
 
@@ -204,6 +211,17 @@ class MassiveNormalizer:
                          Timestamps in milliseconds.
       ``massive_rest`` — Single JSON object with verbose field names.
                          Timestamps in nanoseconds.
+
+    **Thread safety:** ``MassiveNormalizer`` is *not* thread-safe.  All
+    mutable state (``_last_seen``, ``_health_machines``,
+    ``_duplicates_filtered``, ``_unparseable_elements``, the per-(symbol,
+    feed) ``StateMachine``s) is touched without locking.  Callers must
+    invoke ``on_message`` and the management surface
+    (``register_symbols`` / ``on_health_transition`` /
+    ``notify_feed_interrupted``) from a single thread.  The two existing
+    call sites — :class:`MassiveLiveFeed`'s asyncio thread and the
+    historical ingestor's main thread — each own their normalizer
+    instance.  (Audit r4-NEW-04.)
     """
 
     __slots__ = (
@@ -214,13 +232,32 @@ class MassiveNormalizer:
         "_transition_callback",
         "_last_seen",
         "_duplicates_filtered",
+        "_unparseable_elements",
+        "_oversized_frames",
         "_enable_rest_sequence_gap_detection",
         "_halt_on_codes",
         "_halt_off_codes",
+        "_max_raw_frame_bytes",
+        "_ts_lookback_ns",
+        "_ts_lookahead_ns",
+        "_warn_ambiguous_rest_logged",
     )
 
     _FEED_QUOTE = "quote"
     _FEED_TRADE = "trade"
+
+    # Cap raw frame size before ``json.loads`` to bound parser memory and
+    # rule out RecursionError from pathologically-nested upstream payloads
+    # (audit r3-INGEST-01).  16 MB easily covers Massive's largest legitimate
+    # WS batches; anything larger is treated as a feed bug.
+    _DEFAULT_MAX_RAW_FRAME_BYTES = 16 * 1024 * 1024
+
+    # Bound exchange timestamps to a window around the clock so a wire bug
+    # producing ``t = 1e15`` (ms vs ns confusion) cannot inject events
+    # 30,000 years in the future (audit r3-INGEST-02).  Defaults: 30 days
+    # in the past, 1 hour in the future.
+    _DEFAULT_TS_LOOKBACK_NS = 30 * 24 * 3600 * 1_000_000_000
+    _DEFAULT_TS_LOOKAHEAD_NS = 3600 * 1_000_000_000
 
     def __init__(
         self,
@@ -230,6 +267,7 @@ class MassiveNormalizer:
         enable_rest_sequence_gap_detection: bool = False,
         halt_on_codes: frozenset[int] | None = None,
         halt_off_codes: frozenset[int] | None = None,
+        max_raw_frame_bytes: int = _DEFAULT_MAX_RAW_FRAME_BYTES,
     ) -> None:
         self._clock = clock
         self._seq = SequenceGenerator(start=1)
@@ -249,10 +287,19 @@ class MassiveNormalizer:
         # Value: (sequence_number, exchange_timestamp_ns, content_fingerprint).
         self._last_seen: dict[tuple[str, str], tuple[int, int, str]] = {}
         self._duplicates_filtered: int = 0
+        self._unparseable_elements: int = 0
+        self._oversized_frames: int = 0
         # Historical REST rows are usually *thinned* (non-contiguous vendor
         # sequence_number).  Default False keeps ingest usable; set True only when
         # the REST stream is full-tick contiguous (or for experiments).
         self._enable_rest_sequence_gap_detection = enable_rest_sequence_gap_detection
+        self._max_raw_frame_bytes = max_raw_frame_bytes
+        # Live timestamp window — computed lazily against the injected
+        # clock so that ``SimulatedClock(start_ns=0)`` deployments (replay)
+        # keep a wide acceptance band rather than rejecting every event.
+        self._ts_lookback_ns = self._DEFAULT_TS_LOOKBACK_NS
+        self._ts_lookahead_ns = self._DEFAULT_TS_LOOKAHEAD_NS
+        self._warn_ambiguous_rest_logged: bool = False
 
     # ── MarketDataNormalizer protocol ────────────────────────────────
 
@@ -262,9 +309,19 @@ class MassiveNormalizer:
         received_ns: int,
         source: str,
     ) -> Sequence[NBBOQuote | Trade]:
+        # Cap raw payload size and catch ``RecursionError`` from
+        # pathologically-nested JSON so a single bad frame never kills
+        # the parser thread (audit r3-INGEST-01, M2/M3 follow-on).
+        if len(raw) > self._max_raw_frame_bytes:
+            self._oversized_frames += 1
+            logger.warning(
+                "massive_normalizer: %d-byte frame from %s exceeds limit %d — dropping",
+                len(raw), source, self._max_raw_frame_bytes,
+            )
+            return []
         try:
             data = json.loads(raw)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
             logger.warning("massive_normalizer: unparseable message from %s", source)
             return []
 
@@ -277,6 +334,16 @@ class MassiveNormalizer:
         return []
 
     def health(self, symbol: str) -> DataHealth:
+        """Aggregate :class:`DataHealth` for a symbol (worst across feeds).
+
+        Returns ``HEALTHY`` for symbols that have **never been seen** —
+        unseen and "data flowing fine" are indistinguishable through this
+        accessor (audit r3-INGEST-04).  Use :meth:`all_health` plus
+        :meth:`register_symbols` to distinguish "subscribed but not yet
+        receiving data" from "actively healthy" — registered symbols
+        appear in ``all_health()`` even before their first message, while
+        unregistered unseen symbols do not.
+        """
         q = self._health_machines.get((symbol, self._FEED_QUOTE))
         t = self._health_machines.get((symbol, self._FEED_TRADE))
         states: list[DataHealth] = []
@@ -314,6 +381,11 @@ class MassiveNormalizer:
 
         for msg in messages:
             if not isinstance(msg, dict):
+                # Non-dict elements in a status/data array are wire-bug-
+                # like (e.g. a stray string).  Count them so operators can
+                # tell a clean-but-empty stream from a buggy one (audit
+                # r3-INGEST-07).
+                self._unparseable_elements += 1
                 continue
             ev = msg.get("ev")
             event: NBBOQuote | Trade | None
@@ -337,6 +409,7 @@ class MassiveNormalizer:
         try:
             symbol = msg["sym"]
             exchange_ts_ns = int(msg["t"]) * _MS_TO_NS
+            self._check_exchange_ts_in_range(exchange_ts_ns)
             seq_num = int(msg.get("q", 0))
             fp = _fingerprint_ws_quote(msg)
 
@@ -418,6 +491,7 @@ class MassiveNormalizer:
         try:
             symbol = msg["sym"]
             exchange_ts_ns = int(msg["t"]) * _MS_TO_NS
+            self._check_exchange_ts_in_range(exchange_ts_ns)
             seq_num = int(msg.get("q", 0))
             fp = _fingerprint_ws_trade(msg)
 
@@ -490,12 +564,26 @@ class MassiveNormalizer:
             return []
 
         # REST records are passed individually by the ingestor.
-        # Detect type by field presence.
+        # Detect type by field presence.  An ambiguous record carrying
+        # *both* quote and trade fields is classified as a quote (the
+        # historical default) but flagged at WARN level so diagnostic
+        # tooling can pick it up (audit r3-INGEST-03).
         event: NBBOQuote | Trade | None
-        if "bid_price" in data or "ask_price" in data:
+        has_quote_keys = "bid_price" in data or "ask_price" in data
+        has_trade_keys = "price" in data
+        if has_quote_keys and has_trade_keys and not self._warn_ambiguous_rest_logged:
+            logger.warning(
+                "massive_normalizer: ambiguous REST record carries both "
+                "quote and trade fields (keys: %s) — classifying as quote "
+                "and dropping trade-side data.  This warning is suppressed "
+                "after the first occurrence per normalizer.",
+                sorted(data.keys()),
+            )
+            self._warn_ambiguous_rest_logged = True
+        if has_quote_keys:
             event = self._rest_quote(data, received_ns)
             return [event] if event is not None else []
-        if "price" in data:
+        if has_trade_keys:
             event = self._rest_trade(data, received_ns)
             return [event] if event is not None else []
 
@@ -511,6 +599,15 @@ class MassiveNormalizer:
         try:
             symbol = rec["ticker"]
             sip_ts = int(rec["sip_timestamp"])
+            # NOTE: ``_check_exchange_ts_in_range`` deliberately not invoked
+            # on REST paths.  Historical REST rows carry exchange timestamps
+            # for the requested session, which has no relationship to
+            # ``clock.now_ns()`` for either a wall clock or a wall-like
+            # ``SimulatedClock``.  Enforcing the 30-day past / 1-hour
+            # future window here would reject every legitimate backfill
+            # row outside that window.  The ms-vs-ns confusion guard
+            # (r3-INGEST-02) remains active on the WS parse paths, which
+            # is the regime where the heuristic applies.
             seq_num = int(rec.get("sequence_number", 0))
             fp = _fingerprint_rest_quote(rec)
 
@@ -576,6 +673,8 @@ class MassiveNormalizer:
         try:
             symbol = rec["ticker"]
             sip_ts = int(rec["sip_timestamp"])
+            # See ``_rest_quote`` for why ``_check_exchange_ts_in_range``
+            # is not invoked on REST paths.
             seq_num = int(rec.get("sequence_number", 0))
             fp = _fingerprint_rest_trade(rec)
 
@@ -632,6 +731,43 @@ class MassiveNormalizer:
             self._mark_corrupted(rec.get("ticker", "UNKNOWN"))
             return None
 
+    # Heuristic threshold for "this clock looks like wall time" — only
+    # then do we enforce the wire-timestamp sanity window.  ``2*10**17``
+    # ns is ~1976, well after the Unix epoch and well below any plausible
+    # SimulatedClock counter (most test fixtures use values < 1e10 ns).
+    _WALL_CLOCK_HEURISTIC_NS = 2 * 10**17
+
+    def _check_exchange_ts_in_range(self, ts_ns: int) -> None:
+        """Raise ``ValueError`` when a wire timestamp is outside the
+        plausible window around the current clock.
+
+        Implements audit r3-INGEST-02 — a wire payload producing
+        ``t = 1e15`` (ms-vs-ns confusion) would otherwise inject events
+        ~30,000 years in the future, silently breaking any consumer that
+        compares event time to wall time.  The window is generous on
+        purpose: ``_DEFAULT_TS_LOOKBACK_NS`` (30 days) past +
+        ``_DEFAULT_TS_LOOKAHEAD_NS`` (1 hour) future, both configurable.
+
+        Inert when the injected clock is *not* a wall clock — a
+        ``SimulatedClock`` initialized at a small counter (replay, test
+        fixtures) has no relationship to the wire timestamps and the
+        check would false-positive every event.  The heuristic
+        ``_WALL_CLOCK_HEURISTIC_NS`` distinguishes the two regimes.
+        """
+        now = self._clock.now_ns()
+        if now < self._WALL_CLOCK_HEURISTIC_NS:
+            return
+        if ts_ns < now - self._ts_lookback_ns:
+            raise ValueError(
+                f"exchange_timestamp_ns {ts_ns} is {(now - ts_ns) / 1e9:.0f}s "
+                f"in the past (window: {self._ts_lookback_ns / 1e9:.0f}s)"
+            )
+        if ts_ns > now + self._ts_lookahead_ns:
+            raise ValueError(
+                f"exchange_timestamp_ns {ts_ns} is {(ts_ns - now) / 1e9:.0f}s "
+                f"in the future (window: {self._ts_lookahead_ns / 1e9:.0f}s)"
+            )
+
     # ── Gap detection / dedup / health ───────────────────────────────
 
     def _ensure_health_machine(
@@ -671,6 +807,25 @@ class MassiveNormalizer:
     def duplicates_filtered(self) -> int:
         """Total number of exact-duplicate messages filtered across all symbols."""
         return self._duplicates_filtered
+
+    @property
+    def unparseable_elements(self) -> int:
+        """Non-dict elements seen inside WS batches (audit r3-INGEST-07).
+
+        Distinguishes a clean-but-empty stream from a buggy one without
+        scraping logs.
+        """
+        return self._unparseable_elements
+
+    @property
+    def oversized_frames(self) -> int:
+        """Raw WS / REST frames exceeding ``max_raw_frame_bytes``.
+
+        Counts payloads rejected before ``json.loads`` is called (audit
+        r3-INGEST-01).  A non-zero value indicates either a feed bug or
+        an upstream-side configuration mismatch.
+        """
+        return self._oversized_frames
 
     def _reject_sequence_reuse(
         self,

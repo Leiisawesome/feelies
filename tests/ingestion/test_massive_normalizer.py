@@ -6,6 +6,7 @@ import asyncio
 import json
 import queue
 from decimal import Decimal
+from typing import Any
 
 import pytest
 
@@ -849,3 +850,204 @@ class TestMassiveNormalizerCallbackBinding:
         # ``sm.on_transition`` appends rather than replacing.
         gap_events = [s for s in seen if "seq_gap" in s]
         assert len(gap_events) == 1
+
+
+class TestMassiveNormalizerDefensiveHardening:
+    """Regression tests for the MINOR defensive hardening pass."""
+
+    @staticmethod
+    def _ws_quote(symbol: str = "AAPL", t_ms: int = 1700000000) -> bytes:
+        return json.dumps({
+            "ev": "Q", "sym": symbol,
+            "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20,
+            "t": t_ms, "q": 1,
+        }).encode("utf-8")
+
+    def test_oversized_frame_is_dropped_with_counter(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+    ) -> None:
+        # Synthesize a 17 MB payload — over the 16 MB default cap.
+        big = b"X" * (17 * 1024 * 1024)
+        events = normalizer.on_message(big, clock.now_ns(), "massive_ws")
+        assert events == []
+        assert normalizer.oversized_frames == 1
+
+    def test_recursion_error_is_caught(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+    ) -> None:
+        # JSON-decoder doesn't raise RecursionError for moderately nested
+        # arrays; we patch json.loads to confirm the catch path is wired.
+        from unittest.mock import patch
+        with patch(
+            "feelies.ingestion.massive_normalizer.json.loads",
+            side_effect=RecursionError("pathological nesting"),
+        ):
+            events = normalizer.on_message(
+                self._ws_quote(), clock.now_ns(), "massive_ws",
+            )
+        assert events == []
+        # Health is HEALTHY because the parser caught it without marking
+        # any symbol corrupted (we don't know which symbol the bad frame
+        # was for).
+        assert normalizer.health("AAPL") == DataHealth.HEALTHY
+
+    def test_non_dict_element_increments_counter(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+    ) -> None:
+        # WS messages are JSON arrays; sometimes a stray string lands.
+        raw = json.dumps(["garbage", {"ev": "Q", "sym": "AAPL",
+                                       "bp": 150.0, "ap": 150.05,
+                                       "bs": 10, "as": 20,
+                                       "t": 1700000000, "q": 1}]).encode("utf-8")
+        events = normalizer.on_message(raw, clock.now_ns(), "massive_ws")
+        assert len(events) == 1
+        assert normalizer.unparseable_elements == 1
+
+    def test_health_docstring_is_clear_about_unseen_symbols(
+        self, normalizer: MassiveNormalizer,
+    ) -> None:
+        # Documented behavior: health() returns HEALTHY for never-seen.
+        assert normalizer.health("ZZZZ_NEVER_SEEN") == DataHealth.HEALTHY
+        # all_health() does NOT include unregistered unseen symbols, so
+        # callers can distinguish.
+        assert "ZZZZ_NEVER_SEEN" not in normalizer.all_health()
+
+    def test_register_symbols_distinguishes_subscribed_from_observed(
+        self, normalizer: MassiveNormalizer,
+    ) -> None:
+        normalizer.register_symbols({"AAPL", "MSFT"})
+        all_h = normalizer.all_health()
+        assert set(all_h.keys()) == {"AAPL", "MSFT"}
+        assert all(h == DataHealth.HEALTHY for h in all_h.values())
+
+
+class TestMassiveNormalizerAmbiguousRest:
+    """r3-INGEST-03: ambiguous REST records warn (once)."""
+
+    def test_record_with_both_quote_and_trade_fields_warns_once(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        ambiguous = json.dumps({
+            "ticker": "AAPL",
+            "sip_timestamp": 1700000000000000000,
+            "sequence_number": 1,
+            "bid_price": 150.0, "ask_price": 150.05,
+            "bid_size": 10, "ask_size": 20,
+            "price": 150.02, "size": 50,  # also has trade fields
+        }).encode("utf-8")
+
+        with caplog.at_level("WARNING", "feelies.ingestion.massive_normalizer"):
+            normalizer.on_message(ambiguous, clock.now_ns(), "massive_rest")
+            normalizer.on_message(ambiguous, clock.now_ns(), "massive_rest")
+            normalizer.on_message(ambiguous, clock.now_ns(), "massive_rest")
+
+        ambiguous_warnings = [
+            r for r in caplog.records
+            if "ambiguous REST record" in r.getMessage()
+        ]
+        # Warning suppressed after first occurrence per normalizer.
+        assert len(ambiguous_warnings) == 1
+
+
+class TestMassiveLiveFeedSymbolDedup:
+    """r3-INGEST-10: duplicated symbol input is deduped at construction."""
+
+    def test_repeated_symbols_collapse(self, clock: SimulatedClock) -> None:
+        norm = MassiveNormalizer(clock=clock)
+        feed = MassiveLiveFeed(
+            api_key="unused",
+            symbols=["AAPL", "AAPL", "MSFT", "AAPL"],
+            normalizer=norm,
+            clock=clock,
+        )
+        assert feed._symbols == ["AAPL", "MSFT"]
+        # Counter starts at zero.
+        assert feed.events_dropped == 0
+
+
+class TestExchangeTimestampRangeGate:
+    """r3-INGEST-02: bound wire timestamps to a plausible window around
+    the wall clock — but only when the clock IS a wall clock.
+    """
+
+    def test_simulated_clock_skips_the_check(self) -> None:
+        # SimulatedClock(start_ns=1e9) is below the wall-clock heuristic
+        # threshold (~2e17), so any wire timestamp is accepted.
+        clock = SimulatedClock(start_ns=1_000_000_000)
+        norm = MassiveNormalizer(clock=clock)
+        # ts = 1700000000 ms → 1.7e18 ns (Nov 2023).  Without the gate
+        # carve-out this would look like "the future" relative to 1e9.
+        raw = json.dumps({
+            "ev": "Q", "sym": "AAPL",
+            "bp": 100.0, "ap": 100.05, "bs": 10, "as": 20,
+            "t": 1700000000, "q": 1,
+        }).encode("utf-8")
+        events = norm.on_message(raw, clock.now_ns(), "massive_ws")
+        assert len(events) == 1
+
+    def test_wall_clock_rejects_far_future_timestamp(self) -> None:
+        # Pretend we're on a wall clock at Jan 2026.
+        clock = SimulatedClock(start_ns=1_770_000_000_000_000_000)  # ~Feb 2026
+        norm = MassiveNormalizer(clock=clock)
+        # Event timestamp is 30+ days in the future → rejected.
+        far_future_ms = 1_900_000_000_000  # ~mid-2030
+        raw = json.dumps({
+            "ev": "Q", "sym": "AAPL",
+            "bp": 100.0, "ap": 100.05, "bs": 10, "as": 20,
+            "t": far_future_ms, "q": 1,
+        }).encode("utf-8")
+        events = norm.on_message(raw, clock.now_ns(), "massive_ws")
+        assert events == []
+        # Per the M3/M4 parse-then-mutate ordering, the rejected event
+        # still marks the symbol CORRUPTED via the catch path.
+        assert norm.health("AAPL") == DataHealth.CORRUPTED
+
+
+class TestRestQuoteFingerprintSymmetry:
+    """A4-MINOR: REST quote fingerprint includes participant_timestamp
+    and trf_timestamp, so a retransmission carrying corrected timestamps
+    but the same sequence_number is treated as a payload mismatch
+    (CORRUPTED) rather than a silent duplicate drop.
+    """
+
+    @staticmethod
+    def _rest_quote(participant_ts: int | None = None) -> bytes:
+        payload: dict[str, Any] = {
+            "ticker": "AAPL",
+            "sip_timestamp": 1700000000000000000,
+            "sequence_number": 42,
+            "bid_price": 150.0, "ask_price": 150.05,
+            "bid_size": 10, "ask_size": 20,
+            "conditions": [], "indicators": [], "tape": 3,
+        }
+        if participant_ts is not None:
+            payload["participant_timestamp"] = participant_ts
+        return json.dumps(payload).encode("utf-8")
+
+    def test_same_seq_same_participant_ts_is_dedup(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+    ) -> None:
+        raw = self._rest_quote(participant_ts=1700000000000000000)
+        a = normalizer.on_message(raw, clock.now_ns(), "massive_rest")
+        b = normalizer.on_message(raw, clock.now_ns(), "massive_rest")
+        assert len(a) == 1
+        assert len(b) == 0
+        assert normalizer.duplicates_filtered == 1
+        assert normalizer.health("AAPL") == DataHealth.HEALTHY
+
+    def test_same_seq_different_participant_ts_is_corruption(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+    ) -> None:
+        a = normalizer.on_message(
+            self._rest_quote(participant_ts=1700000000000000000),
+            clock.now_ns(), "massive_rest",
+        )
+        b = normalizer.on_message(
+            self._rest_quote(participant_ts=1700000000000000999),
+            clock.now_ns(), "massive_rest",
+        )
+        assert len(a) == 1
+        assert len(b) == 0
+        # Fingerprint divergence → CORRUPTED (via _reject_sequence_reuse).
+        assert normalizer.health("AAPL") == DataHealth.CORRUPTED
