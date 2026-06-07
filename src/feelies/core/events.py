@@ -53,6 +53,13 @@ class NBBOQuote(Event):
     Captures all fields from both WebSocket (ev=Q) and REST (/v3/quotes)
     wire formats.  New optional fields use defaults so existing code is
     unaffected.
+
+    ``received_ns`` is sourced from the normalizer's injected ``Clock``:
+    per-frame wall-clock receipt time on live (WallClock), and the
+    SimulatedClock's static value on historical REST replays (the clock
+    does not advance during batch ingest, so every record in a batch
+    shares one value).  Backtests therefore cannot derive a meaningful
+    ingest latency from this field.
     """
 
     symbol: str

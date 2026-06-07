@@ -19,7 +19,7 @@ import hashlib
 import json
 import logging
 from collections.abc import Callable, Sequence
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from feelies.core.clock import Clock
 from feelies.core.events import NBBOQuote, Trade
@@ -38,6 +38,58 @@ logger = logging.getLogger(__name__)
 _WS_SOURCE = "massive_ws"
 _REST_SOURCE = "massive_rest"
 _MS_TO_NS = 1_000_000
+
+
+def _safe_price(value: object, *, allow_zero: bool = False) -> Decimal:
+    """Parse a wire price into a finite, non-negative ``Decimal``.
+
+    Raises ``ValueError`` on every failure mode the upstream catch tuple
+    already understands:
+
+    * ``decimal.InvalidOperation`` from malformed numerics (``"1.2.3"``,
+      empty string) — wrapped so the parser thread does not die.
+    * ``NaN`` / ``Infinity`` — silently propagating these into
+      ``NBBOQuote.bid`` poisons ``bid > ask`` checks (NaN comparisons
+      always return False) and ``(bid + ask) / 2`` mid-price math.
+    * Negative prices — always invalid for both trade prints and NBBO
+      sides.
+    * Zero prices when ``allow_zero=False`` (the default, used for trade
+      prints — equities never trade at zero and downstream cost / sizing
+      math assumes ``price > 0``).  Callers parsing NBBO bid/ask must
+      pass ``allow_zero=True``: auction snapshots and indicator quotes
+      legitimately carry ``bid=0`` / ``ask=0`` on the wire.
+
+    Wire fields are JSON-decoded as ``float`` / ``int`` / ``str``;
+    ``str(...)`` round-trips int/Decimal cleanly but loses precision on
+    floats.  We accept that float-round-trip is the caller's choice; this
+    helper only enforces *value* validity, not encoding.
+    """
+    try:
+        result = Decimal(str(value))
+    except InvalidOperation as exc:
+        raise ValueError(f"unparseable Decimal: {value!r}") from exc
+    if not result.is_finite():
+        raise ValueError(f"non-finite price: {result}")
+    if result < 0:
+        raise ValueError(f"negative price: {result}")
+    if not allow_zero and result == 0:
+        raise ValueError(f"non-positive price: {result}")
+    return result
+
+
+def _safe_size(value: object) -> int:
+    """Parse a wire size into a non-negative ``int``.
+
+    ``int(...)`` already accepts strings and floats; we only reject
+    negative results.  Zero is allowed (some wire feeds emit
+    ``size=0`` for non-trade conditions or canceled prints).
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ValueError(f"unparseable size: {value!r}")
+    n = int(value)  # raises ValueError on garbage strings
+    if n < 0:
+        raise ValueError(f"negative size: {n}")
+    return n
 
 
 def _optional_wire_ts_ns(raw: object) -> int | None:
@@ -277,21 +329,19 @@ class MassiveNormalizer:
         return results
 
     def _ws_quote(self, msg: dict, received_ns: int) -> NBBOQuote | None:  # type: ignore[type-arg]
+        # Field-parsing order matters: everything that can raise on a bad
+        # payload runs *before* we mutate dedup / SM state (closes the
+        # "phantom gap transition for an event that never emitted" hazard
+        # from pass-4 R4-NEW-05) and *before* the internal sequence is
+        # consumed (closes pass-3 R3-INGEST-03 — sequence holes).
         try:
-            symbol: str = msg["sym"]
+            symbol = msg["sym"]
             exchange_ts_ns = int(msg["t"]) * _MS_TO_NS
             seq_num = int(msg.get("q", 0))
             fp = _fingerprint_ws_quote(msg)
 
             if self._reject_sequence_reuse(symbol, self._FEED_QUOTE, seq_num, fp):
                 return None
-            prev = self._last_seen.get((symbol, self._FEED_QUOTE))
-            prev_seq = prev[0] if prev is not None else 0
-            self._update_last_seen(symbol, self._FEED_QUOTE, seq_num, exchange_ts_ns, fp)
-            self._check_gap(symbol, self._FEED_QUOTE, seq_num, prev_seq)
-
-            internal_seq = self._seq.next()
-            cid = make_correlation_id(symbol, exchange_ts_ns, internal_seq)
 
             raw_c = msg.get("c")
             conditions: tuple[int, ...]
@@ -316,47 +366,63 @@ class MassiveNormalizer:
                 if trf_quote_ns is not None:
                     break
 
+            # Price / size validation — raises on NaN, Infinity, negative
+            # price, or unparseable Decimal.  ``allow_zero=True`` because
+            # auction snapshots and indicator quotes legitimately carry
+            # ``bid=0`` / ``ask=0`` on the wire.  All before state mutation.
+            bid = _safe_price(msg["bp"], allow_zero=True)
+            ask = _safe_price(msg["ap"], allow_zero=True)
+            bid_size = _safe_size(msg["bs"])
+            ask_size = _safe_size(msg["as"])
+            bid_exchange = int(msg.get("bx", 0))
+            ask_exchange = int(msg.get("ax", 0))
+            tape = int(msg.get("z", 0))
+
+            # All parsing succeeded — commit dedup state, fire SM transitions,
+            # consume the internal sequence, build the canonical event.
+            prev = self._last_seen.get((symbol, self._FEED_QUOTE))
+            prev_seq = prev[0] if prev is not None else 0
+            self._update_last_seen(symbol, self._FEED_QUOTE, seq_num, exchange_ts_ns, fp)
+            self._check_gap(symbol, self._FEED_QUOTE, seq_num, prev_seq)
+            internal_seq = self._seq.next()
+            cid = make_correlation_id(symbol, exchange_ts_ns, internal_seq)
+
             return NBBOQuote(
                 timestamp_ns=exchange_ts_ns,
                 correlation_id=cid,
                 sequence=internal_seq,
                 symbol=symbol,
-                bid=Decimal(str(msg["bp"])),
-                ask=Decimal(str(msg["ap"])),
-                bid_size=int(msg["bs"]),
-                ask_size=int(msg["as"]),
-                bid_exchange=int(msg.get("bx", 0)),
-                ask_exchange=int(msg.get("ax", 0)),
+                bid=bid,
+                ask=ask,
+                bid_size=bid_size,
+                ask_size=ask_size,
+                bid_exchange=bid_exchange,
+                ask_exchange=ask_exchange,
                 exchange_timestamp_ns=exchange_ts_ns,
                 conditions=conditions,
                 indicators=indicators,
                 sequence_number=seq_num,
-                tape=int(msg.get("z", 0)),
+                tape=tape,
                 participant_timestamp_ns=part_ns,
                 trf_timestamp_ns=trf_quote_ns,
                 received_ns=received_ns,
             )
-        except (KeyError, ValueError, TypeError) as exc:
+        except (KeyError, ValueError, TypeError, InvalidOperation) as exc:
             logger.warning("massive_normalizer: bad WS quote: %s", exc)
             self._mark_corrupted(msg.get("sym", "UNKNOWN"))
             return None
 
     def _ws_trade(self, msg: dict, received_ns: int) -> Trade | None:  # type: ignore[type-arg]
+        # See ``_ws_quote`` for the field-parsing-before-state-mutation
+        # rationale (M3 / M4 / R4-NEW-05 from the cumulative audit).
         try:
-            symbol: str = msg["sym"]
+            symbol = msg["sym"]
             exchange_ts_ns = int(msg["t"]) * _MS_TO_NS
             seq_num = int(msg.get("q", 0))
             fp = _fingerprint_ws_trade(msg)
 
             if self._reject_sequence_reuse(symbol, self._FEED_TRADE, seq_num, fp):
                 return None
-            prev = self._last_seen.get((symbol, self._FEED_TRADE))
-            prev_seq = prev[0] if prev is not None else 0
-            self._update_last_seen(symbol, self._FEED_TRADE, seq_num, exchange_ts_ns, fp)
-            self._check_gap(symbol, self._FEED_TRADE, seq_num, prev_seq)
-
-            internal_seq = self._seq.next()
-            cid = make_correlation_id(symbol, exchange_ts_ns, internal_seq)
 
             raw_c = msg.get("c")
             conditions = tuple(int(x) for x in raw_c) if isinstance(raw_c, list) else ()
@@ -372,29 +438,43 @@ class MassiveNormalizer:
             corr_raw = msg.get("correction")
             correction = int(corr_raw) if corr_raw is not None else None
 
+            price = _safe_price(msg["p"])
+            size = _safe_size(msg["s"])
+            exchange = int(msg.get("x", 0))
+            tape = int(msg.get("z", 0))
+            trf_id = int(msg["trfi"]) if "trfi" in msg else None
+
+            # All parsing succeeded — commit dedup + halt status before
+            # the SM transitions and sequence consumption fire.
+            prev = self._last_seen.get((symbol, self._FEED_TRADE))
+            prev_seq = prev[0] if prev is not None else 0
+            self._update_last_seen(symbol, self._FEED_TRADE, seq_num, exchange_ts_ns, fp)
+            self._check_gap(symbol, self._FEED_TRADE, seq_num, prev_seq)
             self._apply_halt_status(symbol, conditions)
+            internal_seq = self._seq.next()
+            cid = make_correlation_id(symbol, exchange_ts_ns, internal_seq)
 
             return Trade(
                 timestamp_ns=exchange_ts_ns,
                 correlation_id=cid,
                 sequence=internal_seq,
                 symbol=symbol,
-                price=Decimal(str(msg["p"])),
-                size=int(msg["s"]),
-                exchange=int(msg.get("x", 0)),
+                price=price,
+                size=size,
+                exchange=exchange,
                 trade_id=str(msg.get("i", "")),
                 exchange_timestamp_ns=exchange_ts_ns,
                 conditions=conditions,
                 decimal_size=msg.get("ds"),
                 sequence_number=seq_num,
-                tape=int(msg.get("z", 0)),
-                trf_id=int(msg["trfi"]) if "trfi" in msg else None,
+                tape=tape,
+                trf_id=trf_id,
                 trf_timestamp_ns=trf_ts,
                 participant_timestamp_ns=part_trade,
                 correction=correction,
                 received_ns=received_ns,
             )
-        except (KeyError, ValueError, TypeError) as exc:
+        except (KeyError, ValueError, TypeError, InvalidOperation) as exc:
             logger.warning("massive_normalizer: bad WS trade: %s", exc)
             self._mark_corrupted(msg.get("sym", "UNKNOWN"))
             return None
@@ -426,22 +506,16 @@ class MassiveNormalizer:
         return []
 
     def _rest_quote(self, rec: dict, received_ns: int) -> NBBOQuote | None:  # type: ignore[type-arg]
+        # See ``_ws_quote`` for the field-parsing-before-state-mutation
+        # rationale (M3 / M4 / R4-NEW-05 from the cumulative audit).
         try:
-            symbol: str = rec["ticker"]
+            symbol = rec["ticker"]
             sip_ts = int(rec["sip_timestamp"])
             seq_num = int(rec.get("sequence_number", 0))
             fp = _fingerprint_rest_quote(rec)
 
             if self._reject_sequence_reuse(symbol, self._FEED_QUOTE, seq_num, fp):
                 return None
-            prev = self._last_seen.get((symbol, self._FEED_QUOTE))
-            prev_seq = prev[0] if prev is not None else 0
-            self._update_last_seen(symbol, self._FEED_QUOTE, seq_num, sip_ts, fp)
-            if self._enable_rest_sequence_gap_detection:
-                self._check_gap(symbol, self._FEED_QUOTE, seq_num, prev_seq)
-
-            internal_seq = self._seq.next()
-            cid = make_correlation_id(symbol, sip_ts, internal_seq)
 
             raw_cond = rec.get("conditions")
             conditions = tuple(int(x) for x in raw_cond) if isinstance(raw_cond, list) else ()
@@ -455,48 +529,58 @@ class MassiveNormalizer:
             raw_trf = rec.get("trf_timestamp")
             trf_ts = int(raw_trf) if raw_trf is not None else None
 
+            bid = _safe_price(rec["bid_price"], allow_zero=True)
+            ask = _safe_price(rec["ask_price"], allow_zero=True)
+            bid_size = _safe_size(rec["bid_size"])
+            ask_size = _safe_size(rec["ask_size"])
+            bid_exchange = int(rec.get("bid_exchange", 0))
+            ask_exchange = int(rec.get("ask_exchange", 0))
+            tape = int(rec.get("tape", 0))
+
+            prev = self._last_seen.get((symbol, self._FEED_QUOTE))
+            prev_seq = prev[0] if prev is not None else 0
+            self._update_last_seen(symbol, self._FEED_QUOTE, seq_num, sip_ts, fp)
+            if self._enable_rest_sequence_gap_detection:
+                self._check_gap(symbol, self._FEED_QUOTE, seq_num, prev_seq)
+            internal_seq = self._seq.next()
+            cid = make_correlation_id(symbol, sip_ts, internal_seq)
+
             return NBBOQuote(
                 timestamp_ns=sip_ts,
                 correlation_id=cid,
                 sequence=internal_seq,
                 symbol=symbol,
-                bid=Decimal(str(rec["bid_price"])),
-                ask=Decimal(str(rec["ask_price"])),
-                bid_size=int(rec["bid_size"]),
-                ask_size=int(rec["ask_size"]),
-                bid_exchange=int(rec.get("bid_exchange", 0)),
-                ask_exchange=int(rec.get("ask_exchange", 0)),
+                bid=bid,
+                ask=ask,
+                bid_size=bid_size,
+                ask_size=ask_size,
+                bid_exchange=bid_exchange,
+                ask_exchange=ask_exchange,
                 exchange_timestamp_ns=sip_ts,
                 conditions=conditions,
                 indicators=indicators,
                 sequence_number=seq_num,
-                tape=int(rec.get("tape", 0)),
+                tape=tape,
                 participant_timestamp_ns=part_ts,
                 trf_timestamp_ns=trf_ts,
                 received_ns=received_ns,
             )
-        except (KeyError, ValueError, TypeError) as exc:
+        except (KeyError, ValueError, TypeError, InvalidOperation) as exc:
             logger.warning("massive_normalizer: bad REST quote: %s", exc)
             self._mark_corrupted(rec.get("ticker", "UNKNOWN"))
             return None
 
     def _rest_trade(self, rec: dict, received_ns: int) -> Trade | None:  # type: ignore[type-arg]
+        # See ``_ws_quote`` for the field-parsing-before-state-mutation
+        # rationale (M3 / M4 / R4-NEW-05 from the cumulative audit).
         try:
-            symbol: str = rec["ticker"]
+            symbol = rec["ticker"]
             sip_ts = int(rec["sip_timestamp"])
             seq_num = int(rec.get("sequence_number", 0))
             fp = _fingerprint_rest_trade(rec)
 
             if self._reject_sequence_reuse(symbol, self._FEED_TRADE, seq_num, fp):
                 return None
-            prev = self._last_seen.get((symbol, self._FEED_TRADE))
-            prev_seq = prev[0] if prev is not None else 0
-            self._update_last_seen(symbol, self._FEED_TRADE, seq_num, sip_ts, fp)
-            if self._enable_rest_sequence_gap_detection:
-                self._check_gap(symbol, self._FEED_TRADE, seq_num, prev_seq)
-
-            internal_seq = self._seq.next()
-            cid = make_correlation_id(symbol, sip_ts, internal_seq)
 
             raw_cond = rec.get("conditions")
             conditions = tuple(int(x) for x in raw_cond) if isinstance(raw_cond, list) else ()
@@ -507,29 +591,43 @@ class MassiveNormalizer:
             raw_trf = rec.get("trf_timestamp")
             trf_ts = int(raw_trf) if raw_trf is not None else None
 
+            price = _safe_price(rec["price"])
+            size = _safe_size(rec["size"])
+            exchange = int(rec.get("exchange", 0))
+            tape = int(rec.get("tape", 0))
+            trf_id = int(rec["trf_id"]) if "trf_id" in rec else None
+            correction = int(rec["correction"]) if "correction" in rec else None
+
+            prev = self._last_seen.get((symbol, self._FEED_TRADE))
+            prev_seq = prev[0] if prev is not None else 0
+            self._update_last_seen(symbol, self._FEED_TRADE, seq_num, sip_ts, fp)
+            if self._enable_rest_sequence_gap_detection:
+                self._check_gap(symbol, self._FEED_TRADE, seq_num, prev_seq)
             self._apply_halt_status(symbol, conditions)
+            internal_seq = self._seq.next()
+            cid = make_correlation_id(symbol, sip_ts, internal_seq)
 
             return Trade(
                 timestamp_ns=sip_ts,
                 correlation_id=cid,
                 sequence=internal_seq,
                 symbol=symbol,
-                price=Decimal(str(rec["price"])),
-                size=int(rec["size"]),
-                exchange=int(rec.get("exchange", 0)),
+                price=price,
+                size=size,
+                exchange=exchange,
                 trade_id=str(rec.get("id", "")),
                 exchange_timestamp_ns=sip_ts,
                 conditions=conditions,
                 decimal_size=rec.get("decimal_size"),
                 sequence_number=seq_num,
-                tape=int(rec.get("tape", 0)),
-                trf_id=int(rec["trf_id"]) if "trf_id" in rec else None,
+                tape=tape,
+                trf_id=trf_id,
                 trf_timestamp_ns=trf_ts,
                 participant_timestamp_ns=part_ts,
-                correction=int(rec["correction"]) if "correction" in rec else None,
+                correction=correction,
                 received_ns=received_ns,
             )
-        except (KeyError, ValueError, TypeError) as exc:
+        except (KeyError, ValueError, TypeError, InvalidOperation) as exc:
             logger.warning("massive_normalizer: bad REST trade: %s", exc)
             self._mark_corrupted(rec.get("ticker", "UNKNOWN"))
             return None
@@ -547,10 +645,27 @@ class MassiveNormalizer:
             sm = create_data_integrity_machine(
                 symbol, self._clock, channel=feed_type,
             )
-            if self._transition_callback is not None:
-                sm.on_transition(self._transition_callback)
+            # Always register the stable dispatcher; the live callback is
+            # read lazily from ``self._transition_callback`` so that
+            # :meth:`on_health_transition` can rebind without touching
+            # any per-machine state (closes pass-4 R4-NEW-02 / R4-NEW-03 —
+            # additive vs. replacing semantics and non-idempotency).
+            sm.on_transition(self._dispatch_transition)
             self._health_machines[key] = sm
         return sm
+
+    def _dispatch_transition(self, record: TransitionRecord) -> None:
+        """Single per-SM callback that lazily reads the live subscriber.
+
+        Registered once per ``DataHealth`` machine at creation time.
+        Reading ``self._transition_callback`` here means
+        :meth:`on_health_transition` rebinds the subscriber by mutating a
+        single attribute; existing and future machines see the change
+        identically.
+        """
+        cb = self._transition_callback
+        if cb is not None:
+            cb(record)
 
     @property
     def duplicates_filtered(self) -> int:
@@ -677,14 +792,17 @@ class MassiveNormalizer:
                 sm.transition(DataHealth.CORRUPTED, trigger=trigger)
 
     def on_health_transition(self, callback: Callable[[TransitionRecord], None]) -> None:
-        """Register a callback for DataHealth state transitions on any symbol.
+        """Bind the callback invoked on every :class:`DataHealth` transition.
 
-        Stores the callback for symbols registered in the future and registers
-        it immediately on all currently-tracked symbol state machines.
+        Replaces the previously-bound callback (including the one passed
+        to ``__init__``).  Idempotent: calling twice with the same
+        callable is a no-op.  Both already-created and future per-symbol
+        state machines dispatch through a stable internal forwarder
+        (:meth:`_dispatch_transition`) that lazily reads this attribute,
+        so binding here applies uniformly without re-touching any
+        machine's own callback list.
         """
         self._transition_callback = callback
-        for sm in self._health_machines.values():
-            sm.on_transition(callback)
 
     def notify_feed_interrupted(self, symbols: Sequence[str]) -> None:
         """Transition HEALTHY symbols to GAP_DETECTED on feed connection loss.
