@@ -158,10 +158,14 @@ class MassiveHistoricalIngestor:
         self._event_log = event_log
         self._clock = clock
         self._checkpoint = checkpoint or InMemoryCheckpoint()
-        # Lazy cache of (client_q, client_t) used by all ``ingest_symbol_parallel``
-        # invocations within a single ``ingest()`` call.  Avoids constructing
-        # 2N urllib3 pools for an N-symbol backfill (audit B3-MINOR).
-        self._parallel_clients: tuple[Any, Any] | None = None
+        # Lazy cache of (source_client, client_q, client_t) used by all
+        # ``ingest_symbol_parallel`` invocations sharing the same source
+        # ``client``.  Avoids constructing 2N urllib3 pools for an N-symbol
+        # backfill (audit B3-MINOR).  Keyed on the source ``client`` identity
+        # so a reused ingestor or a later call with a different client (test
+        # doubles, wrappers) rebuilds the pair instead of silently reusing
+        # the stale one.
+        self._parallel_clients: tuple[Any, Any, Any] | None = None
 
     def ingest(
         self,
@@ -284,11 +288,16 @@ class MassiveHistoricalIngestor:
         # Real Massive clients get distinct per-thread instances so their
         # urllib3 pools never collide.  Mocks and test wrappers fall back to
         # the configured client object unless we can safely clone and re-wrap
-        # an inner Massive client.  Cached on ``self`` so a multi-symbol
-        # backfill reuses the same pair across calls (audit B3-MINOR).
-        if self._parallel_clients is None:
-            self._parallel_clients = _clone_parallel_clients(client, self._api_key)
-        client_q, client_t = self._parallel_clients
+        # an inner Massive client.  Cached on ``self`` keyed by the source
+        # ``client`` identity so a multi-symbol backfill reuses the same pair
+        # across calls (audit B3-MINOR), while a reused ingestor or a later
+        # call with a different client rebuilds the pair instead of silently
+        # routing through the stale one.
+        if self._parallel_clients is None or self._parallel_clients[0] is not client:
+            client_q, client_t = _clone_parallel_clients(client, self._api_key)
+            self._parallel_clients = (client, client_q, client_t)
+        else:
+            _, client_q, client_t = self._parallel_clients
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             quotes_future = pool.submit(
