@@ -2,8 +2,10 @@
 name: testing-validation
 description: >
   Testing and validation framework for system integrity across the
-  feelies platform. Owns the five locked parity-hash baselines (sensor,
-  signal, sized-intent, portfolio-order, hazard-exit), the F-2
+  feelies platform. Owns the eleven locked parity-hash baselines across
+  six levels (L1 sensor/v0.3-sensor, L2 horizon-tick/signal, L3
+  snapshot/sized-intent decay-off+on, L4 portfolio-order/hazard-exit,
+  L5 regime-hazard-spike, L6 regime-state), the F-2
   declarative gate matrix that powers the promotion-evidence workflow,
   the F-1 promotion ledger contract, the per-host pinned perf
   baselines, and the strict-mypy / DTZ scope locks. Use when designing
@@ -20,9 +22,9 @@ deterministic, reproducible validation pipeline. The default posture
 is **deny deployment** — evidence of correctness must be affirmatively
 produced, not assumed.
 
-This skill owns the five locked parity hashes, the gate-matrix
-contract, the promotion-ledger schema, and the strict-typing /
-DTZ-rule scope locks.
+This skill owns the eleven locked parity hashes (the canonical registry
+is `tests/determinism/parity_manifest.py`), the gate-matrix contract,
+the promotion-ledger schema, and the strict-typing / DTZ-rule scope locks.
 
 ## Core Invariants
 
@@ -42,21 +44,27 @@ auditable configuration). Additionally:
 
 ---
 
-## Five Locked Parity Hashes (Inv-5)
+## Locked Parity Hashes (Inv-5)
 
-Each is a SHA-256 over the ordered event stream at one layer,
-asserted by a subprocess-isolated test under `tests/determinism/` to
-detect any non-determinism introduced by ordering, RNG, or
-wall-clock leakage.
+Each is a SHA-256 over the ordered event stream at one layer, asserted
+by a subprocess-isolated test under `tests/determinism/`. The canonical
+registry is `tests/determinism/parity_manifest.py:LOCKED_PARITY_BASELINES`
+(eleven entries across six levels). Drift between modules is caught in
+CI by `tests/determinism/test_parity_manifest.py`.
 
 | Level | Stream | Test |
 |-------|--------|------|
-| L1 | `SensorReading` | `test_sensor_replay.py` |
+| L1 | `SensorReading` (v0.2 fixture) | `test_sensor_reading_replay.py` |
+| L1 (v0.3) | `SensorReading` (v0.3 fixture) | `test_v03_sensor_replay.py` |
+| L2 | `HorizonTick` | `test_horizon_tick_replay.py` |
 | L2 | SIGNAL-layer `Signal` | `test_signal_replay.py` |
-| L3 | `SizedPositionIntent` | `test_sized_intent_replay.py` |
-| L3-orders | per-leg `OrderRequest` from PORTFOLIO | `test_portfolio_order_replay.py` |
+| L3 | `HorizonFeatureSnapshot` | `test_horizon_feature_snapshot_replay.py` |
+| L3 | `SizedPositionIntent` (decay OFF) | `test_sized_intent_replay.py` |
+| L3 | `SizedPositionIntent` (decay ON) | `test_sized_intent_with_decay_replay.py` |
+| L4 | per-leg `OrderRequest` from PORTFOLIO | `test_portfolio_order_replay.py` |
 | L4 | hazard-exit `OrderRequest` | `test_hazard_exit_replay.py` |
-| L5 | `RegimeHazardSpike` | `test_hazard_parity.py` |
+| L5 | `RegimeHazardSpike` | `test_regime_hazard_replay.py` |
+| L6 | `RegimeState` | `test_regime_state_replay.py` |
 
 Determinism is structurally supported by:
 
@@ -118,14 +126,14 @@ and construction-time enum-completeness check.
 | `MicroState` | `kernel/micro.py` | M0 → M10 backbone with Phase-2/3/4 sub-states; no skipping |
 | `OrderState` | `execution/order_state.py` | FILLED/CANCELLED/REJECTED/EXPIRED terminal |
 | `RiskLevel` | `risk/escalation.py` | Monotonic forward-only; only R4 → R0 via human unlock |
-| `DataHealth` | `ingestion/data_integrity.py` | Three states: HEALTHY ↔ GAP_DETECTED (WS seq / disconnect); CORRUPTED is terminal |
+| `DataHealth` | `ingestion/data_integrity.py` | Four states: HEALTHY ↔ {GAP_DETECTED (WS seq / disconnect), HALTED (LULD / regulatory halt)}; CORRUPTED is terminal |
 
 #### Core Invariants
 
 | Invariant | Generator | Property |
 |-----------|-----------|----------|
 | Causal ordering | Random event streams with shuffled timestamps | Sensors / signals never depend on future events |
-| Deterministic replay | Same event log + config, two runs | All five parity hashes bit-identical |
+| Deterministic replay | Same event log + config, two runs | All eleven parity hashes bit-identical |
 | Position conservation | Random fill sequences | Σ fills = final position; no phantoms |
 | Risk monotonic safety | Random `RiskLevel` transitions | Safety never decreases without explicit re-auth |
 | PnL decomposition | Random trade sequences | alpha + beta + costs = total (FP tolerance) |
@@ -148,12 +156,12 @@ or hazard-exit logic.
 
 | Test | Method | Pass criteria |
 |------|--------|---------------|
-| Same-machine determinism | Run identical config twice on same machine | Bit-identical event stream + all five parity hashes |
+| Same-machine determinism | Run identical config twice on same machine | Bit-identical event stream + all eleven parity hashes |
 | Cross-machine determinism | Run identical config on two different machines | Bit-identical (requires fixed seeds, no hardware-dependent floats) |
 | Version-upgrade determinism | Run same config on old + new code | Identical, or documented + justified divergence |
 | Checkpoint resume | Interrupt replay; resume from `SensorStateStore` checkpoint | Final output identical to uninterrupted run |
-| Hazard-parity | Replay `RegimeHazardSpike` stream | L5 hash bit-identical |
-| Decay-on / decay-off cross-check | Same alpha with `decay_weighting_enabled` toggled | `SizedPositionIntent.decision_basis_hash` differs; structural ranking unchanged |
+| Hazard-spike parity | Replay `RegimeHazardSpike` stream (`test_regime_hazard_replay.py`) | L5 hash bit-identical |
+| Decay-on / decay-off cross-check | Same alpha with `decay_weighting_enabled` toggled (`test_sized_intent_replay.py` vs `test_sized_intent_with_decay_replay.py`) | `SizedPositionIntent.decision_basis_hash` differs; structural ranking unchanged |
 
 ### Sim-vs-Live Divergence
 
@@ -392,7 +400,7 @@ ledger, never imports orchestrator / risk-engine production code
 |----------|----------|------------|
 | Strategy bundle | `*.alpha.yaml`, signal logic, sensor declarations, risk params | semver + git SHA |
 | Configuration | All tunable parameters | versioned alongside; diff-auditable |
-| Backtest results | All five parity hashes; trade logs; integrity checks | keyed to `(strategy_version, data_version, engine_version)` |
+| Backtest results | All eleven parity hashes; trade logs; integrity checks | keyed to `(strategy_version, data_version, engine_version)` |
 | Reference factor loadings | Parquet / built artifacts | content-addressed hash; max-age guard |
 | Dependency manifest | Library versions | lockfile committed |
 
@@ -428,9 +436,10 @@ trading halt.
 
 | Gate | Threshold | File |
 |------|-----------|------|
-| Phase 4 throughput regression | ≤ 12% e2e vs v0.2 baseline | `tests/perf/test_phase4_no_regression.py` |
-| Phase 4.1 decay-weighting overhead | ≤ 5% wall-clock vs decay-OFF | `tests/perf/test_phase4_1_no_regression.py` |
-| Per-host pinned baselines | opt-in via `PERF_HOST_LABEL` | `tests/perf/baselines/v02_baseline.json` |
+| Paper-RTH throughput regression | ≤ 12% e2e vs v0.2 baseline | `tests/perf/test_paper_rth_no_regression.py` |
+| Phase 4.1 decay-weighting overhead | ≤ 5% wall-clock vs decay-OFF | enforced via the shared per-host pinned baseline helper (`tests/perf/_pinned_baseline.py`); the standalone `test_phase4_1_no_regression.py` referenced in some docs has not landed |
+| Per-host pinned baselines | opt-in via `PERF_HOST_LABEL` | `tests/perf/baselines/v02_baseline.json` (loader: `tests/perf/_pinned_baseline.py`) |
+| Baseline-plumbing smoke | acceptance | `tests/acceptance/test_perf_baseline_plumbing.py` |
 | Baseline recording | manual | `python scripts/record_perf_baseline.py --host-label <id>` |
 
 ---

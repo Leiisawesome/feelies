@@ -69,7 +69,7 @@ no silent transitions (Inv-13).
 | Micro pipeline | `MicroState` | `kernel/micro.py` | M0 ‥ M10 backbone + Phase-2/3/4 sub-states (see below) | Per-tick |
 | Order lifecycle | `OrderState` | `execution/order_state.py` | CREATED → SUBMITTED → ACKNOWLEDGED → {PARTIALLY_FILLED, FILLED, CANCEL_REQUESTED, REJECTED, EXPIRED, CANCELLED} | Per-order |
 | Risk escalation | `RiskLevel` | `risk/escalation.py` | NORMAL → WARNING → BREACH_DETECTED → FORCED_FLATTEN → LOCKED | Monotonic safety |
-| Data integrity | `DataHealth` | `ingestion/data_integrity.py` | HEALTHY ↔ GAP_DETECTED (WS); CORRUPTED terminal | Per-symbol stream |
+| Data integrity | `DataHealth` | `ingestion/data_integrity.py` | HEALTHY ↔ {GAP_DETECTED (WS seq / disconnect), HALTED (LULD / regulatory halt)}; CORRUPTED terminal | Per-symbol stream |
 
 Illegal transitions raise `IllegalTransition`. Construction-time enum
 completeness check guarantees every enum member has a transition entry
@@ -129,8 +129,8 @@ startup via `bootstrap.build_platform(config)`:
 |------|-------------------|---------------|---------|
 | `BACKTEST_MODE` (`execution_mode: market`) | `ReplayFeed(EventLog)` | `BacktestOrderRouter` (mid-price fills) | `SimulatedClock` |
 | `BACKTEST_MODE` (`execution_mode: passive_limit`) | `ReplayFeed(EventLog)` | `PassiveLimitOrderRouter` (queue-position fills) | `SimulatedClock` |
-| `PAPER_TRADING_MODE` | `MassiveLiveFeed` | *(not yet implemented)* | `WallClock` |
-| `LIVE_TRADING_MODE` | `MassiveLiveFeed` | *(not yet implemented)* | `WallClock` |
+| `PAPER_TRADING_MODE` | `MassiveLiveFeed` | `LiveOrderRouter` (`execution/live_router.py`) composed via `paper_backend.py` | `WallClock` |
+| `LIVE_TRADING_MODE` | `MassiveLiveFeed` | `LiveOrderRouter` (`execution/live_router.py`); production-readiness gated on the live-execution skill's acceptance criteria | `WallClock` |
 
 `MassiveHistoricalIngestor` is a batch ETL that populates `EventLog`
 outside the orchestrator lifecycle — it is not an operating mode (see
@@ -181,7 +181,7 @@ end-to-end provenance.
 | `NBBOQuote` | Ingestion → Layer 1 | symbol, bid/ask, sizes |
 | `Trade` | Ingestion → Layer 1 / storage | symbol, price, size, conditions |
 | `RegimeState` | Service → Layer 2 / risk | engine_name, posteriors, dominant_state |
-| `RegimeHazardSpike` | Service → Risk / portfolio | engine_name, departing_state, posterior_drop |
+| `RegimeHazardSpike` | Service → Risk / portfolio | symbol, engine_name, departing_state, departing_posterior_prev, departing_posterior_now, incoming_state, hazard_score |
 | `SensorReading` | Layer 1 → Layer 2 | sensor_id, value, provenance |
 | `HorizonTick` | Scheduler → aggregator | horizon_seconds, boundary_index, boundary_ts_ns |
 | `HorizonFeatureSnapshot` | Layer 1.5 → Layer 2 | symbol, horizon_seconds, values, warm, stale |
@@ -238,20 +238,26 @@ subclass.
 
 | Gate | Concern | Enforcement |
 |------|---------|-------------|
-| G1 | Layer independence | SIGNAL alphas cannot import PORTFOLIO modules and vice versa |
-| G2–G8, G13 | Phase-3-α: event-typing, regime-gate purity, signal purity, sensor-DAG validity, horizon registration, no implicit lookahead, cost-arithmetic disclosure, warm-up documentation | Always blocks |
-| G9 | Cross-symbol staleness | Always blocks |
-| G10 | PORTFOLIO universe presence | Always blocks |
-| G11 | PORTFOLIO factor-neutralization disclosure | Always blocks |
+| G1 | Layer independence (SIGNAL alphas cannot import PORTFOLIO modules and vice versa) | Toggleable via `enforce_layer_gates` |
+| G2 | Event-typing | Always blocks |
+| G3 | Single declared horizon (no cross-horizon leakage) | Toggleable via `enforce_layer_gates` |
+| G4 | Regime-gate purity | Always blocks |
+| G5 | Signal purity | Always blocks |
+| G6 | Sensor-DAG validity | Always blocks |
+| G7 | Horizon registration | Always blocks |
+| G8 | Warm-up documentation | Always blocks |
+| G9 | Cross-symbol staleness (Phase-4) | Always blocks |
+| G10 | PORTFOLIO universe presence (Phase-4) | Always blocks |
+| G11 | PORTFOLIO factor-neutralization disclosure (Phase-4) | Always blocks |
 | G12 | Cost-arithmetic margin_ratio ≥ 1.5 (Inv-12) | Always blocks |
+| G13 | No implicit lookahead | Always blocks |
 | G14 | Data dependency declaration | Always blocks |
 | G15 | Router whitelist | Always blocks |
 | G16 | Mechanism-horizon binding (taxonomy + half-life envelope + horizon ratio + fingerprint sensors + stress-family exit-only + family caps) | Always blocks |
 
-`PlatformConfig.enforce_layer_gates` (default `true`) toggles G1 and G3
-(architectural gates) between hard-blocking and WARNING-only. The
-data-integrity / economic / provenance gates (G9–G16) **always block**
-regardless of the flag.
+`PlatformConfig.enforce_layer_gates` (default `true`) toggles **only G1
+and G3** between hard-blocking and WARNING-only. Every other gate
+(G2, G4–G16) **always blocks** regardless of the flag.
 
 `PlatformConfig.enforce_trend_mechanism` (default `true` since
 Workstream E) additionally rejects schema-1.1 SIGNAL/PORTFOLIO alphas
@@ -342,18 +348,25 @@ gates `unlock_from_lockdown()`.
 
 ## Determinism (Inv-5)
 
-Five locked **parity hashes** guard end-to-end determinism. Each is a
-SHA-256 over the ordered event stream at one layer, asserted by a
-subprocess-isolated test under `tests/determinism/`:
+Eleven locked **parity hashes** across six levels guard end-to-end
+determinism. Each is a SHA-256 over the ordered event stream at one
+layer, asserted by a subprocess-isolated test under
+`tests/determinism/`. The canonical registry is
+`tests/determinism/parity_manifest.py:LOCKED_PARITY_BASELINES`:
 
 | Level | Stream | Test |
 |-------|--------|------|
-| L1 | `SensorReading` | `test_sensor_replay.py` |
+| L1 | `SensorReading` (v0.2 fixture) | `test_sensor_reading_replay.py` |
+| L1 (v0.3) | `SensorReading` (v0.3 fixture) | `test_v03_sensor_replay.py` |
+| L2 | `HorizonTick` | `test_horizon_tick_replay.py` |
 | L2 | `Signal` (SIGNAL layer) | `test_signal_replay.py` |
-| L3 | `SizedPositionIntent` | `test_sized_intent_replay.py` |
-| L3-orders | per-leg `OrderRequest` from PORTFOLIO | `test_portfolio_order_replay.py` |
+| L3 | `HorizonFeatureSnapshot` | `test_horizon_feature_snapshot_replay.py` |
+| L3 | `SizedPositionIntent` (decay OFF) | `test_sized_intent_replay.py` |
+| L3 | `SizedPositionIntent` (decay ON) | `test_sized_intent_with_decay_replay.py` |
+| L4 | per-leg `OrderRequest` from PORTFOLIO | `test_portfolio_order_replay.py` |
 | L4 | hazard-exit `OrderRequest` | `test_hazard_exit_replay.py` |
-| L5 | `RegimeHazardSpike` | `test_hazard_parity.py` |
+| L5 | `RegimeHazardSpike` | `test_regime_hazard_replay.py` |
+| L6 | `RegimeState` | `test_regime_state_replay.py` |
 
 Determinism is structurally supported by:
 - `SimulatedClock.set_time()` rejecting backward movement
@@ -392,7 +405,7 @@ always wins when in tension.
 
 - **Auditability** — every decision traceable to a typed event with
   correlation ID
-- **Determinism** — five locked parity hashes; bit-identical replay
+- **Determinism** — eleven locked parity hashes across six levels (L1–L6); bit-identical replay
 - **Testability** — every layer testable in isolation with mock events
 - **Strictness** — mypy strict on every module under `src/feelies/`;
   ruff DTZ on every `datetime` call; no `ignore_errors` overrides

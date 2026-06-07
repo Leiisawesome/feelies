@@ -170,8 +170,11 @@ from `Signal.strength × sign(direction) × edge_estimate_bps`, then:
    gross. G16 PORTFOLIO rule 8 enforces the cap declaration at load
    time; the ranker enforces realisation at emission time.
 
-Output: a `RankResult` carrying ranked alphas and the
-realised `mechanism_breakdown: dict[TrendMechanism, float]`.
+Output: a public `RankResult` value object
+(`feelies.composition.cross_sectional.RankResult`, exported in
+`__all__`) carrying ranked alphas and the realised
+`mechanism_breakdown: dict[TrendMechanism, float]`. `RankResult` is
+not a bus event — it is consumed in-process by `CompositionEngine`.
 
 ---
 
@@ -280,11 +283,16 @@ of any single family) drives the post-trade crowding diagnostic.
 
 ## Determinism (Inv-5)
 
+The composition layer contributes four entries to the eleven-baseline
+parity-hash registry (`tests/determinism/parity_manifest.py`); the full
+list across all layers lives in the testing-validation skill.
+
 | Test | Locks |
 |------|-------|
-| `tests/determinism/test_sized_intent_replay.py` | L3 — ordered `SizedPositionIntent` stream byte-identical |
-| `tests/determinism/test_portfolio_order_replay.py` | L3-orders — per-leg `OrderRequest` from PORTFOLIO byte-identical (lex-sorted by symbol) |
-| Decay-on/off cross-check | `decision_basis_hash` differs; structural ranking unchanged |
+| `tests/determinism/test_horizon_feature_snapshot_replay.py` | L3 — ordered `HorizonFeatureSnapshot` stream byte-identical (Layer-2 input) |
+| `tests/determinism/test_sized_intent_replay.py` | L3 — ordered `SizedPositionIntent` stream byte-identical (decay OFF) |
+| `tests/determinism/test_sized_intent_with_decay_replay.py` | L3 — ordered `SizedPositionIntent` stream byte-identical (decay ON; `decision_basis_hash` must differ from decay-OFF while structural ranking is unchanged) |
+| `tests/determinism/test_portfolio_order_replay.py` | L4 — per-leg `OrderRequest` from PORTFOLIO byte-identical (lex-sorted by symbol) |
 
 ---
 

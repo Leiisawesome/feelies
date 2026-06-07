@@ -24,7 +24,7 @@ mode-specific behavior is confined to `ExecutionBackend`
                        │ M0 → M1 → M2  (RegimeEngine.posterior → RegimeState)
 ┌──────────────────────▼─────────────────────────────────────┐
 │             SENSOR LAYER (Layer 1)                         │
-│  SensorRegistry fan-out (13 sensors in v0.3)               │
+│  SensorRegistry fan-out (16 sensors ship; 13 registered)   │
 │  SENSOR_UPDATE: SensorProtocol.update → SensorReading      │
 │  Mechanism fingerprints: kyle_lambda, inventory_pressure,  │
 │  hawkes_intensity, liquidity_stress_score, scheduled_flow  │
@@ -91,7 +91,8 @@ mode-specific behavior is confined to `ExecutionBackend`
 The historical per-tick `FeatureVector` / `FeatureEngine.update` /
 `SignalEngine.evaluate` / `CompositeFeatureEngine` /
 `CompositeSignalEngine` / `AlphaModule.evaluate` contracts were
-retired in Workstream D.2.
+retired in Workstream D.2. Canonical D.2-retirement record:
+`.cursor/rules/platform-invariants.mdc` glossary entry for `feature`.
 
 ---
 
@@ -132,7 +133,7 @@ Raw Massive data is normalized into typed events (`core/events.py`):
 These flow through the `MarketDataNormalizer` protocol
 (`ingestion/normalizer.py`). Per-symbol data health is tracked by the
 `DataHealth` SM (`ingestion/data_integrity.py`):
-`HEALTHY ↔ GAP_DETECTED` (live WS sequence / feed loss); `CORRUPTED` is terminal (three states).
+`HEALTHY ↔ {GAP_DETECTED (WS seq / disconnect), HALTED (LULD / regulatory halt)}`; `CORRUPTED` is terminal (four states).
 
 ### Replay Engine
 
@@ -166,20 +167,27 @@ For backtesting, replay historical data through `MarketDataSource`
 
 ### Mechanism-Aware Sensor Catalog (v0.3)
 
-Per the trend-mechanism taxonomy (G16):
+Per the trend-mechanism taxonomy (G16). Sensor ids here are the actual
+implementations under `src/feelies/sensors/impl/`; for the authoritative
+catalog and the dormant-vs-registered split see the feature-engine skill:
 
-| Family | Sensors |
-|--------|---------|
-| KYLE_INFO | `kyle_lambda_60s`, `kyle_lambda_300s`, OFI proxies |
-| INVENTORY | `inventory_pressure`, `quote_replenishment_asym` |
-| HAWKES_SELF_EXCITE | `hawkes_intensity`, `trade_clustering` |
-| LIQUIDITY_STRESS | `liquidity_stress_score`, `spread_z_30d`, `quote_flicker_rate` |
+| Family | Sensors (implemented) |
+|--------|----------------------|
+| KYLE_INFO | `kyle_lambda_60s`, `ofi_ewma`, `micro_price` |
+| INVENTORY | `inventory_pressure`, `quote_replenish_asymmetry` |
+| HAWKES_SELF_EXCITE | `hawkes_intensity`, `trade_through_rate` |
+| LIQUIDITY_STRESS | `liquidity_stress_score`, `spread_z_30d`, `quote_hazard_rate`, `quote_flicker_rate` |
 | SCHEDULED_FLOW | `scheduled_flow_window` |
-| Composite | `ofi_ewma`, `micro_price_drift`, `effective_spread` |
+| Composite | `ofi_ewma`, `micro_price`, `realized_vol_30s` |
+| Dormant (implemented, not in reference `platform.yaml`) | `vpin_50bucket`, `snr_drift_diffusion`, `structural_break_score` |
 
 ---
 
 ## Horizon Aggregation (Layer 1.5)
+
+> Canonical owner: **feature-engine skill**. The summary below is for
+> microstructure-alpha cross-reference only; for the full sensor +
+> horizon-aggregator contract see `feature-engine/SKILL.md`.
 
 ### `HorizonScheduler` + `HorizonAggregator`
 
@@ -193,11 +201,16 @@ warm/stale quality flags.
 
 ### Quality Gates
 
-- `warm: bool` — every consumed sensor past its `warm_up`; SIGNAL
-  alphas suppress entry when False
-- `stale: bool` — no NBBO arrival within staleness threshold; entry
-  suppressed, exit allowed (conservative)
-- `boundary_index: int` — deterministic ordering key for parity hashes
+- `warm: dict[str, bool]` — per `feature_id`. `HorizonSignalEngine`
+  suppresses entry when **any** of the alpha's
+  `required_warm_feature_ids` is `False`. Never gate on
+  `if snapshot.warm:` — a non-empty dict is always truthy; gate on the
+  specific `feature_id` keys you consume.
+- `stale: dict[str, bool]` — per `feature_id`; `True` when the
+  feature's input sensor has not produced a *warm* reading within the
+  feature's horizon window. Entry suppressed, exit allowed
+  (conservative).
+- `boundary_index: int` — deterministic ordering key for parity hashes.
 
 ---
 
@@ -434,7 +447,7 @@ Shared logic guarantees backtest/live parity (Inv-9). Never deploy
 research code directly. Production code must be:
 
 - Reviewed for correctness
-- Tested against the five locked parity hashes
+- Tested against the eleven locked parity hashes (L1–L6; see the testing-validation skill)
 - Validated against backtest results (paper-window evidence in F-2)
 - Promoted via the `AlphaLifecycle` SM (RESEARCH → PAPER → LIVE @
   SMALL_CAPITAL → LIVE @ SCALED) with structured evidence

@@ -169,10 +169,17 @@ regime-dependent scaling drawn from `RegimeEngine.current_state`
 package) and emits `OrderRequest` exits for open positions when a
 regime flip is imminent.
 
-| Reason | Trigger | Suppression |
-|--------|---------|-------------|
-| `HAZARD_SPIKE` | Posterior departure exceeds per-alpha `hazard_score_threshold` AND position open ≥ `min_age_seconds` | Per `(symbol, alpha_id, departing_state)` — at most one spike-exit per departure episode |
-| `HARD_EXIT_AGE` | Position open ≥ `hard_exit_age_seconds` | Per-symbol `hard_exit_suppression_seconds` |
+| Reason | Trigger | Controller-layer suppression |
+|--------|---------|------------------------------|
+| `HAZARD_SPIKE` | Posterior departure exceeds per-alpha `hazard_score_threshold` AND position open ≥ `min_age_seconds` | Per `(strategy_id, symbol, reason)` — cleared when the position returns to flat (prevents re-firing an exit for the same open position) |
+| `HARD_EXIT_AGE` | Position open ≥ `hard_exit_age_seconds` | Per `(strategy_id, symbol, reason)` — same controller key |
+
+The **detector-layer** suppression — `(symbol, engine_name,
+departing_state)` — is a separate key held inside `RegimeHazardDetector`
+that throttles spike *emission* (at most one spike per departure episode
+per regime channel). Do not conflate the two: the controller key
+prevents duplicate exits per open position; the detector key prevents
+duplicate spikes per regime channel.
 
 Behavior:
 

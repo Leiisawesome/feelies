@@ -88,20 +88,33 @@ handles this structurally:
 
 ### Timeout Escalation
 
+The 9-state `OrderState` SM has no `CANCEL_PENDING` or `ERROR` state.
+A submission that ack-times-out is escalated within the existing
+transition table:
+
 ```
 SUBMITTED, no ack within 5s:
-  -> Send cancel request
-  -> Transition to CANCEL_PENDING
+  -> Orchestrator.cancel_order(order_id, reason="ack_timeout")
+     -> SM transition: SUBMITTED → CANCEL_REQUESTED
+        (via auto-ack to ACKNOWLEDGED first, then CANCEL_REQUESTED;
+         see _apply_ack_to_order Fill-Before-Ack handling)
   -> Query order status from broker
 
   If broker says order exists:
-    -> Wait for cancel confirmation
+    -> Wait for CANCELLED ack on the existing CANCEL_REQUESTED SM
   If broker says order unknown:
-    -> Transition to CANCELLED (assumed never received)
+    -> Emit synthetic CANCELLED ack
+       -> SM transition: CANCEL_REQUESTED → CANCELLED (terminal)
   If broker query times out:
-    -> Transition to ERROR
-    -> Trigger position reconciliation
+    -> Fail-safe cascade: _handle_tick_failure
+       -> Macro transitions to DEGRADED; position reconciliation runs
+          via _reconcile_fills before any further ticks
 ```
+
+Errors are handled by the macro-level fail-safe cascade
+(`_handle_tick_failure` → DEGRADED), not by an order-level `ERROR`
+state. Risk approval/rejection happens **before** order construction
+(M5/M6); it is also not an order-lifecycle phase.
 
 ### Stale State Detection
 

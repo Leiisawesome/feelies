@@ -6,6 +6,8 @@
 **Method:** Read-only. Every finding cites file:line in the rule/skill **and** a corroborating source path (or "not found").
 **Posture:** Report only. No edits, no commits.
 
+> **STATUS (2026-06-07 follow-up commit):** all 28 findings below have been fixed in the rules/skills tree. Verification sweeps confirm no residual `five parity`/`test_sensor_replay.py`/`test_hazard_parity.py`/`posterior_drop`/`13 sensors`/`hawkes_intensity_imbalance`/`ost-PR-2b-i`/`three states` patterns remain (one false-positive disclaimer in `feature-engine/SKILL.md` explicitly forbids the stale sensor IDs, and the regime-detection / microstructure-alpha skills retain `posterior_drop` only inside historical "earlier-draft" disclaimers). The eight "Needs human judgment" items are surfaced as comments / cross-references rather than silent decisions.
+
 ---
 
 ## 1. Summary

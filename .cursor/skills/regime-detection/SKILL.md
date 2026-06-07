@@ -123,7 +123,10 @@ New state taxonomies are added by:
 4. Updating consumer scaling-factor maps (risk config, sizer config)
 
 The platform does not require exactly 3 states. Any `n_states ≥ 2`
-is valid.
+is valid. Today, `_ENGINE_REGISTRY` in `services/regime_engine.py`
+exposes two names (`hmm_3state_fractional`, `hmm_3state_spread_filter`)
+both backed by `HMM3StateFractional`; alternative `RegimeEngine`
+implementations can be added via `register_engine(name, engine_cls)`.
 
 ---
 
@@ -227,8 +230,9 @@ keys at distinct layers — don't conflate them.
 `detect()` is a pure function of two `RegimeState` events. No new
 state is introduced beyond the suppression key cache (which is itself
 deterministic given the input sequence). Replay is bit-identical
-(Inv-5; locked by L5 hazard-parity test
-`tests/determinism/test_regime_hazard_replay.py`).
+(Inv-5; locked by the L5 hazard-spike parity test
+`tests/determinism/test_regime_hazard_replay.py`, and the L6
+`RegimeState` parity test `test_regime_state_replay.py`).
 
 ### What `hazard_score` is — and is not
 

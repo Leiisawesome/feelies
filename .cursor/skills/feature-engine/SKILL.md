@@ -44,28 +44,40 @@ Inv-13 (versioned provenance). Additionally:
 
 ## Sensor Protocol (Layer 1)
 
-The `SensorProtocol` (`sensors/protocol.py`) defines the per-symbol
-incremental computation contract:
+The `Sensor` Protocol (`sensors/protocol.py`) defines the per-symbol
+incremental computation contract. State is **owned by the registry**
+and threaded through `update()` — sensor implementations hold no
+mutable per-symbol state themselves:
 
 ```python
-class SensorProtocol(Protocol):
-    @property
-    def sensor_id(self) -> str: ...
-    @property
-    def sensor_version(self) -> str: ...
-    def update(self, event: NBBOQuote | Trade) -> SensorReading | None: ...
-    def is_warm(self, symbol: str) -> bool: ...
-    def reset(self, symbol: str) -> None: ...
+@runtime_checkable
+class Sensor(Protocol):
+    sensor_id: str
+    sensor_version: str
+
+    def initial_state(self) -> dict[str, Any]: ...
+    def update(
+        self,
+        event: NBBOQuote | Trade,
+        state: dict[str, Any],
+        params: Mapping[str, Any],
+    ) -> SensorReading | None: ...
 ```
 
-`update()` processes a single L1 event and returns a `SensorReading`
-event (with `SensorProvenance`) or `None` if the sensor abstains. The
-orchestrator dispatches this fan-out at the `SENSOR_UPDATE` micro-state
-(between M2 and M3).
+`update()` processes a single L1 event, mutates `state` in place exactly
+once, and returns a `SensorReading` event (with `SensorProvenance`) or
+`None` if the sensor abstains. The orchestrator dispatches this fan-out
+at the `SENSOR_UPDATE` micro-state (between M2 and M3). Warmness is set
+directly on the returned `SensorReading.warm` flag — there is **no**
+`is_warm()` method (per `sensors/protocol.py` docstring). The
+`SensorProvenance` attached to each emission is **pre-baked** by the
+registry from the sensor's `SensorSpec`; sensors must attach the
+provided instance verbatim and not allocate fresh provenance per call.
 
-A sensor is **stateless-by-instance** — multiple symbols share the
-class but per-symbol state is keyed inside the implementation. This
-keeps memory bounded and replay deterministic.
+A sensor is **stateless-by-instance** — module-level singletons hold
+only immutable parameters; per-symbol state lives in the registry-owned
+`state` dict and is keyed by `(sensor_id, symbol)`. This keeps memory
+bounded and replay deterministic.
 
 ### `SensorRegistry` (`sensors/registry.py`)
 
@@ -78,39 +90,65 @@ topology before any tick runs.
 class SensorSpec:
     sensor_id: str
     sensor_version: str
-    factory: Callable[..., SensorProtocol]
-    depends_on: tuple[str, ...]      # upstream sensor_ids
-    warm_up: WarmUpSpec
-    throttle_ns: int = 0             # per-symbol min inter-emission interval
+    cls: type[Any]                         # implements the Sensor Protocol
+    params: Mapping[str, Any] = ...        # forwarded to cls(**params) + each update()
+    subscribes_to: tuple[type[Event], ...] = (NBBOQuote,)
+    input_sensor_ids: tuple[str, ...] = () # upstream sensors (cross-sensor deps)
+    min_history: int = 0                   # warm-up minimum (consulted via params)
+    throttled_ms: int | None = None        # per-(sensor, symbol) min inter-emission ms
+    stateful: bool = False                 # accumulator (EWMA/Hawkes/Kyle): bypass-skip throttle
 ```
 
-The registry resolves the dependency DAG, computes a topological order,
-and rejects cycles. Layer gate **G6** enforces sensor-DAG validity at
-alpha-load time — a SIGNAL alpha cannot declare a `depends_on_sensors`
-edge that would create a cycle or reference an unregistered sensor.
+Field semantics worth highlighting:
+
+- `subscribes_to` must be a subset of `(NBBOQuote, Trade)` in Phase 2;
+  the registry uses it to populate `SensorProvenance.input_event_kinds`.
+- `input_sensor_ids` declares upstream sensors whose `SensorReading`
+  this sensor consumes (e.g. `structural_break_score` over
+  `hawkes_intensity`). The registry enforces topological registration
+  order and rejects cycles.
+- `min_history` is the warm-up minimum; sensors consult it via
+  `params` — the registry does **not** gate on it, since warmth is a
+  sensor-level concern.
+- `throttled_ms` is enforced at the registry level. Operators MUST set
+  `stateful=True` for any accumulator paired with a non-null
+  `throttled_ms`; otherwise skipped events bias the estimator (per H4/M4
+  audit). When `stateful=True`, `update()` is called on every event but
+  the resulting `SensorReading` is only *emitted* outside the throttle
+  window — separating "state advance" from "emission rate-limiting".
+
+Layer gate **G6** enforces sensor-DAG validity at alpha-load time — a
+SIGNAL alpha cannot declare a `depends_on_sensors` edge that would
+create a cycle or reference an unregistered sensor.
 
 ### Implemented Sensors (v0.3, 16 total)
 
-Implementations live under `feelies.sensors.impl`. The list below is
-the **actual module catalog** (the `sensor_id` each class exposes);
-keep it in sync with `feelies/sensors/impl/*.py`. Anchored to the
-trend-mechanism taxonomy (see microstructure-alpha):
+Implementations live under `feelies.sensors.impl`. 16 modules ship
+today (one per `sensor_id`); keep this list in sync with
+`feelies/sensors/impl/*.py`. Anchored to the trend-mechanism taxonomy
+(see microstructure-alpha):
 
-- `kyle_lambda_60s` — KYLE_INFO fingerprint
-- `inventory_pressure` — INVENTORY fingerprint (trade-side MM-inventory proxy)
-- `quote_replenish_asymmetry` — INVENTORY fingerprint (quote-side)
-- `hawkes_intensity` — HAWKES_SELF_EXCITE fingerprint
-- `liquidity_stress_score` — LIQUIDITY_STRESS fingerprint (spread×depth composite)
-- `quote_flicker_rate` — LIQUIDITY_STRESS fingerprint (best-price reversal fraction)
-- `spread_z_30d`, `quote_hazard_rate` — LIQUIDITY_STRESS (single-axis)
-- `trade_through_rate` — NBBO-aggression / HAWKES precursor
-- `scheduled_flow_window` — SCHEDULED_FLOW fingerprint
-- `ofi_ewma`, `micro_price`, `realized_vol_30s` — composite
+**Registered in the reference `platform.yaml` (13):**
 
-The following three ship under `sensors/impl/` and are fully tested
-but are **not** registered in the reference `platform.yaml`
-`sensor_specs:` (dormant until wired): `vpin_50bucket`,
-`snr_drift_diffusion`, `structural_break_score`.
+1. `kyle_lambda_60s` — KYLE_INFO fingerprint
+2. `inventory_pressure` — INVENTORY fingerprint (trade-side MM-inventory proxy)
+3. `quote_replenish_asymmetry` — INVENTORY fingerprint (quote-side)
+4. `hawkes_intensity` — HAWKES_SELF_EXCITE fingerprint
+5. `liquidity_stress_score` — LIQUIDITY_STRESS fingerprint (spread×depth composite)
+6. `quote_flicker_rate` — LIQUIDITY_STRESS fingerprint (best-price reversal fraction)
+7. `spread_z_30d` — LIQUIDITY_STRESS (single-axis)
+8. `quote_hazard_rate` — LIQUIDITY_STRESS (single-axis)
+9. `trade_through_rate` — NBBO-aggression / HAWKES precursor
+10. `scheduled_flow_window` — SCHEDULED_FLOW fingerprint
+11. `ofi_ewma` — composite
+12. `micro_price` — composite
+13. `realized_vol_30s` — composite
+
+**Implemented and tested but dormant in the reference `platform.yaml` (3):**
+
+14. `vpin_50bucket` (flow toxicity)
+15. `snr_drift_diffusion`
+16. `structural_break_score`
 
 > `inventory_pressure`, `liquidity_stress_score`, and
 > `quote_flicker_rate` were specified-but-missing in earlier drafts and
@@ -288,16 +326,23 @@ symbol):
 | `HorizonAggregator` snapshot emission | 200 μs | 1 ms |
 | Per-symbol memory footprint | < 1 MB | configurable |
 
-The Phase-4 perf gate is `≤ 12 %` end-to-end throughput regression vs
-the v0.2 baseline; the Phase-4.1 gate is `≤ 5 %` decay-weighting
-overhead. Per-host pinned baselines live in
-`tests/perf/baselines/v02_baseline.json` (opt-in via `PERF_HOST_LABEL`).
+The Paper-RTH perf gate is `≤ 12 %` end-to-end throughput regression
+vs the v0.2 baseline (enforced by
+`tests/perf/test_paper_rth_no_regression.py`); the Phase-4.1 gate is
+`≤ 5 %` decay-weighting overhead, plumbed via
+`tests/perf/_pinned_baseline.py` and the
+`tests/acceptance/test_perf_baseline_plumbing.py` smoke. Per-host
+pinned baselines live in `tests/perf/baselines/v02_baseline.json`
+(opt-in via `PERF_HOST_LABEL`).
 
 ## Reproducibility
 
 Same `(sensor_id, sensor_version)` set + same event log → bit-identical
 `SensorReading` and `HorizonFeatureSnapshot` streams. Locked by the
-Level-1 sensor parity test (`tests/determinism/test_sensor_replay.py`).
+Level-1 sensor parity tests
+(`tests/determinism/test_sensor_reading_replay.py` and
+`tests/determinism/test_v03_sensor_replay.py`), plus the Level-3
+snapshot parity (`test_horizon_feature_snapshot_replay.py`).
 
 ### Snapshot Persistence
 
