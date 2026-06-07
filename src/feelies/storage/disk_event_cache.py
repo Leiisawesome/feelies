@@ -35,6 +35,11 @@ _TYPE_TRADE = "Trade"
 _CACHE_SEMANTIC_VERSION = "2"
 
 
+def _sha256_prefixed(data: bytes) -> str:
+    """Return the ``sha256:<hex>`` checksum string used across the cache."""
+    return f"sha256:{hashlib.sha256(data).hexdigest()}"
+
+
 def _compute_schema_hash() -> str:
     """SHA-256 of sorted field names + types from NBBOQuote and Trade.
 
@@ -46,7 +51,7 @@ def _compute_schema_hash() -> str:
         for name, f in sorted(cls.__dataclass_fields__.items()):
             parts.append(f"{cls.__name__}.{name}:{f.type}")
     raw = "\n".join(parts)
-    return f"sha256:{hashlib.sha256(raw.encode()).hexdigest()}"
+    return _sha256_prefixed(raw.encode())
 
 
 def _event_to_dict(event: NBBOQuote | Trade) -> dict[str, Any]:
@@ -126,20 +131,10 @@ class DiskEventCache:
         Returns False if data file or manifest is missing, or if the
         schema hash doesn't match current event definitions.
         """
-        data_path = self._data_path(symbol, date)
-        manifest_path = self._manifest_path(symbol, date)
-
-        if not data_path.exists() or not manifest_path.exists():
+        if not self._data_path(symbol, date).exists():
             return False
-
-        try:
-            manifest: dict[str, Any] = json.loads(
-                manifest_path.read_text(encoding="utf-8"),
-            )
-        except Exception:
-            return False
-
-        return bool(manifest.get("event_schema_hash") == self._schema_hash)
+        manifest = self.read_manifest(symbol, date)
+        return manifest is not None and manifest.get("event_schema_hash") == self._schema_hash
 
     def load(self, symbol: str, date: str) -> list[NBBOQuote | Trade] | None:
         """Load cached events for a (symbol, date) pair.
@@ -168,7 +163,7 @@ class DiskEventCache:
             logger.warning("disk_cache: unreadable data file for %s/%s", symbol, date)
             return None
 
-        actual_checksum = f"sha256:{hashlib.sha256(raw_bytes).hexdigest()}"
+        actual_checksum = _sha256_prefixed(raw_bytes)
         if actual_checksum != expected_checksum:
             logger.warning(
                 "disk_cache: checksum mismatch for %s/%s (expected %s, got %s)",
@@ -242,7 +237,7 @@ class DiskEventCache:
         data_tmp.write_bytes(compressed)
         os.replace(str(data_tmp), str(data_path))
 
-        checksum = f"sha256:{hashlib.sha256(compressed).hexdigest()}"
+        checksum = _sha256_prefixed(compressed)
 
         manifest: dict[str, Any] = {
             "symbol": symbol,

@@ -27,7 +27,7 @@ zero overhead and downstream Layer-4 parity hashes stay bit-stable.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Mapping
 
 from feelies.bus.event_bus import EventBus
@@ -138,9 +138,7 @@ class CompositionEngine:
                 "skipping bus subscription (legacy fast-path preserved)"
             )
             return
-        self._bus.subscribe(
-            CrossSectionalContext, self._on_context,  # type: ignore[arg-type]
-        )
+        self._bus.subscribe(CrossSectionalContext, self._on_context)
         self._attached = True
 
     # ── Bus handler ──────────────────────────────────────────────────
@@ -216,8 +214,7 @@ class CompositionEngine:
                         disclosed[symbol] = cand.disclosed_cost_total_bps
                         break
 
-        from dataclasses import replace as _replace
-        publishable = _replace(
+        publishable = replace(
             intent,
             timestamp_ns=ctx.timestamp_ns,
             sequence=self._intent_seq.next(),

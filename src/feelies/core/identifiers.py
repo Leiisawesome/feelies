@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import threading
 
 
@@ -12,6 +13,16 @@ def make_correlation_id(symbol: str, exchange_timestamp_ns: int, sequence: int) 
     Links a quote update through the entire pipeline to the trade it caused.
     """
     return f"{symbol}:{exchange_timestamp_ns}:{sequence}"
+
+
+def derive_order_id(seed: str) -> str:
+    """Deterministic 16-hex-char order_id from a provenance ``seed`` string.
+
+    The seed is the order's full provenance key (correlation_id, sequence,
+    symbol, reason, etc.); identical seeds always produce identical IDs so
+    replay is bit-identical (Inv-5).  Callers own the seed format.
+    """
+    return hashlib.sha256(seed.encode()).hexdigest()[:16]
 
 
 class SequenceGenerator:

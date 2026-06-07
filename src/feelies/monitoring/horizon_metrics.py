@@ -118,18 +118,10 @@ class HorizonMetricsCollector:
     def attach(self) -> None:
         if self._attached:
             return
-        self._bus.subscribe(
-            CrossSectionalContext, self._on_context,  # type: ignore[arg-type]
-        )
-        self._bus.subscribe(
-            SizedPositionIntent, self._on_intent,  # type: ignore[arg-type]
-        )
-        self._bus.subscribe(
-            RegimeHazardSpike, self._on_hazard_spike,  # type: ignore[arg-type]
-        )
-        self._bus.subscribe(
-            OrderRequest, self._on_order,  # type: ignore[arg-type]
-        )
+        self._bus.subscribe(CrossSectionalContext, self._on_context)
+        self._bus.subscribe(SizedPositionIntent, self._on_intent)
+        self._bus.subscribe(RegimeHazardSpike, self._on_hazard_spike)
+        self._bus.subscribe(OrderRequest, self._on_order)
         self._attached = True
 
     # ── Bus handlers ─────────────────────────────────────────────────

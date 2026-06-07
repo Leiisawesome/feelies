@@ -16,10 +16,9 @@ Invariants preserved:
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from dataclasses import dataclass, field
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 
 _logger = logging.getLogger(__name__)
 
@@ -28,7 +27,6 @@ from feelies.core.events import (
     Alert,
     AlertSeverity,
     OrderRequest,
-    OrderType,
     RiskAction,
     RiskVerdict,
     Side,
@@ -37,6 +35,7 @@ from feelies.core.events import (
     SizedPositionIntent,
 )
 from feelies.core.identifiers import SequenceGenerator
+from feelies.risk.sized_intent_orders import build_sized_intent_orders, resolve_mark
 from feelies.execution.regulatory.pdt_constraint import PDTConstraint
 from feelies.portfolio.position_store import PositionStore
 from feelies.execution.trading_session import (
@@ -328,95 +327,12 @@ class BasicRiskEngine:
         (within one cent) produce no order — the leg is a no-op and is
         NOT counted as a veto-dropped leg.
         """
-        if not intent.target_positions:
-            return SizedIntentRiskResult(orders=())
-
-        orders: list[OrderRequest] = []
-        dropped: list[tuple[str, str]] = []
-        for symbol in sorted(intent.target_positions):
-            tgt = intent.target_positions[symbol]
-            current = positions.get(symbol)
-            mark = self._mark_for(symbol, current, positions)
-            if mark <= 0:
-                continue
-
-            target_shares = int(
-                (Decimal(str(tgt.target_usd)) / mark).to_integral_value(
-                    rounding=ROUND_HALF_UP,
-                )
-            )
-            delta_shares = target_shares - current.quantity
-            if delta_shares == 0:
-                continue
-
-            side = Side.BUY if delta_shares > 0 else Side.SELL
-            quantity = abs(delta_shares)
-
-            order_id = hashlib.sha256(
-                f"{intent.correlation_id}:{intent.sequence}:{symbol}".encode()
-            ).hexdigest()[:16]
-
-            disclosed_cost = intent.disclosed_cost_total_bps_by_symbol.get(
-                symbol, 0.0,
-            )
-            order = OrderRequest(
-                timestamp_ns=intent.timestamp_ns,
-                correlation_id=intent.correlation_id,
-                sequence=intent.sequence,
-                source_layer="PORTFOLIO",
-                order_id=order_id,
-                symbol=symbol,
-                side=side,
-                order_type=OrderType.MARKET,
-                quantity=quantity,
-                strategy_id=intent.strategy_id,
-                reason="PORTFOLIO",
-                g12_disclosed_cost_total_bps=disclosed_cost,
-            )
-
-            verdict = self.check_order(order, positions)
-            if verdict.action == RiskAction.FORCE_FLATTEN:
-                return SizedIntentRiskResult(
-                    orders=(),
-                    requires_global_risk_escalation=True,
-                )
-            if verdict.action == RiskAction.REJECT:
-                dropped.append((symbol, verdict.reason))
-                continue
-            if verdict.action == RiskAction.SCALE_DOWN:
-                scaled_qty = max(
-                    1,
-                    int(
-                        (
-                            Decimal(quantity)
-                            * Decimal(str(verdict.scaling_factor))
-                        ).to_integral_value(rounding=ROUND_HALF_UP),
-                    ),
-                )
-                if scaled_qty == quantity:
-                    pass
-                else:
-                    order = OrderRequest(
-                        timestamp_ns=intent.timestamp_ns,
-                        correlation_id=intent.correlation_id,
-                        sequence=intent.sequence,
-                        source_layer="PORTFOLIO",
-                        order_id=order_id,
-                        symbol=symbol,
-                        side=side,
-                        order_type=OrderType.MARKET,
-                        quantity=scaled_qty,
-                        strategy_id=intent.strategy_id,
-                        reason="PORTFOLIO",
-                        g12_disclosed_cost_total_bps=disclosed_cost,
-                    )
-
-            orders.append(order)
-
-        if dropped:
-            self._emit_dropped_legs_alert(intent, dropped)
-
-        return SizedIntentRiskResult(orders=tuple(orders))
+        return build_sized_intent_orders(
+            intent,
+            positions,
+            check_order=self.check_order,
+            on_dropped_legs=self._emit_dropped_legs_alert,
+        )
 
     def _emit_dropped_legs_alert(
         self,
@@ -686,7 +602,7 @@ class BasicRiskEngine:
         new entry leg must still count against the gross cap.
         """
         exposure = positions.total_exposure()
-        mark = self._mark_for(order.symbol, current, positions)
+        mark = resolve_mark(order.symbol, current, positions)
         if mark <= 0 and order.limit_price is not None and order.limit_price > 0:
             mark = order.limit_price
         if mark <= 0:
@@ -698,45 +614,6 @@ class BasicRiskEngine:
         current_contrib = abs(current_qty) * mark
         post_fill_contrib = abs(current_qty + signed_qty) * mark
         return exposure - current_contrib + post_fill_contrib
-
-    @staticmethod
-    def _mark_for(
-        symbol: str,
-        current: object,
-        positions: PositionStore,
-    ) -> Decimal:
-        """Return the best-available mark price for translating USD → shares.
-
-        Prefers the latest live mark when recorded; otherwise falls back
-        to ``avg_entry_price`` for the boot-time case before any quote has
-        flowed through.  Returns ``0`` when the position has never been
-        marked AND has zero average entry — the caller must treat zero as
-        "skip this leg" (Inv-11 fail-safe).
-        """
-        # Try to read a live mark via the optional accessor introduced
-        # in Phase 4-finalize; for already-open positions this must take
-        # priority over cost basis so USD targets track current notional.
-        latest = getattr(positions, "latest_mark", None)
-        if callable(latest):
-            try:
-                m = latest(symbol)
-                if isinstance(m, Decimal) and m > 0:
-                    return m
-            except Exception as exc:  # pragma: no cover - defensive
-                # Inv-11 fail-safe: fall back to cost basis rather than
-                # raising into the risk path.  But the swallow itself is
-                # a degraded mode (live-mark feed bug) — surface it via
-                # WARNING so the operator can see the slippage drift in
-                # promotion-window forensics.
-                _logger.warning(
-                    "_mark_for(%s): latest_mark accessor raised %s; "
-                    "falling back to avg_entry_price",
-                    symbol, exc,
-                )
-        avg = getattr(current, "avg_entry_price", Decimal("0"))
-        if isinstance(avg, Decimal) and avg > 0:
-            return avg
-        return Decimal("0")
 
     def _check_exposure_and_drawdown(
         self,

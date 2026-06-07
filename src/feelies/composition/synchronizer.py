@@ -110,6 +110,7 @@ class UniverseSynchronizer:
     __slots__ = (
         "_bus",
         "_universe_sorted",
+        "_universe_frozenset",
         "_context_horizons",
         "_signal_horizons",
         "_signal_horizons_sorted",
@@ -133,6 +134,7 @@ class UniverseSynchronizer:
     ) -> None:
         self._bus = bus
         self._universe_sorted: tuple[str, ...] = tuple(sorted(set(universe)))
+        self._universe_frozenset: frozenset[str] = frozenset(self._universe_sorted)
         self._context_horizons: frozenset[int] = frozenset(horizons)
         self._signal_horizons: frozenset[int] = (
             frozenset(signal_horizons)
@@ -193,11 +195,9 @@ class UniverseSynchronizer:
                 "horizons; skipping bus subscription"
             )
             return
-        self._bus.subscribe(
-            HorizonFeatureSnapshot, self._on_snapshot,  # type: ignore[arg-type]
-        )
-        self._bus.subscribe(Signal, self._on_signal)  # type: ignore[arg-type]
-        self._bus.subscribe(HorizonTick, self._on_tick)  # type: ignore[arg-type]
+        self._bus.subscribe(HorizonFeatureSnapshot, self._on_snapshot)
+        self._bus.subscribe(Signal, self._on_signal)
+        self._bus.subscribe(HorizonTick, self._on_tick)
         self._attached = True
 
     # ── Bus handlers ─────────────────────────────────────────────────
@@ -205,7 +205,7 @@ class UniverseSynchronizer:
     def _on_snapshot(self, snap: HorizonFeatureSnapshot) -> None:
         if snap.horizon_seconds not in self._context_horizons:
             return
-        if snap.symbol not in set(self._universe_sorted):
+        if snap.symbol not in self._universe_frozenset:
             return
         key = (snap.horizon_seconds, snap.symbol)
         prev = self._snapshot_cache.get(key)
@@ -221,7 +221,7 @@ class UniverseSynchronizer:
             return
         if sig.horizon_seconds not in self._signal_horizons:
             return
-        if sig.symbol not in set(self._universe_sorted):
+        if sig.symbol not in self._universe_frozenset:
             return
         key = (sig.horizon_seconds, sig.symbol, sig.strategy_id)
         prev = self._signal_cache.get(key)
@@ -312,6 +312,16 @@ class UniverseSynchronizer:
         signals: dict[str, Signal | None] = {}
         non_none = 0
 
+        # Hoisted out of the per-symbol loop below: the cache sort is
+        # independent of ``symbol`` so computing it once is O(S log S)
+        # instead of O(U x S log S).  Same key order, same break-on-first
+        # selection, so the emitted context is bit-identical (Inv-5).
+        sorted_signal_cache = (
+            sorted(self._signal_cache.items())
+            if not self._upstream_strategy_ids
+            else []
+        )
+
         for symbol in self._universe_sorted:
             snap = snapshots[symbol]
 
@@ -329,7 +339,7 @@ class UniverseSynchronizer:
                 continue
 
             chosen = None
-            for (kh, ksym, _strategy_id), s in sorted(self._signal_cache.items()):
+            for (kh, ksym, _strategy_id), s in sorted_signal_cache:
                 if kh != h or ksym != symbol:
                     continue
                 if snap is not None and s.timestamp_ns < snap.timestamp_ns:

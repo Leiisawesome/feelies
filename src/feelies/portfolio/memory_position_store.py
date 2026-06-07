@@ -34,11 +34,6 @@ class MemoryPositionStore:
         # episode (flat→non-zero or direct sign flip); cleared when
         # ``new_qty == 0`` so the next reopen records a fresh timestamp.
         self._opened_at_ns: dict[str, int] = {}
-        # Most-recent fill timestamp per symbol — used to seed the
-        # "opened" timestamp on flat→non-zero transitions.  Updated on
-        # every ``update`` call, so callers passing ``timestamp_ns`` get
-        # deterministic behaviour across replay.
-        self._last_update_ns: dict[str, int] = {}
 
     def get(self, symbol: str) -> Position:
         pos = self._positions.get(symbol)
@@ -67,7 +62,6 @@ class MemoryPositionStore:
         # ``timestamp_ns`` — legacy callers that omit it see no
         # behavioural change.
         if timestamp_ns is not None:
-            self._last_update_ns[symbol] = int(timestamp_ns)
             if new_qty == 0:
                 self._opened_at_ns.pop(symbol, None)
             elif old_qty == 0 or not _same_sign(old_qty, new_qty):

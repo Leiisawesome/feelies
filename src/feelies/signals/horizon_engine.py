@@ -256,11 +256,9 @@ class HorizonSignalEngine:
                 "skipping bus subscription (legacy fast-path preserved)"
             )
             return
-        self._bus.subscribe(RegimeState, self._on_regime_state)  # type: ignore[arg-type]
-        self._bus.subscribe(SensorReading, self._on_sensor_reading)  # type: ignore[arg-type]
-        self._bus.subscribe(
-            HorizonFeatureSnapshot, self._on_snapshot,  # type: ignore[arg-type]
-        )
+        self._bus.subscribe(RegimeState, self._on_regime_state)
+        self._bus.subscribe(SensorReading, self._on_sensor_reading)
+        self._bus.subscribe(HorizonFeatureSnapshot, self._on_snapshot)
         self._attached = True
 
     # ── Bus handlers ─────────────────────────────────────────────────

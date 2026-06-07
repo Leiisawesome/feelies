@@ -26,7 +26,7 @@ config; the lazy path exists only to keep the demo ergonomic.
 from __future__ import annotations
 
 import logging
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Literal
 
 from feelies.core.events import Event, HorizonTick, MetricEvent, MetricType
 from feelies.core.identifiers import SequenceGenerator, make_correlation_id
@@ -294,7 +294,7 @@ class HorizonScheduler:
         horizon: int,
         boundary_index: int,
         ts_ns: int,
-        scope: str,
+        scope: Literal["SYMBOL", "UNIVERSE"],
         symbol: str | None,
     ) -> HorizonTick:
         seq = self._sequence_generator.next()
@@ -324,7 +324,7 @@ class HorizonScheduler:
             horizon_seconds=horizon,
             boundary_index=boundary_index,
             session_id=self._session_id,
-            scope=scope,  # type: ignore[arg-type]
+            scope=scope,
             symbol=symbol,
         )
         if self._metric_collector is not None:

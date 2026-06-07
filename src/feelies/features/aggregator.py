@@ -326,8 +326,8 @@ class HorizonAggregator:
         """
         if self._subscribed:
             return
-        self._bus.subscribe(SensorReading, self._on_sensor_reading)  # type: ignore[arg-type]
-        self._bus.subscribe(HorizonTick, self._on_horizon_tick)  # type: ignore[arg-type]
+        self._bus.subscribe(SensorReading, self._on_sensor_reading)
+        self._bus.subscribe(HorizonTick, self._on_horizon_tick)
         self._subscribed = True
 
     # ── Public entry points (also used directly by tests) ────────────

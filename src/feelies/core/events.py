@@ -659,8 +659,8 @@ class SizedPositionIntent(Event):
     """Layer-3 portfolio-alpha output (§5.7), consumed by the risk engine.
 
     Replaces the per-symbol ``OrderRequest`` upstream path for portfolio
-    alphas.  LEGACY_SIGNAL alphas continue to emit ``OrderRequest``
-    directly; the risk engine handles both paths.
+    alphas.  Standalone SIGNAL alphas still reach the risk engine via the
+    per-symbol ``OrderRequest`` bus path; the risk engine handles both.
 
     ``mechanism_breakdown`` (v0.3 §20.3.3) reports the gross-exposure
     share of each consumed ``TrendMechanism`` family.  Defaults to ``{}``

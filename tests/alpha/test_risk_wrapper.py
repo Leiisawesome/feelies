@@ -365,3 +365,39 @@ class TestCheckSizedIntent:
         empty = wrapper.check_sized_intent(intent, MemoryPositionStore())
         assert empty.orders == ()
         assert empty.requires_global_risk_escalation is False
+
+    def test_share_rounding_matches_base_engine_on_half_share(self) -> None:
+        """Wrapper and base engine must agree on the canonical share count.
+
+        A target of $375 at a $150 mark is exactly 2.5 shares — the one
+        place the wrapper's historical ``round(float(...))`` (round-half-to-
+        even -> 2) diverged from the base engine's Decimal ``ROUND_HALF_UP``
+        (-> 3).  Both paths now share ``build_sized_intent_orders`` so they
+        round identically; this locks that the consolidation also fixed the
+        divergence rather than merely preserving it.
+        """
+        alpha = _make_alpha(
+            max_position=1000, max_exposure_pct=100.0, capital_pct=100.0,
+        )
+        wrapper = _build_wrapper(alpha)
+        intent = self._make_intent(
+            strategy_id="test_alpha",
+            targets={"AAPL": 375.0},  # 375 / 150 = 2.5 shares
+        )
+
+        wrapper_store = MemoryPositionStore()
+        wrapper_store.update_mark("AAPL", Decimal("150"))
+        wrapper_orders = wrapper.check_sized_intent(intent, wrapper_store).orders
+
+        base_store = MemoryPositionStore()
+        base_store.update_mark("AAPL", Decimal("150"))
+        base = BasicRiskEngine(
+            RiskConfig(max_position_per_symbol=1000, account_equity=Decimal("100000"))
+        )
+        base_orders = base.check_sized_intent(intent, base_store).orders
+
+        assert len(wrapper_orders) == 1
+        assert wrapper_orders[0].quantity == 3  # ROUND_HALF_UP, not 2
+        assert [(o.symbol, o.side, o.quantity) for o in wrapper_orders] == [
+            (o.symbol, o.side, o.quantity) for o in base_orders
+        ]

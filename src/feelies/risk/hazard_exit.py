@@ -48,7 +48,6 @@ universe with mixed-policy alphas behaves correctly.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from dataclasses import dataclass
 from typing import Mapping
@@ -61,7 +60,7 @@ from feelies.core.events import (
     Side,
     Trade,
 )
-from feelies.core.identifiers import SequenceGenerator
+from feelies.core.identifiers import SequenceGenerator, derive_order_id
 from feelies.portfolio.position_store import PositionStore
 
 _logger = logging.getLogger(__name__)
@@ -137,10 +136,8 @@ class HazardExitController:
                 "skipping bus subscription"
             )
             return
-        self._bus.subscribe(
-            RegimeHazardSpike, self._on_spike,  # type: ignore[arg-type]
-        )
-        self._bus.subscribe(Trade, self._on_trade)  # type: ignore[arg-type]
+        self._bus.subscribe(RegimeHazardSpike, self._on_spike)
+        self._bus.subscribe(Trade, self._on_trade)
         self._attached = True
 
     # ── Bus handlers ─────────────────────────────────────────────────
@@ -222,9 +219,9 @@ class HazardExitController:
         side = Side.SELL if position.quantity > 0 else Side.BUY
         quantity = abs(position.quantity)
 
-        order_id = hashlib.sha256(
-            f"{correlation_id}:{trigger_ts_ns}:{symbol}:{reason}".encode()
-        ).hexdigest()[:16]
+        order_id = derive_order_id(
+            f"{correlation_id}:{trigger_ts_ns}:{symbol}:{reason}"
+        )
 
         order = OrderRequest(
             timestamp_ns=trigger_ts_ns,

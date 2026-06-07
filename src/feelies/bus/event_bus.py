@@ -13,11 +13,13 @@ spine for observability.
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Callable
+from typing import Callable, TypeVar
 
 from feelies.core.events import Event
 
 EventHandler = Callable[[Event], None]
+
+E = TypeVar("E", bound=Event)
 
 
 class EventBus:
@@ -36,11 +38,19 @@ class EventBus:
 
     def subscribe(
         self,
-        event_type: type[Event],
-        handler: EventHandler,
+        event_type: type[E],
+        handler: Callable[[E], object],
     ) -> None:
-        """Register a handler for a specific event type."""
-        self._handlers[event_type].append(handler)
+        """Register a handler for a specific event type.
+
+        Generic in the event subtype so a handler typed for the concrete
+        event (e.g. ``Callable[[HorizonTick], None]``) type-checks at the
+        call site without a cast.  Return values are accepted (and ignored)
+        since :meth:`publish` discards them.  The internal store is keyed on
+        the ``Event`` base, so the append is widened with a single ignore
+        here rather than at every subscriber.
+        """
+        self._handlers[event_type].append(handler)  # type: ignore[arg-type]
 
     def subscribe_all(self, handler: EventHandler) -> None:
         """Register a handler that receives every event (logging, metrics)."""

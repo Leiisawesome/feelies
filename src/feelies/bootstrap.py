@@ -473,7 +473,7 @@ def build_platform(
     backtest_router = bundle.backtest_router
 
     if backtest_router is not None:
-        bus.subscribe(NBBOQuote, lambda e: backtest_router.on_quote(e))  # type: ignore[arg-type]
+        bus.subscribe(NBBOQuote, lambda e: backtest_router.on_quote(e))
 
     # ── Phase-2 sensor layer (additive, optional) ─────────────────
     # Constructed *after* the backtest-router subscription so resting

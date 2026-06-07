@@ -90,7 +90,7 @@ from feelies.core.events import (
     SymbolHalted,
     Trade,
 )
-from feelies.core.identifiers import SequenceGenerator
+from feelies.core.identifiers import SequenceGenerator, derive_order_id
 from feelies.core.state_machine import StateMachine, TransitionRecord
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.cost_model import estimate_round_trip_cost_bps
@@ -3051,9 +3051,9 @@ class Orchestrator:
             side = Side.SELL if pos.quantity > 0 else Side.BUY
             qty = abs(pos.quantity)
             seq = self._seq.next()
-            order_id = hashlib.sha256(
-                f"emergency_flatten:{correlation_id}:{symbol}:{seq}".encode()
-            ).hexdigest()[:16]
+            order_id = derive_order_id(
+                f"emergency_flatten:{correlation_id}:{symbol}:{seq}"
+            )
 
             order = OrderRequest(
                 timestamp_ns=self._clock.now_ns(),
@@ -3281,9 +3281,7 @@ class Orchestrator:
         # ── EXIT leg: aggressive MARKET close ──────────────────────
         exit_side = Side.SELL if intent.current_quantity > 0 else Side.BUY
         seq_exit = self._seq.next()
-        exit_order_id = hashlib.sha256(
-            f"{cid}:{seq_exit}:exit".encode()
-        ).hexdigest()[:16]
+        exit_order_id = derive_order_id(f"{cid}:{seq_exit}:exit")
 
         exit_order = OrderRequest(
             timestamp_ns=self._clock.now_ns(),
@@ -3447,9 +3445,7 @@ class Orchestrator:
 
             if entry_passes_edge_gate:
                 seq_entry = self._seq.next()
-                entry_order_id = hashlib.sha256(
-                    f"{cid}:{seq_entry}:entry".encode()
-                ).hexdigest()[:16]
+                entry_order_id = derive_order_id(f"{cid}:{seq_entry}:entry")
 
                 order_type = OrderType.MARKET
                 limit_price: Decimal | None = None
@@ -3654,9 +3650,7 @@ class Orchestrator:
         """Like :meth:`_build_order_from_intent` but returns a failure token."""
         side = self._side_from_intent(intent)
         seq = self._seq.next()
-        order_id = hashlib.sha256(
-            f"{correlation_id}:{seq}".encode()
-        ).hexdigest()[:16]
+        order_id = derive_order_id(f"{correlation_id}:{seq}")
 
         quantity = round(intent.target_quantity * verdict.scaling_factor)
         if quantity <= 0:
@@ -5198,9 +5192,9 @@ class Orchestrator:
         side = Side.SELL if pos.quantity > 0 else Side.BUY
         qty = abs(pos.quantity)
         seq = self._seq.next()
-        order_id = hashlib.sha256(
-            f"degrade_flatten:{reason}:{symbol}:{seq}".encode()
-        ).hexdigest()[:16]
+        order_id = derive_order_id(
+            f"degrade_flatten:{reason}:{symbol}:{seq}"
+        )
         order = OrderRequest(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=correlation_id,

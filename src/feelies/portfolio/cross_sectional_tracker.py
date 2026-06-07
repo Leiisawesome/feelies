@@ -100,12 +100,8 @@ class CrossSectionalTracker:
     def attach(self) -> None:
         if self._attached:
             return
-        self._bus.subscribe(
-            CrossSectionalContext, self._on_context,  # type: ignore[arg-type]
-        )
-        self._bus.subscribe(
-            SizedPositionIntent, self._on_intent,  # type: ignore[arg-type]
-        )
+        self._bus.subscribe(CrossSectionalContext, self._on_context)
+        self._bus.subscribe(SizedPositionIntent, self._on_intent)
         self._attached = True
 
     def snapshot(self, strategy_id: str) -> CrossSectionalSnapshot | None:

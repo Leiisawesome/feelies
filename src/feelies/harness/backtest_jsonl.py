@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Mapping
 from decimal import Decimal
 
 from feelies.core.events import (
@@ -34,6 +35,11 @@ __all__ = [
 ]
 
 
+def _emit_jsonl_line(prefix: str, line: Mapping[str, object]) -> None:
+    """Print one deterministic ``<PREFIX> {json}`` parity-stream line."""
+    print(f"{prefix} " + json.dumps(line, sort_keys=True), flush=True)
+
+
 def emit_fills_jsonl(recorder: BusEventRecorder) -> None:
     """Print one JSON line per FILLED OrderAck in arrival order."""
     acks = recorder.of_type(OrderAck)
@@ -50,7 +56,7 @@ def emit_fills_jsonl(recorder: BusEventRecorder) -> None:
                 else str(Decimal(str(a.fill_price)))
             ),
         }
-        print("FILL_JSONL " + json.dumps(line, sort_keys=True), flush=True)
+        _emit_jsonl_line("FILL_JSONL", line)
 
 
 def emit_sensor_readings_jsonl(recorder: BusEventRecorder) -> None:
@@ -68,7 +74,7 @@ def emit_sensor_readings_jsonl(recorder: BusEventRecorder) -> None:
             "value": value,
             "warm": bool(r.warm),
         }
-        print("SENSOR_JSONL " + json.dumps(line, sort_keys=True), flush=True)
+        _emit_jsonl_line("SENSOR_JSONL", line)
 
 
 def emit_horizon_ticks_jsonl(recorder: BusEventRecorder) -> None:
@@ -81,7 +87,7 @@ def emit_horizon_ticks_jsonl(recorder: BusEventRecorder) -> None:
             "symbol": t.symbol,
             "session_id": t.session_id,
         }
-        print("HTICK_JSONL " + json.dumps(line, sort_keys=True), flush=True)
+        _emit_jsonl_line("HTICK_JSONL", line)
 
 
 def emit_snapshots_jsonl(recorder: BusEventRecorder) -> None:
@@ -95,7 +101,7 @@ def emit_snapshots_jsonl(recorder: BusEventRecorder) -> None:
             "warm": {k: bool(v) for k, v in s.warm.items()},
             "stale": {k: bool(v) for k, v in s.stale.items()},
         }
-        print("SNAP_JSONL " + json.dumps(line, sort_keys=True), flush=True)
+        _emit_jsonl_line("SNAP_JSONL", line)
 
 
 def emit_signals_jsonl(recorder: BusEventRecorder) -> None:
@@ -119,7 +125,7 @@ def emit_signals_jsonl(recorder: BusEventRecorder) -> None:
             ),
             "expected_half_life_seconds": int(s.expected_half_life_seconds),
         }
-        print("SIGNAL_JSONL " + json.dumps(line, sort_keys=True), flush=True)
+        _emit_jsonl_line("SIGNAL_JSONL", line)
 
 
 def emit_hazard_spikes_jsonl(recorder: BusEventRecorder) -> None:
@@ -136,7 +142,7 @@ def emit_hazard_spikes_jsonl(recorder: BusEventRecorder) -> None:
             "timestamp_ns": s.timestamp_ns,
             "correlation_id": s.correlation_id,
         }
-        print("HAZARD_JSONL " + json.dumps(line, sort_keys=True), flush=True)
+        _emit_jsonl_line("HAZARD_JSONL", line)
 
 
 def emit_cross_sectional_jsonl(recorder: BusEventRecorder) -> None:
@@ -150,7 +156,7 @@ def emit_cross_sectional_jsonl(recorder: BusEventRecorder) -> None:
             "completeness": float(c.completeness),
             "correlation_id": c.correlation_id,
         }
-        print("XSECT_JSONL " + json.dumps(line, sort_keys=True), flush=True)
+        _emit_jsonl_line("XSECT_JSONL", line)
 
 
 def emit_sized_intents_jsonl(recorder: BusEventRecorder) -> None:
@@ -184,7 +190,7 @@ def emit_sized_intents_jsonl(recorder: BusEventRecorder) -> None:
             "mechanism_breakdown": mech_breakdown,
             "correlation_id": it.correlation_id,
         }
-        print("INTENT_JSONL " + json.dumps(line, sort_keys=True), flush=True)
+        _emit_jsonl_line("INTENT_JSONL", line)
 
 
 def emit_hazard_exits_jsonl(recorder: BusEventRecorder) -> None:
@@ -203,10 +209,7 @@ def emit_hazard_exits_jsonl(recorder: BusEventRecorder) -> None:
             "reason": reason,
             "correlation_id": o.correlation_id,
         }
-        print(
-            "HAZARD_EXIT_JSONL " + json.dumps(line, sort_keys=True),
-            flush=True,
-        )
+        _emit_jsonl_line("HAZARD_EXIT_JSONL", line)
 
 
 def emit_phase2_jsonl(args: argparse.Namespace, recorder: BusEventRecorder) -> None:
