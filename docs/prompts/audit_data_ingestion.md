@@ -37,7 +37,6 @@ file/line citations, severity, and prioritized recommendations.
 3. Read `.cursor/rules/platform-invariants.mdc` — especially Inv-5 (deterministic
    replay), Inv-6 (causality), Inv-9 (backtest/live parity), Inv-10 (clock
    abstraction), Inv-11 (fail-safe), Inv-13 (provenance).
-4. Prior audit format reference: `docs/audits/sensor_horizon_feature_audit_2026-06-02.md`.
 
 ### Repository facts
 
@@ -211,8 +210,8 @@ file/line citations, severity, and prioritized recommendations.
 
 ## Deliverable
 
-Write **`docs/audits/data_ingestion_replay_audit_YYYY-MM-DD.md`** matching the repo
-audit template.
+Write the audit report to **`docs/audits/data_ingestion_audit_YYYY-MM-DD.md`** using
+the section structure below.
 
 ### Required sections
 

@@ -96,7 +96,7 @@ M6  risk: check_order + HazardExitController (hazard spikes)
 
 - `src/feelies/risk/basic_risk.py` — `_regime_scaling()` (EV over posteriors)
 - `src/feelies/risk/position_sizer.py` — `_get_regime_factor()`
-- `src/feelies/risk/hazard_exit.py` — `HazardExitController` (if present)
+- `src/feelies/risk/hazard_exit.py` — `HazardExitController`
 - `src/feelies/composition/` — any regime-aware portfolio paths
 
 ### Alpha contracts (ground truth for intended semantics)
@@ -112,7 +112,8 @@ M6  risk: check_order + HazardExitController (hazard spikes)
 - `tests/services/test_regime_hazard_engine_wiring.py`
 - `tests/signals/test_regime_gate_dsl.py`
 - `tests/signals/test_regime_gate_dsl_props.py`
-- Determinism: `tests/determinism/test_hazard_parity.py` (L5 hazard hash)
+- Determinism: `tests/determinism/test_regime_hazard_replay.py` (L5 hazard hash),
+  `tests/determinism/test_hazard_exit_replay.py`
 - Kernel: `tests/kernel/test_orchestrator.py` (M2 regime paths)
 
 ---
@@ -328,14 +329,14 @@ quality / risk / order safety.
 7. Run **read-only** checks only:
    - `uv run pytest tests/services/test_regime_engine.py tests/services/test_regime_hazard_detector.py -q`
    - `uv run pytest tests/signals/test_regime_gate_dsl.py tests/signals/test_regime_gate_dsl_props.py -q`
-   - `uv run pytest tests/determinism/test_hazard_parity.py -q`
+   - `uv run pytest tests/determinism/test_regime_hazard_replay.py tests/determinism/test_hazard_exit_replay.py -q`
    Do not modify production code.
 
 ---
 
 ## Output format (strict)
 
-Deliver a single markdown report:
+Write the audit report to `docs/audits/regime_audit_YYYY-MM-DD.md` with these sections:
 
 1. **Executive summary** (≤15 bullets): top risks to signal/risk/order path; top
    opportunities for economically meaningful regime conditioning.

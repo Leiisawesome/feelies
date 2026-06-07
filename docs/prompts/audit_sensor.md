@@ -68,9 +68,9 @@ file/line citations, severity, and prioritized recommendations.
   `test_v03_sensor_replay.py`, `test_horizon_feature_snapshot_replay.py`
 - Any horizon aggregation tests under `tests/features/`
 
-### Downstream consumers (read-only, for “does the feature help alpha?”)
+### Downstream consumers (read-only, for "does the feature help alpha?")
 
-- Example alphas’ `consumed_features` / `depends_on_sensors` in `alphas/`
+- Example alphas' `consumed_features` / `depends_on_sensors` in `alphas/`
 - `src/feelies/signals/horizon_engine.py` (how snapshots are interpreted)
 
 ---
@@ -84,7 +84,7 @@ For **each** `sensor_id` in `platform.yaml`:
 1. **Definition**
    - State the estimator in plain math (symbols, units, sign convention).
    - Cite the literature or standard market-microstructure definition used
-     (e.g. Cont–Kukanov–Stoikov OFI, Kyle λ, Hasbrouck, Easley–O’Hara VPIN,
+     (e.g. Cont–Kukanov–Stoikov OFI, Kyle λ, Hasbrouck, Easley–O'Hara VPIN,
      Hawkes self-excitation, Glosten–Milgrom spread, etc.).
    - Flag if the code implements a **different** object than the docstring claims.
 
@@ -203,7 +203,7 @@ on feature SNR / alpha usability.
 
 ## Output format (strict)
 
-Deliver a single markdown report:
+Write the audit report to `docs/audits/sensor_audit_YYYY-MM-DD.md` with these sections:
 
 1. **Executive summary** (≤15 bullets): top risks and top opportunities for
    stronger features.
@@ -216,21 +216,21 @@ Deliver a single markdown report:
 8. **Appendix:** open questions needing data runs (symbol, date, metric).
 
 Use code citations as `path:line` for every non-trivial claim.
-When citing literature, give author-year-title, not vague “standard practice.”
+When citing literature, give author-year-title, not vague "standard practice."
 
 ---
 
 ## Quality bar
 
-- Prefer **falsifiable** statements (“if X then Y breaks”) over adjectives.
+- Prefer **falsifiable** statements ("if X then Y breaks") over adjectives.
 - Distinguish **implementation bug** vs **modeling choice** vs **L1 identifiability limit**.
 - Do not recommend L2/L3 features; stay Layer-1 + aggregation unless explaining
   consumer impact.
-- Respect that the platform cannot use L2 book data—do not suggest “just add depth.”
+- Respect that the platform cannot use L2 book data—do not suggest "just add depth."
 
 ---
 
 ## Optional follow-ups (paste after the audit)
 
-- *“After the report, draft P0 fixes only for `ofi_ewma` and `HorizonAggregator` as a follow-up PR plan.”*
-- *“Use disk cache APP/2026-03-26 for sensor IC analysis methodology in §E—still no code changes.”*
+- *"After the report, draft P0 fixes only for `ofi_ewma` and `HorizonAggregator` as a follow-up PR plan."*
+- *"Use disk cache APP/2026-03-26 for sensor IC analysis methodology in §E—still no code changes."*
