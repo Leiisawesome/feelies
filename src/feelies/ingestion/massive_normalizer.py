@@ -599,7 +599,15 @@ class MassiveNormalizer:
         try:
             symbol = rec["ticker"]
             sip_ts = int(rec["sip_timestamp"])
-            self._check_exchange_ts_in_range(sip_ts)
+            # NOTE: ``_check_exchange_ts_in_range`` deliberately not invoked
+            # on REST paths.  Historical REST rows carry exchange timestamps
+            # for the requested session, which has no relationship to
+            # ``clock.now_ns()`` for either a wall clock or a wall-like
+            # ``SimulatedClock``.  Enforcing the 30-day past / 1-hour
+            # future window here would reject every legitimate backfill
+            # row outside that window.  The ms-vs-ns confusion guard
+            # (r3-INGEST-02) remains active on the WS parse paths, which
+            # is the regime where the heuristic applies.
             seq_num = int(rec.get("sequence_number", 0))
             fp = _fingerprint_rest_quote(rec)
 
@@ -665,7 +673,8 @@ class MassiveNormalizer:
         try:
             symbol = rec["ticker"]
             sip_ts = int(rec["sip_timestamp"])
-            self._check_exchange_ts_in_range(sip_ts)
+            # See ``_rest_quote`` for why ``_check_exchange_ts_in_range``
+            # is not invoked on REST paths.
             seq_num = int(rec.get("sequence_number", 0))
             fp = _fingerprint_rest_trade(rec)
 
