@@ -48,8 +48,9 @@ Order IDs are deterministic — derived from
 `hashlib.sha256(f"{correlation_id}:{seq}")`. This ensures two runs
 with the same event log and parameters produce bit-identical sensor
 readings, signals, sized intents, per-leg orders, hazard exits, and
-PnL — locked by the **five parity hashes** under `tests/determinism/`
-(see the testing-validation skill).
+PnL — locked by the **eleven parity hashes** across six levels under
+`tests/determinism/` (canonical registry:
+`tests/determinism/parity_manifest.py`; see the testing-validation skill).
 
 ---
 
@@ -66,9 +67,10 @@ timestamp. Ties broken deterministically:
 | 2 | Trades | Trades consume liquidity established by quotes |
 | 3 | Internal events (signals, orders) | Reactions to market data, never ahead of it |
 
-**Current limitation**: `scripts/run_backtest.py` concatenates events
-per `(symbol, day)` and resequences without a global timestamp sort.
-For single-symbol runs events are time-ordered; for multi-symbol runs
+**Current limitation (verified 2026-06)**: `scripts/run_backtest.py`
+concatenates events per `(symbol, day)` and resequences without a
+global timestamp sort (no `sort` call in the script body). For
+single-symbol runs events are time-ordered; for multi-symbol runs
 events are interleaved by symbol then by day, not by global exchange
 timestamp. A global `sort(key=exchange_timestamp_ns)` before
 resequencing is required for multi-symbol correctness.
@@ -413,7 +415,7 @@ should aggregate from the typed events above:
 | Microstructure Alpha (microstructure-alpha skill) | `Signal` events with `SignalDirection`, `trend_mechanism`, `expected_half_life_seconds`; research protocol |
 | Composition Layer (composition-layer skill) | `SizedPositionIntent` from PORTFOLIO alphas; mechanism-cap enforcement |
 | Regime Detection (regime-detection skill) | `RegimeState`, `RegimeHazardSpike` for hazard exits |
-| Testing & Validation (testing-validation skill) | Five locked parity hashes; per-host pinned perf baselines |
+| Testing & Validation (testing-validation skill) | Eleven locked parity hashes (L1–L6); per-host pinned perf baselines |
 
 The backtest engine is a concrete `MarketDataSource` + `OrderRouter`
 implementation composed into `ExecutionBackend`. Two router variants

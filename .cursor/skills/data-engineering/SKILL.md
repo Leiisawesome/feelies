@@ -171,12 +171,13 @@ When a `SimulatedClock` is provided, advances the clock to each event's
 ## Data Integrity State Machine
 
 Per-symbol data integrity is tracked by the `DataHealth` SM
-(`ingestion/data_integrity.py`) with **three** states:
+(`ingestion/data_integrity.py`) with **four** states:
 
 | State | Transitions To | Meaning |
 |-------|---------------|---------|
-| `HEALTHY` | GAP_DETECTED, CORRUPTED | Normal operation |
+| `HEALTHY` | GAP_DETECTED, HALTED, CORRUPTED | Normal operation |
 | `GAP_DETECTED` | HEALTHY, CORRUPTED | Sequence gap (live WS) or feed disconnect; may auto-resume to HEALTHY on contiguous sequence |
+| `HALTED` | HEALTHY, CORRUPTED | LULD / regulatory halt condition codes on the tape; unlike CORRUPTED, halts are recoverable — auto-resumes to HEALTHY when the halt-off marker arrives. Consumers treat HALTED as "no orders, no exits" (entries and exits suppressed). |
 | `CORRUPTED` | *(terminal)* | Parse errors or sequence reuse with conflicting payload — restart/normalizer reset |
 
 When a `MassiveNormalizer` is wired into the orchestrator, quote and trade

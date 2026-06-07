@@ -274,7 +274,7 @@ Reject or flag experiments that exhibit:
 | Microstructure Alpha (microstructure-alpha skill) | Research protocol; `HorizonSignal` contract; `Signal` schema with `trend_mechanism`; G16 mechanism-horizon binding |
 | Feature / Sensor (feature-engine skill) | `SensorProtocol`; `SensorSpec` registration; `HorizonFeatureSnapshot` output type |
 | Composition Layer (composition-layer skill) | `PortfolioAlpha` contract for cross-sectional research |
-| Backtest Engine (backtest-engine skill) | `Orchestrator.run_backtest()` for formalized validation; five parity hashes |
+| Backtest Engine (backtest-engine skill) | `Orchestrator.run_backtest()` for formalized validation; eleven parity hashes (L1–L6) |
 | Testing & Validation (testing-validation skill) | F-2 evidence schemas; CPCV + DSR acceptance suite; promotion pipeline |
 | Alpha Lifecycle (alpha-lifecycle skill) | F-1 ledger; F-3 `feelies promote` CLI; F-5 per-alpha threshold overrides |
 | Data Engineering (data-engineering skill) | `EventLog.replay()` for versioned data snapshots |

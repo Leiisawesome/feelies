@@ -73,7 +73,10 @@ For detailed methodology see [`research-protocol.md`](research-protocol.md).
 
 Every schema-1.1 SIGNAL alpha must declare one of the closed
 `TrendMechanism` family in `core/events.py` (Phase 3.1 strict-mode is
-the platform default since Workstream E):
+the platform default since Workstream E). PORTFOLIO alphas do **not**
+declare a single family — instead they declare a `trend_mechanism.consumes:`
+list (one entry per upstream family) with a `max_share_of_gross` cap per
+family (G16 PORTFOLIO rule 8; see composition-layer skill).
 
 Fingerprint sensors below are the **implemented** `sensor_id`s only
 (see feature-engine skill's catalog). Declaring an unimplemented id in
@@ -83,7 +86,7 @@ Fingerprint sensors below are the **implemented** `sensor_id`s only
 |--------|-------------------|-----------------------|------------------------|
 | `KYLE_INFO` | 60 – 1800 s | `kyle_lambda_60s`, `ofi_ewma`, `micro_price` | Edge ~ permanent impact; survive 1.5× spread |
 | `INVENTORY` | 10 – 120 s | `inventory_pressure`, `quote_replenish_asymmetry` | Mean-reverting; tight horizon, low cost margin |
-| `HAWKES_SELF_EXCITE` | 5 – 120 s | `hawkes_intensity` (use `hawkes_intensity_imbalance` for direction), `trade_through_rate` | Short half-life; latency-sensitive |
+| `HAWKES_SELF_EXCITE` | 5 – 120 s | `hawkes_intensity`, `trade_through_rate` | Short half-life; latency-sensitive |
 | `LIQUIDITY_STRESS` | 30 – 600 s | `liquidity_stress_score`, `spread_z_30d`, `quote_hazard_rate`, `quote_flicker_rate` | **Exit-only** — entries forbidden by G16 |
 | `SCHEDULED_FLOW` | 60 – 3600 s | `scheduled_flow_window` | MOC / open / close imbalance windows |
 
@@ -314,7 +317,8 @@ Suppression at the **controller** layer is per
 to flat.  This is distinct from the **detector** suppression key
 `(symbol, engine_name, departing_state)` held inside
 `RegimeHazardDetector`.  Bit-identical replay is locked by the
-Level-5 hazard-replay parity test.
+Level-5 hazard-replay parity test
+(`tests/determinism/test_regime_hazard_replay.py`).
 
 ---
 

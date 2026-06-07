@@ -67,7 +67,7 @@ pipeline receives already-normalized `NBBOQuote` / `Trade` events.
 |---------|------|--------|--------------|-------|
 | Event receipt + log + publish | M0→M1 | 100 μs | 500 μs | Append to event log, bus dispatch |
 | Regime engine update | M1→M2 | 50 μs | 200 μs | `RegimeEngine.posterior()` (Bayesian update) |
-| Sensor fan-out | M2 → SENSOR_UPDATE | 500 μs | 2 ms | `SensorRegistry` topological dispatch (13 sensors in v0.3) |
+| Sensor fan-out | M2 → SENSOR_UPDATE | 500 μs | 2 ms | `SensorRegistry` topological dispatch (16 sensors ship in v0.3; 13 registered in the reference `platform.yaml`) |
 | Horizon check + aggregate | HORIZON_CHECK + HORIZON_AGGREGATE | 200 μs | 1 ms | Boundary detection + snapshot fan-in (only on boundary tick) |
 | Signal gate | SIGNAL_GATE | 200 μs | 1 ms | `HorizonSignalEngine` regime-gate eval + `evaluate()` (only on boundary) |
 | Cross-sectional | CROSS_SECTIONAL | 1 ms | 5 ms | `UniverseSynchronizer` + `CompositionEngine` (PORTFOLIO; only on boundary; cvxpy optional) |
@@ -252,8 +252,8 @@ Per-host pinned baselines live in
 
 | Gate | Threshold | File |
 |------|-----------|------|
-| Phase 4 throughput regression | ≤ 12% e2e vs v0.2 baseline | `tests/perf/test_phase4_no_regression.py` |
-| Phase 4.1 decay-weighting overhead | ≤ 5% wall-clock vs decay-OFF | `tests/perf/test_phase4_1_no_regression.py` |
+| Paper-RTH throughput regression | ≤ 12% e2e vs v0.2 baseline | `tests/perf/test_paper_rth_no_regression.py` |
+| Phase 4.1 decay-weighting overhead | ≤ 5% wall-clock vs decay-OFF | enforced via `tests/perf/_pinned_baseline.py` + `tests/acceptance/test_perf_baseline_plumbing.py` |
 
 Every PR that touches hot-path code must:
 
