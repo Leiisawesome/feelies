@@ -1988,6 +1988,50 @@ class TestPositionManagerTrim:
     def test_edge_gate_trims_low_edge_position(self) -> None:
         assert self._run_edge_gate(edge_bps=0.0) == 100       # trimmed 150→100
 
+    @staticmethod
+    def _run_urgency(*, urgency_exec: bool) -> list[tuple[str, str, int]]:
+        from feelies.execution.position_manager import TargetPositionManager
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+        pos_store = MemoryPositionStore()
+        pos_store.update("AAPL", 150, Decimal("100"))
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=pos_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+            position_manager=TargetPositionManager(trim_min_fraction=0.10),
+            position_manager_drive=True,
+            position_manager_enable_trim=True,
+            position_manager_urgency_exec=urgency_exec,
+        )
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.LONG),
+        )
+        _boot_to_backtest(orch)
+        q = _make_quote()
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        return [(o.side.name, o.order_type.name, o.quantity) for o in orders]
+
+    def test_urgency_exec_posts_passive_trim(self) -> None:
+        # urgency on → the discretionary trim works as a passive LIMIT.
+        assert self._run_urgency(urgency_exec=True) == [("SELL", "LIMIT", 50)]
+
+    def test_trim_is_market_by_default(self) -> None:
+        # urgency off (default) → trim crosses at MARKET (immediate reduce).
+        assert self._run_urgency(urgency_exec=False) == [("SELL", "MARKET", 50)]
+
 
 # ── B5: reversal combined-edge guard ──────────────────────────────────
 

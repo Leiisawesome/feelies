@@ -247,11 +247,27 @@ This is the riskiest part (hot path, replay parity), so it's explicit.
 | **Flip F1** ✅ | Drive the live decision from the planner: `plan → OrderIntent → existing execution machinery`, behind a default-off `drive` flag | off | none (byte-identical; A/B + truth-table proof) |
 | **P2b** | Planner *owns* the live gate decision + delete the orchestrator bolt-ons | off→on per-config | requires the rest of the flip (see note) |
 | **P3** ✅ | Add cost-aware `TRIM` leg (G-2) behind `enable_trim` via `TargetPositionManager` | off | new baseline when on |
-| **P4** | `urgency → ExecStyle` + passive/working exits (G-3) behind `exit_exec_style` | off | new baseline when on |
+| **P4a** ✅ | `urgency → ExecStyle`: discretionary TRIMs work PASSIVE behind `position_manager_urgency_exec` | off | new baseline when on |
+| **P4b** | working exits with a MARKET fallback (size-aware unwind) for non-discretionary reductions (G-3) | off | new baseline when on |
 | **P5** | Move PORTFOLIO diff out of `check_sized_intent` into the planner; risk engine becomes pure gating | off→on | shadow-verified |
 
 P0–P2a + Flip-F1 are parity-neutral plumbing. P3+ are the economic wins,
 each gated and individually baselined.
+
+> **P4 split (G-3).** The full "panic full-MARKET exit" fix needs passive
+> *working* execution **with a market fallback** (escalate to MARKET on a
+> non-fill / urgency spike / deadline) so a reduction is still guaranteed —
+> that fallback is an execution-algo subsystem (**P4b**, deferred). **P4a**
+> ships the urgency→`ExecStyle` plumbing and the one *safe* behavioral win:
+> a discretionary **TRIM** works `PASSIVE` (posts a near-BBO limit, saves
+> the spread) because a trim non-fill is harmless — it simply defers the
+> reduce to the next signal, creating no risk. Risk-driven exits, stops,
+> reverse-exits, and MOC stay aggressive (Inv-11). Behind
+> `position_manager_urgency_exec` (**default off**): passive reductions
+> defer on a non-fill, so working them is opt-in until P4b's fallback makes
+> it safe-by-default. The style threads through the existing builder
+> (`_try_build_order_from_intent(..., exec_style=…)`) — no order-path
+> rearchitecture.
 
 > **P3 trim policy (as implemented).** `TargetPositionManager` is
 > byte-identical to the legacy planner with `enable_trim` off; with it on

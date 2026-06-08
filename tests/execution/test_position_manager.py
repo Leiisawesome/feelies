@@ -427,6 +427,21 @@ class TestTargetPositionManagerTrim:
         )
         assert plan.primary_leg == PlanLeg.TRIM
 
+    def test_urgency_exec_makes_trim_passive(self) -> None:
+        mgr = TargetPositionManager(trim_min_fraction=0.10)
+        pos = Position(symbol="AAPL", quantity=150)
+        desired = DesiredPosition(symbol="AAPL", target_qty=100, direction=1)
+        passive = mgr.plan(
+            desired=desired, current=pos,
+            config=PositionManagerConfig(enable_trim=True, urgency_exec=True),
+        )
+        assert passive.orders[0].style == ExecStyle.PASSIVE
+        aggressive = mgr.plan(
+            desired=desired, current=pos,
+            config=PositionManagerConfig(enable_trim=True, urgency_exec=False),
+        )
+        assert aggressive.orders[0].style == ExecStyle.MARKET
+
     def test_trim_leg_maps_to_partial_exit_intent(self) -> None:
         from feelies.execution.intent import TradingIntent
         signal = _signal(SignalDirection.LONG)

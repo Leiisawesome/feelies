@@ -105,9 +105,11 @@ from feelies.execution.intent import (
 )
 from feelies.execution.order_state import OrderState, create_order_state_machine
 from feelies.execution.position_manager import (
+    ExecStyle,
     LegacyPositionManager,
     MarketContext,
     PlanDivergence,
+    PlanLeg,
     PositionManager,
     PositionManagerConfig,
     PositionPlan,
@@ -388,6 +390,7 @@ class Orchestrator:
         position_manager_drive: bool = False,
         position_manager_enable_trim: bool = False,
         position_manager_trim_edge_gate_multiplier: float = 0.0,
+        position_manager_urgency_exec: bool = False,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -437,6 +440,9 @@ class Orchestrator:
         self._position_manager_trim_edge_gate_multiplier = (
             position_manager_trim_edge_gate_multiplier
         )
+        # P4: urgency-driven execution style (discretionary trims work
+        # passive).  Default-off — passive reductions defer on a non-fill.
+        self._position_manager_urgency_exec = position_manager_urgency_exec
         self._alpha_registry = alpha_registry
         self._account_equity = account_equity
         self._fill_ledger = fill_ledger
@@ -2117,11 +2123,18 @@ class Orchestrator:
         # planner decides and the plan is projected back onto an OrderIntent
         # so the existing execution machinery runs unchanged.
         current_position = self._positions.get(signal.symbol)
+        # P4: the planner's execution style for a single-leg reduce (TRIM)
+        # overrides the builder's default routing when driving.  Only the
+        # discretionary TRIM is honored here; every other leg keeps the
+        # existing passive/market logic (None == no override).
+        exec_style_override: ExecStyle | None = None
         if self._position_manager is not None and self._position_manager_drive:
             plan = self._plan_for_signal(signal, current_position, target_qty, quote)
             intent = order_intent_from_plan(
                 plan, signal=signal, current=current_position,
             )
+            if plan.primary_leg is PlanLeg.TRIM and plan.orders:
+                exec_style_override = plan.orders[0].style
         else:
             intent = self._intent_translator.translate(
                 signal, current_position, target_qty,
@@ -2315,7 +2328,7 @@ class Orchestrator:
             return
 
         order, order_build_reason = self._try_build_order_from_intent(
-            intent, verdict, cid, quote,
+            intent, verdict, cid, quote, exec_style=exec_style_override,
         )
         if order is None:
             self._append_signal_order_trace(
@@ -3329,6 +3342,7 @@ class Orchestrator:
                 trim_edge_gate_multiplier=(
                     self._position_manager_trim_edge_gate_multiplier
                 ),
+                urgency_exec=self._position_manager_urgency_exec,
             ),
         )
 
@@ -3763,8 +3777,18 @@ class Orchestrator:
         verdict: RiskVerdict,
         correlation_id: str,
         quote: NBBOQuote | None = None,
+        *,
+        exec_style: ExecStyle | None = None,
     ) -> tuple[OrderRequest | None, str | None]:
-        """Like :meth:`_build_order_from_intent` but returns a failure token."""
+        """Like :meth:`_build_order_from_intent` but returns a failure token.
+
+        ``exec_style`` (P4): when ``ExecStyle.PASSIVE`` is supplied by the
+        planner (a discretionary working leg, e.g. an urgency-driven TRIM),
+        the order is posted as a near-BBO LIMIT regardless of the static
+        ``_use_passive_entries`` flag.  ``None`` keeps the legacy routing.
+        Stop-exits and MOC orders always short-circuit to MARKET and ignore
+        the hint (Inv-11).
+        """
         side = self._side_from_intent(intent)
         seq = self._seq.next()
         order_id = hashlib.sha256(
@@ -3822,6 +3846,15 @@ class Orchestrator:
         if is_moc:
             order_type = OrderType.MARKET
             limit_price = None
+        elif (
+            exec_style is ExecStyle.PASSIVE
+            and quote is not None
+            and intent.signal.strategy_id != "__stop_exit__"
+        ):
+            # P4: planner-driven passive working leg (e.g. a discretionary
+            # TRIM) — post at the near BBO; a non-fill simply defers it.
+            order_type = OrderType.LIMIT
+            limit_price = quote.bid if side == Side.BUY else quote.ask
         elif self._use_passive_entries and quote is not None:
             is_stop_exit = intent.signal.strategy_id == "__stop_exit__"
             if not is_stop_exit:

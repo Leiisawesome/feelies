@@ -651,6 +651,7 @@ def build_platform(
         position_manager_trim_edge_gate_multiplier=(
             config.position_manager_trim_edge_gate_multiplier
         ),
+        position_manager_urgency_exec=config.position_manager_urgency_exec,
     )
 
     config_snapshot = config.snapshot()

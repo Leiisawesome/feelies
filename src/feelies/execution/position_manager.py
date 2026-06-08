@@ -170,6 +170,11 @@ class PositionManagerConfig:
     # i.e. while ``edge_bps >= multiplier × round_trip_cost_bps(Δ)``.  0
     # disables the gate (churn-guard-only trim).
     trim_edge_gate_multiplier: float = 0.0
+    # P4: urgency-driven execution style.  When True, the planner sets a
+    # leg's ExecStyle from urgency — e.g. a discretionary TRIM works
+    # PASSIVE (post a limit, save the spread) rather than crossing at
+    # MARKET.  Risk-driven and reverse-exit legs stay aggressive.
+    urgency_exec: bool = False
 
 
 class PositionManager(Protocol):
@@ -439,12 +444,18 @@ class TargetPositionManager:
         }
         if rt_cost_bps is not None:
             rationale["round_trip_cost_bps"] = rt_cost_bps
+        # P4: a TRIM is a discretionary reduce — work it PASSIVE when
+        # urgency-driven execution is on (a non-fill just defers the trim;
+        # no risk is created).  Otherwise cross at MARKET (legacy).
+        trim_style = (
+            ExecStyle.PASSIVE if config.urgency_exec else ExecStyle.MARKET
+        )
         return PositionPlan(orders=(
             PlannedOrder(
                 symbol=desired.symbol,
                 side=side,
                 quantity=trim_qty,
-                style=ExecStyle.MARKET,
+                style=trim_style,
                 leg=PlanLeg.TRIM,
                 rationale=rationale,
             ),

@@ -327,6 +327,11 @@ class PlatformConfig:
     # the signal's forward edge still clears this multiple of the trim's
     # round-trip cost.  0.0 disables the gate (churn-guard-only trim).
     position_manager_trim_edge_gate_multiplier: float = 1.0
+    # P4: urgency-driven execution style.  When True, discretionary trims
+    # work PASSIVE (post a limit) instead of crossing at MARKET.  Default
+    # off — a passive reduction defers on a non-fill, so it is opt-in until
+    # the working-exit-with-market-fallback layer lands.
+    position_manager_urgency_exec: bool = False
 
     # Regime engine boot-time calibration (lookahead avoidance).  ``None``
     # skips feeding the trading event log into ``calibrate()`` entirely
@@ -1022,6 +1027,9 @@ class PlatformConfig:
             "position_manager_trim_edge_gate_multiplier": (
                 self.position_manager_trim_edge_gate_multiplier
             ),
+            "position_manager_urgency_exec": (
+                self.position_manager_urgency_exec
+            ),
             "signal_edge_cost_basis": self.signal_edge_cost_basis,
             "regime_calibration_max_quotes": self.regime_calibration_max_quotes,
             "enforce_regime_state_scale_alignment": (
@@ -1530,6 +1538,9 @@ class PlatformConfig:
             ),
             position_manager_trim_edge_gate_multiplier=float(
                 data.get("position_manager_trim_edge_gate_multiplier", 1.0)
+            ),
+            position_manager_urgency_exec=bool(
+                data.get("position_manager_urgency_exec", False)
             ),
             signal_edge_cost_basis=str(
                 data.get("signal_edge_cost_basis", "round_trip")
