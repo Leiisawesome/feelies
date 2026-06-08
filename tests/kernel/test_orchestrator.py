@@ -2123,6 +2123,120 @@ class TestSessionFlatten:
         assert orders == []
 
 
+# ── P4b: working-exit MARKET fallback ─────────────────────────────────
+
+
+class TestWorkingExitFallback:
+    """A passive working reduction that terminates unfilled escalates its
+    residual to a guaranteed MARKET order."""
+
+    def _orch(self) -> tuple[Orchestrator, EventBus, list[OrderRequest]]:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=MemoryPositionStore(),
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+        _boot_to_backtest(orch)
+        return orch, bus, orders
+
+    @staticmethod
+    def _ack(order_id: str, status: OrderAckStatus, filled: int = 0):
+        return OrderAck(
+            timestamp_ns=2000,
+            correlation_id="c",
+            sequence=1,
+            order_id=order_id,
+            symbol="AAPL",
+            status=status,
+            filled_quantity=filled,
+        )
+
+    def test_cancelled_escalates_full_residual_to_market(self) -> None:
+        orch, _bus, orders = self._orch()
+        orch._working_exit_fallback["oid1"] = ("AAPL", Side.SELL, 50)
+        orch._escalate_unfilled_working_exits(
+            [self._ack("oid1", OrderAckStatus.CANCELLED)], "c",
+        )
+        assert len(orders) == 1
+        assert orders[0].order_type.name == "MARKET"
+        assert orders[0].side == Side.SELL and orders[0].quantity == 50
+        assert "oid1" not in orch._working_exit_fallback  # tag cleared
+
+    def test_partial_fill_escalates_only_residual(self) -> None:
+        orch, _bus, orders = self._orch()
+        orch._working_exit_fallback["oid2"] = ("AAPL", Side.SELL, 50)
+        orch._order_filled_qty["oid2"] = 20
+        orch._escalate_unfilled_working_exits(
+            [self._ack("oid2", OrderAckStatus.EXPIRED, filled=20)], "c",
+        )
+        assert orders[0].quantity == 30  # 50 − 20 already filled
+
+    def test_full_fill_no_fallback(self) -> None:
+        orch, _bus, orders = self._orch()
+        orch._working_exit_fallback["oid3"] = ("AAPL", Side.SELL, 50)
+        orch._escalate_unfilled_working_exits(
+            [self._ack("oid3", OrderAckStatus.FILLED, filled=50)], "c",
+        )
+        assert orders == []
+        assert "oid3" not in orch._working_exit_fallback
+
+    def test_noop_when_nothing_tagged(self) -> None:
+        orch, _bus, orders = self._orch()
+        orch._escalate_unfilled_working_exits(
+            [self._ack("unknown", OrderAckStatus.CANCELLED)], "c",
+        )
+        assert orders == []
+
+    def test_passive_trim_registers_a_fallback_tag(self) -> None:
+        # End-to-end wiring: a driven urgency trim posts a LIMIT that is
+        # tagged for fallback (the escalation itself is covered above).
+        from feelies.execution.position_manager import TargetPositionManager
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+        pos = MemoryPositionStore()
+        pos.update("AAPL", 150, Decimal("100"))
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = Orchestrator(
+            clock=clock, bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(), order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(), position_store=pos,
+            event_log=InMemoryEventLog(), metric_collector=_NoOpMetricCollector(),
+            position_manager=TargetPositionManager(trim_min_fraction=0.10),
+            position_manager_drive=True,
+            position_manager_enable_trim=True,
+            position_manager_urgency_exec=True,
+        )
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.LONG),
+        )
+        _boot_to_backtest(orch)
+        q = _make_quote()
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+
+        limit_orders = [o for o in orders if o.order_type.name == "LIMIT"]
+        assert len(limit_orders) == 1                      # passive trim posted
+        assert limit_orders[0].order_id in orch._working_exit_fallback
+
+
 # ── B5: reversal combined-edge guard ──────────────────────────────────
 
 

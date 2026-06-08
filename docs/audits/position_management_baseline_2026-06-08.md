@@ -260,7 +260,16 @@ like), **severity / effort**.
 - **Severity P1 / Effort M** (adds a `SCALE_DOWN`-toward-target intent +
   partial-reduce execution).
 
-### G-3 — Exits are uniform "panic full-MARKET" (P1, M)
+### G-3 — Exits are uniform "panic full-MARKET" (P1, M) — ✅ CLOSED (2026-06-08)
+
+> **Closed (P4a + P4b).** Discretionary reductions (TRIMs) now work
+> `PASSIVE` (post a near-BBO limit, save the spread) under
+> `position_manager_urgency_exec`, and any passive reduction that
+> terminates unfilled (the router's resting timeout → CANCELLED/EXPIRED)
+> escalates its residual to a guaranteed MARKET order
+> (`_escalate_unfilled_working_exits`) — so working the exit never risks
+> a stranded position. Risk-driven exits, stops, reverse-exits, and the
+> EOD flatten stay aggressive (Inv-11).
 
 - **Evidence:** six of seven close-paths dump the entire position at
   market (table §1.8). Only the normal FLAT exit can be passive, and

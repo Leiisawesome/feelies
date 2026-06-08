@@ -592,6 +592,15 @@ class Orchestrator:
         # without re-deriving the intent from fill order (Task 4).  Pruned
         # alongside ``_active_orders``.
         self._order_trading_intent: dict[str, str] = {}
+        # P4b: passive working-reduction orders awaiting a MARKET fallback.
+        # order_id -> (symbol, side, original_qty).  When such an order
+        # terminates unfilled (the router's resting timeout → CANCELLED /
+        # EXPIRED), the residual is escalated to MARKET so the reduction is
+        # still guaranteed.  ``_order_filled_qty`` tracks cumulative fills
+        # per order for the residual computation.  Both empty by default
+        # (no passive reductions unless ``urgency_exec`` is on).
+        self._working_exit_fallback: dict[str, tuple[str, Side, int]] = {}
+        self._order_filled_qty: dict[str, int] = {}
         # Router acks that were drained while waiting for a different
         # order family.  The order-router queue is global, so targeted
         # pollers must buffer unrelated acks instead of stealing them.
@@ -2540,6 +2549,15 @@ class Orchestrator:
             order.order_id, order.side, order,
             trading_intent=intent.intent.name,
         )
+        # P4b: a passive working reduction (e.g. an urgency-driven TRIM)
+        # gets a MARKET fallback if its resting order terminates unfilled.
+        if (
+            exec_style_override is ExecStyle.PASSIVE
+            and order.order_type is OrderType.LIMIT
+        ):
+            self._working_exit_fallback[order.order_id] = (
+                order.symbol, order.side, order.quantity,
+            )
 
         # ── M6 → M7: ORDER_SUBMIT ──────────────────────────────
         self._micro.transition(
@@ -4386,6 +4404,10 @@ class Orchestrator:
                 self._bus.publish(ack)
                 self._apply_ack_to_order(ack)
             self._reconcile_fills(acks, correlation_id)
+            # P4b: escalate any working-exit reduction that terminated
+            # unfilled to a guaranteed MARKET fallback (after reconcile, so
+            # the residual reflects this drain's fills).
+            self._escalate_unfilled_working_exits(acks, correlation_id)
         if self._paper_session_recorder is not None:
             self._paper_session_recorder.record_timing(
                 kind="drain_async_fills",
@@ -4393,6 +4415,97 @@ class Orchestrator:
                 correlation_id=correlation_id,
                 extra={"ack_count": len(acks)},
             )
+
+    def _escalate_unfilled_working_exits(
+        self, acks: list[OrderAck], correlation_id: str,
+    ) -> None:
+        """P4b: MARKET-fallback any passive working reduction that didn't fill.
+
+        When a tagged passive reduction order terminates ``CANCELLED`` /
+        ``EXPIRED`` (the router's resting timeout elapsed without a fill),
+        the unfilled residual is re-submitted as MARKET so the reduction is
+        still guaranteed — the safety net that makes passive working
+        reductions viable.  No-op when nothing is tagged (the default).
+        """
+        if not self._working_exit_fallback:
+            return
+        for ack in acks:
+            if ack.order_id not in self._working_exit_fallback:
+                continue
+            if ack.status not in (
+                OrderAckStatus.FILLED,
+                OrderAckStatus.CANCELLED,
+                OrderAckStatus.EXPIRED,
+            ):
+                continue
+            symbol, side, original_qty = self._working_exit_fallback.pop(
+                ack.order_id
+            )
+            filled = self._order_filled_qty.pop(ack.order_id, 0)
+            if ack.status is OrderAckStatus.FILLED:
+                continue  # fully worked passively — no fallback needed
+            residual = original_qty - filled
+            if residual < 1:
+                continue
+            self._submit_working_exit_fallback(
+                symbol, side, residual, ack.order_id, correlation_id,
+            )
+
+    def _submit_working_exit_fallback(
+        self,
+        symbol: str,
+        side: Side,
+        quantity: int,
+        parent_order_id: str,
+        correlation_id: str,
+    ) -> None:
+        """Submit the guaranteed MARKET residual for a non-filled working exit."""
+        order_id = hashlib.sha256(
+            f"{parent_order_id}:working_fallback".encode()
+        ).hexdigest()[:16]
+        order = OrderRequest(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            sequence=self._seq.next(),
+            order_id=order_id,
+            symbol=symbol,
+            side=side,
+            order_type=OrderType.MARKET,
+            quantity=quantity,
+            strategy_id="__working_exit_fallback__",
+            reason="WORKING_EXIT_FALLBACK",
+        )
+        self._track_order(order.order_id, order.side, order, trading_intent="EXIT")
+        self._transition_order(
+            order.order_id, OrderState.SUBMITTED, "submitted",
+            correlation_id=correlation_id,
+        )
+        try:
+            self._backend.order_router.submit(order)
+        except Exception as exc:
+            self._reject_order_after_submit_failure(order, exc)
+            return
+        self._bus.publish(order)
+        self._bus.publish(Alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            sequence=self._seq.next(),
+            severity=AlertSeverity.INFO,
+            layer="kernel",
+            alert_name="working_exit_market_fallback",
+            message=(
+                f"Working reduction did not fill passively; escalating "
+                f"{quantity} {side.name} {symbol} to MARKET "
+                f"(parent_order_id={parent_order_id})."
+            ),
+            context={
+                "symbol": symbol,
+                "side": side.name,
+                "quantity": quantity,
+                "parent_order_id": parent_order_id,
+                "fallback_order_id": order_id,
+            },
+        ))
 
     def _reconcile_resting_fills(self, cid: str) -> None:
         """Poll and reconcile quote-driven router acknowledgements.
@@ -4707,6 +4820,14 @@ class Orchestrator:
             signed_qty = ack.filled_quantity
             if side == Side.SELL:
                 signed_qty = -signed_qty
+
+            # P4b: accumulate per-order fills so a working-exit fallback can
+            # escalate only the *residual* if the passive leg partly filled.
+            if ack.order_id in self._working_exit_fallback:
+                self._order_filled_qty[ack.order_id] = (
+                    self._order_filled_qty.get(ack.order_id, 0)
+                    + ack.filled_quantity
+                )
 
             prev_position = self._positions.get(ack.symbol)
             prev_realized = prev_position.realized_pnl

@@ -248,7 +248,7 @@ This is the riskiest part (hot path, replay parity), so it's explicit.
 | **P2b** | Planner *owns* the live gate decision + delete the orchestrator bolt-ons | off→on per-config | requires the rest of the flip (see note) |
 | **P3** ✅ | Add cost-aware `TRIM` leg (G-2) behind `enable_trim` via `TargetPositionManager` | off | new baseline when on |
 | **P4a** ✅ | `urgency → ExecStyle`: discretionary TRIMs work PASSIVE behind `position_manager_urgency_exec` | off | new baseline when on |
-| **P4b** | working exits with a MARKET fallback (size-aware unwind) for non-discretionary reductions (G-3) | off | new baseline when on |
+| **P4b** ✅ | working exits with a MARKET fallback: a passive reduction that terminates unfilled escalates its residual to MARKET (guarantees the reduce) | intrinsic | inert unless passive reductions are used |
 | **P5** | Move PORTFOLIO diff out of `check_sized_intent` into the planner; risk engine becomes pure gating | off→on | shadow-verified |
 
 P0–P2a + Flip-F1 are parity-neutral plumbing. P3+ are the economic wins,
