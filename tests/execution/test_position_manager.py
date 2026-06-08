@@ -21,6 +21,7 @@ from feelies.execution.position_manager import (
     PositionPlan,
     compare_plan_to_intent,
     desired_from_signal,
+    order_intent_from_plan,
 )
 from feelies.portfolio.position_store import Position
 
@@ -98,6 +99,56 @@ class TestLegacyEquivalence:
             symbol="AAPL",
             signal_sequence=signal.sequence,
         ) is None
+
+
+# ── The flip: plan → OrderIntent is byte-faithful to the translator ──
+
+
+class TestOrderIntentFromPlan:
+    @pytest.mark.parametrize("direction", list(SignalDirection))
+    @pytest.mark.parametrize("current", [-150, -100, -50, -1, 0, 1, 50, 100, 150])
+    @pytest.mark.parametrize("target", [0, 1, 50, 100, 150])
+    def test_reconstructed_intent_equals_translator(
+        self,
+        direction: SignalDirection,
+        current: int,
+        target: int,
+    ) -> None:
+        # The drive path (plan -> OrderIntent) must reproduce the exact
+        # OrderIntent the legacy translator produces — the parity proof for
+        # flipping `drive` on while `enable_trim` is off.
+        translator = SignalPositionTranslator()
+        manager = LegacyPositionManager()
+        signal = _signal(direction)
+        position = Position(symbol="AAPL", quantity=current)
+
+        legacy = translator.translate(signal, position, target)
+        plan = manager.plan(
+            desired=desired_from_signal(signal, target),
+            current=position,
+        )
+        reconstructed = order_intent_from_plan(
+            plan, signal=signal, current=position,
+        )
+
+        assert reconstructed == legacy, (
+            f"dir={direction.name} cur={current} tgt={target}: "
+            f"legacy={legacy.intent.name}/{legacy.target_quantity} "
+            f"recon={reconstructed.intent.name}/{reconstructed.target_quantity}"
+        )
+
+    def test_none_target_reconstructs_identically(self) -> None:
+        translator = SignalPositionTranslator(default_target_quantity=100)
+        manager = LegacyPositionManager(default_target_quantity=100)
+        signal = _signal(SignalDirection.SHORT)
+        position = Position(symbol="AAPL", quantity=0)
+        legacy = translator.translate(signal, position, None)
+        plan = manager.plan(
+            desired=desired_from_signal(signal, None), current=position,
+        )
+        assert order_intent_from_plan(
+            plan, signal=signal, current=position,
+        ) == legacy
 
 
 # ── Direct plan classification ───────────────────────────────────────

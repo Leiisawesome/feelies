@@ -31,7 +31,7 @@ from decimal import Decimal
 
 from feelies.core.events import NBBOQuote, Side, Signal, SignalDirection
 from feelies.execution.cost_model import CostModel, estimate_round_trip_cost_bps
-from feelies.execution.intent import TradingIntent
+from feelies.execution.intent import OrderIntent, TradingIntent
 from feelies.portfolio.position_store import Position
 
 
@@ -420,6 +420,80 @@ def desired_from_signal(
         source=signal.strategy_id,
         reason="signal",
     )
+
+
+# ── Plan → OrderIntent (drive-from-plan flip) ────────────────────────
+#
+# G-1 "the flip": when the orchestrator drives from the planner, the plan
+# is projected back onto the existing ``OrderIntent`` so the battle-tested
+# execution machinery (risk scaling, order-id hashing, MOC/passive/borrow
+# routing, the B4/B5 gates) is reused unchanged.  For the legacy planner
+# this reconstruction is *byte-faithful* to the translator — proven
+# exhaustively by the equivalence test — so flipping ``drive`` on is
+# parity-neutral while ``enable_trim`` is off.
+
+
+def order_intent_from_plan(
+    plan: PositionPlan,
+    *,
+    signal: Signal,
+    current: Position,
+) -> OrderIntent:
+    """Project a ``PositionPlan`` back onto a legacy ``OrderIntent``.
+
+    The ``target_quantity`` convention matches the translator: ENTRY/
+    SCALE_UP carry the leg quantity, EXIT carries ``|current|``, and a
+    REVERSE carries ``exit + entry`` (== ``plan.total_quantity`` for both
+    the two-leg flip and the degenerate exit-only flip).
+    """
+    cur = current.quantity
+
+    def _oi(intent: TradingIntent, target: int) -> OrderIntent:
+        return OrderIntent(
+            intent=intent,
+            symbol=signal.symbol,
+            strategy_id=signal.strategy_id,
+            target_quantity=target,
+            current_quantity=cur,
+            signal=signal,
+        )
+
+    if not plan.orders:
+        return _oi(TradingIntent.NO_ACTION, 0)
+
+    leg = plan.primary_leg
+    # A flip is keyed on the *current* side: long→short when currently long.
+    reverse_intent = (
+        TradingIntent.REVERSE_LONG_TO_SHORT if cur > 0
+        else TradingIntent.REVERSE_SHORT_TO_LONG
+    )
+
+    if leg in (PlanLeg.REVERSE_EXIT, PlanLeg.REVERSE_ENTRY):
+        return _oi(reverse_intent, plan.total_quantity)
+    if leg is PlanLeg.EXIT:
+        # A FLAT signal is a genuine EXIT; a *directional* signal that
+        # sized to zero against an opposite book is the legacy degenerate
+        # REVERSE (exit-only).  Preserving that label keeps the order-id
+        # hashing — and thus parity — byte-identical.
+        if signal.direction == SignalDirection.FLAT:
+            return _oi(TradingIntent.EXIT, plan.total_quantity)
+        return _oi(reverse_intent, plan.total_quantity)
+    if leg is PlanLeg.SCALE_UP:
+        return _oi(TradingIntent.SCALE_UP, plan.total_quantity)
+    if leg is PlanLeg.ENTRY:
+        intent = (
+            TradingIntent.ENTRY_LONG if plan.orders[0].side == Side.BUY
+            else TradingIntent.ENTRY_SHORT
+        )
+        return _oi(intent, plan.total_quantity)
+    if leg is PlanLeg.TRIM:
+        # TRIM has no legacy OrderIntent (partial same-direction reduce).
+        # It is unreachable while ``enable_trim`` is off; Phase P3 adds the
+        # partial-reduce execution path.
+        raise NotImplementedError(
+            "TRIM legs require the Phase-P3 partial-reduce path"
+        )
+    return _oi(TradingIntent.NO_ACTION, 0)
 
 
 # ── Shadow-equivalence comparison ────────────────────────────────────

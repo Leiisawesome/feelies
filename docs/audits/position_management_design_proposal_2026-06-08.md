@@ -244,7 +244,8 @@ This is the riskiest part (hot path, replay parity), so it's explicit.
 | **P0** ✅ | `DesiredPosition` / `PositionPlan` / `PositionManager` Protocol + a `LegacyPositionManager` that reproduces today's matrix exactly | off | none |
 | **P1** ✅ | Wire orchestrator SIGNAL path through the planner in **shadow mode**; equivalence-assert on fixtures | shadow | none |
 | **P2a** ✅ | Extract B4 + B5 cost math into the planner module as the single source of truth; orchestrator delegates | off | none (pure refactor) |
-| **P2b** | Planner *owns* the live gate decision + delete the orchestrator bolt-ons | off→on per-config | requires the drive-from-plan flip (see note) |
+| **Flip F1** ✅ | Drive the live decision from the planner: `plan → OrderIntent → existing execution machinery`, behind a default-off `drive` flag | off | none (byte-identical; A/B + truth-table proof) |
+| **P2b** | Planner *owns* the live gate decision + delete the orchestrator bolt-ons | off→on per-config | requires the rest of the flip (see note) |
 | **P3** | Add `TRIM` leg (G-2) behind `enable_trim` | off | new baseline when on |
 | **P4** | `urgency → ExecStyle` + passive/working exits (G-3) behind `exit_exec_style` | off | new baseline when on |
 | **P5** | Move PORTFOLIO diff out of `check_sized_intent` into the planner; risk engine becomes pure gating | off→on | shadow-verified |

@@ -109,9 +109,11 @@ from feelies.execution.position_manager import (
     MarketContext,
     PlanDivergence,
     PositionManagerConfig,
+    PositionPlan,
     compare_plan_to_intent,
     desired_from_signal,
     entry_edge_clears_cost,
+    order_intent_from_plan,
     reversal_edge_gate,
     round_trip_cost_bps,
 )
@@ -382,6 +384,7 @@ class Orchestrator:
         regime_calibration_quotes: Sequence[NBBOQuote] | None = None,
         position_manager: "LegacyPositionManager | None" = None,
         position_manager_shadow_sink: "list[PlanDivergence] | None" = None,
+        position_manager_drive: bool = False,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -416,6 +419,12 @@ class Orchestrator:
         # journal, or parity hashes (default-off when either is None).
         self._position_manager = position_manager
         self._position_manager_shadow_sink = position_manager_shadow_sink
+        # G-1 "the flip": when True (and a manager is wired), the live
+        # decision is driven by the planner — plan -> OrderIntent -> the
+        # existing execution machinery — instead of the legacy translator.
+        # Default-off; byte-identical to legacy while ``enable_trim`` is off
+        # (proven by the order_intent_from_plan equivalence test).
+        self._position_manager_drive = position_manager_drive
         self._alpha_registry = alpha_registry
         self._account_equity = account_equity
         self._fill_ledger = fill_ledger
@@ -2091,16 +2100,26 @@ class Orchestrator:
         # ── Position sizing: compute target quantity from risk budget ──
         target_qty = self._compute_target_quantity(signal, quote)
 
-        # ── Intent translation: Signal x Position → OrderIntent ──
+        # ── Decision: Signal × Position → OrderIntent ──────────────────
+        # Legacy path: the intent translator.  G-1 flip: when driving, the
+        # planner decides and the plan is projected back onto an OrderIntent
+        # so the existing execution machinery runs unchanged.
         current_position = self._positions.get(signal.symbol)
-        intent = self._intent_translator.translate(signal, current_position, target_qty)
-
-        # G-1 Phase P1: shadow the legacy decision with the position manager
-        # and record any divergence.  Pure observation — never touches
-        # orders/bus/journal/parity (no-op unless both manager + sink wired).
-        self._record_position_manager_shadow(
-            signal, current_position, target_qty, intent, quote,
-        )
+        if self._position_manager is not None and self._position_manager_drive:
+            plan = self._plan_for_signal(signal, current_position, target_qty, quote)
+            intent = order_intent_from_plan(
+                plan, signal=signal, current=current_position,
+            )
+        else:
+            intent = self._intent_translator.translate(
+                signal, current_position, target_qty,
+            )
+            # Phase P1: shadow the legacy decision and record divergence.
+            # Pure observation — never touches orders/bus/journal/parity
+            # (no-op unless both manager + sink are wired).
+            self._record_position_manager_shadow(
+                signal, current_position, target_qty, intent, quote,
+            )
 
         if intent.intent == TradingIntent.NO_ACTION:
             reasons_no: list[str] = [
@@ -3267,6 +3286,36 @@ class Orchestrator:
 
         return target
 
+    def _plan_for_signal(
+        self,
+        signal: Signal,
+        current_position: Position,
+        target_qty: int | None,
+        quote: NBBOQuote,
+    ) -> PositionPlan:
+        """Build the planner's ``PositionPlan`` for a signal.
+
+        Shared by the shadow harness (P1) and the drive path (the flip).
+        Resolves the ``None`` sizer target via the translator default so
+        the planner sees the same effective magnitude as the legacy path.
+        """
+        assert self._position_manager is not None
+        default_target = getattr(
+            self._intent_translator, "_default_target", 100,
+        )
+        desired = desired_from_signal(
+            signal, target_qty, default_target_quantity=default_target,
+        )
+        return self._position_manager.plan(
+            desired=desired,
+            current=current_position,
+            market=MarketContext(quote=quote, cost_model=self._cost_model),
+            config=PositionManagerConfig(
+                shadow=not self._position_manager_drive,
+                enabled=self._position_manager_drive,
+            ),
+        )
+
     def _record_position_manager_shadow(
         self,
         signal: Signal,
@@ -3287,17 +3336,8 @@ class Orchestrator:
         sink = self._position_manager_shadow_sink
         if manager is None or sink is None:
             return
-        default_target = getattr(
-            self._intent_translator, "_default_target", 100,
-        )
-        desired = desired_from_signal(
-            signal, target_qty, default_target_quantity=default_target,
-        )
-        plan = manager.plan(
-            desired=desired,
-            current=current_position,
-            market=MarketContext(quote=quote, cost_model=self._cost_model),
-            config=PositionManagerConfig(shadow=True),
+        plan = self._plan_for_signal(
+            signal, current_position, target_qty, quote,
         )
         divergence = compare_plan_to_intent(
             intent_name=intent.intent.name,

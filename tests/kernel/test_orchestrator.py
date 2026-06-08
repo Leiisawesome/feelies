@@ -1828,6 +1828,67 @@ class TestPositionManagerShadow:
         assert orch._positions.get("AAPL").quantity > 0
 
 
+class TestPositionManagerDrive:
+    """The flip: driving the decision from the planner (drive=True) produces
+    byte-identical orders to the legacy translator (drive=False)."""
+
+    @staticmethod
+    def _run_scenario(*, drive: bool) -> list[tuple]:
+        from feelies.execution.position_manager import LegacyPositionManager
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=MemoryPositionStore(),
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+            position_manager=LegacyPositionManager(),
+            position_manager_drive=drive,
+        )
+        long_sig = _make_signal(_make_quote(), SignalDirection.LONG)
+        short_sig = _make_signal(_make_quote(), SignalDirection.SHORT)
+        flat_sig = _make_signal(_make_quote(), SignalDirection.FLAT)
+
+        def emit(quote: NBBOQuote) -> None:
+            sig = {1: long_sig, 2: short_sig, 3: flat_sig}.get(quote.sequence)
+            if sig is not None:
+                bus.publish(replace(
+                    sig,
+                    timestamp_ns=quote.timestamp_ns,
+                    correlation_id=quote.correlation_id,
+                    sequence=quote.sequence,
+                ))
+        bus.subscribe(NBBOQuote, emit)  # type: ignore[arg-type]
+        _boot_to_backtest(orch)
+
+        for seq in (1, 2, 3):
+            q = _make_quote(ts=1000 + seq, seq=seq)
+            orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+            orch._process_tick(q)
+
+        return [
+            (o.order_id, o.side.name, o.quantity, o.order_type.name,
+             str(o.limit_price))
+            for o in orders
+        ]
+
+    def test_drive_is_byte_identical_to_legacy(self) -> None:
+        legacy_orders = self._run_scenario(drive=False)
+        driven_orders = self._run_scenario(drive=True)
+        assert driven_orders, "scenario must submit at least one order"
+        assert driven_orders == legacy_orders
+
+
 # ── B5: reversal combined-edge guard ──────────────────────────────────
 
 
