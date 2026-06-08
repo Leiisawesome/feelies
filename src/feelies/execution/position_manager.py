@@ -23,6 +23,7 @@ Design invariants (see the proposal):
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Protocol
@@ -306,6 +307,109 @@ class LegacyPositionManager:
         ))
 
 
+class TargetPositionManager:
+    """Forward planner: legacy-faithful plus a cost-aware ``TRIM`` (G-2 / P3).
+
+    With ``config.enable_trim`` **off** this is byte-identical to
+    :class:`LegacyPositionManager` (it delegates), so driving from it stays
+    parity-neutral.  With it **on**, the single case it overrides is the
+    legacy *hold*: a same-direction target that has shrunk **below** the
+    current position.  Legacy clamps (``max(current, +m)``) and emits
+    ``NO_ACTION``; this planner instead emits a partial reduce (``TRIM``) of
+    ``|current| − |target|`` — the first real de-risking / partial-profit
+    capability the system has had.
+
+    ``trim_min_fraction`` is the **churn guard** (locked decision: TRIM is
+    cost-aware): a trim smaller than this fraction of the current position is
+    suppressed, so target wobble doesn't bleed round-trip cost on noise.
+    Every other case (entry, scale-up, reverse, exit, the directional-zero
+    corner) defers to the legacy planner unchanged.
+    """
+
+    def __init__(
+        self,
+        default_target_quantity: int = 100,
+        *,
+        trim_min_fraction: float = 0.10,
+    ) -> None:
+        self._legacy = LegacyPositionManager(default_target_quantity)
+        self._trim_min_fraction = trim_min_fraction
+
+    def plan(
+        self,
+        *,
+        desired: DesiredPosition,
+        current: Position,
+        market: MarketContext | None = None,
+        config: PositionManagerConfig | None = None,
+    ) -> PositionPlan:
+        legacy_plan = self._legacy.plan(
+            desired=desired, current=current, market=market, config=config,
+        )
+        if config is None or not config.enable_trim:
+            return legacy_plan
+
+        cur = current.quantity
+        d = desired.direction or _sign(desired.target_qty)
+        m = abs(desired.target_qty)
+        # Only override the legacy hold on a *same-direction shrink*; every
+        # other classification (flip, exit, entry, scale-up) is untouched.
+        if d == 0 or _sign(cur) != d or m >= abs(cur):
+            return legacy_plan
+
+        trim_qty = abs(cur) - m
+        threshold = max(1, math.ceil(self._trim_min_fraction * abs(cur)))
+        if trim_qty < threshold:
+            # Churn guard: hold (same as legacy), but record why for forensics.
+            return PositionPlan(suppressed=(
+                SuppressedLeg(
+                    leg=PlanLeg.TRIM,
+                    reason="trim_below_churn_threshold",
+                    constraints={
+                        "trim_qty": float(trim_qty),
+                        "threshold": float(threshold),
+                        "current_qty": float(cur),
+                    },
+                ),
+            ))
+
+        side = Side.SELL if cur > 0 else Side.BUY
+        rationale: dict[str, float] = {
+            "trim_qty": float(trim_qty),
+            "current_qty": float(cur),
+            "target_qty": float(d * m),
+            "trim_fraction": float(trim_qty) / float(abs(cur)),
+        }
+        if (
+            market is not None
+            and market.cost_model is not None
+            and market.quote is not None
+        ):
+            q = market.quote
+            rationale["round_trip_cost_bps"] = round_trip_cost_bps(
+                market.cost_model,
+                symbol=desired.symbol,
+                entry_side=side,
+                quantity=trim_qty,
+                mid_price=(q.bid + q.ask) / Decimal("2"),
+                half_spread=(q.ask - q.bid) / Decimal("2"),
+                is_taker_entry=True,
+                is_short_entry=False,
+                bid_size=q.bid_size,
+                ask_size=q.ask_size,
+            )
+        return PositionPlan(orders=(
+            PlannedOrder(
+                symbol=desired.symbol,
+                side=side,
+                quantity=trim_qty,
+                style=ExecStyle.MARKET,
+                leg=PlanLeg.TRIM,
+                rationale=rationale,
+            ),
+        ))
+
+
 # ── Cost gates (B4 entry / B5 reversal) — single source of truth ─────
 #
 # G-1 Phase P2: the edge-vs-cost economics live with the planner.  The
@@ -487,12 +591,12 @@ def order_intent_from_plan(
         )
         return _oi(intent, plan.total_quantity)
     if leg is PlanLeg.TRIM:
-        # TRIM has no legacy OrderIntent (partial same-direction reduce).
-        # It is unreachable while ``enable_trim`` is off; Phase P3 adds the
-        # partial-reduce execution path.
-        raise NotImplementedError(
-            "TRIM legs require the Phase-P3 partial-reduce path"
-        )
+        # P3: a partial same-direction reduce executes via the EXIT path —
+        # ``target_quantity`` carries the trim size (not ``|current|``), and
+        # the reducing side is derived from the current position, identical
+        # to a partial flatten.  Reducing legs are never cost-gated (Inv-11 /
+        # locked decision 3), which the EXIT path already guarantees.
+        return _oi(TradingIntent.EXIT, plan.total_quantity)
     return _oi(TradingIntent.NO_ACTION, 0)
 
 

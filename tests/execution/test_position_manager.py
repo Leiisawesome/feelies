@@ -14,11 +14,14 @@ import pytest
 from feelies.core.events import Side, Signal, SignalDirection
 from feelies.execution.intent import SignalPositionTranslator, TradingIntent
 from feelies.execution.position_manager import (
+    DesiredPosition,
     ExecStyle,
     LegacyPositionManager,
     PlannedOrder,
     PlanLeg,
+    PositionManagerConfig,
     PositionPlan,
+    TargetPositionManager,
     compare_plan_to_intent,
     desired_from_signal,
     order_intent_from_plan,
@@ -258,6 +261,103 @@ class TestCostGates:
             model, is_taker=True, is_taker_exit=True, **kw,
         )
         assert got == expected
+
+
+# ── P3: cost-aware TRIM ──────────────────────────────────────────────
+
+
+class TestTargetPositionManagerTrim:
+    @pytest.mark.parametrize("direction", list(SignalDirection))
+    @pytest.mark.parametrize("current", [-150, -50, 0, 50, 150])
+    @pytest.mark.parametrize("target", [0, 50, 100, 150])
+    def test_trim_off_is_byte_identical_to_legacy(
+        self, direction: SignalDirection, current: int, target: int,
+    ) -> None:
+        legacy = LegacyPositionManager()
+        tgt = TargetPositionManager()
+        signal = _signal(direction)
+        pos = Position(symbol="AAPL", quantity=current)
+        desired = desired_from_signal(signal, target)
+        # No config / trim disabled → identical plans.
+        a = legacy.plan(desired=desired, current=pos)
+        b = tgt.plan(
+            desired=desired, current=pos,
+            config=PositionManagerConfig(enable_trim=False),
+        )
+        assert [(o.side, o.quantity, o.leg) for o in a.orders] == \
+               [(o.side, o.quantity, o.leg) for o in b.orders]
+
+    def test_trim_emitted_on_same_direction_shrink(self) -> None:
+        mgr = TargetPositionManager(trim_min_fraction=0.10)
+        pos = Position(symbol="AAPL", quantity=150)  # long 150
+        desired = DesiredPosition(symbol="AAPL", target_qty=100, direction=1)
+        plan = mgr.plan(
+            desired=desired, current=pos,
+            config=PositionManagerConfig(enable_trim=True),
+        )
+        assert len(plan.orders) == 1
+        leg = plan.orders[0]
+        assert leg.leg == PlanLeg.TRIM
+        assert leg.side == Side.SELL
+        assert leg.quantity == 50  # 150 → 100
+        # legacy would have held (NO_ACTION).
+        assert LegacyPositionManager().plan(
+            desired=desired, current=pos,
+        ).orders == ()
+
+    def test_short_trim_covers_partially(self) -> None:
+        mgr = TargetPositionManager(trim_min_fraction=0.10)
+        pos = Position(symbol="AAPL", quantity=-150)  # short 150
+        desired = DesiredPosition(symbol="AAPL", target_qty=-100, direction=-1)
+        plan = mgr.plan(
+            desired=desired, current=pos,
+            config=PositionManagerConfig(enable_trim=True),
+        )
+        leg = plan.orders[0]
+        assert leg.leg == PlanLeg.TRIM
+        assert leg.side == Side.BUY  # reduce a short = buy to cover
+        assert leg.quantity == 50
+
+    def test_churn_guard_suppresses_tiny_trim(self) -> None:
+        mgr = TargetPositionManager(trim_min_fraction=0.10)
+        pos = Position(symbol="AAPL", quantity=150)
+        # 150 → 145 is a 5-share trim; threshold = ceil(0.10*150)=15 → hold.
+        desired = DesiredPosition(symbol="AAPL", target_qty=145, direction=1)
+        plan = mgr.plan(
+            desired=desired, current=pos,
+            config=PositionManagerConfig(enable_trim=True),
+        )
+        assert plan.orders == ()
+        assert plan.suppressed and plan.suppressed[0].reason == \
+            "trim_below_churn_threshold"
+
+    def test_trim_does_not_touch_entry_or_reverse(self) -> None:
+        mgr = TargetPositionManager()
+        cfg = PositionManagerConfig(enable_trim=True)
+        # entry from flat
+        entry = mgr.plan(
+            desired=DesiredPosition(symbol="AAPL", target_qty=100, direction=1),
+            current=Position(symbol="AAPL", quantity=0), config=cfg,
+        )
+        assert entry.primary_leg == PlanLeg.ENTRY
+        # reverse (opposite-side target)
+        rev = mgr.plan(
+            desired=DesiredPosition(symbol="AAPL", target_qty=-100, direction=-1),
+            current=Position(symbol="AAPL", quantity=50), config=cfg,
+        )
+        assert rev.primary_leg == PlanLeg.REVERSE_EXIT
+
+    def test_trim_leg_maps_to_partial_exit_intent(self) -> None:
+        from feelies.execution.intent import TradingIntent
+        signal = _signal(SignalDirection.LONG)
+        pos = Position(symbol="AAPL", quantity=150)
+        plan = TargetPositionManager(trim_min_fraction=0.10).plan(
+            desired=DesiredPosition(symbol="AAPL", target_qty=100, direction=1),
+            current=pos, config=PositionManagerConfig(enable_trim=True),
+        )
+        oi = order_intent_from_plan(plan, signal=signal, current=pos)
+        assert oi.intent == TradingIntent.EXIT  # executes via the EXIT path
+        assert oi.target_quantity == 50         # partial, not |current|
 
 
 # ── compare_plan_to_intent actually detects divergence ───────────────

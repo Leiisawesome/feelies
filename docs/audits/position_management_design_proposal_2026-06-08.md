@@ -246,12 +246,25 @@ This is the riskiest part (hot path, replay parity), so it's explicit.
 | **P2a** ✅ | Extract B4 + B5 cost math into the planner module as the single source of truth; orchestrator delegates | off | none (pure refactor) |
 | **Flip F1** ✅ | Drive the live decision from the planner: `plan → OrderIntent → existing execution machinery`, behind a default-off `drive` flag | off | none (byte-identical; A/B + truth-table proof) |
 | **P2b** | Planner *owns* the live gate decision + delete the orchestrator bolt-ons | off→on per-config | requires the rest of the flip (see note) |
-| **P3** | Add `TRIM` leg (G-2) behind `enable_trim` | off | new baseline when on |
+| **P3** ✅ | Add cost-aware `TRIM` leg (G-2) behind `enable_trim` via `TargetPositionManager` | off | new baseline when on |
 | **P4** | `urgency → ExecStyle` + passive/working exits (G-3) behind `exit_exec_style` | off | new baseline when on |
 | **P5** | Move PORTFOLIO diff out of `check_sized_intent` into the planner; risk engine becomes pure gating | off→on | shadow-verified |
 
-P0–P2a are parity-neutral plumbing. P3+ are the economic wins, each
-gated and individually baselined.
+P0–P2a + Flip-F1 are parity-neutral plumbing. P3+ are the economic wins,
+each gated and individually baselined.
+
+> **P3 trim policy (as implemented).** `TargetPositionManager` is
+> byte-identical to the legacy planner with `enable_trim` off; with it on
+> it overrides exactly one case — the legacy *hold* on a same-direction
+> target that has shrunk below the current position — emitting a partial
+> reduce of `|current| − |target|`. The locked "cost-aware" decision is
+> realised as a **churn guard**: `trim_min_fraction` (default 0.10)
+> suppresses trims smaller than that fraction of the position so wobble
+> doesn't bleed round-trip cost; the trim's round-trip cost in bps is
+> attached to the leg rationale for forensics. The trim executes via the
+> EXIT path (a reducing leg — never cost-gated, Inv-11). A richer
+> cost/benefit trim (tied to a holding-cost or edge-decay signal) is a
+> future refinement of the same seam.
 
 > **P2 split note.** P2 was split into **P2a** (done) and **P2b**
 > (deferred). The B5 reversal gate runs on the *post-risk-scaling* entry

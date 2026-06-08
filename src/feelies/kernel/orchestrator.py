@@ -108,6 +108,7 @@ from feelies.execution.position_manager import (
     LegacyPositionManager,
     MarketContext,
     PlanDivergence,
+    PositionManager,
     PositionManagerConfig,
     PositionPlan,
     compare_plan_to_intent,
@@ -382,9 +383,10 @@ class Orchestrator:
         signal_arbitrator: SignalArbitrator | None = None,
         signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
         regime_calibration_quotes: Sequence[NBBOQuote] | None = None,
-        position_manager: "LegacyPositionManager | None" = None,
+        position_manager: "PositionManager | None" = None,
         position_manager_shadow_sink: "list[PlanDivergence] | None" = None,
         position_manager_drive: bool = False,
+        position_manager_enable_trim: bool = False,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -425,6 +427,10 @@ class Orchestrator:
         # Default-off; byte-identical to legacy while ``enable_trim`` is off
         # (proven by the order_intent_from_plan equivalence test).
         self._position_manager_drive = position_manager_drive
+        # G-2 / P3: emit a cost-aware TRIM (partial reduce) when a same-
+        # direction target shrinks below the current position.  Default-off
+        # → byte-identical to legacy even when driving.
+        self._position_manager_enable_trim = position_manager_enable_trim
         self._alpha_registry = alpha_registry
         self._account_equity = account_equity
         self._fill_ledger = fill_ledger
@@ -3313,6 +3319,7 @@ class Orchestrator:
             config=PositionManagerConfig(
                 shadow=not self._position_manager_drive,
                 enabled=self._position_manager_drive,
+                enable_trim=self._position_manager_enable_trim,
             ),
         )
 

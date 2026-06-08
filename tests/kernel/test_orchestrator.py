@@ -1889,6 +1889,60 @@ class TestPositionManagerDrive:
         assert driven_orders == legacy_orders
 
 
+class TestPositionManagerTrim:
+    """P3: a cost-aware TRIM partially reduces a same-direction position
+    that legacy would hold — default-off (byte-identical when disabled)."""
+
+    @staticmethod
+    def _run(*, enable_trim: bool) -> tuple[int, list[tuple[str, int]]]:
+        from feelies.execution.position_manager import TargetPositionManager
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+        pos_store = MemoryPositionStore()
+        pos_store.update("AAPL", 150, Decimal("100"))  # long 150
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=pos_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+            position_manager=TargetPositionManager(trim_min_fraction=0.10),
+            position_manager_drive=True,
+            position_manager_enable_trim=enable_trim,
+        )
+        # LONG signal → default target 100 < current 150 → would trim 50.
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.LONG),
+        )
+        _boot_to_backtest(orch)
+        q = _make_quote()
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        return (
+            pos_store.get("AAPL").quantity,
+            [(o.side.name, o.quantity) for o in orders],
+        )
+
+    def test_trim_enabled_reduces_toward_target(self) -> None:
+        qty, orders = self._run(enable_trim=True)
+        assert qty == 100               # 150 trimmed down to the target 100
+        assert orders == [("SELL", 50)]  # one partial reduce
+
+    def test_trim_disabled_holds_position(self) -> None:
+        qty, orders = self._run(enable_trim=False)
+        assert qty == 150   # legacy hold — no trim
+        assert orders == []
+
+
 # ── B5: reversal combined-edge guard ──────────────────────────────────
 
 
