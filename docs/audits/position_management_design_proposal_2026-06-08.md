@@ -278,21 +278,24 @@ later), G-5 cross-alpha netting (aggregate `DesiredPosition`s pre-plan),
 G-6 session lifecycle (emits a `session_flat` `DesiredPosition` — trivial
 once the planner exists), G-7 sizing.
 
-**Open questions for sign-off:**
+**Decisions locked (2026-06-08):**
 
-1. **Does the PORTFOLIO diff move out of the risk engine (P5)?** It's the
-   correct layering but touches a working path. Recommend yes, but
-   shadow-gated. *(Your call — architectural.)*
-2. **TRIM threshold policy.** Do we trim on *any* target shrink, or only
-   when the trim notional clears its own round-trip cost (a TRIM analog
-   of B5)? Recommend the latter (cost-aware trim) — otherwise we churn.
-3. **Where does `edge_bps` for a TRIM/EXIT come from?** Reductions have
-   no "edge"; propose the cost gate only ever *gates additive* legs
-   (ENTRY/SCALE_UP/REVERSE_ENTRY) and never gates reducing legs, keeping
-   Inv-11 clean.
-4. **Single planner instance vs per-alpha?** Recommend one injected
-   `PositionManager` (like the translator today) for determinism and to
-   make G-5 netting natural.
+1. **PORTFOLIO diff moves out of the risk engine — shadow-gated (P5).**
+   The diff in `check_sized_intent` (`basic_risk.py:336-375`) relocates
+   into the planner; the risk engine returns to pure gating. Verified in
+   shadow mode before the flip so the working PORTFOLIO path can't drift.
+2. **TRIM is cost-aware.** A same-direction target shrink only produces a
+   TRIM leg when the trim notional clears its own round-trip cost (a
+   TRIM analog of the B5 gate). Prevents churn on small target wobbles.
+3. **The cost gate applies to *additive legs only*** (ENTRY / SCALE_UP /
+   REVERSE_ENTRY). It never blocks or shrinks a reducing leg
+   (TRIM / EXIT / REVERSE_EXIT) — reductions always execute, keeping
+   Inv-11 unambiguous. Note: this makes the cost-aware-trim rule (2) a
+   *classification* test (trim vs hold), not a suppression gate on an
+   already-chosen reducing order.
+4. **One shared `PositionManager` instance**, injected like the
+   translator is today — deterministic, and makes future cross-alpha
+   netting (G-5) a natural pre-plan aggregation step.
 
 ---
 
