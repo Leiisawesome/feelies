@@ -100,6 +100,7 @@ from feelies.execution.backtest_backend import (
 from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.execution.cost_model import DefaultCostModel, DefaultCostModelConfig
 from feelies.execution.intent import SignalPositionTranslator
+from feelies.execution.position_manager import TargetPositionManager
 from feelies.execution.min_cost_policy import (
     MinCostPolicyConfig,
     MinimumCostExecutionPolicy,
@@ -489,6 +490,12 @@ def build_platform(
     feature_snapshots = InMemoryFeatureSnapshotStore()
     position_sizer = BudgetBasedSizer(regime_engine=regime_engine)
     intent_translator = SignalPositionTranslator()
+    # G-1: the position-management decision layer.  ``drive`` routes the
+    # live decision through the planner; ``enable_trim`` turns on the
+    # cost-aware partial-reduce (TRIM).  Both default-on via PlatformConfig.
+    position_manager = TargetPositionManager(
+        trim_min_fraction=config.position_manager_trim_min_fraction,
+    )
 
     kill_switch = InMemoryKillSwitch()
     alert_manager = InMemoryAlertManager(kill_switch=kill_switch)
@@ -638,6 +645,9 @@ def build_platform(
         signal_order_trace_sink=signal_order_trace_sink,
         normalizer=normalizer,
         regime_calibration_quotes=regime_calibration_quotes,
+        position_manager=position_manager,
+        position_manager_drive=config.position_manager_drive,
+        position_manager_enable_trim=config.position_manager_enable_trim,
     )
 
     config_snapshot = config.snapshot()

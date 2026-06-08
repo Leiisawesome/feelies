@@ -266,6 +266,45 @@ each gated and individually baselined.
 > cost/benefit trim (tied to a holding-cost or edge-decay signal) is a
 > future refinement of the same seam.
 
+> **Wired on (2026-06-08).** The planner is now constructed in
+> `bootstrap.py` and **driven by default** with TRIM enabled, via three
+> `PlatformConfig` knobs (`position_manager_drive`,
+> `position_manager_enable_trim`, `position_manager_trim_min_fraction`),
+> all in the config snapshot. The whole non-functional suite stays green;
+> the *functional* APP baseline (`tests/acceptance/test_backtest_app_baseline.py`)
+> must be regenerated against the dataset — config_hash moved (new keys)
+> and the trade path now trims.
+
+### 6.1 Proposed: edge-aware TRIM gate (P3b)
+
+The shipped churn-fraction guard prevents wobble-churn but ignores edge.
+The **recommended** refinement gives the trim a real economic gate that is
+*symmetric* with the entry gate and reuses the P2a cost machinery:
+
+```
+ENTRY (B4):   add    when  edge_bps ≥ ratio    × round_trip_cost_bps   (edge justifies adding)
+TRIM  (B3b):  reduce when  edge_bps < k_trim   × round_trip_cost_bps(Δ) (edge no longer justifies holding)
+```
+
+i.e. the excess `Δ = |current| − |target|` is trimmed only when the
+signal's **current forward edge** has fallen below `k_trim ×` the
+round-trip cost of churning `Δ`. The two gates form one inventory band:
+**add above the band, hold inside it, trim below it.** Properties:
+
+- Reuses `round_trip_cost_bps(Δ)` (single source of truth) — no new cost
+  model call shape.
+- High remaining edge ⇒ a target dip is treated as noise ⇒ **hold** (don't
+  churn a still-profitable book). Low edge ⇒ the excess is dead weight ⇒
+  **trim**.
+- `k_trim` is the symmetric analog of `reversal_min_edge_cost_multiplier`
+  (default ≈ 1.0); the churn-fraction guard stays as a secondary floor.
+
+Open nuance: whether to gate on the *current* signal's `edge_estimate_bps`
+(simple, available) or a decayed/half-life-weighted estimate (more
+faithful to conviction decay). Recommend starting with the current edge,
+behind `enable_trim_edge_gate` (default off → today's churn-only trim),
+new baseline when on.
+
 > **P2 split note.** P2 was split into **P2a** (done) and **P2b**
 > (deferred). The B5 reversal gate runs on the *post-risk-scaling* entry
 > quantity computed *inside* `_execute_reverse`, and the B4 taker
