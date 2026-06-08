@@ -260,7 +260,16 @@ like), **severity / effort**.
 - **Severity P1 / Effort M** (adds a `SCALE_DOWN`-toward-target intent +
   partial-reduce execution).
 
-### G-3 — Exits are uniform "panic full-MARKET" (P1, M)
+### G-3 — Exits are uniform "panic full-MARKET" (P1, M) — ✅ CLOSED (2026-06-08)
+
+> **Closed (P4a + P4b).** Discretionary reductions (TRIMs) now work
+> `PASSIVE` (post a near-BBO limit, save the spread) under
+> `position_manager_urgency_exec`, and any passive reduction that
+> terminates unfilled (the router's resting timeout → CANCELLED/EXPIRED)
+> escalates its residual to a guaranteed MARKET order
+> (`_escalate_unfilled_working_exits`) — so working the exit never risks
+> a stranded position. Risk-driven exits, stops, reverse-exits, and the
+> EOD flatten stay aggressive (Inv-11).
 
 - **Evidence:** six of seven close-paths dump the entire position at
   market (table §1.8). Only the normal FLAT exit can be passive, and
@@ -307,7 +316,13 @@ like), **severity / effort**.
   residual reaches the market.
 - **Severity P1 / Effort L.**
 
-### G-6 — No session / overnight position lifecycle (P1, S-M)
+### G-6 — No session / overnight position lifecycle (P1, S-M) — ✅ CLOSED (2026-06-08)
+
+> **Closed.** `_check_session_flat` unwinds any open book (forced MARKET)
+> and `_in_session_flatten_window` blocks new entries once the quote
+> crosses `rth_close − session_flatten_seconds_before_close`, independent
+> of alpha behaviour. Config: `session_flatten_enabled` (default on),
+> `session_flatten_seconds_before_close`.
 
 - **Evidence:** no EOD flatten; RTH close only flips buying power and
   gates entries (`orchestrator.py:843-872`). Max-holding-period is only

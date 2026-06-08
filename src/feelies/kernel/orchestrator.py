@@ -93,7 +93,6 @@ from feelies.core.events import (
 from feelies.core.identifiers import SequenceGenerator, derive_order_id
 from feelies.core.state_machine import StateMachine, TransitionRecord
 from feelies.execution.backend import ExecutionBackend
-from feelies.execution.cost_model import estimate_round_trip_cost_bps
 from feelies.execution.min_cost_policy import (
     MinCostPolicyConfig,
     MinimumCostExecutionPolicy,
@@ -105,6 +104,22 @@ from feelies.execution.intent import (
     TradingIntent,
 )
 from feelies.execution.order_state import OrderState, create_order_state_machine
+from feelies.execution.position_manager import (
+    ExecStyle,
+    LegacyPositionManager,
+    MarketContext,
+    PlanDivergence,
+    PlanLeg,
+    PositionManager,
+    PositionManagerConfig,
+    PositionPlan,
+    compare_plan_to_intent,
+    desired_from_signal,
+    entry_edge_clears_cost,
+    order_intent_from_plan,
+    reversal_edge_gate,
+    round_trip_cost_bps,
+)
 from feelies.execution.trading_session import TradingSessionBounds
 from feelies.execution.regulatory.borrow_availability import (
     BorrowTier,
@@ -260,6 +275,14 @@ _ENTRY_OPENING_INTENTS: frozenset[TradingIntent] = frozenset({
     TradingIntent.REVERSE_SHORT_TO_LONG,
 })
 
+# Synthetic strategies whose exits must always cross at MARKET — a
+# guaranteed close (stop-loss, end-of-day flatten) is never left to a
+# passive non-fill (Inv-11).
+_FORCED_MARKET_EXIT_STRATEGIES: frozenset[str] = frozenset({
+    "__stop_exit__",
+    "__session_flat__",
+})
+
 
 class Orchestrator:
     """Central coordinator for the deterministic tick-processing pipeline.
@@ -370,6 +393,12 @@ class Orchestrator:
         signal_arbitrator: SignalArbitrator | None = None,
         signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
         regime_calibration_quotes: Sequence[NBBOQuote] | None = None,
+        position_manager: "PositionManager | None" = None,
+        position_manager_shadow_sink: "list[PlanDivergence] | None" = None,
+        position_manager_drive: bool = False,
+        position_manager_enable_trim: bool = False,
+        position_manager_trim_edge_gate_multiplier: float = 0.0,
+        position_manager_urgency_exec: bool = False,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -397,6 +426,31 @@ class Orchestrator:
             position_sizer if position_sizer is not None
             else BudgetBasedSizer(regime_engine=regime_engine)
         )
+        # G-1 Phase P1: optional shadow position-manager.  When both the
+        # manager and the sink are wired, the orchestrator runs the planner
+        # alongside the legacy translator on every signal and records any
+        # decision divergence — without affecting orders, the bus, the
+        # journal, or parity hashes (default-off when either is None).
+        self._position_manager = position_manager
+        self._position_manager_shadow_sink = position_manager_shadow_sink
+        # G-1 "the flip": when True (and a manager is wired), the live
+        # decision is driven by the planner — plan -> OrderIntent -> the
+        # existing execution machinery — instead of the legacy translator.
+        # Default-off; byte-identical to legacy while ``enable_trim`` is off
+        # (proven by the order_intent_from_plan equivalence test).
+        self._position_manager_drive = position_manager_drive
+        # G-2 / P3: emit a cost-aware TRIM (partial reduce) when a same-
+        # direction target shrinks below the current position.  Default-off
+        # → byte-identical to legacy even when driving.
+        self._position_manager_enable_trim = position_manager_enable_trim
+        # P3b: hold the excess (suppress the trim) while the forward edge
+        # still clears this multiple of its round-trip cost.  0 = gate off.
+        self._position_manager_trim_edge_gate_multiplier = (
+            position_manager_trim_edge_gate_multiplier
+        )
+        # P4: urgency-driven execution style (discretionary trims work
+        # passive).  Default-off — passive reductions defer on a non-fill.
+        self._position_manager_urgency_exec = position_manager_urgency_exec
         self._alpha_registry = alpha_registry
         self._account_equity = account_equity
         self._fill_ledger = fill_ledger
@@ -497,6 +551,13 @@ class Orchestrator:
         self._trail_activate_pct: float = 0.0
         self._trail_pct: float = 0.5
         self._peak_pnl_per_share: dict[str, float] = {}
+        # G-6: session/EOD flatten.  When enabled and an RTH session is
+        # configured, open positions are flattened (and new entries blocked)
+        # once the quote crosses ``rth_close - session_flatten_seconds_before
+        # _close``.  Default-off at the instance level; boot() enables it
+        # from PlatformConfig.
+        self._session_flatten_enabled: bool = False
+        self._session_flatten_seconds_before_close: int = 0
         self._min_order_shares: int = 1
         # Audit F-H-14: default 1.0 (round-trip breakeven) matches
         # ``PlatformConfig.signal_min_edge_cost_ratio``.  0 = gate disabled.
@@ -531,6 +592,15 @@ class Orchestrator:
         # without re-deriving the intent from fill order (Task 4).  Pruned
         # alongside ``_active_orders``.
         self._order_trading_intent: dict[str, str] = {}
+        # P4b: passive working-reduction orders awaiting a MARKET fallback.
+        # order_id -> (symbol, side, original_qty).  When such an order
+        # terminates unfilled (the router's resting timeout → CANCELLED /
+        # EXPIRED), the residual is escalated to MARKET so the reduction is
+        # still guaranteed.  ``_order_filled_qty`` tracks cumulative fills
+        # per order for the residual computation.  Both empty by default
+        # (no passive reductions unless ``urgency_exec`` is on).
+        self._working_exit_fallback: dict[str, tuple[str, Side, int]] = {}
+        self._order_filled_qty: dict[str, int] = {}
         # Router acks that were drained while waiting for a different
         # order family.  The order-router queue is global, so targeted
         # pollers must buffer unrelated acks instead of stealing them.
@@ -913,6 +983,13 @@ class Orchestrator:
                 self._trail_activate_pct = config.trail_activate_pct
             if hasattr(config, "trail_pct"):
                 self._trail_pct = config.trail_pct
+            # G-6: session/EOD flatten configuration.
+            if hasattr(config, "session_flatten_enabled"):
+                self._session_flatten_enabled = config.session_flatten_enabled
+            if hasattr(config, "session_flatten_seconds_before_close"):
+                self._session_flatten_seconds_before_close = int(
+                    config.session_flatten_seconds_before_close
+                )
             # BT-5: cache halt-detection config (empty codes ⇒ inert).
             if hasattr(config, "halt_on_condition_codes"):
                 self._halt_on_codes = frozenset(config.halt_on_condition_codes)
@@ -2069,6 +2146,13 @@ class Orchestrator:
                 self._carryover_signal_sequences.discard(buffered.sequence)
             self._signal_buffer.clear()
 
+        # G-6: flat-by-close overrides alpha conviction (an open book is
+        # unwound at the session boundary); an inline stop still wins the
+        # tie — both flatten, so the order is immaterial.
+        session_flat_signal = self._check_session_flat(quote)
+        if session_flat_signal is not None:
+            signal = session_flat_signal
+
         if stop_signal is not None:
             signal = stop_signal
 
@@ -2086,9 +2170,33 @@ class Orchestrator:
         # ── Position sizing: compute target quantity from risk budget ──
         target_qty = self._compute_target_quantity(signal, quote)
 
-        # ── Intent translation: Signal x Position → OrderIntent ──
+        # ── Decision: Signal × Position → OrderIntent ──────────────────
+        # Legacy path: the intent translator.  G-1 flip: when driving, the
+        # planner decides and the plan is projected back onto an OrderIntent
+        # so the existing execution machinery runs unchanged.
         current_position = self._positions.get(signal.symbol)
-        intent = self._intent_translator.translate(signal, current_position, target_qty)
+        # P4: the planner's execution style for a single-leg reduce (TRIM)
+        # overrides the builder's default routing when driving.  Only the
+        # discretionary TRIM is honored here; every other leg keeps the
+        # existing passive/market logic (None == no override).
+        exec_style_override: ExecStyle | None = None
+        if self._position_manager is not None and self._position_manager_drive:
+            plan = self._plan_for_signal(signal, current_position, target_qty, quote)
+            intent = order_intent_from_plan(
+                plan, signal=signal, current=current_position,
+            )
+            if plan.primary_leg is PlanLeg.TRIM and plan.orders:
+                exec_style_override = plan.orders[0].style
+        else:
+            intent = self._intent_translator.translate(
+                signal, current_position, target_qty,
+            )
+            # Phase P1: shadow the legacy decision and record divergence.
+            # Pure observation — never touches orders/bus/journal/parity
+            # (no-op unless both manager + sink are wired).
+            self._record_position_manager_shadow(
+                signal, current_position, target_qty, intent, quote,
+            )
 
         if intent.intent == TradingIntent.NO_ACTION:
             reasons_no: list[str] = [
@@ -2220,6 +2328,31 @@ class Orchestrator:
             self._finalize_tick(t_wall_start, cid)
             return
 
+        # G-6: inside the session-flatten window, refuse any new ENTRY-
+        # opening order so the book stays flat into the close.  Exits and
+        # the flat-by-close unwind itself are unaffected (Inv-11).
+        if (
+            intent.intent in _ENTRY_OPENING_INTENTS
+            and self._in_session_flatten_window(quote)
+        ):
+            self._append_signal_order_trace(
+                quote,
+                signal,
+                outcome="NO_ORDER",
+                reasons=(
+                    "session_flatten_window",
+                    f"symbol={intent.symbol}",
+                ),
+                trading_intent=intent.intent.name,
+            )
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="session_flatten_window",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
         # BT-6: Reg-SHO / SSR conservative refuse-short.  Under an active
         # short-sale restriction, an order that opens or increases SHORT
         # exposure (a short sale) is refused; the entry retries next horizon
@@ -2272,7 +2405,7 @@ class Orchestrator:
             return
 
         order, order_build_reason = self._try_build_order_from_intent(
-            intent, verdict, cid, quote,
+            intent, verdict, cid, quote, exec_style=exec_style_override,
         )
         if order is None:
             self._append_signal_order_trace(
@@ -2430,6 +2563,15 @@ class Orchestrator:
             order.order_id, order.side, order,
             trading_intent=intent.intent.name,
         )
+        # P4b: a passive working reduction (e.g. an urgency-driven TRIM)
+        # gets a MARKET fallback if its resting order terminates unfilled.
+        if (
+            exec_style_override is ExecStyle.PASSIVE
+            and order.order_type is OrderType.LIMIT
+        ):
+            self._working_exit_fallback[order.order_id] = (
+                order.symbol, order.side, order.quantity,
+            )
 
         # ── M6 → M7: ORDER_SUBMIT ──────────────────────────────
         self._micro.transition(
@@ -2601,10 +2743,15 @@ class Orchestrator:
         correlation_id: str,
         detail: str,
     ) -> bool:
-        """Return True when B4 edge estimate clears model round-trip cost."""
+        """Return True when B4 edge estimate clears model round-trip cost.
+
+        Delegates the edge-vs-cost arithmetic to the planner module's
+        ``entry_edge_clears_cost`` (G-1 P2 single source of truth); this
+        method owns only the no-op fast path and the suppression alert.
+        """
         if self._signal_min_edge_cost_ratio <= 0 or self._cost_model is None:
             return True
-        round_trip_cost_bps = self._round_trip_cost_bps(
+        rt_cost_bps = self._round_trip_cost_bps(
             symbol=symbol,
             entry_side=entry_side,
             quantity=quantity,
@@ -2612,20 +2759,20 @@ class Orchestrator:
             is_taker_entry=is_taker_entry,
             is_short_entry=is_short_entry,
         )
-        edge_bps_basis = signal.edge_estimate_bps
-        if self._signal_edge_cost_basis == "round_trip":
-            edge_bps_basis = edge_bps_basis * 2.0
-        if edge_bps_basis < (
-            self._signal_min_edge_cost_ratio * round_trip_cost_bps
+        if entry_edge_clears_cost(
+            edge_bps=signal.edge_estimate_bps,
+            rt_cost_bps=rt_cost_bps,
+            min_ratio=self._signal_min_edge_cost_ratio,
+            basis=self._signal_edge_cost_basis,
         ):
-            self._emit_signal_edge_gate_suppression_alert(
-                signal,
-                symbol,
-                correlation_id,
-                detail=detail,
-            )
-            return False
-        return True
+            return True
+        self._emit_signal_edge_gate_suppression_alert(
+            signal,
+            symbol,
+            correlation_id,
+            detail=detail,
+        )
+        return False
 
     def _round_trip_cost_bps(
         self,
@@ -2639,24 +2786,20 @@ class Orchestrator:
     ) -> float:
         """Model round-trip (entry + taker exit) cost in bps for one leg.
 
-        Shared by the B4 entry edge gate (:meth:`_signal_passes_edge_cost_gate`)
-        and the B5 reversal edge gate
-        (:meth:`_reversal_passes_combined_edge_gate`) so both price legs with
-        an identical cost-model call.  Callers guarantee
+        Thin wrapper over the planner module's ``round_trip_cost_bps``
+        (G-1 P2 single source of truth): resolves the quote → mid/spread
+        and the impact knobs from config.  Callers guarantee
         ``self._cost_model is not None`` before invoking.
         """
         assert self._cost_model is not None
-        gate_price = (quote.bid + quote.ask) / Decimal("2")
-        gate_spread = (quote.ask - quote.bid) / Decimal("2")
-        return estimate_round_trip_cost_bps(
+        return round_trip_cost_bps(
             self._cost_model,
             symbol=symbol,
             entry_side=entry_side,
             quantity=quantity,
-            mid_price=gate_price,
-            half_spread=gate_spread,
-            is_taker=is_taker_entry,
-            is_taker_exit=True,
+            mid_price=(quote.bid + quote.ask) / Decimal("2"),
+            half_spread=(quote.ask - quote.bid) / Decimal("2"),
+            is_taker_entry=is_taker_entry,
             is_short_entry=is_short_entry,
             bid_size=quote.bid_size,
             ask_size=quote.ask_size,
@@ -2727,12 +2870,13 @@ class Orchestrator:
             ),
             is_short_entry=is_short_entry,
         )
-        combined_cost_bps = exit_roundtrip_cost_bps + entry_roundtrip_cost_bps
-        required_bps = (
-            combined_cost_bps * self._reversal_min_edge_cost_multiplier
+        # G-1 P2: combine via the planner module's single-source-of-truth gate.
+        return reversal_edge_gate(
+            edge_bps=edge_estimate_bps,
+            exit_cost_bps=exit_roundtrip_cost_bps,
+            entry_cost_bps=entry_roundtrip_cost_bps,
+            multiplier=self._reversal_min_edge_cost_multiplier,
         )
-        passes = edge_estimate_bps > required_bps
-        return combined_cost_bps, required_bps, passes
 
     def _calibrate_regime_engine(self) -> None:
         """Calibrate regime emission parameters from a *prefix* of the log.
@@ -3213,6 +3357,52 @@ class Orchestrator:
             edge_estimate_bps=0.0,
         )
 
+    def _session_flatten_deadline_ns(self) -> int | None:
+        """Exchange-time ns at/after which the session flattens, or None.
+
+        ``None`` when session flatten is disabled or no RTH session is
+        configured.  The deadline is ``rth_close - buffer`` so an operator
+        can unwind before the closing auction.
+        """
+        if not self._session_flatten_enabled:
+            return None
+        bounds = self._trading_session_bounds
+        if bounds is None:
+            return None
+        return bounds.rth_close_ns - (
+            self._session_flatten_seconds_before_close * 1_000_000_000
+        )
+
+    def _in_session_flatten_window(self, quote: NBBOQuote) -> bool:
+        """True once the quote crosses the session-flatten deadline."""
+        deadline = self._session_flatten_deadline_ns()
+        return deadline is not None and quote.exchange_timestamp_ns >= deadline
+
+    def _check_session_flat(self, quote: NBBOQuote) -> Signal | None:
+        """G-6: flat-by-close.  Synthetic FLAT signal for an open position.
+
+        Independent of alpha behaviour: once the quote crosses the
+        session-flatten deadline, any non-zero position for the symbol is
+        unwound via the normal EXIT path (forced MARKET — the close must
+        not be left to a passive non-fill).  Returns ``None`` when the
+        window has not opened or the book is already flat.
+        """
+        if not self._in_session_flatten_window(quote):
+            return None
+        if self._positions.get(quote.symbol).quantity == 0:
+            return None
+        return Signal(
+            timestamp_ns=quote.timestamp_ns,
+            correlation_id=quote.correlation_id,
+            sequence=self._signal_seq.next(),
+            source_layer="SIGNAL",
+            symbol=quote.symbol,
+            strategy_id="__session_flat__",
+            direction=SignalDirection.FLAT,
+            strength=0.0,
+            edge_estimate_bps=0.0,
+        )
+
     def _compute_target_quantity(
         self,
         signal: Signal,
@@ -3252,6 +3442,75 @@ class Orchestrator:
             target = self._min_order_shares
 
         return target
+
+    def _plan_for_signal(
+        self,
+        signal: Signal,
+        current_position: Position,
+        target_qty: int | None,
+        quote: NBBOQuote,
+    ) -> PositionPlan:
+        """Build the planner's ``PositionPlan`` for a signal.
+
+        Shared by the shadow harness (P1) and the drive path (the flip).
+        Resolves the ``None`` sizer target via the translator default so
+        the planner sees the same effective magnitude as the legacy path.
+        """
+        assert self._position_manager is not None
+        default_target = getattr(
+            self._intent_translator, "_default_target", 100,
+        )
+        desired = desired_from_signal(
+            signal, target_qty, default_target_quantity=default_target,
+        )
+        return self._position_manager.plan(
+            desired=desired,
+            current=current_position,
+            market=MarketContext(quote=quote, cost_model=self._cost_model),
+            config=PositionManagerConfig(
+                shadow=not self._position_manager_drive,
+                enabled=self._position_manager_drive,
+                enable_trim=self._position_manager_enable_trim,
+                trim_edge_gate_multiplier=(
+                    self._position_manager_trim_edge_gate_multiplier
+                ),
+                urgency_exec=self._position_manager_urgency_exec,
+            ),
+        )
+
+    def _record_position_manager_shadow(
+        self,
+        signal: Signal,
+        current_position: Position,
+        target_qty: int | None,
+        intent: OrderIntent,
+        quote: NBBOQuote,
+    ) -> None:
+        """G-1 P1: run the shadow planner and record decision divergence.
+
+        No-op unless both a position manager and a divergence sink are
+        wired.  Strictly observational — it builds no orders, publishes
+        nothing on the bus, and writes no journal records, so it cannot
+        move a parity hash (Inv-5).  The legacy ``OrderIntent`` continues
+        to drive execution unchanged.
+        """
+        manager = self._position_manager
+        sink = self._position_manager_shadow_sink
+        if manager is None or sink is None:
+            return
+        plan = self._plan_for_signal(
+            signal, current_position, target_qty, quote,
+        )
+        divergence = compare_plan_to_intent(
+            intent_name=intent.intent.name,
+            intent_target_quantity=intent.target_quantity,
+            current_quantity=current_position.quantity,
+            plan=plan,
+            symbol=signal.symbol,
+            signal_sequence=signal.sequence,
+        )
+        if divergence is not None:
+            sink.append(divergence)
 
     def _execute_reverse(
         self,
@@ -3646,8 +3905,18 @@ class Orchestrator:
         verdict: RiskVerdict,
         correlation_id: str,
         quote: NBBOQuote | None = None,
+        *,
+        exec_style: ExecStyle | None = None,
     ) -> tuple[OrderRequest | None, str | None]:
-        """Like :meth:`_build_order_from_intent` but returns a failure token."""
+        """Like :meth:`_build_order_from_intent` but returns a failure token.
+
+        ``exec_style`` (P4): when ``ExecStyle.PASSIVE`` is supplied by the
+        planner (a discretionary working leg, e.g. an urgency-driven TRIM),
+        the order is posted as a near-BBO LIMIT regardless of the static
+        ``_use_passive_entries`` flag.  ``None`` keeps the legacy routing.
+        Stop-exits and MOC orders always short-circuit to MARKET and ignore
+        the hint (Inv-11).
+        """
         side = self._side_from_intent(intent)
         seq = self._seq.next()
         order_id = derive_order_id(f"{correlation_id}:{seq}")
@@ -3703,8 +3972,19 @@ class Orchestrator:
         if is_moc:
             order_type = OrderType.MARKET
             limit_price = None
+        elif (
+            exec_style is ExecStyle.PASSIVE
+            and quote is not None
+            and intent.signal.strategy_id not in _FORCED_MARKET_EXIT_STRATEGIES
+        ):
+            # P4: planner-driven passive working leg (e.g. a discretionary
+            # TRIM) — post at the near BBO; a non-fill simply defers it.
+            order_type = OrderType.LIMIT
+            limit_price = quote.bid if side == Side.BUY else quote.ask
         elif self._use_passive_entries and quote is not None:
-            is_stop_exit = intent.signal.strategy_id == "__stop_exit__"
+            is_stop_exit = (
+                intent.signal.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES
+            )
             if not is_stop_exit:
                 # Default: post passive at the near BBO.  When the
                 # minimum-cost policy is wired, let it override on a
@@ -4132,6 +4412,10 @@ class Orchestrator:
                 self._bus.publish(ack)
                 self._apply_ack_to_order(ack)
             self._reconcile_fills(acks, correlation_id)
+            # P4b: escalate any working-exit reduction that terminated
+            # unfilled to a guaranteed MARKET fallback (after reconcile, so
+            # the residual reflects this drain's fills).
+            self._escalate_unfilled_working_exits(acks, correlation_id)
         if self._paper_session_recorder is not None:
             self._paper_session_recorder.record_timing(
                 kind="drain_async_fills",
@@ -4139,6 +4423,97 @@ class Orchestrator:
                 correlation_id=correlation_id,
                 extra={"ack_count": len(acks)},
             )
+
+    def _escalate_unfilled_working_exits(
+        self, acks: list[OrderAck], correlation_id: str,
+    ) -> None:
+        """P4b: MARKET-fallback any passive working reduction that didn't fill.
+
+        When a tagged passive reduction order terminates ``CANCELLED`` /
+        ``EXPIRED`` (the router's resting timeout elapsed without a fill),
+        the unfilled residual is re-submitted as MARKET so the reduction is
+        still guaranteed — the safety net that makes passive working
+        reductions viable.  No-op when nothing is tagged (the default).
+        """
+        if not self._working_exit_fallback:
+            return
+        for ack in acks:
+            if ack.order_id not in self._working_exit_fallback:
+                continue
+            if ack.status not in (
+                OrderAckStatus.FILLED,
+                OrderAckStatus.CANCELLED,
+                OrderAckStatus.EXPIRED,
+            ):
+                continue
+            symbol, side, original_qty = self._working_exit_fallback.pop(
+                ack.order_id
+            )
+            filled = self._order_filled_qty.pop(ack.order_id, 0)
+            if ack.status is OrderAckStatus.FILLED:
+                continue  # fully worked passively — no fallback needed
+            residual = original_qty - filled
+            if residual < 1:
+                continue
+            self._submit_working_exit_fallback(
+                symbol, side, residual, ack.order_id, correlation_id,
+            )
+
+    def _submit_working_exit_fallback(
+        self,
+        symbol: str,
+        side: Side,
+        quantity: int,
+        parent_order_id: str,
+        correlation_id: str,
+    ) -> None:
+        """Submit the guaranteed MARKET residual for a non-filled working exit."""
+        order_id = hashlib.sha256(
+            f"{parent_order_id}:working_fallback".encode()
+        ).hexdigest()[:16]
+        order = OrderRequest(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            sequence=self._seq.next(),
+            order_id=order_id,
+            symbol=symbol,
+            side=side,
+            order_type=OrderType.MARKET,
+            quantity=quantity,
+            strategy_id="__working_exit_fallback__",
+            reason="WORKING_EXIT_FALLBACK",
+        )
+        self._track_order(order.order_id, order.side, order, trading_intent="EXIT")
+        self._transition_order(
+            order.order_id, OrderState.SUBMITTED, "submitted",
+            correlation_id=correlation_id,
+        )
+        try:
+            self._backend.order_router.submit(order)
+        except Exception as exc:
+            self._reject_order_after_submit_failure(order, exc)
+            return
+        self._bus.publish(order)
+        self._bus.publish(Alert(
+            timestamp_ns=self._clock.now_ns(),
+            correlation_id=correlation_id,
+            sequence=self._seq.next(),
+            severity=AlertSeverity.INFO,
+            layer="kernel",
+            alert_name="working_exit_market_fallback",
+            message=(
+                f"Working reduction did not fill passively; escalating "
+                f"{quantity} {side.name} {symbol} to MARKET "
+                f"(parent_order_id={parent_order_id})."
+            ),
+            context={
+                "symbol": symbol,
+                "side": side.name,
+                "quantity": quantity,
+                "parent_order_id": parent_order_id,
+                "fallback_order_id": order_id,
+            },
+        ))
 
     def _reconcile_resting_fills(self, cid: str) -> None:
         """Poll and reconcile quote-driven router acknowledgements.
@@ -4453,6 +4828,14 @@ class Orchestrator:
             signed_qty = ack.filled_quantity
             if side == Side.SELL:
                 signed_qty = -signed_qty
+
+            # P4b: accumulate per-order fills so a working-exit fallback can
+            # escalate only the *residual* if the passive leg partly filled.
+            if ack.order_id in self._working_exit_fallback:
+                self._order_filled_qty[ack.order_id] = (
+                    self._order_filled_qty.get(ack.order_id, 0)
+                    + ack.filled_quantity
+                )
 
             prev_position = self._positions.get(ack.symbol)
             prev_realized = prev_position.realized_pnl

@@ -241,15 +241,102 @@ This is the riskiest part (hot path, replay parity), so it's explicit.
 
 | Phase | Deliverable | Default | Parity impact |
 |-------|-------------|---------|---------------|
-| **P0** | `DesiredPosition` / `PositionPlan` / `PositionManager` Protocol + a `LegacyPositionManager` that reproduces today's matrix exactly | off | none |
-| **P1** | Wire orchestrator SIGNAL path through the planner in **shadow mode**; equivalence-assert on fixtures | shadow | none |
-| **P2** | Fold B4 + B5 into the planner; delete the two bolt-on call sites | off→on per-config | B5 already default-on (PR #100); now intrinsic, same numbers |
-| **P3** | Add `TRIM` leg (G-2) behind `enable_trim` | off | new baseline when on |
-| **P4** | `urgency → ExecStyle` + passive/working exits (G-3) behind `exit_exec_style` | off | new baseline when on |
+| **P0** ✅ | `DesiredPosition` / `PositionPlan` / `PositionManager` Protocol + a `LegacyPositionManager` that reproduces today's matrix exactly | off | none |
+| **P1** ✅ | Wire orchestrator SIGNAL path through the planner in **shadow mode**; equivalence-assert on fixtures | shadow | none |
+| **P2a** ✅ | Extract B4 + B5 cost math into the planner module as the single source of truth; orchestrator delegates | off | none (pure refactor) |
+| **Flip F1** ✅ | Drive the live decision from the planner: `plan → OrderIntent → existing execution machinery`, behind a default-off `drive` flag | off | none (byte-identical; A/B + truth-table proof) |
+| **P2b** | Planner *owns* the live gate decision + delete the orchestrator bolt-ons | off→on per-config | requires the rest of the flip (see note) |
+| **P3** ✅ | Add cost-aware `TRIM` leg (G-2) behind `enable_trim` via `TargetPositionManager` | off | new baseline when on |
+| **P4a** ✅ | `urgency → ExecStyle`: discretionary TRIMs work PASSIVE behind `position_manager_urgency_exec` | off | new baseline when on |
+| **P4b** ✅ | working exits with a MARKET fallback: a passive reduction that terminates unfilled escalates its residual to MARKET (guarantees the reduce) | intrinsic | inert unless passive reductions are used |
 | **P5** | Move PORTFOLIO diff out of `check_sized_intent` into the planner; risk engine becomes pure gating | off→on | shadow-verified |
 
-P0–P2 are parity-neutral plumbing. P3+ are the economic wins, each
-gated and individually baselined.
+P0–P2a + Flip-F1 are parity-neutral plumbing. P3+ are the economic wins,
+each gated and individually baselined.
+
+> **P4 split (G-3).** The full "panic full-MARKET exit" fix needs passive
+> *working* execution **with a market fallback** (escalate to MARKET on a
+> non-fill / urgency spike / deadline) so a reduction is still guaranteed —
+> that fallback is an execution-algo subsystem (**P4b**, deferred). **P4a**
+> ships the urgency→`ExecStyle` plumbing and the one *safe* behavioral win:
+> a discretionary **TRIM** works `PASSIVE` (posts a near-BBO limit, saves
+> the spread) because a trim non-fill is harmless — it simply defers the
+> reduce to the next signal, creating no risk. Risk-driven exits, stops,
+> reverse-exits, and MOC stay aggressive (Inv-11). Behind
+> `position_manager_urgency_exec` (**default off**): passive reductions
+> defer on a non-fill, so working them is opt-in until P4b's fallback makes
+> it safe-by-default. The style threads through the existing builder
+> (`_try_build_order_from_intent(..., exec_style=…)`) — no order-path
+> rearchitecture.
+
+> **P3 trim policy (as implemented).** `TargetPositionManager` is
+> byte-identical to the legacy planner with `enable_trim` off; with it on
+> it overrides exactly one case — the legacy *hold* on a same-direction
+> target that has shrunk below the current position — emitting a partial
+> reduce of `|current| − |target|`. The locked "cost-aware" decision is
+> realised as a **churn guard**: `trim_min_fraction` (default 0.10)
+> suppresses trims smaller than that fraction of the position so wobble
+> doesn't bleed round-trip cost; the trim's round-trip cost in bps is
+> attached to the leg rationale for forensics. The trim executes via the
+> EXIT path (a reducing leg — never cost-gated, Inv-11). A richer
+> cost/benefit trim (tied to a holding-cost or edge-decay signal) is a
+> future refinement of the same seam.
+
+> **Wired on (2026-06-08).** The planner is now constructed in
+> `bootstrap.py` and **driven by default** with TRIM enabled, via three
+> `PlatformConfig` knobs (`position_manager_drive`,
+> `position_manager_enable_trim`, `position_manager_trim_min_fraction`),
+> all in the config snapshot. The whole non-functional suite stays green;
+> the *functional* APP baseline (`tests/acceptance/test_backtest_app_baseline.py`)
+> must be regenerated against the dataset — config_hash moved (new keys)
+> and the trade path now trims.
+
+### 6.1 ✅ Edge-aware TRIM gate (P3b)
+
+The churn-fraction guard prevents wobble-churn but ignores edge. This
+refinement gives the trim a real economic gate that is *symmetric* with the
+entry gate and reuses the P2a cost machinery:
+
+```
+ENTRY (B4):   add    when  edge_bps ≥ ratio    × round_trip_cost_bps   (edge justifies adding)
+TRIM  (B3b):  reduce when  edge_bps < k_trim   × round_trip_cost_bps(Δ) (edge no longer justifies holding)
+```
+
+i.e. the excess `Δ = |current| − |target|` is trimmed only when the
+signal's **current forward edge** has fallen below `k_trim ×` the
+round-trip cost of churning `Δ`. The two gates form one inventory band:
+**add above the band, hold inside it, trim below it.** Properties:
+
+- Reuses `round_trip_cost_bps(Δ)` (single source of truth) — no new cost
+  model call shape.
+- High remaining edge ⇒ a target dip is treated as noise ⇒ **hold** (don't
+  churn a still-profitable book). Low edge ⇒ the excess is dead weight ⇒
+  **trim**.
+- `k_trim` is the symmetric analog of `reversal_min_edge_cost_multiplier`
+  (default ≈ 1.0); the churn-fraction guard stays as a secondary floor.
+
+**As implemented:** gates on the *current* signal's `edge_estimate_bps`
+(carried on `DesiredPosition.edge_bps`) via the existing
+`entry_edge_clears_cost` function — `hold` when
+`edge_bps ≥ k × round_trip_cost(Δ)`, else `trim`. Controlled by
+`PlatformConfig.position_manager_trim_edge_gate_multiplier`
+(`k`, default `1.0`; `0` disables → churn-guard-only trim). Inert when no
+cost model is wired (fail-safe). The churn-fraction guard remains the
+secondary floor. A decayed/half-life-weighted edge estimate is a possible
+future refinement of the same call site.
+
+> **P2 split note.** P2 was split into **P2a** (done) and **P2b**
+> (deferred). The B5 reversal gate runs on the *post-risk-scaling* entry
+> quantity computed *inside* `_execute_reverse`, and the B4 taker
+> assumption depends on execution mode (passive vs. min-cost-policy).
+> The planner cannot reproduce those decisions faithfully at
+> signal-translation time without the execution context threaded in —
+> that threading **is** the drive-from-plan flip. So P2a consolidates the
+> cost arithmetic into the planner module (single source of truth, both
+> the live orchestrator and the future planner call it), while P2b — the
+> planner owning the live decision and deleting the bolt-ons — lands with
+> the flip. This keeps every step parity-neutral and shadow-verifiable
+> rather than forcing a risky big-bang.
 
 ---
 

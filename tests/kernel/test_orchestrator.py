@@ -1710,6 +1710,533 @@ class TestEdgeCostGate:
         assert pos.quantity != 0  # gate disabled, order allowed
 
 
+# ── G-1 Phase P1: position-manager shadow harness ─────────────────────
+
+
+class _EmptyPlanManager:
+    """Wrong-on-purpose manager: always plans nothing (divergence probe)."""
+
+    def plan(self, *, desired, current, market=None, config=None):
+        from feelies.execution.position_manager import PositionPlan
+        return PositionPlan()
+
+
+class TestPositionManagerShadow:
+    """The legacy planner runs alongside the legacy path with zero
+    divergence, drives nothing, and the harness genuinely detects a
+    mismatch when one exists."""
+
+    def _build(
+        self,
+        clock: SimulatedClock,
+        *,
+        manager,
+        sink,
+        position_store=None,
+    ) -> tuple[Orchestrator, EventBus]:
+        bus = EventBus()
+        pos_store = position_store or MemoryPositionStore()
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=pos_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+            position_manager=manager,
+            position_manager_shadow_sink=sink,
+        )
+        return orch, bus
+
+    def test_legacy_manager_zero_divergence_entry_reverse_exit(self) -> None:
+        from feelies.execution.position_manager import (
+            LegacyPositionManager,
+            PlanDivergence,
+        )
+        clock = SimulatedClock(start_ns=1000)
+        sink: list[PlanDivergence] = []
+        pos_store = MemoryPositionStore()
+        orch, bus = self._build(
+            clock, manager=LegacyPositionManager(), sink=sink,
+            position_store=pos_store,
+        )
+
+        long_sig = _make_signal(_make_quote(), SignalDirection.LONG)
+        short_sig = _make_signal(_make_quote(), SignalDirection.SHORT)
+        flat_sig = _make_signal(_make_quote(), SignalDirection.FLAT)
+
+        def emit(quote: NBBOQuote) -> None:
+            sig = {1: long_sig, 2: short_sig, 3: flat_sig}.get(quote.sequence)
+            if sig is not None:
+                bus.publish(replace(
+                    sig,
+                    timestamp_ns=quote.timestamp_ns,
+                    correlation_id=quote.correlation_id,
+                    sequence=quote.sequence,
+                ))
+        bus.subscribe(NBBOQuote, emit)  # type: ignore[arg-type]
+        _boot_to_backtest(orch)
+
+        for seq in (1, 2, 3):
+            q = _make_quote(ts=1000 + seq, seq=seq)
+            orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+            orch._process_tick(q)
+
+        # Legacy path drove the book through entry → reverse → exit …
+        assert pos_store.get("AAPL").quantity == 0
+        # … and the shadow planner never disagreed.
+        assert sink == [], f"unexpected divergence: {sink}"
+
+    def test_shadow_harness_detects_real_divergence(self) -> None:
+        # A manager that plans nothing must be caught diverging on an entry.
+        from feelies.execution.position_manager import PlanDivergence
+        clock = SimulatedClock(start_ns=1000)
+        sink: list[PlanDivergence] = []
+        orch, bus = self._build(clock, manager=_EmptyPlanManager(), sink=sink)
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.LONG),
+        )
+        _boot_to_backtest(orch)
+        q = _make_quote()
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+
+        assert len(sink) == 1
+        assert sink[0].legacy_intent == "ENTRY_LONG"
+        assert sink[0].planner_quantity == 0
+
+    def test_shadow_is_noop_without_sink(self) -> None:
+        # Manager wired but no sink → harness is inert, book still moves.
+        from feelies.execution.position_manager import LegacyPositionManager
+        clock = SimulatedClock(start_ns=1000)
+        orch, bus = self._build(
+            clock, manager=LegacyPositionManager(), sink=None,
+        )
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.LONG),
+        )
+        _boot_to_backtest(orch)
+        q = _make_quote()
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        assert orch._positions.get("AAPL").quantity > 0
+
+
+class TestPositionManagerDrive:
+    """The flip: driving the decision from the planner (drive=True) produces
+    byte-identical orders to the legacy translator (drive=False)."""
+
+    @staticmethod
+    def _run_scenario(*, drive: bool) -> list[tuple]:
+        from feelies.execution.position_manager import LegacyPositionManager
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=MemoryPositionStore(),
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+            position_manager=LegacyPositionManager(),
+            position_manager_drive=drive,
+        )
+        long_sig = _make_signal(_make_quote(), SignalDirection.LONG)
+        short_sig = _make_signal(_make_quote(), SignalDirection.SHORT)
+        flat_sig = _make_signal(_make_quote(), SignalDirection.FLAT)
+
+        def emit(quote: NBBOQuote) -> None:
+            sig = {1: long_sig, 2: short_sig, 3: flat_sig}.get(quote.sequence)
+            if sig is not None:
+                bus.publish(replace(
+                    sig,
+                    timestamp_ns=quote.timestamp_ns,
+                    correlation_id=quote.correlation_id,
+                    sequence=quote.sequence,
+                ))
+        bus.subscribe(NBBOQuote, emit)  # type: ignore[arg-type]
+        _boot_to_backtest(orch)
+
+        for seq in (1, 2, 3):
+            q = _make_quote(ts=1000 + seq, seq=seq)
+            orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+            orch._process_tick(q)
+
+        return [
+            (o.order_id, o.side.name, o.quantity, o.order_type.name,
+             str(o.limit_price))
+            for o in orders
+        ]
+
+    def test_drive_is_byte_identical_to_legacy(self) -> None:
+        legacy_orders = self._run_scenario(drive=False)
+        driven_orders = self._run_scenario(drive=True)
+        assert driven_orders, "scenario must submit at least one order"
+        assert driven_orders == legacy_orders
+
+
+class TestPositionManagerTrim:
+    """P3: a cost-aware TRIM partially reduces a same-direction position
+    that legacy would hold — default-off (byte-identical when disabled)."""
+
+    @staticmethod
+    def _run(*, enable_trim: bool) -> tuple[int, list[tuple[str, int]]]:
+        from feelies.execution.position_manager import TargetPositionManager
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+        pos_store = MemoryPositionStore()
+        pos_store.update("AAPL", 150, Decimal("100"))  # long 150
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=pos_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+            position_manager=TargetPositionManager(trim_min_fraction=0.10),
+            position_manager_drive=True,
+            position_manager_enable_trim=enable_trim,
+        )
+        # LONG signal → default target 100 < current 150 → would trim 50.
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.LONG),
+        )
+        _boot_to_backtest(orch)
+        q = _make_quote()
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        return (
+            pos_store.get("AAPL").quantity,
+            [(o.side.name, o.quantity) for o in orders],
+        )
+
+    def test_trim_enabled_reduces_toward_target(self) -> None:
+        qty, orders = self._run(enable_trim=True)
+        assert qty == 100               # 150 trimmed down to the target 100
+        assert orders == [("SELL", 50)]  # one partial reduce
+
+    def test_trim_disabled_holds_position(self) -> None:
+        qty, orders = self._run(enable_trim=False)
+        assert qty == 150   # legacy hold — no trim
+        assert orders == []
+
+    @staticmethod
+    def _run_edge_gate(*, edge_bps: float) -> int:
+        # P3b end-to-end: edge gate on, real cost model, tight spread.
+        from feelies.execution.cost_model import (
+            DefaultCostModel,
+            DefaultCostModelConfig,
+        )
+        from feelies.execution.position_manager import TargetPositionManager
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        pos_store = MemoryPositionStore()
+        pos_store.update("AAPL", 150, Decimal("100"))
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=pos_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+            cost_model=DefaultCostModel(DefaultCostModelConfig()),
+            position_manager=TargetPositionManager(trim_min_fraction=0.10),
+            position_manager_drive=True,
+            position_manager_enable_trim=True,
+            position_manager_trim_edge_gate_multiplier=1.0,
+        )
+        sig = _make_signal_with_edge(_make_quote(), edge_bps)
+        sig = replace(sig, direction=SignalDirection.LONG)
+        _publish_signal_on_quote(bus, sig)
+        _boot_to_backtest(orch)
+        q = _make_quote(bid="99.99", ask="100.01")
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        return pos_store.get("AAPL").quantity
+
+    def test_edge_gate_holds_high_edge_position(self) -> None:
+        assert self._run_edge_gate(edge_bps=10_000.0) == 150  # held
+
+    def test_edge_gate_trims_low_edge_position(self) -> None:
+        assert self._run_edge_gate(edge_bps=0.0) == 100       # trimmed 150→100
+
+    @staticmethod
+    def _run_urgency(*, urgency_exec: bool) -> list[tuple[str, str, int]]:
+        from feelies.execution.position_manager import TargetPositionManager
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+        pos_store = MemoryPositionStore()
+        pos_store.update("AAPL", 150, Decimal("100"))
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=pos_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+            position_manager=TargetPositionManager(trim_min_fraction=0.10),
+            position_manager_drive=True,
+            position_manager_enable_trim=True,
+            position_manager_urgency_exec=urgency_exec,
+        )
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.LONG),
+        )
+        _boot_to_backtest(orch)
+        q = _make_quote()
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        return [(o.side.name, o.order_type.name, o.quantity) for o in orders]
+
+    def test_urgency_exec_posts_passive_trim(self) -> None:
+        # urgency on → the discretionary trim works as a passive LIMIT.
+        assert self._run_urgency(urgency_exec=True) == [("SELL", "LIMIT", 50)]
+
+    def test_trim_is_market_by_default(self) -> None:
+        # urgency off (default) → trim crosses at MARKET (immediate reduce).
+        assert self._run_urgency(urgency_exec=False) == [("SELL", "MARKET", 50)]
+
+
+# ── G-6: session / end-of-day flatten ─────────────────────────────────
+
+
+class TestSessionFlatten:
+    """Flat-by-close: open positions are unwound (and entries blocked) once
+    the quote crosses the session-flatten deadline, independent of alphas."""
+
+    @staticmethod
+    def _bounds(rth_close_ns: int):
+        from datetime import date
+
+        from feelies.execution.trading_session import TradingSessionBounds
+        return TradingSessionBounds(
+            session_date=date(2026, 3, 26),
+            rth_open_ns=0,
+            rth_close_ns=rth_close_ns,
+        )
+
+    def _orch(
+        self,
+        *,
+        rth_close_ns: int,
+        enabled: bool = True,
+        position: int = 50,
+    ) -> tuple[Orchestrator, EventBus, list[OrderRequest], MemoryPositionStore]:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+        pos_store = MemoryPositionStore()
+        if position:
+            pos_store.update("AAPL", position, Decimal("100"))
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=pos_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+        _boot_to_backtest(orch)
+        orch._trading_session_bounds = self._bounds(rth_close_ns)
+        orch._session_flatten_enabled = enabled
+        return orch, bus, orders, pos_store
+
+    def test_flattens_open_position_past_close(self) -> None:
+        # exchange_timestamp_ns = ts - 100; ts=1000 → 900 ≥ rth_close 500.
+        orch, _bus, orders, pos = self._orch(rth_close_ns=500)
+        q = _make_quote(ts=1000, seq=1)
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        assert pos.get("AAPL").quantity == 0
+        assert len(orders) == 1
+        assert orders[0].side == Side.SELL and orders[0].quantity == 50
+        assert orders[0].order_type.name == "MARKET"  # EOD close is aggressive
+
+    def test_holds_before_close(self) -> None:
+        orch, _bus, orders, pos = self._orch(rth_close_ns=5000)
+        q = _make_quote(ts=1000, seq=1)  # exchange 900 < 5000 → not yet
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        assert pos.get("AAPL").quantity == 50
+        assert orders == []
+
+    def test_disabled_holds_position(self) -> None:
+        orch, _bus, orders, pos = self._orch(rth_close_ns=500, enabled=False)
+        q = _make_quote(ts=1000, seq=1)
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        assert pos.get("AAPL").quantity == 50
+        assert orders == []
+
+    def test_blocks_new_entry_in_window(self) -> None:
+        orch, bus, orders, pos = self._orch(rth_close_ns=500, position=0)
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.LONG),
+        )
+        q = _make_quote(ts=1000, seq=1)
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        assert pos.get("AAPL").quantity == 0  # entry suppressed in the window
+        assert orders == []
+
+
+# ── P4b: working-exit MARKET fallback ─────────────────────────────────
+
+
+class TestWorkingExitFallback:
+    """A passive working reduction that terminates unfilled escalates its
+    residual to a guaranteed MARKET order."""
+
+    def _orch(self) -> tuple[Orchestrator, EventBus, list[OrderRequest]]:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=MemoryPositionStore(),
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+        _boot_to_backtest(orch)
+        return orch, bus, orders
+
+    @staticmethod
+    def _ack(order_id: str, status: OrderAckStatus, filled: int = 0):
+        return OrderAck(
+            timestamp_ns=2000,
+            correlation_id="c",
+            sequence=1,
+            order_id=order_id,
+            symbol="AAPL",
+            status=status,
+            filled_quantity=filled,
+        )
+
+    def test_cancelled_escalates_full_residual_to_market(self) -> None:
+        orch, _bus, orders = self._orch()
+        orch._working_exit_fallback["oid1"] = ("AAPL", Side.SELL, 50)
+        orch._escalate_unfilled_working_exits(
+            [self._ack("oid1", OrderAckStatus.CANCELLED)], "c",
+        )
+        assert len(orders) == 1
+        assert orders[0].order_type.name == "MARKET"
+        assert orders[0].side == Side.SELL and orders[0].quantity == 50
+        assert "oid1" not in orch._working_exit_fallback  # tag cleared
+
+    def test_partial_fill_escalates_only_residual(self) -> None:
+        orch, _bus, orders = self._orch()
+        orch._working_exit_fallback["oid2"] = ("AAPL", Side.SELL, 50)
+        orch._order_filled_qty["oid2"] = 20
+        orch._escalate_unfilled_working_exits(
+            [self._ack("oid2", OrderAckStatus.EXPIRED, filled=20)], "c",
+        )
+        assert orders[0].quantity == 30  # 50 − 20 already filled
+
+    def test_full_fill_no_fallback(self) -> None:
+        orch, _bus, orders = self._orch()
+        orch._working_exit_fallback["oid3"] = ("AAPL", Side.SELL, 50)
+        orch._escalate_unfilled_working_exits(
+            [self._ack("oid3", OrderAckStatus.FILLED, filled=50)], "c",
+        )
+        assert orders == []
+        assert "oid3" not in orch._working_exit_fallback
+
+    def test_noop_when_nothing_tagged(self) -> None:
+        orch, _bus, orders = self._orch()
+        orch._escalate_unfilled_working_exits(
+            [self._ack("unknown", OrderAckStatus.CANCELLED)], "c",
+        )
+        assert orders == []
+
+    def test_passive_trim_registers_a_fallback_tag(self) -> None:
+        # End-to-end wiring: a driven urgency trim posts a LIMIT that is
+        # tagged for fallback (the escalation itself is covered above).
+        from feelies.execution.position_manager import TargetPositionManager
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+        pos = MemoryPositionStore()
+        pos.update("AAPL", 150, Decimal("100"))
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = Orchestrator(
+            clock=clock, bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(), order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(), position_store=pos,
+            event_log=InMemoryEventLog(), metric_collector=_NoOpMetricCollector(),
+            position_manager=TargetPositionManager(trim_min_fraction=0.10),
+            position_manager_drive=True,
+            position_manager_enable_trim=True,
+            position_manager_urgency_exec=True,
+        )
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.LONG),
+        )
+        _boot_to_backtest(orch)
+        q = _make_quote()
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+
+        limit_orders = [o for o in orders if o.order_type.name == "LIMIT"]
+        assert len(limit_orders) == 1                      # passive trim posted
+        assert limit_orders[0].order_id in orch._working_exit_fallback
+
+
 # ── B5: reversal combined-edge guard ──────────────────────────────────
 
 

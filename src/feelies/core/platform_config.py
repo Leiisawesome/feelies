@@ -313,6 +313,33 @@ class PlatformConfig:
     # combined exit + entry round-trip cost. 0.0 = disabled (legacy).
     reversal_min_edge_cost_multiplier: float = 1.5
 
+    # G-1: position-management decision layer.  ``drive`` routes the live
+    # decision through the planner (plan -> OrderIntent -> existing
+    # execution machinery); byte-identical to the legacy translator while
+    # ``enable_trim`` is off.  ``enable_trim`` emits a cost-aware partial
+    # reduce (TRIM) when a same-direction target shrinks below the current
+    # position.  ``trim_min_fraction`` is the churn guard: trims smaller
+    # than this fraction of the position are suppressed.
+    position_manager_drive: bool = True
+    position_manager_enable_trim: bool = True
+    position_manager_trim_min_fraction: float = 0.10
+    # P3b: edge-aware trim gate.  Hold the excess (suppress the trim) while
+    # the signal's forward edge still clears this multiple of the trim's
+    # round-trip cost.  0.0 disables the gate (churn-guard-only trim).
+    position_manager_trim_edge_gate_multiplier: float = 1.0
+    # P4: urgency-driven execution style.  When True, discretionary trims
+    # work PASSIVE (post a limit) instead of crossing at MARKET.  Default
+    # off — a passive reduction defers on a non-fill, so it is opt-in until
+    # the working-exit-with-market-fallback layer lands.
+    position_manager_urgency_exec: bool = False
+
+    # G-6: session / EOD flatten.  When enabled (and an RTH session is
+    # configured), open positions are flattened — and new entries blocked —
+    # once the quote crosses ``rth_close - session_flatten_seconds_before
+    # _close``.  Closes the overnight-gap-risk hole for intraday strategies.
+    session_flatten_enabled: bool = True
+    session_flatten_seconds_before_close: int = 0
+
     # Regime engine boot-time calibration (lookahead avoidance).  ``None``
     # skips feeding the trading event log into ``calibrate()`` entirely
     # (cold emission defaults + per-run warning).  A positive integer uses
@@ -707,6 +734,18 @@ class PlatformConfig:
             raise ConfigurationError(
                 "reversal_min_edge_cost_multiplier must be >= 0"
             )
+        if not (0.0 <= self.position_manager_trim_min_fraction <= 1.0):
+            raise ConfigurationError(
+                "position_manager_trim_min_fraction must be in [0, 1]"
+            )
+        if self.position_manager_trim_edge_gate_multiplier < 0.0:
+            raise ConfigurationError(
+                "position_manager_trim_edge_gate_multiplier must be >= 0"
+            )
+        if self.session_flatten_seconds_before_close < 0:
+            raise ConfigurationError(
+                "session_flatten_seconds_before_close must be >= 0"
+            )
         if self.cost_passive_adverse_selection_bps < 0.0:
             raise ConfigurationError(
                 "cost_passive_adverse_selection_bps must be >= 0"
@@ -990,6 +1029,21 @@ class PlatformConfig:
             "signal_min_edge_cost_ratio": self.signal_min_edge_cost_ratio,
             "reversal_min_edge_cost_multiplier": (
                 self.reversal_min_edge_cost_multiplier
+            ),
+            "position_manager_drive": self.position_manager_drive,
+            "position_manager_enable_trim": self.position_manager_enable_trim,
+            "position_manager_trim_min_fraction": (
+                self.position_manager_trim_min_fraction
+            ),
+            "position_manager_trim_edge_gate_multiplier": (
+                self.position_manager_trim_edge_gate_multiplier
+            ),
+            "position_manager_urgency_exec": (
+                self.position_manager_urgency_exec
+            ),
+            "session_flatten_enabled": self.session_flatten_enabled,
+            "session_flatten_seconds_before_close": (
+                self.session_flatten_seconds_before_close
             ),
             "signal_edge_cost_basis": self.signal_edge_cost_basis,
             "regime_calibration_max_quotes": self.regime_calibration_max_quotes,
@@ -1487,6 +1541,27 @@ class PlatformConfig:
             ),
             reversal_min_edge_cost_multiplier=float(
                 data.get("reversal_min_edge_cost_multiplier", 1.5)
+            ),
+            position_manager_drive=bool(
+                data.get("position_manager_drive", True)
+            ),
+            position_manager_enable_trim=bool(
+                data.get("position_manager_enable_trim", True)
+            ),
+            position_manager_trim_min_fraction=float(
+                data.get("position_manager_trim_min_fraction", 0.10)
+            ),
+            position_manager_trim_edge_gate_multiplier=float(
+                data.get("position_manager_trim_edge_gate_multiplier", 1.0)
+            ),
+            position_manager_urgency_exec=bool(
+                data.get("position_manager_urgency_exec", False)
+            ),
+            session_flatten_enabled=bool(
+                data.get("session_flatten_enabled", True)
+            ),
+            session_flatten_seconds_before_close=int(
+                data.get("session_flatten_seconds_before_close", 0)
             ),
             signal_edge_cost_basis=str(
                 data.get("signal_edge_cost_basis", "round_trip")
