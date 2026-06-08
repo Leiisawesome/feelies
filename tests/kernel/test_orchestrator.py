@@ -2033,6 +2033,96 @@ class TestPositionManagerTrim:
         assert self._run_urgency(urgency_exec=False) == [("SELL", "MARKET", 50)]
 
 
+# ── G-6: session / end-of-day flatten ─────────────────────────────────
+
+
+class TestSessionFlatten:
+    """Flat-by-close: open positions are unwound (and entries blocked) once
+    the quote crosses the session-flatten deadline, independent of alphas."""
+
+    @staticmethod
+    def _bounds(rth_close_ns: int):
+        from datetime import date
+
+        from feelies.execution.trading_session import TradingSessionBounds
+        return TradingSessionBounds(
+            session_date=date(2026, 3, 26),
+            rth_open_ns=0,
+            rth_close_ns=rth_close_ns,
+        )
+
+    def _orch(
+        self,
+        *,
+        rth_close_ns: int,
+        enabled: bool = True,
+        position: int = 50,
+    ) -> tuple[Orchestrator, EventBus, list[OrderRequest], MemoryPositionStore]:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+        pos_store = MemoryPositionStore()
+        if position:
+            pos_store.update("AAPL", position, Decimal("100"))
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=pos_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+        _boot_to_backtest(orch)
+        orch._trading_session_bounds = self._bounds(rth_close_ns)
+        orch._session_flatten_enabled = enabled
+        return orch, bus, orders, pos_store
+
+    def test_flattens_open_position_past_close(self) -> None:
+        # exchange_timestamp_ns = ts - 100; ts=1000 → 900 ≥ rth_close 500.
+        orch, _bus, orders, pos = self._orch(rth_close_ns=500)
+        q = _make_quote(ts=1000, seq=1)
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        assert pos.get("AAPL").quantity == 0
+        assert len(orders) == 1
+        assert orders[0].side == Side.SELL and orders[0].quantity == 50
+        assert orders[0].order_type.name == "MARKET"  # EOD close is aggressive
+
+    def test_holds_before_close(self) -> None:
+        orch, _bus, orders, pos = self._orch(rth_close_ns=5000)
+        q = _make_quote(ts=1000, seq=1)  # exchange 900 < 5000 → not yet
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        assert pos.get("AAPL").quantity == 50
+        assert orders == []
+
+    def test_disabled_holds_position(self) -> None:
+        orch, _bus, orders, pos = self._orch(rth_close_ns=500, enabled=False)
+        q = _make_quote(ts=1000, seq=1)
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        assert pos.get("AAPL").quantity == 50
+        assert orders == []
+
+    def test_blocks_new_entry_in_window(self) -> None:
+        orch, bus, orders, pos = self._orch(rth_close_ns=500, position=0)
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.LONG),
+        )
+        q = _make_quote(ts=1000, seq=1)
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        assert pos.get("AAPL").quantity == 0  # entry suppressed in the window
+        assert orders == []
+
+
 # ── B5: reversal combined-edge guard ──────────────────────────────────
 
 

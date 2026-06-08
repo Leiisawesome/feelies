@@ -307,7 +307,13 @@ like), **severity / effort**.
   residual reaches the market.
 - **Severity P1 / Effort L.**
 
-### G-6 — No session / overnight position lifecycle (P1, S-M)
+### G-6 — No session / overnight position lifecycle (P1, S-M) — ✅ CLOSED (2026-06-08)
+
+> **Closed.** `_check_session_flat` unwinds any open book (forced MARKET)
+> and `_in_session_flatten_window` blocks new entries once the quote
+> crosses `rth_close − session_flatten_seconds_before_close`, independent
+> of alpha behaviour. Config: `session_flatten_enabled` (default on),
+> `session_flatten_seconds_before_close`.
 
 - **Evidence:** no EOD flatten; RTH close only flips buying power and
   gates entries (`orchestrator.py:843-872`). Max-holding-period is only

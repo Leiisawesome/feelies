@@ -333,6 +333,13 @@ class PlatformConfig:
     # the working-exit-with-market-fallback layer lands.
     position_manager_urgency_exec: bool = False
 
+    # G-6: session / EOD flatten.  When enabled (and an RTH session is
+    # configured), open positions are flattened — and new entries blocked —
+    # once the quote crosses ``rth_close - session_flatten_seconds_before
+    # _close``.  Closes the overnight-gap-risk hole for intraday strategies.
+    session_flatten_enabled: bool = True
+    session_flatten_seconds_before_close: int = 0
+
     # Regime engine boot-time calibration (lookahead avoidance).  ``None``
     # skips feeding the trading event log into ``calibrate()`` entirely
     # (cold emission defaults + per-run warning).  A positive integer uses
@@ -735,6 +742,10 @@ class PlatformConfig:
             raise ConfigurationError(
                 "position_manager_trim_edge_gate_multiplier must be >= 0"
             )
+        if self.session_flatten_seconds_before_close < 0:
+            raise ConfigurationError(
+                "session_flatten_seconds_before_close must be >= 0"
+            )
         if self.cost_passive_adverse_selection_bps < 0.0:
             raise ConfigurationError(
                 "cost_passive_adverse_selection_bps must be >= 0"
@@ -1029,6 +1040,10 @@ class PlatformConfig:
             ),
             "position_manager_urgency_exec": (
                 self.position_manager_urgency_exec
+            ),
+            "session_flatten_enabled": self.session_flatten_enabled,
+            "session_flatten_seconds_before_close": (
+                self.session_flatten_seconds_before_close
             ),
             "signal_edge_cost_basis": self.signal_edge_cost_basis,
             "regime_calibration_max_quotes": self.regime_calibration_max_quotes,
@@ -1541,6 +1556,12 @@ class PlatformConfig:
             ),
             position_manager_urgency_exec=bool(
                 data.get("position_manager_urgency_exec", False)
+            ),
+            session_flatten_enabled=bool(
+                data.get("session_flatten_enabled", True)
+            ),
+            session_flatten_seconds_before_close=int(
+                data.get("session_flatten_seconds_before_close", 0)
             ),
             signal_edge_cost_basis=str(
                 data.get("signal_edge_cost_basis", "round_trip")

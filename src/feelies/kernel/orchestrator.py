@@ -275,6 +275,14 @@ _ENTRY_OPENING_INTENTS: frozenset[TradingIntent] = frozenset({
     TradingIntent.REVERSE_SHORT_TO_LONG,
 })
 
+# Synthetic strategies whose exits must always cross at MARKET — a
+# guaranteed close (stop-loss, end-of-day flatten) is never left to a
+# passive non-fill (Inv-11).
+_FORCED_MARKET_EXIT_STRATEGIES: frozenset[str] = frozenset({
+    "__stop_exit__",
+    "__session_flat__",
+})
+
 
 class Orchestrator:
     """Central coordinator for the deterministic tick-processing pipeline.
@@ -543,6 +551,13 @@ class Orchestrator:
         self._trail_activate_pct: float = 0.0
         self._trail_pct: float = 0.5
         self._peak_pnl_per_share: dict[str, float] = {}
+        # G-6: session/EOD flatten.  When enabled and an RTH session is
+        # configured, open positions are flattened (and new entries blocked)
+        # once the quote crosses ``rth_close - session_flatten_seconds_before
+        # _close``.  Default-off at the instance level; boot() enables it
+        # from PlatformConfig.
+        self._session_flatten_enabled: bool = False
+        self._session_flatten_seconds_before_close: int = 0
         self._min_order_shares: int = 1
         # Audit F-H-14: default 1.0 (round-trip breakeven) matches
         # ``PlatformConfig.signal_min_edge_cost_ratio``.  0 = gate disabled.
@@ -959,6 +974,13 @@ class Orchestrator:
                 self._trail_activate_pct = config.trail_activate_pct
             if hasattr(config, "trail_pct"):
                 self._trail_pct = config.trail_pct
+            # G-6: session/EOD flatten configuration.
+            if hasattr(config, "session_flatten_enabled"):
+                self._session_flatten_enabled = config.session_flatten_enabled
+            if hasattr(config, "session_flatten_seconds_before_close"):
+                self._session_flatten_seconds_before_close = int(
+                    config.session_flatten_seconds_before_close
+                )
             # BT-5: cache halt-detection config (empty codes ⇒ inert).
             if hasattr(config, "halt_on_condition_codes"):
                 self._halt_on_codes = frozenset(config.halt_on_condition_codes)
@@ -2101,6 +2123,13 @@ class Orchestrator:
                 self._carryover_signal_sequences.discard(buffered.sequence)
             self._signal_buffer.clear()
 
+        # G-6: flat-by-close overrides alpha conviction (an open book is
+        # unwound at the session boundary); an inline stop still wins the
+        # tie — both flatten, so the order is immaterial.
+        session_flat_signal = self._check_session_flat(quote)
+        if session_flat_signal is not None:
+            signal = session_flat_signal
+
         if stop_signal is not None:
             signal = stop_signal
 
@@ -2271,6 +2300,31 @@ class Orchestrator:
             self._micro.transition(
                 MicroState.LOG_AND_METRICS,
                 trigger="halt_resolution_blackout",
+                correlation_id=cid,
+            )
+            self._finalize_tick(t_wall_start, cid)
+            return
+
+        # G-6: inside the session-flatten window, refuse any new ENTRY-
+        # opening order so the book stays flat into the close.  Exits and
+        # the flat-by-close unwind itself are unaffected (Inv-11).
+        if (
+            intent.intent in _ENTRY_OPENING_INTENTS
+            and self._in_session_flatten_window(quote)
+        ):
+            self._append_signal_order_trace(
+                quote,
+                signal,
+                outcome="NO_ORDER",
+                reasons=(
+                    "session_flatten_window",
+                    f"symbol={intent.symbol}",
+                ),
+                trading_intent=intent.intent.name,
+            )
+            self._micro.transition(
+                MicroState.LOG_AND_METRICS,
+                trigger="session_flatten_window",
                 correlation_id=cid,
             )
             self._finalize_tick(t_wall_start, cid)
@@ -3271,6 +3325,52 @@ class Orchestrator:
             edge_estimate_bps=0.0,
         )
 
+    def _session_flatten_deadline_ns(self) -> int | None:
+        """Exchange-time ns at/after which the session flattens, or None.
+
+        ``None`` when session flatten is disabled or no RTH session is
+        configured.  The deadline is ``rth_close - buffer`` so an operator
+        can unwind before the closing auction.
+        """
+        if not self._session_flatten_enabled:
+            return None
+        bounds = self._trading_session_bounds
+        if bounds is None:
+            return None
+        return bounds.rth_close_ns - (
+            self._session_flatten_seconds_before_close * 1_000_000_000
+        )
+
+    def _in_session_flatten_window(self, quote: NBBOQuote) -> bool:
+        """True once the quote crosses the session-flatten deadline."""
+        deadline = self._session_flatten_deadline_ns()
+        return deadline is not None and quote.exchange_timestamp_ns >= deadline
+
+    def _check_session_flat(self, quote: NBBOQuote) -> Signal | None:
+        """G-6: flat-by-close.  Synthetic FLAT signal for an open position.
+
+        Independent of alpha behaviour: once the quote crosses the
+        session-flatten deadline, any non-zero position for the symbol is
+        unwound via the normal EXIT path (forced MARKET — the close must
+        not be left to a passive non-fill).  Returns ``None`` when the
+        window has not opened or the book is already flat.
+        """
+        if not self._in_session_flatten_window(quote):
+            return None
+        if self._positions.get(quote.symbol).quantity == 0:
+            return None
+        return Signal(
+            timestamp_ns=quote.timestamp_ns,
+            correlation_id=quote.correlation_id,
+            sequence=self._signal_seq.next(),
+            source_layer="SIGNAL",
+            symbol=quote.symbol,
+            strategy_id="__session_flat__",
+            direction=SignalDirection.FLAT,
+            strength=0.0,
+            edge_estimate_bps=0.0,
+        )
+
     def _compute_target_quantity(
         self,
         signal: Signal,
@@ -3849,14 +3949,16 @@ class Orchestrator:
         elif (
             exec_style is ExecStyle.PASSIVE
             and quote is not None
-            and intent.signal.strategy_id != "__stop_exit__"
+            and intent.signal.strategy_id not in _FORCED_MARKET_EXIT_STRATEGIES
         ):
             # P4: planner-driven passive working leg (e.g. a discretionary
             # TRIM) — post at the near BBO; a non-fill simply defers it.
             order_type = OrderType.LIMIT
             limit_price = quote.bid if side == Side.BUY else quote.ask
         elif self._use_passive_entries and quote is not None:
-            is_stop_exit = intent.signal.strategy_id == "__stop_exit__"
+            is_stop_exit = (
+                intent.signal.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES
+            )
             if not is_stop_exit:
                 # Default: post passive at the near BBO.  When the
                 # minimum-cost policy is wired, let it override on a
