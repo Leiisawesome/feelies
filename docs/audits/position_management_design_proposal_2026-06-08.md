@@ -275,11 +275,11 @@ each gated and individually baselined.
 > must be regenerated against the dataset — config_hash moved (new keys)
 > and the trade path now trims.
 
-### 6.1 Proposed: edge-aware TRIM gate (P3b)
+### 6.1 ✅ Edge-aware TRIM gate (P3b)
 
-The shipped churn-fraction guard prevents wobble-churn but ignores edge.
-The **recommended** refinement gives the trim a real economic gate that is
-*symmetric* with the entry gate and reuses the P2a cost machinery:
+The churn-fraction guard prevents wobble-churn but ignores edge. This
+refinement gives the trim a real economic gate that is *symmetric* with the
+entry gate and reuses the P2a cost machinery:
 
 ```
 ENTRY (B4):   add    when  edge_bps ≥ ratio    × round_trip_cost_bps   (edge justifies adding)
@@ -299,11 +299,15 @@ round-trip cost of churning `Δ`. The two gates form one inventory band:
 - `k_trim` is the symmetric analog of `reversal_min_edge_cost_multiplier`
   (default ≈ 1.0); the churn-fraction guard stays as a secondary floor.
 
-Open nuance: whether to gate on the *current* signal's `edge_estimate_bps`
-(simple, available) or a decayed/half-life-weighted estimate (more
-faithful to conviction decay). Recommend starting with the current edge,
-behind `enable_trim_edge_gate` (default off → today's churn-only trim),
-new baseline when on.
+**As implemented:** gates on the *current* signal's `edge_estimate_bps`
+(carried on `DesiredPosition.edge_bps`) via the existing
+`entry_edge_clears_cost` function — `hold` when
+`edge_bps ≥ k × round_trip_cost(Δ)`, else `trim`. Controlled by
+`PlatformConfig.position_manager_trim_edge_gate_multiplier`
+(`k`, default `1.0`; `0` disables → churn-guard-only trim). Inert when no
+cost model is wired (fail-safe). The churn-fraction guard remains the
+secondary floor. A decayed/half-life-weighted edge estimate is a possible
+future refinement of the same call site.
 
 > **P2 split note.** P2 was split into **P2a** (done) and **P2b**
 > (deferred). The B5 reversal gate runs on the *post-risk-scaling* entry

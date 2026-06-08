@@ -387,6 +387,7 @@ class Orchestrator:
         position_manager_shadow_sink: "list[PlanDivergence] | None" = None,
         position_manager_drive: bool = False,
         position_manager_enable_trim: bool = False,
+        position_manager_trim_edge_gate_multiplier: float = 0.0,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -431,6 +432,11 @@ class Orchestrator:
         # direction target shrinks below the current position.  Default-off
         # → byte-identical to legacy even when driving.
         self._position_manager_enable_trim = position_manager_enable_trim
+        # P3b: hold the excess (suppress the trim) while the forward edge
+        # still clears this multiple of its round-trip cost.  0 = gate off.
+        self._position_manager_trim_edge_gate_multiplier = (
+            position_manager_trim_edge_gate_multiplier
+        )
         self._alpha_registry = alpha_registry
         self._account_equity = account_equity
         self._fill_ledger = fill_ledger
@@ -3320,6 +3326,9 @@ class Orchestrator:
                 shadow=not self._position_manager_drive,
                 enabled=self._position_manager_drive,
                 enable_trim=self._position_manager_enable_trim,
+                trim_edge_gate_multiplier=(
+                    self._position_manager_trim_edge_gate_multiplier
+                ),
             ),
         )
 

@@ -165,6 +165,11 @@ class PositionManagerConfig:
     enabled: bool = False     # drive execution from the plan (Phase P2+)
     shadow: bool = False      # run alongside legacy and record divergence
     enable_trim: bool = False  # emit TRIM legs (Phase P3 / G-2)
+    # P3b: edge-aware trim gate.  When > 0, a trim is *suppressed* (the book
+    # is held) while the forward edge still justifies the excess —
+    # i.e. while ``edge_bps >= multiplier × round_trip_cost_bps(Δ)``.  0
+    # disables the gate (churn-guard-only trim).
+    trim_edge_gate_multiplier: float = 0.0
 
 
 class PositionManager(Protocol):
@@ -374,19 +379,16 @@ class TargetPositionManager:
             ))
 
         side = Side.SELL if cur > 0 else Side.BUY
-        rationale: dict[str, float] = {
-            "trim_qty": float(trim_qty),
-            "current_qty": float(cur),
-            "target_qty": float(d * m),
-            "trim_fraction": float(trim_qty) / float(abs(cur)),
-        }
+        # Round-trip cost of churning the excess Δ (priced once; reused by
+        # the P3b edge gate and the leg rationale).
+        rt_cost_bps: float | None = None
         if (
             market is not None
             and market.cost_model is not None
             and market.quote is not None
         ):
             q = market.quote
-            rationale["round_trip_cost_bps"] = round_trip_cost_bps(
+            rt_cost_bps = round_trip_cost_bps(
                 market.cost_model,
                 symbol=desired.symbol,
                 entry_side=side,
@@ -398,6 +400,45 @@ class TargetPositionManager:
                 bid_size=q.bid_size,
                 ask_size=q.ask_size,
             )
+
+        # P3b: edge-aware trim gate — the symmetric mirror of the B4 entry
+        # gate.  While the forward edge still clears the churn cost
+        # (``edge_bps >= k × round_trip_cost``), the target dip is treated
+        # as noise and the excess is *held*; only once the edge falls below
+        # it does the excess become dead weight worth trimming.  Inert when
+        # the multiplier is 0 or no cost model is wired (fail-safe).
+        k = config.trim_edge_gate_multiplier
+        if (
+            k > 0
+            and rt_cost_bps is not None
+            and entry_edge_clears_cost(
+                edge_bps=desired.edge_bps,
+                rt_cost_bps=rt_cost_bps,
+                min_ratio=k,
+                basis="one_way",
+            )
+        ):
+            return PositionPlan(suppressed=(
+                SuppressedLeg(
+                    leg=PlanLeg.TRIM,
+                    reason="trim_edge_above_gate",
+                    constraints={
+                        "edge_bps": desired.edge_bps,
+                        "required_bps": k * rt_cost_bps,
+                        "round_trip_cost_bps": rt_cost_bps,
+                        "trim_qty": float(trim_qty),
+                    },
+                ),
+            ))
+
+        rationale: dict[str, float] = {
+            "trim_qty": float(trim_qty),
+            "current_qty": float(cur),
+            "target_qty": float(d * m),
+            "trim_fraction": float(trim_qty) / float(abs(cur)),
+        }
+        if rt_cost_bps is not None:
+            rationale["round_trip_cost_bps"] = rt_cost_bps
         return PositionPlan(orders=(
             PlannedOrder(
                 symbol=desired.symbol,

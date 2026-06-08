@@ -347,6 +347,86 @@ class TestTargetPositionManagerTrim:
         )
         assert rev.primary_leg == PlanLeg.REVERSE_EXIT
 
+    def _market_ctx(self):
+        from decimal import Decimal
+
+        from feelies.core.events import NBBOQuote
+        from feelies.execution.cost_model import (
+            DefaultCostModel,
+            DefaultCostModelConfig,
+        )
+        from feelies.execution.position_manager import MarketContext
+        quote = NBBOQuote(
+            timestamp_ns=1000, correlation_id="c", sequence=1, symbol="AAPL",
+            bid=Decimal("99.95"), ask=Decimal("100.05"),
+            bid_size=100, ask_size=200, exchange_timestamp_ns=900,
+        )
+        return MarketContext(
+            quote=quote, cost_model=DefaultCostModel(DefaultCostModelConfig()),
+        )
+
+    def test_edge_gate_holds_when_edge_still_clears_cost(self) -> None:
+        # High forward edge → the target dip is noise → hold (no trim).
+        mgr = TargetPositionManager(trim_min_fraction=0.10)
+        pos = Position(symbol="AAPL", quantity=150)
+        desired = DesiredPosition(
+            symbol="AAPL", target_qty=100, direction=1, edge_bps=10_000.0,
+        )
+        plan = mgr.plan(
+            desired=desired, current=pos, market=self._market_ctx(),
+            config=PositionManagerConfig(
+                enable_trim=True, trim_edge_gate_multiplier=1.0,
+            ),
+        )
+        assert plan.orders == ()
+        assert plan.suppressed[0].reason == "trim_edge_above_gate"
+
+    def test_edge_gate_trims_when_edge_below_cost(self) -> None:
+        # Negligible forward edge → the excess is dead weight → trim.
+        mgr = TargetPositionManager(trim_min_fraction=0.10)
+        pos = Position(symbol="AAPL", quantity=150)
+        desired = DesiredPosition(
+            symbol="AAPL", target_qty=100, direction=1, edge_bps=0.0,
+        )
+        plan = mgr.plan(
+            desired=desired, current=pos, market=self._market_ctx(),
+            config=PositionManagerConfig(
+                enable_trim=True, trim_edge_gate_multiplier=1.0,
+            ),
+        )
+        assert plan.primary_leg == PlanLeg.TRIM
+        assert plan.orders[0].quantity == 50
+
+    def test_edge_gate_off_trims_regardless_of_edge(self) -> None:
+        # multiplier 0 → gate inert → churn-guard-only trim even on high edge.
+        mgr = TargetPositionManager(trim_min_fraction=0.10)
+        pos = Position(symbol="AAPL", quantity=150)
+        desired = DesiredPosition(
+            symbol="AAPL", target_qty=100, direction=1, edge_bps=10_000.0,
+        )
+        plan = mgr.plan(
+            desired=desired, current=pos, market=self._market_ctx(),
+            config=PositionManagerConfig(
+                enable_trim=True, trim_edge_gate_multiplier=0.0,
+            ),
+        )
+        assert plan.primary_leg == PlanLeg.TRIM
+
+    def test_edge_gate_inert_without_cost_model(self) -> None:
+        # No cost model → gate cannot price → trim on churn guard (fail-safe).
+        mgr = TargetPositionManager(trim_min_fraction=0.10)
+        pos = Position(symbol="AAPL", quantity=150)
+        desired = DesiredPosition(
+            symbol="AAPL", target_qty=100, direction=1, edge_bps=10_000.0,
+        )
+        plan = mgr.plan(
+            desired=desired, current=pos,
+            config=PositionManagerConfig(
+                enable_trim=True, trim_edge_gate_multiplier=1.0,
+            ),
+        )
+        assert plan.primary_leg == PlanLeg.TRIM
+
     def test_trim_leg_maps_to_partial_exit_intent(self) -> None:
         from feelies.execution.intent import TradingIntent
         signal = _signal(SignalDirection.LONG)

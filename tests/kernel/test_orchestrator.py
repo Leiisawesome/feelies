@@ -1942,6 +1942,52 @@ class TestPositionManagerTrim:
         assert qty == 150   # legacy hold — no trim
         assert orders == []
 
+    @staticmethod
+    def _run_edge_gate(*, edge_bps: float) -> int:
+        # P3b end-to-end: edge gate on, real cost model, tight spread.
+        from feelies.execution.cost_model import (
+            DefaultCostModel,
+            DefaultCostModelConfig,
+        )
+        from feelies.execution.position_manager import TargetPositionManager
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        pos_store = MemoryPositionStore()
+        pos_store.update("AAPL", 150, Decimal("100"))
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=pos_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+            cost_model=DefaultCostModel(DefaultCostModelConfig()),
+            position_manager=TargetPositionManager(trim_min_fraction=0.10),
+            position_manager_drive=True,
+            position_manager_enable_trim=True,
+            position_manager_trim_edge_gate_multiplier=1.0,
+        )
+        sig = _make_signal_with_edge(_make_quote(), edge_bps)
+        sig = replace(sig, direction=SignalDirection.LONG)
+        _publish_signal_on_quote(bus, sig)
+        _boot_to_backtest(orch)
+        q = _make_quote(bid="99.99", ask="100.01")
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        return pos_store.get("AAPL").quantity
+
+    def test_edge_gate_holds_high_edge_position(self) -> None:
+        assert self._run_edge_gate(edge_bps=10_000.0) == 150  # held
+
+    def test_edge_gate_trims_low_edge_position(self) -> None:
+        assert self._run_edge_gate(edge_bps=0.0) == 100       # trimmed 150→100
+
 
 # ── B5: reversal combined-edge guard ──────────────────────────────────
 

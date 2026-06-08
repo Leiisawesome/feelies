@@ -323,6 +323,10 @@ class PlatformConfig:
     position_manager_drive: bool = True
     position_manager_enable_trim: bool = True
     position_manager_trim_min_fraction: float = 0.10
+    # P3b: edge-aware trim gate.  Hold the excess (suppress the trim) while
+    # the signal's forward edge still clears this multiple of the trim's
+    # round-trip cost.  0.0 disables the gate (churn-guard-only trim).
+    position_manager_trim_edge_gate_multiplier: float = 1.0
 
     # Regime engine boot-time calibration (lookahead avoidance).  ``None``
     # skips feeding the trading event log into ``calibrate()`` entirely
@@ -722,6 +726,10 @@ class PlatformConfig:
             raise ConfigurationError(
                 "position_manager_trim_min_fraction must be in [0, 1]"
             )
+        if self.position_manager_trim_edge_gate_multiplier < 0.0:
+            raise ConfigurationError(
+                "position_manager_trim_edge_gate_multiplier must be >= 0"
+            )
         if self.cost_passive_adverse_selection_bps < 0.0:
             raise ConfigurationError(
                 "cost_passive_adverse_selection_bps must be >= 0"
@@ -1010,6 +1018,9 @@ class PlatformConfig:
             "position_manager_enable_trim": self.position_manager_enable_trim,
             "position_manager_trim_min_fraction": (
                 self.position_manager_trim_min_fraction
+            ),
+            "position_manager_trim_edge_gate_multiplier": (
+                self.position_manager_trim_edge_gate_multiplier
             ),
             "signal_edge_cost_basis": self.signal_edge_cost_basis,
             "regime_calibration_max_quotes": self.regime_calibration_max_quotes,
@@ -1516,6 +1527,9 @@ class PlatformConfig:
             ),
             position_manager_trim_min_fraction=float(
                 data.get("position_manager_trim_min_fraction", 0.10)
+            ),
+            position_manager_trim_edge_gate_multiplier=float(
+                data.get("position_manager_trim_edge_gate_multiplier", 1.0)
             ),
             signal_edge_cost_basis=str(
                 data.get("signal_edge_cost_basis", "round_trip")
