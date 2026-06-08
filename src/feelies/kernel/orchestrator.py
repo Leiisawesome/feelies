@@ -105,6 +105,14 @@ from feelies.execution.intent import (
     TradingIntent,
 )
 from feelies.execution.order_state import OrderState, create_order_state_machine
+from feelies.execution.position_manager import (
+    LegacyPositionManager,
+    MarketContext,
+    PlanDivergence,
+    PositionManagerConfig,
+    compare_plan_to_intent,
+    desired_from_signal,
+)
 from feelies.execution.trading_session import TradingSessionBounds
 from feelies.execution.regulatory.borrow_availability import (
     BorrowTier,
@@ -370,6 +378,8 @@ class Orchestrator:
         signal_arbitrator: SignalArbitrator | None = None,
         signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
         regime_calibration_quotes: Sequence[NBBOQuote] | None = None,
+        position_manager: "LegacyPositionManager | None" = None,
+        position_manager_shadow_sink: "list[PlanDivergence] | None" = None,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -397,6 +407,13 @@ class Orchestrator:
             position_sizer if position_sizer is not None
             else BudgetBasedSizer(regime_engine=regime_engine)
         )
+        # G-1 Phase P1: optional shadow position-manager.  When both the
+        # manager and the sink are wired, the orchestrator runs the planner
+        # alongside the legacy translator on every signal and records any
+        # decision divergence — without affecting orders, the bus, the
+        # journal, or parity hashes (default-off when either is None).
+        self._position_manager = position_manager
+        self._position_manager_shadow_sink = position_manager_shadow_sink
         self._alpha_registry = alpha_registry
         self._account_equity = account_equity
         self._fill_ledger = fill_ledger
@@ -2076,6 +2093,13 @@ class Orchestrator:
         current_position = self._positions.get(signal.symbol)
         intent = self._intent_translator.translate(signal, current_position, target_qty)
 
+        # G-1 Phase P1: shadow the legacy decision with the position manager
+        # and record any divergence.  Pure observation — never touches
+        # orders/bus/journal/parity (no-op unless both manager + sink wired).
+        self._record_position_manager_shadow(
+            signal, current_position, target_qty, intent, quote,
+        )
+
         if intent.intent == TradingIntent.NO_ACTION:
             reasons_no: list[str] = [
                 "intent_translator_no_action",
@@ -3238,6 +3262,49 @@ class Orchestrator:
             target = self._min_order_shares
 
         return target
+
+    def _record_position_manager_shadow(
+        self,
+        signal: Signal,
+        current_position: Position,
+        target_qty: int | None,
+        intent: OrderIntent,
+        quote: NBBOQuote,
+    ) -> None:
+        """G-1 P1: run the shadow planner and record decision divergence.
+
+        No-op unless both a position manager and a divergence sink are
+        wired.  Strictly observational — it builds no orders, publishes
+        nothing on the bus, and writes no journal records, so it cannot
+        move a parity hash (Inv-5).  The legacy ``OrderIntent`` continues
+        to drive execution unchanged.
+        """
+        manager = self._position_manager
+        sink = self._position_manager_shadow_sink
+        if manager is None or sink is None:
+            return
+        default_target = getattr(
+            self._intent_translator, "_default_target", 100,
+        )
+        desired = desired_from_signal(
+            signal, target_qty, default_target_quantity=default_target,
+        )
+        plan = manager.plan(
+            desired=desired,
+            current=current_position,
+            market=MarketContext(quote=quote, cost_model=self._cost_model),
+            config=PositionManagerConfig(shadow=True),
+        )
+        divergence = compare_plan_to_intent(
+            intent_name=intent.intent.name,
+            intent_target_quantity=intent.target_quantity,
+            current_quantity=current_position.quantity,
+            plan=plan,
+            symbol=signal.symbol,
+            signal_sequence=signal.sequence,
+        )
+        if divergence is not None:
+            sink.append(divergence)
 
     def _execute_reverse(
         self,

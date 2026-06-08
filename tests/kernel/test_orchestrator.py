@@ -1710,6 +1710,124 @@ class TestEdgeCostGate:
         assert pos.quantity != 0  # gate disabled, order allowed
 
 
+# ── G-1 Phase P1: position-manager shadow harness ─────────────────────
+
+
+class _EmptyPlanManager:
+    """Wrong-on-purpose manager: always plans nothing (divergence probe)."""
+
+    def plan(self, *, desired, current, market=None, config=None):
+        from feelies.execution.position_manager import PositionPlan
+        return PositionPlan()
+
+
+class TestPositionManagerShadow:
+    """The legacy planner runs alongside the legacy path with zero
+    divergence, drives nothing, and the harness genuinely detects a
+    mismatch when one exists."""
+
+    def _build(
+        self,
+        clock: SimulatedClock,
+        *,
+        manager,
+        sink,
+        position_store=None,
+    ) -> tuple[Orchestrator, EventBus]:
+        bus = EventBus()
+        pos_store = position_store or MemoryPositionStore()
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(),
+            position_store=pos_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+            position_manager=manager,
+            position_manager_shadow_sink=sink,
+        )
+        return orch, bus
+
+    def test_legacy_manager_zero_divergence_entry_reverse_exit(self) -> None:
+        from feelies.execution.position_manager import (
+            LegacyPositionManager,
+            PlanDivergence,
+        )
+        clock = SimulatedClock(start_ns=1000)
+        sink: list[PlanDivergence] = []
+        pos_store = MemoryPositionStore()
+        orch, bus = self._build(
+            clock, manager=LegacyPositionManager(), sink=sink,
+            position_store=pos_store,
+        )
+
+        long_sig = _make_signal(_make_quote(), SignalDirection.LONG)
+        short_sig = _make_signal(_make_quote(), SignalDirection.SHORT)
+        flat_sig = _make_signal(_make_quote(), SignalDirection.FLAT)
+
+        def emit(quote: NBBOQuote) -> None:
+            sig = {1: long_sig, 2: short_sig, 3: flat_sig}.get(quote.sequence)
+            if sig is not None:
+                bus.publish(replace(
+                    sig,
+                    timestamp_ns=quote.timestamp_ns,
+                    correlation_id=quote.correlation_id,
+                    sequence=quote.sequence,
+                ))
+        bus.subscribe(NBBOQuote, emit)  # type: ignore[arg-type]
+        _boot_to_backtest(orch)
+
+        for seq in (1, 2, 3):
+            q = _make_quote(ts=1000 + seq, seq=seq)
+            orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+            orch._process_tick(q)
+
+        # Legacy path drove the book through entry → reverse → exit …
+        assert pos_store.get("AAPL").quantity == 0
+        # … and the shadow planner never disagreed.
+        assert sink == [], f"unexpected divergence: {sink}"
+
+    def test_shadow_harness_detects_real_divergence(self) -> None:
+        # A manager that plans nothing must be caught diverging on an entry.
+        from feelies.execution.position_manager import PlanDivergence
+        clock = SimulatedClock(start_ns=1000)
+        sink: list[PlanDivergence] = []
+        orch, bus = self._build(clock, manager=_EmptyPlanManager(), sink=sink)
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.LONG),
+        )
+        _boot_to_backtest(orch)
+        q = _make_quote()
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+
+        assert len(sink) == 1
+        assert sink[0].legacy_intent == "ENTRY_LONG"
+        assert sink[0].planner_quantity == 0
+
+    def test_shadow_is_noop_without_sink(self) -> None:
+        # Manager wired but no sink → harness is inert, book still moves.
+        from feelies.execution.position_manager import LegacyPositionManager
+        clock = SimulatedClock(start_ns=1000)
+        orch, bus = self._build(
+            clock, manager=LegacyPositionManager(), sink=None,
+        )
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.LONG),
+        )
+        _boot_to_backtest(orch)
+        q = _make_quote()
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        assert orch._positions.get("AAPL").quantity > 0
+
+
 # ── B5: reversal combined-edge guard ──────────────────────────────────
 
 
