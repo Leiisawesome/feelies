@@ -152,6 +152,63 @@ class TestPlanClassification:
             desired_from_signal(_signal(SignalDirection.LONG), -1)
 
 
+# ── Cost gates (B4/B5) — single source of truth ──────────────────────
+
+
+class TestCostGates:
+    def test_entry_edge_clears_cost_boundary_and_basis(self) -> None:
+        from feelies.execution.position_manager import entry_edge_clears_cost
+        # one_way: clears when edge >= ratio * cost (boundary inclusive).
+        assert entry_edge_clears_cost(
+            edge_bps=20.0, rt_cost_bps=10.0, min_ratio=2.0, basis="one_way",
+        )
+        assert not entry_edge_clears_cost(
+            edge_bps=19.9, rt_cost_bps=10.0, min_ratio=2.0, basis="one_way",
+        )
+        # round_trip basis doubles the one-way edge before comparing.
+        assert entry_edge_clears_cost(
+            edge_bps=10.0, rt_cost_bps=10.0, min_ratio=2.0, basis="round_trip",
+        )
+
+    def test_reversal_edge_gate_math(self) -> None:
+        from feelies.execution.position_manager import reversal_edge_gate
+        combined, required, passes = reversal_edge_gate(
+            edge_bps=30.0, exit_cost_bps=4.0, entry_cost_bps=4.0, multiplier=2.0,
+        )
+        assert combined == 8.0
+        assert required == 16.0
+        assert passes is True  # 30 > 16
+        _, _, blocked = reversal_edge_gate(
+            edge_bps=5.0, exit_cost_bps=4.0, entry_cost_bps=4.0, multiplier=2.0,
+        )
+        assert blocked is False  # 5 !> 16
+
+    def test_round_trip_cost_bps_is_positive_taker_exit(self) -> None:
+        from decimal import Decimal
+
+        from feelies.execution.cost_model import (
+            DefaultCostModel,
+            DefaultCostModelConfig,
+            estimate_round_trip_cost_bps,
+        )
+        from feelies.execution.position_manager import round_trip_cost_bps
+        model = DefaultCostModel(DefaultCostModelConfig())
+        kw = dict(
+            symbol="AAPL", entry_side=Side.BUY, quantity=100,
+            mid_price=Decimal("100"), half_spread=Decimal("0.05"),
+            is_short_entry=False, bid_size=100, ask_size=200,
+            market_impact_factor=Decimal("0.5"),
+            max_impact_half_spreads=Decimal("10"),
+        )
+        got = round_trip_cost_bps(model, is_taker_entry=True, **kw)
+        assert got > 0
+        # Equivalent to the cost-model helper with a forced taker exit.
+        expected = estimate_round_trip_cost_bps(
+            model, is_taker=True, is_taker_exit=True, **kw,
+        )
+        assert got == expected
+
+
 # ── compare_plan_to_intent actually detects divergence ───────────────
 
 

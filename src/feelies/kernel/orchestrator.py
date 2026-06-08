@@ -93,7 +93,6 @@ from feelies.core.events import (
 from feelies.core.identifiers import SequenceGenerator
 from feelies.core.state_machine import StateMachine, TransitionRecord
 from feelies.execution.backend import ExecutionBackend
-from feelies.execution.cost_model import estimate_round_trip_cost_bps
 from feelies.execution.min_cost_policy import (
     MinCostPolicyConfig,
     MinimumCostExecutionPolicy,
@@ -112,6 +111,9 @@ from feelies.execution.position_manager import (
     PositionManagerConfig,
     compare_plan_to_intent,
     desired_from_signal,
+    entry_edge_clears_cost,
+    reversal_edge_gate,
+    round_trip_cost_bps,
 )
 from feelies.execution.trading_session import TradingSessionBounds
 from feelies.execution.regulatory.borrow_availability import (
@@ -2611,10 +2613,15 @@ class Orchestrator:
         correlation_id: str,
         detail: str,
     ) -> bool:
-        """Return True when B4 edge estimate clears model round-trip cost."""
+        """Return True when B4 edge estimate clears model round-trip cost.
+
+        Delegates the edge-vs-cost arithmetic to the planner module's
+        ``entry_edge_clears_cost`` (G-1 P2 single source of truth); this
+        method owns only the no-op fast path and the suppression alert.
+        """
         if self._signal_min_edge_cost_ratio <= 0 or self._cost_model is None:
             return True
-        round_trip_cost_bps = self._round_trip_cost_bps(
+        rt_cost_bps = self._round_trip_cost_bps(
             symbol=symbol,
             entry_side=entry_side,
             quantity=quantity,
@@ -2622,20 +2629,20 @@ class Orchestrator:
             is_taker_entry=is_taker_entry,
             is_short_entry=is_short_entry,
         )
-        edge_bps_basis = signal.edge_estimate_bps
-        if self._signal_edge_cost_basis == "round_trip":
-            edge_bps_basis = edge_bps_basis * 2.0
-        if edge_bps_basis < (
-            self._signal_min_edge_cost_ratio * round_trip_cost_bps
+        if entry_edge_clears_cost(
+            edge_bps=signal.edge_estimate_bps,
+            rt_cost_bps=rt_cost_bps,
+            min_ratio=self._signal_min_edge_cost_ratio,
+            basis=self._signal_edge_cost_basis,
         ):
-            self._emit_signal_edge_gate_suppression_alert(
-                signal,
-                symbol,
-                correlation_id,
-                detail=detail,
-            )
-            return False
-        return True
+            return True
+        self._emit_signal_edge_gate_suppression_alert(
+            signal,
+            symbol,
+            correlation_id,
+            detail=detail,
+        )
+        return False
 
     def _round_trip_cost_bps(
         self,
@@ -2649,24 +2656,20 @@ class Orchestrator:
     ) -> float:
         """Model round-trip (entry + taker exit) cost in bps for one leg.
 
-        Shared by the B4 entry edge gate (:meth:`_signal_passes_edge_cost_gate`)
-        and the B5 reversal edge gate
-        (:meth:`_reversal_passes_combined_edge_gate`) so both price legs with
-        an identical cost-model call.  Callers guarantee
+        Thin wrapper over the planner module's ``round_trip_cost_bps``
+        (G-1 P2 single source of truth): resolves the quote → mid/spread
+        and the impact knobs from config.  Callers guarantee
         ``self._cost_model is not None`` before invoking.
         """
         assert self._cost_model is not None
-        gate_price = (quote.bid + quote.ask) / Decimal("2")
-        gate_spread = (quote.ask - quote.bid) / Decimal("2")
-        return estimate_round_trip_cost_bps(
+        return round_trip_cost_bps(
             self._cost_model,
             symbol=symbol,
             entry_side=entry_side,
             quantity=quantity,
-            mid_price=gate_price,
-            half_spread=gate_spread,
-            is_taker=is_taker_entry,
-            is_taker_exit=True,
+            mid_price=(quote.bid + quote.ask) / Decimal("2"),
+            half_spread=(quote.ask - quote.bid) / Decimal("2"),
+            is_taker_entry=is_taker_entry,
             is_short_entry=is_short_entry,
             bid_size=quote.bid_size,
             ask_size=quote.ask_size,
@@ -2737,12 +2740,13 @@ class Orchestrator:
             ),
             is_short_entry=is_short_entry,
         )
-        combined_cost_bps = exit_roundtrip_cost_bps + entry_roundtrip_cost_bps
-        required_bps = (
-            combined_cost_bps * self._reversal_min_edge_cost_multiplier
+        # G-1 P2: combine via the planner module's single-source-of-truth gate.
+        return reversal_edge_gate(
+            edge_bps=edge_estimate_bps,
+            exit_cost_bps=exit_roundtrip_cost_bps,
+            entry_cost_bps=entry_roundtrip_cost_bps,
+            multiplier=self._reversal_min_edge_cost_multiplier,
         )
-        passes = edge_estimate_bps > required_bps
-        return combined_cost_bps, required_bps, passes
 
     def _calibrate_regime_engine(self) -> None:
         """Calibrate regime emission parameters from a *prefix* of the log.

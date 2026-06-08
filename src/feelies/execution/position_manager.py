@@ -27,8 +27,10 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Protocol
 
+from decimal import Decimal
+
 from feelies.core.events import NBBOQuote, Side, Signal, SignalDirection
-from feelies.execution.cost_model import CostModel
+from feelies.execution.cost_model import CostModel, estimate_round_trip_cost_bps
 from feelies.execution.intent import TradingIntent
 from feelies.portfolio.position_store import Position
 
@@ -302,6 +304,88 @@ class LegacyPositionManager:
                 is_short=is_short,
             ),
         ))
+
+
+# ── Cost gates (B4 entry / B5 reversal) — single source of truth ─────
+#
+# G-1 Phase P2: the edge-vs-cost economics live with the planner.  The
+# orchestrator's live gate call sites delegate here, and the future
+# cost-aware planner applies the same functions when it owns the live
+# decision.  These are pure — no alerts, no side effects; callers own
+# provenance/alerting and the no-op (disabled / no-cost-model) fast paths.
+
+
+def round_trip_cost_bps(
+    cost_model: CostModel,
+    *,
+    symbol: str,
+    entry_side: Side,
+    quantity: int,
+    mid_price: Decimal,
+    half_spread: Decimal,
+    is_taker_entry: bool,
+    is_short_entry: bool,
+    bid_size: int | None = None,
+    ask_size: int | None = None,
+    market_impact_factor: Decimal | None = None,
+    max_impact_half_spreads: Decimal | None = None,
+) -> float:
+    """Model round-trip (entry + *taker* exit) cost in bps for one leg.
+
+    The exit leg is always priced as a taker (``is_taker_exit=True``) —
+    the conservative assumption for IBKR-style realism, since exits and
+    reverse-exits reach the router aggressively even when the entry is
+    passive (see ``estimate_round_trip_cost_bps``).
+    """
+    return estimate_round_trip_cost_bps(
+        cost_model,
+        symbol=symbol,
+        entry_side=entry_side,
+        quantity=quantity,
+        mid_price=mid_price,
+        half_spread=half_spread,
+        is_taker=is_taker_entry,
+        is_taker_exit=True,
+        is_short_entry=is_short_entry,
+        bid_size=bid_size,
+        ask_size=ask_size,
+        market_impact_factor=market_impact_factor,
+        max_impact_half_spreads=max_impact_half_spreads,
+    )
+
+
+def entry_edge_clears_cost(
+    *,
+    edge_bps: float,
+    rt_cost_bps: float,
+    min_ratio: float,
+    basis: str,
+) -> bool:
+    """B4: True when the entry edge clears ``min_ratio ×`` round-trip cost.
+
+    ``basis == "round_trip"`` doubles the disclosed one-way edge so both
+    sides share the round-trip basis explicitly; ``"one_way"`` keeps the
+    legacy comparison.
+    """
+    edge_basis = edge_bps * 2.0 if basis == "round_trip" else edge_bps
+    return edge_basis >= min_ratio * rt_cost_bps
+
+
+def reversal_edge_gate(
+    *,
+    edge_bps: float,
+    exit_cost_bps: float,
+    entry_cost_bps: float,
+    multiplier: float,
+) -> tuple[float, float, bool]:
+    """B5: combined exit+entry edge gate for a flip.
+
+    Returns ``(combined_cost_bps, required_bps, passes)`` where the flip
+    passes iff ``edge_bps > (exit + entry) × multiplier``.
+    """
+    combined = exit_cost_bps + entry_cost_bps
+    required = combined * multiplier
+    return combined, required, edge_bps > required
 
 
 # ── Signal → DesiredPosition adapter (orchestrator SIGNAL path) ───────

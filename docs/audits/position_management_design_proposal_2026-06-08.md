@@ -241,15 +241,29 @@ This is the riskiest part (hot path, replay parity), so it's explicit.
 
 | Phase | Deliverable | Default | Parity impact |
 |-------|-------------|---------|---------------|
-| **P0** | `DesiredPosition` / `PositionPlan` / `PositionManager` Protocol + a `LegacyPositionManager` that reproduces today's matrix exactly | off | none |
-| **P1** | Wire orchestrator SIGNAL path through the planner in **shadow mode**; equivalence-assert on fixtures | shadow | none |
-| **P2** | Fold B4 + B5 into the planner; delete the two bolt-on call sites | off→on per-config | B5 already default-on (PR #100); now intrinsic, same numbers |
+| **P0** ✅ | `DesiredPosition` / `PositionPlan` / `PositionManager` Protocol + a `LegacyPositionManager` that reproduces today's matrix exactly | off | none |
+| **P1** ✅ | Wire orchestrator SIGNAL path through the planner in **shadow mode**; equivalence-assert on fixtures | shadow | none |
+| **P2a** ✅ | Extract B4 + B5 cost math into the planner module as the single source of truth; orchestrator delegates | off | none (pure refactor) |
+| **P2b** | Planner *owns* the live gate decision + delete the orchestrator bolt-ons | off→on per-config | requires the drive-from-plan flip (see note) |
 | **P3** | Add `TRIM` leg (G-2) behind `enable_trim` | off | new baseline when on |
 | **P4** | `urgency → ExecStyle` + passive/working exits (G-3) behind `exit_exec_style` | off | new baseline when on |
 | **P5** | Move PORTFOLIO diff out of `check_sized_intent` into the planner; risk engine becomes pure gating | off→on | shadow-verified |
 
-P0–P2 are parity-neutral plumbing. P3+ are the economic wins, each
+P0–P2a are parity-neutral plumbing. P3+ are the economic wins, each
 gated and individually baselined.
+
+> **P2 split note.** P2 was split into **P2a** (done) and **P2b**
+> (deferred). The B5 reversal gate runs on the *post-risk-scaling* entry
+> quantity computed *inside* `_execute_reverse`, and the B4 taker
+> assumption depends on execution mode (passive vs. min-cost-policy).
+> The planner cannot reproduce those decisions faithfully at
+> signal-translation time without the execution context threaded in —
+> that threading **is** the drive-from-plan flip. So P2a consolidates the
+> cost arithmetic into the planner module (single source of truth, both
+> the live orchestrator and the future planner call it), while P2b — the
+> planner owning the live decision and deleting the bolt-ons — lands with
+> the flip. This keeps every step parity-neutral and shadow-verifiable
+> rather than forcing a risky big-bang.
 
 ---
 
