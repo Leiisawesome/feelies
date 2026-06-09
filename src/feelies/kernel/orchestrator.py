@@ -407,6 +407,7 @@ class Orchestrator:
         position_manager_trim_edge_gate_multiplier: float = 0.0,
         position_manager_urgency_exec: bool = False,
         net_shadow_sink: "list[NetDivergence] | None" = None,
+        net_shadow_portfolio_max_abs_qty: int | None = None,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -465,9 +466,21 @@ class Orchestrator:
         # disagrees with the winner-take-all decision — pure measurement,
         # nothing driven (parity-neutral, no-op when the sink is None).
         self._desired_target_book = DesiredTargetBook()
-        self._portfolio_netter = PortfolioNetter(self._desired_target_book)
+        self._portfolio_netter = PortfolioNetter(
+            self._desired_target_book,
+            portfolio_max_abs_qty=net_shadow_portfolio_max_abs_qty,
+        )
         self._net_shadow_sink = net_shadow_sink
         self._net_staleness_k: float = 2.0
+        # G-5 N1: horizon-zero signals are one-tick-only by buffer
+        # policy (see ``_process_tick``'s pre-tick stale-eviction
+        # block).  Their standing targets must not persist into the
+        # shadow net on later ticks, otherwise the book accumulates
+        # stale per-alpha desires and ``NetDivergence`` inflates.  We
+        # track the keys we wrote for horizon=0 signals and evict them
+        # at the next call so they live for exactly the tick that
+        # produced them.
+        self._net_shadow_transient_keys: set[tuple[str, str]] = set()
         self._alpha_registry = alpha_registry
         self._account_equity = account_equity
         self._fill_ledger = fill_ledger
@@ -3521,6 +3534,16 @@ class Orchestrator:
                 sig, tq, default_target_quantity=default_target,
             ).target_qty
 
+        # Evict standing targets we wrote from horizon-zero signals on
+        # prior ticks: ``standing_target_from_desired`` cannot set a
+        # ``k×horizon`` expiry when ``horizon_seconds == 0``, so the
+        # netter would otherwise carry them forward indefinitely and
+        # disagree with the live buffer policy (which treats horizon=0
+        # signals as one-tick-only).
+        for prev_strategy_id, prev_symbol in self._net_shadow_transient_keys:
+            self._desired_target_book.clear(prev_strategy_id, prev_symbol)
+        self._net_shadow_transient_keys.clear()
+
         for sig in buf_snapshot:
             if sig.strategy_id.startswith("__"):
                 continue  # synthetic kernel signal, not an alpha target
@@ -3536,6 +3559,10 @@ class Orchestrator:
                 horizon_seconds=sig.horizon_seconds,
                 staleness_k=self._net_staleness_k,
             ))
+            if sig.horizon_seconds <= 0:
+                self._net_shadow_transient_keys.add(
+                    (sig.strategy_id, sig.symbol)
+                )
 
         if winner is None or winner.strategy_id.startswith("__"):
             return
