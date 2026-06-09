@@ -49,6 +49,7 @@ from feelies.harness.backtest_cli import (
 )
 from feelies.harness.backtest_jsonl import (
     _emit_fills_jsonl,
+    _emit_net_divergence_jsonl,
     _emit_phase2_jsonl,
 )
 from feelies.harness.backtest_prep import (
@@ -584,10 +585,17 @@ def _run_backtest_phases_2_7(
     signal_trace_sink: list[SignalOrderTraceRow] | None = (
         [] if args.trace_signal_orders else None
     )
+    # G-5 measurement: cross-alpha net-shadow sink (parity-neutral; wiring it
+    # only records NetDivergence, it does not drive).  ``_cache_args`` and
+    # other lightweight callers may omit the flag, hence ``getattr``.
+    net_shadow_sink: "list | None" = (
+        [] if getattr(args, "emit_net_divergence_jsonl", False) else None
+    )
     orchestrator, config_out = build_platform(
         config,
         event_log=event_log,
         signal_order_trace_sink=signal_trace_sink,
+        net_shadow_sink=net_shadow_sink,
         precomputed_ex_date_spans=prep.calendar_spans,
         regime_calibration_quotes=prep.regime_calibration_quotes,
     )
@@ -720,6 +728,8 @@ def _run_backtest_phases_2_7(
 
     if args.emit_fills_jsonl:
         _emit_fills_jsonl(recorder)
+    if net_shadow_sink is not None:
+        _emit_net_divergence_jsonl(net_shadow_sink)
     _emit_phase2_jsonl(args, recorder)
 
     return BacktestRunOutcome(

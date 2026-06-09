@@ -39,7 +39,7 @@ import time
 from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import replace
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any, Literal
 
 logger = logging.getLogger(__name__)
@@ -111,6 +111,7 @@ from feelies.execution.portfolio_netter import (
     standing_target_from_desired,
 )
 from feelies.execution.position_manager import (
+    DesiredPosition,
     ExecStyle,
     LegacyPositionManager,
     MarketContext,
@@ -291,6 +292,15 @@ _FORCED_MARKET_EXIT_STRATEGIES: frozenset[str] = frozenset({
 })
 
 
+def _int_to_direction(sign: int) -> SignalDirection:
+    """Map a signed direction (+1 / -1 / 0) to a ``SignalDirection``."""
+    if sign > 0:
+        return SignalDirection.LONG
+    if sign < 0:
+        return SignalDirection.SHORT
+    return SignalDirection.FLAT
+
+
 class Orchestrator:
     """Central coordinator for the deterministic tick-processing pipeline.
 
@@ -466,9 +476,12 @@ class Orchestrator:
         # disagrees with the winner-take-all decision — pure measurement,
         # nothing driven (parity-neutral, no-op when the sink is None).
         self._desired_target_book = DesiredTargetBook()
+        self._net_portfolio_max_abs_qty: int | None = (
+            net_shadow_portfolio_max_abs_qty
+        )
         self._portfolio_netter = PortfolioNetter(
             self._desired_target_book,
-            portfolio_max_abs_qty=net_shadow_portfolio_max_abs_qty,
+            portfolio_max_abs_qty=self._net_portfolio_max_abs_qty,
         )
         self._net_shadow_sink = net_shadow_sink
         # Aligned with the pre-tick signal-buffer staleness policy in
@@ -488,6 +501,10 @@ class Orchestrator:
         # at the next call so they live for exactly the tick that
         # produced them.
         self._net_shadow_transient_keys: set[tuple[str, str]] = set()
+        # G-5 N2: drive the decision from the net target.  Default-off →
+        # byte-identical to the pre-N2 winner-take-all path.  boot() reads it
+        # (and the portfolio cap + staleness) from PlatformConfig.
+        self._enable_portfolio_netting: bool = False
         self._alpha_registry = alpha_registry
         self._account_equity = account_equity
         self._fill_ledger = fill_ledger
@@ -1035,6 +1052,21 @@ class Orchestrator:
             if hasattr(config, "session_flatten_seconds_before_close"):
                 self._session_flatten_seconds_before_close = int(
                     config.session_flatten_seconds_before_close
+                )
+            # G-5 N2: cross-alpha netting config.  The portfolio cap reuses the
+            # platform per-symbol position cap.
+            if hasattr(config, "enable_portfolio_netting"):
+                self._enable_portfolio_netting = config.enable_portfolio_netting
+            if hasattr(config, "net_staleness_k"):
+                self._net_staleness_k = float(config.net_staleness_k)
+            if hasattr(config, "risk_max_position_per_symbol"):
+                cap = config.risk_max_position_per_symbol
+                self._net_portfolio_max_abs_qty = (
+                    int(cap) if cap and cap > 0 else None
+                )
+                self._portfolio_netter = PortfolioNetter(
+                    self._desired_target_book,
+                    portfolio_max_abs_qty=self._net_portfolio_max_abs_qty,
                 )
             # BT-5: cache halt-detection config (empty codes ⇒ inert).
             if hasattr(config, "halt_on_condition_codes"):
@@ -2230,9 +2262,36 @@ class Orchestrator:
         # existing passive/market logic (None == no override).
         exec_style_override: ExecStyle | None = None
         if self._position_manager is not None and self._position_manager_drive:
-            plan = self._plan_for_signal(signal, current_position, target_qty, quote)
+            # G-5 N2: when portfolio netting is enabled, the budget-weighted
+            # net target for the symbol drives the decision (the winner only
+            # selects which symbol to act on); otherwise the winner's own
+            # target drives it (byte-identical to the pre-N2 flip).
+            # Inv-11: synthetic forced-market-exit signals (stop-loss,
+            # session flatten) must always unwind to FLAT regardless of
+            # the standing alpha net — position safety beats alpha
+            # conviction, so netting is bypassed for those strategies.
+            decision_signal = signal
+            if (
+                self._enable_portfolio_netting
+                and signal.strategy_id not in _FORCED_MARKET_EXIT_STRATEGIES
+            ):
+                net_desired = self._portfolio_netter.net(
+                    signal.symbol, int(quote.timestamp_ns),
+                )
+                plan = self._plan_for_signal(
+                    signal, current_position, target_qty, quote,
+                    desired=net_desired,
+                )
+                decision_signal = replace(
+                    signal,
+                    direction=_int_to_direction(net_desired.direction),
+                )
+            else:
+                plan = self._plan_for_signal(
+                    signal, current_position, target_qty, quote,
+                )
             intent = order_intent_from_plan(
-                plan, signal=signal, current=current_position,
+                plan, signal=decision_signal, current=current_position,
             )
             if plan.primary_leg is PlanLeg.TRIM and plan.orders:
                 exec_style_override = plan.orders[0].style
@@ -3498,20 +3557,24 @@ class Orchestrator:
         current_position: Position,
         target_qty: int | None,
         quote: NBBOQuote,
+        *,
+        desired: DesiredPosition | None = None,
     ) -> PositionPlan:
         """Build the planner's ``PositionPlan`` for a signal.
 
         Shared by the shadow harness (P1) and the drive path (the flip).
         Resolves the ``None`` sizer target via the translator default so
         the planner sees the same effective magnitude as the legacy path.
+        ``desired`` overrides the per-signal target (G-5 N2: the net target).
         """
         assert self._position_manager is not None
-        default_target = getattr(
-            self._intent_translator, "_default_target", 100,
-        )
-        desired = desired_from_signal(
-            signal, target_qty, default_target_quantity=default_target,
-        )
+        if desired is None:
+            default_target = getattr(
+                self._intent_translator, "_default_target", 100,
+            )
+            desired = desired_from_signal(
+                signal, target_qty, default_target_quantity=default_target,
+            )
         return self._position_manager.plan(
             desired=desired,
             current=current_position,
@@ -3526,6 +3589,56 @@ class Orchestrator:
                 urgency_exec=self._position_manager_urgency_exec,
             ),
         )
+
+    def _record_portfolio_net_shadow(self, intent: SizedPositionIntent) -> None:
+        """G-5 N3: bridge PORTFOLIO targets into the net SHADOW measurement.
+
+        Records each ``TargetPosition`` (``target_usd → shares`` via the
+        latest mark) as a standing target so the cross-alpha ``NetDivergence``
+        measurement spans both the SIGNAL and PORTFOLIO paths.
+
+        Measurement-only: active when a net-shadow sink is wired **and**
+        netting is not driving — feeding PORTFOLIO targets while the PORTFOLIO
+        path also self-drives (``check_sized_intent``) would double-count, so
+        the live drive-bridge (retiring ``check_sized_intent``) is deferred to
+        N3b.  Parity-neutral here (no orders/bus/journal effects).
+        """
+        if self._net_shadow_sink is None or self._enable_portfolio_netting:
+            return
+        mark_fn = getattr(self._positions, "latest_mark", None)
+        if not callable(mark_fn):
+            return
+        for symbol, tgt in intent.target_positions.items():
+            mark = mark_fn(symbol)
+            if mark is None or mark <= 0:
+                continue
+            target_shares = int(
+                (Decimal(str(tgt.target_usd)) / mark).to_integral_value(
+                    rounding=ROUND_HALF_UP,
+                )
+            )
+            desired = DesiredPosition(
+                symbol=symbol,
+                target_qty=target_shares,
+                direction=(target_shares > 0) - (target_shares < 0),
+                urgency=tgt.urgency,
+            )
+            self._desired_target_book.put(standing_target_from_desired(
+                desired,
+                strategy_id=intent.strategy_id,
+                signal_timestamp_ns=int(intent.timestamp_ns),
+                horizon_seconds=intent.horizon_seconds,
+                staleness_k=self._net_staleness_k,
+            ))
+            # Mirror the SIGNAL-path policy: horizon-zero targets cannot
+            # be assigned a ``k×horizon`` expiry, so register them as
+            # one-tick-only and let ``_record_net_shadow`` evict on the
+            # next tick — otherwise PORTFOLIO desires would linger in
+            # the book and skew cross-path ``NetDivergence`` shadows.
+            if intent.horizon_seconds <= 0:
+                self._net_shadow_transient_keys.add(
+                    (intent.strategy_id, symbol)
+                )
 
     def _record_net_shadow(
         self,
@@ -3543,7 +3656,10 @@ class Orchestrator:
         orders, bus, journal, or parity effects; no-op unless a sink is wired.
         """
         sink = self._net_shadow_sink
-        if sink is None:
+        # Maintain the standing-target book when netting drives the decision
+        # (N2) or when shadowing (N1); skip entirely otherwise (no overhead,
+        # parity-neutral default path).
+        if sink is None and not self._enable_portfolio_netting:
             return
         default_target = getattr(
             self._intent_translator, "_default_target", 100,
@@ -3585,7 +3701,8 @@ class Orchestrator:
                     (sig.strategy_id, sig.symbol)
                 )
 
-        if winner is None or winner.strategy_id.startswith("__"):
+        # Divergence recording is shadow-only (N1).
+        if sink is None or winner is None or winner.strategy_id.startswith("__"):
             return
         now_ns = int(quote.timestamp_ns)
         net = self._portfolio_netter.net(winner.symbol, now_ns)
@@ -5355,6 +5472,8 @@ class Orchestrator:
         """
         if not isinstance(event, SizedPositionIntent):
             return
+        # G-5 N3: feed PORTFOLIO targets into the net SHADOW measurement.
+        self._record_portfolio_net_shadow(event)
         if self._quote_tick_in_flight:
             self._pending_sized_intents.append(event)
         else:

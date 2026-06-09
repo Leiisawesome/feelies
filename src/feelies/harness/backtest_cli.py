@@ -178,6 +178,16 @@ def add_backtest_api_arguments(parser: argparse.ArgumentParser) -> None:
         help="Emit one FILLED OrderAck JSON object per line (prefix FILL_JSONL).",
     )
     parser.add_argument(
+        "--emit-net-divergence-jsonl",
+        action="store_true",
+        help=(
+            "G-5 measurement: run the cross-alpha net shadow and emit one "
+            "NetDivergence JSON object per divergent decision (prefix "
+            "NETDIV_JSONL).  Parity-neutral (shadow-only); meaningful only "
+            "with a multi-alpha config."
+        ),
+    )
+    parser.add_argument(
         "--emit-sensor-readings-jsonl",
         action="store_true",
         help="Emit SensorReading rows (prefix SENSOR_JSONL).",

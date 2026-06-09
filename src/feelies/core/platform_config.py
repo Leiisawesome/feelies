@@ -340,6 +340,15 @@ class PlatformConfig:
     session_flatten_enabled: bool = True
     session_flatten_seconds_before_close: int = 0
 
+    # G-5 N2: cross-alpha position netting.  When enabled, the SIGNAL-path
+    # decision is driven by the budget-weighted, portfolio-capped sum of every
+    # alpha's standing desired target (conviction stacks; opposing desires
+    # offset) instead of the single arbitrated winner.  Default-off → the
+    # winner-take-all path, byte-identical.  ``net_staleness_k`` is the expiry
+    # multiple (a standing target dies after k × horizon_seconds unrefreshed).
+    enable_portfolio_netting: bool = False
+    net_staleness_k: float = 1.0
+
     # Regime engine boot-time calibration (lookahead avoidance).  ``None``
     # skips feeding the trading event log into ``calibrate()`` entirely
     # (cold emission defaults + per-run warning).  A positive integer uses
@@ -746,6 +755,8 @@ class PlatformConfig:
             raise ConfigurationError(
                 "session_flatten_seconds_before_close must be >= 0"
             )
+        if self.net_staleness_k < 0.0:
+            raise ConfigurationError("net_staleness_k must be >= 0")
         if self.cost_passive_adverse_selection_bps < 0.0:
             raise ConfigurationError(
                 "cost_passive_adverse_selection_bps must be >= 0"
@@ -1045,6 +1056,8 @@ class PlatformConfig:
             "session_flatten_seconds_before_close": (
                 self.session_flatten_seconds_before_close
             ),
+            "enable_portfolio_netting": self.enable_portfolio_netting,
+            "net_staleness_k": self.net_staleness_k,
             "signal_edge_cost_basis": self.signal_edge_cost_basis,
             "regime_calibration_max_quotes": self.regime_calibration_max_quotes,
             "enforce_regime_state_scale_alignment": (
@@ -1563,6 +1576,10 @@ class PlatformConfig:
             session_flatten_seconds_before_close=int(
                 data.get("session_flatten_seconds_before_close", 0)
             ),
+            enable_portfolio_netting=bool(
+                data.get("enable_portfolio_netting", False)
+            ),
+            net_staleness_k=float(data.get("net_staleness_k", 1.0)),
             signal_edge_cost_basis=str(
                 data.get("signal_edge_cost_basis", "round_trip")
             ),

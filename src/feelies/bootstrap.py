@@ -157,6 +157,7 @@ from feelies.storage.memory_trade_journal import InMemoryTradeJournal
 
 if TYPE_CHECKING:
     from feelies.broker.ib import IBGatewayConnection
+    from feelies.execution.portfolio_netter import NetDivergence
     from feelies.ingestion.massive_ws import MassiveLiveFeed
 
 logger = logging.getLogger(__name__)
@@ -201,6 +202,7 @@ def build_platform(
     event_log: InMemoryEventLog | None = None,
     *,
     signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
+    net_shadow_sink: "list[NetDivergence] | None" = None,
     normalizer: MarketDataNormalizer | None = None,
     precomputed_ex_date_spans: dict[str, tuple[date, date]] | None = None,
     regime_calibration_quotes: tuple[NBBOQuote, ...] | None = None,
@@ -643,6 +645,7 @@ def build_platform(
         composition_metrics_collector=composition_metrics,
         hazard_exit_controller=hazard_exit_controller,
         signal_order_trace_sink=signal_order_trace_sink,
+        net_shadow_sink=net_shadow_sink,
         normalizer=normalizer,
         regime_calibration_quotes=regime_calibration_quotes,
         position_manager=position_manager,
