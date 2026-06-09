@@ -471,7 +471,14 @@ class Orchestrator:
             portfolio_max_abs_qty=net_shadow_portfolio_max_abs_qty,
         )
         self._net_shadow_sink = net_shadow_sink
-        self._net_staleness_k: float = 2.0
+        # Aligned with the pre-tick signal-buffer staleness policy in
+        # ``_process_tick_inner``: a horizon-gated signal is evicted from
+        # the buffer once ``(now - timestamp) > horizon_seconds × 1e9``.
+        # Using ``k = 1.0`` keeps the standing-target book and the trade
+        # path in lock-step, so ``DesiredTargetBook`` never carries an
+        # alpha past the point where the live SIGNAL path would drop it
+        # (avoids spurious ``NetDivergence`` from a stale shadow desire).
+        self._net_staleness_k: float = 1.0
         # G-5 N1: horizon-zero signals are one-tick-only by buffer
         # policy (see ``_process_tick``'s pre-tick stale-eviction
         # block).  Their standing targets must not persist into the
