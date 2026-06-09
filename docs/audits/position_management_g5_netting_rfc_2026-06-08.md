@@ -130,11 +130,21 @@ a cross-sectional optimiser (this is *netting*, not portfolio optimisation);
 sizing changes (G-7, deliberately last — its inventory term then lives at the
 **net** level this RFC establishes).
 
-## 8. Open questions (for sign-off before N0)
+## 8. Decisions locked (2026-06-08)
 
-1. Aggregation rule — budget-weighted sum vs plain sum (§4.1)?
-2. Standing-target staleness policy + default (§4.2 / §3)?
-3. One netter for both SIGNAL and PORTFOLIO paths, or bridge (§4.4)?
-4. Is conviction-stacking (two same-direction alphas → larger net position)
-   desired, or should the net be capped to a single alpha's max (i.e. netting
-   for *offset* only, not *reinforcement*)? — the biggest behavioral call.
+1. **Reinforcement: stacking, capped.** Same-direction alphas **sum** into a
+   larger net target. Each alpha's target is capped by its `risk_budget`; the
+   summed net is capped by portfolio `max_position_per_symbol`. Conviction is
+   expressed, bounded by the existing per-symbol cap.
+2. **Aggregation: budget-weighted sum.** Each per-alpha target is sized/capped
+   by its own `risk_budget` *before* summing (per-alpha risk discipline
+   preserved), then the portfolio cap applies to the net.
+3. **Staleness: expire after `k × horizon_seconds`.** A standing target with no
+   refresh within `k ×` the alpha's horizon decays to flat, so a dead/stale
+   alpha cannot pin exposure. `k` is configurable.
+4. **Scope: SIGNAL-path first, bridge PORTFOLIO later.** Net the SIGNAL path
+   now (N0–N2); leave the PORTFOLIO `SizedPositionIntent` path as-is and unify
+   it through the netter in N3. Smaller, lower-risk first step.
+
+These resolve §4 and the prior open questions; (1)+(2) make the net target a
+**budget-weighted, portfolio-capped sum** of standing per-alpha targets.
