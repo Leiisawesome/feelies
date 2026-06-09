@@ -146,6 +146,7 @@ from feelies.monitoring.kill_switch import KillSwitch
 from feelies.monitoring.paper_session_recorder import PaperSessionRecorder
 from feelies.monitoring.telemetry import MetricCollector
 from feelies.portfolio.position_store import PositionStore
+from feelies.portfolio.lot_ledger import LotLedger
 from feelies.risk.engine import RiskEngine
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
 from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
@@ -601,6 +602,10 @@ class Orchestrator:
         # (no passive reductions unless ``urgency_exec`` is on).
         self._working_exit_fallback: dict[str, tuple[str, Side, int]] = {}
         self._order_filled_qty: dict[str, int] = {}
+        # G-4: per-symbol FIFO open-lot ledger, maintained beside the
+        # average-cost position store for per-lot age / provenance / FIFO
+        # realized PnL.  Pure observability — never feeds orders or parity.
+        self._lot_ledger = LotLedger()
         # Router acks that were drained while waiting for a different
         # order family.  The order-router queue is global, so targeted
         # pollers must buffer unrelated acks instead of stealing them.
@@ -850,6 +855,11 @@ class Orchestrator:
     @property
     def position_store(self) -> PositionStore:
         return self._positions
+
+    @property
+    def lot_ledger(self) -> LotLedger:
+        """G-4: FIFO open-lot ledger (per-lot age / provenance / FIFO PnL)."""
+        return self._lot_ledger
 
     @property
     def account_equity(self) -> Decimal:
@@ -4838,6 +4848,16 @@ class Orchestrator:
                 ack.fill_price,
                 fees=ack.fees,
                 timestamp_ns=ack.timestamp_ns,
+            )
+            # G-4: mirror the fill into the FIFO lot ledger (observability;
+            # does not affect the avg-cost realized PnL above).
+            self._lot_ledger.apply_fill(
+                ack.symbol,
+                signed_qty,
+                ack.fill_price,
+                timestamp_ns=ack.timestamp_ns,
+                strategy_id=order.strategy_id,
+                intent=self._order_trading_intent.get(ack.order_id, ""),
             )
 
             if position.quantity == 0:

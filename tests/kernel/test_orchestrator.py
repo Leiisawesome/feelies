@@ -2237,6 +2237,76 @@ class TestWorkingExitFallback:
         assert limit_orders[0].order_id in orch._working_exit_fallback
 
 
+# ── G-4: lot ledger integration ───────────────────────────────────────
+
+
+class TestLotLedgerIntegration:
+    """Fills mirror into the FIFO lot ledger beside the avg-cost store,
+    with per-lot provenance; the ledger net always tracks the position."""
+
+    def test_fills_populate_lot_ledger_with_provenance(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        pos = MemoryPositionStore()
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = Orchestrator(
+            clock=clock, bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(), order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(), position_store=pos,
+            event_log=InMemoryEventLog(), metric_collector=_NoOpMetricCollector(),
+        )
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.LONG),
+        )
+        _boot_to_backtest(orch)
+        q = _make_quote()
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+
+        led = orch.lot_ledger
+        position_qty = pos.get("AAPL").quantity
+        assert position_qty > 0
+        # The ledger's net mirrors the avg-cost book's quantity.
+        assert led.net_quantity("AAPL") == position_qty
+        lots = led.lots("AAPL")
+        assert len(lots) == 1
+        assert lots[0].quantity == position_qty
+        assert lots[0].intent == "ENTRY_LONG"  # per-lot provenance captured
+
+    def test_exit_empties_lot_ledger(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        pos = MemoryPositionStore()
+        pos.update("AAPL", 50, Decimal("100"))
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        # seed the ledger to mirror the preloaded position
+        orch = Orchestrator(
+            clock=clock, bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(), order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(), position_store=pos,
+            event_log=InMemoryEventLog(), metric_collector=_NoOpMetricCollector(),
+        )
+        orch.lot_ledger.apply_fill(
+            "AAPL", 50, Decimal("100"), timestamp_ns=900, intent="ENTRY_LONG",
+        )
+        _publish_signal_on_quote(
+            bus, _make_signal(_make_quote(), SignalDirection.FLAT),
+        )
+        _boot_to_backtest(orch)
+        q = _make_quote()
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        assert pos.get("AAPL").quantity == 0
+        assert orch.lot_ledger.net_quantity("AAPL") == 0
+        assert orch.lot_ledger.lots("AAPL") == ()
+
+
 # ── B5: reversal combined-edge guard ──────────────────────────────────
 
 
