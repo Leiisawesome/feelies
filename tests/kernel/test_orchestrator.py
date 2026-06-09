@@ -2336,6 +2336,64 @@ class TestNetShadow:
         assert orch._positions.get("AAPL").quantity != 0  # legacy path drove
 
 
+# ── G-5 N2: net-driven decision ───────────────────────────────────────
+
+
+class TestNetDrive:
+    """When portfolio netting is enabled, the SIGNAL-path decision is driven
+    by the budget-weighted net target, not the single arbitrated winner."""
+
+    @staticmethod
+    def _run(*, netting: bool, specs) -> int:
+        from feelies.execution.position_manager import LegacyPositionManager
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        pos = MemoryPositionStore()
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = Orchestrator(
+            clock=clock, bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(), order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(), position_store=pos,
+            event_log=InMemoryEventLog(), metric_collector=_NoOpMetricCollector(),
+            position_manager=LegacyPositionManager(),
+            position_manager_drive=True,
+        )
+        TestNetShadow._emit(bus, specs)
+        _boot_to_backtest(orch)
+        orch._enable_portfolio_netting = netting
+        q = _make_quote()
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        return pos.get("AAPL").quantity
+
+    def test_netting_on_drives_stacked_net_target(self) -> None:
+        qty = self._run(
+            netting=True,
+            specs=[("alpha_a", SignalDirection.LONG),
+                   ("alpha_b", SignalDirection.LONG)],
+        )
+        assert qty == 200   # net stacks both alphas
+
+    def test_netting_off_drives_winner_target(self) -> None:
+        qty = self._run(
+            netting=False,
+            specs=[("alpha_a", SignalDirection.LONG),
+                   ("alpha_b", SignalDirection.LONG)],
+        )
+        assert qty == 100   # winner-take-all (byte-identical to pre-N2)
+
+    def test_netting_opposing_offsets_to_flat(self) -> None:
+        qty = self._run(
+            netting=True,
+            specs=[("alpha_a", SignalDirection.LONG),
+                   ("alpha_b", SignalDirection.SHORT)],
+        )
+        assert qty == 0     # the two desires cancel → no trade
+
+
 # ── G-4: lot ledger integration ───────────────────────────────────────
 
 
