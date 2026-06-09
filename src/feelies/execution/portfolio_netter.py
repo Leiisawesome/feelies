@@ -34,8 +34,11 @@ class StandingTarget:
 
     ``target_qty`` is signed (``+`` long / ``-`` short).  ``max_abs_qty`` is
     the alpha's per-symbol budget cap in shares (``None`` = uncapped — rely on
-    the upstream sizer).  ``expiry_ns`` is the exchange-time ns at/after which
-    the target is stale (``None`` = never expires).
+    the upstream sizer).  ``expiry_ns`` is the exchange-time ns *after* which
+    the target is stale — the target remains fresh at the boundary instant
+    ``now_ns == expiry_ns`` to stay in lock-step with the orchestrator's
+    pre-tick signal-buffer policy (``age <= horizon × 1e9`` is fresh).
+    ``None`` = never expires.
     """
 
     strategy_id: str
@@ -101,7 +104,7 @@ class NetDivergence:
 
 
 def _is_stale(t: StandingTarget, now_ns: int) -> bool:
-    return t.expiry_ns is not None and now_ns >= t.expiry_ns
+    return t.expiry_ns is not None and now_ns > t.expiry_ns
 
 
 class DesiredTargetBook:

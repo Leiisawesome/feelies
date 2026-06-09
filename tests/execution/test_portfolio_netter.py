@@ -76,7 +76,10 @@ class TestPortfolioNetter:
         book.put(_t("b", 50, expiry_ns=None))   # never expires
         netter = PortfolioNetter(book)
         assert netter.net("AAPL", now_ns=500).target_qty == 150   # both live
-        assert netter.net("AAPL", now_ns=1_000).target_qty == 50  # a expired
+        # Boundary: fresh *at* expiry_ns, stale strictly after (matches the
+        # orchestrator's signal-buffer policy ``age <= horizon × 1e9``).
+        assert netter.net("AAPL", now_ns=1_000).target_qty == 150
+        assert netter.net("AAPL", now_ns=1_001).target_qty == 50  # a expired
         assert netter.net("AAPL", now_ns=2_000).target_qty == 50
 
     def test_edge_uses_only_net_aligned_contributors(self) -> None:
