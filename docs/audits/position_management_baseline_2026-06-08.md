@@ -285,7 +285,20 @@ like), **severity / effort**.
   full-aggressive.
 - **Severity P1 / Effort M.**
 
-### G-4 — No lot / age / tax accounting (P1, M) — *root cause RC-B*
+### G-4 — No lot / age / tax accounting (P1, M) — *root cause RC-B* — ◑ PARTIAL (2026-06-08)
+
+> **Observability layer landed.** `LotLedger`
+> (`portfolio/lot_ledger.py`) maintains a per-symbol **FIFO** open-lot
+> book beside the average-cost position store, updated on every fill in
+> `_reconcile_fills` and exposed via `orchestrator.lot_ledger`. It gives
+> per-lot holding age (oldest = FIFO front), per-lot strategy/intent
+> provenance, and an honest FIFO realized-PnL view distinct from the
+> avg-cost realized PnL. **Pure observability** — it touches no
+> position/journal/bus and is not in the config snapshot, so it is fully
+> parity-neutral (no re-baseline). *Remaining:* consume per-lot age in
+> the hazard hard-exit-age path, lot-aware TRIM (trim the worst/oldest
+> lot), tax-lot/wash-sale matching, and surfacing in the report — each a
+> behavioral change with its own baseline.
 
 - **Evidence:** single blended `avg_entry_price`
   (`memory_position_store.py:78-80`); hard-exit-age uses one

@@ -652,6 +652,7 @@ def build_platform(
             config.position_manager_trim_edge_gate_multiplier
         ),
         position_manager_urgency_exec=config.position_manager_urgency_exec,
+        net_shadow_portfolio_max_abs_qty=config.risk_max_position_per_symbol,
     )
 
     config_snapshot = config.snapshot()
