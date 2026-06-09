@@ -2394,6 +2394,83 @@ class TestNetDrive:
         assert qty == 0     # the two desires cancel → no trade
 
 
+# ── G-5 N3: PORTFOLIO → net shadow bridge ─────────────────────────────
+
+
+class TestPortfolioNetBridge:
+    """A PORTFOLIO SizedPositionIntent feeds the net shadow book (target_usd →
+    shares via the mark) so the cross-alpha measurement spans both paths.
+    Measurement-only: gated off while netting drives, or without a sink."""
+
+    @staticmethod
+    def _intent(target_usd: float, *, strategy_id: str = "port_a"):
+        from feelies.core.events import SizedPositionIntent, TargetPosition
+        return SizedPositionIntent(
+            timestamp_ns=1000,
+            correlation_id="c",
+            sequence=1,
+            strategy_id=strategy_id,
+            target_positions={
+                "AAPL": TargetPosition(
+                    symbol="AAPL", target_usd=target_usd, urgency=0.7,
+                ),
+            },
+        )
+
+    def _orch(self):
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        orch._positions.update_mark("AAPL", Decimal("100"))  # mark = $100
+        return orch
+
+    def test_portfolio_target_feeds_book_in_shadow(self) -> None:
+        orch = self._orch()
+        orch._net_shadow_sink = []          # measurement on
+        orch._record_portfolio_net_shadow(self._intent(10_000.0))
+        st = orch._desired_target_book.get("port_a", "AAPL")
+        assert st is not None
+        assert st.target_qty == 100         # $10k / $100 mark
+        assert st.urgency == 0.7
+
+    def test_short_portfolio_target(self) -> None:
+        orch = self._orch()
+        orch._net_shadow_sink = []
+        orch._record_portfolio_net_shadow(self._intent(-5_000.0))
+        st = orch._desired_target_book.get("port_a", "AAPL")
+        assert st.target_qty == -50
+
+    def test_no_sink_is_noop(self) -> None:
+        orch = self._orch()  # sink is None
+        orch._record_portfolio_net_shadow(self._intent(10_000.0))
+        assert orch._desired_target_book.get("port_a", "AAPL") is None
+
+    def test_gated_off_while_netting_drives(self) -> None:
+        # Avoid double-counting the PORTFOLIO self-drive: no feed when driving.
+        orch = self._orch()
+        orch._net_shadow_sink = []
+        orch._enable_portfolio_netting = True
+        orch._record_portfolio_net_shadow(self._intent(10_000.0))
+        assert orch._desired_target_book.get("port_a", "AAPL") is None
+
+    def test_portfolio_and_signal_net_together(self) -> None:
+        # A PORTFOLIO long + a SIGNAL long on the same symbol stack in the net.
+        from feelies.execution.portfolio_netter import standing_target_from_desired
+        from feelies.execution.position_manager import desired_from_signal
+        orch = self._orch()
+        orch._net_shadow_sink = []
+        orch._record_portfolio_net_shadow(self._intent(10_000.0))  # +100
+        # add a SIGNAL alpha standing target of +60 directly
+        sig_desired = desired_from_signal(
+            _make_signal(_make_quote(), SignalDirection.LONG), 60,
+        )
+        orch._desired_target_book.put(standing_target_from_desired(
+            sig_desired, strategy_id="sig_a", signal_timestamp_ns=1000,
+            horizon_seconds=0, staleness_k=1.0,
+        ))
+        net = orch._portfolio_netter.net("AAPL", now_ns=1000)
+        assert net.target_qty == 160        # 100 (portfolio) + 60 (signal)
+
+
 # ── G-4: lot ledger integration ───────────────────────────────────────
 
 

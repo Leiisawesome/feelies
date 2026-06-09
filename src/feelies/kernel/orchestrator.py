@@ -39,7 +39,7 @@ import time
 from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import replace
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any, Literal
 
 logger = logging.getLogger(__name__)
@@ -3583,6 +3583,47 @@ class Orchestrator:
             ),
         )
 
+    def _record_portfolio_net_shadow(self, intent: SizedPositionIntent) -> None:
+        """G-5 N3: bridge PORTFOLIO targets into the net SHADOW measurement.
+
+        Records each ``TargetPosition`` (``target_usd → shares`` via the
+        latest mark) as a standing target so the cross-alpha ``NetDivergence``
+        measurement spans both the SIGNAL and PORTFOLIO paths.
+
+        Measurement-only: active when a net-shadow sink is wired **and**
+        netting is not driving — feeding PORTFOLIO targets while the PORTFOLIO
+        path also self-drives (``check_sized_intent``) would double-count, so
+        the live drive-bridge (retiring ``check_sized_intent``) is deferred to
+        N3b.  Parity-neutral here (no orders/bus/journal effects).
+        """
+        if self._net_shadow_sink is None or self._enable_portfolio_netting:
+            return
+        mark_fn = getattr(self._positions, "latest_mark", None)
+        if not callable(mark_fn):
+            return
+        for symbol, tgt in intent.target_positions.items():
+            mark = mark_fn(symbol)
+            if mark is None or mark <= 0:
+                continue
+            target_shares = int(
+                (Decimal(str(tgt.target_usd)) / mark).to_integral_value(
+                    rounding=ROUND_HALF_UP,
+                )
+            )
+            desired = DesiredPosition(
+                symbol=symbol,
+                target_qty=target_shares,
+                direction=(target_shares > 0) - (target_shares < 0),
+                urgency=tgt.urgency,
+            )
+            self._desired_target_book.put(standing_target_from_desired(
+                desired,
+                strategy_id=intent.strategy_id,
+                signal_timestamp_ns=int(intent.timestamp_ns),
+                horizon_seconds=intent.horizon_seconds,
+                staleness_k=self._net_staleness_k,
+            ))
+
     def _record_net_shadow(
         self,
         buf_snapshot: list[Signal],
@@ -5415,6 +5456,8 @@ class Orchestrator:
         """
         if not isinstance(event, SizedPositionIntent):
             return
+        # G-5 N3: feed PORTFOLIO targets into the net SHADOW measurement.
+        self._record_portfolio_net_shadow(event)
         if self._quote_tick_in_flight:
             self._pending_sized_intents.append(event)
         else:

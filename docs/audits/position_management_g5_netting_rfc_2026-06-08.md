@@ -118,10 +118,24 @@ to the alpha's `horizon_seconds`).
 | **N0** ✅ | `DesiredTargetBook` (per-alpha standing targets) + `PortfolioNetter.net` (pure) + unit tests | off | none |
 | **N1** ✅ | Maintain the standing-target book from the SIGNAL path; run the netter in **shadow**, log divergence vs winner-take-all | shadow | none |
 | **N2** ✅ | Drive the decision from the net target (SIGNAL path) behind `enable_portfolio_netting`; arbitration demoted to symbol-selection | off→on | new baseline when on |
-| **N3** | Route the PORTFOLIO `SizedPositionIntent` path through the same netter; retire the parallel `check_sized_intent` diff | off→on | shadow-verified |
+| **N3a** ✅ | PORTFOLIO `SizedPositionIntent` targets feed the net **shadow** (measurement spans both paths), parity-safe | shadow | none |
+| **N3b** | Retire the parallel `check_sized_intent` diff; the net drives PORTFOLIO symbols (needs the double-count / starvation design) | off→on | shadow-verified |
 | **N4** | Standing-target staleness/expiry + per-alpha budget-weighting tuning | on | new baseline |
 
 N0–N1 are parity-neutral plumbing; N2+ are the behavioral wins, each gated.
+
+> **N3 split (2026-06-08).** N3 was split into **N3a** (done) and **N3b**
+> (deferred). A PORTFOLIO `SizedPositionIntent` already *self-drives* its
+> targets via `check_sized_intent` in `_flush_pending_sized_intents`. Feeding
+> those targets into the net *and* letting the net drive the SIGNAL path would
+> double-count, and simply suppressing the self-drive would *starve*
+> PORTFOLIO-only symbols (no SIGNAL tick ever processes them). The correct
+> drive-bridge therefore has to net-drive PORTFOLIO symbols inside the flush
+> (replacing the `check_sized_intent` diff with a netter→planner→submit loop)
+> — a real change to a working path. **N3a** ships the safe, valuable half:
+> PORTFOLIO targets feed the net **shadow** (gated to measurement mode — sink
+> wired, netting not driving), so the cross-alpha `NetDivergence` measurement
+> now spans both the SIGNAL and PORTFOLIO paths. **N3b** is the drive-bridge.
 
 ## 7. Scope boundaries
 
