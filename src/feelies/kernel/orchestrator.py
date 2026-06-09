@@ -3630,6 +3630,15 @@ class Orchestrator:
                 horizon_seconds=intent.horizon_seconds,
                 staleness_k=self._net_staleness_k,
             ))
+            # Mirror the SIGNAL-path policy: horizon-zero targets cannot
+            # be assigned a ``k×horizon`` expiry, so register them as
+            # one-tick-only and let ``_record_net_shadow`` evict on the
+            # next tick — otherwise PORTFOLIO desires would linger in
+            # the book and skew cross-path ``NetDivergence`` shadows.
+            if intent.horizon_seconds <= 0:
+                self._net_shadow_transient_keys.add(
+                    (intent.strategy_id, symbol)
+                )
 
     def _record_net_shadow(
         self,
