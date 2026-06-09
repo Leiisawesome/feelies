@@ -19,6 +19,7 @@ from feelies.core.events import (
     Signal,
     SizedPositionIntent,
 )
+from feelies.execution.portfolio_netter import NetDivergence
 from feelies.harness.backtest_report import BusEventRecorder
 
 __all__ = [
@@ -27,12 +28,33 @@ __all__ = [
     "emit_hazard_exits_jsonl",
     "emit_hazard_spikes_jsonl",
     "emit_horizon_ticks_jsonl",
+    "emit_net_divergence_jsonl",
     "emit_phase2_jsonl",
     "emit_sensor_readings_jsonl",
     "emit_signals_jsonl",
     "emit_snapshots_jsonl",
     "emit_sized_intents_jsonl",
 ]
+
+
+def emit_net_divergence_jsonl(divergences: list[NetDivergence]) -> None:
+    """G-5 measurement: one JSON line per recorded cross-alpha NetDivergence.
+
+    Sourced from the orchestrator's net-shadow sink (not the bus), in
+    record order.  ``magnitude`` is ``net − winner`` so the stream is
+    directly aggregable (how often, and by how much, the budget-weighted
+    portfolio net would differ from the winner-take-all decision).
+    """
+    for d in divergences:
+        _emit_jsonl_line("NETDIV_JSONL", {
+            "signal_sequence": d.signal_sequence,
+            "symbol": d.symbol,
+            "winner_strategy_id": d.winner_strategy_id,
+            "winner_target_qty": d.winner_target_qty,
+            "net_target_qty": d.net_target_qty,
+            "magnitude": d.net_target_qty - d.winner_target_qty,
+            "contributing_alphas": d.contributing_alphas,
+        })
 
 
 def _emit_jsonl_line(prefix: str, line: Mapping[str, object]) -> None:
@@ -234,6 +256,7 @@ def emit_phase2_jsonl(args: argparse.Namespace, recorder: BusEventRecorder) -> N
 
 # Backward-compatible aliases for ``scripts/run_backtest.py`` importlib tests.
 _emit_fills_jsonl = emit_fills_jsonl
+_emit_net_divergence_jsonl = emit_net_divergence_jsonl
 _emit_sensor_readings_jsonl = emit_sensor_readings_jsonl
 _emit_horizon_ticks_jsonl = emit_horizon_ticks_jsonl
 _emit_snapshots_jsonl = emit_snapshots_jsonl
