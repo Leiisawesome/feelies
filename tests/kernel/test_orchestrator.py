@@ -2237,6 +2237,105 @@ class TestWorkingExitFallback:
         assert limit_orders[0].order_id in orch._working_exit_fallback
 
 
+# ── G-5 N1: cross-alpha net shadow ────────────────────────────────────
+
+
+class TestNetShadow:
+    """The standing-target book is maintained from the live signal stream and
+    the netter runs in shadow, recording where the budget-weighted net target
+    disagrees with the winner-take-all decision (pure measurement)."""
+
+    @staticmethod
+    def _orch(sink):
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        bt_router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = Orchestrator(
+            clock=clock, bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(), order_router=bt_router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(), position_store=MemoryPositionStore(),
+            event_log=InMemoryEventLog(), metric_collector=_NoOpMetricCollector(),
+            net_shadow_sink=sink,
+        )
+        return orch, bus
+
+    @staticmethod
+    def _emit(bus: EventBus, specs: list[tuple[str, SignalDirection]]) -> None:
+        def emit(quote: NBBOQuote) -> None:
+            for i, (sid, direction) in enumerate(specs):
+                bus.publish(Signal(
+                    timestamp_ns=quote.timestamp_ns,
+                    correlation_id=quote.correlation_id,
+                    sequence=quote.sequence * 100 + i,
+                    symbol=quote.symbol,
+                    strategy_id=sid,
+                    direction=direction,
+                    strength=0.8,
+                    edge_estimate_bps=5.0,
+                ))
+        bus.subscribe(NBBOQuote, emit)  # type: ignore[arg-type]
+
+    def test_same_direction_alphas_diverge_by_stacking(self) -> None:
+        from feelies.execution.portfolio_netter import NetDivergence
+        sink: list[NetDivergence] = []
+        orch, bus = self._orch(sink)
+        self._emit(bus, [
+            ("alpha_a", SignalDirection.LONG),
+            ("alpha_b", SignalDirection.LONG),
+        ])
+        _boot_to_backtest(orch)
+        q = _make_quote()
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        assert len(sink) == 1
+        d = sink[0]
+        assert d.winner_target_qty == 100      # winner-take-all
+        assert d.net_target_qty == 200         # net stacks both alphas
+        assert d.contributing_alphas == 2
+
+    def test_opposing_alphas_diverge_by_offset(self) -> None:
+        from feelies.execution.portfolio_netter import NetDivergence
+        sink: list[NetDivergence] = []
+        orch, bus = self._orch(sink)
+        self._emit(bus, [
+            ("alpha_a", SignalDirection.LONG),
+            ("alpha_b", SignalDirection.SHORT),
+        ])
+        _boot_to_backtest(orch)
+        q = _make_quote()
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        assert len(sink) == 1
+        assert sink[0].net_target_qty == 0     # the two cancel
+        assert abs(sink[0].winner_target_qty) == 100
+
+    def test_single_alpha_no_divergence(self) -> None:
+        from feelies.execution.portfolio_netter import NetDivergence
+        sink: list[NetDivergence] = []
+        orch, bus = self._orch(sink)
+        self._emit(bus, [("alpha_a", SignalDirection.LONG)])
+        _boot_to_backtest(orch)
+        q = _make_quote()
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        assert sink == []                      # net == winner
+
+    def test_disabled_without_sink_is_noop(self) -> None:
+        orch, bus = self._orch(None)
+        self._emit(bus, [
+            ("alpha_a", SignalDirection.LONG),
+            ("alpha_b", SignalDirection.LONG),
+        ])
+        _boot_to_backtest(orch)
+        q = _make_quote()
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)  # must not raise; nothing recorded
+        assert orch._positions.get("AAPL").quantity != 0  # legacy path drove
+
+
 # ── G-4: lot ledger integration ───────────────────────────────────────
 
 

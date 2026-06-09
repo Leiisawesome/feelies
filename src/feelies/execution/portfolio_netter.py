@@ -82,6 +82,24 @@ def _clamp(x: int, limit: int) -> int:
     return max(-limit, min(limit, x))
 
 
+@dataclass(frozen=True, kw_only=True)
+class NetDivergence:
+    """N1 shadow record: the net target differs from the winner-take-all one.
+
+    Emitted when the budget-weighted portfolio net for a symbol disagrees with
+    the single arbitrated winner's target — the measurement that quantifies
+    how much cross-alpha netting would change the decision before any flip.
+    """
+
+    symbol: str
+    signal_sequence: int
+    winner_strategy_id: str
+    winner_target_qty: int
+    net_target_qty: int
+    contributing_alphas: int
+    detail: str = ""
+
+
 def _is_stale(t: StandingTarget, now_ns: int) -> bool:
     return t.expiry_ns is not None and now_ns >= t.expiry_ns
 

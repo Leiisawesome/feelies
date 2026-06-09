@@ -104,6 +104,12 @@ from feelies.execution.intent import (
     TradingIntent,
 )
 from feelies.execution.order_state import OrderState, create_order_state_machine
+from feelies.execution.portfolio_netter import (
+    DesiredTargetBook,
+    NetDivergence,
+    PortfolioNetter,
+    standing_target_from_desired,
+)
 from feelies.execution.position_manager import (
     ExecStyle,
     LegacyPositionManager,
@@ -400,6 +406,7 @@ class Orchestrator:
         position_manager_enable_trim: bool = False,
         position_manager_trim_edge_gate_multiplier: float = 0.0,
         position_manager_urgency_exec: bool = False,
+        net_shadow_sink: "list[NetDivergence] | None" = None,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -452,6 +459,15 @@ class Orchestrator:
         # P4: urgency-driven execution style (discretionary trims work
         # passive).  Default-off — passive reductions defer on a non-fill.
         self._position_manager_urgency_exec = position_manager_urgency_exec
+        # G-5 N1: per-alpha standing-target book + portfolio netter, run in
+        # SHADOW.  When a sink is wired the orchestrator records each alpha's
+        # standing desired target and logs where the budget-weighted net
+        # disagrees with the winner-take-all decision — pure measurement,
+        # nothing driven (parity-neutral, no-op when the sink is None).
+        self._desired_target_book = DesiredTargetBook()
+        self._portfolio_netter = PortfolioNetter(self._desired_target_book)
+        self._net_shadow_sink = net_shadow_sink
+        self._net_staleness_k: float = 2.0
         self._alpha_registry = alpha_registry
         self._account_equity = account_equity
         self._fill_ledger = fill_ledger
@@ -2137,6 +2153,9 @@ class Orchestrator:
         self._trace_buffered_signals_arbitration(
             quote, buf_snapshot, signal, stop_signal,
         )
+        # G-5 N1: maintain the standing-target book from this tick's alpha
+        # signals and shadow-record where the net disagrees with the winner.
+        self._record_net_shadow(buf_snapshot, signal, quote)
         if buf_snapshot:
             for buffered in buf_snapshot:
                 self._carryover_signal_sequences.discard(buffered.sequence)
@@ -3473,6 +3492,68 @@ class Orchestrator:
                 urgency_exec=self._position_manager_urgency_exec,
             ),
         )
+
+    def _record_net_shadow(
+        self,
+        buf_snapshot: list[Signal],
+        winner: Signal | None,
+        quote: NBBOQuote,
+    ) -> None:
+        """G-5 N1: maintain the standing-target book + shadow the net target.
+
+        For every real (non-synthetic) alpha signal buffered this tick, record
+        its standing desired target (budget-capped by the sizer, ``k×horizon``
+        expiry).  Then, for the arbitrated winner's symbol, compare the
+        budget-weighted portfolio net to the winner-take-all target and append
+        a :class:`NetDivergence` when they disagree.  Pure measurement — no
+        orders, bus, journal, or parity effects; no-op unless a sink is wired.
+        """
+        sink = self._net_shadow_sink
+        if sink is None:
+            return
+        default_target = getattr(
+            self._intent_translator, "_default_target", 100,
+        )
+
+        def _signed_target(sig: Signal) -> int:
+            tq = self._compute_target_quantity(sig, quote)
+            return desired_from_signal(
+                sig, tq, default_target_quantity=default_target,
+            ).target_qty
+
+        for sig in buf_snapshot:
+            if sig.strategy_id.startswith("__"):
+                continue  # synthetic kernel signal, not an alpha target
+            desired = desired_from_signal(
+                sig,
+                self._compute_target_quantity(sig, quote),
+                default_target_quantity=default_target,
+            )
+            self._desired_target_book.put(standing_target_from_desired(
+                desired,
+                strategy_id=sig.strategy_id,
+                signal_timestamp_ns=int(sig.timestamp_ns),
+                horizon_seconds=sig.horizon_seconds,
+                staleness_k=self._net_staleness_k,
+            ))
+
+        if winner is None or winner.strategy_id.startswith("__"):
+            return
+        now_ns = int(quote.timestamp_ns)
+        net = self._portfolio_netter.net(winner.symbol, now_ns)
+        winner_target = _signed_target(winner)
+        if net.target_qty != winner_target:
+            sink.append(NetDivergence(
+                symbol=winner.symbol,
+                signal_sequence=winner.sequence,
+                winner_strategy_id=winner.strategy_id,
+                winner_target_qty=winner_target,
+                net_target_qty=net.target_qty,
+                contributing_alphas=len(
+                    self._desired_target_book.live_targets(winner.symbol, now_ns)
+                ),
+                detail=f"net={net.target_qty} winner={winner_target}",
+            ))
 
     def _record_position_manager_shadow(
         self,
