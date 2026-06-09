@@ -115,7 +115,7 @@ to the alpha's `horizon_seconds`).
 
 | Phase | Deliverable | Default | Parity |
 |-------|-------------|---------|--------|
-| **N0** | `DesiredTargetBook` (per-alpha standing targets) + `PortfolioNetter.net` (pure) + unit tests | off | none |
+| **N0** ✅ | `DesiredTargetBook` (per-alpha standing targets) + `PortfolioNetter.net` (pure) + unit tests | off | none |
 | **N1** | Maintain the standing-target book from the SIGNAL path; run the netter in **shadow**, log divergence vs winner-take-all | shadow | none |
 | **N2** | Drive the decision from the net target (SIGNAL path) behind `enable_portfolio_netting`; arbitration demoted to intra-alpha | off→on | new baseline |
 | **N3** | Route the PORTFOLIO `SizedPositionIntent` path through the same netter; retire the parallel `check_sized_intent` diff | off→on | shadow-verified |
