@@ -2266,8 +2266,15 @@ class Orchestrator:
             # net target for the symbol drives the decision (the winner only
             # selects which symbol to act on); otherwise the winner's own
             # target drives it (byte-identical to the pre-N2 flip).
+            # Inv-11: synthetic forced-market-exit signals (stop-loss,
+            # session flatten) must always unwind to FLAT regardless of
+            # the standing alpha net — position safety beats alpha
+            # conviction, so netting is bypassed for those strategies.
             decision_signal = signal
-            if self._enable_portfolio_netting:
+            if (
+                self._enable_portfolio_netting
+                and signal.strategy_id not in _FORCED_MARKET_EXIT_STRATEGIES
+            ):
                 net_desired = self._portfolio_netter.net(
                     signal.symbol, int(quote.timestamp_ns),
                 )
