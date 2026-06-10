@@ -1,0 +1,39 @@
+# Multi-alpha measurement config — G-5 cross-alpha net-divergence measurement.
+#
+# Purpose: run several SIGNAL alphas on the SAME symbol so they hold standing
+# targets on it concurrently, making cross-alpha netting MEASURABLE.  Pair
+# with ``--emit-net-divergence-jsonl`` (parity-neutral shadow; netting stays
+# OFF) and ``scripts/analyze_net_divergence.py`` to quantify how often, and by
+# how much, the budget-weighted portfolio net would differ from today's
+# winner-take-all decision — the evidence to size the G-5 N2 flip / N3b.
+#
+# Usage:
+#   uv run python scripts/run_backtest.py --config configs/backtest_multialpha.yaml \
+#       --symbol APP --date 2026-03-26 --emit-net-divergence-jsonl \
+#     | grep '^NETDIV_JSONL ' | sed 's/^NETDIV_JSONL //' > netdiv.jsonl
+#   uv run python scripts/analyze_net_divergence.py netdiv.jsonl
+#
+# This is a STARTING POINT — tune the alpha set, symbols, dates, and
+# parameter_overrides so multiple alphas actually fire on overlapping ticks
+# (a symbol where only one alpha ever signals yields zero divergence).
+extends: ../platform.yaml
+
+symbols:
+  - APP
+
+# A momentum + drift + mean-reversion mix on the same symbol so the net both
+# STACKS (benign + kyle, same direction) and OFFSETS (vs inventory-revert).
+alpha_specs:
+  - alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml
+  - alphas/sig_kyle_drift_v1/sig_kyle_drift_v1.alpha.yaml
+  - alphas/sig_inventory_revert_v1/sig_inventory_revert_v1.alpha.yaml
+
+# Inv-12 margin gate (G12-equivalent 1.5× round-trip floor), as in backtest_app.
+signal_min_edge_cost_ratio: 1.5
+
+# Loosen the benign entry gate so it signals often enough to overlap the others
+# (mirror backtest_app's tuned overrides).
+parameter_overrides:
+  sig_benign_midcap_v1:
+    entry_threshold_z: 1.5
+    edge_per_z_bps: 6.0
