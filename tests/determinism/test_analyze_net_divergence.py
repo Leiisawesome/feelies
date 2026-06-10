@@ -59,3 +59,35 @@ def test_summarize_counts_and_rate(mod) -> None:
 
     empty = mod.summarize([], total_decisions=None)
     assert "No divergent decisions recorded" in empty
+
+
+def test_et_date_bucketing(mod) -> None:
+    # 2026-06-01 13:30:00 UTC = 09:30 ET (market open) → 2026-06-01 ET.
+    ns = 1_780_320_600_000_000_000
+    assert mod._et_date(ns) == "2026-06-01"
+    # 2026-06-02 01:00:00 UTC = 2026-06-01 21:00 ET (after hours) → still 06-01.
+    assert mod._et_date(1_780_362_000_000_000_000) == "2026-06-01"
+
+
+def test_summarize_splits_by_trading_day(mod) -> None:
+    d1 = 1_780_320_600_000_000_000  # 2026-06-01 ET
+    d2 = d1 + 86_400_000_000_000     # +1 day → 2026-06-02 ET
+    records = [
+        {"symbol": "APP", "winner_strategy_id": "a", "winner_target_qty": 0,
+         "net_target_qty": 50, "contributing_alphas": 2, "timestamp_ns": d1},
+        {"symbol": "APP", "winner_strategy_id": "a", "winner_target_qty": 0,
+         "net_target_qty": 50, "contributing_alphas": 2, "timestamp_ns": d1},
+        {"symbol": "APP", "winner_strategy_id": "a", "winner_target_qty": 100,
+         "net_target_qty": 250, "contributing_alphas": 3, "timestamp_ns": d2},
+    ]
+    text = mod.summarize(records, total_decisions=None)
+    assert "By trading day (ET)" in text
+    assert "2026-06-01" in text and "2026-06-02" in text
+
+
+def test_no_by_day_section_without_timestamps(mod) -> None:
+    records = [
+        {"symbol": "APP", "winner_strategy_id": "a", "winner_target_qty": 0,
+         "net_target_qty": 50, "contributing_alphas": 2},  # no timestamp_ns
+    ]
+    assert "By trading day" not in mod.summarize(records, total_decisions=None)

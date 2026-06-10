@@ -3717,6 +3717,7 @@ class Orchestrator:
                 contributing_alphas=len(
                     self._desired_target_book.live_targets(winner.symbol, now_ns)
                 ),
+                timestamp_ns=int(quote.exchange_timestamp_ns),
                 detail=f"net={net.target_qty} winner={winner_target}",
             ))
 

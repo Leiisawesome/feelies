@@ -28,10 +28,23 @@ import json
 import statistics
 import sys
 from collections import Counter
+from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 
 _PREFIX = "NETDIV_JSONL "
+_ET = ZoneInfo("America/New_York")
+
+
+def _et_date(ns: int) -> str:
+    """Epoch ns → trading-day date (US/Eastern), e.g. ``2026-06-01``."""
+    return (
+        datetime.fromtimestamp(ns / 1e9, tz=timezone.utc)
+        .astimezone(_ET)
+        .date()
+        .isoformat()
+    )
 
 
 def _sign(x: int) -> int:
@@ -62,6 +75,8 @@ def parse_line(line: str) -> dict[str, Any] | None:
     try:
         rec = json.loads(line)
     except json.JSONDecodeError:
+        return None
+    if not isinstance(rec, dict):
         return None
     if "net_target_qty" not in rec or "winner_target_qty" not in rec:
         return None
@@ -132,6 +147,28 @@ def summarize(records: list[dict[str, Any]], total_decisions: int | None) -> str
     for k in sorted(contrib):
         c = contrib[k]
         out.append(f"    {k} alphas   {c:>7,} ({c / n * 100:.1f}%)")
+
+    # Per trading day (ET) — only when records carry a timestamp.  Shows the
+    # day-to-day spread of divergence count + the dominant shift, so a multi-
+    # day run reveals whether the pattern is stable (no per-day RATE: this
+    # stream has no per-day decision count; pass single days for that).
+    dated = [r for r in records if int(r.get("timestamp_ns", 0)) > 0]
+    if dated:
+        by_day: dict[str, Counter[str]] = {}
+        for r in dated:
+            day = _et_date(int(r["timestamp_ns"]))
+            by_day.setdefault(day, Counter())[
+                classify(int(r["winner_target_qty"]), int(r["net_target_qty"]))
+            ] += 1
+        out.append("\n  By trading day (ET)   [count | dominant shift]")
+        for day in sorted(by_day):
+            cc = by_day[day]
+            total = sum(cc.values())
+            top, topn = cc.most_common(1)[0]
+            out.append(
+                f"    {day}   {total:>5,}   "
+                f"{top} {topn}/{total} ({topn / total * 100:.0f}%)"
+            )
 
     out.append("")
     return "\n".join(out)

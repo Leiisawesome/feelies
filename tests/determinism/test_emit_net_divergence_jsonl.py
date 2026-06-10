@@ -34,7 +34,8 @@ def runner():
     return _load_runner()
 
 
-def _div(seq: int, winner: int, net: int, n: int = 2) -> NetDivergence:
+def _div(seq: int, winner: int, net: int, n: int = 2,
+         ts: int = 1_717_200_000_000_000_000) -> NetDivergence:
     return NetDivergence(
         symbol="AAPL",
         signal_sequence=seq,
@@ -42,6 +43,7 @@ def _div(seq: int, winner: int, net: int, n: int = 2) -> NetDivergence:
         winner_target_qty=winner,
         net_target_qty=net,
         contributing_alphas=n,
+        timestamp_ns=ts,
         detail="x",
     )
 
@@ -61,6 +63,7 @@ def test_row_shape_and_magnitude(runner, capsys) -> None:
         capsys.readouterr().out.splitlines()[0][len("NETDIV_JSONL "):]
     )
     assert payload == {
+        "timestamp_ns": 1_717_200_000_000_000_000,
         "signal_sequence": 7,
         "symbol": "AAPL",
         "winner_strategy_id": "alpha_a",

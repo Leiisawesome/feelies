@@ -100,6 +100,9 @@ class NetDivergence:
     winner_target_qty: int
     net_target_qty: int
     contributing_alphas: int
+    # Exchange-time ns of the deciding quote — lets a multi-day measurement be
+    # bucketed per trading day.  Default 0 keeps older callers/tests valid.
+    timestamp_ns: int = 0
     detail: str = ""
 
 
