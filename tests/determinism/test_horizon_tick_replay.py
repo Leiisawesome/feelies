@@ -39,9 +39,7 @@ from tests.fixtures.replay import (
 # Locked baseline produced by the canonical fixture + scheduler at the
 # Phase-2-α tip.  Any unintentional drift in scheduler semantics or
 # fixture content will flip this value.
-EXPECTED_LEVEL2_TICK_HASH = (
-    "316765d45725f91373da2dfa6a5e201f6349bdae566980b20b220c481b9793c2"
-)
+EXPECTED_LEVEL2_TICK_HASH = "316765d45725f91373da2dfa6a5e201f6349bdae566980b20b220c481b9793c2"
 EXPECTED_LEVEL2_TICK_COUNT = 28
 
 
@@ -49,8 +47,7 @@ def test_horizon_tick_stream_matches_locked_baseline() -> None:
     ticks, _ = replay_quotes_through_scheduler()
     actual_hash = hash_horizon_tick_stream(ticks)
     assert len(ticks) == EXPECTED_LEVEL2_TICK_COUNT, (
-        f"emitted-tick count drift: expected "
-        f"{EXPECTED_LEVEL2_TICK_COUNT}, got {len(ticks)}"
+        f"emitted-tick count drift: expected {EXPECTED_LEVEL2_TICK_COUNT}, got {len(ticks)}"
     )
     assert actual_hash == EXPECTED_LEVEL2_TICK_HASH, (
         "Level-2 HorizonTick hash drift!\n"

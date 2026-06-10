@@ -58,8 +58,7 @@ def test_boundary_indices_strictly_monotone_per_triplet(
             prev = last_seen.get(key)
             if prev is not None:
                 assert tick.boundary_index > prev, (
-                    f"boundary regression for {key}: {prev} -> "
-                    f"{tick.boundary_index}"
+                    f"boundary regression for {key}: {prev} -> {tick.boundary_index}"
                 )
             last_seen[key] = tick.boundary_index
 

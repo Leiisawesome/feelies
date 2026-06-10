@@ -75,17 +75,20 @@ def test_should_suppress_entry_uses_timestamp_date_for_multi_day_runs() -> None:
 
 
 def test_build_from_platform_disabled() -> None:
-    assert build_trading_session_from_platform(
-        rth_session_gating_enabled=False,
-        rth_session_date="2026-01-15",
-        event_calendar_path=None,
-        rth_open_et="09:30",
-        rth_close_et="16:00",
-        early_close_dates=(),
-        early_close_rth_close_et="13:00",
-        market_holiday_dates=(),
-        no_entry_first_seconds=0,
-    ) is None
+    assert (
+        build_trading_session_from_platform(
+            rth_session_gating_enabled=False,
+            rth_session_date="2026-01-15",
+            event_calendar_path=None,
+            rth_open_et="09:30",
+            rth_close_et="16:00",
+            early_close_dates=(),
+            early_close_rth_close_et="13:00",
+            market_holiday_dates=(),
+            no_entry_first_seconds=0,
+        )
+        is None
+    )
 
 
 def test_no_entry_first_seconds() -> None:

@@ -53,13 +53,9 @@ class TestStandardNormalCDF:
 
     def test_textbook_quantiles(self) -> None:
         # Φ(1.96) ≈ 0.975 (two-sided 95% CI right edge)
-        assert math.isclose(
-            standard_normal_cdf(1.96), 0.975002104852, abs_tol=1e-10
-        )
+        assert math.isclose(standard_normal_cdf(1.96), 0.975002104852, abs_tol=1e-10)
         # Φ(2.576) ≈ 0.995 (two-sided 99% CI right edge)
-        assert math.isclose(
-            standard_normal_cdf(2.5758293035489), 0.995, abs_tol=1e-9
-        )
+        assert math.isclose(standard_normal_cdf(2.5758293035489), 0.995, abs_tol=1e-9)
 
     def test_symmetry_about_zero(self) -> None:
         for x in (0.5, 1.0, 1.5, 2.5, 3.0):
@@ -82,20 +78,17 @@ class TestStandardNormalCDF:
 
 class TestStandardNormalQuantile:
     def test_textbook_values(self) -> None:
+        assert math.isclose(standard_normal_quantile(0.5), 0.0, abs_tol=1e-12)
         assert math.isclose(
-            standard_normal_quantile(0.5), 0.0, abs_tol=1e-12
-        )
-        assert math.isclose(
-            standard_normal_quantile(0.975), 1.959963984540054,
+            standard_normal_quantile(0.975),
+            1.959963984540054,
             rel_tol=1e-9,
         )
 
     def test_round_trip_with_cdf(self) -> None:
         for p in (0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99):
             x = standard_normal_quantile(p)
-            assert math.isclose(
-                standard_normal_cdf(x), p, abs_tol=1e-9
-            )
+            assert math.isclose(standard_normal_cdf(x), p, abs_tol=1e-9)
 
     def test_boundary_p_rejected(self) -> None:
         with pytest.raises(ValueError, match="p in"):
@@ -235,14 +228,10 @@ class TestProbabilisticSharpeRatio:
 class TestExpectedMaxSharpe:
     def test_n_trials_one_returns_zero(self) -> None:
         # No multiple-testing deflation when only one trial.
-        assert expected_max_sharpe(
-            n_trials=1, trial_sharpe_variance=0.5
-        ) == 0.0
+        assert expected_max_sharpe(n_trials=1, trial_sharpe_variance=0.5) == 0.0
 
     def test_zero_variance_returns_zero(self) -> None:
-        assert expected_max_sharpe(
-            n_trials=100, trial_sharpe_variance=0.0
-        ) == 0.0
+        assert expected_max_sharpe(n_trials=100, trial_sharpe_variance=0.0) == 0.0
 
     def test_grows_with_n_trials(self) -> None:
         v = 1.0 / 251
@@ -253,12 +242,8 @@ class TestExpectedMaxSharpe:
 
     def test_grows_with_variance(self) -> None:
         n = 100
-        s_low = expected_max_sharpe(
-            n_trials=n, trial_sharpe_variance=0.001
-        )
-        s_high = expected_max_sharpe(
-            n_trials=n, trial_sharpe_variance=0.01
-        )
+        s_low = expected_max_sharpe(n_trials=n, trial_sharpe_variance=0.001)
+        s_high = expected_max_sharpe(n_trials=n, trial_sharpe_variance=0.01)
         assert s_low < s_high
 
     def test_closed_form_n100_v1_over_251(self) -> None:
@@ -269,28 +254,20 @@ class TestExpectedMaxSharpe:
         #        ≈ 0.06309 * (0.4228 * 2.32635 + 0.5772 * 2.6864)
         #        ≈ 0.06309 * (0.9836 + 1.5505)
         #        ≈ 0.06309 * 2.5340 ≈ 0.1599
-        s = expected_max_sharpe(
-            n_trials=100, trial_sharpe_variance=1.0 / 251
-        )
+        s = expected_max_sharpe(n_trials=100, trial_sharpe_variance=1.0 / 251)
         assert math.isclose(s, 0.1597, abs_tol=1e-3)
 
     def test_n_trials_zero_rejected(self) -> None:
         with pytest.raises(ValueError, match="n_trials"):
-            expected_max_sharpe(
-                n_trials=0, trial_sharpe_variance=0.1
-            )
+            expected_max_sharpe(n_trials=0, trial_sharpe_variance=0.1)
 
     def test_negative_n_trials_rejected(self) -> None:
         with pytest.raises(ValueError, match="n_trials"):
-            expected_max_sharpe(
-                n_trials=-1, trial_sharpe_variance=0.1
-            )
+            expected_max_sharpe(n_trials=-1, trial_sharpe_variance=0.1)
 
     def test_negative_variance_rejected(self) -> None:
         with pytest.raises(ValueError, match="trial_sharpe_variance"):
-            expected_max_sharpe(
-                n_trials=10, trial_sharpe_variance=-0.1
-            )
+            expected_max_sharpe(n_trials=10, trial_sharpe_variance=-0.1)
 
     def test_euler_mascheroni_constant_value(self) -> None:
         # Documented: γ ≈ 0.5772156649015328606.
@@ -373,15 +350,11 @@ class TestDeflatedSharpe:
 
     def test_n_obs_below_two_rejected(self) -> None:
         with pytest.raises(ValueError, match="n_obs"):
-            deflated_sharpe(
-                observed_sharpe=0.5, n_obs=1, n_trials=10
-            )
+            deflated_sharpe(observed_sharpe=0.5, n_obs=1, n_trials=10)
 
     def test_n_trials_zero_rejected(self) -> None:
         with pytest.raises(ValueError, match="n_trials"):
-            deflated_sharpe(
-                observed_sharpe=0.5, n_obs=100, n_trials=0
-            )
+            deflated_sharpe(observed_sharpe=0.5, n_obs=100, n_trials=0)
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -627,15 +600,11 @@ class TestBuildDSREvidenceFromReturns:
 
     def test_short_returns_rejected(self) -> None:
         with pytest.raises(ValueError, match="at least 2"):
-            build_dsr_evidence_from_returns(
-                returns=[0.5], trials_count=10
-            )
+            build_dsr_evidence_from_returns(returns=[0.5], trials_count=10)
 
     def test_empty_returns_rejected(self) -> None:
         with pytest.raises(ValueError, match="at least 2"):
-            build_dsr_evidence_from_returns(
-                returns=[], trials_count=10
-            )
+            build_dsr_evidence_from_returns(returns=[], trials_count=10)
 
     def test_moments_propagate(self) -> None:
         rng = random.Random(0)

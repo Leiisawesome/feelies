@@ -53,9 +53,7 @@ _BASELINE_CONFIG = Path("configs/backtest_app.yaml")
 #   uv run python scripts/run_backtest.py --config configs/backtest_app.yaml \
 #       --symbol APP --date 2026-03-26
 # and updated here (only the parity hash changes).
-_BASELINE_PARITY_HASH = (
-    "f0da57e10c01d421db64a6b2ffe0d8e32583d382f3fb07cef27ba9ec7b32e936"
-)
+_BASELINE_PARITY_HASH = "f0da57e10c01d421db64a6b2ffe0d8e32583d382f3fb07cef27ba9ec7b32e936"
 _BASELINE_NET_PNL = Decimal("15.07")
 _BASELINE_FILL_COUNT = 6
 

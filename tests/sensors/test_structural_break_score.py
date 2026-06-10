@@ -65,14 +65,17 @@ def test_first_quote_emits_zero_no_baseline() -> None:
 def test_constant_mid_no_break() -> None:
     """Identical observations after the first → score stays at 0."""
     sensor = StructuralBreakScoreSensor(
-        window_seconds=10, alarm_threshold=0.1, warm_samples=3,
+        window_seconds=10,
+        alarm_threshold=0.1,
+        warm_samples=3,
     )
     state = sensor.initial_state()
     r = None
     for i in range(10):
         r = sensor.update(
             _quote(ts_ns=(i + 1) * 1_000_000_000, mid="100", sequence=i),
-            state, params={},
+            state,
+            params={},
         )
     assert r is not None
     assert r.value == 0.0
@@ -81,14 +84,17 @@ def test_constant_mid_no_break() -> None:
 def test_structural_jump_increases_score() -> None:
     """Steady mid then a sudden persistent shift → score climbs."""
     sensor = StructuralBreakScoreSensor(
-        window_seconds=60, alarm_threshold=0.001, warm_samples=2,
+        window_seconds=60,
+        alarm_threshold=0.001,
+        warm_samples=2,
     )
     state = sensor.initial_state()
     # Stable phase.
     for i in range(20):
         sensor.update(
             _quote(ts_ns=(i + 1) * 1_000_000_000, mid="100", sequence=i),
-            state, params={},
+            state,
+            params={},
         )
     # Sudden persistent volatility regime.
     last = None
@@ -96,7 +102,8 @@ def test_structural_jump_increases_score() -> None:
         mid = "100" if i % 2 == 0 else "100.20"
         last = sensor.update(
             _quote(ts_ns=(i + 1) * 1_000_000_000, mid=mid, sequence=i),
-            state, params={},
+            state,
+            params={},
         )
     assert last is not None
     assert last.value > 0.0
@@ -104,7 +111,9 @@ def test_structural_jump_increases_score() -> None:
 
 def test_score_is_clipped_to_unit_interval() -> None:
     sensor = StructuralBreakScoreSensor(
-        window_seconds=60, alarm_threshold=1e-9, warm_samples=2,
+        window_seconds=60,
+        alarm_threshold=1e-9,
+        warm_samples=2,
     )
     state = sensor.initial_state()
     # Tiny λ ⇒ even a small persistent observable saturates the score.
@@ -113,7 +122,8 @@ def test_score_is_clipped_to_unit_interval() -> None:
         mid = "100" if i % 2 == 0 else "100.10"
         last = sensor.update(
             _quote(ts_ns=(i + 1) * 1_000_000_000, mid=mid, sequence=i),
-            state, params={},
+            state,
+            params={},
         )
     assert last is not None
     assert 0.0 <= last.value <= 1.0

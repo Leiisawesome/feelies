@@ -74,9 +74,7 @@ class InventoryPressureSensor:
         min_trades: int = 20,
     ) -> None:
         if window_seconds <= 0:
-            raise ValueError(
-                f"window_seconds must be > 0, got {window_seconds}"
-            )
+            raise ValueError(f"window_seconds must be > 0, got {window_seconds}")
         if min_trades < 0:
             raise ValueError(f"min_trades must be >= 0, got {min_trades}")
         if sensor_id is not None:
@@ -89,8 +87,8 @@ class InventoryPressureSensor:
     def initial_state(self) -> dict[str, Any]:
         return {
             "events": deque(),  # (ts_ns, mm_inv_change, size)
-            "mm_inv_sum": 0,    # Σ (-aggressor_side · size) in window
-            "vol_sum": 0,       # Σ size in window
+            "mm_inv_sum": 0,  # Σ (-aggressor_side · size) in window
+            "vol_sum": 0,  # Σ size in window
             "last_price": None,
             "last_side": +1,
         }

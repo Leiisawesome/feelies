@@ -137,7 +137,8 @@ class TestCheckOrderPerAlphaPositionLimit:
         positions.update("test_alpha", "AAPL", 95, Decimal("150"))
 
         wrapper = _build_wrapper(
-            alpha, strategy_positions=positions,
+            alpha,
+            strategy_positions=positions,
             platform_max_position=100,
         )
         order = _make_order(quantity=10)
@@ -276,14 +277,14 @@ class TestCheckSizedIntent:
         targets: dict[str, float],
     ) -> "SizedPositionIntent":
         from feelies.core.events import SizedPositionIntent, TargetPosition
+
         return SizedPositionIntent(
             timestamp_ns=1_000_000_000,
             correlation_id="corr-1",
             sequence=1,
             strategy_id=strategy_id,
             target_positions={
-                sym: TargetPosition(symbol=sym, target_usd=usd)
-                for sym, usd in targets.items()
+                sym: TargetPosition(symbol=sym, target_usd=usd) for sym, usd in targets.items()
             },
         )
 
@@ -308,7 +309,8 @@ class TestCheckSizedIntent:
         agg_store.update_mark("AAPL", Decimal("150"))
 
         wrapper = _build_wrapper(
-            alpha, strategy_positions=strategy_positions,
+            alpha,
+            strategy_positions=strategy_positions,
         )
         intent = self._make_intent(
             strategy_id="test_alpha",
@@ -329,7 +331,8 @@ class TestCheckSizedIntent:
         agg_store.update_mark("AAPL", Decimal("100"))
 
         wrapper = _build_wrapper(
-            alpha, strategy_positions=strategy_positions,
+            alpha,
+            strategy_positions=strategy_positions,
         )
         intent = self._make_intent(
             strategy_id="test_alpha",
@@ -377,7 +380,9 @@ class TestCheckSizedIntent:
         divergence rather than merely preserving it.
         """
         alpha = _make_alpha(
-            max_position=1000, max_exposure_pct=100.0, capital_pct=100.0,
+            max_position=1000,
+            max_exposure_pct=100.0,
+            capital_pct=100.0,
         )
         wrapper = _build_wrapper(alpha)
         intent = self._make_intent(

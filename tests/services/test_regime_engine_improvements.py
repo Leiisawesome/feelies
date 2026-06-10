@@ -153,10 +153,7 @@ def test_per_symbol_pairwise_gate_failure_logs_warning(
         )
     with caplog.at_level(logging.WARNING, logger="feelies.services.regime_engine"):
         assert engine.calibrate(cal)
-    skips = [
-        r for r in caplog.records
-        if "per-symbol calibration skipped" in r.message
-    ]
+    skips = [r for r in caplog.records if "per-symbol calibration skipped" in r.message]
     thin_skips = [r for r in skips if "THIN" in r.message]
     assert len(thin_skips) == 2
     joined = " ".join(r.message for r in thin_skips)
@@ -165,10 +162,12 @@ def test_per_symbol_pairwise_gate_failure_logs_warning(
 
 def test_restore_legacy_checkpoint_without_last_quote_ts() -> None:
     engine = HMM3StateFractional()
-    blob = json.dumps({
-        "posteriors": {"AAPL": [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]},
-        "last_update_seq": {"AAPL": 9},
-    }).encode()
+    blob = json.dumps(
+        {
+            "posteriors": {"AAPL": [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]},
+            "last_update_seq": {"AAPL": 9},
+        }
+    ).encode()
     engine.restore(blob)
     assert engine._last_quote_ts_ns == {}
 
@@ -191,11 +190,13 @@ def test_checkpoint_roundtrips_last_quote_ts_ns() -> None:
 @pytest.mark.parametrize("bad", [True, 42, "x"])
 def test_restore_rejects_non_dict_last_quote_ts_ns(bad: object) -> None:
     engine = HMM3StateFractional()
-    payload = json.dumps({
-        "posteriors": {},
-        "last_update_seq": {},
-        "last_quote_ts_ns": bad,
-    }).encode()
+    payload = json.dumps(
+        {
+            "posteriors": {},
+            "last_update_seq": {},
+            "last_quote_ts_ns": bad,
+        }
+    ).encode()
     with pytest.raises(ValueError, match="last_quote_ts_ns"):
         engine.restore(payload)
 
@@ -237,11 +238,13 @@ def test_checkpoint_includes_schema_version() -> None:
 
 def test_restore_rejects_unsupported_schema_version() -> None:
     engine = HMM3StateFractional()
-    payload = json.dumps({
-        "checkpoint_schema_version": 999,
-        "posteriors": {},
-        "last_update_seq": {},
-    }).encode()
+    payload = json.dumps(
+        {
+            "checkpoint_schema_version": 999,
+            "posteriors": {},
+            "last_update_seq": {},
+        }
+    ).encode()
     with pytest.raises(ValueError, match="Unsupported checkpoint_schema_version"):
         engine.restore(payload)
 

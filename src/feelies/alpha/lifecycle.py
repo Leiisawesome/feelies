@@ -64,14 +64,18 @@ _LIFECYCLE_TRANSITIONS: dict[AlphaLifecycleState, frozenset[AlphaLifecycleState]
     # (SMALL_CAPITAL -> SCALED).  The lifecycle state is unchanged;
     # the tier flip is recorded as a metadata-only ledger entry whose
     # ``trigger`` distinguishes it from the LIVE -> QUARANTINED demotion.
-    AlphaLifecycleState.LIVE: frozenset({
-        AlphaLifecycleState.LIVE,
-        AlphaLifecycleState.QUARANTINED,
-    }),
-    AlphaLifecycleState.QUARANTINED: frozenset({
-        AlphaLifecycleState.PAPER,
-        AlphaLifecycleState.DECOMMISSIONED,
-    }),
+    AlphaLifecycleState.LIVE: frozenset(
+        {
+            AlphaLifecycleState.LIVE,
+            AlphaLifecycleState.QUARANTINED,
+        }
+    ),
+    AlphaLifecycleState.QUARANTINED: frozenset(
+        {
+            AlphaLifecycleState.PAPER,
+            AlphaLifecycleState.DECOMMISSIONED,
+        }
+    ),
     AlphaLifecycleState.DECOMMISSIONED: frozenset(),
 }
 
@@ -149,13 +153,11 @@ def check_live_gate(
         )
     if evidence.paper_sharpe < req.paper_min_sharpe:
         errors.append(
-            f"paper Sharpe {evidence.paper_sharpe:.2f} "
-            f"< {req.paper_min_sharpe:.2f} required"
+            f"paper Sharpe {evidence.paper_sharpe:.2f} < {req.paper_min_sharpe:.2f} required"
         )
     if evidence.paper_hit_rate < req.paper_min_hit_rate:
         errors.append(
-            f"paper hit rate {evidence.paper_hit_rate:.2%} "
-            f"< {req.paper_min_hit_rate:.2%} required"
+            f"paper hit rate {evidence.paper_hit_rate:.2%} < {req.paper_min_hit_rate:.2%} required"
         )
     if evidence.paper_max_drawdown_pct > req.paper_max_drawdown_pct:
         errors.append(
@@ -163,9 +165,7 @@ def check_live_gate(
             f"> {req.paper_max_drawdown_pct:.1f}% limit"
         )
     if evidence.quarantine_triggers > 0:
-        errors.append(
-            f"{evidence.quarantine_triggers} quarantine triggers during paper period"
-        )
+        errors.append(f"{evidence.quarantine_triggers} quarantine triggers during paper period")
     if not evidence.cost_model_validated:
         errors.append("cost model has not been validated")
 
@@ -378,9 +378,7 @@ class AlphaLifecycle:
             evidence,
             structured_evidence,
             gate_id=GateId.PAPER_TO_LIVE,
-            legacy_validator=lambda ev: check_live_gate(
-                ev, self._gate_requirements
-            ),
+            legacy_validator=lambda ev: check_live_gate(ev, self._gate_requirements),
         )
         if errors:
             return errors
@@ -651,9 +649,7 @@ class AlphaLifecycle:
                 "(Workstream F-4 sequence)"
             )
         if structured_evidence is not None:
-            errors = validate_gate(
-                gate_id, structured_evidence, self._gate_thresholds
-            )
+            errors = validate_gate(gate_id, structured_evidence, self._gate_thresholds)
             return None, errors
         # legacy path
         assert evidence is not None  # narrowed by the early returns above
@@ -739,22 +735,17 @@ class AlphaLifecycle:
         try:
             payload = json.loads(data.decode())
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise ValueError(
-                f"Corrupt lifecycle checkpoint for '{self._alpha_id}'"
-            ) from exc
+            raise ValueError(f"Corrupt lifecycle checkpoint for '{self._alpha_id}'") from exc
 
         state_name = payload.get("state")
         if state_name is None:
-            raise ValueError(
-                f"Missing 'state' in lifecycle checkpoint for '{self._alpha_id}'"
-            )
+            raise ValueError(f"Missing 'state' in lifecycle checkpoint for '{self._alpha_id}'")
 
         try:
             target = AlphaLifecycleState[state_name]
         except KeyError:
             raise ValueError(
-                f"Unknown lifecycle state '{state_name}' in checkpoint "
-                f"for '{self._alpha_id}'"
+                f"Unknown lifecycle state '{state_name}' in checkpoint for '{self._alpha_id}'"
             )
 
         # BT-13: enforce the research-only cap on rehydration too, so a
@@ -763,8 +754,7 @@ class AlphaLifecycle:
         cap_errors = self._lifecycle_promotion_errors(target)
         if cap_errors:
             raise ValueError(
-                f"Cannot restore '{self._alpha_id}' to {target.name}: "
-                f"{cap_errors[0]}"
+                f"Cannot restore '{self._alpha_id}' to {target.name}: {cap_errors[0]}"
             )
 
         # Rehydrate the F-6 capital-tier hint *before* the state is
@@ -785,8 +775,7 @@ class AlphaLifecycle:
                 self._persisted_capital_tier = CapitalStageTier[tier_name]
             except KeyError:
                 raise ValueError(
-                    f"Unknown capital_tier '{tier_name}' in checkpoint "
-                    f"for '{self._alpha_id}'"
+                    f"Unknown capital_tier '{tier_name}' in checkpoint for '{self._alpha_id}'"
                 )
         else:
             # Legacy checkpoint (pre-F-6) or non-LIVE state — clear any
@@ -805,8 +794,7 @@ class AlphaLifecycle:
         """
         if token is not _RESTORE_TOKEN:
             raise PermissionError(
-                "Direct state restoration requires the internal token. "
-                "Use restore(data) instead."
+                "Direct state restoration requires the internal token. Use restore(data) instead."
             )
         self._sm._state = target  # noqa: SLF001
 

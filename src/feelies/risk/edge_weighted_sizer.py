@@ -51,19 +51,19 @@ class SizerTiltConfig:
 
     # ── Edge factor: scale by edge relative to a reference. ────────────
     edge_enabled: bool = False
-    edge_ref_bps: float = 20.0      # edge == ref → factor 1.0
-    edge_floor: float = 0.25        # never shrink an entry below 25% on edge
-    edge_cap: float = 2.0           # never amplify beyond 2× on edge
+    edge_ref_bps: float = 20.0  # edge == ref → factor 1.0
+    edge_floor: float = 0.25  # never shrink an entry below 25% on edge
+    edge_cap: float = 2.0  # never amplify beyond 2× on edge
 
     # ── Vol factor: target_vol / realized_vol (vol targeting). ─────────
     vol_enabled: bool = False
-    vol_target_bps: float = 100.0   # realized == target → factor 1.0
+    vol_target_bps: float = 100.0  # realized == target → factor 1.0
     vol_floor: float = 0.25
     vol_cap: float = 2.0
 
     # ── Inventory factor: taper as |inventory| nears the cap. ──────────
     inventory_enabled: bool = False
-    inventory_floor: float = 0.0    # at the cap, factor floors here
+    inventory_floor: float = 0.0  # at the cap, factor floors here
 
     # ── Combined-tilt clamp (applied after the product). ───────────────
     tilt_floor: float = 0.10
@@ -81,8 +81,8 @@ class TiltBreakdown:
     edge: float
     vol: float
     inventory: float
-    combined: float           # clamped product of the enabled factors
-    inventory_qty: int        # signed inventory observed (0 when no provider)
+    combined: float  # clamped product of the enabled factors
+    inventory_qty: int  # signed inventory observed (0 when no provider)
     realized_vol_bps: float | None  # observed realized vol (None when absent)
 
 
@@ -185,9 +185,7 @@ class EdgeWeightedSizer:
     def base(self) -> PositionSizer:
         return self._base
 
-    def tilt_breakdown(
-        self, signal: Signal, risk_budget: AlphaRiskBudget
-    ) -> TiltBreakdown:
+    def tilt_breakdown(self, signal: Signal, risk_budget: AlphaRiskBudget) -> TiltBreakdown:
         """Per-factor decomposition + clamped combined tilt for a signal.
 
         Exposed for the shadow harness so the measurement stream can record
@@ -225,17 +223,21 @@ class EdgeWeightedSizer:
                 else 0
             )
             invf = inventory_factor(
-                inv_qty, risk_budget.max_position_per_symbol,
+                inv_qty,
+                risk_budget.max_position_per_symbol,
                 floor=cfg.inventory_floor,
             )
 
         combined = (
-            1.0 if not cfg.any_enabled
-            else _clamp(ef * vf * invf, cfg.tilt_floor, cfg.tilt_cap)
+            1.0 if not cfg.any_enabled else _clamp(ef * vf * invf, cfg.tilt_floor, cfg.tilt_cap)
         )
         return TiltBreakdown(
-            edge=ef, vol=vf, inventory=invf, combined=combined,
-            inventory_qty=inv_qty, realized_vol_bps=rv,
+            edge=ef,
+            vol=vf,
+            inventory=invf,
+            combined=combined,
+            inventory_qty=inv_qty,
+            realized_vol_bps=rv,
         )
 
     def tilt_for(self, signal: Signal, risk_budget: AlphaRiskBudget) -> float:

@@ -118,19 +118,21 @@ def test_emits_exit_on_spike_above_threshold():
 
 def test_no_exit_when_position_flat():
     _, _, bus, out = _build_controller(seed_positions={})
-    bus.publish(RegimeHazardSpike(
-        timestamp_ns=2_000_000_000,
-        sequence=1,
-        correlation_id="cid:spike2",
-        source_layer="REGIME",
-        symbol="AAPL",
-        engine_name="hmm_3state_fractional",
-        departing_state="normal",
-        departing_posterior_prev=0.99,
-        departing_posterior_now=0.05,
-        incoming_state="vol_breakout",
-        hazard_score=0.99,
-    ))
+    bus.publish(
+        RegimeHazardSpike(
+            timestamp_ns=2_000_000_000,
+            sequence=1,
+            correlation_id="cid:spike2",
+            source_layer="REGIME",
+            symbol="AAPL",
+            engine_name="hmm_3state_fractional",
+            departing_state="normal",
+            departing_posterior_prev=0.99,
+            departing_posterior_now=0.05,
+            incoming_state="vol_breakout",
+            hazard_score=0.99,
+        )
+    )
     assert out == []
 
 
@@ -159,19 +161,21 @@ def test_min_age_safeguard_blocks_premature_exit():
         },
     )
     controller.attach()
-    bus2.publish(RegimeHazardSpike(
-        timestamp_ns=2_010_000_000,  # 10ms later, < 60s
-        sequence=2,
-        correlation_id="cid:spike3",
-        source_layer="REGIME",
-        symbol="AAPL",
-        engine_name="hmm_3state_fractional",
-        departing_state="normal",
-        departing_posterior_prev=0.95,
-        departing_posterior_now=0.10,
-        incoming_state="vol_breakout",
-        hazard_score=0.9,
-    ))
+    bus2.publish(
+        RegimeHazardSpike(
+            timestamp_ns=2_010_000_000,  # 10ms later, < 60s
+            sequence=2,
+            correlation_id="cid:spike3",
+            source_layer="REGIME",
+            symbol="AAPL",
+            engine_name="hmm_3state_fractional",
+            departing_state="normal",
+            departing_posterior_prev=0.95,
+            departing_posterior_now=0.10,
+            incoming_state="vol_breakout",
+            hazard_score=0.9,
+        )
+    )
     assert received == []
 
 
@@ -196,19 +200,21 @@ def test_min_age_safeguard_allows_exit_at_exact_threshold():
     )
     controller.attach()
 
-    bus.publish(RegimeHazardSpike(
-        timestamp_ns=2_000_000_000 + 60 * 1_000_000_000,
-        sequence=3,
-        correlation_id="cid:spike4",
-        source_layer="REGIME",
-        symbol="AAPL",
-        engine_name="hmm_3state_fractional",
-        departing_state="normal",
-        departing_posterior_prev=0.95,
-        departing_posterior_now=0.10,
-        incoming_state="vol_breakout",
-        hazard_score=0.9,
-    ))
+    bus.publish(
+        RegimeHazardSpike(
+            timestamp_ns=2_000_000_000 + 60 * 1_000_000_000,
+            sequence=3,
+            correlation_id="cid:spike4",
+            source_layer="REGIME",
+            symbol="AAPL",
+            engine_name="hmm_3state_fractional",
+            departing_state="normal",
+            departing_posterior_prev=0.95,
+            departing_posterior_now=0.10,
+            incoming_state="vol_breakout",
+            hazard_score=0.9,
+        )
+    )
 
     assert len(received) == 1
     assert received[0].reason == "HAZARD_SPIKE"
@@ -219,16 +225,18 @@ def test_hard_exit_age_emits_on_trade_after_cap():
         seed_positions={"AAPL": (100, 1_000_000_000)},
     )
     # Trade arrives 700s later — exceeds hard_exit_age_seconds=600.
-    bus.publish(Trade(
-        timestamp_ns=1_000_000_000 + 700 * 1_000_000_000,
-        sequence=99,
-        correlation_id="cid:trade1",
-        source_layer="DATA",
-        symbol="AAPL",
-        price=Decimal("101"),
-        size=10,
-        exchange_timestamp_ns=1_000_000_000 + 700 * 1_000_000_000,
-    ))
+    bus.publish(
+        Trade(
+            timestamp_ns=1_000_000_000 + 700 * 1_000_000_000,
+            sequence=99,
+            correlation_id="cid:trade1",
+            source_layer="DATA",
+            symbol="AAPL",
+            price=Decimal("101"),
+            size=10,
+            exchange_timestamp_ns=1_000_000_000 + 700 * 1_000_000_000,
+        )
+    )
     assert len(out) == 1
     assert out[0].reason == "HARD_EXIT_AGE"
 
@@ -237,16 +245,18 @@ def test_hard_exit_age_emits_on_trade_at_exact_cap():
     _, _, bus, out = _build_controller(
         seed_positions={"AAPL": (100, 1_000_000_000)},
     )
-    bus.publish(Trade(
-        timestamp_ns=1_000_000_000 + 600 * 1_000_000_000,
-        sequence=100,
-        correlation_id="cid:trade-exact-cap",
-        source_layer="DATA",
-        symbol="AAPL",
-        price=Decimal("101"),
-        size=10,
-        exchange_timestamp_ns=1_000_000_000 + 600 * 1_000_000_000,
-    ))
+    bus.publish(
+        Trade(
+            timestamp_ns=1_000_000_000 + 600 * 1_000_000_000,
+            sequence=100,
+            correlation_id="cid:trade-exact-cap",
+            source_layer="DATA",
+            symbol="AAPL",
+            price=Decimal("101"),
+            size=10,
+            exchange_timestamp_ns=1_000_000_000 + 600 * 1_000_000_000,
+        )
+    )
 
     assert len(out) == 1
     assert out[0].reason == "HARD_EXIT_AGE"
@@ -277,26 +287,30 @@ def test_hard_exit_age_uses_new_open_episode_after_sign_flip():
     )
     controller.attach()
 
-    bus.publish(Trade(
-        timestamp_ns=800 * 1_000_000_000,
-        sequence=101,
-        correlation_id="cid:trade-too-early-after-flip",
-        source_layer="DATA",
-        symbol="AAPL",
-        price=Decimal("98"),
-        size=10,
-        exchange_timestamp_ns=800 * 1_000_000_000,
-    ))
-    bus.publish(Trade(
-        timestamp_ns=reverse_ts_ns + 600 * 1_000_000_000,
-        sequence=102,
-        correlation_id="cid:trade-at-cap-after-flip",
-        source_layer="DATA",
-        symbol="AAPL",
-        price=Decimal("97"),
-        size=10,
-        exchange_timestamp_ns=reverse_ts_ns + 600 * 1_000_000_000,
-    ))
+    bus.publish(
+        Trade(
+            timestamp_ns=800 * 1_000_000_000,
+            sequence=101,
+            correlation_id="cid:trade-too-early-after-flip",
+            source_layer="DATA",
+            symbol="AAPL",
+            price=Decimal("98"),
+            size=10,
+            exchange_timestamp_ns=800 * 1_000_000_000,
+        )
+    )
+    bus.publish(
+        Trade(
+            timestamp_ns=reverse_ts_ns + 600 * 1_000_000_000,
+            sequence=102,
+            correlation_id="cid:trade-at-cap-after-flip",
+            source_layer="DATA",
+            symbol="AAPL",
+            price=Decimal("97"),
+            size=10,
+            exchange_timestamp_ns=reverse_ts_ns + 600 * 1_000_000_000,
+        )
+    )
 
     assert store.opened_at_ns("AAPL") == reverse_ts_ns
     assert len(received) == 1
@@ -368,30 +382,34 @@ def test_replay_byte_identical(events):
         for kind, sym, dt, score in events:
             ts += dt
             if kind == "spike":
-                bus.publish(RegimeHazardSpike(
-                    timestamp_ns=ts,
-                    sequence=ts,
-                    correlation_id=f"cid:{ts}",
-                    source_layer="REGIME",
-                    symbol=sym,
-                    engine_name="hmm",
-                    departing_state="normal",
-                    departing_posterior_prev=0.95,
-                    departing_posterior_now=0.10,
-                    incoming_state="vol_breakout",
-                    hazard_score=score,
-                ))
+                bus.publish(
+                    RegimeHazardSpike(
+                        timestamp_ns=ts,
+                        sequence=ts,
+                        correlation_id=f"cid:{ts}",
+                        source_layer="REGIME",
+                        symbol=sym,
+                        engine_name="hmm",
+                        departing_state="normal",
+                        departing_posterior_prev=0.95,
+                        departing_posterior_now=0.10,
+                        incoming_state="vol_breakout",
+                        hazard_score=score,
+                    )
+                )
             else:
-                bus.publish(Trade(
-                    timestamp_ns=ts,
-                    sequence=ts,
-                    correlation_id=f"cid:{ts}",
-                    source_layer="DATA",
-                    symbol=sym,
-                    price=Decimal("100"),
-                    size=1,
-                    exchange_timestamp_ns=ts,
-                ))
+                bus.publish(
+                    Trade(
+                        timestamp_ns=ts,
+                        sequence=ts,
+                        correlation_id=f"cid:{ts}",
+                        source_layer="DATA",
+                        symbol=sym,
+                        price=Decimal("100"),
+                        size=1,
+                        exchange_timestamp_ns=ts,
+                    )
+                )
         return _serialize(out)
 
     assert run() == run()

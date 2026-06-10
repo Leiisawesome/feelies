@@ -267,16 +267,14 @@ class DefaultCostModel:
         if is_taker:
             actual_spread_cost = half_spread * quantity * stress
             floor_spread_cost = (
-                notional * self._cfg.min_spread_cost_bps * stress
-                / Decimal("10000")
+                notional * self._cfg.min_spread_cost_bps * stress / Decimal("10000")
             )
             spread_cost = max(actual_spread_cost, floor_spread_cost)
         elif not self._cfg.spread_floor_taker_only:
             # Legacy opt-in: maker fills also pay the spread floor.
             actual_spread_cost = half_spread * quantity * stress
             floor_spread_cost = (
-                notional * self._cfg.min_spread_cost_bps * stress
-                / Decimal("10000")
+                notional * self._cfg.min_spread_cost_bps * stress / Decimal("10000")
             )
             spread_cost = max(actual_spread_cost, floor_spread_cost)
         else:
@@ -311,13 +309,9 @@ class DefaultCostModel:
             # floor brings small orders up to $0.35, then the 1% cap
             # brings penny-stock orders back down — but exchange fees
             # are uncapped pass-throughs and continue to accrue).
-            per_share_commission = max(
-                per_share_commission, self._cfg.min_commission
-            )
+            per_share_commission = max(per_share_commission, self._cfg.min_commission)
             if notional > 0:
-                max_ib_commission = (
-                    notional * self._cfg.max_commission_pct / Decimal("100")
-                )
+                max_ib_commission = notional * self._cfg.max_commission_pct / Decimal("100")
                 per_share_commission = min(per_share_commission, max_ib_commission)
             commission = per_share_commission + exchange_fees
         else:
@@ -332,9 +326,7 @@ class DefaultCostModel:
                 self._cfg.min_commission,
             )
             if notional > 0:
-                max_commission = (
-                    notional * self._cfg.max_commission_pct / Decimal("100")
-                )
+                max_commission = notional * self._cfg.max_commission_pct / Decimal("100")
                 commission = min(commission, max_commission)
 
         # Passive adverse-selection penalty (maker fills only).
@@ -362,9 +354,7 @@ class DefaultCostModel:
                 level_bps = self._cfg.adverse_selection_drain_bps
             adverse_bps = through_bps if fill_type == "THROUGH" else level_bps
             adverse_basis_price = (
-                adverse_notional_price
-                if adverse_notional_price is not None
-                else fill_price
+                adverse_notional_price if adverse_notional_price is not None else fill_price
             )
             adverse_notional = adverse_basis_price * quantity
             adverse_cost = adverse_notional * adverse_bps * stress / Decimal("10000")
@@ -377,10 +367,7 @@ class DefaultCostModel:
         #     the cap is a fixed FINRA threshold (NOT stressed).
         regulatory_cost = Decimal("0")
         if side == Side.SELL:
-            regulatory_cost = (
-                notional * self._cfg.sell_regulatory_bps * stress
-                / Decimal("10000")
-            )
+            regulatory_cost = notional * self._cfg.sell_regulatory_bps * stress / Decimal("10000")
             if self._cfg.finra_taf_per_share > 0:
                 taf = self._cfg.finra_taf_per_share * stress * quantity
                 if self._cfg.finra_taf_max_per_order > 0:
@@ -398,15 +385,15 @@ class DefaultCostModel:
         htb_cost = Decimal("0")
         if is_short and side == Side.SELL and self._cfg.htb_borrow_annual_bps > 0:
             htb_cost = (
-                notional * self._cfg.htb_borrow_annual_bps * stress
-                / Decimal("360") / Decimal("10000")
+                notional
+                * self._cfg.htb_borrow_annual_bps
+                * stress
+                / Decimal("360")
+                / Decimal("10000")
             )
 
         total_fees = spread_cost + commission + adverse_cost + regulatory_cost + htb_cost
-        cost_bps = (
-            total_fees / notional * Decimal("10000")
-            if notional > 0 else Decimal("0")
-        )
+        cost_bps = total_fees / notional * Decimal("10000") if notional > 0 else Decimal("0")
 
         return CostBreakdown(
             spread_cost=spread_cost.quantize(Decimal("0.01")),
@@ -477,8 +464,13 @@ def estimate_aggressive_taker_cost_bps(
 
     if quantity <= available_depth:
         breakdown = model.compute(
-            symbol, side, quantity, mid_price, half_spread,
-            is_taker=True, is_short=is_short,
+            symbol,
+            side,
+            quantity,
+            mid_price,
+            half_spread,
+            is_taker=True,
+            is_short=is_short,
         )
         # Audit F-M-20: return the un-quantized cost so callers (notably
         # the minimum-cost policy) compare on the same grain as the
@@ -506,12 +498,22 @@ def estimate_aggressive_taker_cost_bps(
     # economic slippage on the walk-the-book leg; positive cost
     # regardless of side (BUY pays more, SELL receives less).
     partial = model.compute(
-        symbol, side, partial_qty, mid_price, half_spread,
-        is_taker=True, is_short=is_short,
+        symbol,
+        side,
+        partial_qty,
+        mid_price,
+        half_spread,
+        is_taker=True,
+        is_short=is_short,
     )
     excess = model.compute(
-        symbol, side, excess_qty, mid_price, half_spread,
-        is_taker=True, is_short=is_short,
+        symbol,
+        side,
+        excess_qty,
+        mid_price,
+        half_spread,
+        is_taker=True,
+        is_short=is_short,
     )
     total_notional = mid_price * Decimal(str(quantity))
     impact_cost = impact * Decimal(str(excess_qty))
@@ -597,13 +599,19 @@ def estimate_round_trip_cost_bps(
                 max_impact_half_spreads=max_impact_half_spreads,
                 is_short=entry_short,
             )
-        return float(model.compute(
-            symbol, entry_side, quantity, mid_price, half_spread,
-            is_taker=is_taker,
-            is_short=entry_short,
-            fill_type="THROUGH" if is_through_fill_entry else None,
-            is_through_fill=is_through_fill_entry,
-        ).cost_bps)
+        return float(
+            model.compute(
+                symbol,
+                entry_side,
+                quantity,
+                mid_price,
+                half_spread,
+                is_taker=is_taker,
+                is_short=entry_short,
+                fill_type="THROUGH" if is_through_fill_entry else None,
+                is_through_fill=is_through_fill_entry,
+            ).cost_bps
+        )
 
     def _exit_bps() -> float:
         if is_taker_exit and use_depth_aware:
@@ -622,12 +630,18 @@ def estimate_round_trip_cost_bps(
                 max_impact_half_spreads=max_impact_half_spreads,
                 is_short=False,
             )
-        return float(model.compute(
-            symbol, exit_side, quantity, mid_price, half_spread,
-            is_taker=is_taker_exit,
-            is_short=False,
-            fill_type="THROUGH" if is_through_fill_exit else None,
-            is_through_fill=is_through_fill_exit,
-        ).cost_bps)
+        return float(
+            model.compute(
+                symbol,
+                exit_side,
+                quantity,
+                mid_price,
+                half_spread,
+                is_taker=is_taker_exit,
+                is_short=False,
+                fill_type="THROUGH" if is_through_fill_exit else None,
+                is_through_fill=is_through_fill_exit,
+            ).cost_bps
+        )
 
     return _entry_bps() + _exit_bps()

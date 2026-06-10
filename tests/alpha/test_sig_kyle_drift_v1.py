@@ -22,9 +22,7 @@ from feelies.core.identifiers import SequenceGenerator
 from feelies.signals.horizon_engine import HorizonSignalEngine, RegisteredSignal
 
 
-REFERENCE_PATH = Path(
-    "alphas/sig_kyle_drift_v1/sig_kyle_drift_v1.alpha.yaml"
-)
+REFERENCE_PATH = Path("alphas/sig_kyle_drift_v1/sig_kyle_drift_v1.alpha.yaml")
 ALPHA_ID = "sig_kyle_drift_v1"
 
 
@@ -72,17 +70,19 @@ def _engine_with_alpha(
     bus = EventBus()
     seq = SequenceGenerator()
     engine = HorizonSignalEngine(bus=bus, signal_sequence_generator=seq)
-    engine.register(RegisteredSignal(
-        alpha_id=loaded.manifest.alpha_id,
-        horizon_seconds=loaded.horizon_seconds,
-        signal=loaded.signal,
-        params=loaded.params,
-        gate=loaded.gate,
-        cost_arithmetic=loaded.cost,
-        consumed_features=loaded.consumed_features,
-        trend_mechanism=loaded.trend_mechanism_enum,
-        expected_half_life_seconds=loaded.expected_half_life_seconds,
-    ))
+    engine.register(
+        RegisteredSignal(
+            alpha_id=loaded.manifest.alpha_id,
+            horizon_seconds=loaded.horizon_seconds,
+            signal=loaded.signal,
+            params=loaded.params,
+            gate=loaded.gate,
+            cost_arithmetic=loaded.cost,
+            consumed_features=loaded.consumed_features,
+            trend_mechanism=loaded.trend_mechanism_enum,
+            expected_half_life_seconds=loaded.expected_half_life_seconds,
+        )
+    )
     captured: list[Signal] = []
     bus.subscribe(Signal, captured.append)  # type: ignore[arg-type]
     engine.attach()
@@ -130,7 +130,11 @@ def _spread_low_reading() -> SensorReading:
 
 
 def _snapshot(
-    *, lam_pct: float, lam_z: float, ofi: float, boundary_index: int = 1,
+    *,
+    lam_pct: float,
+    lam_z: float,
+    ofi: float,
+    boundary_index: int = 1,
 ) -> HorizonFeatureSnapshot:
     return HorizonFeatureSnapshot(
         timestamp_ns=2_000,

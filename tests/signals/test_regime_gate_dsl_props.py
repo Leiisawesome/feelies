@@ -38,8 +38,10 @@ from feelies.signals.regime_gate import (
 
 
 _FINITE_FLOATS = st.floats(
-    min_value=-100.0, max_value=100.0,
-    allow_nan=False, allow_infinity=False,
+    min_value=-100.0,
+    max_value=100.0,
+    allow_nan=False,
+    allow_infinity=False,
 )
 
 
@@ -102,7 +104,7 @@ _VALID_EXPRESSIONS = [
     "min(a, b, c) > 0",
     "max(P(normal), P(toxic)) > 0.5",
     "ofi_ewma_zscore > 2.0 AND vpin_50bucket_percentile < p40",
-    "dominant == \"normal\"",
+    'dominant == "normal"',
     "not (spread_z_30d > 2.0)",
     "ofi_ewma + 1.0 > 0.0",
     "(a > b) AND (c < d) OR (e == f)",
@@ -116,15 +118,29 @@ def test_compiled_tree_contains_only_whitelisted_nodes(expr: str) -> None:
         # The walker may surface descendants of allowed parents; treat
         # any "all-allowed" tree as proof of soundness.
         assert type(node) in _OBSERVED_ALLOWED | {
-            ast.cmpop, ast.boolop, ast.operator, ast.unaryop,
+            ast.cmpop,
+            ast.boolop,
+            ast.operator,
+            ast.unaryop,
         } | {
-            ast.And, ast.Or, ast.Not, ast.USub, ast.UAdd,
-            ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod, ast.FloorDiv,
-            ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE,
-        }, (
-            f"forbidden node {type(node).__name__!r} survived parser "
-            f"for expression {expr!r}"
-        )
+            ast.And,
+            ast.Or,
+            ast.Not,
+            ast.USub,
+            ast.UAdd,
+            ast.Add,
+            ast.Sub,
+            ast.Mult,
+            ast.Div,
+            ast.Mod,
+            ast.FloorDiv,
+            ast.Eq,
+            ast.NotEq,
+            ast.Lt,
+            ast.LtE,
+            ast.Gt,
+            ast.GtE,
+        }, f"forbidden node {type(node).__name__!r} survived parser for expression {expr!r}"
 
 
 # ── Property 2: deterministic evaluation ────────────────────────────────
@@ -132,15 +148,19 @@ def test_compiled_tree_contains_only_whitelisted_nodes(expr: str) -> None:
 
 @settings(max_examples=200, suppress_health_check=[HealthCheck.too_slow])
 @given(
-    sv1=_FINITE_FLOATS, sv2=_FINITE_FLOATS,
-    z1=_FINITE_FLOATS, p1=st.floats(0.0, 1.0),
+    sv1=_FINITE_FLOATS,
+    sv2=_FINITE_FLOATS,
+    z1=_FINITE_FLOATS,
+    p1=st.floats(0.0, 1.0),
 )
 def test_evaluation_is_deterministic(
-    sv1: float, sv2: float, z1: float, p1: float,
+    sv1: float,
+    sv2: float,
+    z1: float,
+    p1: float,
 ) -> None:
     tree = compile_expression(
-        "ofi_ewma > spread_z_30d AND ofi_ewma_zscore > 0 AND "
-        "vpin_50bucket_percentile < p40"
+        "ofi_ewma > spread_z_30d AND ofi_ewma_zscore > 0 AND vpin_50bucket_percentile < p40"
     )
     b = _bindings(
         sensor_values={"ofi_ewma": sv1, "spread_z_30d": sv2},
@@ -156,20 +176,20 @@ def test_evaluation_is_deterministic(
 
 
 _FORBIDDEN_CORPUS = [
-    "import os",                           # SyntaxError → wrapped as Unsafe
-    "regime.posteriors",                    # attribute
-    "values[0]",                            # subscript
-    "[i for i in range(3)]",               # listcomp
-    "lambda x: x",                          # lambda
-    "1 if True else 2",                    # IfExp
-    "yield 1",                              # yield (SyntaxError outside def)
-    "P('normal')",                          # P with string arg
-    "P(normal, toxic)",                     # P with two args
-    "min(a=1)",                             # keyword arg
-    "{'a': 1}",                             # dict literal
-    "{1, 2, 3}",                            # set literal
-    "f'{x}'",                               # f-string
-    "a := 1",                               # walrus
+    "import os",  # SyntaxError → wrapped as Unsafe
+    "regime.posteriors",  # attribute
+    "values[0]",  # subscript
+    "[i for i in range(3)]",  # listcomp
+    "lambda x: x",  # lambda
+    "1 if True else 2",  # IfExp
+    "yield 1",  # yield (SyntaxError outside def)
+    "P('normal')",  # P with string arg
+    "P(normal, toxic)",  # P with two args
+    "min(a=1)",  # keyword arg
+    "{'a': 1}",  # dict literal
+    "{1, 2, 3}",  # set literal
+    "f'{x}'",  # f-string
+    "a := 1",  # walrus
 ]
 
 
@@ -183,10 +203,13 @@ def test_forbidden_expressions_always_raise(expr: str) -> None:
 
 
 @settings(max_examples=200, suppress_health_check=[HealthCheck.too_slow])
-@given(posteriors=st.lists(
-    st.floats(0.0, 1.0, allow_nan=False, allow_infinity=False),
-    min_size=1, max_size=50,
-))
+@given(
+    posteriors=st.lists(
+        st.floats(0.0, 1.0, allow_nan=False, allow_infinity=False),
+        min_size=1,
+        max_size=50,
+    )
+)
 def test_gate_post_state_is_boolean_and_in_two_value_set(
     posteriors: list[float],
 ) -> None:

@@ -18,7 +18,8 @@ class TestLotLedger:
         led.apply_fill("AAPL", 30, _d("110"), timestamp_ns=2, strategy_id="b")
         lots = led.lots("AAPL")
         assert [(lot.quantity, lot.price) for lot in lots] == [
-            (50, _d("100")), (30, _d("110")),
+            (50, _d("100")),
+            (30, _d("110")),
         ]
         assert led.net_quantity("AAPL") == 80
         assert led.open_lot_count("AAPL") == 2
@@ -67,7 +68,7 @@ class TestLotLedger:
     def test_short_lots_realize_correctly(self) -> None:
         led = LotLedger()
         led.apply_fill("AAPL", -50, _d("100"), timestamp_ns=1)  # short 50 @ 100
-        led.apply_fill("AAPL", 30, _d("90"), timestamp_ns=2)    # cover 30 @ 90
+        led.apply_fill("AAPL", 30, _d("90"), timestamp_ns=2)  # cover 30 @ 90
         assert led.net_quantity("AAPL") == -20
         # short realized: 30*(100-90) = 300.
         assert led.realized_pnl_fifo("AAPL") == _d("300")

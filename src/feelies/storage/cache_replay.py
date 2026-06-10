@@ -104,9 +104,7 @@ def load_event_log_from_disk_cache(
                     f"Cache entry unreadable or checksum/schema mismatch: {sym}/{day}"
                 )
             manifest = cache.read_manifest(sym, day)
-            ing_health = (
-                manifest.get("ingestion_health") if manifest else None
-            )
+            ing_health = manifest.get("ingestion_health") if manifest else None
             if require_healthy_ingestion_manifests:
                 if ing_health != "HEALTHY":
                     raise CacheReplayError(
@@ -120,9 +118,7 @@ def load_event_log_from_disk_cache(
                     date=day,
                     source="cache",
                     event_count=len(loaded),
-                    ingestion_health=(
-                        str(ing_health) if ing_health is not None else None
-                    ),
+                    ingestion_health=(str(ing_health) if ing_health is not None else None),
                 )
             )
 

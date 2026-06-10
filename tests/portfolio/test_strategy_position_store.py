@@ -29,9 +29,7 @@ class TestStrategyIsolation:
         assert pos_2.quantity == 200
         assert pos_2.avg_entry_price == Decimal("155")
 
-    def test_update_one_strategy_does_not_affect_other(
-        self, store: StrategyPositionStore
-    ) -> None:
+    def test_update_one_strategy_does_not_affect_other(self, store: StrategyPositionStore) -> None:
         store.update("alpha_1", "AAPL", 100, Decimal("150"))
         store.update("alpha_2", "AAPL", 50, Decimal("160"))
         store.update("alpha_1", "AAPL", -50, Decimal("170"))
@@ -40,7 +38,8 @@ class TestStrategyIsolation:
         assert store.get("alpha_2", "AAPL").quantity == 50
 
     def test_update_records_open_timestamp_when_provided(
-        self, store: StrategyPositionStore,
+        self,
+        store: StrategyPositionStore,
     ) -> None:
         store.update(
             "alpha_1",
@@ -53,7 +52,8 @@ class TestStrategyIsolation:
         assert store._get_store("alpha_1").opened_at_ns("AAPL") == 123456789
 
     def test_debit_fees_retained_when_no_fill(
-        self, store: StrategyPositionStore,
+        self,
+        store: StrategyPositionStore,
     ) -> None:
         store.debit_fees("alpha_1", "AAPL", Decimal("0.50"))
 
@@ -64,9 +64,7 @@ class TestStrategyIsolation:
 
 
 class TestGetAggregate:
-    def test_sums_quantities_across_strategies(
-        self, store: StrategyPositionStore
-    ) -> None:
+    def test_sums_quantities_across_strategies(self, store: StrategyPositionStore) -> None:
         store.update("alpha_1", "AAPL", 100, Decimal("150"))
         store.update("alpha_2", "AAPL", 200, Decimal("155"))
 
@@ -85,7 +83,8 @@ class TestGetAggregate:
         assert agg.avg_entry_price == Decimal("15")
 
     def test_mixed_direction_avg_price_not_inflated(
-        self, store: StrategyPositionStore,
+        self,
+        store: StrategyPositionStore,
     ) -> None:
         """Long + short across strategies must not inflate avg_entry_price.
 
@@ -102,7 +101,8 @@ class TestGetAggregate:
         assert agg.avg_entry_price == expected  # Decimal("0")
 
     def test_near_full_offset_avg_price(
-        self, store: StrategyPositionStore,
+        self,
+        store: StrategyPositionStore,
     ) -> None:
         """Near-complete offset: net 1 share should not show inflated price."""
         store.update("a", "AAPL", 100, Decimal("10"))
@@ -114,7 +114,8 @@ class TestGetAggregate:
         assert agg.avg_entry_price == expected  # Decimal("-980")
 
     def test_full_offset_avg_price_zero(
-        self, store: StrategyPositionStore,
+        self,
+        store: StrategyPositionStore,
     ) -> None:
         """Fully offsetting positions yield zero avg_entry_price."""
         store.update("a", "AAPL", 100, Decimal("10"))
@@ -125,7 +126,8 @@ class TestGetAggregate:
         assert agg.avg_entry_price == Decimal("0")
 
     def test_same_direction_unaffected(
-        self, store: StrategyPositionStore,
+        self,
+        store: StrategyPositionStore,
     ) -> None:
         """Same-direction aggregation still works correctly after the fix."""
         store.update("a", "AAPL", 100, Decimal("10"))

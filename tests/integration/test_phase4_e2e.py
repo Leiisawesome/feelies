@@ -108,17 +108,10 @@ pytestmark = pytest.mark.backtest_validation
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_SIGNAL_ALPHA = (
-    _REPO_ROOT / "alphas" / "sig_benign_midcap_v1"
-    / "sig_benign_midcap_v1.alpha.yaml"
-)
-_KYLE_ALPHA = (
-    _REPO_ROOT / "alphas" / "sig_kyle_drift_v1"
-    / "sig_kyle_drift_v1.alpha.yaml"
-)
+_SIGNAL_ALPHA = _REPO_ROOT / "alphas" / "sig_benign_midcap_v1" / "sig_benign_midcap_v1.alpha.yaml"
+_KYLE_ALPHA = _REPO_ROOT / "alphas" / "sig_kyle_drift_v1" / "sig_kyle_drift_v1.alpha.yaml"
 _PORTFOLIO_ALPHA = (
-    _REPO_ROOT / "alphas" / "research" / "pro_kyle_benign_v1"
-    / "pro_kyle_benign_v1.alpha.yaml"
+    _REPO_ROOT / "alphas" / "research" / "pro_kyle_benign_v1" / "pro_kyle_benign_v1.alpha.yaml"
 )
 _FACTOR_LOADINGS_DIR = FACTOR_LOADINGS_DIR
 _SECTOR_MAP_PATH = SECTOR_MAP_PATH
@@ -126,8 +119,16 @@ _SECTOR_MAP_PATH = SECTOR_MAP_PATH
 # 10-symbol reference universe — wider than pro_kyle_benign_v1's single-symbol
 # universe (AAPL); the PORTFOLIO alpha filters to its declared universe internally.
 _UNIVERSE: tuple[str, ...] = (
-    "AAPL", "AMZN", "BAC", "CVX", "GOOG",
-    "JPM", "META", "MSFT", "NVDA", "XOM",
+    "AAPL",
+    "AMZN",
+    "BAC",
+    "CVX",
+    "GOOG",
+    "JPM",
+    "META",
+    "MSFT",
+    "NVDA",
+    "XOM",
 )
 _QUOTES_PER_SYMBOL: int = 360  # 36 seconds @ 10 Hz — short by design
 
@@ -182,9 +183,16 @@ def _synth_multi_symbol_events(seed: int = 42) -> list[Any]:
     """
     quote_cadence_ns = 100_000_000
     starting_prices_cents: dict[str, int] = {
-        "AAPL": 18000, "AMZN": 13000, "BAC":  3000, "CVX": 14000,
-        "GOOG": 14000, "JPM": 14500, "META": 31000, "MSFT": 37000,
-        "NVDA": 45000, "XOM":  10500,
+        "AAPL": 18000,
+        "AMZN": 13000,
+        "BAC": 3000,
+        "CVX": 14000,
+        "GOOG": 14000,
+        "JPM": 14500,
+        "META": 31000,
+        "MSFT": 37000,
+        "NVDA": 45000,
+        "XOM": 10500,
     }
 
     all_events: list[tuple[int, str, dict[str, Any]]] = []
@@ -231,9 +239,7 @@ def _synth_multi_symbol_events(seed: int = 42) -> list[Any]:
                     exchange_timestamp_ns=ts_ns + 1,
                     tape=3,
                 )
-                all_events.append(
-                    (ts_ns + 1, symbol, {"event": trade, "kind": "T"})
-                )
+                all_events.append((ts_ns + 1, symbol, {"event": trade, "kind": "T"}))
 
     # Sort by (timestamp_ns, symbol) for deterministic interleaving.
     all_events.sort(key=lambda r: (r[0], r[1]))
@@ -342,8 +348,7 @@ def _hash_intents(intents: list[SizedPositionIntent]) -> str:
     lines: list[str] = []
     for it in intents:
         targets = "|".join(
-            f"{s}={it.target_positions[s].target_usd:.2f}"
-            for s in sorted(it.target_positions)
+            f"{s}={it.target_positions[s].target_usd:.2f}" for s in sorted(it.target_positions)
         )
         lines.append(
             f"{it.sequence}|{it.timestamp_ns}|{it.strategy_id}|"
@@ -378,9 +383,7 @@ def test_phase4_e2e_signal_and_portfolio_layers_register() -> None:
 def test_phase4_e2e_composition_layer_is_wired() -> None:
     orchestrator, _s, _i, _o = _build()
     assert isinstance(orchestrator._composition_engine, CompositionEngine)
-    assert isinstance(
-        orchestrator._cross_sectional_tracker, CrossSectionalTracker
-    )
+    assert isinstance(orchestrator._cross_sectional_tracker, CrossSectionalTracker)
     assert isinstance(
         orchestrator._composition_metrics_collector,
         HorizonMetricsCollector,
@@ -416,8 +419,7 @@ def test_phase4_e2e_signal_stream_is_deterministic() -> None:
     _o_a, signals_a, intents_a, _orders_a = _build()
     _o_b, signals_b, intents_b, _orders_b = _build()
     assert len(signals_a) == len(signals_b), (
-        f"Signal count drift across replays: "
-        f"{len(signals_a)} vs {len(signals_b)}"
+        f"Signal count drift across replays: {len(signals_a)} vs {len(signals_b)}"
     )
     assert _hash_signals(signals_a) == _hash_signals(signals_b), (
         "Phase-4 e2e Signal stream hash drift across identical replays"
@@ -428,8 +430,7 @@ def test_phase4_e2e_intent_stream_is_deterministic() -> None:
     _o_a, _signals_a, intents_a, _orders_a = _build()
     _o_b, _signals_b, intents_b, _orders_b = _build()
     assert len(intents_a) == len(intents_b), (
-        f"SizedPositionIntent count drift across replays: "
-        f"{len(intents_a)} vs {len(intents_b)}"
+        f"SizedPositionIntent count drift across replays: {len(intents_a)} vs {len(intents_b)}"
     )
     assert _hash_intents(intents_a) == _hash_intents(intents_b), (
         "Phase-4 e2e SizedPositionIntent hash drift across identical replays"
@@ -498,7 +499,8 @@ def test_phase4_e2e_standalone_signal_alphas_translate_to_orders() -> None:
             portfolio_consumed.update(module.depends_on_signals)
 
     standalone_signals = [
-        s for s in signals
+        s
+        for s in signals
         if s.layer == "SIGNAL"
         and s.strategy_id != "__stop_exit__"
         and s.strategy_id not in portfolio_consumed
@@ -506,8 +508,7 @@ def test_phase4_e2e_standalone_signal_alphas_translate_to_orders() -> None:
     standalone_alpha_ids = {s.strategy_id for s in standalone_signals}
 
     orders_per_standalone_alpha = {
-        aid: sum(1 for o in orders if o.strategy_id == aid)
-        for aid in standalone_alpha_ids
+        aid: sum(1 for o in orders if o.strategy_id == aid) for aid in standalone_alpha_ids
     }
 
     for aid, n_signals in (
@@ -557,17 +558,12 @@ def test_phase4_e2e_portfolio_intents_translate_to_orders() -> None:
     portfolio_alpha_ids = {it.strategy_id for it in non_degenerate_intents}
 
     orders_per_portfolio_alpha = {
-        aid: sum(
-            1 for o in orders
-            if o.strategy_id == aid and o.source_layer == "PORTFOLIO"
-        )
+        aid: sum(1 for o in orders if o.strategy_id == aid and o.source_layer == "PORTFOLIO")
         for aid in portfolio_alpha_ids
     }
 
     for aid in portfolio_alpha_ids:
-        n_intents = sum(
-            1 for it in non_degenerate_intents if it.strategy_id == aid
-        )
+        n_intents = sum(1 for it in non_degenerate_intents if it.strategy_id == aid)
         assert orders_per_portfolio_alpha[aid] >= 1, (
             f"PR-2b-iv contract violation: PORTFOLIO alpha {aid!r} emitted "
             f"{n_intents} non-degenerate SizedPositionIntent events but the "

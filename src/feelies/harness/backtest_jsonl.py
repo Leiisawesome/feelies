@@ -48,21 +48,24 @@ def emit_size_divergence_jsonl(divergences: list[SizeDivergence]) -> None:
     sizing would change the target size).
     """
     for d in divergences:
-        _emit_jsonl_line("SIZEDIV_JSONL", {
-            "timestamp_ns": d.timestamp_ns,
-            "signal_sequence": d.signal_sequence,
-            "symbol": d.symbol,
-            "strategy_id": d.strategy_id,
-            "edge_bps": d.edge_bps,
-            "base_target_qty": d.base_target_qty,
-            "tilted_target_qty": d.tilted_target_qty,
-            "magnitude": d.tilted_target_qty - d.base_target_qty,
-            "edge_factor": d.edge_factor,
-            "vol_factor": d.vol_factor,
-            "inventory_factor": d.inventory_factor,
-            "combined_tilt": d.combined_tilt,
-            "inventory_qty": d.inventory_qty,
-        })
+        _emit_jsonl_line(
+            "SIZEDIV_JSONL",
+            {
+                "timestamp_ns": d.timestamp_ns,
+                "signal_sequence": d.signal_sequence,
+                "symbol": d.symbol,
+                "strategy_id": d.strategy_id,
+                "edge_bps": d.edge_bps,
+                "base_target_qty": d.base_target_qty,
+                "tilted_target_qty": d.tilted_target_qty,
+                "magnitude": d.tilted_target_qty - d.base_target_qty,
+                "edge_factor": d.edge_factor,
+                "vol_factor": d.vol_factor,
+                "inventory_factor": d.inventory_factor,
+                "combined_tilt": d.combined_tilt,
+                "inventory_qty": d.inventory_qty,
+            },
+        )
 
 
 def emit_net_divergence_jsonl(divergences: list[NetDivergence]) -> None:
@@ -74,16 +77,19 @@ def emit_net_divergence_jsonl(divergences: list[NetDivergence]) -> None:
     portfolio net would differ from the winner-take-all decision).
     """
     for d in divergences:
-        _emit_jsonl_line("NETDIV_JSONL", {
-            "timestamp_ns": d.timestamp_ns,
-            "signal_sequence": d.signal_sequence,
-            "symbol": d.symbol,
-            "winner_strategy_id": d.winner_strategy_id,
-            "winner_target_qty": d.winner_target_qty,
-            "net_target_qty": d.net_target_qty,
-            "magnitude": d.net_target_qty - d.winner_target_qty,
-            "contributing_alphas": d.contributing_alphas,
-        })
+        _emit_jsonl_line(
+            "NETDIV_JSONL",
+            {
+                "timestamp_ns": d.timestamp_ns,
+                "signal_sequence": d.signal_sequence,
+                "symbol": d.symbol,
+                "winner_strategy_id": d.winner_strategy_id,
+                "winner_target_qty": d.winner_target_qty,
+                "net_target_qty": d.net_target_qty,
+                "magnitude": d.net_target_qty - d.winner_target_qty,
+                "contributing_alphas": d.contributing_alphas,
+            },
+        )
 
 
 def _emit_jsonl_line(prefix: str, line: Mapping[str, object]) -> None:
@@ -102,8 +108,10 @@ def emit_fills_jsonl(recorder: BusEventRecorder) -> None:
             "order_id": a.order_id,
             "filled_quantity": a.filled_quantity,
             "fill_price": (
-                str(a.fill_price) if isinstance(a.fill_price, Decimal)
-                else None if a.fill_price is None
+                str(a.fill_price)
+                if isinstance(a.fill_price, Decimal)
+                else None
+                if a.fill_price is None
                 else str(Decimal(str(a.fill_price)))
             ),
         }
@@ -170,10 +178,7 @@ def emit_signals_jsonl(recorder: BusEventRecorder) -> None:
             "disclosed_cost_total_bps": float(s.disclosed_cost_total_bps),
             "disclosed_margin_ratio": float(s.disclosed_margin_ratio),
             "consumed_features": list(s.consumed_features),
-            "trend_mechanism": (
-                s.trend_mechanism.name if s.trend_mechanism is not None
-                else None
-            ),
+            "trend_mechanism": (s.trend_mechanism.name if s.trend_mechanism is not None else None),
             "expected_half_life_seconds": int(s.expected_half_life_seconds),
         }
         _emit_jsonl_line("SIGNAL_JSONL", line)
@@ -220,9 +225,7 @@ def emit_sized_intents_jsonl(recorder: BusEventRecorder) -> None:
             (k.name if hasattr(k, "name") else str(k)): float(v)
             for k, v in sorted(
                 it.mechanism_breakdown.items(),
-                key=lambda kv: (
-                    kv[0].name if hasattr(kv[0], "name") else str(kv[0])
-                ),
+                key=lambda kv: kv[0].name if hasattr(kv[0], "name") else str(kv[0]),
             )
         }
         line = {
@@ -231,13 +234,9 @@ def emit_sized_intents_jsonl(recorder: BusEventRecorder) -> None:
             "strategy_id": it.strategy_id,
             "horizon_seconds": it.horizon_seconds,
             "target_positions": targets,
-            "factor_exposures": {
-                k: float(v) for k, v in sorted(it.factor_exposures.items())
-            },
+            "factor_exposures": {k: float(v) for k, v in sorted(it.factor_exposures.items())},
             "expected_turnover_usd": float(it.expected_turnover_usd),
-            "expected_gross_exposure_usd": float(
-                it.expected_gross_exposure_usd
-            ),
+            "expected_gross_exposure_usd": float(it.expected_gross_exposure_usd),
             "mechanism_breakdown": mech_breakdown,
             "correlation_id": it.correlation_id,
         }

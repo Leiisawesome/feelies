@@ -49,7 +49,10 @@ class _FakeIBConnection:
             return oid
 
     def enqueue_order(
-        self, ib_order_id: int, contract: "Contract", order: "IBOrder",
+        self,
+        ib_order_id: int,
+        contract: "Contract",
+        order: "IBOrder",
     ) -> None:
         self.submitted_orders.append((ib_order_id, contract, order))
 
@@ -88,7 +91,9 @@ def _make_request(
     )
 
 
-def _build_router(starting_id: int = 1000) -> tuple[IBOrderRouter, _FakeIBConnection, SimulatedClock]:
+def _build_router(
+    starting_id: int = 1000,
+) -> tuple[IBOrderRouter, _FakeIBConnection, SimulatedClock]:
     clock = SimulatedClock(start_ns=1_000_000)
     conn = _FakeIBConnection(clock=clock, starting_id=starting_id)
     router = IBOrderRouter(connection=conn, clock=clock)  # type: ignore[arg-type]
@@ -124,10 +129,14 @@ def test_submit_builds_market_buy_order() -> None:
 
 def test_submit_builds_limit_sell_order() -> None:
     router, conn, _ = _build_router()
-    router.submit(_make_request(
-        "ord-2", side=Side.SELL, order_type=OrderType.LIMIT,
-        limit_price=Decimal("150.25"),
-    ))
+    router.submit(
+        _make_request(
+            "ord-2",
+            side=Side.SELL,
+            order_type=OrderType.LIMIT,
+            limit_price=Decimal("150.25"),
+        )
+    )
     _, _, ib_order = conn.submitted_orders[0]
     assert ib_order.action == "SELL"
     assert ib_order.orderType == "LMT"
@@ -137,9 +146,13 @@ def test_submit_builds_limit_sell_order() -> None:
 def test_submit_limit_without_price_raises() -> None:
     router, _, _ = _build_router()
     with pytest.raises(ValueError, match="missing limit_price"):
-        router.submit(_make_request(
-            "ord-bad", order_type=OrderType.LIMIT, limit_price=None,
-        ))
+        router.submit(
+            _make_request(
+                "ord-bad",
+                order_type=OrderType.LIMIT,
+                limit_price=None,
+            )
+        )
 
 
 def test_duplicate_submit_emits_rejected_ack() -> None:
@@ -174,25 +187,34 @@ def test_cumulative_to_delta_quantity() -> None:
     router.poll_acks()  # drain synchronous ACK
 
     fill1 = IBFillEvent(
-        ib_order_id=ib_id, status="Filled",
-        cumulative_filled=50, remaining=50,
-        avg_fill_price=100.0, timestamp_ns=2_000_000,
+        ib_order_id=ib_id,
+        status="Filled",
+        cumulative_filled=50,
+        remaining=50,
+        avg_fill_price=100.0,
+        timestamp_ns=2_000_000,
     )
     a1 = _ack_for(router, conn, fill1)
     assert a1 is not None and a1.filled_quantity == 50
 
     fill2 = IBFillEvent(
-        ib_order_id=ib_id, status="Filled",
-        cumulative_filled=70, remaining=30,
-        avg_fill_price=100.0, timestamp_ns=2_100_000,
+        ib_order_id=ib_id,
+        status="Filled",
+        cumulative_filled=70,
+        remaining=30,
+        avg_fill_price=100.0,
+        timestamp_ns=2_100_000,
     )
     a2 = _ack_for(router, conn, fill2)
     assert a2 is not None and a2.filled_quantity == 20
 
     fill3 = IBFillEvent(
-        ib_order_id=ib_id, status="Filled",
-        cumulative_filled=100, remaining=0,
-        avg_fill_price=100.0, timestamp_ns=2_200_000,
+        ib_order_id=ib_id,
+        status="Filled",
+        cumulative_filled=100,
+        remaining=0,
+        avg_fill_price=100.0,
+        timestamp_ns=2_200_000,
     )
     a3 = _ack_for(router, conn, fill3)
     assert a3 is not None and a3.filled_quantity == 30
@@ -206,19 +228,33 @@ def test_cumulative_to_delta_drops_duplicate_cumulative() -> None:
     ib_id = conn.submitted_orders[0][0]
     router.poll_acks()
 
-    _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="Filled",
-        cumulative_filled=100, remaining=0,
-        avg_fill_price=100.0, timestamp_ns=2_000_000,
-    ))
+    _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="Filled",
+            cumulative_filled=100,
+            remaining=0,
+            avg_fill_price=100.0,
+            timestamp_ns=2_000_000,
+        ),
+    )
     # Duplicate cumulative — same total, delta = 0 → drop.
     # The router pruned _meta on the terminal FILLED above, so a
     # follow-on fill is treated as "not ours" and silently dropped.
-    a = _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="Filled",
-        cumulative_filled=100, remaining=0,
-        avg_fill_price=100.0, timestamp_ns=2_100_000,
-    ))
+    a = _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="Filled",
+            cumulative_filled=100,
+            remaining=0,
+            avg_fill_price=100.0,
+            timestamp_ns=2_100_000,
+        ),
+    )
     assert a is None
 
 
@@ -229,17 +265,31 @@ def test_cumulative_to_delta_skips_negative_regression() -> None:
     ib_id = conn.submitted_orders[0][0]
     router.poll_acks()
 
-    _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="Filled",
-        cumulative_filled=100, remaining=100,
-        avg_fill_price=100.0, timestamp_ns=2_000_000,
-    ))
+    _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="Filled",
+            cumulative_filled=100,
+            remaining=100,
+            avg_fill_price=100.0,
+            timestamp_ns=2_000_000,
+        ),
+    )
     # Cumulative regressed (impossible but defensive) → dropped silently.
-    a = _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="Filled",
-        cumulative_filled=90, remaining=110,
-        avg_fill_price=100.0, timestamp_ns=2_100_000,
-    ))
+    a = _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="Filled",
+            cumulative_filled=90,
+            remaining=110,
+            avg_fill_price=100.0,
+            timestamp_ns=2_100_000,
+        ),
+    )
     assert a is None
 
 
@@ -252,22 +302,36 @@ def test_cumulative_to_delta_price() -> None:
     router.poll_acks()
 
     # First fill: 50 @ $100 → cum_value = 5000, avg = 100.0
-    a1 = _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="Filled",
-        cumulative_filled=50, remaining=50,
-        avg_fill_price=100.0, timestamp_ns=2_000_000,
-    ))
+    a1 = _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="Filled",
+            cumulative_filled=50,
+            remaining=50,
+            avg_fill_price=100.0,
+            timestamp_ns=2_000_000,
+        ),
+    )
     assert a1 is not None
     assert a1.fill_price == Decimal("100")
 
     # Second fill: cum=100 @ avg=100.50 → cum_value = 10050
     # delta_value = 10050 - 5000 = 5050, delta_qty = 50
     # per-delta price = 101.0  (NOT the cumulative VWAP 100.5)
-    a2 = _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="Filled",
-        cumulative_filled=100, remaining=0,
-        avg_fill_price=100.5, timestamp_ns=2_100_000,
-    ))
+    a2 = _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="Filled",
+            cumulative_filled=100,
+            remaining=0,
+            avg_fill_price=100.5,
+            timestamp_ns=2_100_000,
+        ),
+    )
     assert a2 is not None
     assert a2.fill_price == Decimal("101")
     assert a2.status == OrderAckStatus.FILLED
@@ -286,17 +350,31 @@ def test_pre_submitted_callback_suppressed_after_synchronous_ack() -> None:
 
     # IB's later PreSubmitted is suppressed — poll_acks emits nothing
     # (delta_qty == 0 and ACKNOWLEDGED maps to "already emitted").
-    a = _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="PreSubmitted",
-        cumulative_filled=0, remaining=100,
-        avg_fill_price=0.0, timestamp_ns=2_000_000,
-    ))
+    a = _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="PreSubmitted",
+            cumulative_filled=0,
+            remaining=100,
+            avg_fill_price=0.0,
+            timestamp_ns=2_000_000,
+        ),
+    )
     assert a is None
-    a = _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="Submitted",
-        cumulative_filled=0, remaining=100,
-        avg_fill_price=0.0, timestamp_ns=2_100_000,
-    ))
+    a = _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="Submitted",
+            cumulative_filled=0,
+            remaining=100,
+            avg_fill_price=0.0,
+            timestamp_ns=2_100_000,
+        ),
+    )
     assert a is None
 
 
@@ -309,11 +387,18 @@ def test_pending_cancel_callback_suppressed() -> None:
     ib_id = conn.submitted_orders[0][0]
     router.poll_acks()
 
-    a = _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="PendingCancel",
-        cumulative_filled=0, remaining=100,
-        avg_fill_price=0.0, timestamp_ns=2_000_000,
-    ))
+    a = _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="PendingCancel",
+            cumulative_filled=0,
+            remaining=100,
+            avg_fill_price=0.0,
+            timestamp_ns=2_000_000,
+        ),
+    )
     assert a is None
 
 
@@ -324,11 +409,18 @@ def test_partially_filled_status_maps_to_partial_ack() -> None:
     ib_id = conn.submitted_orders[0][0]
     router.poll_acks()
 
-    a = _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="PartiallyFilled",
-        cumulative_filled=40, remaining=60,
-        avg_fill_price=100.0, timestamp_ns=2_000_000,
-    ))
+    a = _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="PartiallyFilled",
+            cumulative_filled=40,
+            remaining=60,
+            avg_fill_price=100.0,
+            timestamp_ns=2_000_000,
+        ),
+    )
     assert a is not None
     assert a.status == OrderAckStatus.PARTIALLY_FILLED
     assert a.filled_quantity == 40
@@ -340,11 +432,18 @@ def test_status_expired_maps_to_expired_ack() -> None:
     ib_id = conn.submitted_orders[0][0]
     router.poll_acks()
 
-    a = _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="Expired",
-        cumulative_filled=0, remaining=100,
-        avg_fill_price=0.0, timestamp_ns=2_000_000,
-    ))
+    a = _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="Expired",
+            cumulative_filled=0,
+            remaining=100,
+            avg_fill_price=0.0,
+            timestamp_ns=2_000_000,
+        ),
+    )
     assert a is not None and a.status == OrderAckStatus.EXPIRED
 
 
@@ -354,12 +453,20 @@ def test_place_order_failure_emits_rejected_ack() -> None:
     ib_id = conn.submitted_orders[0][0]
     router.poll_acks()
 
-    a = _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="error",
-        cumulative_filled=0, remaining=100,
-        avg_fill_price=0.0, timestamp_ns=2_000_000,
-        error_code=0, error_msg="placeOrder:RuntimeError:socket wedged",
-    ))
+    a = _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="error",
+            cumulative_filled=0,
+            remaining=100,
+            avg_fill_price=0.0,
+            timestamp_ns=2_000_000,
+            error_code=0,
+            error_msg="placeOrder:RuntimeError:socket wedged",
+        ),
+    )
     assert a is not None and a.status == OrderAckStatus.REJECTED
     assert ib_id not in router._meta  # type: ignore[attr-defined]
 
@@ -370,11 +477,18 @@ def test_status_cancelled_maps_to_cancelled_ack() -> None:
     ib_id = conn.submitted_orders[0][0]
     router.poll_acks()
 
-    a = _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="Cancelled",
-        cumulative_filled=0, remaining=100,
-        avg_fill_price=0.0, timestamp_ns=2_000_000,
-    ))
+    a = _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="Cancelled",
+            cumulative_filled=0,
+            remaining=100,
+            avg_fill_price=0.0,
+            timestamp_ns=2_000_000,
+        ),
+    )
     assert a is not None and a.status == OrderAckStatus.CANCELLED
 
 
@@ -384,11 +498,18 @@ def test_status_api_cancelled_maps_to_cancelled_ack() -> None:
     ib_id = conn.submitted_orders[0][0]
     router.poll_acks()
 
-    a = _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="ApiCancelled",
-        cumulative_filled=0, remaining=100,
-        avg_fill_price=0.0, timestamp_ns=2_000_000,
-    ))
+    a = _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="ApiCancelled",
+            cumulative_filled=0,
+            remaining=100,
+            avg_fill_price=0.0,
+            timestamp_ns=2_000_000,
+        ),
+    )
     assert a is not None and a.status == OrderAckStatus.CANCELLED
 
 
@@ -398,11 +519,18 @@ def test_status_inactive_maps_to_rejected_ack() -> None:
     ib_id = conn.submitted_orders[0][0]
     router.poll_acks()
 
-    a = _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="Inactive",
-        cumulative_filled=0, remaining=100,
-        avg_fill_price=0.0, timestamp_ns=2_000_000,
-    ))
+    a = _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="Inactive",
+            cumulative_filled=0,
+            remaining=100,
+            avg_fill_price=0.0,
+            timestamp_ns=2_000_000,
+        ),
+    )
     assert a is not None and a.status == OrderAckStatus.REJECTED
 
 
@@ -412,12 +540,20 @@ def test_error_code_201_maps_to_rejected_ack() -> None:
     ib_id = conn.submitted_orders[0][0]
     router.poll_acks()
 
-    a = _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="error",
-        cumulative_filled=0, remaining=100,
-        avg_fill_price=0.0, timestamp_ns=2_000_000,
-        error_code=201, error_msg="rejected by venue",
-    ))
+    a = _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="error",
+            cumulative_filled=0,
+            remaining=100,
+            avg_fill_price=0.0,
+            timestamp_ns=2_000_000,
+            error_code=201,
+            error_msg="rejected by venue",
+        ),
+    )
     assert a is not None and a.status == OrderAckStatus.REJECTED
     assert "201" in a.reason
 
@@ -428,12 +564,20 @@ def test_error_code_202_maps_to_cancelled_ack() -> None:
     ib_id = conn.submitted_orders[0][0]
     router.poll_acks()
 
-    a = _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="error",
-        cumulative_filled=0, remaining=100,
-        avg_fill_price=0.0, timestamp_ns=2_000_000,
-        error_code=202, error_msg="cancelled",
-    ))
+    a = _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="error",
+            cumulative_filled=0,
+            remaining=100,
+            avg_fill_price=0.0,
+            timestamp_ns=2_000_000,
+            error_code=202,
+            error_msg="cancelled",
+        ),
+    )
     assert a is not None and a.status == OrderAckStatus.CANCELLED
 
 
@@ -443,12 +587,20 @@ def test_unknown_error_code_maps_to_rejected_ack() -> None:
     ib_id = conn.submitted_orders[0][0]
     router.poll_acks()
 
-    a = _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="error",
-        cumulative_filled=0, remaining=100,
-        avg_fill_price=0.0, timestamp_ns=2_000_000,
-        error_code=399, error_msg="order size below minimum",
-    ))
+    a = _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="error",
+            cumulative_filled=0,
+            remaining=100,
+            avg_fill_price=0.0,
+            timestamp_ns=2_000_000,
+            error_code=399,
+            error_msg="order size below minimum",
+        ),
+    )
     assert a is not None and a.status == OrderAckStatus.REJECTED
     assert "399" in a.reason
 
@@ -460,12 +612,20 @@ def test_connectivity_error_codes_drop_ack(code: int) -> None:
     ib_id = conn.submitted_orders[0][0]
     router.poll_acks()
 
-    a = _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="error",
-        cumulative_filled=0, remaining=100,
-        avg_fill_price=0.0, timestamp_ns=2_000_000,
-        error_code=code, error_msg="conn",
-    ))
+    a = _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="error",
+            cumulative_filled=0,
+            remaining=100,
+            avg_fill_price=0.0,
+            timestamp_ns=2_000_000,
+            error_code=code,
+            error_msg="conn",
+        ),
+    )
     assert a is None
 
 
@@ -475,21 +635,35 @@ def test_unknown_orderstatus_string_dropped() -> None:
     ib_id = conn.submitted_orders[0][0]
     router.poll_acks()
 
-    a = _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="MysteryStatus",
-        cumulative_filled=0, remaining=100,
-        avg_fill_price=0.0, timestamp_ns=2_000_000,
-    ))
+    a = _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="MysteryStatus",
+            cumulative_filled=0,
+            remaining=100,
+            avg_fill_price=0.0,
+            timestamp_ns=2_000_000,
+        ),
+    )
     assert a is None
 
 
 def test_unknown_order_id_silently_dropped() -> None:
     router, conn, _ = _build_router()
-    a = _ack_for(router, conn, IBFillEvent(
-        ib_order_id=99999, status="Filled",
-        cumulative_filled=10, remaining=0,
-        avg_fill_price=100.0, timestamp_ns=2_000_000,
-    ))
+    a = _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=99999,
+            status="Filled",
+            cumulative_filled=10,
+            remaining=0,
+            avg_fill_price=100.0,
+            timestamp_ns=2_000_000,
+        ),
+    )
     assert a is None
 
 
@@ -503,11 +677,18 @@ def test_filled_status_downgraded_to_partial_when_qty_short() -> None:
     ib_id = conn.submitted_orders[0][0]
     router.poll_acks()
 
-    a = _ack_for(router, conn, IBFillEvent(
-        ib_order_id=ib_id, status="Filled",
-        cumulative_filled=60, remaining=40,
-        avg_fill_price=100.0, timestamp_ns=2_000_000,
-    ))
+    a = _ack_for(
+        router,
+        conn,
+        IBFillEvent(
+            ib_order_id=ib_id,
+            status="Filled",
+            cumulative_filled=60,
+            remaining=40,
+            avg_fill_price=100.0,
+            timestamp_ns=2_000_000,
+        ),
+    )
     assert a is not None
     assert a.status == OrderAckStatus.PARTIALLY_FILLED
     assert a.filled_quantity == 60

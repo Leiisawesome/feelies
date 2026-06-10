@@ -89,8 +89,7 @@ class CompositionEngine:
     ) -> None:
         if not 0.0 <= completeness_threshold <= 1.0:
             raise ValueError(
-                "completeness_threshold must be in [0, 1], "
-                f"got {completeness_threshold}"
+                f"completeness_threshold must be in [0, 1], got {completeness_threshold}"
             )
         self._bus = bus
         self._intent_seq = intent_sequence_generator
@@ -113,8 +112,7 @@ class CompositionEngine:
         for existing in self._alphas:
             if existing.alpha_id == registered.alpha_id:
                 raise ValueError(
-                    f"CompositionEngine: alpha {registered.alpha_id!r} "
-                    f"is already registered"
+                    f"CompositionEngine: alpha {registered.alpha_id!r} is already registered"
                 )
         self._alphas.append(registered)
         self._alphas.sort(key=lambda a: (a.horizon_seconds, a.alpha_id))
@@ -159,7 +157,8 @@ class CompositionEngine:
         # Below-threshold completeness → degenerate intent (do nothing).
         if ctx.completeness < self._completeness_threshold:
             self._emit_degenerate(
-                registered, ctx,
+                registered,
+                ctx,
                 reason=(
                     f"completeness {ctx.completeness:.3f} below threshold "
                     f"{self._completeness_threshold:.3f}"
@@ -171,16 +170,19 @@ class CompositionEngine:
             intent = registered.alpha.construct(ctx, registered.params)
         except CompositionContextError as exc:
             _logger.info(
-                "CompositionEngine: %s declined to construct intent for "
-                "boundary %d: %s",
-                registered.alpha_id, ctx.boundary_index, exc,
+                "CompositionEngine: %s declined to construct intent for boundary %d: %s",
+                registered.alpha_id,
+                ctx.boundary_index,
+                exc,
             )
             self._emit_degenerate(registered, ctx, reason=str(exc))
             return
         except Exception as exc:  # noqa: BLE001 — fail-safe boundary
             _logger.warning(
                 "CompositionEngine: %s.construct raised at boundary %d: %s",
-                registered.alpha_id, ctx.boundary_index, exc,
+                registered.alpha_id,
+                ctx.boundary_index,
+                exc,
             )
             self._emit_degenerate(registered, ctx, reason=f"raised: {exc}")
             return
@@ -207,10 +209,7 @@ class CompositionEngine:
             row = ctx.signals_by_strategy_by_symbol.get(symbol)
             if row:
                 for _, cand in sorted(row.items()):
-                    if (
-                        cand is not None
-                        and cand.disclosed_cost_total_bps > 0
-                    ):
+                    if cand is not None and cand.disclosed_cost_total_bps > 0:
                         disclosed[symbol] = cand.disclosed_cost_total_bps
                         break
 
@@ -250,9 +249,10 @@ class CompositionEngine:
             mechanism_breakdown={},
         )
         _logger.debug(
-            "CompositionEngine: emitted degenerate intent for %s "
-            "(boundary %d): %s",
-            registered.alpha_id, ctx.boundary_index, reason,
+            "CompositionEngine: emitted degenerate intent for %s (boundary %d): %s",
+            registered.alpha_id,
+            ctx.boundary_index,
+            reason,
         )
         self._bus.publish(intent)
 
@@ -274,13 +274,16 @@ class CompositionEngine:
         public components.
         """
         rank_result = self._ranker.rank(
-            ctx, feeder_strategy_ids=feeder_strategy_ids,
+            ctx,
+            feeder_strategy_ids=feeder_strategy_ids,
         )
         neutral_weights, factor_exposures = self._neutralizer.neutralize(
-            rank_result.weights, ctx.universe,
+            rank_result.weights,
+            ctx.universe,
         )
         sector_matched = self._sector_matcher.neutralize(
-            neutral_weights, ctx.universe,
+            neutral_weights,
+            ctx.universe,
         )
         # Look up current positions if a lookup is wired.
         current_positions: dict[str, float] = {}
@@ -292,12 +295,13 @@ class CompositionEngine:
                     current_positions[s] = 0.0
 
         opt = self._optimizer.optimize(
-            sector_matched, ctx.universe, current_positions,
+            sector_matched,
+            ctx.universe,
+            current_positions,
         )
 
         target_positions = {
-            s: TargetPosition(symbol=s, target_usd=v)
-            for s, v in sorted(opt.target_usd.items())
+            s: TargetPosition(symbol=s, target_usd=v) for s, v in sorted(opt.target_usd.items())
         }
         return SizedPositionIntent(
             timestamp_ns=ctx.timestamp_ns,

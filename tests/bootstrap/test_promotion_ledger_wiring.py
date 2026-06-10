@@ -118,10 +118,7 @@ def _write_alpha(directory: Path, name: str, body: str) -> None:
 
 
 class TestPromotionLedgerWiring:
-
-    def test_no_promotion_ledger_path_disables_ledger(
-        self, tmp_path: Path
-    ) -> None:
+    def test_no_promotion_ledger_path_disables_ledger(self, tmp_path: Path) -> None:
         _write_alpha(tmp_path, "f1.alpha.yaml", _SIGNAL_ALPHA_YAML)
         config = _make_config(tmp_path)
         orchestrator, _ = build_platform(config)
@@ -129,9 +126,7 @@ class TestPromotionLedgerWiring:
         assert orchestrator._alpha_registry is not None
         assert orchestrator._alpha_registry.promotion_ledger is None
 
-    def test_promotion_ledger_path_constructs_and_wires_ledger(
-        self, tmp_path: Path
-    ) -> None:
+    def test_promotion_ledger_path_constructs_and_wires_ledger(self, tmp_path: Path) -> None:
         _write_alpha(tmp_path, "f1.alpha.yaml", _SIGNAL_ALPHA_YAML)
         ledger_path = tmp_path / "audit" / "promotion.jsonl"
         config = _make_config(tmp_path, promotion_ledger_path=ledger_path)
@@ -146,9 +141,7 @@ class TestPromotionLedgerWiring:
         assert ledger_path.exists()
         assert ledger_path.parent.is_dir()
 
-    def test_backtest_mode_does_not_emit_transitions(
-        self, tmp_path: Path
-    ) -> None:
+    def test_backtest_mode_does_not_emit_transitions(self, tmp_path: Path) -> None:
         # In BACKTEST mode the registry has ``clock=None``, so no
         # AlphaLifecycle SMs are constructed and no ledger entries can
         # be appended.  This guards two-run determinism (audit

@@ -54,9 +54,7 @@ class MicroPriceSensor:
         if warm_after < 0:
             raise ValueError(f"warm_after must be >= 0, got {warm_after}")
         if warm_window_seconds <= 0:
-            raise ValueError(
-                f"warm_window_seconds must be > 0, got {warm_window_seconds}"
-            )
+            raise ValueError(f"warm_window_seconds must be > 0, got {warm_window_seconds}")
         if sensor_id is not None:
             self.sensor_id = sensor_id
         if sensor_version is not None:

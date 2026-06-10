@@ -97,9 +97,7 @@ def test_standard_normal_cdf_in_unit_interval(x: float) -> None:
     x=st.floats(min_value=-5.0, max_value=5.0),
     delta=st.floats(min_value=1e-6, max_value=1.0),
 )
-def test_standard_normal_cdf_monotone_non_decreasing(
-    x: float, delta: float
-) -> None:
+def test_standard_normal_cdf_monotone_non_decreasing(x: float, delta: float) -> None:
     assert standard_normal_cdf(x) <= standard_normal_cdf(x + delta)
 
 
@@ -128,9 +126,7 @@ def test_psr_in_unit_interval(kwargs: dict[str, Any]) -> None:
     base=WELL_FORMED_SHARPE_KWARGS,
     delta=st.floats(min_value=1e-3, max_value=0.5),
 )
-def test_psr_monotone_in_observed_sharpe(
-    base: dict[str, Any], delta: float
-) -> None:
+def test_psr_monotone_in_observed_sharpe(base: dict[str, Any], delta: float) -> None:
     # Increasing observed_sharpe → at least non-decreasing PSR.
     kwargs_low = dict(base)
     kwargs_high = dict(base)
@@ -138,9 +134,7 @@ def test_psr_monotone_in_observed_sharpe(
     # Skip cases that push the variance term non-positive.
     for k in (kwargs_low, kwargs_high):
         sr = k["observed_sharpe"]
-        var_term = (
-            1.0 - k["skewness"] * sr + ((k["kurtosis"] - 1.0) / 4.0) * sr * sr
-        )
+        var_term = 1.0 - k["skewness"] * sr + ((k["kurtosis"] - 1.0) / 4.0) * sr * sr
         assume(var_term > 0.0)
     psr_low = probabilistic_sharpe_ratio(**kwargs_low)
     psr_high = probabilistic_sharpe_ratio(**kwargs_high)
@@ -155,9 +149,7 @@ def test_psr_monotone_in_observed_sharpe(
     base=WELL_FORMED_SHARPE_KWARGS,
     delta=st.floats(min_value=1e-3, max_value=0.5),
 )
-def test_psr_monotone_non_increasing_in_threshold(
-    base: dict[str, Any], delta: float
-) -> None:
+def test_psr_monotone_non_increasing_in_threshold(base: dict[str, Any], delta: float) -> None:
     # Increasing threshold_sharpe → non-increasing PSR.
     kwargs_low = dict(base)
     kwargs_high = dict(base)
@@ -206,9 +198,7 @@ def test_psr_deterministic(kwargs: dict[str, Any]) -> None:
     delta=st.integers(min_value=1, max_value=100),
     v=st.floats(min_value=1e-6, max_value=1.0),
 )
-def test_expected_max_sharpe_monotone_in_n_trials(
-    n: int, delta: int, v: float
-) -> None:
+def test_expected_max_sharpe_monotone_in_n_trials(n: int, delta: int, v: float) -> None:
     s_low = expected_max_sharpe(n_trials=n, trial_sharpe_variance=v)
     s_high = expected_max_sharpe(n_trials=n + delta, trial_sharpe_variance=v)
     # Strictly increasing for v > 0 and n >= 2; allow tiny FP slop.
@@ -221,14 +211,10 @@ def test_expected_max_sharpe_monotone_in_n_trials(
     v=st.floats(min_value=1e-6, max_value=1.0),
     scale=st.floats(min_value=1.0, max_value=1000.0),
 )
-def test_expected_max_sharpe_sqrt_variance_scaling(
-    n: int, v: float, scale: float
-) -> None:
+def test_expected_max_sharpe_sqrt_variance_scaling(n: int, v: float, scale: float) -> None:
     # E[max] is sqrt(v)-linear: scaling v by k scales E[max] by sqrt(k).
     s_base = expected_max_sharpe(n_trials=n, trial_sharpe_variance=v)
-    s_scaled = expected_max_sharpe(
-        n_trials=n, trial_sharpe_variance=v * scale
-    )
+    s_scaled = expected_max_sharpe(n_trials=n, trial_sharpe_variance=v * scale)
     assume(s_base > 1e-15)
     ratio = s_scaled / s_base
     assert math.isclose(ratio, math.sqrt(scale), rel_tol=1e-9)
@@ -414,9 +400,7 @@ def test_build_dsr_evidence_annualisation_is_linear(
         "kurtosis": 3.0,
     }
     ev_per_period = build_dsr_evidence(annualization_factor=1.0, **kwargs)
-    ev_annualised = build_dsr_evidence(
-        annualization_factor=annualization_factor, **kwargs
-    )
+    ev_annualised = build_dsr_evidence(annualization_factor=annualization_factor, **kwargs)
     assert math.isclose(
         ev_annualised.observed_sharpe,
         ev_per_period.observed_sharpe * annualization_factor,
@@ -452,17 +436,13 @@ RETURN_SERIES = st.lists(
     returns=RETURN_SERIES,
     trials_count=st.integers(min_value=1, max_value=500),
 )
-def test_from_returns_matches_explicit_stats(
-    returns: list[float], trials_count: int
-) -> None:
+def test_from_returns_matches_explicit_stats(returns: list[float], trials_count: int) -> None:
     # Exclude the constant-series degenerate case (skewness/kurt
     # default branch) so the parity test below stays meaningful.
     sd = statistics.pstdev(returns)
     assume(sd > 1e-10)
     skew, kurt = standardised_moments(returns)
-    ev_from_returns = build_dsr_evidence_from_returns(
-        returns=returns, trials_count=trials_count
-    )
+    ev_from_returns = build_dsr_evidence_from_returns(returns=returns, trials_count=trials_count)
     ev_explicit = build_dsr_evidence(
         observed_sharpe=sharpe_ratio(returns),
         n_obs=len(returns),
@@ -488,9 +468,7 @@ def test_from_returns_deterministic(returns: list[float]) -> None:
 def test_from_returns_p_value_in_unit_interval(
     returns: list[float],
 ) -> None:
-    ev = build_dsr_evidence_from_returns(
-        returns=returns, trials_count=50
-    )
+    ev = build_dsr_evidence_from_returns(returns=returns, trials_count=50)
     assert 0.0 <= ev.dsr_p_value <= 1.0
 
 
@@ -540,6 +518,4 @@ def test_psr_rejects_n_obs_below_two(n_obs: int) -> None:
 @given(n_trials=st.integers(min_value=-100, max_value=0))
 def test_expected_max_sharpe_rejects_invalid_n_trials(n_trials: int) -> None:
     with pytest.raises(ValueError):
-        expected_max_sharpe(
-            n_trials=n_trials, trial_sharpe_variance=0.1
-        )
+        expected_max_sharpe(n_trials=n_trials, trial_sharpe_variance=0.1)

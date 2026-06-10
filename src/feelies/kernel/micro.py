@@ -82,11 +82,11 @@ class MicroState(Enum):
     WAITING_FOR_MARKET_EVENT = auto()
     MARKET_EVENT_RECEIVED = auto()
     STATE_UPDATE = auto()
-    SENSOR_UPDATE = auto()         # NEW (P2-α): Layer-1 sensor fan-out
-    HORIZON_CHECK = auto()         # NEW (P2-α): scheduler boundary check
-    HORIZON_AGGREGATE = auto()     # NEW (P2-α): aggregator snapshot emit
-    SIGNAL_GATE = auto()           # NEW (P3-α): HorizonSignalEngine emit
-    CROSS_SECTIONAL = auto()       # NEW (P4):   CompositionEngine emit
+    SENSOR_UPDATE = auto()  # NEW (P2-α): Layer-1 sensor fan-out
+    HORIZON_CHECK = auto()  # NEW (P2-α): scheduler boundary check
+    HORIZON_AGGREGATE = auto()  # NEW (P2-α): aggregator snapshot emit
+    SIGNAL_GATE = auto()  # NEW (P3-α): HorizonSignalEngine emit
+    CROSS_SECTIONAL = auto()  # NEW (P4):   CompositionEngine emit
     FEATURE_COMPUTE = auto()
     SIGNAL_EVALUATE = auto()
     RISK_CHECK = auto()
@@ -98,90 +98,122 @@ class MicroState(Enum):
 
 
 _MICRO_TRANSITIONS: dict[MicroState, frozenset[MicroState]] = {
-    MicroState.WAITING_FOR_MARKET_EVENT: frozenset({
-        MicroState.MARKET_EVENT_RECEIVED,
-    }),
-    MicroState.MARKET_EVENT_RECEIVED: frozenset({
-        MicroState.STATE_UPDATE,
-    }),
+    MicroState.WAITING_FOR_MARKET_EVENT: frozenset(
+        {
+            MicroState.MARKET_EVENT_RECEIVED,
+        }
+    ),
+    MicroState.MARKET_EVENT_RECEIVED: frozenset(
+        {
+            MicroState.STATE_UPDATE,
+        }
+    ),
     # STATE_UPDATE branches:
     #   sensor-enabled config: → SENSOR_UPDATE (P2-α)
     #   legacy / sensor-empty config: → FEATURE_COMPUTE (bit-identical Phase-1 path)
-    MicroState.STATE_UPDATE: frozenset({
-        MicroState.SENSOR_UPDATE,    # sensor layer registered
-        MicroState.FEATURE_COMPUTE,  # sensor/scheduler-empty fast-path
-    }),
-    MicroState.SENSOR_UPDATE: frozenset({
-        MicroState.HORIZON_CHECK,
-    }),
+    MicroState.STATE_UPDATE: frozenset(
+        {
+            MicroState.SENSOR_UPDATE,  # sensor layer registered
+            MicroState.FEATURE_COMPUTE,  # sensor/scheduler-empty fast-path
+        }
+    ),
+    MicroState.SENSOR_UPDATE: frozenset(
+        {
+            MicroState.HORIZON_CHECK,
+        }
+    ),
     # HORIZON_CHECK branches:
     #   any tick crossed → HORIZON_AGGREGATE
     #   no tick crossed  → FEATURE_COMPUTE (skip aggregate)
-    MicroState.HORIZON_CHECK: frozenset({
-        MicroState.HORIZON_AGGREGATE,
-        MicroState.FEATURE_COMPUTE,
-    }),
+    MicroState.HORIZON_CHECK: frozenset(
+        {
+            MicroState.HORIZON_AGGREGATE,
+            MicroState.FEATURE_COMPUTE,
+        }
+    ),
     # HORIZON_AGGREGATE branches (orchestrator picks exactly one per tick):
     #   SIGNAL alpha(s) loaded → SIGNAL_GATE (P3-α)
     #   else → FEATURE_COMPUTE (Phase-2 fast-path)  OR  via orchestrator bookend
     #   ``CROSS_SECTIONAL`` → FEATURE_COMPUTE when PORTFOLIO alphas are registered
-    MicroState.HORIZON_AGGREGATE: frozenset({
-        MicroState.SIGNAL_GATE,
-        MicroState.CROSS_SECTIONAL,
-        MicroState.FEATURE_COMPUTE,
-    }),
+    MicroState.HORIZON_AGGREGATE: frozenset(
+        {
+            MicroState.SIGNAL_GATE,
+            MicroState.CROSS_SECTIONAL,
+            MicroState.FEATURE_COMPUTE,
+        }
+    ),
     # SIGNAL_GATE branches:
     #   PORTFOLIO alpha(s) loaded → CROSS_SECTIONAL (P4)
     #   no PORTFOLIO alpha        → FEATURE_COMPUTE (Phase-3 bit-identical)
-    MicroState.SIGNAL_GATE: frozenset({
-        MicroState.CROSS_SECTIONAL,
-        MicroState.FEATURE_COMPUTE,
-    }),
+    MicroState.SIGNAL_GATE: frozenset(
+        {
+            MicroState.CROSS_SECTIONAL,
+            MicroState.FEATURE_COMPUTE,
+        }
+    ),
     # PORTFOLIO can walk M5–M10 here when :meth:`Orchestrator._flush_pending_sized_intents`
     # drains horizon-buffered ``SizedPositionIntent`` events before M3.
-    MicroState.CROSS_SECTIONAL: frozenset({
-        MicroState.FEATURE_COMPUTE,
-        MicroState.RISK_CHECK,
-    }),
-    MicroState.FEATURE_COMPUTE: frozenset({
-        MicroState.SIGNAL_EVALUATE,
-    }),
+    MicroState.CROSS_SECTIONAL: frozenset(
+        {
+            MicroState.FEATURE_COMPUTE,
+            MicroState.RISK_CHECK,
+        }
+    ),
+    MicroState.FEATURE_COMPUTE: frozenset(
+        {
+            MicroState.SIGNAL_EVALUATE,
+        }
+    ),
     # M4 branches:
     #   signal selected → RISK_CHECK (multi-alpha arbitration is bus-side
     #   before M4; see ``Orchestrator._select_bus_signal``)
     #   no signal this tick → LOG_AND_METRICS
     #   (FORCE_FLATTEN is evaluated only after RISK_CHECK on the SIGNAL path.)
-    MicroState.SIGNAL_EVALUATE: frozenset({
-        MicroState.RISK_CHECK,
-        MicroState.LOG_AND_METRICS,
-    }),
+    MicroState.SIGNAL_EVALUATE: frozenset(
+        {
+            MicroState.RISK_CHECK,
+            MicroState.LOG_AND_METRICS,
+        }
+    ),
     # M5 branches: risk pass + order needed → M6, risk pass + no order → M10.
     # Risk fail → cross-machine to G8 (handled by orchestrator, not in this table).
-    MicroState.RISK_CHECK: frozenset({
-        MicroState.ORDER_DECISION,   # risk pass, order warranted
-        MicroState.LOG_AND_METRICS,  # risk pass, no order (flat / reject)
-    }),
+    MicroState.RISK_CHECK: frozenset(
+        {
+            MicroState.ORDER_DECISION,  # risk pass, order warranted
+            MicroState.LOG_AND_METRICS,  # risk pass, no order (flat / reject)
+        }
+    ),
     # M6 branches: check_order pass → M7, check_order reject → M10.
-    MicroState.ORDER_DECISION: frozenset({
-        MicroState.ORDER_SUBMIT,    # check_order pass
-        MicroState.LOG_AND_METRICS,  # check_order reject (pre-submission veto)
-    }),
-    MicroState.ORDER_SUBMIT: frozenset({
-        MicroState.ORDER_ACK,
-    }),
-    MicroState.ORDER_ACK: frozenset({
-        MicroState.POSITION_UPDATE,
-    }),
-    MicroState.POSITION_UPDATE: frozenset({
-        MicroState.LOG_AND_METRICS,
-    }),
+    MicroState.ORDER_DECISION: frozenset(
+        {
+            MicroState.ORDER_SUBMIT,  # check_order pass
+            MicroState.LOG_AND_METRICS,  # check_order reject (pre-submission veto)
+        }
+    ),
+    MicroState.ORDER_SUBMIT: frozenset(
+        {
+            MicroState.ORDER_ACK,
+        }
+    ),
+    MicroState.ORDER_ACK: frozenset(
+        {
+            MicroState.POSITION_UPDATE,
+        }
+    ),
+    MicroState.POSITION_UPDATE: frozenset(
+        {
+            MicroState.LOG_AND_METRICS,
+        }
+    ),
     # Loop back to wait for next tick, continue a PORTFOLIO multi-intent flush on
     # the same quote, or resume M3 after that flush (orchestrator-guarded only).
-    MicroState.LOG_AND_METRICS: frozenset({
-        MicroState.WAITING_FOR_MARKET_EVENT,
-        MicroState.RISK_CHECK,
-        MicroState.FEATURE_COMPUTE,
-    }),
+    MicroState.LOG_AND_METRICS: frozenset(
+        {
+            MicroState.WAITING_FOR_MARKET_EVENT,
+            MicroState.RISK_CHECK,
+            MicroState.FEATURE_COMPUTE,
+        }
+    ),
 }
 
 

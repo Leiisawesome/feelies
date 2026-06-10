@@ -42,9 +42,7 @@ class WarmUpSpec:
 
     def __post_init__(self) -> None:
         if self.min_events < 0:
-            raise ValueError(
-                f"WarmUpSpec.min_events must be >= 0, got {self.min_events}"
-            )
+            raise ValueError(f"WarmUpSpec.min_events must be >= 0, got {self.min_events}")
         if self.min_duration_ns < 0:
             raise ValueError(
                 f"WarmUpSpec.min_duration_ns must be >= 0, got {self.min_duration_ns}"

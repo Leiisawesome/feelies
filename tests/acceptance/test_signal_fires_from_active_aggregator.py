@@ -78,10 +78,7 @@ pytestmark = pytest.mark.backtest_validation
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
-_SIGNAL_ALPHA = (
-    _REPO_ROOT / "alphas" / "sig_benign_midcap_v1"
-    / "sig_benign_midcap_v1.alpha.yaml"
-)
+_SIGNAL_ALPHA = _REPO_ROOT / "alphas" / "sig_benign_midcap_v1" / "sig_benign_midcap_v1.alpha.yaml"
 
 # Single-symbol universe — sufficient to prove the chain end-to-end.
 _UNIVERSE: tuple[str, ...] = ("AAPL",)
@@ -232,25 +229,26 @@ def _fire_signals(
     p_compress = (1.0 - regime_p_normal) * 0.5
     p_breakout = (1.0 - regime_p_normal) * 0.5
     for symbol in _UNIVERSE:
-        bus.publish(RegimeState(
-            timestamp_ns=SESSION_OPEN_NS - 1,
-            correlation_id=f"test-regime-{symbol}",
-            sequence=seq,
-            symbol=symbol,
-            engine_name="hmm_3state_fractional",
-            state_names=("compression_clustering", "normal", "vol_breakout"),
-            posteriors=(p_compress, regime_p_normal, p_breakout),
-            dominant_state=1,
-            dominant_name="normal",
-        ))
+        bus.publish(
+            RegimeState(
+                timestamp_ns=SESSION_OPEN_NS - 1,
+                correlation_id=f"test-regime-{symbol}",
+                sequence=seq,
+                symbol=symbol,
+                engine_name="hmm_3state_fractional",
+                state_names=("compression_clustering", "normal", "vol_breakout"),
+                posteriors=(p_compress, regime_p_normal, p_breakout),
+                dominant_state=1,
+                dominant_name="normal",
+            )
+        )
         seq += 1
 
     # ── 2. Inject spread_z_30d into signal engine sensor cache ──────────
     # Gate condition: abs(spread_z_30d) < 0.5.  Value 0.05 satisfies this.
     # HorizonSignalEngine._on_sensor_reading caches warm scalar readings.
     for symbol in _UNIVERSE:
-        bus.publish(_reading(symbol, seq, "spread_z_30d", 0.05,
-                             SESSION_OPEN_NS))
+        bus.publish(_reading(symbol, seq, "spread_z_30d", 0.05, SESSION_OPEN_NS))
         seq += 1
 
     # ── 3. Warm up RollingZscoreFeature with 30 baseline readings ───────
@@ -382,8 +380,7 @@ def test_signal_determinism_inv5() -> None:
     h1 = _hash(_fire_signals())
     h2 = _hash(_fire_signals())
     assert h1 == h2, (
-        f"Signal streams diverged across two independent builds:\n"
-        f"  run 1: {h1}\n  run 2: {h2}"
+        f"Signal streams diverged across two independent builds:\n  run 1: {h1}\n  run 2: {h2}"
     )
 
 

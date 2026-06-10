@@ -100,11 +100,11 @@ class TestDecayDetectorAnalyzeFills:
     def test_size_histogram_buckets(self) -> None:
         """Order-size histogram assigns records to correct buckets."""
         records = [
-            _make_record(filled_quantity=50, idx=0),   # 1-100
+            _make_record(filled_quantity=50, idx=0),  # 1-100
             _make_record(filled_quantity=100, idx=1),  # 1-100
             _make_record(filled_quantity=200, idx=2),  # 101-500
-            _make_record(filled_quantity=1000, idx=3), # 501-2000
-            _make_record(filled_quantity=5000, idx=4), # >2000
+            _make_record(filled_quantity=1000, idx=3),  # 501-2000
+            _make_record(filled_quantity=5000, idx=4),  # >2000
         ]
         report = DecayDetector().analyze_fills(records)
         assert report.size_histogram["1-100"] == 2

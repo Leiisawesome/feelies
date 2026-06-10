@@ -62,13 +62,9 @@ class TradeThroughRateSensor:
         min_trades: int = 20,
     ) -> None:
         if window_seconds <= 0:
-            raise ValueError(
-                f"window_seconds must be > 0, got {window_seconds}"
-            )
+            raise ValueError(f"window_seconds must be > 0, got {window_seconds}")
         if min_trades < 0:
-            raise ValueError(
-                f"min_trades must be >= 0, got {min_trades}"
-            )
+            raise ValueError(f"min_trades must be >= 0, got {min_trades}")
         if sensor_id is not None:
             self.sensor_id = sensor_id
         if sensor_version is not None:

@@ -276,9 +276,7 @@ class MassiveNormalizer:
         # halt detection is inert (no DataHealth.HALTED transitions).
         self._halt_on_codes: frozenset[int] = halt_on_codes or frozenset()
         self._halt_off_codes: frozenset[int] = halt_off_codes or frozenset()
-        self._health_machines: dict[
-            tuple[str, str], StateMachine[DataHealth]
-        ] = {}
+        self._health_machines: dict[tuple[str, str], StateMachine[DataHealth]] = {}
         self._registered_symbols: frozenset[str] = frozenset()
         self._transition_callback = transition_callback
         # Keyed by (symbol, feed_type) — quotes and trades have independent
@@ -316,7 +314,9 @@ class MassiveNormalizer:
             self._oversized_frames += 1
             logger.warning(
                 "massive_normalizer: %d-byte frame from %s exceeds limit %d — dropping",
-                len(raw), source, self._max_raw_frame_bytes,
+                len(raw),
+                source,
+                self._max_raw_frame_bytes,
             )
             return []
         try:
@@ -779,7 +779,9 @@ class MassiveNormalizer:
         sm = self._health_machines.get(key)
         if sm is None:
             sm = create_data_integrity_machine(
-                symbol, self._clock, channel=feed_type,
+                symbol,
+                self._clock,
+                channel=feed_type,
             )
             # Always register the stable dispatcher; the live callback is
             # read lazily from ``self._transition_callback`` so that
@@ -854,8 +856,7 @@ class MassiveNormalizer:
             self._duplicates_filtered += 1
             return True
         logger.warning(
-            "massive_normalizer: sequence_number %s reused with differing payload "
-            "(%s %s)",
+            "massive_normalizer: sequence_number %s reused with differing payload (%s %s)",
             seq_num,
             symbol,
             feed_type,
@@ -883,7 +884,10 @@ class MassiveNormalizer:
                 )
             logger.info(
                 "massive_normalizer: gap detected for %s/%s: %d -> %d",
-                symbol, feed_type, prev_seq, seq_num,
+                symbol,
+                feed_type,
+                prev_seq,
+                seq_num,
             )
         elif seq_num == prev_seq + 1 and sm.state == DataHealth.GAP_DETECTED:
             sm.transition(
@@ -892,7 +896,9 @@ class MassiveNormalizer:
             )
             logger.info(
                 "massive_normalizer: gap resolved for %s/%s at seq %d",
-                symbol, feed_type, seq_num,
+                symbol,
+                feed_type,
+                seq_num,
             )
 
     def _update_last_seen(
@@ -919,7 +925,9 @@ class MassiveNormalizer:
         the symbol to its quote-feed health.  Inert when no codes configured.
         """
         status = classify_halt_status(
-            conditions, self._halt_on_codes, self._halt_off_codes,
+            conditions,
+            self._halt_on_codes,
+            self._halt_off_codes,
         )
         if status is None:
             return

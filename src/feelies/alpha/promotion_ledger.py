@@ -109,9 +109,7 @@ class PromotionLedgerEntry:
         try:
             payload = json.loads(line)
         except json.JSONDecodeError as exc:
-            raise ValueError(
-                f"Corrupt promotion-ledger line (not valid JSON): {line!r}"
-            ) from exc
+            raise ValueError(f"Corrupt promotion-ledger line (not valid JSON): {line!r}") from exc
 
         if not isinstance(payload, dict):
             raise ValueError(
@@ -130,8 +128,7 @@ class PromotionLedgerEntry:
         missing = [k for k in required if k not in payload]
         if missing:
             raise ValueError(
-                f"Promotion-ledger line missing required field(s) "
-                f"{missing}: {line!r}"
+                f"Promotion-ledger line missing required field(s) {missing}: {line!r}"
             )
 
         return cls(
@@ -217,8 +214,7 @@ class PromotionLedger:
                     yield PromotionLedgerEntry.from_json_line(stripped)
                 except ValueError as exc:
                     raise ValueError(
-                        f"Corrupt promotion-ledger entry at "
-                        f"{self._path}:{lineno}: {exc}"
+                        f"Corrupt promotion-ledger entry at {self._path}:{lineno}: {exc}"
                     ) from exc
 
     def entries_for(self, alpha_id: str) -> Iterator[PromotionLedgerEntry]:

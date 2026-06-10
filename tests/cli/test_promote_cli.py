@@ -145,9 +145,7 @@ def _populate_ledger(path: Path) -> PromotionLedger:
             trigger="pass_live_gate",
             timestamp_ns=1_700_000_500_000_000_000,
             correlation_id="corr-a2",
-            metadata=evidence_to_metadata(
-                _full_paper_window(), _full_cpcv(), _full_dsr()
-            ),
+            metadata=evidence_to_metadata(_full_paper_window(), _full_cpcv(), _full_dsr()),
         )
     )
     # ALPHA-A: LIVE -> QUARANTINED (legacy F-1-era reason-only metadata)
@@ -256,9 +254,7 @@ class TestGateMatrixSubcommand:
             "quarantined_to_decommissioned",
         }
         # paper_to_live carries the three F-2 evidence types.
-        paper_to_live = next(
-            g for g in payload["gates"] if g["gate_id"] == "paper_to_live"
-        )
+        paper_to_live = next(g for g in payload["gates"] if g["gate_id"] == "paper_to_live")
         assert set(paper_to_live["required_evidence"]) == {
             "PaperWindowEvidence",
             "CPCVEvidence",
@@ -304,9 +300,7 @@ class TestLedgerResolution:
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        rc = main(
-            ["promote", "inspect", "ALPHA-A", "--ledger", str(tmp_path)]
-        )
+        rc = main(["promote", "inspect", "ALPHA-A", "--ledger", str(tmp_path)])
         captured = capsys.readouterr()
         assert rc == EXIT_USER_ERROR
         assert "not a regular file" in captured.err

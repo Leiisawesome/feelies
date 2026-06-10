@@ -115,8 +115,8 @@ class CrossSectionalTracker:
     # ── Bus handlers ─────────────────────────────────────────────────
 
     def _on_context(self, ctx: CrossSectionalContext) -> None:
-        self._last_completeness[(ctx.horizon_seconds, ctx.boundary_index)] = (
-            float(ctx.completeness)
+        self._last_completeness[(ctx.horizon_seconds, ctx.boundary_index)] = float(
+            ctx.completeness
         )
 
     def _on_intent(self, intent: SizedPositionIntent) -> None:
@@ -133,7 +133,8 @@ class CrossSectionalTracker:
         bi = self._parse_boundary_from_correlation(intent.correlation_id)
         if bi is not None:
             completeness = self._last_completeness.get(
-                (intent.horizon_seconds, bi), 0.0,
+                (intent.horizon_seconds, bi),
+                0.0,
             )
 
         self._snapshots[intent.strategy_id] = CrossSectionalSnapshot(

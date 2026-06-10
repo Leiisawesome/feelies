@@ -153,18 +153,11 @@ class PDTConstraint:
         today = self._trading_date(now_ns)
         window = self._config.window_business_days
         trips = self._round_trips.get(account_id, ())
-        return sum(
-            1
-            for d in trips
-            if 0 <= _business_days_between(d, today) < window
-        )
+        return sum(1 for d in trips if 0 <= _business_days_between(d, today) < window)
 
     def is_flagged(self, account_id: str, now_ns: int) -> bool:
         """True once 4+ round-trips land inside the rolling window."""
-        return (
-            self.round_trip_count(account_id, now_ns)
-            >= self._config.flag_round_trip_threshold
-        )
+        return self.round_trip_count(account_id, now_ns) >= self._config.flag_round_trip_threshold
 
     def should_suppress_entry(
         self,
@@ -192,14 +185,14 @@ class PDTConstraint:
         if not trips:
             return
         self._round_trips[account_id] = [
-            d for d in trips
-            if (today - d).days <= _PRUNE_AGE_CALENDAR_DAYS
+            d for d in trips if (today - d).days <= _PRUNE_AGE_CALENDAR_DAYS
         ]
 
     @staticmethod
     def _trading_date(timestamp_ns: int) -> date:
         return datetime.fromtimestamp(
-            timestamp_ns // _NS_PER_SECOND, tz=_NY_TZ,
+            timestamp_ns // _NS_PER_SECOND,
+            tz=_NY_TZ,
         ).date()
 
 

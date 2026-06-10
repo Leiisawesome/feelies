@@ -70,9 +70,7 @@ class QuoteFlickerRateSensor:
         min_quotes: int = 20,
     ) -> None:
         if window_seconds <= 0:
-            raise ValueError(
-                f"window_seconds must be > 0, got {window_seconds}"
-            )
+            raise ValueError(f"window_seconds must be > 0, got {window_seconds}")
         if min_quotes < 0:
             raise ValueError(f"min_quotes must be >= 0, got {min_quotes}")
         if sensor_id is not None:
@@ -84,12 +82,12 @@ class QuoteFlickerRateSensor:
 
     def initial_state(self) -> dict[str, Any]:
         return {
-            "events": deque(),    # (ts_ns, is_flicker: bool)
+            "events": deque(),  # (ts_ns, is_flicker: bool)
             "flicker_count": 0,
             "last_bid": None,
             "last_ask": None,
-            "last_bid_dir": 0,    # sign of last non-zero Δbid
-            "last_ask_dir": 0,    # sign of last non-zero Δask
+            "last_bid_dir": 0,  # sign of last non-zero Δbid
+            "last_ask_dir": 0,  # sign of last non-zero Δask
         }
 
     def update(

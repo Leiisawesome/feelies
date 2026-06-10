@@ -107,21 +107,13 @@ class StructuralBreakScoreSensor:
         warm_samples: int = 100,
     ) -> None:
         if window_seconds <= 0:
-            raise ValueError(
-                f"window_seconds must be > 0, got {window_seconds}"
-            )
+            raise ValueError(f"window_seconds must be > 0, got {window_seconds}")
         if alarm_threshold <= 0.0:
-            raise ValueError(
-                f"alarm_threshold must be > 0, got {alarm_threshold}"
-            )
+            raise ValueError(f"alarm_threshold must be > 0, got {alarm_threshold}")
         if drift_floor < 0.0:
-            raise ValueError(
-                f"drift_floor must be >= 0, got {drift_floor}"
-            )
+            raise ValueError(f"drift_floor must be >= 0, got {drift_floor}")
         if warm_samples < 0:
-            raise ValueError(
-                f"warm_samples must be >= 0, got {warm_samples}"
-            )
+            raise ValueError(f"warm_samples must be >= 0, got {warm_samples}")
         if sensor_id is not None:
             self.sensor_id = sensor_id
         if sensor_version is not None:
@@ -142,7 +134,7 @@ class StructuralBreakScoreSensor:
             # add/evict pairs in a multi-day continuous run.
             "sum": 0.0,
             "sum_c": 0.0,
-            "m": 0.0,             # page-Hinkley running cumulant
+            "m": 0.0,  # page-Hinkley running cumulant
             "last_mid": None,
         }
 
@@ -208,10 +200,7 @@ class StructuralBreakScoreSensor:
         self._kahan_add(state, observable)
 
         n = len(samples)
-        warm = (
-            n >= self._warm_samples
-            and (samples[-1][0] - samples[0][0]) >= self._window_ns
-        )
+        warm = n >= self._warm_samples and (samples[-1][0] - samples[0][0]) >= self._window_ns
 
         return SensorReading(
             timestamp_ns=ts_ns,

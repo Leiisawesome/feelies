@@ -100,7 +100,8 @@ class ReplayFeed:
                 ts = event.exchange_timestamp_ns
                 if isinstance(self._clock, SimulatedClock):
                     visible_ns = market_data_visible_at_ns(
-                        ts, self._market_data_latency_ns,
+                        ts,
+                        self._market_data_latency_ns,
                     )
                     if visible_ns > self._clock.now_ns():
                         self._clock.set_time(visible_ns)

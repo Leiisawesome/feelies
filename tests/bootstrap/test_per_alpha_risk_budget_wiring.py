@@ -89,7 +89,9 @@ _SIGNAL_ALPHA_YAML = textwrap.dedent(
 
 
 def _make_config(
-    tmp_path: Path, *, enforce_per_alpha_risk_budget: bool = True,
+    tmp_path: Path,
+    *,
+    enforce_per_alpha_risk_budget: bool = True,
 ) -> PlatformConfig:
     return PlatformConfig(
         symbols=frozenset({"AAPL"}),
@@ -113,7 +115,8 @@ class TestPerAlphaRiskBudgetWiring:
         orchestrator, _ = build_platform(config)
 
         assert isinstance(
-            orchestrator._risk_engine, AlphaBudgetRiskWrapper,
+            orchestrator._risk_engine,
+            AlphaBudgetRiskWrapper,
         )
 
     def test_explicit_false_disables_wrapper(self, tmp_path: Path) -> None:
@@ -123,7 +126,8 @@ class TestPerAlphaRiskBudgetWiring:
 
         assert isinstance(orchestrator._risk_engine, BasicRiskEngine)
         assert not isinstance(
-            orchestrator._risk_engine, AlphaBudgetRiskWrapper,
+            orchestrator._risk_engine,
+            AlphaBudgetRiskWrapper,
         )
 
     def test_yaml_round_trip_preserves_flag(self, tmp_path: Path) -> None:

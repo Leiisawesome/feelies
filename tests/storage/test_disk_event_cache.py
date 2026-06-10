@@ -54,7 +54,11 @@ class TestDiskEventCacheRoundTrip:
 
     def test_save_and_load(self, tmp_path: Path) -> None:
         cache = DiskEventCache(tmp_path)
-        events = [_make_quote(1), _make_trade(2, ts=2_000_000_000), _make_quote(3, ts=3_000_000_000)]
+        events = [
+            _make_quote(1),
+            _make_trade(2, ts=2_000_000_000),
+            _make_quote(3, ts=3_000_000_000),
+        ]
 
         cache.save("AAPL", "2026-03-13", events)
 
@@ -87,10 +91,15 @@ class TestDiskEventCacheRoundTrip:
     def test_decimal_precision_preserved(self, tmp_path: Path) -> None:
         cache = DiskEventCache(tmp_path)
         q = NBBOQuote(
-            timestamp_ns=1, exchange_timestamp_ns=1,
-            correlation_id="X:1:0", sequence=0,
-            symbol="X", bid=Decimal("123.456789"), ask=Decimal("0.00000001"),
-            bid_size=1, ask_size=1,
+            timestamp_ns=1,
+            exchange_timestamp_ns=1,
+            correlation_id="X:1:0",
+            sequence=0,
+            symbol="X",
+            bid=Decimal("123.456789"),
+            ask=Decimal("0.00000001"),
+            bid_size=1,
+            ask_size=1,
         )
         cache.save("X", "2026-01-01", [q])
         loaded = cache.load("X", "2026-01-01")
@@ -100,7 +109,6 @@ class TestDiskEventCacheRoundTrip:
 
 
 class TestDiskEventCacheExists:
-
     def test_missing_returns_false(self, tmp_path: Path) -> None:
         cache = DiskEventCache(tmp_path)
         assert not cache.exists("AAPL", "2026-03-13")

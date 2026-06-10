@@ -87,11 +87,8 @@ def _hash_reading_stream(recorder_readings: list[Any]) -> str:
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
-
 # Locked Level-1 SensorReading baseline (canonical synth fixture).
-EXPECTED_LEVEL4_READING_HASH = (
-    "1cb37e110cacd693b0c0e14a4ce99cb87169848a1e9ceb5c273ba4f974f27152"
-)
+EXPECTED_LEVEL4_READING_HASH = "1cb37e110cacd693b0c0e14a4ce99cb87169848a1e9ceb5c273ba4f974f27152"
 EXPECTED_LEVEL4_READING_COUNT = 12_000
 
 
@@ -114,8 +111,7 @@ def test_sensor_reading_stream_matches_locked_baseline() -> None:
     actual_hash, actual_count = _replay()
 
     assert actual_count == EXPECTED_LEVEL4_READING_COUNT, (
-        f"reading count drift: expected {EXPECTED_LEVEL4_READING_COUNT}, "
-        f"got {actual_count}"
+        f"reading count drift: expected {EXPECTED_LEVEL4_READING_COUNT}, got {actual_count}"
     )
     assert actual_hash == EXPECTED_LEVEL4_READING_HASH, (
         "Level-4 SensorReading hash drift!\n"

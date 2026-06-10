@@ -42,20 +42,22 @@ from feelies.alpha.layer_validator import (
 # ── Sensor universe used across this module ─────────────────────────────
 
 
-_SENSORS = frozenset({
-    "ofi_ewma",
-    "spread_z_30d",
-    "kyle_lambda_60s",
-    "micro_price",
-    "quote_replenish_asymmetry",
-    "quote_hazard_rate",
-    "hawkes_intensity",
-    "trade_through_rate",
-    "vpin_50bucket",
-    "realized_vol_30s",
-    "scheduled_flow_window",
-    "seconds_to_window_close",
-})
+_SENSORS = frozenset(
+    {
+        "ofi_ewma",
+        "spread_z_30d",
+        "kyle_lambda_60s",
+        "micro_price",
+        "quote_replenish_asymmetry",
+        "quote_hazard_rate",
+        "hawkes_intensity",
+        "trade_through_rate",
+        "vpin_50bucket",
+        "realized_vol_30s",
+        "scheduled_flow_window",
+        "seconds_to_window_close",
+    }
+)
 
 
 # ── Spec templates ──────────────────────────────────────────────────────
@@ -82,10 +84,7 @@ def _signal_spec_with_mechanism(
             "kyle_lambda_60s_zscore < -1.5",
         ]
     if signal_src is None:
-        signal_src = (
-            "def evaluate(snapshot, regime, params):\n"
-            "    return None\n"
-        )
+        signal_src = "def evaluate(snapshot, regime, params):\n    return None\n"
     return {
         "schema_version": "1.1",
         "layer": "SIGNAL",
@@ -158,7 +157,8 @@ def _validator(*, strict: bool = False) -> LayerValidator:
 
 def test_signal_spec_with_full_mechanism_block_passes() -> None:
     _validator().validate(
-        _signal_spec_with_mechanism(), source="<test>",
+        _signal_spec_with_mechanism(),
+        source="<test>",
     )
 
 
@@ -184,6 +184,7 @@ class TestStrictMode:
         with pytest.raises(MissingTrendMechanismError):
             _validator(strict=True).validate(spec, source="<test>")
 
+
 # ── Rule 1 — closed family taxonomy ─────────────────────────────────────
 
 
@@ -200,13 +201,16 @@ class TestRule1Family:
         with pytest.raises(UnknownTrendMechanismError, match="rule 1"):
             _validator().validate(spec, source="<test>")
 
-    @pytest.mark.parametrize("family,sensors,half_life,horizon", [
-        ("KYLE_INFO", ["kyle_lambda_60s", "ofi_ewma"], 600, 300),
-        ("INVENTORY", ["quote_replenish_asymmetry", "spread_z_30d"], 20, 30),
-        ("HAWKES_SELF_EXCITE", ["hawkes_intensity", "ofi_ewma"], 30, 30),
-        ("LIQUIDITY_STRESS", ["vpin_50bucket", "spread_z_30d"], 120, 300),
-        ("SCHEDULED_FLOW", ["scheduled_flow_window", "ofi_ewma"], 240, 120),
-    ])
+    @pytest.mark.parametrize(
+        "family,sensors,half_life,horizon",
+        [
+            ("KYLE_INFO", ["kyle_lambda_60s", "ofi_ewma"], 600, 300),
+            ("INVENTORY", ["quote_replenish_asymmetry", "spread_z_30d"], 20, 30),
+            ("HAWKES_SELF_EXCITE", ["hawkes_intensity", "ofi_ewma"], 30, 30),
+            ("LIQUIDITY_STRESS", ["vpin_50bucket", "spread_z_30d"], 120, 300),
+            ("SCHEDULED_FLOW", ["scheduled_flow_window", "ofi_ewma"], 240, 120),
+        ],
+    )
     def test_each_family_can_be_constructed(
         self,
         family: str,
@@ -488,10 +492,7 @@ class TestRule7StressEntryProhibited:
         _validator().validate(spec, source="<test>")
 
     def test_stress_returning_none_accepted(self) -> None:
-        signal_src = (
-            "def evaluate(snapshot, regime, params):\n"
-            "    return None\n"
-        )
+        signal_src = "def evaluate(snapshot, regime, params):\n    return None\n"
         spec = _signal_spec_with_mechanism(signal_src=signal_src, **_STRESS_KW)
         _validator().validate(spec, source="<test>")
 

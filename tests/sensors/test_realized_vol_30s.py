@@ -77,8 +77,14 @@ def test_zero_or_negative_quote_returns_none() -> None:
     s = RealizedVol30sSensor()
     state = s.initial_state()
     bad = NBBOQuote(
-        timestamp_ns=1, correlation_id="c", sequence=1, symbol="X",
-        bid=Decimal("0"), ask=Decimal("0"), bid_size=0, ask_size=0,
+        timestamp_ns=1,
+        correlation_id="c",
+        sequence=1,
+        symbol="X",
+        bid=Decimal("0"),
+        ask=Decimal("0"),
+        bid_size=0,
+        ask_size=0,
         exchange_timestamp_ns=1,
     )
     assert s.update(bad, state, {}) is None

@@ -105,7 +105,8 @@ def test_buy_then_sell_independent_intensities() -> None:
 
 def test_warm_after_min_trades_per_side() -> None:
     sensor = HawkesIntensitySensor(
-        warm_window_seconds=60, warm_trades_per_side=2,
+        warm_window_seconds=60,
+        warm_trades_per_side=2,
     )
     state = sensor.initial_state()
     last: object = None

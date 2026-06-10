@@ -35,9 +35,7 @@ from feelies.core.identifiers import SequenceGenerator
 from feelies.signals.horizon_engine import HorizonSignalEngine, RegisteredSignal
 
 
-REFERENCE_PATH = Path(
-    "alphas/sig_hawkes_burst_v1/sig_hawkes_burst_v1.alpha.yaml"
-)
+REFERENCE_PATH = Path("alphas/sig_hawkes_burst_v1/sig_hawkes_burst_v1.alpha.yaml")
 ALPHA_ID = "sig_hawkes_burst_v1"
 
 
@@ -97,17 +95,19 @@ def _engine_with_alpha(
     bus = EventBus()
     seq = SequenceGenerator()
     engine = HorizonSignalEngine(bus=bus, signal_sequence_generator=seq)
-    engine.register(RegisteredSignal(
-        alpha_id=loaded.manifest.alpha_id,
-        horizon_seconds=loaded.horizon_seconds,
-        signal=loaded.signal,
-        params=loaded.params,
-        gate=loaded.gate,
-        cost_arithmetic=loaded.cost,
-        consumed_features=loaded.consumed_features,
-        trend_mechanism=loaded.trend_mechanism_enum,
-        expected_half_life_seconds=loaded.expected_half_life_seconds,
-    ))
+    engine.register(
+        RegisteredSignal(
+            alpha_id=loaded.manifest.alpha_id,
+            horizon_seconds=loaded.horizon_seconds,
+            signal=loaded.signal,
+            params=loaded.params,
+            gate=loaded.gate,
+            cost_arithmetic=loaded.cost,
+            consumed_features=loaded.consumed_features,
+            trend_mechanism=loaded.trend_mechanism_enum,
+            expected_half_life_seconds=loaded.expected_half_life_seconds,
+        )
+    )
     captured: list[Signal] = []
     bus.subscribe(Signal, captured.append)  # type: ignore[arg-type]
     engine.attach()

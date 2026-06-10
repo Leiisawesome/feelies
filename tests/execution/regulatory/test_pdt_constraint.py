@@ -35,11 +35,13 @@ def _constraint(
     account_type: AccountType = AccountType.MARGIN_25K,
     min_equity: Decimal = Decimal("25000"),
 ) -> PDTConstraint:
-    return PDTConstraint(PDTConfig(
-        account_type=account_type,
-        account_id="default",
-        min_equity=min_equity,
-    ))
+    return PDTConstraint(
+        PDTConfig(
+            account_type=account_type,
+            account_id="default",
+            min_equity=min_equity,
+        )
+    )
 
 
 def _round_trip(c: PDTConstraint, ts: int, symbol: str = "AAPL") -> None:

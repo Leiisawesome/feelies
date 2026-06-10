@@ -53,17 +53,13 @@ class TestPosteriorUpdate:
 
 
 class TestIdempotency:
-    def test_same_symbol_timestamp_returns_cached(
-        self, engine: HMM3StateFractional
-    ) -> None:
+    def test_same_symbol_timestamp_returns_cached(self, engine: HMM3StateFractional) -> None:
         quote = _make_quote(timestamp_ns=1_000_000_000)
         first = engine.posterior(quote)
         second = engine.posterior(quote)
         assert first == second
 
-    def test_different_sequence_updates(
-        self, engine: HMM3StateFractional
-    ) -> None:
+    def test_different_sequence_updates(self, engine: HMM3StateFractional) -> None:
         q1 = _make_quote(timestamp_ns=1_000_000_000, sequence=1)
         q2 = _make_quote(timestamp_ns=2_000_000_000, sequence=2)
         first = engine.posterior(q1)
@@ -81,9 +77,7 @@ class TestCurrentState:
         assert cached is not None
         assert len(cached) == engine.n_states
 
-    def test_unknown_symbol_returns_none(
-        self, engine: HMM3StateFractional
-    ) -> None:
+    def test_unknown_symbol_returns_none(self, engine: HMM3StateFractional) -> None:
         assert engine.current_state("UNKNOWN") is None
 
 
@@ -125,12 +119,14 @@ def _make_calibration_quotes(
     quotes = []
     for i in range(n):
         ts = (i + 1) * 1_000_000
-        quotes.append(_make_quote(
-            bid=f"{bid_base:.2f}",
-            ask=f"{bid_base + spread:.4f}",
-            timestamp_ns=ts,
-            sequence=i + 1,
-        ))
+        quotes.append(
+            _make_quote(
+                bid=f"{bid_base:.2f}",
+                ask=f"{bid_base + spread:.4f}",
+                timestamp_ns=ts,
+                sequence=i + 1,
+            )
+        )
     return quotes
 
 
@@ -167,8 +163,7 @@ class TestCalibrate:
         expected_log_spread = math.log(0.01 / (150.0 + 0.005))
         for mu, _ in engine._emission:
             assert abs(mu - expected_log_spread) < 1.0, (
-                f"Calibrated mu={mu:.2f} should be near "
-                f"log(0.01/150)={expected_log_spread:.2f}"
+                f"Calibrated mu={mu:.2f} should be near log(0.01/150)={expected_log_spread:.2f}"
             )
 
     def test_posteriors_discriminate_after_calibration(self) -> None:
@@ -179,39 +174,53 @@ class TestCalibrate:
         # so tercile split produces meaningfully different emission params.
         cal_quotes: list[NBBOQuote] = []
         spreads = (
-            [0.01] * 100   # tight (compression tercile)
+            [0.01] * 100  # tight (compression tercile)
             + [0.05] * 100  # medium (normal tercile)
             + [0.50] * 100  # wide (vol_breakout tercile)
         )
         for i, sp in enumerate(spreads):
-            cal_quotes.append(_make_quote(
-                bid="150.00",
-                ask=f"{150.0 + sp:.4f}",
-                timestamp_ns=(i + 1) * 1_000_000,
-                sequence=i + 1,
-            ))
+            cal_quotes.append(
+                _make_quote(
+                    bid="150.00",
+                    ask=f"{150.0 + sp:.4f}",
+                    timestamp_ns=(i + 1) * 1_000_000,
+                    sequence=i + 1,
+                )
+            )
         engine.calibrate(cal_quotes)
 
         # Feed tight-spread quotes to push posteriors toward compression
         seq = 1
         for i in range(20):
             seq += 1
-            engine.posterior(_make_quote(
-                bid="150.00", ask="150.01",
-                timestamp_ns=seq * 1_000_000, sequence=seq,
-            ))
+            engine.posterior(
+                _make_quote(
+                    bid="150.00",
+                    ask="150.01",
+                    timestamp_ns=seq * 1_000_000,
+                    sequence=seq,
+                )
+            )
         seq += 1
-        tight_post = engine.posterior(_make_quote(
-            bid="150.00", ask="150.01",
-            timestamp_ns=seq * 1_000_000, sequence=seq,
-        ))
+        tight_post = engine.posterior(
+            _make_quote(
+                bid="150.00",
+                ask="150.01",
+                timestamp_ns=seq * 1_000_000,
+                sequence=seq,
+            )
+        )
 
         # Feed a wide-spread quote
         seq += 1
-        wide_post = engine.posterior(_make_quote(
-            bid="150.00", ask="151.00",
-            timestamp_ns=seq * 1_000_000, sequence=seq,
-        ))
+        wide_post = engine.posterior(
+            _make_quote(
+                bid="150.00",
+                ask="151.00",
+                timestamp_ns=seq * 1_000_000,
+                sequence=seq,
+            )
+        )
 
         assert wide_post[2] > tight_post[2], (
             f"Wide spread should increase vol_breakout posterior: "
@@ -339,32 +348,26 @@ class TestUpdateAtomicity:
 class TestUncalibratedWarning:
     """First posterior() call without calibration emits one warning."""
 
-    def test_uncalibrated_first_call_warns(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_uncalibrated_first_call_warns(self, caplog: pytest.LogCaptureFixture) -> None:
         engine = HMM3StateFractional()
         with caplog.at_level(logging.WARNING, logger="feelies.services.regime_engine"):
             engine.posterior(_make_quote(sequence=1))
             engine.posterior(_make_quote(sequence=2))
         warnings = [
-            r for r in caplog.records
-            if "posterior() called before calibrate()" in r.message
+            r for r in caplog.records if "posterior() called before calibrate()" in r.message
         ]
         assert len(warnings) == 1, (
             f"Expected exactly one uncalibrated warning, got {len(warnings)}"
         )
 
-    def test_calibrated_engine_does_not_warn(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_calibrated_engine_does_not_warn(self, caplog: pytest.LogCaptureFixture) -> None:
         engine = HMM3StateFractional(
             emission_params=[(-9.6, 0.3), (-9.0, 0.5), (-8.0, 0.7)],
         )
         with caplog.at_level(logging.WARNING, logger="feelies.services.regime_engine"):
             engine.posterior(_make_quote(sequence=1))
         warnings = [
-            r for r in caplog.records
-            if "posterior() called before calibrate()" in r.message
+            r for r in caplog.records if "posterior() called before calibrate()" in r.message
         ]
         assert warnings == []
 
@@ -431,39 +434,47 @@ class TestRestoreValidation:
 
     def test_restore_rejects_negative_posteriors(self) -> None:
         engine = HMM3StateFractional()
-        payload = json.dumps({
-            "posteriors": {"AAPL": [0.5, -0.3, 0.8]},
-            "last_update_seq": {"AAPL": 1},
-        }).encode()
+        payload = json.dumps(
+            {
+                "posteriors": {"AAPL": [0.5, -0.3, 0.8]},
+                "last_update_seq": {"AAPL": 1},
+            }
+        ).encode()
         with pytest.raises(ValueError, match="Negative posterior"):
             engine.restore(payload)
 
     def test_restore_rejects_posteriors_not_summing_to_one(self) -> None:
         engine = HMM3StateFractional()
-        payload = json.dumps({
-            "posteriors": {"AAPL": [0.9, 0.9, 0.9]},
-            "last_update_seq": {"AAPL": 1},
-        }).encode()
+        payload = json.dumps(
+            {
+                "posteriors": {"AAPL": [0.9, 0.9, 0.9]},
+                "last_update_seq": {"AAPL": 1},
+            }
+        ).encode()
         with pytest.raises(ValueError, match="sum to"):
             engine.restore(payload)
 
     def test_restore_rejects_zero_emission_sigma(self) -> None:
         engine = HMM3StateFractional()
-        payload = json.dumps({
-            "posteriors": {},
-            "last_update_seq": {},
-            "emission": [[-4.5, 0.3], [-3.5, 0.0], [-2.5, 0.7]],
-        }).encode()
+        payload = json.dumps(
+            {
+                "posteriors": {},
+                "last_update_seq": {},
+                "emission": [[-4.5, 0.3], [-3.5, 0.0], [-2.5, 0.7]],
+            }
+        ).encode()
         with pytest.raises(ValueError, match="sigma.*must be > 0"):
             engine.restore(payload)
 
     def test_restore_rejects_negative_emission_sigma(self) -> None:
         engine = HMM3StateFractional()
-        payload = json.dumps({
-            "posteriors": {},
-            "last_update_seq": {},
-            "emission": [[-4.5, 0.3], [-3.5, -0.1], [-2.5, 0.7]],
-        }).encode()
+        payload = json.dumps(
+            {
+                "posteriors": {},
+                "last_update_seq": {},
+                "emission": [[-4.5, 0.3], [-3.5, -0.1], [-2.5, 0.7]],
+            }
+        ).encode()
         with pytest.raises(ValueError, match="sigma.*must be > 0"):
             engine.restore(payload)
 
@@ -473,10 +484,12 @@ class TestRestoreValidation:
         engine.posterior(_make_quote(sequence=1))
         assert engine.current_state("AAPL") is not None
 
-        bad_payload = json.dumps({
-            "posteriors": {"AAPL": [0.5, -0.3, 0.8]},
-            "last_update_seq": {"AAPL": 1},
-        }).encode()
+        bad_payload = json.dumps(
+            {
+                "posteriors": {"AAPL": [0.5, -0.3, 0.8]},
+                "last_update_seq": {"AAPL": 1},
+            }
+        ).encode()
         with pytest.raises(ValueError):
             engine.restore(bad_payload)
 
@@ -516,32 +529,32 @@ class TestCheckpointFlagsFingerprint:
         producer.posterior(_make_quote(sequence=1))
         blob = producer.checkpoint()
 
-        consumer = HMM3StateFractional(transition_matrix=[
-            (0.8, 0.1, 0.1),
-            (0.1, 0.8, 0.1),
-            (0.1, 0.1, 0.8),
-        ])
+        consumer = HMM3StateFractional(
+            transition_matrix=[
+                (0.8, 0.1, 0.1),
+                (0.1, 0.8, 0.1),
+                (0.1, 0.1, 0.8),
+            ]
+        )
         with pytest.raises(ValueError, match="flags_fingerprint mismatch"):
             consumer.restore(blob)
 
-    def test_legacy_v1_blob_loads_with_warning(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_legacy_v1_blob_loads_with_warning(self, caplog: pytest.LogCaptureFixture) -> None:
         """Pre-fingerprint blobs still load (with a warning) so existing
         on-disk checkpoints aren't bricked by the schema bump."""
-        legacy_blob = json.dumps({
-            "checkpoint_schema_version": 1,
-            "posteriors": {"AAPL": [0.2, 0.5, 0.3]},
-            "last_update_seq": {"AAPL": 7},
-        }).encode()
+        legacy_blob = json.dumps(
+            {
+                "checkpoint_schema_version": 1,
+                "posteriors": {"AAPL": [0.2, 0.5, 0.3]},
+                "last_update_seq": {"AAPL": 7},
+            }
+        ).encode()
 
         engine = HMM3StateFractional()
         with caplog.at_level(logging.WARNING, logger="feelies.services.regime_engine"):
             engine.restore(legacy_blob)
         assert engine.current_state("AAPL") == [0.2, 0.5, 0.3]
-        assert any(
-            "without flags_fingerprint" in r.message for r in caplog.records
-        )
+        assert any("without flags_fingerprint" in r.message for r in caplog.records)
 
 
 class TestTransitionMatrixValidation:
@@ -612,12 +625,14 @@ class TestEmissionSeparationDiagnostic:
         cal_quotes: list[NBBOQuote] = []
         spreads = [0.01] * 100 + [0.10] * 100 + [1.00] * 100
         for i, sp in enumerate(spreads):
-            cal_quotes.append(_make_quote(
-                bid="150.00",
-                ask=f"{150.0 + sp:.4f}",
-                timestamp_ns=(i + 1) * 1_000_000,
-                sequence=i + 1,
-            ))
+            cal_quotes.append(
+                _make_quote(
+                    bid="150.00",
+                    ask=f"{150.0 + sp:.4f}",
+                    timestamp_ns=(i + 1) * 1_000_000,
+                    sequence=i + 1,
+                )
+            )
         with caplog.at_level(logging.WARNING, logger="feelies.services.regime_engine"):
             engine.calibrate(cal_quotes)
 

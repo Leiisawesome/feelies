@@ -122,19 +122,33 @@ _DOMINANT_NAME = "dominant"
 _ENTROPY_NAME = "entropy"
 _REGIME_FUNCTION_NAME = "P"
 _SAFE_FUNCTIONS: frozenset[str] = frozenset({"abs", "min", "max"})
-_SAFE_FUNCTIONS_AND_REGIME: frozenset[str] = (
-    _SAFE_FUNCTIONS | {_REGIME_FUNCTION_NAME}
-)
+_SAFE_FUNCTIONS_AND_REGIME: frozenset[str] = _SAFE_FUNCTIONS | {_REGIME_FUNCTION_NAME}
 
 # AST node types tolerated by the validator.  Anything not in this
 # set raises :class:`UnsafeExpressionError`.
 _ALLOWED_NODES: tuple[type[ast.AST], ...] = (
     ast.Expression,
-    ast.BoolOp, ast.And, ast.Or,
-    ast.UnaryOp, ast.Not, ast.USub, ast.UAdd,
-    ast.BinOp, ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod, ast.FloorDiv,
+    ast.BoolOp,
+    ast.And,
+    ast.Or,
+    ast.UnaryOp,
+    ast.Not,
+    ast.USub,
+    ast.UAdd,
+    ast.BinOp,
+    ast.Add,
+    ast.Sub,
+    ast.Mult,
+    ast.Div,
+    ast.Mod,
+    ast.FloorDiv,
     ast.Compare,
-    ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE,
+    ast.Eq,
+    ast.NotEq,
+    ast.Lt,
+    ast.LtE,
+    ast.Gt,
+    ast.GtE,
     ast.Constant,
     ast.Name,
     ast.Load,
@@ -197,9 +211,7 @@ def compile_expression(source: str) -> ast.Expression:
     """
     src = (source or "").strip()
     if not src:
-        raise UnsafeExpressionError(
-            "regime-gate expression must be non-empty"
-        )
+        raise UnsafeExpressionError("regime-gate expression must be non-empty")
     # Normalize the human-friendly capitalised connectives used in the
     # design-doc examples ("P(benign) > 0.7 AND vpin < p40") into
     # Python keyword form so the standard ``ast`` parser accepts them.
@@ -258,9 +270,7 @@ def _validate(tree: ast.AST) -> None:
                     f"to {node.func.id!r}; only positional args allowed"
                 )
             if node.func.id == _REGIME_FUNCTION_NAME:
-                if len(node.args) != 1 or not isinstance(
-                    node.args[0], ast.Name
-                ):
+                if len(node.args) != 1 or not isinstance(node.args[0], ast.Name):
                     raise UnsafeExpressionError(
                         "regime-gate expression: P(...) must take "
                         "exactly one bare identifier (regime state "
@@ -301,8 +311,7 @@ def _eval_node(node: ast.AST, b: Bindings) -> Any:
         if isinstance(node.op, ast.UAdd):
             return +operand
         raise UnsafeExpressionError(
-            f"regime-gate evaluator: unsupported unary op "
-            f"{type(node.op).__name__!r}"
+            f"regime-gate evaluator: unsupported unary op {type(node.op).__name__!r}"
         )
 
     if isinstance(node, ast.BoolOp):
@@ -317,8 +326,7 @@ def _eval_node(node: ast.AST, b: Bindings) -> Any:
                     return True
             return False
         raise UnsafeExpressionError(
-            f"regime-gate evaluator: unsupported boolean op "
-            f"{type(node.op).__name__!r}"
+            f"regime-gate evaluator: unsupported boolean op {type(node.op).__name__!r}"
         )
 
     if isinstance(node, ast.BinOp):
@@ -338,8 +346,7 @@ def _eval_node(node: ast.AST, b: Bindings) -> Any:
         if isinstance(op, ast.FloorDiv):
             return left // right
         raise UnsafeExpressionError(
-            f"regime-gate evaluator: unsupported binary op "
-            f"{type(op).__name__!r}"
+            f"regime-gate evaluator: unsupported binary op {type(op).__name__!r}"
         )
 
     if isinstance(node, ast.Compare):
@@ -364,14 +371,9 @@ def _eval_node(node: ast.AST, b: Bindings) -> Any:
             return min(*args)
         if name == "max":
             return max(*args)
-        raise UnsafeExpressionError(
-            f"regime-gate evaluator: unsupported function {name!r}"
-        )
+        raise UnsafeExpressionError(f"regime-gate evaluator: unsupported function {name!r}")
 
-    raise UnsafeExpressionError(
-        f"regime-gate evaluator: unsupported node "
-        f"{type(node).__name__!r}"
-    )
+    raise UnsafeExpressionError(f"regime-gate evaluator: unsupported node {type(node).__name__!r}")
 
 
 def _compare(op: ast.cmpop, left: Any, right: Any) -> bool:
@@ -388,8 +390,7 @@ def _compare(op: ast.cmpop, left: Any, right: Any) -> bool:
     if isinstance(op, ast.GtE):
         return bool(left >= right)
     raise UnsafeExpressionError(
-        f"regime-gate evaluator: unsupported comparison "
-        f"{type(op).__name__!r}"
+        f"regime-gate evaluator: unsupported comparison {type(op).__name__!r}"
     )
 
 
@@ -425,8 +426,7 @@ def _resolve_name(name: str, b: Bindings) -> Any:
         n = int(pmatch.group(1))
         if not 0 <= n <= 100:
             raise UnsafeExpressionError(
-                f"regime-gate: percentile literal {name!r} out of range "
-                f"(must be p0..p100)"
+                f"regime-gate: percentile literal {name!r} out of range (must be p0..p100)"
             )
         return n / 100.0
 
@@ -471,8 +471,7 @@ def _resolve_posterior(state_name: str, b: Bindings) -> float:
     posteriors = tuple(b.regime.posteriors)
     if state_name not in state_names:
         raise UnknownRegimeStateError(
-            f"regime-gate: state {state_name!r} not in engine "
-            f"state_names {state_names!r}"
+            f"regime-gate: state {state_name!r} not in engine state_names {state_names!r}"
         )
     return float(posteriors[state_names.index(state_name)])
 
@@ -500,8 +499,7 @@ class RegimeGate:
     - Otherwise state is unchanged.
     """
 
-    __slots__ = ("_alpha_id", "_on_tree", "_off_tree", "_state",
-                 "_hysteresis", "_engine_name")
+    __slots__ = ("_alpha_id", "_on_tree", "_off_tree", "_state", "_hysteresis", "_engine_name")
 
     def __init__(
         self,
@@ -657,13 +655,11 @@ class RegimeGate:
         off_condition = spec_map.get("off_condition")
         if not isinstance(on_condition, str) or not on_condition.strip():
             raise RegimeGateError(
-                f"alpha {alpha_id!r}: regime_gate.on_condition must be "
-                f"a non-empty string"
+                f"alpha {alpha_id!r}: regime_gate.on_condition must be a non-empty string"
             )
         if not isinstance(off_condition, str) or not off_condition.strip():
             raise RegimeGateError(
-                f"alpha {alpha_id!r}: regime_gate.off_condition must be "
-                f"a non-empty string"
+                f"alpha {alpha_id!r}: regime_gate.off_condition must be a non-empty string"
             )
         hyst_block = spec_map.get("hysteresis")
         hyst: dict[str, float] = {}
@@ -704,7 +700,8 @@ class RegimeGate:
                     "them in the expressions (e.g. "
                     "'P(normal) > 0.5 + posterior_margin') or remove "
                     "the hysteresis block",
-                    alpha_id, unreferenced,
+                    alpha_id,
+                    unreferenced,
                 )
         return gate
 

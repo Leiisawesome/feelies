@@ -72,9 +72,11 @@ class TestDefaultCostModel:
         $0.0035 + $0.003 = $0.065 floors to a flat $0.35 (which absorbs
         the exchange fee inside the floor — under-counts vs IBKR).
         """
-        model = DefaultCostModel(DefaultCostModelConfig(
-            min_commission_applies_to_per_share_only=False,
-        ))
+        model = DefaultCostModel(
+            DefaultCostModelConfig(
+                min_commission_applies_to_per_share_only=False,
+            )
+        )
         result = model.compute("AAPL", Side.BUY, 10, Decimal("150"), Decimal("0.01"))
         assert result.commission == Decimal("0.35")
 
@@ -106,11 +108,13 @@ class TestDefaultCostModel:
         assert result.commission == Decimal("0.01")
 
     def test_total_fees_is_sum(self) -> None:
-        model = DefaultCostModel(DefaultCostModelConfig(
-            adverse_selection_through_bps=Decimal("0"),
-            adverse_selection_drain_bps=Decimal("0"),
-            sell_regulatory_bps=Decimal("0"),
-        ))
+        model = DefaultCostModel(
+            DefaultCostModelConfig(
+                adverse_selection_through_bps=Decimal("0"),
+                adverse_selection_drain_bps=Decimal("0"),
+                sell_regulatory_bps=Decimal("0"),
+            )
+        )
         result = model.compute("AAPL", Side.BUY, 1000, Decimal("100"), Decimal("0.005"))
         expected_total = result.spread_cost + result.commission
         assert result.total_fees == expected_total
@@ -126,7 +130,7 @@ class TestDefaultCostModel:
         model = DefaultCostModel()
         result = model.compute("AAPL", Side.SELL, 100, Decimal("200"), Decimal("0.01"))
         notional = Decimal("200") * 100
-        expected_bps = (result.total_fees / notional * Decimal("10000"))
+        expected_bps = result.total_fees / notional * Decimal("10000")
         assert abs(result.cost_bps - expected_bps) <= Decimal("0.01")
 
     def test_buy_and_sell_same_cost_with_sell_fees_disabled(self) -> None:
@@ -237,9 +241,7 @@ class TestStressCostMultiplier:
             min_commission=base_config.min_commission * Decimal("1.5"),
             max_commission_pct=Decimal("100"),  # disable cap for this test
         )
-        base_model = DefaultCostModel(
-            DefaultCostModelConfig(max_commission_pct=Decimal("100"))
-        )
+        base_model = DefaultCostModel(DefaultCostModelConfig(max_commission_pct=Decimal("100")))
         stress_model = DefaultCostModel(stress_config)
 
         hs = Decimal("0.005")
@@ -269,8 +271,12 @@ class TestHTBBorrowFee:
         # notional = 100 * $100 = $10 000
         # daily htb = 10 000 * 360 / 360 / 10 000 = $1.00
         result = model.compute("AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=True)
-        baseline = model.compute("AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=False)
-        assert result.total_fees - baseline.total_fees == pytest.approx(Decimal("1.00"), abs=Decimal("0.01"))
+        baseline = model.compute(
+            "AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=False
+        )
+        assert result.total_fees - baseline.total_fees == pytest.approx(
+            Decimal("1.00"), abs=Decimal("0.01")
+        )
 
     def test_htb_uses_360_day_year(self) -> None:
         """Audit fix P6: HTB accrual uses 360-day broker convention.
@@ -284,8 +290,12 @@ class TestHTBBorrowFee:
         config = DefaultCostModelConfig(htb_borrow_annual_bps=Decimal("252"))
         model = DefaultCostModel(config)
         result = model.compute("AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=True)
-        baseline = model.compute("AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=False)
-        assert result.total_fees - baseline.total_fees == pytest.approx(Decimal("0.70"), abs=Decimal("0.01"))
+        baseline = model.compute(
+            "AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=False
+        )
+        assert result.total_fees - baseline.total_fees == pytest.approx(
+            Decimal("0.70"), abs=Decimal("0.01")
+        )
 
     def test_htb_not_applied_to_long_sell(self) -> None:
         """is_short=False → no HTB fee even if config has htb_borrow_annual_bps set."""
@@ -294,15 +304,21 @@ class TestHTBBorrowFee:
         no_htb_config = DefaultCostModelConfig()
         baseline = DefaultCostModel(no_htb_config)
 
-        result = model.compute("AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=False)
+        result = model.compute(
+            "AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=False
+        )
         base = baseline.compute("AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"))
         assert result.total_fees == base.total_fees
 
     def test_htb_zero_when_disabled(self) -> None:
         """Default htb_borrow_annual_bps=0 → no HTB fee even for short sells."""
         model = DefaultCostModel()
-        with_htb = model.compute("AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=True)
-        without_htb = model.compute("AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=False)
+        with_htb = model.compute(
+            "AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=True
+        )
+        without_htb = model.compute(
+            "AAPL", Side.SELL, 100, Decimal("100"), Decimal("0"), is_short=False
+        )
         assert with_htb.total_fees == without_htb.total_fees
 
     def test_htb_not_applied_to_buys(self) -> None:
@@ -310,7 +326,9 @@ class TestHTBBorrowFee:
         config = DefaultCostModelConfig(htb_borrow_annual_bps=Decimal("252"))
         model = DefaultCostModel(config)
 
-        buy_with_flag = model.compute("AAPL", Side.BUY, 100, Decimal("100"), Decimal("0"), is_short=True)
+        buy_with_flag = model.compute(
+            "AAPL", Side.BUY, 100, Decimal("100"), Decimal("0"), is_short=True
+        )
         buy_without = model.compute("AAPL", Side.BUY, 100, Decimal("100"), Decimal("0"))
         assert buy_with_flag.total_fees == buy_without.total_fees
 
@@ -327,12 +345,22 @@ class TestThroughFillAdverseSelection:
         )
         model = DefaultCostModel(cfg)
         level = model.compute(
-            "AAPL", Side.BUY, 1000, Decimal("100"), Decimal("0"),
-            is_taker=False, fill_type="LEVEL",
+            "AAPL",
+            Side.BUY,
+            1000,
+            Decimal("100"),
+            Decimal("0"),
+            is_taker=False,
+            fill_type="LEVEL",
         )
         through = model.compute(
-            "AAPL", Side.BUY, 1000, Decimal("100"), Decimal("0"),
-            is_taker=False, fill_type="THROUGH",
+            "AAPL",
+            Side.BUY,
+            1000,
+            Decimal("100"),
+            Decimal("0"),
+            is_taker=False,
+            fill_type="THROUGH",
         )
         assert through.total_fees > level.total_fees
 
@@ -340,21 +368,39 @@ class TestThroughFillAdverseSelection:
         """Backward compat: omitted fill_type → TAKER on taker, LEVEL on maker."""
         model = DefaultCostModel()
         taker_no_type = model.compute(
-            "AAPL", Side.BUY, 100, Decimal("100"), Decimal("0.01"),
+            "AAPL",
+            Side.BUY,
+            100,
+            Decimal("100"),
+            Decimal("0.01"),
             is_taker=True,
         )
         taker_explicit = model.compute(
-            "AAPL", Side.BUY, 100, Decimal("100"), Decimal("0.01"),
-            is_taker=True, fill_type="TAKER",
+            "AAPL",
+            Side.BUY,
+            100,
+            Decimal("100"),
+            Decimal("0.01"),
+            is_taker=True,
+            fill_type="TAKER",
         )
         assert taker_no_type.total_fees == taker_explicit.total_fees
         maker_no_type = model.compute(
-            "AAPL", Side.BUY, 100, Decimal("100"), Decimal("0"),
+            "AAPL",
+            Side.BUY,
+            100,
+            Decimal("100"),
+            Decimal("0"),
             is_taker=False,
         )
         maker_explicit = model.compute(
-            "AAPL", Side.BUY, 100, Decimal("100"), Decimal("0"),
-            is_taker=False, fill_type="LEVEL",
+            "AAPL",
+            Side.BUY,
+            100,
+            Decimal("100"),
+            Decimal("0"),
+            is_taker=False,
+            fill_type="LEVEL",
         )
         assert maker_no_type.total_fees == maker_explicit.total_fees
 
@@ -369,17 +415,28 @@ class TestThroughFillAdverseSelection:
         model = DefaultCostModel(cfg)
         # fill_price $99 vs override $100 — adverse charged against $100.
         a = model.compute(
-            "AAPL", Side.BUY, 1000, Decimal("99"), Decimal("0"),
-            is_taker=False, fill_type="LEVEL",
+            "AAPL",
+            Side.BUY,
+            1000,
+            Decimal("99"),
+            Decimal("0"),
+            is_taker=False,
+            fill_type="LEVEL",
         )
         b = model.compute(
-            "AAPL", Side.BUY, 1000, Decimal("99"), Decimal("0"),
-            is_taker=False, fill_type="LEVEL",
+            "AAPL",
+            Side.BUY,
+            1000,
+            Decimal("99"),
+            Decimal("0"),
+            is_taker=False,
+            fill_type="LEVEL",
             adverse_notional_price=Decimal("100"),
         )
         # 10 bps of $99 * 1000 = $99 adverse; 10 bps of $100 * 1000 = $100 adverse.
         assert b.total_fees - a.total_fees == pytest.approx(
-            Decimal("1.00"), abs=Decimal("0.01"),
+            Decimal("1.00"),
+            abs=Decimal("0.01"),
         )
 
 
@@ -450,7 +507,8 @@ class TestSellSideRegulatoryFees:
         sell = model.compute("AAPL", Side.SELL, 1000, Decimal("100"), Decimal("0"))
         # notional = $100,000; default 0.5 bps → $5.00
         assert sell.total_fees - buy.total_fees == pytest.approx(
-            Decimal("5.00"), abs=Decimal("0.01"),
+            Decimal("5.00"),
+            abs=Decimal("0.01"),
         )
 
 
@@ -512,7 +570,11 @@ class TestSmallOrderTieredFloor:
         """
         model = DefaultCostModel()
         result = model.compute(
-            "AAPL", Side.BUY, 50, Decimal("100"), Decimal("0.01"),
+            "AAPL",
+            Side.BUY,
+            50,
+            Decimal("100"),
+            Decimal("0.01"),
             is_taker=True,
         )
         assert result.commission == Decimal("0.50")
@@ -523,7 +585,11 @@ class TestSmallOrderTieredFloor:
         $0.35; default rebate 0 → commission = $0.35."""
         model = DefaultCostModel()
         result = model.compute(
-            "AAPL", Side.BUY, 50, Decimal("100"), Decimal("0"),
+            "AAPL",
+            Side.BUY,
+            50,
+            Decimal("100"),
+            Decimal("0"),
             is_taker=False,
         )
         assert result.commission == Decimal("0.35")
@@ -534,7 +600,11 @@ class TestSmallOrderTieredFloor:
         cfg = DefaultCostModelConfig(maker_exchange_per_share=Decimal("-0.002"))
         model = DefaultCostModel(cfg)
         result = model.compute(
-            "AAPL", Side.BUY, 50, Decimal("100"), Decimal("0"),
+            "AAPL",
+            Side.BUY,
+            50,
+            Decimal("100"),
+            Decimal("0"),
             is_taker=False,
         )
         # 50 * $0.0035 = $0.175 → floored to $0.35; rebate -50 * $0.002 = -$0.10
@@ -547,10 +617,12 @@ class TestAdverseSelectionSplit:
     def test_through_fill_costs_more_than_drain(self) -> None:
         """A through-fill carries strictly higher adverse-selection cost
         than a queue-drain fill of the same maker order."""
-        model = DefaultCostModel(DefaultCostModelConfig(
-            adverse_selection_through_bps=Decimal("3.0"),
-            adverse_selection_drain_bps=Decimal("0.3"),
-        ))
+        model = DefaultCostModel(
+            DefaultCostModelConfig(
+                adverse_selection_through_bps=Decimal("3.0"),
+                adverse_selection_drain_bps=Decimal("0.3"),
+            )
+        )
         common = dict(
             symbol="AAPL",
             side=Side.BUY,
@@ -569,10 +641,12 @@ class TestAdverseSelectionSplit:
     def test_through_fill_regime_inert_on_taker(self) -> None:
         """Adverse selection only applies to maker fills; the
         ``is_through_fill`` flag is a no-op on taker fills."""
-        model = DefaultCostModel(DefaultCostModelConfig(
-            adverse_selection_through_bps=Decimal("3.0"),
-            adverse_selection_drain_bps=Decimal("0.3"),
-        ))
+        model = DefaultCostModel(
+            DefaultCostModelConfig(
+                adverse_selection_through_bps=Decimal("3.0"),
+                adverse_selection_drain_bps=Decimal("0.3"),
+            )
+        )
         common = dict(
             symbol="AAPL",
             side=Side.BUY,
@@ -593,7 +667,11 @@ class TestSpreadFloorTakerOnly:
         cfg = DefaultCostModelConfig(min_spread_cost_bps=Decimal("2"))
         model = DefaultCostModel(cfg)
         result = model.compute(
-            "AAPL", Side.BUY, 100, Decimal("100"), Decimal("0"),
+            "AAPL",
+            Side.BUY,
+            100,
+            Decimal("100"),
+            Decimal("0"),
             is_taker=True,
         )
         # floor = 100*100 * 2/10000 = $2.00
@@ -603,7 +681,11 @@ class TestSpreadFloorTakerOnly:
         cfg = DefaultCostModelConfig(min_spread_cost_bps=Decimal("2"))
         model = DefaultCostModel(cfg)
         result = model.compute(
-            "AAPL", Side.BUY, 100, Decimal("100"), Decimal("0"),
+            "AAPL",
+            Side.BUY,
+            100,
+            Decimal("100"),
+            Decimal("0"),
             is_taker=False,
         )
         # Maker doesn't cross the spread → no phantom spread floor.
@@ -616,7 +698,11 @@ class TestSpreadFloorTakerOnly:
         )
         model = DefaultCostModel(cfg)
         result = model.compute(
-            "AAPL", Side.BUY, 100, Decimal("100"), Decimal("0"),
+            "AAPL",
+            Side.BUY,
+            100,
+            Decimal("100"),
+            Decimal("0"),
             is_taker=False,
         )
         # Legacy: floor charged regardless of liquidity side.
@@ -642,10 +728,15 @@ class TestRoundTripAsymmetricLegs:
             is_short_entry=False,
         )
         symmetric_maker = estimate_round_trip_cost_bps(
-            model, is_taker=False, **common,
+            model,
+            is_taker=False,
+            **common,
         )
         passive_entry_taker_exit = estimate_round_trip_cost_bps(
-            model, is_taker=False, is_taker_exit=True, **common,
+            model,
+            is_taker=False,
+            is_taker_exit=True,
+            **common,
         )
         assert passive_entry_taker_exit > symmetric_maker
 
@@ -663,9 +754,14 @@ class TestRoundTripAsymmetricLegs:
             is_short_entry=False,
         )
         explicit = estimate_round_trip_cost_bps(
-            model, is_taker=True, is_taker_exit=True, **common,
+            model,
+            is_taker=True,
+            is_taker_exit=True,
+            **common,
         )
         symmetric = estimate_round_trip_cost_bps(
-            model, is_taker=True, **common,
+            model,
+            is_taker=True,
+            **common,
         )
         assert explicit == symmetric

@@ -326,15 +326,11 @@ def test_buffer_eviction_evicts_old_readings() -> None:
 
     base_ns = 1_000_000_000
     for i in range(5):
-        agg.on_sensor_reading(
-            _reading(ts_ns=base_ns + i * 1_000_000_000, value=float(i))
-        )
+        agg.on_sensor_reading(_reading(ts_ns=base_ns + i * 1_000_000_000, value=float(i)))
     assert agg.buffer_size(symbol="AAPL", sensor_id="ofi_ewma") == 5
 
     # Fast-forward 30s; everything older than (now - 10s) is evicted.
-    agg.on_sensor_reading(
-        _reading(ts_ns=base_ns + 30_000_000_000, value=99.0)
-    )
+    agg.on_sensor_reading(_reading(ts_ns=base_ns + 30_000_000_000, value=99.0))
     remaining = agg.buffer_size(symbol="AAPL", sensor_id="ofi_ewma")
     assert remaining == 1
 

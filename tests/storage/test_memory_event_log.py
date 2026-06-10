@@ -113,10 +113,12 @@ class TestCausalityEnforcement:
 
     def test_append_batch_reorders_quote_before_trade_at_equal_ts(self) -> None:
         log = InMemoryEventLog()
-        log.append_batch([
-            make_trade(seq=1, exchange_ts_ns=100),
-            make_quote(seq=0, exchange_ts_ns=100),
-        ])
+        log.append_batch(
+            [
+                make_trade(seq=1, exchange_ts_ns=100),
+                make_quote(seq=0, exchange_ts_ns=100),
+            ]
+        )
         r = list(log.replay())
         assert isinstance(r[0], NBBOQuote)
         assert isinstance(r[1], Trade)
@@ -135,14 +137,16 @@ class TestCausalityEnforcement:
 
         log = InMemoryEventLog()
         log.append(make_quote(seq=0, exchange_ts_ns=500))
-        log.append(MetricEvent(
-            timestamp_ns=0,
-            correlation_id="",
-            sequence=1,
-            layer="test",
-            name="foo",
-            value=1.0,
-            metric_type=MetricType.COUNTER,
-        ))
+        log.append(
+            MetricEvent(
+                timestamp_ns=0,
+                correlation_id="",
+                sequence=1,
+                layer="test",
+                name="foo",
+                value=1.0,
+                metric_type=MetricType.COUNTER,
+            )
+        )
         log.append(make_quote(seq=2, exchange_ts_ns=600))
         assert len(log) == 3

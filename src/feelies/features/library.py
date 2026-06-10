@@ -110,9 +110,7 @@ class RollingVarianceComputation:
 
     def __init__(self, span: int = 100) -> None:
         if span < 1:
-            raise ValueError(
-                f"RollingVarianceComputation: span must be >= 1, got {span}"
-            )
+            raise ValueError(f"RollingVarianceComputation: span must be >= 1, got {span}")
         self._alpha = 2.0 / (span + 1)
 
     def initial_state(self) -> dict[str, Any]:
@@ -159,9 +157,7 @@ class ZScoreComputation:
 
     def __init__(self, span: int = 100) -> None:
         if span < 1:
-            raise ValueError(
-                f"ZScoreComputation: span must be >= 1, got {span}"
-            )
+            raise ValueError(f"ZScoreComputation: span must be >= 1, got {span}")
         self._alpha = 2.0 / (span + 1)
 
     def initial_state(self) -> dict[str, Any]:

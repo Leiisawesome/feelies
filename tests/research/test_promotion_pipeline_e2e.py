@@ -148,9 +148,7 @@ def _build_cpcv_from_returns(
         k_test_groups=k_test_groups,
         embargo_bars=embargo_bars,
     )
-    test_returns_by_split = _identity_test_returns_by_split(
-        returns=returns, config=config
-    )
+    test_returns_by_split = _identity_test_returns_by_split(returns=returns, config=config)
     return build_cpcv_evidence(
         config=config,
         n_bars=len(returns),
@@ -204,9 +202,7 @@ def _passing_paper_window() -> PaperWindowEvidence:
     )
 
 
-def _make_lifecycle(
-    *, ledger: PromotionLedger | None = None
-) -> AlphaLifecycle:
+def _make_lifecycle(*, ledger: PromotionLedger | None = None) -> AlphaLifecycle:
     clock = SimulatedClock(start_ns=1_700_000_000_000_000_000)
     return AlphaLifecycle(alpha_id="kyle", clock=clock, ledger=ledger)
 
@@ -267,23 +263,17 @@ class TestStrongAlphaPipeline:
         dsr = _build_dsr_from_returns(returns)
 
         lc = _make_lifecycle()
-        lc.promote_to_paper(
-            structured_evidence=[_passing_research_acceptance()]
-        )
+        lc.promote_to_paper(structured_evidence=[_passing_research_acceptance()])
         errors = lc.promote_to_live(
             structured_evidence=[_passing_paper_window(), cpcv, dsr],
         )
         assert errors == [], f"gate rejected strong alpha: {errors}"
         assert lc.state is AlphaLifecycleState.LIVE
 
-    def test_paper_to_live_ledger_round_trips_computed_evidence(
-        self, tmp_path: Path
-    ) -> None:
+    def test_paper_to_live_ledger_round_trips_computed_evidence(self, tmp_path: Path) -> None:
         ledger = PromotionLedger(tmp_path / "ledger.jsonl")
         lc = _make_lifecycle(ledger=ledger)
-        lc.promote_to_paper(
-            structured_evidence=[_passing_research_acceptance()]
-        )
+        lc.promote_to_paper(structured_evidence=[_passing_research_acceptance()])
 
         returns = _strong_alpha_returns()
         cpcv = _build_cpcv_from_returns(returns)
@@ -331,9 +321,7 @@ class TestStrongAlphaPipeline:
         ledger_path = tmp_path / "ledger.jsonl"
         ledger = PromotionLedger(ledger_path)
         lc = _make_lifecycle(ledger=ledger)
-        lc.promote_to_paper(
-            structured_evidence=[_passing_research_acceptance()]
-        )
+        lc.promote_to_paper(structured_evidence=[_passing_research_acceptance()])
         returns = _strong_alpha_returns()
         lc.promote_to_live(
             structured_evidence=[
@@ -371,9 +359,7 @@ class TestStrongAlphaPipeline:
         ledger_path = tmp_path / "ledger.jsonl"
         ledger = PromotionLedger(ledger_path)
         lc = _make_lifecycle(ledger=ledger)
-        lc.promote_to_paper(
-            structured_evidence=[_passing_research_acceptance()]
-        )
+        lc.promote_to_paper(structured_evidence=[_passing_research_acceptance()])
         returns = _strong_alpha_returns()
         lc.promote_to_live(
             structured_evidence=[
@@ -438,9 +424,7 @@ class TestWeakAlphaPipeline:
         # state machine must stay in PAPER (Inv-11: fail-safe by
         # default).
         lc = _make_lifecycle()
-        lc.promote_to_paper(
-            structured_evidence=[_passing_research_acceptance()]
-        )
+        lc.promote_to_paper(structured_evidence=[_passing_research_acceptance()])
         returns = _weak_alpha_returns()
         errors = lc.promote_to_live(
             structured_evidence=[
@@ -452,16 +436,12 @@ class TestWeakAlphaPipeline:
         assert errors  # at least one threshold violated
         assert lc.state is AlphaLifecycleState.PAPER
 
-    def test_failed_promotion_writes_no_ledger_entry_for_live(
-        self, tmp_path: Path
-    ) -> None:
+    def test_failed_promotion_writes_no_ledger_entry_for_live(self, tmp_path: Path) -> None:
         # Inv-13: provenance.  A blocked promotion writes nothing to
         # the ledger past the previous transition.
         ledger = PromotionLedger(tmp_path / "ledger.jsonl")
         lc = _make_lifecycle(ledger=ledger)
-        lc.promote_to_paper(
-            structured_evidence=[_passing_research_acceptance()]
-        )
+        lc.promote_to_paper(structured_evidence=[_passing_research_acceptance()])
         returns = _weak_alpha_returns()
         lc.promote_to_live(
             structured_evidence=[
@@ -485,9 +465,7 @@ class TestWeakAlphaPipeline:
         # the CPCV error so an operator triaging the failure can
         # attribute it to the right evidence layer.
         lc = _make_lifecycle()
-        lc.promote_to_paper(
-            structured_evidence=[_passing_research_acceptance()]
-        )
+        lc.promote_to_paper(structured_evidence=[_passing_research_acceptance()])
         returns = _weak_alpha_returns()
         errors = lc.promote_to_live(
             structured_evidence=[
@@ -524,9 +502,7 @@ class TestPipelineDeterminism:
         dsr2 = _build_dsr_from_returns(returns)
         assert dsr1 == dsr2
 
-    def test_ledger_metadata_round_trip_is_bit_identical(
-        self, tmp_path: Path
-    ) -> None:
+    def test_ledger_metadata_round_trip_is_bit_identical(self, tmp_path: Path) -> None:
         # Two full pipeline runs against separate ledgers must
         # produce metadata payloads that — when round-tripped back
         # through ``metadata_to_evidence`` — yield identical evidence
@@ -537,9 +513,7 @@ class TestPipelineDeterminism:
         def _run(ledger_path: Path) -> tuple[CPCVEvidence, DSREvidence]:
             ledger = PromotionLedger(ledger_path)
             lc = _make_lifecycle(ledger=ledger)
-            lc.promote_to_paper(
-                structured_evidence=[_passing_research_acceptance()]
-            )
+            lc.promote_to_paper(structured_evidence=[_passing_research_acceptance()])
             returns = _strong_alpha_returns()
             cpcv = _build_cpcv_from_returns(returns)
             dsr = _build_dsr_from_returns(returns)

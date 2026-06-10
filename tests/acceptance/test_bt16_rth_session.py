@@ -132,10 +132,13 @@ def test_buying_power_flips_to_overnight_at_close() -> None:
         BuyingPowerConfig(account_type="margin_25k"),
     )
     intraday_qty = int((intraday_cap / Decimal("100")).to_integral_value()) - 1
-    assert engine.check_order(
-        _order(close_ns - 1, intraday_qty),
-        store,
-    ).action == RiskAction.ALLOW
+    assert (
+        engine.check_order(
+            _order(close_ns - 1, intraday_qty),
+            store,
+        ).action
+        == RiskAction.ALLOW
+    )
 
     engine.set_buying_power_phase(BuyingPowerPhase.OVERNIGHT)
     overnight_cap = buying_power_limit(
@@ -146,7 +149,7 @@ def test_buying_power_flips_to_overnight_at_close() -> None:
     overnight_qty = int((overnight_cap / Decimal("100")).to_integral_value()) + 1
     verdict = engine.check_order(_order(close_ns - 1, overnight_qty), store)
     assert verdict.action == RiskAction.REJECT
-    assert verdict.reason == "INSUFFICIENT_BUYING_POWER" 
+    assert verdict.reason == "INSUFFICIENT_BUYING_POWER"
 
 
 def test_early_close_moc_cutoff_is_1250_et() -> None:
@@ -171,7 +174,8 @@ def test_early_close_moc_cutoff_is_1250_et() -> None:
         clock,
         ZeroCostModel(),
         __import__(
-            "feelies.core.identifiers", fromlist=["SequenceGenerator"],
+            "feelies.core.identifiers",
+            fromlist=["SequenceGenerator"],
         ).SequenceGenerator(),
         pending,
     )

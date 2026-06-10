@@ -116,16 +116,18 @@ class IBOrderRouter:
         :meth:`BacktestOrderRouter.submit` and preserves Inv-11).
         """
         if request.order_id in self._submitted_order_ids:
-            self._pending_acks.append(OrderAck(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id=request.correlation_id,
-                sequence=self._ack_seq.next(),
-                order_id=request.order_id,
-                symbol=request.symbol,
-                status=OrderAckStatus.REJECTED,
-                reason=f"duplicate order_id: {request.order_id}",
-                request_sequence=request.sequence,
-            ))
+            self._pending_acks.append(
+                OrderAck(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=request.correlation_id,
+                    sequence=self._ack_seq.next(),
+                    order_id=request.order_id,
+                    symbol=request.symbol,
+                    status=OrderAckStatus.REJECTED,
+                    reason=f"duplicate order_id: {request.order_id}",
+                    request_sequence=request.sequence,
+                )
+            )
             return
         self._submitted_order_ids.add(request.order_id)
 
@@ -146,15 +148,17 @@ class IBOrderRouter:
 
         # Synchronous ACKNOWLEDGED (mirrors BacktestOrderRouter.submit).
         # Suppresses IB's PreSubmitted/Submitted echo via _has_acked.
-        self._pending_acks.append(OrderAck(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=request.correlation_id,
-            sequence=self._ack_seq.next(),
-            order_id=request.order_id,
-            symbol=request.symbol,
-            status=OrderAckStatus.ACKNOWLEDGED,
-            request_sequence=request.sequence,
-        ))
+        self._pending_acks.append(
+            OrderAck(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=request.correlation_id,
+                sequence=self._ack_seq.next(),
+                order_id=request.order_id,
+                symbol=request.symbol,
+                status=OrderAckStatus.ACKNOWLEDGED,
+                request_sequence=request.sequence,
+            )
+        )
         self._has_acked[ib_id] = True
 
     def poll_acks(self) -> list[OrderAck]:
@@ -233,10 +237,7 @@ class IBOrderRouter:
         # orchestrator once we have a wiring hook); for now we just log
         # and drop the ack so the orchestrator never sees a malformed
         # ``OrderAck(filled_quantity=0, fill_price=None)``.
-        if (
-            fill.error_code is not None
-            and fill.error_code in _IB_CONNECTIVITY_CODES
-        ):
+        if fill.error_code is not None and fill.error_code in _IB_CONNECTIVITY_CODES:
             logger.warning(
                 "ib connectivity event for order_id=%s code=%s msg=%s",
                 meta.platform_id,
@@ -312,8 +313,7 @@ class IBOrderRouter:
         delta_qty = fill.cumulative_filled - prev_qty
         if delta_qty < 0:
             logger.warning(
-                "ib router: cumulative regression for ib_id=%d "
-                "(prev=%d new=%d) — dropped",
+                "ib router: cumulative regression for ib_id=%d (prev=%d new=%d) — dropped",
                 fill.ib_order_id,
                 prev_qty,
                 fill.cumulative_filled,
@@ -323,7 +323,8 @@ class IBOrderRouter:
         # Per-delta VWAP: (cum_new * avg_new - cum_prev * avg_prev) / delta.
         # Computing this BEFORE mutating _last_cum_value is critical.
         prev_value = self._last_cum_value.get(
-            fill.ib_order_id, Decimal("0"),
+            fill.ib_order_id,
+            Decimal("0"),
         )
         new_avg = Decimal(str(fill.avg_fill_price))
         new_value = new_avg * Decimal(fill.cumulative_filled)
@@ -336,18 +337,12 @@ class IBOrderRouter:
         self._last_cum_value[fill.ib_order_id] = new_value
 
         # Status-only echoes with no new quantity are redundant.
-        if (
-            status in (OrderAckStatus.FILLED, OrderAckStatus.PARTIALLY_FILLED)
-            and delta_qty == 0
-        ):
+        if status in (OrderAckStatus.FILLED, OrderAckStatus.PARTIALLY_FILLED) and delta_qty == 0:
             return None
 
         # Defensive partial-fill downgrade: IB occasionally sends
         # status="Filled" before the final lot lands.
-        if (
-            status == OrderAckStatus.FILLED
-            and fill.cumulative_filled < meta.total_quantity
-        ):
+        if status == OrderAckStatus.FILLED and fill.cumulative_filled < meta.total_quantity:
             status = OrderAckStatus.PARTIALLY_FILLED
 
         ack = OrderAck(

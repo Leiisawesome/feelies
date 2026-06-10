@@ -211,8 +211,7 @@ class HorizonSignalEngine:
         for existing in self._signals:
             if existing.alpha_id == registered.alpha_id:
                 raise ValueError(
-                    f"HorizonSignalEngine: alpha {registered.alpha_id!r} "
-                    f"is already registered"
+                    f"HorizonSignalEngine: alpha {registered.alpha_id!r} is already registered"
                 )
         self._signals.append(registered)
         # Sort by (horizon_seconds, alpha_id) so iteration order is a
@@ -307,9 +306,7 @@ class HorizonSignalEngine:
                     self._sensor_cache.pop((event.symbol, name), None)
                 return
             for name, component_value in zip(components, value):
-                self._sensor_cache[(event.symbol, name)] = float(
-                    component_value
-                )
+                self._sensor_cache[(event.symbol, name)] = float(component_value)
             return
         if not event.warm:
             self._sensor_cache.pop((event.symbol, event.sensor_id), None)
@@ -347,15 +344,9 @@ class HorizonSignalEngine:
                 keys_to_check = tuple(snapshot.warm.keys())
             else:
                 keys_to_check = tuple(registered.required_warm_feature_ids)
-            not_warm = any(
-                not snapshot.warm[k]
-                for k in keys_to_check
-                if k in snapshot.warm
-            )
+            not_warm = any(not snapshot.warm[k] for k in keys_to_check if k in snapshot.warm)
             is_stale = any(
-                snapshot.stale.get(k, False)
-                for k in keys_to_check
-                if k in snapshot.stale
+                snapshot.stale.get(k, False) for k in keys_to_check if k in snapshot.stale
             )
             if not_warm or is_stale:
                 _logger.debug(
@@ -375,7 +366,8 @@ class HorizonSignalEngine:
         was_on = registered.gate.is_on(snapshot.symbol)
         try:
             on = registered.gate.evaluate(
-                symbol=snapshot.symbol, bindings=bindings,
+                symbol=snapshot.symbol,
+                bindings=bindings,
             )
         except UnknownIdentifierError as exc:
             # H8 / M6: a missing binding during warm-up means the gate
@@ -391,11 +383,7 @@ class HorizonSignalEngine:
             )
             # Missing sensor / Layer-2 feature bindings are routine until
             # sensors publish warm readings (e.g. spread_z_30d window).
-            log_fn = (
-                _logger.debug
-                if exc.missing_binding_token is not None
-                else _logger.warning
-            )
+            log_fn = _logger.debug if exc.missing_binding_token is not None else _logger.warning
             log_fn(
                 "HorizonSignalEngine: %s gate suppressed for %s — %s%s",
                 registered.alpha_id,
@@ -415,11 +403,16 @@ class HorizonSignalEngine:
         except RegimeGateError as exc:
             _logger.warning(
                 "HorizonSignalEngine: %s gate parse/eval error for %s: %s",
-                registered.alpha_id, snapshot.symbol, exc,
+                registered.alpha_id,
+                snapshot.symbol,
+                exc,
             )
             return
         except (
-            ZeroDivisionError, ArithmeticError, TypeError, ValueError,
+            ZeroDivisionError,
+            ArithmeticError,
+            TypeError,
+            ValueError,
         ) as exc:
             # Audit P1 G-1: the DSL whitelists `/ % //` and arbitrary
             # comparisons, so an authored expression like
@@ -452,14 +445,17 @@ class HorizonSignalEngine:
 
         try:
             raw = registered.signal.evaluate(
-                snapshot, regime, registered.params,
+                snapshot,
+                regime,
+                registered.params,
             )
         except Exception as exc:
             _logger.warning(
-                "HorizonSignalEngine: %s.evaluate raised on symbol=%s "
-                "boundary_index=%d: %s",
-                registered.alpha_id, snapshot.symbol,
-                snapshot.boundary_index, exc,
+                "HorizonSignalEngine: %s.evaluate raised on symbol=%s boundary_index=%d: %s",
+                registered.alpha_id,
+                snapshot.symbol,
+                snapshot.boundary_index,
+                exc,
             )
             return
 
@@ -470,7 +466,8 @@ class HorizonSignalEngine:
             _logger.warning(
                 "HorizonSignalEngine: %s.evaluate returned %r (expected "
                 "Signal | None); discarding",
-                registered.alpha_id, type(raw).__name__,
+                registered.alpha_id,
+                type(raw).__name__,
             )
             return
         if raw.direction == SignalDirection.FLAT:
@@ -495,31 +492,27 @@ class HorizonSignalEngine:
         signal so post-trade forensics can attribute the unwind PnL
         to the correct mechanism family (Inv-13).
         """
-        self._bus.publish(Signal(
-            timestamp_ns=snapshot.timestamp_ns,
-            correlation_id=snapshot.correlation_id,
-            sequence=self._signal_seq.next(),
-            source_layer="SIGNAL",
-            symbol=snapshot.symbol,
-            strategy_id=registered.alpha_id,
-            direction=SignalDirection.FLAT,
-            strength=0.0,
-            edge_estimate_bps=0.0,
-            layer="SIGNAL",
-            horizon_seconds=registered.horizon_seconds,
-            regime_gate_state="OFF",
-            consumed_features=registered.consumed_features,
-            trend_mechanism=registered.trend_mechanism,
-            expected_half_life_seconds=(
-                registered.expected_half_life_seconds
-            ),
-            disclosed_cost_total_bps=(
-                registered.cost_arithmetic.cost_total_bps
-            ),
-            disclosed_margin_ratio=(
-                registered.cost_arithmetic.margin_ratio
-            ),
-        ))
+        self._bus.publish(
+            Signal(
+                timestamp_ns=snapshot.timestamp_ns,
+                correlation_id=snapshot.correlation_id,
+                sequence=self._signal_seq.next(),
+                source_layer="SIGNAL",
+                symbol=snapshot.symbol,
+                strategy_id=registered.alpha_id,
+                direction=SignalDirection.FLAT,
+                strength=0.0,
+                edge_estimate_bps=0.0,
+                layer="SIGNAL",
+                horizon_seconds=registered.horizon_seconds,
+                regime_gate_state="OFF",
+                consumed_features=registered.consumed_features,
+                trend_mechanism=registered.trend_mechanism,
+                expected_half_life_seconds=(registered.expected_half_life_seconds),
+                disclosed_cost_total_bps=(registered.cost_arithmetic.cost_total_bps),
+                disclosed_margin_ratio=(registered.cost_arithmetic.margin_ratio),
+            )
+        )
 
     # ── Symbol lifecycle ───────────────────────────────────────────
 
@@ -532,20 +525,14 @@ class HorizonSignalEngine:
         starts clean without stale cached values contaminating the
         new evaluation context.
         """
-        self._regime_cache = {
-            k: v for k, v in self._regime_cache.items() if k[0] != symbol
-        }
-        self._sensor_cache = {
-            k: v for k, v in self._sensor_cache.items() if k[0] != symbol
-        }
+        self._regime_cache = {k: v for k, v in self._regime_cache.items() if k[0] != symbol}
+        self._sensor_cache = {k: v for k, v in self._sensor_cache.items() if k[0] != symbol}
         for registered in self._signals:
             registered.gate.reset(symbol)
 
     # ── Helpers ──────────────────────────────────────────────────────
 
-    def _lookup_regime(
-        self, symbol: str, gate: RegimeGate
-    ) -> RegimeState | None:
+    def _lookup_regime(self, symbol: str, gate: RegimeGate) -> RegimeState | None:
         """Resolve the cached :class:`RegimeState` for *symbol*.
 
         Picks by ``gate.engine_name`` when declared; otherwise returns
@@ -579,7 +566,9 @@ class HorizonSignalEngine:
                 "HorizonSignalEngine: regime lookup for symbol %s found "
                 "%d engines (%r selected by latest timestamp); declare "
                 "engine_name in the alpha config to remove ambiguity",
-                symbol, count, best_engine,
+                symbol,
+                count,
+                best_engine,
             )
         return best
 
@@ -623,9 +612,7 @@ class HorizonSignalEngine:
             if k.endswith("_percentile")
         }
         zscores = {
-            k[: -len("_zscore")]: v
-            for k, v in sensor_values.items()
-            if k.endswith("_zscore")
+            k[: -len("_zscore")]: v for k, v in sensor_values.items() if k.endswith("_zscore")
         }
         return Bindings(
             regime=regime,
@@ -647,11 +634,7 @@ class HorizonSignalEngine:
         field already set by the alpha (e.g. ``metadata``) is
         preserved.
         """
-        timestamp_ns = (
-            raw.timestamp_ns
-            if raw.timestamp_ns
-            else snapshot.timestamp_ns
-        )
+        timestamp_ns = raw.timestamp_ns if raw.timestamp_ns else snapshot.timestamp_ns
         if not timestamp_ns and self._clock is not None:
             timestamp_ns = self._clock.now_ns()
 
@@ -667,9 +650,7 @@ class HorizonSignalEngine:
             horizon_seconds=registered.horizon_seconds,
             regime_gate_state="ON",
             consumed_features=(
-                raw.consumed_features
-                if raw.consumed_features
-                else registered.consumed_features
+                raw.consumed_features if raw.consumed_features else registered.consumed_features
             ),
             trend_mechanism=(
                 raw.trend_mechanism
@@ -681,12 +662,8 @@ class HorizonSignalEngine:
                 if raw.expected_half_life_seconds
                 else registered.expected_half_life_seconds
             ),
-            disclosed_cost_total_bps=(
-                registered.cost_arithmetic.cost_total_bps
-            ),
-            disclosed_margin_ratio=(
-                registered.cost_arithmetic.margin_ratio
-            ),
+            disclosed_cost_total_bps=(registered.cost_arithmetic.cost_total_bps),
+            disclosed_margin_ratio=(registered.cost_arithmetic.margin_ratio),
         )
 
 

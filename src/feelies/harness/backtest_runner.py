@@ -333,17 +333,17 @@ def ingest_data(
                 loaded = cache.load(symbol, day)
                 if loaded is not None:
                     manifest = cache.read_manifest(symbol, day)
-                    ing_h = (
-                        manifest.get("ingestion_health") if manifest else None
-                    )
+                    ing_h = manifest.get("ingestion_health") if manifest else None
                     all_events.extend(loaded)
-                    day_sources.append(DaySource(
-                        symbol=symbol, date=day,
-                        source="cache", event_count=len(loaded),
-                        ingestion_health=(
-                            str(ing_h) if ing_h is not None else None
-                        ),
-                    ))
+                    day_sources.append(
+                        DaySource(
+                            symbol=symbol,
+                            date=day,
+                            source="cache",
+                            event_count=len(loaded),
+                            ingestion_health=(str(ing_h) if ing_h is not None else None),
+                        )
+                    )
                     if multi_day_or_symbol:
                         print(
                             f"  {symbol} {day}: {len(loaded):,} events (cache)",
@@ -368,8 +368,12 @@ def ingest_data(
             print(f"  {symbol} {day}: fetching from API ...", flush=True)
 
             def _on_page(
-                feed_type: str, page_num: int, total: int, elapsed: float,
-                _sym: str = symbol, _day: str = day,
+                feed_type: str,
+                page_num: int,
+                total: int,
+                elapsed: float,
+                _sym: str = symbol,
+                _day: str = day,
             ) -> None:
                 if page_num == 1 or page_num % 25 == 0:
                     print(
@@ -390,23 +394,26 @@ def ingest_data(
             ing_health_str = (
                 "HEALTHY"
                 if sym_health == DataHealth.HEALTHY
-                else (
-                    sym_health.name
-                    if sym_health is not None
-                    else "UNKNOWN"
-                )
+                else (sym_health.name if sym_health is not None else "UNKNOWN")
             )
             if cache is not None:
                 cache.save(
-                    symbol, day, day_events, ingestion_health=ing_health_str,
+                    symbol,
+                    day,
+                    day_events,
+                    ingestion_health=ing_health_str,
                 )
 
             all_events.extend(day_events)
-            day_sources.append(DaySource(
-                symbol=symbol, date=day,
-                source="api", event_count=len(day_events),
-                ingestion_health=ing_health_str,
-            ))
+            day_sources.append(
+                DaySource(
+                    symbol=symbol,
+                    date=day,
+                    source="api",
+                    event_count=len(day_events),
+                    ingestion_health=ing_health_str,
+                )
+            )
             if multi_day_or_symbol:
                 print(
                     f"  {symbol} {day}: {len(day_events):,} events "
@@ -442,19 +449,13 @@ def _warn_if_unhealthy_manifest_days(day_sources: Sequence[DaySource]) -> None:
             bad.append(ds)
     if not bad:
         return
-    lines = [
-        f"    {ds.symbol} {ds.date}: {ds.ingestion_health!r}"
-        for ds in bad[:20]
-    ]
+    lines = [f"    {ds.symbol} {ds.date}: {ds.ingestion_health!r}" for ds in bad[:20]]
     extra = "" if len(bad) <= 20 else f"\n    ... and {len(bad) - 20} more day(s)"
     print(
         "\n  WARNING: One or more loaded days have ingestion_health != HEALTHY.\n"
         "  Replay continues; set require_healthy_disk_cache_manifests: true or "
         "backtest_enforce_ingest_terminal_health: true (after ingest attaches rows) "
-        "to fail boot, or fix/re-ingest degraded days.\n"
-        + "\n".join(lines)
-        + extra
-        + "\n",
+        "to fail boot, or fix/re-ingest degraded days.\n" + "\n".join(lines) + extra + "\n",
         file=sys.stderr,
         flush=True,
     )
@@ -467,10 +468,7 @@ def _attach_disk_cache_health_rows(
     """Fold per-day ingestion_health into config for offline integrity gates."""
     from dataclasses import replace as _cfg_replace
 
-    rows = tuple(
-        (ds.symbol, ds.date, ds.ingestion_health or "UNKNOWN")
-        for ds in day_sources
-    )
+    rows = tuple((ds.symbol, ds.date, ds.ingestion_health or "UNKNOWN") for ds in day_sources)
     return _cfg_replace(config, disk_cache_ingestion_health_rows=rows)
 
 
@@ -581,15 +579,14 @@ def _run_backtest_phases_2_7(
         )
 
     config = _ensure_backtest_session_anchor(
-        config, first_event_ts_ns=prep.first_event_ts_ns,
+        config,
+        first_event_ts_ns=prep.first_event_ts_ns,
     )
     n_quotes = prep.n_quotes
 
     # ── Phase 2: Platform bootstrap ───────────────────────────
     step_t = _step("Composing platform (alphas, engines, risk)")
-    signal_trace_sink: list[SignalOrderTraceRow] | None = (
-        [] if args.trace_signal_orders else None
-    )
+    signal_trace_sink: list[SignalOrderTraceRow] | None = [] if args.trace_signal_orders else None
     # G-5 measurement: cross-alpha net-shadow sink (parity-neutral; wiring it
     # only records NetDivergence, it does not drive).  ``_cache_args`` and
     # other lightweight callers may omit the flag, hence ``getattr``.
@@ -670,6 +667,7 @@ def _run_backtest_phases_2_7(
     # the duration and do a single collection at the end.
     import gc as _gc
     import sys as _sys
+
     # Bootstrap disables raw MetricEvent storage for BACKTEST; clear any
     # warmup events accumulated before replay starts.
     _metrics_collector = orchestrator.metric_collector
@@ -685,6 +683,7 @@ def _run_backtest_phases_2_7(
     try:
         if _sys.platform == "win32":
             import psutil as _psutil  # type: ignore[import-untyped]
+
             _proc = _psutil.Process()
             _prev_nice = _proc.nice()
             _proc.nice(_psutil.HIGH_PRIORITY_CLASS)
@@ -776,7 +775,9 @@ def run_backtest_api(args: argparse.Namespace) -> int:
 
     symbols = resolve_backtest_symbols(config)
     if not symbols:
-        print("ERROR: No symbols specified (use --symbol or set in platform.yaml)", file=sys.stderr)
+        print(
+            "ERROR: No symbols specified (use --symbol or set in platform.yaml)", file=sys.stderr
+        )
         return 1
 
     start_date = args.date
@@ -797,16 +798,17 @@ def run_backtest_api(args: argparse.Namespace) -> int:
 
     try:
         event_log, ingest_result, day_sources = ingest_data(
-            api_key, symbols, start_date, end_date,
-            cache_dir=cache_dir, no_cache=no_cache,
-            enable_rest_sequence_gap_detection=(
-                config.enable_rest_sequence_gap_detection
-            ),
+            api_key,
+            symbols,
+            start_date,
+            end_date,
+            cache_dir=cache_dir,
+            no_cache=no_cache,
+            enable_rest_sequence_gap_detection=(config.enable_rest_sequence_gap_detection),
         )
     except ImportError as exc:
         print(
-            f"\n  ERROR: {exc}\n"
-            "  Install the massive extra: pip install 'feelies[massive]'",
+            f"\n  ERROR: {exc}\n  Install the massive extra: pip install 'feelies[massive]'",
             file=sys.stderr,
         )
         return 1
@@ -901,9 +903,7 @@ def main_cache_replay(argv: list[str] | None = None) -> int:
             start_date,
             end_date,
             cache_dir=cache_path,
-            require_healthy_ingestion_manifests=(
-                config.require_healthy_disk_cache_manifests
-            ),
+            require_healthy_ingestion_manifests=(config.require_healthy_disk_cache_manifests),
         )
     except CacheReplayError as exc:
         print(f"\n  ERROR: {exc}", file=sys.stderr)
@@ -911,8 +911,7 @@ def main_cache_replay(argv: list[str] | None = None) -> int:
 
     dt_load = time.monotonic() - step_t
     print(
-        f"  OK - {ingest_result.events_ingested:,} events "
-        f"(disk cache only) [{dt_load:.1f}s]",
+        f"  OK - {ingest_result.events_ingested:,} events (disk cache only) [{dt_load:.1f}s]",
         flush=True,
     )
 
@@ -942,4 +941,3 @@ def main_cache_replay(argv: list[str] | None = None) -> int:
         run_t0,
         prep=prep,
     ).exit_code
-

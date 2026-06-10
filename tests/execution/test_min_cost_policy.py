@@ -32,8 +32,11 @@ class TestForcedAggressive:
         # overridden by the safety flag.
         policy = MinimumCostExecutionPolicy(_model())
         decision = policy.decide(
-            symbol="AAPL", side=Side.BUY, quantity=1000,
-            mid_price=Decimal("100"), half_spread=Decimal("0.10"),
+            symbol="AAPL",
+            side=Side.BUY,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.10"),
             force_aggressive=True,
         )
         assert decision == "aggressive"
@@ -44,8 +47,11 @@ class TestForcedAggressive:
         policy = MinimumCostExecutionPolicy(_model())
         assert (
             policy.decide(
-                symbol="AAPL", side=Side.BUY, quantity=0,
-                mid_price=Decimal("100"), half_spread=Decimal("0.10"),
+                symbol="AAPL",
+                side=Side.BUY,
+                quantity=0,
+                mid_price=Decimal("100"),
+                half_spread=Decimal("0.10"),
             )
             == "aggressive"
         )
@@ -60,8 +66,11 @@ class TestSmallOrderCarveOut:
         # Wide spread → passive would otherwise be cheaper.
         assert (
             policy.decide(
-                symbol="AAPL", side=Side.BUY, quantity=50,
-                mid_price=Decimal("100"), half_spread=Decimal("0.10"),
+                symbol="AAPL",
+                side=Side.BUY,
+                quantity=50,
+                mid_price=Decimal("100"),
+                half_spread=Decimal("0.10"),
             )
             == "aggressive"
         )
@@ -71,8 +80,11 @@ class TestSmallOrderCarveOut:
         policy = MinimumCostExecutionPolicy(_model(), cfg)
         # Exactly 100 shares — above the strict-less-than gate → cost-comp.
         d = policy.decide(
-            symbol="AAPL", side=Side.BUY, quantity=100,
-            mid_price=Decimal("100"), half_spread=Decimal("0.10"),
+            symbol="AAPL",
+            side=Side.BUY,
+            quantity=100,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.10"),
         )
         # Wide spread + sufficient size → passive wins by cost comparison.
         assert d == "passive"
@@ -85,8 +97,11 @@ class TestTightSpreadCarveOut:
         cfg = MinCostPolicyConfig(min_half_spread_for_passive=Decimal("0.05"))
         policy = MinimumCostExecutionPolicy(_model(), cfg)
         decision = policy.decide(
-            symbol="AAPL", side=Side.BUY, quantity=1000,
-            mid_price=Decimal("100"), half_spread=Decimal("0.01"),
+            symbol="AAPL",
+            side=Side.BUY,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.01"),
         )
         assert decision == "aggressive"
 
@@ -94,8 +109,11 @@ class TestTightSpreadCarveOut:
         cfg = MinCostPolicyConfig(min_half_spread_for_passive=Decimal("0.005"))
         policy = MinimumCostExecutionPolicy(_model(), cfg)
         decision = policy.decide(
-            symbol="AAPL", side=Side.BUY, quantity=1000,
-            mid_price=Decimal("100"), half_spread=Decimal("0.05"),
+            symbol="AAPL",
+            side=Side.BUY,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.05"),
         )
         # Wide spread + adequate size → passive cheaper.
         assert decision == "passive"
@@ -108,8 +126,11 @@ class TestShortEntryCarveOut:
         cfg = MinCostPolicyConfig(allow_passive_short_entry=False)
         policy = MinimumCostExecutionPolicy(_model(), cfg)
         decision = policy.decide(
-            symbol="AAPL", side=Side.SELL, quantity=1000,
-            mid_price=Decimal("100"), half_spread=Decimal("0.10"),
+            symbol="AAPL",
+            side=Side.SELL,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.10"),
             is_short=True,
         )
         assert decision == "aggressive"
@@ -118,8 +139,11 @@ class TestShortEntryCarveOut:
         cfg = MinCostPolicyConfig(allow_passive_short_entry=True)
         policy = MinimumCostExecutionPolicy(_model(), cfg)
         decision = policy.decide(
-            symbol="AAPL", side=Side.SELL, quantity=1000,
-            mid_price=Decimal("100"), half_spread=Decimal("0.10"),
+            symbol="AAPL",
+            side=Side.SELL,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.10"),
             is_short=True,
         )
         assert decision == "passive"
@@ -128,8 +152,11 @@ class TestShortEntryCarveOut:
         cfg = MinCostPolicyConfig(allow_passive_short_entry=False)
         policy = MinimumCostExecutionPolicy(_model(), cfg)
         decision = policy.decide(
-            symbol="AAPL", side=Side.SELL, quantity=1000,
-            mid_price=Decimal("100"), half_spread=Decimal("0.10"),
+            symbol="AAPL",
+            side=Side.SELL,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.10"),
             is_short=False,
         )
         # Long sell (closing a long) ignores the short-entry carve-out.
@@ -142,8 +169,11 @@ class TestCostComparison:
     def test_wide_spread_picks_passive(self) -> None:
         policy = MinimumCostExecutionPolicy(_model())
         decision = policy.decide(
-            symbol="AAPL", side=Side.BUY, quantity=1000,
-            mid_price=Decimal("100"), half_spread=Decimal("0.05"),
+            symbol="AAPL",
+            side=Side.BUY,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.05"),
         )
         assert decision == "passive"
 
@@ -156,8 +186,11 @@ class TestCostComparison:
         model = _model(adverse_selection_drain_bps=Decimal("5"))
         policy = MinimumCostExecutionPolicy(model)
         decision = policy.decide(
-            symbol="AAPL", side=Side.BUY, quantity=1000,
-            mid_price=Decimal("100"), half_spread=Decimal("0"),
+            symbol="AAPL",
+            side=Side.BUY,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0"),
         )
         assert decision == "aggressive"
 
@@ -166,8 +199,11 @@ class TestCostComparison:
         policy = MinimumCostExecutionPolicy(_model(), cfg)
         # Even with a wide spread, a -100 bps bias forces aggressive.
         decision = policy.decide(
-            symbol="AAPL", side=Side.BUY, quantity=1000,
-            mid_price=Decimal("100"), half_spread=Decimal("0.05"),
+            symbol="AAPL",
+            side=Side.BUY,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.05"),
         )
         assert decision == "aggressive"
 
@@ -184,8 +220,11 @@ class TestNonFillRisk:
         # and 50% non-fill probability adds 50 bps to passive cost,
         # which should tip toward aggressive.
         decision = policy.decide(
-            symbol="AAPL", side=Side.BUY, quantity=1000,
-            mid_price=Decimal("100"), half_spread=Decimal("0.05"),
+            symbol="AAPL",
+            side=Side.BUY,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.05"),
             edge_bps=100.0,
         )
         assert decision == "aggressive"
@@ -198,8 +237,11 @@ class TestNonFillRisk:
         # Wide spread → passive cheaper.  edge_bps=0 means no
         # opportunity cost added → passive still wins.
         decision = policy.decide(
-            symbol="AAPL", side=Side.BUY, quantity=1000,
-            mid_price=Decimal("100"), half_spread=Decimal("0.05"),
+            symbol="AAPL",
+            side=Side.BUY,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.05"),
             edge_bps=0.0,
         )
         assert decision == "passive"
@@ -211,8 +253,11 @@ class TestNonFillRisk:
         policy = MinimumCostExecutionPolicy(_model(), cfg)
         # Even with a 1000-bps edge, zero non-fill prob → no penalty.
         decision = policy.decide(
-            symbol="AAPL", side=Side.BUY, quantity=1000,
-            mid_price=Decimal("100"), half_spread=Decimal("0.05"),
+            symbol="AAPL",
+            side=Side.BUY,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.05"),
             edge_bps=1000.0,
         )
         assert decision == "passive"
@@ -224,8 +269,11 @@ class TestQuantizationStability:
     def test_decision_stable_under_subcent_perturbation(self) -> None:
         policy = MinimumCostExecutionPolicy(_model())
         kwargs = dict(
-            symbol="AAPL", side=Side.BUY, quantity=1000,
-            mid_price=Decimal("100"), half_spread=Decimal("0.05"),
+            symbol="AAPL",
+            side=Side.BUY,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.05"),
         )
         a = policy.decide(**kwargs)
         # Same inputs → identical decision (deterministic).
@@ -239,9 +287,13 @@ class TestDeterministicReplay:
     def test_two_calls_same_inputs_same_decision(self) -> None:
         policy = MinimumCostExecutionPolicy(_model())
         kwargs = dict(
-            symbol="AAPL", side=Side.BUY, quantity=1000,
-            mid_price=Decimal("100"), half_spread=Decimal("0.05"),
-            is_short=False, force_aggressive=False,
+            symbol="AAPL",
+            side=Side.BUY,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.05"),
+            is_short=False,
+            force_aggressive=False,
         )
         first = policy.decide(**kwargs)
         second = policy.decide(**kwargs)

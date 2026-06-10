@@ -62,6 +62,7 @@ class TestDefaultGateActiveBreakeven:
     def test_default_signal_min_edge_cost_ratio_is_one(self) -> None:
         from feelies.core.platform_config import PlatformConfig
         from pathlib import Path
+
         # Construct a minimal-valid PlatformConfig.
         cfg = PlatformConfig(
             symbols=frozenset({"AAPL"}),
@@ -72,6 +73,7 @@ class TestDefaultGateActiveBreakeven:
     def test_default_signal_edge_cost_basis_is_round_trip(self) -> None:
         from feelies.core.platform_config import PlatformConfig
         from pathlib import Path
+
         cfg = PlatformConfig(
             symbols=frozenset({"AAPL"}),
             alpha_specs=[Path("dummy.yaml")],
@@ -83,21 +85,33 @@ class TestWorstCaseEntryInMinCostMode:
     """Audit F-H-05: in minimum_cost mode the gate prices entry as taker."""
 
     def test_taker_entry_costs_strictly_more_than_maker_entry(self) -> None:
-        model = DefaultCostModel(DefaultCostModelConfig(
-            maker_exchange_per_share=Decimal("0"),
-            passive_adverse_selection_bps=Decimal("2.0"),
-        ))
+        model = DefaultCostModel(
+            DefaultCostModelConfig(
+                maker_exchange_per_share=Decimal("0"),
+                passive_adverse_selection_bps=Decimal("2.0"),
+            )
+        )
         maker_entry_taker_exit = estimate_round_trip_cost_bps(
             model,
-            symbol="AAPL", entry_side=Side.BUY, quantity=1000,
-            mid_price=Decimal("100"), half_spread=Decimal("0.02"),
-            is_taker=False, is_taker_exit=True, is_short_entry=False,
+            symbol="AAPL",
+            entry_side=Side.BUY,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.02"),
+            is_taker=False,
+            is_taker_exit=True,
+            is_short_entry=False,
         )
         taker_entry_taker_exit = estimate_round_trip_cost_bps(
             model,
-            symbol="AAPL", entry_side=Side.BUY, quantity=1000,
-            mid_price=Decimal("100"), half_spread=Decimal("0.02"),
-            is_taker=True, is_taker_exit=True, is_short_entry=False,
+            symbol="AAPL",
+            entry_side=Side.BUY,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.02"),
+            is_taker=True,
+            is_taker_exit=True,
+            is_short_entry=False,
         )
         # Worst-case (taker) entry is strictly higher than maker entry.
         assert taker_entry_taker_exit > maker_entry_taker_exit

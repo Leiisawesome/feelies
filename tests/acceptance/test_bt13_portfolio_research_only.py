@@ -34,17 +34,13 @@ def test_production_discovery_excludes_research_portfolio_alphas() -> None:
     assert not any(name.startswith("pro_") for name in shipped)
 
     research = discover_research_alpha_specs(_ALPHAS_DIR)
-    research_ids = sorted(
-        p.parent.name for p in research if p.name.endswith(".alpha.yaml")
-    )
+    research_ids = sorted(p.parent.name for p in research if p.name.endswith(".alpha.yaml"))
     assert research_ids == sorted(_RESEARCH_PORTFOLIO_IDS)
 
 
 @pytest.mark.parametrize("alpha_id", _RESEARCH_PORTFOLIO_IDS)
 def test_research_portfolio_yaml_declares_lifecycle_cap(alpha_id: str) -> None:
-    spec_path = (
-        _ALPHAS_DIR / "research" / alpha_id / f"{alpha_id}.alpha.yaml"
-    )
+    spec_path = _ALPHAS_DIR / "research" / alpha_id / f"{alpha_id}.alpha.yaml"
     module = AlphaLoader().load(spec_path)
     assert module.manifest.lifecycle_cap == "RESEARCH"
 

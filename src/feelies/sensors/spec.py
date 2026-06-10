@@ -107,9 +107,7 @@ class SensorSpec:
                 f"at least one event type"
             )
         invalid = tuple(
-            t.__name__
-            for t in self.subscribes_to
-            if t not in _VALID_SUBSCRIPTION_TYPES
+            t.__name__ for t in self.subscribes_to if t not in _VALID_SUBSCRIPTION_TYPES
         )
         if invalid:
             valid = tuple(t.__name__ for t in _VALID_SUBSCRIPTION_TYPES)
@@ -119,8 +117,7 @@ class SensorSpec:
             )
         if self.min_history < 0:
             raise ValueError(
-                f"SensorSpec({self.sensor_id!r}).min_history must be >= 0, "
-                f"got {self.min_history}"
+                f"SensorSpec({self.sensor_id!r}).min_history must be >= 0, got {self.min_history}"
             )
         if self.throttled_ms is not None and self.throttled_ms < 0:
             raise ValueError(

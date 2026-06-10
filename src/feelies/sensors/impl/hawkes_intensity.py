@@ -101,13 +101,9 @@ class HawkesIntensitySensor:
         if baseline_mu < 0.0:
             raise ValueError(f"baseline_mu must be >= 0, got {baseline_mu}")
         if warm_window_seconds <= 0:
-            raise ValueError(
-                f"warm_window_seconds must be > 0, got {warm_window_seconds}"
-            )
+            raise ValueError(f"warm_window_seconds must be > 0, got {warm_window_seconds}")
         if warm_trades_per_side < 0:
-            raise ValueError(
-                f"warm_trades_per_side must be >= 0, got {warm_trades_per_side}"
-            )
+            raise ValueError(f"warm_trades_per_side must be >= 0, got {warm_trades_per_side}")
         if sensor_id is not None:
             self.sensor_id = sensor_id
         if sensor_version is not None:
@@ -183,7 +179,9 @@ class HawkesIntensitySensor:
         state["last_side"] = side
 
         if side > 0:
-            state["lambda_buy"] = state["lambda_buy"] + self._alpha  # S1: additive impulse; decay already applied by _decay_to
+            state["lambda_buy"] = (
+                state["lambda_buy"] + self._alpha
+            )  # S1: additive impulse; decay already applied by _decay_to
             state["buy_ts"].append(ts_ns)
         else:
             state["lambda_sell"] = state["lambda_sell"] + self._alpha  # S1: additive impulse

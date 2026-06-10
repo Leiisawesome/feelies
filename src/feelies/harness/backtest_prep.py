@@ -139,9 +139,7 @@ def prepare_backtest_event_log(
     """Single pass: optional RTH filter + counts + spans + calibration prefix."""
     filter_rth = config.session_kind == "RTH"
     max_cal = (
-        config.regime_calibration_max_quotes
-        if config.mode == OperatingMode.BACKTEST
-        else None
+        config.regime_calibration_max_quotes if config.mode == OperatingMode.BACKTEST else None
     )
 
     kept: list[Event] = [] if filter_rth else []

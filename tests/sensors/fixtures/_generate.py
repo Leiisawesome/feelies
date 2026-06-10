@@ -126,8 +126,8 @@ class FixtureSpec:
     needs_trade: bool
     n_events: int
     seed: int
-    quote_every: int = 1   # emit a quote every N steps
-    trade_every: int = 5   # emit a trade every M steps
+    quote_every: int = 1  # emit a quote every N steps
+    trade_every: int = 5  # emit a trade every M steps
 
 
 def _serialise_event(event: NBBOQuote | Trade) -> dict[str, Any]:
@@ -288,7 +288,9 @@ def _generate_mixed(spec: MixedFixtureSpec) -> int:
 
 def vpin_factory() -> VPIN50BucketSensor:
     return VPIN50BucketSensor(
-        bucket_volume=1_000, window_buckets=20, min_buckets=5,
+        bucket_volume=1_000,
+        window_buckets=20,
+        min_buckets=5,
     )
 
 
@@ -302,7 +304,8 @@ def hazard_factory() -> QuoteHazardRateSensor:
 
 def replenish_factory() -> QuoteReplenishAsymmetrySensor:
     return QuoteReplenishAsymmetrySensor(
-        window_seconds=5, min_observations=20,
+        window_seconds=5,
+        min_observations=20,
     )
 
 
@@ -312,44 +315,59 @@ def through_factory() -> TradeThroughRateSensor:
 
 def _all_specs() -> tuple[tuple[str, Any], ...]:
     return (
-        ("vpin_50bucket.jsonl", MixedFixtureSpec(
-            output=_HERE / "vpin_50bucket.jsonl",
-            sensor_factory=vpin_factory,
-            n_events=600,
-            seed=42,
-        )),
-        ("kyle_lambda_60s.jsonl", MixedFixtureSpec(
-            output=_HERE / "kyle_lambda_60s.jsonl",
-            sensor_factory=kyle_factory,
-            n_events=600,
-            seed=43,
-        )),
-        ("quote_hazard_rate.jsonl", FixtureSpec(
-            output=_HERE / "quote_hazard_rate.jsonl",
-            sensor_factory=hazard_factory,
-            needs_quote=True,
-            needs_trade=False,
-            n_events=400,
-            seed=44,
-            quote_every=1,
-            trade_every=10**6,
-        )),
-        ("quote_replenish_asymmetry.jsonl", FixtureSpec(
-            output=_HERE / "quote_replenish_asymmetry.jsonl",
-            sensor_factory=replenish_factory,
-            needs_quote=True,
-            needs_trade=False,
-            n_events=400,
-            seed=45,
-            quote_every=1,
-            trade_every=10**6,
-        )),
-        ("trade_through_rate.jsonl", MixedFixtureSpec(
-            output=_HERE / "trade_through_rate.jsonl",
-            sensor_factory=through_factory,
-            n_events=600,
-            seed=46,
-        )),
+        (
+            "vpin_50bucket.jsonl",
+            MixedFixtureSpec(
+                output=_HERE / "vpin_50bucket.jsonl",
+                sensor_factory=vpin_factory,
+                n_events=600,
+                seed=42,
+            ),
+        ),
+        (
+            "kyle_lambda_60s.jsonl",
+            MixedFixtureSpec(
+                output=_HERE / "kyle_lambda_60s.jsonl",
+                sensor_factory=kyle_factory,
+                n_events=600,
+                seed=43,
+            ),
+        ),
+        (
+            "quote_hazard_rate.jsonl",
+            FixtureSpec(
+                output=_HERE / "quote_hazard_rate.jsonl",
+                sensor_factory=hazard_factory,
+                needs_quote=True,
+                needs_trade=False,
+                n_events=400,
+                seed=44,
+                quote_every=1,
+                trade_every=10**6,
+            ),
+        ),
+        (
+            "quote_replenish_asymmetry.jsonl",
+            FixtureSpec(
+                output=_HERE / "quote_replenish_asymmetry.jsonl",
+                sensor_factory=replenish_factory,
+                needs_quote=True,
+                needs_trade=False,
+                n_events=400,
+                seed=45,
+                quote_every=1,
+                trade_every=10**6,
+            ),
+        ),
+        (
+            "trade_through_rate.jsonl",
+            MixedFixtureSpec(
+                output=_HERE / "trade_through_rate.jsonl",
+                sensor_factory=through_factory,
+                n_events=600,
+                seed=46,
+            ),
+        ),
     )
 
 
@@ -389,9 +407,7 @@ def load_fixture(
 ) -> list[tuple[NBBOQuote | Trade, float | list[float] | None, bool | None]]:
     """Load a fixture into ``(event, expected_value, expected_warm)`` tuples."""
     path = fixture_path(name)
-    out: list[
-        tuple[NBBOQuote | Trade, float | list[float] | None, bool | None]
-    ] = []
+    out: list[tuple[NBBOQuote | Trade, float | list[float] | None, bool | None]] = []
     with path.open("r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -399,7 +415,5 @@ def load_fixture(
                 continue
             record = json.loads(line)
             event = deserialise_event(record["input"])
-            out.append(
-                (event, record["expected_value"], record["expected_warm"])
-            )
+            out.append((event, record["expected_value"], record["expected_warm"]))
     return out

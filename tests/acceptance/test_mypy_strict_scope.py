@@ -106,8 +106,10 @@ def test_no_strict_overrides_in_pyproject() -> None:
             continue
         modules = entry.get("module")
         names: list[str] = (
-            [modules] if isinstance(modules, str)
-            else list(modules) if isinstance(modules, list)
+            [modules]
+            if isinstance(modules, str)
+            else list(modules)
+            if isinstance(modules, list)
             else []
         )
         for name in names:

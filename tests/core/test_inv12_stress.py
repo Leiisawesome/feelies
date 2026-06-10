@@ -77,6 +77,4 @@ class TestDisclosureSurvival:
             margin_ratio=1.6,
         )
         assert not disclosure_survives_inv12_cost_stress(cost)
-        assert (
-            disclosure_margin_after_cost_stress(1.6) < MIN_MARGIN_RATIO
-        )
+        assert disclosure_margin_after_cost_stress(1.6) < MIN_MARGIN_RATIO

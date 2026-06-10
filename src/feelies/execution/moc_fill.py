@@ -89,19 +89,23 @@ class MocFillController:
             return True
 
         ack_ts = self._clock.now_ns()
-        self._pending_acks.append(OrderAck(
-            timestamp_ns=ack_ts,
-            correlation_id=request.correlation_id,
-            sequence=self._ack_seq.next(),
-            order_id=request.order_id,
-            symbol=request.symbol,
-            status=OrderAckStatus.ACKNOWLEDGED,
-            request_sequence=request.sequence,
-        ))
-        self._pending.append(_PendingMoc(
-            request=request,
-            ack_timestamp_ns=ack_ts,
-        ))
+        self._pending_acks.append(
+            OrderAck(
+                timestamp_ns=ack_ts,
+                correlation_id=request.correlation_id,
+                sequence=self._ack_seq.next(),
+                order_id=request.order_id,
+                symbol=request.symbol,
+                status=OrderAckStatus.ACKNOWLEDGED,
+                request_sequence=request.sequence,
+            )
+        )
+        self._pending.append(
+            _PendingMoc(
+                request=request,
+                ack_timestamp_ns=ack_ts,
+            )
+        )
         return True
 
     def on_quote(self, quote: NBBOQuote) -> None:
@@ -150,16 +154,18 @@ class MocFillController:
             if pm.request.order_id != order_id:
                 continue
             cancel_ts = max(self._clock.now_ns(), pm.ack_timestamp_ns)
-            self._pending_acks.append(OrderAck(
-                timestamp_ns=cancel_ts,
-                correlation_id=pm.request.correlation_id,
-                sequence=self._ack_seq.next(),
-                order_id=order_id,
-                symbol=pm.request.symbol,
-                status=OrderAckStatus.CANCELLED,
-                reason=reason,
-                request_sequence=pm.request.sequence,
-            ))
+            self._pending_acks.append(
+                OrderAck(
+                    timestamp_ns=cancel_ts,
+                    correlation_id=pm.request.correlation_id,
+                    sequence=self._ack_seq.next(),
+                    order_id=order_id,
+                    symbol=pm.request.symbol,
+                    status=OrderAckStatus.CANCELLED,
+                    reason=reason,
+                    request_sequence=pm.request.sequence,
+                )
+            )
             self._pending.pop(index)
             return True
         return False
@@ -201,16 +207,18 @@ class MocFillController:
             half_spread=Decimal("0"),
             is_short=request.is_short,
         )
-        self._pending_acks.append(OrderAck(
-            timestamp_ns=fill_ts,
-            correlation_id=request.correlation_id,
-            sequence=self._ack_seq.next(),
-            order_id=request.order_id,
-            symbol=request.symbol,
-            status=OrderAckStatus.FILLED,
-            filled_quantity=request.quantity,
-            fill_price=close_mid,
-            fees=costs.total_fees,
-            cost_bps=costs.cost_bps,
-            request_sequence=request.sequence,
-        ))
+        self._pending_acks.append(
+            OrderAck(
+                timestamp_ns=fill_ts,
+                correlation_id=request.correlation_id,
+                sequence=self._ack_seq.next(),
+                order_id=request.order_id,
+                symbol=request.symbol,
+                status=OrderAckStatus.FILLED,
+                filled_quantity=request.quantity,
+                fill_price=close_mid,
+                fees=costs.total_fees,
+                cost_bps=costs.cost_bps,
+                request_sequence=request.sequence,
+            )
+        )

@@ -41,9 +41,7 @@ from feelies.alpha.loader import AlphaLoader
 from feelies.alpha.signal_layer_module import LoadedSignalLayerModule
 
 
-_BASELINE_ALPHA_FILE = Path(__file__).with_name(
-    "_chosen_v02_baseline_alpha.txt"
-)
+_BASELINE_ALPHA_FILE = Path(__file__).with_name("_chosen_v02_baseline_alpha.txt")
 
 
 def _baseline_alpha_id() -> str:
@@ -80,19 +78,17 @@ def test_baseline_alpha_yaml_declares_trend_mechanism_block() -> None:
     )
 
     spec = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert isinstance(spec, dict), (
-        f"{path}: top-level YAML must be a mapping"
-    )
+    assert isinstance(spec, dict), f"{path}: top-level YAML must be a mapping"
     assert spec.get("schema_version") == "1.1", (
         f"{path}: baseline must remain schema-1.1 SIGNAL; got "
         f"schema_version={spec.get('schema_version')!r}."
     )
     assert spec.get("layer") == "SIGNAL", (
-        f"{path}: §20.12.3 #2 governs SIGNAL-layer alphas; "
-        f"got layer={spec.get('layer')!r}."
+        f"{path}: §20.12.3 #2 governs SIGNAL-layer alphas; got layer={spec.get('layer')!r}."
     )
     assert "trend_mechanism" in spec and isinstance(
-        spec["trend_mechanism"], dict,
+        spec["trend_mechanism"],
+        dict,
     ), (
         f"{path}: reference SIGNAL alpha must declare trend_mechanism: "
         "(G16). Restore the block or pick a different baseline in "
@@ -115,8 +111,7 @@ def test_baseline_alpha_loads_under_explicit_strict_opt_out(
         module = loader.load(path)
 
     assert isinstance(module, LoadedSignalLayerModule), (
-        f"baseline must load as LoadedSignalLayerModule; got "
-        f"{type(module).__name__}"
+        f"baseline must load as LoadedSignalLayerModule; got {type(module).__name__}"
     )
     assert module.trend_mechanism_enum is not None, (
         "reference alpha must populate trend_mechanism_enum — found "

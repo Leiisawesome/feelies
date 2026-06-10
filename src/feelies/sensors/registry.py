@@ -191,9 +191,7 @@ class SensorRegistry:
 
         provenance = SensorProvenance(
             input_sensor_ids=tuple(sorted(spec.input_sensor_ids)),
-            input_event_kinds=tuple(
-                sorted(t.__name__ for t in spec.subscribes_to)
-            ),
+            input_event_kinds=tuple(sorted(t.__name__ for t in spec.subscribes_to)),
         )
 
         self._sensors[key] = sensor
@@ -211,9 +209,7 @@ class SensorRegistry:
         # surprises (matters for parity tests against fixtures where
         # the first event triggers state allocation).
         for symbol in self._symbols:
-            self._state[(spec.sensor_id, spec.sensor_version, symbol)] = (
-                sensor.initial_state()
-            )
+            self._state[(spec.sensor_id, spec.sensor_version, symbol)] = sensor.initial_state()
 
     # ── Public introspection ─────────────────────────────────────────
 
@@ -269,8 +265,7 @@ class SensorRegistry:
                 last_ns = self._throttle_last_ns.get(throttle_key)
                 if (
                     last_ns is not None
-                    and (event.timestamp_ns - last_ns)
-                    < spec.throttled_ms * 1_000_000
+                    and (event.timestamp_ns - last_ns) < spec.throttled_ms * 1_000_000
                 ):
                     if not spec.stateful:
                         # H4 / M4: stateless sensors are skipped entirely
@@ -403,17 +398,19 @@ class SensorRegistry:
             sequence=seq_count,
         )
         tags = {"sensor_id": spec.sensor_id, "symbol": symbol}
-        self._metric_collector.record(MetricEvent(
-            timestamp_ns=ts_ns,
-            correlation_id=cid,
-            sequence=seq_count,
-            source_layer="SENSOR",
-            layer="sensor",
-            name="feelies.sensor.reading.count",
-            value=1.0,
-            metric_type=MetricType.COUNTER,
-            tags=tags,
-        ))
+        self._metric_collector.record(
+            MetricEvent(
+                timestamp_ns=ts_ns,
+                correlation_id=cid,
+                sequence=seq_count,
+                source_layer="SENSOR",
+                layer="sensor",
+                name="feelies.sensor.reading.count",
+                value=1.0,
+                metric_type=MetricType.COUNTER,
+                tags=tags,
+            )
+        )
 
     # ── Test / forensic helpers ──────────────────────────────────────
 

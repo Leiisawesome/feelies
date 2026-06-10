@@ -61,9 +61,7 @@ class RealizedVol30sSensor:
         warm_after: int = 16,
     ) -> None:
         if window_seconds <= 0:
-            raise ValueError(
-                f"window_seconds must be > 0, got {window_seconds}"
-            )
+            raise ValueError(f"window_seconds must be > 0, got {window_seconds}")
         if warm_after < 0:
             raise ValueError(f"warm_after must be >= 0, got {warm_after}")
         if sensor_id is not None:
@@ -80,7 +78,7 @@ class RealizedVol30sSensor:
             # and the warm gate).
             "history": deque(),  # (ts_ns, log_ret)
             "mean": 0.0,  # Welford running mean of log-returns
-            "M2": 0.0,    # Welford sum of squared deviations from mean
+            "M2": 0.0,  # Welford sum of squared deviations from mean
             "last_mid": None,
         }
 

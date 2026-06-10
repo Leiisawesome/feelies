@@ -28,11 +28,7 @@ class LiveOrderRouter:
         )
 
     def submit(self, request: OrderRequest) -> None:
-        raise NotImplementedError(
-            "LiveOrderRouter is not yet implemented."
-        )
+        raise NotImplementedError("LiveOrderRouter is not yet implemented.")
 
     def poll_acks(self) -> list[OrderAck]:
-        raise NotImplementedError(
-            "LiveOrderRouter is not yet implemented."
-        )
+        raise NotImplementedError("LiveOrderRouter is not yet implemented.")

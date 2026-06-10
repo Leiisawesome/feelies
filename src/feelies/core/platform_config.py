@@ -551,7 +551,7 @@ class PlatformConfig:
     # :class:`MassiveLiveFeed` (kept in sync via the ``from_yaml``
     # loader).  These fields are inert for BACKTEST mode.
     ib_host: str = "127.0.0.1"
-    ib_port: int = 4002              # 4002 = paper, 4001 = live
+    ib_port: int = 4002  # 4002 = paper, 4001 = live
     ib_client_id: int = 1
     massive_ws_url: str = "wss://socket.massive.com/stocks"
 
@@ -589,9 +589,7 @@ class PlatformConfig:
             raise ConfigurationError("symbols must be non-empty")
 
         if self.alpha_spec_dir is not None and not self.alpha_spec_dir.is_dir():
-            raise ConfigurationError(
-                f"alpha_spec_dir does not exist: {self.alpha_spec_dir}"
-            )
+            raise ConfigurationError(f"alpha_spec_dir does not exist: {self.alpha_spec_dir}")
 
         if not self.alpha_spec_dir and not self.alpha_specs:
             raise ConfigurationError(
@@ -621,13 +619,10 @@ class PlatformConfig:
             )
         if self.market_data_latency_ns < 0:
             raise ConfigurationError(
-                f"market_data_latency_ns must be non-negative, "
-                f"got {self.market_data_latency_ns}"
+                f"market_data_latency_ns must be non-negative, got {self.market_data_latency_ns}"
             )
         if self.halt_resolution_blackout_seconds < 0:
-            raise ConfigurationError(
-                "halt_resolution_blackout_seconds must be non-negative"
-            )
+            raise ConfigurationError("halt_resolution_blackout_seconds must be non-negative")
         if set(self.halt_on_condition_codes) & set(self.halt_off_condition_codes):
             raise ConfigurationError(
                 "halt_on_condition_codes and halt_off_condition_codes must be "
@@ -644,9 +639,7 @@ class PlatformConfig:
         for sym, tier in self.borrow_availability.items():
             sym_u = str(sym).strip().upper()
             if not sym_u:
-                raise ConfigurationError(
-                    "borrow_availability keys must be non-empty symbols"
-                )
+                raise ConfigurationError("borrow_availability keys must be non-empty symbols")
             label = str(tier).strip().lower()
             if label not in ("available", "hard", "unavailable"):
                 raise ConfigurationError(
@@ -655,14 +648,11 @@ class PlatformConfig:
                 )
 
         if not isinstance(self.regime_engine_options, dict):
-            raise ConfigurationError(
-                "regime_engine_options must be a dict[str, object] mapping"
-            )
+            raise ConfigurationError("regime_engine_options must be a dict[str, object] mapping")
         for opt_key in self.regime_engine_options:
             if not isinstance(opt_key, str):
                 raise ConfigurationError(
-                    "regime_engine_options keys must be strings, "
-                    f"got {type(opt_key).__name__}"
+                    f"regime_engine_options keys must be strings, got {type(opt_key).__name__}"
                 )
 
         for scale_name, scale_val in (
@@ -671,9 +661,7 @@ class PlatformConfig:
             ("risk_regime_normal_scale", self.risk_regime_normal_scale),
         ):
             if not (0.0 < scale_val <= 2.0):
-                raise ConfigurationError(
-                    f"{scale_name} must lie in (0, 2], got {scale_val}"
-                )
+                raise ConfigurationError(f"{scale_name} must lie in (0, 2], got {scale_val}")
 
         if self.require_healthy_disk_cache_manifests:
             if not self.disk_cache_ingestion_health_rows:
@@ -691,13 +679,10 @@ class PlatformConfig:
         if self.backtest_enforce_ingest_terminal_health:
             if self.mode != OperatingMode.BACKTEST:
                 raise ConfigurationError(
-                    "backtest_enforce_ingest_terminal_health is only valid "
-                    "in BACKTEST mode",
+                    "backtest_enforce_ingest_terminal_health is only valid in BACKTEST mode",
                 )
             if self.ingest_terminal_symbol_health:
-                terminal_map = {
-                    k.upper(): v for k, v in self.ingest_terminal_symbol_health
-                }
+                terminal_map = {k.upper(): v for k, v in self.ingest_terminal_symbol_health}
                 for sym in self.symbols:
                     key = sym.upper()
                     state = terminal_map.get(key)
@@ -715,68 +700,44 @@ class PlatformConfig:
         valid_modes = ("market", "passive_limit", "minimum_cost")
         if self.execution_mode not in valid_modes:
             raise ConfigurationError(
-                f"execution_mode must be one of {valid_modes}, "
-                f"got '{self.execution_mode}'"
+                f"execution_mode must be one of {valid_modes}, got '{self.execution_mode}'"
             )
         if self.cost_min_small_order_threshold_shares < 0:
-            raise ConfigurationError(
-                "cost_min_small_order_threshold_shares must be >= 0"
-            )
+            raise ConfigurationError("cost_min_small_order_threshold_shares must be >= 0")
         if self.cost_min_half_spread_threshold < 0.0:
-            raise ConfigurationError(
-                "cost_min_half_spread_threshold must be >= 0"
-            )
+            raise ConfigurationError("cost_min_half_spread_threshold must be >= 0")
         if self.cost_finra_taf_per_share < 0.0:
-            raise ConfigurationError(
-                "cost_finra_taf_per_share must be >= 0"
-            )
+            raise ConfigurationError("cost_finra_taf_per_share must be >= 0")
         if self.cost_finra_taf_max_per_order < 0.0:
-            raise ConfigurationError(
-                "cost_finra_taf_max_per_order must be >= 0"
-            )
+            raise ConfigurationError("cost_finra_taf_max_per_order must be >= 0")
         if self.cost_max_impact_half_spreads < 1.0:
             raise ConfigurationError(
                 "cost_max_impact_half_spreads must be >= 1 "
                 "(< 1 caps impact below one half-spread on excess legs)"
             )
         if not 0.0 <= self.cost_min_passive_non_fill_probability <= 1.0:
-            raise ConfigurationError(
-                "cost_min_passive_non_fill_probability must be in [0, 1]"
-            )
+            raise ConfigurationError("cost_min_passive_non_fill_probability must be in [0, 1]")
         if self.realized_cost_alert_ratio < 1.0:
             raise ConfigurationError(
-                "realized_cost_alert_ratio must be >= 1 "
-                "(< 1 would fire on every realized cost)"
+                "realized_cost_alert_ratio must be >= 1 (< 1 would fire on every realized cost)"
             )
         if self.cost_stop_slippage_half_spreads < 1.0:
-            raise ConfigurationError(
-                "cost_stop_slippage_half_spreads must be >= 1"
-            )
+            raise ConfigurationError("cost_stop_slippage_half_spreads must be >= 1")
         if self.signal_edge_cost_basis not in ("one_way", "round_trip"):
             raise ConfigurationError(
                 f"signal_edge_cost_basis must be 'one_way' or "
                 f"'round_trip', got {self.signal_edge_cost_basis!r}"
             )
         if self.signal_min_edge_cost_ratio < 0.0:
-            raise ConfigurationError(
-                "signal_min_edge_cost_ratio must be >= 0"
-            )
+            raise ConfigurationError("signal_min_edge_cost_ratio must be >= 0")
         if self.reversal_min_edge_cost_multiplier < 0.0:
-            raise ConfigurationError(
-                "reversal_min_edge_cost_multiplier must be >= 0"
-            )
+            raise ConfigurationError("reversal_min_edge_cost_multiplier must be >= 0")
         if not (0.0 <= self.position_manager_trim_min_fraction <= 1.0):
-            raise ConfigurationError(
-                "position_manager_trim_min_fraction must be in [0, 1]"
-            )
+            raise ConfigurationError("position_manager_trim_min_fraction must be in [0, 1]")
         if self.position_manager_trim_edge_gate_multiplier < 0.0:
-            raise ConfigurationError(
-                "position_manager_trim_edge_gate_multiplier must be >= 0"
-            )
+            raise ConfigurationError("position_manager_trim_edge_gate_multiplier must be >= 0")
         if self.session_flatten_seconds_before_close < 0:
-            raise ConfigurationError(
-                "session_flatten_seconds_before_close must be >= 0"
-            )
+            raise ConfigurationError("session_flatten_seconds_before_close must be >= 0")
         if self.net_staleness_k < 0.0:
             raise ConfigurationError("net_staleness_k must be >= 0")
         if self.sizer_edge_ref_bps <= 0.0:
@@ -789,41 +750,27 @@ class PlatformConfig:
             ("sizer_tilt", self.sizer_tilt_floor, self.sizer_tilt_cap),
         ):
             if _lo < 0.0 or _hi < _lo:
-                raise ConfigurationError(
-                    f"{_name}_floor/_cap must satisfy 0 <= floor <= cap"
-                )
+                raise ConfigurationError(f"{_name}_floor/_cap must satisfy 0 <= floor <= cap")
         if not 0.0 <= self.sizer_inventory_floor <= 1.0:
-            raise ConfigurationError(
-                "sizer_inventory_floor must be in [0, 1]"
-            )
+            raise ConfigurationError("sizer_inventory_floor must be in [0, 1]")
         if self.cost_passive_adverse_selection_bps < 0.0:
-            raise ConfigurationError(
-                "cost_passive_adverse_selection_bps must be >= 0"
-            )
+            raise ConfigurationError("cost_passive_adverse_selection_bps must be >= 0")
         if self.cost_through_fill_adverse_selection_bps < 0.0:
-            raise ConfigurationError(
-                "cost_through_fill_adverse_selection_bps must be >= 0"
-            )
+            raise ConfigurationError("cost_through_fill_adverse_selection_bps must be >= 0")
         if self.cost_sell_regulatory_bps < 0.0:
-            raise ConfigurationError(
-                "cost_sell_regulatory_bps must be >= 0"
-            )
+            raise ConfigurationError("cost_sell_regulatory_bps must be >= 0")
         if self.cost_max_commission_pct <= 0.0:
-            raise ConfigurationError(
-                "cost_max_commission_pct must be > 0"
-            )
+            raise ConfigurationError("cost_max_commission_pct must be > 0")
 
         # ── Phase-2 validation ────────────────────────────────────────
         for h in self.horizons_seconds:
             if h <= 0:
                 raise ConfigurationError(
-                    f"horizons_seconds must contain positive integers, "
-                    f"got {h}"
+                    f"horizons_seconds must contain positive integers, got {h}"
                 )
         if self.session_open_ns is not None and self.session_open_ns < 0:
             raise ConfigurationError(
-                f"session_open_ns must be non-negative or None, "
-                f"got {self.session_open_ns}"
+                f"session_open_ns must be non-negative or None, got {self.session_open_ns}"
             )
         if not self.market_id:
             raise ConfigurationError("market_id must be non-empty")
@@ -832,9 +779,7 @@ class PlatformConfig:
 
         if self.regime_calibration_max_quotes is not None:
             if self.regime_calibration_max_quotes < 1:
-                raise ConfigurationError(
-                    "regime_calibration_max_quotes must be >= 1 when set"
-                )
+                raise ConfigurationError("regime_calibration_max_quotes must be >= 1 when set")
 
         # Sensor specs: detect duplicate (sensor_id, sensor_version)
         # pairs early so registration-time errors at boot are reserved
@@ -844,8 +789,7 @@ class PlatformConfig:
         for spec in self.sensor_specs:
             if spec.key in seen:
                 raise ConfigurationError(
-                    f"duplicate sensor spec: {spec.sensor_id!r} "
-                    f"version {spec.sensor_version!r}"
+                    f"duplicate sensor spec: {spec.sensor_id!r} version {spec.sensor_version!r}"
                 )
             seen.add(spec.key)
             spec_ids.add(spec.sensor_id)
@@ -856,8 +800,7 @@ class PlatformConfig:
             for upstream in spec.input_sensor_ids:
                 if upstream not in spec_ids:
                     raise ConfigurationError(
-                        f"sensor {spec.sensor_id!r} declares unknown "
-                        f"input sensor {upstream!r}"
+                        f"sensor {spec.sensor_id!r} declares unknown input sensor {upstream!r}"
                     )
                 if upstream not in seen_ids:
                     raise ConfigurationError(
@@ -873,14 +816,12 @@ class PlatformConfig:
             # a missing file as a config error rather than letting it
             # explode at first event.
             raise ConfigurationError(
-                f"event_calendar_path does not exist: "
-                f"{self.event_calendar_path}"
+                f"event_calendar_path does not exist: {self.event_calendar_path}"
             )
 
         if self.ex_date_calendar_path is not None and not self.ex_date_calendar_path.is_file():
             raise ConfigurationError(
-                f"ex_date_calendar_path does not exist: "
-                f"{self.ex_date_calendar_path}"
+                f"ex_date_calendar_path does not exist: {self.ex_date_calendar_path}"
             )
 
         # ── Phase-4 validation ────────────────────────────────────────
@@ -890,40 +831,21 @@ class PlatformConfig:
                 f"got {self.composition_completeness_threshold}"
             )
         if self.factor_loadings_refresh_seconds < 0:
-            raise ConfigurationError(
-                "factor_loadings_refresh_seconds must be non-negative"
-            )
+            raise ConfigurationError("factor_loadings_refresh_seconds must be non-negative")
         if self.factor_loadings_max_age_seconds <= 0:
-            raise ConfigurationError(
-                "factor_loadings_max_age_seconds must be positive"
-            )
+            raise ConfigurationError("factor_loadings_max_age_seconds must be positive")
         if self.composition_lambda_tc < 0.0:
-            raise ConfigurationError(
-                "composition_lambda_tc must be non-negative"
-            )
+            raise ConfigurationError("composition_lambda_tc must be non-negative")
         if self.composition_lambda_risk < 0.0:
-            raise ConfigurationError(
-                "composition_lambda_risk must be non-negative"
-            )
+            raise ConfigurationError("composition_lambda_risk must be non-negative")
         if self.composition_max_universe_size <= 0:
+            raise ConfigurationError("composition_max_universe_size must be positive")
+        if self.factor_loadings_dir is not None and not self.factor_loadings_dir.is_dir():
             raise ConfigurationError(
-                "composition_max_universe_size must be positive"
+                f"factor_loadings_dir does not exist: {self.factor_loadings_dir}"
             )
-        if (
-            self.factor_loadings_dir is not None
-            and not self.factor_loadings_dir.is_dir()
-        ):
-            raise ConfigurationError(
-                f"factor_loadings_dir does not exist: "
-                f"{self.factor_loadings_dir}"
-            )
-        if (
-            self.sector_map_path is not None
-            and not self.sector_map_path.is_file()
-        ):
-            raise ConfigurationError(
-                f"sector_map_path does not exist: {self.sector_map_path}"
-            )
+        if self.sector_map_path is not None and not self.sector_map_path.is_file():
+            raise ConfigurationError(f"sector_map_path does not exist: {self.sector_map_path}")
 
     def snapshot(self) -> ConfigSnapshot:
         data = self._to_dict()
@@ -963,9 +885,7 @@ class PlatformConfig:
             "risk_regime_vol_breakout_scale": self.risk_regime_vol_breakout_scale,
             "risk_regime_compression_scale": self.risk_regime_compression_scale,
             "risk_regime_normal_scale": self.risk_regime_normal_scale,
-            "require_healthy_disk_cache_manifests": (
-                self.require_healthy_disk_cache_manifests
-            ),
+            "require_healthy_disk_cache_manifests": (self.require_healthy_disk_cache_manifests),
             "disk_cache_ingestion_health_rows": list(
                 self.disk_cache_ingestion_health_rows,
             ),
@@ -977,20 +897,12 @@ class PlatformConfig:
             "backtest_enforce_ingest_terminal_health": (
                 self.backtest_enforce_ingest_terminal_health
             ),
-            "backtest_reject_zero_ingest_events": (
-                self.backtest_reject_zero_ingest_events
-            ),
-            "strict_normalizer_symbol_coverage": (
-                self.strict_normalizer_symbol_coverage
-            ),
-            "enable_rest_sequence_gap_detection": (
-                self.enable_rest_sequence_gap_detection
-            ),
+            "backtest_reject_zero_ingest_events": (self.backtest_reject_zero_ingest_events),
+            "strict_normalizer_symbol_coverage": (self.strict_normalizer_symbol_coverage),
+            "enable_rest_sequence_gap_detection": (self.enable_rest_sequence_gap_detection),
             "halt_on_condition_codes": list(self.halt_on_condition_codes),
             "halt_off_condition_codes": list(self.halt_off_condition_codes),
-            "halt_resolution_blackout_seconds": (
-                self.halt_resolution_blackout_seconds
-            ),
+            "halt_resolution_blackout_seconds": (self.halt_resolution_blackout_seconds),
             "ssr_active_symbols": list(self.ssr_active_symbols),
             "ssr_trigger_condition_codes": list(self.ssr_trigger_condition_codes),
             "ssr_mode": self.ssr_mode,
@@ -1030,18 +942,12 @@ class PlatformConfig:
             "cost_commission_per_share": self.cost_commission_per_share,
             "cost_taker_exchange_per_share": self.cost_taker_exchange_per_share,
             "cost_maker_exchange_per_share": self.cost_maker_exchange_per_share,
-            "cost_passive_adverse_selection_bps": (
-                self.cost_passive_adverse_selection_bps
-            ),
+            "cost_passive_adverse_selection_bps": (self.cost_passive_adverse_selection_bps),
             "cost_through_fill_adverse_selection_bps": (
                 self.cost_through_fill_adverse_selection_bps
             ),
-            "cost_adverse_selection_through_bps": (
-                self.cost_adverse_selection_through_bps
-            ),
-            "cost_adverse_selection_drain_bps": (
-                self.cost_adverse_selection_drain_bps
-            ),
+            "cost_adverse_selection_through_bps": (self.cost_adverse_selection_through_bps),
+            "cost_adverse_selection_drain_bps": (self.cost_adverse_selection_drain_bps),
             "cost_sell_regulatory_bps": self.cost_sell_regulatory_bps,
             "cost_stress_multiplier": self.cost_stress_multiplier,
             "cost_min_commission": self.cost_min_commission,
@@ -1052,23 +958,13 @@ class PlatformConfig:
                 self.cost_min_commission_applies_to_per_share_only
             ),
             "cost_spread_floor_taker_only": self.cost_spread_floor_taker_only,
-            "cost_stop_slippage_half_spreads": (
-                self.cost_stop_slippage_half_spreads
-            ),
+            "cost_stop_slippage_half_spreads": (self.cost_stop_slippage_half_spreads),
             "execution_mode": self.execution_mode,
             "cost_min_passive_bias_bps": self.cost_min_passive_bias_bps,
-            "cost_min_small_order_threshold_shares": (
-                self.cost_min_small_order_threshold_shares
-            ),
-            "cost_min_half_spread_threshold": (
-                self.cost_min_half_spread_threshold
-            ),
-            "cost_min_allow_passive_short_entry": (
-                self.cost_min_allow_passive_short_entry
-            ),
-            "cost_min_passive_non_fill_probability": (
-                self.cost_min_passive_non_fill_probability
-            ),
+            "cost_min_small_order_threshold_shares": (self.cost_min_small_order_threshold_shares),
+            "cost_min_half_spread_threshold": (self.cost_min_half_spread_threshold),
+            "cost_min_allow_passive_short_entry": (self.cost_min_allow_passive_short_entry),
+            "cost_min_passive_non_fill_probability": (self.cost_min_passive_non_fill_probability),
             "realized_cost_alert_ratio": self.realized_cost_alert_ratio,
             "passive_fill_delay_ticks": self.passive_fill_delay_ticks,
             "passive_max_resting_ticks": self.passive_max_resting_ticks,
@@ -1077,24 +973,16 @@ class PlatformConfig:
             "passive_cancel_fee_per_share": self.passive_cancel_fee_per_share,
             "platform_min_order_shares": self.platform_min_order_shares,
             "signal_min_edge_cost_ratio": self.signal_min_edge_cost_ratio,
-            "reversal_min_edge_cost_multiplier": (
-                self.reversal_min_edge_cost_multiplier
-            ),
+            "reversal_min_edge_cost_multiplier": (self.reversal_min_edge_cost_multiplier),
             "position_manager_drive": self.position_manager_drive,
             "position_manager_enable_trim": self.position_manager_enable_trim,
-            "position_manager_trim_min_fraction": (
-                self.position_manager_trim_min_fraction
-            ),
+            "position_manager_trim_min_fraction": (self.position_manager_trim_min_fraction),
             "position_manager_trim_edge_gate_multiplier": (
                 self.position_manager_trim_edge_gate_multiplier
             ),
-            "position_manager_urgency_exec": (
-                self.position_manager_urgency_exec
-            ),
+            "position_manager_urgency_exec": (self.position_manager_urgency_exec),
             "session_flatten_enabled": self.session_flatten_enabled,
-            "session_flatten_seconds_before_close": (
-                self.session_flatten_seconds_before_close
-            ),
+            "session_flatten_seconds_before_close": (self.session_flatten_seconds_before_close),
             "enable_portfolio_netting": self.enable_portfolio_netting,
             "net_staleness_k": self.net_staleness_k,
             "sizer_tilt_drive": self.sizer_tilt_drive,
@@ -1106,17 +994,13 @@ class PlatformConfig:
             "sizer_vol_target_bps": self.sizer_vol_target_bps,
             "sizer_vol_floor": self.sizer_vol_floor,
             "sizer_vol_cap": self.sizer_vol_cap,
-            "sizer_inventory_penalty_enabled": (
-                self.sizer_inventory_penalty_enabled
-            ),
+            "sizer_inventory_penalty_enabled": (self.sizer_inventory_penalty_enabled),
             "sizer_inventory_floor": self.sizer_inventory_floor,
             "sizer_tilt_floor": self.sizer_tilt_floor,
             "sizer_tilt_cap": self.sizer_tilt_cap,
             "signal_edge_cost_basis": self.signal_edge_cost_basis,
             "regime_calibration_max_quotes": self.regime_calibration_max_quotes,
-            "enforce_regime_state_scale_alignment": (
-                self.enforce_regime_state_scale_alignment
-            ),
+            "enforce_regime_state_scale_alignment": (self.enforce_regime_state_scale_alignment),
             "cost_market_impact_factor": self.cost_market_impact_factor,
             "cost_max_impact_half_spreads": self.cost_max_impact_half_spreads,
             "cost_htb_borrow_annual_bps": self.cost_htb_borrow_annual_bps,
@@ -1141,14 +1025,10 @@ class PlatformConfig:
                 for s in self.sensor_specs
             ],
             "event_calendar_path": (
-                self.event_calendar_path.name
-                if self.event_calendar_path
-                else None
+                self.event_calendar_path.name if self.event_calendar_path else None
             ),
             "ex_date_calendar_path": (
-                self.ex_date_calendar_path.name
-                if self.ex_date_calendar_path
-                else None
+                self.ex_date_calendar_path.name if self.ex_date_calendar_path else None
             ),
             "backtest_enforce_ex_date_guard": self.backtest_enforce_ex_date_guard,
             "market_id": self.market_id,
@@ -1158,43 +1038,27 @@ class PlatformConfig:
             # checksums change when composition configuration changes;
             # default values keep the snapshot bit-stable for legacy
             # configs).
-            "composition_completeness_threshold": (
-                self.composition_completeness_threshold
-            ),
+            "composition_completeness_threshold": (self.composition_completeness_threshold),
             "factor_model": self.factor_model,
-            "factor_loadings_refresh_seconds": (
-                self.factor_loadings_refresh_seconds
-            ),
-            "factor_loadings_max_age_seconds": (
-                self.factor_loadings_max_age_seconds
-            ),
+            "factor_loadings_refresh_seconds": (self.factor_loadings_refresh_seconds),
+            "factor_loadings_max_age_seconds": (self.factor_loadings_max_age_seconds),
             "factor_loadings_dir": (
-                self.factor_loadings_dir.name
-                if self.factor_loadings_dir
-                else None
+                self.factor_loadings_dir.name if self.factor_loadings_dir else None
             ),
-            "sector_map_path": (
-                self.sector_map_path.name if self.sector_map_path else None
-            ),
+            "sector_map_path": (self.sector_map_path.name if self.sector_map_path else None),
             "composition_lambda_tc": self.composition_lambda_tc,
             "composition_lambda_risk": self.composition_lambda_risk,
             "composition_max_universe_size": self.composition_max_universe_size,
             "enforce_layer_gates": self.enforce_layer_gates,
-            "enforce_per_alpha_risk_budget": (
-                self.enforce_per_alpha_risk_budget
-            ),
+            "enforce_per_alpha_risk_budget": (self.enforce_per_alpha_risk_budget),
             # Workstream F-1: ledger path is folded as a basename only
             # (same Path-normalisation policy as event_log_path /
             # cache_dir) so absolute-fs paths don't leak into the
             # config checksum and break two-run determinism (A-DET-02).
             "promotion_ledger_path": (
-                self.promotion_ledger_path.name
-                if self.promotion_ledger_path
-                else None
+                self.promotion_ledger_path.name if self.promotion_ledger_path else None
             ),
-            "gate_thresholds_overrides": dict(
-                sorted(self.gate_thresholds_overrides.items())
-            ),
+            "gate_thresholds_overrides": dict(sorted(self.gate_thresholds_overrides.items())),
             # PAPER / LIVE connection settings — folded so config
             # checksums change when an operator points the same
             # platform at a different broker host or WS endpoint.
@@ -1232,7 +1096,8 @@ class PlatformConfig:
                     "platform.yaml %s sets deprecated field %r (ignored). "
                     "Use cost_taker_exchange_per_share / "
                     "cost_maker_exchange_per_share instead.",
-                    path, deprecated,
+                    path,
+                    deprecated,
                 )
 
         symbols_raw = data.get("symbols", [])
@@ -1267,8 +1132,7 @@ class PlatformConfig:
             for i, item in enumerate(terminal_raw):
                 if not isinstance(item, (list, tuple)) or len(item) != 2:
                     raise ConfigurationError(
-                        f"{path}: ingest_terminal_symbol_health[{i}] "
-                        "must be [symbol, state]",
+                        f"{path}: ingest_terminal_symbol_health[{i}] must be [symbol, state]",
                     )
                 parsed_term.append((str(item[0]), str(item[1])))
             ingest_terminal_symbol_health = tuple(parsed_term)
@@ -1287,18 +1151,13 @@ class PlatformConfig:
 
         sensor_specs_raw = data.get("sensor_specs", []) or []
         if not isinstance(sensor_specs_raw, list):
-            raise ConfigurationError(
-                "sensor_specs must be a YAML list (or omitted)"
-            )
+            raise ConfigurationError("sensor_specs must be a YAML list (or omitted)")
         sensor_specs = tuple(
-            cls._parse_sensor_spec(entry, source=path)
-            for entry in sensor_specs_raw
+            cls._parse_sensor_spec(entry, source=path) for entry in sensor_specs_raw
         )
 
         event_calendar_raw = data.get("event_calendar_path")
-        event_calendar_path = (
-            Path(event_calendar_raw) if event_calendar_raw else None
-        )
+        event_calendar_path = Path(event_calendar_raw) if event_calendar_raw else None
 
         session_open_ns_raw = data.get("session_open_ns")
         session_open_ns: int | None = (
@@ -1324,9 +1183,7 @@ class PlatformConfig:
             regime_engine_options: dict[str, object] = {}
         else:
             if not isinstance(raw_regime_opts, dict):
-                raise ConfigurationError(
-                    f"{path}: regime_engine_options must be a YAML mapping"
-                )
+                raise ConfigurationError(f"{path}: regime_engine_options must be a YAML mapping")
             regime_engine_options = {str(k): v for k, v in raw_regime_opts.items()}
 
         # PAPER mode connection settings: accept either flat top-level
@@ -1336,24 +1193,35 @@ class PlatformConfig:
         paper_block = data.get("paper") or {}
         if not isinstance(paper_block, dict):
             raise ConfigurationError(
-                f"{path}: 'paper' must be a mapping, got "
-                f"{type(paper_block).__name__}"
+                f"{path}: 'paper' must be a mapping, got {type(paper_block).__name__}"
             )
-        ib_host = str(data.get(
-            "ib_host", paper_block.get("ib_host", "127.0.0.1"),
-        ))
-        ib_port = int(data.get(  # type: ignore[arg-type]
-            "ib_port", paper_block.get("ib_port", 4002),
-        ))
-        ib_client_id = int(data.get(  # type: ignore[arg-type]
-            "ib_client_id", paper_block.get("ib_client_id", 1),
-        ))
-        massive_ws_url = str(data.get(
-            "massive_ws_url",
-            paper_block.get(
-                "massive_ws_url", "wss://socket.massive.com/stocks",
-            ),
-        ))
+        ib_host = str(
+            data.get(
+                "ib_host",
+                paper_block.get("ib_host", "127.0.0.1"),
+            )
+        )
+        ib_port = int(
+            data.get(  # type: ignore[arg-type]
+                "ib_port",
+                paper_block.get("ib_port", 4002),
+            )
+        )
+        ib_client_id = int(
+            data.get(  # type: ignore[arg-type]
+                "ib_client_id",
+                paper_block.get("ib_client_id", 1),
+            )
+        )
+        massive_ws_url = str(
+            data.get(
+                "massive_ws_url",
+                paper_block.get(
+                    "massive_ws_url",
+                    "wss://socket.massive.com/stocks",
+                ),
+            )
+        )
 
         return cls(
             version=str(data.get("version", "0.1.0")),
@@ -1367,31 +1235,17 @@ class PlatformConfig:
             regime_engine_options=regime_engine_options,
             data_dir=Path(data_dir_raw) if data_dir_raw else None,
             event_log_path=Path(event_log_raw) if event_log_raw else None,
-            risk_max_position_per_symbol=int(
-                data.get("risk_max_position_per_symbol", 1000)
-            ),
-            risk_max_gross_exposure_pct=float(
-                data.get("risk_max_gross_exposure_pct", 20.0)
-            ),
-            risk_max_drawdown_pct=float(
-                data.get("risk_max_drawdown_pct", 5.0)
-            ),
-            risk_regime_vol_breakout_scale=float(
-                data.get("risk_regime_vol_breakout_scale", 0.5)
-            ),
-            risk_regime_compression_scale=float(
-                data.get("risk_regime_compression_scale", 0.75)
-            ),
-            risk_regime_normal_scale=float(
-                data.get("risk_regime_normal_scale", 1.0)
-            ),
+            risk_max_position_per_symbol=int(data.get("risk_max_position_per_symbol", 1000)),
+            risk_max_gross_exposure_pct=float(data.get("risk_max_gross_exposure_pct", 20.0)),
+            risk_max_drawdown_pct=float(data.get("risk_max_drawdown_pct", 5.0)),
+            risk_regime_vol_breakout_scale=float(data.get("risk_regime_vol_breakout_scale", 0.5)),
+            risk_regime_compression_scale=float(data.get("risk_regime_compression_scale", 0.75)),
+            risk_regime_normal_scale=float(data.get("risk_regime_normal_scale", 1.0)),
             require_healthy_disk_cache_manifests=bool(
                 data.get("require_healthy_disk_cache_manifests", False)
             ),
             degrade_on_data_gap=bool(data.get("degrade_on_data_gap", True)),
-            warn_on_unhealthy_disk_cache=bool(
-                data.get("warn_on_unhealthy_disk_cache", True)
-            ),
+            warn_on_unhealthy_disk_cache=bool(data.get("warn_on_unhealthy_disk_cache", True)),
             ingest_terminal_symbol_health=ingest_terminal_symbol_health,
             backtest_enforce_ingest_terminal_health=bool(
                 data.get("backtest_enforce_ingest_terminal_health", False)
@@ -1405,18 +1259,12 @@ class PlatformConfig:
             enable_rest_sequence_gap_detection=bool(
                 data.get("enable_rest_sequence_gap_detection", False)
             ),
-            halt_on_condition_codes=tuple(
-                int(x) for x in data.get("halt_on_condition_codes", ())
-            ),
+            halt_on_condition_codes=tuple(int(x) for x in data.get("halt_on_condition_codes", ())),
             halt_off_condition_codes=tuple(
                 int(x) for x in data.get("halt_off_condition_codes", ())
             ),
-            halt_resolution_blackout_seconds=int(
-                data.get("halt_resolution_blackout_seconds", 60)
-            ),
-            ssr_active_symbols=tuple(
-                str(s) for s in data.get("ssr_active_symbols", ())
-            ),
+            halt_resolution_blackout_seconds=int(data.get("halt_resolution_blackout_seconds", 60)),
+            ssr_active_symbols=tuple(str(s) for s in data.get("ssr_active_symbols", ())),
             ssr_trigger_condition_codes=tuple(
                 int(x) for x in data.get("ssr_trigger_condition_codes", ())
             ),
@@ -1429,37 +1277,21 @@ class PlatformConfig:
                 str(s) for s in data.get("moc_strategy_ids", ("sig_moc_imbalance_v1",))
             ),
             moc_session_date=(
-                str(data["moc_session_date"])
-                if data.get("moc_session_date") is not None
-                else None
+                str(data["moc_session_date"]) if data.get("moc_session_date") is not None else None
             ),
             moc_cutoff_et=str(data.get("moc_cutoff_et", "15:50")),
             official_close_et=str(data.get("official_close_et", "16:00")),
-            early_close_dates=tuple(
-                str(d) for d in data.get("early_close_dates", ())
-            ),
-            early_close_moc_cutoff_et=str(
-                data.get("early_close_moc_cutoff_et", "12:50")
-            ),
-            early_close_official_close_et=str(
-                data.get("early_close_official_close_et", "13:00")
-            ),
-            rth_session_gating_enabled=bool(
-                data.get("rth_session_gating_enabled", True)
-            ),
+            early_close_dates=tuple(str(d) for d in data.get("early_close_dates", ())),
+            early_close_moc_cutoff_et=str(data.get("early_close_moc_cutoff_et", "12:50")),
+            early_close_official_close_et=str(data.get("early_close_official_close_et", "13:00")),
+            rth_session_gating_enabled=bool(data.get("rth_session_gating_enabled", True)),
             rth_session_date=(
-                str(data["rth_session_date"])
-                if data.get("rth_session_date") is not None
-                else None
+                str(data["rth_session_date"]) if data.get("rth_session_date") is not None else None
             ),
             rth_open_et=str(data.get("rth_open_et", "09:30")),
             rth_close_et=str(data.get("rth_close_et", "16:00")),
-            early_close_rth_close_et=str(
-                data.get("early_close_rth_close_et", "13:00")
-            ),
-            market_holiday_dates=tuple(
-                str(d) for d in data.get("market_holiday_dates", ())
-            ),
+            early_close_rth_close_et=str(data.get("early_close_rth_close_et", "13:00")),
+            market_holiday_dates=tuple(str(d) for d in data.get("market_holiday_dates", ())),
             no_entry_first_seconds=int(data.get("no_entry_first_seconds", 0)),
             account_equity=float(data.get("account_equity", 50_000.0)),
             account_type=str(data.get("account_type", "margin_25k")),
@@ -1483,30 +1315,14 @@ class PlatformConfig:
                     DEFAULT_MARKET_DATA_LATENCY_NS,
                 )
             ),
-            stop_loss_per_share=float(
-                data.get("stop_loss_per_share", 0.0)
-            ),
-            trail_activate_per_share=float(
-                data.get("trail_activate_per_share", 0.0)
-            ),
-            trail_pct=float(
-                data.get("trail_pct", 0.5)
-            ),
-            stop_loss_pct=float(
-                data.get("stop_loss_pct", 0.0)
-            ),
-            trail_activate_pct=float(
-                data.get("trail_activate_pct", 0.0)
-            ),
-            cost_min_spread_bps=float(
-                data.get("cost_min_spread_bps", 0.3)
-            ),
-            cost_commission_per_share=float(
-                data.get("cost_commission_per_share", 0.0035)
-            ),
-            cost_exchange_per_share=float(
-                data.get("cost_exchange_per_share", 0.0005)
-            ),
+            stop_loss_per_share=float(data.get("stop_loss_per_share", 0.0)),
+            trail_activate_per_share=float(data.get("trail_activate_per_share", 0.0)),
+            trail_pct=float(data.get("trail_pct", 0.5)),
+            stop_loss_pct=float(data.get("stop_loss_pct", 0.0)),
+            trail_activate_pct=float(data.get("trail_activate_pct", 0.0)),
+            cost_min_spread_bps=float(data.get("cost_min_spread_bps", 0.3)),
+            cost_commission_per_share=float(data.get("cost_commission_per_share", 0.0035)),
+            cost_exchange_per_share=float(data.get("cost_exchange_per_share", 0.0005)),
             cost_taker_exchange_per_share=float(
                 taker_exch_raw if taker_exch_raw is not None else 0.003
             ),
@@ -1533,117 +1349,65 @@ class PlatformConfig:
                 or data.get("cost_passive_adverse_selection_bps")
                 or 2.0
             ),
-            cost_sell_regulatory_bps=float(
-                data.get("cost_sell_regulatory_bps", 0.5)
-            ),
-            cost_stress_multiplier=float(
-                data.get("cost_stress_multiplier", 1.0)
-            ),
-            cost_min_commission=float(
-                data.get("cost_min_commission", 0.35)
-            ),
-            cost_max_commission_pct=float(
-                data.get("cost_max_commission_pct", 1.0)
-            ),
-            cost_finra_taf_per_share=float(
-                data.get("cost_finra_taf_per_share", 0.000166)
-            ),
-            cost_finra_taf_max_per_order=float(
-                data.get("cost_finra_taf_max_per_order", 8.30)
-            ),
+            cost_sell_regulatory_bps=float(data.get("cost_sell_regulatory_bps", 0.5)),
+            cost_stress_multiplier=float(data.get("cost_stress_multiplier", 1.0)),
+            cost_min_commission=float(data.get("cost_min_commission", 0.35)),
+            cost_max_commission_pct=float(data.get("cost_max_commission_pct", 1.0)),
+            cost_finra_taf_per_share=float(data.get("cost_finra_taf_per_share", 0.000166)),
+            cost_finra_taf_max_per_order=float(data.get("cost_finra_taf_max_per_order", 8.30)),
             cost_min_commission_applies_to_per_share_only=bool(
                 data.get("cost_min_commission_applies_to_per_share_only", True)
             ),
-            cost_spread_floor_taker_only=bool(
-                data.get("cost_spread_floor_taker_only", True)
-            ),
-            cost_max_impact_half_spreads=float(
-                data.get("cost_max_impact_half_spreads", 10.0)
-            ),
+            cost_spread_floor_taker_only=bool(data.get("cost_spread_floor_taker_only", True)),
+            cost_max_impact_half_spreads=float(data.get("cost_max_impact_half_spreads", 10.0)),
             cost_stop_slippage_half_spreads=float(
                 data.get("cost_stop_slippage_half_spreads", 2.0)
             ),
             execution_mode=str(data.get("execution_mode", "market")),
-            cost_min_passive_bias_bps=float(
-                data.get("cost_min_passive_bias_bps", 0.0)
-            ),
+            cost_min_passive_bias_bps=float(data.get("cost_min_passive_bias_bps", 0.0)),
             cost_min_small_order_threshold_shares=int(
                 data.get("cost_min_small_order_threshold_shares", 0)
             ),
-            cost_min_half_spread_threshold=float(
-                data.get("cost_min_half_spread_threshold", 0.0)
-            ),
+            cost_min_half_spread_threshold=float(data.get("cost_min_half_spread_threshold", 0.0)),
             cost_min_allow_passive_short_entry=bool(
                 data.get("cost_min_allow_passive_short_entry", True)
             ),
             cost_min_passive_non_fill_probability=float(
                 data.get("cost_min_passive_non_fill_probability", 0.30)
             ),
-            realized_cost_alert_ratio=float(
-                data.get("realized_cost_alert_ratio", 1.5)
-            ),
-            passive_fill_delay_ticks=int(
-                data.get("passive_fill_delay_ticks", 3)
-            ),
-            passive_max_resting_ticks=int(
-                data.get("passive_max_resting_ticks", 50)
-            ),
-            passive_rebate_per_share=float(
-                data.get("passive_rebate_per_share", 0.002)
-            ),
-            passive_queue_position_shares=int(
-                data.get("passive_queue_position_shares", 0)
-            ),
-            passive_fill_hazard_max=float(
-                data.get("passive_fill_hazard_max", 0.5)
-            ),
-            passive_cancel_fee_per_share=float(
-                data.get("passive_cancel_fee_per_share", 0.0)
-            ),
-            platform_min_order_shares=int(
-                data.get("platform_min_order_shares", 1)
-            ),
-            signal_min_edge_cost_ratio=float(
-                data.get("signal_min_edge_cost_ratio", 1.0)
-            ),
+            realized_cost_alert_ratio=float(data.get("realized_cost_alert_ratio", 1.5)),
+            passive_fill_delay_ticks=int(data.get("passive_fill_delay_ticks", 3)),
+            passive_max_resting_ticks=int(data.get("passive_max_resting_ticks", 50)),
+            passive_rebate_per_share=float(data.get("passive_rebate_per_share", 0.002)),
+            passive_queue_position_shares=int(data.get("passive_queue_position_shares", 0)),
+            passive_fill_hazard_max=float(data.get("passive_fill_hazard_max", 0.5)),
+            passive_cancel_fee_per_share=float(data.get("passive_cancel_fee_per_share", 0.0)),
+            platform_min_order_shares=int(data.get("platform_min_order_shares", 1)),
+            signal_min_edge_cost_ratio=float(data.get("signal_min_edge_cost_ratio", 1.0)),
             reversal_min_edge_cost_multiplier=float(
                 data.get("reversal_min_edge_cost_multiplier", 1.5)
             ),
-            position_manager_drive=bool(
-                data.get("position_manager_drive", True)
-            ),
-            position_manager_enable_trim=bool(
-                data.get("position_manager_enable_trim", True)
-            ),
+            position_manager_drive=bool(data.get("position_manager_drive", True)),
+            position_manager_enable_trim=bool(data.get("position_manager_enable_trim", True)),
             position_manager_trim_min_fraction=float(
                 data.get("position_manager_trim_min_fraction", 0.10)
             ),
             position_manager_trim_edge_gate_multiplier=float(
                 data.get("position_manager_trim_edge_gate_multiplier", 1.0)
             ),
-            position_manager_urgency_exec=bool(
-                data.get("position_manager_urgency_exec", False)
-            ),
-            session_flatten_enabled=bool(
-                data.get("session_flatten_enabled", True)
-            ),
+            position_manager_urgency_exec=bool(data.get("position_manager_urgency_exec", False)),
+            session_flatten_enabled=bool(data.get("session_flatten_enabled", True)),
             session_flatten_seconds_before_close=int(
                 data.get("session_flatten_seconds_before_close", 0)
             ),
-            enable_portfolio_netting=bool(
-                data.get("enable_portfolio_netting", False)
-            ),
+            enable_portfolio_netting=bool(data.get("enable_portfolio_netting", False)),
             net_staleness_k=float(data.get("net_staleness_k", 1.0)),
             sizer_tilt_drive=bool(data.get("sizer_tilt_drive", False)),
-            sizer_edge_weighting_enabled=bool(
-                data.get("sizer_edge_weighting_enabled", False)
-            ),
+            sizer_edge_weighting_enabled=bool(data.get("sizer_edge_weighting_enabled", False)),
             sizer_edge_ref_bps=float(data.get("sizer_edge_ref_bps", 20.0)),
             sizer_edge_floor=float(data.get("sizer_edge_floor", 0.25)),
             sizer_edge_cap=float(data.get("sizer_edge_cap", 2.0)),
-            sizer_vol_targeting_enabled=bool(
-                data.get("sizer_vol_targeting_enabled", False)
-            ),
+            sizer_vol_targeting_enabled=bool(data.get("sizer_vol_targeting_enabled", False)),
             sizer_vol_target_bps=float(data.get("sizer_vol_target_bps", 100.0)),
             sizer_vol_floor=float(data.get("sizer_vol_floor", 0.25)),
             sizer_vol_cap=float(data.get("sizer_vol_cap", 2.0)),
@@ -1653,19 +1417,13 @@ class PlatformConfig:
             sizer_inventory_floor=float(data.get("sizer_inventory_floor", 0.0)),
             sizer_tilt_floor=float(data.get("sizer_tilt_floor", 0.10)),
             sizer_tilt_cap=float(data.get("sizer_tilt_cap", 3.0)),
-            signal_edge_cost_basis=str(
-                data.get("signal_edge_cost_basis", "round_trip")
-            ),
+            signal_edge_cost_basis=str(data.get("signal_edge_cost_basis", "round_trip")),
             regime_calibration_max_quotes=regime_calibration_max_quotes,
             enforce_regime_state_scale_alignment=bool(
                 data.get("enforce_regime_state_scale_alignment", False)
             ),
-            cost_market_impact_factor=float(
-                data.get("cost_market_impact_factor", 0.5)
-            ),
-            cost_htb_borrow_annual_bps=float(
-                data.get("cost_htb_borrow_annual_bps", 0.0)
-            ),
+            cost_market_impact_factor=float(data.get("cost_market_impact_factor", 0.5)),
+            cost_htb_borrow_annual_bps=float(data.get("cost_htb_borrow_annual_bps", 0.0)),
             cache_dir=Path(cache_dir_raw) if cache_dir_raw else None,
             session_open_ns=session_open_ns,
             horizons_seconds=horizons_seconds,
@@ -1676,53 +1434,31 @@ class PlatformConfig:
                 if data.get("ex_date_calendar_path") is not None
                 else None
             ),
-            backtest_enforce_ex_date_guard=bool(
-                data.get("backtest_enforce_ex_date_guard", True)
-            ),
+            backtest_enforce_ex_date_guard=bool(data.get("backtest_enforce_ex_date_guard", True)),
             market_id=str(data.get("market_id", "US_EQUITY")),
             session_kind=str(data.get("session_kind", "RTH")),
-            enforce_trend_mechanism=bool(
-                data.get("enforce_trend_mechanism", True)
-            ),
+            enforce_trend_mechanism=bool(data.get("enforce_trend_mechanism", True)),
             composition_completeness_threshold=float(
                 data.get("composition_completeness_threshold", 0.80)
             ),
             factor_model=str(data.get("factor_model", "FF5_momentum_STR")),
-            factor_loadings_refresh_seconds=int(
-                data.get("factor_loadings_refresh_seconds", 0)
-            ),
+            factor_loadings_refresh_seconds=int(data.get("factor_loadings_refresh_seconds", 0)),
             factor_loadings_max_age_seconds=int(
                 data.get("factor_loadings_max_age_seconds", 7 * 24 * 3600)
             ),
             factor_loadings_dir=(
-                Path(data["factor_loadings_dir"])
-                if data.get("factor_loadings_dir")
-                else None
+                Path(data["factor_loadings_dir"]) if data.get("factor_loadings_dir") else None
             ),
             sector_map_path=(
-                Path(data["sector_map_path"])
-                if data.get("sector_map_path")
-                else None
+                Path(data["sector_map_path"]) if data.get("sector_map_path") else None
             ),
-            composition_lambda_tc=float(
-                data.get("composition_lambda_tc", 1.0)
-            ),
-            composition_lambda_risk=float(
-                data.get("composition_lambda_risk", 0.1)
-            ),
-            composition_max_universe_size=int(
-                data.get("composition_max_universe_size", 50)
-            ),
-            enforce_layer_gates=bool(
-                data.get("enforce_layer_gates", True)
-            ),
-            enforce_per_alpha_risk_budget=bool(
-                data.get("enforce_per_alpha_risk_budget", True)
-            ),
+            composition_lambda_tc=float(data.get("composition_lambda_tc", 1.0)),
+            composition_lambda_risk=float(data.get("composition_lambda_risk", 0.1)),
+            composition_max_universe_size=int(data.get("composition_max_universe_size", 50)),
+            enforce_layer_gates=bool(data.get("enforce_layer_gates", True)),
+            enforce_per_alpha_risk_budget=bool(data.get("enforce_per_alpha_risk_budget", True)),
             promotion_ledger_path=(
-                Path(data["promotion_ledger_path"])
-                if data.get("promotion_ledger_path")
-                else None
+                Path(data["promotion_ledger_path"]) if data.get("promotion_ledger_path") else None
             ),
             gate_thresholds_overrides=cls._parse_gate_thresholds_block(
                 data.get("gate_thresholds"), source=path
@@ -1735,7 +1471,9 @@ class PlatformConfig:
 
     @staticmethod
     def _parse_gate_thresholds_block(
-        block: Any, *, source: Path,
+        block: Any,
+        *,
+        source: Path,
     ) -> dict[str, Any]:
         """Parse the optional top-level ``gate_thresholds:`` YAML block.
 
@@ -1756,8 +1494,7 @@ class PlatformConfig:
             return {}
         if not isinstance(block, dict):
             raise ConfigurationError(
-                f"{source}: 'gate_thresholds' must be a mapping, got "
-                f"{type(block).__name__}"
+                f"{source}: 'gate_thresholds' must be a mapping, got {type(block).__name__}"
             )
         if not block:
             return {}
@@ -1772,9 +1509,7 @@ class PlatformConfig:
         try:
             return parse_gate_thresholds_overrides(block)
         except ValueError as exc:
-            raise ConfigurationError(
-                f"{source}: gate_thresholds: {exc}"
-            ) from exc
+            raise ConfigurationError(f"{source}: gate_thresholds: {exc}") from exc
 
     @staticmethod
     def _parse_sensor_spec(entry: Any, *, source: Path) -> SensorSpec:
@@ -1803,8 +1538,7 @@ class PlatformConfig:
         """
         if not isinstance(entry, dict):
             raise ConfigurationError(
-                f"{source}: each sensor_specs entry must be a mapping, "
-                f"got {type(entry).__name__}"
+                f"{source}: each sensor_specs entry must be a mapping, got {type(entry).__name__}"
             )
 
         sensor_id = entry.get("sensor_id")
@@ -1822,8 +1556,7 @@ class PlatformConfig:
 
         if not cls_path.startswith("feelies.sensors.impl."):
             raise ConfigurationError(
-                f"{source}: sensor cls must live under "
-                f"feelies.sensors.impl.*; got {cls_path!r}"
+                f"{source}: sensor cls must live under feelies.sensors.impl.*; got {cls_path!r}"
             )
         module_name, _, class_name = cls_path.rpartition(".")
         try:
@@ -1849,9 +1582,7 @@ class PlatformConfig:
         params = dict(entry.get("params", {}) or {})
         min_history = int(entry.get("min_history", 0))
         throttled_ms_raw = entry.get("throttled_ms")
-        throttled_ms = (
-            None if throttled_ms_raw is None else int(throttled_ms_raw)
-        )
+        throttled_ms = None if throttled_ms_raw is None else int(throttled_ms_raw)
         # ``stateful`` was previously unreachable from YAML: the loader never
         # read it, so any accumulator sensor (EWMA / Kyle-lambda / Hawkes)
         # paired with a non-null ``throttled_ms`` silently advanced its

@@ -56,7 +56,7 @@ def _welford_push(state: dict[str, Any], prefix: str, x: float, window: int) -> 
     buf: deque[float] = state[prefix + "buf"]
     if len(buf) == window:
         x_old = buf[0]
-        n_cur = state[prefix + "n"]          # == window >= 2
+        n_cur = state[prefix + "n"]  # == window >= 2
         mean_cur = state[prefix + "mean"]
         mean_without = (n_cur * mean_cur - x_old) / (n_cur - 1)
         state[prefix + "M2"] -= (x_old - mean_cur) * (x_old - mean_without)

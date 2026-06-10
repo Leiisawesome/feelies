@@ -98,9 +98,7 @@ class TestExpectedMaxSharpePinned:
         v = 1.0 / 251
         inv1 = _reference_normal_inv(1.0 - 1.0 / n_trials)
         inv2 = _reference_normal_inv(1.0 - 1.0 / (n_trials * math.e))
-        expected = math.sqrt(v) * (
-            (1.0 - EULER_MASCHERONI) * inv1 + EULER_MASCHERONI * inv2
-        )
+        expected = math.sqrt(v) * ((1.0 - EULER_MASCHERONI) * inv1 + EULER_MASCHERONI * inv2)
         s = expected_max_sharpe(n_trials=n_trials, trial_sharpe_variance=v)
         assert s == expected
 
@@ -109,12 +107,8 @@ class TestExpectedMaxSharpePinned:
         v = 1.0 / 251
         inv1 = _reference_normal_inv(1.0 - 1.0 / n_trials)
         inv2 = _reference_normal_inv(1.0 - 1.0 / (n_trials * math.e))
-        s_expected = math.sqrt(v) * (
-            (1.0 - EULER_MASCHERONI) * inv1 + EULER_MASCHERONI * inv2
-        )
-        s_module = expected_max_sharpe(
-            n_trials=n_trials, trial_sharpe_variance=v
-        )
+        s_expected = math.sqrt(v) * ((1.0 - EULER_MASCHERONI) * inv1 + EULER_MASCHERONI * inv2)
+        s_module = expected_max_sharpe(n_trials=n_trials, trial_sharpe_variance=v)
         assert s_expected == s_module
 
 
@@ -127,9 +121,7 @@ class TestDeflatedSharpePinned:
             skewness=0.0,
             kurtosis=3.0,
         )
-        thresh = expected_max_sharpe(
-            n_trials=100, trial_sharpe_variance=1.0 / 251
-        )
+        thresh = expected_max_sharpe(n_trials=100, trial_sharpe_variance=1.0 / 251)
         psr = probabilistic_sharpe_ratio(
             observed_sharpe=0.5,
             threshold_sharpe=thresh,
@@ -232,9 +224,7 @@ class TestEdgeCasesPinned:
             skewness=-0.2,
             kurtosis=4.0,
         )
-        sr0 = expected_max_sharpe(
-            n_trials=50, trial_sharpe_variance=1.0 / 251
-        )
+        sr0 = expected_max_sharpe(n_trials=50, trial_sharpe_variance=1.0 / 251)
         psr = probabilistic_sharpe_ratio(
             observed_sharpe=0.3,
             threshold_sharpe=sr0,

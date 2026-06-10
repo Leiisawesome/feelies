@@ -51,9 +51,7 @@ def test_apply_inv12_stress_on_platform_yaml_defaults() -> None:
         cfg.cost_stress_multiplier * 1.5,
     )
     if cfg.backtest_fill_latency_ns > 0:
-        assert stressed.backtest_fill_latency_ns == (
-            cfg.backtest_fill_latency_ns * 2
-        )
+        assert stressed.backtest_fill_latency_ns == (cfg.backtest_fill_latency_ns * 2)
 
 
 def test_stressed_cost_model_raises_variable_fees() -> None:
@@ -65,12 +63,20 @@ def test_stressed_cost_model_raises_variable_fees() -> None:
     )
     base_bps = float(
         baseline.compute(
-            "AAPL", Side.BUY, 100, Decimal("150"), Decimal("0.05"),
+            "AAPL",
+            Side.BUY,
+            100,
+            Decimal("150"),
+            Decimal("0.05"),
         ).cost_bps,
     )
     stressed_bps = float(
         stressed.compute(
-            "AAPL", Side.BUY, 100, Decimal("150"), Decimal("0.05"),
+            "AAPL",
+            Side.BUY,
+            100,
+            Decimal("150"),
+            Decimal("0.05"),
         ).cost_bps,
     )
     assert stressed_bps > base_bps

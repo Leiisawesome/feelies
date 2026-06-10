@@ -149,20 +149,13 @@ class UniverseSynchronizer:
         )
         for h in self._context_horizons:
             if h <= 0:
-                raise ValueError(
-                    f"UniverseSynchronizer.horizons must be positive, got {h}"
-                )
+                raise ValueError(f"UniverseSynchronizer.horizons must be positive, got {h}")
         for h in self._signal_horizons:
             if h <= 0:
-                raise ValueError(
-                    f"UniverseSynchronizer.signal_horizons must be positive, "
-                    f"got {h}"
-                )
+                raise ValueError(f"UniverseSynchronizer.signal_horizons must be positive, got {h}")
         self._ctx_seq = ctx_sequence_generator
         # Latest snapshot per (horizon_seconds, symbol).
-        self._snapshot_cache: dict[
-            tuple[int, str], HorizonFeatureSnapshot
-        ] = {}
+        self._snapshot_cache: dict[tuple[int, str], HorizonFeatureSnapshot] = {}
         # Latest signal per (horizon_seconds, symbol, strategy_id).
         self._signal_cache: dict[tuple[int, str, str], Signal] = {}
         # ``(horizon_seconds, boundary_index)`` we have already emitted.
@@ -258,21 +251,13 @@ class UniverseSynchronizer:
                 candidates.append((kh, s))
         if not candidates:
             return None
-        candidates = [
-            (kh, s) for kh, s in candidates if s.timestamp_ns <= boundary_ts_ns
-        ]
+        candidates = [(kh, s) for kh, s in candidates if s.timestamp_ns <= boundary_ts_ns]
         if not candidates:
             return None
 
         same_h = [(kh, s) for kh, s in candidates if kh == portfolio_h]
-        if (
-            same_h
-            and snap is not None
-            and snap.boundary_index >= boundary_index
-        ):
-            aligned = [
-                s for kh, s in same_h if s.timestamp_ns >= snap.timestamp_ns
-            ]
+        if same_h and snap is not None and snap.boundary_index >= boundary_index:
+            aligned = [s for kh, s in same_h if s.timestamp_ns >= snap.timestamp_ns]
             if aligned:
                 return max(aligned, key=lambda s: s.timestamp_ns)
 
@@ -317,9 +302,7 @@ class UniverseSynchronizer:
         # instead of O(U x S log S).  Same key order, same break-on-first
         # selection, so the emitted context is bit-identical (Inv-5).
         sorted_signal_cache = (
-            sorted(self._signal_cache.items())
-            if not self._upstream_strategy_ids
-            else []
+            sorted(self._signal_cache.items()) if not self._upstream_strategy_ids else []
         )
 
         for symbol in self._universe_sorted:
@@ -350,11 +333,7 @@ class UniverseSynchronizer:
             if chosen is not None:
                 non_none += 1
 
-        completeness = (
-            non_none / len(self._universe_sorted)
-            if self._universe_sorted
-            else 0.0
-        )
+        completeness = non_none / len(self._universe_sorted) if self._universe_sorted else 0.0
 
         ctx = CrossSectionalContext(
             timestamp_ns=tick.timestamp_ns,

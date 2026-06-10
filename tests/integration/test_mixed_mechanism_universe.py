@@ -49,17 +49,23 @@ _MECHANISM_CAP: float = 0.4
 
 # 9-symbol universe, 3 symbols per mechanism family.
 _UNIVERSE: tuple[str, ...] = (
-    "AAPL", "AMZN", "BAC",   # KYLE_INFO
-    "CVX", "GOOG", "JPM",    # INVENTORY
-    "META", "MSFT", "NVDA",  # HAWKES_SELF_EXCITE
+    "AAPL",
+    "AMZN",
+    "BAC",  # KYLE_INFO
+    "CVX",
+    "GOOG",
+    "JPM",  # INVENTORY
+    "META",
+    "MSFT",
+    "NVDA",  # HAWKES_SELF_EXCITE
 )
 _MECHANISM_BY_SYMBOL: dict[str, TrendMechanism] = {
     "AAPL": TrendMechanism.KYLE_INFO,
     "AMZN": TrendMechanism.KYLE_INFO,
-    "BAC":  TrendMechanism.KYLE_INFO,
-    "CVX":  TrendMechanism.INVENTORY,
+    "BAC": TrendMechanism.KYLE_INFO,
+    "CVX": TrendMechanism.INVENTORY,
     "GOOG": TrendMechanism.INVENTORY,
-    "JPM":  TrendMechanism.INVENTORY,
+    "JPM": TrendMechanism.INVENTORY,
     "META": TrendMechanism.HAWKES_SELF_EXCITE,
     "MSFT": TrendMechanism.HAWKES_SELF_EXCITE,
     "NVDA": TrendMechanism.HAWKES_SELF_EXCITE,
@@ -68,7 +74,11 @@ _NUM_BOUNDARIES: int = 3
 
 
 def _make_signal(
-    *, symbol: str, mechanism: TrendMechanism, ts_ns: int, seq: int,
+    *,
+    symbol: str,
+    mechanism: TrendMechanism,
+    ts_ns: int,
+    seq: int,
     boundary_index: int,
 ) -> Signal:
     # Deterministic per-(boundary, symbol) variation so the cross-
@@ -131,7 +141,8 @@ class _DefaultPipelineAlpha:
 
     def construct(self, ctx, params):  # type: ignore[override, no-untyped-def]
         return self._engine.run_default_pipeline(
-            ctx, strategy_id=self.alpha_id,
+            ctx,
+            strategy_id=self.alpha_id,
         )
 
 
@@ -153,12 +164,14 @@ def _build_engine() -> tuple[EventBus, CompositionEngine, list[SizedPositionInte
         position_lookup=None,
     )
     alpha: PortfolioAlpha = _DefaultPipelineAlpha(engine)
-    engine.register(RegisteredPortfolioAlpha(
-        alpha_id=_STRATEGY_ID,
-        horizon_seconds=_HORIZON_SECONDS,
-        alpha=alpha,
-        params={},
-    ))
+    engine.register(
+        RegisteredPortfolioAlpha(
+            alpha_id=_STRATEGY_ID,
+            horizon_seconds=_HORIZON_SECONDS,
+            alpha=alpha,
+            params={},
+        )
+    )
     engine.attach()
     return bus, engine, captured
 
@@ -176,8 +189,7 @@ def _hash_intents(intents: list[SizedPositionIntent]) -> str:
     lines: list[str] = []
     for it in intents:
         targets = "|".join(
-            f"{s}={it.target_positions[s].target_usd:.2f}"
-            for s in sorted(it.target_positions)
+            f"{s}={it.target_positions[s].target_usd:.2f}" for s in sorted(it.target_positions)
         )
         mech = "|".join(
             f"{m.name}={it.mechanism_breakdown[m]:.6f}"
@@ -207,8 +219,7 @@ def test_mixed_mechanism_intent_carries_non_empty_breakdown() -> None:
         # Every reported family share ≤ the configured per-family cap.
         for mech, share in it.mechanism_breakdown.items():
             assert share <= _MECHANISM_CAP + 1e-9, (
-                f"mechanism {mech.name} share {share:.6f} exceeds "
-                f"cap {_MECHANISM_CAP}"
+                f"mechanism {mech.name} share {share:.6f} exceeds cap {_MECHANISM_CAP}"
             )
 
 
@@ -231,6 +242,5 @@ def test_mixed_mechanism_replay_byte_identical() -> None:
     intents_b = _replay()
     assert len(intents_a) == len(intents_b)
     assert _hash_intents(intents_a) == _hash_intents(intents_b), (
-        "Mixed-mechanism SizedPositionIntent hash drift across "
-        "identical replays"
+        "Mixed-mechanism SizedPositionIntent hash drift across identical replays"
     )

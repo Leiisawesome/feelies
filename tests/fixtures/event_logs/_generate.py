@@ -42,9 +42,9 @@ from typing import Any
 # Anchor the synthetic session at 2026-01-15 14:30:00 UTC (a recent
 # regular US-equity open) — pure constant, unrelated to wall-clock.
 SESSION_OPEN_NS: int = 1_768_532_400_000_000_000
-QUOTE_CADENCE_NS: int = 100_000_000          # 10 quotes per second
-TRADE_EVERY_N_QUOTES: int = 7                # ~1.4 trades per second
-NUM_QUOTES: int = 3_000                      # 5 minutes at 10 Hz
+QUOTE_CADENCE_NS: int = 100_000_000  # 10 quotes per second
+TRADE_EVERY_N_QUOTES: int = 7  # ~1.4 trades per second
+NUM_QUOTES: int = 3_000  # 5 minutes at 10 Hz
 DEFAULT_SYMBOL: str = "AAPL"
 DEFAULT_OUTPUT: Path = Path(__file__).parent / "synth_5min_aapl.jsonl"
 

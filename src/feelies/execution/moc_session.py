@@ -41,7 +41,8 @@ class MocSessionBounds:
 def session_date_from_ns(timestamp_ns: int) -> date:
     """ET calendar date for a UTC nanosecond timestamp."""
     return datetime.fromtimestamp(
-        timestamp_ns / _NS_PER_SECOND, _NY_TZ,
+        timestamp_ns / _NS_PER_SECOND,
+        _NY_TZ,
     ).date()
 
 
@@ -78,7 +79,8 @@ def resolve_moc_session_bounds(
             session_date=session_date,
             moc_cutoff_ns=et_clock_to_ns(session_date, early_close_moc_cutoff_et),
             official_close_ns=et_clock_to_ns(
-                session_date, early_close_official_close_et,
+                session_date,
+                early_close_official_close_et,
             ),
         )
     return MocSessionBounds(

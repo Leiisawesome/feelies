@@ -213,9 +213,7 @@ class TestInspectShowsCapitalTier:
         ledger = PromotionLedger(ledger_path)
         _seed_scaled(ledger, "ALPHA-CAP")
 
-        rc = main(
-            ["promote", "inspect", "ALPHA-CAP", "--ledger", str(ledger_path)]
-        )
+        rc = main(["promote", "inspect", "ALPHA-CAP", "--ledger", str(ledger_path)])
         captured = capsys.readouterr()
         assert rc == EXIT_OK
         assert "tier=SCALED" in captured.out
@@ -231,9 +229,7 @@ class TestInspectShowsCapitalTier:
         ledger = PromotionLedger(ledger_path)
         _seed_live_history(ledger, "ALPHA-LIVE")
 
-        rc = main(
-            ["promote", "inspect", "ALPHA-LIVE", "--ledger", str(ledger_path)]
-        )
+        rc = main(["promote", "inspect", "ALPHA-LIVE", "--ledger", str(ledger_path)])
         captured = capsys.readouterr()
         assert rc == EXIT_OK
         # First entry into LIVE without an escalation -> SMALL_CAPITAL
@@ -362,9 +358,7 @@ class TestListShowsCapitalTier:
         # Non-LIVE alphas have no tier suffix.
         # Find the line containing ALPHA-PAPER and assert no '@' appears
         # on it (the column would otherwise contain a tier marker).
-        paper_line = [
-            ln for ln in captured.out.splitlines() if "ALPHA-PAPER" in ln
-        ][0]
+        paper_line = [ln for ln in captured.out.splitlines() if "ALPHA-PAPER" in ln][0]
         assert "@" not in paper_line
 
     def test_list_json_exposes_current_capital_tier(
@@ -375,9 +369,7 @@ class TestListShowsCapitalTier:
         _seed_scaled(ledger, "ALPHA-SCALED", base_ns=1_700_000_000_000_000_000)
         _seed_live_history(ledger, "ALPHA-SMALL", base_ns=1_700_000_010_000_000_000)
 
-        rc = main(
-            ["promote", "list", "--ledger", str(ledger_path), "--json"]
-        )
+        rc = main(["promote", "list", "--ledger", str(ledger_path), "--json"])
         captured = capsys.readouterr()
         assert rc == EXIT_OK
         payload = json.loads(captured.out)
@@ -386,9 +378,7 @@ class TestListShowsCapitalTier:
         assert by_id["ALPHA-SCALED"]["current_state"] == "LIVE"
         assert by_id["ALPHA-SCALED"]["current_capital_tier"] == "SCALED"
         assert by_id["ALPHA-SMALL"]["current_state"] == "LIVE"
-        assert (
-            by_id["ALPHA-SMALL"]["current_capital_tier"] == "SMALL_CAPITAL"
-        )
+        assert by_id["ALPHA-SMALL"]["current_capital_tier"] == "SMALL_CAPITAL"
 
     def test_list_json_quarantined_alpha_has_no_tier(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -408,9 +398,7 @@ class TestListShowsCapitalTier:
             )
         )
 
-        rc = main(
-            ["promote", "list", "--ledger", str(ledger_path), "--json"]
-        )
+        rc = main(["promote", "list", "--ledger", str(ledger_path), "--json"])
         captured = capsys.readouterr()
         assert rc == EXIT_OK
         payload = json.loads(captured.out)
@@ -445,9 +433,7 @@ class TestReplayEvidenceCapitalTier:
         payload = json.loads(captured.out)
         # Find the LIVE -> LIVE row.
         cap_rows = [
-            r
-            for r in payload["results"]
-            if r["from_state"] == "LIVE" and r["to_state"] == "LIVE"
+            r for r in payload["results"] if r["from_state"] == "LIVE" and r["to_state"] == "LIVE"
         ]
         assert len(cap_rows) == 1
         row = cap_rows[0]
@@ -490,9 +476,7 @@ class TestReplayEvidenceCapitalTier:
         assert rc == EXIT_VALIDATION_FAILED
         payload = json.loads(captured.out)
         cap_rows = [
-            r
-            for r in payload["results"]
-            if r["from_state"] == "LIVE" and r["to_state"] == "LIVE"
+            r for r in payload["results"] if r["from_state"] == "LIVE" and r["to_state"] == "LIVE"
         ]
         assert len(cap_rows) == 1
         row = cap_rows[0]
@@ -559,9 +543,7 @@ class TestReplayEvidenceTriggerAwareLiveSelfLoop:
         assert rc == EXIT_OK
         payload = json.loads(captured.out)
         cap_rows = [
-            r
-            for r in payload["results"]
-            if r["from_state"] == "LIVE" and r["to_state"] == "LIVE"
+            r for r in payload["results"] if r["from_state"] == "LIVE" and r["to_state"] == "LIVE"
         ]
         assert len(cap_rows) == 1
         row = cap_rows[0]
@@ -594,9 +576,7 @@ class TestReplayEvidenceTriggerAwareLiveSelfLoop:
         assert rc == EXIT_OK
         payload = json.loads(captured.out)
         cap_rows = [
-            r
-            for r in payload["results"]
-            if r["from_state"] == "LIVE" and r["to_state"] == "LIVE"
+            r for r in payload["results"] if r["from_state"] == "LIVE" and r["to_state"] == "LIVE"
         ]
         assert len(cap_rows) == 1
         row = cap_rows[0]

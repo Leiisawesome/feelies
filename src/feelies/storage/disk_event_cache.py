@@ -177,7 +177,10 @@ class DiskEventCache:
         if actual_checksum != expected_checksum:
             logger.warning(
                 "disk_cache: checksum mismatch for %s/%s (expected %s, got %s)",
-                symbol, date, expected_checksum, actual_checksum,
+                symbol,
+                date,
+                expected_checksum,
+                actual_checksum,
             )
             return None
 
@@ -191,20 +194,27 @@ class DiskEventCache:
                 d = json.loads(line)
                 events.append(_dict_to_event(d))
         except Exception:
-            logger.warning("disk_cache: deserialization failed for %s/%s", symbol, date, exc_info=True)
+            logger.warning(
+                "disk_cache: deserialization failed for %s/%s", symbol, date, exc_info=True
+            )
             return None
 
         expected_count = manifest.get("event_count", -1)
         if expected_count >= 0 and len(events) != expected_count:
             logger.warning(
                 "disk_cache: event count mismatch for %s/%s (expected %d, got %d)",
-                symbol, date, expected_count, len(events),
+                symbol,
+                date,
+                expected_count,
+                len(events),
             )
             return None
 
         logger.info(
             "disk_cache: loaded %d events for %s/%s from cache",
-            len(events), symbol, date,
+            len(events),
+            symbol,
+            date,
         )
         return events
 
@@ -268,6 +278,10 @@ class DiskEventCache:
 
         logger.info(
             "disk_cache: saved %d events (%d quotes, %d trades) for %s/%s (%.1f MB)",
-            len(events), quotes_count, trades_count, symbol, date,
+            len(events),
+            quotes_count,
+            trades_count,
+            symbol,
+            date,
             len(compressed) / 1_048_576,
         )

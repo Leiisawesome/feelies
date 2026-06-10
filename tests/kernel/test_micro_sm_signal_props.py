@@ -210,11 +210,7 @@ def test_signal_gate_visited_iff_all_conditions_met(cfg: TickConfig) -> None:
     upstream).
     """
     visited = _walk_one_tick(cfg)
-    expected = (
-        cfg.sensors_enabled
-        and cfg.horizon_crossed
-        and cfg.signal_alpha_loaded
-    )
+    expected = cfg.sensors_enabled and cfg.horizon_crossed and cfg.signal_alpha_loaded
     assert (MicroState.SIGNAL_GATE in visited) is expected
 
 
@@ -328,17 +324,20 @@ def _make_engine(
     captured: list[Signal] = []
     bus.subscribe(Signal, captured.append)  # type: ignore[arg-type]
     engine = HorizonSignalEngine(
-        bus=bus, signal_sequence_generator=SequenceGenerator(),
+        bus=bus,
+        signal_sequence_generator=SequenceGenerator(),
     )
-    engine.register(RegisteredSignal(
-        alpha_id="stub",
-        horizon_seconds=horizon_seconds,
-        signal=signal,
-        params={},
-        gate=_open_gate(),
-        cost_arithmetic=_zero_cost(),
-        consumed_features=(),
-    ))
+    engine.register(
+        RegisteredSignal(
+            alpha_id="stub",
+            horizon_seconds=horizon_seconds,
+            signal=signal,
+            params={},
+            gate=_open_gate(),
+            cost_arithmetic=_zero_cost(),
+            consumed_features=(),
+        )
+    )
     engine.attach()
     return bus, engine, captured
 
@@ -359,7 +358,8 @@ def _snapshot(boundary_index: int, horizon_seconds: int = 30) -> HorizonFeatureS
 @given(
     boundary_indices=st.lists(
         st.integers(min_value=0, max_value=128),
-        min_size=1, max_size=32,
+        min_size=1,
+        max_size=32,
     ),
 )
 def test_engine_emits_one_signal_per_snapshot(
@@ -391,7 +391,9 @@ def test_engine_emits_one_signal_per_snapshot(
 @given(
     boundary_indices=st.lists(
         st.integers(min_value=0, max_value=64),
-        min_size=2, max_size=16, unique=True,
+        min_size=2,
+        max_size=16,
+        unique=True,
     ),
 )
 def test_engine_replay_is_byte_stable(
@@ -423,7 +425,8 @@ def _run_signals(
     bit-for-bit (Inv-5).
     """
     bus, _, captured = _make_engine(
-        horizon_seconds=30, signal=_StubSignal(),
+        horizon_seconds=30,
+        signal=_StubSignal(),
     )
     for s in snapshots:
         bus.publish(s)

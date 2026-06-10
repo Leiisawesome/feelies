@@ -216,9 +216,15 @@ class TestBacktestOrderRouter:
         clock = SimulatedClock(start_ns=5000)
         router = BacktestOrderRouter(clock, latency_ns=1000)
 
-        router.on_quote(_quote_with_depth(
-            "100.00", "100.10", bid_size=100, ask_size=0, ts=1000,
-        ))
+        router.on_quote(
+            _quote_with_depth(
+                "100.00",
+                "100.10",
+                bid_size=100,
+                ask_size=0,
+                ts=1000,
+            )
+        )
         router.submit(_order("AAPL"))
         assert [a.status for a in router.poll_acks()] == [
             OrderAckStatus.ACKNOWLEDGED,
@@ -241,9 +247,15 @@ class TestBacktestOrderRouter:
         router.submit(_order("AAPL", order_id="reuse-1"))
         router.poll_acks()
 
-        router.on_quote(_quote_with_depth(
-            "100.00", "100.10", bid_size=100, ask_size=0, ts=6500,
-        ))
+        router.on_quote(
+            _quote_with_depth(
+                "100.00",
+                "100.10",
+                bid_size=100,
+                ask_size=0,
+                ts=6500,
+            )
+        )
         assert router.poll_acks()[0].status == OrderAckStatus.REJECTED
 
         router.on_quote(_quote("AAPL", "100.00", "100.10", ts=7500))
@@ -404,7 +416,9 @@ class TestPartialFillAndSlippage:
     def test_excess_price_lowered_for_sell(self) -> None:
         """Excess qty for a SELL is filled below the cross (bid) — receiver gets less."""
         clock = SimulatedClock(start_ns=5000)
-        router = BacktestOrderRouter(clock, cost_model=ZeroCostModel(), market_impact_factor=Decimal("0.5"))
+        router = BacktestOrderRouter(
+            clock, cost_model=ZeroCostModel(), market_impact_factor=Decimal("0.5")
+        )
 
         router.on_quote(_quote_with_depth("98.00", "102.00", bid_size=50, ask_size=200))
         router.submit(_order_qty(150, side=Side.SELL))
@@ -524,7 +538,9 @@ class TestExcessLegImpactNotDoubleCounted:
     def test_excess_fill_price_still_includes_impact(self) -> None:
         """Sanity: the impact is still encoded in fill_price (Inv-12 realism)."""
         clock = SimulatedClock(start_ns=5000)
-        router = BacktestOrderRouter(clock, cost_model=ZeroCostModel(), market_impact_factor=Decimal("0.5"))
+        router = BacktestOrderRouter(
+            clock, cost_model=ZeroCostModel(), market_impact_factor=Decimal("0.5")
+        )
         router.on_quote(_quote_with_depth("98.00", "102.00", bid_size=200, ask_size=50))
         router.submit(_order_qty(150, side=Side.BUY))
         _, _, filled = router.poll_acks()

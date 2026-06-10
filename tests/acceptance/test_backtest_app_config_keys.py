@@ -18,12 +18,14 @@ from feelies.core.platform_config import PlatformConfig
 _PLATFORM_YAML = Path("platform.yaml")
 _BACKTEST_APP_YAML = Path("configs/backtest_app.yaml")
 
-_ALLOWED_DELTA_KEYS = frozenset({
-    "extends",
-    "symbols",
-    "signal_min_edge_cost_ratio",
-    "parameter_overrides",
-})
+_ALLOWED_DELTA_KEYS = frozenset(
+    {
+        "extends",
+        "symbols",
+        "signal_min_edge_cost_ratio",
+        "parameter_overrides",
+    }
+)
 
 
 def test_backtest_app_yaml_declares_extends_and_only_allowed_deltas() -> None:

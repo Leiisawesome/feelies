@@ -106,15 +106,12 @@ class SNRDriftDiffusionSensor:
         if not horizons_seconds:
             raise ValueError("horizons_seconds must be non-empty")
         if any(h <= 0 for h in horizons_seconds):
-            raise ValueError(
-                f"horizons_seconds must be positive, got {horizons_seconds}"
-            )
+            raise ValueError(f"horizons_seconds must be positive, got {horizons_seconds}")
         if ewma_n_eff <= 0:
             raise ValueError(f"ewma_n_eff must be > 0, got {ewma_n_eff}")
         if warm_samples_per_horizon < 0:
             raise ValueError(
-                f"warm_samples_per_horizon must be >= 0, "
-                f"got {warm_samples_per_horizon}"
+                f"warm_samples_per_horizon must be >= 0, got {warm_samples_per_horizon}"
             )
         if sensor_id is not None:
             self.sensor_id = sensor_id

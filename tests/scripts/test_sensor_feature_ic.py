@@ -70,7 +70,7 @@ def test_mid_series_is_causal() -> None:
         _quote(2 * NS, "102.00", "102.02", 100, 100),
     ]
     mids = ic._MidSeries.from_events(evs)
-    assert mids.at(-1) is None                     # before start
+    assert mids.at(-1) is None  # before start
     assert mids.at(0) == pytest.approx(100.01)
     assert mids.at(1 * NS + 500) == pytest.approx(101.01)  # last <= t
     assert mids.last_ts == 2 * NS
@@ -99,14 +99,13 @@ def test_replay_produces_snapshots_and_pairs() -> None:
         bid_sz = 100 + (i % 50)
         evs.append(_quote(i * NS, f"{px:.2f}", f"{px + 0.02:.2f}", bid_sz, 100))
     horizons = frozenset({30, 120})
-    feats = [
-        f
-        for h in sorted(horizons)
-        for f in ic._window_builder("ofi_ewma")("ofi_ewma", h)
-    ]
+    feats = [f for h in sorted(horizons) for f in ic._window_builder("ofi_ewma")("ofi_ewma", h)]
     snaps = ic._replay_snapshots(
-        evs, symbol="AAPL", horizon_features=feats,
-        horizons=horizons, session_open_ns=0,
+        evs,
+        symbol="AAPL",
+        horizon_features=feats,
+        horizons=horizons,
+        session_open_ns=0,
     )
     assert snaps, "expected snapshots from the synthetic replay"
     mids = ic._MidSeries.from_events(evs)
@@ -129,19 +128,26 @@ def test_kyle_alignment_ab_registers_both_versions_and_runs() -> None:
         cents = i // 5
         px = 100.00 + cents * 0.01
         evs.append(_quote(i * NS, f"{px:.2f}", f"{px + 0.02:.2f}", 100, 100))
-        evs.append(Trade(
-            timestamp_ns=i * NS + 1,
-            correlation_id=f"t-{i}",
-            sequence=i * NS + 1,
-            symbol="AAPL",
-            price=Decimal(f"{px:.2f}"),
-            size=100,
-            exchange_timestamp_ns=i * NS + 1,
-        ))
+        evs.append(
+            Trade(
+                timestamp_ns=i * NS + 1,
+                correlation_id=f"t-{i}",
+                sequence=i * NS + 1,
+                symbol="AAPL",
+                price=Decimal(f"{px:.2f}"),
+                size=100,
+                exchange_timestamp_ns=i * NS + 1,
+            )
+        )
     evs.sort(key=lambda e: (e.timestamp_ns, e.sequence))
     mids = ic._MidSeries.from_events(evs)
     rows = ic._kyle_alignment_ab(
-        evs, mids, "AAPL", "2026-01-01", frozenset({30, 120}), session_open_ns=0,
+        evs,
+        mids,
+        "AAPL",
+        "2026-01-01",
+        frozenset({30, 120}),
+        session_open_ns=0,
     )
     assert {r.variant for r in rows} == {"kyle_legacy_win", "kyle_causal_win"}
     assert all(r.feature == "kyle_alignment" for r in rows)

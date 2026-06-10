@@ -110,7 +110,8 @@ class ExDateReplayViolation:
 def exchange_timestamp_to_ny_date(timestamp_ns: int) -> date:
     """ET calendar date for an exchange-time nanosecond stamp."""
     return datetime.fromtimestamp(
-        timestamp_ns / _NS_PER_SECOND, _NY_TZ,
+        timestamp_ns / _NS_PER_SECOND,
+        _NY_TZ,
     ).date()
 
 
@@ -175,20 +176,20 @@ def find_ex_date_violations(
 ) -> tuple[ExDateReplayViolation, ...]:
     """Return ex-date rows that intersect ``[replay_start, replay_end]``."""
     if replay_start > replay_end:
-        raise ValueError(
-            f"replay_start {replay_start} must be <= replay_end {replay_end}"
-        )
+        raise ValueError(f"replay_start {replay_start} must be <= replay_end {replay_end}")
     violations: list[ExDateReplayViolation] = []
     for entry in calendar.entries_for_symbols(symbols):
         if replay_start <= entry.ex_date <= replay_end:
-            violations.append(ExDateReplayViolation(
-                symbol=entry.symbol,
-                ex_date=entry.ex_date,
-                kind=entry.kind,
-                replay_start_date=replay_start,
-                replay_end_date=replay_end,
-                note=entry.note,
-            ))
+            violations.append(
+                ExDateReplayViolation(
+                    symbol=entry.symbol,
+                    ex_date=entry.ex_date,
+                    kind=entry.kind,
+                    replay_start_date=replay_start,
+                    replay_end_date=replay_end,
+                    note=entry.note,
+                )
+            )
     return tuple(violations)
 
 
@@ -224,14 +225,16 @@ def check_ex_date_replay_window(
             continue
         start, end = span
         if start <= entry.ex_date <= end:
-            violations.append(ExDateReplayViolation(
-                symbol=entry.symbol,
-                ex_date=entry.ex_date,
-                kind=entry.kind,
-                replay_start_date=start,
-                replay_end_date=end,
-                note=entry.note,
-            ))
+            violations.append(
+                ExDateReplayViolation(
+                    symbol=entry.symbol,
+                    ex_date=entry.ex_date,
+                    kind=entry.kind,
+                    replay_start_date=start,
+                    replay_end_date=end,
+                    note=entry.note,
+                )
+            )
     return tuple(violations)
 
 
@@ -241,9 +244,7 @@ def _parse_kind(raw: object, source: str) -> CorporateActionKind:
     try:
         return CorporateActionKind(raw.upper())
     except ValueError as exc:
-        raise ValueError(
-            f"{source}: unknown kind {raw!r}; expected SPLIT or DIVIDEND"
-        ) from exc
+        raise ValueError(f"{source}: unknown kind {raw!r}; expected SPLIT or DIVIDEND") from exc
 
 
 def _parse_entry(raw: Mapping[str, Any], source: str) -> ExDateEntry:
@@ -253,9 +254,7 @@ def _parse_entry(raw: Mapping[str, Any], source: str) -> ExDateEntry:
     ex_raw = raw.get("ex_date")
     if ex_raw is None:
         raise ValueError(f"{source}: ex_date is required")
-    ex_date = (
-        ex_raw if isinstance(ex_raw, date) else date.fromisoformat(str(ex_raw))
-    )
+    ex_date = ex_raw if isinstance(ex_raw, date) else date.fromisoformat(str(ex_raw))
     kind = _parse_kind(raw.get("kind"), source)
     note = str(raw.get("note", ""))
     return ExDateEntry(
@@ -274,9 +273,7 @@ def load_ex_date_calendar(path: str | Path) -> ExDateCalendar:
         raise ValueError(f"{p}: top-level YAML must be a mapping")
     version = raw_data.get("schema_version", "1.0")
     if str(version) != "1.0":
-        raise ValueError(
-            f"{p}: unsupported schema_version {version!r}; expected '1.0'"
-        )
+        raise ValueError(f"{p}: unsupported schema_version {version!r}; expected '1.0'")
     entries_raw = raw_data.get("entries", [])
     if not isinstance(entries_raw, list):
         raise ValueError(f"{p}: entries must be a list")
@@ -284,9 +281,7 @@ def load_ex_date_calendar(path: str | Path) -> ExDateCalendar:
     seen: set[tuple[str, date, str]] = set()
     for idx, row in enumerate(entries_raw):
         if not isinstance(row, Mapping):
-            raise ValueError(
-                f"{p}: entries[{idx}] must be a mapping, got {type(row).__name__}"
-            )
+            raise ValueError(f"{p}: entries[{idx}] must be a mapping, got {type(row).__name__}")
         entry = _parse_entry(row, f"{p}: entries[{idx}]")
         key = (entry.symbol, entry.ex_date, entry.kind.value)
         if key in seen:

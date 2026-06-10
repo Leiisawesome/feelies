@@ -19,7 +19,6 @@ from tests.determinism.test_sized_intent_replay import (  # noqa: E501
 )
 
 
-
 # Locked Level-3 baseline (decay ON).  Paired with decay-OFF in
 # ``test_sized_intent_replay``; both re-baselined together (BT-11).
 EXPECTED_LEVEL3_INTENT_DECAY_ON_HASH = (
@@ -47,8 +46,7 @@ def test_two_replays_produce_identical_intent_hash_with_decay() -> None:
     hash_a, count_a = _replay(decay=True)
     hash_b, count_b = _replay(decay=True)
     assert count_a == count_b, (
-        f"intent count drift across replays (decay ON): "
-        f"{count_a} vs {count_b}"
+        f"intent count drift across replays (decay ON): {count_a} vs {count_b}"
     )
     assert hash_a == hash_b, (
         "Level-3 SizedPositionIntent (decay ON) hash drift across "
@@ -73,6 +71,5 @@ def test_decay_changes_hash_vs_baseline() -> None:
 def test_intent_count_matches_boundary_count_with_decay() -> None:
     _hash, count = _replay(decay=True)
     assert count == _NUM_BOUNDARIES, (
-        f"expected exactly {_NUM_BOUNDARIES} intents with decay ON, "
-        f"got {count}"
+        f"expected exactly {_NUM_BOUNDARIES} intents with decay ON, got {count}"
     )

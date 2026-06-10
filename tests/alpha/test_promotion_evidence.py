@@ -391,14 +391,22 @@ class TestValidatePaperWindow:
     def test_fill_rate_drift_band_is_two_sided(self) -> None:
         # Negative drift exceeds the band as well as positive.
         ev_neg = PaperWindowEvidence(
-            trading_days=5, sample_size=100, slippage_residual_bps=0.5,
-            fill_rate_drift_pct=-15.0, latency_ks_p=0.30,
-            pnl_compression_ratio=0.8, anomalous_event_count=0,
+            trading_days=5,
+            sample_size=100,
+            slippage_residual_bps=0.5,
+            fill_rate_drift_pct=-15.0,
+            latency_ks_p=0.30,
+            pnl_compression_ratio=0.8,
+            anomalous_event_count=0,
         )
         ev_pos = PaperWindowEvidence(
-            trading_days=5, sample_size=100, slippage_residual_bps=0.5,
-            fill_rate_drift_pct=+15.0, latency_ks_p=0.30,
-            pnl_compression_ratio=0.8, anomalous_event_count=0,
+            trading_days=5,
+            sample_size=100,
+            slippage_residual_bps=0.5,
+            fill_rate_drift_pct=+15.0,
+            latency_ks_p=0.30,
+            pnl_compression_ratio=0.8,
+            anomalous_event_count=0,
         )
         assert any("fill-rate drift" in e for e in validate_paper_window(ev_neg))
         assert any("fill-rate drift" in e for e in validate_paper_window(ev_pos))
@@ -411,17 +419,13 @@ class TestValidatePaperWindow:
 
     def test_pnl_compression_low(self) -> None:
         ev = _full_paper_window_pass()
-        ev = PaperWindowEvidence(
-            **{**ev.__dict__, "pnl_compression_ratio": 0.4}
-        )
+        ev = PaperWindowEvidence(**{**ev.__dict__, "pnl_compression_ratio": 0.4})
         errors = validate_paper_window(ev)
         assert any("PnL compression ratio" in e and "0.40" in e for e in errors)
 
     def test_pnl_compression_high(self) -> None:
         ev = _full_paper_window_pass()
-        ev = PaperWindowEvidence(
-            **{**ev.__dict__, "pnl_compression_ratio": 1.5}
-        )
+        ev = PaperWindowEvidence(**{**ev.__dict__, "pnl_compression_ratio": 1.5})
         errors = validate_paper_window(ev)
         assert any("upper alert" in e for e in errors)
 
@@ -444,17 +448,13 @@ class TestValidateCapitalStage:
 
     def test_pnl_compression_too_low(self) -> None:
         ev = _full_capital_stage_pass()
-        ev = CapitalStageEvidence(
-            **{**ev.__dict__, "pnl_compression_ratio_realised": 0.3}
-        )
+        ev = CapitalStageEvidence(**{**ev.__dict__, "pnl_compression_ratio_realised": 0.3})
         errors = validate_capital_stage(ev)
         assert any("PnL compression" in e and "< 0.50" in e for e in errors)
 
     def test_pnl_compression_too_high(self) -> None:
         ev = _full_capital_stage_pass()
-        ev = CapitalStageEvidence(
-            **{**ev.__dict__, "pnl_compression_ratio_realised": 1.4}
-        )
+        ev = CapitalStageEvidence(**{**ev.__dict__, "pnl_compression_ratio_realised": 1.4})
         errors = validate_capital_stage(ev)
         assert any("upper alert" in e for e in errors)
 
@@ -466,17 +466,13 @@ class TestValidateCapitalStage:
 
     def test_hit_rate_residual_below_floor(self) -> None:
         ev = _full_capital_stage_pass()
-        ev = CapitalStageEvidence(
-            **{**ev.__dict__, "hit_rate_residual_pp": -10.0}
-        )
+        ev = CapitalStageEvidence(**{**ev.__dict__, "hit_rate_residual_pp": -10.0})
         errors = validate_capital_stage(ev)
         assert any("hit-rate residual" in e for e in errors)
 
     def test_wrong_outgoing_tier_rejected(self) -> None:
         ev = _full_capital_stage_pass()
-        ev = CapitalStageEvidence(
-            **{**ev.__dict__, "tier": CapitalStageTier.SCALED}
-        )
+        ev = CapitalStageEvidence(**{**ev.__dict__, "tier": CapitalStageTier.SCALED})
         errors = validate_capital_stage(ev)
         assert any("tier=SMALL_CAPITAL" in e for e in errors)
 
@@ -498,7 +494,9 @@ class TestValidateQuarantineTrigger:
 
     def test_crowding_trigger(self) -> None:
         ev = QuarantineTriggerEvidence(
-            crowding_symptoms=tuple(["adverse_selection", "quote_anticipation", "shortfall_growth"])
+            crowding_symptoms=tuple(
+                ["adverse_selection", "quote_anticipation", "shortfall_growth"]
+            )
         )
         assert validate_quarantine_trigger(ev) == []
 
@@ -554,38 +552,28 @@ class TestGateMatrix:
             assert isinstance(req, tuple)
 
     def test_research_to_paper_requires_only_research(self) -> None:
-        assert required_evidence_types(GateId.RESEARCH_TO_PAPER) == (
-            ResearchAcceptanceEvidence,
-        )
+        assert required_evidence_types(GateId.RESEARCH_TO_PAPER) == (ResearchAcceptanceEvidence,)
 
     def test_paper_to_live_requires_paper_cpcv_dsr(self) -> None:
         req = required_evidence_types(GateId.PAPER_TO_LIVE)
         assert set(req) == {PaperWindowEvidence, CPCVEvidence, DSREvidence}
 
     def test_capital_tier_requires_capital_stage(self) -> None:
-        assert required_evidence_types(GateId.LIVE_PROMOTE_CAPITAL_TIER) == (
-            CapitalStageEvidence,
-        )
+        assert required_evidence_types(GateId.LIVE_PROMOTE_CAPITAL_TIER) == (CapitalStageEvidence,)
 
     def test_decommission_requires_no_evidence(self) -> None:
         assert required_evidence_types(GateId.QUARANTINED_TO_DECOMMISSIONED) == ()
 
     def test_quarantined_to_paper_requires_revalidation(self) -> None:
-        assert required_evidence_types(GateId.QUARANTINED_TO_PAPER) == (
-            RevalidationEvidence,
-        )
+        assert required_evidence_types(GateId.QUARANTINED_TO_PAPER) == (RevalidationEvidence,)
 
     def test_live_to_quarantined_requires_trigger(self) -> None:
-        assert required_evidence_types(GateId.LIVE_TO_QUARANTINED) == (
-            QuarantineTriggerEvidence,
-        )
+        assert required_evidence_types(GateId.LIVE_TO_QUARANTINED) == (QuarantineTriggerEvidence,)
 
 
 class TestValidateGate:
     def test_research_to_paper_full_pass(self) -> None:
-        errors = validate_gate(
-            GateId.RESEARCH_TO_PAPER, [_full_research_pass()]
-        )
+        errors = validate_gate(GateId.RESEARCH_TO_PAPER, [_full_research_pass()])
         assert errors == []
 
     def test_paper_to_live_full_pass(self) -> None:
@@ -604,9 +592,7 @@ class TestValidateGate:
             GateId.PAPER_TO_LIVE,
             [_full_paper_window_pass(), _full_cpcv_pass()],
         )
-        assert any(
-            "requires evidence of type 'DSREvidence'" in e for e in errors
-        )
+        assert any("requires evidence of type 'DSREvidence'" in e for e in errors)
 
     def test_paper_to_live_missing_all(self) -> None:
         errors = validate_gate(GateId.PAPER_TO_LIVE, [])
@@ -897,9 +883,9 @@ class TestMetadataToEvidence:
         ]
         payload = evidence_to_metadata(*originals)
         rebuilt = metadata_to_evidence(payload)
-        assert sorted(
-            type(ev).__name__ for ev in rebuilt
-        ) == sorted(type(ev).__name__ for ev in originals)
+        assert sorted(type(ev).__name__ for ev in rebuilt) == sorted(
+            type(ev).__name__ for ev in originals
+        )
         for ev in originals:
             assert ev in rebuilt
 
@@ -953,9 +939,7 @@ class TestMetadataToEvidence:
         # entries that just carry {"reason": "..."}).
         assert metadata_to_evidence({}) == []
         assert metadata_to_evidence({"reason": "edge decay"}) == []
-        assert metadata_to_evidence(
-            {"evidence": {"paper_days": 30, "paper_sharpe": 1.5}}
-        ) == []
+        assert metadata_to_evidence({"evidence": {"paper_days": 30, "paper_sharpe": 1.5}}) == []
 
     def test_mismatched_schema_version_rejected(self) -> None:
         payload = evidence_to_metadata(_full_cpcv_pass())
@@ -1044,9 +1028,7 @@ class TestParseGateThresholdsOverrides:
 
     def test_unknown_key_listed_in_error(self) -> None:
         with pytest.raises(ValueError) as excinfo:
-            parse_gate_thresholds_overrides(
-                {"not_a_real_threshold": 5, "another_typo": 10}
-            )
+            parse_gate_thresholds_overrides({"not_a_real_threshold": 5, "another_typo": 10})
         msg = str(excinfo.value)
         assert "another_typo" in msg
         assert "not_a_real_threshold" in msg
@@ -1089,9 +1071,7 @@ class TestParseGateThresholdsOverrides:
             parse_gate_thresholds_overrides({"dsr_min": True})
 
     def test_partial_overrides_only_carry_specified_keys(self) -> None:
-        out = parse_gate_thresholds_overrides(
-            {"dsr_min": 1.5, "cpcv_min_folds": 12}
-        )
+        out = parse_gate_thresholds_overrides({"dsr_min": 1.5, "cpcv_min_folds": 12})
         assert out == {"dsr_min": 1.5, "cpcv_min_folds": 12}
 
     def test_does_not_mutate_input_mapping(self) -> None:
@@ -1102,9 +1082,7 @@ class TestParseGateThresholdsOverrides:
     def test_negative_value_passes_structural_validation(self) -> None:
         # Numeric invariant checks (e.g. "must be >= 0") are explicitly
         # deferred to consumers — the override layer is structural.
-        out = parse_gate_thresholds_overrides(
-            {"small_max_hit_rate_residual_pp": -8.0}
-        )
+        out = parse_gate_thresholds_overrides({"small_max_hit_rate_residual_pp": -8.0})
         assert out == {"small_max_hit_rate_residual_pp": -8.0}
 
 
@@ -1129,9 +1107,7 @@ class TestApplyGateThresholdsOverrides:
 
     def test_multiple_field_override_preserves_unrelated(self) -> None:
         base = GateThresholds()
-        out = apply_gate_thresholds_overrides(
-            base, {"dsr_min": 1.5, "paper_min_trading_days": 10}
-        )
+        out = apply_gate_thresholds_overrides(base, {"dsr_min": 1.5, "paper_min_trading_days": 10})
         assert out.dsr_min == 1.5
         assert out.paper_min_trading_days == 10
         assert out.cpcv_min_folds == base.cpcv_min_folds
@@ -1154,11 +1130,7 @@ class TestApplyGateThresholdsOverrides:
         platform_layer = apply_gate_thresholds_overrides(
             skill_defaults, {"dsr_min": 1.2, "paper_min_trading_days": 7}
         )
-        per_alpha_layer = apply_gate_thresholds_overrides(
-            platform_layer, {"dsr_min": 1.5}
-        )
+        per_alpha_layer = apply_gate_thresholds_overrides(platform_layer, {"dsr_min": 1.5})
         assert per_alpha_layer.dsr_min == 1.5
         assert per_alpha_layer.paper_min_trading_days == 7
-        assert (
-            per_alpha_layer.cpcv_min_folds == skill_defaults.cpcv_min_folds
-        )
+        assert per_alpha_layer.cpcv_min_folds == skill_defaults.cpcv_min_folds

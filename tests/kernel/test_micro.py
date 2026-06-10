@@ -146,16 +146,12 @@ class TestMicroReset:
 
 
 class TestMicroIllegalTransitions:
-    def test_cannot_skip_waiting_to_feature_compute(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_cannot_skip_waiting_to_feature_compute(self, clock: SimulatedClock) -> None:
         sm = create_micro_state_machine(clock)
         with pytest.raises(IllegalTransition):
             sm.transition(MicroState.FEATURE_COMPUTE, trigger="skip")
 
-    def test_cannot_skip_waiting_to_order_submit(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_cannot_skip_waiting_to_order_submit(self, clock: SimulatedClock) -> None:
         sm = create_micro_state_machine(clock)
         with pytest.raises(IllegalTransition):
             sm.transition(MicroState.ORDER_SUBMIT, trigger="skip")
@@ -175,9 +171,7 @@ class TestMicroIllegalTransitions:
         with pytest.raises(IllegalTransition):
             sm.transition(MicroState.ORDER_SUBMIT, trigger="skip_to_order")
 
-    def test_log_and_metrics_cannot_go_to_order_submit(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_log_and_metrics_cannot_go_to_order_submit(self, clock: SimulatedClock) -> None:
         sm = create_micro_state_machine(clock)
         sm.transition(MicroState.MARKET_EVENT_RECEIVED, trigger="tick_arrived")
         sm.transition(MicroState.STATE_UPDATE, trigger="event_logged")

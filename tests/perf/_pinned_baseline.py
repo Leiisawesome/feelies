@@ -32,9 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-_BASELINE_PATH = (
-    Path(__file__).resolve().parent / "baselines" / "v02_baseline.json"
-)
+_BASELINE_PATH = Path(__file__).resolve().parent / "baselines" / "v02_baseline.json"
 
 
 @dataclass(frozen=True)
@@ -69,7 +67,9 @@ def _load_json() -> dict[str, dict[str, dict[str, float | str]]]:
 
 
 def load_pinned_baseline(
-    *, section: str, secondary_key: str,
+    *,
+    section: str,
+    secondary_key: str,
 ) -> PinnedBaseline | None:
     """Look up the pinned baseline for the running host, or return ``None``.
 

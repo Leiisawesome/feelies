@@ -101,9 +101,7 @@ def _make_config(
         account_equity=100_000.0,
         sensor_specs=_TEST_SENSOR_SPECS,
         gate_thresholds_overrides=(
-            dict(gate_thresholds_overrides)
-            if gate_thresholds_overrides is not None
-            else {}
+            dict(gate_thresholds_overrides) if gate_thresholds_overrides is not None else {}
         ),
         # Workstream E flipped the platform default to ``true``.  This
         # F-5 wiring test is orthogonal to G16 — its concern is the
@@ -141,10 +139,7 @@ class TestBuildPlatformGateThresholds:
         thresholds = _build_platform_gate_thresholds(cfg)
         assert thresholds is not None
         assert thresholds.dsr_min == 1.5
-        assert (
-            thresholds.paper_min_trading_days
-            == GateThresholds().paper_min_trading_days
-        )
+        assert thresholds.paper_min_trading_days == GateThresholds().paper_min_trading_days
 
     def test_returns_fresh_instance_each_call(self) -> None:
         cfg = PlatformConfig(
@@ -164,9 +159,7 @@ class TestBuildPlatformGateThresholds:
 
 
 class TestBuildPlatformGateThresholdsWiring:
-    def test_default_config_leaves_registry_thresholds_none(
-        self, tmp_path: Path
-    ) -> None:
+    def test_default_config_leaves_registry_thresholds_none(self, tmp_path: Path) -> None:
         _write_alpha(tmp_path, "f5.alpha.yaml", _SIGNAL_ALPHA_YAML)
         config = _make_config(tmp_path)
         orchestrator, _ = build_platform(config)
@@ -175,9 +168,7 @@ class TestBuildPlatformGateThresholdsWiring:
         assert registry is not None
         assert registry._gate_thresholds is None  # noqa: SLF001
 
-    def test_platform_overrides_propagate_to_registry(
-        self, tmp_path: Path
-    ) -> None:
+    def test_platform_overrides_propagate_to_registry(self, tmp_path: Path) -> None:
         _write_alpha(tmp_path, "f5.alpha.yaml", _SIGNAL_ALPHA_YAML)
         config = _make_config(
             tmp_path,
@@ -195,9 +186,7 @@ class TestBuildPlatformGateThresholdsWiring:
         assert thresholds is not None
         assert thresholds.dsr_min == 1.5
         assert thresholds.paper_min_trading_days == 7
-        assert (
-            thresholds.cpcv_min_folds == GateThresholds().cpcv_min_folds
-        )
+        assert thresholds.cpcv_min_folds == GateThresholds().cpcv_min_folds
 
 
 class TestBuildPlatformIngestTerminalEnforcement:

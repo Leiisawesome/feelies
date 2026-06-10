@@ -31,7 +31,11 @@ def fmt_money(value: Decimal) -> str:
 def fmt_ts(ns: int | None) -> str:
     if ns is None:
         return ""
-    return datetime.fromtimestamp(ns / 1_000_000_000, tz=timezone.utc).astimezone(_TZ_ET).isoformat(timespec="seconds")
+    return (
+        datetime.fromtimestamp(ns / 1_000_000_000, tz=timezone.utc)
+        .astimezone(_TZ_ET)
+        .isoformat(timespec="seconds")
+    )
 
 
 def signal_type_from_intent(name: str, strategy_id: str = "") -> str:
@@ -57,12 +61,18 @@ def direction_from_quantity(quantity: int) -> str:
 
 
 def main() -> None:
-    args = parse_cache_replay_args([
-        "--config", "configs/backtest_app.yaml",
-        "--symbol", "APP",
-        "--date", "2026-06-01",
-        "--end-date", "2026-06-04",
-    ])
+    args = parse_cache_replay_args(
+        [
+            "--config",
+            "configs/backtest_app.yaml",
+            "--symbol",
+            "APP",
+            "--date",
+            "2026-06-01",
+            "--end-date",
+            "2026-06-04",
+        ]
+    )
     config = _load_backtest_config(args)
     if config is None:
         raise SystemExit("No config")
@@ -103,7 +113,9 @@ def main() -> None:
     orchestrator.boot(config_out)
     orchestrator.run_backtest()
 
-    records = list(orchestrator.trade_journal.query()) if orchestrator.trade_journal is not None else []
+    records = (
+        list(orchestrator.trade_journal.query()) if orchestrator.trade_journal is not None else []
+    )
     position_updates = recorder.of_type(PositionUpdate)
     position_updates_by_ts: dict[int, PositionUpdate] = {
         pu.timestamp_ns: pu for pu in position_updates
@@ -112,35 +124,39 @@ def main() -> None:
     output_path = Path("docs/app_trade_list_full.csv")
     with output_path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh)
-        writer.writerow([
-            "time",
-            "signal_type",
-            "direction",
-            "current_position",
-            "entry_price",
-            "fill_price",
-            "qty",
-            "cost",
-            "realized_pnl",
-            "net_pnl_after_cost",
-        ])
+        writer.writerow(
+            [
+                "time",
+                "signal_type",
+                "direction",
+                "current_position",
+                "entry_price",
+                "fill_price",
+                "qty",
+                "cost",
+                "realized_pnl",
+                "net_pnl_after_cost",
+            ]
+        )
 
         for rec in records:
             pu = position_updates_by_ts.get(rec.fill_timestamp_ns)
             qty = pu.quantity if pu is not None else rec.filled_quantity
             entry_price = rec.fill_price or Decimal("0")
-            writer.writerow([
-                fmt_ts(rec.fill_timestamp_ns),
-                signal_type_from_intent(rec.trading_intent or "", rec.strategy_id),
-                direction_from_quantity(qty),
-                qty,
-                fmt_money(entry_price),
-                fmt_money(rec.fill_price or Decimal("0")),
-                rec.filled_quantity,
-                fmt_money(rec.fees),
-                fmt_money(rec.realized_pnl),
-                fmt_money(rec.realized_pnl - rec.fees),
-            ])
+            writer.writerow(
+                [
+                    fmt_ts(rec.fill_timestamp_ns),
+                    signal_type_from_intent(rec.trading_intent or "", rec.strategy_id),
+                    direction_from_quantity(qty),
+                    qty,
+                    fmt_money(entry_price),
+                    fmt_money(rec.fill_price or Decimal("0")),
+                    rec.filled_quantity,
+                    fmt_money(rec.fees),
+                    fmt_money(rec.realized_pnl),
+                    fmt_money(rec.realized_pnl - rec.fees),
+                ]
+            )
 
     print(f"WROTE {len(records)} trades to {output_path}")
 

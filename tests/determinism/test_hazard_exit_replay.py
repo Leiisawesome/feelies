@@ -147,7 +147,6 @@ def _hash_order_stream(orders: list[OrderRequest]) -> str:
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
-
 # Locked hazard-exit OrderRequest baseline (Phase 4.1).
 EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH = (
     "79b35ea6d10038ec5e36b7844172afadda521734b298b3c8628bd98995bdbd81"
@@ -177,8 +176,7 @@ def test_two_replays_produce_identical_hazard_exit_hash() -> None:
     hash_a, count_a = _replay()
     hash_b, count_b = _replay()
     assert count_a == count_b, (
-        f"hazard-exit order count drift across replays: "
-        f"{count_a} vs {count_b}"
+        f"hazard-exit order count drift across replays: {count_a} vs {count_b}"
     )
     assert hash_a == hash_b, (
         "Hazard-exit OrderRequest hash drift across identical "

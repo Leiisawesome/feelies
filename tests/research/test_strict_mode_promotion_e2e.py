@@ -144,9 +144,7 @@ def _passing_research_acceptance() -> ResearchAcceptanceEvidence:
     )
 
 
-def _make_lifecycle(
-    alpha_id: str, *, ledger: PromotionLedger | None = None
-) -> AlphaLifecycle:
+def _make_lifecycle(alpha_id: str, *, ledger: PromotionLedger | None = None) -> AlphaLifecycle:
     clock = SimulatedClock(start_ns=1_700_000_000_000_000_000)
     return AlphaLifecycle(alpha_id=alpha_id, clock=clock, ledger=ledger)
 
@@ -256,9 +254,7 @@ class TestStrictModeReferenceAlphasPromote:
         # canonical order.  The research_acceptance kind is the only
         # kind the RESEARCH_TO_PAPER gate writes here.
         research_kind = next(
-            kind
-            for kind, ev_type in KIND_TO_TYPE.items()
-            if ev_type is ResearchAcceptanceEvidence
+            kind for kind, ev_type in KIND_TO_TYPE.items() if ev_type is ResearchAcceptanceEvidence
         )
         assert research_kind in entry.metadata, (
             f"{alpha_id!r}: ledger metadata missing the "

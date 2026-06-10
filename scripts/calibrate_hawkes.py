@@ -240,12 +240,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--cache-dir", required=True, type=Path)
     ap.add_argument("--symbol", required=True)
     ap.add_argument("--date", required=True)
-    ap.add_argument("--target-half-life", type=float, default=30.0,
-                    help="Target decay half-life in seconds (default 30).")
-    ap.add_argument("--min-gap-ms", type=float, default=0.0,
-                    help="Collapse prints closer than this (ms) into one event "
-                         "before fitting, to remove split-fill microbursts that "
-                         "otherwise dominate the kernel (try 50). Default 0 = off.")
+    ap.add_argument(
+        "--target-half-life",
+        type=float,
+        default=30.0,
+        help="Target decay half-life in seconds (default 30).",
+    )
+    ap.add_argument(
+        "--min-gap-ms",
+        type=float,
+        default=0.0,
+        help="Collapse prints closer than this (ms) into one event "
+        "before fitting, to remove split-fill microbursts that "
+        "otherwise dominate the kernel (try 50). Default 0 = off.",
+    )
     args = ap.parse_args(argv)
     min_gap_ns = int(args.min_gap_ms * 1_000_000)
 
@@ -269,8 +277,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     note = (
         f" (collapsed to {len(all_ts)} events at min_gap={args.min_gap_ms}ms)"
-        if min_gap_ns > 0 else
-        "  [raw prints — a tiny half-life here means split-fill microbursts "
+        if min_gap_ns > 0
+        else "  [raw prints — a tiny half-life here means split-fill microbursts "
         "dominate; re-run with --min-gap-ms 50 for the macro envelope]"
     )
     print(f"# Hawkes MLE fit — {args.symbol} {args.date} ({len(trades)} trades){note}")

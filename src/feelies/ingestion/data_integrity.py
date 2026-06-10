@@ -35,20 +35,26 @@ class DataHealth(Enum):
 
 
 _DATA_TRANSITIONS: dict[DataHealth, frozenset[DataHealth]] = {
-    DataHealth.HEALTHY: frozenset({
-        DataHealth.GAP_DETECTED,
-        DataHealth.HALTED,
-        DataHealth.CORRUPTED,
-    }),
-    DataHealth.GAP_DETECTED: frozenset({
-        DataHealth.HEALTHY,     # gap resolved
-        DataHealth.HALTED,      # halt declared mid-gap
-        DataHealth.CORRUPTED,   # gap unresolvable
-    }),
-    DataHealth.HALTED: frozenset({
-        DataHealth.HEALTHY,     # halt resolved (resume marker)
-        DataHealth.CORRUPTED,   # stream corrupted during halt
-    }),
+    DataHealth.HEALTHY: frozenset(
+        {
+            DataHealth.GAP_DETECTED,
+            DataHealth.HALTED,
+            DataHealth.CORRUPTED,
+        }
+    ),
+    DataHealth.GAP_DETECTED: frozenset(
+        {
+            DataHealth.HEALTHY,  # gap resolved
+            DataHealth.HALTED,  # halt declared mid-gap
+            DataHealth.CORRUPTED,  # gap unresolvable
+        }
+    ),
+    DataHealth.HALTED: frozenset(
+        {
+            DataHealth.HEALTHY,  # halt resolved (resume marker)
+            DataHealth.CORRUPTED,  # stream corrupted during halt
+        }
+    ),
     DataHealth.CORRUPTED: frozenset(),  # terminal — restart required
 }
 

@@ -64,8 +64,7 @@ def main() -> None:
                 raise SystemExit(f"{alpha_id}: {label} failed: {errs}")
         path = out / f"{alpha_id}_daily_returns.json"
         path.write_text(
-            json.dumps({**meta, "alpha_id": alpha_id, "returns": returns}, indent=2)
-            + "\n",
+            json.dumps({**meta, "alpha_id": alpha_id, "returns": returns}, indent=2) + "\n",
             encoding="utf-8",
         )
         print(f"wrote {path} mean_sharpe={cpcv.mean_sharpe:.2f} dsr={dsr.dsr:.2f}")

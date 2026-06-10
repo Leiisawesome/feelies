@@ -84,14 +84,10 @@ def aggregate_intents(
 
             if intent.intent == TradingIntent.REVERSE_LONG_TO_SHORT:
                 exit_qty -= intent.current_quantity
-                entry_qty -= (
-                    intent.target_quantity - intent.current_quantity
-                )
+                entry_qty -= intent.target_quantity - intent.current_quantity
             elif intent.intent == TradingIntent.REVERSE_SHORT_TO_LONG:
                 exit_qty += abs(intent.current_quantity)
-                entry_qty += (
-                    intent.target_quantity - abs(intent.current_quantity)
-                )
+                entry_qty += intent.target_quantity - abs(intent.current_quantity)
             elif intent.intent == TradingIntent.EXIT:
                 exit_qty += _to_signed_quantity(intent)
             else:
@@ -107,10 +103,7 @@ def aggregate_intents(
             side = Side.BUY if entry_qty > 0 else Side.SELL
             entry_order = (side, abs(entry_qty))
 
-        active_intents = tuple(
-            i for i in sym_intents
-            if i.intent != TradingIntent.NO_ACTION
-        )
+        active_intents = tuple(i for i in sym_intents if i.intent != TradingIntent.NO_ACTION)
 
         result[symbol] = AggregatedOrders(
             exit_order=exit_order,

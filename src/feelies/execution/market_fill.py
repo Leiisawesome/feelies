@@ -90,16 +90,18 @@ def append_reject_ack(
     supplied.
     """
     ts = clock_now_ns if timestamp_ns is None else timestamp_ns
-    pending_acks.append(OrderAck(
-        timestamp_ns=ts,
-        correlation_id=request.correlation_id,
-        sequence=ack_seq.next(),
-        order_id=request.order_id,
-        symbol=request.symbol,
-        status=OrderAckStatus.REJECTED,
-        reason=reason,
-        request_sequence=request.sequence,
-    ))
+    pending_acks.append(
+        OrderAck(
+            timestamp_ns=ts,
+            correlation_id=request.correlation_id,
+            sequence=ack_seq.next(),
+            order_id=request.order_id,
+            symbol=request.symbol,
+            status=OrderAckStatus.REJECTED,
+            reason=reason,
+            request_sequence=request.sequence,
+        )
+    )
     if release_submitted_id:
         submitted_order_ids.discard(request.order_id)
 
@@ -182,9 +184,7 @@ def append_market_fill_acks(
     else:
         fee_half_spread = Decimal("0")
 
-    available_depth = (
-        quote.ask_size if request.side == Side.BUY else quote.bid_size
-    )
+    available_depth = quote.ask_size if request.side == Side.BUY else quote.bid_size
 
     if request.quantity > available_depth:
         partial_qty = available_depth
@@ -198,19 +198,21 @@ def append_market_fill_acks(
         )
         partial_ts = fill_ts
         final_ts = fill_ts + 1
-        pending_acks.append(OrderAck(
-            timestamp_ns=partial_ts,
-            correlation_id=request.correlation_id,
-            sequence=ack_seq.next(),
-            order_id=request.order_id,
-            symbol=request.symbol,
-            status=OrderAckStatus.PARTIALLY_FILLED,
-            filled_quantity=partial_qty,
-            fill_price=fill_price,
-            fees=partial_costs.total_fees,
-            cost_bps=partial_costs.cost_bps,
-            request_sequence=request.sequence,
-        ))
+        pending_acks.append(
+            OrderAck(
+                timestamp_ns=partial_ts,
+                correlation_id=request.correlation_id,
+                sequence=ack_seq.next(),
+                order_id=request.order_id,
+                symbol=request.symbol,
+                status=OrderAckStatus.PARTIALLY_FILLED,
+                filled_quantity=partial_qty,
+                fill_price=fill_price,
+                fees=partial_costs.total_fees,
+                cost_bps=partial_costs.cost_bps,
+                request_sequence=request.sequence,
+            )
+        )
 
         excess_qty = request.quantity - available_depth
         raw_impact = (
@@ -241,19 +243,21 @@ def append_market_fill_acks(
             half_spread=fee_half_spread,
             is_short=request.is_short,
         )
-        pending_acks.append(OrderAck(
-            timestamp_ns=final_ts,
-            correlation_id=request.correlation_id,
-            sequence=ack_seq.next(),
-            order_id=request.order_id,
-            symbol=request.symbol,
-            status=OrderAckStatus.FILLED,
-            filled_quantity=excess_qty,
-            fill_price=impact_price,
-            fees=excess_costs.total_fees,
-            cost_bps=excess_costs.cost_bps,
-            request_sequence=request.sequence,
-        ))
+        pending_acks.append(
+            OrderAck(
+                timestamp_ns=final_ts,
+                correlation_id=request.correlation_id,
+                sequence=ack_seq.next(),
+                order_id=request.order_id,
+                symbol=request.symbol,
+                status=OrderAckStatus.FILLED,
+                filled_quantity=excess_qty,
+                fill_price=impact_price,
+                fees=excess_costs.total_fees,
+                cost_bps=excess_costs.cost_bps,
+                request_sequence=request.sequence,
+            )
+        )
         return
 
     costs = cost_model.compute(
@@ -265,16 +269,18 @@ def append_market_fill_acks(
         is_short=request.is_short,
     )
 
-    pending_acks.append(OrderAck(
-        timestamp_ns=fill_ts,
-        correlation_id=request.correlation_id,
-        sequence=ack_seq.next(),
-        order_id=request.order_id,
-        symbol=request.symbol,
-        status=OrderAckStatus.FILLED,
-        filled_quantity=request.quantity,
-        fill_price=fill_price,
-        fees=costs.total_fees,
-        cost_bps=costs.cost_bps,
-        request_sequence=request.sequence,
-    ))
+    pending_acks.append(
+        OrderAck(
+            timestamp_ns=fill_ts,
+            correlation_id=request.correlation_id,
+            sequence=ack_seq.next(),
+            order_id=request.order_id,
+            symbol=request.symbol,
+            status=OrderAckStatus.FILLED,
+            filled_quantity=request.quantity,
+            fill_price=fill_price,
+            fees=costs.total_fees,
+            cost_bps=costs.cost_bps,
+            request_sequence=request.sequence,
+        )
+    )

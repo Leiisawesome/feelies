@@ -62,9 +62,7 @@ class ParameterDef:
         errors: list[str] = []
         expected_type = _TYPE_MAP.get(self.param_type)
         if expected_type is None:
-            errors.append(
-                f"parameter '{self.name}': unknown type '{self.param_type}'"
-            )
+            errors.append(f"parameter '{self.name}': unknown type '{self.param_type}'")
             return errors
 
         if not isinstance(value, expected_type):
@@ -79,10 +77,7 @@ class ParameterDef:
         if self.range is not None and isinstance(value, (int, float)):
             lo, hi = self.range
             if value < lo or value > hi:
-                errors.append(
-                    f"parameter '{self.name}': value {value} "
-                    f"outside range [{lo}, {hi}]"
-                )
+                errors.append(f"parameter '{self.name}': value {value} outside range [{lo}, {hi}]")
 
         return errors
 

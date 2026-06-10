@@ -32,8 +32,7 @@ def test_discovery_excludes_template_and_underscore_paths() -> None:
     assert not any("research/" in p for p in rel)
 
     research_rel = {
-        p.relative_to(_ALPHAS_DIR).as_posix()
-        for p in discover_research_alpha_specs(_ALPHAS_DIR)
+        p.relative_to(_ALPHAS_DIR).as_posix() for p in discover_research_alpha_specs(_ALPHAS_DIR)
     }
     assert "research/pro_burst_revert_v1/pro_burst_revert_v1.alpha.yaml" in research_rel
     assert "research/pro_kyle_benign_v1/pro_kyle_benign_v1.alpha.yaml" in research_rel

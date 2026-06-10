@@ -65,11 +65,11 @@ def test_nelder_mead_minimises_quadratic() -> None:
 
 def test_split_sides_tick_rule() -> None:
     trades = [
-        _trade(0, "100.00"),       # first → default buy
-        _trade(1, "100.01"),       # up → buy
-        _trade(2, "100.00"),       # down → sell
-        _trade(3, "100.00"),       # equal → inherit sell
-        _trade(4, "100.02"),       # up → buy
+        _trade(0, "100.00"),  # first → default buy
+        _trade(1, "100.01"),  # up → buy
+        _trade(2, "100.00"),  # down → sell
+        _trade(3, "100.00"),  # equal → inherit sell
+        _trade(4, "100.02"),  # up → buy
     ]
     buys, sells = ch._split_sides(trades)
     assert buys == [0, 1, 4]

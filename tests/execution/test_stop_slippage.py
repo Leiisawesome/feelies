@@ -62,22 +62,31 @@ class TestStopSlippageBacktestRouter:
             finra_taf_per_share=Decimal("0"),
         )
         normal = BacktestOrderRouter(
-            SimulatedClock(start_ns=0), cost_model=DefaultCostModel(cfg),
+            SimulatedClock(start_ns=0),
+            cost_model=DefaultCostModel(cfg),
             stop_slippage_half_spreads=Decimal("2.0"),
         )
         stop = BacktestOrderRouter(
-            SimulatedClock(start_ns=0), cost_model=DefaultCostModel(cfg),
+            SimulatedClock(start_ns=0),
+            cost_model=DefaultCostModel(cfg),
             stop_slippage_half_spreads=Decimal("2.0"),
         )
         normal.on_quote(_quote())
         stop.on_quote(_quote())
         normal.submit(_order(reason=""))
-        stop.submit(OrderRequest(
-            timestamp_ns=0, correlation_id="c", sequence=2,
-            order_id="o2", symbol="AAPL", side=Side.SELL,
-            order_type=OrderType.MARKET, quantity=100,
-            reason="STOP_EXIT",
-        ))
+        stop.submit(
+            OrderRequest(
+                timestamp_ns=0,
+                correlation_id="c",
+                sequence=2,
+                order_id="o2",
+                symbol="AAPL",
+                side=Side.SELL,
+                order_type=OrderType.MARKET,
+                quantity=100,
+                reason="STOP_EXIT",
+            )
+        )
         n_fills = [a for a in normal.poll_acks() if a.status == OrderAckStatus.FILLED]
         s_fills = [a for a in stop.poll_acks() if a.status == OrderAckStatus.FILLED]
         assert s_fills[0].fees > n_fills[0].fees
@@ -89,22 +98,31 @@ class TestStopSlippageBacktestRouter:
             finra_taf_per_share=Decimal("0"),
         )
         normal = BacktestOrderRouter(
-            SimulatedClock(start_ns=0), cost_model=DefaultCostModel(cfg),
+            SimulatedClock(start_ns=0),
+            cost_model=DefaultCostModel(cfg),
             stop_slippage_half_spreads=Decimal("1.0"),
         )
         stop = BacktestOrderRouter(
-            SimulatedClock(start_ns=0), cost_model=DefaultCostModel(cfg),
+            SimulatedClock(start_ns=0),
+            cost_model=DefaultCostModel(cfg),
             stop_slippage_half_spreads=Decimal("1.0"),
         )
         normal.on_quote(_quote())
         stop.on_quote(_quote())
         normal.submit(_order(reason=""))
-        stop.submit(OrderRequest(
-            timestamp_ns=0, correlation_id="c", sequence=2,
-            order_id="o2", symbol="AAPL", side=Side.SELL,
-            order_type=OrderType.MARKET, quantity=100,
-            reason="STOP_EXIT",
-        ))
+        stop.submit(
+            OrderRequest(
+                timestamp_ns=0,
+                correlation_id="c",
+                sequence=2,
+                order_id="o2",
+                symbol="AAPL",
+                side=Side.SELL,
+                order_type=OrderType.MARKET,
+                quantity=100,
+                reason="STOP_EXIT",
+            )
+        )
         n_fills = [a for a in normal.poll_acks() if a.status == OrderAckStatus.FILLED]
         s_fills = [a for a in stop.poll_acks() if a.status == OrderAckStatus.FILLED]
         assert s_fills[0].fees == n_fills[0].fees
@@ -123,12 +141,19 @@ class TestStopSlippagePassiveRouter:
         )
         router.on_quote(_quote())
         router.submit(_order(reason=""))
-        router.submit(OrderRequest(
-            timestamp_ns=0, correlation_id="c", sequence=2,
-            order_id="o2", symbol="AAPL", side=Side.SELL,
-            order_type=OrderType.MARKET, quantity=100,
-            reason="HARD_EXIT_AGE",
-        ))
+        router.submit(
+            OrderRequest(
+                timestamp_ns=0,
+                correlation_id="c",
+                sequence=2,
+                order_id="o2",
+                symbol="AAPL",
+                side=Side.SELL,
+                order_type=OrderType.MARKET,
+                quantity=100,
+                reason="HARD_EXIT_AGE",
+            )
+        )
         fills = [a for a in router.poll_acks() if a.status == OrderAckStatus.FILLED]
         assert len(fills) == 2
         assert fills[1].fees > fills[0].fees

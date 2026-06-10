@@ -27,25 +27,35 @@ class RiskLevel(Enum):
 
 
 _RISK_TRANSITIONS: dict[RiskLevel, frozenset[RiskLevel]] = {
-    RiskLevel.NORMAL: frozenset({
-        RiskLevel.WARNING,
-    }),
+    RiskLevel.NORMAL: frozenset(
+        {
+            RiskLevel.WARNING,
+        }
+    ),
     # R1 → R2 only.  Once WARNING, escalation is forward-only.
     # De-escalation is forbidden — only the full cycle R4 → R0
     # (human unlock + audit) can return to NORMAL.
-    RiskLevel.WARNING: frozenset({
-        RiskLevel.BREACH_DETECTED,
-    }),
-    RiskLevel.BREACH_DETECTED: frozenset({
-        RiskLevel.FORCED_FLATTEN,
-    }),
-    RiskLevel.FORCED_FLATTEN: frozenset({
-        RiskLevel.LOCKED,
-    }),
+    RiskLevel.WARNING: frozenset(
+        {
+            RiskLevel.BREACH_DETECTED,
+        }
+    ),
+    RiskLevel.BREACH_DETECTED: frozenset(
+        {
+            RiskLevel.FORCED_FLATTEN,
+        }
+    ),
+    RiskLevel.FORCED_FLATTEN: frozenset(
+        {
+            RiskLevel.LOCKED,
+        }
+    ),
     # LOCKED -> NORMAL only via human override + system audit
-    RiskLevel.LOCKED: frozenset({
-        RiskLevel.NORMAL,
-    }),
+    RiskLevel.LOCKED: frozenset(
+        {
+            RiskLevel.NORMAL,
+        }
+    ),
 }
 
 

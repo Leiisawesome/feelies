@@ -40,9 +40,7 @@ def _make_signal(
     )
 
 
-def _make_ctx(
-    signals: dict[str, Signal | None], *, ts_ns: int = 2_000
-) -> CrossSectionalContext:
+def _make_ctx(signals: dict[str, Signal | None], *, ts_ns: int = 2_000) -> CrossSectionalContext:
     universe = tuple(sorted(signals))
     return CrossSectionalContext(
         timestamp_ns=ts_ns,
@@ -59,23 +57,29 @@ def _make_ctx(
 
 def test_zscore_centers_to_zero_and_clips():
     ranker = CrossSectionalRanker(clip=4.0)
-    ctx = _make_ctx({
-        "AAPL": _make_signal(symbol="AAPL", direction=SignalDirection.LONG, edge_bps=10),
-        "MSFT": _make_signal(symbol="MSFT", direction=SignalDirection.LONG, edge_bps=5),
-        "TSLA": _make_signal(symbol="TSLA", direction=SignalDirection.SHORT, edge_bps=10),
-    })
+    ctx = _make_ctx(
+        {
+            "AAPL": _make_signal(symbol="AAPL", direction=SignalDirection.LONG, edge_bps=10),
+            "MSFT": _make_signal(symbol="MSFT", direction=SignalDirection.LONG, edge_bps=5),
+            "TSLA": _make_signal(symbol="TSLA", direction=SignalDirection.SHORT, edge_bps=10),
+        }
+    )
     result = ranker.rank(ctx)
     assert sum(result.weights.values()) == 0.0 or math.isclose(
-        sum(result.weights.values()), 0.0, abs_tol=1e-9,
+        sum(result.weights.values()),
+        0.0,
+        abs_tol=1e-9,
     )
 
 
 def test_none_signal_yields_zero_weight():
     ranker = CrossSectionalRanker()
-    ctx = _make_ctx({
-        "AAPL": _make_signal(symbol="AAPL", direction=SignalDirection.LONG),
-        "MSFT": None,
-    })
+    ctx = _make_ctx(
+        {
+            "AAPL": _make_signal(symbol="AAPL", direction=SignalDirection.LONG),
+            "MSFT": None,
+        }
+    )
     result = ranker.rank(ctx)
     assert result.weights["MSFT"] == 0.0
 
@@ -98,7 +102,8 @@ def test_decay_weighting_shrinks_old_signals():
         half_life=60,
     )
     ctx = _make_ctx(
-        {"AAPL": sig_old, "MSFT": sig_fresh}, ts_ns=61_000_000_000,
+        {"AAPL": sig_old, "MSFT": sig_fresh},
+        ts_ns=61_000_000_000,
     )
     result = ranker.rank(ctx)
     assert math.isclose(result.decay_factors["AAPL"], math.exp(-1.0))
@@ -113,9 +118,16 @@ def test_liquidity_stress_is_exit_only():
         edge_bps=10.0,
         mech=TrendMechanism.LIQUIDITY_STRESS,
     )
-    ctx = _make_ctx({"AAPL": sig, "MSFT": _make_signal(
-        symbol="MSFT", direction=SignalDirection.LONG, edge_bps=10.0,
-    )})
+    ctx = _make_ctx(
+        {
+            "AAPL": sig,
+            "MSFT": _make_signal(
+                symbol="MSFT",
+                direction=SignalDirection.LONG,
+                edge_bps=10.0,
+            ),
+        }
+    )
     result = ranker.rank(ctx)
     assert result.raw_scores["AAPL"] == 0.0
 
@@ -146,10 +158,12 @@ def test_mechanism_cap_scales_overrepresented_family():
 
 def test_deterministic_replay():
     ranker = CrossSectionalRanker(decay_weighting_enabled=True)
-    ctx = _make_ctx({
-        s: _make_signal(symbol=s, direction=SignalDirection.LONG, edge_bps=i + 1.0)
-        for i, s in enumerate(("AAPL", "MSFT", "GOOG", "TSLA"))
-    })
+    ctx = _make_ctx(
+        {
+            s: _make_signal(symbol=s, direction=SignalDirection.LONG, edge_bps=i + 1.0)
+            for i, s in enumerate(("AAPL", "MSFT", "GOOG", "TSLA"))
+        }
+    )
     a = ranker.rank(ctx)
     b = ranker.rank(ctx)
     assert a.weights == b.weights

@@ -47,18 +47,20 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 _SCRIPT_PATH = Path(__file__).resolve()
-_DEFAULT_REFERENCE_ROOT = (
-    _SCRIPT_PATH.parent.parent
-    / "src"
-    / "feelies"
-    / "storage"
-    / "reference"
-)
+_DEFAULT_REFERENCE_ROOT = _SCRIPT_PATH.parent.parent / "src" / "feelies" / "storage" / "reference"
 
 
 REFERENCE_UNIVERSE: tuple[str, ...] = (
-    "AAPL", "MSFT", "GOOG", "AMZN", "META",
-    "NVDA", "JPM", "BAC", "XOM", "CVX",
+    "AAPL",
+    "MSFT",
+    "GOOG",
+    "AMZN",
+    "META",
+    "NVDA",
+    "JPM",
+    "BAC",
+    "XOM",
+    "CVX",
 )
 
 REFERENCE_SECTORS: dict[str, str] = {
@@ -75,7 +77,13 @@ REFERENCE_SECTORS: dict[str, str] = {
 }
 
 FACTORS_FF5_MOMENTUM_STR: tuple[str, ...] = (
-    "MKT", "SMB", "HML", "RMW", "CMA", "MOM", "STR",
+    "MKT",
+    "SMB",
+    "HML",
+    "RMW",
+    "CMA",
+    "MOM",
+    "STR",
 )
 
 
@@ -89,7 +97,7 @@ def _deterministic_loading(symbol: str, factor: str) -> float:
     """
     key = f"{symbol}:{factor}".encode("utf-8")
     digest = hashlib.sha256(key).digest()
-    raw, = struct.unpack(">Q", digest[:8])
+    (raw,) = struct.unpack(">Q", digest[:8])
     unit = (raw / (2**64 - 1)) * 2.0 - 1.0
     if factor == "MKT":
         return round(0.6 + unit * 0.4, 6)
@@ -119,7 +127,8 @@ def write_json(path: Path, payload: dict) -> None:
 
 
 def write_parquet_if_available(
-    path: Path, loadings: dict[str, dict[str, float]],
+    path: Path,
+    loadings: dict[str, dict[str, float]],
 ) -> bool:
     try:
         import pyarrow as pa  # noqa: F401
@@ -150,8 +159,7 @@ def write_parquet_if_available(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Build the reference factor-loadings + sector-map fixtures "
-            "for Phase 4-finalize."
+            "Build the reference factor-loadings + sector-map fixtures for Phase 4-finalize."
         )
     )
     parser.add_argument(

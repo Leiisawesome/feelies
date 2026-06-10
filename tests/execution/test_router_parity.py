@@ -55,9 +55,15 @@ def _market_order(qty: int, order_id: str = "o1") -> OrderRequest:
 
 
 def _fills_only(acks):
-    return [a for a in acks if a.status in (
-        OrderAckStatus.PARTIALLY_FILLED, OrderAckStatus.FILLED,
-    )]
+    return [
+        a
+        for a in acks
+        if a.status
+        in (
+            OrderAckStatus.PARTIALLY_FILLED,
+            OrderAckStatus.FILLED,
+        )
+    ]
 
 
 class TestAggressiveFillParity:
@@ -85,11 +91,13 @@ class TestAggressiveFillParity:
         clock_a = SimulatedClock(start_ns=0)
         clock_b = SimulatedClock(start_ns=0)
         a = BacktestOrderRouter(
-            clock_a, cost_model=DefaultCostModel(cfg),
+            clock_a,
+            cost_model=DefaultCostModel(cfg),
             market_impact_factor=Decimal("0.5"),
         )
         b = PassiveLimitOrderRouter(
-            clock_b, cost_model=DefaultCostModel(cfg),
+            clock_b,
+            cost_model=DefaultCostModel(cfg),
             market_impact_factor=Decimal("0.5"),
         )
         a.on_quote(_quote(ask_size=50))
@@ -117,11 +125,7 @@ class TestAggressiveFillParity:
         b.on_quote(_quote(ask_size=0))
         a.submit(_market_order(100))
         b.submit(_market_order(100))
-        rejects_a = [
-            x for x in a.poll_acks() if x.status == OrderAckStatus.REJECTED
-        ]
-        rejects_b = [
-            x for x in b.poll_acks() if x.status == OrderAckStatus.REJECTED
-        ]
+        rejects_a = [x for x in a.poll_acks() if x.status == OrderAckStatus.REJECTED]
+        rejects_b = [x for x in b.poll_acks() if x.status == OrderAckStatus.REJECTED]
         assert len(rejects_a) == 1
         assert len(rejects_b) == 1

@@ -55,8 +55,7 @@ from typing import Any
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 _PHASE4_1_TEST = (
-    "tests/perf/test_phase4_1_no_regression.py"
-    "::test_phase4_1_decay_overhead_within_budget"
+    "tests/perf/test_phase4_1_no_regression.py::test_phase4_1_decay_overhead_within_budget"
 )
 
 
@@ -94,8 +93,7 @@ def _run_pytest_capture(test_id: str) -> str:
         raise SystemExit(
             f"perf test {test_id} did not pass (rc={proc.returncode}); "
             f"refusing to record a baseline from a failing run.\n"
-            f"--- last 60 lines ---\n"
-            + "\n".join(proc.stdout.splitlines()[-60:])
+            f"--- last 60 lines ---\n" + "\n".join(proc.stdout.splitlines()[-60:])
         )
     return proc.stdout
 
@@ -103,10 +101,7 @@ def _run_pytest_capture(test_id: str) -> str:
 def _parse_phase4_1(stdout: str) -> _PerfMeasurement:
     m = _PHASE4_1_RE.search(stdout)
     if not m:
-        raise SystemExit(
-            "could not find PHASE4_1_PERF_SUMMARY line in phase-4.1 "
-            "perf-test stdout"
-        )
+        raise SystemExit("could not find PHASE4_1_PERF_SUMMARY line in phase-4.1 perf-test stdout")
     return _PerfMeasurement(
         baseline_best_seconds=float(m.group("baseline")),
         extended_best_seconds=float(m.group("extended")),
@@ -145,9 +140,7 @@ def _merge_into_file(out_path: Path, payload: dict[str, Any]) -> None:
         existing = {"schema_version": "1.0.0", "hosts": {}}
     hosts = existing["hosts"]
     if not isinstance(hosts, dict):
-        raise SystemExit(
-            f"existing baseline file {out_path} has malformed 'hosts' field"
-        )
+        raise SystemExit(f"existing baseline file {out_path} has malformed 'hosts' field")
     hosts[payload["host_label"]] = payload
     existing["schema_version"] = "1.0.0"
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -186,13 +179,11 @@ def main() -> None:
     )
 
     payload = _build_payload(
-        host_label=args.host_label, phase4_1=phase4_1,
+        host_label=args.host_label,
+        phase4_1=phase4_1,
     )
     _merge_into_file(args.out, payload)
-    print(
-        f"[record_perf_baseline] wrote baseline for host_label="
-        f"{args.host_label!r} → {args.out}"
-    )
+    print(f"[record_perf_baseline] wrote baseline for host_label={args.host_label!r} → {args.out}")
 
 
 if __name__ == "__main__":

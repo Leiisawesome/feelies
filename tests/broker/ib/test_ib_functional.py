@@ -171,7 +171,9 @@ def _cleanup_order(
     """Cancel if possible; accept ``CANCELLED`` or after-hours ``REJECTED``."""
     assert router.cancel_order(order_id)
     return _poll_until_terminal_cleanup(
-        router, order_ids={order_id}, timeout_s=timeout_s,
+        router,
+        order_ids={order_id},
+        timeout_s=timeout_s,
     )
 
 
@@ -196,7 +198,8 @@ def ib_session() -> tuple[IBGatewayConnection, IBOrderRouter, WallClock]:
 
 class TestIBGatewayFunctional:
     def test_connect_handshake_and_next_order_id(
-        self, ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
+        self,
+        ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
     ) -> None:
         conn, _, _ = ib_session
         first = conn.next_order_id()
@@ -205,7 +208,8 @@ class TestIBGatewayFunctional:
         assert second == first + 1
 
     def test_duplicate_submit_rejected(
-        self, ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
+        self,
+        ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
     ) -> None:
         _, router, clock = ib_session
         order_id = f"dup-{clock.now_ns()}"
@@ -219,55 +223,63 @@ class TestIBGatewayFunctional:
             assert OrderAckStatus.REJECTED in statuses
         router.cancel_order(order_id)
         seen = _poll_until_terminal_cleanup(
-            router, order_ids={order_id}, timeout_s=_poll_timeout_s(),
+            router,
+            order_ids={order_id},
+            timeout_s=_poll_timeout_s(),
         )
-        terminal = {
-            a.status for a in seen if a.order_id == order_id
-        } & {OrderAckStatus.CANCELLED, OrderAckStatus.REJECTED}
+        terminal = {a.status for a in seen if a.order_id == order_id} & {
+            OrderAckStatus.CANCELLED,
+            OrderAckStatus.REJECTED,
+        }
         assert terminal, f"expected terminal ack for {order_id}, got {seen}"
 
     def test_submit_buy_limit_and_cancel(
-        self, ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
+        self,
+        ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
     ) -> None:
         _, router, clock = ib_session
         order_id = f"buy-{clock.now_ns()}"
         router.submit(_make_limit_request(clock, order_id, side=Side.BUY))
-        assert any(
-            a.status == OrderAckStatus.ACKNOWLEDGED
-            for a in router.poll_acks()
-        )
+        assert any(a.status == OrderAckStatus.ACKNOWLEDGED for a in router.poll_acks())
         seen = _cleanup_order(router, order_id, timeout_s=_poll_timeout_s())
-        terminal = {
-            a.status for a in seen if a.order_id == order_id
-        } & {OrderAckStatus.CANCELLED, OrderAckStatus.REJECTED}
+        terminal = {a.status for a in seen if a.order_id == order_id} & {
+            OrderAckStatus.CANCELLED,
+            OrderAckStatus.REJECTED,
+        }
         assert terminal, f"expected terminal ack for {order_id}, got {seen}"
 
     def test_submit_sell_limit_and_cancel(
-        self, ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
+        self,
+        ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
     ) -> None:
         _, router, clock = ib_session
         order_id = f"sell-{clock.now_ns()}"
-        router.submit(_make_limit_request(
-            clock, order_id, side=Side.SELL, limit_price=Decimal("99999.00"),
-        ))
-        assert any(
-            a.status == OrderAckStatus.ACKNOWLEDGED
-            for a in router.poll_acks()
+        router.submit(
+            _make_limit_request(
+                clock,
+                order_id,
+                side=Side.SELL,
+                limit_price=Decimal("99999.00"),
+            )
         )
+        assert any(a.status == OrderAckStatus.ACKNOWLEDGED for a in router.poll_acks())
         seen = _cleanup_order(router, order_id, timeout_s=_poll_timeout_s())
-        terminal = {
-            a.status for a in seen if a.order_id == order_id
-        } & {OrderAckStatus.CANCELLED, OrderAckStatus.REJECTED}
+        terminal = {a.status for a in seen if a.order_id == order_id} & {
+            OrderAckStatus.CANCELLED,
+            OrderAckStatus.REJECTED,
+        }
         assert terminal, f"expected terminal ack for {order_id}, got {seen}"
 
     def test_cancel_unknown_order_returns_false(
-        self, ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
+        self,
+        ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
     ) -> None:
         _, router, _ = ib_session
         assert router.cancel_order("never-submitted-order-id") is False
 
     def test_two_orders_cancelled_without_cross_drain_race(
-        self, ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
+        self,
+        ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
     ) -> None:
         """Fire both cancels, then poll once — mimics orchestrator drain."""
         _, router, clock = ib_session
@@ -275,10 +287,7 @@ class TestIBGatewayFunctional:
         oid2 = f"multi-b-{clock.now_ns()}"
         for oid in (oid1, oid2):
             router.submit(_make_limit_request(clock, oid))
-        acked = {
-            a.order_id for a in router.poll_acks()
-            if a.status == OrderAckStatus.ACKNOWLEDGED
-        }
+        acked = {a.order_id for a in router.poll_acks() if a.status == OrderAckStatus.ACKNOWLEDGED}
         assert {oid1, oid2} <= acked
 
         assert router.cancel_order(oid1)
@@ -290,7 +299,8 @@ class TestIBGatewayFunctional:
             timeout_s=_poll_timeout_s(),
         )
         terminal = {
-            a.order_id for a in seen
+            a.order_id
+            for a in seen
             if a.status in (OrderAckStatus.CANCELLED, OrderAckStatus.REJECTED)
         }
         assert {oid1, oid2} <= terminal, f"expected terminal acks, got {seen}"
@@ -309,9 +319,10 @@ class TestIBGatewayFunctional:
 
         caplog.set_level(logging.WARNING, logger="feelies.broker.ib.router")
         seen = _cleanup_order(router, order_id, timeout_s=_poll_timeout_s())
-        terminal = {
-            a.status for a in seen if a.order_id == order_id
-        } & {OrderAckStatus.CANCELLED, OrderAckStatus.REJECTED}
+        terminal = {a.status for a in seen if a.order_id == order_id} & {
+            OrderAckStatus.CANCELLED,
+            OrderAckStatus.REJECTED,
+        }
         assert terminal, f"expected terminal ack for {order_id}, got {seen}"
         assert not any(
             "PendingCancel" in r.message
@@ -319,9 +330,9 @@ class TestIBGatewayFunctional:
             if r.name == "feelies.broker.ib.router"
         )
 
-
     def test_after_hours_reject_surfaces_as_rejected(
-        self, ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
+        self,
+        ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
     ) -> None:
         """Outside RTH, IB often rejects DAY orders with error 399."""
         _, router, clock = ib_session
@@ -329,12 +340,15 @@ class TestIBGatewayFunctional:
         router.submit(_make_limit_request(clock, order_id))
         router.poll_acks()  # synchronous ACKNOWLEDGED
         seen = _poll_until_terminal_cleanup(
-            router, order_ids={order_id}, timeout_s=_poll_timeout_s(),
+            router,
+            order_ids={order_id},
+            timeout_s=_poll_timeout_s(),
         )
         statuses = {a.status for a in seen if a.order_id == order_id}
         # During RTH this may be CANCELLED instead; both prove the path.
         assert statuses & {
-            OrderAckStatus.REJECTED, OrderAckStatus.CANCELLED,
+            OrderAckStatus.REJECTED,
+            OrderAckStatus.CANCELLED,
         }, f"expected terminal cleanup, got {seen}"
 
 
@@ -344,14 +358,18 @@ class TestIBGatewayReconnect:
         clock = WallClock()
         cid = _unique_client_id()
         conn = IBGatewayConnection(
-            host=_host(), port=_port(), client_id=cid, clock=clock,
+            host=_host(),
+            port=_port(),
+            client_id=cid,
+            clock=clock,
         )
         conn.connect_and_start(ready_timeout_s=10.0)
         first = conn.next_order_id()
         conn.disconnect_and_stop()
 
         conn2 = IBGatewayConnection(
-            host=_host(), port=_port(),
+            host=_host(),
+            port=_port(),
             client_id=_unique_client_id(),
             clock=clock,
         )
@@ -366,7 +384,10 @@ class TestIBGatewayReconnect:
         _require_ib_gateway_reachable()
         clock = WallClock()
         conn = IBGatewayConnection(
-            host=_host(), port=_port(), client_id=_unique_client_id(), clock=clock,
+            host=_host(),
+            port=_port(),
+            client_id=_unique_client_id(),
+            clock=clock,
         )
         conn.connect_and_start(ready_timeout_s=10.0)
         try:
@@ -379,9 +400,11 @@ class TestIBGatewayReconnect:
 @pytest.mark.paper_rth
 class TestIBGatewayRTHFills:
     def test_market_order_submit_and_cancel(
-        self, ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
+        self,
+        ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
     ) -> None:
         from tests.paper.conftest import require_rth_window
+
         require_rth_window()
         _, router, clock = ib_session
         order_id = f"mkt-{clock.now_ns()}"
@@ -399,7 +422,9 @@ class TestIBGatewayRTHFills:
         router.submit(req)
         router.poll_acks()
         seen = _poll_until_terminal_cleanup(
-            router, order_ids={order_id}, timeout_s=_poll_timeout_s(),
+            router,
+            order_ids={order_id},
+            timeout_s=_poll_timeout_s(),
         )
         statuses = {a.status for a in seen if a.order_id == order_id}
         assert statuses & {
@@ -439,9 +464,11 @@ class TestIBGatewayRTHFills:
         assert conn.last_order.firmQuoteOnly is False
 
     def test_ten_orders_rapid_submit_cancel(
-        self, ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
+        self,
+        ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
     ) -> None:
         from tests.paper.conftest import require_rth_window
+
         require_rth_window()
         _, router, clock = ib_session
         order_ids: list[str] = []
@@ -454,18 +481,24 @@ class TestIBGatewayRTHFills:
             _cleanup_order(router, oid, timeout_s=_poll_timeout_s())
 
     def test_partial_fill_then_cancel(
-        self, ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
+        self,
+        ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
     ) -> None:
         from tests.paper.conftest import require_rth_window
+
         require_rth_window()
         _, router, clock = ib_session
         order_id = f"partial-{clock.now_ns()}"
         req = _make_limit_request(
-            clock, order_id, limit_price=Decimal("500000.00"),
+            clock,
+            order_id,
+            limit_price=Decimal("500000.00"),
         )
         router.submit(req)
         seen = _poll_until_terminal_cleanup(
-            router, order_ids={order_id}, timeout_s=_poll_timeout_s(),
+            router,
+            order_ids={order_id},
+            timeout_s=_poll_timeout_s(),
         )
         statuses = {a.status for a in seen if a.order_id == order_id}
         assert statuses & {
@@ -476,9 +509,11 @@ class TestIBGatewayRTHFills:
         }
 
     def test_fill_ack_lag_exceeds_idle_tick_interval(
-        self, ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
+        self,
+        ib_session: tuple[IBGatewayConnection, IBOrderRouter, WallClock],
     ) -> None:
         from tests.paper.conftest import require_rth_window
+
         require_rth_window()
         _, router, clock = ib_session
         order_id = f"lag-{clock.now_ns()}"

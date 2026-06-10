@@ -100,6 +100,7 @@ def _build_orchestrator(
 class _AllowAllRisk:
     def check_signal(self, signal, positions):  # noqa: ANN001
         from feelies.core.events import RiskAction, RiskVerdict
+
         return RiskVerdict(
             timestamp_ns=signal.timestamp_ns,
             correlation_id=signal.correlation_id,
@@ -111,6 +112,7 @@ class _AllowAllRisk:
 
     def check_order(self, order, positions):  # noqa: ANN001
         from feelies.core.events import RiskAction, RiskVerdict
+
         return RiskVerdict(
             timestamp_ns=order.timestamp_ns,
             correlation_id=order.correlation_id,
@@ -150,24 +152,28 @@ def _submit_and_acknowledge(orch: Orchestrator, router: _DelayedAckRouter) -> st
     )
     orch._track_order(order.order_id, order.side, order)
     orch._transition_order(order.order_id, OrderState.SUBMITTED, "submitted")
-    orch._apply_ack_to_order(OrderAck(
-        timestamp_ns=1_000_100,
-        correlation_id=order.correlation_id,
-        sequence=1,
-        order_id=order.order_id,
-        symbol="SPY",
-        status=OrderAckStatus.ACKNOWLEDGED,
-    ))
-    router.hold_ack(OrderAck(
-        timestamp_ns=1_500_000,
-        correlation_id=order.correlation_id,
-        sequence=2,
-        order_id=order.order_id,
-        symbol="SPY",
-        status=OrderAckStatus.FILLED,
-        filled_quantity=1,
-        fill_price=Decimal("500.01"),
-    ))
+    orch._apply_ack_to_order(
+        OrderAck(
+            timestamp_ns=1_000_100,
+            correlation_id=order.correlation_id,
+            sequence=1,
+            order_id=order.order_id,
+            symbol="SPY",
+            status=OrderAckStatus.ACKNOWLEDGED,
+        )
+    )
+    router.hold_ack(
+        OrderAck(
+            timestamp_ns=1_500_000,
+            correlation_id=order.correlation_id,
+            sequence=2,
+            order_id=order.order_id,
+            symbol="SPY",
+            status=OrderAckStatus.FILLED,
+            filled_quantity=1,
+            fill_price=Decimal("500.01"),
+        )
+    )
     return order.order_id
 
 

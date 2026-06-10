@@ -100,16 +100,11 @@ class AlphaRegistry:
         alpha_id = manifest.alpha_id
 
         if alpha_id in self._alphas:
-            raise AlphaRegistryError(
-                f"Alpha '{alpha_id}' is already registered"
-            )
+            raise AlphaRegistryError(f"Alpha '{alpha_id}' is already registered")
 
         errors = alpha.validate()
         if errors:
-            raise AlphaRegistryError(
-                f"Alpha '{alpha_id}' failed validation: "
-                + "; ".join(errors)
-            )
+            raise AlphaRegistryError(f"Alpha '{alpha_id}' failed validation: " + "; ".join(errors))
 
         self._alphas[alpha_id] = alpha
         if self._clock is not None:
@@ -125,7 +120,8 @@ class AlphaRegistry:
         self._feature_cache = None
 
     def _resolve_gate_thresholds(
-        self, manifest: object,
+        self,
+        manifest: object,
     ) -> GateThresholds | None:
         """Merge per-alpha ``gate_thresholds_overrides`` into the
         registry's base :class:`GateThresholds`.
@@ -185,9 +181,9 @@ class AlphaRegistry:
             return list(self._alphas.values())
 
         return [
-            alpha for alpha_id, alpha in self._alphas.items()
-            if alpha_id in self._lifecycles
-            and self._lifecycles[alpha_id].is_active
+            alpha
+            for alpha_id, alpha in self._alphas.items()
+            if alpha_id in self._lifecycles and self._lifecycles[alpha_id].is_active
         ]
 
     def alpha_ids(self) -> frozenset[str]:
@@ -208,10 +204,7 @@ class AlphaRegistry:
         bootstrap layer treats this as a signal to skip the entire
         Phase-3 wiring path (Inv-A).
         """
-        return [
-            alpha for alpha in self._alphas.values()
-            if alpha.manifest.layer == "SIGNAL"
-        ]
+        return [alpha for alpha in self._alphas.values() if alpha.manifest.layer == "SIGNAL"]
 
     def has_signal_alphas(self) -> bool:
         """True iff at least one ``layer: SIGNAL`` alpha is registered.
@@ -223,10 +216,7 @@ class AlphaRegistry:
         engine entirely (Inv-A: SIGNAL-only deployments without
         portfolio layers take the short path).
         """
-        return any(
-            alpha.manifest.layer == "SIGNAL"
-            for alpha in self._alphas.values()
-        )
+        return any(alpha.manifest.layer == "SIGNAL" for alpha in self._alphas.values())
 
     # ── PORTFOLIO-layer helpers (Phase 4) ────────────────────────────
 
@@ -240,21 +230,13 @@ class AlphaRegistry:
         (Inv-A: SIGNAL-only deployments without portfolio layers do
         not pay for the cross-sectional construction pipeline).
         """
-        return [
-            alpha for alpha in self._alphas.values()
-            if alpha.manifest.layer == "PORTFOLIO"
-        ]
+        return [alpha for alpha in self._alphas.values() if alpha.manifest.layer == "PORTFOLIO"]
 
     def has_portfolio_alphas(self) -> bool:
         """True iff at least one ``layer: PORTFOLIO`` alpha is registered."""
-        return any(
-            alpha.manifest.layer == "PORTFOLIO"
-            for alpha in self._alphas.values()
-        )
+        return any(alpha.manifest.layer == "PORTFOLIO" for alpha in self._alphas.values())
 
-    def resolve_signal_dependencies(
-        self, known_sensor_ids: frozenset[str]
-    ) -> None:
+    def resolve_signal_dependencies(self, known_sensor_ids: frozenset[str]) -> None:
         """Validate every SIGNAL alpha's ``depends_on_sensors`` block.
 
         Called once at bootstrap, after all SIGNAL alphas are
@@ -279,9 +261,7 @@ class AlphaRegistry:
                     missing.append((alpha.manifest.alpha_id, sensor_id))
 
         if missing:
-            details = ", ".join(
-                f"{alpha_id!r} requires {sid!r}" for alpha_id, sid in missing
-            )
+            details = ", ".join(f"{alpha_id!r} requires {sid!r}" for alpha_id, sid in missing)
             raise UnresolvedDependencyError(
                 "SIGNAL alpha(s) reference sensor IDs that are not "
                 f"registered in the SensorRegistry: {details}.  Add the "
@@ -374,9 +354,7 @@ class AlphaRegistry:
         if lc is None:
             if alpha_id not in self._alphas:
                 raise KeyError(f"Alpha '{alpha_id}' is not registered")
-            raise AlphaRegistryError(
-                "Lifecycle tracking is disabled (no clock provided)"
-            )
+            raise AlphaRegistryError("Lifecycle tracking is disabled (no clock provided)")
 
         state = lc.state
         if state == AlphaLifecycleState.RESEARCH:
@@ -426,9 +404,7 @@ class AlphaRegistry:
         if lc is None:
             if alpha_id not in self._alphas:
                 raise KeyError(f"Alpha '{alpha_id}' is not registered")
-            raise AlphaRegistryError(
-                "Lifecycle tracking is disabled (no clock provided)"
-            )
+            raise AlphaRegistryError("Lifecycle tracking is disabled (no clock provided)")
         return lc.promote_capital_tier(
             evidence,
             correlation_id=correlation_id,
@@ -458,9 +434,7 @@ class AlphaRegistry:
         if lc is None:
             if alpha_id not in self._alphas:
                 raise KeyError(f"Alpha '{alpha_id}' is not registered")
-            raise AlphaRegistryError(
-                "Lifecycle tracking is disabled (no clock provided)"
-            )
+            raise AlphaRegistryError("Lifecycle tracking is disabled (no clock provided)")
         lc.quarantine(
             reason,
             structured_evidence=structured_evidence,
@@ -483,17 +457,12 @@ class AlphaRegistry:
         if lc is None:
             if alpha_id not in self._alphas:
                 raise KeyError(f"Alpha '{alpha_id}' is not registered")
-            raise AlphaRegistryError(
-                "Lifecycle tracking is disabled (no clock provided)"
-            )
+            raise AlphaRegistryError("Lifecycle tracking is disabled (no clock provided)")
         lc.decommission(reason, correlation_id=correlation_id)
 
     def lifecycle_states(self) -> dict[str, AlphaLifecycleState]:
         """Current lifecycle state for all registered alphas."""
-        return {
-            alpha_id: lc.state
-            for alpha_id, lc in self._lifecycles.items()
-        }
+        return {alpha_id: lc.state for alpha_id, lc in self._lifecycles.items()}
 
     @property
     def promotion_ledger(self) -> PromotionLedger | None:

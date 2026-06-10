@@ -49,7 +49,7 @@ class CountingSensor:
         return SensorReading(
             timestamp_ns=event.timestamp_ns,
             correlation_id="placeholder",  # registry overwrites
-            sequence=-1,                   # registry overwrites
+            sequence=-1,  # registry overwrites
             symbol=event.symbol,
             sensor_id=self.sensor_id,
             sensor_version=self.sensor_version,

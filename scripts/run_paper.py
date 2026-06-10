@@ -71,39 +71,49 @@ def _configure_logging() -> None:
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Run the feelies platform in PAPER mode against an IB "
-                    "Gateway paper account and a live Massive WS feed.",
+        "Gateway paper account and a live Massive WS feed.",
     )
     p.add_argument(
-        "--config", default="platform.yaml",
+        "--config",
+        default="platform.yaml",
         help="PlatformConfig YAML path (default: platform.yaml)",
     )
     p.add_argument(
-        "--ib-ready-timeout-s", type=float, default=10.0,
-        help="Seconds to wait for IB ``nextValidId`` handshake "
-             "(default: 10.0)",
+        "--ib-ready-timeout-s",
+        type=float,
+        default=10.0,
+        help="Seconds to wait for IB ``nextValidId`` handshake (default: 10.0)",
     )
     p.add_argument(
-        "--max-runtime-s", type=float, default=None,
+        "--max-runtime-s",
+        type=float,
+        default=None,
         help="Auto-halt after N seconds (calls orchestrator.halt())",
     )
     p.add_argument(
-        "--run-dir", type=Path, default=None,
+        "--run-dir",
+        type=Path,
+        default=None,
         help="Session output directory for JSONL artefacts",
     )
     p.add_argument(
-        "--emit-order-acks-jsonl", action="store_true",
+        "--emit-order-acks-jsonl",
+        action="store_true",
         help="Write order_acks.jsonl to --run-dir",
     )
     p.add_argument(
-        "--emit-signals-jsonl", action="store_true",
+        "--emit-signals-jsonl",
+        action="store_true",
         help="Write signals.jsonl to --run-dir",
     )
     p.add_argument(
-        "--emit-fills-jsonl", action="store_true",
+        "--emit-fills-jsonl",
+        action="store_true",
         help="Write fills.jsonl from trade journal to --run-dir",
     )
     p.add_argument(
-        "--emit-timing-jsonl", action="store_true",
+        "--emit-timing-jsonl",
+        action="store_true",
         help="Write timing.jsonl to --run-dir",
     )
     return p.parse_args(argv)
@@ -185,8 +195,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if config.mode != OperatingMode.PAPER:
         print(
-            f"ERROR: {args.config} has mode={config.mode.name}; "
-            "run_paper.py requires mode: PAPER",
+            f"ERROR: {args.config} has mode={config.mode.name}; run_paper.py requires mode: PAPER",
             file=sys.stderr,
         )
         return 1
@@ -194,7 +203,9 @@ def main(argv: list[str] | None = None) -> int:
     logger.info(
         "Booting PAPER platform: symbols=%s ib=%s:%d cid=%d ws=%s",
         sorted(config.symbols),
-        config.ib_host, config.ib_port, config.ib_client_id,
+        config.ib_host,
+        config.ib_port,
+        config.ib_client_id,
         config.massive_ws_url,
     )
 
@@ -233,6 +244,7 @@ def main(argv: list[str] | None = None) -> int:
         ib_connection.connect_and_start(ready_timeout_s=args.ib_ready_timeout_s)
         live_feed.start()
         if args.max_runtime_s is not None and args.max_runtime_s > 0:
+
             def _timer_halt() -> None:
                 logger.info(
                     "max-runtime-s=%s elapsed → orchestrator.halt()",

@@ -33,7 +33,7 @@ def test_is_integer_exact_no_ns_rounding() -> None:
 def test_dst_correct_across_the_spring_forward() -> None:
     # 2026 US DST begins Sun 2026-03-08. A date after it (EDT, UTC-4) and a
     # date before it (EST, UTC-5) must each anchor to *local* 09:30.
-    after = _et_ns(2026, 3, 26, 11, 0, 0)   # EDT
+    after = _et_ns(2026, 3, 26, 11, 0, 0)  # EDT
     before = _et_ns(2026, 1, 15, 11, 0, 0)  # EST
     for ev, (y, m, d) in ((after, (2026, 3, 26)), (before, (2026, 1, 15))):
         anchor = rth_open_ns(ev)

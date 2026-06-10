@@ -66,11 +66,7 @@ class DecayDetector:
             cost_bps_list.append(float(t.cost_bps))
             if t.fill_price is not None and t.filled_quantity > 0:
                 notional = float(t.fill_price) * t.filled_quantity
-                edge_bps = (
-                    float(t.realized_pnl) / notional * 10_000
-                    if notional > 0
-                    else 0.0
-                )
+                edge_bps = float(t.realized_pnl) / notional * 10_000 if notional > 0 else 0.0
             else:
                 edge_bps = 0.0
             edge_bps_list.append(edge_bps)
@@ -85,13 +81,9 @@ class DecayDetector:
         p95_edge_bps = _percentile(sorted_edges, 95)
 
         n = len(trades)
-        pct_positive_edge = (
-            sum(1 for e in edge_bps_list if e > 0) / n * 100.0
-        )
+        pct_positive_edge = sum(1 for e in edge_bps_list if e > 0) / n * 100.0
         pct_edge_covers_cost = (
-            sum(1 for e, c in zip(edge_bps_list, cost_bps_list) if e > 2 * c)
-            / n
-            * 100.0
+            sum(1 for e, c in zip(edge_bps_list, cost_bps_list) if e > 2 * c) / n * 100.0
         )
 
         # ── Order-size histogram ──────────────────────────────
@@ -153,11 +145,7 @@ class DecayDetector:
         for t in strat_trades:
             if t.fill_price is not None and t.filled_quantity > 0:
                 notional = float(t.fill_price) * t.filled_quantity
-                edge_bps.append(
-                    float(t.realized_pnl) / notional * 10_000
-                    if notional > 0
-                    else 0.0
-                )
+                edge_bps.append(float(t.realized_pnl) / notional * 10_000 if notional > 0 else 0.0)
 
         if not edge_bps:
             return []
@@ -168,11 +156,7 @@ class DecayDetector:
             return []
 
         hist_mean = statistics.mean(historical)
-        hist_stdev = (
-            statistics.stdev(historical)
-            if len(historical) > 1
-            else 0.0
-        )
+        hist_stdev = statistics.stdev(historical) if len(historical) > 1 else 0.0
         recent_mean = statistics.mean(recent)
 
         # Positive Z means recent < historical (decay).
@@ -198,4 +182,3 @@ class DecayDetector:
                 ),
             )
         ]
-

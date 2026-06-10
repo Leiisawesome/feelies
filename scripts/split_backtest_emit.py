@@ -58,7 +58,8 @@ def split_emit_stream(
             out_name = _PREFIX_MAP.get(prefix, f"{prefix.lower()}.jsonl")
             if out_name not in handles:
                 handles[out_name] = (run_dir / out_name).open(
-                    "w", encoding="utf-8",
+                    "w",
+                    encoding="utf-8",
                 )
                 counts[out_name] = 0
             fh = handles[out_name]

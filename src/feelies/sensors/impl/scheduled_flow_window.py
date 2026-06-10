@@ -81,9 +81,7 @@ class ScheduledFlowWindowSensor:
         sensor_version: str | None = None,
     ) -> None:
         if not isinstance(calendar, EventCalendar):
-            raise TypeError(
-                f"calendar must be an EventCalendar, got {type(calendar).__name__}"
-            )
+            raise TypeError(f"calendar must be an EventCalendar, got {type(calendar).__name__}")
         if sensor_id is not None:
             self.sensor_id = sensor_id
         if sensor_version is not None:
@@ -112,7 +110,9 @@ class ScheduledFlowWindowSensor:
         return {}
 
     def _select_active_window(
-        self, ts_ns: int, symbol: str,
+        self,
+        ts_ns: int,
+        symbol: str,
     ) -> CalendarWindow | None:
         """Pick the matching window with the earliest ``end_ns``.
 

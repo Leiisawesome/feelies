@@ -86,7 +86,9 @@ def test_balanced_buy_sell_yields_zero_imbalance() -> None:
     # Buy 500, then drop the price → tick rule sells the next one.
     sensor.update(_trade(ts_ns=1, price="100.01", size=500), state, params={})
     reading = sensor.update(
-        _trade(ts_ns=2, price="99.99", size=500), state, params={},
+        _trade(ts_ns=2, price="99.99", size=500),
+        state,
+        params={},
     )
     assert reading is not None
     assert reading.value == 0.0
@@ -101,7 +103,9 @@ def test_overflow_spills_into_next_bucket() -> None:
     # bucket2 starts at 300 buys.
     sensor.update(_trade(ts_ns=1, price="100", size=700), state, params={})
     reading = sensor.update(
-        _trade(ts_ns=2, price="100", size=600), state, params={},
+        _trade(ts_ns=2, price="100", size=600),
+        state,
+        params={},
     )
     assert reading is not None
     assert reading.value == 1.0

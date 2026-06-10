@@ -47,6 +47,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 try:  # pragma: no cover - optional dependency for portfolio extras
     import numpy as np
+
     _HAS_NUMPY = True
 except ImportError:  # pragma: no cover
     _HAS_NUMPY = False
@@ -58,13 +59,13 @@ _logger = logging.getLogger(__name__)
 # names from the loadings file; missing factors silently zero-fill.
 _DEFAULT_FACTORS_BY_MODEL: dict[str, tuple[str, ...]] = {
     "FF5_momentum_STR": (
-        "MKT",     # market excess return
-        "SMB",     # size
-        "HML",     # value
-        "RMW",     # profitability
-        "CMA",     # investment
-        "MOM",     # momentum (12-1)
-        "STR",     # short-term reversal (1-month)
+        "MKT",  # market excess return
+        "SMB",  # size
+        "HML",  # value
+        "RMW",  # profitability
+        "CMA",  # investment
+        "MOM",  # momentum (12-1)
+        "STR",  # short-term reversal (1-month)
     ),
     "FF3": ("MKT", "SMB", "HML"),
     "MARKET_ONLY": ("MKT",),
@@ -100,9 +101,7 @@ class FactorNeutralizer:
         loadings_dir: Path | None = None,
     ) -> None:
         self._model = factor_model
-        self._factors = _DEFAULT_FACTORS_BY_MODEL.get(
-            factor_model, ()
-        )
+        self._factors = _DEFAULT_FACTORS_BY_MODEL.get(factor_model, ())
         self._loadings: dict[str, dict[str, float]] = {}
         if loadings_dir is not None and self._factors:
             self._loadings = self._load_loadings(loadings_dir)
@@ -138,7 +137,8 @@ class FactorNeutralizer:
             return {}, {}
 
         w = np.asarray(
-            [weights.get(s, 0.0) for s in universe], dtype=np.float64,
+            [weights.get(s, 0.0) for s in universe],
+            dtype=np.float64,
         )
         b_matrix = self._build_b_matrix(universe)
         try:
@@ -153,10 +153,7 @@ class FactorNeutralizer:
         post_exposure = b_matrix.T @ residual
 
         out_weights = {s: float(residual[i]) for i, s in enumerate(universe)}
-        out_exposures = {
-            f: float(post_exposure[i])
-            for i, f in enumerate(self._factors)
-        }
+        out_exposures = {f: float(post_exposure[i]) for i, f in enumerate(self._factors)}
         return out_weights, out_exposures
 
     # ── Internals ────────────────────────────────────────────────────
@@ -205,18 +202,14 @@ class FactorNeutralizer:
                 f"FactorNeutralizer: cannot read {path}: {exc}"
             ) from exc
         if not isinstance(data, dict):
-            raise MissingFactorLoadingsError(
-                f"FactorNeutralizer: {path} is not a JSON object"
-            )
+            raise MissingFactorLoadingsError(f"FactorNeutralizer: {path} is not a JSON object")
         out: dict[str, dict[str, float]] = {}
         for sym, loadings in data.items():
             if not isinstance(loadings, dict):
                 raise MissingFactorLoadingsError(
                     f"FactorNeutralizer: loadings for {sym!r} must be an object"
                 )
-            out[str(sym)] = {
-                str(k): float(v) for k, v in loadings.items()
-            }
+            out[str(sym)] = {str(k): float(v) for k, v in loadings.items()}
         return out
 
 

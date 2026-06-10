@@ -62,7 +62,10 @@ _HORIZON_FEATURES: tuple[HorizonFeature, ...] = tuple(
     for feature in (
         SensorPassthroughFeature("ofi_ewma", h),
         HorizonWindowedFeature(
-            "ofi_ewma", h, reducer="zscore", feature_id="ofi_ewma_zscore",
+            "ofi_ewma",
+            h,
+            reducer="zscore",
+            feature_id="ofi_ewma_zscore",
         ),
     )
 )
@@ -81,7 +84,6 @@ def _hash_snapshot_stream(snapshots: list[HorizonFeatureSnapshot]) -> str:
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
-
 # Locked Level-3 HorizonFeatureSnapshot baseline (active aggregator slice).
 # Re-baselined for audit P1-1: the ``ofi_ewma_zscore`` feature is now
 # produced by ``HorizonWindowedFeature`` (event-time horizon window)
@@ -89,9 +91,7 @@ def _hash_snapshot_stream(snapshots: list[HorizonFeatureSnapshot]) -> str:
 # updated production wiring in bootstrap.  Snapshot count is unchanged
 # (14); the field-content hash changes because the windowed feature's
 # warm/value path differs from the count-window one on this fixture.
-EXPECTED_LEVEL3_SNAPSHOT_HASH = (
-    "251cc109c25a4c1124c3dab32b7168c09b6a9126f4092d977df08a740c59d04b"
-)
+EXPECTED_LEVEL3_SNAPSHOT_HASH = "251cc109c25a4c1124c3dab32b7168c09b6a9126f4092d977df08a740c59d04b"
 EXPECTED_LEVEL3_SNAPSHOT_COUNT = 14
 
 
@@ -117,8 +117,7 @@ def test_snapshot_stream_matches_locked_baseline() -> None:
     # sensor output correctly report ``stale=True`` for those features
     # (previously they were incorrectly considered fresh).
     assert actual_count == EXPECTED_LEVEL3_SNAPSHOT_COUNT, (
-        f"snapshot count drift: expected "
-        f"{EXPECTED_LEVEL3_SNAPSHOT_COUNT}, got {actual_count}"
+        f"snapshot count drift: expected {EXPECTED_LEVEL3_SNAPSHOT_COUNT}, got {actual_count}"
     )
     assert actual_hash == EXPECTED_LEVEL3_SNAPSHOT_HASH, (
         "Level-3 HorizonFeatureSnapshot hash drift!\n"

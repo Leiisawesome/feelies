@@ -31,9 +31,7 @@ class TestErrorHierarchy:
             StaleDataError,
         ],
     )
-    def test_all_inherit_from_feelies_error(
-        self, error_cls: type[FeeliesError]
-    ) -> None:
+    def test_all_inherit_from_feelies_error(self, error_cls: type[FeeliesError]) -> None:
         exc = error_cls("msg")
         assert isinstance(exc, FeeliesError)
         assert isinstance(exc, Exception)

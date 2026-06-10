@@ -82,8 +82,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     result = handler(args)
     if not isinstance(result, int):
         raise TypeError(
-            f"CLI subcommand handler {handler!r} must return int, "
-            f"got {type(result).__name__}"
+            f"CLI subcommand handler {handler!r} must return int, got {type(result).__name__}"
         )
     return result
 

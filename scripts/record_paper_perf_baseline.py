@@ -10,8 +10,7 @@ import sys
 from pathlib import Path
 
 _BASELINE = (
-    Path(__file__).resolve().parent.parent
-    / "tests" / "perf" / "baselines" / "v02_baseline.json"
+    Path(__file__).resolve().parent.parent / "tests" / "perf" / "baselines" / "v02_baseline.json"
 )
 
 

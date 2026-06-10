@@ -77,12 +77,8 @@ def test_prepare_backtest_event_log_counts_and_spans() -> None:
 
 
 def test_prepare_backtest_event_log_rth_filter_drops_extended_hours() -> None:
-    pre_market_ns = int(
-        datetime(2026, 3, 26, 8, 0, 0, tzinfo=_TZ_ET).timestamp() * 1e9
-    )
-    rth_ns = int(
-        datetime(2026, 3, 26, 10, 0, 0, tzinfo=_TZ_ET).timestamp() * 1e9
-    )
+    pre_market_ns = int(datetime(2026, 3, 26, 8, 0, 0, tzinfo=_TZ_ET).timestamp() * 1e9)
+    rth_ns = int(datetime(2026, 3, 26, 10, 0, 0, tzinfo=_TZ_ET).timestamp() * 1e9)
     log = InMemoryEventLog()
     log.append_batch(
         [
@@ -147,12 +143,8 @@ def test_prepare_reuses_log_when_not_filtering_rth() -> None:
 
 
 def test_prepare_rebuilds_log_when_filtering_rth() -> None:
-    rth_ns = int(
-        datetime(2026, 3, 26, 10, 0, 0, tzinfo=_TZ_ET).timestamp() * 1e9
-    )
-    pre_market_ns = int(
-        datetime(2026, 3, 26, 8, 0, 0, tzinfo=_TZ_ET).timestamp() * 1e9
-    )
+    rth_ns = int(datetime(2026, 3, 26, 10, 0, 0, tzinfo=_TZ_ET).timestamp() * 1e9)
+    pre_market_ns = int(datetime(2026, 3, 26, 8, 0, 0, tzinfo=_TZ_ET).timestamp() * 1e9)
     log = InMemoryEventLog()
     log.append_batch([_quote(ts_ns=pre_market_ns, seq=1)])
     config = replace(

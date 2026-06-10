@@ -224,6 +224,7 @@ def test_websocket_feed_emits_live_massive_event() -> None:
 def test_multi_symbol_subscribe() -> None:
     pytest.importorskip("websockets")
     from tests.paper.conftest import require_rth_window
+
     require_rth_window()
 
     api_key = _require_api_key()
@@ -255,6 +256,7 @@ def test_multi_symbol_subscribe() -> None:
 def test_sustained_quotes_with_idle_ticks() -> None:
     pytest.importorskip("websockets")
     from tests.paper.conftest import require_rth_window
+
     require_rth_window()
 
     api_key = _require_api_key()

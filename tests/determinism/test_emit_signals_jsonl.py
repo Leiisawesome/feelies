@@ -96,9 +96,15 @@ def _make_recorder(runner, signals: list[Signal]):
 
 
 def test_emit_signals_jsonl_prefix_and_count(runner, capsys) -> None:
-    runner._emit_signals_jsonl(_make_recorder(runner, [
-        _legacy_signal(1), _phase3_signal(2),
-    ]))
+    runner._emit_signals_jsonl(
+        _make_recorder(
+            runner,
+            [
+                _legacy_signal(1),
+                _phase3_signal(2),
+            ],
+        )
+    )
     out = capsys.readouterr().out.splitlines()
     assert len(out) == 2
     assert all(line.startswith("SIGNAL_JSONL ") for line in out)
@@ -114,7 +120,7 @@ def test_emit_signals_jsonl_default_row_shape(runner, capsys) -> None:
     """
     runner._emit_signals_jsonl(_make_recorder(runner, [_legacy_signal(7)]))
     line = capsys.readouterr().out.splitlines()[0]
-    payload = json.loads(line[len("SIGNAL_JSONL "):])
+    payload = json.loads(line[len("SIGNAL_JSONL ") :])
     assert payload == {
         "consumed_features": [],
         "direction": "LONG",
@@ -136,7 +142,7 @@ def test_emit_signals_jsonl_default_row_shape(runner, capsys) -> None:
 def test_emit_signals_jsonl_phase3_row_shape(runner, capsys) -> None:
     runner._emit_signals_jsonl(_make_recorder(runner, [_phase3_signal(11)]))
     line = capsys.readouterr().out.splitlines()[0]
-    payload = json.loads(line[len("SIGNAL_JSONL "):])
+    payload = json.loads(line[len("SIGNAL_JSONL ") :])
     assert payload["layer"] == "SIGNAL"
     assert payload["horizon_seconds"] == 120
     assert payload["regime_gate_state"] == "ON"
@@ -149,7 +155,7 @@ def test_emit_signals_jsonl_phase3_row_shape(runner, capsys) -> None:
 def test_emit_signals_jsonl_keys_sorted(runner, capsys) -> None:
     runner._emit_signals_jsonl(_make_recorder(runner, [_phase3_signal(3)]))
     line = capsys.readouterr().out.splitlines()[0]
-    raw = line[len("SIGNAL_JSONL "):]
+    raw = line[len("SIGNAL_JSONL ") :]
     payload = json.loads(raw)
     assert raw == json.dumps(payload, sort_keys=True)
 
@@ -158,7 +164,7 @@ def test_emit_signals_jsonl_preserves_arrival_order(runner, capsys) -> None:
     sigs = [_legacy_signal(1), _phase3_signal(2), _legacy_signal(3)]
     runner._emit_signals_jsonl(_make_recorder(runner, sigs))
     lines = capsys.readouterr().out.splitlines()
-    seqs = [json.loads(line[len("SIGNAL_JSONL "):])["sequence"] for line in lines]
+    seqs = [json.loads(line[len("SIGNAL_JSONL ") :])["sequence"] for line in lines]
     assert seqs == [1, 2, 3]
 
 
@@ -173,6 +179,7 @@ def test_emit_signals_jsonl_empty(runner, capsys) -> None:
 def test_emit_phase2_jsonl_dispatches_to_signals_emitter(runner, capsys) -> None:
     """Verify the new flag is wired into the composable phase-2 wrapper."""
     import argparse
+
     args = argparse.Namespace(
         emit_sensor_readings_jsonl=False,
         emit_horizon_ticks_jsonl=False,
@@ -188,6 +195,7 @@ def test_emit_phase2_jsonl_dispatches_to_signals_emitter(runner, capsys) -> None
 
 def test_emit_phase2_jsonl_skips_signals_when_flag_off(runner, capsys) -> None:
     import argparse
+
     args = argparse.Namespace(
         emit_sensor_readings_jsonl=False,
         emit_horizon_ticks_jsonl=False,

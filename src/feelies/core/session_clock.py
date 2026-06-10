@@ -32,9 +32,7 @@ def rth_open_ns(ts_ns: int) -> int:
     """
     secs, _rem_ns = divmod(ts_ns, _NS_PER_SECOND)
     dt_et = datetime.fromtimestamp(secs, tz=timezone.utc).astimezone(_TZ_ET)
-    open_et = datetime.combine(
-        dt_et.date(), time(_RTH_OPEN_HOUR, _RTH_OPEN_MINUTE), tzinfo=_TZ_ET
-    )
+    open_et = datetime.combine(dt_et.date(), time(_RTH_OPEN_HOUR, _RTH_OPEN_MINUTE), tzinfo=_TZ_ET)
     return int(open_et.timestamp()) * _NS_PER_SECOND
 
 

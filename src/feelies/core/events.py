@@ -648,9 +648,7 @@ class CrossSectionalContext(Event):
     signals_by_strategy_by_symbol: dict[str, dict[str, "Signal | None"]] = field(
         default_factory=dict,
     )
-    snapshots_by_symbol: dict[str, "HorizonFeatureSnapshot | None"] = field(
-        default_factory=dict
-    )
+    snapshots_by_symbol: dict[str, "HorizonFeatureSnapshot | None"] = field(default_factory=dict)
     completeness: float = 0.0
 
 

@@ -60,10 +60,7 @@ def _signal_spec() -> dict:
             "fee_bps": 1.0,
             "margin_ratio": 1.8,
         },
-        "signal": (
-            "def evaluate(snapshot, regime, params):\n"
-            "    return None\n"
-        ),
+        "signal": ("def evaluate(snapshot, regime, params):\n    return None\n"),
     }
 
 
@@ -208,10 +205,7 @@ def test_signal_code_must_define_evaluate() -> None:
 
 def test_signal_code_evaluate_must_be_3_arg() -> None:
     spec = _signal_spec()
-    spec["signal"] = (
-        "def evaluate(features, params):\n"
-        "    return None\n"
-    )
+    spec["signal"] = "def evaluate(features, params):\n    return None\n"
     with pytest.raises(_LOAD_REJECTED):
         AlphaLoader().load_from_dict(spec, source="<test>")
 

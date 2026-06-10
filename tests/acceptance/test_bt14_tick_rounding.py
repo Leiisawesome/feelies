@@ -72,10 +72,14 @@ def _limit_buy(price: str, qty: int = 50) -> OrderRequest:
 def _fill_prices(acks) -> list[Decimal]:
     out: list[Decimal] = []
     for ack in acks:
-        if ack.status in (
-            OrderAckStatus.FILLED,
-            OrderAckStatus.PARTIALLY_FILLED,
-        ) and ack.fill_price is not None:
+        if (
+            ack.status
+            in (
+                OrderAckStatus.FILLED,
+                OrderAckStatus.PARTIALLY_FILLED,
+            )
+            and ack.fill_price is not None
+        ):
             out.append(ack.fill_price)
     return out
 

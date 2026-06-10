@@ -150,7 +150,10 @@ def test_g12_cost_exceeds_disclosure_alert(paper_session) -> None:
     )
     orchestrator._track_order(order_id, Side.BUY, req)
     orchestrator._transition_order(
-        order_id, OrderState.SUBMITTED, "paper_e2e_g12", correlation_id=req.correlation_id,
+        order_id,
+        OrderState.SUBMITTED,
+        "paper_e2e_g12",
+        correlation_id=req.correlation_id,
     )
 
     ack = OrderAck(
@@ -170,7 +173,4 @@ def test_g12_cost_exceeds_disclosure_alert(paper_session) -> None:
 
     orchestrator.halt()
     thread.join(timeout=30.0)
-    assert any(
-        a.alert_name == "g12_realized_cost_exceeds_disclosure_stress"
-        for a in alerts
-    )
+    assert any(a.alert_name == "g12_realized_cost_exceeds_disclosure_stress" for a in alerts)

@@ -131,13 +131,11 @@ class CostArithmetic:
         """
         if spec is None:
             raise CostArithmeticError(
-                f"alpha {alpha_id!r}: cost_arithmetic block is "
-                f"mandatory for layer: SIGNAL alphas"
+                f"alpha {alpha_id!r}: cost_arithmetic block is mandatory for layer: SIGNAL alphas"
             )
         if not isinstance(spec, Mapping):
             raise CostArithmeticError(
-                f"alpha {alpha_id!r}: cost_arithmetic must be a "
-                f"mapping, got {type(spec).__name__}"
+                f"alpha {alpha_id!r}: cost_arithmetic must be a mapping, got {type(spec).__name__}"
             )
 
         missing = tuple(f for f in _REQUIRED_FIELDS if f not in spec)
@@ -158,8 +156,7 @@ class CostArithmetic:
             v = float(raw)
             if not math.isfinite(v):
                 raise CostArithmeticError(
-                    f"alpha {alpha_id!r}: cost_arithmetic.{f} must be "
-                    f"finite, got {v!r}"
+                    f"alpha {alpha_id!r}: cost_arithmetic.{f} must be finite, got {v!r}"
                 )
             values[f] = v
 
@@ -171,8 +168,7 @@ class CostArithmetic:
         for f in ("half_spread_bps", "impact_bps", "fee_bps"):
             if values[f] < 0:
                 raise CostArithmeticError(
-                    f"alpha {alpha_id!r}: cost_arithmetic.{f} must be "
-                    f">= 0, got {values[f]!r}"
+                    f"alpha {alpha_id!r}: cost_arithmetic.{f} must be >= 0, got {values[f]!r}"
                 )
 
         declared_margin = values["margin_ratio"]

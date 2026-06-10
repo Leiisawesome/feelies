@@ -131,7 +131,8 @@ class TestModelToDict:
         assert out == {"ticker": "AAPL", "bid_price": 100.0, "sip_timestamp": 123}
 
     def test_ticker_mismatch_is_dropped(
-        self, caplog: pytest.LogCaptureFixture,
+        self,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """r3-INGEST-05: upstream returning ``ticker="MSFT"`` for an AAPL
         request must not pollute the MSFT state machine.
@@ -217,7 +218,10 @@ class TestParallelDownload:
         )
 
         ev_count, pg_count = ingestor.ingest_symbol_parallel(
-            mock_client, "AAPL", "2024-01-01", "2024-01-02",
+            mock_client,
+            "AAPL",
+            "2024-01-01",
+            "2024-01-02",
         )
 
         mock_client.list_quotes.assert_called_once()
@@ -249,7 +253,10 @@ class TestParallelDownload:
         )
 
         ingestor.ingest_symbol_parallel(
-            mock_client, "AAPL", "2024-01-01", "2024-01-02",
+            mock_client,
+            "AAPL",
+            "2024-01-01",
+            "2024-01-02",
         )
 
         events = list(event_log.replay())
@@ -305,7 +312,10 @@ class TestDownloadIntegrityAndCheckpoint:
 
         with pytest.raises(DataIntegrityError, match="quotes REST pagination"):
             ingestor.ingest_symbol_parallel(
-                mock_client, "AAPL", "2024-01-01", "2024-01-02",
+                mock_client,
+                "AAPL",
+                "2024-01-01",
+                "2024-01-02",
             )
 
         assert not ckpt.is_done("AAPL", "quotes")
@@ -332,7 +342,10 @@ class TestDownloadIntegrityAndCheckpoint:
 
         with pytest.raises(DataIntegrityError, match="trades REST pagination"):
             ingestor.ingest_symbol_parallel(
-                mock_client, "AAPL", "2024-01-01", "2024-01-02",
+                mock_client,
+                "AAPL",
+                "2024-01-01",
+                "2024-01-02",
             )
 
         assert not ckpt.is_done("AAPL", "quotes")
@@ -361,8 +374,12 @@ class TestDownloadIntegrityAndCheckpoint:
             return BoomIterator()
 
         raw, pages, ok = _download_raw(
-            mock_client, "AAPL", "2024-01-01", "2024-01-01",
-            _list_fn, "quotes",
+            mock_client,
+            "AAPL",
+            "2024-01-01",
+            "2024-01-01",
+            _list_fn,
+            "quotes",
         )
         assert ok is False
         assert len(raw) >= 1

@@ -35,9 +35,7 @@ from feelies.core.identifiers import SequenceGenerator
 from feelies.signals.horizon_engine import HorizonSignalEngine, RegisteredSignal
 
 
-REFERENCE_PATH = Path(
-    "alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml"
-)
+REFERENCE_PATH = Path("alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml")
 ALPHA_ID = "sig_benign_midcap_v1"
 
 
@@ -90,15 +88,17 @@ def _engine_with_alpha(
     bus = EventBus()
     seq = SequenceGenerator()
     engine = HorizonSignalEngine(bus=bus, signal_sequence_generator=seq)
-    engine.register(RegisteredSignal(
-        alpha_id=loaded.manifest.alpha_id,
-        horizon_seconds=loaded.horizon_seconds,
-        signal=loaded.signal,
-        params=loaded.params,
-        gate=loaded.gate,
-        cost_arithmetic=loaded.cost,
-        consumed_features=loaded.consumed_features,
-    ))
+    engine.register(
+        RegisteredSignal(
+            alpha_id=loaded.manifest.alpha_id,
+            horizon_seconds=loaded.horizon_seconds,
+            signal=loaded.signal,
+            params=loaded.params,
+            gate=loaded.gate,
+            cost_arithmetic=loaded.cost,
+            consumed_features=loaded.consumed_features,
+        )
+    )
     captured: list[Signal] = []
     bus.subscribe(Signal, captured.append)  # type: ignore[arg-type]
     engine.attach()
@@ -212,13 +212,13 @@ def test_no_emission_below_threshold(loaded: LoadedSignalLayerModule) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_high())
     bus.publish(_spread_low_reading())
-    bus.publish(_snapshot_with_z(z=0.5))               # below default threshold 0.8
+    bus.publish(_snapshot_with_z(z=0.5))  # below default threshold 0.8
     assert captured == []
 
 
 def test_no_emission_when_gate_off(loaded: LoadedSignalLayerModule) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
-    bus.publish(_normal_low())                         # P(normal)=0.2
+    bus.publish(_normal_low())  # P(normal)=0.2
     bus.publish(_spread_low_reading())
     bus.publish(_snapshot_with_z(z=2.5))
     assert captured == []
@@ -230,7 +230,7 @@ def test_edge_capped_at_disclosed_maximum(
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_high())
     bus.publish(_spread_low_reading())
-    bus.publish(_snapshot_with_z(z=100.0))             # would extrapolate huge
+    bus.publish(_snapshot_with_z(z=100.0))  # would extrapolate huge
 
     assert len(captured) == 1
     assert captured[0].edge_estimate_bps == pytest.approx(20.0)

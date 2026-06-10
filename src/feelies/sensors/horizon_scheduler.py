@@ -96,10 +96,7 @@ class HorizonScheduler:
     ) -> None:
         for h in horizons:
             if h <= 0:
-                raise ValueError(
-                    f"HorizonScheduler.horizons must be positive ints, "
-                    f"got {h}"
-                )
+                raise ValueError(f"HorizonScheduler.horizons must be positive ints, got {h}")
         self._horizons_sorted: tuple[int, ...] = tuple(sorted(horizons))
         self._session_id = session_id
         self._symbols_sorted: tuple[str, ...] = tuple(sorted(symbols))
@@ -196,8 +193,7 @@ class HorizonScheduler:
                 "should set this from PlatformConfig",
                 self._session_open_ns,
                 event.timestamp_ns,
-                "RTH-open anchored" if self._auto_bind_anchor is not None
-                else "raw first-event",
+                "RTH-open anchored" if self._auto_bind_anchor is not None else "raw first-event",
             )
 
         assert self._session_open_ns is not None
@@ -305,9 +301,7 @@ class HorizonScheduler:
         # passing the synthesized prefix as the "symbol" slot and the
         # ``boundary_index`` as the "sequence" slot — this keeps the
         # canonical ID format ``{prefix}:{ts}:{idx}`` per the plan.
-        boundary_ts = (
-            (self._session_open_ns or 0) + boundary_index * horizon * _NS_PER_SECOND
-        )
+        boundary_ts = (self._session_open_ns or 0) + boundary_index * horizon * _NS_PER_SECOND
         prefix = f"htick-{horizon}-{scope}"
         if symbol is not None:
             prefix = f"{prefix}-{symbol}"
@@ -348,17 +342,19 @@ class HorizonScheduler:
             exchange_timestamp_ns=tick.timestamp_ns,
             sequence=seq,
         )
-        self._metric_collector.record(MetricEvent(
-            timestamp_ns=tick.timestamp_ns,
-            correlation_id=cid,
-            sequence=seq,
-            source_layer="SCHEDULER",
-            layer="scheduler",
-            name="feelies.horizon.tick.emitted",
-            value=1.0,
-            metric_type=MetricType.COUNTER,
-            tags={
-                "horizon_seconds": str(tick.horizon_seconds),
-                "scope": tick.scope,
-            },
-        ))
+        self._metric_collector.record(
+            MetricEvent(
+                timestamp_ns=tick.timestamp_ns,
+                correlation_id=cid,
+                sequence=seq,
+                source_layer="SCHEDULER",
+                layer="scheduler",
+                name="feelies.horizon.tick.emitted",
+                value=1.0,
+                metric_type=MetricType.COUNTER,
+                tags={
+                    "horizon_seconds": str(tick.horizon_seconds),
+                    "scope": tick.scope,
+                },
+            )
+        )

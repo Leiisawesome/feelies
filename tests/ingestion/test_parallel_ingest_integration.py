@@ -56,11 +56,15 @@ def _find_recent_trading_day(client: Any, symbol: str) -> str:
         end_ts = f"{d}T23:59:59Z"
 
         has_quote = next(
-            iter(client.list_quotes(symbol, timestamp_gte=start_ts, timestamp_lte=end_ts, limit=1)),
+            iter(
+                client.list_quotes(symbol, timestamp_gte=start_ts, timestamp_lte=end_ts, limit=1)
+            ),
             None,
         )
         has_trade = next(
-            iter(client.list_trades(symbol, timestamp_gte=start_ts, timestamp_lte=end_ts, limit=1)),
+            iter(
+                client.list_trades(symbol, timestamp_gte=start_ts, timestamp_lte=end_ts, limit=1)
+            ),
             None,
         )
         if has_quote is not None and has_trade is not None:
@@ -117,8 +121,12 @@ class TestRawDownload:
 
     def test_downloads_quotes(self, limited_client: _LimitedClient, trading_day: str) -> None:
         raw_quotes, pages, ok = _download_raw(
-            limited_client, "AAPL", trading_day, trading_day,
-            limited_client.list_quotes, "quotes",
+            limited_client,
+            "AAPL",
+            trading_day,
+            trading_day,
+            limited_client.list_quotes,
+            "quotes",
         )
         assert ok
         assert len(raw_quotes) > 0, "should download at least one quote"
@@ -129,8 +137,12 @@ class TestRawDownload:
 
     def test_downloads_trades(self, limited_client: _LimitedClient, trading_day: str) -> None:
         raw_trades, pages, ok = _download_raw(
-            limited_client, "AAPL", trading_day, trading_day,
-            limited_client.list_trades, "trades",
+            limited_client,
+            "AAPL",
+            trading_day,
+            trading_day,
+            limited_client.list_trades,
+            "trades",
         )
         assert ok
         assert len(raw_trades) > 0, "should download at least one trade"
@@ -147,7 +159,9 @@ class TestParallelIngestChronological:
     """Parallel download + merge-sort + normalize produces time-ordered events."""
 
     def test_events_in_chronological_order(
-        self, limited_client: _LimitedClient, trading_day: str,
+        self,
+        limited_client: _LimitedClient,
+        trading_day: str,
     ) -> None:
         clock = SimulatedClock(start_ns=1_000_000_000)
         normalizer = MassiveNormalizer(clock)
@@ -161,7 +175,10 @@ class TestParallelIngestChronological:
         )
 
         ev_count, pg_count = ingestor.ingest_symbol_parallel(
-            limited_client, "AAPL", trading_day, trading_day,
+            limited_client,
+            "AAPL",
+            trading_day,
+            trading_day,
         )
 
         assert ev_count > 0, "should ingest events"
@@ -174,7 +191,9 @@ class TestParallelIngestChronological:
         )
 
     def test_contains_both_quotes_and_trades(
-        self, limited_client: _LimitedClient, trading_day: str,
+        self,
+        limited_client: _LimitedClient,
+        trading_day: str,
     ) -> None:
         clock = SimulatedClock(start_ns=1_000_000_000)
         normalizer = MassiveNormalizer(clock)
@@ -196,7 +215,9 @@ class TestParallelIngestChronological:
         assert len(trades) > 0, "should have at least one trade"
 
     def test_sequences_are_monotonic(
-        self, limited_client: _LimitedClient, trading_day: str,
+        self,
+        limited_client: _LimitedClient,
+        trading_day: str,
     ) -> None:
         clock = SimulatedClock(start_ns=1_000_000_000)
         normalizer = MassiveNormalizer(clock)
@@ -217,7 +238,9 @@ class TestParallelIngestChronological:
         assert len(sequences) == len(set(sequences)), "sequences must be unique"
 
     def test_correlation_ids_are_unique(
-        self, limited_client: _LimitedClient, trading_day: str,
+        self,
+        limited_client: _LimitedClient,
+        trading_day: str,
     ) -> None:
         clock = SimulatedClock(start_ns=1_000_000_000)
         normalizer = MassiveNormalizer(clock)
@@ -244,7 +267,10 @@ class TestDiskCacheIntegration:
     """Cache save → load produces identical event data."""
 
     def test_cache_round_trip(
-        self, limited_client: _LimitedClient, trading_day: str, tmp_path: Path,
+        self,
+        limited_client: _LimitedClient,
+        trading_day: str,
+        tmp_path: Path,
     ) -> None:
         clock = SimulatedClock(start_ns=1_000_000_000)
         normalizer = MassiveNormalizer(clock)
@@ -288,12 +314,17 @@ class TestDiskCacheIntegration:
                 assert orig.conditions == loaded.conditions
             elif isinstance(orig, Trade):
                 assert isinstance(loaded, Trade)
-                assert orig.price == loaded.price, f"price mismatch: {orig.price} vs {loaded.price}"
+                assert orig.price == loaded.price, (
+                    f"price mismatch: {orig.price} vs {loaded.price}"
+                )
                 assert orig.size == loaded.size
                 assert orig.conditions == loaded.conditions
 
     def test_cache_reuse_skips_api(
-        self, limited_client: _LimitedClient, trading_day: str, tmp_path: Path,
+        self,
+        limited_client: _LimitedClient,
+        trading_day: str,
+        tmp_path: Path,
     ) -> None:
         """Second load from cache doesn't need the API client at all."""
         clock = SimulatedClock(start_ns=1_000_000_000)
@@ -332,7 +363,10 @@ class TestResequencing:
     """Re-sequencing assigns globally monotonic sequences."""
 
     def test_resequence_produces_contiguous_sequences(
-        self, limited_client: _LimitedClient, trading_day: str, tmp_path: Path,
+        self,
+        limited_client: _LimitedClient,
+        trading_day: str,
+        tmp_path: Path,
     ) -> None:
         clock = SimulatedClock(start_ns=1_000_000_000)
         normalizer = MassiveNormalizer(clock)
@@ -357,7 +391,9 @@ class TestResequencing:
         )
 
     def test_resequence_rebuilds_correlation_ids(
-        self, limited_client: _LimitedClient, trading_day: str,
+        self,
+        limited_client: _LimitedClient,
+        trading_day: str,
     ) -> None:
         clock = SimulatedClock(start_ns=1_000_000_000)
         normalizer = MassiveNormalizer(clock)
@@ -377,14 +413,18 @@ class TestResequencing:
 
         for event in resequenced:
             expected_cid = make_correlation_id(
-                event.symbol, event.exchange_timestamp_ns, event.sequence,
+                event.symbol,
+                event.exchange_timestamp_ns,
+                event.sequence,
             )
             assert event.correlation_id == expected_cid, (
                 f"correlation_id mismatch: {event.correlation_id} != {expected_cid}"
             )
 
     def test_resequence_preserves_chronological_order(
-        self, limited_client: _LimitedClient, trading_day: str,
+        self,
+        limited_client: _LimitedClient,
+        trading_day: str,
     ) -> None:
         clock = SimulatedClock(start_ns=1_000_000_000)
         normalizer = MassiveNormalizer(clock)
@@ -415,7 +455,10 @@ class TestMultiDayCacheResequence:
     """Simulate multi-day scenario: two independent days cached then merged."""
 
     def test_two_days_resequenced_are_globally_monotonic(
-        self, limited_client: _LimitedClient, trading_day: str, tmp_path: Path,
+        self,
+        limited_client: _LimitedClient,
+        trading_day: str,
+        tmp_path: Path,
     ) -> None:
         cache = DiskEventCache(tmp_path)
 
@@ -423,7 +466,10 @@ class TestMultiDayCacheResequence:
         norm1 = MassiveNormalizer(clock1)
         log1 = InMemoryEventLog()
         ing1 = MassiveHistoricalIngestor(
-            api_key="unused", normalizer=norm1, event_log=log1, clock=clock1,
+            api_key="unused",
+            normalizer=norm1,
+            event_log=log1,
+            clock=clock1,
         )
         ing1.ingest_symbol_parallel(limited_client, "AAPL", trading_day, trading_day)
         day1_events: list[NBBOQuote | Trade] = list(log1.replay())  # type: ignore[arg-type]
@@ -462,7 +508,10 @@ class TestFieldFidelity:
     """Market data fields survive download → normalize → cache → reload."""
 
     def test_quote_fields_survive_pipeline(
-        self, limited_client: _LimitedClient, trading_day: str, tmp_path: Path,
+        self,
+        limited_client: _LimitedClient,
+        trading_day: str,
+        tmp_path: Path,
     ) -> None:
         clock = SimulatedClock(start_ns=1_000_000_000)
         normalizer = MassiveNormalizer(clock)
@@ -503,7 +552,10 @@ class TestFieldFidelity:
             assert nq.ask_size > 0
 
     def test_trade_fields_survive_pipeline(
-        self, limited_client: _LimitedClient, trading_day: str, tmp_path: Path,
+        self,
+        limited_client: _LimitedClient,
+        trading_day: str,
+        tmp_path: Path,
     ) -> None:
         clock = SimulatedClock(start_ns=1_000_000_000)
         normalizer = MassiveNormalizer(clock)
