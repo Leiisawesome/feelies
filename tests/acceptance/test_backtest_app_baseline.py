@@ -42,6 +42,17 @@ _BASELINE_CONFIG = Path("configs/backtest_app.yaml")
 #       --symbol APP --date 2026-03-26
 # then update _BASELINE_PARITY_HASH / _BASELINE_NET_PNL / _BASELINE_FILL_COUNT
 # from the report in one commit.
+#
+# NOTE (G-7 S1 / 2026-06-10): the sizing-tilt config keys (sizer_tilt_drive,
+# sizer_edge_*, sizer_vol_*, sizer_inventory_*, sizer_tilt_*) were added to
+# the PlatformConfig snapshot.  They are all default-off and the live trade
+# path is byte-identical (the size shadow is measurement-only), so pnl_hash,
+# Net P&L ($15.07), and the fill count (6) are UNCHANGED — but config_hash
+# (a hash of the full snapshot) shifts, so the combined _BASELINE_PARITY_HASH
+# below must be regenerated against the disk-cache dataset in the same merge:
+#   uv run python scripts/run_backtest.py --config configs/backtest_app.yaml \
+#       --symbol APP --date 2026-03-26
+# and updated here (only the parity hash changes).
 _BASELINE_PARITY_HASH = (
     "f0da57e10c01d421db64a6b2ffe0d8e32583d382f3fb07cef27ba9ec7b32e936"
 )

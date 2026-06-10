@@ -34,9 +34,13 @@ from zoneinfo import ZoneInfo
 _TZ_ET = ZoneInfo("America/New_York")
 from decimal import Decimal
 from pathlib import Path
-from typing import Sequence, TypeVar
+from typing import TYPE_CHECKING, Sequence, TypeVar
 
 from feelies.bootstrap import build_platform
+
+if TYPE_CHECKING:
+    from feelies.execution.portfolio_netter import NetDivergence
+    from feelies.risk.edge_weighted_sizer import SizeDivergence
 from feelies.cli.env import MASSIVE_API_KEY_ERROR, load_dotenv_optional, massive_api_key_from_env
 from feelies.harness.backtest_cli import (
     ConfigNotFoundError,
@@ -50,6 +54,7 @@ from feelies.harness.backtest_cli import (
 from feelies.harness.backtest_jsonl import (
     _emit_fills_jsonl,
     _emit_net_divergence_jsonl,
+    _emit_size_divergence_jsonl,
     _emit_phase2_jsonl,
 )
 from feelies.harness.backtest_prep import (
@@ -588,14 +593,20 @@ def _run_backtest_phases_2_7(
     # G-5 measurement: cross-alpha net-shadow sink (parity-neutral; wiring it
     # only records NetDivergence, it does not drive).  ``_cache_args`` and
     # other lightweight callers may omit the flag, hence ``getattr``.
-    net_shadow_sink: "list | None" = (
+    net_shadow_sink: "list[NetDivergence] | None" = (
         [] if getattr(args, "emit_net_divergence_jsonl", False) else None
+    )
+    # G-7 measurement: edge/vol/inventory size-shadow sink (parity-neutral;
+    # wiring it only records SizeDivergence, it does not drive).
+    size_shadow_sink: "list[SizeDivergence] | None" = (
+        [] if getattr(args, "emit_size_divergence_jsonl", False) else None
     )
     orchestrator, config_out = build_platform(
         config,
         event_log=event_log,
         signal_order_trace_sink=signal_trace_sink,
         net_shadow_sink=net_shadow_sink,
+        size_shadow_sink=size_shadow_sink,
         precomputed_ex_date_spans=prep.calendar_spans,
         regime_calibration_quotes=prep.regime_calibration_quotes,
     )
@@ -730,6 +741,8 @@ def _run_backtest_phases_2_7(
         _emit_fills_jsonl(recorder)
     if net_shadow_sink is not None:
         _emit_net_divergence_jsonl(net_shadow_sink)
+    if size_shadow_sink is not None:
+        _emit_size_divergence_jsonl(size_shadow_sink)
     _emit_phase2_jsonl(args, recorder)
 
     return BacktestRunOutcome(

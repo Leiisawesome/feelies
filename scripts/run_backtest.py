@@ -27,6 +27,7 @@ from feelies.harness.backtest_jsonl import (  # noqa: E402
     _emit_phase2_jsonl,
     _emit_sensor_readings_jsonl,
     _emit_signals_jsonl,
+    _emit_size_divergence_jsonl,
     _emit_snapshots_jsonl,
     _emit_sized_intents_jsonl,
 )
@@ -62,6 +63,7 @@ __all__ = [
     "_emit_hazard_spikes_jsonl",
     "_emit_horizon_ticks_jsonl",
     "_emit_net_divergence_jsonl",
+    "_emit_size_divergence_jsonl",
     "_emit_phase2_jsonl",
     "_emit_sensor_readings_jsonl",
     "_emit_signals_jsonl",

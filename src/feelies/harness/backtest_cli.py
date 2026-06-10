@@ -188,6 +188,17 @@ def add_backtest_api_arguments(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "--emit-size-divergence-jsonl",
+        action="store_true",
+        help=(
+            "G-7 measurement: run the edge/vol/inventory size shadow and emit "
+            "one SizeDivergence JSON object per sized signal whose tilted "
+            "target differs from the base target (prefix SIZEDIV_JSONL).  "
+            "Parity-neutral (shadow-only); meaningful only when at least one "
+            "sizer tilt factor is enabled in config."
+        ),
+    )
+    parser.add_argument(
         "--emit-sensor-readings-jsonl",
         action="store_true",
         help="Emit SensorReading rows (prefix SENSOR_JSONL).",

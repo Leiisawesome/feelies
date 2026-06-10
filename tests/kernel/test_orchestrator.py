@@ -2411,6 +2411,100 @@ class TestNetShadow:
         assert orch._positions.get("AAPL").quantity != 0  # legacy path drove
 
 
+class TestSizeShadow:
+    """G-7 S1: the size shadow records, per sized signal, how the
+    edge/vol/inventory-tilted target would differ from the live single-factor
+    base target (pure measurement; live size untouched)."""
+
+    @staticmethod
+    def _budget():
+        from feelies.alpha.module import AlphaRiskBudget
+        return AlphaRiskBudget(
+            max_position_per_symbol=500,
+            max_gross_exposure_pct=10.0,
+            max_drawdown_pct=2.0,
+            capital_allocation_pct=10.0,
+        )
+
+    def _orch_with_shadow(self, sink, *, enabled: bool):
+        from types import SimpleNamespace
+
+        from feelies.risk.edge_weighted_sizer import (
+            EdgeWeightedSizer,
+            SizerTiltConfig,
+        )
+        from feelies.risk.position_sizer import BudgetBasedSizer
+
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        budget = self._budget()
+        orch._alpha_registry = SimpleNamespace(  # type: ignore[attr-defined]
+            get=lambda sid: SimpleNamespace(
+                manifest=SimpleNamespace(risk_budget=budget)
+            )
+        )
+        cfg = SizerTiltConfig(edge_enabled=enabled, edge_ref_bps=20.0, edge_cap=2.0)
+        orch._size_shadow_sizer = EdgeWeightedSizer(  # type: ignore[attr-defined]
+            BudgetBasedSizer(), cfg
+        )
+        orch._size_shadow_sink = sink  # type: ignore[attr-defined]
+        orch._account_equity = Decimal("150000")  # type: ignore[attr-defined]
+        return orch
+
+    @staticmethod
+    def _signal(quote, edge_bps: float, strategy_id: str = "test_strat") -> Signal:
+        return Signal(
+            timestamp_ns=quote.timestamp_ns,
+            correlation_id=quote.correlation_id,
+            sequence=quote.sequence,
+            symbol=quote.symbol,
+            strategy_id=strategy_id,
+            direction=SignalDirection.LONG,
+            strength=1.0,
+            edge_estimate_bps=edge_bps,
+        )
+
+    def test_high_edge_records_upsize(self) -> None:
+        sink: list = []
+        orch = self._orch_with_shadow(sink, enabled=True)
+        q = _make_quote()  # mid 150 → base 150000*10%/150 = 100
+        orch._record_size_shadow(self._signal(q, edge_bps=40.0), q)
+        assert len(sink) == 1
+        d = sink[0]
+        assert d.base_target_qty == 100
+        assert d.tilted_target_qty == 200      # edge 40/ref 20 → 2.0×
+        assert d.edge_factor == 2.0
+        assert d.timestamp_ns == q.exchange_timestamp_ns
+
+    def test_edge_equal_ref_no_record(self) -> None:
+        sink: list = []
+        orch = self._orch_with_shadow(sink, enabled=True)
+        q = _make_quote()
+        orch._record_size_shadow(self._signal(q, edge_bps=20.0), q)
+        assert sink == []                       # factor 1.0 → tilted == base
+
+    def test_disabled_factors_noop(self) -> None:
+        sink: list = []
+        orch = self._orch_with_shadow(sink, enabled=False)
+        q = _make_quote()
+        orch._record_size_shadow(self._signal(q, edge_bps=40.0), q)
+        assert sink == []                       # any_enabled False → no-op
+
+    def test_no_sink_noop(self) -> None:
+        orch = self._orch_with_shadow(None, enabled=True)
+        q = _make_quote()
+        orch._record_size_shadow(self._signal(q, edge_bps=40.0), q)  # no raise
+
+    def test_synthetic_signal_skipped(self) -> None:
+        sink: list = []
+        orch = self._orch_with_shadow(sink, enabled=True)
+        q = _make_quote()
+        orch._record_size_shadow(
+            self._signal(q, edge_bps=40.0, strategy_id="__stop_exit__"), q
+        )
+        assert sink == []
+
+
 # ── G-5 N2: net-driven decision ───────────────────────────────────────
 
 

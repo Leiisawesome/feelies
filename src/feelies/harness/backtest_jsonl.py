@@ -21,6 +21,7 @@ from feelies.core.events import (
 )
 from feelies.execution.portfolio_netter import NetDivergence
 from feelies.harness.backtest_report import BusEventRecorder
+from feelies.risk.edge_weighted_sizer import SizeDivergence
 
 __all__ = [
     "emit_cross_sectional_jsonl",
@@ -32,9 +33,36 @@ __all__ = [
     "emit_phase2_jsonl",
     "emit_sensor_readings_jsonl",
     "emit_signals_jsonl",
+    "emit_size_divergence_jsonl",
     "emit_snapshots_jsonl",
     "emit_sized_intents_jsonl",
 ]
+
+
+def emit_size_divergence_jsonl(divergences: list[SizeDivergence]) -> None:
+    """G-7 S1 measurement: one JSON line per recorded SizeDivergence.
+
+    Sourced from the orchestrator's size-shadow sink (not the bus), in
+    record order.  ``magnitude`` is ``tilted − base`` so the stream is
+    directly aggregable (how often, and by how much, edge/vol/inventory
+    sizing would change the target size).
+    """
+    for d in divergences:
+        _emit_jsonl_line("SIZEDIV_JSONL", {
+            "timestamp_ns": d.timestamp_ns,
+            "signal_sequence": d.signal_sequence,
+            "symbol": d.symbol,
+            "strategy_id": d.strategy_id,
+            "edge_bps": d.edge_bps,
+            "base_target_qty": d.base_target_qty,
+            "tilted_target_qty": d.tilted_target_qty,
+            "magnitude": d.tilted_target_qty - d.base_target_qty,
+            "edge_factor": d.edge_factor,
+            "vol_factor": d.vol_factor,
+            "inventory_factor": d.inventory_factor,
+            "combined_tilt": d.combined_tilt,
+            "inventory_qty": d.inventory_qty,
+        })
 
 
 def emit_net_divergence_jsonl(divergences: list[NetDivergence]) -> None:
@@ -258,6 +286,7 @@ def emit_phase2_jsonl(args: argparse.Namespace, recorder: BusEventRecorder) -> N
 # Backward-compatible aliases for ``scripts/run_backtest.py`` importlib tests.
 _emit_fills_jsonl = emit_fills_jsonl
 _emit_net_divergence_jsonl = emit_net_divergence_jsonl
+_emit_size_divergence_jsonl = emit_size_divergence_jsonl
 _emit_sensor_readings_jsonl = emit_sensor_readings_jsonl
 _emit_horizon_ticks_jsonl = emit_horizon_ticks_jsonl
 _emit_snapshots_jsonl = emit_snapshots_jsonl

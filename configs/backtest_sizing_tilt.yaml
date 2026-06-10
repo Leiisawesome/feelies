@@ -1,0 +1,36 @@
+# Sizing-tilt measurement config — G-7 edge/vol/inventory size-divergence.
+#
+# Purpose: enable the G-7 sizer tilt factors so the size shadow records, per
+# sized signal, how the edge/vol/inventory-tilted target would differ from
+# today's single-factor budget target.  ``sizer_tilt_drive`` stays OFF, so
+# the LIVE size is unchanged (byte-identical baseline) — only the
+# SIZEDIV_JSONL shadow stream reflects the tilt.  Pair with
+# ``--emit-size-divergence-jsonl`` and ``scripts/analyze_size_divergence.py``.
+#
+# Usage:
+#   uv run python scripts/run_backtest.py --config configs/backtest_sizing_tilt.yaml \
+#       --symbol APP --date 2026-03-26 --emit-size-divergence-jsonl \
+#     | grep '^SIZEDIV_JSONL ' | sed 's/^SIZEDIV_JSONL //' > sizediv.jsonl
+#   uv run python scripts/analyze_size_divergence.py sizediv.jsonl
+#
+# S1 wires the edge + inventory factors (vol is a deferred provider seam, so
+# vol_targeting is left off here).  Tune edge_ref_bps to the universe's
+# typical disclosed edge so the factor centers near 1.0.
+extends: ../platform.yaml
+
+# Edge-weighting: scale the target by edge / ref, clamped [floor, cap].
+sizer_edge_weighting_enabled: true
+sizer_edge_ref_bps: 20.0
+sizer_edge_floor: 0.25
+sizer_edge_cap: 2.0
+
+# Inventory taper: shrink adds as the book fills toward the per-symbol cap.
+sizer_inventory_penalty_enabled: true
+sizer_inventory_floor: 0.0
+
+# Combined-tilt clamp (after the factor product).
+sizer_tilt_floor: 0.10
+sizer_tilt_cap: 3.0
+
+# Shadow-only: the live size stays single-factor until this flips (S2).
+sizer_tilt_drive: false
