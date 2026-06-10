@@ -30,8 +30,8 @@ file/line citations, severity, and prioritized recommendations.
 
 ## Platform context (read first)
 
-1. Read `.cursor/skills/testing-validation/SKILL.md` end-to-end (the five locked baselines,
-   perf baselines, strict-mypy / DTZ scope locks).
+1. Read `.cursor/skills/testing-validation/SKILL.md` end-to-end (the eleven locked
+   baselines across six levels, perf baselines, strict-mypy / DTZ scope locks).
 2. Read `docs/three_layer_architecture.md` §12 (determinism & parity requirements),
    §13 (testing strategy).
 3. Read `.cursor/rules/platform-invariants.mdc` Inv-5, and the **strict typing** glossary
@@ -40,7 +40,13 @@ file/line citations, severity, and prioritized recommendations.
 **Architecture (contractual):**
 
 ```
-Five locked parity hashes (per skill): sensor, signal, sized-intent, portfolio-order, hazard-exit
+Eleven locked parity hashes (parity_manifest.py LOCKED_PARITY_BASELINES), six levels:
+  L1: sensor_reading, v03_sensor_reading
+  L2: horizon_tick, signal
+  L3: horizon_feature_snapshot, sized_intent_decay_off, sized_intent_decay_on
+  L4: portfolio_order, hazard_exit_order
+  L5: regime_hazard_spike
+  L6: regime_state
 parity_manifest.py = registry of baselines + the canonical hash computation
 determinism tests replay a fixed event log and assert the hash matches the pinned baseline
 scope locks: mypy strict on all of src/feelies (no ignore_errors overrides); DTZ datetime ban
@@ -61,7 +67,7 @@ scope locks: mypy strict on all of src/feelies (no ignore_errors overrides); DTZ
 - `tests/determinism/parity_manifest.py` — baseline registry + hash computation
 - `tests/determinism/test_parity_manifest.py` — manifest self-test
 
-### The five baselines + supporting replays
+### The eleven baselines + supporting replays
 
 - `tests/determinism/test_sensor_reading_replay.py`, `test_v03_sensor_replay.py`
 - `tests/determinism/test_signal_replay.py`, `test_emit_signals_jsonl.py`
@@ -72,6 +78,10 @@ scope locks: mypy strict on all of src/feelies (no ignore_errors overrides); DTZ
 - `tests/determinism/test_regime_state_replay.py`,
   `test_horizon_tick_replay.py`, `test_horizon_feature_snapshot_replay.py`
 - `tests/determinism/test_legacy_sequence_isolation.py`
+- Observational emit streams (not pinned hashes — assess whether they should be):
+  `tests/determinism/test_emit_net_divergence_jsonl.py`,
+  `test_emit_size_divergence_jsonl.py`, `test_analyze_net_divergence.py`,
+  `test_analyze_size_divergence.py` (G-5/G-7 divergence streams)
 
 ### Scope locks
 
@@ -91,7 +101,7 @@ here the question is **"is determinism truly pinned and broadly covered?"**
 
 ### A. What do the hashes actually pin? — highest priority
 
-1. For each of the five baselines, state precisely what the hash covers: which fields,
+1. For each of the eleven baselines, state precisely what the hash covers: which fields,
    ordering, sequence numbers, correlation IDs. Does it lock *ordering and sequence
    allocation* or only output values?
 2. Could a real determinism bug (reordered emission, reused sequence) pass the hash

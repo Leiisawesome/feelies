@@ -40,19 +40,20 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | 4 | `audit_signal_alpha.md` | Layer-2 SIGNAL alphas + engine | microstructure-alpha | Inv-1 mechanism, Inv-12 cost |
 | 5 | `audit_composition.md` | Layer-3 PORTFOLIO / composition | composition-layer | Inv-5 optimizer determinism |
 | 6 | `audit_risk_engine.md` | Risk engine + governor | risk-engine | Inv-11 fail-safe |
-| 7 | `audit_execution_fills.md` | Backtest fills / cost / latency | backtest-engine | Inv-6/9/12 PnL realism |
-| 8 | `audit_live_execution.md` | Live/paper + IB broker | live-execution | Inv-9 parity, fail-closed |
+| 7 | `audit_position_management.md` | Signal→intent decision, exits, sizing economics, PnL ledger (G-1…G-7) | risk-engine + live-execution | Inv-11/12 decision economics, Inv-13 ledger |
+| 8 | `audit_execution_fills.md` | Backtest fills / cost / latency | backtest-engine | Inv-6/9/12 PnL realism |
+| 9 | `audit_live_execution.md` | Live/paper + IB broker | live-execution | Inv-9 parity, fail-closed |
 | **Governance** |
-| 9 | `audit_alpha_lifecycle.md` | Promotion gates + ledger | alpha-lifecycle | Inv-13 provenance |
-| 10 | `audit_forensics.md` | Post-trade + decay detection | post-trade-forensics | Inv-4 decay default |
-| 11 | `audit_research_validation.md` | CPCV / DSR statistics | research-workflow | Inv-2/3 evidence |
+| 10 | `audit_alpha_lifecycle.md` | Promotion gates + ledger | alpha-lifecycle | Inv-13 provenance |
+| 11 | `audit_forensics.md` | Post-trade + decay detection | post-trade-forensics | Inv-4 decay default |
+| 12 | `audit_research_validation.md` | CPCV / DSR statistics | research-workflow | Inv-2/3 evidence |
 | **Foundations (cross-cutting)** |
-| 12 | `audit_kernel.md` | Orchestrator, micro-ordering, **bootstrap wiring** | system-architect | Inv-5/6/7/8 |
-| 13 | `audit_determinism.md` | Parity-hash harness + scope locks | testing-validation | Inv-5 coverage |
-| 14 | `audit_core_clock_config.md` | Clock, config, serialization, SM primitive | system-architect | Inv-10/7/5 |
-| 15 | `audit_performance.md` | Hot-path latency budgets | performance-engineering | Inv-5 (binding constraint) |
-| 16 | `audit_monitoring_safety.md` | Kill switch, health, alerting | live-execution | Inv-11 fail-closed |
-| 17 | `audit_harness_cli.md` | Backtest harness, reporting, operator CLI | backtest-engine | Inv-5 reproducibility, report fidelity |
+| 13 | `audit_kernel.md` | Orchestrator, micro-ordering, **bootstrap wiring** | system-architect | Inv-5/6/7/8 |
+| 14 | `audit_determinism.md` | Parity-hash harness + scope locks | testing-validation | Inv-5 coverage |
+| 15 | `audit_core_clock_config.md` | Clock, config, serialization, SM primitive | system-architect | Inv-10/7/5 |
+| 16 | `audit_performance.md` | Hot-path latency budgets | performance-engineering | Inv-5 (binding constraint) |
+| 17 | `audit_monitoring_safety.md` | Kill switch, health, alerting | live-execution | Inv-11 fail-closed |
+| 18 | `audit_harness_cli.md` | Backtest harness, reporting, operator CLI | backtest-engine | Inv-5 reproducibility, report fidelity |
 
 ## Coverage map (`src/feelies/` → owning audit)
 
@@ -68,9 +69,13 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | `alpha/portfolio_layer_module.py`, `intent_set.py` | composition |
 | `alpha/fill_attribution.py` | forensics |
 | `alpha/risk_wrapper.py` | risk_engine |
-| `composition/`, `portfolio/` | composition |
+| `composition/`, `portfolio/cross_sectional_tracker.py` | composition |
+| `portfolio/position_store.py`, `memory_position_store.py`, `strategy_position_store.py`, `lot_ledger.py` | position_management (PnL ledger) |
+| `storage/trade_journal.py`, `memory_trade_journal.py` | position_management (fill journal) |
 | `risk/` | risk_engine |
+| `risk/position_sizer.py`, `edge_weighted_sizer.py` | position_management (sizing economics) |
 | `execution/` (backtest fill/cost/routers) | execution_fills |
+| `execution/intent.py`, `position_manager.py`, `portfolio_netter.py` | position_management |
 | `execution/live_router.py`, `paper_backend.py`, `order_state.py`, `trading_session.py` | live_execution |
 | `broker/` | live_execution |
 | `forensics/` | forensics |
@@ -80,7 +85,7 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | `monitoring/` | monitoring_safety |
 | `harness/` (run + report) | harness_cli |
 | `cli/` | harness_cli (backtest) · alpha_lifecycle (`promote`) |
-| `scripts/` | harness_cli (ops) · sensor / composition / research / performance (domain scripts) |
+| `scripts/` | harness_cli (ops) · sensor / composition / research / performance (domain scripts) · position_management (`analyze_net_divergence.py`, `analyze_size_divergence.py`) |
 
 Cross-cutting concerns (not a single package): **determinism** spans `tests/determinism/`
 + every event producer (audit 13); **performance** spans the whole hot path (audit 15).
@@ -98,11 +103,26 @@ dive, the others treat them as touchpoints:
 | `monitoring/kill_switch.py` | monitoring_safety | live_execution |
 | `core/inv12_stress.py` | core_clock_config | execution_fills |
 | `execution/order_state.py`, `trading_session.py` | live_execution | execution_fills |
+| `kernel/orchestrator.py` | kernel (micro ordering, single-writer) | position_management (decision/exit economics), data_ingestion (M1 market-event path), regime (M2 writer) |
+| `execution/intent.py` | position_management | execution_fills (order-lifecycle touchpoint) |
+| `risk/position_sizer.py`, `edge_weighted_sizer.py` | position_management (sizing economics) | risk_engine (regime-factor fail-safe) |
+| `portfolio/{memory,strategy}_position_store.py`, `lot_ledger.py` | position_management (PnL math) | composition (position-state reads) |
 | `bootstrap.py` | kernel | every layer (mode-wiring touchpoint) |
 | `harness/backtest_runner.py`, `backtest_prep.py` | data_ingestion (ingest) + harness_cli (run/report) | — |
 
 ## Note
 
 The three original prompts (`audit_data_ingestion`, `audit_sensor`, `audit_regime`) were
-the template; prompts 4–17 follow the same format and were grounded against real module
+the template; prompts 4–18 follow the same format and were grounded against real module
 and test paths. Update this index when adding a new audit prompt.
+
+## Maintenance
+
+**Any PR that adds a new module under `src/feelies/` must assign it an owning audit in
+the coverage map above (and, for split-ownership packages, in
+`tests/docs/test_prompt_coverage_map.py`).** This is enforced by
+`tests/docs/test_prompt_coverage_map.py`, which fails when a module in a
+split-ownership package (`execution/`, `alpha/`, `signals/`, `cli/`, `portfolio/`) has
+no explicit owner, or when a new top-level package has no coverage-map entry. The guard
+exists because the G-1…G-7 position-management work (2026-06-08…10) landed ~15 commits
+of capital-path code with no prompt owner before this index caught up.
