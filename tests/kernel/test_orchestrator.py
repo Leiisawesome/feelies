@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from dataclasses import replace
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
@@ -2041,23 +2042,42 @@ class TestSessionFlatten:
     the quote crosses the session-flatten deadline, independent of alphas."""
 
     @staticmethod
-    def _bounds(rth_close_ns: int):
-        from datetime import date
+    def _day_anchored_bounds(anchor: "date"):
+        """RTH bounds booted anchored to a single ``anchor`` date.
 
+        Mirrors the multi-day CLI range path:
+        ``apply_backtest_session_dates_from_cli`` only rebinds single-day
+        runs, so a date *range* leaves ``rth_session_date`` unset and the
+        bounds fall back to one (often stale ``event_calendar_path``) date.
+        """
+        from feelies.execution.moc_session import et_clock_to_ns
         from feelies.execution.trading_session import TradingSessionBounds
+
         return TradingSessionBounds(
-            session_date=date(2026, 3, 26),
-            rth_open_ns=0,
-            rth_close_ns=rth_close_ns,
+            session_date=anchor,
+            rth_open_ns=et_clock_to_ns(anchor, "09:30"),
+            rth_close_ns=et_clock_to_ns(anchor, "16:00"),
         )
+
+    @staticmethod
+    def _quote_at(d: "date", hhmm: str, seq: int = 1) -> NBBOQuote:
+        from feelies.execution.moc_session import et_clock_to_ns
+
+        # _make_quote sets exchange_timestamp_ns = ts - 100; offset by +100 so
+        # the exchange timestamp lands exactly on the ET wall-clock instant.
+        ns = et_clock_to_ns(d, hhmm)
+        return _make_quote(ts=ns + 100, bid="99.99", ask="100.01", seq=seq)
 
     def _orch(
         self,
         *,
-        rth_close_ns: int,
         enabled: bool = True,
         position: int = 50,
+        anchor: "date | None" = None,
+        flatten_buffer_s: int = 0,
     ) -> tuple[Orchestrator, EventBus, list[OrderRequest], MemoryPositionStore]:
+        from datetime import date
+
         clock = SimulatedClock(start_ns=1000)
         bus = EventBus()
         orders: list[OrderRequest] = []
@@ -2080,14 +2100,16 @@ class TestSessionFlatten:
             metric_collector=_NoOpMetricCollector(),
         )
         _boot_to_backtest(orch)
-        orch._trading_session_bounds = self._bounds(rth_close_ns)
+        orch._trading_session_bounds = self._day_anchored_bounds(
+            anchor or date(2026, 3, 26),
+        )
         orch._session_flatten_enabled = enabled
+        orch._session_flatten_seconds_before_close = flatten_buffer_s
         return orch, bus, orders, pos_store
 
     def test_flattens_open_position_past_close(self) -> None:
-        # exchange_timestamp_ns = ts - 100; ts=1000 → 900 ≥ rth_close 500.
-        orch, _bus, orders, pos = self._orch(rth_close_ns=500)
-        q = _make_quote(ts=1000, seq=1)
+        orch, _bus, orders, pos = self._orch()
+        q = self._quote_at(date(2026, 3, 26), "16:01")  # past the 16:00 close
         orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
         orch._process_tick(q)
         assert pos.get("AAPL").quantity == 0
@@ -2096,30 +2118,83 @@ class TestSessionFlatten:
         assert orders[0].order_type.name == "MARKET"  # EOD close is aggressive
 
     def test_holds_before_close(self) -> None:
-        orch, _bus, orders, pos = self._orch(rth_close_ns=5000)
-        q = _make_quote(ts=1000, seq=1)  # exchange 900 < 5000 → not yet
+        orch, _bus, orders, pos = self._orch()
+        q = self._quote_at(date(2026, 3, 26), "15:59")  # before the 16:00 close
         orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
         orch._process_tick(q)
         assert pos.get("AAPL").quantity == 50
         assert orders == []
 
     def test_disabled_holds_position(self) -> None:
-        orch, _bus, orders, pos = self._orch(rth_close_ns=500, enabled=False)
-        q = _make_quote(ts=1000, seq=1)
+        orch, _bus, orders, pos = self._orch(enabled=False)
+        q = self._quote_at(date(2026, 3, 26), "16:01")
         orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
         orch._process_tick(q)
         assert pos.get("AAPL").quantity == 50
         assert orders == []
 
     def test_blocks_new_entry_in_window(self) -> None:
-        orch, bus, orders, pos = self._orch(rth_close_ns=500, position=0)
-        _publish_signal_on_quote(
-            bus, _make_signal(_make_quote(), SignalDirection.LONG),
-        )
-        q = _make_quote(ts=1000, seq=1)
+        orch, bus, orders, pos = self._orch(position=0)
+        q = self._quote_at(date(2026, 3, 26), "16:01")
+        _publish_signal_on_quote(bus, _make_signal(q, SignalDirection.LONG))
         orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
         orch._process_tick(q)
         assert pos.get("AAPL").quantity == 0  # entry suppressed in the window
+        assert orders == []
+
+    # ── Per-day rebinding for multi-day backtest ranges ───────────────
+    #
+    # A CLI date *range* (``--date D1 --end-date D2``) leaves
+    # ``rth_session_date`` unset (``apply_backtest_session_dates_from_cli``
+    # only rebinds single-day runs), so ``_trading_session_bounds`` is booted
+    # anchored to a single — often stale ``event_calendar_path`` — date.  The
+    # session-flatten window must therefore resolve the close *per replayed
+    # day* (``TradingSessionBounds.resolve_for_timestamp``); otherwise every
+    # quote past the booted day's close reads as past-close and all entries
+    # are blocked with ``session_flatten_window`` (0 orders for the range).
+
+    def test_session_flatten_window_rebinds_per_replayed_day(self) -> None:
+        day1, day2 = date(2026, 6, 1), date(2026, 6, 2)
+        # Bounds booted anchored to DAY 1 (the stale-anchor range scenario).
+        orch, _bus, _orders, _pos = self._orch(
+            position=0, anchor=day1, flatten_buffer_s=300,
+        )
+
+        # Day-2 mid-session must NOT be in the flatten window — the regression:
+        # the stale day-1 16:00 close made every day-2 quote read as past-close.
+        assert not orch._in_session_flatten_window(self._quote_at(day2, "10:45"))
+        # Day-2 within 5 min of its OWN 16:00 close still flattens.
+        assert orch._in_session_flatten_window(self._quote_at(day2, "15:58"))
+        # Day-1 behaviour is preserved (mid-session open, near-close flat).
+        assert not orch._in_session_flatten_window(self._quote_at(day1, "10:45"))
+        assert orch._in_session_flatten_window(self._quote_at(day1, "15:58"))
+
+    def test_day2_intraday_entry_not_flatten_blocked(self) -> None:
+        day1, day2 = date(2026, 6, 1), date(2026, 6, 2)
+        orch, bus, orders, _pos = self._orch(
+            position=0, anchor=day1, flatten_buffer_s=300,
+        )
+
+        q = self._quote_at(day2, "10:45")
+        _publish_signal_on_quote(bus, _make_signal_with_edge(q, 10_000.0))
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
+        # The entry survives: a day-2 intraday LONG produces a BUY order even
+        # though the bounds were booted anchored to day 1.
+        assert len(orders) == 1
+        assert orders[0].side == Side.BUY
+
+    def test_day2_near_close_entry_still_flatten_blocked(self) -> None:
+        day1, day2 = date(2026, 6, 1), date(2026, 6, 2)
+        orch, bus, orders, _pos = self._orch(
+            position=0, anchor=day1, flatten_buffer_s=300,
+        )
+
+        # Within 5 min of day-2's own close → entry is correctly suppressed.
+        q = self._quote_at(day2, "15:58")
+        _publish_signal_on_quote(bus, _make_signal_with_edge(q, 10_000.0))
+        orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+        orch._process_tick(q)
         assert orders == []
 
 
