@@ -47,6 +47,7 @@ def emit_net_divergence_jsonl(divergences: list[NetDivergence]) -> None:
     """
     for d in divergences:
         _emit_jsonl_line("NETDIV_JSONL", {
+            "timestamp_ns": d.timestamp_ns,
             "signal_sequence": d.signal_sequence,
             "symbol": d.symbol,
             "winner_strategy_id": d.winner_strategy_id,
