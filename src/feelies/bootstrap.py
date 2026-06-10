@@ -146,6 +146,11 @@ from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
 from feelies.risk.buying_power import BuyingPowerConfig
 from feelies.risk.engine import RiskEngine
 from feelies.risk.hazard_exit import HazardExitController, HazardPolicy
+from feelies.risk.edge_weighted_sizer import (
+    EdgeWeightedSizer,
+    SizeDivergence,
+    SizerTiltConfig,
+)
 from feelies.risk.position_sizer import BudgetBasedSizer
 from feelies.services.regime_engine import RegimeEngine, get_regime_engine
 from feelies.services.regime_hazard_detector import RegimeHazardDetector
@@ -203,6 +208,7 @@ def build_platform(
     *,
     signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
     net_shadow_sink: "list[NetDivergence] | None" = None,
+    size_shadow_sink: "list[SizeDivergence] | None" = None,
     normalizer: MarketDataNormalizer | None = None,
     precomputed_ex_date_spans: dict[str, tuple[date, date]] | None = None,
     regime_calibration_quotes: tuple[NBBOQuote, ...] | None = None,
@@ -490,7 +496,33 @@ def build_platform(
     strategy_positions = StrategyPositionStore()
     trade_journal = InMemoryTradeJournal()
     feature_snapshots = InMemoryFeatureSnapshotStore()
-    position_sizer = BudgetBasedSizer(regime_engine=regime_engine)
+    base_sizer = BudgetBasedSizer(regime_engine=regime_engine)
+    # G-7: build the edge/vol/inventory tilt config from PlatformConfig.  The
+    # tilted sizer drives the live decision only when ``sizer_tilt_drive`` is
+    # set (S2 flip); otherwise it is used solely for the shadow measurement
+    # stream and the live size stays single-factor (byte-identical baseline).
+    sizer_tilt_config = SizerTiltConfig(
+        edge_enabled=config.sizer_edge_weighting_enabled,
+        edge_ref_bps=config.sizer_edge_ref_bps,
+        edge_floor=config.sizer_edge_floor,
+        edge_cap=config.sizer_edge_cap,
+        vol_enabled=config.sizer_vol_targeting_enabled,
+        vol_target_bps=config.sizer_vol_target_bps,
+        vol_floor=config.sizer_vol_floor,
+        vol_cap=config.sizer_vol_cap,
+        inventory_enabled=config.sizer_inventory_penalty_enabled,
+        inventory_floor=config.sizer_inventory_floor,
+        tilt_floor=config.sizer_tilt_floor,
+        tilt_cap=config.sizer_tilt_cap,
+    )
+    # S1 wires the edge + inventory factors; realized-vol provider is a
+    # deferred seam (the vol factor stays a no-op until it is supplied).
+    tilted_sizer = EdgeWeightedSizer(
+        base_sizer,
+        sizer_tilt_config,
+        inventory_provider=lambda symbol: position_store.get(symbol).quantity,
+    )
+    position_sizer = tilted_sizer if config.sizer_tilt_drive else base_sizer
     intent_translator = SignalPositionTranslator()
     # G-1: the position-management decision layer.  ``drive`` routes the
     # live decision through the planner; ``enable_trim`` turns on the
@@ -646,6 +678,8 @@ def build_platform(
         hazard_exit_controller=hazard_exit_controller,
         signal_order_trace_sink=signal_order_trace_sink,
         net_shadow_sink=net_shadow_sink,
+        size_shadow_sizer=tilted_sizer if size_shadow_sink is not None else None,
+        size_shadow_sink=size_shadow_sink,
         normalizer=normalizer,
         regime_calibration_quotes=regime_calibration_quotes,
         position_manager=position_manager,

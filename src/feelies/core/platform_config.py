@@ -349,6 +349,28 @@ class PlatformConfig:
     enable_portfolio_netting: bool = False
     net_staleness_k: float = 1.0
 
+    # G-7: edge-weighted / vol-targeted sizing with an inventory penalty.
+    # The base sizer (capital × strength × regime) is tilted by up to three
+    # multiplicative factors.  ``sizer_tilt_drive`` routes the live decision
+    # through the tilted sizer; with it off (default) the tilt is computed
+    # only for the shadow measurement stream (``--emit-size-divergence-jsonl``)
+    # and the live size stays single-factor — byte-identical to the baseline.
+    # Each factor is independently disabled by default, so even when driving,
+    # an all-off config reproduces the base sizer exactly.
+    sizer_tilt_drive: bool = False
+    sizer_edge_weighting_enabled: bool = False
+    sizer_edge_ref_bps: float = 20.0
+    sizer_edge_floor: float = 0.25
+    sizer_edge_cap: float = 2.0
+    sizer_vol_targeting_enabled: bool = False
+    sizer_vol_target_bps: float = 100.0
+    sizer_vol_floor: float = 0.25
+    sizer_vol_cap: float = 2.0
+    sizer_inventory_penalty_enabled: bool = False
+    sizer_inventory_floor: float = 0.0
+    sizer_tilt_floor: float = 0.10
+    sizer_tilt_cap: float = 3.0
+
     # Regime engine boot-time calibration (lookahead avoidance).  ``None``
     # skips feeding the trading event log into ``calibrate()`` entirely
     # (cold emission defaults + per-run warning).  A positive integer uses
@@ -757,6 +779,23 @@ class PlatformConfig:
             )
         if self.net_staleness_k < 0.0:
             raise ConfigurationError("net_staleness_k must be >= 0")
+        if self.sizer_edge_ref_bps <= 0.0:
+            raise ConfigurationError("sizer_edge_ref_bps must be > 0")
+        if self.sizer_vol_target_bps <= 0.0:
+            raise ConfigurationError("sizer_vol_target_bps must be > 0")
+        for _name, _lo, _hi in (
+            ("sizer_edge", self.sizer_edge_floor, self.sizer_edge_cap),
+            ("sizer_vol", self.sizer_vol_floor, self.sizer_vol_cap),
+            ("sizer_tilt", self.sizer_tilt_floor, self.sizer_tilt_cap),
+        ):
+            if _lo < 0.0 or _hi < _lo:
+                raise ConfigurationError(
+                    f"{_name}_floor/_cap must satisfy 0 <= floor <= cap"
+                )
+        if not 0.0 <= self.sizer_inventory_floor <= 1.0:
+            raise ConfigurationError(
+                "sizer_inventory_floor must be in [0, 1]"
+            )
         if self.cost_passive_adverse_selection_bps < 0.0:
             raise ConfigurationError(
                 "cost_passive_adverse_selection_bps must be >= 0"
@@ -1058,6 +1097,21 @@ class PlatformConfig:
             ),
             "enable_portfolio_netting": self.enable_portfolio_netting,
             "net_staleness_k": self.net_staleness_k,
+            "sizer_tilt_drive": self.sizer_tilt_drive,
+            "sizer_edge_weighting_enabled": self.sizer_edge_weighting_enabled,
+            "sizer_edge_ref_bps": self.sizer_edge_ref_bps,
+            "sizer_edge_floor": self.sizer_edge_floor,
+            "sizer_edge_cap": self.sizer_edge_cap,
+            "sizer_vol_targeting_enabled": self.sizer_vol_targeting_enabled,
+            "sizer_vol_target_bps": self.sizer_vol_target_bps,
+            "sizer_vol_floor": self.sizer_vol_floor,
+            "sizer_vol_cap": self.sizer_vol_cap,
+            "sizer_inventory_penalty_enabled": (
+                self.sizer_inventory_penalty_enabled
+            ),
+            "sizer_inventory_floor": self.sizer_inventory_floor,
+            "sizer_tilt_floor": self.sizer_tilt_floor,
+            "sizer_tilt_cap": self.sizer_tilt_cap,
             "signal_edge_cost_basis": self.signal_edge_cost_basis,
             "regime_calibration_max_quotes": self.regime_calibration_max_quotes,
             "enforce_regime_state_scale_alignment": (
@@ -1580,6 +1634,25 @@ class PlatformConfig:
                 data.get("enable_portfolio_netting", False)
             ),
             net_staleness_k=float(data.get("net_staleness_k", 1.0)),
+            sizer_tilt_drive=bool(data.get("sizer_tilt_drive", False)),
+            sizer_edge_weighting_enabled=bool(
+                data.get("sizer_edge_weighting_enabled", False)
+            ),
+            sizer_edge_ref_bps=float(data.get("sizer_edge_ref_bps", 20.0)),
+            sizer_edge_floor=float(data.get("sizer_edge_floor", 0.25)),
+            sizer_edge_cap=float(data.get("sizer_edge_cap", 2.0)),
+            sizer_vol_targeting_enabled=bool(
+                data.get("sizer_vol_targeting_enabled", False)
+            ),
+            sizer_vol_target_bps=float(data.get("sizer_vol_target_bps", 100.0)),
+            sizer_vol_floor=float(data.get("sizer_vol_floor", 0.25)),
+            sizer_vol_cap=float(data.get("sizer_vol_cap", 2.0)),
+            sizer_inventory_penalty_enabled=bool(
+                data.get("sizer_inventory_penalty_enabled", False)
+            ),
+            sizer_inventory_floor=float(data.get("sizer_inventory_floor", 0.0)),
+            sizer_tilt_floor=float(data.get("sizer_tilt_floor", 0.10)),
+            sizer_tilt_cap=float(data.get("sizer_tilt_cap", 3.0)),
             signal_edge_cost_basis=str(
                 data.get("signal_edge_cost_basis", "round_trip")
             ),

@@ -74,6 +74,43 @@ class SizerTiltConfig:
         return self.edge_enabled or self.vol_enabled or self.inventory_enabled
 
 
+@dataclass(frozen=True)
+class TiltBreakdown:
+    """Per-factor decomposition of a sizing tilt (for the shadow stream)."""
+
+    edge: float
+    vol: float
+    inventory: float
+    combined: float           # clamped product of the enabled factors
+    inventory_qty: int        # signed inventory observed (0 when no provider)
+    realized_vol_bps: float | None  # observed realized vol (None when absent)
+
+
+@dataclass(frozen=True)
+class SizeDivergence:
+    """G-7 S1 shadow record: the tilted target differs from the base target.
+
+    Emitted when the edge/vol/inventory-tilted size for a sized signal
+    disagrees with the live single-factor budget target — the measurement
+    that quantifies how much G-7 sizing would change the order book before
+    any flip.  ``magnitude = tilted - base``.
+    """
+
+    symbol: str
+    signal_sequence: int
+    strategy_id: str
+    edge_bps: float
+    base_target_qty: int
+    tilted_target_qty: int
+    edge_factor: float
+    vol_factor: float
+    inventory_factor: float
+    combined_tilt: float
+    inventory_qty: int
+    timestamp_ns: int = 0
+    detail: str = ""
+
+
 def _clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
 
@@ -144,21 +181,26 @@ class EdgeWeightedSizer:
     def config(self) -> SizerTiltConfig:
         return self._config
 
-    def tilt_for(
+    @property
+    def base(self) -> PositionSizer:
+        return self._base
+
+    def tilt_breakdown(
         self, signal: Signal, risk_budget: AlphaRiskBudget
-    ) -> float:
-        """Deterministic combined tilt for a signal (1.0 when all-off).
+    ) -> TiltBreakdown:
+        """Per-factor decomposition + clamped combined tilt for a signal.
 
         Exposed for the shadow harness so the measurement stream can record
-        the tilt alongside the base and tilted targets without recomputing.
+        each factor alongside the base and tilted targets without
+        recomputing.  All-off → unit factors and ``combined == 1.0``.
         """
         cfg = self._config
-        if not cfg.any_enabled:
-            return 1.0
+        ef = vf = invf = 1.0
+        inv_qty = 0
+        rv: float | None = None
 
-        tilt = 1.0
         if cfg.edge_enabled:
-            tilt *= edge_factor(
+            ef = edge_factor(
                 signal.edge_estimate_bps,
                 ref_bps=cfg.edge_ref_bps,
                 floor=cfg.edge_floor,
@@ -170,23 +212,35 @@ class EdgeWeightedSizer:
                 if self._realized_vol_provider is not None
                 else None
             )
-            tilt *= vol_factor(
+            vf = vol_factor(
                 rv,
                 target_vol_bps=cfg.vol_target_bps,
                 floor=cfg.vol_floor,
                 cap=cfg.vol_cap,
             )
         if cfg.inventory_enabled:
-            inv = (
+            inv_qty = (
                 self._inventory_provider(signal.symbol)
                 if self._inventory_provider is not None
                 else 0
             )
-            tilt *= inventory_factor(
-                inv, risk_budget.max_position_per_symbol, floor=cfg.inventory_floor
+            invf = inventory_factor(
+                inv_qty, risk_budget.max_position_per_symbol,
+                floor=cfg.inventory_floor,
             )
 
-        return _clamp(tilt, cfg.tilt_floor, cfg.tilt_cap)
+        combined = (
+            1.0 if not cfg.any_enabled
+            else _clamp(ef * vf * invf, cfg.tilt_floor, cfg.tilt_cap)
+        )
+        return TiltBreakdown(
+            edge=ef, vol=vf, inventory=invf, combined=combined,
+            inventory_qty=inv_qty, realized_vol_bps=rv,
+        )
+
+    def tilt_for(self, signal: Signal, risk_budget: AlphaRiskBudget) -> float:
+        """Deterministic combined tilt for a signal (1.0 when all-off)."""
+        return self.tilt_breakdown(signal, risk_budget).combined
 
     def compute_target_quantity(
         self,
@@ -206,6 +260,10 @@ class EdgeWeightedSizer:
             return base_target
 
         tilt = self.tilt_for(signal, risk_budget)
-        tilted = int(Decimal(base_target) * Decimal(str(tilt)))  # floor
-        capped = min(tilted, risk_budget.max_position_per_symbol)
-        return max(0, capped)
+        return apply_tilt(base_target, tilt, risk_budget.max_position_per_symbol)
+
+
+def apply_tilt(base_target: int, tilt: float, max_position: int) -> int:
+    """Floor ``base × tilt`` deterministically, re-cap, and floor at 0."""
+    tilted = int(Decimal(base_target) * Decimal(str(tilt)))  # floor
+    return max(0, min(tilted, max_position))

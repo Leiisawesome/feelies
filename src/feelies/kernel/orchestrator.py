@@ -156,6 +156,11 @@ from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.lot_ledger import LotLedger
 from feelies.risk.engine import RiskEngine
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
+from feelies.risk.edge_weighted_sizer import (
+    EdgeWeightedSizer,
+    SizeDivergence,
+    apply_tilt,
+)
 from feelies.risk.position_sizer import BudgetBasedSizer, PositionSizer
 from feelies.sensors.horizon_scheduler import HorizonScheduler
 from feelies.sensors.registry import SensorRegistry
@@ -418,6 +423,8 @@ class Orchestrator:
         position_manager_urgency_exec: bool = False,
         net_shadow_sink: "list[NetDivergence] | None" = None,
         net_shadow_portfolio_max_abs_qty: int | None = None,
+        size_shadow_sizer: "EdgeWeightedSizer | None" = None,
+        size_shadow_sink: "list[SizeDivergence] | None" = None,
     ) -> None:
         self._clock = clock
         self._bus = bus
@@ -484,6 +491,12 @@ class Orchestrator:
             portfolio_max_abs_qty=self._net_portfolio_max_abs_qty,
         )
         self._net_shadow_sink = net_shadow_sink
+        # G-7 S1: edge/vol/inventory sizing shadow.  When a sink is wired the
+        # orchestrator records, per sized signal, how the tilted target would
+        # differ from the live single-factor base target — pure measurement,
+        # no order/bus/journal effect, no-op unless wired.
+        self._size_shadow_sizer = size_shadow_sizer
+        self._size_shadow_sink = size_shadow_sink
         # Aligned with the pre-tick signal-buffer staleness policy in
         # ``_process_tick_inner``: a horizon-gated signal is evicted from
         # the buffer once ``(now - timestamp) > horizon_seconds × 1e9``.
@@ -2250,6 +2263,7 @@ class Orchestrator:
 
         # ── Position sizing: compute target quantity from risk budget ──
         target_qty = self._compute_target_quantity(signal, quote)
+        self._record_size_shadow(signal, quote)
 
         # ── Decision: Signal × Position → OrderIntent ──────────────────
         # Legacy path: the intent translator.  G-1 flip: when driving, the
@@ -3550,6 +3564,65 @@ class Orchestrator:
             target = self._min_order_shares
 
         return target
+
+    def _record_size_shadow(self, signal: Signal, quote: NBBOQuote) -> None:
+        """G-7 S1: shadow the edge/vol/inventory-tilted target vs the base.
+
+        For each real (non-synthetic) sized signal, compute the tilted
+        target the G-7 sizer *would* produce and append a
+        :class:`SizeDivergence` when it differs from the live single-factor
+        base target.  Pure measurement at the sizer level (before the H1
+        min-order clamp and the risk engine, which apply equally to both) —
+        no orders, bus, journal, or parity effects; no-op unless a sink is
+        wired and at least one tilt factor is enabled.
+        """
+        sizer = self._size_shadow_sizer
+        sink = self._size_shadow_sink
+        if (
+            sizer is None
+            or sink is None
+            or not sizer.config.any_enabled
+            or self._alpha_registry is None
+            or signal.strategy_id.startswith("__")
+        ):
+            return
+        try:
+            alpha = self._alpha_registry.get(signal.strategy_id)
+        except KeyError:
+            return
+        risk_budget = alpha.manifest.risk_budget
+        mid_price = (quote.bid + quote.ask) / Decimal(2)
+        if mid_price <= 0:
+            return
+
+        base_target = sizer.base.compute_target_quantity(
+            signal=signal,
+            risk_budget=risk_budget,
+            symbol_price=mid_price,
+            account_equity=self._account_equity,
+        )
+        if base_target <= 0:
+            return
+        bd = sizer.tilt_breakdown(signal, risk_budget)
+        tilted = apply_tilt(
+            base_target, bd.combined, risk_budget.max_position_per_symbol
+        )
+        if tilted == base_target:
+            return
+        sink.append(SizeDivergence(
+            symbol=signal.symbol,
+            signal_sequence=signal.sequence,
+            strategy_id=signal.strategy_id,
+            edge_bps=float(signal.edge_estimate_bps),
+            base_target_qty=base_target,
+            tilted_target_qty=tilted,
+            edge_factor=bd.edge,
+            vol_factor=bd.vol,
+            inventory_factor=bd.inventory,
+            combined_tilt=bd.combined,
+            inventory_qty=bd.inventory_qty,
+            timestamp_ns=int(quote.exchange_timestamp_ns),
+        ))
 
     def _plan_for_signal(
         self,
