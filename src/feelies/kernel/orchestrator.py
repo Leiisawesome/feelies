@@ -993,7 +993,13 @@ class Orchestrator:
         bounds = self._trading_session_bounds
         if bounds is None:
             return
-        if quote.exchange_timestamp_ns < bounds.rth_close_ns:
+        # Resolve the close for this quote's NY session date so a multi-day
+        # replay flips at each replayed day's actual close rather than the
+        # single booted ``session_date`` (which, for a CLI date range, is the
+        # stale ``event_calendar_path`` date — every replayed quote would
+        # otherwise read as already past-close and flip on the first tick).
+        effective = bounds.resolve_for_timestamp(quote.exchange_timestamp_ns)
+        if quote.exchange_timestamp_ns < effective.rth_close_ns:
             return
         set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
         if not callable(set_phase):
@@ -3465,25 +3471,34 @@ class Orchestrator:
             edge_estimate_bps=0.0,
         )
 
-    def _session_flatten_deadline_ns(self) -> int | None:
+    def _session_flatten_deadline_ns(self, quote: NBBOQuote) -> int | None:
         """Exchange-time ns at/after which the session flattens, or None.
 
         ``None`` when session flatten is disabled or no RTH session is
         configured.  The deadline is ``rth_close - buffer`` so an operator
         can unwind before the closing auction.
+
+        The bounds are resolved for *this quote's* NY session date via
+        :meth:`TradingSessionBounds.resolve_for_timestamp` so a multi-day
+        replay rebinds the close per replayed day rather than pinning every
+        day to the single ``session_date`` the bounds were booted with
+        (which, for a CLI date *range*, falls back to the stale
+        ``event_calendar_path`` date and would otherwise flag every quote
+        as past-close — see ``apply_backtest_session_dates_from_cli``).
         """
         if not self._session_flatten_enabled:
             return None
         bounds = self._trading_session_bounds
         if bounds is None:
             return None
-        return bounds.rth_close_ns - (
+        effective = bounds.resolve_for_timestamp(quote.exchange_timestamp_ns)
+        return effective.rth_close_ns - (
             self._session_flatten_seconds_before_close * 1_000_000_000
         )
 
     def _in_session_flatten_window(self, quote: NBBOQuote) -> bool:
         """True once the quote crosses the session-flatten deadline."""
-        deadline = self._session_flatten_deadline_ns()
+        deadline = self._session_flatten_deadline_ns(quote)
         return deadline is not None and quote.exchange_timestamp_ns >= deadline
 
     def _check_session_flat(self, quote: NBBOQuote) -> Signal | None:
