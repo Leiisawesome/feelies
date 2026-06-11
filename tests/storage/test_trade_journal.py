@@ -62,37 +62,62 @@ class TestInMemoryTradeJournal:
 
     def _make_journal(self):
         from feelies.storage.memory_trade_journal import InMemoryTradeJournal
+
         journal = InMemoryTradeJournal()
-        journal.record(TradeRecord(
-            order_id="ord-1", symbol="AAPL", strategy_id="alpha1",
-            side=Side.BUY, requested_quantity=100, filled_quantity=100,
-            fill_price=Decimal("150.01"),
-            signal_timestamp_ns=1_000_000_000, submit_timestamp_ns=1_000_100_000,
-            fill_timestamp_ns=1_000_200_000,
-            cost_bps=Decimal("0.5"), fees=Decimal("0"),
-            realized_pnl=Decimal("10.50"),
-            correlation_id="AAPL:1000000000:1",
-        ))
-        journal.record(TradeRecord(
-            order_id="ord-2", symbol="MSFT", strategy_id="alpha2",
-            side=Side.SELL, requested_quantity=50, filled_quantity=50,
-            fill_price=Decimal("350.00"),
-            signal_timestamp_ns=2_000_000_000, submit_timestamp_ns=2_000_100_000,
-            fill_timestamp_ns=2_000_200_000,
-            cost_bps=Decimal("0.3"), fees=Decimal("1.00"),
-            realized_pnl=Decimal("-5.00"),
-            correlation_id="MSFT:2000000000:2",
-        ))
-        journal.record(TradeRecord(
-            order_id="ord-3", symbol="AAPL", strategy_id="alpha2",
-            side=Side.BUY, requested_quantity=75, filled_quantity=75,
-            fill_price=Decimal("151.00"),
-            signal_timestamp_ns=3_000_000_000, submit_timestamp_ns=3_000_100_000,
-            fill_timestamp_ns=3_000_200_000,
-            cost_bps=Decimal("0.2"), fees=Decimal("0.50"),
-            realized_pnl=Decimal("7.25"),
-            correlation_id="AAPL:3000000000:3",
-        ))
+        journal.record(
+            TradeRecord(
+                order_id="ord-1",
+                symbol="AAPL",
+                strategy_id="alpha1",
+                side=Side.BUY,
+                requested_quantity=100,
+                filled_quantity=100,
+                fill_price=Decimal("150.01"),
+                signal_timestamp_ns=1_000_000_000,
+                submit_timestamp_ns=1_000_100_000,
+                fill_timestamp_ns=1_000_200_000,
+                cost_bps=Decimal("0.5"),
+                fees=Decimal("0"),
+                realized_pnl=Decimal("10.50"),
+                correlation_id="AAPL:1000000000:1",
+            )
+        )
+        journal.record(
+            TradeRecord(
+                order_id="ord-2",
+                symbol="MSFT",
+                strategy_id="alpha2",
+                side=Side.SELL,
+                requested_quantity=50,
+                filled_quantity=50,
+                fill_price=Decimal("350.00"),
+                signal_timestamp_ns=2_000_000_000,
+                submit_timestamp_ns=2_000_100_000,
+                fill_timestamp_ns=2_000_200_000,
+                cost_bps=Decimal("0.3"),
+                fees=Decimal("1.00"),
+                realized_pnl=Decimal("-5.00"),
+                correlation_id="MSFT:2000000000:2",
+            )
+        )
+        journal.record(
+            TradeRecord(
+                order_id="ord-3",
+                symbol="AAPL",
+                strategy_id="alpha2",
+                side=Side.BUY,
+                requested_quantity=75,
+                filled_quantity=75,
+                fill_price=Decimal("151.00"),
+                signal_timestamp_ns=3_000_000_000,
+                submit_timestamp_ns=3_000_100_000,
+                fill_timestamp_ns=3_000_200_000,
+                cost_bps=Decimal("0.2"),
+                fees=Decimal("0.50"),
+                realized_pnl=Decimal("7.25"),
+                correlation_id="AAPL:3000000000:3",
+            )
+        )
         return journal
 
     def test_query_all(self) -> None:

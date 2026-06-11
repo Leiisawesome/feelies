@@ -113,7 +113,7 @@ from feelies.storage.memory_event_log import InMemoryEventLog
 # ── Constants ────────────────────────────────────────────────────────────
 
 SESSION_OPEN_NS: int = 1_768_532_400_000_000_000  # 2026-01-15 14:30:00 UTC
-QUOTE_CADENCE_NS: int = 100_000_000               # 10 Hz
+QUOTE_CADENCE_NS: int = 100_000_000  # 10 Hz
 
 # 3 symbols — small enough for fast smoke, large enough to prove bus routing.
 _SYMBOLS: tuple[str, ...] = ("AAPL", "MSFT", "NVDA")
@@ -405,45 +405,45 @@ def _build(alpha_yaml_paths: list[Path], seed: int = 42) -> dict[str, list[Any]]
 
     # Subscribe BEFORE boot so we capture every event from tick 1.
     captured: dict[str, list[Any]] = {
-        "quotes":      [],
-        "trades":      [],
-        "regime":      [],
-        "sensor":      [],
-        "htick":       [],
-        "snapshot":    [],
-        "signal":      [],
-        "intent":      [],
-        "risk":        [],
-        "order":       [],
-        "ack":         [],
-        "position":    [],
-        "transition":  [],
-        "metric":      [],
-        "alert":       [],
-        "killswitch":  [],
-        "hazard":      [],
-        "xsect":       [],
-        "all":         [],
+        "quotes": [],
+        "trades": [],
+        "regime": [],
+        "sensor": [],
+        "htick": [],
+        "snapshot": [],
+        "signal": [],
+        "intent": [],
+        "risk": [],
+        "order": [],
+        "ack": [],
+        "position": [],
+        "transition": [],
+        "metric": [],
+        "alert": [],
+        "killswitch": [],
+        "hazard": [],
+        "xsect": [],
+        "all": [],
     }
     bus = orchestrator._bus
-    bus.subscribe(NBBOQuote,              captured["quotes"].append)
-    bus.subscribe(Trade,                  captured["trades"].append)
-    bus.subscribe(RegimeState,            captured["regime"].append)
-    bus.subscribe(SensorReading,          captured["sensor"].append)
-    bus.subscribe(HorizonTick,            captured["htick"].append)
+    bus.subscribe(NBBOQuote, captured["quotes"].append)
+    bus.subscribe(Trade, captured["trades"].append)
+    bus.subscribe(RegimeState, captured["regime"].append)
+    bus.subscribe(SensorReading, captured["sensor"].append)
+    bus.subscribe(HorizonTick, captured["htick"].append)
     bus.subscribe(HorizonFeatureSnapshot, captured["snapshot"].append)
-    bus.subscribe(Signal,                 captured["signal"].append)
-    bus.subscribe(SizedPositionIntent,    captured["intent"].append)
-    bus.subscribe(RiskVerdict,            captured["risk"].append)
-    bus.subscribe(OrderRequest,           captured["order"].append)
-    bus.subscribe(OrderAck,               captured["ack"].append)
-    bus.subscribe(PositionUpdate,         captured["position"].append)
-    bus.subscribe(StateTransition,        captured["transition"].append)
-    bus.subscribe(MetricEvent,            captured["metric"].append)
-    bus.subscribe(Alert,                  captured["alert"].append)
-    bus.subscribe(KillSwitchActivation,   captured["killswitch"].append)
-    bus.subscribe(RegimeHazardSpike,      captured["hazard"].append)
-    bus.subscribe(CrossSectionalContext,  captured["xsect"].append)
+    bus.subscribe(Signal, captured["signal"].append)
+    bus.subscribe(SizedPositionIntent, captured["intent"].append)
+    bus.subscribe(RiskVerdict, captured["risk"].append)
+    bus.subscribe(OrderRequest, captured["order"].append)
+    bus.subscribe(OrderAck, captured["ack"].append)
+    bus.subscribe(PositionUpdate, captured["position"].append)
+    bus.subscribe(StateTransition, captured["transition"].append)
+    bus.subscribe(MetricEvent, captured["metric"].append)
+    bus.subscribe(Alert, captured["alert"].append)
+    bus.subscribe(KillSwitchActivation, captured["killswitch"].append)
+    bus.subscribe(RegimeHazardSpike, captured["hazard"].append)
+    bus.subscribe(CrossSectionalContext, captured["xsect"].append)
     bus.subscribe_all(captured["all"].append)
 
     orchestrator.boot(config)
@@ -499,7 +499,7 @@ def run_smoke(alpha_yaml_paths: list[Path]) -> bool:
     passes: list[bool] = []
     print("\n── STAGE 1 · MARKET_EVENT ──────────────────────────────────────")
     passes.append(_check("NBBOQuote", c["quotes"], required=True))
-    passes.append(_check("Trade",     c["trades"], required=True))
+    passes.append(_check("Trade", c["trades"], required=True))
 
     print("\n── STAGE 2 · STATE_UPDATE ──────────────────────────────────────")
     passes.append(_check("RegimeState", c["regime"], required=True))
@@ -512,37 +512,42 @@ def run_smoke(alpha_yaml_paths: list[Path]) -> bool:
     warm_readings = [s for s in c["sensor"] if s.warm]
     cold_ok = bool(cold_readings)
     warm_ok = bool(warm_readings)
-    print(f"  [{'PASS' if cold_ok else 'FAIL'}] cold (warm=False) readings   : {len(cold_readings)}")
-    print(f"  [{'PASS' if warm_ok else 'FAIL'}] warm (warm=True)  readings   : {len(warm_readings)}")
+    print(
+        f"  [{'PASS' if cold_ok else 'FAIL'}] cold (warm=False) readings   : {len(cold_readings)}"
+    )
+    print(
+        f"  [{'PASS' if warm_ok else 'FAIL'}] warm (warm=True)  readings   : {len(warm_readings)}"
+    )
     passes.append(cold_ok)
     passes.append(warm_ok)
 
     # Verify kyle_lambda_60s sensor produced readings (Trade path).
     kyle_readings = [s for s in c["sensor"] if s.sensor_id == "kyle_lambda_60s"]
     kyle_ok = bool(kyle_readings)
-    print(f"  [{'PASS' if kyle_ok else 'FAIL'}] kyle_lambda_60s readings     : {len(kyle_readings)}")
+    print(
+        f"  [{'PASS' if kyle_ok else 'FAIL'}] kyle_lambda_60s readings     : {len(kyle_readings)}"
+    )
     passes.append(kyle_ok)
 
     print("\n── STAGE 4 · AGGREGATOR ────────────────────────────────────────")
-    passes.append(_check("HorizonTick",            c["htick"],    required=True))
+    passes.append(_check("HorizonTick", c["htick"], required=True))
     passes.append(_check("HorizonFeatureSnapshot", c["snapshot"], required=True))
 
     # Count HORIZON_CHECK transitions (M3 bookkeeping for aggregator gate).
     horizon_check_count = sum(
-        1 for t in c["transition"]
-        if getattr(t, "from_state", None) == "HORIZON_CHECK"
+        1 for t in c["transition"] if getattr(t, "from_state", None) == "HORIZON_CHECK"
     )
     print(f"  HORIZON_CHECK transitions            : {horizon_check_count}")
 
     print("\n── STAGE 5 · SIGNAL ────────────────────────────────────────────")
     passes.append(_check("Signal", c["signal"], required=True))
 
-    long_sigs  = [s for s in c["signal"] if s.direction.name == "LONG"]
+    long_sigs = [s for s in c["signal"] if s.direction.name == "LONG"]
     short_sigs = [s for s in c["signal"] if s.direction.name == "SHORT"]
     print(f"  LONG signals  : {len(long_sigs)}")
     print(f"  SHORT signals : {len(short_sigs)}")
     # Both directions should appear (smoke_always_on_v1 alternates per boundary).
-    long_ok  = bool(long_sigs)
+    long_ok = bool(long_sigs)
     short_ok = bool(short_sigs)
     print(f"  [{'PASS' if long_ok else 'FAIL'}] LONG signals exist")
     print(f"  [{'PASS' if short_ok else 'FAIL'}] SHORT signals exist")
@@ -551,12 +556,10 @@ def run_smoke(alpha_yaml_paths: list[Path]) -> bool:
 
     # FEATURE_COMPUTE / SIGNAL_EVALUATE bookkeeping transitions.
     fc_count = sum(
-        1 for t in c["transition"]
-        if getattr(t, "from_state", None) == "FEATURE_COMPUTE"
+        1 for t in c["transition"] if getattr(t, "from_state", None) == "FEATURE_COMPUTE"
     )
     se_count = sum(
-        1 for t in c["transition"]
-        if getattr(t, "from_state", None) == "SIGNAL_EVALUATE"
+        1 for t in c["transition"] if getattr(t, "from_state", None) == "SIGNAL_EVALUATE"
     )
     print(f"  FEATURE_COMPUTE transitions  : {fc_count}")
     print(f"  SIGNAL_EVALUATE transitions  : {se_count}")
@@ -564,17 +567,16 @@ def run_smoke(alpha_yaml_paths: list[Path]) -> bool:
     print("\n── STAGE 6 · COMPOSITION ───────────────────────────────────────")
     # Both CrossSectionalContext and SizedPositionIntent are required now
     # that smoke_portfolio_v1 is wired in.
-    passes.append(_check("CrossSectionalContext", c["xsect"],  required=True))
-    passes.append(_check("SizedPositionIntent",   c["intent"], required=True))
+    passes.append(_check("CrossSectionalContext", c["xsect"], required=True))
+    passes.append(_check("SizedPositionIntent", c["intent"], required=True))
 
     print("\n── STAGE 7 · RISK ──────────────────────────────────────────────")
     passes.append(_check("RiskVerdict", c["risk"], required=True))
 
     # Break down by RiskAction.
     from collections import Counter
-    action_counts: Counter[str] = Counter(
-        getattr(v, "action", None) for v in c["risk"]
-    )
+
+    action_counts: Counter[str] = Counter(getattr(v, "action", None) for v in c["risk"])
     for action, cnt in sorted(action_counts.items(), key=lambda x: str(x[0])):
         print(f"  {action!s:<35} {cnt}")
     # ALLOW must appear; SCALE_DOWN is expected after exposure builds up.
@@ -589,20 +591,19 @@ def run_smoke(alpha_yaml_paths: list[Path]) -> bool:
     passes.append(_check("OrderRequest", c["order"], required=True))
 
     # Break down by intent type (ENTER / EXIT / REVERSE_ENTRY / REVERSE_EXIT).
-    intent_counts: Counter[str] = Counter(
-        getattr(o, "intent", None) for o in c["order"]
-    )
+    intent_counts: Counter[str] = Counter(getattr(o, "intent", None) for o in c["order"])
     for intent, cnt in sorted(intent_counts.items(), key=lambda x: str(x[0])):
         print(f"  {intent!s:<35} {cnt}")
     # EXIT/REVERSE orders appear when smoke_always_on_v1 fires SHORT after LONG.
-    reverse_types = {v for k, v in intent_counts.items()
-                     if k is not None and "REVERSE" in str(k)}
-    exit_types    = {v for k, v in intent_counts.items()
-                     if k is not None and "EXIT"    in str(k)}
+    reverse_types = {v for k, v in intent_counts.items() if k is not None and "REVERSE" in str(k)}
+    exit_types = {v for k, v in intent_counts.items() if k is not None and "EXIT" in str(k)}
     if intent_counts:
-        any_exit = any("EXIT" in str(k) or "REVERSE" in str(k)
-                       for k in intent_counts if k is not None)
-        print(f"  [{'PASS' if any_exit else 'INFO '}] EXIT / REVERSE order{'s' if any_exit else 's (none yet — may need more boundaries)'}")
+        any_exit = any(
+            "EXIT" in str(k) or "REVERSE" in str(k) for k in intent_counts if k is not None
+        )
+        print(
+            f"  [{'PASS' if any_exit else 'INFO '}] EXIT / REVERSE order{'s' if any_exit else 's (none yet — may need more boundaries)'}"
+        )
     print(f"  Signal/order ratio note: the micro-SM emits at most 1 standalone")
     print(f"  order per tick (PORTFOLIO orders handled via SizedPositionIntent).")
 
@@ -614,7 +615,7 @@ def run_smoke(alpha_yaml_paths: list[Path]) -> bool:
 
     print("\n── STAGE 11 · LOG_AND_METRICS ──────────────────────────────────")
     passes.append(_check("StateTransition", c["transition"], required=False))
-    passes.append(_check("MetricEvent",     c["metric"],     required=False))
+    passes.append(_check("MetricEvent", c["metric"], required=False))
 
     print(f"\n── SAFETY SILENCE CHECK ────────────────────────────────────────")
     # KillSwitchActivation and RegimeHazardSpike must be absent in a healthy
@@ -622,10 +623,8 @@ def run_smoke(alpha_yaml_paths: list[Path]) -> bool:
     # composition.low_completeness Alerts from horizon_metrics are expected on
     # early boundaries (cold-start sensor readings not yet warm); the smoke run
     # does NOT fail on these.
-    composition_alerts = [a for a in c["alert"]
-                          if getattr(a, "source_layer", "") == "COMPOSITION"]
-    kernel_alerts = [a for a in c["alert"]
-                     if getattr(a, "source_layer", "") != "COMPOSITION"]
+    composition_alerts = [a for a in c["alert"] if getattr(a, "source_layer", "") == "COMPOSITION"]
+    kernel_alerts = [a for a in c["alert"] if getattr(a, "source_layer", "") != "COMPOSITION"]
     print(f"  composition Alerts (warm-up expected) : {len(composition_alerts)}")
     print(f"  kernel Alerts (expected 0)             : {len(kernel_alerts)}")
     print(f"  KillSwitchActivation (expected 0)      : {len(c['killswitch'])}")
@@ -682,7 +681,7 @@ def run_risk_rejection_scenario(alpha_yaml_paths: list[Path]) -> bool:
         session_open_ns=SESSION_OPEN_NS,
         account_equity=100_000.0,
         enforce_trend_mechanism=False,
-        risk_max_position_per_symbol=1,   # sizer returns 100, gate rejects
+        risk_max_position_per_symbol=1,  # sizer returns 100, gate rejects
     )
 
     event_log = InMemoryEventLog()
@@ -693,16 +692,13 @@ def run_risk_rejection_scenario(alpha_yaml_paths: list[Path]) -> bool:
     risk_events: list[Any] = []
     order_events: list[Any] = []
     bus = orchestrator._bus
-    bus.subscribe(RiskVerdict,  risk_events.append)
+    bus.subscribe(RiskVerdict, risk_events.append)
     bus.subscribe(OrderRequest, order_events.append)
 
     orchestrator.boot(config)
     orchestrator.run_backtest()
 
-    reject_count = sum(
-        1 for v in risk_events
-        if getattr(v, "action", None) == RiskAction.REJECT
-    )
+    reject_count = sum(1 for v in risk_events if getattr(v, "action", None) == RiskAction.REJECT)
     ok = reject_count > 0
     print(f"  RiskVerdicts total : {len(risk_events)}")
     print(f"  REJECT verdicts    : {reject_count}")
@@ -718,9 +714,7 @@ def run_determinism_check(alpha_yaml_paths: list[Path]) -> bool:
     print("\n── DETERMINISM CHECK (Inv-5) ────────────────────────────────────")
 
     def _h(items: list[Any], key_fn: Any) -> str:
-        return hashlib.sha256(
-            "\n".join(key_fn(e) for e in items).encode()
-        ).hexdigest()
+        return hashlib.sha256("\n".join(key_fn(e) for e in items).encode()).hexdigest()
 
     def _sig_key(s: Any) -> str:
         return (
@@ -748,14 +742,13 @@ def run_determinism_check(alpha_yaml_paths: list[Path]) -> bool:
     c2 = _build(alpha_yaml_paths, seed=42)
 
     streams = [
-        ("Signal",         c1["signal"],     c2["signal"],     _sig_key),
-        ("OrderRequest",   c1["order"],      c2["order"],      _ord_key),
-        ("PositionUpdate", c1["position"],   c2["position"],   _pos_key),
-        ("RegimeState",    c1["regime"],     c2["regime"],     _reg_key),
-        ("RiskVerdict",    c1["risk"],       c2["risk"],       _vrdt_key),
+        ("Signal", c1["signal"], c2["signal"], _sig_key),
+        ("OrderRequest", c1["order"], c2["order"], _ord_key),
+        ("PositionUpdate", c1["position"], c2["position"], _pos_key),
+        ("RegimeState", c1["regime"], c2["regime"], _reg_key),
+        ("RiskVerdict", c1["risk"], c2["risk"], _vrdt_key),
         # Sample every 10th sensor reading to keep the hash concise.
-        ("SensorReading (sampled)",
-         c1["sensor"][::10], c2["sensor"][::10], _sensor_key),
+        ("SensorReading (sampled)", c1["sensor"][::10], c2["sensor"][::10], _sensor_key),
     ]
 
     all_ok = True
@@ -764,10 +757,7 @@ def run_determinism_check(alpha_yaml_paths: list[Path]) -> bool:
         h2 = _h(s2, kfn)
         ok = h1 == h2
         all_ok = all_ok and ok
-        print(
-            f"  [{'PASS' if ok else 'FAIL'}] {name:<30}"
-            f" n={len(s1)}  h={h1[:16]}..."
-        )
+        print(f"  [{'PASS' if ok else 'FAIL'}] {name:<30} n={len(s1)}  h={h1[:16]}...")
 
     return all_ok
 
@@ -775,19 +765,19 @@ def run_determinism_check(alpha_yaml_paths: list[Path]) -> bool:
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="feelies_smoke_") as tmpdir:
         td = Path(tmpdir)
-        signal_path    = td / "smoke_always_on_v1.alpha.yaml"
-        feeder_path    = td / "smoke_portfolio_feeder_v1.alpha.yaml"
+        signal_path = td / "smoke_always_on_v1.alpha.yaml"
+        feeder_path = td / "smoke_portfolio_feeder_v1.alpha.yaml"
         portfolio_path = td / "smoke_portfolio_v1.alpha.yaml"
 
-        signal_path.write_text(_SMOKE_SIGNAL_YAML,    encoding="utf-8")
-        feeder_path.write_text(_SMOKE_FEEDER_YAML,    encoding="utf-8")
+        signal_path.write_text(_SMOKE_SIGNAL_YAML, encoding="utf-8")
+        feeder_path.write_text(_SMOKE_FEEDER_YAML, encoding="utf-8")
         portfolio_path.write_text(_SMOKE_PORTFOLIO_YAML, encoding="utf-8")
 
         all_alpha_paths = [signal_path, feeder_path, portfolio_path]
 
-        stage_ok  = run_smoke(all_alpha_paths)
+        stage_ok = run_smoke(all_alpha_paths)
         reject_ok = run_risk_rejection_scenario(all_alpha_paths)
-        det_ok    = run_determinism_check(all_alpha_paths)
+        det_ok = run_determinism_check(all_alpha_paths)
 
     all_ok = stage_ok and reject_ok and det_ok
     print(f"\nFINAL EXIT: {'0 (success)' if all_ok else '1 (failure)'}\n")

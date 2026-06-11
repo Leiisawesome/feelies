@@ -165,9 +165,7 @@ class PassiveLimitOrderRouter:
         self._clock = clock
         self._latency_ns = latency_ns
         self._cost_model: CostModel = cost_model or ZeroCostModel()
-        self._market_impact_factor = to_decimal(
-            market_impact_factor, "market_impact_factor"
-        )
+        self._market_impact_factor = to_decimal(market_impact_factor, "market_impact_factor")
         self._max_impact_half_spreads = to_decimal(
             max_impact_half_spreads, "max_impact_half_spreads"
         )
@@ -178,9 +176,7 @@ class PassiveLimitOrderRouter:
         self._stop_slippage_half_spreads = to_decimal(
             stop_slippage_half_spreads, "stop_slippage_half_spreads"
         )
-        self._fill_hazard_max = to_decimal(
-            fill_hazard_max, "fill_hazard_max"
-        )
+        self._fill_hazard_max = to_decimal(fill_hazard_max, "fill_hazard_max")
         # Base per-tick fill hazard for the quote-imbalance regime,
         # h0 = 1 / fill_delay_ticks (so mean ticks-to-fill ≈
         # fill_delay_ticks at a balanced book).  fill_delay_ticks <= 0
@@ -267,7 +263,8 @@ class PassiveLimitOrderRouter:
         exchange_ts_ns: int,
     ) -> bool:
         suppress, reason = self._rth_gate.should_suppress(
-            request, exchange_ts_ns,
+            request,
+            exchange_ts_ns,
         )
         if not suppress:
             return False
@@ -304,7 +301,8 @@ class PassiveLimitOrderRouter:
             return
 
         if self._rth_reject_entry_if_needed(
-            request, quote.exchange_timestamp_ns,
+            request,
+            quote.exchange_timestamp_ns,
         ):
             return
 
@@ -340,20 +338,20 @@ class PassiveLimitOrderRouter:
         eligible quote.
         """
         ack_ts = self._clock.now_ns() + self._latency_ns
-        self._pending_acks.append(OrderAck(
-            timestamp_ns=ack_ts,
-            correlation_id=request.correlation_id,
-            sequence=self._ack_seq.next(),
-            order_id=request.order_id,
-            symbol=request.symbol,
-            status=OrderAckStatus.ACKNOWLEDGED,
-            request_sequence=request.sequence,
-        ))
+        self._pending_acks.append(
+            OrderAck(
+                timestamp_ns=ack_ts,
+                correlation_id=request.correlation_id,
+                sequence=self._ack_seq.next(),
+                order_id=request.order_id,
+                symbol=request.symbol,
+                status=OrderAckStatus.ACKNOWLEDGED,
+                request_sequence=request.sequence,
+            )
+        )
 
         if self._latency_ns <= 0:
-            depth = (
-                quote.ask_size if request.side == Side.BUY else quote.bid_size
-            )
+            depth = quote.ask_size if request.side == Side.BUY else quote.bid_size
             if depth <= 0:
                 self.zero_depth_reject_count += 1
                 self._reject(
@@ -371,8 +369,7 @@ class PassiveLimitOrderRouter:
             _DeferredAggressiveFill(
                 request=request,
                 fill_deadline_exchange_ns=(
-                    max(self._clock.now_ns(), quote.exchange_timestamp_ns)
-                    + self._latency_ns
+                    max(self._clock.now_ns(), quote.exchange_timestamp_ns) + self._latency_ns
                 ),
                 ack_timestamp_ns=ack_ts,
             ),
@@ -419,9 +416,7 @@ class PassiveLimitOrderRouter:
                     timestamp_ns=reject_ts,
                 )
                 continue
-            depth = (
-                quote.ask_size if req.side == Side.BUY else quote.bid_size
-            )
+            depth = quote.ask_size if req.side == Side.BUY else quote.bid_size
             if depth <= 0:
                 self._reject(
                     req,
@@ -434,9 +429,7 @@ class PassiveLimitOrderRouter:
             # positive-latency window the BBO may move so mid exceeds limit_price.
             if req.limit_price is not None:
                 fill_mid = (quote.bid + quote.ask) / Decimal("2")
-                if (
-                    req.side == Side.BUY and fill_mid > req.limit_price
-                ) or (
+                if (req.side == Side.BUY and fill_mid > req.limit_price) or (
                     req.side == Side.SELL and fill_mid < req.limit_price
                 ):
                     self._reject(
@@ -448,7 +441,8 @@ class PassiveLimitOrderRouter:
                     )
                     continue
             if self._rth_reject_entry_if_needed(
-                req, quote.exchange_timestamp_ns,
+                req,
+                quote.exchange_timestamp_ns,
             ):
                 continue
             fill_ts = max(self._clock.now_ns(), dm.ack_timestamp_ns)
@@ -464,7 +458,8 @@ class PassiveLimitOrderRouter:
     ) -> None:
         """Aggressive fill at ``quote`` — shared D14 model with ``BacktestOrderRouter``."""
         if self._rth_reject_entry_if_needed(
-            request, quote.exchange_timestamp_ns,
+            request,
+            quote.exchange_timestamp_ns,
         ):
             return
         if fill_ts is None:
@@ -512,19 +507,19 @@ class PassiveLimitOrderRouter:
             queue_ahead_shares=self._queue_position_shares,
         )
         self._resting_orders[request.order_id] = pending
-        self._resting_by_symbol.setdefault(request.symbol, {})[
-            request.order_id
-        ] = None
+        self._resting_by_symbol.setdefault(request.symbol, {})[request.order_id] = None
 
-        self._pending_acks.append(OrderAck(
-            timestamp_ns=ack_ts,
-            correlation_id=request.correlation_id,
-            sequence=self._ack_seq.next(),
-            order_id=request.order_id,
-            symbol=request.symbol,
-            status=OrderAckStatus.ACKNOWLEDGED,
-            request_sequence=request.sequence,
-        ))
+        self._pending_acks.append(
+            OrderAck(
+                timestamp_ns=ack_ts,
+                correlation_id=request.correlation_id,
+                sequence=self._ack_seq.next(),
+                order_id=request.order_id,
+                symbol=request.symbol,
+                status=OrderAckStatus.ACKNOWLEDGED,
+                request_sequence=request.sequence,
+            )
+        )
 
     def set_queue_ahead(self, order_id: str, shares: int) -> bool:
         """Override the queue-ahead threshold for a specific resting order.
@@ -556,14 +551,16 @@ class PassiveLimitOrderRouter:
 
             if action in ("through", "drain"):
                 suppress, rth_reason = self._rth_gate.should_suppress(
-                    pending.request, quote.exchange_timestamp_ns,
+                    pending.request,
+                    quote.exchange_timestamp_ns,
                 )
                 if suppress:
                     self._reject(
                         pending.request,
                         rth_reason,
                         timestamp_ns=max(
-                            self._clock.now_ns(), pending.ack_timestamp_ns,
+                            self._clock.now_ns(),
+                            pending.ack_timestamp_ns,
                         ),
                     )
                     to_remove.append(order_id)
@@ -581,9 +578,7 @@ class PassiveLimitOrderRouter:
                     fill_price = quote.ask
                 elif pending.side == Side.SELL and quote.bid > pending.limit_price:
                     fill_price = quote.bid
-                adverse_notional_price = (
-                    quote.ask if pending.side == Side.BUY else quote.bid
-                )
+                adverse_notional_price = quote.ask if pending.side == Side.BUY else quote.bid
                 self._emit_passive_fill(
                     pending,
                     fill_price=fill_price,
@@ -594,9 +589,7 @@ class PassiveLimitOrderRouter:
                 self._record_fill(pending, PassiveFillOutcome.FILLED_BY_THROUGH)
                 to_remove.append(order_id)
             elif action == "drain":
-                adverse_notional_price = (
-                    quote.ask if pending.side == Side.BUY else quote.bid
-                )
+                adverse_notional_price = quote.ask if pending.side == Side.BUY else quote.bid
                 self._emit_passive_fill(
                     pending,
                     fill_price=pending.limit_price,
@@ -666,7 +659,9 @@ class PassiveLimitOrderRouter:
         return "wait"
 
     def _fill_hazard(
-        self, pending: _PendingOrder, quote: NBBOQuote,
+        self,
+        pending: _PendingOrder,
+        quote: NBBOQuote,
     ) -> Decimal:
         """Per-tick level-fill hazard ``h ∈ [0, fill_hazard_max]``.
 
@@ -716,7 +711,9 @@ class PassiveLimitOrderRouter:
         return hazard
 
     def _seeded_uniform(
-        self, pending: _PendingOrder, quote: NBBOQuote,
+        self,
+        pending: _PendingOrder,
+        quote: NBBOQuote,
     ) -> Decimal:
         """Deterministic per-tick uniform in ``[0, 1)`` for the fill trial.
 
@@ -737,7 +734,9 @@ class PassiveLimitOrderRouter:
         return Decimal(value) / Decimal(1 << 64)
 
     def _record_fill(
-        self, pending: _PendingOrder, outcome: PassiveFillOutcome,
+        self,
+        pending: _PendingOrder,
+        outcome: PassiveFillOutcome,
     ) -> None:
         if outcome is PassiveFillOutcome.FILLED_BY_THROUGH:
             self._fills_by_through += 1
@@ -851,20 +850,22 @@ class PassiveLimitOrderRouter:
             is_through_fill=(fill_type == "THROUGH"),
         )
 
-        self._pending_acks.append(OrderAck(
-            timestamp_ns=fill_ts,
-            correlation_id=pending.request.correlation_id,
-            sequence=self._ack_seq.next(),
-            order_id=pending.request.order_id,
-            symbol=pending.request.symbol,
-            status=OrderAckStatus.FILLED,
-            filled_quantity=pending.request.quantity,
-            fill_price=fill_price,
-            fees=costs.total_fees,
-            cost_bps=costs.cost_bps,
-            reason=outcome.value,
-            request_sequence=pending.request.sequence,
-        ))
+        self._pending_acks.append(
+            OrderAck(
+                timestamp_ns=fill_ts,
+                correlation_id=pending.request.correlation_id,
+                sequence=self._ack_seq.next(),
+                order_id=pending.request.order_id,
+                symbol=pending.request.symbol,
+                status=OrderAckStatus.FILLED,
+                filled_quantity=pending.request.quantity,
+                fill_price=fill_price,
+                fees=costs.total_fees,
+                cost_bps=costs.cost_bps,
+                reason=outcome.value,
+                request_sequence=pending.request.sequence,
+            )
+        )
 
     def _cancel_fees(self, quantity: int) -> Decimal:
         """Deterministically quantized cancel-fee computation.
@@ -873,9 +874,7 @@ class PassiveLimitOrderRouter:
         banker's rounding) so the cancel-fee quantization matches the
         cost model's quantize() rule.
         """
-        return (self._cancel_fee_per_share * quantity).quantize(
-            Decimal("0.01")
-        )
+        return (self._cancel_fee_per_share * quantity).quantize(Decimal("0.01"))
 
     def _append_cancel_ack(
         self,
@@ -892,32 +891,29 @@ class PassiveLimitOrderRouter:
         """
         cancel_fees = self._cancel_fees(pending.request.quantity)
         cancel_ts = max(self._clock.now_ns(), pending.ack_timestamp_ns)
-        self._pending_acks.append(OrderAck(
-            timestamp_ns=cancel_ts,
-            correlation_id=pending.request.correlation_id,
-            sequence=self._ack_seq.next(),
-            order_id=pending.request.order_id,
-            symbol=pending.request.symbol,
-            status=status,
-            reason=reason,
-            fees=cancel_fees if cancel_fees > 0 else Decimal("0"),
-            request_sequence=pending.request.sequence,
-        ))
+        self._pending_acks.append(
+            OrderAck(
+                timestamp_ns=cancel_ts,
+                correlation_id=pending.request.correlation_id,
+                sequence=self._ack_seq.next(),
+                order_id=pending.request.order_id,
+                symbol=pending.request.symbol,
+                status=status,
+                reason=reason,
+                fees=cancel_fees if cancel_fees > 0 else Decimal("0"),
+                request_sequence=pending.request.sequence,
+            )
+        )
 
     def _emit_timeout_cancel(
         self,
         pending: _PendingOrder,
-        outcome: PassiveFillOutcome = (
-            PassiveFillOutcome.CANCELLED_MAX_RESTING_TICKS
-        ),
+        outcome: PassiveFillOutcome = (PassiveFillOutcome.CANCELLED_MAX_RESTING_TICKS),
     ) -> None:
         """Emit an EXPIRED ack for a timed-out resting order."""
         self._append_cancel_ack(
             pending,
-            reason=(
-                f"{outcome.value}: passive limit timeout after "
-                f"{pending.total_ticks} ticks"
-            ),
+            reason=(f"{outcome.value}: passive limit timeout after {pending.total_ticks} ticks"),
             status=OrderAckStatus.EXPIRED,
         )
 
@@ -936,7 +932,8 @@ class PassiveLimitOrderRouter:
             # cleanup walks active orders and calls ``cancel_order``
             # on each, so MOC entries must be reachable here too.
             if self._moc is not None and self._moc.cancel_pending(
-                order_id, "client_cancel",
+                order_id,
+                "client_cancel",
             ):
                 return True
             return False

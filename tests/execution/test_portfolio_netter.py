@@ -13,7 +13,10 @@ from feelies.execution.position_manager import DesiredPosition
 
 def _t(strategy_id: str, target_qty: int, **kw) -> StandingTarget:
     return StandingTarget(
-        strategy_id=strategy_id, symbol="AAPL", target_qty=target_qty, **kw,
+        strategy_id=strategy_id,
+        symbol="AAPL",
+        target_qty=target_qty,
+        **kw,
     )
 
 
@@ -23,7 +26,7 @@ class TestPortfolioNetter:
         book.put(_t("a", 100, edge_bps=10.0))
         book.put(_t("b", 50, edge_bps=20.0))
         net = PortfolioNetter(book).net("AAPL", now_ns=0)
-        assert net.target_qty == 150          # conviction stacks
+        assert net.target_qty == 150  # conviction stacks
         assert net.direction == 1
         # |qty|-weighted edge over aligned: (10*100 + 20*50)/150 = 13.33…
         assert round(net.edge_bps, 2) == 13.33
@@ -33,7 +36,7 @@ class TestPortfolioNetter:
         book.put(_t("a", 100))
         book.put(_t("b", -80))
         net = PortfolioNetter(book).net("AAPL", now_ns=0)
-        assert net.target_qty == 20           # net of the two
+        assert net.target_qty == 20  # net of the two
         assert net.direction == 1
 
     def test_full_offset_is_flat(self) -> None:
@@ -47,35 +50,37 @@ class TestPortfolioNetter:
 
     def test_per_alpha_budget_cap_applied_before_sum(self) -> None:
         book = DesiredTargetBook()
-        book.put(_t("a", 200, max_abs_qty=100))   # clamped to 100
+        book.put(_t("a", 200, max_abs_qty=100))  # clamped to 100
         book.put(_t("b", 50))
         net = PortfolioNetter(book).net("AAPL", now_ns=0)
-        assert net.target_qty == 150              # 100 + 50, not 250
+        assert net.target_qty == 150  # 100 + 50, not 250
 
     def test_portfolio_cap_applied_to_net(self) -> None:
         book = DesiredTargetBook()
         book.put(_t("a", 150))
         book.put(_t("b", 150))
         net = PortfolioNetter(book, portfolio_max_abs_qty=200).net(
-            "AAPL", now_ns=0,
+            "AAPL",
+            now_ns=0,
         )
-        assert net.target_qty == 200              # 300 capped to 200
+        assert net.target_qty == 200  # 300 capped to 200
 
     def test_portfolio_cap_is_symmetric_for_shorts(self) -> None:
         book = DesiredTargetBook()
         book.put(_t("a", -150))
         book.put(_t("b", -150))
         net = PortfolioNetter(book, portfolio_max_abs_qty=200).net(
-            "AAPL", now_ns=0,
+            "AAPL",
+            now_ns=0,
         )
         assert net.target_qty == -200
 
     def test_stale_targets_are_dropped(self) -> None:
         book = DesiredTargetBook()
         book.put(_t("a", 100, expiry_ns=1_000))
-        book.put(_t("b", 50, expiry_ns=None))   # never expires
+        book.put(_t("b", 50, expiry_ns=None))  # never expires
         netter = PortfolioNetter(book)
-        assert netter.net("AAPL", now_ns=500).target_qty == 150   # both live
+        assert netter.net("AAPL", now_ns=500).target_qty == 150  # both live
         # Boundary: fresh *at* expiry_ns, stale strictly after (matches the
         # orchestrator's signal-buffer policy ``age <= horizon × 1e9``).
         assert netter.net("AAPL", now_ns=1_000).target_qty == 150
@@ -89,7 +94,7 @@ class TestPortfolioNetter:
         book.put(_t("b", -40, edge_bps=99.0))
         net = PortfolioNetter(book).net("AAPL", now_ns=0)
         assert net.target_qty == 60
-        assert net.edge_bps == 12.0             # only the long contributor
+        assert net.edge_bps == 12.0  # only the long contributor
 
     def test_urgency_is_max_over_aligned(self) -> None:
         book = DesiredTargetBook()
@@ -110,8 +115,11 @@ class TestPortfolioNetter:
         b2 = DesiredTargetBook()
         for t in (c, a, b):
             b2.put(t)
-        assert PortfolioNetter(b1).net("AAPL", 0).target_qty == \
-               PortfolioNetter(b2).net("AAPL", 0).target_qty == 120
+        assert (
+            PortfolioNetter(b1).net("AAPL", 0).target_qty
+            == PortfolioNetter(b2).net("AAPL", 0).target_qty
+            == 120
+        )
 
     def test_only_named_symbol_is_netted(self) -> None:
         book = DesiredTargetBook()
@@ -124,8 +132,12 @@ class TestStandingTargetBuilder:
     def test_expiry_from_k_times_horizon(self) -> None:
         d = DesiredPosition(symbol="AAPL", target_qty=100, direction=1)
         st = standing_target_from_desired(
-            d, strategy_id="a", signal_timestamp_ns=1_000_000_000,
-            horizon_seconds=60, staleness_k=2.0, max_abs_qty=500,
+            d,
+            strategy_id="a",
+            signal_timestamp_ns=1_000_000_000,
+            horizon_seconds=60,
+            staleness_k=2.0,
+            max_abs_qty=500,
         )
         assert st.target_qty == 100
         assert st.max_abs_qty == 500
@@ -134,14 +146,26 @@ class TestStandingTargetBuilder:
 
     def test_no_expiry_when_horizon_or_k_nonpositive(self) -> None:
         d = DesiredPosition(symbol="AAPL", target_qty=100, direction=1)
-        assert standing_target_from_desired(
-            d, strategy_id="a", signal_timestamp_ns=1,
-            horizon_seconds=0, staleness_k=2.0,
-        ).expiry_ns is None
-        assert standing_target_from_desired(
-            d, strategy_id="a", signal_timestamp_ns=1,
-            horizon_seconds=60, staleness_k=0.0,
-        ).expiry_ns is None
+        assert (
+            standing_target_from_desired(
+                d,
+                strategy_id="a",
+                signal_timestamp_ns=1,
+                horizon_seconds=0,
+                staleness_k=2.0,
+            ).expiry_ns
+            is None
+        )
+        assert (
+            standing_target_from_desired(
+                d,
+                strategy_id="a",
+                signal_timestamp_ns=1,
+                horizon_seconds=60,
+                staleness_k=0.0,
+            ).expiry_ns
+            is None
+        )
 
 
 class TestDesiredTargetBook:

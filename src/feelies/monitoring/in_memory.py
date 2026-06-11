@@ -191,25 +191,31 @@ class InMemoryKillSwitch:
 
     def activate(self, reason: str, *, activated_by: str = "automated") -> None:
         self._active = True
-        self._history.append(KillSwitchRecord(
-            action="activate",
-            reason=reason,
-            actor=activated_by,
-        ))
+        self._history.append(
+            KillSwitchRecord(
+                action="activate",
+                reason=reason,
+                actor=activated_by,
+            )
+        )
         logger.warning("Kill switch ACTIVATED by %s: %s", activated_by, reason)
 
     def reset(self, *, operator: str, audit_token: str) -> None:
         was_active = self._active
         self._active = False
-        self._history.append(KillSwitchRecord(
-            action="reset",
-            reason="manual_reset",
-            actor=operator,
-            audit_token=audit_token,
-        ))
+        self._history.append(
+            KillSwitchRecord(
+                action="reset",
+                reason="manual_reset",
+                actor=operator,
+                audit_token=audit_token,
+            )
+        )
         if was_active:
             logger.info(
-                "Kill switch RESET by %s (token: %s)", operator, audit_token,
+                "Kill switch RESET by %s (token: %s)",
+                operator,
+                audit_token,
             )
 
     @property

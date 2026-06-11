@@ -98,7 +98,7 @@ class _RecordingSignal:
         return Signal(
             timestamp_ns=snapshot.timestamp_ns,
             correlation_id=snapshot.correlation_id,
-            sequence=0,                # patched by engine
+            sequence=0,  # patched by engine
             symbol=snapshot.symbol,
             strategy_id=self.signal_id,
             direction=self._direction,
@@ -238,17 +238,19 @@ def test_narrow_required_warm_ignores_unrelated_cold_features() -> None:
     engine.attach()
 
     bus.publish(_regime_normal_high())
-    bus.publish(_snapshot(
-        warm={
-            "ofi_ewma": True,
-            "hawkes_intensity_zscore": False,
-        },
-        stale={
-            "ofi_ewma": False,
-            "hawkes_intensity_zscore": False,
-        },
-        values={"ofi_ewma": 1.0},
-    ))
+    bus.publish(
+        _snapshot(
+            warm={
+                "ofi_ewma": True,
+                "hawkes_intensity_zscore": False,
+            },
+            stale={
+                "ofi_ewma": False,
+                "hawkes_intensity_zscore": False,
+            },
+            values={"ofi_ewma": 1.0},
+        )
+    )
 
     assert len(captured) == 1
 
@@ -322,11 +324,13 @@ def test_flat_close_signal_carries_alpha_metadata() -> None:
     attribute the unwind PnL to the correct mechanism family (Inv-13).
     """
     engine, bus, captured = _engine()
-    engine.register(_registered(
-        consumed_features=("ofi_ewma", "spread_z_30d"),
-        trend_mechanism=TrendMechanism.KYLE_INFO,
-        expected_half_life_seconds=600,
-    ))
+    engine.register(
+        _registered(
+            consumed_features=("ofi_ewma", "spread_z_30d"),
+            trend_mechanism=TrendMechanism.KYLE_INFO,
+            expected_half_life_seconds=600,
+        )
+    )
     engine.attach()
 
     bus.publish(_regime_normal_high())
@@ -353,7 +357,7 @@ def test_cold_start_missing_binding_swallowed() -> None:
     engine.register(_registered(signal=sig))
     engine.attach()
 
-    bus.publish(_snapshot())                  # no RegimeState first
+    bus.publish(_snapshot())  # no RegimeState first
 
     assert sig.calls == []
     assert captured == []
@@ -435,15 +439,17 @@ def test_sensor_cache_overlay_makes_value_available_to_gate() -> None:
     engine.attach()
 
     bus.publish(_regime_normal_high())
-    bus.publish(SensorReading(
-        timestamp_ns=1_900,
-        correlation_id="corr",
-        sequence=3,
-        symbol="AAPL",
-        sensor_id="ofi_ewma",
-        sensor_version="1.1.0",
-        value=2.5,
-    ))
+    bus.publish(
+        SensorReading(
+            timestamp_ns=1_900,
+            correlation_id="corr",
+            sequence=3,
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            sensor_version="1.1.0",
+            value=2.5,
+        )
+    )
     bus.publish(_snapshot())
 
     assert len(captured) == 1
@@ -459,16 +465,18 @@ def test_sensor_cache_skips_non_warm_readings() -> None:
     engine.attach()
 
     bus.publish(_regime_normal_high())
-    bus.publish(SensorReading(
-        timestamp_ns=1_900,
-        correlation_id="corr",
-        sequence=3,
-        symbol="AAPL",
-        sensor_id="ofi_ewma",
-        sensor_version="1.1.0",
-        value=2.5,
-        warm=False,
-    ))
+    bus.publish(
+        SensorReading(
+            timestamp_ns=1_900,
+            correlation_id="corr",
+            sequence=3,
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            sensor_version="1.1.0",
+            value=2.5,
+            warm=False,
+        )
+    )
     bus.publish(_snapshot())
 
     assert captured == []
@@ -484,15 +492,17 @@ def test_sensor_cache_skips_tuple_value() -> None:
     engine.attach()
 
     bus.publish(_regime_normal_high())
-    bus.publish(SensorReading(
-        timestamp_ns=1_900,
-        correlation_id="corr",
-        sequence=3,
-        symbol="AAPL",
-        sensor_id="ofi_ewma",
-        sensor_version="1.1.0",
-        value=(2.5, 3.0),
-    ))
+    bus.publish(
+        SensorReading(
+            timestamp_ns=1_900,
+            correlation_id="corr",
+            sequence=3,
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            sensor_version="1.1.0",
+            value=(2.5, 3.0),
+        )
+    )
     bus.publish(_snapshot())
 
     assert captured == []
@@ -519,32 +529,36 @@ def test_cold_reading_invalidates_warm_cache_entry() -> None:
 
     bus.publish(_regime_normal_high())
     # First, warm reading populates the cache.
-    bus.publish(SensorReading(
-        timestamp_ns=1_900,
-        correlation_id="corr",
-        sequence=3,
-        symbol="AAPL",
-        sensor_id="ofi_ewma",
-        sensor_version="1.1.0",
-        value=2.5,
-        warm=True,
-    ))
+    bus.publish(
+        SensorReading(
+            timestamp_ns=1_900,
+            correlation_id="corr",
+            sequence=3,
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            sensor_version="1.1.0",
+            value=2.5,
+            warm=True,
+        )
+    )
     bus.publish(_snapshot(boundary_index=1, sequence=10))
     assert len(captured) == 1
 
     # Sensor reverts to cold (e.g. sustained data gap).  This MUST drop
     # the cached 2.5 — otherwise the next snapshot evaluation would
     # spuriously fire on stale data.
-    bus.publish(SensorReading(
-        timestamp_ns=200_000,
-        correlation_id="corr",
-        sequence=4,
-        symbol="AAPL",
-        sensor_id="ofi_ewma",
-        sensor_version="1.1.0",
-        value=0.0,
-        warm=False,
-    ))
+    bus.publish(
+        SensorReading(
+            timestamp_ns=200_000,
+            correlation_id="corr",
+            sequence=4,
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            sensor_version="1.1.0",
+            value=0.0,
+            warm=False,
+        )
+    )
     bus.publish(_snapshot(boundary_index=2, sequence=11))
 
     # No new entry signal should be emitted.  The gate transition
@@ -568,41 +582,41 @@ def test_cold_tuple_reading_invalidates_warm_components() -> None:
 
     # Warm tuple reading populates four component cache entries
     # (per ``_TUPLE_SENSOR_COMPONENTS["scheduled_flow_window"]``).
-    engine._on_sensor_reading(SensorReading(  # type: ignore[arg-type]
-        timestamp_ns=1_900,
-        correlation_id="corr",
-        sequence=3,
-        symbol="AAPL",
-        sensor_id="scheduled_flow_window",
-        sensor_version="1.0.0",
-        value=(1.0, 60.0, 12345.0, 1.0),
-        warm=True,
-    ))
+    engine._on_sensor_reading(
+        SensorReading(  # type: ignore[arg-type]
+            timestamp_ns=1_900,
+            correlation_id="corr",
+            sequence=3,
+            symbol="AAPL",
+            sensor_id="scheduled_flow_window",
+            sensor_version="1.0.0",
+            value=(1.0, 60.0, 12345.0, 1.0),
+            warm=True,
+        )
+    )
     expected_components = {
         "scheduled_flow_window_active",
         "seconds_to_window_close",
         "scheduled_flow_window_id_hash",
         "scheduled_flow_window_direction_prior",
     }
-    cached_names = {
-        name for (sym, name) in engine._sensor_cache if sym == "AAPL"
-    }
+    cached_names = {name for (sym, name) in engine._sensor_cache if sym == "AAPL"}
     assert expected_components == cached_names
 
     # Cold reading drops every component, not just the leading one.
-    engine._on_sensor_reading(SensorReading(  # type: ignore[arg-type]
-        timestamp_ns=200_000,
-        correlation_id="corr",
-        sequence=4,
-        symbol="AAPL",
-        sensor_id="scheduled_flow_window",
-        sensor_version="1.0.0",
-        value=(0.0, -1.0, 0.0, 0.0),
-        warm=False,
-    ))
-    cached_names_after = {
-        name for (sym, name) in engine._sensor_cache if sym == "AAPL"
-    }
+    engine._on_sensor_reading(
+        SensorReading(  # type: ignore[arg-type]
+            timestamp_ns=200_000,
+            correlation_id="corr",
+            sequence=4,
+            symbol="AAPL",
+            sensor_id="scheduled_flow_window",
+            sensor_version="1.0.0",
+            value=(0.0, -1.0, 0.0, 0.0),
+            warm=False,
+        )
+    )
+    cached_names_after = {name for (sym, name) in engine._sensor_cache if sym == "AAPL"}
     assert cached_names_after == set()
 
 
@@ -623,41 +637,47 @@ def test_cold_reading_with_open_position_emits_flat_close() -> None:
         on_condition="P(normal) > 0.7 AND ofi_ewma > 1.0",
         off_condition="P(normal) < 0.5 OR ofi_ewma < -1.0",
     )
-    engine.register(_registered(
-        gate=gate,
-        consumed_features=("ofi_ewma",),
-        trend_mechanism=TrendMechanism.KYLE_INFO,
-        expected_half_life_seconds=600,
-    ))
+    engine.register(
+        _registered(
+            gate=gate,
+            consumed_features=("ofi_ewma",),
+            trend_mechanism=TrendMechanism.KYLE_INFO,
+            expected_half_life_seconds=600,
+        )
+    )
     engine.attach()
 
     bus.publish(_regime_normal_high())
-    bus.publish(SensorReading(
-        timestamp_ns=1_900,
-        correlation_id="corr",
-        sequence=3,
-        symbol="AAPL",
-        sensor_id="ofi_ewma",
-        sensor_version="1.1.0",
-        value=2.5,
-        warm=True,
-    ))
+    bus.publish(
+        SensorReading(
+            timestamp_ns=1_900,
+            correlation_id="corr",
+            sequence=3,
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            sensor_version="1.1.0",
+            value=2.5,
+            warm=True,
+        )
+    )
     bus.publish(_snapshot(boundary_index=1, sequence=10))
     assert len(captured) == 1
     assert captured[0].direction is SignalDirection.LONG
     assert gate.is_on("AAPL")
 
     # Cold reading drops the cache entry.
-    bus.publish(SensorReading(
-        timestamp_ns=200_000,
-        correlation_id="corr",
-        sequence=4,
-        symbol="AAPL",
-        sensor_id="ofi_ewma",
-        sensor_version="1.1.0",
-        value=0.0,
-        warm=False,
-    ))
+    bus.publish(
+        SensorReading(
+            timestamp_ns=200_000,
+            correlation_id="corr",
+            sequence=4,
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            sensor_version="1.1.0",
+            value=0.0,
+            warm=False,
+        )
+    )
     bus.publish(_snapshot(boundary_index=2, sequence=11))
 
     # Gate raised UnknownIdentifierError → was_on=True → FLAT close
@@ -709,7 +729,7 @@ def test_attach_is_idempotent() -> None:
     engine, bus, captured = _engine()
     engine.register(_registered())
     engine.attach()
-    engine.attach()                            # second call: no-op
+    engine.attach()  # second call: no-op
 
     bus.publish(_regime_normal_high())
     bus.publish(_snapshot())
@@ -745,10 +765,12 @@ def test_declared_mechanism_propagates_to_signal() -> None:
     every emitted ``Signal``.
     """
     engine, bus, captured = _engine()
-    engine.register(_registered(
-        trend_mechanism=TrendMechanism.KYLE_INFO,
-        expected_half_life_seconds=600,
-    ))
+    engine.register(
+        _registered(
+            trend_mechanism=TrendMechanism.KYLE_INFO,
+            expected_half_life_seconds=600,
+        )
+    )
     engine.attach()
 
     bus.publish(_regime_normal_high())
@@ -805,11 +827,13 @@ def test_alpha_supplied_mechanism_overrides_registered_default() -> None:
             )
 
     engine, bus, captured = _engine()
-    engine.register(_registered(
-        signal=_MechanismAwareSignal(),  # type: ignore[arg-type]
-        trend_mechanism=TrendMechanism.KYLE_INFO,  # would-be default
-        expected_half_life_seconds=600,
-    ))
+    engine.register(
+        _registered(
+            signal=_MechanismAwareSignal(),  # type: ignore[arg-type]
+            trend_mechanism=TrendMechanism.KYLE_INFO,  # would-be default
+            expected_half_life_seconds=600,
+        )
+    )
     engine.attach()
 
     bus.publish(_regime_normal_high())
@@ -830,6 +854,7 @@ def test_gate_zero_division_fails_safe_off(caplog) -> None:
     G-1 it escaped the fail-safe path.  Verify it now forces the
     latch to OFF and continues the per-tick walk."""
     import logging
+
     boom_gate = _gate(
         on_condition="(1.0 / ofi_ewma) > 0.5",
         off_condition="(1.0 / ofi_ewma) < 0.0",
@@ -842,15 +867,17 @@ def test_gate_zero_division_fails_safe_off(caplog) -> None:
     # Publish a sensor reading of exactly 0 so the gate would divide
     # by zero on evaluation.
     bus.publish(_regime_normal_high())
-    bus.publish(SensorReading(
-        timestamp_ns=1_000,
-        correlation_id="corr",
-        sequence=1,
-        symbol="AAPL",
-        sensor_id="ofi_ewma",
-        sensor_version="1.1.0",
-        value=0.0,
-    ))
+    bus.publish(
+        SensorReading(
+            timestamp_ns=1_000,
+            correlation_id="corr",
+            sequence=1,
+            symbol="AAPL",
+            sensor_id="ofi_ewma",
+            sensor_version="1.1.0",
+            value=0.0,
+        )
+    )
     with caplog.at_level(logging.WARNING, logger="feelies.signals.horizon_engine"):
         bus.publish(_snapshot())
 
@@ -868,9 +895,10 @@ def test_gate_type_error_on_string_comparison_fails_safe_off(caplog) -> None:
     """``dominant < 1`` compares a string to a number — TypeError on
     Python 3 — and must be caught by the P1 G-1 fail-safe."""
     import logging
+
     boom_gate = _gate(
-        on_condition='dominant < 1',
-        off_condition='dominant > 1',
+        on_condition="dominant < 1",
+        off_condition="dominant > 1",
     )
     engine, bus, captured = _engine()
     sig = _RecordingSignal()
@@ -884,6 +912,5 @@ def test_gate_type_error_on_string_comparison_fails_safe_off(caplog) -> None:
     assert sig.calls == []
     assert captured == []
     assert any(
-        "arithmetic/type error" in r.message and "TypeError" in r.message
-        for r in caplog.records
+        "arithmetic/type error" in r.message and "TypeError" in r.message for r in caplog.records
     )

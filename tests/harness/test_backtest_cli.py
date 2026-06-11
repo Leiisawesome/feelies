@@ -55,7 +55,9 @@ def test_apply_backtest_session_dates_single_day() -> None:
     hint = Path("src/feelies/storage/reference/event_calendar/2026-03-26.yaml")
     base = PlatformConfig(event_calendar_path=hint)
     out = apply_backtest_session_dates_from_cli(
-        base, start_date="2026-04-02", end_date="2026-04-02",
+        base,
+        start_date="2026-04-02",
+        end_date="2026-04-02",
     )
     assert out.rth_session_date == "2026-04-02"
     assert out.moc_session_date == "2026-04-02"
@@ -66,7 +68,9 @@ def test_apply_backtest_session_dates_updates_calendar_when_present() -> None:
     hint = Path("src/feelies/storage/reference/event_calendar/2026-03-26.yaml")
     base = PlatformConfig(event_calendar_path=hint)
     out = apply_backtest_session_dates_from_cli(
-        base, start_date="2026-03-26", end_date="2026-03-26",
+        base,
+        start_date="2026-03-26",
+        end_date="2026-03-26",
     )
     assert out.rth_session_date == "2026-03-26"
     assert out.event_calendar_path == hint
@@ -79,7 +83,9 @@ def test_apply_backtest_session_dates_skips_multi_day_range() -> None:
         rth_session_date=None,
     )
     out = apply_backtest_session_dates_from_cli(
-        base, start_date="2026-03-26", end_date="2026-03-28",
+        base,
+        start_date="2026-03-26",
+        end_date="2026-03-28",
     )
     assert out.rth_session_date is None
     assert out.moc_session_date is None

@@ -64,10 +64,16 @@ def test_window_is_time_bounded_not_count_bounded() -> None:
     tick_ts = 119 * _NS
 
     short = HorizonWindowedFeature(
-        "ofi_ewma", 30, reducer="mean", min_samples=1,
+        "ofi_ewma",
+        30,
+        reducer="mean",
+        min_samples=1,
     )
     long = HorizonWindowedFeature(
-        "ofi_ewma", 120, reducer="mean", min_samples=1,
+        "ofi_ewma",
+        120,
+        reducer="mean",
+        min_samples=1,
     )
     short_mean, sw, _ = _drive(short, samples, tick_ts=tick_ts)
     long_mean, lw, _ = _drive(long, samples, tick_ts=tick_ts)
@@ -123,12 +129,13 @@ def test_zscore_numerically_stable_on_price_level() -> None:
     z finite and correctly signed.
     """
     base = 227.0
-    samples = [
-        (i * _NS, base + (0.01 if i % 2 else -0.01)) for i in range(60)
-    ]
+    samples = [(i * _NS, base + (0.01 if i % 2 else -0.01)) for i in range(60)]
     samples.append((60 * _NS, base + 0.05))  # latest pops up 5 cents
     feat = HorizonWindowedFeature(
-        "micro_price", 120, reducer="zscore", min_samples=10,
+        "micro_price",
+        120,
+        reducer="zscore",
+        min_samples=10,
     )
     z, warm, _ = _drive(feat, samples, tick_ts=60 * _NS)
     assert warm
@@ -160,8 +167,11 @@ def test_delta_reducer_is_level_invariant_drift() -> None:
     sample must not change the drift (the P1-9 point)."""
     base = [(i * _NS, 100.0 + i * 0.1) for i in range(50)]  # rises 0.1/sec
     feat = HorizonWindowedFeature(
-        "micro_price", 120, reducer="delta",
-        feature_id="micro_price_drift", min_samples=2,
+        "micro_price",
+        120,
+        reducer="delta",
+        feature_id="micro_price_drift",
+        min_samples=2,
     )
     drift, warm, _ = _drive(feat, base, tick_ts=49 * _NS)
     assert warm
@@ -178,7 +188,10 @@ def test_percentile_reducer_hazen() -> None:
     # Window 0..9; latest is 9 (the max) → Hazen (10 - 0.5)/10 = 0.95.
     samples = [(i * _NS, float(i)) for i in range(10)]
     feat = HorizonWindowedFeature(
-        "kyle_lambda_60s", 30, reducer="percentile", min_samples=1,
+        "kyle_lambda_60s",
+        30,
+        reducer="percentile",
+        min_samples=1,
     )
     val, warm, _ = _drive(feat, samples, tick_ts=9 * _NS)
     assert warm
@@ -188,7 +201,10 @@ def test_percentile_reducer_hazen() -> None:
 
 def test_percentile_neutral_prior_during_warmup() -> None:
     feat = HorizonWindowedFeature(
-        "kyle_lambda_60s", 30, reducer="percentile", min_samples=5,
+        "kyle_lambda_60s",
+        30,
+        reducer="percentile",
+        min_samples=5,
     )
     val, warm, _ = _drive(feat, [(0, 1.0)], tick_ts=0)
     assert warm is False
@@ -197,7 +213,10 @@ def test_percentile_neutral_prior_during_warmup() -> None:
 
 def test_tuple_sum_components() -> None:
     feat = HorizonWindowedFeature(
-        "hawkes_intensity", 30, reducer="mean", min_samples=1,
+        "hawkes_intensity",
+        30,
+        reducer="mean",
+        min_samples=1,
         tuple_sum_component_indices=(0, 1),
     )
     state = feat.initial_state()

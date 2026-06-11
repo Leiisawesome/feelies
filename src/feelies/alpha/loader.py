@@ -79,8 +79,15 @@ logger = logging.getLogger(__name__)
 # the legacy schema-1.0 contract so the early-validation messages can
 # point at exactly which field a copy-pasted-from-1.0 fixture is
 # missing — the keys themselves are no longer accepted.
-_REQUIRED_TOP_KEYS = {"alpha_id", "version", "description", "hypothesis",
-                      "falsification_criteria", "features", "signal"}
+_REQUIRED_TOP_KEYS = {
+    "alpha_id",
+    "version",
+    "description",
+    "hypothesis",
+    "falsification_criteria",
+    "features",
+    "signal",
+}
 
 _REQUIRED_SIGNAL_LAYER_KEYS = {
     "alpha_id",
@@ -129,8 +136,7 @@ _ACCEPTED_LAYERS = {"SIGNAL", "PORTFOLIO"}
 # stable, actionable error instead of a typo-shaped one.
 _RETIRED_LAYERS = {"LEGACY_SIGNAL"}
 _LAYER_PHASE_MAP = {
-    "SENSOR": "Phase 2 (sensor framework — declared in platform.yaml, "
-    "not alpha YAML)",
+    "SENSOR": "Phase 2 (sensor framework — declared in platform.yaml, not alpha YAML)",
     "SIGNAL": "Phase 3 (horizon signal engine)",
     "PORTFOLIO": "Phase 4 (composition layer)",
 }
@@ -195,6 +201,7 @@ _SAFE_BUILTINS = {
     "OverflowError": OverflowError,
 }
 
+
 def _check_arity(
     fn: Callable[..., Any],
     expected: int,
@@ -205,7 +212,8 @@ def _check_arity(
     """Validate that *fn* accepts exactly *expected* required positional args."""
     sig = inspect.signature(fn)
     n_required = sum(
-        1 for p in sig.parameters.values()
+        1
+        for p in sig.parameters.values()
         if p.default is inspect.Parameter.empty
         and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
     )
@@ -214,6 +222,7 @@ def _check_arity(
             f"{source}: {name} in '{context}' requires {expected} "
             f"positional arg(s), got {n_required}"
         )
+
 
 # ── Loader errors ────────────────────────────────────────────────────
 
@@ -278,8 +287,7 @@ class AlphaLoader:
         except Exception as exc:
             raise AlphaLoadError(f"Failed to read {path}: {exc}") from exc
 
-        return self.load_from_dict(spec, param_overrides=param_overrides,
-                                   source=str(path))
+        return self.load_from_dict(spec, param_overrides=param_overrides, source=str(path))
 
     def load_from_dict(
         self,
@@ -306,11 +314,15 @@ class AlphaLoader:
         layer_value = str(spec.get("layer") or "")
         if layer_value == "SIGNAL":
             return self._load_signal_layer(
-                spec, param_overrides=param_overrides, source=source,
+                spec,
+                param_overrides=param_overrides,
+                source=source,
             )
         if layer_value == "PORTFOLIO":
             return self._load_portfolio_layer(
-                spec, param_overrides=param_overrides, source=source,
+                spec,
+                param_overrides=param_overrides,
+                source=source,
             )
 
         # _validate_schema rejects every layer that does not have a
@@ -362,14 +374,16 @@ class AlphaLoader:
 
         try:
             cost_arith = CostArithmetic.from_spec(
-                alpha_id=alpha_id, spec=spec.get("cost_arithmetic"),
+                alpha_id=alpha_id,
+                spec=spec.get("cost_arithmetic"),
             )
         except CostArithmeticError as exc:
             raise AlphaLoadError(f"{source}: {exc}") from exc
 
         try:
             regime_gate = RegimeGate.from_spec(
-                alpha_id=alpha_id, spec=spec.get("regime_gate"),
+                alpha_id=alpha_id,
+                spec=spec.get("regime_gate"),
             )
         except RegimeGateError as exc:
             raise AlphaLoadError(f"{source}: {exc}") from exc
@@ -379,7 +393,10 @@ class AlphaLoader:
         namespace["HorizonFeatureSnapshot"] = HorizonFeatureSnapshot
         namespace["RegimeState"] = RegimeState
         compiled_evaluate = self._compile_signal_layer_evaluate(
-            spec["signal"], alpha_id, namespace, source,
+            spec["signal"],
+            alpha_id,
+            namespace,
+            source,
         )
         signal_obj = _CompiledHorizonSignal(
             signal_id=alpha_id,
@@ -390,25 +407,16 @@ class AlphaLoader:
         trend_mechanism_block = self._parse_trend_mechanism_block(
             spec.get("trend_mechanism"), source
         )
-        hazard_exit_block = self._parse_hazard_exit_block(
-            spec.get("hazard_exit"), source
-        )
-        promotion_overrides = self._parse_promotion_block(
-            spec.get("promotion"), source
-        )
-        lifecycle_cap = self._parse_lifecycle_state(
-            spec.get("lifecycle_state"), source
-        )
+        hazard_exit_block = self._parse_hazard_exit_block(spec.get("hazard_exit"), source)
+        promotion_overrides = self._parse_promotion_block(spec.get("promotion"), source)
+        lifecycle_cap = self._parse_lifecycle_state(spec.get("lifecycle_state"), source)
         trend_enum, expected_half_life = self._extract_trend_metadata(
-            trend_mechanism_block, source,
+            trend_mechanism_block,
+            source,
         )
 
         symbols_raw = spec.get("symbols")
-        symbols = (
-            frozenset(symbols_raw)
-            if symbols_raw is not None
-            else None
-        )
+        symbols = frozenset(symbols_raw) if symbols_raw is not None else None
 
         risk_budget_raw = spec.get("risk_budget", {}) or {}
         risk_budget = AlphaRiskBudget(
@@ -485,7 +493,8 @@ class AlphaLoader:
 
         try:
             cost_arith = CostArithmetic.from_spec(
-                alpha_id=alpha_id, spec=spec.get("cost_arithmetic"),
+                alpha_id=alpha_id,
+                spec=spec.get("cost_arithmetic"),
             )
         except CostArithmeticError as exc:
             raise AlphaLoadError(f"{source}: {exc}") from exc
@@ -493,29 +502,19 @@ class AlphaLoader:
         trend_mechanism_block = self._parse_trend_mechanism_block(
             spec.get("trend_mechanism"), source
         )
-        hazard_exit_block = self._parse_hazard_exit_block(
-            spec.get("hazard_exit"), source
-        )
-        promotion_overrides = self._parse_promotion_block(
-            spec.get("promotion"), source
-        )
-        lifecycle_cap = self._parse_lifecycle_state(
-            spec.get("lifecycle_state"), source
-        )
+        hazard_exit_block = self._parse_hazard_exit_block(spec.get("hazard_exit"), source)
+        promotion_overrides = self._parse_promotion_block(spec.get("promotion"), source)
+        lifecycle_cap = self._parse_lifecycle_state(spec.get("lifecycle_state"), source)
 
         consumes_raw = (
-            (trend_mechanism_block or {}).get("consumes")
-            if trend_mechanism_block
-            else None
+            (trend_mechanism_block or {}).get("consumes") if trend_mechanism_block else None
         )
         try:
             consumes = parse_consumes_mechanisms(consumes_raw)
         except ValueError as exc:
             raise AlphaLoadError(f"{source}: {exc}") from exc
 
-        max_share_of_gross = float(
-            (trend_mechanism_block or {}).get("max_share_of_gross", 1.0)
-        )
+        max_share_of_gross = float((trend_mechanism_block or {}).get("max_share_of_gross", 1.0))
         if not 0.0 < max_share_of_gross <= 1.0:
             raise AlphaLoadError(
                 f"{source}: trend_mechanism.max_share_of_gross must be in "
@@ -526,17 +525,14 @@ class AlphaLoader:
         constructor: Any
         if "construct" in spec and spec["construct"]:
             namespace = self._build_namespace(alpha_id, regime_engine=None)
-            namespace["CrossSectionalContext"] = (
-                _import_cross_sectional_context()
-            )
-            namespace["SizedPositionIntent"] = (
-                _import_sized_position_intent()
-            )
-            namespace["TargetPosition"] = (
-                _import_target_position()
-            )
+            namespace["CrossSectionalContext"] = _import_cross_sectional_context()
+            namespace["SizedPositionIntent"] = _import_sized_position_intent()
+            namespace["TargetPosition"] = _import_target_position()
             compiled = self._compile_portfolio_construct(
-                spec["construct"], alpha_id, namespace, source,
+                spec["construct"],
+                alpha_id,
+                namespace,
+                source,
             )
             constructor = _CompiledPortfolioConstructor(fn=compiled)
         else:
@@ -581,9 +577,7 @@ class AlphaLoader:
             horizon_seconds=horizon_seconds,
             consumes_mechanisms=consumes,
             max_share_of_gross=max_share_of_gross,
-            factor_neutralization_disclosed=bool(
-                spec.get("factor_neutralization", False)
-            ),
+            factor_neutralization_disclosed=bool(spec.get("factor_neutralization", False)),
             depends_on_signals=depends_on_signals,
             params=params,
         )
@@ -608,7 +602,8 @@ class AlphaLoader:
 
     @staticmethod
     def _parse_depends_on_signals(
-        spec: dict[str, Any], source: str,
+        spec: dict[str, Any],
+        source: str,
     ) -> tuple[str, ...]:
         raw = spec.get("depends_on_signals")
         if raw is None or not isinstance(raw, list) or not raw:
@@ -638,8 +633,7 @@ class AlphaLoader:
             tree = compile(code, f"<{alpha_id}.construct>", "exec")
         except SyntaxError as exc:
             raise AlphaLoadError(
-                f"{source}: PORTFOLIO 'construct' block has a syntax "
-                f"error: {exc}"
+                f"{source}: PORTFOLIO 'construct' block has a syntax error: {exc}"
             ) from exc
         local_ns: dict[str, Any] = {}
         exec(tree, namespace, local_ns)
@@ -678,7 +672,8 @@ class AlphaLoader:
 
     @staticmethod
     def _parse_depends_on_sensors(
-        spec: dict[str, Any], source: str,
+        spec: dict[str, Any],
+        source: str,
     ) -> tuple[str, ...]:
         raw = spec.get("depends_on_sensors")
         if raw is None:
@@ -699,8 +694,7 @@ class AlphaLoader:
             sid = entry.strip()
             if sid in seen:
                 raise AlphaLoadError(
-                    f"{source}: duplicate sensor_id {sid!r} in "
-                    f"depends_on_sensors"
+                    f"{source}: duplicate sensor_id {sid!r} in depends_on_sensors"
                 )
             seen.add(sid)
             sensors.append(sid)
@@ -708,7 +702,8 @@ class AlphaLoader:
 
     @staticmethod
     def _extract_trend_metadata(
-        block: dict[str, Any] | None, source: str,
+        block: dict[str, Any] | None,
+        source: str,
     ) -> tuple[TrendMechanism | None, int]:
         """Lift v0.3 ``trend_mechanism:`` family + half-life onto the module.
 
@@ -769,9 +764,7 @@ class AlphaLoader:
             compiled = compile(signal_code, f"<{source}:signal>", "exec")
             exec(compiled, ns)  # noqa: S102
         except SyntaxError as exc:
-            raise AlphaLoadError(
-                f"{source}: signal code syntax error: {exc}"
-            ) from exc
+            raise AlphaLoadError(f"{source}: signal code syntax error: {exc}") from exc
 
         evaluate_fn = ns.get("evaluate")
         if evaluate_fn is None:
@@ -814,7 +807,7 @@ class AlphaLoader:
         if schema_version is None:
             raise AlphaLoadError(
                 f"{source}: missing required 'schema_version' field. "
-                f"The only supported value is \"1.1\". Schema 1.0 was "
+                f'The only supported value is "1.1". Schema 1.0 was '
                 f"removed in workstream D.1; see "
                 f"docs/migration/schema_1_0_to_1_1.md for the migration "
                 f"cookbook (still applicable as historical reference)."
@@ -825,7 +818,7 @@ class AlphaLoader:
                 f"'{schema_version}', supported: "
                 f"{sorted(_SUPPORTED_SCHEMA_VERSIONS)}. "
                 f"Schema 1.0 was removed in workstream D.1; migrate by "
-                f"setting schema_version: \"1.1\" and declaring "
+                f'setting schema_version: "1.1" and declaring '
                 f"layer: SIGNAL or layer: PORTFOLIO. "
                 f"See docs/migration/schema_1_0_to_1_1.md."
             )
@@ -880,12 +873,14 @@ class AlphaLoader:
             if missing:
                 raise AlphaLoadError(
                     f"{source}: layer: SIGNAL spec is missing required "
-                    f"top-level keys: " + ", ".join(sorted(missing))
+                    f"top-level keys: "
+                    + ", ".join(sorted(missing))
                     + ". Required (Phase 3): "
                     + ", ".join(sorted(_REQUIRED_SIGNAL_LAYER_KEYS))
                 )
             self._validate_alpha_id_and_version(spec, source)
             from feelies.alpha.layer_validator import LayerValidator
+
             LayerValidator(
                 enforce_trend_mechanism=self._enforce_trend_mechanism,
                 enforce_layer_gates=self._enforce_layer_gates,
@@ -897,12 +892,14 @@ class AlphaLoader:
             if missing:
                 raise AlphaLoadError(
                     f"{source}: layer: PORTFOLIO spec is missing required "
-                    f"top-level keys: " + ", ".join(sorted(missing))
+                    f"top-level keys: "
+                    + ", ".join(sorted(missing))
                     + ". Required (Phase 4): "
                     + ", ".join(sorted(_REQUIRED_PORTFOLIO_LAYER_KEYS))
                 )
             self._validate_alpha_id_and_version(spec, source)
             from feelies.alpha.layer_validator import LayerValidator
+
             LayerValidator(
                 enforce_trend_mechanism=self._enforce_trend_mechanism,
                 enforce_layer_gates=self._enforce_layer_gates,
@@ -919,7 +916,9 @@ class AlphaLoader:
         )
 
     def _validate_alpha_id_and_version(
-        self, spec: dict[str, Any], source: str,
+        self,
+        spec: dict[str, Any],
+        source: str,
     ) -> None:
         """Shared identifier validation lifted from ``_validate_schema``.
 
@@ -937,10 +936,7 @@ class AlphaLoader:
 
         version = spec.get("version", "")
         if not _SEMVER_RE.match(str(version)):
-            raise AlphaLoadError(
-                f"{source}: version '{version}' must be semver "
-                f"(e.g. '1.0.0')"
-            )
+            raise AlphaLoadError(f"{source}: version '{version}' must be semver (e.g. '1.0.0')")
 
     # ── v0.3 optional YAML blocks ─────────────────────────────
 
@@ -965,8 +961,7 @@ class AlphaLoader:
             return None
         if not isinstance(block, dict):
             raise AlphaLoadError(
-                f"{source}: 'trend_mechanism' must be a mapping, got "
-                f"{type(block).__name__}"
+                f"{source}: 'trend_mechanism' must be a mapping, got {type(block).__name__}"
             )
         family = block.get("family")
         if family is not None and str(family) not in _TREND_MECHANISM_FAMILIES:
@@ -978,12 +973,14 @@ class AlphaLoader:
             )
         return dict(block)
 
-    _HAZARD_EXIT_KNOWN_KEYS: frozenset[str] = frozenset({
-        "enabled",
-        "hazard_score_threshold",
-        "min_age_seconds",
-        "hard_exit_age_seconds",
-    })
+    _HAZARD_EXIT_KNOWN_KEYS: frozenset[str] = frozenset(
+        {
+            "enabled",
+            "hazard_score_threshold",
+            "min_age_seconds",
+            "hard_exit_age_seconds",
+        }
+    )
 
     # Legacy / mis-named keys we accept with a translation, to fail loudly
     # when authors copy the design-doc spelling.  ``posterior_drop_threshold``
@@ -1024,8 +1021,7 @@ class AlphaLoader:
             return None
         if not isinstance(block, dict):
             raise AlphaLoadError(
-                f"{source}: 'hazard_exit' must be a mapping, got "
-                f"{type(block).__name__}"
+                f"{source}: 'hazard_exit' must be a mapping, got {type(block).__name__}"
             )
 
         normalized: dict[str, Any] = {}
@@ -1036,7 +1032,10 @@ class AlphaLoader:
                     "%s: hazard_exit.%s is a legacy spelling of "
                     "hazard_exit.%s; rename to %s in the YAML to silence "
                     "this warning",
-                    source, key, new_key, new_key,
+                    source,
+                    key,
+                    new_key,
+                    new_key,
                 )
                 if new_key in block:
                     raise AlphaLoadError(
@@ -1080,8 +1079,7 @@ class AlphaLoader:
                 ) from exc
             if min_age < 0:
                 raise AlphaLoadError(
-                    f"{source}: hazard_exit.min_age_seconds must be >= 0, "
-                    f"got {min_age}"
+                    f"{source}: hazard_exit.min_age_seconds must be >= 0, got {min_age}"
                 )
             normalized["min_age_seconds"] = min_age
 
@@ -1099,8 +1097,7 @@ class AlphaLoader:
                 ) from exc
             if hard_age <= 0:
                 raise AlphaLoadError(
-                    f"{source}: hazard_exit.hard_exit_age_seconds must "
-                    f"be > 0, got {hard_age}"
+                    f"{source}: hazard_exit.hard_exit_age_seconds must be > 0, got {hard_age}"
                 )
             normalized["hard_exit_age_seconds"] = hard_age
 
@@ -1136,8 +1133,7 @@ class AlphaLoader:
             return None
         if not isinstance(block, dict):
             raise AlphaLoadError(
-                f"{source}: 'promotion' must be a mapping, got "
-                f"{type(block).__name__}"
+                f"{source}: 'promotion' must be a mapping, got {type(block).__name__}"
             )
 
         unknown_keys = sorted(k for k in block if k != "gate_thresholds")
@@ -1162,9 +1158,7 @@ class AlphaLoader:
         try:
             return parse_gate_thresholds_overrides(raw_overrides)
         except ValueError as exc:
-            raise AlphaLoadError(
-                f"{source}: promotion.gate_thresholds: {exc}"
-            ) from exc
+            raise AlphaLoadError(f"{source}: promotion.gate_thresholds: {exc}") from exc
 
     @staticmethod
     def _parse_lifecycle_state(raw: Any, source: str) -> str | None:
@@ -1177,14 +1171,12 @@ class AlphaLoader:
             return None
         if not isinstance(raw, str):
             raise AlphaLoadError(
-                f"{source}: 'lifecycle_state' must be a string, got "
-                f"{type(raw).__name__}"
+                f"{source}: 'lifecycle_state' must be a string, got {type(raw).__name__}"
             )
         normalized = raw.strip().upper()
         if normalized != "RESEARCH":
             raise AlphaLoadError(
-                f"{source}: unsupported lifecycle_state {raw!r}; "
-                "only 'RESEARCH' is supported"
+                f"{source}: unsupported lifecycle_state {raw!r}; only 'RESEARCH' is supported"
             )
         return normalized
 
@@ -1200,42 +1192,34 @@ class AlphaLoader:
         if not (0 < budget.capital_allocation_pct <= 100):
             errors.append("capital_allocation_pct must be in (0, 100]")
         if errors:
-            raise AlphaLoadError(
-                f"{source}: risk_budget validation failed: "
-                + "; ".join(errors)
-            )
+            raise AlphaLoadError(f"{source}: risk_budget validation failed: " + "; ".join(errors))
 
     # ── Parameter resolution ──────────────────────────────────
 
-    def _parse_parameters(
-        self, params_raw: dict[str, Any], source: str
-    ) -> list[ParameterDef]:
+    def _parse_parameters(self, params_raw: dict[str, Any], source: str) -> list[ParameterDef]:
         defs: list[ParameterDef] = []
         for name, pspec in params_raw.items():
             if not isinstance(pspec, dict):
                 raise AlphaLoadError(
-                    f"{source}: parameter '{name}' must be a mapping "
-                    f"with type/default/description"
+                    f"{source}: parameter '{name}' must be a mapping with type/default/description"
                 )
             param_type = str(pspec.get("type", "float"))
             default = pspec.get("default")
             if default is None:
-                raise AlphaLoadError(
-                    f"{source}: parameter '{name}' missing 'default'"
-                )
+                raise AlphaLoadError(f"{source}: parameter '{name}' missing 'default'")
             range_raw = pspec.get("range")
             param_range = (
-                (float(range_raw[0]), float(range_raw[1]))
-                if range_raw is not None
-                else None
+                (float(range_raw[0]), float(range_raw[1])) if range_raw is not None else None
             )
-            defs.append(ParameterDef(
-                name=name,
-                param_type=param_type,
-                default=default,
-                range=param_range,
-                description=str(pspec.get("description", "")),
-            ))
+            defs.append(
+                ParameterDef(
+                    name=name,
+                    param_type=param_type,
+                    default=default,
+                    range=param_range,
+                    description=str(pspec.get("description", "")),
+                )
+            )
         return defs
 
     def _resolve_params(
@@ -1251,8 +1235,7 @@ class AlphaLoader:
         unknown = sorted(override_keys - declared)
         if unknown:
             raise AlphaLoadError(
-                f"{source}: unknown parameter_overrides key(s): "
-                f"{unknown} — refusing silent drops"
+                f"{source}: unknown parameter_overrides key(s): {unknown} — refusing silent drops"
             )
 
         for pdef in param_defs:
@@ -1262,10 +1245,7 @@ class AlphaLoader:
             params[pdef.name] = value
 
         if errors:
-            raise AlphaLoadError(
-                f"{source}: parameter validation failed: "
-                + "; ".join(errors)
-            )
+            raise AlphaLoadError(f"{source}: parameter validation failed: " + "; ".join(errors))
         return params
 
     # ── Regime engine resolution ──────────────────────────────
@@ -1294,8 +1274,7 @@ class AlphaLoader:
             raise AlphaLoadError(f"{source}: {exc}") from exc
         except TypeError as exc:
             raise AlphaLoadError(
-                f"{source}: invalid regime_engine_options for engine "
-                f"{engine_name!r}: {exc}"
+                f"{source}: invalid regime_engine_options for engine {engine_name!r}: {exc}"
             ) from exc
 
     # ── Namespace construction ────────────────────────────────
@@ -1328,14 +1307,17 @@ class AlphaLoader:
 
 def _import_cross_sectional_context() -> Any:
     from feelies.core.events import CrossSectionalContext as _CSC
+
     return _CSC
 
 
 def _import_sized_position_intent() -> Any:
     from feelies.core.events import SizedPositionIntent as _SPI
+
     return _SPI
 
 
 def _import_target_position() -> Any:
     from feelies.core.events import TargetPosition as _TP
+
     return _TP

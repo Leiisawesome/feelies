@@ -59,34 +59,40 @@ def _bindings(
 # ── Parse-time validation ───────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("expr", [
-    "P(normal) > 0.7",
-    "P(normal) > 0.7 AND ofi_ewma_zscore > 2.0",
-    "P(normal) > 0.7 OR P(toxic) < 0.2",
-    "abs(spread_z_30d) < 0.5",
-    "min(P(normal), P(toxic)) > 0.1",
-    "max(ofi_ewma, 0.0) > 1.0",
-    "spread_z_30d_percentile < p40",
-    "dominant == \"normal\"",
-    "not (spread_z_30d > 2.0)",
-])
+@pytest.mark.parametrize(
+    "expr",
+    [
+        "P(normal) > 0.7",
+        "P(normal) > 0.7 AND ofi_ewma_zscore > 2.0",
+        "P(normal) > 0.7 OR P(toxic) < 0.2",
+        "abs(spread_z_30d) < 0.5",
+        "min(P(normal), P(toxic)) > 0.1",
+        "max(ofi_ewma, 0.0) > 1.0",
+        "spread_z_30d_percentile < p40",
+        'dominant == "normal"',
+        "not (spread_z_30d > 2.0)",
+    ],
+)
 def test_compile_accepts_whitelisted(expr: str) -> None:
     compile_expression(expr)
 
 
-@pytest.mark.parametrize("expr", [
-    "regime.posteriors[0] > 0.5",          # subscript
-    "obj.method()",                         # attribute access
-    "[x for x in [1, 2]]",                 # listcomp
-    "lambda x: x > 0",                      # lambda
-    "open('hack')",                          # call to non-whitelisted
-    "exec('import os')",                    # call to forbidden
-    "f'{P(normal)} > 0.5'",                  # joined-str
-    "x := 1",                                # walrus / NamedExpr
-    "P(normal) if True else 0",             # IfExp
-    "{1: 2}",                                # dict literal
-    "{1, 2}",                                # set literal
-])
+@pytest.mark.parametrize(
+    "expr",
+    [
+        "regime.posteriors[0] > 0.5",  # subscript
+        "obj.method()",  # attribute access
+        "[x for x in [1, 2]]",  # listcomp
+        "lambda x: x > 0",  # lambda
+        "open('hack')",  # call to non-whitelisted
+        "exec('import os')",  # call to forbidden
+        "f'{P(normal)} > 0.5'",  # joined-str
+        "x := 1",  # walrus / NamedExpr
+        "P(normal) if True else 0",  # IfExp
+        "{1: 2}",  # dict literal
+        "{1, 2}",  # set literal
+    ],
+)
 def test_compile_rejects_forbidden(expr: str) -> None:
     with pytest.raises(UnsafeExpressionError):
         compile_expression(expr)
@@ -132,7 +138,7 @@ def test_evaluate_unknown_state_raises() -> None:
 
 
 def test_evaluate_dominant_resolution() -> None:
-    tree = compile_expression("dominant == \"normal\"")
+    tree = compile_expression('dominant == "normal"')
     regime = _FakeRegime(
         state_names=("normal", "toxic"),
         posteriors=(0.9, 0.1),
@@ -142,7 +148,7 @@ def test_evaluate_dominant_resolution() -> None:
 
 
 def test_evaluate_dominant_without_regime_raises() -> None:
-    tree = compile_expression("dominant == \"normal\"")
+    tree = compile_expression('dominant == "normal"')
     with pytest.raises(UnknownIdentifierError, match="dominant"):
         evaluate(tree, _bindings())
 
@@ -362,6 +368,7 @@ def test_from_spec_warns_when_hysteresis_unreferenced(caplog):
     """A declared hysteresis block whose keys are not referenced by
     either condition is dead config — surface a load-time warning."""
     import logging
+
     spec = {
         "regime_engine": "hmm_3state_fractional",
         "on_condition": "P(normal) > 0.6",
@@ -373,11 +380,10 @@ def test_from_spec_warns_when_hysteresis_unreferenced(caplog):
     }
     with caplog.at_level(logging.WARNING, logger="feelies.signals.regime_gate"):
         from feelies.signals.regime_gate import RegimeGate
+
         RegimeGate.from_spec(alpha_id="alpha_unref", spec=spec)
     assert any(
-        "hysteresis declares" in r.message
-        and "dead config" in r.message
-        for r in caplog.records
+        "hysteresis declares" in r.message and "dead config" in r.message for r in caplog.records
     ), [r.message for r in caplog.records]
 
 
@@ -385,6 +391,7 @@ def test_from_spec_no_warning_when_hysteresis_referenced(caplog):
     """When the expressions reference the declared margins the warning
     must not fire (e.g. sig_inventory_revert_v1's pattern)."""
     import logging
+
     spec = {
         "regime_engine": "hmm_3state_fractional",
         "on_condition": "P(normal) > 0.6 + posterior_margin",
@@ -395,7 +402,6 @@ def test_from_spec_no_warning_when_hysteresis_referenced(caplog):
     }
     with caplog.at_level(logging.WARNING, logger="feelies.signals.regime_gate"):
         from feelies.signals.regime_gate import RegimeGate
+
         RegimeGate.from_spec(alpha_id="alpha_ref", spec=spec)
-    assert not any(
-        "dead config" in r.message for r in caplog.records
-    )
+    assert not any("dead config" in r.message for r in caplog.records)

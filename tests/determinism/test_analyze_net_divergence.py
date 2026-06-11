@@ -28,12 +28,12 @@ def mod():
 
 def test_classify_covers_all_shifts(mod) -> None:
     c = mod.classify
-    assert c(100, 250) == "stack"      # same dir, larger
-    assert c(100, 40) == "shrink"      # same dir, smaller
-    assert c(100, 0) == "net_flat"     # cancels to flat
-    assert c(-50, 30) == "flip"        # flips direction
-    assert c(0, 80) == "net_opens"     # winner flat, net wants in
-    assert c(100, 100) == "equal"      # degenerate
+    assert c(100, 250) == "stack"  # same dir, larger
+    assert c(100, 40) == "shrink"  # same dir, smaller
+    assert c(100, 0) == "net_flat"  # cancels to flat
+    assert c(-50, 30) == "flip"  # flips direction
+    assert c(0, 80) == "net_opens"  # winner flat, net wants in
+    assert c(100, 100) == "equal"  # degenerate
 
 
 def test_parse_line_accepts_prefixed_and_raw(mod) -> None:
@@ -47,10 +47,20 @@ def test_parse_line_accepts_prefixed_and_raw(mod) -> None:
 
 def test_summarize_counts_and_rate(mod) -> None:
     records = [
-        {"symbol": "APP", "winner_strategy_id": "a",
-         "winner_target_qty": 100, "net_target_qty": 250, "contributing_alphas": 3},
-        {"symbol": "APP", "winner_strategy_id": "b",
-         "winner_target_qty": 100, "net_target_qty": 0, "contributing_alphas": 2},
+        {
+            "symbol": "APP",
+            "winner_strategy_id": "a",
+            "winner_target_qty": 100,
+            "net_target_qty": 250,
+            "contributing_alphas": 3,
+        },
+        {
+            "symbol": "APP",
+            "winner_strategy_id": "b",
+            "winner_target_qty": 100,
+            "net_target_qty": 0,
+            "contributing_alphas": 2,
+        },
     ]
     text = mod.summarize(records, total_decisions=1000)
     assert "Divergent decisions       2" in text
@@ -71,14 +81,32 @@ def test_et_date_bucketing(mod) -> None:
 
 def test_summarize_splits_by_trading_day(mod) -> None:
     d1 = 1_780_320_600_000_000_000  # 2026-06-01 ET
-    d2 = d1 + 86_400_000_000_000     # +1 day → 2026-06-02 ET
+    d2 = d1 + 86_400_000_000_000  # +1 day → 2026-06-02 ET
     records = [
-        {"symbol": "APP", "winner_strategy_id": "a", "winner_target_qty": 0,
-         "net_target_qty": 50, "contributing_alphas": 2, "timestamp_ns": d1},
-        {"symbol": "APP", "winner_strategy_id": "a", "winner_target_qty": 0,
-         "net_target_qty": 50, "contributing_alphas": 2, "timestamp_ns": d1},
-        {"symbol": "APP", "winner_strategy_id": "a", "winner_target_qty": 100,
-         "net_target_qty": 250, "contributing_alphas": 3, "timestamp_ns": d2},
+        {
+            "symbol": "APP",
+            "winner_strategy_id": "a",
+            "winner_target_qty": 0,
+            "net_target_qty": 50,
+            "contributing_alphas": 2,
+            "timestamp_ns": d1,
+        },
+        {
+            "symbol": "APP",
+            "winner_strategy_id": "a",
+            "winner_target_qty": 0,
+            "net_target_qty": 50,
+            "contributing_alphas": 2,
+            "timestamp_ns": d1,
+        },
+        {
+            "symbol": "APP",
+            "winner_strategy_id": "a",
+            "winner_target_qty": 100,
+            "net_target_qty": 250,
+            "contributing_alphas": 3,
+            "timestamp_ns": d2,
+        },
     ]
     text = mod.summarize(records, total_decisions=None)
     assert "By trading day (ET)" in text
@@ -87,7 +115,12 @@ def test_summarize_splits_by_trading_day(mod) -> None:
 
 def test_no_by_day_section_without_timestamps(mod) -> None:
     records = [
-        {"symbol": "APP", "winner_strategy_id": "a", "winner_target_qty": 0,
-         "net_target_qty": 50, "contributing_alphas": 2},  # no timestamp_ns
+        {
+            "symbol": "APP",
+            "winner_strategy_id": "a",
+            "winner_target_qty": 0,
+            "net_target_qty": 50,
+            "contributing_alphas": 2,
+        },  # no timestamp_ns
     ]
     assert "By trading day" not in mod.summarize(records, total_decisions=None)

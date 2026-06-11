@@ -67,7 +67,4 @@ def disclosure_survives_inv12_cost_stress(cost: CostArithmetic) -> bool:
     BT-12 re-validates each alpha under full backtest; this is the cheap
     load-time survival check wired by BT-9 acceptance.
     """
-    return (
-        disclosure_margin_after_cost_stress(cost.margin_ratio)
-        >= MIN_MARGIN_RATIO
-    )
+    return disclosure_margin_after_cost_stress(cost.margin_ratio) >= MIN_MARGIN_RATIO

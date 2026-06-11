@@ -85,7 +85,7 @@ def main() -> None:
 
     _section("Locked parity hashes (copy into tests/determinism/)")
     for prefix, hash_hex, count in rows:
-        print(f"{prefix}_HASH = (\n    \"{hash_hex}\"\n)")
+        print(f'{prefix}_HASH = (\n    "{hash_hex}"\n)')
         print(f"{prefix}_COUNT = {count}")
         print()
 

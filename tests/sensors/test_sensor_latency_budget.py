@@ -55,7 +55,10 @@ pytestmark = pytest.mark.skipif(
 
 
 def _gen_events(
-    n: int, *, seed: int, mix: str = "mixed",
+    n: int,
+    *,
+    seed: int,
+    mix: str = "mixed",
 ) -> list[NBBOQuote | Trade]:
     """Synthesise ``n`` quote/trade events deterministically.
 
@@ -80,17 +83,19 @@ def _gen_events(
             emit_quote = roll < 0.7
         if emit_quote:
             mid_cents += rng.choice((-1, 0, 0, 0, +1))
-            out.append(NBBOQuote(
-                timestamp_ns=ts,
-                correlation_id=f"q-{i}",
-                sequence=i,
-                symbol=SYMBOL,
-                bid=Decimal(mid_cents - 1) / Decimal(100),
-                ask=Decimal(mid_cents + 1) / Decimal(100),
-                bid_size=rng.randint(1, 10) * 100,
-                ask_size=rng.randint(1, 10) * 100,
-                exchange_timestamp_ns=ts,
-            ))
+            out.append(
+                NBBOQuote(
+                    timestamp_ns=ts,
+                    correlation_id=f"q-{i}",
+                    sequence=i,
+                    symbol=SYMBOL,
+                    bid=Decimal(mid_cents - 1) / Decimal(100),
+                    ask=Decimal(mid_cents + 1) / Decimal(100),
+                    bid_size=rng.randint(1, 10) * 100,
+                    ask_size=rng.randint(1, 10) * 100,
+                    exchange_timestamp_ns=ts,
+                )
+            )
         else:
             side = rng.choice(("mid", "buy", "sell"))
             if side == "mid":
@@ -99,15 +104,17 @@ def _gen_events(
                 price_cents = mid_cents + 1
             else:
                 price_cents = mid_cents - 1
-            out.append(Trade(
-                timestamp_ns=ts,
-                correlation_id=f"t-{i}",
-                sequence=i,
-                symbol=SYMBOL,
-                price=Decimal(price_cents) / Decimal(100),
-                size=rng.randint(1, 8) * 100,
-                exchange_timestamp_ns=ts,
-            ))
+            out.append(
+                Trade(
+                    timestamp_ns=ts,
+                    correlation_id=f"t-{i}",
+                    sequence=i,
+                    symbol=SYMBOL,
+                    price=Decimal(price_cents) / Decimal(100),
+                    size=rng.randint(1, 8) * 100,
+                    exchange_timestamp_ns=ts,
+                )
+            )
     return out
 
 
@@ -169,10 +176,7 @@ def test_latency_budget_per_sensor(capsys: pytest.CaptureFixture[str]) -> None:
     inert sensor.
     """
     print()  # blank line so the table renders cleanly under -s
-    print(
-        f"{'sensor':<28} {'p50_ns':>10} {'p99_ns':>10} {'mean_ns':>10}"
-        f" {'emitted':>10}"
-    )
+    print(f"{'sensor':<28} {'p50_ns':>10} {'p99_ns':>10} {'mean_ns':>10} {'emitted':>10}")
     for spec in _SPECS:
         events = _gen_events(EVENTS_PER_SENSOR, seed=hash(spec.name) & 0xFFFF, mix=spec.mix)
         sensor = spec.factory()
@@ -189,9 +193,7 @@ def test_latency_budget_per_sensor(capsys: pytest.CaptureFixture[str]) -> None:
         p50 = _percentile(samples, 50.0)
         p99 = _percentile(samples, 99.0)
         mean = sum(samples) // max(1, len(samples))
-        print(
-            f"{spec.name:<28} {p50:>10d} {p99:>10d} {mean:>10d} {emitted:>10d}"
-        )
+        print(f"{spec.name:<28} {p50:>10d} {p99:>10d} {mean:>10d} {emitted:>10d}")
         assert emitted > 0, f"{spec.name} emitted zero readings — bench is degenerate"
 
     captured = capsys.readouterr()

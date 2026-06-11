@@ -48,7 +48,10 @@ def build_paper_backend(
         ws_url=massive_ws_url,
     )
     ib_conn = IBGatewayConnection(
-        host=ib_host, port=ib_port, client_id=ib_client_id, clock=clock,
+        host=ib_host,
+        port=ib_port,
+        client_id=ib_client_id,
+        clock=clock,
     )
     router = IBOrderRouter(connection=ib_conn, clock=clock)
     backend = ExecutionBackend(

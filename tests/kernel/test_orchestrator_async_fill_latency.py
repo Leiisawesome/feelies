@@ -40,16 +40,18 @@ class _DelayedRouter(BacktestOrderRouter):
 
     def submit(self, request: OrderRequest) -> None:
         super().submit(request)
-        self._pending.append(OrderAck(
-            timestamp_ns=self._clock.now_ns() + 500_000_000,
-            correlation_id=request.correlation_id,
-            sequence=request.sequence + 100,
-            order_id=request.order_id,
-            symbol=request.symbol,
-            status=OrderAckStatus.FILLED,
-            filled_quantity=request.quantity,
-            fill_price=Decimal("100.00"),
-        ))
+        self._pending.append(
+            OrderAck(
+                timestamp_ns=self._clock.now_ns() + 500_000_000,
+                correlation_id=request.correlation_id,
+                sequence=request.sequence + 100,
+                order_id=request.order_id,
+                symbol=request.symbol,
+                status=OrderAckStatus.FILLED,
+                filled_quantity=request.quantity,
+                fill_price=Decimal("100.00"),
+            )
+        )
 
     def poll_acks(self) -> list[OrderAck]:
         out = list(self._pending)
@@ -91,6 +93,7 @@ def _build_orchestrator(clock: SimulatedClock, router: _DelayedRouter) -> Orches
     class _AllowAll:
         def check_signal(self, signal, positions):  # noqa: ANN001
             from feelies.core.events import RiskAction, RiskVerdict
+
             return RiskVerdict(
                 timestamp_ns=signal.timestamp_ns,
                 correlation_id=signal.correlation_id,
@@ -102,6 +105,7 @@ def _build_orchestrator(clock: SimulatedClock, router: _DelayedRouter) -> Orches
 
         def check_order(self, order, positions):  # noqa: ANN001
             from feelies.core.events import RiskAction, RiskVerdict
+
             return RiskVerdict(
                 timestamp_ns=order.timestamp_ns,
                 correlation_id=order.correlation_id,

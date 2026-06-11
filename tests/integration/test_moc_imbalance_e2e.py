@@ -66,10 +66,7 @@ pytestmark = pytest.mark.backtest_validation
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
-_MOC_ALPHA = (
-    _REPO_ROOT / "alphas" / "sig_moc_imbalance_v1"
-    / "sig_moc_imbalance_v1.alpha.yaml"
-)
+_MOC_ALPHA = _REPO_ROOT / "alphas" / "sig_moc_imbalance_v1" / "sig_moc_imbalance_v1.alpha.yaml"
 _CALENDAR_PATH = EVENT_CALENDAR_DIR / "2026-01-15.yaml"
 
 # 3-symbol universe — SIGNAL-only alphas have no portfolio universe
@@ -117,7 +114,9 @@ def _synth_events(seed: int = 42) -> list[Any]:
     """Deterministic 360-second 3-symbol NBBOQuote/Trade stream."""
     quote_cadence_ns: int = 100_000_000  # 10 Hz
     starting_prices_cents: dict[str, int] = {
-        "AAPL": 18000, "MSFT": 37000, "NVDA": 45000,
+        "AAPL": 18000,
+        "MSFT": 37000,
+        "NVDA": 45000,
     }
 
     all_events: list[tuple[int, str, Any]] = []
@@ -285,10 +284,8 @@ def test_moc_imbalance_e2e_signal_stream_is_deterministic() -> None:
     _orch_b, signals_b = _build()
 
     assert len(signals_a) == len(signals_b), (
-        f"Signal count drifted across replays: "
-        f"{len(signals_a)} vs {len(signals_b)}"
+        f"Signal count drifted across replays: {len(signals_a)} vs {len(signals_b)}"
     )
     assert _hash_signals(signals_a) == _hash_signals(signals_b), (
-        "sig_moc_imbalance_v1 signal hash drift across identical replays "
-        "(Inv-5 violation)"
+        "sig_moc_imbalance_v1 signal hash drift across identical replays (Inv-5 violation)"
     )

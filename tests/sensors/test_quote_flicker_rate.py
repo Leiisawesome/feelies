@@ -62,8 +62,10 @@ def test_trade_returns_none() -> None:
 
 def test_monotonic_quotes_have_zero_flicker() -> None:
     s = QuoteFlickerRateSensor(window_seconds=60, min_quotes=1)
-    evs = [_quote((i + 1) * _NS, f"{100.00 + i * 0.01:.2f}", f"{100.02 + i * 0.01:.2f}")
-           for i in range(10)]
+    evs = [
+        _quote((i + 1) * _NS, f"{100.00 + i * 0.01:.2f}", f"{100.02 + i * 0.01:.2f}")
+        for i in range(10)
+    ]
     last, _ = _drive(s, evs)
     assert last is not None and last.warm is True
     assert last.value == 0.0  # strictly rising → no direction reversal

@@ -462,10 +462,7 @@ def validate_research_acceptance(
     if evidence.fault_injection_total <= 0:
         errors.append("no fault-injection cases run")
     else:
-        pass_pct = (
-            100.0 * evidence.fault_injection_pass_count
-            / evidence.fault_injection_total
-        )
+        pass_pct = 100.0 * evidence.fault_injection_pass_count / evidence.fault_injection_total
         if pass_pct < t.research_min_fault_injection_pass_pct:
             errors.append(
                 f"fault-injection pass rate {pass_pct:.1f}% "
@@ -494,10 +491,7 @@ def validate_cpcv(
     errors: list[str] = []
 
     if evidence.fold_count < t.cpcv_min_folds:
-        errors.append(
-            f"CPCV fold_count {evidence.fold_count} "
-            f"< {t.cpcv_min_folds} required"
-        )
+        errors.append(f"CPCV fold_count {evidence.fold_count} < {t.cpcv_min_folds} required")
     if evidence.fold_count > 0 and len(evidence.fold_sharpes) != evidence.fold_count:
         errors.append(
             f"CPCV inconsistent: fold_count={evidence.fold_count} but "
@@ -505,14 +499,10 @@ def validate_cpcv(
         )
     if evidence.mean_sharpe < t.cpcv_min_mean_sharpe:
         errors.append(
-            f"CPCV mean Sharpe {evidence.mean_sharpe:.2f} "
-            f"< {t.cpcv_min_mean_sharpe:.2f} required"
+            f"CPCV mean Sharpe {evidence.mean_sharpe:.2f} < {t.cpcv_min_mean_sharpe:.2f} required"
         )
     if evidence.p_value > t.cpcv_max_p_value:
-        errors.append(
-            f"CPCV p-value {evidence.p_value:.4f} "
-            f"> {t.cpcv_max_p_value:.4f} threshold"
-        )
+        errors.append(f"CPCV p-value {evidence.p_value:.4f} > {t.cpcv_max_p_value:.4f} threshold")
 
     return errors
 
@@ -532,13 +522,11 @@ def validate_dsr(
 
     if evidence.dsr < t.dsr_min:
         errors.append(
-            f"DSR {evidence.dsr:.3f} < {t.dsr_min:.3f} required "
-            f"(schema-1.1 falsification rule)"
+            f"DSR {evidence.dsr:.3f} < {t.dsr_min:.3f} required (schema-1.1 falsification rule)"
         )
     if evidence.dsr_p_value > t.dsr_max_p_value:
         errors.append(
-            f"DSR p-value {evidence.dsr_p_value:.4f} "
-            f"> {t.dsr_max_p_value:.4f} threshold"
+            f"DSR p-value {evidence.dsr_p_value:.4f} > {t.dsr_max_p_value:.4f} threshold"
         )
     if evidence.trials_count <= 0:
         errors.append(
@@ -565,13 +553,11 @@ def validate_paper_window(
 
     if evidence.trading_days < t.paper_min_trading_days:
         errors.append(
-            f"paper trading_days {evidence.trading_days} "
-            f"< {t.paper_min_trading_days} required"
+            f"paper trading_days {evidence.trading_days} < {t.paper_min_trading_days} required"
         )
     if evidence.sample_size < t.paper_min_sample_size:
         errors.append(
-            f"paper sample_size {evidence.sample_size} "
-            f"< {t.paper_min_sample_size} required"
+            f"paper sample_size {evidence.sample_size} < {t.paper_min_sample_size} required"
         )
     if evidence.slippage_residual_bps > t.paper_max_slippage_residual_bps:
         errors.append(
@@ -630,19 +616,13 @@ def validate_capital_stage(
             f"small-capital deployment_days {evidence.deployment_days} "
             f"< {t.small_min_deployment_days} required"
         )
-    if (
-        evidence.pnl_compression_ratio_realised
-        < t.small_min_pnl_compression_ratio
-    ):
+    if evidence.pnl_compression_ratio_realised < t.small_min_pnl_compression_ratio:
         errors.append(
             f"small-capital realised PnL compression ratio "
             f"{evidence.pnl_compression_ratio_realised:.2f} "
             f"< {t.small_min_pnl_compression_ratio:.2f} required"
         )
-    if (
-        evidence.pnl_compression_ratio_realised
-        > t.small_max_pnl_compression_ratio
-    ):
+    if evidence.pnl_compression_ratio_realised > t.small_max_pnl_compression_ratio:
         errors.append(
             f"small-capital realised PnL compression ratio "
             f"{evidence.pnl_compression_ratio_realised:.2f} "
@@ -693,25 +673,18 @@ def validate_quarantine_trigger(
     """
     t = thresholds or GateThresholds()
 
-    triggered = (
-        evidence.net_alpha_negative_days
-        >= t.quarantine_max_net_alpha_negative_days
+    triggered = evidence.net_alpha_negative_days >= t.quarantine_max_net_alpha_negative_days
+    triggered = triggered or (
+        evidence.hit_rate_residual_pp <= t.quarantine_max_hit_rate_residual_pp
     )
     triggered = triggered or (
-        evidence.hit_rate_residual_pp
-        <= t.quarantine_max_hit_rate_residual_pp
+        evidence.pnl_compression_ratio_5d <= t.quarantine_max_pnl_compression_ratio_5d
     )
     triggered = triggered or (
-        evidence.pnl_compression_ratio_5d
-        <= t.quarantine_max_pnl_compression_ratio_5d
+        len(evidence.microstructure_metrics_breached) >= t.quarantine_min_microstructure_breaches
     )
     triggered = triggered or (
-        len(evidence.microstructure_metrics_breached)
-        >= t.quarantine_min_microstructure_breaches
-    )
-    triggered = triggered or (
-        len(evidence.crowding_symptoms)
-        >= t.quarantine_min_crowding_symptoms
+        len(evidence.crowding_symptoms) >= t.quarantine_min_crowding_symptoms
     )
 
     if triggered:
@@ -959,8 +932,7 @@ def _evidence_to_jsonable(ev: object) -> dict[str, Any]:
     """
     if not is_dataclass(ev) or isinstance(ev, type):
         raise TypeError(
-            f"_evidence_to_jsonable expected a dataclass instance, "
-            f"got {type(ev).__name__!r}"
+            f"_evidence_to_jsonable expected a dataclass instance, got {type(ev).__name__!r}"
         )
     raw = asdict(cast(Any, ev))
     out: dict[str, Any] = {}
@@ -1039,9 +1011,7 @@ def _reconstruct_revalidation(
     return RevalidationEvidence(**payload)
 
 
-_RECONSTRUCTOR_BY_TYPE: Mapping[
-    _EvidenceType, Any
-] = {
+_RECONSTRUCTOR_BY_TYPE: Mapping[_EvidenceType, Any] = {
     ResearchAcceptanceEvidence: _reconstruct_research_acceptance,
     CPCVEvidence: _reconstruct_cpcv,
     DSREvidence: _reconstruct_dsr,
@@ -1079,8 +1049,7 @@ def metadata_to_evidence(metadata: Mapping[str, Any]) -> list[object]:
     """
     if not isinstance(metadata, Mapping):
         raise ValueError(
-            f"metadata_to_evidence expected a mapping, "
-            f"got {type(metadata).__name__!r}"
+            f"metadata_to_evidence expected a mapping, got {type(metadata).__name__!r}"
         )
 
     schema_version = metadata.get("schema_version")
@@ -1099,17 +1068,12 @@ def metadata_to_evidence(metadata: Mapping[str, Any]) -> list[object]:
         payload = metadata[kind]
         if not isinstance(payload, Mapping):
             raise ValueError(
-                f"metadata[{kind!r}] must be an object, got "
-                f"{type(payload).__name__!r}"
+                f"metadata[{kind!r}] must be an object, got {type(payload).__name__!r}"
             )
         reconstruct = _RECONSTRUCTOR_BY_TYPE[ev_type]
         evidences.append(reconstruct(payload))
 
-    unknown = sorted(
-        k
-        for k in metadata.keys()
-        if k != "schema_version" and k not in KIND_TO_TYPE
-    )
+    unknown = sorted(k for k in metadata.keys() if k != "schema_version" and k not in KIND_TO_TYPE)
     if unknown:
         raise ValueError(
             f"metadata carries unknown kind(s) {unknown}; supported kinds: "
@@ -1191,10 +1155,7 @@ def parse_gate_thresholds_overrides(
     if raw is None:
         return {}
     if not isinstance(raw, Mapping):
-        raise ValueError(
-            "gate_thresholds overrides must be a mapping; got "
-            f"{type(raw).__name__}"
-        )
+        raise ValueError(f"gate_thresholds overrides must be a mapping; got {type(raw).__name__}")
 
     known = _GATE_THRESHOLD_FIELD_TYPES
     unknown = sorted(k for k in raw if k not in known)
@@ -1212,9 +1173,7 @@ def parse_gate_thresholds_overrides(
     return out
 
 
-def _coerce_threshold_value(
-    key: str, value: Any, expected: type
-) -> Any:
+def _coerce_threshold_value(key: str, value: Any, expected: type) -> Any:
     """Coerce ``value`` into ``expected`` for a ``GateThresholds`` field.
 
     Strict on type (``bool`` is *not* an ``int``, strings are not
@@ -1225,31 +1184,23 @@ def _coerce_threshold_value(
         if isinstance(value, bool):
             return value
         raise ValueError(
-            f"gate_thresholds[{key!r}] expects bool; got "
-            f"{type(value).__name__}={value!r}"
+            f"gate_thresholds[{key!r}] expects bool; got {type(value).__name__}={value!r}"
         )
     if expected is int:
         if isinstance(value, bool) or not isinstance(value, int):
             raise ValueError(
-                f"gate_thresholds[{key!r}] expects int; got "
-                f"{type(value).__name__}={value!r}"
+                f"gate_thresholds[{key!r}] expects int; got {type(value).__name__}={value!r}"
             )
         return value
     if expected is float:
         if isinstance(value, bool):
-            raise ValueError(
-                f"gate_thresholds[{key!r}] expects float; got bool={value!r}"
-            )
+            raise ValueError(f"gate_thresholds[{key!r}] expects float; got bool={value!r}")
         if isinstance(value, (int, float)):
             return float(value)
         raise ValueError(
-            f"gate_thresholds[{key!r}] expects float; got "
-            f"{type(value).__name__}={value!r}"
+            f"gate_thresholds[{key!r}] expects float; got {type(value).__name__}={value!r}"
         )
-    raise RuntimeError(
-        f"unsupported expected type {expected!r} for "
-        f"gate_thresholds[{key!r}]"
-    )
+    raise RuntimeError(f"unsupported expected type {expected!r} for gate_thresholds[{key!r}]")
 
 
 def apply_gate_thresholds_overrides(
@@ -1283,15 +1234,10 @@ def _check_matrix_completeness() -> None:
     :data:`GATE_EVIDENCE_REQUIREMENTS` triggers a hard failure on
     import.
     """
-    missing = sorted(
-        member.value
-        for member in GateId
-        if member not in GATE_EVIDENCE_REQUIREMENTS
-    )
+    missing = sorted(member.value for member in GateId if member not in GATE_EVIDENCE_REQUIREMENTS)
     if missing:
         raise RuntimeError(
-            "GATE_EVIDENCE_REQUIREMENTS is missing entries for "
-            f"GateId members: {missing}"
+            f"GATE_EVIDENCE_REQUIREMENTS is missing entries for GateId members: {missing}"
         )
 
 
@@ -1326,8 +1272,7 @@ def _check_reconstructor_coverage() -> None:
     )
     if missing:
         raise RuntimeError(
-            "metadata_to_evidence is missing reconstructors for evidence "
-            f"types: {missing}"
+            f"metadata_to_evidence is missing reconstructors for evidence types: {missing}"
         )
 
 

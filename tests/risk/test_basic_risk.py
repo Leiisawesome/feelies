@@ -98,9 +98,7 @@ class TestCheckSignal:
         assert verdict.action == RiskAction.REJECT
         assert "position limit" in verdict.reason
 
-    def test_within_limits_allows(
-        self, config: RiskConfig, store: MemoryPositionStore
-    ) -> None:
+    def test_within_limits_allows(self, config: RiskConfig, store: MemoryPositionStore) -> None:
         engine = BasicRiskEngine(config)
         store.update("AAPL", 100, Decimal("10"))
         verdict = engine.check_signal(_make_signal(), store)
@@ -119,9 +117,7 @@ class TestCheckSignal:
         assert verdict.action == RiskAction.REJECT
         assert "gross exposure" in verdict.reason
 
-    def test_no_position_allows(
-        self, config: RiskConfig, store: MemoryPositionStore
-    ) -> None:
+    def test_no_position_allows(self, config: RiskConfig, store: MemoryPositionStore) -> None:
         engine = BasicRiskEngine(config)
         verdict = engine.check_signal(_make_signal(), store)
         assert verdict.action == RiskAction.ALLOW
@@ -136,9 +132,7 @@ class TestCheckOrder:
         verdict = engine.check_order(order, store)
         assert verdict.action == RiskAction.ALLOW
 
-    def test_sell_side_signed_delta(
-        self, config: RiskConfig, store: MemoryPositionStore
-    ) -> None:
+    def test_sell_side_signed_delta(self, config: RiskConfig, store: MemoryPositionStore) -> None:
         """Selling 100 from a 200 long position leaves |100| < 1000 limit."""
         engine = BasicRiskEngine(config)
         store.update("AAPL", 200, Decimal("150"))
@@ -156,9 +150,7 @@ class TestCheckOrder:
         assert verdict.action == RiskAction.REJECT
         assert "post-fill" in verdict.reason
 
-    def test_gross_exposure_exceeded_rejects(
-        self, store: MemoryPositionStore
-    ) -> None:
+    def test_gross_exposure_exceeded_rejects(self, store: MemoryPositionStore) -> None:
         cfg = RiskConfig(
             max_position_per_symbol=100_000,
             max_gross_exposure_pct=1.0,
@@ -171,9 +163,7 @@ class TestCheckOrder:
         assert verdict.action == RiskAction.REJECT
         assert "gross exposure" in verdict.reason
 
-    def test_drawdown_breached_force_flattens(
-        self, store: MemoryPositionStore
-    ) -> None:
+    def test_drawdown_breached_force_flattens(self, store: MemoryPositionStore) -> None:
         cfg = RiskConfig(
             max_position_per_symbol=100_000,
             max_gross_exposure_pct=100.0,
@@ -188,9 +178,7 @@ class TestCheckOrder:
         assert verdict.action == RiskAction.FORCE_FLATTEN
         assert "drawdown" in verdict.reason
 
-    def test_approaching_exposure_scales_down(
-        self, store: MemoryPositionStore
-    ) -> None:
+    def test_approaching_exposure_scales_down(self, store: MemoryPositionStore) -> None:
         cfg = RiskConfig(
             max_position_per_symbol=100_000,
             max_gross_exposure_pct=10.0,
@@ -207,9 +195,7 @@ class TestCheckOrder:
 
 
 class TestRegimeScaling:
-    def test_vol_breakout_reduces_position_limit(
-        self, store: MemoryPositionStore
-    ) -> None:
+    def test_vol_breakout_reduces_position_limit(self, store: MemoryPositionStore) -> None:
         """In pure vol_breakout regime, EV scale = 0.5, limit = 500."""
         regime = HMM3StateFractional()
         cfg = RiskConfig(
@@ -238,9 +224,7 @@ class TestRegimeScaling:
 class TestMarkToMarketExposureAndDrawdown:
     """Exposure caps and drawdown must use live marks, not cost basis."""
 
-    def test_mark_raises_exposure_above_cap(
-        self, store: MemoryPositionStore
-    ) -> None:
+    def test_mark_raises_exposure_above_cap(self, store: MemoryPositionStore) -> None:
         """A long that rallies hard must show up against the gross cap.
 
         Before marks: exposure = 500 × $10 = $5000 (under 10% of $100k).
@@ -290,9 +274,7 @@ class TestMarkToMarketExposureAndDrawdown:
         assert verdict.action == RiskAction.FORCE_FLATTEN
         assert "drawdown" in verdict.reason
 
-    def test_dynamic_equity_compounds_exposure_cap(
-        self, store: MemoryPositionStore
-    ) -> None:
+    def test_dynamic_equity_compounds_exposure_cap(self, store: MemoryPositionStore) -> None:
         """Exposure cap compounds with equity.
 
         After realizing a $50k gain on a $100k book, the 10% cap
@@ -317,7 +299,8 @@ class TestMarkToMarketExposureAndDrawdown:
         assert verdict.action in (RiskAction.ALLOW, RiskAction.SCALE_DOWN)
 
     def test_order_gate_uses_prospective_exposure(
-        self, store: MemoryPositionStore,
+        self,
+        store: MemoryPositionStore,
     ) -> None:
         cfg = RiskConfig(
             max_position_per_symbol=100_000,
@@ -337,7 +320,9 @@ class TestMarkToMarketExposureAndDrawdown:
 
 class TestSizedIntentMarkSelection:
     def test_live_mark_overrides_avg_entry_for_open_positions(
-        self, config: RiskConfig, store: MemoryPositionStore,
+        self,
+        config: RiskConfig,
+        store: MemoryPositionStore,
     ) -> None:
         engine = BasicRiskEngine(config)
         store.update("AAPL", 200, Decimal("100"))
@@ -526,7 +511,9 @@ class TestPortfolioOrderG12Disclosure:
 
 class TestSizedIntentScaleDownDecimal:
     def test_scale_down_quantity_uses_half_up_not_float_truncation(
-        self, config: RiskConfig, store: MemoryPositionStore,
+        self,
+        config: RiskConfig,
+        store: MemoryPositionStore,
     ) -> None:
         """10 × 0.45 = 4.5 → 5 shares (Decimal); int(10*0.45) truncates to 4."""
 

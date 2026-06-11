@@ -122,16 +122,22 @@ def _passing_capital_stage() -> CapitalStageEvidence:
 
 
 def _walk_to_live(lc: AlphaLifecycle) -> None:
-    assert lc.promote_to_paper(
-        structured_evidence=[_passing_research_acceptance()],
-    ) == []
-    assert lc.promote_to_live(
-        structured_evidence=[
-            _passing_paper_window(),
-            _passing_cpcv(),
-            _passing_dsr(),
-        ],
-    ) == []
+    assert (
+        lc.promote_to_paper(
+            structured_evidence=[_passing_research_acceptance()],
+        )
+        == []
+    )
+    assert (
+        lc.promote_to_live(
+            structured_evidence=[
+                _passing_paper_window(),
+                _passing_cpcv(),
+                _passing_dsr(),
+            ],
+        )
+        == []
+    )
 
 
 # ── promote_capital_tier ───────────────────────────────────────────
@@ -142,9 +148,7 @@ class TestPromoteCapitalTierHappyPath:
     def clock(self) -> SimulatedClock:
         return SimulatedClock(start_ns=1_700_000_000_000_000_000)
 
-    def test_small_to_scaled_keeps_state_live(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_small_to_scaled_keeps_state_live(self, clock: SimulatedClock) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         _walk_to_live(lc)
         assert lc.current_capital_tier is CapitalStageTier.SMALL_CAPITAL
@@ -159,9 +163,7 @@ class TestPromoteCapitalTierHappyPath:
     ) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         _walk_to_live(lc)
-        lc.promote_capital_tier(
-            _passing_capital_stage(), correlation_id="cap-1"
-        )
+        lc.promote_capital_tier(_passing_capital_stage(), correlation_id="cap-1")
 
         last = lc.history[-1]
         assert last.from_state == "LIVE"
@@ -199,9 +201,7 @@ class TestPromoteCapitalTierValidatorRejections:
     def clock(self) -> SimulatedClock:
         return SimulatedClock(start_ns=1_700_000_000_000_000_000)
 
-    def test_short_deployment_window_rejected(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_short_deployment_window_rejected(self, clock: SimulatedClock) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         _walk_to_live(lc)
         bad = CapitalStageEvidence(
@@ -217,9 +217,7 @@ class TestPromoteCapitalTierValidatorRejections:
         assert any("deployment_days" in e for e in errors)
         assert lc.current_capital_tier is CapitalStageTier.SMALL_CAPITAL
 
-    def test_pnl_compression_below_floor_rejected(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_pnl_compression_below_floor_rejected(self, clock: SimulatedClock) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         _walk_to_live(lc)
         bad = CapitalStageEvidence(
@@ -235,9 +233,7 @@ class TestPromoteCapitalTierValidatorRejections:
         assert any("PnL compression" in e for e in errors)
         assert lc.current_capital_tier is CapitalStageTier.SMALL_CAPITAL
 
-    def test_slippage_residual_above_ceiling_rejected(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_slippage_residual_above_ceiling_rejected(self, clock: SimulatedClock) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         _walk_to_live(lc)
         bad = CapitalStageEvidence(
@@ -252,9 +248,7 @@ class TestPromoteCapitalTierValidatorRejections:
         errors = lc.promote_capital_tier(bad)
         assert any("slippage" in e for e in errors)
 
-    def test_outgoing_tier_must_be_small_capital(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_outgoing_tier_must_be_small_capital(self, clock: SimulatedClock) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         _walk_to_live(lc)
         bad = CapitalStageEvidence(
@@ -302,16 +296,12 @@ class TestPromoteCapitalTierStatePrecondition:
 
     def test_paper_state_rejects_call(self, clock: SimulatedClock) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
-        lc.promote_to_paper(
-            structured_evidence=[_passing_research_acceptance()]
-        )
+        lc.promote_to_paper(structured_evidence=[_passing_research_acceptance()])
         errors = lc.promote_capital_tier(_passing_capital_stage())
         assert any("requires state=LIVE" in e for e in errors)
         assert lc.state is AlphaLifecycleState.PAPER
 
-    def test_quarantined_state_rejects_call(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_quarantined_state_rejects_call(self, clock: SimulatedClock) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         _walk_to_live(lc)
         lc.quarantine("manual override")
@@ -334,21 +324,15 @@ class TestCurrentCapitalTier:
 
     def test_paper_returns_none(self, clock: SimulatedClock) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
-        lc.promote_to_paper(
-            structured_evidence=[_passing_research_acceptance()]
-        )
+        lc.promote_to_paper(structured_evidence=[_passing_research_acceptance()])
         assert lc.current_capital_tier is None
 
-    def test_first_live_entry_is_small_capital(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_first_live_entry_is_small_capital(self, clock: SimulatedClock) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         _walk_to_live(lc)
         assert lc.current_capital_tier is CapitalStageTier.SMALL_CAPITAL
 
-    def test_after_promote_capital_tier_returns_scaled(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_after_promote_capital_tier_returns_scaled(self, clock: SimulatedClock) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         _walk_to_live(lc)
         lc.promote_capital_tier(_passing_capital_stage())
@@ -361,9 +345,7 @@ class TestCurrentCapitalTier:
         lc.quarantine("ic decay")
         assert lc.current_capital_tier is None
 
-    def test_relive_after_quarantine_resets_tier(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_relive_after_quarantine_resets_tier(self, clock: SimulatedClock) -> None:
         # SMALL -> SCALED, then quarantine, revalidate, re-promote: the
         # new LIVE epoch starts at SMALL_CAPITAL again.
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
@@ -372,13 +354,16 @@ class TestCurrentCapitalTier:
         lc.quarantine("ic decay")
         lc.revalidate_to_paper(structured_evidence=[_passing_revalidation()])
         # PAPER -> LIVE again
-        assert lc.promote_to_live(
-            structured_evidence=[
-                _passing_paper_window(),
-                _passing_cpcv(),
-                _passing_dsr(),
-            ],
-        ) == []
+        assert (
+            lc.promote_to_live(
+                structured_evidence=[
+                    _passing_paper_window(),
+                    _passing_cpcv(),
+                    _passing_dsr(),
+                ],
+            )
+            == []
+        )
         assert lc.state is AlphaLifecycleState.LIVE
         # New epoch must reset to SMALL_CAPITAL — the prior epoch's
         # SCALED escalation belongs to the old epoch and must not
@@ -394,17 +379,13 @@ class TestAlreadyScaledRejection:
     def clock(self) -> SimulatedClock:
         return SimulatedClock(start_ns=1_700_000_000_000_000_000)
 
-    def test_second_call_at_scaled_rejected(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_second_call_at_scaled_rejected(self, clock: SimulatedClock) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         _walk_to_live(lc)
         assert lc.promote_capital_tier(_passing_capital_stage()) == []
         # Second call: lifecycle is at SCALED already.
         errors = lc.promote_capital_tier(_passing_capital_stage())
-        assert any(
-            "tier=SCALED" in e or "already complete" in e for e in errors
-        )
+        assert any("tier=SCALED" in e or "already complete" in e for e in errors)
 
     def test_already_scaled_does_not_write_a_second_ledger_entry(
         self, clock: SimulatedClock, tmp_path: Path
@@ -430,16 +411,12 @@ class TestPromoteCapitalTierGateThresholds:
     def clock(self) -> SimulatedClock:
         return SimulatedClock(start_ns=1_700_000_000_000_000_000)
 
-    def test_relaxed_thresholds_let_borderline_pass(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_relaxed_thresholds_let_borderline_pass(self, clock: SimulatedClock) -> None:
         relaxed = GateThresholds(
             small_min_deployment_days=3,
             small_min_pnl_compression_ratio=0.4,
         )
-        lc = AlphaLifecycle(
-            alpha_id="kyle", clock=clock, gate_thresholds=relaxed
-        )
+        lc = AlphaLifecycle(alpha_id="kyle", clock=clock, gate_thresholds=relaxed)
         _walk_to_live(lc)
         borderline = CapitalStageEvidence(
             tier=CapitalStageTier.SMALL_CAPITAL,
@@ -453,13 +430,9 @@ class TestPromoteCapitalTierGateThresholds:
         assert lc.promote_capital_tier(borderline) == []
         assert lc.current_capital_tier is CapitalStageTier.SCALED
 
-    def test_tightened_thresholds_reject_default_pass(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_tightened_thresholds_reject_default_pass(self, clock: SimulatedClock) -> None:
         tightened = GateThresholds(small_min_deployment_days=30)
-        lc = AlphaLifecycle(
-            alpha_id="kyle", clock=clock, gate_thresholds=tightened
-        )
+        lc = AlphaLifecycle(alpha_id="kyle", clock=clock, gate_thresholds=tightened)
         _walk_to_live(lc)
         # default helper has deployment_days=12 < 30
         errors = lc.promote_capital_tier(_passing_capital_stage())
@@ -502,17 +475,18 @@ class _StubModule:
 
 
 def _walk_registry_to_live(registry: AlphaRegistry, alpha_id: str) -> None:
-    assert registry.promote(
-        alpha_id, structured_evidence=[_passing_research_acceptance()]
-    ) == []
-    assert registry.promote(
-        alpha_id,
-        structured_evidence=[
-            _passing_paper_window(),
-            _passing_cpcv(),
-            _passing_dsr(),
-        ],
-    ) == []
+    assert registry.promote(alpha_id, structured_evidence=[_passing_research_acceptance()]) == []
+    assert (
+        registry.promote(
+            alpha_id,
+            structured_evidence=[
+                _passing_paper_window(),
+                _passing_cpcv(),
+                _passing_dsr(),
+            ],
+        )
+        == []
+    )
 
 
 class TestRegistryPromoteCapitalTier:
@@ -520,9 +494,7 @@ class TestRegistryPromoteCapitalTier:
     def clock(self) -> SimulatedClock:
         return SimulatedClock(start_ns=1_700_000_000_000_000_000)
 
-    def test_registry_forwards_to_lifecycle(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_registry_forwards_to_lifecycle(self, clock: SimulatedClock) -> None:
         registry = AlphaRegistry(clock=clock)
         registry.register(_StubModule("kyle"))
         _walk_registry_to_live(registry, "kyle")
@@ -536,9 +508,7 @@ class TestRegistryPromoteCapitalTier:
         assert lc.state is AlphaLifecycleState.LIVE
         assert lc.current_capital_tier is CapitalStageTier.SCALED
 
-    def test_registry_unregistered_alpha_raises(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_registry_unregistered_alpha_raises(self, clock: SimulatedClock) -> None:
         registry = AlphaRegistry(clock=clock)
         with pytest.raises(KeyError, match="missing"):
             registry.promote_capital_tier("missing", _passing_capital_stage())
@@ -587,9 +557,7 @@ class TestCapitalTierCheckpointRestore:
     def clock(self) -> SimulatedClock:
         return SimulatedClock(start_ns=1_700_000_000_000_000_000)
 
-    def test_scaled_survives_checkpoint_restore_round_trip(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_scaled_survives_checkpoint_restore_round_trip(self, clock: SimulatedClock) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         _walk_to_live(lc)
         assert lc.promote_capital_tier(_passing_capital_stage()) == []
@@ -603,9 +571,7 @@ class TestCapitalTierCheckpointRestore:
         assert restored.state is AlphaLifecycleState.LIVE
         assert restored.current_capital_tier is CapitalStageTier.SCALED
 
-    def test_small_capital_round_trip_keeps_small(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_small_capital_round_trip_keeps_small(self, clock: SimulatedClock) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         _walk_to_live(lc)
         assert lc.current_capital_tier is CapitalStageTier.SMALL_CAPITAL
@@ -638,22 +604,16 @@ class TestCapitalTierCheckpointRestore:
         blob = lc.checkpoint()
 
         ledger = PromotionLedger(tmp_path / "post_restart.jsonl")
-        restored = AlphaLifecycle(
-            alpha_id="kyle", clock=clock, ledger=ledger
-        )
+        restored = AlphaLifecycle(alpha_id="kyle", clock=clock, ledger=ledger)
         restored.restore(blob)
 
         errors = restored.promote_capital_tier(_passing_capital_stage())
         assert errors  # rejected
-        assert any(
-            "tier=SCALED" in e or "already complete" in e for e in errors
-        )
+        assert any("tier=SCALED" in e or "already complete" in e for e in errors)
         # And critically: nothing was written.
         assert list(ledger.entries()) == []
 
-    def test_quarantine_after_restore_clears_tier_semantics(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_quarantine_after_restore_clears_tier_semantics(self, clock: SimulatedClock) -> None:
         # After restore + quarantine, current_capital_tier is None
         # (state != LIVE) and a subsequent revalidate -> live re-entry
         # starts a brand-new SMALL_CAPITAL epoch — the persisted
@@ -670,16 +630,17 @@ class TestCapitalTierCheckpointRestore:
         restored.quarantine("post-restart edge decay")
         assert restored.current_capital_tier is None
 
-        assert restored.revalidate_to_paper(
-            structured_evidence=[_passing_revalidation()]
-        ) == []
-        assert restored.promote_to_live(
-            structured_evidence=[
-                _passing_paper_window(),
-                _passing_cpcv(),
-                _passing_dsr(),
-            ],
-        ) == []
+        assert restored.revalidate_to_paper(structured_evidence=[_passing_revalidation()]) == []
+        assert (
+            restored.promote_to_live(
+                structured_evidence=[
+                    _passing_paper_window(),
+                    _passing_cpcv(),
+                    _passing_dsr(),
+                ],
+            )
+            == []
+        )
         # Fresh LIVE epoch: starts at SMALL_CAPITAL, NOT the
         # persisted SCALED hint from the prior process.
         assert restored.current_capital_tier is CapitalStageTier.SMALL_CAPITAL
@@ -697,33 +658,21 @@ class TestCapitalTierCheckpointRestore:
         assert payload["state"] == "RESEARCH"
 
         # PAPER: also no tier.
-        assert lc.promote_to_paper(
-            structured_evidence=[_passing_research_acceptance()]
-        ) == []
+        assert lc.promote_to_paper(structured_evidence=[_passing_research_acceptance()]) == []
         payload = _json.loads(lc.checkpoint().decode())
         assert "capital_tier" not in payload
         assert payload["state"] == "PAPER"
 
-    def test_corrupt_capital_tier_in_checkpoint_raises(
-        self, clock: SimulatedClock
-    ) -> None:
-        bad_blob = (
-            b'{"alpha_id": "kyle", "state": "LIVE", '
-            b'"capital_tier": "MEGA_CAPITAL"}'
-        )
+    def test_corrupt_capital_tier_in_checkpoint_raises(self, clock: SimulatedClock) -> None:
+        bad_blob = b'{"alpha_id": "kyle", "state": "LIVE", "capital_tier": "MEGA_CAPITAL"}'
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         with pytest.raises(ValueError, match="MEGA_CAPITAL"):
             lc.restore(bad_blob)
 
-    def test_capital_tier_on_non_live_state_rejected(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_capital_tier_on_non_live_state_rejected(self, clock: SimulatedClock) -> None:
         # A capital_tier on a non-LIVE state is malformed — reject
         # rather than silently storing a stale hint.
-        bad_blob = (
-            b'{"alpha_id": "kyle", "state": "PAPER", '
-            b'"capital_tier": "SCALED"}'
-        )
+        bad_blob = b'{"alpha_id": "kyle", "state": "PAPER", "capital_tier": "SCALED"}'
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         with pytest.raises(ValueError, match="capital_tier"):
             lc.restore(bad_blob)
@@ -735,10 +684,7 @@ class TestCapitalTierCheckpointRestore:
         # restored from a *legacy* blob (no capital_tier field), the
         # stale hint must NOT bleed through.
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
-        scaled_blob = (
-            b'{"alpha_id": "kyle", "state": "LIVE", '
-            b'"capital_tier": "SCALED"}'
-        )
+        scaled_blob = b'{"alpha_id": "kyle", "state": "LIVE", "capital_tier": "SCALED"}'
         lc.restore(scaled_blob)
         assert lc.current_capital_tier is CapitalStageTier.SCALED
 
@@ -774,11 +720,7 @@ class TestCapitalTierTriggerSentinel:
 
         history = lc.history
         live = AlphaLifecycleState.LIVE.name
-        scaled_records = [
-            r
-            for r in history
-            if r.from_state == live and r.to_state == live
-        ]
+        scaled_records = [r for r in history if r.from_state == live and r.to_state == live]
         assert len(scaled_records) == 1
         assert scaled_records[0].trigger == PROMOTE_CAPITAL_TIER_TRIGGER
 
@@ -792,9 +734,7 @@ class TestCapitalTierTriggerSentinel:
 
         live = AlphaLifecycleState.LIVE.name
         record = next(
-            r
-            for r in reversed(lc.history)
-            if r.from_state == live and r.to_state == live
+            r for r in reversed(lc.history) if r.from_state == live and r.to_state == live
         )
         assert record.metadata.get("schema_version") == EVIDENCE_SCHEMA_VERSION
         evs = metadata_to_evidence(record.metadata)

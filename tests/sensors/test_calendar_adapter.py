@@ -101,9 +101,7 @@ def test_load_reference_calendar_hash_is_deterministic() -> None:
     assert cal1.hash() == cal2.hash()
     # Locked baseline — bumping this requires intentional content edit
     # to the YAML alongside a rationalised commit message (Inv-13).
-    assert cal1.hash() == (
-        "0c76a8f8271330f0216ef781abd228fcdd423de4f4b0788c968ea9d044406974"
-    )
+    assert cal1.hash() == ("0c76a8f8271330f0216ef781abd228fcdd423de4f4b0788c968ea9d044406974")
 
 
 def test_hash_invariant_under_window_reordering(tmp_path: Path) -> None:

@@ -105,10 +105,7 @@ def _rule_classes() -> dict[str, type]:
 def test_all_nine_g16_rules_have_test_classes() -> None:
     classes = _rule_classes()
     missing = [name for name in _EXPECTED_RULES if name not in classes]
-    extra = [
-        name for name in classes
-        if name not in _EXPECTED_RULES
-    ]
+    extra = [name for name in classes if name not in _EXPECTED_RULES]
     assert not missing, (
         f"§20.12.2 #3: G16 rule test classes missing: {missing}.  "
         "Either restore the class in tests/alpha/test_gate_g16.py "
@@ -135,21 +132,17 @@ def test_every_g16_rule_has_pass_and_fail_cases() -> None:
             continue
 
         method_names = [
-            name for name, _ in inspect.getmembers(
-                cls, predicate=inspect.isfunction,
+            name
+            for name, _ in inspect.getmembers(
+                cls,
+                predicate=inspect.isfunction,
             )
             if _TEST_METHOD_RE.match(name)
         ]
 
-        pass_methods = [
-            n for n in method_names if _classify(n) == "pass"
-        ]
-        fail_methods = [
-            n for n in method_names if _classify(n) == "fail"
-        ]
-        unknown_methods = [
-            n for n in method_names if _classify(n) == "unknown"
-        ]
+        pass_methods = [n for n in method_names if _classify(n) == "pass"]
+        fail_methods = [n for n in method_names if _classify(n) == "fail"]
+        unknown_methods = [n for n in method_names if _classify(n) == "unknown"]
 
         if not pass_methods:
             failures.append(
@@ -172,10 +165,7 @@ def test_every_g16_rule_has_pass_and_fail_cases() -> None:
                 f"split.  Offenders: {unknown_methods}"
             )
 
-    assert not failures, (
-        "§20.12.2 #3 G16 rule completeness gaps:\n  - "
-        + "\n  - ".join(failures)
-    )
+    assert not failures, "§20.12.2 #3 G16 rule completeness gaps:\n  - " + "\n  - ".join(failures)
 
 
 def test_g16_property_test_module_exists() -> None:
@@ -194,10 +184,7 @@ def test_g16_property_test_module_exists() -> None:
             "Restore it or update the matrix to reflect the change."
         ) from exc
 
-    has_test = any(
-        name.startswith("test_")
-        for name in dir(module)
-    )
+    has_test = any(name.startswith("test_") for name in dir(module))
     assert has_test, (
         "tests/alpha/test_gate_g16_props.py contains no `test_*` "
         "callables — §20.12.2 #3 expects at least one property-based "

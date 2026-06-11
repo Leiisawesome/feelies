@@ -24,7 +24,11 @@ def _trade(*, ts_ns: int, price: str, size: int, sequence: int = 0) -> Trade:
 
 
 def _quote(
-    *, ts_ns: int, bid: str, ask: str, sequence: int = 0,
+    *,
+    ts_ns: int,
+    bid: str,
+    ask: str,
+    sequence: int = 0,
 ) -> NBBOQuote:
     return NBBOQuote(
         timestamp_ns=ts_ns,
@@ -76,7 +80,9 @@ def test_handcomputed_lambda_two_samples() -> None:
         params={},
     )
     r1 = sensor.update(
-        _trade(ts_ns=2_000_000_000, price="100.01", size=100), state, params={},
+        _trade(ts_ns=2_000_000_000, price="100.01", size=100),
+        state,
+        params={},
     )
     sensor.update(
         _quote(ts_ns=2_999_999_999, bid="100.03", ask="100.05", sequence=4),
@@ -84,7 +90,9 @@ def test_handcomputed_lambda_two_samples() -> None:
         params={},
     )
     r2 = sensor.update(
-        _trade(ts_ns=3_000_000_000, price="100.03", size=200), state, params={},
+        _trade(ts_ns=3_000_000_000, price="100.03", size=200),
+        state,
+        params={},
     )
     assert r1 is not None
     # First sample only: denom = n*sum_dq² - sum_dq² = 1*10000 - 10000 = 0 → 0.
@@ -123,7 +131,9 @@ def test_window_evicts_old_samples() -> None:
         params={},
     )
     sensor.update(
-        _trade(ts_ns=7_000_000_000, price="100.03", size=100), state, params={},
+        _trade(ts_ns=7_000_000_000, price="100.03", size=100),
+        state,
+        params={},
     )
     assert len(state["samples"]) == 1
 
@@ -165,13 +175,18 @@ def _drive(sensor: KyleLambda60sSensor, steps: list[tuple[str, str, int]]):
     for kind, val, size in steps:
         seq += 1
         if kind == "q":
-            ev = _quote(ts_ns=seq * 1_000_000_000, bid=val,
-                        ask=str(round(float(val) + 0.02, 2)), sequence=seq)
+            ev = _quote(
+                ts_ns=seq * 1_000_000_000,
+                bid=val,
+                ask=str(round(float(val) + 0.02, 2)),
+                sequence=seq,
+            )
             sensor.update(ev, state, params={})
         else:
             r = sensor.update(
                 _trade(ts_ns=seq * 1_000_000_000, price=val, size=size, sequence=seq),
-                state, params={},
+                state,
+                params={},
             )
             if r is not None:
                 last = r
@@ -190,11 +205,11 @@ def test_causal_alignment_pairs_dp_with_previous_trade_flow() -> None:
 
     # mids: 100.01 → 100.02 → 100.04 ; trades rising (all buy, +size).
     steps = [
-        ("q", "100.00", 0),   # mid 100.01
+        ("q", "100.00", 0),  # mid 100.01
         ("m", "100.00", 100),  # trade 1 (buy, +100); seeds, no sample
-        ("q", "100.01", 0),   # mid 100.02
+        ("q", "100.01", 0),  # mid 100.02
         ("m", "100.01", 200),  # trade 2 (buy, +200); Δp=+0.01
-        ("q", "100.03", 0),   # mid 100.04
+        ("q", "100.03", 0),  # mid 100.04
         ("m", "100.03", 300),  # trade 3 (buy, +300); Δp=+0.02
     ]
     _, s_legacy = _drive(legacy, steps)

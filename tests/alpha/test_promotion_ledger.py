@@ -141,9 +141,7 @@ class TestPromotionLedgerFiltering:
 
     def test_latest_for_returns_most_recent(self, tmp_path: Path) -> None:
         ledger = PromotionLedger(tmp_path / "ledger.jsonl")
-        ledger.append(
-            _entry(alpha_id="kyle", to_state="PAPER", timestamp_ns=1_000)
-        )
+        ledger.append(_entry(alpha_id="kyle", to_state="PAPER", timestamp_ns=1_000))
         ledger.append(_entry(alpha_id="other", timestamp_ns=2_000))
         ledger.append(
             _entry(
@@ -167,9 +165,7 @@ class TestPromotionLedgerFiltering:
 
 
 class TestPromotionLedgerJSONFormat:
-    def test_each_line_is_valid_json_with_newline_terminator(
-        self, tmp_path: Path
-    ) -> None:
+    def test_each_line_is_valid_json_with_newline_terminator(self, tmp_path: Path) -> None:
         path = tmp_path / "ledger.jsonl"
         ledger = PromotionLedger(path)
 
@@ -211,9 +207,7 @@ class TestPromotionLedgerJSONFormat:
 
 
 class TestPromotionLedgerCorruptInput:
-    def test_corrupt_json_line_raises_value_error_with_lineno(
-        self, tmp_path: Path
-    ) -> None:
+    def test_corrupt_json_line_raises_value_error_with_lineno(self, tmp_path: Path) -> None:
         path = tmp_path / "ledger.jsonl"
         ledger = PromotionLedger(path)
         ledger.append(_entry(alpha_id="ok"))
@@ -276,9 +270,7 @@ class TestPromotionLedgerEntryImmutability:
 
 
 class TestPromotionLedgerDecimalSafety:
-    def test_decimal_in_metadata_round_trips_as_string(
-        self, tmp_path: Path
-    ) -> None:
+    def test_decimal_in_metadata_round_trips_as_string(self, tmp_path: Path) -> None:
         ledger = PromotionLedger(tmp_path / "ledger.jsonl")
         original_metadata: dict[str, object] = {
             "evidence": {
@@ -297,9 +289,7 @@ class TestPromotionLedgerDecimalSafety:
         assert ev["realized_margin_ratio"] == "1.234567"
         assert ev["paper_sharpe"] == "1.05"
 
-    def test_unsupported_type_raises_type_error(
-        self, tmp_path: Path
-    ) -> None:
+    def test_unsupported_type_raises_type_error(self, tmp_path: Path) -> None:
         ledger = PromotionLedger(tmp_path / "ledger.jsonl")
         entry = _entry(metadata={"thing": object()})
 
@@ -308,9 +298,7 @@ class TestPromotionLedgerDecimalSafety:
 
 
 class TestPromotionLedgerReplayDeterminism:
-    def test_repeated_append_produces_identical_file(
-        self, tmp_path: Path
-    ) -> None:
+    def test_repeated_append_produces_identical_file(self, tmp_path: Path) -> None:
         # Build the same evidence-stream twice in two fresh ledgers and
         # assert the on-disk bytes match exactly.  This is the F-1
         # replay-determinism guarantee that downstream gate-replay

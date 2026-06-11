@@ -100,45 +100,29 @@ def clock() -> SimulatedClock:
 
 
 class TestAlphaRegistryPerAlphaThresholds:
-    def test_no_overrides_anywhere_uses_skill_defaults(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_no_overrides_anywhere_uses_skill_defaults(self, clock: SimulatedClock) -> None:
         registry = AlphaRegistry(clock=clock)
         registry.register(_StubModule("kyle"))
 
         # 92% branch coverage > skill-default 90% → passes.
-        errors = registry.promote(
-            "kyle", structured_evidence=[_passing_research_acceptance()]
-        )
+        errors = registry.promote("kyle", structured_evidence=[_passing_research_acceptance()])
         assert errors == []
-        assert (
-            registry.lifecycle_states()["kyle"]
-            == AlphaLifecycleState.PAPER
-        )
+        assert registry.lifecycle_states()["kyle"] == AlphaLifecycleState.PAPER
 
-    def test_manifest_overrides_only_tightens_threshold(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_manifest_overrides_only_tightens_threshold(self, clock: SimulatedClock) -> None:
         # No registry base; the manifest tightens branch coverage to 99%
         # so the same evidence (92%) must now fail.
         registry = AlphaRegistry(clock=clock)
         registry.register(
             _StubModule(
                 "kyle",
-                gate_thresholds_overrides={
-                    "research_min_branch_coverage_pct": 99.0
-                },
+                gate_thresholds_overrides={"research_min_branch_coverage_pct": 99.0},
             )
         )
 
-        errors = registry.promote(
-            "kyle", structured_evidence=[_passing_research_acceptance()]
-        )
+        errors = registry.promote("kyle", structured_evidence=[_passing_research_acceptance()])
         assert any("branch coverage" in e for e in errors)
-        assert (
-            registry.lifecycle_states()["kyle"]
-            == AlphaLifecycleState.RESEARCH
-        )
+        assert registry.lifecycle_states()["kyle"] == AlphaLifecycleState.RESEARCH
 
     def test_manifest_overrides_loosens_threshold_off_skill_default(
         self, clock: SimulatedClock
@@ -158,15 +142,10 @@ class TestAlphaRegistryPerAlphaThresholds:
 
         errors = registry.promote(
             "kyle",
-            structured_evidence=[
-                _passing_research_acceptance(branch_coverage_pct=80.0)
-            ],
+            structured_evidence=[_passing_research_acceptance(branch_coverage_pct=80.0)],
         )
         assert errors == []
-        assert (
-            registry.lifecycle_states()["kyle"]
-            == AlphaLifecycleState.PAPER
-        )
+        assert registry.lifecycle_states()["kyle"] == AlphaLifecycleState.PAPER
 
     def test_manifest_overrides_layered_on_top_of_registry_base(
         self, clock: SimulatedClock
@@ -177,22 +156,16 @@ class TestAlphaRegistryPerAlphaThresholds:
         # line (from manifest).  Evidence at 92%/85% must fail BOTH.
         registry = AlphaRegistry(
             clock=clock,
-            gate_thresholds=GateThresholds(
-                research_min_branch_coverage_pct=99.0
-            ),
+            gate_thresholds=GateThresholds(research_min_branch_coverage_pct=99.0),
         )
         registry.register(
             _StubModule(
                 "kyle",
-                gate_thresholds_overrides={
-                    "research_min_line_coverage_pct": 99.0
-                },
+                gate_thresholds_overrides={"research_min_line_coverage_pct": 99.0},
             )
         )
 
-        errors = registry.promote(
-            "kyle", structured_evidence=[_passing_research_acceptance()]
-        )
+        errors = registry.promote("kyle", structured_evidence=[_passing_research_acceptance()])
         assert any("branch coverage" in e for e in errors)
         assert any("line coverage" in e for e in errors)
 
@@ -203,47 +176,31 @@ class TestAlphaRegistryPerAlphaThresholds:
         # (tight).  Manifest must win.
         registry = AlphaRegistry(
             clock=clock,
-            gate_thresholds=GateThresholds(
-                research_min_branch_coverage_pct=70.0
-            ),
+            gate_thresholds=GateThresholds(research_min_branch_coverage_pct=70.0),
         )
         registry.register(
             _StubModule(
                 "kyle",
-                gate_thresholds_overrides={
-                    "research_min_branch_coverage_pct": 99.0
-                },
+                gate_thresholds_overrides={"research_min_branch_coverage_pct": 99.0},
             )
         )
 
-        errors = registry.promote(
-            "kyle", structured_evidence=[_passing_research_acceptance()]
-        )
+        errors = registry.promote("kyle", structured_evidence=[_passing_research_acceptance()])
         assert any("branch coverage" in e for e in errors)
 
-    def test_empty_manifest_overrides_treated_as_none(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_empty_manifest_overrides_treated_as_none(self, clock: SimulatedClock) -> None:
         # Registry tightens branch to 99%; manifest carries an empty
         # dict → falls back to registry base, which still rejects 92%.
         registry = AlphaRegistry(
             clock=clock,
-            gate_thresholds=GateThresholds(
-                research_min_branch_coverage_pct=99.0
-            ),
+            gate_thresholds=GateThresholds(research_min_branch_coverage_pct=99.0),
         )
-        registry.register(
-            _StubModule("kyle", gate_thresholds_overrides={})
-        )
+        registry.register(_StubModule("kyle", gate_thresholds_overrides={}))
 
-        errors = registry.promote(
-            "kyle", structured_evidence=[_passing_research_acceptance()]
-        )
+        errors = registry.promote("kyle", structured_evidence=[_passing_research_acceptance()])
         assert any("branch coverage" in e for e in errors)
 
-    def test_per_alpha_isolation_no_bleed_through(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_per_alpha_isolation_no_bleed_through(self, clock: SimulatedClock) -> None:
         # Two alphas in the same registry: 'tight' carries an
         # override; 'loose' does not.  The override must NOT affect
         # 'loose'.
@@ -251,9 +208,7 @@ class TestAlphaRegistryPerAlphaThresholds:
         registry.register(
             _StubModule(
                 "tight",
-                gate_thresholds_overrides={
-                    "research_min_branch_coverage_pct": 99.0
-                },
+                gate_thresholds_overrides={"research_min_branch_coverage_pct": 99.0},
             )
         )
         registry.register(_StubModule("loose"))
@@ -280,9 +235,7 @@ class TestAlphaRegistryPerAlphaThresholds:
         # the immutability guarantee that simplifies replay reasoning.
         registry = AlphaRegistry(
             clock=clock,
-            gate_thresholds=GateThresholds(
-                research_min_branch_coverage_pct=70.0
-            ),
+            gate_thresholds=GateThresholds(research_min_branch_coverage_pct=70.0),
         )
         registry.register(_StubModule("kyle"))
 
@@ -295,14 +248,10 @@ class TestAlphaRegistryPerAlphaThresholds:
 
         # The kyle lifecycle was bound to the *old* base, so 92%
         # coverage must still pass.
-        errors = registry.promote(
-            "kyle", structured_evidence=[_passing_research_acceptance()]
-        )
+        errors = registry.promote("kyle", structured_evidence=[_passing_research_acceptance()])
         assert errors == []
 
-    def test_lifecycle_object_carries_resolved_thresholds(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_lifecycle_object_carries_resolved_thresholds(self, clock: SimulatedClock) -> None:
         # White-box: confirm the merge path actually constructs the
         # AlphaLifecycle with the materialised thresholds (not just
         # passes through the registry's base).  ``_gate_thresholds``

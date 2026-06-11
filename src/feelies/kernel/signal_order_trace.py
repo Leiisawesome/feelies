@@ -41,7 +41,8 @@ class SignalOrderTraceRow:
 
 def _signal_ts_iso_et(ns: int) -> str:
     return datetime.fromtimestamp(
-        ns / 1e9, tz=_TZ_ET,
+        ns / 1e9,
+        tz=_TZ_ET,
     ).strftime("%Y-%m-%d %H:%M:%S.%f ET")
 
 

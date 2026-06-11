@@ -128,9 +128,7 @@ def _find_cycles(graph: dict[str, frozenset[str]]) -> list[str]:
             if node in gray:
                 cycle_start = path.index(node) if node in path else 0
                 cycle = path[cycle_start:] + [node]
-                errors.append(
-                    f"Feature dependency cycle: {' -> '.join(cycle)}"
-                )
+                errors.append(f"Feature dependency cycle: {' -> '.join(cycle)}")
                 continue
 
             white.discard(node)

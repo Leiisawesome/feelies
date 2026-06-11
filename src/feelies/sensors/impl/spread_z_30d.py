@@ -71,9 +71,9 @@ class SpreadZScoreSensor:
     def initial_state(self) -> dict[str, Any]:
         return {
             "spreads": deque(maxlen=self._window),
-            "n": 0,       # Welford element count (== len(spreads))
+            "n": 0,  # Welford element count (== len(spreads))
             "mean": 0.0,  # Welford running mean
-            "M2": 0.0,    # Welford sum of squared deviations from mean
+            "M2": 0.0,  # Welford sum of squared deviations from mean
         }
 
     def update(

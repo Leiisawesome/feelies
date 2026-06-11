@@ -28,9 +28,7 @@ from feelies.core.identifiers import SequenceGenerator
 from feelies.signals.horizon_engine import HorizonSignalEngine, RegisteredSignal
 
 
-REFERENCE_PATH = Path(
-    "alphas/sig_moc_imbalance_v1/sig_moc_imbalance_v1.alpha.yaml"
-)
+REFERENCE_PATH = Path("alphas/sig_moc_imbalance_v1/sig_moc_imbalance_v1.alpha.yaml")
 ALPHA_ID = "sig_moc_imbalance_v1"
 
 
@@ -72,17 +70,19 @@ def _engine_with_alpha(
     bus = EventBus()
     seq = SequenceGenerator()
     engine = HorizonSignalEngine(bus=bus, signal_sequence_generator=seq)
-    engine.register(RegisteredSignal(
-        alpha_id=loaded.manifest.alpha_id,
-        horizon_seconds=loaded.horizon_seconds,
-        signal=loaded.signal,
-        params=loaded.params,
-        gate=loaded.gate,
-        cost_arithmetic=loaded.cost,
-        consumed_features=loaded.consumed_features,
-        trend_mechanism=loaded.trend_mechanism_enum,
-        expected_half_life_seconds=loaded.expected_half_life_seconds,
-    ))
+    engine.register(
+        RegisteredSignal(
+            alpha_id=loaded.manifest.alpha_id,
+            horizon_seconds=loaded.horizon_seconds,
+            signal=loaded.signal,
+            params=loaded.params,
+            gate=loaded.gate,
+            cost_arithmetic=loaded.cost,
+            consumed_features=loaded.consumed_features,
+            trend_mechanism=loaded.trend_mechanism_enum,
+            expected_half_life_seconds=loaded.expected_half_life_seconds,
+        )
+    )
     captured: list[Signal] = []
     bus.subscribe(Signal, captured.append)  # type: ignore[arg-type]
     engine.attach()
@@ -152,12 +152,21 @@ def test_emits_long_when_window_active_and_ofi_positive(
 ) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_regime())
-    bus.publish(_flow_window_reading(
-        active=1.0, seconds_to_close=180.0, direction_prior=1.0,
-    ))
-    bus.publish(_snapshot(
-        active=1.0, seconds_to_close=180.0, direction_prior=1.0, ofi=0.5,
-    ))
+    bus.publish(
+        _flow_window_reading(
+            active=1.0,
+            seconds_to_close=180.0,
+            direction_prior=1.0,
+        )
+    )
+    bus.publish(
+        _snapshot(
+            active=1.0,
+            seconds_to_close=180.0,
+            direction_prior=1.0,
+            ofi=0.5,
+        )
+    )
 
     assert len(captured) == 1
     sig = captured[0]
@@ -176,12 +185,21 @@ def test_emits_short_when_direction_prior_negative_and_ofi_negative(
 ) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_regime())
-    bus.publish(_flow_window_reading(
-        active=1.0, seconds_to_close=180.0, direction_prior=-1.0,
-    ))
-    bus.publish(_snapshot(
-        active=1.0, seconds_to_close=180.0, direction_prior=-1.0, ofi=-0.5,
-    ))
+    bus.publish(
+        _flow_window_reading(
+            active=1.0,
+            seconds_to_close=180.0,
+            direction_prior=-1.0,
+        )
+    )
+    bus.publish(
+        _snapshot(
+            active=1.0,
+            seconds_to_close=180.0,
+            direction_prior=-1.0,
+            ofi=-0.5,
+        )
+    )
     assert len(captured) == 1
     assert captured[0].direction == SignalDirection.SHORT
 
@@ -191,12 +209,21 @@ def test_no_emission_when_window_inactive(
 ) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_regime())
-    bus.publish(_flow_window_reading(
-        active=0.0, seconds_to_close=-1.0, direction_prior=0.0,
-    ))
-    bus.publish(_snapshot(
-        active=0.0, seconds_to_close=-1.0, direction_prior=0.0, ofi=0.5,
-    ))
+    bus.publish(
+        _flow_window_reading(
+            active=0.0,
+            seconds_to_close=-1.0,
+            direction_prior=0.0,
+        )
+    )
+    bus.publish(
+        _snapshot(
+            active=0.0,
+            seconds_to_close=-1.0,
+            direction_prior=0.0,
+            ofi=0.5,
+        )
+    )
     assert captured == []
 
 
@@ -205,12 +232,21 @@ def test_no_emission_when_too_close_to_close(
 ) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_regime())
-    bus.publish(_flow_window_reading(
-        active=1.0, seconds_to_close=45.0, direction_prior=1.0,
-    ))
-    bus.publish(_snapshot(
-        active=1.0, seconds_to_close=45.0, direction_prior=1.0, ofi=0.5,
-    ))
+    bus.publish(
+        _flow_window_reading(
+            active=1.0,
+            seconds_to_close=45.0,
+            direction_prior=1.0,
+        )
+    )
+    bus.publish(
+        _snapshot(
+            active=1.0,
+            seconds_to_close=45.0,
+            direction_prior=1.0,
+            ofi=0.5,
+        )
+    )
     # Below 60s — gate off_condition triggers (seconds_to_window_close < 30
     # is false, but on_condition (>60) is also false → gate stays OFF).
     assert captured == []
@@ -221,12 +257,21 @@ def test_no_emission_when_ofi_disagrees_with_prior(
 ) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_regime())
-    bus.publish(_flow_window_reading(
-        active=1.0, seconds_to_close=180.0, direction_prior=1.0,
-    ))
-    bus.publish(_snapshot(
-        active=1.0, seconds_to_close=180.0, direction_prior=1.0, ofi=-0.5,
-    ))
+    bus.publish(
+        _flow_window_reading(
+            active=1.0,
+            seconds_to_close=180.0,
+            direction_prior=1.0,
+        )
+    )
+    bus.publish(
+        _snapshot(
+            active=1.0,
+            seconds_to_close=180.0,
+            direction_prior=1.0,
+            ofi=-0.5,
+        )
+    )
     assert captured == []
 
 
@@ -236,10 +281,14 @@ def test_tuple_sensor_expansion_populates_gate_bindings(
     """Smoke: the engine fans out the 4-tuple into the documented
     component names so the regime-gate DSL can reference them."""
     engine, bus, _ = _engine_with_alpha(loaded)
-    bus.publish(_flow_window_reading(
-        active=1.0, seconds_to_close=180.0, direction_prior=1.0,
-        window_id_hash=42.0,
-    ))
+    bus.publish(
+        _flow_window_reading(
+            active=1.0,
+            seconds_to_close=180.0,
+            direction_prior=1.0,
+            window_id_hash=42.0,
+        )
+    )
     cache = engine._sensor_cache  # type: ignore[attr-defined]
     assert cache[("AAPL", "scheduled_flow_window_active")] == 1.0
     assert cache[("AAPL", "seconds_to_window_close")] == 180.0

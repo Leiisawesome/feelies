@@ -45,7 +45,19 @@ M4  SIGNAL_EVALUATE (gate → HorizonSignal)
     UniverseSynchronizer barrier → CrossSectionalContext
 M5  risk: check_signal / check_sized_intent + sizing
 M6  risk: check_order + HazardExitController
+M7  ORDER_SUBMIT → M8 ORDER_ACK → M9 POSITION_UPDATE (fill reconcile) → M10 LOG_AND_METRICS
 ```
+
+> **NOTE — shorthand:** "M1–M6" is an abbreviation. The implemented micro SM is the
+> 16-state `MicroState` enum (`src/feelies/kernel/micro.py`): WAITING_FOR_MARKET_EVENT
+> → MARKET_EVENT_RECEIVED → STATE_UPDATE → SENSOR_UPDATE → HORIZON_CHECK →
+> HORIZON_AGGREGATE → SIGNAL_GATE → CROSS_SECTIONAL → FEATURE_COMPUTE →
+> SIGNAL_EVALUATE → RISK_CHECK → ORDER_DECISION → ORDER_SUBMIT → ORDER_ACK →
+> POSITION_UPDATE → LOG_AND_METRICS, with branch/loop-back edges (PORTFOLIO
+> multi-intent flush, session-flatten and working-exit paths reach the order stages
+> too). **Audit transitions against the enum and `_MICRO_TRANSITIONS`, not this
+> shorthand.** Other prompts (`audit_regime.md`, `audit_performance.md`,
+> `audit_signal_alpha.md`) use the same abbreviation and defer to this note.
 
 - **Macro SM:** session/lifecycle (open → trading → close).
 - **Micro SM:** per-event stage ordering M1–M6; strictly sequenced.
@@ -95,7 +107,10 @@ M6  risk: check_order + HazardExitController
 - Causality: `tests/causality/test_anti_lookahead.py`
 
 **Out of scope:** the internal math of sensors/signals/risk/composition (audited
-separately); focus on **ordering, sequencing, writer discipline, and layer boundaries**.
+separately), and the orchestrator's **decision/exit economics** (stop-exit, reverse,
+flatten, B4/B5 edge-cost gates, session flatten, working exits — owned by
+`audit_position_management.md`); focus on **ordering, sequencing, writer discipline,
+and layer boundaries**.
 
 ---
 

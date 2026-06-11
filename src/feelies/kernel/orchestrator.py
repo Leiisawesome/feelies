@@ -174,6 +174,7 @@ from feelies.storage.trade_journal import TradeJournal, TradeRecord
 # Avoid a hard execution-layer import at module level: imported lazily in boot()
 # or via TYPE_CHECKING to preserve the layer boundary.
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from feelies.execution.cost_model import CostModel
     from feelies.portfolio.position_store import Position
@@ -210,6 +211,7 @@ class _PostExitPositionView:
 
     def _adjusted(self, pos: "Position") -> "Position":
         from feelies.portfolio.position_store import Position
+
         new_qty = pos.quantity + self._adj
         mark = self.latest_mark(pos.symbol)
         unrealized = Decimal("0")
@@ -270,31 +272,37 @@ class _PostExitPositionView:
         return self._inner.opened_at_ns(symbol)
 
 
-_TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset({
-    OrderState.FILLED,
-    OrderState.CANCELLED,
-    OrderState.REJECTED,
-    OrderState.EXPIRED,
-})
+_TERMINAL_ORDER_STATES: frozenset[OrderState] = frozenset(
+    {
+        OrderState.FILLED,
+        OrderState.CANCELLED,
+        OrderState.REJECTED,
+        OrderState.EXPIRED,
+    }
+)
 
 # BT-5: intents that open or increase exposure (a "new entry").  These are
 # suppressed during the post-halt resolution blackout; EXIT and NO_ACTION
 # are always permitted (existing positions may always be unwound).
-_ENTRY_OPENING_INTENTS: frozenset[TradingIntent] = frozenset({
-    TradingIntent.ENTRY_LONG,
-    TradingIntent.ENTRY_SHORT,
-    TradingIntent.SCALE_UP,
-    TradingIntent.REVERSE_LONG_TO_SHORT,
-    TradingIntent.REVERSE_SHORT_TO_LONG,
-})
+_ENTRY_OPENING_INTENTS: frozenset[TradingIntent] = frozenset(
+    {
+        TradingIntent.ENTRY_LONG,
+        TradingIntent.ENTRY_SHORT,
+        TradingIntent.SCALE_UP,
+        TradingIntent.REVERSE_LONG_TO_SHORT,
+        TradingIntent.REVERSE_SHORT_TO_LONG,
+    }
+)
 
 # Synthetic strategies whose exits must always cross at MARKET — a
 # guaranteed close (stop-loss, end-of-day flatten) is never left to a
 # passive non-fill (Inv-11).
-_FORCED_MARKET_EXIT_STRATEGIES: frozenset[str] = frozenset({
-    "__stop_exit__",
-    "__session_flat__",
-})
+_FORCED_MARKET_EXIT_STRATEGIES: frozenset[str] = frozenset(
+    {
+        "__stop_exit__",
+        "__session_flat__",
+    }
+)
 
 
 def _int_to_direction(sign: int) -> SignalDirection:
@@ -445,11 +453,11 @@ class Orchestrator:
         # every ``P(...)`` gate raises UnknownIdentifierError.
         self._regime_engine_registry_name = regime_engine_registry_name
         self._intent_translator: IntentTranslator = (
-            intent_translator if intent_translator is not None
-            else SignalPositionTranslator()
+            intent_translator if intent_translator is not None else SignalPositionTranslator()
         )
         self._position_sizer: PositionSizer = (
-            position_sizer if position_sizer is not None
+            position_sizer
+            if position_sizer is not None
             else BudgetBasedSizer(regime_engine=regime_engine)
         )
         # G-1 Phase P1: optional shadow position-manager.  When both the
@@ -483,9 +491,7 @@ class Orchestrator:
         # disagrees with the winner-take-all decision — pure measurement,
         # nothing driven (parity-neutral, no-op when the sink is None).
         self._desired_target_book = DesiredTargetBook()
-        self._net_portfolio_max_abs_qty: int | None = (
-            net_shadow_portfolio_max_abs_qty
-        )
+        self._net_portfolio_max_abs_qty: int | None = net_shadow_portfolio_max_abs_qty
         self._portfolio_netter = PortfolioNetter(
             self._desired_target_book,
             portfolio_max_abs_qty=self._net_portfolio_max_abs_qty,
@@ -576,13 +582,9 @@ class Orchestrator:
         self._composition_metrics_collector = composition_metrics_collector
         self._hazard_exit_controller = hazard_exit_controller
         self._signal_arbitrator: SignalArbitrator = (
-            signal_arbitrator
-            if signal_arbitrator is not None
-            else EdgeWeightedArbitrator()
+            signal_arbitrator if signal_arbitrator is not None else EdgeWeightedArbitrator()
         )
-        self._signal_order_trace_sink: list[SignalOrderTraceRow] | None = (
-            signal_order_trace_sink
-        )
+        self._signal_order_trace_sink: list[SignalOrderTraceRow] | None = signal_order_trace_sink
         self._paper_session_recorder: PaperSessionRecorder | None = None
         self._quote_tick_in_flight: bool = False
         self._tick_quote_for_trace: NBBOQuote | None = None
@@ -644,9 +646,7 @@ class Orchestrator:
         self._realized_cost_alert_ratio: float = 1.5
         self._regime_calibration_max_quotes: int | None = None
         self._regime_calibration_quotes: tuple[NBBOQuote, ...] | None = (
-            tuple(regime_calibration_quotes)
-            if regime_calibration_quotes is not None
-            else None
+            tuple(regime_calibration_quotes) if regime_calibration_quotes is not None else None
         )
 
         self._config: Configuration | None = None
@@ -849,9 +849,7 @@ class Orchestrator:
                 strategy_id=signal.strategy_id,
                 symbol=signal.symbol,
                 signal_direction=signal.direction.name,
-                trading_intent=(
-                    trading_intent if trading_intent is not None else "—"
-                ),
+                trading_intent=(trading_intent if trading_intent is not None else "—"),
                 outcome=outcome,
                 reasons=reasons,
             )
@@ -882,9 +880,7 @@ class Orchestrator:
                     quote,
                     s,
                     outcome="NO_ORDER",
-                    reasons=(
-                        "arbitration_returned_none_dead_zone_or_conflict",
-                    ),
+                    reasons=("arbitration_returned_none_dead_zone_or_conflict",),
                 )
             return
         for s in buf_snapshot:
@@ -894,10 +890,7 @@ class Orchestrator:
                 quote,
                 s,
                 outcome="NO_ORDER",
-                reasons=(
-                    "not_selected_in_arbitration_winner_is:"
-                    f"{bus_selected.strategy_id}",
-                ),
+                reasons=(f"not_selected_in_arbitration_winner_is:{bus_selected.strategy_id}",),
             )
 
     # ── Public state accessors ──────────────────────────────────────
@@ -944,7 +937,8 @@ class Orchestrator:
         return self._alpha_registry
 
     def set_paper_session_recorder(
-        self, recorder: PaperSessionRecorder | None,
+        self,
+        recorder: PaperSessionRecorder | None,
     ) -> None:
         """Attach a forensic session recorder (PAPER mode only)."""
         self._paper_session_recorder = recorder
@@ -957,8 +951,7 @@ class Orchestrator:
         """
         if self._kill_switch is not None and self._kill_switch.is_active:
             raise SessionEntryBlockedError(
-                "Cannot start session: kill switch is active — "
-                "reset with operator audit first",
+                "Cannot start session: kill switch is active — reset with operator audit first",
             )
         if self._risk_escalation.state != RiskLevel.NORMAL:
             raise SessionEntryBlockedError(
@@ -1006,7 +999,13 @@ class Orchestrator:
         bounds = self._trading_session_bounds
         if bounds is None:
             return
-        if quote.exchange_timestamp_ns < bounds.rth_close_ns:
+        # Resolve the close for this quote's NY session date so a multi-day
+        # replay flips at each replayed day's actual close rather than the
+        # single booted ``session_date`` (which, for a CLI date range, is the
+        # stale ``event_calendar_path`` date — every replayed quote would
+        # otherwise read as already past-close and flip on the first tick).
+        effective = bounds.resolve_for_timestamp(quote.exchange_timestamp_ns)
+        if quote.exchange_timestamp_ns < effective.rth_close_ns:
             return
         set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
         if not callable(set_phase):
@@ -1074,9 +1073,7 @@ class Orchestrator:
                 self._net_staleness_k = float(config.net_staleness_k)
             if hasattr(config, "risk_max_position_per_symbol"):
                 cap = config.risk_max_position_per_symbol
-                self._net_portfolio_max_abs_qty = (
-                    int(cap) if cap and cap > 0 else None
-                )
+                self._net_portfolio_max_abs_qty = int(cap) if cap and cap > 0 else None
                 self._portfolio_netter = PortfolioNetter(
                     self._desired_target_book,
                     portfolio_max_abs_qty=self._net_portfolio_max_abs_qty,
@@ -1092,9 +1089,7 @@ class Orchestrator:
                 )
             # BT-6: seed the daily SSR list + cache the intraday trigger codes.
             if hasattr(config, "ssr_active_symbols"):
-                self._ssr_active = {
-                    s.upper() for s in config.ssr_active_symbols
-                }
+                self._ssr_active = {s.upper() for s in config.ssr_active_symbols}
             if hasattr(config, "ssr_trigger_condition_codes"):
                 self._ssr_codes = frozenset(config.ssr_trigger_condition_codes)
             if hasattr(config, "ssr_mode"):
@@ -1109,29 +1104,39 @@ class Orchestrator:
                     )
 
                     _event_cal = getattr(config, "event_calendar_path", None)
-                    cal_path = (
-                        str(_event_cal) if _event_cal is not None else None
-                    )
+                    cal_path = str(_event_cal) if _event_cal is not None else None
                     self._moc_bounds_configured = (
                         build_moc_bounds_from_platform(
                             moc_session_date=getattr(
-                                config, "moc_session_date", None,
+                                config,
+                                "moc_session_date",
+                                None,
                             ),
                             event_calendar_path=cal_path,
                             moc_cutoff_et=getattr(
-                                config, "moc_cutoff_et", "15:50",
+                                config,
+                                "moc_cutoff_et",
+                                "15:50",
                             ),
                             official_close_et=getattr(
-                                config, "official_close_et", "16:00",
+                                config,
+                                "official_close_et",
+                                "16:00",
                             ),
                             early_close_dates=getattr(
-                                config, "early_close_dates", (),
+                                config,
+                                "early_close_dates",
+                                (),
                             ),
                             early_close_moc_cutoff_et=getattr(
-                                config, "early_close_moc_cutoff_et", "12:50",
+                                config,
+                                "early_close_moc_cutoff_et",
+                                "12:50",
                             ),
                             early_close_official_close_et=getattr(
-                                config, "early_close_official_close_et", "13:00",
+                                config,
+                                "early_close_official_close_et",
+                                "13:00",
                             ),
                         )
                         is not None
@@ -1142,9 +1147,7 @@ class Orchestrator:
                 )
 
                 _event_cal = getattr(config, "event_calendar_path", None)
-                cal_path = (
-                    str(_event_cal) if _event_cal is not None else None
-                )
+                cal_path = str(_event_cal) if _event_cal is not None else None
                 self._trading_session_bounds = build_trading_session_from_platform(
                     rth_session_gating_enabled=True,
                     rth_session_date=(
@@ -1156,13 +1159,19 @@ class Orchestrator:
                     rth_close_et=getattr(config, "rth_close_et", "16:00"),
                     early_close_dates=getattr(config, "early_close_dates", ()),
                     early_close_rth_close_et=getattr(
-                        config, "early_close_rth_close_et", "13:00",
+                        config,
+                        "early_close_rth_close_et",
+                        "13:00",
                     ),
                     market_holiday_dates=getattr(
-                        config, "market_holiday_dates", (),
+                        config,
+                        "market_holiday_dates",
+                        (),
                     ),
                     no_entry_first_seconds=getattr(
-                        config, "no_entry_first_seconds", 0,
+                        config,
+                        "no_entry_first_seconds",
+                        0,
                     ),
                 )
             if hasattr(config, "execution_mode"):
@@ -1174,19 +1183,21 @@ class Orchestrator:
                 # per-order policy that may override the choice on a
                 # per-order basis.
                 self._use_passive_entries = config.execution_mode in (
-                    "passive_limit", "minimum_cost",
+                    "passive_limit",
+                    "minimum_cost",
                 )
-                if (
-                    config.execution_mode == "minimum_cost"
-                    and self._cost_model is not None
-                ):
+                if config.execution_mode == "minimum_cost" and self._cost_model is not None:
                     self._min_cost_policy = MinimumCostExecutionPolicy(
                         cost_model=self._cost_model,
                         config=MinCostPolicyConfig(
                             prefer_passive_bias_bps=Decimal(
-                                str(getattr(
-                                    config, "cost_min_passive_bias_bps", 0.0,
-                                ))
+                                str(
+                                    getattr(
+                                        config,
+                                        "cost_min_passive_bias_bps",
+                                        0.0,
+                                    )
+                                )
                             ),
                             small_order_aggressive_threshold_shares=int(
                                 getattr(
@@ -1196,11 +1207,13 @@ class Orchestrator:
                                 )
                             ),
                             min_half_spread_for_passive=Decimal(
-                                str(getattr(
-                                    config,
-                                    "cost_min_half_spread_threshold",
-                                    0.0,
-                                ))
+                                str(
+                                    getattr(
+                                        config,
+                                        "cost_min_half_spread_threshold",
+                                        0.0,
+                                    )
+                                )
                             ),
                             allow_passive_short_entry=bool(
                                 getattr(
@@ -1209,17 +1222,33 @@ class Orchestrator:
                                     True,
                                 )
                             ),
-                            market_impact_factor=Decimal(str(getattr(
-                                config, "cost_market_impact_factor", 0.5,
-                            ))),
-                            max_impact_half_spreads=Decimal(str(getattr(
-                                config, "cost_max_impact_half_spreads", 10.0,
-                            ))),
-                            passive_non_fill_probability=Decimal(str(getattr(
-                                config,
-                                "cost_min_passive_non_fill_probability",
-                                0.30,
-                            ))),
+                            market_impact_factor=Decimal(
+                                str(
+                                    getattr(
+                                        config,
+                                        "cost_market_impact_factor",
+                                        0.5,
+                                    )
+                                )
+                            ),
+                            max_impact_half_spreads=Decimal(
+                                str(
+                                    getattr(
+                                        config,
+                                        "cost_max_impact_half_spreads",
+                                        10.0,
+                                    )
+                                )
+                            ),
+                            passive_non_fill_probability=Decimal(
+                                str(
+                                    getattr(
+                                        config,
+                                        "cost_min_passive_non_fill_probability",
+                                        0.30,
+                                    )
+                                )
+                            ),
                         ),
                     )
             if hasattr(config, "platform_min_order_shares"):
@@ -1227,17 +1256,13 @@ class Orchestrator:
             if hasattr(config, "signal_min_edge_cost_ratio"):
                 self._signal_min_edge_cost_ratio = config.signal_min_edge_cost_ratio
             if hasattr(config, "reversal_min_edge_cost_multiplier"):
-                self._reversal_min_edge_cost_multiplier = (
-                    config.reversal_min_edge_cost_multiplier
-                )
+                self._reversal_min_edge_cost_multiplier = config.reversal_min_edge_cost_multiplier
             if hasattr(config, "signal_edge_cost_basis"):
                 self._signal_edge_cost_basis = config.signal_edge_cost_basis
             if hasattr(config, "realized_cost_alert_ratio"):
                 self._realized_cost_alert_ratio = config.realized_cost_alert_ratio
             if hasattr(config, "regime_calibration_max_quotes"):
-                self._regime_calibration_max_quotes = (
-                    config.regime_calibration_max_quotes
-                )
+                self._regime_calibration_max_quotes = config.regime_calibration_max_quotes
             self._macro.transition(
                 MacroState.DATA_SYNC,
                 trigger="CONFIG_VALIDATED",
@@ -1485,13 +1510,9 @@ class Orchestrator:
         if self._risk_escalation.state == RiskLevel.NORMAL:
             return
         if self._risk_escalation.state == RiskLevel.LOCKED:
-            raise RuntimeError(
-                "Risk is LOCKED — use unlock_from_lockdown() instead"
-            )
+            raise RuntimeError("Risk is LOCKED — use unlock_from_lockdown() instead")
         if self._macro.state in TRADING_MODES:
-            raise RuntimeError(
-                "Cannot reset risk during active trading — halt first"
-            )
+            raise RuntimeError("Cannot reset risk during active trading — halt first")
         self._risk_escalation.reset(
             trigger=f"human_risk_reset:{audit_token}",
         )
@@ -1522,7 +1543,9 @@ class Orchestrator:
             # closing-auction print so they don't survive shutdown
             # as ACKNOWLEDGED-but-never-filled (Inv-4 hygiene).
             expire_moc = getattr(
-                self._backend.order_router, "expire_pending_moc", None,
+                self._backend.order_router,
+                "expire_pending_moc",
+                None,
             )
             if expire_moc is not None:
                 expire_moc()
@@ -1542,23 +1565,26 @@ class Orchestrator:
         self._prune_terminal_orders()
 
         pending = [
-            oid for oid, (sm, _, _) in self._active_orders.items()
+            oid
+            for oid, (sm, _, _) in self._active_orders.items()
             if sm.state not in _TERMINAL_ORDER_STATES
         ]
         if pending:
-            self._bus.publish(Alert(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id="",
-                sequence=self._seq.next(),
-                severity=AlertSeverity.WARNING,
-                layer="kernel",
-                alert_name="pending_orders_at_shutdown",
-                message=(
-                    f"Inv-4 violation: {len(pending)} order(s) not terminally "
-                    f"resolved at shutdown"
-                ),
-                context={"order_ids": pending},
-            ))
+            self._bus.publish(
+                Alert(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id="",
+                    sequence=self._seq.next(),
+                    severity=AlertSeverity.WARNING,
+                    layer="kernel",
+                    alert_name="pending_orders_at_shutdown",
+                    message=(
+                        f"Inv-4 violation: {len(pending)} order(s) not terminally "
+                        f"resolved at shutdown"
+                    ),
+                    context={"order_ids": pending},
+                )
+            )
 
         if self._macro.can_transition(MacroState.SHUTDOWN):
             self._macro.transition(
@@ -1687,8 +1713,7 @@ class Orchestrator:
         legacy execution path bit-for-bit (Inv-A).
         """
         registry_active = (
-            self._sensor_registry is not None
-            and not self._sensor_registry.is_empty()
+            self._sensor_registry is not None and not self._sensor_registry.is_empty()
         )
         scheduler_active = self._horizon_scheduler is not None
         if not registry_active and not scheduler_active:
@@ -1762,8 +1787,7 @@ class Orchestrator:
         ``HORIZON_AGGREGATE`` or ``SIGNAL_GATE``).
         """
         registry_portfolio = (
-            self._alpha_registry is not None
-            and self._alpha_registry.has_portfolio_alphas()
+            self._alpha_registry is not None and self._alpha_registry.has_portfolio_alphas()
         )
         if not registry_portfolio and self._composition_engine is None:
             return
@@ -1807,12 +1831,14 @@ class Orchestrator:
                         self._micro.state.name,
                     )
                     self._submit_portfolio_leg_without_micro_walk(
-                        intent, correlation_id,
+                        intent,
+                        correlation_id,
                     )
                     while self._pending_sized_intents:
                         nxt = self._pending_sized_intents.popleft()
                         self._submit_portfolio_leg_without_micro_walk(
-                            nxt, correlation_id,
+                            nxt,
+                            correlation_id,
                         )
                     return
             else:
@@ -1866,7 +1892,9 @@ class Orchestrator:
             for order in orders:
                 self._track_order(order.order_id, order.side, order)
                 self._transition_order(
-                    order.order_id, OrderState.SUBMITTED, "submitted",
+                    order.order_id,
+                    OrderState.SUBMITTED,
+                    "submitted",
                 )
                 self._backend.order_router.submit(order)
                 self._bus.publish(order)
@@ -1918,7 +1946,9 @@ class Orchestrator:
         for order in orders:
             self._track_order(order.order_id, order.side, order)
             self._transition_order(
-                order.order_id, OrderState.SUBMITTED, "submitted",
+                order.order_id,
+                OrderState.SUBMITTED,
+                "submitted",
             )
             self._backend.order_router.submit(order)
             self._bus.publish(order)
@@ -1927,6 +1957,7 @@ class Orchestrator:
             self._bus.publish(ack)
             self._apply_ack_to_order(ack)
         self._reconcile_fills(acks, correlation_id)
+
     def _process_tick(self, quote: NBBOQuote) -> None:
         """Process a single tick through the full micro-state pipeline.
 
@@ -1977,15 +2008,17 @@ class Orchestrator:
                 correlation_id=cid,
             )
             self._pending_sized_intents.clear()
-            self._bus.publish(MetricEvent(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id=cid,
-                sequence=self._seq.next(),
-                layer="kernel",
-                name="tick_aborted_micro_reset",
-                value=1.0,
-                metric_type=MetricType.COUNTER,
-            ))
+            self._bus.publish(
+                MetricEvent(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=cid,
+                    sequence=self._seq.next(),
+                    layer="kernel",
+                    name="tick_aborted_micro_reset",
+                    value=1.0,
+                    metric_type=MetricType.COUNTER,
+                )
+            )
         except Exception:
             logger.critical(
                 "orchestrator: micro SM reset failed during tick-failure recovery "
@@ -1994,9 +2027,8 @@ class Orchestrator:
             )
 
         try:
-            if (
-                self._macro.state in TRADING_MODES
-                and self._macro.can_transition(MacroState.DEGRADED)
+            if self._macro.state in TRADING_MODES and self._macro.can_transition(
+                MacroState.DEGRADED
             ):
                 self._macro.transition(
                     MacroState.DEGRADED,
@@ -2043,10 +2075,8 @@ class Orchestrator:
             for sig in self._signal_buffer:
                 if (
                     sig.sequence in self._carryover_signal_sequences
-                    and
-                    sig.horizon_seconds > 0
-                    and (_now_ns - sig.timestamp_ns)
-                    <= sig.horizon_seconds * 1_000_000_000
+                    and sig.horizon_seconds > 0
+                    and (_now_ns - sig.timestamp_ns) <= sig.horizon_seconds * 1_000_000_000
                 ):
                     fresh.append(sig)
                 else:
@@ -2062,9 +2092,7 @@ class Orchestrator:
                             anchor,
                             pending,
                             outcome="NO_ORDER",
-                            reasons=(
-                                "signal_buffer_cleared_unprocessed_at_tick_boundary",
-                            ),
+                            reasons=("signal_buffer_cleared_unprocessed_at_tick_boundary",),
                         )
             self._signal_buffer.clear()
             self._signal_buffer.extend(fresh)
@@ -2079,15 +2107,17 @@ class Orchestrator:
                         trigger="KILL_SWITCH_ACTIVE",
                         correlation_id=cid,
                     )
-            self._bus.publish(MetricEvent(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id=cid,
-                sequence=self._seq.next(),
-                layer="kernel",
-                name="tick_suppressed_kill_switch",
-                value=1.0,
-                metric_type=MetricType.COUNTER,
-            ))
+            self._bus.publish(
+                MetricEvent(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=cid,
+                    sequence=self._seq.next(),
+                    layer="kernel",
+                    name="tick_suppressed_kill_switch",
+                    value=1.0,
+                    metric_type=MetricType.COUNTER,
+                )
+            )
             return
 
         # ── Runtime data integrity check (W-6) ─────────────────
@@ -2129,7 +2159,10 @@ class Orchestrator:
             # unrealized PnL, so this removes a half-spread × |qty|
             # optimistic bias that delayed the gate.
             self._positions.update_mark(
-                quote.symbol, mid, bid=quote.bid, ask=quote.ask,
+                quote.symbol,
+                mid,
+                bid=quote.bid,
+                ask=quote.ask,
             )
             # Advance the risk engine's drawdown high-water mark from
             # the freshly updated marks so peak equity reflects open
@@ -2140,13 +2173,18 @@ class Orchestrator:
             # capability is optional on the ``RiskEngine`` protocol so
             # legacy stubs without the hook are silently skipped.
             refresh_hwm = getattr(
-                self._risk_engine, "refresh_high_water_mark", None,
+                self._risk_engine,
+                "refresh_high_water_mark",
+                None,
             )
             if callable(refresh_hwm):
                 refresh_hwm(self._positions)
             if self._strategy_positions is not None:
                 self._strategy_positions.update_mark(
-                    quote.symbol, mid, bid=quote.bid, ask=quote.ask,
+                    quote.symbol,
+                    mid,
+                    bid=quote.bid,
+                    ask=quote.ask,
                 )
         # BT-16: drive the RTH-close buying-power flip purely from the
         # quote's exchange timestamp so it always aligns with router-side
@@ -2230,7 +2268,10 @@ class Orchestrator:
 
         stop_signal = self._check_stop_exit(quote)
         self._trace_buffered_signals_arbitration(
-            quote, buf_snapshot, signal, stop_signal,
+            quote,
+            buf_snapshot,
+            signal,
+            stop_signal,
         )
         # G-5 N1: maintain the standing-target book from this tick's alpha
         # signals and shadow-record where the net disagrees with the winner.
@@ -2290,10 +2331,14 @@ class Orchestrator:
                 and signal.strategy_id not in _FORCED_MARKET_EXIT_STRATEGIES
             ):
                 net_desired = self._portfolio_netter.net(
-                    signal.symbol, int(quote.timestamp_ns),
+                    signal.symbol,
+                    int(quote.timestamp_ns),
                 )
                 plan = self._plan_for_signal(
-                    signal, current_position, target_qty, quote,
+                    signal,
+                    current_position,
+                    target_qty,
+                    quote,
                     desired=net_desired,
                 )
                 decision_signal = replace(
@@ -2302,22 +2347,33 @@ class Orchestrator:
                 )
             else:
                 plan = self._plan_for_signal(
-                    signal, current_position, target_qty, quote,
+                    signal,
+                    current_position,
+                    target_qty,
+                    quote,
                 )
             intent = order_intent_from_plan(
-                plan, signal=decision_signal, current=current_position,
+                plan,
+                signal=decision_signal,
+                current=current_position,
             )
             if plan.primary_leg is PlanLeg.TRIM and plan.orders:
                 exec_style_override = plan.orders[0].style
         else:
             intent = self._intent_translator.translate(
-                signal, current_position, target_qty,
+                signal,
+                current_position,
+                target_qty,
             )
             # Phase P1: shadow the legacy decision and record divergence.
             # Pure observation — never touches orders/bus/journal/parity
             # (no-op unless both manager + sink are wired).
             self._record_position_manager_shadow(
-                signal, current_position, target_qty, intent, quote,
+                signal,
+                current_position,
+                target_qty,
+                intent,
+                quote,
             )
 
         if intent.intent == TradingIntent.NO_ACTION:
@@ -2428,9 +2484,8 @@ class Orchestrator:
         # orders for ``halt_resolution_blackout_seconds`` after a resume so
         # the reopening-auction print can stabilize.  Exits (and NO_ACTION)
         # are always permitted — an existing position may always unwind.
-        if (
-            intent.intent in _ENTRY_OPENING_INTENTS
-            and self._in_halt_blackout(intent.symbol, quote.timestamp_ns)
+        if intent.intent in _ENTRY_OPENING_INTENTS and self._in_halt_blackout(
+            intent.symbol, quote.timestamp_ns
         ):
             self._append_signal_order_trace(
                 quote,
@@ -2453,10 +2508,7 @@ class Orchestrator:
         # G-6: inside the session-flatten window, refuse any new ENTRY-
         # opening order so the book stays flat into the close.  Exits and
         # the flat-by-close unwind itself are unaffected (Inv-11).
-        if (
-            intent.intent in _ENTRY_OPENING_INTENTS
-            and self._in_session_flatten_window(quote)
-        ):
+        if intent.intent in _ENTRY_OPENING_INTENTS and self._in_session_flatten_window(quote):
             self._append_signal_order_trace(
                 quote,
                 signal,
@@ -2527,7 +2579,11 @@ class Orchestrator:
             return
 
         order, order_build_reason = self._try_build_order_from_intent(
-            intent, verdict, cid, quote, exec_style=exec_style_override,
+            intent,
+            verdict,
+            cid,
+            quote,
+            exec_style=exec_style_override,
         )
         if order is None:
             self._append_signal_order_trace(
@@ -2658,9 +2714,8 @@ class Orchestrator:
         # ``__stop_exit__`` / ``TradingIntent.EXIT`` carve-out
         # preserves Inv-11 (exits always race in).
         if self._has_pending_order_for_symbol(order.symbol):
-            if (
-                intent.intent != TradingIntent.EXIT
-                or self._has_pending_exit_for_symbol(order.symbol)
+            if intent.intent != TradingIntent.EXIT or self._has_pending_exit_for_symbol(
+                order.symbol
             ):
                 self._append_signal_order_trace(
                     quote,
@@ -2682,17 +2737,18 @@ class Orchestrator:
 
         # ── Track order lifecycle (Inv-4) ───────────────────────
         self._track_order(
-            order.order_id, order.side, order,
+            order.order_id,
+            order.side,
+            order,
             trading_intent=intent.intent.name,
         )
         # P4b: a passive working reduction (e.g. an urgency-driven TRIM)
         # gets a MARKET fallback if its resting order terminates unfilled.
-        if (
-            exec_style_override is ExecStyle.PASSIVE
-            and order.order_type is OrderType.LIMIT
-        ):
+        if exec_style_override is ExecStyle.PASSIVE and order.order_type is OrderType.LIMIT:
             self._working_exit_fallback[order.order_id] = (
-                order.symbol, order.side, order.quantity,
+                order.symbol,
+                order.side,
+                order.quantity,
             )
 
         # ── M6 → M7: ORDER_SUBMIT ──────────────────────────────
@@ -2794,27 +2850,31 @@ class Orchestrator:
                 correlation_id=correlation_id,
             )
 
-        self._bus.publish(MetricEvent(
-            timestamp_ns=now_ns,
-            correlation_id=correlation_id,
-            sequence=self._seq.next(),
-            layer="kernel",
-            name="tick_to_decision_latency_ns",
-            value=float(latency_ns),
-            metric_type=MetricType.HISTOGRAM,
-        ))
-
-        timings = getattr(self, "_tick_timings", {})
-        for name, value in timings.items():
-            self._bus.publish(MetricEvent(
+        self._bus.publish(
+            MetricEvent(
                 timestamp_ns=now_ns,
                 correlation_id=correlation_id,
                 sequence=self._seq.next(),
                 layer="kernel",
-                name=name,
-                value=float(value),
+                name="tick_to_decision_latency_ns",
+                value=float(latency_ns),
                 metric_type=MetricType.HISTOGRAM,
-            ))
+            )
+        )
+
+        timings = getattr(self, "_tick_timings", {})
+        for name, value in timings.items():
+            self._bus.publish(
+                MetricEvent(
+                    timestamp_ns=now_ns,
+                    correlation_id=correlation_id,
+                    sequence=self._seq.next(),
+                    layer="kernel",
+                    name=name,
+                    value=float(value),
+                    metric_type=MetricType.HISTOGRAM,
+                )
+            )
         self._micro.transition(
             MicroState.WAITING_FOR_MARKET_EVENT,
             trigger="tick_complete",
@@ -2830,27 +2890,29 @@ class Orchestrator:
         detail: str,
     ) -> None:
         """Surface B4 edge-vs-cost suppressions (Inv-13 provenance)."""
-        self._bus.publish(Alert(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=correlation_id,
-            sequence=self._seq.next(),
-            severity=AlertSeverity.WARNING,
-            layer="kernel",
-            alert_name="signal_edge_below_min_edge_cost_ratio_gate",
-            message=(
-                f"Order suppressed: signal.edge_estimate_bps below "
-                f"{self._signal_min_edge_cost_ratio}× round-trip cost "
-                f"({detail}; strategy_id={signal.strategy_id!r}, "
-                f"symbol={symbol!r})."
-            ),
-            context={
-                "detail": detail,
-                "strategy_id": signal.strategy_id,
-                "symbol": symbol,
-                "edge_estimate_bps": signal.edge_estimate_bps,
-                "signal_min_edge_cost_ratio": self._signal_min_edge_cost_ratio,
-            },
-        ))
+        self._bus.publish(
+            Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="signal_edge_below_min_edge_cost_ratio_gate",
+                message=(
+                    f"Order suppressed: signal.edge_estimate_bps below "
+                    f"{self._signal_min_edge_cost_ratio}× round-trip cost "
+                    f"({detail}; strategy_id={signal.strategy_id!r}, "
+                    f"symbol={symbol!r})."
+                ),
+                context={
+                    "detail": detail,
+                    "strategy_id": signal.strategy_id,
+                    "symbol": symbol,
+                    "edge_estimate_bps": signal.edge_estimate_bps,
+                    "signal_min_edge_cost_ratio": self._signal_min_edge_cost_ratio,
+                },
+            )
+        )
 
     def _signal_passes_edge_cost_gate(
         self,
@@ -2925,12 +2987,28 @@ class Orchestrator:
             is_short_entry=is_short_entry,
             bid_size=quote.bid_size,
             ask_size=quote.ask_size,
-            market_impact_factor=Decimal(str(getattr(
-                self._config, "cost_market_impact_factor", 0.5,
-            ))) if self._config else None,
-            max_impact_half_spreads=Decimal(str(getattr(
-                self._config, "cost_max_impact_half_spreads", 10.0,
-            ))) if self._config else None,
+            market_impact_factor=Decimal(
+                str(
+                    getattr(
+                        self._config,
+                        "cost_market_impact_factor",
+                        0.5,
+                    )
+                )
+            )
+            if self._config
+            else None,
+            max_impact_half_spreads=Decimal(
+                str(
+                    getattr(
+                        self._config,
+                        "cost_max_impact_half_spreads",
+                        10.0,
+                    )
+                )
+            )
+            if self._config
+            else None,
         )
 
     def _reversal_passes_combined_edge_gate(
@@ -2963,10 +3041,7 @@ class Orchestrator:
         when no cost model is wired — fail-safe: an unknown cost model
         disables the guard rather than crashing or blocking the flip.
         """
-        if (
-            self._reversal_min_edge_cost_multiplier <= 0
-            or self._cost_model is None
-        ):
+        if self._reversal_min_edge_cost_multiplier <= 0 or self._cost_model is None:
             return 0.0, 0.0, True
         # Exit leg: aggressive MARKET close of the existing position (taker,
         # never a short — closing a long is a plain sell, covering a short
@@ -2986,10 +3061,7 @@ class Orchestrator:
             entry_side=entry_side,
             quantity=entry_qty,
             quote=quote,
-            is_taker_entry=(
-                not self._use_passive_entries
-                or self._min_cost_policy is not None
-            ),
+            is_taker_entry=(not self._use_passive_entries or self._min_cost_policy is not None),
             is_short_entry=is_short_entry,
         )
         # G-1 P2: combine via the planner module's single-source-of-truth gate.
@@ -3030,21 +3102,23 @@ class Orchestrator:
                 "is unset.  Engine will run with placeholder emission "
                 "parameters; downstream P(state) gates will be near-uniform."
             )
-            self._bus.publish(Alert(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id="regime_calibration",
-                sequence=self._seq.next(),
-                severity=AlertSeverity.WARNING,
-                layer="kernel",
-                alert_name="regime_calibration_unset",
-                message=(
-                    "RegimeEngine has no calibration prefix configured "
-                    "(regime_calibration_max_quotes is None). Posteriors "
-                    "will use placeholder emission parameters; configure a "
-                    "positive integer for a causal warmup prefix."
-                ),
-                context={},
-            ))
+            self._bus.publish(
+                Alert(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id="regime_calibration",
+                    sequence=self._seq.next(),
+                    severity=AlertSeverity.WARNING,
+                    layer="kernel",
+                    alert_name="regime_calibration_unset",
+                    message=(
+                        "RegimeEngine has no calibration prefix configured "
+                        "(regime_calibration_max_quotes is None). Posteriors "
+                        "will use placeholder emission parameters; configure a "
+                        "positive integer for a causal warmup prefix."
+                    ),
+                    context={},
+                )
+            )
             return
 
         precomputed = self._regime_calibration_quotes
@@ -3052,29 +3126,23 @@ class Orchestrator:
             quotes = list(precomputed)
         else:
             quote_stream = (
-                event for event in self._event_log.replay()
-                if isinstance(event, NBBOQuote)
+                event for event in self._event_log.replay() if isinstance(event, NBBOQuote)
             )
             quotes = list(itertools.islice(quote_stream, max_q))
         if not quotes:
-            logger.info(
-                "Regime calibration skipped — no quotes in event log"
-            )
+            logger.info("Regime calibration skipped — no quotes in event log")
             return
 
         prefix_n = len(quotes)
         # Exact total only when the prefix exhausts the quote stream; otherwise
         # counting the suffix is O(full log) at boot — report a lower bound.
-        exact_total = (
-            precomputed is not None or prefix_n < max_q
-        )
+        exact_total = precomputed is not None or prefix_n < max_q
 
         ok = calibrate_fn(quotes)
         if ok:
             if exact_total:
                 logger.info(
-                    "Regime engine calibrated from %d quotes "
-                    "(prefix cap=%d, total_log=%d)",
+                    "Regime engine calibrated from %d quotes (prefix cap=%d, total_log=%d)",
                     prefix_n,
                     max_q,
                     prefix_n,
@@ -3094,33 +3162,35 @@ class Orchestrator:
                 prefix_n,
                 max_q,
             )
-            self._bus.publish(Alert(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id="regime_calibration",
-                sequence=self._seq.next(),
-                severity=AlertSeverity.CRITICAL,
-                layer="kernel",
-                alert_name="regime_calibration_failed",
-                message=(
-                    f"Regime engine calibrate() returned False "
-                    f"(prefix_quotes={prefix_n}, cap={max_q}). "
-                    "Posteriors may discriminate poorly until operators "
-                    "raise regime_calibration_max_quotes or supply cleaner data."
-                ),
-                context=(
-                    {
-                        "prefix_quote_count": prefix_n,
-                        "cap": max_q,
-                        "total_quotes_in_log": prefix_n,
-                    }
-                    if exact_total
-                    else {
-                        "prefix_quote_count": prefix_n,
-                        "cap": max_q,
-                        "total_quotes_in_log_at_least": max_q,
-                    }
-                ),
-            ))
+            self._bus.publish(
+                Alert(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id="regime_calibration",
+                    sequence=self._seq.next(),
+                    severity=AlertSeverity.CRITICAL,
+                    layer="kernel",
+                    alert_name="regime_calibration_failed",
+                    message=(
+                        f"Regime engine calibrate() returned False "
+                        f"(prefix_quotes={prefix_n}, cap={max_q}). "
+                        "Posteriors may discriminate poorly until operators "
+                        "raise regime_calibration_max_quotes or supply cleaner data."
+                    ),
+                    context=(
+                        {
+                            "prefix_quote_count": prefix_n,
+                            "cap": max_q,
+                            "total_quotes_in_log": prefix_n,
+                        }
+                        if exact_total
+                        else {
+                            "prefix_quote_count": prefix_n,
+                            "cap": max_q,
+                            "total_quotes_in_log_at_least": max_q,
+                        }
+                    ),
+                )
+            )
 
     def _update_regime(self, quote: NBBOQuote, correlation_id: str) -> None:
         """Update platform-level RegimeEngine and publish RegimeState event.
@@ -3149,7 +3219,9 @@ class Orchestrator:
             state_names=state_names,
             posteriors=tuple(posteriors),
             dominant_state=dominant_idx,
-            dominant_name=state_names[dominant_idx] if dominant_idx < len(state_names) else "unknown",
+            dominant_name=state_names[dominant_idx]
+            if dominant_idx < len(state_names)
+            else "unknown",
             posterior_entropy_nats=regime_posterior_entropy_nats(posteriors),
         )
         self._bus.publish(regime_state)
@@ -3202,18 +3274,20 @@ class Orchestrator:
         spike = self._regime_hazard_detector.detect(prev, regime_state)
         if spike is None:
             return
-        self._bus.publish(RegimeHazardSpike(
-            timestamp_ns=spike.timestamp_ns,
-            correlation_id=correlation_id,
-            sequence=self._hazard_seq.next(),
-            symbol=spike.symbol,
-            engine_name=spike.engine_name,
-            departing_state=spike.departing_state,
-            departing_posterior_prev=spike.departing_posterior_prev,
-            departing_posterior_now=spike.departing_posterior_now,
-            incoming_state=spike.incoming_state,
-            hazard_score=spike.hazard_score,
-        ))
+        self._bus.publish(
+            RegimeHazardSpike(
+                timestamp_ns=spike.timestamp_ns,
+                correlation_id=correlation_id,
+                sequence=self._hazard_seq.next(),
+                symbol=spike.symbol,
+                engine_name=spike.engine_name,
+                departing_state=spike.departing_state,
+                departing_posterior_prev=spike.departing_posterior_prev,
+                departing_posterior_now=spike.departing_posterior_now,
+                incoming_state=spike.incoming_state,
+                hazard_score=spike.hazard_score,
+            )
+        )
 
     def _escalate_risk(self, correlation_id: str) -> None:
         """Escalate through R0 → R1 → R2 → R3 → R4 → macro G8.
@@ -3270,13 +3344,15 @@ class Orchestrator:
                 reason="risk_escalation_lockdown",
                 activated_by="orchestrator",
             )
-            self._bus.publish(KillSwitchActivation(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id=correlation_id,
-                sequence=self._seq.next(),
-                reason="risk_escalation_lockdown",
-                activated_by="orchestrator",
-            ))
+            self._bus.publish(
+                KillSwitchActivation(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=correlation_id,
+                    sequence=self._seq.next(),
+                    reason="risk_escalation_lockdown",
+                    activated_by="orchestrator",
+                )
+            )
 
         self._macro.transition(
             MacroState.RISK_LOCKDOWN,
@@ -3317,9 +3393,7 @@ class Orchestrator:
             side = Side.SELL if pos.quantity > 0 else Side.BUY
             qty = abs(pos.quantity)
             seq = self._seq.next()
-            order_id = derive_order_id(
-                f"emergency_flatten:{correlation_id}:{symbol}:{seq}"
-            )
+            order_id = derive_order_id(f"emergency_flatten:{correlation_id}:{symbol}:{seq}")
 
             order = OrderRequest(
                 timestamp_ns=self._clock.now_ns(),
@@ -3357,21 +3431,22 @@ class Orchestrator:
                 # A reject / zero-fill ack still leaves the position open.
                 # Surface it as a failure so the residual alert sees it.
                 non_fill_acks = [
-                    a for a in acks
+                    a
+                    for a in acks
                     if a.order_id == order_id
                     and (a.filled_quantity or 0) == 0
                     and a.status in (OrderAckStatus.REJECTED, OrderAckStatus.CANCELLED)
                 ]
                 if non_fill_acks:
                     failures[symbol] = (
-                        f"{non_fill_acks[0].status.name}: "
-                        f"{non_fill_acks[0].reason or 'no reason'}"
+                        f"{non_fill_acks[0].status.name}: {non_fill_acks[0].reason or 'no reason'}"
                     )
             except Exception as exc:
                 logger.exception(
                     "Emergency flatten failed for %s (qty=%d) -- "
                     "position may remain open at LOCKED",
-                    symbol, pos.quantity,
+                    symbol,
+                    pos.quantity,
                 )
                 failures[symbol] = f"submit_exception: {exc!r}"
                 if order_id in self._active_orders:
@@ -3393,15 +3468,17 @@ class Orchestrator:
                 f"failures={failures}"
             )
             logger.critical(msg)
-            self._bus.publish(Alert(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id=correlation_id,
-                sequence=self._seq.next(),
-                severity=AlertSeverity.CRITICAL,
-                layer="kernel",
-                alert_name="emergency_flatten_incomplete",
-                message=msg,
-            ))
+            self._bus.publish(
+                Alert(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=correlation_id,
+                    sequence=self._seq.next(),
+                    severity=AlertSeverity.CRITICAL,
+                    layer="kernel",
+                    alert_name="emergency_flatten_incomplete",
+                    message=msg,
+                )
+            )
         return failures, residual
 
     def _check_stop_exit(self, quote: NBBOQuote) -> Signal | None:
@@ -3444,9 +3521,7 @@ class Orchestrator:
 
         # Percentage thresholds override per-share fields when set.
         stop_threshold = (
-            entry * self._stop_loss_pct
-            if self._stop_loss_pct > 0
-            else self._stop_loss_per_share
+            entry * self._stop_loss_pct if self._stop_loss_pct > 0 else self._stop_loss_per_share
         )
         trail_activate_threshold = (
             entry * self._trail_activate_pct
@@ -3459,9 +3534,11 @@ class Orchestrator:
         if stop_threshold > 0 and unrealized_per_share < -stop_threshold:
             triggered = True
 
-        if (trail_activate_threshold > 0
-                and peak >= trail_activate_threshold
-                and unrealized_per_share < peak * self._trail_pct):
+        if (
+            trail_activate_threshold > 0
+            and peak >= trail_activate_threshold
+            and unrealized_per_share < peak * self._trail_pct
+        ):
             triggered = True
 
         if not triggered:
@@ -3479,25 +3556,34 @@ class Orchestrator:
             edge_estimate_bps=0.0,
         )
 
-    def _session_flatten_deadline_ns(self) -> int | None:
+    def _session_flatten_deadline_ns(self, quote: NBBOQuote) -> int | None:
         """Exchange-time ns at/after which the session flattens, or None.
 
         ``None`` when session flatten is disabled or no RTH session is
         configured.  The deadline is ``rth_close - buffer`` so an operator
         can unwind before the closing auction.
+
+        The bounds are resolved for *this quote's* NY session date via
+        :meth:`TradingSessionBounds.resolve_for_timestamp` so a multi-day
+        replay rebinds the close per replayed day rather than pinning every
+        day to the single ``session_date`` the bounds were booted with
+        (which, for a CLI date *range*, falls back to the stale
+        ``event_calendar_path`` date and would otherwise flag every quote
+        as past-close — see ``apply_backtest_session_dates_from_cli``).
         """
         if not self._session_flatten_enabled:
             return None
         bounds = self._trading_session_bounds
         if bounds is None:
             return None
-        return bounds.rth_close_ns - (
+        effective = bounds.resolve_for_timestamp(quote.exchange_timestamp_ns)
+        return effective.rth_close_ns - (
             self._session_flatten_seconds_before_close * 1_000_000_000
         )
 
     def _in_session_flatten_window(self, quote: NBBOQuote) -> bool:
         """True once the quote crosses the session-flatten deadline."""
-        deadline = self._session_flatten_deadline_ns()
+        deadline = self._session_flatten_deadline_ns(quote)
         return deadline is not None and quote.exchange_timestamp_ns >= deadline
 
     def _check_session_flat(self, quote: NBBOQuote) -> Signal | None:
@@ -3604,25 +3690,25 @@ class Orchestrator:
         if base_target <= 0:
             return
         bd = sizer.tilt_breakdown(signal, risk_budget)
-        tilted = apply_tilt(
-            base_target, bd.combined, risk_budget.max_position_per_symbol
-        )
+        tilted = apply_tilt(base_target, bd.combined, risk_budget.max_position_per_symbol)
         if tilted == base_target:
             return
-        sink.append(SizeDivergence(
-            symbol=signal.symbol,
-            signal_sequence=signal.sequence,
-            strategy_id=signal.strategy_id,
-            edge_bps=float(signal.edge_estimate_bps),
-            base_target_qty=base_target,
-            tilted_target_qty=tilted,
-            edge_factor=bd.edge,
-            vol_factor=bd.vol,
-            inventory_factor=bd.inventory,
-            combined_tilt=bd.combined,
-            inventory_qty=bd.inventory_qty,
-            timestamp_ns=int(quote.exchange_timestamp_ns),
-        ))
+        sink.append(
+            SizeDivergence(
+                symbol=signal.symbol,
+                signal_sequence=signal.sequence,
+                strategy_id=signal.strategy_id,
+                edge_bps=float(signal.edge_estimate_bps),
+                base_target_qty=base_target,
+                tilted_target_qty=tilted,
+                edge_factor=bd.edge,
+                vol_factor=bd.vol,
+                inventory_factor=bd.inventory,
+                combined_tilt=bd.combined,
+                inventory_qty=bd.inventory_qty,
+                timestamp_ns=int(quote.exchange_timestamp_ns),
+            )
+        )
 
     def _plan_for_signal(
         self,
@@ -3643,10 +3729,14 @@ class Orchestrator:
         assert self._position_manager is not None
         if desired is None:
             default_target = getattr(
-                self._intent_translator, "_default_target", 100,
+                self._intent_translator,
+                "_default_target",
+                100,
             )
             desired = desired_from_signal(
-                signal, target_qty, default_target_quantity=default_target,
+                signal,
+                target_qty,
+                default_target_quantity=default_target,
             )
         return self._position_manager.plan(
             desired=desired,
@@ -3656,9 +3746,7 @@ class Orchestrator:
                 shadow=not self._position_manager_drive,
                 enabled=self._position_manager_drive,
                 enable_trim=self._position_manager_enable_trim,
-                trim_edge_gate_multiplier=(
-                    self._position_manager_trim_edge_gate_multiplier
-                ),
+                trim_edge_gate_multiplier=(self._position_manager_trim_edge_gate_multiplier),
                 urgency_exec=self._position_manager_urgency_exec,
             ),
         )
@@ -3696,22 +3784,22 @@ class Orchestrator:
                 direction=(target_shares > 0) - (target_shares < 0),
                 urgency=tgt.urgency,
             )
-            self._desired_target_book.put(standing_target_from_desired(
-                desired,
-                strategy_id=intent.strategy_id,
-                signal_timestamp_ns=int(intent.timestamp_ns),
-                horizon_seconds=intent.horizon_seconds,
-                staleness_k=self._net_staleness_k,
-            ))
+            self._desired_target_book.put(
+                standing_target_from_desired(
+                    desired,
+                    strategy_id=intent.strategy_id,
+                    signal_timestamp_ns=int(intent.timestamp_ns),
+                    horizon_seconds=intent.horizon_seconds,
+                    staleness_k=self._net_staleness_k,
+                )
+            )
             # Mirror the SIGNAL-path policy: horizon-zero targets cannot
             # be assigned a ``k×horizon`` expiry, so register them as
             # one-tick-only and let ``_record_net_shadow`` evict on the
             # next tick — otherwise PORTFOLIO desires would linger in
             # the book and skew cross-path ``NetDivergence`` shadows.
             if intent.horizon_seconds <= 0:
-                self._net_shadow_transient_keys.add(
-                    (intent.strategy_id, symbol)
-                )
+                self._net_shadow_transient_keys.add((intent.strategy_id, symbol))
 
     def _record_net_shadow(
         self,
@@ -3735,13 +3823,17 @@ class Orchestrator:
         if sink is None and not self._enable_portfolio_netting:
             return
         default_target = getattr(
-            self._intent_translator, "_default_target", 100,
+            self._intent_translator,
+            "_default_target",
+            100,
         )
 
         def _signed_target(sig: Signal) -> int:
             tq = self._compute_target_quantity(sig, quote)
             return desired_from_signal(
-                sig, tq, default_target_quantity=default_target,
+                sig,
+                tq,
+                default_target_quantity=default_target,
             ).target_qty
 
         # Evict standing targets we wrote from horizon-zero signals on
@@ -3762,17 +3854,17 @@ class Orchestrator:
                 self._compute_target_quantity(sig, quote),
                 default_target_quantity=default_target,
             )
-            self._desired_target_book.put(standing_target_from_desired(
-                desired,
-                strategy_id=sig.strategy_id,
-                signal_timestamp_ns=int(sig.timestamp_ns),
-                horizon_seconds=sig.horizon_seconds,
-                staleness_k=self._net_staleness_k,
-            ))
-            if sig.horizon_seconds <= 0:
-                self._net_shadow_transient_keys.add(
-                    (sig.strategy_id, sig.symbol)
+            self._desired_target_book.put(
+                standing_target_from_desired(
+                    desired,
+                    strategy_id=sig.strategy_id,
+                    signal_timestamp_ns=int(sig.timestamp_ns),
+                    horizon_seconds=sig.horizon_seconds,
+                    staleness_k=self._net_staleness_k,
                 )
+            )
+            if sig.horizon_seconds <= 0:
+                self._net_shadow_transient_keys.add((sig.strategy_id, sig.symbol))
 
         # Divergence recording is shadow-only (N1).
         if sink is None or winner is None or winner.strategy_id.startswith("__"):
@@ -3781,18 +3873,20 @@ class Orchestrator:
         net = self._portfolio_netter.net(winner.symbol, now_ns)
         winner_target = _signed_target(winner)
         if net.target_qty != winner_target:
-            sink.append(NetDivergence(
-                symbol=winner.symbol,
-                signal_sequence=winner.sequence,
-                winner_strategy_id=winner.strategy_id,
-                winner_target_qty=winner_target,
-                net_target_qty=net.target_qty,
-                contributing_alphas=len(
-                    self._desired_target_book.live_targets(winner.symbol, now_ns)
-                ),
-                timestamp_ns=int(quote.exchange_timestamp_ns),
-                detail=f"net={net.target_qty} winner={winner_target}",
-            ))
+            sink.append(
+                NetDivergence(
+                    symbol=winner.symbol,
+                    signal_sequence=winner.sequence,
+                    winner_strategy_id=winner.strategy_id,
+                    winner_target_qty=winner_target,
+                    net_target_qty=net.target_qty,
+                    contributing_alphas=len(
+                        self._desired_target_book.live_targets(winner.symbol, now_ns)
+                    ),
+                    timestamp_ns=int(quote.exchange_timestamp_ns),
+                    detail=f"net={net.target_qty} winner={winner_target}",
+                )
+            )
 
     def _record_position_manager_shadow(
         self,
@@ -3815,7 +3909,10 @@ class Orchestrator:
         if manager is None or sink is None:
             return
         plan = self._plan_for_signal(
-            signal, current_position, target_qty, quote,
+            signal,
+            current_position,
+            target_qty,
+            quote,
         )
         divergence = compare_plan_to_intent(
             intent_name=intent.intent.name,
@@ -3873,7 +3970,8 @@ class Orchestrator:
 
         # Risk check exit (should always pass — reduces exposure).
         exit_verdict = self._risk_engine.check_order(
-            exit_order, self._positions,
+            exit_order,
+            self._positions,
         )
         self._bus.publish(exit_verdict)
         if exit_verdict.action == RiskAction.FORCE_FLATTEN:
@@ -3932,7 +4030,9 @@ class Orchestrator:
         # Signed adjustment: the exit leg removes close_qty from position.
         exit_signed_adj = -close_qty if exit_side == Side.SELL else close_qty
         post_exit_positions = _PostExitPositionView(
-            self._positions, intent.symbol, exit_signed_adj,
+            self._positions,
+            intent.symbol,
+            exit_signed_adj,
         )
 
         if entry_qty >= self._min_order_shares:
@@ -3971,51 +4071,49 @@ class Orchestrator:
             if not reversal_edge_passes:
                 edge_bps = intent.signal.edge_estimate_bps
                 deficit_bps = reversal_required_bps - edge_bps
-                self._bus.publish(Alert(
-                    timestamp_ns=self._clock.now_ns(),
-                    correlation_id=cid,
-                    sequence=self._seq.next(),
-                    severity=AlertSeverity.WARNING,
-                    layer="kernel",
-                    alert_name="reversal_edge_insufficient",
-                    message=(
-                        f"Reversal entry suppressed (flatten-only): "
-                        f"edge_bps={edge_bps:.4f} below required "
-                        f"{reversal_required_bps:.4f} "
-                        f"({self._reversal_min_edge_cost_multiplier}× combined "
-                        f"round-trip cost {reversal_cost_bps:.4f}); "
-                        f"deficit={deficit_bps:.4f} bps "
-                        f"(symbol={intent.symbol!r}, "
-                        f"strategy_id={intent.strategy_id!r})."
-                    ),
-                    context={
-                        "edge_bps": edge_bps,
-                        "required_bps": reversal_required_bps,
-                        "deficit_bps": deficit_bps,
-                        "symbol": intent.symbol,
-                        "strategy_id": intent.strategy_id,
-                        "order_id": exit_order.order_id,
-                    },
-                ))
+                self._bus.publish(
+                    Alert(
+                        timestamp_ns=self._clock.now_ns(),
+                        correlation_id=cid,
+                        sequence=self._seq.next(),
+                        severity=AlertSeverity.WARNING,
+                        layer="kernel",
+                        alert_name="reversal_edge_insufficient",
+                        message=(
+                            f"Reversal entry suppressed (flatten-only): "
+                            f"edge_bps={edge_bps:.4f} below required "
+                            f"{reversal_required_bps:.4f} "
+                            f"({self._reversal_min_edge_cost_multiplier}× combined "
+                            f"round-trip cost {reversal_cost_bps:.4f}); "
+                            f"deficit={deficit_bps:.4f} bps "
+                            f"(symbol={intent.symbol!r}, "
+                            f"strategy_id={intent.strategy_id!r})."
+                        ),
+                        context={
+                            "edge_bps": edge_bps,
+                            "required_bps": reversal_required_bps,
+                            "deficit_bps": deficit_bps,
+                            "symbol": intent.symbol,
+                            "strategy_id": intent.strategy_id,
+                            "order_id": exit_order.order_id,
+                        },
+                    )
+                )
 
             # B4: edge vs cost gate for the entry leg.  Short-circuited when
             # the B5 reversal guard already suppressed the flip.
-            entry_passes_edge_gate = (
-                reversal_edge_passes
-                and self._signal_passes_edge_cost_gate(
-                    intent.signal,
-                    symbol=intent.symbol,
-                    entry_side=entry_side,
-                    quantity=entry_qty,
-                    quote=quote,
-                    is_taker_entry=(
-                        not self._use_passive_entries
-                        or self._min_cost_policy is not None
-                    ),
-                    is_short_entry=is_short,
-                    correlation_id=cid,
-                    detail="reverse_entry_leg_suppressed",
-                )
+            entry_passes_edge_gate = reversal_edge_passes and self._signal_passes_edge_cost_gate(
+                intent.signal,
+                symbol=intent.symbol,
+                entry_side=entry_side,
+                quantity=entry_qty,
+                quote=quote,
+                is_taker_entry=(
+                    not self._use_passive_entries or self._min_cost_policy is not None
+                ),
+                is_short_entry=is_short,
+                correlation_id=cid,
+                detail="reverse_entry_leg_suppressed",
             )
 
             if entry_passes_edge_gate:
@@ -4025,8 +4123,7 @@ class Orchestrator:
                 order_type = OrderType.MARKET
                 limit_price: Decimal | None = None
                 entry_is_moc = (
-                    intent.strategy_id in self._moc_strategy_ids
-                    and self._moc_bounds_configured
+                    intent.strategy_id in self._moc_strategy_ids and self._moc_bounds_configured
                 )
                 if entry_is_moc:
                     order_type = OrderType.MARKET
@@ -4049,9 +4146,7 @@ class Orchestrator:
                         use_passive = decision == "passive"
                     if use_passive:
                         order_type = OrderType.LIMIT
-                        limit_price = (
-                            quote.bid if entry_side == Side.BUY else quote.ask
-                        )
+                        limit_price = quote.bid if entry_side == Side.BUY else quote.ask
 
                 entry_order = OrderRequest(
                     timestamp_ns=self._clock.now_ns(),
@@ -4066,18 +4161,18 @@ class Orchestrator:
                     strategy_id=intent.strategy_id,
                     is_short=is_short,
                     is_moc=entry_is_moc,
-                    g12_disclosed_cost_total_bps=(
-                        intent.signal.disclosed_cost_total_bps
-                    ),
+                    g12_disclosed_cost_total_bps=(intent.signal.disclosed_cost_total_bps),
                 )
 
                 # Risk check entry leg against post-exit position view.
                 entry_rv = self._risk_engine.check_order(
-                    entry_order, post_exit_positions,
+                    entry_order,
+                    post_exit_positions,
                 )
                 self._bus.publish(entry_rv)
                 if entry_rv.action in (
-                    RiskAction.REJECT, RiskAction.FORCE_FLATTEN,
+                    RiskAction.REJECT,
+                    RiskAction.FORCE_FLATTEN,
                 ):
                     entry_order = None
                 elif entry_rv.action == RiskAction.SCALE_DOWN:
@@ -4090,7 +4185,8 @@ class Orchestrator:
                         entry_order = None
                     elif scaled != entry_order.quantity:
                         entry_order = replace(
-                            entry_order, quantity=scaled,
+                            entry_order,
+                            quantity=scaled,
                         )
 
         # ── M6 → M7: ORDER_SUBMIT ─────────────────────────────────
@@ -4105,7 +4201,9 @@ class Orchestrator:
         # entry leg below is stamped with its resulting ENTRY_* intent so it
         # is not double-counted as a separate reversal attempt.
         self._track_order(
-            exit_order.order_id, exit_order.side, exit_order,
+            exit_order.order_id,
+            exit_order.side,
+            exit_order,
             trading_intent=intent.intent.name,
         )
         self._transition_order(
@@ -4151,7 +4249,9 @@ class Orchestrator:
                 else TradingIntent.ENTRY_LONG.name
             )
             self._track_order(
-                entry_order.order_id, entry_order.side, entry_order,
+                entry_order.order_id,
+                entry_order.side,
+                entry_order,
                 trading_intent=entry_intent_name,
             )
             self._transition_order(
@@ -4244,8 +4344,7 @@ class Orchestrator:
         # F2: Exits and stop-losses bypass min_order_shares — you must be
         # able to close any position regardless of size (Inv-11 fail-safe).
         is_exit_or_stop = (
-            intent.intent == TradingIntent.EXIT
-            or intent.signal.strategy_id == "__stop_exit__"
+            intent.intent == TradingIntent.EXIT or intent.signal.strategy_id == "__stop_exit__"
         )
         if not is_exit_or_stop and quantity < self._min_order_shares:
             return None, "quantity_below_platform_min_order_shares"
@@ -4267,8 +4366,7 @@ class Orchestrator:
                 quantity=quantity,
                 quote=quote,
                 is_taker_entry=(
-                    not self._use_passive_entries
-                    or self._min_cost_policy is not None
+                    not self._use_passive_entries or self._min_cost_policy is not None
                 ),
                 is_short_entry=is_short,
                 correlation_id=correlation_id,
@@ -4298,9 +4396,7 @@ class Orchestrator:
             order_type = OrderType.LIMIT
             limit_price = quote.bid if side == Side.BUY else quote.ask
         elif self._use_passive_entries and quote is not None:
-            is_stop_exit = (
-                intent.signal.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES
-            )
+            is_stop_exit = intent.signal.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES
             if not is_stop_exit:
                 # Default: post passive at the near BBO.  When the
                 # minimum-cost policy is wired, let it override on a
@@ -4341,9 +4437,7 @@ class Orchestrator:
                 strategy_id=intent.strategy_id,
                 is_short=is_short,
                 is_moc=is_moc,
-                g12_disclosed_cost_total_bps=(
-                    intent.signal.disclosed_cost_total_bps
-                ),
+                g12_disclosed_cost_total_bps=(intent.signal.disclosed_cost_total_bps),
             ),
             None,
         )
@@ -4371,7 +4465,10 @@ class Orchestrator:
         always use MARKET (invariant 11: fail-safe).
         """
         order, _reason = self._try_build_order_from_intent(
-            intent, verdict, correlation_id, quote,
+            intent,
+            verdict,
+            correlation_id,
+            quote,
         )
         return order
 
@@ -4437,21 +4534,23 @@ class Orchestrator:
         )
         cancel_fn = getattr(self._backend.order_router, "cancel_order", None)
         if cancel_fn is None:
-            self._bus.publish(Alert(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id=order.correlation_id,
-                sequence=self._seq.next(),
-                severity=AlertSeverity.WARNING,
-                layer="kernel",
-                alert_name="cancel_order_router_unsupported",
-                message=(
-                    f"cancel_order requested for {order_id!r} but "
-                    f"{type(self._backend.order_router).__name__} has no "
-                    "cancel_order(...) — resolving SM to CANCELLED locally "
-                    "(Inv-4 shutdown hygiene)."
-                ),
-                context={"order_id": order_id},
-            ))
+            self._bus.publish(
+                Alert(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=order.correlation_id,
+                    sequence=self._seq.next(),
+                    severity=AlertSeverity.WARNING,
+                    layer="kernel",
+                    alert_name="cancel_order_router_unsupported",
+                    message=(
+                        f"cancel_order requested for {order_id!r} but "
+                        f"{type(self._backend.order_router).__name__} has no "
+                        "cancel_order(...) — resolving SM to CANCELLED locally "
+                        "(Inv-4 shutdown hygiene)."
+                    ),
+                    context={"order_id": order_id},
+                )
+            )
             sm2 = self._active_orders[order_id][0]
             if sm2.can_transition(OrderState.CANCELLED):
                 sm2.transition(
@@ -4510,24 +4609,26 @@ class Orchestrator:
         filtered: list[OrderRequest] = []
         for order in orders:
             if self._has_pending_order_for_symbol(order.symbol):
-                self._bus.publish(Alert(
-                    timestamp_ns=self._clock.now_ns(),
-                    correlation_id=correlation_id,
-                    sequence=self._seq.next(),
-                    severity=AlertSeverity.WARNING,
-                    layer="kernel",
-                    alert_name="portfolio_leg_skipped_pending_order",
-                    message=(
-                        f"PORTFOLIO leg skipped: pending order on "
-                        f"{order.symbol!r} (order_id={order.order_id!r}, "
-                        f"strategy={intent.strategy_id!r})"
-                    ),
-                    context={
-                        "order_id": order.order_id,
-                        "symbol": order.symbol,
-                        "strategy_id": intent.strategy_id,
-                    },
-                ))
+                self._bus.publish(
+                    Alert(
+                        timestamp_ns=self._clock.now_ns(),
+                        correlation_id=correlation_id,
+                        sequence=self._seq.next(),
+                        severity=AlertSeverity.WARNING,
+                        layer="kernel",
+                        alert_name="portfolio_leg_skipped_pending_order",
+                        message=(
+                            f"PORTFOLIO leg skipped: pending order on "
+                            f"{order.symbol!r} (order_id={order.order_id!r}, "
+                            f"strategy={intent.strategy_id!r})"
+                        ),
+                        context={
+                            "order_id": order.order_id,
+                            "symbol": order.symbol,
+                            "strategy_id": intent.strategy_id,
+                        },
+                    )
+                )
                 continue
             filtered.append(order)
         return filtered
@@ -4543,9 +4644,7 @@ class Orchestrator:
             return False
         exit_side = Side.SELL if pos.quantity > 0 else Side.BUY
         return any(
-            order.symbol == symbol
-            and sm.state not in _TERMINAL_ORDER_STATES
-            and side == exit_side
+            order.symbol == symbol and sm.state not in _TERMINAL_ORDER_STATES and side == exit_side
             for sm, side, order in self._active_orders.values()
         )
 
@@ -4612,23 +4711,25 @@ class Orchestrator:
         exc: BaseException,
     ) -> None:
         """Transition a tracked order to REJECTED when ``submit`` raises (Inv-11)."""
-        self._bus.publish(Alert(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=order.correlation_id,
-            sequence=self._seq.next(),
-            severity=AlertSeverity.WARNING,
-            layer="kernel",
-            alert_name="order_submit_failed",
-            message=(
-                f"order_router.submit raised for order_id={order.order_id!r} "
-                f"symbol={order.symbol!r}: {exc!r}"
-            ),
-            context={
-                "order_id": order.order_id,
-                "symbol": order.symbol,
-                "exc_type": type(exc).__name__,
-            },
-        ))
+        self._bus.publish(
+            Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=order.correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="order_submit_failed",
+                message=(
+                    f"order_router.submit raised for order_id={order.order_id!r} "
+                    f"symbol={order.symbol!r}: {exc!r}"
+                ),
+                context={
+                    "order_id": order.order_id,
+                    "symbol": order.symbol,
+                    "exc_type": type(exc).__name__,
+                },
+            )
+        )
         oid = order.order_id
         if oid not in self._active_orders:
             return
@@ -4654,24 +4755,26 @@ class Orchestrator:
         raised — the order must not remain stuck in a non-terminal SM state
         (Inv-4 / operator hygiene).
         """
-        self._bus.publish(Alert(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=order.correlation_id,
-            sequence=self._seq.next(),
-            severity=AlertSeverity.WARNING,
-            layer="kernel",
-            alert_name="order_pipeline_exception",
-            message=(
-                f"{context}: pipeline failed after submit for "
-                f"order_id={order.order_id!r} symbol={order.symbol!r}: {exc!r}"
-            ),
-            context={
-                "order_id": order.order_id,
-                "symbol": order.symbol,
-                "context": context,
-                "exc_type": type(exc).__name__,
-            },
-        ))
+        self._bus.publish(
+            Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=order.correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="order_pipeline_exception",
+                message=(
+                    f"{context}: pipeline failed after submit for "
+                    f"order_id={order.order_id!r} symbol={order.symbol!r}: {exc!r}"
+                ),
+                context={
+                    "order_id": order.order_id,
+                    "symbol": order.symbol,
+                    "context": context,
+                    "exc_type": type(exc).__name__,
+                },
+            )
+        )
         oid = order.order_id
         if oid not in self._active_orders:
             return
@@ -4741,7 +4844,9 @@ class Orchestrator:
             )
 
     def _escalate_unfilled_working_exits(
-        self, acks: list[OrderAck], correlation_id: str,
+        self,
+        acks: list[OrderAck],
+        correlation_id: str,
     ) -> None:
         """P4b: MARKET-fallback any passive working reduction that didn't fill.
 
@@ -4762,9 +4867,7 @@ class Orchestrator:
                 OrderAckStatus.EXPIRED,
             ):
                 continue
-            symbol, side, original_qty = self._working_exit_fallback.pop(
-                ack.order_id
-            )
+            symbol, side, original_qty = self._working_exit_fallback.pop(ack.order_id)
             filled = self._order_filled_qty.pop(ack.order_id, 0)
             if ack.status is OrderAckStatus.FILLED:
                 continue  # fully worked passively — no fallback needed
@@ -4772,7 +4875,11 @@ class Orchestrator:
             if residual < 1:
                 continue
             self._submit_working_exit_fallback(
-                symbol, side, residual, ack.order_id, correlation_id,
+                symbol,
+                side,
+                residual,
+                ack.order_id,
+                correlation_id,
             )
 
     def _submit_working_exit_fallback(
@@ -4784,9 +4891,7 @@ class Orchestrator:
         correlation_id: str,
     ) -> None:
         """Submit the guaranteed MARKET residual for a non-filled working exit."""
-        order_id = hashlib.sha256(
-            f"{parent_order_id}:working_fallback".encode()
-        ).hexdigest()[:16]
+        order_id = hashlib.sha256(f"{parent_order_id}:working_fallback".encode()).hexdigest()[:16]
         order = OrderRequest(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=correlation_id,
@@ -4801,7 +4906,9 @@ class Orchestrator:
         )
         self._track_order(order.order_id, order.side, order, trading_intent="EXIT")
         self._transition_order(
-            order.order_id, OrderState.SUBMITTED, "submitted",
+            order.order_id,
+            OrderState.SUBMITTED,
+            "submitted",
             correlation_id=correlation_id,
         )
         try:
@@ -4810,26 +4917,28 @@ class Orchestrator:
             self._reject_order_after_submit_failure(order, exc)
             return
         self._bus.publish(order)
-        self._bus.publish(Alert(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=correlation_id,
-            sequence=self._seq.next(),
-            severity=AlertSeverity.INFO,
-            layer="kernel",
-            alert_name="working_exit_market_fallback",
-            message=(
-                f"Working reduction did not fill passively; escalating "
-                f"{quantity} {side.name} {symbol} to MARKET "
-                f"(parent_order_id={parent_order_id})."
-            ),
-            context={
-                "symbol": symbol,
-                "side": side.name,
-                "quantity": quantity,
-                "parent_order_id": parent_order_id,
-                "fallback_order_id": order_id,
-            },
-        ))
+        self._bus.publish(
+            Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.INFO,
+                layer="kernel",
+                alert_name="working_exit_market_fallback",
+                message=(
+                    f"Working reduction did not fill passively; escalating "
+                    f"{quantity} {side.name} {symbol} to MARKET "
+                    f"(parent_order_id={parent_order_id})."
+                ),
+                context={
+                    "symbol": symbol,
+                    "side": side.name,
+                    "quantity": quantity,
+                    "parent_order_id": parent_order_id,
+                    "fallback_order_id": order_id,
+                },
+            )
+        )
 
     def _reconcile_resting_fills(self, cid: str) -> None:
         """Poll and reconcile quote-driven router acknowledgements.
@@ -4888,16 +4997,18 @@ class Orchestrator:
         """
         cid = ack.correlation_id
         if ack.order_id not in self._active_orders:
-            self._bus.publish(Alert(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id=cid,
-                sequence=self._seq.next(),
-                severity=AlertSeverity.WARNING,
-                layer="kernel",
-                alert_name="ack_for_unknown_order",
-                message=f"Ack for unknown order_id={ack.order_id}, status={ack.status.name}",
-                context={"order_id": ack.order_id, "status": ack.status.name},
-            ))
+            self._bus.publish(
+                Alert(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=cid,
+                    sequence=self._seq.next(),
+                    severity=AlertSeverity.WARNING,
+                    layer="kernel",
+                    alert_name="ack_for_unknown_order",
+                    message=f"Ack for unknown order_id={ack.order_id}, status={ack.status.name}",
+                    context={"order_id": ack.order_id, "status": ack.status.name},
+                )
+            )
             return
         sm = self._active_orders[ack.order_id][0]
 
@@ -4931,19 +5042,21 @@ class Orchestrator:
 
         if ack.status == OrderAckStatus.FILLED:
             if sm.state == OrderState.FILLED:
-                self._bus.publish(Alert(
-                    timestamp_ns=self._clock.now_ns(),
-                    correlation_id=cid,
-                    sequence=self._seq.next(),
-                    severity=AlertSeverity.WARNING,
-                    layer="kernel",
-                    alert_name="duplicate_terminal_fill_ack",
-                    message=(
-                        f"Ignoring duplicate FILLED ack for order_id={ack.order_id} "
-                        "(already terminal FILLED)."
-                    ),
-                    context={"order_id": ack.order_id},
-                ))
+                self._bus.publish(
+                    Alert(
+                        timestamp_ns=self._clock.now_ns(),
+                        correlation_id=cid,
+                        sequence=self._seq.next(),
+                        severity=AlertSeverity.WARNING,
+                        layer="kernel",
+                        alert_name="duplicate_terminal_fill_ack",
+                        message=(
+                            f"Ignoring duplicate FILLED ack for order_id={ack.order_id} "
+                            "(already terminal FILLED)."
+                        ),
+                        context={"order_id": ack.order_id},
+                    )
+                )
                 return
             if sm.can_transition(OrderState.FILLED):
                 sm.transition(
@@ -4995,23 +5108,25 @@ class Orchestrator:
 
     def _emit_ack_drop_alert(self, ack: OrderAck, sm: StateMachine[OrderState]) -> None:
         """Emit an alert when a valid broker ack cannot be applied to the order SM."""
-        self._bus.publish(Alert(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=ack.correlation_id,
-            sequence=self._seq.next(),
-            severity=AlertSeverity.WARNING,
-            layer="kernel",
-            alert_name="ack_inapplicable_to_order_state",
-            message=(
-                f"Ack status={ack.status.name} cannot be applied to order "
-                f"{ack.order_id} in state {sm.state.name}"
-            ),
-            context={
-                "order_id": ack.order_id,
-                "ack_status": ack.status.name,
-                "order_state": sm.state.name,
-            },
-        ))
+        self._bus.publish(
+            Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=ack.correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="ack_inapplicable_to_order_state",
+                message=(
+                    f"Ack status={ack.status.name} cannot be applied to order "
+                    f"{ack.order_id} in state {sm.state.name}"
+                ),
+                context={
+                    "order_id": ack.order_id,
+                    "ack_status": ack.status.name,
+                    "order_state": sm.state.name,
+                },
+            )
+        )
 
     # ── Fill reconciliation ─────────────────────────────────────────
 
@@ -5035,14 +5150,17 @@ class Orchestrator:
         """
         for ack in acks:
             # F7: debit cancel/expiry fees even when there is no fill.
-            if ack.status in (
-                OrderAckStatus.CANCELLED, OrderAckStatus.EXPIRED,
-            ) and ack.fees and ack.fees > 0:
+            if (
+                ack.status
+                in (
+                    OrderAckStatus.CANCELLED,
+                    OrderAckStatus.EXPIRED,
+                )
+                and ack.fees
+                and ack.fees > 0
+            ):
                 self._positions.debit_fees(ack.symbol, ack.fees)
-                if (
-                    self._strategy_positions is not None
-                    and ack.order_id in self._active_orders
-                ):
+                if self._strategy_positions is not None and ack.order_id in self._active_orders:
                     strategy_id = self._active_orders[ack.order_id][2].strategy_id
                     if strategy_id:
                         self._strategy_positions.debit_fees(
@@ -5051,93 +5169,99 @@ class Orchestrator:
                             ack.fees,
                         )
                 fee_position = self._positions.get(ack.symbol)
-                self._bus.publish(PositionUpdate(
-                    timestamp_ns=ack.timestamp_ns,
-                    correlation_id=correlation_id,
-                    sequence=self._seq.next(),
-                    symbol=ack.symbol,
-                    quantity=fee_position.quantity,
-                    avg_price=fee_position.avg_entry_price,
-                    realized_pnl=fee_position.realized_pnl,
-                    unrealized_pnl=fee_position.unrealized_pnl,
-                    cumulative_fees=fee_position.cumulative_fees,
-                    cost_bps=ack.cost_bps,
-                ))
+                self._bus.publish(
+                    PositionUpdate(
+                        timestamp_ns=ack.timestamp_ns,
+                        correlation_id=correlation_id,
+                        sequence=self._seq.next(),
+                        symbol=ack.symbol,
+                        quantity=fee_position.quantity,
+                        avg_price=fee_position.avg_entry_price,
+                        realized_pnl=fee_position.realized_pnl,
+                        unrealized_pnl=fee_position.unrealized_pnl,
+                        cumulative_fees=fee_position.cumulative_fees,
+                        cost_bps=ack.cost_bps,
+                    )
+                )
 
             if ack.status in (
                 OrderAckStatus.FILLED,
                 OrderAckStatus.PARTIALLY_FILLED,
             ):
                 if ack.fill_price is None or ack.filled_quantity <= 0:
-                    self._bus.publish(Alert(
-                        timestamp_ns=self._clock.now_ns(),
-                        correlation_id=correlation_id,
-                        sequence=self._seq.next(),
-                        severity=AlertSeverity.WARNING,
-                        layer="kernel",
-                        alert_name="fill_ack_missing_price_or_quantity",
-                        message=(
-                            f"{ack.status.name} ack missing economics "
-                            f"(order_id={ack.order_id!r}, symbol={ack.symbol!r}, "
-                            f"filled_quantity={ack.filled_quantity}, "
-                            f"fill_price={ack.fill_price!r})."
-                        ),
-                        context={
-                            "order_id": ack.order_id,
-                            "symbol": ack.symbol,
-                            "status": ack.status.name,
-                            "filled_quantity": ack.filled_quantity,
-                            "fill_price": str(ack.fill_price),
-                        },
-                    ))
+                    self._bus.publish(
+                        Alert(
+                            timestamp_ns=self._clock.now_ns(),
+                            correlation_id=correlation_id,
+                            sequence=self._seq.next(),
+                            severity=AlertSeverity.WARNING,
+                            layer="kernel",
+                            alert_name="fill_ack_missing_price_or_quantity",
+                            message=(
+                                f"{ack.status.name} ack missing economics "
+                                f"(order_id={ack.order_id!r}, symbol={ack.symbol!r}, "
+                                f"filled_quantity={ack.filled_quantity}, "
+                                f"fill_price={ack.fill_price!r})."
+                            ),
+                            context={
+                                "order_id": ack.order_id,
+                                "symbol": ack.symbol,
+                                "status": ack.status.name,
+                                "filled_quantity": ack.filled_quantity,
+                                "fill_price": str(ack.fill_price),
+                            },
+                        )
+                    )
                     continue
             else:
-                fill_like = (
-                    ack.fill_price is not None and ack.filled_quantity > 0
-                )
+                fill_like = ack.fill_price is not None and ack.filled_quantity > 0
                 if fill_like:
-                    self._bus.publish(Alert(
-                        timestamp_ns=self._clock.now_ns(),
-                        correlation_id=correlation_id,
-                        sequence=self._seq.next(),
-                        severity=AlertSeverity.WARNING,
-                        layer="kernel",
-                        alert_name="fill_payload_inconsistent_with_ack_status",
-                        message=(
-                            f"Ignoring fill-like payload on {ack.status.name} ack "
-                            f"(order_id={ack.order_id!r}, symbol={ack.symbol!r})."
-                        ),
-                        context={
-                            "order_id": ack.order_id,
-                            "symbol": ack.symbol,
-                            "status": ack.status.name,
-                            "filled_quantity": ack.filled_quantity,
-                            "fill_price": str(ack.fill_price),
-                        },
-                    ))
+                    self._bus.publish(
+                        Alert(
+                            timestamp_ns=self._clock.now_ns(),
+                            correlation_id=correlation_id,
+                            sequence=self._seq.next(),
+                            severity=AlertSeverity.WARNING,
+                            layer="kernel",
+                            alert_name="fill_payload_inconsistent_with_ack_status",
+                            message=(
+                                f"Ignoring fill-like payload on {ack.status.name} ack "
+                                f"(order_id={ack.order_id!r}, symbol={ack.symbol!r})."
+                            ),
+                            context={
+                                "order_id": ack.order_id,
+                                "symbol": ack.symbol,
+                                "status": ack.status.name,
+                                "filled_quantity": ack.filled_quantity,
+                                "fill_price": str(ack.fill_price),
+                            },
+                        )
+                    )
                 continue
 
             if ack.order_id not in self._active_orders:
-                self._bus.publish(Alert(
-                    timestamp_ns=self._clock.now_ns(),
-                    correlation_id=correlation_id,
-                    sequence=self._seq.next(),
-                    severity=AlertSeverity.WARNING,
-                    layer="kernel",
-                    alert_name="fill_for_unknown_order",
-                    message=(
-                        f"Fill for unknown order_id={ack.order_id}, "
-                        f"symbol={ack.symbol}, qty={ack.filled_quantity}, "
-                        f"price={ack.fill_price}. "
-                        f"Rejected: cannot determine side (Inv-11 fail-safe)."
-                    ),
-                    context={
-                        "order_id": ack.order_id,
-                        "symbol": ack.symbol,
-                        "filled_quantity": ack.filled_quantity,
-                        "fill_price": str(ack.fill_price),
-                    },
-                ))
+                self._bus.publish(
+                    Alert(
+                        timestamp_ns=self._clock.now_ns(),
+                        correlation_id=correlation_id,
+                        sequence=self._seq.next(),
+                        severity=AlertSeverity.WARNING,
+                        layer="kernel",
+                        alert_name="fill_for_unknown_order",
+                        message=(
+                            f"Fill for unknown order_id={ack.order_id}, "
+                            f"symbol={ack.symbol}, qty={ack.filled_quantity}, "
+                            f"price={ack.fill_price}. "
+                            f"Rejected: cannot determine side (Inv-11 fail-safe)."
+                        ),
+                        context={
+                            "order_id": ack.order_id,
+                            "symbol": ack.symbol,
+                            "filled_quantity": ack.filled_quantity,
+                            "fill_price": str(ack.fill_price),
+                        },
+                    )
+                )
                 continue
 
             _, side, order = self._active_orders[ack.order_id]
@@ -5149,8 +5273,7 @@ class Orchestrator:
             # escalate only the *residual* if the passive leg partly filled.
             if ack.order_id in self._working_exit_fallback:
                 self._order_filled_qty[ack.order_id] = (
-                    self._order_filled_qty.get(ack.order_id, 0)
-                    + ack.filled_quantity
+                    self._order_filled_qty.get(ack.order_id, 0) + ack.filled_quantity
                 )
 
             prev_position = self._positions.get(ack.symbol)
@@ -5183,14 +5306,14 @@ class Orchestrator:
             record_fill = getattr(self._risk_engine, "record_fill", None)
             if callable(record_fill):
                 record_fill(
-                    ack.symbol, prev_qty, position.quantity, ack.timestamp_ns,
+                    ack.symbol,
+                    prev_qty,
+                    position.quantity,
+                    ack.timestamp_ns,
                 )
 
             # ── Per-alpha fill attribution (multi-alpha mode) ──
-            if (
-                self._fill_ledger is not None
-                and self._strategy_positions is not None
-            ):
+            if self._fill_ledger is not None and self._strategy_positions is not None:
                 try:
                     alpha_allocs = self._fill_ledger.allocate_fill(
                         ack.order_id,
@@ -5207,11 +5330,12 @@ class Orchestrator:
                     alpha_allocs = []
 
                 if alpha_allocs:
-                    for (
-                        strat_id, sym, alpha_signed, price, alloc_fees
-                    ) in alpha_allocs:
+                    for strat_id, sym, alpha_signed, price, alloc_fees in alpha_allocs:
                         self._strategy_positions.update(
-                            strat_id, sym, alpha_signed, price,
+                            strat_id,
+                            sym,
+                            alpha_signed,
+                            price,
                             fees=alloc_fees,
                             timestamp_ns=ack.timestamp_ns,
                         )
@@ -5228,66 +5352,73 @@ class Orchestrator:
                         ack.fees,
                         ack.timestamp_ns,
                     )
-            self._bus.publish(PositionUpdate(
-                timestamp_ns=ack.timestamp_ns,
-                correlation_id=correlation_id,
-                sequence=self._seq.next(),
-                symbol=ack.symbol,
-                quantity=position.quantity,
-                avg_price=position.avg_entry_price,
-                realized_pnl=position.realized_pnl,
-                unrealized_pnl=position.unrealized_pnl,
-                cumulative_fees=position.cumulative_fees,
-                cost_bps=ack.cost_bps,
-            ))
+            self._bus.publish(
+                PositionUpdate(
+                    timestamp_ns=ack.timestamp_ns,
+                    correlation_id=correlation_id,
+                    sequence=self._seq.next(),
+                    symbol=ack.symbol,
+                    quantity=position.quantity,
+                    avg_price=position.avg_entry_price,
+                    realized_pnl=position.realized_pnl,
+                    unrealized_pnl=position.unrealized_pnl,
+                    cumulative_fees=position.cumulative_fees,
+                    cost_bps=ack.cost_bps,
+                )
+            )
 
             disclosed = order.g12_disclosed_cost_total_bps
             alert_ratio = self._realized_cost_alert_ratio
             if disclosed > 0 and float(ack.cost_bps) > disclosed * alert_ratio:
-                self._bus.publish(Alert(
-                    timestamp_ns=self._clock.now_ns(),
-                    correlation_id=correlation_id,
-                    sequence=self._seq.next(),
-                    severity=AlertSeverity.WARNING,
-                    layer="kernel",
-                    alert_name="g12_realized_cost_exceeds_disclosure",
-                    message=(
-                        f"Fill cost_bps={float(ack.cost_bps):.4f} exceeds "
-                        f"{alert_ratio}× G12 disclosed one-way "
-                        f"cost_total_bps={disclosed:.4f} "
-                        f"(strategy_id={order.strategy_id!r}, "
-                        f"symbol={ack.symbol!r}, order_id={ack.order_id!r})"
-                    ),
-                    context={
-                        "strategy_id": order.strategy_id,
-                        "symbol": ack.symbol,
-                        "order_id": ack.order_id,
-                        "realized_cost_bps": float(ack.cost_bps),
-                        "g12_disclosed_cost_total_bps": disclosed,
-                        "alert_ratio": alert_ratio,
-                    },
-                ))
+                self._bus.publish(
+                    Alert(
+                        timestamp_ns=self._clock.now_ns(),
+                        correlation_id=correlation_id,
+                        sequence=self._seq.next(),
+                        severity=AlertSeverity.WARNING,
+                        layer="kernel",
+                        alert_name="g12_realized_cost_exceeds_disclosure",
+                        message=(
+                            f"Fill cost_bps={float(ack.cost_bps):.4f} exceeds "
+                            f"{alert_ratio}× G12 disclosed one-way "
+                            f"cost_total_bps={disclosed:.4f} "
+                            f"(strategy_id={order.strategy_id!r}, "
+                            f"symbol={ack.symbol!r}, order_id={ack.order_id!r})"
+                        ),
+                        context={
+                            "strategy_id": order.strategy_id,
+                            "symbol": ack.symbol,
+                            "order_id": ack.order_id,
+                            "realized_cost_bps": float(ack.cost_bps),
+                            "g12_disclosed_cost_total_bps": disclosed,
+                            "alert_ratio": alert_ratio,
+                        },
+                    )
+                )
 
             if self._trade_journal is not None:
-                self._trade_journal.record(TradeRecord(
-                    order_id=ack.order_id,
-                    symbol=ack.symbol,
-                    strategy_id=order.strategy_id,
-                    side=side,
-                    requested_quantity=order.quantity,
-                    filled_quantity=ack.filled_quantity,
-                    fill_price=ack.fill_price,
-                    signal_timestamp_ns=order.timestamp_ns,
-                    submit_timestamp_ns=order.timestamp_ns,
-                    fill_timestamp_ns=ack.timestamp_ns,
-                    cost_bps=ack.cost_bps,
-                    fees=ack.fees,
-                    realized_pnl=position.realized_pnl - prev_realized,
-                    correlation_id=order.correlation_id,
-                    trading_intent=self._order_trading_intent.get(
-                        ack.order_id, "",
-                    ),
-                ))
+                self._trade_journal.record(
+                    TradeRecord(
+                        order_id=ack.order_id,
+                        symbol=ack.symbol,
+                        strategy_id=order.strategy_id,
+                        side=side,
+                        requested_quantity=order.quantity,
+                        filled_quantity=ack.filled_quantity,
+                        fill_price=ack.fill_price,
+                        signal_timestamp_ns=order.timestamp_ns,
+                        submit_timestamp_ns=order.timestamp_ns,
+                        fill_timestamp_ns=ack.timestamp_ns,
+                        cost_bps=ack.cost_bps,
+                        fees=ack.fees,
+                        realized_pnl=position.realized_pnl - prev_realized,
+                        correlation_id=order.correlation_id,
+                        trading_intent=self._order_trading_intent.get(
+                            ack.order_id,
+                            "",
+                        ),
+                    )
+                )
 
         self._prune_terminal_orders()
 
@@ -5353,7 +5484,10 @@ class Orchestrator:
                 )
             fee_remainder -= alloc_fees
             self._strategy_positions.update(
-                sid, symbol, alloc_sign * alloc_qty, fill_price,
+                sid,
+                symbol,
+                alloc_sign * alloc_qty,
+                fill_price,
                 fees=alloc_fees,
                 timestamp_ns=timestamp_ns,
             )
@@ -5375,7 +5509,8 @@ class Orchestrator:
         completed their lifecycle and can be safely discarded.
         """
         terminal_ids = [
-            oid for oid, (sm, _, _) in self._active_orders.items()
+            oid
+            for oid, (sm, _, _) in self._active_orders.items()
             if sm.state in _TERMINAL_ORDER_STATES
         ]
         for oid in terminal_ids:
@@ -5386,16 +5521,18 @@ class Orchestrator:
 
     def _emit_state_transition(self, record: TransitionRecord) -> None:
         """Emit a StateTransition event for every state machine change."""
-        self._bus.publish(StateTransition(
-            timestamp_ns=record.timestamp_ns,
-            correlation_id=record.correlation_id,
-            sequence=self._seq.next(),
-            machine_name=record.machine_name,
-            from_state=record.from_state,
-            to_state=record.to_state,
-            trigger=record.trigger,
-            metadata=record.metadata,
-        ))
+        self._bus.publish(
+            StateTransition(
+                timestamp_ns=record.timestamp_ns,
+                correlation_id=record.correlation_id,
+                sequence=self._seq.next(),
+                machine_name=record.machine_name,
+                from_state=record.from_state,
+                to_state=record.to_state,
+                trigger=record.trigger,
+                metadata=record.metadata,
+            )
+        )
 
     def _on_metric_event(self, event: Event) -> None:
         """Forward MetricEvents from the bus to the MetricCollector."""
@@ -5466,9 +5603,7 @@ class Orchestrator:
                     q,
                     event,
                     outcome="NO_ORDER",
-                    reasons=(
-                        "filtered_alpha_consumed_by_portfolio_composition",
-                    ),
+                    reasons=("filtered_alpha_consumed_by_portfolio_composition",),
                 )
             return
         self._signal_buffer.append(event)
@@ -5488,7 +5623,9 @@ class Orchestrator:
             consumed: set[str] = set()
             if self._alpha_registry is not None:
                 portfolio_alphas_fn = getattr(
-                    self._alpha_registry, "portfolio_alphas", None,
+                    self._alpha_registry,
+                    "portfolio_alphas",
+                    None,
                 )
                 if portfolio_alphas_fn is not None:
                     for module in portfolio_alphas_fn():
@@ -5555,9 +5692,7 @@ class Orchestrator:
 
     # ── Audit R1: bus-driven hazard-exit OrderRequest handler ────────
 
-    _HAZARD_EXIT_REASONS: frozenset[str] = frozenset(
-        {"HAZARD_SPIKE", "HARD_EXIT_AGE"}
-    )
+    _HAZARD_EXIT_REASONS: frozenset[str] = frozenset({"HAZARD_SPIKE", "HARD_EXIT_AGE"})
 
     def _on_bus_hazard_order(self, event: Event) -> None:
         """Route hazard-exit ``OrderRequest`` events to the execution backend.
@@ -5611,24 +5746,26 @@ class Orchestrator:
         if hv.action != RiskAction.FORCE_FLATTEN:
             self._bus.publish(hv)
         if hv.action == RiskAction.REJECT:
-            self._bus.publish(Alert(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id=event.correlation_id,
-                sequence=self._seq.next(),
-                severity=AlertSeverity.WARNING,
-                layer="kernel",
-                alert_name="hazard_exit_defensive_check_order_reject",
-                message=(
-                    "Defensive check_order returned REJECT on a hazard exit "
-                    f"(strategy_id={event.strategy_id!r}, symbol={event.symbol!r}, "
-                    f"reason={hv.reason!r}) — submitting anyway (Inv-11 exit "
-                    "fail-safe)."
-                ),
-                context={
-                    "order_id": event.order_id,
-                    "risk_reason": hv.reason,
-                },
-            ))
+            self._bus.publish(
+                Alert(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=event.correlation_id,
+                    sequence=self._seq.next(),
+                    severity=AlertSeverity.WARNING,
+                    layer="kernel",
+                    alert_name="hazard_exit_defensive_check_order_reject",
+                    message=(
+                        "Defensive check_order returned REJECT on a hazard exit "
+                        f"(strategy_id={event.strategy_id!r}, symbol={event.symbol!r}, "
+                        f"reason={hv.reason!r}) — submitting anyway (Inv-11 exit "
+                        "fail-safe)."
+                    ),
+                    context={
+                        "order_id": event.order_id,
+                        "risk_reason": hv.reason,
+                    },
+                )
+            )
         self._track_order(event.order_id, event.side, event)
         self._transition_order(
             event.order_id,
@@ -5643,7 +5780,9 @@ class Orchestrator:
                 "Hazard exit order submission failed for %s "
                 "(strategy_id=%s, reason=%s, order_id=%s); position "
                 "remains open and will be retried on the next spike.",
-                event.symbol, event.strategy_id, event.reason,
+                event.symbol,
+                event.strategy_id,
+                event.reason,
                 event.order_id,
             )
             self._reject_order_after_submit_failure(event, exc)
@@ -5669,7 +5808,9 @@ class Orchestrator:
         if not self._halt_on_codes and not self._halt_off_codes:
             return
         status = classify_halt_status(
-            trade.conditions, self._halt_on_codes, self._halt_off_codes,
+            trade.conditions,
+            self._halt_on_codes,
+            self._halt_off_codes,
         )
         if status is None:
             return
@@ -5716,16 +5857,18 @@ class Orchestrator:
         blackout_until_ns: int,
     ) -> None:
         """Publish the forensic ``SymbolHalted`` marker."""
-        self._bus.publish(SymbolHalted(
-            timestamp_ns=ts,
-            correlation_id=correlation_id,
-            sequence=self._seq.next(),
-            source_layer="kernel",
-            symbol=symbol,
-            halted=halted,
-            reason=reason,
-            blackout_until_ns=blackout_until_ns,
-        ))
+        self._bus.publish(
+            SymbolHalted(
+                timestamp_ns=ts,
+                correlation_id=correlation_id,
+                sequence=self._seq.next(),
+                source_layer="kernel",
+                symbol=symbol,
+                halted=halted,
+                reason=reason,
+                blackout_until_ns=blackout_until_ns,
+            )
+        )
 
     # ── BT-6: Reg-SHO / SSR short-sale restriction ──────────────────
 
@@ -5743,16 +5886,18 @@ class Orchestrator:
         if symbol in self._ssr_active:
             return
         self._ssr_active.add(symbol)
-        self._bus.publish(Alert(
-            timestamp_ns=trade.timestamp_ns,
-            correlation_id=trade.correlation_id,
-            sequence=self._seq.next(),
-            severity=AlertSeverity.INFO,
-            layer="kernel",
-            alert_name="ssr_triggered",
-            message=f"SSR became active intraday for {symbol} (Reg-SHO 201).",
-            context={"symbol": symbol},
-        ))
+        self._bus.publish(
+            Alert(
+                timestamp_ns=trade.timestamp_ns,
+                correlation_id=trade.correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.INFO,
+                layer="kernel",
+                alert_name="ssr_triggered",
+                message=f"SSR became active intraday for {symbol} (Reg-SHO 201).",
+                context={"symbol": symbol},
+            )
+        )
 
     # ── BT-7: static borrow-availability ────────────────────────────
 
@@ -5762,28 +5907,31 @@ class Orchestrator:
 
     def _borrow_blocks_intent(self, intent: OrderIntent) -> bool:
         """True when locate is unavailable and this intent is a short sale."""
-        return (
-            self._borrow_tier_for(intent.symbol) == BorrowTier.UNAVAILABLE
-            and is_short_sale_intent(intent)
-        )
+        return self._borrow_tier_for(
+            intent.symbol
+        ) == BorrowTier.UNAVAILABLE and is_short_sale_intent(intent)
 
     def _emit_locate_unavailable_alert(
-        self, intent: OrderIntent, correlation_id: str,
+        self,
+        intent: OrderIntent,
+        correlation_id: str,
     ) -> None:
         """Publish the forensic marker for a refused short entry (no locate)."""
-        self._bus.publish(Alert(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=correlation_id,
-            sequence=self._seq.next(),
-            severity=AlertSeverity.WARNING,
-            layer="kernel",
-            alert_name="locate_unavailable",
-            message=(
-                f"No borrow locate for {intent.symbol!r}: refused short entry "
-                f"({intent.intent.name}); retries next boundary."
-            ),
-            context={"symbol": intent.symbol, "intent": intent.intent.name},
-        ))
+        self._bus.publish(
+            Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="locate_unavailable",
+                message=(
+                    f"No borrow locate for {intent.symbol!r}: refused short entry "
+                    f"({intent.intent.name}); retries next boundary."
+                ),
+                context={"symbol": intent.symbol, "intent": intent.intent.name},
+            )
+        )
 
     def _ssr_blocks_intent(self, intent: OrderIntent) -> bool:
         """True when SSR (refuse_short) must refuse this short-opening order."""
@@ -5792,22 +5940,26 @@ class Orchestrator:
         return is_short_sale_intent(intent)
 
     def _emit_ssr_suppression_alert(
-        self, intent: OrderIntent, correlation_id: str,
+        self,
+        intent: OrderIntent,
+        correlation_id: str,
     ) -> None:
         """Publish the forensic marker for a refused SSR short entry."""
-        self._bus.publish(Alert(
-            timestamp_ns=self._clock.now_ns(),
-            correlation_id=correlation_id,
-            sequence=self._seq.next(),
-            severity=AlertSeverity.WARNING,
-            layer="kernel",
-            alert_name="ssr_short_suppressed",
-            message=(
-                f"SSR active for {intent.symbol!r}: refused short entry "
-                f"({intent.intent.name}); retries next boundary (Reg-SHO 201)."
-            ),
-            context={"symbol": intent.symbol, "intent": intent.intent.name},
-        ))
+        self._bus.publish(
+            Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="ssr_short_suppressed",
+                message=(
+                    f"SSR active for {intent.symbol!r}: refused short entry "
+                    f"({intent.intent.name}); retries next boundary (Reg-SHO 201)."
+                ),
+                context={"symbol": intent.symbol, "intent": intent.intent.name},
+            )
+        )
 
     def _data_health_blocks_trading(self, symbol: str, correlation_id: str) -> bool:
         """Return True when the Massive normalizer forbids consuming this symbol.
@@ -5827,9 +5979,7 @@ class Orchestrator:
             return False
         health = self._normalizer.health(symbol)
         cfg_syms = (
-            {s.upper() for s in self._config.symbols}
-            if self._config is not None
-            else frozenset()
+            {s.upper() for s in self._config.symbols} if self._config is not None else frozenset()
         )
         if getattr(self._config, "strict_normalizer_symbol_coverage", False):
             if symbol.upper() in cfg_syms:
@@ -5847,7 +5997,9 @@ class Orchestrator:
             # CORRUPTED is terminal — leaving an open position to mark at
             # the last-known quote would carry stale risk through DEGRADED.
             self._force_flatten_symbol_on_degrade(
-                symbol, correlation_id, reason="DATA_CORRUPTED",
+                symbol,
+                correlation_id,
+                reason="DATA_CORRUPTED",
             )
             if self._macro.can_transition(MacroState.DEGRADED):
                 self._macro.transition(
@@ -5871,7 +6023,9 @@ class Orchestrator:
             # Unwind the affected symbol at the last-known mark so the
             # book doesn't carry stale exposure through the gap window.
             self._force_flatten_symbol_on_degrade(
-                symbol, correlation_id, reason="DATA_GAP_DETECTED",
+                symbol,
+                correlation_id,
+                reason="DATA_GAP_DETECTED",
             )
             if self._macro.can_transition(MacroState.DEGRADED):
                 self._macro.transition(
@@ -5903,9 +6057,7 @@ class Orchestrator:
         side = Side.SELL if pos.quantity > 0 else Side.BUY
         qty = abs(pos.quantity)
         seq = self._seq.next()
-        order_id = derive_order_id(
-            f"degrade_flatten:{reason}:{symbol}:{seq}"
-        )
+        order_id = derive_order_id(f"degrade_flatten:{reason}:{symbol}:{seq}")
         order = OrderRequest(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=correlation_id,
@@ -5937,26 +6089,30 @@ class Orchestrator:
             logger.exception(
                 "Force-flatten on %s failed for symbol=%s (qty=%d, side=%s); "
                 "position remains open and will require manual intervention.",
-                reason, symbol, qty, side.name,
+                reason,
+                symbol,
+                qty,
+                side.name,
             )
-            self._bus.publish(Alert(
-                timestamp_ns=self._clock.now_ns(),
-                correlation_id=correlation_id,
-                sequence=self._seq.next(),
-                severity=AlertSeverity.CRITICAL,
-                layer="kernel",
-                alert_name="degrade_flatten_failed",
-                message=(
-                    f"Force-flatten on {reason} failed for symbol={symbol!r} "
-                    f"(qty={qty}, side={side.name}). Position remains open."
-                ),
-                context={
-                    "symbol": symbol,
-                    "reason": reason,
-                    "exception": repr(exc),
-                },
-            ))
-
+            self._bus.publish(
+                Alert(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=correlation_id,
+                    sequence=self._seq.next(),
+                    severity=AlertSeverity.CRITICAL,
+                    layer="kernel",
+                    alert_name="degrade_flatten_failed",
+                    message=(
+                        f"Force-flatten on {reason} failed for symbol={symbol!r} "
+                        f"(qty={qty}, side={side.name}). Position remains open."
+                    ),
+                    context={
+                        "symbol": symbol,
+                        "reason": reason,
+                        "exception": repr(exc),
+                    },
+                )
+            )
 
     def _verify_data_integrity(self) -> bool:
         """Verify data integrity for all configured symbols.
@@ -6022,12 +6178,10 @@ class Orchestrator:
     def _restore_regime_snapshot(self) -> None:
         if self._feature_snapshots is None or self._regime_engine is None:
             return
-        regime_version = (
-            self._REGIME_VERSION_PREFIX
-            + type(self._regime_engine).__name__
-        )
+        regime_version = self._REGIME_VERSION_PREFIX + type(self._regime_engine).__name__
         result = self._feature_snapshots.load(
-            self._REGIME_SNAPSHOT_KEY, regime_version,
+            self._REGIME_SNAPSHOT_KEY,
+            regime_version,
         )
         if result is None:
             return
@@ -6057,10 +6211,7 @@ class Orchestrator:
     def _checkpoint_regime_snapshot(self) -> None:
         if self._feature_snapshots is None or self._regime_engine is None:
             return
-        regime_version = (
-            self._REGIME_VERSION_PREFIX
-            + type(self._regime_engine).__name__
-        )
+        regime_version = self._REGIME_VERSION_PREFIX + type(self._regime_engine).__name__
         try:
             data = self._regime_engine.checkpoint()
             checksum = hashlib.sha256(data).hexdigest()
@@ -6075,7 +6226,6 @@ class Orchestrator:
             self._feature_snapshots.save(meta, data)
         except Exception:
             logger.warning(
-                "Regime snapshot checkpoint failed -- "
-                "next boot will cold-start regime engine",
+                "Regime snapshot checkpoint failed -- next boot will cold-start regime engine",
                 exc_info=True,
             )

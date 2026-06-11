@@ -105,7 +105,10 @@ def _make_signal(
 
 
 def _make_ctx(
-    *, boundary_index: int, ts_ns: int, seq: int,
+    *,
+    boundary_index: int,
+    ts_ns: int,
+    seq: int,
 ) -> CrossSectionalContext:
     sigs: dict[str, Signal | None] = {}
     for i, symbol in enumerate(_UNIVERSE):
@@ -149,7 +152,8 @@ class _DefaultPipelineAlpha:
 
     def construct(self, ctx, params):  # type: ignore[no-untyped-def]
         return self._engine.run_default_pipeline(
-            ctx, strategy_id=self.alpha_id,
+            ctx,
+            strategy_id=self.alpha_id,
         )
 
 
@@ -168,12 +172,14 @@ def _build(*, decay: bool) -> tuple[EventBus, list[SizedPositionIntent]]:
         position_lookup=None,
     )
     alpha: PortfolioAlpha = _DefaultPipelineAlpha(engine)
-    engine.register(RegisteredPortfolioAlpha(
-        alpha_id=_STRATEGY_ID,
-        horizon_seconds=_HORIZON_SECONDS,
-        alpha=alpha,
-        params={},
-    ))
+    engine.register(
+        RegisteredPortfolioAlpha(
+            alpha_id=_STRATEGY_ID,
+            horizon_seconds=_HORIZON_SECONDS,
+            alpha=alpha,
+            params={},
+        )
+    )
     engine.attach()
     return bus, captured
 
@@ -191,8 +197,7 @@ def _hash_intents(intents: list[SizedPositionIntent]) -> str:
     lines: list[str] = []
     for it in intents:
         targets = "|".join(
-            f"{s}={it.target_positions[s].target_usd:.2f}@"
-            f"{it.target_positions[s].urgency:.2f}"
+            f"{s}={it.target_positions[s].target_usd:.2f}@{it.target_positions[s].urgency:.2f}"
             for s in sorted(it.target_positions)
         )
         mech = "|".join(
@@ -228,14 +233,12 @@ def test_each_branch_is_internally_deterministic() -> None:
     hash_off_a, _ = _replay(decay=False)
     hash_off_b, _ = _replay(decay=False)
     assert hash_off_a == hash_off_b, (
-        f"decay-OFF replay drift on mixed-mechanism fixture: "
-        f"{hash_off_a} vs {hash_off_b}"
+        f"decay-OFF replay drift on mixed-mechanism fixture: {hash_off_a} vs {hash_off_b}"
     )
     hash_on_a, _ = _replay(decay=True)
     hash_on_b, _ = _replay(decay=True)
     assert hash_on_a == hash_on_b, (
-        f"decay-ON replay drift on mixed-mechanism fixture: "
-        f"{hash_on_a} vs {hash_on_b}"
+        f"decay-ON replay drift on mixed-mechanism fixture: {hash_on_a} vs {hash_on_b}"
     )
 
 
@@ -254,6 +257,5 @@ def test_universe_preserved_across_branches() -> None:
     _, intents_on = _replay(decay=True)
     for intent_off, intent_on in zip(intents_off, intents_on):
         assert set(intent_off.target_positions) == set(intent_on.target_positions), (
-            "decay toggle changed the per-boundary symbol set — ranker "
-            "is gating, not re-weighting"
+            "decay toggle changed the per-boundary symbol set — ranker is gating, not re-weighting"
         )

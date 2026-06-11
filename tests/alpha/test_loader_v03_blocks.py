@@ -68,10 +68,7 @@ _BASE_SPEC: dict[str, Any] = {
         "fee_bps": 1.0,
         "margin_ratio": 1.8,
     },
-    "signal": (
-        "def evaluate(snapshot, regime, params):\n"
-        "    return None\n"
-    ),
+    "signal": ("def evaluate(snapshot, regime, params):\n    return None\n"),
 }
 
 
@@ -139,21 +136,18 @@ def test_trend_mechanism_absent_yields_none_on_manifest() -> None:
 )
 def test_trend_mechanism_known_family_accepted(family: str) -> None:
     block = copy.deepcopy(_TREND_MECHANISM_FIXTURES[family])
-    loaded = AlphaLoader().load_from_dict(
-        _spec(trend_mechanism=block), source="<test>"
-    )
+    loaded = AlphaLoader().load_from_dict(_spec(trend_mechanism=block), source="<test>")
     assert loaded.manifest.trend_mechanism is not None
     assert loaded.manifest.trend_mechanism["family"] == family
-    assert loaded.manifest.trend_mechanism[
-        "expected_half_life_seconds"
-    ] == block["expected_half_life_seconds"]
+    assert (
+        loaded.manifest.trend_mechanism["expected_half_life_seconds"]
+        == block["expected_half_life_seconds"]
+    )
 
 
 def test_trend_mechanism_non_mapping_rejected() -> None:
     with pytest.raises(_LOAD_REJECTED, match="trend_mechanism.*must be a mapping"):
-        AlphaLoader().load_from_dict(
-            _spec(trend_mechanism="KYLE_INFO"), source="<test>"
-        )
+        AlphaLoader().load_from_dict(_spec(trend_mechanism="KYLE_INFO"), source="<test>")
 
 
 def test_trend_mechanism_block_stored_verbatim_as_dict_copy() -> None:
@@ -162,9 +156,7 @@ def test_trend_mechanism_block_stored_verbatim_as_dict_copy() -> None:
     """
     block = copy.deepcopy(_TREND_MECHANISM_FIXTURES["INVENTORY"])
     block["extra"] = {"nested": True}
-    loaded = AlphaLoader().load_from_dict(
-        _spec(trend_mechanism=block), source="<test>"
-    )
+    loaded = AlphaLoader().load_from_dict(_spec(trend_mechanism=block), source="<test>")
     block["family"] = "KYLE_INFO"
     assert loaded.manifest.trend_mechanism is not None
     assert loaded.manifest.trend_mechanism["family"] == "INVENTORY"
@@ -188,9 +180,7 @@ def test_hazard_exit_block_accepted_with_known_keys() -> None:
         "min_age_seconds": 45,
         "hard_exit_age_seconds": 600,
     }
-    loaded = AlphaLoader().load_from_dict(
-        _spec(hazard_exit=block), source="<test>"
-    )
+    loaded = AlphaLoader().load_from_dict(_spec(hazard_exit=block), source="<test>")
     assert loaded.manifest.hazard_exit == {
         "enabled": True,
         "hazard_score_threshold": 0.7,
@@ -202,9 +192,7 @@ def test_hazard_exit_block_accepted_with_known_keys() -> None:
 def test_hazard_exit_unknown_key_rejected() -> None:
     """Audit P1 H-2: previously-silent unknown keys (e.g. legacy doc
     spellings ``trigger`` / ``min_hazard_score``) must fail loudly."""
-    with pytest.raises(
-        _LOAD_REJECTED, match="hazard_exit block carries unknown key 'trigger'"
-    ):
+    with pytest.raises(_LOAD_REJECTED, match="hazard_exit block carries unknown key 'trigger'"):
         AlphaLoader().load_from_dict(
             _spec(hazard_exit={"enabled": True, "trigger": "regime_hazard_spike"}),
             source="<test>",
@@ -219,12 +207,15 @@ def test_hazard_exit_legacy_posterior_drop_threshold_renamed_with_warning(
     before this fix.  The loader now translates it to the canonical
     ``hazard_score_threshold`` and logs a WARNING."""
     import logging
+
     with caplog.at_level(logging.WARNING, logger="feelies.alpha.loader"):
         loaded = AlphaLoader().load_from_dict(
-            _spec(hazard_exit={
-                "enabled": True,
-                "posterior_drop_threshold": 0.3,
-            }),
+            _spec(
+                hazard_exit={
+                    "enabled": True,
+                    "posterior_drop_threshold": 0.3,
+                }
+            ),
             source="<test>",
         )
     assert loaded.manifest.hazard_exit == {
@@ -238,11 +229,13 @@ def test_hazard_exit_legacy_and_canonical_simultaneous_rejected() -> None:
     """If both spellings are present the loader refuses (ambiguous)."""
     with pytest.raises(_LOAD_REJECTED, match="legacy key 'posterior_drop_threshold'"):
         AlphaLoader().load_from_dict(
-            _spec(hazard_exit={
-                "enabled": True,
-                "posterior_drop_threshold": 0.3,
-                "hazard_score_threshold": 0.5,
-            }),
+            _spec(
+                hazard_exit={
+                    "enabled": True,
+                    "posterior_drop_threshold": 0.3,
+                    "hazard_score_threshold": 0.5,
+                }
+            ),
             source="<test>",
         )
 
@@ -265,9 +258,7 @@ def test_hazard_exit_negative_min_age_rejected() -> None:
 
 def test_hazard_exit_non_mapping_rejected() -> None:
     with pytest.raises(_LOAD_REJECTED, match="hazard_exit.*must be a mapping"):
-        AlphaLoader().load_from_dict(
-            _spec(hazard_exit=["regime_hazard_spike"]), source="<test>"
-        )
+        AlphaLoader().load_from_dict(_spec(hazard_exit=["regime_hazard_spike"]), source="<test>")
 
 
 # ── Combined block presence ─────────────────────────────────────────────

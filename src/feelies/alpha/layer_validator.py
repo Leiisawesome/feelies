@@ -130,13 +130,15 @@ class MissingTrendMechanismError(TrendMechanismValidationError):
 # ── G16 rule data tables (§20.6.1) ──────────────────────────────────────
 
 
-_NORMATIVE_FAMILY_NAMES: frozenset[str] = frozenset({
-    "KYLE_INFO",
-    "INVENTORY",
-    "HAWKES_SELF_EXCITE",
-    "LIQUIDITY_STRESS",
-    "SCHEDULED_FLOW",
-})
+_NORMATIVE_FAMILY_NAMES: frozenset[str] = frozenset(
+    {
+        "KYLE_INFO",
+        "INVENTORY",
+        "HAWKES_SELF_EXCITE",
+        "LIQUIDITY_STRESS",
+        "SCHEDULED_FLOW",
+    }
+)
 
 
 _FAMILY_HALF_LIFE_RANGES_SECONDS: dict[str, tuple[int, int]] = {
@@ -177,9 +179,7 @@ _NON_FLAT_DIRECTIONS: frozenset[str] = frozenset({"LONG", "SHORT"})
 # gate behaves consistently in unit tests that don't go through
 # bootstrap.  G7 elevates this to a refusal when ``horizon_seconds``
 # is set outside this set.
-DEFAULT_REGISTERED_HORIZONS: frozenset[int] = frozenset(
-    {30, 120, 300, 900, 1800}
-)
+DEFAULT_REGISTERED_HORIZONS: frozenset[int] = frozenset({30, 120, 300, 900, 1800})
 
 # G5 / G8: AST node types and bare names that are forbidden in inline
 # ``signal:`` and ``computation:`` blocks.  These are the same
@@ -241,9 +241,7 @@ class LayerValidator:
           before the sensor registry exists).
         """
         self._registered_horizons = (
-            registered_horizons
-            if registered_horizons is not None
-            else DEFAULT_REGISTERED_HORIZONS
+            registered_horizons if registered_horizons is not None else DEFAULT_REGISTERED_HORIZONS
         )
         self._known_sensor_ids = known_sensor_ids
         self._enforce_trend_mechanism = bool(enforce_trend_mechanism)
@@ -278,7 +276,8 @@ class LayerValidator:
                 raise
             _logger.warning(
                 "%s downgraded to WARNING (enforce_layer_gates=False): %s",
-                gate, exc,
+                gate,
+                exc,
             )
 
     def validate(self, spec: dict[str, Any], source: str) -> None:
@@ -301,7 +300,10 @@ class LayerValidator:
         # G1-G13 — scaffolded no-ops (Phase 3+).  Order matters for
         # determinism of error reporting once they go live.
         self._softly(
-            self._check_g1_layer_independence, spec, source, gate="G1",
+            self._check_g1_layer_independence,
+            spec,
+            source,
+            gate="G1",
         )
         self._check_g2_event_typing(spec, source)
         self._softly(
@@ -348,8 +350,7 @@ class LayerValidator:
             return
         if not isinstance(sources_decl, list):
             raise LayerValidationError(
-                f"{source}: G14 — 'data_sources' must be a list, got "
-                f"{type(sources_decl).__name__}"
+                f"{source}: G14 — 'data_sources' must be a list, got {type(sources_decl).__name__}"
             )
         allowed = {"l1_nbbo", "trades", "reference_data", "session_calendar"}
         declared = {str(s).lower() for s in sources_decl}
@@ -361,9 +362,7 @@ class LayerValidator:
                 f"Allowed: {sorted(allowed)}."
             )
 
-    def _check_g15_fill_assumptions(
-        self, spec: dict[str, Any], source: str
-    ) -> None:
+    def _check_g15_fill_assumptions(self, spec: dict[str, Any], source: str) -> None:
         """G15 — fill assumptions must be consistent with the platform router.
 
         Per gate G15 in ``alphas/SCHEMA.md`` / §6.6.
@@ -380,8 +379,7 @@ class LayerValidator:
             return
         if not isinstance(fill_model, dict):
             raise LayerValidationError(
-                f"{source}: G15 — 'fill_model' must be a mapping, got "
-                f"{type(fill_model).__name__}"
+                f"{source}: G15 — 'fill_model' must be a mapping, got {type(fill_model).__name__}"
             )
         router = fill_model.get("router")
         if router is None:
@@ -396,9 +394,7 @@ class LayerValidator:
 
     # ── Scaffolded gates (Phase 4+) ──────────────────────────────────
 
-    def _check_g1_layer_independence(
-        self, spec: dict[str, Any], source: str
-    ) -> None:
+    def _check_g1_layer_independence(self, spec: dict[str, Any], source: str) -> None:
         """G1 — no Layer-N alpha may import or call into Layer-(N+k) code.
 
         Phase 4: structurally enforced by the loader's compile
@@ -425,9 +421,7 @@ class LayerValidator:
                 f"instead."
             )
 
-    def _check_g3_no_cross_horizon_leakage(
-        self, spec: dict[str, Any], source: str
-    ) -> None:
+    def _check_g3_no_cross_horizon_leakage(self, spec: dict[str, Any], source: str) -> None:
         """G3 — alphas must operate on a single declared horizon.
 
         Phase 4 active enforcement: PORTFOLIO alphas declare a single
@@ -447,9 +441,7 @@ class LayerValidator:
                 f"multi-horizon alphas are not supported."
             )
 
-    def _check_g9_session_alignment(
-        self, spec: dict[str, Any], source: str
-    ) -> None:
+    def _check_g9_session_alignment(self, spec: dict[str, Any], source: str) -> None:
         """G9 — horizon boundaries must align with ``session_open_ns``.
 
         Phase 4: the :class:`HorizonScheduler` aligns boundaries
@@ -465,9 +457,7 @@ class LayerValidator:
         # _REQUIRED_PORTFOLIO_LAYER_KEYS by the loader).  This gate is
         # otherwise a structural placeholder.
 
-    def _check_g10_universe_disclosure(
-        self, spec: dict[str, Any], source: str
-    ) -> None:
+    def _check_g10_universe_disclosure(self, spec: dict[str, Any], source: str) -> None:
         """G10 — portfolio alphas must declare ``universe:`` explicitly (ACTIVE)."""
         layer = str(spec.get("layer") or "")
         if layer != "PORTFOLIO":
@@ -481,8 +471,7 @@ class LayerValidator:
         for entry in universe:
             if not isinstance(entry, str) or not entry:
                 raise LayerValidationError(
-                    f"{source}: G10 — 'universe' entries must be non-empty "
-                    f"strings; got {entry!r}"
+                    f"{source}: G10 — 'universe' entries must be non-empty strings; got {entry!r}"
                 )
 
     def _check_g11_factor_neutralization_disclosure(
@@ -519,9 +508,7 @@ class LayerValidator:
 
     # ── ACTIVE gates (Phase 3-α) ─────────────────────────────────────
 
-    def _check_g2_event_typing(
-        self, spec: dict[str, Any], source: str
-    ) -> None:
+    def _check_g2_event_typing(self, spec: dict[str, Any], source: str) -> None:
         """G2 — every cross-layer event must be a typed dataclass (Inv-7).
 
         Phase 3-α enforcement: a SIGNAL spec must declare its inline
@@ -544,9 +531,7 @@ class LayerValidator:
                 f"{type(signal_block).__name__}={signal_block!r}"
             )
 
-    def _check_g4_regime_gate_purity(
-        self, spec: dict[str, Any], source: str
-    ) -> None:
+    def _check_g4_regime_gate_purity(self, spec: dict[str, Any], source: str) -> None:
         """G4 — regime gate must be a pure boolean function of posteriors.
 
         Phase 3-α enforcement: parse both ``on_condition`` and
@@ -576,20 +561,16 @@ class LayerValidator:
             cond = gate_block.get(key)
             if not isinstance(cond, str) or not cond.strip():
                 raise LayerValidationError(
-                    f"{source}: G4 — regime_gate.{key} must be a "
-                    f"non-empty string; got {cond!r}"
+                    f"{source}: G4 — regime_gate.{key} must be a non-empty string; got {cond!r}"
                 )
             try:
                 compile_expression(cond)
             except UnsafeExpressionError as exc:
                 raise LayerValidationError(
-                    f"{source}: G4 — regime_gate.{key} failed DSL "
-                    f"validation: {exc}"
+                    f"{source}: G4 — regime_gate.{key} failed DSL validation: {exc}"
                 ) from exc
 
-    def _check_g5_signal_purity(
-        self, spec: dict[str, Any], source: str
-    ) -> None:
+    def _check_g5_signal_purity(self, spec: dict[str, Any], source: str) -> None:
         """G5 — signal evaluate() must be a pure function of features.
 
         Phase 3-α enforcement: AST-scan the inline ``signal:`` source
@@ -614,13 +595,14 @@ class LayerValidator:
         if not isinstance(signal_code, str):
             return  # G2 will already have raised.
         self._scan_inline_python(
-            signal_code, source=source, gate="G5",
-            context="signal", what="signal evaluate",
+            signal_code,
+            source=source,
+            gate="G5",
+            context="signal",
+            what="signal evaluate",
         )
 
-    def _check_g6_feature_dependency_dag(
-        self, spec: dict[str, Any], source: str
-    ) -> None:
+    def _check_g6_feature_dependency_dag(self, spec: dict[str, Any], source: str) -> None:
         """G6 — sensor / feature dependency graph must be a DAG.
 
         Phase 3-α enforcement (post-D.2 PR-2):
@@ -660,8 +642,7 @@ class LayerValidator:
                 )
             if entry in seen:
                 raise LayerValidationError(
-                    f"{source}: G6 — duplicate sensor_id "
-                    f"{entry!r} in depends_on_sensors"
+                    f"{source}: G6 — duplicate sensor_id {entry!r} in depends_on_sensors"
                 )
             seen.add(entry)
         if self._known_sensor_ids is not None:
@@ -674,9 +655,7 @@ class LayerValidator:
                     f"{sorted(self._known_sensor_ids)}"
                 )
 
-    def _check_g7_horizon_registration(
-        self, spec: dict[str, Any], source: str
-    ) -> None:
+    def _check_g7_horizon_registration(self, spec: dict[str, Any], source: str) -> None:
         """G7 — declared ``horizon_seconds`` must be in
         ``platform.yaml`` registered horizons.
 
@@ -702,9 +681,7 @@ class LayerValidator:
                 f"{sorted(self._registered_horizons)}"
             )
 
-    def _check_g8_no_implicit_lookahead(
-        self, spec: dict[str, Any], source: str
-    ) -> None:
+    def _check_g8_no_implicit_lookahead(self, spec: dict[str, Any], source: str) -> None:
         """G8 — feature/signal code must not reference future state.
 
         Phase 3-α enforcement: AST-scan inline computation/signal
@@ -719,20 +696,25 @@ class LayerValidator:
             return
         banned = frozenset(
             {
-                "time", "datetime", "monotonic", "perf_counter",
-                "process_time", "now",
+                "time",
+                "datetime",
+                "monotonic",
+                "perf_counter",
+                "process_time",
+                "now",
             }
         )
         signal_code = spec.get("signal")
         if isinstance(signal_code, str):
             self._scan_for_banned_names(
-                signal_code, source=source, gate="G8",
-                banned=banned, what="signal evaluate",
+                signal_code,
+                source=source,
+                gate="G8",
+                banned=banned,
+                what="signal evaluate",
             )
 
-    def _check_g12_cost_arithmetic_disclosure(
-        self, spec: dict[str, Any], source: str
-    ) -> None:
+    def _check_g12_cost_arithmetic_disclosure(self, spec: dict[str, Any], source: str) -> None:
         """G12 — alpha must declare ``cost_arithmetic:`` (bps vs $) explicitly.
 
         Phase 3-α enforcement (SIGNAL): ``cost_arithmetic:`` is
@@ -762,13 +744,9 @@ class LayerValidator:
                 spec=block,
             )
         except CostArithmeticError as exc:
-            raise LayerValidationError(
-                f"{source}: G12 — {exc}"
-            ) from exc
+            raise LayerValidationError(f"{source}: G12 — {exc}") from exc
 
-    def _check_g13_warm_up_documentation(
-        self, spec: dict[str, Any], source: str
-    ) -> None:
+    def _check_g13_warm_up_documentation(self, spec: dict[str, Any], source: str) -> None:
         """G13 — every feature must declare ``warm_up:`` (events or duration).
 
         Phase 3-α enforcement (post-D.2 PR-2): SIGNAL alphas don't
@@ -802,8 +780,7 @@ class LayerValidator:
             tree = ast.parse(code, filename=f"<{source}:{context}>")
         except SyntaxError as exc:
             raise LayerValidationError(
-                f"{source}: {gate} — {what} failed to parse: "
-                f"{exc.msg} (line {exc.lineno})"
+                f"{source}: {gate} — {what} failed to parse: {exc.msg} (line {exc.lineno})"
             ) from exc
         for node in ast.walk(tree):
             if isinstance(node, _BANNED_SIGNAL_AST_NODES):
@@ -825,8 +802,7 @@ class LayerValidator:
                 and node.value.id == "__builtins__"
             ):
                 raise LayerValidationError(
-                    f"{source}: {gate} — {what} accesses "
-                    f"'__builtins__' which is forbidden"
+                    f"{source}: {gate} — {what} accesses '__builtins__' which is forbidden"
                 )
 
     @staticmethod
@@ -853,9 +829,7 @@ class LayerValidator:
                     f"replay path"
                 )
 
-    def _check_g16_trend_mechanism_compliance(
-        self, spec: dict[str, Any], source: str
-    ) -> None:
+    def _check_g16_trend_mechanism_compliance(self, spec: dict[str, Any], source: str) -> None:
         """G16 — mechanism-horizon binding (§20.6.1, ACTIVE in Phase 3.1).
 
         Two activation triggers per §20.6:
@@ -879,9 +853,7 @@ class LayerValidator:
         block = spec.get("trend_mechanism")
         layer = str(spec.get("layer") or "").upper()
         schema_version = str(spec.get("schema_version") or "")
-        is_v11_signal_or_portfolio = (
-            schema_version == "1.1" and layer in {"SIGNAL", "PORTFOLIO"}
-        )
+        is_v11_signal_or_portfolio = schema_version == "1.1" and layer in {"SIGNAL", "PORTFOLIO"}
 
         if not is_v11_signal_or_portfolio:
             return
@@ -896,8 +868,7 @@ class LayerValidator:
             return
         if not isinstance(block, dict):
             raise TrendMechanismValidationError(
-                f"{source}: G16 — 'trend_mechanism' must be a mapping, "
-                f"got {type(block).__name__}"
+                f"{source}: G16 — 'trend_mechanism' must be a mapping, got {type(block).__name__}"
             )
 
         if layer == "PORTFOLIO":
@@ -928,8 +899,7 @@ class LayerValidator:
         half_life_raw = block.get("expected_half_life_seconds")
         if half_life_raw is None:
             raise MechanismHalfLifeOutOfRangeError(
-                f"{source}: G16 rule 2 — "
-                f"'trend_mechanism.expected_half_life_seconds' is required"
+                f"{source}: G16 rule 2 — 'trend_mechanism.expected_half_life_seconds' is required"
             )
         try:
             half_life = int(half_life_raw)
@@ -972,10 +942,7 @@ class LayerValidator:
         declared_sensor_ids = _extract_sensor_ids(sensors_raw, source)
 
         if self._known_sensor_ids is not None:
-            missing = [
-                sid for sid in declared_sensor_ids
-                if sid not in self._known_sensor_ids
-            ]
+            missing = [sid for sid in declared_sensor_ids if sid not in self._known_sensor_ids]
             if missing:
                 raise MissingMechanismSensorError(
                     f"{source}: G16 rule 4 — l1_signature_sensors "

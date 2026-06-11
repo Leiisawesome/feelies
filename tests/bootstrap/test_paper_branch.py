@@ -113,7 +113,8 @@ def _minimal_paper_config(**overrides: Any) -> PlatformConfig:
 
 class TestCreateBackendPaperBranch:
     def test_missing_api_key_raises_configuration_error(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.delenv("MASSIVE_API_KEY", raising=False)
         config = _minimal_paper_config()
@@ -122,40 +123,48 @@ class TestCreateBackendPaperBranch:
         with pytest.raises(ConfigurationError, match="MASSIVE_API_KEY"):
             _create_backend(
                 OperatingMode.PAPER,
-                InMemoryEventLog(), clock,
-                config=config, normalizer=normalizer,
+                InMemoryEventLog(),
+                clock,
+                config=config,
+                normalizer=normalizer,
                 cost_model=DefaultCostModel(),
             )
 
     def test_missing_normalizer_raises_configuration_error(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("MASSIVE_API_KEY", "k")
         config = _minimal_paper_config()
         with pytest.raises(ConfigurationError, match="MassiveNormalizer"):
             _create_backend(
                 OperatingMode.PAPER,
-                InMemoryEventLog(), SimulatedClock(),
-                config=config, normalizer=None,
+                InMemoryEventLog(),
+                SimulatedClock(),
+                config=config,
+                normalizer=None,
                 cost_model=DefaultCostModel(),
             )
 
     def test_missing_config_raises_configuration_error(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("MASSIVE_API_KEY", "k")
         clock = SimulatedClock()
         with pytest.raises(ConfigurationError, match="PlatformConfig"):
             _create_backend(
                 OperatingMode.PAPER,
-                InMemoryEventLog(), clock,
+                InMemoryEventLog(),
+                clock,
                 config=None,
                 normalizer=MassiveNormalizer(clock=clock),
                 cost_model=DefaultCostModel(),
             )
 
     def test_returns_populated_backend_bundle(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("MASSIVE_API_KEY", "fake_key")
         config = _minimal_paper_config()
@@ -167,12 +176,16 @@ class TestCreateBackendPaperBranch:
             sentinel_feed = object()
             sentinel_ib = object()
             mock_build.return_value = (
-                sentinel_backend, sentinel_feed, sentinel_ib,
+                sentinel_backend,
+                sentinel_feed,
+                sentinel_ib,
             )
             bundle = _create_backend(
                 OperatingMode.PAPER,
-                InMemoryEventLog(), clock,
-                config=config, normalizer=normalizer,
+                InMemoryEventLog(),
+                clock,
+                config=config,
+                normalizer=normalizer,
                 cost_model=DefaultCostModel(),
             )
 
@@ -183,11 +196,14 @@ class TestCreateBackendPaperBranch:
         assert bundle.backtest_router is None
 
     def test_forwards_config_fields_to_paper_backend(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("MASSIVE_API_KEY", "fake_key_xyz")
         config = _minimal_paper_config(
-            ib_host="10.20.30.40", ib_port=4001, ib_client_id=99,
+            ib_host="10.20.30.40",
+            ib_port=4001,
+            ib_client_id=99,
             massive_ws_url="wss://prod.example.com/stocks",
             symbols=frozenset({"NVDA", "TSLA"}),
         )
@@ -198,8 +214,10 @@ class TestCreateBackendPaperBranch:
             mock_build.return_value = (object(), object(), object())
             _create_backend(
                 OperatingMode.PAPER,
-                InMemoryEventLog(), clock,
-                config=config, normalizer=normalizer,
+                InMemoryEventLog(),
+                clock,
+                config=config,
+                normalizer=normalizer,
                 cost_model=DefaultCostModel(),
             )
 
@@ -214,7 +232,8 @@ class TestCreateBackendPaperBranch:
         assert kwargs["massive_ws_url"] == "wss://prod.example.com/stocks"
 
     def test_whitespace_only_api_key_raises_configuration_error(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("MASSIVE_API_KEY", "   ")
         config = _minimal_paper_config()
@@ -222,15 +241,18 @@ class TestCreateBackendPaperBranch:
         with pytest.raises(ConfigurationError, match="MASSIVE_API_KEY"):
             _create_backend(
                 OperatingMode.PAPER,
-                InMemoryEventLog(), clock,
-                config=config, normalizer=MassiveNormalizer(clock=clock),
+                InMemoryEventLog(),
+                clock,
+                config=config,
+                normalizer=MassiveNormalizer(clock=clock),
                 cost_model=DefaultCostModel(),
             )
 
 
 def _write_paper_alpha(directory: Path) -> None:
     (directory / "paper.alpha.yaml").write_text(
-        _PAPER_SIGNAL_ALPHA_YAML, encoding="utf-8",
+        _PAPER_SIGNAL_ALPHA_YAML,
+        encoding="utf-8",
     )
 
 
@@ -251,7 +273,9 @@ def _paper_platform_config(tmp_path: Path) -> PlatformConfig:
 
 class TestBuildPlatformPaperBranch:
     def test_auto_normalizer_shared_with_orchestrator_and_feed(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         monkeypatch.setenv("MASSIVE_API_KEY", "fake_key")
         _write_paper_alpha(tmp_path)
@@ -271,7 +295,9 @@ class TestBuildPlatformPaperBranch:
         assert orchestrator.ib_connection is not None  # type: ignore[attr-defined]
 
     def test_paper_without_session_open_ns_auto_anchors(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         monkeypatch.setenv("MASSIVE_API_KEY", "fake_key")
         _write_paper_alpha(tmp_path)
@@ -288,7 +314,8 @@ class TestBuildPlatformPaperBranch:
         assert out_config.session_open_ns > 0
 
     def test_nested_paper_yaml_block_parses_connection_fields(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         yaml_path = tmp_path / "platform.yaml"
         yaml_path.write_text(
@@ -313,7 +340,8 @@ class TestBuildPlatformPaperBranch:
         assert config.massive_ws_url == "wss://example.test/stocks"
 
     def test_top_level_ib_port_overrides_nested_paper_block(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         yaml_path = tmp_path / "platform.yaml"
         yaml_path.write_text(
@@ -335,7 +363,9 @@ class TestBuildPlatformPaperBranch:
 
 class TestPaperIbPortWarning:
     def test_paper_mode_ib_port_4001_emits_warning(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         import logging
@@ -352,9 +382,7 @@ class TestPaperIbPortWarning:
             ):
                 build_platform(config)
 
-        assert any(
-            "ib_port=4001" in rec.message for rec in caplog.records
-        )
+        assert any("ib_port=4001" in rec.message for rec in caplog.records)
 
 
 # Note: end-to-end ``build_platform(PAPER)`` session lifecycle is

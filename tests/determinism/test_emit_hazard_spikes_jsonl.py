@@ -77,7 +77,7 @@ def test_emit_hazard_spikes_jsonl_prefix_and_count(runner, capsys) -> None:
 def test_emit_hazard_spikes_jsonl_row_shape(runner, capsys) -> None:
     runner._emit_hazard_spikes_jsonl(_make_recorder(runner, [_spike(7)]))
     line = capsys.readouterr().out.splitlines()[0]
-    payload = json.loads(line[len("HAZARD_JSONL "):])
+    payload = json.loads(line[len("HAZARD_JSONL ") :])
     assert payload == {
         "correlation_id": "haz-7",
         "departing_posterior_now": 0.31,
@@ -93,27 +93,23 @@ def test_emit_hazard_spikes_jsonl_row_shape(runner, capsys) -> None:
 
 
 def test_emit_hazard_spikes_jsonl_handles_none_incoming(runner, capsys) -> None:
-    runner._emit_hazard_spikes_jsonl(
-        _make_recorder(runner, [_spike(3, incoming=None)])
-    )
+    runner._emit_hazard_spikes_jsonl(_make_recorder(runner, [_spike(3, incoming=None)]))
     line = capsys.readouterr().out.splitlines()[0]
-    payload = json.loads(line[len("HAZARD_JSONL "):])
+    payload = json.loads(line[len("HAZARD_JSONL ") :])
     assert payload["incoming_state"] is None
 
 
 def test_emit_hazard_spikes_jsonl_keys_sorted(runner, capsys) -> None:
     runner._emit_hazard_spikes_jsonl(_make_recorder(runner, [_spike(3)]))
-    raw = capsys.readouterr().out.splitlines()[0][len("HAZARD_JSONL "):]
+    raw = capsys.readouterr().out.splitlines()[0][len("HAZARD_JSONL ") :]
     payload = json.loads(raw)
     assert raw == json.dumps(payload, sort_keys=True)
 
 
 def test_emit_hazard_spikes_jsonl_preserves_arrival_order(runner, capsys) -> None:
-    runner._emit_hazard_spikes_jsonl(
-        _make_recorder(runner, [_spike(1), _spike(2), _spike(3)])
-    )
+    runner._emit_hazard_spikes_jsonl(_make_recorder(runner, [_spike(1), _spike(2), _spike(3)]))
     seqs = [
-        json.loads(line[len("HAZARD_JSONL "):])["sequence"]
+        json.loads(line[len("HAZARD_JSONL ") :])["sequence"]
         for line in capsys.readouterr().out.splitlines()
     ]
     assert seqs == [1, 2, 3]
@@ -130,6 +126,7 @@ def test_emit_hazard_spikes_jsonl_empty(runner, capsys) -> None:
 def test_emit_phase2_jsonl_dispatches_to_hazard_emitter(runner, capsys) -> None:
     """The Phase-3.1 flag must compose with the prior emitter wrapper."""
     import argparse
+
     args = argparse.Namespace(
         emit_sensor_readings_jsonl=False,
         emit_horizon_ticks_jsonl=False,
@@ -145,6 +142,7 @@ def test_emit_phase2_jsonl_dispatches_to_hazard_emitter(runner, capsys) -> None:
 
 def test_emit_phase2_jsonl_skips_hazards_when_flag_off(runner, capsys) -> None:
     import argparse
+
     args = argparse.Namespace(
         emit_sensor_readings_jsonl=False,
         emit_horizon_ticks_jsonl=False,
@@ -161,9 +159,7 @@ def test_emit_phase2_jsonl_skips_hazards_when_flag_off(runner, capsys) -> None:
 
 def test_cli_parses_emit_hazard_spikes_jsonl_flag(runner) -> None:
     """`--emit-hazard-spikes-jsonl` must be a recognized argparse flag."""
-    args = runner.parse_args(
-        ["--date", "2024-01-15", "--emit-hazard-spikes-jsonl"]
-    )
+    args = runner.parse_args(["--date", "2024-01-15", "--emit-hazard-spikes-jsonl"])
     assert args.emit_hazard_spikes_jsonl is True
 
 

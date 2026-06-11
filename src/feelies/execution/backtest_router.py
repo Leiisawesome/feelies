@@ -152,9 +152,7 @@ class BacktestOrderRouter:
         self._clock = clock
         self._latency_ns = latency_ns
         self._cost_model: CostModel = cost_model or ZeroCostModel()
-        self._market_impact_factor = to_decimal(
-            market_impact_factor, "market_impact_factor"
-        )
+        self._market_impact_factor = to_decimal(market_impact_factor, "market_impact_factor")
         self._max_impact_half_spreads = to_decimal(
             max_impact_half_spreads, "max_impact_half_spreads"
         )
@@ -208,7 +206,8 @@ class BacktestOrderRouter:
         exchange_ts_ns: int,
     ) -> bool:
         suppress, reason = self._rth_gate.should_suppress(
-            request, exchange_ts_ns,
+            request,
+            exchange_ts_ns,
         )
         if not suppress:
             return False
@@ -244,7 +243,8 @@ class BacktestOrderRouter:
             return
 
         if self._rth_reject_entry_if_needed(
-            request, quote.exchange_timestamp_ns,
+            request,
+            quote.exchange_timestamp_ns,
         ):
             return
 
@@ -257,20 +257,20 @@ class BacktestOrderRouter:
 
         # Emit ACKNOWLEDGED first for live-mode SM parity (Inv 9).
         ack_ts = self._clock.now_ns() + self._latency_ns
-        self._pending_acks.append(OrderAck(
-            timestamp_ns=ack_ts,
-            correlation_id=request.correlation_id,
-            sequence=self._ack_seq.next(),
-            order_id=request.order_id,
-            symbol=request.symbol,
-            status=OrderAckStatus.ACKNOWLEDGED,
-            request_sequence=request.sequence,
-        ))
+        self._pending_acks.append(
+            OrderAck(
+                timestamp_ns=ack_ts,
+                correlation_id=request.correlation_id,
+                sequence=self._ack_seq.next(),
+                order_id=request.order_id,
+                symbol=request.symbol,
+                status=OrderAckStatus.ACKNOWLEDGED,
+                request_sequence=request.sequence,
+            )
+        )
 
         if self._latency_ns <= 0:
-            available_depth = (
-                quote.ask_size if request.side == Side.BUY else quote.bid_size
-            )
+            available_depth = quote.ask_size if request.side == Side.BUY else quote.bid_size
             if available_depth <= 0:
                 self.zero_depth_reject_count += 1
                 self._reject(
@@ -288,8 +288,7 @@ class BacktestOrderRouter:
                 _DeferredMarketFill(
                     request=request,
                     fill_deadline_exchange_ns=(
-                        max(self._clock.now_ns(), quote.exchange_timestamp_ns)
-                        + self._latency_ns
+                        max(self._clock.now_ns(), quote.exchange_timestamp_ns) + self._latency_ns
                     ),
                     ack_timestamp_ns=ack_ts,
                     ticks_for_symbol=0,
@@ -328,9 +327,7 @@ class BacktestOrderRouter:
                     timestamp_ns=reject_ts,
                 )
                 continue
-            depth = (
-                quote.ask_size if dm.request.side == Side.BUY else quote.bid_size
-            )
+            depth = quote.ask_size if dm.request.side == Side.BUY else quote.bid_size
             if depth <= 0:
                 self.zero_depth_reject_count += 1
                 self._reject(
@@ -341,7 +338,8 @@ class BacktestOrderRouter:
                 )
                 continue
             if self._rth_reject_entry_if_needed(
-                dm.request, quote.exchange_timestamp_ns,
+                dm.request,
+                quote.exchange_timestamp_ns,
             ):
                 continue
             fill_ts = max(self._clock.now_ns(), dm.ack_timestamp_ns)

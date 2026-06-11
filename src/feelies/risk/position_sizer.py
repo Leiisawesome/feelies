@@ -73,7 +73,9 @@ class BudgetBasedSizer:
     ) -> None:
         self._regime_engine = regime_engine
         self._regime_factors = regime_factors or dict(self._DEFAULT_REGIME_FACTORS)
-        self._regime_factor_default = min(self._regime_factors.values()) if self._regime_factors else 1.0
+        self._regime_factor_default = (
+            min(self._regime_factors.values()) if self._regime_factors else 1.0
+        )
 
     def compute_target_quantity(
         self,
@@ -85,7 +87,9 @@ class BudgetBasedSizer:
         if symbol_price <= 0 or account_equity <= 0:
             return 0
 
-        allocated = account_equity * Decimal(str(risk_budget.capital_allocation_pct)) / Decimal("100")
+        allocated = (
+            account_equity * Decimal(str(risk_budget.capital_allocation_pct)) / Decimal("100")
+        )
 
         strength = max(0.0, signal.strength)
         conviction_capital = allocated * Decimal(str(strength))

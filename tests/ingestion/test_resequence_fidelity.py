@@ -126,10 +126,12 @@ class TestInMemoryEventLogOrderInvariant:
         # so locally-out-of-order quotes inside one batch are accepted
         # and end up canonicalized.
         log = InMemoryEventLog()
-        log.append_batch([
-            _q(2000, "AAPL", 1),
-            _q(1000, "AAPL", 0),  # earlier than the prior row in the same batch
-        ])
+        log.append_batch(
+            [
+                _q(2000, "AAPL", 1),
+                _q(1000, "AAPL", 0),  # earlier than the prior row in the same batch
+            ]
+        )
         replayed = list(log.replay())
         assert [e.timestamp_ns for e in replayed] == [1000, 2000]
 

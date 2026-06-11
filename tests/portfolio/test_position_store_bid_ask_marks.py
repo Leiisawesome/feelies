@@ -29,8 +29,10 @@ class TestMemoryPositionStoreBidAskMarks:
         # mid = $101, bid = $100.95, ask = $101.05.  Long marks to
         # bid: (100.95 − 100) × 100 = $95 unrealized.
         store.update_mark(
-            "AAPL", Decimal("101"),
-            bid=Decimal("100.95"), ask=Decimal("101.05"),
+            "AAPL",
+            Decimal("101"),
+            bid=Decimal("100.95"),
+            ask=Decimal("101.05"),
         )
         assert store.get("AAPL").unrealized_pnl == Decimal("95.00")
 
@@ -39,8 +41,10 @@ class TestMemoryPositionStoreBidAskMarks:
         store.update("AAPL", quantity_delta=100, fill_price=Decimal("100"))
         # bid > entry: positive unrealized = (bid − entry) × qty
         store.update_mark(
-            "AAPL", Decimal("101.00"),
-            bid=Decimal("100.95"), ask=Decimal("101.05"),
+            "AAPL",
+            Decimal("101.00"),
+            bid=Decimal("100.95"),
+            ask=Decimal("101.05"),
         )
         # Long marks to bid: (100.95 - 100) * 100 = $95
         assert store.get("AAPL").unrealized_pnl == Decimal("95.00")
@@ -53,8 +57,10 @@ class TestMemoryPositionStoreBidAskMarks:
         # unrealized = (mark - avg) * qty; qty = -100, avg = 100, mark = ask = 99.05
         # = (99.05 - 100) × -100 = -0.95 × -100 = $95 unrealized gain.
         store.update_mark(
-            "AAPL", Decimal("99.00"),
-            bid=Decimal("98.95"), ask=Decimal("99.05"),
+            "AAPL",
+            Decimal("99.00"),
+            bid=Decimal("98.95"),
+            ask=Decimal("99.05"),
         )
         assert store.get("AAPL").unrealized_pnl == Decimal("95.00")
 
@@ -74,8 +80,10 @@ class TestMemoryPositionStoreBidAskMarks:
         store_b.update("AAPL", 100, Decimal("100"))
         store_a.update_mark("AAPL", Decimal("101"))
         store_b.update_mark(
-            "AAPL", Decimal("101"),
-            bid=Decimal("100.95"), ask=Decimal("101.05"),
+            "AAPL",
+            Decimal("101"),
+            bid=Decimal("100.95"),
+            ask=Decimal("101.05"),
         )
         # Legacy (mid): $100 unrealized.  New (bid): $95 unrealized.
         assert store_a.get("AAPL").unrealized_pnl > store_b.get("AAPL").unrealized_pnl
@@ -90,8 +98,10 @@ class TestMemoryPositionStoreBidAskMarks:
         # so close-at-ask is less profitable than close-at-mid.
         store_a.update_mark("AAPL", Decimal("99"))
         store_b.update_mark(
-            "AAPL", Decimal("99"),
-            bid=Decimal("98.95"), ask=Decimal("99.05"),
+            "AAPL",
+            Decimal("99"),
+            bid=Decimal("98.95"),
+            ask=Decimal("99.05"),
         )
         # Legacy (mid): (99 - 100) * -100 = $100.  New (ask): $95.
         assert store_a.get("AAPL").unrealized_pnl > store_b.get("AAPL").unrealized_pnl
@@ -102,8 +112,10 @@ class TestStrategyPositionStoreBidAskMarks:
         store = StrategyPositionStore()
         store.update("alpha_a", "AAPL", 100, Decimal("100"))
         store.update_mark(
-            "AAPL", Decimal("101"),
-            bid=Decimal("100.95"), ask=Decimal("101.05"),
+            "AAPL",
+            Decimal("101"),
+            bid=Decimal("100.95"),
+            ask=Decimal("101.05"),
         )
         pos = store.get("alpha_a", "AAPL")
         # Long marks to bid: (100.95 - 100) * 100 = $95.

@@ -14,9 +14,7 @@ from pathlib import Path
 
 import pytest
 
-_SCRIPT_PATH = (
-    Path(__file__).resolve().parent.parent.parent / "scripts" / "run_paper.py"
-)
+_SCRIPT_PATH = Path(__file__).resolve().parent.parent.parent / "scripts" / "run_paper.py"
 
 
 def _load_module() -> object:
@@ -35,13 +33,16 @@ class TestRunPaperGuards:
         assert exc_info.value.code == 0
 
     def test_missing_api_key_returns_one(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         monkeypatch.delenv("MASSIVE_API_KEY", raising=False)
         mod = _load_module()
         # Stub load_dotenv so it doesn't read a real ``.env`` file
         # (which on dev machines actually has the key).
         import builtins
+
         original_import = builtins.__import__
 
         def _fake_import(name: str, *args: object, **kwargs: object) -> object:
@@ -56,7 +57,9 @@ class TestRunPaperGuards:
         assert "MASSIVE_API_KEY" in capsys.readouterr().err
 
     def test_missing_config_file_returns_one(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
         tmp_path: Path,
     ) -> None:
         monkeypatch.setenv("MASSIVE_API_KEY", "fake")
@@ -68,16 +71,14 @@ class TestRunPaperGuards:
         assert "Config file not found" in capsys.readouterr().err
 
     def test_non_paper_mode_returns_one(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
         tmp_path: Path,
     ) -> None:
         monkeypatch.setenv("MASSIVE_API_KEY", "fake")
         cfg = tmp_path / "platform.yaml"
-        cfg.write_text(
-            "symbols: [AAPL]\n"
-            "mode: BACKTEST\n"
-            "alpha_specs: [alpha.yaml]\n"
-        )
+        cfg.write_text("symbols: [AAPL]\nmode: BACKTEST\nalpha_specs: [alpha.yaml]\n")
         mod = _load_module()
         rc = mod.main(["--config", str(cfg)])  # type: ignore[attr-defined]
         assert rc == 1
@@ -86,7 +87,8 @@ class TestRunPaperGuards:
 
 class TestRunPaperTeardownOrder:
     def test_finally_shutdown_before_feed_and_ib(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         mod = _load_module()
         calls: list[str] = []
@@ -110,6 +112,7 @@ class TestRunPaperTeardownOrder:
 
             def __init__(self) -> None:
                 from feelies.kernel.macro import MacroState
+
                 self.macro_state = MacroState.READY
                 self.live_feed = _LiveFeed()
                 self.ib_connection = _IB()

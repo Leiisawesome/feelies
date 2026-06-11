@@ -74,18 +74,14 @@ class KyleLambda60sSensor:
         alignment: str = "legacy",
     ) -> None:
         if window_seconds <= 0:
-            raise ValueError(
-                f"window_seconds must be > 0, got {window_seconds}"
-            )
+            raise ValueError(f"window_seconds must be > 0, got {window_seconds}")
         if min_samples < 2:
             raise ValueError(
-                f"min_samples must be >= 2 (need 2+ for OLS slope), "
-                f"got {min_samples}"
+                f"min_samples must be >= 2 (need 2+ for OLS slope), got {min_samples}"
             )
         if alignment not in self._VALID_ALIGNMENTS:
             raise ValueError(
-                f"alignment must be one of {self._VALID_ALIGNMENTS}, "
-                f"got {alignment!r}"
+                f"alignment must be one of {self._VALID_ALIGNMENTS}, got {alignment!r}"
             )
         if sensor_id is not None:
             self.sensor_id = sensor_id

@@ -190,8 +190,7 @@ class MassiveLiveFeed:
                 self._queue.put_nowait(item)
             except queue.Full:
                 logger.warning(
-                    "massive_ws: queue full while restoring buffered events "
-                    "after sentinel drain",
+                    "massive_ws: queue full while restoring buffered events after sentinel drain",
                 )
                 break
 
@@ -298,10 +297,12 @@ class MassiveLiveFeed:
         for sym in self._symbols:
             channels.append(f"Q.{sym}")
             channels.append(f"T.{sym}")
-        sub_msg = json.dumps({
-            "action": "subscribe",
-            "params": ",".join(channels),
-        })
+        sub_msg = json.dumps(
+            {
+                "action": "subscribe",
+                "params": ",".join(channels),
+            }
+        )
         await ws.send(sub_msg)
 
         # Massive may send one frame per channel or batch them together.
@@ -365,8 +366,7 @@ class MassiveLiveFeed:
                 return
 
         raise ConnectionError(
-            f"massive_ws: {action_name} failed — expected status "
-            f"'{expected_status}', got: {raw!r}"
+            f"massive_ws: {action_name} failed — expected status '{expected_status}', got: {raw!r}"
         )
 
     async def _consume(self, ws: Any) -> None:
@@ -378,11 +378,7 @@ class MassiveLiveFeed:
             if self._stop_event.is_set():
                 return
 
-            raw_bytes = (
-                raw_msg.encode("utf-8")
-                if isinstance(raw_msg, str)
-                else raw_msg
-            )
+            raw_bytes = raw_msg.encode("utf-8") if isinstance(raw_msg, str) else raw_msg
             received_ns = self._clock.now_ns()
             events = self._normalizer.on_message(
                 raw_bytes,

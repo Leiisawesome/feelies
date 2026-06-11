@@ -16,6 +16,7 @@ def pytest_configure() -> None:
 
     os.environ.setdefault("HYPOTHESIS_STORAGE_DIRECTORY", "/tmp/hypothesis-feelies")
     from hypothesis import settings as h_settings, database as h_db
+
     h_settings.register_profile(
         "ci", database=h_db.DirectoryBasedExampleDatabase("/tmp/hypothesis-feelies")
     )

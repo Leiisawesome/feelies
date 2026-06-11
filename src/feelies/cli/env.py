@@ -17,6 +17,7 @@ def load_dotenv_optional() -> None:
     """Load a local ``.env`` when ``python-dotenv`` is installed."""
     try:
         from dotenv import load_dotenv  # pyright: ignore[reportMissingImports]
+
         load_dotenv()
     except ImportError:
         pass

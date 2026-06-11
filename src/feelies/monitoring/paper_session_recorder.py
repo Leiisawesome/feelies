@@ -29,39 +29,45 @@ def _event_to_dict(event: Event) -> dict[str, Any]:
         "sequence": event.sequence,
     }
     if isinstance(event, Signal):
-        data.update({
-            "symbol": event.symbol,
-            "strategy_id": event.strategy_id,
-            "direction": event.direction.name,
-            "strength": event.strength,
-            "edge_estimate_bps": event.edge_estimate_bps,
-        })
+        data.update(
+            {
+                "symbol": event.symbol,
+                "strategy_id": event.strategy_id,
+                "direction": event.direction.name,
+                "strength": event.strength,
+                "edge_estimate_bps": event.edge_estimate_bps,
+            }
+        )
     elif isinstance(event, OrderRequest):
-        data.update({
-            "order_id": event.order_id,
-            "symbol": event.symbol,
-            "side": event.side.name,
-            "order_type": event.order_type.name,
-            "quantity": event.quantity,
-            "strategy_id": event.strategy_id,
-        })
+        data.update(
+            {
+                "order_id": event.order_id,
+                "symbol": event.symbol,
+                "side": event.side.name,
+                "order_type": event.order_type.name,
+                "quantity": event.quantity,
+                "strategy_id": event.strategy_id,
+            }
+        )
     elif isinstance(event, OrderAck):
-        data.update({
-            "order_id": event.order_id,
-            "symbol": event.symbol,
-            "status": event.status.name,
-            "filled_quantity": event.filled_quantity,
-            "fill_price": (
-                str(event.fill_price) if event.fill_price is not None else None
-            ),
-        })
+        data.update(
+            {
+                "order_id": event.order_id,
+                "symbol": event.symbol,
+                "status": event.status.name,
+                "filled_quantity": event.filled_quantity,
+                "fill_price": (str(event.fill_price) if event.fill_price is not None else None),
+            }
+        )
     elif isinstance(event, Alert):
-        data.update({
-            "alert_name": event.alert_name,
-            "severity": event.severity.name,
-            "message": event.message,
-            "context": event.context,
-        })
+        data.update(
+            {
+                "alert_name": event.alert_name,
+                "severity": event.severity.name,
+                "message": event.message,
+                "context": event.context,
+            }
+        )
     return data
 
 
@@ -123,11 +129,13 @@ class PaperSessionRecorder:
         if self.emit_timing and self._timing:
             self._write_jsonl("timing.jsonl", self._timing)
         if self.emit_timing and self._idle_tick_count:
-            self._timing.append({
-                "kind": "idle_tick_total",
-                "duration_ns": self._idle_tick_count,
-                "correlation_id": "",
-            })
+            self._timing.append(
+                {
+                    "kind": "idle_tick_total",
+                    "duration_ns": self._idle_tick_count,
+                    "correlation_id": "",
+                }
+            )
             self._write_jsonl("timing.jsonl", self._timing)
 
     def write_fills(self, records: list[dict[str, Any]]) -> None:
@@ -149,15 +157,17 @@ def trade_records_to_dicts(records: list[Any]) -> list[dict[str, Any]]:
     """Convert TradeRecord objects to JSON-serialisable dicts."""
     out: list[dict[str, Any]] = []
     for rec in records:
-        out.append({
-            "order_id": rec.order_id,
-            "symbol": rec.symbol,
-            "strategy_id": rec.strategy_id,
-            "side": rec.side.name if hasattr(rec.side, "name") else str(rec.side),
-            "requested_quantity": rec.requested_quantity,
-            "filled_quantity": rec.filled_quantity,
-            "fill_price": str(rec.fill_price),
-            "fill_timestamp_ns": rec.fill_timestamp_ns,
-            "cost_bps": float(rec.cost_bps) if rec.cost_bps is not None else None,
-        })
+        out.append(
+            {
+                "order_id": rec.order_id,
+                "symbol": rec.symbol,
+                "strategy_id": rec.strategy_id,
+                "side": rec.side.name if hasattr(rec.side, "name") else str(rec.side),
+                "requested_quantity": rec.requested_quantity,
+                "filled_quantity": rec.filled_quantity,
+                "fill_price": str(rec.fill_price),
+                "fill_timestamp_ns": rec.fill_timestamp_ns,
+                "cost_bps": float(rec.cost_bps) if rec.cost_bps is not None else None,
+            }
+        )
     return out

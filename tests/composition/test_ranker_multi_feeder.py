@@ -97,6 +97,7 @@ def test_multi_feeder_exit_only_mechanism_excluded_from_active() -> None:
         trend_mechanism=TrendMechanism.LIQUIDITY_STRESS,
         expected_half_life_seconds=120,
     )
+
     def _kyle_signal(sym: str, sid: str, raw: float) -> Signal:
         return Signal(
             timestamp_ns=ts,
@@ -105,9 +106,7 @@ def test_multi_feeder_exit_only_mechanism_excluded_from_active() -> None:
             source_layer="SIGNAL",
             symbol=sym,
             strategy_id=sid,
-            direction=(
-                SignalDirection.LONG if raw > 0 else SignalDirection.SHORT
-            ),
+            direction=(SignalDirection.LONG if raw > 0 else SignalDirection.SHORT),
             strength=1.0,
             edge_estimate_bps=abs(raw),
             layer="SIGNAL",
@@ -115,6 +114,7 @@ def test_multi_feeder_exit_only_mechanism_excluded_from_active() -> None:
             trend_mechanism=TrendMechanism.KYLE_INFO,
             expected_half_life_seconds=600,
         )
+
     ctx = CrossSectionalContext(
         timestamp_ns=ts,
         sequence=1,

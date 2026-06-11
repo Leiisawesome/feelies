@@ -213,9 +213,7 @@ class TestAlphaLifecycle:
     def test_is_live_false_in_research(self, lifecycle: AlphaLifecycle) -> None:
         assert lifecycle.is_live is False
 
-    def test_promote_to_paper_success(
-        self, lifecycle: AlphaLifecycle
-    ) -> None:
+    def test_promote_to_paper_success(self, lifecycle: AlphaLifecycle) -> None:
         evidence = PromotionEvidence(
             schema_valid=True,
             determinism_test_passed=True,
@@ -227,9 +225,7 @@ class TestAlphaLifecycle:
         assert lifecycle.is_active is True
         assert lifecycle.is_live is False
 
-    def test_promote_to_paper_fails_gate(
-        self, lifecycle: AlphaLifecycle
-    ) -> None:
+    def test_promote_to_paper_fails_gate(self, lifecycle: AlphaLifecycle) -> None:
         evidence = PromotionEvidence(
             schema_valid=False,
             determinism_test_passed=True,
@@ -299,9 +295,7 @@ class TestAlphaLifecycle:
         assert len(errors) > 0
         assert lc.state == AlphaLifecycleState.PAPER
 
-    def test_quarantine_from_live(
-        self, lifecycle: AlphaLifecycle, clock: SimulatedClock
-    ) -> None:
+    def test_quarantine_from_live(self, lifecycle: AlphaLifecycle, clock: SimulatedClock) -> None:
         gate = GateRequirements(paper_min_days=1)
         lc = AlphaLifecycle(
             alpha_id="test",
@@ -395,9 +389,7 @@ class TestAlphaLifecycle:
         assert len(errors) > 0
         assert lc.state == AlphaLifecycleState.QUARANTINED
 
-    def test_decommission(
-        self, lifecycle: AlphaLifecycle, clock: SimulatedClock
-    ) -> None:
+    def test_decommission(self, lifecycle: AlphaLifecycle, clock: SimulatedClock) -> None:
         gate = GateRequirements(paper_min_days=1)
         lc = AlphaLifecycle(alpha_id="test", clock=clock, gate_requirements=gate)
         lc.promote_to_paper(
@@ -467,9 +459,7 @@ class TestAlphaLifecycleWithLedger:
     ) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock, ledger=ledger)
 
-        errors = lc.promote_to_paper(
-            _paper_evidence(), correlation_id="corr-paper"
-        )
+        errors = lc.promote_to_paper(_paper_evidence(), correlation_id="corr-paper")
 
         assert errors == []
         entries = list(ledger.entries())

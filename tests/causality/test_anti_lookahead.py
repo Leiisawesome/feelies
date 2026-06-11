@@ -143,10 +143,12 @@ class TestIngestionCausality:
             log.append(_log_quote(seq=1, exchange_ts_ns=100))
 
     def test_replay_feed_rejects_trade_before_quote_at_equal_ts(self) -> None:
-        log = _UnsortedEventLog([
-            _replay_trade(1, symbol="AAPL", exchange_ts_ns=100),
-            _replay_quote(1, symbol="AAPL", exchange_ts_ns=100),
-        ])
+        log = _UnsortedEventLog(
+            [
+                _replay_trade(1, symbol="AAPL", exchange_ts_ns=100),
+                _replay_quote(1, symbol="AAPL", exchange_ts_ns=100),
+            ]
+        )
         feed = ReplayFeed(log, clock=None)
         with pytest.raises(CausalityViolation, match="out of deterministic order"):
             list(feed.events())
@@ -285,9 +287,7 @@ class _CausalSumFeature:
         causal = [v for ts, v in state["observations"] if ts <= cutoff]
         # Retain post-cutoff observations for the next horizon; drop
         # the ones we just folded into this snapshot.
-        state["observations"] = [
-            (ts, v) for ts, v in state["observations"] if ts > cutoff
-        ]
+        state["observations"] = [(ts, v) for ts, v in state["observations"] if ts > cutoff]
         if not causal:
             return 0.0, False, True
         return sum(causal), True, False
@@ -392,7 +392,8 @@ class TestRegulatoryAntiLookahead:
         orch._ssr_codes = frozenset({7})
 
         _publish_signal_on_quote(
-            bus, _make_signal(_make_quote(ts=2000, seq=1), SignalDirection.SHORT),
+            bus,
+            _make_signal(_make_quote(ts=2000, seq=1), SignalDirection.SHORT),
         )
         q_entry = _make_quote(ts=2000, seq=2)
         bt_router.on_quote(q_entry)
@@ -441,7 +442,8 @@ class TestRegulatoryAntiLookahead:
         orch, bt_router = self._build_halt_orchestrator(clock, bus, position_store)
 
         _publish_signal_on_quote(
-            bus, _make_signal(_make_quote(), SignalDirection.LONG),
+            bus,
+            _make_signal(_make_quote(), SignalDirection.LONG),
         )
         orch._process_trade(self._halt_trade(ts=1500, seq=2, conditions=(5,)))
         assert "AAPL" in orch._halted_symbols

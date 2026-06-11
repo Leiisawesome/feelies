@@ -209,19 +209,22 @@ class MassiveHistoricalIngestor:
             q_done = self._checkpoint.is_done(symbol, "quotes")
             t_done = self._checkpoint.is_done(symbol, "trades")
             if q_done and t_done:
-                logger.info(
-                    "massive_ingestor: skipping %s (checkpoint complete)", symbol
-                )
+                logger.info("massive_ingestor: skipping %s (checkpoint complete)", symbol)
                 completed_symbols.add(symbol)
                 continue
 
             logger.info(
                 "massive_ingestor: ingesting %s from %s to %s",
-                symbol, start_date, end_date,
+                symbol,
+                start_date,
+                end_date,
             )
 
             ev_count, pg_count = self.ingest_symbol_parallel(
-                client, symbol, start_date, end_date,
+                client,
+                symbol,
+                start_date,
+                end_date,
                 on_page=on_page,
             )
             total_events += ev_count
@@ -230,22 +233,19 @@ class MassiveHistoricalIngestor:
             completed_symbols.add(symbol)
             logger.info(
                 "massive_ingestor: completed %s, cumulative events: %d",
-                symbol, total_events,
+                symbol,
+                total_events,
             )
 
         health = self._normalizer.all_health()
         gaps = sum(
-            1 for h in health.values()
-            if h in (DataHealth.GAP_DETECTED, DataHealth.CORRUPTED)
+            1 for h in health.values() if h in (DataHealth.GAP_DETECTED, DataHealth.CORRUPTED)
         )
 
         if len(symbols) > 1:
             from feelies.storage.event_resequence import resequence_event_list
 
-            merged_raw = [
-                e for e in self._event_log.replay()
-                if isinstance(e, (NBBOQuote, Trade))
-            ]
+            merged_raw = [e for e in self._event_log.replay() if isinstance(e, (NBBOQuote, Trade))]
             sorted_events = resequence_event_list(merged_raw)
             self._event_log.replace_events(sorted_events)
 
@@ -301,12 +301,24 @@ class MassiveHistoricalIngestor:
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             quotes_future = pool.submit(
-                _download_raw, client_q, symbol, start_date, end_date,
-                client_q.list_quotes, "quotes", _q_on_page,
+                _download_raw,
+                client_q,
+                symbol,
+                start_date,
+                end_date,
+                client_q.list_quotes,
+                "quotes",
+                _q_on_page,
             )
             trades_future = pool.submit(
-                _download_raw, client_t, symbol, start_date, end_date,
-                client_t.list_trades, "trades", _t_on_page,
+                _download_raw,
+                client_t,
+                symbol,
+                start_date,
+                end_date,
+                client_t.list_trades,
+                "trades",
+                _t_on_page,
             )
             # One REST stream can exceed 5m on liquid names / full session days;
             # ``TimeoutError`` has an empty ``str()``, so a too-tight bound looks
@@ -331,7 +343,10 @@ class MassiveHistoricalIngestor:
         total_pages = q_pages + t_pages
         logger.info(
             "massive_ingestor: downloaded %d raw quotes + %d raw trades for %s (%d pages)",
-            len(raw_quotes), len(raw_trades), symbol, total_pages,
+            len(raw_quotes),
+            len(raw_trades),
+            symbol,
+            total_pages,
         )
 
         for d in raw_quotes:
@@ -341,11 +356,13 @@ class MassiveHistoricalIngestor:
 
         merged = raw_quotes + raw_trades
         del raw_quotes, raw_trades  # free the two intermediate copies before processing
-        merged.sort(key=lambda d: (
-            d.get("sip_timestamp", 0),
-            d.get("sequence_number", 0),
-            d.get("__type_rank__", 0),
-        ))
+        merged.sort(
+            key=lambda d: (
+                d.get("sip_timestamp", 0),
+                d.get("sequence_number", 0),
+                d.get("__type_rank__", 0),
+            )
+        )
 
         total_events_local = 0
         chunk: list[NBBOQuote | Trade] = []
@@ -403,7 +420,9 @@ def _download_raw(
         )
     except Exception:
         logger.exception(
-            "massive_ingestor: failed to start %s iteration for %s", data_label, symbol,
+            "massive_ingestor: failed to start %s iteration for %s",
+            data_label,
+            symbol,
         )
         return [], 0, False
 
@@ -426,7 +445,10 @@ def _download_raw(
         logger.exception(
             "massive_ingestor: mid-pagination error for %s/%s after %d pages;"
             " partial data (%d records) retained",
-            symbol, data_label, pages, len(raw_dicts),
+            symbol,
+            data_label,
+            pages,
+            len(raw_dicts),
         )
 
     if buf:
@@ -460,11 +482,7 @@ def _model_to_dict(record: Any, symbol: str) -> dict[str, Any]:
     annotations = getattr(cls, "__annotations__", None)
 
     if annotations:
-        rec_dict = {
-            k: getattr(record, k, None)
-            for k in annotations
-            if not k.startswith("_")
-        }
+        rec_dict = {k: getattr(record, k, None) for k in annotations if not k.startswith("_")}
     elif isinstance(record, dict):
         rec_dict = dict(record)
     elif hasattr(record, "__dict__"):
@@ -482,7 +500,8 @@ def _model_to_dict(record: Any, symbol: str) -> dict[str, Any]:
         logger.warning(
             "massive_ingestor: REST record ticker %r does not match "
             "requested symbol %r — dropping record",
-            returned, symbol,
+            returned,
+            symbol,
         )
         return {}
 

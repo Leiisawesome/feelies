@@ -54,10 +54,7 @@ _BASE_SPEC = {
         "fee_bps": 1.0,
         "margin_ratio": 1.8,
     },
-    "signal": (
-        "def evaluate(snapshot, regime, params):\n"
-        "    return None\n"
-    ),
+    "signal": ("def evaluate(snapshot, regime, params):\n    return None\n"),
 }
 
 
@@ -114,9 +111,7 @@ def test_missing_schema_version_is_rejected() -> None:
 def test_schema_1_1_without_layer_is_rejected() -> None:
     spec = _spec(schema_version="1.1")
     spec.pop("layer", None)
-    with pytest.raises(
-        AlphaLoadError, match="schema_version '1.1' requires the 'layer' field"
-    ):
+    with pytest.raises(AlphaLoadError, match="schema_version '1.1' requires the 'layer' field"):
         AlphaLoader().load_from_dict(spec, source="<test>")
 
 
@@ -244,9 +239,7 @@ def test_g15_unknown_router_rejected() -> None:
         AlphaLoader().load_from_dict(spec, source="<test>")
 
 
-@pytest.mark.parametrize(
-    "router", ["PassiveLimitOrderRouter", "BacktestOrderRouter"]
-)
+@pytest.mark.parametrize("router", ["PassiveLimitOrderRouter", "BacktestOrderRouter"])
 def test_g15_known_routers_pass(router: str) -> None:
     spec = _spec(
         schema_version="1.1",

@@ -30,14 +30,23 @@ pytestmark = pytest.mark.backtest_validation
 class TestEstimateAggressiveTakerCostBps:
     def test_qty_within_depth_matches_flat_estimate(self) -> None:
         model = DefaultCostModel()
-        flat = float(model.compute(
-            "AAPL", Side.BUY, 100, Decimal("100"), Decimal("0.02"),
-            is_taker=True,
-        ).cost_bps)
+        flat = float(
+            model.compute(
+                "AAPL",
+                Side.BUY,
+                100,
+                Decimal("100"),
+                Decimal("0.02"),
+                is_taker=True,
+            ).cost_bps
+        )
         depth_aware = estimate_aggressive_taker_cost_bps(
             model,
-            symbol="AAPL", side=Side.BUY, quantity=100,
-            mid_price=Decimal("100"), half_spread=Decimal("0.02"),
+            symbol="AAPL",
+            side=Side.BUY,
+            quantity=100,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.02"),
             available_depth=500,  # ample
             market_impact_factor=Decimal("0.5"),
             max_impact_half_spreads=Decimal("10"),
@@ -46,15 +55,24 @@ class TestEstimateAggressiveTakerCostBps:
 
     def test_qty_exceeds_depth_higher_than_flat(self) -> None:
         model = DefaultCostModel()
-        flat = float(model.compute(
-            "AAPL", Side.BUY, 1000, Decimal("100"), Decimal("0.02"),
-            is_taker=True,
-        ).cost_bps)
+        flat = float(
+            model.compute(
+                "AAPL",
+                Side.BUY,
+                1000,
+                Decimal("100"),
+                Decimal("0.02"),
+                is_taker=True,
+            ).cost_bps
+        )
         # 1000 shares vs 100 L1 depth → 900 excess → impact applies.
         depth_aware = estimate_aggressive_taker_cost_bps(
             model,
-            symbol="AAPL", side=Side.BUY, quantity=1000,
-            mid_price=Decimal("100"), half_spread=Decimal("0.02"),
+            symbol="AAPL",
+            side=Side.BUY,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.02"),
             available_depth=100,
             market_impact_factor=Decimal("0.5"),
             max_impact_half_spreads=Decimal("10"),
@@ -67,16 +85,25 @@ class TestRoundTripEstimatorDepthAware:
         model = DefaultCostModel()
         legacy = estimate_round_trip_cost_bps(
             model,
-            symbol="AAPL", entry_side=Side.BUY, quantity=1000,
-            mid_price=Decimal("100"), half_spread=Decimal("0.02"),
-            is_taker=True, is_short_entry=False,
+            symbol="AAPL",
+            entry_side=Side.BUY,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.02"),
+            is_taker=True,
+            is_short_entry=False,
         )
         depth_aware = estimate_round_trip_cost_bps(
             model,
-            symbol="AAPL", entry_side=Side.BUY, quantity=1000,
-            mid_price=Decimal("100"), half_spread=Decimal("0.02"),
-            is_taker=True, is_short_entry=False,
-            bid_size=100, ask_size=100,
+            symbol="AAPL",
+            entry_side=Side.BUY,
+            quantity=1000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.02"),
+            is_taker=True,
+            is_short_entry=False,
+            bid_size=100,
+            ask_size=100,
             market_impact_factor=Decimal("0.5"),
             max_impact_half_spreads=Decimal("10"),
         )
@@ -92,14 +119,21 @@ class TestPolicyDepthAware:
         policy = MinimumCostExecutionPolicy(DefaultCostModel(), cfg)
         # Wide quote, large qty vs thin depth → aggressive walks book.
         decision_with_depth = policy.decide(
-            symbol="AAPL", side=Side.BUY, quantity=10_000,
-            mid_price=Decimal("100"), half_spread=Decimal("0.05"),
-            bid_size=10, ask_size=10,
+            symbol="AAPL",
+            side=Side.BUY,
+            quantity=10_000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.05"),
+            bid_size=10,
+            ask_size=10,
         )
         # Without depth, policy under-prices aggressive → passive may win.
         decision_without_depth = policy.decide(
-            symbol="AAPL", side=Side.BUY, quantity=10_000,
-            mid_price=Decimal("100"), half_spread=Decimal("0.05"),
+            symbol="AAPL",
+            side=Side.BUY,
+            quantity=10_000,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.05"),
         )
         # With depth the aggressive route is correctly more expensive,
         # which makes passive more attractive (matches reality).

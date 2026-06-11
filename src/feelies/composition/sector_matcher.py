@@ -104,14 +104,10 @@ class SectorMatcher:
     @staticmethod
     def _load_map(path: Path) -> dict[str, str]:
         if not path.is_file():
-            raise FileNotFoundError(
-                f"SectorMatcher: sector map file not found: {path}"
-            )
+            raise FileNotFoundError(f"SectorMatcher: sector map file not found: {path}")
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
-            raise ValueError(
-                f"SectorMatcher: {path} must contain a JSON object"
-            )
+            raise ValueError(f"SectorMatcher: {path} must contain a JSON object")
         return {str(k): str(v) for k, v in data.items()}
 
 

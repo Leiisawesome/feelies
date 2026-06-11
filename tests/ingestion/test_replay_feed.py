@@ -14,7 +14,9 @@ from feelies.ingestion.replay_feed import ReplayFeed, market_data_visible_at_ns
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 
-def _make_quote(seq: int, symbol: str = "AAPL", exchange_ts_ns: int = 1_700_000_000_000_000_000) -> NBBOQuote:
+def _make_quote(
+    seq: int, symbol: str = "AAPL", exchange_ts_ns: int = 1_700_000_000_000_000_000
+) -> NBBOQuote:
     return NBBOQuote(
         timestamp_ns=exchange_ts_ns,
         correlation_id=f"{symbol}:{exchange_ts_ns}:{seq}",
@@ -28,7 +30,9 @@ def _make_quote(seq: int, symbol: str = "AAPL", exchange_ts_ns: int = 1_700_000_
     )
 
 
-def _make_trade(seq: int, symbol: str = "AAPL", exchange_ts_ns: int = 1_700_000_000_000_100_000) -> Trade:
+def _make_trade(
+    seq: int, symbol: str = "AAPL", exchange_ts_ns: int = 1_700_000_000_000_100_000
+) -> Trade:
     return Trade(
         timestamp_ns=exchange_ts_ns,
         correlation_id=f"{symbol}:{exchange_ts_ns}:{seq}",
@@ -56,7 +60,9 @@ class _UnsortedEventLog:
         self._events = list(events)
 
     def replay(
-        self, start_sequence: int = 0, end_sequence: int | None = None,
+        self,
+        start_sequence: int = 0,
+        end_sequence: int | None = None,
     ) -> Iterator[Event]:
         yield from self._events
 
@@ -73,15 +79,17 @@ class TestReplayFeed:
 
         log = InMemoryEventLog()
         log.append(_make_quote(0))
-        log.append(MetricEvent(
-            timestamp_ns=0,
-            correlation_id="",
-            sequence=1,
-            layer="test",
-            name="foo",
-            value=1.0,
-            metric_type=MetricType.COUNTER,
-        ))
+        log.append(
+            MetricEvent(
+                timestamp_ns=0,
+                correlation_id="",
+                sequence=1,
+                layer="test",
+                name="foo",
+                value=1.0,
+                metric_type=MetricType.COUNTER,
+            )
+        )
         log.append(_make_trade(2))
 
         feed = ReplayFeed(log, clock=None)
@@ -141,30 +149,36 @@ class TestReplayFeedCausalityEnforcement:
 
     def test_raises_on_backward_exchange_timestamp(self) -> None:
         """Defense-in-depth: catches unsorted EventLog implementations."""
-        log = _UnsortedEventLog([
-            _make_quote(0, exchange_ts_ns=100),
-            _make_trade(1, symbol="MSFT", exchange_ts_ns=50),
-            _make_quote(2, exchange_ts_ns=200),
-        ])
+        log = _UnsortedEventLog(
+            [
+                _make_quote(0, exchange_ts_ns=100),
+                _make_trade(1, symbol="MSFT", exchange_ts_ns=50),
+                _make_quote(2, exchange_ts_ns=200),
+            ]
+        )
         feed = ReplayFeed(log, clock=None)
 
         with pytest.raises(CausalityViolation, match="out of deterministic order"):
             list(feed.events())
 
     def test_accepts_equal_timestamps(self) -> None:
-        log = _UnsortedEventLog([
-            _make_quote(0, exchange_ts_ns=100),
-            _make_trade(1, symbol="MSFT", exchange_ts_ns=100),
-        ])
+        log = _UnsortedEventLog(
+            [
+                _make_quote(0, exchange_ts_ns=100),
+                _make_trade(1, symbol="MSFT", exchange_ts_ns=100),
+            ]
+        )
         feed = ReplayFeed(log, clock=None)
         assert len(list(feed.events())) == 2
 
     def test_raises_when_equal_timestamp_breaks_kind_tie_order(self) -> None:
         """At identical (ts, sequence), quotes must precede trades (Inv-6)."""
-        log = _UnsortedEventLog([
-            _make_trade(1, symbol="AAPL", exchange_ts_ns=100),
-            _make_quote(1, symbol="AAPL", exchange_ts_ns=100),
-        ])
+        log = _UnsortedEventLog(
+            [
+                _make_trade(1, symbol="AAPL", exchange_ts_ns=100),
+                _make_quote(1, symbol="AAPL", exchange_ts_ns=100),
+            ]
+        )
         feed = ReplayFeed(log, clock=None)
         with pytest.raises(CausalityViolation, match="out of deterministic order"):
             list(feed.events())

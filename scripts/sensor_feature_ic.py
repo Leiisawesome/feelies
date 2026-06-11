@@ -80,23 +80,29 @@ _NS_PER_SECOND = 1_000_000_000
 # what production actually computes.
 _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     SensorSpec(
-        sensor_id="ofi_ewma", sensor_version="1.1.0", cls=OFIEwmaSensor,
+        sensor_id="ofi_ewma",
+        sensor_version="1.1.0",
+        cls=OFIEwmaSensor,
         params={"alpha": 0.1, "warm_after": 50, "warm_window_seconds": 300},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
-        sensor_id="micro_price", sensor_version="1.1.0", cls=MicroPriceSensor,
+        sensor_id="micro_price",
+        sensor_version="1.1.0",
+        cls=MicroPriceSensor,
         params={"warm_after": 1, "warm_window_seconds": 60},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
-        sensor_id="realized_vol_30s", sensor_version="1.3.0",
+        sensor_id="realized_vol_30s",
+        sensor_version="1.3.0",
         cls=RealizedVol30sSensor,
         params={"window_seconds": 30, "warm_after": 16},
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
-        sensor_id="kyle_lambda_60s", sensor_version="2.0.0",
+        sensor_id="kyle_lambda_60s",
+        sensor_version="2.0.0",
         cls=KyleLambda60sSensor,
         params={
             "min_samples": 30,
@@ -117,9 +123,13 @@ def _count_builder(sensor_id: str, max_samples: int) -> _FeatureBuilder:
         return [
             SensorPassthroughFeature(sid, h),
             RollingZscoreFeature(
-                sid, h, feature_id=f"{sid}_zscore", max_samples=max_samples,
+                sid,
+                h,
+                feature_id=f"{sid}_zscore",
+                max_samples=max_samples,
             ),
         ]
+
     return build
 
 
@@ -128,9 +138,13 @@ def _window_builder(sensor_id: str) -> _FeatureBuilder:
         return [
             SensorPassthroughFeature(sid, h),
             HorizonWindowedFeature(
-                sid, h, reducer="zscore", feature_id=f"{sid}_zscore",
+                sid,
+                h,
+                reducer="zscore",
+                feature_id=f"{sid}_zscore",
             ),
         ]
+
     return build
 
 
@@ -160,18 +174,22 @@ def _replay_snapshots(
     bus.subscribe(HorizonFeatureSnapshot, captured.append)  # type: ignore[arg-type]
 
     registry = SensorRegistry(
-        bus=bus, sequence_generator=SequenceGenerator(),
+        bus=bus,
+        sequence_generator=SequenceGenerator(),
         symbols=frozenset({symbol}),
     )
     for spec in sensor_specs:
         registry.register(spec)
     scheduler = HorizonScheduler(
-        horizons=horizons, session_id="IC_HARNESS",
-        symbols=frozenset({symbol}), session_open_ns=session_open_ns,
+        horizons=horizons,
+        session_id="IC_HARNESS",
+        symbols=frozenset({symbol}),
+        session_open_ns=session_open_ns,
         sequence_generator=SequenceGenerator(),
     )
     aggregator = HorizonAggregator(
-        bus=bus, symbols=frozenset({symbol}),
+        bus=bus,
+        symbols=frozenset({symbol}),
         sensor_buffer_seconds=2 * max(horizons),
         sequence_generator=SequenceGenerator(),
         horizon_features=horizon_features,
@@ -328,7 +346,10 @@ class _Row:
 
 
 def _run_one(
-    cache: DiskEventCache, symbol: str, date: str, horizons: frozenset[int],
+    cache: DiskEventCache,
+    symbol: str,
+    date: str,
+    horizons: frozenset[int],
 ) -> list[_Row]:
     events = cache.load(symbol, date)
     if not events:
@@ -350,36 +371,52 @@ def _run_one(
         feature_id = f"{sensor_id}_zscore"
         variants: dict[str, list[HorizonFeature]] = {
             "count_window": [
-                f for h in sorted(horizons)
+                f
+                for h in sorted(horizons)
                 for f in _count_builder(sensor_id, max_samples)(sensor_id, h)
             ],
             "horizon_window": [
-                f for h in sorted(horizons)
-                for f in _window_builder(sensor_id)(sensor_id, h)
+                f for h in sorted(horizons) for f in _window_builder(sensor_id)(sensor_id, h)
             ],
         }
         for variant, feats in variants.items():
             snaps = _replay_snapshots(
-                events, symbol=symbol, horizon_features=feats,
-                horizons=horizons, session_open_ns=session_open_ns,
+                events,
+                symbol=symbol,
+                horizon_features=feats,
+                horizons=horizons,
+                session_open_ns=session_open_ns,
             )
             for h in sorted(horizons):
                 p = _collect_pairs(snaps, mids, feature_id, h)
-                rows.append(_Row(
-                    symbol=symbol, date=date, feature=feature_id, horizon=h,
-                    variant=variant, n=len(p.values),
-                    rank_ic=_spearman(p.values, p.fwd),
-                    ic=_pearson(p.values, p.fwd),
-                ))
+                rows.append(
+                    _Row(
+                        symbol=symbol,
+                        date=date,
+                        feature=feature_id,
+                        horizon=h,
+                        variant=variant,
+                        n=len(p.values),
+                        rank_ic=_spearman(p.values, p.fwd),
+                        ic=_pearson(p.values, p.fwd),
+                    )
+                )
 
     # Audit P1-5: A/B the Kyle *alignment* (legacy 1.2.0 vs causal 2.0.0),
     # both under the horizon-window feature, isolating the alignment change
     # from the windowing change.  The main loop above already tests windowing
     # on whatever kyle version sits in _SENSOR_SPECS (currently causal);
     # this answers the distinct question "did the causal re-alignment help?".
-    rows.extend(_kyle_alignment_ab(
-        events, mids, symbol, date, horizons, session_open_ns,
-    ))
+    rows.extend(
+        _kyle_alignment_ab(
+            events,
+            mids,
+            symbol,
+            date,
+            horizons,
+            session_open_ns,
+        )
+    )
     return rows
 
 
@@ -400,13 +437,15 @@ def _kyle_alignment_ab(
     feature_id = "kyle_lambda_60s_zscore"
     base = tuple(s for s in _SENSOR_SPECS if s.sensor_id != "kyle_lambda_60s")
     legacy_kyle = SensorSpec(
-        sensor_id="kyle_lambda_60s", sensor_version="1.2.0",
+        sensor_id="kyle_lambda_60s",
+        sensor_version="1.2.0",
         cls=KyleLambda60sSensor,
         params={"min_samples": 30, "alignment": "legacy", "sensor_version": "1.2.0"},
         subscribes_to=(NBBOQuote, Trade),
     )
     causal_kyle = SensorSpec(
-        sensor_id="kyle_lambda_60s", sensor_version="2.0.0",
+        sensor_id="kyle_lambda_60s",
+        sensor_version="2.0.0",
         cls=KyleLambda60sSensor,
         params={"min_samples": 30, "alignment": "causal", "sensor_version": "2.0.0"},
         subscribes_to=(NBBOQuote, Trade),
@@ -418,22 +457,32 @@ def _kyle_alignment_ab(
     rows: list[_Row] = []
     for variant, specs in specsets.items():
         feats = [
-            f for h in sorted(horizons)
+            f
+            for h in sorted(horizons)
             for f in _window_builder("kyle_lambda_60s")("kyle_lambda_60s", h)
         ]
         snaps = _replay_snapshots(
-            events, symbol=symbol, horizon_features=feats,
-            horizons=horizons, session_open_ns=session_open_ns,
+            events,
+            symbol=symbol,
+            horizon_features=feats,
+            horizons=horizons,
+            session_open_ns=session_open_ns,
             sensor_specs=specs,
         )
         for h in sorted(horizons):
             p = _collect_pairs(snaps, mids, feature_id, h)
-            rows.append(_Row(
-                symbol=symbol, date=date, feature="kyle_alignment", horizon=h,
-                variant=variant, n=len(p.values),
-                rank_ic=_spearman(p.values, p.fwd),
-                ic=_pearson(p.values, p.fwd),
-            ))
+            rows.append(
+                _Row(
+                    symbol=symbol,
+                    date=date,
+                    feature="kyle_alignment",
+                    horizon=h,
+                    variant=variant,
+                    n=len(p.values),
+                    rank_ic=_spearman(p.values, p.fwd),
+                    ic=_pearson(p.values, p.fwd),
+                )
+            )
     return rows
 
 
@@ -480,13 +529,18 @@ def _aggregate_across_days(rows: list[_Row]) -> list[_Row]:
             else None
         )
 
-        pooled.append(_Row(
-            symbol="*", date="*", feature=feature, horizon=horizon,
-            variant=variant,
-            n=max(n_ric, n_ic),
-            rank_ic=ric,
-            ic=ic,
-        ))
+        pooled.append(
+            _Row(
+                symbol="*",
+                date="*",
+                feature=feature,
+                horizon=horizon,
+                variant=variant,
+                n=max(n_ric, n_ic),
+                rank_ic=ric,
+                ic=ic,
+            )
+        )
     return pooled
 
 
@@ -536,11 +590,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.csv is not None:
         with args.csv.open("w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh)
-            w.writerow(["symbol", "date", "feature", "horizon", "variant",
-                        "n", "rank_ic", "ic", "tstat"])
+            w.writerow(
+                ["symbol", "date", "feature", "horizon", "variant", "n", "rank_ic", "ic", "tstat"]
+            )
             for r in all_rows:
-                w.writerow([r.symbol, r.date, r.feature, r.horizon, r.variant,
-                            r.n, r.rank_ic, r.ic, r.tstat])
+                w.writerow(
+                    [
+                        r.symbol,
+                        r.date,
+                        r.feature,
+                        r.horizon,
+                        r.variant,
+                        r.n,
+                        r.rank_ic,
+                        r.ic,
+                        r.tstat,
+                    ]
+                )
         print(f"\nWrote {args.csv}", file=sys.stderr)
     return 0
 

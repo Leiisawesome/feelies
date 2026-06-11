@@ -48,9 +48,7 @@ from feelies.core.events import (
 )
 from feelies.features.definition import FeatureDefinition
 
-PortfolioConstructor = Callable[
-    [CrossSectionalContext, Mapping[str, Any]], SizedPositionIntent
-]
+PortfolioConstructor = Callable[[CrossSectionalContext, Mapping[str, Any]], SizedPositionIntent]
 
 _FAMILY_BY_NAME: dict[str, TrendMechanism] = {m.name: m for m in TrendMechanism}
 
@@ -89,9 +87,7 @@ class LoadedPortfolioLayerModule:
         self._horizon_seconds = int(horizon_seconds)
         self._consumes_mechanisms = consumes_mechanisms
         self._max_share_of_gross = float(max_share_of_gross)
-        self._factor_neutralization_disclosed = bool(
-            factor_neutralization_disclosed
-        )
+        self._factor_neutralization_disclosed = bool(factor_neutralization_disclosed)
         self._depends_on_signals = tuple(depends_on_signals)
         self._params = dict(params)
 
@@ -194,9 +190,7 @@ class _DefaultPortfolioConstructor:
     ) -> SizedPositionIntent:
         engine = self._engine_thunk()
         if engine is None:  # pragma: no cover - bootstrap bug
-            raise CompositionContextError(
-                "_DefaultPortfolioConstructor: engine not yet wired"
-            )
+            raise CompositionContextError("_DefaultPortfolioConstructor: engine not yet wired")
         intent: SizedPositionIntent = engine.run_default_pipeline(
             ctx,
             strategy_id=self._strategy_id,
@@ -242,9 +236,7 @@ def parse_consumes_mechanisms(
     if raw is None:
         return ()
     if not isinstance(raw, (list, tuple)):
-        raise ValueError(
-            f"trend_mechanism.consumes must be a list, got {type(raw).__name__}"
-        )
+        raise ValueError(f"trend_mechanism.consumes must be a list, got {type(raw).__name__}")
     out: list[TrendMechanism] = []
     for entry in raw:
         if isinstance(entry, dict):

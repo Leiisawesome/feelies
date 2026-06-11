@@ -61,9 +61,7 @@ def _make_ctx(*, completeness: float = 1.0) -> CrossSectionalContext:
     )
 
 
-def _build_engine(
-    bus: EventBus, *, completeness_threshold: float = 0.0
-) -> CompositionEngine:
+def _build_engine(bus: EventBus, *, completeness_threshold: float = 0.0) -> CompositionEngine:
     return CompositionEngine(
         bus=bus,
         intent_sequence_generator=SequenceGenerator(),
@@ -102,12 +100,14 @@ def test_dispatch_publishes_one_intent_per_alpha():
     bus.subscribe(SizedPositionIntent, lambda e: captured.append(e))
 
     engine = _build_engine(bus)
-    engine.register(RegisteredPortfolioAlpha(
-        alpha_id="noop",
-        horizon_seconds=300,
-        alpha=_NoopAlpha(),
-        params={},
-    ))
+    engine.register(
+        RegisteredPortfolioAlpha(
+            alpha_id="noop",
+            horizon_seconds=300,
+            alpha=_NoopAlpha(),
+            params={},
+        )
+    )
     engine.attach()
     bus.publish(_make_ctx())
     assert len(captured) == 1
@@ -124,9 +124,14 @@ def test_low_completeness_emits_degenerate_intent():
     bus.subscribe(SizedPositionIntent, lambda e: captured.append(e))
 
     engine = _build_engine(bus, completeness_threshold=0.99)
-    engine.register(RegisteredPortfolioAlpha(
-        alpha_id="noop", horizon_seconds=300, alpha=_NoopAlpha(), params={},
-    ))
+    engine.register(
+        RegisteredPortfolioAlpha(
+            alpha_id="noop",
+            horizon_seconds=300,
+            alpha=_NoopAlpha(),
+            params={},
+        )
+    )
     engine.attach()
     bus.publish(_make_ctx(completeness=0.5))
     assert len(captured) == 1
@@ -146,12 +151,14 @@ def test_alpha_exception_emits_degenerate_intent():
             raise CompositionContextError("solver infeasible")
 
     engine = _build_engine(bus)
-    engine.register(RegisteredPortfolioAlpha(
-        alpha_id="raises",
-        horizon_seconds=300,
-        alpha=_RaisingAlpha(),
-        params={},
-    ))
+    engine.register(
+        RegisteredPortfolioAlpha(
+            alpha_id="raises",
+            horizon_seconds=300,
+            alpha=_RaisingAlpha(),
+            params={},
+        )
+    )
     engine.attach()
     bus.publish(_make_ctx())
     assert len(captured) == 1

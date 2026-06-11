@@ -68,30 +68,36 @@ class TestYAMLRoundTrip:
         Python ``PlatformConfig(...)`` construction agree.
         """
         path = tmp_path / "platform.yaml"
-        path.write_text(dedent("""
+        path.write_text(
+            dedent("""
             symbols: [AAPL]
             alpha_specs: [dummy.alpha.yaml]
-        """).strip())
+        """).strip()
+        )
         cfg = PlatformConfig.from_yaml(path)
         assert cfg.enforce_trend_mechanism is True
 
     def test_explicit_true_loaded(self, tmp_path: Path) -> None:
         path = tmp_path / "platform.yaml"
-        path.write_text(dedent("""
+        path.write_text(
+            dedent("""
             symbols: [AAPL]
             alpha_specs: [dummy.alpha.yaml]
             enforce_trend_mechanism: true
-        """).strip())
+        """).strip()
+        )
         cfg = PlatformConfig.from_yaml(path)
         assert cfg.enforce_trend_mechanism is True
 
     def test_explicit_false_loaded(self, tmp_path: Path) -> None:
         path = tmp_path / "platform.yaml"
-        path.write_text(dedent("""
+        path.write_text(
+            dedent("""
             symbols: [AAPL]
             alpha_specs: [dummy.alpha.yaml]
             enforce_trend_mechanism: false
-        """).strip())
+        """).strip()
+        )
         cfg = PlatformConfig.from_yaml(path)
         assert cfg.enforce_trend_mechanism is False
 
@@ -141,10 +147,7 @@ _SIGNAL_SPEC_NO_MECHANISM = {
         "fee_bps": 1.0,
         "margin_ratio": 1.8,
     },
-    "signal": (
-        "def evaluate(snapshot, regime, params):\n"
-        "    return None\n"
-    ),
+    "signal": ("def evaluate(snapshot, regime, params):\n    return None\n"),
 }
 
 
@@ -162,16 +165,19 @@ _SIGNAL_SPEC_WITH_MECHANISM = {
 class TestStrictLoaderBehaviour:
     def test_strict_off_accepts_v11_signal_without_mechanism(self) -> None:
         AlphaLoader(enforce_trend_mechanism=False).load_from_dict(
-            dict(_SIGNAL_SPEC_NO_MECHANISM), source="<test>",
+            dict(_SIGNAL_SPEC_NO_MECHANISM),
+            source="<test>",
         )
 
     def test_strict_on_refuses_v11_signal_without_mechanism(self) -> None:
         with pytest.raises(MissingTrendMechanismError, match="strict-mode"):
             AlphaLoader(enforce_trend_mechanism=True).load_from_dict(
-                dict(_SIGNAL_SPEC_NO_MECHANISM), source="<test>",
+                dict(_SIGNAL_SPEC_NO_MECHANISM),
+                source="<test>",
             )
 
     def test_strict_on_accepts_v11_signal_with_mechanism(self) -> None:
         AlphaLoader(enforce_trend_mechanism=True).load_from_dict(
-            dict(_SIGNAL_SPEC_WITH_MECHANISM), source="<test>",
+            dict(_SIGNAL_SPEC_WITH_MECHANISM),
+            source="<test>",
         )

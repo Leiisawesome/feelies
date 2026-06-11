@@ -71,9 +71,7 @@ class ExecStyle(Enum):
 ADDITIVE_LEGS: frozenset[PlanLeg] = frozenset(
     {PlanLeg.ENTRY, PlanLeg.SCALE_UP, PlanLeg.REVERSE_ENTRY}
 )
-REDUCING_LEGS: frozenset[PlanLeg] = frozenset(
-    {PlanLeg.TRIM, PlanLeg.EXIT, PlanLeg.REVERSE_EXIT}
-)
+REDUCING_LEGS: frozenset[PlanLeg] = frozenset({PlanLeg.TRIM, PlanLeg.EXIT, PlanLeg.REVERSE_EXIT})
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -162,8 +160,8 @@ class PositionPlan:
 class PositionManagerConfig:
     """Planner feature flags.  Defaults reproduce legacy behaviour."""
 
-    enabled: bool = False     # drive execution from the plan (Phase P2+)
-    shadow: bool = False      # run alongside legacy and record divergence
+    enabled: bool = False  # drive execution from the plan (Phase P2+)
+    shadow: bool = False  # run alongside legacy and record divergence
     enable_trim: bool = False  # emit TRIM legs (Phase P3 / G-2)
     # P3b: edge-aware trim gate.  When > 0, a trim is *suppressed* (the book
     # is held) while the forward edge still justifies the excess —
@@ -247,22 +245,27 @@ class LegacyPositionManager:
         if cur != 0 and eff != 0 and (cur > 0) != (eff > 0):
             entry_side = Side.BUY if eff > 0 else Side.SELL
             return self._reverse_plan(
-                sym, exit_qty=abs(cur), entry_qty=abs(eff),
-                entry_side=entry_side, is_short=eff < 0,
+                sym,
+                exit_qty=abs(cur),
+                entry_qty=abs(eff),
+                entry_side=entry_side,
+                is_short=eff < 0,
             )
 
         # Pure reduce to flat → EXIT (covers the legacy degenerate-reverse
         # whose entry leg is zero: same single flatten order).
         if eff == 0:
-            return PositionPlan(orders=(
-                PlannedOrder(
-                    symbol=sym,
-                    side=Side.SELL if cur > 0 else Side.BUY,
-                    quantity=abs(cur),
-                    style=ExecStyle.MARKET,
-                    leg=PlanLeg.EXIT,
-                ),
-            ))
+            return PositionPlan(
+                orders=(
+                    PlannedOrder(
+                        symbol=sym,
+                        side=Side.SELL if cur > 0 else Side.BUY,
+                        quantity=abs(cur),
+                        style=ExecStyle.MARKET,
+                        leg=PlanLeg.EXIT,
+                    ),
+                )
+            )
 
         # Same-direction additive (ENTRY from flat, or SCALE_UP).  The
         # legacy clamp never produces a same-direction *reduce*, so TRIM
@@ -270,13 +273,25 @@ class LegacyPositionManager:
         # dropped).
         leg = PlanLeg.ENTRY if cur == 0 else PlanLeg.SCALE_UP
         side = Side.BUY if delta > 0 else Side.SELL
-        return PositionPlan(orders=(self._additive(
-            sym, side, abs(delta), leg, is_short=eff < 0,
-        ),))
+        return PositionPlan(
+            orders=(
+                self._additive(
+                    sym,
+                    side,
+                    abs(delta),
+                    leg,
+                    is_short=eff < 0,
+                ),
+            )
+        )
 
     @staticmethod
     def _additive(
-        sym: str, side: Side, qty: int, leg: PlanLeg, is_short: bool,
+        sym: str,
+        side: Side,
+        qty: int,
+        leg: PlanLeg,
+        is_short: bool,
     ) -> PlannedOrder:
         return PlannedOrder(
             symbol=sym,
@@ -298,23 +313,25 @@ class LegacyPositionManager:
     ) -> PositionPlan:
         # Mirror _execute_reverse: aggressive MARKET exit + (same-side) entry.
         exit_side = Side.BUY if entry_side == Side.BUY else Side.SELL
-        return PositionPlan(orders=(
-            PlannedOrder(
-                symbol=sym,
-                side=exit_side,
-                quantity=exit_qty,
-                style=ExecStyle.MARKET,
-                leg=PlanLeg.REVERSE_EXIT,
-            ),
-            PlannedOrder(
-                symbol=sym,
-                side=entry_side,
-                quantity=entry_qty,
-                style=ExecStyle.PASSIVE,
-                leg=PlanLeg.REVERSE_ENTRY,
-                is_short=is_short,
-            ),
-        ))
+        return PositionPlan(
+            orders=(
+                PlannedOrder(
+                    symbol=sym,
+                    side=exit_side,
+                    quantity=exit_qty,
+                    style=ExecStyle.MARKET,
+                    leg=PlanLeg.REVERSE_EXIT,
+                ),
+                PlannedOrder(
+                    symbol=sym,
+                    side=entry_side,
+                    quantity=entry_qty,
+                    style=ExecStyle.PASSIVE,
+                    leg=PlanLeg.REVERSE_ENTRY,
+                    is_short=is_short,
+                ),
+            )
+        )
 
 
 class TargetPositionManager:
@@ -354,7 +371,10 @@ class TargetPositionManager:
         config: PositionManagerConfig | None = None,
     ) -> PositionPlan:
         legacy_plan = self._legacy.plan(
-            desired=desired, current=current, market=market, config=config,
+            desired=desired,
+            current=current,
+            market=market,
+            config=config,
         )
         if config is None or not config.enable_trim:
             return legacy_plan
@@ -371,27 +391,25 @@ class TargetPositionManager:
         threshold = max(1, math.ceil(self._trim_min_fraction * abs(cur)))
         if trim_qty < threshold:
             # Churn guard: hold (same as legacy), but record why for forensics.
-            return PositionPlan(suppressed=(
-                SuppressedLeg(
-                    leg=PlanLeg.TRIM,
-                    reason="trim_below_churn_threshold",
-                    constraints={
-                        "trim_qty": float(trim_qty),
-                        "threshold": float(threshold),
-                        "current_qty": float(cur),
-                    },
-                ),
-            ))
+            return PositionPlan(
+                suppressed=(
+                    SuppressedLeg(
+                        leg=PlanLeg.TRIM,
+                        reason="trim_below_churn_threshold",
+                        constraints={
+                            "trim_qty": float(trim_qty),
+                            "threshold": float(threshold),
+                            "current_qty": float(cur),
+                        },
+                    ),
+                )
+            )
 
         side = Side.SELL if cur > 0 else Side.BUY
         # Round-trip cost of churning the excess Δ (priced once; reused by
         # the P3b edge gate and the leg rationale).
         rt_cost_bps: float | None = None
-        if (
-            market is not None
-            and market.cost_model is not None
-            and market.quote is not None
-        ):
+        if market is not None and market.cost_model is not None and market.quote is not None:
             q = market.quote
             rt_cost_bps = round_trip_cost_bps(
                 market.cost_model,
@@ -423,18 +441,20 @@ class TargetPositionManager:
                 basis="one_way",
             )
         ):
-            return PositionPlan(suppressed=(
-                SuppressedLeg(
-                    leg=PlanLeg.TRIM,
-                    reason="trim_edge_above_gate",
-                    constraints={
-                        "edge_bps": desired.edge_bps,
-                        "required_bps": k * rt_cost_bps,
-                        "round_trip_cost_bps": rt_cost_bps,
-                        "trim_qty": float(trim_qty),
-                    },
-                ),
-            ))
+            return PositionPlan(
+                suppressed=(
+                    SuppressedLeg(
+                        leg=PlanLeg.TRIM,
+                        reason="trim_edge_above_gate",
+                        constraints={
+                            "edge_bps": desired.edge_bps,
+                            "required_bps": k * rt_cost_bps,
+                            "round_trip_cost_bps": rt_cost_bps,
+                            "trim_qty": float(trim_qty),
+                        },
+                    ),
+                )
+            )
 
         rationale: dict[str, float] = {
             "trim_qty": float(trim_qty),
@@ -447,19 +467,19 @@ class TargetPositionManager:
         # P4: a TRIM is a discretionary reduce — work it PASSIVE when
         # urgency-driven execution is on (a non-fill just defers the trim;
         # no risk is created).  Otherwise cross at MARKET (legacy).
-        trim_style = (
-            ExecStyle.PASSIVE if config.urgency_exec else ExecStyle.MARKET
+        trim_style = ExecStyle.PASSIVE if config.urgency_exec else ExecStyle.MARKET
+        return PositionPlan(
+            orders=(
+                PlannedOrder(
+                    symbol=desired.symbol,
+                    side=side,
+                    quantity=trim_qty,
+                    style=trim_style,
+                    leg=PlanLeg.TRIM,
+                    rationale=rationale,
+                ),
+            )
         )
-        return PositionPlan(orders=(
-            PlannedOrder(
-                symbol=desired.symbol,
-                side=side,
-                quantity=trim_qty,
-                style=trim_style,
-                leg=PlanLeg.TRIM,
-                rationale=rationale,
-            ),
-        ))
 
 
 # ── Cost gates (B4 entry / B5 reversal) — single source of truth ─────
@@ -620,8 +640,7 @@ def order_intent_from_plan(
     leg = plan.primary_leg
     # A flip is keyed on the *current* side: long→short when currently long.
     reverse_intent = (
-        TradingIntent.REVERSE_LONG_TO_SHORT if cur > 0
-        else TradingIntent.REVERSE_SHORT_TO_LONG
+        TradingIntent.REVERSE_LONG_TO_SHORT if cur > 0 else TradingIntent.REVERSE_SHORT_TO_LONG
     )
 
     if leg in (PlanLeg.REVERSE_EXIT, PlanLeg.REVERSE_ENTRY):
@@ -638,7 +657,8 @@ def order_intent_from_plan(
         return _oi(TradingIntent.SCALE_UP, plan.total_quantity)
     if leg is PlanLeg.ENTRY:
         intent = (
-            TradingIntent.ENTRY_LONG if plan.orders[0].side == Side.BUY
+            TradingIntent.ENTRY_LONG
+            if plan.orders[0].side == Side.BUY
             else TradingIntent.ENTRY_SHORT
         )
         return _oi(intent, plan.total_quantity)
@@ -728,7 +748,9 @@ def compare_plan_to_intent(
 ) -> PlanDivergence | None:
     """Return a :class:`PlanDivergence` iff the plan's orders disagree."""
     legacy = _legacy_orders(
-        intent_name, intent_target_quantity, current_quantity,
+        intent_name,
+        intent_target_quantity,
+        current_quantity,
     )
     legacy_n = _norm(legacy) if legacy is not None else None
     plan_n = _norm([(o.side, o.quantity) for o in plan.orders])

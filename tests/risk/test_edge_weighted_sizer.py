@@ -157,30 +157,22 @@ class TestVolTilt:
         wrapped = EdgeWeightedSizer(
             BudgetBasedSizer(), cfg, realized_vol_provider=lambda _s: 200.0
         )
-        qty = wrapped.compute_target_quantity(
-            _signal(), budget, Decimal("100"), Decimal("100000")
-        )
+        qty = wrapped.compute_target_quantity(_signal(), budget, Decimal("100"), Decimal("100000"))
         assert qty == 50  # 100 × (100/200)
 
     def test_absent_provider_is_noop(self, budget: AlphaRiskBudget) -> None:
         cfg = SizerTiltConfig(vol_enabled=True)
         wrapped = EdgeWeightedSizer(BudgetBasedSizer(), cfg)  # no provider
-        qty = wrapped.compute_target_quantity(
-            _signal(), budget, Decimal("100"), Decimal("100000")
-        )
+        qty = wrapped.compute_target_quantity(_signal(), budget, Decimal("100"), Decimal("100000"))
         assert qty == 100
 
 
 class TestInventoryTilt:
     def test_taper_with_inventory(self, budget: AlphaRiskBudget) -> None:
         cfg = SizerTiltConfig(inventory_enabled=True)
-        wrapped = EdgeWeightedSizer(
-            BudgetBasedSizer(), cfg, inventory_provider=lambda _s: 250
-        )
+        wrapped = EdgeWeightedSizer(BudgetBasedSizer(), cfg, inventory_provider=lambda _s: 250)
         # base 100, inventory 250/500 → factor 0.5 → 50.
-        qty = wrapped.compute_target_quantity(
-            _signal(), budget, Decimal("100"), Decimal("100000")
-        )
+        qty = wrapped.compute_target_quantity(_signal(), budget, Decimal("100"), Decimal("100000"))
         assert qty == 50
 
 
@@ -241,13 +233,13 @@ class TestCombinedAndCap:
     def test_combined_tilt_clamped(self, budget: AlphaRiskBudget) -> None:
         # edge 2.0 × vol 2.0 = 4.0, clamped to tilt_cap 3.0.
         cfg = SizerTiltConfig(
-            edge_enabled=True, edge_cap=2.0,
-            vol_enabled=True, vol_cap=2.0,
+            edge_enabled=True,
+            edge_cap=2.0,
+            vol_enabled=True,
+            vol_cap=2.0,
             tilt_cap=3.0,
         )
-        wrapped = EdgeWeightedSizer(
-            BudgetBasedSizer(), cfg, realized_vol_provider=lambda _s: 10.0
-        )
+        wrapped = EdgeWeightedSizer(BudgetBasedSizer(), cfg, realized_vol_provider=lambda _s: 10.0)
         assert wrapped.tilt_for(_signal(edge_bps=80.0), budget) == 3.0
 
     def test_zero_base_short_circuits(self, budget: AlphaRiskBudget) -> None:
@@ -256,6 +248,8 @@ class TestCombinedAndCap:
         # strength 0 → base 0 → stays 0 regardless of tilt.
         qty = wrapped.compute_target_quantity(
             _signal(strength=0.0, edge_bps=80.0),
-            budget, Decimal("100"), Decimal("100000"),
+            budget,
+            Decimal("100"),
+            Decimal("100000"),
         )
         assert qty == 0

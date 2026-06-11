@@ -141,9 +141,7 @@ class CPCVConfig:
 
     def __post_init__(self) -> None:
         if self.n_groups < 2:
-            raise ValueError(
-                f"CPCVConfig.n_groups must be >= 2 (got {self.n_groups})"
-            )
+            raise ValueError(f"CPCVConfig.n_groups must be >= 2 (got {self.n_groups})")
         if not (1 <= self.k_test_groups < self.n_groups):
             raise ValueError(
                 f"CPCVConfig.k_test_groups must satisfy "
@@ -151,10 +149,7 @@ class CPCVConfig:
                 f"n_groups={self.n_groups})"
             )
         if self.embargo_bars < 0:
-            raise ValueError(
-                f"CPCVConfig.embargo_bars must be >= 0 "
-                f"(got {self.embargo_bars})"
-            )
+            raise ValueError(f"CPCVConfig.embargo_bars must be >= 0 (got {self.embargo_bars})")
 
     @property
     def n_combinations(self) -> int:
@@ -208,9 +203,7 @@ class CPCVSplit:
 # ─────────────────────────────────────────────────────────────────────
 
 
-def assign_groups(
-    n_bars: int, n_groups: int
-) -> tuple[tuple[int, ...], ...]:
+def assign_groups(n_bars: int, n_groups: int) -> tuple[tuple[int, ...], ...]:
     """Partition ``[0, n_bars)`` into ``n_groups`` contiguous groups.
 
     When ``n_bars`` is not a multiple of ``n_groups`` the remainder
@@ -228,10 +221,7 @@ def assign_groups(
     if n_groups < 1:
         raise ValueError(f"n_groups must be >= 1 (got {n_groups})")
     if n_bars < n_groups:
-        raise ValueError(
-            f"need at least one bar per group: n_bars={n_bars} "
-            f"< n_groups={n_groups}"
-        )
+        raise ValueError(f"need at least one bar per group: n_bars={n_bars} < n_groups={n_groups}")
 
     base, extra = divmod(n_bars, n_groups)
     out: list[tuple[int, ...]] = []
@@ -289,16 +279,10 @@ def _purged_train_indices(
                         if j not in test_set:
                             embargoed.add(j)
 
-    return tuple(
-        i
-        for i in range(n_bars)
-        if i not in test_set and i not in embargoed
-    )
+    return tuple(i for i in range(n_bars) if i not in test_set and i not in embargoed)
 
 
-def generate_cpcv_splits(
-    n_bars: int, config: CPCVConfig
-) -> tuple[CPCVSplit, ...]:
+def generate_cpcv_splits(n_bars: int, config: CPCVConfig) -> tuple[CPCVSplit, ...]:
     """Generate the ``φ = C(N, k)`` train/test splits.
 
     Splits are emitted in the lexicographic order of
@@ -323,9 +307,7 @@ def generate_cpcv_splits(
         test_indices.sort()
         test_indices_tuple = tuple(test_indices)
 
-        train_indices = _purged_train_indices(
-            test_indices_tuple, config.embargo_bars, n_bars
-        )
+        train_indices = _purged_train_indices(test_indices_tuple, config.embargo_bars, n_bars)
 
         splits.append(
             CPCVSplit(
@@ -376,9 +358,7 @@ def reconstruct_paths(
     """
     expected_per_group = math.comb(n_groups - 1, k_test_groups - 1)
 
-    splits_by_group: dict[int, list[int]] = {
-        g: [] for g in range(n_groups)
-    }
+    splits_by_group: dict[int, list[int]] = {g: [] for g in range(n_groups)}
     for split_idx, split in enumerate(splits):
         for g in split.test_group_ids:
             splits_by_group[g].append(split_idx)
@@ -394,9 +374,7 @@ def reconstruct_paths(
 
     paths: list[tuple[int, ...]] = []
     for p in range(expected_per_group):
-        paths.append(
-            tuple(splits_by_group[g][p] for g in range(n_groups))
-        )
+        paths.append(tuple(splits_by_group[g][p] for g in range(n_groups)))
     paths.sort()
     return tuple(paths)
 
@@ -448,8 +426,7 @@ def assemble_path_returns(
     """
     if len(test_returns_by_split) != len(splits):
         raise ValueError(
-            f"len(test_returns_by_split)={len(test_returns_by_split)} "
-            f"!= len(splits)={len(splits)}"
+            f"len(test_returns_by_split)={len(test_returns_by_split)} != len(splits)={len(splits)}"
         )
     for s, split in enumerate(splits):
         if len(test_returns_by_split[s]) != len(split.test_indices):
@@ -485,9 +462,7 @@ def assemble_path_returns(
     out: list[tuple[float, ...]] = []
     for path in paths:
         if len(path) != n_groups:
-            raise ValueError(
-                f"path length {len(path)} != n_groups={n_groups}"
-            )
+            raise ValueError(f"path length {len(path)} != n_groups={n_groups}")
         path_returns: list[float] = []
         for bar_idx in range(n_bars):
             g = bar_to_group[bar_idx]
@@ -605,9 +580,7 @@ def lo_bootstrap_p_value(
       configuration mistake, not a degenerate case).
     """
     if n_bootstrap <= 0:
-        raise ValueError(
-            f"n_bootstrap must be >= 1 (got {n_bootstrap})"
-        )
+        raise ValueError(f"n_bootstrap must be >= 1 (got {n_bootstrap})")
     n = len(sharpes)
     if n < 2:
         return 1.0
@@ -741,9 +714,7 @@ def build_cpcv_evidence(
     Pure function.  No I/O, no clock reads, no global state.
     """
     splits = generate_cpcv_splits(n_bars, config)
-    paths = reconstruct_paths(
-        config.n_groups, config.k_test_groups, splits
-    )
+    paths = reconstruct_paths(config.n_groups, config.k_test_groups, splits)
     paths_returns = assemble_path_returns(
         n_bars=n_bars,
         n_groups=config.n_groups,
@@ -767,9 +738,7 @@ def build_cpcv_evidence(
     mean_sharpe = statistics.fmean(fold_sharpes)
     median_sharpe = statistics.median(fold_sharpes)
     mean_pnl = statistics.fmean(sum(p) for p in paths_returns)
-    p_value = lo_bootstrap_p_value(
-        fold_sharpes, n_bootstrap=n_bootstrap, seed=seed
-    )
+    p_value = lo_bootstrap_p_value(fold_sharpes, n_bootstrap=n_bootstrap, seed=seed)
     fold_pnl_curves_hash = fold_pnl_curves_sha256(paths_returns)
 
     return CPCVEvidence(

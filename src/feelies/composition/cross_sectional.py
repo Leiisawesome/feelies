@@ -66,9 +66,11 @@ _logger = logging.getLogger(__name__)
 # LIQUIDITY_STRESS is a hazard signal — entries are forbidden by Gate
 # G16 rule 5 — but we still defend against malformed alphas slipping
 # through validation.
-_EXIT_ONLY_MECHANISMS: frozenset[TrendMechanism] = frozenset({
-    TrendMechanism.LIQUIDITY_STRESS,
-})
+_EXIT_ONLY_MECHANISMS: frozenset[TrendMechanism] = frozenset(
+    {
+        TrendMechanism.LIQUIDITY_STRESS,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -90,13 +92,9 @@ class RankResult:
     weights: dict[str, float]
     raw_scores: dict[str, float]
     decay_factors: dict[str, float]
-    mechanism_by_symbol: dict[str, TrendMechanism] = field(
-        default_factory=dict
-    )
+    mechanism_by_symbol: dict[str, TrendMechanism] = field(default_factory=dict)
     # Gross share per mechanism family AFTER concentration cap.
-    mechanism_breakdown: dict[TrendMechanism, float] = field(
-        default_factory=dict
-    )
+    mechanism_breakdown: dict[TrendMechanism, float] = field(default_factory=dict)
 
 
 class CrossSectionalRanker:
@@ -136,9 +134,7 @@ class CrossSectionalRanker:
         if clip <= 0:
             raise ValueError(f"clip must be positive, got {clip}")
         if not 0.0 < decay_floor < 1.0:
-            raise ValueError(
-                f"decay_floor must be in (0, 1), got {decay_floor}"
-            )
+            raise ValueError(f"decay_floor must be in (0, 1), got {decay_floor}")
         if not 0.0 < mechanism_max_share_of_gross <= 1.0:
             raise ValueError(
                 "mechanism_max_share_of_gross must be in (0, 1], "
@@ -208,7 +204,8 @@ class CrossSectionalRanker:
 
         weights = self._standardize(raw_scores, ctx.universe, active)
         weights, breakdown = self._apply_mechanism_cap(
-            weights, mechanism_by_symbol,
+            weights,
+            mechanism_by_symbol,
         )
         return RankResult(
             weights=weights,
@@ -288,7 +285,8 @@ class CrossSectionalRanker:
 
         weights = self._standardize(raw_scores, ctx.universe, active)
         weights, breakdown = self._apply_mechanism_cap(
-            weights, mechanism_by_symbol,
+            weights,
+            mechanism_by_symbol,
         )
         return RankResult(
             weights=weights,

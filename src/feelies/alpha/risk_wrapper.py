@@ -82,10 +82,12 @@ class AlphaBudgetRiskWrapper:
             self._platform_config.max_position_per_symbol,
         )
         strategy_pos = self._strategy_positions.get(
-            signal.strategy_id, signal.symbol,
+            signal.strategy_id,
+            signal.symbol,
         )
         signal_reduces = _signal_reduces_position(
-            strategy_pos.quantity, signal.direction,
+            strategy_pos.quantity,
+            signal.direction,
         )
         if abs(strategy_pos.quantity) >= effective_max and not signal_reduces:
             return RiskVerdict(
@@ -94,16 +96,13 @@ class AlphaBudgetRiskWrapper:
                 sequence=signal.sequence,
                 symbol=signal.symbol,
                 action=RiskAction.REJECT,
-                reason=(
-                    f"per-alpha position limit: "
-                    f"|{strategy_pos.quantity}| >= {effective_max}"
-                ),
+                reason=(f"per-alpha position limit: |{strategy_pos.quantity}| >= {effective_max}"),
             )
 
         # 2. Per-alpha exposure limit.  Exempt reducing signals for the
         # same reason as the position-limit gate.
-        alpha_equity, alpha_max_exposure, alpha_exposure = (
-            self._alpha_equity_and_exposure(signal.strategy_id, budget)
+        alpha_equity, alpha_max_exposure, alpha_exposure = self._alpha_equity_and_exposure(
+            signal.strategy_id, budget
         )
         if alpha_exposure >= alpha_max_exposure and not signal_reduces:
             return RiskVerdict(
@@ -112,15 +111,14 @@ class AlphaBudgetRiskWrapper:
                 sequence=signal.sequence,
                 symbol=signal.symbol,
                 action=RiskAction.REJECT,
-                reason=(
-                    f"per-alpha exposure limit: "
-                    f"{alpha_exposure} >= {alpha_max_exposure}"
-                ),
+                reason=(f"per-alpha exposure limit: {alpha_exposure} >= {alpha_max_exposure}"),
             )
 
         # 3. Per-alpha drawdown check (realized-only, see §10.12)
         drawdown_verdict = self._check_alpha_drawdown(
-            signal, budget, alpha_equity,
+            signal,
+            budget,
+            alpha_equity,
         )
         if drawdown_verdict is not None:
             return drawdown_verdict
@@ -203,12 +201,10 @@ class AlphaBudgetRiskWrapper:
                     self._platform_config.max_position_per_symbol,
                 )
                 strategy_pos = self._strategy_positions.get(
-                    strategy_id, order.symbol,
+                    strategy_id,
+                    order.symbol,
                 )
-                signed_qty = (
-                    order.quantity if order.side == Side.BUY
-                    else -order.quantity
-                )
+                signed_qty = order.quantity if order.side == Side.BUY else -order.quantity
                 post_fill = abs(strategy_pos.quantity + signed_qty)
                 if post_fill > effective_max:
                     return RiskVerdict(
@@ -224,8 +220,8 @@ class AlphaBudgetRiskWrapper:
                     )
 
                 # 2. Per-alpha exposure limit
-                _, alpha_max_exposure, alpha_exposure = (
-                    self._alpha_equity_and_exposure(strategy_id, budget)
+                _, alpha_max_exposure, alpha_exposure = self._alpha_equity_and_exposure(
+                    strategy_id, budget
                 )
                 if alpha_exposure >= alpha_max_exposure:
                     return RiskVerdict(
@@ -285,12 +281,20 @@ class AlphaBudgetRiskWrapper:
         Centralises the repeated budget arithmetic shared by check_signal,
         check_order, and _check_alpha_drawdown.
         """
-        alpha_equity = self._account_equity * Decimal(
-            str(budget.capital_allocation_pct),
-        ) / Decimal("100")
-        alpha_max_exposure = alpha_equity * Decimal(
-            str(budget.max_gross_exposure_pct),
-        ) / Decimal("100")
+        alpha_equity = (
+            self._account_equity
+            * Decimal(
+                str(budget.capital_allocation_pct),
+            )
+            / Decimal("100")
+        )
+        alpha_max_exposure = (
+            alpha_equity
+            * Decimal(
+                str(budget.max_gross_exposure_pct),
+            )
+            / Decimal("100")
+        )
         alpha_exposure = self._strategy_positions.get_strategy_exposure(strategy_id)
         return alpha_equity, alpha_max_exposure, alpha_exposure
 
@@ -303,18 +307,14 @@ class AlphaBudgetRiskWrapper:
         for JSON serialization.  Stored alongside lifecycle and feature
         snapshots so drawdown enforcement survives restarts.
         """
-        return {
-            sid: str(hwm) for sid, hwm in self._alpha_hwm.items()
-        }
+        return {sid: str(hwm) for sid, hwm in self._alpha_hwm.items()}
 
     def restore_risk_state(self, state: dict[str, str]) -> None:
         """Restore per-alpha HWM state from a checkpoint.
 
         Accepts the dict produced by ``checkpoint_risk_state()``.
         """
-        self._alpha_hwm = {
-            sid: Decimal(val) for sid, val in state.items()
-        }
+        self._alpha_hwm = {sid: Decimal(val) for sid, val in state.items()}
 
     def refresh_high_water_mark(self, positions: PositionStore) -> None:
         """Delegate mark-driven HWM refresh to the inner engine.

@@ -28,7 +28,14 @@ import pytest
 
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
-from feelies.core.events import NBBOQuote, OrderRequest, RiskAction, RiskVerdict, Signal, SignalDirection
+from feelies.core.events import (
+    NBBOQuote,
+    OrderRequest,
+    RiskAction,
+    RiskVerdict,
+    Signal,
+    SignalDirection,
+)
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.execution.cost_model import ZeroCostModel
@@ -114,12 +121,14 @@ def test_signal_gate_scale_down_can_still_fail_order_gate_on_prospective_exposur
     positions = MemoryPositionStore()
     positions.update("MSFT", 90, Decimal("100.00"))
 
-    risk_engine = BasicRiskEngine(RiskConfig(
-        max_position_per_symbol=100_000,
-        max_gross_exposure_pct=10.0,
-        account_equity=Decimal("100000"),
-        scale_down_threshold_pct=0.8,
-    ))
+    risk_engine = BasicRiskEngine(
+        RiskConfig(
+            max_position_per_symbol=100_000,
+            max_gross_exposure_pct=10.0,
+            account_equity=Decimal("100000"),
+            scale_down_threshold_pct=0.8,
+        )
+    )
 
     router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
     backend = ExecutionBackend(
@@ -151,24 +160,14 @@ def test_signal_gate_scale_down_can_still_fail_order_gate_on_prospective_exposur
     orchestrator.boot(_MinimalConfig())
     orchestrator.run_backtest()
 
-    scale_downs = [
-        verdict for verdict in captured_risk
-        if verdict.action == RiskAction.SCALE_DOWN
-    ]
-    rejects = [
-        verdict for verdict in captured_risk
-        if verdict.action == RiskAction.REJECT
-    ]
+    scale_downs = [verdict for verdict in captured_risk if verdict.action == RiskAction.SCALE_DOWN]
+    rejects = [verdict for verdict in captured_risk if verdict.action == RiskAction.REJECT]
 
     assert orchestrator.macro_state == MacroState.READY
-    assert len(scale_downs) == 1, (
-        f"expected one signal-gate SCALE_DOWN, got {captured_risk!r}"
-    )
+    assert len(scale_downs) == 1, f"expected one signal-gate SCALE_DOWN, got {captured_risk!r}"
     assert scale_downs[0].scaling_factor == 0.5
     assert scale_downs[0].reason == "approaching exposure limit"
-    assert len(rejects) == 1, (
-        f"expected one order-gate REJECT, got {captured_risk!r}"
-    )
+    assert len(rejects) == 1, f"expected one order-gate REJECT, got {captured_risk!r}"
     assert "gross exposure limit" in rejects[0].reason
     assert captured_orders == [], (
         "order-gate rejection should veto submission when the scaled "

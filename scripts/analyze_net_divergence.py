@@ -39,12 +39,7 @@ _ET = ZoneInfo("America/New_York")
 
 def _et_date(ns: int) -> str:
     """Epoch ns → trading-day date (US/Eastern), e.g. ``2026-06-01``."""
-    return (
-        datetime.fromtimestamp(ns / 1e9, tz=timezone.utc)
-        .astimezone(_ET)
-        .date()
-        .isoformat()
-    )
+    return datetime.fromtimestamp(ns / 1e9, tz=timezone.utc).astimezone(_ET).date().isoformat()
 
 
 def _sign(x: int) -> int:
@@ -54,16 +49,16 @@ def _sign(x: int) -> int:
 def classify(w: int, n: int) -> str:
     """Classify a divergence by how the net (n) differs from the winner (w)."""
     if n == 0 and w != 0:
-        return "net_flat"          # opposing desires cancel to flat
+        return "net_flat"  # opposing desires cancel to flat
     if w == 0 and n != 0:
-        return "net_opens"         # winner flat, portfolio wants a position
+        return "net_opens"  # winner flat, portfolio wants a position
     if _sign(n) != _sign(w):
-        return "flip"              # net flips direction vs the winner
+        return "flip"  # net flips direction vs the winner
     if abs(n) > abs(w):
-        return "stack"             # same direction, net larger (reinforced)
+        return "stack"  # same direction, net larger (reinforced)
     if abs(n) < abs(w):
-        return "shrink"            # same direction, net smaller (offset)
-    return "equal"                 # |n|==|w| same sign (shouldn't be emitted)
+        return "shrink"  # same direction, net smaller (offset)
+    return "equal"  # |n|==|w| same sign (shouldn't be emitted)
 
 
 def parse_line(line: str) -> dict[str, Any] | None:
@@ -71,7 +66,7 @@ def parse_line(line: str) -> dict[str, Any] | None:
     if not line:
         return None
     if line.startswith(_PREFIX):
-        line = line[len(_PREFIX):]
+        line = line[len(_PREFIX) :]
     try:
         rec = json.loads(line)
     except json.JSONDecodeError:
@@ -97,8 +92,7 @@ def summarize(records: list[dict[str, Any]], total_decisions: int | None) -> str
     mags = [int(r["net_target_qty"]) - int(r["winner_target_qty"]) for r in records]
     abs_mags = [abs(m) for m in mags]
     classes = Counter(
-        classify(int(r["winner_target_qty"]), int(r["net_target_qty"]))
-        for r in records
+        classify(int(r["winner_target_qty"]), int(r["net_target_qty"])) for r in records
     )
     by_symbol = Counter(r.get("symbol", "?") for r in records)
     by_winner = Counter(r.get("winner_strategy_id", "?") for r in records)
@@ -110,17 +104,21 @@ def summarize(records: list[dict[str, Any]], total_decisions: int | None) -> str
         out.append(f"  Total decisions           {total_decisions:,}")
         out.append(f"  Divergence rate           {rate:.2f}%")
     else:
-        out.append("  Divergence rate           n/a "
-                   "(pass --total-decisions N from the run's signal count)")
+        out.append(
+            "  Divergence rate           n/a "
+            "(pass --total-decisions N from the run's signal count)"
+        )
 
     out.append("\n  Magnitude |net − winner| (shares)")
     out.append(f"    mean    {statistics.mean(abs_mags):.1f}")
     out.append(f"    median  {statistics.median(abs_mags):.0f}")
     out.append(f"    p95     {_pct(abs_mags, 0.95):.0f}")
     out.append(f"    max     {max(abs_mags)}")
-    out.append(f"    >0 (net bigger/flip)  "
-               f"{sum(1 for m in mags if m > 0):,}   "
-               f"<0 (net smaller)  {sum(1 for m in mags if m < 0):,}")
+    out.append(
+        f"    >0 (net bigger/flip)  "
+        f"{sum(1 for m in mags if m > 0):,}   "
+        f"<0 (net smaller)  {sum(1 for m in mags if m < 0):,}"
+    )
 
     out.append("\n  Decision shift (what netting would change)")
     for kind, label in (
@@ -166,8 +164,7 @@ def summarize(records: list[dict[str, Any]], total_decisions: int | None) -> str
             total = sum(cc.values())
             top, topn = cc.most_common(1)[0]
             out.append(
-                f"    {day}   {total:>5,}   "
-                f"{top} {topn}/{total} ({topn / total * 100:.0f}%)"
+                f"    {day}   {total:>5,}   {top} {topn}/{total} ({topn / total * 100:.0f}%)"
             )
 
     out.append("")

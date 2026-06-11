@@ -36,7 +36,10 @@ def _build_conn(monkeypatch: pytest.MonkeyPatch) -> tuple[IBGatewayConnection, d
     """Build a connection with stubbed networking — does NOT start threads."""
     clock = SimulatedClock(start_ns=1_000_000)
     conn = IBGatewayConnection(
-        host="127.0.0.1", port=4002, client_id=1, clock=clock,
+        host="127.0.0.1",
+        port=4002,
+        client_id=1,
+        clock=clock,
     )
     captured = {"place": [], "cancel": [], "disconnect": [], "connect": []}
 
@@ -69,7 +72,10 @@ def _build_conn(monkeypatch: pytest.MonkeyPatch) -> tuple[IBGatewayConnection, d
 def test_next_valid_id_never_regresses_on_reconnect_pulse() -> None:
     clock = SimulatedClock(start_ns=0)
     conn = IBGatewayConnection(
-        host="127.0.0.1", port=4002, client_id=1, clock=clock,
+        host="127.0.0.1",
+        port=4002,
+        client_id=1,
+        clock=clock,
     )
     conn.nextValidId(100)
     assert conn.next_order_id() == 100
@@ -85,7 +91,10 @@ def test_next_valid_id_never_regresses_on_reconnect_pulse() -> None:
 def test_next_order_id_raises_before_handshake() -> None:
     clock = SimulatedClock(start_ns=0)
     conn = IBGatewayConnection(
-        host="127.0.0.1", port=4002, client_id=1, clock=clock,
+        host="127.0.0.1",
+        port=4002,
+        client_id=1,
+        clock=clock,
     )
     with pytest.raises(RuntimeError, match="nextValidId not received"):
         conn.next_order_id()
@@ -94,7 +103,10 @@ def test_next_order_id_raises_before_handshake() -> None:
 def test_next_order_id_monotonic_after_handshake() -> None:
     clock = SimulatedClock(start_ns=0)
     conn = IBGatewayConnection(
-        host="127.0.0.1", port=4002, client_id=1, clock=clock,
+        host="127.0.0.1",
+        port=4002,
+        client_id=1,
+        clock=clock,
     )
     conn.nextValidId(100)
     assert conn.next_order_id() == 100
@@ -105,7 +117,10 @@ def test_next_order_id_monotonic_after_handshake() -> None:
 def test_next_order_id_thread_safe_under_parallel_calls() -> None:
     clock = SimulatedClock(start_ns=0)
     conn = IBGatewayConnection(
-        host="127.0.0.1", port=4002, client_id=1, clock=clock,
+        host="127.0.0.1",
+        port=4002,
+        client_id=1,
+        clock=clock,
     )
     conn.nextValidId(0)
     collected: list[int] = []
@@ -150,7 +165,10 @@ def test_run_suppresses_server_version_teardown_race(
 ) -> None:
     clock = SimulatedClock(start_ns=0)
     conn = IBGatewayConnection(
-        host="127.0.0.1", port=4002, client_id=1, clock=clock,
+        host="127.0.0.1",
+        port=4002,
+        client_id=1,
+        clock=clock,
     )
     conn._shutdown_event.set()
 
@@ -224,10 +242,7 @@ def test_writer_thread_serialises_submit_and_cancel(
     # Wait for the writer to drain (poll timeout 0.05s; allow 2s).
     deadline = time.time() + 2.0
     while time.time() < deadline:
-        if (
-            len(captured["place"]) == 50
-            and len(captured["cancel"]) == 24
-        ):
+        if len(captured["place"]) == 50 and len(captured["cancel"]) == 24:
             break
         time.sleep(0.02)
 
@@ -243,7 +258,10 @@ def test_writer_thread_serialises_submit_and_cancel(
 def test_order_status_coerces_decimal_filled_remaining() -> None:
     clock = SimulatedClock(start_ns=42_000_000)
     conn = IBGatewayConnection(
-        host="127.0.0.1", port=4002, client_id=1, clock=clock,
+        host="127.0.0.1",
+        port=4002,
+        client_id=1,
+        clock=clock,
     )
     conn.orderStatus(
         orderId=7,
@@ -267,7 +285,10 @@ def test_order_status_coerces_decimal_filled_remaining() -> None:
 def test_error_with_zero_req_id_does_not_reach_queue() -> None:
     clock = SimulatedClock(start_ns=0)
     conn = IBGatewayConnection(
-        host="127.0.0.1", port=4002, client_id=1, clock=clock,
+        host="127.0.0.1",
+        port=4002,
+        client_id=1,
+        clock=clock,
     )
     conn.error(reqId=0, errorTime=0, errorCode=504, errorString="not connected")
     assert conn.poll_fills() == []
@@ -305,7 +326,10 @@ def test_disconnect_resets_handshake_state(
 def test_order_status_pushes_fill_event_with_clock_ts() -> None:
     clock = SimulatedClock(start_ns=42_000_000)
     conn = IBGatewayConnection(
-        host="127.0.0.1", port=4002, client_id=1, clock=clock,
+        host="127.0.0.1",
+        port=4002,
+        client_id=1,
+        clock=clock,
     )
     conn.orderStatus(
         orderId=7,
@@ -335,10 +359,15 @@ def test_order_status_pushes_fill_event_with_clock_ts() -> None:
 def test_connect_fatal_error_326_aborts_handshake() -> None:
     clock = SimulatedClock(start_ns=0)
     conn = IBGatewayConnection(
-        host="127.0.0.1", port=4002, client_id=1, clock=clock,
+        host="127.0.0.1",
+        port=4002,
+        client_id=1,
+        clock=clock,
     )
     conn.error(
-        reqId=-1, errorTime=0, errorCode=326,
+        reqId=-1,
+        errorTime=0,
+        errorCode=326,
         errorString="client id already in use",
     )
     assert conn._connect_failed.is_set()
@@ -348,7 +377,10 @@ def test_connect_fatal_error_326_aborts_handshake() -> None:
 def test_error_with_negative_req_id_does_not_reach_queue() -> None:
     clock = SimulatedClock(start_ns=0)
     conn = IBGatewayConnection(
-        host="127.0.0.1", port=4002, client_id=1, clock=clock,
+        host="127.0.0.1",
+        port=4002,
+        client_id=1,
+        clock=clock,
     )
     conn.error(reqId=-1, errorTime=0, errorCode=1100, errorString="connectivity lost")
     assert conn.poll_fills() == []
@@ -357,7 +389,10 @@ def test_error_with_negative_req_id_does_not_reach_queue() -> None:
 def test_error_with_order_req_id_forwards_to_queue() -> None:
     clock = SimulatedClock(start_ns=99)
     conn = IBGatewayConnection(
-        host="127.0.0.1", port=4002, client_id=1, clock=clock,
+        host="127.0.0.1",
+        port=4002,
+        client_id=1,
+        clock=clock,
     )
     conn.error(reqId=7, errorTime=0, errorCode=201, errorString="rejected")
     fills = conn.poll_fills()
@@ -371,14 +406,22 @@ def test_error_with_order_req_id_forwards_to_queue() -> None:
 def test_poll_fills_drains_non_blockingly() -> None:
     clock = SimulatedClock(start_ns=0)
     conn = IBGatewayConnection(
-        host="127.0.0.1", port=4002, client_id=1, clock=clock,
+        host="127.0.0.1",
+        port=4002,
+        client_id=1,
+        clock=clock,
     )
     for i in range(3):
-        conn._fill_queue.put(IBFillEvent(
-            ib_order_id=i, status="Filled",
-            cumulative_filled=10, remaining=0,
-            avg_fill_price=100.0, timestamp_ns=i,
-        ))
+        conn._fill_queue.put(
+            IBFillEvent(
+                ib_order_id=i,
+                status="Filled",
+                cumulative_filled=10,
+                remaining=0,
+                avg_fill_price=100.0,
+                timestamp_ns=i,
+            )
+        )
     out = conn.poll_fills()
     assert [f.ib_order_id for f in out] == [0, 1, 2]
     # Subsequent call returns empty without blocking.

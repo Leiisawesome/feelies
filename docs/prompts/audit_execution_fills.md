@@ -67,7 +67,9 @@ OrderRequest
 - `src/feelies/execution/backend.py` — `ExecutionBackend` / `MarketDataSource` contract
 - `src/feelies/execution/backtest_backend.py`, `backtest_router.py`
 - `src/feelies/execution/passive_limit_router.py`, `min_cost_policy.py`
-- `src/feelies/execution/intent.py`, `order_state.py` — order lifecycle
+- `src/feelies/execution/order_state.py` — order lifecycle
+  (`intent.py` / `SignalPositionTranslator` is a *touchpoint only* — the
+  signal→position decision is owned by `audit_position_management.md`)
 
 ### Fill & cost models
 
@@ -91,7 +93,8 @@ OrderRequest
   `test_inv12_stress_gate.py`, `test_backtest_app_baseline.py`
 
 **Out of scope:** live broker/router (see `audit_live_execution.md`), risk sizing,
-signal logic.
+signal logic, and the signal→intent position decision / exit economics (see
+`audit_position_management.md`).
 
 ---
 

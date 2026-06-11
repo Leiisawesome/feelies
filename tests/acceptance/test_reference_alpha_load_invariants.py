@@ -122,8 +122,7 @@ def _loaded_factor_symbols() -> tuple[str, ...]:
     )
     raw = json.loads(path.read_text(encoding="utf-8"))
     assert isinstance(raw, dict) and raw, (
-        f"{path}: must be a non-empty JSON object of "
-        "{symbol: {factor: loading}}"
+        f"{path}: must be a non-empty JSON object of {{symbol: {{factor: loading}}}}"
     )
     return tuple(sorted(raw.keys()))
 
@@ -143,9 +142,7 @@ def test_portfolio_factor_exposure_within_tolerance() -> None:
         / _PORTFOLIO_REFERENCE_ALPHA
         / f"{_PORTFOLIO_REFERENCE_ALPHA}.alpha.yaml"
     )
-    assert spec_path.exists(), (
-        f"reference PORTFOLIO alpha YAML missing at {spec_path}"
-    )
+    assert spec_path.exists(), f"reference PORTFOLIO alpha YAML missing at {spec_path}"
 
     # Loading is part of the acceptance criterion (the alpha must
     # *load* end-to-end before its factor neutralization can be tested).
@@ -164,8 +161,7 @@ def test_portfolio_factor_exposure_within_tolerance() -> None:
     # vector or alternating signs can accidentally land in the null
     # space of the loadings matrix and pass for the wrong reason.
     weights: dict[str, float] = {
-        sym: ((-1.0) ** i) * (1.0 + 0.1 * i)
-        for i, sym in enumerate(universe)
+        sym: ((-1.0) ** i) * (1.0 + 0.1 * i) for i, sym in enumerate(universe)
     }
 
     neutralizer = FactorNeutralizer(loadings_dir=_FACTOR_LOADINGS_DIR)

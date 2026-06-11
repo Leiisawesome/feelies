@@ -64,7 +64,10 @@ def test_orchestrator_constructs_default_generators_when_none_provided() -> None
         kill_switch=MagicMock(),
     )
     seqs = (
-        orch._seq, orch._sensor_seq, orch._horizon_seq, orch._snapshot_seq,
+        orch._seq,
+        orch._sensor_seq,
+        orch._horizon_seq,
+        orch._snapshot_seq,
     )
     assert all(isinstance(s, SequenceGenerator) for s in seqs)
     assert len({id(s) for s in seqs}) == 4

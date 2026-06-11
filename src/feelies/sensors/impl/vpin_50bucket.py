@@ -60,17 +60,11 @@ class VPIN50BucketSensor:
         min_buckets: int = 10,
     ) -> None:
         if bucket_volume <= 0:
-            raise ValueError(
-                f"bucket_volume must be > 0, got {bucket_volume}"
-            )
+            raise ValueError(f"bucket_volume must be > 0, got {bucket_volume}")
         if window_buckets <= 0:
-            raise ValueError(
-                f"window_buckets must be > 0, got {window_buckets}"
-            )
+            raise ValueError(f"window_buckets must be > 0, got {window_buckets}")
         if min_buckets < 0 or min_buckets > window_buckets:
-            raise ValueError(
-                f"min_buckets must be in [0, window_buckets], got {min_buckets}"
-            )
+            raise ValueError(f"min_buckets must be in [0, window_buckets], got {min_buckets}")
         if sensor_id is not None:
             self.sensor_id = sensor_id
         if sensor_version is not None:
@@ -134,9 +128,7 @@ class VPIN50BucketSensor:
                 state["sell_vol"] += take
             remaining -= take
             if state["buy_vol"] + state["sell_vol"] >= bucket_vol:
-                imbalance = abs(state["buy_vol"] - state["sell_vol"]) / float(
-                    bucket_vol
-                )
+                imbalance = abs(state["buy_vol"] - state["sell_vol"]) / float(bucket_vol)
                 # Maintain ``buckets_sum`` in sync with the bounded deque.
                 # When the deque is at maxlen the append silently drops the
                 # oldest element — subtract it from the running sum first.

@@ -180,16 +180,13 @@ EXPECTED_LEVEL5_HAZARD_COUNT = 3
 #     commit message.
 #   * If unintentional, the detector or one of its dependencies
 #     changed observable output and must be fixed before merge.
-EXPECTED_LEVEL5_HAZARD_HASH = (
-    "8092e88586a006ff7a46ee02dfc8f26c31d62d4cb2db7d1493bb8e8e81e3bf2e"
-)
+EXPECTED_LEVEL5_HAZARD_HASH = "8092e88586a006ff7a46ee02dfc8f26c31d62d4cb2db7d1493bb8e8e81e3bf2e"
 
 
 def test_hazard_count_matches_locked_baseline() -> None:
     _, actual_count = _replay()
     assert actual_count == EXPECTED_LEVEL5_HAZARD_COUNT, (
-        f"hazard spike count drift: expected "
-        f"{EXPECTED_LEVEL5_HAZARD_COUNT}, got {actual_count}"
+        f"hazard spike count drift: expected {EXPECTED_LEVEL5_HAZARD_COUNT}, got {actual_count}"
     )
 
 

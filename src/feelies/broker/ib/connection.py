@@ -169,13 +169,10 @@ class IBGatewayConnection(EWrapper, EClient):  # type: ignore[misc]
                 return
             if self._connect_failed.is_set():
                 self.disconnect_and_stop()
-                raise RuntimeError(
-                    f"IB connection failed: {self._connect_failed_reason}"
-                )
+                raise RuntimeError(f"IB connection failed: {self._connect_failed_reason}")
         self.disconnect_and_stop()
         raise RuntimeError(
-            "IB connection not ready: nextValidId not received within "
-            f"{ready_timeout_s}s"
+            f"IB connection not ready: nextValidId not received within {ready_timeout_s}s"
         )
 
     def disconnect_and_stop(self) -> None:
@@ -214,7 +211,10 @@ class IBGatewayConnection(EWrapper, EClient):  # type: ignore[misc]
     # ── Submission API (main thread → writer thread) ─────────────────
 
     def enqueue_order(
-        self, ib_order_id: int, contract: "Contract", order: "IBOrder",
+        self,
+        ib_order_id: int,
+        contract: "Contract",
+        order: "IBOrder",
     ) -> None:
         """Submit an IB order; drained on the writer thread."""
         self._submit_queue.put((ib_order_id, contract, order))
@@ -261,25 +261,29 @@ class IBGatewayConnection(EWrapper, EClient):  # type: ignore[misc]
             self.placeOrder(ib_id, contract, order)
         except Exception as exc:  # noqa: BLE001
             logger.exception(
-                "ib writer: placeOrder raised for ib_id=%d", ib_id,
+                "ib writer: placeOrder raised for ib_id=%d",
+                ib_id,
             )
-            self._fill_queue.put(IBFillEvent(
-                ib_order_id=ib_id,
-                status="error",
-                cumulative_filled=0,
-                remaining=0,
-                avg_fill_price=0.0,
-                timestamp_ns=self._clock.now_ns(),
-                error_code=0,
-                error_msg=f"placeOrder:{type(exc).__name__}:{exc}",
-            ))
+            self._fill_queue.put(
+                IBFillEvent(
+                    ib_order_id=ib_id,
+                    status="error",
+                    cumulative_filled=0,
+                    remaining=0,
+                    avg_fill_price=0.0,
+                    timestamp_ns=self._clock.now_ns(),
+                    error_code=0,
+                    error_msg=f"placeOrder:{type(exc).__name__}:{exc}",
+                )
+            )
 
     def _writer_cancel_order(self, ib_id: int) -> None:
         try:
             self.cancelOrder(ib_id, OrderCancel())
         except Exception:  # noqa: BLE001
             logger.exception(
-                "ib writer: cancelOrder raised for ib_id=%d", ib_id,
+                "ib writer: cancelOrder raised for ib_id=%d",
+                ib_id,
             )
 
     def _drain_writer_queues(self) -> None:
@@ -321,7 +325,8 @@ class IBGatewayConnection(EWrapper, EClient):  # type: ignore[misc]
         except TypeError as exc:
             if self._shutdown_event.is_set() or not self.isConnected():
                 logger.debug(
-                    "ib msg loop: suppressed teardown race: %s", exc,
+                    "ib msg loop: suppressed teardown race: %s",
+                    exc,
                 )
                 return
             raise
@@ -368,14 +373,16 @@ class IBGatewayConnection(EWrapper, EClient):  # type: ignore[misc]
         except (TypeError, ValueError):
             cum_filled = int(Decimal(str(filled)))
             rem = int(Decimal(str(remaining)))
-        self._fill_queue.put(IBFillEvent(
-            ib_order_id=orderId,
-            status=status,
-            cumulative_filled=cum_filled,
-            remaining=rem,
-            avg_fill_price=float(avgFillPrice),
-            timestamp_ns=self._clock.now_ns(),
-        ))
+        self._fill_queue.put(
+            IBFillEvent(
+                ib_order_id=orderId,
+                status=status,
+                cumulative_filled=cum_filled,
+                remaining=rem,
+                avg_fill_price=float(avgFillPrice),
+                timestamp_ns=self._clock.now_ns(),
+            )
+        )
 
     def error(  # noqa: N802 — ibapi signature
         self,
@@ -394,12 +401,12 @@ class IBGatewayConnection(EWrapper, EClient):  # type: ignore[misc]
         """
         if reqId <= 0:
             logger.warning(
-                "ib error (no order): code=%d msg=%s", errorCode, errorString,
+                "ib error (no order): code=%d msg=%s",
+                errorCode,
+                errorString,
             )
             if int(errorCode) in _CONNECT_FATAL_ERROR_CODES:
-                self._connect_failed_reason = (
-                    f"code={errorCode}: {errorString}"
-                )
+                self._connect_failed_reason = f"code={errorCode}: {errorString}"
                 self._connect_failed.set()
             elif self._alert_callback is not None:
                 # Non-fatal connectivity event (e.g. 1100 disconnect,
@@ -413,13 +420,15 @@ class IBGatewayConnection(EWrapper, EClient):  # type: ignore[misc]
                         errorCode,
                     )
             return
-        self._fill_queue.put(IBFillEvent(
-            ib_order_id=reqId,
-            status="error",
-            cumulative_filled=0,
-            remaining=0,
-            avg_fill_price=0.0,
-            timestamp_ns=self._clock.now_ns(),
-            error_code=int(errorCode),
-            error_msg=str(errorString),
-        ))
+        self._fill_queue.put(
+            IBFillEvent(
+                ib_order_id=reqId,
+                status="error",
+                cumulative_filled=0,
+                remaining=0,
+                avg_fill_price=0.0,
+                timestamp_ns=self._clock.now_ns(),
+                error_code=int(errorCode),
+                error_msg=str(errorString),
+            )
+        )

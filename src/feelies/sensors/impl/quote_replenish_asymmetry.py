@@ -68,13 +68,9 @@ class QuoteReplenishAsymmetrySensor:
         min_observations: int = 20,
     ) -> None:
         if window_seconds <= 0:
-            raise ValueError(
-                f"window_seconds must be > 0, got {window_seconds}"
-            )
+            raise ValueError(f"window_seconds must be > 0, got {window_seconds}")
         if min_observations < 0:
-            raise ValueError(
-                f"min_observations must be >= 0, got {min_observations}"
-            )
+            raise ValueError(f"min_observations must be >= 0, got {min_observations}")
         if sensor_id is not None:
             self.sensor_id = sensor_id
         if sensor_version is not None:
@@ -153,11 +149,7 @@ class QuoteReplenishAsymmetrySensor:
         else:
             value = (bid_total - ask_total) / denom
 
-        warm = (
-            state["count"] >= self._min_observations
-            and bool(bid_adds)
-            and bool(ask_adds)
-        )
+        warm = state["count"] >= self._min_observations and bool(bid_adds) and bool(ask_adds)
 
         return SensorReading(
             timestamp_ns=ts,

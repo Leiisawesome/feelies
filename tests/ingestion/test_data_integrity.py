@@ -22,6 +22,7 @@ class TestDataHealth:
 
     def test_corrupted_is_terminal(self) -> None:
         from feelies.ingestion.data_integrity import _DATA_TRANSITIONS
+
         assert _DATA_TRANSITIONS[DataHealth.CORRUPTED] == frozenset()
 
 
@@ -96,21 +97,41 @@ class TestClassifyHaltStatus:
         assert classify_halt_status((1, 2, 3), frozenset(), frozenset()) is None
 
     def test_halt_on_code_detected(self) -> None:
-        assert classify_halt_status(
-            (5,), frozenset({5}), frozenset({6}),
-        ) is HaltSignal.HALT_ON
+        assert (
+            classify_halt_status(
+                (5,),
+                frozenset({5}),
+                frozenset({6}),
+            )
+            is HaltSignal.HALT_ON
+        )
 
     def test_halt_off_code_detected(self) -> None:
-        assert classify_halt_status(
-            (6,), frozenset({5}), frozenset({6}),
-        ) is HaltSignal.HALT_OFF
+        assert (
+            classify_halt_status(
+                (6,),
+                frozenset({5}),
+                frozenset({6}),
+            )
+            is HaltSignal.HALT_OFF
+        )
 
     def test_no_matching_code(self) -> None:
-        assert classify_halt_status(
-            (9,), frozenset({5}), frozenset({6}),
-        ) is None
+        assert (
+            classify_halt_status(
+                (9,),
+                frozenset({5}),
+                frozenset({6}),
+            )
+            is None
+        )
 
     def test_both_present_prefers_halt_on_failsafe(self) -> None:
-        assert classify_halt_status(
-            (5, 6), frozenset({5}), frozenset({6}),
-        ) is HaltSignal.HALT_ON
+        assert (
+            classify_halt_status(
+                (5, 6),
+                frozenset({5}),
+                frozenset({6}),
+            )
+            is HaltSignal.HALT_ON
+        )

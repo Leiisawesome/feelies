@@ -64,9 +64,7 @@ from tests.fixtures.event_logs._generate import (
 )
 
 
-REFERENCE_PATH = Path(
-    "alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml"
-)
+REFERENCE_PATH = Path("alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml")
 
 _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     SensorSpec(
@@ -142,19 +140,22 @@ def _replay(alpha_path: str = str(REFERENCE_PATH)) -> tuple[str, int]:
     assert isinstance(loaded, LoadedSignalLayerModule)
 
     engine = HorizonSignalEngine(
-        bus=bus, signal_sequence_generator=SequenceGenerator(),
+        bus=bus,
+        signal_sequence_generator=SequenceGenerator(),
     )
-    engine.register(RegisteredSignal(
-        alpha_id=loaded.manifest.alpha_id,
-        horizon_seconds=loaded.horizon_seconds,
-        signal=loaded.signal,
-        params=loaded.params,
-        gate=loaded.gate,
-        cost_arithmetic=loaded.cost,
-        consumed_features=loaded.consumed_features,
-        trend_mechanism=loaded.trend_mechanism_enum,
-        expected_half_life_seconds=loaded.expected_half_life_seconds,
-    ))
+    engine.register(
+        RegisteredSignal(
+            alpha_id=loaded.manifest.alpha_id,
+            horizon_seconds=loaded.horizon_seconds,
+            signal=loaded.signal,
+            params=loaded.params,
+            gate=loaded.gate,
+            cost_arithmetic=loaded.cost,
+            consumed_features=loaded.consumed_features,
+            trend_mechanism=loaded.trend_mechanism_enum,
+            expected_half_life_seconds=loaded.expected_half_life_seconds,
+        )
+    )
     engine.attach()
 
     for event in load(DEFAULT_OUTPUT):
@@ -206,9 +207,7 @@ def test_two_replays_produce_identical_signal_hash() -> None:
 # z-scores, or (b) a Phase-3 reference alpha is added that emits on
 # the synthetic fixture.  Either change will require updating both
 # the count and the hash in the same commit.
-EXPECTED_LEVEL2_SIGNAL_HASH = (
-    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-)
+EXPECTED_LEVEL2_SIGNAL_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 EXPECTED_LEVEL2_SIGNAL_COUNT = 0
 
 
@@ -216,8 +215,7 @@ def test_signal_stream_matches_locked_baseline() -> None:
     actual_hash, actual_count = _replay()
 
     assert actual_count == EXPECTED_LEVEL2_SIGNAL_COUNT, (
-        f"signal count drift: expected "
-        f"{EXPECTED_LEVEL2_SIGNAL_COUNT}, got {actual_count}"
+        f"signal count drift: expected {EXPECTED_LEVEL2_SIGNAL_COUNT}, got {actual_count}"
     )
     assert actual_hash == EXPECTED_LEVEL2_SIGNAL_HASH, (
         "Level-2 Signal hash drift!\n"
@@ -264,7 +262,8 @@ _V03_REFERENCE_ALPHAS: tuple[tuple[str, str], ...] = (
     ids=[alpha_id for alpha_id, _ in _V03_REFERENCE_ALPHAS],
 )
 def test_v03_reference_alpha_signal_baseline(
-    alpha_id: str, alpha_path: str,
+    alpha_id: str,
+    alpha_path: str,
 ) -> None:
     actual_hash, actual_count = _replay(alpha_path)
 
@@ -287,7 +286,8 @@ def test_v03_reference_alpha_signal_baseline(
     ids=[alpha_id for alpha_id, _ in _V03_REFERENCE_ALPHAS],
 )
 def test_v03_reference_alpha_replay_is_deterministic(
-    alpha_id: str, alpha_path: str,
+    alpha_id: str,
+    alpha_path: str,
 ) -> None:
     hash_a, count_a = _replay(alpha_path)
     hash_b, count_b = _replay(alpha_path)

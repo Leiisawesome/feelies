@@ -30,8 +30,12 @@ pytestmark = pytest.mark.backtest_validation
 
 
 def _quote(
-    symbol: str, bid: str, ask: str, ts: int,
-    bid_size: int = 100, ask_size: int = 100,
+    symbol: str,
+    bid: str,
+    ask: str,
+    ts: int,
+    bid_size: int = 100,
+    ask_size: int = 100,
 ) -> NBBOQuote:
     return NBBOQuote(
         timestamp_ns=ts,
@@ -63,7 +67,9 @@ class TestBacktestRouterLatencyQueue:
     def test_zero_latency_fast_path_fills_synchronously(self) -> None:
         clock = SimulatedClock(start_ns=5000)
         router = BacktestOrderRouter(
-            clock, latency_ns=0, cost_model=ZeroCostModel(),
+            clock,
+            latency_ns=0,
+            cost_model=ZeroCostModel(),
         )
         router.on_quote(_quote("AAPL", "100.00", "100.10", ts=4000))
         router.submit(_market_order("AAPL"))
@@ -75,7 +81,9 @@ class TestBacktestRouterLatencyQueue:
     def test_nonzero_latency_defers_fill_until_post_eligibility_quote(self) -> None:
         clock = SimulatedClock(start_ns=5000)
         router = BacktestOrderRouter(
-            clock, latency_ns=1000, cost_model=ZeroCostModel(),
+            clock,
+            latency_ns=1000,
+            cost_model=ZeroCostModel(),
         )
         router.on_quote(_quote("AAPL", "100.00", "100.10", ts=4000))
         router.submit(_market_order("AAPL"))
@@ -102,7 +110,9 @@ class TestBacktestRouterLatencyQueue:
     def test_fifo_eligibility_two_orders_same_symbol(self) -> None:
         clock = SimulatedClock(start_ns=5000)
         router = BacktestOrderRouter(
-            clock, latency_ns=1000, cost_model=ZeroCostModel(),
+            clock,
+            latency_ns=1000,
+            cost_model=ZeroCostModel(),
         )
         router.on_quote(_quote("AAPL", "100.00", "100.10", ts=4000))
         router.submit(_market_order("AAPL", order_id="a"))
@@ -112,15 +122,15 @@ class TestBacktestRouterLatencyQueue:
         clock.set_time(6500)
         router.on_quote(_quote("AAPL", "99.00", "99.10", ts=6500))
         acks = router.poll_acks()
-        filled_order_ids = [
-            a.order_id for a in acks if a.status == OrderAckStatus.FILLED
-        ]
+        filled_order_ids = [a.order_id for a in acks if a.status == OrderAckStatus.FILLED]
         assert filled_order_ids == ["a", "b"]
 
     def test_eligibility_per_symbol(self) -> None:
         clock = SimulatedClock(start_ns=5000)
         router = BacktestOrderRouter(
-            clock, latency_ns=1000, cost_model=ZeroCostModel(),
+            clock,
+            latency_ns=1000,
+            cost_model=ZeroCostModel(),
         )
         router.on_quote(_quote("AAPL", "100.00", "100.10", ts=4000))
         router.on_quote(_quote("MSFT", "200.00", "200.10", ts=4000))
@@ -140,7 +150,9 @@ class TestPassiveLimitRouterLatencyQueue:
     def test_zero_latency_market_fills_synchronously(self) -> None:
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(
-            clock, latency_ns=0, cost_model=ZeroCostModel(),
+            clock,
+            latency_ns=0,
+            cost_model=ZeroCostModel(),
         )
         router.on_quote(_quote("AAPL", "100.00", "100.10", ts=4000))
         router.submit(_market_order("AAPL"))
@@ -150,7 +162,9 @@ class TestPassiveLimitRouterLatencyQueue:
     def test_nonzero_latency_market_defers_to_later_quote(self) -> None:
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(
-            clock, latency_ns=1000, cost_model=ZeroCostModel(),
+            clock,
+            latency_ns=1000,
+            cost_model=ZeroCostModel(),
         )
         router.on_quote(_quote("AAPL", "100.00", "100.10", ts=4000))
         router.submit(_market_order("AAPL"))
@@ -159,9 +173,7 @@ class TestPassiveLimitRouterLatencyQueue:
 
         clock.set_time(6500)
         router.on_quote(_quote("AAPL", "99.00", "99.10", ts=6500))
-        fills = [
-            a for a in router.poll_acks() if a.status == OrderAckStatus.FILLED
-        ]
+        fills = [a for a in router.poll_acks() if a.status == OrderAckStatus.FILLED]
         assert len(fills) == 1
         assert fills[0].fill_price == Decimal("99.10")
 
@@ -169,21 +181,28 @@ class TestPassiveLimitRouterLatencyQueue:
         """Resting LIMIT orders also wait for the latency window."""
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(
-            clock, latency_ns=0, cost_model=ZeroCostModel(),
+            clock,
+            latency_ns=0,
+            cost_model=ZeroCostModel(),
             fill_delay_ticks=1,
         )
         router.on_quote(_quote("AAPL", "100.00", "100.10", ts=4000))
-        router.submit(OrderRequest(
-            timestamp_ns=0, correlation_id="o", sequence=1,
-            order_id="l", symbol="AAPL", side=Side.BUY,
-            order_type=OrderType.LIMIT, quantity=50,
-            limit_price=Decimal("100.00"),
-        ))
+        router.submit(
+            OrderRequest(
+                timestamp_ns=0,
+                correlation_id="o",
+                sequence=1,
+                order_id="l",
+                symbol="AAPL",
+                side=Side.BUY,
+                order_type=OrderType.LIMIT,
+                quantity=50,
+                limit_price=Decimal("100.00"),
+            )
+        )
         router.poll_acks()
         clock.set_time(6000)
         router.on_quote(_quote("AAPL", "100.00", "100.10", ts=6000))
         # With fill_delay_ticks=1 and zero latency, fills on this quote.
-        fills = [
-            a for a in router.poll_acks() if a.status == OrderAckStatus.FILLED
-        ]
+        fills = [a for a in router.poll_acks() if a.status == OrderAckStatus.FILLED]
         assert len(fills) == 1

@@ -57,10 +57,7 @@ _SIGNAL_BASE_SPEC: dict[str, Any] = {
         "fee_bps": 1.0,
         "margin_ratio": 1.8,
     },
-    "signal": (
-        "def evaluate(snapshot, regime, params):\n"
-        "    return None\n"
-    ),
+    "signal": ("def evaluate(snapshot, regime, params):\n    return None\n"),
 }
 
 
@@ -79,9 +76,7 @@ def test_promotion_absent_yields_none_on_manifest() -> None:
 
 
 def test_promotion_block_with_no_gate_thresholds_yields_none() -> None:
-    loaded = AlphaLoader().load_from_dict(
-        _spec(promotion={}), source="<test>"
-    )
+    loaded = AlphaLoader().load_from_dict(_spec(promotion={}), source="<test>")
     assert loaded.manifest.gate_thresholds_overrides is None
 
 
@@ -97,9 +92,7 @@ def test_promotion_block_with_empty_gate_thresholds_yields_none() -> None:
 
 def test_promotion_block_non_mapping_rejected() -> None:
     with pytest.raises(_LOAD_REJECTED, match="promotion.*must be a mapping"):
-        AlphaLoader().load_from_dict(
-            _spec(promotion=["nope"]), source="<test>"
-        )
+        AlphaLoader().load_from_dict(_spec(promotion=["nope"]), source="<test>")
 
 
 def test_promotion_block_unknown_top_level_key_rejected() -> None:
@@ -140,11 +133,7 @@ def test_promotion_string_value_for_numeric_field_rejected() -> None:
 def test_promotion_bool_value_for_int_field_rejected() -> None:
     with pytest.raises(_LOAD_REJECTED, match="expects int"):
         AlphaLoader().load_from_dict(
-            _spec(
-                promotion={
-                    "gate_thresholds": {"paper_min_trading_days": True}
-                }
-            ),
+            _spec(promotion={"gate_thresholds": {"paper_min_trading_days": True}}),
             source="<test>",
         )
 
@@ -152,11 +141,7 @@ def test_promotion_bool_value_for_int_field_rejected() -> None:
 def test_promotion_float_value_for_int_field_rejected() -> None:
     with pytest.raises(_LOAD_REJECTED, match="expects int"):
         AlphaLoader().load_from_dict(
-            _spec(
-                promotion={
-                    "gate_thresholds": {"paper_min_trading_days": 7.5}
-                }
-            ),
+            _spec(promotion={"gate_thresholds": {"paper_min_trading_days": 7.5}}),
             source="<test>",
         )
 
@@ -228,9 +213,7 @@ def _portfolio_spec(**overrides: object) -> dict[str, Any]:
 
 
 def test_portfolio_promotion_absent_yields_none_on_manifest() -> None:
-    loaded = AlphaLoader().load_from_dict(
-        _portfolio_spec(), source="<test>"
-    )
+    loaded = AlphaLoader().load_from_dict(_portfolio_spec(), source="<test>")
     assert loaded.manifest.gate_thresholds_overrides is None
 
 
@@ -248,8 +231,6 @@ def test_portfolio_promotion_partial_overrides_round_trip() -> None:
 def test_portfolio_promotion_unknown_key_rejected() -> None:
     with pytest.raises(_LOAD_REJECTED, match="unknown field"):
         AlphaLoader().load_from_dict(
-            _portfolio_spec(
-                promotion={"gate_thresholds": {"bogus_key": 1}}
-            ),
+            _portfolio_spec(promotion={"gate_thresholds": {"bogus_key": 1}}),
             source="<test>",
         )

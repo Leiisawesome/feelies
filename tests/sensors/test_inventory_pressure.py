@@ -120,8 +120,10 @@ def test_warm_gate() -> None:
 
 
 def test_deterministic() -> None:
-    evs = [_trade((i + 1) * _NS, f"{100.00 + ((i * 7) % 5 - 2) * 0.01:.2f}", 100 + i)
-           for i in range(50)]
+    evs = [
+        _trade((i + 1) * _NS, f"{100.00 + ((i * 7) % 5 - 2) * 0.01:.2f}", 100 + i)
+        for i in range(50)
+    ]
     a, _ = _drive(InventoryPressureSensor(min_trades=5), evs)
     b, _ = _drive(InventoryPressureSensor(min_trades=5), evs)
     assert a is not None and b is not None

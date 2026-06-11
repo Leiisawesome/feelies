@@ -211,9 +211,7 @@ regime_engine_options:
         assert cfg.regime_engine_options["transition_time_scaling_enabled"] is True
         assert cfg.regime_engine_options["transition_dt_reference_seconds"] == 0.1
 
-    def test_regime_engine_options_must_be_mapping_in_yaml(
-        self, tmp_path: Path
-    ) -> None:
+    def test_regime_engine_options_must_be_mapping_in_yaml(self, tmp_path: Path) -> None:
         yaml_content = """\
 symbols: [AAPL]
 alpha_specs: [x.yaml]
@@ -262,7 +260,8 @@ backtest_fill_latency_ns: 5000
         assert cfg.backtest_fill_latency_ns == 5000
 
     def test_backtest_fill_latency_ns_yaml_omitted_uses_bt17_defaults(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         yaml_content = """\
 symbols: [AAPL]
@@ -348,9 +347,7 @@ class TestDiskCacheManifestHealth:
             symbols=frozenset({"AAPL"}),
             alpha_specs=[Path("x.yaml")],
             require_healthy_disk_cache_manifests=True,
-            disk_cache_ingestion_health_rows=(
-                ("AAPL", "2024-01-02", "HEALTHY"),
-            ),
+            disk_cache_ingestion_health_rows=(("AAPL", "2024-01-02", "HEALTHY"),),
         )
         cfg.validate()
 
@@ -369,9 +366,7 @@ class TestDiskCacheManifestHealth:
             symbols=frozenset({"AAPL"}),
             alpha_specs=[Path("x.yaml")],
             require_healthy_disk_cache_manifests=True,
-            disk_cache_ingestion_health_rows=(
-                ("AAPL", "2024-01-02", "GAP_DETECTED"),
-            ),
+            disk_cache_ingestion_health_rows=(("AAPL", "2024-01-02", "GAP_DETECTED"),),
         )
         with pytest.raises(ConfigurationError, match="not HEALTHY"):
             cfg.validate()
@@ -437,7 +432,8 @@ class TestBacktestIngestTerminalHealth:
 class TestPaperConnectionSettings:
     def test_default_ib_paper_settings(self) -> None:
         cfg = PlatformConfig(
-            symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")],
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
         )
         assert cfg.ib_host == "127.0.0.1"
         assert cfg.ib_port == 4002

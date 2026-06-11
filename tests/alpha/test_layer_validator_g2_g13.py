@@ -60,10 +60,7 @@ def _signal_spec() -> dict:
             "fee_bps": 1.0,
             "margin_ratio": 1.8,
         },
-        "signal": (
-            "def evaluate(snapshot, regime, params):\n"
-            "    return None\n"
-        ),
+        "signal": ("def evaluate(snapshot, regime, params):\n    return None\n"),
     }
 
 
@@ -83,7 +80,8 @@ def _validator(
 
 def test_signal_spec_passes_all_gates() -> None:
     _validator(sensors=frozenset({"ofi_ewma", "spread_z_30d"})).validate(
-        _signal_spec(), source="<test>",
+        _signal_spec(),
+        source="<test>",
     )
 
 
@@ -131,29 +129,25 @@ def test_g4_rejects_empty_off_condition() -> None:
 # ── G5 — signal purity ─────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("snippet", [
-    "import os\n",
-    "from os import path\n",
-    "x = exec('1 + 1')\n",
-    "x = eval('1 + 1')\n",
-    "x = open('hack')\n",
-    "global x\n",
-    "x = __import__('os')\n",
-])
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        "import os\n",
+        "from os import path\n",
+        "x = exec('1 + 1')\n",
+        "x = eval('1 + 1')\n",
+        "x = open('hack')\n",
+        "global x\n",
+        "x = __import__('os')\n",
+    ],
+)
 def test_g5_rejects_banned_constructs(snippet: str) -> None:
     spec = _signal_spec()
-    spec["signal"] = (
-        "def evaluate(snapshot, regime, params):\n"
-        f"    {snippet}"
-        "    return None\n"
-    )
+    spec["signal"] = f"def evaluate(snapshot, regime, params):\n    {snippet}    return None\n"
     # ``global`` requires being inside a function — wrap accordingly.
     if snippet.startswith("global"):
         spec["signal"] = (
-            "x = 0\n"
-            "def evaluate(snapshot, regime, params):\n"
-            "    global x\n"
-            "    return None\n"
+            "x = 0\ndef evaluate(snapshot, regime, params):\n    global x\n    return None\n"
         )
     with pytest.raises(LayerValidationError, match="G5"):
         _validator().validate(spec, source="<test>")
@@ -167,7 +161,8 @@ def test_g5_accepts_safe_snippet() -> None:
         "    return None\n"
     )
     _validator(sensors=frozenset({"ofi_ewma", "spread_z_30d"})).validate(
-        spec, source="<test>",
+        spec,
+        source="<test>",
     )
 
 
@@ -200,7 +195,8 @@ def test_g6_rejects_unknown_sensor_when_registry_known() -> None:
     spec["depends_on_sensors"] = ["ofi_ewma", "missing_sensor"]
     with pytest.raises(LayerValidationError, match="G6"):
         _validator(sensors=frozenset({"ofi_ewma"})).validate(
-            spec, source="<test>",
+            spec,
+            source="<test>",
         )
 
 
@@ -239,22 +235,14 @@ def test_g7_accepts_custom_registry() -> None:
 
 def test_g8_rejects_time_in_signal() -> None:
     spec = _signal_spec()
-    spec["signal"] = (
-        "def evaluate(snapshot, regime, params):\n"
-        "    t = time\n"
-        "    return None\n"
-    )
+    spec["signal"] = "def evaluate(snapshot, regime, params):\n    t = time\n    return None\n"
     with pytest.raises(LayerValidationError, match="G8"):
         _validator().validate(spec, source="<test>")
 
 
 def test_g8_rejects_now_in_signal() -> None:
     spec = _signal_spec()
-    spec["signal"] = (
-        "def evaluate(snapshot, regime, params):\n"
-        "    t = now()\n"
-        "    return None\n"
-    )
+    spec["signal"] = "def evaluate(snapshot, regime, params):\n    t = now()\n    return None\n"
     with pytest.raises(LayerValidationError, match="G8"):
         _validator().validate(spec, source="<test>")
 
@@ -294,5 +282,6 @@ def test_g13_signal_layer_no_op() -> None:
     loadable layer family post-D.2.
     """
     _validator(sensors=frozenset({"ofi_ewma", "spread_z_30d"})).validate(
-        _signal_spec(), source="<test>",
+        _signal_spec(),
+        source="<test>",
     )

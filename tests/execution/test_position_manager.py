@@ -94,14 +94,17 @@ class TestLegacyEquivalence:
         )
         assert oi.target_quantity == 100
         assert plan.total_quantity == 100
-        assert compare_plan_to_intent(
-            intent_name=oi.intent.name,
-            intent_target_quantity=oi.target_quantity,
-            current_quantity=position.quantity,
-            plan=plan,
-            symbol="AAPL",
-            signal_sequence=signal.sequence,
-        ) is None
+        assert (
+            compare_plan_to_intent(
+                intent_name=oi.intent.name,
+                intent_target_quantity=oi.target_quantity,
+                current_quantity=position.quantity,
+                plan=plan,
+                symbol="AAPL",
+                signal_sequence=signal.sequence,
+            )
+            is None
+        )
 
 
 # ── The flip: plan → OrderIntent is byte-faithful to the translator ──
@@ -131,7 +134,9 @@ class TestOrderIntentFromPlan:
             current=position,
         )
         reconstructed = order_intent_from_plan(
-            plan, signal=signal, current=position,
+            plan,
+            signal=signal,
+            current=position,
         )
 
         assert reconstructed == legacy, (
@@ -147,11 +152,17 @@ class TestOrderIntentFromPlan:
         position = Position(symbol="AAPL", quantity=0)
         legacy = translator.translate(signal, position, None)
         plan = manager.plan(
-            desired=desired_from_signal(signal, None), current=position,
+            desired=desired_from_signal(signal, None),
+            current=position,
         )
-        assert order_intent_from_plan(
-            plan, signal=signal, current=position,
-        ) == legacy
+        assert (
+            order_intent_from_plan(
+                plan,
+                signal=signal,
+                current=position,
+            )
+            == legacy
+        )
 
 
 # ── Direct plan classification ───────────────────────────────────────
@@ -212,28 +223,45 @@ class TestPlanClassification:
 class TestCostGates:
     def test_entry_edge_clears_cost_boundary_and_basis(self) -> None:
         from feelies.execution.position_manager import entry_edge_clears_cost
+
         # one_way: clears when edge >= ratio * cost (boundary inclusive).
         assert entry_edge_clears_cost(
-            edge_bps=20.0, rt_cost_bps=10.0, min_ratio=2.0, basis="one_way",
+            edge_bps=20.0,
+            rt_cost_bps=10.0,
+            min_ratio=2.0,
+            basis="one_way",
         )
         assert not entry_edge_clears_cost(
-            edge_bps=19.9, rt_cost_bps=10.0, min_ratio=2.0, basis="one_way",
+            edge_bps=19.9,
+            rt_cost_bps=10.0,
+            min_ratio=2.0,
+            basis="one_way",
         )
         # round_trip basis doubles the one-way edge before comparing.
         assert entry_edge_clears_cost(
-            edge_bps=10.0, rt_cost_bps=10.0, min_ratio=2.0, basis="round_trip",
+            edge_bps=10.0,
+            rt_cost_bps=10.0,
+            min_ratio=2.0,
+            basis="round_trip",
         )
 
     def test_reversal_edge_gate_math(self) -> None:
         from feelies.execution.position_manager import reversal_edge_gate
+
         combined, required, passes = reversal_edge_gate(
-            edge_bps=30.0, exit_cost_bps=4.0, entry_cost_bps=4.0, multiplier=2.0,
+            edge_bps=30.0,
+            exit_cost_bps=4.0,
+            entry_cost_bps=4.0,
+            multiplier=2.0,
         )
         assert combined == 8.0
         assert required == 16.0
         assert passes is True  # 30 > 16
         _, _, blocked = reversal_edge_gate(
-            edge_bps=5.0, exit_cost_bps=4.0, entry_cost_bps=4.0, multiplier=2.0,
+            edge_bps=5.0,
+            exit_cost_bps=4.0,
+            entry_cost_bps=4.0,
+            multiplier=2.0,
         )
         assert blocked is False  # 5 !> 16
 
@@ -246,11 +274,17 @@ class TestCostGates:
             estimate_round_trip_cost_bps,
         )
         from feelies.execution.position_manager import round_trip_cost_bps
+
         model = DefaultCostModel(DefaultCostModelConfig())
         kw = dict(
-            symbol="AAPL", entry_side=Side.BUY, quantity=100,
-            mid_price=Decimal("100"), half_spread=Decimal("0.05"),
-            is_short_entry=False, bid_size=100, ask_size=200,
+            symbol="AAPL",
+            entry_side=Side.BUY,
+            quantity=100,
+            mid_price=Decimal("100"),
+            half_spread=Decimal("0.05"),
+            is_short_entry=False,
+            bid_size=100,
+            ask_size=200,
             market_impact_factor=Decimal("0.5"),
             max_impact_half_spreads=Decimal("10"),
         )
@@ -258,7 +292,10 @@ class TestCostGates:
         assert got > 0
         # Equivalent to the cost-model helper with a forced taker exit.
         expected = estimate_round_trip_cost_bps(
-            model, is_taker=True, is_taker_exit=True, **kw,
+            model,
+            is_taker=True,
+            is_taker_exit=True,
+            **kw,
         )
         assert got == expected
 
@@ -271,7 +308,10 @@ class TestTargetPositionManagerTrim:
     @pytest.mark.parametrize("current", [-150, -50, 0, 50, 150])
     @pytest.mark.parametrize("target", [0, 50, 100, 150])
     def test_trim_off_is_byte_identical_to_legacy(
-        self, direction: SignalDirection, current: int, target: int,
+        self,
+        direction: SignalDirection,
+        current: int,
+        target: int,
     ) -> None:
         legacy = LegacyPositionManager()
         tgt = TargetPositionManager()
@@ -281,18 +321,21 @@ class TestTargetPositionManagerTrim:
         # No config / trim disabled → identical plans.
         a = legacy.plan(desired=desired, current=pos)
         b = tgt.plan(
-            desired=desired, current=pos,
+            desired=desired,
+            current=pos,
             config=PositionManagerConfig(enable_trim=False),
         )
-        assert [(o.side, o.quantity, o.leg) for o in a.orders] == \
-               [(o.side, o.quantity, o.leg) for o in b.orders]
+        assert [(o.side, o.quantity, o.leg) for o in a.orders] == [
+            (o.side, o.quantity, o.leg) for o in b.orders
+        ]
 
     def test_trim_emitted_on_same_direction_shrink(self) -> None:
         mgr = TargetPositionManager(trim_min_fraction=0.10)
         pos = Position(symbol="AAPL", quantity=150)  # long 150
         desired = DesiredPosition(symbol="AAPL", target_qty=100, direction=1)
         plan = mgr.plan(
-            desired=desired, current=pos,
+            desired=desired,
+            current=pos,
             config=PositionManagerConfig(enable_trim=True),
         )
         assert len(plan.orders) == 1
@@ -301,16 +344,23 @@ class TestTargetPositionManagerTrim:
         assert leg.side == Side.SELL
         assert leg.quantity == 50  # 150 → 100
         # legacy would have held (NO_ACTION).
-        assert LegacyPositionManager().plan(
-            desired=desired, current=pos,
-        ).orders == ()
+        assert (
+            LegacyPositionManager()
+            .plan(
+                desired=desired,
+                current=pos,
+            )
+            .orders
+            == ()
+        )
 
     def test_short_trim_covers_partially(self) -> None:
         mgr = TargetPositionManager(trim_min_fraction=0.10)
         pos = Position(symbol="AAPL", quantity=-150)  # short 150
         desired = DesiredPosition(symbol="AAPL", target_qty=-100, direction=-1)
         plan = mgr.plan(
-            desired=desired, current=pos,
+            desired=desired,
+            current=pos,
             config=PositionManagerConfig(enable_trim=True),
         )
         leg = plan.orders[0]
@@ -324,12 +374,12 @@ class TestTargetPositionManagerTrim:
         # 150 → 145 is a 5-share trim; threshold = ceil(0.10*150)=15 → hold.
         desired = DesiredPosition(symbol="AAPL", target_qty=145, direction=1)
         plan = mgr.plan(
-            desired=desired, current=pos,
+            desired=desired,
+            current=pos,
             config=PositionManagerConfig(enable_trim=True),
         )
         assert plan.orders == ()
-        assert plan.suppressed and plan.suppressed[0].reason == \
-            "trim_below_churn_threshold"
+        assert plan.suppressed and plan.suppressed[0].reason == "trim_below_churn_threshold"
 
     def test_trim_does_not_touch_entry_or_reverse(self) -> None:
         mgr = TargetPositionManager()
@@ -337,13 +387,15 @@ class TestTargetPositionManagerTrim:
         # entry from flat
         entry = mgr.plan(
             desired=DesiredPosition(symbol="AAPL", target_qty=100, direction=1),
-            current=Position(symbol="AAPL", quantity=0), config=cfg,
+            current=Position(symbol="AAPL", quantity=0),
+            config=cfg,
         )
         assert entry.primary_leg == PlanLeg.ENTRY
         # reverse (opposite-side target)
         rev = mgr.plan(
             desired=DesiredPosition(symbol="AAPL", target_qty=-100, direction=-1),
-            current=Position(symbol="AAPL", quantity=50), config=cfg,
+            current=Position(symbol="AAPL", quantity=50),
+            config=cfg,
         )
         assert rev.primary_leg == PlanLeg.REVERSE_EXIT
 
@@ -356,13 +408,21 @@ class TestTargetPositionManagerTrim:
             DefaultCostModelConfig,
         )
         from feelies.execution.position_manager import MarketContext
+
         quote = NBBOQuote(
-            timestamp_ns=1000, correlation_id="c", sequence=1, symbol="AAPL",
-            bid=Decimal("99.95"), ask=Decimal("100.05"),
-            bid_size=100, ask_size=200, exchange_timestamp_ns=900,
+            timestamp_ns=1000,
+            correlation_id="c",
+            sequence=1,
+            symbol="AAPL",
+            bid=Decimal("99.95"),
+            ask=Decimal("100.05"),
+            bid_size=100,
+            ask_size=200,
+            exchange_timestamp_ns=900,
         )
         return MarketContext(
-            quote=quote, cost_model=DefaultCostModel(DefaultCostModelConfig()),
+            quote=quote,
+            cost_model=DefaultCostModel(DefaultCostModelConfig()),
         )
 
     def test_edge_gate_holds_when_edge_still_clears_cost(self) -> None:
@@ -370,12 +430,18 @@ class TestTargetPositionManagerTrim:
         mgr = TargetPositionManager(trim_min_fraction=0.10)
         pos = Position(symbol="AAPL", quantity=150)
         desired = DesiredPosition(
-            symbol="AAPL", target_qty=100, direction=1, edge_bps=10_000.0,
+            symbol="AAPL",
+            target_qty=100,
+            direction=1,
+            edge_bps=10_000.0,
         )
         plan = mgr.plan(
-            desired=desired, current=pos, market=self._market_ctx(),
+            desired=desired,
+            current=pos,
+            market=self._market_ctx(),
             config=PositionManagerConfig(
-                enable_trim=True, trim_edge_gate_multiplier=1.0,
+                enable_trim=True,
+                trim_edge_gate_multiplier=1.0,
             ),
         )
         assert plan.orders == ()
@@ -386,12 +452,18 @@ class TestTargetPositionManagerTrim:
         mgr = TargetPositionManager(trim_min_fraction=0.10)
         pos = Position(symbol="AAPL", quantity=150)
         desired = DesiredPosition(
-            symbol="AAPL", target_qty=100, direction=1, edge_bps=0.0,
+            symbol="AAPL",
+            target_qty=100,
+            direction=1,
+            edge_bps=0.0,
         )
         plan = mgr.plan(
-            desired=desired, current=pos, market=self._market_ctx(),
+            desired=desired,
+            current=pos,
+            market=self._market_ctx(),
             config=PositionManagerConfig(
-                enable_trim=True, trim_edge_gate_multiplier=1.0,
+                enable_trim=True,
+                trim_edge_gate_multiplier=1.0,
             ),
         )
         assert plan.primary_leg == PlanLeg.TRIM
@@ -402,12 +474,18 @@ class TestTargetPositionManagerTrim:
         mgr = TargetPositionManager(trim_min_fraction=0.10)
         pos = Position(symbol="AAPL", quantity=150)
         desired = DesiredPosition(
-            symbol="AAPL", target_qty=100, direction=1, edge_bps=10_000.0,
+            symbol="AAPL",
+            target_qty=100,
+            direction=1,
+            edge_bps=10_000.0,
         )
         plan = mgr.plan(
-            desired=desired, current=pos, market=self._market_ctx(),
+            desired=desired,
+            current=pos,
+            market=self._market_ctx(),
             config=PositionManagerConfig(
-                enable_trim=True, trim_edge_gate_multiplier=0.0,
+                enable_trim=True,
+                trim_edge_gate_multiplier=0.0,
             ),
         )
         assert plan.primary_leg == PlanLeg.TRIM
@@ -417,12 +495,17 @@ class TestTargetPositionManagerTrim:
         mgr = TargetPositionManager(trim_min_fraction=0.10)
         pos = Position(symbol="AAPL", quantity=150)
         desired = DesiredPosition(
-            symbol="AAPL", target_qty=100, direction=1, edge_bps=10_000.0,
+            symbol="AAPL",
+            target_qty=100,
+            direction=1,
+            edge_bps=10_000.0,
         )
         plan = mgr.plan(
-            desired=desired, current=pos,
+            desired=desired,
+            current=pos,
             config=PositionManagerConfig(
-                enable_trim=True, trim_edge_gate_multiplier=1.0,
+                enable_trim=True,
+                trim_edge_gate_multiplier=1.0,
             ),
         )
         assert plan.primary_leg == PlanLeg.TRIM
@@ -432,27 +515,31 @@ class TestTargetPositionManagerTrim:
         pos = Position(symbol="AAPL", quantity=150)
         desired = DesiredPosition(symbol="AAPL", target_qty=100, direction=1)
         passive = mgr.plan(
-            desired=desired, current=pos,
+            desired=desired,
+            current=pos,
             config=PositionManagerConfig(enable_trim=True, urgency_exec=True),
         )
         assert passive.orders[0].style == ExecStyle.PASSIVE
         aggressive = mgr.plan(
-            desired=desired, current=pos,
+            desired=desired,
+            current=pos,
             config=PositionManagerConfig(enable_trim=True, urgency_exec=False),
         )
         assert aggressive.orders[0].style == ExecStyle.MARKET
 
     def test_trim_leg_maps_to_partial_exit_intent(self) -> None:
         from feelies.execution.intent import TradingIntent
+
         signal = _signal(SignalDirection.LONG)
         pos = Position(symbol="AAPL", quantity=150)
         plan = TargetPositionManager(trim_min_fraction=0.10).plan(
             desired=DesiredPosition(symbol="AAPL", target_qty=100, direction=1),
-            current=pos, config=PositionManagerConfig(enable_trim=True),
+            current=pos,
+            config=PositionManagerConfig(enable_trim=True),
         )
         oi = order_intent_from_plan(plan, signal=signal, current=pos)
         assert oi.intent == TradingIntent.EXIT  # executes via the EXIT path
-        assert oi.target_quantity == 50         # partial, not |current|
+        assert oi.target_quantity == 50  # partial, not |current|
 
 
 # ── compare_plan_to_intent actually detects divergence ───────────────
@@ -475,12 +562,17 @@ class TestDivergenceDetection:
         assert div.planner_quantity == 0
 
     def test_leg_mismatch_flagged(self) -> None:
-        plan = PositionPlan(orders=(
-            PlannedOrder(
-                symbol="AAPL", side=Side.SELL, quantity=50,
-                style=ExecStyle.MARKET, leg=PlanLeg.EXIT,
-            ),
-        ))
+        plan = PositionPlan(
+            orders=(
+                PlannedOrder(
+                    symbol="AAPL",
+                    side=Side.SELL,
+                    quantity=50,
+                    style=ExecStyle.MARKET,
+                    leg=PlanLeg.EXIT,
+                ),
+            )
+        )
         div = compare_plan_to_intent(
             intent_name=TradingIntent.ENTRY_LONG.name,
             intent_target_quantity=50,

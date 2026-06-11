@@ -133,9 +133,7 @@ class TestDebitFees:
         assert result["AAPL"].quantity == 0
         assert result["AAPL"].realized_pnl == Decimal("500")
 
-    def test_debit_fees_accumulate_on_closed_position(
-        self, store: MemoryPositionStore
-    ) -> None:
+    def test_debit_fees_accumulate_on_closed_position(self, store: MemoryPositionStore) -> None:
         """Cancel fees arriving after a full close accumulate on the existing entry."""
         store.update("AAPL", 100, Decimal("150"))
         store.update("AAPL", -100, Decimal("155"))  # qty → 0

@@ -134,7 +134,11 @@ class TestSensorPassthroughFeature:
     def test_tuple_value_ignored(self) -> None:
         f = SensorPassthroughFeature("scheduled_flow_window", 30)
         state = f.initial_state()
-        f.observe(_reading(ts_ns=1, sensor_id="scheduled_flow_window", value=(1.0, 60.0, 0.5, 0.3)), state, {})
+        f.observe(
+            _reading(ts_ns=1, sensor_id="scheduled_flow_window", value=(1.0, 60.0, 0.5, 0.3)),
+            state,
+            {},
+        )
         _, warm, _ = f.finalize(_DUMMY_TICK, state, {})
         assert warm is False
 
@@ -148,18 +152,22 @@ class TestTupleComponentFeature:
         state = f.initial_state()
         f.observe(
             _reading(ts_ns=1, sensor_id="scheduled_flow_window", value=(1.0, 45.0, 0.9, 0.2)),
-            state, {},
+            state,
+            {},
         )
         value, warm, _ = f.finalize(_DUMMY_TICK, state, {})
         assert value == 1.0
         assert warm is True
 
     def test_extracts_component_3(self) -> None:
-        f = TupleComponentFeature("scheduled_flow_window", 3, "scheduled_flow_window_direction_prior", 120)
+        f = TupleComponentFeature(
+            "scheduled_flow_window", 3, "scheduled_flow_window_direction_prior", 120
+        )
         state = f.initial_state()
         f.observe(
             _reading(ts_ns=1, sensor_id="scheduled_flow_window", value=(1.0, 45.0, 0.9, 0.25)),
-            state, {},
+            state,
+            {},
         )
         value, warm, _ = f.finalize(_DUMMY_TICK, state, {})
         assert abs(value - 0.25) < 1e-9
@@ -168,8 +176,11 @@ class TestTupleComponentFeature:
         f = TupleComponentFeature("scheduled_flow_window", 0, "sfw_active", 120)
         state = f.initial_state()
         f.observe(
-            _reading(ts_ns=1, sensor_id="scheduled_flow_window", value=(1.0, 45.0, 0.9, 0.2), warm=False),
-            state, {},
+            _reading(
+                ts_ns=1, sensor_id="scheduled_flow_window", value=(1.0, 45.0, 0.9, 0.2), warm=False
+            ),
+            state,
+            {},
         )
         _, warm, _ = f.finalize(_DUMMY_TICK, state, {})
         assert warm is False
@@ -187,7 +198,8 @@ class TestTupleComponentFeature:
         state = f.initial_state()
         f.observe(
             _reading(ts_ns=1, sensor_id="scheduled_flow_window", value=(1.0, 2.0)),
-            state, {},
+            state,
+            {},
         )
         _, warm, _ = f.finalize(_DUMMY_TICK, state, {})
         assert warm is False
@@ -345,7 +357,9 @@ class TestRollingPercentileFeature:
         state = f.initial_state()
         for v in range(2):
             f.observe(_reading(ts_ns=v, sensor_id="kyle_lambda_60s", value=float(v)), state, {})
-        f.observe(_reading(ts_ns=99, sensor_id="kyle_lambda_60s", value=9.0, warm=False), state, {})
+        f.observe(
+            _reading(ts_ns=99, sensor_id="kyle_lambda_60s", value=9.0, warm=False), state, {}
+        )
         _, warm, _ = f.finalize(_DUMMY_TICK, state, {})
         assert warm is False
 

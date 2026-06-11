@@ -54,7 +54,9 @@ def resequence_event_list(
     for event in sorted_events:
         new_seq = seq.next()
         new_cid = make_correlation_id(
-            event.symbol, event.exchange_timestamp_ns, new_seq,
+            event.symbol,
+            event.exchange_timestamp_ns,
+            new_seq,
         )
         result.append(replace(event, sequence=new_seq, correlation_id=new_cid))
     return result

@@ -86,7 +86,12 @@ def session_open_ns_for_today() -> int:
     """9:30 America/New_York anchor for the current calendar day."""
     today = datetime.now(_ET).date()
     open_dt = datetime(
-        today.year, today.month, today.day, 9, 30, tzinfo=_ET,
+        today.year,
+        today.month,
+        today.day,
+        9,
+        30,
+        tzinfo=_ET,
     )
     return int(open_dt.timestamp() * 1_000_000_000)
 
@@ -144,11 +149,16 @@ def paper_session(
 
     def _run() -> None:
         try:
-            rc = run_paper.main([
-                "--config", str(config_path),
-                "--run-dir", str(run_dir),
-                "--max-runtime-s", str(max_runtime_s),
-            ])
+            rc = run_paper.main(
+                [
+                    "--config",
+                    str(config_path),
+                    "--run-dir",
+                    str(run_dir),
+                    "--max-runtime-s",
+                    str(max_runtime_s),
+                ]
+            )
             captured["exit_code"] = rc
         except BaseException as exc:
             errors.append(exc)

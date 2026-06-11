@@ -138,10 +138,14 @@ class TurnoverOptimizer:
 
         if _HAS_CVXPY:
             return self._optimize_cvxpy(
-                weights, universe, current_positions_usd or {},
+                weights,
+                universe,
+                current_positions_usd or {},
             )
         return self._optimize_closed_form(
-            weights, universe, current_positions_usd or {},
+            weights,
+            universe,
+            current_positions_usd or {},
         )
 
     # ── Strategies ───────────────────────────────────────────────────
@@ -181,8 +185,7 @@ class TurnoverOptimizer:
             rounded = {s: round(v * shrink, 2) for s, v in rounded.items()}
 
         turnover = sum(
-            abs(rounded.get(s, 0.0) - current_positions_usd.get(s, 0.0))
-            for s in universe
+            abs(rounded.get(s, 0.0) - current_positions_usd.get(s, 0.0)) for s in universe
         )
         gross_after = sum(abs(v) for v in rounded.values())
         return OptimizerResult(
@@ -202,7 +205,8 @@ class TurnoverOptimizer:
         assert cp is not None and _np is not None
         n = len(universe)
         mu = _np.asarray(
-            [weights.get(s, 0.0) for s in universe], dtype=_np.float64,
+            [weights.get(s, 0.0) for s in universe],
+            dtype=_np.float64,
         )
         p_cur = _np.asarray(
             [current_positions_usd.get(s, 0.0) for s in universe],
@@ -232,12 +236,13 @@ class TurnoverOptimizer:
             problem.solve(solver=cp.ECOS, verbose=False)
         except (cp.SolverError, ValueError) as exc:  # pragma: no cover
             _logger.warning(
-                "TurnoverOptimizer: ECOS solve failed (%s); "
-                "falling back to closed-form",
+                "TurnoverOptimizer: ECOS solve failed (%s); falling back to closed-form",
                 exc,
             )
             return self._optimize_closed_form(
-                weights, universe, current_positions_usd,
+                weights,
+                universe,
+                current_positions_usd,
             )
 
         if x.value is None or problem.status not in ("optimal", "optimal_inaccurate"):
@@ -254,8 +259,7 @@ class TurnoverOptimizer:
                 rounded[s] = v
 
         turnover = sum(
-            abs(rounded.get(s, 0.0) - current_positions_usd.get(s, 0.0))
-            for s in universe
+            abs(rounded.get(s, 0.0) - current_positions_usd.get(s, 0.0)) for s in universe
         )
         gross_after = sum(abs(v) for v in rounded.values())
         return OptimizerResult(

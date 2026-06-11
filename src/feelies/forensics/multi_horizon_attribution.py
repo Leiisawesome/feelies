@@ -96,12 +96,8 @@ class MultiHorizonReport:
     JSON-serialised output is bit-stable across replays.
     """
 
-    horizon: dict[tuple[str, int], HorizonBucket] = field(
-        default_factory=dict
-    )
-    mechanism: dict[tuple[str, TrendMechanism], MechanismBucket] = field(
-        default_factory=dict
-    )
+    horizon: dict[tuple[str, int], HorizonBucket] = field(default_factory=dict)
+    mechanism: dict[tuple[str, TrendMechanism], MechanismBucket] = field(default_factory=dict)
     regime: dict[tuple[str, str], RegimeBucket] = field(default_factory=dict)
 
 
@@ -148,12 +144,8 @@ class MultiHorizonAttributor:
         self,
         trades: Iterable[TradeRecord],
     ) -> MultiHorizonReport:
-        horizon_acc: dict[tuple[str, int], _HorizonAcc] = defaultdict(
-            _HorizonAcc
-        )
-        regime_acc: dict[tuple[str, str], _RegimeAcc] = defaultdict(
-            _RegimeAcc
-        )
+        horizon_acc: dict[tuple[str, int], _HorizonAcc] = defaultdict(_HorizonAcc)
+        regime_acc: dict[tuple[str, str], _RegimeAcc] = defaultdict(_RegimeAcc)
         # Track total realized PnL per strategy so we can split it
         # across mechanisms by the per-strategy gross-share weights.
         strategy_pnl: dict[str, float] = defaultdict(float)
@@ -180,9 +172,7 @@ class MultiHorizonAttributor:
                 r_acc.realized_pnl += pnl
 
         # Build mechanism axis from per-strategy intent snapshots.
-        mechanism_buckets: dict[
-            tuple[str, TrendMechanism], MechanismBucket
-        ] = {}
+        mechanism_buckets: dict[tuple[str, TrendMechanism], MechanismBucket] = {}
         for sid in sorted(strategy_pnl):
             snap = self._intent_snapshots.get(sid)
             total_pnl = strategy_pnl[sid]
@@ -192,7 +182,8 @@ class MultiHorizonAttributor:
             if total_share <= 0:
                 continue
             for mech in sorted(
-                snap.mechanism_breakdown, key=lambda m: m.name,
+                snap.mechanism_breakdown,
+                key=lambda m: m.name,
             ):
                 share = float(snap.mechanism_breakdown[mech]) / total_share
                 mechanism_buckets[(sid, mech)] = MechanismBucket(

@@ -135,7 +135,8 @@ class _DefaultPipelineAlpha:
 
     def construct(self, ctx, params):  # type: ignore[override, no-untyped-def]
         return self._engine.run_default_pipeline(
-            ctx, strategy_id=self.alpha_id,
+            ctx,
+            strategy_id=self.alpha_id,
         )
 
 
@@ -155,12 +156,14 @@ def _build_engine(*, decay: bool) -> tuple[EventBus, CompositionEngine, list[Siz
         position_lookup=None,
     )
     alpha: PortfolioAlpha = _DefaultPipelineAlpha(engine)
-    engine.register(RegisteredPortfolioAlpha(
-        alpha_id=_STRATEGY_ID,
-        horizon_seconds=_HORIZON_SECONDS,
-        alpha=alpha,
-        params={},
-    ))
+    engine.register(
+        RegisteredPortfolioAlpha(
+            alpha_id=_STRATEGY_ID,
+            horizon_seconds=_HORIZON_SECONDS,
+            alpha=alpha,
+            params={},
+        )
+    )
     engine.attach()
     return bus, engine, captured
 
@@ -182,8 +185,7 @@ def _hash_intent_stream(intents: list[SizedPositionIntent]) -> str:
             for s in sorted(it.target_positions)
         )
         factors = "|".join(
-            f"{f}={it.factor_exposures[f]:.6f}"
-            for f in sorted(it.factor_exposures)
+            f"{f}={it.factor_exposures[f]:.6f}" for f in sorted(it.factor_exposures)
         )
         mech = "|".join(
             f"{m.name}={it.mechanism_breakdown[m]:.6f}"
@@ -197,7 +199,6 @@ def _hash_intent_stream(intents: list[SizedPositionIntent]) -> str:
             f"TGT[{targets}]|FX[{factors}]|MECH[{mech}]"
         )
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
-
 
 
 # Locked Level-3 baseline (decay OFF).  Re-baseline only in a batched
@@ -229,9 +230,7 @@ def test_intent_stream_matches_locked_baseline_decay_off() -> None:
 def test_two_replays_produce_identical_intent_hash() -> None:
     hash_a, count_a = _replay(decay=False)
     hash_b, count_b = _replay(decay=False)
-    assert count_a == count_b, (
-        f"intent count drift across replays: {count_a} vs {count_b}"
-    )
+    assert count_a == count_b, f"intent count drift across replays: {count_a} vs {count_b}"
     assert hash_a == hash_b, (
         "Level-3 SizedPositionIntent (decay OFF) hash drift across "
         f"identical replays!\n  a: {hash_a}\n  b: {hash_b}"
@@ -242,6 +241,5 @@ def test_intent_count_matches_boundary_count() -> None:
     """Sanity guard: one intent per boundary."""
     _hash, count = _replay(decay=False)
     assert count == _NUM_BOUNDARIES, (
-        f"expected exactly {_NUM_BOUNDARIES} intents (one per boundary), "
-        f"got {count}"
+        f"expected exactly {_NUM_BOUNDARIES} intents (one per boundary), got {count}"
     )

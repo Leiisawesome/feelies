@@ -15,11 +15,13 @@ from enum import Enum
 from feelies.core.events import SignalDirection
 from feelies.execution.intent import OrderIntent, TradingIntent
 
-_VALID_TIER_LABELS: frozenset[str] = frozenset({
-    "available",
-    "hard",
-    "unavailable",
-})
+_VALID_TIER_LABELS: frozenset[str] = frozenset(
+    {
+        "available",
+        "hard",
+        "unavailable",
+    }
+)
 
 
 class BorrowTier(Enum):
@@ -35,8 +37,7 @@ def parse_borrow_tier(label: str) -> BorrowTier:
     key = label.strip().lower()
     if key not in _VALID_TIER_LABELS:
         raise ValueError(
-            f"invalid borrow tier {label!r}; expected one of "
-            f"{sorted(_VALID_TIER_LABELS)}"
+            f"invalid borrow tier {label!r}; expected one of {sorted(_VALID_TIER_LABELS)}"
         )
     return BorrowTier(key)
 

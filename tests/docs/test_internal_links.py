@@ -55,29 +55,31 @@ _SOURCE_FILES: tuple[Path, ...] = (
 
 # Path tokens we intentionally cite in docs as forward-looking
 # *examples* or placeholders.  They do not need to resolve on disk.
-_PLACEHOLDER_PATH_TOKENS: frozenset[str] = frozenset({
-    # SCHEMA.md flat-vs-nested layout illustration:
-    "alphas/my_alpha.alpha.yaml",
-    "alphas/my_alpha/my_alpha.alpha.yaml",
-    # Workstream F-5 migration cookbook §11.5 worked example —
-    # forward-looking placeholder filename for an operator's
-    # research-grade alpha YAML carrying a stricter ``promotion:``
-    # block.
-    "alphas/my_research_alpha.alpha.yaml",
-    # Prompt-7 mutation example (forward-looking
-    # successor file the operator would create on a real mutation):
-    "alphas/pofi_benign_midcap_v2/pofi_benign_midcap_v2.alpha.yaml",
-    "alphas/_deprecated/sig_benign_midcap_v1_v1.0.0.yaml",
-    # Forward-looking research infrastructure path referenced as a
-    # design pointer for the hypothesis status taxonomy.  Not yet
-    # implemented; tracked separately:
-    "src/feelies/research/hypothesis_status.py",
-    # Workstream-D.2 retired this parity test alongside the
-    # ``alphas/trade_cluster_drift/`` reference alpha.  The path is
-    # intentionally cited from SCHEMA.md so operators reading those
-    # docs can grep their own forks for the now-defunct anchor.
-    "tests/determinism/test_legacy_alpha_parity.py",
-})
+_PLACEHOLDER_PATH_TOKENS: frozenset[str] = frozenset(
+    {
+        # SCHEMA.md flat-vs-nested layout illustration:
+        "alphas/my_alpha.alpha.yaml",
+        "alphas/my_alpha/my_alpha.alpha.yaml",
+        # Workstream F-5 migration cookbook §11.5 worked example —
+        # forward-looking placeholder filename for an operator's
+        # research-grade alpha YAML carrying a stricter ``promotion:``
+        # block.
+        "alphas/my_research_alpha.alpha.yaml",
+        # Prompt-7 mutation example (forward-looking
+        # successor file the operator would create on a real mutation):
+        "alphas/pofi_benign_midcap_v2/pofi_benign_midcap_v2.alpha.yaml",
+        "alphas/_deprecated/sig_benign_midcap_v1_v1.0.0.yaml",
+        # Forward-looking research infrastructure path referenced as a
+        # design pointer for the hypothesis status taxonomy.  Not yet
+        # implemented; tracked separately:
+        "src/feelies/research/hypothesis_status.py",
+        # Workstream-D.2 retired this parity test alongside the
+        # ``alphas/trade_cluster_drift/`` reference alpha.  The path is
+        # intentionally cited from SCHEMA.md so operators reading those
+        # docs can grep their own forks for the now-defunct anchor.
+        "tests/determinism/test_legacy_alpha_parity.py",
+    }
+)
 
 
 # Match repo-relative paths inside backticks: `foo/bar.md`, `path/to/file.py`.
@@ -148,6 +150,4 @@ def test_internal_path_references_resolve(doc: Path) -> None:
         target = _normalise(cite)
         if not target.exists():
             missing.append(cite)
-    assert not missing, (
-        f"{doc}: cites repo paths that do not resolve on disk: {missing}"
-    )
+    assert not missing, f"{doc}: cites repo paths that do not resolve on disk: {missing}"

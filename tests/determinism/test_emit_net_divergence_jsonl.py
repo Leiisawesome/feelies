@@ -34,8 +34,9 @@ def runner():
     return _load_runner()
 
 
-def _div(seq: int, winner: int, net: int, n: int = 2,
-         ts: int = 1_717_200_000_000_000_000) -> NetDivergence:
+def _div(
+    seq: int, winner: int, net: int, n: int = 2, ts: int = 1_717_200_000_000_000_000
+) -> NetDivergence:
     return NetDivergence(
         symbol="AAPL",
         signal_sequence=seq,
@@ -53,15 +54,13 @@ def test_prefix_and_order(runner, capsys) -> None:
     out = capsys.readouterr().out.splitlines()
     assert len(out) == 2
     assert all(line.startswith("NETDIV_JSONL ") for line in out)
-    seqs = [json.loads(ln[len("NETDIV_JSONL "):])["signal_sequence"] for ln in out]
+    seqs = [json.loads(ln[len("NETDIV_JSONL ") :])["signal_sequence"] for ln in out]
     assert seqs == [1, 2]  # record order preserved
 
 
 def test_row_shape_and_magnitude(runner, capsys) -> None:
     runner._emit_net_divergence_jsonl([_div(7, 100, 200, n=3)])
-    payload = json.loads(
-        capsys.readouterr().out.splitlines()[0][len("NETDIV_JSONL "):]
-    )
+    payload = json.loads(capsys.readouterr().out.splitlines()[0][len("NETDIV_JSONL ") :])
     assert payload == {
         "timestamp_ns": 1_717_200_000_000_000_000,
         "signal_sequence": 7,
@@ -69,16 +68,14 @@ def test_row_shape_and_magnitude(runner, capsys) -> None:
         "winner_strategy_id": "alpha_a",
         "winner_target_qty": 100,
         "net_target_qty": 200,
-        "magnitude": 100,          # net − winner = 200 − 100
+        "magnitude": 100,  # net − winner = 200 − 100
         "contributing_alphas": 3,
     }
 
 
 def test_offset_magnitude_is_signed(runner, capsys) -> None:
     runner._emit_net_divergence_jsonl([_div(1, 100, 0)])  # opposing → net flat
-    payload = json.loads(
-        capsys.readouterr().out.splitlines()[0][len("NETDIV_JSONL "):]
-    )
+    payload = json.loads(capsys.readouterr().out.splitlines()[0][len("NETDIV_JSONL ") :])
     assert payload["magnitude"] == -100  # 0 − 100
 
 

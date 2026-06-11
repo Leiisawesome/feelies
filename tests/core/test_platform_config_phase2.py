@@ -67,8 +67,11 @@ class TestValidation:
 class TestSensorSpecValidation:
     def test_duplicate_sensor_spec_rejected(self) -> None:
         spec = SensorSpec(
-            sensor_id="x", sensor_version="1.0.0", cls=CountingSensor,
-            subscribes_to=(NBBOQuote,), params={"sensor_id": "x"},
+            sensor_id="x",
+            sensor_version="1.0.0",
+            cls=CountingSensor,
+            subscribes_to=(NBBOQuote,),
+            params={"sensor_id": "x"},
         )
         cfg = _base_config(sensor_specs=(spec, spec))
         with pytest.raises(ConfigurationError, match="duplicate|already"):
@@ -76,8 +79,11 @@ class TestSensorSpecValidation:
 
     def test_unknown_input_sensor_id_rejected(self) -> None:
         spec = SensorSpec(
-            sensor_id="downstream", sensor_version="1.0.0", cls=CountingSensor,
-            subscribes_to=(NBBOQuote,), input_sensor_ids=("upstream",),
+            sensor_id="downstream",
+            sensor_version="1.0.0",
+            cls=CountingSensor,
+            subscribes_to=(NBBOQuote,),
+            input_sensor_ids=("upstream",),
             params={"sensor_id": "downstream"},
         )
         cfg = _base_config(sensor_specs=(spec,))
@@ -86,12 +92,18 @@ class TestSensorSpecValidation:
 
     def test_topological_misorder_rejected(self) -> None:
         upstream = SensorSpec(
-            sensor_id="upstream", sensor_version="1.0.0", cls=CountingSensor,
-            subscribes_to=(NBBOQuote,), params={"sensor_id": "upstream"},
+            sensor_id="upstream",
+            sensor_version="1.0.0",
+            cls=CountingSensor,
+            subscribes_to=(NBBOQuote,),
+            params={"sensor_id": "upstream"},
         )
         downstream = SensorSpec(
-            sensor_id="downstream", sensor_version="1.0.0", cls=CountingSensor,
-            subscribes_to=(NBBOQuote,), input_sensor_ids=("upstream",),
+            sensor_id="downstream",
+            sensor_version="1.0.0",
+            cls=CountingSensor,
+            subscribes_to=(NBBOQuote,),
+            input_sensor_ids=("upstream",),
             params={"sensor_id": "downstream"},
         )
         cfg = _base_config(sensor_specs=(downstream, upstream))
@@ -100,12 +112,18 @@ class TestSensorSpecValidation:
 
     def test_correct_topological_order_accepted(self) -> None:
         upstream = SensorSpec(
-            sensor_id="upstream", sensor_version="1.0.0", cls=CountingSensor,
-            subscribes_to=(NBBOQuote,), params={"sensor_id": "upstream"},
+            sensor_id="upstream",
+            sensor_version="1.0.0",
+            cls=CountingSensor,
+            subscribes_to=(NBBOQuote,),
+            params={"sensor_id": "upstream"},
         )
         downstream = SensorSpec(
-            sensor_id="downstream", sensor_version="1.0.0", cls=CountingSensor,
-            subscribes_to=(NBBOQuote,), input_sensor_ids=("upstream",),
+            sensor_id="downstream",
+            sensor_version="1.0.0",
+            cls=CountingSensor,
+            subscribes_to=(NBBOQuote,),
+            input_sensor_ids=("upstream",),
             params={"sensor_id": "downstream"},
         )
         cfg = _base_config(sensor_specs=(upstream, downstream))
@@ -128,8 +146,11 @@ class TestSnapshot:
 
     def test_snapshot_serializes_sensor_specs_deterministically(self) -> None:
         spec = SensorSpec(
-            sensor_id="x", sensor_version="1.0.0", cls=CountingSensor,
-            subscribes_to=(NBBOQuote, Trade), params={"sensor_id": "x"},
+            sensor_id="x",
+            sensor_version="1.0.0",
+            cls=CountingSensor,
+            subscribes_to=(NBBOQuote, Trade),
+            params={"sensor_id": "x"},
         )
         cfg = _base_config(sensor_specs=(spec,))
         snap_a = cfg.snapshot()
@@ -212,9 +233,6 @@ class TestYamlLoader:
         # Omitted ⇒ backward-compatible default.
         assert by_id["micro_price"].stateful is False
         # Audit/replay provenance: the snapshot serializes the flag.
-        serialized = {
-            row["sensor_id"]: row
-            for row in cfg.snapshot().data["sensor_specs"]
-        }
+        serialized = {row["sensor_id"]: row for row in cfg.snapshot().data["sensor_specs"]}
         assert serialized["ofi_ewma"]["stateful"] is True
         assert serialized["micro_price"]["stateful"] is False

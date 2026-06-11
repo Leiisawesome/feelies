@@ -161,9 +161,7 @@ def standard_normal_quantile(p: float) -> float:
     ``inf`` / ``nan`` propagating through downstream arithmetic.
     """
     if not (0.0 < p < 1.0):
-        raise ValueError(
-            f"standard_normal_quantile requires p in (0, 1), got {p}"
-        )
+        raise ValueError(f"standard_normal_quantile requires p in (0, 1), got {p}")
     return statistics.NormalDist().inv_cdf(p)
 
 
@@ -211,9 +209,7 @@ def probabilistic_sharpe_ratio(
       a sign of misspecified inputs).
     """
     if n_obs < 2:
-        raise ValueError(
-            f"probabilistic_sharpe_ratio requires n_obs >= 2, got {n_obs}"
-        )
+        raise ValueError(f"probabilistic_sharpe_ratio requires n_obs >= 2, got {n_obs}")
     var_term = (
         1.0
         - skewness * observed_sharpe
@@ -226,11 +222,7 @@ def probabilistic_sharpe_ratio(
             f"kurt={kurtosis}, observed_sharpe={observed_sharpe}, "
             f"variance_factor={var_term})"
         )
-    z = (
-        (observed_sharpe - threshold_sharpe)
-        * math.sqrt(n_obs - 1)
-        / math.sqrt(var_term)
-    )
+    z = (observed_sharpe - threshold_sharpe) * math.sqrt(n_obs - 1) / math.sqrt(var_term)
     return standard_normal_cdf(z)
 
 
@@ -273,13 +265,10 @@ def expected_max_sharpe(
     module docstring for the per-period vs. annualised convention.
     """
     if n_trials < 1:
-        raise ValueError(
-            f"expected_max_sharpe requires n_trials >= 1, got {n_trials}"
-        )
+        raise ValueError(f"expected_max_sharpe requires n_trials >= 1, got {n_trials}")
     if trial_sharpe_variance < 0.0:
         raise ValueError(
-            "expected_max_sharpe requires trial_sharpe_variance >= 0, "
-            f"got {trial_sharpe_variance}"
+            f"expected_max_sharpe requires trial_sharpe_variance >= 0, got {trial_sharpe_variance}"
         )
     if n_trials == 1 or trial_sharpe_variance == 0.0:
         return 0.0
@@ -372,13 +361,9 @@ def deflated_sharpe(
       ``n_obs - 1``).
     """
     if n_obs < 2:
-        raise ValueError(
-            f"deflated_sharpe requires n_obs >= 2, got {n_obs}"
-        )
+        raise ValueError(f"deflated_sharpe requires n_obs >= 2, got {n_obs}")
     if n_trials < 1:
-        raise ValueError(
-            f"deflated_sharpe requires n_trials >= 1, got {n_trials}"
-        )
+        raise ValueError(f"deflated_sharpe requires n_trials >= 1, got {n_trials}")
 
     if trial_sharpe_variance is None:
         trial_sharpe_variance = 1.0 / (n_obs - 1)
@@ -492,18 +477,12 @@ def build_dsr_evidence(
     :func:`probabilistic_sharpe_ratio` rejects.
     """
     if n_obs < 2:
-        raise ValueError(
-            f"build_dsr_evidence requires n_obs >= 2, got {n_obs}"
-        )
+        raise ValueError(f"build_dsr_evidence requires n_obs >= 2, got {n_obs}")
     if trials_count < 0:
-        raise ValueError(
-            f"build_dsr_evidence requires trials_count >= 0, "
-            f"got {trials_count}"
-        )
+        raise ValueError(f"build_dsr_evidence requires trials_count >= 0, got {trials_count}")
     if annualization_factor <= 0.0:
         raise ValueError(
-            "build_dsr_evidence requires annualization_factor > 0, "
-            f"got {annualization_factor}"
+            f"build_dsr_evidence requires annualization_factor > 0, got {annualization_factor}"
         )
 
     if trials_count == 0:
@@ -560,8 +539,7 @@ def build_dsr_evidence_from_returns(
     """
     if len(returns) < 2:
         raise ValueError(
-            "build_dsr_evidence_from_returns requires at least 2 returns, "
-            f"got {len(returns)}"
+            f"build_dsr_evidence_from_returns requires at least 2 returns, got {len(returns)}"
         )
     skew, kurt = standardised_moments(returns)
     return build_dsr_evidence(

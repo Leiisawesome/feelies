@@ -187,12 +187,14 @@ def test_disabled_or_missing_block_skips_alpha() -> None:
     )
     b = _StubSignalModule(
         manifest=_manifest(
-            alpha_id="sig_b", hazard_exit={"enabled": False},
+            alpha_id="sig_b",
+            hazard_exit={"enabled": False},
         ),
     )
     c = _StubSignalModule(
         manifest=_manifest(
-            alpha_id="sig_c", hazard_exit={"hazard_score_threshold": 0.5},
+            alpha_id="sig_c",
+            hazard_exit={"hazard_score_threshold": 0.5},
         ),
     )
     controller = _create_hazard_exit_controller(

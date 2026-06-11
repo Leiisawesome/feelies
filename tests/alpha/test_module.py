@@ -111,29 +111,21 @@ class TestParameterDef:
         assert "unknown type" in errs[0]
 
     def test_validate_value_range_within(self) -> None:
-        pdef = ParameterDef(
-            name="x", param_type="float", default=2.0, range=(1.0, 10.0)
-        )
+        pdef = ParameterDef(name="x", param_type="float", default=2.0, range=(1.0, 10.0))
         assert pdef.validate_value(5.0) == []
 
     def test_validate_value_range_below(self) -> None:
-        pdef = ParameterDef(
-            name="x", param_type="float", default=2.0, range=(1.0, 10.0)
-        )
+        pdef = ParameterDef(name="x", param_type="float", default=2.0, range=(1.0, 10.0))
         errs = pdef.validate_value(0.5)
         assert len(errs) == 1
         assert "outside range" in errs[0]
 
     def test_validate_value_range_above(self) -> None:
-        pdef = ParameterDef(
-            name="x", param_type="int", default=5, range=(1, 10)
-        )
+        pdef = ParameterDef(name="x", param_type="int", default=5, range=(1, 10))
         errs = pdef.validate_value(15)
         assert len(errs) == 1
         assert "outside range" in errs[0]
 
     def test_validate_value_range_ignored_for_str(self) -> None:
-        pdef = ParameterDef(
-            name="x", param_type="str", default="a", range=(0, 1)
-        )
+        pdef = ParameterDef(name="x", param_type="str", default="a", range=(0, 1))
         assert pdef.validate_value("hello") == []

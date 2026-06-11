@@ -120,43 +120,49 @@ def _portfolio_alpha_yaml(
         "universe:",
     ]
     lines.extend(f"  - {s}" for s in universe)
-    lines.extend([
-        "depends_on_signals:",
-        "  - upstream_test_alpha",
-        "factor_neutralization: true",
-        "cost_arithmetic:",
-        "  edge_estimate_bps: 10.0",
-        "  half_spread_bps: 1.0",
-        "  impact_bps: 0.5",
-        "  fee_bps: 0.5",
-        "  margin_ratio: 5.0",
-        "trend_mechanism:",
-        "  consumes:",
-        "    - {family: KYLE_INFO, max_share_of_gross: 0.6}",
-        "    - {family: INVENTORY, max_share_of_gross: 0.4}",
-        "  max_share_of_gross: 0.6",
-        "risk_budget:",
-        "  max_position_per_symbol: 100",
-        "  max_gross_exposure_pct: 5.0",
-        "  max_drawdown_pct: 1.0",
-        "  capital_allocation_pct: 10.0",
-    ])
+    lines.extend(
+        [
+            "depends_on_signals:",
+            "  - upstream_test_alpha",
+            "factor_neutralization: true",
+            "cost_arithmetic:",
+            "  edge_estimate_bps: 10.0",
+            "  half_spread_bps: 1.0",
+            "  impact_bps: 0.5",
+            "  fee_bps: 0.5",
+            "  margin_ratio: 5.0",
+            "trend_mechanism:",
+            "  consumes:",
+            "    - {family: KYLE_INFO, max_share_of_gross: 0.6}",
+            "    - {family: INVENTORY, max_share_of_gross: 0.4}",
+            "  max_share_of_gross: 0.6",
+            "risk_budget:",
+            "  max_position_per_symbol: 100",
+            "  max_gross_exposure_pct: 5.0",
+            "  max_drawdown_pct: 1.0",
+            "  capital_allocation_pct: 10.0",
+        ]
+    )
     if decay_weighting:
-        lines.extend([
-            "parameters:",
-            "  decay_weighting_enabled:",
-            "    type: bool",
-            "    default: true",
-        ])
+        lines.extend(
+            [
+                "parameters:",
+                "  decay_weighting_enabled:",
+                "    type: bool",
+                "    default: true",
+            ]
+        )
     else:
         lines.append("parameters: {}")
     if hazard_exit_enabled:
-        lines.extend([
-            "hazard_exit:",
-            "  enabled: true",
-            "  hazard_score_threshold: 0.7",
-            "  min_age_seconds: 60",
-        ])
+        lines.extend(
+            [
+                "hazard_exit:",
+                "  enabled: true",
+                "  hazard_score_threshold: 0.7",
+                "  min_age_seconds: 60",
+            ]
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -198,22 +204,24 @@ def _signal_alpha_yaml(
         "depends_on_sensors:",
     ]
     lines.extend(f"  - {s}" for s in depends_on_sensors)
-    lines.extend([
-        "regime_gate:",
-        "  regime_engine: hmm_3state_fractional",
-        '  on_condition: "P(normal) > 0.7"',
-        '  off_condition: "P(normal) < 0.5"',
-        "cost_arithmetic:",
-        "  edge_estimate_bps: 9.0",
-        "  half_spread_bps: 2.0",
-        "  impact_bps: 2.0",
-        "  fee_bps: 1.0",
-        "  margin_ratio: 1.8",
-        "trend_mechanism:",
-        f"  family: {family}",
-        f"  expected_half_life_seconds: {expected_half_life_seconds}",
-        f"  expected_holding_period_seconds: {expected_half_life_seconds * 2}",
-    ])
+    lines.extend(
+        [
+            "regime_gate:",
+            "  regime_engine: hmm_3state_fractional",
+            '  on_condition: "P(normal) > 0.7"',
+            '  off_condition: "P(normal) < 0.5"',
+            "cost_arithmetic:",
+            "  edge_estimate_bps: 9.0",
+            "  half_spread_bps: 2.0",
+            "  impact_bps: 2.0",
+            "  fee_bps: 1.0",
+            "  margin_ratio: 1.8",
+            "trend_mechanism:",
+            f"  family: {family}",
+            f"  expected_half_life_seconds: {expected_half_life_seconds}",
+            f"  expected_holding_period_seconds: {expected_half_life_seconds * 2}",
+        ]
+    )
     if l1_signature_sensors:
         lines.append("  l1_signature_sensors:")
         lines.extend(f"    - {s}" for s in l1_signature_sensors)
@@ -221,10 +229,12 @@ def _signal_alpha_yaml(
     # ``failure_signature`` block (Inv-2 / mechanism falsifiers).  The
     # specific content doesn't matter for wiring tests — it just has
     # to be a non-empty list.
-    lines.extend([
-        "  failure_signature:",
-        '    - "spread_z_30d > 2.5"',
-    ])
+    lines.extend(
+        [
+            "  failure_signature:",
+            '    - "spread_z_30d > 2.5"',
+        ]
+    )
     if hazard_block is not None:
         lines.append("hazard_exit:")
         for k, v in hazard_block.items():
@@ -232,11 +242,13 @@ def _signal_alpha_yaml(
                 lines.append(f"  {k}: {'true' if v else 'false'}")
             else:
                 lines.append(f"  {k}: {v}")
-    lines.extend([
-        "signal: |",
-        "  def evaluate(snapshot, regime, params):",
-        "      return None",
-    ])
+    lines.extend(
+        [
+            "signal: |",
+            "  def evaluate(snapshot, regime, params):",
+            "      return None",
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 
@@ -271,7 +283,6 @@ def _make_config(
 
 
 class TestCompositionWiring:
-
     def test_no_portfolio_alpha_no_composition(self, tmp_path: Path) -> None:
         """Inv-A: legacy fast-path preserved when no PORTFOLIO alpha exists."""
         _write_alpha(tmp_path, "upstream.alpha.yaml", _UPSTREAM_SIGNAL_ALPHA_YAML)
@@ -282,9 +293,7 @@ class TestCompositionWiring:
         assert orchestrator._composition_metrics_collector is None
         assert orchestrator._hazard_exit_controller is None
 
-    def test_single_portfolio_alpha_wires_full_pipeline(
-        self, tmp_path: Path
-    ) -> None:
+    def test_single_portfolio_alpha_wires_full_pipeline(self, tmp_path: Path) -> None:
         """Single PORTFOLIO alpha activates the whole composition layer."""
         _write_alpha(tmp_path, "upstream.alpha.yaml", _UPSTREAM_SIGNAL_ALPHA_YAML)
         _write_alpha(
@@ -295,9 +304,7 @@ class TestCompositionWiring:
         config = _make_config(tmp_path)
         orchestrator, _ = build_platform(config)
         assert isinstance(orchestrator._composition_engine, CompositionEngine)
-        assert isinstance(
-            orchestrator._cross_sectional_tracker, CrossSectionalTracker
-        )
+        assert isinstance(orchestrator._cross_sectional_tracker, CrossSectionalTracker)
         assert isinstance(
             orchestrator._composition_metrics_collector,
             HorizonMetricsCollector,
@@ -305,9 +312,7 @@ class TestCompositionWiring:
         # No alpha enabled hazard_exit ->controller stays None.
         assert orchestrator._hazard_exit_controller is None
 
-    def test_hazard_exit_alpha_constructs_controller(
-        self, tmp_path: Path
-    ) -> None:
+    def test_hazard_exit_alpha_constructs_controller(self, tmp_path: Path) -> None:
         """Opt-in hazard_exit.enabled=true wires HazardExitController."""
         _write_alpha(tmp_path, "upstream.alpha.yaml", _UPSTREAM_SIGNAL_ALPHA_YAML)
         _write_alpha(
@@ -328,9 +333,7 @@ class TestCompositionWiring:
         assert policy.hazard_score_threshold == pytest.approx(0.7)
         assert policy.min_age_seconds == 60
 
-    def test_signal_layer_hazard_exit_opt_in_wires_controller(
-        self, tmp_path: Path
-    ) -> None:
+    def test_signal_layer_hazard_exit_opt_in_wires_controller(self, tmp_path: Path) -> None:
         """Audit P0 H-1: SIGNAL-layer ``hazard_exit.enabled: true`` must
         actually wire a controller.  Before the fix,
         ``_create_composition_layer`` scanned only PORTFOLIO modules
@@ -349,8 +352,7 @@ class TestCompositionWiring:
             horizon_seconds=300,
             family="KYLE_INFO",
             expected_half_life_seconds=150,
-            depends_on_sensors=("ofi_ewma", "spread_z_30d",
-                                "kyle_lambda_60s", "micro_price"),
+            depends_on_sensors=("ofi_ewma", "spread_z_30d", "kyle_lambda_60s", "micro_price"),
             l1_signature_sensors=("kyle_lambda_60s", "micro_price"),
             hazard_block={
                 "enabled": True,
@@ -385,8 +387,7 @@ class TestCompositionWiring:
             horizon_seconds=300,
             family="KYLE_INFO",
             expected_half_life_seconds=150,
-            depends_on_sensors=("ofi_ewma", "spread_z_30d",
-                                "kyle_lambda_60s", "micro_price"),
+            depends_on_sensors=("ofi_ewma", "spread_z_30d", "kyle_lambda_60s", "micro_price"),
             l1_signature_sensors=("kyle_lambda_60s", "micro_price"),
             hazard_block={
                 "enabled": True,

@@ -55,6 +55,7 @@ def _make_intent(
 
 # ── REVERSE_LONG_TO_SHORT ────────────────────────────────────────────
 
+
 class TestReverseLongToShort:
     """Long position flipped to short: exit closes the long, entry opens short."""
 
@@ -63,7 +64,7 @@ class TestReverseLongToShort:
         intent = _make_intent(
             TradingIntent.REVERSE_LONG_TO_SHORT,
             current_quantity=50,
-            target_quantity=80,   # 50 exit + 30 entry short
+            target_quantity=80,  # 50 exit + 30 entry short
         )
         result = aggregate_intents((intent,))
         agg = result["AAPL"]
@@ -117,6 +118,7 @@ class TestReverseLongToShort:
 
 # ── REVERSE_SHORT_TO_LONG ────────────────────────────────────────────
 
+
 class TestReverseShortToLong:
     """Short position flipped to long: exit closes the short, entry opens long."""
 
@@ -126,7 +128,7 @@ class TestReverseShortToLong:
         intent = _make_intent(
             TradingIntent.REVERSE_SHORT_TO_LONG,
             current_quantity=-60,
-            target_quantity=100,   # abs(-60) + 40 new long
+            target_quantity=100,  # abs(-60) + 40 new long
         )
         result = aggregate_intents((intent,))
         agg = result["AAPL"]
@@ -178,6 +180,7 @@ class TestReverseShortToLong:
 
 
 # ── Multi-alpha netting across reversals ────────────────────────────
+
 
 class TestReversalNetting:
     """Multiple alpha intents for the same symbol should net correctly."""

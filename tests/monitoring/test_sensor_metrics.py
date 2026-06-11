@@ -72,13 +72,15 @@ def test_registry_emits_reading_count_and_latency_per_reading() -> None:
         symbols=frozenset({"AAPL"}),
         metric_collector=mc,
     )
-    registry.register(SensorSpec(
-        sensor_id="micro_price",
-        sensor_version="1.1.0",
-        cls=MicroPriceSensor,
-        params={},
-        subscribes_to=(NBBOQuote,),
-    ))
+    registry.register(
+        SensorSpec(
+            sensor_id="micro_price",
+            sensor_version="1.1.0",
+            cls=MicroPriceSensor,
+            params={},
+            subscribes_to=(NBBOQuote,),
+        )
+    )
 
     captured: list[SensorReading] = []
     bus.subscribe(SensorReading, captured.append)
@@ -88,23 +90,15 @@ def test_registry_emits_reading_count_and_latency_per_reading() -> None:
     bus.publish(_quote(ts_ns=3_000_000_000))
 
     assert len(captured) == 3
-    counts = [
-        e for e in mc.events
-        if e.name == "feelies.sensor.reading.count"
-    ]
+    counts = [e for e in mc.events if e.name == "feelies.sensor.reading.count"]
     # S6: latency histogram removed (A-CLOCK-01 violation in dispatch path).
-    latencies = [
-        e for e in mc.events
-        if e.name == "feelies.sensor.reading.latency"
-    ]
+    latencies = [e for e in mc.events if e.name == "feelies.sensor.reading.latency"]
     assert len(counts) == 3
     assert len(latencies) == 0  # S6: no longer emitted
     assert all(e.metric_type is MetricType.COUNTER for e in counts)
     assert all(e.value == 1.0 for e in counts)
     # Tags must include sensor_id and symbol for the count metric.
-    assert all(
-        e.tags.get("sensor_id") == "micro_price" for e in counts
-    )
+    assert all(e.tags.get("sensor_id") == "micro_price" for e in counts)
     assert all(e.tags.get("symbol") == "AAPL" for e in counts)
     assert all(e.layer == "sensor" for e in counts)
 
@@ -122,13 +116,15 @@ def test_registry_metrics_dont_perturb_sensor_reading_sequence() -> None:
         symbols=frozenset({"AAPL"}),
         metric_collector=mc,
     )
-    registry.register(SensorSpec(
-        sensor_id="micro_price",
-        sensor_version="1.1.0",
-        cls=MicroPriceSensor,
-        params={},
-        subscribes_to=(NBBOQuote,),
-    ))
+    registry.register(
+        SensorSpec(
+            sensor_id="micro_price",
+            sensor_version="1.1.0",
+            cls=MicroPriceSensor,
+            params={},
+            subscribes_to=(NBBOQuote,),
+        )
+    )
     captured: list[SensorReading] = []
     bus.subscribe(SensorReading, captured.append)
 
@@ -145,13 +141,15 @@ def test_registry_without_metric_collector_emits_nothing() -> None:
         sequence_generator=SequenceGenerator(),
         symbols=frozenset({"AAPL"}),
     )
-    registry.register(SensorSpec(
-        sensor_id="micro_price",
-        sensor_version="1.1.0",
-        cls=MicroPriceSensor,
-        params={},
-        subscribes_to=(NBBOQuote,),
-    ))
+    registry.register(
+        SensorSpec(
+            sensor_id="micro_price",
+            sensor_version="1.1.0",
+            cls=MicroPriceSensor,
+            params={},
+            subscribes_to=(NBBOQuote,),
+        )
+    )
     # Just exercise it: publish a quote and confirm no crash + no
     # metrics by inspecting that no MetricCollector was wired.
     bus.publish(_quote(ts_ns=1_000_000_000))
@@ -179,10 +177,7 @@ def test_scheduler_emits_tick_emitted_metric_per_tick() -> None:
     ticks_b = scheduler.on_event(_quote(ts_ns=1_031_000_000_000))
     assert len(ticks_b) == 2
 
-    metrics = [
-        e for e in mc.events
-        if e.name == "feelies.horizon.tick.emitted"
-    ]
+    metrics = [e for e in mc.events if e.name == "feelies.horizon.tick.emitted"]
     assert len(metrics) == 4
     assert all(e.metric_type is MetricType.COUNTER for e in metrics)
     assert all(e.value == 1.0 for e in metrics)
@@ -228,32 +223,33 @@ def test_aggregator_emits_stale_fraction_per_snapshot() -> None:
     bus.subscribe(HorizonFeatureSnapshot, captured.append)
 
     # Publish two ticks to generate two passive-mode snapshots.
-    bus.publish(HorizonTick(
-        timestamp_ns=1_030_000_000_000,
-        correlation_id="t1",
-        sequence=1,
-        horizon_seconds=30,
-        boundary_index=1,
-        scope="SYMBOL",
-        symbol="AAPL",
-        session_id="TEST",
-    ))
-    bus.publish(HorizonTick(
-        timestamp_ns=1_060_000_000_000,
-        correlation_id="t2",
-        sequence=2,
-        horizon_seconds=30,
-        boundary_index=2,
-        scope="SYMBOL",
-        symbol="AAPL",
-        session_id="TEST",
-    ))
+    bus.publish(
+        HorizonTick(
+            timestamp_ns=1_030_000_000_000,
+            correlation_id="t1",
+            sequence=1,
+            horizon_seconds=30,
+            boundary_index=1,
+            scope="SYMBOL",
+            symbol="AAPL",
+            session_id="TEST",
+        )
+    )
+    bus.publish(
+        HorizonTick(
+            timestamp_ns=1_060_000_000_000,
+            correlation_id="t2",
+            sequence=2,
+            horizon_seconds=30,
+            boundary_index=2,
+            scope="SYMBOL",
+            symbol="AAPL",
+            session_id="TEST",
+        )
+    )
 
     assert len(captured) == 2
-    metrics = [
-        e for e in mc.events
-        if e.name == "feelies.feature.snapshot.stale_fraction"
-    ]
+    metrics = [e for e in mc.events if e.name == "feelies.feature.snapshot.stale_fraction"]
     assert len(metrics) == 2
     assert all(e.metric_type is MetricType.GAUGE for e in metrics)
     assert all(e.layer == "feature" for e in metrics)
@@ -277,16 +273,18 @@ def test_aggregator_metrics_dont_perturb_snapshot_sequence() -> None:
     bus.subscribe(HorizonFeatureSnapshot, captured.append)
 
     for i, ts in enumerate([1_030_000_000_000, 1_060_000_000_000, 1_090_000_000_000]):
-        bus.publish(HorizonTick(
-            timestamp_ns=ts,
-            correlation_id=f"t{i}",
-            sequence=i + 1,
-            horizon_seconds=30,
-            boundary_index=i + 1,
-            scope="SYMBOL",
-            symbol="AAPL",
-            session_id="TEST",
-        ))
+        bus.publish(
+            HorizonTick(
+                timestamp_ns=ts,
+                correlation_id=f"t{i}",
+                sequence=i + 1,
+                horizon_seconds=30,
+                boundary_index=i + 1,
+                scope="SYMBOL",
+                symbol="AAPL",
+                session_id="TEST",
+            )
+        )
 
     assert [s.sequence for s in captured] == [0, 1, 2]
 
@@ -305,13 +303,15 @@ def test_metric_collector_summary_keys_match_plan() -> None:
         symbols=frozenset({"AAPL"}),
         metric_collector=mc,
     )
-    registry.register(SensorSpec(
-        sensor_id="micro_price",
-        sensor_version="1.1.0",
-        cls=MicroPriceSensor,
-        params={},
-        subscribes_to=(NBBOQuote,),
-    ))
+    registry.register(
+        SensorSpec(
+            sensor_id="micro_price",
+            sensor_version="1.1.0",
+            cls=MicroPriceSensor,
+            params={},
+            subscribes_to=(NBBOQuote,),
+        )
+    )
     bus.publish(_quote(ts_ns=1_000_000_000))
 
     keys = set(mc.summaries.keys())

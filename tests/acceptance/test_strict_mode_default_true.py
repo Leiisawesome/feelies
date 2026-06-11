@@ -61,11 +61,7 @@ from feelies.core.platform_config import PlatformConfig
 # ── §20.12.3 #2 v0.2 reference alpha ────────────────────────────────────
 
 
-_V02_BASELINE_ALPHA = (
-    Path("alphas")
-    / "sig_benign_midcap_v1"
-    / "sig_benign_midcap_v1.alpha.yaml"
-)
+_V02_BASELINE_ALPHA = Path("alphas") / "sig_benign_midcap_v1" / "sig_benign_midcap_v1.alpha.yaml"
 
 
 # A schema-1.1 SIGNAL spec missing the ``trend_mechanism:`` block.
@@ -93,10 +89,7 @@ _SIGNAL_SPEC_NO_MECHANISM: dict[str, object] = {
         "fee_bps": 1.0,
         "margin_ratio": 1.8,
     },
-    "signal": (
-        "def evaluate(snapshot, regime, params):\n"
-        "    return None\n"
-    ),
+    "signal": ("def evaluate(snapshot, regime, params):\n    return None\n"),
 }
 
 
@@ -184,9 +177,7 @@ class TestYAMLParserDefaultIsTrue:
                 alpha_specs: [dummy.alpha.yaml]
             """).strip()
         )
-        yaml_default = (
-            PlatformConfig.from_yaml(path).enforce_trend_mechanism
-        )
+        yaml_default = PlatformConfig.from_yaml(path).enforce_trend_mechanism
         assert dataclass_default is yaml_default
 
 
@@ -207,9 +198,7 @@ class TestLoaderRefusesMissingMechanismUnderDefault:
         platform_default = _base_config().enforce_trend_mechanism
         loader = AlphaLoader(enforce_trend_mechanism=platform_default)
         with pytest.raises(MissingTrendMechanismError, match="strict-mode"):
-            loader.load_from_dict(
-                dict(_SIGNAL_SPEC_NO_MECHANISM), source="<acceptance-test>"
-            )
+            loader.load_from_dict(dict(_SIGNAL_SPEC_NO_MECHANISM), source="<acceptance-test>")
 
 
 # ── Surface 4: v0.2 parity preserved on explicit opt-out ────────────────

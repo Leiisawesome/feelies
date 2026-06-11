@@ -254,7 +254,11 @@ class _StaticAlphaRegistry:
 
 
 def _make_quote(
-    *, ts: int = 1000, bid: str = "149.50", ask: str = "150.50", seq: int = 1,
+    *,
+    ts: int = 1000,
+    bid: str = "149.50",
+    ask: str = "150.50",
+    seq: int = 1,
 ) -> NBBOQuote:
     return NBBOQuote(
         timestamp_ns=ts,
@@ -342,13 +346,17 @@ def _signal_from_bus(bus: EventBus, signal: Signal) -> None:
     arrives at M1's ``bus.publish(quote)`` and is buffered by the
     orchestrator's ``_on_bus_signal`` before M4 drains.
     """
+
     def emit(quote: NBBOQuote) -> None:
-        bus.publish(replace(
-            signal,
-            timestamp_ns=quote.timestamp_ns,
-            correlation_id=quote.correlation_id,
-            sequence=quote.sequence,
-        ))
+        bus.publish(
+            replace(
+                signal,
+                timestamp_ns=quote.timestamp_ns,
+                correlation_id=quote.correlation_id,
+                sequence=quote.sequence,
+            )
+        )
+
     bus.subscribe(NBBOQuote, emit)  # type: ignore[arg-type]
 
 
@@ -377,8 +385,7 @@ class TestBusDrivenSignalProducesOrder:
         orch._process_tick(quote)
 
         assert len(captured) == 1, (
-            f"expected exactly 1 OrderRequest from the bus-fed Signal, "
-            f"got {len(captured)}"
+            f"expected exactly 1 OrderRequest from the bus-fed Signal, got {len(captured)}"
         )
         assert captured[0].symbol == "AAPL"
         assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
@@ -421,8 +428,7 @@ class TestBusDrivenSignalProducesOrder:
         assert len(captured) == 1
         assert captured[0].strategy_id == "double_scale_alpha"
         assert captured[0].quantity == 50, (
-            "expected 100-share default target scaled once by 0.5, "
-            f"got {captured[0].quantity}"
+            f"expected 100-share default target scaled once by 0.5, got {captured[0].quantity}"
         )
 
     def test_scale_down_at_both_gates_applies_once_for_reverse_entry(self) -> None:
@@ -459,7 +465,9 @@ class TestBusDrivenSignalProducesOrder:
         clock = SimulatedClock(start_ns=1000)
         bus = EventBus()
         quote = _make_quote()
-        signal = _make_signal(quote, strategy_id="reverse_ff_escalate", direction=SignalDirection.LONG)
+        signal = _make_signal(
+            quote, strategy_id="reverse_ff_escalate", direction=SignalDirection.LONG
+        )
         pos = MemoryPositionStore()
         pos.update("AAPL", -100, Decimal("150"))
 
@@ -499,12 +507,14 @@ class TestBusDrivenSignalProducesOrder:
         orch = _build_orchestrator(
             clock,
             bus=bus,
-            risk_engine=BasicRiskEngine(RiskConfig(
-                max_position_per_symbol=100_000,
-                max_gross_exposure_pct=10.0,
-                max_drawdown_pct=99.0,
-                account_equity=Decimal("100000"),
-            )),
+            risk_engine=BasicRiskEngine(
+                RiskConfig(
+                    max_position_per_symbol=100_000,
+                    max_gross_exposure_pct=10.0,
+                    max_drawdown_pct=99.0,
+                    account_equity=Decimal("100000"),
+                )
+            ),
             position_store=pos,
         )
         captured = _capture_orders(bus)
@@ -531,12 +541,14 @@ class TestBusDrivenSignalProducesOrder:
         orch = _build_orchestrator(
             clock,
             bus=bus,
-            risk_engine=BasicRiskEngine(RiskConfig(
-                max_position_per_symbol=100_000,
-                max_gross_exposure_pct=16.0,
-                max_drawdown_pct=99.0,
-                account_equity=Decimal("100000"),
-            )),
+            risk_engine=BasicRiskEngine(
+                RiskConfig(
+                    max_position_per_symbol=100_000,
+                    max_gross_exposure_pct=16.0,
+                    max_drawdown_pct=99.0,
+                    account_equity=Decimal("100000"),
+                )
+            ),
             position_store=pos,
         )
         captured = _capture_orders(bus)
@@ -570,7 +582,9 @@ class TestPortfolioConsumedSignalsSkipped:
             ),
         )
         orch = _build_orchestrator(
-            clock, bus=bus, alpha_registry=registry,
+            clock,
+            bus=bus,
+            alpha_registry=registry,
         )
         captured = _capture_orders(bus)
         _signal_from_bus(bus, signal)
@@ -600,7 +614,9 @@ class TestPortfolioConsumedSignalsSkipped:
             ),
         )
         orch = _build_orchestrator(
-            clock, bus=bus, alpha_registry=registry,
+            clock,
+            bus=bus,
+            alpha_registry=registry,
         )
         captured = _capture_orders(bus)
         _signal_from_bus(bus, signal)
@@ -658,7 +674,9 @@ class TestFiltering:
         orch = _build_orchestrator(clock, bus=bus)
 
         portfolio_signal = _make_signal(
-            _make_quote(), strategy_id="pf_alpha", layer="PORTFOLIO",
+            _make_quote(),
+            strategy_id="pf_alpha",
+            layer="PORTFOLIO",
         )
         bus.publish(portfolio_signal)
 
@@ -677,7 +695,8 @@ class TestFiltering:
         orch = _build_orchestrator(clock, bus=bus)
 
         stop_exit_signal = _make_signal(
-            _make_quote(), strategy_id="__stop_exit__",
+            _make_quote(),
+            strategy_id="__stop_exit__",
         )
         bus.publish(stop_exit_signal)
 
@@ -688,7 +707,8 @@ class TestMultipleStandaloneSignalsPerTick:
     """One micro-SM order walk per tick; multiple candidates → arbitrator."""
 
     def test_tie_break_favors_first_arrival_when_scores_equal(
-        self, caplog: pytest.LogCaptureFixture,
+        self,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         caplog.set_level(logging.WARNING, logger="feelies.kernel.orchestrator")
         clock = SimulatedClock(start_ns=1000)
@@ -702,31 +722,32 @@ class TestMultipleStandaloneSignalsPerTick:
 
         def emit_two_signals(q: NBBOQuote) -> None:
             for s in (signal_a, signal_b):
-                bus.publish(replace(
-                    s,
-                    timestamp_ns=q.timestamp_ns,
-                    correlation_id=q.correlation_id,
-                    sequence=q.sequence,
-                ))
+                bus.publish(
+                    replace(
+                        s,
+                        timestamp_ns=q.timestamp_ns,
+                        correlation_id=q.correlation_id,
+                        sequence=q.sequence,
+                    )
+                )
+
         bus.subscribe(NBBOQuote, emit_two_signals)  # type: ignore[arg-type]
 
         BacktestOrderRouter.on_quote(orch._backend.order_router, quote)
         _boot_to_backtest(orch)
         orch._process_tick(quote)
 
-        assert len(captured) == 1, (
-            "exactly one OrderRequest per tick (micro-SM constraint)"
-        )
+        assert len(captured) == 1, "exactly one OrderRequest per tick (micro-SM constraint)"
         assert captured[0].strategy_id == "alpha_first"
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert any("standalone SIGNAL candidate(s)" in r.message for r in warnings), (
             "expected a once-per-process WARNING about multiple "
-            "standalone Signals; got logs: "
-            + str([r.message for r in warnings])
+            "standalone Signals; got logs: " + str([r.message for r in warnings])
         )
 
     def test_arbitration_prefers_higher_composite_over_first_arrival(
-        self, caplog: pytest.LogCaptureFixture,
+        self,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         caplog.set_level(logging.WARNING, logger="feelies.kernel.orchestrator")
         clock = SimulatedClock(start_ns=1000)
@@ -742,12 +763,15 @@ class TestMultipleStandaloneSignalsPerTick:
 
         def emit_two_signals(q: NBBOQuote) -> None:
             for s in (weak_first, strong_second):
-                bus.publish(replace(
-                    s,
-                    timestamp_ns=q.timestamp_ns,
-                    correlation_id=q.correlation_id,
-                    sequence=q.sequence,
-                ))
+                bus.publish(
+                    replace(
+                        s,
+                        timestamp_ns=q.timestamp_ns,
+                        correlation_id=q.correlation_id,
+                        sequence=q.sequence,
+                    )
+                )
+
         bus.subscribe(NBBOQuote, emit_two_signals)  # type: ignore[arg-type]
 
         BacktestOrderRouter.on_quote(orch._backend.order_router, quote)
@@ -758,7 +782,8 @@ class TestMultipleStandaloneSignalsPerTick:
         assert captured[0].strategy_id == "strong_second"
 
     def test_warning_emitted_only_once_per_process(
-        self, caplog: pytest.LogCaptureFixture,
+        self,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         caplog.set_level(logging.WARNING, logger="feelies.kernel.orchestrator")
         clock = SimulatedClock(start_ns=1000)
@@ -770,12 +795,15 @@ class TestMultipleStandaloneSignalsPerTick:
 
         def emit_two_signals(q: NBBOQuote) -> None:
             for s in (signal_a, signal_b):
-                bus.publish(replace(
-                    s,
-                    timestamp_ns=q.timestamp_ns,
-                    correlation_id=q.correlation_id,
-                    sequence=q.sequence,
-                ))
+                bus.publish(
+                    replace(
+                        s,
+                        timestamp_ns=q.timestamp_ns,
+                        correlation_id=q.correlation_id,
+                        sequence=q.sequence,
+                    )
+                )
+
         bus.subscribe(NBBOQuote, emit_two_signals)  # type: ignore[arg-type]
 
         _boot_to_backtest(orch)
@@ -785,9 +813,9 @@ class TestMultipleStandaloneSignalsPerTick:
             orch._process_tick(q)
 
         warnings = [
-            r for r in caplog.records
-            if r.levelno == logging.WARNING
-            and "standalone SIGNAL candidate(s)" in r.message
+            r
+            for r in caplog.records
+            if r.levelno == logging.WARNING and "standalone SIGNAL candidate(s)" in r.message
         ]
         assert len(warnings) == 1, (
             f"expected exactly 1 WARNING across 3 ticks (once-per-process "
@@ -795,7 +823,8 @@ class TestMultipleStandaloneSignalsPerTick:
         )
 
     def test_warning_reports_candidate_count_vs_unique_alpha_ids(
-        self, caplog: pytest.LogCaptureFixture,
+        self,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         caplog.set_level(logging.WARNING, logger="feelies.kernel.orchestrator")
         clock = SimulatedClock(start_ns=1000)
@@ -808,12 +837,15 @@ class TestMultipleStandaloneSignalsPerTick:
 
         def emit_two_signals(q: NBBOQuote) -> None:
             for s in (dup_a, dup_b):
-                bus.publish(replace(
-                    s,
-                    timestamp_ns=q.timestamp_ns,
-                    correlation_id=q.correlation_id,
-                    sequence=q.sequence,
-                ))
+                bus.publish(
+                    replace(
+                        s,
+                        timestamp_ns=q.timestamp_ns,
+                        correlation_id=q.correlation_id,
+                        sequence=q.sequence,
+                    )
+                )
+
         bus.subscribe(NBBOQuote, emit_two_signals)  # type: ignore[arg-type]
 
         BacktestOrderRouter.on_quote(orch._backend.order_router, quote)
@@ -821,9 +853,9 @@ class TestMultipleStandaloneSignalsPerTick:
         orch._process_tick(quote)
 
         warnings = [
-            r.message for r in caplog.records
-            if r.levelno == logging.WARNING
-            and "standalone SIGNAL candidate(s)" in r.message
+            r.message
+            for r in caplog.records
+            if r.levelno == logging.WARNING and "standalone SIGNAL candidate(s)" in r.message
         ]
         assert len(warnings) == 1
         assert "2 standalone SIGNAL candidate(s) from 1 alpha id(s)" in warnings[0]
@@ -961,8 +993,7 @@ def test_trade_path_fresh_signal_is_drained_only_once() -> None:
 
     trade_orders = [o for o in captured if o.strategy_id == "trade_once_alpha"]
     assert len(trade_orders) == 1, (
-        "expected carried trade-path signal to be drained exactly once; "
-        f"orders={trade_orders!r}"
+        f"expected carried trade-path signal to be drained exactly once; orders={trade_orders!r}"
     )
 
 

@@ -104,8 +104,10 @@ def main() -> int:
         )
         return 1
 
-    print(f"\nIB broker verification @ {args.host}:{args.port} "
-          f"(clientId={args.client_id}, symbol={args.symbol})\n")
+    print(
+        f"\nIB broker verification @ {args.host}:{args.port} "
+        f"(clientId={args.client_id}, symbol={args.symbol})\n"
+    )
 
     clock = WallClock()
     conn = IBGatewayConnection(
@@ -147,35 +149,43 @@ def main() -> int:
         assert statuses.count(OrderAckStatus.ACKNOWLEDGED) == 1
         router.cancel_order(oid)
         seen = _poll_terminal(router, order_ids={oid}, timeout_s=args.timeout_s)
-        assert any(a.order_id == oid and a.status in (
-            OrderAckStatus.CANCELLED, OrderAckStatus.REJECTED,
-        ) for a in seen), f"no terminal ack for {oid}: {seen}"
+        assert any(
+            a.order_id == oid
+            and a.status
+            in (
+                OrderAckStatus.CANCELLED,
+                OrderAckStatus.REJECTED,
+            )
+            for a in seen
+        ), f"no terminal ack for {oid}: {seen}"
 
     _check("duplicate submit → REJECTED", check_duplicate_submit)
 
     # ── 3. Buy limit far below market ───────────────────────────────
     def check_buy_limit_cancel() -> None:
         oid = f"buy-{clock.now_ns()}"
-        router.submit(OrderRequest(
-            timestamp_ns=clock.now_ns(),
-            correlation_id=f"cid:{oid}",
-            sequence=1,
-            order_id=oid,
-            symbol=args.symbol,
-            side=Side.BUY,
-            order_type=OrderType.LIMIT,
-            quantity=1,
-            limit_price=Decimal("1.00"),
-        ))
-        assert any(
-            a.status == OrderAckStatus.ACKNOWLEDGED
-            for a in router.poll_acks()
+        router.submit(
+            OrderRequest(
+                timestamp_ns=clock.now_ns(),
+                correlation_id=f"cid:{oid}",
+                sequence=1,
+                order_id=oid,
+                symbol=args.symbol,
+                side=Side.BUY,
+                order_type=OrderType.LIMIT,
+                quantity=1,
+                limit_price=Decimal("1.00"),
+            )
         )
+        assert any(a.status == OrderAckStatus.ACKNOWLEDGED for a in router.poll_acks())
         assert router.cancel_order(oid)
         seen = _poll_terminal(router, order_ids={oid}, timeout_s=args.timeout_s)
         assert any(
-            a.order_id == oid and a.status in (
-                OrderAckStatus.CANCELLED, OrderAckStatus.REJECTED,
+            a.order_id == oid
+            and a.status
+            in (
+                OrderAckStatus.CANCELLED,
+                OrderAckStatus.REJECTED,
             )
             for a in seen
         ), f"no terminal ack for {oid}: {seen}"
@@ -185,26 +195,28 @@ def main() -> int:
     # ── 4. Sell limit far above market ──────────────────────────────
     def check_sell_limit_cancel() -> None:
         oid = f"sell-{clock.now_ns()}"
-        router.submit(OrderRequest(
-            timestamp_ns=clock.now_ns(),
-            correlation_id=f"cid:{oid}",
-            sequence=1,
-            order_id=oid,
-            symbol=args.symbol,
-            side=Side.SELL,
-            order_type=OrderType.LIMIT,
-            quantity=1,
-            limit_price=Decimal("99999.00"),
-        ))
-        assert any(
-            a.status == OrderAckStatus.ACKNOWLEDGED
-            for a in router.poll_acks()
+        router.submit(
+            OrderRequest(
+                timestamp_ns=clock.now_ns(),
+                correlation_id=f"cid:{oid}",
+                sequence=1,
+                order_id=oid,
+                symbol=args.symbol,
+                side=Side.SELL,
+                order_type=OrderType.LIMIT,
+                quantity=1,
+                limit_price=Decimal("99999.00"),
+            )
         )
+        assert any(a.status == OrderAckStatus.ACKNOWLEDGED for a in router.poll_acks())
         assert router.cancel_order(oid)
         seen = _poll_terminal(router, order_ids={oid}, timeout_s=args.timeout_s)
         assert any(
-            a.order_id == oid and a.status in (
-                OrderAckStatus.CANCELLED, OrderAckStatus.REJECTED,
+            a.order_id == oid
+            and a.status
+            in (
+                OrderAckStatus.CANCELLED,
+                OrderAckStatus.REJECTED,
             )
             for a in seen
         ), f"no terminal ack for {oid}: {seen}"
@@ -222,17 +234,19 @@ def main() -> int:
         oid1 = f"multi-a-{clock.now_ns()}"
         oid2 = f"multi-b-{clock.now_ns()}"
         for oid in (oid1, oid2):
-            router.submit(OrderRequest(
-                timestamp_ns=clock.now_ns(),
-                correlation_id=f"cid:{oid}",
-                sequence=1,
-                order_id=oid,
-                symbol=args.symbol,
-                side=Side.BUY,
-                order_type=OrderType.LIMIT,
-                quantity=1,
-                limit_price=Decimal("1.00"),
-            ))
+            router.submit(
+                OrderRequest(
+                    timestamp_ns=clock.now_ns(),
+                    correlation_id=f"cid:{oid}",
+                    sequence=1,
+                    order_id=oid,
+                    symbol=args.symbol,
+                    side=Side.BUY,
+                    order_type=OrderType.LIMIT,
+                    quantity=1,
+                    limit_price=Decimal("1.00"),
+                )
+            )
         acks = router.poll_acks()
         acked = {a.order_id for a in acks if a.status == OrderAckStatus.ACKNOWLEDGED}
         assert {oid1, oid2} <= acked
@@ -249,15 +263,14 @@ def main() -> int:
                 seen.extend(batch)
                 for ack in batch:
                     if ack.order_id in {oid1, oid2} and ack.status in (
-                        OrderAckStatus.CANCELLED, OrderAckStatus.REJECTED,
+                        OrderAckStatus.CANCELLED,
+                        OrderAckStatus.REJECTED,
                     ):
                         satisfied.add(ack.order_id)
                 if satisfied >= {oid1, oid2}:
                     return
             time.sleep(_POLL_INTERVAL_S)
-        raise AssertionError(
-            f"expected both orders terminal; got {satisfied} acks={seen}"
-        )
+        raise AssertionError(f"expected both orders terminal; got {satisfied} acks={seen}")
 
     _check("two independent orders", check_two_orders)
 
@@ -275,7 +288,8 @@ def main() -> int:
     # ── 8. Reconnect after disconnect ───────────────────────────────
     def check_reconnect() -> None:
         conn2 = IBGatewayConnection(
-            host=args.host, port=args.port,
+            host=args.host,
+            port=args.port,
             client_id=args.client_id + 1,  # different client id
             clock=clock,
         )

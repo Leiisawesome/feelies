@@ -146,6 +146,7 @@ class TestSequenceIsolation:
 
     def test_hazard_sequence_advances_independent_of_legacy_seq(self) -> None:
         from feelies.core.identifiers import SequenceGenerator
+
         legacy_seq = SequenceGenerator()
         legacy_seq.next()
         legacy_seq.next()
@@ -215,7 +216,9 @@ class TestSessionBoundaryReset:
 
         class _StubRisk:
             def check_signal(
-                self, signal: Signal, positions: PositionStore,
+                self,
+                signal: Signal,
+                positions: PositionStore,
             ) -> RiskVerdict:
                 return RiskVerdict(
                     timestamp_ns=signal.timestamp_ns,
@@ -227,7 +230,9 @@ class TestSessionBoundaryReset:
                 )
 
             def check_order(
-                self, order: OrderRequest, positions: PositionStore,
+                self,
+                order: OrderRequest,
+                positions: PositionStore,
             ) -> RiskVerdict:
                 return RiskVerdict(
                     timestamp_ns=order.timestamp_ns,
@@ -266,9 +271,7 @@ class TestSessionBoundaryReset:
 
         orch._reset_regime_session_state()
 
-        assert orch._last_regime_state == {}, (
-            "session boundary must clear prev-pointer cache"
-        )
+        assert orch._last_regime_state == {}, "session boundary must clear prev-pointer cache"
 
     def test_reset_clears_hazard_suppression(self) -> None:
         orch = self._build_orchestrator()
@@ -300,9 +303,7 @@ class TestSessionBoundaryReset:
 
         # Session N-1 final tick: normal-dominant.
         end_prev = _state(posteriors=(0.05, 0.95, 0.0), dominant_idx=1, sequence=0)
-        orch._last_regime_state[
-            (end_prev.symbol, end_prev.engine_name)
-        ] = end_prev
+        orch._last_regime_state[(end_prev.symbol, end_prev.engine_name)] = end_prev
 
         # Boundary.
         orch._reset_regime_session_state()
@@ -311,11 +312,11 @@ class TestSessionBoundaryReset:
         # if paired with end_prev — but the cache is empty, so prev is
         # None and detect() must return None.
         start_curr = _state(
-            posteriors=(0.45, 0.55, 0.0), dominant_idx=1, sequence=1,
+            posteriors=(0.45, 0.55, 0.0),
+            dominant_idx=1,
+            sequence=1,
         )
-        prev = orch._last_regime_state.get(
-            (start_curr.symbol, start_curr.engine_name)
-        )
+        prev = orch._last_regime_state.get((start_curr.symbol, start_curr.engine_name))
         assert prev is None, "stale prev must not survive boundary"
         assert det.detect(prev, start_curr) is None
 
@@ -339,6 +340,7 @@ class TestSessionBoundaryReset:
         # the pipeline returns immediately, so we only exercise the
         # session-start clearing.
         from feelies.kernel.macro import MacroState
+
         orch._macro.transition(MacroState.DATA_SYNC, trigger="CMD_BOOT")
         orch._macro.transition(MacroState.READY, trigger="DATA_INTEGRITY_OK")
         orch.run_backtest()

@@ -67,9 +67,7 @@ def standing_target_from_desired(
     """
     expiry_ns: int | None = None
     if horizon_seconds > 0 and staleness_k > 0:
-        expiry_ns = signal_timestamp_ns + int(
-            staleness_k * horizon_seconds * 1_000_000_000
-        )
+        expiry_ns = signal_timestamp_ns + int(staleness_k * horizon_seconds * 1_000_000_000)
     return StandingTarget(
         strategy_id=strategy_id,
         symbol=desired.symbol,
@@ -129,7 +127,8 @@ class DesiredTargetBook:
         """Non-stale standing targets for ``symbol``, sorted by strategy id."""
         return sorted(
             (
-                t for (_, sym), t in self._book.items()
+                t
+                for (_, sym), t in self._book.items()
                 if sym == symbol and not _is_stale(t, now_ns)
             ),
             key=lambda t: t.strategy_id,
@@ -174,14 +173,12 @@ class PortfolioNetter:
         direction = (total > 0) - (total < 0)
 
         aligned = [
-            (tq, t) for tq, t in clamped
+            (tq, t)
+            for tq, t in clamped
             if tq != 0 and ((tq > 0) == (total > 0)) and direction != 0
         ]
         weight = sum(abs(tq) for tq, _ in aligned)
-        edge = (
-            sum(t.edge_bps * abs(tq) for tq, t in aligned) / weight
-            if weight > 0 else 0.0
-        )
+        edge = sum(t.edge_bps * abs(tq) for tq, t in aligned) / weight if weight > 0 else 0.0
         urgency = max((t.urgency for _, t in aligned), default=0.5)
 
         return DesiredPosition(

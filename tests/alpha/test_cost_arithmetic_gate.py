@@ -79,10 +79,16 @@ def test_from_spec_rejects_missing_fields() -> None:
         CostArithmetic.from_spec(alpha_id="alpha_x", spec=spec)
 
 
-@pytest.mark.parametrize("field", [
-    "edge_estimate_bps", "half_spread_bps", "impact_bps", "fee_bps",
-    "margin_ratio",
-])
+@pytest.mark.parametrize(
+    "field",
+    [
+        "edge_estimate_bps",
+        "half_spread_bps",
+        "impact_bps",
+        "fee_bps",
+        "margin_ratio",
+    ],
+)
 def test_from_spec_rejects_non_numeric(field: str) -> None:
     spec = _spec()
     spec[field] = "not a number"  # type: ignore[assignment]
@@ -155,13 +161,19 @@ def test_from_spec_rejects_disclosed_disagrees_with_computed() -> None:
 
 def test_compute_margin_ratio_basic() -> None:
     assert compute_margin_ratio(
-        edge_bps=10.0, half_spread_bps=2.0, impact_bps=2.0, fee_bps=1.0,
+        edge_bps=10.0,
+        half_spread_bps=2.0,
+        impact_bps=2.0,
+        fee_bps=1.0,
     ) == pytest.approx(2.0)
 
 
 def test_compute_margin_ratio_zero_cost_returns_inf() -> None:
     val = compute_margin_ratio(
-        edge_bps=10.0, half_spread_bps=0.0, impact_bps=0.0, fee_bps=0.0,
+        edge_bps=10.0,
+        half_spread_bps=0.0,
+        impact_bps=0.0,
+        fee_bps=0.0,
     )
     assert math.isinf(val)
 

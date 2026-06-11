@@ -39,11 +39,21 @@ def compare_runs(paper_dir: Path, backtest_dir: Path) -> dict[str, Any]:
     paper_acks = _load_jsonl(paper_dir / "order_acks.jsonl")
     backtest_fills = _load_jsonl(backtest_dir / "fills.jsonl")
     paper_fills = _load_jsonl(paper_dir / "fills.jsonl")
-    paper_meta = json.loads((paper_dir / "metadata.json").read_text(encoding="utf-8")) if (paper_dir / "metadata.json").is_file() else {}
-    backtest_meta = json.loads((backtest_dir / "metadata.json").read_text(encoding="utf-8")) if (backtest_dir / "metadata.json").is_file() else {}
+    paper_meta = (
+        json.loads((paper_dir / "metadata.json").read_text(encoding="utf-8"))
+        if (paper_dir / "metadata.json").is_file()
+        else {}
+    )
+    backtest_meta = (
+        json.loads((backtest_dir / "metadata.json").read_text(encoding="utf-8"))
+        if (backtest_dir / "metadata.json").is_file()
+        else {}
+    )
 
-    paper_fill_rate = _fill_rate(paper_acks) if paper_acks else (
-        len(paper_fills) / max(len(paper_acks), 1) if paper_acks else 0.0
+    paper_fill_rate = (
+        _fill_rate(paper_acks)
+        if paper_acks
+        else (len(paper_fills) / max(len(paper_acks), 1) if paper_acks else 0.0)
     )
     backtest_fill_rate = len(backtest_fills) / max(len(backtest_fills), 1)
 

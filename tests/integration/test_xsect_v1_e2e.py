@@ -84,17 +84,12 @@ pytestmark = pytest.mark.backtest_validation
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
-_HAWKES_ALPHA = (
-    _REPO_ROOT / "alphas" / "sig_hawkes_burst_v1"
-    / "sig_hawkes_burst_v1.alpha.yaml"
-)
+_HAWKES_ALPHA = _REPO_ROOT / "alphas" / "sig_hawkes_burst_v1" / "sig_hawkes_burst_v1.alpha.yaml"
 _INVENTORY_ALPHA = (
-    _REPO_ROOT / "alphas" / "sig_inventory_revert_v1"
-    / "sig_inventory_revert_v1.alpha.yaml"
+    _REPO_ROOT / "alphas" / "sig_inventory_revert_v1" / "sig_inventory_revert_v1.alpha.yaml"
 )
 _BURST_ALPHA = (
-    _REPO_ROOT / "alphas" / "research" / "pro_burst_revert_v1"
-    / "pro_burst_revert_v1.alpha.yaml"
+    _REPO_ROOT / "alphas" / "research" / "pro_burst_revert_v1" / "pro_burst_revert_v1.alpha.yaml"
 )
 _FACTOR_LOADINGS_DIR = FACTOR_LOADINGS_DIR
 _SECTOR_MAP_PATH = SECTOR_MAP_PATH
@@ -102,8 +97,16 @@ _SECTOR_MAP_PATH = SECTOR_MAP_PATH
 # 10-symbol reference universe — wider than pro_burst_revert_v1's declared
 # universe (AAPL, MSFT, NVDA); the PORTFOLIO alpha filters internally.
 _UNIVERSE: tuple[str, ...] = (
-    "AAPL", "AMZN", "BAC", "CVX", "GOOG",
-    "JPM", "META", "MSFT", "NVDA", "XOM",
+    "AAPL",
+    "AMZN",
+    "BAC",
+    "CVX",
+    "GOOG",
+    "JPM",
+    "META",
+    "MSFT",
+    "NVDA",
+    "XOM",
 )
 
 # 360 seconds at 10 Hz per symbol — long enough to cross one 300 s
@@ -176,9 +179,16 @@ def _synth_multi_symbol_events(seed: int = 42) -> list[Any]:
     """
     quote_cadence_ns: int = 100_000_000  # 10 Hz
     starting_prices_cents: dict[str, int] = {
-        "AAPL": 18000, "AMZN": 13000, "BAC":  3000, "CVX": 14000,
-        "GOOG": 14000, "JPM": 14500, "META": 31000, "MSFT": 37000,
-        "NVDA": 45000, "XOM":  10500,
+        "AAPL": 18000,
+        "AMZN": 13000,
+        "BAC": 3000,
+        "CVX": 14000,
+        "GOOG": 14000,
+        "JPM": 14500,
+        "META": 31000,
+        "MSFT": 37000,
+        "NVDA": 45000,
+        "XOM": 10500,
     }
 
     all_events: list[tuple[int, str, dict[str, Any]]] = []
@@ -208,9 +218,7 @@ def _synth_multi_symbol_events(seed: int = 42) -> list[Any]:
                 ask_exchange=11,
                 tape=3,
             )
-            all_events.append(
-                (ts_ns, symbol, {"event": quote, "kind": "Q"})
-            )
+            all_events.append((ts_ns, symbol, {"event": quote, "kind": "Q"}))
             if i % 7 == 0 and i > 0:
                 side_buy = rng.random() < 0.5
                 price_cents = last_mid + (1 if side_buy else 0)
@@ -227,9 +235,7 @@ def _synth_multi_symbol_events(seed: int = 42) -> list[Any]:
                     exchange_timestamp_ns=ts_ns + 1,
                     tape=3,
                 )
-                all_events.append(
-                    (ts_ns + 1, symbol, {"event": trade, "kind": "T"})
-                )
+                all_events.append((ts_ns + 1, symbol, {"event": trade, "kind": "T"}))
 
     all_events.sort(key=lambda r: (r[0], r[1]))
     return [r[2]["event"] for r in all_events]
@@ -282,8 +288,7 @@ def _hash_intents(intents: list[SizedPositionIntent]) -> str:
     lines: list[str] = []
     for it in intents:
         targets = "|".join(
-            f"{s}={it.target_positions[s].target_usd:.2f}"
-            for s in sorted(it.target_positions)
+            f"{s}={it.target_positions[s].target_usd:.2f}" for s in sorted(it.target_positions)
         )
         lines.append(
             f"{it.sequence}|{it.timestamp_ns}|{it.strategy_id}|"
@@ -315,17 +320,13 @@ def test_xsect_v1_e2e_all_three_alphas_register() -> None:
 def test_xsect_v1_e2e_composition_layer_is_wired() -> None:
     orchestrator, _s, _i, _o = _build()
     assert isinstance(orchestrator._composition_engine, CompositionEngine)
-    assert isinstance(
-        orchestrator._cross_sectional_tracker, CrossSectionalTracker
-    )
+    assert isinstance(orchestrator._cross_sectional_tracker, CrossSectionalTracker)
     assert isinstance(
         orchestrator._composition_metrics_collector,
         HorizonMetricsCollector,
     )
     # sig_hawkes_burst_v1 opts into hazard_exit.enabled=true (audit P0 H-1).
-    assert isinstance(
-        orchestrator._hazard_exit_controller, HazardExitController
-    )
+    assert isinstance(orchestrator._hazard_exit_controller, HazardExitController)
 
 
 def test_xsect_v1_e2e_run_completes_and_reaches_ready() -> None:
@@ -384,8 +385,7 @@ def test_xsect_v1_e2e_intent_stream_is_deterministic() -> None:
     _o_b, _s_b, intents_b, _ord_b = _build()
 
     assert len(intents_a) == len(intents_b), (
-        f"SizedPositionIntent count drifted across replays: "
-        f"{len(intents_a)} vs {len(intents_b)}"
+        f"SizedPositionIntent count drifted across replays: {len(intents_a)} vs {len(intents_b)}"
     )
     assert _hash_intents(intents_a) == _hash_intents(intents_b), (
         "pro_burst_revert_v1 SizedPositionIntent hash drift across identical "

@@ -38,10 +38,10 @@ _PREFIX = "SIZEDIV_JSONL "
 def classify(base: int, tilted: int) -> str:
     """Classify a divergence by how the tilted target differs from base."""
     if tilted > base:
-        return "upsize"        # tilt grows the target (edge / low-vol)
+        return "upsize"  # tilt grows the target (edge / low-vol)
     if tilted < base:
-        return "downsize"      # tilt shrinks it (low edge / high-vol / inventory)
-    return "equal"             # |t|==|b| (shouldn't be emitted)
+        return "downsize"  # tilt shrinks it (low edge / high-vol / inventory)
+    return "equal"  # |t|==|b| (shouldn't be emitted)
 
 
 def parse_line(line: str) -> dict[str, Any] | None:
@@ -49,7 +49,7 @@ def parse_line(line: str) -> dict[str, Any] | None:
     if not line:
         return None
     if line.startswith(_PREFIX):
-        line = line[len(_PREFIX):]
+        line = line[len(_PREFIX) :]
     try:
         rec = json.loads(line)
     except json.JSONDecodeError:
@@ -74,22 +74,15 @@ def summarize(records: list[dict[str, Any]], total_decisions: int | None) -> str
     n = len(records)
     if n == 0:
         out.append("\n  No divergent sizes recorded.")
-        out.append("  (no tilt factor enabled, or every tilt rounded to the "
-                   "base target)")
+        out.append("  (no tilt factor enabled, or every tilt rounded to the base target)")
         return "\n".join(out)
 
-    mags = [
-        int(r["tilted_target_qty"]) - int(r["base_target_qty"]) for r in records
-    ]
+    mags = [int(r["tilted_target_qty"]) - int(r["base_target_qty"]) for r in records]
     abs_mags = [abs(m) for m in mags]
     bases = [int(r["base_target_qty"]) for r in records]
-    rel = [
-        (int(r["tilted_target_qty"]) - b) / b * 100.0
-        for r, b in zip(records, bases) if b > 0
-    ]
+    rel = [(int(r["tilted_target_qty"]) - b) / b * 100.0 for r, b in zip(records, bases) if b > 0]
     classes = Counter(
-        classify(int(r["base_target_qty"]), int(r["tilted_target_qty"]))
-        for r in records
+        classify(int(r["base_target_qty"]), int(r["tilted_target_qty"])) for r in records
     )
     by_symbol = Counter(r.get("symbol", "?") for r in records)
     by_alpha = Counter(r.get("strategy_id", "?") for r in records)
@@ -101,8 +94,10 @@ def summarize(records: list[dict[str, Any]], total_decisions: int | None) -> str
         out.append(f"  Total sized decisions     {total_decisions:,}")
         out.append(f"  Divergence rate           {rate:.2f}%")
     else:
-        out.append("  Divergence rate           n/a "
-                   "(pass --total-decisions N from the run's signal count)")
+        out.append(
+            "  Divergence rate           n/a "
+            "(pass --total-decisions N from the run's signal count)"
+        )
 
     out.append("\n  Magnitude |tilted − base| (shares)")
     out.append(f"    mean    {statistics.mean(abs_mags):.1f}")
@@ -110,8 +105,9 @@ def summarize(records: list[dict[str, Any]], total_decisions: int | None) -> str
     out.append(f"    p95     {_pct([float(m) for m in abs_mags], 0.95):.0f}")
     out.append(f"    max     {max(abs_mags)}")
     if rel:
-        out.append(f"    mean Δ% {statistics.mean(rel):+.1f}%   "
-                   f"median Δ% {statistics.median(rel):+.1f}%")
+        out.append(
+            f"    mean Δ% {statistics.mean(rel):+.1f}%   median Δ% {statistics.median(rel):+.1f}%"
+        )
 
     out.append("\n  Combined tilt")
     out.append(f"    mean    {statistics.mean(tilts):.3f}")

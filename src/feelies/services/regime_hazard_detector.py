@@ -152,8 +152,7 @@ class RegimeHazardDetector:
     ) -> None:
         if not 0.0 < hysteresis_threshold < 1.0:
             raise ValueError(
-                "hysteresis_threshold must be in (0.0, 1.0); "
-                f"got {hysteresis_threshold!r}"
+                f"hysteresis_threshold must be in (0.0, 1.0); got {hysteresis_threshold!r}"
             )
         self._hysteresis_threshold: float = float(hysteresis_threshold)
         self._suppressed: set[tuple[str, str, str]] = set()
@@ -284,10 +283,7 @@ def _rearm_suppression(
     for k in suppressed:
         if k[0] != curr.symbol or k[1] != curr.engine_name:
             continue
-        re_dominant = (
-            prev.dominant_name != curr.dominant_name
-            and k[2] == curr.dominant_name
-        )
+        re_dominant = prev.dominant_name != curr.dominant_name and k[2] == curr.dominant_name
         recovered = False
         idx = index_by_name.get(k[2])
         if idx is not None and idx < len(curr.posteriors):
@@ -301,8 +297,7 @@ def _rearm_suppression(
 def _validate_pair(prev: RegimeState, curr: RegimeState) -> None:
     if prev.symbol != curr.symbol:
         raise HazardDetectorContractError(
-            "RegimeState pair must share symbol; "
-            f"got prev={prev.symbol!r} curr={curr.symbol!r}"
+            f"RegimeState pair must share symbol; got prev={prev.symbol!r} curr={curr.symbol!r}"
         )
     if prev.engine_name != curr.engine_name:
         raise HazardDetectorContractError(
@@ -342,8 +337,7 @@ def _validate_dominant_consistency(state: RegimeState, label: str) -> None:
     n = len(state.state_names)
     if idx < 0 or idx >= n:
         raise HazardDetectorContractError(
-            f"{label}.dominant_state={idx} out of range for "
-            f"state_names of length {n}"
+            f"{label}.dominant_state={idx} out of range for state_names of length {n}"
         )
     expected_name = state.state_names[idx]
     if state.dominant_name != expected_name:

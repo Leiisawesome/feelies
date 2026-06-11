@@ -51,9 +51,7 @@ def test_record_perf_baseline_script_exists_and_imports() -> None:
     sys.modules[mod_name] = module
     try:
         spec.loader.exec_module(module)
-        assert hasattr(module, "main"), (
-            "scripts/record_perf_baseline.py missing main() entrypoint"
-        )
+        assert hasattr(module, "main"), "scripts/record_perf_baseline.py missing main() entrypoint"
     finally:
         sys.modules.pop(mod_name, None)
 
@@ -69,9 +67,7 @@ def test_v02_baseline_json_is_well_formed() -> None:
         assert isinstance(host_label, str) and host_label, (
             f"host_label keys must be non-empty strings, got {host_label!r}"
         )
-        assert isinstance(payload, dict), (
-            f"host {host_label!r} payload must be an object"
-        )
+        assert isinstance(payload, dict), f"host {host_label!r} payload must be an object"
         # Workstream-D update — the prior ``phase3_signal_layer``
         # section was anchored on ``test_signal_layer_no_regression``
         # which was retired with the ``trade_cluster_drift`` LEGACY
@@ -79,10 +75,7 @@ def test_v02_baseline_json_is_well_formed() -> None:
         # required of newly-recorded hosts; legacy entries on disk
         # remain valid and are simply not enforced here.
         required = "phase4_1_decay_weighting"
-        assert required in payload, (
-            f"host {host_label!r} missing required section "
-            f"{required!r}"
-        )
+        assert required in payload, f"host {host_label!r} missing required section {required!r}"
 
 
 def test_pinned_baseline_helper_returns_none_when_label_unset(
@@ -107,7 +100,8 @@ def test_pinned_baseline_helper_returns_none_for_unknown_host(
     from tests.perf._pinned_baseline import load_pinned_baseline
 
     monkeypatch.setenv(
-        "PERF_HOST_LABEL", "definitely_not_a_recorded_host_label_xyz_123",
+        "PERF_HOST_LABEL",
+        "definitely_not_a_recorded_host_label_xyz_123",
     )
     result = load_pinned_baseline(
         section="phase4_1_decay_weighting",

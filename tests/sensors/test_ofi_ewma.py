@@ -85,8 +85,13 @@ def test_trade_event_returns_none() -> None:
     s = OFIEwmaSensor()
     state = s.initial_state()
     trade = Trade(
-        timestamp_ns=1, correlation_id="t", sequence=1, symbol="X",
-        price=Decimal("100.00"), size=100, exchange_timestamp_ns=1,
+        timestamp_ns=1,
+        correlation_id="t",
+        sequence=1,
+        symbol="X",
+        price=Decimal("100.00"),
+        size=100,
+        exchange_timestamp_ns=1,
     )
     assert s.update(trade, state, {}) is None
 
@@ -98,6 +103,7 @@ def test_warm_flag_flips_after_threshold() -> None:
     for i in range(3):
         last = s.update(
             _q(bid="100.00", ask="100.01", bs=100, as_=100, ts=i + 1),
-            state, {},
+            state,
+            {},
         )
     assert last is not None and last.warm is True

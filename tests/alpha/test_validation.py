@@ -85,16 +85,28 @@ class TestValidateAlphaSet:
             alpha_id="a1",
             feature_defs=[
                 FeatureDefinition(
-                    feature_id="a", version="1", description="a",
-                    depends_on=frozenset({"c"}), warm_up=WarmUpSpec(), compute=f.compute,
+                    feature_id="a",
+                    version="1",
+                    description="a",
+                    depends_on=frozenset({"c"}),
+                    warm_up=WarmUpSpec(),
+                    compute=f.compute,
                 ),
                 FeatureDefinition(
-                    feature_id="b", version="1", description="b",
-                    depends_on=frozenset({"a"}), warm_up=WarmUpSpec(), compute=f.compute,
+                    feature_id="b",
+                    version="1",
+                    description="b",
+                    depends_on=frozenset({"a"}),
+                    warm_up=WarmUpSpec(),
+                    compute=f.compute,
                 ),
                 FeatureDefinition(
-                    feature_id="c", version="1", description="c",
-                    depends_on=frozenset({"b"}), warm_up=WarmUpSpec(), compute=f.compute,
+                    feature_id="c",
+                    version="1",
+                    description="c",
+                    depends_on=frozenset({"b"}),
+                    warm_up=WarmUpSpec(),
+                    compute=f.compute,
                 ),
             ],
         )
@@ -131,24 +143,27 @@ class TestValidateAlphaSet:
         # In _collect_feature_defs, first-seen wins. So we need one alpha with base (depends on derived)
         # and one with derived (depends on base). The merged graph: base.depends_on = {derived},
         # derived.depends_on = {base}. That's a cycle.
-        a1 = MockAlpha(alpha_id="a1", feature_defs=[
-            FeatureDefinition(
-                feature_id="base",
-                version="1.0",
-                description="b",
-                depends_on=frozenset({"derived"}),
-                warm_up=WarmUpSpec(),
-                compute=f.compute,
-            ),
-            FeatureDefinition(
-                feature_id="derived",
-                version="1.0",
-                description="d",
-                depends_on=frozenset({"base"}),
-                warm_up=WarmUpSpec(),
-                compute=f.compute,
-            ),
-        ])
+        a1 = MockAlpha(
+            alpha_id="a1",
+            feature_defs=[
+                FeatureDefinition(
+                    feature_id="base",
+                    version="1.0",
+                    description="b",
+                    depends_on=frozenset({"derived"}),
+                    warm_up=WarmUpSpec(),
+                    compute=f.compute,
+                ),
+                FeatureDefinition(
+                    feature_id="derived",
+                    version="1.0",
+                    description="d",
+                    depends_on=frozenset({"base"}),
+                    warm_up=WarmUpSpec(),
+                    compute=f.compute,
+                ),
+            ],
+        )
         errors = validate_alpha_set([a1])
         assert any("cycle" in e.lower() for e in errors)
 

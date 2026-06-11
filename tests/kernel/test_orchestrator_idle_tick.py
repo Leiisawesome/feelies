@@ -92,16 +92,20 @@ def _track_submitted_order(orch: Orchestrator) -> OrderRequest:
     )
     orch._track_order(order.order_id, order.side, order)
     orch._transition_order(
-        order.order_id, OrderState.SUBMITTED, "submitted",
+        order.order_id,
+        OrderState.SUBMITTED,
+        "submitted",
     )
-    orch._apply_ack_to_order(OrderAck(
-        timestamp_ns=orch._clock.now_ns(),
-        correlation_id="paper-order",
-        sequence=1,
-        order_id=order.order_id,
-        symbol="AAPL",
-        status=OrderAckStatus.ACKNOWLEDGED,
-    ))
+    orch._apply_ack_to_order(
+        OrderAck(
+            timestamp_ns=orch._clock.now_ns(),
+            correlation_id="paper-order",
+            sequence=1,
+            order_id=order.order_id,
+            symbol="AAPL",
+            status=OrderAckStatus.ACKNOWLEDGED,
+        )
+    )
     return order
 
 
@@ -125,6 +129,7 @@ def _build_orch(
     class _AllowAll:
         def check_signal(self, signal, positions):  # noqa: ANN001
             from feelies.core.events import RiskAction, RiskVerdict
+
             return RiskVerdict(
                 timestamp_ns=signal.timestamp_ns,
                 correlation_id=signal.correlation_id,
@@ -136,6 +141,7 @@ def _build_orch(
 
         def check_order(self, order, positions):  # noqa: ANN001
             from feelies.core.events import RiskAction, RiskVerdict
+
             return RiskVerdict(
                 timestamp_ns=order.timestamp_ns,
                 correlation_id=order.correlation_id,
@@ -169,7 +175,8 @@ def _boot_to_paper(orch: Orchestrator) -> None:
 
     orch.boot(_Cfg())
     orch._macro.transition(
-        MacroState.PAPER_TRADING_MODE, trigger="CMD_PAPER",
+        MacroState.PAPER_TRADING_MODE,
+        trigger="CMD_PAPER",
     )
     orch._micro.reset(trigger="session_start:paper")
 
@@ -179,7 +186,9 @@ def test_idle_tick_drains_async_fills_and_keeps_micro_waiting() -> None:
     router = _QueuedRouter(clock=clock)
     quote = _make_quote()
     router.on_quote(quote)
-    market_data = _IterableMarketData([quote, IdleTick(timestamp_ns=2_000_000), IdleTick(timestamp_ns=3_000_000)])
+    market_data = _IterableMarketData(
+        [quote, IdleTick(timestamp_ns=2_000_000), IdleTick(timestamp_ns=3_000_000)]
+    )
     bus = EventBus()
     published_acks: list[OrderAck] = []
     bus.subscribe(OrderAck, published_acks.append)
@@ -193,23 +202,24 @@ def test_idle_tick_drains_async_fills_and_keeps_micro_waiting() -> None:
     # would naturally arrive in production (the queue is filled by
     # poll_fills() in the live IB scenario; here we push them
     # directly).
-    router.push_async_ack(OrderAck(
-        timestamp_ns=2_100_000,
-        correlation_id=order.correlation_id,
-        sequence=99,
-        order_id=order.order_id,
-        symbol=order.symbol,
-        status=OrderAckStatus.FILLED,
-        filled_quantity=10,
-        fill_price=Decimal("150.25"),
-    ))
+    router.push_async_ack(
+        OrderAck(
+            timestamp_ns=2_100_000,
+            correlation_id=order.correlation_id,
+            sequence=99,
+            order_id=order.order_id,
+            symbol=order.symbol,
+            status=OrderAckStatus.FILLED,
+            filled_quantity=10,
+            fill_price=Decimal("150.25"),
+        )
+    )
 
     orch._run_pipeline()
 
     assert orch.micro_state == MicroState.WAITING_FOR_MARKET_EVENT
     assert any(
-        a.order_id == "ord-paper" and a.status == OrderAckStatus.FILLED
-        for a in published_acks
+        a.order_id == "ord-paper" and a.status == OrderAckStatus.FILLED for a in published_acks
     )
 
 
@@ -219,10 +229,12 @@ def test_idle_tick_not_published_or_logged() -> None:
     seen_events: list[Event] = []
     bus.subscribe(Event, seen_events.append)
     event_log = InMemoryEventLog()
-    market_data = _IterableMarketData([
-        IdleTick(timestamp_ns=1_500_000),
-        IdleTick(timestamp_ns=2_500_000),
-    ])
+    market_data = _IterableMarketData(
+        [
+            IdleTick(timestamp_ns=1_500_000),
+            IdleTick(timestamp_ns=2_500_000),
+        ]
+    )
     orch = _build_orch(clock, market_data, bus=bus, event_log=event_log)
     _boot_to_paper(orch)
     orch._run_pipeline()

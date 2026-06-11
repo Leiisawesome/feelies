@@ -94,7 +94,6 @@ def _hash_order_stream(orders: list[OrderRequest]) -> str:
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
-
 # Locked Level-4 PORTFOLIO order baseline (per-leg OrderRequest stream).
 EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH = (
     "a49b925e57a2156d1cc3cf495cf5efa45cf9e52ce14902435f5f9d30bb95bb5c"
@@ -123,9 +122,7 @@ def test_portfolio_order_stream_matches_locked_baseline() -> None:
 def test_two_replays_produce_identical_order_hash() -> None:
     hash_a, count_a = _replay()
     hash_b, count_b = _replay()
-    assert count_a == count_b, (
-        f"Level-4 PORTFOLIO order count drift: {count_a} vs {count_b}"
-    )
+    assert count_a == count_b, f"Level-4 PORTFOLIO order count drift: {count_a} vs {count_b}"
     assert hash_a == hash_b, (
         "Level-4 PORTFOLIO OrderRequest hash drift across identical "
         f"replays!\n  a: {hash_a}\n  b: {hash_b}"
@@ -150,9 +147,7 @@ def test_orders_are_lex_sorted_within_each_intent() -> None:
     for intent in captured_intents:
         legs = risk.check_sized_intent(intent, store).orders
         symbols = [leg.symbol for leg in legs]
-        assert symbols == sorted(symbols), (
-            f"per-intent legs not lex-sorted: {symbols}"
-        )
+        assert symbols == sorted(symbols), f"per-intent legs not lex-sorted: {symbols}"
         for leg in legs:
             assert leg.symbol in _UNIVERSE
             assert leg.reason == "PORTFOLIO"

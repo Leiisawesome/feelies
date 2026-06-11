@@ -25,7 +25,9 @@ class TestAlphaRegistry:
         assert "mock_alpha" in registry
         assert len(registry) == 1
 
-    def test_register_duplicate_raises(self, registry: AlphaRegistry, mock_alpha: MockAlpha) -> None:
+    def test_register_duplicate_raises(
+        self, registry: AlphaRegistry, mock_alpha: MockAlpha
+    ) -> None:
         registry.register(mock_alpha)
         with pytest.raises(AlphaRegistryError, match="already registered"):
             registry.register(mock_alpha)
@@ -51,9 +53,7 @@ class TestAlphaRegistry:
         with pytest.raises(AlphaRegistryError, match="failed validation"):
             registry.register(invalid)
 
-    def test_active_alphas_returns_registration_order(
-        self, registry: AlphaRegistry
-    ) -> None:
+    def test_active_alphas_returns_registration_order(self, registry: AlphaRegistry) -> None:
         a1 = MockAlpha(alpha_id="alpha1")
         a2 = MockAlpha(alpha_id="alpha2")
         registry.register(a1)
@@ -120,9 +120,7 @@ class TestAlphaRegistryFeatureDefinitions:
         with pytest.raises(AlphaRegistryError, match="version conflict"):
             registry.feature_definitions()
 
-    def test_same_feature_same_version_deduplicated(
-        self, registry: AlphaRegistry
-    ) -> None:
+    def test_same_feature_same_version_deduplicated(self, registry: AlphaRegistry) -> None:
         spread = _make_spread_feature()
         a1 = MockAlpha(alpha_id="a1", feature_defs=[spread])
         a2 = MockAlpha(alpha_id="a2", feature_defs=[spread])
@@ -142,9 +140,7 @@ class TestAlphaRegistryValidateAll:
         result = registry.validate_all()
         assert result == {}
 
-    def test_validate_all_reports_cross_alpha_errors(
-        self, registry: AlphaRegistry
-    ) -> None:
+    def test_validate_all_reports_cross_alpha_errors(self, registry: AlphaRegistry) -> None:
         def make_v1() -> FeatureDefinition:
             f = _make_spread_feature()
             return FeatureDefinition(
@@ -186,9 +182,7 @@ class TestAlphaRegistryLifecycle:
         registry.register(mock_alpha)
         assert registry.get_lifecycle("mock_alpha") is None
 
-    def test_get_lifecycle_returns_none_for_nonexistent(
-        self, registry: AlphaRegistry
-    ) -> None:
+    def test_get_lifecycle_returns_none_for_nonexistent(self, registry: AlphaRegistry) -> None:
         assert registry.get_lifecycle("nonexistent") is None
 
     def test_promote_raises_when_lifecycle_disabled(
@@ -262,9 +256,7 @@ class TestAlphaRegistryLifecycle:
         registry.unregister("mock_alpha")
         assert "mock_alpha" not in registry
 
-    def test_full_lifecycle_promotion_flow(
-        self, mock_alpha: MockAlpha
-    ) -> None:
+    def test_full_lifecycle_promotion_flow(self, mock_alpha: MockAlpha) -> None:
         from feelies.core.clock import SimulatedClock
 
         from feelies.alpha.lifecycle import (
@@ -326,9 +318,7 @@ class TestAlphaRegistryLifecycle:
         registry.decommission("mock_alpha", "retired")
         assert registry.lifecycle_states()["mock_alpha"] == AlphaLifecycleState.DECOMMISSIONED
 
-    def test_promote_from_live_returns_error(
-        self, mock_alpha: MockAlpha
-    ) -> None:
+    def test_promote_from_live_returns_error(self, mock_alpha: MockAlpha) -> None:
         from feelies.core.clock import SimulatedClock
 
         from feelies.alpha.lifecycle import (
@@ -374,9 +364,7 @@ class TestAlphaRegistryWithPromotionLedger:
     def ledger(self, tmp_path: Path) -> PromotionLedger:
         return PromotionLedger(tmp_path / "promotion.jsonl")
 
-    def test_default_registry_has_no_ledger(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_default_registry_has_no_ledger(self, clock: SimulatedClock) -> None:
         registry = AlphaRegistry(clock=clock)
         assert registry.promotion_ledger is None
 
@@ -405,9 +393,7 @@ class TestAlphaRegistryWithPromotionLedger:
             determinism_test_passed=True,
             feature_values_finite=True,
         )
-        errors = registry.promote(
-            "mock_alpha", paper_evidence, correlation_id="reg-1"
-        )
+        errors = registry.promote("mock_alpha", paper_evidence, correlation_id="reg-1")
 
         assert errors == []
         entries = list(ledger.entries())

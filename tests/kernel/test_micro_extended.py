@@ -32,9 +32,7 @@ class TestLegacyPathPreserved:
 
 
 class TestSensorEnabledPath:
-    def test_full_sensor_path_with_horizon_aggregate(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_full_sensor_path_with_horizon_aggregate(self, clock: SimulatedClock) -> None:
         sm = create_micro_state_machine(clock)
         for target, trigger in [
             (MicroState.MARKET_EVENT_RECEIVED, "tick_arrived"),
@@ -63,9 +61,7 @@ class TestSensorEnabledPath:
 
 
 class TestIllegalTransitions:
-    def test_sensor_update_cannot_skip_horizon_check(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_sensor_update_cannot_skip_horizon_check(self, clock: SimulatedClock) -> None:
         sm = create_micro_state_machine(clock)
         sm.transition(MicroState.MARKET_EVENT_RECEIVED, trigger="tick_arrived")
         sm.transition(MicroState.STATE_UPDATE, trigger="event_logged")
@@ -73,18 +69,14 @@ class TestIllegalTransitions:
         with pytest.raises(IllegalTransition):
             sm.transition(MicroState.FEATURE_COMPUTE, trigger="invalid_skip")
 
-    def test_state_update_cannot_jump_to_horizon_check(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_state_update_cannot_jump_to_horizon_check(self, clock: SimulatedClock) -> None:
         sm = create_micro_state_machine(clock)
         sm.transition(MicroState.MARKET_EVENT_RECEIVED, trigger="tick_arrived")
         sm.transition(MicroState.STATE_UPDATE, trigger="event_logged")
         with pytest.raises(IllegalTransition):
             sm.transition(MicroState.HORIZON_CHECK, trigger="invalid_skip")
 
-    def test_horizon_aggregate_only_reaches_feature_compute(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_horizon_aggregate_only_reaches_feature_compute(self, clock: SimulatedClock) -> None:
         sm = create_micro_state_machine(clock)
         for target, trigger in [
             (MicroState.MARKET_EVENT_RECEIVED, "tick_arrived"),

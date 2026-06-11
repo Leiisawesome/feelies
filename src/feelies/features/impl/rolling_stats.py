@@ -101,18 +101,13 @@ class RollingZscoreFeature:
         # mask the n=1 edge; we now branch on it explicitly in
         # ``finalize`` (n=1 → std undefined → constant-sensor path).
         if min_samples < 1:
-            raise ValueError(
-                f"RollingZscoreFeature: min_samples must be >= 1, "
-                f"got {min_samples}"
-            )
+            raise ValueError(f"RollingZscoreFeature: min_samples must be >= 1, got {min_samples}")
         if max_samples < min_samples:
             raise ValueError(
                 f"RollingZscoreFeature: max_samples ({max_samples}) "
                 f"must be >= min_samples ({min_samples})"
             )
-        self.feature_id: str = (
-            feature_id if feature_id is not None else f"{sensor_id}_zscore"
-        )
+        self.feature_id: str = feature_id if feature_id is not None else f"{sensor_id}_zscore"
         self.horizon_seconds: int = horizon_seconds
         self.input_sensor_ids: tuple[str, ...] = (sensor_id,)
         self._min_samples = min_samples
@@ -198,7 +193,7 @@ class RollingZscoreFeature:
         mean = sum(vals) / n
         # Bessel-corrected sample variance; ``n - 1 >= 1`` here.
         var = sum((x - mean) ** 2 for x in vals) / (n - 1)
-        std = var ** 0.5
+        std = var**0.5
         if std < 1e-10:
             # Constant sensor — z-score is undefined; return warm, value 0.
             return 0.0, True, False
@@ -260,17 +255,14 @@ class RollingPercentileFeature:
     ) -> None:
         if min_samples < 1:
             raise ValueError(
-                f"RollingPercentileFeature: min_samples must be >= 1, "
-                f"got {min_samples}"
+                f"RollingPercentileFeature: min_samples must be >= 1, got {min_samples}"
             )
         if max_samples < min_samples:
             raise ValueError(
                 f"RollingPercentileFeature: max_samples ({max_samples}) "
                 f"must be >= min_samples ({min_samples})"
             )
-        self.feature_id: str = (
-            feature_id if feature_id is not None else f"{sensor_id}_percentile"
-        )
+        self.feature_id: str = feature_id if feature_id is not None else f"{sensor_id}_percentile"
         self.horizon_seconds: int = horizon_seconds
         self.input_sensor_ids: tuple[str, ...] = (sensor_id,)
         self._min_samples = min_samples

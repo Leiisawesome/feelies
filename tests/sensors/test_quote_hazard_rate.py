@@ -64,7 +64,8 @@ def test_handcomputed_full_window() -> None:
     for i in range(5):
         reading = sensor.update(
             _quote(ts_ns=1_000_000_000 + i * 200_000_000, sequence=i),
-            state, params={},
+            state,
+            params={},
         )
     assert reading is not None
     assert reading.value == pytest.approx(1.0, rel=1e-12)

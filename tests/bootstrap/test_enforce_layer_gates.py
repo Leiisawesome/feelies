@@ -69,27 +69,25 @@ def _portfolio_missing_universe() -> dict:
 
 
 class TestEnforceLayerGates:
-
     def test_g1_blocks_when_strict(self) -> None:
         """Default ``enforce_layer_gates=True`` raises on G1 violation."""
         with pytest.raises(LayerValidationError, match="G1"):
             LayerValidator().validate(
-                _signal_with_universe_field(), source="<test>",
+                _signal_with_universe_field(),
+                source="<test>",
             )
 
-    def test_g1_warns_when_relaxed(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_g1_warns_when_relaxed(self, caplog: pytest.LogCaptureFixture) -> None:
         """``enforce_layer_gates=False`` downgrades G1 to a WARNING."""
         caplog.set_level(logging.WARNING, logger="feelies.alpha.layer_validator")
         LayerValidator(enforce_layer_gates=False).validate(
-            _signal_with_universe_field(), source="<test>",
+            _signal_with_universe_field(),
+            source="<test>",
         )
         # The downgrade message must mention the gate id so operators
         # can grep for residual violations.
         warnings = [
-            rec for rec in caplog.records
-            if rec.levelno == logging.WARNING and "G1" in rec.message
+            rec for rec in caplog.records if rec.levelno == logging.WARNING and "G1" in rec.message
         ]
         assert warnings, "expected G1 warning when enforce_layer_gates=False"
 
@@ -97,7 +95,8 @@ class TestEnforceLayerGates:
         """G10 / G11 are data-integrity gates: never downgraded."""
         with pytest.raises(LayerValidationError, match="G10"):
             LayerValidator(enforce_layer_gates=False).validate(
-                _portfolio_missing_universe(), source="<test>",
+                _portfolio_missing_universe(),
+                source="<test>",
             )
 
     def test_g11_always_blocks_regardless_of_flag(self) -> None:
@@ -107,5 +106,6 @@ class TestEnforceLayerGates:
         spec.pop("factor_neutralization")
         with pytest.raises(LayerValidationError, match="G11"):
             LayerValidator(enforce_layer_gates=False).validate(
-                spec, source="<test>",
+                spec,
+                source="<test>",
             )

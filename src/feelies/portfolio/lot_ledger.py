@@ -72,13 +72,15 @@ class LotLedger:
 
         # Extend / open → append a new lot.
         if net == 0 or _same_sign(net, signed_qty):
-            lots.append(Lot(
-                quantity=signed_qty,
-                price=price,
-                opened_at_ns=timestamp_ns,
-                strategy_id=strategy_id,
-                intent=intent,
-            ))
+            lots.append(
+                Lot(
+                    quantity=signed_qty,
+                    price=price,
+                    opened_at_ns=timestamp_ns,
+                    strategy_id=strategy_id,
+                    intent=intent,
+                )
+            )
             return
 
         # Reduce → consume FIFO front-first, realizing per matched share.
@@ -98,19 +100,19 @@ class LotLedger:
                 lots[0] = replace(front, quantity=front.quantity + to_reduce)
                 to_reduce = 0
         if realized != 0:
-            self._realized_fifo[symbol] = (
-                self._realized_fifo.get(symbol, Decimal("0")) + realized
-            )
+            self._realized_fifo[symbol] = self._realized_fifo.get(symbol, Decimal("0")) + realized
 
         # Cross-through-zero residual opens a lot on the other side.
         if to_reduce != 0:
-            lots.append(Lot(
-                quantity=to_reduce,
-                price=price,
-                opened_at_ns=timestamp_ns,
-                strategy_id=strategy_id,
-                intent=intent,
-            ))
+            lots.append(
+                Lot(
+                    quantity=to_reduce,
+                    price=price,
+                    opened_at_ns=timestamp_ns,
+                    strategy_id=strategy_id,
+                    intent=intent,
+                )
+            )
 
     # ── Queries ──────────────────────────────────────────────────────
 

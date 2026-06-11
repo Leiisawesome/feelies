@@ -354,9 +354,7 @@ def build_platform(
     # cap silently does nothing.  Future operator edits to the gross
     # cap could then surprise-promote the per-symbol cap to the binding
     # constraint with no logical link between the two.
-    _max_gross = (
-        config.account_equity * config.risk_max_gross_exposure_pct / 100.0
-    )
+    _max_gross = config.account_equity * config.risk_max_gross_exposure_pct / 100.0
     # Use $1 as a conservative price floor when the universe price is
     # unknown at boot; operators on penny-stock universes are expected
     # to set the cap explicitly.
@@ -388,19 +386,17 @@ def build_platform(
             f"account_type={config.account_type!r} is not implemented; "
             "only 'margin_25k' is wired (BT-4). Set account_type: margin_25k."
         )
-    pdt_constraint = PDTConstraint(PDTConfig(
-        account_type=account_type,
-        account_id=config.account_id,
-        min_equity=_decimal(config.pdt_min_equity_usd),
-    ))
+    pdt_constraint = PDTConstraint(
+        PDTConfig(
+            account_type=account_type,
+            account_id=config.account_id,
+            min_equity=_decimal(config.pdt_min_equity_usd),
+        )
+    )
     buying_power_config = BuyingPowerConfig(
         account_type=config.account_type,
-        intraday_multiplier=_decimal(
-            config.risk_margin_intraday_buying_power_multiplier
-        ),
-        overnight_multiplier=_decimal(
-            config.risk_margin_overnight_buying_power_multiplier
-        ),
+        intraday_multiplier=_decimal(config.risk_margin_intraday_buying_power_multiplier),
+        overnight_multiplier=_decimal(config.risk_margin_overnight_buying_power_multiplier),
     )
     trading_session_bounds = _resolve_trading_session_bounds(config)
     risk_engine = BasicRiskEngine(
@@ -414,33 +410,31 @@ def build_platform(
         account_id=config.account_id,
     )
 
-    cost_model = DefaultCostModel(DefaultCostModelConfig(
-        min_spread_cost_bps=_decimal(config.cost_min_spread_bps),
-        commission_per_share=_decimal(config.cost_commission_per_share),
-        taker_exchange_per_share=_decimal(config.cost_taker_exchange_per_share),
-        maker_exchange_per_share=_decimal(config.cost_maker_exchange_per_share),
-        passive_adverse_selection_bps=_decimal(config.cost_passive_adverse_selection_bps),
-        through_fill_adverse_selection_bps=_decimal(
-            config.cost_through_fill_adverse_selection_bps
-        ),
-        adverse_selection_through_bps=_decimal(
-            config.cost_adverse_selection_through_bps
-        ),
-        adverse_selection_drain_bps=_decimal(
-            config.cost_adverse_selection_drain_bps
-        ),
-        sell_regulatory_bps=_decimal(config.cost_sell_regulatory_bps),
-        stress_multiplier=_decimal(config.cost_stress_multiplier),
-        min_commission=_decimal(config.cost_min_commission),
-        max_commission_pct=_decimal(config.cost_max_commission_pct),
-        htb_borrow_annual_bps=_decimal(config.cost_htb_borrow_annual_bps),
-        finra_taf_per_share=_decimal(config.cost_finra_taf_per_share),
-        finra_taf_max_per_order=_decimal(config.cost_finra_taf_max_per_order),
-        min_commission_applies_to_per_share_only=(
-            config.cost_min_commission_applies_to_per_share_only
-        ),
-        spread_floor_taker_only=config.cost_spread_floor_taker_only,
-    ))
+    cost_model = DefaultCostModel(
+        DefaultCostModelConfig(
+            min_spread_cost_bps=_decimal(config.cost_min_spread_bps),
+            commission_per_share=_decimal(config.cost_commission_per_share),
+            taker_exchange_per_share=_decimal(config.cost_taker_exchange_per_share),
+            maker_exchange_per_share=_decimal(config.cost_maker_exchange_per_share),
+            passive_adverse_selection_bps=_decimal(config.cost_passive_adverse_selection_bps),
+            through_fill_adverse_selection_bps=_decimal(
+                config.cost_through_fill_adverse_selection_bps
+            ),
+            adverse_selection_through_bps=_decimal(config.cost_adverse_selection_through_bps),
+            adverse_selection_drain_bps=_decimal(config.cost_adverse_selection_drain_bps),
+            sell_regulatory_bps=_decimal(config.cost_sell_regulatory_bps),
+            stress_multiplier=_decimal(config.cost_stress_multiplier),
+            min_commission=_decimal(config.cost_min_commission),
+            max_commission_pct=_decimal(config.cost_max_commission_pct),
+            htb_borrow_annual_bps=_decimal(config.cost_htb_borrow_annual_bps),
+            finra_taf_per_share=_decimal(config.cost_finra_taf_per_share),
+            finra_taf_max_per_order=_decimal(config.cost_finra_taf_max_per_order),
+            min_commission_applies_to_per_share_only=(
+                config.cost_min_commission_applies_to_per_share_only
+            ),
+            spread_floor_taker_only=config.cost_spread_floor_taker_only,
+        )
+    )
     # Wiring safety: every router path must receive an explicit cost model.
     # ZeroCostModel was removed as a silent fallback (audit F-H-12); a None
     # here is a wiring bug, not a benign zero-cost path.
@@ -452,7 +446,8 @@ def build_platform(
     # one and thread the same instance into the live feed AND the
     # orchestrator below (Inv-13 — single provenance source).
     if normalizer is None and config.mode in (
-        OperatingMode.PAPER, OperatingMode.LIVE,
+        OperatingMode.PAPER,
+        OperatingMode.LIVE,
     ):
         normalizer = MassiveNormalizer(
             clock=clock,
@@ -462,7 +457,9 @@ def build_platform(
         normalizer.register_symbols(config.symbols)
 
     bundle = _create_backend(
-        config.mode, event_log, clock,
+        config.mode,
+        event_log,
+        clock,
         fill_latency_ns=config.backtest_fill_latency_ns,
         market_data_latency_ns=config.market_data_latency_ns,
         cost_model=cost_model,
@@ -630,9 +627,7 @@ def build_platform(
         account_equity=_decimal(config.account_equity),
     )
     effective_risk_engine: RiskEngine = (
-        risk_wrapper
-        if config.enforce_per_alpha_risk_budget
-        else risk_engine
+        risk_wrapper if config.enforce_per_alpha_risk_budget else risk_engine
     )
     fill_ledger = FillAttributionLedger()
     # Workstream D.2 PR-2b-ii: ``MultiAlphaEvaluator`` was deleted along
@@ -706,29 +701,28 @@ def build_platform(
     # Wire IB connectivity / unknown-status alerts onto the shared bus so
     # operators have programmatic visibility into IB link-state events and
     # unrecognised order-status strings during live/paper sessions.
-    if bundle.ib_connection is not None and hasattr(
-        bundle.ib_connection, "on_alert_event"
-    ):
+    if bundle.ib_connection is not None and hasattr(bundle.ib_connection, "on_alert_event"):
         _ib_alert_seq = SequenceGenerator()
         _ib_clock = clock  # captured by closure
 
         def _publish_ib_alert(error_code: int, error_msg: str) -> None:
-            bus.publish(Alert(
-                timestamp_ns=_ib_clock.now_ns(),
-                correlation_id="",
-                sequence=_ib_alert_seq.next(),
-                severity=AlertSeverity.WARNING,
-                layer="broker.ib",
-                alert_name="ib_connectivity_event",
-                message=error_msg,
-                context={"error_code": error_code},
-            ))
+            bus.publish(
+                Alert(
+                    timestamp_ns=_ib_clock.now_ns(),
+                    correlation_id="",
+                    sequence=_ib_alert_seq.next(),
+                    severity=AlertSeverity.WARNING,
+                    layer="broker.ib",
+                    alert_name="ib_connectivity_event",
+                    message=error_msg,
+                    context={"error_code": error_code},
+                )
+            )
 
         bundle.ib_connection.on_alert_event(_publish_ib_alert)
 
     logger.info(
-        "Platform composed: mode=%s, symbols=%s, alphas=%d, regime=%s, "
-        "config_checksum=%s",
+        "Platform composed: mode=%s, symbols=%s, alphas=%d, regime=%s, config_checksum=%s",
         config.mode.name,
         sorted(config.symbols),
         len(registry),
@@ -853,22 +847,22 @@ def _load_alphas(
 
     for spec_path in config.alpha_specs:
         name = spec_path.name
-        alpha_id_guess = name[:-len(".alpha.yaml")] if name.endswith(".alpha.yaml") else spec_path.stem
+        alpha_id_guess = (
+            name[: -len(".alpha.yaml")] if name.endswith(".alpha.yaml") else spec_path.stem
+        )
         overrides = config.parameter_overrides.get(alpha_id_guess)
         module = loader.load(spec_path, param_overrides=overrides)
         registry.register(module)
-        logger.info("Registered alpha '%s' from explicit path %s", module.manifest.alpha_id, spec_path)
+        logger.info(
+            "Registered alpha '%s' from explicit path %s", module.manifest.alpha_id, spec_path
+        )
 
 
 def _resolve_trading_session_bounds(
     config: PlatformConfig,
 ) -> TradingSessionBounds | None:
     """BT-16: RTH open/close bounds for entry-fill suppression."""
-    cal_path = (
-        str(config.event_calendar_path)
-        if config.event_calendar_path is not None
-        else None
-    )
+    cal_path = str(config.event_calendar_path) if config.event_calendar_path is not None else None
     session_date = config.rth_session_date or config.moc_session_date
     return build_trading_session_from_platform(
         rth_session_gating_enabled=config.rth_session_gating_enabled,
@@ -887,11 +881,7 @@ def _resolve_moc_bounds(config: PlatformConfig) -> MocSessionBounds | None:
     """BT-8: session bounds for closing-auction fills (None ⇒ MOC inert)."""
     if not config.moc_strategy_ids:
         return None
-    cal_path = (
-        str(config.event_calendar_path)
-        if config.event_calendar_path is not None
-        else None
-    )
+    cal_path = str(config.event_calendar_path) if config.event_calendar_path is not None else None
     return build_moc_bounds_from_platform(
         moc_session_date=config.moc_session_date,
         event_calendar_path=cal_path,
@@ -941,7 +931,8 @@ def _create_backend(
         # path (same economics as ``BacktestOrderRouter``).
         if execution_mode in ("passive_limit", "minimum_cost"):
             backend, router = build_passive_limit_backend(
-                event_log, clock,
+                event_log,
+                clock,
                 latency_ns=fill_latency_ns,
                 market_data_latency_ns=market_data_latency_ns,
                 cost_model=cost_model,
@@ -959,7 +950,8 @@ def _create_backend(
             return _BackendBundle(backend=backend, backtest_router=router)
 
         backend, router = build_backtest_backend(
-            event_log, clock,
+            event_log,
+            clock,
             latency_ns=fill_latency_ns,
             market_data_latency_ns=market_data_latency_ns,
             cost_model=cost_model,
@@ -980,10 +972,7 @@ def _create_backend(
             )
         api_key = (os.environ.get("MASSIVE_API_KEY") or "").strip()
         if not api_key:
-            raise ConfigurationError(
-                "MASSIVE_API_KEY env var is required for "
-                "OperatingMode.PAPER"
-            )
+            raise ConfigurationError("MASSIVE_API_KEY env var is required for OperatingMode.PAPER")
         if normalizer is None:
             raise ConfigurationError(
                 "PAPER mode requires a MassiveNormalizer instance "
@@ -1041,9 +1030,7 @@ def _derive_session_id(config: PlatformConfig) -> str:
         # timezone-dependent drift that would defeat replay parity.
         from datetime import datetime, timezone
 
-        dt = datetime.fromtimestamp(
-            config.session_open_ns / 1_000_000_000, tz=timezone.utc
-        )
+        dt = datetime.fromtimestamp(config.session_open_ns / 1_000_000_000, tz=timezone.utc)
         date_str = dt.strftime("%Y-%m-%d")
     return f"{config.market_id}_{config.session_kind}_{date_str}"
 
@@ -1079,7 +1066,10 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
     "ofi_ewma": lambda h: [
         SensorPassthroughFeature("ofi_ewma", h),
         HorizonWindowedFeature(
-            "ofi_ewma", h, reducer="zscore", feature_id="ofi_ewma_zscore",
+            "ofi_ewma",
+            h,
+            reducer="zscore",
+            feature_id="ofi_ewma_zscore",
         ),
     ],
     # Audit P1-7/P1-11: horizon-window these too so every rolling feature
@@ -1087,17 +1077,23 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
     # mix of 200- / 2000-sample count windows.
     "kyle_lambda_60s": lambda h: [
         HorizonWindowedFeature(
-            "kyle_lambda_60s", h, reducer="zscore",
+            "kyle_lambda_60s",
+            h,
+            reducer="zscore",
             feature_id="kyle_lambda_60s_zscore",
         ),
         HorizonWindowedFeature(
-            "kyle_lambda_60s", h, reducer="percentile",
+            "kyle_lambda_60s",
+            h,
+            reducer="percentile",
             feature_id="kyle_lambda_60s_percentile",
         ),
     ],
     "quote_replenish_asymmetry": lambda h: [
         HorizonWindowedFeature(
-            "quote_replenish_asymmetry", h, reducer="zscore",
+            "quote_replenish_asymmetry",
+            h,
+            reducer="zscore",
             feature_id="quote_replenish_asymmetry_zscore",
         ),
     ],
@@ -1111,7 +1107,9 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
     "inventory_pressure": lambda h: [
         SensorPassthroughFeature("inventory_pressure", h),
         HorizonWindowedFeature(
-            "inventory_pressure", h, reducer="zscore",
+            "inventory_pressure",
+            h,
+            reducer="zscore",
             feature_id="inventory_pressure_zscore",
         ),
     ],
@@ -1124,7 +1122,9 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
     "quote_flicker_rate": lambda h: [
         SensorPassthroughFeature("quote_flicker_rate", h),
         HorizonWindowedFeature(
-            "quote_flicker_rate", h, reducer="zscore",
+            "quote_flicker_rate",
+            h,
+            reducer="zscore",
             feature_id="quote_flicker_rate_zscore",
         ),
     ],
@@ -1135,13 +1135,18 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
     # HAWKES_SELF_EXCITE alpha has a usable L1 fingerprint.
     "hawkes_intensity": lambda h: [
         HorizonWindowedFeature(
-            "hawkes_intensity", h, reducer="zscore",
+            "hawkes_intensity",
+            h,
+            reducer="zscore",
             feature_id="hawkes_intensity_zscore",
             tuple_sum_component_indices=(0, 1),
         ),
         TupleSignedImbalanceFeature(
-            "hawkes_intensity", 0, 1,
-            "hawkes_intensity_imbalance", h,
+            "hawkes_intensity",
+            0,
+            1,
+            "hawkes_intensity_imbalance",
+            h,
         ),
     ],
     "trade_through_rate": lambda h: [
@@ -1149,22 +1154,30 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
     ],
     "scheduled_flow_window": lambda h: [
         TupleComponentFeature(
-            "scheduled_flow_window", 0,
-            "scheduled_flow_window_active", h,
+            "scheduled_flow_window",
+            0,
+            "scheduled_flow_window_active",
+            h,
         ),
         TupleComponentFeature(
-            "scheduled_flow_window", 1,
-            "seconds_to_window_close", h,
+            "scheduled_flow_window",
+            1,
+            "seconds_to_window_close",
+            h,
         ),
         TupleComponentFeature(
-            "scheduled_flow_window", 3,
-            "scheduled_flow_window_direction_prior", h,
+            "scheduled_flow_window",
+            3,
+            "scheduled_flow_window_direction_prior",
+            h,
         ),
     ],
     "micro_price": lambda h: [
         SensorPassthroughFeature("micro_price", h),
         HorizonWindowedFeature(
-            "micro_price", h, reducer="zscore",
+            "micro_price",
+            h,
+            reducer="zscore",
             feature_id="micro_price_zscore",
         ),
         # Audit P1-9: a z-score of the raw micro-price *level* leaks the
@@ -1172,7 +1185,9 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
         # change of the micro-price across the horizon — level-invariant,
         # so it isolates the directional tilt an alpha actually wants.
         HorizonWindowedFeature(
-            "micro_price", h, reducer="delta",
+            "micro_price",
+            h,
+            reducer="delta",
             feature_id="micro_price_drift",
         ),
     ],
@@ -1185,7 +1200,9 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
         # sensor keeps the count-window z (unlike ofi/micro/kyle which win
         # windowed).
         RollingZscoreFeature(
-            "realized_vol_30s", h, feature_id="realized_vol_30s_zscore",
+            "realized_vol_30s",
+            h,
+            feature_id="realized_vol_30s_zscore",
         ),
     ],
 }
@@ -1334,9 +1351,7 @@ def _create_sensor_layer(
                         "sensor 'scheduled_flow_window' requires "
                         "event_calendar_path to be set in PlatformConfig"
                     )
-                spec = _dc.replace(
-                    spec, params={**spec.params, "calendar": _calendar}
-                )
+                spec = _dc.replace(spec, params={**spec.params, "calendar": _calendar})
             sensor_registry.register(spec)
         logger.info(
             "Sensor registry composed: %d specs, %d symbols",
@@ -1346,9 +1361,7 @@ def _create_sensor_layer(
 
     horizon_scheduler: HorizonScheduler | None = None
     horizon_aggregator: HorizonAggregator | None = None
-    if config.horizons_seconds and (
-        sensor_registry is not None or config.sensor_specs
-    ):
+    if config.horizons_seconds and (sensor_registry is not None or config.sensor_specs):
         # H10: lazy-binding session_open_ns from the first event makes
         # boundary indices depend on event-arrival ordering at the
         # scheduler, which defeats bit-identical replay (B-PROV-01 /
@@ -1398,12 +1411,11 @@ def _create_sensor_layer(
             session_open_anchor_fn=_anchor_fn,
         )
         logger.info(
-            "HorizonScheduler composed: horizons=%s, session_id=%s, "
-            "session_open_ns=%s",
+            "HorizonScheduler composed: horizons=%s, session_id=%s, session_open_ns=%s",
             sorted(config.horizons_seconds),
-            horizon_scheduler._session_id if hasattr(
-                horizon_scheduler, "_session_id"
-            ) else "<unknown>",
+            horizon_scheduler._session_id
+            if hasattr(horizon_scheduler, "_session_id")
+            else "<unknown>",
             config.session_open_ns,
         )
         # Buffer 2 × max(horizon) per plan §4.3 so any feature whose
@@ -1429,8 +1441,7 @@ def _create_sensor_layer(
         horizon_aggregator.attach()
         _mode_label = "active" if _active_features else "passive"
         logger.info(
-            "HorizonAggregator composed (%s mode): "
-            "buffer_window=%ds, symbols=%d, features=%d",
+            "HorizonAggregator composed (%s mode): buffer_window=%ds, symbols=%d, features=%d",
             _mode_label,
             sensor_buffer_seconds,
             len(config.symbols),
@@ -1528,9 +1539,7 @@ def _create_signal_layer(
     if sensor_registry is None:
         known_sensor_ids: frozenset[str] = frozenset()
     else:
-        known_sensor_ids = frozenset(
-            spec.sensor_id for spec in sensor_registry.specs
-        )
+        known_sensor_ids = frozenset(spec.sensor_id for spec in sensor_registry.specs)
 
     registry.resolve_signal_dependencies(known_sensor_ids)
 
@@ -1538,9 +1547,7 @@ def _create_signal_layer(
     # HorizonFeatureSnapshot.values so we can warn on any
     # depends_on_sensors entry that neither maps to a feature nor
     # lands in the sensor cache (= known_sensor_ids).
-    feature_ids: frozenset[str] = frozenset(
-        f.feature_id for f in (horizon_features or [])
-    )
+    feature_ids: frozenset[str] = frozenset(f.feature_id for f in (horizon_features or []))
     covered = feature_ids | known_sensor_ids
     for alpha in signal_alphas:
         depends = getattr(alpha, "depends_on_sensors", ())
@@ -1572,18 +1579,20 @@ def _create_signal_layer(
             horizon_features=horizon_features or [],
             gate=module.gate,
         )
-        engine.register(RegisteredSignal(
-            alpha_id=module.manifest.alpha_id,
-            horizon_seconds=module.horizon_seconds,
-            signal=module.signal,
-            params=module.params,
-            gate=module.gate,
-            cost_arithmetic=module.cost,
-            trend_mechanism=module.trend_mechanism_enum,
-            expected_half_life_seconds=module.expected_half_life_seconds,
-            consumed_features=module.consumed_features,
-            required_warm_feature_ids=warm_ids,
-        ))
+        engine.register(
+            RegisteredSignal(
+                alpha_id=module.manifest.alpha_id,
+                horizon_seconds=module.horizon_seconds,
+                signal=module.signal,
+                params=module.params,
+                gate=module.gate,
+                cost_arithmetic=module.cost,
+                trend_mechanism=module.trend_mechanism_enum,
+                expected_half_life_seconds=module.expected_half_life_seconds,
+                consumed_features=module.consumed_features,
+                required_warm_feature_ids=warm_ids,
+            )
+        )
     engine.attach()
     logger.info(
         "HorizonSignalEngine composed: %d SIGNAL alpha(s) attached",
@@ -1669,10 +1678,7 @@ def _create_composition_layer(
     if not portfolio_alphas:
         return None, None, None, None
 
-    portfolio_modules = [
-        m for m in portfolio_alphas
-        if isinstance(m, LoadedPortfolioLayerModule)
-    ]
+    portfolio_modules = [m for m in portfolio_alphas if isinstance(m, LoadedPortfolioLayerModule)]
     if not portfolio_modules:
         # PORTFOLIO alphas exist but none use the layer-3 module type
         # (defensive — the loader always produces this type for
@@ -1726,9 +1732,7 @@ def _create_composition_layer(
             loadings_dir=config.factor_loadings_dir,
         )
     except MissingFactorLoadingsError as exc:
-        raise StaleFactorLoadingsError(
-            f"FactorNeutralizer construction failed: {exc}"
-        ) from exc
+        raise StaleFactorLoadingsError(f"FactorNeutralizer construction failed: {exc}") from exc
 
     sector_matcher = SectorMatcher(
         sector_map_path=config.sector_map_path,
@@ -1742,8 +1746,7 @@ def _create_composition_layer(
     )
 
     decay_enabled = any(
-        bool(m.params.get("decay_weighting_enabled", False))
-        for m in portfolio_modules
+        bool(m.params.get("decay_weighting_enabled", False)) for m in portfolio_modules
     )
     ranker = CrossSectionalRanker(
         decay_weighting_enabled=decay_enabled,
@@ -1778,12 +1781,14 @@ def _create_composition_layer(
                 strategy_id=module.alpha_id,
                 feeder_strategy_ids=module.depends_on_signals,
             )
-        engine.register(RegisteredPortfolioAlpha(
-            alpha_id=module.alpha_id,
-            horizon_seconds=module.horizon_seconds,
-            alpha=module,
-            params=module.params,
-        ))
+        engine.register(
+            RegisteredPortfolioAlpha(
+                alpha_id=module.alpha_id,
+                horizon_seconds=module.horizon_seconds,
+                alpha=module,
+                params=module.params,
+            )
+        )
     engine.attach()
 
     cross_sectional_tracker = CrossSectionalTracker(bus=bus)
@@ -1845,7 +1850,8 @@ def _create_hazard_exit_controller(
     fallback = tuple(sorted(fallback_universe))
 
     candidates = [
-        m for m in registry.active_alphas()
+        m
+        for m in registry.active_alphas()
         if _hazard_block_enabled(getattr(m.manifest, "hazard_exit", None))
     ]
     if not candidates:
@@ -1886,17 +1892,13 @@ def _create_hazard_exit_controller(
             hazard_score_threshold=float(
                 block.get(
                     "hazard_score_threshold",
-                    HazardPolicy.__dataclass_fields__[
-                        "hazard_score_threshold"
-                    ].default,
+                    HazardPolicy.__dataclass_fields__["hazard_score_threshold"].default,
                 )
             ),
             min_age_seconds=int(
                 block.get(
                     "min_age_seconds",
-                    HazardPolicy.__dataclass_fields__[
-                        "min_age_seconds"
-                    ].default,
+                    HazardPolicy.__dataclass_fields__["min_age_seconds"].default,
                 )
             ),
             hard_exit_age_seconds=hard_exit,
@@ -1919,8 +1921,6 @@ def _hazard_block_enabled(block: object | None) -> bool:
     if not isinstance(block, dict):
         return False
     return bool(block.get("enabled", False)) is True
-
-
 
 
 def _enforce_ex_date_replay_guard(
@@ -1952,9 +1952,9 @@ def _enforce_ex_date_replay_guard(
     if not violations:
         return
     detail = "; ".join(v.message() for v in violations)
-    raise ConfigurationError(
-        f"BT-18 ex-date replay guard ({RAW_UNADJUSTED_L1_POLICY}): {detail}"
-    )
+    raise ConfigurationError(f"BT-18 ex-date replay guard ({RAW_UNADJUSTED_L1_POLICY}): {detail}")
+
+
 def _enforce_factor_loadings_freshness(
     config: PlatformConfig,
     universe_sorted: list[str],
@@ -1976,9 +1976,7 @@ def _enforce_factor_loadings_freshness(
 
     path = config.factor_loadings_dir / "loadings.json"
     if not path.is_file():
-        raise StaleFactorLoadingsError(
-            f"factor loadings file not found: {path}"
-        )
+        raise StaleFactorLoadingsError(f"factor loadings file not found: {path}")
 
     # Prefer ``session_open_ns`` as the freshness reference so the check
     # is bit-deterministic across replays.  Wall-clock ``time.time()`` is
@@ -2002,14 +2000,10 @@ def _enforce_factor_loadings_freshness(
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise StaleFactorLoadingsError(
-            f"cannot parse factor loadings file {path}: {exc}"
-        ) from exc
+        raise StaleFactorLoadingsError(f"cannot parse factor loadings file {path}: {exc}") from exc
 
     if not isinstance(data, dict):
-        raise StaleFactorLoadingsError(
-            f"factor loadings file {path} is not a JSON object"
-        )
+        raise StaleFactorLoadingsError(f"factor loadings file {path} is not a JSON object")
 
     missing = [s for s in universe_sorted if s not in data]
     if missing:

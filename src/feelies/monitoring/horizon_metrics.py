@@ -150,8 +150,7 @@ class HorizonMetricsCollector:
                 ctx.correlation_id,
                 AlertSeverity.WARNING,
                 "composition.low_completeness",
-                f"completeness={ctx.completeness:.3f} < "
-                f"{COMPLETENESS_WARN_THRESHOLD}",
+                f"completeness={ctx.completeness:.3f} < {COMPLETENESS_WARN_THRESHOLD}",
                 context={
                     "horizon_seconds": ctx.horizon_seconds,
                     "boundary_index": ctx.boundary_index,
@@ -173,53 +172,74 @@ class HorizonMetricsCollector:
         }
 
         self._publish_metric(
-            intent.timestamp_ns, intent.correlation_id,
-            "composition.intents_emitted", float(self._intents_total),
-            MetricType.COUNTER, tags=tags,
+            intent.timestamp_ns,
+            intent.correlation_id,
+            "composition.intents_emitted",
+            float(self._intents_total),
+            MetricType.COUNTER,
+            tags=tags,
         )
         self._publish_metric(
-            intent.timestamp_ns, intent.correlation_id,
-            "composition.gross_usd", gross, MetricType.GAUGE, tags=tags,
+            intent.timestamp_ns,
+            intent.correlation_id,
+            "composition.gross_usd",
+            gross,
+            MetricType.GAUGE,
+            tags=tags,
         )
         self._publish_metric(
-            intent.timestamp_ns, intent.correlation_id,
-            "composition.net_usd", net, MetricType.GAUGE, tags=tags,
+            intent.timestamp_ns,
+            intent.correlation_id,
+            "composition.net_usd",
+            net,
+            MetricType.GAUGE,
+            tags=tags,
         )
         self._publish_metric(
-            intent.timestamp_ns, intent.correlation_id,
+            intent.timestamp_ns,
+            intent.correlation_id,
             "composition.expected_turnover_usd",
             float(intent.expected_turnover_usd),
-            MetricType.GAUGE, tags=tags,
+            MetricType.GAUGE,
+            tags=tags,
         )
         self._publish_metric(
-            intent.timestamp_ns, intent.correlation_id,
-            "composition.factor_residual_l2", residual_l2,
-            MetricType.GAUGE, tags=tags,
+            intent.timestamp_ns,
+            intent.correlation_id,
+            "composition.factor_residual_l2",
+            residual_l2,
+            MetricType.GAUGE,
+            tags=tags,
         )
 
         for mech in sorted(intent.mechanism_breakdown, key=lambda m: m.name):
             share = float(intent.mechanism_breakdown[mech])
             self._publish_metric(
-                intent.timestamp_ns, intent.correlation_id,
+                intent.timestamp_ns,
+                intent.correlation_id,
                 f"composition.mechanism_share.{mech.name}",
-                share, MetricType.GAUGE, tags=tags,
+                share,
+                MetricType.GAUGE,
+                tags=tags,
             )
 
         if is_degenerate:
             self._publish_metric(
-                intent.timestamp_ns, intent.correlation_id,
+                intent.timestamp_ns,
+                intent.correlation_id,
                 "composition.degenerate_intents",
                 float(self._degenerate_total),
-                MetricType.COUNTER, tags=tags,
+                MetricType.COUNTER,
+                tags=tags,
             )
             rate = self._degenerate_total / max(1, self._intents_total)
             if rate > DEGENERATE_RATE_WARN_THRESHOLD:
                 self._publish_alert(
-                    intent.timestamp_ns, intent.correlation_id,
+                    intent.timestamp_ns,
+                    intent.correlation_id,
                     AlertSeverity.WARNING,
                     "composition.high_degenerate_rate",
-                    f"degenerate_rate={rate:.3f} > "
-                    f"{DEGENERATE_RATE_WARN_THRESHOLD}",
+                    f"degenerate_rate={rate:.3f} > {DEGENERATE_RATE_WARN_THRESHOLD}",
                     context={
                         "strategy_id": intent.strategy_id,
                         "degenerate_total": self._degenerate_total,
@@ -229,11 +249,11 @@ class HorizonMetricsCollector:
 
         if residual_l2 > FACTOR_RESIDUAL_WARN_THRESHOLD:
             self._publish_alert(
-                intent.timestamp_ns, intent.correlation_id,
+                intent.timestamp_ns,
+                intent.correlation_id,
                 AlertSeverity.WARNING,
                 "composition.factor_residual_high",
-                f"factor_residual_l2={residual_l2:.4f} > "
-                f"{FACTOR_RESIDUAL_WARN_THRESHOLD}",
+                f"factor_residual_l2={residual_l2:.4f} > {FACTOR_RESIDUAL_WARN_THRESHOLD}",
                 context={
                     "strategy_id": intent.strategy_id,
                     "factor_exposures": dict(intent.factor_exposures),
@@ -243,7 +263,8 @@ class HorizonMetricsCollector:
     def _on_hazard_spike(self, spike: RegimeHazardSpike) -> None:
         self._hazard_spikes_total += 1
         self._publish_metric(
-            spike.timestamp_ns, spike.correlation_id,
+            spike.timestamp_ns,
+            spike.correlation_id,
             "composition.hazard_spikes_observed",
             float(self._hazard_spikes_total),
             MetricType.COUNTER,
@@ -260,7 +281,8 @@ class HorizonMetricsCollector:
             return
         self._hazard_exits_total += 1
         self._publish_metric(
-            order.timestamp_ns, order.correlation_id,
+            order.timestamp_ns,
+            order.correlation_id,
             "composition.hazard_exits_emitted",
             float(self._hazard_exits_total),
             MetricType.COUNTER,

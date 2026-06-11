@@ -77,7 +77,9 @@ def test_balanced_replenishment_yields_zero() -> None:
     state = sensor.initial_state()
     sensor.update(_quote(ts_ns=1, bid_size=100, ask_size=100), state, params={})
     r = sensor.update(
-        _quote(ts_ns=2, bid_size=200, ask_size=200, sequence=1), state, params={},
+        _quote(ts_ns=2, bid_size=200, ask_size=200, sequence=1),
+        state,
+        params={},
     )
     assert r is not None
     assert r.value == 0.0
@@ -90,13 +92,15 @@ def test_window_evicts_old_additions() -> None:
     sensor.update(_quote(ts_ns=1_000_000_000, bid_size=100, ask_size=100), state, params={})
     sensor.update(
         _quote(ts_ns=1_500_000_000, bid_size=200, ask_size=100, sequence=1),
-        state, params={},
+        state,
+        params={},
     )
     # +100 bid recorded inside the 1s window.
     assert state["bid_sum"] == 100
     sensor.update(
         _quote(ts_ns=10_000_000_000, bid_size=200, ask_size=100, sequence=2),
-        state, params={},
+        state,
+        params={},
     )
     # The earlier addition is evicted; the latest tick had Δbid=0 (200→200).
     assert state["bid_sum"] == 0
@@ -107,7 +111,9 @@ def test_warm_requires_both_sides_with_adds() -> None:
     state = sensor.initial_state()
     sensor.update(_quote(ts_ns=1, bid_size=100, ask_size=100, sequence=0), state, params={})
     r = sensor.update(
-        _quote(ts_ns=2, bid_size=150, ask_size=120, sequence=1), state, params={},
+        _quote(ts_ns=2, bid_size=150, ask_size=120, sequence=1),
+        state,
+        params={},
     )
     assert r is not None and r.warm is True  # 2 obs, both sides have adds
 

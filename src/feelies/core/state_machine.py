@@ -38,9 +38,7 @@ class TransitionRecord:
 class IllegalTransition(Exception):
     """Raised when a forbidden state transition is attempted."""
 
-    def __init__(
-        self, machine: str, from_state: Enum, to_state: Enum, trigger: str
-    ) -> None:
+    def __init__(self, machine: str, from_state: Enum, to_state: Enum, trigger: str) -> None:
         self.machine = machine
         self.from_state = from_state
         self.to_state = to_state

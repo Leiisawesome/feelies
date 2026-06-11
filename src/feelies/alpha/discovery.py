@@ -28,10 +28,7 @@ def _iter_alpha_spec_paths(spec_dir: Path) -> list[Path]:
     return sorted(
         p
         for p in spec_dir.rglob("*.alpha.yaml")
-        if not any(
-            part.startswith("_")
-            for part in p.relative_to(spec_dir).parts
-        )
+        if not any(part.startswith("_") for part in p.relative_to(spec_dir).parts)
     )
 
 
@@ -107,10 +104,7 @@ def load_and_register(
             logger.warning("Alpha load failure: %s — %s", path, err)
 
     if not loaded_ids:
-        raise RuntimeError(
-            f"No alphas loaded successfully from {spec_dir}. "
-            f"Errors: {errors}"
-        )
+        raise RuntimeError(f"No alphas loaded successfully from {spec_dir}. Errors: {errors}")
 
     cross_errors = registry.validate_all()
     if cross_errors:

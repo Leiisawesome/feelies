@@ -83,15 +83,20 @@ class FillAttributionLedger:
 
         sign = 1 if record.net_side == Side.BUY else -1
         allocations = _largest_remainder_allocate(
-            filled_quantity, record.contributions,
+            filled_quantity,
+            record.contributions,
         )
 
         total_allocated = sum(a for a in allocations if a > 0)
         result: list[tuple[str, str, int, Decimal, Decimal]] = []
         fee_remainder = total_fees
-        for idx, (contrib, alloc_qty) in enumerate(zip(
-            record.contributions, allocations, strict=True,
-        )):
+        for idx, (contrib, alloc_qty) in enumerate(
+            zip(
+                record.contributions,
+                allocations,
+                strict=True,
+            )
+        ):
             if alloc_qty == 0:
                 continue
             contrib_sign = 1 if contrib.signed_quantity >= 0 else -1
@@ -101,13 +106,15 @@ class FillAttributionLedger:
             else:
                 alloc_fee = Decimal("0")
             fee_remainder -= alloc_fee
-            result.append((
-                contrib.strategy_id,
-                record.symbol,
-                effective_sign * alloc_qty,
-                fill_price,
-                alloc_fee,
-            ))
+            result.append(
+                (
+                    contrib.strategy_id,
+                    record.symbol,
+                    effective_sign * alloc_qty,
+                    fill_price,
+                    alloc_fee,
+                )
+            )
 
         if result and fee_remainder != Decimal("0"):
             last = result[-1]
@@ -136,9 +143,7 @@ def _largest_remainder_allocate(
         remainder = total - base * n
         return [base + (1 if i < remainder else 0) for i in range(n)]
 
-    exact = [
-        total * abs(c.proportion) / total_proportion for c in contributions
-    ]
+    exact = [total * abs(c.proportion) / total_proportion for c in contributions]
     floors = [int(e) for e in exact]
     remainders = [e - f for e, f in zip(exact, floors)]
 

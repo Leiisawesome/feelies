@@ -173,9 +173,7 @@ class TestPromoteToPaperStructured:
         assert errors == []
         assert lc.state == AlphaLifecycleState.PAPER
 
-    def test_failed_research_validator_blocks_transition(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_failed_research_validator_blocks_transition(self, clock: SimulatedClock) -> None:
         bad = ResearchAcceptanceEvidence(
             schema_valid=False,
             determinism_replay_passed=False,
@@ -192,35 +190,24 @@ class TestPromoteToPaperStructured:
         assert len(errors) > 0
         assert lc.state == AlphaLifecycleState.RESEARCH
 
-    def test_missing_required_evidence_blocks_transition(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_missing_required_evidence_blocks_transition(self, clock: SimulatedClock) -> None:
         # No ResearchAcceptanceEvidence in the sequence.
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         errors = lc.promote_to_paper(structured_evidence=[])
-        assert any(
-            "ResearchAcceptanceEvidence" in e and "none was supplied" in e
-            for e in errors
-        )
+        assert any("ResearchAcceptanceEvidence" in e and "none was supplied" in e for e in errors)
         assert lc.state == AlphaLifecycleState.RESEARCH
 
-    def test_unsupported_evidence_type_blocks_transition(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_unsupported_evidence_type_blocks_transition(self, clock: SimulatedClock) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
 
         class NotEvidence:
             pass
 
         errors = lc.promote_to_paper(structured_evidence=[NotEvidence()])
-        assert any(
-            "unsupported evidence type" in e for e in errors
-        )
+        assert any("unsupported evidence type" in e for e in errors)
         assert lc.state == AlphaLifecycleState.RESEARCH
 
-    def test_neither_evidence_nor_structured_raises(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_neither_evidence_nor_structured_raises(self, clock: SimulatedClock) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         with pytest.raises(ValueError, match="must supply either"):
             lc.promote_to_paper()
@@ -260,9 +247,7 @@ class TestPromoteToLiveStructured:
         assert errors == []
         assert lc.state == AlphaLifecycleState.LIVE
 
-    def test_missing_cpcv_evidence_blocks_transition(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_missing_cpcv_evidence_blocks_transition(self, clock: SimulatedClock) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         _walk_to_paper(lc)
         errors = lc.promote_to_live(
@@ -271,9 +256,7 @@ class TestPromoteToLiveStructured:
         assert any("CPCVEvidence" in e for e in errors)
         assert lc.state == AlphaLifecycleState.PAPER
 
-    def test_low_cpcv_sharpe_blocks_transition(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_low_cpcv_sharpe_blocks_transition(self, clock: SimulatedClock) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         _walk_to_paper(lc)
         bad_cpcv = CPCVEvidence(
@@ -317,9 +300,7 @@ class TestPromoteToLiveStructured:
         assert any("DSR" in e for e in errors)
         assert lc.state == AlphaLifecycleState.PAPER
 
-    def test_short_paper_window_blocks_transition(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_short_paper_window_blocks_transition(self, clock: SimulatedClock) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         _walk_to_paper(lc)
         bad_paper = PaperWindowEvidence(
@@ -356,9 +337,7 @@ class TestRevalidateToPaperStructured:
         assert errors == []
         assert lc.state == AlphaLifecycleState.PAPER
 
-    def test_missing_human_signoff_blocks_transition(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_missing_human_signoff_blocks_transition(self, clock: SimulatedClock) -> None:
         lc = AlphaLifecycle(alpha_id="kyle", clock=clock)
         _walk_to_live(lc)
         lc.quarantine("ic decay")
@@ -524,16 +503,12 @@ class TestGateThresholds:
     def clock(self) -> SimulatedClock:
         return SimulatedClock(start_ns=1_700_000_000_000_000_000)
 
-    def test_custom_thresholds_relaxed_lets_borderline_pass(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_custom_thresholds_relaxed_lets_borderline_pass(self, clock: SimulatedClock) -> None:
         relaxed = GateThresholds(
             research_min_branch_coverage_pct=50.0,
             research_min_line_coverage_pct=40.0,
         )
-        lc = AlphaLifecycle(
-            alpha_id="kyle", clock=clock, gate_thresholds=relaxed
-        )
+        lc = AlphaLifecycle(alpha_id="kyle", clock=clock, gate_thresholds=relaxed)
         borderline = ResearchAcceptanceEvidence(
             schema_valid=True,
             determinism_replay_passed=True,
@@ -548,13 +523,9 @@ class TestGateThresholds:
         errors = lc.promote_to_paper(structured_evidence=[borderline])
         assert errors == []
 
-    def test_custom_thresholds_tightened_rejects_default_pass(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_custom_thresholds_tightened_rejects_default_pass(self, clock: SimulatedClock) -> None:
         tightened = GateThresholds(research_min_branch_coverage_pct=99.0)
-        lc = AlphaLifecycle(
-            alpha_id="kyle", clock=clock, gate_thresholds=tightened
-        )
+        lc = AlphaLifecycle(alpha_id="kyle", clock=clock, gate_thresholds=tightened)
         ev = _passing_research_acceptance()  # 92% branch coverage
         errors = lc.promote_to_paper(structured_evidence=[ev])
         assert any("branch coverage" in e for e in errors)
@@ -629,9 +600,7 @@ class TestAlphaRegistryStructuredEvidence:
     def clock(self) -> SimulatedClock:
         return SimulatedClock(start_ns=1_700_000_000_000_000_000)
 
-    def test_registry_promote_forwards_structured_evidence(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_registry_promote_forwards_structured_evidence(self, clock: SimulatedClock) -> None:
         registry = AlphaRegistry(clock=clock)
         registry.register(_StubModule("kyle"))
 
@@ -643,14 +612,10 @@ class TestAlphaRegistryStructuredEvidence:
         assert errors == []
         assert registry.lifecycle_states()["kyle"] == AlphaLifecycleState.PAPER
 
-    def test_registry_promote_forwards_to_live(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_registry_promote_forwards_to_live(self, clock: SimulatedClock) -> None:
         registry = AlphaRegistry(clock=clock)
         registry.register(_StubModule("kyle"))
-        registry.promote(
-            "kyle", structured_evidence=[_passing_research_acceptance()]
-        )
+        registry.promote("kyle", structured_evidence=[_passing_research_acceptance()])
 
         errors = registry.promote(
             "kyle",
@@ -670,9 +635,7 @@ class TestAlphaRegistryStructuredEvidence:
         registry = AlphaRegistry(clock=clock, promotion_ledger=ledger)
         registry.register(_StubModule("kyle"))
 
-        registry.promote(
-            "kyle", structured_evidence=[_passing_research_acceptance()]
-        )
+        registry.promote("kyle", structured_evidence=[_passing_research_acceptance()])
         registry.promote(
             "kyle",
             structured_evidence=[
@@ -694,9 +657,7 @@ class TestAlphaRegistryStructuredEvidence:
         assert "quarantine_trigger" in last.metadata
         assert last.correlation_id == "quarantine-1"
 
-    def test_registry_neither_path_raises(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_registry_neither_path_raises(self, clock: SimulatedClock) -> None:
         registry = AlphaRegistry(clock=clock)
         registry.register(_StubModule("kyle"))
         with pytest.raises(ValueError, match="must supply either"):
@@ -717,9 +678,7 @@ class TestAlphaRegistryStructuredEvidence:
                 structured_evidence=[_passing_research_acceptance()],
             )
 
-    def test_registry_unregistered_alpha_raises(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_registry_unregistered_alpha_raises(self, clock: SimulatedClock) -> None:
         registry = AlphaRegistry(clock=clock)
         with pytest.raises(KeyError):
             registry.promote(
@@ -736,9 +695,7 @@ class TestAlphaRegistryStructuredEvidence:
                 structured_evidence=[_passing_research_acceptance()],
             )
 
-    def test_registry_uses_custom_gate_thresholds(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_registry_uses_custom_gate_thresholds(self, clock: SimulatedClock) -> None:
         tightened = GateThresholds(research_min_branch_coverage_pct=99.0)
         registry = AlphaRegistry(clock=clock, gate_thresholds=tightened)
         registry.register(_StubModule("kyle"))
@@ -764,17 +721,11 @@ class TestMixedPathWorkflow:
     def clock(self) -> SimulatedClock:
         return SimulatedClock(start_ns=1_700_000_000_000_000_000)
 
-    def test_structured_paper_then_legacy_live(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_structured_paper_then_legacy_live(self, clock: SimulatedClock) -> None:
         gate = GateRequirements(paper_min_days=1, paper_min_sharpe=0.0)
-        lc = AlphaLifecycle(
-            alpha_id="kyle", clock=clock, gate_requirements=gate
-        )
+        lc = AlphaLifecycle(alpha_id="kyle", clock=clock, gate_requirements=gate)
         # Structured RESEARCH→PAPER
-        errors = lc.promote_to_paper(
-            structured_evidence=[_passing_research_acceptance()]
-        )
+        errors = lc.promote_to_paper(structured_evidence=[_passing_research_acceptance()])
         assert errors == []
         assert lc.state == AlphaLifecycleState.PAPER
 

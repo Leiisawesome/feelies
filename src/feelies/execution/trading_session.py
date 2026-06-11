@@ -54,12 +54,8 @@ class TradingSessionBounds:
     def resolve_for_timestamp(self, ts_ns: int) -> "TradingSessionBounds":
         """Resolve the effective RTH bounds for an event timestamp."""
         session_date = session_date_from_ns(ts_ns)
-        early = self.is_early_close or (
-            session_date.isoformat() in self.early_close_dates
-        )
-        holiday = self.is_holiday or (
-            session_date.isoformat() in self.market_holiday_dates
-        )
+        early = self.is_early_close or (session_date.isoformat() in self.early_close_dates)
+        holiday = self.is_holiday or (session_date.isoformat() in self.market_holiday_dates)
         close_et = self.early_close_rth_close_et if early else self.rth_close_et
         return TradingSessionBounds(
             session_date=session_date,
@@ -139,7 +135,6 @@ def should_suppress_entry(
     return False, ""
 
 
-
 def opens_or_increases_signed(current_qty: int, post_signed: int) -> bool:
     """Entry detection: True iff the resulting position grows or flips sign.
 
@@ -147,13 +142,8 @@ def opens_or_increases_signed(current_qty: int, post_signed: int) -> bool:
     min-equity gate, the BT-15 Reg-T buying-power gate, and the BT-16
     RTH router-side suppression — a future edge-case fix lands here.
     """
-    return (
-        abs(post_signed) > abs(current_qty)
-        or (
-            current_qty != 0
-            and post_signed != 0
-            and (current_qty > 0) != (post_signed > 0)
-        )
+    return abs(post_signed) > abs(current_qty) or (
+        current_qty != 0 and post_signed != 0 and (current_qty > 0) != (post_signed > 0)
     )
 
 
@@ -173,7 +163,8 @@ class RthEntryFillGate:
 
     bounds: TradingSessionBounds | None
     _position_qty: Callable[[str], int] | None = field(
-        default=None, repr=False,
+        default=None,
+        repr=False,
     )
 
     def bind_position_qty(self, fn: Callable[[str], int]) -> None:
@@ -190,13 +181,16 @@ class RthEntryFillGate:
         if self._position_qty is not None:
             current_qty = self._position_qty(request.symbol)
         if not order_opens_or_increases(
-            current_qty, request.side, request.quantity,
+            current_qty,
+            request.side,
+            request.quantity,
         ):
             return False, ""
         return should_suppress_entry(
-            exchange_ts_ns, self.bounds, opens_or_increases=True,
+            exchange_ts_ns,
+            self.bounds,
+            opens_or_increases=True,
         )
-
 
 
 def build_trading_session_from_platform(

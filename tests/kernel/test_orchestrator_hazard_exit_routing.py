@@ -75,24 +75,28 @@ class _RecordingRouter:
 
     def submit(self, request: OrderRequest) -> None:
         self.submitted.append(request)
-        self._pending.append(OrderAck(
-            timestamp_ns=request.timestamp_ns + 1,
-            correlation_id=request.correlation_id,
-            sequence=request.sequence,
-            order_id=request.order_id,
-            symbol=request.symbol,
-            status=OrderAckStatus.ACKNOWLEDGED,
-        ))
-        self._pending.append(OrderAck(
-            timestamp_ns=request.timestamp_ns + 2,
-            correlation_id=request.correlation_id,
-            sequence=request.sequence,
-            order_id=request.order_id,
-            symbol=request.symbol,
-            status=OrderAckStatus.FILLED,
-            filled_quantity=request.quantity,
-            fill_price=self._fill_price,
-        ))
+        self._pending.append(
+            OrderAck(
+                timestamp_ns=request.timestamp_ns + 1,
+                correlation_id=request.correlation_id,
+                sequence=request.sequence,
+                order_id=request.order_id,
+                symbol=request.symbol,
+                status=OrderAckStatus.ACKNOWLEDGED,
+            )
+        )
+        self._pending.append(
+            OrderAck(
+                timestamp_ns=request.timestamp_ns + 2,
+                correlation_id=request.correlation_id,
+                sequence=request.sequence,
+                order_id=request.order_id,
+                symbol=request.symbol,
+                status=OrderAckStatus.FILLED,
+                filled_quantity=request.quantity,
+                fill_price=self._fill_price,
+            )
+        )
 
     def poll_acks(self) -> list[OrderAck]:
         acks = list(self._pending)
@@ -130,11 +134,13 @@ def _build_orchestrator(
         clock=clock,
         bus=bus,
         backend=backend,
-        risk_engine=BasicRiskEngine(RiskConfig(
-            account_equity=Decimal("1000000"),
-            max_position_per_symbol=10_000,
-            max_gross_exposure_pct=200.0,
-        )),
+        risk_engine=BasicRiskEngine(
+            RiskConfig(
+                account_equity=Decimal("1000000"),
+                max_position_per_symbol=10_000,
+                max_gross_exposure_pct=200.0,
+            )
+        ),
         position_store=positions,
         event_log=InMemoryEventLog(),
         metric_collector=_NoOpMetricCollector(),
@@ -206,7 +212,8 @@ class TestHazardOrderRouting:
         positions.update_mark("AAPL", Decimal("150.00"))
 
         _, _, positions = _build_orchestrator(
-            bus=bus, positions=positions,
+            bus=bus,
+            positions=positions,
         )
         bus.publish(_make_hazard_order(reason="HAZARD_SPIKE"))
 
@@ -239,10 +246,12 @@ class TestHandlerFiltersOutNonHazardOrders:
 
         # PORTFOLIO orders are stamped source_layer="PORTFOLIO" by
         # BasicRiskEngine.check_sized_intent.
-        bus.publish(_make_hazard_order(
-            source_layer="PORTFOLIO",
-            reason="PORTFOLIO",
-        ))
+        bus.publish(
+            _make_hazard_order(
+                source_layer="PORTFOLIO",
+                reason="PORTFOLIO",
+            )
+        )
 
         assert router.submitted == []
 
@@ -252,10 +261,12 @@ class TestHandlerFiltersOutNonHazardOrders:
 
         # SIGNAL-walk orders default to source_layer="" (no explicit
         # tagging in the orchestrator); they MUST NOT be re-submitted.
-        bus.publish(_make_hazard_order(
-            source_layer="",
-            reason="entry",
-        ))
+        bus.publish(
+            _make_hazard_order(
+                source_layer="",
+                reason="entry",
+            )
+        )
 
         assert router.submitted == []
 
@@ -263,10 +274,12 @@ class TestHandlerFiltersOutNonHazardOrders:
         bus = EventBus()
         _, router, _ = _build_orchestrator(bus=bus)
 
-        bus.publish(_make_hazard_order(
-            source_layer="RISK",
-            reason="some_other_risk_event",
-        ))
+        bus.publish(
+            _make_hazard_order(
+                source_layer="RISK",
+                reason="some_other_risk_event",
+            )
+        )
 
         assert router.submitted == []
 
@@ -279,7 +292,8 @@ class TestIdempotency:
         positions.update_mark("AAPL", Decimal("150.00"))
 
         _, router, _ = _build_orchestrator(
-            bus=bus, positions=positions,
+            bus=bus,
+            positions=positions,
         )
         order = _make_hazard_order()
         bus.publish(order)

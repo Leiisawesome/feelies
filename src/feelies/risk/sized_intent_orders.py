@@ -57,7 +57,8 @@ def resolve_mark(symbol: str, current: object, positions: PositionStore) -> Deci
             _logger.warning(
                 "resolve_mark(%s): latest_mark accessor raised %s; "
                 "falling back to avg_entry_price",
-                symbol, exc,
+                symbol,
+                exc,
             )
     avg = getattr(current, "avg_entry_price", Decimal("0"))
     if isinstance(avg, Decimal) and avg > 0:
@@ -105,9 +106,7 @@ def build_sized_intent_orders(
         side = Side.BUY if delta_shares > 0 else Side.SELL
         quantity = abs(delta_shares)
 
-        order_id = derive_order_id(
-            f"{intent.correlation_id}:{intent.sequence}:{symbol}"
-        )
+        order_id = derive_order_id(f"{intent.correlation_id}:{intent.sequence}:{symbol}")
         disclosed_cost = intent.disclosed_cost_total_bps_by_symbol.get(symbol, 0.0)
         order = OrderRequest(
             timestamp_ns=intent.timestamp_ns,
@@ -137,9 +136,9 @@ def build_sized_intent_orders(
             scaled_qty = max(
                 1,
                 int(
-                    (
-                        Decimal(quantity) * Decimal(str(verdict.scaling_factor))
-                    ).to_integral_value(rounding=ROUND_HALF_UP),
+                    (Decimal(quantity) * Decimal(str(verdict.scaling_factor))).to_integral_value(
+                        rounding=ROUND_HALF_UP
+                    ),
                 ),
             )
             if scaled_qty != quantity:

@@ -80,11 +80,13 @@ class BasicRiskEngine:
     # ``bootstrap._validate_regime_engine_risk_scale_alignment`` reads this
     # frozenset so adding/renaming a regime here propagates without a
     # parallel constant drifting out of sync.
-    REGIME_SCALE_STATE_NAMES: frozenset[str] = frozenset({
-        "vol_breakout",
-        "compression_clustering",
-        "normal",
-    })
+    REGIME_SCALE_STATE_NAMES: frozenset[str] = frozenset(
+        {
+            "vol_breakout",
+            "compression_clustering",
+            "normal",
+        }
+    )
 
     def __init__(
         self,
@@ -107,10 +109,7 @@ class BasicRiskEngine:
             "compression_clustering": config.regime_compression_scale,
             "normal": config.regime_normal_scale,
         }
-        assert (
-            self._regime_scale_map.keys()
-            == BasicRiskEngine.REGIME_SCALE_STATE_NAMES
-        ), (
+        assert self._regime_scale_map.keys() == BasicRiskEngine.REGIME_SCALE_STATE_NAMES, (
             "REGIME_SCALE_STATE_NAMES drifted from _regime_scale_map keys"
         )
         self._regime_scale_default = min(self._regime_scale_map.values())
@@ -167,8 +166,11 @@ class BasicRiskEngine:
 
         current = positions.get(signal.symbol)
         signal_reduces = (
-            (current.quantity > 0 and signal.direction in (SignalDirection.SHORT, SignalDirection.FLAT))
-            or (current.quantity < 0 and signal.direction in (SignalDirection.LONG, SignalDirection.FLAT))
+            current.quantity > 0
+            and signal.direction in (SignalDirection.SHORT, SignalDirection.FLAT)
+        ) or (
+            current.quantity < 0
+            and signal.direction in (SignalDirection.LONG, SignalDirection.FLAT)
         )
         if abs(current.quantity) >= adjusted_max and not signal_reduces:
             return RiskVerdict(
@@ -181,8 +183,12 @@ class BasicRiskEngine:
             )
 
         shared = self._check_exposure_and_drawdown(
-            signal.timestamp_ns, signal.correlation_id, signal.sequence, signal.symbol,
-            positions, scale_down_reason="approaching exposure limit",
+            signal.timestamp_ns,
+            signal.correlation_id,
+            signal.sequence,
+            signal.symbol,
+            positions,
+            scale_down_reason="approaching exposure limit",
         )
         if shared is not None:
             return shared
@@ -223,19 +229,27 @@ class BasicRiskEngine:
         post_fill_qty = abs(post_signed)
 
         pdt_verdict = self._check_pdt_min_equity(
-            order, current.quantity, post_signed, positions,
+            order,
+            current.quantity,
+            post_signed,
+            positions,
         )
         if pdt_verdict is not None:
             return pdt_verdict
 
         bp_verdict = self._check_buying_power(
-            order, current.quantity, post_signed, positions,
+            order,
+            current.quantity,
+            post_signed,
+            positions,
         )
         if bp_verdict is not None:
             return bp_verdict
 
         rth_verdict = self._check_rth_session(
-            order, current.quantity, post_signed,
+            order,
+            current.quantity,
+            post_signed,
         )
         if rth_verdict is not None:
             return rth_verdict
@@ -254,10 +268,15 @@ class BasicRiskEngine:
             )
 
         prospective_exposure = self._prospective_total_exposure(
-            order, positions, current,
+            order,
+            positions,
+            current,
         )
         shared = self._check_exposure_and_drawdown(
-            order.timestamp_ns, order.correlation_id, order.sequence, order.symbol,
+            order.timestamp_ns,
+            order.correlation_id,
+            order.sequence,
+            order.symbol,
             positions,
             scale_down_reason="approaching exposure limit at order gate",
             exposure_override=prospective_exposure,
@@ -359,35 +378,34 @@ class BasicRiskEngine:
         )
         if self._bus is None or self._alert_seq is None:
             return
-        self._bus.publish(Alert(
-            timestamp_ns=intent.timestamp_ns,
-            correlation_id=intent.correlation_id,
-            sequence=self._alert_seq.next(),
-            source_layer="RISK",
-            severity=AlertSeverity.WARNING,
-            layer="risk",
-            alert_name="portfolio_intent_partial_execution",
-            message=(
-                f"Per-leg PORTFOLIO veto dropped {len(dropped)} of "
-                f"{len(intent.target_positions)} legs from intent "
-                f"(strategy_id={intent.strategy_id!r}, "
-                f"correlation_id={intent.correlation_id!r}). "
-                f"Surviving legs execute as a partial portfolio; "
-                f"any dollar-neutral / sector-neutral / "
-                f"mechanism-cap invariant the alpha intended is "
-                f"NOT re-validated after the drop."
-            ),
-            context={
-                "strategy_id": intent.strategy_id,
-                "intent_correlation_id": intent.correlation_id,
-                "intent_sequence": intent.sequence,
-                "total_legs": len(intent.target_positions),
-                "dropped_legs": [
-                    {"symbol": sym, "reason": reason}
-                    for sym, reason in dropped
-                ],
-            },
-        ))
+        self._bus.publish(
+            Alert(
+                timestamp_ns=intent.timestamp_ns,
+                correlation_id=intent.correlation_id,
+                sequence=self._alert_seq.next(),
+                source_layer="RISK",
+                severity=AlertSeverity.WARNING,
+                layer="risk",
+                alert_name="portfolio_intent_partial_execution",
+                message=(
+                    f"Per-leg PORTFOLIO veto dropped {len(dropped)} of "
+                    f"{len(intent.target_positions)} legs from intent "
+                    f"(strategy_id={intent.strategy_id!r}, "
+                    f"correlation_id={intent.correlation_id!r}). "
+                    f"Surviving legs execute as a partial portfolio; "
+                    f"any dollar-neutral / sector-neutral / "
+                    f"mechanism-cap invariant the alpha intended is "
+                    f"NOT re-validated after the drop."
+                ),
+                context={
+                    "strategy_id": intent.strategy_id,
+                    "intent_correlation_id": intent.correlation_id,
+                    "intent_sequence": intent.sequence,
+                    "total_legs": len(intent.target_positions),
+                    "dropped_legs": [{"symbol": sym, "reason": reason} for sym, reason in dropped],
+                },
+            )
+        )
 
     def record_fill(
         self,
@@ -405,7 +423,11 @@ class BasicRiskEngine:
         if self._pdt_constraint is None:
             return
         self._pdt_constraint.record_fill(
-            self._account_id, symbol, prev_qty, new_qty, timestamp_ns,
+            self._account_id,
+            symbol,
+            prev_qty,
+            new_qty,
+            timestamp_ns,
         )
 
     @staticmethod
@@ -440,7 +462,9 @@ class BasicRiskEngine:
             return None
         current_equity = self._compute_current_equity(positions)
         if not self._pdt_constraint.should_suppress_entry(
-            self._account_id, current_equity, order.timestamp_ns,
+            self._account_id,
+            current_equity,
+            order.timestamp_ns,
         ):
             return None
         self._emit_pdt_suppression_alert(order, current_equity)
@@ -452,7 +476,6 @@ class BasicRiskEngine:
             action=RiskAction.REJECT,
             reason="PDT_MIN_EQUITY",
         )
-
 
     def _check_rth_session(
         self,
@@ -473,8 +496,7 @@ class BasicRiskEngine:
         if not suppress:
             return None
         _logger.warning(
-            "RTH session gate rejected ENTRY (symbol=%s, side=%s, qty=%d, "
-            "reason=%s, ts_ns=%d).",
+            "RTH session gate rejected ENTRY (symbol=%s, side=%s, qty=%d, reason=%s, ts_ns=%d).",
             order.symbol,
             order.side.name,
             order.quantity,
@@ -515,7 +537,9 @@ class BasicRiskEngine:
             self._buying_power_config,
         )
         prospective = self._prospective_total_exposure(
-            order, positions, current,
+            order,
+            positions,
+            current,
         )
         if prospective > limit:
             _logger.warning(
@@ -554,39 +578,41 @@ class BasicRiskEngine:
             order.side.name,
             order.quantity,
             current_equity,
-            self._pdt_constraint.config.min_equity
-            if self._pdt_constraint is not None else "?",
+            self._pdt_constraint.config.min_equity if self._pdt_constraint is not None else "?",
         )
         if self._bus is None or self._alert_seq is None:
             return
         floor = (
             self._pdt_constraint.config.min_equity
-            if self._pdt_constraint is not None else Decimal("0")
+            if self._pdt_constraint is not None
+            else Decimal("0")
         )
-        self._bus.publish(Alert(
-            timestamp_ns=order.timestamp_ns,
-            correlation_id=order.correlation_id,
-            sequence=self._alert_seq.next(),
-            source_layer="RISK",
-            severity=AlertSeverity.WARNING,
-            layer="risk",
-            alert_name="pdt_min_equity_suppressed",
-            message=(
-                f"PDT-flagged account {self._account_id!r} below the "
-                f"${floor} maintenance floor (equity={current_equity}); "
-                f"new ENTRY fill on {order.symbol!r} "
-                f"({order.side.name} {order.quantity}) refused. "
-                f"Exits remain permitted."
-            ),
-            context={
-                "account_id": self._account_id,
-                "symbol": order.symbol,
-                "side": order.side.name,
-                "quantity": order.quantity,
-                "current_equity": str(current_equity),
-                "min_equity": str(floor),
-            },
-        ))
+        self._bus.publish(
+            Alert(
+                timestamp_ns=order.timestamp_ns,
+                correlation_id=order.correlation_id,
+                sequence=self._alert_seq.next(),
+                source_layer="RISK",
+                severity=AlertSeverity.WARNING,
+                layer="risk",
+                alert_name="pdt_min_equity_suppressed",
+                message=(
+                    f"PDT-flagged account {self._account_id!r} below the "
+                    f"${floor} maintenance floor (equity={current_equity}); "
+                    f"new ENTRY fill on {order.symbol!r} "
+                    f"({order.side.name} {order.quantity}) refused. "
+                    f"Exits remain permitted."
+                ),
+                context={
+                    "account_id": self._account_id,
+                    "symbol": order.symbol,
+                    "side": order.side.name,
+                    "quantity": order.quantity,
+                    "current_equity": str(current_equity),
+                    "min_equity": str(floor),
+                },
+            )
+        )
 
     def _prospective_total_exposure(
         self,
@@ -638,14 +664,11 @@ class BasicRiskEngine:
         definition so the two checks stay internally consistent.
         """
         current_equity = self._compute_current_equity(positions)
-        exposure = (
-            positions.total_exposure()
-            if exposure_override is None else exposure_override
-        )
+        exposure = positions.total_exposure() if exposure_override is None else exposure_override
         equity_for_cap = current_equity if current_equity > 0 else self._config.account_equity
-        max_exposure = equity_for_cap * Decimal(
-            str(self._config.max_gross_exposure_pct)
-        ) / Decimal("100")
+        max_exposure = (
+            equity_for_cap * Decimal(str(self._config.max_gross_exposure_pct)) / Decimal("100")
+        )
         if exposure >= max_exposure:
             return RiskVerdict(
                 timestamp_ns=timestamp_ns,
@@ -681,9 +704,7 @@ class BasicRiskEngine:
                 reason="scale_down_threshold_pct >= 1.0 is invalid (would divide by zero)",
             )
         if exposure >= max_exposure * threshold:
-            scaling = float(
-                (max_exposure - exposure) / (max_exposure * (1 - threshold))
-            )
+            scaling = float((max_exposure - exposure) / (max_exposure * (1 - threshold)))
             scaling = max(0.1, min(1.0, scaling))
             return RiskVerdict(
                 timestamp_ns=timestamp_ns,
@@ -753,12 +774,7 @@ class BasicRiskEngine:
             total_realized += pos.realized_pnl
             total_fees += pos.cumulative_fees
             total_unrealized += pos.unrealized_pnl
-        return (
-            self._config.account_equity
-            + total_realized
-            - total_fees
-            + total_unrealized
-        )
+        return self._config.account_equity + total_realized - total_fees + total_unrealized
 
     def _update_high_water_mark(self, current_equity: Decimal) -> None:
         """Bump the HWM monotonically.

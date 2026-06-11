@@ -115,6 +115,7 @@ def test_events_sentinel_terminates_iterator() -> None:
     feed = _make_feed(clock)
     # Enqueue the module-level sentinel that stop() uses internally.
     from feelies.ingestion.massive_ws import _SENTINEL
+
     feed._queue.put_nowait(_SENTINEL)
     assert list(feed.events()) == []
 

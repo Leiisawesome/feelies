@@ -23,8 +23,7 @@ class InMemoryFeatureSnapshotStore:
         actual_full = hashlib.sha256(state).hexdigest()
         if meta.checksum and not self._checksums_match(meta.checksum, actual_full):
             raise ValueError(
-                f"Checksum mismatch on save: expected {meta.checksum}, "
-                f"got {actual_full}"
+                f"Checksum mismatch on save: expected {meta.checksum}, got {actual_full}"
             )
         key = (meta.symbol, meta.feature_version)
         self._snapshots.setdefault(key, []).append((meta, bytes(state)))

@@ -82,7 +82,6 @@ def dedupe_republished_signal_events(signals: list[Signal]) -> list[Signal]:
     return out
 
 
-
 def _report_header(title: str, symbol: str, date_range: str) -> str:
     lines = [
         "",
@@ -233,36 +232,23 @@ def generate_report(
     # or entry-leg submission failure) and only the exit leg traded.
     _REVERSE_INTENTS = {"REVERSE_LONG_TO_SHORT", "REVERSE_SHORT_TO_LONG"}
     _ENTRY_INTENTS = {"ENTRY_LONG", "ENTRY_SHORT"}
-    reversal_records = [
-        r for r in records
-        if getattr(r, "trading_intent", "") in _REVERSE_INTENTS
-    ]
+    reversal_records = [r for r in records if getattr(r, "trading_intent", "") in _REVERSE_INTENTS]
     entry_correlation_ids = {
-        r.correlation_id for r in records
-        if getattr(r, "trading_intent", "") in _ENTRY_INTENTS
+        r.correlation_id for r in records if getattr(r, "trading_intent", "") in _ENTRY_INTENTS
     }
     reversal_alerts = [
-        a for a in recorder.of_type(Alert)
-        if a.alert_name == "reversal_edge_insufficient"
+        a for a in recorder.of_type(Alert) if a.alert_name == "reversal_edge_insufficient"
     ]
     guard_order_ids = {
-        a.context.get("order_id")
-        for a in reversal_alerts
-        if a.context.get("order_id") is not None
+        a.context.get("order_id") for a in reversal_alerts if a.context.get("order_id") is not None
     }
     reversals_attempted = len(reversal_records)
-    reversals_full = sum(
-        1 for r in reversal_records
-        if r.correlation_id in entry_correlation_ids
-    )
+    reversals_full = sum(1 for r in reversal_records if r.correlation_id in entry_correlation_ids)
     reversals_flat_exit = reversals_attempted - reversals_full
-    reversals_edge_guard = sum(
-        1 for r in reversal_records if r.order_id in guard_order_ids
-    )
+    reversals_edge_guard = sum(1 for r in reversal_records if r.order_id in guard_order_ids)
     exit_realized = [r.realized_pnl for r in reversal_records]
     avg_exit_realized = (
-        sum(exit_realized, Decimal("0")) / len(exit_realized)
-        if exit_realized else Decimal("0")
+        sum(exit_realized, Decimal("0")) / len(exit_realized) if exit_realized else Decimal("0")
     )
     worst_exit_realized = min(exit_realized) if exit_realized else Decimal("0")
 
@@ -291,7 +277,8 @@ def generate_report(
             max_exposure = total_exposure
             max_exposure_pct = (
                 float(total_exposure / current_equity * Decimal("100"))
-                if current_equity != 0 else 0.0
+                if current_equity != 0
+                else 0.0
             )
 
     # Drawdown: track live NAV from position updates.
@@ -315,10 +302,7 @@ def generate_report(
         dd = current_equity - peak_equity
         if dd < max_drawdown:
             max_drawdown = dd
-    max_dd_pct = (
-        float(max_drawdown / peak_equity * Decimal("100"))
-        if peak_equity != 0 else 0.0
-    )
+    max_dd_pct = float(max_drawdown / peak_equity * Decimal("100")) if peak_equity != 0 else 0.0
 
     kill_switch = orchestrator.kill_switch
     ks_status = (
@@ -356,8 +340,7 @@ def generate_report(
             tick_metrics = tick_latency_events
         else:
             tick_metrics = [
-                e for e in recorder.of_type(MetricEvent)
-                if e.name == "tick_to_decision_latency_ns"
+                e for e in recorder.of_type(MetricEvent) if e.name == "tick_to_decision_latency_ns"
             ]
         if tick_metrics:
             values = sorted(e.value for e in tick_metrics)
@@ -381,29 +364,26 @@ def generate_report(
                     "symbol": trace_entry.symbol,
                     "exchange_ts_ns": trace_entry.exchange_timestamp_ns,
                     "is_first_5_pct": (
-                        tick_idx is not None
-                        and tick_idx <= max(1, quote_count // 20)
+                        tick_idx is not None and tick_idx <= max(1, quote_count // 20)
                     ),
                 }
             else:
                 quotes = recorder.of_type(NBBOQuote)
                 quote_by_cid = {q.correlation_id: q for q in quotes}
                 originating = quote_by_cid.get(spike.correlation_id)
-                tick_index_by_cid = {
-                    q.correlation_id: i for i, q in enumerate(quotes, start=1)
-                }
+                tick_index_by_cid = {q.correlation_id: i for i, q in enumerate(quotes, start=1)}
                 tick_idx = tick_index_by_cid.get(spike.correlation_id)
                 max_tick_meta = {
-                    "value_ns":          spike.value,
-                    "correlation_id":    spike.correlation_id,
-                    "kernel_sequence":   spike.sequence,
-                    "tick_index":        tick_idx,
-                    "n_total_ticks":     quote_count,
-                    "symbol":            originating.symbol if originating else "?",
-                    "exchange_ts_ns":    (originating.exchange_timestamp_ns
-                                          if originating else None),
-                    "is_first_5_pct":    (tick_idx is not None
-                                          and tick_idx <= max(1, quote_count // 20)),
+                    "value_ns": spike.value,
+                    "correlation_id": spike.correlation_id,
+                    "kernel_sequence": spike.sequence,
+                    "tick_index": tick_idx,
+                    "n_total_ticks": quote_count,
+                    "symbol": originating.symbol if originating else "?",
+                    "exchange_ts_ns": (originating.exchange_timestamp_ns if originating else None),
+                    "is_first_5_pct": (
+                        tick_idx is not None and tick_idx <= max(1, quote_count // 20)
+                    ),
                 }
 
     # ── Assemble report ──────────────────────────────────────────
@@ -483,10 +463,12 @@ def generate_report(
     lines.append(_kv("Reversals", ""))
     lines.append(_sub_kv("Attempted", f"{reversals_attempted}"))
     lines.append(_sub_kv("Executed (full)", f"{reversals_full}"))
-    lines.append(_sub_kv(
-        "Flat-exit only",
-        f"{reversals_flat_exit}  ({reversals_edge_guard} edge-guard)",
-    ))
+    lines.append(
+        _sub_kv(
+            "Flat-exit only",
+            f"{reversals_flat_exit}  ({reversals_edge_guard} edge-guard)",
+        )
+    )
     lines.append(_sub_kv("Avg exit-leg realized", _money(avg_exit_realized)))
     lines.append(_sub_kv("Worst exit-leg realized", _money(worst_exit_realized)))
 
@@ -513,26 +495,32 @@ def generate_report(
         ts_str = ""
         if isinstance(ts_ns, int):
             from datetime import datetime
+
             dt = datetime.fromtimestamp(ts_ns / 1e9, tz=_TZ_ET)
             ts_str = dt.strftime("%H:%M:%S.%f")[:-3] + " ET"
         warmup_flag = "  [warm-up]" if max_tick_meta.get("is_first_5_pct") else ""
-        lines.append(_sub_kv(
-            "spike origin",
-            f"{max_tick_meta['symbol']} tick "
-            f"#{max_tick_meta['tick_index']}/{max_tick_meta['n_total_ticks']:,}"
-            + (f" @ {ts_str}" if ts_str else "")
-            + warmup_flag,
-        ))
-        lines.append(_sub_kv(
-            "correlation_id",
-            str(max_tick_meta["correlation_id"]),
-        ))
+        lines.append(
+            _sub_kv(
+                "spike origin",
+                f"{max_tick_meta['symbol']} tick "
+                f"#{max_tick_meta['tick_index']}/{max_tick_meta['n_total_ticks']:,}"
+                + (f" @ {ts_str}" if ts_str else "")
+                + warmup_flag,
+            )
+        )
+        lines.append(
+            _sub_kv(
+                "correlation_id",
+                str(max_tick_meta["correlation_id"]),
+            )
+        )
     lines.append(_kv("Avg feature compute", _ns_to_ms(avg_feat_ns)))
     lines.append(_kv("Avg signal evaluate", _ns_to_ms(avg_sig_ns)))
 
     # TCA (transaction cost analysis)
     if records:
         from feelies.forensics.decay_detector import DecayDetector
+
         tca = DecayDetector().analyze_fills(records)
 
         lines.append(_divider())
@@ -572,16 +560,18 @@ def generate_report(
     parity_hash = compute_combined_parity_hash(pnl_hash, config_hash)
     resolved_data_version = data_version if data_version is not None else "unknown"
     artifact_id = compute_artifact_id(
-        orchestrator, config, data_version=resolved_data_version,
+        orchestrator,
+        config,
+        data_version=resolved_data_version,
     )
     lines.append(_divider())
     lines.append(format_section("Parity"))
     lines.append(_kv("Trade count", f"{len(records)}"))
     lines.append(_kv("pnl_hash    (trades)", pnl_hash))
-    lines.append(_kv("config_hash (cfg)",    config_hash))
-    lines.append(_kv("parity_hash (both)",   parity_hash))
-    lines.append(_kv("engine_version",       ENGINE_VERSION))
-    lines.append(_kv("data_version",         resolved_data_version))
+    lines.append(_kv("config_hash (cfg)", config_hash))
+    lines.append(_kv("parity_hash (both)", parity_hash))
+    lines.append(_kv("engine_version", ENGINE_VERSION))
+    lines.append(_kv("data_version", resolved_data_version))
     lines.append(_kv("artifact_id (B-PROMO-04)", artifact_id))
 
     lines.append("")
@@ -755,5 +745,3 @@ def run_verification(
     )
 
     return results
-
-

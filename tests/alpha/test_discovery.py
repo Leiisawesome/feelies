@@ -77,7 +77,6 @@ def _write_spec(directory: Path, filename: str, alpha_id: str) -> Path:
 
 
 class TestDiscoverAlphaSpecs:
-
     def test_finds_alpha_yaml_files(self, tmp_path: Path) -> None:
         _write_spec(tmp_path, "a.alpha.yaml", "alpha_a")
         _write_spec(tmp_path, "b.alpha.yaml", "alpha_b")
@@ -119,9 +118,7 @@ class TestDiscoverAlphaSpecs:
         names = [s.name for s in specs]
         assert names == sorted(names)
 
-    def test_excludes_research_subtree_from_production_discovery(
-        self, tmp_path: Path
-    ) -> None:
+    def test_excludes_research_subtree_from_production_discovery(self, tmp_path: Path) -> None:
         _write_spec(tmp_path, "shipped.alpha.yaml", "shipped")
         research_dir = tmp_path / "research" / "nested"
         research_dir.mkdir(parents=True)
@@ -135,7 +132,6 @@ class TestDiscoverAlphaSpecs:
 
 
 class TestLoadAndRegister:
-
     def test_loads_and_registers_multiple_alphas(self, tmp_path: Path) -> None:
         _write_spec(tmp_path, "alpha_a.alpha.yaml", "alpha_a")
         _write_spec(tmp_path, "alpha_b.alpha.yaml", "alpha_b")
@@ -148,9 +144,7 @@ class TestLoadAndRegister:
         assert "alpha_a" in registry
         assert "alpha_b" in registry
 
-    def test_continues_on_error_for_individual_alphas(
-        self, tmp_path: Path
-    ) -> None:
+    def test_continues_on_error_for_individual_alphas(self, tmp_path: Path) -> None:
         _write_spec(tmp_path, "good.alpha.yaml", "good_alpha")
         bad_file = tmp_path / "bad.alpha.yaml"
         bad_file.write_text(INVALID_ALPHA_SPEC_YAML, encoding="utf-8")

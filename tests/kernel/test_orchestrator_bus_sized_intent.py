@@ -105,16 +105,18 @@ class _ScriptedOrderRouter:
 
     def submit(self, request: OrderRequest) -> None:
         self.submitted.append(request)
-        self._pending_acks.append(OrderAck(
-            timestamp_ns=request.timestamp_ns + 1,
-            correlation_id=request.correlation_id,
-            sequence=request.sequence,
-            order_id=request.order_id,
-            symbol=request.symbol,
-            status=OrderAckStatus.FILLED,
-            filled_quantity=request.quantity,
-            fill_price=self._submit_fill_price,
-        ))
+        self._pending_acks.append(
+            OrderAck(
+                timestamp_ns=request.timestamp_ns + 1,
+                correlation_id=request.correlation_id,
+                sequence=request.sequence,
+                order_id=request.order_id,
+                symbol=request.symbol,
+                status=OrderAckStatus.FILLED,
+                filled_quantity=request.quantity,
+                fill_price=self._submit_fill_price,
+            )
+        )
 
     def poll_acks(self) -> list[OrderAck]:
         acks = list(self._pending_acks)
@@ -263,11 +265,14 @@ def _build_orchestrator(
         clock=clock,
         bus=bus,
         backend=backend,
-        risk_engine=risk_engine or BasicRiskEngine(RiskConfig(
-            account_equity=account_equity,
-            max_position_per_symbol=10_000_000,
-            max_gross_exposure_pct=200.0,
-        )),
+        risk_engine=risk_engine
+        or BasicRiskEngine(
+            RiskConfig(
+                account_equity=account_equity,
+                max_position_per_symbol=10_000_000,
+                max_gross_exposure_pct=200.0,
+            )
+        ),
         position_store=pos,
         event_log=InMemoryEventLog(),
         metric_collector=_NoOpMetricCollector(),
@@ -366,11 +371,13 @@ class TestBusDrivenSizedIntentProducesOrders:
         orch = _build_orchestrator(clock, bus=bus, position_store=positions)
         captured = _capture_orders(bus)
 
-        intent = _make_intent(targets={
-            "AAPL": 15_000.0,
-            "MSFT": 30_000.0,
-            "NVDA": 50_000.0,
-        })
+        intent = _make_intent(
+            targets={
+                "AAPL": 15_000.0,
+                "MSFT": 30_000.0,
+                "NVDA": 50_000.0,
+            }
+        )
 
         _boot_to_backtest(orch)
         bus.publish(intent)
@@ -427,7 +434,10 @@ class TestBusDrivenSizedIntentProducesOrders:
         _seed_position(positions, "AAPL", 0, "150.00")
         router = _ScriptedOrderRouter()
         orch = _build_orchestrator(
-            clock, bus=bus, position_store=positions, order_router=router,
+            clock,
+            bus=bus,
+            position_store=positions,
+            order_router=router,
         )
         _boot_to_backtest(orch)
 
@@ -454,10 +464,7 @@ class TestBusDrivenSizedIntentProducesOrders:
         )
 
         assert router.submitted == []
-        assert any(
-            a.alert_name == "portfolio_leg_skipped_pending_order"
-            for a in alerts
-        )
+        assert any(a.alert_name == "portfolio_leg_skipped_pending_order" for a in alerts)
 
     def test_intent_runs_outside_per_tick_micro_sm_walk(self) -> None:
         """Intent dispatch does not advance the SIGNAL-reserved M5..M10 walk.
@@ -497,10 +504,14 @@ class TestDeterminism:
         _seed_position(positions_b, "MSFT", 0, "300.00")
 
         orch_a = _build_orchestrator(
-            clock_a, bus=bus_a, position_store=positions_a,
+            clock_a,
+            bus=bus_a,
+            position_store=positions_a,
         )
         orch_b = _build_orchestrator(
-            clock_b, bus=bus_b, position_store=positions_b,
+            clock_b,
+            bus=bus_b,
+            position_store=positions_b,
         )
         captured_a = _capture_orders(bus_a)
         captured_b = _capture_orders(bus_b)
@@ -513,9 +524,7 @@ class TestDeterminism:
 
         _ = orch_a, orch_b
         assert len(captured_a) == 2 == len(captured_b)
-        assert [o.order_id for o in captured_a] == [
-            o.order_id for o in captured_b
-        ]
+        assert [o.order_id for o in captured_a] == [o.order_id for o in captured_b]
 
 
 class TestPerLegVeto:
@@ -530,22 +539,29 @@ class TestPerLegVeto:
         _seed_position(positions, "MSFT", 0, "300.00")
         _seed_position(positions, "NVDA", 0, "500.00")
 
-        risk = BasicRiskEngine(RiskConfig(
-            account_equity=Decimal("1000000"),
-            max_position_per_symbol=200,
-            max_gross_exposure_pct=200.0,
-        ))
+        risk = BasicRiskEngine(
+            RiskConfig(
+                account_equity=Decimal("1000000"),
+                max_position_per_symbol=200,
+                max_gross_exposure_pct=200.0,
+            )
+        )
 
         orch = _build_orchestrator(
-            clock, bus=bus, risk_engine=risk, position_store=positions,
+            clock,
+            bus=bus,
+            risk_engine=risk,
+            position_store=positions,
         )
         captured = _capture_orders(bus)
 
-        intent = _make_intent(targets={
-            "AAPL": 15_000.0,
-            "MSFT": 30_000.0,
-            "NVDA": 500_000.0,
-        })
+        intent = _make_intent(
+            targets={
+                "AAPL": 15_000.0,
+                "MSFT": 30_000.0,
+                "NVDA": 500_000.0,
+            }
+        )
 
         _boot_to_backtest(orch)
         bus.publish(intent)
@@ -569,7 +585,8 @@ class TestFillReconciliation:
 
         orch = _build_orchestrator(clock, bus=bus, position_store=positions)
         BacktestOrderRouter.on_quote(
-            orch._backend.order_router, _make_quote(),
+            orch._backend.order_router,
+            _make_quote(),
         )
 
         ack_capture = _capture_acks(bus)
@@ -671,7 +688,8 @@ class TestPortfolioCoexistsWithStandaloneSignal:
 
         orch = _build_orchestrator(clock, bus=bus, position_store=positions)
         BacktestOrderRouter.on_quote(
-            orch._backend.order_router, _make_quote(),
+            orch._backend.order_router,
+            _make_quote(),
         )
 
         captured = _capture_orders(bus)
@@ -702,9 +720,7 @@ class TestPortfolioCoexistsWithStandaloneSignal:
         orch._process_tick(_make_quote())
 
         order_symbols = sorted(o.symbol for o in captured)
-        assert "MSFT" in order_symbols, (
-            "PORTFOLIO intent for MSFT must produce an OrderRequest"
-        )
+        assert "MSFT" in order_symbols, "PORTFOLIO intent for MSFT must produce an OrderRequest"
 
     def test_portfolio_fill_completes_before_signal_gate_checks(self) -> None:
         clock = SimulatedClock(start_ns=1000)
@@ -713,11 +729,13 @@ class TestPortfolioCoexistsWithStandaloneSignal:
         _seed_position(positions, "AAPL", 0, "150.00")
         _seed_position(positions, "MSFT", 0, "300.00")
 
-        risk = _RecordingGateSnapshotRiskEngine(RiskConfig(
-            account_equity=Decimal("1000000"),
-            max_position_per_symbol=10_000_000,
-            max_gross_exposure_pct=200.0,
-        ))
+        risk = _RecordingGateSnapshotRiskEngine(
+            RiskConfig(
+                account_equity=Decimal("1000000"),
+                max_position_per_symbol=10_000_000,
+                max_gross_exposure_pct=200.0,
+            )
+        )
         router = _ScriptedOrderRouter()
         orch = _build_orchestrator(
             clock,
@@ -757,7 +775,9 @@ class TestPortfolioCoexistsWithStandaloneSignal:
         assert risk.signal_gate_snapshots == [{"AAPL": 0, "MSFT": 100}]
         assert risk.order_gate_snapshots == [{"AAPL": 0, "MSFT": 100}]
 
-    def test_portfolio_orders_dispatch_during_horizon_tick_fanout_before_feature_compute(self) -> None:
+    def test_portfolio_orders_dispatch_during_horizon_tick_fanout_before_feature_compute(
+        self,
+    ) -> None:
         clock = SimulatedClock(start_ns=1000)
         bus = EventBus()
         positions = MemoryPositionStore()
@@ -794,12 +814,14 @@ class TestPortfolioCoexistsWithStandaloneSignal:
             position_lookup=None,
         )
         portfolio_alpha: PortfolioAlpha = _FixedTargetPortfolioAlpha()
-        engine.register(RegisteredPortfolioAlpha(
-            alpha_id=portfolio_alpha.alpha_id,
-            horizon_seconds=portfolio_alpha.horizon_seconds,
-            alpha=portfolio_alpha,
-            params={},
-        ))
+        engine.register(
+            RegisteredPortfolioAlpha(
+                alpha_id=portfolio_alpha.alpha_id,
+                horizon_seconds=portfolio_alpha.horizon_seconds,
+                alpha=portfolio_alpha,
+                params={},
+            )
+        )
         engine.attach()
 
         orch = Orchestrator(
@@ -810,11 +832,13 @@ class TestPortfolioCoexistsWithStandaloneSignal:
                 order_router=_ScriptedOrderRouter(),
                 mode="BACKTEST",
             ),
-            risk_engine=BasicRiskEngine(RiskConfig(
-                account_equity=Decimal("1000000"),
-                max_position_per_symbol=10_000_000,
-                max_gross_exposure_pct=200.0,
-            )),
+            risk_engine=BasicRiskEngine(
+                RiskConfig(
+                    account_equity=Decimal("1000000"),
+                    max_position_per_symbol=10_000_000,
+                    max_gross_exposure_pct=200.0,
+                )
+            ),
             position_store=positions,
             event_log=InMemoryEventLog(),
             metric_collector=_NoOpMetricCollector(),
@@ -850,14 +874,16 @@ class TestFiltering:
         orch = _build_orchestrator(clock, bus=bus)
         captured = _capture_orders(bus)
 
-        bus.publish(RiskVerdict(
-            timestamp_ns=1000,
-            correlation_id="cid:0",
-            sequence=0,
-            symbol="AAPL",
-            action=RiskAction.ALLOW,
-            reason="unrelated",
-        ))
+        bus.publish(
+            RiskVerdict(
+                timestamp_ns=1000,
+                correlation_id="cid:0",
+                sequence=0,
+                symbol="AAPL",
+                action=RiskAction.ALLOW,
+                reason="unrelated",
+            )
+        )
 
         _ = orch
         assert captured == []

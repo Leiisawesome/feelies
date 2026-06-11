@@ -31,9 +31,7 @@ def clock() -> SimulatedClock:
 
 
 class TestSignalGateTransitions:
-    def test_horizon_aggregate_to_signal_gate_legal(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_horizon_aggregate_to_signal_gate_legal(self, clock: SimulatedClock) -> None:
         sm = create_micro_state_machine(clock)
         for target, trig in [
             (MicroState.MARKET_EVENT_RECEIVED, "tick_arrived"),
@@ -46,9 +44,7 @@ class TestSignalGateTransitions:
             sm.transition(target, trigger=trig)
         assert sm.state == MicroState.SIGNAL_GATE
 
-    def test_signal_gate_to_feature_compute(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_signal_gate_to_feature_compute(self, clock: SimulatedClock) -> None:
         sm = create_micro_state_machine(clock)
         for target, trig in [
             (MicroState.MARKET_EVENT_RECEIVED, "tick_arrived"),
@@ -64,9 +60,7 @@ class TestSignalGateTransitions:
 
 
 class TestPhase2FastPathPreserved:
-    def test_horizon_aggregate_can_still_skip_signal_gate(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_horizon_aggregate_can_still_skip_signal_gate(self, clock: SimulatedClock) -> None:
         sm = create_micro_state_machine(clock)
         for target, trig in [
             (MicroState.MARKET_EVENT_RECEIVED, "tick_arrived"),
@@ -81,9 +75,7 @@ class TestPhase2FastPathPreserved:
 
 
 class TestSignalGateIsolation:
-    def test_signal_gate_unreachable_from_state_update(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_signal_gate_unreachable_from_state_update(self, clock: SimulatedClock) -> None:
         sm = create_micro_state_machine(clock)
         sm.transition(MicroState.MARKET_EVENT_RECEIVED, trigger="tick_arrived")
         sm.transition(MicroState.STATE_UPDATE, trigger="event_logged")
@@ -106,9 +98,7 @@ class TestSignalGateIsolation:
         with pytest.raises(IllegalTransition):
             sm.transition(MicroState.HORIZON_AGGREGATE, trigger="cant_loop_back")
 
-    def test_signal_gate_cannot_skip_to_signal_evaluate(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_signal_gate_cannot_skip_to_signal_evaluate(self, clock: SimulatedClock) -> None:
         sm = create_micro_state_machine(clock)
         for target, trig in [
             (MicroState.MARKET_EVENT_RECEIVED, "tick_arrived"),
@@ -121,14 +111,13 @@ class TestSignalGateIsolation:
             sm.transition(target, trigger=trig)
         with pytest.raises(IllegalTransition):
             sm.transition(
-                MicroState.SIGNAL_EVALUATE, trigger="cant_skip_features",
+                MicroState.SIGNAL_EVALUATE,
+                trigger="cant_skip_features",
             )
 
 
 class TestSignalGateFullPipeline:
-    def test_full_pipeline_with_signal_gate_reaches_waiting(
-        self, clock: SimulatedClock
-    ) -> None:
+    def test_full_pipeline_with_signal_gate_reaches_waiting(self, clock: SimulatedClock) -> None:
         sm = create_micro_state_machine(clock)
         for target, trig in [
             (MicroState.MARKET_EVENT_RECEIVED, "tick_arrived"),

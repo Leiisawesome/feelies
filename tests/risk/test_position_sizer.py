@@ -98,8 +98,7 @@ class TestRegimeFactor:
         # caps it at 1.0.
         sizer = BudgetBasedSizer(
             regime_engine=regime,
-            regime_factors={"normal": 2.0, "vol_breakout": 0.5,
-                            "compression_clustering": 0.75},
+            regime_factors={"normal": 2.0, "vol_breakout": 0.5, "compression_clustering": 0.75},
         )
         qty = sizer.compute_target_quantity(
             _make_signal(strength=1.0),

@@ -125,11 +125,7 @@ class HorizonAggregator:
         self,
         *,
         bus: EventBus,
-        horizon_features: (
-            Sequence[HorizonFeature]
-            | Mapping[str, HorizonFeature]
-            | None
-        ) = None,
+        horizon_features: (Sequence[HorizonFeature] | Mapping[str, HorizonFeature] | None) = None,
         symbols: frozenset[str],
         sensor_buffer_seconds: int,
         sequence_generator: SequenceGenerator,
@@ -138,9 +134,7 @@ class HorizonAggregator:
         feature_params: Mapping[str, Mapping[str, Any]] | None = None,
     ) -> None:
         if sensor_buffer_seconds <= 0:
-            raise ValueError(
-                f"sensor_buffer_seconds must be > 0, got {sensor_buffer_seconds}"
-            )
+            raise ValueError(f"sensor_buffer_seconds must be > 0, got {sensor_buffer_seconds}")
         # Normalise to a plain list of features.  Accept a Mapping for
         # backward compatibility (existing tests pass {key: feature});
         # the Mapping keys are ignored — feature.feature_id is used.
@@ -232,9 +226,9 @@ class HorizonAggregator:
         # by the determinism harness.  The 2× ``max(horizons)`` window
         # ensures a feature whose horizon equals the max still has a full
         # history on the boundary.
-        self._buffers: dict[
-            tuple[str, str, str], deque[tuple[int, SensorReading]]
-        ] = defaultdict(deque)
+        self._buffers: dict[tuple[str, str, str], deque[tuple[int, SensorReading]]] = defaultdict(
+            deque
+        )
 
         # Per-(feature_id, horizon_seconds, symbol) feature state owned
         # by the aggregator (mirrors the SensorRegistry per-symbol state
@@ -244,9 +238,9 @@ class HorizonAggregator:
         self._feature_state: dict[tuple[str, int, str], dict[str, Any]] = {}
         for feature in self._features_sorted:
             for symbol in self._symbols_sorted:
-                self._feature_state[
-                    (feature.feature_id, feature.horizon_seconds, symbol)
-                ] = feature.initial_state()
+                self._feature_state[(feature.feature_id, feature.horizon_seconds, symbol)] = (
+                    feature.initial_state()
+                )
 
         # Reverse index sensor_id -> features that consume it, built once
         # at construction in ``_features_sorted`` order.  ``_on_sensor_reading``
@@ -408,9 +402,7 @@ class HorizonAggregator:
                 params=self._feature_params.get(feature.feature_id, {}),
             )
 
-    def _on_horizon_tick(
-        self, tick: HorizonTick
-    ) -> tuple[HorizonFeatureSnapshot, ...]:
+    def _on_horizon_tick(self, tick: HorizonTick) -> tuple[HorizonFeatureSnapshot, ...]:
         # Universe ticks fan out across every symbol; symbol-scoped
         # ticks emit a single snapshot for that one symbol.
         # H1 / M3: the scheduler emits both per-symbol SYMBOL ticks and
@@ -432,17 +424,14 @@ class HorizonAggregator:
         horizon = tick.horizon_seconds
         if tick.scope == "SYMBOL":
             assert tick.symbol is not None
-            if (
-                self._last_snapshot_boundary.get((horizon, tick.symbol), -1)
-                >= boundary_idx
-            ):
+            if self._last_snapshot_boundary.get((horizon, tick.symbol), -1) >= boundary_idx:
                 return ()
             target_symbols: tuple[str, ...] = (tick.symbol,)
         else:
             target_symbols = tuple(
-                sym for sym in self._symbols_sorted
-                if self._last_snapshot_boundary.get((horizon, sym), -1)
-                < boundary_idx
+                sym
+                for sym in self._symbols_sorted
+                if self._last_snapshot_boundary.get((horizon, sym), -1) < boundary_idx
             )
 
         snapshots: list[HorizonFeatureSnapshot] = []
@@ -451,9 +440,7 @@ class HorizonAggregator:
             # Record that this (horizon, symbol) has been snapshotted at
             # this boundary so a later UNIVERSE tick (or an out-of-order
             # SYMBOL tick) cannot produce a duplicate.
-            self._last_snapshot_boundary[
-                (tick.horizon_seconds, symbol)
-            ] = tick.boundary_index
+            self._last_snapshot_boundary[(tick.horizon_seconds, symbol)] = tick.boundary_index
             self._bus.publish(snapshot)
             snapshots.append(snapshot)
             if self._metric_collector is not None:
@@ -547,9 +534,7 @@ class HorizonAggregator:
 
     # ── Monitoring (plan §4.5) ───────────────────────────────────────
 
-    def _emit_snapshot_metric(
-        self, *, snapshot: HorizonFeatureSnapshot
-    ) -> None:
+    def _emit_snapshot_metric(self, *, snapshot: HorizonFeatureSnapshot) -> None:
         """Emit ``feelies.feature.snapshot.stale_fraction`` for one snapshot.
 
         Gauge in ``[0, 1]`` reporting the fraction of features whose
@@ -573,21 +558,25 @@ class HorizonAggregator:
             exchange_timestamp_ns=snapshot.timestamp_ns,
             sequence=seq,
         )
-        self._metric_collector.record(MetricEvent(
-            timestamp_ns=snapshot.timestamp_ns,
-            correlation_id=cid,
-            sequence=seq,
-            source_layer="FEATURE",
-            layer="feature",
-            name="feelies.feature.snapshot.stale_fraction",
-            value=float(fraction),
-            metric_type=MetricType.GAUGE,
-            tags={"horizon_seconds": str(snapshot.horizon_seconds)},
-        ))
+        self._metric_collector.record(
+            MetricEvent(
+                timestamp_ns=snapshot.timestamp_ns,
+                correlation_id=cid,
+                sequence=seq,
+                source_layer="FEATURE",
+                layer="feature",
+                name="feelies.feature.snapshot.stale_fraction",
+                value=float(fraction),
+                metric_type=MetricType.GAUGE,
+                tags={"horizon_seconds": str(snapshot.horizon_seconds)},
+            )
+        )
 
     # ── Introspection helpers (used by tests / forensics) ────────────
 
-    def buffer_size(self, *, symbol: str, sensor_id: str, sensor_version: str | None = None) -> int:
+    def buffer_size(
+        self, *, symbol: str, sensor_id: str, sensor_version: str | None = None
+    ) -> int:
         """Number of readings currently retained for ``(symbol, sensor_id[, version])``.
 
         When ``sensor_version`` is ``None`` (default), returns the total

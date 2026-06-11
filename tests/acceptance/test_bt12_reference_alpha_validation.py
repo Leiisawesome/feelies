@@ -124,9 +124,7 @@ def test_paper_to_live_gate_accepts_computed_cpcv_and_dsr(alpha_id: str) -> None
         [_passing_paper_window(), cpcv, dsr],
         GateThresholds(),
     )
-    assert errors == [], (
-        f"{alpha_id!r}: PAPER→LIVE gate rejected post-fix evidence: {errors}"
-    )
+    assert errors == [], f"{alpha_id!r}: PAPER→LIVE gate rejected post-fix evidence: {errors}"
 
 
 @pytest.mark.parametrize("alpha_id", _REFERENCE_SIGNAL_ALPHAS)

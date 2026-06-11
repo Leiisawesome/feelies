@@ -146,9 +146,7 @@ class EventCalendar:
         seen: set[str] = set()
         for w in self.windows:
             if w.window_id in seen:
-                raise ValueError(
-                    f"duplicate window_id {w.window_id!r} in calendar"
-                )
+                raise ValueError(f"duplicate window_id {w.window_id!r} in calendar")
             seen.add(w.window_id)
 
     def windows_active_at(self, ts_ns: int) -> tuple[CalendarWindow, ...]:
@@ -180,7 +178,10 @@ class EventCalendar:
             "windows": [w.to_canonical_dict() for w in self.windows],
         }
         encoded = json.dumps(
-            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
         ).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
@@ -221,12 +222,12 @@ def _et_clock_to_ns(session_date: date, clock_str: str) -> int:
 
 
 def _parse_window(
-    raw: Mapping[str, Any], *, session_date: date,
+    raw: Mapping[str, Any],
+    *,
+    session_date: date,
 ) -> CalendarWindow:
     if "window_id" not in raw or "kind" not in raw:
-        raise ValueError(
-            f"calendar window missing required key (window_id, kind): {raw!r}"
-        )
+        raise ValueError(f"calendar window missing required key (window_id, kind): {raw!r}")
     kind_raw = raw["kind"]
     try:
         kind = WindowKind(kind_raw)
@@ -251,9 +252,7 @@ def _parse_window(
     flow_dir = float(raw.get("flow_direction_prior", 0.0))
     meta_raw = raw.get("meta", {})
     if not isinstance(meta_raw, Mapping):
-        raise ValueError(
-            f"window {raw['window_id']!r}: meta must be a mapping"
-        )
+        raise ValueError(f"window {raw['window_id']!r}: meta must be a mapping")
     return CalendarWindow(
         window_id=str(raw["window_id"]),
         kind=kind,
@@ -302,19 +301,14 @@ def load_event_calendar(
     if not isinstance(raw, Mapping):
         raise ValueError(f"{p}: top-level must be a mapping")
     if "session_date" not in raw or "windows" not in raw:
-        raise ValueError(
-            f"{p}: top-level keys 'session_date' and 'windows' are required"
-        )
+        raise ValueError(f"{p}: top-level keys 'session_date' and 'windows' are required")
     sd_raw = raw["session_date"]
     if isinstance(sd_raw, date):
         session_date = sd_raw
     else:
         session_date = date.fromisoformat(str(sd_raw))
 
-    if (
-        expected_session_date is not None
-        and session_date != expected_session_date
-    ):
+    if expected_session_date is not None and session_date != expected_session_date:
         raise ValueError(
             f"{p}: calendar session_date={session_date.isoformat()} does "
             f"not match expected {expected_session_date.isoformat()}. "

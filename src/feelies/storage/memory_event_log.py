@@ -109,11 +109,13 @@ class InMemoryEventLog:
     ) -> Iterator[Event]:
         with self._lock:
             start_idx = bisect.bisect_left(
-                _SequenceKey(self._events), start_sequence,
+                _SequenceKey(self._events),
+                start_sequence,
             )
             if end_sequence is not None:
                 end_idx = bisect.bisect_right(
-                    _SequenceKey(self._events), end_sequence,
+                    _SequenceKey(self._events),
+                    end_sequence,
                 )
                 snapshot = self._events[start_idx:end_idx]
             else:

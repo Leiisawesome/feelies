@@ -132,8 +132,7 @@ class HazardExitController:
             return
         if not self._policies:
             _logger.debug(
-                "HazardExitController.attach() — no policies registered; "
-                "skipping bus subscription"
+                "HazardExitController.attach() — no policies registered; skipping bus subscription"
             )
             return
         self._bus.subscribe(RegimeHazardSpike, self._on_spike)
@@ -219,9 +218,7 @@ class HazardExitController:
         side = Side.SELL if position.quantity > 0 else Side.BUY
         quantity = abs(position.quantity)
 
-        order_id = derive_order_id(
-            f"{correlation_id}:{trigger_ts_ns}:{symbol}:{reason}"
-        )
+        order_id = derive_order_id(f"{correlation_id}:{trigger_ts_ns}:{symbol}:{reason}")
 
         order = OrderRequest(
             timestamp_ns=trigger_ts_ns,
@@ -239,9 +236,12 @@ class HazardExitController:
         self._emitted_for_episode.add(key)
         self._bus.publish(order)
         _logger.info(
-            "HazardExitController emitted %s exit for %s (strategy=%s, "
-            "qty=%d, side=%s)",
-            reason, symbol, strategy_id, quantity, side.name,
+            "HazardExitController emitted %s exit for %s (strategy=%s, qty=%d, side=%s)",
+            reason,
+            symbol,
+            strategy_id,
+            quantity,
+            side.name,
         )
 
     def _clear_episode_if_flat(

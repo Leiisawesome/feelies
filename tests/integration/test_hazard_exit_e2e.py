@@ -72,26 +72,33 @@ def _fixture_states() -> list[RegimeState]:
     determinism test — keeps this integration's spike stream in lock-
     step with the parity-hashed reference (Inv-5)."""
     return [
-        _state(posteriors=(0.05, 0.95, 0.00),
-               dominant_idx=1, sequence=0, timestamp_ns=1_000_000_000),
+        _state(
+            posteriors=(0.05, 0.95, 0.00), dominant_idx=1, sequence=0, timestamp_ns=1_000_000_000
+        ),
         # Quiet decay below the floor — spike(1) fires.
-        _state(posteriors=(0.40, 0.60, 0.00),
-               dominant_idx=1, sequence=1, timestamp_ns=2_000_000_000),
+        _state(
+            posteriors=(0.40, 0.60, 0.00), dominant_idx=1, sequence=1, timestamp_ns=2_000_000_000
+        ),
         # Same departure episode — suppressed.
-        _state(posteriors=(0.50, 0.50, 0.00),
-               dominant_idx=1, sequence=2, timestamp_ns=3_000_000_000),
+        _state(
+            posteriors=(0.50, 0.50, 0.00), dominant_idx=1, sequence=2, timestamp_ns=3_000_000_000
+        ),
         # ``normal`` recovers above the floor — re-arm.
-        _state(posteriors=(0.10, 0.85, 0.05),
-               dominant_idx=1, sequence=3, timestamp_ns=4_000_000_000),
+        _state(
+            posteriors=(0.10, 0.85, 0.05), dominant_idx=1, sequence=3, timestamp_ns=4_000_000_000
+        ),
         # Hard flip to vol_breakout — spike(2) fires.
-        _state(posteriors=(0.05, 0.20, 0.75),
-               dominant_idx=2, sequence=4, timestamp_ns=5_000_000_000),
+        _state(
+            posteriors=(0.05, 0.20, 0.75), dominant_idx=2, sequence=4, timestamp_ns=5_000_000_000
+        ),
         # vol_breakout decays below floor — spike(3) fires.
-        _state(posteriors=(0.30, 0.45, 0.25),
-               dominant_idx=1, sequence=5, timestamp_ns=6_000_000_000),
+        _state(
+            posteriors=(0.30, 0.45, 0.25), dominant_idx=1, sequence=5, timestamp_ns=6_000_000_000
+        ),
         # Quiet — no new spike.
-        _state(posteriors=(0.05, 0.95, 0.00),
-               dominant_idx=1, sequence=6, timestamp_ns=7_000_000_000),
+        _state(
+            posteriors=(0.05, 0.95, 0.00), dominant_idx=1, sequence=6, timestamp_ns=7_000_000_000
+        ),
     ]
 
 
@@ -180,11 +187,13 @@ def test_hazard_spike_closes_an_open_position() -> None:
     policy = HazardPolicy(
         strategy_id=_STRATEGY,
         hazard_score_threshold=0.30,  # The alpha's declared threshold.
-        min_age_seconds=1,            # Well below the spike-1 age.
+        min_age_seconds=1,  # Well below the spike-1 age.
         universe=(_SYMBOL,),
     )
     detector, _controller, captured = _wire(
-        bus=bus, position_store=store, policies=[policy],
+        bus=bus,
+        position_store=store,
+        policies=[policy],
     )
 
     spike_count = _drive(detector, bus, _fixture_states())
@@ -192,8 +201,7 @@ def test_hazard_spike_closes_an_open_position() -> None:
     assert spike_count == 3
 
     hazard_orders = [
-        o for o in captured
-        if isinstance(o, OrderRequest) and o.reason == "HAZARD_SPIKE"
+        o for o in captured if isinstance(o, OrderRequest) and o.reason == "HAZARD_SPIKE"
     ]
     assert len(hazard_orders) == 1, (
         "Exactly one HAZARD_SPIKE order is expected — the controller "
@@ -216,8 +224,11 @@ def test_hazard_spike_below_threshold_does_not_exit() -> None:
     bus = EventBus()
     store = MemoryPositionStore()
     _seed_long_position(
-        store, symbol=_SYMBOL, quantity=100,
-        price=Decimal("150.00"), opened_at_ns=0,
+        store,
+        symbol=_SYMBOL,
+        quantity=100,
+        price=Decimal("150.00"),
+        opened_at_ns=0,
     )
 
     # Set the threshold above the maximum hazard score the fixture
@@ -230,13 +241,14 @@ def test_hazard_spike_below_threshold_does_not_exit() -> None:
         universe=(_SYMBOL,),
     )
     detector, _controller, captured = _wire(
-        bus=bus, position_store=store, policies=[policy],
+        bus=bus,
+        position_store=store,
+        policies=[policy],
     )
     _drive(detector, bus, _fixture_states())
 
     hazard_orders = [
-        o for o in captured
-        if isinstance(o, OrderRequest) and o.reason == "HAZARD_SPIKE"
+        o for o in captured if isinstance(o, OrderRequest) and o.reason == "HAZARD_SPIKE"
     ]
     assert hazard_orders == []
 
@@ -251,7 +263,9 @@ def test_min_age_blocks_exit_until_position_seasons() -> None:
     # Open the position AFTER the spike timestamps so age is
     # effectively negative when the spike fires.
     _seed_long_position(
-        store, symbol=_SYMBOL, quantity=100,
+        store,
+        symbol=_SYMBOL,
+        quantity=100,
         price=Decimal("150.00"),
         opened_at_ns=10_000_000_000,  # 10 s — after the last fixture tick.
     )
@@ -263,17 +277,17 @@ def test_min_age_blocks_exit_until_position_seasons() -> None:
         universe=(_SYMBOL,),
     )
     detector, _controller, captured = _wire(
-        bus=bus, position_store=store, policies=[policy],
+        bus=bus,
+        position_store=store,
+        policies=[policy],
     )
     _drive(detector, bus, _fixture_states())
 
     hazard_orders = [
-        o for o in captured
-        if isinstance(o, OrderRequest) and o.reason == "HAZARD_SPIKE"
+        o for o in captured if isinstance(o, OrderRequest) and o.reason == "HAZARD_SPIKE"
     ]
     assert hazard_orders == [], (
-        "Position that hasn't aged past min_age_seconds must NOT be "
-        "closed by a hazard spike"
+        "Position that hasn't aged past min_age_seconds must NOT be closed by a hazard spike"
     )
 
 
@@ -292,13 +306,14 @@ def test_no_open_position_does_not_emit_order() -> None:
         universe=(_SYMBOL,),
     )
     detector, _controller, captured = _wire(
-        bus=bus, position_store=store, policies=[policy],
+        bus=bus,
+        position_store=store,
+        policies=[policy],
     )
     _drive(detector, bus, _fixture_states())
 
     hazard_orders = [
-        o for o in captured
-        if isinstance(o, OrderRequest) and o.reason == "HAZARD_SPIKE"
+        o for o in captured if isinstance(o, OrderRequest) and o.reason == "HAZARD_SPIKE"
     ]
     assert hazard_orders == []
 
@@ -310,8 +325,11 @@ def test_short_position_exits_via_buy_side() -> None:
     bus = EventBus()
     store = MemoryPositionStore()
     _seed_long_position(
-        store, symbol=_SYMBOL, quantity=-100,   # short
-        price=Decimal("150.00"), opened_at_ns=0,
+        store,
+        symbol=_SYMBOL,
+        quantity=-100,  # short
+        price=Decimal("150.00"),
+        opened_at_ns=0,
     )
 
     policy = HazardPolicy(
@@ -321,13 +339,14 @@ def test_short_position_exits_via_buy_side() -> None:
         universe=(_SYMBOL,),
     )
     detector, _controller, captured = _wire(
-        bus=bus, position_store=store, policies=[policy],
+        bus=bus,
+        position_store=store,
+        policies=[policy],
     )
     _drive(detector, bus, _fixture_states())
 
     hazard_orders = [
-        o for o in captured
-        if isinstance(o, OrderRequest) and o.reason == "HAZARD_SPIKE"
+        o for o in captured if isinstance(o, OrderRequest) and o.reason == "HAZARD_SPIKE"
     ]
     assert len(hazard_orders) == 1
     order = hazard_orders[0]
@@ -343,8 +362,11 @@ def test_universe_filter_excludes_off_universe_symbols() -> None:
     bus = EventBus()
     store = MemoryPositionStore()
     _seed_long_position(
-        store, symbol=_SYMBOL, quantity=100,
-        price=Decimal("150.00"), opened_at_ns=0,
+        store,
+        symbol=_SYMBOL,
+        quantity=100,
+        price=Decimal("150.00"),
+        opened_at_ns=0,
     )
 
     # Policy universe is MSFT only — AAPL spikes must be ignored.
@@ -355,15 +377,15 @@ def test_universe_filter_excludes_off_universe_symbols() -> None:
         universe=("MSFT",),
     )
     detector, _controller, captured = _wire(
-        bus=bus, position_store=store, policies=[policy],
+        bus=bus,
+        position_store=store,
+        policies=[policy],
     )
     _drive(detector, bus, _fixture_states())  # AAPL spikes only.
 
     hazard_orders = [
-        o for o in captured
-        if isinstance(o, OrderRequest) and o.reason == "HAZARD_SPIKE"
+        o for o in captured if isinstance(o, OrderRequest) and o.reason == "HAZARD_SPIKE"
     ]
     assert hazard_orders == [], (
-        "Spike on AAPL must not trigger an exit when the policy's "
-        "universe is MSFT-only"
+        "Spike on AAPL must not trigger an exit when the policy's universe is MSFT-only"
     )

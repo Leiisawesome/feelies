@@ -177,11 +177,7 @@ class MinimumCostExecutionPolicy:
         # operator opts out of passive shorts, all sells with
         # ``is_short=True`` go aggressive.  When opted in (default),
         # the cost comparison itself handles HTB on the SELL leg.
-        if (
-            is_short
-            and side == Side.SELL
-            and not self._cfg.allow_passive_short_entry
-        ):
+        if is_short and side == Side.SELL and not self._cfg.allow_passive_short_entry:
             return "aggressive"
 
         # Cost comparison.  The two sides are evaluated against the
@@ -210,18 +206,22 @@ class MinimumCostExecutionPolicy:
         # that don't pass bid_size / ask_size).
         if bid_size is not None and ask_size is not None:
             depth = ask_size if side == Side.BUY else bid_size
-            aggressive_cost_bps = Decimal(str(estimate_aggressive_taker_cost_bps(
-                self._cost_model,
-                symbol=symbol,
-                side=side,
-                quantity=quantity,
-                mid_price=mid_price,
-                half_spread=half_spread,
-                available_depth=int(depth),
-                market_impact_factor=self._cfg.market_impact_factor,
-                max_impact_half_spreads=self._cfg.max_impact_half_spreads,
-                is_short=is_short,
-            )))
+            aggressive_cost_bps = Decimal(
+                str(
+                    estimate_aggressive_taker_cost_bps(
+                        self._cost_model,
+                        symbol=symbol,
+                        side=side,
+                        quantity=quantity,
+                        mid_price=mid_price,
+                        half_spread=half_spread,
+                        available_depth=int(depth),
+                        market_impact_factor=self._cfg.market_impact_factor,
+                        max_impact_half_spreads=self._cfg.max_impact_half_spreads,
+                        is_short=is_short,
+                    )
+                )
+            )
         else:
             aggressive_breakdown = self._cost_model.compute(
                 symbol=symbol,
@@ -240,14 +240,8 @@ class MinimumCostExecutionPolicy:
         # the spread saving is dwarfed by the chance of missing the
         # trade entirely.
         passive_raw = passive_breakdown.raw_cost_bps
-        opportunity_cost = (
-            self._cfg.passive_non_fill_probability * Decimal(str(edge_bps))
-        )
-        passive_cost_bps = (
-            passive_raw
-            - self._cfg.prefer_passive_bias_bps
-            + opportunity_cost
-        )
+        opportunity_cost = self._cfg.passive_non_fill_probability * Decimal(str(edge_bps))
+        passive_cost_bps = passive_raw - self._cfg.prefer_passive_bias_bps + opportunity_cost
         if passive_cost_bps < aggressive_cost_bps:
             return "passive"
         return "aggressive"

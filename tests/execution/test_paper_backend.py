@@ -51,6 +51,7 @@ def test_build_paper_backend_does_not_start_or_connect() -> None:
     assert ib_conn._writer_thread is None
     # No handshake — next_order_id() must raise.
     import pytest
+
     with pytest.raises(RuntimeError, match="nextValidId not received"):
         ib_conn.next_order_id()
 

@@ -64,7 +64,8 @@ def apply_backtest_session_dates_from_cli(
     if start_date != end:
         return config
     cal_path = _reference_event_calendar_for_date(
-        start_date, config.event_calendar_path,
+        start_date,
+        config.event_calendar_path,
     )
     if cal_path is not None:
         return replace(
@@ -97,7 +98,9 @@ def apply_backtest_cli_overrides(
     if symbols:
         config = replace(config, symbols=frozenset(s.upper() for s in symbols))
     return apply_backtest_session_dates_from_cli(
-        config, start_date=start_date, end_date=end_date,
+        config,
+        start_date=start_date,
+        end_date=end_date,
     )
 
 
@@ -151,10 +154,7 @@ def add_common_backtest_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--trace-signal-orders",
         action="store_true",
-        help=(
-            "After the run, print a diagnostic table for standalone SIGNAL "
-            "→ order handling."
-        ),
+        help=("After the run, print a diagnostic table for standalone SIGNAL → order handling."),
     )
 
 

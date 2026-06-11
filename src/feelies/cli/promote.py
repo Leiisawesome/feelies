@@ -136,8 +136,7 @@ def _resolve_ledger_path(args: argparse.Namespace) -> Path:
 
     raise _CLIArgError(
         EXIT_USER_ERROR,
-        "must supply --ledger PATH or --config PATH (with "
-        "promotion_ledger_path set)",
+        "must supply --ledger PATH or --config PATH (with promotion_ledger_path set)",
     )
 
 
@@ -315,9 +314,7 @@ def _build_inspect_result(
     ledger: PromotionLedger,
     alpha_id: str,
 ) -> _InspectResult:
-    raw_entries: list[PromotionLedgerEntry] = list(
-        ledger.entries_for(alpha_id)
-    )
+    raw_entries: list[PromotionLedgerEntry] = list(ledger.entries_for(alpha_id))
     rows: list[dict[str, Any]] = [_entry_as_dict(e) for e in raw_entries]
     return _InspectResult(
         alpha_id=alpha_id,
@@ -335,10 +332,7 @@ def _render_inspect_text(result: _InspectResult) -> None:
         if result.current_capital_tier is not None
         else ""
     )
-    print(
-        f"alpha_id: {result.alpha_id}  "
-        f"({len(result.transitions)} transitions){tier_suffix}"
-    )
+    print(f"alpha_id: {result.alpha_id}  ({len(result.transitions)} transitions){tier_suffix}")
     print("-" * 78)
     for idx, row in enumerate(result.transitions):
         # Render LIVE -> LIVE capital-tier escalations with an explicit
@@ -454,17 +448,16 @@ def _render_list_text(
 ) -> None:
     print(f"ledger: {ledger_path}")
     if parse_errors:
-        print(f"warning: {len(parse_errors)} corrupt entry(ies) "
-              "encountered while reading; partial summary follows")
+        print(
+            f"warning: {len(parse_errors)} corrupt entry(ies) "
+            "encountered while reading; partial summary follows"
+        )
         for err in parse_errors:
             print(f"  - {err}")
     if not summaries:
         print("(no entries)")
         return
-    header = (
-        f"{'alpha_id':<32}  {'state':<26}  {'#tx':>4}  "
-        f"{'first_seen':<32}  {'last_seen':<32}"
-    )
+    header = f"{'alpha_id':<32}  {'state':<26}  {'#tx':>4}  {'first_seen':<32}  {'last_seen':<32}"
     print(header)
     print("-" * len(header))
     for s in summaries:
@@ -502,13 +495,9 @@ def _handle_list(args: argparse.Namespace) -> int:
                         ),
                         "transition_count": s.transition_count,
                         "first_timestamp_ns": s.first_timestamp_ns,
-                        "first_timestamp_iso": _format_ts(
-                            s.first_timestamp_ns
-                        ),
+                        "first_timestamp_iso": _format_ts(s.first_timestamp_ns),
                         "last_timestamp_ns": s.last_timestamp_ns,
-                        "last_timestamp_iso": _format_ts(
-                            s.last_timestamp_ns
-                        ),
+                        "last_timestamp_iso": _format_ts(s.last_timestamp_ns),
                     }
                     for s in summaries
                 ],
@@ -560,10 +549,7 @@ def _replay_one(
             timestamp_ns=entry.timestamp_ns,
             gate=gate_id.value if gate_id else None,
             evidence_kinds=[],
-            skipped_reason=(
-                f"metadata is not an object "
-                f"(type={type(metadata).__name__})"
-            ),
+            skipped_reason=(f"metadata is not an object (type={type(metadata).__name__})"),
             errors=[],
         )
 
@@ -609,8 +595,7 @@ def _replay_one(
             gate=None,
             evidence_kinds=[],
             skipped_reason=(
-                f"no gate registered for transition "
-                f"{entry.from_state}->{entry.to_state}"
+                f"no gate registered for transition {entry.from_state}->{entry.to_state}"
             ),
             errors=[],
         )
@@ -630,11 +615,7 @@ def _replay_one(
             errors=[f"could not reconstruct evidence: {exc}"],
         )
 
-    kinds_present = sorted(
-        k
-        for k in metadata.keys()
-        if k != "schema_version"
-    )
+    kinds_present = sorted(k for k in metadata.keys() if k != "schema_version")
     errors = validate_gate(gate_id, evidences, thresholds)
     return _ReplayResult(
         index=index,
@@ -656,15 +637,10 @@ def _render_replay_text(
     if not results:
         print(f"no ledger entries found for alpha_id={alpha_id!r}")
         return
-    print(f"replay-evidence for alpha_id={alpha_id!r} "
-          f"({len(results)} transition(s))")
+    print(f"replay-evidence for alpha_id={alpha_id!r} ({len(results)} transition(s))")
     print("-" * 78)
     for r in results:
-        status = (
-            "OK"
-            if r.ok
-            else ("SKIPPED" if r.skipped_reason else "FAIL")
-        )
+        status = "OK" if r.ok else ("SKIPPED" if r.skipped_reason else "FAIL")
         gate_repr = r.gate or "<no-gate>"
         print(
             f"#{r.index:02d}  {_format_ts(r.timestamp_ns)}  "
@@ -807,17 +783,10 @@ def _handle_gate_matrix(args: argparse.Namespace) -> int:
             }
         )
     else:
-        print(
-            f"F-2 gate matrix "
-            f"(EVIDENCE_SCHEMA_VERSION={EVIDENCE_SCHEMA_VERSION})"
-        )
+        print(f"F-2 gate matrix (EVIDENCE_SCHEMA_VERSION={EVIDENCE_SCHEMA_VERSION})")
         print("-" * 78)
         for row in rows:
-            req = (
-                ", ".join(row["required_evidence"])
-                if row["required_evidence"]
-                else "(none)"
-            )
+            req = ", ".join(row["required_evidence"]) if row["required_evidence"] else "(none)"
             print(f"  {row['gate_id']:<32}  required: {req}")
     return EXIT_OK
 
@@ -870,8 +839,7 @@ def register(promote_parser: argparse.ArgumentParser) -> None:
     p_replay = sub.add_parser(
         "replay-evidence",
         help=(
-            "Re-validate every F-2 evidence package on the ledger "
-            "against current GateThresholds."
+            "Re-validate every F-2 evidence package on the ledger against current GateThresholds."
         ),
     )
     _add_ledger_args(p_replay)

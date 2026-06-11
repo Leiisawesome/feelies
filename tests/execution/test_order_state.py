@@ -67,12 +67,15 @@ class TestOrderStateMachine:
         with pytest.raises(IllegalTransition):
             sm.transition(OrderState.ACKNOWLEDGED, trigger="skip")
 
-    @pytest.mark.parametrize("terminal_state", [
-        OrderState.FILLED,
-        OrderState.CANCELLED,
-        OrderState.REJECTED,
-        OrderState.EXPIRED,
-    ])
+    @pytest.mark.parametrize(
+        "terminal_state",
+        [
+            OrderState.FILLED,
+            OrderState.CANCELLED,
+            OrderState.REJECTED,
+            OrderState.EXPIRED,
+        ],
+    )
     def test_terminal_states_have_no_outbound(
         self, clock: SimulatedClock, terminal_state: OrderState
     ):

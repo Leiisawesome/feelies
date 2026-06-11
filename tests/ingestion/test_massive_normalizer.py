@@ -79,7 +79,16 @@ class TestMassiveNormalizerWebSocket:
         self, normalizer: MassiveNormalizer, clock: SimulatedClock
     ) -> None:
         msgs = [
-            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1000, "q": 1},
+            {
+                "ev": "Q",
+                "sym": "AAPL",
+                "bp": 150.0,
+                "ap": 150.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1000,
+                "q": 1,
+            },
             {"ev": "T", "sym": "AAPL", "p": 150.02, "s": 50, "t": 1001, "q": 2},
         ]
         raw = json.dumps(msgs).encode("utf-8")
@@ -91,19 +100,32 @@ class TestMassiveNormalizerWebSocket:
     def test_dedup_filters_exact_duplicate(
         self, normalizer: MassiveNormalizer, clock: SimulatedClock
     ) -> None:
-        msg = {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1000, "q": 1}
+        msg = {
+            "ev": "Q",
+            "sym": "AAPL",
+            "bp": 150.0,
+            "ap": 150.05,
+            "bs": 10,
+            "as": 20,
+            "t": 1000,
+            "q": 1,
+        }
         raw = json.dumps(msg).encode("utf-8")
         events1 = normalizer.on_message(raw, clock.now_ns(), "massive_ws")
         events2 = normalizer.on_message(raw, clock.now_ns(), "massive_ws")
         assert len(events1) == 1
         assert len(events2) == 0
 
-    def test_unknown_source_returns_empty(self, normalizer: MassiveNormalizer, clock: SimulatedClock) -> None:
+    def test_unknown_source_returns_empty(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock
+    ) -> None:
         raw = b'{"ev":"Q","sym":"AAPL","bp":150,"ap":150.05,"bs":10,"as":20,"t":1000,"q":1}'
         events = normalizer.on_message(raw, clock.now_ns(), "unknown_feed")
         assert events == []
 
-    def test_invalid_json_returns_empty(self, normalizer: MassiveNormalizer, clock: SimulatedClock) -> None:
+    def test_invalid_json_returns_empty(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock
+    ) -> None:
         events = normalizer.on_message(b"not json", clock.now_ns(), "massive_ws")
         assert events == []
 
@@ -154,7 +176,9 @@ class TestMassiveNormalizerREST:
         assert trade.price == Decimal("400.02")
         assert trade.size == 200
 
-    def test_rest_non_dict_returns_empty(self, normalizer: MassiveNormalizer, clock: SimulatedClock) -> None:
+    def test_rest_non_dict_returns_empty(
+        self, normalizer: MassiveNormalizer, clock: SimulatedClock
+    ) -> None:
         raw = json.dumps([1, 2, 3]).encode("utf-8")
         events = normalizer.on_message(raw, clock.now_ns(), "massive_rest")
         assert events == []
@@ -189,7 +213,16 @@ class TestMassiveNormalizerHealth:
     def test_health_tracks_symbol_after_parse(
         self, normalizer: MassiveNormalizer, clock: SimulatedClock
     ) -> None:
-        msg = {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1000, "q": 1}
+        msg = {
+            "ev": "Q",
+            "sym": "AAPL",
+            "bp": 150.0,
+            "ap": 150.05,
+            "bs": 10,
+            "as": 20,
+            "t": 1000,
+            "q": 1,
+        }
         raw = json.dumps(msg).encode("utf-8")
         normalizer.on_message(raw, clock.now_ns(), "massive_ws")
         assert normalizer.health("AAPL") == DataHealth.HEALTHY
@@ -198,7 +231,16 @@ class TestMassiveNormalizerHealth:
         self, normalizer: MassiveNormalizer, clock: SimulatedClock
     ) -> None:
         for sym in ("AAPL", "MSFT"):
-            msg = {"ev": "Q", "sym": sym, "bp": 100.0, "ap": 100.05, "bs": 10, "as": 20, "t": 1000, "q": 1}
+            msg = {
+                "ev": "Q",
+                "sym": sym,
+                "bp": 100.0,
+                "ap": 100.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1000,
+                "q": 1,
+            }
             normalizer.on_message(json.dumps(msg).encode("utf-8"), clock.now_ns(), "massive_ws")
         health = normalizer.all_health()
         assert set(health.keys()) == {"AAPL", "MSFT"}
@@ -208,15 +250,22 @@ class TestMassiveNormalizerHealth:
 class TestMassiveNormalizerDuplicateCounting:
     """Tests for duplicate counting."""
 
-    def test_duplicates_filtered_starts_at_zero(
-        self, normalizer: MassiveNormalizer
-    ) -> None:
+    def test_duplicates_filtered_starts_at_zero(self, normalizer: MassiveNormalizer) -> None:
         assert normalizer.duplicates_filtered == 0
 
     def test_counts_exact_duplicates(
         self, normalizer: MassiveNormalizer, clock: SimulatedClock
     ) -> None:
-        msg = {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1000, "q": 1}
+        msg = {
+            "ev": "Q",
+            "sym": "AAPL",
+            "bp": 150.0,
+            "ap": 150.05,
+            "bs": 10,
+            "as": 20,
+            "t": 1000,
+            "q": 1,
+        }
         raw = json.dumps(msg).encode("utf-8")
         normalizer.on_message(raw, clock.now_ns(), "massive_ws")
         normalizer.on_message(raw, clock.now_ns(), "massive_ws")
@@ -227,7 +276,16 @@ class TestMassiveNormalizerDuplicateCounting:
         self, normalizer: MassiveNormalizer, clock: SimulatedClock
     ) -> None:
         for q in (1, 2, 3):
-            msg = {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1000 + q, "q": q}
+            msg = {
+                "ev": "Q",
+                "sym": "AAPL",
+                "bp": 150.0,
+                "ap": 150.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1000 + q,
+                "q": q,
+            }
             normalizer.on_message(json.dumps(msg).encode("utf-8"), clock.now_ns(), "massive_ws")
         assert normalizer.duplicates_filtered == 0
 
@@ -239,7 +297,16 @@ class TestMassiveNormalizerDuplicateCounting:
         A quote and trade sharing (sequence_number, timestamp) must both
         survive — dedup is per (symbol, feed_type), not per symbol alone.
         """
-        quote = {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1000, "q": 5}
+        quote = {
+            "ev": "Q",
+            "sym": "AAPL",
+            "bp": 150.0,
+            "ap": 150.05,
+            "bs": 10,
+            "as": 20,
+            "t": 1000,
+            "q": 5,
+        }
         trade = {"ev": "T", "sym": "AAPL", "p": 150.02, "s": 100, "t": 1000, "q": 5}
         q_events = normalizer.on_message(json.dumps(quote).encode(), clock.now_ns(), "massive_ws")
         t_events = normalizer.on_message(json.dumps(trade).encode(), clock.now_ns(), "massive_ws")
@@ -254,16 +321,27 @@ class TestMassiveNormalizerDuplicateCounting:
     ) -> None:
         """Same cross-feed dedup safety for the REST path."""
         quote = {
-            "ticker": "AAPL", "bid_price": 150.0, "ask_price": 150.05,
-            "bid_size": 10, "ask_size": 20,
-            "sip_timestamp": 1_700_000_000_000_000_000, "sequence_number": 42,
+            "ticker": "AAPL",
+            "bid_price": 150.0,
+            "ask_price": 150.05,
+            "bid_size": 10,
+            "ask_size": 20,
+            "sip_timestamp": 1_700_000_000_000_000_000,
+            "sequence_number": 42,
         }
         trade = {
-            "ticker": "AAPL", "price": 150.02, "size": 100,
-            "sip_timestamp": 1_700_000_000_000_000_000, "sequence_number": 42,
+            "ticker": "AAPL",
+            "price": 150.02,
+            "size": 100,
+            "sip_timestamp": 1_700_000_000_000_000_000,
+            "sequence_number": 42,
         }
-        q_events = normalizer.on_message(json.dumps(quote).encode(), clock.now_ns(), "massive_rest")
-        t_events = normalizer.on_message(json.dumps(trade).encode(), clock.now_ns(), "massive_rest")
+        q_events = normalizer.on_message(
+            json.dumps(quote).encode(), clock.now_ns(), "massive_rest"
+        )
+        t_events = normalizer.on_message(
+            json.dumps(trade).encode(), clock.now_ns(), "massive_rest"
+        )
         assert len(q_events) == 1
         assert len(t_events) == 1
         assert normalizer.duplicates_filtered == 0
@@ -345,8 +423,26 @@ class TestMassiveNormalizerGapRecovery:
         self, normalizer: MassiveNormalizer, clock: SimulatedClock
     ) -> None:
         msgs = [
-            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1000, "q": 1},
-            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1005, "q": 5},
+            {
+                "ev": "Q",
+                "sym": "AAPL",
+                "bp": 150.0,
+                "ap": 150.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1000,
+                "q": 1,
+            },
+            {
+                "ev": "Q",
+                "sym": "AAPL",
+                "bp": 150.0,
+                "ap": 150.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1005,
+                "q": 5,
+            },
         ]
         for msg in msgs:
             normalizer.on_message(json.dumps(msg).encode("utf-8"), clock.now_ns(), "massive_ws")
@@ -356,9 +452,36 @@ class TestMassiveNormalizerGapRecovery:
         self, normalizer: MassiveNormalizer, clock: SimulatedClock
     ) -> None:
         msgs = [
-            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1000, "q": 1},
-            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1005, "q": 5},
-            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1006, "q": 6},
+            {
+                "ev": "Q",
+                "sym": "AAPL",
+                "bp": 150.0,
+                "ap": 150.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1000,
+                "q": 1,
+            },
+            {
+                "ev": "Q",
+                "sym": "AAPL",
+                "bp": 150.0,
+                "ap": 150.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1005,
+                "q": 5,
+            },
+            {
+                "ev": "Q",
+                "sym": "AAPL",
+                "bp": 150.0,
+                "ap": 150.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1006,
+                "q": 6,
+            },
         ]
         for msg in msgs:
             normalizer.on_message(json.dumps(msg).encode("utf-8"), clock.now_ns(), "massive_ws")
@@ -371,11 +494,38 @@ class TestMassiveNormalizerGapRecovery:
         must not fire gap detection — sequences are tracked per feed type.
         """
         msgs = [
-            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1000, "q": 1},
+            {
+                "ev": "Q",
+                "sym": "AAPL",
+                "bp": 150.0,
+                "ap": 150.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1000,
+                "q": 1,
+            },
             {"ev": "T", "sym": "AAPL", "p": 150.02, "s": 50, "t": 1001, "q": 100},
-            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1002, "q": 2},
+            {
+                "ev": "Q",
+                "sym": "AAPL",
+                "bp": 150.0,
+                "ap": 150.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1002,
+                "q": 2,
+            },
             {"ev": "T", "sym": "AAPL", "p": 150.03, "s": 50, "t": 1003, "q": 101},
-            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1004, "q": 3},
+            {
+                "ev": "Q",
+                "sym": "AAPL",
+                "bp": 150.0,
+                "ap": 150.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1004,
+                "q": 3,
+            },
             {"ev": "T", "sym": "AAPL", "p": 150.04, "s": 50, "t": 1005, "q": 102},
         ]
         for msg in msgs:
@@ -387,9 +537,27 @@ class TestMassiveNormalizerGapRecovery:
     ) -> None:
         """A gap in trades still fires even when quote sequences are contiguous."""
         msgs = [
-            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1000, "q": 1},
+            {
+                "ev": "Q",
+                "sym": "AAPL",
+                "bp": 150.0,
+                "ap": 150.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1000,
+                "q": 1,
+            },
             {"ev": "T", "sym": "AAPL", "p": 150.02, "s": 50, "t": 1001, "q": 1},
-            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1002, "q": 2},
+            {
+                "ev": "Q",
+                "sym": "AAPL",
+                "bp": 150.0,
+                "ap": 150.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1002,
+                "q": 2,
+            },
             {"ev": "T", "sym": "AAPL", "p": 150.03, "s": 50, "t": 1003, "q": 10},
         ]
         for msg in msgs:
@@ -404,8 +572,26 @@ class TestMassiveNormalizerCrossFeedHealth:
         self, normalizer: MassiveNormalizer, clock: SimulatedClock
     ) -> None:
         msgs = [
-            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1000, "q": 1},
-            {"ev": "Q", "sym": "AAPL", "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20, "t": 1005, "q": 5},
+            {
+                "ev": "Q",
+                "sym": "AAPL",
+                "bp": 150.0,
+                "ap": 150.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1000,
+                "q": 1,
+            },
+            {
+                "ev": "Q",
+                "sym": "AAPL",
+                "bp": 150.0,
+                "ap": 150.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1005,
+                "q": 5,
+            },
             {"ev": "T", "sym": "AAPL", "p": 150.02, "s": 50, "t": 1001, "q": 100},
             {"ev": "T", "sym": "AAPL", "p": 150.03, "s": 50, "t": 1003, "q": 101},
         ]
@@ -462,10 +648,12 @@ class TestMassiveNormalizerRestTradeTrf:
 
 class TestMassiveNormalizerRestGapOptIn:
     def test_rest_gap_detection_when_enabled(
-        self, clock: SimulatedClock,
+        self,
+        clock: SimulatedClock,
     ) -> None:
         norm = MassiveNormalizer(
-            clock, enable_rest_sequence_gap_detection=True,
+            clock,
+            enable_rest_sequence_gap_detection=True,
         )
         for seq in (1, 5):
             rec = {
@@ -493,7 +681,9 @@ class TestMassiveLiveFeedValidation:
         MassiveLiveFeed._validate_status_response(raw, "auth_success", "authentication")
 
     def test_accepts_subscribe_success(self) -> None:
-        raw = json.dumps([{"ev": "status", "status": "success", "message": "subscribed to Q.AAPL"}])
+        raw = json.dumps(
+            [{"ev": "status", "status": "success", "message": "subscribed to Q.AAPL"}]
+        )
         MassiveLiveFeed._validate_status_response(raw, "success", "subscription")
 
     def test_accepts_single_object(self) -> None:
@@ -507,7 +697,9 @@ class TestMassiveLiveFeedValidation:
 
     def test_rejects_invalid_json(self) -> None:
         with pytest.raises(ConnectionError, match="not valid JSON"):
-            MassiveLiveFeed._validate_status_response(b"not json", "auth_success", "authentication")
+            MassiveLiveFeed._validate_status_response(
+                b"not json", "auth_success", "authentication"
+            )
 
     def test_rejects_empty_array(self) -> None:
         raw = json.dumps([])
@@ -630,19 +822,23 @@ class TestHaltStatusDetection:
 
     @staticmethod
     def _ws_trade(symbol: str, seq: int, conditions: list[int]) -> bytes:
-        return json.dumps({
-            "ev": "T",
-            "sym": symbol,
-            "p": 150.0,
-            "s": 100,
-            "t": 1700000000000 + seq,
-            "q": seq,
-            "c": conditions,
-            "z": 3,
-        }).encode("utf-8")
+        return json.dumps(
+            {
+                "ev": "T",
+                "sym": symbol,
+                "p": 150.0,
+                "s": 100,
+                "t": 1700000000000 + seq,
+                "q": seq,
+                "c": conditions,
+                "z": 3,
+            }
+        ).encode("utf-8")
 
     def test_default_normalizer_ignores_halt_codes(
-        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
     ) -> None:
         normalizer.on_message(self._ws_trade("AAPL", 1, [5]), clock.now_ns(), "massive_ws")
         assert normalizer.health("AAPL") == DataHealth.HEALTHY
@@ -672,14 +868,23 @@ class TestMassiveNormalizerPriceValidation:
 
     @staticmethod
     def _ws_quote(bp: object, ap: object = 150.05) -> bytes:
-        return json.dumps({
-            "ev": "Q", "sym": "AAPL",
-            "bp": bp, "ap": ap, "bs": 10, "as": 20,
-            "t": 1700000000000, "q": 1,
-        }).encode("utf-8")
+        return json.dumps(
+            {
+                "ev": "Q",
+                "sym": "AAPL",
+                "bp": bp,
+                "ap": ap,
+                "bs": 10,
+                "as": 20,
+                "t": 1700000000000,
+                "q": 1,
+            }
+        ).encode("utf-8")
 
     def test_nan_bid_is_rejected(
-        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
     ) -> None:
         events = normalizer.on_message(self._ws_quote("NaN"), clock.now_ns(), "massive_ws")
         assert events == []
@@ -687,29 +892,39 @@ class TestMassiveNormalizerPriceValidation:
         assert normalizer.health("AAPL") == DataHealth.CORRUPTED
 
     def test_infinity_ask_is_rejected(
-        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
     ) -> None:
         events = normalizer.on_message(
-            self._ws_quote(150.0, "Infinity"), clock.now_ns(), "massive_ws",
+            self._ws_quote(150.0, "Infinity"),
+            clock.now_ns(),
+            "massive_ws",
         )
         assert events == []
         assert normalizer.health("AAPL") == DataHealth.CORRUPTED
 
     def test_negative_price_is_rejected(
-        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
     ) -> None:
         events = normalizer.on_message(self._ws_quote(-1.5), clock.now_ns(), "massive_ws")
         assert events == []
         assert normalizer.health("AAPL") == DataHealth.CORRUPTED
 
     def test_zero_quote_price_is_accepted(
-        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
     ) -> None:
         # Auction snapshots and indicator quotes legitimately carry bid=0 /
         # ask=0 on the wire; the normalizer must surface them rather than
         # marking the symbol CORRUPTED.
         events = normalizer.on_message(
-            self._ws_quote(0, 0), clock.now_ns(), "massive_ws",
+            self._ws_quote(0, 0),
+            clock.now_ns(),
+            "massive_ws",
         )
         assert len(events) == 1
         quote = events[0]
@@ -719,26 +934,38 @@ class TestMassiveNormalizerPriceValidation:
         assert normalizer.health("AAPL") == DataHealth.HEALTHY
 
     def test_zero_trade_price_is_rejected(
-        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
     ) -> None:
         # Trade prints at zero remain invalid: equities never trade at zero
         # and downstream cost / sizing math assumes ``price > 0``.
-        raw = json.dumps({
-            "ev": "T", "sym": "AAPL",
-            "p": 0, "s": 10, "x": 11,
-            "t": 1700000000000, "q": 1,
-        }).encode("utf-8")
+        raw = json.dumps(
+            {
+                "ev": "T",
+                "sym": "AAPL",
+                "p": 0,
+                "s": 10,
+                "x": 11,
+                "t": 1700000000000,
+                "q": 1,
+            }
+        ).encode("utf-8")
         events = normalizer.on_message(raw, clock.now_ns(), "massive_ws")
         assert events == []
         assert normalizer.health("AAPL") == DataHealth.CORRUPTED
 
     def test_malformed_decimal_does_not_crash_thread(
-        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
     ) -> None:
         # "1.2.3" raises decimal.InvalidOperation, which the pre-fix catch
         # tuple (KeyError, ValueError, TypeError) did NOT include.
         events = normalizer.on_message(
-            self._ws_quote("1.2.3"), clock.now_ns(), "massive_ws",
+            self._ws_quote("1.2.3"),
+            clock.now_ns(),
+            "massive_ws",
         )
         assert events == []
         assert normalizer.health("AAPL") == DataHealth.CORRUPTED
@@ -749,31 +976,46 @@ class TestMassiveNormalizerSequenceContiguity:
 
     @staticmethod
     def _ws_quote(symbol: str, bp: object, seq: int = 1) -> bytes:
-        return json.dumps({
-            "ev": "Q", "sym": symbol,
-            "bp": bp, "ap": 150.05, "bs": 10, "as": 20,
-            "t": 1700000000000 + seq, "q": seq,
-        }).encode("utf-8")
+        return json.dumps(
+            {
+                "ev": "Q",
+                "sym": symbol,
+                "bp": bp,
+                "ap": 150.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1700000000000 + seq,
+                "q": seq,
+            }
+        ).encode("utf-8")
 
     def test_bad_payload_does_not_advance_internal_sequence(
-        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
     ) -> None:
         # First a healthy event so we observe what the next sequence would be.
         events = normalizer.on_message(
-            self._ws_quote("AAPL", 150.0, seq=1), clock.now_ns(), "massive_ws",
+            self._ws_quote("AAPL", 150.0, seq=1),
+            clock.now_ns(),
+            "massive_ws",
         )
         assert len(events) == 1
         first_seq = events[0].sequence
 
         # Bad event between (NaN price) — must NOT consume a sequence number.
         normalizer.on_message(
-            self._ws_quote("MSFT", "NaN", seq=1), clock.now_ns(), "massive_ws",
+            self._ws_quote("MSFT", "NaN", seq=1),
+            clock.now_ns(),
+            "massive_ws",
         )
 
         # Healthy event after the failure: its sequence must be exactly
         # first_seq + 1 (no hole left by the failed event).
         events = normalizer.on_message(
-            self._ws_quote("GOOG", 100.0, seq=1), clock.now_ns(), "massive_ws",
+            self._ws_quote("GOOG", 100.0, seq=1),
+            clock.now_ns(),
+            "massive_ws",
         )
         assert len(events) == 1
         assert events[0].sequence == first_seq + 1
@@ -784,20 +1026,35 @@ class TestMassiveNormalizerCallbackBinding:
 
     @staticmethod
     def _gap_msgs(symbol: str) -> tuple[bytes, bytes]:
-        a = json.dumps({
-            "ev": "Q", "sym": symbol,
-            "bp": 100.0, "ap": 100.05, "bs": 10, "as": 20,
-            "t": 1700000000000, "q": 1,
-        }).encode("utf-8")
-        b = json.dumps({
-            "ev": "Q", "sym": symbol,
-            "bp": 100.0, "ap": 100.05, "bs": 10, "as": 20,
-            "t": 1700000000005, "q": 5,  # gap from seq=1 → seq=5
-        }).encode("utf-8")
+        a = json.dumps(
+            {
+                "ev": "Q",
+                "sym": symbol,
+                "bp": 100.0,
+                "ap": 100.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1700000000000,
+                "q": 1,
+            }
+        ).encode("utf-8")
+        b = json.dumps(
+            {
+                "ev": "Q",
+                "sym": symbol,
+                "bp": 100.0,
+                "ap": 100.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1700000000005,
+                "q": 5,  # gap from seq=1 → seq=5
+            }
+        ).encode("utf-8")
         return a, b
 
     def test_callback_fires_for_symbols_seen_before_registration(
-        self, clock: SimulatedClock,
+        self,
+        clock: SimulatedClock,
     ) -> None:
         norm = MassiveNormalizer(clock=clock)
         seen: list[str] = []
@@ -857,14 +1114,23 @@ class TestMassiveNormalizerDefensiveHardening:
 
     @staticmethod
     def _ws_quote(symbol: str = "AAPL", t_ms: int = 1700000000) -> bytes:
-        return json.dumps({
-            "ev": "Q", "sym": symbol,
-            "bp": 150.0, "ap": 150.05, "bs": 10, "as": 20,
-            "t": t_ms, "q": 1,
-        }).encode("utf-8")
+        return json.dumps(
+            {
+                "ev": "Q",
+                "sym": symbol,
+                "bp": 150.0,
+                "ap": 150.05,
+                "bs": 10,
+                "as": 20,
+                "t": t_ms,
+                "q": 1,
+            }
+        ).encode("utf-8")
 
     def test_oversized_frame_is_dropped_with_counter(
-        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
     ) -> None:
         # Synthesize a 17 MB payload — over the 16 MB default cap.
         big = b"X" * (17 * 1024 * 1024)
@@ -873,17 +1139,22 @@ class TestMassiveNormalizerDefensiveHardening:
         assert normalizer.oversized_frames == 1
 
     def test_recursion_error_is_caught(
-        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
     ) -> None:
         # JSON-decoder doesn't raise RecursionError for moderately nested
         # arrays; we patch json.loads to confirm the catch path is wired.
         from unittest.mock import patch
+
         with patch(
             "feelies.ingestion.massive_normalizer.json.loads",
             side_effect=RecursionError("pathological nesting"),
         ):
             events = normalizer.on_message(
-                self._ws_quote(), clock.now_ns(), "massive_ws",
+                self._ws_quote(),
+                clock.now_ns(),
+                "massive_ws",
             )
         assert events == []
         # Health is HEALTHY because the parser caught it without marking
@@ -892,19 +1163,33 @@ class TestMassiveNormalizerDefensiveHardening:
         assert normalizer.health("AAPL") == DataHealth.HEALTHY
 
     def test_non_dict_element_increments_counter(
-        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
     ) -> None:
         # WS messages are JSON arrays; sometimes a stray string lands.
-        raw = json.dumps(["garbage", {"ev": "Q", "sym": "AAPL",
-                                       "bp": 150.0, "ap": 150.05,
-                                       "bs": 10, "as": 20,
-                                       "t": 1700000000, "q": 1}]).encode("utf-8")
+        raw = json.dumps(
+            [
+                "garbage",
+                {
+                    "ev": "Q",
+                    "sym": "AAPL",
+                    "bp": 150.0,
+                    "ap": 150.05,
+                    "bs": 10,
+                    "as": 20,
+                    "t": 1700000000,
+                    "q": 1,
+                },
+            ]
+        ).encode("utf-8")
         events = normalizer.on_message(raw, clock.now_ns(), "massive_ws")
         assert len(events) == 1
         assert normalizer.unparseable_elements == 1
 
     def test_health_docstring_is_clear_about_unseen_symbols(
-        self, normalizer: MassiveNormalizer,
+        self,
+        normalizer: MassiveNormalizer,
     ) -> None:
         # Documented behavior: health() returns HEALTHY for never-seen.
         assert normalizer.health("ZZZZ_NEVER_SEEN") == DataHealth.HEALTHY
@@ -913,7 +1198,8 @@ class TestMassiveNormalizerDefensiveHardening:
         assert "ZZZZ_NEVER_SEEN" not in normalizer.all_health()
 
     def test_register_symbols_distinguishes_subscribed_from_observed(
-        self, normalizer: MassiveNormalizer,
+        self,
+        normalizer: MassiveNormalizer,
     ) -> None:
         normalizer.register_symbols({"AAPL", "MSFT"})
         all_h = normalizer.all_health()
@@ -925,17 +1211,24 @@ class TestMassiveNormalizerAmbiguousRest:
     """r3-INGEST-03: ambiguous REST records warn (once)."""
 
     def test_record_with_both_quote_and_trade_fields_warns_once(
-        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        ambiguous = json.dumps({
-            "ticker": "AAPL",
-            "sip_timestamp": 1700000000000000000,
-            "sequence_number": 1,
-            "bid_price": 150.0, "ask_price": 150.05,
-            "bid_size": 10, "ask_size": 20,
-            "price": 150.02, "size": 50,  # also has trade fields
-        }).encode("utf-8")
+        ambiguous = json.dumps(
+            {
+                "ticker": "AAPL",
+                "sip_timestamp": 1700000000000000000,
+                "sequence_number": 1,
+                "bid_price": 150.0,
+                "ask_price": 150.05,
+                "bid_size": 10,
+                "ask_size": 20,
+                "price": 150.02,
+                "size": 50,  # also has trade fields
+            }
+        ).encode("utf-8")
 
         with caplog.at_level("WARNING", "feelies.ingestion.massive_normalizer"):
             normalizer.on_message(ambiguous, clock.now_ns(), "massive_rest")
@@ -943,8 +1236,7 @@ class TestMassiveNormalizerAmbiguousRest:
             normalizer.on_message(ambiguous, clock.now_ns(), "massive_rest")
 
         ambiguous_warnings = [
-            r for r in caplog.records
-            if "ambiguous REST record" in r.getMessage()
+            r for r in caplog.records if "ambiguous REST record" in r.getMessage()
         ]
         # Warning suppressed after first occurrence per normalizer.
         assert len(ambiguous_warnings) == 1
@@ -978,11 +1270,18 @@ class TestExchangeTimestampRangeGate:
         norm = MassiveNormalizer(clock=clock)
         # ts = 1700000000 ms → 1.7e18 ns (Nov 2023).  Without the gate
         # carve-out this would look like "the future" relative to 1e9.
-        raw = json.dumps({
-            "ev": "Q", "sym": "AAPL",
-            "bp": 100.0, "ap": 100.05, "bs": 10, "as": 20,
-            "t": 1700000000, "q": 1,
-        }).encode("utf-8")
+        raw = json.dumps(
+            {
+                "ev": "Q",
+                "sym": "AAPL",
+                "bp": 100.0,
+                "ap": 100.05,
+                "bs": 10,
+                "as": 20,
+                "t": 1700000000,
+                "q": 1,
+            }
+        ).encode("utf-8")
         events = norm.on_message(raw, clock.now_ns(), "massive_ws")
         assert len(events) == 1
 
@@ -992,11 +1291,18 @@ class TestExchangeTimestampRangeGate:
         norm = MassiveNormalizer(clock=clock)
         # Event timestamp is 30+ days in the future → rejected.
         far_future_ms = 1_900_000_000_000  # ~mid-2030
-        raw = json.dumps({
-            "ev": "Q", "sym": "AAPL",
-            "bp": 100.0, "ap": 100.05, "bs": 10, "as": 20,
-            "t": far_future_ms, "q": 1,
-        }).encode("utf-8")
+        raw = json.dumps(
+            {
+                "ev": "Q",
+                "sym": "AAPL",
+                "bp": 100.0,
+                "ap": 100.05,
+                "bs": 10,
+                "as": 20,
+                "t": far_future_ms,
+                "q": 1,
+            }
+        ).encode("utf-8")
         events = norm.on_message(raw, clock.now_ns(), "massive_ws")
         assert events == []
         # Per the M3/M4 parse-then-mutate ordering, the rejected event
@@ -1017,16 +1323,22 @@ class TestRestQuoteFingerprintSymmetry:
             "ticker": "AAPL",
             "sip_timestamp": 1700000000000000000,
             "sequence_number": 42,
-            "bid_price": 150.0, "ask_price": 150.05,
-            "bid_size": 10, "ask_size": 20,
-            "conditions": [], "indicators": [], "tape": 3,
+            "bid_price": 150.0,
+            "ask_price": 150.05,
+            "bid_size": 10,
+            "ask_size": 20,
+            "conditions": [],
+            "indicators": [],
+            "tape": 3,
         }
         if participant_ts is not None:
             payload["participant_timestamp"] = participant_ts
         return json.dumps(payload).encode("utf-8")
 
     def test_same_seq_same_participant_ts_is_dedup(
-        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
     ) -> None:
         raw = self._rest_quote(participant_ts=1700000000000000000)
         a = normalizer.on_message(raw, clock.now_ns(), "massive_rest")
@@ -1037,15 +1349,19 @@ class TestRestQuoteFingerprintSymmetry:
         assert normalizer.health("AAPL") == DataHealth.HEALTHY
 
     def test_same_seq_different_participant_ts_is_corruption(
-        self, normalizer: MassiveNormalizer, clock: SimulatedClock,
+        self,
+        normalizer: MassiveNormalizer,
+        clock: SimulatedClock,
     ) -> None:
         a = normalizer.on_message(
             self._rest_quote(participant_ts=1700000000000000000),
-            clock.now_ns(), "massive_rest",
+            clock.now_ns(),
+            "massive_rest",
         )
         b = normalizer.on_message(
             self._rest_quote(participant_ts=1700000000000000999),
-            clock.now_ns(), "massive_rest",
+            clock.now_ns(),
+            "massive_rest",
         )
         assert len(a) == 1
         assert len(b) == 0

@@ -37,18 +37,20 @@ from feelies.alpha.layer_validator import (
 )
 
 
-_SENSORS = frozenset({
-    "ofi_ewma",
-    "spread_z_30d",
-    "kyle_lambda_60s",
-    "micro_price",
-    "quote_replenish_asymmetry",
-    "hawkes_intensity",
-    "trade_through_rate",
-    "vpin_50bucket",
-    "realized_vol_30s",
-    "scheduled_flow_window",
-})
+_SENSORS = frozenset(
+    {
+        "ofi_ewma",
+        "spread_z_30d",
+        "kyle_lambda_60s",
+        "micro_price",
+        "quote_replenish_asymmetry",
+        "hawkes_intensity",
+        "trade_through_rate",
+        "vpin_50bucket",
+        "realized_vol_30s",
+        "scheduled_flow_window",
+    }
+)
 
 
 _REGISTERED_HORIZONS = sorted(DEFAULT_REGISTERED_HORIZONS)  # [30,120,300,900,1800]
@@ -93,10 +95,7 @@ def _spec(
     if sensors is None:
         sensors = [_FAMILY_FINGERPRINT[family], "ofi_ewma"]
     if signal_src is None:
-        signal_src = (
-            "def evaluate(snapshot, regime, params):\n"
-            "    return None\n"
-        )
+        signal_src = "def evaluate(snapshot, regime, params):\n    return None\n"
     return {
         "schema_version": "1.1",
         "layer": "SIGNAL",
@@ -207,9 +206,7 @@ def test_in_range_half_life_accepted(triple: tuple[str, int, int]) -> None:
 def test_out_of_range_half_life_rejected(triple: tuple[str, int, int]) -> None:
     family, half_life, horizon = triple
     spec = _spec(family=family, half_life=half_life, horizon=horizon)
-    with pytest.raises(
-        (MechanismHalfLifeOutOfRangeError, MechanismHorizonMismatchError)
-    ):
+    with pytest.raises((MechanismHalfLifeOutOfRangeError, MechanismHorizonMismatchError)):
         _validator().validate(spec, source="<prop>")
 
 
@@ -276,9 +273,7 @@ def test_stress_family_rejects_any_non_flat_return(
 @settings(max_examples=20, suppress_health_check=[HealthCheck.too_slow])
 @given(use_attr_form=st.booleans())
 def test_stress_family_accepts_flat_return(use_attr_form: bool) -> None:
-    direction_expr = (
-        "SignalDirection.FLAT" if use_attr_form else "'FLAT'"
-    )
+    direction_expr = "SignalDirection.FLAT" if use_attr_form else "'FLAT'"
     signal_src = (
         "def evaluate(snapshot, regime, params):\n"
         f"    return Signal(symbol='AAPL', direction={direction_expr}, "

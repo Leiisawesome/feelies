@@ -74,14 +74,16 @@ def test_first_quote_bootstraps_grid_no_snr_yet() -> None:
 def test_warm_after_required_samples_per_horizon() -> None:
     """Need 4 samples on a 1-second horizon."""
     sensor = SNRDriftDiffusionSensor(
-        horizons_seconds=(1,), warm_samples_per_horizon=4,
+        horizons_seconds=(1,),
+        warm_samples_per_horizon=4,
     )
     state = sensor.initial_state()
     last = None
     for i in range(5):
         last = sensor.update(
             _quote(ts_ns=(i + 1) * 1_000_000_000, mid="100", sequence=i),
-            state, params={},
+            state,
+            params={},
         )
         assert last is not None
     assert last is not None and last.warm is True
@@ -90,14 +92,16 @@ def test_warm_after_required_samples_per_horizon() -> None:
 def test_zero_volatility_yields_zero_snr() -> None:
     """Constant mid → μ=0 and σ=0 → SNR=|0|/(ε/√h) = 0."""
     sensor = SNRDriftDiffusionSensor(
-        horizons_seconds=(1,), warm_samples_per_horizon=2,
+        horizons_seconds=(1,),
+        warm_samples_per_horizon=2,
     )
     state = sensor.initial_state()
     r = None
     for i in range(6):
         r = sensor.update(
             _quote(ts_ns=(i + 1) * 1_000_000_000, mid="100", sequence=i),
-            state, params={},
+            state,
+            params={},
         )
     assert r is not None
     assert r.value[0] == 0.0
@@ -106,7 +110,9 @@ def test_zero_volatility_yields_zero_snr() -> None:
 def test_positive_drift_produces_positive_snr() -> None:
     """Monotone increasing mid → SNR > 0 once warm."""
     sensor = SNRDriftDiffusionSensor(
-        horizons_seconds=(1,), warm_samples_per_horizon=2, ewma_n_eff=4,
+        horizons_seconds=(1,),
+        warm_samples_per_horizon=2,
+        ewma_n_eff=4,
     )
     state = sensor.initial_state()
     r = None
@@ -117,7 +123,8 @@ def test_positive_drift_produces_positive_snr() -> None:
                 mid=str(100 + i * 0.01),
                 sequence=i,
             ),
-            state, params={},
+            state,
+            params={},
         )
     assert r is not None
     assert r.value[0] > 0.0

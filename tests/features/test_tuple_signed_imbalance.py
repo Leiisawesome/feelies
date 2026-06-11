@@ -39,7 +39,11 @@ def _tick() -> HorizonTick:
 def _feat() -> TupleSignedImbalanceFeature:
     # λ_buy at index 0, λ_sell at index 1.
     return TupleSignedImbalanceFeature(
-        "hawkes_intensity", 0, 1, "hawkes_intensity_imbalance", 30,
+        "hawkes_intensity",
+        0,
+        1,
+        "hawkes_intensity_imbalance",
+        30,
     )
 
 

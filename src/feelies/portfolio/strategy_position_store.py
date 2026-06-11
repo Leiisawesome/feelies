@@ -117,9 +117,7 @@ class StrategyPositionStore:
                 total_qty += pos.quantity
                 total_signed_cost += pos.avg_entry_price * pos.quantity
 
-        avg_price = (
-            total_signed_cost / total_qty if total_qty != 0 else Decimal("0")
-        )
+        avg_price = total_signed_cost / total_qty if total_qty != 0 else Decimal("0")
 
         return Position(
             symbol=symbol,
@@ -162,7 +160,8 @@ class StrategyPositionStore:
                 (pos.realized_pnl for pos in store.all_positions().values()),
                 Decimal("0"),
             )
-            if store is not None else Decimal("0")
+            if store is not None
+            else Decimal("0")
         )
 
     def get_strategy_cumulative_fees(self, strategy_id: str) -> Decimal:
@@ -177,7 +176,8 @@ class StrategyPositionStore:
                 (pos.cumulative_fees for pos in store.all_positions().values()),
                 Decimal("0"),
             )
-            if store is not None else Decimal("0")
+            if store is not None
+            else Decimal("0")
         )
 
     def get_strategy_unrealized_pnl(self, strategy_id: str) -> Decimal:
@@ -194,7 +194,8 @@ class StrategyPositionStore:
                 (pos.unrealized_pnl for pos in store.all_positions().values()),
                 Decimal("0"),
             )
-            if store is not None else Decimal("0")
+            if store is not None
+            else Decimal("0")
         )
 
     def strategy_ids(self) -> frozenset[str]:

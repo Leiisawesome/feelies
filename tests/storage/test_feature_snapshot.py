@@ -49,8 +49,11 @@ class TestInMemoryFeatureSnapshotStore:
         state = b"feature_state_data"
         checksum = hashlib.sha256(state).hexdigest()
         meta = FeatureSnapshotMeta(
-            symbol="AAPL", feature_version="1.0", event_count=100,
-            last_sequence=99, last_timestamp_ns=1_000_000,
+            symbol="AAPL",
+            feature_version="1.0",
+            event_count=100,
+            last_sequence=99,
+            last_timestamp_ns=1_000_000,
             checksum=checksum,
         )
         store.save(meta, state)
@@ -74,8 +77,11 @@ class TestInMemoryFeatureSnapshotStore:
         store = InMemoryFeatureSnapshotStore()
         state = b"data"
         meta = FeatureSnapshotMeta(
-            symbol="AAPL", feature_version="1.0", event_count=10,
-            last_sequence=9, last_timestamp_ns=500,
+            symbol="AAPL",
+            feature_version="1.0",
+            event_count=10,
+            last_sequence=9,
+            last_timestamp_ns=500,
             checksum=hashlib.sha256(state).hexdigest(),
         )
         store.save(meta, state)
@@ -89,16 +95,22 @@ class TestInMemoryFeatureSnapshotStore:
 
         state_v1 = b"state_v1"
         meta_v1 = FeatureSnapshotMeta(
-            symbol="AAPL", feature_version="1.0", event_count=10,
-            last_sequence=9, last_timestamp_ns=100,
+            symbol="AAPL",
+            feature_version="1.0",
+            event_count=10,
+            last_sequence=9,
+            last_timestamp_ns=100,
             checksum=hashlib.sha256(state_v1).hexdigest(),
         )
         store.save(meta_v1, state_v1)
 
         state_v2 = b"state_v2"
         meta_v2 = FeatureSnapshotMeta(
-            symbol="AAPL", feature_version="1.0", event_count=20,
-            last_sequence=19, last_timestamp_ns=200,
+            symbol="AAPL",
+            feature_version="1.0",
+            event_count=20,
+            last_sequence=19,
+            last_timestamp_ns=200,
             checksum=hashlib.sha256(state_v2).hexdigest(),
         )
         store.save(meta_v2, state_v2)
@@ -114,8 +126,11 @@ class TestInMemoryFeatureSnapshotStore:
 
         store = InMemoryFeatureSnapshotStore()
         meta = FeatureSnapshotMeta(
-            symbol="AAPL", feature_version="1.0", event_count=10,
-            last_sequence=9, last_timestamp_ns=100,
+            symbol="AAPL",
+            feature_version="1.0",
+            event_count=10,
+            last_sequence=9,
+            last_timestamp_ns=100,
             checksum="wrong_checksum_value",
         )
         with pytest.raises(ValueError, match="Checksum mismatch"):
@@ -128,8 +143,11 @@ class TestInMemoryFeatureSnapshotStore:
         store = InMemoryFeatureSnapshotStore()
         state = b"original_data"
         meta = FeatureSnapshotMeta(
-            symbol="AAPL", feature_version="1.0", event_count=10,
-            last_sequence=9, last_timestamp_ns=100,
+            symbol="AAPL",
+            feature_version="1.0",
+            event_count=10,
+            last_sequence=9,
+            last_timestamp_ns=100,
             checksum=hashlib.sha256(state).hexdigest(),
         )
         store.save(meta, state)
@@ -145,8 +163,11 @@ class TestInMemoryFeatureSnapshotStore:
         for version, ts in [("1.0", 100), ("1.1", 200)]:
             state = f"state_{version}".encode()
             meta = FeatureSnapshotMeta(
-                symbol="AAPL", feature_version=version, event_count=10,
-                last_sequence=9, last_timestamp_ns=ts,
+                symbol="AAPL",
+                feature_version=version,
+                event_count=10,
+                last_sequence=9,
+                last_timestamp_ns=ts,
                 checksum=hashlib.sha256(state).hexdigest(),
             )
             store.save(meta, state)

@@ -109,9 +109,7 @@ class TestReconstructPathsReference:
 
         cfg = CPCVConfig(n_groups=4, k_test_groups=2)
         splits = generate_cpcv_splits(n_bars=8, config=cfg)
-        paths = reconstruct_paths(
-            cfg.n_groups, cfg.k_test_groups, splits
-        )
+        paths = reconstruct_paths(cfg.n_groups, cfg.k_test_groups, splits)
         # Per design-doc derivation:
         #   group 0 testing splits: [0, 1, 2]
         #   group 1 testing splits: [0, 3, 4]
@@ -140,9 +138,7 @@ class TestBuildCPCVEvidenceIdentityReturns:
     def test_n4_k2_identity_returns_pinned_evidence(self) -> None:
         cfg = CPCVConfig(n_groups=4, k_test_groups=2, embargo_bars=0)
         splits = generate_cpcv_splits(n_bars=8, config=cfg)
-        test_returns = [
-            tuple(float(i) for i in s.test_indices) for s in splits
-        ]
+        test_returns = [tuple(float(i) for i in s.test_indices) for s in splits]
 
         ev = build_cpcv_evidence(
             config=cfg,
@@ -165,12 +161,8 @@ class TestBuildCPCVEvidenceIdentityReturns:
         for s in ev.fold_sharpes:
             assert math.isclose(s, expected_sharpe, rel_tol=1e-12)
 
-        assert math.isclose(
-            ev.median_sharpe, expected_sharpe, rel_tol=1e-12
-        )
-        assert math.isclose(
-            ev.mean_sharpe, expected_sharpe, rel_tol=1e-12
-        )
+        assert math.isclose(ev.median_sharpe, expected_sharpe, rel_tol=1e-12)
+        assert math.isclose(ev.mean_sharpe, expected_sharpe, rel_tol=1e-12)
 
         # Each path's PnL is sum(0..7) = 28.0; mean across 3 paths = 28.0.
         assert ev.mean_pnl == 28.0
@@ -208,10 +200,7 @@ class TestBuildCPCVEvidenceSplitPerturbedReturns:
         # Per-split OOS return for bar i in split s:
         #     r = bar_idx * 1e-3 + split_idx * 1e-4
         test_returns = [
-            tuple(
-                bi * 0.001 + sidx * 0.0001
-                for bi in s.test_indices
-            )
+            tuple(bi * 0.001 + sidx * 0.0001 for bi in s.test_indices)
             for sidx, s in enumerate(splits)
         ]
 
@@ -251,10 +240,7 @@ class TestBuildCPCVEvidenceSplitPerturbedReturns:
         cfg = CPCVConfig(n_groups=6, k_test_groups=2, embargo_bars=2)
         splits = generate_cpcv_splits(n_bars=30, config=cfg)
         test_returns = [
-            tuple(
-                bi * 0.001 + sidx * 0.0001
-                for bi in s.test_indices
-            )
+            tuple(bi * 0.001 + sidx * 0.0001 for bi in s.test_indices)
             for sidx, s in enumerate(splits)
         ]
         ev = build_cpcv_evidence(
@@ -264,9 +250,7 @@ class TestBuildCPCVEvidenceSplitPerturbedReturns:
             n_bootstrap=200,
             seed=7,
         )
-        relaxed = GateThresholds(
-            cpcv_min_folds=4, cpcv_min_mean_sharpe=1.0
-        )
+        relaxed = GateThresholds(cpcv_min_folds=4, cpcv_min_mean_sharpe=1.0)
         errors = validate_cpcv(ev, relaxed)
         assert errors == [], f"validator rejected: {errors}"
 
@@ -285,9 +269,7 @@ class TestLoBootstrapPValueReference:
 
     def test_strong_signal_pinned(self) -> None:
         sharpes = (1.0, 0.8, 1.2, 0.9, 1.1, 1.05, 0.95, 1.15)
-        p = lo_bootstrap_p_value(
-            sharpes, n_bootstrap=10_000, seed=12345
-        )
+        p = lo_bootstrap_p_value(sharpes, n_bootstrap=10_000, seed=12345)
         # Strong, clean signal: every centred-resample mean is
         # bounded by the largest centred deviation, so the
         # observation lands at the +1/+1 floor.
@@ -297,14 +279,10 @@ class TestLoBootstrapPValueReference:
         # Symmetric sharpes about zero -> mean is zero -> early-out
         # returns 1.0 (no signal).
         sharpes = (1.0, -1.0, 1.0, -1.0)
-        assert lo_bootstrap_p_value(
-            sharpes, n_bootstrap=200, seed=0
-        ) == 1.0
+        assert lo_bootstrap_p_value(sharpes, n_bootstrap=200, seed=0) == 1.0
 
     def test_singleton_pinned(self) -> None:
-        assert lo_bootstrap_p_value(
-            (0.5,), n_bootstrap=100, seed=0
-        ) == 1.0
+        assert lo_bootstrap_p_value((0.5,), n_bootstrap=100, seed=0) == 1.0
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -322,16 +300,10 @@ class TestFoldPnLCurvesSha256Reference:
         # Computed once via the canonical formatter:
         #   "2\n3,0.1,0.2,0.3\n3,0.4,0.5,0.6\n"
         # sha256-hex pinned below.
-        expected_serialisation = (
-            b"2\n"
-            b"3,0.1,0.2,0.3\n"
-            b"3,0.4,0.5,0.6\n"
-        )
+        expected_serialisation = b"2\n3,0.1,0.2,0.3\n3,0.4,0.5,0.6\n"
         import hashlib as _hashlib
 
-        expected_hash = (
-            "sha256:" + _hashlib.sha256(expected_serialisation).hexdigest()
-        )
+        expected_hash = "sha256:" + _hashlib.sha256(expected_serialisation).hexdigest()
         assert h == expected_hash
 
     def test_empty_paths_hash_pinned(self) -> None:
@@ -343,9 +315,7 @@ class TestFoldPnLCurvesSha256Reference:
         # Canonical serialisation: "0\n".
         import hashlib as _hashlib
 
-        expected = (
-            "sha256:" + _hashlib.sha256(b"0\n").hexdigest()
-        )
+        expected = "sha256:" + _hashlib.sha256(b"0\n").hexdigest()
         assert h == expected
 
 

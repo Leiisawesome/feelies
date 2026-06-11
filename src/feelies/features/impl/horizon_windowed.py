@@ -58,9 +58,7 @@ _NS_PER_SECOND = 1_000_000_000
 # cannot emit an unbounded z that poisons downstream signals (audit #5).
 _MAX_ZSCORE = 10.0
 
-_REDUCERS = frozenset(
-    {"last", "mean", "sum", "rms", "zscore", "percentile", "delta"}
-)
+_REDUCERS = frozenset({"last", "mean", "sum", "rms", "zscore", "percentile", "delta"})
 
 
 class HorizonWindowedFeature:
@@ -132,13 +130,10 @@ class HorizonWindowedFeature:
             )
         if horizon_seconds <= 0:
             raise ValueError(
-                f"HorizonWindowedFeature: horizon_seconds must be > 0, "
-                f"got {horizon_seconds}"
+                f"HorizonWindowedFeature: horizon_seconds must be > 0, got {horizon_seconds}"
             )
         suffix = self._DEFAULT_SUFFIX[reducer]
-        self.feature_id: str = (
-            feature_id if feature_id is not None else f"{sensor_id}{suffix}"
-        )
+        self.feature_id: str = feature_id if feature_id is not None else f"{sensor_id}{suffix}"
         self.horizon_seconds: int = horizon_seconds
         self.input_sensor_ids: tuple[str, ...] = (sensor_id,)
         self._reducer = reducer
@@ -206,8 +201,7 @@ class HorizonWindowedFeature:
             if idxs is None:
                 self._warn_once(
                     "tuple_without_indices",
-                    "sensor delivered a tuple but tuple_sum_component_"
-                    "indices is None",
+                    "sensor delivered a tuple but tuple_sum_component_indices is None",
                 )
                 return None
             acc = 0.0
@@ -303,7 +297,7 @@ class HorizonWindowedFeature:
             return (mean * mean + var) ** 0.5, True, False
 
         # zscore
-        std = var ** 0.5
+        std = var**0.5
         if std < 1e-10:
             return 0.0, True, False
         z = (latest - mean) / std
