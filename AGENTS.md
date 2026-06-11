@@ -31,21 +31,18 @@ There are no long-running services. The platform is a library + CLI; the "applic
 
 ### Testing
 
-- `uv run pytest` — full suite (~2095 tests)
+- `uv run pytest` — full suite (~3350 tests)
 - `uv run pytest -m "not functional and not slow"` — skip network/benchmark tests
-- `uv run pytest tests/determinism/` — determinism parity hash tests (54 tests)
-- `uv run pytest tests/integration/test_phase4_e2e.py` — e2e pipeline test (8 tests)
+- `uv run pytest tests/determinism/` — determinism parity hash tests (90 tests)
+- `uv run pytest tests/integration/test_phase4_e2e.py` — e2e pipeline test (10 tests)
 - **Paper RTH (Tier 2–3, requires IB Gateway + MASSIVE_API_KEY + RTH):** `uv run pytest tests/broker/ib/test_ib_functional.py tests/integration/test_paper_rth_e2e.py -m paper_rth`
 - **Paper smoke config:** `uv run python scripts/run_paper.py --config configs/paper_smoke_rth.yaml --max-runtime-s 60 --run-dir /tmp/paper_smoke`
 
 ### Known pre-existing acceptance test failures (as of main)
 
-Two acceptance tests fail because `alphas/sig_benign_midcap_v1/` already contains a `trend_mechanism:` block but the acceptance test expects it to be absent (v0.2 baseline parity):
-- `tests/acceptance/test_strict_mode_default_true.py::TestV02ParityPreservedOnExplicitOptOut::test_v02_baseline_alpha_refused_under_default`
-- `tests/acceptance/test_v02_no_trend_mechanism_parity.py::test_baseline_alpha_yaml_has_no_trend_mechanism_block`
-- `tests/acceptance/test_v02_no_trend_mechanism_parity.py::test_baseline_alpha_loads_under_v03_default`
-
-These are not environment issues — they reflect a drift between the reference alpha YAML and the acceptance test expectations on the `main` branch.
+None — the full suite is green on `main` (verified 2026-06-11: 3319 passed, 27 skipped;
+the skips are gated `functional` / `paper_rth` / per-host perf tests). The historical
+`sig_benign_midcap_v1` trend-mechanism parity failures have been resolved.
 
 ### Gotchas
 
