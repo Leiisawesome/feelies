@@ -1,0 +1,32 @@
+# Sizing-tilt measurement config — EDGE FACTOR ONLY (G-7 attribution).
+#
+# Factor-split companion to backtest_sizing_tilt.yaml: edge-weighting on,
+# inventory taper OFF, so the SIZEDIV_JSONL shadow isolates how much the
+# edge factor alone would change the target size.  Pair the up/downsize
+# split from this run against backtest_sizing_tilt_invonly.yaml to attribute
+# the combined tilt's behaviour to each factor.
+#
+# Shadow-only (sizer_tilt_drive: false): the live size is byte-identical to
+# the baseline; only the measurement stream reflects the tilt.
+#
+# Usage:
+#   run_backtest.py --config configs/backtest_sizing_tilt_edgeonly.yaml \
+#       --symbol APP --date 2026-03-26 --emit-size-divergence-jsonl \
+#     | grep '^SIZEDIV_JSONL ' | sed 's/^SIZEDIV_JSONL //' > edgeonly.jsonl
+#   python scripts/analyze_size_divergence.py edgeonly.jsonl
+#
+# edge_ref_bps=11 is the recalibrated reference (~median disclosed edge for
+# sig_benign_midcap_v1 under backtest_app.yaml) — see backtest_sizing_tilt.yaml
+# for the derivation and the empirical-confirmation command.
+extends: ../platform.yaml
+
+sizer_edge_weighting_enabled: true
+sizer_edge_ref_bps: 11.0
+sizer_edge_floor: 0.25
+sizer_edge_cap: 2.0
+
+sizer_inventory_penalty_enabled: false
+
+sizer_tilt_floor: 0.10
+sizer_tilt_cap: 3.0
+sizer_tilt_drive: false

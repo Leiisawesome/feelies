@@ -14,13 +14,28 @@
 #   uv run python scripts/analyze_size_divergence.py sizediv.jsonl
 #
 # S1 wires the edge + inventory factors (vol is a deferred provider seam, so
-# vol_targeting is left off here).  Tune edge_ref_bps to the universe's
-# typical disclosed edge so the factor centers near 1.0.
+# vol_targeting is left off here).
+#
+# CALIBRATION (2026-06-10).  The first shadow run (edge_ref_bps=20) produced
+# 100% downsize because sig_benign_midcap_v1 discloses edge in [9, 20] bps
+# (edge = clamp(|z|·edge_per_z_bps, ·, edge_cap_bps) with edge_per_z_bps=6,
+# entry_threshold_z=1.5, edge_cap_bps=20) — so edge/20 is always < 1.0.  The
+# median disclosed edge (z truncated at 1.5σ) is ~11 bps, so edge_ref_bps is
+# set to 11.0 here: weak (~9 bps) signals mildly downsize, strong (15-20 bps)
+# ones upsize → genuine two-sided discrimination.  Confirm/refine the
+# reference against the EMPIRICAL distribution for your dates:
+#   run_backtest.py --config configs/backtest_app.yaml --symbol APP \
+#       --date 2026-06-01 --emit-signals-jsonl \
+#     | grep '^SIGNAL_JSONL ' | sed 's/^SIGNAL_JSONL //' \
+#     | python -c 'import sys,json,statistics as s; \
+#         e=[json.loads(l)["edge_estimate_bps"] for l in sys.stdin]; \
+#         print("median",s.median(e),"mean",round(s.mean(e),2),"n",len(e))'
+# and set edge_ref_bps to that median.
 extends: ../platform.yaml
 
 # Edge-weighting: scale the target by edge / ref, clamped [floor, cap].
 sizer_edge_weighting_enabled: true
-sizer_edge_ref_bps: 20.0
+sizer_edge_ref_bps: 11.0
 sizer_edge_floor: 0.25
 sizer_edge_cap: 2.0
 

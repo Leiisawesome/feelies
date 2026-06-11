@@ -1,0 +1,30 @@
+# Sizing-tilt measurement config — INVENTORY FACTOR ONLY (G-7 attribution).
+#
+# Factor-split companion to backtest_sizing_tilt.yaml: inventory taper on,
+# edge-weighting OFF, so the SIZEDIV_JSONL shadow isolates how much the
+# inventory factor alone would change the target size (shrinking adds as the
+# book fills toward the per-symbol cap).  Pair against
+# backtest_sizing_tilt_edgeonly.yaml to attribute the combined tilt.
+#
+# Inventory taper is the defensible single-alpha factor: unlike edge-weighting
+# (which needs cross-signal edge dispersion to add value), the taper is a pure
+# risk control — it never amplifies, only reduces adds as concentration rises.
+#
+# Shadow-only (sizer_tilt_drive: false): the live size is byte-identical to
+# the baseline; only the measurement stream reflects the tilt.
+#
+# Usage:
+#   run_backtest.py --config configs/backtest_sizing_tilt_invonly.yaml \
+#       --symbol APP --date 2026-03-26 --emit-size-divergence-jsonl \
+#     | grep '^SIZEDIV_JSONL ' | sed 's/^SIZEDIV_JSONL //' > invonly.jsonl
+#   python scripts/analyze_size_divergence.py invonly.jsonl
+extends: ../platform.yaml
+
+sizer_edge_weighting_enabled: false
+
+sizer_inventory_penalty_enabled: true
+sizer_inventory_floor: 0.0
+
+sizer_tilt_floor: 0.10
+sizer_tilt_cap: 3.0
+sizer_tilt_drive: false

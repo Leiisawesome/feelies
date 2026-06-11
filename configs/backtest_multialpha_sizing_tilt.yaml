@@ -1,0 +1,38 @@
+# Multi-alpha sizing-tilt shadow — the honest edge-weighting test (G-7).
+#
+# Edge-weighting's value is CROSS-SIGNAL discrimination: sizing high-edge
+# signals up and low-edge ones down.  A single alpha that discloses
+# near-constant edge can't show this (the factor just rescales everything,
+# ≈ a lower capital allocation), which is why the single-alpha shadow on
+# backtest_sizing_tilt.yaml came back 100% downsize.  This config runs the
+# 3-alpha mix (benign momentum + kyle drift + inventory revert) so the
+# SIZEDIV_JSONL stream reveals dispersion ACROSS alphas with different edge
+# scales — the by-alpha breakdown in analyze_size_divergence.py is the read.
+#
+# CAVEAT: sizer_edge_ref_bps is a single GLOBAL reference, but the three
+# alphas disclose edge on different scales, so one ref cannot center all of
+# them at 1.0.  Read this run for the SHAPE (which alphas the tilt up/downs,
+# and how widely), not as a tuned configuration — per-alpha edge references
+# are a follow-up refinement (the sizer would need an alpha-keyed ref map).
+# The ref below (~11 bps) is centered on sig_benign_midcap_v1.
+#
+# Shadow-only (sizer_tilt_drive: false): live size byte-identical to baseline.
+#
+# Usage:
+#   run_backtest.py --config configs/backtest_multialpha_sizing_tilt.yaml \
+#       --symbol APP --date 2026-03-26 --emit-size-divergence-jsonl \
+#     | grep '^SIZEDIV_JSONL ' | sed 's/^SIZEDIV_JSONL //' > ma_sizediv.jsonl
+#   python scripts/analyze_size_divergence.py ma_sizediv.jsonl
+extends: backtest_multialpha.yaml
+
+sizer_edge_weighting_enabled: true
+sizer_edge_ref_bps: 11.0
+sizer_edge_floor: 0.25
+sizer_edge_cap: 2.0
+
+sizer_inventory_penalty_enabled: true
+sizer_inventory_floor: 0.0
+
+sizer_tilt_floor: 0.10
+sizer_tilt_cap: 3.0
+sizer_tilt_drive: false
