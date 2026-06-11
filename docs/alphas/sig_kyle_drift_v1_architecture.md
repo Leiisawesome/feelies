@@ -75,7 +75,7 @@ flowchart TD
   RK --> EX[ExecutionBackend]
 ```
 
-**Bindings:** `spread_z_30d` is **cache-only** (no horizon feature row). **`realized_vol_30s_zscore`** comes from the **snapshot** at the 300 s boundary.
+**Bindings:** since audit **P1-6**, `spread_z_30d` has a passthrough horizon feature row, so the gate reads it from the **snapshot** at the 300 s boundary (cache fallback). **`realized_vol_30s_zscore`** likewise comes from the snapshot.
 
 ---
 
@@ -88,18 +88,18 @@ flowchart TD
 | `kyle_lambda_60s` | Rolling **Kyle λ** estimate; **percentile** gates “actively informed” regimes; **z-score** scales edge when present. |
 | `ofi_ewma` | **Direction** (`LONG` if `ofi > 0`) and **strength** scaling; magnitude filter via `ofi_threshold`. |
 | `micro_price` | Declared dependency / mechanism context (G16 fingerprint list); **not read** in the shipped `evaluate()` body. |
-| `spread_z_30d` | Gate friction / toxicity (cache scalar). |
+| `spread_z_30d` | Gate friction / toxicity (snapshot passthrough since P1-6). |
 | `realized_vol_30s` | Gate stress via **`realized_vol_30s_zscore`**. |
 
 ### 2.2 Sensor → `snapshot.values` (300 s horizon)
 
 | Sensor | Horizon features | Keys used by this alpha |
 |--------|------------------|-------------------------|
-| `kyle_lambda_60s` | rolling z + rolling percentile | **`kyle_lambda_60s_percentile`**, **`kyle_lambda_60s_zscore`** (optional for edge magnitude) |
+| `kyle_lambda_60s` | horizon-windowed z + percentile | **`kyle_lambda_60s_percentile`**, **`kyle_lambda_60s_zscore`** (optional for edge magnitude) |
 | `ofi_ewma` | passthrough + z | **`ofi_ewma`** (level for direction + `abs(ofi)` filter) |
-| `micro_price` | passthrough + z | *(not referenced in inline evaluate)* |
+| `micro_price` | passthrough + z + drift (`micro_price_drift`, P1-9) | *(not referenced in inline evaluate)* |
 | `realized_vol_30s` | passthrough + z | Gate: **`realized_vol_30s_zscore`** |
-| `spread_z_30d` | none | Gate: **`spread_z_30d`** |
+| `spread_z_30d` | passthrough (P1-6) | Gate: **`spread_z_30d`** from the snapshot |
 
 ### 2.3 `evaluate()` logic (condensed)
 
@@ -115,7 +115,7 @@ flowchart TD
 
 ### 2.5 `micro_price` declared but unused in `evaluate()`
 
-Because **`micro_price`** is listed in **`depends_on_sensors`**, bootstrap registers **`micro_price`** and **`micro_price_zscore`** (and any other rows from `_horizon_features_for`) as **required warm feature ids** at the **300 s** horizon alongside **`kyle_lambda_60s_*`** and **`ofi_ewma_*`**. The shipped **`evaluate()`** never reads them, but **`HorizonSignalEngine`** can still **suppress** the whole boundary if those rows are cold/stale when present under the warm/stale maps — i.e. **unused dependencies still affect readiness**. To drop that cost, remove `micro_price` from `depends_on_sensors` **only if** G6/G16 and your mechanism story still validate (G16 fingerprint list is separate from `depends_on_sensors`).
+Because **`micro_price`** is listed in **`depends_on_sensors`**, bootstrap registers **`micro_price`**, **`micro_price_zscore`**, and **`micro_price_drift`** (the P1-9 level-invariant drift row) as **required warm feature ids** at the **300 s** horizon alongside **`kyle_lambda_60s_*`** and **`ofi_ewma_*`**. The shipped **`evaluate()`** never reads them, but **`HorizonSignalEngine`** can still **suppress** the whole boundary if those rows are cold/stale when present under the warm/stale maps — i.e. **unused dependencies still affect readiness**. To drop that cost, remove `micro_price` from `depends_on_sensors` **only if** G6/G16 and your mechanism story still validate (G16 fingerprint list is separate from `depends_on_sensors`).
 
 ---
 
@@ -129,7 +129,7 @@ Because **`micro_price`** is listed in **`depends_on_sensors`**, bootstrap regis
 
 - **Warm/stale:** Any `*_zscore` / `*_percentile` token in the gate adds to **`required_warm_feature_ids`** — includes **`realized_vol_30s_zscore`**.
 
-- **`spread_z_30d`:** gate-only, **sensor_cache**; not promoted via `_horizon_features_for`, so **no** dedicated snapshot warm row for that identifier.
+- **`spread_z_30d`:** gate-only in this alpha, but promoted via `_horizon_features_for` since P1-6 — the bare `spread_z_30d` feature_id has a snapshot warm row and **is** part of `required_warm_feature_ids`.
 
 ### 3.2 Gate ON vs `evaluate()`
 

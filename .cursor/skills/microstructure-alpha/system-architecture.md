@@ -25,7 +25,7 @@ mode-specific behavior is confined to `ExecutionBackend`
 ┌──────────────────────▼─────────────────────────────────────┐
 │             SENSOR LAYER (Layer 1)                         │
 │  SensorRegistry fan-out (16 sensors ship; 13 registered)   │
-│  SENSOR_UPDATE: SensorProtocol.update → SensorReading      │
+│  SENSOR_UPDATE: Sensor.update → SensorReading              │
 │  Mechanism fingerprints: kyle_lambda, inventory_pressure,  │
 │  hawkes_intensity, liquidity_stress_score, scheduled_flow  │
 └──────────────────────┬─────────────────────────────────────┘
@@ -34,7 +34,8 @@ mode-specific behavior is confined to `ExecutionBackend`
 │           HORIZON AGGREGATION (Layer 1.5)                  │
 │  HorizonScheduler boundary detection (integer math)        │
 │  HorizonAggregator → HorizonFeatureSnapshot                │
-│  warm/stale flags, z-scores, percentiles                   │
+│  per-feature warm/stale dicts; z-score / percentile        │
+│  views are feature_id keys inside `values`                 │
 └──────────────────────┬─────────────────────────────────────┘
                        │ SIGNAL_GATE
 ┌──────────────────────▼─────────────────────────────────────┐
@@ -49,7 +50,7 @@ mode-specific behavior is confined to `ExecutionBackend`
 │            COMPOSITION LAYER (Layer 3)                     │
 │  UniverseSynchronizer → CrossSectionalContext              │
 │  CompositionEngine:                                         │
-│    PortfolioAlpha.compute_weights                          │
+│    PortfolioAlpha.construct(ctx, params)                   │
 │      → CrossSectionalRanker (decay-weighted, capped)       │
 │      → FactorNeutralizer (factor exposures)                │
 │      → SectorMatcher (long/short pairing)                  │
@@ -71,7 +72,11 @@ mode-specific behavior is confined to `ExecutionBackend`
 │  OrderRouter.submit(OrderRequest)                          │
 │  OrderRouter.poll_acks() → OrderAck[OrderAckStatus]        │
 │  Backtest: BacktestOrderRouter / PassiveLimitOrderRouter   │
-│  Live:     broker API (not yet implemented)                │
+│  Paper:    IBOrderRouter + IBGatewayConnection             │
+│            (execution/paper_backend.py)                    │
+│  Live:     no dedicated backend yet (live_router.py is a   │
+│            stub raising NotImplementedError; bootstrap     │
+│            raises NotImplementedError for LIVE mode)       │
 └──────────────────────┬─────────────────────────────────────┘
                        │ M9 → M10
 ┌──────────────────────▼─────────────────────────────────────┐
@@ -150,14 +155,14 @@ For backtesting, replay historical data through `MarketDataSource`
 
 ## Sensor Layer (Layer 1)
 
-> Implemented as the `SensorProtocol` + `SensorRegistry` framework
+> Implemented as the `Sensor` protocol + `SensorRegistry` framework
 > (`feelies.sensors`). Sensors fan out at the `SENSOR_UPDATE`
 > sub-state between M2 and M3. See the feature-engine skill for the
 > full sensor + horizon-aggregator contract.
 
 ### Design Principles
 
-- **Incremental updates**: `SensorProtocol.update()` processes one
+- **Incremental updates**: `Sensor.update()` processes one
   event at a time; no window recomputation
 - **Per-symbol isolation**: state is per-symbol; no cross-symbol
   leakage inside a sensor
@@ -196,8 +201,9 @@ against `session_open_ns` for each configured horizon
 (`{30, 120, 300, 900, 1800}` seconds canonical Phase-2 set). On each
 `HorizonTick`, `HorizonAggregator` fans in the most recent
 `SensorReading` per (symbol, sensor_id) and emits a
-`HorizonFeatureSnapshot` carrying values, z-scores, percentiles, and
-warm/stale quality flags.
+`HorizonFeatureSnapshot` carrying `values` (where z-score / percentile
+views are `feature_id` keys, e.g. `<sensor_id>_zscore`) and
+per-feature warm/stale quality dicts.
 
 ### Quality Gates
 
@@ -252,7 +258,7 @@ no position to exit, the translator returns `NO_ACTION`, causing the
 pipeline to skip from M4 directly to M10 — before the risk check at
 M5.
 
-### Regime Gate Purity (G3)
+### Regime Gate Purity (G4)
 
 `signals/regime_gate.py` parses the alpha's `regime_gate:` block into
 a safe AST-evaluated boolean DSL. Bindings drawn from `RegimeState`
@@ -278,8 +284,9 @@ The platform refuses to load any alpha with `margin_ratio < 1.5`.
 
 > See the composition-layer skill for the full contract. Summary:
 > `PortfolioAlpha` declares a `universe`, `depends_on_signals`,
-> `factor_neutralization`, and emits cross-sectional weights via
-> `compute_weights`. `CompositionEngine` runs the rank → neutralize
+> `factor_neutralization`, and emits a `SizedPositionIntent` via
+> `construct(ctx, params)` (`composition/protocol.py`).
+> `CompositionEngine` runs the rank → neutralize
 > → sector → optimize → cap pipeline and emits
 > `SizedPositionIntent` with `mechanism_breakdown`. `RiskEngine.check_sized_intent`
 > decomposes it into per-leg `OrderRequest`s with per-leg veto

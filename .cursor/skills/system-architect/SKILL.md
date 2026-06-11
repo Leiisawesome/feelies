@@ -71,6 +71,10 @@ no silent transitions (Inv-13).
 | Risk escalation | `RiskLevel` | `risk/escalation.py` | NORMAL → WARNING → BREACH_DETECTED → FORCED_FLATTEN → LOCKED | Monotonic safety |
 | Data integrity | `DataHealth` | `ingestion/data_integrity.py` | HEALTHY ↔ {GAP_DETECTED (WS seq / disconnect), HALTED (LULD / regulatory halt)}; CORRUPTED terminal | Per-symbol stream |
 
+Note: `MacroState.BACKTEST_MODE` has no outbound edge to
+`RISK_LOCKDOWN` (`kernel/macro.py` — its only exits are READY and
+DEGRADED); the orchestrator simulates the flatten in backtest instead.
+
 Illegal transitions raise `IllegalTransition`. Construction-time enum
 completeness check guarantees every enum member has a transition entry
 — a contributor adding a new state without wiring it triggers a hard
@@ -129,8 +133,12 @@ startup via `bootstrap.build_platform(config)`:
 |------|-------------------|---------------|---------|
 | `BACKTEST_MODE` (`execution_mode: market`) | `ReplayFeed(EventLog)` | `BacktestOrderRouter` (mid-price fills) | `SimulatedClock` |
 | `BACKTEST_MODE` (`execution_mode: passive_limit`) | `ReplayFeed(EventLog)` | `PassiveLimitOrderRouter` (queue-position fills) | `SimulatedClock` |
-| `PAPER_TRADING_MODE` | `MassiveLiveFeed` | `LiveOrderRouter` (`execution/live_router.py`) composed via `paper_backend.py` | `WallClock` |
-| `LIVE_TRADING_MODE` | `MassiveLiveFeed` | `LiveOrderRouter` (`execution/live_router.py`); production-readiness gated on the live-execution skill's acceptance criteria | `WallClock` |
+| `PAPER_TRADING_MODE` | `MassiveLiveFeed` | `IBOrderRouter` (`broker/ib/`), composed via `build_paper_backend()` in `execution/paper_backend.py` | `WallClock` |
+| `LIVE_TRADING_MODE` | — | **Not yet implemented** — `bootstrap._create_backend()` raises `NotImplementedError` for `OperatingMode.LIVE`; `LiveOrderRouter` (`execution/live_router.py`) is a stub that raises `NotImplementedError` | — |
+
+`execution_mode: minimum_cost` is a third backtest mode: it routes
+through the passive-limit backend (`PassiveLimitOrderRouter`) so the
+per-order policy can post a LIMIT when it picks the passive route.
 
 `MassiveHistoricalIngestor` is a batch ETL that populates `EventLog`
 outside the orchestrator lifecycle — it is not an operating mode (see
@@ -186,12 +194,12 @@ end-to-end provenance.
 | `HorizonTick` | Scheduler → aggregator | horizon_seconds, boundary_index, boundary_ts_ns |
 | `HorizonFeatureSnapshot` | Layer 1.5 → Layer 2 | symbol, horizon_seconds, values, warm, stale |
 | `Signal` | Layer 2 → Layer 3 / risk | direction, strength, edge_estimate_bps, trend_mechanism, expected_half_life_seconds |
-| `CrossSectionalContext` | Layer 3 → portfolio alpha | alpha_id, horizon_seconds, signals, completeness |
-| `SizedPositionIntent` | Layer 3 → risk | target_positions, mechanism_breakdown, decision_basis_hash |
+| `CrossSectionalContext` | Layer 3 → portfolio alpha | horizon_seconds, boundary_index, universe, signals_by_symbol, completeness |
+| `SizedPositionIntent` | Layer 3 → risk | target_positions (`dict[str, TargetPosition]`), mechanism_breakdown, factor_exposures |
 | `RiskVerdict` | Risk → kernel | action (`RiskAction`), reason, scaling_factor |
 | `OrderRequest` | Kernel → execution | order_id, symbol, side, qty, reason |
 | `OrderAck` | Execution → kernel | status (`OrderAckStatus`), fill_price, filled_qty |
-| `PositionUpdate` | Kernel → portfolio | symbol, signed qty, avg_entry, realized_pnl |
+| `PositionUpdate` | Kernel → portfolio | symbol, signed qty, avg_price, realized_pnl |
 | `StateTransition` | Any SM → bus | machine_name, from/to, trigger |
 | `MetricEvent` | Any → monitoring | layer, name, value, metric_type |
 | `Alert` | Any → monitoring | severity (`AlertSeverity`), name, context |
@@ -245,12 +253,12 @@ subclass.
 | G5 | Signal purity | Always blocks |
 | G6 | Sensor-DAG validity | Always blocks |
 | G7 | Horizon registration | Always blocks |
-| G8 | Warm-up documentation | Always blocks |
-| G9 | Cross-symbol staleness (Phase-4) | Always blocks |
+| G8 | No implicit lookahead (`_check_g8_no_implicit_lookahead`) | Always blocks |
+| G9 | Session/horizon alignment (`_check_g9_session_alignment`; PORTFOLIO-only structural placeholder) | Always blocks |
 | G10 | PORTFOLIO universe presence (Phase-4) | Always blocks |
 | G11 | PORTFOLIO factor-neutralization disclosure (Phase-4) | Always blocks |
 | G12 | Cost-arithmetic margin_ratio ≥ 1.5 (Inv-12) | Always blocks |
-| G13 | No implicit lookahead | Always blocks |
+| G13 | Warm-up documentation (`_check_g13_warm_up_documentation`; currently a no-op for SIGNAL/PORTFOLIO — neither declares inline features) | Always blocks |
 | G14 | Data dependency declaration | Always blocks |
 | G15 | Router whitelist | Always blocks |
 | G16 | Mechanism-horizon binding (taxonomy + half-life envelope + horizon ratio + fingerprint sensors + stress-family exit-only + family caps) | Always blocks |
@@ -307,8 +315,10 @@ isolation.
 `MetricCollector.record(metric)` accepts `MetricEvent` from all layers
 via bus subscription. `flush()` is called at M10 each tick and on
 graceful shutdown. `AlertManager.emit(alert)` routes by severity;
-CRITICAL and EMERGENCY trigger safety controls synchronously before
-returning. `AlertManager.acknowledge(name, operator)` records human
+`InMemoryAlertManager.emit()` auto-activates the kill switch
+synchronously on EMERGENCY only — CRITICAL is logged/surfaced but does
+not auto-trip (`monitoring/in_memory.py`).
+`AlertManager.acknowledge(name, operator)` records human
 acknowledgment but does not deactivate safety — re-authorization is
 explicit (`KillSwitch.reset`, `Orchestrator.unlock_from_lockdown`).
 
@@ -350,7 +360,7 @@ gates `unlock_from_lockdown()`.
 
 Eleven locked **parity hashes** across six levels guard end-to-end
 determinism. Each is a SHA-256 over the ordered event stream at one
-layer, asserted by a subprocess-isolated test under
+layer, asserted by an in-process pytest replay test under
 `tests/determinism/`. The canonical registry is
 `tests/determinism/parity_manifest.py:LOCKED_PARITY_BASELINES`:
 

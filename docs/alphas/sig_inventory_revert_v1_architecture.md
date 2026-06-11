@@ -109,7 +109,7 @@ flowchart TD
   RK --> EX[ExecutionBackend]
 ```
 
-**Binding priority (gate and snapshot semantics):** For each symbol, `HorizonSignalEngine._build_bindings` starts from `snapshot.values` (values **at the horizon boundary** from `HorizonAggregator`) and **only then** fills missing keys from the **latest warm** `SensorReading` cache. So features in the snapshot win over stale-by-definition intra-bar cache entries; sensors **without** a registered horizon feature (this alpha: `spread_z_30d`) are read **only** via the cache in gate expressions.
+**Binding priority (gate and snapshot semantics):** For each symbol, `HorizonSignalEngine._build_bindings` starts from `snapshot.values` (values **at the horizon boundary** from `HorizonAggregator`) and **only then** fills missing keys from the **latest warm** `SensorReading` cache. So features in the snapshot win over stale-by-definition intra-bar cache entries. Since audit **P1-6**, every sensor this alpha declares — including `spread_z_30d` — has a registered horizon feature, so all gate identifiers resolve from the snapshot first; the cache path remains a fallback for sensors with no feature row.
 
 ---
 
@@ -132,10 +132,10 @@ Bootstrap builds **`HorizonFeature`** instances per `(sensor_id, horizon)` when 
 
 | Sensor | Horizon features at 30s (examples) | Keys in `HorizonFeatureSnapshot.values` |
 |--------|-------------------------------------|-------------------------------------------|
-| `quote_replenish_asymmetry` | `RollingZscoreFeature` | `quote_replenish_asymmetry_zscore` |
+| `quote_replenish_asymmetry` | `HorizonWindowedFeature` (z-score reducer) | `quote_replenish_asymmetry_zscore` |
 | `quote_hazard_rate` | `SensorPassthroughFeature` | `quote_hazard_rate` |
 | `realized_vol_30s` | passthrough + rolling z | `realized_vol_30s`, `realized_vol_30s_zscore` |
-| `spread_z_30d` | **none** (sensor is “stats-complete”; intentionally no Layer-2 row) | *No snapshot key* — gate uses **`spread_z_30d`** from **sensor_cache** |
+| `spread_z_30d` | `SensorPassthroughFeature` (**P1-6**; the sensor is stats-complete so the row is a passthrough of its z-like statistic) | `spread_z_30d` — gate reads the snapshot boundary value (cache fallback) |
 
 The alpha’s **`evaluate()`** body only pulls:
 
@@ -159,13 +159,13 @@ The loader sets `consumed_features` on the registered module to the **sensor id 
 
 ### 3.2 This alpha’s gate (latch + hysteresis band)
 
-- **`on_condition`:** `abs(quote_replenish_asymmetry_zscore) > 2.0 and P(normal) > 0.5`  
-  Arms only when the inventory signature is already extreme **and** the HMM thinks the session is plausibly “normal.”
+- **`on_condition`** (BT-12 “inventory-dominant only” tightening): `abs(quote_replenish_asymmetry_zscore) > 2.0 and dominant == "normal" and P(normal) > 0.65 and P(vol_breakout) < 0.20`  
+  Arms only when the inventory signature is already extreme, **normal is the dominant HMM state** with high posterior mass, **and** vol-breakout mass (an informed-flow proxy) is low — the fade is only safe when displacement is inventory-driven, not informational.
 
-- **`off_condition`:** `P(normal) < 0.5 - posterior_margin or abs(quote_replenish_asymmetry_zscore) < 2.0 - percentile_margin or spread_z_30d > 2.0 or realized_vol_30s_zscore > 3.5 or quote_hazard_rate < 4.0`
-  Disarms on **regime deterioration** (P(normal) < 0.30 with defaults), **asymmetry loss** (signature falls below hysteresis band), **wide spread vs history**, **vol spike**, or **ladder thinning** (`quote_hazard_rate` drops back below the hazard floor).
+- **`off_condition`:** `dominant != "normal" or P(normal) < 0.5 - posterior_margin or P(vol_breakout) > 0.30 or abs(quote_replenish_asymmetry_zscore) < 2.0 - percentile_margin or spread_z_30d > 2.0 or realized_vol_30s_zscore > 3.5 or quote_hazard_rate < 4.0`
+  Disarms on **dominant-state flip**, **regime deterioration** (P(normal) < 0.30 with defaults), **vol-breakout mass rising** (> 0.30), **asymmetry loss** (signature falls below hysteresis band), **wide spread vs history**, **vol spike**, or **ladder thinning** (`quote_hazard_rate` drops back below the hazard floor).
 
-- **Hysteresis:** `posterior_margin` and `percentile_margin` are loaded and injected into the gate binding map so expressions *may* reference them (e.g. `P(normal) > 0.5 + posterior_margin`). **This spec’s conditions use numeric literals**, so those margins are **available but unused** until you rewrite thresholds to use them. Regardless, the gate is a **proper latch**: when ON, only `off_condition` is tested; when OFF, only `on_condition`; if neither fires, the prior state holds (deadband between on and off).
+- **Hysteresis:** `posterior_margin` (0.20) and `percentile_margin` (0.30) are injected into the gate binding map, and **this spec’s `off_condition` references both** (`P(normal) < 0.5 - posterior_margin`, `abs(asym_z) < 2.0 - percentile_margin`), producing genuine ON/OFF deadbands. The gate is a **proper latch**: when ON, only `off_condition` is tested; when OFF, only `on_condition`; if neither fires, the prior state holds.
 
 ### 3.3 Warm / stale gating (Layer-2 safety)
 
@@ -177,9 +177,9 @@ If a binding goes missing mid-session (sensor returns cold), the engine fail-saf
 
 **`regime_gate` ON** only means the latch allows the engine to **call** `evaluate()` on each matching snapshot. **`evaluate()`** can still return **`None`** (e.g. `hazard_floor`, `cost_floor_bps`, or asymmetry below `asymmetry_z_threshold` even when the gate armed on the same z-threshold in `on_condition`). Do not equate “gate ON” with “will publish LONG/SHORT this boundary.”
 
-### 3.5 Cache-only identifiers and warm/stale (`spread_z_30d`)
+### 3.5 `spread_z_30d` warm/stale (post-P1-6)
 
-`bootstrap._required_warm_feature_ids_for_signal_alpha` unions (a) every **feature_id** derived from `depends_on_sensors` at this horizon, and (b) gate AST names ending in **`_zscore`** / **`_percentile`**, plus bare sensor names mapped through `_feature_ids_for_sensor_at_horizon`. For **`spread_z_30d`**, that mapping is **empty** (no horizon feature row), so **`spread_z_30d` is not a `required_warm_feature_ids` key** — the gate still reads it from **`sensor_cache`** when a warm **`SensorReading`** exists. Lack of a snapshot warm row does **not** block dispatch for that identifier alone.
+`bootstrap._required_warm_feature_ids_for_signal_alpha` unions (a) every **feature_id** derived from `depends_on_sensors` at this horizon, and (b) gate AST names ending in **`_zscore`** / **`_percentile`**, plus bare sensor names mapped through `_feature_ids_for_sensor_at_horizon`. Since audit **P1-6**, `spread_z_30d` has a passthrough feature row, so the bare `spread_z_30d` feature_id **is** a `required_warm_feature_ids` key — and the snapshot row gives the identifier a horizon-staleness path (a silent sensor marks the row stale and suppresses dispatch), which the old cache-only path lacked.
 
 ---
 
@@ -191,7 +191,7 @@ These are **merged at load** with optional **`platform.yaml` → `parameter_over
 
 | Parameter | Effect |
 |-----------|--------|
-| `asymmetry_z_threshold` | Minimum `abs(quote_replenish_asymmetry_zscore)` before a directional signal is considered. Higher ⇒ fewer, “cleaner” fades. |
+| `asymmetry_z_threshold` | Minimum `abs(quote_replenish_asymmetry_zscore)` before a directional signal is considered. Higher ⇒ fewer, “cleaner” fades. The gate’s `> 2.0` literal must match this default (the gate DSL cannot read `parameters:`), so sweeps below 2.0 are silently floored by the gate — see the YAML comment block. |
 | `hazard_floor` | Minimum `quote_hazard_rate` from the snapshot; below ⇒ no signal (stale ladder guard). Must stay in sync with the gate's `quote_hazard_rate < 4.0` literal. |
 | `hazard_band` | Width of the soft ramp above `hazard_floor` (events/s). Edge is scaled by `clip((hazard - hazard_floor) / hazard_band, 0, 1)` so marginally-active ladders contribute proportionally rather than clipping at the floor. |
 | `edge_per_z_bps` | Linear scaling of `edge_estimate_bps` in excess of the z-threshold. |

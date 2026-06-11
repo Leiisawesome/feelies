@@ -14,7 +14,7 @@ implemented primitives:
 | Mechanism | RiskLevel mapping | Protocol hook |
 |-----------|------------------|---------------|
 | Kill Switch | `LOCKED` (R4) | `KillSwitch.activate()` → `KillSwitchActivation` event |
-| Circuit Breaker | `BREACH_DETECTED` / `FORCED_FLATTEN` (R2/R3) | `RiskEngine.check_signal()` returns `REJECT` or `FORCE_FLATTEN` |
+| RiskLevel escalation (no standalone circuit breaker) | `BREACH_DETECTED` / `FORCED_FLATTEN` (R2/R3) | `RiskEngine.check_signal()` returns `REJECT` or `FORCE_FLATTEN`; FORCE_FLATTEN triggers the full `_escalate_risk()` cascade to LOCKED + kill switch — not a temporary halt-with-resume |
 | Capital Throttle | `WARNING` (R1) | `RiskEngine.check_order()` returns `SCALE_DOWN` |
 
 Safety controls only tighten autonomously (monotonic `RiskLevel` transitions);
@@ -28,9 +28,9 @@ guard (invariant 11).
 | Trigger | Source | Auto/Manual |
 |---------|--------|-------------|
 | Manual button / API call | Ops team | Manual |
-| Position reconciliation sign mismatch | Reconciliation engine | Auto |
+| Position reconciliation sign mismatch | Reconciliation engine | Auto — **not implemented** (no reconciliation-engine kill-switch wiring exists) |
 | Unrecoverable gateway error | Broker gateway | Auto |
-| Multiple orders in ERROR state (>= 3 within 1 min) | Order state machine | Auto |
+| Multiple orders in ERROR state (>= 3 within 1 min) | Order state machine | Auto — **not implemented** (`OrderState` has no ERROR state) |
 | External halt signal | Upstream monitoring | Auto |
 
 ### Activation Sequence
@@ -46,7 +46,9 @@ Implemented in `Orchestrator._escalate_risk()`:
 4. MacroState transitions to RISK_LOCKDOWN
 5. All new ticks: kill switch gate at top of _process_tick_inner()
    detects is_active, transitions macro to DEGRADED, returns
-6. Cancel open orders via OrderRouter (best-effort)
+6. Emergency flatten of non-zero positions via market orders
+   (at R3 FORCED_FLATTEN, before LOCKED) — there is no cancel-all
+   step; open orders are not cancelled
 7. Block all further trading until manual unlock_from_lockdown()
 ```
 
@@ -68,6 +70,12 @@ Implemented via `Orchestrator.unlock_from_lockdown()`:
 ---
 
 ## Circuit Breaker
+
+> **Status:** design spec — not implemented. No `circuit_breaker_active`
+> flag, `CIRCUIT_BREAKER_TRIPPED` event, or cooldown/resume/backoff
+> logic exists in `src/feelies/`. What ships today is the monotonic
+> `RiskLevel` escalation (`FORCE_FLATTEN` → `_escalate_risk()` →
+> LOCKED + kill switch), which is one-way, not halt-with-resume.
 
 ### Trigger Conditions
 
@@ -127,6 +135,12 @@ Global circuit breaker overrides all strategy-level breakers.
 ---
 
 ## Capital Throttle
+
+> **Status:** design spec — not implemented. No `throttle_level`
+> computation or bus-emitted throttle events exist. The only partial
+> overlap shipped today is `RiskAction.SCALE_DOWN` returned by
+> `BasicRiskEngine.check_order()` (`risk/basic_risk.py`), which
+> rebuilds the order at the scaled quantity.
 
 ### Health Signal Inputs
 

@@ -74,7 +74,7 @@ flowchart TD
 
 **Tuple sensor:** `scheduled_flow_window` publishes a **tuple** reading; `HorizonSignalEngine` fans scalar components into **`sensor_cache`** under stable names (`scheduled_flow_window_active`, `seconds_to_window_close`, …) per `horizon_engine._TUPLE_SENSOR_COMPONENTS`, while **`HorizonAggregator`** exposes **tuple-derived horizon features** (see below).
 
-**`RegimeState`:** The gate strings do **not** call **`P(...)`**, but the YAML still sets **`regime_engine: hmm_3state_fractional`**. The engine resolves **`RegimeState`** for that engine name when evaluating the gate (posteriors simply unused in these boolean expressions). Other subsystems (risk scaling, hazard detector, forensics) may still consume the same **`RegimeState`** stream.
+**`RegimeState`:** The gate strings reference **no regime identifiers** (no `P(...)`, no `dominant` — see the YAML’s **P2 GC-2** audit note), so the gate booleans never consult the HMM. **`regime_engine: hmm_3state_fractional`** is retained as the engine this alpha would attach to if regime conditions were added; other subsystems (risk scaling, hazard detector, forensics) still consume the same **`RegimeState`** stream.
 
 ---
 
@@ -130,9 +130,9 @@ This alpha’s gate is **predominantly calendar- and vol-driven**, not HMM-poste
 - **`off_condition`:** `scheduled_flow_window_active == 0.0 or seconds_to_window_close < 30 or realized_vol_30s_zscore > 3.5`  
   Disarms when the window closes, **within 30 s** of end (tighter than the entry margin), or on **vol stress**.
 
-- **`regime_engine: hmm_3state_fractional`** is still declared; **`P(normal)` does not appear** in these conditions — see §1: **`RegimeState`** is still resolved for that engine name, but posteriors are unused in the gate booleans. Other platform components may still consume the same stream.
+- **`regime_engine: hmm_3state_fractional`** is still declared; **`P(normal)` does not appear** in these conditions — per the YAML’s audit note (**P2 GC-2**) this alpha is **schedule-gated, not regime-gated**: the conditions reference no regime identifiers, so the gate never consults the posteriors. The key is retained as the engine the alpha would attach to if regime conditions were added; other platform components still consume the same `RegimeState` stream.
 
-- **Hysteresis** margins are declared for DSL use but **not referenced** by the current strings.
+- **Hysteresis:** the `hysteresis:` block was **removed** from the YAML (P2 GC-2) — margins only matter when the expressions reference them explicitly, and these strings never did.
 
 ### 3.2 Gate ON vs `evaluate()`
 

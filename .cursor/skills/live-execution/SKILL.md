@@ -67,6 +67,9 @@ The orchestrator mediates all order routing.
 
 ### Retry Logic
 
+**Status:** specification / future work — no retry or backoff logic
+exists in `src/feelies/broker/` today.
+
 | Failure Class | Strategy | Max Attempts | Backoff |
 |---------------|----------|--------------|---------|
 | Transient (network, 5xx) | Retry with exponential backoff | 3 | 100ms, 500ms, 2s |
@@ -75,6 +78,9 @@ The orchestrator mediates all order routing.
 | Unknown | Treat as transient for 1 retry, then abort | 1 | 500ms |
 
 ### Timeout Logic
+
+**Status:** specification / future work — the orchestrator has no
+ack-timeout handling and no heartbeat-expiry wiring today.
 
 | Operation | Timeout | On Expiry |
 |-----------|---------|-----------|
@@ -131,11 +137,17 @@ the order SM focused on the broker lifecycle.
 ```
 CREATED         → {SUBMITTED}
 SUBMITTED       → {ACKNOWLEDGED, REJECTED}
-ACKNOWLEDGED    → {PARTIALLY_FILLED, FILLED, CANCEL_REQUESTED, EXPIRED}
-PARTIALLY_FILLED → {PARTIALLY_FILLED, FILLED}
+ACKNOWLEDGED    → {PARTIALLY_FILLED, FILLED, CANCEL_REQUESTED, CANCELLED, EXPIRED, REJECTED}
+PARTIALLY_FILLED → {PARTIALLY_FILLED, FILLED, CANCEL_REQUESTED, CANCELLED, EXPIRED}
 CANCEL_REQUESTED → {CANCELLED, FILLED}
 FILLED / CANCELLED / REJECTED / EXPIRED → {} (terminal)
 ```
+
+ACKNOWLEDGED → CANCELLED covers broker-unsolicited cancels (e.g.
+passive timeout); ACKNOWLEDGED → REJECTED covers post-ack risk rejects
+and deferred-fill rejects. PARTIALLY_FILLED → CANCEL_REQUESTED /
+CANCELLED / EXPIRED cover cancel-the-remainder and TIF expiry on a
+partially-filled order.
 
 ### Acknowledgment Handling
 
@@ -143,7 +155,7 @@ FILLED / CANCELLED / REJECTED / EXPIRED → {} (terminal)
 order SM transitions with exhaustive matching:
 
 - **ACKNOWLEDGED**: SUBMITTED → ACKNOWLEDGED
-- **REJECTED**: any → REJECTED (direct terminal)
+- **REJECTED**: transitions to REJECTED only when `sm.can_transition(REJECTED)`; otherwise emits `ack_inapplicable_to_order_state` alert
 - **FILLED**: ACKNOWLEDGED → FILLED (auto-acks SUBMITTED first if needed)
 - **PARTIALLY_FILLED**: ACKNOWLEDGED → PARTIALLY_FILLED (emits alert if inapplicable)
 - **CANCELLED**: CANCEL_REQUESTED → CANCELLED (emits alert if inapplicable)
@@ -160,13 +172,22 @@ Fills for untracked orders are rejected with `fill_for_unknown_order` alert
 
 ### Reconciliation Protocol
 
+What ships today is **fill-driven** reconciliation only:
+`_reconcile_fills()` applies each fill ack to the `PositionStore`, and
+`_reconcile_resting_fills()` drains quote-driven router acks at tick
+start. There is no periodic position polling, no reconnect snapshot,
+and no sign-mismatch kill-switch wiring.
+
+**Status:** the periodic/holistic rows below are a design target — not
+yet implemented.
+
 | Trigger | Action |
 |---------|--------|
-| Every fill event | Reconcile internal position vs running fill tally |
-| Every 30s (configurable) | Query broker positions; diff against internal state |
-| On reconnect | Full position snapshot from broker; hard-reconcile |
-| On `ERROR` state entry | Immediate position query and reconciliation |
-| Pre-market open | Zero-position assertion (for intraday-only strategies) |
+| Every fill event | Reconcile internal position vs running fill tally (`_reconcile_fills`) — **implemented** |
+| Every 30s (configurable) | Query broker positions; diff against internal state — design target |
+| On reconnect | Full position snapshot from broker; hard-reconcile — design target |
+| On `ERROR` state entry | Immediate position query and reconciliation — design target (no `ERROR` order state exists) |
+| Pre-market open | Zero-position assertion (for intraday-only strategies) — design target |
 
 ### Discrepancy Handling
 
@@ -280,14 +301,25 @@ with a zero-exposure guard.
 
 | Trigger | Response |
 |---------|----------|
-| `_escalate_risk()` cascade (FORCE_FLATTEN) | R0→R4 escalation + kill switch + macro RISK_LOCKDOWN |
-| Manual activation | Cancel all open orders; flatten positions |
-| Unrecoverable system error | Cancel all open orders; freeze state |
-| External signal (ops team) | Cancel all open orders; await manual re-enable |
+| `_escalate_risk()` cascade (FORCE_FLATTEN) | R0→R4 escalation + emergency flatten via market orders + kill switch + macro RISK_LOCKDOWN |
+| Manual activation | Tick suppression (kill-switch gate); positions flattened only via the `_escalate_risk()` market-order path |
+| Unrecoverable system error | Tick suppression; freeze state |
+| External signal (ops team) | Tick suppression; await manual re-enable |
+
+There is **no cancel-all path**: neither `halt()` nor kill-switch
+activation cancels open orders. `_escalate_risk()` emergency-flattens
+non-zero positions via market orders at R3 (FORCED_FLATTEN).
 
 ### Circuit Breaker
 
-Temporary trading halt with automatic evaluation for resumption.
+**Status:** design target — not yet implemented. No circuit-breaker
+component exists in `src/feelies/`. What ships today is the monotonic
+`RiskLevel` escalation: `FORCE_FLATTEN` → `_escalate_risk()` → LOCKED
++ kill switch (`risk/escalation.py`, `kernel/orchestrator.py`) — a
+one-way cascade, not a temporary halt with resumption.
+
+Design target: temporary trading halt with automatic evaluation for
+resumption.
 
 | Trigger | Cooldown | Resume Condition |
 |---------|----------|------------------|
@@ -302,7 +334,13 @@ Circuit breaker cancels all open orders but does **not** flatten positions
 
 ### Capital Throttle
 
-Dynamic position sizing based on system health.
+**Status:** design target — not yet implemented. No `throttle_level`
+runtime component exists; the closest shipped behavior is
+`RiskAction.SCALE_DOWN` returned by `BasicRiskEngine.check_order()`
+(`risk/basic_risk.py`), which rebuilds the order at the scaled
+quantity.
+
+Design target: dynamic position sizing based on system health.
 
 | Health Signal | Throttle Level | Max Position Size |
 |---------------|---------------|-------------------|

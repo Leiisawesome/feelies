@@ -22,7 +22,7 @@ Inherits platform invariants 3 (evidence over intuition → profile before optim
 5 (deterministic replay — optimizations must not break it). Additionally:
 
 1. **Budget-driven** — every module has a latency and memory budget; violations are defects
-2. **Regression-gated** — performance benchmarks run in CI; regressions block merge
+2. **Regression-gated (operator opt-in)** — perf gates are not wired into any CI workflow today. `tests/perf/test_paper_rth_no_regression.py` is opt-in via `PERF_HOST_LABEL`; `tests/sensors/test_sensor_latency_budget.py` requires `CI_BENCHMARK=1` and is informational. Operators on a perf-labeled host are expected to run the gates before merging hot-path changes
 3. **Readability default** — micro-optimization only in measured hot paths; everywhere else, clarity wins
 
 ---
@@ -55,6 +55,14 @@ Market data arrives (M0: WAITING_FOR_MARKET_EVENT)
                               → M10 LOG_AND_METRICS: tick_to_decision_latency_ns
                                 → M10→M0: ready for next tick
 ```
+
+Note (PORTFOLIO branch): the diagram above is the per-symbol SIGNAL
+path and is not strictly linear for PORTFOLIO alphas. Horizon-buffered
+`SizedPositionIntent`s are drained by
+`_flush_pending_sized_intents()` (`kernel/orchestrator.py`), which runs
+`check_sized_intent` and walks M5→M10 per intent *before* the
+M3 FEATURE_COMPUTE / M4 SIGNAL_EVALUATE transitions of the current
+tick.
 
 Note: Normalization happens outside the tick pipeline — at the
 ingestion boundary (live: `MassiveNormalizer.on_message()`) or
@@ -108,7 +116,7 @@ subscribes `MetricCollector.record()` to `MetricEvent` on the bus.
 | Metric | Granularity | Collection Method |
 |--------|------------|-------------------|
 | End-to-end latency | Per-tick | `tick_to_decision_latency_ns` MetricEvent (HISTOGRAM) at M10 |
-| Per-module wall time | Per-tick | Scoped timers around each pipeline stage |
+| Per-module wall time | Per-tick | Partial segment timers only — the orchestrator records `signal_evaluate_ns` and `risk_check_ns` in `_tick_timings`; timers around every pipeline stage are a design target |
 | CPU time per module | Per-session | `cProfile` / `perf` / sampling profiler |
 | Memory footprint | Per-module | `tracemalloc` snapshots at steady state |
 | Allocation rate | Per-session | Track object creation in hot path |
@@ -210,7 +218,7 @@ single-writer / multi-reader patterns over mutexes.
 
 | Issue | Mitigation |
 |-------|-----------|
-| GC pauses in hot path | Disable GC during tick processing; run between sessions or during idle |
+| GC pauses in hot path | Disable GC during tick processing; run between sessions or during idle. Currently applied only to backtest runs (`gc.disable()` in `harness/backtest_runner.py`); the orchestrator tick loop itself does not toggle GC |
 | Object churn | Pre-allocate buffers; reuse objects via pools; avoid temporary dicts/lists in loops |
 | Reference cycles | Break cycles explicitly in long-lived objects; use `weakref` where appropriate |
 | Large DataFrame copies | Use views / zero-copy slicing; `.values` for NumPy pass-through |
@@ -221,7 +229,7 @@ single-writer / multi-reader patterns over mutexes.
 | Component | Budget | Rationale |
 |-----------|--------|-----------|
 | Per-symbol feature state | < 1 MB | Scales linearly with symbol count |
-| Event bus backlog | < 100 MB | Bounded ring buffer; overflow = drop + alert |
+| Event bus backlog | < 100 MB | **Design target** — the shipped `EventBus` (`bus/event_bus.py`) is an unbounded synchronous handler registry with no queue or ring buffer, so no backlog accumulates today; the bounded-ring-buffer + drop/alert policy applies only if an async bus is introduced |
 | Historical data (in-memory) | < 2 GB per day per symbol | Parquet memory-mapped when possible |
 | Total process RSS | < 8 GB (configurable) | Monitor and alert on approach |
 
@@ -252,14 +260,15 @@ Per-host pinned baselines live in
 
 | Gate | Threshold | File |
 |------|-----------|------|
-| Paper-RTH throughput regression | ≤ 12% e2e vs v0.2 baseline | `tests/perf/test_paper_rth_no_regression.py` |
-| Phase 4.1 decay-weighting overhead | ≤ 5% wall-clock vs decay-OFF | enforced via `tests/perf/_pinned_baseline.py` + `tests/acceptance/test_perf_baseline_plumbing.py` |
+| Paper-RTH throughput regression | ≤ 12% e2e vs v0.2 baseline (policy target) | `tests/perf/test_paper_rth_no_regression.py` — baseline plumbing only today: asserts a `paper_rth` baseline blob exists and `tick_processing_p99_s > 0`; the 12% comparator gate is planned |
+| Phase 4.1 decay-weighting overhead | ≤ 5% wall-clock vs decay-OFF (policy target) | baseline plumbing via `tests/perf/_pinned_baseline.py` + `tests/acceptance/test_perf_baseline_plumbing.py` (verifies script / JSON / helper existence only); the test asserting the 5% ratio has not landed |
 
-Every PR that touches hot-path code must:
+Contributor protocol (not CI-enforced): every PR that touches hot-path
+code should:
 
 1. Run the benchmark suite against the per-host pinned baseline
 2. Report latency and throughput delta
-3. Fail if any metric regresses beyond threshold
+3. Treat any metric regressing beyond threshold as a merge blocker
 
 ### Tracking
 
@@ -300,4 +309,4 @@ When a performance decision involves a tradeoff, document it explicitly:
 | Microstructure Alpha (microstructure-alpha skill) | Horizon-anchored signal evaluation latency budget (boundary-tick only) |
 | Composition Layer (composition-layer skill) | Cross-sectional construction latency; cvxpy turnover-optimizer budget |
 | Risk Engine (risk-engine skill) | Risk-check latency; per-leg veto budget; pre-computed constraint lookups |
-| Testing & Validation (testing-validation skill) | Per-host pinned perf baselines; ≤12% / ≤5% regression gates |
+| Testing & Validation (testing-validation skill) | Per-host pinned perf baselines; ≤12% / ≤5% regression targets (baseline plumbing landed; comparator gates planned) |

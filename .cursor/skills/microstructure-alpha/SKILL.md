@@ -78,17 +78,21 @@ declare a single family — instead they declare a `trend_mechanism.consumes:`
 list (one entry per upstream family) with a `max_share_of_gross` cap per
 family (G16 PORTFOLIO rule 8; see composition-layer skill).
 
-Fingerprint sensors below are the **implemented** `sensor_id`s only
+Sensors below are the **implemented** `sensor_id`s only
 (see feature-engine skill's catalog). Declaring an unimplemented id in
-`l1_signature_sensors` / `depends_on_sensors` fails G6 at load.
+`l1_signature_sensors` / `depends_on_sensors` fails G6 at load. The
+"G16 primary fingerprint" column lists the rule-5 set
+(`_FAMILY_FINGERPRINT_SENSORS`, `alpha/layer_validator.py`):
+`l1_signature_sensors` must include **at least one** of these;
+"other family-related sensors" do not satisfy rule 5 on their own.
 
-| Family | Half-life envelope | L1 fingerprint sensors (implemented) | Cost-arithmetic guidance |
-|--------|-------------------|-----------------------|------------------------|
-| `KYLE_INFO` | 60 – 1800 s | `kyle_lambda_60s`, `ofi_ewma`, `micro_price` | Edge ~ permanent impact; survive 1.5× spread |
-| `INVENTORY` | 10 – 120 s | `inventory_pressure`, `quote_replenish_asymmetry` | Mean-reverting; tight horizon, low cost margin |
-| `HAWKES_SELF_EXCITE` | 5 – 120 s | `hawkes_intensity`, `trade_through_rate` | Short half-life; latency-sensitive |
-| `LIQUIDITY_STRESS` | 30 – 600 s | `liquidity_stress_score`, `spread_z_30d`, `quote_hazard_rate`, `quote_flicker_rate` | **Exit-only** — entries forbidden by G16 |
-| `SCHEDULED_FLOW` | 60 – 3600 s | `scheduled_flow_window` | MOC / open / close imbalance windows |
+| Family | Half-life envelope | G16 primary fingerprint (rule 5) | Other family-related sensors | Cost-arithmetic guidance |
+|--------|-------------------|-----------------------|-----------------------|------------------------|
+| `KYLE_INFO` | 60 – 1800 s | `kyle_lambda_60s`, `micro_price` | `ofi_ewma` | Edge ~ permanent impact; survive 1.5× spread |
+| `INVENTORY` | 5 – 60 s | `quote_replenish_asymmetry` | `inventory_pressure` | Mean-reverting; tight horizon, low cost margin |
+| `HAWKES_SELF_EXCITE` | 5 – 60 s | `hawkes_intensity` | `trade_through_rate` | Short half-life; latency-sensitive |
+| `LIQUIDITY_STRESS` | 30 – 600 s | `vpin_50bucket`, `realized_vol_30s` | `liquidity_stress_score`, `spread_z_30d`, `quote_hazard_rate`, `quote_flicker_rate` | **Exit-only** — entries forbidden by G16 |
+| `SCHEDULED_FLOW` | 60 – 1800 s | `scheduled_flow_window` | — | MOC / open / close imbalance windows |
 
 > Coverage note: every family above now has at least one **dedicated,
 > implemented** fingerprint sensor — the previously-missing
@@ -106,8 +110,11 @@ sensor for the family must appear in `depends_on_sensors`.
 
 Stress-family alphas are **exit-only**: G16 rejects any entry-direction
 `Signal` originating from a `LIQUIDITY_STRESS` alpha. The PORTFOLIO
-layer enforces a per-family `mechanism_max_share_of_gross` cap (see the
-composition-layer skill).
+layer enforces a per-family gross-share cap, declared in the alpha
+YAML as `trend_mechanism.consumes[*].max_share_of_gross` and enforced
+at runtime via the `CrossSectionalRanker` parameter
+`mechanism_max_share_of_gross` (`composition/cross_sectional.py`; see
+the composition-layer skill).
 
 The mechanism is propagated end-to-end on `Signal.trend_mechanism` and
 `Signal.expected_half_life_seconds`, surfaced in
@@ -138,7 +145,8 @@ trend_mechanism:                        # G16 — required since Workstream E
   family: KYLE_INFO
   expected_half_life_seconds: 240
   l1_signature_sensors: [kyle_lambda_60s]
-  failure_signature: "kyle_lambda decays below 30d percentile-20 …"
+  failure_signature:                    # G16 rule 6 — non-empty LIST of invalidator clauses
+    - "kyle_lambda decays below 30d percentile-20 …"
 
 regime_gate:
   regime_engine: hmm_3state_fractional
@@ -257,7 +265,9 @@ post-trade reconciliation, and decay detection.
 ### Entry Conditions
 
 Enter only when:
-- `snapshot.warm == True` and `snapshot.stale == False`
+- Every consumed `feature_id` is warm and not stale (`warm` / `stale`
+  are per-`feature_id` dicts; the engine gates on the alpha's
+  `required_warm_feature_ids` — see Feature Quality Gates above)
 - The alpha's `regime_gate` has resolved to ON
 - The mechanism family's expected half-life justifies the configured
   horizon (G16)
@@ -281,8 +291,9 @@ Exit based on:
 - Structural invalidation (the causal premise breaks)
 - Time decay (alpha half-life exceeded — `expected_half_life_seconds`)
 
-Exits are permitted even when `snapshot.stale == True` (conservative:
-exit is safer than hold when data is missing).
+Exits are permitted even when consumed features are stale
+(`snapshot.stale[feature_id] == True` — conservative: exit is safer
+than hold when data is missing).
 
 ### Hazard-Driven Exit
 

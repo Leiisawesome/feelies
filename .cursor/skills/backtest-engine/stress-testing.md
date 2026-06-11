@@ -12,7 +12,7 @@ Key infrastructure:
 | Component | File | Role in Stress Tests |
 |-----------|------|---------------------|
 | `SimulatedClock` | `core/clock.py` | Deterministic time; `set_time()` with backward-movement guard |
-| `DataHealth` SM | `ingestion/data_integrity.py` | Detects STALE / GAP / CORRUPTED states from perturbations |
+| `DataHealth` SM | `ingestion/data_integrity.py` | Detects GAP_DETECTED / HALTED / CORRUPTED states from perturbations |
 | `StateMachine[OrderState]` | `execution/order_state.py` | Validates order lifecycle under stress |
 | `_handle_tick_failure()` | `kernel/orchestrator.py` | Fail-safe cascade: micro reset + macro DEGRADED |
 | `MetricEvent` | `core/events.py` | Captures latency/throughput metrics during stress runs |
@@ -20,6 +20,11 @@ Key infrastructure:
 ---
 
 ## Data Perturbation Protocol
+
+**Status:** design target — the perturbation injectors below
+(jitter / duplicate / drop / stale / spike) are not wired into the
+platform. The only implemented stress harness today is the Inv-12
+cost ×1.5 / latency ×2 stress (`src/feelies/core/inv12_stress.py`).
 
 Inject controlled anomalies into the replay stream to validate engine robustness.
 Every perturbation has a known ground truth so you can verify correct handling.
@@ -69,7 +74,11 @@ Remove events randomly to simulate feed gaps.
 
 **Validation**:
 - Engine must detect gaps (sequence break or timestamp discontinuity)
-- `DataHealth` SM must transition to `GAP` state; `_handle_tick_failure()` triggers micro reset
+- `DataHealth` SM must transition to `GAP_DETECTED`
+  (`ingestion/data_integrity.py`); with `degrade_on_data_gap: true`,
+  gaps flow through `_data_health_blocks_trading()` → flatten + macro
+  DEGRADED with trigger `DATA_GAP_DETECTED:{symbol}`
+  (`_handle_tick_failure()` is for tick-processing exceptions, not gaps)
 - Features must handle missing data (interpolate, hold, or invalidate)
 - Orders in flight during gap must be flagged as uncertain
 - PnL should degrade proportionally, not diverge
@@ -200,7 +209,7 @@ Run before accepting any backtest result:
 
 ```
 INTEGRITY
-- [ ] Determinism: two runs with same `SimulatedClock` sequence produce bit-identical `TradeRecord` output
+- [ ] Determinism: bit-identical replay is verified by the locked parity hashes in `tests/determinism/` (not a per-run CLI self-check)
 - [ ] Causality: no feature uses future data (`SimulatedClock.now_ns()` enforces wall)
 - [ ] Fill timing: no fill before order acknowledgment (`OrderState` SM transition ordering)
 - [ ] PnL reconciliation: positions × prices = reported PnL (`TradeRecord` vs `PositionUpdate`)

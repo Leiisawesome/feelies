@@ -1,9 +1,12 @@
 # Fill Model — Calibration & Assumptions
 
-> **PARTIALLY IMPLEMENTED** — A deterministic queue-position fill model
+> **PARTIALLY IMPLEMENTED** — A queue-position fill model
 > is implemented in `PassiveLimitOrderRouter` (`execution/passive_limit_router.py`),
-> providing through-fill, level-fill, and timeout cancellation without
-> stochastic elements. The stochastic probability-based models described
+> providing through-fill, level-fill, and timeout cancellation. The
+> level fill uses a deterministic-replay hazard model: probabilistic
+> semantics (per-tick Bernoulli trial against `_fill_hazard`) but no
+> RNG — the uniform is a SHA-256 of replay-stable quote/order keys
+> (`_seeded_uniform`). The stochastic probability-based models described
 > below (slippage functions, adverse selection, partial fills) remain
 > design targets for Tier 2/3 realism. The implementation hook is the
 > `OrderRouter` protocol (`execution/backend.py`). Fill model logic
@@ -12,7 +15,11 @@
 
 ## Model Hierarchy
 
-Three tiers of fill realism. Default to Tier 2 unless explicitly choosing otherwise.
+Three tiers of fill realism. Note the platform's default
+`execution_mode` is `"market"` (Tier 1; `core/platform_config.py`) —
+the repo `platform.yaml` opts into `passive_limit`, and a third
+`minimum_cost` mode picks LIMIT vs MARKET per order. Choose the tier
+deliberately for research rather than relying on the default.
 
 | Tier | Description | Use Case |
 |------|------------|----------|
@@ -75,6 +82,11 @@ Higher volatility → quotes are staler → more adverse movement during executi
 
 ### Queue Position Model
 
+**Status:** Tier 2/3 design target — not the shipped model. The
+shipped passive path uses `passive_queue_position_shares` (trade-fed
+queue drain) and the per-tick hazard cap (`_fill_hazard`) in
+`PassiveLimitOrderRouter`. When built:
+
 Queue position is unobservable from L1. Model probabilistically:
 
 ```
@@ -105,6 +117,9 @@ lambda_touch = f(volatility / spread)
 Higher vol-to-spread ratio → more frequent price touches.
 
 #### Fill-at-Touch Probability
+
+**Status:** Tier 2/3 design target — the shipped level fill is the
+seeded-Bernoulli hazard model described in the header note.
 
 ```
 P(fill_at_touch | queue_pos, volume) =

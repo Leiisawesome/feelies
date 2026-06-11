@@ -52,7 +52,7 @@ LONG/SHORT  (unwind)
   RegimeState --> RegimeHazardDetector --> RegimeHazardSpike (bus)
                                               |
                                               v
-                               HazardExitController (PORTFOLIO policies only)
+                               HazardExitController (any opted-in alpha; P0 H-1)
                                               |
                                               v
                                OrderRequest (HAZARD_SPIKE / HARD_EXIT_AGE)
@@ -95,9 +95,9 @@ flowchart TD
   OQ --> OR2[Orchestrator]
 ```
 
-**`hazard_exit` block (this SIGNAL alpha):** `bootstrap._create_hazard_detector` turns on **`RegimeHazardDetector`** when **any** registered alpha’s manifest has **`hazard_exit.enabled: true`**, so **`RegimeHazardSpike`** events can be published on regime transitions. **`HazardExitController`** (which subscribes to spikes and emits **`OrderRequest`** exits) is constructed in **`_create_composition_layer`** only for alphas in **`portfolio_modules`** that opt in — **not** from SIGNAL modules alone. In a **SIGNAL-only** deployment, this alpha’s flag therefore **arms the detector** but typically leaves **`hazard_exit_controller=None`** unless a PORTFOLIO alpha also opts in.
+**`hazard_exit` block (this SIGNAL alpha):** `bootstrap._create_hazard_detector` turns on **`RegimeHazardDetector`** when **any** registered alpha’s manifest has **`hazard_exit.enabled: true`**, so **`RegimeHazardSpike`** events can be published on regime transitions. Since audit **P0 H-1**, **`HazardExitController`** is built by **`bootstrap._create_hazard_exit_controller`**, which scans **all active alphas** (SIGNAL **and** PORTFOLIO) for the opt-in — this alpha’s flag therefore wires **both** the detector and a live exit policy, even in a SIGNAL-only deployment. (Historically the controller was constructed only from `portfolio_modules` inside `_create_composition_layer`, leaving SIGNAL opt-ins with spikes on the bus and nothing listening.)
 
-The YAML field **`posterior_drop_threshold`** is preserved on **`AlphaManifest.hazard_exit`** by the loader’s permissive parse; it is **not** wired today to `HazardPolicy` (which uses keys such as **`hazard_score_threshold`**, **`min_age_seconds`**, **`hard_exit_age_seconds`** in `feelies.risk.hazard_exit`). Treat it as **documentation / forward-compatible metadata** unless a future PR maps it.
+The policy threshold is read from the canonical key **`hazard_score_threshold`** (this YAML declares **0.30**). The historical spelling **`posterior_drop_threshold`** was renamed by audit **P1 H-2** — bootstrap only ever read `hazard_score_threshold`, so the legacy key was silently ignored and the controller fell back to its **0.85** default. The loader still accepts the legacy name (normalised with a WARN), but new specs should use the canonical spelling. When **`hard_exit_age_seconds`** is omitted (as here), the **HM-1** default derives it as **`2 × expected_half_life_seconds`** = **60 s** from the `trend_mechanism:` block.
 
 **Orthogonality:** **`regime_gate`** controls **Layer-2 signal emission** (ON/OFF latch + FLAT on OFF). **Hazard exits** (when a controller policy exists) flatten **open risk** from **`RegimeHazardSpike`** — a different path from the gate DSL.
 
@@ -112,18 +112,18 @@ The YAML field **`posterior_drop_threshold`** is preserved on **`AlphaManifest.h
 | `hawkes_intensity` | Tuple sensor (buy/sell intensities, etc.); platform rolls a **scalar z-score** over a reduced intensity (sum of configured tuple components). |
 | `trade_through_rate` | Fraction of aggressive flow **walking the book** — confirms “cluster aggression.” |
 | `ofi_ewma` | **Direction** of the burst (LONG if `ofi > 0` else SHORT) once intensity/trade-through filters pass. |
-| `spread_z_30d` | Gate: keep bursts only in **tight** spread regimes vs history (cache scalar). |
+| `spread_z_30d` | Gate: keep bursts only in **tight** spread regimes vs history (snapshot passthrough since P1-6). |
 | `realized_vol_30s` | Gate: **`realized_vol_30s_zscore`** caps participation in vol spikes. |
 
 ### 2.2 Sensor → `snapshot.values` (30 s horizon)
 
 | Sensor | Horizon feature wiring | Keys |
 |--------|-------------------------|------|
-| `hawkes_intensity` | `RollingZscoreFeature(..., tuple_sum_component_indices=(0,1))` | **`hawkes_intensity_zscore`** (default feature id) |
+| `hawkes_intensity` | `HorizonWindowedFeature(reducer="zscore", tuple_sum_component_indices=(0,1))` + `TupleSignedImbalanceFeature` (P1-3) | **`hawkes_intensity_zscore`** (undirected burst magnitude); **`hawkes_intensity_imbalance`** (signed buy/sell imbalance — available but **not read** by the shipped evaluate, which directs via OFI) |
 | `trade_through_rate` | `SensorPassthroughFeature` | **`trade_through_rate`** |
 | `ofi_ewma` | passthrough + z | **`ofi_ewma`** (level used in evaluate) |
 | `realized_vol_30s` | passthrough + z | Gate: **`realized_vol_30s_zscore`** |
-| `spread_z_30d` | none | Gate: **`spread_z_30d`** from **sensor_cache** |
+| `spread_z_30d` | passthrough (P1-6) | Gate: **`spread_z_30d`** from the snapshot (cache fallback) |
 
 ### 2.3 `evaluate()` logic (condensed)
 
@@ -153,7 +153,7 @@ Emitted `Signal.consumed_features` lists **sensor ids** from YAML (`depends_on_s
 
 - **Warm/stale:** Gate references **`realized_vol_30s_zscore`** → that feature id participates in **`required_warm_feature_ids`** at 30 s even if only used in `off_condition`.
 
-- **`spread_z_30d`:** cache-only for the gate (no horizon feature id); **not** part of **`required_warm_feature_ids`** via the sensor→feature map.
+- **`spread_z_30d`:** snapshot passthrough since P1-6 — the bare `spread_z_30d` feature_id **is** part of **`required_warm_feature_ids`**, and the gate reads the horizon-boundary value (cache fallback).
 
 ### 3.2 Gate ON vs burst `evaluate()`
 
@@ -180,9 +180,11 @@ Control Hawkes tuple estimation, OFI decay, spread window, vol window, etc. Thes
 
 - **`enabled: true`** — participates in the **“any alpha opted in”** check that constructs **`RegimeHazardDetector`** (`bootstrap._create_hazard_detector`), enabling **`RegimeHazardSpike`** on the bus when regime posteriors show configured departure behaviour.
 
-- **`HazardExitController`** policies (thresholds that actually emit **`OrderRequest`** hazard exits) are registered today only from **`layer: PORTFOLIO`** alphas in **`_create_composition_layer`**. A SIGNAL-only stack therefore usually **does not** attach exit policies for `sig_hawkes_burst_v1` even though the detector runs.
+- **`HazardExitController`** policies are registered by **`bootstrap._create_hazard_exit_controller`** for **every** active alpha that opts in — SIGNAL or PORTFOLIO (audit **P0 H-1**). This alpha therefore gets a live `HazardPolicy` with `strategy_id="sig_hawkes_burst_v1"`; per-alpha universe falls back to the platform-wide symbol list for SIGNAL modules.
 
-- **`posterior_drop_threshold`** — stored on the manifest; **no** current consumer maps this string to `HazardPolicy` fields. Prefer documented keys (`hazard_score_threshold`, …) on PORTFOLIO specs if you need live hazard exits.
+- **`hazard_score_threshold: 0.30`** — the live exit trigger (spikes with `hazard_score >= 0.30` flatten the position once `min_age_seconds` is satisfied). The legacy spelling `posterior_drop_threshold` is normalised to this key by the loader with a WARN (audit **P1 H-2**); before that rename the declared 0.30 was silently ignored in favour of the 0.85 default.
+
+- **`hard_exit_age_seconds`** is not declared, so the **HM-1** default applies: `2 × expected_half_life_seconds` = **60 s** age-based hard exit.
 
 ### 4.4 `cost_arithmetic`, `risk_budget`, execution
 
@@ -196,6 +198,6 @@ Tighter **`risk_budget`** (small max position / gross %) matches the **short hal
 2. At each **30 s** boundary, snapshot carries **intensity z**, **TTR level**, **OFI level**.  
 3. **Gate** requires **normal** HMM + calm **spread**; **vol z** can force OFF.  
 4. **evaluate** rides **positive intensity excursions** with aggressive **TTR**, direction from **OFI**.  
-5. **`hazard_exit.enabled`** turns on **`RegimeHazardDetector`** for the process; **`HazardExitController`** order exits require a **PORTFOLIO** hazard policy in typical bootstrap wiring. **`posterior_drop_threshold`** is manifest metadata today, not a live `HazardPolicy` knob.
+5. **`hazard_exit.enabled`** turns on **`RegimeHazardDetector`** *and* registers a live **`HazardExitController`** policy for this alpha (P0 H-1): regime departures with `hazard_score >= 0.30` flatten the position, and the HM-1 default adds a **60 s** age-based hard exit.
 
 If you generalize to **negative** intensity spikes, adjust the **`z < floor` → `abs(z)`** style logic in the alpha code and re-validate G16 / entry-direction invariants.

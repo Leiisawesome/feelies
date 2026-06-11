@@ -41,7 +41,8 @@ fail-safe cascade (micro reset + macro DEGRADED).
 ## Transition Event Schema
 
 Every state transition emits a `StateTransition` event (`core/events.py`)
-via `TransitionRecord` callback on the order's `StateMachine[OrderState]`:
+via `TransitionRecord` (`core/state_machine.py`) callback on the order's
+`StateMachine[OrderState]`:
 
 ```python
 @dataclass(frozen=True)
@@ -88,8 +89,12 @@ handles this structurally:
 
 ### Timeout Escalation
 
+> **NOT YET IMPLEMENTED** — No ack-timeout handler exists; the
+> escalation flow below is a design target. `cancel_order()` only
+> enters CANCEL_REQUESTED from ACKNOWLEDGED or PARTIALLY_FILLED.
+
 The 9-state `OrderState` SM has no `CANCEL_PENDING` or `ERROR` state.
-A submission that ack-times-out is escalated within the existing
+A submission that ack-times-out would be escalated within the existing
 transition table:
 
 ```
@@ -179,10 +184,10 @@ origin layer for forensic attribution and per-strategy quarantine:
 
 | `reason` | Origin | Path |
 |----------|--------|------|
-| `"SIGNAL"` | Layer-2 SIGNAL alpha → `IntentTranslator` | M4 → M5 → M6 → M7 |
+| `""` (default) | Layer-2 SIGNAL alpha → `IntentTranslator` (no `"SIGNAL"` string is ever assigned) | M4 → M5 → M6 → M7 |
 | `"PORTFOLIO"` | Layer-3 PORTFOLIO alpha → `RiskEngine.check_sized_intent` | CROSS_SECTIONAL → M5 (per-leg) → M7 |
-| `"HAZARD_SPIKE"` | `HazardExitController` consuming `RegimeHazardSpike` | hazard branch → M7 |
-| `"HARD_EXIT_AGE"` | `HazardExitController` time-cap branch | hazard branch → M7 |
+| `"HAZARD_SPIKE"` | `HazardExitController` consuming `RegimeHazardSpike` | bus-published; submitted by `_on_bus_hazard_order()` outside the M0–M10 walk |
+| `"HARD_EXIT_AGE"` | `HazardExitController` time-cap branch | bus-published; submitted by `_on_bus_hazard_order()` outside the M0–M10 walk |
 
 Post-trade-forensics consumes these via the `MultiHorizonAttributor`
 and `OrderRequest`-keyed `TradeRecord` joins.

@@ -155,7 +155,8 @@ recommended when the live feed is production-hardened.
 Generic `MarketDataSource` adapter over `EventLog.replay()`. Feed-
 agnostic — works with any `EventLog` populated through any ingestor.
 When a `SimulatedClock` is provided, advances the clock to each event's
-`exchange_timestamp_ns` before yielding (deterministic time progression).
+visibility time — `exchange_timestamp_ns + market_data_latency_ns`
+(BT-17) — before yielding (deterministic time progression).
 
 ## Ingestion Pipeline
 
@@ -205,6 +206,7 @@ Append-only, sequence-based event store for replay and audit:
 class EventLog(Protocol):
     def append(self, event: Event) -> None: ...
     def append_batch(self, events: Sequence[Event]) -> None: ...
+    def replace_events(self, events: Sequence[Event]) -> None: ...
     def replay(self, start_sequence: int = 0, end_sequence: int | None = None) -> Iterator[Event]: ...
     def last_sequence(self) -> int: ...
 ```
@@ -215,6 +217,9 @@ class EventLog(Protocol):
 - `append_batch()` — persist a chunk of events atomically; used by
   `MassiveHistoricalIngestor` for chunk-aware ingestion and by
   `scripts/run_backtest.py` for loading resequenced event streams.
+- `replace_events()` — replace the persisted stream wholesale; used by
+  the multi-symbol merge path after `resequence_event_list()`
+  merge-sorts NBBO/trade rows by exchange time before replay.
 - `replay()` — replay by sequence range for deterministic backtest
   replay (invariant 5).
 - `last_sequence()` — sequence number of the most recent event.
@@ -236,10 +241,11 @@ class TradeRecord:
     signal_timestamp_ns: int
     submit_timestamp_ns: int
     fill_timestamp_ns: int | None
-    slippage_bps: Decimal
+    cost_bps: Decimal
     fees: Decimal
     realized_pnl: Decimal
     correlation_id: str
+    trading_intent: str
     metadata: dict[str, str]
 
 class TradeJournal(Protocol):
@@ -255,11 +261,14 @@ the journal can be rebuilt. Journal unavailability does not halt trading.
 post-trade-forensics skill consumes `TradeJournal.query()` for analysis.
 The live-execution skill produces `TradeRecord` entries from fill events.
 
-### EventSerializer (NOT YET IMPLEMENTED)
+### EventSerializer (`src/feelies/core/serialization.py`)
 
-Round-trip serialization for event persistence. When implemented, must
-guarantee bit-deterministic output — the same event serialized twice
-produces identical bytes.
+Round-trip serialization protocol for event persistence. The
+`EventSerializer` Protocol exists (round-trip correctness,
+bit-determinism, type preservation, Decimal fidelity), but the disk
+cache currently uses ad-hoc `_event_to_dict` / `_dict_to_event`
+helpers; a concrete bit-deterministic serializer unifying the disk
+cache behind the protocol is still TODO.
 
 ## Storage Design
 
@@ -272,10 +281,19 @@ produces identical bytes.
 
 ## Design Decisions
 
+Implemented today: the disk cache (`src/feelies/storage/disk_event_cache.py`)
+stores JSONL.gz files with a companion manifest per `(symbol, date)`
+pair under `{cache_dir}/{SYMBOL}/{YYYY-MM-DD}.jsonl.gz`; reference
+data lives under `src/feelies/storage/reference/`.
+
+Aspirational (design targets, not implemented):
+
 - **Storage format**: columnar (Parquet) for analytics; row-based (append log) for ingestion
 - **Partitioning**: by symbol and date (`/symbol=AAPL/date=2026-03-02/`)
 - **Compression**: Zstandard for cold storage; LZ4 for hot/query path
-- **Query path**: optimized for sequential time-range scans per symbol (backtesting primary access pattern)
+
+The query path remains optimized for sequential time-range scans per
+symbol (backtesting primary access pattern).
 
 ## Operating Assumptions
 

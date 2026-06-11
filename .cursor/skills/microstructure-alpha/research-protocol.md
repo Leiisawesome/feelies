@@ -3,7 +3,7 @@
 ## Codebase Alignment
 
 Research features defined below feed into the Layer-1 sensor framework
-(`feelies.sensors`) — implementations of `SensorProtocol`
+(`feelies.sensors`) — implementations of the `Sensor` protocol
 (`sensors/protocol.py`) emitting `SensorReading` events
 (`core/events.py`). `HorizonAggregator` (`features/aggregator.py`)
 fans them into `HorizonFeatureSnapshot` events on `HorizonTick`
@@ -18,8 +18,9 @@ are unsupported.
 
 The formalization path from research prototype to engine component is
 governed by the research-workflow skill. Sensors must implement
-incremental `update(NBBOQuote | Trade) -> SensorReading | None`
-semantics; batch pandas/numpy prototypes must be re-implemented
+incremental `update(event, state, params) -> SensorReading | None`
+semantics (per-symbol `state` is owned by the registry and threaded
+through each call); batch pandas/numpy prototypes must be re-implemented
 incrementally before backtesting via `Orchestrator.run_backtest()`.
 
 Schema-1.1 SIGNAL alphas additionally declare:
@@ -133,7 +134,7 @@ BACKTEST REQUIREMENTS:
 - Market impact: even for small orders, model temporary impact
 - Cost model: explicit commission + SEC/FINRA fees
 - Timestamp alignment: use exchange timestamps via NBBOQuote.exchange_timestamp_ns
-- Determinism: SHA-256 order IDs from correlation_id:sequence (core/identifiers.py)
+- Determinism: SHA-256-derived order IDs via `derive_order_id(seed)` — first 16 hex chars of the hashed provenance seed; the signal path seeds with f"{correlation_id}:{seq}" (core/identifiers.py)
 ```
 
 ### Phase 4: Robustness Checks
@@ -232,9 +233,9 @@ Test predictive power of OFI on next-bucket return.
 
 | Research concept | Codebase type | Location |
 |------------------|---------------|----------|
-| Sensor prototype (Layer 1) | `SensorProtocol` + `SensorSpec` | `sensors/protocol.py`, `sensors/spec.py`, `sensors/registry.py` |
+| Sensor prototype (Layer 1) | `Sensor` protocol + `SensorSpec` | `sensors/protocol.py`, `sensors/spec.py`, `sensors/registry.py` |
 | Sensor output | `SensorReading` (with `SensorProvenance`) | `core/events.py` |
-| Layer-2 input | `HorizonFeatureSnapshot` (warm/stale flags, z-scores, percentiles) | `core/events.py` |
+| Layer-2 input | `HorizonFeatureSnapshot` (per-`feature_id` warm/stale dicts; z-score / percentile views are `feature_id` keys inside `values`, e.g. `ofi_ewma_zscore`) | `core/events.py` |
 | SIGNAL alpha contract | `HorizonSignal.evaluate(snapshot, regime, params)` | `signals/horizon_protocol.py` |
 | Signal output | `Signal` (with `SignalDirection`, `edge_estimate_bps`, `trend_mechanism`, `expected_half_life_seconds`) | `core/events.py` |
 | Regime gate DSL | `RegimeGate` (AST-evaluated boolean DSL) | `signals/regime_gate.py` |

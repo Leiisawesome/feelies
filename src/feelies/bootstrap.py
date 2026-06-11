@@ -1043,9 +1043,10 @@ def _derive_session_id(config: PlatformConfig) -> str:
 # to the lookup function or its callers is needed.
 
 # sensor_id -> factory(horizon) -> the HorizonFeatures that sensor drives.
-# A sensor absent from this map (e.g. ``spread_z_30d``) contributes no
-# Layer-2 features; the gate DSL resolves it via the sensor_cache path in
-# HorizonSignalEngine._build_bindings.
+# A sensor absent from this map contributes no Layer-2 features; the gate
+# DSL resolves it via the sensor_cache path in
+# HorizonSignalEngine._build_bindings.  (``spread_z_30d`` was historically
+# the cache-only example until audit P1-6 wired its passthrough below.)
 _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
     # Audit P1-6: ``spread_z_30d`` previously wired no Layer-2 feature, so it
     # reached alphas only through the engine's event-time ``_sensor_cache`` —
@@ -1226,9 +1227,8 @@ def _build_horizon_features(
 
     Creates features for every (sensor_id, horizon_seconds) pair that
     has an entry in *_horizon_features_for*.  Sensors without an entry
-    (e.g. ``spread_z_30d``) are skipped silently — they are fully
-    handled by the gate DSL via the sensor_cache path in
-    HorizonSignalEngine._build_bindings.
+    are skipped silently — they are fully handled by the gate DSL via
+    the sensor_cache path in HorizonSignalEngine._build_bindings.
     """
     if not config.sensor_specs or not config.horizons_seconds:
         return []

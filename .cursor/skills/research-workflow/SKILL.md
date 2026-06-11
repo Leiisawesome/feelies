@@ -36,7 +36,7 @@ Research execution is supported by the orchestrator's
 2. Transition macro: READY → RESEARCH_MODE (`CMD_RESEARCH`)
 3. Execute the caller-supplied `job()` callable
 4. On success: RESEARCH_MODE → READY (`JOB_COMPLETE`)
-5. On exception: RESEARCH_MODE → DEGRADED (`CRITICAL_ERROR`)
+5. On exception: RESEARCH_MODE → DEGRADED (trigger `CRITICAL_ERROR:<ExceptionTypeName>` — parameterized with the exception class name)
 
 Research mode does **not** run the micro-state tick pipeline. The `job`
 callable has full access to the feature engine, event log, and other
@@ -71,12 +71,27 @@ corrections.
 
 ### Experiment Log
 
-Every experiment is registered before execution:
+Every experiment is registered before execution. The shipped dataclass
+(`src/feelies/research/experiment.py`; the module docstring notes that
+concrete `ExperimentTracker` implementations are future work) is:
 
 ```
 ExperimentRecord:
-  experiment_id: str (unique, human-readable slug + auto-incrementing number)
-  hypothesis_id: str (links to hypothesis registry)
+  experiment_id: str
+  hypothesis_id: str
+  config_snapshot: dict[str, Any]
+  result_summary: dict[str, Any]
+  timestamp_ns: int
+  tags: tuple[str, ...] = ()
+  metadata: dict[str, Any] = {}
+```
+
+**Status:** the richer record below is the target spec — not yet
+implemented. Until it lands, the extra fields are carried in
+`tags` / `metadata`:
+
+```
+ExperimentRecord (target spec):
   author: str
   created: datetime
   status: "proposed" | "exploring" | "formalizing" | "backtesting" | "promoted" | "failed" | "abandoned"
@@ -85,7 +100,6 @@ ExperimentRecord:
   data_version: str (hash of input data used)
   code_ref: str (git SHA or branch of experiment code)
   notebook_path: str (relative path to primary notebook)
-  results_summary: str (filled after completion)
   outcome: "supported" | "falsified" | "inconclusive" | null
   promoted_to: str | null (strategy artifact ID if promoted)
 ```
@@ -95,16 +109,23 @@ ExperimentRecord:
 Hypotheses are tracked independently from experiments. Multiple experiments
 may test the same hypothesis from different angles.
 
+The shipped dataclass (`src/feelies/research/hypothesis.py`;
+`HypothesisRegistry` is a Protocol stub — concrete implementations are
+future work) is:
+
 ```
-HypothesisRecord:
+Hypothesis:
   hypothesis_id: str
-  statement: str (the structural mechanism)
-  source: str (what observation or theory motivated this)
-  falsification_criteria: list[str]
-  related_experiments: list[experiment_id]
-  status: "open" | "supported" | "falsified" | "retired"
-  confidence: float (0–1, updated as evidence accumulates)
+  description: str
+  mechanism: str
+  falsification_criteria: str
+  status: str = "active"
+  metadata: dict[str, Any] = {}
 ```
+
+**Status:** `related_experiments: list[experiment_id]` and
+`confidence: float (0–1)` are target-spec extensions — not yet
+implemented; carry them in `metadata` until they land.
 
 A hypothesis is falsified when any registered falsification criterion is met.
 A hypothesis is supported (never "proven") when multiple independent
@@ -128,7 +149,7 @@ Every research notebook follows this structure:
 
 ### Rules
 
-1. **No production imports** — notebooks import from a `research` package, never from `core`, `engine`, or `execution` packages
+1. **No production imports (guideline)** — notebooks import from a `research` package, never from `core`, `engine`, or `execution` packages. Today `feelies.research` ships the CPCV/DSR math plus Protocol stubs; the boundary is not yet enforced by an import linter
 2. **No hardcoded paths** — data paths resolved via a config or environment variable
 3. **Pinned data versions** — the data version hash is recorded in the notebook header
 4. **Seed everything** — all random operations use explicit seeds recorded in the header
@@ -136,6 +157,9 @@ Every research notebook follows this structure:
 6. **Narrative flow** — markdown cells explain reasoning, not just code; a reader unfamiliar with the hypothesis should understand the notebook end-to-end
 
 ### Naming Convention
+
+Convention to adopt — no `notebooks/` directory exists in the repo yet;
+create it with the first committed notebook:
 
 ```
 notebooks/
@@ -169,10 +193,10 @@ re-implemented as a proper module before backtesting:
 
 | Notebook Artifact | Formalized As | Destination |
 |------------------|--------------|-------------|
-| Feature prototype (pandas/numpy) | `SensorProtocol` implementation registered via `SensorSpec` (incremental `update(NBBOQuote | Trade) -> SensorReading | None`) | Sensor layer (`feelies.sensors.impl`) |
+| Feature prototype (pandas/numpy) | `Sensor` protocol implementation registered via `SensorSpec` (incremental `update(event, state, params) -> SensorReading | None`) | Sensor layer (`feelies.sensors.impl`) |
 | Signal logic (threshold + condition) | `HorizonSignal.evaluate(snapshot, regime, params) -> Signal | None` declared inline in a schema-1.1 SIGNAL alpha YAML | `alphas/<alpha_id>/<alpha_id>.alpha.yaml` |
 | Entry/exit rules | `Signal.direction`, `Signal.strength`, `Signal.edge_estimate_bps`, `Signal.trend_mechanism`, `Signal.expected_half_life_seconds` | Schema-1.1 SIGNAL alpha (G16) |
-| Cross-sectional weights | `PortfolioAlpha.compute_weights(...) -> dict[str, TargetPosition]` declared inline in a `layer: PORTFOLIO` alpha YAML | `alphas/<alpha_id>/<alpha_id>.alpha.yaml` |
+| Cross-sectional weights | `PortfolioAlpha.construct(ctx, params) -> SizedPositionIntent` declared inline in a `layer: PORTFOLIO` alpha YAML | `alphas/<alpha_id>/<alpha_id>.alpha.yaml` |
 | Cost arithmetic | `cost_arithmetic:` block (G12 — `margin_ratio ≥ 1.5`, reconciles ±5%) | Alpha YAML |
 | Trend mechanism declaration (G16) | `trend_mechanism:` block with family + `expected_half_life_seconds` + `l1_signature_sensors` + `failure_signature` | Alpha YAML (default-required since Workstream E) |
 | Regime gate | `regime_gate:` AST-DSL block | Alpha YAML |
@@ -199,19 +223,27 @@ Before a notebook artifact is considered formalized:
 | Artifact | Versioning Method | Storage |
 |----------|------------------|---------|
 | Notebooks | Git (committed with experiment ID in filename) | Repository |
-| Experiment log | Append-only structured file (JSON lines) | Repository |
-| Hypothesis registry | Append-only structured file | Repository |
-| Feature definitions (formalized) | Semantic version in `FeatureDefinition` | Repository (feature-engine) |
+| Experiment log | Append-only structured file (JSON lines) — **planned**; today only the `ExperimentTracker` Protocol interface exists | Repository |
+| Hypothesis registry | Append-only structured file — **planned**; today only the `HypothesisRegistry` Protocol interface exists | Repository |
+| Sensor implementations (formalized) | `sensor_id` + `sensor_version` declared via `SensorSpec` (`feelies.sensors.impl`) — post-D.2, `FeatureDefinition` survives only as test scaffolding | Repository (feature-engine) |
 | Strategy configs | Versioned alongside strategy code | Repository |
-| Data snapshots (for reproduction) | Content-addressed hash | Data store |
-| Backtest results | Keyed to `(strategy_version, data_version, engine_version)` | Storage layer |
+| Data snapshots (for reproduction) | Content-addressed hash — **planned**; no dedicated research-artefact store exists yet (`fold_pnl_curves_hash` on `CPCVEvidence` is a content-hash pointer only) | Data store (planned) |
+| Backtest results | Keyed to `(strategy_version, data_version, engine_version)` — **planned**; no dedicated backtest-results store module exists yet | Storage layer (planned) |
 
 ### Provenance Chain
 
-Every promoted strategy artifact carries a full provenance chain:
+What ships today: promotion provenance is the F-1 promotion ledger
+(append-only JSONL, `src/feelies/alpha/promotion_ledger.py`) plus the
+F-2 structured-evidence metadata persisted on each ledger entry
+(`src/feelies/alpha/promotion_evidence.py`). There is no
+`promoted_artifact` type in the codebase.
+
+**Status:** the consolidated chain below is a design target — not yet
+implemented; until it lands, record these fields through the ledger
+entry's evidence metadata:
 
 ```
-promoted_artifact:
+promoted_artifact (target spec):
   strategy_version: git SHA
   originating_experiment: experiment_id
   originating_hypothesis: hypothesis_id
@@ -258,9 +290,9 @@ Reject or flag experiments that exhibit:
 
 | Failure | Detection | Response |
 |---------|-----------|----------|
-| Unregistered experiment | Code review; CI check for experiment ID in notebook header | Block promotion; register retroactively |
+| Unregistered experiment | Code review; CI check for experiment ID in notebook header (planned — no such CI check exists yet) | Block promotion; register retroactively |
 | Data version mismatch | Hash comparison at notebook load | Alert; re-run with correct data or update experiment record |
-| Notebook imports production code | Import linter / CI check | Block merge; refactor to research package |
+| Notebook imports production code | Import linter / CI check (planned — no such CI check exists yet) | Block merge; refactor to research package |
 | Promoted artifact without provenance | Artifact validation at promotion gate | Block deployment; reconstruct provenance or re-run |
 | Hypothesis drift (changing hypothesis after seeing results) | Experiment log audit (hypothesis registered before results) | Flag experiment; apply stricter validation |
 | Orphaned notebooks (no experiment record) | Periodic scan of notebook directory vs experiment log | Register or archive |
@@ -272,7 +304,7 @@ Reject or flag experiments that exhibit:
 | Dependency | Interface |
 |------------|-----------|
 | Microstructure Alpha (microstructure-alpha skill) | Research protocol; `HorizonSignal` contract; `Signal` schema with `trend_mechanism`; G16 mechanism-horizon binding |
-| Feature / Sensor (feature-engine skill) | `SensorProtocol`; `SensorSpec` registration; `HorizonFeatureSnapshot` output type |
+| Feature / Sensor (feature-engine skill) | `Sensor` protocol; `SensorSpec` registration; `HorizonFeatureSnapshot` output type |
 | Composition Layer (composition-layer skill) | `PortfolioAlpha` contract for cross-sectional research |
 | Backtest Engine (backtest-engine skill) | `Orchestrator.run_backtest()` for formalized validation; eleven parity hashes (L1–L6) |
 | Testing & Validation (testing-validation skill) | F-2 evidence schemas; CPCV + DSR acceptance suite; promotion pipeline |

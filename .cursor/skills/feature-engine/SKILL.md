@@ -81,9 +81,10 @@ bounded and replay deterministic.
 
 ### `SensorRegistry` (`sensors/registry.py`)
 
-Sensors are registered declaratively via `SensorSpec` so the registry
-can pre-bake provenance, enforce throttling, and validate dependency
-topology before any tick runs.
+Sensors are registered declaratively via `SensorSpec`
+(`src/feelies/sensors/spec.py`) so the registry can pre-bake
+provenance, enforce throttling, and validate dependency topology
+before any tick runs.
 
 ```python
 @dataclass(frozen=True, kw_only=True)
@@ -104,9 +105,13 @@ Field semantics worth highlighting:
 - `subscribes_to` must be a subset of `(NBBOQuote, Trade)` in Phase 2;
   the registry uses it to populate `SensorProvenance.input_event_kinds`.
 - `input_sensor_ids` declares upstream sensors whose `SensorReading`
-  this sensor consumes (e.g. `structural_break_score` over
-  `hawkes_intensity`). The registry enforces topological registration
-  order and rejects cycles.
+  this sensor consumes. The registry enforces topological registration
+  order and rejects cycles. Note: no shipped sensor currently declares
+  a cross-sensor edge — the design intent was `structural_break_score`
+  over `hawkes_intensity`, but the v0.3 implementation subscribes to
+  `NBBOQuote` only (mid-price log-returns) with an empty
+  `input_sensor_ids` by design; true cross-sensor wiring is deferred
+  (`sensors/impl/structural_break_score.py`).
 - `min_history` is the warm-up minimum; sensors consult it via
   `params` — the registry does **not** gate on it, since warmth is a
   sensor-level concern.
@@ -158,8 +163,9 @@ today (one per `sensor_id`); keep this list in sync with
 > `effective_spread`) must not appear in `l1_signature_sensors` /
 > `depends_on_sensors`, or G6 resolution fails at load.
 
-Per-sensor implementations expose `is_warm(symbol)` and emit
-`SensorReading.provenance.warm` so downstream consumers (the horizon
+Per-sensor implementations set the `warm` flag on each emitted
+`SensorReading` (there is no `is_warm()` method on the `Sensor`
+protocol — `sensors/protocol.py`) so downstream consumers (the horizon
 aggregator) can track readiness on a per-(symbol, sensor) basis.
 
 ## Horizon Pipeline (Layer 1.5)
@@ -226,10 +232,14 @@ contract (`core/events.py`):
 Staleness is enforced by the aggregator's per-`(symbol, sensor_id)`
 warm-reading freshness clock, **not** a fixed 5 s wall-clock window:
 a feature is stale when `tick.timestamp_ns - last_warm_reading_ns >
-horizon_seconds * 1e9`. Sensors whose value reaches the gate only via
-the engine's event-time `_sensor_cache` (e.g. `spread_z_30d`, which
-wires no Layer-2 feature) are **not** covered by this horizon
-staleness path — they are invalidated only when the sensor emits a
+horizon_seconds * 1e9`. `spread_z_30d` was historically the cache-only
+example, but audit P1-6 wired `SensorPassthroughFeature("spread_z_30d",
+h)` in `bootstrap._HORIZON_FEATURE_FACTORIES`, so it now appears in
+`HorizonFeatureSnapshot.values` and `required_warm_feature_ids` with
+per-feature horizon-window staleness. Sensors that wire **no** Layer-2
+feature still reach the gate only via the engine's event-time
+`_sensor_cache` (the fallback path) — those are **not** covered by
+horizon staleness and are invalidated only when the sensor emits a
 *cold* reading.
 
 ## Computation Patterns
@@ -254,41 +264,48 @@ processed before trades within the same exchange timestamp.
 
 ### Derived Sensors
 
-Sensors computed from other sensors declare their `depends_on:` edges
-and update only after all upstreams have updated for the current
-event. The `SensorRegistry` topological sort enforces this; cycles
-are rejected at construction.
+Sensors computed from other sensors declare their upstream edges via
+`SensorSpec.input_sensor_ids` (`sensors/spec.py`) and update only
+after all upstreams have updated for the current event. The
+`SensorRegistry` topological sort enforces this; cycles are rejected
+at construction.
 
 ## State Lifecycle (per Symbol)
 
 | Phase | Trigger | Behavior |
 |-------|---------|----------|
 | Init | First event for symbol | Allocate state; cold-start mode |
-| Warm-up | Events received but insufficient history | `is_warm == False`; `SensorReading.provenance.warm = False` |
+| Warm-up | Events received but insufficient history | `SensorReading.warm = False` on each emission |
 | Active | Warm-up complete | Normal operation; readings flow into the aggregator |
-| Stale | No event received for > staleness threshold | `HorizonFeatureSnapshot.stale = True` |
+| Stale | No warm reading within the feature's horizon window | `HorizonFeatureSnapshot.stale[feature_id] = True` (per-feature dict, `core/events.py`) |
 | Reset | Explicit command or corruption detected | Clear state; re-enter Init |
 
 ### Warm-Up
 
 Each sensor declares its minimum warm-up requirement via
-`WarmUpSpec(min_events: int, min_duration_ns: int)`. Layer gate **G8**
-enforces that every alpha's `depends_on_sensors` declares a warm-up
-budget consistent with its sensors.
+`SensorSpec.min_history` (`sensors/spec.py`), consulted by the sensor
+through `params`. Layer gate **G8** is the AST no-implicit-lookahead
+scan on inline `signal:` code; layer gate **G13** is the warm-up
+documentation gate, currently a no-op for the surviving SIGNAL /
+PORTFOLIO layers post-D.2 (`alpha/layer_validator.py`) — neither gate
+checks warm-up budgets against sensors.
 
-The aggregator emits `warm=True` only when **every** consumed sensor
-reports warm. SIGNAL alphas must not act on `warm=False` snapshots
-for entry; exits are permitted (conservative).
+The aggregator sets `warm` / `stale` **per `feature_id`** via each
+feature's `finalize()` (`features/aggregator.py`); there is no global
+all-sensors-warm flag. `HorizonSignalEngine` suppresses entry when any
+of the alpha's `required_warm_feature_ids` is not warm; exits are
+permitted (conservative).
 
 ### Staleness
 
-If no NBBO event arrives for a symbol within a configurable threshold
-(default 5 s during market hours), the snapshot is marked stale. Stale
-snapshots:
+Snapshot staleness is **per feature**: a feature is marked stale when
+its input sensor has produced no *warm* reading within the feature's
+own `horizon_seconds` window — there is no fixed wall-clock default
+(no 5 s threshold exists in the aggregator path). Stale features:
 
 - Continue to hold last-known sensor values (no decay to zero)
-- Carry `HorizonFeatureSnapshot.stale = True`
-- Trigger an `Alert` if sustained beyond a second threshold
+- Carry `HorizonFeatureSnapshot.stale[feature_id] = True`
+- Suppress entry for any alpha consuming them; exits permitted
 
 ## Snapshot/Sensor Versioning
 
@@ -326,14 +343,15 @@ symbol):
 | `HorizonAggregator` snapshot emission | 200 μs | 1 ms |
 | Per-symbol memory footprint | < 1 MB | configurable |
 
-The Paper-RTH perf gate is `≤ 12 %` end-to-end throughput regression
-vs the v0.2 baseline (enforced by
-`tests/perf/test_paper_rth_no_regression.py`); the Phase-4.1 gate is
-`≤ 5 %` decay-weighting overhead, plumbed via
-`tests/perf/_pinned_baseline.py` and the
-`tests/acceptance/test_perf_baseline_plumbing.py` smoke. Per-host
-pinned baselines live in `tests/perf/baselines/v02_baseline.json`
-(opt-in via `PERF_HOST_LABEL`).
+The Paper-RTH `≤ 12 %` end-to-end throughput-regression threshold and
+the Phase-4.1 `≤ 5 %` decay-weighting-overhead threshold are **policy
+targets** — no shipped test enforces them as regression gates.
+What ships today: `tests/perf/test_paper_rth_no_regression.py` asserts
+only that the pinned baseline blob exists (host-label gated), and
+`tests/acceptance/test_perf_baseline_plumbing.py` smoke-checks the
+`tests/perf/_pinned_baseline.py` plumbing. Per-host pinned baselines
+live in `tests/perf/baselines/v02_baseline.json` (opt-in via
+`PERF_HOST_LABEL`).
 
 ## Reproducibility
 
@@ -346,10 +364,12 @@ snapshot parity (`test_horizon_feature_snapshot_replay.py`).
 
 ### Snapshot Persistence
 
-This skill owns the optional `SensorStateStore` checkpoint protocol for
-warm-start. Snapshots are keyed by `(symbol, sensor_id,
-sensor_version)`. Version mismatch on restore falls back to cold start
-— never silently degrade to a different version's state.
+**Status:** design target — not yet implemented; no checkpoint
+protocol exists in `src/feelies/` today (sensors always cold-start
+from the event stream). The planned design: an optional checkpoint
+store for warm-start, keyed by `(symbol, sensor_id, sensor_version)`,
+where version mismatch on restore falls back to cold start — never
+silently degrade to a different version's state.
 
 ## Cross-Sectional Aggregation
 

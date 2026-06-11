@@ -33,7 +33,9 @@ Backtest execution is driven by `Orchestrator.run_backtest()`:
 3. Transition macro: READY → BACKTEST_MODE (`CMD_BACKTEST`)
 4. Run `_run_pipeline()` — iterates `backend.market_data.events()`
 5. On success: BACKTEST_MODE → READY (`BACKTEST_COMPLETE`)
-6. On exception: BACKTEST_MODE → DEGRADED (`BACKTEST_INTEGRITY_FAIL`)
+6. On exception: BACKTEST_MODE → DEGRADED (trigger
+   `f"BACKTEST_INTEGRITY_FAIL:{type(exc).__name__}"` — the exception
+   class name is embedded in the trigger string)
 
 The pipeline dispatches by event type: `NBBOQuote` drives the full
 three-layer pipeline via `_process_tick()` (sensors → aggregator →
@@ -44,8 +46,12 @@ the M0 → M10 backbone with the Phase-2/3/4 sub-states
 CROSS_SECTIONAL) inserted between M2 and M3 — see the
 system-architect skill for the full pipeline diagram.
 
-Order IDs are deterministic — derived from
-`hashlib.sha256(f"{correlation_id}:{seq}")`. This ensures two runs
+Order IDs are deterministic — `derive_order_id(seed)`
+(`src/feelies/core/identifiers.py`) returns the first 16 hex chars of
+`SHA-256(seed)`. The signal-path seed is `f"{correlation_id}:{seq}"`;
+hazard, emergency-flatten, and degrade-flatten paths use other seed
+formats (e.g. `f"emergency_flatten:{correlation_id}:{symbol}:{seq}"`).
+This ensures two runs
 with the same event log and parameters produce bit-identical sensor
 readings, signals, sized intents, per-leg orders, hazard exits, and
 PnL — locked by the **eleven parity hashes** across six levels under
@@ -67,15 +73,19 @@ timestamp. Ties broken deterministically:
 | 2 | Trades | Trades consume liquidity established by quotes |
 | 3 | Internal events (signals, orders) | Reactions to market data, never ahead of it |
 
-**Current limitation (verified 2026-06)**: `scripts/run_backtest.py`
-concatenates events per `(symbol, day)` and resequences without a
-global timestamp sort (no `sort` call in the script body). For
-single-symbol runs events are time-ordered; for multi-symbol runs
-events are interleaved by symbol then by day, not by global exchange
-timestamp. A global `sort(key=exchange_timestamp_ns)` before
-resequencing is required for multi-symbol correctness.
+This is implemented: `backtest_runner.py` calls
+`resequence_event_list()` (`src/feelies/storage/event_resequence.py`),
+which globally sorts the concatenated per-`(symbol, day)` batches by
+`(exchange_timestamp_ns, symbol, quote-before-trade, prior_sequence)`
+and assigns fresh contiguous sequences. `ReplayFeed` defends the
+invariant at consumption time — it raises `CausalityViolation` if the
+EventLog yields market events out of deterministic merge-key order.
 
 ### Micro-Batching Rules
+
+**Status:** design target — not yet implemented. Today every event is
+processed individually in merge-key order (same-nanosecond events are
+disambiguated by the resequence tie-breaker, not batched). When built:
 
 Events within the same exchange-timestamp nanosecond form a **micro-batch**:
 - All events in a batch are visible simultaneously
@@ -90,13 +100,25 @@ whose time only advances via explicit `set_time(ns)` calls. The clock
 enforces monotonicity: `set_time(ns)` raises `ValueError` if `ns` is less
 than the current time, preventing accidental backward movement.
 
+Latency is modeled as two deterministic legs (BT-17), configured in
+nanoseconds on `PlatformConfig` (`core/platform_config.py`):
+
 ```python
-simulated_clock = exchange_timestamp + injected_latency
+# Feed visibility — ReplayFeed advances the clock to this before yielding:
+visible_ns = exchange_timestamp_ns + market_data_latency_ns   # default 20ms
+
+# Fill deferral — routers defer fill eligibility by the submission leg:
+backtest_fill_latency_ns                                       # default 50ms
 ```
 
-Latency injection is achieved by calling `set_time()` with the exchange
-timestamp plus modeled delays between events — not by inserting explicit
-sleeps into the pipeline.
+Latency injection is achieved by calling `set_time()` with the
+visibility time — not by inserting explicit sleeps into the pipeline.
+Fill deferral is handled inside the order routers
+(`backtest_router.py`, `passive_limit_router.py`).
+
+**Future / live-calibration design** — stochastic latency profiles are
+not implemented; backtest latency today is the deterministic ns config
+above. When live-measured RTTs exist, the design target is:
 
 ```
 injected_latency = data_feed_delay + processing_delay + broker_delay
@@ -106,7 +128,7 @@ processing_delay ~ Deterministic(measured_compute_time)
 broker_delay     ~ LogNormal(mu=2.0, sigma=0.8) [ms]
 ```
 
-Configurable latency profiles:
+Configurable latency profiles (design target):
 
 | Profile | Use Case | Total Latency |
 |---------|----------|---------------|
@@ -132,7 +154,7 @@ flow through the `Clock` protocol (invariant 10).
 | Passive limit buy | Place at bid; fill via queue model |
 | Passive limit sell | Place at ask; fill via queue model |
 | Spread-crossing limit | Aggresses through NBBO; immediate fill with market-order slippage |
-| Cancel | Remove pending limit order; subject to cancel latency |
+| Cancel | Remove pending limit order; acks are immediate (a cancel-latency model is not implemented) |
 
 ### Order Lifecycle
 
@@ -174,16 +196,23 @@ RegimeHazardSpike (from RegimeHazardDetector) → HazardExitController
     → M7 ORDER_SUBMIT → M8 ORDER_ACK → M9 POSITION_UPDATE
 ```
 
-Two backtest order routers are available, selected via
-`PlatformConfig.execution_mode`:
+Three execution modes are available, selected via
+`PlatformConfig.execution_mode` (valid values: `market`,
+`passive_limit`, `minimum_cost`):
 
 - **`BacktestOrderRouter`** (`execution/backtest_router.py`) —
-  immediate mid-price fills. Selected by `execution_mode: market`.
+  cross-price taker fills (BUY lifts the ask, SELL hits the bid) with
+  D14 partial fills + walk-the-book impact on excess size. Selected by
+  `execution_mode: market`.
 - **`PassiveLimitOrderRouter`** (`execution/passive_limit_router.py`) —
   passive limit order queue-position fill model. Selected by
   `execution_mode: passive_limit`.
+- **`minimum_cost`** — per-order policy picks LIMIT vs MARKET via the
+  cost-model comparison (`execution/min_cost_policy.py`); routes
+  through the passive-limit backend at bootstrap (`bootstrap.py`) so
+  the policy can post a LIMIT when it picks the passive route.
 
-Both implement the `OrderRouter` protocol and return `OrderAck` events
+Both routers implement the `OrderRouter` protocol and return `OrderAck` events
 with `OrderAckStatus.FILLED`/`REJECTED`/`CANCELLED` plus `fill_price`
 and `filled_quantity`. The orchestrator's `_apply_ack_to_order()` handles
 the order SM transitions and `_reconcile_fills()` produces
@@ -196,8 +225,9 @@ The fill model uses the NBBO at acknowledgment time, not signal time.
 
 When a limit order price crosses the opposite side of NBBO at submission:
 - Treat as a marketable limit order
-- Fill at the NBBO (not the limit price) plus slippage
-- Remaining size (if any) rests as a passive limit at the limit price
+- The entire order routes to `_submit_aggressive_market()`
+  (`passive_limit_router.py`) and fills with market-order economics —
+  there is no split where remaining size rests as a passive limit
 
 ---
 
@@ -206,27 +236,38 @@ When a limit order price crosses the opposite side of NBBO at submission:
 Two concrete `OrderRouter` implementations exist for backtest mode,
 selected via `PlatformConfig.execution_mode`:
 
-**`BacktestOrderRouter`** (`execution_mode: market`) — immediate
-mid-price fills. Fills at `(bid + ask) / 2` with configurable latency
-(`backtest_fill_latency_ns`). No slippage, queue model, or partial
-fills. Orders for symbols with no quote are rejected.
+**`BacktestOrderRouter`** (`execution_mode: market`) — deterministic
+cross-price taker fills: BUY lifts the ask, SELL hits the bid (the
+half-spread is embedded in the fill price, not charged as a separate
+fee). When requested quantity exceeds L1 depth, the D14 partial-fill
+model splits the fill: `PARTIALLY_FILLED` for the available depth at
+the cross, then `FILLED` for the excess at a walk-the-book
+impact-adjusted price. Fill eligibility is optionally deferred by
+`backtest_fill_latency_ns`. Orders for symbols with no quote (or a
+crossed/locked quote, or zero depth) are rejected.
 
 **`PassiveLimitOrderRouter`** (`execution_mode: passive_limit`) —
-deterministic queue-position fill model for passive limit orders.
-Entry and signal-driven exit orders post at the near BBO (bid for BUY,
-ask for SELL). Two fill triggers:
+queue-position fill model for passive limit orders, deterministic
+under replay. Entry and signal-driven exit orders post at the near BBO
+(bid for BUY, ask for SELL). Two fill triggers:
 
 1. **Through fill** — opposite BBO crosses the limit price
    (ask ≤ limit for BUY, bid ≥ limit for SELL). Immediate fill at
    limit price.
-2. **Level fill** — BBO stays at the limit price for
-   `passive_fill_delay_ticks` consecutive quotes, modeling queue drain.
-   Counter resets if BBO moves away.
+2. **Level fill** — while our level is the BBO, each quote tick is a
+   *seeded Bernoulli trial* against a per-tick fill hazard
+   (`_fill_hazard`); `passive_fill_delay_ticks` sets the base hazard
+   scale `h0 = 1 / fill_delay_ticks` (not a consecutive-tick counter).
+   The uniform comes from `_seeded_uniform` — a SHA-256 of
+   replay-stable quote/order keys, no RNG — so replay is bit-identical
+   (Inv-5). A queue-depth mode (`passive_queue_position_shares`)
+   instead fires once trades have drained the modeled queue ahead.
 
 Unfilled orders are cancelled after `passive_max_resting_ticks` quotes.
 Stop-loss and emergency exits always use MARKET orders for immediate
-fill (invariant 11). Passive fills charge zero spread cost and apply
-a configurable maker rebate (`passive_rebate_per_share`).
+fill (invariant 11). Passive fills charge zero spread cost; maker
+rebates come from the cost model's `cost_maker_exchange_per_share`
+(`passive_rebate_per_share` is deprecated and ignored).
 
 The stochastic probability-based fill model (slippage functions,
 adverse selection adjustment, partial fills) described below and in
@@ -270,7 +311,7 @@ Key assumptions:
 | Market impact | Temporary: linear in participation rate; permanent: sqrt model |
 | Commission | Explicit per-share fee schedule |
 | Regulatory fees | SEC fee + FINRA TAF (per-trade) |
-| Financing | Intraday carry cost for leveraged positions |
+| Financing | No intraday carry model; optional HTB borrow fee via `cost_htb_borrow_annual_bps` (`cost_model.py`) on short-entry sells |
 
 ### Cost Aggregation
 
@@ -295,7 +336,7 @@ post-hoc validation:
 |----------|----------------------|
 | Timestamp monotonicity | `SimulatedClock.set_time()` raises `ValueError` on backward movement |
 | No illegal state transitions | `StateMachine` frozen transition table + `IllegalTransition` exception |
-| Deterministic order IDs | SHA-256 from `correlation_id:sequence` (no uuid4) |
+| Deterministic order IDs | `derive_order_id(seed)` — first 16 hex chars of SHA-256 over a provenance seed (no uuid4) |
 | No silent transitions | Every SM change emits `StateTransition` via `TransitionRecord` callback |
 | Enum completeness | `StateMachine.__init__` validates every enum member has a transition entry |
 
@@ -311,12 +352,24 @@ post-hoc validation:
 
 ### Automated Validation
 
-Run these checks on every backtest:
-1. **Timestamp audit** — verify no feature depends on future timestamps
-2. **Fill audit** — verify no fill occurs before order acknowledgment time
-3. **PnL reconciliation** — verify position changes match fill records exactly
-4. **Determinism check** — two runs with same seed produce identical output (SHA-256 IDs guarantee this structurally)
-5. **Latency budget check** — log if any event processing exceeds pipeline budget
+Two distinct mechanisms exist:
+
+1. **Per-run smoke checks** — `run_verification()`
+   (`harness/backtest_report.py`) runs 7 checks after every backtest:
+   events ingested > 0, signals fired > 0, fills ≥ 1, PnL computable,
+   trade journal ≥ 1 record, macro state == READY, kill switch
+   inactive.
+2. **Deep determinism / causality audits** — the eleven locked parity
+   hashes under `tests/determinism/` verify bit-identical replay
+   (sensor readings, signals, sized intents, orders, hazard exits,
+   regime states); causality and fill-timing are enforced structurally
+   (`ReplayFeed` causality guard, `SimulatedClock` monotonicity,
+   `OrderState` SM ordering) and exercised by the test suite, not
+   re-audited per run.
+
+The remaining design-target audits (timestamp audit, fill audit, PnL
+reconciliation, latency budget check as per-run checks) are not yet
+implemented as automated per-backtest validation.
 
 ---
 
@@ -386,9 +439,11 @@ Backtest output flows through the existing event and storage types:
 | Tick latency | `MetricEvent` (`core/events.py`) | `tick_to_decision_latency_ns` histogram per tick |
 | Alerts | `Alert` (`core/events.py`) | Safety events, fill anomalies |
 
-Aggregated run summaries (PnL curve, integrity checks, realism metrics)
-are NOT YET IMPLEMENTED as a structured output format. When built, they
-should aggregate from the typed events above:
+An aggregated text operator report IS implemented:
+`generate_report()` (`harness/backtest_report.py`) renders PnL, TCA,
+parity hashes, and the `artifact_id` from the typed events above. A
+structured JSON envelope remains TODO; when built, it should look
+like:
 
 ```
 {
@@ -419,8 +474,9 @@ should aggregate from the typed events above:
 
 The backtest engine is a concrete `MarketDataSource` + `OrderRouter`
 implementation composed into `ExecutionBackend`. Two router variants
-exist: `BacktestOrderRouter` (mid-price fills) and
+exist: `BacktestOrderRouter` (cross-price taker fills) and
 `PassiveLimitOrderRouter` (queue-position fills), selected via
-`execution_mode` in `PlatformConfig`. Both swap in for the live
+`execution_mode` in `PlatformConfig` (`minimum_cost` routes through
+the passive-limit backend). Both swap in for the live
 execution layer with no changes to signal, feature, or risk logic
 — the orchestrator's `_process_tick()` is identical in all modes.

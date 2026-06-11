@@ -4,7 +4,7 @@ description: >
   Post-trade forensics + structural edge-decay detection for the
   feelies platform. Owns multi-horizon attribution (per-mechanism,
   per-regime), the `DecayDetector`, the quarantine-trigger evidence
-  schema, and the `AlphaLifecycle.quarantine` auto-trigger. Compares
+  schema, and the `AlphaLifecycle.quarantine` evidence path. Compares
   expected vs realized slippage, hit rate, and net alpha across
   mechanism families and regimes; detects microstructure regime
   change, edge crowding, and latency-disadvantage emergence. Use
@@ -49,19 +49,31 @@ default). Additionally:
 
 ## Multi-Horizon Attribution (`MultiHorizonAttributor`)
 
+> **Implementation status**: what ships today is the
+> `MultiHorizonAttributor`, the `DecayDetector`
+> (`forensics/decay_detector.py`), and the quarantine-evidence schema
+> (`alpha/promotion_evidence.py`). The broader Compare / Monitor /
+> Detect tables below and the daily health-report JSON are operator
+> playbook — not automated (`src/feelies/forensics/__init__.py`:
+> "concrete analyzers are future work").
+
 `forensics/multi_horizon_attribution.py` decomposes realized PnL
 along three orthogonal axes:
 
 | Axis | Bucket type | Source |
 |------|-------------|--------|
-| Horizon | `HorizonBucket` | `Signal.boundary_index` × alpha's `horizon_seconds` |
-| Mechanism | `MechanismBucket` | `Signal.trend_mechanism` (closed `TrendMechanism` enum) |
-| Regime | `RegimeBucket` | `RegimeState.dominant_name` at signal time |
+| Horizon | `HorizonBucket` | caller-supplied `horizon_by_strategy` map — buckets key on `(strategy_id, horizon_seconds)` (`Signal` carries no `boundary_index`) |
+| Mechanism | `MechanismBucket` | `mechanism_breakdown` from the per-strategy `CrossSectionalSnapshot` (closed `TrendMechanism` enum) |
+| Regime | `RegimeBucket` | `RegimeEngine.current_state(symbol)` argmax at FILL time |
 
-Output is a `MultiHorizonReport` carrying per-bucket realized PnL,
-hit rate, slippage residual, and a `mechanism_concentration`
-diagnostic from the realized vs intended `mechanism_breakdown` on
-each `SizedPositionIntent`.
+Output is a `MultiHorizonReport` carrying `HorizonBucket`
+(pnl / fees / gross notional / trade count), `MechanismBucket`
+(pnl share / gross share), and `RegimeBucket` (pnl / trade count)
+only. Per-bucket hit rate, slippage residual, and a
+`mechanism_concentration` diagnostic from realized vs intended
+`mechanism_breakdown` are **design targets** — not yet on the report
+(see `DecayDetector` and the backtest TCA report for what exists
+today).
 
 The attributor is the primary tool for diagnosing "what's decaying":
 
@@ -236,9 +248,15 @@ for L1-latency infrastructure**.
 ### Strategy Quarantine
 
 Forensic findings emit `QuarantineTriggerEvidence` → invoke
-`AlphaLifecycle.quarantine(structured_evidence=[ev])`. This path is
+`AlphaLifecycle.quarantine("<reason>", structured_evidence=[ev])`
+(the positional `reason` string is required). This path is
 **fail-safe**: even if the validator flags the trigger as
 spurious-looking, the demotion always commits (Inv-11).
+
+**Status**: there is no production forensics → lifecycle
+auto-trigger wired today — operators / tooling call
+`registry.quarantine(...)` with `QuarantineTriggerEvidence`; the
+`DecayDetector` is consumed by `harness/backtest_report.py`.
 
 | Trigger threshold (default) | Field |
 |-----------------------------|-------|
@@ -307,7 +325,8 @@ identifier) — automatic re-promotion is forbidden.
 
 ### Per-Strategy Health Report
 
-Generated daily and on-demand:
+Generated daily and on-demand (**status**: design target — this JSON
+report is operator playbook, not automated today):
 
 ```
 {
@@ -359,9 +378,10 @@ reduce, retire).
 
 `TradeRecord` carries the full decision chain
 (`order_id`, `symbol`, `strategy_id`, `side`, `signal_timestamp_ns`,
-`submit_timestamp_ns`, `fill_timestamp_ns`, `slippage_bps`, `fees`,
+`submit_timestamp_ns`, `fill_timestamp_ns`, `cost_bps: Decimal`, `fees`,
 `realized_pnl`, `correlation_id`) — linking each trade to the signal
-that caused it.
+that caused it. The `net_pnl` property returns `realized_pnl - fees`
+(realized PnL is mid-to-mid; spread cost is booked into `fees`).
 
 ---
 
@@ -409,11 +429,11 @@ built they must extend `Event` to inherit `timestamp_ns`,
 | Risk Engine | `RiskVerdict` for constraint context; `RiskLevel` SM state; `OrderRequest.reason` for lineage |
 | Backtest Engine | `TradeRecord` baselines via `TradeJournal.query()` |
 | Microstructure Alpha | `Signal.trend_mechanism` + `expected_half_life_seconds` for per-mechanism attribution; hypothesis revalidation |
-| Composition Layer | `SizedPositionIntent.mechanism_breakdown` for crowding diagnostics |
+| Composition Layer | `mechanism_breakdown` via `CrossSectionalSnapshot` from `portfolio/cross_sectional_tracker.py` (the attributor does not consume `SizedPositionIntent` directly) |
 | Regime Detection | `RegimeState` + `RegimeHazardSpike` for hazard-attribution and regime-stability audit |
 | Testing & Validation | Sim-vs-live divergence metrics; `QuarantineTriggerEvidence` schema |
 | Data Engineering | `EventLog.replay()` for historical analysis |
-| Alpha Lifecycle | `AlphaLifecycle.quarantine` auto-trigger; `revalidate_to_paper` evidence |
+| Alpha Lifecycle | operator-invoked `AlphaLifecycle.quarantine(reason, structured_evidence=...)`; `revalidate_to_paper` evidence |
 
 The forensic layer sits downstream of execution and upstream of
 strategy lifecycle decisions. It is forensic-only — never on the

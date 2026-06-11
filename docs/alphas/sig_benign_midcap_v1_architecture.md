@@ -78,7 +78,7 @@ flowchart TD
   RK --> EX[ExecutionBackend]
 ```
 
-**Bindings:** `HorizonSignalEngine._build_bindings` prefers **`snapshot.values`** (boundary aggregates) and falls back to **`sensor_cache`** for sensor ids without a derived horizon row. Here, **`spread_z_30d`** has **no** `_horizon_features_for` entry — gate conditions use the **raw** `spread_z_30d` scalar from the cache.
+**Bindings:** `HorizonSignalEngine._build_bindings` prefers **`snapshot.values`** (boundary aggregates) and falls back to **`sensor_cache`** for sensor ids without a derived horizon row. Since audit **P1-6**, **`spread_z_30d`** has a `SensorPassthroughFeature` row in `_horizon_features_for` (feature_id = the bare `spread_z_30d`), so gate conditions resolve it from the **snapshot boundary value** (with the cache as fallback), unifying the gate/snapshot time-base.
 
 ---
 
@@ -90,7 +90,7 @@ flowchart TD
 |-----------|------|
 | `ofi_ewma` | Signed order-flow imbalance (EWMA); primary **direction** and magnitude for Kyle-style footprint. |
 | `micro_price` | Micro-price vs mid; **confirmation** that pressure aligns with OFI (same-sign tilt). |
-| `spread_z_30d` | Friction / toxicity context for the gate (cache-only scalar). |
+| `spread_z_30d` | Friction / toxicity context for the gate (snapshot passthrough since P1-6). |
 | `realized_vol_30s` | Short-horizon vol stress; gate uses **`realized_vol_30s_zscore`** from the snapshot. |
 
 Universe is **not** pinned in the YAML; operators scope symbols via **`platform.yaml`** (`symbols` / deployment policy).
@@ -101,10 +101,10 @@ From `bootstrap._horizon_features_for` (and `SensorRegistry` + `sensor_specs`):
 
 | Sensor | Features built | Typical `snapshot.values` keys used by this alpha |
 |--------|----------------|-----------------------------------------------------|
-| `ofi_ewma` | passthrough + rolling z | `ofi_ewma_zscore` (and raw `ofi_ewma` available) |
-| `micro_price` | passthrough + rolling z | **`micro_price_zscore`** (evaluate alignment check) |
-| `realized_vol_30s` | passthrough + rolling z | Gate: **`realized_vol_30s_zscore`** |
-| `spread_z_30d` | *(none — stats-complete sensor)* | Gate: **`spread_z_30d`** via **sensor_cache** only |
+| `ofi_ewma` | passthrough + horizon-windowed z | `ofi_ewma_zscore` (and raw `ofi_ewma` available) |
+| `micro_price` | passthrough + horizon-windowed z + drift (`micro_price_drift`, P1-9) | **`micro_price_zscore`** (evaluate alignment check); drift available but unused here |
+| `realized_vol_30s` | passthrough + count-window rolling z | Gate: **`realized_vol_30s_zscore`** |
+| `spread_z_30d` | passthrough (**P1-6**; feature_id is the bare `spread_z_30d`) | Gate: **`spread_z_30d`** from the snapshot (cache fallback) |
 
 **`evaluate()`** reads **`ofi_ewma_zscore`** and **`micro_price_zscore`** only; spread/vol are **gate-only**.
 
@@ -130,15 +130,15 @@ Loader stamps **`consumed_features`** with the **sensor id tuple** from `depends
 
 ### 3.2 Warm / stale
 
-`required_warm_feature_ids` includes feature ids implied by **`depends_on_sensors`** at horizon **120** plus gate tokens ending in **`_zscore`** / **`_percentile`**. So **`realized_vol_30s_zscore`** must be warm/non-stale for dispatch even though `evaluate()` does not read it.
+`required_warm_feature_ids` includes feature ids implied by **`depends_on_sensors`** at horizon **120** plus gate tokens ending in **`_zscore`** / **`_percentile`** (bare gate names are also mapped through the sensor→feature table). So **`realized_vol_30s_zscore`** must be warm/non-stale for dispatch even though `evaluate()` does not read it.
 
 ### 3.3 Gate ON vs `evaluate()`
 
-**Gate ON** permits `evaluate()` to run; **`evaluate()`** still returns **`None`** when `\|ofi_ewma_zscore\| < entry_threshold_z` or when OFI and **micro-price z** disagree on sign — do not treat latch state as “will trade every 120 s boundary.”
+**Gate ON** permits `evaluate()` to run; **`evaluate()`** still returns **`None`** when `\|ofi_ewma_zscore\| < entry_threshold_z`, when OFI and **micro-price z** disagree on sign, or when `micro_price_zscore` is exactly **0.0** (zero pressure is treated as “no confirmation,” not agreement) — do not treat latch state as “will trade every 120 s boundary.”
 
 ### 3.4 `spread_z_30d` and warm rows
 
-`spread_z_30d` appears in the gate but has **no** `_horizon_features_for` mapping, so it contributes **no** feature_id to **`required_warm_feature_ids`**. The gate reads the scalar from **`sensor_cache`** instead.
+Since audit **P1-6**, `spread_z_30d` has a passthrough horizon feature, so it **does** contribute the feature_id `spread_z_30d` to **`required_warm_feature_ids`** (it is in `depends_on_sensors` and appears in the gate). The snapshot row also gives it a horizon-staleness path: if the sensor goes silent within the window, the aggregator marks it stale and dispatch is suppressed — previously the cache-only path could serve an arbitrarily old value.
 
 ---
 
@@ -174,7 +174,7 @@ Same split as other SIGNAL alphas: **G12** disclosure stamps `Signal.disclosed_*
 
 1. L1 sensors stream on the bus.  
 2. Every **120 s** boundary, horizon features (OFI z, micro-price z, vol z, etc.) are snapshotted.  
-3. Gate uses HMM + **spread_z_30d** (cache) + **realized_vol_30s_zscore** (snapshot).  
+3. Gate uses HMM + **spread_z_30d** (snapshot passthrough) + **realized_vol_30s_zscore** (snapshot).  
 4. When ON and warm, **evaluate** demands **OFI z** above threshold **and** **micro-price z** sign-consistent with OFI, then emits **LONG/SHORT** with capped edge.  
 5. Risk + backend translate **`Signal`** → **`OrderRequest`** → fills.
 

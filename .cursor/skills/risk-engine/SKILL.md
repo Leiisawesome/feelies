@@ -83,8 +83,11 @@ typed `RiskAction`:
 | `REJECT` | Skip order; transition to M10 |
 | `FORCE_FLATTEN` | Trigger `_escalate_risk()` cascade; abort pipeline |
 
-Exhaustiveness guards at M5, M6, and the per-leg veto loop raise
-`ValueError` for any `RiskAction` not explicitly handled.
+Exhaustiveness guards at M5 and M6 (orchestrator) raise `ValueError`
+for any `RiskAction` not explicitly handled. The per-leg veto loop
+(`build_sized_intent_orders`, `risk/sized_intent_orders.py`) has no
+exhaustiveness guard — it handles `ALLOW` / `REJECT` / `SCALE_DOWN` /
+`FORCE_FLATTEN` explicitly.
 
 ---
 
@@ -94,8 +97,10 @@ Triggered by Layer-3 PORTFOLIO alphas at the `CROSS_SECTIONAL`
 sub-state. The `CompositionEngine` emits one `SizedPositionIntent` per
 `(alpha_id, horizon_seconds, boundary_index)`; `check_sized_intent`:
 
-1. **Resolves desired delta** against `PositionStore` (current signed
-   quantity and `latest_mark`)
+1. **Resolves desired delta** against `PositionStore` — each leg's
+   signed `target_usd` is converted to a share delta via
+   `resolve_mark` (`latest_mark` when available, falling back to the
+   position's `avg_entry_price`; a zero mark skips the leg, Inv-11)
 2. **Emits per-leg `OrderRequest`s** sorted lexicographically by symbol
    (deterministic ordering for the L3-orders parity hash)
 3. **Applies per-leg risk checks** with **per-leg veto** — a single
@@ -108,28 +113,40 @@ inherits the intent's `correlation_id` so post-trade attribution can
 recover the originating intent.
 
 `SizedPositionIntent.mechanism_breakdown: dict[TrendMechanism, float]`
-is preserved through the veto loop — the per-mechanism gross-exposure
-share is recorded even after some legs are vetoed, so the
-`MultiHorizonAttributor` can compute realized vs decided breakdowns.
+is never read or updated by the veto loop — it stays on the
+*pre-veto* `SizedPositionIntent` (tracked by `CrossSectionalTracker`
+on bus publish), so it records the *decided* per-mechanism
+gross-exposure share. Post-veto realized exposure may differ when
+legs are dropped.
 
 ---
 
 ## Real-Time Constraints
 
-### Position Limits
+### Position & Exposure Limits
 
-| Constraint | Scope | Default | Enforcement |
-|------------|-------|---------|-------------|
-| Max shares per symbol | Per-symbol | configured per ticker | Reject if post-fill exceeds limit |
-| Max notional per symbol | Per-symbol | % of NAV | Reject based on mark-to-market notional |
-| Max symbols held | Portfolio | configurable | Reject new-name orders at capacity |
-| Max position as % of ADV | Per-symbol | 1% of 20-day ADV | Prevent outsized participation |
+**Implemented (`BasicRiskEngine`, `risk/basic_risk.py`):**
 
-### Exposure Limits
+| Constraint | Config field | Default | Enforcement |
+|------------|-------------|---------|-------------|
+| Max shares per symbol | `max_position_per_symbol` | 1000 | Reject if post-fill exceeds the (regime-scaled) limit |
+| Max gross exposure | `max_gross_exposure_pct` | 20.0% of equity | Reject orders that breach the cap |
+| Drawdown gate | `max_drawdown_pct` | 5.0% | `FORCE_FLATTEN` on breach |
+| Regime scaling | scale map over `RegimeEngine` posteriors | min-scale fail-safe for unknown names | EV-scales the limits above |
 
-| Constraint | Definition | Action on breach |
-|------------|-----------|------------------|
-| Max gross | Σ\|long\| + \|short\| / NAV | Block new; begin unwinding if sustained |
+**Per-alpha YAML (`AlphaBudgetRiskWrapper` / `AlphaRiskBudget`,
+`alpha/module.py`):** `max_position_per_symbol`,
+`max_gross_exposure_pct`, `max_drawdown_pct`,
+`capital_allocation_pct` — the alpha's self-declared operating
+envelope; the risk engine may enforce tighter limits.
+
+**Policy only — not yet implemented:**
+
+| Constraint | Scope / definition | Intended response |
+|------------|--------------------|-------------------|
+| Max notional per symbol | % of NAV | Reject based on mark-to-market notional |
+| Max symbols held | Portfolio | Reject new-name orders at capacity |
+| Max position as % of ADV | 1% of 20-day ADV | Prevent outsized participation |
 | Max net | (long − short) / NAV | Block directional that increases |
 | Max sector gross | Sector notional / NAV | Block same-sector orders |
 | Max single-name concentration | One position / gross | Reject orders increasing concentration |
@@ -142,6 +159,11 @@ share is recorded even after some legs are vetoed, so the
 | Throttle | Intraday PnL < −1.0% NAV | Cancel open; reduce sizing to 25%; no new positions |
 | Circuit breaker | Intraday PnL < −1.5% NAV | Cancel all; positions monitored with stops |
 | Kill switch | Intraday PnL < −2.0% NAV | Flatten all; halt for the day |
+
+**Status:** the tiered ladder above is design policy — not yet
+implemented. What ships today is a single gate in `BasicRiskEngine`
+(`risk/basic_risk.py`): `drawdown_pct >= RiskConfig.max_drawdown_pct`
+(default `5.0`%) → `FORCE_FLATTEN` (`_is_drawdown_breached`).
 
 Drawdown thresholds are configurable. PnL is mark-to-market using
 last NBBO mid. **Ownership boundary**: this skill defines the policy
@@ -171,7 +193,7 @@ regime flip is imminent.
 
 | Reason | Trigger | Controller-layer suppression |
 |--------|---------|------------------------------|
-| `HAZARD_SPIKE` | Posterior departure exceeds per-alpha `hazard_score_threshold` AND position open ≥ `min_age_seconds` | Per `(strategy_id, symbol, reason)` — cleared when the position returns to flat (prevents re-firing an exit for the same open position) |
+| `HAZARD_SPIKE` | `hazard_score >= hazard_score_threshold` (per-alpha; default 0.85) AND position open ≥ `min_age_seconds` (default 30) | Per `(strategy_id, symbol, reason)` — cleared when the position returns to flat (prevents re-firing an exit for the same open position) |
 | `HARD_EXIT_AGE` | Position open ≥ `hard_exit_age_seconds` | Per `(strategy_id, symbol, reason)` — same controller key |
 
 The **detector-layer** suppression — `(symbol, engine_name,
@@ -185,6 +207,15 @@ Behavior:
 
 - Wired behind alpha-level `hazard_exit.enabled: true` (default off,
   v0.2-compatible)
+- Wiring (`bootstrap._create_hazard_exit_controller`) scans **all**
+  active alphas — SIGNAL and PORTFOLIO — for opt-ins (audit P0 H-1),
+  so a SIGNAL-layer opt-in actually gets a controller listening on
+  the bus
+- When an alpha omits `hard_exit_age_seconds`, the default is
+  `2 × expected_half_life_seconds` from its mechanism declaration
+  (HM-1)
+- The legacy `posterior_drop_threshold` YAML key is normalized to
+  `hazard_score_threshold` at load time with a WARNING (audit P1 H-2)
 - Bit-identical replay (Inv-5) — verified by the Level-1 + Level-4
   hazard-exit replay tests
 - The controller never closes a position on its own initiative
@@ -201,13 +232,25 @@ The risk engine consumes regime state from the platform-level
 `RegimeEngine` service (services package). Read-only access via
 `current_state(symbol)`. **Ownership boundary**:
 
-- microstructure-alpha defines the regime taxonomy (what regimes exist)
-- regime-detection owns the platform-level service (the writer/reader contract)
+- regime-detection owns the regime taxonomy (what regimes exist) and
+  the platform-level service (the writer/reader contract):
+  `HMM3StateFractional` (`services/regime_engine.py`) defines
+  `compression_clustering`, `normal`, `vol_breakout`, selected via
+  `PlatformConfig.regime_engine`
+- microstructure-alpha consumes the taxonomy via regime gates and
+  scaling
 - this skill owns the risk response to regime transitions
 - post-trade-forensics audits classification accuracy
 
 When forensic and risk-engine regime labels diverge, use the **more
 conservative** classification.
+
+**Status:** the three tables below (volatility-percentile regimes,
+correlation clustering, concentration risk) are design policy — not
+yet implemented in `src/feelies/risk/`. The implemented regime
+response is EV-scaling over `RegimeEngine` posteriors
+(`BasicRiskEngine._regime_scaling()` and
+`BudgetBasedSizer._get_regime_factor()`).
 
 ### Volatility Regime
 
@@ -327,6 +370,8 @@ Aggregate constraints no single strategy can evaluate alone:
 
 If aggregate constraints bind, the governor reduces the most recently
 submitted order first (LIFO priority for risk reduction).
+**Status:** design target — no LIFO-priority governor exists in the
+code today.
 
 ---
 
@@ -339,9 +384,10 @@ submitted order first (LIFO priority for risk reduction).
 | `Alert` | Orchestrator / risk | `severity: AlertSeverity`, `alert_name`, context |
 | `KillSwitchActivation` | Orchestrator | `reason`, `activated_by` |
 
-`OrderRequest.reason` is set to `"SIGNAL"`, `"PORTFOLIO"`,
-`"HAZARD_SPIKE"`, or `"HARD_EXIT_AGE"` depending on the upstream path,
-giving post-trade forensics a clean lineage axis.
+`OrderRequest.reason` is set to `"PORTFOLIO"`, `"HAZARD_SPIKE"`, or
+`"HARD_EXIT_AGE"` depending on the upstream path, giving post-trade
+forensics a clean lineage axis. SIGNAL-path orders keep the default
+`reason=""` — their lineage flows via `correlation_id`.
 
 ---
 

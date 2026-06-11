@@ -42,7 +42,7 @@ Additionally:
    atomically.
 3. **Forensic-only consumer** — production code paths must never read
    the ledger to make per-tick decisions (audit `A-DET-02`).
-4. **Quarantine fail-safe** — `validate_gate(QUARANTINED, ...)`
+4. **Quarantine fail-safe** — `validate_gate(GateId.LIVE_TO_QUARANTINED, ...)`
    errors are logged at WARNING level but the demotion always
    commits.
 5. **Immutable thresholds per alpha** — F-5 three-layer merge runs
@@ -68,12 +68,12 @@ Triggers (the `trigger:` string on every ledger entry):
 
 | Trigger | Gate | Method |
 |---------|------|--------|
-| `promote_to_paper` | RESEARCH_TO_PAPER | `promote_to_paper(...)` |
-| `promote_to_live` | PAPER_TO_LIVE | `promote_to_live(...)` |
+| `pass_paper_gate` | RESEARCH_TO_PAPER | `promote_to_paper(...)` |
+| `pass_live_gate` | PAPER_TO_LIVE | `promote_to_live(...)` |
 | `promote_capital_tier` | LIVE_PROMOTE_CAPITAL_TIER | `promote_capital_tier(evidence)` (LIVE → LIVE self-loop) |
-| `quarantine` | LIVE_TO_QUARANTINED (consistency-only) | `quarantine(...)` |
-| `revalidate_to_paper` | QUARANTINED_TO_PAPER | `revalidate_to_paper(...)` |
-| `decommission` | QUARANTINED_TO_DECOMMISSIONED | `decommission(...)` |
+| `edge_decay_detected` | LIVE_TO_QUARANTINED (consistency-only) | `quarantine(...)` |
+| `revalidation_passed` | QUARANTINED_TO_PAPER | `revalidate_to_paper(...)` |
+| `decommissioned` | QUARANTINED_TO_DECOMMISSIONED | `decommission(...)` |
 
 `AlphaLifecycle.current_capital_tier: CapitalStageTier | None` scans
 `history` backwards from the most recent record to the most recent
@@ -103,7 +103,7 @@ the modern surface; legacy is preserved for backwards compatibility.
 ### Quarantine Fail-Safe (Inv-11)
 
 `AlphaLifecycle.quarantine` is the consistency-only path:
-`validate_gate(QUARANTINED, ...)` errors are logged at WARNING level
+`validate_gate(GateId.LIVE_TO_QUARANTINED, ...)` errors are logged at WARNING level
 (spurious-trigger flag) but the demotion **always commits** so a
 forensic-layer auto-trigger can never be blocked by the validator.
 
@@ -119,8 +119,8 @@ GATE_EVIDENCE_REQUIREMENTS: Mapping[GateId, tuple[type, ...]]
 
 | `GateId` | Required evidence |
 |----------|-------------------|
-| `RESEARCH_TO_PAPER` | `ResearchAcceptanceEvidence`, `CPCVEvidence`, `DSREvidence` |
-| `PAPER_TO_LIVE` | `PaperWindowEvidence` |
+| `RESEARCH_TO_PAPER` | `ResearchAcceptanceEvidence` |
+| `PAPER_TO_LIVE` | `PaperWindowEvidence`, `CPCVEvidence`, `DSREvidence` |
 | `LIVE_PROMOTE_CAPITAL_TIER` | `CapitalStageEvidence` |
 | `LIVE_TO_QUARANTINED` | `QuarantineTriggerEvidence` (consistency-only) |
 | `QUARANTINED_TO_PAPER` | `RevalidationEvidence` |
@@ -217,11 +217,11 @@ recording every committed lifecycle transition.
 ```python
 @dataclass(frozen=True)
 class PromotionLedgerEntry:
-    schema_version: int             # LEDGER_SCHEMA_VERSION
+    schema_version: str             # LEDGER_SCHEMA_VERSION = "1.0.0"
     alpha_id: str
     from_state: str
     to_state: str
-    trigger: str                    # "promote_to_paper" | "promote_capital_tier" | ...
+    trigger: str                    # "pass_paper_gate" | "promote_capital_tier" | ...
     timestamp_ns: int               # clock-derived (Inv-10)
     correlation_id: str
     metadata: dict[str, Any]        # legacy {"evidence": ...} or F-2 evidence_to_metadata(*evs)
@@ -266,11 +266,13 @@ feelies.cli`).
 | `validate` | Preflight ledger file (parse + `LEDGER_SCHEMA_VERSION` check) |
 | `gate-matrix` | Render the F-2 declarative gate matrix |
 
-All accept:
+`inspect`, `list`, `replay-evidence`, and `validate` accept:
 - `--ledger PATH` (explicit)
 - `--config PATH` (loads `PlatformConfig` and resolves
   `promotion_ledger_path`)
 - `--json` for stable machine-readable output
+
+`gate-matrix` needs no ledger and accepts only `--json`.
 
 ### Pinned Exit Codes
 
@@ -296,9 +298,13 @@ wall-clock readings).
 
 The F-6 capital-tier escalation extended the CLI:
 
-- `_STATE_PAIR_TO_GATE` maps `("LIVE", "LIVE") → GateId.LIVE_PROMOTE_CAPITAL_TIER`
-  so `replay-evidence` validates round-tripped `CapitalStageEvidence`
-  against today's thresholds
+- `("LIVE", "LIVE")` is **deliberately excluded** from the static
+  `_STATE_PAIR_TO_GATE` map (a self-loop can in principle carry any
+  trigger); `_gate_for_entry` resolves the pair to
+  `GateId.LIVE_PROMOTE_CAPITAL_TIER` only when
+  `entry.trigger == PROMOTE_CAPITAL_TIER_TRIGGER` (otherwise `None` →
+  reported as skipped), so `replay-evidence` validates round-tripped
+  `CapitalStageEvidence` against today's thresholds
 - `inspect` renders a `tier=SCALED` / `tier=SMALL_CAPITAL` suffix in
   the per-alpha header and formats the self-loop arrow as
   `LIVE @ SMALL_CAPITAL → LIVE @ SCALED`
@@ -361,22 +367,22 @@ escalation per epoch.
    Author runs CPCV + DSR + research-acceptance suite (Workstream C).
    Operator invokes:
      AlphaLifecycle.promote_to_paper(
-         structured_evidence=[ResearchAcceptanceEvidence(...),
-                              CPCVEvidence(...),
-                              DSREvidence(...)])
+         structured_evidence=[ResearchAcceptanceEvidence(...)])
    → Gate dispatch → validate_gate(RESEARCH_TO_PAPER, ...)
    → On success: SM transitions RESEARCH → PAPER
                 ; ledger entry written with F-2 metadata
-                ; trigger="promote_to_paper"
+                ; trigger="pass_paper_gate"
 
 2. PAPER:
    ≥ 5 trading days; collect PaperWindowEvidence from sim-vs-live
    divergence metrics (testing-validation skill).
    Operator invokes:
      AlphaLifecycle.promote_to_live(
-         structured_evidence=[PaperWindowEvidence(...)])
+         structured_evidence=[PaperWindowEvidence(...),
+                              CPCVEvidence(...),
+                              DSREvidence(...)])
    → SM transitions PAPER → LIVE @ SMALL_CAPITAL
-                ; ledger entry; trigger="promote_to_live"
+                ; ledger entry; trigger="pass_live_gate"
 
 3. LIVE @ SMALL_CAPITAL:
    ≤ 1% target allocation; ≥ 10 trading days.
@@ -392,9 +398,10 @@ escalation per epoch.
    Target allocation. Continuous forensic monitoring
    (post-trade-forensics skill) emits QuarantineTriggerEvidence on
    threshold breach. Auto-trigger:
-     AlphaLifecycle.quarantine(structured_evidence=[QuarantineTriggerEvidence(...)])
+     AlphaLifecycle.quarantine("<reason>",
+         structured_evidence=[QuarantineTriggerEvidence(...)])
    → SM transitions LIVE → QUARANTINED (always commits, fail-safe)
-                ; ledger entry; trigger="quarantine"
+                ; ledger entry; trigger="edge_decay_detected"
 
 5. QUARANTINED:
    Continue paper-mode signal generation. Hypothesis revalidation

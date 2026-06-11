@@ -47,7 +47,7 @@ auditable configuration). Additionally:
 ## Locked Parity Hashes (Inv-5)
 
 Each is a SHA-256 over the ordered event stream at one layer, asserted
-by a subprocess-isolated test under `tests/determinism/`. The canonical
+by an in-process pytest replay test under `tests/determinism/`. The canonical
 registry is `tests/determinism/parity_manifest.py:LOCKED_PARITY_BASELINES`
 (eleven entries across six levels). Drift between modules is caught in
 CI by `tests/determinism/test_parity_manifest.py`.
@@ -69,7 +69,7 @@ CI by `tests/determinism/test_parity_manifest.py`.
 Determinism is structurally supported by:
 
 - `SimulatedClock.set_time()` rejecting backward movement
-- SHA-256 order IDs (`hashlib.sha256(f"{correlation_id}:{seq}")`) — never `uuid4`
+- SHA-256 order IDs (`derive_order_id(f"{correlation_id}:{seq}")` — first 16 hex chars of the SHA-256 digest) — never `uuid4`
 - `SequenceGenerator` (`core/identifiers.py`) thread-safe monotonic counter
 - Frozen `StateMachine` transition tables; `TransitionRecord` audit trail
 - `ruff` `DTZ` rules banning raw `datetime.now()` (Inv-10)
@@ -159,9 +159,9 @@ or hazard-exit logic.
 | Same-machine determinism | Run identical config twice on same machine | Bit-identical event stream + all eleven parity hashes |
 | Cross-machine determinism | Run identical config on two different machines | Bit-identical (requires fixed seeds, no hardware-dependent floats) |
 | Version-upgrade determinism | Run same config on old + new code | Identical, or documented + justified divergence |
-| Checkpoint resume | Interrupt replay; resume from `SensorStateStore` checkpoint | Final output identical to uninterrupted run |
+| Checkpoint resume | Interrupt replay; resume from checkpoint (design target — no sensor-state checkpoint store exists yet; only `RegimeEngine.checkpoint()`/`restore()` is implemented) | Final output identical to uninterrupted run |
 | Hazard-spike parity | Replay `RegimeHazardSpike` stream (`test_regime_hazard_replay.py`) | L5 hash bit-identical |
-| Decay-on / decay-off cross-check | Same alpha with `decay_weighting_enabled` toggled (`test_sized_intent_replay.py` vs `test_sized_intent_with_decay_replay.py`) | `SizedPositionIntent.decision_basis_hash` differs; structural ranking unchanged |
+| Decay-on / decay-off cross-check | Same alpha with `decay_weighting_enabled` toggled (`test_sized_intent_replay.py` vs `test_sized_intent_with_decay_replay.py`) | The locked L3 intent-stream parity hashes differ between the two modes; structural ranking unchanged |
 
 ### Sim-vs-Live Divergence
 
@@ -241,8 +241,8 @@ class GateId(Enum):
 | Schema | Gate(s) | Carries |
 |--------|---------|---------|
 | `ResearchAcceptanceEvidence` | RESEARCH_TO_PAPER | acceptance-suite outcomes |
-| `CPCVEvidence` | RESEARCH_TO_PAPER | fold count, embargo bars, fold sharpes, mean / median sharpe, mean PnL, p-value, content-addressable `fold_pnl_curves_hash` |
-| `DSREvidence` | RESEARCH_TO_PAPER | observed sharpe, trials count, skew, kurtosis, deflated `dsr` + `dsr_p_value` |
+| `CPCVEvidence` | PAPER_TO_LIVE | fold count, embargo bars, fold sharpes, mean / median sharpe, mean PnL, p-value, content-addressable `fold_pnl_curves_hash` |
+| `DSREvidence` | PAPER_TO_LIVE | observed sharpe, trials count, skew, kurtosis, deflated `dsr` + `dsr_p_value` |
 | `PaperWindowEvidence` | PAPER_TO_LIVE | trading days, sample size, slippage residual bps, fill-rate drift pct (two-sided), latency KS p, PnL compression ratio, anomalous event count |
 | `CapitalStageEvidence` | LIVE_PROMOTE_CAPITAL_TIER | tier (`SMALL_CAPITAL`), deployment days, PnL compression band, exec-quality envelopes |
 | `QuarantineTriggerEvidence` | LIVE_TO_QUARANTINED | net-alpha negative days, hit-rate residual pp, microstructure metrics breached, crowding symptoms, PnL compression 5d |
@@ -294,10 +294,10 @@ RESEARCH → PAPER → LIVE → QUARANTINED → DECOMMISSIONED
 
 | Stage | Capital | Duration | Exit gate |
 |-------|---------|----------|-----------|
-| RESEARCH | $0 | Until acceptance gates pass | RESEARCH_TO_PAPER (CPCV + DSR + research-acceptance) |
-| PAPER | $0 (live data, simulated execution) | ≥ 5 trading days | PAPER_TO_LIVE (paper-window) |
+| RESEARCH | $0 | Until acceptance gates pass | RESEARCH_TO_PAPER (research-acceptance only) |
+| PAPER | $0 (live data, simulated execution) | ≥ 5 trading days | PAPER_TO_LIVE (paper-window + CPCV + DSR) |
 | LIVE @ SMALL_CAPITAL | ≤ 1% target allocation | ≥ 10 trading days | LIVE_PROMOTE_CAPITAL_TIER (capital-stage) |
-| LIVE @ SCALED | Target allocation | Ongoing | Demotion via QUARANTINE_TRIGGER |
+| LIVE @ SCALED | Target allocation | Ongoing | Demotion via LIVE_TO_QUARANTINED (ledger trigger `edge_decay_detected`, forensic auto-trigger) |
 | QUARANTINED | $0 (paper-mode only) | Until revalidation | QUARANTINED_TO_PAPER (revalidation) |
 | DECOMMISSIONED | terminal | — | — |
 
@@ -319,7 +319,7 @@ the modern surface; legacy is preserved for backwards compatibility.
 ### Quarantine Path (Inv-11 Fail-Safe)
 
 `AlphaLifecycle.quarantine` is fail-safe: any
-`validate_gate(QUARANTINED, ...)` errors are logged at WARNING level
+`validate_gate(GateId.LIVE_TO_QUARANTINED, ...)` errors are logged at WARNING level
 (spurious-trigger flag) but the demotion **always commits** so a
 forensic-layer auto-trigger can never be blocked by the validator.
 
@@ -368,7 +368,9 @@ does not perturb replay determinism.
 | `validate` | Preflight ledger file (parse + `LEDGER_SCHEMA_VERSION` check) |
 | `gate-matrix` | Render the F-2 declarative gate matrix |
 
-All accept `--ledger PATH` or `--config PATH` and `--json`.
+`inspect`, `list`, `replay-evidence`, and `validate` accept
+`--ledger PATH` or `--config PATH` and `--json`; `gate-matrix`
+accepts only `--json`.
 
 Exit codes (CI-stable):
 - `0` OK
@@ -412,11 +414,11 @@ artifact_id = hash(strategy_version, config_version, data_version, engine_versio
 
 Every run produces a record with `run_id` (deterministic hash),
 `strategy_version`, `engine_version`, `data_version`,
-`config_snapshot` (JSON), environment, random seeds, **all five
+`config_snapshot` (JSON), environment, random seeds, **all eleven
 parity hashes**, integrity-check pass/fail, timestamp.
 
 To reproduce: check out `strategy_version` + `engine_version`, load
-`data_version`, apply `config_snapshot`, set seeds, run. All five
+`data_version`, apply `config_snapshot`, set seeds, run. All eleven
 parity hashes must match.
 
 ### Configuration Audit Trail
@@ -437,7 +439,7 @@ trading halt.
 | Gate | Threshold | File |
 |------|-----------|------|
 | Paper-RTH throughput regression | ≤ 12% e2e vs v0.2 baseline | `tests/perf/test_paper_rth_no_regression.py` |
-| Phase 4.1 decay-weighting overhead | ≤ 5% wall-clock vs decay-OFF | enforced via the shared per-host pinned baseline helper (`tests/perf/_pinned_baseline.py`); the standalone `test_phase4_1_no_regression.py` referenced in some docs has not landed |
+| Phase 4.1 decay-weighting overhead | ≤ 5% wall-clock vs decay-OFF | plumbing present (`tests/perf/_pinned_baseline.py` + `tests/acceptance/test_perf_baseline_plumbing.py`), but the asserting regression test (`test_phase4_1_no_regression.py`) has not landed — the threshold is **not yet enforced in CI** |
 | Per-host pinned baselines | opt-in via `PERF_HOST_LABEL` | `tests/perf/baselines/v02_baseline.json` (loader: `tests/perf/_pinned_baseline.py`) |
 | Baseline-plumbing smoke | acceptance | `tests/acceptance/test_perf_baseline_plumbing.py` |
 | Baseline recording | manual | `python scripts/record_perf_baseline.py --host-label <id>` |
@@ -472,7 +474,7 @@ commit → lint (ruff + DTZ) → mypy strict → unit → property → replay
 | Lint + DTZ + mypy | 2 min | Block merge |
 | Unit | 10 min | Block merge |
 | Property | 30 min | Block merge |
-| Replay determinism (5 parity hashes) | 15 min | Block merge |
+| Replay determinism (11 parity hashes) | 15 min | Block merge |
 | Fault injection | 45 min | Block merge |
 | Cost / latency sensitivity | 60 min | Block promotion |
 | Full acceptance + perf gate | 2 hr | Block promotion |

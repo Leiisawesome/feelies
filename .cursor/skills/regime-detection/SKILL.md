@@ -85,6 +85,8 @@ class RegimeEngine(Protocol):
     def posterior(self, quote: NBBOQuote) -> list[float]: ...
     def current_state(self, symbol: str) -> list[float] | None: ...
     def reset(self, symbol: str) -> None: ...
+    def checkpoint(self) -> bytes: ...
+    def restore(self, data: bytes) -> None: ...
 ```
 
 | Method | Mutates state | Caller |
@@ -92,6 +94,8 @@ class RegimeEngine(Protocol):
 | `posterior(quote)` | Yes (Bayesian update) | Orchestrator only (M2) |
 | `current_state(symbol)` | No (read cache) | Risk engine, position sizer, regime-gate, forensics |
 | `reset(symbol)` | Yes (clear cache) | Orchestrator (recovery), tests |
+| `checkpoint()` | No (serialize all per-symbol state to an opaque blob) | Recovery / persistence |
+| `restore(data)` | Yes (replace all per-symbol state; atomic — rolls back or cold-starts on failure) | Recovery |
 | `state_names` | No | Any |
 | `n_states` | No | Any |
 
@@ -110,8 +114,13 @@ canonical states:
 
 State names are **not hardcoded** in consumers. Risk engine and
 position sizer look up names from `state_names` and apply
-configurable scaling factors per name. Consumers handle unknown
-names by defaulting to `1.0×`.
+configurable scaling factors per name. Both consumers handle unknown
+names by defaulting to the **minimum** configured scale (fail-safe,
+Inv-11): `BasicRiskEngine._regime_scaling()` uses
+`_regime_scale_default` (the min of its scale map), and
+`BudgetBasedSizer._get_regime_factor()` uses
+`min(self._regime_factors.values())`. The resulting EV is then
+clamped with `min(EV, 1.0)`.
 
 ### Extensibility
 
@@ -167,7 +176,17 @@ class RegimeState(Event):
     posteriors: tuple[float, ...]
     dominant_state: int
     dominant_name: str
+    horizon_seconds: int = 0
+    stability: float = 1.0
+    posterior_entropy_nats: float = 0.0
 ```
+
+The three defaulted fields are additive: `horizon_seconds` is `0`
+for the per-tick snapshot (positive for horizon-anchored snapshots),
+`stability` is the 0..1 stability of the dominant state over recent
+posteriors (default `1.0` is a no-op for legacy producers), and
+`posterior_entropy_nats` is the Shannon entropy of the posterior
+categorical (`0.0` when unused).
 
 Published by the orchestrator at M2 after `posterior()` returns.
 
@@ -175,7 +194,8 @@ Consumers:
 
 - Risk engine — `current_state(symbol)` → scaling factor
 - Position sizer — `current_state(symbol)` → capital scalar
-- Regime-gate DSL — bindings `P(<state_name>)`, `dominant`
+- Regime-gate DSL — bindings `P(<state_name>)`, `dominant`,
+  `entropy` (bound to `posterior_entropy_nats`)
 - `RegimeHazardDetector` — pairs of consecutive `RegimeState` events
 - Post-trade forensics — regime-stability audit
 
@@ -217,9 +237,11 @@ for the authoritative schema.
 
 Suppression at the **detector** layer is keyed on
 ``(symbol, engine_name, departing_state)``: at most one spike per
-departure episode on a given regime channel; re-arms only when a
-different state becomes dominant or the departing posterior recovers
-above the ``1.0 − hysteresis_threshold`` floor.  A second,
+departure episode on a given regime channel; re-arms only when the
+suppressed departing state becomes dominant *again* after a flip (a
+clean round-trip) or its posterior recovers to or above the
+``1.0 − hysteresis_threshold`` floor (see ``_rearm_suppression`` in
+``services/regime_hazard_detector.py``).  A second,
 **controller-side** suppression key (``(strategy_id, symbol,
 reason)``) lives in :class:`HazardExitController` and prevents
 re-firing an exit for the same open position.  The two are distinct
@@ -277,8 +299,8 @@ does not emit one.
 `RegimeHazardSpike` events and emits `OrderRequest.reason ∈
 {"HAZARD_SPIKE", "HARD_EXIT_AGE"}` to flatten open positions when:
 
-- Posterior drop exceeds the per-alpha `hazard_score_threshold`
-- The position has been open at least `min_age_seconds`
+- `hazard_score >= hazard_score_threshold` (per-alpha; default 0.85)
+- The position has been open at least `min_age_seconds` (default 30)
 
 Wired behind alpha-level `hazard_exit.enabled: true` (default off,
 v0.2-compatible).
@@ -321,8 +343,15 @@ block into a safe AST-evaluated boolean DSL. Bindings drawn from
 
 - `P(<state_name>)` — posterior probability of the named state
 - `dominant` — name of the dominant state
+- `entropy` — `posterior_entropy_nats` of the current `RegimeState`
 
-Plus from the live sensor cache:
+Plus sensor/feature bindings, built by
+`HorizonSignalEngine._build_bindings`
+(`signals/horizon_engine.py`): the primary source is
+`HorizonFeatureSnapshot.values` (horizon-boundary aggregates,
+including `SensorPassthroughFeature` rows such as `spread_z_30d`);
+the live sensor cache is a fallback only, applied via `setdefault`
+for identifiers absent from the snapshot:
 
 - `<sensor_id>` — raw value
 - `<sensor_id>_zscore` — z-score
@@ -356,7 +385,7 @@ to audit regime classification accuracy over time.
 | Engine not configured | `regime_engine is None` | All consumers default to `1.0×` (Inv-11) |
 | Symbol never updated | `current_state()` returns `None` | Consumers default to `1.0×` |
 | Empty posteriors list | `len(posteriors) == 0` | Treat as `None` |
-| NaN in posteriors | Bayesian update divergence | `reset(symbol)` and re-initialize |
+| NaN/inf in posteriors | Checked inside `posterior()` after the Bayesian update | Log WARNING and substitute a uniform prior in place; no `reset()` call |
 | Engine raises in `posterior()` | Caught by orchestrator at M2 | Tick degrades; cached state preserved |
 | Hazard detector receives mismatched engine_name | `_validate_pair` raises `HazardDetectorContractError` | Tick degrades to DEGRADED; investigate engine swap |
 
