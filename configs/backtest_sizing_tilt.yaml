@@ -14,13 +14,40 @@
 #   uv run python scripts/analyze_size_divergence.py sizediv.jsonl
 #
 # S1 wires the edge + inventory factors (vol is a deferred provider seam, so
-# vol_targeting is left off here).  Tune edge_ref_bps to the universe's
-# typical disclosed edge so the factor centers near 1.0.
+# vol_targeting is left off here).
+#
+# CALIBRATION (2026-06-10).  The first shadow run (edge_ref_bps=20) produced
+# 100% downsize for TWO reasons, both now fixed:
+#
+#  1) Reference miscalibration.  sig_benign_midcap_v1 discloses edge in
+#     [9, 20] bps (edge = clamp(|z|·edge_per_z_bps, ·, edge_cap_bps) with
+#     edge_per_z_bps=6, entry_threshold_z=1.5, edge_cap_bps=20), so edge/20
+#     was always < 1.0.  EMPIRICAL entry-signal edge (APP 2026-06-01, the 6
+#     LONG/SHORT entries; the 96 FLAT exits carry edge=0 by construction and
+#     are excluded): median 9.34, mean 12.86 bps — matching the analytic
+#     ~11 bps (z truncated at 1.5σ).  edge_ref_bps=11.0 sits between the
+#     entry median and mean: weak (~9 bps) entries mildly downsize, strong
+#     (15-20 bps) ones upsize → genuine two-sided discrimination.  Re-confirm
+#     over more days and set edge_ref_bps to the ENTRY median:
+#       run_backtest.py --config configs/backtest_app.yaml --symbol APP \
+#           --date 2026-06-01 --emit-signals-jsonl \
+#         | grep '^SIGNAL_JSONL ' | sed 's/^SIGNAL_JSONL //' \
+#         | python -c 'import sys,json,statistics as s; \
+#             e=[json.loads(l)["edge_estimate_bps"] for l in sys.stdin \
+#                if json.loads(l)["direction"]!="FLAT"]; \
+#             print("entry median",s.median(e),"mean",round(s.mean(e),2),"n",len(e))'
+#
+#  2) Exit leakage (fixed in code).  The base sizer sizes off strength and
+#     ignores direction, so FLAT exits (edge=0) were being sized AND
+#     edge-floored to 0.25× — shrinking closes to a quarter.  The tilt now
+#     passes FLAT exits and zero-edge directional signals through at the base
+#     size (entry economics never touch an exit).  So this shadow now records
+#     ONLY entries; expect a mix of up/downsize, not 100% downsize.
 extends: ../platform.yaml
 
 # Edge-weighting: scale the target by edge / ref, clamped [floor, cap].
 sizer_edge_weighting_enabled: true
-sizer_edge_ref_bps: 20.0
+sizer_edge_ref_bps: 11.0
 sizer_edge_floor: 0.25
 sizer_edge_cap: 2.0
 

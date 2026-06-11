@@ -24,14 +24,19 @@ from feelies.risk.edge_weighted_sizer import (
 from feelies.risk.position_sizer import BudgetBasedSizer
 
 
-def _signal(symbol: str = "AAPL", strength: float = 1.0, edge_bps: float = 20.0) -> Signal:
+def _signal(
+    symbol: str = "AAPL",
+    strength: float = 1.0,
+    edge_bps: float = 20.0,
+    direction: SignalDirection = SignalDirection.LONG,
+) -> Signal:
     return Signal(
         timestamp_ns=1_000_000_000,
         correlation_id="corr-1",
         sequence=1,
         symbol=symbol,
         strategy_id="test_alpha",
-        direction=SignalDirection.LONG,
+        direction=direction,
         strength=strength,
         edge_estimate_bps=edge_bps,
     )
@@ -169,6 +174,44 @@ class TestInventoryTilt:
         # base 100, inventory 250/500 → factor 0.5 → 50.
         qty = wrapped.compute_target_quantity(_signal(), budget, Decimal("100"), Decimal("100000"))
         assert qty == 50
+
+
+class TestExitGate:
+    """The tilt is entry economics: FLAT exits and zero-edge signals must
+    pass through at the base size — never floored/shrunk."""
+
+    def test_flat_exit_not_tilted(self, budget: AlphaRiskBudget) -> None:
+        # Edge + inventory both on, a near-full book — a directional add here
+        # would shrink hard, but a FLAT exit must stay at base size.
+        cfg = SizerTiltConfig(
+            edge_enabled=True, edge_ref_bps=20.0,
+            inventory_enabled=True,
+        )
+        wrapped = EdgeWeightedSizer(
+            BudgetBasedSizer(), cfg, inventory_provider=lambda _s: 400
+        )
+        flat = _signal(edge_bps=0.0, direction=SignalDirection.FLAT)
+        assert wrapped.tilt_for(flat, budget) == 1.0
+        qty = wrapped.compute_target_quantity(
+            flat, budget, Decimal("100"), Decimal("100000")
+        )
+        assert qty == 100  # base, untouched
+
+    def test_zero_edge_directional_not_edge_floored(
+        self, budget: AlphaRiskBudget
+    ) -> None:
+        # A LONG with no disclosed edge: the edge factor is a no-op (1.0),
+        # not floored to 0.25.  (Inventory off here to isolate it.)
+        cfg = SizerTiltConfig(edge_enabled=True, edge_ref_bps=20.0)
+        wrapped = EdgeWeightedSizer(BudgetBasedSizer(), cfg)
+        bd = wrapped.tilt_breakdown(_signal(edge_bps=0.0), budget)
+        assert bd.edge == 1.0
+        assert bd.combined == 1.0
+
+    def test_positive_edge_still_tilts(self, budget: AlphaRiskBudget) -> None:
+        cfg = SizerTiltConfig(edge_enabled=True, edge_ref_bps=20.0)
+        wrapped = EdgeWeightedSizer(BudgetBasedSizer(), cfg)
+        assert wrapped.tilt_for(_signal(edge_bps=40.0), budget) == 2.0
 
 
 class TestCombinedAndCap:
