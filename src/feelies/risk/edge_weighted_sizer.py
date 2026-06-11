@@ -37,7 +37,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from feelies.alpha.module import AlphaRiskBudget
-from feelies.core.events import Signal
+from feelies.core.events import Signal, SignalDirection
 from feelies.risk.position_sizer import PositionSizer
 
 
@@ -193,13 +193,29 @@ class EdgeWeightedSizer:
         Exposed for the shadow harness so the measurement stream can record
         each factor alongside the base and tilted targets without
         recomputing.  All-off → unit factors and ``combined == 1.0``.
+
+        The tilt is **entry economics** and never touches an exit: a
+        FLAT-direction signal (a close/reduce-to-flat) passes through at the
+        base size (``combined == 1.0``).  Edge-weighting a zero-edge exit
+        would otherwise floor its size — shrinking the close to a fraction,
+        which is exactly backwards.  (Synthetic stop/flatten signals are
+        already excluded upstream; this guards the alpha-emitted FLAT exits.)
         """
         cfg = self._config
         ef = vf = invf = 1.0
         inv_qty = 0
         rv: float | None = None
 
-        if cfg.edge_enabled:
+        if not cfg.any_enabled or signal.direction == SignalDirection.FLAT:
+            return TiltBreakdown(
+                edge=1.0, vol=1.0, inventory=1.0, combined=1.0,
+                inventory_qty=0, realized_vol_bps=None,
+            )
+
+        # Edge-weighting only applies to a disclosed positive edge; a
+        # directional signal with no edge is left at the base size rather
+        # than floored.
+        if cfg.edge_enabled and signal.edge_estimate_bps > 0.0:
             ef = edge_factor(
                 signal.edge_estimate_bps,
                 ref_bps=cfg.edge_ref_bps,
@@ -229,10 +245,7 @@ class EdgeWeightedSizer:
                 floor=cfg.inventory_floor,
             )
 
-        combined = (
-            1.0 if not cfg.any_enabled
-            else _clamp(ef * vf * invf, cfg.tilt_floor, cfg.tilt_cap)
-        )
+        combined = _clamp(ef * vf * invf, cfg.tilt_floor, cfg.tilt_cap)
         return TiltBreakdown(
             edge=ef, vol=vf, inventory=invf, combined=combined,
             inventory_qty=inv_qty, realized_vol_bps=rv,
