@@ -71,6 +71,10 @@ feelies promote {inspect,list,replay-evidence,validate,gate-matrix}  [read-only,
 
 - `src/feelies/alpha/layer_validator.py` — G2–G16 gates
 - `src/feelies/alpha/loader.py`, `validation.py`, `discovery.py`
+- `src/feelies/alpha/module.py` — `AlphaManifest`, `AlphaRiskBudget`, `ParameterDef`,
+  `AlphaModule` protocol (the loaded-alpha surface the registry governs)
+- `src/feelies/alpha/signal_layer_module.py` — `LoadedSignalLayerModule` (loader output;
+  runtime signal semantics are a touchpoint of `audit_signal_alpha.md`)
 
 ### Operator CLI (read-only surface)
 
@@ -82,11 +86,16 @@ feelies promote {inspect,list,replay-evidence,validate,gate-matrix}  [read-only,
 - `tests/alpha/test_promotion_evidence.py`, `test_promotion_ledger.py`
 - `tests/alpha/test_registry.py`, `test_registry_per_alpha_thresholds.py`
 - `tests/alpha/test_layer_validator_g2_g13.py`, `test_gate_g16.py`, `test_gate_g16_props.py`
-- `tests/alpha/test_loader_promotion_block.py`, `test_loader_v03_blocks.py`
+- `tests/alpha/test_loader_promotion_block.py`, `test_loader_v03_blocks.py`,
+  `test_module.py`, `test_validation.py`, `test_discovery.py`,
+  `test_signal_layer_loader.py`, `test_schema_1_1_loading.py`, `test_layer_templates.py`,
+  `test_discovered_alpha_specs_load.py`, `test_shipped_alpha_specs_load.py`
 - `tests/cli/**`
+- `tests/bootstrap/test_gate_thresholds_wiring.py` (F-5 merge wiring)
 - `tests/research/test_promotion_pipeline_e2e.py`, `test_strict_mode_promotion_e2e.py`
 - Acceptance: `tests/acceptance/test_strict_mode_default_true.py`,
-  `test_strict_mode_reference_alphas.py`, `test_g16_rule_completeness.py`
+  `test_strict_mode_reference_alphas.py`, `test_g16_rule_completeness.py`,
+  `test_v02_no_trend_mechanism_parity.py`, `test_reference_alpha_load_invariants.py`
 
 **Out of scope:** CPCV/DSR statistical math (see `audit_research_validation.md`), forensic
 decay triggers (see `audit_forensics.md`), runtime signal/risk logic.
@@ -138,6 +147,10 @@ decay triggers (see `audit_forensics.md`), runtime signal/risk logic.
    downgrade to warnings.
 3. G16 strict mode default (`enforce_trend_mechanism: true`): schema-1.1 SIGNAL/PORTFOLIO
    missing `trend_mechanism:` is rejected? Cross-check `AGENTS.md` known-failure note.
+   > **Auditor note:** `docs/three_layer_architecture.md` §9 still claims "only G12–G15
+   > are blocking; G1–G11 warnings logged" — that predates the invariants glossary and is
+   > stale. The glossary (`enforce_layer_gates` entry) is canonical; flag the doc drift,
+   > do not "resolve" the conflict in the doc's favor.
 
 ### F. Operator CLI (read-only / fail-safe)
 

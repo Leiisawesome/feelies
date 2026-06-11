@@ -35,8 +35,10 @@ file/line citations, severity, and prioritized recommendations.
 2. Read `.cursor/skills/microstructure-alpha/SKILL.md` § on `regime_gate:` and
    hysteresis.
 3. Read `.cursor/skills/risk-engine/SKILL.md` § on regime scaling and hazard exits.
-4. Read `docs/three_layer_architecture.md` §8.4 (regime gate), §12 (regime engine),
-   §20.3–20.7 (hazard detection / exits).
+4. Read `docs/three_layer_architecture.md` §8.4 (regime gate), §12 (determinism &
+   parity — the L6 regime-state hash), §20.3–20.7 (hazard detection / exits). The
+   regime engine's writer/reader contract is documented in the regime-detection skill,
+   not the architecture doc.
 5. Skim `platform.yaml` `regime_engine:` and example alpha `regime_gate:` blocks in
    `alphas/` (especially `sig_benign_midcap_v1`, `sig_inventory_revert_v1`,
    `sig_moc_imbalance_v1`).

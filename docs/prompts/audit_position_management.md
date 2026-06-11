@@ -123,7 +123,9 @@ Signal (selected at M4; _select_bus_signal arbitration; _check_stop_exit may ove
 
 - `scripts/analyze_net_divergence.py`, `scripts/analyze_size_divergence.py`
 - `configs/backtest_multialpha.yaml`, `backtest_multialpha_netting.yaml`,
-  `backtest_sizing_tilt.yaml`
+  `backtest_sizing_tilt.yaml` (+ ablation variants: `backtest_sizing_tilt_edgeonly.yaml`,
+  `backtest_sizing_tilt_invonly.yaml`, `backtest_multialpha_sizing_tilt.yaml`,
+  `backtest_app_edge_drive.yaml`, `backtest_multialpha_edge_drive.yaml`)
 
 ### Tests (spec + gap analysis)
 
@@ -131,6 +133,7 @@ Signal (selected at M4; _select_bus_signal arbitration; _check_stop_exit may ove
 - `tests/risk/test_position_sizer.py`, `test_edge_weighted_sizer.py`
 - `tests/portfolio/test_lot_ledger.py`, `test_memory_position_store.py`,
   `test_strategy_position_store.py`, `test_position_store_bid_ask_marks.py`
+- `tests/storage/test_trade_journal.py` (fill-journal contract)
 - Determinism: `tests/determinism/test_emit_net_divergence_jsonl.py`,
   `test_emit_size_divergence_jsonl.py`, `test_analyze_net_divergence.py`,
   `test_analyze_size_divergence.py`

@@ -81,6 +81,16 @@ file/line citations, severity, and prioritized recommendations.
 - `src/feelies/storage/disk_event_cache.py` — cache format, schema hash, manifest,
   checksums
 - `src/feelies/storage/cache_replay.py` — cache → replay path
+- `src/feelies/storage/feature_snapshot.py`, `memory_feature_snapshot.py` —
+  `HorizonFeatureSnapshot` persistence (round-trip fidelity; snapshot *semantics* are
+  owned by `audit_sensor.md`)
+- `src/feelies/storage/reference/` — reference-data stores (`paths.py`,
+  `corporate_actions/`, `event_calendar/`, `factor_loadings/`, `sector_map/`) —
+  load/validation/staleness here; consumers are touchpoints (`audit_execution_fills.md`
+  for ex-date guard, `audit_composition.md` for factor loadings / sectors)
+
+(`storage/trade_journal.py` / `memory_trade_journal.py` are owned by
+`audit_position_management.md` — fill-journal touchpoint only.)
 
 ### Integration / wiring
 
@@ -95,8 +105,9 @@ file/line citations, severity, and prioritized recommendations.
 ### Tests (map coverage gaps)
 
 - `tests/ingestion/**`
-- `tests/storage/test_memory_event_log.py`, `test_disk_event_cache.py`,
-  `test_cache_replay.py`
+- `tests/storage/test_memory_event_log.py`, `test_event_resequence.py`,
+  `test_disk_event_cache.py`, `test_cache_replay.py`, `test_feature_snapshot.py`,
+  `test_corporate_actions.py`
 - `tests/causality/test_anti_lookahead.py`
 - `tests/determinism/` — parity hashes that depend on event ordering
 - `tests/ingestion/test_massive_functional.py` — network-backed; note but don't

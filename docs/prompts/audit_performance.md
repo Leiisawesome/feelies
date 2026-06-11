@@ -68,6 +68,8 @@ known budget: decay-weighting end-to-end ≤ 5% wall-clock regression vs decay-O
 - `tests/perf/_pinned_baseline.py`, `tests/perf/baselines/v02_baseline.json`
 - `tests/perf/test_paper_rth_no_regression.py`
 - `tests/acceptance/test_perf_baseline_plumbing.py`
+- `scripts/record_perf_baseline.py`, `record_paper_perf_baseline.py` (*touchpoints* —
+  owned by `audit_harness_cli.md`; here only whether what they pin is meaningful)
 
 **Out of scope:** correctness of the math (audited per layer); here the lens is
 **latency, allocation, and regression guarding — subject to determinism**.

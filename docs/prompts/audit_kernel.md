@@ -102,7 +102,8 @@ M7  ORDER_SUBMIT → M8 ORDER_ACK → M9 POSITION_UPDATE (fill reconcile) → M1
 - `tests/bus/test_event_bus.py`, `tests/core/test_state_machine.py`
 - Bootstrap wiring: `tests/bootstrap/test_execution_backend_wiring.py`,
   `test_composition_wiring.py`, `test_paper_branch.py`,
-  `test_promotion_ledger_wiring.py`, `test_enforce_layer_gates.py`
+  `test_promotion_ledger_wiring.py`, `test_enforce_layer_gates.py`,
+  `test_gate_thresholds_wiring.py`, `test_per_alpha_risk_budget_wiring.py`
 - Determinism: `tests/determinism/` (all parity hashes depend on kernel ordering)
 - Causality: `tests/causality/test_anti_lookahead.py`
 

@@ -74,12 +74,19 @@ OrderRequest
 
 - `src/feelies/monitoring/kill_switch.py` (cross-ref `audit_monitoring_safety.md`)
 
+### Operator scripts
+
+- `scripts/verify_ib_broker.py` — broker connectivity preflight
+- `scripts/run_paper.py`, `run_paper_soak.py` (*touchpoints* — owned by
+  `audit_harness_cli.md`; here only the safety wiring they invoke)
+
 ### Tests (spec + gap analysis)
 
 - `tests/broker/ib/test_ib_connection.py`, `test_ib_router.py`,
   `test_router_market_order.py`, `test_ib_functional.py` (network; note, don't require)
 - `tests/execution/test_paper_backend.py`, `test_order_state.py`,
   `test_router_parity.py`, `test_router_latency.py`, `test_router_wiring.py`
+- `tests/paper/test_smoke_config.py` (paper smoke-config contract)
 - Integration: `tests/integration/test_paper_rth_e2e.py`,
   `tests/integration/test_paper_rth_safety.py`
 - `tests/monitoring/test_kill_switch.py`

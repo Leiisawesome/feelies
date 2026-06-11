@@ -76,10 +76,19 @@ Signal (per symbol, per alpha)
 
 ### Position state
 
+- `src/feelies/portfolio/cross_sectional_tracker.py`
 - `src/feelies/portfolio/position_store.py`, `memory_position_store.py`,
-  `strategy_position_store.py`, `cross_sectional_tracker.py`
+  `strategy_position_store.py` (*touchpoints* — position-state reads only; PnL math is
+  owned by `audit_position_management.md`)
 - `src/feelies/alpha/portfolio_layer_module.py`, `intent_set.py`
 - `src/feelies/core/events.py` — `CrossSectionalContext`, `SizedPositionIntent` fields
+
+### Reference-data inputs
+
+- `scripts/build_reference_factor_loadings.py` — factor-loading artifact builder
+- `src/feelies/storage/reference/factor_loadings/`, `sector_map/` (*touchpoints* —
+  store machinery owned by `audit_data_ingestion.md`; here only causality/staleness of
+  the loadings consumed)
 
 ### Tests (spec + gap analysis)
 
@@ -90,7 +99,9 @@ Signal (per symbol, per alpha)
   `test_sized_intent_with_decay_replay.py`, `test_portfolio_order_replay.py`
 - Integration: `tests/integration/test_xsect_v1_e2e.py`,
   `test_mixed_mechanism_e2e.py`, `test_mixed_mechanism_universe.py`,
-  `test_dual_scale_down_e2e.py`
+  `test_dual_scale_down_e2e.py`, `test_phase4_e2e.py`
+- Acceptance: `tests/acceptance/test_bt13_portfolio_research_only.py` (PORTFOLIO
+  research-only gating — *cross-ref*; cited by `audit_harness_cli.md` for the CLI side)
 
 **Out of scope:** SIGNAL alpha internals, risk per-leg veto (see `audit_risk_engine.md`),
 fills.

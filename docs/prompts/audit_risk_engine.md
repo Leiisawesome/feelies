@@ -77,6 +77,9 @@ M6  OrderRequest → check_order  → emit / veto
 
 - `tests/risk/test_basic_risk.py`, `test_buying_power.py`, `test_position_sizer.py`,
   `test_hazard_exit.py`
+- `tests/services/test_hazard_exit_controller_wiring.py` (controller wiring)
+- `tests/bootstrap/test_per_alpha_risk_budget_wiring.py` (per-alpha budget wiring)
+- `tests/alpha/test_risk_wrapper.py` (per-alpha risk param wiring)
 - Determinism: `tests/determinism/test_hazard_exit_replay.py`
 - Acceptance: `tests/acceptance/test_bt15_buying_power.py`
 - Integration: `tests/integration/test_hazard_exit_e2e.py`,

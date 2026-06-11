@@ -76,7 +76,10 @@ scripts/: run_backtest, run_paper, smoke_pipeline, compare_paper_backtest, ...
 - `scripts/run_backtest.py`, `scripts/run_paper.py`, `scripts/run_paper_soak.py`
 - `scripts/smoke_pipeline.py`, `scripts/compare_paper_backtest.py`
 - `scripts/split_backtest_emit.py`, `scripts/export_full_trade_list.py`
-- `scripts/rebaseline_parity_hashes.py`, `scripts/record_perf_baseline.py`
+- `scripts/generate_bt12_fixtures.py` (regenerates BT-12 acceptance fixtures —
+  fixture-mutating; audit for guardrails)
+- `scripts/rebaseline_parity_hashes.py`, `scripts/record_perf_baseline.py`,
+  `scripts/record_paper_perf_baseline.py`
   (destructive/baseline-mutating — audit for guardrails, not behavior)
 
 ### Tests (spec + gap analysis)

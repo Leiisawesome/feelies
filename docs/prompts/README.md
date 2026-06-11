@@ -85,10 +85,10 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | `monitoring/` | monitoring_safety |
 | `harness/` (run + report) | harness_cli |
 | `cli/` | harness_cli (backtest) · alpha_lifecycle (`promote`) |
-| `scripts/` | harness_cli (ops) · sensor / composition / research / performance (domain scripts) · position_management (`analyze_net_divergence.py`, `analyze_size_divergence.py`) |
+| `scripts/` | harness_cli (ops: `run_backtest.py`, `run_paper.py`, `run_paper_soak.py`, `smoke_pipeline.py`, `compare_paper_backtest.py`, `split_backtest_emit.py`, `export_full_trade_list.py`, `generate_bt12_fixtures.py`, `rebaseline_parity_hashes.py`, `record_perf_baseline.py`, `record_paper_perf_baseline.py`) · sensor (`sensor_feature_ic.py`, `calibrate_hawkes.py`) · composition (`build_reference_factor_loadings.py`) · live_execution (`verify_ib_broker.py`) · position_management (`analyze_net_divergence.py`, `analyze_size_divergence.py`) |
 
 Cross-cutting concerns (not a single package): **determinism** spans `tests/determinism/`
-+ every event producer (audit 13); **performance** spans the whole hot path (audit 15).
++ every event producer (audit 14); **performance** spans the whole hot path (audit 16).
 
 ## Overlaps (shared files)
 
@@ -109,6 +109,10 @@ dive, the others treat them as touchpoints:
 | `portfolio/{memory,strategy}_position_store.py`, `lot_ledger.py` | position_management (PnL math) | composition (position-state reads) |
 | `bootstrap.py` | kernel | every layer (mode-wiring touchpoint) |
 | `harness/backtest_runner.py`, `backtest_prep.py` | data_ingestion (ingest) + harness_cli (run/report) | — |
+| `alpha/loader.py`, `layer_validator.py`, `module.py`, `signal_layer_module.py` | alpha_lifecycle | signal_alpha (loaded-alpha surface, G12/G16 signal semantics) |
+| `storage/feature_snapshot.py`, `memory_feature_snapshot.py` | data_ingestion (persistence) | sensor (snapshot semantics) |
+| `storage/reference/**` | data_ingestion (store machinery) | execution_fills (ex-date guard), composition (factor loadings / sectors) |
+| `scripts/run_paper.py`, `run_paper_soak.py` | harness_cli | live_execution (safety wiring) |
 
 ## Note
 

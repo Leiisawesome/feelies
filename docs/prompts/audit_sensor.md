@@ -54,19 +54,38 @@ file/line citations, severity, and prioritized recommendations.
 - `src/feelies/sensors/protocol.py`, `spec.py`, `registry.py`, `errors.py`
 - `src/feelies/sensors/horizon_scheduler.py`
 - `src/feelies/features/aggregator.py` (snapshot construction from readings)
-- `src/feelies/features/protocol.py`, `warmup.py` (if present)
-- `src/feelies/bootstrap.py` (sensor registry wiring, throttle, metrics)
+- `src/feelies/features/protocol.py`, `definition.py` (`FeatureDefinition`,
+  `WarmUpSpec`, `FeatureComputation`), `library.py` (standard computations:
+  mid-price, spread, imbalance, EWMA, rolling variance, z-score)
+- `src/feelies/features/impl/horizon_windowed.py`, `rolling_stats.py`,
+  `sensor_passthrough.py` (feature computation implementations)
+- `src/feelies/bootstrap.py` (sensor registry wiring, throttle, metrics —
+  *touchpoint*; owned by `audit_kernel.md`)
+- Snapshot persistence: `src/feelies/storage/feature_snapshot.py`,
+  `memory_feature_snapshot.py` (*touchpoints* — serialization/storage owned by
+  `audit_data_ingestion.md`; here only what snapshot fields/semantics survive a
+  round-trip)
 
 ### Every sensor implementation
 
 - `src/feelies/sensors/impl/*.py` (all modules; catalog in feature-engine skill)
 
+### Domain scripts (offline sensor research)
+
+- `scripts/sensor_feature_ic.py` — sensor-level IC vs forward returns
+- `scripts/calibrate_hawkes.py` — Hawkes sensor parameter calibration
+
 ### Tests (use as spec + gap analysis)
 
 - `tests/sensors/test_*.py`, `tests/sensors/_helpers.py`, fixtures
 - Determinism: `tests/determinism/test_sensor_reading_replay.py`,
-  `test_v03_sensor_replay.py`, `test_horizon_feature_snapshot_replay.py`
-- Any horizon aggregation tests under `tests/features/`
+  `test_v03_sensor_replay.py`, `test_horizon_tick_replay.py`,
+  `test_horizon_feature_snapshot_replay.py`
+- Horizon/feature tests: `tests/features/test_*.py` (aggregator, horizon-windowed,
+  library, tuple-valued sensor handling)
+- `tests/scripts/test_sensor_feature_ic.py`, `test_calibrate_hawkes.py`
+- Acceptance: `tests/acceptance/test_signal_fires_from_active_aggregator.py`
+  (aggregator → signal wiring)
 
 ### Downstream consumers (read-only, for "does the feature help alpha?")
 

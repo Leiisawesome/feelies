@@ -83,14 +83,18 @@ OrderRequest
 
 ### Tests (spec + gap analysis)
 
-- `tests/execution/test_cost_model.py`, `test_market_fill.py` (if present),
-  `test_moc_fill.py`, `test_tick_size.py`, `test_round_trip_cost_estimate.py`,
-  `test_depth_aware_estimate.py`, `test_min_cost_policy.py`, `test_stop_slippage.py`,
-  `test_backtest_router.py`, `test_router_latency.py`, `test_trading_session.py`
+- `tests/execution/test_cost_model.py`, `test_moc_fill.py`, `test_tick_size.py`,
+  `test_round_trip_cost_estimate.py`, `test_depth_aware_estimate.py`,
+  `test_min_cost_policy.py`, `test_stop_slippage.py`, `test_backtest_router.py`,
+  `test_passive_limit_router.py`, `test_router_latency.py`, `test_trading_session.py`
+  (note: `market_fill.py` has **no dedicated test module** — its coverage is embedded in
+  router/orchestrator tests; flag this in the test-gap matrix)
+- `tests/execution/regulatory/test_borrow_availability.py`, `test_pdt_constraint.py`
 - Acceptance: `tests/acceptance/test_bt11_parity_post_fill_model.py`,
   `test_bt14_tick_rounding.py`, `test_bt16_rth_session.py`,
   `test_bt17_market_data_latency.py`, `test_bt18_ex_date_guard.py`,
   `test_inv12_stress_gate.py`, `test_backtest_app_baseline.py`
+- Integration: `tests/integration/test_moc_imbalance_e2e.py` (MOC session mechanics)
 
 **Out of scope:** live broker/router (see `audit_live_execution.md`), risk sizing,
 signal logic, and the signal→intent position decision / exit economics (see

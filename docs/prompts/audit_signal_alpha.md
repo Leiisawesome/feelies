@@ -78,10 +78,14 @@ HorizonFeatureSnapshot + RegimeState
 ### Alpha disclosure & gates (load-time correctness)
 
 - `src/feelies/alpha/cost_arithmetic.py` — `CostArithmetic` reconciliation (±5%, ≥1.5×)
-- `src/feelies/alpha/layer_validator.py` — G2–G16 structural gates
-- `src/feelies/alpha/loader.py` — YAML → alpha construction
+- `src/feelies/alpha/layer_validator.py` — G2–G16 structural gates (*touchpoint* — owned
+  by `audit_alpha_lifecycle.md`; here only G12/G16 as they bear on signal semantics)
+- `src/feelies/alpha/loader.py` — YAML → alpha construction (*touchpoint* — owned by
+  `audit_alpha_lifecycle.md`)
 - `src/feelies/alpha/arbitration.py`, `aggregation.py` — multi-alpha conflict / combine
 - `src/feelies/alpha/signal_layer_module.py`, `module.py` — loaded alpha surface
+  (*touchpoints* — owned by `audit_alpha_lifecycle.md`; read for how `evaluate` and
+  params reach the engine, defer structural critique)
 
 ### Alpha contracts (ground truth for intended semantics)
 
