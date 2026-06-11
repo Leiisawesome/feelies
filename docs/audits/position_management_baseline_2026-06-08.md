@@ -363,15 +363,18 @@ like), **severity / effort**.
 
 ### Gap summary
 
-| Gap | Title | Root | Sev | Effort |
-|-----|-------|------|-----|--------|
-| G-1 | Decision layer economically blind | RC-A | P0 | L |
-| G-2 | No trim / partial-reduce path | RC-A | P1 | M |
-| G-3 | Exits are panic full-MARKET | — | P1 | M |
-| G-4 | No lot / age / tax accounting | RC-B | P1 | M-L |
-| G-5 | Multi-alpha netting unmanaged | RC-B | P1 | L |
-| G-6 | No session / overnight lifecycle | — | P1 | S-M |
-| G-7 | Single-factor sizing | — | P2 | M |
+Status as of 2026-06-11 (G-1…G-7 overhaul complete):
+
+| Gap | Title | Root | Sev | Effort | Status |
+|-----|-------|------|-----|--------|--------|
+| G-1 | Decision layer economically blind | RC-A | P0 | L | shipped (driven) |
+| G-2 | No trim / partial-reduce path | RC-A | P1 | M | shipped (driven) |
+| G-3 | Exits are panic full-MARKET | — | P1 | M | shipped |
+| G-4 | No lot / age / tax accounting | RC-B | P1 | M-L | shipped (observ.) |
+| G-5 | Multi-alpha netting unmanaged | RC-B | P1 | L | shipped dark; measured, off (netting A/B) |
+| G-6 | No session / overnight lifecycle | — | P1 | S-M | shipped (driven) |
+| G-7 | Single-factor sizing | — | P2 | M | shipped dark; measured, off (see g7 outcome note) |
+
 
 ---
 
