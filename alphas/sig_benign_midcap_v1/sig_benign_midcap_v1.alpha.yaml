@@ -107,10 +107,14 @@ risk_budget:
 # ── Regime Gate (Phase 3 DSL — §8.4) ──────────────────────
 regime_gate:
   regime_engine: hmm_3state_fractional
+  # Audit P1-6: require low vol_breakout mass so a 0.50 P(normal) latch
+  # cannot admit ~0.49 of adverse-selection mass on a tight-spread tick.
+  # Audit P2-2: exit when the posterior is diffuse (entropy near ln(3)≈1.10)
+  # — a near-uniform regime is not evidence of the benign state.
   on_condition: |
-    P(normal) > 0.5 and spread_z_30d < 1.5
+    P(normal) > 0.5 and P(vol_breakout) < 0.30 and spread_z_30d < 1.5
   off_condition: |
-    P(normal) < 0.35 or spread_z_30d > 3.0 or realized_vol_30s_zscore > 4.5
+    P(normal) < 0.35 or P(vol_breakout) > 0.40 or entropy > 0.95 or spread_z_30d > 3.0 or realized_vol_30s_zscore > 4.5
 
 # ── Cost Arithmetic Disclosure (G12) ──────────────────────
 cost_arithmetic:

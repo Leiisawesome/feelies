@@ -44,6 +44,26 @@ Each PORTFOLIO alpha that opts in declares::
 
 The controller fans the configuration out per ``strategy_id`` so a
 universe with mixed-policy alphas behaves correctly.
+
+Position scope (audit P1-7)
+---------------------------
+
+The exit acts on the **symbol-net** position read from a symbol-keyed
+:class:`~feelies.portfolio.position_store.PositionStore`
+(``position_store.get(symbol)``), **not** on a per-strategy slice.
+When two alphas hold the same symbol, a hazard spike attributed to one
+strategy's policy flattens the *shared* symbol position.  This is
+acceptable and fail-safe (the action is exit-only — it can only reduce
+exposure, never amplify it, Inv-11) but it means hazard exits are not
+attributable to a single strategy's book.  Per-strategy scoping would
+require routing a
+:class:`~feelies.portfolio.strategy_position_store.StrategyPositionStore`
+and a ``get(strategy_id, symbol)`` lookup through the controller and the
+orchestrator's fill-application path; that refactor is deferred (it
+touches reconciliation and is out of scope for the hazard fix).  Until
+then, treat the universe filter on each :class:`HazardPolicy` as the
+mechanism for keeping a strategy's hazard exits off symbols it does not
+trade.
 """
 
 from __future__ import annotations

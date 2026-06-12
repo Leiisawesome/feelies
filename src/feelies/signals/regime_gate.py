@@ -115,7 +115,11 @@ class UnknownRegimeStateError(RegimeGateError):
 # ── Whitelist tables ────────────────────────────────────────────────────
 
 
-_PERCENTILE_LITERAL_RE = re.compile(r"^p(\d{1,2})$")
+# Audit P2-3: allow 1–3 digits so ``p100`` is reachable (the prior
+# ``\d{1,2}`` capped at ``p99`` while the range-check message claimed
+# ``p0..p100``).  Values > 100 are still rejected by the bound check in
+# :func:`_resolve_name`.
+_PERCENTILE_LITERAL_RE = re.compile(r"^p(\d{1,3})$")
 _PERCENTILE_SUFFIX = "_percentile"
 _ZSCORE_SUFFIX = "_zscore"
 _DOMINANT_NAME = "dominant"
@@ -394,6 +398,23 @@ def _compare(op: ast.cmpop, left: Any, right: Any) -> bool:
     )
 
 
+def _regime_is_uncalibrated(regime: Any) -> bool:
+    """True when a present RegimeState was produced from placeholder emissions.
+
+    Audit P0-1: an engine running without data-fit emissions publishes
+    ``RegimeState.calibrated=False``.  Its posteriors do not reflect real
+    microstructure (for typical US-equity spreads they collapse toward a
+    single state), so every regime binding — ``P(<state>)``, ``dominant``,
+    ``entropy`` — is treated as *unavailable*.  Resolving any of them
+    raises :class:`UnknownIdentifierError`, which the
+    :class:`~feelies.signals.horizon_engine.HorizonSignalEngine` routes
+    through its fail-safe path (force OFF + unwind), so regime-gated
+    entries never fire on untrustworthy posteriors (Inv-11).  Engines that
+    do not publish the field (legacy / custom) default to calibrated.
+    """
+    return regime is not None and not bool(getattr(regime, "calibrated", True))
+
+
 def _resolve_name(name: str, b: Bindings) -> Any:
     """Resolve an identifier against the binding tables.
 
@@ -411,6 +432,12 @@ def _resolve_name(name: str, b: Bindings) -> Any:
                 "regime-gate: 'dominant' referenced but no RegimeState "
                 "is available (cold start / regime engine inactive)"
             )
+        if _regime_is_uncalibrated(b.regime):
+            raise UnknownIdentifierError(
+                "regime-gate: 'dominant' referenced but the RegimeState is "
+                "uncalibrated (placeholder emissions); failing entry gate "
+                "safe to OFF (audit P0-1)"
+            )
         return b.regime.dominant_name
 
     if name == _ENTROPY_NAME:
@@ -418,6 +445,12 @@ def _resolve_name(name: str, b: Bindings) -> Any:
             raise UnknownIdentifierError(
                 "regime-gate: 'entropy' referenced but no RegimeState "
                 "is available (cold start / regime engine inactive)"
+            )
+        if _regime_is_uncalibrated(b.regime):
+            raise UnknownIdentifierError(
+                "regime-gate: 'entropy' referenced but the RegimeState is "
+                "uncalibrated (placeholder emissions); failing entry gate "
+                "safe to OFF (audit P0-1)"
             )
         return float(b.regime.posterior_entropy_nats)
 
@@ -466,6 +499,21 @@ def _resolve_posterior(state_name: str, b: Bindings) -> float:
         raise UnknownIdentifierError(
             f"regime-gate: P({state_name}) referenced but no RegimeState "
             f"is available (cold start / regime engine inactive)"
+        )
+    if _regime_is_uncalibrated(b.regime):
+        # Audit P0-1: posteriors from placeholder emissions are not
+        # trustworthy for gating — treat as unavailable so the entry gate
+        # fails safe to OFF (Inv-11).  A malformed state name is still
+        # caught below to surface authoring typos even while uncalibrated.
+        if state_name not in tuple(b.regime.state_names):
+            raise UnknownRegimeStateError(
+                f"regime-gate: state {state_name!r} not in engine "
+                f"state_names {tuple(b.regime.state_names)!r}"
+            )
+        raise UnknownIdentifierError(
+            f"regime-gate: P({state_name}) referenced but the RegimeState "
+            f"is uncalibrated (placeholder emissions); failing entry gate "
+            f"safe to OFF (audit P0-1)"
         )
     state_names = tuple(b.regime.state_names)
     posteriors = tuple(b.regime.posteriors)
@@ -553,6 +601,17 @@ class RegimeGate:
         # Whitelisted Call func names are never binding identifiers.
         raw -= _SAFE_FUNCTIONS_AND_REGIME
         return frozenset(raw)
+
+    def referenced_posterior_states(self) -> frozenset[str]:
+        """State names referenced by any ``P(<state>)`` in the ON/OFF ASTs.
+
+        Public accessor used by :class:`~feelies.alpha.loader.AlphaLoader`
+        for the audit P1-2 load-time check: every ``P(...)`` argument must
+        name a real engine state, validated against ``engine.state_names``
+        at load rather than surfacing as a runtime
+        :class:`UnknownRegimeStateError` on the first evaluation.
+        """
+        return frozenset(self._p_posterior_argument_names())
 
     def _p_posterior_argument_names(self) -> set[str]:
         """State labels referenced inside ``P(...)`` calls."""

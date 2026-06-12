@@ -39,6 +39,7 @@ class _FakeRegime:
     posteriors: tuple[float, ...]
     dominant_name: str
     posterior_entropy_nats: float = 0.0
+    calibrated: bool = True
 
 
 def _bindings(
@@ -405,3 +406,98 @@ def test_from_spec_no_warning_when_hysteresis_referenced(caplog):
 
         RegimeGate.from_spec(alpha_id="alpha_ref", spec=spec)
     assert not any("dead config" in r.message for r in caplog.records)
+
+
+# ── Audit P0-1: uncalibrated regime fails P()/dominant/entropy safe ──────
+
+
+def test_uncalibrated_regime_makes_posterior_unavailable() -> None:
+    """P(<state>) on an uncalibrated RegimeState raises UnknownIdentifierError.
+
+    Audit P0-1: placeholder-emission posteriors are not trustworthy for
+    gating, so the binding is treated as unavailable and the entry gate
+    fails safe to OFF via the HorizonSignalEngine's UnknownIdentifierError
+    path (Inv-11).
+    """
+    regime = _FakeRegime(
+        state_names=("compression_clustering", "normal", "vol_breakout"),
+        posteriors=(0.0, 0.0, 1.0),
+        dominant_name="vol_breakout",
+        calibrated=False,
+    )
+    tree = compile_expression("P(normal) > 0.5")
+    with pytest.raises(UnknownIdentifierError):
+        evaluate(tree, _bindings(regime=regime))
+
+
+def test_uncalibrated_regime_makes_dominant_and_entropy_unavailable() -> None:
+    regime = _FakeRegime(
+        state_names=("compression_clustering", "normal", "vol_breakout"),
+        posteriors=(0.2, 0.3, 0.5),
+        dominant_name="vol_breakout",
+        posterior_entropy_nats=1.0,
+        calibrated=False,
+    )
+    for expr in ('dominant == "normal"', "entropy < 0.9"):
+        with pytest.raises(UnknownIdentifierError):
+            evaluate(compile_expression(expr), _bindings(regime=regime))
+
+
+def test_uncalibrated_regime_still_surfaces_typo_as_unknown_state() -> None:
+    """A misspelled P(<name>) is an UnknownRegimeStateError even uncalibrated.
+
+    The calibration fail-safe must not mask authoring typos: an undeclared
+    state name takes precedence over the uncalibrated-unavailable signal.
+    """
+    regime = _FakeRegime(
+        state_names=("compression_clustering", "normal", "vol_breakout"),
+        posteriors=(0.0, 0.0, 1.0),
+        dominant_name="vol_breakout",
+        calibrated=False,
+    )
+    with pytest.raises(UnknownRegimeStateError):
+        evaluate(compile_expression("P(noraml) > 0.5"), _bindings(regime=regime))
+
+
+def test_calibrated_regime_resolves_normally() -> None:
+    """The default (calibrated=True) path is unchanged."""
+    regime = _FakeRegime(
+        state_names=("compression_clustering", "normal", "vol_breakout"),
+        posteriors=(0.1, 0.7, 0.2),
+        dominant_name="normal",
+        posterior_entropy_nats=0.8,
+    )
+    assert evaluate(compile_expression("P(normal) > 0.5"), _bindings(regime=regime)) is True
+    assert evaluate(compile_expression('dominant == "normal"'), _bindings(regime=regime)) is True
+
+
+def test_uncalibrated_gate_latches_off() -> None:
+    """End-to-end through the latch: an uncalibrated regime keeps the gate OFF."""
+    gate = RegimeGate(
+        alpha_id="a",
+        on_condition="P(normal) > 0.5",
+        off_condition="P(normal) < 0.3",
+    )
+    regime = _FakeRegime(
+        state_names=("compression_clustering", "normal", "vol_breakout"),
+        posteriors=(0.0, 0.9, 0.1),  # would be ON if trusted
+        dominant_name="normal",
+        calibrated=False,
+    )
+    # evaluate() does not swallow the error; the HorizonSignalEngine does.
+    with pytest.raises(UnknownIdentifierError):
+        gate.evaluate(symbol="AAPL", bindings=_bindings(regime=regime))
+    assert gate.is_on("AAPL") is False
+
+
+# ── Audit P2-3: p100 percentile literal is reachable ─────────────────────
+
+
+def test_percentile_literal_p100_resolves() -> None:
+    assert evaluate(compile_expression("p100 == 1.0"), _bindings()) is True
+    assert evaluate(compile_expression("p0 == 0.0"), _bindings()) is True
+
+
+def test_percentile_literal_out_of_range_rejected() -> None:
+    with pytest.raises(UnsafeExpressionError):
+        evaluate(compile_expression("p101 > 0.5"), _bindings())

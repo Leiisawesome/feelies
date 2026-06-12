@@ -389,6 +389,15 @@ class AlphaLoader:
             raise AlphaLoadError(f"{source}: {exc}") from exc
 
         regime_engine = self._resolve_regime_engine(spec.get("regimes"), source)
+        # Audit P1-2: validate every ``P(<state>)`` in the gate against the
+        # engine's published ``state_names`` at LOAD time.  Previously a typo
+        # (``P(noraml)``) compiled cleanly and only failed at the first
+        # runtime evaluation as an ``UnknownRegimeStateError`` — and on the
+        # OFF path that error did not even unwind a latched-ON gate (see
+        # P1-1).  Failing loud at boot turns a latent production hazard into
+        # a config error.  Skipped only when no engine is resolvable (the
+        # gate then cannot be name-checked against a taxonomy).
+        self._validate_gate_posterior_states(regime_gate, regime_engine, source)
         namespace = self._build_namespace(alpha_id, regime_engine)
         namespace["HorizonFeatureSnapshot"] = HorizonFeatureSnapshot
         namespace["RegimeState"] = RegimeState
@@ -1249,6 +1258,32 @@ class AlphaLoader:
         return params
 
     # ── Regime engine resolution ──────────────────────────────
+
+    @staticmethod
+    def _validate_gate_posterior_states(
+        regime_gate: RegimeGate,
+        regime_engine: RegimeEngine | None,
+        source: str,
+    ) -> None:
+        """Reject ``P(<state>)`` references to names the engine cannot emit.
+
+        Audit P1-2.  No-op when no engine is resolvable (the gate's state
+        names cannot be checked against any taxonomy in that case).
+        """
+        if regime_engine is None:
+            return
+        referenced = regime_gate.referenced_posterior_states()
+        if not referenced:
+            return
+        known = frozenset(regime_engine.state_names)
+        unknown = sorted(referenced - known)
+        if unknown:
+            raise AlphaLoadError(
+                f"{source}: regime_gate references unknown regime state(s) "
+                f"{unknown} in P(...); engine {type(regime_engine).__name__} "
+                f"publishes state_names {sorted(known)}.  Fix the spelling "
+                f"in on_condition/off_condition or align the engine taxonomy."
+            )
 
     def _resolve_regime_engine(
         self,

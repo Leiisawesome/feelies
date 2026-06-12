@@ -914,3 +914,30 @@ def test_gate_type_error_on_string_comparison_fails_safe_off(caplog) -> None:
     assert any(
         "arithmetic/type error" in r.message and "TypeError" in r.message for r in caplog.records
     )
+
+
+def test_off_condition_regime_error_unwinds_latched_gate() -> None:
+    """Audit P1-1: a RegimeGateError on the OFF path (e.g. a typo'd
+    ``P(<state>)`` in off_condition) must force the gate OFF and emit a FLAT
+    close when the gate was latched ON — never silently strand the position
+    in the regime-ON state (Inv-11)."""
+    engine, _, captured = _engine()
+    gate = _gate(
+        on_condition="P(normal) > 0.7",
+        off_condition="P(toxic) > 0.5",  # 'toxic' absent from published state_names
+    )
+    engine.register(_registered(gate=gate))
+
+    # Tick 1: normal-high posterior latches the gate ON and emits a LONG.
+    engine._on_regime_state(_regime_normal_high())
+    engine._on_snapshot(_snapshot(sequence=10, boundary_index=1))
+    assert gate.is_on("AAPL") is True
+    assert [s.direction for s in captured] == [SignalDirection.LONG]
+
+    # Tick 2: gate is ON, so off_condition runs; P(toxic) raises
+    # UnknownRegimeStateError (a RegimeGateError). The fail-safe must unwind.
+    engine._on_regime_state(_regime_normal_high())
+    engine._on_snapshot(_snapshot(sequence=11, boundary_index=2))
+    assert gate.is_on("AAPL") is False
+    assert captured[-1].direction is SignalDirection.FLAT
+    assert captured[-1].regime_gate_state == "OFF"

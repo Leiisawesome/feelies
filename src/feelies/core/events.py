@@ -155,6 +155,14 @@ class RegimeState(Event):
       posteriors.  Default 1.0 is a no-op for legacy producers.
       ``posterior_entropy_nats`` — Shannon entropy (natural log base) of
       the posterior categorical; ``0`` when unused (legacy producers).
+      ``calibrated`` — whether the producing engine's emission parameters
+      were fit from data.  ``False`` means the posteriors were computed
+      from placeholder/default emissions and are not trustworthy for
+      ``P(<state>)`` gating; the regime gate treats ``P()``/``dominant``/
+      ``entropy`` bindings as *unavailable* in that case so entry gates
+      fail safe to OFF (audit P0-1, Inv-11).  Defaults to ``True`` so
+      legacy producers — and the L6 parity hash, which does not serialize
+      this field — are unaffected.
 
     When ``posteriors`` tie, producers pick the lowest ``dominant_state``
     index (deterministic replay).
@@ -169,6 +177,7 @@ class RegimeState(Event):
     horizon_seconds: int = 0
     stability: float = 1.0
     posterior_entropy_nats: float = 0.0
+    calibrated: bool = True
 
 
 # ── Signal Events ───────────────────────────────────────────────────────
