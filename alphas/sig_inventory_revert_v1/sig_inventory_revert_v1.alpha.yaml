@@ -193,18 +193,6 @@ trend_mechanism:
     - "quote_hazard_rate < 4.0"
     - "realized_vol_30s_zscore > 3.5"
 
-# ── Hazard-rate exit (v0.3 §20.7) ─────────────────────────
-# Audit P1-8: with a 20 s mechanism half-life, the regime gate (evaluated
-# only at horizon boundaries) is too coarse to protect against a mid-interval
-# regime flip into informed flow.  Opt into the hazard-spike exit so a sharp
-# decay of the dominant posterior flattens the inventory-revert position
-# before the next boundary.  min_age defaults to 30 s and hard_exit_age
-# defaults to 2 × expected_half_life_seconds = 40 s (bootstrap HM-1).
-hazard_exit:
-  enabled: true
-  hazard_score_threshold: 0.50
-  min_age_seconds: 15
-
 # ── Signal (Layer-2 evaluate) ─────────────────────────────
 signal: |
   def evaluate(snapshot, regime, params):

@@ -234,74 +234,62 @@ def test_gate_post_state_is_boolean_and_in_two_value_set(
     assert g.is_on("AAPL") is states[-1]
 
 
-# ── Property 5 (audit P2-6): economic entry invariant for shipped gates ──
+# ── Property 5 (audit P2-6): non-empty hysteresis band for shipped gates ─
 #
-# These lock an *economic* property (not merely syntactic): a regime-gated
-# entry must never latch ON while the posterior carries elevated wide-spread
-# / adverse-selection mass.  They load the real shipped on_condition strings
-# so a future edit that drops the ``P(vol_breakout) < τ`` clause fails here.
+# A design-agnostic *economic* invariant: each shipped P(normal)-gated alpha
+# must have a non-empty hold band — a posterior region where neither
+# on_condition nor off_condition fires, so the gate latches rather than
+# oscillating tick-to-tick.  (The stronger "ON ⇒ bounded vol mass" guard was
+# tried in PR #123 but an APP backtest showed it net-harmful; re-introducing
+# such an entry bound is deferred to a calibrated, data-validated threshold —
+# see the audit appendix.)  These load the real shipped condition strings.
 
 import yaml  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 _ALPHA_ROOT = Path(__file__).resolve().parents[2] / "alphas"
-
-# alpha_id -> (P(vol_breakout) upper bound, P(normal) lower floor) the ON
-# condition is contractually required to enforce.
-_VOL_GATED_ALPHAS = {
-    "sig_benign_midcap_v1": (0.30, 0.5),
-    "sig_kyle_drift_v1": (0.30, 0.6),
-    "sig_hawkes_burst_v1": (0.30, 0.6),
-}
-
 _REGIME_STATES = ("compression_clustering", "normal", "vol_breakout")
 
+# alpha_id -> a P(normal) value strictly inside its (off_threshold, on_floor)
+# band, with the other mass placed on compression (tight-spread, benign).
+_HOLD_BAND_PROBE = {
+    "sig_benign_midcap_v1": 0.45,  # ON > 0.5, OFF < 0.35
+    "sig_kyle_drift_v1": 0.50,  # ON > 0.6, OFF < 0.4
+    "sig_hawkes_burst_v1": 0.50,  # ON > 0.6, OFF < 0.4
+}
 
-def _load_on_condition(alpha_id: str) -> str:
+
+def _load_gate(alpha_id: str) -> RegimeGate:
     path = _ALPHA_ROOT / alpha_id / f"{alpha_id}.alpha.yaml"
     spec = yaml.safe_load(path.read_text())
-    return str(spec["regime_gate"]["on_condition"])
+    return RegimeGate.from_spec(alpha_id=alpha_id, spec=spec["regime_gate"])
 
 
-@st.composite
-def _simplex3(draw: st.DrawFn) -> tuple[float, float, float]:
-    raw = [
-        draw(st.floats(0.0, 1.0, allow_nan=False, allow_infinity=False)) + 1e-9
-        for _ in range(3)
-    ]
-    total = sum(raw)
-    return (raw[0] / total, raw[1] / total, raw[2] / total)
+@pytest.mark.parametrize("alpha_id", sorted(_HOLD_BAND_PROBE))
+def test_shipped_gate_has_non_empty_hold_band(alpha_id: str) -> None:
+    """In the hold band the gate neither opens nor closes — it latches.
 
-
-@pytest.mark.parametrize("alpha_id", sorted(_VOL_GATED_ALPHAS))
-@settings(max_examples=200, suppress_health_check=[HealthCheck.function_scoped_fixture])
-@given(post=_simplex3(), spread_z=_FINITE_FLOATS, rv_z=_FINITE_FLOATS)
-def test_shipped_gate_on_implies_bounded_vol_mass(
-    alpha_id: str,
-    post: tuple[float, float, float],
-    spread_z: float,
-    rv_z: float,
-) -> None:
-    vol_bound, normal_floor = _VOL_GATED_ALPHAS[alpha_id]
-    tree = compile_expression(_load_on_condition(alpha_id))
+    From OFF the probe must not turn ON; from a forced-ON latch the same
+    probe must not turn OFF.  A gate without such a band would chatter on
+    posterior noise (whipsaw cost), which is an economic defect.
+    """
+    p_normal = _HOLD_BAND_PROBE[alpha_id]
     regime = _FakeRegime(
         state_names=_REGIME_STATES,
-        posteriors=post,
-        dominant_name=_REGIME_STATES[max(range(3), key=lambda i: post[i])],
+        posteriors=(1.0 - p_normal, p_normal, 0.0),  # rest on compression
+        dominant_name="compression_clustering" if p_normal < 0.5 else "normal",
     )
+    # Benign micro: tight spread, calm vol — only the regime band should gate.
+    # ``realized_vol_30s_zscore`` resolves via the _zscore binding table.
     bindings = _bindings(
-        sensor_values={"spread_z_30d": spread_z, "realized_vol_30s_zscore": rv_z},
+        sensor_values={"spread_z_30d": 0.0},
+        zscores={"realized_vol_30s": 0.0},
         regime=regime,
     )
-    if evaluate(tree, bindings):
-        # Entry is permitted → the economic guards must hold by construction.
-        assert post[1] > normal_floor, f"{alpha_id}: ON with P(normal)={post[1]:.3f}"
-        assert post[2] < vol_bound, f"{alpha_id}: ON with P(vol_breakout)={post[2]:.3f}"
 
+    from_off = _load_gate(alpha_id)
+    assert from_off.evaluate(symbol="AAPL", bindings=bindings) is False
 
-def test_shipped_vol_gated_alphas_declare_vol_breakout_bound() -> None:
-    """Regression guard: each ON condition literally references P(vol_breakout)
-    so the bound above cannot be silently dropped in a future edit."""
-    for alpha_id in _VOL_GATED_ALPHAS:
-        on = _load_on_condition(alpha_id)
-        assert "P(vol_breakout)" in on, f"{alpha_id} lost its P(vol_breakout) entry bound"
+    forced_on = _load_gate(alpha_id)
+    forced_on._state["AAPL"] = True  # latch ON, then probe the OFF path
+    assert forced_on.evaluate(symbol="AAPL", bindings=bindings) is True
