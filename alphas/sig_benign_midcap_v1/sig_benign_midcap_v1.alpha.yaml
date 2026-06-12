@@ -51,6 +51,7 @@ falsification_criteria:
 depends_on_sensors:
   - ofi_ewma
   - micro_price
+  - book_imbalance
   - spread_z_30d
   - realized_vol_30s
 
@@ -141,21 +142,28 @@ signal: |
       str_cap = params["strength_cap"]
 
       z = snapshot.values.get("ofi_ewma_zscore")
-      z_mp = snapshot.values.get("micro_price_zscore")
-      if z is None or z_mp is None:
+      # Audit P1-B: confirm with the signed top-of-book size imbalance
+      # (``book_imbalance`` ∈ [-1, 1]) rather than ``micro_price_zscore``.
+      # The latter z-scores the micro-price *level* (~$100), whose variance is
+      # dominated by price drift — the sub-cent Stoikov imbalance content is
+      # < 0.01% of it, so it confirmed momentum, not the L1 queue footprint.
+      # ``book_imbalance`` is exactly that footprint, level-invariant:
+      # positive ⇒ bid-heavy ⇒ upward micro-price pressure.
+      imb = snapshot.values.get("book_imbalance")
+      if z is None or imb is None:
           return None
 
       mag = abs(z)
       if mag < threshold:
           return None
 
-      # Require micro-price pressure aligned with signed OFI (L1 footprint).
-      # Strict inequality so an exactly-zero z_mp is treated as neutral
+      # Require book imbalance aligned with signed OFI (L1 footprint).
+      # Strict inequality so an exactly-zero imbalance is treated as neutral
       # (insufficient evidence) rather than as contradicting either side.
-      if (z > 0.0 and z_mp < 0.0) or (z < 0.0 and z_mp > 0.0):
+      if (z > 0.0 and imb < 0.0) or (z < 0.0 and imb > 0.0):
           return None
-      # Zero micro-price pressure carries no L1 confirmation of OFI.
-      if z_mp == 0.0:
+      # A balanced book carries no L1 confirmation of the OFI direction.
+      if imb == 0.0:
           return None
 
       direction = LONG if z > 0 else SHORT

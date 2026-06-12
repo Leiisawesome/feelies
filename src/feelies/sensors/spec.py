@@ -19,10 +19,13 @@ audit reproducibility (plan §3.1 / S4).
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from feelies.core.events import Event, NBBOQuote, Trade
+
+_logger = logging.getLogger(__name__)
 
 
 _VALID_SUBSCRIPTION_TYPES: tuple[type[Event], ...] = (NBBOQuote, Trade)
@@ -123,6 +126,25 @@ class SensorSpec:
             raise ValueError(
                 f"SensorSpec({self.sensor_id!r}).throttled_ms must be >= 0 "
                 f"or None, got {self.throttled_ms}"
+            )
+        # Audit P1-D: surface the documented "undefined behaviour" combination
+        # (a non-null throttle on a sensor NOT marked ``stateful``) loudly.  We
+        # cannot reject it outright — a genuinely stateless sensor (a pure
+        # function of the current event with no accumulator) is safe to
+        # throttle — but an accumulator (EWMA / Hawkes / Kyle / rolling window)
+        # left unflagged will be biased by every skipped event inside the
+        # throttle window.  The registry skips ``update()`` entirely for
+        # ``stateful=False`` sensors inside the window, so confirm the sensor
+        # truly carries no state across events before relying on this.
+        if self.throttled_ms is not None and self.throttled_ms > 0 and not self.stateful:
+            _logger.warning(
+                "SensorSpec(%r): throttled_ms=%d is set but stateful=False; "
+                "update() will be SKIPPED inside the throttle window.  This is "
+                "only safe for a truly stateless sensor — any accumulator "
+                "(EWMA/Hawkes/Kyle/rolling-window) MUST set stateful=True or "
+                "skipped events will bias the estimator (H4/M4 audit).",
+                self.sensor_id,
+                self.throttled_ms,
             )
 
     @property

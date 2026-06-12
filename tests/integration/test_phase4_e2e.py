@@ -90,6 +90,7 @@ from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.monitoring.horizon_metrics import HorizonMetricsCollector
 from feelies.portfolio.cross_sectional_tracker import CrossSectionalTracker
+from feelies.sensors.impl.book_imbalance import BookImbalanceSensor
 from feelies.sensors.impl.kyle_lambda_60s import KyleLambda60sSensor
 from feelies.sensors.impl.micro_price import MicroPriceSensor
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
@@ -148,6 +149,14 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
         params={},
         subscribes_to=(NBBOQuote,),
     ),
+    # Audit P1-B: sig_benign_midcap_v1 now depends on book_imbalance.
+    SensorSpec(
+        sensor_id="book_imbalance",
+        sensor_version="1.0.0",
+        cls=BookImbalanceSensor,
+        params={},
+        subscribes_to=(NBBOQuote,),
+    ),
     SensorSpec(
         sensor_id="spread_z_30d",
         sensor_version="1.1.0",
@@ -163,8 +172,9 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
         subscribes_to=(NBBOQuote,),
     ),
     SensorSpec(
+        # Audit P0-1: causal / 2.0.0 is the new class default.
         sensor_id="kyle_lambda_60s",
-        sensor_version="1.2.0",
+        sensor_version="2.0.0",
         cls=KyleLambda60sSensor,
         params={"min_samples": 5},
         subscribes_to=(NBBOQuote, Trade),

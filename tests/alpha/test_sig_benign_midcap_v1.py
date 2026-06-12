@@ -57,6 +57,7 @@ def test_manifest_metadata(loaded: LoadedSignalLayerModule) -> None:
     assert loaded.depends_on_sensors == (
         "ofi_ewma",
         "micro_price",
+        "book_imbalance",
         "spread_z_30d",
         "realized_vol_30s",
     )
@@ -152,8 +153,17 @@ def _snapshot_with_z(
     symbol: str = "AAPL",
     boundary_index: int = 1,
 ) -> HorizonFeatureSnapshot:
-    """Snapshot with aligned OFI / micro-price z-scores (footprint check)."""
-    zm = float(z) if z_micro is None else float(z_micro)
+    """Snapshot with OFI z-score and an aligned book-imbalance footprint.
+
+    Audit P1-B: the alpha now confirms with ``book_imbalance`` (∈ [-1, 1])
+    instead of ``micro_price_zscore``.  ``z_micro`` overrides the imbalance
+    (used to test the disagree / neutral cases); when ``None`` the imbalance
+    is sign-aligned with the OFI z (magnitude 0.5).
+    """
+    if z_micro is None:
+        imb = 0.5 if z > 0 else (-0.5 if z < 0 else 0.0)
+    else:
+        imb = float(z_micro)
     return HorizonFeatureSnapshot(
         timestamp_ns=2_000,
         correlation_id="corr",
@@ -163,7 +173,7 @@ def _snapshot_with_z(
         boundary_index=boundary_index,
         values={
             "ofi_ewma_zscore": z,
-            "micro_price_zscore": zm,
+            "book_imbalance": imb,
             "realized_vol_30s_zscore": 0.5,
         },
     )

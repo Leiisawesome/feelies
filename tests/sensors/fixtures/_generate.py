@@ -295,7 +295,15 @@ def vpin_factory() -> VPIN50BucketSensor:
 
 
 def kyle_factory() -> KyleLambda60sSensor:
-    return KyleLambda60sSensor(window_seconds=60, min_samples=10)
+    # Audit P0-1: the class default flipped to ``alignment="causal"`` / 2.0.0.
+    # This locked vector was generated under the legacy 1.2.0 alignment, so we
+    # pin it explicitly here to keep ``kyle_lambda_60s.jsonl`` byte-identical.
+    return KyleLambda60sSensor(
+        window_seconds=60,
+        min_samples=10,
+        alignment="legacy",
+        sensor_version="1.2.0",
+    )
 
 
 def hazard_factory() -> QuoteHazardRateSensor:

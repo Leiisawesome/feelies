@@ -65,8 +65,12 @@ def test_first_trade_returns_none_without_nbbo_mid() -> None:
 
 
 def test_handcomputed_lambda_two_samples() -> None:
-    """Two Δp_mid samples (+0.01, +0.02) with tick-rule Δq (+100,+200) → λ = 1e-4."""
-    sensor = KyleLambda60sSensor(window_seconds=60, min_samples=2)
+    """Two Δp_mid samples (+0.01, +0.02) with tick-rule Δq (+100,+200) → λ = 1e-4.
+
+    Legacy alignment (current trade's Δq); pinned explicitly after audit P0-1
+    flipped the class default to ``causal``.
+    """
+    sensor = KyleLambda60sSensor(window_seconds=60, min_samples=2, alignment="legacy")
     state = sensor.initial_state()
     sensor.update(
         _quote(ts_ns=999_999_999, bid="100.00", ask="100.02", sequence=0),

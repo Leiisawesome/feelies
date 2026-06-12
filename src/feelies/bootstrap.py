@@ -1072,6 +1072,34 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             reducer="zscore",
             feature_id="ofi_ewma_zscore",
         ),
+        # Audit P1-A: integrated (summed) OFI over the horizon window is the
+        # literature-correct Kyle input — permanent price impact ∝ Σ signed
+        # flow, not the deviation of an event-paced EWMA from its windowed
+        # mean.  ``ofi_ewma`` decays in *event* time (α=0.1 ⇒ ~0.1–0.7 s
+        # half-life), so the boundary value is a near-instantaneous flow
+        # sample; the ``sum`` reducer accumulates persistent same-sign
+        # pressure across the decision horizon, which KYLE_INFO alphas should
+        # prefer over ``ofi_ewma_zscore``.
+        HorizonWindowedFeature(
+            "ofi_ewma",
+            h,
+            reducer="sum",
+            feature_id="ofi_ewma_integrated",
+        ),
+    ],
+    # Audit P1-B / P1-C: signed top-of-book size imbalance, the level-invariant
+    # L1 fingerprint that ``micro_price_zscore`` (a z of the ~$100 price level)
+    # destroys.  ``(micro - mid)/spread = book_imbalance / 2``, so the
+    # passthrough (last-of-horizon) carries the Stoikov imbalance directly; the
+    # windowed z gives a regime-relative view for gating.
+    "book_imbalance": lambda h: [
+        SensorPassthroughFeature("book_imbalance", h),
+        HorizonWindowedFeature(
+            "book_imbalance",
+            h,
+            reducer="zscore",
+            feature_id="book_imbalance_zscore",
+        ),
     ],
     # Audit P1-7/P1-11: horizon-window these too so every rolling feature
     # uses a consistent event-time window of width ``h`` rather than a
@@ -1098,22 +1126,29 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             feature_id="quote_replenish_asymmetry_zscore",
         ),
     ],
+    # Audit P1-G: expose a regime-relative z (per-symbol, event-time window)
+    # alongside the raw rate so a hazard threshold is comparable across symbols
+    # and quote frequencies — the raw events/second is not (a fast name always
+    # reads high).  The bare passthrough is retained so gate identifiers that
+    # reference ``quote_hazard_rate`` directly still resolve.
     "quote_hazard_rate": lambda h: [
         SensorPassthroughFeature("quote_hazard_rate", h),
-    ],
-    # P2-3 INVENTORY fingerprint: signed, already-normalised [-1,1] MM-inventory
-    # pressure.  Passthrough = last-of-horizon (INVENTORY is fast/mean-reverting,
-    # the audit's recommended aggregation); the windowed z gives a
-    # regime-relative view for gating.
-    "inventory_pressure": lambda h: [
-        SensorPassthroughFeature("inventory_pressure", h),
         HorizonWindowedFeature(
-            "inventory_pressure",
+            "quote_hazard_rate",
             h,
             reducer="zscore",
-            feature_id="inventory_pressure_zscore",
+            feature_id="quote_hazard_rate_zscore",
         ),
     ],
+    # Audit P1-F: INVENTORY is a fast, mean-reverting mechanism (half-life
+    # 5–60 s).  A z over a long horizon window (300–1800 s) smears that
+    # reversion, and the G16 horizon/half-life binding only admits the 30 s
+    # horizon for this family.  So we expose ONLY the last-of-horizon signed
+    # pressure, and ONLY at h=30 — the already-normalised [-1,1] value is the
+    # right aggregation; longer horizons would dilute the signal.
+    "inventory_pressure": lambda h: (
+        [SensorPassthroughFeature("inventory_pressure", h)] if h == 30 else []
+    ),
     # P2-3 LIQUIDITY_STRESS fingerprints.  Both are already normalised
     # ([0,1] alarm / [0,1] fraction), so passthrough (last-of-horizon) is the
     # natural aggregation; quote_flicker also gets a regime-relative z.

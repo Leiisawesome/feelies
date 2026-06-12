@@ -76,6 +76,7 @@ def test_reference_alpha_loads_from_file() -> None:
     assert m.depends_on_sensors == (
         "ofi_ewma",
         "micro_price",
+        "book_imbalance",
         "spread_z_30d",
         "realized_vol_30s",
     )
