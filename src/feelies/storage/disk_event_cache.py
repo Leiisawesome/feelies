@@ -19,20 +19,37 @@ import logging
 import os
 import time
 from collections.abc import Sequence
-from decimal import Decimal
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, cast
 
+from feelies.core.clock import Clock
 from feelies.core.events import NBBOQuote, Trade
+from feelies.core.serialization import (
+    JsonLineEventSerializer,
+    dict_to_event,
+    event_to_dict,
+)
 
 logger = logging.getLogger(__name__)
 
 _TYPE_QUOTE = "NBBOQuote"
 _TYPE_TRADE = "Trade"
 
+# Provenance: bumped when the normalizer's parse/normalize semantics change
+# in a way operators should be able to detect in a cache manifest, even when
+# the dataclass schema (and therefore ``event_schema_hash``) is unchanged.
+# Recorded as ``normalizer_version`` in the manifest (Inv-13); not part of the
+# schema-hash invalidation path (that stays ``_CACHE_SEMANTIC_VERSION``).
+_NORMALIZER_VERSION = "1"
+
 # Bump when the semantic meaning of existing fields changes without
 # altering the dataclass schema.  Forces re-ingestion from the API.
 _CACHE_SEMANTIC_VERSION = "2"
+
+# Shared concrete serializer — single source of truth for the on-disk
+# NBBOQuote / Trade JSONL encoding (audit ING-05).
+_SERIALIZER = JsonLineEventSerializer()
 
 
 def _sha256_prefixed(data: bytes) -> str:
@@ -54,67 +71,34 @@ def _compute_schema_hash() -> str:
     return _sha256_prefixed(raw.encode())
 
 
-def _event_to_dict(event: NBBOQuote | Trade) -> dict[str, Any]:
-    """Serialize a frozen event to a JSON-safe dict.
-
-    Decimal fields are converted to strings to preserve precision (Inv-5).
-    Tuple fields are converted to lists for JSON compatibility.
-    """
-    d: dict[str, Any] = {
-        "__type__": _TYPE_QUOTE if isinstance(event, NBBOQuote) else _TYPE_TRADE,
-    }
-
-    for name in event.__dataclass_fields__:
-        val = getattr(event, name)
-        if isinstance(val, Decimal):
-            d[name] = str(val)
-        elif isinstance(val, tuple):
-            d[name] = list(val)
-        else:
-            d[name] = val
-
-    return d
-
-
-def _dict_to_event(d: dict[str, Any]) -> NBBOQuote | Trade:
-    """Deserialize a dict back into a frozen NBBOQuote or Trade.
-
-    Type-string matching is intentionally **substring-based** so
-    annotations such as ``"Decimal"``, ``"Decimal | None"``,
-    ``"tuple[int, ...]"``, and any future ``"tuple[int, ...] | None"``
-    are all reverse-mapped correctly without depending on the exact
-    spelling (audit D3-MINOR).  ``from __future__ import annotations``
-    makes every dataclass field type a string at this layer, so we
-    cannot rely on runtime ``isinstance`` of the declared type.
-    """
-    type_tag = d.pop("__type__")
-    cls = NBBOQuote if type_tag == _TYPE_QUOTE else Trade
-
-    for name, field_obj in cls.__dataclass_fields__.items():
-        if name not in d:
-            continue
-        val = d[name]
-        ft = field_obj.type
-        ft_str = ft if isinstance(ft, str) else getattr(ft, "__name__", str(ft))
-
-        if "Decimal" in ft_str:
-            if val is not None:
-                d[name] = Decimal(str(val))
-        elif "tuple[int" in ft_str:
-            if isinstance(val, list):
-                d[name] = tuple(val)
-
-    return cls(**d)
+# Backward-compatible module aliases.  The canonical NBBOQuote / Trade codec
+# now lives in ``feelies.core.serialization`` so the disk cache and any future
+# JSONL writer share one bit-deterministic implementation (audit ING-05).
+_event_to_dict = event_to_dict
+_dict_to_event = dict_to_event
 
 
 class DiskEventCache:
     """Per-day, per-symbol disk cache for normalized market events."""
 
-    __slots__ = ("_cache_dir", "_schema_hash")
+    __slots__ = ("_cache_dir", "_schema_hash", "_clock")
 
-    def __init__(self, cache_dir: Path) -> None:
+    def __init__(self, cache_dir: Path, *, clock: Clock | None = None) -> None:
         self._cache_dir = Path(cache_dir)
         self._schema_hash = _compute_schema_hash()
+        # ``created_at`` is informational provenance only — it is never read
+        # by replay and never folded into the schema hash or checksum.  When a
+        # ``Clock`` is injected the stamp derives from it (no hidden wall-clock
+        # read, Inv-10); otherwise it falls back to UTC wall time for
+        # human-readable provenance (audit ING-04).
+        self._clock = clock
+
+    def _created_at_utc(self) -> str:
+        if self._clock is not None:
+            return datetime.fromtimestamp(
+                self._clock.now_ns() / 1e9, tz=timezone.utc
+            ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
     def _symbol_dir(self, symbol: str) -> Path:
         return self._cache_dir / symbol
@@ -191,8 +175,11 @@ class DiskEventCache:
             for line in lines:
                 if not line.strip():
                     continue
-                d = json.loads(line)
-                events.append(_dict_to_event(d))
+                # The serializer only ever round-trips NBBOQuote / Trade (it
+                # raises on anything else), so the narrowing cast is sound.
+                events.append(
+                    cast("NBBOQuote | Trade", _SERIALIZER.deserialize(line.encode("utf-8")))
+                )
         except Exception:
             logger.warning(
                 "disk_cache: deserialization failed for %s/%s", symbol, date, exc_info=True
@@ -244,7 +231,7 @@ class DiskEventCache:
         quotes_count = 0
         trades_count = 0
         for event in events:
-            lines.append(json.dumps(_event_to_dict(event), default=str))
+            lines.append(_SERIALIZER.serialize(event).decode("utf-8"))
             if isinstance(event, NBBOQuote):
                 quotes_count += 1
             else:
@@ -267,7 +254,8 @@ class DiskEventCache:
             "trades_count": trades_count,
             "checksum": checksum,
             "event_schema_hash": self._schema_hash,
-            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "normalizer_version": _NORMALIZER_VERSION,
+            "created_at": self._created_at_utc(),
         }
         if ingestion_health is not None:
             manifest["ingestion_health"] = ingestion_health

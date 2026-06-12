@@ -19,9 +19,14 @@ fidelity is prioritized over throughput.
 
 from __future__ import annotations
 
-from typing import Protocol
+import json
+from decimal import Decimal
+from typing import Any, Protocol
 
-from feelies.core.events import Event
+from feelies.core.events import Event, NBBOQuote, Trade
+
+_TYPE_QUOTE = "NBBOQuote"
+_TYPE_TRADE = "Trade"
 
 
 class EventSerializer(Protocol):
@@ -45,3 +50,90 @@ class EventSerializer(Protocol):
         is unknown.
         """
         ...
+
+
+def event_to_dict(event: NBBOQuote | Trade) -> dict[str, Any]:
+    """Serialize a frozen market event to a JSON-safe dict.
+
+    Decimal fields are converted to strings to preserve precision (Inv-5).
+    Tuple fields are converted to lists for JSON compatibility.  Field
+    iteration order follows ``__dataclass_fields__`` (definition order),
+    which is stable across processes — the basis of bit-determinism.
+    """
+    d: dict[str, Any] = {
+        "__type__": _TYPE_QUOTE if isinstance(event, NBBOQuote) else _TYPE_TRADE,
+    }
+    for name in event.__dataclass_fields__:
+        val = getattr(event, name)
+        if isinstance(val, Decimal):
+            d[name] = str(val)
+        elif isinstance(val, tuple):
+            d[name] = list(val)
+        else:
+            d[name] = val
+    return d
+
+
+def dict_to_event(d: dict[str, Any]) -> NBBOQuote | Trade:
+    """Deserialize a dict back into a frozen ``NBBOQuote`` or ``Trade``.
+
+    Type-string matching is intentionally **substring-based** so
+    annotations such as ``"Decimal"``, ``"Decimal | None"``,
+    ``"tuple[int, ...]"``, and any future ``"tuple[int, ...] | None"``
+    are all reverse-mapped correctly without depending on the exact
+    spelling.  ``from __future__ import annotations`` makes every
+    dataclass field type a string at this layer, so we cannot rely on
+    runtime ``isinstance`` of the declared type.
+
+    Raises ``ValueError`` if ``__type__`` is missing or unknown.
+    """
+    work = dict(d)
+    type_tag = work.pop("__type__", None)
+    if type_tag == _TYPE_QUOTE:
+        cls: type[NBBOQuote | Trade] = NBBOQuote
+    elif type_tag == _TYPE_TRADE:
+        cls = Trade
+    else:
+        raise ValueError(f"unknown or missing event __type__: {type_tag!r}")
+
+    for name, field_obj in cls.__dataclass_fields__.items():
+        if name not in work:
+            continue
+        val = work[name]
+        ft = field_obj.type
+        ft_str = ft if isinstance(ft, str) else getattr(ft, "__name__", str(ft))
+        if "Decimal" in ft_str:
+            if val is not None:
+                work[name] = Decimal(str(val))
+        elif "tuple[int" in ft_str:
+            if isinstance(val, list):
+                work[name] = tuple(val)
+
+    return cls(**work)
+
+
+class JsonLineEventSerializer:
+    """Concrete :class:`EventSerializer` — one canonical JSON object per event.
+
+    Bit-deterministic by construction: ``__dataclass_fields__`` iteration
+    order is stable, ``json.dumps`` preserves dict insertion order, and
+    Decimal/tuple coercion is total.  This is the single source of truth
+    for ``NBBOQuote`` / ``Trade`` persistence — :class:`DiskEventCache`
+    and any future JSONL writer route through it (audit ING-05).
+    """
+
+    def serialize(self, event: Event) -> bytes:
+        if not isinstance(event, (NBBOQuote, Trade)):
+            raise ValueError(
+                f"JsonLineEventSerializer only persists NBBOQuote / Trade, got {type(event).__name__}"
+            )
+        return json.dumps(event_to_dict(event), default=str).encode("utf-8")
+
+    def deserialize(self, data: bytes) -> Event:
+        try:
+            obj = json.loads(data)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ValueError(f"corrupt event bytes: {exc}") from exc
+        if not isinstance(obj, dict):
+            raise ValueError(f"expected a JSON object, got {type(obj).__name__}")
+        return dict_to_event(obj)

@@ -100,6 +100,49 @@ class TestCausalityEnforcement:
         log.append(make_trade(seq=1, exchange_ts_ns=100))
         assert len(log) == 2
 
+    def test_relaxed_append_accepts_out_of_order_arrival(self) -> None:
+        """ING-01: a live/paper log (enforce_market_order=False) accepts
+        arrival-ordered events whose exchange timestamps are not monotonic.
+        """
+        log = InMemoryEventLog(enforce_market_order=False)
+        log.append(make_quote(seq=0, exchange_ts_ns=200))
+        # Later-arriving quote stamped *earlier* (cross-exchange / cross-symbol
+        # jitter) — must NOT raise on a relaxed live log.
+        log.append(make_quote(seq=1, exchange_ts_ns=100))
+        log.append(make_trade(seq=2, exchange_ts_ns=150))
+        assert len(log) == 3
+        # Events are retained in arrival order (a faithful audit record).
+        assert [e.exchange_timestamp_ns for e in log.replay()] == [200, 100, 150]
+
+    def test_relaxed_append_record_is_forensically_resequencable(self) -> None:
+        """ING-01: the arrival-order live log can be re-imposed into canonical
+        deterministic order at forensic-replay time.
+        """
+        from feelies.storage.event_resequence import (
+            event_merge_sort_key,
+            resequence_event_list,
+        )
+
+        log = InMemoryEventLog(enforce_market_order=False)
+        log.append(make_quote(seq=0, exchange_ts_ns=300))
+        log.append(make_trade(seq=1, exchange_ts_ns=100))
+        log.append(make_quote(seq=2, exchange_ts_ns=100))
+
+        market = [e for e in log.replay() if isinstance(e, (NBBOQuote, Trade))]
+        resequenced = resequence_event_list(market)
+        keys = [event_merge_sort_key(e) for e in resequenced]
+        assert keys == sorted(keys)
+        # quote-before-trade at the equal 100ns timestamp after resequence.
+        first_at_100 = next(e for e in resequenced if e.exchange_timestamp_ns == 100)
+        assert isinstance(first_at_100, NBBOQuote)
+
+    def test_strict_is_default_and_still_rejects(self) -> None:
+        """ING-01: the default (replay/ingest) log keeps the strict guard."""
+        log = InMemoryEventLog()  # enforce_market_order defaults True
+        log.append(make_quote(seq=0, exchange_ts_ns=200))
+        with pytest.raises(CausalityViolation, match="out of merge-sort order"):
+            log.append(make_quote(seq=1, exchange_ts_ns=100))
+
     def test_append_batch_sorts_market_rows_within_batch(self) -> None:
         events = [
             make_quote(seq=0, exchange_ts_ns=100),

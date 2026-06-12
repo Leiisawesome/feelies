@@ -356,11 +356,21 @@ class MassiveHistoricalIngestor:
 
         merged = raw_quotes + raw_trades
         del raw_quotes, raw_trades  # free the two intermediate copies before processing
+        # Sort key MUST mirror the canonical ``event_merge_sort_key``
+        # ``(exchange_timestamp_ns, symbol, type_rank, sequence)`` — within a
+        # single-symbol ingest ``symbol`` is constant, so the alignment reduces
+        # to ``(sip_timestamp, type_rank, sequence_number)``: quotes (rank 0)
+        # sort before trades (rank 1) at equal timestamps, *then* by vendor
+        # sequence.  Earlier code ordered ``sequence_number`` ahead of
+        # ``type_rank``, which disagreed with the per-chunk stabilization in
+        # ``InMemoryEventLog`` and could raise a spurious ``CausalityViolation``
+        # when a run of same-ns quote/trade rows straddled a 5 000-row chunk
+        # boundary (audit ING-02).
         merged.sort(
             key=lambda d: (
                 d.get("sip_timestamp", 0),
-                d.get("sequence_number", 0),
                 d.get("__type_rank__", 0),
+                d.get("sequence_number", 0),
             )
         )
 

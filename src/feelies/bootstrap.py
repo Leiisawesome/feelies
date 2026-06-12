@@ -279,7 +279,17 @@ def build_platform(
         )
 
     if event_log is None:
-        event_log = InMemoryEventLog()
+        # Live/paper feeds append market events in *arrival* order at M1, which
+        # is not exchange-timestamp monotonic across symbols/exchanges.  Relax
+        # the replay-grade ordering guard for those logs so a benign out-of-order
+        # arrival does not crash the pipeline to DEGRADED (audit ING-01); the
+        # ingest/resequence path and ReplayFeed still enforce order where it is
+        # contractual.  Backtest/research logs keep the strict guard.
+        enforce_market_order = config.mode not in (
+            OperatingMode.PAPER,
+            OperatingMode.LIVE,
+        )
+        event_log = InMemoryEventLog(enforce_market_order=enforce_market_order)
     _enforce_ex_date_replay_guard(
         config,
         event_log,
