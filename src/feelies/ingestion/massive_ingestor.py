@@ -261,7 +261,12 @@ class MassiveHistoricalIngestor:
         if multi_symbol:
             from feelies.storage.event_resequence import resequence_event_list
 
-            merged_raw = [e for e in accumulate_log.replay() if isinstance(e, (NBBOQuote, Trade))]
+            merged_raw = [
+                e for e in self._event_log.replay() if isinstance(e, (NBBOQuote, Trade))
+            ]
+            merged_raw.extend(
+                e for e in accumulate_log.replay() if isinstance(e, (NBBOQuote, Trade))
+            )
             sorted_events = resequence_event_list(merged_raw)
             self._event_log.replace_events(sorted_events)
 
