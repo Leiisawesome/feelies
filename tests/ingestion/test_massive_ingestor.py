@@ -319,6 +319,81 @@ class TestParallelDownload:
         keys = [event_resequence.event_merge_sort_key(e) for e in stored]
         assert keys == sorted(keys), "stored events must be in canonical merge-key order"
 
+    def test_multi_symbol_overlapping_timestamps_via_scratch_log(self) -> None:
+        """ING-10: per-symbol full-session batches with overlapping exchange
+        timestamps accumulate into an order-tolerant scratch log and resequence
+        to global order — without tripping the cross-symbol monotonicity guard.
+        """
+        from feelies.core.events import NBBOQuote, Trade
+        from feelies.storage.event_resequence import (
+            event_merge_sort_key,
+            resequence_event_list,
+        )
+
+        ts0 = 1700000000000000000
+        clock = SimulatedClock(ts0)
+        normalizer = MassiveNormalizer(clock)
+        ingestor = MassiveHistoricalIngestor(
+            api_key="t",
+            normalizer=normalizer,
+            event_log=InMemoryEventLog(),
+            clock=clock,
+        )
+
+        # AAPL spans [ts0, ts0+2000]; MSFT *overlaps* it (starts back at ts0).
+        aapl = MagicMock()
+        aapl.list_quotes = MagicMock(
+            return_value=iter(
+                [_make_mock_quote(seq=1, ts_ns=ts0), _make_mock_quote(seq=2, ts_ns=ts0 + 2000)]
+            )
+        )
+        aapl.list_trades = MagicMock(return_value=iter([_make_mock_trade(seq=1, ts_ns=ts0 + 1000)]))
+        msft = MagicMock()
+        msft.list_quotes = MagicMock(return_value=iter([_make_mock_quote(seq=1, ts_ns=ts0)]))
+        msft.list_trades = MagicMock(return_value=iter([_make_mock_trade(seq=1, ts_ns=ts0 + 500)]))
+
+        scratch = InMemoryEventLog(enforce_market_order=False)
+        ingestor.ingest_symbol_parallel(aapl, "AAPL", "2024-01-01", "2024-01-01", target_log=scratch)
+        # This second append carries earlier timestamps than AAPL's last event;
+        # it must NOT raise on the order-tolerant scratch log.
+        ingestor.ingest_symbol_parallel(msft, "MSFT", "2024-01-01", "2024-01-01", target_log=scratch)
+
+        merged = [e for e in scratch.replay() if isinstance(e, (NBBOQuote, Trade))]
+        reseq = resequence_event_list(merged)
+        keys = [event_merge_sort_key(e) for e in reseq]
+        assert keys == sorted(keys), "resequenced multi-symbol stream must be globally ordered"
+        assert {e.symbol for e in reseq} == {"AAPL", "MSFT"}
+
+    def test_strict_scratch_would_reject_overlapping_second_symbol(self) -> None:
+        """ING-10 guard rail: prove the strict log *would* crash — the reason the
+        multi-symbol path must accumulate into a relaxed scratch log.
+        """
+        from feelies.core.errors import CausalityViolation
+
+        ts0 = 1700000000000000000
+        clock = SimulatedClock(ts0)
+        normalizer = MassiveNormalizer(clock)
+        ingestor = MassiveHistoricalIngestor(
+            api_key="t",
+            normalizer=normalizer,
+            event_log=InMemoryEventLog(),
+            clock=clock,
+        )
+
+        aapl = MagicMock()
+        aapl.list_quotes = MagicMock(return_value=iter([_make_mock_quote(seq=1, ts_ns=ts0 + 2000)]))
+        aapl.list_trades = MagicMock(return_value=iter([]))
+        msft = MagicMock()
+        msft.list_quotes = MagicMock(return_value=iter([_make_mock_quote(seq=1, ts_ns=ts0)]))
+        msft.list_trades = MagicMock(return_value=iter([]))
+
+        strict = InMemoryEventLog()  # default enforce_market_order=True
+        ingestor.ingest_symbol_parallel(aapl, "AAPL", "2024-01-01", "2024-01-01", target_log=strict)
+        with pytest.raises(CausalityViolation):
+            ingestor.ingest_symbol_parallel(
+                msft, "MSFT", "2024-01-01", "2024-01-01", target_log=strict
+            )
+
     @_requires_massive
     def test_ingest_delegates_to_parallel(self) -> None:
         """ingest() routes through ingest_symbol_parallel."""
