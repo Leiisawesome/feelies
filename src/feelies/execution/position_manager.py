@@ -1,7 +1,5 @@
 """Position-management decision layer — contracts + legacy adapter (G-1).
 
-Phase P0/P1 of ``docs/audits/position_management_design_proposal_2026-06-08.md``.
-
 This module introduces the *contracts* for a unified, target-based
 position-management decision layer and a :class:`LegacyPositionManager`
 that reproduces today's 7-intent matrix **exactly** as a
@@ -9,7 +7,7 @@ that reproduces today's 7-intent matrix **exactly** as a
 substrate for the shadow-equivalence harness wired into the orchestrator
 (default-off, parity-neutral).
 
-Design invariants (see the proposal):
+Design invariants:
   - Inv-5 (determinism): :meth:`PositionManager.plan` is a pure function
     of ``(desired, current, market, config)``.
   - Default-off parity: the legacy adapter is byte-for-byte faithful to

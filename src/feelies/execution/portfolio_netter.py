@@ -7,8 +7,7 @@ emissions), with a per-alpha budget cap and a ``k × horizon`` expiry.  The
 a single **net** :class:`DesiredPosition` that the G-1 planner then diffs
 against the net book.
 
-Locked decisions (2026-06-08,
-``docs/audits/position_management_g5_netting_rfc_2026-06-08.md``):
+Locked design decisions (G-5 netting contract):
 
   - **Stacking, capped** — same-direction alphas *sum* into a larger net
     target (conviction stacks), bounded by the portfolio cap.

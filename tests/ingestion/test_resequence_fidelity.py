@@ -7,15 +7,14 @@ network-backed integration tests are valuable but skip in CI when the
 ``massive`` SDK is absent; these tests keep the multi-symbol global
 ordering invariant under test on every run.
 
-Invariants under test (all rooted in
-``audits/ingestion_replay_storage_audit_2026-06-06.md`` section B):
+Invariants under test (multi-symbol global ordering contract):
 
-  B1. Canonical sort key ``(exchange_timestamp_ns, symbol, type_rank,
-      sequence)`` produces a strictly-monotonic key after merge.
-  B5. Quotes precede trades at equal ``(timestamp, symbol)``.
-  B6. ``InMemoryEventLog.append_batch`` enforces the same order
-      invariant on the write side that ``ReplayFeed`` enforces on the
-      read side.
+  1. Canonical sort key ``(exchange_timestamp_ns, symbol, type_rank,
+     sequence)`` produces a strictly-monotonic key after merge.
+  2. Quotes precede trades at equal ``(timestamp, symbol)``.
+  3. ``InMemoryEventLog.append_batch`` enforces the same order
+     invariant on the write side that ``ReplayFeed`` enforces on the
+     read side.
 
 Each test fabricates events that would *fail* a naive concatenation
 sort and asserts that ``resequence_event_list`` produces the canonical
