@@ -14,8 +14,12 @@ The prioritized backlog (§9) was implemented in PR #123. A subsequent APP
 changes were net-harmful** (signals 4,833 → 414; Net P&L +$1,804 → −$1,889):
 the periods the new entry bound / entropy guard filtered out were
 *profitable* for `sig_benign_midcap_v1` on APP, contradicting the audit's
-adverse-selection hypothesis. Those changes were therefore **reverted** in a
-follow-up; the pure correctness/safety fixes were kept. Updated status:
+adverse-selection hypothesis. Those changes were therefore **reverted** in
+PR #124; the pure correctness/safety fixes were kept. The post-#124 APP
+backtest reproduces the pre-#123 (PR #122) result **bit-for-bit**, confirming
+the revert restored trading behaviour exactly while the retained fixes act
+only in failure/misconfig paths (they cannot change entry selection).
+Updated status:
 
 | Item | Status | Where |
 |---|---|---|
