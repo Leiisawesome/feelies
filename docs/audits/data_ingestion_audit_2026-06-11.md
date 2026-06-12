@@ -16,13 +16,20 @@ EventLog ordering guard is applied to arrival-ordered live appends) and a
 
 ## 1. Remediation status
 
-Read-only audit — no code changes made. No trivial doc fixes applied (skill/doc
-drift is catalogued in §2 / Findings rather than edited, to keep this pass
-non-mutating).
+Original audit was read-only. The findings below were subsequently remediated
+per the §10 roadmap (follow-up commit on `claude/hopeful-maxwell-4nae3m`).
 
-| ID | Status | Commit |
-|----|--------|--------|
-| — | (none — read-only) | — |
+| ID | Sev | Status | Resolution |
+|----|-----|--------|------------|
+| ING-01 | P1 | **Fixed** | `InMemoryEventLog(enforce_market_order=…)`; bootstrap relaxes the guard for PAPER/LIVE logs (arrival order) while ingest/replay stay strict. Tests: `test_memory_event_log.py` (relaxed-accepts / forensic-resequencable / strict-default). |
+| ING-02 | P1 | **Fixed** | Ingest raw pre-sort realigned to `(sip_timestamp, type_rank, sequence_number)` = canonical key. Test: `test_massive_ingestor.py::test_same_ns_quote_trade_run_across_chunk_boundary`. |
+| ING-03 | P2 | **Fixed (doc)** | Explicit backtest-vs-live health-gate parity note added to the data-engineering skill. |
+| ING-04 | P2 | **Fixed** | `DiskEventCache(clock=…)` injectable `created_at`; `normalizer_version` added to manifest (Inv-13). |
+| ING-05 | P2 | **Fixed** | Concrete `JsonLineEventSerializer` + shared `event_to_dict`/`dict_to_event` codec in `core/serialization.py`; disk cache routed through it. Tests: `tests/core/test_serialization.py`. |
+| ING-06 | P2 | **Fixed (doc)** | Data-engineering "Storage Design" / "Recovery & Replay" reconciled with Inv-1 (no raw-vendor log). |
+| ING-07 | P2 | **No-op** | Both skills already describe the global resequence correctly — no stale text to fix. |
+| ING-08 | P2 | **Acknowledged** | All-or-nothing `enable_rest_sequence_gap_detection` is documented at the call site; no behavior change. |
+| ING-09 | P2 | **Fixed** | 3 vendor-SDK tests gated behind `_requires_massive` skip; new REST↔WS field-parity test `tests/ingestion/test_rest_ws_parity.py`. |
 
 ---
 

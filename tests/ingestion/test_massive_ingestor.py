@@ -19,6 +19,16 @@ from feelies.ingestion.massive_ingestor import (
 from feelies.ingestion.massive_normalizer import MassiveNormalizer
 from feelies.storage.memory_event_log import InMemoryEventLog
 
+# Tests that ``patch("massive.RESTClient", ...)`` need the optional vendor SDK
+# to be importable (``mock.patch`` resolves the target module eagerly).  Skip
+# them cleanly when the ``massive`` extra is absent so a vanilla checkout is
+# green without the vendor dependency (audit ING-09).
+_MASSIVE_ABSENT = importlib.util.find_spec("massive") is None
+_requires_massive = pytest.mark.skipif(
+    _MASSIVE_ABSENT,
+    reason="massive SDK not installed; patch('massive.RESTClient') requires the package",
+)
+
 
 def _make_mock_quote(seq: int = 1, ts_ns: int = 1700000000000000000) -> Any:
     """Create a mock object resembling massive Quote model with __annotations__ on class."""
@@ -172,6 +182,7 @@ class TestMassiveHistoricalIngestor:
         with pytest.raises(ImportError, match="massive"):
             ingestor.ingest(["AAPL"], "2024-01-01", "2024-01-01")
 
+    @_requires_massive
     def test_ingest_with_mocked_rest_client(self) -> None:
         """Ingest uses REST client and persists normalized events."""
         clock = SimulatedClock(1700000000000000000)
@@ -263,6 +274,52 @@ class TestParallelDownload:
         timestamps = [e.exchange_timestamp_ns for e in events]
         assert timestamps == sorted(timestamps), "events must be in chronological order"
 
+    def test_same_ns_quote_trade_run_across_chunk_boundary(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """ING-02: a same-nanosecond quote/trade run straddling a chunk
+        boundary must not raise ``CausalityViolation``.
+
+        Quotes carry odd vendor sequences, trades carry even ones, all at the
+        *same* ``sip_timestamp``.  Under the old raw sort key
+        ``(sip_timestamp, sequence_number, type_rank)`` the events interleave
+        quote/trade by sequence, and per-chunk canonical stabilization then
+        produces a backward merge-key across the chunk boundary.  The aligned
+        key ``(sip_timestamp, type_rank, sequence_number)`` keeps all quotes
+        before all trades, so no boundary inversion occurs.
+        """
+        from feelies.storage import event_resequence
+
+        # Force a tiny chunk so 6 events straddle a boundary.
+        monkeypatch.setattr("feelies.ingestion.massive_ingestor._CHUNK_SIZE", 4)
+
+        ts = 1700000000000000000
+        quotes = [_make_mock_quote(seq=s, ts_ns=ts) for s in (1, 3, 5)]
+        trades = [_make_mock_trade(seq=s, ts_ns=ts) for s in (2, 4, 6)]
+
+        clock = SimulatedClock(ts)
+        normalizer = MassiveNormalizer(clock)
+        event_log = InMemoryEventLog()
+        mock_client = MagicMock()
+        mock_client.list_quotes = MagicMock(return_value=iter(quotes))
+        mock_client.list_trades = MagicMock(return_value=iter(trades))
+
+        ingestor = MassiveHistoricalIngestor(
+            api_key="test",
+            normalizer=normalizer,
+            event_log=event_log,
+            clock=clock,
+        )
+
+        # Must not raise CausalityViolation.
+        ingestor.ingest_symbol_parallel(mock_client, "AAPL", "2024-01-01", "2024-01-01")
+
+        stored = list(event_log.replay())
+        assert len(stored) == 6
+        keys = [event_resequence.event_merge_sort_key(e) for e in stored]
+        assert keys == sorted(keys), "stored events must be in canonical merge-key order"
+
+    @_requires_massive
     def test_ingest_delegates_to_parallel(self) -> None:
         """ingest() routes through ingest_symbol_parallel."""
         clock = SimulatedClock(1700000000000000000)
@@ -388,6 +445,7 @@ class TestDownloadIntegrityAndCheckpoint:
 class TestDuplicateCountingInIngestor:
     """Tests that IngestResult.duplicates_filtered reflects normalizer counts."""
 
+    @_requires_massive
     def test_reports_duplicates_from_normalizer(self) -> None:
         clock = SimulatedClock(1700000000000000000)
         normalizer = MassiveNormalizer(clock)
