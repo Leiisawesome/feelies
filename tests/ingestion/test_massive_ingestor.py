@@ -394,6 +394,68 @@ class TestParallelDownload:
                 msft, "MSFT", "2024-01-01", "2024-01-01", target_log=strict
             )
 
+    def _finalize_ingestor(self, dest: InMemoryEventLog) -> MassiveHistoricalIngestor:
+        return MassiveHistoricalIngestor(
+            api_key="t",
+            normalizer=MassiveNormalizer(SimulatedClock()),
+            event_log=dest,
+            clock=SimulatedClock(),
+        )
+
+    @staticmethod
+    def _quote(ts: int, sym: str, seq: int) -> Any:
+        from decimal import Decimal
+
+        from feelies.core.events import NBBOQuote
+
+        return NBBOQuote(
+            timestamp_ns=ts,
+            correlation_id=f"c{seq}",
+            sequence=seq,
+            symbol=sym,
+            bid=Decimal("1"),
+            ask=Decimal("2"),
+            bid_size=1,
+            ask_size=1,
+            exchange_timestamp_ns=ts,
+        )
+
+    def test_finalize_merge_preserves_preexisting_destination(self) -> None:
+        """ING-10 follow-up: the multi-symbol finalize must merge the *existing*
+        destination content with the scratch log — not replace it wholesale.
+        """
+        from feelies.core.events import NBBOQuote, Trade
+        from feelies.storage.event_resequence import event_merge_sort_key
+
+        dest = InMemoryEventLog()
+        dest.append(self._quote(100, "AAPL", 1))  # pre-existing content
+        scratch = InMemoryEventLog(enforce_market_order=False)
+        scratch.append(self._quote(50, "MSFT", 1))  # earlier ts — would invert vs dest
+
+        self._finalize_ingestor(dest)._finalize_multi_symbol_merge(scratch)
+
+        out = [e for e in dest.replay() if isinstance(e, (NBBOQuote, Trade))]
+        assert len(out) == 2, "pre-existing destination content must be preserved"
+        assert {e.symbol for e in out} == {"AAPL", "MSFT"}
+        keys = [event_merge_sort_key(e) for e in out]
+        assert keys == sorted(keys), "merged stream must be globally ordered"
+
+    def test_finalize_merge_empty_scratch_does_not_wipe_destination(self) -> None:
+        """ING-10 follow-up: a checkpoint-skip-all run leaves the scratch empty;
+        the finalize must NOT clear the destination (no silent data loss).
+        """
+        from feelies.core.events import NBBOQuote, Trade
+
+        dest = InMemoryEventLog()
+        dest.append(self._quote(100, "AAPL", 1))
+        empty_scratch = InMemoryEventLog(enforce_market_order=False)
+
+        self._finalize_ingestor(dest)._finalize_multi_symbol_merge(empty_scratch)
+
+        out = [e for e in dest.replay() if isinstance(e, (NBBOQuote, Trade))]
+        assert len(out) == 1, "empty scratch must not wipe pre-existing destination"
+        assert out[0].symbol == "AAPL"
+
     @_requires_massive
     def test_ingest_delegates_to_parallel(self) -> None:
         """ingest() routes through ingest_symbol_parallel."""

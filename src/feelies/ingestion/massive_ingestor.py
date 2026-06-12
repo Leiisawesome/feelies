@@ -259,16 +259,7 @@ class MassiveHistoricalIngestor:
         )
 
         if multi_symbol:
-            from feelies.storage.event_resequence import resequence_event_list
-
-            merged_raw = [
-                e for e in self._event_log.replay() if isinstance(e, (NBBOQuote, Trade))
-            ]
-            merged_raw.extend(
-                e for e in accumulate_log.replay() if isinstance(e, (NBBOQuote, Trade))
-            )
-            sorted_events = resequence_event_list(merged_raw)
-            self._event_log.replace_events(sorted_events)
+            self._finalize_multi_symbol_merge(accumulate_log)
 
         return IngestResult(
             events_ingested=total_events,
@@ -277,6 +268,34 @@ class MassiveHistoricalIngestor:
             duplicates_filtered=self._normalizer.duplicates_filtered,
             symbols_completed=frozenset(completed_symbols),
         )
+
+    def _finalize_multi_symbol_merge(self, scratch: EventLog) -> None:
+        """Merge-sort the destination + scratch market events back into the log.
+
+        Reads market events from **both** the existing destination
+        ``self._event_log`` *and* the order-tolerant ``scratch`` log, then
+        ``resequence_event_list`` + ``replace_events`` once.  Reading the
+        destination too is load-bearing (audit ING-10 follow-up):
+
+        * a non-empty destination prior to a multi-symbol ingest must not be
+          silently dropped, and
+        * a run that checkpoint-skips every symbol leaves ``scratch`` empty —
+          merging the destination back in means ``replace_events`` re-writes the
+          prior data instead of clearing it (``replace_events([])`` would wipe
+          the log, trading the ING-10 crash for silent data loss).
+
+        Both logs are materialized into the list *before* ``replace_events``
+        mutates the destination, so reading and replacing the same log is safe.
+        """
+        from feelies.storage.event_resequence import resequence_event_list
+
+        merged_raw: list[NBBOQuote | Trade] = []
+        for src_log in (self._event_log, scratch):
+            merged_raw.extend(
+                e for e in src_log.replay() if isinstance(e, (NBBOQuote, Trade))
+            )
+        sorted_events = resequence_event_list(merged_raw)
+        self._event_log.replace_events(sorted_events)
 
     # ── Parallel download + merge-sort ─────────────────────────────
 
