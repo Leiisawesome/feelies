@@ -401,12 +401,25 @@ class HorizonSignalEngine:
                 self._publish_gate_close(snapshot, registered)
             return
         except RegimeGateError as exc:
+            # Audit P1-1: a RegimeGateError here is most commonly an
+            # ``UnknownRegimeStateError`` from a typo'd ``P(<state>)`` in the
+            # OFF expression — which previously logged and returned WITHOUT
+            # unwinding a latched-ON gate, orphaning any open position
+            # (only ``UnknownIdentifierError`` and arithmetic errors below
+            # were fail-safe).  Treat every gate eval error as Inv-11:
+            # force the latch OFF and unwind an open position if the gate
+            # was previously ON, so a bad OFF expression can never strand a
+            # position in the regime-ON state.
+            registered.gate.reset(snapshot.symbol)
             _logger.warning(
-                "HorizonSignalEngine: %s gate parse/eval error for %s: %s",
+                "HorizonSignalEngine: %s gate parse/eval error for %s: %s "
+                "— forcing OFF and unwinding any open position",
                 registered.alpha_id,
                 snapshot.symbol,
                 exc,
             )
+            if was_on:
+                self._publish_gate_close(snapshot, registered)
             return
         except (
             ZeroDivisionError,

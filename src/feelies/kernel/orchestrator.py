@@ -3080,6 +3080,17 @@ class Orchestrator:
         ``None`` (platform default), calibration from the trading log is
         skipped entirely — use explicit positive integers for a causal
         warmup prefix only.
+
+        Audit P2-4 — residual within-prefix lookahead: emissions are fit
+        once from the first ``max_q`` quotes, then the live run *re-replays*
+        that same prefix.  Posteriors for ticks early in the prefix are
+        therefore computed with emission moments estimated from later (but
+        still prefix-bounded) ticks — a soft Inv-6 wrinkle confined to the
+        warm-up window.  It does not affect Inv-5 (the fit is a pure,
+        deterministic function of the prefix, so replay is bit-identical),
+        and emission moments are slowly varying so the effect on the warm-up
+        posteriors is small.  Strict causal calibration would fit on a
+        held-out prior session and is left as a follow-up (audit P2-5).
         """
         if self._regime_engine is None:
             return
@@ -3100,21 +3111,33 @@ class Orchestrator:
             logger.warning(
                 "Regime calibration skipped — regime_calibration_max_quotes "
                 "is unset.  Engine will run with placeholder emission "
-                "parameters; downstream P(state) gates will be near-uniform."
+                "parameters that do not match real US-equity spreads; "
+                "RegimeState.calibrated will be False and every "
+                "P(state)/dominant/entropy entry gate will fail safe to OFF "
+                "(audit P0-1).  Configure a positive integer for a causal "
+                "warmup prefix to enable regime-conditioned entries."
             )
             self._bus.publish(
                 Alert(
                     timestamp_ns=self._clock.now_ns(),
                     correlation_id="regime_calibration",
                     sequence=self._seq.next(),
-                    severity=AlertSeverity.WARNING,
+                    # Audit P0-1: escalated WARNING -> CRITICAL.  Running on
+                    # placeholder emissions silently disables the entire
+                    # regime-gated SIGNAL book (gates fail safe to OFF), which
+                    # is an availability incident operators must see, not a
+                    # soft warning buried in the log.
+                    severity=AlertSeverity.CRITICAL,
                     layer="kernel",
                     alert_name="regime_calibration_unset",
                     message=(
                         "RegimeEngine has no calibration prefix configured "
                         "(regime_calibration_max_quotes is None). Posteriors "
-                        "will use placeholder emission parameters; configure a "
-                        "positive integer for a causal warmup prefix."
+                        "use placeholder emission parameters; RegimeState is "
+                        "published with calibrated=False and all "
+                        "P(state)/dominant/entropy entry gates fail safe to "
+                        "OFF (Inv-11).  Configure a positive integer for a "
+                        "causal warmup prefix to enable regime-gated entries."
                     ),
                     context={},
                 )
@@ -3223,6 +3246,11 @@ class Orchestrator:
             if dominant_idx < len(state_names)
             else "unknown",
             posterior_entropy_nats=regime_posterior_entropy_nats(posteriors),
+            # Audit P0-1: surface calibration status so the regime gate can
+            # fail safe to OFF on placeholder emissions (Inv-11).  Engines
+            # that do not expose ``calibrated`` are assumed calibrated
+            # (legacy / custom engines opt out of the disable behavior).
+            calibrated=bool(getattr(self._regime_engine, "calibrated", True)),
         )
         self._bus.publish(regime_state)
         self._maybe_publish_hazard_spike(regime_state, correlation_id)

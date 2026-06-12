@@ -95,13 +95,18 @@ risk_budget:
 # ── Regime Gate (Phase 3 DSL) ─────────────────────────────
 regime_gate:
   regime_engine: hmm_3state_fractional
+  # Audit P1-6: exclude elevated vol_breakout mass from the entry latch.
+  # Audit P2-2: drop out on diffuse posteriors (entropy near ln(3)).
   on_condition: |
-    P(normal) > 0.6 and spread_z_30d <= 1.0
+    P(normal) > 0.6 and P(vol_breakout) < 0.30 and spread_z_30d <= 1.0
   off_condition: |
-    P(normal) < 0.4 or spread_z_30d > 2.0 or realized_vol_30s_zscore > 3.5
-  hysteresis:
-    posterior_margin: 0.20
-    percentile_margin: 0.30
+    P(normal) < 0.4 or P(vol_breakout) > 0.40 or entropy > 0.95 or spread_z_30d > 2.0 or realized_vol_30s_zscore > 3.5
+  # Audit P1-4: the previous ``hysteresis:`` block declared posterior_margin
+  # / percentile_margin but neither expression referenced them, so they were
+  # dead config (loader warned).  This alpha's hysteresis is the implicit
+  # dual-threshold gap (ON P(normal)>0.6 / OFF P(normal)<0.4); the dead
+  # block is removed to avoid implying an automatic margin band that never
+  # existed.
 
 # ── Cost Arithmetic Disclosure (G12) ──────────────────────
 cost_arithmetic:

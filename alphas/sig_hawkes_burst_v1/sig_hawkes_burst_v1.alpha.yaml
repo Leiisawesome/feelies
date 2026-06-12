@@ -93,13 +93,21 @@ risk_budget:
 # ── Regime Gate (Phase 3 DSL) ─────────────────────────────
 regime_gate:
   regime_engine: hmm_3state_fractional
+  # Audit P1-5/P1-6: keep the entry out of incipient breakouts — the
+  # mechanism (self-exciting trade bursts) widens spreads as it fires, and
+  # the declared failure_signature already names ``P(vol_breakout) > 0.5``,
+  # so admitting elevated vol_breakout mass on entry is self-contradictory.
+  # NOTE: a fuller redesign (gating ON on rising hawkes_intensity within a
+  # normal regime rather than on calm alone) is deferred pending the
+  # conditional-edge data run in the audit appendix.
+  # Audit P2-2: exit on diffuse posteriors (entropy near ln(3)).
   on_condition: |
-    P(normal) > 0.6 and spread_z_30d < 1.0
+    P(normal) > 0.6 and P(vol_breakout) < 0.30 and spread_z_30d < 1.0
   off_condition: |
-    P(normal) < 0.4 or spread_z_30d > 2.5 or realized_vol_30s_zscore > 3.5
-  hysteresis:
-    posterior_margin: 0.20
-    percentile_margin: 0.30
+    P(normal) < 0.4 or P(vol_breakout) > 0.40 or entropy > 0.95 or spread_z_30d > 2.5 or realized_vol_30s_zscore > 3.5
+  # Audit P1-4: removed dead hysteresis block (margins were declared but
+  # never referenced in the expressions).  Effective hysteresis is the
+  # dual-threshold gap (ON P(normal)>0.6 / OFF P(normal)<0.4).
 
 # ── Cost Arithmetic Disclosure (G12) ──────────────────────
 cost_arithmetic:
@@ -127,9 +135,14 @@ trend_mechanism:
 # the 0.30 declared here was silently ignored and the controller used
 # its 0.85 default.  The loader still accepts the legacy name with a
 # WARN, but use the canonical spelling in new specs.
+# Audit P1-5: raised hazard_score_threshold 0.30 -> 0.50.  The score is a
+# normalized one-tick relative decay (NOT time-normalized), so 0.30 fired an
+# exit on a mild 0.70->0.49 wobble and clipped the 30 s-half-life edge.  0.50
+# requires a halving of the dominant posterior in one tick before flattening;
+# tune toward the 0.85 default per tick-rate once conditional-exit data is in.
 hazard_exit:
   enabled: true
-  hazard_score_threshold: 0.30
+  hazard_score_threshold: 0.50
 
 # ── Signal (Layer-2 evaluate) ─────────────────────────────
 signal: |

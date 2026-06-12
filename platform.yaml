@@ -43,6 +43,18 @@ regime_engine: hmm_3state_fractional
 
 # Optional engine kwargs (forwarded at bootstrap). Defaults preserve tick-based
 # transitions and pooled prefix calibration only.
+#
+# Audit P1-3 (RECOMMENDED for live cohorts): enable transition_time_scaling.
+# With the default (off) the transition matrix is applied once per inbound
+# quote, so the mean regime dwell is measured in *ticks* and drifts ~10x with
+# intraday quote intensity (100 ticks ≈ 10 s @ 10 q/s but ≈ 1 s @ 100 q/s).
+# Enabling it re-exponentiates each row's self-transition by
+# (dt / transition_dt_reference_seconds) so dwell is comparable in *seconds*.
+# It is left OFF by default because (a) the right transition_dt_reference_seconds
+# is cohort-specific and (b) flipping the global default would change every
+# posterior and invalidate the locked Level-5/6 determinism baselines.  Set it
+# explicitly per deployment, tuning transition_dt_reference_seconds to the
+# cohort's typical inter-quote gap.
 # regime_engine_options:
 #   transition_time_scaling_enabled: true
 #   transition_dt_reference_seconds: 0.05

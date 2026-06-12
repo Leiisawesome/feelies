@@ -312,3 +312,42 @@ def test_alpha_loader_invalid_regime_engine_options_raise_alpha_load_error() -> 
     )
     with pytest.raises(AlphaLoadError, match="invalid regime_engine_options"):
         loader.load_from_dict(spec, source="<test>")
+
+
+# ── Audit P1-2: load-time P(<state>) name validation ────────────────────
+
+
+def test_unknown_posterior_state_rejected_at_load() -> None:
+    """A typo'd ``P(<state>)`` is rejected at LOAD when an engine is wired.
+
+    Audit P1-2: previously this compiled cleanly and only failed at the
+    first runtime evaluation (and on the OFF path did not even unwind).
+    """
+    from feelies.services.regime_engine import HMM3StateFractional
+
+    spec = _signal_spec()
+    spec["regime_gate"]["on_condition"] = "P(noraml) > 0.7"  # typo
+    loader = AlphaLoader(regime_engine=HMM3StateFractional())
+    with pytest.raises(AlphaLoadError, match="unknown regime state"):
+        loader.load_from_dict(spec, source="<test>")
+
+
+def test_known_posterior_states_load_with_engine() -> None:
+    """The happy path: every P(<state>) names a real engine state."""
+    from feelies.services.regime_engine import HMM3StateFractional
+
+    spec = _signal_spec()
+    spec["regime_gate"]["on_condition"] = "P(normal) > 0.7 and P(vol_breakout) < 0.3"
+    loader = AlphaLoader(regime_engine=HMM3StateFractional())
+    m = loader.load_from_dict(spec, source="<test>")
+    assert m.manifest.alpha_id == "alpha_x"
+
+
+def test_unknown_posterior_state_skipped_without_engine() -> None:
+    """With no engine wired the loader cannot name-check; load must not raise
+    on the P(...) names alone (the runtime path still guards)."""
+    spec = _signal_spec()
+    spec["regime_gate"]["on_condition"] = "P(noraml) > 0.7"
+    # Default loader has no regime engine → P() validation is a no-op.
+    m = AlphaLoader().load_from_dict(spec, source="<test>")
+    assert m.manifest.alpha_id == "alpha_x"

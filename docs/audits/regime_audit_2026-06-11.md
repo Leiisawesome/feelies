@@ -5,6 +5,39 @@
 **Mode:** Read-only, evidence-based. No production code modified.
 **Test status:** `148 passed` across the six mandated suites (regime engine, hazard detector, gate DSL + props, hazard replay, hazard-exit replay).
 
+---
+
+## 0. Remediation status (2026-06-12)
+
+The prioritized backlog (§9) was implemented in a follow-up change. Status
+per item:
+
+| Item | Status | Where |
+|---|---|---|
+| **P0-1** uncalibrated engine pins to one extreme | **Fixed** | `RegimeState.calibrated` field (`core/events.py`); orchestrator publishes it from `engine.calibrated` and escalates the unset-calibration alert to CRITICAL (`kernel/orchestrator.py`); gate fails `P()`/`dominant`/`entropy` safe to OFF when uncalibrated (`signals/regime_gate.py`). Golden test locks the pin-to-vol_breakout behaviour. |
+| **P1-1** off-path `RegimeGateError` not fail-safe | **Fixed** | `signals/horizon_engine.py` `except RegimeGateError` now resets the latch + emits FLAT close when previously ON. |
+| **P1-2** no load-time `P()` validation | **Fixed** | `alpha/loader.py` `_validate_gate_posterior_states` rejects unknown state names at load. |
+| **P1-3** tick-time transition default OFF | **Deferred (documented)** | Flipping the global default would change every posterior and invalidate locked L5/L6 baselines, and needs per-cohort `dt_reference` tuning. Strong RECOMMENDED guidance added to `platform.yaml`; remains explicit opt-in. |
+| **P1-4** dead hysteresis blocks | **Fixed** | Removed from `sig_hawkes_burst_v1`, `sig_kyle_drift_v1`. |
+| **P1-5** hawkes gate stance + 0.30 hazard | **Partially fixed** | Hazard threshold 0.30 → 0.50; added `P(vol_breakout) < 0.30` to ON. Full intensity-based re-derivation deferred pending the appendix conditional-edge data run. |
+| **P1-6** loose ON-floor admits vol mass | **Fixed** | `P(vol_breakout) < 0.30` added to `sig_benign_midcap_v1`, `sig_kyle_drift_v1` ON. |
+| **P1-7** hazard exits symbol, not strategy | **Deferred (documented)** | Per-strategy scoping touches reconciliation; symbol-net-flatten semantics now documented prominently in `risk/hazard_exit.py` with the `universe` filter as the interim control. |
+| **P1-8** short-half-life alpha no mid-interval exit | **Fixed** | `hazard_exit` added to `sig_inventory_revert_v1` (20 s half-life). |
+| **P2-1** richer regime features (2nd dimension) | **Deferred (documented)** | Full engine redesign; would break all baselines. Out of scope for this pass. |
+| **P2-2** entropy-gating for diffuse posteriors | **Fixed** | `entropy > 0.95` added to benign/kyle/hawkes OFF. |
+| **P2-3** `pNN` regex `p100` unreachable | **Fixed** | Regex widened to `\d{1,3}` (`signals/regime_gate.py`); bound check unchanged. |
+| **P2-4** within-prefix calibration lookahead | **Fixed (documented)** | Rationale added to `_calibrate_regime_engine` docstring. |
+| **P2-5** calibration drift detection / auto-refit | **Deferred (documented)** | New subsystem with replay-determinism implications; out of scope. |
+| **P2-6** economic property tests for gates | **Fixed** | `tests/signals/test_regime_gate_dsl_props.py` ON ⇒ bounded vol mass, loaded from shipped YAML. |
+
+New/changed tests: `tests/signals/test_regime_gate_dsl.py` (P0-1, P2-3),
+`tests/signals/test_horizon_signal_engine.py` (P1-1),
+`tests/alpha/test_signal_layer_loader.py` (P1-2),
+`tests/signals/test_regime_gate_dsl_props.py` (P2-6),
+`tests/services/test_regime_engine.py` (P0-1 golden). Full suite green
+(`3303 passed, 43 skipped` pre-change; touched suites + new tests green
+post-change); ruff + mypy-strict clean.
+
 > Convention: findings are tagged **[BUG]** (implementation defect),
 > **[MODEL]** (deliberate modeling choice with consequences), or
 > **[L1]** (fundamental limit of an L1/NBBO-only, 1-D-observation
