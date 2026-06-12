@@ -42,6 +42,16 @@ class SpreadZScoreSensor:
     - ``min_std`` (float, default 1e-9): floor on the rolling
       standard deviation; below this we emit ``value=0.0`` to avoid
       pathological z-scores in degenerate (constant-spread) books.
+    - ``max_gap_seconds`` (int | None, default None): audit P1-E
+      event-time staleness reset.  This is a **count**-window sensor, so
+      unlike the event-time-windowed sensors it cannot un-warm on its
+      own — once the 6000-quote deque fills it stays warm and keeps
+      z-scoring against a distribution that may predate a halt.  When set,
+      an inter-quote gap longer than ``max_gap_seconds`` (e.g. a LULD
+      halt) flushes the rolling window so the post-gap z-score is built
+      against post-gap data, and the sensor correctly reverts to cold
+      until ``warm_after`` fresh quotes accumulate.  ``None`` (default)
+      preserves the exact legacy behaviour and the locked golden vector.
     """
 
     sensor_id: str = "spread_z_30d"
@@ -55,11 +65,14 @@ class SpreadZScoreSensor:
         window: int = 6000,
         warm_after: int | None = None,
         min_std: float = 1e-9,
+        max_gap_seconds: int | None = None,
     ) -> None:
         if window < 2:
             raise ValueError(f"window must be >= 2, got {window}")
         if min_std <= 0.0:
             raise ValueError(f"min_std must be > 0, got {min_std}")
+        if max_gap_seconds is not None and max_gap_seconds <= 0:
+            raise ValueError(f"max_gap_seconds must be > 0 or None, got {max_gap_seconds}")
         if sensor_id is not None:
             self.sensor_id = sensor_id
         if sensor_version is not None:
@@ -67,6 +80,7 @@ class SpreadZScoreSensor:
         self._window = window
         self._warm_after = window if warm_after is None else warm_after
         self._min_std = min_std
+        self._max_gap_ns = None if max_gap_seconds is None else max_gap_seconds * 1_000_000_000
 
     def initial_state(self) -> dict[str, Any]:
         return {
@@ -74,6 +88,7 @@ class SpreadZScoreSensor:
             "n": 0,  # Welford element count (== len(spreads))
             "mean": 0.0,  # Welford running mean
             "M2": 0.0,  # Welford sum of squared deviations from mean
+            "last_ts_ns": None,  # event-time of the previous accepted quote (P1-E)
         }
 
     def update(
@@ -92,6 +107,23 @@ class SpreadZScoreSensor:
         # would poison the rolling mean/variance.
         if bid <= 0.0 or ask <= 0.0:
             return None
+
+        # Audit P1-E: flush the count window after a long event-time gap so
+        # the post-halt z-score is built against post-halt data (and the
+        # sensor reverts to cold).  Disabled when ``max_gap_seconds is None``,
+        # which keeps the legacy behaviour and the locked golden vector.
+        ts_ns = event.timestamp_ns
+        last_ts = state["last_ts_ns"]
+        if (
+            self._max_gap_ns is not None
+            and last_ts is not None
+            and (ts_ns - last_ts) > self._max_gap_ns
+        ):
+            state["spreads"].clear()
+            state["n"] = 0
+            state["mean"] = 0.0
+            state["M2"] = 0.0
+        state["last_ts_ns"] = ts_ns
 
         spread = ask - bid
         spreads: deque[float] = state["spreads"]

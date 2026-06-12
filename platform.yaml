@@ -198,6 +198,10 @@ sensor_specs:
     params:
       window: 6000
       min_std: 1.0e-9
+      # Audit P1-E: count-window sensors cannot un-warm; flush the rolling
+      # distribution after a >5 min inter-quote gap (e.g. a halt) so the
+      # z-score is built against post-gap data and re-warms cleanly.
+      max_gap_seconds: 300
     subscribes_to: [NBBOQuote]
     input_sensor_ids: []
     min_history: 6000
@@ -240,6 +244,20 @@ sensor_specs:
   - sensor_id: micro_price
     sensor_version: "1.1.0"
     cls: feelies.sensors.impl.micro_price.MicroPriceSensor
+    params:
+      warm_after: 1
+      warm_window_seconds: 60
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 1
+    throttled_ms: null
+
+  # Audit P1-B/P1-C: signed top-of-book size imbalance — the level-invariant
+  # micro-price footprint that ``micro_price_zscore`` (a z of the price level)
+  # cannot carry.  (micro - mid)/spread = book_imbalance / 2.
+  - sensor_id: book_imbalance
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.book_imbalance.BookImbalanceSensor
     params:
       warm_after: 1
       warm_window_seconds: 60
@@ -343,6 +361,8 @@ sensor_specs:
     params:
       window: 6000
       sensitivity: 2.0
+      # Audit P1-E: flush both count-window baselines after a >5 min gap.
+      max_gap_seconds: 300
     subscribes_to: [NBBOQuote]
     input_sensor_ids: []
     min_history: 6000

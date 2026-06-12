@@ -64,6 +64,7 @@ from feelies.core.events import (
     Signal,
 )
 from feelies.core.platform_config import OperatingMode, PlatformConfig
+from feelies.sensors.impl.book_imbalance import BookImbalanceSensor
 from feelies.sensors.impl.micro_price import MicroPriceSensor
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
 from feelies.sensors.impl.realized_vol_30s import RealizedVol30sSensor
@@ -114,6 +115,16 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
         sensor_version="1.3.0",
         cls=RealizedVol30sSensor,
         params={"window_seconds": 30, "warm_after": 8},
+        subscribes_to=(NBBOQuote,),
+    ),
+    # Audit P1-B: sig_benign_midcap_v1 now confirms the OFI footprint with
+    # ``book_imbalance`` (signed top-of-book size imbalance) instead of the
+    # momentum-laden ``micro_price_zscore``.
+    SensorSpec(
+        sensor_id="book_imbalance",
+        sensor_version="1.0.0",
+        cls=BookImbalanceSensor,
+        params={"warm_after": 1},
         subscribes_to=(NBBOQuote,),
     ),
 )
@@ -276,6 +287,11 @@ def _fire_signals(
                 ),
             )
             seq += 1
+            # Audit P1-B: positive book imbalance (bid-heavy) confirms the
+            # upward OFI footprint.  Slight per-step variation keeps the
+            # windowed z-score non-degenerate.
+            bus.publish(_reading(symbol, seq, "book_imbalance", 0.20 + 0.001 * i, ts))
+            seq += 1
 
     # ── 4. Spike OFI — this is the reading that drives z above threshold ─
     # After 30 symmetric readings (mean≈0, std≈0.607) a reading of +3.0
@@ -296,6 +312,9 @@ def _fire_signals(
                 sensor_version="1.2.0",
             ),
         )
+        seq += 1
+        # Audit P1-B: bid-heavy book confirms the positive OFI spike → LONG.
+        bus.publish(_reading(symbol, seq, "book_imbalance", 0.5, spike_ts))
         seq += 1
 
     # ── 5. Trigger the 120-second horizon boundary ─────────────────────

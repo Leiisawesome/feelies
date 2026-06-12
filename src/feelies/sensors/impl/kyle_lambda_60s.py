@@ -46,22 +46,30 @@ class KyleLambda60sSensor:
     """
 
     sensor_id: str = "kyle_lambda_60s"
-    sensor_version: str = "1.2.0"
+    # Audit P0-1: the class default is the *causal* (correct-sign) estimator,
+    # version 2.0.0.  Previously the default was ``legacy`` / 1.2.0, which the
+    # cached IC shows carries the WRONG sign at KYLE horizons (platform.yaml
+    # P1-5 note) — any construction without explicit params silently produced
+    # an inverted λ.  Defaulting to causal removes that footgun; the legacy
+    # estimator is still reachable only by explicit ``alignment="legacy"``
+    # (used to regenerate the locked 1.2.0 golden vector).
+    sensor_version: str = "2.0.0"
 
-    # Audit P1-5: ``alignment`` selects how ``Δp`` and ``Δq`` are paired.
+    # Audit P1-5 / P0-1: ``alignment`` selects how ``Δp`` and ``Δq`` are paired.
     #
-    # * ``"legacy"`` (default, sensor_version 1.2.0): ``Δp`` over the interval
-    #   ``[t-1, t)`` is paired with the *current* trade's signed size ``Δq_t``.
-    #   This regresses *past* mid drift on *current* flow — closer to a
-    #   flow-autocorrelation statistic than Kyle's contemporaneous impact λ.
-    #   Preserved byte-identically for the locked 1.2.0 golden vector.
-    #
-    # * ``"causal"`` (sensor_version 2.0.0): ``Δp`` over ``[t-1, t)`` is paired
-    #   with ``Δq_{t-1}`` — the flow that occurred at the *start* of that
+    # * ``"causal"`` (DEFAULT, sensor_version 2.0.0): ``Δp`` over ``[t-1, t)`` is
+    #   paired with ``Δq_{t-1}`` — the flow that occurred at the *start* of that
     #   interval and whose permanent impact the move realises.  This is the
     #   correct Kyle alignment and remains causal (at trade ``t`` both the
     #   previous trade's size and the current mid are known; no lookahead,
     #   Inv-6 holds).
+    #
+    # * ``"legacy"`` (sensor_version 1.2.0, opt-in only): ``Δp`` over the
+    #   interval ``[t-1, t)`` is paired with the *current* trade's signed size
+    #   ``Δq_t``.  This regresses *past* mid drift on *current* flow — closer to
+    #   a flow-autocorrelation statistic than Kyle's contemporaneous impact λ,
+    #   and wrong-signed at the KYLE horizons.  Preserved byte-identically for
+    #   the locked 1.2.0 golden vector; do not use in new configs.
     _VALID_ALIGNMENTS = ("legacy", "causal")
 
     def __init__(
@@ -71,7 +79,7 @@ class KyleLambda60sSensor:
         sensor_version: str | None = None,
         window_seconds: int = 60,
         min_samples: int = 30,
-        alignment: str = "legacy",
+        alignment: str = "causal",
     ) -> None:
         if window_seconds <= 0:
             raise ValueError(f"window_seconds must be > 0, got {window_seconds}")

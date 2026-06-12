@@ -99,6 +99,12 @@ class LiquidityStressScoreSensor:
       larger = less sensitive (more sigma needed for a given score).
     - ``min_std`` (float, default 1e-9): floor on a baseline std below
       which that axis contributes no z (degenerate constant book).
+    - ``max_gap_seconds`` (int | None, default None): audit P1-E event-time
+      staleness reset.  Both baselines are **count** windows that cannot
+      un-warm on their own; when set, an inter-quote gap longer than
+      ``max_gap_seconds`` (e.g. a halt) flushes both axes so the post-gap
+      score is built against post-gap data and the sensor reverts to cold.
+      ``None`` (default) preserves the exact legacy behaviour.
     """
 
     sensor_id: str = "liquidity_stress_score"
@@ -113,6 +119,7 @@ class LiquidityStressScoreSensor:
         warm_after: int | None = None,
         sensitivity: float = 2.0,
         min_std: float = 1e-9,
+        max_gap_seconds: int | None = None,
     ) -> None:
         if window < 2:
             raise ValueError(f"window must be >= 2, got {window}")
@@ -120,6 +127,8 @@ class LiquidityStressScoreSensor:
             raise ValueError(f"sensitivity must be > 0, got {sensitivity}")
         if min_std <= 0.0:
             raise ValueError(f"min_std must be > 0, got {min_std}")
+        if max_gap_seconds is not None and max_gap_seconds <= 0:
+            raise ValueError(f"max_gap_seconds must be > 0 or None, got {max_gap_seconds}")
         if sensor_id is not None:
             self.sensor_id = sensor_id
         if sensor_version is not None:
@@ -128,6 +137,7 @@ class LiquidityStressScoreSensor:
         self._warm_after = window if warm_after is None else warm_after
         self._sensitivity = float(sensitivity)
         self._min_std = min_std
+        self._max_gap_ns = None if max_gap_seconds is None else max_gap_seconds * 1_000_000_000
 
     def initial_state(self) -> dict[str, Any]:
         return {
@@ -139,6 +149,7 @@ class LiquidityStressScoreSensor:
             "depth_n": 0,
             "depth_mean": 0.0,
             "depth_M2": 0.0,
+            "last_ts_ns": None,  # event-time of the previous accepted quote (P1-E)
         }
 
     def update(
@@ -156,6 +167,23 @@ class LiquidityStressScoreSensor:
         # poison the rolling baselines; drop it.
         if bid <= 0.0 or ask <= 0.0:
             return None
+
+        # Audit P1-E: flush both count windows after a long event-time gap so
+        # the post-halt score is built against post-halt data.  Disabled when
+        # ``max_gap_seconds is None`` (legacy behaviour).
+        ts_ns = event.timestamp_ns
+        last_ts = state["last_ts_ns"]
+        if (
+            self._max_gap_ns is not None
+            and last_ts is not None
+            and (ts_ns - last_ts) > self._max_gap_ns
+        ):
+            for prefix in ("spread_", "depth_"):
+                state[prefix + "buf"].clear()
+                state[prefix + "n"] = 0
+                state[prefix + "mean"] = 0.0
+                state[prefix + "M2"] = 0.0
+        state["last_ts_ns"] = ts_ns
 
         spread = ask - bid
         depth = float(event.bid_size + event.ask_size)

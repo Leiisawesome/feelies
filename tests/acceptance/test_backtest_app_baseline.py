@@ -57,8 +57,12 @@ _BASELINE_CONFIG = Path("configs/backtest_app.yaml")
 # Net P&L + fill count.  To re-pin a full literal, run against the cache:
 #   uv run python scripts/run_backtest.py --config configs/backtest_app.yaml \
 #       --symbol APP --date 2026-03-26
+# Re-baked after audit P0/P1: the reference alpha now depends on the new
+# ``book_imbalance`` sensor, and the count-window sensors (spread_z_30d,
+# liquidity_stress_score) gained ``max_gap_seconds`` (P1-E) — all shift the
+# resolved config-contract snapshot.
 _BASELINE_CONFIG_HASH = (
-    "bdd42402c9c997a24e9ae195c48330ccb8db57d8e917fb1bdd2cb05922b728e4"
+    "4d68389ed667b6b424bd7558b7a1c066122b2de4ae841e9260178af531fd5f9e"
 )
 _BASELINE_NET_PNL = Decimal("15.07")
 _BASELINE_FILL_COUNT = 6

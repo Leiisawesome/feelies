@@ -16,8 +16,10 @@ above.
 Outputs (length-4 tuple):
 
     SensorReading.value = (
-        intensity_buy,         # λ_buy(t)  per second
-        intensity_sell,        # λ_sell(t) per second
+        intensity_buy,         # λ_buy(t)  — impulse-EWMA intensity in ARBITRARY
+                               # units (impulse α decayed at rate β); NOT
+                               # normalised to events/second (audit P2-1)
+        intensity_sell,        # λ_sell(t) — same units as λ_buy
         intensity_ratio,       # ∈ [0.5, 1]; defaults to 0.5 when both sides
                                # are below ε (no information state)
         impulse_decay_ratio,   # configured α / β (NOT a runtime estimate and

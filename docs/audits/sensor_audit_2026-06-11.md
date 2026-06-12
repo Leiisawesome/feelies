@@ -639,4 +639,81 @@ thinner mid-cap to expose sparsity effects; ≥20 RTH sessions.
 
 ---
 
-*End of audit. No production code was modified in this pass.*
+## 9. Remediation status (2026-06-11 follow-up pass)
+
+The backlog above was subsequently implemented. Status of every item:
+
+### P0 — done
+
+- **P0-1 (done).** `KyleLambda60sSensor` class default flipped to
+  `alignment="causal"` / version `2.0.0` (`sensors/impl/kyle_lambda_60s.py`);
+  the wrong-sign `legacy`/`1.2.0` estimator is now opt-in only. Test fixtures
+  that relied on the old default updated (`tests/_fixtures/sensor_specs.py`,
+  `tests/integration/test_phase4_e2e.py`, `tests/sensors/fixtures/_generate.py`
+  pins the locked legacy vector explicitly).
+- **P0-2 (done).** Sign positive-control goldens added
+  (`tests/sensors/test_sensor_sign_goldens.py`) for ofi, kyle (causal),
+  inventory_pressure, hawkes, book_imbalance.
+- **P0-3 (partial / documented).** Per-libm caveat documented in
+  `tests/determinism/parity_manifest.py`; intra-process reproducibility of the
+  `exp`/`log` sensors locked by
+  `tests/determinism/test_transcendental_determinism.py`. **Deferred:** pinning
+  the libm/host fingerprint into parity-hash *provenance* (cross-cutting
+  plumbing owned by the data-ingestion / determinism harness) and the full
+  cross-host ulp bound.
+
+### P1 — done
+
+- **P1-A (done).** `ofi_ewma_integrated` (`reducer="sum"`) feature wired
+  (`bootstrap.py`).
+- **P1-B / P1-C (done).** New `book_imbalance` sensor
+  (`sensors/impl/book_imbalance.py`, registered in `platform.yaml`) — the
+  signed top-of-book size imbalance that *is* the Stoikov footprint
+  (`(micro−mid)/spread = book_imbalance/2`). The reference alpha
+  `sig_benign_midcap_v1` now confirms with `book_imbalance` instead of the
+  momentum-laden `micro_price_zscore`.
+- **P1-D (done).** `SensorSpec.__post_init__` now warns on the
+  `throttled_ms`-without-`stateful` footgun
+  (`tests/sensors/test_spec_throttle_guard.py`).
+- **P1-E (done).** Opt-in `max_gap_seconds` event-time reset added to
+  `spread_z_30d` and `liquidity_stress_score`; enabled at 300 s in
+  `platform.yaml`. Default `None` preserves the locked golden vectors.
+- **P1-F (done).** `inventory_pressure` restricted to last-of-horizon at h=30.
+- **P1-G (done).** `quote_hazard_rate` gained a regime-relative windowed z.
+- **P1-H (done).** No-cross-feature-fusion / collinearity contract documented in
+  the `HorizonAggregator` module docstring.
+
+### P2 — mixed
+
+- **P2-1 (done, option a).** Hawkes λ outputs relabeled as impulse-EWMA units
+  (dropped the misleading "per second").
+- **P2-5 (done).** Realized-vol aggregation IC evidence promoted to
+  `docs/research/realized_vol_aggregation_ic.md`.
+- **P2-2 (deferred).** Cross-sensor Page-Hinkley over `hawkes_intensity`
+  requires the registry to route `SensorReading` to downstream sensors — a
+  v0.4 hot-path change with its own determinism surface; out of scope for this
+  pass. `structural_break_score` remains dormant.
+- **P2-3 (deferred — out of L1 scope).** Cross-sectional standardization is a
+  Layer-3 (composition) concern by platform invariant; not implemented here.
+- **P2-4 (deferred — data-dependent).** Data-driven α/β/half-life calibration
+  needs cached-data IC runs (no dataset in this environment); tracked in §8.
+
+### Known follow-up requiring the APP dataset
+
+Re-pointing `sig_benign_midcap_v1` to `book_imbalance` changes its signals on
+the APP tape, so the **data-gated** baselines in
+`tests/acceptance/test_backtest_app_baseline.py` (`_BASELINE_NET_PNL`,
+`_BASELINE_FILL_COUNT`, and the combined parity hash) must be re-baked on a host
+with the APP dataset. The **dataset-free** config-contract hash in that file was
+re-baked in this pass; the PnL/fill baselines were not (no dataset available).
+
+### Verification
+
+`tests/sensors/`, `tests/features/`, `tests/determinism/`, `tests/alpha/`,
+`tests/bootstrap/test_composition_wiring.py`,
+`tests/integration/test_phase4_e2e.py`, and the active-aggregator acceptance
+test pass. Pre-existing environment failures unrelated to this work
+(`tests/ingestion/test_massive_ingestor.py` mocked-REST cases,
+`tests/acceptance/test_mypy_strict_scope.py`) are unchanged.
+
+*End of audit.*

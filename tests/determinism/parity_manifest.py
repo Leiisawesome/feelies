@@ -9,6 +9,21 @@ Each entry maps a stable name to ``(hash_hex, event_count)`` pinned in
 
 The manifest is checked by :mod:`tests.determinism.test_parity_manifest`
 so drift between modules is caught in CI.
+
+Cross-libm caveat (audit P0-3)
+------------------------------
+These hashes guarantee bit-identical replay on a **fixed (platform, libm)
+pair**, not universally.  Sensors that call ``math.exp`` / ``math.log``
+(``hawkes_intensity``, ``realized_vol_30s``, ``snr_drift_diffusion``,
+``structural_break_score``, ``liquidity_stress_score``) depend on the C math
+library's rounding of those transcendental functions, which is not guaranteed
+correctly-rounded across libm versions — so a hash computed on one host may
+differ in the last bit on another.  Intra-process reproducibility (the part
+that *is* guaranteed) is locked by
+:mod:`tests.determinism.test_transcendental_determinism`.  FOLLOW-UP: record
+the libm / host fingerprint alongside each parity hash so a cross-host
+mismatch is attributable rather than mysterious (provenance plumbing owned by
+the data-ingestion / determinism harness).
 """
 
 from __future__ import annotations

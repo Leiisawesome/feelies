@@ -53,6 +53,21 @@ Architectural decisions (plan §4.3):
     when the timestamp is monotonically newer.  Cold readings do not
     refresh the sensor (features ignore them), and out-of-order late
     arrivals cannot regress freshness.
+
+9.  **No cross-feature fusion — sign reconciliation is the caller's job
+    (audit P1-H).**  The snapshot is a flat ``{feature_id: value}`` map;
+    the aggregator performs **no** orthogonalization, decorrelation, or
+    sign reconciliation across features.  Two features can carry opposite
+    implications for the same forward return — e.g. ``ofi_ewma`` /
+    ``ofi_ewma_integrated`` are *momentum* (positive ⇒ continuation) while
+    ``inventory_pressure`` is *mean-reverting* (positive ⇒ up-revert of the
+    move that loaded it) — and several KYLE features are collinear
+    (``micro_price_zscore`` and integrated OFI are both largely
+    price-momentum).  A Layer-2 alpha that consumes more than one mechanism
+    family MUST resolve the sign conflict and the collinearity itself; the
+    aggregator will not do it.  Cross-sectional standardization (z within
+    the universe at the boundary) is likewise out of scope here — it is a
+    Layer-3 (composition) concern (see the composition-layer skill).
 """
 
 from __future__ import annotations
