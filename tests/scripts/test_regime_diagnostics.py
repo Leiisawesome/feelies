@@ -125,12 +125,15 @@ def _view(mod, *, normal, comp, vb, entropy=0.3):
 
 
 def test_latch_simulation_catches_aggressive_off_condition(mod) -> None:
-    """The latch ON-fraction (not the instantaneous prune table) is what an
-    aggressive off_condition collapses — the APP regression mechanism.
+    """The latch ON-fraction detects off-condition-driven latch collapse that
+    the instantaneous prune table misses.
 
-    Alternating normal-dominant and vol-elevated boundaries: a lenient off
-    keeps the latch ON across the vol excursions; a `P(vol_breakout) > 0.40`
-    off knocks it OFF every other boundary.
+    NOTE: this is a *general* property of the metric, not the APP regression
+    mechanism — on APP the regime-isolated latch retained 97% of baseline
+    ON-time, so the real cause is regime×sensor coupling, not the regime terms
+    alone (audit 2026-06-13 §2.5).  Here, with regime terms constructed to
+    differ, a lenient off keeps the latch ON across vol excursions while a
+    `P(vol_breakout) > 0.40` off knocks it OFF every other boundary.
     """
     views = []
     for _ in range(50):
