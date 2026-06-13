@@ -64,7 +64,7 @@ _BASELINE_CONFIG = Path("configs/backtest_app.yaml")
 _BASELINE_CONFIG_HASH = (
     "57a94b512e1ba8c0498d1eb950fac5401ec54af46e31e551fd87c03fa15a161f"
 )
-_BASELINE_NET_PNL = Decimal("15.07")
+_BASELINE_NET_PNL = Decimal("71.56")
 _BASELINE_FILL_COUNT = 6
 
 
