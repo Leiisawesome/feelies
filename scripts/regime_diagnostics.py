@@ -238,11 +238,13 @@ def compute_diagnostics(
     )
     n = 0
     pass_pnorm = pass_pnorm_vol = pass_pnorm_vol_ent = 0
-    # Per-quote (timestamp, posterior, entropy) samples are retained so the
-    # boundary-view pass below can latch the most-recent posterior at each
-    # bin crossing — production ``HorizonSignalEngine`` evaluates the gate
-    # against the cached regime, which the engine only updates on quotes.
-    quote_samples: list[tuple[int, tuple[float, ...], float]] = []
+    # Per-quote (timestamp, symbol, posterior, entropy) samples are retained
+    # so the boundary-view pass below can latch the most-recent posterior at
+    # each bin crossing — production ``HorizonSignalEngine`` evaluates the
+    # gate against the cached regime *per symbol*, and ``RegimeEngine``
+    # advances each symbol's posterior independently, so latching must be
+    # keyed by symbol when quotes from multiple symbols are interleaved.
+    quote_samples: list[tuple[int, str, tuple[float, ...], float]] = []
     for q in quotes:
         p = engine.posterior(q)
         n += 1
@@ -259,7 +261,7 @@ def compute_diagnostics(
                 pass_pnorm_vol += 1
                 if e <= 0.95:
                     pass_pnorm_vol_ent += 1
-        quote_samples.append((q.timestamp_ns, tuple(p), e))
+        quote_samples.append((q.timestamp_ns, q.symbol, tuple(p), e))
 
     # Sample one regime view per horizon-width window at the production
     # ``HorizonScheduler`` cadence: a tick is emitted on the first event of
@@ -275,36 +277,50 @@ def compute_diagnostics(
         if boundary_event_timestamps_ns is not None:
             boundary_ts_seq: Sequence[int] = boundary_event_timestamps_ns
         else:
-            boundary_ts_seq = [ts for ts, _p, _e in quote_samples]
+            boundary_ts_seq = [ts for ts, _sym, _p, _e in quote_samples]
         cal = bool(getattr(engine, "calibrated", False))
+        # Group quote samples per symbol; production ``HorizonSignalEngine``
+        # caches regime under ``(symbol, engine_name)`` and evaluates the
+        # gate per symbol at each tick, so a boundary view for symbol A must
+        # read A's most-recent posterior — never whichever symbol happens to
+        # have quoted last on a merged multi-symbol stream.
+        samples_by_sym: dict[str, list[tuple[int, tuple[float, ...], float]]] = {}
+        for ts_q, sym, p_q, e_q in quote_samples:
+            samples_by_sym.setdefault(sym, []).append((ts_q, p_q, e_q))
+        qi_by_sym: dict[str, int] = {sym: -1 for sym in samples_by_sym}
+        sorted_syms = sorted(samples_by_sym)
         cur_bin = -1
-        qi = -1  # latched-quote index: most recent quote with ts ≤ event ts
-        n_obs = len(quote_samples)
         for ts in boundary_ts_seq:
             if ts < t0_ns:
                 continue
             b = (ts - t0_ns) // horizon_ns
             if b == cur_bin:
                 continue
-            while qi + 1 < n_obs and quote_samples[qi + 1][0] <= ts:
-                qi += 1
-            if qi < 0:
-                # Boundary crossed before the first quote arrived; no
-                # posterior is latched yet (production's cached regime is
-                # absent here too), so skip rather than fabricate one.
-                continue
             cur_bin = b
-            _ts_q, p_t, e_t = quote_samples[qi]
-            dom = max(range(len(p_t)), key=lambda i: p_t[i])
-            boundary_views.append(
-                _RegimeView(
-                    state_names=names,
-                    posteriors=p_t,
-                    dominant_name=names[dom],
-                    posterior_entropy_nats=e_t,
-                    calibrated=cal,
+            for sym in sorted_syms:
+                sym_samples = samples_by_sym[sym]
+                qi = qi_by_sym[sym]
+                n_obs = len(sym_samples)
+                while qi + 1 < n_obs and sym_samples[qi + 1][0] <= ts:
+                    qi += 1
+                qi_by_sym[sym] = qi
+                if qi < 0:
+                    # Boundary crossed before this symbol's first quote; no
+                    # posterior is latched yet (production's cached regime
+                    # is absent here too), so skip rather than fabricate
+                    # one.  Other symbols may still emit a view for this bin.
+                    continue
+                _ts_q, p_t, e_t = sym_samples[qi]
+                dom = max(range(len(p_t)), key=lambda i: p_t[i])
+                boundary_views.append(
+                    _RegimeView(
+                        state_names=names,
+                        posteriors=p_t,
+                        dominant_name=names[dom],
+                        posterior_entropy_nats=e_t,
+                        calibrated=cal,
+                    )
                 )
-            )
 
     emis = getattr(engine, "_emission", tuple((0.0, 1.0) for _ in names))
     mu = tuple(float(m) for m, _ in emis)
