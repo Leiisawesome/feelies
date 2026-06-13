@@ -57,7 +57,7 @@ import sys
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Iterable, Mapping, Sequence
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT / "src"))
@@ -204,6 +204,7 @@ def compute_diagnostics(
     calibration_max_quotes: int | None,
     horizon_seconds: int,
     vol_bound: float,
+    boundary_anchor_ns: int | None = None,
 ) -> RegimeDiagnostics:
     """Calibrate (causal prefix), run posteriors, and summarise discriminability."""
     quotes = sorted(quotes, key=lambda q: (q.timestamp_ns, q.sequence))
@@ -224,7 +225,17 @@ def compute_diagnostics(
     fwd_series: list[float | None] = []
     boundary_views: list[_RegimeView] = []
     horizon_ns = horizon_seconds * _NS_PER_SECOND
-    t0_ns = quotes[0].timestamp_ns if quotes else 0
+    # Anchor to the *first event* of the prepared replay (mirrors
+    # ``HorizonScheduler.session_open_ns``, which ``backtest_runner`` derives
+    # from ``prepare_backtest_event_log.first_event_ts_ns`` — the first kept
+    # event of any type, possibly a trade).  Falling back to the first quote
+    # would misalign the latch bins with the production cadence when the first
+    # RTH event is not an NBBO.
+    t0_ns = (
+        boundary_anchor_ns
+        if boundary_anchor_ns is not None
+        else (quotes[0].timestamp_ns if quotes else 0)
+    )
     cur_bin = -1
     n = 0
     pass_pnorm = pass_pnorm_vol = pass_pnorm_vol_ent = 0
@@ -300,6 +311,8 @@ def simulate_latch_on_fraction(
     views: Sequence["_RegimeView"],
     on_condition: str,
     off_condition: str,
+    *,
+    hysteresis: Mapping[str, float] | None = None,
 ) -> tuple[float, int]:
     """Fraction of horizon boundaries the hysteresis latch holds ON.
 
@@ -312,12 +325,23 @@ def simulate_latch_on_fraction(
 
     Sensor identifiers in the conditions are bound to **neutral** values (0.0 /
     z=0 / pct=0.5) so the regime terms are isolated: the result is the
-    *regime-driven* ON-fraction, comparable old-vs-new.  Returns
-    ``(on_fraction, n_boundaries)``.
+    *regime-driven* ON-fraction, comparable old-vs-new.  Hysteresis margin
+    identifiers (e.g. ``posterior_margin``) must be supplied via *hysteresis*
+    so that off-clauses like ``P(normal) < 0.5 - posterior_margin`` evaluate at
+    the YAML-declared values rather than collapsing to ``0.0`` and diverging
+    from production gate behaviour.  Returns ``(on_fraction, n_boundaries)``.
     """
     from feelies.signals.regime_gate import Bindings, RegimeGate
 
-    gate = RegimeGate(alpha_id="_diag", on_condition=on_condition, off_condition=off_condition)
+    gate = RegimeGate(
+        alpha_id="_diag",
+        on_condition=on_condition,
+        off_condition=off_condition,
+        hysteresis=hysteresis,
+    )
+    # ``binding_identifier_names`` already excludes hysteresis keys, so the
+    # neutral 0.0 / z=0 / pct=0.5 fill below never shadows declared margins —
+    # ``RegimeGate.evaluate`` will overlay the margin values on top.
     referenced = gate.binding_identifier_names()
     sensor_values = {name: 0.0 for name in referenced if not name.endswith(("_zscore", "_percentile"))}
     zscores = {name[: -len("_zscore")]: 0.0 for name in referenced if name.endswith("_zscore")}
@@ -415,14 +439,21 @@ def _load_quotes_from_cache(
     symbols: list[str],
     dates: list[str],
     cache_dir: Path | None,
-) -> tuple[list[NBBOQuote], int | None]:
-    """Return (quotes, calibration_max_quotes). Engine is built via _build_engine.
+) -> tuple[list[NBBOQuote], int | None, int | None]:
+    """Return (quotes, calibration_max_quotes, first_event_ts_ns).
 
-    Mirrors a real backtest: applies ``prepare_backtest_event_log`` so the
-    ``session_kind`` filter (default RTH) and the calibration-prefix selection
-    match what ``run_backtest`` / ``export_full_trade_list`` feed the
-    orchestrator. Without this, cache-mode diagnostics would calibrate and
-    score on a quote universe that diverges from the production replay.
+    Engine is built via :func:`_build_engine`.  Mirrors a real backtest:
+    applies ``prepare_backtest_event_log`` so the ``session_kind`` filter
+    (default RTH) and the calibration-prefix selection match what
+    ``run_backtest`` / ``export_full_trade_list`` feed the orchestrator.
+    Without this, cache-mode diagnostics would calibrate and score on a
+    quote universe that diverges from the production replay.
+
+    ``first_event_ts_ns`` is the timestamp of the *first kept event of any
+    type* (possibly a Trade), exactly what ``backtest_runner`` uses to
+    seed ``PlatformConfig.session_open_ns``; threading it through to
+    :func:`compute_diagnostics` keeps boundary indices aligned with
+    ``HorizonScheduler``.
     """
     from feelies.core.platform_config import PlatformConfig
     from feelies.harness.backtest_prep import prepare_backtest_event_log
@@ -440,13 +471,37 @@ def _load_quotes_from_cache(
     )
     prep = prepare_backtest_event_log(config, event_log)
     quotes = [e for e in prep.event_log.replay() if isinstance(e, NBBOQuote)]
-    return quotes, cal_max
+    return quotes, cal_max, prep.first_event_ts_ns
 
 
 def _parse_multi(values: list[str]) -> list[str]:
     out: list[str] = []
     for v in values:
         out.extend(p.strip() for p in v.split(",") if p.strip())
+    return out
+
+
+def _parse_hysteresis(raw: str | None) -> dict[str, float] | None:
+    """Parse a ``key=value,key=value`` CLI string into a margin mapping.
+
+    Mirrors the ``regime_gate.hysteresis:`` YAML block so callers can pass
+    e.g. ``--baseline-hysteresis posterior_margin=0.20,percentile_margin=0.30``
+    and have the simulator evaluate off-clauses like
+    ``P(normal) < 0.5 - posterior_margin`` against the production values.
+    """
+    if raw is None:
+        return None
+    out: dict[str, float] = {}
+    for chunk in raw.split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        if "=" not in chunk:
+            raise SystemExit(
+                f"--*-hysteresis entry {chunk!r} must be key=value (e.g. posterior_margin=0.20)"
+            )
+        key, value = chunk.split("=", 1)
+        out[key.strip()] = float(value.strip())
     return out
 
 
@@ -479,10 +534,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     # vs a candidate gate at horizon cadence, regime terms isolated.
     ap.add_argument("--baseline-on", default=None, help="baseline on_condition (regime terms)")
     ap.add_argument("--baseline-off", default=None, help="baseline off_condition")
+    ap.add_argument(
+        "--baseline-hysteresis",
+        default=None,
+        help="baseline hysteresis margins (k=v,k=v; e.g. posterior_margin=0.20)",
+    )
     ap.add_argument("--candidate-on", default=None, help="candidate on_condition")
     ap.add_argument("--candidate-off", default=None, help="candidate off_condition")
+    ap.add_argument(
+        "--candidate-hysteresis",
+        default=None,
+        help="candidate hysteresis margins (k=v,k=v)",
+    )
     args = ap.parse_args(argv)
 
+    boundary_anchor_ns: int | None = None
     if args.event_log is not None:
         quotes = _load_quotes_from_jsonl(args.event_log)
         engine = _build_engine(args.config)
@@ -499,7 +565,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 2
-        quotes, cal_max = _load_quotes_from_cache(
+        quotes, cal_max, boundary_anchor_ns = _load_quotes_from_cache(
             args.config, symbols, dates, args.cache_dir
         )
         engine = _build_engine(args.config)
@@ -517,24 +583,34 @@ def main(argv: Sequence[str] | None = None) -> int:
         calibration_max_quotes=cal_max,
         horizon_seconds=args.horizon,
         vol_bound=args.vol_bound,
+        boundary_anchor_ns=boundary_anchor_ns,
     )
     print(format_report(diag, label=label))
 
     # Optional latch comparison — the metric that predicts signal-count impact.
-    pairs: list[tuple[str, str, str]] = []
+    baseline_hyst = _parse_hysteresis(args.baseline_hysteresis)
+    candidate_hyst = _parse_hysteresis(args.candidate_hysteresis)
+    pairs: list[tuple[str, str, str, Mapping[str, float] | None]] = []
     if args.baseline_on and args.baseline_off:
-        pairs.append(("baseline", args.baseline_on, args.baseline_off))
+        pairs.append(("baseline", args.baseline_on, args.baseline_off, baseline_hyst))
     if args.candidate_on and args.candidate_off:
-        pairs.append(("candidate", args.candidate_on, args.candidate_off))
+        pairs.append(("candidate", args.candidate_on, args.candidate_off, candidate_hyst))
     if pairs:
         print("\n== Latched ON-fraction at horizon cadence (regime terms isolated) ==")
         results: dict[str, float] = {}
-        for name, on, off in pairs:
-            frac, nb = simulate_latch_on_fraction(diag.boundary_views, on, off)
+        for name, on, off, hyst in pairs:
+            frac, nb = simulate_latch_on_fraction(
+                diag.boundary_views, on, off, hysteresis=hyst
+            )
             results[name] = frac
             print(f"  {name:<10} ON {frac:.2%} of {nb} boundaries")
             print(f"             on:  {on.strip()}")
             print(f"             off: {off.strip()}")
+            if hyst:
+                print(
+                    "             hysteresis: "
+                    + ", ".join(f"{k}={v}" for k, v in hyst.items())
+                )
         if "baseline" in results and "candidate" in results and results["baseline"] > 0:
             ratio = results["candidate"] / results["baseline"]
             print(
