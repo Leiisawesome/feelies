@@ -205,6 +205,7 @@ def compute_diagnostics(
     horizon_seconds: int,
     vol_bound: float,
     boundary_anchor_ns: int | None = None,
+    boundary_event_timestamps_ns: Sequence[int] | None = None,
 ) -> RegimeDiagnostics:
     """Calibrate (causal prefix), run posteriors, and summarise discriminability."""
     quotes = sorted(quotes, key=lambda q: (q.timestamp_ns, q.sequence))
@@ -223,7 +224,6 @@ def compute_diagnostics(
     ents: list[float] = []
     pvb_series: list[float] = []
     fwd_series: list[float | None] = []
-    boundary_views: list[_RegimeView] = []
     horizon_ns = horizon_seconds * _NS_PER_SECOND
     # Anchor to the *first event* of the prepared replay (mirrors
     # ``HorizonScheduler.session_open_ns``, which ``backtest_runner`` derives
@@ -236,9 +236,13 @@ def compute_diagnostics(
         if boundary_anchor_ns is not None
         else (quotes[0].timestamp_ns if quotes else 0)
     )
-    cur_bin = -1
     n = 0
     pass_pnorm = pass_pnorm_vol = pass_pnorm_vol_ent = 0
+    # Per-quote (timestamp, posterior, entropy) samples are retained so the
+    # boundary-view pass below can latch the most-recent posterior at each
+    # bin crossing — production ``HorizonSignalEngine`` evaluates the gate
+    # against the cached regime, which the engine only updates on quotes.
+    quote_samples: list[tuple[int, tuple[float, ...], float]] = []
     for q in quotes:
         p = engine.posterior(q)
         n += 1
@@ -255,23 +259,52 @@ def compute_diagnostics(
                 pass_pnorm_vol += 1
                 if e <= 0.95:
                     pass_pnorm_vol_ent += 1
-        # Sample one regime view per horizon-width window (production gate
-        # cadence) so the latch simulation evaluates at boundary frequency,
-        # not per tick.
-        if horizon_ns > 0:
-            b = (q.timestamp_ns - t0_ns) // horizon_ns
-            if b != cur_bin:
-                cur_bin = b
-                dom = max(range(len(p)), key=lambda i: p[i])
-                boundary_views.append(
-                    _RegimeView(
-                        state_names=names,
-                        posteriors=tuple(p),
-                        dominant_name=names[dom],
-                        posterior_entropy_nats=e,
-                        calibrated=bool(getattr(engine, "calibrated", False)),
-                    )
+        quote_samples.append((q.timestamp_ns, tuple(p), e))
+
+    # Sample one regime view per horizon-width window at the production
+    # ``HorizonScheduler`` cadence: a tick is emitted on the first event of
+    # *any* type that crosses a new bin (trades and metrics included), and
+    # the gate evaluates against the *latched* posterior at that moment —
+    # i.e. the most recent quote's posterior, since ``RegimeEngine`` only
+    # updates on quotes.  When the caller supplies the full event-timestamp
+    # stream we mirror that exactly; otherwise we fall back to quote
+    # timestamps (correct only when no non-quote event ever leads a bin —
+    # the JSONL/no-cache case where only quotes are loaded).
+    boundary_views: list[_RegimeView] = []
+    if horizon_ns > 0 and quote_samples:
+        if boundary_event_timestamps_ns is not None:
+            boundary_ts_seq: Sequence[int] = boundary_event_timestamps_ns
+        else:
+            boundary_ts_seq = [ts for ts, _p, _e in quote_samples]
+        cal = bool(getattr(engine, "calibrated", False))
+        cur_bin = -1
+        qi = -1  # latched-quote index: most recent quote with ts ≤ event ts
+        n_obs = len(quote_samples)
+        for ts in boundary_ts_seq:
+            if ts < t0_ns:
+                continue
+            b = (ts - t0_ns) // horizon_ns
+            if b == cur_bin:
+                continue
+            while qi + 1 < n_obs and quote_samples[qi + 1][0] <= ts:
+                qi += 1
+            if qi < 0:
+                # Boundary crossed before the first quote arrived; no
+                # posterior is latched yet (production's cached regime is
+                # absent here too), so skip rather than fabricate one.
+                continue
+            cur_bin = b
+            _ts_q, p_t, e_t = quote_samples[qi]
+            dom = max(range(len(p_t)), key=lambda i: p_t[i])
+            boundary_views.append(
+                _RegimeView(
+                    state_names=names,
+                    posteriors=p_t,
+                    dominant_name=names[dom],
+                    posterior_entropy_nats=e_t,
+                    calibrated=cal,
                 )
+            )
 
     emis = getattr(engine, "_emission", tuple((0.0, 1.0) for _ in names))
     mu = tuple(float(m) for m, _ in emis)
@@ -434,13 +467,36 @@ def _load_quotes_from_jsonl(path: Path) -> list[NBBOQuote]:
     return quotes
 
 
+def _load_event_timestamps_from_jsonl(path: Path) -> list[int]:
+    """Timestamps of *all* events in a JSONL log, sorted ascending.
+
+    Production ``HorizonScheduler`` boundary detection runs over every
+    kept event regardless of kind; we mirror that here so trades and
+    other non-quote events can lead a bin, matching production's
+    boundary-tick emission cadence.
+    """
+    ts: list[int] = []
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            d = json.loads(line)
+            try:
+                ts.append(int(d["timestamp_ns"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+    ts.sort()
+    return ts
+
+
 def _load_quotes_from_cache(
     config_path: Path,
     symbols: list[str],
     dates: list[str],
     cache_dir: Path | None,
-) -> tuple[list[NBBOQuote], int | None, int | None]:
-    """Return (quotes, calibration_max_quotes, first_event_ts_ns).
+) -> tuple[list[NBBOQuote], int | None, int | None, list[int]]:
+    """Return (quotes, calibration_max_quotes, first_event_ts_ns, all_event_ts_ns).
 
     Engine is built via :func:`_build_engine`.  Mirrors a real backtest:
     applies ``prepare_backtest_event_log`` so the ``session_kind`` filter
@@ -454,6 +510,11 @@ def _load_quotes_from_cache(
     seed ``PlatformConfig.session_open_ns``; threading it through to
     :func:`compute_diagnostics` keeps boundary indices aligned with
     ``HorizonScheduler``.
+
+    ``all_event_ts_ns`` is the sorted ascending timestamp stream of *every*
+    kept event (quotes + trades + …) so the boundary-view sampler can
+    mirror ``HorizonScheduler``'s cross-kind tick cadence — production
+    emits a tick on the first event of *any* type to cross a bin.
     """
     from feelies.core.platform_config import PlatformConfig
     from feelies.harness.backtest_prep import prepare_backtest_event_log
@@ -470,8 +531,14 @@ def _load_quotes_from_cache(
         symbols, sorted_dates[0], sorted_dates[-1], cache_dir=cache_dir
     )
     prep = prepare_backtest_event_log(config, event_log)
-    quotes = [e for e in prep.event_log.replay() if isinstance(e, NBBOQuote)]
-    return quotes, cal_max, prep.first_event_ts_ns
+    quotes: list[NBBOQuote] = []
+    all_event_ts: list[int] = []
+    for ev in prep.event_log.replay():
+        all_event_ts.append(ev.timestamp_ns)
+        if isinstance(ev, NBBOQuote):
+            quotes.append(ev)
+    all_event_ts.sort()
+    return quotes, cal_max, prep.first_event_ts_ns, all_event_ts
 
 
 def _parse_multi(values: list[str]) -> list[str]:
@@ -549,8 +616,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     boundary_anchor_ns: int | None = None
+    boundary_event_ts: list[int] | None = None
     if args.event_log is not None:
         quotes = _load_quotes_from_jsonl(args.event_log)
+        boundary_event_ts = _load_event_timestamps_from_jsonl(args.event_log)
         engine = _build_engine(args.config)
         cal_max = args.calibration_max_quotes or len(quotes)
         label = str(args.event_log)
@@ -565,7 +634,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 2
-        quotes, cal_max, boundary_anchor_ns = _load_quotes_from_cache(
+        quotes, cal_max, boundary_anchor_ns, boundary_event_ts = _load_quotes_from_cache(
             args.config, symbols, dates, args.cache_dir
         )
         engine = _build_engine(args.config)
@@ -584,6 +653,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         horizon_seconds=args.horizon,
         vol_bound=args.vol_bound,
         boundary_anchor_ns=boundary_anchor_ns,
+        boundary_event_timestamps_ns=boundary_event_ts,
     )
     print(format_report(diag, label=label))
 
