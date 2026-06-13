@@ -40,6 +40,7 @@ class _FakeRegime:
     dominant_name: str
     posterior_entropy_nats: float = 0.0
     calibrated: bool = True
+    discriminability: float = float("inf")
 
 
 def _bindings(
@@ -48,12 +49,14 @@ def _bindings(
     sensor_values: dict[str, float] | None = None,
     percentiles: dict[str, float] | None = None,
     zscores: dict[str, float] | None = None,
+    min_discriminability: float = 0.0,
 ) -> Bindings:
     return Bindings(
         regime=regime,
         sensor_values=sensor_values or {},
         percentiles=percentiles or {},
         zscores=zscores or {},
+        min_discriminability=min_discriminability,
     )
 
 
@@ -501,3 +504,58 @@ def test_percentile_literal_p100_resolves() -> None:
 def test_percentile_literal_out_of_range_rejected() -> None:
     with pytest.raises(UnsafeExpressionError):
         evaluate(compile_expression("p101 > 0.5"), _bindings())
+
+
+# ── Audit R-1: indiscriminate regime fails P()/dominant/entropy safe ─────
+
+
+def _discr_regime(d: float) -> _FakeRegime:
+    return _FakeRegime(
+        state_names=("compression_clustering", "normal", "vol_breakout"),
+        posteriors=(0.34, 0.33, 0.33),
+        dominant_name="compression_clustering",
+        posterior_entropy_nats=1.09,
+        calibrated=True,
+        discriminability=d,
+    )
+
+
+def test_indiscriminate_regime_below_floor_unavailable() -> None:
+    """P()/dominant/entropy raise when discriminability < floor (audit R-1)."""
+    regime = _discr_regime(0.05)  # degenerate calibration
+    b = _bindings(regime=regime, min_discriminability=0.5)
+    for expr in ("P(normal) > 0.5", 'dominant == "normal"', "entropy < 1.0"):
+        with pytest.raises(UnknownIdentifierError, match="indiscriminate"):
+            evaluate(compile_expression(expr), b)
+
+
+def test_discriminative_regime_above_floor_resolves() -> None:
+    """A well-separated regime resolves normally even with the floor set."""
+    regime = _discr_regime(1.48)  # APP-like
+    b = _bindings(regime=regime, min_discriminability=0.5)
+    assert evaluate(compile_expression("P(compression_clustering) > 0.3"), b) is True
+    assert evaluate(compile_expression('dominant == "compression_clustering"'), b) is True
+
+
+def test_default_floor_zero_is_noop() -> None:
+    """Floor 0.0 (the default) never disables, even for d==0.0."""
+    regime = _discr_regime(0.0)
+    b = _bindings(regime=regime, min_discriminability=0.0)
+    assert evaluate(compile_expression("P(normal) >= 0.0"), b) is True
+
+
+def test_indiscriminate_still_surfaces_typo_as_unknown_state() -> None:
+    """A misspelled P(<name>) is UnknownRegimeStateError even below the floor."""
+    regime = _discr_regime(0.05)
+    b = _bindings(regime=regime, min_discriminability=0.5)
+    with pytest.raises(UnknownRegimeStateError):
+        evaluate(compile_expression("P(noraml) > 0.5"), b)
+
+
+def test_regime_free_gate_unaffected_by_floor() -> None:
+    """A gate that references no regime binding is never disabled by the floor
+    (the unusable-reason check is only reached via P()/dominant/entropy)."""
+    regime = _discr_regime(0.01)
+    b = _bindings(regime=regime, sensor_values={"spread_z_30d": 0.2}, min_discriminability=0.9)
+    # Pure sensor gate (cf. sig_moc_imbalance_v1) resolves regardless.
+    assert evaluate(compile_expression("spread_z_30d < 1.5"), b) is True

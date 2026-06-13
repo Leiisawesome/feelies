@@ -163,6 +163,15 @@ class RegimeState(Event):
       fail safe to OFF (audit P0-1, Inv-11).  Defaults to ``True`` so
       legacy producers — and the L6 parity hash, which does not serialize
       this field — are unaffected.
+      ``discriminability`` — the engine's calibration-time min pairwise
+      emission separation ``d`` (audit R-1).  Near ``0`` means the states
+      are statistically indistinguishable (degenerate calibration on a
+      tight/stable spread) so ``P(state)`` is noise; consumers fail
+      regime-gates safe to OFF when it is below a configured floor.
+      Orthogonal to ``calibrated`` (placeholder emissions score high here
+      but are caught by ``calibrated=False``).  Defaults to ``+inf`` so
+      legacy producers are always treated as fully discriminative, and the
+      L6 parity hash does not serialize it.
 
     When ``posteriors`` tie, producers pick the lowest ``dominant_state``
     index (deterministic replay).
@@ -178,6 +187,7 @@ class RegimeState(Event):
     stability: float = 1.0
     posterior_entropy_nats: float = 0.0
     calibrated: bool = True
+    discriminability: float = float("inf")
 
 
 # ── Signal Events ───────────────────────────────────────────────────────

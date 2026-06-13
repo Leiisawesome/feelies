@@ -556,3 +556,31 @@ class TestProtocolCompliance:
         assert isinstance(cfg.version, str)
         assert isinstance(cfg.symbols, frozenset)
         assert isinstance(cfg.snapshot(), ConfigSnapshot)
+
+
+# ── Audit R-1: regime_min_discriminability ───────────────────────────────
+
+
+def test_regime_min_discriminability_defaults_to_zero() -> None:
+    cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
+    assert cfg.regime_min_discriminability == 0.0
+
+
+def test_regime_min_discriminability_negative_rejected() -> None:
+    cfg = PlatformConfig(
+        symbols=frozenset({"AAPL"}),
+        alpha_specs=[Path("x.yaml")],
+        regime_min_discriminability=-0.1,
+    )
+    with pytest.raises(ConfigurationError, match="regime_min_discriminability must be >= 0.0"):
+        cfg.validate()
+
+
+def test_regime_min_discriminability_roundtrips_through_snapshot() -> None:
+    cfg = PlatformConfig(
+        symbols=frozenset({"AAPL"}),
+        alpha_specs=[Path("x.yaml")],
+        regime_min_discriminability=0.5,
+    )
+    # Behaviour-affecting field must be in the snapshot (replay provenance).
+    assert cfg.snapshot().data["regime_min_discriminability"] == 0.5
