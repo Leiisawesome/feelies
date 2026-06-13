@@ -142,14 +142,14 @@ signal: |
       str_cap = params["strength_cap"]
 
       z = snapshot.values.get("ofi_ewma_zscore")
-      # Audit P1-B: confirm with the signed top-of-book size imbalance
-      # (``book_imbalance`` ∈ [-1, 1]) rather than ``micro_price_zscore``.
-      # The latter z-scores the micro-price *level* (~$100), whose variance is
-      # dominated by price drift — the sub-cent Stoikov imbalance content is
-      # < 0.01% of it, so it confirmed momentum, not the L1 queue footprint.
-      # ``book_imbalance`` is exactly that footprint, level-invariant:
-      # positive ⇒ bid-heavy ⇒ upward micro-price pressure.
-      imb = snapshot.values.get("book_imbalance")
+      # Audit P1-B / 2P-3: confirm with the signed top-of-book size imbalance
+      # rather than ``micro_price_zscore`` (which z-scored the ~$100 price
+      # level — dominated by drift, not the sub-cent Stoikov imbalance).
+      # ``book_imbalance_mean`` is the horizon-window mean of that imbalance
+      # ∈ [-1, 1] (level-invariant; positive ⇒ bid-heavy ⇒ upward micro-price
+      # pressure), averaged over the horizon so a single noisy instantaneous
+      # quote does not drive the confirmation.
+      imb = snapshot.values.get("book_imbalance_mean")
       if z is None or imb is None:
           return None
 

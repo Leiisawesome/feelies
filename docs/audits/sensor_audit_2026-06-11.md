@@ -1,9 +1,10 @@
 <!--
   File:    docs/audits/sensor_audit_2026-06-11.md
-  Status:  AUDIT (read-only pass) — no production code modified.
+  Status:  AUDIT — §1-8 first pass (read-only); §9 remediation (code merged);
+           §10 second-pass review of the remediation (read-only, 2026-06-12).
   Scope:   Layer-1 sensors → Layer-1.5 horizon aggregation → HorizonFeatureSnapshot.
-  Method:  Static read of src + YAML + tests; tests/sensors (170 pass, 1 skip)
-           and determinism/feature suites (122 pass) executed read-only.
+  Method:  Static read of src + YAML + tests; full suite 3311 pass / 43 skip
+           (4 pre-existing env failures) after the §9 remediation.
   Owner:   feature-engine (sensors + aggregator); touchpoints into bootstrap,
            microstructure-alpha, data-ingestion noted but not owned here.
 -->
@@ -716,4 +717,186 @@ test pass. Pre-existing environment failures unrelated to this work
 (`tests/ingestion/test_massive_ingestor.py` mocked-REST cases,
 `tests/acceptance/test_mypy_strict_scope.py`) are unchanged.
 
-*End of audit.*
+---
+
+## 10. Second-pass review (2026-06-12)
+
+This pass audits the §9 remediation itself — including code I added — for new
+issues, overstated fixes, and regressions. Findings are numbered `2P-*`. Three
+of them (`2P-1`, `2P-2`, `2P-3`) are partly *self-inflicted*: the remediation
+introduced or amplified them. Nothing here is a hard test failure; they are
+correctness-of-semantics and feature-strength issues. No code was changed in
+this second pass — these are documented for a follow-up.
+
+### 2P-1 (P1, **amplified by this remediation**) — `required_warm` gates alphas on features they never read
+
+`_feature_ids_for_sensor_at_horizon` (`bootstrap.py:1280-1291`) adds **every**
+feature whose `input_sensor_ids` contains a depended sensor to the alpha's
+`required_warm_feature_ids` — *regardless of whether the alpha's `evaluate()`
+reads it*. The `HorizonSignalEngine` suppresses entry until all of them are
+warm. So adding an auxiliary feature to a sensor silently raises the entry bar
+for every alpha that depends on that sensor.
+
+**Concrete regression I introduced:** `sig_inventory_revert_v1` consumes the
+*raw* `quote_hazard_rate` in both its gate (`quote_hazard_rate < 4.0`) and
+`evaluate()` (`hazard = snapshot.values.get("quote_hazard_rate")`,
+`sig_inventory_revert_v1.alpha.yaml:199-203`) — it never reads a z-score. P1-G
+added `quote_hazard_rate_zscore` (`bootstrap.py`), which now enters this alpha's
+`required_warm` set and must reach its `min_samples=20` warm-up before the alpha
+may enter, even though the alpha ignores it. Same shape for P1-A
+(`ofi_ewma_integrated` now required-warm for `sig_benign`, which reads only
+`ofi_ewma_zscore`) and P1-B (`book_imbalance_zscore` required-warm for
+`sig_benign`, which reads only the `book_imbalance` passthrough).
+
+- **Falsifiable:** on a thin name where `quote_hazard_rate` warms but fires
+  < 20 times within a 30 s window, `sig_inventory_revert_v1` is now suppressed
+  where it previously would have entered. (On liquid names the 20-sample
+  warm-up is sub-second, so the practical impact is small — but the *semantics*
+  are wrong: the alpha is gated on data it does not use.)
+- **Pre-existing, but worse:** the pattern predates the remediation
+  (`micro_price_drift` was already required-but-unused for `sig_benign`), but
+  P1-A/P1-G/P1-B each added another required-but-unused feature.
+- **Fix (P1):** derive `required_warm` from the features the alpha *actually
+  consumes* — parse the `signal:` body for `values.get("…")` keys (or honour a
+  declared `consumed_features` whitelist) — instead of the union over all
+  depended sensors' features. Decouples G16 fingerprint declaration from
+  runtime gating. **Effort: M.** Touches `bootstrap._required_warm_feature_ids_for_signal_alpha`
+  and may shift `signal_replay` / acceptance gating → rebaseline.
+
+### 2P-2 (P1, **overstated fix**) — `ofi_ewma_integrated` is not a flow integral
+
+P1-A wired `HorizonWindowedFeature("ofi_ewma", h, reducer="sum")` and called it
+"integrated OFI." Two problems make the label overstate it:
+
+1. **It sums the EWMA, not raw flow.** The sensor emits the *EWMA* of OFI, so
+   the `sum` reducer sums an already-low-passed series. Each raw OFI event is
+   smeared across the EWMA's decay tail and thus counted many times with
+   geometric weights — this is a decaying-weighted cumulative, **not** Kyle's
+   `Σ signed flow`.
+2. **It scales with quote count.** The `sum` reducer returns `mean * n`
+   (`horizon_windowed.py:281`), where `n` is the number of in-window readings.
+   `n` tracks the *quote rate*, not the flow, so `ofi_ewma_integrated` at a busy
+   moment is mechanically larger than at a quiet one for identical net flow —
+   and it is not comparable across symbols or time. A z-score or threshold on it
+   inherits the quote-rate contamination.
+
+- **Falsifiable:** hold net signed flow fixed and double the quote rate ⇒
+  `ofi_ewma_integrated` roughly doubles.
+- **Fix (P1):** to get a true Kyle input, have the OFI sensor emit *cumulative
+  raw OFI* (reset per horizon or as a running sum the feature differences), or
+  add a count/time-normalised integral reducer. Until then, prefer
+  `ofi_ewma_zscore` over `ofi_ewma_integrated` and treat the latter as
+  experimental. **Effort: M** (sensor change).
+
+### 2P-3 (P2, **L1 limit + aggregation choice on new sensor**) — `book_imbalance` is noisy at L1 and sampled last-of-horizon
+
+The P1-B/C `book_imbalance` sensor recovers the right *quantity*
+(`(micro−mid)/spread`), but two caveats temper the win:
+
+1. **Displayed-size imbalance is a weak L1 proxy.** SIP NBBO sizes are
+   round-lot-quantised, exclude hidden/iceberg depth, and are trivially gameable
+   (post-and-pull). The imbalance computed from displayed sizes is therefore
+   noisy and partially adversarial — the same critique the first pass made of
+   `quote_flicker_rate`. This is an L1 identifiability limit, not a bug.
+2. **Last-of-horizon sampling is high-variance.** The wired confirmation is
+   `SensorPassthroughFeature("book_imbalance", h)` — the *single* most-recent
+   warm reading at the boundary (`bootstrap.py`). One instantaneous quote's
+   imbalance is a high-variance snapshot; a short-window mean/EWMA would be a
+   steadier confirmation.
+
+- **Fix (P2):** confirm `sig_benign` with a `reducer="mean"` (or a short EWMA)
+  of `book_imbalance` over the horizon rather than the raw last reading; keep
+  the passthrough for gate identifiers. **Effort: S.**
+
+### 2P-4 (P2) — `micro_price` is now a dead dependency held only for G16
+
+After P1-B, `sig_benign_midcap_v1` no longer reads any `micro_price` feature,
+yet still declares `micro_price` in `depends_on_sensors` and
+`l1_signature_sensors`. It cannot simply be dropped: G16 rule 5 requires a
+*primary* KYLE fingerprint (`kyle_lambda_60s` **or** `micro_price`) to appear in
+`depends_on_sensors`, and the alpha does not depend on `kyle_lambda_60s`. So
+`micro_price` is retained purely to satisfy G16, while contributing three
+required-but-unused features (compounding `2P-1`). This exposes a structural
+tension: **G16 fingerprint declaration and `required_warm` gating are coupled
+through `depends_on_sensors`.** Resolving `2P-1` (consume-driven `required_warm`)
+also resolves the gating half of this; the declaration half is by-design.
+**Effort: subsumed by 2P-1.**
+
+### 2P-5 (P2, doc accuracy) — snapshot-replay golden no longer mirrors bootstrap
+
+`tests/determinism/test_horizon_feature_snapshot_replay.py` wires
+`ofi_ewma` → passthrough + `HorizonWindowedFeature(zscore)` and comments that it
+"mirrors `_horizon_features_for()` in bootstrap." After P1-A, bootstrap also
+emits `ofi_ewma_integrated`, so the golden's feature slice is now a strict
+*subset* of production, and the "mirrors" comment is stale. Not a correctness
+bug (the golden is a deterministic slice), but either add the integrated feature
+and rebaseline `EXPECTED_LEVEL3_SNAPSHOT_HASH`, or downgrade the comment to
+"a slice of bootstrap." **Effort: S.**
+
+### 2P-6 (P2, residual from P2-1) — Hawkes μ/α/λ units still inconsistent
+
+P2-1 relabelled `λ_buy`/`λ_sell` as "arbitrary impulse units," but the class
+docstring still documents `baseline_mu` as "events/second"
+(`hawkes_intensity.py`). If λ is in arbitrary impulse units then μ (the level λ
+decays toward) and α (the impulse) must share those units; "events/second" for
+μ is inconsistent with "arbitrary" for λ. Either fully commit to dimensionless
+impulse units across μ/α/λ, or normalise the impulse so λ really is events/s.
+**Effort: S** (doc) **/ L** (true normalisation).
+
+### 2P-7 (informational) — `book_imbalance` is a better but not orthogonal confirmation
+
+`book_imbalance` is a genuine improvement over `micro_price_zscore` for the
+`sig_benign` footprint check: it is level-invariant and carries queue-state
+rather than price-momentum, so it is far less collinear with `ofi_ewma_zscore`
+than the old confirmation was. But it is not *independent* of OFI — both read
+top-of-book queue dynamics (OFI from size *changes*, `book_imbalance` from size
+*levels*), so they share information when the book builds directionally. A truly
+orthogonal confirmation would come from a different observable channel (e.g.
+trade-side aggression). This is a refinement, not a defect; recorded so the
+"independent L1 confirmation" claim is not overread.
+
+### Second-pass backlog
+
+| ID | Sev | One-line fix | Effort |
+|----|-----|--------------|--------|
+| 2P-1 | P1 | Derive `required_warm` from consumed `values.get(...)` keys, not all depended-sensor features | M |
+| 2P-2 | P1 | Emit cumulative raw OFI (or a rate-normalised integral) instead of `sum` over the EWMA | M |
+| 2P-3 | P2 | Confirm with a short-window mean/EWMA of `book_imbalance`, not last-of-horizon | S |
+| 2P-5 | P2 | Reconcile the snapshot-replay golden with bootstrap (add integrated + rebaseline, or fix comment) | S |
+| 2P-6 | P2 | Make Hawkes μ/α/λ units consistent (doc, or normalise to events/s) | S/L |
+
+### Second-pass remediation status (2026-06-13)
+
+- **2P-1 (done).** `required_warm` is now *consume-driven*: bootstrap statically
+  parses the `signal:` body (`_consumed_value_keys_from_signal_source`,
+  `bootstrap.py`) for the `snapshot.values` keys the alpha actually reads and
+  gates only on those, with a conservative fall-back to the old all-features set
+  when the keys cannot be resolved (dynamic key, aliased `.values`, missing
+  source). The source is threaded through `LoadedSignalLayerModule.signal_source`.
+  `sig_inventory_revert_v1` no longer requires the unread `quote_hazard_rate_zscore`;
+  `sig_benign` no longer requires the unread `micro_price*` views — which also
+  resolves the gating half of **2P-4**. Tests:
+  `tests/bootstrap/test_required_warm_consume_driven.py`.
+- **2P-2 (done).** New `ofi_raw` sensor (`sensors/impl/ofi_raw.py`, registered in
+  `platform.yaml`) emits the per-event signed OFI, so the `sum` reducer now
+  yields the genuine integrated flow `Σ ofi_t` (`ofi_integrated`, each event
+  counted once). The misleading sum-over-EWMA `ofi_ewma_integrated` was removed.
+  Tests: `tests/sensors/test_ofi_raw.py`.
+- **2P-3 (done).** Added `book_imbalance_mean` (horizon-window mean) and
+  re-pointed `sig_benign_midcap_v1`'s confirmation to it instead of the noisy
+  last-of-horizon `book_imbalance` passthrough.
+- **2P-5 (resolved by 2P-2).** With `ofi_ewma_integrated` removed, the
+  `ofi_ewma` factory is back to passthrough + z-score, so the snapshot-replay
+  golden's "mirrors bootstrap" comment is accurate again (the golden hash was
+  never affected — it wires its own slice).
+- **2P-6 (done).** Hawkes `baseline_mu` doc corrected — μ/α/λ are documented as a
+  single arbitrary impulse-unit system; only β carries physical (1/s) units.
+- **2P-7** — informational; no action (recorded so the "independent confirmation"
+  claim is not overread).
+
+Re-baked the dataset-free config-contract hash. The data-gated APP PnL/fill
+baselines still require re-baking on a host with the dataset (the reference
+alpha's signals changed). Full suite green apart from the same pre-existing
+environment failures (`massive` / `dotenv` / `yaml`-stub absence).
+
+*End of audit (second-pass remediation appended 2026-06-13).*
