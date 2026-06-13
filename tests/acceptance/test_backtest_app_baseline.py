@@ -61,8 +61,12 @@ _BASELINE_CONFIG = Path("configs/backtest_app.yaml")
 # ``book_imbalance_mean`` (2P-3), and the platform sensor block gained
 # ``ofi_raw`` (2P-2, integrated signed flow) on top of ``book_imbalance`` and
 # the P1-E ``max_gap_seconds`` keys — all shift the resolved config snapshot.
+# Re-baked for audit R-1: added the ``regime_min_discriminability`` config
+# field (default 0.0 — behaviour-neutral) to the snapshot, which shifts the
+# config-contract hash. Trade path is byte-identical (the floor is a no-op at
+# 0.0), so Net P&L / fill count are unchanged.
 _BASELINE_CONFIG_HASH = (
-    "57a94b512e1ba8c0498d1eb950fac5401ec54af46e31e551fd87c03fa15a161f"
+    "c1c32450812bef4c94252d6d1c58dad0d8c98933ab5b96b17c5da5d434ed0007"
 )
 _BASELINE_NET_PNL = Decimal("71.56")
 _BASELINE_FILL_COUNT = 6

@@ -279,6 +279,23 @@ class HMM3StateFractional:
         """Whether emission parameters have been calibrated from data."""
         return self._calibrated
 
+    @property
+    def discriminability(self) -> float:
+        """Calibration-time min pairwise emission separation ``d`` (audit R-1).
+
+        ``d_min = min_{i<j} |mu_i - mu_j| / sqrt(sigma_i^2 + sigma_j^2)`` over
+        the *current* (pooled) emissions.  It measures whether the states are
+        statistically distinguishable at all: ``d >= ~0.5`` is usable, ``d → 0``
+        means the quantile-fit Gaussians have collapsed to near-identical
+        distributions (a tight, stable spread), so the posterior is uniform
+        noise and ``P(state)`` carries no information.  Consumers compare it
+        against a floor and fail regime-gates safe to OFF below it.  This is
+        *orthogonal* to :attr:`calibrated`: placeholder (uncalibrated)
+        emissions are well-separated yet mis-located, so they score high here
+        but are caught by ``calibrated=False`` instead.  ``+inf`` for a
+        single-state engine (no pair to compare)."""
+        return self._compute_min_pairwise_emission_separation(self._emission)
+
     def calibrate(self, quotes: Sequence[NBBOQuote]) -> bool:
         """Fit emission parameters from historical spread distribution.
 

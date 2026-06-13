@@ -174,6 +174,7 @@ class HorizonSignalEngine:
         "_regime_cache",
         "_sensor_cache",
         "_attached",
+        "_regime_min_discriminability",
     )
 
     def __init__(
@@ -182,10 +183,15 @@ class HorizonSignalEngine:
         bus: EventBus,
         signal_sequence_generator: SequenceGenerator,
         clock: Any | None = None,
+        regime_min_discriminability: float = 0.0,
     ) -> None:
         self._bus = bus
         self._signal_seq = signal_sequence_generator
         self._clock = clock
+        # Audit R-1: floor on the engine's calibration-time emission
+        # separation; below it, regime gates fail safe to OFF (the regime
+        # posterior is noise).  Default 0.0 is an exact no-op.
+        self._regime_min_discriminability = float(regime_min_discriminability)
         self._signals: list[RegisteredSignal] = []
         self._regime_cache: dict[tuple[str, str], RegimeState] = {}
         # ``_sensor_cache`` holds the latest scalar reading per
@@ -362,7 +368,9 @@ class HorizonSignalEngine:
                 return
 
         regime = self._lookup_regime(snapshot.symbol, registered.gate)
-        bindings = self._build_bindings(snapshot, regime, self._sensor_cache)
+        bindings = self._build_bindings(
+            snapshot, regime, self._sensor_cache, self._regime_min_discriminability
+        )
         was_on = registered.gate.is_on(snapshot.symbol)
         try:
             on = registered.gate.evaluate(
@@ -590,6 +598,7 @@ class HorizonSignalEngine:
         snapshot: HorizonFeatureSnapshot,
         regime: RegimeState | None,
         sensor_cache: Mapping[tuple[str, str], float],
+        min_discriminability: float = 0.0,
     ) -> Bindings:
         """Promote the snapshot's ``values`` mapping into a gate binding.
 
@@ -632,6 +641,7 @@ class HorizonSignalEngine:
             sensor_values=sensor_values,
             percentiles=percentiles,
             zscores=zscores,
+            min_discriminability=min_discriminability,
         )
 
     def _patch_signal(

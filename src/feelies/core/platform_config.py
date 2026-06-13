@@ -378,6 +378,15 @@ class PlatformConfig:
     # input — causal prefix, never the full session.
     regime_calibration_max_quotes: int | None = None
 
+    # Audit R-1: floor on the regime engine's calibration-time emission
+    # separation ``d`` (min pairwise).  When the published
+    # ``RegimeState.discriminability`` is below this, regime-gates fail safe
+    # to OFF (the posterior cannot tell the states apart — degenerate
+    # calibration on a tight/stable spread).  ``0.0`` (default) is an exact
+    # no-op; ``~0.5`` enables the guard.  Orthogonal to the calibrated
+    # fail-safe (P0-1).  Wired into ``HorizonSignalEngine``.
+    regime_min_discriminability: float = 0.0
+
     # When True, bootstrap refuses to start if ``RegimeEngine.state_names``
     # contains any name missing from the risk engine's regime scale map
     # (fail-closed vs silent ``min(scale)`` fallback for unknown states).
@@ -781,6 +790,12 @@ class PlatformConfig:
             if self.regime_calibration_max_quotes < 1:
                 raise ConfigurationError("regime_calibration_max_quotes must be >= 1 when set")
 
+        if self.regime_min_discriminability < 0.0:
+            raise ConfigurationError(
+                "regime_min_discriminability must be >= 0.0 "
+                f"(got {self.regime_min_discriminability})"
+            )
+
         # Sensor specs: detect duplicate (sensor_id, sensor_version)
         # pairs early so registration-time errors at boot are reserved
         # for genuinely missing dependencies.
@@ -1000,6 +1015,7 @@ class PlatformConfig:
             "sizer_tilt_cap": self.sizer_tilt_cap,
             "signal_edge_cost_basis": self.signal_edge_cost_basis,
             "regime_calibration_max_quotes": self.regime_calibration_max_quotes,
+            "regime_min_discriminability": self.regime_min_discriminability,
             "enforce_regime_state_scale_alignment": (self.enforce_regime_state_scale_alignment),
             "cost_market_impact_factor": self.cost_market_impact_factor,
             "cost_max_impact_half_spreads": self.cost_max_impact_half_spreads,
@@ -1419,6 +1435,7 @@ class PlatformConfig:
             sizer_tilt_cap=float(data.get("sizer_tilt_cap", 3.0)),
             signal_edge_cost_basis=str(data.get("signal_edge_cost_basis", "round_trip")),
             regime_calibration_max_quotes=regime_calibration_max_quotes,
+            regime_min_discriminability=float(data.get("regime_min_discriminability", 0.0)),
             enforce_regime_state_scale_alignment=bool(
                 data.get("enforce_regime_state_scale_alignment", False)
             ),

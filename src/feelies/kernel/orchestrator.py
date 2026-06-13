@@ -3251,6 +3251,11 @@ class Orchestrator:
             # that do not expose ``calibrated`` are assumed calibrated
             # (legacy / custom engines opt out of the disable behavior).
             calibrated=bool(getattr(self._regime_engine, "calibrated", True)),
+            # Audit R-1: surface the engine's calibration-time emission
+            # separation so the gate can fail safe to OFF when the states are
+            # indiscriminate (degenerate calibration).  +inf for engines that
+            # do not expose it (always treated as fully discriminative).
+            discriminability=float(getattr(self._regime_engine, "discriminability", float("inf"))),
         )
         self._bus.publish(regime_state)
         self._maybe_publish_hazard_spike(regime_state, correlation_id)

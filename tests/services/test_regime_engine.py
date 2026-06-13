@@ -670,3 +670,25 @@ def test_uncalibrated_posterior_pins_to_vol_breakout_on_realistic_spread() -> No
     # require, so those gates would never fire even before the fail-safe.
     normal_idx = engine.state_names.index("normal")
     assert post[normal_idx] < 0.5
+
+
+# ── Audit R-1: discriminability property (min pairwise emission separation) ──
+
+
+def test_discriminability_high_for_well_separated_emissions() -> None:
+    eng = HMM3StateFractional(emission_params=[(-9.2, 0.25), (-8.0, 0.45), (-6.5, 0.65)])
+    # min pairwise d well above the 0.5 weak-discrimination floor
+    assert eng.discriminability > 1.0
+
+
+def test_discriminability_low_for_degenerate_emissions() -> None:
+    # Near-identical Gaussians (a tight, stable spread after quantile fit) —
+    # mirrors the synth_5min_aapl fixture (d ~= 0.02-0.07).
+    eng = HMM3StateFractional(emission_params=[(-9.800, 0.01), (-9.799, 0.01), (-9.798, 0.01)])
+    assert eng.discriminability < 0.5
+
+
+def test_discriminability_matches_min_pairwise_separation() -> None:
+    eng = HMM3StateFractional(emission_params=[(-9.2, 0.25), (-8.8, 0.45), (-8.0, 0.65)])
+    expected = eng._compute_min_pairwise_emission_separation(eng._emission)
+    assert eng.discriminability == expected
