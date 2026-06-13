@@ -338,25 +338,35 @@ def _load_quotes_from_jsonl(path: Path) -> list[NBBOQuote]:
 
 
 def _load_quotes_from_cache(
-    config_path: Path | None,
+    config_path: Path,
     symbols: list[str],
     dates: list[str],
     cache_dir: Path | None,
 ) -> tuple[list[NBBOQuote], int | None]:
-    """Return (quotes, calibration_max_quotes). Engine is built via _build_engine."""
+    """Return (quotes, calibration_max_quotes). Engine is built via _build_engine.
+
+    Mirrors a real backtest: applies ``prepare_backtest_event_log`` so the
+    ``session_kind`` filter (default RTH) and the calibration-prefix selection
+    match what ``run_backtest`` / ``export_full_trade_list`` feed the
+    orchestrator. Without this, cache-mode diagnostics would calibrate and
+    score on a quote universe that diverges from the production replay.
+    """
     from feelies.core.platform_config import PlatformConfig
+    from feelies.harness.backtest_prep import prepare_backtest_event_log
     from feelies.storage.cache_replay import load_event_log_from_disk_cache
 
-    cal_max: int | None = None
-    if config_path is not None:
-        cal_max = PlatformConfig.from_yaml(config_path).regime_calibration_max_quotes
+    config = PlatformConfig.from_yaml(config_path)
+    cal_max = config.regime_calibration_max_quotes
 
     # ``load_event_log_from_disk_cache`` expands [start, end] over the calendar,
-    # so first..last covers both an explicit pair and a longer date list.
+    # so min..max covers both an explicit pair and a longer date list and is
+    # robust to dates passed in any order.
+    sorted_dates = sorted(dates)
     event_log, _ingest, _meta = load_event_log_from_disk_cache(
-        symbols, dates[0], dates[-1], cache_dir=cache_dir
+        symbols, sorted_dates[0], sorted_dates[-1], cache_dir=cache_dir
     )
-    quotes = [e for e in event_log.replay() if isinstance(e, NBBOQuote)]
+    prep = prepare_backtest_event_log(config, event_log)
+    quotes = [e for e in prep.event_log.replay() if isinstance(e, NBBOQuote)]
     return quotes, cal_max
 
 
@@ -402,8 +412,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         symbols = _parse_multi(args.symbol)
         dates = _parse_multi(args.date)
-        if not symbols or not dates:
-            print("Provide --event-log, or --symbol and --date (with --config).", file=sys.stderr)
+        if not symbols or not dates or args.config is None:
+            print(
+                "Provide --event-log, or --symbol and --date together with --config "
+                "(cache mode mirrors a configured backtest and requires the YAML "
+                "to pick the engine + calibration prefix).",
+                file=sys.stderr,
+            )
             return 2
         quotes, cal_max = _load_quotes_from_cache(
             args.config, symbols, dates, args.cache_dir
