@@ -173,7 +173,7 @@ def _snapshot_with_z(
         boundary_index=boundary_index,
         values={
             "ofi_ewma_zscore": z,
-            "book_imbalance": imb,
+            "book_imbalance_mean": imb,
             "realized_vol_30s_zscore": 0.5,
         },
     )

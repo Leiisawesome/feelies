@@ -456,6 +456,9 @@ class AlphaLoader:
             expected_half_life_seconds=expected_half_life,
             consumed_features=depends_on_sensors,
             params=params,
+            # 2P-1: retain the raw body so the platform can statically derive
+            # which snapshot.values keys the alpha actually reads.
+            signal_source=str(spec["signal"]),
         )
 
     # ── PORTFOLIO-layer load path (Phase 4) ───────────────────────

@@ -47,6 +47,7 @@ legacy execution path bit-for-bit (Inv-A).
 
 from __future__ import annotations
 
+import ast
 import logging
 import os
 from collections.abc import Callable, Iterable, Sequence
@@ -1072,19 +1073,22 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             reducer="zscore",
             feature_id="ofi_ewma_zscore",
         ),
-        # Audit P1-A: integrated (summed) OFI over the horizon window is the
-        # literature-correct Kyle input — permanent price impact ∝ Σ signed
-        # flow, not the deviation of an event-paced EWMA from its windowed
-        # mean.  ``ofi_ewma`` decays in *event* time (α=0.1 ⇒ ~0.1–0.7 s
-        # half-life), so the boundary value is a near-instantaneous flow
-        # sample; the ``sum`` reducer accumulates persistent same-sign
-        # pressure across the decision horizon, which KYLE_INFO alphas should
-        # prefer over ``ofi_ewma_zscore``.
+    ],
+    # Audit 2P-2: the literature-correct Kyle input is integrated *raw* signed
+    # flow Σ ofi_t over the horizon — NOT a sum over the EWMA (which
+    # double-counts each event through the decay tail and scales with quote
+    # count).  ``ofi_raw`` emits the per-event OFI so this ``sum`` reducer
+    # computes the genuine windowed integral (each event counted once).  This
+    # replaces the earlier P1-A ``ofi_ewma_integrated``.  KYLE_INFO alphas
+    # should prefer ``ofi_integrated`` once an entry threshold is calibrated
+    # for its (share-flow) scale.
+    "ofi_raw": lambda h: [
         HorizonWindowedFeature(
-            "ofi_ewma",
+            "ofi_raw",
             h,
             reducer="sum",
-            feature_id="ofi_ewma_integrated",
+            feature_id="ofi_integrated",
+            min_samples=1,
         ),
     ],
     # Audit P1-B / P1-C: signed top-of-book size imbalance, the level-invariant
@@ -1099,6 +1103,17 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             h,
             reducer="zscore",
             feature_id="book_imbalance_zscore",
+        ),
+        # Audit 2P-3: a single last-of-horizon imbalance reading is a
+        # high-variance instantaneous snapshot.  The horizon-window *mean*
+        # captures the persistent queue imbalance over the decision horizon
+        # (the KYLE footprint) with far less noise — this is what the
+        # reference alpha confirms on.
+        HorizonWindowedFeature(
+            "book_imbalance",
+            h,
+            reducer="mean",
+            feature_id="book_imbalance_mean",
         ),
     ],
     # Audit P1-7/P1-11: horizon-window these too so every rolling feature
@@ -1290,24 +1305,113 @@ def _feature_ids_for_sensor_at_horizon(
     return frozenset(out)
 
 
+def _consumed_value_keys_from_signal_source(source: str | None) -> frozenset[str] | None:
+    """Statically extract the ``snapshot.values`` keys a signal body reads.
+
+    Audit 2P-1: ``required_warm`` must gate an alpha only on the features it
+    *actually consumes*, not on every feature of every declared sensor.  We
+    parse the compiled ``signal:`` source and collect the string-literal keys
+    used in ``snapshot.values.get("…")`` and ``snapshot.values["…"]``.
+
+    Returns:
+
+    - ``frozenset[str]`` of literal keys when **every** ``.values`` access in
+      the body is a recognised literal get/subscript (so the consumed set is
+      fully known), **or**
+    - ``None`` when the source is absent, unparseable, or contains any
+      ``.values`` access we cannot resolve to a string literal (a dynamic key,
+      ``.values.items()``, an aliased ``v = snapshot.values``, …).  ``None`` is
+      the **conservative** signal: the caller falls back to requiring every
+      feature of every depended sensor, preserving the pre-2P-1 (safe) gating.
+    """
+    if not source:
+        return None
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+
+    keys: set[str] = set()
+    recognised: set[int] = set()  # id() of ``X.values`` Attribute nodes resolved
+
+    for node in ast.walk(tree):
+        # snapshot.values.get("KEY"[, default])
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get"
+            and isinstance(node.func.value, ast.Attribute)
+            and node.func.value.attr == "values"
+        ):
+            recognised.add(id(node.func.value))
+            if node.args and isinstance(node.args[0], ast.Constant) and isinstance(
+                node.args[0].value, str
+            ):
+                keys.add(node.args[0].value)
+            else:
+                return None  # dynamic key — cannot determine the consumed set
+        # snapshot.values["KEY"]
+        elif (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.value, ast.Attribute)
+            and node.value.attr == "values"
+        ):
+            recognised.add(id(node.value))
+            sl = node.slice
+            if isinstance(sl, ast.Constant) and isinstance(sl.value, str):
+                keys.add(sl.value)
+            else:
+                return None  # dynamic subscript key
+
+    # Any ``.values`` access that was not one of the recognised literal forms
+    # (e.g. ``snapshot.values.items()``, ``v = snapshot.values``) means we
+    # cannot be sure we captured every consumed key → fall back conservatively.
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr == "values" and id(node) not in recognised:
+            return None
+
+    return frozenset(keys)
+
+
 def _required_warm_feature_ids_for_signal_alpha(
     *,
     depends_on_sensors: Sequence[str],
     horizon_seconds: int,
     horizon_features: Sequence[HorizonFeature],
     gate: RegimeGate,
+    signal_source: str | None = None,
 ) -> frozenset[str]:
-    """Union of snapshot ``warm`` / ``stale`` keys an alpha must satisfy.
+    """Snapshot ``warm`` / ``stale`` keys an alpha must satisfy to enter.
 
-    Built from ``depends_on_sensors`` → registered :class:`HorizonFeature`
-    rows at this horizon, plus regime-gate identifiers mapped the same
-    way (``*_percentile`` / ``*_zscore`` names are already feature_ids).
+    Audit 2P-1: when the consumed ``snapshot.values`` keys can be determined
+    statically from the ``signal:`` body, gate only on those (intersected with
+    the features registered at this horizon).  This stops an alpha from being
+    suppressed on a feature it never reads — e.g. an auxiliary ``*_zscore`` /
+    ``*_integrated`` view added to a sensor it depends on.  When the body's
+    feature access cannot be resolved (``signal_source is None`` or it contains
+    a dynamic ``.values`` access), fall back to the pre-2P-1 conservative set
+    (every feature of every depended sensor).  Either way the regime-gate
+    identifiers are added, since the gate must also resolve from warm features.
     """
     req: set[str] = set()
-    for sid in sorted(depends_on_sensors):
-        req.update(
-            _feature_ids_for_sensor_at_horizon(sid, horizon_seconds, horizon_features),
-        )
+
+    consumed = _consumed_value_keys_from_signal_source(signal_source)
+    if consumed is None:
+        # Conservative fallback: every feature of every depended sensor.
+        for sid in sorted(depends_on_sensors):
+            req.update(
+                _feature_ids_for_sensor_at_horizon(sid, horizon_seconds, horizon_features),
+            )
+    else:
+        # Consume-driven: only the feature_ids the body reads that a feature
+        # actually produces at this horizon.  (The engine additionally filters
+        # by presence in ``snapshot.warm``, so a consumed key with no producing
+        # feature is harmless either way; intersecting keeps the set auditable.)
+        available = {
+            f.feature_id for f in horizon_features if f.horizon_seconds == horizon_seconds
+        }
+        req.update(k for k in consumed if k in available)
+
     for name in sorted(gate.binding_identifier_names()):
         if name.endswith("_percentile") or name.endswith("_zscore"):
             req.add(name)
@@ -1613,6 +1717,7 @@ def _create_signal_layer(
             horizon_seconds=module.horizon_seconds,
             horizon_features=horizon_features or [],
             gate=module.gate,
+            signal_source=module.signal_source,
         )
         engine.register(
             RegisteredSignal(

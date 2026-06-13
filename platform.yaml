@@ -241,6 +241,20 @@ sensor_specs:
     min_history: 50
     throttled_ms: null
 
+  # Audit 2P-2: per-event raw OFI so a ``sum`` reducer yields the TRUE
+  # integrated signed flow (Σ ofi_t) over a horizon — the literature-correct
+  # Kyle input, unlike a sum over the smoothed ``ofi_ewma``.
+  - sensor_id: ofi_raw
+    sensor_version: "1.0.0"
+    cls: feelies.sensors.impl.ofi_raw.OFIRawSensor
+    params:
+      warm_after: 50
+      warm_window_seconds: 300
+    subscribes_to: [NBBOQuote]
+    input_sensor_ids: []
+    min_history: 50
+    throttled_ms: null
+
   - sensor_id: micro_price
     sensor_version: "1.1.0"
     cls: feelies.sensors.impl.micro_price.MicroPriceSensor

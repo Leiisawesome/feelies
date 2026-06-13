@@ -865,4 +865,38 @@ trade-side aggression). This is a refinement, not a defect; recorded so the
 | 2P-5 | P2 | Reconcile the snapshot-replay golden with bootstrap (add integrated + rebaseline, or fix comment) | S |
 | 2P-6 | P2 | Make Hawkes μ/α/λ units consistent (doc, or normalise to events/s) | S/L |
 
-*End of audit (second pass appended 2026-06-12).*
+### Second-pass remediation status (2026-06-13)
+
+- **2P-1 (done).** `required_warm` is now *consume-driven*: bootstrap statically
+  parses the `signal:` body (`_consumed_value_keys_from_signal_source`,
+  `bootstrap.py`) for the `snapshot.values` keys the alpha actually reads and
+  gates only on those, with a conservative fall-back to the old all-features set
+  when the keys cannot be resolved (dynamic key, aliased `.values`, missing
+  source). The source is threaded through `LoadedSignalLayerModule.signal_source`.
+  `sig_inventory_revert_v1` no longer requires the unread `quote_hazard_rate_zscore`;
+  `sig_benign` no longer requires the unread `micro_price*` views — which also
+  resolves the gating half of **2P-4**. Tests:
+  `tests/bootstrap/test_required_warm_consume_driven.py`.
+- **2P-2 (done).** New `ofi_raw` sensor (`sensors/impl/ofi_raw.py`, registered in
+  `platform.yaml`) emits the per-event signed OFI, so the `sum` reducer now
+  yields the genuine integrated flow `Σ ofi_t` (`ofi_integrated`, each event
+  counted once). The misleading sum-over-EWMA `ofi_ewma_integrated` was removed.
+  Tests: `tests/sensors/test_ofi_raw.py`.
+- **2P-3 (done).** Added `book_imbalance_mean` (horizon-window mean) and
+  re-pointed `sig_benign_midcap_v1`'s confirmation to it instead of the noisy
+  last-of-horizon `book_imbalance` passthrough.
+- **2P-5 (resolved by 2P-2).** With `ofi_ewma_integrated` removed, the
+  `ofi_ewma` factory is back to passthrough + z-score, so the snapshot-replay
+  golden's "mirrors bootstrap" comment is accurate again (the golden hash was
+  never affected — it wires its own slice).
+- **2P-6 (done).** Hawkes `baseline_mu` doc corrected — μ/α/λ are documented as a
+  single arbitrary impulse-unit system; only β carries physical (1/s) units.
+- **2P-7** — informational; no action (recorded so the "independent confirmation"
+  claim is not overread).
+
+Re-baked the dataset-free config-contract hash. The data-gated APP PnL/fill
+baselines still require re-baking on a host with the dataset (the reference
+alpha's signals changed). Full suite green apart from the same pre-existing
+environment failures (`massive` / `dotenv` / `yaml`-stub absence).
+
+*End of audit (second-pass remediation appended 2026-06-13).*

@@ -78,6 +78,7 @@ class LoadedSignalLayerModule:
     __slots__ = (
         "_manifest",
         "_signal",
+        "_signal_source",
         "_gate",
         "_cost",
         "_horizon_seconds",
@@ -101,9 +102,11 @@ class LoadedSignalLayerModule:
         expected_half_life_seconds: int,
         consumed_features: tuple[str, ...],
         params: Mapping[str, Any],
+        signal_source: str | None = None,
     ) -> None:
         self._manifest = manifest
         self._signal = signal
+        self._signal_source = signal_source
         self._gate = gate
         self._cost = cost
         self._horizon_seconds = horizon_seconds
@@ -152,6 +155,17 @@ class LoadedSignalLayerModule:
     def signal(self) -> HorizonSignal:
         """Compiled :class:`HorizonSignal` callable."""
         return self._signal
+
+    @property
+    def signal_source(self) -> str | None:
+        """Raw ``signal:`` source the alpha was compiled from.
+
+        Retained so the platform can statically determine which
+        ``snapshot.values`` keys the body actually reads (audit 2P-1:
+        consume-driven ``required_warm`` derivation).  ``None`` for
+        modules constructed without the source (legacy / synthetic).
+        """
+        return self._signal_source
 
     @property
     def gate(self) -> RegimeGate:

@@ -77,9 +77,11 @@ class HawkesIntensitySensor:
       used for the per-side trade-count warm-up criterion.
     - ``warm_trades_per_side`` (int, default 20): minimum trades on
       *each* side within ``warm_window_seconds`` before ``warm=True``.
-    - ``baseline_mu`` (float, default ``0.0``): Hawkes background
-      intensity μ (events / second) toward which both sides decay between
-      impulses.  Must be non-negative.
+    - ``baseline_mu`` (float, default ``0.0``): background level μ toward
+      which both sides decay between impulses, in the **same arbitrary
+      impulse units as λ and α** (NOT events/second — audit 2P-6).  Only β
+      carries physical units (1/second), via the decay half-life ln(2)/β.
+      Must be non-negative.
     """
 
     sensor_id: str = "hawkes_intensity"
