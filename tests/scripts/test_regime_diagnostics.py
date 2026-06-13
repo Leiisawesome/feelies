@@ -111,3 +111,44 @@ def test_variable_spread_recovers_discrimination(mod, quotes) -> None:
     )
     assert diag.min_separation > 0.5  # discrimination restored
     assert diag.entropy_frac_gt_095 < 0.5  # posteriors now mostly peaked
+
+
+def _view(mod, *, normal, comp, vb, entropy=0.3):
+    return mod._RegimeView(
+        state_names=("compression_clustering", "normal", "vol_breakout"),
+        posteriors=(comp, normal, vb),
+        dominant_name=("compression_clustering", "normal", "vol_breakout")[
+            max(range(3), key=lambda i: (comp, normal, vb)[i])
+        ],
+        posterior_entropy_nats=entropy,
+    )
+
+
+def test_latch_simulation_catches_aggressive_off_condition(mod) -> None:
+    """The latch ON-fraction (not the instantaneous prune table) is what an
+    aggressive off_condition collapses — the APP regression mechanism.
+
+    Alternating normal-dominant and vol-elevated boundaries: a lenient off
+    keeps the latch ON across the vol excursions; a `P(vol_breakout) > 0.40`
+    off knocks it OFF every other boundary.
+    """
+    views = []
+    for _ in range(50):
+        views.append(_view(mod, normal=0.70, comp=0.20, vb=0.10))  # on-eligible
+        views.append(_view(mod, normal=0.40, comp=0.15, vb=0.45))  # vol excursion
+
+    on = "P(normal) > 0.5 and P(vol_breakout) < 0.30 and spread_z_30d < 1.5"
+    lenient_off = "P(normal) < 0.35 or spread_z_30d > 3.0 or realized_vol_30s_zscore > 4.5"
+    aggressive_off = (
+        "P(normal) < 0.35 or P(vol_breakout) > 0.40 or entropy > 0.95 "
+        "or spread_z_30d > 3.0 or realized_vol_30s_zscore > 4.5"
+    )
+
+    base_frac, _ = mod.simulate_latch_on_fraction(views, on, lenient_off)
+    cand_frac, _ = mod.simulate_latch_on_fraction(views, on, aggressive_off)
+
+    # Lenient off latches ON and holds through the vol excursions.
+    assert base_frac > 0.9
+    # Aggressive off is knocked OFF on every vol excursion -> roughly halved.
+    assert cand_frac < 0.6
+    assert cand_frac < base_frac
