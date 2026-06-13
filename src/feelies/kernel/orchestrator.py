@@ -3233,6 +3233,18 @@ class Orchestrator:
             if self._regime_engine_registry_name is not None
             else type(self._regime_engine).__name__
         )
+        # Audit R-1: prefer the per-symbol min pairwise emission separation
+        # when the engine exposes it (per-symbol calibrated emissions can
+        # collapse independently of the pooled fit, so a global ``d`` would
+        # falsely keep gates ON for a tight symbol).  Fall back to the pooled
+        # property for legacy / custom engines that only expose that.
+        discriminability_for_symbol = getattr(
+            self._regime_engine, "discriminability_for_symbol", None
+        )
+        if callable(discriminability_for_symbol):
+            d_value = float(discriminability_for_symbol(quote.symbol))
+        else:
+            d_value = float(getattr(self._regime_engine, "discriminability", float("inf")))
         regime_state = RegimeState(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=correlation_id,
@@ -3255,7 +3267,7 @@ class Orchestrator:
             # separation so the gate can fail safe to OFF when the states are
             # indiscriminate (degenerate calibration).  +inf for engines that
             # do not expose it (always treated as fully discriminative).
-            discriminability=float(getattr(self._regime_engine, "discriminability", float("inf"))),
+            discriminability=d_value,
         )
         self._bus.publish(regime_state)
         self._maybe_publish_hazard_spike(regime_state, correlation_id)

@@ -293,8 +293,29 @@ class HMM3StateFractional:
         *orthogonal* to :attr:`calibrated`: placeholder (uncalibrated)
         emissions are well-separated yet mis-located, so they score high here
         but are caught by ``calibrated=False`` instead.  ``+inf`` for a
-        single-state engine (no pair to compare)."""
+        single-state engine (no pair to compare).
+
+        Reports the *pooled* fit only.  When ``per_symbol_calibration`` is
+        enabled, callers that need to gate per symbol must use
+        :meth:`discriminability_for_symbol` instead — otherwise a tight
+        symbol whose per-symbol fit has collapsed could be gated against the
+        global ``d`` and pass falsely (audit R-1 fail-safe)."""
         return self._compute_min_pairwise_emission_separation(self._emission)
+
+    def discriminability_for_symbol(self, symbol: str) -> float:
+        """Per-symbol counterpart of :attr:`discriminability` (audit R-1).
+
+        Mirrors the emission-resolution rule used by :meth:`posterior` /
+        :meth:`_emission_for_symbol`: returns the min pairwise separation
+        of the symbol's per-symbol calibrated emissions when present, or
+        of the pooled global emissions otherwise.  This is the quantity
+        consumers must compare to ``regime_min_discriminability`` so the
+        regime-gate fails safe to OFF for a symbol whose per-symbol fit
+        has collapsed even while the pooled fit remains well separated.
+        """
+        return self._compute_min_pairwise_emission_separation(
+            self._emission_for_symbol(symbol)
+        )
 
     def calibrate(self, quotes: Sequence[NBBOQuote]) -> bool:
         """Fit emission parameters from historical spread distribution.
