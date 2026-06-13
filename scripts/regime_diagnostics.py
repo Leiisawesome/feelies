@@ -114,6 +114,17 @@ class _MidSeries:
 
 
 @dataclass
+class _RegimeView:
+    """Minimal regime snapshot the gate DSL reads (a stand-in for RegimeState)."""
+
+    state_names: tuple[str, ...]
+    posteriors: tuple[float, ...]
+    dominant_name: str
+    posterior_entropy_nats: float
+    calibrated: bool = True
+
+
+@dataclass
 class _Bucket:
     lo: float
     hi: float
@@ -140,6 +151,7 @@ class RegimeDiagnostics:
     prune_table: list[tuple[str, float]] = field(default_factory=list)
     fwd_by_vol_decile: list[_Bucket] = field(default_factory=list)
     fwd_by_entropy_decile: list[_Bucket] = field(default_factory=list)
+    boundary_views: list[_RegimeView] = field(default_factory=list)
     horizon_seconds: int = 0
     vol_bound: float = 0.30
 
@@ -210,6 +222,10 @@ def compute_diagnostics(
     ents: list[float] = []
     pvb_series: list[float] = []
     fwd_series: list[float | None] = []
+    boundary_views: list[_RegimeView] = []
+    horizon_ns = horizon_seconds * _NS_PER_SECOND
+    t0_ns = quotes[0].timestamp_ns if quotes else 0
+    cur_bin = -1
     n = 0
     pass_pnorm = pass_pnorm_vol = pass_pnorm_vol_ent = 0
     for q in quotes:
@@ -228,6 +244,23 @@ def compute_diagnostics(
                 pass_pnorm_vol += 1
                 if e <= 0.95:
                     pass_pnorm_vol_ent += 1
+        # Sample one regime view per horizon-width window (production gate
+        # cadence) so the latch simulation evaluates at boundary frequency,
+        # not per tick.
+        if horizon_ns > 0:
+            b = (q.timestamp_ns - t0_ns) // horizon_ns
+            if b != cur_bin:
+                cur_bin = b
+                dom = max(range(len(p)), key=lambda i: p[i])
+                boundary_views.append(
+                    _RegimeView(
+                        state_names=names,
+                        posteriors=tuple(p),
+                        dominant_name=names[dom],
+                        posterior_entropy_nats=e,
+                        calibrated=bool(getattr(engine, "calibrated", False)),
+                    )
+                )
 
     emis = getattr(engine, "_emission", tuple((0.0, 1.0) for _ in names))
     mu = tuple(float(m) for m, _ in emis)
@@ -257,9 +290,49 @@ def compute_diagnostics(
         ],
         fwd_by_vol_decile=_decile_buckets(pvb_series, fwd_series),
         fwd_by_entropy_decile=_decile_buckets(ents, fwd_series),
+        boundary_views=boundary_views,
         horizon_seconds=horizon_seconds,
         vol_bound=vol_bound,
     )
+
+
+def simulate_latch_on_fraction(
+    views: Sequence["_RegimeView"],
+    on_condition: str,
+    off_condition: str,
+) -> tuple[float, int]:
+    """Fraction of horizon boundaries the hysteresis latch holds ON.
+
+    Audit second-pass: instantaneous on-eligibility (the prune table) does NOT
+    capture a gate's *latched* behaviour — an aggressive ``off_condition`` (e.g.
+    ``P(vol_breakout) > 0.40``) can knock the latch OFF during exactly the
+    windows the on-condition would admit, collapsing the realised ON-fraction
+    far below the instantaneous eligibility.  This drives signal count, so it is
+    the metric a gate change must be measured on.
+
+    Sensor identifiers in the conditions are bound to **neutral** values (0.0 /
+    z=0 / pct=0.5) so the regime terms are isolated: the result is the
+    *regime-driven* ON-fraction, comparable old-vs-new.  Returns
+    ``(on_fraction, n_boundaries)``.
+    """
+    from feelies.signals.regime_gate import Bindings, RegimeGate
+
+    gate = RegimeGate(alpha_id="_diag", on_condition=on_condition, off_condition=off_condition)
+    referenced = gate.binding_identifier_names()
+    sensor_values = {name: 0.0 for name in referenced if not name.endswith(("_zscore", "_percentile"))}
+    zscores = {name[: -len("_zscore")]: 0.0 for name in referenced if name.endswith("_zscore")}
+    percentiles = {
+        name[: -len("_percentile")]: 0.5 for name in referenced if name.endswith("_percentile")
+    }
+    on_count = 0
+    for v in views:
+        b = Bindings(
+            regime=v, sensor_values=sensor_values, percentiles=percentiles, zscores=zscores
+        )
+        if gate.evaluate(symbol="_diag", bindings=b):
+            on_count += 1
+    n = len(views)
+    return (on_count / n if n else 0.0), n
 
 
 def format_report(d: RegimeDiagnostics, *, label: str = "") -> str:
@@ -402,6 +475,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help="override calibration prefix (JSONL mode default: all quotes)",
     )
+    # Latch simulation (the merge-gate metric): ON-fraction of a baseline gate
+    # vs a candidate gate at horizon cadence, regime terms isolated.
+    ap.add_argument("--baseline-on", default=None, help="baseline on_condition (regime terms)")
+    ap.add_argument("--baseline-off", default=None, help="baseline off_condition")
+    ap.add_argument("--candidate-on", default=None, help="candidate on_condition")
+    ap.add_argument("--candidate-off", default=None, help="candidate off_condition")
     args = ap.parse_args(argv)
 
     if args.event_log is not None:
@@ -440,6 +519,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         vol_bound=args.vol_bound,
     )
     print(format_report(diag, label=label))
+
+    # Optional latch comparison — the metric that predicts signal-count impact.
+    pairs: list[tuple[str, str, str]] = []
+    if args.baseline_on and args.baseline_off:
+        pairs.append(("baseline", args.baseline_on, args.baseline_off))
+    if args.candidate_on and args.candidate_off:
+        pairs.append(("candidate", args.candidate_on, args.candidate_off))
+    if pairs:
+        print("\n== Latched ON-fraction at horizon cadence (regime terms isolated) ==")
+        results: dict[str, float] = {}
+        for name, on, off in pairs:
+            frac, nb = simulate_latch_on_fraction(diag.boundary_views, on, off)
+            results[name] = frac
+            print(f"  {name:<10} ON {frac:.2%} of {nb} boundaries")
+            print(f"             on:  {on.strip()}")
+            print(f"             off: {off.strip()}")
+        if "baseline" in results and "candidate" in results and results["baseline"] > 0:
+            ratio = results["candidate"] / results["baseline"]
+            print(
+                f"  => candidate retains {ratio:.0%} of baseline ON-time "
+                f"(a large drop here is the signal-count regression, BEFORE backtest)."
+            )
     return 0
 
 
