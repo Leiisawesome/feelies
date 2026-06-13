@@ -713,6 +713,7 @@ class RegimeGate:
                 sensor_values=merged,
                 percentiles=bindings.percentiles,
                 zscores=bindings.zscores,
+                min_discriminability=bindings.min_discriminability,
             )
         currently_on = self._state.get(symbol, False)
         if currently_on:
