@@ -145,6 +145,14 @@ cost_max_commission_pct: 1.0
 # when (edge_bps_basis) < ratio × round_trip_cost_bps.  Default 1.0 =
 # round-trip breakeven floor.  Operators wanting G12-equivalent margin
 # (1.5× one-way) can set 0.75.  Set 0.0 to disable (research-only).
+#
+# Audit P1-3: Inv-12 requires edge > 1.5× ROUND-TRIP cost.  This default
+# (1.0) is only round-trip break-even; it is intentionally permissive for
+# the reference profile.  Every deployment config that trades for real
+# (configs/backtest_app*.yaml, configs/backtest_multialpha.yaml,
+# configs/paper_run.yaml, configs/paper_smoke_rth.yaml) overrides this to
+# 1.5 to satisfy Inv-12.  Leave reference at 1.0 only for research; raise
+# to 1.5 for any cost-realistic run.
 signal_min_edge_cost_ratio: 1.0
 signal_edge_cost_basis: round_trip
 

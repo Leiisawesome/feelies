@@ -30,6 +30,29 @@ the canonical example in §6.5 of the legacy doc):
    §9 (canonical hypothesis-survival threshold) — alphas with
    thinner margins are rejected at load time.
 
+Cost basis (audit P1-1)
+-----------------------
+
+``cost_total_bps`` sums a **single** crossing: ``half_spread`` is half
+the quoted spread (one side) and ``fee`` is one taker fee.  This is a
+**one-way** cost.  Inv-12 ("expected_edge > 1.5x round_trip_cost", and
+survive 1.5x cost / 2x latency) is stated on a **round-trip** basis,
+which crosses the spread and pays fees twice — roughly
+``2 x cost_total_bps`` (see
+:func:`feelies.execution.cost_model.estimate_round_trip_cost_bps`, which
+prices entry + exit legs).  Therefore the disclosed ``margin_ratio`` is a
+one-way figure and is ~2x more generous than the round-trip survival
+margin; a disclosed ``margin_ratio`` of 1.6 corresponds to an
+``edge / round_trip`` of ~0.8.
+
+The disclosed ``cost_basis`` field (default ``"one_way"``) records this
+explicitly so downstream consumers do not mistake the one-way disclosure
+for a round-trip survival margin.  The authoritative round-trip Inv-12
+check is the orchestrator's runtime **B4 gate**
+(``signal_min_edge_cost_ratio`` x round-trip cost,
+``kernel/orchestrator.py``); this load-time gate is a coarse disclosure
+floor, not the round-trip survival test.
+
 Failure raises :class:`CostArithmeticError` with a structured message
 naming the alpha, the offending field, and the computed numbers.
 The exception is a sub-class of ``ValueError`` so existing alpha
@@ -71,6 +94,15 @@ MIN_MARGIN_RATIO: float = 1.5
 # enough to absorb that without letting an author understate cost.
 MARGIN_RATIO_TOLERANCE: float = 0.05
 
+# Accepted ``cost_basis`` declarations (audit P1-1).  ``one_way`` (the
+# default and the basis the component fields actually express) sums a
+# single crossing; ``round_trip`` declares the author has already
+# doubled the crossing costs.  The round-trip approximation factor below
+# converts a one-way ``cost_total_bps`` into a round-trip estimate.
+_VALID_COST_BASES: frozenset[str] = frozenset({"one_way", "round_trip"})
+DEFAULT_COST_BASIS: str = "one_way"
+ROUND_TRIP_FACTOR: float = 2.0
+
 
 class CostArithmeticError(ValueError):
     """Raised when a ``cost_arithmetic:`` block fails validation.
@@ -96,11 +128,28 @@ class CostArithmetic:
     impact_bps: float
     fee_bps: float
     margin_ratio: float
+    cost_basis: str = DEFAULT_COST_BASIS
 
     @property
     def cost_total_bps(self) -> float:
-        """Arithmetic sum of the three cost components."""
+        """Arithmetic sum of the three cost components (as disclosed)."""
         return self.half_spread_bps + self.impact_bps + self.fee_bps
+
+    @property
+    def round_trip_cost_bps(self) -> float:
+        """Round-trip cost estimate for the Inv-12 survival comparison.
+
+        When ``cost_basis == "one_way"`` (the default) the disclosed
+        components describe a single crossing, so the round-trip estimate
+        is ``ROUND_TRIP_FACTOR x cost_total_bps``.  When the author has
+        already disclosed round-trip components (``cost_basis ==
+        "round_trip"``) the total is used as-is.  This is an approximation
+        (it ignores entry/exit asymmetry); the authoritative round-trip
+        figure is the runtime B4 cost model.
+        """
+        if self.cost_basis == "round_trip":
+            return self.cost_total_bps
+        return ROUND_TRIP_FACTOR * self.cost_total_bps
 
     @property
     def computed_margin_ratio(self) -> float:
@@ -143,6 +192,17 @@ class CostArithmetic:
             raise CostArithmeticError(
                 f"alpha {alpha_id!r}: cost_arithmetic missing required "
                 f"field(s) {missing}; required: {_REQUIRED_FIELDS}"
+            )
+
+        # cost_basis (audit P1-1) — optional; defaults to one-way, the
+        # basis the component fields actually express.  Reject anything
+        # other than the two documented values so a typo can't silently
+        # disable the round-trip survival reconciliation downstream.
+        cost_basis = spec.get("cost_basis", DEFAULT_COST_BASIS)
+        if not isinstance(cost_basis, str) or cost_basis not in _VALID_COST_BASES:
+            raise CostArithmeticError(
+                f"alpha {alpha_id!r}: cost_arithmetic.cost_basis must be "
+                f"one of {sorted(_VALID_COST_BASES)}, got {cost_basis!r}"
             )
 
         values: dict[str, float] = {}
@@ -200,6 +260,7 @@ class CostArithmetic:
             impact_bps=values["impact_bps"],
             fee_bps=values["fee_bps"],
             margin_ratio=declared_margin,
+            cost_basis=cost_basis,
         )
 
 
@@ -230,5 +291,7 @@ __all__ = [
     "CostArithmeticError",
     "MIN_MARGIN_RATIO",
     "MARGIN_RATIO_TOLERANCE",
+    "DEFAULT_COST_BASIS",
+    "ROUND_TRIP_FACTOR",
     "compute_margin_ratio",
 ]

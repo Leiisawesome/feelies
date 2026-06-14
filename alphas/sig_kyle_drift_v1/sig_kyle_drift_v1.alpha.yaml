@@ -81,6 +81,20 @@ parameters:
     min: 8.0
     max: 50.0
     description: Hard cap on the reported ``edge_estimate_bps``.
+  cost_floor_bps:
+    type: float
+    default: 6.5
+    min: 0.0
+    max: 30.0
+    description: |
+      One-way cost floor (bps). Audit P1-2: the engine does not gate
+      emission on edge, so the alpha must self-suppress signals whose
+      computed ``edge_bps`` does not exceed the disclosed one-way cost
+      (half_spread + impact + fee = 2.5 + 3.0 + 1.0 = 6.5). Without it
+      the alpha can emit directional entries with edge as low as 0.0
+      (small/negative ``lam_z``). The authoritative round-trip Inv-12
+      bar is the runtime B4 gate (~1.5x round-trip). Keep aligned with
+      cost_arithmetic.
 
 # ── Horizon (Layer-2 boundary) ────────────────────────────
 horizon_seconds: 300
@@ -110,6 +124,10 @@ cost_arithmetic:
   impact_bps: 3.0
   fee_bps: 1.0
   margin_ratio: 1.8
+  # Audit P1-1: components are a single crossing. Round-trip ≈ 13.0 bps;
+  # edge/round-trip ≈ 0.90. Inv-12's 1.5x round-trip bar is enforced at
+  # runtime by the orchestrator B4 gate, not by this one-way disclosure.
+  cost_basis: one_way
 
 # ── Trend Mechanism (v0.3 §20.5 — gate G16) ───────────────
 trend_mechanism:
@@ -144,6 +162,11 @@ signal: |
           max(magnitude, 0.0) * params["edge_per_lambda_bps"],
           params["edge_cap_bps"],
       )
+
+      # Audit P1-2: never emit an entry whose edge does not clear the
+      # disclosed one-way cost (also suppresses the edge==0.0 case).
+      if edge_bps <= params["cost_floor_bps"]:
+          return None
 
       return Signal(
           timestamp_ns=snapshot.timestamp_ns,

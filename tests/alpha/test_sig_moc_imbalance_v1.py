@@ -152,17 +152,19 @@ def test_emits_long_when_window_active_and_ofi_positive(
 ) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_regime())
+    # Audit P1-2: use a ≥4-minute window so edge (1.5 bps/min) clears the
+    # 6.0 bps one-way cost_floor_bps. 360 s → 6 min → edge 9.0 bps.
     bus.publish(
         _flow_window_reading(
             active=1.0,
-            seconds_to_close=180.0,
+            seconds_to_close=360.0,
             direction_prior=1.0,
         )
     )
     bus.publish(
         _snapshot(
             active=1.0,
-            seconds_to_close=180.0,
+            seconds_to_close=360.0,
             direction_prior=1.0,
             ofi=0.5,
         )
@@ -185,23 +187,53 @@ def test_emits_short_when_direction_prior_negative_and_ofi_negative(
 ) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_regime())
+    # Audit P1-2: ≥4-minute window so edge clears the 6.0 bps cost floor.
     bus.publish(
         _flow_window_reading(
             active=1.0,
-            seconds_to_close=180.0,
+            seconds_to_close=360.0,
             direction_prior=-1.0,
         )
     )
     bus.publish(
         _snapshot(
             active=1.0,
-            seconds_to_close=180.0,
+            seconds_to_close=360.0,
             direction_prior=-1.0,
             ofi=-0.5,
         )
     )
     assert len(captured) == 1
     assert captured[0].direction == SignalDirection.SHORT
+
+
+def test_no_emission_when_edge_below_cost_floor(
+    loaded: LoadedSignalLayerModule,
+) -> None:
+    """Audit P1-2: a thin window (edge < one-way cost) is suppressed.
+
+    At seconds_to_close=180 (3 min) edge = 3 * 1.5 = 4.5 bps, below the
+    6.0 bps cost_floor_bps, so no Signal is emitted even though the gate
+    is ON and OFI agrees with the prior.
+    """
+    _, bus, captured = _engine_with_alpha(loaded)
+    bus.publish(_normal_regime())
+    bus.publish(
+        _flow_window_reading(
+            active=1.0,
+            seconds_to_close=180.0,
+            direction_prior=1.0,
+        )
+    )
+    bus.publish(
+        _snapshot(
+            active=1.0,
+            seconds_to_close=180.0,
+            direction_prior=1.0,
+            ofi=0.5,
+        )
+    )
+    assert captured == []
 
 
 def test_no_emission_when_window_inactive(

@@ -79,6 +79,18 @@ parameters:
     min: 4.0
     max: 25.0
     description: Hard cap on the reported ``edge_estimate_bps``.
+  cost_floor_bps:
+    type: float
+    default: 5.0
+    min: 0.0
+    max: 30.0
+    description: |
+      One-way cost floor (bps). Audit P1-2: self-suppress entries whose
+      computed ``edge_bps`` does not exceed the disclosed one-way cost
+      (half_spread + impact + fee = 2.0 + 2.0 + 1.0 = 5.0). The
+      authoritative round-trip Inv-12 bar (~1.5x round-trip ≈ 7.5 bps)
+      is enforced at runtime by the B4 gate. Keep aligned with
+      cost_arithmetic.
 
 # ── Horizon (Layer-2 boundary) ────────────────────────────
 horizon_seconds: 30
@@ -108,6 +120,10 @@ cost_arithmetic:
   impact_bps: 2.0
   fee_bps: 1.0
   margin_ratio: 1.6
+  # Audit P1-1: one-way components. Round-trip ≈ 10.0 bps; edge/round-trip
+  # ≈ 0.80 (does not clear the 1.5x round-trip Inv-12 bar). The runtime B4
+  # gate is the authoritative round-trip survival test.
+  cost_basis: one_way
 
 # ── Trend Mechanism (v0.3 §20.5 — gate G16) ───────────────
 trend_mechanism:
@@ -151,6 +167,10 @@ signal: |
 
       direction = LONG if ofi > 0.0 else SHORT
       edge_bps = min(z * params["edge_per_z_bps"], params["edge_cap_bps"])
+
+      # Audit P1-2: never emit an entry below the disclosed one-way cost.
+      if edge_bps <= params["cost_floor_bps"]:
+          return None
 
       return Signal(
           timestamp_ns=snapshot.timestamp_ns,

@@ -51,11 +51,16 @@ class ParameterDef:
     name: str
     param_type: str  # "int", "float", "bool", "str"
     default: int | float | bool | str
+    # ``range`` marks a parameter as *free for optimization* (counts
+    # against the §8.5 cap of 3 free knobs).  ``bounds`` (audit P1-8)
+    # carries the YAML ``min``/``max`` validation envelope — enforced on
+    # every value but NOT counted as a free-optimization knob.
     range: tuple[float, float] | None = None
+    bounds: tuple[float, float] | None = None
     description: str = ""
 
     def validate_value(self, value: Any) -> list[str]:
-        """Check *value* against this definition's type and range.
+        """Check *value* against this definition's type, range, and bounds.
 
         Returns a list of error strings (empty = valid).
         """
@@ -78,6 +83,16 @@ class ParameterDef:
             lo, hi = self.range
             if value < lo or value > hi:
                 errors.append(f"parameter '{self.name}': value {value} outside range [{lo}, {hi}]")
+
+        # Audit P1-8: the YAML ``min``/``max`` envelope was historically
+        # parsed into nothing and silently ignored; it is now enforced so
+        # an override outside the declared bounds is rejected.
+        if self.bounds is not None and isinstance(value, (int, float)):
+            blo, bhi = self.bounds
+            if value < blo or value > bhi:
+                errors.append(
+                    f"parameter '{self.name}': value {value} outside bounds [{blo}, {bhi}]"
+                )
 
         return errors
 

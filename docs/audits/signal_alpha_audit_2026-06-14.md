@@ -422,6 +422,35 @@ PORTFOLIO universe), RTH only.
 
 ---
 
+---
+
+## 10. Remediation status (2026-06-14, follow-up commit)
+
+Implemented under two operator decisions: **document, don't delist** (the
+literal round-trip G12 floor would fail every shipped alpha at load) and
+**parity-preserving** (no golden/parity-hash regeneration). The Level-2
+signal-replay baseline (0 signals on the synthetic fixture) and the
+`backtest_app_baseline` PnL hash are unchanged.
+
+| Item | Status | How |
+|---|---|---|
+| P1-1 | **Done** | `cost_arithmetic.py`: added `cost_basis` field (default `one_way`), `round_trip_cost_bps` property (≈2× one-way), and docstring clarifying Inv-12 is the runtime B4 round-trip test. Each alpha YAML now discloses `cost_basis: one_way` + its edge/round-trip ratio. |
+| P1-2 | **Done** | Per-alpha `cost_floor_bps` (= one-way cost) + `if edge_bps <= cost_floor: return None` in `kyle_drift`, `hawkes_burst`, `benign_midcap`, `moc_imbalance` (inventory already had it). Fixes `kyle_drift`'s `edge==0.0` entries. |
+| P1-3 | **Done (doc)** | `platform.yaml`: documented that reference `signal_min_edge_cost_ratio: 1.0` is research-only and every cost-realistic config overrides to 1.5 (Inv-12). Value left at 1.0 per parity-preserving choice. |
+| P1-4 | **Partial (WARN)** | Load-time WARN in `loader.py` when `l1_signature_sensors ⊄ depends_on_sensors`. Hard G16 rule deferred: it would force a §20.6.1 + acceptance-matrix change and break the canonical 9-rule G16 fixtures. |
+| P1-5 | **Done** | `sig_benign_midcap_v1` retagged: removed cosmetic `kyle_lambda_60s`; `l1_signature_sensors = [micro_price, book_imbalance, ofi_ewma, spread_z_30d]` (all in `depends_on_sensors`; fingerprint = `micro_price`, consumed via its `book_imbalance` transform). No logic change. |
+| P1-6 | **Done** | `sig_moc_imbalance_v1` hypothesis + falsification rewritten to state the direction prior is an exogenous calendar field, not L1-derived; operative prior-vs-realized falsifier called out. |
+| P1-7 | **Done** | `horizon_engine.py`: warm/stale now blocks *entries only*; the ON→OFF FLAT gate-close runs first so stale data can no longer orphan an open position. New engine tests cover both directions. |
+| P1-8 | **Done** | `loader.py`/`module.py`: `min`/`max` parsed into an enforced `bounds` envelope (was dead metadata); spec defaults validated against bounds; §8.5 cap enforced counting only `range:` params (non-delisting). |
+| P2-2 | **Deferred** | Hawkes direction from `hawkes_intensity_buy/sell` requires the aggregator to expose those tuple components in `snapshot.values` (feature-engine scope) and would change emissions/parity. |
+| P2-3 | **Done** | `arbitration.py`: explicit deterministic tie-break by `strategy_id` (preserves current behavior under sorted input). |
+| P2-5 | **Done** | New `tests/acceptance/test_falsifiability_inv2.py` enforces ≥2 falsification criteria + non-empty `failure_signature` across the SIGNAL fleet. |
+| P2-1, P2-4 | **Deferred (data runs)** | Require cached-NBBO forward-return / OFI-correlation studies — see §9. |
+
+Verification: targeted suites + full suite (`-m "not functional"`) → **3398 passed, 7 skipped**. The lone failure, `test_mypy_strict_clean_on_src_feelies`, is a sandbox artifact (missing optional `massive`/`websockets` deps in `ingestion/*`, files untouched here); all five changed source files are `mypy --strict` clean.
+
+---
+
 *Prepared read-only. No production code modified. Distinctions used:
 **implementation bug** (P1-7 warm/stale exit, P1-8 dead param bounds);
 **modeling choice / contract** (P1-1 cost basis, P1-2/P1-3 edge gate,
