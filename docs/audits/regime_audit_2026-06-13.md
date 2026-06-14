@@ -134,6 +134,25 @@ No regression risk was introduced by the kept fixes (confirmed empirically: #124
 
 ---
 
+## 5.1 R-3 validation on APP — NOT adopted (2026-06-14)
+
+`scripts/regime_diagnostics.py` was run on APP 2026-06-01..05 (256,973 quotes) with the spread-only default vs the 2-D `hmm_3state_spread_vol` engine (identical config except `regime_engine`). Verdict by the §6 decision rule (adopt only on a *clear* win): **keep the default for APP; do not switch.**
+
+| Metric | Default (spread-only) | 2-D (spread+vol) |
+|---|---|---|
+| min separation `d` | 1.478 | 0.696 (both ≥ 0.5; 2-D lower) |
+| entropy mean / frac>0.95 | 0.109 / 0.3% | 0.054 / 0.0% (2-D more peaked) |
+| occupancy (normal) | 30.3% | 43.6% |
+| forward `mean\|fwd\|` decile-10 ÷ decile-1 | 3.12× | 3.34× |
+| top-decile (d10) signed drift | −12.93 bps | −11.78 bps |
+| d9 signed drift / `mean\|fwd\|` | −3.80 / 24.80 | −6.12 / 28.47 |
+
+Both engines' `vol_breakout` is monotonic in forward `|return|` (~3×) and carries the negative top-decile drift; the 2-D engine is *marginally* sharper (steeper `|fwd|` gradient, adverse window flagged one decile earlier, more confident posteriors) but has **lower joint separation** and only a ~7% steeper gradient — not a clear win, so not worth switching APP (and not worth the P&L-backtest step).
+
+**Why this is the expected result:** APP is a name where spread width already proxies volatility well (spread-only `d=1.478`); the two are correlated, so the second dimension adds little orthogonal information (bucketing by realized-vol even trades away some of APP's abundant spread separation). The 2-D engine's value is the **degenerate cohort** — tight/stable-spread names where the spread-only engine collapses (committed fixture: spread-only `d=0.024` → 2-D `d=1.77`). APP was never that case. `hmm_3state_spread_vol` therefore stays merged and **opt-in**, validated per-cohort by exactly this run before any switch.
+
+---
+
 ## 6. Process recommendation (the actual fix)
 
 Add a contributor rule, enforceable in review: **a change to any regime-gate condition string, hazard threshold, or risk/sizer scaling constant must include, in the PR body, a conditional-return backtest delta on at least one cached symbol** (signals, Net P&L, hit-rate, ON/OFF Sharpe — before vs after). Correctness/safety changes (fail-safes, validation, determinism) are exempt and merge on code evidence. This single rule would have blocked PR #123's harmful half while passing its safe half.
