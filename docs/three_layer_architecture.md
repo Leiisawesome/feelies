@@ -2353,6 +2353,19 @@ For PORTFOLIO alphas with `trend_mechanism.consumes:` declared:
    `depends_on_signals` entry's source-alpha family is allowed.
    Reject with `UnauthorizedMechanismDependencyError`.
 
+For SIGNAL alphas (added by audit P1-4):
+
+10. **Signature sensors are backed by dependencies** — every
+    `trend_mechanism.l1_signature_sensors` entry must also appear in
+    the alpha's `depends_on_sensors`. A signature sensor the alpha does
+    not depend on cannot be consumed by `evaluate` and is therefore a
+    *cosmetic fingerprint* that satisfies rule 5 on paper while the
+    signal logic reads something else. Reject with
+    `UnbackedSignatureSensorError`. This check is independent of the
+    sensor registry, so it runs even during the loader's load-time
+    validation pass (where `known_sensor_ids` is unset and rule 4
+    abstains).
+
 #### 20.6.2 Strict mode
 
 `platform.yaml: enforce_trend_mechanism: true` makes the

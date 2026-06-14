@@ -223,6 +223,8 @@ def test_trend_mechanism_default_none() -> None:
 def test_trend_mechanism_extracts_enum_and_half_life() -> None:
     spec = _signal_spec()
     spec["horizon_seconds"] = 300
+    # G16 rule 10 (audit P1-4): signature sensors must be backed by deps.
+    spec["depends_on_sensors"] = ["kyle_lambda_60s", "ofi_ewma", "spread_z_30d"]
     spec["trend_mechanism"] = {
         "family": "KYLE_INFO",
         "expected_half_life_seconds": 600,

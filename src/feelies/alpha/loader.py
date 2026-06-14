@@ -428,15 +428,10 @@ class AlphaLoader:
             trend_mechanism_block,
             source,
         )
-        # Audit P1-4: surface cosmetic G16 fingerprints — a
-        # ``l1_signature_sensors`` entry the alpha does not actually
-        # depend on cannot be the fingerprint of a mechanism it never
-        # consumes.  Warn (not reject) so the canonical G16 fixtures and
-        # the 9-rule completeness lock are untouched; hardening this to a
-        # G16 binding rule is a §20.6.1 design-doc change.
-        self._warn_unbacked_signature_sensors(
-            trend_mechanism_block, depends_on_sensors, source
-        )
+        # Audit P1-4: cosmetic-fingerprint enforcement (l1_signature_sensors
+        # must be a subset of depends_on_sensors) is now a hard G16 rule 10
+        # in ``LayerValidator._check_g16_signal_rules`` — applied during the
+        # load-time validation pass.
 
         symbols_raw = spec.get("symbols")
         symbols = frozenset(symbols_raw) if symbols_raw is not None else None
@@ -1286,41 +1281,6 @@ class AlphaLoader:
                 f"validation bounds that do not count against the cap."
             )
         return defs
-
-    def _warn_unbacked_signature_sensors(
-        self,
-        trend_mechanism_block: dict[str, Any] | None,
-        depends_on_sensors: tuple[str, ...],
-        source: str,
-    ) -> None:
-        """Audit P1-4 — warn when ``l1_signature_sensors`` is not a subset
-        of ``depends_on_sensors``.
-
-        A signature sensor the alpha never declares as a dependency (and
-        therefore cannot consume) is a cosmetic G16 fingerprint: it
-        satisfies the rule-5 family-marker check on paper while the
-        ``evaluate`` body reads something else entirely.  This is a
-        non-fatal WARN so the canonical G16 test fixtures (which use
-        deliberately-minimal ``depends_on_sensors``) and the 9-rule
-        completeness lock stay green; promoting it to a hard G16 rule is
-        a §20.6.1 + acceptance-matrix design change.
-        """
-        if not trend_mechanism_block:
-            return
-        sig_raw = trend_mechanism_block.get("l1_signature_sensors") or []
-        if not isinstance(sig_raw, list):
-            return
-        declared = {s for s in sig_raw if isinstance(s, str)}
-        unbacked = sorted(declared - set(depends_on_sensors))
-        if unbacked:
-            logger.warning(
-                "%s: trend_mechanism.l1_signature_sensors %s not present in "
-                "depends_on_sensors — cosmetic fingerprint risk (audit P1-4): "
-                "a signature sensor the alpha does not consume cannot be the "
-                "mechanism's L1 fingerprint.",
-                source,
-                unbacked,
-            )
 
     def _resolve_params(
         self,
