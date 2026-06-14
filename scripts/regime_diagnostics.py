@@ -322,11 +322,25 @@ def compute_diagnostics(
                     )
                 )
 
+    # 1-D engines expose ``_emission`` as (mu, sigma) pairs; 2-D engines (audit
+    # R-3, spread+vol) use a nested structure.  Display the per-state mu/sigma
+    # and pairwise table only for the 1-D shape; otherwise rely on the engine's
+    # canonical ``discriminability`` property for min_separation.
     emis = getattr(engine, "_emission", tuple((0.0, 1.0) for _ in names))
-    mu = tuple(float(m) for m, _ in emis)
-    sigma = tuple(float(s) for _, s in emis)
-    pw = _pairwise_separation(mu, sigma)
-    pw_named = {f"{names[i]}|{names[j]}": d for (i, j), d in pw.items()}
+    try:
+        mu = tuple(float(m) for m, _ in emis)
+        sigma = tuple(float(s) for _, s in emis)
+        pw = _pairwise_separation(mu, sigma)
+        pw_named = {f"{names[i]}|{names[j]}": d for (i, j), d in pw.items()}
+        min_sep = min(pw.values()) if pw else float("inf")
+    except (TypeError, ValueError):
+        mu = ()
+        sigma = ()
+        pw_named = {}
+        min_sep = float("inf")
+    # Prefer the engine's own discriminability (defined on both 1-D and 2-D
+    # engines); fall back to the 1-D pairwise min above.
+    min_sep = float(getattr(engine, "discriminability", min_sep))
     denom = max(n, 1)
 
     return RegimeDiagnostics(
@@ -335,7 +349,7 @@ def compute_diagnostics(
         state_names=names,
         emission_mu=mu,
         emission_sigma=sigma,
-        min_separation=min(pw.values()) if pw else float("inf"),
+        min_separation=min_sep,
         pairwise_separation=pw_named,
         occupancy={names[i]: occ[i] / denom for i in range(len(names))},
         p_state_mean={names[i]: p_sum[i] / denom for i in range(len(names))},
