@@ -14,14 +14,23 @@ description: |
 # ── Hypothesis (causal mechanism) ─────────────────────────
 hypothesis: |
   Closing-auction MOC imbalance is structurally predictable in
-  sign because reported ``MOC_IMBALANCE`` windows publish a
-  flow-direction prior derived from exchange imbalance feeds.
-  Within the active window — and while the realised OFI agrees
-  in sign — child-order participation generates a predictable
-  micro-price drift that decays over the half-life of the
-  imbalance signature (~240 s).  We harvest the drift only when
-  more than 60 seconds remain in the window so the alpha never
-  trades into the closing seconds where slippage spikes.
+  sign during the imbalance window.  IMPORTANT (audit P1-6): the
+  ``flow_direction_prior`` is NOT derived from L1 NBBO — it is an
+  exogenous, statically-configured field on the ``MOC_IMBALANCE``
+  CalendarWindow loaded from the reference
+  ``storage/reference/event_calendar`` YAML (see
+  ``sensors/impl/scheduled_flow_window.py``).  The platform is L1-only,
+  so the directional edge is sourced from the calendar prior, not from
+  any L1-observable mechanism; contemporaneous OFI is used only to
+  CONFIRM (sign-agreement gate) the exogenous prior, not to derive it.
+  Within the active window — and while the realised OFI agrees in sign —
+  child-order participation generates a predictable micro-price drift
+  that decays over the half-life of the imbalance signature (~240 s).
+  We harvest the drift only when more than 60 seconds remain in the
+  window so the alpha never trades into the closing seconds where
+  slippage spikes.  If the calendar prior is stale or wrong, the alpha
+  trades blind — hence the explicit prior-vs-realised falsification
+  criterion below.
 
 falsification_criteria:
   - |
@@ -29,9 +38,13 @@ falsification_criteria:
     [60, 1800] s — the family no longer satisfies G16 rule 2 for
     SCHEDULED_FLOW.
   - |
-    Sign-agreement rate between published flow-direction prior
-    and realised forward-120-s return drops below 0.55 over four
-    consecutive earnings cycles.
+    Sign-agreement rate between the calendar-configured
+    flow_direction_prior and realised forward-120-s return drops below
+    0.55 over four consecutive earnings cycles. (Audit P1-6: this is the
+    operative falsifier — the directional edge lives entirely in the
+    exogenous prior, so if the prior stops predicting forward sign the
+    mechanism is dead regardless of OFI confirmation. Measure on cached
+    NBBO + the event_calendar prior; see audit appendix.)
   - |
     Out-of-sample DSR < 1.0 across any single calendar quarter
     after promotion to LIVE.
@@ -78,6 +91,20 @@ parameters:
     min: 6.0
     max: 30.0
     description: Hard cap on the reported ``edge_estimate_bps``.
+  cost_floor_bps:
+    type: float
+    default: 6.0
+    min: 0.0
+    max: 30.0
+    description: |
+      One-way cost floor (bps). Audit P1-2: self-suppress entries whose
+      computed ``edge_bps`` does not exceed the disclosed one-way cost
+      (half_spread + impact + fee = 2.5 + 2.5 + 1.0 = 6.0). With
+      ``edge_per_remaining_minute_bps`` = 1.5 this requires > 4 minutes
+      remaining in the window; entries in (min_seconds_to_close, 240s)
+      were previously emitted as low as 1.5 bps. The round-trip Inv-12
+      bar is enforced at runtime by the B4 gate. Keep aligned with
+      cost_arithmetic.
 
 # ── Horizon (Layer-2 boundary) ────────────────────────────
 horizon_seconds: 120
@@ -112,6 +139,9 @@ cost_arithmetic:
   impact_bps: 2.5
   fee_bps: 1.0
   margin_ratio: 2.0
+  # Audit P1-1: one-way components. Round-trip ≈ 12.0 bps; edge/round-trip
+  # ≈ 1.00. The runtime B4 gate enforces the round-trip Inv-12 bar.
+  cost_basis: one_way
 
 # ── Trend Mechanism (v0.3 §20.5 — gate G16) ───────────────
 trend_mechanism:
@@ -166,6 +196,11 @@ signal: |
           remaining_minutes * params["edge_per_remaining_minute_bps"],
           params["edge_cap_bps"],
       )
+
+      # Audit P1-2: never emit an entry below the disclosed one-way cost
+      # (suppresses thin entries late in the window where edge < cost).
+      if edge_bps <= params["cost_floor_bps"]:
+          return None
 
       return Signal(
           timestamp_ns=snapshot.timestamp_ns,

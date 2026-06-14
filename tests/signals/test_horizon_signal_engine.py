@@ -350,6 +350,74 @@ def test_flat_close_signal_carries_alpha_metadata() -> None:
     assert close_signal.horizon_seconds == 120
 
 
+def test_stale_required_feature_still_permits_gate_close() -> None:
+    """Audit P1-7: a stale required feature must NOT block the ON->OFF
+    FLAT exit.
+
+    A position is opened while the gate is ON; on the next boundary a
+    required feature is stale (entry would be suppressed) AND the gate
+    transitions OFF.  The engine must still emit the FLAT gate-close so
+    the open position is unwound — staleness suppresses *entries*, not
+    *exits* (conservative contract).
+    """
+    engine, bus, captured = _engine()
+    engine.register(_registered(required_warm_feature_ids=frozenset({"ofi_ewma"})))
+    engine.attach()
+
+    # 1) Gate ON + warm snapshot → entry.
+    bus.publish(_regime_normal_high())
+    bus.publish(
+        _snapshot(
+            sequence=10,
+            boundary_index=1,
+            values={"ofi_ewma": 1.0},
+            warm={"ofi_ewma": True},
+            stale={"ofi_ewma": False},
+        )
+    )
+    assert len(captured) == 1
+    assert captured[0].direction == SignalDirection.LONG
+
+    # 2) Gate transitions OFF while the required feature is stale.
+    bus.publish(_regime_normal_low())
+    bus.publish(
+        _snapshot(
+            sequence=11,
+            boundary_index=2,
+            values={"ofi_ewma": 1.0},
+            warm={"ofi_ewma": True},
+            stale={"ofi_ewma": True},
+        )
+    )
+
+    assert len(captured) == 2
+    close_signal = captured[1]
+    assert close_signal.direction == SignalDirection.FLAT
+    assert close_signal.regime_gate_state == "OFF"
+
+
+def test_stale_required_feature_suppresses_new_entry() -> None:
+    """Audit P1-7: while the gate stays ON, a stale required feature must
+    still suppress a *new* entry (entry-suppression contract intact)."""
+    engine, bus, captured = _engine()
+    engine.register(_registered(required_warm_feature_ids=frozenset({"ofi_ewma"})))
+    engine.attach()
+
+    bus.publish(_regime_normal_high())
+    bus.publish(
+        _snapshot(
+            sequence=10,
+            boundary_index=1,
+            values={"ofi_ewma": 1.0},
+            warm={"ofi_ewma": True},
+            stale={"ofi_ewma": True},
+        )
+    )
+    # Gate is ON but the feature is stale and no position was open, so no
+    # entry and no close.
+    assert captured == []
+
+
 def test_cold_start_missing_binding_swallowed() -> None:
     """Cold start: no RegimeState yet → gate raises UnknownIdentifierError."""
     engine, bus, captured = _engine()

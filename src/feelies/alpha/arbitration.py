@@ -66,11 +66,17 @@ class EdgeWeightedArbitrator:
 
         flats = [s for s in signals if s.direction == SignalDirection.FLAT]
         if flats:
-            return max(flats, key=lambda s: s.strength)
+            # Audit P2-3: highest-strength FLAT wins; ties broken by
+            # ``strategy_id`` (ascending) so the winner is independent of
+            # input ordering rather than relying on first-seen iteration.
+            return min(flats, key=lambda s: (-s.strength, s.strategy_id))
 
-        best = max(
+        # Audit P2-3: highest composite score wins; explicit, deterministic
+        # tie-break on ``strategy_id`` (ascending) removes the implicit
+        # dependence on buffered iteration order.
+        best = min(
             signals,
-            key=lambda s: s.edge_estimate_bps * s.strength,
+            key=lambda s: (-(s.edge_estimate_bps * s.strength), s.strategy_id),
         )
 
         if best.edge_estimate_bps * best.strength < self._dead_zone_bps:

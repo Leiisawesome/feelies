@@ -179,6 +179,11 @@ cost_arithmetic:
   impact_bps: 2.0
   fee_bps: 1.0
   margin_ratio: 1.6
+  # Audit P1-1: one-way components (the ``cost_floor_bps`` parameter is
+  # aligned to this 5.5 bps one-way total). Round-trip ≈ 11.0 bps;
+  # edge/round-trip ≈ 0.80. The runtime B4 gate enforces the round-trip
+  # Inv-12 bar.
+  cost_basis: one_way
 
 # ── Trend Mechanism (v0.3 §20.5 — gate G16) ───────────────
 trend_mechanism:
