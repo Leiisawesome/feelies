@@ -3,6 +3,25 @@ schema_version: "1.1"
 layer: SIGNAL
 alpha_id: sig_inventory_revert_v1
 version: "1.1.0"
+
+# ── Lifecycle: QUARANTINED (audit P2-1) ───────────────────
+# Blocks PAPER/LIVE promotion (backtest/replay still permitted).
+lifecycle_state: RESEARCH
+notes: |
+  QUARANTINED 2026-06-15 by the audit P2-1 forward-return study
+  (docs/research/inventory_sign_ic.md, scripts/research/inventory_sign_ic.py).
+  Across 6 sessions / 3 symbols (AAPL 2026-03-20/23/26, APP 2026-06-01/05,
+  AGNC 2026-04-21) the Spearman IC of quote_replenish_asymmetry_zscore vs the
+  forward 30 s micro-price return is indistinguishable from zero (pooled
+  rho ~= -0.007, per-day sign unstable, no session significant at p<0.05) and
+  the conditional forward returns are ~0.1-1.4 bps — far below the disclosed
+  8.8 bps edge and ~11 bps round-trip cost. The SHORT leg (very negative
+  asym_z) shows POSITIVE forward returns in 5/6 sessions, contradicting the
+  fade premise. The directional sign convention below (LONG if asym_z > 0)
+  is therefore UNCONFIRMED and weakly contra-indicated at the 30 s horizon.
+  Do not promote to PAPER/LIVE until a regime-gated, by-leg, multi-day
+  re-study establishes a cost-survivable edge. See the audit doc
+  docs/audits/signal_alpha_audit_2026-06-14.md.
 description: |
   Inventory mean-reversion — short-horizon (30 s) alpha that
   fades transient asymmetric quote replenishment.  A sharp,
