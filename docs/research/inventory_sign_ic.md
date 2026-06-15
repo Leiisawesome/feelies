@@ -111,10 +111,35 @@ return, `SHORT (asym_z < -thr)` wants negative — each with an indicative
 t-stat (which ignores intra-session autocorrelation, so read it loosely).
 Missing days in a range are skipped with a warning.
 
-**Caveat — still unconditional on regime.** The runner conditions on the
-`|asym_z|` threshold but not yet on the alpha's regime gate
-(inventory-dominant normal). Full regime-gated conditioning (replaying
-`RegimeState`) is the remaining step before lifting the quarantine.
+### `--regime-gated` (the decision-grade run)
+
+```bash
+python scripts/research/inventory_sign_ic.py --symbol AAPL \
+    --start 2026-03-16 --end 2026-03-27 --regime-gated
+```
+
+This conditions on the alpha's **actual regime gate**: it builds the real
+`RegimeEngine` (`hmm_3state_fractional`), the alpha's `RegimeGate` DSL (from
+the YAML), and the extra sensors the gate reads (`spread_z_30d`,
+`realized_vol_30s_zscore`, `quote_hazard_rate`), then evaluates the gate at
+each boundary exactly as `HorizonSignalEngine` does (same `_build_bindings`
++ `RegimeState`, snapshot-values-priority with a sensor-cache fallback) and
+pools **only the boundaries the gate turns ON**. The hysteresis latch is
+reset per session. This is the faithful "what the alpha actually trades"
+test.
+
+Fidelity caveats (call them out when reporting):
+
+* **HMM calibration** is per-session — the engine is calibrated on *that
+  day's* spread distribution (no cross-day seeding), so the `P(normal)` /
+  `P(vol_breakout)` posteriors approximate, not reproduce, a production run
+  warm-started from history.
+* `spread_z_30d` is a **count**-window sensor (warms after ~6000 quotes),
+  so the first few minutes of each session are gate-cold; on a full RTH day
+  this is negligible.
+* On any missing gate binding the harness fails the gate **OFF**
+  (conservative), mirroring the engine — so the gated boundary count is a
+  lower bound.
 
 ## Notes
 
