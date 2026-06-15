@@ -96,6 +96,10 @@ def evaluate_cost_circuit_breaker(
     :func:`per_alpha_cost_survival`, i.e. net descending).
     """
     pol = policy or CircuitBreakerPolicy()
+    # Materialize once: ``records`` may be a single-pass iterator (e.g. a
+    # journal query) and we walk it twice — once for cost survival, once to
+    # bucket per alpha for decay detection.
+    records = list(records)
     rows = per_alpha_cost_survival(
         records,
         min_margin_ratio=pol.survival_margin_ratio,
