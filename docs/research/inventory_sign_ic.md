@@ -1,10 +1,21 @@
 # P2-1 — Inventory sign confirmation (forward-return IC)
 
-**Status:** measurement tooling shipped; the study itself is **blocked on
-real L1 NBBO data**. The repo ships only synthetic fixtures (a seeded
-random walk, `tests/fixtures/event_logs/synth_5min_aapl.jsonl`) which
-carry no real microstructure signal, so an IC run on them is a *mechanical
-smoke test only* (expected ρ ≈ 0), not a sign confirmation.
+**Status (2026-06-15): run on real NBBO → `sig_inventory_revert_v1`
+QUARANTINED.** Across 6 sessions / 3 symbols (AAPL 2026-03-20/23/26, APP
+2026-06-01/05, AGNC 2026-04-21) the pooled Spearman IC of
+`quote_replenish_asymmetry_zscore` vs the forward 30 s micro-price return is
+indistinguishable from zero (pooled ρ ≈ −0.007; per-day sign unstable; no
+session significant at p < 0.05). Conditional forward returns are ~0.1–1.4
+bps — far below the disclosed 8.8 bps edge and ~11 bps round-trip cost — and
+the SHORT leg (very negative `asym_z`) shows *positive* forward returns in
+5/6 sessions, contradicting the fade premise. The alpha is marked
+`lifecycle_state: RESEARCH` (blocks PAPER/LIVE) pending a regime-gated,
+by-leg, multi-day re-study. See
+`docs/audits/signal_alpha_audit_2026-06-14.md` §10.
+
+The repo's synthetic fixture (`tests/fixtures/event_logs/synth_5min_aapl.jsonl`,
+a seeded random walk) is a *mechanical smoke only* (ρ ≈ 0), never a
+confirmation — use cached real NBBO via the disk cache.
 
 ## Objective
 
@@ -80,6 +91,30 @@ in `tests/research/test_forward_ic.py`):
    ```
 
 4. **Apply the decision gate** above.
+
+## Runner (`scripts/research/inventory_sign_ic.py`)
+
+The script wires steps 1–4 over the disk cache. Single day or pooled range,
+with a per-leg edge at the entry threshold (the decision-relevant numbers):
+
+```bash
+# single session
+python scripts/research/inventory_sign_ic.py --symbol AAPL --date 2026-03-26
+# pooled range, entry threshold 2.0 (the alpha's |asym_z| floor)
+python scripts/research/inventory_sign_ic.py --symbol AAPL \
+    --start 2026-03-16 --end 2026-03-27 --threshold 2.0
+```
+
+It prints the pooled Spearman IC, the bucketed profile (in bps), and the
+**per-leg fade edge** — `LONG (asym_z > +thr)` wants positive forward
+return, `SHORT (asym_z < -thr)` wants negative — each with an indicative
+t-stat (which ignores intra-session autocorrelation, so read it loosely).
+Missing days in a range are skipped with a warning.
+
+**Caveat — still unconditional on regime.** The runner conditions on the
+`|asym_z|` threshold but not yet on the alpha's regime gate
+(inventory-dominant normal). Full regime-gated conditioning (replaying
+`RegimeState`) is the remaining step before lifting the quarantine.
 
 ## Notes
 
