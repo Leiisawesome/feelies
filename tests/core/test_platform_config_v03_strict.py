@@ -153,6 +153,8 @@ _SIGNAL_SPEC_NO_MECHANISM = {
 
 _SIGNAL_SPEC_WITH_MECHANISM = {
     **_SIGNAL_SPEC_NO_MECHANISM,
+    # G16 rule 10 (audit P1-4): signature sensors must be backed by deps.
+    "depends_on_sensors": ["kyle_lambda_60s", "ofi_ewma", "spread_z_30d"],
     "trend_mechanism": {
         "family": "KYLE_INFO",
         "expected_half_life_seconds": 240,

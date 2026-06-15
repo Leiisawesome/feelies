@@ -437,7 +437,7 @@ signal-replay baseline (0 signals on the synthetic fixture) and the
 | P1-1 | **Done** | `cost_arithmetic.py`: added `cost_basis` field (default `one_way`), `round_trip_cost_bps` property (≈2× one-way), and docstring clarifying Inv-12 is the runtime B4 round-trip test. Each alpha YAML now discloses `cost_basis: one_way` + its edge/round-trip ratio. |
 | P1-2 | **Done** | Per-alpha `cost_floor_bps` (= one-way cost) + `if edge_bps <= cost_floor: return None` in `kyle_drift`, `hawkes_burst`, `benign_midcap`, `moc_imbalance` (inventory already had it). Fixes `kyle_drift`'s `edge==0.0` entries. |
 | P1-3 | **Done (doc)** | `platform.yaml`: documented that reference `signal_min_edge_cost_ratio: 1.0` is research-only and every cost-realistic config overrides to 1.5 (Inv-12). Value left at 1.0 per parity-preserving choice. |
-| P1-4 | **Partial (WARN)** | Load-time WARN in `loader.py` when `l1_signature_sensors ⊄ depends_on_sensors`. Hard G16 rule deferred: it would force a §20.6.1 + acceptance-matrix change and break the canonical 9-rule G16 fixtures. |
+| P1-4 | **Done (hard rule)** | Promoted to **G16 rule 10** (`UnbackedSignatureSensorError`) in `layer_validator.py`: `l1_signature_sensors ⊆ depends_on_sensors`, enforced at load (registry-independent). §20.6.1 amended; `TestRule10SignatureBacked` added; `_EXPECTED_RULES` extended to 10; canonical G16/loader/config fixtures reworked to subset-clean. The interim loader WARN was removed. |
 | P1-5 | **Done** | `sig_benign_midcap_v1` retagged: removed cosmetic `kyle_lambda_60s`; `l1_signature_sensors = [micro_price, book_imbalance, ofi_ewma, spread_z_30d]` (all in `depends_on_sensors`; fingerprint = `micro_price`, consumed via its `book_imbalance` transform). No logic change. |
 | P1-6 | **Done** | `sig_moc_imbalance_v1` hypothesis + falsification rewritten to state the direction prior is an exogenous calendar field, not L1-derived; operative prior-vs-realized falsifier called out. |
 | P1-7 | **Done** | `horizon_engine.py`: warm/stale now blocks *entries only*; the ON→OFF FLAT gate-close runs first so stale data can no longer orphan an open position. New engine tests cover both directions. |
@@ -445,9 +445,24 @@ signal-replay baseline (0 signals on the synthetic fixture) and the
 | P2-2 | **Deferred** | Hawkes direction from `hawkes_intensity_buy/sell` requires the aggregator to expose those tuple components in `snapshot.values` (feature-engine scope) and would change emissions/parity. |
 | P2-3 | **Done** | `arbitration.py`: explicit deterministic tie-break by `strategy_id` (preserves current behavior under sorted input). |
 | P2-5 | **Done** | New `tests/acceptance/test_falsifiability_inv2.py` enforces ≥2 falsification criteria + non-empty `failure_signature` across the SIGNAL fleet. |
-| P2-1, P2-4 | **Deferred (data runs)** | Require cached-NBBO forward-return / OFI-correlation studies — see §9. |
+| P2-1 | **Tooling shipped; study data-blocked** | `research/forward_ic.py` (pure-Python Spearman IC + bucketed forward return + `forward_return_at`, unit-tested) is the missing measurement core; runbook in `docs/research/inventory_sign_ic.md`. The sign confirmation itself needs real L1 NBBO (repo has only synthetic random-walk fixtures). |
+| P2-4 | **Deferred (data run)** | OFI-correlation crowding study — reuses the P2-1 replay harness + `forward_ic`; needs cached NBBO. See §9. |
 
-Verification: targeted suites + full suite (`-m "not functional"`) → **3398 passed, 7 skipped**. The lone failure, `test_mypy_strict_clean_on_src_feelies`, is a sandbox artifact (missing optional `massive`/`websockets` deps in `ingestion/*`, files untouched here); all five changed source files are `mypy --strict` clean.
+Verification: full suite (`-m "not functional"`) → **3411 passed, 7 skipped**. The lone failure, `test_mypy_strict_clean_on_src_feelies`, is a sandbox artifact (missing optional `massive`/`websockets` deps in `ingestion/*`, files untouched here); all changed/new source files are `mypy --strict` clean.
+
+### Follow-up commit 2 (2026-06-14) — P1-4 hardening + P2-1 tooling
+
+- **P1-4** promoted from load-time WARN to hard **G16 rule 10**
+  (`UnbackedSignatureSensorError`): a `l1_signature_sensors` entry absent
+  from `depends_on_sensors` is now rejected at load. Design doc §20.6.1,
+  the G16 test suite (`TestRule10SignatureBacked`), the completeness lock
+  (`_EXPECTED_RULES` → 10), and the canonical G16/loader/strict-config
+  fixtures were updated to keep the fleet loading (all production alphas
+  already comply post-P1-5).
+- **P2-1** measurement core shipped: `research/forward_ic.py` +
+  `tests/research/test_forward_ic.py`; runbook
+  `docs/research/inventory_sign_ic.md`. The directional-sign confirmation
+  is gated on real L1 NBBO acquisition.
 
 ---
 

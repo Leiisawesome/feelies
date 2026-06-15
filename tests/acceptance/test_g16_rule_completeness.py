@@ -1,10 +1,11 @@
 """Closes G-D — §20.12.2 #3 G16 rule completeness.
 
 §20.12.2 #3 of ``docs/three_layer_architecture.md`` requires
-that "G16 unit tests cover all 9 binding rules with pass + fail
+that "G16 unit tests cover all binding rules with pass + fail
 cases".  The unit tests themselves live in
 ``tests/alpha/test_gate_g16.py`` and are organised as one
-``TestRuleN…`` class per binding rule (Rule 1 through Rule 9).
+``TestRuleN…`` class per binding rule (Rule 1 through Rule 10;
+Rule 10 = l1_signature_sensors ⊆ depends_on_sensors, audit P1-4).
 
 This acceptance test introspects that module and asserts that every
 rule class has at least one test method whose name signals a *pass*
@@ -20,9 +21,9 @@ Why introspection rather than a static checklist?
 * A static list would silently rot if a rule's test class were
   deleted or renamed without anyone updating the matrix.
   Introspection promotes that drift to a loud failure.
-* Adding a 10th binding rule is a design-doc change that should
+* Adding a new binding rule is a design-doc change that should
   *also* require updating this test (extending ``_EXPECTED_RULES``)
-  — the failure mode at that point is "you added rule 10 but
+  — the failure mode at that point is "you added a rule but
   haven't told the matrix yet", which is exactly the discipline the
   Acceptance Sweep is meant to enforce.
 """
@@ -49,6 +50,7 @@ _EXPECTED_RULES: tuple[str, ...] = (
     "TestRule7StressEntryProhibited",
     "TestRule8ShareReachable",
     "TestRule9DependencyAuthorised",
+    "TestRule10SignatureBacked",
 )
 
 
