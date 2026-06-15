@@ -144,8 +144,20 @@ def _regime_state(
     state_names: tuple[str, ...],
     posteriors: Sequence[float],
     engine_name: str,
+    engine: RegimeEngine,
 ) -> RegimeState:
     dominant_idx = max(range(len(posteriors)), key=lambda i: posteriors[i])
+    # Audit P0-1 / R-1: mirror the orchestrator (orchestrator.py around the
+    # ``RegimeState(...)`` construction) so the regime gate sees the same
+    # calibration status and per-symbol emission separation it would in
+    # production.  Without this, an uncalibrated session (engine.calibrate
+    # returned False) would still publish ``calibrated=True`` here and the
+    # harness would evaluate boundaries the live gate would fail-safe OFF.
+    discriminability_for_symbol = getattr(engine, "discriminability_for_symbol", None)
+    if callable(discriminability_for_symbol):
+        d_value = float(discriminability_for_symbol(symbol))
+    else:
+        d_value = float(getattr(engine, "discriminability", float("inf")))
     return RegimeState(
         timestamp_ns=snap.timestamp_ns,
         correlation_id=snap.correlation_id,
@@ -156,6 +168,8 @@ def _regime_state(
         posteriors=tuple(posteriors),
         dominant_state=dominant_idx,
         dominant_name=state_names[dominant_idx],
+        calibrated=bool(getattr(engine, "calibrated", True)),
+        discriminability=d_value,
     )
 
 
@@ -242,7 +256,8 @@ def compute_feature_and_forward_returns(
         post = latest_post.get(symbol)
         if post is None:
             return  # no regime posterior yet
-        regime = _regime_state(snap, symbol, state_names, post, regime_engine_name)
+        assert engine is not None
+        regime = _regime_state(snap, symbol, state_names, post, regime_engine_name, engine)
         try:
             bindings = HorizonSignalEngine._build_bindings(snap, regime, sensor_cache)
             on = gate.evaluate(symbol=symbol, bindings=bindings)
