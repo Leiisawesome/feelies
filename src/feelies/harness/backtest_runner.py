@@ -551,6 +551,7 @@ class BacktestRunOutcome:
     exit_code: int
     orchestrator: Orchestrator
     config: PlatformConfig
+    recorder: BusRecorder | None = None
 
 
 def _emit_edge_calibration(orchestrator: Orchestrator, path: str, *, version: str) -> None:
@@ -807,6 +808,7 @@ def _run_backtest_phases_2_7(
         exit_code=0 if all_passed else 2,
         orchestrator=orchestrator,
         config=config_out,
+        recorder=recorder,
     )
 
 
