@@ -142,7 +142,7 @@ def prepare_backtest_event_log(
         config.regime_calibration_max_quotes if config.mode == OperatingMode.BACKTEST else None
     )
 
-    kept: list[Event] = [] if filter_rth else []
+    kept: list[Event] = []
     first_ts: int | None = None
     n_quotes = 0
     n_trades = 0

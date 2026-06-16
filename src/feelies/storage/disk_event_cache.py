@@ -25,16 +25,9 @@ from typing import Any, cast
 
 from feelies.core.clock import Clock
 from feelies.core.events import NBBOQuote, Trade
-from feelies.core.serialization import (
-    JsonLineEventSerializer,
-    dict_to_event,
-    event_to_dict,
-)
+from feelies.core.serialization import JsonLineEventSerializer
 
 logger = logging.getLogger(__name__)
-
-_TYPE_QUOTE = "NBBOQuote"
-_TYPE_TRADE = "Trade"
 
 # Provenance: bumped when the normalizer's parse/normalize semantics change
 # in a way operators should be able to detect in a cache manifest, even when
@@ -69,13 +62,6 @@ def _compute_schema_hash() -> str:
             parts.append(f"{cls.__name__}.{name}:{f.type}")
     raw = "\n".join(parts)
     return _sha256_prefixed(raw.encode())
-
-
-# Backward-compatible module aliases.  The canonical NBBOQuote / Trade codec
-# now lives in ``feelies.core.serialization`` so the disk cache and any future
-# JSONL writer share one bit-deterministic implementation (audit ING-05).
-_event_to_dict = event_to_dict
-_dict_to_event = dict_to_event
 
 
 class DiskEventCache:
@@ -227,17 +213,20 @@ class DiskEventCache:
         data_path = self._data_path(symbol, date)
         manifest_path = self._manifest_path(symbol, date)
 
-        lines: list[str] = []
+        # Keep the encoding in bytes end-to-end: each serialized line is already
+        # UTF-8, so joining with ``b"\n"`` avoids a per-event decode/re-encode
+        # round-trip and yields byte-identical output to the old str path.
+        lines: list[bytes] = []
         quotes_count = 0
         trades_count = 0
         for event in events:
-            lines.append(_SERIALIZER.serialize(event).decode("utf-8"))
+            lines.append(_SERIALIZER.serialize(event))
             if isinstance(event, NBBOQuote):
                 quotes_count += 1
             else:
                 trades_count += 1
 
-        raw_jsonl = "\n".join(lines).encode("utf-8")
+        raw_jsonl = b"\n".join(lines)
         compressed = gzip.compress(raw_jsonl)
 
         data_tmp = data_path.with_suffix(".tmp")
