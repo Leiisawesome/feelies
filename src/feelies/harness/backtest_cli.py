@@ -156,22 +156,11 @@ def add_common_backtest_arguments(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help=("After the run, print a diagnostic table for standalone SIGNAL → order handling."),
     )
-
-
-def add_backtest_api_arguments(parser: argparse.ArgumentParser) -> None:
-    """Register flags for the Massive API backtest entry point."""
-    add_common_backtest_arguments(parser)
-    parser.add_argument(
-        "--date",
-        type=str,
-        default=None,
-        help="Start date in YYYY-MM-DD format (required)",
-    )
-    parser.add_argument(
-        "--no-cache",
-        action="store_true",
-        help="Force re-download, skip disk cache",
-    )
+    # Close-the-loop edge calibration flags are registered on the *common*
+    # parser so the disk-cache replay entry point (which only calls
+    # ``add_common_backtest_arguments``) can drive a fast pass-two run after
+    # an API pass-one that emitted the calibration JSON.  ``_run_backtest_phases_2_7``
+    # reads both via ``getattr`` so legacy callers that omit them stay valid.
     parser.add_argument(
         "--edge-calibration",
         type=str,
@@ -192,6 +181,22 @@ def add_backtest_api_arguments(parser: argparse.ArgumentParser) -> None:
             "After the run, write per-alpha edge realization factors (realized "
             "vs disclosed edge) to this path for use with --edge-calibration."
         ),
+    )
+
+
+def add_backtest_api_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register flags for the Massive API backtest entry point."""
+    add_common_backtest_arguments(parser)
+    parser.add_argument(
+        "--date",
+        type=str,
+        default=None,
+        help="Start date in YYYY-MM-DD format (required)",
+    )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Force re-download, skip disk cache",
     )
     parser.add_argument(
         "--emit-fills-jsonl",
