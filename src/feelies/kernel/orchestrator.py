@@ -38,7 +38,7 @@ import logging
 import time
 from collections import deque
 from collections.abc import Callable, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any, Literal, Mapping
 
@@ -312,6 +312,87 @@ def _int_to_direction(sign: int) -> SignalDirection:
     if sign < 0:
         return SignalDirection.SHORT
     return SignalDirection.FLAT
+
+
+def _signal_reduces_book(current_qty: int, direction: SignalDirection) -> bool:
+    """True when *direction* would close or offset a non-flat *current_qty*."""
+    if current_qty == 0:
+        return False
+    if direction == SignalDirection.FLAT:
+        return True
+    if current_qty > 0 and direction == SignalDirection.SHORT:
+        return True
+    if current_qty < 0 and direction == SignalDirection.LONG:
+        return True
+    return False
+
+
+def standalone_signal_actionable_for_strategy(
+    signal: Signal,
+    *,
+    strategy_qty: int,
+    aggregate_qty: int,
+    alpha_has_prior_fill: bool,
+) -> bool:
+    """Whether a standalone SIGNAL may participate in per-tick arbitration.
+
+    Gate-close FLAT (``regime_gate_state == "OFF"``) from an alpha that
+    has never filled on this symbol is suppressed while the aggregate
+    book is open, so passive alphas cannot hijack another alpha's exit
+    tick.  Directional exits require matching strategy exposure; entries
+    always pass.
+    """
+    if (
+        signal.direction == SignalDirection.FLAT
+        and signal.regime_gate_state == "OFF"
+        and strategy_qty == 0
+        and aggregate_qty != 0
+        and not alpha_has_prior_fill
+    ):
+        return False
+    if signal.direction == SignalDirection.FLAT:
+        return True
+    if _signal_reduces_book(aggregate_qty, signal.direction):
+        return _signal_reduces_book(strategy_qty, signal.direction)
+    return True
+
+
+def is_redundant_gate_close_flat(
+    signal: Signal,
+    *,
+    aggregate_qty: int,
+    alpha_has_prior_fill: bool,
+) -> bool:
+    """True when a gate-close FLAT is a no-op (never traded, flat book)."""
+    return (
+        signal.direction == SignalDirection.FLAT
+        and signal.regime_gate_state == "OFF"
+        and aggregate_qty == 0
+        and not alpha_has_prior_fill
+    )
+
+
+def collision_is_harmless_flat_gate_close(
+    candidates: Sequence[Signal],
+    aggregate_qty: int,
+) -> bool:
+    """True when every arbitration candidate is inert gate-close on a flat book."""
+    if aggregate_qty != 0:
+        return False
+    return all(
+        s.direction == SignalDirection.FLAT and s.regime_gate_state == "OFF"
+        for s in candidates
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class StandaloneArbitrationCollision:
+    """One post-filter standalone-SIGNAL arbitration tick (forensics)."""
+
+    candidate_count: int
+    strategy_ids: tuple[str, ...]
+    kinds: tuple[tuple[str, str, str], ...]
+    harmless: bool
 
 
 class Orchestrator:
@@ -776,9 +857,12 @@ class Orchestrator:
         # legacy ``signal_engine`` ctor scaffolding, so this is now the
         # sole standalone-SIGNAL → Order path.
         self._signal_buffer: list[Signal] = []
+        self._alpha_symbols_with_fills: set[tuple[str, str]] = set()
+        self._arbitration_collisions: list[StandaloneArbitrationCollision] = []
         self._pending_sized_intents: deque[SizedPositionIntent] = deque()
         self._consumed_by_portfolio_ids: frozenset[str] | None = None
         self._warned_multi_standalone_signals: bool = False
+        self._logged_harmless_arbitration_collision: bool = False
         self._bus.subscribe(Signal, self._on_bus_signal)
 
         # ── PR-2b-iv: bus-driven SizedPositionIntent subscriber ─────────
@@ -886,6 +970,8 @@ class Orchestrator:
             return
         if bus_selected is None:
             for s in buf_snapshot:
+                if not self._standalone_signal_actionable_for_strategy_ownership(s):
+                    continue
                 self._append_signal_order_trace(
                     quote,
                     s,
@@ -895,6 +981,8 @@ class Orchestrator:
             return
         for s in buf_snapshot:
             if s is bus_selected:
+                continue
+            if not self._standalone_signal_actionable_for_strategy_ownership(s):
                 continue
             self._append_signal_order_trace(
                 quote,
@@ -912,6 +1000,11 @@ class Orchestrator:
     @property
     def micro_state(self) -> MicroState:
         return self._micro.state
+
+    @property
+    def arbitration_collisions(self) -> tuple[StandaloneArbitrationCollision, ...]:
+        """Post-filter standalone-SIGNAL ticks with 2+ candidates (forensics)."""
+        return tuple(self._arbitration_collisions)
 
     @property
     def risk_level(self) -> RiskLevel:
@@ -5485,6 +5578,8 @@ class Orchestrator:
                         ),
                     )
                 )
+            if order.strategy_id not in _FORCED_MARKET_EXIT_STRATEGIES:
+                self._alpha_symbols_with_fills.add((order.strategy_id, ack.symbol))
 
         self._prune_terminal_orders()
 
@@ -5672,6 +5767,21 @@ class Orchestrator:
                     reasons=("filtered_alpha_consumed_by_portfolio_composition",),
                 )
             return
+        agg_qty = self._positions.get(event.symbol).quantity
+        if is_redundant_gate_close_flat(
+            event,
+            aggregate_qty=agg_qty,
+            alpha_has_prior_fill=(event.strategy_id, event.symbol)
+            in self._alpha_symbols_with_fills,
+        ):
+            if self._signal_order_trace_sink is not None and q is not None:
+                self._append_signal_order_trace(
+                    q,
+                    event,
+                    outcome="NO_ORDER",
+                    reasons=("filtered_redundant_gate_close_flat",),
+                )
+            return
         self._signal_buffer.append(event)
         if not self._quote_tick_in_flight:
             self._carryover_signal_sequences.add(event.sequence)
@@ -5700,6 +5810,34 @@ class Orchestrator:
             self._consumed_by_portfolio_ids = frozenset(consumed)
         return alpha_id in self._consumed_by_portfolio_ids
 
+    def _standalone_signal_actionable_for_strategy_ownership(
+        self,
+        signal: Signal,
+    ) -> bool:
+        """Return False when *signal* would exit book the alpha does not own."""
+        if self._strategy_positions is None:
+            return True
+        sym = signal.symbol
+        strat_qty = self._strategy_positions.get(signal.strategy_id, sym).quantity
+        agg_qty = self._positions.get(sym).quantity
+        return standalone_signal_actionable_for_strategy(
+            signal,
+            strategy_qty=strat_qty,
+            aggregate_qty=agg_qty,
+            alpha_has_prior_fill=(signal.strategy_id, sym) in self._alpha_symbols_with_fills,
+        )
+
+    def _filter_standalone_signals_by_strategy_ownership(
+        self,
+        signals: Sequence[Signal],
+    ) -> list[Signal]:
+        """Drop cross-alpha gate-close hijacks and foreign exit signals."""
+        return [
+            s
+            for s in signals
+            if self._standalone_signal_actionable_for_strategy_ownership(s)
+        ]
+
     def _select_bus_signal(self) -> Signal | None:
         """Pick one Signal from this tick's bus buffer (deterministic).
 
@@ -5720,20 +5858,64 @@ class Orchestrator:
         """
         if not self._signal_buffer:
             return None
-        buf = self._signal_buffer
-        if len(buf) > 1 and not self._warned_multi_standalone_signals:
-            self._warned_multi_standalone_signals = True
-            ids = sorted({s.strategy_id for s in buf})
-            logger.warning(
-                "orchestrator: %d standalone SIGNAL candidate(s) from %d "
-                "alpha id(s) fired on the same tick (%s); arbitrating via "
-                "%s.  Prefer a PORTFOLIO alpha listing these ids in "
-                "depends_on_signals for full multi-alpha aggregation.",
-                len(buf),
-                len(ids),
-                ids,
-                type(self._signal_arbitrator).__name__,
+        buf = self._filter_standalone_signals_by_strategy_ownership(
+            self._signal_buffer,
+        )
+        quote = self._tick_quote_for_trace
+        if quote is not None and self._signal_order_trace_sink is not None:
+            actionable_ids = {id(s) for s in buf}
+            for s in self._signal_buffer:
+                if id(s) in actionable_ids:
+                    continue
+                self._append_signal_order_trace(
+                    quote,
+                    s,
+                    outcome="NO_ORDER",
+                    reasons=("filtered_no_strategy_position_for_exit",),
+                )
+        if not buf:
+            return None
+        if len(buf) > 1:
+            agg_qty = self._positions.get(buf[0].symbol).quantity
+            harmless = collision_is_harmless_flat_gate_close(buf, agg_qty)
+            self._arbitration_collisions.append(
+                StandaloneArbitrationCollision(
+                    candidate_count=len(buf),
+                    strategy_ids=tuple(sorted({s.strategy_id for s in buf})),
+                    kinds=tuple(
+                        sorted(
+                            (s.strategy_id, s.direction.name, s.regime_gate_state)
+                            for s in buf
+                        )
+                    ),
+                    harmless=harmless,
+                )
             )
+            ids = sorted({s.strategy_id for s in buf})
+            if harmless:
+                if not self._logged_harmless_arbitration_collision:
+                    self._logged_harmless_arbitration_collision = True
+                    logger.debug(
+                        "orchestrator: %d standalone SIGNAL candidate(s) from %d "
+                        "alpha id(s) on flat book (%s); all gate-close FLAT — "
+                        "no order impact.  Prefer PORTFOLIO aggregation for "
+                        "production multi-alpha books.",
+                        len(buf),
+                        len(ids),
+                        ids,
+                    )
+            elif not self._warned_multi_standalone_signals:
+                self._warned_multi_standalone_signals = True
+                logger.warning(
+                    "orchestrator: %d standalone SIGNAL candidate(s) from %d "
+                    "alpha id(s) fired on the same tick (%s); arbitrating via "
+                    "%s.  Prefer a PORTFOLIO alpha listing these ids in "
+                    "depends_on_signals for full multi-alpha aggregation.",
+                    len(buf),
+                    len(ids),
+                    ids,
+                    type(self._signal_arbitrator).__name__,
+                )
         return self._signal_arbitrator.arbitrate(buf)
 
     # ── PR-2b-iv: bus-driven SizedPositionIntent handler ────────────

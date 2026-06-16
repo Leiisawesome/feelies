@@ -1,13 +1,22 @@
-# Multi-alpha backtest config — run several SIGNAL alphas on the same symbol.
+# Multi-alpha backtest config — STANDALONE-SIGNAL collision harness (research only).
 #
-# Purpose: exercise cross-alpha interaction (EdgeWeightedArbitrator collisions,
-# standing-signal overlap, per-alpha cost-survival in the backtest report).
-# Tune the alpha set, symbols, dates, and parameter_overrides so multiple alphas
-# actually fire on overlapping ticks.
+# Purpose: exercise cross-alpha interaction on one symbol without a PORTFOLIO
+# alpha — EdgeWeightedArbitrator collisions, standing-signal overlap, per-alpha
+# cost-survival in the backtest report, and exit-hijack regression checks via
+# ``scripts/compare_multialpha_runs.py``.
+#
+# NOT FOR PRODUCTION / LIVE CAPITAL: standalone mode allows at most one order
+# walk per tick and arbitrates overlapping SIGNAL alphas lossily.  Production
+# multi-alpha books must use a PORTFOLIO alpha with ``depends_on_signals`` so
+# ``CompositionEngine`` emits ``SizedPositionIntent`` and
+# ``RiskEngine.check_sized_intent`` decomposes per-leg orders.
 #
 # Usage:
 #   uv run python scripts/run_backtest.py --config configs/bt_multialpha.yaml \
 #       --symbol APP --date 2026-03-26
+#
+#   uv run python scripts/compare_multialpha_runs.py --symbol APP --date 2026-03-26 \
+#       --strict
 extends: ../platform.yaml
 
 symbols:
@@ -17,7 +26,6 @@ symbols:
 # STACKS (benign + kyle, same direction) and OFFSETS (vs inventory-revert).
 alpha_specs:
   - alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml
-  - alphas/sig_kyle_drift_v1/sig_kyle_drift_v1.alpha.yaml
   - alphas/sig_inventory_revert_v1/sig_inventory_revert_v1.alpha.yaml
 
 # Inv-12 margin gate (G12-equivalent 1.5× round-trip floor), as in bt_app.
