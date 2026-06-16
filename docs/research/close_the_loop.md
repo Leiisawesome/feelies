@@ -128,6 +128,31 @@ reconcile_session(
 )
 ```
 
+## Reproduce on a real backtest (the two-pass)
+
+The loop is **feedback** and **evidence-gated**, so a single sparse session
+shows no change (every alpha is below the 30-fill bar → factor 1.0). To see
+it bite you need a multi-session window, then a second run that applies the
+factors:
+
+```bash
+# pass 1 — accumulate a window and write the realization factors
+run_backtest --config configs/backtest_multialpha.yaml \
+    --start 2026-03-16 --end 2026-03-27 \
+    --emit-edge-calibration /tmp/edge_cal.json
+
+# pass 2 — re-run with the factors applied at the B4 gate
+run_backtest --config configs/backtest_multialpha.yaml \
+    --start 2026-03-16 --end 2026-03-27 \
+    --edge-calibration /tmp/edge_cal.json
+```
+
+Pass 1 prints each alpha's `realized / disclosed` edge and `lcb_factor`; in
+pass 2 an alpha whose realized edge has decayed (e.g. `sig_kyle_drift_v1` →
+factor ~0) is gated out, so its fee bleed stops. `scripts/research/close_the_loop_demo.py`
+shows the same flip on the reported APP 2026-03-26 numbers (1 session → no
+change; 6 sessions → kyle/benign flip PASS→FAIL).
+
 ## Remaining (optional refinements)
 
 - **Per-regime calibration**: key factors by `(alpha, regime)` rather than
