@@ -23,16 +23,18 @@ from __future__ import annotations
 from dataclasses import replace
 
 from feelies.core.events import NBBOQuote, Trade
-from feelies.core.identifiers import SequenceGenerator, make_correlation_id
+from feelies.core.identifiers import make_correlation_id
 
-_TYPE_RANK = (NBBOQuote, Trade)
+# Quote-before-trade rank, keyed by exact type for O(1) lookup on the hot
+# resequence/append path (a ``KeyError`` still flags an unexpected event type).
+_TYPE_RANK: dict[type, int] = {NBBOQuote: 0, Trade: 1}
 
 
 def event_merge_sort_key(
     event: NBBOQuote | Trade,
 ) -> tuple[int, str, int, int]:
     """Deterministic sort key for merged quote/trade lists."""
-    type_rank = _TYPE_RANK.index(type(event))
+    type_rank = _TYPE_RANK[type(event)]
     return (
         event.exchange_timestamp_ns,
         event.symbol,
@@ -49,14 +51,18 @@ def resequence_event_list(
     Does not mutate ``events``; callers may retain their original list order.
     """
     sorted_events = sorted(events, key=event_merge_sort_key)
-    seq = SequenceGenerator()
-    result: list[NBBOQuote | Trade] = []
-    for event in sorted_events:
-        new_seq = seq.next()
-        new_cid = make_correlation_id(
-            event.symbol,
-            event.exchange_timestamp_ns,
-            new_seq,
+    # Sequences are assigned 0,1,2,… by a plain local counter — this pass is
+    # single-threaded and the generator's per-call lock would be pure overhead
+    # across millions of events.
+    return [
+        replace(
+            event,
+            sequence=new_seq,
+            correlation_id=make_correlation_id(
+                event.symbol,
+                event.exchange_timestamp_ns,
+                new_seq,
+            ),
         )
-        result.append(replace(event, sequence=new_seq, correlation_id=new_cid))
-    return result
+        for new_seq, event in enumerate(sorted_events)
+    ]
