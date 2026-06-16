@@ -98,14 +98,23 @@ def disclosed_edges_from_registry(registry: object) -> dict[str, float]:
     """Best-effort ``strategy_id -> edge_estimate_bps`` from a loaded
     alpha registry/modules.
 
-    Looks for ``.modules()`` / iterable of loaded modules exposing
-    ``manifest.alpha_id`` and a ``cost`` (``CostArithmetic``) with
-    ``edge_estimate_bps``.  Returns an empty dict when the shape is unknown
-    (the caller can always supply ``disclosed_edges`` directly).
+    Accepts (in order of preference) an :class:`AlphaRegistry` exposing
+    ``active_alphas()``, an object exposing ``modules()``, or any iterable
+    of loaded modules exposing ``manifest.alpha_id`` and a ``cost``
+    (``CostArithmetic``) with ``edge_estimate_bps``.  Returns an empty
+    dict when the shape is unknown (the caller can always supply
+    ``disclosed_edges`` directly).
     """
     out: dict[str, float] = {}
+    iterable: object
+    active_alphas = getattr(registry, "active_alphas", None)
     modules = getattr(registry, "modules", None)
-    iterable = modules() if callable(modules) else registry
+    if callable(active_alphas):
+        iterable = active_alphas()
+    elif callable(modules):
+        iterable = modules()
+    else:
+        iterable = registry
     try:
         for module in iterable:  # type: ignore[union-attr]
             manifest = getattr(module, "manifest", None)
