@@ -53,6 +53,7 @@ import os
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
+from collections.abc import Mapping
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -213,6 +214,7 @@ def build_platform(
     normalizer: MarketDataNormalizer | None = None,
     precomputed_ex_date_spans: dict[str, tuple[date, date]] | None = None,
     regime_calibration_quotes: tuple[NBBOQuote, ...] | None = None,
+    edge_calibration_factors: "Mapping[str, float] | None" = None,
 ) -> tuple[Orchestrator, PlatformConfig]:
     """Compose the full platform from configuration.
 
@@ -649,15 +651,19 @@ def build_platform(
     # bus-driven Phase-3 / Phase-4 composition pipeline owns multi-alpha
     # arbitration end-to-end.
 
-    # Close-the-loop (gate): load per-alpha realization factors from the
-    # versioned EdgeCalibrationStore when an ``edge_calibration_path`` is
-    # configured.  Absent path -> empty -> no haircut (parity-preserving).
-    edge_calibration_factors: dict[str, float] = {}
-    _edge_cal_path = getattr(config, "edge_calibration_path", None)
-    if _edge_cal_path:
-        from feelies.forensics.edge_calibration import EdgeCalibrationStore
+    # Close-the-loop (gate): explicit ``edge_calibration_factors`` win;
+    # otherwise load from the versioned EdgeCalibrationStore when an
+    # ``edge_calibration_path`` is configured.  Absent both -> empty -> no
+    # haircut (parity-preserving).
+    if edge_calibration_factors is not None:
+        resolved_edge_factors: dict[str, float] = dict(edge_calibration_factors)
+    else:
+        resolved_edge_factors = {}
+        _edge_cal_path = getattr(config, "edge_calibration_path", None)
+        if _edge_cal_path:
+            from feelies.forensics.edge_calibration import EdgeCalibrationStore
 
-        edge_calibration_factors = EdgeCalibrationStore(_edge_cal_path).factors()
+            resolved_edge_factors = EdgeCalibrationStore(_edge_cal_path).factors()
 
     orchestrator = Orchestrator(
         clock=clock,
@@ -693,7 +699,7 @@ def build_platform(
         cross_sectional_tracker=cross_sectional_tracker,
         composition_metrics_collector=composition_metrics,
         hazard_exit_controller=hazard_exit_controller,
-        edge_calibration_factors=edge_calibration_factors,
+        edge_calibration_factors=resolved_edge_factors,
         signal_order_trace_sink=signal_order_trace_sink,
         net_shadow_sink=net_shadow_sink,
         size_shadow_sizer=tilted_sizer if size_shadow_sink is not None else None,

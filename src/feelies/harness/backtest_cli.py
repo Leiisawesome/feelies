@@ -173,6 +173,27 @@ def add_backtest_api_arguments(parser: argparse.ArgumentParser) -> None:
         help="Force re-download, skip disk cache",
     )
     parser.add_argument(
+        "--edge-calibration",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Apply per-alpha edge realization factors from this "
+            "EdgeCalibrationStore JSON at the B4 gate (close-the-loop). "
+            "Build it with --emit-edge-calibration on a prior multi-session run."
+        ),
+    )
+    parser.add_argument(
+        "--emit-edge-calibration",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help=(
+            "After the run, write per-alpha edge realization factors (realized "
+            "vs disclosed edge) to this path for use with --edge-calibration."
+        ),
+    )
+    parser.add_argument(
         "--emit-fills-jsonl",
         action="store_true",
         help="Emit one FILLED OrderAck JSON object per line (prefix FILL_JSONL).",

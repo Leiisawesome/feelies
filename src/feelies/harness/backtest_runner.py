@@ -553,6 +553,46 @@ class BacktestRunOutcome:
     config: PlatformConfig
 
 
+def _emit_edge_calibration(orchestrator: Orchestrator, path: str, *, version: str) -> None:
+    """Close-the-loop: build per-alpha edge realization factors from this
+    run's trade journal (realized vs disclosed edge) and write them to an
+    ``EdgeCalibrationStore`` for a subsequent ``--edge-calibration`` run.
+
+    Factors stay 1.0 until an alpha clears the 30-fill evidence bar, so a
+    single sparse session produces no haircut — accumulate a multi-session
+    window (run over a date range) for the factors to bite.
+    """
+    from feelies.forensics.edge_calibration import (
+        EdgeCalibrationStore,
+        build_edge_calibrations,
+    )
+
+    journal = orchestrator.trade_journal
+    records = list(journal.query()) if journal is not None else []
+    disclosed: dict[str, float] = {}
+    registry = orchestrator.alpha_registry
+    if registry is not None:
+        for alpha_id in registry.alpha_ids():
+            module = registry.get(alpha_id)
+            cost = getattr(module, "cost", None)
+            edge = getattr(cost, "edge_estimate_bps", None)
+            if isinstance(edge, (int, float)):
+                disclosed[alpha_id] = float(edge)
+
+    cals = build_edge_calibrations(records, disclosed)
+    EdgeCalibrationStore(path).save(cals, version=version)
+    print(f"  edge calibration written -> {path}", flush=True)
+    for sid in sorted(cals):
+        c = cals[sid]
+        print(
+            f"    {sid:<26s} n={c.n_fills:<4d} "
+            f"realized={c.realized_edge_bps_mean:7.2f}b "
+            f"disclosed={c.disclosed_edge_bps:6.2f}b "
+            f"lcb_factor={c.lcb_factor:.3f}",
+            flush=True,
+        )
+
+
 def _run_backtest_phases_2_7(
     args: argparse.Namespace,
     event_log: InMemoryEventLog,
@@ -598,6 +638,20 @@ def _run_backtest_phases_2_7(
     size_shadow_sink: "list[SizeDivergence] | None" = (
         [] if getattr(args, "emit_size_divergence_jsonl", False) else None
     )
+    # Close-the-loop (gate): apply per-alpha edge realization factors from a
+    # prior multi-session run's EdgeCalibrationStore (no flag -> None -> no
+    # haircut -> parity-preserving).
+    _edge_factors = None
+    _apply_edge_cal = getattr(args, "edge_calibration", None)
+    if _apply_edge_cal:
+        from feelies.forensics.edge_calibration import EdgeCalibrationStore
+
+        _edge_factors = EdgeCalibrationStore(_apply_edge_cal).factors()
+        print(
+            f"  applying edge calibration from {_apply_edge_cal} "
+            f"({len(_edge_factors)} alpha factor(s))",
+            flush=True,
+        )
     orchestrator, config_out = build_platform(
         config,
         event_log=event_log,
@@ -606,6 +660,7 @@ def _run_backtest_phases_2_7(
         size_shadow_sink=size_shadow_sink,
         precomputed_ex_date_spans=prep.calendar_spans,
         regime_calibration_quotes=prep.regime_calibration_quotes,
+        edge_calibration_factors=_edge_factors,
     )
     alpha_count = (
         len(orchestrator.alpha_registry.alpha_ids())
@@ -743,6 +798,10 @@ def _run_backtest_phases_2_7(
     if size_shadow_sink is not None:
         _emit_size_divergence_jsonl(size_shadow_sink)
     _emit_phase2_jsonl(args, recorder)
+
+    _emit_edge_cal = getattr(args, "emit_edge_calibration", None)
+    if _emit_edge_cal:
+        _emit_edge_calibration(orchestrator, _emit_edge_cal, version=date_range)
 
     return BacktestRunOutcome(
         exit_code=0 if all_passed else 2,
