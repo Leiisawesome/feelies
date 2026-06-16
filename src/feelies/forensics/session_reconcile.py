@@ -22,7 +22,7 @@ alpha lifecycles, (c) the disclosed edges from the loaded alphas, and (d) the
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable, Mapping
 
 from feelies.forensics.cost_circuit_breaker import (
@@ -71,10 +71,18 @@ def reconcile_session(
     decisions without demoting; omit ``calibration_store`` to skip persisting
     the new factors.  Pure aside from the two durable writes (ledger +
     calibration JSON).
+
+    The ``min_fills`` kwarg is the *shared* persistence bar for both layers
+    in this single boundary job: it gates the edge-calibration build **and**
+    the circuit-breaker's ``INSUFFICIENT_EVIDENCE`` floor, so a fill window
+    can never simultaneously yield a calibrated haircut and a "not enough
+    fills to demote" abstention (and vice-versa).  Any ``policy.min_fills``
+    is overridden by this kwarg for that reason.
     """
     materialized = list(records)
 
-    decisions = evaluate_cost_circuit_breaker(materialized, policy=policy)
+    effective_policy = replace(policy or CircuitBreakerPolicy(), min_fills=min_fills)
+    decisions = evaluate_cost_circuit_breaker(materialized, policy=effective_policy)
     quarantined: list[CircuitBreakerDecision] = []
     if lifecycles:
         quarantined = apply_cost_circuit_breaker(
