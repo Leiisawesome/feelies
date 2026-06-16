@@ -18,8 +18,9 @@ the loop was open. This is the plan to close it.
 |---|---|---|
 | **Measure** | Per-alpha realized edge vs cost, with a verdict | **shipped** — `forensics/cost_survival.py`, surfaced in every backtest report |
 | **Automate** | Auto-quarantine a persistently cost-failing LIVE alpha | **shipped** — `forensics/cost_circuit_breaker.py` |
-| **Calibrate** | Haircut `edge_estimate_bps` by realized/disclosed ratio | planned |
-| **Gate** | Gate G12/B4 on the *lower confidence bound* of a data-fit edge | planned |
+| **Calibrate** | Haircut `edge_estimate_bps` by realized/disclosed ratio | **shipped** — `forensics/edge_calibration.py` |
+| **Gate** | B4 gate on the *lower confidence bound* of realized edge | **shipped** — `orchestrator` B4 reads the calibration factor |
+| **Wire** | Session-end boundary job (automate + calibrate) | **shipped** — `forensics/session_reconcile.py` |
 
 ## Measure — `cost_survival.py`
 
@@ -75,14 +76,66 @@ applied = apply_cost_circuit_breaker(decisions, live_lifecycles, correlation_id=
 This generalizes the manual `sig_inventory_revert_v1` quarantine into
 evidence-driven policy.
 
-## Next: Calibrate + Gate
+## Calibrate — `edge_calibration.py`
 
-- **Calibrate**: maintain a per-`(alpha, regime)` rolling
-  `realized_edge / disclosed_edge` ratio (from `cost_survival`) and apply it
-  as a versioned haircut to the `edge_estimate_bps` the gates see — Inv-4
-  (edge decays when exploited), boundary-updated for determinism.
-- **Gate**: replace hand-set `edge_per_*_bps` slopes with regression-fit
-  slopes (forward return on the driving feature, OOS; the `forward_ic`
-  harness is the seed) disclosed with a confidence interval, and gate on the
-  **lower bound**, not the point estimate — removing the optimism at the
-  source.
+`build_edge_calibrations(records, disclosed_edges)` reconciles realized edge
+(`realized_pnl / notional` bps) against each alpha's disclosed
+`edge_estimate_bps` over a fill window and produces two factors in `[0, 1]`:
+
+- `haircut_factor` = clamp(realized_mean / disclosed, 0, 1) — point shrink.
+- `lcb_factor` = clamp(realized_LCB / disclosed, 0, 1), where
+  `LCB = mean − z·std/√n` — the **lower confidence bound**, so the gate
+  trades on a conservative estimate, not an optimistic point.
+
+Insufficient evidence (`n < min_fills` or no disclosed edge) → factor `1.0`
+(no haircut). Factors are persisted by `EdgeCalibrationStore` as versioned,
+sorted JSON.
+
+## Gate — B4 reads the calibration factor
+
+`Orchestrator` takes `edge_calibration_factors` (`strategy_id → factor`,
+loaded by `bootstrap` from `config.edge_calibration_path` via
+`EdgeCalibrationStore.factors()`). The B4 gate multiplies
+`signal.edge_estimate_bps × factor` before the edge-vs-cost comparison, so
+an alpha whose realized edge has decayed is gated on the shrunken estimate.
+**Empty factors → 1.0 → identical behaviour** (parity-preserving); a present
+factor is a versioned input fixed within a replay (Inv-5).
+
+## Wire — `session_reconcile.py`
+
+`reconcile_session(records, disclosed_edges, lifecycles, calibration_store)`
+is the **session/epoch-boundary** job that closes the loop in one call:
+
+1. **Automate** — runs the cost circuit-breaker and quarantines LIVE
+   bleeders (durable ledger write).
+2. **Calibrate** — rebuilds the edge factors and writes them to the
+   `EdgeCalibrationStore` at `config.edge_calibration_path`.
+
+The *next* run's B4 gate reads those factors at construction. Determinism is
+preserved because both writes are versioned durable state read at load, never
+per-tick.
+
+```python
+# session-end / EOD job (PAPER/LIVE)
+records = list(trade_journal.query(start_ns=window_start))   # rolling window
+reconcile_session(
+    records,
+    disclosed_edges=disclosed_edges_from_registry(alpha_registry),
+    lifecycles=live_lifecycles,
+    calibration_store=EdgeCalibrationStore(config.edge_calibration_path),
+    calibration_version=session_id,
+    correlation_id=run_id,
+)
+```
+
+## Remaining (optional refinements)
+
+- **Per-regime calibration**: key factors by `(alpha, regime)` rather than
+  alpha alone (the structure is already boundary-versioned).
+- **Authoring-time CI**: regression-fit the `edge_per_*_bps` slopes (the
+  `forward_ic` harness is the seed) and disclose a confidence interval at
+  load, so G12 also gates on a lower bound — removing optimism at the source,
+  not just at runtime.
+- **Live call-site**: invoke `reconcile_session` from the operational
+  session-end scheduler (the function is wired and tested; only the live
+  cron/hook is environment-specific).

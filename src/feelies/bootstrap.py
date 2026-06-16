@@ -649,6 +649,16 @@ def build_platform(
     # bus-driven Phase-3 / Phase-4 composition pipeline owns multi-alpha
     # arbitration end-to-end.
 
+    # Close-the-loop (gate): load per-alpha realization factors from the
+    # versioned EdgeCalibrationStore when an ``edge_calibration_path`` is
+    # configured.  Absent path -> empty -> no haircut (parity-preserving).
+    edge_calibration_factors: dict[str, float] = {}
+    _edge_cal_path = getattr(config, "edge_calibration_path", None)
+    if _edge_cal_path:
+        from feelies.forensics.edge_calibration import EdgeCalibrationStore
+
+        edge_calibration_factors = EdgeCalibrationStore(_edge_cal_path).factors()
+
     orchestrator = Orchestrator(
         clock=clock,
         bus=bus,
@@ -683,6 +693,7 @@ def build_platform(
         cross_sectional_tracker=cross_sectional_tracker,
         composition_metrics_collector=composition_metrics,
         hazard_exit_controller=hazard_exit_controller,
+        edge_calibration_factors=edge_calibration_factors,
         signal_order_trace_sink=signal_order_trace_sink,
         net_shadow_sink=net_shadow_sink,
         size_shadow_sizer=tilted_sizer if size_shadow_sink is not None else None,

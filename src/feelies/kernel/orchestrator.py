@@ -40,7 +40,7 @@ from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from decimal import ROUND_HALF_UP, Decimal
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Mapping
 
 logger = logging.getLogger(__name__)
 
@@ -421,6 +421,7 @@ class Orchestrator:
         composition_metrics_collector: "HorizonMetricsCollector | None" = None,
         hazard_exit_controller: "HazardExitController | None" = None,
         signal_arbitrator: SignalArbitrator | None = None,
+        edge_calibration_factors: Mapping[str, float] | None = None,
         signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
         regime_calibration_quotes: Sequence[NBBOQuote] | None = None,
         position_manager: "PositionManager | None" = None,
@@ -636,6 +637,15 @@ class Orchestrator:
         # disclosed one-way edge by 2 inside the gate so both sides
         # share the round-trip basis explicitly.
         self._signal_edge_cost_basis: str = "round_trip"
+        # Close-the-loop (calibrate/gate): per-alpha realization factor in
+        # [0, 1] that shrinks the disclosed ``edge_estimate_bps`` the B4 gate
+        # trades on toward realized edge (Inv-4).  Empty -> factor 1.0 for
+        # every alpha -> identical behaviour (parity-preserving).  Sourced
+        # from a versioned ``EdgeCalibrationStore`` at construction, so it is
+        # a fixed input within a replay (Inv-5).
+        self._edge_calibration_factors: dict[str, float] = (
+            dict(edge_calibration_factors) if edge_calibration_factors else {}
+        )
         # B5: reversal edge guard multiplier.  The entry leg of a REVERSE
         # intent is suppressed (flatten-only) unless the signal edge clears
         # this multiple of the combined exit+entry round-trip cost.  0.0
@@ -2943,18 +2953,29 @@ class Orchestrator:
             is_taker_entry=is_taker_entry,
             is_short_entry=is_short_entry,
         )
+        # Close-the-loop (gate): trade on the realization-calibrated edge,
+        # not the raw disclosed estimate.  factor defaults to 1.0 (no
+        # calibration -> unchanged, parity-preserving).
+        factor = self._edge_calibration_factors.get(signal.strategy_id, 1.0)
+        effective_edge_bps = signal.edge_estimate_bps * factor
         if entry_edge_clears_cost(
-            edge_bps=signal.edge_estimate_bps,
+            edge_bps=effective_edge_bps,
             rt_cost_bps=rt_cost_bps,
             min_ratio=self._signal_min_edge_cost_ratio,
             basis=self._signal_edge_cost_basis,
         ):
             return True
+        gate_detail = (
+            detail
+            if factor >= 1.0
+            else f"{detail}; realization factor={factor:.3f} "
+            f"(disclosed {signal.edge_estimate_bps:.2f} -> {effective_edge_bps:.2f} bps)"
+        )
         self._emit_signal_edge_gate_suppression_alert(
             signal,
             symbol,
             correlation_id,
-            detail=detail,
+            detail=gate_detail,
         )
         return False
 
