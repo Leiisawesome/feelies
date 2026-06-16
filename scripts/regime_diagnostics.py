@@ -34,7 +34,7 @@ Usage
 -----
     # Cache mode (mirrors a real backtest's engine + calibration):
     uv run python scripts/regime_diagnostics.py \
-        --config configs/backtest_app.yaml \
+        --config configs/bt_app.yaml \
         --symbol APP --date 2026-06-01 --date 2026-06-05 \
         [--cache-dir ~/.feelies/cache] [--horizon 120] [--vol-bound 0.30]
 
@@ -531,7 +531,7 @@ def _load_quotes_from_cache(
     Engine is built via :func:`_build_engine`.  Mirrors a real backtest:
     applies ``prepare_backtest_event_log`` so the ``session_kind`` filter
     (default RTH) and the calibration-prefix selection match what
-    ``run_backtest`` / ``export_full_trade_list`` feed the orchestrator.
+    ``run_backtest`` feeds the orchestrator.
     Without this, cache-mode diagnostics would calibrate and score on a
     quote universe that diverges from the production replay.
 

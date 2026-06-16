@@ -1,0 +1,18 @@
+# APP research backtest — single-alpha config for sig_moc_imbalance_v1.
+#
+# Usage:
+#   uv run python scripts/run_backtest.py --config configs/bt_sig_moc_imbalance.yaml \
+#       --symbol APP --date 2026-03-26
+#
+# Inherits platform defaults via ``extends:``; only APP-specific deltas below.
+extends: ../platform.yaml
+
+symbols:
+  - APP
+
+alpha_specs:
+  - alphas/sig_moc_imbalance_v1/sig_moc_imbalance_v1.alpha.yaml
+
+signal_min_edge_cost_ratio: 1.5
+
+parameter_overrides: {}

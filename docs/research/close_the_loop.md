@@ -149,9 +149,7 @@ run_backtest --config configs/backtest_multialpha.yaml \
 
 Pass 1 prints each alpha's `realized / disclosed` edge and `lcb_factor`; in
 pass 2 an alpha whose realized edge has decayed (e.g. `sig_kyle_drift_v1` →
-factor ~0) is gated out, so its fee bleed stops. `scripts/research/close_the_loop_demo.py`
-shows the same flip on the reported APP 2026-03-26 numbers (1 session → no
-change; 6 sessions → kyle/benign flip PASS→FAIL).
+factor ~0) is gated out, so its fee bleed stops.
 
 ## Remaining (optional refinements)
 

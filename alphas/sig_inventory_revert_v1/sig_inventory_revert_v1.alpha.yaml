@@ -9,7 +9,7 @@ version: "1.1.0"
 lifecycle_state: RESEARCH
 notes: |
   QUARANTINED 2026-06-15 by the audit P2-1 forward-return study
-  (docs/research/inventory_sign_ic.md, scripts/research/inventory_sign_ic.py).
+  (docs/audits/signal_alpha_audit_2026-06-14.md; harness: feelies.research.forward_ic).
   Across 6 sessions / 3 symbols (AAPL 2026-03-20/23/26, APP 2026-06-01/05,
   AGNC 2026-04-21) the Spearman IC of quote_replenish_asymmetry_zscore vs the
   forward 30 s micro-price return is indistinguishable from zero (pooled

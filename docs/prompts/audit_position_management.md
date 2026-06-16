@@ -118,7 +118,6 @@ Signal (selected at M4; _select_bus_signal arbitration; _check_stop_exit may ove
 
 ### Operator surfaces (measurement streams)
 
-- `scripts/analyze_net_divergence.py`, `scripts/analyze_size_divergence.py`
 - `configs/backtest_multialpha.yaml`, `backtest_multialpha_netting.yaml`,
   `backtest_sizing_tilt.yaml` (+ ablation variants: `backtest_sizing_tilt_edgeonly.yaml`,
   `backtest_sizing_tilt_invonly.yaml`, `backtest_multialpha_sizing_tilt.yaml`,
@@ -131,9 +130,6 @@ Signal (selected at M4; _select_bus_signal arbitration; _check_stop_exit may ove
 - `tests/portfolio/test_lot_ledger.py`, `test_memory_position_store.py`,
   `test_strategy_position_store.py`, `test_position_store_bid_ask_marks.py`
 - `tests/storage/test_trade_journal.py` (fill-journal contract)
-- Determinism: `tests/determinism/test_emit_net_divergence_jsonl.py`,
-  `test_emit_size_divergence_jsonl.py`, `test_analyze_net_divergence.py`,
-  `test_analyze_size_divergence.py`
 - Kernel-embedded coverage (note the placement): stop-exit / reverse / session-flatten /
   working-exit behavior is tested inside `tests/kernel/test_orchestrator.py` and
   `test_orchestrator_bus_signal.py`; B4 in `tests/kernel/test_orchestrator_cost_gate.py`
@@ -273,7 +269,6 @@ or safety.
    - `uv run pytest tests/execution/test_intent.py tests/execution/test_position_manager.py tests/execution/test_portfolio_netter.py -q`
    - `uv run pytest tests/risk/test_position_sizer.py tests/risk/test_edge_weighted_sizer.py -q`
    - `uv run pytest tests/portfolio/ -q`
-   - `uv run pytest tests/determinism/test_emit_net_divergence_jsonl.py tests/determinism/test_emit_size_divergence_jsonl.py tests/kernel/test_orchestrator_cost_gate.py -q`
    Do not modify production code.
 
 ---

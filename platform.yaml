@@ -149,7 +149,7 @@ cost_max_commission_pct: 1.0
 # Audit P1-3: Inv-12 requires edge > 1.5× ROUND-TRIP cost.  This default
 # (1.0) is only round-trip break-even; it is intentionally permissive for
 # the reference profile.  Every deployment config that trades for real
-# (configs/backtest_app*.yaml, configs/backtest_multialpha.yaml,
+# (configs/bt_app*.yaml, configs/bt_multialpha.yaml,
 # configs/paper_run.yaml, configs/paper_smoke_rth.yaml) overrides this to
 # 1.5 to satisfy Inv-12.  Leave reference at 1.0 only for research; raise
 # to 1.5 for any cost-realistic run.

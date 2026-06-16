@@ -11,8 +11,8 @@ Motivating use (audit P2-1): confirm or refute the sign convention of
 ``quote_replenish_asymmetry_zscore`` predict a *positive* forward
 30-second micro-price return (LONG), or is the sign inverted/absent?  The
 alpha's own comment flags this as unconfirmed; this module is the
-measurement tool.  Drive it on cached L1 NBBO via
-``scripts/research/inventory_sign_ic.py``.
+measurement tool.  Re-run via a custom replay harness that imports this module
+and the alpha's sensor stack on cached L1 NBBO.
 
 Statistics notes:
 

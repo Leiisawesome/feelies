@@ -1,7 +1,7 @@
 """Locked APP 2026-03-26 backtest regression baseline (Phase 0).
 
 Requires a populated disk cache for ``APP/2026-03-26`` (run once with
-``run_backtest.py`` and ``--cache-dir``).  Uses ``configs/backtest_app.yaml``
+``run_backtest.py`` and ``--cache-dir``).  Uses ``configs/bt_app.yaml``
 parameter overrides for ``sig_benign_midcap_v1``.
 
 Re-baseline only when the trade path, config contract, or input dataset
@@ -30,14 +30,14 @@ from feelies.storage.cache_replay import CacheReplayError, load_event_log_from_d
 
 _BASELINE_SYMBOL = "APP"
 _BASELINE_DATE = "2026-03-26"
-_BASELINE_CONFIG = Path("configs/backtest_app.yaml")
+_BASELINE_CONFIG = Path("configs/bt_app.yaml")
 # NOTE (G-1 / 2026-06-08): the position-manager decision layer is now driven
 # by default with cost-aware TRIM enabled (PlatformConfig.position_manager_*).
 # This intentionally changes BOTH config_hash (new snapshot keys) and the
 # trade path (partial reduces). The constants below are the PRE-G-1 baseline
 # and MUST be regenerated against the disk-cache dataset before this
 # functional test passes again:
-#   uv run python scripts/run_backtest.py --config configs/backtest_app.yaml \
+#   uv run python scripts/run_backtest.py --config configs/bt_app.yaml \
 #       --symbol APP --date 2026-03-26
 # then update _BASELINE_PARITY_HASH / _BASELINE_NET_PNL / _BASELINE_FILL_COUNT
 # from the report in one commit.
@@ -55,7 +55,7 @@ _BASELINE_CONFIG = Path("configs/backtest_app.yaml")
 # provenance into config_hash and the trade journal into pnl_hash, so it can
 # only be regenerated from a cached run; the trade path is instead locked by
 # Net P&L + fill count.  To re-pin a full literal, run against the cache:
-#   uv run python scripts/run_backtest.py --config configs/backtest_app.yaml \
+#   uv run python scripts/run_backtest.py --config configs/bt_app.yaml \
 #       --symbol APP --date 2026-03-26
 # Re-baked after audit P0/P1 + 2P: the reference alpha now confirms with
 # ``book_imbalance_mean`` (2P-3), and the platform sensor block gained
