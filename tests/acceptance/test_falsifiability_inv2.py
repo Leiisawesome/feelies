@@ -36,7 +36,7 @@ def _signal_alpha_paths() -> list[Path]:
     for path in sorted(_ALPHAS_DIR.rglob("*.alpha.yaml")):
         if "_template" in path.parts:
             continue
-        spec = yaml.safe_load(path.read_text())
+        spec = yaml.safe_load(path.read_text(encoding="utf-8"))
         if isinstance(spec, dict) and str(spec.get("layer", "")).upper() == "SIGNAL":
             paths.append(path)
     return paths

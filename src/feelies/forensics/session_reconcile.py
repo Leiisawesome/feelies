@@ -22,8 +22,9 @@ alpha lifecycles, (c) the disclosed edges from the loaded alphas, and (d) the
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
-from typing import Iterable, Mapping
+from typing import cast
 
 from feelies.forensics.cost_circuit_breaker import (
     CircuitBreakerDecision,
@@ -114,17 +115,18 @@ def disclosed_edges_from_registry(registry: object) -> dict[str, float]:
     ``disclosed_edges`` directly).
     """
     out: dict[str, float] = {}
-    iterable: object
     active_alphas = getattr(registry, "active_alphas", None)
     modules = getattr(registry, "modules", None)
     if callable(active_alphas):
-        iterable = active_alphas()
+        iterable = cast(Iterable[object], active_alphas())
     elif callable(modules):
-        iterable = modules()
+        iterable = cast(Iterable[object], modules())
     else:
-        iterable = registry
+        iterable = cast(Iterable[object], registry)
     try:
-        for module in iterable:  # type: ignore[union-attr]
+        if not isinstance(iterable, Iterable):
+            return out
+        for module in iterable:
             manifest = getattr(module, "manifest", None)
             cost = getattr(module, "cost", None)
             alpha_id = getattr(manifest, "alpha_id", None)

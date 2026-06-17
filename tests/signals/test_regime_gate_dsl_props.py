@@ -261,7 +261,7 @@ _HOLD_BAND_PROBE = {
 
 def _load_gate(alpha_id: str) -> RegimeGate:
     path = _ALPHA_ROOT / alpha_id / f"{alpha_id}.alpha.yaml"
-    spec = yaml.safe_load(path.read_text())
+    spec = yaml.safe_load(path.read_text(encoding="utf-8"))
     return RegimeGate.from_spec(alpha_id=alpha_id, spec=spec["regime_gate"])
 
 
