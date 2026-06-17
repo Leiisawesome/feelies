@@ -1,7 +1,8 @@
 <!--
   File:    docs/audits/sensor_audit_2026-06-11.md
   Status:  AUDIT — §1-8 first pass (read-only); §9 remediation (code merged);
-           §10 second-pass review of the remediation (read-only, 2026-06-12).
+           §10 second-pass review + remediation (merged); §11 third-pass
+           robustness / logic-soundness review (read-only, 2026-06-13).
   Scope:   Layer-1 sensors → Layer-1.5 horizon aggregation → HorizonFeatureSnapshot.
   Method:  Static read of src + YAML + tests; full suite 3311 pass / 43 skip
            (4 pre-existing env failures) after the §9 remediation.
@@ -900,3 +901,160 @@ alpha's signals changed). Full suite green apart from the same pre-existing
 environment failures (`massive` / `dotenv` / `yaml`-stub absence).
 
 *End of audit (second-pass remediation appended 2026-06-13).*
+
+---
+
+## 11. Third-pass review — algorithm robustness & logic soundness (2026-06-13)
+
+This pass applies an institutional-grade robustness lens: numerical stability,
+data-quality failure modes, fail-safe containment, and logic soundness across
+the whole path (sensors → aggregator → snapshot → gate/signal), **including the
+code added in passes 1–2**. The bar is "what breaks in production on a bad tick,
+a crossed quote, or a million-event session" — not "does the unit test pass."
+Findings are `3P-*`. This pass is read-only; no code was changed. Two findings
+are P0/P1-class and one (`3P-3`) is a logic regression introduced in `2P-3`.
+
+### 3P-1 (P0, institutional) — no NaN/Inf containment anywhere on the path
+
+The feature-engine SKILL "Failure Modes" table promises a safeguard:
+*"NaN / Inf in sensor value → post-update value check → suppress emission; emit
+`Alert`; flag `provenance.valid = False`"* (`feature-engine/SKILL.md:327`). **No
+such check exists anywhere.** The registry publishes the sensor's value verbatim
+(`registry.py:282` `raw = sensor.update(...)` → `:303` `self._bus.publish(reading)`
+→ `_stamp` `:358` `value=reading.value`, no finiteness test); the aggregator
+stores it with a bare `float(value)` (`aggregator.py:521`); and `signals/` /
+`risk/` contain no `isfinite`/`isnan` guard either (grep: empty). So a single
+non-finite sensor value propagates **unbounded** with three compounding harms:
+
+1. **Permanent accumulator poisoning.** A NaN folded into a
+   `HorizonWindowedFeature` reverse-Welford (`horizon_windowed.py:169-189`)
+   sets `mean`/`M2` to NaN forever — every subsequent z-score/mean/sum for that
+   `(feature, symbol, horizon)` is NaN for the rest of the session, and the
+   `M2 < 0 → 0` clamp does not catch NaN (`NaN < 0` is `False`).
+2. **Silent gate corruption.** A NaN in `snapshot.values` makes every gate
+   comparison evaluate `False` (`NaN < 1.5` is `False`), so the ON/OFF latch
+   silently takes the wrong branch instead of failing safe.
+3. **NaN sizing.** A NaN reaches `Signal.edge_estimate_bps`, then position
+   sizing — a non-finite target quantity is the textbook institutional
+   incident.
+
+- **Falsifiable:** inject one `float('nan')` `SensorReading` for a windowed
+  feature; every later snapshot value for that feature is NaN and entries are
+  no longer gated by the real condition.
+- **Fix (P0):** implement the documented contract at the registry emission
+  boundary — reject non-finite `value` (and each tuple component), suppress the
+  emission, emit `Alert`, set `provenance.valid = False`; add a defensive
+  finiteness guard at `aggregator.py:521` so a feature bug cannot poison the
+  snapshot. **Effort: M.** This is the single most important institutional gap
+  in the layer.
+
+### 3P-2 (P1, institutional / data-quality) — no crossed/locked-market guard
+
+Every price-consuming sensor guards only `bid <= 0 or ask <= 0`
+(e.g. `spread_z_30d.py:93`, `liquidity_stress_score.py:157`, `micro_price.py:84`)
+— **none reject a crossed (`bid > ask`) or locked (`bid == ask`) NBBO**, which
+occur routinely in fast markets, around halts, and from SIP consolidation
+latency. The consequences are silent and sometimes sign-inverted:
+
+- `spread_z_30d` folds a **negative** spread into its rolling mean/variance,
+  distorting the entire spread distribution and every subsequent z-score.
+- `liquidity_stress_score` is **inverted** on a cross: `z_spread` goes strongly
+  negative, and `excess = max(0, z_spread) + max(0, z_thin)`
+  (`liquidity_stress_score.py:195,173`) drops the spread axis to **0** — so a
+  crossed book (an acute stress / dislocation event) reads as *zero stress*,
+  exactly backwards for an exit-only alarm.
+- `micro_price` can return a value **outside `[bid, ask]`** when the book is
+  crossed (`micro_price.py:94`), feeding a nonsensical "fair price."
+
+- **Fix (P1):** add a shared crossed/locked guard to the price-consuming
+  sensors (reject `bid >= ask`, or treat crossed as a degenerate book like the
+  `bid<=0` path and reset carry-forward mids), or filter crossed/locked NBBO at
+  the normalizer so the whole sensor layer sees only valid books. **Effort: M.**
+
+### 3P-3 (P1, logic soundness — regression introduced in 2P-3) — dead `imb == 0.0` guard
+
+The reference alpha's neutral-rejection guard `if imb == 0.0: return None`
+(`sig_benign_midcap_v1.alpha.yaml:166`) was sound when `imb` was the
+last-of-horizon `book_imbalance` passthrough (exactly `0.0` when
+`bid_size == ask_size`). After `2P-3` re-pointed it to `book_imbalance_mean` — a
+float **mean** over many in-window readings — exact `0.0` essentially never
+occurs, so the guard is **dead code**: a near-zero mean (no real queue
+confirmation) now passes the footprint check and can fire a signal on noise.
+
+- **Falsifiable:** feed a `book_imbalance_mean` of `1e-9` with `z` above
+  threshold ⇒ a signal fires, where the intent was to require a *meaningful*
+  same-side imbalance.
+- **Fix (P1):** replace exact equality with an epsilon band, e.g.
+  `if abs(imb) < params["imbalance_floor"]: return None`. **Effort: S.**
+  **Note:** this re-touches the reference alpha, so it will re-trigger the
+  data-gated APP PnL/fill re-bake that was just completed — batch it with any
+  other reference-alpha change rather than shipping it alone.
+
+### 3P-4 (P2, numerical) — drift-prone reverse-Welford vs exact recompute
+
+The two feature families use *different* numerical schemes for the same
+statistic. `HorizonWindowedFeature` maintains `mean`/`M2` incrementally with a
+reverse-Welford remove on every eviction (`horizon_windowed.py:169-189,196,249`)
+— over a 1800 s window at high quote rate this is millions of add/remove pairs
+per session, accumulating float error, and the `M2 < 0 → 0` clamp
+(`:186-188`) *masks* the error rather than bounding it. `RollingZscoreFeature`
+instead recomputes `sum`/`var` from the deque on each `finalize`
+(`rolling_stats.py:193-195`) — O(n) but numerically exact, no drift. For
+institutional grade the incremental reverse-Welford over a long high-frequency
+window is the riskier choice for the *more*-used feature family.
+
+- **Fix (P2):** periodically recompute `mean`/`M2` from the live deque (e.g.
+  every K finalizes, or whenever the M2 clamp fires) to bound drift, or document
+  and test a precision budget. **Effort: M.**
+
+### 3P-5 (P2, consistency) — gap-handling differs across the mid-return sensors
+
+The log-return sensors disagree on what a bad tick does to carry-forward state:
+`realized_vol_30s` (`realized_vol_30s.py:96-101`) and `structural_break_score`
+(`structural_break_score.py:160-165`) reset `last_mid = None` so the next return
+cannot span the gap; `snr_drift_diffusion` (`snr_drift_diffusion.py:192-193`)
+returns `None` **without** resetting, so its per-horizon return spans the
+bad-data gap (then splits it into `N` equal bars, understating a halt jump);
+`kyle_lambda_60s` resets a *different* field (`last_nbbo_mid`). Harmonize the
+gap-reset contract across all mid-derived sensors so behaviour around halts is
+uniform and auditable. (`snr` is dormant, so low urgency — but the inconsistency
+is a latent surprise.) **Effort: S.**
+
+### 3P-6 (P2, robustness) — `ofi_integrated` is unbounded and unnormalised
+
+The `2P-2` integral (`sum` reducer over `ofi_raw`, `horizon_windowed.py:281`
+`mean * n`) is the correct *quantity*, but its magnitude scales with both quote
+count and book depth, so a single fat-finger size or a quote-rate burst can
+dominate the window, and the value is not comparable across symbols or regimes.
+Any future alpha thresholding `ofi_integrated` directly is brittle.
+
+- **Fix (P2):** normalise the integral (per-window traded volume, or `√n`), or
+  require it be z-scored before use; document that a raw threshold is
+  unsupported. **Effort: S.**
+
+### 3P-7 (P2, robustness) — single-quote saturation in `book_imbalance`
+
+`book_imbalance = (bid_size − ask_size)/(bid_size + ask_size)`
+(`book_imbalance.py`) saturates to ±1 on a single lopsided resting order; the
+`2P-3` horizon mean dampens transient spikes but a persistent fat-finger /
+spoof quote holds the mean near ±1. Consider winsorising displayed sizes or
+capping the per-quote contribution before averaging. **Effort: S.**
+
+### Third-pass backlog
+
+| ID | Sev | One-line fix | Effort |
+|----|-----|--------------|--------|
+| 3P-1 | **P0** | Reject non-finite sensor values at registry emission (Alert + provenance.valid=False); finiteness guard in aggregator | M |
+| 3P-2 | P1 | Reject crossed/locked NBBO in price-consuming sensors (or filter at the normalizer) | M |
+| 3P-3 | P1 | Replace `imb == 0.0` with an epsilon band (batch with the APP re-bake) | S |
+| 3P-4 | P2 | Bound reverse-Welford drift (periodic recompute) or document a precision budget | M |
+| 3P-5 | P2 | Harmonise the bad-tick gap-reset contract across mid-return sensors | S |
+| 3P-6 | P2 | Normalise / mandate z-scoring of `ofi_integrated` | S |
+| 3P-7 | P2 | Winsorise `book_imbalance` displayed sizes | S |
+
+**Priority guidance:** `3P-1` (NaN/Inf containment) is the institutional P0 —
+it is a fail-safe the platform *documents but does not have*, and its blast
+radius (permanent accumulator poison → NaN sizing) is severe. `3P-2` and `3P-3`
+are next. `3P-4`–`3P-7` are hardening.
+
+*End of audit (third pass appended 2026-06-13).*
