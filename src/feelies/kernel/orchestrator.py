@@ -5050,7 +5050,7 @@ class Orchestrator:
         correlation_id: str,
     ) -> None:
         """Submit the guaranteed MARKET residual for a non-filled working exit."""
-        order_id = hashlib.sha256(f"{parent_order_id}:working_fallback".encode()).hexdigest()[:16]
+        order_id = derive_order_id(f"{parent_order_id}:working_fallback")
         order = OrderRequest(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=correlation_id,
@@ -5504,6 +5504,16 @@ class Orchestrator:
                     # fill proportionally across all strategy positions
                     # for this symbol to keep strategy and global stores
                     # in sync.
+                    #
+                    # Forensic-approximate (audit P1, 2026-06-18): the
+                    # proportional split keeps the *aggregate* realized
+                    # PnL exact, but on a shared symbol it can mis-
+                    # attribute realized PnL across alphas relative to
+                    # the alpha that actually held the risk.  Per-alpha
+                    # attribution from this path is therefore an estimate,
+                    # not a ledger of record; consumers needing exact per-
+                    # alpha cost basis must use the FillLedger attribution
+                    # branch above (driven by allocate_fill).
                     self._distribute_fill_to_strategies(
                         ack.symbol,
                         signed_qty,

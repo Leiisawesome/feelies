@@ -524,8 +524,9 @@ def build_platform(
     )
     # G-7: build the edge/vol/inventory tilt config from PlatformConfig.  The
     # tilted sizer drives the live decision only when ``sizer_tilt_drive`` is
-    # set (S2 flip); otherwise it is used solely for the shadow measurement
-    # stream and the live size stays single-factor (byte-identical baseline).
+    # set (audit P2.3: available opt-in, default OFF); otherwise it is used
+    # solely for the shadow measurement stream and the live size stays
+    # single-factor (byte-identical baseline).
     sizer_tilt_config = SizerTiltConfig(
         edge_enabled=config.sizer_edge_weighting_enabled,
         edge_ref_bps=config.sizer_edge_ref_bps,
