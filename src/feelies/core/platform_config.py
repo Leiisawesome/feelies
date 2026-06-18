@@ -328,10 +328,15 @@ class PlatformConfig:
     # round-trip cost.  0.0 disables the gate (churn-guard-only trim).
     position_manager_trim_edge_gate_multiplier: float = 1.0
     # P4: urgency-driven execution style.  When True, discretionary trims
-    # work PASSIVE (post a limit) instead of crossing at MARKET.  Default
-    # off — a passive reduction defers on a non-fill, so it is opt-in until
-    # the working-exit-with-market-fallback layer lands.
-    position_manager_urgency_exec: bool = False
+    # work PASSIVE (post a limit) instead of crossing at MARKET, saving the
+    # spread on a non-safety reduce.  Audit P2 (2026-06-18): flipped default
+    # ON now that the working-exit-with-market-fallback layer has landed
+    # (``_escalate_unfilled_working_exits`` / ``_submit_working_exit_fallback``
+    # re-submit any unfilled passive residual as MARKET), so a passive trim
+    # that does not fill is still guaranteed to complete.  Only the
+    # discretionary TRIM leg is affected; entries/exits/reverses are
+    # unchanged.  This changes the trade path — re-baseline the APP backtest.
+    position_manager_urgency_exec: bool = True
 
     # G-6: session / EOD flatten.  When enabled (and an RTH session is
     # configured), open positions are flattened — and new entries blocked —
@@ -357,6 +362,15 @@ class PlatformConfig:
     # and the live size stays single-factor — byte-identical to the baseline.
     # Each factor is independently disabled by default, so even when driving,
     # an all-off config reproduces the base sizer exactly.
+    #
+    # Audit P2.3 (2026-06-18): the EDGE-weighted tilt is fully wired and
+    # available **opt-in** — an operator promotes it per deployment by setting
+    # ``sizer_tilt_drive: true`` + ``sizer_edge_weighting_enabled: true`` (then
+    # a disclosed-positive-edge entry is sized by ``edge / edge_ref_bps``
+    # clamped to ``[edge_floor, edge_cap]``, re-capped at
+    # ``max_position_per_symbol`` and floored at 0 — Inv-11 holds).  It is left
+    # OFF by default so promoting edge-amplified sizing is a conscious,
+    # re-baselined per-deployment choice rather than a platform-wide default.
     sizer_tilt_drive: bool = False
     sizer_edge_weighting_enabled: bool = False
     sizer_edge_ref_bps: float = 20.0
@@ -1411,7 +1425,7 @@ class PlatformConfig:
             position_manager_trim_edge_gate_multiplier=float(
                 data.get("position_manager_trim_edge_gate_multiplier", 1.0)
             ),
-            position_manager_urgency_exec=bool(data.get("position_manager_urgency_exec", False)),
+            position_manager_urgency_exec=bool(data.get("position_manager_urgency_exec", True)),
             session_flatten_enabled=bool(data.get("session_flatten_enabled", True)),
             session_flatten_seconds_before_close=int(
                 data.get("session_flatten_seconds_before_close", 0)
