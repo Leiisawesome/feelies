@@ -19,8 +19,9 @@ Determinism (Inv-5)
 
 Both triggers fire from event timestamps — the controller never reads
 wall-clock time.  Order ID derivation is SHA-256 of
-``(correlation_id, sequence, symbol, reason)`` so two replays produce
-identical IDs.
+``(correlation_id, trigger_ts_ns, symbol, reason)`` (the triggering
+event's timestamp, not a sequence number — see ``_maybe_emit_exit``) so
+two replays produce identical IDs.
 
 Idempotency / suppression
 -------------------------

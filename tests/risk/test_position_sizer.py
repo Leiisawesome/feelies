@@ -158,3 +158,42 @@ class TestEdgeCases:
         )
         # factor 1.0: 100000 * 10% = 10000 / 100 = 100
         assert qty == 100
+
+
+class TestStrengthClamp:
+    """Audit R-8: conviction is clamped to [0, 1] so a stray strength > 1.0
+    cannot size above the alpha's allocated capital."""
+
+    def test_strength_above_one_is_clamped(self, budget: AlphaRiskBudget) -> None:
+        sizer = BudgetBasedSizer()
+        clamped = sizer.compute_target_quantity(
+            _make_signal(strength=5.0),
+            budget,
+            symbol_price=Decimal("100"),
+            account_equity=Decimal("100000"),
+        )
+        full = sizer.compute_target_quantity(
+            _make_signal(strength=1.0),
+            budget,
+            symbol_price=Decimal("100"),
+            account_equity=Decimal("100000"),
+        )
+        # strength 5.0 must not exceed the full-conviction (strength 1.0) size.
+        assert clamped == full == 100
+
+
+class TestRegimeMissingDataFailsSafe:
+    """Audit R-3: a configured engine with no posterior for the symbol
+    tightens quantity to min(factors), not the 1.0 baseline."""
+
+    def test_missing_posterior_uses_min_factor(self, budget: AlphaRiskBudget) -> None:
+        regime = HMM3StateFractional()  # no posterior for AAPL
+        sizer = BudgetBasedSizer(regime_engine=regime)
+        qty = sizer.compute_target_quantity(
+            _make_signal(strength=1.0),
+            budget,
+            symbol_price=Decimal("100"),
+            account_equity=Decimal("100000"),
+        )
+        # min factor = 0.5: 100000 * 10% = 10000 * 0.5 / 100 = 50
+        assert qty == 50

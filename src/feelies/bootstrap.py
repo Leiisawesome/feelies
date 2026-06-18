@@ -421,6 +421,9 @@ def build_platform(
         buying_power_config=buying_power_config,
         trading_session_bounds=trading_session_bounds,
         account_id=config.account_id,
+        # Audit R-9: in PAPER/LIVE an unwired ENTRY gate fails open; surface
+        # a one-shot WARNING if any are missing so the omission is visible.
+        warn_on_inert_entry_gates=config.mode in (OperatingMode.PAPER, OperatingMode.LIVE),
     )
 
     cost_model = DefaultCostModel(
@@ -506,7 +509,19 @@ def build_platform(
     strategy_positions = StrategyPositionStore()
     trade_journal = InMemoryTradeJournal()
     feature_snapshots = InMemoryFeatureSnapshotStore()
-    base_sizer = BudgetBasedSizer(regime_engine=regime_engine)
+    # Audit R-7: the position sizer scales *quantity* by regime while the
+    # risk engine scales *limits* by regime — a deliberate series, not a
+    # double-scale.  Source both from the same RiskConfig scale fields so the
+    # two can never silently drift (previously the sizer used its own
+    # hard-coded defaults that merely happened to match RiskConfig defaults).
+    base_sizer = BudgetBasedSizer(
+        regime_engine=regime_engine,
+        regime_factors={
+            "vol_breakout": risk_config.regime_vol_breakout_scale,
+            "compression_clustering": risk_config.regime_compression_scale,
+            "normal": risk_config.regime_normal_scale,
+        },
+    )
     # G-7: build the edge/vol/inventory tilt config from PlatformConfig.  The
     # tilted sizer drives the live decision only when ``sizer_tilt_drive`` is
     # set (S2 flip); otherwise it is used solely for the shadow measurement

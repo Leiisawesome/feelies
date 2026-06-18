@@ -9,6 +9,7 @@ signal-to-execution path exists.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Protocol
 
 from feelies.core.events import (
@@ -43,8 +44,21 @@ class RiskEngine(Protocol):
         self,
         order: OrderRequest,
         positions: PositionStore,
+        *,
+        additional_exposure: Decimal = Decimal("0"),
     ) -> RiskVerdict:
-        """Final pre-submission validation on a concrete order."""
+        """Final pre-submission validation on a concrete order.
+
+        ``additional_exposure`` (default ``0``) is the signed gross-notional
+        already committed by *earlier* legs of the same in-flight
+        ``SizedPositionIntent`` that are not yet reflected in ``positions``
+        (fills happen after the whole intent is vetted).  The per-leg
+        decomposition in :func:`feelies.risk.sized_intent_orders.build_sized_intent_orders`
+        passes the running total so the gross-exposure and buying-power caps
+        are enforced *cumulatively* across legs rather than each leg seeing
+        only the pre-intent snapshot (audit R-1).  The standalone SIGNAL path
+        leaves it at the default and is unchanged.
+        """
         ...
 
     def check_sized_intent(

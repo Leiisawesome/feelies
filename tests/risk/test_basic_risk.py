@@ -509,6 +509,158 @@ class TestPortfolioOrderG12Disclosure:
         assert orders[0].g12_disclosed_cost_total_bps == 0.0
 
 
+class TestSizedIntentCumulativeGrossCap:
+    """Audit R-1: the gross cap must bind across legs of one intent.
+
+    Each leg's ``check_order`` previously saw only the pre-intent
+    ``positions`` snapshot, so K legs each individually under the cap
+    could collectively breach it.  ``build_sized_intent_orders`` now
+    threads the running admitted gross into ``additional_exposure``.
+    """
+
+    def test_second_leg_dropped_when_aggregate_breaches_cap(
+        self, store: MemoryPositionStore
+    ) -> None:
+        # max_gross = 10% of $100k = $10,000.  Two flat symbols at $100.
+        cfg = RiskConfig(
+            max_position_per_symbol=100_000,
+            max_gross_exposure_pct=10.0,
+            max_drawdown_pct=99.0,
+            account_equity=Decimal("100000"),
+        )
+        engine = BasicRiskEngine(cfg)
+        store.update("AAPL", 0, Decimal("100"))
+        store.update_mark("AAPL", Decimal("100"))
+        store.update("MSFT", 0, Decimal("100"))
+        store.update_mark("MSFT", Decimal("100"))
+
+        # Each leg is $6,000 (< $10k cap) in isolation; together $12,000.
+        intent = _make_sized_intent(targets={"AAPL": 6_000.0, "MSFT": 6_000.0})
+        result = engine.check_sized_intent(intent, store)
+
+        # Lexicographic order admits AAPL, then MSFT breaches the running
+        # cap and is veto-dropped — the rest of the intent is unaffected.
+        assert {o.symbol for o in result.orders} == {"AAPL"}
+        assert result.requires_global_risk_escalation is False
+
+    def test_both_legs_pass_when_aggregate_within_cap(
+        self, store: MemoryPositionStore
+    ) -> None:
+        cfg = RiskConfig(
+            max_position_per_symbol=100_000,
+            max_gross_exposure_pct=10.0,
+            max_drawdown_pct=99.0,
+            account_equity=Decimal("100000"),
+        )
+        engine = BasicRiskEngine(cfg)
+        store.update("AAPL", 0, Decimal("100"))
+        store.update_mark("AAPL", Decimal("100"))
+        store.update("MSFT", 0, Decimal("100"))
+        store.update_mark("MSFT", Decimal("100"))
+
+        # $4,000 + $4,000 = $8,000 < $10k cap → both admitted.
+        intent = _make_sized_intent(targets={"AAPL": 4_000.0, "MSFT": 4_000.0})
+        result = engine.check_sized_intent(intent, store)
+        assert {o.symbol for o in result.orders} == {"AAPL", "MSFT"}
+
+
+class TestSizedIntentRaisingCheckContained:
+    """Audit R-2: a raising per-leg check_order must not propagate."""
+
+    def test_raising_leg_is_veto_dropped(self, config: RiskConfig) -> None:
+        engine = BasicRiskEngine(config)
+        store = MemoryPositionStore()
+        store.update("AAPL", 0, Decimal("100"))
+        store.update_mark("AAPL", Decimal("100"))
+        store.update("MSFT", 0, Decimal("100"))
+        store.update_mark("MSFT", Decimal("100"))
+
+        def boom_check_order(
+            self: BasicRiskEngine,
+            order: OrderRequest,
+            positions: MemoryPositionStore,
+            *,
+            additional_exposure: Decimal = Decimal("0"),
+        ) -> RiskVerdict:
+            if order.symbol == "AAPL":
+                raise RuntimeError("position store glitch")
+            return RiskVerdict(
+                timestamp_ns=order.timestamp_ns,
+                correlation_id=order.correlation_id,
+                sequence=order.sequence,
+                symbol=order.symbol,
+                action=RiskAction.ALLOW,
+                reason="ok",
+            )
+
+        with patch.object(BasicRiskEngine, "check_order", boom_check_order):
+            # Must not raise; AAPL is dropped, MSFT proceeds.
+            result = engine.check_sized_intent(
+                _make_sized_intent(targets={"AAPL": 5_000.0, "MSFT": 5_000.0}),
+                store,
+            )
+        assert {o.symbol for o in result.orders} == {"MSFT"}
+        assert result.requires_global_risk_escalation is False
+
+
+class TestNonPositiveEquityForceFlattens:
+    """Audit R-6: a wiped-out book must force-flatten, never size against
+    initial capital it no longer has — independent of drawdown config."""
+
+    def test_negative_equity_force_flattens_even_with_loose_drawdown(
+        self, store: MemoryPositionStore
+    ) -> None:
+        cfg = RiskConfig(
+            max_position_per_symbol=100_000,
+            max_gross_exposure_pct=10.0,
+            max_drawdown_pct=1000.0,  # deliberately permissive
+            account_equity=Decimal("100000"),
+        )
+        engine = BasicRiskEngine(cfg)
+        # Unrealized loss of $120k drives live equity to −$20k.
+        store.update("AAPL", 2000, Decimal("100"))
+        store.update_mark("AAPL", Decimal("40"))
+
+        order = _make_order(symbol="MSFT", side=Side.BUY, quantity=10)
+        verdict = engine.check_order(order, store)
+        assert verdict.action == RiskAction.FORCE_FLATTEN
+        assert "non-positive equity" in verdict.reason
+
+
+class TestRegimeMissingDataFailsSafe:
+    """Audit R-3: a configured engine with no committed posterior for the
+    symbol tightens to min(scales), not the 1.0 baseline."""
+
+    def test_missing_posterior_uses_min_scale(self, store: MemoryPositionStore) -> None:
+        regime = HMM3StateFractional()  # no posterior committed for AAPL
+        cfg = RiskConfig(
+            max_position_per_symbol=1000,
+            max_gross_exposure_pct=50.0,
+            account_equity=Decimal("10000000"),
+        )
+        engine = BasicRiskEngine(cfg, regime_engine=regime)
+        # min scale = 0.5 → adjusted_max = 500; a 500-share book is at cap.
+        store.update("AAPL", 500, Decimal("10"))
+        verdict = engine.check_signal(_make_signal(), store)
+        assert verdict.action == RiskAction.REJECT
+
+    def test_no_engine_still_full_limit(self, config: RiskConfig, store: MemoryPositionStore) -> None:
+        engine = BasicRiskEngine(config, regime_engine=None)
+        store.update("AAPL", 500, Decimal("10"))
+        verdict = engine.check_signal(_make_signal(), store)
+        assert verdict.action in (RiskAction.ALLOW, RiskAction.SCALE_DOWN)
+
+    def test_regime_scaling_never_amplifies_above_one(self) -> None:
+        regime = HMM3StateFractional()
+        regime._posteriors["AAPL"] = [0.0, 1.0, 0.0]  # 100% "normal"
+        cfg = RiskConfig(max_position_per_symbol=1000, account_equity=Decimal("100000"))
+        engine = BasicRiskEngine(cfg, regime_engine=regime)
+        # Misconfigure the "normal" scale to an amplifier; the clamp caps EV
+        # at 1.0 so the limit never exceeds the unscaled baseline.
+        engine._regime_scale_map["normal"] = 2.0
+        assert engine._regime_scaling("AAPL") <= 1.0
+
+
 class TestSizedIntentScaleDownDecimal:
     def test_scale_down_quantity_uses_half_up_not_float_truncation(
         self,
@@ -525,6 +677,8 @@ class TestSizedIntentScaleDownDecimal:
             self: BasicRiskEngine,
             order: OrderRequest,
             positions: MemoryPositionStore,
+            *,
+            additional_exposure: Decimal = Decimal("0"),
         ) -> RiskVerdict:
             if order.symbol == "AAPL" and order.quantity == 10:
                 return RiskVerdict(

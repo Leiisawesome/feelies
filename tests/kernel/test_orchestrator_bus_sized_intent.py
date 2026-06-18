@@ -193,10 +193,12 @@ class _RecordingGateSnapshotRiskEngine(BasicRiskEngine):
         self,
         order: OrderRequest,
         positions: PositionStore,
+        *,
+        additional_exposure: Decimal = Decimal("0"),
     ) -> RiskVerdict:
         if order.strategy_id == "standalone_signal_alpha":
             self.order_gate_snapshots.append(self._snapshot(positions))
-        return super().check_order(order, positions)
+        return super().check_order(order, positions, additional_exposure=additional_exposure)
 
 
 # -- Helpers ----------------------------------------------------------
