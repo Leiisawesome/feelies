@@ -138,6 +138,48 @@ def test_low_completeness_emits_degenerate_intent():
     assert captured[0].target_positions == {}
 
 
+def test_per_alpha_completeness_threshold_overrides_engine_default():
+    # Engine default 0.0 (accept everything); alpha declares a stricter
+    # threshold via params (audit P1-5) → low-completeness ctx is degenerate.
+    bus = EventBus()
+    captured: list[SizedPositionIntent] = []
+    bus.subscribe(SizedPositionIntent, lambda e: captured.append(e))
+
+    engine = _build_engine(bus, completeness_threshold=0.0)
+    engine.register(
+        RegisteredPortfolioAlpha(
+            alpha_id="noop",
+            horizon_seconds=300,
+            alpha=_NoopAlpha(),
+            params={"composition_completeness_threshold": 0.9},
+        )
+    )
+    engine.attach()
+    bus.publish(_make_ctx(completeness=0.5))
+    assert len(captured) == 1
+    assert captured[0].target_positions == {}
+
+
+def test_per_alpha_completeness_threshold_accepts_above_threshold():
+    bus = EventBus()
+    captured: list[SizedPositionIntent] = []
+    bus.subscribe(SizedPositionIntent, lambda e: captured.append(e))
+
+    engine = _build_engine(bus, completeness_threshold=0.0)
+    engine.register(
+        RegisteredPortfolioAlpha(
+            alpha_id="noop",
+            horizon_seconds=300,
+            alpha=_NoopAlpha(),
+            params={"composition_completeness_threshold": 0.5},
+        )
+    )
+    engine.attach()
+    bus.publish(_make_ctx(completeness=1.0))
+    assert len(captured) == 1
+    assert captured[0].target_positions != {}
+
+
 def test_alpha_exception_emits_degenerate_intent():
     bus = EventBus()
     captured: list[SizedPositionIntent] = []

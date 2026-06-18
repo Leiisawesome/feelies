@@ -17,13 +17,19 @@ For each sector:
 1. Collect ``(symbol, weight)`` pairs in the sector.
 2. Compute net exposure ``net = sum(weights)``.  When ``|net|`` is
    below ``tolerance`` no action is taken.
-3. Otherwise scale every weight in the sector by
-   ``(gross - |net|) / gross`` where ``gross = sum(|w|)`` — this
-   removes the directional component while preserving the cross-
-   sectional ranking *within* the sector.
+3. Otherwise scale **only the dominant side** down so the two sides
+   match and the within-sector net becomes zero: if longs dominate
+   (``net > 0``) every long is multiplied by ``short_sum / long_sum``;
+   if shorts dominate every short is multiplied by
+   ``long_sum / short_sum``.  This drives ``net → 0`` exactly while
+   preserving the cross-sectional ranking *within* each side (audit
+   P1-3).  When the offsetting side is empty the dominant side is
+   scaled to zero (a one-sided sector cannot be made neutral except by
+   flattening it).
 
-This scheme is gentler than full re-allocation and preserves
-deterministic iteration order (sorted by symbol).
+Uniformly scaling *both* sides — the prior implementation — leaves the
+net/gross ratio invariant and so never reaches ``net = 0``; it only
+shrinks gross.  Iteration order is deterministic (sorted by symbol).
 """
 
 from __future__ import annotations
@@ -91,14 +97,22 @@ class SectorMatcher:
             net = sum(out.get(s, 0.0) for s in symbols)
             if abs(net) <= self._tolerance:
                 continue
-            gross = sum(abs(out.get(s, 0.0)) for s in symbols)
-            if gross <= self._tolerance:
-                continue
-            scale = (gross - abs(net)) / gross
-            if scale < 0.0:
-                scale = 0.0
-            for s in symbols:
-                out[s] = out.get(s, 0.0) * scale
+            long_sum = sum(w for w in (out.get(s, 0.0) for s in symbols) if w > 0.0)
+            short_sum = -sum(w for w in (out.get(s, 0.0) for s in symbols) if w < 0.0)
+            if net > 0.0:
+                # Longs dominate — shrink the long side to equal the shorts.
+                scale = short_sum / long_sum if long_sum > 0.0 else 0.0
+                for s in symbols:
+                    w = out.get(s, 0.0)
+                    if w > 0.0:
+                        out[s] = w * scale
+            else:
+                # Shorts dominate — shrink the short side to equal the longs.
+                scale = long_sum / short_sum if short_sum > 0.0 else 0.0
+                for s in symbols:
+                    w = out.get(s, 0.0)
+                    if w < 0.0:
+                        out[s] = w * scale
         return out
 
     @staticmethod

@@ -1950,6 +1950,8 @@ def _create_composition_layer(
                 engine_thunk=lambda e=engine: e,
                 strategy_id=module.alpha_id,
                 feeder_strategy_ids=module.depends_on_signals,
+                mechanism_caps=module.mechanism_caps,
+                global_mechanism_cap=module.max_share_of_gross,
             )
         engine.register(
             RegisteredPortfolioAlpha(
@@ -2134,10 +2136,21 @@ def _enforce_factor_loadings_freshness(
     The neutralizer accepts ``loadings_dir is None`` (no-op pass-through),
     so the freshness check only fires when an operator explicitly
     points at a loadings file.  When fired, every symbol in
-    ``universe_sorted`` MUST appear in ``loadings.json`` and the file
-    mtime must be within ``factor_loadings_max_age_seconds`` — else we
-    raise rather than silently neutralize against a stale or partial
-    factor model (Inv-11).
+    ``universe_sorted`` MUST appear in ``loadings.json`` and the file's
+    effective age must be within ``factor_loadings_max_age_seconds`` —
+    else we raise rather than silently neutralize against a stale or
+    partial factor model (Inv-11).
+
+    Freshness reference (audit P1-4).  The file's "as of" timestamp is
+    taken from an optional ``"_meta": {"as_of_ns": <int>}`` block
+    embedded *in the file* when present — a content-addressable anchor
+    that yields a reproducible verdict regardless of when the artefact
+    was checked out.  Only when that block is absent do we fall back to
+    the filesystem mtime, whose drift forced downstream suites to pin a
+    ~century-long ``factor_loadings_max_age_seconds``.  The comparison
+    clock is ``session_open_ns`` when available (deterministic);
+    wall-clock ``time.time()`` is a last resort that breaks bit-identical
+    replay and is logged as such.
     """
     if config.factor_loadings_dir is None:
         return
@@ -2148,25 +2161,6 @@ def _enforce_factor_loadings_freshness(
     if not path.is_file():
         raise StaleFactorLoadingsError(f"factor loadings file not found: {path}")
 
-    # Prefer ``session_open_ns`` as the freshness reference so the check
-    # is bit-deterministic across replays.  Wall-clock ``time.time()`` is
-    # only used as a fallback when no session anchor is configured; in
-    # that path the staleness verdict depends on the system clock at
-    # boot, which breaks bit-identical replay (a backtest passing today
-    # may fail tomorrow with no code change).
-    file_mtime = path.stat().st_mtime
-    if config.session_open_ns is not None:
-        reference_time = config.session_open_ns / 1_000_000_000
-    else:
-        reference_time = time.time()
-    age_seconds = reference_time - file_mtime
-    if age_seconds > config.factor_loadings_max_age_seconds:
-        raise StaleFactorLoadingsError(
-            f"factor loadings file {path} is {age_seconds:.0f}s old, "
-            f"exceeds factor_loadings_max_age_seconds="
-            f"{config.factor_loadings_max_age_seconds}s"
-        )
-
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -2174,6 +2168,36 @@ def _enforce_factor_loadings_freshness(
 
     if not isinstance(data, dict):
         raise StaleFactorLoadingsError(f"factor loadings file {path} is not a JSON object")
+
+    # Effective file timestamp: embedded ``_meta.as_of_ns`` (reproducible)
+    # else filesystem mtime (drifts with the checkout).
+    embedded_as_of_seconds: float | None = None
+    meta = data.get("_meta")
+    if isinstance(meta, dict):
+        raw_as_of = meta.get("as_of_ns")
+        if isinstance(raw_as_of, (int, float)) and not isinstance(raw_as_of, bool):
+            embedded_as_of_seconds = float(raw_as_of) / 1_000_000_000
+    file_as_of_seconds = (
+        embedded_as_of_seconds if embedded_as_of_seconds is not None else path.stat().st_mtime
+    )
+
+    if config.session_open_ns is not None:
+        reference_time = config.session_open_ns / 1_000_000_000
+    else:
+        reference_time = time.time()
+        logger.warning(
+            "factor loadings freshness: no session_open_ns configured; using wall-clock "
+            "time.time() as the reference, which breaks bit-identical replay (Inv-5) — "
+            "configure session_open_ns or embed _meta.as_of_ns in %s",
+            path,
+        )
+    age_seconds = reference_time - file_as_of_seconds
+    if age_seconds > config.factor_loadings_max_age_seconds:
+        raise StaleFactorLoadingsError(
+            f"factor loadings file {path} is {age_seconds:.0f}s old, "
+            f"exceeds factor_loadings_max_age_seconds="
+            f"{config.factor_loadings_max_age_seconds}s"
+        )
 
     missing = [s for s in universe_sorted if s not in data]
     if missing:

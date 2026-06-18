@@ -100,5 +100,7 @@ parameters:
     default: false
     description: |
       When true, weights upstream signal strengths by
-      exp(-age_seconds / horizon_seconds) before ranking.
-      Disabled by default to match v0.2 parity baseline.
+      exp(-Δt / expected_half_life_seconds) before ranking — where Δt is
+      the signal's age relative to the boundary and the half-life is the
+      signal's per-mechanism expected_half_life_seconds (NOT the alpha's
+      horizon_seconds).  Disabled by default to match v0.2 parity baseline.

@@ -110,6 +110,58 @@ def test_decay_weighting_shrinks_old_signals():
     assert math.isclose(result.decay_factors["MSFT"], 1.0)
 
 
+def test_decay_override_disables_decay_for_one_call():
+    # Instance flag ON, but the per-call override (audit P1-6) forces it OFF
+    # so a decay-OFF alpha sharing this ranker is unaffected by a decay-ON one.
+    ranker = CrossSectionalRanker(decay_weighting_enabled=True)
+    sig_old = _make_signal(
+        symbol="AAPL",
+        direction=SignalDirection.LONG,
+        edge_bps=10.0,
+        ts_ns=1_000_000_000,
+        half_life=60,
+    )
+    ctx = _make_ctx({"AAPL": sig_old, "MSFT": None}, ts_ns=61_000_000_000)
+
+    on = ranker.rank(ctx)
+    off = ranker.rank(ctx, decay_weighting_enabled=False)
+    assert math.isclose(on.decay_factors["AAPL"], math.exp(-1.0))
+    assert math.isclose(off.decay_factors["AAPL"], 1.0)
+
+
+def test_decay_override_enables_decay_when_instance_off():
+    ranker = CrossSectionalRanker(decay_weighting_enabled=False)
+    sig_old = _make_signal(
+        symbol="AAPL",
+        direction=SignalDirection.LONG,
+        edge_bps=10.0,
+        ts_ns=1_000_000_000,
+        half_life=60,
+    )
+    ctx = _make_ctx({"AAPL": sig_old, "MSFT": None}, ts_ns=61_000_000_000)
+
+    default = ranker.rank(ctx)
+    forced_on = ranker.rank(ctx, decay_weighting_enabled=True)
+    assert math.isclose(default.decay_factors["AAPL"], 1.0)
+    assert math.isclose(forced_on.decay_factors["AAPL"], math.exp(-1.0))
+
+
+def test_decay_override_none_uses_instance_flag():
+    ranker = CrossSectionalRanker(decay_weighting_enabled=True)
+    sig_old = _make_signal(
+        symbol="AAPL",
+        direction=SignalDirection.LONG,
+        edge_bps=10.0,
+        ts_ns=1_000_000_000,
+        half_life=60,
+    )
+    ctx = _make_ctx({"AAPL": sig_old, "MSFT": None}, ts_ns=61_000_000_000)
+    assert math.isclose(
+        ranker.rank(ctx, decay_weighting_enabled=None).decay_factors["AAPL"],
+        math.exp(-1.0),
+    )
+
+
 def test_liquidity_stress_is_exit_only():
     ranker = CrossSectionalRanker()
     sig = _make_signal(

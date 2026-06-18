@@ -26,7 +26,7 @@ treat the empty dict as "hold existing positions" per
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Mapping
 
 # Optional [portfolio] extras — typed as ``Any`` so strict mypy accepts
@@ -45,6 +45,17 @@ except ImportError:  # pragma: no cover
 
 
 _logger = logging.getLogger(__name__)
+
+
+# Pinned ECOS interior-point tolerances and iteration cap (audit P0-2).
+# ECOS is invoked with *explicit* convergence criteria so the returned
+# solution does not drift across ECOS / BLAS builds or CPU architectures.
+# Re-baseline the Level-3 solver-parity hash in the same commit if these
+# values ever change.
+_ECOS_ABSTOL: float = 1e-8
+_ECOS_RELTOL: float = 1e-8
+_ECOS_FEASTOL: float = 1e-8
+_ECOS_MAX_ITERS: int = 100
 
 
 class MissingOptionalDependencyError(RuntimeError):
@@ -80,9 +91,30 @@ class TurnoverOptimizer:
         Quadratic-risk penalty (default ``0.1``).  Used only by the
         CVXPY path; the closed-form fallback ignores it.
     require_solver :
-        When ``True``, raise :class:`MissingOptionalDependencyError`
-        if CVXPY is not installed.  When ``False`` (default), fall
-        back to the closed-form rescale.
+        Selects the optimization path **deterministically** (audit P0-1).
+        When ``True`` the cvxpy/ECOS path is used (and
+        :class:`MissingOptionalDependencyError` is raised at construction
+        if cvxpy is absent).  When ``False`` (default) the deterministic
+        closed-form rescale is always used — *regardless of whether cvxpy
+        happens to be installed* — so the emitted intent stream does not
+        depend on the environment's optional extras (Inv-5 / Inv-9).
+
+    Caps vs. the alpha ``risk_budget`` (audit P2-3)
+    -----------------------------------------------
+    ``gross_cap_pct`` / ``per_name_cap_pct`` are *composition-shaping*
+    parameters: they bound the **desired** book the optimizer constructs,
+    in USD / fraction-of-capital units.  They are intentionally **not**
+    sourced from the alpha's ``risk_budget`` (``max_position_per_symbol``
+    in *shares*, ``max_gross_exposure_pct``) — that budget is enforced
+    authoritatively *downstream* and per-leg by the risk engine
+    (``RiskEngine.check_sized_intent`` → ``check_order`` / the per-alpha
+    ``AlphaBudgetRiskWrapper``), which owns the shares↔USD conversion and
+    the regime-scaled, account-level veto (Inv-11).  Feeding the
+    shares-domain risk budget into this USD-domain optimizer would
+    double-count the constraint and leak the risk layer into the
+    composition layer (Inv-8).  Making these shaping caps operator-tunable
+    (a ``composition_gross_cap_pct`` config, parallel to ``lambda_tc``) is
+    the natural extension if per-deployment shaping is needed.
     """
 
     __slots__ = (
@@ -132,11 +164,18 @@ class TurnoverOptimizer:
         universe: tuple[str, ...],
         current_positions_usd: Mapping[str, float] | None = None,
     ) -> OptimizerResult:
-        """Solve the optimization; return :class:`OptimizerResult`."""
+        """Solve the optimization; return :class:`OptimizerResult`.
+
+        The path is chosen by ``require_solver`` (set at construction),
+        **not** by whether cvxpy is importable (audit P0-1).  This keeps
+        the emitted intent stream bit-identical across environments that
+        differ only in the presence of the optional ``[portfolio]`` extra.
+        """
         if not universe:
             return OptimizerResult({}, 0.0, 0.0, "EMPTY_UNIVERSE")
 
-        if _HAS_CVXPY:
+        if self._require_solver:
+            # Constructor guarantees cvxpy is present when require_solver.
             return self._optimize_cvxpy(
                 weights,
                 universe,
@@ -159,11 +198,19 @@ class TurnoverOptimizer:
         per_name_cap_usd = self._per_name_cap * self._capital
         gross_cap_usd = self._gross_cap * self._capital
 
-        # Step 1: scale weights to target gross.
+        # Step 1: scale weights so the post-scale gross equals the target
+        # ``capital * gross_cap``.  The prior ``min(..., capital)`` clamp
+        # (audit P2-4) capped the scale at one unit of capital, which
+        # *under-levered* whenever the raw weight gross fell below
+        # ``gross_cap`` (the book then spanned ``gross * capital`` instead
+        # of the intended ``gross_cap * capital``).  The per-name cap
+        # (step 2) and the post-rounding gross shrink (step 4) bound the
+        # result from above, so the clamp added no safety — only a
+        # silent, dimensionally-confusing leverage haircut.
         gross = sum(abs(weights.get(s, 0.0)) for s in universe)
         if gross <= 0.0:
             return OptimizerResult({}, 0.0, 0.0, "ZERO_GROSS")
-        scale = min(self._capital * self._gross_cap / gross, self._capital)
+        scale = self._capital * self._gross_cap / gross
         scaled = {s: weights.get(s, 0.0) * scale for s in universe}
 
         # Step 2: cap per-name exposure.
@@ -204,48 +251,77 @@ class TurnoverOptimizer:
         assert _HAS_CVXPY
         assert cp is not None and _np is not None
         n = len(universe)
+        # Optimize in *weight space* (dimensionless fractions of capital)
+        # so the alpha, risk, and turnover terms are commensurable and
+        # well-scaled — the prior USD-space formulation let the risk term
+        # ``(0.01*capital)**2`` dominate by ~10 orders of magnitude, so a
+        # successful solve collapsed to the empty book (audit P0-1/P1-1).
+        # The dollar targets are recovered by scaling the optimal weight
+        # vector by ``capital`` at the end.
         mu = _np.asarray(
             [weights.get(s, 0.0) for s in universe],
             dtype=_np.float64,
         )
-        p_cur = _np.asarray(
-            [current_positions_usd.get(s, 0.0) for s in universe],
+        w_cur = _np.asarray(
+            [current_positions_usd.get(s, 0.0) / self._capital for s in universe],
             dtype=_np.float64,
         )
-        # Diagonal "risk" — cross-sectional position penalization;
-        # per Q5 we don't have an intraday Σ here, so use identity
-        # scaled by an estimated per-name vol of 1% of capital.  This
-        # keeps the optimizer well-conditioned and is pure / static.
-        sigma_diag = (0.01 * self._capital) ** 2 * _np.ones(n)
+        # Static identity risk model (audit P2-1).  No intraday covariance
+        # Σ is estimated (design Q5: daily refresh, intraday uses static
+        # inputs), so the risk term is a *unit diagonal* ridge: every name
+        # carries equal variance and zero pairwise covariance.  Two
+        # consequences the operator must understand:
+        #   * the term penalizes raw weight concentration uniformly — it is
+        #     a convexity/dispersion regularizer, NOT a true risk model, so
+        #     it does not down-weight genuinely high-vol names or net out
+        #     correlated pairs;
+        #   * because mu/w are O(1) in weight space, a unit ridge is well-
+        #     conditioned and keeps the QP convex without swamping the alpha
+        #     term (the prior USD-space ridge did swamp it — P0-1/P1-1).
+        # Wiring an estimated diagonal vol (or full Σ) here is the natural
+        # extension; it is deferred until an intraday estimator exists, and
+        # would require re-baselining the Level-3 solver-parity hash.
+        sigma_diag = _np.ones(n)
 
-        x = cp.Variable(n)
-        per_name_cap = self._per_name_cap * self._capital
-        gross_cap = self._gross_cap * self._capital
+        w = cp.Variable(n)
+        per_name_cap = self._per_name_cap  # weight-space caps (fractions)
+        gross_cap = self._gross_cap
 
         objective = cp.Minimize(
-            -mu @ x
-            + self._lambda_risk * cp.sum(cp.multiply(sigma_diag, cp.square(x)))
-            + self._lambda_tc * cp.norm(x - p_cur, 1)
+            -mu @ w
+            + self._lambda_risk * cp.sum(cp.multiply(sigma_diag, cp.square(w)))
+            + self._lambda_tc * cp.norm(w - w_cur, 1)
         )
         constraints = [
-            cp.norm(x, 1) <= gross_cap,
-            cp.abs(x) <= per_name_cap,
+            cp.norm(w, 1) <= gross_cap,
+            cp.abs(w) <= per_name_cap,
         ]
         problem = cp.Problem(objective, constraints)
         try:
-            problem.solve(solver=cp.ECOS, verbose=False)
+            problem.solve(
+                solver=cp.ECOS,
+                verbose=False,
+                abstol=_ECOS_ABSTOL,
+                reltol=_ECOS_RELTOL,
+                feastol=_ECOS_FEASTOL,
+                max_iters=_ECOS_MAX_ITERS,
+            )
         except (cp.SolverError, ValueError) as exc:  # pragma: no cover
             _logger.warning(
                 "TurnoverOptimizer: ECOS solve failed (%s); falling back to closed-form",
                 exc,
             )
-            return self._optimize_closed_form(
+            # Mark the fallback distinctly so the monitoring layer can alert
+            # on solver degradation (audit P1-8) — a verbatim closed-form
+            # status would hide that the *required* solver failed.
+            fallback = self._optimize_closed_form(
                 weights,
                 universe,
                 current_positions_usd,
             )
+            return replace(fallback, solver_status="ECOS_FAILED_FALLBACK")
 
-        if x.value is None or problem.status not in ("optimal", "optimal_inaccurate"):
+        if w.value is None or problem.status not in ("optimal", "optimal_inaccurate"):
             _logger.warning(
                 "TurnoverOptimizer: solver status=%s; returning empty allocation",
                 problem.status,
@@ -254,7 +330,7 @@ class TurnoverOptimizer:
 
         rounded: dict[str, float] = {}
         for i, s in enumerate(universe):
-            v = round(float(x.value[i]), 2)
+            v = round(float(w.value[i]) * self._capital, 2)
             if abs(v) >= 0.01:
                 rounded[s] = v
 

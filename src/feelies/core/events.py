@@ -705,3 +705,22 @@ class SizedPositionIntent(Event):
     disclosed_cost_total_bps_by_symbol: dict[str, float] = field(
         default_factory=dict,
     )
+    # Content-addressable digest over the canonical *inputs* that produced
+    # ``target_positions`` (consumed signals, current positions, decision
+    # parameters).  Provides in-band provenance so two structurally-equal
+    # intents can be distinguished when they were derived from different
+    # inputs, and so forensics can detect silent input drift without
+    # re-deriving the decision (Inv-13).  Empty string ``""`` denotes
+    # "not computed" (degenerate intents, custom alphas that opt out) and
+    # is the v0.2-compatible default so existing replay hashes — which do
+    # not serialise this field — stay bit-identical (Inv-5).
+    decision_basis_hash: str = ""
+    # Optimizer terminal status for the solve that produced this intent
+    # (e.g. ``"CLOSED_FORM"``, ``"optimal"``, ``"ECOS_FAILED_FALLBACK"``,
+    # or a non-optimal solver status).  Surfaced so the monitoring layer
+    # can alert on solver degradation without reaching into the optimizer
+    # (audit P1-8).  Empty string ``""`` denotes "not recorded" (degenerate
+    # intents, custom alphas) and is the v0.2-compatible default — like
+    # ``decision_basis_hash`` it is not serialised into the locked replay
+    # hashes, so determinism is unaffected (Inv-5).
+    solver_status: str = ""

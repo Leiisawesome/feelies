@@ -63,6 +63,7 @@ class LoadedPortfolioLayerModule:
         "_horizon_seconds",
         "_consumes_mechanisms",
         "_max_share_of_gross",
+        "_mechanism_caps",
         "_factor_neutralization_disclosed",
         "_depends_on_signals",
         "_params",
@@ -80,6 +81,7 @@ class LoadedPortfolioLayerModule:
         factor_neutralization_disclosed: bool,
         depends_on_signals: tuple[str, ...],
         params: Mapping[str, Any],
+        mechanism_caps: Mapping[TrendMechanism, float] | None = None,
     ) -> None:
         self._manifest = manifest
         self._construct = construct
@@ -87,6 +89,7 @@ class LoadedPortfolioLayerModule:
         self._horizon_seconds = int(horizon_seconds)
         self._consumes_mechanisms = consumes_mechanisms
         self._max_share_of_gross = float(max_share_of_gross)
+        self._mechanism_caps: dict[TrendMechanism, float] = dict(mechanism_caps or {})
         self._factor_neutralization_disclosed = bool(factor_neutralization_disclosed)
         self._depends_on_signals = tuple(depends_on_signals)
         self._params = dict(params)
@@ -130,6 +133,15 @@ class LoadedPortfolioLayerModule:
         return self._max_share_of_gross
 
     @property
+    def mechanism_caps(self) -> dict[TrendMechanism, float]:
+        """Per-family ``max_share_of_gross`` caps declared in the YAML.
+
+        Empty when the alpha declares no per-family caps; the global
+        :attr:`max_share_of_gross` still applies as the default.
+        """
+        return dict(self._mechanism_caps)
+
+    @property
     def factor_neutralization_disclosed(self) -> bool:
         return self._factor_neutralization_disclosed
 
@@ -170,7 +182,13 @@ class _DefaultPortfolioConstructor:
     rebinds once both the engine and the registry are wired.
     """
 
-    __slots__ = ("_engine_thunk", "_strategy_id", "_feeder_strategy_ids")
+    __slots__ = (
+        "_engine_thunk",
+        "_strategy_id",
+        "_feeder_strategy_ids",
+        "_mechanism_caps",
+        "_global_mechanism_cap",
+    )
 
     def __init__(
         self,
@@ -178,10 +196,14 @@ class _DefaultPortfolioConstructor:
         engine_thunk: Any,
         strategy_id: str,
         feeder_strategy_ids: tuple[str, ...] = (),
+        mechanism_caps: Mapping[TrendMechanism, float] | None = None,
+        global_mechanism_cap: float | None = None,
     ) -> None:
         self._engine_thunk = engine_thunk
         self._strategy_id = strategy_id
         self._feeder_strategy_ids = feeder_strategy_ids
+        self._mechanism_caps: dict[TrendMechanism, float] = dict(mechanism_caps or {})
+        self._global_mechanism_cap = global_mechanism_cap
 
     def __call__(
         self,
@@ -191,10 +213,21 @@ class _DefaultPortfolioConstructor:
         engine = self._engine_thunk()
         if engine is None:  # pragma: no cover - bootstrap bug
             raise CompositionContextError("_DefaultPortfolioConstructor: engine not yet wired")
+        # Per-alpha decay override (audit P1-6): the shared ranker carries a
+        # global decay toggle, so without this an alpha that enables decay
+        # would flip it on for every PORTFOLIO sharing the engine.  Reading
+        # the alpha's own resolved param here keeps the toggle local.  When
+        # the alpha does not declare the param we pass ``None`` so the ranker
+        # instance flag still applies (back-compat).
+        raw_decay = params.get("decay_weighting_enabled")
+        decay_override = bool(raw_decay) if isinstance(raw_decay, bool) else None
         intent: SizedPositionIntent = engine.run_default_pipeline(
             ctx,
             strategy_id=self._strategy_id,
             feeder_strategy_ids=self._feeder_strategy_ids,
+            mechanism_caps=self._mechanism_caps or None,
+            global_mechanism_cap=self._global_mechanism_cap,
+            decay_weighting_enabled=decay_override,
         )
         return intent
 
@@ -252,9 +285,46 @@ def parse_consumes_mechanisms(
     return tuple(out)
 
 
+def parse_mechanism_caps(raw: Any) -> dict[TrendMechanism, float]:
+    """Map a YAML ``trend_mechanism.consumes:`` list to per-family caps.
+
+    Returns ``{family: max_share_of_gross}`` for every ``consumes`` entry
+    that declares a ``max_share_of_gross`` (audit P0-4 — these caps were
+    previously parsed away by :func:`parse_consumes_mechanisms` and never
+    reached the runtime ranker).  Entries without an explicit cap are
+    omitted (the global ``trend_mechanism.max_share_of_gross`` applies as
+    the default).  ``None`` / list-of-strings → empty mapping.
+    """
+    if raw is None:
+        return {}
+    if not isinstance(raw, (list, tuple)):
+        raise ValueError(f"trend_mechanism.consumes must be a list, got {type(raw).__name__}")
+    caps: dict[TrendMechanism, float] = {}
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        family = entry.get("family")
+        if family not in _FAMILY_BY_NAME:
+            raise ValueError(
+                f"trend_mechanism.consumes: unknown family {family!r}; "
+                f"allowed: {sorted(_FAMILY_BY_NAME)}"
+            )
+        if "max_share_of_gross" not in entry:
+            continue
+        cap = float(entry["max_share_of_gross"])
+        if not 0.0 < cap <= 1.0:
+            raise ValueError(
+                f"trend_mechanism.consumes[{family}].max_share_of_gross must be "
+                f"in (0, 1], got {cap}"
+            )
+        caps[_FAMILY_BY_NAME[family]] = cap
+    return caps
+
+
 __all__ = [
     "LoadedPortfolioLayerModule",
     "_CompiledPortfolioConstructor",
     "_DefaultPortfolioConstructor",
     "parse_consumes_mechanisms",
+    "parse_mechanism_caps",
 ]

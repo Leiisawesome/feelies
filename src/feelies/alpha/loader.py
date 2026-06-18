@@ -51,6 +51,7 @@ from feelies.alpha.portfolio_layer_module import (
     _CompiledPortfolioConstructor,
     _DefaultPortfolioConstructor,
     parse_consumes_mechanisms,
+    parse_mechanism_caps,
 )
 from feelies.alpha.signal_layer_module import (
     LoadedSignalLayerModule,
@@ -532,6 +533,7 @@ class AlphaLoader:
         )
         try:
             consumes = parse_consumes_mechanisms(consumes_raw)
+            mechanism_caps = parse_mechanism_caps(consumes_raw)
         except ValueError as exc:
             raise AlphaLoadError(f"{source}: {exc}") from exc
 
@@ -562,6 +564,8 @@ class AlphaLoader:
                 engine_thunk=lambda: None,
                 strategy_id=alpha_id,
                 feeder_strategy_ids=depends_on_signals,
+                mechanism_caps=mechanism_caps,
+                global_mechanism_cap=max_share_of_gross,
             )
 
         risk_budget_raw = spec.get("risk_budget", {}) or {}
@@ -598,6 +602,7 @@ class AlphaLoader:
             horizon_seconds=horizon_seconds,
             consumes_mechanisms=consumes,
             max_share_of_gross=max_share_of_gross,
+            mechanism_caps=mechanism_caps,
             factor_neutralization_disclosed=bool(spec.get("factor_neutralization", False)),
             depends_on_signals=depends_on_signals,
             params=params,

@@ -27,9 +27,16 @@ every factor).
 Numerical safety
 ----------------
 
-* When ``BᵀB`` is singular (rank-deficient loadings — e.g. fewer than
-  ``K`` symbols), the neutralizer falls back to projecting onto the
-  largest non-zero singular vectors only.
+* The normal equations ``(BᵀB) β = Bᵀ w`` are solved with
+  ``numpy.linalg.solve``.  When ``BᵀB`` is singular (rank-deficient
+  loadings — e.g. fewer symbols than factors, or collinear loadings),
+  ``solve`` raises ``LinAlgError`` and the neutralizer falls back to the
+  minimum-norm least-squares solution ``numpy.linalg.lstsq(B, w)`` (which
+  internally truncates singular values below ``rcond``).  This still
+  yields a valid residual ``w − Bβ``; the residual is exactly factor-
+  orthogonal only on the non-degenerate subspace, so ``post_exposure``
+  may be non-zero along the degenerate directions and is reported as-is
+  for the monitoring layer rather than silently zeroed.
 * All linear algebra runs in NumPy ``float64``; iteration order over
   symbols is the lex-sorted universe so replay is bit-stable.
 """
@@ -205,6 +212,10 @@ class FactorNeutralizer:
             raise MissingFactorLoadingsError(f"FactorNeutralizer: {path} is not a JSON object")
         out: dict[str, dict[str, float]] = {}
         for sym, loadings in data.items():
+            # ``_meta`` is the optional provenance block (e.g. ``as_of_ns``,
+            # audit P1-4) — it is metadata, not a symbol row, so skip it.
+            if sym == "_meta":
+                continue
             if not isinstance(loadings, dict):
                 raise MissingFactorLoadingsError(
                     f"FactorNeutralizer: loadings for {sym!r} must be an object"
