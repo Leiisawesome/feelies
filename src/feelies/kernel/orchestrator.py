@@ -2864,7 +2864,38 @@ class Orchestrator:
         # ``__stop_exit__`` / ``TradingIntent.EXIT`` carve-out
         # preserves Inv-11 (exits always race in).
         if self._has_pending_order_for_symbol(order.symbol):
-            if intent.intent != TradingIntent.EXIT or self._has_pending_exit_for_symbol(
+            # Inv-11: a forced MARKET exit (hard stop / session flatten) must
+            # never be subordinated to a stale passive order.  A gate-OFF FLAT
+            # cover posted as a resting LIMIT can sit unfilled while the market
+            # runs through the stop; the old guard treated that resting cover
+            # as a "pending exit" and suppressed the stop until the passive
+            # order expired (docs/pending issues/app_backtest_2026-06-01_*).
+            # Mirror the REVERSE path: cancel the resting orders so the
+            # aggressive close can cross immediately.  A forced exit already
+            # in flight is left untouched so we never pile a second aggressive
+            # leg on the book (overshoot guard).
+            if intent.signal.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES:
+                if self._has_pending_forced_exit_for_symbol(order.symbol):
+                    self._append_signal_order_trace(
+                        quote,
+                        signal,
+                        outcome="NO_ORDER",
+                        reasons=(
+                            "resting_order_guard_forced_exit_already_pending",
+                            f"symbol={order.symbol}",
+                        ),
+                        trading_intent=intent.intent.name,
+                    )
+                    self._micro.transition(
+                        MicroState.LOG_AND_METRICS,
+                        trigger="resting_order_pending",
+                        correlation_id=cid,
+                    )
+                    self._finalize_tick(t_wall_start, cid)
+                    return
+                self._emit_forced_exit_supersedes_pending_alert(order, cid)
+                self._cancel_resting_for_symbol(order.symbol, cid)
+            elif intent.intent != TradingIntent.EXIT or self._has_pending_exit_for_symbol(
                 order.symbol
             ):
                 self._append_signal_order_trace(
@@ -4923,6 +4954,22 @@ class Orchestrator:
             for sm, side, order in self._active_orders.values()
         )
 
+    def _has_pending_forced_exit_for_symbol(self, symbol: str) -> bool:
+        """True if a forced MARKET exit (stop / session-flat) is already in flight.
+
+        Distinguishes an aggressive exit already crossing the book from a
+        merely-resting passive cover.  The resting-order guard cancels stale
+        passive orders to let a forced MARKET exit through (Inv-11) but must
+        not stack a second aggressive leg on top of one already pending —
+        that would overshoot the position.
+        """
+        return any(
+            order.symbol == symbol
+            and sm.state not in _TERMINAL_ORDER_STATES
+            and order.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES
+            for sm, _, order in self._active_orders.values()
+        )
+
     def _cancel_resting_for_symbol(self, symbol: str, cid: str) -> None:
         """Cancel all non-terminal resting orders for a symbol.
 
@@ -6329,6 +6376,41 @@ class Orchestrator:
                     f"({intent.intent.name}); retries next boundary."
                 ),
                 context={"symbol": intent.symbol, "intent": intent.intent.name},
+            )
+        )
+
+    def _emit_forced_exit_supersedes_pending_alert(
+        self,
+        order: OrderRequest,
+        correlation_id: str,
+    ) -> None:
+        """Publish a forensic marker when a forced MARKET exit supersedes a
+        stale resting order.
+
+        Operator visibility (Inv-11): a hard-stop / session-flat MARKET exit
+        cancelled a pending passive order for the symbol so the aggressive
+        close could cross immediately.  Distinct from a duplicate-exit
+        suppression so post-trade forensics can attribute the cancel-and-cross
+        to the safety control rather than to alpha behaviour.
+        """
+        self._bus.publish(
+            Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="forced_exit_supersedes_pending_order",
+                message=(
+                    f"Forced MARKET exit {order.strategy_id!r} on "
+                    f"{order.symbol!r}: cancelling resting order(s) so the "
+                    f"aggressive close can cross immediately (Inv-11)."
+                ),
+                context={
+                    "symbol": order.symbol,
+                    "strategy_id": order.strategy_id,
+                    "order_id": order.order_id,
+                },
             )
         )
 
