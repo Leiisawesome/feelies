@@ -105,7 +105,7 @@ class SpreadZScoreSensor:
         # A1: uniform bid/ask positivity validation across price-consuming
         # sensors.  A zero/negative side gives a nonsense spread and
         # would poison the rolling mean/variance.
-        if bid <= 0.0 or ask <= 0.0:
+        if bid <= 0.0 or ask <= 0.0 or bid > ask:  # 3P-2: reject crossed book
             return None
 
         # Audit P1-E: flush the count window after a long event-time gap so

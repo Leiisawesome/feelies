@@ -93,7 +93,7 @@ class RealizedVol30sSensor:
 
         bid = float(event.bid)
         ask = float(event.ask)
-        if bid <= 0.0 or ask <= 0.0:
+        if bid <= 0.0 or ask <= 0.0 or bid > ask:  # 3P-2: reject crossed book
             # A2: a bad quote invalidates the carry-forward mid so the next
             # good quote bootstraps fresh.  Preserving ``last_mid`` would
             # cause the next good quote to compute a log-return spanning

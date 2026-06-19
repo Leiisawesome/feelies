@@ -49,6 +49,7 @@ The registry never publishes ``Signal``, ``OrderIntent``, or
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 
 from feelies.bus.event_bus import EventBus
@@ -76,6 +77,20 @@ _logger = logging.getLogger(__name__)
 # A throttle bookkeeping entry keyed by (sensor_id, symbol).
 # Stored as nanoseconds to avoid float drift across runs.
 _ThrottleKey = tuple[str, str]
+
+
+def _is_finite_value(value: Any) -> bool:
+    """True iff every numeric component of a sensor value is finite.
+
+    Audit 3P-1: a non-finite (``NaN`` / ``±Inf``) sensor value must never reach
+    the bus — it permanently poisons downstream rolling accumulators (a NaN
+    folded into a Welford mean stays NaN forever), silently flips regime-gate
+    comparisons (``NaN < x`` is ``False``), and propagates into signal edge and
+    position sizing.  Scalars and every component of a tuple value are checked.
+    """
+    if isinstance(value, tuple):
+        return all(math.isfinite(v) for v in value)
+    return math.isfinite(value)
 
 
 class SensorRegistry:
@@ -292,6 +307,29 @@ class SensorRegistry:
             if raw is None:
                 continue
 
+            # 3P-1: fail-safe containment of non-finite values.  State has
+            # already advanced (the sensor's accumulators are its own concern);
+            # we simply refuse to PUBLISH a NaN/Inf so it cannot poison the
+            # aggregator's Welford state, the regime gate, or position sizing.
+            # The emission is suppressed, a warning logged, and a metric
+            # counter incremented — the throttle clock is intentionally NOT
+            # advanced (a suppressed-poison reading is not a real emission).
+            if not _is_finite_value(raw.value):
+                _logger.warning(
+                    "sensor %s/%s produced a non-finite value %r for symbol "
+                    "%s at ts=%d; suppressing emission (3P-1 fail-safe)",
+                    spec.sensor_id,
+                    spec.sensor_version,
+                    raw.value,
+                    symbol,
+                    event.timestamp_ns,
+                )
+                if self._metric_collector is not None:
+                    self._emit_nonfinite_metric(
+                        spec=spec, symbol=symbol, ts_ns=event.timestamp_ns
+                    )
+                continue
+
             # Suppress emission (but not state advance) when inside the
             # throttle window for stateful sensors (H4 / M4).
             if inside_throttle_window:
@@ -409,6 +447,42 @@ class SensorRegistry:
                 value=1.0,
                 metric_type=MetricType.COUNTER,
                 tags=tags,
+            )
+        )
+
+    def _emit_nonfinite_metric(
+        self,
+        *,
+        spec: SensorSpec,
+        symbol: str,
+        ts_ns: int,
+    ) -> None:
+        """Emit ``feelies.sensor.nonfinite.count`` for one suppressed value (3P-1).
+
+        Counter (``value=1.0``), one per suppressed non-finite emission, so the
+        fail-safe is observable in monitoring rather than silent.  Uses the same
+        dedicated metrics sequence generator as the per-reading counter so it
+        cannot perturb the locked SensorReading sequence (Inv-A / C1).
+        """
+        assert self._metric_collector is not None
+        assert self._metrics_seq is not None
+        seq = self._metrics_seq.next()
+        cid = make_correlation_id(
+            symbol=f"metric:sensor-nonfinite:{spec.sensor_id}",
+            exchange_timestamp_ns=ts_ns,
+            sequence=seq,
+        )
+        self._metric_collector.record(
+            MetricEvent(
+                timestamp_ns=ts_ns,
+                correlation_id=cid,
+                sequence=seq,
+                source_layer="SENSOR",
+                layer="sensor",
+                name="feelies.sensor.nonfinite.count",
+                value=1.0,
+                metric_type=MetricType.COUNTER,
+                tags={"sensor_id": spec.sensor_id, "symbol": symbol},
             )
         )
 

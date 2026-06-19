@@ -124,7 +124,7 @@ class KyleLambda60sSensor:
         if isinstance(event, NBBOQuote):
             bid = float(event.bid)
             ask = float(event.ask)
-            if bid <= 0.0 or ask <= 0.0:
+            if bid <= 0.0 or ask <= 0.0 or bid > ask:  # 3P-2: reject crossed book
                 # A2: invalidate carry-forward mid so the next trade waits
                 # for a fresh NBBO snapshot rather than using a stale mid
                 # from before the bad-data gap.

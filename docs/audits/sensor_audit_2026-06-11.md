@@ -1057,4 +1057,44 @@ it is a fail-safe the platform *documents but does not have*, and its blast
 radius (permanent accumulator poison → NaN sizing) is severe. `3P-2` and `3P-3`
 are next. `3P-4`–`3P-7` are hardening.
 
-*End of audit (third pass appended 2026-06-13).*
+### Third-pass remediation status (2026-06-13)
+
+- **3P-1 (done).** Non-finite containment now exists at both boundaries: the
+  registry refuses to publish a NaN/Inf sensor value (scalar or any tuple
+  component) — suppress + WARN + `feelies.sensor.nonfinite.count` metric, with
+  the throttle clock intentionally not advanced (`registry.py:_is_finite_value`,
+  `_on_event`, `_emit_nonfinite_metric`); the aggregator demotes a non-finite
+  *feature* value to cold and omits it from `values`
+  (`aggregator.py:_build_snapshot`). Tests:
+  `tests/sensors/test_robustness_3p.py`, `tests/features/test_robustness_3p.py`.
+- **3P-2 (done).** All spread/mid-consuming sensors now reject a crossed book
+  (`bid > ask`) via the existing degenerate-book path (the mid-carrying sensors
+  reset their carry-forward mid). Applied to `spread_z_30d`, `micro_price`,
+  `liquidity_stress_score`, `quote_flicker_rate`, `realized_vol_30s`,
+  `structural_break_score`, `snr_drift_diffusion`, `kyle_lambda_60s`,
+  `ofi_ewma`, `ofi_raw`, `trade_through_rate`. `book_imbalance` (sizes-only) and
+  `quote_hazard_rate` (price-agnostic) are intentionally untouched. Locked
+  markets (`bid == ask`) are still accepted (harmless, sometimes legitimate).
+  Golden-safe: fixtures contain zero crossed quotes (verified).
+- **3P-4 (done).** `HorizonWindowedFeature` now flags catastrophic cancellation
+  (the `M2 < 0` indicator) and recomputes `mean`/`M2` exactly from the live
+  window on the next eviction sweep, so reverse-Welford drift is *bounded*, not
+  merely clamped (`horizon_windowed._recompute_from_window`). Golden-safe (the
+  recompute fires only when the indicator trips, which clean fixtures do not).
+- **3P-5 (done).** `snr_drift_diffusion` now resets its carry-forward mid and
+  per-horizon grid on a bad/crossed quote, harmonising bad-tick gap handling
+  with `realized_vol_30s` / `structural_break_score`.
+- **3P-6 (addressed by documentation).** The `ofi_integrated` wiring comment
+  already directs consumers to z-score it; a normalised (per-volume / √n)
+  variant is left as future work since no alpha consumes it yet.
+- **3P-3 (held) / 3P-7 (held).** Both change an input the reference alpha
+  consumes (`book_imbalance` → `book_imbalance_mean`), so they would re-trigger
+  the data-gated APP PnL/fill re-bake. Deferred to batch with the next
+  reference-alpha change rather than shipped alone.
+
+These are **code** changes to the sensor/feature layer, not config, so the
+data-free config-contract hash is unchanged. The data-gated APP functional test
+skips without the dataset; on a data host it could shift only if the APP tape
+actually contains crossed quotes (then re-bake PnL/fill alongside).
+
+*End of audit (third-pass remediation appended 2026-06-13).*
