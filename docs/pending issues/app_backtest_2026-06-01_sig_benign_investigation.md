@@ -1,8 +1,8 @@
 # APP 2026-06-01 backtest — `__stop_exit__` and entry-signal investigation
 
-**Status:** Open (pending fix)  
-**Date:** 2026-06-17  
-**Scope:** Forensic analysis of `sig_benign_midcap_v1` on APP for 2026-06-01 using `configs/bt_sig_benign_midcap.yaml`. No production code was modified as part of this investigation.
+**Status:** Resolved (P0 platform fix landed 2026-06-19; see §9)  
+**Date:** 2026-06-17 (investigation) · 2026-06-19 (resolution)  
+**Scope:** Forensic analysis of `sig_benign_midcap_v1` on APP for 2026-06-01 using `configs/bt_sig_benign_midcap.yaml`. The investigation itself modified no production code; the P0 execution-path bug it identified was fixed on 2026-06-19 (§9).
 
 **Related artifacts**
 
@@ -265,3 +265,60 @@ Structurally valid SHORT; did not fill — likely superseded by pending long ent
 Read-only replay of the APP 2026-06-01 event log through the standard backtest harness (`feelies.harness.backtest_runner._run_backtest_phases_2_7`). Trade journal, order lifecycle, quote path, regime posteriors, and horizon snapshots were extracted programmatically from the in-memory event log and position store.
 
 No scripts from this investigation were committed to the repo (ad-hoc analysis only).
+
+---
+
+## 9. Resolution (2026-06-19)
+
+### 9.1 P0 — forced MARKET exits now supersede stale resting orders
+
+**Change:** `src/feelies/kernel/orchestrator.py`, resting-order guard in
+`_process_tick_inner`.
+
+The guard previously suppressed every `__stop_exit__` / `__session_flat__`
+MARKET attempt whenever `_has_pending_exit_for_symbol()` was True — which
+included a stale gate-OFF FLAT passive cover that never traded. The guard now
+carves out `_FORCED_MARKET_EXIT_STRATEGIES`:
+
+- If a **forced** MARKET exit is *already* in flight for the symbol
+  (`_has_pending_forced_exit_for_symbol()` — new helper), the duplicate is
+  still suppressed (overshoot guard, unchanged intent of the original guard).
+- Otherwise the guard **cancels the resting orders** for the symbol
+  (`_cancel_resting_for_symbol()`, mirroring the REVERSE path in
+  `_execute_reverse()`) and lets the aggressive close cross immediately
+  (Inv-11). This covers both the hard-stop and the session-flatten paths, so
+  open question #1/#2 in §7 are answered: a breached forced exit always
+  cancels-first and crosses; it never waits for the passive leg to expire.
+
+A forensic `Alert` (`alert_name="forced_exit_supersedes_pending_order"`,
+WARNING) is published when the supersede fires, giving operators a marker
+distinct from ordinary duplicate-exit suppression (addresses the §6.1 P2
+"operator visibility" item).
+
+### 9.2 Regression test (P2)
+
+`tests/kernel/test_orchestrator.py::TestRestingOrderGuardAfterRisk::test_stop_exit_supersedes_resting_passive_cover`
+reproduces the failure chain deterministically: short @ $599.50, a resting
+passive BUY cover, then a quote that runs through the 1% hard stop. It asserts
+the cover is cancelled, a `__stop_exit__` MARKET order fills in the *same*
+tick, the position is flat, and the supersede alert is emitted. The existing
+`test_stop_exit_does_not_submit_duplicate_exit_while_pending` still passes,
+locking the overshoot guard (a forced exit already pending is not re-stacked).
+
+### 9.3 Verification
+
+- `pytest tests/kernel/ tests/determinism/` — 345 passed (parity hashes
+  unchanged; the fix only affects the previously-blocked stop path).
+- `pytest tests/acceptance/test_backtest_app_baseline.py tests/execution/` —
+  664 passed.
+- `ruff check` clean; `mypy src/feelies/kernel/orchestrator.py` clean.
+
+### 9.4 Not actioned (research hygiene / process)
+
+The §6.2 config/alpha tuning (market-mode research backtests, higher
+`entry_threshold_z`, tighter `on_condition`, book-imbalance floor) and the §6.3
+process notes are research-hygiene recommendations for `sig_benign_midcap_v1`,
+not platform defects, and are intentionally left to the alpha author. The §5
+entry-signal forensics confirmed the entries were *structurally valid* under
+the declared logic — the day loss was an alpha direction misfire amplified by
+the now-fixed execution bug, not a platform correctness failure.
