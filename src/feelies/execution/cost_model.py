@@ -582,6 +582,8 @@ def estimate_round_trip_cost_bps(
     ask_size: int | None = None,
     market_impact_factor: Decimal | None = None,
     max_impact_half_spreads: Decimal | None = None,
+    within_l1_impact_factor: Decimal = Decimal("0"),
+    permanent_impact_coefficient: Decimal = Decimal("0"),
     is_through_fill_entry: bool = False,
     is_through_fill_exit: bool = False,
 ) -> float:
@@ -641,6 +643,8 @@ def estimate_round_trip_cost_bps(
                 available_depth=int(depth or 0),
                 market_impact_factor=market_impact_factor,
                 max_impact_half_spreads=max_impact_half_spreads,
+                within_l1_impact_factor=within_l1_impact_factor,
+                permanent_impact_coefficient=permanent_impact_coefficient,
                 is_short=entry_short,
             )
         return float(
@@ -672,6 +676,8 @@ def estimate_round_trip_cost_bps(
                 available_depth=int(depth or 0),
                 market_impact_factor=market_impact_factor,
                 max_impact_half_spreads=max_impact_half_spreads,
+                within_l1_impact_factor=within_l1_impact_factor,
+                permanent_impact_coefficient=permanent_impact_coefficient,
                 is_short=False,
             )
         return float(

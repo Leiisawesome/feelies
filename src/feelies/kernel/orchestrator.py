@@ -1368,6 +1368,24 @@ class Orchestrator:
                                     )
                                 )
                             ),
+                            within_l1_impact_factor=Decimal(
+                                str(
+                                    getattr(
+                                        config,
+                                        "cost_within_l1_impact_factor",
+                                        0.0,
+                                    )
+                                )
+                            ),
+                            permanent_impact_coefficient=Decimal(
+                                str(
+                                    getattr(
+                                        config,
+                                        "cost_permanent_impact_coefficient",
+                                        0.0,
+                                    )
+                                )
+                            ),
                             passive_non_fill_probability=Decimal(
                                 str(
                                     getattr(
@@ -3152,6 +3170,28 @@ class Orchestrator:
             )
             if self._config
             else None,
+            within_l1_impact_factor=Decimal(
+                str(
+                    getattr(
+                        self._config,
+                        "cost_within_l1_impact_factor",
+                        0.0,
+                    )
+                )
+            )
+            if self._config
+            else Decimal("0"),
+            permanent_impact_coefficient=Decimal(
+                str(
+                    getattr(
+                        self._config,
+                        "cost_permanent_impact_coefficient",
+                        0.0,
+                    )
+                )
+            )
+            if self._config
+            else Decimal("0"),
         )
 
     def _reversal_passes_combined_edge_gate(

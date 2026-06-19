@@ -503,6 +503,8 @@ def round_trip_cost_bps(
     ask_size: int | None = None,
     market_impact_factor: Decimal | None = None,
     max_impact_half_spreads: Decimal | None = None,
+    within_l1_impact_factor: Decimal = Decimal("0"),
+    permanent_impact_coefficient: Decimal = Decimal("0"),
 ) -> float:
     """Model round-trip (entry + *taker* exit) cost in bps for one leg.
 
@@ -525,6 +527,8 @@ def round_trip_cost_bps(
         ask_size=ask_size,
         market_impact_factor=market_impact_factor,
         max_impact_half_spreads=max_impact_half_spreads,
+        within_l1_impact_factor=within_l1_impact_factor,
+        permanent_impact_coefficient=permanent_impact_coefficient,
     )
 
 
