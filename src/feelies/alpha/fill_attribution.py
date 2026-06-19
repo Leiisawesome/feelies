@@ -53,6 +53,15 @@ class FillAttributionLedger:
 
     def __init__(self) -> None:
         self._records: dict[str, AttributionRecord] = {}
+        # Cumulative integer allocation per contributor across all
+        # partial fills against an order — keyed by order_id and indexed
+        # by contributor position.  Used to compute per-fill deltas via
+        # largest-remainder over the *cumulative* quantity, so the sum
+        # across partial fills equals the single-shot allocation for
+        # the same total — preserving Inv-5 determinism and Inv-13
+        # provenance when a passive through is capped (P1.1) into a
+        # PARTIALLY_FILLED + later FILLED sequence.
+        self._cumulative_allocations: dict[str, list[int]] = {}
 
     def record(self, record: AttributionRecord) -> None:
         """Store an attribution record keyed by order_id."""
@@ -64,6 +73,7 @@ class FillAttributionLedger:
         filled_quantity: int,
         fill_price: Decimal,
         total_fees: Decimal = Decimal("0"),
+        is_final: bool = True,
     ) -> list[tuple[str, str, int, Decimal, Decimal]]:
         """Distribute a fill across contributing alphas.
 
@@ -71,21 +81,38 @@ class FillAttributionLedger:
         tuples.  Uses largest-remainder method for integer rounding.
         Fees are allocated proportionally to each alpha's share of the fill.
 
+        ``is_final=True`` (the default) preserves the legacy single-shot
+        semantics: the attribution record is popped after allocation.
+        ``is_final=False`` is used for ``PARTIALLY_FILLED`` acks so the
+        record stays available for subsequent fills against the same
+        order_id; per-contributor cumulative allocations are tracked so
+        the largest-remainder split is computed over the cumulative
+        filled quantity and the sum across partial fills equals the
+        single-shot allocation for the same total (Inv-5 / Inv-13).
+
         If the order_id is unknown (e.g. emergency flatten), returns
         an empty list — the caller handles aggregate position updates.
         """
-        record = self._records.pop(order_id, None)
+        record = self._records.get(order_id)
         if record is None:
             return []
 
         if not record.contributions:
+            if is_final:
+                self._records.pop(order_id, None)
+                self._cumulative_allocations.pop(order_id, None)
             return []
 
         sign = 1 if record.net_side == Side.BUY else -1
-        allocations = _largest_remainder_allocate(
-            filled_quantity,
+        prev_cum = self._cumulative_allocations.get(
+            order_id, [0] * len(record.contributions)
+        )
+        prev_total = sum(prev_cum)
+        new_cum = _largest_remainder_allocate(
+            prev_total + filled_quantity,
             record.contributions,
         )
+        allocations = [n - p for n, p in zip(new_cum, prev_cum, strict=True)]
 
         total_allocated = sum(a for a in allocations if a > 0)
         result: list[tuple[str, str, int, Decimal, Decimal]] = []
@@ -119,6 +146,12 @@ class FillAttributionLedger:
         if result and fee_remainder != Decimal("0"):
             last = result[-1]
             result[-1] = (last[0], last[1], last[2], last[3], last[4] + fee_remainder)
+
+        if is_final:
+            self._records.pop(order_id, None)
+            self._cumulative_allocations.pop(order_id, None)
+        else:
+            self._cumulative_allocations[order_id] = new_cum
 
         return result
 

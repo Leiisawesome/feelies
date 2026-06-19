@@ -86,10 +86,25 @@ _BASELINE_CONFIG = Path("configs/bt_app.yaml")
 # The APP/2026-03-26 trade path emits no discretionary passive TRIM in this
 # dataset, so Net P&L ($71.56) and fill count (6) are UNCHANGED from the
 # d101f30 trim-on baseline — only the config snapshot shifted.
+# Re-baked for the 2026-06-19 execution-realism audit (P1/P2 backlog): the
+# new execution-realism knobs are additive and behaviour-neutral *in code*,
+# but the reference ``platform.yaml`` now FLIPS the conservative profile ON so
+# backtests price fills live-realistically by default —
+# ``passive_through_fill_size_cap_enabled: true``,
+# ``passive_require_trade_for_level_fill: true`` (inert here while
+# ``passive_queue_position_shares > 0``), ``cost_within_l1_impact_factor: 0.3``,
+# ``cost_stop_depth_depletion_factor: 2.0``, ``cost_moc_penalty_bps: 3.0``
+# (inert for this non-MOC alpha).  This is a deliberate TRADE-PATH change: the
+# +participation impact on aggressive exit legs and the through-fill cap cost
+# the alpha ~$2.50, compressing Net P&L $71.56 → $69.06 (edge survives) while
+# fill count stays 6.  Re-verified against the disk cache on 2026-06-19:
+#   uv run python scripts/run_backtest.py --config configs/bt_app.yaml \
+#       --symbol APP --date 2026-03-26
+# The data-free config-contract hash was recomputed for the flipped snapshot.
 _BASELINE_CONFIG_HASH = (
-    "b01ba7033bc092ba87c6bc51b9f7f628ee9188d2af36828587551170a27c7152"
+    "a74d682e738fdc5dd5616c8875c38d3a5d3a5d561cf3c12060b1d3e774dce650"
 )
-_BASELINE_NET_PNL = Decimal("71.56")
+_BASELINE_NET_PNL = Decimal("69.06")
 _BASELINE_FILL_COUNT = 6
 
 

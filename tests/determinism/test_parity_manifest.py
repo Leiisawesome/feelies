@@ -7,6 +7,7 @@ import pytest
 from tests.determinism import parity_manifest
 from tests.determinism.test_hazard_exit_replay import _replay as hazard_exit_replay
 from tests.determinism.test_horizon_feature_snapshot_replay import _replay as snapshot_replay
+from tests.determinism.test_market_fill_replay import _replay as market_fill_replay
 from tests.determinism.test_portfolio_order_replay import _replay as portfolio_order_replay
 from tests.determinism.test_regime_hazard_replay import _replay as regime_hazard_replay
 from tests.determinism.test_regime_state_replay import (
@@ -46,6 +47,7 @@ _REPLAY_BY_NAME = {
     "level4_hazard_exit_order": hazard_exit_replay,
     "level5_regime_hazard_spike": regime_hazard_replay,
     "level6_regime_state": _replay_regime_state,
+    "market_fill_acks": market_fill_replay,
 }
 
 

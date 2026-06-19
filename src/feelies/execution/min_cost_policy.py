@@ -87,6 +87,13 @@ class MinCostPolicyConfig:
     # on realised aggressive cost.
     market_impact_factor: Decimal = Decimal("0.5")
     max_impact_half_spreads: Decimal = Decimal("10")
+    # Audit P1.3 / P2.11: within-L1 participation premium + permanent
+    # square-root impact.  Mirror the router's ``append_market_fill_acks``
+    # so the policy does not under-price aggressive fills once those
+    # knobs are enabled in ``platform.yaml``.  Defaults are zero so the
+    # legacy "impact only on excess-over-L1" comparison is preserved.
+    within_l1_impact_factor: Decimal = Decimal("0")
+    permanent_impact_coefficient: Decimal = Decimal("0")
     # Audit F-M-19: opportunity cost of a passive non-fill.  When the
     # caller supplies an ``edge_bps`` to ``decide()``, the passive
     # route's effective cost is inflated by
@@ -218,6 +225,8 @@ class MinimumCostExecutionPolicy:
                         available_depth=int(depth),
                         market_impact_factor=self._cfg.market_impact_factor,
                         max_impact_half_spreads=self._cfg.max_impact_half_spreads,
+                        within_l1_impact_factor=self._cfg.within_l1_impact_factor,
+                        permanent_impact_coefficient=self._cfg.permanent_impact_coefficient,
                         is_short=is_short,
                     )
                 )

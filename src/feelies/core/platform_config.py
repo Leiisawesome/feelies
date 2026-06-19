@@ -424,6 +424,52 @@ class PlatformConfig:
     # Default 0 = disabled.  Set for short-selling strategies only.
     cost_htb_borrow_annual_bps: float = 0.0
 
+    # ── Execution-realism knobs (audit 2026-06-19; additive, default-neutral) ──
+    # Each defaults to the prior trade-path behaviour so every locked Inv-5
+    # parity hash and the APP PnL baseline remain valid; only the config
+    # snapshot grows.  Operators opt into the more-conservative realism per
+    # knob (platform.yaml enables them for live-like backtests).
+    #
+    # P1.3: participation-based impact applied to the *within-L1* filled
+    # portion (the excess-over-L1 walk-the-book term is unchanged).  Moves
+    # the taker fill price by ``factor × (fill_qty / available_depth) ×
+    # half_spread`` for the L1 leg too.  0.0 reproduces "impact only on
+    # excess".  Mirrored by the round-trip cost estimators.
+    cost_within_l1_impact_factor: float = 0.0
+    # P2.11: permanent square-root market-impact coefficient.  Adds
+    # ``coef × sqrt(quantity / available_depth) × half_spread`` to the taker
+    # fill price.  0.0 = disabled (calibration from cached fills is a data
+    # task — see the audit appendix).
+    cost_permanent_impact_coefficient: float = 0.0
+    # P2.8: MOC closing-auction penalty in bps of notional, charged as a fee
+    # on every MOC fill to proxy auction imbalance the close-mid proxy
+    # ignores.  0.0 preserves prior MOC economics (close mid, no spread).
+    cost_moc_penalty_bps: float = 0.0
+    # P2.9: forced-exit (stop / hazard / force-flatten) depth-depletion
+    # factor.  The effective L1 depth a panic exit fills against is divided
+    # by this factor before the walk-the-book split, so a stop walks deeper
+    # into a depleted book.  1.0 = no change; 2.0 halves usable L1 depth.
+    cost_stop_depth_depletion_factor: float = 1.0
+    # P1.1: cap a passive through-fill at the crossing quote's opposite-side
+    # size and rest the remainder instead of filling the whole order in one
+    # tick (models queue position on through-trades).  False = prior full-fill.
+    passive_through_fill_size_cap_enabled: bool = False
+    # P1.2: require observed trade volume at the resting level before a
+    # quote-imbalance level (drain) fill can fire — a passive order cannot
+    # drain-fill on quote ticks alone.  False = prior quote-imbalance-only
+    # behaviour.  (Explicit queue-depth mode already requires volume.)
+    passive_require_trade_for_level_fill: bool = False
+    # P1.7: borrow tier assumed for symbols absent from
+    # ``borrow_availability``.  "available" (default) is optimistic for
+    # non-large-cap universes; "hard" / "unavailable" are conservative.
+    borrow_default_tier: str = "available"
+    # P2.10: when True, a realized fill cost_bps that exceeds
+    # ``realized_cost_alert_ratio`` × the disclosed G12 one-way cost for
+    # ``realized_cost_escalation_streak`` consecutive fills escalates the
+    # risk engine (SCALE_DOWN) rather than only emitting a WARNING alert.
+    realized_cost_escalation_enabled: bool = False
+    realized_cost_escalation_streak: int = 3
+
     cache_dir: Path | None = None
 
     # ── Phase-2 (three-layer architecture) — all optional ──────────────
@@ -669,6 +715,15 @@ class PlatformConfig:
                     f"borrow_availability[{sym!r}]={tier!r} is invalid; "
                     "expected available, hard, or unavailable"
                 )
+        if str(self.borrow_default_tier).strip().lower() not in (
+            "available",
+            "hard",
+            "unavailable",
+        ):
+            raise ConfigurationError(
+                f"borrow_default_tier={self.borrow_default_tier!r} is invalid; "
+                "expected available, hard, or unavailable"
+            )
 
         if not isinstance(self.regime_engine_options, dict):
             raise ConfigurationError("regime_engine_options must be a dict[str, object] mapping")
@@ -733,6 +788,16 @@ class PlatformConfig:
             raise ConfigurationError("cost_finra_taf_per_share must be >= 0")
         if self.cost_finra_taf_max_per_order < 0.0:
             raise ConfigurationError("cost_finra_taf_max_per_order must be >= 0")
+        if self.cost_within_l1_impact_factor < 0.0:
+            raise ConfigurationError("cost_within_l1_impact_factor must be >= 0")
+        if self.cost_permanent_impact_coefficient < 0.0:
+            raise ConfigurationError("cost_permanent_impact_coefficient must be >= 0")
+        if self.cost_moc_penalty_bps < 0.0:
+            raise ConfigurationError("cost_moc_penalty_bps must be >= 0")
+        if self.cost_stop_depth_depletion_factor < 1.0:
+            raise ConfigurationError("cost_stop_depth_depletion_factor must be >= 1")
+        if self.realized_cost_escalation_streak < 1:
+            raise ConfigurationError("realized_cost_escalation_streak must be >= 1")
         if self.cost_max_impact_half_spreads < 1.0:
             raise ConfigurationError(
                 "cost_max_impact_half_spreads must be >= 1 "
@@ -1034,6 +1099,15 @@ class PlatformConfig:
             "cost_market_impact_factor": self.cost_market_impact_factor,
             "cost_max_impact_half_spreads": self.cost_max_impact_half_spreads,
             "cost_htb_borrow_annual_bps": self.cost_htb_borrow_annual_bps,
+            "cost_within_l1_impact_factor": self.cost_within_l1_impact_factor,
+            "cost_permanent_impact_coefficient": (self.cost_permanent_impact_coefficient),
+            "cost_moc_penalty_bps": self.cost_moc_penalty_bps,
+            "cost_stop_depth_depletion_factor": (self.cost_stop_depth_depletion_factor),
+            "passive_through_fill_size_cap_enabled": (self.passive_through_fill_size_cap_enabled),
+            "passive_require_trade_for_level_fill": (self.passive_require_trade_for_level_fill),
+            "borrow_default_tier": self.borrow_default_tier,
+            "realized_cost_escalation_enabled": (self.realized_cost_escalation_enabled),
+            "realized_cost_escalation_streak": (self.realized_cost_escalation_streak),
             # Phase-2 fields (folded into the snapshot so determinism
             # checksums change when sensor configuration changes — but
             # default values keep the snapshot bit-stable for legacy
@@ -1455,6 +1529,27 @@ class PlatformConfig:
             ),
             cost_market_impact_factor=float(data.get("cost_market_impact_factor", 0.5)),
             cost_htb_borrow_annual_bps=float(data.get("cost_htb_borrow_annual_bps", 0.0)),
+            cost_within_l1_impact_factor=float(data.get("cost_within_l1_impact_factor", 0.0)),
+            cost_permanent_impact_coefficient=float(
+                data.get("cost_permanent_impact_coefficient", 0.0)
+            ),
+            cost_moc_penalty_bps=float(data.get("cost_moc_penalty_bps", 0.0)),
+            cost_stop_depth_depletion_factor=float(
+                data.get("cost_stop_depth_depletion_factor", 1.0)
+            ),
+            passive_through_fill_size_cap_enabled=bool(
+                data.get("passive_through_fill_size_cap_enabled", False)
+            ),
+            passive_require_trade_for_level_fill=bool(
+                data.get("passive_require_trade_for_level_fill", False)
+            ),
+            borrow_default_tier=str(data.get("borrow_default_tier", "available")),
+            realized_cost_escalation_enabled=bool(
+                data.get("realized_cost_escalation_enabled", False)
+            ),
+            realized_cost_escalation_streak=int(
+                data.get("realized_cost_escalation_streak", 3)
+            ),
             cache_dir=Path(cache_dir_raw) if cache_dir_raw else None,
             session_open_ns=session_open_ns,
             horizons_seconds=horizons_seconds,

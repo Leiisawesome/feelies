@@ -145,8 +145,12 @@ class BacktestOrderRouter:
         market_impact_factor: Decimal | int | str | float = Decimal("0.5"),
         max_impact_half_spreads: Decimal | int | str | float = Decimal("10"),
         stop_slippage_half_spreads: Decimal | int | str | float = Decimal("2.0"),
+        within_l1_impact_factor: Decimal | int | str | float = Decimal("0"),
+        permanent_impact_coefficient: Decimal | int | str | float = Decimal("0"),
+        stop_depth_depletion_factor: Decimal | int | str | float = Decimal("1"),
         max_resting_ticks: int = 50,
         moc_bounds: MocSessionBounds | None = None,
+        moc_penalty_bps: Decimal | int | str | float = Decimal("0"),
         trading_session_bounds: TradingSessionBounds | None = None,
     ) -> None:
         self._clock = clock
@@ -158,6 +162,15 @@ class BacktestOrderRouter:
         )
         self._stop_slippage_half_spreads = to_decimal(
             stop_slippage_half_spreads, "stop_slippage_half_spreads"
+        )
+        self._within_l1_impact_factor = to_decimal(
+            within_l1_impact_factor, "within_l1_impact_factor"
+        )
+        self._permanent_impact_coefficient = to_decimal(
+            permanent_impact_coefficient, "permanent_impact_coefficient"
+        )
+        self._stop_depth_depletion_factor = to_decimal(
+            stop_depth_depletion_factor, "stop_depth_depletion_factor"
         )
         self._max_resting_ticks = max_resting_ticks
         self._last_quotes: dict[str, NBBOQuote] = {}
@@ -178,6 +191,7 @@ class BacktestOrderRouter:
                 self._ack_seq,
                 self._pending_acks,
                 max_resting_ticks=max_resting_ticks,
+                moc_penalty_bps=to_decimal(moc_penalty_bps, "moc_penalty_bps"),
             )
         self._rth_gate = RthEntryFillGate(trading_session_bounds)
 
@@ -363,6 +377,9 @@ class BacktestOrderRouter:
             market_impact_factor=self._market_impact_factor,
             max_impact_half_spreads=self._max_impact_half_spreads,
             stop_slippage_half_spreads=self._stop_slippage_half_spreads,
+            within_l1_impact_factor=self._within_l1_impact_factor,
+            permanent_impact_coefficient=self._permanent_impact_coefficient,
+            stop_depth_depletion_factor=self._stop_depth_depletion_factor,
         )
 
     def poll_acks(self) -> list[OrderAck]:
