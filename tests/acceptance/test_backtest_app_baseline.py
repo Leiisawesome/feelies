@@ -45,11 +45,17 @@ _BASELINE_CONFIG = Path("configs/backtest_app.yaml")
 # NOTE (G-7 / 2026-06-11): the sizing-tilt config keys (sizer_tilt_drive,
 # sizer_edge_*, sizer_vol_*, sizer_inventory_*, sizer_tilt_*) were added to
 # the PlatformConfig snapshot.  They are all default-off and the live trade
-# path is byte-identical (the size shadow is measurement-only), so Net P&L
-# ($15.07) and the fill count (6) are UNCHANGED — only the config snapshot
-# shifts.  The config CONTRACT hash (raw YAML + defaults, no per-run ingest-
-# health provenance) is data-independent, so it is re-baked directly here in
-# ``test_app_baseline_config_contract_hash`` and runs without the dataset.
+# path is byte-identical (the size shadow is measurement-only), so the config
+# snapshot shifts but the trade path does not.  The config CONTRACT hash (raw
+# YAML + defaults, no per-run ingest-health provenance) is data-independent, so
+# it is re-baked directly here in ``test_app_baseline_config_contract_hash``
+# and runs without the dataset.
+#
+# NOTE (audit 3P-3/3P-7 / 2026-06-13): the reference alpha's footprint
+# confirmation now uses an ``imbalance_floor`` epsilon band over
+# ``book_imbalance_mean`` (winsorised via ``imbalance_cap=0.95``), which changes
+# the realised APP trade path.  Net P&L and fill count below were re-baked from
+# a cached APP/2026-03-26 run after that change (Net P&L $55.04, 4 fills).
 #
 # The combined per-fill parity hash mixed the (data-derived) ingest-health
 # provenance into config_hash and the trade journal into pnl_hash, so it can
@@ -65,8 +71,8 @@ _BASELINE_CONFIG = Path("configs/backtest_app.yaml")
 _BASELINE_CONFIG_HASH = (
     "ca75fd8357e48d2d16f79c6728ef7335268f3100e84b50961346210274a05897"
 )
-_BASELINE_NET_PNL = Decimal("15.07")
-_BASELINE_FILL_COUNT = 6
+_BASELINE_NET_PNL = Decimal("55.04")
+_BASELINE_FILL_COUNT = 4
 
 
 def _load_runner():
