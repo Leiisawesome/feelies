@@ -116,6 +116,11 @@ class _PendingOrder:
     ticks_at_level: int = 0
     total_ticks: int = 0
     shares_traded_at_level: int = 0
+    # Cumulative filled quantity across capped through-fills (P1.1).  When
+    # the through-fill size cap is enabled a single through-trade may only
+    # fill part of the order; the remainder keeps resting until subsequent
+    # through-trades (or a timeout) terminate it.
+    filled_quantity: int = 0
     # Whether the order was resting at the BBO on the most recent quote
     # evaluation — used to classify a timeout cancel as
     # CANCELLED_MAX_RESTING_TICKS (competitive at cancel) vs
@@ -159,7 +164,13 @@ class PassiveLimitOrderRouter:
         cancel_fee_per_share: Decimal = Decimal("0.0"),
         fill_hazard_max: Decimal | int | str | float = Decimal("0.5"),
         stop_slippage_half_spreads: Decimal | int | str | float = Decimal("2.0"),
+        within_l1_impact_factor: Decimal | int | str | float = Decimal("0"),
+        permanent_impact_coefficient: Decimal | int | str | float = Decimal("0"),
+        stop_depth_depletion_factor: Decimal | int | str | float = Decimal("1"),
+        through_fill_size_cap_enabled: bool = False,
+        require_trade_for_level_fill: bool = False,
         moc_bounds: MocSessionBounds | None = None,
+        moc_penalty_bps: Decimal | int | str | float = Decimal("0"),
         trading_session_bounds: TradingSessionBounds | None = None,
     ) -> None:
         self._clock = clock
@@ -176,6 +187,21 @@ class PassiveLimitOrderRouter:
         self._stop_slippage_half_spreads = to_decimal(
             stop_slippage_half_spreads, "stop_slippage_half_spreads"
         )
+        self._within_l1_impact_factor = to_decimal(
+            within_l1_impact_factor, "within_l1_impact_factor"
+        )
+        self._permanent_impact_coefficient = to_decimal(
+            permanent_impact_coefficient, "permanent_impact_coefficient"
+        )
+        self._stop_depth_depletion_factor = to_decimal(
+            stop_depth_depletion_factor, "stop_depth_depletion_factor"
+        )
+        # P1.1: cap a through-fill at the crossing quote's opposite-side size
+        # and rest the remainder, instead of filling the whole order at once.
+        self._through_fill_size_cap_enabled = through_fill_size_cap_enabled
+        # P1.2: require observed trade volume at the level before a
+        # quote-imbalance drain fill can fire.
+        self._require_trade_for_level_fill = require_trade_for_level_fill
         self._fill_hazard_max = to_decimal(fill_hazard_max, "fill_hazard_max")
         # Base per-tick fill hazard for the quote-imbalance regime,
         # h0 = 1 / fill_delay_ticks (so mean ticks-to-fill ≈
@@ -219,6 +245,7 @@ class PassiveLimitOrderRouter:
                 self._ack_seq,
                 self._pending_acks,
                 max_resting_ticks=max_resting_ticks,
+                moc_penalty_bps=to_decimal(moc_penalty_bps, "moc_penalty_bps"),
             )
         self._rth_gate = RthEntryFillGate(trading_session_bounds)
 
@@ -250,7 +277,11 @@ class PassiveLimitOrderRouter:
             return
         for order_id in order_ids:
             pending = self._resting_orders[order_id]
-            if pending.queue_ahead_shares <= 0:
+            # Accumulate level volume for the explicit queue-depth mode
+            # (``queue_ahead_shares > 0``) *and* for the P1.2 volume gate
+            # (``require_trade_for_level_fill``), which needs at least one
+            # print at the level before a quote-imbalance drain fill.
+            if pending.queue_ahead_shares <= 0 and not self._require_trade_for_level_fill:
                 continue
             if pending.side == Side.BUY and trade.price <= pending.limit_price:
                 pending.shares_traded_at_level += trade.size
@@ -474,6 +505,9 @@ class PassiveLimitOrderRouter:
             market_impact_factor=self._market_impact_factor,
             max_impact_half_spreads=self._max_impact_half_spreads,
             stop_slippage_half_spreads=self._stop_slippage_half_spreads,
+            within_l1_impact_factor=self._within_l1_impact_factor,
+            permanent_impact_coefficient=self._permanent_impact_coefficient,
+            stop_depth_depletion_factor=self._stop_depth_depletion_factor,
         )
 
     # ── Passive (limit) order posting ────────────────────────────
@@ -579,15 +613,43 @@ class PassiveLimitOrderRouter:
                 elif pending.side == Side.SELL and quote.bid > pending.limit_price:
                     fill_price = quote.bid
                 adverse_notional_price = quote.ask if pending.side == Side.BUY else quote.bid
-                self._emit_passive_fill(
-                    pending,
-                    fill_price=fill_price,
-                    fill_type="THROUGH",
-                    adverse_notional_price=adverse_notional_price,
-                    outcome=PassiveFillOutcome.FILLED_BY_THROUGH,
-                )
-                self._record_fill(pending, PassiveFillOutcome.FILLED_BY_THROUGH)
-                to_remove.append(order_id)
+                remaining_qty = pending.request.quantity - pending.filled_quantity
+                # P1.1: cap the through-fill at the crossing quote's
+                # opposite-side displayed size and rest the remainder.  Only
+                # the size that actually trades through can fill — a resting
+                # order behind the queue does not fully fill on a single
+                # through-tick.  Default-off → fill the whole remainder.
+                fill_qty = remaining_qty
+                if self._through_fill_size_cap_enabled:
+                    crossing_size = quote.ask_size if pending.side == Side.BUY else quote.bid_size
+                    if crossing_size > 0:
+                        fill_qty = min(remaining_qty, crossing_size)
+                    # crossing_size <= 0 is a degenerate through with no
+                    # displayed size; fall back to the full remainder.
+                if fill_qty >= remaining_qty:
+                    self._emit_passive_fill(
+                        pending,
+                        fill_price=fill_price,
+                        fill_type="THROUGH",
+                        adverse_notional_price=adverse_notional_price,
+                        outcome=PassiveFillOutcome.FILLED_BY_THROUGH,
+                        fill_quantity=fill_qty,
+                    )
+                    self._record_fill(pending, PassiveFillOutcome.FILLED_BY_THROUGH)
+                    to_remove.append(order_id)
+                else:
+                    # Partial through-fill: emit PARTIALLY_FILLED for the
+                    # available size and keep the remainder resting.
+                    self._emit_passive_fill(
+                        pending,
+                        fill_price=fill_price,
+                        fill_type="THROUGH",
+                        adverse_notional_price=adverse_notional_price,
+                        outcome=PassiveFillOutcome.FILLED_BY_THROUGH,
+                        fill_quantity=fill_qty,
+                        status=OrderAckStatus.PARTIALLY_FILLED,
+                    )
+                    pending.filled_quantity += fill_qty
             elif action == "drain":
                 adverse_notional_price = quote.ask if pending.side == Side.BUY else quote.bid
                 self._emit_passive_fill(
@@ -692,6 +754,13 @@ class PassiveLimitOrderRouter:
         if pending.queue_ahead_shares > 0:
             if pending.shares_traded_at_level >= pending.queue_ahead_shares:
                 return self._fill_hazard_max
+            return Decimal(0)
+
+        # P1.2: a quote-imbalance drain fill cannot fire until at least one
+        # trade has printed at/through our level since posting — quote ticks
+        # alone are not evidence of a fill.  Default-off (legacy: quote-tick
+        # hazard with no volume requirement).
+        if self._require_trade_for_level_fill and pending.shares_traded_at_level <= 0:
             return Decimal(0)
 
         our_size = quote.bid_size if pending.side == Side.BUY else quote.ask_size
@@ -806,6 +875,8 @@ class PassiveLimitOrderRouter:
         fill_type: FillType = "LEVEL",
         adverse_notional_price: Decimal | None = None,
         outcome: PassiveFillOutcome = PassiveFillOutcome.FILLED_BY_DRAIN,
+        fill_quantity: int | None = None,
+        status: OrderAckStatus = OrderAckStatus.FILLED,
     ) -> None:
         """Emit a FILLED ack for a passive limit order.
 
@@ -829,6 +900,10 @@ class PassiveLimitOrderRouter:
         """
         if fill_price is None:
             fill_price = pending.limit_price
+        # ``fill_quantity`` defaults to the *remaining* unfilled size so a
+        # capped through-fill (P1.1) bills only the size that traded through.
+        if fill_quantity is None:
+            fill_quantity = pending.request.quantity - pending.filled_quantity
         # Maker rounding: a passive fill must be at the resting limit
         # OR BETTER (BUY pays no more, SELL receives no less).  Taker
         # rounding (``snap_fill_price``) would round *against* the
@@ -840,7 +915,7 @@ class PassiveLimitOrderRouter:
         costs = self._cost_model.compute(
             symbol=pending.request.symbol,
             side=pending.side,
-            quantity=pending.request.quantity,
+            quantity=fill_quantity,
             fill_price=fill_price,
             half_spread=Decimal("0"),
             is_taker=False,
@@ -857,8 +932,8 @@ class PassiveLimitOrderRouter:
                 sequence=self._ack_seq.next(),
                 order_id=pending.request.order_id,
                 symbol=pending.request.symbol,
-                status=OrderAckStatus.FILLED,
-                filled_quantity=pending.request.quantity,
+                status=status,
+                filled_quantity=fill_quantity,
                 fill_price=fill_price,
                 fees=costs.total_fees,
                 cost_bps=costs.cost_bps,
@@ -983,8 +1058,13 @@ class PassiveLimitOrderRouter:
         When the queue-position mode is enabled (``queue_position_shares > 0``
         at construction, or any order has a non-zero per-order threshold),
         level fills only fire when accumulated trade volume reaches the
-        threshold.  Without a trade feed subscription those orders never
+        threshold.          Without a trade feed subscription those orders never
         fill by queue drain and silently degrade — callers should wire
         ``on_trade`` when this is True.
+
+        Also True under the P1.2 volume gate
+        (``require_trade_for_level_fill``): quote-imbalance drain fills then
+        require at least one print at the level, so the trade feed must be
+        wired or passive orders only ever fill on through-trades.
         """
-        return self._queue_position_shares > 0
+        return self._queue_position_shares > 0 or self._require_trade_for_level_fill

@@ -133,6 +133,7 @@ from feelies.execution.regulatory.borrow_availability import (
     build_borrow_table,
     htb_fee_applies,
     is_short_sale_intent,
+    parse_borrow_tier,
 )
 from feelies.ingestion.data_integrity import (
     DataHealth,
@@ -735,6 +736,12 @@ class Orchestrator:
         # Audit F-M-22: dedicated threshold for the realized-vs-disclosed
         # cost alert, decoupled from MIN_MARGIN_RATIO.
         self._realized_cost_alert_ratio: float = 1.5
+        # Audit P2.10: optional escalation when realized cost persistently
+        # exceeds the disclosed G12 cost.  Default-off → alert-only (legacy).
+        self._realized_cost_escalation_enabled: bool = False
+        self._realized_cost_escalation_streak: int = 3
+        # Per-strategy consecutive realized-cost-overrun streak counter.
+        self._realized_cost_breach_streak: dict[str, int] = {}
         self._regime_calibration_max_quotes: int | None = None
         self._regime_calibration_quotes: tuple[NBBOQuote, ...] | None = (
             tuple(regime_calibration_quotes) if regime_calibration_quotes is not None else None
@@ -800,8 +807,14 @@ class Orchestrator:
 
         # ── BT-7: static borrow-availability table ────────────────────
         # Per-symbol locate tier (available / hard / unavailable).  Omitted
-        # symbols default to AVAILABLE.  Cached from config in boot().
+        # symbols fall back to ``self._borrow_default_tier``.  Cached from
+        # config in boot().
         self._borrow_tier: dict[str, BorrowTier] = {}
+        # Audit P1.7: tier assumed for symbols absent from the table.
+        # AVAILABLE (optimistic) preserves prior behaviour; operators set
+        # ``borrow_default_tier`` to "hard"/"unavailable" for a conservative
+        # short-locate assumption on non-large-cap universes.
+        self._borrow_default_tier: BorrowTier = BorrowTier.AVAILABLE
 
         # ── BT-8: MOC strategy routing ────────────────────────────────
         # Set of strategy_ids whose entries route as MOC orders, and a
@@ -1199,6 +1212,18 @@ class Orchestrator:
                 self._ssr_mode = config.ssr_mode
             if hasattr(config, "borrow_availability"):
                 self._borrow_tier = build_borrow_table(config.borrow_availability)
+            if hasattr(config, "borrow_default_tier"):
+                self._borrow_default_tier = parse_borrow_tier(config.borrow_default_tier)
+                if (
+                    self._borrow_default_tier != BorrowTier.AVAILABLE
+                    and getattr(config, "cost_htb_borrow_annual_bps", 0.0) == 0.0
+                ):
+                    logger.warning(
+                        "borrow_default_tier=%s but cost_htb_borrow_annual_bps=0 — "
+                        "short-side borrow cost is not modelled; set "
+                        "cost_htb_borrow_annual_bps for HARD-to-borrow names.",
+                        self._borrow_default_tier.value,
+                    )
             if hasattr(config, "moc_strategy_ids"):
                 self._moc_strategy_ids = frozenset(config.moc_strategy_ids)
                 if config.moc_strategy_ids:
@@ -1364,6 +1389,10 @@ class Orchestrator:
                 self._signal_edge_cost_basis = config.signal_edge_cost_basis
             if hasattr(config, "realized_cost_alert_ratio"):
                 self._realized_cost_alert_ratio = config.realized_cost_alert_ratio
+            if hasattr(config, "realized_cost_escalation_enabled"):
+                self._realized_cost_escalation_enabled = config.realized_cost_escalation_enabled
+            if hasattr(config, "realized_cost_escalation_streak"):
+                self._realized_cost_escalation_streak = config.realized_cost_escalation_streak
             if hasattr(config, "regime_calibration_max_quotes"):
                 self._regime_calibration_max_quotes = config.regime_calibration_max_quotes
             self._macro.transition(
@@ -5538,32 +5567,56 @@ class Orchestrator:
 
             disclosed = order.g12_disclosed_cost_total_bps
             alert_ratio = self._realized_cost_alert_ratio
-            if disclosed > 0 and float(ack.cost_bps) > disclosed * alert_ratio:
-                self._bus.publish(
-                    Alert(
-                        timestamp_ns=self._clock.now_ns(),
-                        correlation_id=correlation_id,
-                        sequence=self._seq.next(),
-                        severity=AlertSeverity.WARNING,
-                        layer="kernel",
-                        alert_name="g12_realized_cost_exceeds_disclosure",
-                        message=(
-                            f"Fill cost_bps={float(ack.cost_bps):.4f} exceeds "
-                            f"{alert_ratio}× G12 disclosed one-way "
-                            f"cost_total_bps={disclosed:.4f} "
-                            f"(strategy_id={order.strategy_id!r}, "
-                            f"symbol={ack.symbol!r}, order_id={ack.order_id!r})"
-                        ),
-                        context={
-                            "strategy_id": order.strategy_id,
-                            "symbol": ack.symbol,
-                            "order_id": ack.order_id,
-                            "realized_cost_bps": float(ack.cost_bps),
-                            "g12_disclosed_cost_total_bps": disclosed,
-                            "alert_ratio": alert_ratio,
-                        },
+            if disclosed > 0:
+                breached = float(ack.cost_bps) > disclosed * alert_ratio
+                if not breached:
+                    # A fill within the disclosed band breaks the streak.
+                    self._realized_cost_breach_streak.pop(order.strategy_id, None)
+                else:
+                    streak = self._realized_cost_breach_streak.get(order.strategy_id, 0) + 1
+                    self._realized_cost_breach_streak[order.strategy_id] = streak
+                    # P2.10: when enabled, a persistent overrun (the cost
+                    # model under-predicting fill cost across several fills)
+                    # is fail-safe-escalated — suppress further trading via
+                    # the kill switch rather than only logging — Inv-11.
+                    escalate = (
+                        self._realized_cost_escalation_enabled
+                        and streak >= self._realized_cost_escalation_streak
                     )
-                )
+                    severity = AlertSeverity.CRITICAL if escalate else AlertSeverity.WARNING
+                    self._bus.publish(
+                        Alert(
+                            timestamp_ns=self._clock.now_ns(),
+                            correlation_id=correlation_id,
+                            sequence=self._seq.next(),
+                            severity=severity,
+                            layer="kernel",
+                            alert_name="g12_realized_cost_exceeds_disclosure",
+                            message=(
+                                f"Fill cost_bps={float(ack.cost_bps):.4f} exceeds "
+                                f"{alert_ratio}× G12 disclosed one-way "
+                                f"cost_total_bps={disclosed:.4f} "
+                                f"(strategy_id={order.strategy_id!r}, "
+                                f"symbol={ack.symbol!r}, order_id={ack.order_id!r}, "
+                                f"streak={streak})"
+                            ),
+                            context={
+                                "strategy_id": order.strategy_id,
+                                "symbol": ack.symbol,
+                                "order_id": ack.order_id,
+                                "realized_cost_bps": float(ack.cost_bps),
+                                "g12_disclosed_cost_total_bps": disclosed,
+                                "alert_ratio": alert_ratio,
+                                "breach_streak": streak,
+                                "escalated": escalate,
+                            },
+                        )
+                    )
+                    if escalate and self._kill_switch is not None and not self._kill_switch.is_active:
+                        self._kill_switch.activate(
+                            reason="realized_cost_persistent_overrun",
+                            activated_by="orchestrator",
+                        )
 
             if self._trade_journal is not None:
                 self._trade_journal.record(
@@ -6160,8 +6213,8 @@ class Orchestrator:
     # ── BT-7: static borrow-availability ────────────────────────────
 
     def _borrow_tier_for(self, symbol: str) -> BorrowTier:
-        """Locate tier for ``symbol``; omitted symbols default to AVAILABLE."""
-        return self._borrow_tier.get(symbol.upper(), BorrowTier.AVAILABLE)
+        """Locate tier for ``symbol``; omitted symbols use the default tier."""
+        return self._borrow_tier.get(symbol.upper(), self._borrow_default_tier)
 
     def _borrow_blocks_intent(self, intent: OrderIntent) -> bool:
         """True when locate is unavailable and this intent is a short sale."""

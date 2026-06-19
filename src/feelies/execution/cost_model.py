@@ -432,6 +432,30 @@ class ZeroCostModel:
         )
 
 
+def _within_l1_premium(
+    *,
+    quantity: int,
+    available_depth: int,
+    half_spread: Decimal,
+    within_l1_impact_factor: Decimal,
+    permanent_impact_coefficient: Decimal,
+) -> Decimal:
+    """Per-share within-L1 participation premium (mirrors ``market_fill``).
+
+    Kept local to avoid a ``cost_model`` ↔ ``market_fill`` import cycle; the
+    formula is identical to :func:`market_fill.base_impact_premium`.
+    """
+    if available_depth <= 0 or quantity <= 0:
+        return Decimal("0")
+    if within_l1_impact_factor <= 0 and permanent_impact_coefficient <= 0:
+        return Decimal("0")
+    participation = Decimal(quantity) / Decimal(available_depth)
+    capped = participation if participation < Decimal("1") else Decimal("1")
+    temporary = within_l1_impact_factor * capped * half_spread
+    permanent = permanent_impact_coefficient * participation.sqrt() * half_spread
+    return temporary + permanent
+
+
 def estimate_aggressive_taker_cost_bps(
     model: CostModel,
     *,
@@ -443,6 +467,8 @@ def estimate_aggressive_taker_cost_bps(
     available_depth: int,
     market_impact_factor: Decimal,
     max_impact_half_spreads: Decimal,
+    within_l1_impact_factor: Decimal = Decimal("0"),
+    permanent_impact_coefficient: Decimal = Decimal("0"),
     is_short: bool = False,
 ) -> float:
     """Estimate one-way taker ``cost_bps`` including walk-the-book impact.
@@ -451,6 +477,12 @@ def estimate_aggressive_taker_cost_bps(
     into an L1 leg (filling at mid against ``available_depth``) and an
     excess leg (filling at impact-adjusted mid).  Returns the
     weighted-by-quantity ``cost_bps`` summed across the two legs.
+
+    ``within_l1_impact_factor`` / ``permanent_impact_coefficient`` (audit
+    P1.3 / P2.11) mirror the within-L1 participation premium charged by
+    ``market_fill`` so the B4 gate / minimum-cost policy do not under-price
+    aggressive fills once those knobs are enabled.  Both default 0 (legacy:
+    impact only on the excess-over-L1 leg).
 
     Used by the orchestrator's B4 gate and the minimum-cost policy to
     price the aggressive route depth-aware (audit F-H-04).  Without
@@ -462,6 +494,14 @@ def estimate_aggressive_taker_cost_bps(
         # does not under-price aggressive fills on zero depth.
         return float("inf")
 
+    within_premium = _within_l1_premium(
+        quantity=quantity,
+        available_depth=available_depth,
+        half_spread=half_spread,
+        within_l1_impact_factor=within_l1_impact_factor,
+        permanent_impact_coefficient=permanent_impact_coefficient,
+    )
+
     if quantity <= available_depth:
         breakdown = model.compute(
             symbol,
@@ -472,10 +512,16 @@ def estimate_aggressive_taker_cost_bps(
             is_taker=True,
             is_short=is_short,
         )
-        # Audit F-M-20: return the un-quantized cost so callers (notably
-        # the minimum-cost policy) compare on the same grain as the
-        # non-depth-aware path's ``aggressive_breakdown.raw_cost_bps``.
-        return float(breakdown.raw_cost_bps)
+        if within_premium <= 0:
+            # Audit F-M-20: return the un-quantized cost so callers (notably
+            # the minimum-cost policy) compare on the same grain as the
+            # non-depth-aware path's ``aggressive_breakdown.raw_cost_bps``.
+            return float(breakdown.raw_cost_bps)
+        total_notional = mid_price * Decimal(str(quantity))
+        if total_notional <= 0:
+            return 0.0
+        within_cost = within_premium * Decimal(str(quantity))
+        return float((breakdown.total_fees + within_cost) / total_notional * Decimal("10000"))
 
     # Walk-the-book: L1 + excess.
     partial_qty = available_depth
@@ -488,10 +534,6 @@ def estimate_aggressive_taker_cost_bps(
     )
     impact_cap = max_impact_half_spreads * half_spread
     impact = min(raw_impact, impact_cap)
-    if side == Side.BUY:
-        impact_price = mid_price + impact
-    else:
-        impact_price = max(mid_price - impact, Decimal("0.01"))
 
     # Both legs evaluated against mid-notional so the impact is the
     # only side-dependent cost line.  ``impact * excess_qty`` is the
@@ -517,7 +559,9 @@ def estimate_aggressive_taker_cost_bps(
     )
     total_notional = mid_price * Decimal(str(quantity))
     impact_cost = impact * Decimal(str(excess_qty))
-    total_fees = partial.total_fees + excess.total_fees + impact_cost
+    # The within-L1 premium applies to the whole order (both legs).
+    within_cost = within_premium * Decimal(str(quantity))
+    total_fees = partial.total_fees + excess.total_fees + impact_cost + within_cost
     if total_notional <= 0:
         return 0.0
     return float(total_fees / total_notional * Decimal("10000"))

@@ -967,6 +967,22 @@ def _create_backend(
     trading_session_bounds: TradingSessionBounds | None = (
         _resolve_trading_session_bounds(config) if config is not None else None
     )
+    # Execution-realism knobs (audit 2026-06-19) — read straight off the
+    # config so they thread into both backtest routers.  All default-neutral.
+    within_l1_impact_factor = config.cost_within_l1_impact_factor if config is not None else 0.0
+    permanent_impact_coefficient = (
+        config.cost_permanent_impact_coefficient if config is not None else 0.0
+    )
+    stop_depth_depletion_factor = (
+        config.cost_stop_depth_depletion_factor if config is not None else 1.0
+    )
+    moc_penalty_bps = config.cost_moc_penalty_bps if config is not None else 0.0
+    through_fill_size_cap_enabled = (
+        config.passive_through_fill_size_cap_enabled if config is not None else False
+    )
+    require_trade_for_level_fill = (
+        config.passive_require_trade_for_level_fill if config is not None else False
+    )
     if mode == OperatingMode.BACKTEST:
         # ``minimum_cost`` runs through the passive-limit backend
         # because the per-order policy must be able to post a LIMIT
@@ -989,7 +1005,13 @@ def _create_backend(
                 cancel_fee_per_share=_decimal(passive_cancel_fee_per_share),
                 fill_hazard_max=_decimal(passive_fill_hazard_max),
                 stop_slippage_half_spreads=stop_slippage_half_spreads,
+                within_l1_impact_factor=within_l1_impact_factor,
+                permanent_impact_coefficient=permanent_impact_coefficient,
+                stop_depth_depletion_factor=stop_depth_depletion_factor,
+                through_fill_size_cap_enabled=through_fill_size_cap_enabled,
+                require_trade_for_level_fill=require_trade_for_level_fill,
                 moc_bounds=moc_bounds,
+                moc_penalty_bps=moc_penalty_bps,
                 trading_session_bounds=trading_session_bounds,
             )
             return _BackendBundle(backend=backend, backtest_router=router)
@@ -1003,8 +1025,12 @@ def _create_backend(
             market_impact_factor=market_impact_factor,
             max_impact_half_spreads=max_impact_half_spreads,
             stop_slippage_half_spreads=stop_slippage_half_spreads,
+            within_l1_impact_factor=within_l1_impact_factor,
+            permanent_impact_coefficient=permanent_impact_coefficient,
+            stop_depth_depletion_factor=stop_depth_depletion_factor,
             max_resting_ticks=passive_max_resting_ticks,
             moc_bounds=moc_bounds,
+            moc_penalty_bps=moc_penalty_bps,
             trading_session_bounds=trading_session_bounds,
         )
         return _BackendBundle(backend=backend, backtest_router=router)

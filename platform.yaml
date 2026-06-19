@@ -192,6 +192,35 @@ passive_queue_position_shares: 200
 passive_fill_hazard_max: 0.5
 passive_cancel_fee_per_share: 0.0
 
+# ── Execution-realism profile (audit 2026-06-19 P1/P2 backlog) ──────────────
+# These knobs default to behaviour-neutral in code; the reference platform
+# config flips them ON so every backtest prices fills live-realistically by
+# default.  They are BACKTEST-only (the live/paper path fills via the IB
+# broker router, not these simulators), so enabling them here does not change
+# PAPER/LIVE behaviour.  Flipping them changed the APP trade path — the
+# regression baseline in tests/acceptance/test_backtest_app_baseline.py was
+# re-baked in the same commit.
+#
+# P1.1: cap a passive through-fill at the crossing quote's opposite-side size
+# and rest the remainder (models queue position on through-trades).
+passive_through_fill_size_cap_enabled: true
+# P1.2: require an observed print at the level before a quote-imbalance drain
+# fill (inert while passive_queue_position_shares > 0, which already requires
+# volume; protects quote-imbalance-mode configs).
+passive_require_trade_for_level_fill: true
+# P1.3: participation impact on the within-L1 leg of aggressive fills (stops,
+# marketable limits, reverses), measured in half-spreads.  0.3 × (qty/depth).
+cost_within_l1_impact_factor: 0.3
+# P2.9: forced exits (stop / hazard / force-flatten) fill into a depleted book
+# — 2.0 halves the usable L1 depth so a stop walks deeper.
+cost_stop_depth_depletion_factor: 2.0
+# P2.8: MOC closing-auction penalty (bps of notional).  Inert for non-MOC
+# alphas; priced for any MOC-routed config that extends this base.
+cost_moc_penalty_bps: 3.0
+# P2.11: permanent sqrt impact stays 0 — its coefficient needs calibration
+# from cached fills (audit §10 open question), so it is not flipped on blind.
+cost_permanent_impact_coefficient: 0.0
+
 platform_min_order_shares: 50
 
 # Explicit no-op overrides; PAPER/LIVE often set promotion_ledger_path.
