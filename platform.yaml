@@ -275,6 +275,9 @@ sensor_specs:
     params:
       warm_after: 1
       warm_window_seconds: 60
+      # Audit 3P-7: winsorise the per-quote imbalance so a lone fat-finger /
+      # spoof quote cannot pin the horizon mean near ±1 (0.95 ≈ a 39:1 book).
+      imbalance_cap: 0.95
     subscribes_to: [NBBOQuote]
     input_sensor_ids: []
     min_history: 1

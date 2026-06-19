@@ -1087,14 +1087,19 @@ are next. `3P-4`–`3P-7` are hardening.
 - **3P-6 (addressed by documentation).** The `ofi_integrated` wiring comment
   already directs consumers to z-score it; a normalised (per-volume / √n)
   variant is left as future work since no alpha consumes it yet.
-- **3P-3 (held) / 3P-7 (held).** Both change an input the reference alpha
-  consumes (`book_imbalance` → `book_imbalance_mean`), so they would re-trigger
-  the data-gated APP PnL/fill re-bake. Deferred to batch with the next
-  reference-alpha change rather than shipped alone.
+- **3P-3 (done).** The reference alpha's dead `imb == 0.0` check is replaced by
+  an epsilon band `abs(imb) < params["imbalance_floor"]` (new parameter,
+  default 0.05), so a near-zero `book_imbalance_mean` no longer passes as a
+  confirmation. Test: `test_no_emission_when_imbalance_below_floor`.
+- **3P-7 (done).** `book_imbalance` gained an opt-in `imbalance_cap` (default
+  1.0 = no-op, so the 1.0.0 estimator is byte-preserved without a version bump;
+  `platform.yaml` opts into 0.95). A lone fat-finger / spoof quote is winsorised
+  before it enters the horizon mean. Tests in `test_robustness_3p.py`.
 
-These are **code** changes to the sensor/feature layer, not config, so the
-data-free config-contract hash is unchanged. The data-gated APP functional test
-skips without the dataset; on a data host it could shift only if the APP tape
-actually contains crossed quotes (then re-bake PnL/fill alongside).
+3P-1/3P-2/3P-4/3P-5 are code-only (no config change). 3P-3/3P-7 change the
+reference alpha + a platform sensor param, so the **data-free config-contract
+hash was re-baked**; the **data-gated APP PnL/fill baselines must be re-baked on
+a host with the APP disk cache** (the reference alpha's confirmation logic
+changed), as must any host where the APP tape contains crossed quotes (3P-2).
 
 *End of audit (third-pass remediation appended 2026-06-13).*

@@ -6,9 +6,12 @@ import math
 from decimal import Decimal
 from typing import Any, Mapping
 
+import pytest
+
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import NBBOQuote, SensorReading, Trade
 from feelies.core.identifiers import SequenceGenerator
+from feelies.sensors.impl.book_imbalance import BookImbalanceSensor
 from feelies.sensors.impl.liquidity_stress_score import LiquidityStressScoreSensor
 from feelies.sensors.impl.micro_price import MicroPriceSensor
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
@@ -126,6 +129,28 @@ def test_price_sensors_reject_crossed_book() -> None:
         sensor.update(_quote(100.00, 100.01, ts=_NS), st, {})
         out = sensor.update(crossed, st, {"ts": 2 * _NS})
         assert out is None, f"{type(sensor).__name__} did not reject a crossed book"
+
+
+# ── 3P-7: book_imbalance winsorisation ──────────────────────────────────────
+
+
+def test_book_imbalance_winsorises_fat_finger() -> None:
+    s = BookImbalanceSensor(warm_after=1, imbalance_cap=0.95)
+    st = s.initial_state()
+    # 1000:1 bid-heavy book would be ~+0.998 raw; capped to +0.95.
+    r = s.update(_quote(100.00, 100.01, bid_sz=100_000, ask_sz=100), st, {})
+    assert r is not None and r.value == 0.95
+    # A modest book within the cap is unchanged.
+    r2 = s.update(_quote(100.00, 100.01, bid_sz=300, ask_sz=100, ts=2 * _NS), st, {})
+    assert r2 is not None and r2.value == pytest.approx((300 - 100) / 400)
+
+
+def test_book_imbalance_cap_default_is_noop() -> None:
+    # Default cap (1.0) preserves the 1.0.0 estimator exactly.
+    s = BookImbalanceSensor(warm_after=1)
+    st = s.initial_state()
+    r = s.update(_quote(100.00, 100.01, bid_sz=100_000, ask_sz=100), st, {})
+    assert r is not None and r.value == pytest.approx((100_000 - 100) / 100_100)
 
 
 def test_locked_book_is_allowed() -> None:
