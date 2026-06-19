@@ -3969,7 +3969,54 @@ class Orchestrator:
         return self._position_manager.plan(
             desired=desired,
             current=current_position,
-            market=MarketContext(quote=quote, cost_model=self._cost_model),
+            market=MarketContext(
+                quote=quote,
+                cost_model=self._cost_model,
+                market_impact_factor=Decimal(
+                    str(
+                        getattr(
+                            self._config,
+                            "cost_market_impact_factor",
+                            0.5,
+                        )
+                    )
+                )
+                if self._config
+                else None,
+                max_impact_half_spreads=Decimal(
+                    str(
+                        getattr(
+                            self._config,
+                            "cost_max_impact_half_spreads",
+                            10.0,
+                        )
+                    )
+                )
+                if self._config
+                else None,
+                within_l1_impact_factor=Decimal(
+                    str(
+                        getattr(
+                            self._config,
+                            "cost_within_l1_impact_factor",
+                            0.0,
+                        )
+                    )
+                )
+                if self._config
+                else Decimal("0"),
+                permanent_impact_coefficient=Decimal(
+                    str(
+                        getattr(
+                            self._config,
+                            "cost_permanent_impact_coefficient",
+                            0.0,
+                        )
+                    )
+                )
+                if self._config
+                else Decimal("0"),
+            ),
             config=PositionManagerConfig(
                 shadow=not self._position_manager_drive,
                 enabled=self._position_manager_drive,

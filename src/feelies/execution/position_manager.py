@@ -108,10 +108,21 @@ class MarketContext:
 
     Optional in P0/P1 — the legacy adapter does no cost math.  Carried so
     later phases fold B4/B5 into ``plan`` without a signature change.
+
+    The impact knobs (``market_impact_factor``, ``max_impact_half_spreads``,
+    ``within_l1_impact_factor``, ``permanent_impact_coefficient``) mirror
+    the orchestrator's B4 entry-gate plumbing so the P3b trim gate prices
+    its round-trip churn cost against the same depth-aware / within-L1
+    model the entry gate and fill path use.  Defaults preserve the legacy
+    flat-impact behaviour when no knobs are supplied.
     """
 
     quote: NBBOQuote | None = None
     cost_model: CostModel | None = None
+    market_impact_factor: Decimal | None = None
+    max_impact_half_spreads: Decimal | None = None
+    within_l1_impact_factor: Decimal = Decimal("0")
+    permanent_impact_coefficient: Decimal = Decimal("0")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -420,6 +431,10 @@ class TargetPositionManager:
                 is_short_entry=False,
                 bid_size=q.bid_size,
                 ask_size=q.ask_size,
+                market_impact_factor=market.market_impact_factor,
+                max_impact_half_spreads=market.max_impact_half_spreads,
+                within_l1_impact_factor=market.within_l1_impact_factor,
+                permanent_impact_coefficient=market.permanent_impact_coefficient,
             )
 
         # P3b: edge-aware trim gate — the symmetric mirror of the B4 entry
