@@ -5548,6 +5548,7 @@ class Orchestrator:
                         ack.filled_quantity,
                         ack.fill_price,
                         total_fees=ack.fees,
+                        is_final=ack.status == OrderAckStatus.FILLED,
                     )
                 except Exception:
                     logger.exception(
