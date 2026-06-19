@@ -95,6 +95,17 @@ parameters:
       still produce strength==1.0 (backward-compatible floor); the cap
       allows high-z signals to size proportionally larger up to this
       multiple of the base unit size.
+  imbalance_floor:
+    type: float
+    default: 0.05
+    min: 0.0
+    max: 0.5
+    description: |
+      Audit 3P-3: minimum |book_imbalance_mean| required to count as a
+      same-side queue confirmation of the OFI footprint.  Replaces the dead
+      ``imb == 0.0`` exact-equality check — now that ``imb`` is a horizon mean
+      (a float that is essentially never exactly 0.0), an epsilon band is
+      needed so a near-zero mean (no real confirmation) does not pass.
   cost_floor_bps:
     type: float
     default: 5.0
@@ -183,13 +194,15 @@ signal: |
       if mag < threshold:
           return None
 
-      # Require book imbalance aligned with signed OFI (L1 footprint).
-      # Strict inequality so an exactly-zero imbalance is treated as neutral
-      # (insufficient evidence) rather than as contradicting either side.
-      if (z > 0.0 and imb < 0.0) or (z < 0.0 and imb > 0.0):
+      # Audit 3P-3: require a *meaningful* same-side queue imbalance.  ``imb``
+      # is a horizon mean, so the old ``imb == 0.0`` exact check was dead; an
+      # epsilon band rejects a near-zero (no-confirmation) mean.  Checked before
+      # the sign test so a tiny opposite-sign mean reads as "no evidence", not
+      # "contradiction".
+      if abs(imb) < params["imbalance_floor"]:
           return None
-      # A balanced book carries no L1 confirmation of the OFI direction.
-      if imb == 0.0:
+      # Require book imbalance aligned with signed OFI (L1 footprint).
+      if (z > 0.0 and imb < 0.0) or (z < 0.0 and imb > 0.0):
           return None
 
       direction = LONG if z > 0 else SHORT

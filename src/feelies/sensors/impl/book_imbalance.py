@@ -71,17 +71,28 @@ class BookImbalanceSensor:
         sensor_version: str | None = None,
         warm_after: int = 1,
         warm_window_seconds: int = 60,
+        imbalance_cap: float = 1.0,
     ) -> None:
         if warm_after < 0:
             raise ValueError(f"warm_after must be >= 0, got {warm_after}")
         if warm_window_seconds <= 0:
             raise ValueError(f"warm_window_seconds must be > 0, got {warm_window_seconds}")
+        if not (0.0 < imbalance_cap <= 1.0):
+            raise ValueError(f"imbalance_cap must be in (0, 1], got {imbalance_cap}")
         if sensor_id is not None:
             self.sensor_id = sensor_id
         if sensor_version is not None:
             self.sensor_version = sensor_version
         self._warm_after = warm_after
         self._warm_window_ns = warm_window_seconds * 1_000_000_000
+        # 3P-7: winsorise the per-quote contribution.  A lone lopsided resting
+        # order (fat-finger / spoof) saturates the raw imbalance toward ±1 and,
+        # because (b-a)/(b+a) is asymptotic to ±1, a 1000:1 book (±0.998) is
+        # indistinguishable from a 40:1 book (±0.95).  Clamping to ``±cap``
+        # bounds the influence of any single extreme quote before it is
+        # averaged over the horizon.  Default 1.0 is a no-op (preserves the
+        # 1.0.0 estimator exactly); production opts into a tighter cap.
+        self._imbalance_cap = float(imbalance_cap)
 
     def initial_state(self) -> dict[str, Any]:
         return {
@@ -122,6 +133,12 @@ class BookImbalanceSensor:
             )
 
         value = (bid_sz - ask_sz) / float(total)
+        # 3P-7: winsorise to bound a single fat-finger / spoof quote's influence.
+        cap = self._imbalance_cap
+        if value > cap:
+            value = cap
+        elif value < -cap:
+            value = -cap
 
         # S3: sliding-window warm check — reverts to cold after data gaps.
         ts_ns = event.timestamp_ns

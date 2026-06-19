@@ -161,6 +161,9 @@ class HorizonWindowedFeature:
             "n": 0,
             "mean": 0.0,
             "M2": 0.0,
+            # 3P-4: set when a reverse-Welford remove drives M2 negative (the
+            # catastrophic-cancellation indicator); triggers an exact recompute.
+            "_drift_dirty": False,
         }
 
     # ── Welford add / remove (sliding window) ────────────────────────
@@ -184,16 +187,41 @@ class HorizonWindowedFeature:
         mean_without = (n * mean_cur - x) / (n - 1)
         state["M2"] -= (x - mean_cur) * (x - mean_without)
         if state["M2"] < 0.0:
-            # Guard against tiny negative drift from float round-off.
+            # 3P-4: M2 < 0 is impossible in exact arithmetic — it signals
+            # catastrophic cancellation has corrupted the incremental
+            # accumulator.  Clamp to keep the immediate result sane, but flag
+            # for an exact recompute from the live window so the drift is
+            # *bounded*, not just hidden.
             state["M2"] = 0.0
+            state["_drift_dirty"] = True
         state["mean"] = mean_without
         state["n"] = n - 1
+
+    @staticmethod
+    def _recompute_from_window(state: dict[str, Any]) -> None:
+        """Exact two-pass mean/M2 over the live window (3P-4 drift reset)."""
+        win: deque[tuple[int, float]] = state["win"]
+        n = len(win)
+        if n == 0:
+            state["n"] = 0
+            state["mean"] = 0.0
+            state["M2"] = 0.0
+        else:
+            mean = sum(x for _ts, x in win) / n
+            state["mean"] = mean
+            state["M2"] = sum((x - mean) ** 2 for _ts, x in win)
+            state["n"] = n
+        state["_drift_dirty"] = False
 
     def _evict_before(self, state: dict[str, Any], cutoff_ns: int) -> None:
         win: deque[tuple[int, float]] = state["win"]
         while win and win[0][0] < cutoff_ns:
             _ts, x_old = win.popleft()
             self._welford_remove(state, x_old)
+        # 3P-4: if cancellation corrupted the accumulator during this eviction
+        # sweep, restore it exactly from the window so drift cannot persist.
+        if state["_drift_dirty"]:
+            self._recompute_from_window(state)
 
     def _scalarize(self, v_raw: Any) -> float | None:
         idxs = self._tuple_idxs

@@ -157,7 +157,7 @@ class StructuralBreakScoreSensor:
 
         bid = float(event.bid)
         ask = float(event.ask)
-        if bid <= 0.0 or ask <= 0.0:
+        if bid <= 0.0 or ask <= 0.0 or bid > ask:  # 3P-2: reject crossed book
             # A2: invalidate carry-forward mid so the next good quote
             # bootstraps fresh rather than computing an observable that
             # spans the bad-data gap.

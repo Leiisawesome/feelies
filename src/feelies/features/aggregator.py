@@ -73,6 +73,7 @@ Architectural decisions (plan §4.3):
 from __future__ import annotations
 
 import logging
+import math
 from collections import defaultdict, deque
 from collections.abc import Mapping as MappingABC
 from typing import Any, Mapping, Sequence
@@ -510,15 +511,36 @@ class HorizonAggregator:
                     if last_ns is None or (tick.timestamp_ns - last_ns) > horizon_ns:
                         s = True
                         break
+            # 3P-1: defence in depth.  The registry already suppresses
+            # non-finite *sensor* values, but a feature reducer could still
+            # produce a NaN/Inf (e.g. a degenerate variance path).  Never let
+            # one into ``values`` — it would poison the gate and signal — so a
+            # non-finite warm value is demoted to cold (warm=False) and omitted.
+            w_eff = bool(w)
+            fv: float | None = None
+            if w_eff:
+                fv = float(value)
+                if not math.isfinite(fv):
+                    _logger.warning(
+                        "feature %r produced a non-finite value %r for symbol "
+                        "%s at horizon %ds; demoting to cold (3P-1 fail-safe)",
+                        feature.feature_id,
+                        value,
+                        symbol,
+                        feature.horizon_seconds,
+                    )
+                    w_eff = False
+                    fv = None
             # S2: always populate warm/stale for every registered feature
             # so the engine can detect active mode even when all features
             # are temporarily cold.  Only add to values when the feature
             # is warm — cold features are absent (not 0.0) so consumers
             # correctly distinguish "not yet warm" from "computed zero".
-            warm[feature.feature_id] = bool(w)
+            warm[feature.feature_id] = w_eff
             stale[feature.feature_id] = bool(s)
-            if w:
-                values[feature.feature_id] = float(value)
+            if w_eff:
+                assert fv is not None
+                values[feature.feature_id] = fv
             source_sensors[feature.feature_id] = tuple(feature.input_sensor_ids)
             # Audit #12: provenance now records feature_version so a
             # consumer reading an archived snapshot can reconstruct which

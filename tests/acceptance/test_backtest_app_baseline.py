@@ -102,7 +102,7 @@ _BASELINE_CONFIG = Path("configs/bt_app.yaml")
 #       --symbol APP --date 2026-03-26
 # The data-free config-contract hash was recomputed for the flipped snapshot.
 _BASELINE_CONFIG_HASH = (
-    "a74d682e738fdc5dd5616c8875c38d3a5d3a5d561cf3c12060b1d3e774dce650"
+    "0b46397723e95823c780b2c7e6ea2049d62163fea616b651e637c3abefba1236"
 )
 _BASELINE_NET_PNL = Decimal("69.06")
 _BASELINE_FILL_COUNT = 6

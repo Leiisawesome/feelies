@@ -189,7 +189,14 @@ class SNRDriftDiffusionSensor:
             return None
         bid = float(event.bid)
         ask = float(event.ask)
-        if bid <= 0.0 or ask <= 0.0:
+        if bid <= 0.0 or ask <= 0.0 or bid > ask:  # 3P-2: reject crossed book
+            # 3P-5: harmonise gap handling with realized_vol / structural_break
+            # — invalidate the carry-forward mid so the next good quote does not
+            # compute a per-horizon return spanning the bad-data gap.
+            state["last_mid"] = None
+            for slot in state["by_horizon"].values():
+                slot["mid_bar_open"] = None
+                slot["next_sample_ns"] = None
             return None
         mid = (bid + ask) / 2.0
         state["last_mid"] = mid

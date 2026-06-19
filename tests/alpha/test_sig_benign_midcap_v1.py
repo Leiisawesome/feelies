@@ -218,6 +218,22 @@ def test_no_emission_when_micro_price_disagrees(
     assert captured == []
 
 
+def test_no_emission_when_imbalance_below_floor(
+    loaded: LoadedSignalLayerModule,
+) -> None:
+    """Audit 3P-3: a near-zero book_imbalance_mean is no confirmation.
+
+    With z above threshold but |imb| (0.02) below the default imbalance_floor
+    (0.05), the footprint is unconfirmed and no signal fires — the old
+    ``imb == 0.0`` exact check could never catch this non-zero-but-tiny case.
+    """
+    _, bus, captured = _engine_with_alpha(loaded)
+    bus.publish(_normal_high())
+    bus.publish(_spread_low_reading())
+    bus.publish(_snapshot_with_z(z=2.5, z_micro=0.02))
+    assert captured == []
+
+
 def test_no_emission_below_threshold(loaded: LoadedSignalLayerModule) -> None:
     _, bus, captured = _engine_with_alpha(loaded)
     bus.publish(_normal_high())

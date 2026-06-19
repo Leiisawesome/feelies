@@ -81,7 +81,7 @@ class MicroPriceSensor:
         # A1: uniform bid/ask positivity validation across price-consuming
         # sensors.  A zero/negative side is a halt / pre-open marker and
         # cannot produce a meaningful micro-price.
-        if bid <= 0.0 or ask <= 0.0:
+        if bid <= 0.0 or ask <= 0.0 or bid > ask:  # 3P-2: reject crossed book
             return None
         bid_sz = event.bid_size
         ask_sz = event.ask_size

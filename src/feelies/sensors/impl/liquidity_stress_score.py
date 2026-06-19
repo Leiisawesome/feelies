@@ -165,7 +165,7 @@ class LiquidityStressScoreSensor:
         ask = float(event.ask)
         # A1: a degenerate side gives a nonsense spread/depth and would
         # poison the rolling baselines; drop it.
-        if bid <= 0.0 or ask <= 0.0:
+        if bid <= 0.0 or ask <= 0.0 or bid > ask:  # 3P-2: reject crossed book
             return None
 
         # Audit P1-E: flush both count windows after a long event-time gap so

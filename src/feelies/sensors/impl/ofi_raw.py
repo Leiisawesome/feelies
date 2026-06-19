@@ -95,7 +95,7 @@ class OFIRawSensor:
         ask = float(event.ask)
         # A1: drop a degenerate (halt / pre-open) book rather than poisoning
         # state with zero-price deltas.
-        if bid <= 0.0 or ask <= 0.0:
+        if bid <= 0.0 or ask <= 0.0 or bid > ask:  # 3P-2: reject crossed book
             return None
         bid_sz = event.bid_size
         ask_sz = event.ask_size

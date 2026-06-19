@@ -104,7 +104,7 @@ class QuoteFlickerRateSensor:
         # A1: a degenerate (halt / pre-open) quote carries no flicker
         # information and would corrupt the direction references; drop it
         # without disturbing state so the next valid quote diffs cleanly.
-        if bid <= 0.0 or ask <= 0.0:
+        if bid <= 0.0 or ask <= 0.0 or bid > ask:  # 3P-2: reject crossed book
             return None
 
         last_bid = state["last_bid"]

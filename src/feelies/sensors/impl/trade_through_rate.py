@@ -92,7 +92,7 @@ class TradeThroughRateSensor:
             # A1: ignore degenerate quotes — a (bid=0, ask=0) snapshot would
             # classify every positive-priced trade as ``price >= ask`` and
             # poison the rolling fraction.  Preserve the prior valid NBBO.
-            if bid <= 0.0 or ask <= 0.0:
+            if bid <= 0.0 or ask <= 0.0 or bid > ask:  # 3P-2: reject crossed book
                 return None
             state["last_bid"] = bid
             state["last_ask"] = ask
