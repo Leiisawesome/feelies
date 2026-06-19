@@ -232,3 +232,64 @@ def test_gate_post_state_is_boolean_and_in_two_value_set(
         states.append(out)
     # Equally, the cached is_on agrees with the last returned value.
     assert g.is_on("AAPL") is states[-1]
+
+
+# ── Property 5 (audit P2-6): non-empty hysteresis band for shipped gates ─
+#
+# A design-agnostic *economic* invariant: each shipped P(normal)-gated alpha
+# must have a non-empty hold band — a posterior region where neither
+# on_condition nor off_condition fires, so the gate latches rather than
+# oscillating tick-to-tick.  (The stronger "ON ⇒ bounded vol mass" guard was
+# tried in PR #123 but an APP backtest showed it net-harmful; re-introducing
+# such an entry bound is deferred to a calibrated, data-validated threshold —
+# see the audit appendix.)  These load the real shipped condition strings.
+
+import yaml  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+_ALPHA_ROOT = Path(__file__).resolve().parents[2] / "alphas"
+_REGIME_STATES = ("compression_clustering", "normal", "vol_breakout")
+
+# alpha_id -> a P(normal) value strictly inside its (off_threshold, on_floor)
+# band, with the other mass placed on compression (tight-spread, benign).
+_HOLD_BAND_PROBE = {
+    "sig_benign_midcap_v1": 0.45,  # ON > 0.5, OFF < 0.35
+    "sig_kyle_drift_v1": 0.50,  # ON > 0.6, OFF < 0.4
+    "sig_hawkes_burst_v1": 0.50,  # ON > 0.6, OFF < 0.4
+}
+
+
+def _load_gate(alpha_id: str) -> RegimeGate:
+    path = _ALPHA_ROOT / alpha_id / f"{alpha_id}.alpha.yaml"
+    spec = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return RegimeGate.from_spec(alpha_id=alpha_id, spec=spec["regime_gate"])
+
+
+@pytest.mark.parametrize("alpha_id", sorted(_HOLD_BAND_PROBE))
+def test_shipped_gate_has_non_empty_hold_band(alpha_id: str) -> None:
+    """In the hold band the gate neither opens nor closes — it latches.
+
+    From OFF the probe must not turn ON; from a forced-ON latch the same
+    probe must not turn OFF.  A gate without such a band would chatter on
+    posterior noise (whipsaw cost), which is an economic defect.
+    """
+    p_normal = _HOLD_BAND_PROBE[alpha_id]
+    regime = _FakeRegime(
+        state_names=_REGIME_STATES,
+        posteriors=(1.0 - p_normal, p_normal, 0.0),  # rest on compression
+        dominant_name="compression_clustering" if p_normal < 0.5 else "normal",
+    )
+    # Benign micro: tight spread, calm vol — only the regime band should gate.
+    # ``realized_vol_30s_zscore`` resolves via the _zscore binding table.
+    bindings = _bindings(
+        sensor_values={"spread_z_30d": 0.0},
+        zscores={"realized_vol_30s": 0.0},
+        regime=regime,
+    )
+
+    from_off = _load_gate(alpha_id)
+    assert from_off.evaluate(symbol="AAPL", bindings=bindings) is False
+
+    forced_on = _load_gate(alpha_id)
+    forced_on._state["AAPL"] = True  # latch ON, then probe the OFF path
+    assert forced_on.evaluate(symbol="AAPL", bindings=bindings) is True

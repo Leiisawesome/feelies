@@ -155,6 +155,23 @@ class RegimeState(Event):
       posteriors.  Default 1.0 is a no-op for legacy producers.
       ``posterior_entropy_nats`` — Shannon entropy (natural log base) of
       the posterior categorical; ``0`` when unused (legacy producers).
+      ``calibrated`` — whether the producing engine's emission parameters
+      were fit from data.  ``False`` means the posteriors were computed
+      from placeholder/default emissions and are not trustworthy for
+      ``P(<state>)`` gating; the regime gate treats ``P()``/``dominant``/
+      ``entropy`` bindings as *unavailable* in that case so entry gates
+      fail safe to OFF (audit P0-1, Inv-11).  Defaults to ``True`` so
+      legacy producers — and the L6 parity hash, which does not serialize
+      this field — are unaffected.
+      ``discriminability`` — the engine's calibration-time min pairwise
+      emission separation ``d`` (audit R-1).  Near ``0`` means the states
+      are statistically indistinguishable (degenerate calibration on a
+      tight/stable spread) so ``P(state)`` is noise; consumers fail
+      regime-gates safe to OFF when it is below a configured floor.
+      Orthogonal to ``calibrated`` (placeholder emissions score high here
+      but are caught by ``calibrated=False``).  Defaults to ``+inf`` so
+      legacy producers are always treated as fully discriminative, and the
+      L6 parity hash does not serialize it.
 
     When ``posteriors`` tie, producers pick the lowest ``dominant_state``
     index (deterministic replay).
@@ -169,6 +186,8 @@ class RegimeState(Event):
     horizon_seconds: int = 0
     stability: float = 1.0
     posterior_entropy_nats: float = 0.0
+    calibrated: bool = True
+    discriminability: float = float("inf")
 
 
 # ── Signal Events ───────────────────────────────────────────────────────
@@ -686,3 +705,22 @@ class SizedPositionIntent(Event):
     disclosed_cost_total_bps_by_symbol: dict[str, float] = field(
         default_factory=dict,
     )
+    # Content-addressable digest over the canonical *inputs* that produced
+    # ``target_positions`` (consumed signals, current positions, decision
+    # parameters).  Provides in-band provenance so two structurally-equal
+    # intents can be distinguished when they were derived from different
+    # inputs, and so forensics can detect silent input drift without
+    # re-deriving the decision (Inv-13).  Empty string ``""`` denotes
+    # "not computed" (degenerate intents, custom alphas that opt out) and
+    # is the v0.2-compatible default so existing replay hashes — which do
+    # not serialise this field — stay bit-identical (Inv-5).
+    decision_basis_hash: str = ""
+    # Optimizer terminal status for the solve that produced this intent
+    # (e.g. ``"CLOSED_FORM"``, ``"optimal"``, ``"ECOS_FAILED_FALLBACK"``,
+    # or a non-optimal solver status).  Surfaced so the monitoring layer
+    # can alert on solver degradation without reaching into the optimizer
+    # (audit P1-8).  Empty string ``""`` denotes "not recorded" (degenerate
+    # intents, custom alphas) and is the v0.2-compatible default — like
+    # ``decision_basis_hash`` it is not serialised into the locked replay
+    # hashes, so determinism is unaffected (Inv-5).
+    solver_status: str = ""

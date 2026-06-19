@@ -179,6 +179,8 @@ class AlphaBudgetRiskWrapper:
         self,
         order: OrderRequest,
         positions: PositionStore,
+        *,
+        additional_exposure: Decimal = Decimal("0"),
     ) -> RiskVerdict:
         strategy_id = order.strategy_id
         if strategy_id:
@@ -236,7 +238,9 @@ class AlphaBudgetRiskWrapper:
                         ),
                     )
 
-        return self._inner.check_order(order, positions)
+        # Forward the cumulative intent exposure so the inner engine enforces
+        # the platform gross / buying-power caps across legs (audit R-1).
+        return self._inner.check_order(order, positions, additional_exposure=additional_exposure)
 
     def check_sized_intent(
         self,

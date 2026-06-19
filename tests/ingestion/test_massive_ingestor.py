@@ -19,6 +19,16 @@ from feelies.ingestion.massive_ingestor import (
 from feelies.ingestion.massive_normalizer import MassiveNormalizer
 from feelies.storage.memory_event_log import InMemoryEventLog
 
+# Tests that ``patch("massive.RESTClient", ...)`` need the optional vendor SDK
+# to be importable (``mock.patch`` resolves the target module eagerly).  Skip
+# them cleanly when the ``massive`` extra is absent so a vanilla checkout is
+# green without the vendor dependency (audit ING-09).
+_MASSIVE_ABSENT = importlib.util.find_spec("massive") is None
+_requires_massive = pytest.mark.skipif(
+    _MASSIVE_ABSENT,
+    reason="massive SDK not installed; patch('massive.RESTClient') requires the package",
+)
+
 
 def _make_mock_quote(seq: int = 1, ts_ns: int = 1700000000000000000) -> Any:
     """Create a mock object resembling massive Quote model with __annotations__ on class."""
@@ -172,6 +182,7 @@ class TestMassiveHistoricalIngestor:
         with pytest.raises(ImportError, match="massive"):
             ingestor.ingest(["AAPL"], "2024-01-01", "2024-01-01")
 
+    @_requires_massive
     def test_ingest_with_mocked_rest_client(self) -> None:
         """Ingest uses REST client and persists normalized events."""
         clock = SimulatedClock(1700000000000000000)
@@ -263,6 +274,189 @@ class TestParallelDownload:
         timestamps = [e.exchange_timestamp_ns for e in events]
         assert timestamps == sorted(timestamps), "events must be in chronological order"
 
+    def test_same_ns_quote_trade_run_across_chunk_boundary(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """ING-02: a same-nanosecond quote/trade run straddling a chunk
+        boundary must not raise ``CausalityViolation``.
+
+        Quotes carry odd vendor sequences, trades carry even ones, all at the
+        *same* ``sip_timestamp``.  Under the old raw sort key
+        ``(sip_timestamp, sequence_number, type_rank)`` the events interleave
+        quote/trade by sequence, and per-chunk canonical stabilization then
+        produces a backward merge-key across the chunk boundary.  The aligned
+        key ``(sip_timestamp, type_rank, sequence_number)`` keeps all quotes
+        before all trades, so no boundary inversion occurs.
+        """
+        from feelies.storage import event_resequence
+
+        # Force a tiny chunk so 6 events straddle a boundary.
+        monkeypatch.setattr("feelies.ingestion.massive_ingestor._CHUNK_SIZE", 4)
+
+        ts = 1700000000000000000
+        quotes = [_make_mock_quote(seq=s, ts_ns=ts) for s in (1, 3, 5)]
+        trades = [_make_mock_trade(seq=s, ts_ns=ts) for s in (2, 4, 6)]
+
+        clock = SimulatedClock(ts)
+        normalizer = MassiveNormalizer(clock)
+        event_log = InMemoryEventLog()
+        mock_client = MagicMock()
+        mock_client.list_quotes = MagicMock(return_value=iter(quotes))
+        mock_client.list_trades = MagicMock(return_value=iter(trades))
+
+        ingestor = MassiveHistoricalIngestor(
+            api_key="test",
+            normalizer=normalizer,
+            event_log=event_log,
+            clock=clock,
+        )
+
+        # Must not raise CausalityViolation.
+        ingestor.ingest_symbol_parallel(mock_client, "AAPL", "2024-01-01", "2024-01-01")
+
+        stored = list(event_log.replay())
+        assert len(stored) == 6
+        keys = [event_resequence.event_merge_sort_key(e) for e in stored]
+        assert keys == sorted(keys), "stored events must be in canonical merge-key order"
+
+    def test_multi_symbol_overlapping_timestamps_via_scratch_log(self) -> None:
+        """ING-10: per-symbol full-session batches with overlapping exchange
+        timestamps accumulate into an order-tolerant scratch log and resequence
+        to global order — without tripping the cross-symbol monotonicity guard.
+        """
+        from feelies.core.events import NBBOQuote, Trade
+        from feelies.storage.event_resequence import (
+            event_merge_sort_key,
+            resequence_event_list,
+        )
+
+        ts0 = 1700000000000000000
+        clock = SimulatedClock(ts0)
+        normalizer = MassiveNormalizer(clock)
+        ingestor = MassiveHistoricalIngestor(
+            api_key="t",
+            normalizer=normalizer,
+            event_log=InMemoryEventLog(),
+            clock=clock,
+        )
+
+        # AAPL spans [ts0, ts0+2000]; MSFT *overlaps* it (starts back at ts0).
+        aapl = MagicMock()
+        aapl.list_quotes = MagicMock(
+            return_value=iter(
+                [_make_mock_quote(seq=1, ts_ns=ts0), _make_mock_quote(seq=2, ts_ns=ts0 + 2000)]
+            )
+        )
+        aapl.list_trades = MagicMock(return_value=iter([_make_mock_trade(seq=1, ts_ns=ts0 + 1000)]))
+        msft = MagicMock()
+        msft.list_quotes = MagicMock(return_value=iter([_make_mock_quote(seq=1, ts_ns=ts0)]))
+        msft.list_trades = MagicMock(return_value=iter([_make_mock_trade(seq=1, ts_ns=ts0 + 500)]))
+
+        scratch = InMemoryEventLog(enforce_market_order=False)
+        ingestor.ingest_symbol_parallel(aapl, "AAPL", "2024-01-01", "2024-01-01", target_log=scratch)
+        # This second append carries earlier timestamps than AAPL's last event;
+        # it must NOT raise on the order-tolerant scratch log.
+        ingestor.ingest_symbol_parallel(msft, "MSFT", "2024-01-01", "2024-01-01", target_log=scratch)
+
+        merged = [e for e in scratch.replay() if isinstance(e, (NBBOQuote, Trade))]
+        reseq = resequence_event_list(merged)
+        keys = [event_merge_sort_key(e) for e in reseq]
+        assert keys == sorted(keys), "resequenced multi-symbol stream must be globally ordered"
+        assert {e.symbol for e in reseq} == {"AAPL", "MSFT"}
+
+    def test_strict_scratch_would_reject_overlapping_second_symbol(self) -> None:
+        """ING-10 guard rail: prove the strict log *would* crash — the reason the
+        multi-symbol path must accumulate into a relaxed scratch log.
+        """
+        from feelies.core.errors import CausalityViolation
+
+        ts0 = 1700000000000000000
+        clock = SimulatedClock(ts0)
+        normalizer = MassiveNormalizer(clock)
+        ingestor = MassiveHistoricalIngestor(
+            api_key="t",
+            normalizer=normalizer,
+            event_log=InMemoryEventLog(),
+            clock=clock,
+        )
+
+        aapl = MagicMock()
+        aapl.list_quotes = MagicMock(return_value=iter([_make_mock_quote(seq=1, ts_ns=ts0 + 2000)]))
+        aapl.list_trades = MagicMock(return_value=iter([]))
+        msft = MagicMock()
+        msft.list_quotes = MagicMock(return_value=iter([_make_mock_quote(seq=1, ts_ns=ts0)]))
+        msft.list_trades = MagicMock(return_value=iter([]))
+
+        strict = InMemoryEventLog()  # default enforce_market_order=True
+        ingestor.ingest_symbol_parallel(aapl, "AAPL", "2024-01-01", "2024-01-01", target_log=strict)
+        with pytest.raises(CausalityViolation):
+            ingestor.ingest_symbol_parallel(
+                msft, "MSFT", "2024-01-01", "2024-01-01", target_log=strict
+            )
+
+    def _finalize_ingestor(self, dest: InMemoryEventLog) -> MassiveHistoricalIngestor:
+        return MassiveHistoricalIngestor(
+            api_key="t",
+            normalizer=MassiveNormalizer(SimulatedClock()),
+            event_log=dest,
+            clock=SimulatedClock(),
+        )
+
+    @staticmethod
+    def _quote(ts: int, sym: str, seq: int) -> Any:
+        from decimal import Decimal
+
+        from feelies.core.events import NBBOQuote
+
+        return NBBOQuote(
+            timestamp_ns=ts,
+            correlation_id=f"c{seq}",
+            sequence=seq,
+            symbol=sym,
+            bid=Decimal("1"),
+            ask=Decimal("2"),
+            bid_size=1,
+            ask_size=1,
+            exchange_timestamp_ns=ts,
+        )
+
+    def test_finalize_merge_preserves_preexisting_destination(self) -> None:
+        """ING-10 follow-up: the multi-symbol finalize must merge the *existing*
+        destination content with the scratch log — not replace it wholesale.
+        """
+        from feelies.core.events import NBBOQuote, Trade
+        from feelies.storage.event_resequence import event_merge_sort_key
+
+        dest = InMemoryEventLog()
+        dest.append(self._quote(100, "AAPL", 1))  # pre-existing content
+        scratch = InMemoryEventLog(enforce_market_order=False)
+        scratch.append(self._quote(50, "MSFT", 1))  # earlier ts — would invert vs dest
+
+        self._finalize_ingestor(dest)._finalize_multi_symbol_merge(scratch)
+
+        out = [e for e in dest.replay() if isinstance(e, (NBBOQuote, Trade))]
+        assert len(out) == 2, "pre-existing destination content must be preserved"
+        assert {e.symbol for e in out} == {"AAPL", "MSFT"}
+        keys = [event_merge_sort_key(e) for e in out]
+        assert keys == sorted(keys), "merged stream must be globally ordered"
+
+    def test_finalize_merge_empty_scratch_does_not_wipe_destination(self) -> None:
+        """ING-10 follow-up: a checkpoint-skip-all run leaves the scratch empty;
+        the finalize must NOT clear the destination (no silent data loss).
+        """
+        from feelies.core.events import NBBOQuote, Trade
+
+        dest = InMemoryEventLog()
+        dest.append(self._quote(100, "AAPL", 1))
+        empty_scratch = InMemoryEventLog(enforce_market_order=False)
+
+        self._finalize_ingestor(dest)._finalize_multi_symbol_merge(empty_scratch)
+
+        out = [e for e in dest.replay() if isinstance(e, (NBBOQuote, Trade))]
+        assert len(out) == 1, "empty scratch must not wipe pre-existing destination"
+        assert out[0].symbol == "AAPL"
+
+    @_requires_massive
     def test_ingest_delegates_to_parallel(self) -> None:
         """ingest() routes through ingest_symbol_parallel."""
         clock = SimulatedClock(1700000000000000000)
@@ -388,6 +582,7 @@ class TestDownloadIntegrityAndCheckpoint:
 class TestDuplicateCountingInIngestor:
     """Tests that IngestResult.duplicates_filtered reflects normalizer counts."""
 
+    @_requires_massive
     def test_reports_duplicates_from_normalizer(self) -> None:
         clock = SimulatedClock(1700000000000000000)
         normalizer = MassiveNormalizer(clock)

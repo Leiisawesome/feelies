@@ -38,6 +38,7 @@ class MocFillController:
         pending_acks: list[OrderAck],
         *,
         max_resting_ticks: int = 50,
+        moc_penalty_bps: Decimal = Decimal("0"),
     ) -> None:
         self._bounds = bounds
         self._clock = clock
@@ -45,6 +46,10 @@ class MocFillController:
         self._ack_seq = ack_seq
         self._pending_acks = pending_acks
         self._max_resting_ticks = max_resting_ticks
+        # P2.8: closing-auction penalty (bps of notional) charged as a fee
+        # on every MOC fill to proxy auction imbalance / size pressure the
+        # close-mid proxy ignores.  Default 0 = prior behaviour.
+        self._moc_penalty_bps = moc_penalty_bps
         self._pending: list[_PendingMoc] = []
 
     @property
@@ -207,6 +212,15 @@ class MocFillController:
             half_spread=Decimal("0"),
             is_short=request.is_short,
         )
+        total_fees = costs.total_fees
+        cost_bps = costs.cost_bps
+        # P2.8: layer the auction penalty on top of the modelled fees.  The
+        # close-mid proxy charges no spread/impact, so a large MOC otherwise
+        # fills free; the penalty restores a size-agnostic auction cost floor.
+        if self._moc_penalty_bps > 0 and costs.notional > 0:
+            penalty = costs.notional * self._moc_penalty_bps / Decimal("10000")
+            total_fees = (total_fees + penalty).quantize(Decimal("0.01"))
+            cost_bps = (total_fees / costs.notional * Decimal("10000")).quantize(Decimal("0.01"))
         self._pending_acks.append(
             OrderAck(
                 timestamp_ns=fill_ts,
@@ -217,8 +231,8 @@ class MocFillController:
                 status=OrderAckStatus.FILLED,
                 filled_quantity=request.quantity,
                 fill_price=close_mid,
-                fees=costs.total_fees,
-                cost_bps=costs.cost_bps,
+                fees=total_fees,
+                cost_bps=cost_bps,
                 request_sequence=request.sequence,
             )
         )

@@ -31,7 +31,9 @@ from feelies.risk.sized_intent_result import SizedIntentRiskResult
 
 _logger = logging.getLogger(__name__)
 
-CheckOrder = Callable[[OrderRequest, PositionStore], RiskVerdict]
+# Loosely typed so callers may pass the ``additional_exposure`` keyword
+# (audit R-1); the concrete engines accept it, test stubs may ignore it.
+CheckOrder = Callable[..., RiskVerdict]
 DroppedLegsCallback = Callable[[SizedPositionIntent, list[tuple[str, str]]], None]
 
 
@@ -81,12 +83,30 @@ def build_sized_intent_orders(
     aborts the whole intent and requests global escalation; ``REJECT`` drops
     only the offending leg; ``SCALE_DOWN`` rebuilds the leg at the scaled
     quantity.  Veto-dropped legs are surfaced via ``on_dropped_legs``.
+
+    Cumulative cap (audit R-1)
+    --------------------------
+    Each admitted leg's signed gross-notional delta is accumulated into
+    ``running_extra`` and passed to the *next* leg's ``check_order`` as
+    ``additional_exposure``.  Without this, every leg sees only the
+    pre-intent ``positions`` snapshot (fills land after the whole intent is
+    vetted), so K legs each individually under the gross/buying-power cap
+    could collectively breach it.  Reducing legs contribute a negative delta,
+    so netting is handled correctly.
+
+    Fail-safe containment (audit R-2)
+    ---------------------------------
+    A per-leg ``check_order`` that *raises* is contained: the offending leg
+    is veto-dropped (treated like REJECT) rather than propagating out of
+    ``check_sized_intent`` — the protocol contract is that implementations
+    MUST NOT raise.
     """
     if not intent.target_positions:
         return SizedIntentRiskResult(orders=())
 
     orders: list[OrderRequest] = []
     dropped: list[tuple[str, str]] = []
+    running_extra = Decimal("0")
     for symbol in sorted(intent.target_positions):
         tgt = intent.target_positions[symbol]
         current = positions.get(symbol)
@@ -123,7 +143,19 @@ def build_sized_intent_orders(
             g12_disclosed_cost_total_bps=disclosed_cost,
         )
 
-        verdict = check_order(order, positions)
+        try:
+            verdict = check_order(order, positions, additional_exposure=running_extra)
+        except Exception as exc:  # noqa: BLE001 — Inv-11: never raise from the risk path
+            _logger.warning(
+                "build_sized_intent_orders: check_order raised for leg %s "
+                "(strategy_id=%s, correlation_id=%s): %r — veto-dropping the leg",
+                symbol,
+                intent.strategy_id,
+                intent.correlation_id,
+                exc,
+            )
+            dropped.append((symbol, f"check_order raised: {exc!r}"))
+            continue
         if verdict.action == RiskAction.FORCE_FLATTEN:
             return SizedIntentRiskResult(
                 orders=(),
@@ -142,6 +174,7 @@ def build_sized_intent_orders(
                 ),
             )
             if scaled_qty != quantity:
+                quantity = scaled_qty
                 order = OrderRequest(
                     timestamp_ns=intent.timestamp_ns,
                     correlation_id=intent.correlation_id,
@@ -156,6 +189,12 @@ def build_sized_intent_orders(
                     reason="PORTFOLIO",
                     g12_disclosed_cost_total_bps=disclosed_cost,
                 )
+
+        # Accumulate this admitted leg's signed gross-notional change so the
+        # next leg's cap check sees it (audit R-1).
+        admitted_signed = quantity if side == Side.BUY else -quantity
+        post_qty = current.quantity + admitted_signed
+        running_extra += (abs(post_qty) - abs(current.quantity)) * mark
         orders.append(order)
 
     if dropped and on_dropped_legs is not None:

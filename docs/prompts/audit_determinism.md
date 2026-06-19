@@ -79,10 +79,6 @@ scope locks: mypy strict on all of src/feelies (no ignore_errors overrides); DTZ
   `test_horizon_tick_replay.py`, `test_horizon_feature_snapshot_replay.py`
 - `tests/determinism/test_legacy_sequence_isolation.py`
 - Observational emit streams (not pinned hashes — assess whether they should be):
-  `tests/determinism/test_emit_net_divergence_jsonl.py`,
-  `test_emit_size_divergence_jsonl.py`, `test_analyze_net_divergence.py`,
-  `test_analyze_size_divergence.py` (G-5/G-7 divergence streams)
-
 ### Scope locks
 
 - `tests/acceptance/test_mypy_strict_scope.py` — strict mypy + no-override assertion

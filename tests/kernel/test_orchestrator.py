@@ -2923,6 +2923,38 @@ class TestReversalEdgeGuard:
 # ── F1: Resting-order guard placed AFTER signal/risk evaluation ───────────
 
 
+class _CancelRecordingBacktestRouter(BacktestOrderRouter):
+    """``BacktestOrderRouter`` that records cancels and emits a CANCELLED ack.
+
+    The market backtest router has no resting limit book of its own, so a
+    seeded passive cover lives only in the orchestrator's order tracker.
+    This subclass lets ``_cancel_resting_for_symbol`` drive that tracked
+    order to a terminal CANCELLED state (parity with the passive router),
+    so the forced-exit supersede path can be exercised end-to-end.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.cancelled_order_ids: list[str] = []
+
+    def cancel_order(self, order_id: str) -> bool:
+        if super().cancel_order(order_id):
+            return True
+        self.cancelled_order_ids.append(order_id)
+        self._pending_acks.append(
+            OrderAck(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id="cancel-ack",
+                sequence=self._ack_seq.next(),
+                order_id=order_id,
+                symbol="AAPL",
+                status=OrderAckStatus.CANCELLED,
+                reason="client_cancel",
+            )
+        )
+        return True
+
+
 class TestRestingOrderGuardAfterRisk:
     """F1: Signal + risk always run even with a pending limit order resting.
 
@@ -3055,6 +3087,74 @@ class TestRestingOrderGuardAfterRisk:
         orch._process_tick(quote)
 
         assert new_orders == []
+
+    def test_stop_exit_supersedes_resting_passive_cover(self) -> None:
+        """Inv-11: a hard-stop MARKET exit cancels a stale passive cover and crosses.
+
+        Regression for ``docs/pending issues/app_backtest_2026-06-01_*``: a
+        gate-OFF FLAT passive LIMIT cover left resting must not subordinate a
+        breached hard stop.  Previously the resting-order guard treated the
+        pending cover as a pending exit and suppressed every ``__stop_exit__``
+        MARKET attempt until the passive order expired (~57 minutes later),
+        turning a configured 1.0% stop into a 1.49% realized loss.  The stop
+        must now cancel the resting cover and fill a MARKET close in the same
+        tick.
+        """
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+
+        position_store = MemoryPositionStore()
+        position_store.update("AAPL", -50, Decimal("599.50"))  # short 50 @ 599.50
+
+        router = _CancelRecordingBacktestRouter(clock=clock, cost_model=ZeroCostModel())
+        orch = _build_orchestrator(
+            clock,
+            bus=bus,
+            position_store=position_store,
+            order_router=router,
+        )
+        orch._stop_loss_pct = 0.01
+        orch._use_passive_entries = True
+        _boot_to_backtest(orch)
+
+        # Seed a resting passive BUY cover (mimics the alpha gate-OFF FLAT leg).
+        cover = OrderRequest(
+            timestamp_ns=clock.now_ns(),
+            correlation_id="cover-cid",
+            sequence=999,
+            order_id="cover-001",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=50,
+            limit_price=Decimal("600.00"),
+            strategy_id="sig_benign_midcap_v1",
+        )
+        orch._track_order(cover.order_id, Side.BUY, cover, trading_intent="EXIT")
+        # Mirror a real resting passive order: SUBMITTED → ACKNOWLEDGED so a
+        # broker CANCELLED ack is a valid (non-terminal → terminal) transition.
+        orch._transition_order(cover.order_id, OrderState.SUBMITTED, "submitted")
+        orch._transition_order(cover.order_id, OrderState.ACKNOWLEDGED, "acknowledged")
+        assert orch._has_pending_order_for_symbol("AAPL")
+
+        alerts: list[Alert] = []
+        new_orders: list[OrderRequest] = []
+        bus.subscribe(Alert, alerts.append)
+        bus.subscribe(OrderRequest, new_orders.append)
+
+        # Quote runs through the 1% hard stop (599.50 × 1.01 = 605.495); mid 608.42.
+        stop_quote = _make_quote(ts=2000, bid="608.00", ask="608.84", seq=7)
+        router.on_quote(stop_quote)
+        orch._process_tick(stop_quote)
+
+        # The resting cover was cancelled so the MARKET stop could cross.
+        assert "cover-001" in router.cancelled_order_ids
+        assert not orch._has_pending_order_for_symbol("AAPL")
+        # A forced MARKET exit was submitted and filled → position flat.
+        assert any(o.strategy_id == "__stop_exit__" for o in new_orders)
+        assert position_store.get("AAPL").quantity == 0
+        # Operator-visible forensic marker distinguishes the cancel-and-cross.
+        assert any(a.alert_name == "forced_exit_supersedes_pending_order" for a in alerts)
 
 
 # ── F2: EXIT bypasses min_order_shares gate ──────────────────────────────

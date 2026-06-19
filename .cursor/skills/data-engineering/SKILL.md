@@ -36,7 +36,7 @@ with auth, reconnection, and parsed model objects (see Live Stream section).
 Inherits platform invariants 5 (deterministic replay), 6 (causality),
 7 (event-driven typed schemas), 13 (full provenance). Additionally:
 
-1. **Append-only normalized log** — `EventLog` is append-only and never mutated in place; `DiskEventCache` stores canonical `NBBOQuote` / `Trade` events post-normalization, not raw vendor frames. Re-deriving canonical events under a future normalizer revision requires re-hitting the REST API; the cache is invalidated automatically via `event_schema_hash` / `_CACHE_SEMANTIC_VERSION` whenever the schema or its semantic meaning changes. (Raw-vendor archival is not part of the current contract — see `audits/ingestion_replay_storage_audit_2026-06-06.md` D4.)
+1. **Append-only normalized log** — `EventLog` is append-only and never mutated in place; `DiskEventCache` stores canonical `NBBOQuote` / `Trade` events post-normalization, not raw vendor frames. Re-deriving canonical events under a future normalizer revision requires re-hitting the REST API; the cache is invalidated automatically via `event_schema_hash` / `_CACHE_SEMANTIC_VERSION` whenever the schema or its semantic meaning changes. Raw-vendor archival is not part of the current contract.
 2. **Gaps are visible** — missing data is surfaced via `DataHealth` SM transitions, never silently skipped or interpolated
 3. **Schema as contract** — every event crossing the ingestion boundary conforms to a typed schema (`NBBOQuote`, `Trade`); untyped or malformed data is rejected at the boundary
 4. **`received_ns` semantics** — populated by the normalizer's injected `Clock`. Live (`WallClock`): per-frame wall-clock receipt time, usable for ingestion-latency analysis. Historical REST replay: the `SimulatedClock` does not advance during ingest, so every record in a batch carries the same value. Backtests therefore cannot derive a meaningful "ingest latency" — the metric is wall-time-only.
@@ -187,6 +187,16 @@ handlers consult `normalizer.health(symbol)`: `CORRUPTED` forces macro
 `GAP_DETECTED` the same way. Offline replay without a normalizer relies on
 `DiskEventCache` checksums plus optional `require_healthy_disk_cache_manifests`.
 
+> **Backtest vs live health-gate parity (by design).** Only PAPER / LIVE
+> construct a `MassiveNormalizer`, so the runtime `DataHealth` gate
+> (`Orchestrator._data_health_blocks_trading`) is *inert in BACKTEST*
+> (`normalizer is None` short-circuits to "not blocked"). Backtest instead
+> enforces integrity at *ingest time* — the manifest's `ingestion_health` is
+> folded into config via `backtest_enforce_ingest_terminal_health` /
+> `require_healthy_disk_cache_manifests`, which fail the boot rather than
+> degrading mid-replay. The asymmetry is intentional: a backtest replays an
+> already-validated stream, so per-tick health escalation would be redundant.
+
 ## Validation & Integrity
 
 - **Schema validation**: every inbound message validated against typed schema before persistence
@@ -274,10 +284,17 @@ cache behind the protocol is still TODO.
 
 | Layer | Description | Protocol |
 |---|---|---|
-| Raw immutable | Append-only log of original messages — never mutated | `EventLog` |
-| Normalized events | Schema-conformed, deduplicated, gap-annotated event stream | `EventLog.replay()` |
+| Normalized events (canonical) | Append-only, schema-conformed, deduplicated, gap-annotated `NBBOQuote` / `Trade` stream — never mutated in place | `EventLog` / `EventLog.replay()` |
 | Feature snapshots | Versioned and reproducible from normalized events | `FeatureSnapshotStore` |
 | Trade journal | Structured trade lifecycle records | `TradeJournal` |
+
+> **No raw-vendor layer.** Per Core Invariant 1, `EventLog` and
+> `DiskEventCache` persist *post-normalization* canonical events, **not**
+> raw vendor frames. There is no immutable raw-message log in the current
+> contract; re-deriving canonical events under a future normalizer revision
+> requires re-hitting the Massive REST API (the cache self-invalidates via
+> `event_schema_hash` / `_CACHE_SEMANTIC_VERSION`). Raw-vendor archival is a
+> design target, not implemented.
 
 ## Design Decisions
 
@@ -305,8 +322,13 @@ symbol (backtesting primary access pattern).
 ## Recovery & Replay
 
 - Define recovery protocol for every failure mode (feed drop, schema change, storage fault)
-- Replay from raw immutable log must reproduce identical normalized output (replay invariant)
-- All backfills tagged with provenance metadata (source, timestamp, version)
+- Replay from the persisted **normalized** `EventLog` must reproduce identical
+  signals/orders/PnL (replay invariant). Re-deriving canonical events under a
+  *new* normalizer revision is not a pure replay — it requires re-ingesting from
+  the REST API (no raw-vendor log; see Storage Design above).
+- All backfills tagged with provenance metadata: the `DiskEventCache` manifest
+  carries `source`-equivalent `ingestion_health`, `created_at`,
+  `event_schema_hash`, and `normalizer_version` (Inv-13).
 
 ---
 

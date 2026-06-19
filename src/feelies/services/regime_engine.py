@@ -17,6 +17,7 @@ import json
 import logging
 import math
 import statistics
+from collections import deque
 from collections.abc import Sequence
 from typing import Protocol
 
@@ -278,6 +279,44 @@ class HMM3StateFractional:
     def calibrated(self) -> bool:
         """Whether emission parameters have been calibrated from data."""
         return self._calibrated
+
+    @property
+    def discriminability(self) -> float:
+        """Calibration-time min pairwise emission separation ``d`` (audit R-1).
+
+        ``d_min = min_{i<j} |mu_i - mu_j| / sqrt(sigma_i^2 + sigma_j^2)`` over
+        the *current* (pooled) emissions.  It measures whether the states are
+        statistically distinguishable at all: ``d >= ~0.5`` is usable, ``d → 0``
+        means the quantile-fit Gaussians have collapsed to near-identical
+        distributions (a tight, stable spread), so the posterior is uniform
+        noise and ``P(state)`` carries no information.  Consumers compare it
+        against a floor and fail regime-gates safe to OFF below it.  This is
+        *orthogonal* to :attr:`calibrated`: placeholder (uncalibrated)
+        emissions are well-separated yet mis-located, so they score high here
+        but are caught by ``calibrated=False`` instead.  ``+inf`` for a
+        single-state engine (no pair to compare).
+
+        Reports the *pooled* fit only.  When ``per_symbol_calibration`` is
+        enabled, callers that need to gate per symbol must use
+        :meth:`discriminability_for_symbol` instead — otherwise a tight
+        symbol whose per-symbol fit has collapsed could be gated against the
+        global ``d`` and pass falsely (audit R-1 fail-safe)."""
+        return self._compute_min_pairwise_emission_separation(self._emission)
+
+    def discriminability_for_symbol(self, symbol: str) -> float:
+        """Per-symbol counterpart of :attr:`discriminability` (audit R-1).
+
+        Mirrors the emission-resolution rule used by :meth:`posterior` /
+        :meth:`_emission_for_symbol`: returns the min pairwise separation
+        of the symbol's per-symbol calibrated emissions when present, or
+        of the pooled global emissions otherwise.  This is the quantity
+        consumers must compare to ``regime_min_discriminability`` so the
+        regime-gate fails safe to OFF for a symbol whose per-symbol fit
+        has collapsed even while the pooled fit remains well separated.
+        """
+        return self._compute_min_pairwise_emission_separation(
+            self._emission_for_symbol(symbol)
+        )
 
     def calibrate(self, quotes: Sequence[NBBOQuote]) -> bool:
         """Fit emission parameters from historical spread distribution.
@@ -816,12 +855,424 @@ class HMM3StateFractional:
         return [u / total for u in unnorm]
 
 
+# ── HMM 3-State 2-D spread+vol implementation (audit R-3) ────────────
+
+
+class HMM3StateSpreadVol:
+    """Opt-in 3-state forward filter on **two** L1 observations: log-relative
+    spread *and* short-window realized volatility of the mid (audit R-3).
+
+    Why
+    ---
+    The default :class:`HMM3StateFractional` observes only log-relative
+    spread, so its three states are just spread terciles and ``vol_breakout``
+    means *widest spread*, not *high volatility* — it cannot see volatility
+    that arrives without spread widening (audit 2026-06-13 §3.2, §7).  This
+    engine adds a second, near-orthogonal dimension — realized vol of the mid
+    over a rolling window of quotes — and fits a 2-D diagonal-Gaussian
+    emission per state, with states ordered by **increasing realized-vol
+    mean**, so ``vol_breakout`` is genuinely the high-volatility regime.
+
+    Design / safety
+    ---------------
+    * **Opt-in, default-off.**  Selected only via ``regime_engine:
+      hmm_3state_spread_vol``; the default deployment and every locked
+      determinism baseline keep using :class:`HMM3StateFractional` unchanged.
+    * Still a **fixed-structure forward filter** (Markov predict + diagonal
+      Gaussian emission), *not* a Baum–Welch / EM HMM.  :meth:`calibrate`
+      fits per-state moments from realized-vol quantile buckets; the
+      transition matrix is author-controlled.
+    * **Deterministic** (Inv-5): realized vol is computed from a fixed-count
+      rolling window of mids in sequence order; no wall-clock.  Idempotent per
+      ``(symbol, sequence)`` like the default engine.
+    * Realized vol needs warm-up (``rv_min_returns`` returns).  Until warm the
+      vol dimension contributes likelihood ``1.0`` (the filter degrades to
+      spread-only), so cold starts never crash.
+    * Exposes the same :attr:`discriminability` contract (audit R-1) — the
+      joint min pairwise separation across both dimensions — so the gate's
+      indiscriminate-regime fail-safe works unchanged.
+
+    Validation gate (the hard lesson of this audit): no alpha should switch
+    its ``regime_engine`` to this until ``scripts/regime_diagnostics.py`` shows
+    its conditional forward-return tables are at least as informative as the
+    spread-only engine on the target cohort.
+    """
+
+    _DEFAULT_STATE_NAMES = ("compression_clustering", "normal", "vol_breakout")
+
+    _DEFAULT_TRANSITION = (
+        (0.990, 0.008, 0.002),
+        (0.005, 0.990, 0.005),
+        (0.002, 0.008, 0.990),
+    )
+
+    # Per state: ((mu_log_spread, sigma), (mu_log_realized_vol, sigma)).
+    # Placeholder defaults ordered by increasing realized vol; ``calibrate()``
+    # replaces them.  Uncalibrated use publishes ``calibrated=False`` so the
+    # gate fails safe to OFF (audit P0-1), exactly like the default engine.
+    _DEFAULT_EMISSION = (
+        ((-4.5, 0.3), (-9.5, 1.0)),  # compression: tight spread, low vol
+        ((-3.5, 0.5), (-8.5, 1.0)),  # normal
+        ((-2.5, 0.7), (-7.5, 1.0)),  # vol_breakout: high vol
+    )
+
+    _MIN_SIGMA = 0.01
+    _MIN_RV = 1e-12
+    _MIN_CALIBRATION_SAMPLES = 30
+    _CHECKPOINT_SCHEMA_VERSION = 1
+
+    def __init__(
+        self,
+        state_names: Sequence[str] | None = None,
+        transition_matrix: Sequence[Sequence[float]] | None = None,
+        emission_params: Sequence[tuple[tuple[float, float], tuple[float, float]]] | None = None,
+        *,
+        rv_window: int = 30,
+        rv_min_returns: int = 5,
+    ) -> None:
+        self._state_names = tuple(state_names or self._DEFAULT_STATE_NAMES)
+        self._n_states = len(self._state_names)
+        self._transition = tuple(
+            tuple(float(x) for x in row)
+            for row in (transition_matrix or self._DEFAULT_TRANSITION)
+        )
+        self._emission = tuple(emission_params or self._DEFAULT_EMISSION)
+        self._calibrated = emission_params is not None
+        if rv_window < 2:
+            raise ValueError(f"rv_window must be >= 2, got {rv_window}")
+        if not 2 <= rv_min_returns <= rv_window:
+            raise ValueError(
+                f"rv_min_returns must be in [2, rv_window]; got {rv_min_returns} (window {rv_window})"
+            )
+        self._rv_window = int(rv_window)
+        self._rv_min_returns = int(rv_min_returns)
+        self._validate_params()
+
+        self._posteriors: dict[str, list[float]] = {}
+        self._last_update_seq: dict[str, int] = {}
+        # Rolling window of recent mids per symbol (maxlen = rv_window + 1 so we
+        # retain ``rv_window`` consecutive log-returns).
+        self._mid_window: dict[str, deque[float]] = {}
+        self._uncalibrated_warned = False
+
+    def _validate_params(self) -> None:
+        n = self._n_states
+        if n < 2:
+            raise ValueError(f"Need at least 2 states, got {n}")
+        if len(self._transition) != n:
+            raise ValueError(f"Transition matrix has {len(self._transition)} rows, expected {n}")
+        for i, row in enumerate(self._transition):
+            if len(row) != n:
+                raise ValueError(f"Transition row {i} has {len(row)} columns, expected {n}")
+            if any(v < 0 for v in row):
+                raise ValueError(f"Transition row {i} has negative entries: {row}")
+            if abs(sum(row) - 1.0) > 1e-6:
+                raise ValueError(f"Transition row {i} sums to {sum(row)}, expected ~1.0")
+        if len(self._emission) != n:
+            raise ValueError(f"Emission params has {len(self._emission)} entries, expected {n}")
+        for i, dims in enumerate(self._emission):
+            if len(dims) != 2:
+                raise ValueError(f"Emission state {i} must have 2 dims (spread, vol)")
+            for d, (_mu, sigma) in enumerate(dims):
+                if sigma <= 0:
+                    raise ValueError(f"Emission sigma state {i} dim {d} is {sigma}, must be > 0")
+
+    @property
+    def state_names(self) -> Sequence[str]:
+        return self._state_names
+
+    @property
+    def n_states(self) -> int:
+        return self._n_states
+
+    @property
+    def calibrated(self) -> bool:
+        return self._calibrated
+
+    @property
+    def discriminability(self) -> float:
+        """Joint min pairwise separation across both dimensions (audit R-1).
+
+        ``d_ij = sqrt( sum_dim (mu_i - mu_j)^2 / (sig_i^2 + sig_j^2) )`` — the
+        2-D generalisation of the spread-only separation; ``+inf`` for a
+        single-state engine."""
+        k = self._n_states
+        if k < 2:
+            return float("inf")
+        best = float("inf")
+        for i in range(k):
+            for j in range(i + 1, k):
+                acc = 0.0
+                for (mu_i, sig_i), (mu_j, sig_j) in zip(self._emission[i], self._emission[j]):
+                    denom = sig_i * sig_i + sig_j * sig_j
+                    if denom > 1e-12:
+                        acc += (mu_j - mu_i) ** 2 / denom
+                best = min(best, math.sqrt(acc))
+        return best
+
+    # ── Realized-vol feature ────────────────────────────────────────
+
+    def _push_mid_and_realized_vol(self, symbol: str, mid: float) -> float | None:
+        """Append ``mid`` to the symbol window; return realized vol or None.
+
+        Realized vol is the sample stdev of the consecutive log-returns within
+        the rolling window (causal: includes only mids at or before this
+        quote).  Returns ``None`` until ``rv_min_returns`` returns exist."""
+        window = self._mid_window.get(symbol)
+        if window is None:
+            window = deque(maxlen=self._rv_window + 1)
+            self._mid_window[symbol] = window
+        window.append(mid)
+        if len(window) < self._rv_min_returns + 1:
+            return None
+        mids = list(window)
+        rets = [
+            math.log(mids[i] / mids[i - 1])
+            for i in range(1, len(mids))
+            if mids[i] > 0.0 and mids[i - 1] > 0.0
+        ]
+        if len(rets) < self._rv_min_returns:
+            return None
+        return statistics.stdev(rets)
+
+    def posterior(self, quote: NBBOQuote) -> list[float]:
+        symbol = quote.symbol
+        seq = quote.sequence
+        if self._last_update_seq.get(symbol) == seq:
+            return list(self._posteriors[symbol])
+
+        if not self._calibrated and not self._uncalibrated_warned:
+            logger.warning(
+                "regime_engine: HMM3StateSpreadVol.posterior() called before "
+                "calibrate(); running with placeholder 2-D emissions — "
+                "RegimeState.calibrated will be False and P(state) gates fail "
+                "safe to OFF.  Call calibrate() with historical quotes first."
+            )
+            self._uncalibrated_warned = True
+
+        prior = self._posteriors.get(symbol)
+        if prior is None:
+            prior = [1.0 / self._n_states] * self._n_states
+        predicted = self._predict(prior)
+
+        spread = float(quote.ask - quote.bid)
+        mid = float(quote.ask + quote.bid) / 2.0
+
+        # Always advance the realized-vol window (so the next tick is warm),
+        # even on an invalid spread — the mid is still informative.
+        rv = self._push_mid_and_realized_vol(symbol, mid) if mid > 0 else None
+
+        if spread <= 0 or mid <= 0:
+            updated: list[float] = predicted
+        else:
+            log_spread = math.log(max(spread / mid, 1e-12))
+            log_rv = math.log(max(rv, self._MIN_RV)) if rv is not None else None
+            likelihoods = self._emission_likelihood(log_spread, log_rv)
+            updated = self._bayes_update(predicted, likelihoods)
+            if any(math.isnan(v) or math.isinf(v) for v in updated):
+                logger.warning(
+                    "regime_engine: NaN/inf in 2-D Bayesian update for symbol=%s; "
+                    "resetting to uniform prior",
+                    symbol,
+                )
+                updated = [1.0 / self._n_states] * self._n_states
+
+        self._posteriors[symbol] = updated
+        self._last_update_seq[symbol] = seq
+        return list(updated)
+
+    def _predict(self, prior: list[float]) -> list[float]:
+        predicted = [0.0] * self._n_states
+        for j in range(self._n_states):
+            for i in range(self._n_states):
+                predicted[j] += self._transition[i][j] * prior[i]
+        total = sum(predicted)
+        if total > 0:
+            return [p / total for p in predicted]
+        return [1.0 / self._n_states] * self._n_states
+
+    def _emission_likelihood(self, log_spread: float, log_rv: float | None) -> list[float]:
+        out: list[float] = []
+        for (mu_s, sig_s), (mu_v, sig_v) in self._emission:
+            z = (log_spread - mu_s) / sig_s
+            ll = math.exp(-0.5 * z * z) / (sig_s * math.sqrt(2.0 * math.pi))
+            if log_rv is not None:
+                zv = (log_rv - mu_v) / sig_v
+                ll *= math.exp(-0.5 * zv * zv) / (sig_v * math.sqrt(2.0 * math.pi))
+            out.append(max(ll, 1e-300))
+        return out
+
+    def _bayes_update(self, predicted: list[float], likelihoods: list[float]) -> list[float]:
+        unnorm = [p * l for p, l in zip(predicted, likelihoods)]
+        total = sum(unnorm)
+        if total < 1e-300:
+            return [1.0 / self._n_states] * self._n_states
+        return [u / total for u in unnorm]
+
+    def current_state(self, symbol: str) -> list[float] | None:
+        cached = self._posteriors.get(symbol)
+        return list(cached) if cached is not None else None
+
+    def reset(self, symbol: str) -> None:
+        self._posteriors.pop(symbol, None)
+        self._last_update_seq.pop(symbol, None)
+        self._mid_window.pop(symbol, None)
+
+    # ── Calibration ─────────────────────────────────────────────────
+
+    def calibrate(self, quotes: Sequence[NBBOQuote]) -> bool:
+        """Fit 2-D emissions from realized-vol quantile buckets.
+
+        Replays quotes per symbol in (timestamp, sequence) order to compute
+        the causal realized-vol series, pools ``(log_spread, log_rv)`` samples
+        across symbols, buckets them by ``log_rv`` tercile, and fits per-bucket
+        Gaussian moments for both dimensions.  Buckets are ordered by
+        increasing realized-vol mean so state ``k`` is the ``k``-th vol
+        regime (``vol_breakout`` = highest)."""
+        by_symbol: dict[str, list[NBBOQuote]] = {}
+        for q in quotes:
+            by_symbol.setdefault(q.symbol, []).append(q)
+
+        samples: list[tuple[float, float]] = []  # (log_spread, log_rv)
+        for sym, sym_quotes in by_symbol.items():
+            ordered = sorted(sym_quotes, key=lambda q: (q.timestamp_ns, q.sequence))
+            window: deque[float] = deque(maxlen=self._rv_window + 1)
+            for q in ordered:
+                spread = float(q.ask - q.bid)
+                mid = float(q.ask + q.bid) / 2.0
+                if mid <= 0:
+                    continue
+                window.append(mid)
+                if spread <= 0 or len(window) < self._rv_min_returns + 1:
+                    continue
+                mids = list(window)
+                rets = [
+                    math.log(mids[i] / mids[i - 1])
+                    for i in range(1, len(mids))
+                    if mids[i] > 0.0 and mids[i - 1] > 0.0
+                ]
+                if len(rets) < self._rv_min_returns:
+                    continue
+                rv = statistics.stdev(rets)
+                samples.append(
+                    (math.log(max(spread / mid, 1e-12)), math.log(max(rv, self._MIN_RV)))
+                )
+
+        if len(samples) < self._MIN_CALIBRATION_SAMPLES:
+            return False
+
+        by_vol = sorted(samples, key=lambda t: t[1])
+        n = len(by_vol)
+        k = self._n_states
+        edges = [i * n // k for i in range(k)] + [n]
+        fitted: list[tuple[tuple[float, float], tuple[float, float]]] = []
+        for b in range(k):
+            bucket = by_vol[edges[b] : edges[b + 1]]
+            spreads = [s for s, _ in bucket]
+            vols = [v for _, v in bucket]
+            fitted.append(
+                (
+                    (statistics.mean(spreads), self._fit_sigma(spreads)),
+                    (statistics.mean(vols), self._fit_sigma(vols)),
+                )
+            )
+        # Already vol-ordered by construction (buckets are vol terciles).
+        self._emission = tuple(fitted)
+        self._calibrated = True
+        self._posteriors.clear()
+        self._last_update_seq.clear()
+        self._mid_window.clear()
+        return True
+
+    def _fit_sigma(self, values: list[float]) -> float:
+        sigma = statistics.stdev(values) if len(values) >= 2 else self._MIN_SIGMA
+        return max(sigma, self._MIN_SIGMA)
+
+    # ── Checkpoint / restore ────────────────────────────────────────
+
+    def _flags_fingerprint(self) -> str:
+        canonical = {
+            "schema": self._CHECKPOINT_SCHEMA_VERSION,
+            "cls": "HMM3StateSpreadVol",
+            "n_states": self._n_states,
+            "state_names": list(self._state_names),
+            "transition": [list(r) for r in self._transition],
+            "rv_window": self._rv_window,
+            "rv_min_returns": self._rv_min_returns,
+        }
+        raw = json.dumps(canonical, separators=(",", ":"), sort_keys=True)
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    def checkpoint(self) -> bytes:
+        payload: dict[str, object] = {
+            "checkpoint_schema_version": self._CHECKPOINT_SCHEMA_VERSION,
+            "flags_fingerprint": self._flags_fingerprint(),
+            "posteriors": self._posteriors,
+            "last_update_seq": self._last_update_seq,
+            "mid_window": {s: list(w) for s, w in self._mid_window.items()},
+        }
+        if self._calibrated:
+            payload["emission"] = [[list(d) for d in dims] for dims in self._emission]
+        return json.dumps(payload, separators=(",", ":")).encode("utf-8")
+
+    def restore(self, data: bytes) -> None:
+        prev_emission = self._emission
+        prev_calibrated = self._calibrated
+        try:
+            payload = json.loads(data)
+            blob_fp = payload.get("flags_fingerprint")
+            if blob_fp is not None and blob_fp != self._flags_fingerprint():
+                raise ValueError(
+                    "checkpoint flags_fingerprint mismatch for HMM3StateSpreadVol; "
+                    "restore requires identical state_names / transition / rv_* config"
+                )
+            posteriors = payload["posteriors"]
+            last_seq = payload["last_update_seq"]
+            if not isinstance(posteriors, dict) or not isinstance(last_seq, dict):
+                raise ValueError("Invalid checkpoint structure")
+            for sym, post in posteriors.items():
+                if len(post) != self._n_states:
+                    raise ValueError(f"Posterior length mismatch for {sym}")
+                if any(v < 0 for v in post) or abs(sum(post) - 1.0) > 1e-6:
+                    raise ValueError(f"Invalid posterior for {sym}: {post}")
+            self._posteriors = {k: list(v) for k, v in posteriors.items()}
+            self._last_update_seq = {k: int(v) for k, v in last_seq.items()}
+            mw = payload.get("mid_window") or {}
+            self._mid_window = {
+                str(s): deque((float(x) for x in w), maxlen=self._rv_window + 1)
+                for s, w in mw.items()
+            }
+            emission_data = payload.get("emission")
+            if emission_data is not None:
+                if len(emission_data) != self._n_states:
+                    raise ValueError("Emission params length mismatch")
+                parsed: list[tuple[tuple[float, float], tuple[float, float]]] = []
+                for dims in emission_data:
+                    (ms, ss), (mv, sv) = dims
+                    if float(ss) <= 0 or float(sv) <= 0:
+                        raise ValueError("Restored emission sigma must be > 0")
+                    parsed.append(((float(ms), float(ss)), (float(mv), float(sv))))
+                self._emission = tuple(parsed)
+                self._calibrated = True
+        except Exception:
+            self._posteriors = {}
+            self._last_update_seq = {}
+            self._mid_window = {}
+            self._emission = prev_emission
+            self._calibrated = prev_calibrated
+            raise
+
+
 # ── Engine registry ──────────────────────────────────────────────────
 
 _ENGINE_REGISTRY: dict[str, type[RegimeEngine]] = {
     "hmm_3state_fractional": HMM3StateFractional,
     # Preferred alias — same implementation; name reflects spread-filter semantics.
     "hmm_3state_spread_filter": HMM3StateFractional,
+    # Audit R-3: opt-in 2-D (spread + realized-vol) engine.  Default
+    # deployments keep the spread-only engine above; switch to this only after
+    # validating its conditional-return tables via scripts/regime_diagnostics.py.
+    "hmm_3state_spread_vol": HMM3StateSpreadVol,
 }
 
 

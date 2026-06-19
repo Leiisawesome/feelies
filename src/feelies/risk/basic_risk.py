@@ -99,6 +99,7 @@ class BasicRiskEngine:
         buying_power_config: BuyingPowerConfig | None = None,
         trading_session_bounds: TradingSessionBounds | None = None,
         account_id: str = "default",
+        warn_on_inert_entry_gates: bool = False,
     ) -> None:
         self._config = config
         self._regime_engine = regime_engine
@@ -129,6 +130,31 @@ class BasicRiskEngine:
         self._buying_power_phase = BuyingPowerPhase.INTRADAY
         self._trading_session_bounds = trading_session_bounds
         self._account_id = account_id
+        # Audit R-9: in live/paper an unwired ENTRY gate fails *open* (the
+        # check returns None → pass).  When the caller asserts these gates
+        # should be active (bootstrap sets this for non-backtest modes) we
+        # surface a one-shot WARNING at construction listing the inert gates
+        # so an accidental omission is visible rather than silent.  Kept off
+        # by default so unit-test fixtures that intentionally omit gates stay
+        # quiet.
+        if warn_on_inert_entry_gates:
+            inert = [
+                name
+                for name, gate in (
+                    ("pdt_min_equity", self._pdt_constraint),
+                    ("buying_power", self._buying_power_config),
+                    ("rth_session", self._trading_session_bounds),
+                )
+                if gate is None
+            ]
+            if inert:
+                _logger.warning(
+                    "BasicRiskEngine constructed with inert ENTRY gates %s "
+                    "(account_id=%s): these checks will fail OPEN (pass) for "
+                    "every order. Verify this is intended for the deployment mode.",
+                    inert,
+                    self._account_id,
+                )
 
     def set_buying_power_phase(self, phase: BuyingPowerPhase) -> None:
         """Switch intraday (4×) vs overnight (2×) Reg-T caps (BT-15)."""
@@ -206,6 +232,8 @@ class BasicRiskEngine:
         self,
         order: OrderRequest,
         positions: PositionStore,
+        *,
+        additional_exposure: Decimal = Decimal("0"),
     ) -> RiskVerdict:
         """Gate 2 (order-level): post-fill position quantity check.
 
@@ -219,6 +247,12 @@ class BasicRiskEngine:
         validation — gate 1's directional check does not catch cases
         where the sized order would overshoot the limit (e.g. SCALE_UP
         by more than the remaining headroom).
+
+        ``additional_exposure`` (audit R-1) folds the gross notional
+        already committed by earlier legs of the same ``SizedPositionIntent``
+        into the buying-power and gross-exposure caps, so a multi-leg
+        intent cannot collectively breach a cap that each leg clears in
+        isolation.  Default ``0`` reproduces the standalone-SIGNAL behavior.
         """
         regime_scale = self._regime_scaling(order.symbol)
         adjusted_max = int(self._config.max_position_per_symbol * regime_scale)
@@ -242,6 +276,7 @@ class BasicRiskEngine:
             current.quantity,
             post_signed,
             positions,
+            additional_exposure=additional_exposure,
         )
         if bp_verdict is not None:
             return bp_verdict
@@ -267,10 +302,13 @@ class BasicRiskEngine:
                 ),
             )
 
-        prospective_exposure = self._prospective_total_exposure(
-            order,
-            positions,
-            current,
+        prospective_exposure = (
+            self._prospective_total_exposure(
+                order,
+                positions,
+                current,
+            )
+            + additional_exposure
         )
         shared = self._check_exposure_and_drawdown(
             order.timestamp_ns,
@@ -329,11 +367,15 @@ class BasicRiskEngine:
 
         Macro interaction (kernel audit)
         ----------------------------------
-        A ``RiskAction.FORCE_FLATTEN`` verdict on a per-leg
-        :meth:`check_order` call is **not** promoted to orchestrator
-        global lockdown — the leg is veto-dropped like REJECT. Only the
-        standalone-SIGNAL per-tick path can drive macro
-        **RISK_LOCKDOWN** (see :mod:`feelies.kernel.macro`).
+        A ``RiskAction.FORCE_FLATTEN`` verdict on any per-leg
+        :meth:`check_order` call **is** promoted to orchestrator global
+        lockdown: :func:`build_sized_intent_orders` returns
+        ``requires_global_risk_escalation=True`` and the orchestrator's
+        ``_flush_pending_sized_intents`` calls ``_escalate_risk``, driving
+        macro **RISK_LOCKDOWN** (see
+        :mod:`feelies.kernel.orchestrator`).  This is the same global halt
+        as the standalone-SIGNAL per-tick path — a portfolio-path drawdown
+        breach is never silently veto-dropped.
 
         Diagnostic (audit R4)
         ---------------------
@@ -518,12 +560,18 @@ class BasicRiskEngine:
         current_qty: int,
         post_signed: int,
         positions: PositionStore,
+        *,
+        additional_exposure: Decimal = Decimal("0"),
     ) -> RiskVerdict | None:
         """Reg-T buying-power ENTRY gate (BT-15).
 
         Rejects orders that would *open or increase* exposure when post-fill
         gross exceeds the phase limit (4× intraday / 2× overnight on live NAV).
         Exits and reductions return ``None`` (Inv-11 fail-safe).
+
+        ``additional_exposure`` accumulates the gross committed by earlier
+        legs of the same intent (audit R-1) so buying power is enforced
+        cumulatively, not per-leg-in-isolation.
         """
         if self._buying_power_config is None:
             return None
@@ -536,10 +584,13 @@ class BasicRiskEngine:
             self._buying_power_phase,
             self._buying_power_config,
         )
-        prospective = self._prospective_total_exposure(
-            order,
-            positions,
-            current,
+        prospective = (
+            self._prospective_total_exposure(
+                order,
+                positions,
+                current,
+            )
+            + additional_exposure
         )
         if prospective > limit:
             _logger.warning(
@@ -662,12 +713,30 @@ class BasicRiskEngine:
         let the book silently over- or under-lever as PnL moves.  The
         HWM tracked inside ``_is_drawdown_breached`` uses the same
         definition so the two checks stay internally consistent.
+
+        Non-positive live equity (audit R-6): when ``current_equity <= 0``
+        the percentage-of-NAV gross cap is meaningless, and the historical
+        fallback to *initial* ``account_equity`` was a silent loosening — it
+        sized an underwater book against capital it no longer had.  Such a
+        book is wiped out, so the only correct response is ``FORCE_FLATTEN``
+        (emergency flatten + LOCKED), returned unconditionally and
+        independent of how loosely ``max_drawdown_pct`` is configured — this
+        forecloses both the old loosening *and* an "allow unlimited" hole if
+        the drawdown gate were set permissively.
         """
         current_equity = self._compute_current_equity(positions)
         exposure = positions.total_exposure() if exposure_override is None else exposure_override
-        equity_for_cap = current_equity if current_equity > 0 else self._config.account_equity
+        if current_equity <= 0:
+            return RiskVerdict(
+                timestamp_ns=timestamp_ns,
+                correlation_id=correlation_id,
+                sequence=sequence,
+                symbol=symbol,
+                action=RiskAction.FORCE_FLATTEN,
+                reason=f"non-positive equity: {current_equity} <= 0",
+            )
         max_exposure = (
-            equity_for_cap * Decimal(str(self._config.max_gross_exposure_pct)) / Decimal("100")
+            current_equity * Decimal(str(self._config.max_gross_exposure_pct)) / Decimal("100")
         )
         if exposure >= max_exposure:
             return RiskVerdict(
@@ -739,13 +808,21 @@ class BasicRiskEngine:
         caps), not in parallel.
 
         Unknown state names default to min(all scales) (fail-safe).
+
+        Missing-data policy (audit R-3): a configured engine that has no
+        committed posterior for ``symbol`` yet (warm-up, or a symbol that
+        has never been filtered) is genuine *missing data*, so the limit is
+        tightened to ``min(all scales)`` rather than left at the 1.0
+        baseline.  This is distinct from ``regime_engine is None`` — that is
+        an explicit operator decision to not apply regime scaling at all, so
+        it stays 1.0.
         """
         if self._regime_engine is None:
             return 1.0
 
         posteriors = self._regime_engine.current_state(symbol)
-        if posteriors is None:
-            return 1.0
+        if not posteriors:
+            return self._regime_scale_default
 
         state_names = list(self._regime_engine.state_names)
         default = self._regime_scale_default

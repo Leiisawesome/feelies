@@ -1,0 +1,11 @@
+# APP research backtest — tuned sig_benign_midcap_v1 entry gate overrides.
+#
+# Usage:
+#   uv run python scripts/run_backtest.py --config configs/bt_app.yaml \
+#       --symbol APP --date 2026-03-26
+#   uv run feelies backtest --config configs/bt_app.yaml --symbol APP --date 2026-03-26
+#
+# Locked regression baseline: tests/acceptance/test_backtest_app_baseline.py
+#
+# Canonical single-alpha spec: configs/bt_sig_benign_midcap.yaml
+extends: bt_sig_benign_midcap.yaml

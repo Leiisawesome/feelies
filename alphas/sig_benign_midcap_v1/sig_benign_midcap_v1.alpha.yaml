@@ -106,6 +106,19 @@ parameters:
       ``imb == 0.0`` exact-equality check — now that ``imb`` is a horizon mean
       (a float that is essentially never exactly 0.0), an epsilon band is
       needed so a near-zero mean (no real confirmation) does not pass.
+  cost_floor_bps:
+    type: float
+    default: 5.0
+    min: 0.0
+    max: 30.0
+    description: |
+      One-way cost floor (bps). Audit P1-2: self-suppress entries whose
+      computed ``edge_bps`` does not exceed the disclosed one-way cost
+      (half_spread + impact + fee = 2.0 + 2.0 + 1.0 = 5.0). Without it the
+      alpha emits entries with edge as low as 3.2 bps (|z| at the default
+      0.8 threshold). The round-trip Inv-12 bar (~1.5x round-trip) is
+      enforced at runtime by the B4 gate. Keep aligned with
+      cost_arithmetic.
 # ── Horizon (Layer-2 boundary) ────────────────────────────
 horizon_seconds: 120
 
@@ -131,13 +144,26 @@ cost_arithmetic:
   impact_bps: 2.0
   fee_bps: 1.0
   margin_ratio: 1.8
+  # Audit P1-1: one-way components. Round-trip ≈ 10.0 bps; edge/round-trip
+  # ≈ 0.90. The runtime B4 gate enforces the round-trip Inv-12 bar.
+  cost_basis: one_way
 
+# Audit P1-5: the prior block declared ``kyle_lambda_60s`` as the
+# KYLE_INFO fingerprint, but this alpha neither depends on nor reads it —
+# a cosmetic fingerprint. The mechanism it actually exploits is the
+# order-flow imbalance footprint: standardised ``ofi_ewma`` confirmed by
+# ``book_imbalance`` (the level-invariant L1 transform of micro-price vs
+# mid, platform.yaml: (micro - mid)/spread = book_imbalance / 2). The
+# fingerprint is therefore ``micro_price`` (a genuine dependency, read via
+# its ``book_imbalance`` transform), which satisfies G16 rule 5 for
+# KYLE_INFO. All l1_signature_sensors are now a subset of
+# depends_on_sensors (no cosmetic entries; see audit P1-4).
 trend_mechanism:
   family: KYLE_INFO
   expected_half_life_seconds: 120
   l1_signature_sensors:
-    - kyle_lambda_60s
     - micro_price
+    - book_imbalance
     - ofi_ewma
     - spread_z_30d
   failure_signature:
@@ -181,6 +207,10 @@ signal: |
 
       direction = LONG if z > 0 else SHORT
       edge_bps = min(mag * slope_bps, edge_cap)
+
+      # Audit P1-2: never emit an entry below the disclosed one-way cost.
+      if edge_bps <= params["cost_floor_bps"]:
+          return None
 
       # Convex strength: superlinear above the old saturation point
       # (mag == threshold*2 => norm==1.0 => same strength as before).

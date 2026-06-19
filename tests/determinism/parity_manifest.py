@@ -42,6 +42,10 @@ from tests.determinism.test_horizon_tick_replay import (
     EXPECTED_LEVEL2_TICK_COUNT,
     EXPECTED_LEVEL2_TICK_HASH,
 )
+from tests.determinism.test_market_fill_replay import (
+    EXPECTED_MARKET_FILL_ACK_COUNT,
+    EXPECTED_MARKET_FILL_HASH,
+)
 from tests.determinism.test_portfolio_order_replay import (
     EXPECTED_LEVEL4_PORTFOLIO_ORDER_COUNT,
     EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH,
@@ -109,5 +113,10 @@ LOCKED_PARITY_BASELINES: Final[dict[str, ParityEntry]] = {
     "level6_regime_state": (
         EXPECTED_LEVEL6_REGIME_STATE_HASH,
         EXPECTED_LEVEL6_REGIME_STATE_COUNT,
+    ),
+    # Audit P1.5: golden aggressive fill-replay (default market_fill economics).
+    "market_fill_acks": (
+        EXPECTED_MARKET_FILL_HASH,
+        EXPECTED_MARKET_FILL_ACK_COUNT,
     ),
 }

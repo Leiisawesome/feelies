@@ -96,6 +96,12 @@ def _spec(
         sensors = [_FAMILY_FINGERPRINT[family], "ofi_ewma"]
     if signal_src is None:
         signal_src = "def evaluate(snapshot, regime, params):\n    return None\n"
+    # G16 rule 10 (audit P1-4): depends_on_sensors must be a superset of
+    # the registered signature sensors so happy-path fixtures pass.
+    depends = sorted(
+        {s for s in sensors if isinstance(s, str) and s in _SENSORS}
+        | {"ofi_ewma", "spread_z_30d"}
+    )
     return {
         "schema_version": "1.1",
         "layer": "SIGNAL",
@@ -105,7 +111,7 @@ def _spec(
         "hypothesis": "test hypothesis",
         "falsification_criteria": ["c"],
         "horizon_seconds": horizon,
-        "depends_on_sensors": ["ofi_ewma", "spread_z_30d"],
+        "depends_on_sensors": depends,
         "regime_gate": {
             "regime_engine": "hmm_3state_fractional",
             "on_condition": "P(normal) > 0.7",

@@ -174,6 +174,7 @@ class HorizonSignalEngine:
         "_regime_cache",
         "_sensor_cache",
         "_attached",
+        "_regime_min_discriminability",
     )
 
     def __init__(
@@ -182,10 +183,15 @@ class HorizonSignalEngine:
         bus: EventBus,
         signal_sequence_generator: SequenceGenerator,
         clock: Any | None = None,
+        regime_min_discriminability: float = 0.0,
     ) -> None:
         self._bus = bus
         self._signal_seq = signal_sequence_generator
         self._clock = clock
+        # Audit R-1: floor on the engine's calibration-time emission
+        # separation; below it, regime gates fail safe to OFF (the regime
+        # posterior is noise).  Default 0.0 is an exact no-op.
+        self._regime_min_discriminability = float(regime_min_discriminability)
         self._signals: list[RegisteredSignal] = []
         self._regime_cache: dict[tuple[str, str], RegimeState] = {}
         # ``_sensor_cache`` holds the latest scalar reading per
@@ -339,6 +345,15 @@ class HorizonSignalEngine:
         # sentinel; cold features are absent from snapshot.values but
         # still present in snapshot.warm, so an all-cold snapshot is
         # correctly detected as active-mode-but-not-ready.
+        # H2 / M1 / M8 + audit P1-7: warm/stale gates the *entry* only.
+        # Previously a not-warm/stale required feature returned here, which
+        # also skipped the gate evaluation below and therefore the ON->OFF
+        # FLAT exit (``_publish_gate_close``) — orphaning an open position
+        # whenever a consumed feature went stale.  The documented contract
+        # (SKILL.md) is "entry suppressed when stale; exits permitted
+        # (conservative)", so we now compute ``entry_blocked`` and still
+        # run the gate so a close can fire, suppressing only a *new* entry.
+        entry_blocked = False
         if snapshot.warm:
             if registered.required_warm_feature_ids is None:
                 keys_to_check = tuple(snapshot.warm.keys())
@@ -348,21 +363,23 @@ class HorizonSignalEngine:
             is_stale = any(
                 snapshot.stale.get(k, False) for k in keys_to_check if k in snapshot.stale
             )
-            if not_warm or is_stale:
+            entry_blocked = not_warm or is_stale
+            if entry_blocked:
                 _logger.debug(
                     "HorizonSignalEngine: %s snapshot for %s at "
                     "boundary=%d is not ready (warm=%s stale=%s); "
-                    "suppressing evaluation",
+                    "suppressing entry (exit/gate-close still permitted)",
                     registered.alpha_id,
                     snapshot.symbol,
                     snapshot.boundary_index,
                     not not_warm,
                     is_stale,
                 )
-                return
 
         regime = self._lookup_regime(snapshot.symbol, registered.gate)
-        bindings = self._build_bindings(snapshot, regime, self._sensor_cache)
+        bindings = self._build_bindings(
+            snapshot, regime, self._sensor_cache, self._regime_min_discriminability
+        )
         was_on = registered.gate.is_on(snapshot.symbol)
         try:
             on = registered.gate.evaluate(
@@ -401,12 +418,25 @@ class HorizonSignalEngine:
                 self._publish_gate_close(snapshot, registered)
             return
         except RegimeGateError as exc:
+            # Audit P1-1: a RegimeGateError here is most commonly an
+            # ``UnknownRegimeStateError`` from a typo'd ``P(<state>)`` in the
+            # OFF expression — which previously logged and returned WITHOUT
+            # unwinding a latched-ON gate, orphaning any open position
+            # (only ``UnknownIdentifierError`` and arithmetic errors below
+            # were fail-safe).  Treat every gate eval error as Inv-11:
+            # force the latch OFF and unwind an open position if the gate
+            # was previously ON, so a bad OFF expression can never strand a
+            # position in the regime-ON state.
+            registered.gate.reset(snapshot.symbol)
             _logger.warning(
-                "HorizonSignalEngine: %s gate parse/eval error for %s: %s",
+                "HorizonSignalEngine: %s gate parse/eval error for %s: %s "
+                "— forcing OFF and unwinding any open position",
                 registered.alpha_id,
                 snapshot.symbol,
                 exc,
             )
+            if was_on:
+                self._publish_gate_close(snapshot, registered)
             return
         except (
             ZeroDivisionError,
@@ -441,6 +471,12 @@ class HorizonSignalEngine:
             self._publish_gate_close(snapshot, registered)
             return
         if not on:
+            return
+
+        # Gate is ON.  If the snapshot's required features are not warm or
+        # are stale, suppress a *new* entry (the gate-close exit path above
+        # has already run) — audit P1-7.
+        if entry_blocked:
             return
 
         try:
@@ -577,6 +613,7 @@ class HorizonSignalEngine:
         snapshot: HorizonFeatureSnapshot,
         regime: RegimeState | None,
         sensor_cache: Mapping[tuple[str, str], float],
+        min_discriminability: float = 0.0,
     ) -> Bindings:
         """Promote the snapshot's ``values`` mapping into a gate binding.
 
@@ -619,6 +656,7 @@ class HorizonSignalEngine:
             sensor_values=sensor_values,
             percentiles=percentiles,
             zscores=zscores,
+            min_discriminability=min_discriminability,
         )
 
     def _patch_signal(

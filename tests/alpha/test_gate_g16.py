@@ -35,6 +35,7 @@ from feelies.alpha.layer_validator import (
     StressFamilyEntryProhibitedError,
     TrendMechanismValidationError,
     UnauthorizedMechanismDependencyError,
+    UnbackedSignatureSensorError,
     UnknownTrendMechanismError,
 )
 
@@ -85,6 +86,18 @@ def _signal_spec_with_mechanism(
         ]
     if signal_src is None:
         signal_src = "def evaluate(snapshot, regime, params):\n    return None\n"
+    # G16 rule 10 (audit P1-4): l1_signature_sensors must be a subset of
+    # depends_on_sensors.  Derive depends as a superset of the *registered*
+    # signature sensors (plus the base gate sensors) so happy-path fixtures
+    # satisfy rule 10; unregistered ids (the rule-4 fixtures) are excluded
+    # so rule 4 still fires on them and depends stays G6-clean.
+    sig_ids: set[str] = set()
+    for s in sensors:
+        if isinstance(s, str):
+            sig_ids.add(s)
+        elif isinstance(s, dict) and isinstance(s.get("id"), str):
+            sig_ids.add(s["id"])
+    depends = sorted({sid for sid in sig_ids if sid in _SENSORS} | {"ofi_ewma", "spread_z_30d"})
     return {
         "schema_version": "1.1",
         "layer": "SIGNAL",
@@ -94,7 +107,7 @@ def _signal_spec_with_mechanism(
         "hypothesis": "test hypothesis",
         "falsification_criteria": ["criterion 1"],
         "horizon_seconds": horizon,
-        "depends_on_sensors": ["ofi_ewma", "spread_z_30d"],
+        "depends_on_sensors": depends,
         "regime_gate": {
             "regime_engine": "hmm_3state_fractional",
             "on_condition": "P(normal) > 0.7",
@@ -317,6 +330,15 @@ class TestRule4SensorRegistration:
             "kyle_lambda_60s",
             "imaginary_sensor_42",
         ]
+        # Back both signature sensors with deps so rule 10 (audit P1-4)
+        # does not pre-empt the rule-4 abstention this test isolates;
+        # with the registry unset, depends resolution (G6) also abstains.
+        spec["depends_on_sensors"] = [
+            "kyle_lambda_60s",
+            "imaginary_sensor_42",
+            "ofi_ewma",
+            "spread_z_30d",
+        ]
         validator.validate(spec, source="<test>")
 
     def test_dict_form_with_id_accepted(self) -> None:
@@ -536,6 +558,26 @@ class TestRule7StressEntryProhibited:
             signal_src=signal_src,
         )
         _validator().validate(spec, source="<test>")
+
+
+# ── Rule 10 — l1_signature_sensors ⊆ depends_on_sensors (audit P1-4) ────
+
+
+class TestRule10SignatureBacked:
+    def test_signature_subset_of_depends_accepted(self) -> None:
+        # The fixture derives depends_on_sensors ⊇ l1_signature_sensors, so
+        # a well-formed spec passes rule 10.
+        _validator().validate(_signal_spec_with_mechanism(), source="<test>")
+
+    def test_unbacked_signature_sensor_rejected(self) -> None:
+        # Shrink depends_on_sensors so the KYLE fingerprint sensors are no
+        # longer backed by a dependency — a cosmetic fingerprint.
+        spec = _signal_spec_with_mechanism(
+            sensors=["kyle_lambda_60s", "micro_price", "ofi_ewma"],
+        )
+        spec["depends_on_sensors"] = ["ofi_ewma", "spread_z_30d"]
+        with pytest.raises(UnbackedSignatureSensorError, match="rule 10"):
+            _validator().validate(spec, source="<test>")
 
 
 # ── Rule 8 — PORTFOLIO max_share_of_gross sums to ≥ 1.0 ────────────────

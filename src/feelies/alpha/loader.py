@@ -51,6 +51,7 @@ from feelies.alpha.portfolio_layer_module import (
     _CompiledPortfolioConstructor,
     _DefaultPortfolioConstructor,
     parse_consumes_mechanisms,
+    parse_mechanism_caps,
 )
 from feelies.alpha.signal_layer_module import (
     LoadedSignalLayerModule,
@@ -69,6 +70,11 @@ from feelies.services.regime_engine import RegimeEngine, get_regime_engine
 from feelies.signals.regime_gate import RegimeGate, RegimeGateError
 
 logger = logging.getLogger(__name__)
+
+# §8.5 parameter surface cap — at most this many parameters may declare a
+# ``range:`` (free for optimization).  ``min``/``max`` validation bounds
+# do not count against this cap (audit P1-8).
+_MAX_FREE_OPTIMIZATION_PARAMS: int = 3
 
 # Workstream D.2 retired ``layer: LEGACY_SIGNAL`` from the loader's
 # accepted set; the once-per-process sunset banner and the per-tick
@@ -389,6 +395,15 @@ class AlphaLoader:
             raise AlphaLoadError(f"{source}: {exc}") from exc
 
         regime_engine = self._resolve_regime_engine(spec.get("regimes"), source)
+        # Audit P1-2: validate every ``P(<state>)`` in the gate against the
+        # engine's published ``state_names`` at LOAD time.  Previously a typo
+        # (``P(noraml)``) compiled cleanly and only failed at the first
+        # runtime evaluation as an ``UnknownRegimeStateError`` — and on the
+        # OFF path that error did not even unwind a latched-ON gate (see
+        # P1-1).  Failing loud at boot turns a latent production hazard into
+        # a config error.  Skipped only when no engine is resolvable (the
+        # gate then cannot be name-checked against a taxonomy).
+        self._validate_gate_posterior_states(regime_gate, regime_engine, source)
         namespace = self._build_namespace(alpha_id, regime_engine)
         namespace["HorizonFeatureSnapshot"] = HorizonFeatureSnapshot
         namespace["RegimeState"] = RegimeState
@@ -414,6 +429,10 @@ class AlphaLoader:
             trend_mechanism_block,
             source,
         )
+        # Audit P1-4: cosmetic-fingerprint enforcement (l1_signature_sensors
+        # must be a subset of depends_on_sensors) is now a hard G16 rule 10
+        # in ``LayerValidator._check_g16_signal_rules`` — applied during the
+        # load-time validation pass.
 
         symbols_raw = spec.get("symbols")
         symbols = frozenset(symbols_raw) if symbols_raw is not None else None
@@ -514,6 +533,7 @@ class AlphaLoader:
         )
         try:
             consumes = parse_consumes_mechanisms(consumes_raw)
+            mechanism_caps = parse_mechanism_caps(consumes_raw)
         except ValueError as exc:
             raise AlphaLoadError(f"{source}: {exc}") from exc
 
@@ -544,6 +564,8 @@ class AlphaLoader:
                 engine_thunk=lambda: None,
                 strategy_id=alpha_id,
                 feeder_strategy_ids=depends_on_signals,
+                mechanism_caps=mechanism_caps,
+                global_mechanism_cap=max_share_of_gross,
             )
 
         risk_budget_raw = spec.get("risk_budget", {}) or {}
@@ -580,6 +602,7 @@ class AlphaLoader:
             horizon_seconds=horizon_seconds,
             consumes_mechanisms=consumes,
             max_share_of_gross=max_share_of_gross,
+            mechanism_caps=mechanism_caps,
             factor_neutralization_disclosed=bool(spec.get("factor_neutralization", False)),
             depends_on_signals=depends_on_signals,
             params=params,
@@ -1201,6 +1224,7 @@ class AlphaLoader:
 
     def _parse_parameters(self, params_raw: dict[str, Any], source: str) -> list[ParameterDef]:
         defs: list[ParameterDef] = []
+        free_optimization_params: list[str] = []
         for name, pspec in params_raw.items():
             if not isinstance(pspec, dict):
                 raise AlphaLoadError(
@@ -1214,14 +1238,52 @@ class AlphaLoader:
             param_range = (
                 (float(range_raw[0]), float(range_raw[1])) if range_raw is not None else None
             )
-            defs.append(
-                ParameterDef(
-                    name=name,
-                    param_type=param_type,
-                    default=default,
-                    range=param_range,
-                    description=str(pspec.get("description", "")),
+            if param_range is not None:
+                free_optimization_params.append(name)
+            # Audit P1-8: ``min``/``max`` were parsed into nothing and
+            # silently ignored.  Map them to an enforced validation
+            # envelope (``bounds``) — distinct from ``range`` so they do
+            # not count as free-optimization knobs against the §8.5 cap.
+            min_raw = pspec.get("min")
+            max_raw = pspec.get("max")
+            param_bounds: tuple[float, float] | None = None
+            if min_raw is not None or max_raw is not None:
+                lo = float(min_raw) if min_raw is not None else float("-inf")
+                hi = float(max_raw) if max_raw is not None else float("inf")
+                if lo > hi:
+                    raise AlphaLoadError(
+                        f"{source}: parameter '{name}' has min ({lo}) > max ({hi})"
+                    )
+                param_bounds = (lo, hi)
+            pdef = ParameterDef(
+                name=name,
+                param_type=param_type,
+                default=default,
+                range=param_range,
+                bounds=param_bounds,
+                description=str(pspec.get("description", "")),
+            )
+            # Reject specs whose own declared default violates its bounds
+            # so the envelope can be trusted by downstream override checks.
+            default_errors = pdef.validate_value(default)
+            if default_errors:
+                raise AlphaLoadError(
+                    f"{source}: parameter '{name}' default is invalid: "
+                    + "; ".join(default_errors)
                 )
+            defs.append(pdef)
+
+        # §8.5 parameter surface cap (docs/three_layer_architecture.md):
+        # at most 3 parameters declared free for optimization (``range:``).
+        # ``min``/``max``-bounded parameters are unlimited.
+        if len(free_optimization_params) > _MAX_FREE_OPTIMIZATION_PARAMS:
+            raise AlphaLoadError(
+                f"{source}: §8.5 parameter surface cap exceeded — "
+                f"{len(free_optimization_params)} parameters declare a "
+                f"'range:' (free for optimization); max is "
+                f"{_MAX_FREE_OPTIMIZATION_PARAMS}. Offenders: "
+                f"{free_optimization_params}. Use 'min'/'max' for "
+                f"validation bounds that do not count against the cap."
             )
         return defs
 
@@ -1252,6 +1314,32 @@ class AlphaLoader:
         return params
 
     # ── Regime engine resolution ──────────────────────────────
+
+    @staticmethod
+    def _validate_gate_posterior_states(
+        regime_gate: RegimeGate,
+        regime_engine: RegimeEngine | None,
+        source: str,
+    ) -> None:
+        """Reject ``P(<state>)`` references to names the engine cannot emit.
+
+        Audit P1-2.  No-op when no engine is resolvable (the gate's state
+        names cannot be checked against any taxonomy in that case).
+        """
+        if regime_engine is None:
+            return
+        referenced = regime_gate.referenced_posterior_states()
+        if not referenced:
+            return
+        known = frozenset(regime_engine.state_names)
+        unknown = sorted(referenced - known)
+        if unknown:
+            raise AlphaLoadError(
+                f"{source}: regime_gate references unknown regime state(s) "
+                f"{unknown} in P(...); engine {type(regime_engine).__name__} "
+                f"publishes state_names {sorted(known)}.  Fix the spelling "
+                f"in on_condition/off_condition or align the engine taxonomy."
+            )
 
     def _resolve_regime_engine(
         self,

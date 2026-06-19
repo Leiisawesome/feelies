@@ -173,6 +173,17 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Skip parquet emission even when pyarrow is installed.",
     )
+    parser.add_argument(
+        "--as-of-ns",
+        type=int,
+        default=None,
+        help=(
+            "Optional content-embedded freshness anchor (ns since epoch). When set, "
+            "emits a `_meta.as_of_ns` block so the bootstrap freshness check uses a "
+            "reproducible timestamp instead of the file mtime (audit P1-4). Omitted by "
+            "default so the committed fixture stays byte-identical across reruns."
+        ),
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -183,9 +194,13 @@ def main(argv: list[str] | None = None) -> int:
     loadings = build_loadings()
     sector_map = build_sector_map()
 
+    loadings_payload: dict[str, object] = dict(loadings)
+    if args.as_of_ns is not None:
+        loadings_payload["_meta"] = {"as_of_ns": int(args.as_of_ns)}
+
     write_json(
         args.output_root / "factor_loadings" / "loadings.json",
-        loadings,
+        loadings_payload,
     )
     write_json(
         args.output_root / "sector_map" / "sector_map.json",

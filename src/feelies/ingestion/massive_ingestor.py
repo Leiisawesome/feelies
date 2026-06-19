@@ -205,6 +205,21 @@ class MassiveHistoricalIngestor:
         total_pages = 0
         completed_symbols: set[str] = set()
 
+        # Multi-symbol ingest accumulates each symbol's full-session batches into
+        # an order-tolerant scratch log: consecutive symbols carry overlapping
+        # exchange-timestamp ranges, so appending them straight into the strict
+        # destination log would raise ``CausalityViolation`` on the second symbol
+        # before the global resequence below ever ran (audit ING-10).  Order is
+        # imposed once, at the end, via ``resequence_event_list`` +
+        # ``replace_events``.  Single-symbol ingest writes straight to the
+        # destination and keeps the strict guard.
+        multi_symbol = len(symbols) > 1
+        from feelies.storage.memory_event_log import InMemoryEventLog
+
+        accumulate_log: EventLog = (
+            InMemoryEventLog(enforce_market_order=False) if multi_symbol else self._event_log
+        )
+
         for symbol in symbols:
             q_done = self._checkpoint.is_done(symbol, "quotes")
             t_done = self._checkpoint.is_done(symbol, "trades")
@@ -226,6 +241,7 @@ class MassiveHistoricalIngestor:
                 start_date,
                 end_date,
                 on_page=on_page,
+                target_log=accumulate_log if multi_symbol else None,
             )
             total_events += ev_count
             total_pages += pg_count
@@ -242,12 +258,8 @@ class MassiveHistoricalIngestor:
             1 for h in health.values() if h in (DataHealth.GAP_DETECTED, DataHealth.CORRUPTED)
         )
 
-        if len(symbols) > 1:
-            from feelies.storage.event_resequence import resequence_event_list
-
-            merged_raw = [e for e in self._event_log.replay() if isinstance(e, (NBBOQuote, Trade))]
-            sorted_events = resequence_event_list(merged_raw)
-            self._event_log.replace_events(sorted_events)
+        if multi_symbol:
+            self._finalize_multi_symbol_merge(accumulate_log)
 
         return IngestResult(
             events_ingested=total_events,
@@ -256,6 +268,34 @@ class MassiveHistoricalIngestor:
             duplicates_filtered=self._normalizer.duplicates_filtered,
             symbols_completed=frozenset(completed_symbols),
         )
+
+    def _finalize_multi_symbol_merge(self, scratch: EventLog) -> None:
+        """Merge-sort the destination + scratch market events back into the log.
+
+        Reads market events from **both** the existing destination
+        ``self._event_log`` *and* the order-tolerant ``scratch`` log, then
+        ``resequence_event_list`` + ``replace_events`` once.  Reading the
+        destination too is load-bearing (audit ING-10 follow-up):
+
+        * a non-empty destination prior to a multi-symbol ingest must not be
+          silently dropped, and
+        * a run that checkpoint-skips every symbol leaves ``scratch`` empty —
+          merging the destination back in means ``replace_events`` re-writes the
+          prior data instead of clearing it (``replace_events([])`` would wipe
+          the log, trading the ING-10 crash for silent data loss).
+
+        Both logs are materialized into the list *before* ``replace_events``
+        mutates the destination, so reading and replacing the same log is safe.
+        """
+        from feelies.storage.event_resequence import resequence_event_list
+
+        merged_raw: list[NBBOQuote | Trade] = []
+        for src_log in (self._event_log, scratch):
+            merged_raw.extend(
+                e for e in src_log.replay() if isinstance(e, (NBBOQuote, Trade))
+            )
+        sorted_events = resequence_event_list(merged_raw)
+        self._event_log.replace_events(sorted_events)
 
     # ── Parallel download + merge-sort ─────────────────────────────
 
@@ -267,11 +307,21 @@ class MassiveHistoricalIngestor:
         end_date: str,
         *,
         on_page: Callable[[str, int, int, float], None] | None = None,
+        target_log: EventLog | None = None,
     ) -> tuple[int, int]:
         """Download quotes + trades in parallel, merge-sort, normalize sequentially.
 
         Returns (events_ingested, pages_processed).
+
+        ``target_log`` overrides the destination for this symbol's batches
+        (defaults to ``self._event_log``).  The multi-symbol :meth:`ingest`
+        path passes an order-tolerant scratch log here so per-symbol batches
+        (each a full session, whose timestamps overlap the previous symbol's)
+        can accumulate without tripping the shared log's cross-symbol
+        monotonicity guard; final order is imposed once by
+        ``resequence_event_list`` + ``replace_events`` (audit ING-10).
         """
+        dest = target_log if target_log is not None else self._event_log
         _lock: threading.Lock = threading.Lock()
         _t0: float = time.monotonic()
 
@@ -356,11 +406,21 @@ class MassiveHistoricalIngestor:
 
         merged = raw_quotes + raw_trades
         del raw_quotes, raw_trades  # free the two intermediate copies before processing
+        # Sort key MUST mirror the canonical ``event_merge_sort_key``
+        # ``(exchange_timestamp_ns, symbol, type_rank, sequence)`` — within a
+        # single-symbol ingest ``symbol`` is constant, so the alignment reduces
+        # to ``(sip_timestamp, type_rank, sequence_number)``: quotes (rank 0)
+        # sort before trades (rank 1) at equal timestamps, *then* by vendor
+        # sequence.  Earlier code ordered ``sequence_number`` ahead of
+        # ``type_rank``, which disagreed with the per-chunk stabilization in
+        # ``InMemoryEventLog`` and could raise a spurious ``CausalityViolation``
+        # when a run of same-ns quote/trade rows straddled a 5 000-row chunk
+        # boundary (audit ING-02).
         merged.sort(
             key=lambda d: (
                 d.get("sip_timestamp", 0),
-                d.get("sequence_number", 0),
                 d.get("__type_rank__", 0),
+                d.get("sequence_number", 0),
             )
         )
 
@@ -374,12 +434,12 @@ class MassiveHistoricalIngestor:
             events = self._normalizer.on_message(raw, received_ns, "massive_rest")
             chunk.extend(events)
             if len(chunk) >= _CHUNK_SIZE:
-                self._event_log.append_batch(chunk)
+                dest.append_batch(chunk)
                 total_events_local += len(chunk)
                 chunk = []
 
         if chunk:
-            self._event_log.append_batch(chunk)
+            dest.append_batch(chunk)
             total_events_local += len(chunk)
 
         self._checkpoint.mark_done(symbol, "quotes")

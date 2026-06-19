@@ -3,26 +3,42 @@
 **Scope:** raw vendor messages → `MassiveNormalizer` → `EventLog` → `ReplayFeed`
 → orchestrator `_process_tick` / `_process_trade`. Storage (`EventLog`,
 `DiskEventCache`, `cache_replay`, resequencing) and live feed (`MassiveLiveFeed`).
-**Mode:** read-only, evidence-based. No fixes applied.
+**Mode:** evidence-based audit (§2–§10 read-only as-found); findings since
+remediated and second-pass-verified — current status in §1 / §11.
 **Auditor:** quantitative systems / data-pipeline audit pass.
 **Verdict:** **No P0 found.** Ingestion is rigorous: typed boundary, complete
 fingerprints, fail-safe cache, deterministic resequence, BT-17 latency wiring,
 and anti-lookahead guards on the replay path are all present and tested. The
-sharpest issues are a **P1 live-parity/robustness gap** (the replay-grade
-EventLog ordering guard is applied to arrival-ordered live appends) and a
-**P1 latent sort-key inconsistency** in the single-symbol ingest path.
+sharpest issues — a **P1 live-parity/robustness gap** (the replay-grade EventLog
+ordering guard applied to arrival-ordered live appends) and a **P1 latent
+sort-key inconsistency** in the single-symbol ingest path — are now fixed, along
+with a second-pass **P2 multi-symbol ingest crash** (ING-10).
+
+> Sections 2–10 preserve the original as-found audit (present tense, P1s open).
+> §1 (remediation status) and §11 (second-pass review) record the current,
+> remediated state.
 
 ---
 
 ## 1. Remediation status
 
-Read-only audit — no code changes made. No trivial doc fixes applied (skill/doc
-drift is catalogued in §2 / Findings rather than edited, to keep this pass
-non-mutating).
+Original audit was read-only. Findings ING-01…ING-09 were remediated per the §10
+roadmap. A **second pass** (2026-06-11) re-verified those fixes against the code
+and surfaced one additional latent defect, **ING-10**, also fixed. See §11 for
+the second-pass write-up.
 
-| ID | Status | Commit |
-|----|--------|--------|
-| — | (none — read-only) | — |
+| ID | Sev | Status | Resolution |
+|----|-----|--------|------------|
+| ING-01 | P1 | **Fixed** | `InMemoryEventLog(enforce_market_order=…)`; bootstrap relaxes the guard for PAPER/LIVE logs (arrival order) while ingest/replay stay strict. Tests: `test_memory_event_log.py` (relaxed-accepts / forensic-resequencable / strict-default). |
+| ING-02 | P1 | **Fixed** | Ingest raw pre-sort realigned to `(sip_timestamp, type_rank, sequence_number)` = canonical key. Test: `test_massive_ingestor.py::test_same_ns_quote_trade_run_across_chunk_boundary`. |
+| ING-03 | P2 | **Fixed (doc)** | Explicit backtest-vs-live health-gate parity note added to the data-engineering skill. |
+| ING-04 | P2 | **Fixed** | `DiskEventCache(clock=…)` injectable `created_at`; `normalizer_version` added to manifest (Inv-13). |
+| ING-05 | P2 | **Fixed** | Concrete `JsonLineEventSerializer` + shared `event_to_dict`/`dict_to_event` codec in `core/serialization.py`; disk cache routed through it. Tests: `tests/core/test_serialization.py`. |
+| ING-06 | P2 | **Fixed (doc)** | Data-engineering "Storage Design" / "Recovery & Replay" reconciled with Inv-1 (no raw-vendor log). |
+| ING-07 | P2 | **No-op** | Both skills already describe the global resequence correctly — no stale text to fix. |
+| ING-08 | P2 | **Acknowledged** | All-or-nothing `enable_rest_sequence_gap_detection` is documented at the call site; no behavior change. |
+| ING-09 | P2 | **Fixed** | 3 vendor-SDK tests gated behind `_requires_massive` skip; new REST↔WS field-parity test `tests/ingestion/test_rest_ws_parity.py`. |
+| ING-10 | P2 | **Fixed (2nd pass)** | Multi-symbol `MassiveHistoricalIngestor.ingest()` crashed with `CausalityViolation` on the 2nd overlapping symbol *before* its own resequence ran. Now accumulates per-symbol batches into an order-tolerant scratch log, then resequences once. Tests: `test_massive_ingestor.py::test_multi_symbol_overlapping_timestamps_via_scratch_log` + strict-rejection guard-rail. |
 
 ---
 
@@ -160,8 +176,8 @@ non-mutating).
 | Invariant | Verdict | Evidence |
 |-----------|---------|----------|
 | **Inv-5 — Deterministic replay** | **PASS** | `resequence_event_list` assigns contiguous `sequence` + deterministic `correlation_id` (`event_resequence.py:44-62`); `replay()` is sequence-ordered (`memory_event_log.py:105-124`); cache round-trips Decimal→str and tuple→list losslessly (`disk_event_cache.py:57-107`); `tests/determinism/*` parity hashes depend on this order; `tests/storage/test_event_resequence.py` locks order-independence. |
-| **Inv-6 — Causality** | **PASS (replay) / PARTIAL (live)** | Replay: `ReplayFeed.events()` raises `CausalityViolation` on backward merge-key (`replay_feed.py:90-99`); `InMemoryEventLog._enforce_market_order` defends at insert (`memory_event_log.py:92-103`); BT-17 visibility-time gating (`replay_feed.py:100-108`); `tests/causality/test_anti_lookahead.py` (7 cases incl. fill-at-T immune to appended future quote, boundary snapshot excludes early-processed future reading). Live: the same guard is mis-applied to arrival order (Finding ING-01). |
-| **Inv-9 — Backtest/live parity** | **PARTIAL** | Same `_process_tick`/`_process_trade` for all modes; `_events_prelogged` cleanly avoids double-append on replay (`orchestrator.py:1311`). Gaps: (a) backtest `normalizer=None` ⇒ DataHealth gate inert vs live (Finding ING-03); (b) M1 append guard asymmetry (Finding ING-01); (c) `received_ns` semantics differ by clock (documented in skill Inv-4). |
+| **Inv-6 — Causality** | **PASS** *(was PARTIAL-live; ING-01 fixed)* | Replay: `ReplayFeed.events()` raises `CausalityViolation` on backward merge-key (`replay_feed.py:90-99`); `InMemoryEventLog._enforce_market_order` defends at insert for ingest/replay logs (`memory_event_log.py:92-103`); BT-17 visibility-time gating (`replay_feed.py:100-108`); `tests/causality/test_anti_lookahead.py`. Live: arrival-ordered logs are now relaxed (`enforce_market_order=False`) and re-imposed to canonical order via `resequence_event_list` at forensic-replay time — verified no production path replays a live log directly (ReplayFeed is only built over the backtest log; regime-calibration reads an empty log at PAPER boot). |
+| **Inv-9 — Backtest/live parity** | **PARTIAL → improved** | Same `_process_tick`/`_process_trade` for all modes; `_events_prelogged` cleanly avoids double-append on replay (`orchestrator.py:1311`); M1 append-guard asymmetry resolved (ING-01); REST↔WS field parity now test-locked (`test_rest_ws_parity.py`). Remaining (by design): (a) backtest `normalizer=None` ⇒ DataHealth gate inert vs live (Finding ING-03, documented); (b) `received_ns` semantics differ by clock (documented in skill Inv-4). |
 | **Inv-10 — Clock abstraction** | **PASS (1 carve-out)** | Normalizer uses injected `Clock` for `received_ns` and the ts-range heuristic (`massive_normalizer.py:757`); ReplayFeed/routers use `SimulatedClock`; no `datetime.now()`/`time.time()` in core paths. Carve-out: cache `created_at` via `time.gmtime()` (`disk_event_cache.py:270`, Finding ING-04) — provenance only. |
 | **Inv-11 — Fail-safe default** | **PASS** | Cache `load()` returns `None` on unreadable manifest, schema mismatch, checksum mismatch, deserialize error, or count mismatch → caller falls through to API (`disk_event_cache.py:149-219`); `CORRUPTED` is terminal → macro DEGRADED + force-flatten (`orchestrator.py:5995-6010`); WS overflow drops with counter, never blocks reader (`massive_ws.py:388-396`); partial REST pagination refuses checkpoint + refuses to normalize (`massive_ingestor.py:330-341`); oversized/recursive frames dropped pre-`json.loads` (`massive_normalizer.py:313-326`). |
 | **Inv-13 — Provenance** | **PARTIAL** | `correlation_id` + internal `sequence` assigned at boundary (`massive_normalizer.py:461,529,643,707`); manifest persists source/health/checksum/schema_hash/counts/created_at (`disk_event_cache.py:262-273`); `IngestDayMeta` carries source+health (`cache_replay.py:34-43`). Gaps: no raw vendor log (Finding ING-06); `EventSerializer` unimplemented (Finding ING-05); manifest lacks a normalizer/code version tag beyond the dataclass-derived `event_schema_hash`. |
@@ -181,6 +197,7 @@ non-mutating).
 | ING-07 | P2 | S | skills | Stale "no global multi-symbol sort" risk in skills; code resequences globally | `backtest_runner.py:424`; `cache_replay.py:125` | Update both skills to mark the risk resolved and cite the resequence call sites | n/a (doc) |
 | ING-08 | P2 | S | massive_normalizer | `enable_rest_sequence_gap_detection` toggles gap detection for **both** quote and trade channels globally; no per-channel granularity for partially-contiguous REST feeds | `massive_normalizer.py:640-641,703-704` | Acceptable as documented; note the all-or-nothing semantics | No |
 | ING-09 | INFO | S | tests / env | 3 `test_massive_ingestor.py` cases fail only because `massive` SDK absent (they patch `massive.RESTClient`) | run log §9 | Mark these `@pytest.mark.massive` / skip-if-absent so a clean checkout reports green without the vendor extra | n/a |
+| ING-10 | **P2** | S | massive_ingestor | **(2nd pass)** Multi-symbol `ingest()` appends each symbol's full-session batch to the *shared strict* log; the 2nd symbol's overlapping timestamps raise `CausalityViolation` **before** the `len(symbols)>1` resequence at `:245-250` can run. Unreachable via the harness (always single-symbol, `backtest_runner.py:385`) but a real bug in a public method | `massive_ingestor.py:245-250` (pre-fix); shared-log append in `ingest_symbol_parallel` | Accumulate per-symbol into an order-tolerant scratch log, resequence + `replace_events` once (fixed) | **Yes** (added) |
 
 ---
 
@@ -316,10 +333,11 @@ include the network-backed `test_massive_functional.py` (no `MASSIVE_API_KEY`).
 | Halt on/off (BT-5) DataHealth | Covered | `test_data_integrity.py` |
 | Anti-lookahead (fill-at-T, prefix-ack, SSR/halt future) | Covered | `test_anti_lookahead.py:161-437` |
 | Determinism / parity hashes vs event order | Covered | `tests/determinism/*` (e.g. `test_signal_replay.py`, `test_sensor_reading_replay.py`) |
-| **Live/paper multi-symbol arrival-order append** | **Missing** | — (Finding ING-01) |
-| **Single-symbol >5000 same-ns chunk boundary** | **Missing** | — (Finding ING-02) |
-| **REST↔WS field parity (same logical event)** | **Partial** | per-side parse tested; no cross-source equivalence assertion |
-| **EventSerializer bit-equality** | **Missing** | functional round-trip only |
+| Live/paper relaxed arrival-order append + forensic resequence | **Covered** *(added)* | `test_memory_event_log.py::test_relaxed_append_*` / `test_strict_is_default_and_still_rejects` |
+| Single-symbol same-ns chunk boundary | **Covered** *(added)* | `test_massive_ingestor.py::test_same_ns_quote_trade_run_across_chunk_boundary` |
+| Multi-symbol overlapping-timestamp ingest (ING-10) | **Covered** *(added)* | `test_massive_ingestor.py::test_multi_symbol_overlapping_timestamps_via_scratch_log` + strict guard-rail |
+| REST↔WS field parity (same logical event) | **Covered** *(added)* | `tests/ingestion/test_rest_ws_parity.py` (quote + trade) |
+| EventSerializer bit-equality | **Covered** *(added)* | `tests/core/test_serialization.py::TestJsonLineEventSerializer` |
 
 **Determinism sensitivity:** the `tests/determinism/*` parity hashes are
 ordering-sensitive by construction (they lock sequence allocation + emission
@@ -392,3 +410,93 @@ auto-rebaselined.
 - **B1-B6** see §7. **C1-C5** see §7 + BT-17 (default latency is 20 ms md / 50 ms
   fill via `PlatformConfig`, not 0 — the `0` is only the bare constructor default;
   bootstrap always threads config). **D1-D6 / E1-E4 / F1-F3** see §6/§8.
+
+---
+
+## 11. Second-pass review (2026-06-11)
+
+A fresh adversarial pass re-examined the layer *after* the ING-01…ING-09 fixes,
+focusing on (a) whether the fixes are complete and don't displace the failure
+elsewhere, and (b) paths the first pass treated lightly.
+
+### 11.1 New finding — ING-10 (multi-symbol ingest crash), fixed
+
+`MassiveHistoricalIngestor.ingest()` is built to support multiple symbols: it
+loops `ingest_symbol_parallel` per symbol then, for `len(symbols) > 1`,
+merge-sorts the whole log via `resequence_event_list` + `replace_events`
+(`massive_ingestor.py:245-250`). But each `ingest_symbol_parallel` appends that
+symbol's *full-session* batches straight into the **shared strict** event log.
+Symbol 2's session timestamps overlap symbol 1's, so the first batch of symbol 2
+carries an `event_merge_sort_key` *below* symbol 1's last key →
+`InMemoryEventLog._enforce_market_order` raises `CausalityViolation` **before**
+the global resequence is ever reached. The intended multi-symbol code path is
+therefore dead on arrival for any real (same-day) symbol set.
+
+- **Reachability:** not reachable via shipped entry points — the backtest
+  harness always ingests one symbol per call (`backtest_runner.py:385`
+  `ingestor.ingest([symbol], day, day)`), and `ingest()` itself requires the
+  `massive` SDK. So this is a latent defect in a public method, not a live
+  regression. Severity **P2** (fail-safe crash, unreachable in current wiring).
+- **Fix:** multi-symbol ingest now accumulates into an order-tolerant scratch
+  `InMemoryEventLog(enforce_market_order=False)` (reusing the ING-01 capability),
+  then `resequence_event_list` + `replace_events` into the destination once.
+  `ingest_symbol_parallel` gained an optional `target_log` parameter (defaults to
+  `self._event_log`, so single-symbol behavior and existing callers are
+  unchanged). Single-symbol ingest keeps the strict guard end-to-end.
+- **Tests:** `test_multi_symbol_overlapping_timestamps_via_scratch_log` (no crash
+  + globally-ordered after resequence) and
+  `test_strict_scratch_would_reject_overlapping_second_symbol` (guard-rail proving
+  the strict path *would* crash — the reason the scratch log is required).
+
+### 11.2 Verification of the prior fixes
+
+- **ING-01 does not displace the crash.** The relaxed live log is a faithful
+  arrival-order audit record. Confirmed: (1) `ReplayFeed` is only ever built over
+  the *backtest* log (`backtest_backend.py:53,115`), never a live log; (2) the
+  only orchestrator `self._event_log.replay()` consumer is regime-calibration at
+  boot (`orchestrator.py:3128-3131`), which reads an **empty** log in PAPER/LIVE
+  (calibration runs before live data arrives) and otherwise uses the precomputed
+  prefix; (3) `replay()` uses `bisect` on `.sequence`, and live sequences are
+  monotonic by arrival (single `SequenceGenerator`, FIFO queue), so the relaxed
+  log is still sequence-sorted and replayable. The canonical PAPER entry point
+  `scripts/run_paper.py:212` calls `build_platform(config)` with no `event_log`,
+  so the PAPER-mode relaxation applies as intended.
+- **ING-05 preserves fail-safe + format.** On-disk bytes are unchanged
+  (`event_to_dict` / `json.dumps(..., default=str)` identical), so existing caches
+  still validate by checksum and load. `deserialize` raises `ValueError` on
+  corrupt bytes, which the cache's broad `except` still converts to a cache miss →
+  API fallback (Inv-11 intact). `dict_to_event` now copies its input instead of
+  mutating it (minor robustness gain). Round-trip + bit-determinism are test-locked.
+- **ING-04 is honest.** `created_at` is now produced by `_created_at_utc()`: when
+  a `Clock` is injected the stamp derives from it (no hidden wall read); the
+  default remains UTC wall time for human-readable provenance — i.e. the wall
+  read is now an explicit, overridable seam, not a buried `time.gmtime()`.
+  `normalizer_version` is provenance-only and deliberately *not* part of the
+  schema-hash invalidation path (`_CACHE_SEMANTIC_VERSION` keeps that role).
+
+### 11.3 Items re-checked and cleared (no action)
+
+- **Dedup window:** `_reject_sequence_reuse` only compares the immediately
+  previous vendor sequence per `(symbol, feed)`, so a non-consecutive
+  duplicate is not filtered. This matches the skill's documented "same-sequence
+  replay" contract and is not a correctness defect (no silent wrong data).
+- **WS timestamp range guard** (`_WALL_CLOCK_HEURISTIC_NS = 2e17`): live
+  `WallClock` (~1.7e18 in 2024+) activates the 30-day/1-hour window; small
+  `SimulatedClock` counters keep it inert. Correct for both regimes.
+- **`smoke_pipeline.py`** passes a pre-populated `event_log` into
+  `build_platform` — but in a replay/backtest context (prelogged), where the
+  strict guard is correct. Not a PAPER/LIVE live-append path.
+
+### 11.4 Second-pass test status
+
+```
+uv run --extra dev pytest tests/ingestion/ tests/storage/ \
+  tests/causality/test_anti_lookahead.py tests/core/test_serialization.py -q
+→ 201 passed, 21 skipped
+```
+
+`mypy --strict` clean on all changed `src/` modules (the lone
+`massive_ingestor.py:38` `import-not-found` is the absent-vendor-SDK environment
+artifact, unchanged by this work). Ordering-sensitive `tests/determinism/*_replay`
+parity tests unaffected (29 passed). Pre-existing `tests/determinism/test_emit_*`
+collection errors are an absent `ibapi` SDK artifact, independent of this layer.

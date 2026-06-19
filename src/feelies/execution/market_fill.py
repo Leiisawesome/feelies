@@ -137,6 +137,50 @@ def to_decimal(value: Decimal | int | str | float, name: str) -> Decimal:
     raise TypeError(f"{name} must be Decimal | int | str | float, got {type(value).__name__}")
 
 
+def base_impact_premium(
+    *,
+    quantity: int,
+    available_depth: int,
+    raw_half_spread: Decimal,
+    within_l1_impact_factor: Decimal,
+    permanent_impact_coefficient: Decimal,
+) -> Decimal:
+    """Participation-based impact premium charged on the *within-L1* leg.
+
+    Audit 2026-06-19 (P1.3 + P2.11): the legacy model charged market impact
+    only on the *excess* above displayed L1 depth, so any order sized at or
+    below the touch filled at the pure cross with zero impact.  This premium
+    closes that gap with two additive, default-off terms (both measured in
+    half-spread units, so they vanish when their coefficients are 0):
+
+    * **Temporary (linear in participation):**
+      ``within_l1_impact_factor × min(qty/depth, 1) × half_spread``.
+    * **Permanent (square-root law):**
+      ``permanent_impact_coefficient × sqrt(qty/depth) × half_spread``.
+
+    ``Decimal.sqrt`` is correctly-rounded and platform-independent (unlike
+    ``math.sqrt``), so replay stays bit-identical (Inv-5).
+    """
+    if available_depth <= 0 or quantity <= 0:
+        return Decimal("0")
+    if within_l1_impact_factor <= 0 and permanent_impact_coefficient <= 0:
+        return Decimal("0")
+    participation = Decimal(quantity) / Decimal(available_depth)
+    capped = participation if participation < Decimal("1") else Decimal("1")
+    temporary = within_l1_impact_factor * capped * raw_half_spread
+    permanent = permanent_impact_coefficient * participation.sqrt() * raw_half_spread
+    return temporary + permanent
+
+
+def _apply_premium(side: Side, cross: Decimal, premium: Decimal) -> Decimal:
+    """Move ``cross`` against the taker by ``premium`` (BUY up, SELL down)."""
+    if premium <= 0:
+        return cross
+    if side == Side.BUY:
+        return cross + premium
+    return max(cross - premium, Decimal("0.01"))
+
+
 def append_market_fill_acks(
     pending_acks: list[OrderAck],
     ack_seq: SequenceGenerator,
@@ -148,11 +192,21 @@ def append_market_fill_acks(
     market_impact_factor: Decimal,
     max_impact_half_spreads: Decimal,
     stop_slippage_half_spreads: Decimal = Decimal("1"),
+    within_l1_impact_factor: Decimal = Decimal("0"),
+    permanent_impact_coefficient: Decimal = Decimal("0"),
+    stop_depth_depletion_factor: Decimal = Decimal("1"),
 ) -> None:
     """Append FILLED / PARTIALLY_FILLED acks for a MARKET-style fill at L1.
 
     Caller must ensure the quote is non-crossed and L1 depth on the relevant
     side is strictly positive.
+
+    ``within_l1_impact_factor`` / ``permanent_impact_coefficient`` (audit
+    P1.3 / P2.11) add participation-based impact to the within-L1 leg (see
+    :func:`base_impact_premium`); both default 0 (legacy: impact only on the
+    excess-over-L1 leg).  ``stop_depth_depletion_factor`` (audit P2.9, default
+    1.0) shrinks the effective L1 depth a forced exit fills against, so a
+    stop / hazard / force-flatten walks deeper into a depleted book.
     """
     limit_px = request.limit_price
     if limit_px is not None:
@@ -168,15 +222,6 @@ def append_market_fill_acks(
     # spread_cost fee).  ``half_spread`` is still used to *size* the
     # walk-the-book impact below, which is measured in half-spread units.
     cross = quote.ask if request.side == Side.BUY else quote.bid
-    # Snap first, then clamp: ``snap_fill_price`` ceils BUY / floors SELL,
-    # which can push a clamped sub-tick price *across* the limit.  Snapping
-    # before clamping ensures the final price is bounded by the on-grid
-    # ``limit_px`` (BT-14 limit-violation guard).
-    fill_price = _clamp_fill_price_to_limit(
-        request.side,
-        snap_fill_price(request.side, cross),
-        limit_px,
-    )
     raw_half_spread = (quote.ask - quote.bid) / Decimal("2")
     is_stop_exit = request.reason in STOP_EXIT_REASONS
     if is_stop_exit and stop_slippage_half_spreads > Decimal("1"):
@@ -184,7 +229,32 @@ def append_market_fill_acks(
     else:
         fee_half_spread = Decimal("0")
 
-    available_depth = quote.ask_size if request.side == Side.BUY else quote.bid_size
+    l1_depth = quote.ask_size if request.side == Side.BUY else quote.bid_size
+    # P2.9: a forced exit fills into a depleted book — shrink the effective
+    # L1 depth so more of the order walks the book (and the participation
+    # ratio rises).  Default factor 1.0 is an exact no-op.
+    available_depth = l1_depth
+    if is_stop_exit and stop_depth_depletion_factor > Decimal("1"):
+        depleted = int(Decimal(l1_depth) / stop_depth_depletion_factor)
+        available_depth = max(1, depleted)
+
+    # P1.3 / P2.11: participation impact charged on the within-L1 leg.
+    within_premium = base_impact_premium(
+        quantity=request.quantity,
+        available_depth=available_depth,
+        raw_half_spread=raw_half_spread,
+        within_l1_impact_factor=within_l1_impact_factor,
+        permanent_impact_coefficient=permanent_impact_coefficient,
+    )
+    # Snap first, then clamp: ``snap_fill_price`` ceils BUY / floors SELL,
+    # which can push a clamped sub-tick price *across* the limit.  Snapping
+    # before clamping ensures the final price is bounded by the on-grid
+    # ``limit_px`` (BT-14 limit-violation guard).
+    fill_price = _clamp_fill_price_to_limit(
+        request.side,
+        snap_fill_price(request.side, _apply_premium(request.side, cross, within_premium)),
+        limit_px,
+    )
 
     if request.quantity > available_depth:
         partial_qty = available_depth
@@ -223,12 +293,10 @@ def append_market_fill_acks(
         )
         impact_cap = max_impact_half_spreads * raw_half_spread
         impact = min(raw_impact, impact_cap)
-        # Walk-the-book impact stacks on top of the cross (above the ask
-        # for buys, below the bid for sells).
-        if request.side == Side.BUY:
-            raw_impact_px = cross + impact
-        else:
-            raw_impact_px = max(cross - impact, Decimal("0.01"))
+        # Walk-the-book impact stacks on top of the cross plus the within-L1
+        # participation premium (above the ask for buys, below the bid for
+        # sells).
+        raw_impact_px = _apply_premium(request.side, cross, within_premium + impact)
         impact_price = _clamp_fill_price_to_limit(
             request.side,
             snap_fill_price(request.side, raw_impact_px),

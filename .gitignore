@@ -1,5 +1,6 @@
 venv/
 .venv/
+*_cache/
 __pycache__/
 *.pyc
 .env
@@ -21,3 +22,6 @@ runs/
 
 # Editor-local settings
 .vscode/
+
+# Local Windows Cursor/VS Code binary bundle
+code-win/

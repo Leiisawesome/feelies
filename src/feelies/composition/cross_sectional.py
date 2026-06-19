@@ -152,6 +152,9 @@ class CrossSectionalRanker:
         ctx: CrossSectionalContext,
         *,
         feeder_strategy_ids: tuple[str, ...] = (),
+        mechanism_caps: Mapping[TrendMechanism, float] | None = None,
+        global_mechanism_cap: float | None = None,
+        decay_weighting_enabled: bool | None = None,
     ) -> RankResult:
         """Rank ``ctx``; return :class:`RankResult`.
 
@@ -160,12 +163,57 @@ class CrossSectionalRanker:
         marginal contribution of each upstream SIGNAL alpha (deterministic
         iteration order).  Otherwise the legacy single-slot
         ``signals_by_symbol`` path is used.
-        """
-        if feeder_strategy_ids and ctx.signals_by_strategy_by_symbol:
-            return self._rank_multi_feeder(ctx, feeder_strategy_ids)
-        return self._rank_legacy(ctx)
 
-    def _rank_legacy(self, ctx: CrossSectionalContext) -> RankResult:
+        *mechanism_caps* / *global_mechanism_cap* are the per-alpha
+        ``trend_mechanism.consumes[*].max_share_of_gross`` and the global
+        ``trend_mechanism.max_share_of_gross`` declared on the PORTFOLIO
+        alpha YAML (audit P0-4).  When supplied they **override** the
+        ranker's instance-level ``mechanism_max_share_of_gross`` for this
+        call, so an alpha's declared caps are enforced at emit time
+        (G16 rule 8) rather than only validated at load.  When omitted the
+        instance default applies (back-compat).
+
+        *decay_weighting_enabled* (audit P1-6) overrides the ranker's
+        instance-level decay toggle **per call**, so the shared ranker can
+        serve one PORTFOLIO alpha with decay ON and another with decay OFF
+        without the global ``any(...)`` leakage.  ``None`` (default) uses
+        the instance flag (back-compat).
+        """
+        caps = self._resolve_caps(mechanism_caps, global_mechanism_cap)
+        decay_enabled = (
+            self._decay_enabled if decay_weighting_enabled is None else bool(decay_weighting_enabled)
+        )
+        if feeder_strategy_ids and ctx.signals_by_strategy_by_symbol:
+            return self._rank_multi_feeder(ctx, feeder_strategy_ids, caps, decay_enabled)
+        return self._rank_legacy(ctx, caps, decay_enabled)
+
+    def _resolve_caps(
+        self,
+        mechanism_caps: Mapping[TrendMechanism, float] | None,
+        global_mechanism_cap: float | None,
+    ) -> tuple[dict[TrendMechanism, float], float]:
+        """Resolve effective per-family caps and a default cap for a call.
+
+        The effective cap for a family is ``min(per_family_cap,
+        global_cap)`` so neither the family-specific nor the global
+        declaration can be exceeded; families with no explicit entry use
+        the global (or instance) default.
+        """
+        default_cap = (
+            float(global_mechanism_cap) if global_mechanism_cap is not None else self._mech_cap
+        )
+        per_family: dict[TrendMechanism, float] = {}
+        if mechanism_caps:
+            for mech, cap in mechanism_caps.items():
+                per_family[mech] = min(float(cap), default_cap)
+        return per_family, default_cap
+
+    def _rank_legacy(
+        self,
+        ctx: CrossSectionalContext,
+        caps: tuple[dict[TrendMechanism, float], float],
+        decay_enabled: bool,
+    ) -> RankResult:
         """Single-signal-per-symbol ranking (pre–fan-in behaviour)."""
         raw_scores: dict[str, float] = {}
         decay_factors: dict[str, float] = {}
@@ -191,7 +239,7 @@ class CrossSectionalRanker:
             sign = self._direction_to_sign(sig.direction)
             raw = sign * sig.strength * sig.edge_estimate_bps
             decay = 1.0
-            if self._decay_enabled and sig.expected_half_life_seconds > 0:
+            if decay_enabled and sig.expected_half_life_seconds > 0:
                 age_ns = max(0, ctx.timestamp_ns - sig.timestamp_ns)
                 age_s = age_ns / 1e9
                 hl = float(sig.expected_half_life_seconds)
@@ -206,6 +254,7 @@ class CrossSectionalRanker:
         weights, breakdown = self._apply_mechanism_cap(
             weights,
             mechanism_by_symbol,
+            caps,
         )
         return RankResult(
             weights=weights,
@@ -219,6 +268,8 @@ class CrossSectionalRanker:
         self,
         ctx: CrossSectionalContext,
         feeder_strategy_ids: tuple[str, ...],
+        caps: tuple[dict[TrendMechanism, float], float],
+        decay_enabled: bool,
     ) -> RankResult:
         """Aggregate ranked contribution across upstream SIGNAL alphas."""
         raw_scores: dict[str, float] = {}
@@ -251,7 +302,7 @@ class CrossSectionalRanker:
                 sign = self._direction_to_sign(sig.direction)
                 raw = sign * sig.strength * sig.edge_estimate_bps
                 decay = 1.0
-                if self._decay_enabled and sig.expected_half_life_seconds > 0:
+                if decay_enabled and sig.expected_half_life_seconds > 0:
                     age_ns = max(0, ctx.timestamp_ns - sig.timestamp_ns)
                     age_s = age_ns / 1e9
                     hl = float(sig.expected_half_life_seconds)
@@ -287,6 +338,7 @@ class CrossSectionalRanker:
         weights, breakdown = self._apply_mechanism_cap(
             weights,
             mechanism_by_symbol,
+            caps,
         )
         return RankResult(
             weights=weights,
@@ -355,8 +407,20 @@ class CrossSectionalRanker:
         self,
         weights: dict[str, float],
         mechanism_by_symbol: Mapping[str, TrendMechanism],
+        caps: tuple[dict[TrendMechanism, float], float],
     ) -> tuple[dict[str, float], dict[TrendMechanism, float]]:
-        """Cap each mechanism's gross share to ``mechanism_max_share_of_gross``."""
+        """Cap each mechanism's gross share to its effective per-family cap.
+
+        *caps* is ``(per_family, default_cap)`` from :meth:`_resolve_caps`:
+        a family's cap is ``per_family.get(mech, default_cap)``.  When no
+        cap binds (all relevant caps ``>= 1.0``) the weights are returned
+        unchanged and the breakdown is reported as-is.
+        """
+        per_family, default_cap = caps
+
+        def cap_for(mech: TrendMechanism) -> float:
+            return per_family.get(mech, default_cap)
+
         gross_total = sum(abs(w) for w in weights.values())
         if gross_total <= 0.0:
             return weights, {}
@@ -369,18 +433,17 @@ class CrossSectionalRanker:
                 continue
             gross_by_mech[mech] = gross_by_mech.get(mech, 0.0) + abs(w)
 
-        if self._mech_cap >= 1.0 or not gross_by_mech:
-            # No cap → just report the breakdown unchanged.
+        # No binding cap on any present family → report breakdown unchanged.
+        if not gross_by_mech or all(cap_for(m) >= 1.0 for m in gross_by_mech):
             breakdown_unchanged: dict[TrendMechanism, float] = {
                 m: g / gross_total for m, g in gross_by_mech.items()
             }
             return weights, breakdown_unchanged
 
-        cap_share = self._mech_cap
         # Recursive scaling: each over-cap mechanism is scaled to exactly
-        # the cap (using current gross_total).  Because scaling reduces
-        # gross_total, we iterate until stable (max 5 iterations — the
-        # cap is monotonically decreasing).
+        # its cap (using current gross_total).  Because scaling reduces
+        # gross_total, we iterate until stable (max 5 iterations — every
+        # family's share is monotonically decreasing).
         scaled = dict(weights)
         for _ in range(5):
             cur_gross = sum(abs(w) for w in scaled.values())
@@ -394,6 +457,9 @@ class CrossSectionalRanker:
                     continue
                 cur_by_mech[mech] = cur_by_mech.get(mech, 0.0) + abs(w)
             for mech, g in cur_by_mech.items():
+                cap_share = cap_for(mech)
+                if cap_share >= 1.0:
+                    continue
                 share = g / cur_gross
                 if share <= cap_share:
                     continue
@@ -426,4 +492,35 @@ class CrossSectionalRanker:
         return scaled, breakdown
 
 
-__all__ = ["CrossSectionalRanker", "RankResult", "RankedAlpha"]
+def compute_mechanism_breakdown(
+    gross_by_symbol: Mapping[str, float],
+    mechanism_by_symbol: Mapping[str, TrendMechanism],
+) -> dict[TrendMechanism, float]:
+    """Realised gross-exposure share per mechanism family (audit P0-5).
+
+    Computed from the *final* per-symbol signed exposures
+    (``gross_by_symbol`` — typically ``intent.target_positions`` dollar
+    targets) so the reported breakdown reflects the emitted book after
+    neutralization / sector matching / optimization, not the ranker's
+    pre-construction weights.  The denominator is total gross over *all*
+    positions; the numerator for a family is the gross of the positions
+    whose consumed signal carried that mechanism.
+    """
+    gross_total = sum(abs(v) for v in gross_by_symbol.values())
+    if gross_total <= 0.0:
+        return {}
+    by_mech: dict[TrendMechanism, float] = {}
+    for symbol, v in gross_by_symbol.items():
+        mech = mechanism_by_symbol.get(symbol)
+        if mech is None:
+            continue
+        by_mech[mech] = by_mech.get(mech, 0.0) + abs(v)
+    return {m: g / gross_total for m, g in by_mech.items()}
+
+
+__all__ = [
+    "CrossSectionalRanker",
+    "RankResult",
+    "RankedAlpha",
+    "compute_mechanism_breakdown",
+]

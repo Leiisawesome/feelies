@@ -26,12 +26,17 @@ zero overhead and downstream Layer-4 parity hashes stay bit-stable.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from dataclasses import dataclass, replace
 from typing import Any, Mapping
 
 from feelies.bus.event_bus import EventBus
-from feelies.composition.cross_sectional import CrossSectionalRanker
+from feelies.composition.cross_sectional import (
+    CrossSectionalRanker,
+    RankResult,
+    compute_mechanism_breakdown,
+)
 from feelies.composition.factor_neutralizer import FactorNeutralizer
 from feelies.composition.protocol import (
     CompositionContextError,
@@ -43,10 +48,43 @@ from feelies.core.events import (
     CrossSectionalContext,
     SizedPositionIntent,
     TargetPosition,
+    TrendMechanism,
 )
 from feelies.core.identifiers import SequenceGenerator
 
 _logger = logging.getLogger(__name__)
+
+
+def _compute_decision_basis_hash(
+    *,
+    strategy_id: str,
+    ctx: CrossSectionalContext,
+    rank_result: RankResult,
+    current_positions: Mapping[str, float],
+    mechanism_caps: Mapping[TrendMechanism, float] | None,
+    global_mechanism_cap: float | None,
+) -> str:
+    """SHA-256 over the canonical decision inputs (audit P0-6).
+
+    Deterministic: every component is emitted in a fixed order (universe
+    order for per-symbol rows, mechanism-name order for caps) with a
+    fixed float format, so identical inputs hash identically across
+    replays and materially-different inputs almost never collide.
+    """
+    parts: list[str] = [f"{strategy_id}|{ctx.horizon_seconds}|{ctx.boundary_index}"]
+    for s in ctx.universe:
+        raw = rank_result.raw_scores.get(s, 0.0)
+        decay = rank_result.decay_factors.get(s, 0.0)
+        mech = rank_result.mechanism_by_symbol.get(s)
+        mech_name = mech.name if mech is not None else "-"
+        pos = current_positions.get(s, 0.0)
+        parts.append(f"{s}={raw:.10g}:{decay:.10g}:{mech_name}:{pos:.2f}")
+    gcap = "-" if global_mechanism_cap is None else f"{global_mechanism_cap:.10g}"
+    parts.append(f"gcap={gcap}")
+    if mechanism_caps:
+        for mech in sorted(mechanism_caps, key=lambda m: m.name):
+            parts.append(f"cap:{mech.name}={mechanism_caps[mech]:.10g}")
+    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -155,13 +193,16 @@ class CompositionEngine:
         ctx: CrossSectionalContext,
     ) -> None:
         # Below-threshold completeness → degenerate intent (do nothing).
-        if ctx.completeness < self._completeness_threshold:
+        # The threshold is resolved per-alpha (audit P1-5): an alpha may
+        # declare a stricter ``composition_completeness_threshold`` in its
+        # ``parameters:`` block; the platform-config value is the fallback.
+        threshold = self._resolve_completeness_threshold(registered)
+        if ctx.completeness < threshold:
             self._emit_degenerate(
                 registered,
                 ctx,
                 reason=(
-                    f"completeness {ctx.completeness:.3f} below threshold "
-                    f"{self._completeness_threshold:.3f}"
+                    f"completeness {ctx.completeness:.3f} below threshold {threshold:.3f}"
                 ),
             )
             return
@@ -226,6 +267,24 @@ class CompositionEngine:
         )
         self._bus.publish(publishable)
 
+    def _resolve_completeness_threshold(
+        self,
+        registered: RegisteredPortfolioAlpha,
+    ) -> float:
+        """Per-alpha completeness threshold with platform-config fallback.
+
+        Reads ``composition_completeness_threshold`` from the alpha's
+        resolved params (audit P1-5); falls back to the engine-level
+        platform-config value when the alpha does not declare one or
+        declares an out-of-range / non-numeric value.
+        """
+        raw = registered.params.get("composition_completeness_threshold")
+        if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+            value = float(raw)
+            if 0.0 <= value <= 1.0:
+                return value
+        return self._completeness_threshold
+
     def _emit_degenerate(
         self,
         registered: RegisteredPortfolioAlpha,
@@ -265,6 +324,9 @@ class CompositionEngine:
         strategy_id: str,
         feeder_strategy_ids: tuple[str, ...] = (),
         capital_usd: float | None = None,
+        mechanism_caps: Mapping[TrendMechanism, float] | None = None,
+        global_mechanism_cap: float | None = None,
+        decay_weighting_enabled: bool | None = None,
     ) -> SizedPositionIntent:
         """Execute the canonical ranker → neutralize → match → optimize chain.
 
@@ -272,10 +334,19 @@ class CompositionEngine:
         whose alpha is "the default pipeline".  Custom :class:`PortfolioAlpha`
         implementations can compose their own pipeline using the engine's
         public components.
+
+        *mechanism_caps* / *global_mechanism_cap* are the alpha's declared
+        ``trend_mechanism`` caps, threaded into the ranker so they are
+        enforced at emit time (audit P0-4).  *decay_weighting_enabled*
+        overrides the shared ranker's decay toggle for this alpha (audit
+        P1-6); ``None`` falls back to the ranker's instance flag.
         """
         rank_result = self._ranker.rank(
             ctx,
             feeder_strategy_ids=feeder_strategy_ids,
+            mechanism_caps=mechanism_caps,
+            global_mechanism_cap=global_mechanism_cap,
+            decay_weighting_enabled=decay_weighting_enabled,
         )
         neutral_weights, factor_exposures = self._neutralizer.neutralize(
             rank_result.weights,
@@ -303,6 +374,26 @@ class CompositionEngine:
         target_positions = {
             s: TargetPosition(symbol=s, target_usd=v) for s, v in sorted(opt.target_usd.items())
         }
+        # P0-5: report the *realised* mechanism breakdown computed from the
+        # final dollar targets (post-neutralization, post-sector,
+        # post-optimization), not the ranker's pre-construction shares.
+        realised_breakdown = compute_mechanism_breakdown(
+            opt.target_usd,
+            rank_result.mechanism_by_symbol,
+        )
+        # P0-6: in-band provenance digest over the canonical decision
+        # inputs (per-symbol raw scores + decay + mechanism, the turnover
+        # reference positions, the resolved caps, and the alpha/boundary
+        # identity) so structurally-equal intents derived from different
+        # inputs are distinguishable.
+        decision_basis_hash = _compute_decision_basis_hash(
+            strategy_id=strategy_id,
+            ctx=ctx,
+            rank_result=rank_result,
+            current_positions=current_positions,
+            mechanism_caps=mechanism_caps,
+            global_mechanism_cap=global_mechanism_cap,
+        )
         return SizedPositionIntent(
             timestamp_ns=ctx.timestamp_ns,
             sequence=0,  # patched by the engine envelope
@@ -315,7 +406,9 @@ class CompositionEngine:
             factor_exposures=factor_exposures,
             expected_turnover_usd=opt.expected_turnover_usd,
             expected_gross_exposure_usd=opt.expected_gross_exposure_usd,
-            mechanism_breakdown=dict(rank_result.mechanism_breakdown),
+            mechanism_breakdown=realised_breakdown,
+            decision_basis_hash=decision_basis_hash,
+            solver_status=opt.solver_status,
         )
 
 

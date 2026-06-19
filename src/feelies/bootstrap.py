@@ -53,6 +53,7 @@ import os
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
+from collections.abc import Mapping
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -213,6 +214,7 @@ def build_platform(
     normalizer: MarketDataNormalizer | None = None,
     precomputed_ex_date_spans: dict[str, tuple[date, date]] | None = None,
     regime_calibration_quotes: tuple[NBBOQuote, ...] | None = None,
+    edge_calibration_factors: "Mapping[str, float] | None" = None,
 ) -> tuple[Orchestrator, PlatformConfig]:
     """Compose the full platform from configuration.
 
@@ -280,7 +282,17 @@ def build_platform(
         )
 
     if event_log is None:
-        event_log = InMemoryEventLog()
+        # Live/paper feeds append market events in *arrival* order at M1, which
+        # is not exchange-timestamp monotonic across symbols/exchanges.  Relax
+        # the replay-grade ordering guard for those logs so a benign out-of-order
+        # arrival does not crash the pipeline to DEGRADED (audit ING-01); the
+        # ingest/resequence path and ReplayFeed still enforce order where it is
+        # contractual.  Backtest/research logs keep the strict guard.
+        enforce_market_order = config.mode not in (
+            OperatingMode.PAPER,
+            OperatingMode.LIVE,
+        )
+        event_log = InMemoryEventLog(enforce_market_order=enforce_market_order)
     _enforce_ex_date_replay_guard(
         config,
         event_log,
@@ -409,6 +421,9 @@ def build_platform(
         buying_power_config=buying_power_config,
         trading_session_bounds=trading_session_bounds,
         account_id=config.account_id,
+        # Audit R-9: in PAPER/LIVE an unwired ENTRY gate fails open; surface
+        # a one-shot WARNING if any are missing so the omission is visible.
+        warn_on_inert_entry_gates=config.mode in (OperatingMode.PAPER, OperatingMode.LIVE),
     )
 
     cost_model = DefaultCostModel(
@@ -494,11 +509,24 @@ def build_platform(
     strategy_positions = StrategyPositionStore()
     trade_journal = InMemoryTradeJournal()
     feature_snapshots = InMemoryFeatureSnapshotStore()
-    base_sizer = BudgetBasedSizer(regime_engine=regime_engine)
+    # Audit R-7: the position sizer scales *quantity* by regime while the
+    # risk engine scales *limits* by regime — a deliberate series, not a
+    # double-scale.  Source both from the same RiskConfig scale fields so the
+    # two can never silently drift (previously the sizer used its own
+    # hard-coded defaults that merely happened to match RiskConfig defaults).
+    base_sizer = BudgetBasedSizer(
+        regime_engine=regime_engine,
+        regime_factors={
+            "vol_breakout": risk_config.regime_vol_breakout_scale,
+            "compression_clustering": risk_config.regime_compression_scale,
+            "normal": risk_config.regime_normal_scale,
+        },
+    )
     # G-7: build the edge/vol/inventory tilt config from PlatformConfig.  The
     # tilted sizer drives the live decision only when ``sizer_tilt_drive`` is
-    # set (S2 flip); otherwise it is used solely for the shadow measurement
-    # stream and the live size stays single-factor (byte-identical baseline).
+    # set (audit P2.3: available opt-in, default OFF); otherwise it is used
+    # solely for the shadow measurement stream and the live size stays
+    # single-factor (byte-identical baseline).
     sizer_tilt_config = SizerTiltConfig(
         edge_enabled=config.sizer_edge_weighting_enabled,
         edge_ref_bps=config.sizer_edge_ref_bps,
@@ -566,6 +594,7 @@ def build_platform(
         clock=clock,
         sensor_registry=sensor_registry,
         horizon_features=_built_horizon_features,
+        regime_min_discriminability=config.regime_min_discriminability,
     )
 
     # ── Phase-4 PORTFOLIO / composition layer (additive, optional) ──
@@ -638,6 +667,20 @@ def build_platform(
     # bus-driven Phase-3 / Phase-4 composition pipeline owns multi-alpha
     # arbitration end-to-end.
 
+    # Close-the-loop (gate): explicit ``edge_calibration_factors`` win;
+    # otherwise load from the versioned EdgeCalibrationStore when an
+    # ``edge_calibration_path`` is configured.  Absent both -> empty -> no
+    # haircut (parity-preserving).
+    if edge_calibration_factors is not None:
+        resolved_edge_factors: dict[str, float] = dict(edge_calibration_factors)
+    else:
+        resolved_edge_factors = {}
+        _edge_cal_path = getattr(config, "edge_calibration_path", None)
+        if _edge_cal_path:
+            from feelies.forensics.edge_calibration import EdgeCalibrationStore
+
+            resolved_edge_factors = EdgeCalibrationStore(_edge_cal_path).factors()
+
     orchestrator = Orchestrator(
         clock=clock,
         bus=bus,
@@ -672,6 +715,7 @@ def build_platform(
         cross_sectional_tracker=cross_sectional_tracker,
         composition_metrics_collector=composition_metrics,
         hazard_exit_controller=hazard_exit_controller,
+        edge_calibration_factors=resolved_edge_factors,
         signal_order_trace_sink=signal_order_trace_sink,
         net_shadow_sink=net_shadow_sink,
         size_shadow_sizer=tilted_sizer if size_shadow_sink is not None else None,
@@ -923,6 +967,22 @@ def _create_backend(
     trading_session_bounds: TradingSessionBounds | None = (
         _resolve_trading_session_bounds(config) if config is not None else None
     )
+    # Execution-realism knobs (audit 2026-06-19) — read straight off the
+    # config so they thread into both backtest routers.  All default-neutral.
+    within_l1_impact_factor = config.cost_within_l1_impact_factor if config is not None else 0.0
+    permanent_impact_coefficient = (
+        config.cost_permanent_impact_coefficient if config is not None else 0.0
+    )
+    stop_depth_depletion_factor = (
+        config.cost_stop_depth_depletion_factor if config is not None else 1.0
+    )
+    moc_penalty_bps = config.cost_moc_penalty_bps if config is not None else 0.0
+    through_fill_size_cap_enabled = (
+        config.passive_through_fill_size_cap_enabled if config is not None else False
+    )
+    require_trade_for_level_fill = (
+        config.passive_require_trade_for_level_fill if config is not None else False
+    )
     if mode == OperatingMode.BACKTEST:
         # ``minimum_cost`` runs through the passive-limit backend
         # because the per-order policy must be able to post a LIMIT
@@ -945,7 +1005,13 @@ def _create_backend(
                 cancel_fee_per_share=_decimal(passive_cancel_fee_per_share),
                 fill_hazard_max=_decimal(passive_fill_hazard_max),
                 stop_slippage_half_spreads=stop_slippage_half_spreads,
+                within_l1_impact_factor=within_l1_impact_factor,
+                permanent_impact_coefficient=permanent_impact_coefficient,
+                stop_depth_depletion_factor=stop_depth_depletion_factor,
+                through_fill_size_cap_enabled=through_fill_size_cap_enabled,
+                require_trade_for_level_fill=require_trade_for_level_fill,
                 moc_bounds=moc_bounds,
+                moc_penalty_bps=moc_penalty_bps,
                 trading_session_bounds=trading_session_bounds,
             )
             return _BackendBundle(backend=backend, backtest_router=router)
@@ -959,8 +1025,12 @@ def _create_backend(
             market_impact_factor=market_impact_factor,
             max_impact_half_spreads=max_impact_half_spreads,
             stop_slippage_half_spreads=stop_slippage_half_spreads,
+            within_l1_impact_factor=within_l1_impact_factor,
+            permanent_impact_coefficient=permanent_impact_coefficient,
+            stop_depth_depletion_factor=stop_depth_depletion_factor,
             max_resting_ticks=passive_max_resting_ticks,
             moc_bounds=moc_bounds,
+            moc_penalty_bps=moc_penalty_bps,
             trading_session_bounds=trading_session_bounds,
         )
         return _BackendBundle(backend=backend, backtest_router=router)
@@ -1644,6 +1714,7 @@ def _create_signal_layer(
     clock: Clock,
     sensor_registry: SensorRegistry | None,
     horizon_features: list[HorizonFeature] | None = None,
+    regime_min_discriminability: float = 0.0,
 ) -> tuple[SequenceGenerator, HorizonSignalEngine | None]:
     """Compose the Phase-3 :class:`HorizonSignalEngine` if SIGNAL alphas exist.
 
@@ -1708,6 +1779,7 @@ def _create_signal_layer(
         bus=bus,
         signal_sequence_generator=signal_seq,
         clock=clock,
+        regime_min_discriminability=regime_min_discriminability,
     )
     for module in signal_alphas:
         if not isinstance(module, LoadedSignalLayerModule):
@@ -1920,6 +1992,8 @@ def _create_composition_layer(
                 engine_thunk=lambda e=engine: e,
                 strategy_id=module.alpha_id,
                 feeder_strategy_ids=module.depends_on_signals,
+                mechanism_caps=module.mechanism_caps,
+                global_mechanism_cap=module.max_share_of_gross,
             )
         engine.register(
             RegisteredPortfolioAlpha(
@@ -2104,10 +2178,21 @@ def _enforce_factor_loadings_freshness(
     The neutralizer accepts ``loadings_dir is None`` (no-op pass-through),
     so the freshness check only fires when an operator explicitly
     points at a loadings file.  When fired, every symbol in
-    ``universe_sorted`` MUST appear in ``loadings.json`` and the file
-    mtime must be within ``factor_loadings_max_age_seconds`` — else we
-    raise rather than silently neutralize against a stale or partial
-    factor model (Inv-11).
+    ``universe_sorted`` MUST appear in ``loadings.json`` and the file's
+    effective age must be within ``factor_loadings_max_age_seconds`` —
+    else we raise rather than silently neutralize against a stale or
+    partial factor model (Inv-11).
+
+    Freshness reference (audit P1-4).  The file's "as of" timestamp is
+    taken from an optional ``"_meta": {"as_of_ns": <int>}`` block
+    embedded *in the file* when present — a content-addressable anchor
+    that yields a reproducible verdict regardless of when the artefact
+    was checked out.  Only when that block is absent do we fall back to
+    the filesystem mtime, whose drift forced downstream suites to pin a
+    ~century-long ``factor_loadings_max_age_seconds``.  The comparison
+    clock is ``session_open_ns`` when available (deterministic);
+    wall-clock ``time.time()`` is a last resort that breaks bit-identical
+    replay and is logged as such.
     """
     if config.factor_loadings_dir is None:
         return
@@ -2118,25 +2203,6 @@ def _enforce_factor_loadings_freshness(
     if not path.is_file():
         raise StaleFactorLoadingsError(f"factor loadings file not found: {path}")
 
-    # Prefer ``session_open_ns`` as the freshness reference so the check
-    # is bit-deterministic across replays.  Wall-clock ``time.time()`` is
-    # only used as a fallback when no session anchor is configured; in
-    # that path the staleness verdict depends on the system clock at
-    # boot, which breaks bit-identical replay (a backtest passing today
-    # may fail tomorrow with no code change).
-    file_mtime = path.stat().st_mtime
-    if config.session_open_ns is not None:
-        reference_time = config.session_open_ns / 1_000_000_000
-    else:
-        reference_time = time.time()
-    age_seconds = reference_time - file_mtime
-    if age_seconds > config.factor_loadings_max_age_seconds:
-        raise StaleFactorLoadingsError(
-            f"factor loadings file {path} is {age_seconds:.0f}s old, "
-            f"exceeds factor_loadings_max_age_seconds="
-            f"{config.factor_loadings_max_age_seconds}s"
-        )
-
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -2144,6 +2210,36 @@ def _enforce_factor_loadings_freshness(
 
     if not isinstance(data, dict):
         raise StaleFactorLoadingsError(f"factor loadings file {path} is not a JSON object")
+
+    # Effective file timestamp: embedded ``_meta.as_of_ns`` (reproducible)
+    # else filesystem mtime (drifts with the checkout).
+    embedded_as_of_seconds: float | None = None
+    meta = data.get("_meta")
+    if isinstance(meta, dict):
+        raw_as_of = meta.get("as_of_ns")
+        if isinstance(raw_as_of, (int, float)) and not isinstance(raw_as_of, bool):
+            embedded_as_of_seconds = float(raw_as_of) / 1_000_000_000
+    file_as_of_seconds = (
+        embedded_as_of_seconds if embedded_as_of_seconds is not None else path.stat().st_mtime
+    )
+
+    if config.session_open_ns is not None:
+        reference_time = config.session_open_ns / 1_000_000_000
+    else:
+        reference_time = time.time()
+        logger.warning(
+            "factor loadings freshness: no session_open_ns configured; using wall-clock "
+            "time.time() as the reference, which breaks bit-identical replay (Inv-5) — "
+            "configure session_open_ns or embed _meta.as_of_ns in %s",
+            path,
+        )
+    age_seconds = reference_time - file_as_of_seconds
+    if age_seconds > config.factor_loadings_max_age_seconds:
+        raise StaleFactorLoadingsError(
+            f"factor loadings file {path} is {age_seconds:.0f}s old, "
+            f"exceeds factor_loadings_max_age_seconds="
+            f"{config.factor_loadings_max_age_seconds}s"
+        )
 
     missing = [s for s in universe_sorted if s not in data]
     if missing:

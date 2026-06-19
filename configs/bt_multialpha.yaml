@@ -1,0 +1,39 @@
+# Multi-alpha backtest config — STANDALONE-SIGNAL collision harness (research only).
+#
+# Purpose: exercise cross-alpha interaction on one symbol without a PORTFOLIO
+# alpha — EdgeWeightedArbitrator collisions, standing-signal overlap, per-alpha
+# cost-survival in the backtest report, and exit-hijack regression checks via
+# ``scripts/compare_multialpha_runs.py``.
+#
+# NOT FOR PRODUCTION / LIVE CAPITAL: standalone mode allows at most one order
+# walk per tick and arbitrates overlapping SIGNAL alphas lossily.  Production
+# multi-alpha books must use a PORTFOLIO alpha with ``depends_on_signals`` so
+# ``CompositionEngine`` emits ``SizedPositionIntent`` and
+# ``RiskEngine.check_sized_intent`` decomposes per-leg orders.
+#
+# Usage:
+#   uv run python scripts/run_backtest.py --config configs/bt_multialpha.yaml \
+#       --symbol APP --date 2026-03-26
+#
+#   uv run python scripts/compare_multialpha_runs.py --symbol APP --date 2026-03-26 \
+#       --strict
+extends: ../platform.yaml
+
+symbols:
+  - APP
+
+# A momentum + drift + mean-reversion mix on the same symbol so the net both
+# STACKS (benign + kyle, same direction) and OFFSETS (vs inventory-revert).
+alpha_specs:
+  - alphas/sig_benign_midcap_v1/sig_benign_midcap_v1.alpha.yaml
+  - alphas/sig_inventory_revert_v1/sig_inventory_revert_v1.alpha.yaml
+
+# Inv-12 margin gate (G12-equivalent 1.5× round-trip floor), as in bt_app.
+signal_min_edge_cost_ratio: 1.5
+
+# Loosen the benign entry gate so it signals often enough to overlap the others
+# (mirror bt_app's tuned overrides).
+parameter_overrides:
+  sig_benign_midcap_v1:
+    entry_threshold_z: 1.5
+    edge_per_z_bps: 6.0

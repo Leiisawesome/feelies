@@ -554,6 +554,22 @@ def generate_report(
                 lines.append(_sub_kv("  Recent edge", f"{decay.realized:.2f} bps"))
                 lines.append(_sub_kv("  Z-score", f"{decay.z_score:.2f}"))
 
+        # Per-alpha cost survival — realized edge vs cost, per strategy_id
+        # (close-the-loop: the realized complement to the disclosed
+        # edge_estimate_bps the G12/B4 gates trade on).
+        from feelies.forensics.cost_survival import (
+            format_cost_survival_report,
+            per_alpha_cost_survival,
+        )
+
+        survival_rows = per_alpha_cost_survival(records)
+        if survival_rows:
+            lines.append(_divider())
+            lines.append(format_section("Per-Alpha Cost Survival"))
+            # Drop the module's own header line; the section header above
+            # already labels the block.
+            lines.extend(format_cost_survival_report(survival_rows).splitlines()[1:])
+
     # Three-hash parity contract — pnl_hash, config_hash, parity_hash (combined bind).
     pnl_hash = compute_parity_hash(orchestrator)
     config_hash = compute_config_hash(config)

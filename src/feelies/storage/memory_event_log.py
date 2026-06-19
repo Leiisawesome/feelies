@@ -37,14 +37,32 @@ class _SequenceKey:
 
 
 class InMemoryEventLog:
-    """Volatile, list-backed event store implementing ``EventLog``."""
+    """Volatile, list-backed event store implementing ``EventLog``.
 
-    __slots__ = ("_events", "_lock", "_last_market_key")
+    ``enforce_market_order`` (default ``True``) governs whether the
+    replay-grade monotonicity guard fires.  Replay / ingest / resequence
+    logs keep it on — they are populated from a stream that was already
+    merge-sorted, so any backward :func:`event_merge_sort_key` is a
+    programming error and must raise (Inv-6).
 
-    def __init__(self) -> None:
+    Live / paper logs constructed by the orchestrator (M1 ``append`` per
+    inbound quote/trade) must set it ``False``: a live feed delivers events
+    in *arrival* order, which is not necessarily exchange-timestamp
+    monotonic across symbols (or across exchanges for a single symbol).
+    Rejecting a benign out-of-order arrival would crash the live pipeline
+    to DEGRADED (audit ING-01).  The log stays a faithful arrival-order
+    audit record; ``ReplayFeed`` and ``resequence_event_list`` re-impose
+    deterministic order at forensic-replay time, so determinism is
+    preserved where it is contractual.
+    """
+
+    __slots__ = ("_events", "_lock", "_last_market_key", "_enforce_market_order_enabled")
+
+    def __init__(self, *, enforce_market_order: bool = True) -> None:
         self._events: list[Event] = []
         self._lock = threading.Lock()
         self._last_market_key: tuple[int, str, int, int] | None = None
+        self._enforce_market_order_enabled = enforce_market_order
 
     def append(self, event: Event) -> None:
         with self._lock:
@@ -92,7 +110,11 @@ class InMemoryEventLog:
     def _enforce_market_order(self, event: Event) -> None:
         if isinstance(event, (NBBOQuote, Trade)):
             key = event_merge_sort_key(event)
-            if self._last_market_key is not None and key < self._last_market_key:
+            if (
+                self._enforce_market_order_enabled
+                and self._last_market_key is not None
+                and key < self._last_market_key
+            ):
                 raise CausalityViolation(
                     "InMemoryEventLog: market event out of merge-sort order "
                     f"at sequence={event.sequence}: key={key!r} < "

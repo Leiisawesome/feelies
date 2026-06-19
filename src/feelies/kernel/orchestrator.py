@@ -38,9 +38,9 @@ import logging
 import time
 from collections import deque
 from collections.abc import Callable, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from decimal import ROUND_HALF_UP, Decimal
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Mapping
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +133,7 @@ from feelies.execution.regulatory.borrow_availability import (
     build_borrow_table,
     htb_fee_applies,
     is_short_sale_intent,
+    parse_borrow_tier,
 )
 from feelies.ingestion.data_integrity import (
     DataHealth,
@@ -314,6 +315,87 @@ def _int_to_direction(sign: int) -> SignalDirection:
     return SignalDirection.FLAT
 
 
+def _signal_reduces_book(current_qty: int, direction: SignalDirection) -> bool:
+    """True when *direction* would close or offset a non-flat *current_qty*."""
+    if current_qty == 0:
+        return False
+    if direction == SignalDirection.FLAT:
+        return True
+    if current_qty > 0 and direction == SignalDirection.SHORT:
+        return True
+    if current_qty < 0 and direction == SignalDirection.LONG:
+        return True
+    return False
+
+
+def standalone_signal_actionable_for_strategy(
+    signal: Signal,
+    *,
+    strategy_qty: int,
+    aggregate_qty: int,
+    alpha_has_prior_fill: bool,
+) -> bool:
+    """Whether a standalone SIGNAL may participate in per-tick arbitration.
+
+    Gate-close FLAT (``regime_gate_state == "OFF"``) from an alpha that
+    has never filled on this symbol is suppressed while the aggregate
+    book is open, so passive alphas cannot hijack another alpha's exit
+    tick.  Directional exits require matching strategy exposure; entries
+    always pass.
+    """
+    if (
+        signal.direction == SignalDirection.FLAT
+        and signal.regime_gate_state == "OFF"
+        and strategy_qty == 0
+        and aggregate_qty != 0
+        and not alpha_has_prior_fill
+    ):
+        return False
+    if signal.direction == SignalDirection.FLAT:
+        return True
+    if _signal_reduces_book(aggregate_qty, signal.direction):
+        return _signal_reduces_book(strategy_qty, signal.direction)
+    return True
+
+
+def is_redundant_gate_close_flat(
+    signal: Signal,
+    *,
+    aggregate_qty: int,
+    alpha_has_prior_fill: bool,
+) -> bool:
+    """True when a gate-close FLAT is a no-op (never traded, flat book)."""
+    return (
+        signal.direction == SignalDirection.FLAT
+        and signal.regime_gate_state == "OFF"
+        and aggregate_qty == 0
+        and not alpha_has_prior_fill
+    )
+
+
+def collision_is_harmless_flat_gate_close(
+    candidates: Sequence[Signal],
+    aggregate_qty: int,
+) -> bool:
+    """True when every arbitration candidate is inert gate-close on a flat book."""
+    if aggregate_qty != 0:
+        return False
+    return all(
+        s.direction == SignalDirection.FLAT and s.regime_gate_state == "OFF"
+        for s in candidates
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class StandaloneArbitrationCollision:
+    """One post-filter standalone-SIGNAL arbitration tick (forensics)."""
+
+    candidate_count: int
+    strategy_ids: tuple[str, ...]
+    kinds: tuple[tuple[str, str, str], ...]
+    harmless: bool
+
+
 class Orchestrator:
     """Central coordinator for the deterministic tick-processing pipeline.
 
@@ -421,6 +503,7 @@ class Orchestrator:
         composition_metrics_collector: "HorizonMetricsCollector | None" = None,
         hazard_exit_controller: "HazardExitController | None" = None,
         signal_arbitrator: SignalArbitrator | None = None,
+        edge_calibration_factors: Mapping[str, float] | None = None,
         signal_order_trace_sink: list[SignalOrderTraceRow] | None = None,
         regime_calibration_quotes: Sequence[NBBOQuote] | None = None,
         position_manager: "PositionManager | None" = None,
@@ -636,6 +719,15 @@ class Orchestrator:
         # disclosed one-way edge by 2 inside the gate so both sides
         # share the round-trip basis explicitly.
         self._signal_edge_cost_basis: str = "round_trip"
+        # Close-the-loop (calibrate/gate): per-alpha realization factor in
+        # [0, 1] that shrinks the disclosed ``edge_estimate_bps`` the B4 gate
+        # trades on toward realized edge (Inv-4).  Empty -> factor 1.0 for
+        # every alpha -> identical behaviour (parity-preserving).  Sourced
+        # from a versioned ``EdgeCalibrationStore`` at construction, so it is
+        # a fixed input within a replay (Inv-5).
+        self._edge_calibration_factors: dict[str, float] = (
+            dict(edge_calibration_factors) if edge_calibration_factors else {}
+        )
         # B5: reversal edge guard multiplier.  The entry leg of a REVERSE
         # intent is suppressed (flatten-only) unless the signal edge clears
         # this multiple of the combined exit+entry round-trip cost.  0.0
@@ -644,6 +736,12 @@ class Orchestrator:
         # Audit F-M-22: dedicated threshold for the realized-vs-disclosed
         # cost alert, decoupled from MIN_MARGIN_RATIO.
         self._realized_cost_alert_ratio: float = 1.5
+        # Audit P2.10: optional escalation when realized cost persistently
+        # exceeds the disclosed G12 cost.  Default-off → alert-only (legacy).
+        self._realized_cost_escalation_enabled: bool = False
+        self._realized_cost_escalation_streak: int = 3
+        # Per-strategy consecutive realized-cost-overrun streak counter.
+        self._realized_cost_breach_streak: dict[str, int] = {}
         self._regime_calibration_max_quotes: int | None = None
         self._regime_calibration_quotes: tuple[NBBOQuote, ...] | None = (
             tuple(regime_calibration_quotes) if regime_calibration_quotes is not None else None
@@ -709,8 +807,14 @@ class Orchestrator:
 
         # ── BT-7: static borrow-availability table ────────────────────
         # Per-symbol locate tier (available / hard / unavailable).  Omitted
-        # symbols default to AVAILABLE.  Cached from config in boot().
+        # symbols fall back to ``self._borrow_default_tier``.  Cached from
+        # config in boot().
         self._borrow_tier: dict[str, BorrowTier] = {}
+        # Audit P1.7: tier assumed for symbols absent from the table.
+        # AVAILABLE (optimistic) preserves prior behaviour; operators set
+        # ``borrow_default_tier`` to "hard"/"unavailable" for a conservative
+        # short-locate assumption on non-large-cap universes.
+        self._borrow_default_tier: BorrowTier = BorrowTier.AVAILABLE
 
         # ── BT-8: MOC strategy routing ────────────────────────────────
         # Set of strategy_ids whose entries route as MOC orders, and a
@@ -766,9 +870,12 @@ class Orchestrator:
         # legacy ``signal_engine`` ctor scaffolding, so this is now the
         # sole standalone-SIGNAL → Order path.
         self._signal_buffer: list[Signal] = []
+        self._alpha_symbols_with_fills: set[tuple[str, str]] = set()
+        self._arbitration_collisions: list[StandaloneArbitrationCollision] = []
         self._pending_sized_intents: deque[SizedPositionIntent] = deque()
         self._consumed_by_portfolio_ids: frozenset[str] | None = None
         self._warned_multi_standalone_signals: bool = False
+        self._logged_harmless_arbitration_collision: bool = False
         self._bus.subscribe(Signal, self._on_bus_signal)
 
         # ── PR-2b-iv: bus-driven SizedPositionIntent subscriber ─────────
@@ -876,6 +983,8 @@ class Orchestrator:
             return
         if bus_selected is None:
             for s in buf_snapshot:
+                if not self._standalone_signal_actionable_for_strategy_ownership(s):
+                    continue
                 self._append_signal_order_trace(
                     quote,
                     s,
@@ -885,6 +994,8 @@ class Orchestrator:
             return
         for s in buf_snapshot:
             if s is bus_selected:
+                continue
+            if not self._standalone_signal_actionable_for_strategy_ownership(s):
                 continue
             self._append_signal_order_trace(
                 quote,
@@ -902,6 +1013,11 @@ class Orchestrator:
     @property
     def micro_state(self) -> MicroState:
         return self._micro.state
+
+    @property
+    def arbitration_collisions(self) -> tuple[StandaloneArbitrationCollision, ...]:
+        """Post-filter standalone-SIGNAL ticks with 2+ candidates (forensics)."""
+        return tuple(self._arbitration_collisions)
 
     @property
     def risk_level(self) -> RiskLevel:
@@ -1096,6 +1212,18 @@ class Orchestrator:
                 self._ssr_mode = config.ssr_mode
             if hasattr(config, "borrow_availability"):
                 self._borrow_tier = build_borrow_table(config.borrow_availability)
+            if hasattr(config, "borrow_default_tier"):
+                self._borrow_default_tier = parse_borrow_tier(config.borrow_default_tier)
+                if (
+                    self._borrow_default_tier != BorrowTier.AVAILABLE
+                    and getattr(config, "cost_htb_borrow_annual_bps", 0.0) == 0.0
+                ):
+                    logger.warning(
+                        "borrow_default_tier=%s but cost_htb_borrow_annual_bps=0 — "
+                        "short-side borrow cost is not modelled; set "
+                        "cost_htb_borrow_annual_bps for HARD-to-borrow names.",
+                        self._borrow_default_tier.value,
+                    )
             if hasattr(config, "moc_strategy_ids"):
                 self._moc_strategy_ids = frozenset(config.moc_strategy_ids)
                 if config.moc_strategy_ids:
@@ -1240,6 +1368,24 @@ class Orchestrator:
                                     )
                                 )
                             ),
+                            within_l1_impact_factor=Decimal(
+                                str(
+                                    getattr(
+                                        config,
+                                        "cost_within_l1_impact_factor",
+                                        0.0,
+                                    )
+                                )
+                            ),
+                            permanent_impact_coefficient=Decimal(
+                                str(
+                                    getattr(
+                                        config,
+                                        "cost_permanent_impact_coefficient",
+                                        0.0,
+                                    )
+                                )
+                            ),
                             passive_non_fill_probability=Decimal(
                                 str(
                                     getattr(
@@ -1261,6 +1407,10 @@ class Orchestrator:
                 self._signal_edge_cost_basis = config.signal_edge_cost_basis
             if hasattr(config, "realized_cost_alert_ratio"):
                 self._realized_cost_alert_ratio = config.realized_cost_alert_ratio
+            if hasattr(config, "realized_cost_escalation_enabled"):
+                self._realized_cost_escalation_enabled = config.realized_cost_escalation_enabled
+            if hasattr(config, "realized_cost_escalation_streak"):
+                self._realized_cost_escalation_streak = config.realized_cost_escalation_streak
             if hasattr(config, "regime_calibration_max_quotes"):
                 self._regime_calibration_max_quotes = config.regime_calibration_max_quotes
             self._macro.transition(
@@ -2714,7 +2864,38 @@ class Orchestrator:
         # ``__stop_exit__`` / ``TradingIntent.EXIT`` carve-out
         # preserves Inv-11 (exits always race in).
         if self._has_pending_order_for_symbol(order.symbol):
-            if intent.intent != TradingIntent.EXIT or self._has_pending_exit_for_symbol(
+            # Inv-11: a forced MARKET exit (hard stop / session flatten) must
+            # never be subordinated to a stale passive order.  A gate-OFF FLAT
+            # cover posted as a resting LIMIT can sit unfilled while the market
+            # runs through the stop; the old guard treated that resting cover
+            # as a "pending exit" and suppressed the stop until the passive
+            # order expired (docs/pending issues/app_backtest_2026-06-01_*).
+            # Mirror the REVERSE path: cancel the resting orders so the
+            # aggressive close can cross immediately.  A forced exit already
+            # in flight is left untouched so we never pile a second aggressive
+            # leg on the book (overshoot guard).
+            if intent.signal.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES:
+                if self._has_pending_forced_exit_for_symbol(order.symbol):
+                    self._append_signal_order_trace(
+                        quote,
+                        signal,
+                        outcome="NO_ORDER",
+                        reasons=(
+                            "resting_order_guard_forced_exit_already_pending",
+                            f"symbol={order.symbol}",
+                        ),
+                        trading_intent=intent.intent.name,
+                    )
+                    self._micro.transition(
+                        MicroState.LOG_AND_METRICS,
+                        trigger="resting_order_pending",
+                        correlation_id=cid,
+                    )
+                    self._finalize_tick(t_wall_start, cid)
+                    return
+                self._emit_forced_exit_supersedes_pending_alert(order, cid)
+                self._cancel_resting_for_symbol(order.symbol, cid)
+            elif intent.intent != TradingIntent.EXIT or self._has_pending_exit_for_symbol(
                 order.symbol
             ):
                 self._append_signal_order_trace(
@@ -2943,18 +3124,29 @@ class Orchestrator:
             is_taker_entry=is_taker_entry,
             is_short_entry=is_short_entry,
         )
+        # Close-the-loop (gate): trade on the realization-calibrated edge,
+        # not the raw disclosed estimate.  factor defaults to 1.0 (no
+        # calibration -> unchanged, parity-preserving).
+        factor = self._edge_calibration_factors.get(signal.strategy_id, 1.0)
+        effective_edge_bps = signal.edge_estimate_bps * factor
         if entry_edge_clears_cost(
-            edge_bps=signal.edge_estimate_bps,
+            edge_bps=effective_edge_bps,
             rt_cost_bps=rt_cost_bps,
             min_ratio=self._signal_min_edge_cost_ratio,
             basis=self._signal_edge_cost_basis,
         ):
             return True
+        gate_detail = (
+            detail
+            if factor >= 1.0
+            else f"{detail}; realization factor={factor:.3f} "
+            f"(disclosed {signal.edge_estimate_bps:.2f} -> {effective_edge_bps:.2f} bps)"
+        )
         self._emit_signal_edge_gate_suppression_alert(
             signal,
             symbol,
             correlation_id,
-            detail=detail,
+            detail=gate_detail,
         )
         return False
 
@@ -3009,6 +3201,28 @@ class Orchestrator:
             )
             if self._config
             else None,
+            within_l1_impact_factor=Decimal(
+                str(
+                    getattr(
+                        self._config,
+                        "cost_within_l1_impact_factor",
+                        0.0,
+                    )
+                )
+            )
+            if self._config
+            else Decimal("0"),
+            permanent_impact_coefficient=Decimal(
+                str(
+                    getattr(
+                        self._config,
+                        "cost_permanent_impact_coefficient",
+                        0.0,
+                    )
+                )
+            )
+            if self._config
+            else Decimal("0"),
         )
 
     def _reversal_passes_combined_edge_gate(
@@ -3080,6 +3294,17 @@ class Orchestrator:
         ``None`` (platform default), calibration from the trading log is
         skipped entirely — use explicit positive integers for a causal
         warmup prefix only.
+
+        Audit P2-4 — residual within-prefix lookahead: emissions are fit
+        once from the first ``max_q`` quotes, then the live run *re-replays*
+        that same prefix.  Posteriors for ticks early in the prefix are
+        therefore computed with emission moments estimated from later (but
+        still prefix-bounded) ticks — a soft Inv-6 wrinkle confined to the
+        warm-up window.  It does not affect Inv-5 (the fit is a pure,
+        deterministic function of the prefix, so replay is bit-identical),
+        and emission moments are slowly varying so the effect on the warm-up
+        posteriors is small.  Strict causal calibration would fit on a
+        held-out prior session and is left as a follow-up (audit P2-5).
         """
         if self._regime_engine is None:
             return
@@ -3100,21 +3325,33 @@ class Orchestrator:
             logger.warning(
                 "Regime calibration skipped — regime_calibration_max_quotes "
                 "is unset.  Engine will run with placeholder emission "
-                "parameters; downstream P(state) gates will be near-uniform."
+                "parameters that do not match real US-equity spreads; "
+                "RegimeState.calibrated will be False and every "
+                "P(state)/dominant/entropy entry gate will fail safe to OFF "
+                "(audit P0-1).  Configure a positive integer for a causal "
+                "warmup prefix to enable regime-conditioned entries."
             )
             self._bus.publish(
                 Alert(
                     timestamp_ns=self._clock.now_ns(),
                     correlation_id="regime_calibration",
                     sequence=self._seq.next(),
-                    severity=AlertSeverity.WARNING,
+                    # Audit P0-1: escalated WARNING -> CRITICAL.  Running on
+                    # placeholder emissions silently disables the entire
+                    # regime-gated SIGNAL book (gates fail safe to OFF), which
+                    # is an availability incident operators must see, not a
+                    # soft warning buried in the log.
+                    severity=AlertSeverity.CRITICAL,
                     layer="kernel",
                     alert_name="regime_calibration_unset",
                     message=(
                         "RegimeEngine has no calibration prefix configured "
                         "(regime_calibration_max_quotes is None). Posteriors "
-                        "will use placeholder emission parameters; configure a "
-                        "positive integer for a causal warmup prefix."
+                        "use placeholder emission parameters; RegimeState is "
+                        "published with calibrated=False and all "
+                        "P(state)/dominant/entropy entry gates fail safe to "
+                        "OFF (Inv-11).  Configure a positive integer for a "
+                        "causal warmup prefix to enable regime-gated entries."
                     ),
                     context={},
                 )
@@ -3210,6 +3447,18 @@ class Orchestrator:
             if self._regime_engine_registry_name is not None
             else type(self._regime_engine).__name__
         )
+        # Audit R-1: prefer the per-symbol min pairwise emission separation
+        # when the engine exposes it (per-symbol calibrated emissions can
+        # collapse independently of the pooled fit, so a global ``d`` would
+        # falsely keep gates ON for a tight symbol).  Fall back to the pooled
+        # property for legacy / custom engines that only expose that.
+        discriminability_for_symbol = getattr(
+            self._regime_engine, "discriminability_for_symbol", None
+        )
+        if callable(discriminability_for_symbol):
+            d_value = float(discriminability_for_symbol(quote.symbol))
+        else:
+            d_value = float(getattr(self._regime_engine, "discriminability", float("inf")))
         regime_state = RegimeState(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=correlation_id,
@@ -3223,6 +3472,16 @@ class Orchestrator:
             if dominant_idx < len(state_names)
             else "unknown",
             posterior_entropy_nats=regime_posterior_entropy_nats(posteriors),
+            # Audit P0-1: surface calibration status so the regime gate can
+            # fail safe to OFF on placeholder emissions (Inv-11).  Engines
+            # that do not expose ``calibrated`` are assumed calibrated
+            # (legacy / custom engines opt out of the disable behavior).
+            calibrated=bool(getattr(self._regime_engine, "calibrated", True)),
+            # Audit R-1: surface the engine's calibration-time emission
+            # separation so the gate can fail safe to OFF when the states are
+            # indiscriminate (degenerate calibration).  +inf for engines that
+            # do not expose it (always treated as fully discriminative).
+            discriminability=d_value,
         )
         self._bus.publish(regime_state)
         self._maybe_publish_hazard_spike(regime_state, correlation_id)
@@ -3741,7 +4000,54 @@ class Orchestrator:
         return self._position_manager.plan(
             desired=desired,
             current=current_position,
-            market=MarketContext(quote=quote, cost_model=self._cost_model),
+            market=MarketContext(
+                quote=quote,
+                cost_model=self._cost_model,
+                market_impact_factor=Decimal(
+                    str(
+                        getattr(
+                            self._config,
+                            "cost_market_impact_factor",
+                            0.5,
+                        )
+                    )
+                )
+                if self._config
+                else None,
+                max_impact_half_spreads=Decimal(
+                    str(
+                        getattr(
+                            self._config,
+                            "cost_max_impact_half_spreads",
+                            10.0,
+                        )
+                    )
+                )
+                if self._config
+                else None,
+                within_l1_impact_factor=Decimal(
+                    str(
+                        getattr(
+                            self._config,
+                            "cost_within_l1_impact_factor",
+                            0.0,
+                        )
+                    )
+                )
+                if self._config
+                else Decimal("0"),
+                permanent_impact_coefficient=Decimal(
+                    str(
+                        getattr(
+                            self._config,
+                            "cost_permanent_impact_coefficient",
+                            0.0,
+                        )
+                    )
+                )
+                if self._config
+                else Decimal("0"),
+            ),
             config=PositionManagerConfig(
                 shadow=not self._position_manager_drive,
                 enabled=self._position_manager_drive,
@@ -4648,6 +4954,22 @@ class Orchestrator:
             for sm, side, order in self._active_orders.values()
         )
 
+    def _has_pending_forced_exit_for_symbol(self, symbol: str) -> bool:
+        """True if a forced MARKET exit (stop / session-flat) is already in flight.
+
+        Distinguishes an aggressive exit already crossing the book from a
+        merely-resting passive cover.  The resting-order guard cancels stale
+        passive orders to let a forced MARKET exit through (Inv-11) but must
+        not stack a second aggressive leg on top of one already pending —
+        that would overshoot the position.
+        """
+        return any(
+            order.symbol == symbol
+            and sm.state not in _TERMINAL_ORDER_STATES
+            and order.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES
+            for sm, _, order in self._active_orders.values()
+        )
+
     def _cancel_resting_for_symbol(self, symbol: str, cid: str) -> None:
         """Cancel all non-terminal resting orders for a symbol.
 
@@ -4891,7 +5213,7 @@ class Orchestrator:
         correlation_id: str,
     ) -> None:
         """Submit the guaranteed MARKET residual for a non-filled working exit."""
-        order_id = hashlib.sha256(f"{parent_order_id}:working_fallback".encode()).hexdigest()[:16]
+        order_id = derive_order_id(f"{parent_order_id}:working_fallback")
         order = OrderRequest(
             timestamp_ns=self._clock.now_ns(),
             correlation_id=correlation_id,
@@ -5320,6 +5642,7 @@ class Orchestrator:
                         ack.filled_quantity,
                         ack.fill_price,
                         total_fees=ack.fees,
+                        is_final=ack.status == OrderAckStatus.FILLED,
                     )
                 except Exception:
                     logger.exception(
@@ -5345,6 +5668,16 @@ class Orchestrator:
                     # fill proportionally across all strategy positions
                     # for this symbol to keep strategy and global stores
                     # in sync.
+                    #
+                    # Forensic-approximate (audit P1, 2026-06-18): the
+                    # proportional split keeps the *aggregate* realized
+                    # PnL exact, but on a shared symbol it can mis-
+                    # attribute realized PnL across alphas relative to
+                    # the alpha that actually held the risk.  Per-alpha
+                    # attribution from this path is therefore an estimate,
+                    # not a ledger of record; consumers needing exact per-
+                    # alpha cost basis must use the FillLedger attribution
+                    # branch above (driven by allocate_fill).
                     self._distribute_fill_to_strategies(
                         ack.symbol,
                         signed_qty,
@@ -5369,32 +5702,56 @@ class Orchestrator:
 
             disclosed = order.g12_disclosed_cost_total_bps
             alert_ratio = self._realized_cost_alert_ratio
-            if disclosed > 0 and float(ack.cost_bps) > disclosed * alert_ratio:
-                self._bus.publish(
-                    Alert(
-                        timestamp_ns=self._clock.now_ns(),
-                        correlation_id=correlation_id,
-                        sequence=self._seq.next(),
-                        severity=AlertSeverity.WARNING,
-                        layer="kernel",
-                        alert_name="g12_realized_cost_exceeds_disclosure",
-                        message=(
-                            f"Fill cost_bps={float(ack.cost_bps):.4f} exceeds "
-                            f"{alert_ratio}× G12 disclosed one-way "
-                            f"cost_total_bps={disclosed:.4f} "
-                            f"(strategy_id={order.strategy_id!r}, "
-                            f"symbol={ack.symbol!r}, order_id={ack.order_id!r})"
-                        ),
-                        context={
-                            "strategy_id": order.strategy_id,
-                            "symbol": ack.symbol,
-                            "order_id": ack.order_id,
-                            "realized_cost_bps": float(ack.cost_bps),
-                            "g12_disclosed_cost_total_bps": disclosed,
-                            "alert_ratio": alert_ratio,
-                        },
+            if disclosed > 0:
+                breached = float(ack.cost_bps) > disclosed * alert_ratio
+                if not breached:
+                    # A fill within the disclosed band breaks the streak.
+                    self._realized_cost_breach_streak.pop(order.strategy_id, None)
+                else:
+                    streak = self._realized_cost_breach_streak.get(order.strategy_id, 0) + 1
+                    self._realized_cost_breach_streak[order.strategy_id] = streak
+                    # P2.10: when enabled, a persistent overrun (the cost
+                    # model under-predicting fill cost across several fills)
+                    # is fail-safe-escalated — suppress further trading via
+                    # the kill switch rather than only logging — Inv-11.
+                    escalate = (
+                        self._realized_cost_escalation_enabled
+                        and streak >= self._realized_cost_escalation_streak
                     )
-                )
+                    severity = AlertSeverity.CRITICAL if escalate else AlertSeverity.WARNING
+                    self._bus.publish(
+                        Alert(
+                            timestamp_ns=self._clock.now_ns(),
+                            correlation_id=correlation_id,
+                            sequence=self._seq.next(),
+                            severity=severity,
+                            layer="kernel",
+                            alert_name="g12_realized_cost_exceeds_disclosure",
+                            message=(
+                                f"Fill cost_bps={float(ack.cost_bps):.4f} exceeds "
+                                f"{alert_ratio}× G12 disclosed one-way "
+                                f"cost_total_bps={disclosed:.4f} "
+                                f"(strategy_id={order.strategy_id!r}, "
+                                f"symbol={ack.symbol!r}, order_id={ack.order_id!r}, "
+                                f"streak={streak})"
+                            ),
+                            context={
+                                "strategy_id": order.strategy_id,
+                                "symbol": ack.symbol,
+                                "order_id": ack.order_id,
+                                "realized_cost_bps": float(ack.cost_bps),
+                                "g12_disclosed_cost_total_bps": disclosed,
+                                "alert_ratio": alert_ratio,
+                                "breach_streak": streak,
+                                "escalated": escalate,
+                            },
+                        )
+                    )
+                    if escalate and self._kill_switch is not None and not self._kill_switch.is_active:
+                        self._kill_switch.activate(
+                            reason="realized_cost_persistent_overrun",
+                            activated_by="orchestrator",
+                        )
 
             if self._trade_journal is not None:
                 self._trade_journal.record(
@@ -5419,6 +5776,8 @@ class Orchestrator:
                         ),
                     )
                 )
+            if order.strategy_id not in _FORCED_MARKET_EXIT_STRATEGIES:
+                self._alpha_symbols_with_fills.add((order.strategy_id, ack.symbol))
 
         self._prune_terminal_orders()
 
@@ -5606,6 +5965,21 @@ class Orchestrator:
                     reasons=("filtered_alpha_consumed_by_portfolio_composition",),
                 )
             return
+        agg_qty = self._positions.get(event.symbol).quantity
+        if is_redundant_gate_close_flat(
+            event,
+            aggregate_qty=agg_qty,
+            alpha_has_prior_fill=(event.strategy_id, event.symbol)
+            in self._alpha_symbols_with_fills,
+        ):
+            if self._signal_order_trace_sink is not None and q is not None:
+                self._append_signal_order_trace(
+                    q,
+                    event,
+                    outcome="NO_ORDER",
+                    reasons=("filtered_redundant_gate_close_flat",),
+                )
+            return
         self._signal_buffer.append(event)
         if not self._quote_tick_in_flight:
             self._carryover_signal_sequences.add(event.sequence)
@@ -5634,6 +6008,34 @@ class Orchestrator:
             self._consumed_by_portfolio_ids = frozenset(consumed)
         return alpha_id in self._consumed_by_portfolio_ids
 
+    def _standalone_signal_actionable_for_strategy_ownership(
+        self,
+        signal: Signal,
+    ) -> bool:
+        """Return False when *signal* would exit book the alpha does not own."""
+        if self._strategy_positions is None:
+            return True
+        sym = signal.symbol
+        strat_qty = self._strategy_positions.get(signal.strategy_id, sym).quantity
+        agg_qty = self._positions.get(sym).quantity
+        return standalone_signal_actionable_for_strategy(
+            signal,
+            strategy_qty=strat_qty,
+            aggregate_qty=agg_qty,
+            alpha_has_prior_fill=(signal.strategy_id, sym) in self._alpha_symbols_with_fills,
+        )
+
+    def _filter_standalone_signals_by_strategy_ownership(
+        self,
+        signals: Sequence[Signal],
+    ) -> list[Signal]:
+        """Drop cross-alpha gate-close hijacks and foreign exit signals."""
+        return [
+            s
+            for s in signals
+            if self._standalone_signal_actionable_for_strategy_ownership(s)
+        ]
+
     def _select_bus_signal(self) -> Signal | None:
         """Pick one Signal from this tick's bus buffer (deterministic).
 
@@ -5654,20 +6056,64 @@ class Orchestrator:
         """
         if not self._signal_buffer:
             return None
-        buf = self._signal_buffer
-        if len(buf) > 1 and not self._warned_multi_standalone_signals:
-            self._warned_multi_standalone_signals = True
-            ids = sorted({s.strategy_id for s in buf})
-            logger.warning(
-                "orchestrator: %d standalone SIGNAL candidate(s) from %d "
-                "alpha id(s) fired on the same tick (%s); arbitrating via "
-                "%s.  Prefer a PORTFOLIO alpha listing these ids in "
-                "depends_on_signals for full multi-alpha aggregation.",
-                len(buf),
-                len(ids),
-                ids,
-                type(self._signal_arbitrator).__name__,
+        buf = self._filter_standalone_signals_by_strategy_ownership(
+            self._signal_buffer,
+        )
+        quote = self._tick_quote_for_trace
+        if quote is not None and self._signal_order_trace_sink is not None:
+            actionable_ids = {id(s) for s in buf}
+            for s in self._signal_buffer:
+                if id(s) in actionable_ids:
+                    continue
+                self._append_signal_order_trace(
+                    quote,
+                    s,
+                    outcome="NO_ORDER",
+                    reasons=("filtered_no_strategy_position_for_exit",),
+                )
+        if not buf:
+            return None
+        if len(buf) > 1:
+            agg_qty = self._positions.get(buf[0].symbol).quantity
+            harmless = collision_is_harmless_flat_gate_close(buf, agg_qty)
+            self._arbitration_collisions.append(
+                StandaloneArbitrationCollision(
+                    candidate_count=len(buf),
+                    strategy_ids=tuple(sorted({s.strategy_id for s in buf})),
+                    kinds=tuple(
+                        sorted(
+                            (s.strategy_id, s.direction.name, s.regime_gate_state)
+                            for s in buf
+                        )
+                    ),
+                    harmless=harmless,
+                )
             )
+            ids = sorted({s.strategy_id for s in buf})
+            if harmless:
+                if not self._logged_harmless_arbitration_collision:
+                    self._logged_harmless_arbitration_collision = True
+                    logger.debug(
+                        "orchestrator: %d standalone SIGNAL candidate(s) from %d "
+                        "alpha id(s) on flat book (%s); all gate-close FLAT — "
+                        "no order impact.  Prefer PORTFOLIO aggregation for "
+                        "production multi-alpha books.",
+                        len(buf),
+                        len(ids),
+                        ids,
+                    )
+            elif not self._warned_multi_standalone_signals:
+                self._warned_multi_standalone_signals = True
+                logger.warning(
+                    "orchestrator: %d standalone SIGNAL candidate(s) from %d "
+                    "alpha id(s) fired on the same tick (%s); arbitrating via "
+                    "%s.  Prefer a PORTFOLIO alpha listing these ids in "
+                    "depends_on_signals for full multi-alpha aggregation.",
+                    len(buf),
+                    len(ids),
+                    ids,
+                    type(self._signal_arbitrator).__name__,
+                )
         return self._signal_arbitrator.arbitrate(buf)
 
     # ── PR-2b-iv: bus-driven SizedPositionIntent handler ────────────
@@ -5902,8 +6348,8 @@ class Orchestrator:
     # ── BT-7: static borrow-availability ────────────────────────────
 
     def _borrow_tier_for(self, symbol: str) -> BorrowTier:
-        """Locate tier for ``symbol``; omitted symbols default to AVAILABLE."""
-        return self._borrow_tier.get(symbol.upper(), BorrowTier.AVAILABLE)
+        """Locate tier for ``symbol``; omitted symbols use the default tier."""
+        return self._borrow_tier.get(symbol.upper(), self._borrow_default_tier)
 
     def _borrow_blocks_intent(self, intent: OrderIntent) -> bool:
         """True when locate is unavailable and this intent is a short sale."""
@@ -5930,6 +6376,41 @@ class Orchestrator:
                     f"({intent.intent.name}); retries next boundary."
                 ),
                 context={"symbol": intent.symbol, "intent": intent.intent.name},
+            )
+        )
+
+    def _emit_forced_exit_supersedes_pending_alert(
+        self,
+        order: OrderRequest,
+        correlation_id: str,
+    ) -> None:
+        """Publish a forensic marker when a forced MARKET exit supersedes a
+        stale resting order.
+
+        Operator visibility (Inv-11): a hard-stop / session-flat MARKET exit
+        cancelled a pending passive order for the symbol so the aggressive
+        close could cross immediately.  Distinct from a duplicate-exit
+        suppression so post-trade forensics can attribute the cancel-and-cross
+        to the safety control rather than to alpha behaviour.
+        """
+        self._bus.publish(
+            Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="forced_exit_supersedes_pending_order",
+                message=(
+                    f"Forced MARKET exit {order.strategy_id!r} on "
+                    f"{order.symbol!r}: cancelling resting order(s) so the "
+                    f"aggressive close can cross immediately (Inv-11)."
+                ),
+                context={
+                    "symbol": order.symbol,
+                    "strategy_id": order.strategy_id,
+                    "order_id": order.order_id,
+                },
             )
         )
 

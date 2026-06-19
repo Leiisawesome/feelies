@@ -115,7 +115,11 @@ class UnknownRegimeStateError(RegimeGateError):
 # ── Whitelist tables ────────────────────────────────────────────────────
 
 
-_PERCENTILE_LITERAL_RE = re.compile(r"^p(\d{1,2})$")
+# Audit P2-3: allow 1–3 digits so ``p100`` is reachable (the prior
+# ``\d{1,2}`` capped at ``p99`` while the range-check message claimed
+# ``p0..p100``).  Values > 100 are still rejected by the bound check in
+# :func:`_resolve_name`.
+_PERCENTILE_LITERAL_RE = re.compile(r"^p(\d{1,3})$")
 _PERCENTILE_SUFFIX = "_percentile"
 _ZSCORE_SUFFIX = "_zscore"
 _DOMINANT_NAME = "dominant"
@@ -179,9 +183,16 @@ class Bindings:
     bindings.  Missing keys raise :class:`UnknownIdentifierError`
     rather than silently defaulting to 0; gate authors must declare
     every consumed sensor so the validator (G6) can DAG-check them.
+
+    - ``min_discriminability`` — audit R-1 floor on the engine's
+      calibration-time emission separation ``d``.  When the regime's
+      ``discriminability`` is below this floor the posterior cannot tell
+      the states apart, so ``P()``/``dominant``/``entropy`` are treated as
+      unavailable (gate fails safe to OFF).  Default ``0.0`` is an exact
+      no-op (the published ``discriminability`` is always ``>= 0``).
     """
 
-    __slots__ = ("regime", "sensor_values", "percentiles", "zscores")
+    __slots__ = ("regime", "sensor_values", "percentiles", "zscores", "min_discriminability")
 
     def __init__(
         self,
@@ -190,11 +201,13 @@ class Bindings:
         sensor_values: Mapping[str, float],
         percentiles: Mapping[str, float] | None = None,
         zscores: Mapping[str, float] | None = None,
+        min_discriminability: float = 0.0,
     ) -> None:
         self.regime = regime
         self.sensor_values = sensor_values
         self.percentiles = percentiles or {}
         self.zscores = zscores or {}
+        self.min_discriminability = min_discriminability
 
 
 # ── Compilation ─────────────────────────────────────────────────────────
@@ -394,6 +407,52 @@ def _compare(op: ast.cmpop, left: Any, right: Any) -> bool:
     )
 
 
+def _regime_unusable_reason(b: Bindings) -> str | None:
+    """Why a *present* RegimeState must be treated as unavailable for gating.
+
+    Returns a short reason string, or ``None`` when the regime is usable.
+    Resolving ``P()``/``dominant``/``entropy`` against an unusable regime
+    raises :class:`UnknownIdentifierError`, which the
+    :class:`~feelies.signals.horizon_engine.HorizonSignalEngine` routes
+    through its fail-safe path (force OFF + unwind), so regime-gated entries
+    never fire on untrustworthy posteriors (Inv-11).  This is *only* reached
+    when a gate actually references a regime binding, so regime-free gates
+    (e.g. a pure schedule gate) are unaffected.
+
+    Two complementary failure modes:
+
+    * **Audit P0-1 (uncalibrated):** an engine without data-fit emissions
+      publishes ``RegimeState.calibrated=False``; its posteriors do not
+      reflect real microstructure (they collapse toward one state).
+    * **Audit R-1 (indiscriminate):** even a *calibrated* engine can be
+      degenerate — on a tight, stable spread the quantile-fit emissions
+      collapse to near-identical Gaussians (separation ``d → 0``), so the
+      posterior is uniform noise and ``P(state)`` carries no information.
+      The engine publishes its calibration-time min pairwise separation as
+      ``RegimeState.discriminability``; when it is below the configured
+      ``min_discriminability`` floor the regime is unusable.  ``calibrated``
+      does **not** catch this case (placeholder emissions are well-separated
+      yet mis-located), so the two checks are orthogonal.
+
+    Legacy / custom producers default to calibrated and ``discriminability``
+    ``= +inf`` (always usable); the floor defaults to ``0.0`` (exact no-op).
+    """
+    regime = b.regime
+    if regime is None:
+        return None
+    if not bool(getattr(regime, "calibrated", True)):
+        return "uncalibrated (placeholder emissions; audit P0-1)"
+    floor = b.min_discriminability
+    if floor > 0.0:
+        d = float(getattr(regime, "discriminability", float("inf")))
+        if d < floor:
+            return (
+                f"indiscriminate (emission separation d={d:.3f} < floor "
+                f"{floor:.3f}; audit R-1)"
+            )
+    return None
+
+
 def _resolve_name(name: str, b: Bindings) -> Any:
     """Resolve an identifier against the binding tables.
 
@@ -411,6 +470,12 @@ def _resolve_name(name: str, b: Bindings) -> Any:
                 "regime-gate: 'dominant' referenced but no RegimeState "
                 "is available (cold start / regime engine inactive)"
             )
+        reason = _regime_unusable_reason(b)
+        if reason is not None:
+            raise UnknownIdentifierError(
+                f"regime-gate: 'dominant' referenced but the RegimeState is "
+                f"{reason}; failing entry gate safe to OFF"
+            )
         return b.regime.dominant_name
 
     if name == _ENTROPY_NAME:
@@ -418,6 +483,12 @@ def _resolve_name(name: str, b: Bindings) -> Any:
             raise UnknownIdentifierError(
                 "regime-gate: 'entropy' referenced but no RegimeState "
                 "is available (cold start / regime engine inactive)"
+            )
+        reason = _regime_unusable_reason(b)
+        if reason is not None:
+            raise UnknownIdentifierError(
+                f"regime-gate: 'entropy' referenced but the RegimeState is "
+                f"{reason}; failing entry gate safe to OFF"
             )
         return float(b.regime.posterior_entropy_nats)
 
@@ -466,6 +537,21 @@ def _resolve_posterior(state_name: str, b: Bindings) -> float:
         raise UnknownIdentifierError(
             f"regime-gate: P({state_name}) referenced but no RegimeState "
             f"is available (cold start / regime engine inactive)"
+        )
+    reason = _regime_unusable_reason(b)
+    if reason is not None:
+        # Audit P0-1 / R-1: posteriors from placeholder or indiscriminate
+        # emissions are not trustworthy for gating — treat as unavailable so
+        # the entry gate fails safe to OFF (Inv-11).  A malformed state name
+        # is still caught first to surface authoring typos.
+        if state_name not in tuple(b.regime.state_names):
+            raise UnknownRegimeStateError(
+                f"regime-gate: state {state_name!r} not in engine "
+                f"state_names {tuple(b.regime.state_names)!r}"
+            )
+        raise UnknownIdentifierError(
+            f"regime-gate: P({state_name}) referenced but the RegimeState "
+            f"is {reason}; failing entry gate safe to OFF"
         )
     state_names = tuple(b.regime.state_names)
     posteriors = tuple(b.regime.posteriors)
@@ -554,6 +640,17 @@ class RegimeGate:
         raw -= _SAFE_FUNCTIONS_AND_REGIME
         return frozenset(raw)
 
+    def referenced_posterior_states(self) -> frozenset[str]:
+        """State names referenced by any ``P(<state>)`` in the ON/OFF ASTs.
+
+        Public accessor used by :class:`~feelies.alpha.loader.AlphaLoader`
+        for the audit P1-2 load-time check: every ``P(...)`` argument must
+        name a real engine state, validated against ``engine.state_names``
+        at load rather than surfacing as a runtime
+        :class:`UnknownRegimeStateError` on the first evaluation.
+        """
+        return frozenset(self._p_posterior_argument_names())
+
     def _p_posterior_argument_names(self) -> set[str]:
         """State labels referenced inside ``P(...)`` calls."""
         out: set[str] = set()
@@ -616,6 +713,7 @@ class RegimeGate:
                 sensor_values=merged,
                 percentiles=bindings.percentiles,
                 zscores=bindings.zscores,
+                min_discriminability=bindings.min_discriminability,
             )
         currently_on = self._state.get(symbol, False)
         if currently_on:

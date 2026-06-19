@@ -21,7 +21,7 @@ There are no long-running services. The platform is a library + CLI; the "applic
 - **Smoke pipeline:** `uv run python scripts/smoke_pipeline.py`
 - **E2E integration test:** `uv run pytest tests/integration/test_phase4_e2e.py`
 - **APP backtest baseline:** `uv run pytest tests/acceptance/test_backtest_app_baseline.py` (disk cache for `APP/2026-03-26` required)
-- **APP backtest CLI:** `uv run feelies backtest --config configs/backtest_app.yaml --symbol APP --date 2026-03-26`
+- **APP backtest CLI:** `uv run feelies backtest --config configs/bt_app.yaml --symbol APP --date 2026-03-26`
 
 ### Linting and type checking
 

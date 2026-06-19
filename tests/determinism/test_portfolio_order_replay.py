@@ -95,10 +95,18 @@ def _hash_order_stream(orders: list[OrderRequest]) -> str:
 
 
 # Locked Level-4 PORTFOLIO order baseline (per-leg OrderRequest stream).
+#
+# Re-baselined 2026-06-18 (audit R-1): the per-leg gross-exposure cap is now
+# enforced *cumulatively* across legs of a single intent.  With the replay's
+# 20%-of-$1M = $200k gross cap, the final lexicographic leg of the boundary-300
+# intent (MSFT @ $370) now correctly breaches the running aggregate and is
+# veto-dropped, taking the stream from 16 → 15 orders.  The prior baseline
+# captured the pre-fix behavior where a multi-leg intent could collectively
+# blow through the gross cap because each leg saw only the pre-intent snapshot.
 EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH = (
-    "a49b925e57a2156d1cc3cf495cf5efa45cf9e52ce14902435f5f9d30bb95bb5c"
+    "7db2425d84f3313a394a8b7a88ea26f663b6800d435d2fba1dcb4195b2061ad7"
 )
-EXPECTED_LEVEL4_PORTFOLIO_ORDER_COUNT = 16
+EXPECTED_LEVEL4_PORTFOLIO_ORDER_COUNT = 15
 
 
 def test_portfolio_order_stream_matches_locked_baseline() -> None:

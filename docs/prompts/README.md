@@ -85,7 +85,7 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | `monitoring/` | monitoring_safety |
 | `harness/` (run + report) | harness_cli |
 | `cli/` | harness_cli (backtest) · alpha_lifecycle (`promote`) |
-| `scripts/` | harness_cli (ops: `run_backtest.py`, `run_paper.py`, `run_paper_soak.py`, `smoke_pipeline.py`, `compare_paper_backtest.py`, `split_backtest_emit.py`, `export_full_trade_list.py`, `generate_bt12_fixtures.py`, `rebaseline_parity_hashes.py`, `record_perf_baseline.py`, `record_paper_perf_baseline.py`) · sensor (`sensor_feature_ic.py`, `calibrate_hawkes.py`) · composition (`build_reference_factor_loadings.py`) · live_execution (`verify_ib_broker.py`) · position_management (`analyze_net_divergence.py`, `analyze_size_divergence.py`) |
+| `scripts/` | harness_cli (ops: `run_backtest.py`, `run_paper.py`, `run_paper_soak.py`, `smoke_pipeline.py`, `compare_paper_backtest.py`, `split_backtest_emit.py`, `generate_bt12_fixtures.py`, `rebaseline_parity_hashes.py`, `record_perf_baseline.py`, `record_paper_perf_baseline.py`) · sensor (`sensor_feature_ic.py`, `calibrate_hawkes.py`) · composition (`build_reference_factor_loadings.py`) · live_execution (`verify_ib_broker.py`) |
 
 Cross-cutting concerns (not a single package): **determinism** spans `tests/determinism/`
 + every event producer (audit 14); **performance** spans the whole hot path (audit 16).

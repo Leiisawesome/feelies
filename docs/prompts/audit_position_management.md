@@ -18,8 +18,7 @@ permanently supported deployment mode, not a transitional one. It is where a sta
 `Signal` becomes a real position and where that position is later reduced, reversed, or
 flattened. The decision layer has historically been **economically blind** (RC-A: intent
 derived from `target − current_quantity` only) over a **netted single-average book**
-(RC-B) — see `docs/audits/position_management_baseline_2026-06-08.md`. The G-1…G-7
-remediation is actively landing here; every new mechanism (position manager, netting,
+(RC-B). The G-1…G-7 remediation is actively landing here; every new mechanism (position manager, netting,
 lot ledger, session flatten, working exits, edge-weighted sizing) must be audited with
 the same rigor as the layers above it.
 
@@ -35,12 +34,10 @@ file/line citations, severity, and prioritized recommendations.
 
 ## Platform context (read first)
 
-1. Read `docs/audits/position_management_baseline_2026-06-08.md` end-to-end (the
-   factual baseline: RC-A / RC-B root causes, gaps G-1…G-7, the 7-intent matrix, the
-   close-path hierarchy).
-2. Read `docs/audits/position_management_design_proposal_2026-06-08.md` and
-   `docs/audits/position_management_g5_netting_rfc_2026-06-08.md` (the remediation
-   designs the current code implements).
+1. Read `src/feelies/execution/intent.py`, `position_manager.py`, and
+   `portfolio_netter.py` (the G-1/G-5 decision contracts and legacy adapter).
+2. Read `src/feelies/portfolio/lot_ledger.py`, `storage/trade_journal.py`, and the
+   position-store modules (PnL ledger path).
 3. Read `.cursor/skills/risk-engine/SKILL.md` § on sizing and fail-safe, and
    `.cursor/skills/live-execution/SKILL.md` § on order lifecycle.
 4. Read `.cursor/rules/platform-invariants.mdc` Inv-5 (deterministic replay), Inv-11
@@ -121,7 +118,6 @@ Signal (selected at M4; _select_bus_signal arbitration; _check_stop_exit may ove
 
 ### Operator surfaces (measurement streams)
 
-- `scripts/analyze_net_divergence.py`, `scripts/analyze_size_divergence.py`
 - `configs/backtest_multialpha.yaml`, `backtest_multialpha_netting.yaml`,
   `backtest_sizing_tilt.yaml` (+ ablation variants: `backtest_sizing_tilt_edgeonly.yaml`,
   `backtest_sizing_tilt_invonly.yaml`, `backtest_multialpha_sizing_tilt.yaml`,
@@ -134,9 +130,6 @@ Signal (selected at M4; _select_bus_signal arbitration; _check_stop_exit may ove
 - `tests/portfolio/test_lot_ledger.py`, `test_memory_position_store.py`,
   `test_strategy_position_store.py`, `test_position_store_bid_ask_marks.py`
 - `tests/storage/test_trade_journal.py` (fill-journal contract)
-- Determinism: `tests/determinism/test_emit_net_divergence_jsonl.py`,
-  `test_emit_size_divergence_jsonl.py`, `test_analyze_net_divergence.py`,
-  `test_analyze_size_divergence.py`
 - Kernel-embedded coverage (note the placement): stop-exit / reverse / session-flatten /
   working-exit behavior is tested inside `tests/kernel/test_orchestrator.py` and
   `test_orchestrator_bus_signal.py`; B4 in `tests/kernel/test_orchestrator_cost_gate.py`
@@ -276,7 +269,6 @@ or safety.
    - `uv run pytest tests/execution/test_intent.py tests/execution/test_position_manager.py tests/execution/test_portfolio_netter.py -q`
    - `uv run pytest tests/risk/test_position_sizer.py tests/risk/test_edge_weighted_sizer.py -q`
    - `uv run pytest tests/portfolio/ -q`
-   - `uv run pytest tests/determinism/test_emit_net_divergence_jsonl.py tests/determinism/test_emit_size_divergence_jsonl.py tests/kernel/test_orchestrator_cost_gate.py -q`
    Do not modify production code.
 
 ---

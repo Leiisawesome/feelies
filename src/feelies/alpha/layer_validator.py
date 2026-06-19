@@ -121,6 +121,17 @@ class UnauthorizedMechanismDependencyError(TrendMechanismValidationError):
     ``trend_mechanism.consumes`` whitelist."""
 
 
+class UnbackedSignatureSensorError(TrendMechanismValidationError):
+    """G16 rule 10 — a SIGNAL alpha declares a ``l1_signature_sensors``
+    entry that is not in its ``depends_on_sensors``.
+
+    A signature sensor the alpha does not depend on (and therefore
+    cannot consume in ``evaluate``) is a *cosmetic fingerprint*: it
+    satisfies the rule-5 family-marker check on paper while the signal
+    logic reads something else entirely (audit P1-4).  The mechanism a
+    SIGNAL claims must be backed by a real sensor dependency."""
+
+
 class MissingTrendMechanismError(TrendMechanismValidationError):
     """G16 strict-mode (§20.6.2) — ``platform.yaml.enforce_trend_mechanism``
     is True and a schema-1.1 SIGNAL/PORTFOLIO spec failed to declare a
@@ -966,6 +977,24 @@ class LayerValidator:
                 f"{source}: G16 rule 6 — 'failure_signature' must be a "
                 f"non-empty list of mechanism-specific invalidator "
                 f"clauses (Inv-2)"
+            )
+
+        # Rule 10 (audit P1-4) — every declared signature sensor must be a
+        # real dependency.  A ``l1_signature_sensors`` entry absent from
+        # ``depends_on_sensors`` cannot be consumed by ``evaluate`` and is
+        # therefore a cosmetic fingerprint.  Independent of the sensor
+        # registry, so it runs even when ``known_sensor_ids`` is unset
+        # (e.g. the loader's load-time validation pass).
+        depends_raw = spec.get("depends_on_sensors") or []
+        depends_ids = {d for d in depends_raw if isinstance(d, str)}
+        unbacked = sorted(declared_sensor_ids - depends_ids)
+        if unbacked:
+            raise UnbackedSignatureSensorError(
+                f"{source}: G16 rule 10 — l1_signature_sensors {unbacked} "
+                f"are not in depends_on_sensors; a signature sensor the "
+                f"alpha does not depend on cannot be the mechanism's L1 "
+                f"fingerprint (cosmetic fingerprint). Add them to "
+                f"depends_on_sensors or drop them from l1_signature_sensors."
             )
 
         if family == _STRESS_FAMILY:

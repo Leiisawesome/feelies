@@ -639,3 +639,56 @@ class TestEmissionSeparationDiagnostic:
         assert not any("weak emission separation" in r.message for r in caplog.records), (
             "Should not warn when emissions are well separated"
         )
+
+
+# ── Audit P0-1: uncalibrated defaults pin to an extreme on real spreads ──
+
+
+def test_uncalibrated_posterior_pins_to_vol_breakout_on_realistic_spread() -> None:
+    """Quantifies why uncalibrated gating is unsafe (audit P0-1, appendix #1).
+
+    A default-constructed engine carries placeholder emission means at
+    log-relative-spread −4.5/−3.5/−2.5 (≈1.1%/3.0%/8.2%), far above a real
+    US-equity ~1.3 bps spread (log ≈ −8.9).  Every real quote lands deep in
+    the left tail of all three Gaussians, where the widest-σ state
+    (vol_breakout) has the slowest-decaying likelihood, so the posterior
+    collapses toward vol_breakout rather than being merely "near-uniform".
+    The engine reports ``calibrated == False`` so the regime gate fails
+    P(<state>) safe to OFF instead of trading on this artefact.
+    """
+    engine = HMM3StateFractional()
+    assert engine.calibrated is False  # default deployments must opt in
+
+    # bid 149.99 / ask 150.01 -> ~1.3 bps relative spread (typical midcap).
+    post = engine.posterior(_make_quote())
+    vol_breakout_idx = engine.state_names.index("vol_breakout")
+    assert post[vol_breakout_idx] > 0.5, (
+        "uncalibrated posterior should pin to vol_breakout on a realistic "
+        f"spread, got {dict(zip(engine.state_names, post))}"
+    )
+    # And P(normal) is nowhere near the 0.5-0.65 floors the shipped gates
+    # require, so those gates would never fire even before the fail-safe.
+    normal_idx = engine.state_names.index("normal")
+    assert post[normal_idx] < 0.5
+
+
+# ── Audit R-1: discriminability property (min pairwise emission separation) ──
+
+
+def test_discriminability_high_for_well_separated_emissions() -> None:
+    eng = HMM3StateFractional(emission_params=[(-9.2, 0.25), (-8.0, 0.45), (-6.5, 0.65)])
+    # min pairwise d well above the 0.5 weak-discrimination floor
+    assert eng.discriminability > 1.0
+
+
+def test_discriminability_low_for_degenerate_emissions() -> None:
+    # Near-identical Gaussians (a tight, stable spread after quantile fit) —
+    # mirrors the synth_5min_aapl fixture (d ~= 0.02-0.07).
+    eng = HMM3StateFractional(emission_params=[(-9.800, 0.01), (-9.799, 0.01), (-9.798, 0.01)])
+    assert eng.discriminability < 0.5
+
+
+def test_discriminability_matches_min_pairwise_separation() -> None:
+    eng = HMM3StateFractional(emission_params=[(-9.2, 0.25), (-8.8, 0.45), (-8.0, 0.65)])
+    expected = eng._compute_min_pairwise_emission_separation(eng._emission)
+    assert eng.discriminability == expected

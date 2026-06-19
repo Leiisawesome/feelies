@@ -91,7 +91,13 @@ class BudgetBasedSizer:
             account_equity * Decimal(str(risk_budget.capital_allocation_pct)) / Decimal("100")
         )
 
-        strength = max(0.0, signal.strength)
+        # Clamp conviction into [0, 1] (audit R-8).  ``strength`` is the
+        # alpha's self-reported conviction and is contractually in [0, 1];
+        # a stray value > 1.0 would size *above* the alpha's allocated
+        # capital before the (<=1.0) regime factor is even applied, leaving
+        # ``budget.max_position_per_symbol`` as the only backstop.  Clamp so
+        # conviction can never amplify exposure beyond the full allocation.
+        strength = min(1.0, max(0.0, signal.strength))
         conviction_capital = allocated * Decimal(str(strength))
 
         regime_factor = self._get_regime_factor(signal.symbol)
@@ -103,12 +109,17 @@ class BudgetBasedSizer:
         return max(0, capped)
 
     def _get_regime_factor(self, symbol: str) -> float:
+        # Missing-data policy (audit R-3): mirror BasicRiskEngine._regime_scaling.
+        # No engine configured → 1.0 (operator opted out of regime scaling).
+        # Engine configured but no committed posterior for ``symbol`` yet
+        # (warm-up / never filtered) → genuine missing data → tighten to
+        # min(all factors) rather than the 1.0 baseline.
         if self._regime_engine is None:
             return 1.0
 
         posteriors = self._regime_engine.current_state(symbol)
         if not posteriors:
-            return 1.0
+            return self._regime_factor_default
 
         state_names = list(self._regime_engine.state_names)
         default = self._regime_factor_default

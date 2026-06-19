@@ -43,6 +43,18 @@ regime_engine: hmm_3state_fractional
 
 # Optional engine kwargs (forwarded at bootstrap). Defaults preserve tick-based
 # transitions and pooled prefix calibration only.
+#
+# Audit P1-3 (RECOMMENDED for live cohorts): enable transition_time_scaling.
+# With the default (off) the transition matrix is applied once per inbound
+# quote, so the mean regime dwell is measured in *ticks* and drifts ~10x with
+# intraday quote intensity (100 ticks ≈ 10 s @ 10 q/s but ≈ 1 s @ 100 q/s).
+# Enabling it re-exponentiates each row's self-transition by
+# (dt / transition_dt_reference_seconds) so dwell is comparable in *seconds*.
+# It is left OFF by default because (a) the right transition_dt_reference_seconds
+# is cohort-specific and (b) flipping the global default would change every
+# posterior and invalidate the locked Level-5/6 determinism baselines.  Set it
+# explicitly per deployment, tuning transition_dt_reference_seconds to the
+# cohort's typical inter-quote gap.
 # regime_engine_options:
 #   transition_time_scaling_enabled: true
 #   transition_dt_reference_seconds: 0.05
@@ -133,6 +145,14 @@ cost_max_commission_pct: 1.0
 # when (edge_bps_basis) < ratio × round_trip_cost_bps.  Default 1.0 =
 # round-trip breakeven floor.  Operators wanting G12-equivalent margin
 # (1.5× one-way) can set 0.75.  Set 0.0 to disable (research-only).
+#
+# Audit P1-3: Inv-12 requires edge > 1.5× ROUND-TRIP cost.  This default
+# (1.0) is only round-trip break-even; it is intentionally permissive for
+# the reference profile.  Every deployment config that trades for real
+# (configs/bt_app*.yaml, configs/bt_multialpha.yaml,
+# configs/paper_run.yaml, configs/paper_smoke_rth.yaml) overrides this to
+# 1.5 to satisfy Inv-12.  Leave reference at 1.0 only for research; raise
+# to 1.5 for any cost-realistic run.
 signal_min_edge_cost_ratio: 1.0
 signal_edge_cost_basis: round_trip
 
@@ -140,6 +160,16 @@ signal_edge_cost_basis: round_trip
 # N NBBO quotes in replay order (pooled across symbols unless per_symbol_calibration
 # is enabled in regime_engine_options). Omit or null to skip boot calibration.
 regime_calibration_max_quotes: 100000
+
+# Audit R-1: floor on the regime engine's calibration-time emission separation
+# d (min pairwise |mu_i-mu_j|/sqrt(sig_i^2+sig_j^2)).  When the calibrated
+# states are statistically indistinguishable (d below this), regime gates fail
+# safe to OFF — the posterior is uniform noise (e.g. a tight, stable spread
+# whose quantile-fit Gaussians collapse).  0.0 (default) is an exact no-op;
+# ~0.5 enables the guard (the conventional weak-discrimination floor).  This is
+# orthogonal to the calibrated fail-safe (uncalibrated placeholder emissions
+# are well-separated yet mis-located, caught separately).
+regime_min_discriminability: 0.0
 
 # Short borrow annual bps; 0 = off (optimistic for SHORT alphas like benign).
 # Audited (BT-0): HTB *fee* modeling is deferred per plan §2 for the intraday
@@ -161,6 +191,35 @@ passive_queue_position_shares: 200
 # queue-position uncertainty so no single quote tick is a near-certain fill.
 passive_fill_hazard_max: 0.5
 passive_cancel_fee_per_share: 0.0
+
+# ── Execution-realism profile (audit 2026-06-19 P1/P2 backlog) ──────────────
+# These knobs default to behaviour-neutral in code; the reference platform
+# config flips them ON so every backtest prices fills live-realistically by
+# default.  They are BACKTEST-only (the live/paper path fills via the IB
+# broker router, not these simulators), so enabling them here does not change
+# PAPER/LIVE behaviour.  Flipping them changed the APP trade path — the
+# regression baseline in tests/acceptance/test_backtest_app_baseline.py was
+# re-baked in the same commit.
+#
+# P1.1: cap a passive through-fill at the crossing quote's opposite-side size
+# and rest the remainder (models queue position on through-trades).
+passive_through_fill_size_cap_enabled: true
+# P1.2: require an observed print at the level before a quote-imbalance drain
+# fill (inert while passive_queue_position_shares > 0, which already requires
+# volume; protects quote-imbalance-mode configs).
+passive_require_trade_for_level_fill: true
+# P1.3: participation impact on the within-L1 leg of aggressive fills (stops,
+# marketable limits, reverses), measured in half-spreads.  0.3 × (qty/depth).
+cost_within_l1_impact_factor: 0.3
+# P2.9: forced exits (stop / hazard / force-flatten) fill into a depleted book
+# — 2.0 halves the usable L1 depth so a stop walks deeper.
+cost_stop_depth_depletion_factor: 2.0
+# P2.8: MOC closing-auction penalty (bps of notional).  Inert for non-MOC
+# alphas; priced for any MOC-routed config that extends this base.
+cost_moc_penalty_bps: 3.0
+# P2.11: permanent sqrt impact stays 0 — its coefficient needs calibration
+# from cached fills (audit §10 open question), so it is not flipped on blind.
+cost_permanent_impact_coefficient: 0.0
 
 platform_min_order_shares: 50
 

@@ -76,6 +76,16 @@ COMPLETENESS_WARN_THRESHOLD: float = 0.50
 DEGENERATE_RATE_WARN_THRESHOLD: float = 0.05
 FACTOR_RESIDUAL_WARN_THRESHOLD: float = 0.05
 
+# Optimizer terminal statuses that are *not* a degradation: the
+# deterministic closed-form path, a healthy ECOS solve, and the benign
+# "nothing to size" outcomes.  Any other non-empty status (e.g.
+# ``ECOS_FAILED_FALLBACK``, ``infeasible``, ``unbounded``) raises a
+# WARNING (audit P1-8).  Empty string ``""`` means "not recorded" and is
+# ignored.
+_HEALTHY_SOLVER_STATUSES: frozenset[str] = frozenset(
+    {"CLOSED_FORM", "optimal", "optimal_inaccurate", "ZERO_GROSS", "EMPTY_UNIVERSE"}
+)
+
 
 class HorizonMetricsCollector:
     """Bus-attached composition metrics + alert publisher.
@@ -96,6 +106,7 @@ class HorizonMetricsCollector:
         "_barriers_total",
         "_hazard_spikes_total",
         "_hazard_exits_total",
+        "_last_solver_status",
     )
 
     def __init__(
@@ -112,6 +123,9 @@ class HorizonMetricsCollector:
         self._barriers_total = 0
         self._hazard_spikes_total = 0
         self._hazard_exits_total = 0
+        # Per-alpha last-seen solver status — drives the state-change
+        # throttle for the solver-degradation alert (audit P1-8).
+        self._last_solver_status: dict[str, str] = {}
 
     # ── Public API ───────────────────────────────────────────────────
 
@@ -246,6 +260,26 @@ class HorizonMetricsCollector:
                         "intents_total": self._intents_total,
                     },
                 )
+
+        # Solver-degradation alert (audit P1-8): fire on the transition
+        # *into* a degraded optimizer status (state-change throttle so a
+        # persistently-degraded alpha alerts once, not every boundary).
+        status = intent.solver_status
+        prev_status = self._last_solver_status.get(intent.strategy_id, "")
+        if status and status not in _HEALTHY_SOLVER_STATUSES and status != prev_status:
+            self._publish_alert(
+                intent.timestamp_ns,
+                intent.correlation_id,
+                AlertSeverity.WARNING,
+                "composition.solver_degraded",
+                f"optimizer solver_status={status!r} (degraded)",
+                context={
+                    "strategy_id": intent.strategy_id,
+                    "solver_status": status,
+                    "previous_status": prev_status,
+                },
+            )
+        self._last_solver_status[intent.strategy_id] = status
 
         if residual_l2 > FACTOR_RESIDUAL_WARN_THRESHOLD:
             self._publish_alert(

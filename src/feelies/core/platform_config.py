@@ -328,10 +328,15 @@ class PlatformConfig:
     # round-trip cost.  0.0 disables the gate (churn-guard-only trim).
     position_manager_trim_edge_gate_multiplier: float = 1.0
     # P4: urgency-driven execution style.  When True, discretionary trims
-    # work PASSIVE (post a limit) instead of crossing at MARKET.  Default
-    # off — a passive reduction defers on a non-fill, so it is opt-in until
-    # the working-exit-with-market-fallback layer lands.
-    position_manager_urgency_exec: bool = False
+    # work PASSIVE (post a limit) instead of crossing at MARKET, saving the
+    # spread on a non-safety reduce.  Audit P2 (2026-06-18): flipped default
+    # ON now that the working-exit-with-market-fallback layer has landed
+    # (``_escalate_unfilled_working_exits`` / ``_submit_working_exit_fallback``
+    # re-submit any unfilled passive residual as MARKET), so a passive trim
+    # that does not fill is still guaranteed to complete.  Only the
+    # discretionary TRIM leg is affected; entries/exits/reverses are
+    # unchanged.  This changes the trade path — re-baseline the APP backtest.
+    position_manager_urgency_exec: bool = True
 
     # G-6: session / EOD flatten.  When enabled (and an RTH session is
     # configured), open positions are flattened — and new entries blocked —
@@ -357,6 +362,15 @@ class PlatformConfig:
     # and the live size stays single-factor — byte-identical to the baseline.
     # Each factor is independently disabled by default, so even when driving,
     # an all-off config reproduces the base sizer exactly.
+    #
+    # Audit P2.3 (2026-06-18): the EDGE-weighted tilt is fully wired and
+    # available **opt-in** — an operator promotes it per deployment by setting
+    # ``sizer_tilt_drive: true`` + ``sizer_edge_weighting_enabled: true`` (then
+    # a disclosed-positive-edge entry is sized by ``edge / edge_ref_bps``
+    # clamped to ``[edge_floor, edge_cap]``, re-capped at
+    # ``max_position_per_symbol`` and floored at 0 — Inv-11 holds).  It is left
+    # OFF by default so promoting edge-amplified sizing is a conscious,
+    # re-baselined per-deployment choice rather than a platform-wide default.
     sizer_tilt_drive: bool = False
     sizer_edge_weighting_enabled: bool = False
     sizer_edge_ref_bps: float = 20.0
@@ -377,6 +391,15 @@ class PlatformConfig:
     # only the first N NBBO quotes in replay sequence order as calibration
     # input — causal prefix, never the full session.
     regime_calibration_max_quotes: int | None = None
+
+    # Audit R-1: floor on the regime engine's calibration-time emission
+    # separation ``d`` (min pairwise).  When the published
+    # ``RegimeState.discriminability`` is below this, regime-gates fail safe
+    # to OFF (the posterior cannot tell the states apart — degenerate
+    # calibration on a tight/stable spread).  ``0.0`` (default) is an exact
+    # no-op; ``~0.5`` enables the guard.  Orthogonal to the calibrated
+    # fail-safe (P0-1).  Wired into ``HorizonSignalEngine``.
+    regime_min_discriminability: float = 0.0
 
     # When True, bootstrap refuses to start if ``RegimeEngine.state_names``
     # contains any name missing from the risk engine's regime scale map
@@ -400,6 +423,52 @@ class PlatformConfig:
     # Applied as a daily cost (annual_bps / 252) on SELL fills flagged as_short.
     # Default 0 = disabled.  Set for short-selling strategies only.
     cost_htb_borrow_annual_bps: float = 0.0
+
+    # ── Execution-realism knobs (audit 2026-06-19; additive, default-neutral) ──
+    # Each defaults to the prior trade-path behaviour so every locked Inv-5
+    # parity hash and the APP PnL baseline remain valid; only the config
+    # snapshot grows.  Operators opt into the more-conservative realism per
+    # knob (platform.yaml enables them for live-like backtests).
+    #
+    # P1.3: participation-based impact applied to the *within-L1* filled
+    # portion (the excess-over-L1 walk-the-book term is unchanged).  Moves
+    # the taker fill price by ``factor × (fill_qty / available_depth) ×
+    # half_spread`` for the L1 leg too.  0.0 reproduces "impact only on
+    # excess".  Mirrored by the round-trip cost estimators.
+    cost_within_l1_impact_factor: float = 0.0
+    # P2.11: permanent square-root market-impact coefficient.  Adds
+    # ``coef × sqrt(quantity / available_depth) × half_spread`` to the taker
+    # fill price.  0.0 = disabled (calibration from cached fills is a data
+    # task — see the audit appendix).
+    cost_permanent_impact_coefficient: float = 0.0
+    # P2.8: MOC closing-auction penalty in bps of notional, charged as a fee
+    # on every MOC fill to proxy auction imbalance the close-mid proxy
+    # ignores.  0.0 preserves prior MOC economics (close mid, no spread).
+    cost_moc_penalty_bps: float = 0.0
+    # P2.9: forced-exit (stop / hazard / force-flatten) depth-depletion
+    # factor.  The effective L1 depth a panic exit fills against is divided
+    # by this factor before the walk-the-book split, so a stop walks deeper
+    # into a depleted book.  1.0 = no change; 2.0 halves usable L1 depth.
+    cost_stop_depth_depletion_factor: float = 1.0
+    # P1.1: cap a passive through-fill at the crossing quote's opposite-side
+    # size and rest the remainder instead of filling the whole order in one
+    # tick (models queue position on through-trades).  False = prior full-fill.
+    passive_through_fill_size_cap_enabled: bool = False
+    # P1.2: require observed trade volume at the resting level before a
+    # quote-imbalance level (drain) fill can fire — a passive order cannot
+    # drain-fill on quote ticks alone.  False = prior quote-imbalance-only
+    # behaviour.  (Explicit queue-depth mode already requires volume.)
+    passive_require_trade_for_level_fill: bool = False
+    # P1.7: borrow tier assumed for symbols absent from
+    # ``borrow_availability``.  "available" (default) is optimistic for
+    # non-large-cap universes; "hard" / "unavailable" are conservative.
+    borrow_default_tier: str = "available"
+    # P2.10: when True, a realized fill cost_bps that exceeds
+    # ``realized_cost_alert_ratio`` × the disclosed G12 one-way cost for
+    # ``realized_cost_escalation_streak`` consecutive fills escalates the
+    # risk engine (SCALE_DOWN) rather than only emitting a WARNING alert.
+    realized_cost_escalation_enabled: bool = False
+    realized_cost_escalation_streak: int = 3
 
     cache_dir: Path | None = None
 
@@ -646,6 +715,15 @@ class PlatformConfig:
                     f"borrow_availability[{sym!r}]={tier!r} is invalid; "
                     "expected available, hard, or unavailable"
                 )
+        if str(self.borrow_default_tier).strip().lower() not in (
+            "available",
+            "hard",
+            "unavailable",
+        ):
+            raise ConfigurationError(
+                f"borrow_default_tier={self.borrow_default_tier!r} is invalid; "
+                "expected available, hard, or unavailable"
+            )
 
         if not isinstance(self.regime_engine_options, dict):
             raise ConfigurationError("regime_engine_options must be a dict[str, object] mapping")
@@ -710,6 +788,16 @@ class PlatformConfig:
             raise ConfigurationError("cost_finra_taf_per_share must be >= 0")
         if self.cost_finra_taf_max_per_order < 0.0:
             raise ConfigurationError("cost_finra_taf_max_per_order must be >= 0")
+        if self.cost_within_l1_impact_factor < 0.0:
+            raise ConfigurationError("cost_within_l1_impact_factor must be >= 0")
+        if self.cost_permanent_impact_coefficient < 0.0:
+            raise ConfigurationError("cost_permanent_impact_coefficient must be >= 0")
+        if self.cost_moc_penalty_bps < 0.0:
+            raise ConfigurationError("cost_moc_penalty_bps must be >= 0")
+        if self.cost_stop_depth_depletion_factor < 1.0:
+            raise ConfigurationError("cost_stop_depth_depletion_factor must be >= 1")
+        if self.realized_cost_escalation_streak < 1:
+            raise ConfigurationError("realized_cost_escalation_streak must be >= 1")
         if self.cost_max_impact_half_spreads < 1.0:
             raise ConfigurationError(
                 "cost_max_impact_half_spreads must be >= 1 "
@@ -780,6 +868,12 @@ class PlatformConfig:
         if self.regime_calibration_max_quotes is not None:
             if self.regime_calibration_max_quotes < 1:
                 raise ConfigurationError("regime_calibration_max_quotes must be >= 1 when set")
+
+        if self.regime_min_discriminability < 0.0:
+            raise ConfigurationError(
+                "regime_min_discriminability must be >= 0.0 "
+                f"(got {self.regime_min_discriminability})"
+            )
 
         # Sensor specs: detect duplicate (sensor_id, sensor_version)
         # pairs early so registration-time errors at boot are reserved
@@ -1000,10 +1094,20 @@ class PlatformConfig:
             "sizer_tilt_cap": self.sizer_tilt_cap,
             "signal_edge_cost_basis": self.signal_edge_cost_basis,
             "regime_calibration_max_quotes": self.regime_calibration_max_quotes,
+            "regime_min_discriminability": self.regime_min_discriminability,
             "enforce_regime_state_scale_alignment": (self.enforce_regime_state_scale_alignment),
             "cost_market_impact_factor": self.cost_market_impact_factor,
             "cost_max_impact_half_spreads": self.cost_max_impact_half_spreads,
             "cost_htb_borrow_annual_bps": self.cost_htb_borrow_annual_bps,
+            "cost_within_l1_impact_factor": self.cost_within_l1_impact_factor,
+            "cost_permanent_impact_coefficient": (self.cost_permanent_impact_coefficient),
+            "cost_moc_penalty_bps": self.cost_moc_penalty_bps,
+            "cost_stop_depth_depletion_factor": (self.cost_stop_depth_depletion_factor),
+            "passive_through_fill_size_cap_enabled": (self.passive_through_fill_size_cap_enabled),
+            "passive_require_trade_for_level_fill": (self.passive_require_trade_for_level_fill),
+            "borrow_default_tier": self.borrow_default_tier,
+            "realized_cost_escalation_enabled": (self.realized_cost_escalation_enabled),
+            "realized_cost_escalation_streak": (self.realized_cost_escalation_streak),
             # Phase-2 fields (folded into the snapshot so determinism
             # checksums change when sensor configuration changes — but
             # default values keep the snapshot bit-stable for legacy
@@ -1395,7 +1499,7 @@ class PlatformConfig:
             position_manager_trim_edge_gate_multiplier=float(
                 data.get("position_manager_trim_edge_gate_multiplier", 1.0)
             ),
-            position_manager_urgency_exec=bool(data.get("position_manager_urgency_exec", False)),
+            position_manager_urgency_exec=bool(data.get("position_manager_urgency_exec", True)),
             session_flatten_enabled=bool(data.get("session_flatten_enabled", True)),
             session_flatten_seconds_before_close=int(
                 data.get("session_flatten_seconds_before_close", 0)
@@ -1419,11 +1523,33 @@ class PlatformConfig:
             sizer_tilt_cap=float(data.get("sizer_tilt_cap", 3.0)),
             signal_edge_cost_basis=str(data.get("signal_edge_cost_basis", "round_trip")),
             regime_calibration_max_quotes=regime_calibration_max_quotes,
+            regime_min_discriminability=float(data.get("regime_min_discriminability", 0.0)),
             enforce_regime_state_scale_alignment=bool(
                 data.get("enforce_regime_state_scale_alignment", False)
             ),
             cost_market_impact_factor=float(data.get("cost_market_impact_factor", 0.5)),
             cost_htb_borrow_annual_bps=float(data.get("cost_htb_borrow_annual_bps", 0.0)),
+            cost_within_l1_impact_factor=float(data.get("cost_within_l1_impact_factor", 0.0)),
+            cost_permanent_impact_coefficient=float(
+                data.get("cost_permanent_impact_coefficient", 0.0)
+            ),
+            cost_moc_penalty_bps=float(data.get("cost_moc_penalty_bps", 0.0)),
+            cost_stop_depth_depletion_factor=float(
+                data.get("cost_stop_depth_depletion_factor", 1.0)
+            ),
+            passive_through_fill_size_cap_enabled=bool(
+                data.get("passive_through_fill_size_cap_enabled", False)
+            ),
+            passive_require_trade_for_level_fill=bool(
+                data.get("passive_require_trade_for_level_fill", False)
+            ),
+            borrow_default_tier=str(data.get("borrow_default_tier", "available")),
+            realized_cost_escalation_enabled=bool(
+                data.get("realized_cost_escalation_enabled", False)
+            ),
+            realized_cost_escalation_streak=int(
+                data.get("realized_cost_escalation_streak", 3)
+            ),
             cache_dir=Path(cache_dir_raw) if cache_dir_raw else None,
             session_open_ns=session_open_ns,
             horizons_seconds=horizons_seconds,

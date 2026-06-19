@@ -325,6 +325,14 @@ class UniverseSynchronizer:
             for (kh, ksym, _strategy_id), s in sorted_signal_cache:
                 if kh != h or ksym != symbol:
                     continue
+                # Causality guard (Inv-6, audit P1-7): never select a
+                # signal stamped after the barrier.  In-order replay keeps
+                # such signals out of the cache, but the explicit filter
+                # makes the legacy path symmetric with the multi-feeder
+                # selector (``_pick_feeder_signal``) so an out-of-order
+                # injection cannot leak a future signal into the context.
+                if s.timestamp_ns > tick.timestamp_ns:
+                    continue
                 if snap is not None and s.timestamp_ns < snap.timestamp_ns:
                     continue
                 chosen = s
@@ -333,6 +341,17 @@ class UniverseSynchronizer:
             if chosen is not None:
                 non_none += 1
 
+        # Completeness semantics (audit P2-2).  This counts symbols with a
+        # *present and causal* signal — i.e. one selected above subject to
+        # the ``ts <= barrier`` guard and the ``ts >= snapshot`` freshness
+        # floor.  It is NOT a staleness-window check: a signal carried over
+        # from a much earlier boundary still counts, even if its
+        # information content is stale relative to the barrier.  Adding a
+        # true staleness gate (drop signals older than a per-horizon
+        # window before counting) is a modeling decision that would change
+        # completeness → the completeness-threshold gate → the emitted
+        # intent stream, so it is deferred behind an explicit window choice
+        # and a Level-3 re-baseline rather than introduced silently here.
         completeness = non_none / len(self._universe_sorted) if self._universe_sorted else 0.0
 
         ctx = CrossSectionalContext(
