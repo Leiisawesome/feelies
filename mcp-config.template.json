@@ -1,0 +1,38 @@
+{
+  "_instructions": [
+    "Copy this file. Fill in YOUR_USERNAME and all API keys.",
+    "Save the filled copy to:",
+    "  Mac:     ~/Library/Application Support/Claude/claude_desktop_config.json",
+    "  Windows: %APPDATA%\\Claude\\claude_desktop_config.json",
+    "NEVER commit the filled copy — it contains live secrets.",
+    "When adding or changing an MCP server, update THIS template file and commit it."
+  ],
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "REPLACE_WITH_YOUR_PAT"
+      }
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "REPLACE_WITH_ABSOLUTE_REPO_PATH_ON_THIS_MACHINE"
+      ],
+      "_path_examples": {
+        "mac": "/Users/YOUR_USERNAME/path/to/feelies",
+        "windows": "C:\\Users\\YOUR_USERNAME\\path\\to\\feelies"
+      }
+    },
+    "brave-search": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "REPLACE_WITH_YOUR_BRAVE_API_KEY"
+      }
+    }
+  }
+}
