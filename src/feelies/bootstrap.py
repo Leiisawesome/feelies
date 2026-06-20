@@ -1286,6 +1286,18 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             "seconds_to_window_close",
             h,
         ),
+        # Audit follow-up (2026-06-19 external review): expose the window
+        # identity (tuple index 2) so an alpha surface modelling multiple
+        # scheduled-flow event types (MOC vs earnings vs open) can tell them
+        # apart instead of collapsing them under one indistinguishable
+        # active/seconds/prior triple.  Name matches the engine's gate binding
+        # (`_TUPLE_SENSOR_COMPONENTS`).
+        TupleComponentFeature(
+            "scheduled_flow_window",
+            2,
+            "scheduled_flow_window_id_hash",
+            h,
+        ),
         TupleComponentFeature(
             "scheduled_flow_window",
             3,
