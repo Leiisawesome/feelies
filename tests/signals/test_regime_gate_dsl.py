@@ -559,3 +559,99 @@ def test_regime_free_gate_unaffected_by_floor() -> None:
     b = _bindings(regime=regime, sensor_values={"spread_z_30d": 0.2}, min_discriminability=0.9)
     # Pure sensor gate (cf. sig_moc_imbalance_v1) resolves regardless.
     assert evaluate(compile_expression("spread_z_30d < 1.5"), b) is True
+
+
+# ── Param injection as gate constants (external report §5.5) ─────────────
+
+
+def test_param_injected_as_gate_constant() -> None:
+    gate = RegimeGate(
+        alpha_id="a",
+        on_condition="ofi_ewma > entry_z",
+        off_condition="ofi_ewma < 0",
+        params={"entry_z": 2.0},
+    )
+    assert gate.evaluate(symbol="X", bindings=_bindings(sensor_values={"ofi_ewma": 3.0})) is True
+    gate2 = RegimeGate(
+        alpha_id="a",
+        on_condition="ofi_ewma > entry_z",
+        off_condition="ofi_ewma < 0",
+        params={"entry_z": 2.0},
+    )
+    assert gate2.evaluate(symbol="X", bindings=_bindings(sensor_values={"ofi_ewma": 1.0})) is False
+
+
+def test_param_names_excluded_from_binding_identifiers() -> None:
+    gate = RegimeGate(
+        alpha_id="a",
+        on_condition="ofi_ewma > entry_z",
+        off_condition="ofi_ewma < 0",
+        params={"entry_z": 2.0},
+    )
+    names = gate.binding_identifier_names()
+    assert "entry_z" not in names  # injected constant, not a warm-sensor binding
+    assert "ofi_ewma" in names
+
+
+def test_real_sensor_overrides_param_constant() -> None:
+    # A live sensor of the same name wins; the param is only the fallback.
+    gate = RegimeGate(
+        alpha_id="a",
+        on_condition="threshold > 5",
+        off_condition="threshold < 0",
+        params={"threshold": 1.0},  # would be 1 > 5 -> False on its own
+    )
+    assert gate.evaluate(symbol="X", bindings=_bindings(sensor_values={"threshold": 10.0})) is True
+
+
+def test_hysteresis_overrides_param_on_collision() -> None:
+    gate = RegimeGate(
+        alpha_id="a",
+        on_condition="P(normal) > margin",
+        off_condition="P(normal) < 0",
+        params={"margin": 0.9},
+        hysteresis={"margin": 0.2},  # hysteresis wins -> 0.5 > 0.2 True
+    )
+    regime = _FakeRegime(
+        state_names=("compression_clustering", "normal", "vol_breakout"),
+        posteriors=(0.25, 0.5, 0.25),
+        dominant_name="normal",
+    )
+    assert gate.evaluate(symbol="X", bindings=_bindings(regime=regime)) is True
+
+
+# ── Strict dead-hysteresis load error (external report §5.3 / P1 GC-1) ────
+
+
+def _dead_hyst_spec() -> dict:
+    return {
+        "regime_engine": "hmm_3state_fractional",
+        "on_condition": "P(normal) > 0.6",
+        "off_condition": "P(normal) < 0.4",
+        "hysteresis": {"posterior_margin": 0.2},
+    }
+
+
+def test_from_spec_strict_rejects_dead_hysteresis() -> None:
+    with pytest.raises(RegimeGateError, match="dead config"):
+        RegimeGate.from_spec(alpha_id="a", spec=_dead_hyst_spec(), strict=True)
+
+
+def test_from_spec_non_strict_accepts_dead_hysteresis(caplog) -> None:
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="feelies.signals.regime_gate"):
+        gate = RegimeGate.from_spec(alpha_id="a", spec=_dead_hyst_spec(), strict=False)
+    assert gate is not None
+    assert any("dead config" in r.message for r in caplog.records)
+
+
+def test_from_spec_strict_accepts_referenced_hysteresis() -> None:
+    spec = {
+        "regime_engine": "hmm_3state_fractional",
+        "on_condition": "P(normal) > 0.6 + posterior_margin",
+        "off_condition": "P(normal) < 0.4 - posterior_margin",
+        "hysteresis": {"posterior_margin": 0.1},
+    }
+    gate = RegimeGate.from_spec(alpha_id="a", spec=spec, strict=True)
+    assert gate is not None

@@ -1019,6 +1019,13 @@ class LayerValidator:
         The check accepts a missing ``signal:`` block (e.g. a SIGNAL
         spec that delegates to an external module — uncommon but
         valid); G5 / G2 will catch the deeper integrity issues.
+
+        Abstention is safe: when the direction is computed dynamically and
+        cannot be resolved statically, this rule abstains, but
+        :class:`~feelies.signals.horizon_engine.HorizonSignalEngine` provides a
+        runtime backstop — it suppresses any non-FLAT signal emitted by an
+        ``EXIT_ONLY_MECHANISMS`` alpha — so a dynamically-directed stress alpha
+        still cannot open exposure (external audit §5.6).
         """
         signal_src = spec.get("signal")
         if not isinstance(signal_src, str):

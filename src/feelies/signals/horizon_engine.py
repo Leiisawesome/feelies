@@ -71,6 +71,7 @@ from typing import Any, Mapping
 from feelies.alpha.cost_arithmetic import CostArithmetic
 from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
+    EXIT_ONLY_MECHANISMS,
     HorizonFeatureSnapshot,
     RegimeState,
     SensorReading,
@@ -509,6 +510,25 @@ class HorizonSignalEngine:
         if raw.direction == SignalDirection.FLAT:
             # FLAT is the canonical "no trade" disposition; do not
             # publish (matches legacy SignalEngine behavior).
+            return
+
+        # Exit-only mechanism guardrail (§20.6.1 rule 7).  G16 statically
+        # rejects a stress alpha that *literally* returns LONG/SHORT, but
+        # abstains when the direction is computed dynamically.  Backstop that
+        # at the emission boundary: an exit-only mechanism (LIQUIDITY_STRESS)
+        # may de-leverage (FLAT, handled above) or be flattened, but it must
+        # never open/increase exposure, so any non-FLAT entry it produces is
+        # suppressed.  Fail-safe — drops exposure, never amplifies (Inv-11).
+        if registered.trend_mechanism in EXIT_ONLY_MECHANISMS:
+            _logger.warning(
+                "HorizonSignalEngine: %s is an exit-only mechanism (%s) but "
+                "evaluate returned a non-FLAT %s entry for %s; suppressing "
+                "(exit-only alphas may not open exposure — §20.6.1 rule 7)",
+                registered.alpha_id,
+                registered.trend_mechanism.name,
+                raw.direction.name,
+                snapshot.symbol,
+            )
             return
 
         emitted = self._patch_signal(raw, snapshot, registered)

@@ -353,3 +353,34 @@ def test_unknown_posterior_state_skipped_without_engine() -> None:
     # Default loader has no regime engine → P() validation is a no-op.
     m = AlphaLoader().load_from_dict(spec, source="<test>")
     assert m.manifest.alpha_id == "alpha_x"
+
+
+# ── Strict dead-hysteresis + param-reference gate (external report) ───────
+
+
+def test_dead_hysteresis_rejected_under_enforce_layer_gates() -> None:
+    spec = _signal_spec()
+    spec["regime_gate"]["hysteresis"] = {"posterior_margin": 0.2}  # unreferenced
+    # Default loader enforces layer gates -> dead hysteresis is a hard error.
+    with pytest.raises(_LOAD_REJECTED, match="dead config"):
+        AlphaLoader().load_from_dict(spec, source="<test>")
+
+
+def test_dead_hysteresis_warns_when_gates_not_enforced() -> None:
+    spec = _signal_spec()
+    spec["regime_gate"]["hysteresis"] = {"posterior_margin": 0.2}
+    m = AlphaLoader(enforce_layer_gates=False).load_from_dict(spec, source="<test>")
+    assert m.manifest.alpha_id == "alpha_x"
+
+
+def test_gate_can_reference_declared_param() -> None:
+    spec = _signal_spec()
+    spec["parameters"] = {
+        "entry_z": {"type": "float", "default": 2.0, "min": 0.5, "max": 4.0, "description": "x"},
+    }
+    spec["regime_gate"]["on_condition"] = "P(normal) > 0.7 and ofi_ewma > entry_z"
+    m = AlphaLoader().load_from_dict(spec, source="<test>")
+    # The param name is injected as a gate constant, not treated as a warm
+    # sensor binding (so it is excluded from the required-warm identifier set).
+    assert "entry_z" not in m.gate.binding_identifier_names()
+    assert "ofi_ewma" in m.gate.binding_identifier_names()

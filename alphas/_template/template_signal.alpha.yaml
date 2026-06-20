@@ -96,11 +96,14 @@ regime_gate:
   regime_engine: hmm_3state_fractional
   on_condition: |
     P(normal) > 0.6 and spread_z_30d <= 1.0
+  # Hysteresis margins are only active when an expression *references* them
+  # (the strict loader rejects declared-but-unused margins as dead config).
+  # Here ``posterior_margin`` widens the OFF threshold so the latch holds
+  # through small posterior wobbles: ON at P(normal)>0.6, OFF at <0.4-0.20=0.20.
   off_condition: |
-    P(normal) < 0.4 or spread_z_30d > 2.0
+    P(normal) < 0.4 - posterior_margin or spread_z_30d > 2.0
   hysteresis:
     posterior_margin: 0.20            # ≥ 0.15 (G9)
-    percentile_margin: 0.30
 
 # ── Cost Arithmetic Disclosure (G12) ──────────────────────
 cost_arithmetic:

@@ -413,3 +413,87 @@ def test_replay_byte_identical(events):
         return _serialize(out)
 
     assert run() == run()
+
+
+# ── applies_to_regimes departing-state filter (§20.5.3 / §20.7.1) ─────────
+
+from feelies.risk.hazard_exit import _spike_matches_regimes  # noqa: E402
+
+
+def _spike(departing: str, incoming: str | None, *, score: float = 0.9, symbol: str = "AAPL"):
+    return RegimeHazardSpike(
+        timestamp_ns=2_000_000_000,
+        sequence=1,
+        correlation_id="cid:flt",
+        source_layer="REGIME",
+        symbol=symbol,
+        engine_name="hmm_3state_fractional",
+        departing_state=departing,
+        departing_posterior_prev=0.95,
+        departing_posterior_now=0.10,
+        incoming_state=incoming,
+        hazard_score=score,
+    )
+
+
+def _controller_with_regimes(applies, seed=("AAPL", 100, 1_000_000_000)):
+    bus = EventBus()
+    store = MemoryPositionStore()
+    if seed:
+        store.update(seed[0], seed[1], Decimal("100"), timestamp_ns=seed[2])
+    out: list[OrderRequest] = []
+    bus.subscribe(OrderRequest, out.append)  # type: ignore[arg-type]
+    controller = HazardExitController(
+        bus=bus,
+        sequence_generator=SequenceGenerator(start=10_000),
+        position_store=store,
+        policies={
+            _STRATEGY_ID: HazardPolicy(
+                strategy_id=_STRATEGY_ID,
+                hazard_score_threshold=0.5,
+                min_age_seconds=0,
+                universe=_UNIVERSE,
+                applies_to_regimes=applies,
+            )
+        },
+    )
+    controller.attach()
+    return bus, out
+
+
+def test_spike_matches_regimes_helper():
+    # Empty filter ⇒ matches everything (backward compatible).
+    assert _spike_matches_regimes("normal", "vol_breakout", ()) is True
+    # Transition match / non-match.
+    assert _spike_matches_regimes("normal", "vol_breakout", ("normal -> vol_breakout",)) is True
+    assert _spike_matches_regimes("normal", "compression_clustering", ("normal -> vol_breakout",)) is False
+    # Bare departing-state match (any incoming, incl. None/tied).
+    assert _spike_matches_regimes("normal", None, ("normal",)) is True
+    assert _spike_matches_regimes("compression_clustering", "normal", ("normal",)) is False
+    # A tied/None incoming only matches a bare entry, never a transition.
+    assert _spike_matches_regimes("normal", None, ("normal -> vol_breakout",)) is False
+
+
+def test_exit_fires_only_on_listed_transition():
+    bus, out = _controller_with_regimes(("normal -> vol_breakout",))
+    bus.publish(_spike("normal", "vol_breakout"))  # listed → exit
+    assert len(out) == 1 and out[0].reason == "HAZARD_SPIKE"
+
+
+def test_exit_suppressed_for_unlisted_transition():
+    bus, out = _controller_with_regimes(("normal -> vol_breakout",))
+    # Same symbol/score, but a departure to compression is not in the filter.
+    bus.publish(_spike("normal", "compression_clustering"))
+    assert out == []
+
+
+def test_bare_departing_state_filter_matches_any_incoming():
+    bus, out = _controller_with_regimes(("normal",))
+    bus.publish(_spike("normal", "compression_clustering"))
+    assert len(out) == 1
+
+
+def test_empty_applies_to_regimes_preserves_all_departures():
+    bus, out = _controller_with_regimes(())
+    bus.publish(_spike("compression_clustering", "vol_breakout"))
+    assert len(out) == 1

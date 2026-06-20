@@ -2129,6 +2129,9 @@ def _create_hazard_exit_controller(
             ),
             hard_exit_age_seconds=hard_exit,
             universe=universe,
+            # §20.5.3: loader already validated/canonicalized to a tuple of
+            # "<from> -> <to>" / bare-state strings; empty ⇒ all departures.
+            applies_to_regimes=tuple(block.get("applies_to_regimes", ()) or ()),
         )
         controller.register_policy(policy)
 

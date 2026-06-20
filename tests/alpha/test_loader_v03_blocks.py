@@ -273,3 +273,65 @@ def test_both_v03_blocks_present_independently_stored() -> None:
     )
     assert loaded.manifest.trend_mechanism == tm
     assert loaded.manifest.hazard_exit == he
+
+
+# ── hazard_exit.applies_to_regimes (§20.5.3) ────────────────────────────
+
+
+def test_hazard_exit_applies_to_regimes_parsed_and_canonicalized() -> None:
+    block = {
+        "enabled": True,
+        "hazard_score_threshold": 0.5,
+        "applies_to_regimes": ["normal->vol_breakout", "  compression_clustering  ", "normal -> compression_clustering"],
+    }
+    loaded = AlphaLoader().load_from_dict(_spec(hazard_exit=block), source="<test>")
+    assert loaded.manifest.hazard_exit["applies_to_regimes"] == (
+        "normal -> vol_breakout",
+        "compression_clustering",
+        "normal -> compression_clustering",
+    )
+
+
+def test_hazard_exit_applies_to_regimes_must_be_list() -> None:
+    with pytest.raises(_LOAD_REJECTED, match="applies_to_regimes must be a list"):
+        AlphaLoader().load_from_dict(
+            _spec(hazard_exit={"enabled": True, "applies_to_regimes": "normal -> vol_breakout"}),
+            source="<test>",
+        )
+
+
+def test_hazard_exit_applies_to_regimes_malformed_transition_rejected() -> None:
+    with pytest.raises(_LOAD_REJECTED, match="must be '<departing> -> <incoming>'"):
+        AlphaLoader().load_from_dict(
+            _spec(hazard_exit={"enabled": True, "applies_to_regimes": ["a -> b -> c"]}),
+            source="<test>",
+        )
+
+
+def test_hazard_exit_applies_to_regimes_empty_entry_rejected() -> None:
+    with pytest.raises(_LOAD_REJECTED, match="must be non-empty strings"):
+        AlphaLoader().load_from_dict(
+            _spec(hazard_exit={"enabled": True, "applies_to_regimes": ["  "]}),
+            source="<test>",
+        )
+
+
+def test_hazard_exit_applies_to_regimes_unknown_state_rejected_with_engine() -> None:
+    from feelies.services.regime_engine import HMM3StateFractional
+
+    loader = AlphaLoader(regime_engine=HMM3StateFractional())
+    with pytest.raises(_LOAD_REJECTED, match="unknown regime state"):
+        loader.load_from_dict(
+            _spec(hazard_exit={"enabled": True, "applies_to_regimes": ["noraml -> vol_breakout"]}),
+            source="<test>",
+        )
+
+
+def test_hazard_exit_applies_to_regimes_name_check_skipped_without_engine() -> None:
+    # No engine wired → format-only validation; unknown names pass (they simply
+    # never match at runtime — fail-safe, never a spurious exit).
+    loaded = AlphaLoader().load_from_dict(
+        _spec(hazard_exit={"enabled": True, "applies_to_regimes": ["made_up_state"]}),
+        source="<test>",
+    )
+    assert loaded.manifest.hazard_exit["applies_to_regimes"] == ("made_up_state",)

@@ -53,6 +53,7 @@ from dataclasses import dataclass, field
 from typing import Mapping
 
 from feelies.core.events import (
+    EXIT_ONLY_MECHANISMS,
     CrossSectionalContext,
     Signal,
     SignalDirection,
@@ -66,11 +67,9 @@ _logger = logging.getLogger(__name__)
 # LIQUIDITY_STRESS is a hazard signal — entries are forbidden by Gate
 # G16 rule 5 — but we still defend against malformed alphas slipping
 # through validation.
-_EXIT_ONLY_MECHANISMS: frozenset[TrendMechanism] = frozenset(
-    {
-        TrendMechanism.LIQUIDITY_STRESS,
-    }
-)
+# Single source of truth lives in core.events (also consumed by the SIGNAL-
+# layer runtime guardrail).  Re-exported under the historical private name.
+_EXIT_ONLY_MECHANISMS: frozenset[TrendMechanism] = EXIT_ONLY_MECHANISMS
 
 
 @dataclass(frozen=True)
