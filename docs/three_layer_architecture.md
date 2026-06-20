@@ -2357,6 +2357,14 @@ For SIGNAL alphas with `trend_mechanism:` declared, the loader checks:
    under stress is a documented historical alpha grave for L1-only
    strategies.)
 
+   **Runtime backstop.** The static AST check *abstains* when the
+   `signal:` block computes its direction dynamically (the safe default for
+   a structural gate). That gap is closed at the emission boundary:
+   `HorizonSignalEngine` suppresses any non-FLAT signal produced by an
+   `EXIT_ONLY_MECHANISMS` alpha (`core/events.py`), so a dynamically-directed
+   stress alpha still cannot open exposure — fail-safe (drops exposure, never
+   amplifies; Inv-11).
+
 For PORTFOLIO alphas with `trend_mechanism.consumes:` declared:
 
 8. **Sum of `max_share_of_gross` ≥ 1.0** — concentration caps must

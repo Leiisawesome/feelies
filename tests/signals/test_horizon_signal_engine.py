@@ -1009,3 +1009,34 @@ def test_off_condition_regime_error_unwinds_latched_gate() -> None:
     assert gate.is_on("AAPL") is False
     assert captured[-1].direction is SignalDirection.FLAT
     assert captured[-1].regime_gate_state == "OFF"
+
+
+def test_exit_only_mechanism_suppresses_non_flat_entry() -> None:
+    """§20.6.1 rule 7 runtime backstop: an exit-only (LIQUIDITY_STRESS) alpha
+    that produces a non-FLAT entry — e.g. via a dynamically-computed direction
+    that G16 statically abstained on — has that entry suppressed."""
+    from feelies.core.events import TrendMechanism
+
+    engine, _, captured = _engine()
+    sig = _RecordingSignal(direction=SignalDirection.LONG)
+    engine.register(
+        _registered(signal=sig, trend_mechanism=TrendMechanism.LIQUIDITY_STRESS)
+    )
+    engine._on_regime_state(_regime_normal_high())
+    engine._on_snapshot(_snapshot())
+    # evaluate ran (gate ON) and returned LONG, but the entry must be dropped.
+    assert sig.calls, "signal.evaluate should have been invoked (gate ON)"
+    assert captured == []
+
+
+def test_non_exit_only_mechanism_publishes_entry() -> None:
+    """Control: a non-exit-only mechanism's entry is published normally."""
+    from feelies.core.events import TrendMechanism
+
+    engine, _, captured = _engine()
+    sig = _RecordingSignal(direction=SignalDirection.LONG)
+    engine.register(_registered(signal=sig, trend_mechanism=TrendMechanism.KYLE_INFO))
+    engine._on_regime_state(_regime_normal_high())
+    engine._on_snapshot(_snapshot())
+    assert len(captured) == 1
+    assert captured[0].direction is SignalDirection.LONG

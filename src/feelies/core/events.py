@@ -500,6 +500,20 @@ class TrendMechanism(Enum):
     SCHEDULED_FLOW = auto()
 
 
+# Mechanisms that are **exit-only**: an alpha bound to one of these must never
+# open or increase exposure — it may only de-leverage (FLAT) or have its
+# positions flattened.  Single source of truth, consumed by the composition
+# layer (cross-sectional ranking zeroes their scores) AND the SIGNAL-layer
+# runtime guardrail (``HorizonSignalEngine`` suppresses any non-FLAT signal
+# they emit, closing the gap where G16's static analysis abstains on a
+# dynamically-computed direction — §20.6.1 rule 7).
+EXIT_ONLY_MECHANISMS: frozenset[TrendMechanism] = frozenset(
+    {
+        TrendMechanism.LIQUIDITY_STRESS,
+    }
+)
+
+
 # ── v0.3 RegimeHazardSpike (§20.3.1) ────────────────────────────────────
 
 
