@@ -113,9 +113,10 @@ regime_gate:
     P(normal) > 0.6 and spread_z_30d <= 1.0
   off_condition: |
     P(normal) < 0.4 or spread_z_30d > 2.0 or realized_vol_30s_zscore > 3.5
-  hysteresis:
-    posterior_margin: 0.20
-    percentile_margin: 0.30
+  # External-report §5.3: removed the dead hysteresis block (margins were
+  # declared but never referenced in the expressions — a no-op the strict
+  # loader now rejects).  Effective hysteresis is the implicit dual-threshold
+  # gap (ON P(normal)>0.6 / OFF P(normal)<0.4).
 
 # ── Cost Arithmetic Disclosure (G12) ──────────────────────
 cost_arithmetic:

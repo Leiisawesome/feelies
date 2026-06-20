@@ -386,10 +386,21 @@ class AlphaLoader:
         except CostArithmeticError as exc:
             raise AlphaLoadError(f"{source}: {exc}") from exc
 
+        # Inject declared numeric param defaults as named gate constants so a
+        # gate threshold can reference the param instead of duplicating its
+        # literal (external report §5.5).  bool is excluded (it is an int
+        # subclass but not a numeric threshold).
+        gate_params = {
+            name: float(value)
+            for name, value in params.items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
         try:
             regime_gate = RegimeGate.from_spec(
                 alpha_id=alpha_id,
                 spec=spec.get("regime_gate"),
+                params=gate_params,
+                strict=self._enforce_layer_gates,
             )
         except RegimeGateError as exc:
             raise AlphaLoadError(f"{source}: {exc}") from exc

@@ -169,16 +169,14 @@ risk_budget:
   capital_allocation_pct: 15.0
 
 # ── Regime Gate (Phase 3 DSL) ─────────────────────────────
-# NOTE: the asymmetry literal (2.0) below MUST match the default of the
-# ``asymmetry_z_threshold`` parameter. The ``quote_hazard_rate < 4.0``
-# literal in off_condition MUST match the ``hazard_floor`` parameter
-# default (events/sec — see ``quote_hazard_rate`` sensor docstring). The
-# gate DSL binding map does not resolve YAML ``parameters:`` entries, so
-# gate thresholds cannot be parameterized without platform support;
-# sweeps on asymmetry_z_threshold below 2.0 are silently floored by the
-# gate. Keep these literals in sync with their parameter defaults, and
-# prefer a single platform change to inject params into the binding map
-# over divergent literals here.
+# NOTE: the literals below (asymmetry 2.0, quote_hazard_rate < 4.0) mirror the
+# ``asymmetry_z_threshold`` / ``hazard_floor`` parameter defaults.  The gate DSL
+# now injects declared numeric ``parameters:`` as named constants (external
+# report §5.5), so these can be referenced directly — e.g.
+# ``abs(quote_replenish_asymmetry_zscore) > asymmetry_z_threshold`` — instead of
+# duplicating the literal, which keeps a parameter sweep and its gate threshold
+# in lockstep.  The literals are retained here to keep the locked replay
+# baselines byte-identical; migrate to the param names in a future revision.
 regime_gate:
   regime_engine: hmm_3state_fractional
   # BT-12: inventory-dominant only — require normal dominant state, higher

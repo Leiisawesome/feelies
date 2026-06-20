@@ -585,7 +585,15 @@ class RegimeGate:
     - Otherwise state is unchanged.
     """
 
-    __slots__ = ("_alpha_id", "_on_tree", "_off_tree", "_state", "_hysteresis", "_engine_name")
+    __slots__ = (
+        "_alpha_id",
+        "_on_tree",
+        "_off_tree",
+        "_state",
+        "_hysteresis",
+        "_engine_name",
+        "_params",
+    )
 
     def __init__(
         self,
@@ -595,6 +603,7 @@ class RegimeGate:
         off_condition: str,
         hysteresis: Mapping[str, float] | None = None,
         engine_name: str | None = None,
+        params: Mapping[str, float] | None = None,
     ) -> None:
         self._alpha_id = alpha_id
         self._engine_name = engine_name
@@ -602,6 +611,13 @@ class RegimeGate:
         self._off_tree = compile_expression(off_condition)
         self._state: dict[str, bool] = {}
         self._hysteresis: dict[str, float] = dict(hysteresis or {})
+        # Audit (external report §5.5 / inventory comment): declared alpha
+        # parameter defaults injectable as named gate constants so a gate
+        # threshold can reference the param (``abs(z) > asymmetry_z_threshold``)
+        # instead of duplicating its literal — which otherwise silently drifts
+        # under parameter sweeps.  Hysteresis margins take precedence on a name
+        # collision (they are the more specific gate-local constant).
+        self._params: dict[str, float] = dict(params or {})
 
     @property
     def alpha_id(self) -> str:
@@ -634,6 +650,8 @@ class RegimeGate:
         raw.discard(_DOMINANT_NAME)
         raw.discard(_ENTROPY_NAME)
         raw -= frozenset(self._hysteresis.keys())
+        # Injected alpha-param constants are not warm sensor bindings either.
+        raw -= frozenset(self._params.keys())
         lit = {n for n in raw if _PERCENTILE_LITERAL_RE.match(n) is not None}
         raw -= lit
         # Whitelisted Call func names are never binding identifiers.
@@ -702,12 +720,14 @@ class RegimeGate:
         precedence than dynamic sensor readings to avoid accidental
         capture.
         """
-        # Overlay hysteresis margin constants so expression identifiers
-        # like ``posterior_margin`` and ``percentile_margin`` resolve
-        # to their declared values.  When _hysteresis is empty this
-        # creates no extra objects (fast path for the common case).
-        if self._hysteresis:
-            merged = {**bindings.sensor_values, **self._hysteresis}
+        # Overlay declared alpha-param constants then hysteresis margin
+        # constants so expression identifiers like ``asymmetry_z_threshold``,
+        # ``posterior_margin``, ``percentile_margin`` resolve to their declared
+        # values.  Precedence: hysteresis > params > dynamic sensors.  When both
+        # are empty this creates no extra objects (fast path for the common
+        # case).
+        if self._hysteresis or self._params:
+            merged = {**self._params, **bindings.sensor_values, **self._hysteresis}
             bindings = Bindings(
                 regime=bindings.regime,
                 sensor_values=merged,
@@ -736,12 +756,24 @@ class RegimeGate:
         *,
         alpha_id: str,
         spec: object,
+        params: Mapping[str, float] | None = None,
+        strict: bool = False,
     ) -> "RegimeGate":
         """Build a :class:`RegimeGate` from the parsed YAML ``regime_gate:`` block.
 
         Raises :class:`UnsafeExpressionError` (sub-class of
         :class:`RegimeGateError`) if either condition fails the DSL
         validation.
+
+        ``params`` are the alpha's resolved numeric parameter defaults; they
+        are injected as named gate constants so an expression can reference a
+        declared param instead of duplicating its literal threshold.
+
+        When ``strict`` is True (loader passes ``enforce_layer_gates``), a
+        ``hysteresis:`` block whose declared margins are referenced by neither
+        expression is a hard :class:`RegimeGateError` rather than a warning
+        (audit P1 GC-1 / external report §5.3): dead margin config silently
+        misleads authors into thinking a band is active.
         """
         if not isinstance(spec, Mapping):
             raise RegimeGateError(
@@ -776,6 +808,7 @@ class RegimeGate:
             off_condition=off_condition,
             hysteresis=hyst,
             engine_name=str(engine_name) if engine_name is not None else None,
+            params=params,
         )
         # Audit P1 GC-1: warn when hysteresis margins are declared but
         # never referenced inside the ON/OFF expressions.  Margins are
@@ -790,6 +823,15 @@ class RegimeGate:
             referenced = gate._referenced_identifiers()
             unreferenced = sorted(set(hyst) - referenced)
             if unreferenced:
+                if strict:
+                    raise RegimeGateError(
+                        f"alpha {alpha_id!r}: regime_gate.hysteresis declares "
+                        f"{unreferenced} but neither on_condition nor "
+                        f"off_condition references any of them; the margins are "
+                        f"dead config (no effect on the ON/OFF latch). Reference "
+                        f"them (e.g. 'P(normal) > 0.5 + posterior_margin') or "
+                        f"remove the hysteresis block."
+                    )
                 _LOGGER.warning(
                     "alpha %r: regime_gate.hysteresis declares %s but "
                     "neither on_condition nor off_condition references "
