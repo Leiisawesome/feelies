@@ -2280,13 +2280,27 @@ trend_mechanism:
 hazard_exit:
   enabled: true                        # consume RegimeHazardSpike events
   hazard_score_threshold: 0.7          # exit when hazard_score >= threshold
-  applies_to_regimes:                  # which regime transitions trigger exit
-    - "normal -> vol_breakout"
-    - "compression_clustering -> vol_breakout"
-  hard_exit_seconds: null              # null = derive from 2 × expected_half_life_seconds
+  applies_to_regimes:                  # OPTIONAL departure filter (see below)
+    - "normal -> vol_breakout"         # transition: departing -> incoming
+    - "compression_clustering"         # bare state: any departure from it
+  hard_exit_age_seconds: null          # null = derive from 2 × expected_half_life_seconds
 ```
 
-If `hard_exit_seconds` is `null` (recommended), the risk engine derives
+`applies_to_regimes` restricts which regime *departures* trigger an exit.
+Each entry is either a transition `"<departing> -> <incoming>"` (matches when
+both the departing state and the spike's incoming state agree) or a bare
+`"<departing>"` state name (matches any departure from it, including a
+tied/`None` incoming). **Omitted or empty ⇒ the exit fires on every
+qualifying departure** (the historical behaviour). When a SIGNAL alpha's
+regime engine is resolvable at load time, every referenced state name is
+validated against the engine taxonomy so a typo cannot silently disable the
+filter. Implemented in `alpha/loader.py`
+(`_parse_hazard_exit_block` / `_normalize_applies_to_regimes`),
+`risk/hazard_exit.py` (`HazardPolicy.applies_to_regimes`,
+`_spike_matches_regimes`), and threaded by
+`bootstrap._create_hazard_exit_controller`.
+
+If `hard_exit_age_seconds` is `null` (recommended), the risk engine derives
 `2 × trend_mechanism.expected_half_life_seconds` as the hard-exit age
 threshold. Positions older than this age exit unconditionally on the
 next tick, regardless of horizon boundary.
@@ -2405,9 +2419,15 @@ RegimeEngine.posterior(quote)
         → RiskEngine.on_hazard_spike(spike)
           → for each open position whose alpha declares hazard_exit.enabled:
               if spike.symbol == position.symbol AND
-                 spike.departing_state in alpha.hazard_exit.applies_to_regimes AND
-                 spike.hazard_score >= alpha.hazard_exit.hazard_score_threshold:
+                 spike.hazard_score >= alpha.hazard_exit.hazard_score_threshold AND
+                 regime_matches(spike, alpha.hazard_exit.applies_to_regimes):
                   emit OrderIntent(side=EXIT, reason=HAZARD_SPIKE, ...)
+
+          # regime_matches(spike, filter):
+          #   filter empty            → True (all departures)
+          #   spike.departing_state in filter                       → True (bare)
+          #   "<departing> -> <incoming>" in filter (incoming != None) → True
+          #   else                                                  → False
 ```
 
 Hazard exits flow through the **same** risk engine and order router as

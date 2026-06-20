@@ -422,7 +422,15 @@ class AlphaLoader:
         trend_mechanism_block = self._parse_trend_mechanism_block(
             spec.get("trend_mechanism"), source
         )
-        hazard_exit_block = self._parse_hazard_exit_block(spec.get("hazard_exit"), source)
+        # Audit (external report): validate hazard_exit.applies_to_regimes state
+        # names against the resolved engine taxonomy so a typo cannot silently
+        # disable an exit filter.
+        hazard_known_states = (
+            frozenset(regime_engine.state_names) if regime_engine is not None else None
+        )
+        hazard_exit_block = self._parse_hazard_exit_block(
+            spec.get("hazard_exit"), source, hazard_known_states
+        )
         promotion_overrides = self._parse_promotion_block(spec.get("promotion"), source)
         lifecycle_cap = self._parse_lifecycle_state(spec.get("lifecycle_state"), source)
         trend_enum, expected_half_life = self._extract_trend_metadata(
@@ -1005,6 +1013,7 @@ class AlphaLoader:
             "hazard_score_threshold",
             "min_age_seconds",
             "hard_exit_age_seconds",
+            "applies_to_regimes",
         }
     )
 
@@ -1023,6 +1032,7 @@ class AlphaLoader:
         self,
         block: Any,
         source: str,
+        known_state_names: frozenset[str] | None = None,
     ) -> dict[str, Any] | None:
         """Parse the optional v0.3 ``hazard_exit:`` block (§20.5).
 
@@ -1042,6 +1052,15 @@ class AlphaLoader:
         * ``min_age_seconds``        — int ≥ 0
         * ``hard_exit_age_seconds``  — int > 0 (or omitted → derived
           from ``2 × expected_half_life_seconds`` at composition time)
+        * ``applies_to_regimes``     — optional list of departure filters
+          (§20.5.3 / §20.7.1).  Each entry is either a transition
+          ``"<departing> -> <incoming>"`` or a bare departing-state name
+          ``"<departing>"`` (any incoming).  Omitted / empty ⇒ the exit
+          fires on **all** qualifying departures (backward-compatible).
+          When ``known_state_names`` is supplied (SIGNAL path, engine
+          resolved) every referenced state is checked against the
+          engine taxonomy so a typo cannot silently disable an exit
+          filter.
         """
         if block is None:
             return None
@@ -1127,7 +1146,60 @@ class AlphaLoader:
                 )
             normalized["hard_exit_age_seconds"] = hard_age
 
+        if "applies_to_regimes" in normalized:
+            normalized["applies_to_regimes"] = self._normalize_applies_to_regimes(
+                normalized["applies_to_regimes"], source, known_state_names
+            )
+
         return normalized
+
+    @staticmethod
+    def _normalize_applies_to_regimes(
+        value: Any,
+        source: str,
+        known_state_names: frozenset[str] | None,
+    ) -> tuple[str, ...]:
+        """Validate and canonicalize ``hazard_exit.applies_to_regimes`` (§20.5.3).
+
+        Returns a tuple of canonical strings — ``"<from> -> <to>"`` for a
+        transition entry, or a bare ``"<from>"`` departing-state entry.
+        """
+        if not isinstance(value, (list, tuple)):
+            raise AlphaLoadError(
+                f"{source}: hazard_exit.applies_to_regimes must be a list of "
+                f"strings, got {type(value).__name__}"
+            )
+        out: list[str] = []
+        for entry in value:
+            if not isinstance(entry, str) or not entry.strip():
+                raise AlphaLoadError(
+                    f"{source}: hazard_exit.applies_to_regimes entries must be "
+                    f"non-empty strings, got {entry!r}"
+                )
+            s = entry.strip()
+            states: tuple[str, ...]
+            if "->" in s:
+                parts = [p.strip() for p in s.split("->")]
+                if len(parts) != 2 or not parts[0] or not parts[1]:
+                    raise AlphaLoadError(
+                        f"{source}: hazard_exit.applies_to_regimes transition "
+                        f"{entry!r} must be '<departing> -> <incoming>'"
+                    )
+                states = (parts[0], parts[1])
+                canonical = f"{parts[0]} -> {parts[1]}"
+            else:
+                states = (s,)
+                canonical = s
+            if known_state_names is not None:
+                unknown = [st for st in states if st not in known_state_names]
+                if unknown:
+                    raise AlphaLoadError(
+                        f"{source}: hazard_exit.applies_to_regimes references "
+                        f"unknown regime state(s) {sorted(unknown)} in {entry!r}; "
+                        f"engine publishes {sorted(known_state_names)}"
+                    )
+            out.append(canonical)
+        return tuple(out)
 
     def _parse_promotion_block(
         self,

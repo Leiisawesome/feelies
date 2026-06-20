@@ -204,3 +204,43 @@ def test_disabled_or_missing_block_skips_alpha() -> None:
         fallback_universe=("AAPL",),
     )
     assert controller is None
+
+
+def test_applies_to_regimes_threaded_into_policy() -> None:
+    """§20.5.3: the parsed/canonicalized applies_to_regimes reaches the policy."""
+    module = _StubSignalModule(
+        manifest=_manifest(
+            alpha_id="sig_regimes_v1",
+            hazard_exit={
+                "enabled": True,
+                "applies_to_regimes": ("normal -> vol_breakout", "compression_clustering"),
+            },
+        ),
+        expected_half_life_seconds=60,
+    )
+    controller = _create_hazard_exit_controller(
+        bus=EventBus(),
+        registry=_registry(module),
+        position_store=MemoryPositionStore(),
+        fallback_universe=("AAPL",),
+    )
+    assert controller is not None
+    assert controller.policies["sig_regimes_v1"].applies_to_regimes == (
+        "normal -> vol_breakout",
+        "compression_clustering",
+    )
+
+
+def test_applies_to_regimes_defaults_empty() -> None:
+    module = _StubSignalModule(
+        manifest=_manifest(alpha_id="sig_no_regimes", hazard_exit={"enabled": True}),
+        expected_half_life_seconds=60,
+    )
+    controller = _create_hazard_exit_controller(
+        bus=EventBus(),
+        registry=_registry(module),
+        position_store=MemoryPositionStore(),
+        fallback_universe=("AAPL",),
+    )
+    assert controller is not None
+    assert controller.policies["sig_no_regimes"].applies_to_regimes == ()

@@ -93,13 +93,41 @@ _DEFAULT_MIN_AGE_SECONDS: int = 30
 
 @dataclass(frozen=True)
 class HazardPolicy:
-    """Per-alpha hazard-exit configuration."""
+    """Per-alpha hazard-exit configuration.
+
+    ``applies_to_regimes`` (§20.5.3 / §20.7.1) restricts which regime
+    *departures* trigger a hazard exit.  Each entry is a canonical
+    ``"<departing> -> <incoming>"`` transition or a bare ``"<departing>"``
+    departing-state name.  Empty ⇒ fire on **all** qualifying departures
+    (the historical behaviour).
+    """
 
     strategy_id: str
     hazard_score_threshold: float = _DEFAULT_HAZARD_SCORE_THRESHOLD
     min_age_seconds: int = _DEFAULT_MIN_AGE_SECONDS
     hard_exit_age_seconds: int | None = None
     universe: tuple[str, ...] = ()
+    applies_to_regimes: tuple[str, ...] = ()
+
+
+def _spike_matches_regimes(
+    departing_state: str,
+    incoming_state: str | None,
+    applies_to_regimes: tuple[str, ...],
+) -> bool:
+    """Whether a spike's departure is selected by ``applies_to_regimes``.
+
+    Empty filter ⇒ matches everything (backward-compatible).  Otherwise the
+    spike matches iff the bare departing state, or the full
+    ``"<departing> -> <incoming>"`` transition, is listed.  A tied/None
+    incoming only matches a bare departing-state entry.
+    """
+    if not applies_to_regimes:
+        return True
+    candidates = {departing_state}
+    if incoming_state is not None:
+        candidates.add(f"{departing_state} -> {incoming_state}")
+    return any(entry in candidates for entry in applies_to_regimes)
 
 
 class HazardExitController:
@@ -170,6 +198,11 @@ class HazardExitController:
             if policy.universe and spike.symbol not in policy.universe:
                 continue
             if spike.hazard_score < policy.hazard_score_threshold:
+                continue
+            # §20.5.3 / §20.7.1: departing-state filter. Empty ⇒ all departures.
+            if not _spike_matches_regimes(
+                spike.departing_state, spike.incoming_state, policy.applies_to_regimes
+            ):
                 continue
             self._maybe_emit_exit(
                 strategy_id=sid,
