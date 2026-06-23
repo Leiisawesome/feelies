@@ -43,6 +43,7 @@ Numerical safety
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -121,6 +122,22 @@ class FactorNeutralizer:
     def factor_model(self) -> str:
         return self._model
 
+    def provenance_digest(self) -> str:
+        """Stable digest of the neutralizer's decision-affecting state.
+
+        Folds the factor-model identity and the loaded β matrix into the
+        composition-layer ``decision_basis_hash`` so the digest changes
+        when either the model or the loadings content changes (audit
+        P0-2).  An empty loadings table (no-op neutralizer) still yields a
+        stable model-only digest.
+        """
+        parts = [f"model={self._model}"]
+        for sym in sorted(self._loadings):
+            row = self._loadings[sym]
+            cells = ",".join(f"{f}={row[f]:.10g}" for f in sorted(row))
+            parts.append(f"{sym}:{cells}")
+        return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
+
     # ── Public API ───────────────────────────────────────────────────
 
     def neutralize(
@@ -137,7 +154,7 @@ class FactorNeutralizer:
         if not self._factors or not self._loadings or not _HAS_NUMPY:
             # No-op path: pass weights through; exposures are computed
             # if we have loadings, otherwise empty.
-            return dict(weights), self._compute_exposures(weights, universe)
+            return dict(weights), self.compute_exposures(weights, universe)
 
         n = len(universe)
         if n == 0:
@@ -173,12 +190,18 @@ class FactorNeutralizer:
             rows.append([float(sym_load.get(f, 0.0)) for f in self._factors])
         return np.asarray(rows, dtype=np.float64)
 
-    def _compute_exposures(
+    def compute_exposures(
         self,
         weights: Mapping[str, float],
         universe: tuple[str, ...],
     ) -> dict[str, float]:
-        """Compute pre-neutralization factor exposure (for reporting)."""
+        """Compute factor exposure of *weights* (for reporting).
+
+        Public so the composition engine can report the carried exposure
+        of an alpha that opted out of neutralization (``factor_neutralization:
+        false``) without residualizing it (audit P0-1).  Returns ``{}`` when
+        no loadings are configured.
+        """
         if not self._factors or not self._loadings:
             return {}
         out: dict[str, float] = {f: 0.0 for f in self._factors}

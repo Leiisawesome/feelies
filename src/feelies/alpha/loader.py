@@ -585,6 +585,8 @@ class AlphaLoader:
                 feeder_strategy_ids=depends_on_signals,
                 mechanism_caps=mechanism_caps,
                 global_mechanism_cap=max_share_of_gross,
+                neutralize=bool(spec.get("factor_neutralization", False)),
+                consumes_mechanisms=consumes,
             )
 
         risk_budget_raw = spec.get("risk_budget", {}) or {}

@@ -2006,6 +2006,8 @@ def _create_composition_layer(
                 feeder_strategy_ids=module.depends_on_signals,
                 mechanism_caps=module.mechanism_caps,
                 global_mechanism_cap=module.max_share_of_gross,
+                neutralize=module.factor_neutralization_disclosed,
+                consumes_mechanisms=module.consumes_mechanisms,
             )
         engine.register(
             RegisteredPortfolioAlpha(

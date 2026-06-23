@@ -154,6 +154,7 @@ class CrossSectionalRanker:
         mechanism_caps: Mapping[TrendMechanism, float] | None = None,
         global_mechanism_cap: float | None = None,
         decay_weighting_enabled: bool | None = None,
+        consumes_mechanisms: tuple[TrendMechanism, ...] | None = None,
     ) -> RankResult:
         """Rank ``ctx``; return :class:`RankResult`.
 
@@ -177,14 +178,37 @@ class CrossSectionalRanker:
         serve one PORTFOLIO alpha with decay ON and another with decay OFF
         without the global ``any(...)`` leakage.  ``None`` (default) uses
         the instance flag (back-compat).
+
+        *consumes_mechanisms* is the PORTFOLIO alpha's declared
+        ``trend_mechanism.consumes`` family whitelist (audit P0-6).  When
+        non-empty, any consumed ``Signal`` whose ``trend_mechanism`` is a
+        concrete family **outside** the whitelist is excluded fail-safe
+        (its contribution is zeroed and it never enters the book), so an
+        undeclared mechanism family cannot be traded at runtime.  ``None``
+        or an empty tuple disables the filter (back-compat); a ``None``
+        mechanism is always allowed (it declares no family to police —
+        exit-only families are guarded separately).
         """
         caps = self._resolve_caps(mechanism_caps, global_mechanism_cap)
         decay_enabled = (
             self._decay_enabled if decay_weighting_enabled is None else bool(decay_weighting_enabled)
         )
+        whitelist = frozenset(consumes_mechanisms) if consumes_mechanisms else None
         if feeder_strategy_ids and ctx.signals_by_strategy_by_symbol:
-            return self._rank_multi_feeder(ctx, feeder_strategy_ids, caps, decay_enabled)
-        return self._rank_legacy(ctx, caps, decay_enabled)
+            return self._rank_multi_feeder(
+                ctx, feeder_strategy_ids, caps, decay_enabled, whitelist
+            )
+        return self._rank_legacy(ctx, caps, decay_enabled, whitelist)
+
+    @staticmethod
+    def _is_allowed(
+        mech: TrendMechanism | None,
+        whitelist: frozenset[TrendMechanism] | None,
+    ) -> bool:
+        """``True`` when *mech* may enter the book under *whitelist* (P0-6)."""
+        if whitelist is None or mech is None:
+            return True
+        return mech in whitelist
 
     def _resolve_caps(
         self,
@@ -212,6 +236,7 @@ class CrossSectionalRanker:
         ctx: CrossSectionalContext,
         caps: tuple[dict[TrendMechanism, float], float],
         decay_enabled: bool,
+        whitelist: frozenset[TrendMechanism] | None = None,
     ) -> RankResult:
         """Single-signal-per-symbol ranking (pre–fan-in behaviour)."""
         raw_scores: dict[str, float] = {}
@@ -227,6 +252,16 @@ class CrossSectionalRanker:
                 continue
 
             mech = sig.trend_mechanism
+            if not self._is_allowed(mech, whitelist):
+                # Undeclared mechanism family — exclude fail-safe (P0-6).
+                _logger.debug(
+                    "CrossSectionalRanker: excluding %s — mechanism %s outside consumes whitelist",
+                    symbol,
+                    mech.name if mech is not None else None,
+                )
+                raw_scores[symbol] = 0.0
+                decay_factors[symbol] = 0.0
+                continue
             if mech is not None:
                 mechanism_by_symbol[symbol] = mech
 
@@ -269,6 +304,7 @@ class CrossSectionalRanker:
         feeder_strategy_ids: tuple[str, ...],
         caps: tuple[dict[TrendMechanism, float], float],
         decay_enabled: bool,
+        whitelist: frozenset[TrendMechanism] | None = None,
     ) -> RankResult:
         """Aggregate ranked contribution across upstream SIGNAL alphas."""
         raw_scores: dict[str, float] = {}
@@ -292,6 +328,17 @@ class CrossSectionalRanker:
                     continue
                 found_any_signal = True
                 mech = sig.trend_mechanism
+                if not self._is_allowed(mech, whitelist):
+                    # Undeclared family on this feeder — drop only this
+                    # contribution; other feeders on the symbol stand (P0-6).
+                    _logger.debug(
+                        "CrossSectionalRanker: excluding %s feeder %s — "
+                        "mechanism %s outside consumes whitelist",
+                        symbol,
+                        sid,
+                        mech.name if mech is not None else None,
+                    )
+                    continue
                 if mech in _EXIT_ONLY_MECHANISMS:
                     if mech is not None:
                         exit_only_mech = mech

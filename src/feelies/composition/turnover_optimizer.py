@@ -158,6 +158,20 @@ class TurnoverOptimizer:
 
     # ── Public API ───────────────────────────────────────────────────
 
+    def provenance_digest(self) -> str:
+        """Stable digest of the optimizer's decision-affecting parameters.
+
+        Folded into the composition-layer ``decision_basis_hash`` (audit
+        P0-2) alongside the per-solve ``solver_status`` so the digest moves
+        when capital, caps, the turnover/risk penalties, or the solver-path
+        selection change.
+        """
+        return (
+            f"cap={self._capital:.10g}|gross={self._gross_cap:.10g}|"
+            f"pername={self._per_name_cap:.10g}|ltc={self._lambda_tc:.10g}|"
+            f"lrisk={self._lambda_risk:.10g}|solver={self._require_solver}"
+        )
+
     def optimize(
         self,
         weights: Mapping[str, float],

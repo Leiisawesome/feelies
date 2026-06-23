@@ -63,13 +63,25 @@ def _compute_decision_basis_hash(
     current_positions: Mapping[str, float],
     mechanism_caps: Mapping[TrendMechanism, float] | None,
     global_mechanism_cap: float | None,
+    neutralize: bool,
+    consumes_mechanisms: tuple[TrendMechanism, ...] | None,
+    neutralizer_digest: str,
+    sector_digest: str,
+    optimizer_digest: str,
+    solver_status: str,
 ) -> str:
-    """SHA-256 over the canonical decision inputs (audit P0-6).
+    """SHA-256 over the canonical decision inputs (audit P0-2).
 
     Deterministic: every component is emitted in a fixed order (universe
     order for per-symbol rows, mechanism-name order for caps) with a
     fixed float format, so identical inputs hash identically across
     replays and materially-different inputs almost never collide.
+
+    Coverage spans every input that moves ``target_positions``: the
+    per-symbol ranker inputs, the turnover reference positions, the
+    resolved caps, the neutralization opt-out and consumes whitelist, and
+    digests of the factor model / loadings, sector map, and optimizer
+    parameters plus the terminal solver status (audit P0-2).
     """
     parts: list[str] = [f"{strategy_id}|{ctx.horizon_seconds}|{ctx.boundary_index}"]
     for s in ctx.universe:
@@ -84,6 +96,13 @@ def _compute_decision_basis_hash(
     if mechanism_caps:
         for mech in sorted(mechanism_caps, key=lambda m: m.name):
             parts.append(f"cap:{mech.name}={mechanism_caps[mech]:.10g}")
+    parts.append(f"neutralize={neutralize}")
+    if consumes_mechanisms:
+        parts.append("consumes=" + ",".join(sorted(m.name for m in consumes_mechanisms)))
+    parts.append(f"factor={neutralizer_digest}")
+    parts.append(f"sector={sector_digest}")
+    parts.append(f"optimizer={optimizer_digest}")
+    parts.append(f"solver={solver_status}")
     return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
 
 
@@ -327,6 +346,8 @@ class CompositionEngine:
         mechanism_caps: Mapping[TrendMechanism, float] | None = None,
         global_mechanism_cap: float | None = None,
         decay_weighting_enabled: bool | None = None,
+        neutralize: bool = True,
+        consumes_mechanisms: tuple[TrendMechanism, ...] | None = None,
     ) -> SizedPositionIntent:
         """Execute the canonical ranker → neutralize → match → optimize chain.
 
@@ -340,6 +361,15 @@ class CompositionEngine:
         enforced at emit time (audit P0-4).  *decay_weighting_enabled*
         overrides the shared ranker's decay toggle for this alpha (audit
         P1-6); ``None`` falls back to the ranker's instance flag.
+
+        *neutralize* honours the alpha's ``factor_neutralization`` disclosure
+        (audit P0-1): when ``False`` the global :class:`FactorNeutralizer` is
+        bypassed for this alpha — weights pass through unresidualized and the
+        reported ``factor_exposures`` are the *carried* (un-neutralized)
+        exposures — so a declared opt-out is honoured even when a global
+        ``factor_loadings_dir`` is configured.  *consumes_mechanisms* is the
+        alpha's declared family whitelist, threaded into the ranker so an
+        undeclared mechanism family cannot enter the book (audit P0-6).
         """
         rank_result = self._ranker.rank(
             ctx,
@@ -347,11 +377,22 @@ class CompositionEngine:
             mechanism_caps=mechanism_caps,
             global_mechanism_cap=global_mechanism_cap,
             decay_weighting_enabled=decay_weighting_enabled,
+            consumes_mechanisms=consumes_mechanisms,
         )
-        neutral_weights, factor_exposures = self._neutralizer.neutralize(
-            rank_result.weights,
-            ctx.universe,
-        )
+        if neutralize:
+            neutral_weights, factor_exposures = self._neutralizer.neutralize(
+                rank_result.weights,
+                ctx.universe,
+            )
+        else:
+            # Alpha disclosed ``factor_neutralization: false`` — pass weights
+            # through unresidualized but still report the carried exposure
+            # for provenance (audit P0-1).
+            neutral_weights = dict(rank_result.weights)
+            factor_exposures = self._neutralizer.compute_exposures(
+                rank_result.weights,
+                ctx.universe,
+            )
         sector_matched = self._sector_matcher.neutralize(
             neutral_weights,
             ctx.universe,
@@ -393,6 +434,12 @@ class CompositionEngine:
             current_positions=current_positions,
             mechanism_caps=mechanism_caps,
             global_mechanism_cap=global_mechanism_cap,
+            neutralize=neutralize,
+            consumes_mechanisms=consumes_mechanisms,
+            neutralizer_digest=self._neutralizer.provenance_digest(),
+            sector_digest=self._sector_matcher.provenance_digest(),
+            optimizer_digest=self._optimizer.provenance_digest(),
+            solver_status=opt.solver_status,
         )
         return SizedPositionIntent(
             timestamp_ns=ctx.timestamp_ns,
