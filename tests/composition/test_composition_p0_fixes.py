@@ -82,8 +82,14 @@ def _ctx(
     )
 
 
-def _engine(neutralizer: FactorNeutralizer, *, capital: float = 1_000_000.0) -> CompositionEngine:
-    # Generous per-name / gross caps so a 3-name book does not saturate the
+def _engine(
+    neutralizer: FactorNeutralizer,
+    *,
+    capital: float = 1_000_000.0,
+    gross_cap_pct: float = 1.0,
+    per_name_cap_pct: float = 0.8,
+) -> CompositionEngine:
+    # Generous per-name / gross caps so a small book does not saturate the
     # caps (which would mask weight differences between pipeline variants).
     return CompositionEngine(
         bus=EventBus(),
@@ -93,8 +99,8 @@ def _engine(neutralizer: FactorNeutralizer, *, capital: float = 1_000_000.0) -> 
         sector_matcher=SectorMatcher(sector_map_path=None),
         optimizer=TurnoverOptimizer(
             capital_usd=capital,
-            gross_cap_pct=1.0,
-            per_name_cap_pct=0.8,
+            gross_cap_pct=gross_cap_pct,
+            per_name_cap_pct=per_name_cap_pct,
         ),
         completeness_threshold=0.0,
         position_lookup=None,
@@ -240,6 +246,61 @@ def test_decision_basis_hash_distinguishes_neutralize_flag() -> None:
     assert _targets(on) == _targets(off)
     # ... but the provenance hash distinguishes the two decisions.
     assert on.decision_basis_hash != off.decision_basis_hash
+
+
+# ── P0-3/P0-4: sleeve-based caps and mixed-mechanism attribution ────────
+
+
+def test_sleeve_attribution_splits_mixed_mechanism_symbol() -> None:
+    """A symbol fed by two families must report BOTH (not just the largest)."""
+    universe = ("AAPL", "MSFT", "NVDA")
+    sigs: dict[str, Signal | None] = {}
+    by_strategy: dict[str, dict[str, Signal | None]] = {}
+    for i, sym in enumerate(universe):
+        kyle = _sig(
+            sym, SignalDirection.LONG, 1.0 + 0.3 * i, 10.0, TrendMechanism.KYLE_INFO,
+            strategy_id="s_kyle",
+        )
+        inv = _sig(
+            sym,
+            SignalDirection.SHORT if i % 2 else SignalDirection.LONG,
+            0.5 + 0.2 * i, 8.0, TrendMechanism.INVENTORY,
+            strategy_id="s_inv",
+        )
+        sigs[sym] = kyle
+        by_strategy[sym] = {"s_kyle": kyle, "s_inv": inv}
+    ctx = _ctx(sigs, universe=universe, by_strategy=by_strategy)
+
+    intent = _engine(FactorNeutralizer(loadings_dir=None)).run_default_pipeline(
+        ctx, strategy_id="a", feeder_strategy_ids=("s_inv", "s_kyle"), neutralize=False
+    )
+    families = set(intent.mechanism_breakdown)
+    assert TrendMechanism.KYLE_INFO in families
+    assert TrendMechanism.INVENTORY in families
+    assert abs(sum(intent.mechanism_breakdown.values()) - 1.0) < 1e-6
+
+
+def test_sleeve_cap_holds_on_emitted_book() -> None:
+    """A binding family cap must hold on the FINAL emitted dollar book (P0-3)."""
+    universe = ("AAPL", "MSFT", "NVDA", "AMZN", "JPM", "BAC")
+    sigs: dict[str, Signal | None] = {
+        "AAPL": _sig("AAPL", SignalDirection.LONG, 1.0, 30.0, TrendMechanism.KYLE_INFO),
+        "MSFT": _sig("MSFT", SignalDirection.LONG, 1.0, 24.0, TrendMechanism.KYLE_INFO),
+        "NVDA": _sig("NVDA", SignalDirection.SHORT, 1.0, 20.0, TrendMechanism.KYLE_INFO),
+        "AMZN": _sig("AMZN", SignalDirection.LONG, 1.0, 16.0, TrendMechanism.KYLE_INFO),
+        "JPM": _sig("JPM", SignalDirection.LONG, 1.0, 8.0, TrendMechanism.INVENTORY),
+        "BAC": _sig("BAC", SignalDirection.SHORT, 1.0, 6.0, TrendMechanism.INVENTORY),
+    }
+    ctx = _ctx(sigs, universe=universe)
+    # Generous per-name cap so weight-space shares carry through to dollars
+    # (otherwise per-name clipping would equalize shares and mask the cap).
+    eng = _engine(FactorNeutralizer(loadings_dir=None), per_name_cap_pct=0.95)
+
+    uncapped = eng.run_default_pipeline(ctx, strategy_id="a", global_mechanism_cap=1.0)
+    assert uncapped.mechanism_breakdown[TrendMechanism.KYLE_INFO] > 0.5
+
+    capped = eng.run_default_pipeline(ctx, strategy_id="a", global_mechanism_cap=0.5)
+    assert capped.mechanism_breakdown[TrendMechanism.KYLE_INFO] <= 0.5 + 1e-9
 
 
 def test_decision_basis_hash_distinguishes_decay() -> None:

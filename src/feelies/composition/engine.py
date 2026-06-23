@@ -34,8 +34,9 @@ from typing import Any, Mapping
 from feelies.bus.event_bus import EventBus
 from feelies.composition.cross_sectional import (
     CrossSectionalRanker,
-    RankResult,
-    compute_mechanism_breakdown,
+    SleeveRankResult,
+    cap_family_vectors,
+    compute_sleeve_breakdown,
 )
 from feelies.composition.factor_neutralizer import FactorNeutralizer
 from feelies.composition.protocol import (
@@ -59,7 +60,7 @@ def _compute_decision_basis_hash(
     *,
     strategy_id: str,
     ctx: CrossSectionalContext,
-    rank_result: RankResult,
+    rank_result: SleeveRankResult,
     current_positions: Mapping[str, float],
     mechanism_caps: Mapping[TrendMechanism, float] | None,
     global_mechanism_cap: float | None,
@@ -370,33 +371,58 @@ class CompositionEngine:
         ``factor_loadings_dir`` is configured.  *consumes_mechanisms* is the
         alpha's declared family whitelist, threaded into the ranker so an
         undeclared mechanism family cannot enter the book (audit P0-6).
+
+        Construction is *sleeve-based* (audit P0-3/P0-4): each mechanism family
+        is standardized, neutralized, and sector-matched as its own sub-book,
+        the per-family gross shares are capped structurally, the sleeves are
+        combined, and the optimizer scales the combined book once.  A symbol
+        fed by several families splits across their sleeves, so the cap and the
+        realised breakdown are per-family-correct.  Single-family / uncapped
+        books reduce to the prior single-pass result (bit-identical).
         """
-        rank_result = self._ranker.rank(
+        sleeves = self._ranker.rank_sleeves(
             ctx,
             feeder_strategy_ids=feeder_strategy_ids,
-            mechanism_caps=mechanism_caps,
-            global_mechanism_cap=global_mechanism_cap,
             decay_weighting_enabled=decay_weighting_enabled,
             consumes_mechanisms=consumes_mechanisms,
         )
+        caps = self._ranker.resolve_caps(mechanism_caps, global_mechanism_cap)
+        per_family, default_cap = caps
+
+        def cap_for(mech: TrendMechanism) -> float:
+            return per_family.get(mech, default_cap)
+
+        # Shape each mechanism sleeve independently.  Neutralization is linear,
+        # so per-sleeve == combined; sector-neutrality is additive, so
+        # per-sleeve matching keeps the combined book sector-neutral.
+        shaped_by_mech: dict[TrendMechanism | None, dict[str, float]] = {}
+        exposures_acc: dict[str, float] = {}
+        for mech, sleeve_weights in sleeves.weights_by_mech.items():
+            if neutralize:
+                neutral_f, exp_f = self._neutralizer.neutralize(sleeve_weights, ctx.universe)
+                for factor, value in exp_f.items():
+                    exposures_acc[factor] = exposures_acc.get(factor, 0.0) + value
+            else:
+                neutral_f = dict(sleeve_weights)
+            shaped_by_mech[mech] = self._sector_matcher.neutralize(neutral_f, ctx.universe)
+
+        # Structural family caps in weight space (audit P0-3/P0-4): scale each
+        # over-cap sleeve down *before* the optimizer scales the combined book
+        # up to the gross budget, so the budget is utilised and shares are
+        # capped.
+        capped_by_mech, _ = cap_family_vectors(shaped_by_mech, caps)
+
+        combined: dict[str, float] = {}
+        for sleeve_weights in capped_by_mech.values():
+            for symbol, value in sleeve_weights.items():
+                combined[symbol] = combined.get(symbol, 0.0) + value
+
         if neutralize:
-            neutral_weights, factor_exposures = self._neutralizer.neutralize(
-                rank_result.weights,
-                ctx.universe,
-            )
+            factor_exposures = exposures_acc
         else:
-            # Alpha disclosed ``factor_neutralization: false`` — pass weights
-            # through unresidualized but still report the carried exposure
-            # for provenance (audit P0-1).
-            neutral_weights = dict(rank_result.weights)
-            factor_exposures = self._neutralizer.compute_exposures(
-                rank_result.weights,
-                ctx.universe,
-            )
-        sector_matched = self._sector_matcher.neutralize(
-            neutral_weights,
-            ctx.universe,
-        )
+            # Opt-out: report the carried (un-neutralized) exposure (audit P0-1).
+            factor_exposures = self._neutralizer.compute_exposures(combined, ctx.universe)
+
         # Look up current positions if a lookup is wired.
         current_positions: dict[str, float] = {}
         if self._position_lookup is not None:
@@ -406,31 +432,56 @@ class CompositionEngine:
                 except Exception:  # pragma: no cover - defensive
                     current_positions[s] = 0.0
 
-        opt = self._optimizer.optimize(
-            sector_matched,
-            ctx.universe,
-            current_positions,
-        )
+        opt = self._optimizer.optimize(combined, ctx.universe, current_positions)
+
+        # Realised per-family breakdown from the final dollars, splitting
+        # mixed-mechanism symbols by their per-family weight share (audit P0-4).
+        realised_breakdown = compute_sleeve_breakdown(opt.target_usd, capped_by_mech)
+        target_usd = dict(opt.target_usd)
+        expected_gross = opt.expected_gross_exposure_usd
+        expected_turnover = opt.expected_turnover_usd
+
+        # Emit-time cap backstop (audit P0-3): the optimizer's per-name clip can
+        # perturb realised family shares after the weight-space cap.  Only when
+        # that pushes a family over its cap do we re-cap on the final dollars
+        # (attribute each symbol's dollars across families, scale the over-cap
+        # family down, re-sum) so caps hold on the *emitted* book.  When nothing
+        # is over cap the optimizer output is used verbatim, keeping
+        # single-family / uncapped books bit-identical.
+        if any(share > cap_for(m) + 1e-9 for m, share in realised_breakdown.items()):
+            dollar_by_mech: dict[TrendMechanism | None, dict[str, float]] = {
+                m: {} for m in capped_by_mech
+            }
+            for symbol, dollars in opt.target_usd.items():
+                denom = sum(abs(capped_by_mech[m].get(symbol, 0.0)) for m in capped_by_mech)
+                if denom <= 0.0:
+                    continue
+                for m in capped_by_mech:
+                    weight = capped_by_mech[m].get(symbol, 0.0)
+                    if weight == 0.0:
+                        continue
+                    dollar_by_mech[m][symbol] = dollars * (abs(weight) / denom)
+            capped_dollars, realised_breakdown = cap_family_vectors(dollar_by_mech, caps)
+            resummed: dict[str, float] = {}
+            for sleeve_dollars in capped_dollars.values():
+                for symbol, value in sleeve_dollars.items():
+                    resummed[symbol] = resummed.get(symbol, 0.0) + value
+            target_usd = {
+                s: round(v, 2) for s, v in resummed.items() if abs(round(v, 2)) >= 0.01
+            }
+            expected_gross = sum(abs(v) for v in target_usd.values())
+            expected_turnover = sum(
+                abs(target_usd.get(s, 0.0) - current_positions.get(s, 0.0)) for s in ctx.universe
+            )
 
         target_positions = {
-            s: TargetPosition(symbol=s, target_usd=v) for s, v in sorted(opt.target_usd.items())
+            s: TargetPosition(symbol=s, target_usd=v) for s, v in sorted(target_usd.items())
         }
-        # P0-5: report the *realised* mechanism breakdown computed from the
-        # final dollar targets (post-neutralization, post-sector,
-        # post-optimization), not the ranker's pre-construction shares.
-        realised_breakdown = compute_mechanism_breakdown(
-            opt.target_usd,
-            rank_result.mechanism_by_symbol,
-        )
-        # P0-6: in-band provenance digest over the canonical decision
-        # inputs (per-symbol raw scores + decay + mechanism, the turnover
-        # reference positions, the resolved caps, and the alpha/boundary
-        # identity) so structurally-equal intents derived from different
-        # inputs are distinguishable.
+        # Provenance digest over the canonical decision inputs (audit P0-2).
         decision_basis_hash = _compute_decision_basis_hash(
             strategy_id=strategy_id,
             ctx=ctx,
-            rank_result=rank_result,
+            rank_result=sleeves,
             current_positions=current_positions,
             mechanism_caps=mechanism_caps,
             global_mechanism_cap=global_mechanism_cap,
@@ -451,8 +502,8 @@ class CompositionEngine:
             horizon_seconds=ctx.horizon_seconds,
             target_positions=target_positions,
             factor_exposures=factor_exposures,
-            expected_turnover_usd=opt.expected_turnover_usd,
-            expected_gross_exposure_usd=opt.expected_gross_exposure_usd,
+            expected_turnover_usd=expected_turnover,
+            expected_gross_exposure_usd=expected_gross,
             mechanism_breakdown=realised_breakdown,
             decision_basis_hash=decision_basis_hash,
             solver_status=opt.solver_status,
