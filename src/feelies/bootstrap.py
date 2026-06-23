@@ -1947,6 +1947,7 @@ def _create_composition_layer(
         ctx_sequence_generator=ctx_seq,
         signal_horizons=signal_horizons,
         upstream_strategy_ids=upstream_ids,
+        signal_max_age_seconds=config.composition_signal_max_age_seconds,
     )
     synchronizer.attach()
 

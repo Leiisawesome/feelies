@@ -211,6 +211,86 @@ def test_fan_in_cross_horizon_feeders_into_portfolio_context():
     assert ctx.signals_by_symbol["AAPL"] == row["fast_feeder"]
 
 
+def test_stale_signal_dropped_from_completeness_legacy():
+    """A signal older than the horizon window must not count (audit P0-5)."""
+    bus = EventBus()
+    captured: list[CrossSectionalContext] = []
+    bus.subscribe(CrossSectionalContext, lambda e: captured.append(e))
+
+    sync = UniverseSynchronizer(
+        bus=bus,
+        universe=("AAPL", "MSFT"),
+        horizons=(300,),
+        ctx_sequence_generator=SequenceGenerator(),
+    )
+    sync.attach()
+
+    tick_ts = 1_000_000_000 + 301 * 1_000_000_000  # AAPL signal is 301s old
+    # AAPL: stale (age 301s > 300s window) → dropped.
+    bus.publish(_make_signal(symbol="AAPL", ts_ns=1_000_000_000))
+    # MSFT: fresh (≈1ms old) → counts.
+    bus.publish(_make_signal(symbol="MSFT", ts_ns=tick_ts - 1_000_000))
+    bus.publish(_make_tick(ts_ns=tick_ts, bi=1))
+
+    assert len(captured) == 1
+    ctx = captured[0]
+    assert ctx.signals_by_symbol["AAPL"] is None
+    assert ctx.signals_by_symbol["MSFT"] is not None
+    assert ctx.completeness == 0.5
+
+
+def test_explicit_max_age_override_drops_signal():
+    """A configured window narrower than the horizon still applies (P0-5)."""
+    bus = EventBus()
+    captured: list[CrossSectionalContext] = []
+    bus.subscribe(CrossSectionalContext, lambda e: captured.append(e))
+
+    sync = UniverseSynchronizer(
+        bus=bus,
+        universe=("AAPL",),
+        horizons=(300,),
+        ctx_sequence_generator=SequenceGenerator(),
+        signal_max_age_seconds=60,
+    )
+    sync.attach()
+
+    # 120s old: within the 300s horizon but beyond the explicit 60s window.
+    bus.publish(_make_signal(symbol="AAPL", ts_ns=1_000_000_000))
+    bus.publish(_make_tick(ts_ns=1_000_000_000 + 120 * 1_000_000_000, bi=1))
+
+    assert len(captured) == 1
+    ctx = captured[0]
+    assert ctx.signals_by_symbol["AAPL"] is None
+    assert ctx.completeness == 0.0
+
+
+def test_stale_feeder_dropped_multi_feeder():
+    """The stale gate also applies on the multi-feeder fan-in path (P0-5)."""
+    bus = EventBus()
+    captured: list[CrossSectionalContext] = []
+    bus.subscribe(CrossSectionalContext, lambda e: captured.append(e))
+
+    sync = UniverseSynchronizer(
+        bus=bus,
+        universe=("AAPL",),
+        horizons=(300,),
+        ctx_sequence_generator=SequenceGenerator(),
+        signal_horizons=(300,),
+        upstream_strategy_ids=("alpha_a",),
+    )
+    sync.attach()
+
+    tick_ts = 1_000_000_000 + 301 * 1_000_000_000
+    bus.publish(_make_signal(symbol="AAPL", ts_ns=1_000_000_000, strategy_id="alpha_a"))
+    bus.publish(_make_tick(ts_ns=tick_ts, bi=1))
+
+    assert len(captured) == 1
+    ctx = captured[0]
+    assert ctx.signals_by_strategy_by_symbol["AAPL"]["alpha_a"] is None
+    assert ctx.signals_by_symbol["AAPL"] is None
+    assert ctx.completeness == 0.0
+
+
 def test_separate_horizons_independent():
     bus = EventBus()
     captured: list[CrossSectionalContext] = []
