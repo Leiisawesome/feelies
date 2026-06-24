@@ -56,6 +56,24 @@ def test_gross_cap_enforced() -> None:
     assert result.expected_gross_exposure_usd <= 1.0 * _CAPITAL + 0.01
 
 
+def test_closed_form_ignores_lambda_penalties() -> None:
+    """The closed-form path is independent of lambda_tc / lambda_risk (P1-1).
+
+    Documents that the turnover/risk penalties are inert outside the solver
+    path, so an operator tuning them under ``composition_optimizer_mode:
+    closed_form`` does not change the desired book.
+    """
+    weights = {"AAPL": 0.6, "MSFT": -0.3, "TSLA": 0.1}
+    universe = ("AAPL", "MSFT", "TSLA")
+    current = {"AAPL": 50_000.0, "MSFT": 0.0, "TSLA": 0.0}
+    low = TurnoverOptimizer(capital_usd=_CAPITAL, lambda_tc=0.0, lambda_risk=0.0)
+    high = TurnoverOptimizer(capital_usd=_CAPITAL, lambda_tc=100.0, lambda_risk=100.0)
+    assert (
+        low.optimize(weights, universe, current).target_usd
+        == high.optimize(weights, universe, current).target_usd
+    )
+
+
 def test_closed_form_is_deterministic() -> None:
     opt = TurnoverOptimizer(capital_usd=_CAPITAL)
     weights = {"AAPL": 0.3, "MSFT": -0.2, "TSLA": 0.1}

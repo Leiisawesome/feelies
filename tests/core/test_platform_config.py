@@ -96,6 +96,19 @@ class TestValidation:
         with pytest.raises(ConfigurationError, match="regime_engine_options keys"):
             cfg.validate()
 
+    def test_default_optimizer_mode_is_closed_form(self) -> None:
+        cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
+        assert cfg.composition_optimizer_mode == "closed_form"
+
+    def test_invalid_optimizer_mode_raises(self) -> None:
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            composition_optimizer_mode="lp",
+        )
+        with pytest.raises(ConfigurationError, match="composition_optimizer_mode"):
+            cfg.validate()
+
 
 # ── Snapshot (invariant 13) ─────────────────────────────────────────
 

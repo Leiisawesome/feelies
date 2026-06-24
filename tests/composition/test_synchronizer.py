@@ -291,6 +291,64 @@ def test_stale_feeder_dropped_multi_feeder():
     assert ctx.completeness == 0.0
 
 
+def test_future_signal_not_captured_legacy():
+    """A future-dated signal must never be selected (Inv-6 fail-safe, P1-5)."""
+    bus = EventBus()
+    captured: list[CrossSectionalContext] = []
+    bus.subscribe(CrossSectionalContext, lambda e: captured.append(e))
+
+    sync = UniverseSynchronizer(
+        bus=bus,
+        universe=("AAPL",),
+        horizons=(300,),
+        ctx_sequence_generator=SequenceGenerator(),
+    )
+    sync.attach()
+
+    # A causal signal (t=1000), then a FUTURE signal (t=10000) for the same
+    # (horizon, symbol, strategy) arrives before the barrier.  The cache keeps
+    # the latest timestamp, so the future signal overwrites the causal one;
+    # the causality filter then drops the future signal at selection.
+    bus.publish(_make_signal(symbol="AAPL", ts_ns=1_000))
+    bus.publish(_make_signal(symbol="AAPL", ts_ns=10_000))
+    bus.publish(_make_tick(ts_ns=2_000, bi=1))
+
+    assert len(captured) == 1
+    ctx = captured[0]
+    sig = ctx.signals_by_symbol["AAPL"]
+    # No look-ahead: a future-dated signal is never surfaced.
+    assert sig is None or sig.timestamp_ns <= 2_000
+    # Fail-safe: the future signal does not inflate completeness.
+    assert ctx.completeness == 0.0
+
+
+def test_future_signal_not_captured_multi_feeder():
+    """Same causality guard on the multi-feeder fan-in path (Inv-6, P1-5)."""
+    bus = EventBus()
+    captured: list[CrossSectionalContext] = []
+    bus.subscribe(CrossSectionalContext, lambda e: captured.append(e))
+
+    sync = UniverseSynchronizer(
+        bus=bus,
+        universe=("AAPL",),
+        horizons=(300,),
+        ctx_sequence_generator=SequenceGenerator(),
+        signal_horizons=(300,),
+        upstream_strategy_ids=("alpha_a",),
+    )
+    sync.attach()
+
+    bus.publish(_make_signal(symbol="AAPL", ts_ns=1_000, strategy_id="alpha_a"))
+    bus.publish(_make_signal(symbol="AAPL", ts_ns=10_000, strategy_id="alpha_a"))
+    bus.publish(_make_tick(ts_ns=2_000, bi=1))
+
+    assert len(captured) == 1
+    ctx = captured[0]
+    chosen = ctx.signals_by_strategy_by_symbol["AAPL"]["alpha_a"]
+    assert chosen is None or chosen.timestamp_ns <= 2_000
+    assert ctx.completeness == 0.0
+
+
 def test_separate_horizons_independent():
     bus = EventBus()
     captured: list[CrossSectionalContext] = []

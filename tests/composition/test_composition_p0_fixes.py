@@ -140,9 +140,12 @@ def test_factor_neutralization_opt_out_bypasses_configured_loadings(tmp_path: Pa
     assert _targets(optout) == _targets(passthrough)
     # ... and is genuinely different from the neutralized book (loadings bite).
     assert _targets(optin) != _targets(optout)
-    # Reported exposure: neutralized ≈ 0; opted-out carries the real exposure.
-    assert abs(optin.factor_exposures.get("MKT", 0.0)) < 1e-9
-    assert abs(optout.factor_exposures.get("MKT", 0.0)) > 1e-6
+    # Reported exposure is the FINAL book's exposure (audit P1-2): the
+    # neutralized book carries materially less MKT exposure than the opted-out
+    # (un-neutralized) book.
+    assert abs(optin.factor_exposures.get("MKT", 0.0)) < abs(
+        optout.factor_exposures.get("MKT", 0.0)
+    )
 
 
 # ── P0-6: runtime consumes whitelist ────────────────────────────────────

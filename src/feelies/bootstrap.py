@@ -1968,6 +1968,10 @@ def _create_composition_layer(
         capital_usd=capital_usd,
         lambda_tc=config.composition_lambda_tc,
         lambda_risk=config.composition_lambda_risk,
+        # Audit P1-1: the optimizer path is selected explicitly by config, not
+        # by whether cvxpy happens to be importable.  ``closed_form`` (default)
+        # ignores the lambda penalties; ``ecos`` engages the solver objective.
+        require_solver=(config.composition_optimizer_mode == "ecos"),
     )
 
     decay_enabled = any(

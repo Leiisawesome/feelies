@@ -396,13 +396,11 @@ class CompositionEngine:
         # so per-sleeve == combined; sector-neutrality is additive, so
         # per-sleeve matching keeps the combined book sector-neutral.
         shaped_by_mech: dict[TrendMechanism | None, dict[str, float]] = {}
-        exposures_acc: dict[str, float] = {}
         for mech, sleeve_weights in sleeves.weights_by_mech.items():
             if neutralize:
-                neutral_f, exp_f = self._neutralizer.neutralize(sleeve_weights, ctx.universe)
-                for factor, value in exp_f.items():
-                    exposures_acc[factor] = exposures_acc.get(factor, 0.0) + value
+                neutral_f, _ = self._neutralizer.neutralize(sleeve_weights, ctx.universe)
             else:
+                # Opt-out (audit P0-1): pass weights through unresidualized.
                 neutral_f = dict(sleeve_weights)
             shaped_by_mech[mech] = self._sector_matcher.neutralize(neutral_f, ctx.universe)
 
@@ -416,12 +414,6 @@ class CompositionEngine:
         for sleeve_weights in capped_by_mech.values():
             for symbol, value in sleeve_weights.items():
                 combined[symbol] = combined.get(symbol, 0.0) + value
-
-        if neutralize:
-            factor_exposures = exposures_acc
-        else:
-            # Opt-out: report the carried (un-neutralized) exposure (audit P0-1).
-            factor_exposures = self._neutralizer.compute_exposures(combined, ctx.universe)
 
         # Look up current positions if a lookup is wired.
         current_positions: dict[str, float] = {}
@@ -473,6 +465,17 @@ class CompositionEngine:
             expected_turnover = sum(
                 abs(target_usd.get(s, 0.0) - current_positions.get(s, 0.0)) for s in ctx.universe
             )
+
+        # Factor exposure of the *final* emitted book (audit P1-2): normalize
+        # the dollar targets back to weights and measure exposure there, so the
+        # reported value describes the desired book after sector matching and
+        # optimization — not the pre-sector residual.  ``{}`` when no loadings
+        # are configured (keeps the no-loadings parity stream bit-identical).
+        gross_final = sum(abs(v) for v in target_usd.values())
+        final_weights = (
+            {s: v / gross_final for s, v in target_usd.items()} if gross_final > 0.0 else {}
+        )
+        factor_exposures = self._neutralizer.compute_exposures(final_weights, ctx.universe)
 
         target_positions = {
             s: TargetPosition(symbol=s, target_usd=v) for s, v in sorted(target_usd.items())
