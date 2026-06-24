@@ -172,6 +172,62 @@ class TestCheckOrderPerAlphaExposureLimit:
         assert "per-alpha exposure limit at order gate" in verdict.reason
 
 
+class TestCheckOrderReducingExemption:
+    """An over-cap alpha must still pass reducing orders at the order gate.
+
+    Mirrors check_signal's reducing exemption: a strict drop in
+    |position| for the symbol lowers the alpha's gross exposure, so a
+    de-risking order must not be rejected by the per-alpha exposure cap
+    even when the alpha is already at/over budget.  A reversal that ends
+    up larger gross is still gated.  Setup: equity=100k, capital_pct=10%
+    -> alpha_equity=10k; max_exposure_pct=5% -> max_exposure=500.  A
+    4-share @ $150 position = 600 gross > 500, i.e. already over cap.
+    """
+
+    def _over_cap_long(self) -> StrategyPositionStore:
+        positions = StrategyPositionStore()
+        positions.update("test_alpha", "AAPL", 4, Decimal("150"))
+        return positions
+
+    def _over_cap_short(self) -> StrategyPositionStore:
+        positions = StrategyPositionStore()
+        positions.update("test_alpha", "AAPL", -4, Decimal("150"))
+        return positions
+
+    def test_sell_reducing_long_over_cap_is_allowed(self) -> None:
+        alpha = _make_alpha(max_exposure_pct=5.0, capital_pct=10.0)
+        positions = self._over_cap_long()
+        wrapper = _build_wrapper(alpha, strategy_positions=positions)
+        order = _make_order(side=Side.SELL, quantity=1)  # +4 -> +3, reduces
+        verdict = wrapper.check_order(order, positions.as_aggregate())
+        assert verdict.action != RiskAction.REJECT
+
+    def test_buy_reducing_short_over_cap_is_allowed(self) -> None:
+        alpha = _make_alpha(max_exposure_pct=5.0, capital_pct=10.0)
+        positions = self._over_cap_short()
+        wrapper = _build_wrapper(alpha, strategy_positions=positions)
+        order = _make_order(side=Side.BUY, quantity=1)  # -4 -> -3, reduces
+        verdict = wrapper.check_order(order, positions.as_aggregate())
+        assert verdict.action != RiskAction.REJECT
+
+    def test_full_close_over_cap_is_allowed(self) -> None:
+        alpha = _make_alpha(max_exposure_pct=5.0, capital_pct=10.0)
+        positions = self._over_cap_long()
+        wrapper = _build_wrapper(alpha, strategy_positions=positions)
+        order = _make_order(side=Side.SELL, quantity=4)  # +4 -> 0, reduces
+        verdict = wrapper.check_order(order, positions.as_aggregate())
+        assert verdict.action != RiskAction.REJECT
+
+    def test_reversal_to_larger_over_cap_still_rejected(self) -> None:
+        alpha = _make_alpha(max_exposure_pct=5.0, capital_pct=10.0)
+        positions = self._over_cap_long()
+        wrapper = _build_wrapper(alpha, strategy_positions=positions)
+        order = _make_order(side=Side.SELL, quantity=10)  # +4 -> -6, grows gross
+        verdict = wrapper.check_order(order, positions.as_aggregate())
+        assert verdict.action == RiskAction.REJECT
+        assert "per-alpha exposure limit at order gate" in verdict.reason
+
+
 class TestCheckSignalReducingExemption:
     """An alpha at its cap must still be allowed to exit or reduce."""
 
