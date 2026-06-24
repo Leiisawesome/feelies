@@ -51,13 +51,17 @@ class TradeRecord:
 
     @property
     def net_pnl(self) -> Decimal:
-        """Audit F-M-21: realized PnL net of fees.
+        """Audit F-M-21: realized PnL net of explicit fees.
 
-        ``realized_pnl`` is mid-to-mid by convention (the cost model
-        records spread cost into ``fees``, not into the fill_price).
-        Consumers computing economic P&L must subtract fees; this
-        property does it correctly so naive consumers don't over-state
-        net P&L by the spread component.
+        Under the BT-3 cost convention (see
+        :class:`feelies.portfolio.position_store.Position`) a taker fill
+        executes at the crossed price (BUY lifts the ask, SELL hits the bid),
+        so ``realized_pnl`` already INCLUDES the half-spread paid to cross — it
+        is not mid-to-mid, and ``fees`` carries no separate ``spread_cost``.
+        ``fees`` holds the explicit charges only (commission, regulatory/TAF,
+        and any forced-exit panic slippage).  ``realized_pnl - fees`` therefore
+        nets those explicit charges off a PnL that already reflects the spread;
+        consumers must not subtract a spread component a second time.
         """
         return self.realized_pnl - self.fees
 
