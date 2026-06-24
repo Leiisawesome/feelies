@@ -14,15 +14,22 @@ flatten/edge-cost gates) — owned by `audit_position_management.md`.
 
 ### Verification run
 
-The read-only checks below could **not** be executed in this environment:
-`uv sync` failed with a network timeout downloading `pyyaml==6.0.3`, so the
-`.venv` has no `pytest`. This audit is therefore static/evidence-based. The
-operator should run, on a synced environment:
+After resolving an environment dependency-sync timeout (`uv sync --all-extras`),
+both read-only suites were run:
 
-```
-uv run pytest tests/kernel/ tests/bus/ tests/core/test_state_machine.py tests/bootstrap/ -q
-uv run pytest tests/causality/test_anti_lookahead.py tests/determinism/ -q
-```
+- `uv run pytest tests/kernel/ tests/bus/ tests/core/test_state_machine.py tests/bootstrap/ -q` — **348 passed**.
+- `uv run pytest tests/causality/test_anti_lookahead.py tests/determinism/ -q` — **89 passed** (includes all 12 locked parity baselines).
+
+**Blocker found and fixed during verification** (separately authorized, outside
+the read-only analysis below): `src/feelies/kernel/orchestrator.py` passed
+`reason=` twice to the same `OrderRequest(...)` constructor (`:4793` and the
+stray `:4795`) — a hard `SyntaxError` that prevented
+`feelies.kernel.orchestrator` from importing and errored all 19 kernel/bootstrap
+test modules at collection (and would have broken every backtest/paper/live run
+on this branch). The stray duplicate kwarg and its now-orphaned local
+`reason` variable were removed, keeping the documented `_FORCED_EXIT_PANIC_REASON`
+mapping form. This was a pre-existing committed defect, unrelated to the
+ordering/determinism findings below.
 
 ### Severity convention
 
