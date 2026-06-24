@@ -4790,7 +4790,6 @@ class Orchestrator:
                 # ``__stop_exit__`` → ``STOP_EXIT``) so the fill model prices
                 # the stop with slippage / depleted depth; "" for ordinary
                 # entries and discretionary exits leaves the fill unchanged.
-                reason=_FORCED_EXIT_PANIC_REASON.get(intent.signal.strategy_id, ""),
                 g12_disclosed_cost_total_bps=(intent.signal.disclosed_cost_total_bps),
                 reason=reason,
             ),
