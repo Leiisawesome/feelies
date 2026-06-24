@@ -30,12 +30,16 @@ from typing import Any
 from feelies.bus.event_bus import EventBus
 from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
+    Alert,
+    AlertSeverity,
     NBBOQuote,
     OrderAck,
     OrderAckStatus,
     OrderRequest,
     OrderType,
     PositionUpdate,
+    RiskAction,
+    RiskVerdict,
     Side,
 )
 from feelies.execution.backend import ExecutionBackend
@@ -282,6 +286,70 @@ class TestHandlerFiltersOutNonHazardOrders:
         )
 
         assert router.submitted == []
+
+
+def _make_reject_verdict(order: OrderRequest) -> RiskVerdict:
+    return RiskVerdict(
+        timestamp_ns=order.timestamp_ns,
+        correlation_id=order.correlation_id,
+        sequence=order.sequence,
+        symbol=order.symbol,
+        action=RiskAction.REJECT,
+        reason="stubbed reject for test",
+    )
+
+
+class TestHazardHandlerAuthoritativeReject:
+    """A formal check_order REJECT is honored unless the order verifiably
+    reduces the live position — the Inv-11 exit fail-safe is exit-only,
+    so it must not launder a non-reducing order past a rejecting gate."""
+
+    def test_reducing_exit_submits_despite_reject(self) -> None:
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        positions.update("AAPL", 100, Decimal("150.00"))
+        positions.update_mark("AAPL", Decimal("150.00"))
+
+        orch, router, _ = _build_orchestrator(bus=bus, positions=positions)
+
+        def _reject(order: OrderRequest, _positions: object, **_kw: object) -> RiskVerdict:
+            return _make_reject_verdict(order)
+
+        orch._risk_engine.check_order = _reject  # type: ignore[method-assign]
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)  # type: ignore[arg-type]
+
+        # 100 long -> SELL 100 reduces to flat: exit fail-safe submits anyway.
+        bus.publish(_make_hazard_order(side=Side.SELL, quantity=100))
+
+        assert len(router.submitted) == 1
+        assert any(a.alert_name == "hazard_exit_defensive_check_order_reject" for a in alerts)
+
+    def test_nonreducing_hazard_order_blocked_on_reject(self) -> None:
+        bus = EventBus()
+        positions = MemoryPositionStore()
+        positions.update("AAPL", 100, Decimal("150.00"))
+        positions.update_mark("AAPL", Decimal("150.00"))
+
+        orch, router, _ = _build_orchestrator(bus=bus, positions=positions)
+
+        def _reject(order: OrderRequest, _positions: object, **_kw: object) -> RiskVerdict:
+            return _make_reject_verdict(order)
+
+        orch._risk_engine.check_order = _reject  # type: ignore[method-assign]
+        alerts: list[Alert] = []
+        bus.subscribe(Alert, alerts.append)  # type: ignore[arg-type]
+
+        # A hazard-tagged order that INCREASES the long (100 -> 150) has no
+        # exit fail-safe claim: REJECT is authoritative and must block.
+        bus.publish(_make_hazard_order(side=Side.BUY, quantity=50, order_id="hz-bad"))
+
+        assert router.submitted == []
+        assert any(
+            a.alert_name == "hazard_exit_nonreducing_reject_blocked"
+            and a.severity == AlertSeverity.CRITICAL
+            for a in alerts
+        )
 
 
 class TestIdempotency:
