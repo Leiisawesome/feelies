@@ -6163,10 +6163,13 @@ class Orchestrator:
         Inv-11 (fail-safe): hazard exits are exit-direction-only by
         construction in ``HazardExitController`` (the order side is
         always opposite the position sign) so they cannot increase
-        exposure.  A defensive ``check_order`` runs for audit parity;
-        ``REJECT`` verdicts are logged and the order is still submitted
-        (mirroring emergency flatten).  See ``risk/engine.py`` for the
-        formal sole-gatekeeper carve-outs.
+        exposure.  A defensive ``check_order`` runs for audit parity.
+        The exit fail-safe is honored only for orders that verifiably
+        reduce the live position: a ``REJECT`` on a reducing order is
+        logged and the order is still submitted (mirroring emergency
+        flatten), but a ``REJECT`` on a non-reducing order is
+        authoritative and blocks submission.  See ``risk/engine.py`` for
+        the formal sole-gatekeeper carve-outs.
         """
         if not isinstance(event, OrderRequest):
             return
@@ -6186,11 +6189,47 @@ class Orchestrator:
             return
         self._hazard_submitted_order_ids.add(event.order_id)
         hv = self._risk_engine.check_order(event, self._positions)
+        # Verify the order actually de-risks before honoring the Inv-11 exit
+        # fail-safe below.  HazardExitController emits full-position exits by
+        # construction (side opposite the position sign, qty == |position|), so
+        # a legitimate hazard order always reduces |position|.  An order that
+        # does NOT reduce the live position has no exit fail-safe claim, so a
+        # formal REJECT on it is authoritative and must block submission — the
+        # submit decision must not rest on trusting the reason tag alone.
+        current_qty = self._positions.get(event.symbol).quantity
+        signed_qty = event.quantity if event.side == Side.BUY else -event.quantity
+        order_reduces = abs(current_qty + signed_qty) < abs(current_qty)
         # Do not broadcast FORCE_FLATTEN: downstream subscribers may treat it as
         # a global lockdown trigger while this handler still submits the exit
         # (Inv-11 fail-safe).  REJECT / ALLOW are fine for audit parity.
         if hv.action != RiskAction.FORCE_FLATTEN:
             self._bus.publish(hv)
+        if hv.action == RiskAction.REJECT and not order_reduces:
+            # Non-exit order carrying a hazard reason: REJECT is authoritative.
+            self._bus.publish(
+                Alert(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=event.correlation_id,
+                    sequence=self._seq.next(),
+                    severity=AlertSeverity.CRITICAL,
+                    layer="kernel",
+                    alert_name="hazard_exit_nonreducing_reject_blocked",
+                    message=(
+                        "check_order returned REJECT on a hazard-tagged order "
+                        "that does not reduce the live position "
+                        f"(strategy_id={event.strategy_id!r}, symbol={event.symbol!r}, "
+                        f"current_qty={current_qty}, side={event.side.name}, "
+                        f"order_qty={event.quantity}, reason={hv.reason!r}) — "
+                        "blocking submission (REJECT is authoritative for "
+                        "non-exit orders)."
+                    ),
+                    context={
+                        "order_id": event.order_id,
+                        "risk_reason": hv.reason,
+                    },
+                )
+            )
+            return
         if hv.action == RiskAction.REJECT:
             self._bus.publish(
                 Alert(
