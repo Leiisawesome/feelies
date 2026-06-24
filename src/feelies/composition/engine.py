@@ -392,28 +392,36 @@ class CompositionEngine:
         def cap_for(mech: TrendMechanism) -> float:
             return per_family.get(mech, default_cap)
 
-        # Shape each mechanism sleeve independently.  Neutralization is linear,
-        # so per-sleeve == combined; sector-neutrality is additive, so
-        # per-sleeve matching keeps the combined book sector-neutral.
-        shaped_by_mech: dict[TrendMechanism | None, dict[str, float]] = {}
+        # Factor-neutralize each mechanism sleeve independently.  Factor
+        # residualization is linear, so per-sleeve == single pass on the
+        # combined vector.  Sector matching, by contrast, is *not* linear or
+        # additive — it scales only the dominant side per sector and flattens
+        # one-sided sectors — so it must run once on the combined book to pair
+        # longs/shorts across families within the same sector.
+        neutralized_by_mech: dict[TrendMechanism | None, dict[str, float]] = {}
         for mech, sleeve_weights in sleeves.weights_by_mech.items():
             if neutralize:
                 neutral_f, _ = self._neutralizer.neutralize(sleeve_weights, ctx.universe)
             else:
                 # Opt-out (audit P0-1): pass weights through unresidualized.
                 neutral_f = dict(sleeve_weights)
-            shaped_by_mech[mech] = self._sector_matcher.neutralize(neutral_f, ctx.universe)
+            neutralized_by_mech[mech] = neutral_f
 
         # Structural family caps in weight space (audit P0-3/P0-4): scale each
         # over-cap sleeve down *before* the optimizer scales the combined book
         # up to the gross budget, so the budget is utilised and shares are
         # capped.
-        capped_by_mech, _ = cap_family_vectors(shaped_by_mech, caps)
+        capped_by_mech, _ = cap_family_vectors(neutralized_by_mech, caps)
 
         combined: dict[str, float] = {}
         for sleeve_weights in capped_by_mech.values():
             for symbol, value in sleeve_weights.items():
                 combined[symbol] = combined.get(symbol, 0.0) + value
+
+        # Sector match on the combined book so long/short pairs across
+        # families within the same sector offset correctly (rather than each
+        # one-sided sleeve being flattened in isolation).
+        combined = self._sector_matcher.neutralize(combined, ctx.universe)
 
         # Look up current positions if a lookup is wired.
         current_positions: dict[str, float] = {}
