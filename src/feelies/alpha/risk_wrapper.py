@@ -221,11 +221,18 @@ class AlphaBudgetRiskWrapper:
                         ),
                     )
 
-                # 2. Per-alpha exposure limit
+                # 2. Per-alpha exposure limit.  Exempt reducing orders (a
+                # strict drop in |position| for this symbol lowers the alpha's
+                # gross exposure, since get_strategy_exposure sums |qty|*mark
+                # across symbols) so an alpha already at/over its cap can still
+                # unwind — mirrors check_signal's reducing exemption.  A full
+                # close and a reversal-to-smaller are exempt; a reversal that
+                # ends up larger gross is not.
+                order_reduces = post_fill < abs(strategy_pos.quantity)
                 _, alpha_max_exposure, alpha_exposure = self._alpha_equity_and_exposure(
                     strategy_id, budget
                 )
-                if alpha_exposure >= alpha_max_exposure:
+                if alpha_exposure >= alpha_max_exposure and not order_reduces:
                     return RiskVerdict(
                         timestamp_ns=order.timestamp_ns,
                         correlation_id=order.correlation_id,

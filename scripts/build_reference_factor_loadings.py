@@ -86,6 +86,16 @@ FACTORS_FF5_MOMENTUM_STR: tuple[str, ...] = (
     "STR",
 )
 
+# Content-embedded freshness anchor for the committed fixture (audit P1-3).
+# Daily-refresh factor loadings are "as of" the prior trading day; this value
+# is one trading day before the reference end-to-end session
+# (``tests.fixtures.event_logs._generate.SESSION_OPEN_NS`` = 2026-01-15 09:30
+# ET), i.e. 2026-01-14 09:30 ET.  Embedding it in ``_meta.as_of_ns`` makes the
+# bootstrap staleness verdict reproducible across checkouts (independent of
+# file mtime), so suites use a realistic ``factor_loadings_max_age_seconds``
+# instead of a ~century-long window.
+REFERENCE_AS_OF_NS: int = 1_768_446_000_000_000_000
+
 
 def _deterministic_loading(symbol: str, factor: str) -> float:
     """Map ``(symbol, factor)`` to a stable pseudo-random loading.
@@ -176,12 +186,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--as-of-ns",
         type=int,
-        default=None,
+        default=REFERENCE_AS_OF_NS,
         help=(
-            "Optional content-embedded freshness anchor (ns since epoch). When set, "
-            "emits a `_meta.as_of_ns` block so the bootstrap freshness check uses a "
-            "reproducible timestamp instead of the file mtime (audit P1-4). Omitted by "
-            "default so the committed fixture stays byte-identical across reruns."
+            "Content-embedded freshness anchor (ns since epoch) emitted as a "
+            "`_meta.as_of_ns` block so the bootstrap freshness check uses a "
+            "reproducible timestamp instead of the file mtime (audit P1-3). "
+            f"Defaults to REFERENCE_AS_OF_NS ({REFERENCE_AS_OF_NS}); pass 0 to omit."
         ),
     )
     args = parser.parse_args(argv)
@@ -195,7 +205,7 @@ def main(argv: list[str] | None = None) -> int:
     sector_map = build_sector_map()
 
     loadings_payload: dict[str, object] = dict(loadings)
-    if args.as_of_ns is not None:
+    if args.as_of_ns:  # 0 (or None) omits the block
         loadings_payload["_meta"] = {"as_of_ns": int(args.as_of_ns)}
 
     write_json(

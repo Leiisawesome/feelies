@@ -22,6 +22,9 @@ attributing the drift to a deliberate ECOS-version or objective change).
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
+
 import pytest
 
 from feelies.bus.event_bus import EventBus
@@ -76,6 +79,21 @@ def _build_solver_engine() -> tuple[EventBus, CompositionEngine, list[SizedPosit
     return bus, engine, captured
 
 
+def _solver_versions() -> dict[str, str]:
+    """Installed solver/linear-algebra library versions (audit P1-4).
+
+    Recorded in parity-failure output so a hash drift observed on a different
+    OS / BLAS / ECOS build can be attributed to a specific version set.
+    """
+    out: dict[str, str] = {}
+    for pkg in ("cvxpy", "ecos", "numpy", "scipy"):
+        try:
+            out[pkg] = _pkg_version(pkg)
+        except PackageNotFoundError:
+            out[pkg] = "absent"
+    return out
+
+
 def _replay_solver() -> tuple[str, int, int]:
     bus, _engine, captured = _build_solver_engine()
     base_ts = 1_700_000_000_000_000_000
@@ -101,8 +119,33 @@ def test_solver_intent_stream_matches_locked_baseline() -> None:
         "Level-3 SizedPositionIntent (cvxpy/ECOS) hash drift!\n"
         f"  Expected: {EXPECTED_LEVEL3_SOLVER_HASH}\n"
         f"  Actual:   {actual_hash}\n"
+        f"  Solver/library versions: {_solver_versions()}\n"
         "If intentional (ECOS version / objective change), update the constant in the "
-        "same commit and justify."
+        "same commit and justify.  A drift seen only on a different OS/BLAS/ECOS build "
+        "(versions above) means ECOS is not yet safe for production (audit P1-4)."
+    )
+
+
+def test_solver_path_engages_and_records_versions() -> None:
+    """The solver must actually run (not silently fall back), and the library
+    versions are recorded for cross-platform parity attribution (audit P1-4).
+
+    ``composition_optimizer_mode: ecos`` must not be enabled in production until
+    this module passes on at least Linux x86_64 and macOS arm64 CI runners with
+    the version set recorded below.
+    """
+    bus, _engine, captured = _build_solver_engine()
+    base_ts = 1_700_000_000_000_000_000
+    for k in range(_NUM_BOUNDARIES):
+        ts = base_ts + k * _HORIZON_SECONDS * 1_000_000_000
+        bus.publish(_make_ctx(boundary_index=k + 1, ts_ns=ts, seq=k + 1))
+
+    versions = _solver_versions()
+    statuses = {it.solver_status for it in captured if it.target_positions}
+    assert statuses, f"no non-empty intents to verify solver engagement; versions={versions}"
+    # A real ECOS solve, not the deterministic closed-form fallback.
+    assert statuses <= {"optimal", "optimal_inaccurate"}, (
+        f"cvxpy/ECOS path did not engage (statuses={statuses}); versions={versions}"
     )
 
 

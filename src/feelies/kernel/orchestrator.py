@@ -3695,10 +3695,9 @@ class Orchestrator:
                 order_type=OrderType.MARKET,
                 quantity=qty,
                 strategy_id="emergency_flatten",
-                # Forced flatten fills into a depleted book — tag it so the
-                # backtest fill model applies panic slippage (FORCE_FLATTEN is
-                # in STOP_EXIT_REASONS); without this the cost model misprices
-                # the lockdown exit as an ordinary market order.
+                # P1 (position-mgmt audit 2026-06-20): classify the lockdown
+                # flatten for panic slippage / depth depletion in the fill
+                # model (``STOP_EXIT_REASONS``).
                 reason="FORCE_FLATTEN",
             )
 
@@ -4765,6 +4764,14 @@ class Orchestrator:
                     order_type = OrderType.LIMIT
                     limit_price = quote.bid if side == Side.BUY else quote.ask
 
+        # P1 (position-mgmt audit 2026-06-20): tag a stop-loss exit with the
+        # canonical STOP_EXIT reason so the fill model classifies it for panic
+        # slippage / depth depletion (``STOP_EXIT_REASONS``).  A
+        # ``__session_flat__`` exit is a *scheduled* orderly unwind, not an
+        # adverse-move panic, so it deliberately keeps ``reason=""`` and is not
+        # surcharged.
+        reason = "STOP_EXIT" if intent.signal.strategy_id == "__stop_exit__" else ""
+
         return (
             OrderRequest(
                 timestamp_ns=self._clock.now_ns(),
@@ -4785,6 +4792,7 @@ class Orchestrator:
                 # entries and discretionary exits leaves the fill unchanged.
                 reason=_FORCED_EXIT_PANIC_REASON.get(intent.signal.strategy_id, ""),
                 g12_disclosed_cost_total_bps=(intent.signal.disclosed_cost_total_bps),
+                reason=reason,
             ),
             None,
         )
@@ -5815,10 +5823,10 @@ class Orchestrator:
                             ack.order_id,
                             "",
                         ),
-                        # Inv-13 provenance: record forced-exit lineage so
-                        # post-trade forensics can split stop / hazard /
-                        # force-flatten fills (order_reason in STOP_EXIT_REASONS,
-                        # order_source_layer == "RISK") from discretionary trades.
+                        # P1 (position-mgmt audit 2026-06-20): propagate
+                        # order lineage so post-trade forensics (Inv-13) can
+                        # split fills by forced-exit class / producing layer
+                        # without re-deriving it from the order stream.
                         metadata={
                             "order_reason": order.reason,
                             "order_source_layer": order.source_layer,
@@ -6212,10 +6220,13 @@ class Orchestrator:
         Inv-11 (fail-safe): hazard exits are exit-direction-only by
         construction in ``HazardExitController`` (the order side is
         always opposite the position sign) so they cannot increase
-        exposure.  A defensive ``check_order`` runs for audit parity;
-        ``REJECT`` verdicts are logged and the order is still submitted
-        (mirroring emergency flatten).  See ``risk/engine.py`` for the
-        formal sole-gatekeeper carve-outs.
+        exposure.  A defensive ``check_order`` runs for audit parity.
+        The exit fail-safe is honored only for orders that verifiably
+        reduce the live position: a ``REJECT`` on a reducing order is
+        logged and the order is still submitted (mirroring emergency
+        flatten), but a ``REJECT`` on a non-reducing order is
+        authoritative and blocks submission.  See ``risk/engine.py`` for
+        the formal sole-gatekeeper carve-outs.
         """
         if not isinstance(event, OrderRequest):
             return
@@ -6235,11 +6246,47 @@ class Orchestrator:
             return
         self._hazard_submitted_order_ids.add(event.order_id)
         hv = self._risk_engine.check_order(event, self._positions)
+        # Verify the order actually de-risks before honoring the Inv-11 exit
+        # fail-safe below.  HazardExitController emits full-position exits by
+        # construction (side opposite the position sign, qty == |position|), so
+        # a legitimate hazard order always reduces |position|.  An order that
+        # does NOT reduce the live position has no exit fail-safe claim, so a
+        # formal REJECT on it is authoritative and must block submission — the
+        # submit decision must not rest on trusting the reason tag alone.
+        current_qty = self._positions.get(event.symbol).quantity
+        signed_qty = event.quantity if event.side == Side.BUY else -event.quantity
+        order_reduces = abs(current_qty + signed_qty) < abs(current_qty)
         # Do not broadcast FORCE_FLATTEN: downstream subscribers may treat it as
         # a global lockdown trigger while this handler still submits the exit
         # (Inv-11 fail-safe).  REJECT / ALLOW are fine for audit parity.
         if hv.action != RiskAction.FORCE_FLATTEN:
             self._bus.publish(hv)
+        if hv.action == RiskAction.REJECT and not order_reduces:
+            # Non-exit order carrying a hazard reason: REJECT is authoritative.
+            self._bus.publish(
+                Alert(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=event.correlation_id,
+                    sequence=self._seq.next(),
+                    severity=AlertSeverity.CRITICAL,
+                    layer="kernel",
+                    alert_name="hazard_exit_nonreducing_reject_blocked",
+                    message=(
+                        "check_order returned REJECT on a hazard-tagged order "
+                        "that does not reduce the live position "
+                        f"(strategy_id={event.strategy_id!r}, symbol={event.symbol!r}, "
+                        f"current_qty={current_qty}, side={event.side.name}, "
+                        f"order_qty={event.quantity}, reason={hv.reason!r}) — "
+                        "blocking submission (REJECT is authoritative for "
+                        "non-exit orders)."
+                    ),
+                    context={
+                        "order_id": event.order_id,
+                        "risk_reason": hv.reason,
+                    },
+                )
+            )
+            return
         if hv.action == RiskAction.REJECT:
             self._bus.publish(
                 Alert(

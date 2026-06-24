@@ -1173,6 +1173,112 @@ class TestStopExitSignalMetadata:
         assert stop_signal.regime_gate_state == "N/A"
 
 
+class TestForcedExitReasonClassification:
+    """Audit P1 (2026-06-20): forced MARKET exits must carry the canonical
+    ``OrderRequest.reason`` so the fill model classifies them for panic
+    slippage / depth depletion (``STOP_EXIT_REASONS``).  A *scheduled*
+    session flatten is an orderly unwind, not an adverse-move panic, and
+    must NOT be surcharged.
+    """
+
+    @staticmethod
+    def _exit_intent(strategy_id: str) -> OrderIntent:
+        signal = Signal(
+            timestamp_ns=2000,
+            correlation_id="AAPL:2000:1",
+            sequence=0,
+            source_layer="SIGNAL",
+            symbol="AAPL",
+            strategy_id=strategy_id,
+            direction=SignalDirection.FLAT,
+            strength=0.0,
+            edge_estimate_bps=0.0,
+        )
+        return OrderIntent(
+            intent=TradingIntent.EXIT,
+            symbol="AAPL",
+            strategy_id=strategy_id,
+            target_quantity=100,
+            current_quantity=100,
+            signal=signal,
+        )
+
+    def test_only_stop_exit_intent_is_tagged_as_panic(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        orch = _build_orchestrator(clock)
+        verdict = RiskVerdict(
+            timestamp_ns=2000,
+            correlation_id="AAPL:2000:1",
+            sequence=1,
+            symbol="AAPL",
+            action=RiskAction.ALLOW,
+            reason="ok",
+        )
+
+        stop_order = orch._build_order_from_intent(
+            self._exit_intent("__stop_exit__"), verdict, "AAPL:2000:1"
+        )
+        session_order = orch._build_order_from_intent(
+            self._exit_intent("__session_flat__"), verdict, "AAPL:2000:1"
+        )
+        alpha_order = orch._build_order_from_intent(
+            self._exit_intent("test_strat"), verdict, "AAPL:2000:1"
+        )
+
+        assert stop_order is not None and stop_order.reason == "STOP_EXIT"
+        # Scheduled session flatten and ordinary alpha exit are not panics.
+        assert session_order is not None and session_order.reason == ""
+        assert alpha_order is not None and alpha_order.reason == ""
+
+    def test_stop_trigger_tags_order_and_journals_reason(self) -> None:
+        from feelies.storage.memory_trade_journal import InMemoryTradeJournal
+
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+
+        position_store = MemoryPositionStore()
+        position_store.update("AAPL", 100, Decimal("150.00"))
+
+        orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
+        journal = InMemoryTradeJournal()
+        orch._trade_journal = journal
+        orch._stop_loss_per_share = 1.0
+        _boot_to_backtest(orch)
+
+        quote = _make_quote(ts=2000, bid="147.50", ask="148.50", seq=7)
+        orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
+        orch._process_tick(quote)
+
+        stop_orders = [o for o in orders if o.strategy_id == "__stop_exit__"]
+        assert len(stop_orders) == 1
+        assert stop_orders[0].reason == "STOP_EXIT"
+
+        # Inv-13 provenance: the forced-exit reason reaches the journal.
+        recorded = list(journal.query(strategy_id="__stop_exit__"))
+        assert len(recorded) == 1
+        assert recorded[0].metadata["order_reason"] == "STOP_EXIT"
+        assert "order_source_layer" in recorded[0].metadata
+
+    def test_emergency_flatten_tags_force_flatten_reason(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+
+        orch = _build_orchestrator(clock, bus=bus, position_store=MemoryPositionStore())
+        _boot_to_backtest(orch)
+        orch._positions.update("AAPL", 100, Decimal("150.00"))
+        orch._backend.order_router.on_quote(_make_quote(ts=2000, seq=7))  # type: ignore[attr-defined]
+
+        orch._emergency_flatten_all("esc-cid")
+
+        flat_orders = [o for o in orders if o.strategy_id == "emergency_flatten"]
+        assert len(flat_orders) == 1
+        assert flat_orders[0].reason == "FORCE_FLATTEN"
+
+
 class TestCancelFeeAccounting:
     def test_cancel_fee_without_fill_creates_fee_only_position_and_update(self) -> None:
         clock = SimulatedClock(start_ns=1000)
