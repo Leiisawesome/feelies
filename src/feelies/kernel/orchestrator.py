@@ -39,6 +39,7 @@ import time
 from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any, Literal, Mapping
 
@@ -839,6 +840,10 @@ class Orchestrator:
         # BT-16: RTH entry-fill suppression + close buying-power phase flip.
         self._trading_session_bounds: TradingSessionBounds | None = None
         self._rth_close_bp_flipped: bool = False
+        # NY session date the BP flip is currently armed for.  Tracked so a
+        # multi-day replay re-arms the flip (and reopens on the intraday cap)
+        # at each new session date instead of latching OVERNIGHT after day 1.
+        self._rth_bp_session_date: date | None = None
 
         # When True, entry/exit orders use LIMIT at BBO instead of
         # MARKET.  Stop-loss exits always use MARKET (fail-safe).
@@ -1109,7 +1114,7 @@ class Orchestrator:
     def _maybe_flip_buying_power_at_rth_close(self, quote: NBBOQuote) -> None:
         """BT-16: flip risk-engine buying-power phase at RTH close.
 
-        Once-per-session: the first quote with
+        Once-per-session-date: the first quote with
         ``exchange_timestamp_ns >= rth_close_ns`` transitions the risk
         engine to :attr:`BuyingPowerPhase.OVERNIGHT` so the 2× overnight
         multiplier is applied to any exits that linger past the close.
@@ -1117,24 +1122,38 @@ class Orchestrator:
         ``timestamp_ns`` so the flip aligns with the exchange-time RTH
         close used by router-side entry gating
         (``BacktestOrderRouter`` / ``PassiveLimitOrderRouter`` and
-        :class:`TradingSessionBounds`).  No-op when RTH gating is
-        disabled, the flip has already fired this session, or the risk
-        engine does not expose ``set_buying_power_phase``.
+        :class:`TradingSessionBounds`).
+
+        Multi-day replays run as a single booted session whose quotes span
+        several NY dates (``resolve_for_timestamp`` recomputes the close per
+        quote).  When the resolved session date advances, re-arm the flip and
+        reopen the day on the intraday cap — otherwise the day-1 OVERNIGHT flip
+        latches for the whole run and days 2+ trade their entire RTH session
+        under the 2× overnight multiplier.
+
+        No-op when RTH gating is disabled or the risk engine does not expose
+        ``set_buying_power_phase``.
         """
-        if self._rth_close_bp_flipped:
-            return
         bounds = self._trading_session_bounds
         if bounds is None:
             return
-        # Resolve the close for this quote's NY session date so a multi-day
-        # replay flips at each replayed day's actual close rather than the
-        # single booted ``session_date`` (which, for a CLI date range, is the
-        # stale ``event_calendar_path`` date — every replayed quote would
-        # otherwise read as already past-close and flip on the first tick).
         effective = bounds.resolve_for_timestamp(quote.exchange_timestamp_ns)
+        set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
+
+        # New NY session date → reopen on the intraday cap and re-arm the flip.
+        if effective.session_date != self._rth_bp_session_date:
+            self._rth_bp_session_date = effective.session_date
+            if self._rth_close_bp_flipped:
+                self._rth_close_bp_flipped = False
+                if callable(set_phase):
+                    from feelies.risk.buying_power import BuyingPowerPhase
+
+                    set_phase(BuyingPowerPhase.INTRADAY)
+
+        if self._rth_close_bp_flipped:
+            return
         if quote.exchange_timestamp_ns < effective.rth_close_ns:
             return
-        set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
         if not callable(set_phase):
             self._rth_close_bp_flipped = True
             return
@@ -1144,16 +1163,17 @@ class Orchestrator:
         self._rth_close_bp_flipped = True
 
     def _reset_buying_power_phase_for_session(self) -> None:
-        """BT-16: reset the once-per-session RTH-close BP flip state.
+        """BT-16: reset the RTH-close BP flip state at session start.
 
-        Clears the latch that gates :meth:`_maybe_flip_buying_power_at_rth_close`
-        and forces the risk engine back onto
-        :attr:`BuyingPowerPhase.INTRADAY` so a new session always opens
-        on the 4× intraday cap — even when the same orchestrator
-        instance is reused across runs and the previous run left the
-        engine flipped to ``OVERNIGHT`` after crossing the close.
+        Clears the latch (and the armed session date) that gate
+        :meth:`_maybe_flip_buying_power_at_rth_close` and forces the risk
+        engine back onto :attr:`BuyingPowerPhase.INTRADAY` so a new session
+        always opens on the 4× intraday cap — even when the same orchestrator
+        instance is reused across runs and the previous run left the engine
+        flipped to ``OVERNIGHT`` after crossing the close.
         """
         self._rth_close_bp_flipped = False
+        self._rth_bp_session_date = None
         set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
         if callable(set_phase):
             from feelies.risk.buying_power import BuyingPowerPhase
@@ -5795,6 +5815,14 @@ class Orchestrator:
                             ack.order_id,
                             "",
                         ),
+                        # Inv-13 provenance: record forced-exit lineage so
+                        # post-trade forensics can split stop / hazard /
+                        # force-flatten fills (order_reason in STOP_EXIT_REASONS,
+                        # order_source_layer == "RISK") from discretionary trades.
+                        metadata={
+                            "order_reason": order.reason,
+                            "order_source_layer": order.source_layer,
+                        },
                     )
                 )
             if order.strategy_id not in _FORCED_MARKET_EXIT_STRATEGIES:

@@ -3265,6 +3265,105 @@ class TestForcedExitPanicReason:
         assert closed.cumulative_fees == Decimal("25.00")
 
 
+# ── P2: fill-journal provenance (Inv-13) ─────────────────────────────────
+
+
+class TestTradeJournalProvenance:
+    """Audit P2 (2026-06-20): fill-journal records carry order provenance
+    (reason + source_layer) so forced exits are distinguishable post-trade.
+    """
+
+    def test_stop_exit_fill_records_reason_in_journal_metadata(self) -> None:
+        from feelies.storage.memory_trade_journal import InMemoryTradeJournal
+
+        clock = SimulatedClock(start_ns=1000)
+        position_store = MemoryPositionStore()
+        position_store.update("AAPL", 50, Decimal("150.00"))
+
+        quote = _make_quote(ts=2000, bid="147.50", ask="148.50", seq=7)
+        orch = _build_orchestrator(clock, position_store=position_store)
+        journal = InMemoryTradeJournal()
+        orch._trade_journal = journal
+        orch._stop_loss_per_share = 1.0
+        _boot_to_backtest(orch)
+
+        orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
+        orch._process_tick(quote)
+
+        records = list(journal.query())
+        assert len(records) == 1
+        assert records[0].metadata["order_reason"] == "STOP_EXIT"
+        assert "order_source_layer" in records[0].metadata
+
+
+# ── P1: RTH-close buying-power phase re-arms per session date ─────────────
+
+
+class TestRthBuyingPowerPhaseMultiDay:
+    """Audit P1 (2026-06-20): the RTH-close buying-power flip must re-arm per
+    NY session date.  A single booted bounds anchor replayed across multiple
+    days must flip to OVERNIGHT at each day's close and reopen the next day on
+    the intraday cap — not latch OVERNIGHT for the whole run after day 1.
+    """
+
+    class _PhaseRecordingRiskEngine(_StubRiskEngine):
+        """Stub risk engine that records buying-power phase transitions."""
+
+        def __init__(self) -> None:
+            super().__init__(action=RiskAction.ALLOW)
+            self.phase_calls: list[Any] = []
+
+        def set_buying_power_phase(self, phase: Any) -> None:
+            self.phase_calls.append(phase)
+
+    @staticmethod
+    def _quote_at(d: "date", hhmm: str, seq: int) -> NBBOQuote:
+        from feelies.execution.moc_session import et_clock_to_ns
+
+        # _make_quote sets exchange_timestamp_ns = ts - 100; offset +100 so the
+        # exchange timestamp lands exactly on the ET wall-clock instant.
+        ns = et_clock_to_ns(d, hhmm)
+        return _make_quote(ts=ns + 100, bid="99.99", ask="100.01", seq=seq)
+
+    def test_phase_re_arms_at_each_session_date(self) -> None:
+        from datetime import date
+
+        from feelies.execution.moc_session import et_clock_to_ns
+        from feelies.execution.trading_session import TradingSessionBounds
+        from feelies.risk.buying_power import BuyingPowerPhase
+
+        clock = SimulatedClock(start_ns=1000)
+        engine = self._PhaseRecordingRiskEngine()
+        orch = _build_orchestrator(clock, risk_engine=engine)
+        _boot_to_backtest(orch)
+        # Session start opens on the intraday cap (run_backtest does this in
+        # production; the test boots the macro SM directly).
+        orch._reset_buying_power_phase_for_session()
+
+        day1, day2 = date(2026, 3, 26), date(2026, 3, 27)
+        # Bounds anchored to a single date — mirrors the multi-day CLI range
+        # fallback where resolve_for_timestamp recomputes the close per quote.
+        orch._trading_session_bounds = TradingSessionBounds(
+            session_date=day1,
+            rth_open_ns=et_clock_to_ns(day1, "09:30"),
+            rth_close_ns=et_clock_to_ns(day1, "16:00"),
+        )
+
+        for i, (d, hhmm) in enumerate(
+            [(day1, "15:59"), (day1, "16:01"), (day2, "15:59"), (day2, "16:01")]
+        ):
+            q = self._quote_at(d, hhmm, seq=i + 1)
+            orch._backend.order_router.on_quote(q)  # type: ignore[attr-defined]
+            orch._process_tick(q)
+
+        assert engine.phase_calls == [
+            BuyingPowerPhase.INTRADAY,  # session start
+            BuyingPowerPhase.OVERNIGHT,  # day-1 close
+            BuyingPowerPhase.INTRADAY,  # day-2 reopen (the fix)
+            BuyingPowerPhase.OVERNIGHT,  # day-2 close
+        ]
+
+
 # ── F2: EXIT bypasses min_order_shares gate ──────────────────────────────
 
 
