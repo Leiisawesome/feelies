@@ -44,7 +44,7 @@ from feelies.composition.protocol import (
     PortfolioAlpha,
 )
 from feelies.composition.sector_matcher import SectorMatcher
-from feelies.composition.turnover_optimizer import TurnoverOptimizer
+from feelies.composition.turnover_optimizer import TurnoverOptimizer, round_cents
 from feelies.core.events import (
     CrossSectionalContext,
     SizedPositionIntent,
@@ -459,7 +459,7 @@ class CompositionEngine:
                 for symbol, value in sleeve_dollars.items():
                     resummed[symbol] = resummed.get(symbol, 0.0) + value
             target_usd = {
-                s: round(v, 2) for s, v in resummed.items() if abs(round(v, 2)) >= 0.01
+                s: round_cents(v) for s, v in resummed.items() if abs(round_cents(v)) >= 0.01
             }
             expected_gross = sum(abs(v) for v in target_usd.values())
             expected_turnover = sum(

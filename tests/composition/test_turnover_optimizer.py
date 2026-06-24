@@ -9,9 +9,21 @@ from __future__ import annotations
 
 import pytest
 
-from feelies.composition.turnover_optimizer import TurnoverOptimizer
+from feelies.composition.turnover_optimizer import TurnoverOptimizer, round_cents
 
 _CAPITAL = 100_000.0
+
+
+def test_round_cents_is_half_up() -> None:
+    """Target-dollar rounding is declared half-up, not binary-float banker's (P1-6)."""
+    # Half-cent cases where round-half-to-even (float ``round``) diverges from
+    # the declared ROUND_HALF_UP mode used at the risk boundary.
+    assert round_cents(2.675) == 2.68  # float round(2.675, 2) == 2.67
+    assert round_cents(0.125) == 0.13  # float round(0.125, 2) == 0.12
+    assert round_cents(-2.675) == -2.68  # half away from zero
+    # Plain values are unaffected and the function is deterministic.
+    assert round_cents(123.454) == 123.45
+    assert round_cents(123.456) == round_cents(123.456)
 
 
 def test_empty_universe_status() -> None:

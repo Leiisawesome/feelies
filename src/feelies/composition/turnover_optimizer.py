@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, replace
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Mapping
 
 # Optional [portfolio] extras — typed as ``Any`` so strict mypy accepts
@@ -56,6 +57,21 @@ _ECOS_ABSTOL: float = 1e-8
 _ECOS_RELTOL: float = 1e-8
 _ECOS_FEASTOL: float = 1e-8
 _ECOS_MAX_ITERS: int = 100
+
+
+_CENT = Decimal("0.01")
+
+
+def round_cents(x: float) -> float:
+    """Round *x* to whole cents with a declared, platform-consistent mode (P1-6).
+
+    Uses ``Decimal(str(x))`` + ``ROUND_HALF_UP`` — the same mode the risk layer
+    applies for the dollar→share conversion (``sized_intent_orders``) — so
+    target-dollar rounding is half-up rather than binary-float
+    round-half-to-even, removing subtle drift around cent-level thresholds
+    (e.g. ``round(2.675, 2) == 2.67`` vs ``2.68`` here).  Deterministic.
+    """
+    return float(Decimal(str(x)).quantize(_CENT, rounding=ROUND_HALF_UP))
 
 
 class MissingOptionalDependencyError(RuntimeError):
@@ -235,15 +251,15 @@ class TurnoverOptimizer:
             elif v < -per_name_cap_usd:
                 scaled[s] = -per_name_cap_usd
 
-        # Step 3: round to whole cents for determinism.
-        rounded = {s: round(scaled[s], 2) for s in universe if abs(scaled[s]) >= 0.01}
+        # Step 3: round to whole cents for determinism (P1-6: half-up Decimal).
+        rounded = {s: round_cents(scaled[s]) for s in universe if abs(scaled[s]) >= 0.01}
 
         # Step 4: enforce gross cap post-clip (rounding may push us
         # marginally over).
         cur_gross = sum(abs(v) for v in rounded.values())
         if cur_gross > gross_cap_usd and cur_gross > 0:
             shrink = gross_cap_usd / cur_gross
-            rounded = {s: round(v * shrink, 2) for s, v in rounded.items()}
+            rounded = {s: round_cents(v * shrink) for s, v in rounded.items()}
 
         turnover = sum(
             abs(rounded.get(s, 0.0) - current_positions_usd.get(s, 0.0)) for s in universe
@@ -344,7 +360,7 @@ class TurnoverOptimizer:
 
         rounded: dict[str, float] = {}
         for i, s in enumerate(universe):
-            v = round(float(w.value[i]) * self._capital, 2)
+            v = round_cents(float(w.value[i]) * self._capital)
             if abs(v) >= 0.01:
                 rounded[s] = v
 
@@ -364,4 +380,5 @@ __all__ = [
     "MissingOptionalDependencyError",
     "OptimizerResult",
     "TurnoverOptimizer",
+    "round_cents",
 ]
