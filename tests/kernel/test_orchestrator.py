@@ -54,7 +54,11 @@ from feelies.core.events import (
 )
 from feelies.execution.backend import ExecutionBackend
 from feelies.execution.backtest_router import BacktestOrderRouter
-from feelies.execution.cost_model import ZeroCostModel
+from feelies.execution.cost_model import (
+    DefaultCostModel,
+    DefaultCostModelConfig,
+    ZeroCostModel,
+)
 from feelies.execution.intent import OrderIntent, TradingIntent
 from feelies.execution.order_state import OrderState
 from feelies.execution.regulatory.borrow_availability import BorrowTier
@@ -3155,6 +3159,110 @@ class TestRestingOrderGuardAfterRisk:
         assert position_store.get("AAPL").quantity == 0
         # Operator-visible forensic marker distinguishes the cancel-and-cross.
         assert any(a.alert_name == "forced_exit_supersedes_pending_order" for a in alerts)
+
+
+# ── P1: forced-exit panic-fill reason classification ─────────────────────
+
+
+class TestForcedExitPanicReason:
+    """Audit P1 (2026-06-20): forced exits must populate ``OrderRequest.reason``
+    so the backtest fill model classifies them for panic slippage.  The fill
+    model keys on ``reason in STOP_EXIT_REASONS`` (``market_fill.py``), not on
+    ``strategy_id`` — an empty ``reason`` silently underprices stops and forced
+    flattens even when the panic-slippage knob is configured (default 2.0).
+    """
+
+    def test_stop_exit_order_carries_stop_exit_reason(self) -> None:
+        """A synthetic ``__stop_exit__`` MARKET exit is tagged ``STOP_EXIT``."""
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        bus.subscribe(OrderRequest, orders.append)
+
+        position_store = MemoryPositionStore()
+        position_store.update("AAPL", 50, Decimal("150.00"))
+
+        quote = _make_quote(ts=2000, bid="147.50", ask="148.50", seq=7)
+        orch = _build_orchestrator(clock, bus=bus, position_store=position_store)
+        orch._stop_loss_per_share = 1.0
+        _boot_to_backtest(orch)
+
+        orch._backend.order_router.on_quote(quote)  # type: ignore[attr-defined]
+        orch._process_tick(quote)
+
+        stop_orders = [o for o in orders if o.strategy_id == "__stop_exit__"]
+        assert len(stop_orders) == 1
+        assert stop_orders[0].reason == "STOP_EXIT"
+        assert stop_orders[0].order_type == OrderType.MARKET
+
+    def test_emergency_flatten_order_carries_force_flatten_reason(self) -> None:
+        """Emergency-flatten MARKET exits are tagged ``FORCE_FLATTEN``."""
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        orders: list[OrderRequest] = []
+        bus.subscribe(OrderRequest, orders.append)
+
+        quote = _make_quote()
+        position_store = MemoryPositionStore()
+        position_store.update("AAPL", 100, Decimal("150.00"))
+
+        router = BacktestOrderRouter(clock=clock, cost_model=ZeroCostModel())
+        router.on_quote(quote)
+        orch = _build_orchestrator(
+            clock, bus=bus, position_store=position_store, order_router=router
+        )
+        _boot_to_backtest(orch)
+
+        orch._emergency_flatten_all("esc-cid")
+
+        flatten_orders = [o for o in orders if o.strategy_id == "emergency_flatten"]
+        assert len(flatten_orders) == 1
+        assert flatten_orders[0].reason == "FORCE_FLATTEN"
+        assert flatten_orders[0].order_type == OrderType.MARKET
+
+    def test_stop_exit_fill_pays_panic_slippage_end_to_end(self) -> None:
+        """End-to-end: an orchestrator-driven stop fill carries the panic
+        half-spread fee.  Every other cost component is zeroed, so a non-zero
+        fee can only be the forced-exit slippage — which requires ``reason`` to
+        reach the fill model.  Before the fix (empty ``reason``) the fill is
+        priced as an ordinary market order and ``cumulative_fees`` stays 0.
+        """
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+
+        # Zero everything except the spread so a non-zero fee is unambiguously
+        # the forced-exit panic slippage (raw half-spread x (2.0 - 1)).
+        cfg = DefaultCostModelConfig(
+            commission_per_share=Decimal("0"),
+            taker_exchange_per_share=Decimal("0"),
+            min_commission=Decimal("0"),
+            sell_regulatory_bps=Decimal("0"),
+            finra_taf_per_share=Decimal("0"),
+        )
+        router = BacktestOrderRouter(
+            clock=clock,
+            cost_model=DefaultCostModel(cfg),
+            stop_slippage_half_spreads=Decimal("2.0"),
+        )
+
+        position_store = MemoryPositionStore()
+        position_store.update("AAPL", 50, Decimal("150.00"))  # long 50 @ 150
+
+        quote = _make_quote(ts=2000, bid="147.50", ask="148.50", seq=7)
+        router.on_quote(quote)
+        orch = _build_orchestrator(
+            clock, bus=bus, position_store=position_store, order_router=router
+        )
+        orch._stop_loss_per_share = 1.0
+        _boot_to_backtest(orch)
+
+        orch._process_tick(quote)
+
+        closed = position_store.get("AAPL")
+        assert closed.quantity == 0  # stop closed the long
+        # raw half-spread = (148.50 - 147.50)/2 = 0.50; panic fee for 50 sh =
+        # 0.50 x (2.0 - 1) x 50 = 25.00.  Without the reason fix this is 0.
+        assert closed.cumulative_fees == Decimal("25.00")
 
 
 # ── F2: EXIT bypasses min_order_shares gate ──────────────────────────────

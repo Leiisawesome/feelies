@@ -305,6 +305,17 @@ _FORCED_MARKET_EXIT_STRATEGIES: frozenset[str] = frozenset(
     }
 )
 
+# Panic-fill reason tag stamped on a forced-market-exit order built through
+# the intent pipeline so the backtest fill model prices it as a stop — extra
+# half-spread slippage / depleted L1 depth (see
+# ``execution/_fill_helpers.STOP_EXIT_REASONS``, which classifies on
+# ``OrderRequest.reason``, not ``strategy_id``).  ``__session_flat__`` is
+# intentionally absent: a scheduled EOD flatten is not a panic exit and fills
+# at ordinary liquidity (``SESSION_FLAT`` is not in the panic set).
+_FORCED_EXIT_PANIC_REASON: dict[str, str] = {
+    "__stop_exit__": "STOP_EXIT",
+}
+
 
 def _int_to_direction(sign: int) -> SignalDirection:
     """Map a signed direction (+1 / -1 / 0) to a ``SignalDirection``."""
@@ -3664,6 +3675,11 @@ class Orchestrator:
                 order_type=OrderType.MARKET,
                 quantity=qty,
                 strategy_id="emergency_flatten",
+                # Forced flatten fills into a depleted book — tag it so the
+                # backtest fill model applies panic slippage (FORCE_FLATTEN is
+                # in STOP_EXIT_REASONS); without this the cost model misprices
+                # the lockdown exit as an ordinary market order.
+                reason="FORCE_FLATTEN",
             )
 
             try:
@@ -4743,6 +4759,11 @@ class Orchestrator:
                 strategy_id=intent.strategy_id,
                 is_short=is_short,
                 is_moc=is_moc,
+                # Stamp the panic-fill reason for forced exits (e.g.
+                # ``__stop_exit__`` → ``STOP_EXIT``) so the fill model prices
+                # the stop with slippage / depleted depth; "" for ordinary
+                # entries and discretionary exits leaves the fill unchanged.
+                reason=_FORCED_EXIT_PANIC_REASON.get(intent.signal.strategy_id, ""),
                 g12_disclosed_cost_total_bps=(intent.signal.disclosed_cost_total_bps),
             ),
             None,
