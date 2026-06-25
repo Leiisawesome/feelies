@@ -90,6 +90,7 @@ from feelies.core.events import (
     StateTransition,
     SymbolHalted,
     Trade,
+    TrendMechanism,
 )
 from feelies.core.identifiers import SequenceGenerator, derive_order_id
 from feelies.core.state_machine import StateMachine, TransitionRecord
@@ -769,6 +770,14 @@ class Orchestrator:
         # without re-deriving the intent from fill order (Task 4).  Pruned
         # alongside ``_active_orders``.
         self._order_trading_intent: dict[str, str] = {}
+        # Maps (strategy_id, symbol) -> (trend_mechanism, expected_half_life)
+        # captured from the most recent SIGNAL-layer Signal so fill
+        # reconciliation can stamp the causal mechanism onto each
+        # ``TradeRecord`` (Inv-1 per-trade forensic attribution).  Pure side
+        # table — never read on the per-tick decision path.
+        self._last_signal_mechanism: dict[
+            tuple[str, str], tuple[TrendMechanism | None, int]
+        ] = {}
         # P4b: passive working-reduction orders awaiting a MARKET fallback.
         # order_id -> (symbol, side, original_qty).  When such an order
         # terminates unfilled (the router's resting timeout → CANCELLED /
@@ -5793,6 +5802,10 @@ class Orchestrator:
                         )
 
             if self._trade_journal is not None:
+                _trade_mech, _trade_hl = self._last_signal_mechanism.get(
+                    (order.strategy_id, ack.symbol),
+                    (None, 0),
+                )
                 self._trade_journal.record(
                     TradeRecord(
                         order_id=ack.order_id,
@@ -5813,6 +5826,9 @@ class Orchestrator:
                             ack.order_id,
                             "",
                         ),
+                        trend_mechanism=_trade_mech,
+                        expected_half_life_seconds=_trade_hl,
+                        regime_state=self._regime_label_for(ack.symbol),
                         # P1 (position-mgmt audit 2026-06-20): propagate
                         # order lineage so post-trade forensics (Inv-13) can
                         # split fills by forced-exit class / producing layer
@@ -5827,6 +5843,27 @@ class Orchestrator:
                 self._alpha_symbols_with_fills.add((order.strategy_id, ack.symbol))
 
         self._prune_terminal_orders()
+
+    def _regime_label_for(self, symbol: str) -> str:
+        """Dominant regime-state name for *symbol* at fill time (forensics).
+
+        Pure provenance capture for the trade journal: reads the regime
+        engine's already-computed posterior (no new computation, no
+        decision — Inv-5-safe) and returns its argmax state name.  Returns
+        "" when there is no engine or no posterior yet for the symbol, so a
+        cold or regime-less deployment simply records an empty regime label.
+        """
+        engine = self._regime_engine
+        if engine is None:
+            return ""
+        post = engine.current_state(symbol)
+        if not post:
+            return ""
+        names = list(engine.state_names)
+        if not names:
+            return ""
+        idx = max(range(len(post)), key=lambda i: post[i])
+        return names[idx] if idx < len(names) else ""
 
     def _distribute_fill_to_strategies(
         self,
@@ -6028,6 +6065,14 @@ class Orchestrator:
                 )
             return
         self._signal_buffer.append(event)
+        # Forensic provenance: remember this alpha/symbol's mechanism so the
+        # eventual fill's ``TradeRecord`` carries it (Inv-1).  Side table only,
+        # never read on the decision path.
+        if event.trend_mechanism is not None or event.expected_half_life_seconds:
+            self._last_signal_mechanism[(event.strategy_id, event.symbol)] = (
+                event.trend_mechanism,
+                event.expected_half_life_seconds,
+            )
         if not self._quote_tick_in_flight:
             self._carryover_signal_sequences.add(event.sequence)
 

@@ -44,16 +44,34 @@ VERDICT_SURVIVES = "SURVIVES"
 
 @dataclass(frozen=True, kw_only=True)
 class AlphaCostSurvival:
-    """One alpha's realized edge-vs-cost summary over a set of fills."""
+    """One alpha's realized edge-vs-cost summary over a set of fills.
+
+    Two distinct cost views travel together — keep them straight (audit P1-9):
+
+    * ``net = gross_pnl - fees`` is the **economic** bottom line: mid-to-mid
+      PnL less the booked ``fees`` (which include the spread component).  The
+      BLEED verdict and the circuit-breaker's primary trip key off it.
+    * ``realized_margin_ratio = mean_edge_bps / mean_cost_bps`` is a **gross**
+      edge-vs-modeled-cost ratio: ``mean_edge_bps`` is gross of fees and
+      ``mean_cost_bps`` is the modeled per-trade cost
+      (``TradeRecord.cost_bps``) — a *different* quantity from ``fees``.  An
+      alpha can be ``net``-positive yet have a thin gross margin (MARGINAL).
+      The two views are not interchangeable.
+    """
 
     strategy_id: str
     n_fills: int
     gross_pnl: float
+    """Sum of mid-to-mid ``realized_pnl`` (gross of fees)."""
     fees: float
     net: float
+    """``gross_pnl - fees`` — net-of-fees economic PnL."""
     mean_edge_bps: float
+    """Mean **gross** edge in bps (matches ``DecayDetector.analyze_fills``)."""
     mean_cost_bps: float
+    """Mean modeled per-trade cost in bps (``TradeRecord.cost_bps``)."""
     realized_margin_ratio: float
+    """``mean_edge_bps / mean_cost_bps`` — gross-edge-vs-modeled-cost ratio."""
     pct_edge_covers_cost: float
     verdict: str
 

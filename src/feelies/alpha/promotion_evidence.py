@@ -1073,7 +1073,14 @@ def metadata_to_evidence(metadata: Mapping[str, Any]) -> list[object]:
         reconstruct = _RECONSTRUCTOR_BY_TYPE[ev_type]
         evidences.append(reconstruct(payload))
 
-    unknown = sorted(k for k in metadata.keys() if k != "schema_version" and k not in KIND_TO_TYPE)
+    # ``reason`` is a documented free-form field carried by quarantine /
+    # decommission ledger entries alongside structured evidence (see
+    # ``AlphaLifecycle.quarantine``); it is not an evidence kind, so tolerate
+    # it rather than rejecting the whole payload as unknown — otherwise an
+    # auto-quarantine entry (reason + QuarantineTriggerEvidence) cannot be
+    # round-tripped by the ``feelies promote replay-evidence`` CLI.
+    _non_kind_keys = {"schema_version", "reason"}
+    unknown = sorted(k for k in metadata.keys() if k not in _non_kind_keys and k not in KIND_TO_TYPE)
     if unknown:
         raise ValueError(
             f"metadata carries unknown kind(s) {unknown}; supported kinds: "

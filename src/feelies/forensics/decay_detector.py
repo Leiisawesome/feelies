@@ -8,6 +8,7 @@ historical realized edge using a Z-score test.
 
 from __future__ import annotations
 
+import math
 import statistics
 
 from feelies.forensics.analyzer import DecaySignal, TCAReport
@@ -64,8 +65,9 @@ class DecayDetector:
 
         for t in trades:
             cost_bps_list.append(float(t.cost_bps))
-            if t.fill_price is not None and t.filled_quantity > 0:
-                notional = float(t.fill_price) * t.filled_quantity
+            qty = abs(t.filled_quantity)
+            if t.fill_price is not None and qty > 0:
+                notional = float(t.fill_price) * qty
                 edge_bps = float(t.realized_pnl) / notional * 10_000 if notional > 0 else 0.0
             else:
                 edge_bps = 0.0
@@ -94,7 +96,7 @@ class DecayDetector:
             ">2000": 0,
         }
         for t in trades:
-            qty = t.filled_quantity
+            qty = abs(t.filled_quantity)
             if qty <= 100:
                 size_histogram["1-100"] += 1
             elif qty <= 500:
@@ -131,11 +133,15 @@ class DecayDetector:
     ) -> list[DecaySignal]:
         """Detect edge decay for a strategy via Z-score test.
 
-        Requires ≥ 100 trades to produce a signal.  Compares the
-        mean realized edge of the most recent 50 trades against the
-        historical mean and standard deviation of all earlier trades.
-        A Z-score > 2.0 (recent edge significantly below history)
-        generates a DecaySignal.
+        Requires ≥ 100 trades to produce a signal.  Compares the mean
+        **net** realized edge (PnL less fees) of the most recent 50 trades
+        against the historical mean of all earlier trades, scaled by the
+        standard error of a 50-trade mean.  A Z-score > 2.0 (recent edge
+        significantly below history) generates a DecaySignal.
+
+        Edge is computed net of fees so cost-driven decay — stable gross
+        edge with rising costs, the crowding signature — is detectable
+        rather than invisible (Inv-4).
         """
         strat_trades = [t for t in trades if t.strategy_id == strategy_id]
         if len(strat_trades) < 100:
@@ -143,9 +149,11 @@ class DecayDetector:
 
         edge_bps: list[float] = []
         for t in strat_trades:
-            if t.fill_price is not None and t.filled_quantity > 0:
-                notional = float(t.fill_price) * t.filled_quantity
-                edge_bps.append(float(t.realized_pnl) / notional * 10_000 if notional > 0 else 0.0)
+            qty = abs(t.filled_quantity)
+            if t.fill_price is not None and qty > 0:
+                notional = float(t.fill_price) * qty
+                net = float(t.realized_pnl) - float(t.fees)
+                edge_bps.append(net / notional * 10_000 if notional > 0 else 0.0)
 
         if not edge_bps:
             return []
@@ -159,11 +167,16 @@ class DecayDetector:
         hist_stdev = statistics.stdev(historical) if len(historical) > 1 else 0.0
         recent_mean = statistics.mean(recent)
 
-        # Positive Z means recent < historical (decay).
-        # Always use stdev + epsilon as denominator — when stdev==0
-        # (all-same historical values) a diverging recent mean should
-        # still produce a large Z (not silently 0).
-        z_score = (hist_mean - recent_mean) / (hist_stdev + 1e-9)
+        # Positive Z means recent < historical (decay).  Scale the mean
+        # shift by the standard error of the recent-window mean
+        # (stdev / sqrt(n_recent)), NOT the raw per-trade stdev: the latter
+        # under-powered the test by a factor of sqrt(n_recent) (~7x at
+        # n_recent=50) and let a real partial decay pass undetected — the
+        # costly false negative under Inv-4.  The epsilon keeps a diverging
+        # recent mean against zero-variance history producing a large Z
+        # rather than a silent 0.
+        recent_se = hist_stdev / math.sqrt(len(recent)) if recent else 0.0
+        z_score = (hist_mean - recent_mean) / (recent_se + 1e-9)
 
         if z_score <= 2.0:
             return []
