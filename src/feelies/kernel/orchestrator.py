@@ -4764,14 +4764,6 @@ class Orchestrator:
                     order_type = OrderType.LIMIT
                     limit_price = quote.bid if side == Side.BUY else quote.ask
 
-        # P1 (position-mgmt audit 2026-06-20): tag a stop-loss exit with the
-        # canonical STOP_EXIT reason so the fill model classifies it for panic
-        # slippage / depth depletion (``STOP_EXIT_REASONS``).  A
-        # ``__session_flat__`` exit is a *scheduled* orderly unwind, not an
-        # adverse-move panic, so it deliberately keeps ``reason=""`` and is not
-        # surcharged.
-        reason = "STOP_EXIT" if intent.signal.strategy_id == "__stop_exit__" else ""
-
         return (
             OrderRequest(
                 timestamp_ns=self._clock.now_ns(),
@@ -4791,7 +4783,6 @@ class Orchestrator:
                 # the stop with slippage / depleted depth; "" for ordinary
                 # entries and discretionary exits leaves the fill unchanged.
                 g12_disclosed_cost_total_bps=(intent.signal.disclosed_cost_total_bps),
-                reason=reason,
             ),
             None,
         )
