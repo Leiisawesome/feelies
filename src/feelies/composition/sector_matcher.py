@@ -34,6 +34,7 @@ shrinks gross.  Iteration order is deterministic (sorted by symbol).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -73,6 +74,18 @@ class SectorMatcher:
     @property
     def active(self) -> bool:
         return self._active
+
+    def provenance_digest(self) -> str:
+        """Stable digest of the sector map and tolerance (audit P0-2).
+
+        Folded into the composition-layer ``decision_basis_hash`` so the
+        digest changes when the sector taxonomy or tolerance changes.  An
+        inactive matcher (no map configured) still yields a stable digest.
+        """
+        parts = [f"active={self._active}", f"tol={self._tolerance:.10g}"]
+        for sym in sorted(self._sector_by_symbol):
+            parts.append(f"{sym}={self._sector_by_symbol[sym]}")
+        return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
 
     def neutralize(
         self,

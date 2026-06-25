@@ -1,13 +1,17 @@
 """Shared knobs for PORTFOLIO integration tests.
 
-Reference ``src/feelies/storage/reference/factor_loadings/loadings.json`` is committed with a
-real file mtime.  Operator default ``factor_loadings_max_age_seconds`` (7 days)
-is appropriate for live configs but makes tests fail once the checkout ages
-past that window.  Integration suites pin a generous ceiling so Inv-5 replay
-and structural wiring — not artefact freshness — are what fail.
+Reference ``src/feelies/storage/reference/factor_loadings/loadings.json`` now
+embeds a deterministic ``_meta.as_of_ns`` (audit P1-3), so the bootstrap
+staleness verdict is reproducible across checkouts (it no longer depends on
+the committed file's mtime).  The reference end-to-end session
+(``SESSION_OPEN_NS`` = 2026-01-15) is one trading day after that anchor, so a
+realistic operator window covers it — the suites no longer need a
+century-long ceiling to dodge mtime drift.
 """
 
 from __future__ import annotations
 
-# ~100 years — effectively “ignore mtime drift” for committed reference json.
-FACTOR_LOADINGS_MAX_AGE_SECONDS_FIXTURE = 100 * 365 * 24 * 3600
+# 7 days — the platform-default operator window.  The embedded
+# ``_meta.as_of_ns`` anchor sits one trading day before the reference
+# session, well inside this window.
+FACTOR_LOADINGS_MAX_AGE_SECONDS_FIXTURE = 7 * 24 * 3600

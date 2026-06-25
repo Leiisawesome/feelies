@@ -120,6 +120,7 @@ class UniverseSynchronizer:
         "_signal_cache",
         "_emitted",
         "_attached",
+        "_signal_max_age_seconds",
     )
 
     def __init__(
@@ -131,6 +132,7 @@ class UniverseSynchronizer:
         ctx_sequence_generator: SequenceGenerator,
         signal_horizons: Iterable[int] | None = None,
         upstream_strategy_ids: tuple[str, ...] | None = None,
+        signal_max_age_seconds: int | None = None,
     ) -> None:
         self._bus = bus
         self._universe_sorted: tuple[str, ...] = tuple(sorted(set(universe)))
@@ -153,6 +155,15 @@ class UniverseSynchronizer:
         for h in self._signal_horizons:
             if h <= 0:
                 raise ValueError(f"UniverseSynchronizer.signal_horizons must be positive, got {h}")
+        if signal_max_age_seconds is not None and signal_max_age_seconds <= 0:
+            raise ValueError(
+                "UniverseSynchronizer.signal_max_age_seconds must be positive, "
+                f"got {signal_max_age_seconds}"
+            )
+        # Stale-feeder window (audit P0-5).  ``None`` → use the context's own
+        # decision horizon per emit, so one fully-missed barrier drops a
+        # carried-over signal before it is counted toward completeness.
+        self._signal_max_age_seconds: int | None = signal_max_age_seconds
         self._ctx_seq = ctx_sequence_generator
         # Latest snapshot per (horizon_seconds, symbol).
         self._snapshot_cache: dict[tuple[int, str], HorizonFeatureSnapshot] = {}
@@ -233,6 +244,13 @@ class UniverseSynchronizer:
         self._emitted.add(key)
         self._emit_context(tick)
 
+    def _max_age_ns(self, portfolio_h: int) -> int:
+        """Stale-feeder window in nanos for a context at horizon *portfolio_h*."""
+        window_s = (
+            self._signal_max_age_seconds if self._signal_max_age_seconds is not None else portfolio_h
+        )
+        return window_s * 1_000_000_000
+
     def _pick_feeder_signal(
         self,
         *,
@@ -243,7 +261,8 @@ class UniverseSynchronizer:
         snap: HorizonFeatureSnapshot | None,
         boundary_index: int,
     ) -> Signal | None:
-        """Latest causal ``Signal`` for *strategy_id* at the portfolio barrier."""
+        """Latest causal, non-stale ``Signal`` for *strategy_id* at the barrier."""
+        max_age_ns = self._max_age_ns(portfolio_h)
         candidates: list[tuple[int, Signal]] = []
         for kh in self._signal_horizons_sorted:
             s = self._signal_cache.get((kh, symbol, strategy_id))
@@ -251,7 +270,13 @@ class UniverseSynchronizer:
                 candidates.append((kh, s))
         if not candidates:
             return None
-        candidates = [(kh, s) for kh, s in candidates if s.timestamp_ns <= boundary_ts_ns]
+        # Causal (ts ≤ barrier) AND non-stale (age ≤ window): a signal carried
+        # over from a much earlier boundary is dropped, not counted (P0-5).
+        candidates = [
+            (kh, s)
+            for kh, s in candidates
+            if s.timestamp_ns <= boundary_ts_ns and boundary_ts_ns - s.timestamp_ns <= max_age_ns
+        ]
         if not candidates:
             return None
 
@@ -296,6 +321,8 @@ class UniverseSynchronizer:
 
         signals: dict[str, Signal | None] = {}
         non_none = 0
+        # Stale-feeder window for the legacy single-slot path (P0-5).
+        legacy_max_age_ns = self._max_age_ns(h)
 
         # Hoisted out of the per-symbol loop below: the cache sort is
         # independent of ``symbol`` so computing it once is O(S log S)
@@ -333,6 +360,10 @@ class UniverseSynchronizer:
                 # injection cannot leak a future signal into the context.
                 if s.timestamp_ns > tick.timestamp_ns:
                     continue
+                # Stale-signal gate (audit P0-5): drop a signal carried over
+                # from a much earlier boundary so it cannot inflate completeness.
+                if tick.timestamp_ns - s.timestamp_ns > legacy_max_age_ns:
+                    continue
                 if snap is not None and s.timestamp_ns < snap.timestamp_ns:
                     continue
                 chosen = s
@@ -341,17 +372,13 @@ class UniverseSynchronizer:
             if chosen is not None:
                 non_none += 1
 
-        # Completeness semantics (audit P2-2).  This counts symbols with a
-        # *present and causal* signal — i.e. one selected above subject to
-        # the ``ts <= barrier`` guard and the ``ts >= snapshot`` freshness
-        # floor.  It is NOT a staleness-window check: a signal carried over
-        # from a much earlier boundary still counts, even if its
-        # information content is stale relative to the barrier.  Adding a
-        # true staleness gate (drop signals older than a per-horizon
-        # window before counting) is a modeling decision that would change
-        # completeness → the completeness-threshold gate → the emitted
-        # intent stream, so it is deferred behind an explicit window choice
-        # and a Level-3 re-baseline rather than introduced silently here.
+        # Completeness semantics (audit P0-5).  This counts symbols with a
+        # *present, causal, and non-stale* signal: selection above applies the
+        # ``ts <= barrier`` causality guard, the ``ts >= snapshot`` freshness
+        # floor, AND the stale-feeder window (``signal_max_age_seconds``, or
+        # the decision horizon when unset).  A signal carried over from a much
+        # earlier boundary is dropped before it is counted, so aged data can
+        # only reduce completeness, never inflate it (Inv-11 fail-safe).
         completeness = non_none / len(self._universe_sorted) if self._universe_sorted else 0.0
 
         ctx = CrossSectionalContext(
