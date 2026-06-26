@@ -21,6 +21,7 @@ from tests.determinism.test_regime_state_replay import (
 )
 from tests.determinism.test_sensor_reading_replay import _replay as sensor_replay
 from tests.determinism.test_signal_replay import _replay as signal_replay
+from tests.determinism.test_state_transition_replay import _replay as state_transition_replay
 from tests.determinism.test_sized_intent_replay import _replay as intent_replay
 from tests.determinism.test_v03_sensor_replay import _replay as v03_sensor_replay
 from tests.fixtures.replay import (
@@ -53,6 +54,7 @@ _REPLAY_BY_NAME = {
     "level6_regime_state": _replay_regime_state,
     "market_fill_acks": market_fill_replay,
     "position_pnl": position_pnl_replay,
+    "state_transition": state_transition_replay,
 }
 
 

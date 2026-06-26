@@ -70,6 +70,10 @@ from tests.determinism.test_signal_replay import (
     EXPECTED_LEVEL2_SIGNAL_COUNT,
     EXPECTED_LEVEL2_SIGNAL_HASH,
 )
+from tests.determinism.test_state_transition_replay import (
+    EXPECTED_STATE_TRANSITION_COUNT,
+    EXPECTED_STATE_TRANSITION_HASH,
+)
 from tests.determinism.test_sized_intent_replay import (
     EXPECTED_LEVEL3_INTENT_DECAY_OFF_COUNT,
     EXPECTED_LEVEL3_INTENT_DECAY_OFF_HASH,
@@ -128,5 +132,11 @@ LOCKED_PARITY_BASELINES: Final[dict[str, ParityEntry]] = {
     "position_pnl": (
         EXPECTED_POSITION_PNL_HASH,
         EXPECTED_POSITION_PNL_COUNT,
+    ),
+    # Audit P1 #12: StateTransition stream from a deterministic RiskLevel +
+    # OrderState walk (pins SM emission order + sequence allocation).
+    "state_transition": (
+        EXPECTED_STATE_TRANSITION_HASH,
+        EXPECTED_STATE_TRANSITION_COUNT,
     ),
 }
