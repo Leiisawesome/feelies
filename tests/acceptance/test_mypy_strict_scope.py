@@ -82,44 +82,102 @@ def test_mypy_strict_clean_on_src_feelies() -> None:
         )
 
 
+def _load_mypy_section() -> dict[str, Any]:
+    raw = _PYPROJECT.read_bytes()
+    data: dict[str, Any] = tomllib.loads(raw.decode("utf-8"))
+    tool: dict[str, Any] = data.get("tool", {})
+    section: dict[str, Any] = tool.get("mypy", {})
+    return section
+
+
+def _override_module_names(entry: dict[str, Any]) -> list[str]:
+    modules = entry.get("module")
+    if isinstance(modules, str):
+        return [modules]
+    if isinstance(modules, list):
+        return [m for m in modules if isinstance(m, str)]
+    return []
+
+
+# Per-module knobs that re-weaken what ``strict = true`` turns on.  A
+# ``feelies.*`` override that trips any of these silences a strict-mode
+# failure without ``ignore_errors`` — closing the audit P0 gap where the
+# old lock only inspected ``ignore_errors``.
+def _strict_weakening_reasons(entry: dict[str, Any]) -> list[str]:
+    reasons: list[str] = []
+    if entry.get("ignore_errors"):
+        reasons.append("ignore_errors=true")
+    # Booleans that strict mode sets to ``true``; flipping any to ``false``
+    # re-admits the corresponding class of un-checked code.
+    for flag in (
+        "disallow_untyped_defs",
+        "disallow_incomplete_defs",
+        "disallow_untyped_calls",
+        "check_untyped_defs",
+        "warn_return_any",
+    ):
+        if entry.get(flag) is False:
+            reasons.append(f"{flag}=false")
+    if entry.get("disable_error_code"):
+        reasons.append(f"disable_error_code={entry['disable_error_code']!r}")
+    if entry.get("follow_imports") in {"skip", "silent"}:
+        reasons.append(f"follow_imports={entry['follow_imports']!r}")
+    return reasons
+
+
+def test_strict_mode_enabled_in_pyproject() -> None:
+    """Lock the linchpin: ``[tool.mypy] strict = true`` must be set.
+
+    Audit P0: ``test_mypy_strict_clean_on_src_feelies`` runs
+    ``mypy --no-incremental src/feelies`` with **no** ``--strict`` on the
+    CLI — strictness comes entirely from this key.  Without this assertion
+    a contributor can flip ``strict = false`` (or delete it) and *both*
+    scope-lock tests stay green while the entire strict regime evaporates.
+    ``python_version`` is pinned too so the checked dialect cannot drift
+    silently.
+    """
+    mypy_section = _load_mypy_section()
+    assert mypy_section.get("strict") is True, (
+        "pyproject.toml [tool.mypy] must set ``strict = true`` — it is the "
+        "sole source of strictness for test_mypy_strict_clean_on_src_feelies "
+        f"(found strict={mypy_section.get('strict')!r})."
+    )
+    assert isinstance(mypy_section.get("python_version"), str), (
+        "pyproject.toml [tool.mypy] must pin ``python_version`` so the "
+        f"checked dialect is explicit (found {mypy_section.get('python_version')!r})."
+    )
+
+
 def test_no_strict_overrides_in_pyproject() -> None:
     """Lock the gap-Z invariant: no ``feelies.*`` strict-mode overrides.
 
     A contributor who silences a new strict-mode failure by adding a
-    ``[[tool.mypy.overrides]] module = "feelies.foo" ignore_errors =
-    true`` block fails this test even if mypy is happy.  The only
-    exemption shape allowed is for **third-party** modules that lack a
-    ``py.typed`` marker (e.g. ``"massive"``); those are typed
-    ``ignore_missing_imports``, not ``ignore_errors``, and target the
-    third-party module — never ``feelies.*``.
+    ``[[tool.mypy.overrides]] module = "feelies.foo"`` block that sets
+    ``ignore_errors = true`` — **or** any other strictness knob
+    (``disable_error_code``, ``disallow_untyped_defs = false``,
+    ``check_untyped_defs = false``, ``warn_return_any = false``,
+    ``follow_imports = "skip"``, …) — fails this test even if mypy is
+    happy.  The only exemption shape allowed is for **third-party** modules
+    that lack a ``py.typed`` marker (e.g. ``"massive"``, ``"cvxpy"``);
+    those are typed ``ignore_missing_imports`` (which is *not* a strictness
+    knob) and target the third-party module — never ``feelies.*``.
     """
-    raw = _PYPROJECT.read_bytes()
-    data: dict[str, Any] = tomllib.loads(raw.decode("utf-8"))
-
-    tool = data.get("tool", {})
-    mypy_section = tool.get("mypy", {})
+    mypy_section = _load_mypy_section()
     overrides = mypy_section.get("overrides", [])
 
     offenders: list[str] = []
     for entry in overrides:
-        if not entry.get("ignore_errors"):
+        reasons = _strict_weakening_reasons(entry)
+        if not reasons:
             continue
-        modules = entry.get("module")
-        names: list[str] = (
-            [modules]
-            if isinstance(modules, str)
-            else list(modules)
-            if isinstance(modules, list)
-            else []
-        )
-        for name in names:
-            if isinstance(name, str) and name.startswith("feelies"):
-                offenders.append(name)
+        for name in _override_module_names(entry):
+            if name.startswith("feelies"):
+                offenders.append(f"{name} ({', '.join(reasons)})")
 
     assert offenders == [], (
-        "gap-Z invariant violation: pyproject.toml re-introduced "
-        "``ignore_errors = true`` for the following ``feelies.*`` "
-        f"modules: {offenders}.  Tighten the modules to pass "
-        "``mypy --strict`` instead.  See workstream gap-Z notes in "
+        "gap-Z invariant violation: pyproject.toml weakened strict mode "
+        "for the following ``feelies.*`` modules: "
+        f"{offenders}.  Tighten the modules to pass ``mypy --strict`` "
+        "instead of overriding.  See workstream gap-Z notes in "
         "docs/acceptance/v02_v03_matrix.md."
     )
