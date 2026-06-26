@@ -10,6 +10,7 @@ from feelies.core.errors import (
     DataIntegrityError,
     DeterminismViolation,
     ExecutionError,
+    FailureMode,
     FeeliesError,
     RiskBreachError,
     StaleDataError,
@@ -39,3 +40,21 @@ class TestErrorHierarchy:
     def test_raise_and_catch(self) -> None:
         with pytest.raises(ConfigurationError):
             raise ConfigurationError("invalid config")
+
+    @pytest.mark.parametrize(
+        ("error_cls", "expected_mode"),
+        [
+            (ConfigurationError, FailureMode.CRASH),
+            (CausalityViolation, FailureMode.CRASH),
+            (DeterminismViolation, FailureMode.CRASH),
+            (DataIntegrityError, FailureMode.DEGRADE),
+            (StaleDataError, FailureMode.DEGRADE),
+            (ExecutionError, FailureMode.RETRY),
+            (RiskBreachError, FailureMode.LOCKDOWN),
+        ],
+    )
+    def test_failure_mode_classification(
+        self, error_cls: type[FeeliesError], expected_mode: FailureMode
+    ) -> None:
+        assert error_cls.failure_mode is expected_mode
+        assert error_cls("m").failure_mode is expected_mode

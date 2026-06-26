@@ -735,7 +735,10 @@ def build_platform(
         net_shadow_portfolio_max_abs_qty=config.risk_max_position_per_symbol,
     )
 
-    config_snapshot = config.snapshot()
+    # Stamp the snapshot from the injected clock so a backtest's provenance
+    # record is deterministic (SimulatedClock); only PAPER/LIVE read wall time
+    # (WallClock).  Inv-10: no raw wall-clock read at the bootstrap edge.
+    config_snapshot = config.snapshot(ts_ns=clock.now_ns())
     orchestrator.config_snapshot = config_snapshot  # type: ignore[attr-defined]
 
     # Attach the PAPER/LIVE live-feed + IB connection handles to the

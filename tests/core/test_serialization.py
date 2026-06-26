@@ -133,3 +133,35 @@ class TestJsonLineEventSerializer:
     def test_deserialize_rejects_unknown_type(self) -> None:
         with pytest.raises(ValueError, match="unknown or missing event __type__"):
             dict_to_event({"__type__": "Bogus", "symbol": "AAPL"})
+
+    def test_serialized_dict_carries_schema_version(self) -> None:
+        d = event_to_dict(_quote())
+        assert d["__schema_version__"] == 1
+
+    def test_legacy_record_without_schema_version_loads(self) -> None:
+        # Records written before versioning carry no __schema_version__ and
+        # must still deserialize (== v1) — DiskEventCache backward-compat.
+        d = event_to_dict(_quote())
+        del d["__schema_version__"]
+        assert dict_to_event(d) == _quote()
+
+    def test_unsupported_schema_version_rejected(self) -> None:
+        d = event_to_dict(_quote())
+        d["__schema_version__"] = 999
+        with pytest.raises(ValueError, match="unsupported event __schema_version__"):
+            dict_to_event(d)
+
+    def test_forward_schema_unknown_field_is_dropped(self) -> None:
+        # A record from a newer build with an extra additive field must
+        # round-trip to an equal event, not raise (audit P1-2).
+        d = event_to_dict(_quote())
+        d["future_field_added_later"] = 42
+        assert dict_to_event(d) == _quote()
+
+    def test_missing_required_field_raises_value_error(self) -> None:
+        # Corrupt record (required field absent) surfaces as ValueError per
+        # the deserialize contract, not a raw TypeError (audit P1-2).
+        d = event_to_dict(_quote())
+        del d["symbol"]
+        with pytest.raises(ValueError, match="cannot reconstruct"):
+            dict_to_event(d)

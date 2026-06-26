@@ -19,7 +19,6 @@ import hashlib
 import importlib
 import logging
 import json
-import time
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from pathlib import Path
@@ -27,6 +26,7 @@ from typing import Any
 
 import yaml  # pyright: ignore[reportMissingModuleSource]
 
+from feelies.core.clock import WallClock
 from feelies.core.config import ConfigSnapshot
 from feelies.core.errors import ConfigurationError
 from feelies.core.events import NBBOQuote, Trade
@@ -970,13 +970,24 @@ class PlatformConfig:
         if self.sector_map_path is not None and not self.sector_map_path.is_file():
             raise ConfigurationError(f"sector_map_path does not exist: {self.sector_map_path}")
 
-    def snapshot(self) -> ConfigSnapshot:
+    def snapshot(self, *, ts_ns: int | None = None) -> ConfigSnapshot:
+        """Create an immutable provenance snapshot.
+
+        ``ts_ns`` stamps the snapshot's wall-time provenance.  Pass a
+        clock-derived value (``clock.now_ns()``) for a deterministic record
+        — bootstrap does exactly this with the injected ``Clock`` so a
+        backtest's snapshot is reproducible (Inv-10).  When omitted it falls
+        back to the ``WallClock`` primitive rather than a raw ``time``
+        read, keeping core free of direct wall-clock calls.  ``timestamp_ns``
+        is never folded into ``checksum`` (see ``_to_dict``), so it cannot
+        affect replay determinism (Inv-5) regardless of its source.
+        """
         data = self._to_dict()
         raw = json.dumps(data, sort_keys=True, default=str)
         checksum = hashlib.sha256(raw.encode()).hexdigest()
         return ConfigSnapshot(
             version=self.version,
-            timestamp_ns=time.time_ns(),
+            timestamp_ns=ts_ns if ts_ns is not None else WallClock().now_ns(),
             author=self.author,
             data=data,
             checksum=checksum,
@@ -1218,7 +1229,14 @@ class PlatformConfig:
         """Load configuration from a YAML file.
 
         Raises ``ConfigurationError`` if the file is unreadable or
-        contains invalid structure.
+        contains invalid structure (including loosely-typed scalars, see
+        :meth:`_check_yaml_keys_and_types`).
+
+        Note: this only parses + type-coerces the YAML.  It does NOT run the
+        semantic range checks in :meth:`validate` (e.g. "symbols non-empty",
+        "ratios in range") — callers (``bootstrap.build_platform``) must call
+        ``config.validate()`` before use.  Construction is kept separate from
+        validation so partially-specified configs can be assembled in tests.
         """
         path = Path(path)
         from feelies.core.config_yaml import load_yaml_mapping
@@ -1244,6 +1262,11 @@ class PlatformConfig:
                     path,
                     deprecated,
                 )
+
+        # Audit P1-3 / P1-4: reject loosely-typed scalars (e.g. quoted
+        # "false" for a bool, a float for an int) and surface unrecognized
+        # keys (typo'd overrides that would otherwise silently no-op).
+        cls._check_yaml_keys_and_types(data, source=path)
 
         symbols_raw = data.get("symbols", [])
         symbols = frozenset(symbols_raw) if symbols_raw else frozenset()
@@ -1616,9 +1639,7 @@ class PlatformConfig:
                 if data.get("composition_signal_max_age_seconds") is not None
                 else None
             ),
-            composition_optimizer_mode=str(
-                data.get("composition_optimizer_mode", "closed_form")
-            ),
+            composition_optimizer_mode=str(data.get("composition_optimizer_mode", "closed_form")),
             factor_loadings_dir=(
                 Path(data["factor_loadings_dir"]) if data.get("factor_loadings_dir") else None
             ),
@@ -1641,6 +1662,71 @@ class PlatformConfig:
             ib_client_id=ib_client_id,
             massive_ws_url=massive_ws_url,
         )
+
+    # Top-level YAML keys that are accepted but do not map 1:1 to a
+    # PlatformConfig field name: ``gate_thresholds`` → gate_thresholds_overrides,
+    # ``paper`` is a nested connection block, ``extends`` is consumed by the
+    # YAML loader (may survive as ``extends: null``).
+    _NON_FIELD_YAML_KEYS = frozenset({"gate_thresholds", "paper", "extends"})
+
+    @classmethod
+    def _check_yaml_keys_and_types(cls, data: dict[str, Any], *, source: Path) -> None:
+        """Validate YAML key recognition and scalar typing before coercion.
+
+        Two fail-fast guards (audit P1-3 / P1-4):
+
+        - **Unknown keys** (P1-4): keys that are neither a ``PlatformConfig``
+          field nor a recognised non-field key (``_NON_FIELD_YAML_KEYS``) are
+          almost always typos (e.g. ``cost_stress_multipler``) whose intended
+          override would silently no-op.  We log a loud WARNING rather than
+          raise so a config with a harmless stray key still runs — but the
+          drift is no longer silent.
+
+        - **Loose scalars** (P1-3): for fields annotated as a bare ``bool`` /
+          ``int`` / ``float``, the YAML value (already parsed by
+          ``yaml.safe_load``) must be the matching Python type, with the one
+          conventional widening of ``int`` → ``float``.  This rejects the
+          ``bool("false") is True`` footgun, silent ``int(5.7) → 5``
+          truncation, and string→number auto-parsing.  Optional / union
+          scalars (``int | None`` etc.) keep their bespoke parsing and are
+          not policed here.
+        """
+        fields = cls.__dataclass_fields__
+        known = set(fields) | cls._NON_FIELD_YAML_KEYS
+
+        unknown = sorted(k for k in data if k not in known)
+        if unknown:
+            logger.warning(
+                "%s: ignoring unrecognized config key(s) %s — check for typos; "
+                "a misspelled key silently keeps the default.",
+                source,
+                unknown,
+            )
+
+        for key, value in data.items():
+            field_obj = fields.get(key)
+            if field_obj is None:
+                continue
+            ann = field_obj.type if isinstance(field_obj.type, str) else None
+            if ann == "bool":
+                # bool first: bool is a subclass of int, so the int branch
+                # below must never see a bool.
+                if not isinstance(value, bool):
+                    raise ConfigurationError(
+                        f"{source}: {key} must be a boolean (true/false), "
+                        f"got {type(value).__name__}: {value!r}"
+                    )
+            elif ann == "int":
+                if isinstance(value, bool) or not isinstance(value, int):
+                    raise ConfigurationError(
+                        f"{source}: {key} must be an integer, "
+                        f"got {type(value).__name__}: {value!r}"
+                    )
+            elif ann == "float":
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    raise ConfigurationError(
+                        f"{source}: {key} must be a number, got {type(value).__name__}: {value!r}"
+                    )
 
     @staticmethod
     def _parse_gate_thresholds_block(

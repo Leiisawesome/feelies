@@ -16,6 +16,45 @@ Each finding is tagged **[bug]** (implementation defect), **[limitation]**
 
 ---
 
+## 0. Remediation status (2026-06-25, follow-up commit)
+
+All P1 and P2 backlog items below were subsequently fixed in the same branch.
+Summary of what changed (see §9 for the original specs):
+
+- **P1-1** — `PlatformConfig.snapshot(*, ts_ns=None)` now stamps from the
+  caller's clock; bootstrap passes `clock.now_ns()` (deterministic in
+  backtest). The raw `import time` / `time.time_ns()` was removed; the
+  `None` fallback routes through `WallClock`. Checksum exclusion unchanged.
+- **P1-2** — serialization writes/validates `__schema_version__` (absent ⇒
+  v1, so existing disk caches still load), drops unknown forward-schema
+  fields instead of crashing, and converts the residual `TypeError` to the
+  contracted `ValueError`.
+- **P1-3** — `from_yaml` runs a pre-coercion type guard rejecting loose
+  scalars (`bool("false")`, `int(5.7)`, string→number); `int`→`float`
+  widening still allowed.
+- **P1-4** — unrecognized top-level YAML keys now log a loud WARNING
+  (chosen over hard-raise to avoid breaking configs with harmless stray
+  keys; the silence is what mattered).
+- **P2-1** — tuple restoration generalized from `tuple[int` to any `tuple`.
+- **P2-2 / P2-3 / P2-4 / P2-5** — documented the SM multi-callback rollback
+  boundary, shallow event immutability, `SequenceGenerator` cross-thread
+  ordering, and the `from_yaml`-does-not-`validate()` contract.
+- **P2-6** — added a structured `FailureMode` enum + `failure_mode`
+  classvar to the error taxonomy.
+
+Verification: `tests/core/` + `tests/storage/` → **289 passed** (81 new
+cases), `mypy` strict clean on the six changed modules, `ruff` clean.
+
+Out-of-scope follow-up (fixed at the user's request): a **pre-existing**
+`SyntaxError` (duplicate `reason=` kwarg) at `kernel/orchestrator.py:4795`
+was blocking `tests/determinism/` and `tests/kernel/` from importing the
+orchestrator. The duplicate was a merge artifact — two functionally
+identical forms of the same stop-exit reason tag. Kept the canonical
+module-constant form (`_FORCED_EXIT_PANIC_REASON.get(...)`) and removed the
+orphaned local-variable form. Those two suites now pass (**356 passed**).
+
+---
+
 ## 1. Executive summary
 
 Top foundational risks first.

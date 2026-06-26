@@ -26,7 +26,16 @@ def derive_order_id(seed: str) -> str:
 
 
 class SequenceGenerator:
-    """Thread-safe monotonically increasing sequence counter."""
+    """Thread-safe monotonically increasing sequence counter.
+
+    The lock guarantees every ``next()`` returns a **unique** value. It does
+    NOT make the *assignment order* deterministic across concurrent callers:
+    if two threads race on ``next()``, which one gets the lower value depends
+    on OS scheduling.  Deterministic replay (Inv-5) therefore requires
+    single-threaded sequence allocation — which is exactly the
+    backtest/replay path.  Live/paper runs may allocate from multiple
+    threads, where uniqueness holds but cross-thread ordering is not
+    reproducible (acceptable: live is not replay-hashed)."""
 
     __slots__ = ("_counter", "_lock")
 

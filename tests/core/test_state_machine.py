@@ -105,6 +105,30 @@ class TestStateMachine:
         assert sm.state == SimpleState.A
         assert len(sm.history) == 0
 
+    def test_multi_callback_rollback_boundary(self) -> None:
+        # When a later callback vetoes, the SM rolls back its OWN state, but
+        # an earlier callback's external side effect is NOT undone — the SM
+        # cannot reverse effects it does not own (documented contract).
+        sm = _make_sm()
+        external_effects: list[str] = []
+
+        def first(rec: TransitionRecord) -> None:
+            external_effects.append("first-ran")
+
+        def second(rec: TransitionRecord) -> None:
+            raise RuntimeError("veto")
+
+        sm.on_transition(first)
+        sm.on_transition(second)
+        with pytest.raises(RuntimeError, match="veto"):
+            sm.transition(SimpleState.B, trigger="t")
+
+        # SM state/history rolled back ...
+        assert sm.state == SimpleState.A
+        assert len(sm.history) == 0
+        # ... but the first callback's external effect persists.
+        assert external_effects == ["first-ran"]
+
     def test_reset_unconditional(self) -> None:
         sm = _make_sm()
         sm.transition(SimpleState.B, trigger="t")

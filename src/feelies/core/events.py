@@ -35,6 +35,17 @@ class Event:
     three_layer_architecture.md) that tags every emitted event with the
     layer that produced it.  Default ``"UNKNOWN"`` preserves construction
     for every existing producer that does not yet pass the tag.
+
+    Immutability is **shallow** (audit P2-3): ``frozen=True`` blocks
+    rebinding a field, but events whose fields hold mutable containers
+    (e.g. ``Signal.metadata``, ``RiskVerdict.constraints``,
+    ``MetricEvent.tags``, ``HorizonFeatureSnapshot.values/warm/stale``,
+    ``SizedPositionIntent.target_positions``) can still have those
+    containers mutated in place, and those events are not hashable.
+    Treat every event as read-only once published — do not mutate a
+    container reached through an event you received off the bus; build a
+    fresh event instead.  Tuple-valued fields are deeply immutable and the
+    preferred shape for new schemas.
     """
 
     timestamp_ns: int
