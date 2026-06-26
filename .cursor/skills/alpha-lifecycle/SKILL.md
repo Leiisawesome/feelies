@@ -207,6 +207,26 @@ The grammar enforces:
 - Scalar-type coercion with bool-not-int strictness
 - No string-to-number auto-parsing
 
+### Per-alpha floor rule (operator policy is a floor, not a ceiling)
+
+The "per-alpha wins" precedence is bounded by operator policy: a
+per-alpha override may **tighten** any gate, and may **loosen** a
+threshold the operator left at its skill default, but may **not loosen
+below a threshold the operator explicitly pinned in
+`platform.yaml: gate_thresholds:`**. `AlphaRegistry._enforce_threshold_floor`
+runs at registration (all modes, including BACKTEST) and raises
+`AlphaRegistryError` (wrapping `GateThresholdFloorError`) for any
+per-alpha override that loosens a pinned floor — closing the Inv-11 /
+Inv-13 gap where an alpha-bundle edit could silently undercut operator
+policy. Direction is per-field
+(`_GATE_THRESHOLD_DIRECTIONS` in `promotion_evidence.py`): `MIN`
+thresholds may only be raised, `MAX` thresholds only lowered; the
+consistency-only quarantine-trigger fields are `FREE` (never gate, so
+never floored). Fields the operator did **not** pin remain freely
+loosenable per-alpha (the documented skill-default flexibility is
+preserved). The effective per-alpha `GateThresholds` is still resolved
+once at registration and immutable thereafter.
+
 ---
 
 ## F-1: Promotion Ledger

@@ -57,7 +57,7 @@ Schema sources (so reviewers can double-check the field choices):
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, fields, is_dataclass, replace
 from enum import Enum
 from typing import Any, cast
@@ -1244,6 +1244,138 @@ def apply_gate_thresholds_overrides(
 
 
 # ─────────────────────────────────────────────────────────────────────
+#   Per-alpha floor enforcement (audit P0-1)
+# ─────────────────────────────────────────────────────────────────────
+
+
+class _FloorDirection(Enum):
+    """Monotonicity of a :class:`GateThresholds` field, used to decide
+    whether a per-alpha override *tightens* or *loosens* a gate relative
+    to an operator-pinned ``platform.yaml`` floor.
+    """
+
+    MIN = "min"
+    """Lower-bound threshold (evidence value must be ``>=`` it).  Higher
+    is stricter; a per-alpha override may only *raise* it."""
+
+    MAX = "max"
+    """Upper-bound threshold (evidence value must be ``<=`` it).  Lower
+    is stricter; a per-alpha override may only *lower* it."""
+
+    FREE = "free"
+    """Consistency-only / non-gating threshold (the quarantine-trigger
+    fields, which never block a transition).  No floor constraint — a
+    per-alpha override cannot grant capital access by changing it."""
+
+
+_GATE_THRESHOLD_DIRECTIONS: dict[str, _FloorDirection] = {
+    # ── Research → Paper (minimums: evidence must meet or exceed) ──────
+    "research_min_branch_coverage_pct": _FloorDirection.MIN,
+    "research_min_line_coverage_pct": _FloorDirection.MIN,
+    "research_min_fault_injection_pass_pct": _FloorDirection.MIN,
+    # ── Paper → Live ───────────────────────────────────────────────────
+    "paper_min_trading_days": _FloorDirection.MIN,
+    "paper_min_sample_size": _FloorDirection.MIN,
+    "paper_max_slippage_residual_bps": _FloorDirection.MAX,
+    "paper_max_fill_rate_drift_pct": _FloorDirection.MAX,
+    "paper_min_latency_ks_p": _FloorDirection.MIN,
+    "paper_min_pnl_compression_ratio": _FloorDirection.MIN,
+    "paper_max_pnl_compression_ratio": _FloorDirection.MAX,
+    "paper_max_anomalous_events": _FloorDirection.MAX,
+    "cpcv_min_folds": _FloorDirection.MIN,
+    "cpcv_min_mean_sharpe": _FloorDirection.MIN,
+    "cpcv_max_p_value": _FloorDirection.MAX,
+    "dsr_min": _FloorDirection.MIN,
+    "dsr_max_p_value": _FloorDirection.MAX,
+    # ── Capital-stage tier (SMALL → SCALED) ────────────────────────────
+    "small_min_deployment_days": _FloorDirection.MIN,
+    "small_min_pnl_compression_ratio": _FloorDirection.MIN,
+    "small_max_pnl_compression_ratio": _FloorDirection.MAX,
+    "small_max_slippage_residual_bps": _FloorDirection.MAX,
+    # ``small_max_hit_rate_residual_pp`` is a *floor* despite the "max"
+    # name — the validator passes when ``residual >= threshold`` (stored
+    # negative, e.g. -5.0), so a higher value is stricter → MIN.
+    "small_max_hit_rate_residual_pp": _FloorDirection.MIN,
+    "small_max_fill_rate_drift_pct": _FloorDirection.MAX,
+    # ── Quarantine triggers (consistency-only, never gate) ─────────────
+    "quarantine_max_net_alpha_negative_days": _FloorDirection.FREE,
+    "quarantine_max_hit_rate_residual_pp": _FloorDirection.FREE,
+    "quarantine_max_pnl_compression_ratio_5d": _FloorDirection.FREE,
+    "quarantine_min_microstructure_breaches": _FloorDirection.FREE,
+    "quarantine_min_crowding_symptoms": _FloorDirection.FREE,
+    # ── Revalidation ───────────────────────────────────────────────────
+    "revalidation_min_oos_sharpe": _FloorDirection.MIN,
+}
+"""Per-field monotonicity used by :func:`assert_per_alpha_overrides_respect_floor`.
+
+Every :class:`GateThresholds` field MUST appear here; a construction-time
+check (:func:`_check_threshold_direction_coverage`) fails the import if a
+new field is added without a direction, so the floor rule can never
+silently miss a gate."""
+
+
+class GateThresholdFloorError(ValueError):
+    """Raised when a per-alpha ``promotion.gate_thresholds`` override would
+    loosen a threshold below an operator-pinned ``platform.yaml`` floor.
+
+    Inv-11 (loosening a safety control requires human re-authorization)
+    and Inv-13 (provenance): the platform operator pins acceptance floors
+    in ``platform.yaml: gate_thresholds:``; a per-alpha override authored
+    in the alpha bundle may *tighten* any gate but may not *loosen* one
+    the operator explicitly pinned.  Per-alpha overrides on fields the
+    operator did **not** pin still apply (they only relax the skill-pinned
+    defaults, which are not operator policy)."""
+
+
+def assert_per_alpha_overrides_respect_floor(
+    *,
+    platform_floor: GateThresholds,
+    platform_pinned_fields: Iterable[str],
+    per_alpha_overrides: Mapping[str, Any],
+) -> None:
+    """Reject per-alpha overrides that loosen an operator-pinned floor.
+
+    ``platform_floor`` is the materialised platform-level
+    :class:`GateThresholds` (skill defaults overlaid by
+    ``platform.yaml: gate_thresholds:``).  ``platform_pinned_fields`` is
+    the set of field names the operator *explicitly* set in
+    ``platform.yaml`` (i.e. the keys of
+    :attr:`PlatformConfig.gate_thresholds_overrides`) — only those are
+    treated as operator floors; fields left at their skill default remain
+    freely loosenable per-alpha (preserving the documented F-5
+    "per-alpha wins over skill defaults" behavior).
+
+    Raises :class:`GateThresholdFloorError` listing every offending field
+    if any per-alpha override loosens a pinned floor in its
+    direction-appropriate sense; returns ``None`` otherwise.
+    """
+    pinned = set(platform_pinned_fields)
+    violations: list[str] = []
+    for name, proposed in per_alpha_overrides.items():
+        if name not in pinned:
+            continue
+        direction = _GATE_THRESHOLD_DIRECTIONS.get(name, _FloorDirection.FREE)
+        if direction is _FloorDirection.FREE:
+            continue
+        floor = getattr(platform_floor, name)
+        if direction is _FloorDirection.MIN and proposed < floor:
+            violations.append(
+                f"{name!r}={proposed} loosens below operator-pinned platform "
+                f"floor {floor} (minimum threshold — per-alpha may only raise it)"
+            )
+        elif direction is _FloorDirection.MAX and proposed > floor:
+            violations.append(
+                f"{name!r}={proposed} loosens above operator-pinned platform "
+                f"ceiling {floor} (maximum threshold — per-alpha may only lower it)"
+            )
+    if violations:
+        raise GateThresholdFloorError(
+            "per-alpha promotion.gate_thresholds may not loosen an operator-pinned "
+            "platform floor (Inv-11 / Inv-13): " + "; ".join(sorted(violations))
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────
 #   Construction-time invariant checks
 # ─────────────────────────────────────────────────────────────────────
 
@@ -1299,9 +1431,30 @@ def _check_reconstructor_coverage() -> None:
         )
 
 
+def _check_threshold_direction_coverage() -> None:
+    """Enforce that every :class:`GateThresholds` field is classified in
+    :data:`_GATE_THRESHOLD_DIRECTIONS`.
+
+    A contributor adding a new threshold without a floor direction would
+    otherwise let a per-alpha override silently loosen it past an
+    operator-pinned platform floor (audit P0-1).  Failing at import keeps
+    the floor rule total over the schema.
+    """
+    classified = set(_GATE_THRESHOLD_DIRECTIONS)
+    actual = {f.name for f in fields(GateThresholds)}
+    missing = sorted(actual - classified)
+    extra = sorted(classified - actual)
+    if missing or extra:
+        raise RuntimeError(
+            "_GATE_THRESHOLD_DIRECTIONS is out of sync with GateThresholds: "
+            f"missing direction for {missing}; stale entries {extra}"
+        )
+
+
 _check_matrix_completeness()
 _check_validator_coverage()
 _check_reconstructor_coverage()
+_check_threshold_direction_coverage()
 
 
 __all__ = (
@@ -1313,6 +1466,7 @@ __all__ = (
     "DSREvidence",
     "GATE_EVIDENCE_REQUIREMENTS",
     "GateId",
+    "GateThresholdFloorError",
     "GateThresholds",
     "KIND_TO_TYPE",
     "PaperWindowEvidence",
@@ -1321,6 +1475,7 @@ __all__ = (
     "ResearchAcceptanceEvidence",
     "RevalidationEvidence",
     "apply_gate_thresholds_overrides",
+    "assert_per_alpha_overrides_respect_floor",
     "evidence_to_metadata",
     "metadata_to_evidence",
     "parse_gate_thresholds_overrides",

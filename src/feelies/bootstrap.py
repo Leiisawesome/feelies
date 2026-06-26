@@ -330,6 +330,9 @@ def build_platform(
         clock=registry_clock,
         gate_thresholds=gate_thresholds,
         promotion_ledger=promotion_ledger,
+        # Audit P0-1: the explicitly operator-pinned fields become floors
+        # a per-alpha ``promotion.gate_thresholds`` override may not loosen.
+        platform_gate_threshold_overrides=config.gate_thresholds_overrides,
     )
     loader = AlphaLoader(
         regime_engine=regime_engine,

@@ -1169,3 +1169,90 @@ class TestMetadataToEvidenceReservedCoKeys:
 
         assert "reason" in RESERVED_METADATA_KEYS
         assert "schema_version" in RESERVED_METADATA_KEYS
+
+
+class TestPerAlphaFloorHelper:
+    """Audit P0-1: ``assert_per_alpha_overrides_respect_floor`` rejects a
+    per-alpha override that loosens an operator-pinned platform floor.
+    """
+
+    def test_min_floor_loosening_rejected(self) -> None:
+        from feelies.alpha.promotion_evidence import (
+            GateThresholdFloorError,
+            assert_per_alpha_overrides_respect_floor,
+        )
+
+        floor = apply_gate_thresholds_overrides(GateThresholds(), {"dsr_min": 1.5})
+        with pytest.raises(GateThresholdFloorError, match="dsr_min"):
+            assert_per_alpha_overrides_respect_floor(
+                platform_floor=floor,
+                platform_pinned_fields={"dsr_min"},
+                per_alpha_overrides={"dsr_min": 0.5},
+            )
+
+    def test_max_ceiling_loosening_rejected(self) -> None:
+        from feelies.alpha.promotion_evidence import (
+            GateThresholdFloorError,
+            assert_per_alpha_overrides_respect_floor,
+        )
+
+        floor = apply_gate_thresholds_overrides(GateThresholds(), {"dsr_max_p_value": 0.01})
+        with pytest.raises(GateThresholdFloorError, match="dsr_max_p_value"):
+            assert_per_alpha_overrides_respect_floor(
+                platform_floor=floor,
+                platform_pinned_fields={"dsr_max_p_value"},
+                per_alpha_overrides={"dsr_max_p_value": 0.05},
+            )
+
+    def test_tightening_and_unpinned_and_free_all_allowed(self) -> None:
+        from feelies.alpha.promotion_evidence import assert_per_alpha_overrides_respect_floor
+
+        floor = apply_gate_thresholds_overrides(
+            GateThresholds(),
+            {"dsr_min": 1.5, "quarantine_max_net_alpha_negative_days": 10},
+        )
+        # tighten dsr_min, loosen an unpinned field, move a FREE field —
+        # none of these raise.
+        assert_per_alpha_overrides_respect_floor(
+            platform_floor=floor,
+            platform_pinned_fields={"dsr_min", "quarantine_max_net_alpha_negative_days"},
+            per_alpha_overrides={
+                "dsr_min": 2.0,
+                "cpcv_min_mean_sharpe": 0.1,
+                "quarantine_max_net_alpha_negative_days": 999,
+            },
+        )
+
+    def test_hit_rate_residual_floor_is_min_direction(self) -> None:
+        # Regression for the misleadingly-named ``small_max_hit_rate_residual_pp``
+        # (a *floor*, pass condition residual >= threshold): lowering it
+        # (more negative) loosens the gate and must be rejected.
+        from feelies.alpha.promotion_evidence import (
+            GateThresholdFloorError,
+            assert_per_alpha_overrides_respect_floor,
+        )
+
+        floor = apply_gate_thresholds_overrides(
+            GateThresholds(), {"small_max_hit_rate_residual_pp": -5.0}
+        )
+        with pytest.raises(GateThresholdFloorError):
+            assert_per_alpha_overrides_respect_floor(
+                platform_floor=floor,
+                platform_pinned_fields={"small_max_hit_rate_residual_pp"},
+                per_alpha_overrides={"small_max_hit_rate_residual_pp": -20.0},
+            )
+        # Raising the floor (stricter) is allowed.
+        assert_per_alpha_overrides_respect_floor(
+            platform_floor=floor,
+            platform_pinned_fields={"small_max_hit_rate_residual_pp"},
+            per_alpha_overrides={"small_max_hit_rate_residual_pp": -1.0},
+        )
+
+    def test_every_threshold_field_has_a_direction(self) -> None:
+        from dataclasses import fields
+
+        from feelies.alpha.promotion_evidence import _GATE_THRESHOLD_DIRECTIONS
+
+        classified = set(_GATE_THRESHOLD_DIRECTIONS)
+        actual = {f.name for f in fields(GateThresholds)}
+        assert classified == actual
