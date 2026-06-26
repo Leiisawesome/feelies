@@ -158,6 +158,7 @@ from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.lot_ledger import LotLedger
 from feelies.risk.engine import RiskEngine
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
+from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER
 from feelies.risk.edge_weighted_sizer import (
     EdgeWeightedSizer,
     SizeDivergence,
@@ -2481,7 +2482,15 @@ class Orchestrator:
             self._finalize_tick(t_wall_start, cid)
             return
 
-        self._bus.publish(signal)
+        # Inv-7 single-writer: only synthetic forced-exit signals are first
+        # published here.  ``_check_stop_exit`` / ``_check_session_flat`` compute
+        # ``__stop_exit__`` / ``__session_flat__`` Signals inline and never reach
+        # the bus otherwise.  A bus-arbitrated standalone winner was already
+        # published by ``HorizonSignalEngine`` (the sole writer of alpha
+        # Signals); re-publishing it here would double-count it on the Signal
+        # stream for every subscriber (UniverseSynchronizer, forensics).
+        if signal.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES:
+            self._bus.publish(signal)
 
         # ── Position sizing: compute target quantity from risk budget ──
         target_qty = self._compute_target_quantity(signal, quote)
@@ -5850,7 +5859,11 @@ class Orchestrator:
         if self._strategy_positions is None:
             return
 
-        strategy_ids = list(self._strategy_positions.strategy_ids())
+        # Inv-5: iterate strategies in a deterministic (sorted) order.
+        # ``strategy_ids()`` returns a ``frozenset``; materialising it directly
+        # would make the largest-remainder tie-break and per-alpha fee split
+        # depend on hash-iteration order (process/seed dependent).
+        strategy_ids = sorted(self._strategy_positions.strategy_ids())
         if not strategy_ids:
             return
 
@@ -6185,8 +6198,10 @@ class Orchestrator:
             self._submit_portfolio_leg_without_micro_walk(event, event.correlation_id)
 
     # ── Audit R1: bus-driven hazard-exit OrderRequest handler ────────
-
-    _HAZARD_EXIT_REASONS: frozenset[str] = frozenset({"HAZARD_SPIKE", "HARD_EXIT_AGE"})
+    # The accepted signature (``HAZARD_EXIT_SOURCE_LAYER`` +
+    # ``HAZARD_EXIT_REASONS``) is imported from ``feelies.risk.hazard_exit`` —
+    # the sole writer — so the bridge filter cannot drift from what the
+    # controller actually emits (audit kernel-P1).
 
     def _on_bus_hazard_order(self, event: Event) -> None:
         """Route hazard-exit ``OrderRequest`` events to the execution backend.
@@ -6221,9 +6236,9 @@ class Orchestrator:
         """
         if not isinstance(event, OrderRequest):
             return
-        if event.source_layer != "RISK":
+        if event.source_layer != HAZARD_EXIT_SOURCE_LAYER:
             return
-        if event.reason not in self._HAZARD_EXIT_REASONS:
+        if event.reason not in HAZARD_EXIT_REASONS:
             return
         # Idempotency guard against a duplicate publish of the same
         # hazard order_id (e.g. a misconfigured second subscriber
