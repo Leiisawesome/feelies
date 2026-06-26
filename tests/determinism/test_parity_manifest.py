@@ -12,6 +12,7 @@ from tests.determinism.test_hazard_exit_replay import _replay as hazard_exit_rep
 from tests.determinism.test_horizon_feature_snapshot_replay import _replay as snapshot_replay
 from tests.determinism.test_market_fill_replay import _replay as market_fill_replay
 from tests.determinism.test_portfolio_order_replay import _replay as portfolio_order_replay
+from tests.determinism.test_position_pnl_replay import _replay as position_pnl_replay
 from tests.determinism.test_regime_hazard_replay import _replay as regime_hazard_replay
 from tests.determinism.test_regime_state_replay import (
     EXPECTED_LEVEL6_REGIME_STATE_COUNT,
@@ -51,6 +52,7 @@ _REPLAY_BY_NAME = {
     "level5_regime_hazard_spike": regime_hazard_replay,
     "level6_regime_state": _replay_regime_state,
     "market_fill_acks": market_fill_replay,
+    "position_pnl": position_pnl_replay,
 }
 
 

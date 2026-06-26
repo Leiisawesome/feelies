@@ -50,6 +50,10 @@ from tests.determinism.test_portfolio_order_replay import (
     EXPECTED_LEVEL4_PORTFOLIO_ORDER_COUNT,
     EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH,
 )
+from tests.determinism.test_position_pnl_replay import (
+    EXPECTED_POSITION_PNL_COUNT,
+    EXPECTED_POSITION_PNL_HASH,
+)
 from tests.determinism.test_regime_hazard_replay import (
     EXPECTED_LEVEL5_HAZARD_COUNT,
     EXPECTED_LEVEL5_HAZARD_HASH,
@@ -118,5 +122,11 @@ LOCKED_PARITY_BASELINES: Final[dict[str, ParityEntry]] = {
     "market_fill_acks": (
         EXPECTED_MARKET_FILL_HASH,
         EXPECTED_MARKET_FILL_ACK_COUNT,
+    ),
+    # Audit P1 #5: PnL — PositionUpdate reconciliation over a deterministic
+    # fill/mark scenario (FIFO cost-basis math; closes the Inv-5 "PnL" clause).
+    "position_pnl": (
+        EXPECTED_POSITION_PNL_HASH,
+        EXPECTED_POSITION_PNL_COUNT,
     ),
 }
