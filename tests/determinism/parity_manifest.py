@@ -50,6 +50,10 @@ from tests.determinism.test_market_fill_replay import (
     EXPECTED_MARKET_FILL_ACK_COUNT,
     EXPECTED_MARKET_FILL_HASH,
 )
+from tests.determinism.test_multi_symbol_sensor_replay import (
+    EXPECTED_MULTI_SYMBOL_READING_COUNT,
+    EXPECTED_MULTI_SYMBOL_READING_HASH,
+)
 from tests.determinism.test_portfolio_order_replay import (
     EXPECTED_LEVEL4_PORTFOLIO_ORDER_COUNT,
     EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH,
@@ -158,5 +162,11 @@ LOCKED_PARITY_BASELINES: Final[dict[str, ParityEntry]] = {
     "signal_fires": (
         EXPECTED_SIGNAL_FIRES_HASH,
         EXPECTED_SIGNAL_FIRES_COUNT,
+    ),
+    # Audit P1 #8: cross-symbol SensorReading interleave (single-symbol
+    # fixtures cannot pin inter-symbol emission order / sequence allocation).
+    "multi_symbol_sensor_reading": (
+        EXPECTED_MULTI_SYMBOL_READING_HASH,
+        EXPECTED_MULTI_SYMBOL_READING_COUNT,
     ),
 }

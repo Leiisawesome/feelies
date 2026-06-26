@@ -12,6 +12,7 @@ from tests.determinism.test_cross_sectional_context_replay import _replay as xse
 from tests.determinism.test_hazard_exit_replay import _replay as hazard_exit_replay
 from tests.determinism.test_horizon_feature_snapshot_replay import _replay as snapshot_replay
 from tests.determinism.test_market_fill_replay import _replay as market_fill_replay
+from tests.determinism.test_multi_symbol_sensor_replay import _replay as multi_symbol_sensor_replay
 from tests.determinism.test_portfolio_order_replay import _replay as portfolio_order_replay
 from tests.determinism.test_position_pnl_replay import _replay as position_pnl_replay
 from tests.determinism.test_regime_hazard_replay import _replay as regime_hazard_replay
@@ -59,6 +60,7 @@ _REPLAY_BY_NAME = {
     "state_transition": state_transition_replay,
     "cross_sectional_context": xsect_context_replay,
     "signal_fires": signal_fires_replay,
+    "multi_symbol_sensor_reading": multi_symbol_sensor_replay,
 }
 
 
