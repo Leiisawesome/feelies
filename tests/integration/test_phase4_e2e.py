@@ -471,6 +471,75 @@ def test_phase4_e2e_final_positions_and_journal_are_deterministic() -> None:
     )
 
 
+# ── Locked end-to-end baselines (determinism-audit P1 #6) ──────────────
+#
+# The two-run tests above prove *intra-process* determinism (run twice →
+# identical output) but pin no committed value, so a change that
+# deterministically alters the end-to-end output would move both runs in
+# lockstep and pass undetected (audit honesty gap E.1).  The constants below
+# lock the values so deterministic drift is caught.
+#
+# This fixture's regime engine is intentionally uncalibrated
+# (``regime_calibration_max_quotes`` unset), so every ``P(state)`` entry gate
+# fails safe to OFF (Inv-11) and the pipeline emits **0 signals / 0 orders**
+# and an empty position book + trade journal **by design**; the composition
+# layer still emits one degenerate ``SizedPositionIntent`` (empty targets).
+# The locked *counts* are therefore regression guards — if a change calibrates
+# the regime, opens a gate, or otherwise makes the fixture trade, the count
+# flips and this fails loudly (investigate before re-baselining).  The
+# non-empty intent hash pins the real composition output.
+#
+# Because ``_build()`` boots the real :class:`Orchestrator` and runs a full
+# backtest, this is the only determinism baseline that exercises the
+# orchestrator itself — the per-layer parity replays deliberately bypass it,
+# so an orchestrator boot/import regression surfaces here (and only here).
+_EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+EXPECTED_E2E_SIGNAL_COUNT = 0
+EXPECTED_E2E_SIGNAL_HASH = _EMPTY_SHA256
+EXPECTED_E2E_INTENT_COUNT = 1
+EXPECTED_E2E_INTENT_HASH = "e1250a7e84eb1e102ab25c0777b308b4cf8f9354954f9088c07f6a113e04c24e"
+EXPECTED_E2E_ORDER_COUNT = 0
+EXPECTED_E2E_ORDER_HASH = _EMPTY_SHA256
+EXPECTED_E2E_POSITIONS_HASH = _EMPTY_SHA256
+EXPECTED_E2E_JOURNAL_HASH = _EMPTY_SHA256
+
+
+def test_phase4_e2e_matches_locked_baselines() -> None:
+    """End-to-end orchestrator-boot baseline (not just two-run identity)."""
+    orch, signals, intents, orders = _build()
+
+    assert len(signals) == EXPECTED_E2E_SIGNAL_COUNT, (
+        f"e2e signal count drift: expected {EXPECTED_E2E_SIGNAL_COUNT}, got {len(signals)} "
+        "— the fixture's gates fail safe to OFF; a non-zero count means "
+        "regime/gate semantics changed (investigate before re-baselining)"
+    )
+    assert _hash_signals(signals) == EXPECTED_E2E_SIGNAL_HASH
+
+    assert len(intents) == EXPECTED_E2E_INTENT_COUNT, (
+        f"e2e intent count drift: expected {EXPECTED_E2E_INTENT_COUNT}, got {len(intents)}"
+    )
+    assert _hash_intents(intents) == EXPECTED_E2E_INTENT_HASH, (
+        "Phase-4 e2e SizedPositionIntent baseline drift!\n"
+        f"  Expected: {EXPECTED_E2E_INTENT_HASH}\n"
+        f"  Actual:   {_hash_intents(intents)}\n"
+        "If intentional, update the constant in the same commit and justify."
+    )
+
+    assert len(orders) == EXPECTED_E2E_ORDER_COUNT, (
+        f"e2e order count drift: expected {EXPECTED_E2E_ORDER_COUNT}, got {len(orders)} "
+        "— a non-zero count means the fixture started trading (investigate)"
+    )
+    assert _hash_orders(orders) == EXPECTED_E2E_ORDER_HASH
+
+    assert _hash_positions_book(orch) == EXPECTED_E2E_POSITIONS_HASH, (
+        "Phase-4 e2e final position-book baseline drift"
+    )
+    assert _hash_trade_journal(orch) == EXPECTED_E2E_JOURNAL_HASH, (
+        "Phase-4 e2e trade-journal baseline drift"
+    )
+
+
 # ── PR-2b-iii contract: standalone-SIGNAL → OrderRequest ───────────────
 
 
