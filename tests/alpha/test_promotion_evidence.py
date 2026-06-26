@@ -1134,3 +1134,38 @@ class TestApplyGateThresholdsOverrides:
         assert per_alpha_layer.dsr_min == 1.5
         assert per_alpha_layer.paper_min_trading_days == 7
         assert per_alpha_layer.cpcv_min_folds == skill_defaults.cpcv_min_folds
+
+
+class TestMetadataToEvidenceReservedCoKeys:
+    """Audit P1-1: ``metadata_to_evidence`` must ignore non-evidence
+    co-keys (``reason``) that lifecycle writers merge alongside evidence.
+    """
+
+    def test_quarantine_shape_with_reason_round_trips(self) -> None:
+        # Exactly the shape AlphaLifecycle.quarantine(structured_evidence=)
+        # writes: free-form ``reason`` merged with evidence_to_metadata.
+        metadata: dict[str, object] = {"reason": "edge decay detected"}
+        metadata.update(
+            evidence_to_metadata(QuarantineTriggerEvidence(net_alpha_negative_days=12))
+        )
+        evidences = metadata_to_evidence(metadata)
+        assert len(evidences) == 1
+        ev = evidences[0]
+        assert isinstance(ev, QuarantineTriggerEvidence)
+        assert ev.net_alpha_negative_days == 12
+
+    def test_reason_only_metadata_is_treated_as_legacy(self) -> None:
+        # No schema_version → nothing to reconstruct (legacy/decommission).
+        assert metadata_to_evidence({"reason": "manual retire"}) == []
+
+    def test_genuinely_unknown_kind_still_rejected(self) -> None:
+        with pytest.raises(ValueError, match="unknown kind"):
+            metadata_to_evidence(
+                {"schema_version": EVIDENCE_SCHEMA_VERSION, "not_a_kind": {"x": 1}}
+            )
+
+    def test_reason_is_a_reserved_co_key(self) -> None:
+        from feelies.alpha.promotion_evidence import RESERVED_METADATA_KEYS
+
+        assert "reason" in RESERVED_METADATA_KEYS
+        assert "schema_version" in RESERVED_METADATA_KEYS

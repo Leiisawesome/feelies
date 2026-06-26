@@ -963,6 +963,26 @@ typed evidence dataclasses from the JSON metadata persisted on a
 :class:`feelies.alpha.promotion_ledger.PromotionLedgerEntry`."""
 
 
+RESERVED_METADATA_KEYS: frozenset[str] = frozenset({"schema_version", "reason"})
+"""Non-evidence metadata co-keys that may legitimately accompany F-2
+evidence sections in a ledger entry's ``metadata`` and therefore must be
+**ignored** (not treated as an unknown evidence ``kind``) by
+:func:`metadata_to_evidence`.
+
+* ``schema_version`` — the payload version stamp written by
+  :func:`evidence_to_metadata`.
+* ``reason`` — the free-form operator string that
+  :meth:`feelies.alpha.lifecycle.AlphaLifecycle.quarantine` (and
+  ``decommission``) always writes alongside any structured evidence
+  (``{"reason": ...}`` merged with ``evidence_to_metadata(*evs)``).
+
+Without this allow-list, replaying a quarantine-with-evidence entry
+raised ``ValueError: metadata carries unknown kind(s) ['reason']`` and
+``feelies promote replay-evidence`` mis-reported the healthy entry as a
+gate FAIL (exit 3).  Keep this in sync with the co-keys any lifecycle
+writer merges into evidence metadata."""
+
+
 def _reconstruct_research_acceptance(
     payload: Mapping[str, Any],
 ) -> ResearchAcceptanceEvidence:
@@ -1073,11 +1093,14 @@ def metadata_to_evidence(metadata: Mapping[str, Any]) -> list[object]:
         reconstruct = _RECONSTRUCTOR_BY_TYPE[ev_type]
         evidences.append(reconstruct(payload))
 
-    unknown = sorted(k for k in metadata.keys() if k != "schema_version" and k not in KIND_TO_TYPE)
+    unknown = sorted(
+        k for k in metadata.keys() if k not in RESERVED_METADATA_KEYS and k not in KIND_TO_TYPE
+    )
     if unknown:
         raise ValueError(
             f"metadata carries unknown kind(s) {unknown}; supported kinds: "
-            f"{sorted(KIND_TO_TYPE.keys())}"
+            f"{sorted(KIND_TO_TYPE.keys())} (reserved co-keys: "
+            f"{sorted(RESERVED_METADATA_KEYS)})"
         )
 
     return evidences
@@ -1294,6 +1317,7 @@ __all__ = (
     "KIND_TO_TYPE",
     "PaperWindowEvidence",
     "QuarantineTriggerEvidence",
+    "RESERVED_METADATA_KEYS",
     "ResearchAcceptanceEvidence",
     "RevalidationEvidence",
     "apply_gate_thresholds_overrides",
