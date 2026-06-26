@@ -107,6 +107,10 @@ def _strict_weakening_reasons(entry: dict[str, Any]) -> list[str]:
     reasons: list[str] = []
     if entry.get("ignore_errors"):
         reasons.append("ignore_errors=true")
+    # Per-module ``strict = false`` disables the entire strict bundle in
+    # one step — stronger than toggling any single flag below.
+    if entry.get("strict") is False:
+        reasons.append("strict=false")
     # Booleans that strict mode sets to ``true``; flipping any to ``false``
     # re-admits the corresponding class of un-checked code.
     for flag in (
