@@ -30,6 +30,10 @@ from __future__ import annotations
 
 from typing import Final
 
+from tests.determinism.test_cross_sectional_context_replay import (
+    EXPECTED_XSECT_CONTEXT_COUNT,
+    EXPECTED_XSECT_CONTEXT_HASH,
+)
 from tests.determinism.test_hazard_exit_replay import (
     EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_COUNT,
     EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH,
@@ -138,5 +142,11 @@ LOCKED_PARITY_BASELINES: Final[dict[str, ParityEntry]] = {
     "state_transition": (
         EXPECTED_STATE_TRANSITION_HASH,
         EXPECTED_STATE_TRANSITION_COUNT,
+    ),
+    # Audit P1 #7: CrossSectionalContext from the real UniverseSynchronizer
+    # (pins the SIGNAL→PORTFOLIO barrier fan-in + completeness + _ctx_seq).
+    "cross_sectional_context": (
+        EXPECTED_XSECT_CONTEXT_HASH,
+        EXPECTED_XSECT_CONTEXT_COUNT,
     ),
 }

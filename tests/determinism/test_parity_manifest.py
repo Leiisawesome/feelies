@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from tests.determinism import parity_manifest
+from tests.determinism.test_cross_sectional_context_replay import _replay as xsect_context_replay
 from tests.determinism.test_hazard_exit_replay import _replay as hazard_exit_replay
 from tests.determinism.test_horizon_feature_snapshot_replay import _replay as snapshot_replay
 from tests.determinism.test_market_fill_replay import _replay as market_fill_replay
@@ -55,6 +56,7 @@ _REPLAY_BY_NAME = {
     "market_fill_acks": market_fill_replay,
     "position_pnl": position_pnl_replay,
     "state_transition": state_transition_replay,
+    "cross_sectional_context": xsect_context_replay,
 }
 
 
