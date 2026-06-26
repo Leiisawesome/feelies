@@ -39,6 +39,7 @@ import time
 from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any, Literal, Mapping
 
@@ -89,6 +90,7 @@ from feelies.core.events import (
     StateTransition,
     SymbolHalted,
     Trade,
+    TrendMechanism,
 )
 from feelies.core.identifiers import SequenceGenerator, derive_order_id
 from feelies.core.state_machine import StateMachine, TransitionRecord
@@ -304,6 +306,17 @@ _FORCED_MARKET_EXIT_STRATEGIES: frozenset[str] = frozenset(
         "__session_flat__",
     }
 )
+
+# Panic-fill reason tag stamped on a forced-market-exit order built through
+# the intent pipeline so the backtest fill model prices it as a stop — extra
+# half-spread slippage / depleted L1 depth (see
+# ``execution/_fill_helpers.STOP_EXIT_REASONS``, which classifies on
+# ``OrderRequest.reason``, not ``strategy_id``).  ``__session_flat__`` is
+# intentionally absent: a scheduled EOD flatten is not a panic exit and fills
+# at ordinary liquidity (``SESSION_FLAT`` is not in the panic set).
+_FORCED_EXIT_PANIC_REASON: dict[str, str] = {
+    "__stop_exit__": "STOP_EXIT",
+}
 
 
 def _int_to_direction(sign: int) -> SignalDirection:
@@ -756,6 +769,14 @@ class Orchestrator:
         # without re-deriving the intent from fill order (Task 4).  Pruned
         # alongside ``_active_orders``.
         self._order_trading_intent: dict[str, str] = {}
+        # Maps (strategy_id, symbol) -> (trend_mechanism, expected_half_life)
+        # captured from the most recent SIGNAL-layer Signal so fill
+        # reconciliation can stamp the causal mechanism onto each
+        # ``TradeRecord`` (Inv-1 per-trade forensic attribution).  Pure side
+        # table — never read on the per-tick decision path.
+        self._last_signal_mechanism: dict[
+            tuple[str, str], tuple[TrendMechanism | None, int]
+        ] = {}
         # P4b: passive working-reduction orders awaiting a MARKET fallback.
         # order_id -> (symbol, side, original_qty).  When such an order
         # terminates unfilled (the router's resting timeout → CANCELLED /
@@ -827,6 +848,10 @@ class Orchestrator:
         # BT-16: RTH entry-fill suppression + close buying-power phase flip.
         self._trading_session_bounds: TradingSessionBounds | None = None
         self._rth_close_bp_flipped: bool = False
+        # NY session date the BP flip is currently armed for.  Tracked so a
+        # multi-day replay re-arms the flip (and reopens on the intraday cap)
+        # at each new session date instead of latching OVERNIGHT after day 1.
+        self._rth_bp_session_date: date | None = None
 
         # When True, entry/exit orders use LIMIT at BBO instead of
         # MARKET.  Stop-loss exits always use MARKET (fail-safe).
@@ -1097,7 +1122,7 @@ class Orchestrator:
     def _maybe_flip_buying_power_at_rth_close(self, quote: NBBOQuote) -> None:
         """BT-16: flip risk-engine buying-power phase at RTH close.
 
-        Once-per-session: the first quote with
+        Once-per-session-date: the first quote with
         ``exchange_timestamp_ns >= rth_close_ns`` transitions the risk
         engine to :attr:`BuyingPowerPhase.OVERNIGHT` so the 2× overnight
         multiplier is applied to any exits that linger past the close.
@@ -1105,24 +1130,38 @@ class Orchestrator:
         ``timestamp_ns`` so the flip aligns with the exchange-time RTH
         close used by router-side entry gating
         (``BacktestOrderRouter`` / ``PassiveLimitOrderRouter`` and
-        :class:`TradingSessionBounds`).  No-op when RTH gating is
-        disabled, the flip has already fired this session, or the risk
-        engine does not expose ``set_buying_power_phase``.
+        :class:`TradingSessionBounds`).
+
+        Multi-day replays run as a single booted session whose quotes span
+        several NY dates (``resolve_for_timestamp`` recomputes the close per
+        quote).  When the resolved session date advances, re-arm the flip and
+        reopen the day on the intraday cap — otherwise the day-1 OVERNIGHT flip
+        latches for the whole run and days 2+ trade their entire RTH session
+        under the 2× overnight multiplier.
+
+        No-op when RTH gating is disabled or the risk engine does not expose
+        ``set_buying_power_phase``.
         """
-        if self._rth_close_bp_flipped:
-            return
         bounds = self._trading_session_bounds
         if bounds is None:
             return
-        # Resolve the close for this quote's NY session date so a multi-day
-        # replay flips at each replayed day's actual close rather than the
-        # single booted ``session_date`` (which, for a CLI date range, is the
-        # stale ``event_calendar_path`` date — every replayed quote would
-        # otherwise read as already past-close and flip on the first tick).
         effective = bounds.resolve_for_timestamp(quote.exchange_timestamp_ns)
+        set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
+
+        # New NY session date → reopen on the intraday cap and re-arm the flip.
+        if effective.session_date != self._rth_bp_session_date:
+            self._rth_bp_session_date = effective.session_date
+            if self._rth_close_bp_flipped:
+                self._rth_close_bp_flipped = False
+                if callable(set_phase):
+                    from feelies.risk.buying_power import BuyingPowerPhase
+
+                    set_phase(BuyingPowerPhase.INTRADAY)
+
+        if self._rth_close_bp_flipped:
+            return
         if quote.exchange_timestamp_ns < effective.rth_close_ns:
             return
-        set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
         if not callable(set_phase):
             self._rth_close_bp_flipped = True
             return
@@ -1132,16 +1171,17 @@ class Orchestrator:
         self._rth_close_bp_flipped = True
 
     def _reset_buying_power_phase_for_session(self) -> None:
-        """BT-16: reset the once-per-session RTH-close BP flip state.
+        """BT-16: reset the RTH-close BP flip state at session start.
 
-        Clears the latch that gates :meth:`_maybe_flip_buying_power_at_rth_close`
-        and forces the risk engine back onto
-        :attr:`BuyingPowerPhase.INTRADAY` so a new session always opens
-        on the 4× intraday cap — even when the same orchestrator
-        instance is reused across runs and the previous run left the
-        engine flipped to ``OVERNIGHT`` after crossing the close.
+        Clears the latch (and the armed session date) that gate
+        :meth:`_maybe_flip_buying_power_at_rth_close` and forces the risk
+        engine back onto :attr:`BuyingPowerPhase.INTRADAY` so a new session
+        always opens on the 4× intraday cap — even when the same orchestrator
+        instance is reused across runs and the previous run left the engine
+        flipped to ``OVERNIGHT`` after crossing the close.
         """
         self._rth_close_bp_flipped = False
+        self._rth_bp_session_date = None
         set_phase = getattr(self._risk_engine, "set_buying_power_phase", None)
         if callable(set_phase):
             from feelies.risk.buying_power import BuyingPowerPhase
@@ -3663,6 +3703,10 @@ class Orchestrator:
                 order_type=OrderType.MARKET,
                 quantity=qty,
                 strategy_id="emergency_flatten",
+                # P1 (position-mgmt audit 2026-06-20): classify the lockdown
+                # flatten for panic slippage / depth depletion in the fill
+                # model (``STOP_EXIT_REASONS``).
+                reason="FORCE_FLATTEN",
             )
 
             try:
@@ -4742,6 +4786,10 @@ class Orchestrator:
                 strategy_id=intent.strategy_id,
                 is_short=is_short,
                 is_moc=is_moc,
+                # Stamp the panic-fill reason for forced exits (e.g.
+                # ``__stop_exit__`` → ``STOP_EXIT``) so the fill model prices
+                # the stop with slippage / depleted depth; "" for ordinary
+                # entries and discretionary exits leaves the fill unchanged.
                 g12_disclosed_cost_total_bps=(intent.signal.disclosed_cost_total_bps),
             ),
             None,
@@ -5757,6 +5805,10 @@ class Orchestrator:
                         )
 
             if self._trade_journal is not None:
+                _trade_mech, _trade_hl = self._last_signal_mechanism.get(
+                    (order.strategy_id, ack.symbol),
+                    (None, 0),
+                )
                 self._trade_journal.record(
                     TradeRecord(
                         order_id=ack.order_id,
@@ -5777,12 +5829,44 @@ class Orchestrator:
                             ack.order_id,
                             "",
                         ),
+                        trend_mechanism=_trade_mech,
+                        expected_half_life_seconds=_trade_hl,
+                        regime_state=self._regime_label_for(ack.symbol),
+                        # P1 (position-mgmt audit 2026-06-20): propagate
+                        # order lineage so post-trade forensics (Inv-13) can
+                        # split fills by forced-exit class / producing layer
+                        # without re-deriving it from the order stream.
+                        metadata={
+                            "order_reason": order.reason,
+                            "order_source_layer": order.source_layer,
+                        },
                     )
                 )
             if order.strategy_id not in _FORCED_MARKET_EXIT_STRATEGIES:
                 self._alpha_symbols_with_fills.add((order.strategy_id, ack.symbol))
 
         self._prune_terminal_orders()
+
+    def _regime_label_for(self, symbol: str) -> str:
+        """Dominant regime-state name for *symbol* at fill time (forensics).
+
+        Pure provenance capture for the trade journal: reads the regime
+        engine's already-computed posterior (no new computation, no
+        decision — Inv-5-safe) and returns its argmax state name.  Returns
+        "" when there is no engine or no posterior yet for the symbol, so a
+        cold or regime-less deployment simply records an empty regime label.
+        """
+        engine = self._regime_engine
+        if engine is None:
+            return ""
+        post = engine.current_state(symbol)
+        if not post:
+            return ""
+        names = list(engine.state_names)
+        if not names:
+            return ""
+        idx = max(range(len(post)), key=lambda i: post[i])
+        return names[idx] if idx < len(names) else ""
 
     def _distribute_fill_to_strategies(
         self,
@@ -5984,6 +6068,14 @@ class Orchestrator:
                 )
             return
         self._signal_buffer.append(event)
+        # Forensic provenance: remember this alpha/symbol's mechanism so the
+        # eventual fill's ``TradeRecord`` carries it (Inv-1).  Side table only,
+        # never read on the decision path.
+        if event.trend_mechanism is not None or event.expected_half_life_seconds:
+            self._last_signal_mechanism[(event.strategy_id, event.symbol)] = (
+                event.trend_mechanism,
+                event.expected_half_life_seconds,
+            )
         if not self._quote_tick_in_flight:
             self._carryover_signal_sequences.add(event.sequence)
 
@@ -6159,10 +6251,13 @@ class Orchestrator:
         Inv-11 (fail-safe): hazard exits are exit-direction-only by
         construction in ``HazardExitController`` (the order side is
         always opposite the position sign) so they cannot increase
-        exposure.  A defensive ``check_order`` runs for audit parity;
-        ``REJECT`` verdicts are logged and the order is still submitted
-        (mirroring emergency flatten).  See ``risk/engine.py`` for the
-        formal sole-gatekeeper carve-outs.
+        exposure.  A defensive ``check_order`` runs for audit parity.
+        The exit fail-safe is honored only for orders that verifiably
+        reduce the live position: a ``REJECT`` on a reducing order is
+        logged and the order is still submitted (mirroring emergency
+        flatten), but a ``REJECT`` on a non-reducing order is
+        authoritative and blocks submission.  See ``risk/engine.py`` for
+        the formal sole-gatekeeper carve-outs.
         """
         if not isinstance(event, OrderRequest):
             return
@@ -6182,11 +6277,47 @@ class Orchestrator:
             return
         self._hazard_submitted_order_ids.add(event.order_id)
         hv = self._risk_engine.check_order(event, self._positions)
+        # Verify the order actually de-risks before honoring the Inv-11 exit
+        # fail-safe below.  HazardExitController emits full-position exits by
+        # construction (side opposite the position sign, qty == |position|), so
+        # a legitimate hazard order always reduces |position|.  An order that
+        # does NOT reduce the live position has no exit fail-safe claim, so a
+        # formal REJECT on it is authoritative and must block submission — the
+        # submit decision must not rest on trusting the reason tag alone.
+        current_qty = self._positions.get(event.symbol).quantity
+        signed_qty = event.quantity if event.side == Side.BUY else -event.quantity
+        order_reduces = abs(current_qty + signed_qty) < abs(current_qty)
         # Do not broadcast FORCE_FLATTEN: downstream subscribers may treat it as
         # a global lockdown trigger while this handler still submits the exit
         # (Inv-11 fail-safe).  REJECT / ALLOW are fine for audit parity.
         if hv.action != RiskAction.FORCE_FLATTEN:
             self._bus.publish(hv)
+        if hv.action == RiskAction.REJECT and not order_reduces:
+            # Non-exit order carrying a hazard reason: REJECT is authoritative.
+            self._bus.publish(
+                Alert(
+                    timestamp_ns=self._clock.now_ns(),
+                    correlation_id=event.correlation_id,
+                    sequence=self._seq.next(),
+                    severity=AlertSeverity.CRITICAL,
+                    layer="kernel",
+                    alert_name="hazard_exit_nonreducing_reject_blocked",
+                    message=(
+                        "check_order returned REJECT on a hazard-tagged order "
+                        "that does not reduce the live position "
+                        f"(strategy_id={event.strategy_id!r}, symbol={event.symbol!r}, "
+                        f"current_qty={current_qty}, side={event.side.name}, "
+                        f"order_qty={event.quantity}, reason={hv.reason!r}) — "
+                        "blocking submission (REJECT is authoritative for "
+                        "non-exit orders)."
+                    ),
+                    context={
+                        "order_id": event.order_id,
+                        "risk_reason": hv.reason,
+                    },
+                )
+            )
+            return
         if hv.action == RiskAction.REJECT:
             self._bus.publish(
                 Alert(

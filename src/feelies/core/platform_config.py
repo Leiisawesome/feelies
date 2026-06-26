@@ -553,7 +553,15 @@ class PlatformConfig:
     #
     # ``composition_lambda_tc`` / ``composition_lambda_risk`` — turnover
     # and risk penalty weights in the CVXPY objective
-    # ``max w·α − λ_TC·‖Δw‖₁ − λ_risk·w'Σw``.
+    # ``max w·α − λ_TC·‖Δw‖₁ − λ_risk·w'Σw``.  These bind **only** under
+    # ``composition_optimizer_mode: ecos`` (audit P1-1); the default
+    # ``closed_form`` path is a deterministic gross rescale that ignores both
+    # penalties, so tuning them there has no effect on the desired book.
+    #
+    # ``composition_optimizer_mode`` — ``"closed_form"`` (default) selects the
+    # deterministic closed-form rescale; ``"ecos"`` selects the CVXPY/ECOS
+    # solver path (requires the ``[portfolio]`` extra and is subject to
+    # cross-platform solver-parity verification before production use).
     #
     # ``composition_max_universe_size`` — Phase-4 ships with a 10-symbol
     # reference universe.  Per §15.1 we hard-cap at 50 in v0.2 and defer
@@ -573,6 +581,15 @@ class PlatformConfig:
     composition_lambda_tc: float = 1.0
     composition_lambda_risk: float = 0.1
     composition_max_universe_size: int = 50
+    # ``composition_signal_max_age_seconds`` — stale-feeder gate (audit
+    # P0-5).  A feeder ``Signal`` whose event-time age at the PORTFOLIO
+    # barrier exceeds this window is dropped before completeness is
+    # counted and before it can enter a context, so a signal carried over
+    # from a much earlier boundary cannot inflate completeness.  ``None``
+    # (default) uses the context's own decision horizon as the window, so
+    # one fully-missed barrier drops the signal.
+    composition_signal_max_age_seconds: int | None = None
+    composition_optimizer_mode: str = "closed_form"
     enforce_layer_gates: bool = True
 
     # ── Audit R2: per-alpha risk-budget enforcement ───────────────
@@ -934,6 +951,18 @@ class PlatformConfig:
             raise ConfigurationError("composition_lambda_risk must be non-negative")
         if self.composition_max_universe_size <= 0:
             raise ConfigurationError("composition_max_universe_size must be positive")
+        if (
+            self.composition_signal_max_age_seconds is not None
+            and self.composition_signal_max_age_seconds <= 0
+        ):
+            raise ConfigurationError(
+                "composition_signal_max_age_seconds must be positive when set"
+            )
+        if self.composition_optimizer_mode not in ("closed_form", "ecos"):
+            raise ConfigurationError(
+                "composition_optimizer_mode must be 'closed_form' or 'ecos', "
+                f"got {self.composition_optimizer_mode!r}"
+            )
         if self.factor_loadings_dir is not None and not self.factor_loadings_dir.is_dir():
             raise ConfigurationError(
                 f"factor_loadings_dir does not exist: {self.factor_loadings_dir}"
@@ -1153,6 +1182,18 @@ class PlatformConfig:
             "composition_lambda_tc": self.composition_lambda_tc,
             "composition_lambda_risk": self.composition_lambda_risk,
             "composition_max_universe_size": self.composition_max_universe_size,
+            # Only serialized when non-default so legacy configs keep a
+            # bit-stable snapshot checksum (audit P0-5 / P1-1).
+            **(
+                {"composition_signal_max_age_seconds": self.composition_signal_max_age_seconds}
+                if self.composition_signal_max_age_seconds is not None
+                else {}
+            ),
+            **(
+                {"composition_optimizer_mode": self.composition_optimizer_mode}
+                if self.composition_optimizer_mode != "closed_form"
+                else {}
+            ),
             "enforce_layer_gates": self.enforce_layer_gates,
             "enforce_per_alpha_risk_budget": (self.enforce_per_alpha_risk_budget),
             # Workstream F-1: ledger path is folded as a basename only
@@ -1569,6 +1610,14 @@ class PlatformConfig:
             factor_loadings_refresh_seconds=int(data.get("factor_loadings_refresh_seconds", 0)),
             factor_loadings_max_age_seconds=int(
                 data.get("factor_loadings_max_age_seconds", 7 * 24 * 3600)
+            ),
+            composition_signal_max_age_seconds=(
+                int(data["composition_signal_max_age_seconds"])
+                if data.get("composition_signal_max_age_seconds") is not None
+                else None
+            ),
+            composition_optimizer_mode=str(
+                data.get("composition_optimizer_mode", "closed_form")
             ),
             factor_loadings_dir=(
                 Path(data["factor_loadings_dir"]) if data.get("factor_loadings_dir") else None

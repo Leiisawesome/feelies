@@ -188,6 +188,8 @@ class _DefaultPortfolioConstructor:
         "_feeder_strategy_ids",
         "_mechanism_caps",
         "_global_mechanism_cap",
+        "_neutralize",
+        "_consumes_mechanisms",
     )
 
     def __init__(
@@ -198,12 +200,16 @@ class _DefaultPortfolioConstructor:
         feeder_strategy_ids: tuple[str, ...] = (),
         mechanism_caps: Mapping[TrendMechanism, float] | None = None,
         global_mechanism_cap: float | None = None,
+        neutralize: bool = True,
+        consumes_mechanisms: tuple[TrendMechanism, ...] = (),
     ) -> None:
         self._engine_thunk = engine_thunk
         self._strategy_id = strategy_id
         self._feeder_strategy_ids = feeder_strategy_ids
         self._mechanism_caps: dict[TrendMechanism, float] = dict(mechanism_caps or {})
         self._global_mechanism_cap = global_mechanism_cap
+        self._neutralize = bool(neutralize)
+        self._consumes_mechanisms = tuple(consumes_mechanisms)
 
     def __call__(
         self,
@@ -228,6 +234,8 @@ class _DefaultPortfolioConstructor:
             mechanism_caps=self._mechanism_caps or None,
             global_mechanism_cap=self._global_mechanism_cap,
             decay_weighting_enabled=decay_override,
+            neutralize=self._neutralize,
+            consumes_mechanisms=self._consumes_mechanisms or None,
         )
         return intent
 

@@ -96,6 +96,26 @@ class RankResult:
     mechanism_breakdown: dict[TrendMechanism, float] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class SleeveRankResult:
+    """Per-mechanism standardized sleeves + combined provenance (audit P0-4).
+
+    ``weights_by_mech`` maps each mechanism family to a standardized
+    ``symbol -> weight`` vector built from *only* that family's signal
+    contributions (a symbol fed by two families appears in both sleeves).
+    The ``None`` key is the unattributed sleeve (signals with no declared
+    mechanism); it participates in the book but is exempt from family caps
+    and the breakdown.  ``raw_scores`` / ``decay_factors`` /
+    ``mechanism_by_symbol`` are the *combined* per-symbol values (summed raw,
+    min decay, largest-contribution family) carried for the decision hash.
+    """
+
+    weights_by_mech: dict[TrendMechanism | None, dict[str, float]]
+    raw_scores: dict[str, float]
+    decay_factors: dict[str, float]
+    mechanism_by_symbol: dict[str, TrendMechanism] = field(default_factory=dict)
+
+
 class CrossSectionalRanker:
     """Standardize cross-sectional alpha scores deterministically.
 
@@ -154,6 +174,7 @@ class CrossSectionalRanker:
         mechanism_caps: Mapping[TrendMechanism, float] | None = None,
         global_mechanism_cap: float | None = None,
         decay_weighting_enabled: bool | None = None,
+        consumes_mechanisms: tuple[TrendMechanism, ...] | None = None,
     ) -> RankResult:
         """Rank ``ctx``; return :class:`RankResult`.
 
@@ -177,6 +198,16 @@ class CrossSectionalRanker:
         serve one PORTFOLIO alpha with decay ON and another with decay OFF
         without the global ``any(...)`` leakage.  ``None`` (default) uses
         the instance flag (back-compat).
+
+        *consumes_mechanisms* is the PORTFOLIO alpha's declared
+        ``trend_mechanism.consumes`` family whitelist (audit P0-6).  When
+        non-empty, any consumed ``Signal`` whose ``trend_mechanism`` is a
+        concrete family **outside** the whitelist is excluded fail-safe
+        (its contribution is zeroed and it never enters the book), so an
+        undeclared mechanism family cannot be traded at runtime.  ``None``
+        or an empty tuple disables the filter (back-compat); a ``None``
+        mechanism is always allowed (it declares no family to police —
+        exit-only families are guarded separately).
         """
         caps = self._resolve_caps(mechanism_caps, global_mechanism_cap)
         decay_enabled = (
@@ -184,9 +215,164 @@ class CrossSectionalRanker:
             if decay_weighting_enabled is None
             else bool(decay_weighting_enabled)
         )
+        whitelist = frozenset(consumes_mechanisms) if consumes_mechanisms else None
         if feeder_strategy_ids and ctx.signals_by_strategy_by_symbol:
-            return self._rank_multi_feeder(ctx, feeder_strategy_ids, caps, decay_enabled)
-        return self._rank_legacy(ctx, caps, decay_enabled)
+            return self._rank_multi_feeder(
+                ctx, feeder_strategy_ids, caps, decay_enabled, whitelist
+            )
+        return self._rank_legacy(ctx, caps, decay_enabled, whitelist)
+
+    @staticmethod
+    def _is_allowed(
+        mech: TrendMechanism | None,
+        whitelist: frozenset[TrendMechanism] | None,
+    ) -> bool:
+        """``True`` when *mech* may enter the book under *whitelist* (P0-6)."""
+        if whitelist is None or mech is None:
+            return True
+        return mech in whitelist
+
+    def resolve_caps(
+        self,
+        mechanism_caps: Mapping[TrendMechanism, float] | None,
+        global_mechanism_cap: float | None,
+    ) -> tuple[dict[TrendMechanism, float], float]:
+        """Public wrapper over :meth:`_resolve_caps` for sleeve capping.
+
+        The composition engine resolves the same effective caps the ranker
+        would, then applies them structurally to the per-family sleeves
+        (audit P0-3/P0-4).
+        """
+        return self._resolve_caps(mechanism_caps, global_mechanism_cap)
+
+    def rank_sleeves(
+        self,
+        ctx: CrossSectionalContext,
+        *,
+        feeder_strategy_ids: tuple[str, ...] = (),
+        decay_weighting_enabled: bool | None = None,
+        consumes_mechanisms: tuple[TrendMechanism, ...] | None = None,
+    ) -> SleeveRankResult:
+        """Standardize each mechanism family into its own sleeve (audit P0-4).
+
+        Unlike :meth:`rank` (which standardizes the combined book and applies
+        caps in-place), this partitions each symbol's signal contributions by
+        mechanism family and z-scores each family over its *own* active
+        symbols, so a symbol fed by two families splits across two sleeves.
+        Capping is deferred to the engine (:func:`cap_family_vectors`) so it
+        is enforced structurally on the combined book and at emit time.
+        """
+        decay_enabled = (
+            self._decay_enabled if decay_weighting_enabled is None else bool(decay_weighting_enabled)
+        )
+        whitelist = frozenset(consumes_mechanisms) if consumes_mechanisms else None
+        raw_by_mech, raw_scores, decay_factors, mechanism_by_symbol = self._gather_raw_by_mech(
+            ctx,
+            tuple(feeder_strategy_ids),
+            decay_enabled,
+            whitelist,
+        )
+        weights_by_mech: dict[TrendMechanism | None, dict[str, float]] = {}
+        for mech, raw_map in raw_by_mech.items():
+            weights_by_mech[mech] = self._standardize(raw_map, ctx.universe, set(raw_map))
+        return SleeveRankResult(
+            weights_by_mech=weights_by_mech,
+            raw_scores=raw_scores,
+            decay_factors=decay_factors,
+            mechanism_by_symbol=mechanism_by_symbol,
+        )
+
+    def _raw_and_decay(
+        self,
+        sig: Signal,
+        ctx: CrossSectionalContext,
+        decay_enabled: bool,
+    ) -> tuple[float, float]:
+        """Signed raw score and decay multiplier for one *sig* at the barrier."""
+        sign = self._direction_to_sign(sig.direction)
+        raw = sign * sig.strength * sig.edge_estimate_bps
+        decay = 1.0
+        if decay_enabled and sig.expected_half_life_seconds > 0:
+            age_ns = max(0, ctx.timestamp_ns - sig.timestamp_ns)
+            age_s = age_ns / 1e9
+            hl = float(sig.expected_half_life_seconds)
+            decay = max(self._decay_floor, math.exp(-age_s / hl))
+            raw *= decay
+        return raw, decay
+
+    def _gather_raw_by_mech(
+        self,
+        ctx: CrossSectionalContext,
+        feeder_strategy_ids: tuple[str, ...],
+        decay_enabled: bool,
+        whitelist: frozenset[TrendMechanism] | None,
+    ) -> tuple[
+        dict[TrendMechanism | None, dict[str, float]],
+        dict[str, float],
+        dict[str, float],
+        dict[str, TrendMechanism],
+    ]:
+        """Per-(family, symbol) signed raw contribution + combined provenance.
+
+        Honours the consumes whitelist and the exit-only set (both drop a
+        contribution), and aggregates per-family raw within a symbol when
+        several feeders share a family.  ``None`` keys the unattributed
+        sleeve.  The combined maps (summed raw, min decay, largest-|raw|
+        family) feed the decision hash.
+        """
+        raw_by_mech: dict[TrendMechanism | None, dict[str, float]] = {}
+        raw_scores: dict[str, float] = {}
+        decay_factors: dict[str, float] = {}
+        mechanism_by_symbol: dict[str, TrendMechanism] = {}
+        use_multi = bool(feeder_strategy_ids) and bool(ctx.signals_by_strategy_by_symbol)
+
+        for symbol in ctx.universe:
+            contribs: list[tuple[TrendMechanism | None, float, float]] = []
+            if use_multi:
+                row = ctx.signals_by_strategy_by_symbol.get(symbol, {})
+                for sid in feeder_strategy_ids:
+                    sig = row.get(sid)
+                    if sig is None:
+                        continue
+                    mech = sig.trend_mechanism
+                    if not self._is_allowed(mech, whitelist) or mech in _EXIT_ONLY_MECHANISMS:
+                        continue
+                    raw, decay = self._raw_and_decay(sig, ctx, decay_enabled)
+                    contribs.append((mech, raw, decay))
+            else:
+                sig = ctx.signals_by_symbol.get(symbol)
+                if sig is not None:
+                    mech = sig.trend_mechanism
+                    if self._is_allowed(mech, whitelist) and mech not in _EXIT_ONLY_MECHANISMS:
+                        raw, decay = self._raw_and_decay(sig, ctx, decay_enabled)
+                        contribs.append((mech, raw, decay))
+
+            if not contribs:
+                raw_scores[symbol] = 0.0
+                decay_factors[symbol] = 0.0
+                continue
+
+            local_raw: dict[TrendMechanism | None, float] = {}
+            local_decay: dict[TrendMechanism | None, float] = {}
+            for mech, raw, decay in contribs:
+                local_raw[mech] = local_raw.get(mech, 0.0) + raw
+                local_decay[mech] = min(local_decay.get(mech, 1.0), decay)
+            for mech, raw in local_raw.items():
+                raw_by_mech.setdefault(mech, {})[symbol] = raw
+            raw_scores[symbol] = sum(local_raw.values())
+            decay_factors[symbol] = min(local_decay.values())
+            best_mech: TrendMechanism | None = None
+            best_abs = -1.0
+            for mech, raw in local_raw.items():
+                if mech is None:
+                    continue
+                if abs(raw) > best_abs:
+                    best_abs = abs(raw)
+                    best_mech = mech
+            if best_mech is not None:
+                mechanism_by_symbol[symbol] = best_mech
+
+        return raw_by_mech, raw_scores, decay_factors, mechanism_by_symbol
 
     def _resolve_caps(
         self,
@@ -214,6 +400,7 @@ class CrossSectionalRanker:
         ctx: CrossSectionalContext,
         caps: tuple[dict[TrendMechanism, float], float],
         decay_enabled: bool,
+        whitelist: frozenset[TrendMechanism] | None = None,
     ) -> RankResult:
         """Single-signal-per-symbol ranking (pre–fan-in behaviour)."""
         raw_scores: dict[str, float] = {}
@@ -229,6 +416,16 @@ class CrossSectionalRanker:
                 continue
 
             mech = sig.trend_mechanism
+            if not self._is_allowed(mech, whitelist):
+                # Undeclared mechanism family — exclude fail-safe (P0-6).
+                _logger.debug(
+                    "CrossSectionalRanker: excluding %s — mechanism %s outside consumes whitelist",
+                    symbol,
+                    mech.name if mech is not None else None,
+                )
+                raw_scores[symbol] = 0.0
+                decay_factors[symbol] = 0.0
+                continue
             if mech is not None:
                 mechanism_by_symbol[symbol] = mech
 
@@ -271,6 +468,7 @@ class CrossSectionalRanker:
         feeder_strategy_ids: tuple[str, ...],
         caps: tuple[dict[TrendMechanism, float], float],
         decay_enabled: bool,
+        whitelist: frozenset[TrendMechanism] | None = None,
     ) -> RankResult:
         """Aggregate ranked contribution across upstream SIGNAL alphas."""
         raw_scores: dict[str, float] = {}
@@ -294,6 +492,17 @@ class CrossSectionalRanker:
                     continue
                 found_any_signal = True
                 mech = sig.trend_mechanism
+                if not self._is_allowed(mech, whitelist):
+                    # Undeclared family on this feeder — drop only this
+                    # contribution; other feeders on the symbol stand (P0-6).
+                    _logger.debug(
+                        "CrossSectionalRanker: excluding %s feeder %s — "
+                        "mechanism %s outside consumes whitelist",
+                        symbol,
+                        sid,
+                        mech.name if mech is not None else None,
+                    )
+                    continue
                 if mech in _EXIT_ONLY_MECHANISMS:
                     if mech is not None:
                         exit_only_mech = mech
@@ -519,9 +728,110 @@ def compute_mechanism_breakdown(
     return {m: g / gross_total for m, g in by_mech.items()}
 
 
+def cap_family_vectors(
+    vectors_by_mech: Mapping["TrendMechanism | None", Mapping[str, float]],
+    caps: tuple[Mapping[TrendMechanism, float], float],
+) -> tuple[dict["TrendMechanism | None", dict[str, float]], dict[TrendMechanism, float]]:
+    """Scale per-family value vectors so each family's gross share ≤ its cap.
+
+    *vectors_by_mech* maps a mechanism family (``None`` = unattributed) to a
+    ``symbol -> signed value`` vector (weights or dollars).  A family's gross
+    is ``Σ|value|`` over its symbols; the denominator is the total over all
+    families.  Over-cap families are scaled down proportionally — iteratively,
+    because scaling one family lowers the denominator — until stable (max 5
+    passes; shares decrease monotonically).  The unattributed (``None``)
+    family and families whose effective cap is ``>= 1.0`` are never scaled.
+
+    Used for both the weight-space structural cap and the final dollar-space
+    backstop (audit P0-3/P0-4).  Deterministic: families are processed in
+    mechanism-name order.  Returns the scaled vectors and the realised
+    per-(real)-family gross-share breakdown.
+    """
+    per_family, default_cap = caps
+
+    def cap_for(mech: "TrendMechanism | None") -> float:
+        if mech is None:
+            return 1.0
+        return per_family.get(mech, default_cap)
+
+    scaled: dict[TrendMechanism | None, dict[str, float]] = {
+        m: dict(v) for m, v in vectors_by_mech.items()
+    }
+
+    def gross_of(mech: "TrendMechanism | None") -> float:
+        return sum(abs(x) for x in scaled[mech].values())
+
+    real_mechs = sorted((m for m in scaled if m is not None), key=lambda m: m.name)
+    for _ in range(5):
+        cur_total = sum(gross_of(m) for m in scaled)
+        if cur_total <= 0.0:
+            break
+        adjusted = False
+        for mech in real_mechs:
+            cap_share = cap_for(mech)
+            if cap_share >= 1.0:
+                continue
+            g = gross_of(mech)
+            if g <= 0.0 or g / cur_total <= cap_share:
+                continue
+            denom = (1.0 - cap_share) * g
+            if denom <= 0.0:
+                continue
+            s = cap_share * (cur_total - g) / denom
+            if s < 1.0:
+                scaled[mech] = {sym: x * s for sym, x in scaled[mech].items()}
+                adjusted = True
+        if not adjusted:
+            break
+
+    new_total = sum(gross_of(m) for m in scaled)
+    breakdown: dict[TrendMechanism, float] = {}
+    if new_total > 0.0:
+        for mech_key in scaled:
+            if mech_key is None:
+                continue
+            g = gross_of(mech_key)
+            if g > 0.0:
+                breakdown[mech_key] = g / new_total
+    return scaled, breakdown
+
+
+def compute_sleeve_breakdown(
+    gross_by_symbol: Mapping[str, float],
+    weights_by_mech: Mapping["TrendMechanism | None", Mapping[str, float]],
+) -> dict[TrendMechanism, float]:
+    """Realised per-family gross share, splitting mixed symbols (audit P0-4).
+
+    Each symbol's final gross (``|gross_by_symbol[s]|``) is attributed across
+    the families that built it, in proportion to each family's ``|weight|``
+    contribution to that symbol (so a 60/40 KYLE/INVENTORY symbol contributes
+    0.6 / 0.4 of its gross to the two families).  The unattributed (``None``)
+    family is counted in the denominator but never reported.
+    """
+    total = sum(abs(v) for v in gross_by_symbol.values())
+    if total <= 0.0:
+        return {}
+    by_mech: dict[TrendMechanism, float] = {}
+    for symbol, value in gross_by_symbol.items():
+        denom = sum(abs(weights_by_mech[m].get(symbol, 0.0)) for m in weights_by_mech)
+        if denom <= 0.0:
+            continue
+        for mech in weights_by_mech:
+            if mech is None:
+                continue
+            wv = weights_by_mech[mech].get(symbol, 0.0)
+            if wv == 0.0:
+                continue
+            by_mech[mech] = by_mech.get(mech, 0.0) + abs(value) * (abs(wv) / denom)
+    return {m: g / total for m, g in by_mech.items()}
+
+
 __all__ = [
     "CrossSectionalRanker",
     "RankResult",
     "RankedAlpha",
+    "SleeveRankResult",
+    "cap_family_vectors",
     "compute_mechanism_breakdown",
+    "compute_sleeve_breakdown",
 ]

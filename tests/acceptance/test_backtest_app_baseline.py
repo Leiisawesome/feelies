@@ -101,9 +101,15 @@ _BASELINE_CONFIG = Path("configs/bt_app.yaml")
 #   uv run python scripts/run_backtest.py --config configs/bt_app.yaml \
 #       --symbol APP --date 2026-03-26
 # The data-free config-contract hash was recomputed for the flipped snapshot.
-_BASELINE_CONFIG_HASH = "0b46397723e95823c780b2c7e6ea2049d62163fea616b651e637c3abefba1236"
-_BASELINE_NET_PNL = Decimal("69.06")
-_BASELINE_FILL_COUNT = 6
+# Re-baked again on 2026-06-24 for the forced-exit reason audit (P1): the
+# stop-loss path now stamps the canonical ``STOP_EXIT`` order reason, which
+# changes the replayed APP/2026-03-26 trade path to 4 fills and a net P&L of
+# $19.64 while leaving the config-contract hash unchanged.
+_BASELINE_CONFIG_HASH = (
+    "0b46397723e95823c780b2c7e6ea2049d62163fea616b651e637c3abefba1236"
+)
+_BASELINE_NET_PNL = Decimal("19.64")
+_BASELINE_FILL_COUNT = 4
 
 
 def _load_runner():

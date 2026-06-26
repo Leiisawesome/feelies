@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Iterator, Protocol
 
-from feelies.core.events import Side
+from feelies.core.events import Side, TrendMechanism
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -47,17 +47,29 @@ class TradeRecord:
     realized_pnl: Decimal
     correlation_id: str
     trading_intent: str = ""  # TradingIntent.name at order submission time
+    # Forensic provenance (Inv-1 / Inv-13): the causal mechanism and the
+    # regime in effect at fill time, captured on the record so post-trade
+    # attribution is a pure, causal function of the journal — no live-engine
+    # lookups at audit time.  All default to "unspecified" so existing
+    # producers and tests remain valid (v0.2-compatible).
+    trend_mechanism: TrendMechanism | None = None
+    expected_half_life_seconds: int = 0
+    regime_state: str = ""
     metadata: dict[str, str] = field(default_factory=dict)
 
     @property
     def net_pnl(self) -> Decimal:
-        """Audit F-M-21: realized PnL net of fees.
+        """Audit F-M-21: realized PnL net of explicit fees.
 
-        ``realized_pnl`` is mid-to-mid by convention (the cost model
-        records spread cost into ``fees``, not into the fill_price).
-        Consumers computing economic P&L must subtract fees; this
-        property does it correctly so naive consumers don't over-state
-        net P&L by the spread component.
+        Under the BT-3 cost convention (see
+        :class:`feelies.portfolio.position_store.Position`) a taker fill
+        executes at the crossed price (BUY lifts the ask, SELL hits the bid),
+        so ``realized_pnl`` already INCLUDES the half-spread paid to cross — it
+        is not mid-to-mid, and ``fees`` carries no separate ``spread_cost``.
+        ``fees`` holds the explicit charges only (commission, regulatory/TAF,
+        and any forced-exit panic slippage).  ``realized_pnl - fees`` therefore
+        nets those explicit charges off a PnL that already reflects the spread;
+        consumers must not subtract a spread component a second time.
         """
         return self.realized_pnl - self.fees
 

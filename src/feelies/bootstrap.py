@@ -1956,6 +1956,7 @@ def _create_composition_layer(
         ctx_sequence_generator=ctx_seq,
         signal_horizons=signal_horizons,
         upstream_strategy_ids=upstream_ids,
+        signal_max_age_seconds=config.composition_signal_max_age_seconds,
     )
     synchronizer.attach()
 
@@ -1976,6 +1977,10 @@ def _create_composition_layer(
         capital_usd=capital_usd,
         lambda_tc=config.composition_lambda_tc,
         lambda_risk=config.composition_lambda_risk,
+        # Audit P1-1: the optimizer path is selected explicitly by config, not
+        # by whether cvxpy happens to be importable.  ``closed_form`` (default)
+        # ignores the lambda penalties; ``ecos`` engages the solver objective.
+        require_solver=(config.composition_optimizer_mode == "ecos"),
     )
 
     decay_enabled = any(
@@ -2015,6 +2020,8 @@ def _create_composition_layer(
                 feeder_strategy_ids=module.depends_on_signals,
                 mechanism_caps=module.mechanism_caps,
                 global_mechanism_cap=module.max_share_of_gross,
+                neutralize=module.factor_neutralization_disclosed,
+                consumes_mechanisms=module.consumes_mechanisms,
             )
         engine.register(
             RegisteredPortfolioAlpha(
