@@ -1429,8 +1429,10 @@ def _consumed_value_keys_from_signal_source(source: str | None) -> frozenset[str
             and node.func.value.attr == "values"
         ):
             recognised.add(id(node.func.value))
-            if node.args and isinstance(node.args[0], ast.Constant) and isinstance(
-                node.args[0].value, str
+            if (
+                node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
             ):
                 keys.add(node.args[0].value)
             else:
@@ -1452,7 +1454,11 @@ def _consumed_value_keys_from_signal_source(source: str | None) -> frozenset[str
     # (e.g. ``snapshot.values.items()``, ``v = snapshot.values``) means we
     # cannot be sure we captured every consumed key → fall back conservatively.
     for node in ast.walk(tree):
-        if isinstance(node, ast.Attribute) and node.attr == "values" and id(node) not in recognised:
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr == "values"
+            and id(node) not in recognised
+        ):
             return None
 
     return frozenset(keys)
