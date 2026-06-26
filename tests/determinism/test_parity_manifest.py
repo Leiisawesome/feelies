@@ -21,6 +21,7 @@ from tests.determinism.test_regime_state_replay import (
     _hash_regime_stream,
 )
 from tests.determinism.test_sensor_reading_replay import _replay as sensor_replay
+from tests.determinism.test_signal_fires_replay import _replay as signal_fires_replay
 from tests.determinism.test_signal_replay import _replay as signal_replay
 from tests.determinism.test_state_transition_replay import _replay as state_transition_replay
 from tests.determinism.test_sized_intent_replay import _replay as intent_replay
@@ -57,6 +58,7 @@ _REPLAY_BY_NAME = {
     "position_pnl": position_pnl_replay,
     "state_transition": state_transition_replay,
     "cross_sectional_context": xsect_context_replay,
+    "signal_fires": signal_fires_replay,
 }
 
 

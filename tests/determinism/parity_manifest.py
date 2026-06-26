@@ -70,6 +70,10 @@ from tests.determinism.test_sensor_reading_replay import (
     EXPECTED_LEVEL4_READING_COUNT,
     EXPECTED_LEVEL4_READING_HASH,
 )
+from tests.determinism.test_signal_fires_replay import (
+    EXPECTED_SIGNAL_FIRES_COUNT,
+    EXPECTED_SIGNAL_FIRES_HASH,
+)
 from tests.determinism.test_signal_replay import (
     EXPECTED_LEVEL2_SIGNAL_COUNT,
     EXPECTED_LEVEL2_SIGNAL_HASH,
@@ -148,5 +152,11 @@ LOCKED_PARITY_BASELINES: Final[dict[str, ParityEntry]] = {
     "cross_sectional_context": (
         EXPECTED_XSECT_CONTEXT_HASH,
         EXPECTED_XSECT_CONTEXT_COUNT,
+    ),
+    # Audit P1 #4: non-empty Signal emission from the real HorizonSignalEngine
+    # (the level2_signal baseline pins only the empty stream).
+    "signal_fires": (
+        EXPECTED_SIGNAL_FIRES_HASH,
+        EXPECTED_SIGNAL_FIRES_COUNT,
     ),
 }
