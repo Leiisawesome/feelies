@@ -28,6 +28,13 @@ from feelies.core.events import Event, NBBOQuote, Trade
 _TYPE_QUOTE = "NBBOQuote"
 _TYPE_TRADE = "Trade"
 
+# On-disk event schema version.  Written into every serialized record and
+# validated on load so schema evolution is explicit (Inv-7) rather than a
+# silent ``TypeError`` from a future field.  Records written before this tag
+# existed carry no ``__schema_version__`` key and are treated as version 1,
+# so existing disk caches remain loadable (DiskEventCache backward-compat).
+_SCHEMA_VERSION = 1
+
 
 class EventSerializer(Protocol):
     """Serialize and deserialize typed events with full fidelity.
@@ -62,6 +69,7 @@ def event_to_dict(event: NBBOQuote | Trade) -> dict[str, Any]:
     """
     d: dict[str, Any] = {
         "__type__": _TYPE_QUOTE if isinstance(event, NBBOQuote) else _TYPE_TRADE,
+        "__schema_version__": _SCHEMA_VERSION,
     }
     for name in event.__dataclass_fields__:
         val = getattr(event, name)
@@ -85,10 +93,25 @@ def dict_to_event(d: dict[str, Any]) -> NBBOQuote | Trade:
     dataclass field type a string at this layer, so we cannot rely on
     runtime ``isinstance`` of the declared type.
 
-    Raises ``ValueError`` if ``__type__`` is missing or unknown.
+    Forward-compatible by design: a record from a newer build that carries
+    fields this build does not know about is reconstructed by ignoring the
+    unknown fields (additive evolution), rather than raising.  An unknown
+    ``__schema_version__`` *is* rejected, since a version bump signals a
+    non-additive change this build cannot safely interpret.
+
+    Raises ``ValueError`` if ``__type__`` is missing/unknown, if the
+    ``__schema_version__`` is unsupported, or if the record cannot be
+    reconstructed into the target event (e.g. a required field is absent).
     """
     work = dict(d)
     type_tag = work.pop("__type__", None)
+    # Absent tag ⇒ legacy record written before versioning existed (== v1).
+    schema_version = work.pop("__schema_version__", _SCHEMA_VERSION)
+    if schema_version != _SCHEMA_VERSION:
+        raise ValueError(
+            f"unsupported event __schema_version__: {schema_version!r} "
+            f"(this build reads v{_SCHEMA_VERSION})"
+        )
     if type_tag == _TYPE_QUOTE:
         cls: type[NBBOQuote | Trade] = NBBOQuote
     elif type_tag == _TYPE_TRADE:
@@ -105,11 +128,24 @@ def dict_to_event(d: dict[str, Any]) -> NBBOQuote | Trade:
         if "Decimal" in ft_str:
             if val is not None:
                 work[name] = Decimal(str(val))
-        elif "tuple[int" in ft_str:
+        elif "tuple" in ft_str:
+            # Any tuple field (tuple[int, ...], tuple[str, ...], …): JSON
+            # decodes tuples as lists, so restore tuple identity for every
+            # element type, not just int (audit P2-1 — prevents list/tuple
+            # drift breaking Inv-5 round-trip equality).
             if isinstance(val, list):
                 work[name] = tuple(val)
 
-    return cls(**work)
+    # Drop any field this build does not recognise (forward-schema record)
+    # so reconstruction never raises on an unexpected keyword.
+    known = cls.__dataclass_fields__
+    clean = {k: v for k, v in work.items() if k in known}
+    try:
+        return cls(**clean)
+    except TypeError as exc:
+        # Missing required field / wrong arity: corrupt record per the
+        # deserialize contract — surface as ValueError, not TypeError.
+        raise ValueError(f"cannot reconstruct {type_tag} event: {exc}") from exc
 
 
 class JsonLineEventSerializer:

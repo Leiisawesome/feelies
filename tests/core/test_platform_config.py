@@ -139,6 +139,16 @@ class TestSnapshot:
         snap2 = cfg.snapshot()
         assert snap1.checksum == snap2.checksum
 
+    def test_snapshot_ts_ns_is_injectable_and_excluded_from_checksum(self) -> None:
+        # ts_ns gives a deterministic provenance stamp (Inv-10) and must not
+        # influence the checksum (Inv-5) — audit P1-1.
+        cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
+        snap_a = cfg.snapshot(ts_ns=123)
+        snap_b = cfg.snapshot(ts_ns=456)
+        assert snap_a.timestamp_ns == 123
+        assert snap_b.timestamp_ns == 456
+        assert snap_a.checksum == snap_b.checksum
+
     def test_different_configs_different_checksums(self) -> None:
         cfg_a = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
         cfg_b = PlatformConfig(symbols=frozenset({"MSFT"}), alpha_specs=[Path("x.yaml")])
@@ -192,6 +202,50 @@ account_equity: 500000
         (tmp_path / "bad.yaml").write_text("just a string")
         with pytest.raises(ConfigurationError, match="root must be a YAML mapping"):
             PlatformConfig.from_yaml(tmp_path / "bad.yaml")
+
+    def test_int_field_for_float_field_is_accepted(self, tmp_path: Path) -> None:
+        # int → float widening is the one allowed coercion (audit P1-3).
+        (tmp_path / "c.yaml").write_text(
+            "symbols: [AAPL]\nalpha_specs: [x.yaml]\naccount_equity: 500000\n"
+        )
+        cfg = PlatformConfig.from_yaml(tmp_path / "c.yaml")
+        assert cfg.account_equity == 500_000.0
+
+    def test_quoted_string_bool_rejected(self, tmp_path: Path) -> None:
+        # bool("false") is True — the footgun (audit P1-3).
+        (tmp_path / "c.yaml").write_text(
+            'symbols: [AAPL]\nalpha_specs: [x.yaml]\nenforce_trend_mechanism: "false"\n'
+        )
+        with pytest.raises(ConfigurationError, match="must be a boolean"):
+            PlatformConfig.from_yaml(tmp_path / "c.yaml")
+
+    def test_float_for_int_field_rejected(self, tmp_path: Path) -> None:
+        # int(5.7) silently truncates — reject instead (audit P1-3).
+        (tmp_path / "c.yaml").write_text(
+            "symbols: [AAPL]\nalpha_specs: [x.yaml]\nrisk_max_position_per_symbol: 5.7\n"
+        )
+        with pytest.raises(ConfigurationError, match="must be an integer"):
+            PlatformConfig.from_yaml(tmp_path / "c.yaml")
+
+    def test_string_for_number_field_rejected(self, tmp_path: Path) -> None:
+        (tmp_path / "c.yaml").write_text(
+            'symbols: [AAPL]\nalpha_specs: [x.yaml]\naccount_equity: "50000"\n'
+        )
+        with pytest.raises(ConfigurationError, match="must be a number"):
+            PlatformConfig.from_yaml(tmp_path / "c.yaml")
+
+    def test_unknown_key_warns_not_raises(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # A typo'd override key would silently no-op; we warn loudly but
+        # still load (audit P1-4).
+        (tmp_path / "c.yaml").write_text(
+            "symbols: [AAPL]\nalpha_specs: [x.yaml]\ncost_stress_multipler: 2.0\n"
+        )
+        with caplog.at_level("WARNING"):
+            cfg = PlatformConfig.from_yaml(tmp_path / "c.yaml")
+        assert cfg.cost_stress_multiplier == 1.0  # default kept (typo ignored)
+        assert any("unrecognized config key" in r.message for r in caplog.records)
 
     def test_paper_mode_parses(self, tmp_path: Path) -> None:
         yaml_content = "symbols: [AAPL]\nmode: PAPER\nalpha_specs: [x.yaml]\n"
