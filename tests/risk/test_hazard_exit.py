@@ -466,7 +466,10 @@ def test_spike_matches_regimes_helper():
     assert _spike_matches_regimes("normal", "vol_breakout", ()) is True
     # Transition match / non-match.
     assert _spike_matches_regimes("normal", "vol_breakout", ("normal -> vol_breakout",)) is True
-    assert _spike_matches_regimes("normal", "compression_clustering", ("normal -> vol_breakout",)) is False
+    assert (
+        _spike_matches_regimes("normal", "compression_clustering", ("normal -> vol_breakout",))
+        is False
+    )
     # Bare departing-state match (any incoming, incl. None/tied).
     assert _spike_matches_regimes("normal", None, ("normal",)) is True
     assert _spike_matches_regimes("compression_clustering", "normal", ("normal",)) is False

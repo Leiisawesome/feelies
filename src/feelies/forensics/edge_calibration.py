@@ -145,9 +145,7 @@ class EdgeCalibrationStore:
         payload = {
             "schema_version": CALIBRATION_SCHEMA_VERSION,
             "version": version,
-            "factors": {
-                sid: asdict(calibrations[sid]) for sid in sorted(calibrations)
-            },
+            "factors": {sid: asdict(calibrations[sid]) for sid in sorted(calibrations)},
         }
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._path.write_text(

@@ -543,9 +543,7 @@ class TestSizedIntentCumulativeGrossCap:
         assert {o.symbol for o in result.orders} == {"AAPL"}
         assert result.requires_global_risk_escalation is False
 
-    def test_both_legs_pass_when_aggregate_within_cap(
-        self, store: MemoryPositionStore
-    ) -> None:
+    def test_both_legs_pass_when_aggregate_within_cap(self, store: MemoryPositionStore) -> None:
         cfg = RiskConfig(
             max_position_per_symbol=100_000,
             max_gross_exposure_pct=10.0,
@@ -644,7 +642,9 @@ class TestRegimeMissingDataFailsSafe:
         verdict = engine.check_signal(_make_signal(), store)
         assert verdict.action == RiskAction.REJECT
 
-    def test_no_engine_still_full_limit(self, config: RiskConfig, store: MemoryPositionStore) -> None:
+    def test_no_engine_still_full_limit(
+        self, config: RiskConfig, store: MemoryPositionStore
+    ) -> None:
         engine = BasicRiskEngine(config, regime_engine=None)
         store.update("AAPL", 500, Decimal("10"))
         verdict = engine.check_signal(_make_signal(), store)

@@ -16,7 +16,9 @@ from feelies.storage.trade_journal import TradeRecord
 _SEQ = 0
 
 
-def _tr(strategy_id: str, realized_pnl: float, *, qty: int = 50, price: float = 100.0) -> TradeRecord:
+def _tr(
+    strategy_id: str, realized_pnl: float, *, qty: int = 50, price: float = 100.0
+) -> TradeRecord:
     # edge_bps = realized_pnl / (price*qty) * 1e4 = realized_pnl * 2 (at 100/50)
     global _SEQ
     _SEQ += 1

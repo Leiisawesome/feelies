@@ -1547,9 +1547,7 @@ class PlatformConfig:
             realized_cost_escalation_enabled=bool(
                 data.get("realized_cost_escalation_enabled", False)
             ),
-            realized_cost_escalation_streak=int(
-                data.get("realized_cost_escalation_streak", 3)
-            ),
+            realized_cost_escalation_streak=int(data.get("realized_cost_escalation_streak", 3)),
             cache_dir=Path(cache_dir_raw) if cache_dir_raw else None,
             session_open_ns=session_open_ns,
             horizons_seconds=horizons_seconds,

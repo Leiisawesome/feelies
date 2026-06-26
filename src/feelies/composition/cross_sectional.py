@@ -180,7 +180,9 @@ class CrossSectionalRanker:
         """
         caps = self._resolve_caps(mechanism_caps, global_mechanism_cap)
         decay_enabled = (
-            self._decay_enabled if decay_weighting_enabled is None else bool(decay_weighting_enabled)
+            self._decay_enabled
+            if decay_weighting_enabled is None
+            else bool(decay_weighting_enabled)
         )
         if feeder_strategy_ids and ctx.signals_by_strategy_by_symbol:
             return self._rank_multi_feeder(ctx, feeder_strategy_ids, caps, decay_enabled)

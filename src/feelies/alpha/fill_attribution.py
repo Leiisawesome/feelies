@@ -104,9 +104,7 @@ class FillAttributionLedger:
             return []
 
         sign = 1 if record.net_side == Side.BUY else -1
-        prev_cum = self._cumulative_allocations.get(
-            order_id, [0] * len(record.contributions)
-        )
+        prev_cum = self._cumulative_allocations.get(order_id, [0] * len(record.contributions))
         prev_total = sum(prev_cum)
         new_cum = _largest_remainder_allocate(
             prev_total + filled_quantity,

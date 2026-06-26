@@ -22,7 +22,9 @@ from feelies.storage.trade_journal import TradeRecord
 _SEQ = 0
 
 
-def _tr(strategy_id: str, realized_pnl: float, fees: float, *, qty: int = 50, price: float = 100.0) -> TradeRecord:
+def _tr(
+    strategy_id: str, realized_pnl: float, fees: float, *, qty: int = 50, price: float = 100.0
+) -> TradeRecord:
     global _SEQ
     _SEQ += 1
     return TradeRecord(
@@ -50,10 +52,14 @@ def _live(alpha_id: str, clock: SimulatedClock) -> AlphaLifecycle:
         gate_requirements=GateRequirements(paper_min_days=1),
     )
     lc.promote_to_paper(
-        PromotionEvidence(schema_valid=True, determinism_test_passed=True, feature_values_finite=True)
+        PromotionEvidence(
+            schema_valid=True, determinism_test_passed=True, feature_values_finite=True
+        )
     )
     lc.promote_to_live(
-        PromotionEvidence(paper_days=10, paper_sharpe=1.0, paper_hit_rate=0.55, cost_model_validated=True)
+        PromotionEvidence(
+            paper_days=10, paper_sharpe=1.0, paper_hit_rate=0.55, cost_model_validated=True
+        )
     )
     assert lc.is_live is True
     return lc

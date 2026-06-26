@@ -156,7 +156,9 @@ class RegimeDiagnostics:
     vol_bound: float = 0.30
 
 
-def _pairwise_separation(mu: Sequence[float], sigma: Sequence[float]) -> dict[tuple[int, int], float]:
+def _pairwise_separation(
+    mu: Sequence[float], sigma: Sequence[float]
+) -> dict[tuple[int, int], float]:
     out: dict[tuple[int, int], float] = {}
     k = len(mu)
     for i in range(k):
@@ -406,7 +408,9 @@ def simulate_latch_on_fraction(
     # neutral 0.0 / z=0 / pct=0.5 fill below never shadows declared margins —
     # ``RegimeGate.evaluate`` will overlay the margin values on top.
     referenced = gate.binding_identifier_names()
-    sensor_values = {name: 0.0 for name in referenced if not name.endswith(("_zscore", "_percentile"))}
+    sensor_values = {
+        name: 0.0 for name in referenced if not name.endswith(("_zscore", "_percentile"))
+    }
     zscores = {name[: -len("_zscore")]: 0.0 for name in referenced if name.endswith("_zscore")}
     percentiles = {
         name[: -len("_percentile")]: 0.5 for name in referenced if name.endswith("_percentile")
@@ -438,7 +442,9 @@ def format_report(d: RegimeDiagnostics, *, label: str = "") -> str:
     lines.append(f"min pairwise separation d = {d.min_separation:.3f}{flag}")
     lines.append("  " + "  ".join(f"{k}={v:.3f}" for k, v in d.pairwise_separation.items()))
     lines.append("argmax occupancy: " + "  ".join(f"{k}={v:.1%}" for k, v in d.occupancy.items()))
-    lines.append("P(state) mean:    " + "  ".join(f"{k}={v:.3f}" for k, v in d.p_state_mean.items()))
+    lines.append(
+        "P(state) mean:    " + "  ".join(f"{k}={v:.3f}" for k, v in d.p_state_mean.items())
+    )
     lines.append(
         f"posterior entropy: mean={d.entropy_mean:.3f} max={d.entropy_max:.3f} "
         f"(ln K={math.log(len(d.state_names)):.3f})  frac>0.95={d.entropy_frac_gt_095:.1%}"
@@ -614,11 +620,15 @@ def _build_engine(config_path: Path | None) -> RegimeEngine:
 
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--config", type=Path, default=None, help="PlatformConfig YAML (engine + calibration)")
+    ap.add_argument(
+        "--config", type=Path, default=None, help="PlatformConfig YAML (engine + calibration)"
+    )
     ap.add_argument("--symbol", action="append", default=[])
     ap.add_argument("--date", action="append", default=[])
     ap.add_argument("--cache-dir", type=Path, default=None)
-    ap.add_argument("--event-log", type=Path, default=None, help="raw NBBO JSONL (skips the cache)")
+    ap.add_argument(
+        "--event-log", type=Path, default=None, help="raw NBBO JSONL (skips the cache)"
+    )
     ap.add_argument("--horizon", type=int, default=120)
     ap.add_argument("--vol-bound", type=float, default=0.30)
     ap.add_argument(
@@ -699,18 +709,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("\n== Latched ON-fraction at horizon cadence (regime terms isolated) ==")
         results: dict[str, float] = {}
         for name, on, off, hyst in pairs:
-            frac, nb = simulate_latch_on_fraction(
-                diag.boundary_views, on, off, hysteresis=hyst
-            )
+            frac, nb = simulate_latch_on_fraction(diag.boundary_views, on, off, hysteresis=hyst)
             results[name] = frac
             print(f"  {name:<10} ON {frac:.2%} of {nb} boundaries")
             print(f"             on:  {on.strip()}")
             print(f"             off: {off.strip()}")
             if hyst:
-                print(
-                    "             hysteresis: "
-                    + ", ".join(f"{k}={v}" for k, v in hyst.items())
-                )
+                print("             hysteresis: " + ", ".join(f"{k}={v}" for k, v in hyst.items()))
         if "baseline" in results and "candidate" in results and results["baseline"] > 0:
             ratio = results["candidate"] / results["baseline"]
             print(

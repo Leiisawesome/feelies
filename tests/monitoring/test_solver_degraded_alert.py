@@ -13,7 +13,9 @@ from feelies.core.identifiers import SequenceGenerator
 from feelies.monitoring.horizon_metrics import HorizonMetricsCollector
 
 
-def _intent(solver_status: str, *, strategy_id: str = "port_a", ts_ns: int = 1_000) -> SizedPositionIntent:
+def _intent(
+    solver_status: str, *, strategy_id: str = "port_a", ts_ns: int = 1_000
+) -> SizedPositionIntent:
     return SizedPositionIntent(
         timestamp_ns=ts_ns,
         sequence=0,
@@ -53,7 +55,14 @@ def test_degraded_status_raises_alert() -> None:
 
 def test_healthy_statuses_do_not_alert() -> None:
     bus, alerts = _collector()
-    for status in ("CLOSED_FORM", "optimal", "optimal_inaccurate", "ZERO_GROSS", "EMPTY_UNIVERSE", ""):
+    for status in (
+        "CLOSED_FORM",
+        "optimal",
+        "optimal_inaccurate",
+        "ZERO_GROSS",
+        "EMPTY_UNIVERSE",
+        "",
+    ):
         bus.publish(_intent(status))
     assert _solver_alerts(alerts) == []
 

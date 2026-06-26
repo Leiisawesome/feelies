@@ -201,9 +201,7 @@ class CompositionEngine:
             self._emit_degenerate(
                 registered,
                 ctx,
-                reason=(
-                    f"completeness {ctx.completeness:.3f} below threshold {threshold:.3f}"
-                ),
+                reason=(f"completeness {ctx.completeness:.3f} below threshold {threshold:.3f}"),
             )
             return
 

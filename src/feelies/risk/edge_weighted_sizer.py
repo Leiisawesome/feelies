@@ -206,8 +206,12 @@ class EdgeWeightedSizer:
 
         if not cfg.any_enabled or signal.direction == SignalDirection.FLAT:
             return TiltBreakdown(
-                edge=1.0, vol=1.0, inventory=1.0, combined=1.0,
-                inventory_qty=0, realized_vol_bps=None,
+                edge=1.0,
+                vol=1.0,
+                inventory=1.0,
+                combined=1.0,
+                inventory_qty=0,
+                realized_vol_bps=None,
             )
 
         # Edge-weighting only applies to a disclosed positive edge; a

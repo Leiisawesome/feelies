@@ -331,7 +331,9 @@ class TestPerAlphaFloorEnforcement:
         assert lc is not None
         assert lc._gate_thresholds.cpcv_min_mean_sharpe == 3.0  # noqa: SLF001
 
-    def test_allows_loosening_a_field_the_operator_did_not_pin(self, clock: SimulatedClock) -> None:
+    def test_allows_loosening_a_field_the_operator_did_not_pin(
+        self, clock: SimulatedClock
+    ) -> None:
         # Operator pinned cpcv only; per-alpha loosens dsr_min (still at
         # skill default) — preserves documented F-5 "per-alpha wins over
         # skill defaults" behavior.

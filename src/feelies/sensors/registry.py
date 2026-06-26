@@ -325,9 +325,7 @@ class SensorRegistry:
                     event.timestamp_ns,
                 )
                 if self._metric_collector is not None:
-                    self._emit_nonfinite_metric(
-                        spec=spec, symbol=symbol, ts_ns=event.timestamp_ns
-                    )
+                    self._emit_nonfinite_metric(spec=spec, symbol=symbol, ts_ns=event.timestamp_ns)
                 continue
 
             # Suppress emission (but not state advance) when inside the

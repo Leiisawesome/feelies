@@ -314,9 +314,7 @@ class HMM3StateFractional:
         regime-gate fails safe to OFF for a symbol whose per-symbol fit
         has collapsed even while the pooled fit remains well separated.
         """
-        return self._compute_min_pairwise_emission_separation(
-            self._emission_for_symbol(symbol)
-        )
+        return self._compute_min_pairwise_emission_separation(self._emission_for_symbol(symbol))
 
     def calibrate(self, quotes: Sequence[NBBOQuote]) -> bool:
         """Fit emission parameters from historical spread distribution.
@@ -933,8 +931,7 @@ class HMM3StateSpreadVol:
         self._state_names = tuple(state_names or self._DEFAULT_STATE_NAMES)
         self._n_states = len(self._state_names)
         self._transition = tuple(
-            tuple(float(x) for x in row)
-            for row in (transition_matrix or self._DEFAULT_TRANSITION)
+            tuple(float(x) for x in row) for row in (transition_matrix or self._DEFAULT_TRANSITION)
         )
         self._emission = tuple(emission_params or self._DEFAULT_EMISSION)
         self._calibrated = emission_params is not None

@@ -63,9 +63,7 @@ def _order(side: Side, oid: str, seq: int) -> OrderRequest:
 
 def _net_pnl_and_fees(stress_multiplier: Decimal) -> tuple[Decimal, Decimal]:
     """Run a 1000-share buy → sell round trip with a +$0.50/share edge."""
-    cost_model = DefaultCostModel(
-        DefaultCostModelConfig(stress_multiplier=stress_multiplier)
-    )
+    cost_model = DefaultCostModel(DefaultCostModelConfig(stress_multiplier=stress_multiplier))
     router = BacktestOrderRouter(SimulatedClock(start_ns=0), cost_model=cost_model)
 
     # Entry: buy lifts the ask at 100.05.
@@ -93,9 +91,7 @@ def _net_pnl_and_fees(stress_multiplier: Decimal) -> tuple[Decimal, Decimal]:
 
 def test_known_edge_survives_inv12_cost_stress() -> None:
     base_net, base_fees = _net_pnl_and_fees(Decimal("1.0"))
-    stressed_net, stressed_fees = _net_pnl_and_fees(
-        Decimal(str(INV12_COST_STRESS_MULTIPLIER))
-    )
+    stressed_net, stressed_fees = _net_pnl_and_fees(Decimal(str(INV12_COST_STRESS_MULTIPLIER)))
 
     # The +$0.50/share edge clears costs in both regimes (survival).
     assert base_net > 0

@@ -1019,9 +1019,7 @@ def test_exit_only_mechanism_suppresses_non_flat_entry() -> None:
 
     engine, _, captured = _engine()
     sig = _RecordingSignal(direction=SignalDirection.LONG)
-    engine.register(
-        _registered(signal=sig, trend_mechanism=TrendMechanism.LIQUIDITY_STRESS)
-    )
+    engine.register(_registered(signal=sig, trend_mechanism=TrendMechanism.LIQUIDITY_STRESS))
     engine._on_regime_state(_regime_normal_high())
     engine._on_snapshot(_snapshot())
     # evaluate ran (gate ON) and returned LONG, but the entry must be dropped.
