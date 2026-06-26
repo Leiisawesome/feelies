@@ -44,9 +44,14 @@ Summary of what changed (see §9 for the original specs):
 
 Verification: `tests/core/` + `tests/storage/` → **289 passed** (81 new
 cases), `mypy` strict clean on the six changed modules, `ruff` clean.
-Note: `tests/determinism/` and `tests/kernel/` cannot run on this branch due
-to a **pre-existing** `SyntaxError` (duplicate `reason=` kwarg) at
-`kernel/orchestrator.py:4795` — unrelated to this work and out of scope.
+
+Out-of-scope follow-up (fixed at the user's request): a **pre-existing**
+`SyntaxError` (duplicate `reason=` kwarg) at `kernel/orchestrator.py:4795`
+was blocking `tests/determinism/` and `tests/kernel/` from importing the
+orchestrator. The duplicate was a merge artifact — two functionally
+identical forms of the same stop-exit reason tag. Kept the canonical
+module-constant form (`_FORCED_EXIT_PANIC_REASON.get(...)`) and removed the
+orphaned local-variable form. Those two suites now pass (**356 passed**).
 
 ---
 
