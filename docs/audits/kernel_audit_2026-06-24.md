@@ -603,3 +603,29 @@ kernel-introduced ordering regression would pass the determinism suite.
 (#4, #5, #6, #7, #8 — correct today, brittle under change); **intentional
 design** (mode wiring, per-family generators, clock/backend divergence, the
 leaf-driven parity hashes — flagged where the design leaves a coverage hole).*
+
+---
+
+## 12. Remediation — 2026-06-24
+
+Applied in the same PR after the audit, at the maintainer's request to "fix the
+verified P0, P1". Regression sweep (`tests/kernel tests/bus tests/core
+tests/bootstrap tests/risk tests/determinism tests/causality` + the
+Phase-4 / hazard / mixed-mechanism / cross-sectional integration e2e tests):
+**839 passed**; `ruff` and strict `mypy` clean on the changed modules.
+
+| # | Tier | Status | What changed |
+|---|---|---|---|
+| 1 | P0 | **Fixed** | `_distribute_fill_to_strategies` now `sorted(self._strategy_positions.strategy_ids())` (`orchestrator.py`), removing the `frozenset`-iteration dependency on the M9 path. New proof test asserts the tie-break +1 lands on the lexicographically-first strategy id. |
+| 2 | P1 | **Fixed** | `tests/determinism/test_orchestrator_replay.py` runs the **full** `build_platform` + `run_backtest` and locks the orchestrator-produced Signal / SizedPositionIntent / OrderRequest / PositionUpdate streams (two-replays determinism + host-pinned baseline + no-false-empty guard) — the first parity coverage that exercises kernel `_seq`/drain ordering. |
+| 3 | P1 | **Partial (by design)** | `conftest.py` surfaces `PYTHONHASHSEED` in the run header and warns when it is not `0`. A hard `os.execv` re-exec pin was implemented then **rejected** — it corrupts pytest's output capture (the session ran but emitted nothing). True enforcement needs the env var at launch (`PYTHONHASHSEED=0 uv run pytest`); since #1 removed the tick-path set-order dependency, the seed pin is now defensive only. |
+| 4 | P1 | **Fixed** | The M4 re-publish (`orchestrator.py`) now emits a `Signal` only for synthetic forced-exit strategies (`_FORCED_MARKET_EXIT_STRATEGIES`); the bus-arbitrated alpha winner is no longer echoed, restoring `HorizonSignalEngine` as the sole writer of alpha `Signal`s. Verified no consumer relied on the echo. |
+| 5 | P1 | **Fixed** | The hazard `(source_layer, reason)` signature is centralized as `HAZARD_EXIT_SOURCE_LAYER` / `HAZARD_EXIT_REASONS` in `risk/hazard_exit.py` (the sole writer); the kernel bridge imports them instead of re-declaring literals. Guard test asserts the kernel references the *same* objects (identity) and that every reason in the shared set is routed. |
+| 6 | P1 | **Fixed** | `tests/bootstrap/test_bus_subscription_order.py` pins the canonical handler order for the determinism-critical families. (It also corrected a detail in §3.3/§8 of this audit: because the composition/observability layer is constructed **before** the `Orchestrator`, the orchestrator's shared-event handlers register *last*, not first — immaterial to correctness, now locked.) |
+| 7 | P1/P2 | **Declined (won't fix)** | Dedicated `_regime_seq` / `_position_seq` was evaluated and rejected. It would delete the single global emission-ordering provenance the shared `_seq` provides, serves no Inv-A purpose (RegimeState/PositionUpdate are *original* families, not newly-added ones for which Inv-A reserves isolated counters), and the coupling it targets is already deterministic and now locked by #2. Net-negative; the shared `_seq` is retained. |
+| 8, 9 | P2 | Deferred | Outside the requested P0/P1 scope. |
+
+Behaviour impact: all changes are behaviour-preserving except #1 (makes a
+previously hash-seed-dependent per-alpha fill split deterministic) and #4
+(removes one redundant duplicate `Signal` publish). Neither alters orders, fills,
+or PnL on the regression fixtures.

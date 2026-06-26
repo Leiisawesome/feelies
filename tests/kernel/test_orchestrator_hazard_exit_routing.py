@@ -47,7 +47,9 @@ from feelies.execution.backtest_router import BacktestOrderRouter
 from feelies.kernel.macro import MacroState
 from feelies.kernel.orchestrator import Orchestrator
 from feelies.portfolio.memory_position_store import MemoryPositionStore
+from feelies.kernel import orchestrator as _orchestrator_mod
 from feelies.risk.basic_risk import BasicRiskEngine, RiskConfig
+from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER
 from feelies.storage.memory_event_log import InMemoryEventLog
 
 
@@ -368,3 +370,47 @@ class TestIdempotency:
         bus.publish(order)  # republish with identical order_id
 
         assert len(router.submitted) == 1
+
+
+class TestHazardSignatureSingleSourceOfTruth:
+    """Audit kernel-P1: the bridge filter and the controller share one
+    definition of the hazard-exit signature, so they cannot drift.
+
+    ``Orchestrator._on_bus_hazard_order`` imports ``HAZARD_EXIT_REASONS`` and
+    ``HAZARD_EXIT_SOURCE_LAYER`` from ``feelies.risk.hazard_exit`` — the sole
+    writer — rather than re-declaring the literals.  Adding a new hazard reason
+    to the writer's set therefore automatically extends what the bridge routes;
+    a stale or typo'd literal would fail these tests rather than silently
+    dropping a real exit (Inv-11 fail-safe)."""
+
+    def test_bridge_imports_the_writers_constants(self) -> None:
+        # Identity, not equality: the kernel must reference the *same* objects
+        # the controller exports, so a future edit to the writer's set is the
+        # single source of truth for the bridge's membership test.
+        assert _orchestrator_mod.HAZARD_EXIT_REASONS is HAZARD_EXIT_REASONS
+        assert _orchestrator_mod.HAZARD_EXIT_SOURCE_LAYER == HAZARD_EXIT_SOURCE_LAYER
+
+    def test_every_writer_reason_is_routed_by_the_bridge(self) -> None:
+        # Each reason the controller may emit must be routed when carried on an
+        # order with the controller's source_layer.  Iterating the shared
+        # frozenset means a new reason cannot be added to the writer without
+        # this assertion covering it.
+        for reason in sorted(HAZARD_EXIT_REASONS):
+            bus = EventBus()
+            positions = MemoryPositionStore()
+            positions.update("AAPL", 100, Decimal("150.00"))
+            positions.update_mark("AAPL", Decimal("150.00"))
+            _, router, _ = _build_orchestrator(bus=bus, positions=positions)
+
+            bus.publish(
+                _make_hazard_order(
+                    reason=reason,
+                    source_layer=HAZARD_EXIT_SOURCE_LAYER,
+                    order_id=f"hz-{reason}",
+                )
+            )
+
+            assert [o.reason for o in router.submitted] == [reason], (
+                f"hazard reason {reason!r} from HAZARD_EXIT_REASONS was not "
+                f"routed by Orchestrator._on_bus_hazard_order"
+            )

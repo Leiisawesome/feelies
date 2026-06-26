@@ -1392,6 +1392,32 @@ class TestStrategyFillDistribution:
         assert strategy_positions.get("alpha_c", "AAPL").cumulative_fees == Decimal("0.01")
         assert strategy_positions.get("alpha_d", "AAPL").cumulative_fees == Decimal("0")
 
+    def test_distribution_iterates_strategies_in_sorted_order(self) -> None:
+        # Audit kernel-P0: ``StrategyPositionStore.strategy_ids()`` returns a
+        # ``frozenset`` whose iteration order is hash-seed dependent.  The
+        # distribution now sorts the ids, so the largest-remainder tie-break is
+        # deterministic.  Two equal-weight strategies registered in
+        # reverse-sorted order tie on the remainder; the odd share must always
+        # land on the lexicographically-first id ("a_alpha"), never on hash
+        # order.
+        clock = SimulatedClock(start_ns=1000)
+        strategy_positions = StrategyPositionStore()
+        # Insertion order deliberately != sorted order.
+        strategy_positions.update("z_alpha", "AAPL", 100, Decimal("150.00"))
+        strategy_positions.update("a_alpha", "AAPL", 100, Decimal("150.00"))
+
+        orch = _build_orchestrator(clock, strategy_positions=strategy_positions)
+        orch._distribute_fill_to_strategies(
+            symbol="AAPL",
+            signed_qty=1,  # odd → exactly one strategy receives the extra share
+            fill_price=Decimal("150.00"),
+            fees=Decimal("0"),
+            timestamp_ns=2000,
+        )
+
+        assert strategy_positions.get("a_alpha", "AAPL").quantity == 101
+        assert strategy_positions.get("z_alpha", "AAPL").quantity == 100
+
 
 # ── Tests: Shutdown ──────────────────────────────────────────────────
 
