@@ -394,8 +394,7 @@ def collision_is_harmless_flat_gate_close(
     if aggregate_qty != 0:
         return False
     return all(
-        s.direction == SignalDirection.FLAT and s.regime_gate_state == "OFF"
-        for s in candidates
+        s.direction == SignalDirection.FLAT and s.regime_gate_state == "OFF" for s in candidates
     )
 
 
@@ -5795,7 +5794,11 @@ class Orchestrator:
                             },
                         )
                     )
-                    if escalate and self._kill_switch is not None and not self._kill_switch.is_active:
+                    if (
+                        escalate
+                        and self._kill_switch is not None
+                        and not self._kill_switch.is_active
+                    ):
                         self._kill_switch.activate(
                             reason="realized_cost_persistent_overrun",
                             activated_by="orchestrator",
@@ -6122,11 +6125,7 @@ class Orchestrator:
         signals: Sequence[Signal],
     ) -> list[Signal]:
         """Drop cross-alpha gate-close hijacks and foreign exit signals."""
-        return [
-            s
-            for s in signals
-            if self._standalone_signal_actionable_for_strategy_ownership(s)
-        ]
+        return [s for s in signals if self._standalone_signal_actionable_for_strategy_ownership(s)]
 
     def _select_bus_signal(self) -> Signal | None:
         """Pick one Signal from this tick's bus buffer (deterministic).
@@ -6173,10 +6172,7 @@ class Orchestrator:
                     candidate_count=len(buf),
                     strategy_ids=tuple(sorted({s.strategy_id for s in buf})),
                     kinds=tuple(
-                        sorted(
-                            (s.strategy_id, s.direction.name, s.regime_gate_state)
-                            for s in buf
-                        )
+                        sorted((s.strategy_id, s.direction.name, s.regime_gate_state) for s in buf)
                     ),
                     harmless=harmless,
                 )

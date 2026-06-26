@@ -81,9 +81,9 @@ class DiskEventCache:
 
     def _created_at_utc(self) -> str:
         if self._clock is not None:
-            return datetime.fromtimestamp(
-                self._clock.now_ns() / 1e9, tz=timezone.utc
-            ).strftime("%Y-%m-%dT%H:%M:%SZ")
+            return datetime.fromtimestamp(self._clock.now_ns() / 1e9, tz=timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
         return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
     def _symbol_dir(self, symbol: str) -> Path:

@@ -18,6 +18,21 @@ the working tree at branch `claude/cool-mccarthy-po75qg`.
 Legend for classification: **[BUG]** implementation defect · **[LIM]** documented
 limitation · **[DESIGN]** intentional design (flagged where it carries governance risk).
 
+> **Resolution status (updated 2026-06-26).** Follow-up commits on this branch fixed the
+> verified P0/P1 bugs:
+> - **P0-1** — per-alpha overrides may no longer loosen an operator-pinned `platform.yaml`
+>   floor (`AlphaRegistry._enforce_threshold_floor` +
+>   `assert_per_alpha_overrides_respect_floor`); fields the operator left unpinned stay
+>   loosenable, preserving documented F-5 flexibility.
+> - **P1-1** — `metadata_to_evidence` now ignores the `reason` co-key
+>   (`RESERVED_METADATA_KEYS`); quarantine-with-evidence entries replay as OK, not a false
+>   exit-3 FAIL.
+> - **P1-3** — subcommands register lazily; `feelies promote` no longer imports the
+>   backtest/harness/bootstrap/IB stack and runs without the `ib` extra.
+>
+> Still open (classified **[LIM]**, larger changes): **P1-2** (record effective thresholds
+> in the ledger), **P1-4** (bind evidence to a reproducible run), and the P2 items.
+
 ---
 
 ## 1. Executive summary

@@ -188,6 +188,36 @@ class TestBuildPlatformGateThresholdsWiring:
         assert thresholds.paper_min_trading_days == 7
         assert thresholds.cpcv_min_folds == GateThresholds().cpcv_min_folds
 
+    def test_pinned_fields_propagate_as_floors(self, tmp_path: Path) -> None:
+        # Audit P0-1: the operator-pinned field set is plumbed through so
+        # the registry can refuse a per-alpha override that loosens it.
+        _write_alpha(tmp_path, "f5.alpha.yaml", _SIGNAL_ALPHA_YAML)
+        config = _make_config(tmp_path, gate_thresholds_overrides={"dsr_min": 1.5})
+        orchestrator, _ = build_platform(config)
+
+        registry = orchestrator._alpha_registry
+        assert registry is not None
+        assert registry._platform_threshold_overrides == {"dsr_min": 1.5}  # noqa: SLF001
+
+    def test_per_alpha_loosening_below_platform_floor_refused_at_boot(
+        self, tmp_path: Path
+    ) -> None:
+        # Audit P0-1, end-to-end: an alpha whose promotion.gate_thresholds
+        # loosens below an operator-pinned floor is refused at
+        # registration; with it as the only alpha, the platform refuses to
+        # boot an empty system (fail-safe — the alpha never reaches capital).
+        loosening_yaml = _SIGNAL_ALPHA_YAML + textwrap.dedent(
+            """\
+            promotion:
+              gate_thresholds:
+                dsr_min: 0.1
+            """
+        )
+        _write_alpha(tmp_path, "f5.alpha.yaml", loosening_yaml)
+        config = _make_config(tmp_path, gate_thresholds_overrides={"dsr_min": 1.5})
+        with pytest.raises(RuntimeError, match="may not loosen"):
+            build_platform(config)
+
 
 class TestBuildPlatformIngestTerminalEnforcement:
     def test_build_platform_raises_when_enforce_without_rows(

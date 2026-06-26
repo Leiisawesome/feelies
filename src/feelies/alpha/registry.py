@@ -21,7 +21,7 @@ Lifecycle integration:
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from feelies.alpha.lifecycle import (
     AlphaLifecycle,
@@ -32,8 +32,10 @@ from feelies.alpha.lifecycle import (
 from feelies.alpha.module import AlphaModule
 from feelies.alpha.promotion_evidence import (
     CapitalStageEvidence,
+    GateThresholdFloorError,
     GateThresholds,
     apply_gate_thresholds_overrides,
+    assert_per_alpha_overrides_respect_floor,
 )
 from feelies.alpha.promotion_ledger import PromotionLedger
 from feelies.alpha.validation import validate_alpha_set
@@ -78,12 +80,23 @@ class AlphaRegistry:
         gate_requirements: GateRequirements | None = None,
         gate_thresholds: GateThresholds | None = None,
         promotion_ledger: PromotionLedger | None = None,
+        platform_gate_threshold_overrides: Mapping[str, object] | None = None,
     ) -> None:
         self._alphas: dict[str, AlphaModule] = {}
         self._lifecycles: dict[str, AlphaLifecycle] = {}
         self._clock = clock
         self._gate_requirements = gate_requirements
         self._gate_thresholds = gate_thresholds
+        # Audit P0-1: the set of gate-threshold fields the *operator*
+        # explicitly pinned in ``platform.yaml: gate_thresholds:``.  Only
+        # these are treated as floors a per-alpha override may not loosen
+        # (fields left at their skill default stay freely loosenable, so
+        # the documented F-5 "per-alpha wins over skill defaults" behavior
+        # is preserved).  ``gate_thresholds`` above is the *materialised*
+        # floor (skill defaults overlaid by these overrides).
+        self._platform_threshold_overrides: dict[str, object] = dict(
+            platform_gate_threshold_overrides or {}
+        )
         self._promotion_ledger = promotion_ledger
         self._feature_cache: list[FeatureDefinition] | None = None
 
@@ -106,10 +119,17 @@ class AlphaRegistry:
         if errors:
             raise AlphaRegistryError(f"Alpha '{alpha_id}' failed validation: " + "; ".join(errors))
 
-        self._alphas[alpha_id] = alpha
+        # Audit P0-1: floor-check per-alpha overrides against operator
+        # policy in ALL modes (even BACKTEST, where no lifecycle is
+        # tracked) so a misconfiguration that loosens an operator-pinned
+        # floor fails fast.  Runs before any state mutation, so a rejected
+        # override leaves the registry unchanged (no half-registration).
+        self._enforce_threshold_floor(manifest)
+
+        lifecycle: AlphaLifecycle | None = None
         if self._clock is not None:
             per_alpha_thresholds = self._resolve_gate_thresholds(manifest)
-            self._lifecycles[alpha_id] = AlphaLifecycle(
+            lifecycle = AlphaLifecycle(
                 alpha_id=alpha_id,
                 clock=self._clock,
                 gate_requirements=self._gate_requirements,
@@ -117,6 +137,10 @@ class AlphaRegistry:
                 ledger=self._promotion_ledger,
                 lifecycle_cap=manifest.lifecycle_cap,
             )
+
+        self._alphas[alpha_id] = alpha
+        if lifecycle is not None:
+            self._lifecycles[alpha_id] = lifecycle
         self._feature_cache = None
 
     def _resolve_gate_thresholds(
@@ -148,6 +172,37 @@ class AlphaRegistry:
             return self._gate_thresholds
         base = self._gate_thresholds or GateThresholds()
         return apply_gate_thresholds_overrides(base, overrides)
+
+    def _enforce_threshold_floor(self, manifest: object) -> None:
+        """Reject a per-alpha override that loosens an operator-pinned floor.
+
+        Audit P0-1.  A per-alpha ``promotion.gate_thresholds`` override may
+        tighten any gate and may loosen a skill default the operator left
+        unpinned, but may NOT loosen below a floor the operator explicitly
+        pinned in ``platform.yaml`` (Inv-11 — loosening a safety control
+        requires operator re-authorization, not an alpha-bundle edit;
+        Inv-13 — operator policy is the audit substrate).
+
+        No-op when the operator pinned nothing (``platform.yaml`` carried
+        no ``gate_thresholds:``) or the alpha declares no overrides.  Runs
+        in every mode, independent of lifecycle tracking, so the check
+        also fires for BACKTEST registrations.
+        """
+        overrides = getattr(manifest, "gate_thresholds_overrides", None)
+        if not overrides or not self._platform_threshold_overrides:
+            return
+        base = self._gate_thresholds or GateThresholds()
+        try:
+            assert_per_alpha_overrides_respect_floor(
+                platform_floor=base,
+                platform_pinned_fields=self._platform_threshold_overrides,
+                per_alpha_overrides=overrides,
+            )
+        except GateThresholdFloorError as exc:
+            alpha_id = getattr(manifest, "alpha_id", "<unknown>")
+            raise AlphaRegistryError(
+                f"Alpha '{alpha_id}' gate_thresholds override rejected: {exc}"
+            ) from exc
 
     def unregister(self, alpha_id: str) -> None:
         """Remove an alpha module from the registry.

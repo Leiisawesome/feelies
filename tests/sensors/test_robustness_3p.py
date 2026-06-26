@@ -23,7 +23,9 @@ from feelies.sensors.spec import SensorSpec
 _NS = 1_000_000_000
 
 
-def _quote(bid: float, ask: float, *, ts: int = _NS, bid_sz: int = 100, ask_sz: int = 100) -> NBBOQuote:
+def _quote(
+    bid: float, ask: float, *, ts: int = _NS, bid_sz: int = 100, ask_sz: int = 100
+) -> NBBOQuote:
     return NBBOQuote(
         timestamp_ns=ts,
         correlation_id=f"q-{ts}",

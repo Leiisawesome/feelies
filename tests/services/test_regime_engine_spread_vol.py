@@ -84,7 +84,11 @@ def test_posterior_sums_to_one_and_three_floats() -> None:
 def test_uncalibrated_by_default_calibrated_with_params() -> None:
     assert HMM3StateSpreadVol().calibrated is False
     eng = HMM3StateSpreadVol(
-        emission_params=[((-4.5, 0.3), (-9.5, 1.0)), ((-3.5, 0.5), (-8.5, 1.0)), ((-2.5, 0.7), (-7.5, 1.0))]
+        emission_params=[
+            ((-4.5, 0.3), (-9.5, 1.0)),
+            ((-3.5, 0.5), (-8.5, 1.0)),
+            ((-2.5, 0.7), (-7.5, 1.0)),
+        ]
     )
     assert eng.calibrated is True
 
@@ -195,7 +199,11 @@ def test_calibrated_engine_discriminates_vol_regimes() -> None:
 
 def test_discriminability_high_for_separated_emissions() -> None:
     eng = HMM3StateSpreadVol(
-        emission_params=[((-9.2, 0.25), (-9.5, 0.4)), ((-8.0, 0.45), (-8.0, 0.4)), ((-6.5, 0.65), (-6.5, 0.4))]
+        emission_params=[
+            ((-9.2, 0.25), (-9.5, 0.4)),
+            ((-8.0, 0.45), (-8.0, 0.4)),
+            ((-6.5, 0.65), (-6.5, 0.4)),
+        ]
     )
     assert eng.discriminability > 1.0
 

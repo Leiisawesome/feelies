@@ -719,9 +719,7 @@ def main(argv: list[str] | None = None) -> int:
         print(_format_human(report), end="")
 
     if args.strict:
-        mismatch = any(
-            d.multi_trading_intent == "FILL_COUNT_MISMATCH" for d in report.fill_diffs
-        )
+        mismatch = any(d.multi_trading_intent == "FILL_COUNT_MISMATCH" for d in report.fill_diffs)
         if report.exit_hijacks or mismatch:
             return 2
     return 0

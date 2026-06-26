@@ -90,9 +90,7 @@ def reconcile_session(
             decisions, lifecycles, correlation_id=correlation_id
         )
 
-    calibrations = build_edge_calibrations(
-        materialized, disclosed_edges, z=z, min_fills=min_fills
-    )
+    calibrations = build_edge_calibrations(materialized, disclosed_edges, z=z, min_fills=min_fills)
     if calibration_store is not None:
         calibration_store.save(calibrations, version=calibration_version)
 

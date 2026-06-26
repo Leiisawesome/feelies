@@ -282,7 +282,11 @@ def test_hazard_exit_applies_to_regimes_parsed_and_canonicalized() -> None:
     block = {
         "enabled": True,
         "hazard_score_threshold": 0.5,
-        "applies_to_regimes": ["normal->vol_breakout", "  compression_clustering  ", "normal -> compression_clustering"],
+        "applies_to_regimes": [
+            "normal->vol_breakout",
+            "  compression_clustering  ",
+            "normal -> compression_clustering",
+        ],
     }
     loaded = AlphaLoader().load_from_dict(_spec(hazard_exit=block), source="<test>")
     assert loaded.manifest.hazard_exit["applies_to_regimes"] == (

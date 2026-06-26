@@ -52,10 +52,7 @@ def test_aliased_values_forces_conservative_none() -> None:
 
 
 def test_values_iteration_forces_conservative_none() -> None:
-    src = (
-        "def evaluate(snapshot, regime, params):\n"
-        "    return sum(snapshot.values.values())\n"
-    )
+    src = "def evaluate(snapshot, regime, params):\n    return sum(snapshot.values.values())\n"
     assert _consumed_value_keys_from_signal_source(src) is None
 
 

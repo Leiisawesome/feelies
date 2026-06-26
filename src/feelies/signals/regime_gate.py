@@ -446,10 +446,7 @@ def _regime_unusable_reason(b: Bindings) -> str | None:
     if floor > 0.0:
         d = float(getattr(regime, "discriminability", float("inf")))
         if d < floor:
-            return (
-                f"indiscriminate (emission separation d={d:.3f} < floor "
-                f"{floor:.3f}; audit R-1)"
-            )
+            return f"indiscriminate (emission separation d={d:.3f} < floor {floor:.3f}; audit R-1)"
     return None
 
 

@@ -120,11 +120,7 @@ def per_alpha_cost_survival(
         gross = float(sum((t.realized_pnl for t in trades), Decimal("0")))
         fees = float(sum((t.fees for t in trades), Decimal("0")))
         net = gross - fees
-        margin = (
-            tca.mean_edge_bps / tca.mean_cost_bps
-            if tca.mean_cost_bps > 0.0
-            else float("inf")
-        )
+        margin = tca.mean_edge_bps / tca.mean_cost_bps if tca.mean_cost_bps > 0.0 else float("inf")
         rows.append(
             AlphaCostSurvival(
                 strategy_id=strategy_id,
@@ -170,7 +166,9 @@ def format_cost_survival_report(
     n_fills = gross = fees = net = 0.0
     counts: dict[str, int] = {}
     for r in rows:
-        margin_str = "inf" if r.realized_margin_ratio == float("inf") else f"{r.realized_margin_ratio:.2f}"
+        margin_str = (
+            "inf" if r.realized_margin_ratio == float("inf") else f"{r.realized_margin_ratio:.2f}"
+        )
         out.append(
             f"  {r.strategy_id:<26s}{r.n_fills:>6d}{r.net:>+12.2f}"
             f"{r.mean_edge_bps:>10.2f}{r.mean_cost_bps:>10.2f}{margin_str:>8s}"
@@ -182,8 +180,7 @@ def format_cost_survival_report(
         net += r.net
         counts[r.verdict] = counts.get(r.verdict, 0) + 1
     out.append(
-        f"  {'FLEET':<26s}{int(n_fills):>6d}{net:>+12.2f}"
-        f"  (gross {gross:+.2f}, fees {fees:.2f})"
+        f"  {'FLEET':<26s}{int(n_fills):>6d}{net:>+12.2f}  (gross {gross:+.2f}, fees {fees:.2f})"
     )
     summary = ", ".join(
         f"{counts[v]} {v}"

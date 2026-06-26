@@ -105,17 +105,22 @@ def test_detect_exit_hijacks_flags_inventory_exit() -> None:
 
 def test_fill_count_mismatch_surfaces() -> None:
     mod = _load_mod()
-    diffs = mod.compare_fill_legs([], [mod.FillLeg(
-        index=0,
-        side="SELL",
-        qty=1,
-        price=Decimal("1"),
-        strategy_id="a",
-        trading_intent="ENTRY_SHORT",
-        realized_pnl=Decimal("0"),
-        fees=Decimal("0"),
-        fill_timestamp_ns=None,
-    )])
+    diffs = mod.compare_fill_legs(
+        [],
+        [
+            mod.FillLeg(
+                index=0,
+                side="SELL",
+                qty=1,
+                price=Decimal("1"),
+                strategy_id="a",
+                trading_intent="ENTRY_SHORT",
+                realized_pnl=Decimal("0"),
+                fees=Decimal("0"),
+                fill_timestamp_ns=None,
+            )
+        ],
+    )
     assert any(d.multi_trading_intent == "FILL_COUNT_MISMATCH" for d in diffs)
 
 
