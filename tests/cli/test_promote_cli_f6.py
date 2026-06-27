@@ -91,7 +91,7 @@ def _cpcv() -> CPCVEvidence:
         median_sharpe=1.15,
         mean_pnl=4200.0,
         p_value=0.012,
-        fold_pnl_curves_hash="sha256:abc",
+        fold_pnl_curves_hash="sha256:" + "0" * 64,
     )
 
 

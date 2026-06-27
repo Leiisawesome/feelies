@@ -72,17 +72,20 @@ per-split realised OOS test returns in the order matching
 :attr:`CPCVSplit.test_indices`.  See :func:`build_cpcv_evidence`'s
 docstring for the contract.
 
-The bootstrap p-value treats the per-path Sharpes as observations
-from an unknown distribution and bootstraps the *centred* sample
-to assess ``H0: mean Sharpe = 0``.  This implicitly assumes the
-across-path correlation is benign; in practice CPCV paths share
-most bars and are correlated, so the resulting p-value is a
-conservative-leaning *summary* statistic suitable for the F-2
-gate threshold ``cpcv_max_p_value`` and not a publication-grade
-significance test on its own.  The post-trade-forensics skill
-documents the further checks (e.g. block-bootstrap on the
-underlying per-bar returns) that supplement this evidence at the
-LIVE-promotion review.
+:func:`build_cpcv_evidence` computes ``p_value`` with
+:func:`block_bootstrap_p_value` — a *circular moving-block* bootstrap
+(Politis & Romano 1992) of ``H0: mean return = 0`` on the per-bar
+mean-across-paths OOS return series.  The block structure preserves
+the serial correlation the embargo guards against, and operating on
+the per-bar returns (rather than the per-path Sharpes) avoids the
+degeneracy of the path-level bootstrap: when every reconstructed path
+shares the same bars (e.g. an identity-model OOS projection) the
+per-path Sharpes are identical and a bootstrap over *them* collapses
+to the ``1/(B+1)`` floor regardless of signal — anti-conservative, not
+conservative.  The legacy :func:`lo_bootstrap_p_value` (a plain iid
+bootstrap of the per-path Sharpes) is retained for backward
+compatibility and reference, but is **not** used to populate the
+gate evidence; see its docstring for the correlation caveat.
 """
 
 from __future__ import annotations
@@ -101,10 +104,12 @@ __all__ = [
     "CPCVSplit",
     "assemble_path_returns",
     "assign_groups",
+    "block_bootstrap_p_value",
     "build_cpcv_evidence",
     "fold_pnl_curves_sha256",
     "generate_cpcv_splits",
     "lo_bootstrap_p_value",
+    "mean_path_return_per_bar",
     "reconstruct_paths",
     "sharpe_ratio",
 ]
@@ -128,15 +133,31 @@ class CPCVConfig:
         Number of groups held out as the test set per combination
         (``k`` in the notation).  Must satisfy
         ``1 <= k_test_groups < n_groups``.
+    label_horizon_bars
+        The forward span (in bars) of the alpha's label/holding
+        window — a label realised at bar ``j`` consumes information
+        over ``[j, j + label_horizon_bars]``.  Used by the purge step
+        (López de Prado, *AFML* 2018, §7.4.1): a training observation
+        whose label window overlaps a test observation's label window
+        is removed from training.  Two length-``h`` label windows at
+        bars ``j`` and ``t`` overlap iff ``|j - t| <= h``, so the
+        purge excises the ``h`` bars on **both** sides of every test
+        region (not just the post-test side the embargo covers).
+        Default ``0`` reproduces the historical "labels realised at
+        the bar boundary" behaviour (no purge beyond the test bars).
+        Must be ``>= 0``.
     embargo_bars
         Number of bars immediately following each test region
-        excluded from training, to guard against serial-correlation
-        leakage from the immediate post-test bars.  Must be
-        ``>= 0``.
+        excluded from training *in addition to* the forward
+        ``label_horizon_bars`` purge, to guard against
+        serial-correlation leakage from the immediate post-test bars
+        (López de Prado, *AFML* 2018, §7.4.2).  One-sided (post-test)
+        by convention.  Must be ``>= 0``.
     """
 
     n_groups: int
     k_test_groups: int
+    label_horizon_bars: int = 0
     embargo_bars: int = 0
 
     def __post_init__(self) -> None:
@@ -147,6 +168,10 @@ class CPCVConfig:
                 f"CPCVConfig.k_test_groups must satisfy "
                 f"1 <= k < n_groups (got k={self.k_test_groups}, "
                 f"n_groups={self.n_groups})"
+            )
+        if self.label_horizon_bars < 0:
+            raise ValueError(
+                f"CPCVConfig.label_horizon_bars must be >= 0 (got {self.label_horizon_bars})"
             )
         if self.embargo_bars < 0:
             raise ValueError(f"CPCVConfig.embargo_bars must be >= 0 (got {self.embargo_bars})")
@@ -240,46 +265,63 @@ def assign_groups(n_bars: int, n_groups: int) -> tuple[tuple[int, ...], ...]:
 
 def _purged_train_indices(
     test_indices: tuple[int, ...],
+    label_horizon_bars: int,
     embargo_bars: int,
     n_bars: int,
 ) -> tuple[int, ...]:
-    """Return the training bar indices given the test set,
-    after applying purge + embargo.
+    """Return the training bar indices given the test set, after
+    applying the López de Prado purge + embargo (*AFML* 2018, §7.4).
 
-    Purge: any bar whose index lies in the test set is removed from
-    training (the simple index-overlap purge appropriate when
-    *labels* are computed at the bar boundary itself; if the alpha
-    uses overlapping label windows the caller should pass a wider
-    test set or pre-purge the returns themselves before calling
-    :func:`build_cpcv_evidence`).
+    Purge (§7.4.1): a training observation whose label window overlaps
+    a test observation's label window is removed.  With a forward
+    label span of ``label_horizon_bars`` (``h``), two length-``h``
+    windows at bars ``j`` and ``t`` overlap iff ``|j - t| <= h``, so
+    every contiguous test region ``[a, b]`` purges the ``h`` training
+    bars on **both** sides — ``[a - h, a - 1]`` (backward) and the
+    forward window below.  At ``h == 0`` this collapses to removing
+    only the exact test indices (the historical behaviour, so existing
+    pinned references are unchanged).
 
-    Embargo: the ``embargo_bars`` bars immediately following each
-    *contiguous test region* are also excluded from training.  The
-    embargo is one-sided (post-test only) by convention, since
-    causal alphas only leak forward through serial correlation.
+    Embargo (§7.4.2): an *additional* ``embargo_bars`` bars beyond the
+    forward purge window are excluded after each region, suppressing
+    serial-correlation leakage.  The forward exclusion is therefore
+    ``[b + 1, b + h + embargo_bars]``; the embargo is one-sided
+    (post-test only) by convention, since causal alphas leak forward
+    through serial correlation.
+
+    Both windows are clipped to ``[0, n_bars)`` and never re-add a
+    test bar to training.
     """
     test_set = set(test_indices)
+    if not test_indices:
+        return tuple(range(n_bars))
 
-    embargoed: set[int] = set()
-    if embargo_bars > 0 and test_indices:
-        in_region = False
-        region_end = -1
-        for i in range(n_bars):
-            if i in test_set:
-                if not in_region:
-                    in_region = True
-                region_end = i
-            else:
-                if in_region:
-                    in_region = False
-                    for j in range(
-                        region_end + 1,
-                        min(region_end + 1 + embargo_bars, n_bars),
-                    ):
-                        if j not in test_set:
-                            embargoed.add(j)
+    # Collapse the (ascending) test indices into contiguous regions.
+    sorted_test = sorted(test_set)
+    regions: list[tuple[int, int]] = []
+    a = prev = sorted_test[0]
+    for cur in sorted_test[1:]:
+        if cur == prev + 1:
+            prev = cur
+        else:
+            regions.append((a, prev))
+            a = prev = cur
+    regions.append((a, prev))
 
-    return tuple(i for i in range(n_bars) if i not in test_set and i not in embargoed)
+    excluded: set[int] = set()
+    for region_start, region_end in regions:
+        # Backward label-overlap purge: [a - h, a - 1].
+        for j in range(max(0, region_start - label_horizon_bars), region_start):
+            excluded.add(j)
+        # Forward label-overlap purge (h) + serial-correlation embargo:
+        # [b + 1, b + h + embargo_bars].
+        for j in range(
+            region_end + 1,
+            min(region_end + 1 + label_horizon_bars + embargo_bars, n_bars),
+        ):
+            excluded.add(j)
+
+    return tuple(i for i in range(n_bars) if i not in test_set and i not in excluded)
 
 
 def generate_cpcv_splits(n_bars: int, config: CPCVConfig) -> tuple[CPCVSplit, ...]:
@@ -307,7 +349,12 @@ def generate_cpcv_splits(n_bars: int, config: CPCVConfig) -> tuple[CPCVSplit, ..
         test_indices.sort()
         test_indices_tuple = tuple(test_indices)
 
-        train_indices = _purged_train_indices(test_indices_tuple, config.embargo_bars, n_bars)
+        train_indices = _purged_train_indices(
+            test_indices_tuple,
+            config.label_horizon_bars,
+            config.embargo_bars,
+            n_bars,
+        )
 
         splits.append(
             CPCVSplit(
@@ -562,13 +609,18 @@ def lo_bootstrap_p_value(
 
     Caveats
     -------
-    The per-path Sharpes from CPCV are correlated (paths share most
-    bars), so this bootstrap is a *summary* statistic and not a
-    rigorous independence-bootstrap p-value.  The resulting
-    p-value is appropriate for the F-2 ``cpcv_max_p_value`` gate
-    threshold but should be supplemented with the post-trade-
-    forensics block-bootstrap on the underlying per-bar returns
-    when reviewing a candidate for the LIVE-promotion gate.
+    **Legacy — not used to populate gate evidence.**  The per-path
+    Sharpes from CPCV are strongly *positively* correlated (paths
+    share most bars), so an iid bootstrap over them understates the
+    standard error of their mean and the resulting p-value is biased
+    *small* (anti-conservative).  In the extreme — every path
+    identical, as under an identity-model OOS projection — the centred
+    sample is all-zero and this returns the ``1/(B+1)`` floor for any
+    non-zero observed mean, i.e. maximal (false) significance.
+    :func:`build_cpcv_evidence` therefore uses
+    :func:`block_bootstrap_p_value` on the per-bar returns instead;
+    this function is retained only for backward compatibility and the
+    pinned reference vector.
 
     Edge cases
     ----------
@@ -595,6 +647,102 @@ def lo_bootstrap_p_value(
         # Random.choices is deterministic given the seed.
         sample_mean = sum(rng.choices(centred, k=n)) / n
         if abs(sample_mean) >= abs_mu:
+            extreme += 1
+    return (extreme + 1) / (n_bootstrap + 1)
+
+
+def mean_path_return_per_bar(
+    paths_returns: Sequence[Sequence[float]],
+) -> tuple[float, ...]:
+    """Per-bar mean OOS return across all reconstructed paths.
+
+    Each CPCV path is a full-length per-bar return series over the
+    *same* bars; their per-bar average is the natural pooled OOS
+    return at each bar and the series :func:`block_bootstrap_p_value`
+    tests.  Under an identity-model OOS projection (every path equal)
+    this recovers the original return series exactly.
+
+    Returns the empty tuple for an empty path set.  Raises
+    ``ValueError`` if the paths are not all the same length.
+    """
+    if not paths_returns:
+        return ()
+    n_bars = len(paths_returns[0])
+    for p in paths_returns:
+        if len(p) != n_bars:
+            raise ValueError("mean_path_return_per_bar: all paths must have equal length")
+    k = len(paths_returns)
+    return tuple(sum(float(p[i]) for p in paths_returns) / k for i in range(n_bars))
+
+
+def block_bootstrap_p_value(
+    returns: Sequence[float],
+    *,
+    block_size: int,
+    n_bootstrap: int = 10_000,
+    seed: int = 0,
+) -> float:
+    """Two-sided circular moving-block bootstrap p-value for
+    ``H0: mean return = 0`` (equivalently ``Sharpe = 0``).
+
+    Algorithm (Politis & Romano 1992)
+    ---------------------------------
+    1. Observed statistic ``ŜR = sharpe_ratio(returns)``.
+    2. Centre under H0: ``c_i = returns[i] - mean(returns)``.
+    3. For ``n_bootstrap`` iterations: assemble a length-``n`` series
+       by drawing ``ceil(n / L)`` blocks of ``L`` consecutive centred
+       observations from uniformly-random start positions, **wrapping
+       around** the series (circular), then truncating to ``n``.
+       Record ``sharpe_ratio`` of the resample.
+    4. Two-sided p-value with the Davison-Hinkley ``+1/+1`` floor:
+       ``(#{|ŜR_b| >= |ŜR|} + 1) / (n_bootstrap + 1)``.
+
+    Why blocks
+    ----------
+    Operating on the per-bar returns (not the per-path Sharpes) keeps
+    the estimate non-degenerate, and the block length ``L`` preserves
+    the serial correlation the embargo guards against — resampling iid
+    would understate the variance and bias the p-value small.  Pass
+    ``block_size`` equal to the configured ``embargo_bars`` (the
+    declared serial-correlation length); ``block_size = 1`` recovers an
+    iid bootstrap of the per-bar returns.
+
+    Determinism
+    -----------
+    Uses a :class:`random.Random` seeded by ``seed``; same
+    ``(returns, block_size, n_bootstrap, seed)`` ⇒ bit-identical
+    p-value (Inv-5).
+
+    Edge cases
+    ----------
+    - ``len(returns) < 2`` or all-equal returns (``ŜR == 0``):
+      returns ``1.0`` (no evidence).
+    - ``n_bootstrap <= 0`` or ``block_size <= 0``: ``ValueError``.
+    """
+    if n_bootstrap <= 0:
+        raise ValueError(f"n_bootstrap must be >= 1 (got {n_bootstrap})")
+    if block_size <= 0:
+        raise ValueError(f"block_size must be >= 1 (got {block_size})")
+    n = len(returns)
+    if n < 2:
+        return 1.0
+    observed = sharpe_ratio(returns)
+    if observed == 0.0:
+        return 1.0
+    mean = statistics.fmean(returns)
+    centred = [float(r) - mean for r in returns]
+    block = min(block_size, n)
+    n_blocks = -(-n // block)  # ceil division
+    abs_obs = abs(observed)
+    rng = random.Random(seed)
+    extreme = 0
+    for _ in range(n_bootstrap):
+        sample: list[float] = []
+        for _ in range(n_blocks):
+            start = rng.randrange(n)
+            for offset in range(block):
+                sample.append(centred[(start + offset) % n])
+        if abs(sharpe_ratio(sample[:n])) >= abs_obs:
             extreme += 1
     return (extreme + 1) / (n_bootstrap + 1)
 
@@ -665,6 +813,7 @@ def build_cpcv_evidence(
     config: CPCVConfig,
     n_bars: int,
     test_returns_by_split: Sequence[Sequence[float]],
+    annualization_factor: float = 1.0,
     n_bootstrap: int = 10_000,
     seed: int = 0,
 ) -> CPCVEvidence:
@@ -679,11 +828,24 @@ def build_cpcv_evidence(
        order matching ``splits[s].test_indices``).
     2. Reconstruct ``C(N-1, k-1)`` full-length backtest paths.
     3. Assemble per-path return series.
-    4. Compute per-path Sharpes, summary stats, bootstrap p-value,
-       and content-addressable hash.
+    4. Compute per-path Sharpes (scaled by ``annualization_factor``),
+       summary stats, the block-bootstrap p-value, and the
+       content-addressable hash.
     5. Emit a :class:`CPCVEvidence` ready for
        :func:`feelies.alpha.promotion_evidence.validate_gate` against
        :data:`feelies.alpha.promotion_evidence.GateId.PAPER_TO_LIVE`.
+
+    Units
+    -----
+    ``sharpe_ratio`` is computed per bar; ``annualization_factor``
+    (default ``1.0`` = no scaling) multiplies every ``fold_sharpe``
+    and hence ``mean_sharpe`` / ``median_sharpe`` onto the caller's
+    target frequency — pass ``sqrt(periods_per_year)`` (e.g.
+    ``sqrt(252)`` for daily bars) so the emitted Sharpes are in the
+    **same annualised unit** the ``GateThresholds.cpcv_min_mean_sharpe``
+    default is anchored against, and commensurate with the annualised
+    :class:`feelies.alpha.promotion_evidence.DSREvidence`.  The
+    p-value is frequency-invariant and is left unscaled.
 
     Inputs
     ------
@@ -700,8 +862,12 @@ def build_cpcv_evidence(
         for the bars listed in ``splits[s].test_indices`` (in that
         same order).  The contract is checked at runtime by
         :func:`assemble_path_returns`.
+    annualization_factor
+        Multiplies every emitted Sharpe onto the caller's target
+        frequency (default ``1.0`` = per-bar).  See *Units* above.
+        Must be ``> 0``.
     n_bootstrap
-        Bootstrap iterations for the across-path p-value.  Default
+        Block-bootstrap iterations for the p-value.  Default
         ``10_000`` matches the testing-validation skill's stated
         floor for promotion-gate evidence.
     seed
@@ -713,6 +879,10 @@ def build_cpcv_evidence(
     -----------
     Pure function.  No I/O, no clock reads, no global state.
     """
+    if annualization_factor <= 0.0:
+        raise ValueError(
+            f"build_cpcv_evidence requires annualization_factor > 0, got {annualization_factor}"
+        )
     splits = generate_cpcv_splits(n_bars, config)
     paths = reconstruct_paths(config.n_groups, config.k_test_groups, splits)
     paths_returns = assemble_path_returns(
@@ -723,7 +893,7 @@ def build_cpcv_evidence(
         paths=paths,
     )
 
-    fold_sharpes = tuple(sharpe_ratio(p) for p in paths_returns)
+    fold_sharpes = tuple(sharpe_ratio(p) * annualization_factor for p in paths_returns)
     fold_count = len(fold_sharpes)
 
     if fold_count == 0:
@@ -738,7 +908,16 @@ def build_cpcv_evidence(
     mean_sharpe = statistics.fmean(fold_sharpes)
     median_sharpe = statistics.median(fold_sharpes)
     mean_pnl = statistics.fmean(sum(p) for p in paths_returns)
-    p_value = lo_bootstrap_p_value(fold_sharpes, n_bootstrap=n_bootstrap, seed=seed)
+    # Block-bootstrap the per-bar pooled OOS return (not the correlated
+    # per-path Sharpes) so the p-value is non-degenerate and respects
+    # serial correlation; block length = the declared embargo (>= 1).
+    representative = mean_path_return_per_bar(paths_returns)
+    p_value = block_bootstrap_p_value(
+        representative,
+        block_size=max(1, config.embargo_bars),
+        n_bootstrap=n_bootstrap,
+        seed=seed,
+    )
     fold_pnl_curves_hash = fold_pnl_curves_sha256(paths_returns)
 
     return CPCVEvidence(

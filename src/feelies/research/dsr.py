@@ -68,6 +68,17 @@ two-of-two design intentionally blocks alphas that are
 statistically-significant-but-economically-marginal as well as
 economically-large-but-noisy.
 
+.. note::
+   **Naming vs. the paper.**  The *canonical* Bailey-LdP DSR is a
+   probability in ``[0, 1]`` — ``DSR = PSR(SR_0) = Prob[true Sharpe >
+   E[max]]`` — and equals ``1 − dsr_p_value`` here.  The field this
+   module calls ``dsr`` is the platform's *redefinition*: a deflated
+   Sharpe **excess** (``observed − E[max]``, in Sharpe units), which is
+   why ``GateThresholds.dsr_min = 1.0`` ("DSR ≥ 1") is meaningful — a
+   probability could never exceed 1.  When cross-checking against the
+   2014 paper, compare the paper's DSR to ``1 − dsr_p_value``, not to
+   the ``dsr`` field.
+
 Annualisation
 =============
 
@@ -102,6 +113,7 @@ from __future__ import annotations
 
 import math
 import statistics
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -465,6 +477,15 @@ def build_dsr_evidence(
     ``annualization_factor``; the deflation null is evaluated at
     the same per-period frequency as the inputs.
 
+    **Honest deflation.**  When ``trial_sharpe_variance`` is omitted
+    (and ``trials_count > 0``) the deflation falls back to the
+    iid-Gaussian null floor ``1 / (n_obs - 1)`` — the *smallest*
+    plausible cross-trial dispersion, hence the weakest honest
+    deflation.  A :class:`UserWarning` is emitted in that case: callers
+    who actually explored a family of variants should pass the
+    empirically-measured variance of those trials' Sharpes so the
+    deflation reflects how spread the real search was.
+
     The function is permissive about ``trials_count`` — it accepts
     ``trials_count = 0`` and produces a valid (but inevitably
     failing-validator) :class:`DSREvidence` so a researcher can
@@ -500,6 +521,16 @@ def build_dsr_evidence(
         dsr_value = observed_sharpe
         dsr_p_value = 1.0 - psr
     else:
+        if trial_sharpe_variance is None:
+            warnings.warn(
+                "build_dsr_evidence: trial_sharpe_variance not supplied; deflating "
+                "against the iid-Gaussian null floor 1/(n_obs-1). This is the WEAKEST "
+                "honest deflation — the empirical dispersion of the trials you actually "
+                "explored is larger, so E[max] (and the deflation) are understated and "
+                "the DSR is optimistic. Pass an empirically-measured variance of your "
+                "explored trials' Sharpes for an honest deflation.",
+                stacklevel=2,
+            )
         comp = deflated_sharpe(
             observed_sharpe=observed_sharpe,
             n_obs=n_obs,

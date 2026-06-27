@@ -66,11 +66,12 @@ def _full_cpcv() -> CPCVEvidence:
         fold_count=8,
         embargo_bars=20,
         fold_sharpes=tuple([1.1, 1.2, 1.0, 1.3, 1.1, 1.4, 1.0, 1.2]),
-        mean_sharpe=1.16,
+        # mean=9.3/8=1.1625, median=(1.1+1.2)/2=1.15 (validate_cpcv recomputes).
+        mean_sharpe=1.1625,
         median_sharpe=1.15,
         mean_pnl=12345.67,
         p_value=0.01,
-        fold_pnl_curves_hash="sha256:abc123",
+        fold_pnl_curves_hash="sha256:" + "0" * 64,
     )
 
 

@@ -180,11 +180,13 @@ def _full_cpcv_pass() -> CPCVEvidence:
         fold_count=8,
         embargo_bars=20,
         fold_sharpes=tuple([1.1, 1.2, 1.0, 1.3, 1.1, 1.4, 1.0, 1.2]),
-        mean_sharpe=1.16,
+        # mean / median must match fold_sharpes (validate_cpcv recomputes
+        # them) — mean(=9.3/8)=1.1625, median=(1.1+1.2)/2=1.15.
+        mean_sharpe=1.1625,
         median_sharpe=1.15,
         mean_pnl=12345.67,
         p_value=0.01,
-        fold_pnl_curves_hash="sha256:abc123",
+        fold_pnl_curves_hash="sha256:" + "0" * 64,
     )
 
 
@@ -329,6 +331,106 @@ class TestValidateCPCV:
         errors = validate_cpcv(ev)
         assert any("p-value" in e for e in errors)
 
+    # ── P1-2: integrity (not trust-on-submit) ────────────────────────
+
+    def test_audit_fabricated_evidence_now_rejected(self) -> None:
+        # Regression guard for the audit's confirmed trust-on-submit
+        # finding: this exact package PASSED validate_cpcv before P1-2.
+        ev = CPCVEvidence(
+            fold_count=8,
+            embargo_bars=0,
+            fold_sharpes=tuple([0.01] * 8),
+            mean_sharpe=2.0,
+            median_sharpe=2.0,
+            mean_pnl=0.0,
+            p_value=0.0001,
+            fold_pnl_curves_hash="",
+        )
+        errors = validate_cpcv(ev)
+        assert errors
+        assert any("does not match" in e for e in errors)  # fabricated summary
+        assert any("embargo_bars" in e for e in errors)  # zero embargo
+
+    def test_drifted_mean_rejected(self) -> None:
+        ev = CPCVEvidence(
+            fold_count=8,
+            embargo_bars=5,
+            fold_sharpes=tuple([1.5] * 8),
+            mean_sharpe=1.9,  # does not match mean(fold_sharpes)=1.5
+            median_sharpe=1.5,
+            p_value=0.01,
+        )
+        assert any("mean_sharpe" in e and "does not match" in e for e in validate_cpcv(ev))
+
+    def test_drifted_median_rejected(self) -> None:
+        ev = CPCVEvidence(
+            fold_count=8,
+            embargo_bars=5,
+            fold_sharpes=tuple([1.5] * 8),
+            mean_sharpe=1.5,
+            median_sharpe=1.9,  # does not match median(fold_sharpes)=1.5
+            p_value=0.01,
+        )
+        assert any("median_sharpe" in e and "does not match" in e for e in validate_cpcv(ev))
+
+    def test_non_finite_fold_sharpe_rejected(self) -> None:
+        ev = CPCVEvidence(
+            fold_count=8,
+            embargo_bars=5,
+            fold_sharpes=tuple([1.5] * 7 + [float("nan")]),
+            mean_sharpe=1.5,
+            median_sharpe=1.5,
+            p_value=0.01,
+        )
+        assert any("non-finite" in e for e in validate_cpcv(ev))
+
+    def test_zero_embargo_rejected_by_default(self) -> None:
+        ev = CPCVEvidence(
+            fold_count=8,
+            embargo_bars=0,
+            fold_sharpes=tuple([1.5] * 8),
+            mean_sharpe=1.5,
+            median_sharpe=1.5,
+            p_value=0.01,
+        )
+        assert any("embargo_bars" in e for e in validate_cpcv(ev))
+
+    def test_p_value_outside_unit_interval_rejected(self) -> None:
+        ev = CPCVEvidence(
+            fold_count=8,
+            embargo_bars=5,
+            fold_sharpes=tuple([1.5] * 8),
+            mean_sharpe=1.5,
+            median_sharpe=1.5,
+            p_value=0.0,  # block bootstrap never returns 0; (0, 1] required
+        )
+        assert any("outside (0, 1]" in e for e in validate_cpcv(ev))
+
+    def test_malformed_hash_rejected(self) -> None:
+        ev = CPCVEvidence(
+            fold_count=8,
+            embargo_bars=5,
+            fold_sharpes=tuple([1.5] * 8),
+            mean_sharpe=1.5,
+            median_sharpe=1.5,
+            p_value=0.01,
+            fold_pnl_curves_hash="sha256:not-hex",
+        )
+        assert any("malformed" in e for e in validate_cpcv(ev))
+
+    def test_empty_hash_is_allowed(self) -> None:
+        # The artefact pointer is optional per the CPCVEvidence schema.
+        ev = CPCVEvidence(
+            fold_count=8,
+            embargo_bars=5,
+            fold_sharpes=tuple([1.5] * 8),
+            mean_sharpe=1.5,
+            median_sharpe=1.5,
+            p_value=0.01,
+            fold_pnl_curves_hash="",
+        )
+        assert validate_cpcv(ev) == []
+
 
 class TestValidateDSR:
     def test_full_pass(self) -> None:
@@ -363,6 +465,39 @@ class TestValidateDSR:
         )
         errors = validate_dsr(ev)
         assert any("trials_count" in e for e in errors)
+
+    # ── P1-2 / P1-5: integrity + canonical-DSR surfacing ─────────────
+
+    def test_non_finite_dsr_rejected(self) -> None:
+        ev = DSREvidence(
+            observed_sharpe=1.5,
+            trials_count=12,
+            dsr=float("inf"),
+            dsr_p_value=0.02,
+        )
+        assert any("non-finite" in e for e in validate_dsr(ev))
+
+    def test_dsr_p_value_outside_unit_interval_rejected(self) -> None:
+        ev = DSREvidence(
+            observed_sharpe=1.5,
+            trials_count=12,
+            dsr=1.5,
+            dsr_p_value=1.5,
+        )
+        assert any("outside [0, 1]" in e for e in validate_dsr(ev))
+
+    def test_p_value_error_surfaces_canonical_dsr(self) -> None:
+        # P1-5: the error text states the canonical Bailey-LdP DSR
+        # (= 1 - dsr_p_value) so reviewers are not misled by the
+        # Sharpe-excess `dsr` field.
+        ev = DSREvidence(
+            observed_sharpe=1.5,
+            trials_count=12,
+            dsr=1.2,
+            dsr_p_value=0.10,
+        )
+        errors = validate_dsr(ev)
+        assert any("canonical Bailey-LdP DSR = 1 - p = 0.9000" in e for e in errors)
 
 
 class TestValidatePaperWindow:
@@ -683,7 +818,7 @@ class TestEvidenceToMetadata:
         payload = evidence_to_metadata(cpcv)
         assert "cpcv" in payload
         assert payload["cpcv"]["fold_count"] == 8
-        assert payload["cpcv"]["mean_sharpe"] == pytest.approx(1.16)
+        assert payload["cpcv"]["mean_sharpe"] == pytest.approx(1.1625)
         # Tuple → list for JSON.
         assert isinstance(payload["cpcv"]["fold_sharpes"], list)
         assert payload["cpcv"]["fold_sharpes"][0] == pytest.approx(1.1)
