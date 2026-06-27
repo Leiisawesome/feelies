@@ -247,6 +247,15 @@ account_equity: 500000
         assert cfg.cost_stress_multiplier == 1.0  # default kept (typo ignored)
         assert any("unrecognized config key" in r.message for r in caplog.records)
 
+    def test_unknown_key_strict_raises(self, tmp_path: Path) -> None:
+        # strict=True (wired to --strict-config) fails closed on a typo instead
+        # of silently keeping the default (audit P1-4).
+        (tmp_path / "c.yaml").write_text(
+            "symbols: [AAPL]\nalpha_specs: [x.yaml]\ncost_stress_multipler: 2.0\n"
+        )
+        with pytest.raises(ConfigurationError, match="unrecognized config key"):
+            PlatformConfig.from_yaml(tmp_path / "c.yaml", strict=True)
+
     def test_paper_mode_parses(self, tmp_path: Path) -> None:
         yaml_content = "symbols: [AAPL]\nmode: PAPER\nalpha_specs: [x.yaml]\n"
         (tmp_path / "config.yaml").write_text(yaml_content)

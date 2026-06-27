@@ -1,4 +1,13 @@
-"""Deterministic stdout JSONL emitters for backtest parity streams."""
+"""Deterministic stdout JSONL emitters for backtest parity streams.
+
+Precision note: ``FILL_JSONL`` serializes ``fill_price`` as ``str(Decimal)`` and
+is exact.  The SIGNAL / INTENT / SIZEDIV / NETDIV streams coerce ``Decimal``
+fields (strength, edge, exposures, target USD) to ``float`` for compact
+diagnostics — these are **lossy** and must not be used as a source of truth for
+replay parity (the determinism suite hashes the typed events, not these emits).
+The ``<PREFIX> {json}`` line format (single space) is consumed by
+``scripts/split_backtest_emit.py`` and pinned by ``tests/determinism``.
+"""
 
 from __future__ import annotations
 

@@ -152,7 +152,7 @@ _SENSOR_SPECS: tuple[SensorSpec, ...] = (
     ),
     SensorSpec(
         sensor_id="kyle_lambda_60s",
-        sensor_version="1.2.0",
+        sensor_version="2.0.0",
         cls=KyleLambda60sSensor,
         # Use min_samples=5 so the sensor warms up quickly within the
         # smoke run (default is 30; 5 trades arrive within seconds).
@@ -192,9 +192,6 @@ _SMOKE_SIGNAL_YAML = textwrap.dedent("""\
       regime_engine: hmm_3state_fractional
       on_condition: "1 > 0"
       off_condition: "1 < 0"
-      hysteresis:
-        posterior_margin: 0.0
-        percentile_margin: 0.0
 
     cost_arithmetic:
       edge_estimate_bps: 15.0
@@ -251,9 +248,6 @@ _SMOKE_FEEDER_YAML = textwrap.dedent("""\
       regime_engine: hmm_3state_fractional
       on_condition: "1 > 0"
       off_condition: "1 < 0"
-      hysteresis:
-        posterior_margin: 0.0
-        percentile_margin: 0.0
 
     cost_arithmetic:
       edge_estimate_bps: 15.0

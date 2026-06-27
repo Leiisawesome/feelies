@@ -19,12 +19,16 @@ class ConfigNotFoundError(FileNotFoundError):
         super().__init__(str(path))
 
 
-def load_platform_config(path: Path | str) -> PlatformConfig:
-    """Load ``PlatformConfig`` from YAML; raise if the path is missing."""
+def load_platform_config(path: Path | str, *, strict: bool = False) -> PlatformConfig:
+    """Load ``PlatformConfig`` from YAML; raise if the path is missing.
+
+    ``strict=True`` makes an unrecognized config key abort the load
+    (``ConfigurationError``) instead of warning — wired to ``--strict-config``.
+    """
     config_path = Path(path)
     if not config_path.exists():
         raise ConfigNotFoundError(config_path)
-    return PlatformConfig.from_yaml(config_path)
+    return PlatformConfig.from_yaml(config_path, strict=strict)
 
 
 def _reference_event_calendar_for_date(
@@ -155,6 +159,14 @@ def add_common_backtest_arguments(parser: argparse.ArgumentParser) -> None:
         "--trace-signal-orders",
         action="store_true",
         help=("After the run, print a diagnostic table for standalone SIGNAL → order handling."),
+    )
+    parser.add_argument(
+        "--strict-config",
+        action="store_true",
+        help=(
+            "Fail closed on unrecognized config keys (a misspelled override "
+            "aborts the run instead of silently keeping the default)."
+        ),
     )
 
 

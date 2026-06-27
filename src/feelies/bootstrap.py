@@ -116,7 +116,6 @@ from feelies.execution.trading_session import (
     build_trading_session_from_platform,
 )
 from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
-from feelies.execution.paper_backend import build_paper_backend
 from feelies.execution.regulatory.pdt_constraint import (
     AccountType,
     PDTConfig,
@@ -1060,6 +1059,12 @@ def _create_backend(
                 "PAPER mode requires a MassiveNormalizer instance, got "
                 f"{type(normalizer).__name__}"
             )
+        # Lazy import: the paper backend pulls in the optional IB stack
+        # (``ibapi``).  Importing it at module load forced BACKTEST-only script
+        # entry points (run_backtest.py, smoke_pipeline.py) to require the
+        # ``ib`` extra; deferring it here keeps pure-backtest runs dependency-light.
+        from feelies.execution.paper_backend import build_paper_backend
+
         backend, live_feed, ib_conn = build_paper_backend(
             massive_api_key=api_key,
             symbols=sorted(config.symbols),

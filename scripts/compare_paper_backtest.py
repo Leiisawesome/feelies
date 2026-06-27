@@ -36,6 +36,18 @@ def _rejection_rate(rows: list[dict[str, Any]]) -> float:
 
 
 def compare_runs(paper_dir: Path, backtest_dir: Path) -> dict[str, Any]:
+    """Compare a paper session run-dir against a backtest run-dir.
+
+    Honesty note: the backtest ``fills.jsonl`` contains FILLED acks only (it
+    has no rejected/cancelled rows), so a true *fill rate* is not computable
+    for the backtest side and the old ``len/len`` formula was identically 1.0.
+    We therefore report the paper fill/rejection rates (which ARE computable
+    from ``order_acks.jsonl``) plus raw counts, and mark the cross-run
+    divergence metrics (slippage, latency KS, PnL compression) as *unavailable*
+    rather than emitting hardcoded placeholder constants.  Only the paper
+    rejection rate gates here; this tool is **not** promotion-grade until the
+    slippage/latency/PnL comparisons are implemented against matched streams.
+    """
     paper_acks = _load_jsonl(paper_dir / "order_acks.jsonl")
     backtest_fills = _load_jsonl(backtest_dir / "fills.jsonl")
     paper_fills = _load_jsonl(paper_dir / "fills.jsonl")
@@ -50,37 +62,42 @@ def compare_runs(paper_dir: Path, backtest_dir: Path) -> dict[str, Any]:
         else {}
     )
 
-    paper_fill_rate = (
-        _fill_rate(paper_acks)
-        if paper_acks
-        else (len(paper_fills) / max(len(paper_acks), 1) if paper_acks else 0.0)
-    )
-    backtest_fill_rate = len(backtest_fills) / max(len(backtest_fills), 1)
-
-    fill_rate_drift_pct = (paper_fill_rate - backtest_fill_rate) * 100.0
+    paper_fill_rate = _fill_rate(paper_acks)  # filled / all acks — real rate
     rejection_rate_pct = _rejection_rate(paper_acks) * 100.0
 
-    comparison_confidence = "LOW"
-    if paper_meta.get("session_open_ns") and backtest_meta.get("first_timestamp_ns"):
-        comparison_confidence = "MEDIUM"
+    # Metrics not yet implemented against matched streams — surfaced as null so
+    # downstream consumers cannot mistake a placeholder constant for a measurement.
+    unavailable = [
+        "slippage_residual_bps",
+        "latency_ks_p",
+        "pnl_compression_ratio",
+        "anomalous_event_count",
+        "fill_rate_drift_pct",  # backtest stream is fills-only; no denominator
+    ]
 
-    report = {
+    have_anchors = bool(
+        paper_meta.get("session_open_ns") and backtest_meta.get("first_timestamp_ns")
+    )
+    have_paper_acks = bool(paper_acks)
+    comparison_confidence = "LOW" if (have_anchors and have_paper_acks) else "INSUFFICIENT"
+
+    report: dict[str, Any] = {
         "comparison_confidence": comparison_confidence,
-        "paper_window_evidence": {
-            "trading_days": 1,
-            "sample_size": len(paper_fills) or len(paper_acks),
-            "slippage_residual_bps": 0.0,
-            "fill_rate_drift_pct": fill_rate_drift_pct,
-            "latency_ks_p": 1.0,
-            "pnl_compression_ratio": 1.0,
-            "anomalous_event_count": 0,
+        "promotion_grade": False,
+        "paper": {
+            "order_acks": len(paper_acks),
+            "fills": len(paper_fills),
+            "fill_rate": paper_fill_rate,
+            "rejection_rate_pct": rejection_rate_pct,
         },
+        "backtest": {
+            "fills": len(backtest_fills),
+        },
+        "unavailable_metrics": unavailable,
         "order_rejection_rate_pct": rejection_rate_pct,
         "blocking_alerts": [],
     }
 
-    if abs(fill_rate_drift_pct) > 20.0:
-        report["blocking_alerts"].append("fill_rate_drift_pct > 20%")
     if rejection_rate_pct > 8.0:
         report["blocking_alerts"].append("order_rejection_rate > 8%")
 
@@ -98,10 +115,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
     else:
-        ev = report["paper_window_evidence"]
+        paper = report["paper"]
         print(f"comparison_confidence: {report['comparison_confidence']}")
-        print(f"fill_rate_drift_pct: {ev['fill_rate_drift_pct']:.2f}")
-        print(f"sample_size: {ev['sample_size']}")
+        print(f"promotion_grade: {report['promotion_grade']}")
+        print(f"paper order_acks: {paper['order_acks']}  fills: {paper['fills']}")
+        print(f"paper fill_rate: {paper['fill_rate']:.3f}")
+        print(f"paper rejection_rate_pct: {paper['rejection_rate_pct']:.2f}")
+        print(f"backtest fills: {report['backtest']['fills']}")
+        print(f"unavailable_metrics: {', '.join(report['unavailable_metrics'])}")
         if report["blocking_alerts"]:
             print("BLOCKING:", ", ".join(report["blocking_alerts"]))
 

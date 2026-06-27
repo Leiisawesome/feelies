@@ -1225,8 +1225,14 @@ class PlatformConfig:
         }
 
     @classmethod
-    def from_yaml(cls, path: str | Path) -> PlatformConfig:
+    def from_yaml(cls, path: str | Path, *, strict: bool = False) -> PlatformConfig:
         """Load configuration from a YAML file.
+
+        With ``strict=True`` an unrecognized top-level key raises
+        ``ConfigurationError`` instead of warning — opt-in fail-closed loading
+        for CI / operator runs that want a misspelled override to abort rather
+        than silently keep the default (default ``False`` preserves the
+        forward-compatible warn-and-load behaviour).
 
         Raises ``ConfigurationError`` if the file is unreadable or
         contains invalid structure (including loosely-typed scalars, see
@@ -1266,7 +1272,7 @@ class PlatformConfig:
         # Audit P1-3 / P1-4: reject loosely-typed scalars (e.g. quoted
         # "false" for a bool, a float for an int) and surface unrecognized
         # keys (typo'd overrides that would otherwise silently no-op).
-        cls._check_yaml_keys_and_types(data, source=path)
+        cls._check_yaml_keys_and_types(data, source=path, strict=strict)
 
         symbols_raw = data.get("symbols", [])
         symbols = frozenset(symbols_raw) if symbols_raw else frozenset()
@@ -1670,7 +1676,9 @@ class PlatformConfig:
     _NON_FIELD_YAML_KEYS = frozenset({"gate_thresholds", "paper", "extends"})
 
     @classmethod
-    def _check_yaml_keys_and_types(cls, data: dict[str, Any], *, source: Path) -> None:
+    def _check_yaml_keys_and_types(
+        cls, data: dict[str, Any], *, source: Path, strict: bool = False
+    ) -> None:
         """Validate YAML key recognition and scalar typing before coercion.
 
         Two fail-fast guards (audit P1-3 / P1-4):
@@ -1696,6 +1704,12 @@ class PlatformConfig:
 
         unknown = sorted(k for k in data if k not in known)
         if unknown:
+            if strict:
+                raise ConfigurationError(
+                    f"{source}: unrecognized config key(s) {unknown} — check for typos. "
+                    "(strict config loading is enabled; a misspelled key would otherwise "
+                    "silently keep the default.)"
+                )
             logger.warning(
                 "%s: ignoring unrecognized config key(s) %s — check for typos; "
                 "a misspelled key silently keeps the default.",

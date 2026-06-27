@@ -24,6 +24,7 @@ import argparse
 import hashlib
 import json
 import logging
+import os
 import sys
 import time
 from collections import defaultdict
@@ -63,6 +64,7 @@ from feelies.harness.backtest_prep import (
     prepare_backtest_event_log,
 )
 from feelies.harness.backtest_report import (
+    cache_data_version,
     compute_combined_parity_hash,
     compute_config_hash,
     compute_parity_hash,
@@ -95,6 +97,7 @@ from feelies.core.events import (
     SizedPositionIntent,
     Trade,
 )
+from feelies.core.errors import ConfigurationError
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.ingestion.data_integrity import DataHealth
 from feelies.ingestion.ingest_health import terminal_symbol_health_rows
@@ -260,9 +263,14 @@ DaySource = IngestDayMeta
 def _load_backtest_config(args: argparse.Namespace) -> PlatformConfig | None:
     """Load platform YAML and apply CLI stress / symbol overrides."""
     try:
-        config = load_platform_config(args.config)
+        config = load_platform_config(
+            args.config, strict=getattr(args, "strict_config", False)
+        )
     except ConfigNotFoundError as exc:
         print(f"ERROR: Config file not found: {exc.path}", file=sys.stderr)
+        return None
+    except ConfigurationError as exc:
+        print(f"ERROR: Invalid config: {exc}", file=sys.stderr)
         return None
     end_date = getattr(args, "end_date", None) or getattr(args, "date", None)
     return apply_backtest_cli_overrides(
@@ -509,6 +517,26 @@ def print_verification(results: list[tuple[str, bool, str]]) -> bool:
 
 
 # ── Main ─────────────────────────────────────────────────────────────
+
+
+def _warn_if_unpinned_hash_seed() -> None:
+    """Warn when ``PYTHONHASHSEED`` is not pinned to ``0``.
+
+    Inv-5 determinism (set/frozenset iteration order) is contractually pinned
+    at ``PYTHONHASHSEED=0``.  conftest enforces this for the test session; an
+    operator running ``run_backtest.py`` / ``feelies backtest`` gets no such
+    guard, so echo a one-line backstop (the value is also stamped into the
+    report's Parity block).
+    """
+    seed = os.environ.get("PYTHONHASHSEED")
+    if seed != "0":
+        print(
+            f"  WARNING: PYTHONHASHSEED={seed!r} (expected '0'). Inv-5 determinism is "
+            "pinned at PYTHONHASHSEED=0; cross-host parity is not guaranteed. "
+            "Re-run as `PYTHONHASHSEED=0 ...` for a reproducible run.",
+            file=sys.stderr,
+            flush=True,
+        )
 
 
 def _force_utf8_console() -> None:
@@ -759,6 +787,19 @@ def _run_backtest_phases_2_7(
     dt = time.monotonic() - step_t
     print(f"  Pipeline complete - {quote_observer.summary()}", flush=True)
 
+    # Explicit post-run macro-state gate (do not rely solely on verification
+    # check #6).  ``run_backtest`` transitions to DEGRADED and re-raises on an
+    # integrity failure, but a future relaxation must still fail the run here.
+    macro = orchestrator.macro_state
+    if macro != MacroState.READY:
+        print(
+            f"  ERROR: Backtest ended in macro state {macro.name}, expected READY",
+            file=sys.stderr,
+        )
+        return BacktestRunOutcome(
+            exit_code=1, orchestrator=orchestrator, config=config_out, recorder=recorder
+        )
+
     # ── Phase 6: Report ───────────────────────────────────────
     step_t = _step("Generating report")
     report = generate_report(
@@ -770,7 +811,14 @@ def _run_backtest_phases_2_7(
         symbol_str=symbol_str,
         date_range=date_range,
         day_sources=list(day_sources),
-        data_version=live_data_version(symbols, date_range),
+        # Prefer the content-bound data_version (per-day event counts + health)
+        # so a re-ingested tape under the same symbol/date does not collide to
+        # the same artifact_id; fall back to the (symbols, date_range) label.
+        data_version=(
+            cache_data_version(list(day_sources))
+            if day_sources
+            else live_data_version(symbols, date_range)
+        ),
         quote_trace=quote_observer.trace,
         n_quotes=n_quotes,
     )
@@ -814,6 +862,7 @@ def _run_backtest_phases_2_7(
 
 def run_backtest_api(args: argparse.Namespace) -> int:
     """Run the Massive API backtest path (shared by script and ``feelies backtest``)."""
+    _warn_if_unpinned_hash_seed()
     if not args.date:
         print(
             "ERROR: --date is required (the synthetic --demo mode was "
@@ -928,6 +977,7 @@ def main_cache_replay(argv: list[str] | None = None) -> int:
     """Entry point: replay from DiskEventCache JSONL.gz only (no Massive API)."""
     _force_utf8_console()
     _configure_logging_for_cli()
+    _warn_if_unpinned_hash_seed()
     args = parse_cache_replay_args(argv)
 
     config = _load_backtest_config(args)

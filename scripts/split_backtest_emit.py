@@ -23,10 +23,22 @@ _PREFIX_MAP = {
 
 
 def _parse_line(line: str) -> tuple[str, dict] | None:
+    """Parse one ``PREFIX {json}`` emitter line into ``(prefix, obj)``.
+
+    The backtest emitters (``backtest_jsonl._emit_jsonl_line``) write
+    ``f"{prefix} " + json.dumps(...)`` — a single space separates the prefix
+    from the JSON, which itself contains ``": "``.  Splitting on the first
+    space (not the first ``": "``) is therefore required; the old ``": "``
+    split landed inside the JSON and silently dropped every real line.  A
+    trailing colon on the prefix (legacy ``PREFIX: {json}`` form) is tolerated.
+    """
     line = line.strip()
-    if not line or ": " not in line:
+    if not line:
         return None
-    prefix, _, payload = line.partition(": ")
+    prefix, sep, payload = line.partition(" ")
+    if not sep:
+        return None
+    prefix = prefix.rstrip(":")
     if not prefix.endswith("_JSONL"):
         return None
     try:
@@ -99,7 +111,16 @@ def main(argv: list[str] | None = None) -> int:
     else:
         lines = sys.stdin.read().splitlines()
 
-    split_emit_stream(lines, args.run_dir, source_cmd=args.source_cmd)
+    counts = split_emit_stream(lines, args.run_dir, source_cmd=args.source_cmd)
+    total = sum(counts.values())
+    if total == 0:
+        print(
+            f"  WARNING: parsed 0 JSONL rows from {len(lines)} input line(s) — "
+            "no '<PREFIX>_JSONL {json}' lines found (did the run enable --emit-*-jsonl?).",
+            file=sys.stderr,
+        )
+    else:
+        print(f"  wrote {total:,} row(s) across {len(counts)} file(s) -> {args.run_dir}")
     return 0
 
 
