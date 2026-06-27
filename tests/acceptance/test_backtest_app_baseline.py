@@ -124,16 +124,23 @@ def _load_runner():
     return mod
 
 
-def _net_pnl_from_orchestrator(orchestrator: Orchestrator) -> Decimal:
-    """Mirror ``generate_report`` net PnL at flat book (gross − journal fees)."""
+def _net_pnl_from_orchestrator(orchestrator: Orchestrator, recorder) -> Decimal:
+    """Mirror ``generate_report`` net PnL exactly: gross − ``sum(ack.fees)``.
+
+    ``generate_report`` subtracts fees summed over **all** ``OrderAck``s
+    (``backtest_report.py``), which includes cancel/expiry fees that the trade
+    journal has no record for.  Reconciling against journal fees (the old
+    formula) silently diverged from the printed number whenever a non-fill ack
+    carried a fee, so this now uses the same ack-fee population the report does.
+    """
+    from feelies.core.events import OrderAck
+
     all_pos = orchestrator.position_store.all_positions()
     gross_pnl = sum(
         (p.realized_pnl + p.unrealized_pnl for p in all_pos.values()),
         Decimal("0"),
     )
-    journal = orchestrator.trade_journal
-    assert journal is not None
-    fees = sum((r.fees for r in journal.query()), Decimal("0"))
+    fees = sum((a.fees for a in recorder.of_type(OrderAck)), Decimal("0"))
     return gross_pnl - fees
 
 
@@ -230,7 +237,21 @@ def test_app_20260326_backtest_baseline_from_disk_cache(runner) -> None:
     # contract is pinned data-free in ``test_app_baseline_config_contract_hash``.
     pnl_hash = compute_parity_hash(outcome.orchestrator)
     assert pnl_hash == compute_parity_hash(outcome.orchestrator)
-    assert _net_pnl_from_orchestrator(outcome.orchestrator) == _BASELINE_NET_PNL
+
+    # Fee reconciliation: the report's fee population (sum of all OrderAck.fees)
+    # must equal the position store's cumulative_fees (the NAV truth, which
+    # also absorbs cancel/expiry fees).  If these ever diverge, the printed
+    # Net P&L no longer reconciles with the fills it summarizes.
+    from feelies.core.events import OrderAck
+
+    assert outcome.recorder is not None
+    ack_fees = sum((a.fees for a in outcome.recorder.of_type(OrderAck)), Decimal("0"))
+    cumulative_fees = sum(
+        (p.cumulative_fees for p in outcome.orchestrator.position_store.all_positions().values()),
+        Decimal("0"),
+    )
+    assert ack_fees == cumulative_fees
+    assert _net_pnl_from_orchestrator(outcome.orchestrator, outcome.recorder) == _BASELINE_NET_PNL
 
 
 def test_app_baseline_config_contract_hash() -> None:

@@ -23,6 +23,31 @@ ergonomics, richer provenance, hardening. Each finding tags **[bug] / [limitatio
 
 ---
 
+## 0. Resolution (follow-up commit)
+
+The P1/P2 backlog below was addressed in a follow-up. Status per item:
+
+| Item | Status | Change |
+|---|---|---|
+| P1-1 split emit | **Fixed** | `split_backtest_emit.py:_parse_line` now splits on the first space (tolerates legacy colon); test feeds real emitter output + a round-trip test |
+| P1-2 paper-compare | **Fixed** | `compare_paper_backtest.py` no longer fabricates a 1.0 fill-rate or hardcoded metrics; reports real paper rates + counts, marks divergence metrics `unavailable`, flags `promotion_grade: false` |
+| P1-3 report fees | **Fixed** | Baseline test reconciles to `sum(ack.fees)` and asserts `== Σ cumulative_fees` |
+| P1-4 config strictness | **Fixed (opt-in)** | `from_yaml(..., strict=True)` raises on unknown keys; `--strict-config` flag wired; default warn-behaviour preserved (the deliberate, separately-tested forward-compat path) |
+| P1-5 PYTHONHASHSEED | **Fixed** | Runner warns when unpinned; report Parity block echoes `hash_seed` |
+| P1-6 data provenance | **Fixed** | `cache_data_version()` binds `data_version` to per-day event counts + health; used when day-sources present |
+| P1-7 code provenance | **Fixed** | `code_version()` folds the HEAD git SHA into `artifact_id` and the report |
+| P1-8 smoke | **Fixed** | Removed dead `hysteresis` margins and bumped the stale `kyle_lambda_60s` version; `smoke_pipeline.py` runs green |
+| P2-9 scripts import | **Fixed** | `bootstrap` lazy-imports the paper backend; backtest scripts import without the `ib` extra |
+| P2-10 fixtures guard | **Fixed** | `generate_bt12_fixtures.py` gains `--force` / `--dry-run`; refuses to clobber without them |
+| P2-11/12 report docs | **Fixed** | Latency-block non-determinism documented; scratch trades counted explicitly; `pnl_per_share` denominator documented |
+| P2-13 macro gate | **Fixed** | Explicit `macro == READY` gate after the pipeline (exit 1 otherwise) |
+| P2-14 CI parity | **Fixed** | New `tests/harness/test_backtest_parity_no_cache.py` pins trade-path bit-identity without the disk cache |
+| P2-15 jsonl precision | **Documented** | Float coercion flagged lossy in the emitter docstring (format is test-pinned, so not changed) |
+
+Pre-existing, out-of-scope failures on this branch (unrelated to these changes; verified failing with the changes reverted): 5 `tests/kernel/test_orchestrator.py` `STOP_EXIT`-reason tests and the `platform_config.py` stale wall-clock-allowlist entry.
+
+---
+
 ## 1. Executive summary
 
 1. **[P1, bug] `scripts/split_backtest_emit.py` silently drops every real emitter line.**

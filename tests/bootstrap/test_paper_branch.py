@@ -171,7 +171,7 @@ class TestCreateBackendPaperBranch:
         clock = SimulatedClock()
         normalizer = MassiveNormalizer(clock=clock)
 
-        with patch("feelies.bootstrap.build_paper_backend") as mock_build:
+        with patch("feelies.execution.paper_backend.build_paper_backend") as mock_build:
             sentinel_backend = object()
             sentinel_feed = object()
             sentinel_ib = object()
@@ -210,7 +210,7 @@ class TestCreateBackendPaperBranch:
         clock = SimulatedClock()
         normalizer = MassiveNormalizer(clock=clock)
 
-        with patch("feelies.bootstrap.build_paper_backend") as mock_build:
+        with patch("feelies.execution.paper_backend.build_paper_backend") as mock_build:
             mock_build.return_value = (object(), object(), object())
             _create_backend(
                 OperatingMode.PAPER,
@@ -286,7 +286,7 @@ class TestBuildPlatformPaperBranch:
             captured["normalizer"] = kwargs["normalizer"]
             return (object(), object(), object())
 
-        with patch("feelies.bootstrap.build_paper_backend", side_effect=_fake_build):
+        with patch("feelies.execution.paper_backend.build_paper_backend", side_effect=_fake_build):
             orchestrator, _ = build_platform(config)
 
         assert isinstance(orchestrator._normalizer, MassiveNormalizer)
@@ -305,7 +305,7 @@ class TestBuildPlatformPaperBranch:
         assert config.session_open_ns is None
 
         with patch(
-            "feelies.bootstrap.build_paper_backend",
+            "feelies.execution.paper_backend.build_paper_backend",
             return_value=(object(), object(), object()),
         ):
             _, out_config = build_platform(config)
@@ -377,7 +377,7 @@ class TestPaperIbPortWarning:
 
         with caplog.at_level(logging.WARNING):
             with patch(
-                "feelies.bootstrap.build_paper_backend",
+                "feelies.execution.paper_backend.build_paper_backend",
                 return_value=(object(), object(), object()),
             ):
                 build_platform(config)

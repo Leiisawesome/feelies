@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import random
@@ -33,8 +34,33 @@ _COST_DRAG = 4.0 / 10_000.0
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing committed fixtures (required to mutate them).",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate and report what would be written; write nothing.",
+    )
+    args = parser.parse_args()
+
     out = _REPO_ROOT / "tests" / "fixtures" / "bt12"
     out.mkdir(parents=True, exist_ok=True)
+
+    # Guardrail: this script overwrites committed BT-12 acceptance fixtures.
+    # Refuse to clobber them unless --force (or --dry-run) is given, so an
+    # accidental invocation cannot silently re-baseline the fixtures.
+    existing = [out / f"{aid}_daily_returns.json" for aid in _ALPHAS]
+    present = [p for p in existing if p.exists()]
+    if present and not args.force and not args.dry_run:
+        raise SystemExit(
+            "refusing to overwrite existing BT-12 fixtures without --force "
+            f"({len(present)} file(s) present under {out}); "
+            "pass --force to re-baseline or --dry-run to preview."
+        )
     meta = {
         "schema": "bt12_post_fix_backtest_surrogate_v1",
         "source": "surrogate_v1",
@@ -63,6 +89,9 @@ def main() -> None:
             if errs:
                 raise SystemExit(f"{alpha_id}: {label} failed: {errs}")
         path = out / f"{alpha_id}_daily_returns.json"
+        if args.dry_run:
+            print(f"[dry-run] would write {path} mean_sharpe={cpcv.mean_sharpe:.2f} dsr={dsr.dsr:.2f}")
+            continue
         path.write_text(
             json.dumps({**meta, "alpha_id": alpha_id, "returns": returns}, indent=2) + "\n",
             encoding="utf-8",

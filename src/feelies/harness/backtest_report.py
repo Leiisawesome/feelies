@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Protocol, TypeVar
 from zoneinfo import ZoneInfo
 
@@ -36,9 +38,15 @@ _W = 62
 _RULE_HEAVY = "=" * _W
 _TZ_ET = ZoneInfo("America/New_York")
 
+# Trade-journal ``trading_intent`` tags used for reversal/entry classification.
+_REVERSE_INTENTS = frozenset({"REVERSE_LONG_TO_SHORT", "REVERSE_SHORT_TO_LONG"})
+_ENTRY_INTENTS = frozenset({"ENTRY_LONG", "ENTRY_SHORT", "SCALE_UP"})
+
 __all__ = [
     "ENGINE_VERSION",
     "BusEventRecorder",
+    "cache_data_version",
+    "code_version",
     "compute_artifact_id",
     "compute_combined_parity_hash",
     "compute_config_hash",
@@ -199,24 +207,35 @@ def generate_report(
 
     open_positions = sum(1 for p in all_pos.values() if p.quantity != 0)
 
+    # A fill with realized_pnl == 0 is a *scratch* close (break-even exit) or
+    # an entry leg (entries realize nothing).  We separate the two below so the
+    # win-rate denominator (resolved_count) excludes scratches rather than
+    # silently treating a break-even exit as an "entry fill".
     winning_pnls: list[Decimal] = []
     losing_pnls: list[Decimal] = []
+    scratch_count = 0
     for rec in records:
         if rec.realized_pnl > 0:
             winning_pnls.append(rec.realized_pnl)
         elif rec.realized_pnl < 0:
             losing_pnls.append(rec.realized_pnl)
+        elif getattr(rec, "trading_intent", "") not in _ENTRY_INTENTS:
+            # realized_pnl == 0 on a non-entry leg → a genuine scratch close.
+            scratch_count += 1
 
     total_fills = len(records)
     win_count = len(winning_pnls)
     loss_count = len(losing_pnls)
     resolved_count = win_count + loss_count
-    entry_fills = total_fills - resolved_count
+    entry_fills = total_fills - resolved_count - scratch_count
     win_rate = (win_count / resolved_count * 100.0) if resolved_count else 0.0
     avg_win = sum(winning_pnls, Decimal("0")) / len(winning_pnls) if winning_pnls else Decimal("0")
     avg_loss = sum(losing_pnls, Decimal("0")) / len(losing_pnls) if losing_pnls else Decimal("0")
     largest_win = max(winning_pnls) if winning_pnls else Decimal("0")
     largest_loss = min(losing_pnls) if losing_pnls else Decimal("0")
+    # NOTE: ``total_shares`` counts BOTH entry and exit fills, so this divides
+    # realized PnL by ≈2× the net traded position — a coarse per-fill figure,
+    # not a per-unit edge.  Kept for backwards comparability of the report.
     pnl_per_share = float(realized_pnl) / total_shares if total_shares else 0.0
 
     # ── Reversal analysis (B5) ───────────────────────────────────
@@ -230,8 +249,6 @@ def generate_report(
     # along the path (B5 reversal-edge guard, B4 entry edge/cost gate,
     # post-exit risk rejection, SCALE_DOWN below ``min_order_shares``,
     # or entry-leg submission failure) and only the exit leg traded.
-    _REVERSE_INTENTS = {"REVERSE_LONG_TO_SHORT", "REVERSE_SHORT_TO_LONG"}
-    _ENTRY_INTENTS = {"ENTRY_LONG", "ENTRY_SHORT"}
     reversal_records = [r for r in records if getattr(r, "trading_intent", "") in _REVERSE_INTENTS]
     entry_correlation_ids = {
         r.correlation_id for r in records if getattr(r, "trading_intent", "") in _ENTRY_INTENTS
@@ -310,6 +327,11 @@ def generate_report(
     )
 
     # ── Performance metrics ──────────────────────────────────────
+    # NOTE (reproducibility): every value in the Latency section below is a
+    # wall-clock measurement and is therefore NOT bit-identical across runs or
+    # machines.  Inv-5's "identical report" contract holds for the Parity block
+    # (pnl_hash / config_hash / parity_hash / artifact_id), not for these
+    # timing lines.  Diff two runs on the Parity block, never on the full text.
     mc = orchestrator.metric_collector
     if isinstance(mc, InMemoryMetricCollector):
         tick_summary = mc.get_summary("kernel", "tick_to_decision_latency_ns")
@@ -450,6 +472,8 @@ def generate_report(
     lines.append(_kv("Total fills", f"{total_fills:,}"))
     lines.append(_sub_kv("Entry fills ", f"{entry_fills:,}"))
     lines.append(_sub_kv("Closing fills", f"{resolved_count:,}"))
+    if scratch_count:
+        lines.append(_sub_kv("Scratch (break-even)", f"{scratch_count:,}"))
     lines.append(_kv("Open positions", f"{open_positions}"))
     win_rate_str = f"{win_rate:.1f}% ({win_count}/{resolved_count})" if resolved_count else "N/A"
     lines.append(_kv("Win rate", win_rate_str))
@@ -587,8 +611,12 @@ def generate_report(
     lines.append(_kv("config_hash (cfg)", config_hash))
     lines.append(_kv("parity_hash (both)", parity_hash))
     lines.append(_kv("engine_version", ENGINE_VERSION))
+    lines.append(_kv("code_version", code_version()))
     lines.append(_kv("data_version", resolved_data_version))
     lines.append(_kv("artifact_id (B-PROMO-04)", artifact_id))
+    # Determinism depends on PYTHONHASHSEED=0 (set/frozenset iteration order);
+    # echo it so a non-reproducible run is self-documenting (Inv-5 backstop).
+    lines.append(_kv("hash_seed", os.environ.get("PYTHONHASHSEED", "<unset>")))
 
     lines.append("")
     lines.append(_RULE_HEAVY)
@@ -612,6 +640,70 @@ def live_data_version(symbols: list[str], date_range: str) -> str:
         separators=(",", ":"),
     )
     return "live:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def cache_data_version(day_sources: list[IngestDayMeta]) -> str:
+    """Content-bound identifier for a run's input dataset.
+
+    Unlike :func:`live_data_version` (which hashes only the ``(symbols,
+    date_range)`` *label*), this folds in the per-day event counts and
+    ingestion health.  A re-ingested tape with a different event count or
+    health therefore yields a different ``data_version`` even when the symbol
+    and date are unchanged — closing the Inv-13 gap where two different tapes
+    for the same symbol/date collided to the same ``artifact_id``.
+
+    It is still not a full byte-hash of the cache (which would require a second
+    pass over millions of events); it binds to the provenance rows already
+    computed during ingest.  Falls back to a stable empty marker when no day
+    sources are available.
+    """
+    rows = sorted(
+        (str(ds.symbol), str(ds.date), int(ds.event_count), ds.ingestion_health or "UNKNOWN")
+        for ds in day_sources
+    )
+    payload = json.dumps({"days": rows}, sort_keys=True, separators=(",", ":"))
+    return "cache:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def _git_sha() -> str | None:
+    """Best-effort short git SHA of the HEAD commit, or ``None``.
+
+    Reads ``.git/HEAD`` directly (no subprocess) by walking up from this
+    module's location.  Returns ``None`` when no ``.git`` is found (e.g. an
+    installed wheel) so callers can substitute a stable placeholder.
+    """
+    for base in (Path(__file__).resolve(), Path.cwd().resolve()):
+        for parent in (base, *base.parents):
+            head = parent / ".git" / "HEAD"
+            if not head.is_file():
+                continue
+            try:
+                ref = head.read_text(encoding="utf-8").strip()
+            except OSError:
+                return None
+            if ref.startswith("ref:"):
+                ref_path = parent / ".git" / ref.split(" ", 1)[1].strip()
+                if ref_path.is_file():
+                    try:
+                        return ref_path.read_text(encoding="utf-8").strip()[:12]
+                    except OSError:
+                        return None
+                return None
+            return ref[:12]  # detached HEAD: raw SHA
+    return None
+
+
+def code_version() -> str:
+    """``ENGINE_VERSION`` bound to the working-tree git SHA when available.
+
+    ``ENGINE_VERSION`` is a hand-bumped contract version; on its own it cannot
+    detect a code change that altered fill semantics without a bump.  Pairing
+    it with the git SHA gives ``artifact_id`` a real code anchor.  Renders as
+    ``"<ENGINE_VERSION>+<sha>"`` in a git checkout, or just ``ENGINE_VERSION``
+    when no ``.git`` is present.
+    """
+    sha = _git_sha()
+    return f"{ENGINE_VERSION}+{sha}" if sha else ENGINE_VERSION
 
 
 def compute_parity_hash(orchestrator: Orchestrator) -> str:
@@ -672,7 +764,7 @@ def compute_artifact_id(
 ) -> str:
     """Deterministic artifact id for the run (audit B-PROMO-04).
 
-    Combines four orthogonal axes that together identify a backtest run:
+    Combines five orthogonal axes that together identify a backtest run:
 
       - ``strategy_version``: ``alpha_id@manifest.version`` for every
         active alpha, sorted. Picks up code-level alpha changes.
@@ -682,6 +774,9 @@ def compute_artifact_id(
         dataset. Demo mode hashes the static tick payload; live mode
         encodes ``symbols + date range``.
       - ``engine_version``: the ``ENGINE_VERSION`` constant above.
+      - ``code_version``: ``ENGINE_VERSION`` paired with the HEAD git SHA
+        when a ``.git`` is present, so a fill-semantics change that forgot
+        to bump ``ENGINE_VERSION`` still shifts the id.
 
     Same inputs produce the same id; any drift across consecutive
     audits flags an unintentional change in the artifact contract.
@@ -699,6 +794,7 @@ def compute_artifact_id(
             "config_version": config.version,
             "data_version": data_version,
             "engine_version": ENGINE_VERSION,
+            "code_version": code_version(),
         },
         sort_keys=True,
         separators=(",", ":"),
