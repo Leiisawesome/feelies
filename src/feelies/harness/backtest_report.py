@@ -40,7 +40,7 @@ _TZ_ET = ZoneInfo("America/New_York")
 
 # Trade-journal ``trading_intent`` tags used for reversal/entry classification.
 _REVERSE_INTENTS = frozenset({"REVERSE_LONG_TO_SHORT", "REVERSE_SHORT_TO_LONG"})
-_ENTRY_INTENTS = frozenset({"ENTRY_LONG", "ENTRY_SHORT"})
+_ENTRY_INTENTS = frozenset({"ENTRY_LONG", "ENTRY_SHORT", "SCALE_UP"})
 
 __all__ = [
     "ENGINE_VERSION",
