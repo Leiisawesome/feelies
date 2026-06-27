@@ -223,6 +223,7 @@ class TestEdgeCasesPinned:
             trials_count=50,
             skewness=-0.2,
             kurtosis=4.0,
+            trial_sharpe_variance=1.0 / 251,
         )
         sr0 = expected_max_sharpe(n_trials=50, trial_sharpe_variance=1.0 / 251)
         psr = probabilistic_sharpe_ratio(
@@ -233,3 +234,45 @@ class TestEdgeCasesPinned:
             kurtosis=4.0,
         )
         assert ev.dsr_p_value == 1.0 - psr
+
+
+class TestExpectedMaxSharpeKnownAnswer:
+    """P2-5: cross-check ``expected_max_sharpe`` against an INDEPENDENT
+    ground truth — the literature value of ``E[max of N iid standard
+    normals]``, the order-statistic expectation that Bailey-LdP eq. 7
+    closed-form *approximates*.
+
+    The other reference tests in this module compare the module to a
+    reimplementation of the *same* closed form (a formula-drift
+    tripwire, but circular).  This test instead pins the answer to
+    well-tabulated expected-largest-order-statistic values (e.g. Harter
+    1961; Royston 1982), against which the eq. 7 approximation is a
+    documented ~1-3% match for ``N >= 10`` — catching an error that
+    silently preserves the formula's internal structure.
+    """
+
+    # E[max of N iid N(0,1)] from standard order-statistics tables.
+    _E_MAX_STD_NORMAL = {
+        10: 1.53875,
+        100: 2.50759,
+        1000: 3.24147,
+    }
+
+    def test_matches_order_statistic_expectation(self) -> None:
+        # With V[SR] = 1, expected_max_sharpe returns E[max] directly in
+        # standard-normal units.
+        for n_trials, e_max in self._E_MAX_STD_NORMAL.items():
+            approx = expected_max_sharpe(n_trials=n_trials, trial_sharpe_variance=1.0)
+            assert math.isclose(approx, e_max, rel_tol=0.03), (
+                f"N={n_trials}: closed form {approx:.5f} vs tabulated "
+                f"E[max]={e_max:.5f} differs by more than 3%"
+            )
+
+    def test_approximation_brackets_the_truth_monotonically(self) -> None:
+        # Sanity that the closed form tracks the truth in the right
+        # direction as N grows (more trials -> larger expected max).
+        vals = [
+            expected_max_sharpe(n_trials=n, trial_sharpe_variance=1.0)
+            for n in sorted(self._E_MAX_STD_NORMAL)
+        ]
+        assert vals == sorted(vals)

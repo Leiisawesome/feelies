@@ -33,10 +33,12 @@ from feelies.research.cpcv import (
     CPCVSplit,
     assemble_path_returns,
     assign_groups,
+    block_bootstrap_p_value,
     build_cpcv_evidence,
     fold_pnl_curves_sha256,
     generate_cpcv_splits,
     lo_bootstrap_p_value,
+    mean_path_return_per_bar,
     reconstruct_paths,
     sharpe_ratio,
 )
@@ -667,8 +669,8 @@ class TestBuildCPCVEvidence:
     def test_passes_default_validator_with_strong_signal(self) -> None:
         # Inject a strong positive signal to guarantee the validator
         # accepts the evidence under default thresholds (8 folds,
-        # mean Sharpe >= 1.0, p_value <= 0.05).
-        cfg = CPCVConfig(n_groups=10, k_test_groups=2)
+        # mean Sharpe >= 1.0, p_value <= 0.05, embargo >= 1).
+        cfg = CPCVConfig(n_groups=10, k_test_groups=2, embargo_bars=5)
         splits = generate_cpcv_splits(n_bars=200, config=cfg)
         # Mean=0.05, sd=0.02 -> expected per-bar Sharpe ~2.5 which
         # comfortably clears the 1.0 threshold even after CPCV
@@ -749,3 +751,241 @@ class TestBuildCPCVEvidence:
             seed=0,
         )
         assert ev.fold_count == math.comb(3, 2)  # 3
+
+    def test_annualization_factor_scales_sharpes(self) -> None:
+        # P1-4: annualization_factor multiplies every fold Sharpe (and
+        # hence mean/median), leaving the p-value and mean_pnl untouched
+        # so cpcv_min_mean_sharpe can share units with the annualised
+        # dsr_min.
+        cfg = CPCVConfig(n_groups=8, k_test_groups=2, embargo_bars=2)
+        splits = generate_cpcv_splits(n_bars=80, config=cfg)
+        tr = _make_test_returns(splits, mean=0.002, sd=0.01, seed=3)
+        base = build_cpcv_evidence(
+            config=cfg, n_bars=80, test_returns_by_split=tr, n_bootstrap=100, seed=0
+        )
+        af = math.sqrt(252)
+        ann = build_cpcv_evidence(
+            config=cfg,
+            n_bars=80,
+            test_returns_by_split=tr,
+            annualization_factor=af,
+            n_bootstrap=100,
+            seed=0,
+        )
+        for b, a in zip(base.fold_sharpes, ann.fold_sharpes, strict=True):
+            assert math.isclose(a, b * af, rel_tol=1e-12)
+        assert math.isclose(ann.mean_sharpe, base.mean_sharpe * af, rel_tol=1e-12)
+        assert math.isclose(ann.median_sharpe, base.median_sharpe * af, rel_tol=1e-12)
+        # Frequency-invariant / dimensionless quantities are unchanged.
+        assert ann.p_value == base.p_value
+        assert ann.mean_pnl == base.mean_pnl
+
+    def test_annualization_factor_must_be_positive(self) -> None:
+        cfg = CPCVConfig(n_groups=8, k_test_groups=2, embargo_bars=2)
+        splits = generate_cpcv_splits(n_bars=80, config=cfg)
+        tr = _make_test_returns(splits, mean=0.002, sd=0.01, seed=3)
+        with pytest.raises(ValueError, match="annualization_factor"):
+            build_cpcv_evidence(
+                config=cfg,
+                n_bars=80,
+                test_returns_by_split=tr,
+                annualization_factor=0.0,
+            )
+
+
+# ─────────────────────────────────────────────────────────────────────
+#   P0-1: label-horizon purge (two-sided, López de Prado §7.4.1)
+# ─────────────────────────────────────────────────────────────────────
+
+
+class TestLabelHorizonPurge:
+    def test_negative_label_horizon_rejected(self) -> None:
+        with pytest.raises(ValueError, match="label_horizon_bars must be >= 0"):
+            CPCVConfig(n_groups=4, k_test_groups=2, label_horizon_bars=-1)
+
+    def test_label_horizon_zero_is_legacy_behavior(self) -> None:
+        # h=0 reproduces the historical purge (only exact test bars
+        # removed) so existing pinned references stay valid.
+        cfg = CPCVConfig(n_groups=5, k_test_groups=1, label_horizon_bars=0, embargo_bars=0)
+        splits = generate_cpcv_splits(n_bars=10, config=cfg)
+        for s in splits:
+            assert set(s.train_indices) | set(s.test_indices) == set(range(10))
+
+    def test_label_horizon_purges_both_sides(self) -> None:
+        # n_bars=10, n_groups=5, k=1 -> group size 2; test group {2} -> bars {4,5}.
+        # label_horizon=1 purges bar 3 (backward label overlap) and bar 6
+        # (forward label overlap); embargo=0.
+        cfg = CPCVConfig(n_groups=5, k_test_groups=1, label_horizon_bars=1, embargo_bars=0)
+        splits = generate_cpcv_splits(n_bars=10, config=cfg)
+        target = next(s for s in splits if s.test_group_ids == (2,))
+        assert set(target.test_indices) == {4, 5}
+        assert 3 not in target.train_indices  # backward overlap
+        assert 6 not in target.train_indices  # forward overlap
+        assert set(target.train_indices) == {0, 1, 2, 7, 8, 9}
+
+    def test_label_horizon_and_embargo_stack_forward(self) -> None:
+        # forward exclusion = label_horizon + embargo; backward = label_horizon.
+        cfg = CPCVConfig(n_groups=5, k_test_groups=1, label_horizon_bars=1, embargo_bars=2)
+        splits = generate_cpcv_splits(n_bars=10, config=cfg)
+        target = next(s for s in splits if s.test_group_ids == (2,))  # bars {4,5}
+        # backward purge: {3}; forward: {6,7,8} (h=1 + embargo=2 = 3 bars).
+        assert set(target.train_indices) == {0, 1, 2, 9}
+
+    def test_no_train_bar_within_horizon_of_any_test_bar(self) -> None:
+        # The structural invariant the purge exists to guarantee: with a
+        # label horizon h, no surviving training bar lies within h of any
+        # test bar (so no two length-h label windows overlap).
+        cfg = CPCVConfig(n_groups=6, k_test_groups=2, label_horizon_bars=3, embargo_bars=0)
+        splits = generate_cpcv_splits(n_bars=60, config=cfg)
+        for s in splits:
+            test_set = set(s.test_indices)
+            for j in s.train_indices:
+                assert all(abs(j - t) > 3 for t in test_set), (
+                    f"train bar {j} is within horizon 3 of a test bar in {s.test_group_ids}"
+                )
+
+
+# ─────────────────────────────────────────────────────────────────────
+#   P0-2: functional leakage probe (purge collapses spurious Sharpe)
+# ─────────────────────────────────────────────────────────────────────
+
+
+class TestPurgeFunctionalLeakageProbe:
+    """A toy leaky 'model' earns a return bonus on any test bar whose
+    label window overlaps a *surviving* training bar.  With a
+    horizon-blind purge (``label_horizon_bars=0``) the leaking training
+    bars remain and the bonus manufactures alpha; with a horizon-aware
+    purge (``label_horizon_bars = true_horizon``) the leaking bars are
+    excised and the spurious Sharpe collapses.  This is the functional
+    answer the structural purge tests above cannot give."""
+
+    _TRUE_HORIZON = 2
+    _BONUS = 0.02
+
+    def _leaky_returns(
+        self, splits: tuple[CPCVSplit, ...], noise: list[float]
+    ) -> list[list[float]]:
+        out: list[list[float]] = []
+        for s in splits:
+            train = set(s.train_indices)
+            row: list[float] = []
+            for t in s.test_indices:
+                leaked = any(abs(j - t) <= self._TRUE_HORIZON for j in train)
+                row.append(noise[t] + (self._BONUS if leaked else 0.0))
+            out.append(row)
+        return out
+
+    def _build(self, label_horizon_bars: int) -> float:
+        # group size 2 (n_groups=20, n_bars=40), k=1 -> 1 path.
+        cfg = CPCVConfig(
+            n_groups=20,
+            k_test_groups=1,
+            label_horizon_bars=label_horizon_bars,
+            embargo_bars=0,
+        )
+        rng = random.Random(123)
+        noise = [rng.gauss(0.0, 0.005) for _ in range(40)]
+        splits = generate_cpcv_splits(n_bars=40, config=cfg)
+        ev = build_cpcv_evidence(
+            config=cfg,
+            n_bars=40,
+            test_returns_by_split=self._leaky_returns(splits, noise),
+            n_bootstrap=200,
+            seed=0,
+        )
+        return ev.mean_sharpe
+
+    def test_horizon_blind_purge_leaks_spurious_alpha(self) -> None:
+        # label_horizon_bars=0 leaves the leaking neighbours in train.
+        assert self._build(label_horizon_bars=0) > 1.0
+
+    def test_horizon_aware_purge_collapses_the_leak(self) -> None:
+        leaky = self._build(label_horizon_bars=0)
+        purged = self._build(label_horizon_bars=self._TRUE_HORIZON)
+        # The horizon-aware purge removes the cheat: Sharpe falls to ~0.
+        assert abs(purged) < 0.5
+        assert purged < leaky - 1.0
+
+
+# ─────────────────────────────────────────────────────────────────────
+#   P1-3: block-bootstrap p-value (non-degenerate, discriminating)
+# ─────────────────────────────────────────────────────────────────────
+
+
+class TestBlockBootstrapPValue:
+    def test_discriminates_signal_from_noise(self) -> None:
+        rng = random.Random(0)
+        strong = [rng.gauss(0.05, 0.02) for _ in range(240)]  # per-bar Sharpe ~2.5
+        rng = random.Random(1)
+        noise = [rng.gauss(0.0, 0.02) for _ in range(240)]  # Sharpe ~0
+        p_strong = block_bootstrap_p_value(strong, block_size=5, n_bootstrap=2000, seed=0)
+        p_noise = block_bootstrap_p_value(noise, block_size=5, n_bootstrap=2000, seed=0)
+        assert p_strong < 0.05
+        assert p_noise > 0.20
+
+    def test_deterministic_under_same_seed(self) -> None:
+        rng = random.Random(2)
+        rs = [rng.gauss(0.01, 0.02) for _ in range(120)]
+        p1 = block_bootstrap_p_value(rs, block_size=4, n_bootstrap=500, seed=7)
+        p2 = block_bootstrap_p_value(rs, block_size=4, n_bootstrap=500, seed=7)
+        assert p1 == p2
+
+    def test_floor_and_unit_interval(self) -> None:
+        rng = random.Random(3)
+        rs = [rng.gauss(0.1, 0.01) for _ in range(60)]  # overwhelming signal
+        p = block_bootstrap_p_value(rs, block_size=3, n_bootstrap=100, seed=0)
+        assert 1.0 / 101 <= p <= 1.0
+
+    def test_all_equal_returns_one(self) -> None:
+        assert block_bootstrap_p_value([0.5] * 10, block_size=2, n_bootstrap=100, seed=0) == 1.0
+
+    def test_singleton_returns_one(self) -> None:
+        assert block_bootstrap_p_value([0.5], block_size=1, n_bootstrap=100, seed=0) == 1.0
+
+    def test_invalid_block_size_raises(self) -> None:
+        with pytest.raises(ValueError, match="block_size"):
+            block_bootstrap_p_value([0.1, 0.2], block_size=0, n_bootstrap=100, seed=0)
+
+    def test_invalid_n_bootstrap_raises(self) -> None:
+        with pytest.raises(ValueError, match="n_bootstrap"):
+            block_bootstrap_p_value([0.1, 0.2], block_size=1, n_bootstrap=0, seed=0)
+
+    def test_identity_model_noise_does_not_floor_p_value(self) -> None:
+        # The audit's confirmed degeneracy: an identity-model OOS
+        # projection makes every reconstructed path byte-identical, so the
+        # per-path Sharpes are equal and the OLD per-path bootstrap floored
+        # p_value=1/(B+1) even for pure noise.  build_cpcv_evidence now
+        # block-bootstraps the per-bar returns, so noise gets a HIGH p.
+        cfg = CPCVConfig(n_groups=10, k_test_groups=2, embargo_bars=5)
+        splits = generate_cpcv_splits(n_bars=240, config=cfg)
+        rng = random.Random(7)
+        noise = [rng.gauss(0.0, 0.01) for _ in range(240)]
+        identity = [[noise[i] for i in s.test_indices] for s in splits]
+        ev = build_cpcv_evidence(
+            config=cfg,
+            n_bars=240,
+            test_returns_by_split=identity,
+            n_bootstrap=2000,
+            seed=0,
+        )
+        # Paths are degenerate-identical by construction ...
+        assert len({round(s, 12) for s in ev.fold_sharpes}) == 1
+        # ... yet the gate p-value reflects the absent signal, not the floor.
+        assert ev.p_value > 0.05
+
+
+class TestMeanPathReturnPerBar:
+    def test_identity_paths_recover_series(self) -> None:
+        paths = ((0.1, 0.2, 0.3), (0.1, 0.2, 0.3))
+        assert mean_path_return_per_bar(paths) == (0.1, 0.2, 0.3)
+
+    def test_averages_across_paths(self) -> None:
+        paths = ((0.0, 1.0), (2.0, 3.0))
+        assert mean_path_return_per_bar(paths) == (1.0, 2.0)
+
+    def test_empty_paths_empty_result(self) -> None:
+        assert mean_path_return_per_bar(()) == ()
+
+    def test_ragged_paths_raise(self) -> None:
+        with pytest.raises(ValueError, match="equal length"):
+            mean_path_return_per_bar(((0.1, 0.2), (0.3,)))

@@ -57,6 +57,8 @@ Schema sources (so reviewers can double-check the field choices):
 
 from __future__ import annotations
 
+import math
+import statistics
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, fields, is_dataclass, replace
 from enum import Enum
@@ -193,15 +195,21 @@ class CPCVEvidence:
     JSON.
 
     Fields:
-      fold_count           -- number of CPCV folds run
+      fold_count           -- number of reconstructed CPCV **paths**
+                              (``C(N-1, k-1)``), NOT the combination
+                              count ``C(N, k)``; "fold" is kept for
+                              schema back-compat but each fold_sharpes
+                              entry is one full-length path
       embargo_bars         -- purge/embargo bars between train and test
-      fold_sharpes         -- per-fold OOS Sharpe ratios
+      fold_sharpes         -- per-path OOS Sharpe ratios (one per path)
       mean_sharpe          -- arithmetic mean of fold_sharpes
       median_sharpe        -- median of fold_sharpes
-      mean_pnl             -- arithmetic mean of fold realised PnL
-      p_value              -- combined p-value across folds (e.g. Stouffer)
+      mean_pnl             -- arithmetic mean of per-path realised PnL
+      p_value              -- two-sided block-bootstrap p-value for
+                              ``H0: mean return = 0`` on the per-bar
+                              pooled OOS return (block_bootstrap_p_value)
       fold_pnl_curves_hash -- pointer (sha256) to the artefact carrying
-                              the per-fold equity curves; persisted in
+                              the per-path return series; persisted in
                               the research-artefact store.  Optional —
                               evidence may travel without the heavy
                               artefact when the validator only needs
@@ -233,8 +241,15 @@ class DSREvidence:
       trials_count   -- number of variants explored before this one
       skewness       -- 3rd standardised moment of returns
       kurtosis       -- 4th standardised moment of returns
-      dsr            -- deflated Sharpe ratio
-      dsr_p_value    -- p-value for ``DSR > 0`` under the null
+      dsr            -- deflated Sharpe **excess** (``observed − E[max]``,
+                        in Sharpe units), gated by ``dsr_min``.  NOTE:
+                        this is the platform's redefinition, NOT the
+                        canonical Bailey-LdP DSR — the paper's DSR is a
+                        probability and equals ``1 − dsr_p_value`` here.
+      dsr_p_value    -- ``1 − PSR(E[max])``; the right-tail p-value for
+                        "observed Sharpe exceeds the deflated benchmark".
+                        ``dsr_p_value ≤ 0.05`` ⇔ canonical Bailey-LdP
+                        DSR ≥ 0.95.
     """
 
     observed_sharpe: float = 0.0
@@ -386,8 +401,20 @@ class GateThresholds:
 
     # ── CPCV (Workstream C will compute) ──────────────────────────
     cpcv_min_folds: int = 8
+    """Minimum number of reconstructed CPCV **paths** (``C(N-1, k-1)``).
+    Despite the field name, ``CPCVEvidence.fold_count`` carries the path
+    count, not the combination count ``C(N, k)`` — see that field's
+    docstring."""
     cpcv_min_mean_sharpe: float = 1.0
+    """Minimum mean fold Sharpe.  Interpreted in the **same unit** the
+    evidence was built with: pass ``annualization_factor=sqrt(252)`` to
+    :func:`feelies.research.cpcv.build_cpcv_evidence` so this annualised
+    default is commensurate with the annualised ``dsr_min``."""
     cpcv_max_p_value: float = 0.05
+    cpcv_min_embargo_bars: int = 1
+    """Minimum embargo (purge/embargo bars between train and test).  A
+    zero-embargo CPCV run applies no serial-correlation guard at all, so
+    promotion requires at least one bar by default."""
 
     # ── DSR ────────────────────────────────────────────────────────
     dsr_min: float = 1.0
@@ -476,16 +503,34 @@ def validate_research_acceptance(
     return errors
 
 
+def _is_well_formed_curve_hash(value: str) -> bool:
+    """``True`` iff ``value`` is a ``sha256:<64 lowercase hex>`` pointer."""
+    prefix = "sha256:"
+    if not value.startswith(prefix):
+        return False
+    tail = value[len(prefix) :]
+    return len(tail) == 64 and all(c in "0123456789abcdef" for c in tail)
+
+
 def validate_cpcv(
     evidence: CPCVEvidence,
     thresholds: GateThresholds | None = None,
 ) -> list[str]:
     """Validate :class:`CPCVEvidence` against thresholds.
 
-    Pass conditions: enough folds run, mean Sharpe at or above
-    threshold, p-value at or below threshold, and ``len(fold_sharpes)``
-    must equal ``fold_count`` (else the evidence is internally
-    inconsistent and we refuse it).
+    Pass conditions:
+
+    - enough paths (``fold_count >= cpcv_min_folds``) and a non-zero
+      embargo (``embargo_bars >= cpcv_min_embargo_bars``);
+    - ``mean_sharpe >= cpcv_min_mean_sharpe`` and
+      ``p_value <= cpcv_max_p_value``;
+    - **internal integrity** (the evidence is not trust-on-submit):
+      ``len(fold_sharpes) == fold_count``, every fold Sharpe is finite,
+      ``p_value`` lies in ``(0, 1]``, the reported ``mean_sharpe`` /
+      ``median_sharpe`` actually match ``mean`` / ``median`` of
+      ``fold_sharpes``, and any non-empty ``fold_pnl_curves_hash`` is a
+      well-formed ``sha256:`` pointer.  These catch fabricated or
+      drifted summary statistics that the threshold checks alone miss.
     """
     t = thresholds or GateThresholds()
     errors: list[str] = []
@@ -497,12 +542,46 @@ def validate_cpcv(
             f"CPCV inconsistent: fold_count={evidence.fold_count} but "
             f"{len(evidence.fold_sharpes)} fold_sharpes provided"
         )
+
+    nonfinite = [s for s in evidence.fold_sharpes if not math.isfinite(s)]
+    if nonfinite:
+        errors.append(f"CPCV fold_sharpes contains non-finite values: {nonfinite}")
+    elif evidence.fold_sharpes:
+        # Recompute the summaries from fold_sharpes so a fabricated or
+        # drifted mean/median cannot pass on the operator's word alone.
+        recomputed_mean = statistics.fmean(evidence.fold_sharpes)
+        if not math.isclose(evidence.mean_sharpe, recomputed_mean, rel_tol=1e-6, abs_tol=1e-9):
+            errors.append(
+                f"CPCV mean_sharpe {evidence.mean_sharpe:.4f} does not match "
+                f"mean(fold_sharpes)={recomputed_mean:.4f} (fabricated/drifted summary?)"
+            )
+        recomputed_median = statistics.median(evidence.fold_sharpes)
+        if not math.isclose(evidence.median_sharpe, recomputed_median, rel_tol=1e-6, abs_tol=1e-9):
+            errors.append(
+                f"CPCV median_sharpe {evidence.median_sharpe:.4f} does not match "
+                f"median(fold_sharpes)={recomputed_median:.4f} (fabricated/drifted summary?)"
+            )
+
     if evidence.mean_sharpe < t.cpcv_min_mean_sharpe:
         errors.append(
             f"CPCV mean Sharpe {evidence.mean_sharpe:.2f} < {t.cpcv_min_mean_sharpe:.2f} required"
         )
-    if evidence.p_value > t.cpcv_max_p_value:
+    if not (0.0 < evidence.p_value <= 1.0):
+        errors.append(f"CPCV p_value {evidence.p_value} is outside (0, 1]")
+    elif evidence.p_value > t.cpcv_max_p_value:
         errors.append(f"CPCV p-value {evidence.p_value:.4f} > {t.cpcv_max_p_value:.4f} threshold")
+    if evidence.embargo_bars < t.cpcv_min_embargo_bars:
+        errors.append(
+            f"CPCV embargo_bars {evidence.embargo_bars} < {t.cpcv_min_embargo_bars} required "
+            "(a zero-embargo run applies no serial-correlation guard)"
+        )
+    if evidence.fold_pnl_curves_hash and not _is_well_formed_curve_hash(
+        evidence.fold_pnl_curves_hash
+    ):
+        errors.append(
+            f"CPCV fold_pnl_curves_hash {evidence.fold_pnl_curves_hash!r} is malformed "
+            "(expected 'sha256:' + 64 lowercase hex chars)"
+        )
 
     return errors
 
@@ -513,12 +592,27 @@ def validate_dsr(
 ) -> list[str]:
     """Validate :class:`DSREvidence` against thresholds.
 
-    Pass conditions: DSR at or above threshold *and* DSR p-value at
-    or below threshold *and* ``trials_count`` recorded (a 0 trials
-    count is suspicious — DSR's whole point is to deflate by trials).
+    Pass conditions: DSR (a Sharpe *excess*) at or above threshold
+    *and* DSR p-value at or below threshold *and* ``trials_count``
+    recorded (a 0 trials count is suspicious — DSR's whole point is to
+    deflate by trials).  Integrity checks additionally reject
+    non-finite moments / DSR and a ``dsr_p_value`` outside ``[0, 1]``
+    so a malformed package cannot pass on the operator's word alone.
     """
     t = thresholds or GateThresholds()
     errors: list[str] = []
+
+    for name, value in (
+        ("observed_sharpe", evidence.observed_sharpe),
+        ("skewness", evidence.skewness),
+        ("kurtosis", evidence.kurtosis),
+        ("dsr", evidence.dsr),
+        ("dsr_p_value", evidence.dsr_p_value),
+    ):
+        if not math.isfinite(value):
+            errors.append(f"DSR {name} is non-finite ({value})")
+    if not (0.0 <= evidence.dsr_p_value <= 1.0):
+        errors.append(f"DSR dsr_p_value {evidence.dsr_p_value} is outside [0, 1]")
 
     if evidence.dsr < t.dsr_min:
         errors.append(
@@ -526,7 +620,8 @@ def validate_dsr(
         )
     if evidence.dsr_p_value > t.dsr_max_p_value:
         errors.append(
-            f"DSR p-value {evidence.dsr_p_value:.4f} > {t.dsr_max_p_value:.4f} threshold"
+            f"DSR p-value {evidence.dsr_p_value:.4f} > {t.dsr_max_p_value:.4f} threshold "
+            f"(canonical Bailey-LdP DSR = 1 - p = {1.0 - evidence.dsr_p_value:.4f})"
         )
     if evidence.trials_count <= 0:
         errors.append(
@@ -1285,6 +1380,7 @@ _GATE_THRESHOLD_DIRECTIONS: dict[str, _FloorDirection] = {
     "cpcv_min_folds": _FloorDirection.MIN,
     "cpcv_min_mean_sharpe": _FloorDirection.MIN,
     "cpcv_max_p_value": _FloorDirection.MAX,
+    "cpcv_min_embargo_bars": _FloorDirection.MIN,
     "dsr_min": _FloorDirection.MIN,
     "dsr_max_p_value": _FloorDirection.MAX,
     # ── Capital-stage tier (SMALL → SCALED) ────────────────────────────
