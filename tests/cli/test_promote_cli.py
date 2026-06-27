@@ -758,6 +758,53 @@ class TestReplayEvidenceSubcommand:
         assert third["skipped_reason"] is not None
         assert "schema_version" in third["skipped_reason"]
 
+    def test_quarantine_with_structured_evidence_replays_ok(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        # Regression (audit P1-1): AlphaLifecycle.quarantine(
+        # structured_evidence=[...]) writes BOTH the free-form ``reason``
+        # co-key AND a schema_version + ``quarantine_trigger`` section.
+        # Before the fix, metadata_to_evidence raised "unknown kind
+        # ['reason']" and replay-evidence reported a false FAIL (exit 3).
+        ledger_path = tmp_path / "ledger.jsonl"
+        ledger = PromotionLedger(ledger_path)
+        metadata: dict[str, object] = {"reason": "edge decay detected"}
+        metadata.update(
+            evidence_to_metadata(QuarantineTriggerEvidence(net_alpha_negative_days=12))
+        )
+        ledger.append(
+            _make_entry(
+                alpha_id="ALPHA-Q",
+                from_state="LIVE",
+                to_state="QUARANTINED",
+                trigger="edge_decay_detected",
+                timestamp_ns=1_700_003_000_000_000_000,
+                metadata=metadata,
+            )
+        )
+        rc = main(
+            [
+                "promote",
+                "replay-evidence",
+                "ALPHA-Q",
+                "--ledger",
+                str(ledger_path),
+                "--json",
+            ]
+        )
+        captured = capsys.readouterr()
+        assert rc == EXIT_OK
+        payload = json.loads(captured.out)
+        assert payload["ok"] is True
+        (row,) = payload["results"]
+        assert row["gate"] == "live_to_quarantined"
+        assert row["skipped_reason"] is None
+        assert row["errors"] == []
+        # The free-form ``reason`` co-key is not surfaced as an evidence kind.
+        assert row["evidence_kinds"] == ["quarantine_trigger"]
+
     def test_alpha_b_legacy_metadata_gets_skipped(
         self,
         tmp_path: Path,

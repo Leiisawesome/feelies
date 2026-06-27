@@ -12,7 +12,9 @@ from feelies.storage.trade_journal import TradeRecord
 _SEQ = 0
 
 
-def _tr(strategy_id: str, realized_pnl: float, *, qty: int = 50, price: float = 100.0) -> TradeRecord:
+def _tr(
+    strategy_id: str, realized_pnl: float, *, qty: int = 50, price: float = 100.0
+) -> TradeRecord:
     global _SEQ
     _SEQ += 1
     return TradeRecord(
@@ -65,9 +67,7 @@ def test_emit_writes_realization_factors(tmp_path) -> None:
     # kyle: 40 fills, zero realized edge -> lcb_factor 0; good: realized 10 bps
     # (pnl 5 / notional 5000) vs disclosed 10 -> factor ~1.0.
     records = [_tr("kyle", 0.0) for _ in range(40)] + [_tr("good", 5.0) for _ in range(40)]
-    orch = _FakeOrchestrator(
-        _FakeJournal(records), _FakeRegistry({"kyle": 11.7, "good": 10.0})
-    )
+    orch = _FakeOrchestrator(_FakeJournal(records), _FakeRegistry({"kyle": 11.7, "good": 10.0}))
     path = tmp_path / "edge_cal.json"
 
     _emit_edge_calibration(orch, str(path), version="2026-03-26")

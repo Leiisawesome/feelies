@@ -291,9 +291,7 @@ class MassiveHistoricalIngestor:
 
         merged_raw: list[NBBOQuote | Trade] = []
         for src_log in (self._event_log, scratch):
-            merged_raw.extend(
-                e for e in src_log.replay() if isinstance(e, (NBBOQuote, Trade))
-            )
+            merged_raw.extend(e for e in src_log.replay() if isinstance(e, (NBBOQuote, Trade)))
         sorted_events = resequence_event_list(merged_raw)
         self._event_log.replace_events(sorted_events)
 

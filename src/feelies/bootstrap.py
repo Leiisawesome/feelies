@@ -330,6 +330,9 @@ def build_platform(
         clock=registry_clock,
         gate_thresholds=gate_thresholds,
         promotion_ledger=promotion_ledger,
+        # Audit P0-1: the explicitly operator-pinned fields become floors
+        # a per-alpha ``promotion.gate_thresholds`` override may not loosen.
+        platform_gate_threshold_overrides=config.gate_thresholds_overrides,
     )
     loader = AlphaLoader(
         regime_engine=regime_engine,
@@ -732,7 +735,10 @@ def build_platform(
         net_shadow_portfolio_max_abs_qty=config.risk_max_position_per_symbol,
     )
 
-    config_snapshot = config.snapshot()
+    # Stamp the snapshot from the injected clock so a backtest's provenance
+    # record is deterministic (SimulatedClock); only PAPER/LIVE read wall time
+    # (WallClock).  Inv-10: no raw wall-clock read at the bootstrap edge.
+    config_snapshot = config.snapshot(ts_ns=clock.now_ns())
     orchestrator.config_snapshot = config_snapshot  # type: ignore[attr-defined]
 
     # Attach the PAPER/LIVE live-feed + IB connection handles to the
@@ -1426,8 +1432,10 @@ def _consumed_value_keys_from_signal_source(source: str | None) -> frozenset[str
             and node.func.value.attr == "values"
         ):
             recognised.add(id(node.func.value))
-            if node.args and isinstance(node.args[0], ast.Constant) and isinstance(
-                node.args[0].value, str
+            if (
+                node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
             ):
                 keys.add(node.args[0].value)
             else:
@@ -1449,7 +1457,11 @@ def _consumed_value_keys_from_signal_source(source: str | None) -> frozenset[str
     # (e.g. ``snapshot.values.items()``, ``v = snapshot.values``) means we
     # cannot be sure we captured every consumed key → fall back conservatively.
     for node in ast.walk(tree):
-        if isinstance(node, ast.Attribute) and node.attr == "values" and id(node) not in recognised:
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr == "values"
+            and id(node) not in recognised
+        ):
             return None
 
     return frozenset(keys)

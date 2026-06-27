@@ -51,14 +51,10 @@ class TestLegClassificationDisjoint:
         assert ADDITIVE_LEGS.isdisjoint(REDUCING_LEGS)
 
     def test_reducing_legs_are_exactly_the_de_risking_set(self) -> None:
-        assert REDUCING_LEGS == frozenset(
-            {PlanLeg.TRIM, PlanLeg.EXIT, PlanLeg.REVERSE_EXIT}
-        )
+        assert REDUCING_LEGS == frozenset({PlanLeg.TRIM, PlanLeg.EXIT, PlanLeg.REVERSE_EXIT})
 
     def test_additive_legs_are_exactly_the_exposure_increasing_set(self) -> None:
-        assert ADDITIVE_LEGS == frozenset(
-            {PlanLeg.ENTRY, PlanLeg.SCALE_UP, PlanLeg.REVERSE_ENTRY}
-        )
+        assert ADDITIVE_LEGS == frozenset({PlanLeg.ENTRY, PlanLeg.SCALE_UP, PlanLeg.REVERSE_ENTRY})
 
 
 class TestReducingLegsProjectToExitIntent:

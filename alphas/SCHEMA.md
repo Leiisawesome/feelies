@@ -490,6 +490,18 @@ Layering precedence (lowest → highest):
 3. **`promotion.gate_thresholds:`** in this YAML — per-alpha
    overrides applied on top of (2) at registration time.
 
+**Operator floors (per-alpha may only tighten operator policy).** A
+per-alpha override may tighten any gate and may loosen a threshold the
+operator left at its skill default, but it may **not loosen below a
+threshold the operator explicitly pinned in `platform.yaml:
+gate_thresholds:`**. `AlphaRegistry` refuses such an alpha at
+registration (`AlphaRegistryError` wrapping `GateThresholdFloorError`)
+in every mode. Direction is per-field: `*_min_*` / floor thresholds may
+only be raised, `*_max_*` ceilings only lowered (note
+`small_max_hit_rate_residual_pp` is a *floor* despite its name); the
+consistency-only `quarantine_*` fields are unconstrained. Fields the
+operator did not pin remain freely loosenable per-alpha.
+
 Validation at load time:
 
 | Rule | Behaviour |

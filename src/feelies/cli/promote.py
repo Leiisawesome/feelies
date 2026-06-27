@@ -39,6 +39,7 @@ from feelies.alpha.promotion_evidence import (
     EVIDENCE_SCHEMA_VERSION,
     GATE_EVIDENCE_REQUIREMENTS,
     PROMOTE_CAPITAL_TIER_TRIGGER,
+    RESERVED_METADATA_KEYS,
     CapitalStageTier,
     GateId,
     GateThresholds,
@@ -615,7 +616,7 @@ def _replay_one(
             errors=[f"could not reconstruct evidence: {exc}"],
         )
 
-    kinds_present = sorted(k for k in metadata.keys() if k != "schema_version")
+    kinds_present = sorted(k for k in metadata.keys() if k not in RESERVED_METADATA_KEYS)
     errors = validate_gate(gate_id, evidences, thresholds)
     return _ReplayResult(
         index=index,

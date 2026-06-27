@@ -347,16 +347,22 @@ class TestParallelDownload:
                 [_make_mock_quote(seq=1, ts_ns=ts0), _make_mock_quote(seq=2, ts_ns=ts0 + 2000)]
             )
         )
-        aapl.list_trades = MagicMock(return_value=iter([_make_mock_trade(seq=1, ts_ns=ts0 + 1000)]))
+        aapl.list_trades = MagicMock(
+            return_value=iter([_make_mock_trade(seq=1, ts_ns=ts0 + 1000)])
+        )
         msft = MagicMock()
         msft.list_quotes = MagicMock(return_value=iter([_make_mock_quote(seq=1, ts_ns=ts0)]))
         msft.list_trades = MagicMock(return_value=iter([_make_mock_trade(seq=1, ts_ns=ts0 + 500)]))
 
         scratch = InMemoryEventLog(enforce_market_order=False)
-        ingestor.ingest_symbol_parallel(aapl, "AAPL", "2024-01-01", "2024-01-01", target_log=scratch)
+        ingestor.ingest_symbol_parallel(
+            aapl, "AAPL", "2024-01-01", "2024-01-01", target_log=scratch
+        )
         # This second append carries earlier timestamps than AAPL's last event;
         # it must NOT raise on the order-tolerant scratch log.
-        ingestor.ingest_symbol_parallel(msft, "MSFT", "2024-01-01", "2024-01-01", target_log=scratch)
+        ingestor.ingest_symbol_parallel(
+            msft, "MSFT", "2024-01-01", "2024-01-01", target_log=scratch
+        )
 
         merged = [e for e in scratch.replay() if isinstance(e, (NBBOQuote, Trade))]
         reseq = resequence_event_list(merged)
@@ -381,14 +387,18 @@ class TestParallelDownload:
         )
 
         aapl = MagicMock()
-        aapl.list_quotes = MagicMock(return_value=iter([_make_mock_quote(seq=1, ts_ns=ts0 + 2000)]))
+        aapl.list_quotes = MagicMock(
+            return_value=iter([_make_mock_quote(seq=1, ts_ns=ts0 + 2000)])
+        )
         aapl.list_trades = MagicMock(return_value=iter([]))
         msft = MagicMock()
         msft.list_quotes = MagicMock(return_value=iter([_make_mock_quote(seq=1, ts_ns=ts0)]))
         msft.list_trades = MagicMock(return_value=iter([]))
 
         strict = InMemoryEventLog()  # default enforce_market_order=True
-        ingestor.ingest_symbol_parallel(aapl, "AAPL", "2024-01-01", "2024-01-01", target_log=strict)
+        ingestor.ingest_symbol_parallel(
+            aapl, "AAPL", "2024-01-01", "2024-01-01", target_log=strict
+        )
         with pytest.raises(CausalityViolation):
             ingestor.ingest_symbol_parallel(
                 msft, "MSFT", "2024-01-01", "2024-01-01", target_log=strict

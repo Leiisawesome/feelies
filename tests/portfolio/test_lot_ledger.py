@@ -121,7 +121,9 @@ class TestStoreVsLotReconciliation:
         self._apply(store, led, "AAPL", 50, _d("9"), 4)  # cover short → flat
         assert store.get("AAPL").quantity == 0
         assert led.net_quantity("AAPL") == 0
-        assert abs(store.get("AAPL").realized_pnl - led.realized_pnl_fifo("AAPL")) <= _RECON_TOLERANCE
+        assert (
+            abs(store.get("AAPL").realized_pnl - led.realized_pnl_fifo("AAPL")) <= _RECON_TOLERANCE
+        )
 
     def test_agree_at_flat_short_first(self) -> None:
         store = MemoryPositionStore()
@@ -132,7 +134,9 @@ class TestStoreVsLotReconciliation:
         self._apply(store, led, "MSFT", 60, _d("47"), 4)  # back to flat
         assert store.get("MSFT").quantity == 0
         assert led.net_quantity("MSFT") == 0
-        assert abs(store.get("MSFT").realized_pnl - led.realized_pnl_fifo("MSFT")) <= _RECON_TOLERANCE
+        assert (
+            abs(store.get("MSFT").realized_pnl - led.realized_pnl_fifo("MSFT")) <= _RECON_TOLERANCE
+        )
 
     def test_randomized_fill_streams_agree_when_returned_to_flat(self) -> None:
         rng = random.Random(20260618)

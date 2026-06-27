@@ -90,6 +90,23 @@ _logger = logging.getLogger(__name__)
 _DEFAULT_HAZARD_SCORE_THRESHOLD: float = 0.85
 _DEFAULT_MIN_AGE_SECONDS: int = 30
 
+# ── Hazard-exit OrderRequest signature (single source of truth) ──────────
+# Every hazard exit this controller emits carries ``source_layer`` ==
+# ``HAZARD_EXIT_SOURCE_LAYER`` and a ``reason`` drawn from
+# ``HAZARD_EXIT_REASONS``.  The orchestrator's bus bridge
+# (``Orchestrator._on_bus_hazard_order``) filters on *exactly* this signature
+# to decide which ``OrderRequest`` events to route to the backend, so the
+# producer (here, the sole writer) and the consumer (kernel) must agree
+# byte-for-byte.  Centralising the strings on the writer keeps them in lock-
+# step — adding a new hazard reason here surfaces immediately in the bridge's
+# membership test rather than silently failing to route (audit kernel-P1).
+HAZARD_EXIT_SOURCE_LAYER: str = "RISK"
+HAZARD_EXIT_REASON_SPIKE: str = "HAZARD_SPIKE"
+HAZARD_EXIT_REASON_HARD_AGE: str = "HARD_EXIT_AGE"
+HAZARD_EXIT_REASONS: frozenset[str] = frozenset(
+    {HAZARD_EXIT_REASON_SPIKE, HAZARD_EXIT_REASON_HARD_AGE}
+)
+
 
 @dataclass(frozen=True)
 class HazardPolicy:
@@ -210,7 +227,7 @@ class HazardExitController:
                 trigger_ts_ns=spike.timestamp_ns,
                 correlation_id=spike.correlation_id,
                 policy=policy,
-                reason="HAZARD_SPIKE",
+                reason=HAZARD_EXIT_REASON_SPIKE,
             )
 
     def _on_trade(self, trade: Trade) -> None:
@@ -235,7 +252,7 @@ class HazardExitController:
                 trigger_ts_ns=trade.timestamp_ns,
                 correlation_id=trade.correlation_id,
                 policy=policy,
-                reason="HARD_EXIT_AGE",
+                reason=HAZARD_EXIT_REASON_HARD_AGE,
             )
 
     # ── Internals ────────────────────────────────────────────────────
@@ -264,7 +281,7 @@ class HazardExitController:
         opened = self._position_store.opened_at_ns(symbol)
         # Min-age safeguard only applies to hazard-spike triggers; the
         # hard-exit-age trigger has already reasoned about age.
-        if reason == "HAZARD_SPIKE" and opened is not None:
+        if reason == HAZARD_EXIT_REASON_SPIKE and opened is not None:
             age_ns = trigger_ts_ns - opened
             if age_ns < int(policy.min_age_seconds) * 1_000_000_000:
                 return
@@ -278,7 +295,7 @@ class HazardExitController:
             timestamp_ns=trigger_ts_ns,
             correlation_id=correlation_id,
             sequence=self._seq.next(),
-            source_layer="RISK",
+            source_layer=HAZARD_EXIT_SOURCE_LAYER,
             order_id=order_id,
             symbol=symbol,
             side=side,

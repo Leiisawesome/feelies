@@ -30,6 +30,10 @@ from __future__ import annotations
 
 from typing import Final
 
+from tests.determinism.test_cross_sectional_context_replay import (
+    EXPECTED_XSECT_CONTEXT_COUNT,
+    EXPECTED_XSECT_CONTEXT_HASH,
+)
 from tests.determinism.test_hazard_exit_replay import (
     EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_COUNT,
     EXPECTED_LEVEL4_HAZARD_EXIT_ORDER_HASH,
@@ -46,9 +50,17 @@ from tests.determinism.test_market_fill_replay import (
     EXPECTED_MARKET_FILL_ACK_COUNT,
     EXPECTED_MARKET_FILL_HASH,
 )
+from tests.determinism.test_multi_symbol_sensor_replay import (
+    EXPECTED_MULTI_SYMBOL_READING_COUNT,
+    EXPECTED_MULTI_SYMBOL_READING_HASH,
+)
 from tests.determinism.test_portfolio_order_replay import (
     EXPECTED_LEVEL4_PORTFOLIO_ORDER_COUNT,
     EXPECTED_LEVEL4_PORTFOLIO_ORDER_HASH,
+)
+from tests.determinism.test_position_pnl_replay import (
+    EXPECTED_POSITION_PNL_COUNT,
+    EXPECTED_POSITION_PNL_HASH,
 )
 from tests.determinism.test_regime_hazard_replay import (
     EXPECTED_LEVEL5_HAZARD_COUNT,
@@ -62,9 +74,17 @@ from tests.determinism.test_sensor_reading_replay import (
     EXPECTED_LEVEL4_READING_COUNT,
     EXPECTED_LEVEL4_READING_HASH,
 )
+from tests.determinism.test_signal_fires_replay import (
+    EXPECTED_SIGNAL_FIRES_COUNT,
+    EXPECTED_SIGNAL_FIRES_HASH,
+)
 from tests.determinism.test_signal_replay import (
     EXPECTED_LEVEL2_SIGNAL_COUNT,
     EXPECTED_LEVEL2_SIGNAL_HASH,
+)
+from tests.determinism.test_state_transition_replay import (
+    EXPECTED_STATE_TRANSITION_COUNT,
+    EXPECTED_STATE_TRANSITION_HASH,
 )
 from tests.determinism.test_sized_intent_replay import (
     EXPECTED_LEVEL3_INTENT_DECAY_OFF_COUNT,
@@ -118,5 +138,35 @@ LOCKED_PARITY_BASELINES: Final[dict[str, ParityEntry]] = {
     "market_fill_acks": (
         EXPECTED_MARKET_FILL_HASH,
         EXPECTED_MARKET_FILL_ACK_COUNT,
+    ),
+    # Audit P1 #5: PnL — PositionUpdate reconciliation over a deterministic
+    # fill/mark scenario (FIFO cost-basis math; closes the Inv-5 "PnL" clause).
+    "position_pnl": (
+        EXPECTED_POSITION_PNL_HASH,
+        EXPECTED_POSITION_PNL_COUNT,
+    ),
+    # Audit P1 #12: StateTransition stream from a deterministic RiskLevel +
+    # OrderState walk (pins SM emission order + sequence allocation).
+    "state_transition": (
+        EXPECTED_STATE_TRANSITION_HASH,
+        EXPECTED_STATE_TRANSITION_COUNT,
+    ),
+    # Audit P1 #7: CrossSectionalContext from the real UniverseSynchronizer
+    # (pins the SIGNAL→PORTFOLIO barrier fan-in + completeness + _ctx_seq).
+    "cross_sectional_context": (
+        EXPECTED_XSECT_CONTEXT_HASH,
+        EXPECTED_XSECT_CONTEXT_COUNT,
+    ),
+    # Audit P1 #4: non-empty Signal emission from the real HorizonSignalEngine
+    # (the level2_signal baseline pins only the empty stream).
+    "signal_fires": (
+        EXPECTED_SIGNAL_FIRES_HASH,
+        EXPECTED_SIGNAL_FIRES_COUNT,
+    ),
+    # Audit P1 #8: cross-symbol SensorReading interleave (single-symbol
+    # fixtures cannot pin inter-symbol emission order / sequence allocation).
+    "multi_symbol_sensor_reading": (
+        EXPECTED_MULTI_SYMBOL_READING_HASH,
+        EXPECTED_MULTI_SYMBOL_READING_COUNT,
     ),
 }

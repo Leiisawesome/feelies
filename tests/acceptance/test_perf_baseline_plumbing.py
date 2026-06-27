@@ -112,3 +112,46 @@ def test_pinned_baseline_helper_returns_none_for_unknown_host(
         "is not in the JSON file (so perf gates do not flip red on "
         "first-run hosts)"
     )
+
+
+def test_record_perf_baseline_referenced_harness_is_collectable() -> None:
+    """The node id the recorder executes must resolve to a real test.
+
+    Regression guard for the audit P0 dead-guard: ``record_perf_baseline.py``
+    shells out to a fixed ``<file>::<func>`` node id; for years that file did
+    not exist, so the recorder errored, no baseline could be recorded, and the
+    decay budget went unmeasured (``docs/audits/performance_audit_2026-06-25.md``
+    §6). This asserts the referenced file *and* function exist — without
+    spawning pytest — so the dead reference cannot silently return.
+    """
+    mod_name = "_record_perf_baseline_node_id_under_test"
+    spec = importlib.util.spec_from_file_location(mod_name, _SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[mod_name] = module
+    try:
+        spec.loader.exec_module(module)
+        node_id = getattr(module, "_PHASE4_1_TEST", None)
+    finally:
+        sys.modules.pop(mod_name, None)
+
+    assert isinstance(node_id, str) and "::" in node_id, (
+        "record_perf_baseline must expose its target node id as "
+        f"_PHASE4_1_TEST = '<file>::<func>'; got {node_id!r}"
+    )
+    path_str, _, func_name = node_id.partition("::")
+    assert func_name, f"malformed perf-test node id (no function): {node_id!r}"
+
+    test_path = _REPO_ROOT / path_str
+    assert test_path.is_file(), (
+        f"record_perf_baseline references {path_str!r} which does not exist; "
+        "the recorder would error and no baseline could ever be recorded "
+        "(the v0.2 dead-guard this test exists to prevent)"
+    )
+
+    dotted = path_str.replace("/", ".").removesuffix(".py")
+    test_mod = importlib.import_module(dotted)
+    assert hasattr(test_mod, func_name), (
+        f"{path_str!r} exists but defines no {func_name!r}; the recorder's "
+        "node id would collect zero tests"
+    )

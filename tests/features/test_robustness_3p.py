@@ -26,7 +26,9 @@ class _NaNFeature:
     def initial_state(self) -> dict[str, Any]:
         return {}
 
-    def observe(self, reading: SensorReading, state: dict[str, Any], params: Mapping[str, Any]) -> None:
+    def observe(
+        self, reading: SensorReading, state: dict[str, Any], params: Mapping[str, Any]
+    ) -> None:
         return None
 
     def finalize(

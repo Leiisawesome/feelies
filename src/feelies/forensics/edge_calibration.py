@@ -49,10 +49,14 @@ def _clamp(x: float, lo: float, hi: float) -> float:
 
 def _edge_bps(rec: TradeRecord) -> float:
     """Realized edge in bps = realized_pnl / notional × 1e4 (gross of fees,
-    matching ``DecayDetector``'s convention)."""
-    if rec.fill_price is None or rec.filled_quantity <= 0:
+    matching ``DecayDetector.analyze_fills``'s convention).
+
+    Uses ``abs(filled_quantity)`` so a sell booked with a negative quantity
+    is not silently dropped (consistent with the attributor's notional)."""
+    qty = abs(rec.filled_quantity)
+    if rec.fill_price is None or qty == 0:
         return 0.0
-    notional = float(rec.fill_price) * rec.filled_quantity
+    notional = float(rec.fill_price) * qty
     if notional <= 0.0:
         return 0.0
     return float(rec.realized_pnl) / notional * 10_000.0
@@ -145,9 +149,7 @@ class EdgeCalibrationStore:
         payload = {
             "schema_version": CALIBRATION_SCHEMA_VERSION,
             "version": version,
-            "factors": {
-                sid: asdict(calibrations[sid]) for sid in sorted(calibrations)
-            },
+            "factors": {sid: asdict(calibrations[sid]) for sid in sorted(calibrations)},
         }
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._path.write_text(

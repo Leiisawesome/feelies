@@ -184,22 +184,17 @@ class TestExitGate:
         # Edge + inventory both on, a near-full book — a directional add here
         # would shrink hard, but a FLAT exit must stay at base size.
         cfg = SizerTiltConfig(
-            edge_enabled=True, edge_ref_bps=20.0,
+            edge_enabled=True,
+            edge_ref_bps=20.0,
             inventory_enabled=True,
         )
-        wrapped = EdgeWeightedSizer(
-            BudgetBasedSizer(), cfg, inventory_provider=lambda _s: 400
-        )
+        wrapped = EdgeWeightedSizer(BudgetBasedSizer(), cfg, inventory_provider=lambda _s: 400)
         flat = _signal(edge_bps=0.0, direction=SignalDirection.FLAT)
         assert wrapped.tilt_for(flat, budget) == 1.0
-        qty = wrapped.compute_target_quantity(
-            flat, budget, Decimal("100"), Decimal("100000")
-        )
+        qty = wrapped.compute_target_quantity(flat, budget, Decimal("100"), Decimal("100000"))
         assert qty == 100  # base, untouched
 
-    def test_zero_edge_directional_not_edge_floored(
-        self, budget: AlphaRiskBudget
-    ) -> None:
+    def test_zero_edge_directional_not_edge_floored(self, budget: AlphaRiskBudget) -> None:
         # A LONG with no disclosed edge: the edge factor is a no-op (1.0),
         # not floored to 0.25.  (Inventory off here to isolate it.)
         cfg = SizerTiltConfig(edge_enabled=True, edge_ref_bps=20.0)

@@ -28,9 +28,11 @@ reaction — a thin single session lands in ``INSUFFICIENT_EVIDENCE``.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
-from typing import Iterable, Mapping, Protocol, runtime_checkable
+from typing import Iterable, Mapping, Protocol, Sequence, runtime_checkable
 
+from feelies.alpha.promotion_evidence import QuarantineTriggerEvidence
 from feelies.forensics.cost_survival import per_alpha_cost_survival
 from feelies.forensics.decay_detector import DecayDetector
 from feelies.storage.trade_journal import TradeRecord
@@ -81,7 +83,13 @@ class _Quarantinable(Protocol):
     @property
     def is_live(self) -> bool: ...
 
-    def quarantine(self, reason: str, *, correlation_id: str = "") -> None: ...
+    def quarantine(
+        self,
+        reason: str,
+        *,
+        structured_evidence: Sequence[object] | None = None,
+        correlation_id: str = "",
+    ) -> None: ...
 
 
 def evaluate_cost_circuit_breaker(
@@ -188,10 +196,48 @@ def apply_cost_circuit_breaker(
             continue
         lifecycle.quarantine(
             f"cost-circuit-breaker: {decision.reason}",
+            structured_evidence=[_decision_to_quarantine_evidence(decision)],
             correlation_id=correlation_id,
         )
         applied.append(decision)
     return applied
+
+
+def _decision_to_quarantine_evidence(
+    decision: CircuitBreakerDecision,
+) -> QuarantineTriggerEvidence:
+    """Project a circuit-breaker decision into structured quarantine evidence.
+
+    Inv-13: the durable ledger entry should carry *why* the alpha was demoted
+    in machine-readable form, not only a free-text reason.  The cost-survival
+    breaker is a different trigger model than the documented decay-metric
+    thresholds, so the realized signals are recorded faithfully:
+
+    * the qualitative trip drivers go into ``crowding_symptoms`` as tags;
+    * the realized gross margin is exposed via ``pnl_compression_ratio_5d``
+      (clamped to ``>= 0``) so a genuine cost bleed (margin <= 0) crosses the
+      documented quarantine threshold and is not mislabelled spurious.
+
+    A trip that keys only on a fragile-but-positive margin or a decay z-score
+    may still draw a ``validate_quarantine_trigger`` "spurious-looking" flag;
+    that is benign — the demotion is fail-safe (Inv-11) and the free-form
+    ``reason`` records the real driver.
+    """
+    symptoms: list[str] = []
+    if decision.net <= 0.0:
+        symptoms.append("net_negative_over_window")
+    if decision.mean_cost_bps > 0.0 and decision.realized_margin_ratio < 1.0:
+        symptoms.append("realized_edge_below_cost")
+    if decision.decay_z is not None and decision.decay_z > 2.0:
+        symptoms.append("edge_decay_zscore")
+
+    margin = decision.realized_margin_ratio
+    compression = 1.0 if not math.isfinite(margin) else max(0.0, margin)
+
+    return QuarantineTriggerEvidence(
+        crowding_symptoms=tuple(symptoms),
+        pnl_compression_ratio_5d=compression,
+    )
 
 
 __all__ = [

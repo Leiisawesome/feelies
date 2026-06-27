@@ -25,9 +25,8 @@ distinguish "ledger corrupt" from "evidence stale".
 from __future__ import annotations
 
 import argparse
+import sys
 from collections.abc import Sequence
-
-from feelies.cli import backtest, promote
 
 
 EXIT_OK = 0
@@ -36,7 +35,22 @@ EXIT_DATA_ERROR = 2
 EXIT_VALIDATION_FAILED = 3
 
 
-def _build_parser() -> argparse.ArgumentParser:
+def _build_parser(argv: Sequence[str] | None = None) -> argparse.ArgumentParser:
+    """Build the top-level parser with **lazy** subcommand registration.
+
+    The read-only ``promote`` subtree is always wired (its handlers import
+    only ``feelies.alpha.promotion_*`` — no orchestrator / risk / broker
+    code, preserving the forensic-only contract and Inv-5 / A-DET-02).
+
+    The ``backtest`` subtree is wired **only when it is the selected
+    command**, because ``feelies.cli.backtest`` transitively imports the
+    harness / bootstrap / IB-broker stack (which requires the optional
+    ``ib`` extra).  Importing it eagerly here would make ``feelies
+    promote`` unusable in a minimal forensic environment (it previously
+    raised ``ModuleNotFoundError: ibapi``).  When ``backtest`` is not the
+    selected command we register a lightweight placeholder so ``feelies
+    --help`` still lists it without paying the import cost.
+    """
     parser = argparse.ArgumentParser(
         prog="feelies",
         description=(
@@ -47,6 +61,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", metavar="<command>")
     subparsers.required = True
+
+    from feelies.cli import promote
 
     promote_parser = subparsers.add_parser(
         "promote",
@@ -61,7 +77,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     promote.register(promote_parser)
 
-    backtest.register(subparsers)
+    selected = argv[0] if argv else None
+    if selected == "backtest":
+        from feelies.cli import backtest
+
+        backtest.register(subparsers)
+    else:
+        subparsers.add_parser(
+            "backtest",
+            help="Run a historical backtest with Massive L1 data (loaded on demand).",
+        )
 
     return parser
 
@@ -73,8 +98,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ``sys.argv[1:]`` when called from the console-script entry-point;
     test code passes a list explicitly.
     """
-    parser = _build_parser()
-    args = parser.parse_args(argv)
+    resolved_argv = list(sys.argv[1:] if argv is None else argv)
+    parser = _build_parser(resolved_argv)
+    args = parser.parse_args(resolved_argv)
     handler = getattr(args, "handler", None)
     if handler is None:
         parser.print_help()

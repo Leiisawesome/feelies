@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 
 from feelies.alpha.lifecycle import (
@@ -9,6 +10,10 @@ from feelies.alpha.lifecycle import (
     AlphaLifecycleState,
     GateRequirements,
     PromotionEvidence,
+)
+from feelies.alpha.promotion_evidence import (
+    QuarantineTriggerEvidence,
+    metadata_to_evidence,
 )
 from feelies.alpha.promotion_ledger import PromotionLedger
 from feelies.core.clock import SimulatedClock
@@ -208,3 +213,50 @@ def test_apply_ignores_non_quarantine_decisions() -> None:
     applied = apply_cost_circuit_breaker([ok], {"good": lc})
     assert applied == []
     assert lc.state == AlphaLifecycleState.LIVE
+
+
+def test_apply_records_structured_quarantine_evidence(tmp_path) -> None:
+    """Audit P1-6: the auto-trigger records a QuarantineTriggerEvidence on the
+    ledger (Inv-13), round-trippable, not only a free-text reason."""
+    clock = SimulatedClock(start_ns=0)
+    ledger = PromotionLedger(tmp_path / "ledger.jsonl")
+    lc = _live_lifecycle("bleeder", clock, ledger)
+
+    decision = CircuitBreakerDecision(
+        strategy_id="bleeder",
+        action=ACTION_QUARANTINE,
+        reason="net -50.00 <= 0 over 40 fills (paying fees for no edge)",
+        n_fills=40,
+        net=-50.0,
+        mean_edge_bps=0.0,
+        mean_cost_bps=2.0,
+        realized_margin_ratio=0.0,
+        decay_z=None,
+    )
+    apply_cost_circuit_breaker([decision], {"bleeder": lc}, correlation_id="cb1")
+
+    entry = ledger.latest_for("bleeder")
+    assert entry is not None
+    assert "cost-circuit-breaker" in entry.metadata.get("reason", "")
+    evs = metadata_to_evidence(entry.metadata)
+    assert len(evs) == 1
+    ev = evs[0]
+    assert isinstance(ev, QuarantineTriggerEvidence)
+    assert "net_negative_over_window" in ev.crowding_symptoms
+    # A genuine cost bleed maps to compression 0.0 → crosses the documented
+    # threshold, so it is NOT mislabelled spurious.
+    assert ev.pnl_compression_ratio_5d == 0.0
+
+
+def test_spurious_trigger_still_commits_and_warns(caplog) -> None:
+    """Inv-11 fail-safe (audit P1-11): a quarantine whose evidence trips no
+    documented threshold still commits; the validator only logs a WARNING."""
+    clock = SimulatedClock(start_ns=0)
+    lc = _live_lifecycle("borderline", clock)
+
+    spurious = QuarantineTriggerEvidence()  # all nominal → flagged spurious
+    with caplog.at_level(logging.WARNING):
+        lc.quarantine("manual demotion", structured_evidence=[spurious])
+
+    assert lc.state == AlphaLifecycleState.QUARANTINED  # committed anyway
+    assert any("suspicious" in r.getMessage().lower() for r in caplog.records)

@@ -141,9 +141,20 @@ class StateMachine(Generic[S]):
           3. notify    — fire callbacks (may veto by raising)
           4. commit    — append to history + update state pointer
 
-        History and state are updated ONLY after all callbacks succeed.
-        If a callback raises, no side effects remain — the SM is
-        unchanged and the record is not in history.
+        The SM's own state and history are updated ONLY after all callbacks
+        succeed: if any callback raises, this machine's state pointer and
+        history are left unchanged and the record is not appended (verified
+        by ``test_callback_raises_prevents_transition``).
+
+        Caveat for multiple callbacks: callbacks run in registration order
+        and the rollback covers only *this machine's* state.  If callback N
+        raises after callbacks 1..N-1 already executed, those earlier
+        callbacks' **external** side effects (e.g. a ledger row already
+        written to disk) are NOT undone — the SM cannot reverse effects it
+        does not own.  The promotion-ledger wiring relies on this guarantee
+        with a single callback, where it is exact; consumers that register
+        several side-effecting callbacks must make each one individually
+        idempotent/reversible.
         """
         if not self.can_transition(target):
             raise IllegalTransition(self._name, self._state, target, trigger)

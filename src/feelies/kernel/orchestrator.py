@@ -90,6 +90,7 @@ from feelies.core.events import (
     StateTransition,
     SymbolHalted,
     Trade,
+    TrendMechanism,
 )
 from feelies.core.identifiers import SequenceGenerator, derive_order_id
 from feelies.core.state_machine import StateMachine, TransitionRecord
@@ -158,6 +159,7 @@ from feelies.portfolio.position_store import PositionStore
 from feelies.portfolio.lot_ledger import LotLedger
 from feelies.risk.engine import RiskEngine
 from feelies.risk.escalation import RiskLevel, create_risk_escalation_machine
+from feelies.risk.hazard_exit import HAZARD_EXIT_REASONS, HAZARD_EXIT_SOURCE_LAYER
 from feelies.risk.edge_weighted_sizer import (
     EdgeWeightedSizer,
     SizeDivergence,
@@ -393,8 +395,7 @@ def collision_is_harmless_flat_gate_close(
     if aggregate_qty != 0:
         return False
     return all(
-        s.direction == SignalDirection.FLAT and s.regime_gate_state == "OFF"
-        for s in candidates
+        s.direction == SignalDirection.FLAT and s.regime_gate_state == "OFF" for s in candidates
     )
 
 
@@ -769,6 +770,14 @@ class Orchestrator:
         # without re-deriving the intent from fill order (Task 4).  Pruned
         # alongside ``_active_orders``.
         self._order_trading_intent: dict[str, str] = {}
+        # Maps (strategy_id, symbol) -> (trend_mechanism, expected_half_life)
+        # captured from the most recent SIGNAL-layer Signal so fill
+        # reconciliation can stamp the causal mechanism onto each
+        # ``TradeRecord`` (Inv-1 per-trade forensic attribution).  Pure side
+        # table — never read on the per-tick decision path.
+        self._last_signal_mechanism: dict[
+            tuple[str, str], tuple[TrendMechanism | None, int]
+        ] = {}
         # P4b: passive working-reduction orders awaiting a MARKET fallback.
         # order_id -> (symbol, side, original_qty).  When such an order
         # terminates unfilled (the router's resting timeout → CANCELLED /
@@ -2481,7 +2490,15 @@ class Orchestrator:
             self._finalize_tick(t_wall_start, cid)
             return
 
-        self._bus.publish(signal)
+        # Inv-7 single-writer: only synthetic forced-exit signals are first
+        # published here.  ``_check_stop_exit`` / ``_check_session_flat`` compute
+        # ``__stop_exit__`` / ``__session_flat__`` Signals inline and never reach
+        # the bus otherwise.  A bus-arbitrated standalone winner was already
+        # published by ``HorizonSignalEngine`` (the sole writer of alpha
+        # Signals); re-publishing it here would double-count it on the Signal
+        # stream for every subscriber (UniverseSynchronizer, forensics).
+        if signal.strategy_id in _FORCED_MARKET_EXIT_STRATEGIES:
+            self._bus.publish(signal)
 
         # ── Position sizing: compute target quantity from risk budget ──
         target_qty = self._compute_target_quantity(signal, quote)
@@ -4782,7 +4799,6 @@ class Orchestrator:
                 # ``__stop_exit__`` → ``STOP_EXIT``) so the fill model prices
                 # the stop with slippage / depleted depth; "" for ordinary
                 # entries and discretionary exits leaves the fill unchanged.
-                reason=_FORCED_EXIT_PANIC_REASON.get(intent.signal.strategy_id, ""),
                 g12_disclosed_cost_total_bps=(intent.signal.disclosed_cost_total_bps),
             ),
             None,
@@ -5787,13 +5803,21 @@ class Orchestrator:
                             },
                         )
                     )
-                    if escalate and self._kill_switch is not None and not self._kill_switch.is_active:
+                    if (
+                        escalate
+                        and self._kill_switch is not None
+                        and not self._kill_switch.is_active
+                    ):
                         self._kill_switch.activate(
                             reason="realized_cost_persistent_overrun",
                             activated_by="orchestrator",
                         )
 
             if self._trade_journal is not None:
+                _trade_mech, _trade_hl = self._last_signal_mechanism.get(
+                    (order.strategy_id, ack.symbol),
+                    (None, 0),
+                )
                 self._trade_journal.record(
                     TradeRecord(
                         order_id=ack.order_id,
@@ -5814,6 +5838,9 @@ class Orchestrator:
                             ack.order_id,
                             "",
                         ),
+                        trend_mechanism=_trade_mech,
+                        expected_half_life_seconds=_trade_hl,
+                        regime_state=self._regime_label_for(ack.symbol),
                         # P1 (position-mgmt audit 2026-06-20): propagate
                         # order lineage so post-trade forensics (Inv-13) can
                         # split fills by forced-exit class / producing layer
@@ -5828,6 +5855,27 @@ class Orchestrator:
                 self._alpha_symbols_with_fills.add((order.strategy_id, ack.symbol))
 
         self._prune_terminal_orders()
+
+    def _regime_label_for(self, symbol: str) -> str:
+        """Dominant regime-state name for *symbol* at fill time (forensics).
+
+        Pure provenance capture for the trade journal: reads the regime
+        engine's already-computed posterior (no new computation, no
+        decision — Inv-5-safe) and returns its argmax state name.  Returns
+        "" when there is no engine or no posterior yet for the symbol, so a
+        cold or regime-less deployment simply records an empty regime label.
+        """
+        engine = self._regime_engine
+        if engine is None:
+            return ""
+        post = engine.current_state(symbol)
+        if not post:
+            return ""
+        names = list(engine.state_names)
+        if not names:
+            return ""
+        idx = max(range(len(post)), key=lambda i: post[i])
+        return names[idx] if idx < len(names) else ""
 
     def _distribute_fill_to_strategies(
         self,
@@ -5850,7 +5898,11 @@ class Orchestrator:
         if self._strategy_positions is None:
             return
 
-        strategy_ids = list(self._strategy_positions.strategy_ids())
+        # Inv-5: iterate strategies in a deterministic (sorted) order.
+        # ``strategy_ids()`` returns a ``frozenset``; materialising it directly
+        # would make the largest-remainder tie-break and per-alpha fee split
+        # depend on hash-iteration order (process/seed dependent).
+        strategy_ids = sorted(self._strategy_positions.strategy_ids())
         if not strategy_ids:
             return
 
@@ -6029,6 +6081,14 @@ class Orchestrator:
                 )
             return
         self._signal_buffer.append(event)
+        # Forensic provenance: remember this alpha/symbol's mechanism so the
+        # eventual fill's ``TradeRecord`` carries it (Inv-1).  Side table only,
+        # never read on the decision path.
+        if event.trend_mechanism is not None or event.expected_half_life_seconds:
+            self._last_signal_mechanism[(event.strategy_id, event.symbol)] = (
+                event.trend_mechanism,
+                event.expected_half_life_seconds,
+            )
         if not self._quote_tick_in_flight:
             self._carryover_signal_sequences.add(event.sequence)
 
@@ -6078,11 +6138,7 @@ class Orchestrator:
         signals: Sequence[Signal],
     ) -> list[Signal]:
         """Drop cross-alpha gate-close hijacks and foreign exit signals."""
-        return [
-            s
-            for s in signals
-            if self._standalone_signal_actionable_for_strategy_ownership(s)
-        ]
+        return [s for s in signals if self._standalone_signal_actionable_for_strategy_ownership(s)]
 
     def _select_bus_signal(self) -> Signal | None:
         """Pick one Signal from this tick's bus buffer (deterministic).
@@ -6129,10 +6185,7 @@ class Orchestrator:
                     candidate_count=len(buf),
                     strategy_ids=tuple(sorted({s.strategy_id for s in buf})),
                     kinds=tuple(
-                        sorted(
-                            (s.strategy_id, s.direction.name, s.regime_gate_state)
-                            for s in buf
-                        )
+                        sorted((s.strategy_id, s.direction.name, s.regime_gate_state) for s in buf)
                     ),
                     harmless=harmless,
                 )
@@ -6185,8 +6238,10 @@ class Orchestrator:
             self._submit_portfolio_leg_without_micro_walk(event, event.correlation_id)
 
     # ── Audit R1: bus-driven hazard-exit OrderRequest handler ────────
-
-    _HAZARD_EXIT_REASONS: frozenset[str] = frozenset({"HAZARD_SPIKE", "HARD_EXIT_AGE"})
+    # The accepted signature (``HAZARD_EXIT_SOURCE_LAYER`` +
+    # ``HAZARD_EXIT_REASONS``) is imported from ``feelies.risk.hazard_exit`` —
+    # the sole writer — so the bridge filter cannot drift from what the
+    # controller actually emits (audit kernel-P1).
 
     def _on_bus_hazard_order(self, event: Event) -> None:
         """Route hazard-exit ``OrderRequest`` events to the execution backend.
@@ -6221,9 +6276,9 @@ class Orchestrator:
         """
         if not isinstance(event, OrderRequest):
             return
-        if event.source_layer != "RISK":
+        if event.source_layer != HAZARD_EXIT_SOURCE_LAYER:
             return
-        if event.reason not in self._HAZARD_EXIT_REASONS:
+        if event.reason not in HAZARD_EXIT_REASONS:
             return
         # Idempotency guard against a duplicate publish of the same
         # hazard order_id (e.g. a misconfigured second subscriber

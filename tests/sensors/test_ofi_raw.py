@@ -48,7 +48,9 @@ def test_sum_reducer_gives_integrated_flow() -> None:
     each event counted exactly once (unlike a sum over the EWMA)."""
     s = OFIRawSensor(warm_after=1)
     st = s.initial_state()
-    feat = HorizonWindowedFeature("ofi_raw", 120, reducer="sum", feature_id="ofi_integrated", min_samples=1)
+    feat = HorizonWindowedFeature(
+        "ofi_raw", 120, reducer="sum", feature_id="ofi_integrated", min_samples=1
+    )
     fstate = feat.initial_state()
 
     # Three OFI-bearing quotes: +300 (bid lift), -100 (bid drop to prior size),
