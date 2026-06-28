@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import math
 from decimal import Decimal
 
 import pytest
 
 from feelies.core.events import NBBOQuote, Trade
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
+
+_NS = 1_000_000_000
 
 
 def _q(*, bid: str, ask: str, bs: int, as_: int, ts: int) -> NBBOQuote:
@@ -29,6 +32,12 @@ def test_constructor_rejects_invalid_alpha() -> None:
         OFIEwmaSensor(alpha=0.0)
     with pytest.raises(ValueError):
         OFIEwmaSensor(alpha=1.1)
+    with pytest.raises(ValueError):
+        OFIEwmaSensor(decay_tau_seconds=0.0)
+    with pytest.raises(ValueError):
+        OFIEwmaSensor(max_gap_seconds=0)
+    with pytest.raises(ValueError):
+        OFIEwmaSensor(depth_floor=0.0)
 
 
 def test_first_quote_emits_zero_ofi() -> None:
@@ -54,6 +63,54 @@ def test_bid_up_ask_up_handcomputed() -> None:
     r = s.update(_q(bid="100.01", ask="100.02", bs=100, as_=100, ts=2), state, {})
     assert r is not None
     assert r.value == pytest.approx(20.0)
+
+
+def test_time_decay_uses_event_time_gap() -> None:
+    """With tau=1s and dt=1s, alpha_t = 1 - exp(-1)."""
+    s = OFIEwmaSensor(decay_tau_seconds=1.0)
+    state = s.initial_state()
+    s.update(_q(bid="100.00", ask="100.01", bs=100, as_=100, ts=0), state, {})
+    r = s.update(_q(bid="100.01", ask="100.02", bs=100, as_=100, ts=_NS), state, {})
+
+    assert r is not None
+    assert r.value == pytest.approx(200.0 * (1.0 - math.exp(-1.0)))
+
+
+def test_depth_normalization_scales_raw_ofi_by_local_depth() -> None:
+    s = OFIEwmaSensor(alpha=1.0, normalize_by_depth=True)
+    state = s.initial_state()
+    s.update(_q(bid="100.00", ask="100.01", bs=100, as_=100, ts=1), state, {})
+    r = s.update(_q(bid="100.01", ask="100.02", bs=100, as_=100, ts=2), state, {})
+
+    assert r is not None
+    assert r.value == pytest.approx(1.0)  # raw OFI 200 / displayed depth 200
+
+
+def test_gap_reset_seeds_fresh_book_and_reverts_to_cold() -> None:
+    s = OFIEwmaSensor(alpha=1.0, warm_after=2, max_gap_seconds=10)
+    state = s.initial_state()
+
+    s.update(_q(bid="100.00", ask="100.01", bs=100, as_=100, ts=0), state, {})
+    warm = s.update(_q(bid="100.01", ask="100.02", bs=100, as_=100, ts=_NS), state, {})
+    assert warm is not None and warm.warm is True
+
+    after_gap = s.update(
+        _q(bid="101.00", ask="101.01", bs=100, as_=100, ts=20 * _NS),
+        state,
+        {},
+    )
+    assert after_gap is not None
+    assert after_gap.value == 0.0
+    assert after_gap.warm is False
+
+    post_seed = s.update(
+        _q(bid="101.01", ask="101.02", bs=100, as_=100, ts=21 * _NS),
+        state,
+        {},
+    )
+    assert post_seed is not None
+    assert post_seed.value == pytest.approx(200.0)
+    assert post_seed.warm is True
 
 
 def test_bid_down_ask_down_handcomputed() -> None:
