@@ -200,14 +200,22 @@ class OFIEwmaSensor:
                 depth = max(float(bid_sz + ask_sz), self._depth_floor)
                 ofi /= depth
 
-            alpha = self._effective_alpha(ts_ns=ts_ns, last_ts_ns=last_ts)
-            new_ewma = alpha * ofi + (1.0 - alpha) * state["ewma"]
-            state["ewma"] = new_ewma
-            state["last_bid"] = bid
-            state["last_ask"] = ask
-            state["last_bid_size"] = bid_sz
-            state["last_ask_size"] = ask_sz
-            state["last_ts_ns"] = ts_ns
+            if self._decay_tau_ns is not None and last_ts is not None and ts_ns == last_ts:
+                # Same-instant quote under event-time decay: ``alpha_t`` would
+                # be 0 and drop this step's OFI.  Defer the EWMA blend and the
+                # level/size/anchor advance so the cumulative book move from
+                # the pre-burst level enters the smoothed signal on the next
+                # ``dt > 0`` update (mirrors HawkesIntensitySensor._decay_to).
+                new_ewma = state["ewma"]
+            else:
+                alpha = self._effective_alpha(ts_ns=ts_ns, last_ts_ns=last_ts)
+                new_ewma = alpha * ofi + (1.0 - alpha) * state["ewma"]
+                state["ewma"] = new_ewma
+                state["last_bid"] = bid
+                state["last_ask"] = ask
+                state["last_bid_size"] = bid_sz
+                state["last_ask_size"] = ask_sz
+                state["last_ts_ns"] = ts_ns
 
         # S3: sliding-window warm check — reverts to cold after data gaps
         warm_ts: deque[int] = state["warm_ts"]
