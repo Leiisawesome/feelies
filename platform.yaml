@@ -292,7 +292,17 @@ sensor_specs:
     sensor_version: "1.1.0"
     cls: feelies.sensors.impl.ofi_ewma.OFIEwmaSensor
     params:
-      alpha: 0.1
+      # Time-stable OFI smoothing: alpha_t = 1 - exp(-dt / tau).
+      # Retains the same broad responsiveness as the old alpha=0.1 path
+      # around a ~10 Hz quote stream, without making memory quote-rate dependent.
+      decay_tau_seconds: 10.0
+      # Reset stale book levels after a >5 min inter-quote gap so the next
+      # quote seeds a fresh OFI baseline instead of generating a cross-gap jump.
+      max_gap_seconds: 300
+      # Scale raw OFI by current displayed top-of-book depth, making the sensor
+      # output a local pressure measure rather than unnormalised share units.
+      normalize_by_depth: true
+      depth_floor: 1.0
       warm_after: 50
       warm_window_seconds: 300
     subscribes_to: [NBBOQuote]
