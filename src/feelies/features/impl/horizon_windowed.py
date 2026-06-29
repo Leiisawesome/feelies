@@ -3,7 +3,7 @@
 Unlike :mod:`feelies.features.impl.rolling_stats` — whose deques are
 *count*-bounded (``max_samples``) and therefore independent of
 ``horizon_seconds`` — these features aggregate over the **actual
-event-time window** ``[tick.ts - horizon_seconds, tick.ts]``.  The
+event-time window** ``[tick.asof - horizon_seconds, tick.asof]``.  The
 horizon is finally a *window*, not just a *clock*: the same sensor at
 horizon 30 s and 1800 s now produces genuinely different baselines, so
 the G16 ``horizon / half_life`` binding has real effect (audit P1-1).
@@ -286,10 +286,31 @@ class HorizonWindowedFeature:
         # since its last reading correctly shrinks (and eventually
         # empties) its window — the aggregator's stale override then
         # fires on the empty/short window.
-        self._evict_before(state, tick.timestamp_ns - self._window_ns)
+        asof_ns = tick.asof_timestamp_ns
+        self._evict_before(state, asof_ns - self._window_ns)
         win: deque[tuple[int, float]] = state["win"]
-        n = state["n"]
         reducer = self._reducer
+
+        if any(ts > asof_ns for ts, _x in win):
+            live = [(ts, x) for ts, x in win if ts <= asof_ns]
+            n = len(live)
+            if n > 0:
+                mean = sum(x for _ts, x in live) / n
+                m2 = sum((x - mean) ** 2 for _ts, x in live)
+                latest = live[-1][1]
+                oldest = live[0][1]
+            else:
+                mean = 0.0
+                m2 = 0.0
+                latest = 0.0
+                oldest = 0.0
+        else:
+            n = state["n"]
+            mean = state["mean"]
+            m2 = state["M2"]
+            latest = win[-1][1] if win else 0.0
+            oldest = win[0][1] if win else 0.0
+
         if n < self._min_samples or not win:
             # Percentile uses 0.5 (neutral prior) during warm-up, matching
             # RollingPercentileFeature; other reducers use 0.0.  The value
@@ -297,9 +318,6 @@ class HorizonWindowedFeature:
             # archived cold snapshots interpretable.
             neutral = 0.5 if reducer == "percentile" else 0.0
             return neutral, False, False
-
-        latest = win[-1][1]
-        mean = state["mean"]
 
         if reducer == "last":
             return latest, True, False
@@ -310,14 +328,14 @@ class HorizonWindowedFeature:
         if reducer == "delta":
             # Signed drift across the window: latest - oldest.  n >= 1 here;
             # a single-sample window has zero drift by definition.
-            return latest - win[0][1], True, False
+            return latest - oldest, True, False
         if reducer == "percentile":
             # Hazen plotting position over the in-window values (audit #9).
-            rank = sum(1 for (_ts, x) in win if x <= latest)
+            rank = sum(1 for (_ts, x) in win if _ts <= asof_ns and x <= latest)
             return (rank - 0.5) / n, True, False
 
         # Variance-based reducers (need n >= 2, guaranteed by min_samples).
-        var = state["M2"] / (n - 1) if n >= 2 else 0.0
+        var = m2 / (n - 1) if n >= 2 else 0.0
         if var < 0.0:
             var = 0.0
         if reducer == "rms":

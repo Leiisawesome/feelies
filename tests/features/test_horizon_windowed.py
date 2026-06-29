@@ -24,7 +24,7 @@ def _reading(ts_ns: int, value, *, warm: bool = True) -> SensorReading:
     )
 
 
-def _tick(ts_ns: int) -> HorizonTick:
+def _tick(ts_ns: int, *, boundary_ts_ns: int = 0) -> HorizonTick:
     return HorizonTick(
         timestamp_ns=ts_ns,
         correlation_id="c2",
@@ -34,6 +34,7 @@ def _tick(ts_ns: int) -> HorizonTick:
         boundary_index=1,
         session_id="US_EQUITY_RTH_2026-01-15",
         scope="SYMBOL",
+        boundary_timestamp_ns=boundary_ts_ns,
         symbol="AAPL",
     )
 
@@ -95,6 +96,27 @@ def test_finalize_evicts_at_tick_boundary() -> None:
     val, warm, stale = feat.finalize(_tick(100 * _NS), state, {})
     assert warm is False  # window emptied → not enough samples
     assert val == 0.0
+
+
+def test_finalize_uses_boundary_asof_not_post_boundary_event_time() -> None:
+    feat = HorizonWindowedFeature("ofi_ewma", 30, reducer="last", min_samples=1)
+    state = feat.initial_state()
+    feat.observe(_reading(29 * _NS, 1.0), state, {})
+    feat.observe(_reading(30 * _NS + 100_000_000, 99.0), state, {})
+
+    val, warm, stale = feat.finalize(
+        _tick(30 * _NS + 100_000_000, boundary_ts_ns=30 * _NS),
+        state,
+        {},
+    )
+
+    assert warm
+    assert stale is False
+    assert val == pytest.approx(1.0)
+
+    next_val, next_warm, _ = feat.finalize(_tick(60 * _NS, boundary_ts_ns=60 * _NS), state, {})
+    assert next_warm
+    assert next_val == pytest.approx(99.0)
 
 
 def test_sum_reducer_integrates_over_window() -> None:

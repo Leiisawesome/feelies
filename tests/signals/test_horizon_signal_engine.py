@@ -400,7 +400,13 @@ def test_stale_required_feature_suppresses_new_entry() -> None:
     """Audit P1-7: while the gate stays ON, a stale required feature must
     still suppress a *new* entry (entry-suppression contract intact)."""
     engine, bus, captured = _engine()
-    engine.register(_registered(required_warm_feature_ids=frozenset({"ofi_ewma"})))
+    gate = _gate()
+    engine.register(
+        _registered(
+            gate=gate,
+            required_warm_feature_ids=frozenset({"ofi_ewma"}),
+        )
+    )
     engine.attach()
 
     bus.publish(_regime_normal_high())
@@ -414,8 +420,9 @@ def test_stale_required_feature_suppresses_new_entry() -> None:
         )
     )
     # Gate is ON but the feature is stale and no position was open, so no
-    # entry and no close.
+    # entry, no close, and no OFF->ON latch mutation.
     assert captured == []
+    assert not gate.is_on("AAPL")
 
 
 def test_cold_start_missing_binding_swallowed() -> None:

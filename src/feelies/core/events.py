@@ -592,13 +592,24 @@ class HorizonTick(Event):
     ``scope`` is ``"SYMBOL"`` for per-symbol horizons (in which case
     ``symbol`` must be set) or ``"UNIVERSE"`` for cross-sectional
     horizons (``symbol`` is ``None``).
+
+    ``timestamp_ns`` is the event time that caused the scheduler to
+    emit the tick.  ``boundary_timestamp_ns`` is the exact horizon
+    boundary being finalized; legacy hand-built ticks leave it at ``0``
+    and consumers fall back to ``timestamp_ns``.
     """
 
     horizon_seconds: int
     boundary_index: int
     session_id: str
     scope: Literal["SYMBOL", "UNIVERSE"]
+    boundary_timestamp_ns: int = 0
     symbol: str | None = None
+
+    @property
+    def asof_timestamp_ns(self) -> int:
+        """Exact event-time boundary used for feature as-of math."""
+        return self.boundary_timestamp_ns or self.timestamp_ns
 
 
 @dataclass(frozen=True, kw_only=True)

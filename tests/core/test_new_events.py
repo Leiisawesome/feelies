@@ -200,6 +200,24 @@ def test_horizon_tick_symbol_scope() -> None:
     assert tick.scope == "SYMBOL"
     assert tick.symbol == "AAPL"
     assert tick.horizon_seconds == 30
+    assert tick.boundary_timestamp_ns == 0
+    assert tick.asof_timestamp_ns == tick.timestamp_ns
+
+
+def test_horizon_tick_boundary_timestamp_asof() -> None:
+    tick = HorizonTick(
+        timestamp_ns=2_031_000_000_000,
+        correlation_id="ht-30-1",
+        sequence=1,
+        horizon_seconds=30,
+        boundary_index=1,
+        session_id="US_EQUITY_RTH_20260420",
+        scope="SYMBOL",
+        boundary_timestamp_ns=2_030_000_000_000,
+        symbol="AAPL",
+    )
+    assert tick.timestamp_ns == 2_031_000_000_000
+    assert tick.asof_timestamp_ns == 2_030_000_000_000
 
 
 def test_horizon_tick_universe_scope_no_symbol() -> None:

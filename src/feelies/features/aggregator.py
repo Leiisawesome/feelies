@@ -474,6 +474,7 @@ class HorizonAggregator:
         stale: dict[str, bool] = {}
         source_sensors: dict[str, tuple[str, ...]] = {}
         feature_versions: dict[str, str] = {}
+        asof_ns = tick.asof_timestamp_ns
 
         # Audit #17: dispatch on horizon-bucketed view so passive
         # horizons cost O(1), not O(F).  Iteration order matches the
@@ -507,8 +508,12 @@ class HorizonAggregator:
             if not s:
                 horizon_ns = feature.horizon_seconds * _NS_PER_SECOND
                 for sid in feature.input_sensor_ids:
-                    last_ns = self._last_reading_ns.get((symbol, sid))
-                    if last_ns is None or (tick.timestamp_ns - last_ns) > horizon_ns:
+                    last_ns = self._latest_warm_reading_ns_at_or_before(
+                        symbol=symbol,
+                        sensor_id=sid,
+                        asof_ns=asof_ns,
+                    )
+                    if last_ns is None or (asof_ns - last_ns) > horizon_ns:
                         s = True
                         break
             # 3P-1: defence in depth.  The registry already suppresses
@@ -550,7 +555,7 @@ class HorizonAggregator:
         seq = self._sequence_generator.next()
         cid = make_correlation_id(
             symbol=f"snap:{symbol}:{tick.horizon_seconds}",
-            exchange_timestamp_ns=tick.timestamp_ns,
+            exchange_timestamp_ns=asof_ns,
             sequence=tick.boundary_index,
         )
         return HorizonFeatureSnapshot(
@@ -571,6 +576,29 @@ class HorizonAggregator:
 
     # ── Monitoring (plan §4.5) ───────────────────────────────────────
 
+    # Snapshot freshness helpers.
+    def _latest_warm_reading_ns_at_or_before(
+        self,
+        *,
+        symbol: str,
+        sensor_id: str,
+        asof_ns: int,
+    ) -> int | None:
+        """Latest warm sensor timestamp that is causal for this boundary."""
+        cached = self._last_reading_ns.get((symbol, sensor_id))
+        if cached is not None and cached <= asof_ns:
+            return cached
+
+        latest: int | None = None
+        for (buf_symbol, buf_sensor_id, _version), buf in self._buffers.items():
+            if buf_symbol != symbol or buf_sensor_id != sensor_id:
+                continue
+            for ts_ns, reading in buf:
+                if reading.warm and ts_ns <= asof_ns and (latest is None or ts_ns > latest):
+                    latest = ts_ns
+        return latest
+
+    # Monitoring.
     def _emit_snapshot_metric(self, *, snapshot: HorizonFeatureSnapshot) -> None:
         """Emit ``feelies.feature.snapshot.stale_fraction`` for one snapshot.
 

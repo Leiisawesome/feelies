@@ -383,9 +383,14 @@ class HorizonSignalEngine:
         )
         was_on = registered.gate.is_on(snapshot.symbol)
         try:
+            # Entry-blocked snapshots may still need to evaluate an ON
+            # latch for expression errors, but they must not arm a new
+            # OFF->ON state.  Existing ON latches evaluate mutably so the
+            # OFF path can still publish a conservative FLAT close.
             on = registered.gate.evaluate(
                 symbol=snapshot.symbol,
                 bindings=bindings,
+                mutate=not (entry_blocked and not was_on),
             )
         except UnknownIdentifierError as exc:
             # H8 / M6: a missing binding during warm-up means the gate

@@ -95,9 +95,14 @@ def test_no_emission_within_same_boundary_window() -> None:
 def test_emission_when_boundary_crossed() -> None:
     sched = _make_scheduler(horizons=frozenset({30}), symbols=frozenset({"AAPL"}))
     sched.on_event(make_quote(symbol="AAPL", ts_ns=SESSION_OPEN_NS))
-    ticks = sched.on_event(make_quote(symbol="AAPL", ts_ns=SESSION_OPEN_NS + 31 * 1_000_000_000))
+    event_ts = SESSION_OPEN_NS + 31 * 1_000_000_000
+    boundary_ts = SESSION_OPEN_NS + 30 * 1_000_000_000
+    ticks = sched.on_event(make_quote(symbol="AAPL", ts_ns=event_ts))
     assert len(ticks) == 2  # SYMBOL + UNIVERSE for boundary_index=1
     assert {t.boundary_index for t in ticks} == {1}
+    assert {t.timestamp_ns for t in ticks} == {event_ts}
+    assert {t.boundary_timestamp_ns for t in ticks} == {boundary_ts}
+    assert {t.asof_timestamp_ns for t in ticks} == {boundary_ts}
 
 
 def test_pre_session_event_does_not_emit_negative_boundary() -> None:

@@ -319,6 +319,7 @@ class HorizonScheduler:
             boundary_index=boundary_index,
             session_id=self._session_id,
             scope=scope,
+            boundary_timestamp_ns=boundary_ts,
             symbol=symbol,
         )
         if self._metric_collector is not None:

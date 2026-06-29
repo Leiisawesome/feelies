@@ -697,12 +697,14 @@ class RegimeGate:
         else:
             self._state.pop(symbol, None)
 
-    def evaluate(self, *, symbol: str, bindings: Bindings) -> bool:
+    def evaluate(self, *, symbol: str, bindings: Bindings, mutate: bool = True) -> bool:
         """Update the latch for *symbol* and return the new state.
 
         Returns the **post-transition** state (True if currently ON,
         False otherwise).  Callers that need the pre-transition state
         for forensics should snapshot :meth:`is_on` first.
+        Passing ``mutate=False`` evaluates the same transition rules
+        without committing the resulting latch state.
 
         M7: When ``hysteresis`` margins are declared (e.g.
         ``posterior_margin: 0.20``) they are injected into the binding
@@ -735,11 +737,13 @@ class RegimeGate:
         currently_on = self._state.get(symbol, False)
         if currently_on:
             if self._eval(self._off_tree, bindings):
-                self._state[symbol] = False
+                if mutate:
+                    self._state[symbol] = False
                 return False
             return True
         if self._eval(self._on_tree, bindings):
-            self._state[symbol] = True
+            if mutate:
+                self._state[symbol] = True
             return True
         return False
 

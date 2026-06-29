@@ -22,6 +22,7 @@ from feelies.core.events import (
 )
 from feelies.core.identifiers import SequenceGenerator
 from feelies.features.aggregator import HorizonAggregator
+from feelies.features.impl.horizon_windowed import HorizonWindowedFeature
 from feelies.features.protocol import HorizonFeature
 
 
@@ -99,6 +100,7 @@ def _tick(
     ts_ns: int,
     symbol: str | None = "AAPL",
     scope: str = "SYMBOL",
+    boundary_ts_ns: int = 0,
 ) -> HorizonTick:
     return HorizonTick(
         timestamp_ns=ts_ns,
@@ -107,6 +109,7 @@ def _tick(
         horizon_seconds=horizon,
         boundary_index=boundary,
         scope=scope,
+        boundary_timestamp_ns=boundary_ts_ns,
         symbol=symbol,
         session_id="TEST",
     )
@@ -235,6 +238,48 @@ def test_active_mode_finalizes_feature_with_value() -> None:
     assert snap.warm == {"sum_feat": True}
     assert snap.stale == {"sum_feat": False}
     assert snap.source_sensors == {"sum_feat": ("ofi_ewma",)}
+
+
+def test_boundary_asof_excludes_post_boundary_reading_from_window_snapshot() -> None:
+    bus = EventBus()
+    captured: list[HorizonFeatureSnapshot] = []
+    bus.subscribe(HorizonFeatureSnapshot, captured.append)
+
+    feat = HorizonWindowedFeature(
+        "ofi_ewma",
+        30,
+        reducer="last",
+        feature_id="ofi_last",
+        min_samples=1,
+    )
+    agg = HorizonAggregator(
+        bus=bus,
+        horizon_features={"ofi_last": feat},
+        symbols=frozenset({"AAPL"}),
+        sensor_buffer_seconds=600,
+        sequence_generator=SequenceGenerator(),
+    )
+    agg.attach()
+
+    boundary_ts = 30_000_000_000
+    post_boundary_ts = boundary_ts + 100_000_000
+    bus.publish(_reading(ts_ns=29_000_000_000, value=1.0))
+    bus.publish(_reading(ts_ns=post_boundary_ts, value=99.0))
+    bus.publish(
+        _tick(
+            boundary=1,
+            ts_ns=post_boundary_ts,
+            boundary_ts_ns=boundary_ts,
+        )
+    )
+
+    assert len(captured) == 1
+    snap = captured[0]
+    assert snap.timestamp_ns == post_boundary_ts
+    assert snap.correlation_id == "snap:AAPL:30:30000000000:1"
+    assert snap.values == {"ofi_last": 1.0}
+    assert snap.warm == {"ofi_last": True}
+    assert snap.stale == {"ofi_last": False}
 
 
 def test_active_mode_second_horizon_reports_stale_when_no_new_readings() -> None:
