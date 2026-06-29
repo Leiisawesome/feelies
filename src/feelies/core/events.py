@@ -574,6 +574,14 @@ class HorizonTick(Event):
     session_id: str
     scope: Literal["SYMBOL", "UNIVERSE"]
     symbol: str | None = None
+    # ENG-1: the EXACT nominal boundary time
+    # ``session_open_ns + boundary_index * horizon_seconds * 1e9``.  Distinct
+    # from ``timestamp_ns`` (the *triggering* event time, which on sparse tapes
+    # lands at or after the boundary).  Lets consumers anchor to a regular grid
+    # (IC labels, forensics, cross-sectional sync) instead of the jittery
+    # trigger time.  Default 0 = "unset" (legacy / direct test construction);
+    # the scheduler always sets it.
+    boundary_ts_ns: int = 0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -636,6 +644,10 @@ class HorizonFeatureSnapshot(Event):
     symbol: str
     horizon_seconds: int
     boundary_index: int
+    # ENG-1: exact nominal boundary time, carried verbatim from the triggering
+    # ``HorizonTick.boundary_ts_ns``.  ``timestamp_ns`` remains the trigger
+    # time; this is the regular-grid anchor for IC labels / forensics.
+    boundary_ts_ns: int = 0
     values: dict[str, float] = field(default_factory=dict)
     warm: dict[str, bool] = field(default_factory=dict)
     stale: dict[str, bool] = field(default_factory=dict)
