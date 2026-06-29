@@ -30,11 +30,11 @@ Legend: ✅ done · 🟡 partial (scoped issue below) · ⬜ open (scoped issue 
 | 6 | Fail-safe gate — errors never strand a position | ✅ | Every gate-eval exception path forces the latch OFF and unwinds if previously ON (`signals/horizon_engine.py:389-468`); `entry_blocked` is separated from gate eval (`:356, 470-480`) so ON→OFF exits fire even when a required feature is cold/stale. Warm/stale gates **entry only** (exits permitted). |
 | 7 | Gating semantics — gate only on consumed features | ✅ | `required_warm` is consume-driven: bootstrap statically parses the `signal:` body for the `snapshot.values` keys it reads (`bootstrap.py:_consumed_value_keys_from_signal_source` @1390, used @1480), with a conservative fall-back when keys can't be resolved. Tests: `tests/bootstrap/test_required_warm_consume_driven.py`. |
 | 8 | Throttle dispatch contract locked | ✅ | `SensorSpec` warns on `throttled_ms` without `stateful=True` (`sensors/spec.py`); registry dispatch golden in `tests/sensors/test_throttle_dispatch.py` (stateful → update every event, emit sparsely; stateless → skip update in window). |
-| 9 | Observability — engine behaviour is visible | 🟡 | Sensor/aggregator metered: `feelies.sensor.reading.count`, `feelies.sensor.nonfinite.count`, `feelies.horizon.tick.emitted`, `feelies.feature.snapshot.stale_fraction`. **Signal engine emits no metrics** — gate ON/OFF transitions, entry suppression (`entry_blocked`), and fail-safe unwinds (`_publish_gate_close`) are log-only. → **ENG-2**. |
+| 9 | Observability — engine behaviour is visible | ✅ | Sensor/aggregator metered: `feelies.sensor.reading.count`, `feelies.sensor.nonfinite.count`, `feelies.horizon.tick.emitted`, `feelies.feature.snapshot.stale_fraction`. **ENG-2 done:** the signal engine now emits `feelies.signal.gate.transition` (to=ON\|OFF), `feelies.signal.entry.suppressed` (reason=not_warm\|stale), `feelies.signal.gate.failsafe_unwind` (reason), `feelies.signal.emitted` (direction) on a dedicated metrics sequence (off the locked Signal stream). `signals/horizon_engine.py:_emit_metric`; tests `tests/signals/test_horizon_engine_metrics.py`. |
 | 10 | Known-answer measurement harness | 🟡 | `scripts/sensor_feature_ic.py` replays through the real registry→scheduler→aggregator and pairs warm snapshots with forward mid-returns (causal, no-lookahead drop) — but covers only 4 families (ofi/micro/realized-vol/kyle), no regime/cost stratification, and there is **no reference-sensor golden** that asserts the snapshot↔forward-return pairing is *exact*. → **ENG-3**. |
 
-**Verdict:** 7 of 10 ✅. The engine is ~80 % done. Three scoped issues remain;
-none is a from-scratch effort. ENG-3 is the true bridge to the gas phase.
+**Verdict:** 8 of 10 ✅ (ENG-2 landed 2026-06-19). Two scoped issues remain;
+neither is a from-scratch effort. ENG-3 is the true bridge to the gas phase.
 
 ---
 
@@ -77,29 +77,17 @@ field changes the hashed snapshot stream). No behavioural change to gating.
 
 ---
 
-### ENG-2 — Meter the signal engine (see the gate working)
+### ENG-2 — Meter the signal engine ✅ DONE (2026-06-19)
 
-**Problem.** The sensor and aggregator layers emit metrics, but the
-`HorizonSignalEngine` is log-only. You cannot answer, from telemetry, "how often
-is the gate ON?", "how many entries were suppressed for warm/stale?", "how many
-fail-safe unwinds fired?" — exactly the signals you need to trust the engine in
-production and to debug a silent alpha.
-
-**Acceptance criteria.** Emit counters (dedicated metrics sequence, off the
-locked Signal stream — mirror the registry pattern):
-- `feelies.signal.gate.transition` (tags: `alpha_id`, `to=ON|OFF`),
-- `feelies.signal.entry.suppressed` (tags: `alpha_id`, `reason=not_warm|stale`),
-- `feelies.signal.gate.failsafe_unwind` (tags: `alpha_id`, `reason`),
-- `feelies.signal.emitted` (tags: `alpha_id`, `direction`).
-One test asserts the suppression counter increments when a required feature is
-cold.
-
-**Scope: S.** Pure additive instrumentation in `signals/horizon_engine.py`
-(`_dispatch_one`, `_publish_gate_close`). No effect on the Signal stream or
-parity hashes (separate sequence generator).
-
-**Evidence:** `signals/horizon_engine.py:356-380, 470-480, 517-551`; no
-`MetricEvent` in that module today.
+**Delivered.** The `HorizonSignalEngine` now emits four counters via
+`_emit_metric` on a dedicated metrics sequence (collector, not bus — zero effect
+on the locked Signal stream; `None` collector is a no-op):
+- `feelies.signal.gate.transition` (`alpha_id`, `to=ON|OFF`) — normal ON↔OFF,
+- `feelies.signal.entry.suppressed` (`alpha_id`, `reason=not_warm|stale`),
+- `feelies.signal.gate.failsafe_unwind` (`alpha_id`, `reason`) — error-forced OFFs,
+- `feelies.signal.emitted` (`alpha_id`, `direction`).
+Wired through `bootstrap._create_signal_layer` → `HorizonSignalEngine`. Tests in
+`tests/signals/test_horizon_engine_metrics.py`; signal parity goldens unchanged.
 
 ---
 
@@ -139,13 +127,13 @@ one new golden test. No production-code change required.
 
 ## Sequencing recommendation
 
-1. **ENG-2** first (S, zero risk) — instrument the engine so you can *watch* the
-   next two changes land.
+1. ~~**ENG-2**~~ ✅ **done (2026-06-19)** — the engine is now instrumented, so you
+   can *watch* the next two changes land.
 2. **ENG-1** (S–M) — close the last causality-clarity gap and unblock honest
    cross-sectional work; rebaseline the snapshot parity hash in the same commit.
 3. **ENG-3** (M) — build and certify the measurement harness. **This row going
    green is the signal to start the gas phase.**
 
-Everything else (rows 1, 2, 4–8) is already ✅ from the three-pass sensor audit
-plus the merged platform work — "engine first" here is *finishing*, not
+Everything else (rows 1–9 except ENG-1/ENG-3) is ✅ from the three-pass sensor
+audit plus the merged platform work — "engine first" here is *finishing*, not
 *building*.
