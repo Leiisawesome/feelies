@@ -73,13 +73,16 @@ from feelies.bus.event_bus import EventBus
 from feelies.core.events import (
     EXIT_ONLY_MECHANISMS,
     HorizonFeatureSnapshot,
+    MetricEvent,
+    MetricType,
     RegimeState,
     SensorReading,
     Signal,
     SignalDirection,
     TrendMechanism,
 )
-from feelies.core.identifiers import SequenceGenerator
+from feelies.core.identifiers import SequenceGenerator, make_correlation_id
+from feelies.monitoring.telemetry import MetricCollector
 from feelies.signals.horizon_protocol import HorizonSignal
 from feelies.signals.regime_gate import (
     Bindings,
@@ -176,6 +179,8 @@ class HorizonSignalEngine:
         "_sensor_cache",
         "_attached",
         "_regime_min_discriminability",
+        "_metric_collector",
+        "_metrics_seq",
     )
 
     def __init__(
@@ -185,10 +190,20 @@ class HorizonSignalEngine:
         signal_sequence_generator: SequenceGenerator,
         clock: Any | None = None,
         regime_min_discriminability: float = 0.0,
+        metric_collector: MetricCollector | None = None,
     ) -> None:
         self._bus = bus
         self._signal_seq = signal_sequence_generator
         self._clock = clock
+        # ENG-2: signal-engine observability.  Counters are recorded into a
+        # dedicated metrics sequence (never the locked Signal stream) and go to
+        # the collector, not the bus — so instrumentation cannot perturb the
+        # Level-2 parity hash (Inv-A / C1).  ``None`` (e.g. the replay tests)
+        # is a zero-overhead no-op.
+        self._metric_collector = metric_collector
+        self._metrics_seq: SequenceGenerator | None = (
+            SequenceGenerator() if metric_collector is not None else None
+        )
         # Audit R-1: floor on the engine's calibration-time emission
         # separation; below it, regime gates fail safe to OFF (the regime
         # posterior is noise).  Default 0.0 is an exact no-op.
@@ -355,6 +370,8 @@ class HorizonSignalEngine:
         # (conservative)", so we now compute ``entry_blocked`` and still
         # run the gate so a close can fire, suppressing only a *new* entry.
         entry_blocked = False
+        not_warm = False
+        is_stale = False
         if snapshot.warm:
             if registered.required_warm_feature_ids is None:
                 keys_to_check = tuple(snapshot.warm.keys())
@@ -417,6 +434,11 @@ class HorizonSignalEngine:
             # the gate was latched ON.
             if was_on:
                 self._publish_gate_close(snapshot, registered)
+                self._emit_metric(
+                    "feelies.signal.gate.failsafe_unwind",
+                    ts_ns=snapshot.timestamp_ns,
+                    tags={"alpha_id": registered.alpha_id, "reason": "unknown_identifier"},
+                )
             return
         except RegimeGateError as exc:
             # Audit P1-1: a RegimeGateError here is most commonly an
@@ -438,6 +460,11 @@ class HorizonSignalEngine:
             )
             if was_on:
                 self._publish_gate_close(snapshot, registered)
+                self._emit_metric(
+                    "feelies.signal.gate.failsafe_unwind",
+                    ts_ns=snapshot.timestamp_ns,
+                    tags={"alpha_id": registered.alpha_id, "reason": "regime_gate_error"},
+                )
             return
         except (
             ZeroDivisionError,
@@ -466,18 +493,44 @@ class HorizonSignalEngine:
             )
             if was_on:
                 self._publish_gate_close(snapshot, registered)
+                self._emit_metric(
+                    "feelies.signal.gate.failsafe_unwind",
+                    ts_ns=snapshot.timestamp_ns,
+                    tags={"alpha_id": registered.alpha_id, "reason": "arithmetic_error"},
+                )
             return
 
         if was_on and not on:
+            # Normal ON → OFF gate transition (exit).
             self._publish_gate_close(snapshot, registered)
+            self._emit_metric(
+                "feelies.signal.gate.transition",
+                ts_ns=snapshot.timestamp_ns,
+                tags={"alpha_id": registered.alpha_id, "to": "OFF"},
+            )
             return
         if not on:
             return
+        if not was_on:
+            # Normal OFF → ON gate transition (admission).
+            self._emit_metric(
+                "feelies.signal.gate.transition",
+                ts_ns=snapshot.timestamp_ns,
+                tags={"alpha_id": registered.alpha_id, "to": "ON"},
+            )
 
         # Gate is ON.  If the snapshot's required features are not warm or
         # are stale, suppress a *new* entry (the gate-close exit path above
         # has already run) — audit P1-7.
         if entry_blocked:
+            self._emit_metric(
+                "feelies.signal.entry.suppressed",
+                ts_ns=snapshot.timestamp_ns,
+                tags={
+                    "alpha_id": registered.alpha_id,
+                    "reason": "not_warm" if not_warm else "stale",
+                },
+            )
             return
 
         try:
@@ -533,6 +586,11 @@ class HorizonSignalEngine:
 
         emitted = self._patch_signal(raw, snapshot, registered)
         self._bus.publish(emitted)
+        self._emit_metric(
+            "feelies.signal.emitted",
+            ts_ns=snapshot.timestamp_ns,
+            tags={"alpha_id": registered.alpha_id, "direction": emitted.direction.name},
+        )
 
     def _publish_gate_close(
         self,
@@ -567,6 +625,37 @@ class HorizonSignalEngine:
                 expected_half_life_seconds=(registered.expected_half_life_seconds),
                 disclosed_cost_total_bps=(registered.cost_arithmetic.cost_total_bps),
                 disclosed_margin_ratio=(registered.cost_arithmetic.margin_ratio),
+            )
+        )
+
+    # ── Observability (ENG-2) ──────────────────────────────────────
+
+    def _emit_metric(self, name: str, *, ts_ns: int, tags: dict[str, str]) -> None:
+        """Record one signal-engine counter (value 1.0).
+
+        No-op when no collector is wired.  Uses the dedicated metrics sequence
+        so it can never perturb the locked Signal stream (Inv-A / C1).
+        """
+        if self._metric_collector is None:
+            return
+        assert self._metrics_seq is not None
+        seq = self._metrics_seq.next()
+        cid = make_correlation_id(
+            symbol=f"metric:signal:{tags.get('alpha_id', '?')}",
+            exchange_timestamp_ns=ts_ns,
+            sequence=seq,
+        )
+        self._metric_collector.record(
+            MetricEvent(
+                timestamp_ns=ts_ns,
+                correlation_id=cid,
+                sequence=seq,
+                source_layer="SIGNAL",
+                layer="signal",
+                name=name,
+                value=1.0,
+                metric_type=MetricType.COUNTER,
+                tags=tags,
             )
         )
 

@@ -317,6 +317,10 @@ class HorizonScheduler:
             source_layer="SCHEDULER",
             horizon_seconds=horizon,
             boundary_index=boundary_index,
+            # ENG-1: the exact nominal boundary (already computed for the
+            # correlation id) — the regular-grid anchor distinct from the
+            # trigger time ``ts_ns``.
+            boundary_ts_ns=boundary_ts,
             session_id=self._session_id,
             scope=scope,
             symbol=symbol,
