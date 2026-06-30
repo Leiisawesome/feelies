@@ -65,6 +65,7 @@ from feelies.features.impl.horizon_windowed import HorizonWindowedFeature  # noq
 from feelies.features.impl.rolling_stats import RollingZscoreFeature  # noqa: E402
 from feelies.features.impl.sensor_passthrough import SensorPassthroughFeature  # noqa: E402
 from feelies.features.protocol import HorizonFeature  # noqa: E402
+from feelies.research.forward_ic import long_short_edge_bps  # noqa: E402
 from feelies.sensors.horizon_scheduler import HorizonScheduler  # noqa: E402
 from feelies.sensors.impl.kyle_lambda_60s import KyleLambda60sSensor  # noqa: E402
 from feelies.sensors.impl.micro_price import MicroPriceSensor  # noqa: E402
@@ -338,6 +339,9 @@ class _Row:
     n: int
     rank_ic: float | None
     ic: float | None
+    # Gross long-short edge (top−bottom quintile forward return) in bps — the
+    # tradability/cost-gate number for fast-horizon features (gas decision #2).
+    edge_bps: float | None = None
 
     @property
     def tstat(self) -> float | None:
@@ -492,6 +496,9 @@ def _ofi_integrated_ab(
     for variant in ("ofi_ewma_zscore", "ofi_integrated"):
         for h in sorted(horizons):
             p = _collect_pairs(snaps, mids, variant, h)
+            edge = (
+                long_short_edge_bps(p.values, p.fwd) if len(p.values) >= 5 else None
+            )
             rows.append(
                 _Row(
                     symbol=symbol,
@@ -502,6 +509,7 @@ def _ofi_integrated_ab(
                     n=len(p.values),
                     rank_ic=_spearman(p.values, p.fwd),
                     ic=_pearson(p.values, p.fwd),
+                    edge_bps=edge,
                 )
             )
     return rows
@@ -578,16 +586,20 @@ def _fmt(x: float | None) -> str:
 
 
 def _print_table(rows: list[_Row]) -> None:
-    hdr = f"{'feature':<24}{'horizon':>8}{'variant':>16}{'n':>7}{'RankIC':>9}{'IC':>9}{'t':>8}"
+    hdr = (
+        f"{'feature':<24}{'horizon':>8}{'variant':>16}{'n':>7}"
+        f"{'RankIC':>9}{'IC':>9}{'t':>8}{'edgeBps':>9}"
+    )
     print(hdr)
     print("-" * len(hdr))
     rows_sorted = sorted(rows, key=lambda r: (r.feature, r.horizon, r.variant))
     for r in rows_sorted:
         t = r.tstat
         t_s = "   n/a" if t is None else f"{t:+.2f}"
+        e_s = "   n/a" if r.edge_bps is None else f"{r.edge_bps:+.2f}"
         print(
             f"{r.feature:<24}{r.horizon:>8}{r.variant:>16}{r.n:>7}"
-            f"{_fmt(r.rank_ic):>9}{_fmt(r.ic):>9}{t_s:>8}"
+            f"{_fmt(r.rank_ic):>9}{_fmt(r.ic):>9}{t_s:>8}{e_s:>9}"
         )
 
 
@@ -678,7 +690,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         with args.csv.open("w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh)
             w.writerow(
-                ["symbol", "date", "feature", "horizon", "variant", "n", "rank_ic", "ic", "tstat"]
+                [
+                    "symbol", "date", "feature", "horizon", "variant",
+                    "n", "rank_ic", "ic", "tstat", "edge_bps",
+                ]
             )
             for r in all_rows:
                 w.writerow(
@@ -692,6 +707,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         r.rank_ic,
                         r.ic,
                         r.tstat,
+                        r.edge_bps,
                     ]
                 )
         print(f"\nWrote {args.csv}", file=sys.stderr)

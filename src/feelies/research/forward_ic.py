@@ -161,6 +161,32 @@ def bucketed_forward_return(
     return out
 
 
+def long_short_edge_bps(
+    feature: Sequence[float],
+    forward_return: Sequence[float],
+    *,
+    n_buckets: int = 5,
+) -> float:
+    """Gross long-short edge of the feature, in basis points.
+
+    The mean-forward-return spread between the **top** and **bottom** feature
+    buckets — i.e. what a market-neutral "long the top bucket, short the bottom
+    bucket" book earns *gross* per decision, expressed in bps
+    (``(top.mean − bottom.mean) * 1e4``).  Positive ⇒ the feature is a momentum
+    signal (high feature → high forward return); negative ⇒ contrarian.
+
+    This is the quantity the tradability / cost gate compares against round-trip
+    cost (Inv-12: the *captured* edge must exceed ~1.5× round-trip cost).  A
+    RankIC can be statistically significant yet imply an edge far below the
+    cost hurdle — especially at short horizons — so this is the binding check
+    for fast-horizon features, not RankIC alone.
+    """
+    buckets = bucketed_forward_return(feature, forward_return, n_buckets=n_buckets)
+    if len(buckets) < 2:
+        return float("nan")
+    return (buckets[-1].mean_forward_return - buckets[0].mean_forward_return) * 1e4
+
+
 def forward_return_at(
     times_ns: Sequence[int],
     mids: Sequence[float],
@@ -191,5 +217,6 @@ __all__ = [
     "Bucket",
     "spearman_ic",
     "bucketed_forward_return",
+    "long_short_edge_bps",
     "forward_return_at",
 ]
