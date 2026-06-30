@@ -69,6 +69,7 @@ from feelies.sensors.horizon_scheduler import HorizonScheduler  # noqa: E402
 from feelies.sensors.impl.kyle_lambda_60s import KyleLambda60sSensor  # noqa: E402
 from feelies.sensors.impl.micro_price import MicroPriceSensor  # noqa: E402
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor  # noqa: E402
+from feelies.sensors.impl.ofi_raw import OFIRawSensor  # noqa: E402
 from feelies.sensors.impl.realized_vol_30s import RealizedVol30sSensor  # noqa: E402
 from feelies.sensors.registry import SensorRegistry  # noqa: E402
 from feelies.sensors.spec import SensorSpec  # noqa: E402
@@ -417,6 +418,92 @@ def _run_one(
             session_open_ns,
         )
     )
+    # Gas decision #1 (KYLE_INFO input): integrated raw OFI (Σ ofi_t, the
+    # permanent-impact quantity) vs the event-paced ``ofi_ewma_zscore`` the
+    # alphas currently read.  Both measured in one replay so the head-to-head
+    # RankIC per horizon is directly comparable.
+    rows.extend(
+        _ofi_integrated_ab(
+            events,
+            mids,
+            symbol,
+            date,
+            horizons,
+            session_open_ns,
+        )
+    )
+    return rows
+
+
+def _ofi_integrated_ab(
+    events: Sequence[NBBOQuote | Trade],
+    mids: "_MidSeries",
+    symbol: str,
+    date: str,
+    horizons: frozenset[int],
+    session_open_ns: int,
+) -> list[_Row]:
+    """RankIC of ``ofi_integrated`` (Σ raw OFI over the horizon) vs
+    ``ofi_ewma_zscore`` (the event-paced EWMA z the KYLE alphas read).
+
+    The KYLE_INFO mechanism is permanent impact ∝ integrated signed flow
+    (Cont–Kukanov–Stoikov 2014); the EWMA decays per quote (~0.1–0.7 s
+    half-life) so its boundary value is a near-instantaneous flow snapshot.
+    This A/B settles, on real cached L1, whether the integrated input has the
+    higher |RankIC| (correct positive sign) at the KYLE horizons (300/900/1800 s)
+    before any alpha is re-pointed.
+
+    NOTE: CKS OFI is dominated by price-change events, so integrated OFI partly
+    tracks realised in-window price direction — its forward predictiveness is
+    therefore an empirical question (price autocorrelation), which is exactly
+    why this must be measured on data, not assumed.
+    """
+    specs = _SENSOR_SPECS + (
+        SensorSpec(
+            sensor_id="ofi_raw",
+            sensor_version="1.0.0",
+            cls=OFIRawSensor,
+            params={"warm_after": 50, "warm_window_seconds": 300},
+            subscribes_to=(NBBOQuote,),
+        ),
+    )
+    feats: list[HorizonFeature] = []
+    for h in sorted(horizons):
+        feats.append(SensorPassthroughFeature("ofi_ewma", h))
+        feats.append(
+            HorizonWindowedFeature(
+                "ofi_ewma", h, reducer="zscore", feature_id="ofi_ewma_zscore"
+            )
+        )
+        feats.append(
+            HorizonWindowedFeature(
+                "ofi_raw", h, reducer="sum", feature_id="ofi_integrated", min_samples=1
+            )
+        )
+    snaps = _replay_snapshots(
+        events,
+        symbol=symbol,
+        horizon_features=feats,
+        horizons=horizons,
+        session_open_ns=session_open_ns,
+        sensor_specs=specs,
+    )
+    rows: list[_Row] = []
+    for variant in ("ofi_ewma_zscore", "ofi_integrated"):
+        for h in sorted(horizons):
+            p = _collect_pairs(snaps, mids, variant, h)
+            rows.append(
+                _Row(
+                    symbol=symbol,
+                    date=date,
+                    feature="ofi_kyle_input",
+                    horizon=h,
+                    variant=variant,
+                    n=len(p.values),
+                    rank_ic=_spearman(p.values, p.fwd),
+                    ic=_pearson(p.values, p.fwd),
+                )
+            )
     return rows
 
 
