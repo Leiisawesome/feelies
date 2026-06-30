@@ -613,9 +613,11 @@ def _aggregate_across_days(rows: list[_Row]) -> list[_Row]:
     for (feature, horizon, variant), rs in buckets.items():
         ric_rows = [r for r in rs if r.rank_ic is not None]
         ic_rows = [r for r in rs if r.ic is not None]
+        edge_rows = [r for r in rs if r.edge_bps is not None]
 
         n_ric = sum(r.n for r in ric_rows)
         n_ic = sum(r.n for r in ic_rows)
+        n_edge = sum(r.n for r in edge_rows)
 
         ric = (
             sum(r.rank_ic * r.n for r in ric_rows) / n_ric  # type: ignore[operator]
@@ -625,6 +627,15 @@ def _aggregate_across_days(rows: list[_Row]) -> list[_Row]:
         ic = (
             sum(r.ic * r.n for r in ic_rows) / n_ic  # type: ignore[operator]
             if n_ic
+            else None
+        )
+        # Sample-weighted mean of per-day long-short spreads: not identical to
+        # quintile-bucketing on globally-pooled pairs (raw pairs aren't kept
+        # past _run_one), but a statistically valid pool so the gas-#2 cost
+        # gate (Inv-12) is visible on the pooled headline row, not just n/a.
+        edge = (
+            sum(r.edge_bps * r.n for r in edge_rows) / n_edge  # type: ignore[operator]
+            if n_edge
             else None
         )
 
@@ -638,6 +649,7 @@ def _aggregate_across_days(rows: list[_Row]) -> list[_Row]:
                 n=max(n_ric, n_ic),
                 rank_ic=ric,
                 ic=ic,
+                edge_bps=edge,
             )
         )
     return pooled
