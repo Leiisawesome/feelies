@@ -1,7 +1,7 @@
 <!--
   File:   docs/research/gas_02_fast_ofi_momentum.md
-  Status: GAS DECISION #2 — open. Sign + cost-gate tooling shipped; edge/cost
-          measurement on multi-day data pending. No alpha created.
+  Status: GAS DECISION #2 — RESOLVED: cost gate FAILED. Real 30 s signal, edge
+          ~0.85 bps << round-trip cost. Not tradeable on L1. No alpha created.
   Owner:  feature-engine / microstructure-alpha.
 -->
 
@@ -53,8 +53,8 @@ stable `edgeBps`.
 
 1. `RankIC(ofi_integrated, 30 s) > 0` and significant — ✅ on APP/2026-03-26, to
    be confirmed across days.
-2. `edgeBps(30 s) > 1.5 × round_trip_cost_bps` (≈ 4.5–5 bps) — **unmeasured; the
-   crux.** A fast-horizon RankIC of 0.10 may not clear this.
+2. `edgeBps(30 s) > 1.5 × round_trip_cost_bps` (≈ 4.5–5 bps) — **✗ FAILED:
+   measured 0.85 bps** (see Result). The crux, and it does not clear.
 3. The edge survives a regime gate (it should be conditional, e.g. HAWKES burst
    active) and isn't pure latency-arbitrage that an L1 book can't capture.
 
@@ -66,11 +66,42 @@ No current alpha is a fast-OFI-momentum strategy. A pass would justify a new
 edge is backed by the measured `edgeBps`, gated to burst regimes. That is a
 larger step — authored only after criteria 1–3 are met.
 
+## Result — multi-symbol harness run (30 s, `ofi_kyle_input`)
+
+| variant | RankIC (t) | **edgeBps** (gross long-short, 30 s) |
+|---------|-----------:|-------------------------------------:|
+| `ofi_integrated`   | +0.035 (+2.58) | **+0.85** |
+| `ofi_ewma_zscore`  | +0.033 (+2.17) | +1.39 |
+
+## Decision — DO NOT build a fast-OFI alpha; close gas #2
+
+**Cost gate ✗ (decisive).** The 30 s integrated-OFI signal is *statistically
+real* (RankIC +0.035, t +2.58) but its **gross long-short edge is 0.85 bps** —
+against a ~3.5 bp 30 s round-trip cost (architecture spec §2.2) and the ~5 bp
+Inv-12 hurdle (1.5× round-trip), that is **~4–6× too small**. The edge does not
+survive costs on L1.
+
+Reinforcing points:
+- `ofi_integrated`'s tradable edge (0.85 bps) is **below** the incumbent
+  `ofi_ewma_zscore`'s (1.39 bps) — so it is not even better on the tradability
+  metric, despite ~equal RankIC.
+- This run's RankIC (0.035) is **a third of gas #1's single-day +0.101** — the
+  earlier number was an optimistic small-sample estimate; the more robust value
+  confirms there is no large fast-horizon edge to chase.
+
+This is exactly the pre-registered most-likely outcome: **real signal, too small
+to clear costs.** It is also the textbook reason the platform pushed decision
+horizons to 30 s–5 min in the first place (architecture §2.2): sub-minute L1
+edges are real but cost-arithmetic-infeasible.
+
 ## Status
 
-Sign golden ✅ (gas #1), cost-gate primitive + harness `edgeBps` column ✅,
-unit-certified (`tests/research/test_gas_fast_ofi.py`). **Awaiting the multi-day
-RankIC + `edgeBps` measurement.** Most likely outcome to pre-register honestly:
-the 30 s edge is real but **too small to clear costs** — in which case this
-closes as "real signal, not tradeable on L1," and that negative result is itself
-the deliverable. Nothing is built until the cost gate passes.
+**RESOLVED — closed negative.** Sign golden ✅, cost-gate primitive + harness
+`edgeBps` ✅, edge gate ✗ (0.85 bps << ~5 bp hurdle). **No alpha built.** The
+gate did its job a second time: a statistically-significant signal was correctly
+*not* turned into a strategy because it cannot survive transaction costs.
+
+Re-open only if a materially different construction (e.g. a longer accumulation
+window, a regime-conditioned burst gate that raises the per-decision edge, or a
+maker/queue-position execution that cuts the cost) plausibly lifts `edgeBps`
+above the hurdle — and even then, only through this same gate.
