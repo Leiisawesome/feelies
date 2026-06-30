@@ -13,14 +13,22 @@ from feelies.sensors.impl.quote_replenish_asymmetry import (
 from tests.sensors.fixtures._generate import load_fixture, replenish_factory
 
 
-def _quote(*, ts_ns: int, bid_size: int, ask_size: int, sequence: int = 0) -> NBBOQuote:
+def _quote(
+    *,
+    ts_ns: int,
+    bid_size: int,
+    ask_size: int,
+    sequence: int = 0,
+    bid: str = "100",
+    ask: str = "100.01",
+) -> NBBOQuote:
     return NBBOQuote(
         timestamp_ns=ts_ns,
         correlation_id=f"q-{sequence}",
         sequence=sequence,
         symbol="AAPL",
-        bid=Decimal("100"),
-        ask=Decimal("100.01"),
+        bid=Decimal(bid),
+        ask=Decimal(ask),
         bid_size=bid_size,
         ask_size=ask_size,
         exchange_timestamp_ns=ts_ns,
@@ -69,6 +77,30 @@ def test_pure_bid_replenishment_yields_plus_one() -> None:
     # bid_sum=100, ask_sum=0 → asymmetry = (100/5 - 0)/(100/5 + 0) = 1.
     assert r.value == 1.0
     assert r.warm is False  # ask_adds is empty
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"bid": "0", "ask": "100.01"},
+        {"bid": "100.02", "ask": "100.01"},
+        {"bid_size": 0},
+        {"ask_size": 0},
+    ],
+)
+def test_invalid_nbbo_returns_none_and_resets_last_quote(kwargs: dict[str, object]) -> None:
+    sensor = QuoteReplenishAsymmetrySensor(window_seconds=5, min_observations=1)
+    state = sensor.initial_state()
+    sensor.update(_quote(ts_ns=1, bid_size=100, ask_size=100), state, params={})
+
+    invalid_kwargs = {"ts_ns": 2, "bid_size": 110, "ask_size": 100, "sequence": 1}
+    invalid_kwargs.update(kwargs)
+    assert sensor.update(_quote(**invalid_kwargs), state, params={}) is None
+
+    r = sensor.update(_quote(ts_ns=3, bid_size=200, ask_size=100, sequence=2), state, params={})
+    assert r is not None
+    assert r.value == 0.0
+    assert state["bid_sum"] == 0
 
 
 def test_balanced_replenishment_yields_zero() -> None:

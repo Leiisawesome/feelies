@@ -16,6 +16,7 @@ from feelies.sensors.impl.liquidity_stress_score import LiquidityStressScoreSens
 from feelies.sensors.impl.micro_price import MicroPriceSensor
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor
 from feelies.sensors.impl.ofi_raw import OFIRawSensor
+from feelies.sensors.impl.quote_replenish_asymmetry import QuoteReplenishAsymmetrySensor
 from feelies.sensors.impl.spread_z_30d import SpreadZScoreSensor
 from feelies.sensors.registry import SensorRegistry
 from feelies.sensors.spec import SensorSpec
@@ -125,6 +126,7 @@ def test_price_sensors_reject_crossed_book() -> None:
         LiquidityStressScoreSensor(window=4),
         OFIEwmaSensor(),
         OFIRawSensor(),
+        QuoteReplenishAsymmetrySensor(min_observations=1),
     ):
         st = sensor.initial_state()
         # Seed a valid quote first so the sensor has prior state to protect.

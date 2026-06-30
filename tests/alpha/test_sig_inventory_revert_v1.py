@@ -7,9 +7,11 @@ from pathlib import Path
 
 import pytest
 
+from feelies.alpha.lifecycle import AlphaLifecycle, AlphaLifecycleState
 from feelies.alpha.loader import AlphaLoader
 from feelies.alpha.signal_layer_module import LoadedSignalLayerModule
 from feelies.bus.event_bus import EventBus
+from feelies.core.clock import SimulatedClock
 from feelies.core.events import (
     HorizonFeatureSnapshot,
     RegimeState,
@@ -20,6 +22,7 @@ from feelies.core.events import (
 )
 from feelies.core.identifiers import SequenceGenerator
 from feelies.signals.horizon_engine import HorizonSignalEngine, RegisteredSignal
+from feelies.signals.regime_gate import Bindings
 
 
 REFERENCE_PATH = Path("alphas/sig_inventory_revert_v1/sig_inventory_revert_v1.alpha.yaml")
@@ -58,6 +61,71 @@ def test_manifest_metadata(loaded: LoadedSignalLayerModule) -> None:
 def test_cost_arithmetic_meets_floor(loaded: LoadedSignalLayerModule) -> None:
     assert loaded.cost.margin_ratio == pytest.approx(1.6)
     assert loaded.cost.computed_margin_ratio == pytest.approx(1.6, abs=0.05)
+
+
+def test_research_lifecycle_cap_blocks_paper_promotion(
+    loaded: LoadedSignalLayerModule,
+) -> None:
+    assert loaded.manifest.lifecycle_cap == "RESEARCH"
+    lifecycle = AlphaLifecycle(
+        alpha_id=loaded.manifest.alpha_id,
+        clock=SimulatedClock(0),
+        lifecycle_cap=loaded.manifest.lifecycle_cap,
+    )
+
+    errors = lifecycle.promote_to_paper()
+
+    assert lifecycle.state is AlphaLifecycleState.RESEARCH
+    assert any("lifecycle_state=RESEARCH" in error for error in errors)
+
+
+def test_regime_gate_thresholds_follow_parameter_overrides() -> None:
+    loaded = AlphaLoader(enforce_trend_mechanism=True).load(
+        str(REFERENCE_PATH),
+        param_overrides={
+            "asymmetry_z_threshold": 4.0,
+            "hazard_floor": 6.0,
+            "vol_taper_z_scale": 2.0,
+        },
+    )
+
+    def bindings(*, asym_z: float, hazard: float, rv_z: float) -> Bindings:
+        return Bindings(
+            regime=_normal_with_asym(asym_z),
+            sensor_values={
+                "quote_replenish_asymmetry_zscore": asym_z,
+                "quote_hazard_rate": hazard,
+                "realized_vol_30s_zscore": rv_z,
+                "spread_z_30d": 0.4,
+            },
+            zscores={
+                "quote_replenish_asymmetry": asym_z,
+                "realized_vol_30s": rv_z,
+            },
+        )
+
+    gate = loaded.gate
+    assert (
+        gate.evaluate(
+            symbol="AAPL",
+            bindings=bindings(asym_z=3.5, hazard=7.0, rv_z=0.0),
+        )
+        is False
+    )
+    assert (
+        gate.evaluate(
+            symbol="AAPL",
+            bindings=bindings(asym_z=4.5, hazard=7.0, rv_z=0.0),
+        )
+        is True
+    )
+    assert (
+        gate.evaluate(
+            symbol="AAPL",
+            bindings=bindings(asym_z=4.5, hazard=5.5, rv_z=0.0),
+        )
+        is False
+    )
 
 
 def _engine_with_alpha(

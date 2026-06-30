@@ -106,6 +106,20 @@ class QuoteReplenishAsymmetrySensor:
         bid_sz = int(event.bid_size)
         ask_sz = int(event.ask_size)
 
+        invalid_nbbo = (
+            bid_price <= 0.0
+            or ask_price <= 0.0
+            or bid_price > ask_price
+            or bid_sz <= 0
+            or ask_sz <= 0
+        )
+        if invalid_nbbo:
+            state["last_bid_size"] = None
+            state["last_ask_size"] = None
+            state["last_bid_price"] = None
+            state["last_ask_price"] = None
+            return None
+
         last_bid_sz = state["last_bid_size"]
         last_ask_sz = state["last_ask_size"]
         last_bid_price = state["last_bid_price"]

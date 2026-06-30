@@ -1512,14 +1512,37 @@ def _required_warm_feature_ids_for_signal_alpha(
         }
         req.update(k for k in consumed if k in available)
 
+    available = {f.feature_id for f in horizon_features if f.horizon_seconds == horizon_seconds}
     for name in sorted(gate.binding_identifier_names()):
         if name.endswith("_percentile") or name.endswith("_zscore"):
+            req.add(name)
+            continue
+        if name in available:
             req.add(name)
             continue
         req.update(
             _feature_ids_for_sensor_at_horizon(name, horizon_seconds, horizon_features),
         )
     return frozenset(req)
+
+
+def _consumed_features_for_signal_registration(
+    *,
+    declared_consumed_features: Sequence[str],
+    required_warm_feature_ids: frozenset[str],
+) -> tuple[str, ...]:
+    """Feature identifiers to stamp on bootstrapped SIGNAL emissions.
+
+    Loader-era ``consumed_features`` historically mirrors
+    ``depends_on_sensors``.  At bootstrap time we know the exact warm feature
+    set used by the signal body and regime gate, so prefer that feature-level
+    provenance.  If no horizon features are available, preserve the declared
+    identifiers as a compatibility fallback.
+    """
+
+    if required_warm_feature_ids:
+        return tuple(sorted(required_warm_feature_ids))
+    return tuple(declared_consumed_features)
 
 
 def _create_sensor_layer(
@@ -1817,11 +1840,15 @@ def _create_signal_layer(
         if not isinstance(module, LoadedSignalLayerModule):
             continue
         warm_ids = _required_warm_feature_ids_for_signal_alpha(
-            depends_on_sensors=module.consumed_features,
+            depends_on_sensors=module.depends_on_sensors,
             horizon_seconds=module.horizon_seconds,
             horizon_features=horizon_features or [],
             gate=module.gate,
             signal_source=module.signal_source,
+        )
+        consumed_feature_ids = _consumed_features_for_signal_registration(
+            declared_consumed_features=module.consumed_features,
+            required_warm_feature_ids=warm_ids,
         )
         engine.register(
             RegisteredSignal(
@@ -1833,7 +1860,7 @@ def _create_signal_layer(
                 cost_arithmetic=module.cost,
                 trend_mechanism=module.trend_mechanism_enum,
                 expected_half_life_seconds=module.expected_half_life_seconds,
-                consumed_features=module.consumed_features,
+                consumed_features=consumed_feature_ids,
                 required_warm_feature_ids=warm_ids,
             )
         )

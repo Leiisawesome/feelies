@@ -169,22 +169,18 @@ risk_budget:
   capital_allocation_pct: 15.0
 
 # ── Regime Gate (Phase 3 DSL) ─────────────────────────────
-# NOTE: the literals below (asymmetry 2.0, quote_hazard_rate < 4.0) mirror the
-# ``asymmetry_z_threshold`` / ``hazard_floor`` parameter defaults.  The gate DSL
-# now injects declared numeric ``parameters:`` as named constants (external
-# report §5.5), so these can be referenced directly — e.g.
-# ``abs(quote_replenish_asymmetry_zscore) > asymmetry_z_threshold`` — instead of
-# duplicating the literal, which keeps a parameter sweep and its gate threshold
-# in lockstep.  The literals are retained here to keep the locked replay
-# baselines byte-identical; migrate to the param names in a future revision.
+# The gate references declared numeric ``parameters:`` by name so parameter
+# sweeps keep evaluate() and gate thresholds in lockstep. Defaults preserve the
+# locked replay behavior: asymmetry_z_threshold=2.0, hazard_floor=4.0, and
+# vol_taper_z_scale=3.5.
 regime_gate:
   regime_engine: hmm_3state_fractional
   # BT-12: inventory-dominant only — require normal dominant state, higher
   # P(normal), and suppress when vol-breakout mass rises (informed-flow proxy).
   on_condition: |
-    abs(quote_replenish_asymmetry_zscore) > 2.0 and dominant == "normal" and P(normal) > 0.65 and P(vol_breakout) < 0.20
+    abs(quote_replenish_asymmetry_zscore) > asymmetry_z_threshold and dominant == "normal" and P(normal) > 0.65 and P(vol_breakout) < 0.20
   off_condition: |
-    dominant != "normal" or P(normal) < 0.5 - posterior_margin or P(vol_breakout) > 0.30 or abs(quote_replenish_asymmetry_zscore) < 2.0 - percentile_margin or spread_z_30d > 2.0 or realized_vol_30s_zscore > 3.5 or quote_hazard_rate < 4.0
+    dominant != "normal" or P(normal) < 0.5 - posterior_margin or P(vol_breakout) > 0.30 or abs(quote_replenish_asymmetry_zscore) < asymmetry_z_threshold - percentile_margin or spread_z_30d > 2.0 or realized_vol_30s_zscore > vol_taper_z_scale or quote_hazard_rate < hazard_floor
   hysteresis:
     posterior_margin: 0.20
     percentile_margin: 0.30

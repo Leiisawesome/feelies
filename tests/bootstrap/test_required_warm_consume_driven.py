@@ -7,8 +7,13 @@ sensor.  These tests lock the static extractor and its conservative fallback.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from feelies.alpha.loader import AlphaLoader
 from feelies.bootstrap import (
+    _consumed_features_for_signal_registration,
     _consumed_value_keys_from_signal_source,
+    _horizon_features_for,
     _required_warm_feature_ids_for_signal_alpha,
 )
 from feelies.features.impl.horizon_windowed import HorizonWindowedFeature
@@ -126,3 +131,89 @@ def test_conservative_fallback_requires_all_depended_features() -> None:
         signal_source=dynamic_src,
     )
     assert {"ofi_ewma", "ofi_ewma_zscore", "ofi_ewma_integrated"} <= req
+
+
+def test_gate_bare_identifier_prefers_exact_feature_over_derivatives() -> None:
+    h = 30
+    features = [
+        SensorPassthroughFeature("quote_hazard_rate", h),
+        HorizonWindowedFeature(
+            "quote_hazard_rate",
+            h,
+            reducer="zscore",
+            feature_id="quote_hazard_rate_zscore",
+        ),
+    ]
+    gate = RegimeGate.from_spec(
+        alpha_id="t",
+        spec={
+            "regime_engine": "hmm_3state_fractional",
+            "on_condition": "quote_hazard_rate > 4.0",
+            "off_condition": "quote_hazard_rate < 4.0",
+        },
+    )
+    req = _required_warm_feature_ids_for_signal_alpha(
+        depends_on_sensors=("quote_hazard_rate",),
+        horizon_seconds=h,
+        horizon_features=features,
+        gate=gate,
+        signal_source=(
+            "def evaluate(snapshot, regime, params):\n"
+            "    return snapshot.values.get('quote_hazard_rate')\n"
+        ),
+    )
+    assert req == frozenset({"quote_hazard_rate"})
+
+
+def test_inventory_revert_required_warm_excludes_unused_hazard_zscore() -> None:
+    module = AlphaLoader(enforce_trend_mechanism=True).load(
+        Path("alphas/sig_inventory_revert_v1/sig_inventory_revert_v1.alpha.yaml")
+    )
+    features = []
+    for sensor_id in module.depends_on_sensors:
+        features.extend(_horizon_features_for(sensor_id, module.horizon_seconds))
+
+    req = _required_warm_feature_ids_for_signal_alpha(
+        depends_on_sensors=module.depends_on_sensors,
+        horizon_seconds=module.horizon_seconds,
+        horizon_features=features,
+        gate=module.gate,
+        signal_source=module.signal_source,
+    )
+
+    assert req == frozenset(
+        {
+            "quote_hazard_rate",
+            "quote_replenish_asymmetry_zscore",
+            "realized_vol_30s_zscore",
+            "spread_z_30d",
+        }
+    )
+
+
+def test_inventory_revert_bootstrap_consumed_features_are_feature_ids() -> None:
+    module = AlphaLoader(enforce_trend_mechanism=True).load(
+        Path("alphas/sig_inventory_revert_v1/sig_inventory_revert_v1.alpha.yaml")
+    )
+    features = []
+    for sensor_id in module.depends_on_sensors:
+        features.extend(_horizon_features_for(sensor_id, module.horizon_seconds))
+    req = _required_warm_feature_ids_for_signal_alpha(
+        depends_on_sensors=module.depends_on_sensors,
+        horizon_seconds=module.horizon_seconds,
+        horizon_features=features,
+        gate=module.gate,
+        signal_source=module.signal_source,
+    )
+
+    consumed = _consumed_features_for_signal_registration(
+        declared_consumed_features=module.consumed_features,
+        required_warm_feature_ids=req,
+    )
+
+    assert consumed == (
+        "quote_hazard_rate",
+        "quote_replenish_asymmetry_zscore",
+        "realized_vol_30s_zscore",
+        "spread_z_30d",
+    )
