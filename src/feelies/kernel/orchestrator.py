@@ -2917,7 +2917,7 @@ class Orchestrator:
             # cover posted as a resting LIMIT can sit unfilled while the market
             # runs through the stop; the old guard treated that resting cover
             # as a "pending exit" and suppressed the stop until the passive
-            # order expired (docs/pending issues/app_backtest_2026-06-01_*).
+            # order expired (docs/audits/app_backtest_sig_benign_2026-06-01_investigation.md).
             # Mirror the REVERSE path: cancel the resting orders so the
             # aggressive close can cross immediately.  A forced exit already
             # in flight is left untouched so we never pile a second aggressive

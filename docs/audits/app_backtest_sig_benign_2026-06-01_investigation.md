@@ -1,5 +1,7 @@
 # APP 2026-06-01 backtest — `__stop_exit__` and entry-signal investigation
 
+> Archived from `docs/pending issues/` — investigation resolved; retained under `docs/audits/`.
+
 **Status:** Resolved (P0 platform fix landed 2026-06-19; see §9)  
 **Date:** 2026-06-17 (investigation) · 2026-06-19 (resolution)  
 **Scope:** Forensic analysis of `sig_benign_midcap_v1` on APP for 2026-06-01 using `configs/bt_sig_benign_midcap.yaml`. The investigation itself modified no production code; the P0 execution-path bug it identified was fixed on 2026-06-19 (§9).
