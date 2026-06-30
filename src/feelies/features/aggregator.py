@@ -566,6 +566,7 @@ class HorizonAggregator:
             symbol=symbol,
             horizon_seconds=tick.horizon_seconds,
             boundary_index=tick.boundary_index,
+            boundary_ts_ns=tick.boundary_ts_ns,  # ENG-1: carry the nominal grid anchor
             values=values,
             warm=warm,
             stale=stale,

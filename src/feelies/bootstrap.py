@@ -597,6 +597,7 @@ def build_platform(
         sensor_registry=sensor_registry,
         horizon_features=_built_horizon_features,
         regime_min_discriminability=config.regime_min_discriminability,
+        metric_collector=metric_collector,
     )
 
     # ── Phase-4 PORTFOLIO / composition layer (additive, optional) ──
@@ -1744,6 +1745,7 @@ def _create_signal_layer(
     sensor_registry: SensorRegistry | None,
     horizon_features: list[HorizonFeature] | None = None,
     regime_min_discriminability: float = 0.0,
+    metric_collector: InMemoryMetricCollector | None = None,
 ) -> tuple[SequenceGenerator, HorizonSignalEngine | None]:
     """Compose the Phase-3 :class:`HorizonSignalEngine` if SIGNAL alphas exist.
 
@@ -1809,6 +1811,7 @@ def _create_signal_layer(
         signal_sequence_generator=signal_seq,
         clock=clock,
         regime_min_discriminability=regime_min_discriminability,
+        metric_collector=metric_collector,
     )
     for module in signal_alphas:
         if not isinstance(module, LoadedSignalLayerModule):
