@@ -133,6 +133,10 @@ def bucketed_forward_return(
     signature of a real conditional edge; a flat or non-monotone profile
     says the feature is not predictive of forward direction.
     """
+    if len(feature) != len(forward_return):
+        raise ValueError(
+            f"feature and forward_return must align: {len(feature)} != {len(forward_return)}"
+        )
     pairs = [
         (float(a), float(b))
         for a, b in zip(feature, forward_return)

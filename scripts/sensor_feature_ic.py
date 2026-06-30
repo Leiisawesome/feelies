@@ -342,6 +342,10 @@ class _Row:
     # Gross long-short edge (top−bottom quintile forward return) in bps — the
     # tradability/cost-gate number for fast-horizon features (gas decision #2).
     edge_bps: float | None = None
+    # Raw (feature, forward_return) pairs retained when ``edge_bps`` is set,
+    # so multi-day pooling can re-run the cost-gate primitive on globally
+    # concatenated pairs rather than averaging per-day spreads.
+    pairs: _Pairs | None = None
 
     @property
     def tstat(self) -> float | None:
@@ -510,6 +514,7 @@ def _ofi_integrated_ab(
                     rank_ic=_spearman(p.values, p.fwd),
                     ic=_pearson(p.values, p.fwd),
                     edge_bps=edge,
+                    pairs=p if edge is not None else None,
                 )
             )
     return rows
@@ -613,11 +618,10 @@ def _aggregate_across_days(rows: list[_Row]) -> list[_Row]:
     for (feature, horizon, variant), rs in buckets.items():
         ric_rows = [r for r in rs if r.rank_ic is not None]
         ic_rows = [r for r in rs if r.ic is not None]
-        edge_rows = [r for r in rs if r.edge_bps is not None]
+        pair_rows = [r for r in rs if r.pairs is not None]
 
         n_ric = sum(r.n for r in ric_rows)
         n_ic = sum(r.n for r in ic_rows)
-        n_edge = sum(r.n for r in edge_rows)
 
         ric = (
             sum(r.rank_ic * r.n for r in ric_rows) / n_ric  # type: ignore[operator]
@@ -629,14 +633,23 @@ def _aggregate_across_days(rows: list[_Row]) -> list[_Row]:
             if n_ic
             else None
         )
-        # Sample-weighted mean of per-day long-short spreads: not identical to
-        # quintile-bucketing on globally-pooled pairs (raw pairs aren't kept
-        # past _run_one), but a statistically valid pool so the gas-#2 cost
-        # gate (Inv-12) is visible on the pooled headline row, not just n/a.
+        # Pooled edge must match the cost-gate primitive (Inv-12 / gas #2):
+        # re-bucket on globally-concatenated (feature, forward_return) pairs,
+        # not a sample-weighted mean of per-day spreads (which uses each day's
+        # own quintile cuts and would disagree with the binding gate).
+        pooled_values: list[float] = []
+        pooled_fwd: list[float] = []
+        for r in pair_rows:
+            assert r.pairs is not None
+            pooled_values.extend(r.pairs.values)
+            pooled_fwd.extend(r.pairs.fwd)
         edge = (
-            sum(r.edge_bps * r.n for r in edge_rows) / n_edge  # type: ignore[operator]
-            if n_edge
+            long_short_edge_bps(pooled_values, pooled_fwd)
+            if len(pooled_values) >= 5
             else None
+        )
+        pooled_pairs = (
+            _Pairs(values=pooled_values, fwd=pooled_fwd) if pair_rows else None
         )
 
         pooled.append(
@@ -650,6 +663,7 @@ def _aggregate_across_days(rows: list[_Row]) -> list[_Row]:
                 rank_ic=ric,
                 ic=ic,
                 edge_bps=edge,
+                pairs=pooled_pairs,
             )
         )
     return pooled
