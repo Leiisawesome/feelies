@@ -1,16 +1,7 @@
 ---
 name: post-trade-forensics
 description: >
-  Post-trade forensics + structural edge-decay detection for the
-  feelies platform. Owns multi-horizon attribution (per-mechanism,
-  per-regime), the `DecayDetector`, the quarantine-trigger evidence
-  schema, and the `AlphaLifecycle.quarantine` evidence path. Compares
-  expected vs realized slippage, hit rate, and net alpha across
-  mechanism families and regimes; detects microstructure regime
-  change, edge crowding, and latency-disadvantage emergence. Use
-  when analyzing post-trade performance, diagnosing alpha decay,
-  auditing strategy health, or reasoning about edge longevity,
-  per-mechanism PnL drift, or structural regime shifts.
+  Decay detection, attribution, quarantine evidence. Use for sim-vs-live drift and mechanism-level PnL.
 ---
 
 # Post-Trade Forensics & Edge-Decay Analyst
@@ -91,7 +82,7 @@ model predictions. **Divergence is the primary decay signal**.
 
 ### Slippage Comparison
 
-**Ownership boundary**: live-execution monitors slippage in real-time
+**See:** live-execution monitors slippage in real-time
 (rolling 20-trade) and triggers immediate safety responses (throttle,
 circuit breaker). This skill performs deeper forensic analysis over
 longer windows (50–200 trades) and decides whether drift indicates
@@ -169,7 +160,7 @@ drift may indicate edge loss, not recalibration need.
 
 ### Regime Dependency Stability
 
-**Ownership boundary**: risk-engine owns real-time regime detection
+**See:** risk-engine owns real-time regime detection
 and immediate risk responses. This skill audits whether
 classifications remain accurate over time and whether alpha
 concentrates in or collapses across regimes.
@@ -253,10 +244,7 @@ Forensic findings emit `QuarantineTriggerEvidence` → invoke
 **fail-safe**: even if the validator flags the trigger as
 spurious-looking, the demotion always commits (Inv-11).
 
-**Status**: there is no production forensics → lifecycle
-auto-trigger wired today — operators / tooling call
-`registry.quarantine(...)` with `QuarantineTriggerEvidence`; the
-`DecayDetector` is consumed by `harness/backtest_report.py`.
+**Not shipped:** forensics → lifecycle auto-trigger (see **Not shipped** section).
 
 | Trigger threshold (default) | Field |
 |-----------------------------|-------|
@@ -325,7 +313,7 @@ identifier) — automatic re-promotion is forbidden.
 
 ### Per-Strategy Health Report
 
-Generated daily and on-demand (**status**: design target — this JSON
+Generated daily and on-demand (**Not shipped:** design target — this JSON
 report is operator playbook, not automated today):
 
 ```
@@ -390,8 +378,8 @@ that caused it. The `net_pnl` property returns `realized_pnl - fees`
 Forensic findings are delivered via `Alert` events (`core/events.py`)
 with `AlertSeverity` levels. `AlertManager` routes by severity.
 
-The following forensic-specific events are NOT YET IMPLEMENTED. When
-built they must extend `Event` to inherit `timestamp_ns`,
+**Not shipped:** dedicated forensic event types below (see **Not shipped**
+section). When built they must extend `Event` to inherit `timestamp_ns`,
 `correlation_id`, and `sequence`:
 
 | Future event | Payload |
@@ -419,22 +407,18 @@ built they must extend `Event` to inherit `timestamp_ns`,
 | Regime classifier disagreement | Forensic vs risk-engine labels diverge | Use more conservative classification; alert |
 | Promotion-ledger schema mismatch | `LEDGER_SCHEMA_VERSION` | Bail out; do not silently degrade |
 
+
+## Not shipped
+
+| Area | Shipped today |
+|------|---------------|
+| Forensics → lifecycle auto-trigger | Operator/tooling calls `registry.quarantine(...)`; `DecayDetector` in `harness/backtest_report.py` |
+| Daily health JSON report | Operator playbook only — not automated |
+| Forensic event types (`FORENSIC_ALERT`, `DECAY_DETECTED`, …) | Delivered via generic `Alert` today |
+
+
 ---
 
 ## Integration Points
 
-| Dependency | Interface |
-|------------|-----------|
-| Live Execution | `OrderAck` for fill analysis; `MetricEvent` for latency |
-| Risk Engine | `RiskVerdict` for constraint context; `RiskLevel` SM state; `OrderRequest.reason` for lineage |
-| Backtest Engine | `TradeRecord` baselines via `TradeJournal.query()` |
-| Microstructure Alpha | `Signal.trend_mechanism` + `expected_half_life_seconds` for per-mechanism attribution; hypothesis revalidation |
-| Composition Layer | `mechanism_breakdown` via `CrossSectionalSnapshot` from `portfolio/cross_sectional_tracker.py` (the attributor does not consume `SizedPositionIntent` directly) |
-| Regime Detection | `RegimeState` + `RegimeHazardSpike` for hazard-attribution and regime-stability audit |
-| Testing & Validation | Sim-vs-live divergence metrics; `QuarantineTriggerEvidence` schema |
-| Data Engineering | `EventLog.replay()` for historical analysis |
-| Alpha Lifecycle | operator-invoked `AlphaLifecycle.quarantine(reason, structured_evidence=...)`; `revalidate_to_paper` evidence |
-
-The forensic layer sits downstream of execution and upstream of
-strategy lifecycle decisions. It is forensic-only — never on the
-per-tick critical path.
+See [skill index](../README.md). **Non-obvious edges:** forensic-only (not tick path); quarantine via operator-invoked `AlphaLifecycle.quarantine`.

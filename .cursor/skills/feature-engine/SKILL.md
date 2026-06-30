@@ -1,14 +1,7 @@
 ---
 name: feature-engine
 description: >
-  Layer-1 sensor framework + horizon-aggregation contract for the feelies
-  platform. Owns per-symbol sensor state, the `SensorRegistry`, the
-  `HorizonScheduler` / `HorizonAggregator` pipeline, and the
-  `HorizonFeatureSnapshot` event consumed by Layer-2 alphas. Use when
-  designing or extending Layer-1 sensors, debugging warm-up / staleness,
-  reasoning about sensor-DAG topology, horizon bucketing, snapshot
-  emission, or the boundary between Layer-1 (event-time) and Layer-2
-  (horizon-anchored) computation.
+  Layer-1 sensors and `HorizonFeatureSnapshot` aggregation. Use for sensor DAG, warm/stale, horizon bucketing.
 ---
 
 # Sensor Layer & Horizon Aggregation
@@ -21,11 +14,7 @@ data integrity).
 Sensors transform raw L1 NBBO events into typed `SensorReading`
 estimates. `HorizonAggregator` then bucket-aggregates those readings
 into `HorizonFeatureSnapshot` events on `HorizonTick` boundary
-crossings. This is the **only** Layer-2 input contract — the historical
-per-tick `FeatureVector` path was retired in Workstream D.2 (D.2
-PR-2b-iv deleted `FeatureVector`, `FeatureEngine.update`,
-`SignalEngine.evaluate`, `CompositeFeatureEngine`, `CompositeSignalEngine`,
-and `AlphaModule.evaluate`).
+crossings. Layer-2 input is `HorizonFeatureSnapshot` only; D.2 retired `FeatureVector` / `LEGACY_SIGNAL`.
 
 ## Core Invariants
 
@@ -356,15 +345,14 @@ live in `tests/perf/baselines/v02_baseline.json` (opt-in via
 ## Reproducibility
 
 Same `(sensor_id, sensor_version)` set + same event log → bit-identical
-`SensorReading` and `HorizonFeatureSnapshot` streams. Locked by the
-Level-1 sensor parity tests
-(`tests/determinism/test_sensor_reading_replay.py` and
-`tests/determinism/test_v03_sensor_replay.py`), plus the Level-3
-snapshot parity (`test_horizon_feature_snapshot_replay.py`).
+`SensorReading` and `HorizonFeatureSnapshot` streams. Locked by L1/L3
+parity tests — full registry in [testing-validation skill](../testing-validation/SKILL.md)
+(`test_sensor_reading_replay.py`, `test_v03_sensor_replay.py`,
+`test_horizon_feature_snapshot_replay.py`).
 
 ### Snapshot Persistence
 
-**Status:** design target — not yet implemented; no checkpoint
+**Not shipped:** design target — not yet implemented; no checkpoint
 protocol exists in `src/feelies/` today (sensors always cold-start
 from the event stream). The planned design: an optional checkpoint
 store for warm-start, keyed by `(symbol, sensor_id, sensor_version)`,
@@ -393,15 +381,4 @@ All carry timestamps from the injectable `Clock` (Inv-10).
 
 ## Integration Points
 
-| Dependency | Interface |
-|------------|-----------|
-| Data Engineering | `NBBOQuote` / `Trade` events from `MarketDataSource` |
-| System Architect | `Clock`, `EventBus`, micro-state pipeline (M2 → SENSOR_UPDATE → HORIZON_AGGREGATE) |
-| Microstructure Alpha | Defines what sensors to compute; consumes `HorizonFeatureSnapshot` |
-| Composition Layer | Per-symbol snapshots feed `UniverseSynchronizer` for cross-sectional context |
-| Backtest Engine | Replays events through the sensor + aggregator pipeline |
-| Performance Engineering | Per-tick sensor compute budget |
-| Testing & Validation | Sensor parity hash + warm-up + staleness property tests |
-
-The sensor layer is the deterministic, incremental, bounded,
-version-controlled foundation on which every alpha depends.
+See [skill index](../README.md). **Non-obvious edges:** feeds `HorizonFeatureSnapshot` to Layer-2; micro-state chain M2 → SENSOR_UPDATE → HORIZON_AGGREGATE.

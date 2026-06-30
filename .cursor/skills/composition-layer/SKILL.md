@@ -1,15 +1,7 @@
 ---
 name: composition-layer
 description: >
-  Layer-3 (PORTFOLIO) cross-sectional construction pipeline for the
-  feelies platform. Owns the `PortfolioAlpha` protocol, the
-  `UniverseSynchronizer` fan-in, the `CrossSectionalRanker` (with
-  optional decay weighting), `FactorNeutralizer`, `SectorMatcher`,
-  the cvxpy-based `TurnoverOptimizer`, and the `CompositionEngine`
-  that emits `SizedPositionIntent`. Use when authoring PORTFOLIO
-  alphas, designing cross-sectional construction, debugging
-  mechanism-cap enforcement, factor-loading ingestion, or the
-  L3 sized-intent parity contract.
+  Layer-3 PORTFOLIO pipeline and `SizedPositionIntent`. Use for cross-sectional construction and mechanism caps.
 ---
 
 # Composition Layer — Layer 3 Cross-Sectional Construction
@@ -347,15 +339,4 @@ factor_loadings_max_age_seconds: 604800   # 7 days; stale → bootstrap fail
 
 ## Integration Points
 
-| Dependency | Interface |
-|------------|-----------|
-| Microstructure Alpha | `Signal` events (with `trend_mechanism`, `expected_half_life_seconds`) — input |
-| Risk Engine | `check_sized_intent` per-leg veto — output consumer |
-| System Architect | `Clock`, `EventBus`, `CROSS_SECTIONAL` sub-state, `CrossSectionalContext` event |
-| Storage Layer | Reference factor loadings (`loadings.json` in `factor_loadings_dir`) |
-| Testing & Validation | L3 + L3-orders parity hashes; decay-on/off cross-check |
-| Post-Trade Forensics | `mechanism_breakdown` for crowding diagnostics; `MultiHorizonAttributor` per-mechanism axis |
-
-The composition layer is the only path that constructs cross-sectional
-weights. Per-symbol SIGNAL alphas never produce sized positions —
-they emit `Signal` events that PORTFOLIO alphas optionally consume.
+See [skill index](../README.md). **Non-obvious edges:** fan-in via `UniverseSynchronizer`; `check_sized_intent` per-leg veto in risk-engine.

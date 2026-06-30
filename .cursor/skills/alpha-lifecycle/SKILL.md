@@ -1,15 +1,7 @@
 ---
 name: alpha-lifecycle
 description: >
-  Alpha promotion, quarantine, and capital-tier lifecycle management
-  for the feelies platform. Owns the 5-state `AlphaLifecycle` SM
-  (RESEARCH → PAPER → LIVE → QUARANTINED → DECOMMISSIONED) plus the
-  F-6 LIVE @ SCALED self-loop, the F-2 declarative gate matrix, the
-  F-1 promotion ledger contract, the F-5 three-layer threshold merge,
-  and the F-3 read-only operator CLI (`feelies promote ...`). Use
-  when wiring promotion / quarantine evidence, defining new gate
-  thresholds, debugging ledger schema, building forensic CLI surfaces,
-  or extending the gate matrix with new evidence types.
+  Promotion SM, gate matrix, ledger, and `feelies promote`. Use for quarantine, capital tier, and evidence wiring.
 ---
 
 # Alpha Lifecycle — Promotion, Quarantine, Capital Tier
@@ -23,11 +15,12 @@ together form the platform's promotion-evidence backbone — the
 operational realization of Inv-3 (evidence over intuition) and
 Inv-13 (full provenance).
 
-This skill owns the promotion contract end-to-end. The
-testing-validation skill defines the underlying acceptance criteria
-that produce evidence; the post-trade-forensics skill consumes
-forensic data to build `QuarantineTriggerEvidence`; this skill is
-the wiring between them and the lifecycle SM.
+This skill owns the promotion contract end-to-end (**canonical F-1..F-6
+reference** for the skill library). The testing-validation skill defines
+the underlying acceptance criteria that produce evidence; the
+post-trade-forensics skill consumes forensic data to build
+`QuarantineTriggerEvidence`; this skill is the wiring between them and
+the lifecycle SM.
 
 ## Core Invariants
 
@@ -456,20 +449,4 @@ escalation per epoch.
 
 ## Integration Points
 
-| Dependency | Interface |
-|------------|-----------|
-| Testing & Validation | F-2 evidence schemas; gate-matrix dispatcher; sim-vs-live divergence metrics produce `PaperWindowEvidence` |
-| Post-Trade Forensics | Quarantine auto-trigger via `QuarantineTriggerEvidence`; revalidation surface |
-| System Architect | `AlphaLifecycle` SM is one of the platform's secondary state machines; `Clock`-derived timestamps for ledger entries |
-| Risk Engine | Capital-tier scaling; quarantined alphas produce no live orders |
-| Composition Layer | PORTFOLIO alphas obey the same lifecycle |
-| Microstructure Alpha | SIGNAL alphas obey the same lifecycle |
-| Storage Layer | Promotion ledger persistence (JSONL) |
-| Operator (human) | F-3 CLI surface; `human_signoff` on revalidation |
-
-The alpha lifecycle is the **only** path that grants an alpha access
-to capital. No alpha gets to LIVE without all required evidence
-clearing the F-2 gate; no alpha moves from LIVE @ SMALL_CAPITAL to
-SCALED without demonstrated execution quality; no alpha lifts
-quarantine without an explicit human sign-off. The platform
-**defaults to deny**.
+See [skill index](../README.md). **Non-obvious edges:** canonical F-1..F-6 promotion wiring; ledger never read on tick path. CLI: `feelies promote`.

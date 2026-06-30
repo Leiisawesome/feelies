@@ -27,13 +27,33 @@ file/line citations, severity, and prioritized recommendations.
 
 ---
 
+## Agent context (mandatory)
+
+| Step | Resource |
+|------|----------|
+| 1 | `.cursor/rules/platform-invariants.mdc` — **Inv-3, 5, 13**; glossary: promotion, gate matrix, promotion ledger, capital-stage tier, layer gate, operator CLI |
+| 2 | `.cursor/rules/karpathy-guidelines.mdc` |
+| 3 | `.cursor/skills/README.md` — promotion canonical → this skill |
+| 4 | `.cursor/skills/alpha-lifecycle/SKILL.md` (**owner**) |
+| 5 | `.cursor/skills/testing-validation/SKILL.md` — acceptance thresholds (not gate wiring) |
+
+CLI surface: `feelies promote` (`src/feelies/cli/promote.py`). Ledger must never be read on the tick path.
+
+
+**Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
+targets — P0 only if code/tests claim they are live.
+
+**Finding bar:** P0/P1 items must cite `Inv-N` + `path:line`. Read-only pass per
+`.cursor/rules/karpathy-guidelines.mdc`.
+
+---
+
 ## Platform context (read first)
 
-1. Read `.cursor/skills/alpha-lifecycle/SKILL.md` end-to-end.
-2. Read `.cursor/skills/testing-validation/SKILL.md` § on the gate matrix + ledger.
-3. Read `.cursor/rules/platform-invariants.mdc` glossary entries: **gate matrix**,
-   **promotion ledger**, **capital-stage tier**, **operator CLI**, **layer gate (G2–G16)**.
-4. Skim `platform.yaml` `gate_thresholds:` and any alpha `promotion: { gate_thresholds: }`.
+**Docs and config** (after Agent context):
+
+1. Skim `platform.yaml` `gate_thresholds:` and any alpha `promotion: { gate_thresholds: }`.
+
 
 **Architecture (contractual):**
 
@@ -182,7 +202,8 @@ Each item: component, `file:line`, one-sentence fix, expected impact.
 2. Audit `validate_gate` + the matrix completeness checks first.
 3. Audit the ledger (append-only, round-trip, forensic-only).
 4. Audit the threshold merge and layer validator.
-5. Run **read-only** checks only:
+5. Cross-check findings against the owning skill's **Not shipped** sections before filing P0 on absent features.
+6. Run **read-only** checks only:
    - `uv run pytest tests/alpha/test_lifecycle.py tests/alpha/test_lifecycle_f6.py tests/alpha/test_promotion_evidence.py tests/alpha/test_promotion_ledger.py -q`
    - `uv run pytest tests/alpha/test_layer_validator_g2_g13.py tests/alpha/test_gate_g16.py tests/alpha/test_registry_per_alpha_thresholds.py -q`
    - `uv run feelies promote gate-matrix --json`

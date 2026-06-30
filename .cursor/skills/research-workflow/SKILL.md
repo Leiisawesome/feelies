@@ -1,12 +1,7 @@
 ---
 name: research-workflow
 description: >
-  Research environment conventions for reproducible quantitative experiments.
-  Covers experiment tracking, notebook discipline, the path from exploratory
-  analysis to backtest-ready artifacts, and research artifact versioning.
-  Use when setting up research infrastructure, designing experiment workflows,
-  managing notebook-to-production handoff, tracking hypotheses, or reasoning
-  about research reproducibility, experiment provenance, or artifact promotion.
+  Reproducible experiments and notebook-to-alpha handoff. Use for hypothesis tracking and artifact promotion.
 ---
 
 # Research Workflow — Experiment Lifecycle
@@ -86,7 +81,7 @@ ExperimentRecord:
   metadata: dict[str, Any] = {}
 ```
 
-**Status:** the richer record below is the target spec — not yet
+**Not shipped:** the richer record below is the target spec — not yet
 implemented. Until it lands, the extra fields are carried in
 `tags` / `metadata`:
 
@@ -123,7 +118,7 @@ Hypothesis:
   metadata: dict[str, Any] = {}
 ```
 
-**Status:** `related_experiments: list[experiment_id]` and
+**Not shipped:** `related_experiments: list[experiment_id]` and
 `confidence: float (0–1)` are target-spec extensions — not yet
 implemented; carry them in `metadata` until they land.
 
@@ -238,7 +233,7 @@ F-2 structured-evidence metadata persisted on each ledger entry
 (`src/feelies/alpha/promotion_evidence.py`). There is no
 `promoted_artifact` type in the codebase.
 
-**Status:** the consolidated chain below is a design target — not yet
+**Not shipped:** the consolidated chain below is a design target — not yet
 implemented; until it lands, record these fields through the ledger
 entry's evidence metadata:
 
@@ -301,18 +296,4 @@ Reject or flag experiments that exhibit:
 
 ## Integration Points
 
-| Dependency | Interface |
-|------------|-----------|
-| Microstructure Alpha (microstructure-alpha skill) | Research protocol; `HorizonSignal` contract; `Signal` schema with `trend_mechanism`; G16 mechanism-horizon binding |
-| Feature / Sensor (feature-engine skill) | `Sensor` protocol; `SensorSpec` registration; `HorizonFeatureSnapshot` output type |
-| Composition Layer (composition-layer skill) | `PortfolioAlpha` contract for cross-sectional research |
-| Backtest Engine (backtest-engine skill) | `Orchestrator.run_backtest()` for formalized validation; eleven parity hashes (L1–L6) |
-| Testing & Validation (testing-validation skill) | F-2 evidence schemas; CPCV + DSR acceptance suite; promotion pipeline |
-| Alpha Lifecycle (alpha-lifecycle skill) | F-1 ledger; F-3 `feelies promote` CLI; F-5 per-alpha threshold overrides |
-| Data Engineering (data-engineering skill) | `EventLog.replay()` for versioned data snapshots |
-| System Architect (system-architect skill) | `MacroState.RESEARCH_MODE`; `Configuration.snapshot()`; `SimulatedClock` |
-
-The research workflow skill governs the left side of the pipeline — from
-idea to backtest-ready artifact. The testing-validation skill governs the
-right side — from backtest to live capital. Together they form the full
-strategy lifecycle.
+See [skill index](../README.md). **Non-obvious edges:** notebook → alpha YAML handoff; experiment provenance before promotion gates.

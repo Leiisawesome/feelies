@@ -27,15 +27,35 @@ file/line citations, severity, and prioritized recommendations.
 
 ---
 
+## Agent context (mandatory)
+
+| Step | Resource |
+|------|----------|
+| 1 | `.cursor/rules/platform-invariants.mdc` — **Inv-6, 9, 12**; glossary: backtest, simulation |
+| 2 | `.cursor/rules/karpathy-guidelines.mdc` |
+| 3 | `.cursor/skills/README.md` |
+| 4 | `.cursor/skills/backtest-engine/SKILL.md` (**owner**) — read **Not shipped** in `fill-model.md` / `stress-testing.md` |
+| 5 | `.cursor/skills/live-execution/SKILL.md` — shared `ExecutionBackend` parity |
+| 6 | `src/feelies/core/inv12_stress.py` — `--inv12-stress` touchpoint (owned by `audit_core_clock_config.md`) |
+
+Optional: `backtest-engine/fill-model.md`, `stress-testing.md`.
+
+
+**Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
+targets — P0 only if code/tests claim they are live.
+
+**Finding bar:** P0/P1 items must cite `Inv-N` + `path:line`. Read-only pass per
+`.cursor/rules/karpathy-guidelines.mdc`.
+
+---
+
 ## Platform context (read first)
 
-1. Read `.cursor/skills/backtest-engine/SKILL.md` end-to-end (fill model, queue
-   uncertainty, latency, cost realism).
-2. Read `.cursor/skills/live-execution/SKILL.md` § on backtest/live parity (the shared
-   `ExecutionBackend` seam).
-3. Read `docs/three_layer_architecture.md` §12 (determinism/parity) and §7 (micro SM
+**Docs and config** (after Agent context):
+
+1. Read `docs/three_layer_architecture.md` §12 (determinism/parity) and §7 (micro SM
    M6 order/fill stages).
-4. Read `.cursor/rules/platform-invariants.mdc` Inv-9 (parity), Inv-12 (cost realism).
+
 
 **Architecture (contractual):**
 
@@ -170,7 +190,8 @@ Each item: component, `file:line`, one-sentence fix, expected impact on PnL real
 2. Audit fill lookahead first — trace one fill end-to-end against visibility time.
 3. Audit cost model + stress harness; reconcile with alpha cost disclosures.
 4. Audit latency wiring and tick/regulatory rounding.
-5. Run **read-only** checks only:
+5. Cross-check findings against the owning skill's **Not shipped** sections before filing P0 on absent features.
+6. Run **read-only** checks only:
    - `uv run pytest tests/execution/ -q`
    - `uv run pytest tests/acceptance/test_bt11_parity_post_fill_model.py tests/acceptance/test_bt14_tick_rounding.py tests/acceptance/test_bt17_market_data_latency.py tests/acceptance/test_inv12_stress_gate.py -q`
    - `uv run pytest tests/acceptance/test_backtest_app_baseline.py -q` (needs disk cache APP/2026-03-26)

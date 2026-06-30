@@ -1,27 +1,18 @@
 ---
 name: microstructure-alpha
 description: >
-  Institutional-grade quantitative research and Layer-2 (SIGNAL) alpha
-  authoring on L1 NBBO data. Owns the `HorizonSignal` protocol, the
-  `Signal` event semantics, the `RegimeGate` purity boundary, the
-  `cost_arithmetic` disclosure, and the `TrendMechanism` taxonomy. Use
-  when authoring SIGNAL alphas, designing horizon-anchored entry/exit
-  logic, declaring trend mechanisms, reasoning about edge mechanism
-  vs measured alpha, falsifiability, or short-horizon return prediction.
+  Layer-2 SIGNAL alpha authoring: `HorizonSignal`, regime gates, G16, cost arithmetic. Use when writing or reviewing SIGNAL YAML.
 ---
 
 # Microstructure Alpha — Layer-2 (SIGNAL) Authoring
 
-You are an institutional-grade quantitative researcher and system
-architect constrained to L1 NBBO data (Massive Advanced Stock,
-formerly Polygon.io). You extract intraday alpha from top-of-book
-dynamics without L2 depth or microsecond-direct-feed advantages.
+Scope: Layer-2 (SIGNAL) alpha on L1 NBBO only — no L2 depth or
+microsecond-direct-feed edge.
 
 This skill owns the Layer-2 contract: every `layer: SIGNAL` alpha is a
 **pure, stateless, horizon-anchored, regime-gated, cost-disclosed,
 mechanism-tagged** function from `(HorizonFeatureSnapshot, RegimeState,
-params) → Signal | None`. The historical per-tick `FeatureVector`
-contract was retired in Workstream D.2 and is unsupported.
+params) → Signal | None`. Layer-2 input is `HorizonFeatureSnapshot` only; D.2 retired `FeatureVector` / `LEGACY_SIGNAL`.
 
 ## Operating Constraints
 
@@ -466,28 +457,13 @@ Omit sections only when genuinely irrelevant.
 
 ## Tri-Altitude Convergence Rule
 
-Before any final recommendation, validate across all three layers
-(microstructure trader, portfolio risk manager, fund CTO). If any
-layer raises a structural objection, resolve it before proceeding. If
-convergence is impossible, declare the strategy non-viable. Do not
-compromise robustness to force agreement.
+**Applies only to final strategy recommendations** (not routine code
+changes). Before recommending deployment, validate across microstructure,
+portfolio-risk, and CTO layers. If convergence is impossible, declare
+non-viable.
 
 ---
 
 ## Integration Points
 
-| Dependency | Interface |
-|------------|-----------|
-| System Architect | `Clock`, `EventBus`, micro-state pipeline; `Event` base class |
-| Feature Engine (Sensors) | `HorizonFeatureSnapshot` — the canonical Layer-2 input contract |
-| Regime Detection | `RegimeState` posteriors (read-only); `RegimeHazardSpike` for hazard exits |
-| Risk Engine | Consumes `Signal` at M5; per-leg veto on cost / position checks |
-| Live Execution | `Signal.direction` → `TradingIntent` → `Side` via `IntentTranslator` |
-| Backtest Engine | Shared `HorizonSignalEngine` in replay; fill model validates survivability |
-| Composition Layer | Consumes contemporaneous `Signal` events for cross-sectional construction |
-| Post-Trade Forensics | `Signal.trend_mechanism` for per-mechanism PnL decomposition; hypothesis revalidation |
-| Research Workflow | Research protocol; experiment tracking; notebook → SIGNAL alpha YAML handoff |
-
-For detailed architecture reference see
-[`system-architecture.md`](system-architecture.md). For the full research
-methodology see [`research-protocol.md`](research-protocol.md).
+See [skill index](../README.md). **Non-obvious edges:** consumes `HorizonFeatureSnapshot`, emits `Signal`; see [`research-protocol.md`](research-protocol.md) and [`system-architecture.md`](system-architecture.md).

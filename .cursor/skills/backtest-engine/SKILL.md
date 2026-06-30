@@ -1,11 +1,7 @@
 ---
 name: backtest-engine
 description: >
-  High-fidelity backtest engine architecture for event-driven replay of L1 NBBO
-  data with realistic fill simulation, latency injection, and integrity enforcement.
-  Use when designing backtest infrastructure, implementing fill models, building
-  replay engines, modeling transaction costs, testing for lookahead bias, or
-  reasoning about simulation realism, queue uncertainty, or execution feasibility.
+  Event-driven replay, fills, and `feelies backtest`. Use for simulation realism and Inv-12 stress.
 ---
 
 # Backtest Engine — High-Fidelity Simulation
@@ -60,6 +56,57 @@ PnL — locked by the **eleven parity hashes** across six levels under
 
 ---
 
+## Operator CLI (`feelies backtest`)
+
+Entry point: `src/feelies/cli/backtest.py` (registered in `feelies.cli.main`).
+Equivalent to `python scripts/run_backtest.py` — replays NBBO/trade events
+through `Orchestrator.run_backtest()` and prints the operator report from
+`harness/backtest_report.py`.
+
+### Requirements
+
+- `MASSIVE_API_KEY` in the environment (or `.env`) for API-backed runs
+- Platform config YAML (`--config`, default `platform.yaml`)
+- Disk cache under `~/.feelies/cache/` unless `--no-cache`
+
+### Common invocations
+
+```bash
+# Single symbol / session (APP acceptance baseline)
+uv run feelies backtest --config configs/bt_app.yaml --symbol APP --date 2026-03-26
+
+# Override symbols and stress Inv-12 (1.5× cost + 2× fill latency)
+uv run feelies backtest --config platform.yaml --symbol AAPL --date 2026-03-24 --inv12-stress
+
+# Fail closed on typos in platform.yaml
+uv run feelies backtest --config platform.yaml --symbol AAPL --date 2026-03-24 --strict-config
+```
+
+### Shared flags (`harness/backtest_cli.py`)
+
+| Flag | Purpose |
+|------|---------|
+| `--config PATH` | Platform YAML (default `platform.yaml`) |
+| `--symbol SYM [SYM ...]` | Override universe symbols |
+| `--date YYYY-MM-DD` | Session start (required for API path) |
+| `--end-date YYYY-MM-DD` | Multi-day end (default: same as `--date`) |
+| `--cache-dir PATH` | Disk event cache (default `~/.feelies/cache/`) |
+| `--no-cache` | Force re-download from Massive REST |
+| `--stress-cost MULT` | Scale fees/slippage (default `1.0`) |
+| `--inv12-stress` | Joint 1.5× cost + 2× `backtest_fill_latency_ns` (supersedes `--stress-cost`) |
+| `--strict-config` | Reject unrecognized config keys |
+| `--trace-signal-orders` | Post-run SIGNAL → order diagnostic table |
+| `--edge-calibration PATH` | Apply B4 edge-realization factors from prior run |
+| `--emit-edge-calibration PATH` | Write edge calibration artifact after run |
+
+Exit code follows `run_backtest_api()` in `harness/backtest_runner.py`
+(non-zero on config errors, ingest failures, or integrity-check failure).
+
+Promotion forensics use a separate CLI — see [alpha-lifecycle skill](../alpha-lifecycle/SKILL.md)
+(`feelies promote …`).
+
+---
+
 ## Event Replay Engine
 
 ### Deterministic Ordering
@@ -83,7 +130,7 @@ EventLog yields market events out of deterministic merge-key order.
 
 ### Micro-Batching Rules
 
-**Status:** design target — not yet implemented. Today every event is
+**Not shipped:** design target — not yet implemented. Today every event is
 processed individually in merge-key order (same-nanosecond events are
 disambiguated by the resequence tie-breaker, not batched). When built:
 
@@ -461,22 +508,4 @@ like:
 
 ## Integration Points
 
-| Upstream Dependency | Interface |
-|--------------------|-----------|
-| Data Engineering (data-engineering skill) | `NBBOQuote` / `Trade` events from `MarketDataSource.events()` |
-| System Architect (system-architect skill) | `SimulatedClock`, `EventBus`, `ExecutionBackend`, micro-state pipeline |
-| Sensor / Feature Engine (feature-engine skill) | Layer-1 sensor fan-out + `HorizonAggregator` → `HorizonFeatureSnapshot` |
-| Risk Engine (risk-engine skill) | `RiskEngine.check_signal()` / `check_order()` / `check_sized_intent()` returning `RiskVerdict`; per-leg veto on PORTFOLIO path |
-| Microstructure Alpha (microstructure-alpha skill) | `Signal` events with `SignalDirection`, `trend_mechanism`, `expected_half_life_seconds`; research protocol |
-| Composition Layer (composition-layer skill) | `SizedPositionIntent` from PORTFOLIO alphas; mechanism-cap enforcement |
-| Regime Detection (regime-detection skill) | `RegimeState`, `RegimeHazardSpike` for hazard exits |
-| Testing & Validation (testing-validation skill) | Eleven locked parity hashes (L1–L6); per-host pinned perf baselines |
-
-The backtest engine is a concrete `MarketDataSource` + `OrderRouter`
-implementation composed into `ExecutionBackend`. Two router variants
-exist: `BacktestOrderRouter` (cross-price taker fills) and
-`PassiveLimitOrderRouter` (queue-position fills), selected via
-`execution_mode` in `PlatformConfig` (`minimum_cost` routes through
-the passive-limit backend). Both swap in for the live
-execution layer with no changes to signal, feature, or risk logic
-— the orchestrator's `_process_tick()` is identical in all modes.
+See [skill index](../README.md). **Non-obvious edges:** shares tick pipeline with live; only `ExecutionBackend` differs. CLI: `feelies backtest`.

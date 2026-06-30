@@ -27,16 +27,35 @@ file/line citations, severity, and prioritized recommendations.
 
 ---
 
+## Agent context (mandatory)
+
+| Step | Resource |
+|------|----------|
+| 1 | `.cursor/rules/platform-invariants.mdc` — **Inv-2, 3**; glossary: CPCV evidence, DSR evidence |
+| 2 | `.cursor/rules/karpathy-guidelines.mdc` |
+| 3 | `.cursor/skills/README.md` |
+| 4 | `.cursor/skills/research-workflow/SKILL.md` (**owner**) — **Not shipped** experiment-tracking sections |
+| 5 | `.cursor/skills/testing-validation/SKILL.md` — threshold defaults |
+| 6 | `.cursor/skills/alpha-lifecycle/SKILL.md` — gate matrix wiring (`promotion_evidence.py`) |
+
+
+**Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
+targets — P0 only if code/tests claim they are live.
+
+**Finding bar:** P0/P1 items must cite `Inv-N` + `path:line`. Read-only pass per
+`.cursor/rules/karpathy-guidelines.mdc`.
+
+---
+
 ## Platform context (read first)
 
-1. Read `.cursor/skills/research-workflow/SKILL.md` end-to-end.
-2. Read `.cursor/skills/testing-validation/SKILL.md` § on CPCV/DSR evidence schemas.
-3. Read `.cursor/rules/platform-invariants.mdc` glossary: **CPCV evidence**, **DSR
-   evidence**, and Inv-2 / Inv-3.
-4. Primary literature (verify the code against these, not vibes):
+**Docs and config** (after Agent context):
+
+1. Primary literature (verify the code against these, not vibes):
    - López de Prado (2018) *Advances in Financial Machine Learning* — purged k-fold,
      combinatorial purged CV, embargo.
    - Bailey & López de Prado (2014) *The Deflated Sharpe Ratio*.
+
 
 **Architecture (contractual):**
 
@@ -150,7 +169,8 @@ rate.
 2. Reproduce the CPCV combinatorics and purge/embargo on paper, then check the code.
 3. Reproduce the DSR formula on paper, then check `dsr.py` term-for-term.
 4. Probe for leakage and non-determinism.
-5. Run **read-only** checks only:
+5. Cross-check findings against the owning skill's **Not shipped** sections before filing P0 on absent features.
+6. Run **read-only** checks only:
    - `uv run pytest tests/research/ -q`
    Do not modify production code.
 

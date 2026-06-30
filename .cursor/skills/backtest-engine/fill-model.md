@@ -82,7 +82,7 @@ Higher volatility → quotes are staler → more adverse movement during executi
 
 ### Queue Position Model
 
-**Status:** Tier 2/3 design target — not the shipped model. The
+**Not shipped:** Tier 2/3 design target — not the shipped model. The
 shipped passive path uses `passive_queue_position_shares` (trade-fed
 queue drain) and the per-tick hazard cap (`_fill_hazard`) in
 `PassiveLimitOrderRouter`. When built:
@@ -118,7 +118,7 @@ Higher vol-to-spread ratio → more frequent price touches.
 
 #### Fill-at-Touch Probability
 
-**Status:** Tier 2/3 design target — the shipped level fill is the
+**Not shipped:** Tier 2/3 design target — the shipped level fill is the
 seeded-Bernoulli hazard model described in the header note.
 
 ```

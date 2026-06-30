@@ -32,16 +32,37 @@ file/line citations, severity, and prioritized recommendations.
 
 ---
 
+## Agent context (mandatory)
+
+| Step | Resource |
+|------|----------|
+| 1 | `.cursor/rules/platform-invariants.mdc` — **Inv-5, 11, 12, 13** |
+| 2 | `.cursor/rules/karpathy-guidelines.mdc` |
+| 3 | `.cursor/skills/README.md` |
+| 4 | `.cursor/skills/risk-engine/SKILL.md` — sizing, fail-safe (**co-owner**) |
+| 5 | `.cursor/skills/live-execution/SKILL.md` — order lifecycle, intent translation (**co-owner**) |
+| 6 | `.cursor/skills/system-architect/SKILL.md` — micro-state ordering touchpoint |
+
+Defer deep orchestrator ordering critique to `audit_kernel.md`; defer fill math to `audit_execution_fills.md`.
+
+
+**Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
+targets — P0 only if code/tests claim they are live.
+
+**Finding bar:** P0/P1 items must cite `Inv-N` + `path:line`. Read-only pass per
+`.cursor/rules/karpathy-guidelines.mdc`.
+
+---
+
 ## Platform context (read first)
+
+**Docs and config** (after Agent context):
 
 1. Read `src/feelies/execution/intent.py`, `position_manager.py`, and
    `portfolio_netter.py` (the G-1/G-5 decision contracts and legacy adapter).
 2. Read `src/feelies/portfolio/lot_ledger.py`, `storage/trade_journal.py`, and the
    position-store modules (PnL ledger path).
-3. Read `.cursor/skills/risk-engine/SKILL.md` § on sizing and fail-safe, and
-   `.cursor/skills/live-execution/SKILL.md` § on order lifecycle.
-4. Read `.cursor/rules/platform-invariants.mdc` Inv-5 (deterministic replay), Inv-11
-   (fail-safe), Inv-12 (cost realism), Inv-13 (PnL traceable to fills).
+
 
 **Architecture (contractual):**
 
@@ -265,7 +286,8 @@ or safety.
 3. Recompute one position lifecycle by hand through the store **and** the lot ledger;
    reconcile.
 4. Audit G-5/G-6/G-7 flag-off parity claims against the determinism tests.
-5. Run **read-only** checks only:
+5. Cross-check findings against the owning skill's **Not shipped** sections before filing P0 on absent features.
+6. Run **read-only** checks only:
    - `uv run pytest tests/execution/test_intent.py tests/execution/test_position_manager.py tests/execution/test_portfolio_netter.py -q`
    - `uv run pytest tests/risk/test_position_sizer.py tests/risk/test_edge_weighted_sizer.py -q`
    - `uv run pytest tests/portfolio/ -q`

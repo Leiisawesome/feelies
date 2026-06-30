@@ -12,9 +12,7 @@ contract (`signals/horizon_protocol.py`) declared inline in a
 schema-1.1 SIGNAL alpha YAML — `evaluate(snapshot, regime, params)
 -> Signal | None`.
 
-The historical per-tick `FeatureVector` / `FeatureEngine.update` /
-`SignalEngine.evaluate` contracts were retired in Workstream D.2 and
-are unsupported.
+Layer-2 input is `HorizonFeatureSnapshot` only; D.2 retired `FeatureVector` / `LEGACY_SIGNAL`.
 
 The formalization path from research prototype to engine component is
 governed by the research-workflow skill. Sensors must implement

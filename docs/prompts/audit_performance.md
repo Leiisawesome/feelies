@@ -27,12 +27,33 @@ file/line citations, severity, and prioritized recommendations.
 
 ---
 
+## Agent context (mandatory)
+
+| Step | Resource |
+|------|----------|
+| 1 | `.cursor/rules/platform-invariants.mdc` — **Inv-5** (determinism is the binding constraint on optimizations) |
+| 2 | `.cursor/rules/karpathy-guidelines.mdc` |
+| 3 | `.cursor/skills/README.md` |
+| 4 | `.cursor/skills/performance-engineering/SKILL.md` (**owner**) |
+| 5 | `.cursor/skills/system-architect/SKILL.md` — M1–M6 hot path |
+
+Perf wins that break parity hashes are P0 regressions, not P2 optimizations.
+
+
+**Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
+targets — P0 only if code/tests claim they are live.
+
+**Finding bar:** P0/P1 items must cite `Inv-N` + `path:line`. Read-only pass per
+`.cursor/rules/karpathy-guidelines.mdc`.
+
+---
+
 ## Platform context (read first)
 
-1. Read `.cursor/skills/performance-engineering/SKILL.md` end-to-end.
-2. Read `.cursor/skills/system-architect/SKILL.md` § on the M1–M6 hot path.
-3. Read `.cursor/rules/platform-invariants.mdc` Inv-5 (determinism — the binding
-   constraint on every optimization) and Inv-10 (clock).
+**Docs and config** (after Agent context):
+
+*(Skills and invariants loaded in Agent context above.)*
+
 
 **Architecture (contractual):**
 
@@ -143,6 +164,7 @@ latency/allocation impact.
 4. Classify every proposed optimization for determinism safety **before** recommending it.
 5. Optionally measure with `uv run python -X importtime` / `cProfile` on
    `scripts/smoke_pipeline.py` (off-path timing only). Do not modify production code.
+6. Cross-check findings against the owning skill's **Not shipped** sections before filing P0 on absent features.
 
 ---
 

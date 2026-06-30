@@ -2,8 +2,8 @@
 
 Use this prompt in a **Claude Code** session with full repo access. Scope: feelies
 post-trade forensics — multi-horizon attribution (per-mechanism, per-regime), the
-`DecayDetector`, fill attribution / TCA, and the quarantine auto-trigger that demotes a
-LIVE alpha.
+`DecayDetector`, fill attribution / TCA, and the operator-invoked quarantine path
+(`QuarantineTriggerEvidence` → `AlphaLifecycle.quarantine`).
 
 ---
 
@@ -27,14 +27,33 @@ file/line citations, severity, and prioritized recommendations.
 
 ---
 
+## Agent context (mandatory)
+
+| Step | Resource |
+|------|----------|
+| 1 | `.cursor/rules/platform-invariants.mdc` — **Inv-1, 4, 11, 13**; glossary: quarantine, quarantine-trigger evidence, trend mechanism breakdown |
+| 2 | `.cursor/rules/karpathy-guidelines.mdc` |
+| 3 | `.cursor/skills/README.md` |
+| 4 | `.cursor/skills/post-trade-forensics/SKILL.md` (**owner**) — **Not shipped**: auto-trigger, daily health JSON, dedicated forensic events |
+| 5 | `.cursor/skills/alpha-lifecycle/SKILL.md` — operator-invoked `quarantine` + evidence schemas |
+
+Quarantine demotion is fail-safe (Inv-11) but **not** auto-wired from forensics today.
+
+
+**Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
+targets — P0 only if code/tests claim they are live.
+
+**Finding bar:** P0/P1 items must cite `Inv-N` + `path:line`. Read-only pass per
+`.cursor/rules/karpathy-guidelines.mdc`.
+
+---
+
 ## Platform context (read first)
 
-1. Read `.cursor/skills/post-trade-forensics/SKILL.md` end-to-end.
-2. Read `.cursor/skills/alpha-lifecycle/SKILL.md` § on the `quarantine` auto-trigger and
-   `QuarantineTriggerEvidence`.
-3. Read `docs/three_layer_architecture.md` §6.10 (forensics module).
-4. Read `.cursor/rules/platform-invariants.mdc` Inv-1 (mechanism), Inv-4 (decay default),
-   Inv-11 (fail-safe), Inv-13 (provenance).
+**Docs and config** (after Agent context):
+
+1. Read `docs/three_layer_architecture.md` §6.10 (forensics module).
+
 
 **Architecture (contractual):**
 
@@ -42,7 +61,7 @@ file/line citations, severity, and prioritized recommendations.
 fills + Signal provenance (trend_mechanism, expected_half_life, regime)
   → MultiHorizonAttributor: PnL decomposed by mechanism family × regime × horizon
   → DecayDetector: expected vs realized slippage / hit-rate / net-alpha drift
-  → QuarantineTriggerEvidence → AlphaLifecycle.quarantine (auto, fail-safe commit)
+  → QuarantineTriggerEvidence → operator/tooling calls `registry.quarantine(...)` (fail-safe commit; not auto-wired today)
 ```
 
 **Hard invariants (non-negotiable):**
@@ -150,7 +169,8 @@ Each item: component, `file:line`, one-sentence fix, expected impact.
 2. Audit attribution conservation first (Σ buckets = total).
 3. Audit expected-vs-realized comparison and decay thresholds.
 4. Trace the quarantine trigger wiring end-to-end.
-5. Run **read-only** checks only:
+5. Cross-check findings against the owning skill's **Not shipped** sections before filing P0 on absent features.
+6. Run **read-only** checks only:
    - `uv run pytest tests/forensics/test_tca.py tests/acceptance/test_decay_divergence.py -q`
    - `uv run pytest tests/alpha/test_promotion_evidence.py -q -k quarantine`
    Do not modify production code.

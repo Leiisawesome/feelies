@@ -29,16 +29,38 @@ file/line citations, severity, and prioritized recommendations.
 
 ---
 
+## Agent context (mandatory)
+
+| Step | Resource |
+|------|----------|
+| 1 | `.cursor/rules/platform-invariants.mdc` — **Inv-5, 6, 11**; glossary: portfolio alpha, sized position intent, mechanism concentration, decay weighting |
+| 2 | `.cursor/rules/karpathy-guidelines.mdc` |
+| 3 | `.cursor/skills/README.md` — L3 parity hashes → testing-validation |
+| 4 | `.cursor/skills/composition-layer/SKILL.md` (**owner**) |
+| 5 | `.cursor/skills/microstructure-alpha/SKILL.md` — `TrendMechanism` caps |
+| 6 | `.cursor/skills/risk-engine/SKILL.md` — `check_sized_intent` per-leg veto |
+
+Default `composition_completeness_threshold`: **0.80** (platform invariants glossary).
+
+
+**Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
+targets — P0 only if code/tests claim they are live.
+
+**Finding bar:** P0/P1 items must cite `Inv-N` + `path:line`. Read-only pass per
+`.cursor/rules/karpathy-guidelines.mdc`.
+
+---
+
 ## Platform context (read first)
 
-1. Read `.cursor/skills/composition-layer/SKILL.md` end-to-end.
-2. Read `.cursor/skills/microstructure-alpha/SKILL.md` § on `TrendMechanism` (for
-   mechanism caps) and `.cursor/skills/risk-engine/SKILL.md` § on `check_sized_intent`.
-3. Read `docs/three_layer_architecture.md` §5.6 (`CrossSectionalContext`), §5.7
+**Docs and config** (after Agent context):
+
+1. Read `docs/three_layer_architecture.md` §5.6 (`CrossSectionalContext`), §5.7
    (`SizedPositionIntent`), §6.5 (composition module), §7.5 (UniverseSynchronizer
    barrier semantics).
-4. Skim `platform.yaml` composition keys (`composition_completeness_threshold`,
+2. Skim `platform.yaml` composition keys (`composition_completeness_threshold`,
    factor model, `λ_TC`, `λ_risk`) and any `layer: PORTFOLIO` alpha YAML.
+
 
 **Architecture (contractual):**
 
@@ -177,7 +199,8 @@ Each item: component, `file:line`, one-sentence fix, expected impact.
 3. Audit `cross_sectional.py` + `turnover_optimizer.py` (determinism) — the crux.
 4. Trace one boundary: Signals → context → intent, and recompute the hash inputs.
 5. Cross-check Level-3 + Level-4 parity hashes.
-6. Run **read-only** checks only:
+6. Cross-check findings against the owning skill's **Not shipped** sections before filing P0 on absent features.
+7. Run **read-only** checks only:
    - `uv run pytest tests/composition/ tests/portfolio/ -q`
    - `uv run pytest tests/determinism/test_sized_intent_replay.py tests/determinism/test_sized_intent_with_decay_replay.py tests/determinism/test_portfolio_order_replay.py -q`
    - `uv run pytest tests/integration/test_xsect_v1_e2e.py -q`

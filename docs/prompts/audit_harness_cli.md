@@ -27,14 +27,35 @@ file/line citations, severity, and prioritized recommendations.
 
 ---
 
+## Agent context (mandatory)
+
+| Step | Resource |
+|------|----------|
+| 1 | `.cursor/rules/platform-invariants.mdc` — **Inv-5, 13**; glossary: operator CLI, replay |
+| 2 | `.cursor/rules/karpathy-guidelines.mdc` |
+| 3 | `.cursor/skills/README.md` — CLI routing table |
+| 4 | `.cursor/skills/backtest-engine/SKILL.md` (**owner**) — `feelies backtest` |
+| 5 | `.cursor/skills/alpha-lifecycle/SKILL.md` — `feelies promote` (read-only forensics) |
+| 6 | `.cursor/skills/research-workflow/SKILL.md` — artifact reproducibility |
+
+Split ownership: ingest path in `audit_data_ingestion.md`; promote CLI deep-dive in `audit_alpha_lifecycle.md`.
+
+
+**Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
+targets — P0 only if code/tests claim they are live.
+
+**Finding bar:** P0/P1 items must cite `Inv-N` + `path:line`. Read-only pass per
+`.cursor/rules/karpathy-guidelines.mdc`.
+
+---
+
 ## Platform context (read first)
 
-1. Read `.cursor/skills/backtest-engine/SKILL.md` § on run orchestration and reporting.
-2. Read `.cursor/skills/research-workflow/SKILL.md` § on reproducibility and artifact
-   provenance.
-3. Read `AGENTS.md` (CLI / smoke / backtest commands) and `docs/paper_rth_test_runbook.md`.
-4. Read `.cursor/rules/platform-invariants.mdc` Inv-5 (reproducible runs), Inv-13
+**Docs and config** (after Agent context):
+
+1. Read `AGENTS.md` (CLI / smoke / backtest commands) and `docs/paper_rth_test_runbook.md`.
    (provenance).
+
 
 **Architecture (contractual):**
 
@@ -164,7 +185,8 @@ Each item: component, `file:line`, one-sentence fix, expected impact.
 3. Audit reproducibility (two-run diff) and JSONL fidelity.
 4. Audit CLI exit codes and config-key strictness.
 5. Audit baseline-mutating scripts for guardrails.
-6. Run **read-only** checks only:
+6. Cross-check findings against the owning skill's **Not shipped** sections before filing P0 on absent features.
+7. Run **read-only** checks only:
    - `uv run pytest tests/harness/ tests/cli/test_backtest_cli.py tests/scripts/ -q`
    - `uv run pytest tests/acceptance/test_backtest_app_baseline.py tests/acceptance/test_backtest_app_config_keys.py -q` (disk cache APP/2026-03-26 required)
    - `uv run python scripts/smoke_pipeline.py` (read-only smoke; no writes to baselines)

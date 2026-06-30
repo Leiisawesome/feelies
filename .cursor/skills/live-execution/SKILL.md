@@ -1,11 +1,7 @@
 ---
 name: live-execution
 description: >
-  Live execution architecture for transforming signals into safe, latency-aware
-  trades with order routing, state machine lifecycle, idempotency, and safety
-  controls. Use when designing live order execution, implementing broker
-  integration, building kill switches or circuit breakers, reasoning about
-  backtest/live parity, or monitoring execution quality drift.
+  Live orders, IB adapter, kill switch, reconciliation. Use for execution safety and backtest/live parity.
 ---
 
 # Live Execution Architect
@@ -67,7 +63,7 @@ The orchestrator mediates all order routing.
 
 ### Retry Logic
 
-**Status:** specification / future work — no retry or backoff logic
+**Not shipped:** specification / future work — no retry or backoff logic
 exists in `src/feelies/broker/` today.
 
 | Failure Class | Strategy | Max Attempts | Backoff |
@@ -79,7 +75,7 @@ exists in `src/feelies/broker/` today.
 
 ### Timeout Logic
 
-**Status:** specification / future work — the orchestrator has no
+**Not shipped:** specification / future work — the orchestrator has no
 ack-timeout handling and no heartbeat-expiry wiring today.
 
 | Operation | Timeout | On Expiry |
@@ -178,7 +174,7 @@ What ships today is **fill-driven** reconciliation only:
 start. There is no periodic position polling, no reconnect snapshot,
 and no sign-mismatch kill-switch wiring.
 
-**Status:** the periodic/holistic rows below are a design target — not
+**Not shipped:** the periodic/holistic rows below are a design target — not
 yet implemented.
 
 | Trigger | Action |
@@ -208,7 +204,7 @@ optimization — it must never override broker ground truth.
 Real-time monitoring of execution quality. Drift from expectations triggers
 alerts and can activate safety controls.
 
-**Ownership boundary**: This skill monitors slippage, latency, and fill rate
+**See:** This skill monitors slippage, latency, and fill rate
 in real-time over short windows (20 trades, 30 min) and triggers immediate
 safety responses. The post-trade-forensics skill consumes the same metrics
 over longer windows (50–200 trades, multi-day) to detect structural edge
@@ -264,7 +260,7 @@ Three independent safety mechanisms. Any one can halt trading independently.
 See [safety-controls.md](safety-controls.md) for implementation details,
 configuration, and recovery procedures.
 
-**Ownership boundary**: This skill owns the mechanisms (kill switch, circuit
+**See:** This skill owns the mechanisms (kill switch, circuit
 breaker, capital throttle). The risk-engine skill defines the policies
 (drawdown thresholds, exposure limits) that trigger these mechanisms. The
 risk engine emits events; this layer enforces them.
@@ -312,7 +308,7 @@ non-zero positions via market orders at R3 (FORCED_FLATTEN).
 
 ### Circuit Breaker
 
-**Status:** design target — not yet implemented. No circuit-breaker
+**Not shipped:** design target — not yet implemented. No circuit-breaker
 component exists in `src/feelies/`. What ships today is the monotonic
 `RiskLevel` escalation: `FORCE_FLATTEN` → `_escalate_risk()` → LOCKED
 + kill switch (`risk/escalation.py`, `kernel/orchestrator.py`) — a
@@ -334,7 +330,7 @@ Circuit breaker cancels all open orders but does **not** flatten positions
 
 ### Capital Throttle
 
-**Status:** design target — not yet implemented. No `throttle_level`
+**Not shipped:** design target — not yet implemented. No `throttle_level`
 runtime component exists; the closest shipped behavior is
 `RiskAction.SCALE_DOWN` returned by `BasicRiskEngine.check_order()`
 (`risk/basic_risk.py`), which rebuilds the order at the scaled
@@ -450,17 +446,4 @@ Live execution produces a continuous stream of:
 
 ## Integration Points
 
-| Dependency | Interface |
-|------------|-----------|
-| Backtest Engine (backtest-engine skill) | Shared `OrderRouter` protocol; fill model behind same interface |
-| System Architect (system-architect skill) | `Clock`, `EventBus`, `ExecutionBackend`, `PositionStore` protocols |
-| Risk Engine (risk-engine skill) | `RiskVerdict` with `RiskAction`; `_escalate_risk()` cascade; per-leg veto on `check_sized_intent` |
-| Microstructure Alpha (microstructure-alpha skill) | `Signal` events with `SignalDirection`, `trend_mechanism`; entry/exit logic |
-| Composition Layer (composition-layer skill) | `SizedPositionIntent` decomposed into per-leg `OrderRequest`s with `reason="PORTFOLIO"` |
-| Regime Detection (regime-detection skill) | `RegimeHazardSpike` consumed by `HazardExitController` for hazard-driven exits |
-| Data Engineering (data-engineering skill) | `NBBOQuote` / `Trade` events for reference pricing |
-
-The live execution engine is a concrete `OrderRouter` implementation
-(broker API adapter). It swaps in for the backtest fill simulator with
-no changes to signal, feature, or risk logic — the orchestrator's
-`_process_tick()` is identical in all modes.
+See [skill index](../README.md). **Non-obvious edges:** owns kill switch / reconciliation; real-time slippage (forensics uses longer windows).

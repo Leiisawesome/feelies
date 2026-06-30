@@ -1,13 +1,7 @@
 ---
 name: performance-engineering
 description: >
-  Performance analysis and optimization for latency-critical intraday trading
-  infrastructure. Identifies critical paths, enforces latency budgets, guides
-  data structure and concurrency decisions, and balances throughput against
-  determinism. Use when profiling tick-to-trade pipelines, optimizing hot loops,
-  reducing memory footprint, choosing parallelization strategies, diagnosing GC
-  pauses, or reasoning about cache locality, vectorization, lock-free design,
-  or performance regression prevention.
+  Latency budgets and perf baselines. Use when profiling tick-to-trade or preventing regressions.
 ---
 
 # Performance & Optimization Engineer
@@ -299,14 +293,4 @@ When a performance decision involves a tradeoff, document it explicitly:
 
 ## Integration Points
 
-| Dependency | Performance Interface |
-|------------|---------------------|
-| System Architect (system-architect skill) | Layer boundaries define measurement points; clock abstraction for timing |
-| Backtest Engine (backtest-engine skill) | Replay speed targets; event processing budget; single-event latency |
-| Live Execution (live-execution skill) | End-to-end latency monitoring; signal-to-fill latency histograms |
-| Data Engineering (data-engineering skill) | Ingestion throughput; storage I/O; query-path latency (Parquet scans) |
-| Sensor / Feature Engine (feature-engine skill) | Per-tick sensor compute budget; incremental update enforcement; memory budget |
-| Microstructure Alpha (microstructure-alpha skill) | Horizon-anchored signal evaluation latency budget (boundary-tick only) |
-| Composition Layer (composition-layer skill) | Cross-sectional construction latency; cvxpy turnover-optimizer budget |
-| Risk Engine (risk-engine skill) | Risk-check latency; per-leg veto budget; pre-computed constraint lookups |
-| Testing & Validation (testing-validation skill) | Per-host pinned perf baselines; ≤12% / ≤5% regression targets (baseline plumbing landed; comparator gates planned) |
+See [skill index](../README.md). **Non-obvious edges:** pinned perf baselines in `tests/perf/`; ≤5% decay-weighting budget vs decay-OFF.

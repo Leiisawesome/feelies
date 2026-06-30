@@ -1,11 +1,7 @@
 ---
 name: data-engineering
 description: >
-  Data engineering standards for high-fidelity ingestion, validation, and storage
-  of L1 NBBO and trade data from Massive (formerly Polygon.io). Use when building
-  data pipelines, designing storage schemas, implementing gap detection or
-  deduplication, working on historical backfill, or reasoning about data integrity,
-  replay invariants, or recovery protocols.
+  Massive ingest, `EventLog`, cache, and data integrity. Use for pipelines, gaps, and replay storage.
 ---
 
 # Data Engineering — Market Data & Storage
@@ -86,11 +82,8 @@ The third reads already-normalized events from `EventLog`.
 **Layer-1 / Layer-2 anchoring**: ingested `NBBOQuote` and `Trade`
 events are consumed by the Layer-1 sensor framework
 (`feelies.sensors`) at the orchestrator's `SENSOR_UPDATE` sub-state
-(between M2 and M3). The historical per-tick `FeatureVector` /
-`FeatureEngine.update` contract was retired in Workstream D.2; the
-canonical Layer-2 input is now `HorizonFeatureSnapshot` emitted by
-`HorizonAggregator` on `HorizonTick` boundary crossings. See the
-feature-engine skill for the sensor + horizon-aggregator contract.
+(between M2 and M3). Layer-2 input is `HorizonFeatureSnapshot` only; D.2
+retired `FeatureVector` / `LEGACY_SIGNAL`. See feature-engine skill.
 
 **Key invariant**: backfill and live both normalize through
 `MassiveNormalizer` (source tags `"massive_rest"` and `"massive_ws"`
@@ -267,7 +260,7 @@ class TradeJournal(Protocol):
 Failure mode: degrade. If journal write fails, EventLog still has raw events —
 the journal can be rebuilt. Journal unavailability does not halt trading.
 
-**Ownership boundary**: this skill owns the storage implementation. The
+**See:** this skill owns the storage implementation. The
 post-trade-forensics skill consumes `TradeJournal.query()` for analysis.
 The live-execution skill produces `TradeRecord` entries from fill events.
 
@@ -334,17 +327,4 @@ symbol (backtesting primary access pattern).
 
 ## Integration Points
 
-| Dependency | Interface |
-|------------|-----------|
-| System Architect (system-architect skill) | `Clock`, `EventBus`, layer boundaries; `Event` base class for all typed events |
-| Sensor / Feature Engine (feature-engine skill) | Produces `NBBOQuote`/`Trade` consumed by Layer-1 sensors at SENSOR_UPDATE; `HorizonAggregator` produces the canonical Layer-2 `HorizonFeatureSnapshot` |
-| Backtest Engine (backtest-engine skill) | `EventLog.replay()` drives backtest via `MarketDataSource`; `SimulatedClock` for deterministic time |
-| Live Execution (live-execution skill) | Real-time `NBBOQuote`/`Trade` feed for live pipeline; reference pricing for slippage |
-| Risk Engine (risk-engine skill) | Real-time NBBO for mark-to-market, volatility estimation, regime detection |
-| Post-Trade Forensics (post-trade-forensics skill) | `EventLog.replay()` for historical forensic analysis |
-| Testing & Validation (testing-validation skill) | `DataHealth` SM transitions; schema validation; gap injection for fault tests |
-
-The data engineering layer is the system's first contact with the external
-world. Every downstream layer depends on the fidelity of the events it
-produces. No other layer ingests raw market data — all access is through
-`MarketDataNormalizer` and `EventLog`.
+See [skill index](../README.md). **Non-obvious edges:** `EventLog` + `DataHealth` upstream of sensors; storage owned here.

@@ -1,15 +1,7 @@
 ---
 name: risk-engine
 description: >
-  Risk control layer + portfolio governor for the feelies platform. Owns
-  the `RiskEngine` protocol with three entry points (`check_signal`,
-  `check_order`, `check_sized_intent` for the Layer-3 path), the
-  `RiskLevel` escalation SM, real-time PnL attribution, regime-aware
-  sizing, the `HazardExitController`, and the per-leg veto semantics
-  that turn a `SizedPositionIntent` into per-leg `OrderRequest`s. Use
-  when designing risk constraints, debugging the per-leg veto path,
-  reasoning about regime-conditional sizing, hazard-driven exits,
-  fail-safe escalation, or PnL attribution.
+  Risk gatekeeper: `check_signal`, `check_order`, `check_sized_intent`, hazard exits. Use for constraints and per-leg veto.
 ---
 
 # Risk Engine & Portfolio Governor
@@ -160,13 +152,12 @@ envelope; the risk engine may enforce tighter limits.
 | Circuit breaker | Intraday PnL < −1.5% NAV | Cancel all; positions monitored with stops |
 | Kill switch | Intraday PnL < −2.0% NAV | Flatten all; halt for the day |
 
-**Status:** the tiered ladder above is design policy — not yet
-implemented. What ships today is a single gate in `BasicRiskEngine`
+**Not shipped:** tiered drawdown ladder. **Shipped:** single gate in `BasicRiskEngine`
 (`risk/basic_risk.py`): `drawdown_pct >= RiskConfig.max_drawdown_pct`
 (default `5.0`%) → `FORCE_FLATTEN` (`_is_drawdown_breached`).
 
 Drawdown thresholds are configurable. PnL is mark-to-market using
-last NBBO mid. **Ownership boundary**: this skill defines the policy
+last NBBO mid. **See:** this skill defines the policy
 (thresholds and responses). The live-execution skill owns the
 mechanism layer (kill switch, circuit breaker, capital throttle).
 
@@ -230,7 +221,7 @@ See the regime-detection skill for the hazard detector itself.
 
 The risk engine consumes regime state from the platform-level
 `RegimeEngine` service (services package). Read-only access via
-`current_state(symbol)`. **Ownership boundary**:
+`current_state(symbol)`. **See:**
 
 - regime-detection owns the regime taxonomy (what regimes exist) and
   the platform-level service (the writer/reader contract):
@@ -245,12 +236,7 @@ The risk engine consumes regime state from the platform-level
 When forensic and risk-engine regime labels diverge, use the **more
 conservative** classification.
 
-**Status:** the three tables below (volatility-percentile regimes,
-correlation clustering, concentration risk) are design policy — not
-yet implemented in `src/feelies/risk/`. The implemented regime
-response is EV-scaling over `RegimeEngine` posteriors
-(`BasicRiskEngine._regime_scaling()` and
-`BudgetBasedSizer._get_regime_factor()`).
+**Not shipped:** volatility/correlation/concentration tables below. **Shipped:** EV-scaling over `RegimeEngine` posteriors.
 
 ### Volatility Regime
 
@@ -332,7 +318,7 @@ total_return = alpha + beta_return + slippage + spread_cost + timing_cost + fees
 Computed per-trade and aggregated at strategy + portfolio level.
 Rolling windows (1 hr, session, daily) for monitoring.
 
-**Ownership boundary**: this skill computes real-time attribution
+**See:** this skill computes real-time attribution
 for operational risk. The post-trade-forensics skill performs deeper
 forensic attribution over multi-day windows including per-mechanism
 decomposition (`MultiHorizonAttributor`) — same framework, longer
@@ -370,7 +356,7 @@ Aggregate constraints no single strategy can evaluate alone:
 
 If aggregate constraints bind, the governor reduces the most recently
 submitted order first (LIFO priority for risk reduction).
-**Status:** design target — no LIFO-priority governor exists in the
+**Not shipped:** design target — no LIFO-priority governor exists in the
 code today.
 
 ---
@@ -404,23 +390,20 @@ forensics a clean lineage axis. SIGNAL-path orders keep the default
 The risk engine is a **hard dependency** for order flow. If
 unavailable, the system cannot trade. By design.
 
+
+## Not shipped
+
+Design-policy sections above not yet in `src/feelies/risk/`:
+
+| Area | Shipped today |
+|------|---------------|
+| Tiered drawdown ladder | Single `max_drawdown_pct` → `FORCE_FLATTEN` in `BasicRiskEngine` |
+| Volatility / correlation / concentration tables | EV-scaling via `RegimeEngine` posteriors only |
+| LIFO portfolio governor | No cross-strategy aggregate governor |
+
+
 ---
 
 ## Integration Points
 
-| Dependency | Interface |
-|------------|-----------|
-| System Architect | Clock, EventBus, layer boundaries, `PositionStore` |
-| Live Execution | Order routing gate; safety controls coordination; execution-quality health signal |
-| Backtest Engine | Shared risk-check logic; deterministic replay of risk decisions |
-| Microstructure Alpha | `Signal` events with `SignalDirection`, `trend_mechanism`; entry / exit conditions |
-| Composition Layer | `SizedPositionIntent` consumed via `check_sized_intent`; per-leg veto |
-| Regime Detection | `current_state(symbol)` for sizing scalars; `RegimeHazardSpike` for hazard exits |
-| Data Engineering | Real-time NBBO feed for MTM and vol estimation |
-| Post-Trade Forensics | `OrderRequest.reason` lineage; per-mechanism attribution |
-| Alpha Lifecycle | Quarantine demotion; capital-tier scaling |
-
-The risk engine sits between every alpha layer and execution in
-backtest, paper, and live. Same logic, same constraints, same
-fail-safe behavior — mode-specific differences are confined to
-`ExecutionBackend` (`execution/backend.py`).
+See [skill index](../README.md). **Non-obvious edges:** sole gate before `OrderRouter`; three entry points for SIGNAL, order, and PORTFOLIO.

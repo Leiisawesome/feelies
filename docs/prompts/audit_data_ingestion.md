@@ -29,14 +29,33 @@ file/line citations, severity, and prioritized recommendations.
 
 ---
 
+## Agent context (mandatory)
+
+Load context **before** reading code:
+
+| Step | Resource |
+|------|----------|
+| 1 | `.cursor/rules/platform-invariants.mdc` — **Inv-5, 6, 9, 10, 11, 13**; glossary: replay, backtest |
+| 2 | `.cursor/rules/karpathy-guidelines.mdc` |
+| 3 | `.cursor/skills/README.md` |
+| 4 | `.cursor/skills/data-engineering/SKILL.md` (**owner**) |
+| 5 | `.cursor/skills/backtest-engine/SKILL.md` — replay / ordering touchpoint |
+
+
+**Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
+targets — P0 only if code/tests claim they are live.
+
+**Finding bar:** P0/P1 items must cite `Inv-N` + `path:line`. Read-only pass per
+`.cursor/rules/karpathy-guidelines.mdc`.
+
+---
+
 ## Platform context (read first)
 
-1. Read `.cursor/skills/data-engineering/SKILL.md` end-to-end.
-2. Read `.cursor/skills/backtest-engine/SKILL.md` § on event replay, ordering, clock
-   & latency injection.
-3. Read `.cursor/rules/platform-invariants.mdc` — especially Inv-5 (deterministic
-   replay), Inv-6 (causality), Inv-9 (backtest/live parity), Inv-10 (clock
-   abstraction), Inv-11 (fail-safe), Inv-13 (provenance).
+**Docs and config** (after Agent context):
+
+*(Skills and invariants loaded in Agent context above.)*
+
 
 ### Repository facts
 
@@ -112,6 +131,7 @@ file/line citations, severity, and prioritized recommendations.
 - `tests/determinism/` — parity hashes that depend on event ordering
 - `tests/ingestion/test_massive_functional.py` — network-backed; note but don't
   require API key
+
 
 **Out of scope:** alpha logic, sensors, fills, promotion gates, regime detection.
 
@@ -269,14 +289,16 @@ the section structure below.
 ## Suggested investigation order
 
 1. Read skills + invariants (above)
-2. Read `event_resequence.py` + `replay_feed.py` + `massive_normalizer.py` (core
+2. Cross-check findings against the owning skill's **Not shipped** sections before
+   filing P0 on absent features.
+3. Read `event_resequence.py` + `replay_feed.py` + `massive_normalizer.py` (core
    contracts)
-3. Trace bootstrap wiring for BACKTEST vs PAPER vs LIVE
-4. Trace `backtest_runner.ingest_data()` and `run_backtest.py` merge paths
-5. Grep for `resequence_event_list`, `replace_events`, `CausalityViolation`,
+4. Trace bootstrap wiring for BACKTEST vs PAPER vs LIVE
+5. Trace `backtest_runner.ingest_data()` and `run_backtest.py` merge paths
+6. Grep for `resequence_event_list`, `replace_events`, `CausalityViolation`,
    `market_data_latency`
-6. Run ingestion/storage/causality tests
-7. Write the audit doc
+7. Run ingestion/storage/causality tests
+8. Write the audit doc
 
 ---
 

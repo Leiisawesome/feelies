@@ -27,13 +27,34 @@ file/line citations, severity, and prioritized recommendations.
 
 ---
 
+## Agent context (mandatory)
+
+| Step | Resource |
+|------|----------|
+| 1 | `.cursor/rules/platform-invariants.mdc` — **Inv-5, 7, 10**; glossary: replay, strict typing |
+| 2 | `.cursor/rules/karpathy-guidelines.mdc` |
+| 3 | `.cursor/skills/README.md` |
+| 4 | `.cursor/skills/system-architect/SKILL.md` (**owner**) — clock, events, SM primitive |
+| 5 | `src/feelies/core/inv12_stress.py` — Inv-12 stress helper (touchpoint for execution_fills) |
+
+This audit **owns** `core/state_machine.py`; kernel/alpha_lifecycle are touchpoints.
+
+
+**Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
+targets — P0 only if code/tests claim they are live.
+
+**Finding bar:** P0/P1 items must cite `Inv-N` + `path:line`. Read-only pass per
+`.cursor/rules/karpathy-guidelines.mdc`.
+
+---
+
 ## Platform context (read first)
 
-1. Read `.cursor/skills/system-architect/SKILL.md` § on clock abstraction, typed events,
-   and state machines.
-2. Read `docs/three_layer_architecture.md` §5 (event contracts), §9 (platform config).
-3. Read `.cursor/rules/platform-invariants.mdc` Inv-5, 7, 10, and the **strict typing**
+**Docs and config** (after Agent context):
+
+1. Read `docs/three_layer_architecture.md` §5 (event contracts), §9 (platform config).
    glossary entry.
+
 
 **Architecture (contractual):**
 
@@ -156,7 +177,8 @@ Each item: component, `file:line`, one-sentence fix, expected impact.
 2. Grep for wall-clock usage across `src/feelies/` first.
 3. Round-trip every event type through `serialization.py` and diff.
 4. Audit the config merge and the generic SM atomicity.
-5. Run **read-only** checks only:
+5. Cross-check findings against the owning skill's **Not shipped** sections before filing P0 on absent features.
+6. Run **read-only** checks only:
    - `uv run pytest tests/core/ -q`
    Do not modify production code.
 
