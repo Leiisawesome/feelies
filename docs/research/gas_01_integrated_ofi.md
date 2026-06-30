@@ -1,6 +1,7 @@
 <!--
   File:   docs/research/gas_01_integrated_ofi.md
-  Status: GAS DECISION #1 — open (correctness gate passed; edge gate pending data).
+  Status: GAS DECISION #1 — RESOLVED: edge gate NOT passed at the KYLE horizons;
+          KYLE alphas NOT re-pointed. Robust 30 s win recorded for follow-up.
   Owner:  feature-engine / microstructure-alpha.
 -->
 
@@ -35,10 +36,10 @@ without **both**:
 1. **Sign golden — ✅ DONE.** `ofi_integrated` is signed correctly through the
    real pipeline: persistent net buy flow ⇒ positive, sell ⇒ negative
    (`tests/research/test_gas_ofi_integrated.py`).
-2. **Edge — RankIC pass through the certified harness — ⏳ PENDING (needs data).**
-   On real cached L1, `ofi_integrated` must show the **higher |RankIC|** with the
-   **correct positive sign** at the KYLE horizons (300 / 900 / 1800 s) vs
-   `ofi_ewma_zscore`.
+2. **Edge — RankIC pass through the certified harness — ✗ NOT PASSED**
+   (APP/2026-03-26; see Result below). `ofi_integrated` must show the **higher
+   |RankIC|** with the **correct positive sign** at the KYLE horizons
+   (300 / 900 / 1800 s) vs `ofi_ewma_zscore`; it does not on this tape.
 
 ## Run the edge measurement (operator, on the APP disk cache)
 
@@ -82,8 +83,53 @@ empirical — exactly what the certified harness is for.
 3. Re-bake the affected goldens (signal replay) and the data-gated APP PnL/fill
    baseline, in one commit (same procedure as prior alpha changes).
 
+## Result — APP / 2026-03-26 (RankIC = Spearman, IC = Pearson)
+
+| horizon | `ofi_integrated` RankIC (n, t) | `ofi_ewma_zscore` RankIC (n, t) |
+|--------:|-------------------------------:|--------------------------------:|
+|    30 s | **+0.101** (810, +2.89)        | +0.045 (718, +1.22)             |
+|   120 s | +0.048 (215, +0.70)            | +0.012 (206, +0.17)             |
+|   300 s | +0.006 (88, +0.06)             | +0.170 (85, +1.57)              |
+|   900 s | +0.046 (32, +0.25)             | −0.021 (30, −0.11)              |
+|  1800 s | **−0.409** (17, −1.74)         | −0.132 (16, −0.50)              |
+
+## Decision — DO NOT adopt `ofi_integrated` for the KYLE alphas (this evidence)
+
+The criterion ("RankIC(integrated) > 0 **and** materially beats `ofi_ewma_zscore`
+at 300/900/1800 s") is **not met**: integrated is ≈0 at 300 s, and **wrong-signed
+(−0.41) at 1800 s**. The KYLE alphas are **not re-pointed**.
+
+Reading the evidence honestly:
+
+- **Only the 30 s comparison is statistically robust** (n≈700–810, |t| > 2.5):
+  there `ofi_integrated` wins decisively (+0.101 vs +0.045, ~2.2×). But **30 s is
+  below the KYLE half-life band** (60–1800 s) — that win argues for a *fast*
+  (INVENTORY/HAWKES-horizon) input, not a KYLE one, and is logged as a separate
+  follow-up, not acted on here.
+- **300 / 900 / 1800 s are underpowered** — n = 16–88 on a single day. The
+  long-horizon RankICs (incl. the −0.41 at 1800 s, n=17) are noise; the Spearman
+  vs Pearson disagreement at those n confirms instability. No KYLE-horizon claim
+  can be made either way from one tape.
+- The **1800 s sign flip** is consistent with the pre-registered **CKS
+  price-direction risk**: integrated OFI partly tracks in-window price direction,
+  so its forward edge is momentum-like at short horizons and reverts at long
+  ones — i.e. *not* clean permanent impact. The risk was real, not theoretical.
+
+**The gate did its job:** it blocked an evidence-free, literature-plausible
+re-point that intuition would have made.
+
+## Next steps (to actually settle the KYLE question)
+
+1. **Pool across many `(symbol, date)` days** (the harness already pools — pass
+   repeated `--symbol/--date`) until n at 300/900/1800 s is in the hundreds, then
+   re-evaluate the KYLE-horizon criterion.
+2. Separately, the robust **30 s** win motivates a *new* gas question — is
+   integrated OFI a good INVENTORY/HAWKES-band input? — opened as gas decision #2,
+   not folded into this one.
+
 ## Status
 
-Correctness gate ✅ and tooling ✅ shipped. **Awaiting the real-data RankIC pass**
-(operator-run on the disk cache) before any alpha is re-pointed. Paste the
-harness's `ofi_kyle_input` RankIC rows and this decision can be closed either way.
+**RESOLVED for this tape.** Correctness gate ✅, tooling ✅, edge gate ✗ at the
+KYLE horizons on APP/2026-03-26. No alpha changed. Re-open only with multi-day
+pooled data; nothing is re-pointed until the KYLE-horizon edge is demonstrated
+with adequate sample size and the correct sign.
