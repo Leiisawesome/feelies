@@ -3227,7 +3227,7 @@ class TestRestingOrderGuardAfterRisk:
     def test_stop_exit_supersedes_resting_passive_cover(self) -> None:
         """Inv-11: a hard-stop MARKET exit cancels a stale passive cover and crosses.
 
-        Regression for ``docs/pending issues/app_backtest_2026-06-01_*``: a
+        Regression for ``docs/audits/app_backtest_sig_benign_2026-06-01_investigation.md``: a
         gate-OFF FLAT passive LIMIT cover left resting must not subordinate a
         breached hard stop.  Previously the resting-order guard treated the
         pending cover as a pending exit and suppressed every ``__stop_exit__``
