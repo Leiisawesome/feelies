@@ -71,7 +71,7 @@ Implemented via `Orchestrator.unlock_from_lockdown()`:
 
 ## Circuit Breaker
 
-> **Status:** design spec — not implemented. No `circuit_breaker_active`
+> **Not shipped:** design spec — not implemented. No `circuit_breaker_active`
 > flag, `CIRCUIT_BREAKER_TRIPPED` event, or cooldown/resume/backoff
 > logic exists in `src/feelies/`. What ships today is the monotonic
 > `RiskLevel` escalation (`FORCE_FLATTEN` → `_escalate_risk()` →
@@ -136,7 +136,7 @@ Global circuit breaker overrides all strategy-level breakers.
 
 ## Capital Throttle
 
-> **Status:** design spec — not implemented. No `throttle_level`
+> **Not shipped:** design spec — not implemented. No `throttle_level`
 > computation or bus-emitted throttle events exist. The only partial
 > overlap shipped today is `RiskAction.SCALE_DOWN` returned by
 > `BasicRiskEngine.check_order()` (`risk/basic_risk.py`), which

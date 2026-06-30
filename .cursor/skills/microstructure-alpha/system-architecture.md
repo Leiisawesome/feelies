@@ -1,228 +1,52 @@
-# System Architecture — Engineering Reference
+# System Architecture — Layer-2 Reference
 
-> **Cross-reference**: this document provides microstructure-specific
-> architecture context. For the authoritative layer structure, state
-> machines, and protocol definitions, see the system-architect skill.
-> The actual tick-processing pipeline is the `MicroState` SM (M0–M10
-> backbone with Phase-2/3/4 sub-states) in `kernel/micro.py`, driven
-> by `Orchestrator._process_tick_inner()`.
+> **Authoritative pipeline:** [system-architect skill](../system-architect/SKILL.md)
+> (layer topology, micro-states M0–M10, typed events, `ExecutionBackend`).
+> This file records **microstructure-alpha-specific** context only.
 
-## Architecture Overview
-
-The diagram below shows the conceptual flow. In the implemented codebase,
-the Kernel layer (`Orchestrator`) coordinates all transitions, and
-mode-specific behavior is confined to `ExecutionBackend`
-(`execution/backend.py`) which composes `MarketDataSource` + `OrderRouter`.
+## Where Layer 2 sits
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│                      DATA LAYER                            │
-│  Massive WebSocket  ─→ MarketDataNormalizer (live)         │
-│  Massive REST API   ─→ EventLog → ReplayFeed (backtest)    │
-│  Output: NBBOQuote, Trade (core/events.py)                 │
-└──────────────────────┬─────────────────────────────────────┘
-                       │ M0 → M1 → M2  (RegimeEngine.posterior → RegimeState)
-┌──────────────────────▼─────────────────────────────────────┐
-│             SENSOR LAYER (Layer 1)                         │
-│  SensorRegistry fan-out (16 sensors ship; 13 registered)   │
-│  SENSOR_UPDATE: Sensor.update → SensorReading              │
-│  Mechanism fingerprints: kyle_lambda, inventory_pressure,  │
-│  hawkes_intensity, liquidity_stress_score, scheduled_flow  │
-└──────────────────────┬─────────────────────────────────────┘
-                       │ HORIZON_CHECK / HORIZON_AGGREGATE
-┌──────────────────────▼─────────────────────────────────────┐
-│           HORIZON AGGREGATION (Layer 1.5)                  │
-│  HorizonScheduler boundary detection (integer math)        │
-│  HorizonAggregator → HorizonFeatureSnapshot                │
-│  per-feature warm/stale dicts; z-score / percentile        │
-│  views are feature_id keys inside `values`                 │
-└──────────────────────┬─────────────────────────────────────┘
-                       │ SIGNAL_GATE
-┌──────────────────────▼─────────────────────────────────────┐
-│              SIGNAL LAYER (Layer 2)                        │
-│  HorizonSignalEngine: regime_gate eval                     │
-│    HorizonSignal.evaluate(snapshot, regime, params)        │
-│  Signal: direction, strength, edge_estimate_bps,           │
-│           trend_mechanism, expected_half_life_seconds      │
-└──────────────────────┬─────────────────────────────────────┘
-                       │ CROSS_SECTIONAL (PORTFOLIO only)
-┌──────────────────────▼─────────────────────────────────────┐
-│            COMPOSITION LAYER (Layer 3)                     │
-│  UniverseSynchronizer → CrossSectionalContext              │
-│  CompositionEngine:                                         │
-│    PortfolioAlpha.construct(ctx, params)                   │
-│      → CrossSectionalRanker (decay-weighted, capped)       │
-│      → FactorNeutralizer (factor exposures)                │
-│      → SectorMatcher (long/short pairing)                  │
-│      → TurnoverOptimizer (cvxpy QP, optional)              │
-│  Output: SizedPositionIntent + mechanism_breakdown         │
-└──────────────────────┬─────────────────────────────────────┘
-                       │ M5: RISK_CHECK
-┌──────────────────────▼─────────────────────────────────────┐
-│                  RISK ENGINE                               │
-│  check_signal()      → RiskVerdict (per-symbol path)       │
-│  check_order()       → RiskVerdict (post-construction)     │
-│  check_sized_intent()→ per-leg veto on PORTFOLIO intent    │
-│  Position limits │ drawdown │ RiskLevel SM (R0→R4)         │
-│  HazardExitController consumes RegimeHazardSpike           │
-└──────────────────────┬─────────────────────────────────────┘
-                       │ M6 → M7 → M8 → M9
-┌──────────────────────▼─────────────────────────────────────┐
-│              EXECUTION LAYER                               │
-│  OrderRouter.submit(OrderRequest)                          │
-│  OrderRouter.poll_acks() → OrderAck[OrderAckStatus]        │
-│  Backtest: BacktestOrderRouter / PassiveLimitOrderRouter   │
-│  Paper:    IBOrderRouter + IBGatewayConnection             │
-│            (execution/paper_backend.py)                    │
-│  Live:     no dedicated backend yet (live_router.py is a   │
-│            stub raising NotImplementedError; bootstrap     │
-│            raises NotImplementedError for LIVE mode)       │
-└──────────────────────┬─────────────────────────────────────┘
-                       │ M9 → M10
-┌──────────────────────▼─────────────────────────────────────┐
-│             PORTFOLIO / POSITION                           │
-│  PositionStore.update() → PositionUpdate event             │
-│  TradeJournal.record() → TradeRecord                       │
-└──────────────────────┬─────────────────────────────────────┘
-                       │
-┌──────────────────────▼─────────────────────────────────────┐
-│              MONITORING & LOGGING                          │
-│  MetricEvent (tick_to_decision_latency_ns)                 │
-│  Alert / AlertSeverity │ StateTransition events            │
-│  KillSwitch │ MetricCollector │ AlertManager               │
-└────────────────────────────────────────────────────────────┘
+HorizonFeatureSnapshot + RegimeState
+  → SIGNAL_GATE: regime_gate (AST DSL) → HorizonSignal.evaluate()
+  → Signal (direction, strength, edge_estimate_bps,
+             trend_mechanism, expected_half_life_seconds)
+  → M4 drain → PositionSizer → IntentTranslator → M5 risk
 ```
 
-The historical per-tick `FeatureVector` / `FeatureEngine.update` /
-`SignalEngine.evaluate` / `CompositeFeatureEngine` /
-`CompositeSignalEngine` / `AlphaModule.evaluate` contracts were
-retired in Workstream D.2. Canonical D.2-retirement record:
-`.cursor/rules/platform-invariants.mdc` glossary entry for `feature`.
+PORTFOLIO construction is downstream — see [composition-layer skill](../composition-layer/SKILL.md).
+
+D.2 retired the per-tick `FeatureVector` path; canonical Layer-2 input is
+`HorizonFeatureSnapshot` only (see platform-invariants glossary).
 
 ---
 
-## Data Layer
+## Mechanism-aware sensors (G16 fingerprint map)
 
-### Massive API Integration
+Layer-1 sensors that anchor SIGNAL alpha `depends_on_sensors` /
+`l1_signature_sensors`. Full catalog (registered vs dormant): [feature-engine skill](../feature-engine/SKILL.md).
 
-**Real-time feeds (WebSocket):**
-- `T.*` — Trade messages
-- `Q.*` — NBBO quote messages
-- `AM.*` — Per-minute aggregates (secondary)
-
-**Historical data (REST):**
-- `/v3/quotes/{ticker}` — Historical NBBO quotes (nanosecond)
-- `/v3/trades/{ticker}` — Historical trades
-- `/v2/aggs/ticker/{ticker}/range/...` — Aggregated bars
-
-**Subscription tier**: Advanced Stock — real-time trades + quotes,
-full historical access, 5 concurrent WebSocket connections.
-
-### Data Normalization
-
-| Field | Normalization |
-|-------|--------------|
-| Timestamps | Convert to exchange time; track Massive receipt delay |
-| Prices | Adjust for splits (Massive adjustment factors) |
-| Sizes | Normalize to shares (not lots) |
-| Conditions | Parse trade-condition codes; filter irregular |
-| Exchanges | Map exchange codes; flag SIP consolidated vs direct |
-
-### Canonical Event Types
-
-Raw Massive data is normalized into typed events (`core/events.py`):
-
-- `NBBOQuote` — bid/ask price+size, exchange timestamp
-- `Trade` — price, size, conditions, aggressor side
-
-These flow through the `MarketDataNormalizer` protocol
-(`ingestion/normalizer.py`). Per-symbol data health is tracked by the
-`DataHealth` SM (`ingestion/data_integrity.py`):
-`HEALTHY ↔ {GAP_DETECTED (WS seq / disconnect), HALTED (LULD / regulatory halt)}`; `CORRUPTED` is terminal (four states).
-
-### Replay Engine
-
-For backtesting, replay historical data through `MarketDataSource`
-(the same protocol as live, behind `ExecutionBackend`):
-
-- Same downstream code path (sensor → aggregator → signal → composition)
-- `SimulatedClock` (`core/clock.py`) provides injectable time
-- No future-data leakage — enforced by `SimulatedClock.set_time()`
-  monotonicity guard and causal ordering via `MicroState` pipeline
-- Variable-speed replay by controlling `SimulatedClock.set_time()` calls
+| Family | Primary fingerprints (rule 5) | Other family-related |
+|--------|------------------------------|----------------------|
+| KYLE_INFO | `kyle_lambda_60s`, `micro_price` | `ofi_ewma` |
+| INVENTORY | `quote_replenish_asymmetry` | `inventory_pressure` |
+| HAWKES_SELF_EXCITE | `hawkes_intensity` | `trade_through_rate` |
+| LIQUIDITY_STRESS | `vpin_50bucket`, `realized_vol_30s` | `liquidity_stress_score`, `spread_z_30d`, `quote_hazard_rate`, `quote_flicker_rate` |
+| SCHEDULED_FLOW | `scheduled_flow_window` | — |
 
 ---
 
-## Sensor Layer (Layer 1)
+## Horizon snapshot quality (Layer-2 gate)
 
-> Implemented as the `Sensor` protocol + `SensorRegistry` framework
-> (`feelies.sensors`). Sensors fan out at the `SENSOR_UPDATE`
-> sub-state between M2 and M3. See the feature-engine skill for the
-> full sensor + horizon-aggregator contract.
+From [feature-engine skill](../feature-engine/SKILL.md); common authoring mistakes:
 
-### Design Principles
-
-- **Incremental updates**: `Sensor.update()` processes one
-  event at a time; no window recomputation
-- **Per-symbol isolation**: state is per-symbol; no cross-symbol
-  leakage inside a sensor
-- **Bounded memory**: per-sensor footprint configurable
-- **Determinism**: same `(NBBOQuote | Trade)` sequence → identical
-  `SensorReading` stream (Inv-5)
-
-### Mechanism-Aware Sensor Catalog (v0.3)
-
-Per the trend-mechanism taxonomy (G16). Sensor ids here are the actual
-implementations under `src/feelies/sensors/impl/`; for the authoritative
-catalog and the dormant-vs-registered split see the feature-engine skill:
-
-| Family | Sensors (implemented) |
-|--------|----------------------|
-| KYLE_INFO | `kyle_lambda_60s`, `ofi_ewma`, `micro_price` |
-| INVENTORY | `inventory_pressure`, `quote_replenish_asymmetry` |
-| HAWKES_SELF_EXCITE | `hawkes_intensity`, `trade_through_rate` |
-| LIQUIDITY_STRESS | `liquidity_stress_score`, `spread_z_30d`, `quote_hazard_rate`, `quote_flicker_rate` |
-| SCHEDULED_FLOW | `scheduled_flow_window` |
-| Composite | `ofi_ewma`, `micro_price`, `realized_vol_30s` |
-| Dormant (implemented, not in reference `platform.yaml`) | `vpin_50bucket`, `snr_drift_diffusion`, `structural_break_score` |
+- `warm` / `stale` are **per-`feature_id` dicts** — never `if snapshot.warm:`
+- `values` contains warm features only; cold keys are absent (use `.get()`)
+- Entry suppressed when any `required_warm_feature_ids` is not warm or is stale; exits permitted when stale
 
 ---
 
-## Horizon Aggregation (Layer 1.5)
-
-> Canonical owner: **feature-engine skill**. The summary below is for
-> microstructure-alpha cross-reference only; for the full sensor +
-> horizon-aggregator contract see `feature-engine/SKILL.md`.
-
-### `HorizonScheduler` + `HorizonAggregator`
-
-`HorizonScheduler` detects boundary crossings via pure integer math
-against `session_open_ns` for each configured horizon
-(`{30, 120, 300, 900, 1800}` seconds canonical Phase-2 set). On each
-`HorizonTick`, `HorizonAggregator` fans in the most recent
-`SensorReading` per (symbol, sensor_id) and emits a
-`HorizonFeatureSnapshot` carrying `values` (where z-score / percentile
-views are `feature_id` keys, e.g. `<sensor_id>_zscore`) and
-per-feature warm/stale quality dicts.
-
-### Quality Gates
-
-- `warm: dict[str, bool]` — per `feature_id`. `HorizonSignalEngine`
-  suppresses entry when **any** of the alpha's
-  `required_warm_feature_ids` is `False`. Never gate on
-  `if snapshot.warm:` — a non-empty dict is always truthy; gate on the
-  specific `feature_id` keys you consume.
-- `stale: dict[str, bool]` — per `feature_id`; `True` when the
-  feature's input sensor has not produced a *warm* reading within the
-  feature's horizon window. Entry suppressed, exit allowed
-  (conservative).
-- `boundary_index: int` — deterministic ordering key for parity hashes.
-
----
-
-## Signal Layer (Layer 2)
-
-### `HorizonSignal` Contract
+## Signal contract summary
 
 ```python
 class HorizonSignal(Protocol):
@@ -234,228 +58,36 @@ class HorizonSignal(Protocol):
     ) -> Signal | None: ...
 ```
 
-`evaluate()` is a **pure function**. `HorizonSignalEngine` invokes it
-once per `(alpha_id, symbol, boundary_index)` after the alpha's
-`regime_gate` resolves to ON.
-
-### Signal Output
-
-```python
-@dataclass(frozen=True, kw_only=True)
-class Signal(Event):
-    symbol: str
-    strategy_id: str
-    direction: SignalDirection                  # LONG, SHORT, FLAT
-    strength: float                              # [0, 1]
-    edge_estimate_bps: float                     # > 1.5 × round_trip_cost (Inv-12)
-    trend_mechanism: TrendMechanism | None       # G16 — populated for schema-1.1
-    expected_half_life_seconds: int              # G16 — 0 means unspecified
-    metadata: dict[str, Any]
-```
-
-`FLAT` signals are handled by the `IntentTranslator`: when there is
-no position to exit, the translator returns `NO_ACTION`, causing the
-pipeline to skip from M4 directly to M10 — before the risk check at
-M5.
-
-### Regime Gate Purity (G4)
-
-`signals/regime_gate.py` parses the alpha's `regime_gate:` block into
-a safe AST-evaluated boolean DSL. Bindings drawn from `RegimeState`
-posteriors and the live sensor cache. Hysteresis state is per
-`(alpha_id, symbol)`. Whitelisted AST nodes only — `Attribute`,
-free-form `Call`, `Lambda`, `Subscript`, `ListComp`, etc. raise
-`UnsafeExpressionError` at compile time.
-
-### Cost Arithmetic (G12)
-
-The `cost_arithmetic:` block discloses `edge_estimate_bps`,
-`half_spread_bps`, `impact_bps`, `fee_bps`, and `margin_ratio`.
-Validated by `alpha/cost_arithmetic.py`:
-
-- `margin_ratio ≥ 1.5` (Inv-12)
-- Disclosed margin reconciles with components within ±5%
-
-The platform refuses to load any alpha with `margin_ratio < 1.5`.
+- Pure function — no sizing, routing, or risk (Inv-5 parity hash scope)
+- Single `horizon_seconds` per alpha (G3/G16)
+- `cost_arithmetic:` margin_ratio ≥ 1.5, reconciles ±5% (G12)
+- `trend_mechanism:` required under default strict mode (G16)
+- `hazard_exit.enabled: true` → `HazardExitController` (see [regime-detection](../regime-detection/SKILL.md) + [risk-engine](../risk-engine/SKILL.md))
 
 ---
 
-## Composition Layer (Layer 3)
+## Research vs production parity
 
-> See the composition-layer skill for the full contract. Summary:
-> `PortfolioAlpha` declares a `universe`, `depends_on_signals`,
-> `factor_neutralization`, and emits a `SizedPositionIntent` via
-> `construct(ctx, params)` (`composition/protocol.py`).
-> `CompositionEngine` runs the rank → neutralize
-> → sector → optimize → cap pipeline and emits
-> `SizedPositionIntent` with `mechanism_breakdown`. `RiskEngine.check_sized_intent`
-> decomposes it into per-leg `OrderRequest`s with per-leg veto
-> semantics.
+Shared tick pipeline; mode swap is only `ExecutionBackend`:
 
----
+| Mode | Clock | Orders |
+|------|-------|--------|
+| RESEARCH | `SimulatedClock` | None (`run_research`) |
+| BACKTEST | `SimulatedClock` | Simulated router |
+| PAPER | `WallClock` | IB Gateway |
 
-## Execution Layer
-
-> Implemented behind `ExecutionBackend` (`execution/backend.py`),
-> which composes `MarketDataSource` + `OrderRouter`. Backtest and
-> live modes provide different `OrderRouter` implementations; the
-> core pipeline is shared.
-
-### Order Lifecycle
-
-Orders flow through the 9-state `OrderState` SM
-(`execution/order_state.py`):
-`CREATED → SUBMITTED → ACKNOWLEDGED → {PARTIALLY_FILLED, FILLED,
-CANCEL_REQUESTED, REJECTED, EXPIRED, CANCELLED}`.
-See `order-lifecycle.md` (live-execution skill) for the full reference.
-
-Fill events arrive as `OrderAck` events with typed `OrderAckStatus`
-(ACKNOWLEDGED, PARTIALLY_FILLED, FILLED, CANCELLED, REJECTED, EXPIRED).
-
-### Backtest Routers
-
-Two backtest routers are available, selected via `execution_mode`:
-
-- `BacktestOrderRouter` (`execution_mode: market`) — immediate
-  mid-price fills with configurable latency
-- `PassiveLimitOrderRouter` (`execution_mode: passive_limit`) —
-  deterministic queue-position fill model with through-fill,
-  level-fill, timeout cancellation; passive fills charge zero spread
-  cost and apply a maker rebate
-
-The stochastic 3-tier fill model (slippage, adverse selection)
-remains a design target — see `fill-model.md` (backtest-engine skill).
-
-### Latency Model
-
-```
-total = massive_delay + network_jitter + compute_time + broker_delay
-
-massive_delay  ~ LogNormal(mu=3.0, sigma=0.5) [ms]
-network_jitter ~ Uniform(1, 5) [ms]
-compute_time   ~ deterministic (measured via tick_to_decision_latency_ns)
-broker_delay   ~ LogNormal(mu=2.0, sigma=0.8) [ms]
-```
-
-Add stochastic latency in backtest; do not use fixed latency
-assumptions. `SimulatedClock` provides the time base; latency
-injection advances simulated time without violating monotonicity.
+Before LIVE: all eleven parity hashes (L1–L6) + F-2 promotion gates —
+see [testing-validation](../testing-validation/SKILL.md) and
+[alpha-lifecycle](../alpha-lifecycle/SKILL.md).
 
 ---
 
-## Risk Engine
+## Further reading
 
-> Implemented as the `RiskEngine` protocol with three entry points:
-> `check_signal()` at M5 (per-symbol SIGNAL path),
-> `check_order()` at M6 (post-construction final gate), and
-> `check_sized_intent()` at the CROSS_SECTIONAL sub-state (per-leg
-> veto on PORTFOLIO intent). All return `RiskVerdict` containing a
-> `RiskAction` (ALLOW, REJECT, SCALE_DOWN, FORCE_FLATTEN).
-> Exhaustiveness guards in the orchestrator ensure no unhandled
-> action values.
-
-### Risk Escalation
-
-The `RiskLevel` SM (`risk/escalation.py`) provides 5 monotonic states:
-`NORMAL → WARNING → BREACH_DETECTED → FORCED_FLATTEN → LOCKED`.
-`_escalate_risk()` walks all intermediate transitions and emits a
-`KillSwitchActivation` event.
-
-### Hazard Exit
-
-`HazardExitController` (`risk/hazard_exit.py`) consumes
-`RegimeHazardSpike` events from `RegimeHazardDetector` and emits
-`OrderRequest.reason ∈ {"HAZARD_SPIKE", "HARD_EXIT_AGE"}` to flatten
-open positions when departure exceeds the per-alpha
-`hazard_score_threshold`. Wired behind alpha-level
-`hazard_exit.enabled: true` (default off).
-
-### Automatic Shutdown Triggers
-
-1. Daily PnL exceeds drawdown kill-switch threshold (configurable)
-2. Latency exceeds 200 ms for > 30 seconds
-3. Data-feed gap > 5 seconds during market hours
-4. Execution errors > 3 in any 10-minute window
-5. Position-reconciliation mismatch detected
-6. Manual override via `KillSwitch.activate()`
-
-See `safety-controls.md` (live-execution skill) for detailed
-implementation.
-
----
-
-## Portfolio Construction
-
-### Position Sizing
-
-Volatility-scaled (`risk/position_sizer.py`):
-
-```
-position_size = (target_risk / realized_vol) × confidence × capital
-```
-
-The default `BudgetBasedSizer` reads `RegimeEngine.current_state` and
-applies regime-dependent scaling.
-
-### Factor Exposure Management
-
-Cross-sectional construction is enforced at Layer 3 by the
-composition pipeline:
-
-- Market beta: net beta < 0.1 (near market-neutral)
-- Sector: enforced via `SectorMatcher`
-- Size / value / momentum: enforced via `FactorNeutralizer` against
-  the parquet-loaded `FactorLoadings` artifact (`factor_loadings_max_age_seconds`
-  guard at bootstrap)
-- Mechanism concentration: per-family `max_share_of_gross` cap (G16)
-
----
-
-## Monitoring & Logging
-
-> Metrics are emitted as `MetricEvent` events via `MetricCollector`
-> protocol. Alerts as `Alert` events (with `AlertSeverity`: INFO,
-> WARNING, CRITICAL, EMERGENCY) via `AlertManager`. Both flow through
-> the event bus.
-
-### Real-Time Metrics
-
-| Metric | Frequency | Alert |
-|--------|-----------|-------|
-| PnL (realized + unrealized) | Per-second | Daily loss limit |
-| `tick_to_decision_latency_ns` | Per-tick (HISTOGRAM) | > 100 ms sustained |
-| Fill rate vs expected | Per-trade | < 50% of expected |
-| Signal IC | Hourly | < 0 for 2+ consecutive hours |
-| Regime state per symbol | Per-tick | Regime shift detected |
-| `DataHealth` per symbol | Per-tick | `GAP_DETECTED` or `CORRUPTED` |
-
-### Research vs Production
-
-Both share the same core pipeline (M0–M10 backbone with Phase-2/3/4
-sub-states), differing only in `ExecutionBackend`:
-
-```
-RESEARCH (MacroState.RESEARCH_MODE):
-- run_research(job) on Orchestrator
-- SimulatedClock for injectable time
-- Full historical data via MarketDataSource (replay)
-- No OrderRouter — orders never submitted
-
-PRODUCTION (MacroState.LIVE_TRADING_MODE):
-- run_live() on Orchestrator (requires RiskLevel == NORMAL)
-- WallClock for real time
-- Live data via MarketDataSource (WebSocket)
-- Live OrderRouter (broker API)
-- Frozen alpha YAML (until scheduled update)
-- Full audit logging via EventLog, TradeJournal, PromotionLedger
-```
-
-Shared logic guarantees backtest/live parity (Inv-9). Never deploy
-research code directly. Production code must be:
-
-- Reviewed for correctness
-- Tested against the eleven locked parity hashes (L1–L6; see the testing-validation skill)
-- Validated against backtest results (paper-window evidence in F-2)
-- Promoted via the `AlphaLifecycle` SM (RESEARCH → PAPER → LIVE @
-  SMALL_CAPITAL → LIVE @ SCALED) with structured evidence
-- Monitored for divergence from expected behavior
+| Topic | Skill |
+|-------|-------|
+| Full pipeline diagram | system-architect |
+| Sensor + aggregator detail | feature-engine |
+| Regime gate DSL bindings | regime-detection |
+| Fill / execution backends | backtest-engine, live-execution |
+| Research methodology | [research-protocol.md](research-protocol.md) |

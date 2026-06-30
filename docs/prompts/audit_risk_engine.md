@@ -26,14 +26,34 @@ file/line citations, severity, and prioritized recommendations.
 
 ---
 
+## Agent context (mandatory)
+
+| Step | Resource |
+|------|----------|
+| 1 | `.cursor/rules/platform-invariants.mdc` — **Inv-5, 11**; glossary: sized position intent, hazard exit |
+| 2 | `.cursor/rules/karpathy-guidelines.mdc` |
+| 3 | `.cursor/skills/README.md` |
+| 4 | `.cursor/skills/risk-engine/SKILL.md` (**owner**) — read **Not shipped** before filing P0 on tiered drawdown / portfolio governor |
+| 5 | `.cursor/skills/regime-detection/SKILL.md` — hazard spikes |
+| 6 | `.cursor/skills/composition-layer/SKILL.md` — `SizedPositionIntent` upstream |
+
+
+**Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
+targets — P0 only if code/tests claim they are live.
+
+**Finding bar:** P0/P1 items must cite `Inv-N` + `path:line`. Read-only pass per
+`.cursor/rules/karpathy-guidelines.mdc`.
+
+---
+
 ## Platform context (read first)
 
-1. Read `.cursor/skills/risk-engine/SKILL.md` end-to-end.
-2. Read `.cursor/skills/regime-detection/SKILL.md` § on hazard spikes, and
-   `.cursor/skills/composition-layer/SKILL.md` § on `SizedPositionIntent`.
-3. Read `docs/three_layer_architecture.md` §5.7 (`SizedPositionIntent`), §7 (micro SM
+**Docs and config** (after Agent context):
+
+1. Read `docs/three_layer_architecture.md` §5.7 (`SizedPositionIntent`), §7 (micro SM
    stages M5/M6).
-4. Skim `platform.yaml` risk keys and any alpha `hazard_exit:` / sizing blocks.
+2. Skim `platform.yaml` risk keys and any alpha `hazard_exit:` / sizing blocks.
+
 
 **Architecture (contractual):**
 
@@ -160,7 +180,8 @@ Each item: component, `file:line`, one-sentence fix, expected impact.
 2. Audit fail-safe paths first (grep every scale/multiplier; prove ≤ 1.0× autonomous).
 3. Audit per-leg veto by tracing one multi-leg intent.
 4. Audit escalation SM and hazard exit.
-5. Run **read-only** checks only:
+5. Cross-check findings against the owning skill's **Not shipped** sections before filing P0 on absent features.
+6. Run **read-only** checks only:
    - `uv run pytest tests/risk/ -q`
    - `uv run pytest tests/acceptance/test_bt15_buying_power.py tests/determinism/test_hazard_exit_replay.py -q`
    - `uv run pytest tests/integration/test_hazard_exit_e2e.py -q`

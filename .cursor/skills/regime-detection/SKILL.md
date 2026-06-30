@@ -1,15 +1,7 @@
 ---
 name: regime-detection
 description: >
-  Platform-level regime detection + hazard-spike service for the
-  feelies platform. Owns the `RegimeEngine` protocol, the
-  `RegimeState` event, the state taxonomy, the
-  `RegimeHazardDetector` (and the `RegimeHazardSpike` event consumed
-  by `HazardExitController`), and the writer/reader contract. Use
-  when designing regime-aware components, integrating regime
-  posteriors into risk or sizing, extending the state taxonomy,
-  swapping HMM implementations, or reasoning about hazard-detection
-  semantics, idempotency, or consumer contracts.
+  Platform `RegimeEngine` and `RegimeHazardSpike` service. Use for regime taxonomy, hazard detection, and posteriors.
 ---
 
 # Regime Detection — Platform Service
@@ -393,15 +385,4 @@ to audit regime classification accuracy over time.
 
 ## Integration Points
 
-| Dependency | Interface | Direction |
-|------------|-----------|-----------|
-| Orchestrator | `posterior()` at M2 | Provides |
-| Risk engine | `current_state()` | Provides |
-| Position sizer | `current_state()` | Provides |
-| Regime-gate DSL | `current_state`, `state_names` | Provides |
-| `HazardExitController` | `RegimeHazardSpike` | Provides (via the hazard detector) |
-| Event bus | `RegimeState`, `RegimeHazardSpike` published | Emits |
-| Platform config | `regime_engine: str` selects implementation | Consumes |
-| Engine registry | `register_engine`, `get_regime_engine` | Provides |
-| Post-trade forensics | `RegimeState` for `RegimeBucket` attribution | Consumed by forensics |
-| Testing & Validation | L5 hazard-parity hash; idempotency property tests | Provides |
+See [skill index](../README.md). **Non-obvious edges:** writer of `RegimeState` / `RegimeHazardSpike`; hazard spikes are exit-direction hints only (Inv-11).

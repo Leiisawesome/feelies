@@ -13,18 +13,28 @@ code changes in the audit pass**.
 4. (Optional) paste one of the prompt's "Optional follow-ups" to turn findings into a
    scoped, fix-only PR plan.
 
-Each prompt shares the same skeleton: Mission → Platform context → Scope → Audit
-dimensions (A–G) → Working method → Output format → Quality bar → Optional follow-ups.
+Each prompt shares the same skeleton: Mission → **Agent context (mandatory)** → Platform
+context → Scope → Audit dimensions (A–G) → Working method → Output format → Quality bar →
+Optional follow-ups.
 
 ## Conventions
 
 - **Read-only.** Audits never modify production code, baselines, or the promotion ledger.
+- **Agent context first.** Every `audit_*.md` opens with **Agent context (mandatory)** —
+  a ordered read list: platform invariants → karpathy guidelines → skill index → owning
+  skill → cross-skill touchpoints. Maintenance table:
+  [`_audit_agent_context.md`](_audit_agent_context.md).
+- **Rules + skills, not memory.** Findings must cite **Inv-N** and `path:line`. Use
+  `.cursor/skills/README.md` for canonical parity-hash and promotion tables — do not
+  duplicate them in audit reports.
+- **Shipped vs Not shipped.** Skill sections marked **Not shipped** are design targets.
+  File P0 for absence only when code, tests, or operator docs claim the feature is live.
 - **Ownership vs touchpoint.** Every source file has exactly **one owning audit** that
   deep-dives it; other audits may *reference* it as a touchpoint but defer critique via an
   "Out of scope" pointer. This prevents two parallel audits from conflicting over the same
   file. The shared files and their owners are listed under [Overlaps](#overlaps-shared-files).
-- **Invariant-anchored.** Findings are tied to the platform invariants in
-  `.cursor/rules/platform-invariants.mdc` (Inv-1 … Inv-13).
+- **Invariant-anchored.** Primary invariant lens per audit is listed in Agent context;
+  full contract: `.cursor/rules/platform-invariants.mdc` (Inv-1 … Inv-13).
 
 ## The audits
 
@@ -130,3 +140,10 @@ split-ownership package (`execution/`, `alpha/`, `signals/`, `cli/`, `portfolio/
 no explicit owner, or when a new top-level package has no coverage-map entry. The guard
 exists because the G-1…G-7 position-management work (2026-06-08…10) landed ~15 commits
 of capital-path code with no prompt owner before this index caught up.
+
+**Any PR that adds or materially edits an `audit_*.md` prompt must:**
+
+- include **Agent context (mandatory)** per [`_audit_agent_context.md`](_audit_agent_context.md)
+- include the **Not shipped** cross-check in Working method (or Suggested investigation
+  order for `audit_data_ingestion.md`)
+- pass `tests/docs/test_audit_prompt_structure.py`

@@ -27,13 +27,35 @@ file/line citations, severity, and prioritized recommendations.
 
 ---
 
+## Agent context (mandatory)
+
+| Step | Resource |
+|------|----------|
+| 1 | `.cursor/rules/platform-invariants.mdc` — **Inv-5, 6, 7, 8, 9, 10**; glossary: replay, strict typing |
+| 2 | `.cursor/rules/karpathy-guidelines.mdc` |
+| 3 | `.cursor/skills/README.md` — layer topology canonical → system-architect |
+| 4 | `.cursor/skills/system-architect/SKILL.md` (**owner**) |
+| 5 | `.cursor/skills/testing-validation/SKILL.md` — which parity hashes depend on kernel ordering |
+
+This audit **owns** `bootstrap.py` wiring; other audits treat it as a touchpoint only.
+
+
+**Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
+targets — P0 only if code/tests claim they are live.
+
+**Finding bar:** P0/P1 items must cite `Inv-N` + `path:line`. Read-only pass per
+`.cursor/rules/karpathy-guidelines.mdc`.
+
+---
+
 ## Platform context (read first)
 
-1. Read `.cursor/skills/system-architect/SKILL.md` end-to-end.
-2. Read `docs/three_layer_architecture.md` §7 (Micro SM extension — §7.2 transitions,
+**Docs and config** (after Agent context):
+
+1. Read `docs/three_layer_architecture.md` §7 (Micro SM extension — §7.2 transitions,
    §7.3 formal rules, §7.4 HorizonScheduler, §7.5 UniverseSynchronizer), §12 (determinism
    & parity).
-3. Read `.cursor/rules/platform-invariants.mdc` Inv-5, 6, 7, 8, 10.
+
 
 **Architecture (contractual):**
 
@@ -198,7 +220,8 @@ Each item: component, `file:line`, one-sentence fix, expected impact on determin
 4. Trace one event end-to-end for causality.
 5. Audit `bootstrap.py` mode wiring: diff the BACKTEST / PAPER / LIVE component graphs and
    confirm divergence is confined to `ExecutionBackend`.
-6. Run **read-only** checks only:
+6. Cross-check findings against the owning skill's **Not shipped** sections before filing P0 on absent features.
+7. Run **read-only** checks only:
    - `uv run pytest tests/kernel/ tests/bus/ tests/core/test_state_machine.py tests/bootstrap/ -q`
    - `uv run pytest tests/causality/test_anti_lookahead.py tests/determinism/ -q`
    Do not modify production code.

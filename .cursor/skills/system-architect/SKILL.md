@@ -1,13 +1,7 @@
 ---
 name: system-architect
 description: >
-  Foundational architecture for the feelies intraday platform: three alpha
-  layers (SENSOR / SIGNAL / PORTFOLIO) anchored to horizon-bucketed snapshots,
-  five state machines, single-`ExecutionBackend` mode swap, and end-to-end
-  determinism. Use when designing components, defining layer boundaries,
-  reasoning about cross-layer interactions, micro-state ordering, replay
-  determinism, or fail-safe enforcement on L1 NBBO data from Massive
-  (formerly Polygon.io).
+  Platform foundation: three alpha layers, five SMs, determinism, and `ExecutionBackend`. Use for layer boundaries and replay.
 ---
 
 # System Architect — Platform Foundation
@@ -34,12 +28,7 @@ a load-time failure (gate G1).
 | **SIGNAL** (Layer 2) | `feelies.signals` | 30 s – 30 min | `Signal` | microstructure-alpha |
 | **PORTFOLIO** (Layer 3) | `feelies.composition` | 5 – 30 min | `SizedPositionIntent` | composition-layer |
 
-`LEGACY_SIGNAL` was a fourth (per-tick) layer retired in Workstream D.2;
-the loader rejects `layer: LEGACY_SIGNAL` outright. The legacy
-per-tick `FeatureVector` event, `FeatureEngine.update`, `SignalEngine.evaluate`,
-`CompositeFeatureEngine`, `CompositeSignalEngine`, and
-`AlphaModule.evaluate` were all deleted in D.2 PR-2b-iv — any
-documentation or skill referring to them is stale.
+Layer-2 input is `HorizonFeatureSnapshot` only; D.2 retired `FeatureVector` / `LEGACY_SIGNAL`.
 
 The canonical Layer-2 input is **`HorizonFeatureSnapshot`** (emitted by
 `HorizonAggregator` on `HorizonTick` boundary crossings). The canonical
@@ -359,24 +348,9 @@ gates `unlock_from_lockdown()`.
 ## Determinism (Inv-5)
 
 Eleven locked **parity hashes** across six levels guard end-to-end
-determinism. Each is a SHA-256 over the ordered event stream at one
-layer, asserted by an in-process pytest replay test under
-`tests/determinism/`. The canonical registry is
-`tests/determinism/parity_manifest.py:LOCKED_PARITY_BASELINES`:
-
-| Level | Stream | Test |
-|-------|--------|------|
-| L1 | `SensorReading` (v0.2 fixture) | `test_sensor_reading_replay.py` |
-| L1 (v0.3) | `SensorReading` (v0.3 fixture) | `test_v03_sensor_replay.py` |
-| L2 | `HorizonTick` | `test_horizon_tick_replay.py` |
-| L2 | `Signal` (SIGNAL layer) | `test_signal_replay.py` |
-| L3 | `HorizonFeatureSnapshot` | `test_horizon_feature_snapshot_replay.py` |
-| L3 | `SizedPositionIntent` (decay OFF) | `test_sized_intent_replay.py` |
-| L3 | `SizedPositionIntent` (decay ON) | `test_sized_intent_with_decay_replay.py` |
-| L4 | per-leg `OrderRequest` from PORTFOLIO | `test_portfolio_order_replay.py` |
-| L4 | hazard-exit `OrderRequest` | `test_hazard_exit_replay.py` |
-| L5 | `RegimeHazardSpike` | `test_regime_hazard_replay.py` |
-| L6 | `RegimeState` | `test_regime_state_replay.py` |
+determinism (SHA-256 over ordered event streams, asserted under
+`tests/determinism/`). **Canonical table:** testing-validation skill
+(registry: `tests/determinism/parity_manifest.py:LOCKED_PARITY_BASELINES`).
 
 Determinism is structurally supported by:
 - `SimulatedClock.set_time()` rejecting backward movement

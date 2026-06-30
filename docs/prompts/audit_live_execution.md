@@ -25,13 +25,34 @@ file/line citations, severity, and prioritized recommendations.
 
 ---
 
+## Agent context (mandatory)
+
+| Step | Resource |
+|------|----------|
+| 1 | `.cursor/rules/platform-invariants.mdc` — **Inv-9, 11**; glossary: simulation, hazard exit |
+| 2 | `.cursor/rules/karpathy-guidelines.mdc` |
+| 3 | `.cursor/skills/README.md` |
+| 4 | `.cursor/skills/live-execution/SKILL.md` (**owner**) — **Not shipped** for circuit breaker / throttle |
+| 5 | `.cursor/skills/backtest-engine/SKILL.md` — parity contract |
+| 6 | Optional: `live-execution/order-lifecycle.md`, `safety-controls.md` |
+
+Kill-switch ownership overlaps `audit_monitoring_safety.md` — defer mechanism deep-dive there.
+
+
+**Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
+targets — P0 only if code/tests claim they are live.
+
+**Finding bar:** P0/P1 items must cite `Inv-N` + `path:line`. Read-only pass per
+`.cursor/rules/karpathy-guidelines.mdc`.
+
+---
+
 ## Platform context (read first)
 
-1. Read `.cursor/skills/live-execution/SKILL.md` end-to-end.
-2. Read `.cursor/skills/backtest-engine/SKILL.md` § on the shared `ExecutionBackend`.
-3. Read `docs/paper_rth_test_runbook.md` and `AGENTS.md` § Paper RTH.
-4. Read `.cursor/rules/platform-invariants.mdc` Inv-9 (parity), Inv-11 (fail-safe),
-   Inv-10 (clock).
+**Docs and config** (after Agent context):
+
+1. Read `docs/paper_rth_test_runbook.md` and `AGENTS.md` § Paper RTH.
+
 
 **Architecture (contractual):**
 
@@ -156,7 +177,8 @@ Each item: component, `file:line`, one-sentence fix, expected impact.
 2. Audit the `ExecutionBackend` seam for parity leakage first.
 3. Audit the order-lifecycle SM and idempotency.
 4. Audit the IB adapter and kill switch.
-5. Run **read-only** checks only:
+5. Cross-check findings against the owning skill's **Not shipped** sections before filing P0 on absent features.
+6. Run **read-only** checks only:
    - `uv run pytest tests/execution/test_order_state.py tests/execution/test_paper_backend.py tests/execution/test_router_parity.py -q`
    - `uv run pytest tests/broker/ib/test_ib_connection.py tests/broker/ib/test_ib_router.py -q`
    - `uv run pytest tests/monitoring/test_kill_switch.py -q`

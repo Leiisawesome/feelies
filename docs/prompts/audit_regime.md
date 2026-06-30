@@ -29,19 +29,38 @@ file/line citations, severity, and prioritized recommendations.
 
 ---
 
+## Agent context (mandatory)
+
+| Step | Resource |
+|------|----------|
+| 1 | `.cursor/rules/platform-invariants.mdc` — **Inv-5, 6, 11**; glossary: regime gate, hazard spike, regime |
+| 2 | `.cursor/rules/karpathy-guidelines.mdc` |
+| 3 | `.cursor/skills/README.md` |
+| 4 | `.cursor/skills/regime-detection/SKILL.md` (**owner**) |
+| 5 | `.cursor/skills/microstructure-alpha/SKILL.md` — `regime_gate:` DSL |
+| 6 | `.cursor/skills/risk-engine/SKILL.md` — hazard exits, regime scaling (consumer) |
+
+
+**Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
+targets — P0 only if code/tests claim they are live.
+
+**Finding bar:** P0/P1 items must cite `Inv-N` + `path:line`. Read-only pass per
+`.cursor/rules/karpathy-guidelines.mdc`.
+
+---
+
 ## Platform context (read first)
 
-1. Read `.cursor/skills/regime-detection/SKILL.md` end-to-end.
-2. Read `.cursor/skills/microstructure-alpha/SKILL.md` § on `regime_gate:` and
-   hysteresis.
-3. Read `.cursor/skills/risk-engine/SKILL.md` § on regime scaling and hazard exits.
-4. Read `docs/three_layer_architecture.md` §8.4 (regime gate), §12 (determinism &
+**Docs and config** (after Agent context):
+
+1. Read `docs/three_layer_architecture.md` §8.4 (regime gate), §12 (determinism &
    parity — the L6 regime-state hash), §20.3–20.7 (hazard detection / exits). The
    regime engine's writer/reader contract is documented in the regime-detection skill,
    not the architecture doc.
-5. Skim `platform.yaml` `regime_engine:` and example alpha `regime_gate:` blocks in
+2. Skim `platform.yaml` `regime_engine:` and example alpha `regime_gate:` blocks in
    `alphas/` (especially `sig_benign_midcap_v1`, `sig_inventory_revert_v1`,
    `sig_moc_imbalance_v1`).
+
 
 **Architecture (contractual):**
 
@@ -328,7 +347,8 @@ quality / risk / order safety.
 4. Audit hazard detector + orchestrator wiring third.
 5. Audit consumers last — verify contract table against code.
 6. Cross-check tests and L5 hazard parity hash.
-7. Run **read-only** checks only:
+7. Cross-check findings against the owning skill's **Not shipped** sections before filing P0 on absent features.
+8. Run **read-only** checks only:
    - `uv run pytest tests/services/test_regime_engine.py tests/services/test_regime_hazard_detector.py -q`
    - `uv run pytest tests/signals/test_regime_gate_dsl.py tests/signals/test_regime_gate_dsl_props.py -q`
    - `uv run pytest tests/determinism/test_regime_hazard_replay.py tests/determinism/test_hazard_exit_replay.py -q`

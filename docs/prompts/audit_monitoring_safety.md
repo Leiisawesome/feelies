@@ -26,14 +26,34 @@ file/line citations, severity, and prioritized recommendations.
 
 ---
 
+## Agent context (mandatory)
+
+| Step | Resource |
+|------|----------|
+| 1 | `.cursor/rules/platform-invariants.mdc` — **Inv-11**; glossary: hazard exit |
+| 2 | `.cursor/rules/karpathy-guidelines.mdc` |
+| 3 | `.cursor/skills/README.md` |
+| 4 | `.cursor/skills/live-execution/SKILL.md` (**owner**) — `safety-controls.md` supplement |
+| 5 | `.cursor/skills/risk-engine/SKILL.md` — hazard exit controller |
+| 6 | `.cursor/skills/regime-detection/SKILL.md` — hazard spike writer |
+
+**Not shipped:** tiered circuit breaker / capital throttle tables in skills — verify against `monitoring/` code before P0.
+
+
+**Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
+targets — P0 only if code/tests claim they are live.
+
+**Finding bar:** P0/P1 items must cite `Inv-N` + `path:line`. Read-only pass per
+`.cursor/rules/karpathy-guidelines.mdc`.
+
+---
+
 ## Platform context (read first)
 
-1. Read `.cursor/skills/live-execution/SKILL.md` § on safety controls / kill switch.
-2. Read `.cursor/skills/regime-detection/SKILL.md` and `risk-engine/SKILL.md` § on hazard
-   / escalation (the upstream signals monitoring consumes).
-3. Read `docs/three_layer_architecture.md` §14 (monitoring & observability).
-4. Read `.cursor/rules/platform-invariants.mdc` Inv-11 (fail-safe — the binding lens),
-   Inv-10 (clock).
+**Docs and config** (after Agent context):
+
+1. Read `docs/three_layer_architecture.md` §14 (monitoring & observability).
+
 
 **Architecture (contractual):**
 
@@ -149,7 +169,8 @@ Each item: component, `file:line`, one-sentence fix, expected impact on safety.
 2. Audit the kill switch fail-closed behavior first (including its own error path).
 3. Audit the health SM for monotone degradation.
 4. Map trigger coverage against known failure modes; find the gaps.
-5. Run **read-only** checks only:
+5. Cross-check findings against the owning skill's **Not shipped** sections before filing P0 on absent features.
+6. Run **read-only** checks only:
    - `uv run pytest tests/monitoring/ tests/ingestion/test_ingest_health.py tests/kernel/test_data_integrity_runtime.py -q`
    - `uv run pytest tests/integration/test_paper_rth_safety.py -q` (note: paper safety path)
    Do not modify production code.

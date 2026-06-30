@@ -28,14 +28,35 @@ file/line citations, severity, and prioritized recommendations.
 
 ---
 
+## Agent context (mandatory)
+
+| Step | Resource |
+|------|----------|
+| 1 | `.cursor/rules/platform-invariants.mdc` — **Inv-5**; glossary: replay, strict typing |
+| 2 | `.cursor/rules/karpathy-guidelines.mdc` |
+| 3 | `.cursor/skills/README.md` — parity hash table canonical → this skill |
+| 4 | `.cursor/skills/testing-validation/SKILL.md` (**owner**) — L1–L6 baselines, scope locks |
+| 5 | `.cursor/skills/system-architect/SKILL.md` — ordering assumptions under test |
+
+Never re-pin baselines during the audit pass.
+
+
+**Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
+targets — P0 only if code/tests claim they are live.
+
+**Finding bar:** P0/P1 items must cite `Inv-N` + `path:line`. Read-only pass per
+`.cursor/rules/karpathy-guidelines.mdc`.
+
+---
+
 ## Platform context (read first)
 
-1. Read `.cursor/skills/testing-validation/SKILL.md` end-to-end (the eleven locked
-   baselines across six levels, perf baselines, strict-mypy / DTZ scope locks).
-2. Read `docs/three_layer_architecture.md` §12 (determinism & parity requirements),
+**Docs and config** (after Agent context):
+
+1. Read `docs/three_layer_architecture.md` §12 (determinism & parity requirements),
    §13 (testing strategy).
-3. Read `.cursor/rules/platform-invariants.mdc` Inv-5, and the **strict typing** glossary
    entry.
+
 
 **Architecture (contractual):**
 
@@ -158,7 +179,8 @@ Each item: component, `file:line`, one-sentence fix, expected impact on Inv-5 co
 2. For each baseline, open its replay test and record exactly what it hashes.
 3. Diff the set of bus event types against the set of pinned hashes → coverage gaps.
 4. Audit the scope-lock acceptance tests.
-5. Run **read-only** checks only:
+5. Cross-check findings against the owning skill's **Not shipped** sections before filing P0 on absent features.
+6. Run **read-only** checks only:
    - `uv run pytest tests/determinism/ -q`
    - `uv run pytest tests/acceptance/test_mypy_strict_scope.py -q`
    - `uv run pytest tests/causality/test_anti_lookahead.py -q`

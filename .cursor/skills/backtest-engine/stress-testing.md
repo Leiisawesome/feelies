@@ -21,7 +21,7 @@ Key infrastructure:
 
 ## Data Perturbation Protocol
 
-**Status:** design target — the perturbation injectors below
+**Not shipped:** design target — the perturbation injectors below
 (jitter / duplicate / drop / stale / spike) are not wired into the
 platform. The only implemented stress harness today is the Inv-12
 cost ×1.5 / latency ×2 stress (`src/feelies/core/inv12_stress.py`).

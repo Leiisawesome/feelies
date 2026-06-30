@@ -1,17 +1,7 @@
 ---
 name: testing-validation
 description: >
-  Testing and validation framework for system integrity across the
-  feelies platform. Owns the eleven locked parity-hash baselines across
-  six levels (L1 sensor/v0.3-sensor, L2 horizon-tick/signal, L3
-  snapshot/sized-intent decay-off+on, L4 portfolio-order/hazard-exit,
-  L5 regime-hazard-spike, L6 regime-state), the F-2
-  declarative gate matrix that powers the promotion-evidence workflow,
-  the F-1 promotion ledger contract, the per-host pinned perf
-  baselines, and the strict-mypy / DTZ scope locks. Use when designing
-  tests, defining or extending acceptance gates, debugging
-  determinism failures, or reasoning about promotion / quarantine /
-  capital-tier escalation evidence.
+  Parity hashes (L1–L6), acceptance gates, strict mypy. Use for determinism failures and promotion bars.
 ---
 
 # Testing & Validation Director
@@ -23,8 +13,10 @@ is **deny deployment** — evidence of correctness must be affirmatively
 produced, not assumed.
 
 This skill owns the eleven locked parity hashes (the canonical registry
-is `tests/determinism/parity_manifest.py`), the gate-matrix contract,
-the promotion-ledger schema, and the strict-typing / DTZ-rule scope locks.
+is `tests/determinism/parity_manifest.py`), the gate-matrix **acceptance
+criteria**, the promotion-ledger schema references, and the strict-typing
+/ DTZ-rule scope locks. Promotion wiring detail lives in the
+[alpha-lifecycle skill](../alpha-lifecycle/SKILL.md).
 
 ## Core Invariants
 
@@ -220,169 +212,36 @@ All fault-injection tests run in CI.
 
 ---
 
-## Acceptance Gates & Gate Matrix (F-2)
+## Promotion & Gate Matrix (F-1..F-6)
 
-The platform owns a **declarative gate matrix** that wires each
-`GateId` to the tuple of evidence dataclasses the gate requires. The
-matrix is `GATE_EVIDENCE_REQUIREMENTS` in `alpha/promotion_evidence.py`.
+**Canonical contract:** [alpha-lifecycle skill](../alpha-lifecycle/SKILL.md) —
+5-state SM, F-2 evidence schemas, F-5 threshold merge, F-1 ledger, F-3
+`feelies promote` CLI, F-6 capital-tier escalation.
 
-```python
-class GateId(Enum):
-    RESEARCH_TO_PAPER          # PAPER promotion gate
-    PAPER_TO_LIVE              # LIVE promotion gate (with SMALL_CAPITAL)
-    LIVE_PROMOTE_CAPITAL_TIER  # F-6 LIVE @ SMALL_CAPITAL → LIVE @ SCALED
-    LIVE_TO_QUARANTINED        # forensic-triggered demotion (consistency-only)
-    QUARANTINED_TO_PAPER       # revalidation
-    QUARANTINED_TO_DECOMMISSIONED
-```
+This skill owns **what must pass before deployment** (acceptance criteria,
+sim-vs-live divergence, parity hashes). The alpha-lifecycle skill owns
+**how promotion is wired** (APIs, ledger schema, operator CLI).
 
-### Evidence Schemas (F-2)
+Construction-time gate-matrix invariants (`_check_matrix_completeness`,
+`_check_validator_coverage`, `_check_reconstructor_coverage`) are enforced
+at import in `alpha/promotion_evidence.py` — a missing validator blocks
+platform boot.
 
-| Schema | Gate(s) | Carries |
-|--------|---------|---------|
-| `ResearchAcceptanceEvidence` | RESEARCH_TO_PAPER | acceptance-suite outcomes |
-| `CPCVEvidence` | PAPER_TO_LIVE | fold count, embargo bars, fold sharpes, mean / median sharpe, mean PnL, p-value, content-addressable `fold_pnl_curves_hash` |
-| `DSREvidence` | PAPER_TO_LIVE | observed sharpe, trials count, skew, kurtosis, deflated `dsr` + `dsr_p_value` |
-| `PaperWindowEvidence` | PAPER_TO_LIVE | trading days, sample size, slippage residual bps, fill-rate drift pct (two-sided), latency KS p, PnL compression ratio, anomalous event count |
-| `CapitalStageEvidence` | LIVE_PROMOTE_CAPITAL_TIER | tier (`SMALL_CAPITAL`), deployment days, PnL compression band, exec-quality envelopes |
-| `QuarantineTriggerEvidence` | LIVE_TO_QUARANTINED | net-alpha negative days, hit-rate residual pp, microstructure metrics breached, crowding symptoms, PnL compression 5d |
-| `RevalidationEvidence` | QUARANTINED_TO_PAPER | hypothesis re-derived, OOS walk-forward sharpe, parameter drift resolved, human signoff, revalidation notes |
+### Testing-specific promotion gates
 
-### Default `GateThresholds`
+| Stage | Minimum evidence (F-2) | Blocking thresholds (defaults) |
+|-------|------------------------|--------------------------------|
+| RESEARCH → PAPER | `ResearchAcceptanceEvidence` | Acceptance suite green |
+| PAPER → LIVE | `PaperWindowEvidence`, `CPCVEvidence`, `DSREvidence` | CPCV mean sharpe ≥ 1.0, p ≤ 0.05; DSR ≥ 1.0; paper-window bands |
+| LIVE → LIVE (tier) | `CapitalStageEvidence` | ≥ 10 deployment days; PnL compression [0.5, 1.0] |
+| LIVE → QUARANTINED | `QuarantineTriggerEvidence` | Consistency-only; demotion always commits (Inv-11) |
+| QUARANTINED → PAPER | `RevalidationEvidence` | OOS sharpe ≥ 1.0; non-empty `human_signoff` |
 
-| Field | Default | Rationale |
-|-------|---------|-----------|
-| `cpcv_min_folds` | 8 | Combinatorial purged CV minimum |
-| `cpcv_min_mean_sharpe` | 1.0 | Pre-deployment statistical significance |
-| `cpcv_max_p_value` | 0.05 | Standard significance |
-| `dsr_min` | 1.0 | Bailey-López de Prado deflated sharpe ≥ 1 |
-| `revalidation_min_oos_sharpe` | 1.0 | Non-degenerate post-quarantine performance |
-| `small_min_deployment_days` | 10 | Capital-tier escalation gate |
+Sim-vs-live metrics that feed `PaperWindowEvidence` are defined in the
+**Sim-vs-Live Divergence** section above. Forensic quarantine triggers
+align with post-trade-forensics skill defaults.
 
-Defaults can be overridden via the F-5 three-layer merge: skill-pinned
-defaults ≺ `platform.yaml: gate_thresholds:` ≺ per-alpha
-`promotion: { gate_thresholds: ... }` in the alpha YAML. Merge is
-non-mutating (`dataclasses.replace`) and runs once at registration time
-so an alpha's effective thresholds are immutable for its lifetime —
-replay determinism is preserved (audit `A-DET-02`).
-
-### Construction-Time Invariants
-
-`alpha/promotion_evidence.py` enforces:
-
-- `_check_matrix_completeness` — every `GateId` member has an entry
-- `_check_validator_coverage` — every required type has both a
-  registered validator AND a metadata `kind` string
-- `_check_reconstructor_coverage` — every metadata kind has a
-  registered reconstructor (round-trippable through
-  `evidence_to_metadata` / `metadata_to_evidence`)
-
-A contributor adding a new gate or evidence type without wiring all
-three triggers a hard **import failure** — the platform refuses to
-boot.
-
----
-
-## Promotion Pipeline (`AlphaLifecycle`)
-
-The 5-state lifecycle (`alpha/lifecycle.py`):
-
-```
-RESEARCH → PAPER → LIVE → QUARANTINED → DECOMMISSIONED
-                  (LIVE @ SMALL_CAPITAL → LIVE @ SCALED via F-6 self-loop)
-```
-
-| Stage | Capital | Duration | Exit gate |
-|-------|---------|----------|-----------|
-| RESEARCH | $0 | Until acceptance gates pass | RESEARCH_TO_PAPER (research-acceptance only) |
-| PAPER | $0 (live data, simulated execution) | ≥ 5 trading days | PAPER_TO_LIVE (paper-window + CPCV + DSR) |
-| LIVE @ SMALL_CAPITAL | ≤ 1% target allocation | ≥ 10 trading days | LIVE_PROMOTE_CAPITAL_TIER (capital-stage) |
-| LIVE @ SCALED | Target allocation | Ongoing | Demotion via LIVE_TO_QUARANTINED (ledger trigger `edge_decay_detected`, forensic auto-trigger) |
-| QUARANTINED | $0 (paper-mode only) | Until revalidation | QUARANTINED_TO_PAPER (revalidation) |
-| DECOMMISSIONED | terminal | — | — |
-
-### Two Paths
-
-`AlphaLifecycle.promote_to_paper / promote_to_live / revalidate_to_paper`
-accept **either**:
-
-1. **Legacy positional** `PromotionEvidence` (validated via
-   `check_*_gate` against `GateRequirements`) — persists `{"evidence":
-   {...}}` to the ledger
-2. **Keyword-only `structured_evidence: Sequence[object]`** (validated
-   via `validate_gate(GateId, evidences, gate_thresholds)`) — persists
-   F-2 `evidence_to_metadata(*evs)` payload
-
-Supplying both or neither raises `ValueError`. The structured path is
-the modern surface; legacy is preserved for backwards compatibility.
-
-### Quarantine Path (Inv-11 Fail-Safe)
-
-`AlphaLifecycle.quarantine` is fail-safe: any
-`validate_gate(GateId.LIVE_TO_QUARANTINED, ...)` errors are logged at WARNING level
-(spurious-trigger flag) but the demotion **always commits** so a
-forensic-layer auto-trigger can never be blocked by the validator.
-
-### Capital-Tier Escalation (F-6)
-
-`AlphaLifecycle.promote_capital_tier(evidence)` is wired as a
-`LIVE → LIVE` state-machine self-loop. The lifecycle state name does
-not change but the F-1 ledger receives a metadata-only entry with
-`trigger == PROMOTE_CAPITAL_TIER_TRIGGER ("promote_capital_tier")` —
-distinguishable from the LIVE → QUARANTINED demotion (both share
-`from_state == "LIVE"`).
-
-`AlphaLifecycle.current_capital_tier` scans `history` backwards from
-the most recent record to the most recent transition into LIVE,
-returning `SCALED` if any `promote_capital_tier` self-loop is present
-in that epoch and `SMALL_CAPITAL` otherwise. Quarantine + revalidate
-+ re-promote starts a new LIVE epoch that resets to `SMALL_CAPITAL` —
-operators must re-justify SCALED per epoch.
-
----
-
-## Promotion Ledger (F-1)
-
-`alpha/promotion_ledger.py` provides an append-only JSONL audit log
-that records every committed transition with full evidence,
-`trigger`, clock-derived `timestamp_ns`, and `correlation_id`. Wired
-into `AlphaLifecycle` via a `StateMachine.on_transition` callback so
-a ledger-write failure rolls the SM back atomically (Inv-13 + Inv-11).
-
-The ledger is constructed from `PlatformConfig.promotion_ledger_path`.
-**Forensic-only consumer contract**: production code paths must
-never read the ledger to make per-tick decisions, so ledger presence
-does not perturb replay determinism.
-
-`LEDGER_SCHEMA_VERSION` is asserted on every read.
-
-### Operator CLI (F-3)
-
-`feelies promote …` (entry point in `cli/promote.py`):
-
-| Subcommand | Purpose |
-|------------|---------|
-| `inspect <alpha_id>` | Per-alpha chronological timeline (text or `--json`) |
-| `list` | Every alpha + current state + transition count |
-| `replay-evidence <alpha_id>` | Re-run `validate_gate` against every F-2-shaped evidence package recorded for the alpha against today's `GateThresholds` (legacy reason-only metadata reported as SKIPPED) |
-| `validate` | Preflight ledger file (parse + `LEDGER_SCHEMA_VERSION` check) |
-| `gate-matrix` | Render the F-2 declarative gate matrix |
-
-`inspect`, `list`, `replay-evidence`, and `validate` accept
-`--ledger PATH` or `--config PATH` and `--json`; `gate-matrix`
-accepts only `--json`.
-
-Exit codes (CI-stable):
-- `0` OK
-- `1` user error (missing args / non-existent file / config without `promotion_ledger_path`)
-- `2` data error (corrupt ledger / schema-version mismatch)
-- `3` validation failure (`replay-evidence` found gate violations)
-
-The CLI is **read-only and forensic-only** — never writes to the
-ledger, never imports orchestrator / risk-engine production code
-(audit `A-DET-02`).
-
-### Demotion Triggers
+### Policy demotion triggers (design targets)
 
 | Trigger | Response |
 |---------|----------|
@@ -464,6 +323,12 @@ including:
 
 ## CI/CD Pipeline
 
+**Not shipped:** target pipeline — stage timeouts and gates below describe the
+intended merge/promotion bar; not every stage runs in CI today. What ships:
+ruff + DTZ, mypy strict, unit/property/replay determinism, and acceptance
+sweeps under `tests/acceptance/`. Fault-injection and full perf comparator
+gates are aspirational (see Performance Regression Gate above).
+
 ```
 commit → lint (ruff + DTZ) → mypy strict → unit → property → replay
        → fault injection → cost / latency sensitivity → acceptance gate
@@ -487,18 +352,4 @@ property-based testing (10 000+ examples).
 
 ## Integration Points
 
-| Dependency | Interface |
-|------------|-----------|
-| Backtest Engine | `SimulatedClock` + `MarketDataSource`; `OrderRouter` for fill-model validation |
-| Live Execution | Sim-vs-live divergence metrics; `OrderAckStatus` exhaustiveness verification |
-| Risk Engine | `RiskLevel` SM monotonicity; `RiskAction` exhaustiveness; per-leg veto property tests |
-| Data Engineering | `DataHealth` SM transitions; `NBBOQuote` / `Trade` schema validation; gap injection |
-| System Architect | `StateMachine` framework; `TransitionRecord`; `EventBus` contract tests; `Clock` abstraction |
-| Performance Engineering | `MetricEvent` latency budget; throughput regression tests |
-| Alpha Lifecycle | Gate-matrix dispatcher; promotion-ledger contract |
-| Composition Layer | L3 + L3-orders + decay-on/off cross-check parity tests |
-| Sensor / Aggregator | L1 sensor parity + warm-up + staleness invariants |
-
-The testing framework validates every other layer but contains no
-business logic itself. It is the gatekeeper — independent,
-comprehensive, unyielding.
+See [skill index](../README.md). **Non-obvious edges:** canonical parity-hash table (L1–L6); acceptance criteria for promotion evidence.
