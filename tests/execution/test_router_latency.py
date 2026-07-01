@@ -206,3 +206,43 @@ class TestPassiveLimitRouterLatencyQueue:
         # With fill_delay_ticks=1 and zero latency, fills on this quote.
         fills = [a for a in router.poll_acks() if a.status == OrderAckStatus.FILLED]
         assert len(fills) == 1
+
+    def test_resting_limit_through_fill_deferred_until_latency_eligible(self) -> None:
+        """A resting LIMIT order must not fill before ``latency_ns`` has
+        elapsed in exchange time, even when the opposite BBO immediately
+        crosses the resting level (a "through fill", which is otherwise a
+        guaranteed, unconditional fill in :meth:`_evaluate_fill`)."""
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(
+            clock,
+            latency_ns=1000,
+            cost_model=ZeroCostModel(),
+        )
+        router.on_quote(_quote("AAPL", "100.00", "100.10", ts=4000))
+        router.submit(
+            OrderRequest(
+                timestamp_ns=0,
+                correlation_id="o",
+                sequence=1,
+                order_id="l",
+                symbol="AAPL",
+                side=Side.BUY,
+                order_type=OrderType.LIMIT,
+                quantity=50,
+                limit_price=Decimal("100.00"),
+            )
+        )
+        router.poll_acks()
+        # eligible_at = 5000 + 1000 = 6000. A crossing quote at ts=5500 (still
+        # before eligibility) must NOT fill the resting order.
+        clock.set_time(5500)
+        router.on_quote(_quote("AAPL", "99.00", "99.10", ts=5500))
+        assert not any(
+            a.status == OrderAckStatus.FILLED for a in router.poll_acks()
+        )
+
+        # Quote at ts=6500 (after eligibility) — through-fill fires now.
+        clock.set_time(6500)
+        router.on_quote(_quote("AAPL", "98.00", "98.10", ts=6500))
+        fills = [a for a in router.poll_acks() if a.status == OrderAckStatus.FILLED]
+        assert len(fills) == 1

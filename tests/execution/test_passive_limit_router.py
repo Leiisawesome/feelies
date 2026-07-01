@@ -993,6 +993,10 @@ class TestLatency:
     """Test fill timestamp latency injection."""
 
     def test_passive_fill_latency(self):
+        """A resting LIMIT order must not become fill-eligible until
+        ``latency_ns`` has elapsed in exchange time past its post (audit
+        execution_fills_audit_2026-06-20 P0: the passive path previously
+        skipped this gate entirely, unlike the aggressive/market path)."""
         clock = SimulatedClock(start_ns=5000)
         router = PassiveLimitOrderRouter(
             clock,
@@ -1004,12 +1008,17 @@ class TestLatency:
         router.on_quote(_quote("AAPL", "150.00", "150.02"))
         router.submit(_limit_buy("AAPL"))
         router.poll_acks()
+        # eligible_at = max(clock.now_ns()=5000, post-quote exchange_ts=1000)
+        #             + latency_ns=2000 = 7000.
 
         clock.set_time(6000)
         router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6000))
+        assert router.poll_acks() == []  # still before eligibility
 
+        clock.set_time(7000)
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=7000))
         acks = router.poll_acks()
-        assert acks[0].timestamp_ns == 8000  # 6000 + 2000
+        assert acks[0].timestamp_ns == 9000  # 7000 + 2000
 
     def test_market_fill_latency(self):
         """Audit F-H-07: under non-zero latency the market fill is
