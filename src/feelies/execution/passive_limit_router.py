@@ -283,6 +283,12 @@ class PassiveLimitOrderRouter:
             # print at the level before a quote-imbalance drain fill.
             if pending.queue_ahead_shares <= 0 and not self._require_trade_for_level_fill:
                 continue
+            # Pre-eligibility trades (printed before the order is live at the
+            # exchange in exchange time) must not drain the queue or satisfy
+            # the volume gate — the order was not on the book when they
+            # occurred (mirrors the ``_check_resting_orders`` quote gate).
+            if trade.exchange_timestamp_ns < pending.ack_timestamp_ns:
+                continue
             if pending.side == Side.BUY and trade.price <= pending.limit_price:
                 pending.shares_traded_at_level += trade.size
             elif pending.side == Side.SELL and trade.price >= pending.limit_price:
