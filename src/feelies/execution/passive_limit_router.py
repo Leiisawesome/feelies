@@ -531,7 +531,7 @@ class PassiveLimitOrderRouter:
 
         limit_price = snap_limit_price(request.side, limit_price)
 
-        ack_ts = self._clock.now_ns()
+        ack_ts = max(self._clock.now_ns(), quote.exchange_timestamp_ns) + self._latency_ns
         pending = _PendingOrder(
             request=request,
             side=request.side,
@@ -580,6 +580,11 @@ class PassiveLimitOrderRouter:
 
         for order_id in order_ids:
             pending = self._resting_orders[order_id]
+            if quote.exchange_timestamp_ns < pending.ack_timestamp_ns:
+                # Order-entry latency not yet elapsed in exchange time — the
+                # order is not yet live at the exchange, so this quote cannot
+                # fill it (mirrors the aggressive path's deferred-fill gate).
+                continue
             pending.total_ticks += 1
             action = self._evaluate_fill(pending, quote)
 
