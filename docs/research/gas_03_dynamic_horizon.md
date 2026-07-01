@@ -1,7 +1,10 @@
 <!--
   File:   docs/research/gas_03_dynamic_horizon.md
   Status: GAS DECISION #3 — LAB TEST, offline only. No engine, alpha, or
-          scheduler change. Pre-registered; awaiting operator harness run.
+          scheduler change. 12-day pooled run: criteria not met (no cell
+          clears |t|>2 + regime-conditional cost + CPCV/DSR); INCONCLUSIVE,
+          not a flat kill. One lead (300s/compression_clustering/
+          ofi_integrated, t=1.65) worth further pooling.
   Owner:  feature-engine / microstructure-alpha.
 -->
 
@@ -132,15 +135,67 @@ volume-clock horizon (a genuine `HorizonScheduler` change) is explicitly
 to be insufficient — see the "engine vs gas" discussion this decision was
 opened from.
 
-## Result
+## Result — pooled 12 days, sample-weighted (`ofi_kyle_input`)
 
-*(pending — operator harness run on cached data)*
+| horizon | variant | regime | n | RankIC | t | edgeBps |
+|--:|---|---|--:|--:|--:|--:|
+| 30s | `ofi_ewma_zscore` | all | 7,799 | +0.028 | +2.47 | +1.23 |
+| 30s | `ofi_ewma_zscore` | normal | 2,532 | +0.025 | +1.26 | +1.89 |
+| 30s | `ofi_ewma_zscore` | vol_breakout | 996 | +0.060 | **+1.90** | +2.20 |
+| 30s | `ofi_integrated` | all | 9,177 | +0.035 | +3.36 | +1.03 |
+| 300s | `ofi_ewma_zscore` | all | 964 | +0.021 | +0.65 | −0.06 |
+| 300s | `ofi_integrated` | compression_clustering | 526 | +0.072 | **+1.65** | +8.35 |
+| 1800s | `ofi_ewma_zscore` | normal | 46 | +0.266 | **+1.83** | +3.61 |
+| 1800s | `ofi_integrated` | vol_breakout | 35 | +0.171 | **+1.00** | +105.15 |
+
+(t computed with the same `_tstat` the harness reports, `t = ic·√((n−2)/(1−ic²))`.)
+
+**No regime-cut cell clears the pre-registered `|t| > 2` bar.** The single
+largest-looking number (`+105.15 bps`, 1800s `ofi_integrated`/`vol_breakout`)
+has the *weakest* statistical support of the table (t≈1.00, n=35) — the exact
+small-sample-long-horizon failure mode gas #1 already flagged (its −0.409 at
+1800s, n=17). It is noise, not a finding, and must not anchor the read.
+
+Qualitative support for the hypothesis, short of significance:
+- At 30s, edge scales with regime in the predicted direction:
+  `ofi_ewma_zscore` edge is 1.23 (all) → 1.89 (normal) → 2.20 (vol_breakout)
+  bps — a real, ~1.8× lift from calm to bursty. But even the best bucket
+  stays well under the ~5 bp Inv-12 hurdle; regime conditioning does not
+  rescue the 30 s cost-gate failure gas #2 found.
+- The one cell worth further pooling: **300s / `ofi_integrated` /
+  `compression_clustering`** — a real sample (n=526, not a fluke size),
+  edge +8.35 bps clears cost by a wide margin, t=1.65 short of significance.
+  It also has a coherent mechanism (quiet/tight-spread regimes may carry
+  less noise-diluted order-flow signal than chaotic ones), unlike the 1800 s
+  numbers, which have no such support.
+- Sanity check: the pooled "all" rows match gas #2's single-day read almost
+  exactly (30 s `ofi_integrated`: RankIC +0.035 both times; n grew from
+  ~810 to 9,177) — the harness is behaving consistently as more days pool in.
+
+**Multiple-comparison caution.** This run cut ~24 cells (2 variants × 3
+horizons × 3–4 regime buckets incl. "all"). Seeing one or two cells near
+t≈1.7–1.9 is unsurprising under pure noise at that count — exactly why
+criterion 3 (CPCV/DSR) exists before any single cell is treated as real.
+
+## Decision
+
+**Criteria not met — stays a lab-test negative/inconclusive result.** No
+cell clears all three pre-registered criteria (significant RankIC,
+regime-conditional cost clearance, CPCV/DSR robustness) simultaneously.
+Regime stratification does not rescue gas #1 or gas #2's failures on this
+evidence. It is not, however, a flat kill the way gas #1/#2 were: the
+300 s/`compression_clustering`/`ofi_integrated` cell is a plausible,
+adequately-sized (n=526) lead that fell just short of significance
+(t=1.65) — worth targeted further pooling (more compression-regime days at
+300 s specifically) before being written off, but not worth building
+anything on yet.
 
 ## Status
 
-**OPEN — pre-registered, lab test only.** Harness plumbing (`--regime-stratify`,
+**OPEN — inconclusive.** Harness plumbing (`--regime-stratify`,
 `_build_regime_lookup`, `_ofi_integrated_by_regime`) and unit tests
-(`tests/research/test_gas_dynamic_horizon.py`) are in place. No alpha, no
-engine primitive, no scheduler change. Reversible by deleting this doc, the
-new harness functions, and the new tests — nothing else in the platform
-depends on them.
+(`tests/research/test_gas_dynamic_horizon.py`) are in place and have
+produced one 12-day pooled result. No alpha, no engine primitive, no
+scheduler change — reversible by deleting this doc, the new harness
+functions, and the new tests. Re-run with more days pooled, targeting the
+300 s/`compression_clustering` cell, before revisiting this decision.
