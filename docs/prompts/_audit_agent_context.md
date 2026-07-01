@@ -14,10 +14,14 @@ Behavioral constraints for the audit pass come from
 `.cursor/rules/karpathy-guidelines.mdc` (read-only, no speculative fixes,
 falsifiable claims, surface assumptions).
 
+Before running commands, follow `AGENTS.md` for environment/test guidance. If Claude Code
+also loads `CLAUDE.md`, `AGENTS.md`, the current prompt, and `.cursor/rules/` /
+`.cursor/skills/` context take precedence for audit execution.
+
 **Shipped vs Not shipped:** When the owning skill marks a section **Not shipped**,
 treat it as a design target — do not file P0 for absence unless code, tests, or
-operator docs claim it is live. Cross-check the skill's **Not shipped** table before
-escalating.
+operator docs claim it is live. Cross-check the skill's **Not shipped** markings,
+inline design-target notes, or **Design Targets** section before escalating.
 
 **Canonical tables (do not re-derive from memory):**
 
@@ -39,7 +43,7 @@ Full index: `.cursor/skills/README.md`.
 | `audit_signal_alpha` | microstructure-alpha | feature-engine (snapshot input) | 1,2,5,6,7,12 | horizon signal, cost arithmetic, trend mechanism |
 | `audit_composition` | composition-layer | microstructure-alpha, risk-engine | 5,6,11 | portfolio alpha, sized position intent, mechanism concentration |
 | `audit_risk_engine` | risk-engine | regime-detection, composition-layer | 5,11 | hazard exit, sized position intent |
-| `audit_position_management` | risk-engine + live-execution | composition-layer (position reads) | 5,11,12,13 | sized position intent, hazard exit |
+| `audit_position_management` | risk-engine + live-execution | composition-layer (position reads), system-architect (ordering touchpoint) | 5,11,12,13 | sized position intent, hazard exit |
 | `audit_execution_fills` | backtest-engine | live-execution (parity) | 6,9,12 | backtest, simulation |
 | `audit_live_execution` | live-execution | backtest-engine (ExecutionBackend) | 9,11 | simulation, hazard exit |
 | `audit_alpha_lifecycle` | alpha-lifecycle | testing-validation (gate bars) | 3,5,13 | promotion, gate matrix, promotion ledger, layer gate |

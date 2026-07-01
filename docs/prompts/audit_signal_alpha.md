@@ -38,8 +38,12 @@ file/line citations, severity, and prioritized recommendations.
 | 4 | `.cursor/skills/microstructure-alpha/SKILL.md` (**owner**) |
 | 5 | `.cursor/skills/feature-engine/SKILL.md` — sole Layer-2 input contract |
 
-Optional depth: `microstructure-alpha/research-protocol.md` for falsifiability framing.
+Optional depth: `.cursor/skills/microstructure-alpha/research-protocol.md` for falsifiability framing.
 
+
+Before running commands, follow `AGENTS.md` for environment/test guidance. If Claude Code
+also loads `CLAUDE.md`, `AGENTS.md`, this prompt, and `.cursor/rules/` /
+`.cursor/skills/` context take precedence for audit execution.
 
 **Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
 targets — P0 only if code/tests claim they are live.

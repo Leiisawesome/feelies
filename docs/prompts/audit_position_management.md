@@ -41,10 +41,15 @@ file/line citations, severity, and prioritized recommendations.
 | 3 | `.cursor/skills/README.md` |
 | 4 | `.cursor/skills/risk-engine/SKILL.md` — sizing, fail-safe (**co-owner**) |
 | 5 | `.cursor/skills/live-execution/SKILL.md` — order lifecycle, intent translation (**co-owner**) |
-| 6 | `.cursor/skills/system-architect/SKILL.md` — micro-state ordering touchpoint |
+| 6 | `.cursor/skills/composition-layer/SKILL.md` — position reads / `SizedPositionIntent` touchpoint |
+| 7 | `.cursor/skills/system-architect/SKILL.md` — micro-state ordering touchpoint |
 
 Defer deep orchestrator ordering critique to `audit_kernel.md`; defer fill math to `audit_execution_fills.md`.
 
+
+Before running commands, follow `AGENTS.md` for environment/test guidance. If Claude Code
+also loads `CLAUDE.md`, `AGENTS.md`, this prompt, and `.cursor/rules/` /
+`.cursor/skills/` context take precedence for audit execution.
 
 **Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
 targets — P0 only if code/tests claim they are live.
@@ -139,10 +144,10 @@ Signal (selected at M4; _select_bus_signal arbitration; _check_stop_exit may ove
 
 ### Operator surfaces (measurement streams)
 
-- `configs/backtest_multialpha.yaml`, `backtest_multialpha_netting.yaml`,
-  `backtest_sizing_tilt.yaml` (+ ablation variants: `backtest_sizing_tilt_edgeonly.yaml`,
-  `backtest_sizing_tilt_invonly.yaml`, `backtest_multialpha_sizing_tilt.yaml`,
-  `backtest_app_edge_drive.yaml`, `backtest_multialpha_edge_drive.yaml`)
+- `configs/bt_app.yaml` — canonical single-alpha APP baseline
+- `configs/bt_multialpha.yaml` — current multi-alpha measurement config
+- `scripts/compare_multialpha_runs.py` — operator comparison surface for standalone vs.
+  multi-alpha runs
 
 ### Tests (spec + gap analysis)
 

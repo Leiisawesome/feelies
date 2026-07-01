@@ -13,9 +13,40 @@ code changes in the audit pass**.
 4. (Optional) paste one of the prompt's "Optional follow-ups" to turn findings into a
    scoped, fix-only PR plan.
 
+Before running commands, the audit agent must follow `AGENTS.md` for environment and
+test guidance. If Claude Code also loads `CLAUDE.md`, `AGENTS.md`, the prompt's
+**Agent context**, and `.cursor/rules/` / `.cursor/skills/` take precedence for audit
+execution.
+
+## Automation
+
+Use `scripts/run_audit_pack.py` to make the manual Cursor workflow repeatable:
+
+```powershell
+$env:PYTHONHASHSEED='0'
+uv run python scripts/run_audit_pack.py prepare --date YYYY-MM-DD --force
+```
+
+This writes one self-contained bundle per audit prompt under
+`docs/audits/_runs/YYYY-MM-DD/`. Paste each `*.bundle.md` into a fresh Cursor agent
+session and require the agent to write only the named report under `docs/audits/`.
+
+After the reports are written:
+
+```powershell
+$env:PYTHONHASHSEED='0'
+uv run python scripts/run_audit_pack.py verify --date YYYY-MM-DD
+uv run python scripts/run_audit_pack.py synthesize --date YYYY-MM-DD
+```
+
+The verifier fails missing reports, P0/P1 findings without `Inv-N` or `path:line`
+evidence, reports missing owner-skill context, and reports missing a test/coverage gap
+matrix. The synthesizer writes `docs/audits/audit_pack_summary_YYYY-MM-DD.md`.
+
 Each prompt shares the same skeleton: Mission → **Agent context (mandatory)** → Platform
-context → Scope → Audit dimensions (A–G) → Working method → Output format → Quality bar →
-Optional follow-ups.
+context → Scope → Audit dimensions/questions (usually A–G, shorter prompts may combine
+the final coverage/recommendation sections) → Working method → Output format →
+Quality bar → Optional follow-ups.
 
 ## Conventions
 
@@ -28,7 +59,9 @@ Optional follow-ups.
   `.cursor/skills/README.md` for canonical parity-hash and promotion tables — do not
   duplicate them in audit reports.
 - **Shipped vs Not shipped.** Skill sections marked **Not shipped** are design targets.
-  File P0 for absence only when code, tests, or operator docs claim the feature is live.
+  Some skills use inline **Not shipped** notes or **Design Targets** instead of a
+  dedicated table; treat those markings the same way. File P0 for absence only when
+  code, tests, or operator docs claim the feature is live.
 - **Ownership vs touchpoint.** Every source file has exactly **one owning audit** that
   deep-dives it; other audits may *reference* it as a touchpoint but defer critique via an
   "Out of scope" pointer. This prevents two parallel audits from conflicting over the same
@@ -95,7 +128,7 @@ Grouped by pipeline position; the suggested run order follows the table top-to-b
 | `monitoring/` | monitoring_safety |
 | `harness/` (run + report) | harness_cli |
 | `cli/` | harness_cli (backtest) · alpha_lifecycle (`promote`) |
-| `scripts/` | harness_cli (ops: `run_backtest.py`, `run_paper.py`, `run_paper_soak.py`, `smoke_pipeline.py`, `compare_paper_backtest.py`, `split_backtest_emit.py`, `generate_bt12_fixtures.py`, `rebaseline_parity_hashes.py`, `record_perf_baseline.py`, `record_paper_perf_baseline.py`) · sensor (`sensor_feature_ic.py`, `calibrate_hawkes.py`) · composition (`build_reference_factor_loadings.py`) · live_execution (`verify_ib_broker.py`) |
+| `scripts/` | harness_cli (ops: `run_backtest.py`, `run_paper.py`, `run_paper_soak.py`, `smoke_pipeline.py`, `compare_paper_backtest.py`, `split_backtest_emit.py`, `generate_bt12_fixtures.py`, `rebaseline_parity_hashes.py`, `record_perf_baseline.py`, `record_paper_perf_baseline.py`, `run_audit_pack.py`) · sensor (`sensor_feature_ic.py`, `calibrate_hawkes.py`) · composition (`build_reference_factor_loadings.py`) · live_execution (`verify_ib_broker.py`) |
 
 Cross-cutting concerns (not a single package): **determinism** spans `tests/determinism/`
 + every event producer (audit 14); **performance** spans the whole hot path (audit 16).
@@ -146,4 +179,6 @@ of capital-path code with no prompt owner before this index caught up.
 - include **Agent context (mandatory)** per [`_audit_agent_context.md`](_audit_agent_context.md)
 - include the **Not shipped** cross-check in Working method (or Suggested investigation
   order for `audit_data_ingestion.md`)
+- keep prompt-referenced repo paths real; `tests/docs/test_internal_links.py` checks
+  `docs/prompts/*.md` for stale path references
 - pass `tests/docs/test_audit_prompt_structure.py`

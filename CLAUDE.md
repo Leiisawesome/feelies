@@ -14,11 +14,10 @@ the venv manually.
 
 ## Credentials
 
-- Copy `.env.example` → `.env` and fill in MASSIVE_API_KEY
-- `.env.example` is a template committed to the repo — it must contain only placeholder
-  values (e.g. `MASSIVE_API_KEY=your_key_here`), never real secrets
-- `.env` is gitignored — never commit it
-- Paper/live mode requires IB Gateway running locally on port 4002
+- No `.env` file is needed for the standard test suite.
+- `MASSIVE_API_KEY` is only required for `pytest -m functional` network-backed tests,
+  `scripts/run_backtest.py` when it needs live Massive data, and paper/live workflows.
+- Paper/live mode requires IB Gateway running locally on port 4002.
 
 ## Directory Map
 
@@ -68,7 +67,7 @@ the venv manually.
 
     # Linting and formatting (line length 99)
     uv run ruff check src/ tests/
-    uv run ruff format src/ tests/
+    uv run ruff format --check src/ tests/
 
     # Backtest
     uv run python scripts/run_backtest.py \
@@ -114,12 +113,8 @@ the venv manually.
 
 ## Known Pre-existing Test Failures (main branch)
 
-Three acceptance tests intentionally fail due to baseline drift in
-alphas/sig_benign_midcap_v1/ — not environment issues:
-
-- tests/acceptance/test_strict_mode_default_true.py::TestV02ParityPreservedOnExplicitOptOut::test_v02_baseline_alpha_refused_under_default
-- tests/acceptance/test_v02_no_trend_mechanism_parity.py::test_baseline_alpha_yaml_has_no_trend_mechanism_block
-- tests/acceptance/test_v02_no_trend_mechanism_parity.py::test_baseline_alpha_loads_under_v03_default
+None. The full suite was green on `main` as of 2026-06-11: 3319 passed, 27 skipped.
+The skips are gated `functional` / `paper_rth` / per-host perf tests.
 
 ## Cross-Platform Notes
 

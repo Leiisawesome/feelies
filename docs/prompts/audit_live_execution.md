@@ -34,10 +34,14 @@ file/line citations, severity, and prioritized recommendations.
 | 3 | `.cursor/skills/README.md` |
 | 4 | `.cursor/skills/live-execution/SKILL.md` (**owner**) — **Not shipped** for circuit breaker / throttle |
 | 5 | `.cursor/skills/backtest-engine/SKILL.md` — parity contract |
-| 6 | Optional: `live-execution/order-lifecycle.md`, `safety-controls.md` |
+| 6 | Optional: `.cursor/skills/live-execution/order-lifecycle.md`, `.cursor/skills/live-execution/safety-controls.md` |
 
 Kill-switch ownership overlaps `audit_monitoring_safety.md` — defer mechanism deep-dive there.
 
+
+Before running commands, follow `AGENTS.md` for environment/test guidance. If Claude Code
+also loads `CLAUDE.md`, `AGENTS.md`, this prompt, and `.cursor/rules/` /
+`.cursor/skills/` context take precedence for audit execution.
 
 **Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
 targets — P0 only if code/tests claim they are live.

@@ -38,8 +38,12 @@ file/line citations, severity, and prioritized recommendations.
 | 5 | `.cursor/skills/live-execution/SKILL.md` — shared `ExecutionBackend` parity |
 | 6 | `src/feelies/core/inv12_stress.py` — `--inv12-stress` touchpoint (owned by `audit_core_clock_config.md`) |
 
-Optional: `backtest-engine/fill-model.md`, `stress-testing.md`.
+Optional: `.cursor/skills/backtest-engine/fill-model.md`, `.cursor/skills/backtest-engine/stress-testing.md`.
 
+
+Before running commands, follow `AGENTS.md` for environment/test guidance. If Claude Code
+also loads `CLAUDE.md`, `AGENTS.md`, this prompt, and `.cursor/rules/` /
+`.cursor/skills/` context take precedence for audit execution.
 
 **Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
 targets — P0 only if code/tests claim they are live.
@@ -152,7 +156,7 @@ signal logic, and the signal→intent position decision / exit economics (see
 ### D. Tick-size & regulatory realism
 
 1. `tick_size.py`: rounding direction — does it ever round in the strategy's favor?
-2. `regulatory/borrow_availability.py`: shorts blocked when unavailable (fail-safe)?
+2. `src/feelies/execution/regulatory/borrow_availability.py`: shorts blocked when unavailable (fail-safe)?
 3. `pdt_constraint.py`: pattern-day-trade limits enforced where applicable?
 4. Ex-date guard (`test_bt18_ex_date_guard.py`): dividends/splits handled?
 

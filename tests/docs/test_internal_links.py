@@ -1,7 +1,7 @@
 """Verify internal repo paths cited from documentation actually exist.
 
-The Phase-5 documentation rewrite (README, alphas/SCHEMA.md, the
-migration cookbook, Cursor skill docs under ``.cursor/skills/``, and
+The Phase-5 documentation rewrite (README, alphas/SCHEMA.md, audit prompts,
+the migration cookbook, Cursor skill docs under ``.cursor/skills/``, and
 the source-code comments in ``layer_validator.py`` /
 ``regime_gate.py``) carries dozens of
 cross-references to other repository paths.  When a file is renamed or
@@ -39,6 +39,7 @@ _REPO_ROOT = Path(".").resolve()
 _DOC_FILES: tuple[Path, ...] = (
     Path("README.md"),
     Path("alphas/SCHEMA.md"),
+    *tuple(sorted(Path("docs/prompts").glob("*.md"))),
 )
 
 
@@ -95,7 +96,7 @@ _BACKTICK_PATH_RE = re.compile(
 # accept them when the path component contains a slash and a known
 # extension).
 _BARE_PATH_RE = re.compile(
-    r"(?<![\w/`])((?:src|tests|docs|alphas|\.cursor)/"
+    r"(?<![\w/`])((?:src|tests|docs|alphas|configs|scripts|\.cursor)/"
     r"[a-zA-Z0-9_./\-]+\.(?:mdc|yaml|toml|md|py|yml))"
 )
 
@@ -113,6 +114,17 @@ def _normalise(path_str: str) -> Path:
     """Return ``Path`` for a slash-separated repo-relative reference."""
     parts = [p for p in path_str.split("/") if p not in ("", ".")]
     return Path(*parts)
+
+
+def _resolve_cited_path(path_str: str) -> Path | None:
+    """Resolve repo paths plus prompt-local shorthand used in audit scopes."""
+    target = _normalise(path_str)
+    candidates = (
+        target,
+        Path("src/feelies") / target,
+        Path(".cursor/skills") / target,
+    )
+    return next((candidate for candidate in candidates if candidate.exists()), None)
 
 
 @pytest.mark.parametrize(
@@ -147,7 +159,9 @@ def test_internal_path_references_resolve(doc: Path) -> None:
         # Skip whitelisted forward-looking / example placeholders.
         if cite in _PLACEHOLDER_PATH_TOKENS:
             continue
-        target = _normalise(cite)
-        if not target.exists():
+        # Audit prompts name generated report outputs with date templates.
+        if cite.startswith("docs/audits/") and "YYYY-MM-DD" in cite:
+            continue
+        if _resolve_cited_path(cite) is None:
             missing.append(cite)
     assert not missing, f"{doc}: cites repo paths that do not resolve on disk: {missing}"

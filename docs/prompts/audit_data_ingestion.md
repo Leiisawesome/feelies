@@ -42,6 +42,10 @@ Load context **before** reading code:
 | 5 | `.cursor/skills/backtest-engine/SKILL.md` — replay / ordering touchpoint |
 
 
+Before running commands, follow `AGENTS.md` for environment/test guidance. If Claude Code
+also loads `CLAUDE.md`, `AGENTS.md`, this prompt, and `.cursor/rules/` /
+`.cursor/skills/` context take precedence for audit execution.
+
 **Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
 targets — P0 only if code/tests claim they are live.
 
@@ -278,7 +282,7 @@ the section structure below.
   search
 - Distinguish **bug** vs **documented limitation** vs **intentional design**
 - Flag skill/doc drift where `.cursor/skills/data-engineering/SKILL.md` or
-  `backtest-engine/SKILL.md` disagrees with code
+  `.cursor/skills/backtest-engine/SKILL.md` disagrees with code
 - Do not audit alpha logic, sensors, fills, or promotion gates — stay inside
   ingestion/replay/storage
 - If you find a P0, stop and surface it in the executive summary before finishing

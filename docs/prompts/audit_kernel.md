@@ -40,6 +40,10 @@ file/line citations, severity, and prioritized recommendations.
 This audit **owns** `bootstrap.py` wiring; other audits treat it as a touchpoint only.
 
 
+Before running commands, follow `AGENTS.md` for environment/test guidance. If Claude Code
+also loads `CLAUDE.md`, `AGENTS.md`, this prompt, and `.cursor/rules/` /
+`.cursor/skills/` context take precedence for audit execution.
+
 **Shipped vs Not shipped:** Treat skill sections marked **Not shipped** as design
 targets — P0 only if code/tests claim they are live.
 
