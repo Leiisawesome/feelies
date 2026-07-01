@@ -74,6 +74,7 @@ from feelies.sensors.impl.ofi_raw import OFIRawSensor  # noqa: E402
 from feelies.sensors.impl.realized_vol_30s import RealizedVol30sSensor  # noqa: E402
 from feelies.sensors.registry import SensorRegistry  # noqa: E402
 from feelies.sensors.spec import SensorSpec  # noqa: E402
+from feelies.services.regime_engine import HMM3StateFractional  # noqa: E402
 from feelies.storage.disk_event_cache import DiskEventCache  # noqa: E402
 
 _NS_PER_SECOND = 1_000_000_000
@@ -346,6 +347,9 @@ class _Row:
     # so multi-day pooling can re-run the cost-gate primitive on globally
     # concatenated pairs rather than averaging per-day spreads.
     pairs: _Pairs | None = None
+    # Causal dominant-regime bucket this row is stratified by (gas decision
+    # #3, lab test only), e.g. "vol_breakout"; None for the ungrouped rows.
+    regime: str | None = None
 
     @property
     def tstat(self) -> float | None:
@@ -359,6 +363,8 @@ def _run_one(
     symbol: str,
     date: str,
     horizons: frozenset[int],
+    *,
+    regime_stratify: bool = False,
 ) -> list[_Row]:
     events = cache.load(symbol, date)
     if not events:
@@ -440,7 +446,54 @@ def _run_one(
             session_open_ns,
         )
     )
+    # Gas decision #3 (lab test) — regime-stratified cut of the same A/B.
+    # Opt-in only: default invocations (incl. gas #1/#2 commands) are
+    # unaffected.
+    if regime_stratify:
+        rows.extend(
+            _ofi_integrated_by_regime(
+                events,
+                mids,
+                symbol,
+                date,
+                horizons,
+                session_open_ns,
+            )
+        )
     return rows
+
+
+def _ofi_kyle_input_specs_and_feats(
+    horizons: frozenset[int],
+) -> tuple[tuple[SensorSpec, ...], list[HorizonFeature]]:
+    """Shared sensor specs / feature list for the ``ofi_kyle_input`` A/B
+    (``ofi_integrated`` vs ``ofi_ewma_zscore``) — factored so gas decision #3's
+    regime-stratified cut (:func:`_ofi_integrated_by_regime`) replays the
+    identical feature set as gas decision #1/#2's pooled A/B
+    (:func:`_ofi_integrated_ab`)."""
+    specs = _SENSOR_SPECS + (
+        SensorSpec(
+            sensor_id="ofi_raw",
+            sensor_version="1.0.0",
+            cls=OFIRawSensor,
+            params={"warm_after": 50, "warm_window_seconds": 300},
+            subscribes_to=(NBBOQuote,),
+        ),
+    )
+    feats: list[HorizonFeature] = []
+    for h in sorted(horizons):
+        feats.append(SensorPassthroughFeature("ofi_ewma", h))
+        feats.append(
+            HorizonWindowedFeature(
+                "ofi_ewma", h, reducer="zscore", feature_id="ofi_ewma_zscore"
+            )
+        )
+        feats.append(
+            HorizonWindowedFeature(
+                "ofi_raw", h, reducer="sum", feature_id="ofi_integrated", min_samples=1
+            )
+        )
+    return specs, feats
 
 
 def _ofi_integrated_ab(
@@ -466,28 +519,7 @@ def _ofi_integrated_ab(
     therefore an empirical question (price autocorrelation), which is exactly
     why this must be measured on data, not assumed.
     """
-    specs = _SENSOR_SPECS + (
-        SensorSpec(
-            sensor_id="ofi_raw",
-            sensor_version="1.0.0",
-            cls=OFIRawSensor,
-            params={"warm_after": 50, "warm_window_seconds": 300},
-            subscribes_to=(NBBOQuote,),
-        ),
-    )
-    feats: list[HorizonFeature] = []
-    for h in sorted(horizons):
-        feats.append(SensorPassthroughFeature("ofi_ewma", h))
-        feats.append(
-            HorizonWindowedFeature(
-                "ofi_ewma", h, reducer="zscore", feature_id="ofi_ewma_zscore"
-            )
-        )
-        feats.append(
-            HorizonWindowedFeature(
-                "ofi_raw", h, reducer="sum", feature_id="ofi_integrated", min_samples=1
-            )
-        )
+    specs, feats = _ofi_kyle_input_specs_and_feats(horizons)
     snaps = _replay_snapshots(
         events,
         symbol=symbol,
@@ -517,6 +549,147 @@ def _ofi_integrated_ab(
                     pairs=p if edge is not None else None,
                 )
             )
+    return rows
+
+
+# ── Gas decision #3 (LAB TEST — no engine/alpha impact) ──────────────────
+#
+# Stratifies the gas #1/#2 ``ofi_kyle_input`` A/B by the *causal* dominant
+# regime state at each snapshot boundary, to test the "dynamic horizon"
+# hypothesis: fixed-calendar-horizon RankIC/edge pools together windows with
+# very different information-arrival rates (compression / normal /
+# vol_breakout), which may explain gas #1's unstable long-horizon sign and
+# gas #2's cost-gate failure.  See docs/research/gas_03_dynamic_horizon.md.
+#
+# This uses the platform's default ``hmm_3state_fractional`` engine,
+# instantiated fresh and read-only for this script only — it is never wired
+# to ``bootstrap``, an alpha, or ``HorizonScheduler``.  Purely additive: no
+# existing row, column, or function above is modified, and the new cut only
+# runs when ``--regime-stratify`` is passed.
+
+# Mirrors the orchestrator's own causal-prefix calibration size (see
+# ``configs/paper_run.yaml: regime_calibration_max_quotes``); smaller here
+# since harness tapes are single-symbol/single-session.
+_REGIME_CALIBRATION_MAX_QUOTES = 20_000
+_REGIME_MIN_CALIBRATION_QUOTES = 30  # HMM3StateFractional._MIN_CALIBRATION_SAMPLES
+
+
+@dataclass
+class _RegimeLookup:
+    """Causal (timestamp -> dominant regime name) step series."""
+
+    ts: list[int]
+    dominant: list[str]
+    calibrated: bool
+
+    def at(self, t_ns: int) -> str | None:
+        """Dominant regime at-or-before ``t_ns`` (causal), or None if before
+        the symbol's first quote."""
+        i = bisect.bisect_right(self.ts, t_ns) - 1
+        if i < 0:
+            return None
+        return self.dominant[i]
+
+
+def _build_regime_lookup(events: Sequence[NBBOQuote | Trade], symbol: str) -> _RegimeLookup:
+    """Causal per-symbol dominant-regime series from the default regime engine.
+
+    Mirrors ``Orchestrator._calibrate_regime_engine``: fit emissions once
+    from a causal prefix of quotes, then run ``posterior()`` forward over the
+    full stream in order.  A fresh engine instance is built per call — this
+    harness never touches the live bootstrap-wired ``RegimeEngine``.
+    """
+    quotes = [e for e in events if isinstance(e, NBBOQuote) and e.symbol == symbol]
+    engine = HMM3StateFractional()
+    if len(quotes) >= _REGIME_MIN_CALIBRATION_QUOTES:
+        engine.calibrate(quotes[: min(len(quotes), _REGIME_CALIBRATION_MAX_QUOTES)])
+    ts: list[int] = []
+    dominant: list[str] = []
+    for q in quotes:
+        p = engine.posterior(q)
+        dom_i = max(range(len(p)), key=lambda i: p[i])
+        ts.append(q.timestamp_ns)
+        dominant.append(engine.state_names[dom_i])
+    return _RegimeLookup(ts=ts, dominant=dominant, calibrated=engine.calibrated)
+
+
+def _ofi_integrated_by_regime(
+    events: Sequence[NBBOQuote | Trade],
+    mids: "_MidSeries",
+    symbol: str,
+    date: str,
+    horizons: frozenset[int],
+    session_open_ns: int,
+) -> list[_Row]:
+    """Regime-stratified cut of the ``ofi_kyle_input`` A/B (gas decision #3,
+    lab test).  Buckets each warm (feature, forward_return) pair by the
+    dominant regime latched at the snapshot boundary; reports RankIC/IC/
+    edgeBps per ``(variant, horizon, regime)`` cell instead of pooled.
+    """
+    specs, feats = _ofi_kyle_input_specs_and_feats(horizons)
+    snaps = _replay_snapshots(
+        events,
+        symbol=symbol,
+        horizon_features=feats,
+        horizons=horizons,
+        session_open_ns=session_open_ns,
+        sensor_specs=specs,
+    )
+    regime = _build_regime_lookup(events, symbol)
+    if not regime.calibrated:
+        print(
+            f"  ! regime engine uncalibrated for {symbol}/{date} "
+            "(too few quotes) — skipping regime stratification",
+            file=sys.stderr,
+        )
+        return []
+
+    grouped: dict[tuple[str, int, str], _Pairs] = {}
+    dropped_uncached = 0
+    for variant in ("ofi_ewma_zscore", "ofi_integrated"):
+        for h in sorted(horizons):
+            for s in snaps:
+                if s.horizon_seconds != h:
+                    continue
+                v = s.values.get(variant)
+                if v is None:
+                    continue
+                r = _forward_return(mids, s.timestamp_ns, h)
+                if r is None:
+                    continue
+                bucket = regime.at(s.timestamp_ns)
+                if bucket is None:
+                    dropped_uncached += 1
+                    continue
+                key = (variant, h, bucket)
+                pair = grouped.setdefault(key, _Pairs(values=[], fwd=[]))
+                pair.values.append(float(v))
+                pair.fwd.append(r)
+    if dropped_uncached:
+        print(
+            f"  ({dropped_uncached} pairs dropped for {symbol}/{date}: "
+            "no regime posterior latched yet at boundary)",
+            file=sys.stderr,
+        )
+
+    rows: list[_Row] = []
+    for (variant, h, bucket), p in grouped.items():
+        edge = long_short_edge_bps(p.values, p.fwd) if len(p.values) >= 5 else None
+        rows.append(
+            _Row(
+                symbol=symbol,
+                date=date,
+                feature="ofi_kyle_input",
+                horizon=h,
+                variant=variant,
+                n=len(p.values),
+                rank_ic=_spearman(p.values, p.fwd),
+                ic=_pearson(p.values, p.fwd),
+                edge_bps=edge,
+                pairs=p if edge is not None else None,
+                regime=bucket,
+            )
+        )
     return rows
 
 
@@ -592,30 +765,35 @@ def _fmt(x: float | None) -> str:
 
 def _print_table(rows: list[_Row]) -> None:
     hdr = (
-        f"{'feature':<24}{'horizon':>8}{'variant':>16}{'n':>7}"
+        f"{'feature':<24}{'horizon':>8}{'variant':>16}{'regime':>20}{'n':>7}"
         f"{'RankIC':>9}{'IC':>9}{'t':>8}{'edgeBps':>9}"
     )
     print(hdr)
     print("-" * len(hdr))
-    rows_sorted = sorted(rows, key=lambda r: (r.feature, r.horizon, r.variant))
+    rows_sorted = sorted(
+        rows, key=lambda r: (r.feature, r.horizon, r.variant, r.regime or "")
+    )
     for r in rows_sorted:
         t = r.tstat
         t_s = "   n/a" if t is None else f"{t:+.2f}"
         e_s = "   n/a" if r.edge_bps is None else f"{r.edge_bps:+.2f}"
+        regime_s = r.regime or ""
         print(
-            f"{r.feature:<24}{r.horizon:>8}{r.variant:>16}{r.n:>7}"
+            f"{r.feature:<24}{r.horizon:>8}{r.variant:>16}{regime_s:>20}{r.n:>7}"
             f"{_fmt(r.rank_ic):>9}{_fmt(r.ic):>9}{t_s:>8}{e_s:>9}"
         )
 
 
 def _aggregate_across_days(rows: list[_Row]) -> list[_Row]:
     """Pool RankIC across (symbol,date) by sample-weighted mean per
-    (feature, horizon, variant) so multi-day runs get one headline row."""
-    buckets: dict[tuple[str, int, str], list[_Row]] = {}
+    (feature, horizon, variant, regime) so multi-day runs get one headline
+    row — regime-stratified rows (gas #3) pool within their own regime
+    bucket; ungrouped rows (regime=None) pool exactly as before."""
+    buckets: dict[tuple[str, int, str, str | None], list[_Row]] = {}
     for r in rows:
-        buckets.setdefault((r.feature, r.horizon, r.variant), []).append(r)
+        buckets.setdefault((r.feature, r.horizon, r.variant, r.regime), []).append(r)
     pooled: list[_Row] = []
-    for (feature, horizon, variant), rs in buckets.items():
+    for (feature, horizon, variant, regime), rs in buckets.items():
         ric_rows = [r for r in rs if r.rank_ic is not None]
         ic_rows = [r for r in rs if r.ic is not None]
         pair_rows = [r for r in rs if r.pairs is not None]
@@ -664,6 +842,7 @@ def _aggregate_across_days(rows: list[_Row]) -> list[_Row]:
                 ic=ic,
                 edge_bps=edge,
                 pairs=pooled_pairs,
+                regime=regime,
             )
         )
     return pooled
@@ -683,6 +862,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--date", action="append", default=[], required=True)
     ap.add_argument("--horizons", default="30,120,300,900,1800")
     ap.add_argument("--csv", type=Path, default=None)
+    ap.add_argument(
+        "--regime-stratify",
+        action="store_true",
+        help=(
+            "Gas decision #3 (lab test): also cut the ofi_kyle_input A/B by "
+            "the causal dominant regime state at each boundary. Opt-in; "
+            "default output is unchanged when omitted."
+        ),
+    )
     args = ap.parse_args(argv)
 
     symbols = _parse_multi(args.symbol)
@@ -699,7 +887,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     all_rows: list[_Row] = []
     for symbol, date in pairs:
         print(f"# {symbol} {date}", file=sys.stderr)
-        all_rows.extend(_run_one(cache, symbol, date, horizons))
+        all_rows.extend(
+            _run_one(cache, symbol, date, horizons, regime_stratify=args.regime_stratify)
+        )
 
     if not all_rows:
         print("No data produced — check --cache-dir / symbol / date.", file=sys.stderr)
@@ -717,8 +907,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             w = csv.writer(fh)
             w.writerow(
                 [
-                    "symbol", "date", "feature", "horizon", "variant",
-                    "n", "rank_ic", "ic", "tstat", "edge_bps",
+                    "symbol",
+                    "date",
+                    "feature",
+                    "horizon",
+                    "variant",
+                    "regime",
+                    "n",
+                    "rank_ic",
+                    "ic",
+                    "tstat",
+                    "edge_bps",
                 ]
             )
             for r in all_rows:
@@ -729,6 +928,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         r.feature,
                         r.horizon,
                         r.variant,
+                        r.regime,
                         r.n,
                         r.rank_ic,
                         r.ic,
