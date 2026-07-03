@@ -18,6 +18,7 @@ test_output.txt
 .DS_Store
 # Local operator run artefacts (paper/backtest compare workflows)
 runs/
+docs/audits/_runs/
 *.log
 
 # Editor-local settings
