@@ -168,6 +168,19 @@ class TestSnapshot:
         with pytest.raises(AttributeError):
             snap.version = "hacked"  # type: ignore[misc]
 
+    def test_snapshot_data_does_not_alias_live_parameter_overrides(self) -> None:
+        # ConfigSnapshot is documented as an immutable provenance record;
+        # mutating snapshot().data must never reach back into the live
+        # PlatformConfig it was taken from.
+        cfg = PlatformConfig(
+            symbols=frozenset({"AAPL"}),
+            alpha_specs=[Path("x.yaml")],
+            parameter_overrides={"sig_x": {"k": 1}},
+        )
+        snap = cfg.snapshot()
+        snap.data["parameter_overrides"]["sig_x"]["k"] = 999
+        assert cfg.parameter_overrides == {"sig_x": {"k": 1}}
+
 
 # ── YAML loading ────────────────────────────────────────────────────
 
@@ -401,6 +414,58 @@ promotion_ledger_path: data/promotion/ledger.jsonl
         )
         snap = cfg.snapshot()
         assert snap.data["promotion_ledger_path"] == "ledger.jsonl"
+
+
+class TestAdverseSelectionAliasResolution:
+    """cost_passive_adverse_selection_bps/cost_adverse_selection_drain_bps and
+    cost_through_fill_adverse_selection_bps/cost_adverse_selection_through_bps
+    are current-name/legacy-name pairs that must resolve to the same value
+    regardless of which name is set, and an explicit 0.0 must survive (audit
+    core_clock_config_2026-07-02, finding N1: a prior `x or y or default`
+    resolution silently discarded an explicit 0.0)."""
+
+    def test_explicit_zero_passive_adverse_selection_survives(self, tmp_path: Path) -> None:
+        (tmp_path / "c.yaml").write_text(
+            "symbols: [AAPL]\nalpha_specs: [x.yaml]\ncost_passive_adverse_selection_bps: 0.0\n"
+        )
+        cfg = PlatformConfig.from_yaml(tmp_path / "c.yaml")
+        assert cfg.cost_passive_adverse_selection_bps == 0.0
+        assert cfg.cost_adverse_selection_drain_bps == 0.0
+
+    def test_explicit_zero_through_fill_adverse_selection_survives(self, tmp_path: Path) -> None:
+        (tmp_path / "c.yaml").write_text(
+            "symbols: [AAPL]\nalpha_specs: [x.yaml]\n"
+            "cost_through_fill_adverse_selection_bps: 0.0\n"
+        )
+        cfg = PlatformConfig.from_yaml(tmp_path / "c.yaml")
+        assert cfg.cost_through_fill_adverse_selection_bps == 0.0
+        assert cfg.cost_adverse_selection_through_bps == 0.0
+
+    def test_legacy_alias_only_still_populates_both_names(self, tmp_path: Path) -> None:
+        (tmp_path / "c.yaml").write_text(
+            "symbols: [AAPL]\nalpha_specs: [x.yaml]\ncost_adverse_selection_drain_bps: 3.5\n"
+        )
+        cfg = PlatformConfig.from_yaml(tmp_path / "c.yaml")
+        assert cfg.cost_adverse_selection_drain_bps == 3.5
+        assert cfg.cost_passive_adverse_selection_bps == 3.5
+
+    def test_current_name_wins_over_legacy_when_both_set(self, tmp_path: Path) -> None:
+        (tmp_path / "c.yaml").write_text(
+            "symbols: [AAPL]\nalpha_specs: [x.yaml]\n"
+            "cost_passive_adverse_selection_bps: 1.0\n"
+            "cost_adverse_selection_drain_bps: 9.0\n"
+        )
+        cfg = PlatformConfig.from_yaml(tmp_path / "c.yaml")
+        assert cfg.cost_passive_adverse_selection_bps == 1.0
+        assert cfg.cost_adverse_selection_drain_bps == 1.0
+
+    def test_neither_set_falls_back_to_defaults(self, tmp_path: Path) -> None:
+        (tmp_path / "c.yaml").write_text("symbols: [AAPL]\nalpha_specs: [x.yaml]\n")
+        cfg = PlatformConfig.from_yaml(tmp_path / "c.yaml")
+        assert cfg.cost_passive_adverse_selection_bps == 2.0
+        assert cfg.cost_adverse_selection_drain_bps == 2.0
+        assert cfg.cost_through_fill_adverse_selection_bps == 5.0
+        assert cfg.cost_adverse_selection_through_bps == 5.0
 
 
 # ── Risk regime scales + disk-cache manifest health ─────────────────
