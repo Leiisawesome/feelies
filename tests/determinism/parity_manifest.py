@@ -28,6 +28,7 @@ the data-ingestion / determinism harness).
 
 from __future__ import annotations
 
+import hashlib
 from typing import Final
 
 from tests.determinism.test_cross_sectional_context_replay import (
@@ -210,3 +211,23 @@ LOCKED_PARITY_BASELINES: Final[dict[str, ParityEntry]] = {
     # order legs a verdict produces were hashed elsewhere.
     "risk_verdict": (EXPECTED_RISK_VERDICT_HASH, EXPECTED_RISK_VERDICT_COUNT),
 }
+
+
+def manifest_fingerprint() -> str:
+    """SHA-256 over the whole sorted manifest (audit-2026-07-02 P2 #15).
+
+    A re-pin of any single baseline changes this one value, so a coordinated
+    (intentional or not) multi-baseline re-pin surfaces in code review as a
+    one-line diff on the locked constant in
+    :mod:`tests.determinism.test_parity_manifest`, instead of requiring a
+    reviewer to notice several unrelated-looking hash-literal changes spread
+    across the manifest. This is a review-visibility aid, not a new
+    correctness check — ``test_manifest_entry_matches_replay`` already
+    catches any individual drift; this just makes *how many* baselines moved
+    in one commit legible at a glance.
+    """
+    canonical = "\n".join(
+        f"{name}|{hash_hex}|{count}"
+        for name, (hash_hex, count) in sorted(LOCKED_PARITY_BASELINES.items())
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

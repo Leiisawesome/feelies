@@ -187,3 +187,25 @@ def test_every_locked_hash_is_registered_or_exempt() -> None:
         f"exempted: {unregistered}.  Add them to LOCKED_PARITY_BASELINES + "
         "_REPLAY_BY_NAME, or to _UNREGISTERED_HASH_EXEMPTIONS with a reason."
     )
+
+
+# ── Manifest fingerprint (audit-2026-07-02 P2 #15) ──────────────────────
+
+# A single SHA-256 over the sorted manifest.  Any re-pin — one baseline or
+# several at once — changes this one line, so a coordinated re-pin is a
+# one-line diff in review instead of several hash literals that each look
+# individually plausible. Re-baseline alongside whatever baseline change
+# caused it to move, in the same commit, with the same justification.
+EXPECTED_MANIFEST_FINGERPRINT = "b181f9790b6f1046f68753e4df8d4621ec746f4ca3dc08415feea86358aa76d9"
+
+
+def test_manifest_fingerprint_matches_locked_value() -> None:
+    actual = parity_manifest.manifest_fingerprint()
+    assert actual == EXPECTED_MANIFEST_FINGERPRINT, (
+        "Manifest fingerprint drift — one or more locked baselines changed!\n"
+        f"  Expected: {EXPECTED_MANIFEST_FINGERPRINT}\n"
+        f"  Actual:   {actual}\n"
+        "If intentional, update EXPECTED_MANIFEST_FINGERPRINT here in the same "
+        "commit as the baseline change(s) that moved it, with the same "
+        "re-baseline justification."
+    )
