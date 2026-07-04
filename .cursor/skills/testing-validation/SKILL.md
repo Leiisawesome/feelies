@@ -12,11 +12,12 @@ deterministic, reproducible validation pipeline. The default posture
 is **deny deployment** — evidence of correctness must be affirmatively
 produced, not assumed.
 
-This skill owns the locked parity hashes (the canonical registry
-is `tests/determinism/parity_manifest.py`), the gate-matrix **acceptance
-criteria**, the promotion-ledger schema references, and the strict-typing
-/ DTZ-rule scope locks. Promotion wiring detail lives in the
-[alpha-lifecycle skill](../alpha-lifecycle/SKILL.md).
+This skill owns the locked parity hashes (the canonical registry — and
+source of truth for the current count, which grows over time — is
+`tests/determinism/parity_manifest.py:LOCKED_PARITY_BASELINES`), the
+gate-matrix **acceptance criteria**, the promotion-ledger schema
+references, and the strict-typing / DTZ-rule scope locks. Promotion
+wiring detail lives in the [alpha-lifecycle skill](../alpha-lifecycle/SKILL.md).
 
 ## Core Invariants
 
@@ -41,9 +42,12 @@ auditable configuration). Additionally:
 Each is a SHA-256 over the ordered event stream at one layer, asserted
 by an in-process pytest replay test under `tests/determinism/`. The canonical
 registry is `tests/determinism/parity_manifest.py:LOCKED_PARITY_BASELINES`
-(17 entries as of the 2026-07-02 kernel audit; the original eleven span six
-levels L1–L6, plus six additional non-leveled baselines added since).
-Drift between modules is caught in CI by `tests/determinism/test_parity_manifest.py`.
+— check `len(LOCKED_PARITY_BASELINES)` for the current count rather than
+trusting a number here, since new baselines are added over time (plus a
+handful of intentionally-unregistered ones — cvxpy-conditional and
+orchestrator-level — tracked in `test_parity_manifest.py`'s
+`_UNREGISTERED_HASH_EXEMPTIONS`). Drift between modules is caught in
+CI by `tests/determinism/test_parity_manifest.py`.
 
 | Level | Stream | Test |
 |-------|--------|------|
@@ -79,6 +83,21 @@ Two further determinism modules exist deliberately **outside** the manifest
   in subprocesses under several `PYTHONHASHSEED` values and asserts identical
   hashes, proving seed-independence directly rather than only pinning one
   seed value.
+
+Added since the original eleven (level numbering doesn't map as cleanly for
+these — see `parity_manifest.py` for the authoritative list):
+
+| Baseline (manifest key) | Stream | Test |
+|-------|--------|------|
+| `market_fill_acks` | `OrderAck` fill economics | `test_market_fill_replay.py` |
+| `position_pnl` | `PositionUpdate` (PnL reconciliation) | `test_position_pnl_replay.py` |
+| `state_transition` | `StateTransition` (all five SMs) | `test_state_transition_replay.py` |
+| `cross_sectional_context` | `CrossSectionalContext` | `test_cross_sectional_context_replay.py` |
+| `signal_fires` | non-empty `Signal` (synthetic probe alpha) | `test_signal_fires_replay.py` |
+| `reference_alpha_signal_fires` | non-empty `Signal` (real reference alpha) | `test_reference_alpha_signal_fires_replay.py` |
+| `multi_symbol_sensor_reading` | cross-symbol `SensorReading` interleave | `test_multi_symbol_sensor_replay.py` |
+| `symbol_halted` / `halt_order` / `halt_ack` / `halt_position_update` | halt-gate fill suppression | `test_symbol_halted_replay.py` |
+| `risk_verdict` | `RiskVerdict` | `test_risk_verdict_replay.py` |
 
 Determinism is structurally supported by:
 

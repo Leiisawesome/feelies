@@ -1472,7 +1472,7 @@ build fails with a detailed diff pointing at the divergence point.
 |---|---|---|
 | Python dict iteration order | Low (Python 3.12 preserves insertion order) | Use `sorted()` at all emission boundaries |
 | Set iteration | Medium | Forbid `set` in state; use `dict` or `list` |
-| Hash randomization | Low (PYTHONHASHSEED=0 in test) | CI sets `PYTHONHASHSEED=0` |
+| Hash randomization | Low | No CI config exists in this repo to pin `PYTHONHASHSEED=0`; `conftest.py` instead warns when it is unset (it cannot set it mid-session — see the conftest docstring) and `tests/determinism/test_hash_seed_independence.py` directly proves the dict/set-iterating replay hashes are identical across several seeds via subprocess replay, a stronger guarantee than pinning one seed |
 | Float reduction order | Medium | Use `math.fsum` for summations over > 10 items |
 | Concurrent event delivery | N/A (bus is synchronous) | Invariant 7 holds |
 | Factor model refresh | Medium | Refresh at horizon boundaries, not real-time |

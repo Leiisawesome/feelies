@@ -15,7 +15,11 @@ from tests.determinism.test_market_fill_replay import _replay as market_fill_rep
 from tests.determinism.test_multi_symbol_sensor_replay import _replay as multi_symbol_sensor_replay
 from tests.determinism.test_portfolio_order_replay import _replay as portfolio_order_replay
 from tests.determinism.test_position_pnl_replay import _replay as position_pnl_replay
+from tests.determinism.test_reference_alpha_signal_fires_replay import (
+    _replay as reference_alpha_signal_fires_replay,
+)
 from tests.determinism.test_regime_hazard_replay import _replay as regime_hazard_replay
+from tests.determinism.test_risk_verdict_replay import _replay as risk_verdict_replay
 from tests.determinism.test_regime_state_replay import (
     EXPECTED_LEVEL6_REGIME_STATE_COUNT,
     _drive_regime_states,
@@ -25,6 +29,7 @@ from tests.determinism.test_sensor_reading_replay import _replay as sensor_repla
 from tests.determinism.test_signal_fires_replay import _replay as signal_fires_replay
 from tests.determinism.test_signal_replay import _replay as signal_replay
 from tests.determinism.test_state_transition_replay import _replay as state_transition_replay
+from tests.determinism.test_symbol_halted_replay import _replay as symbol_halted_replay
 from tests.determinism.test_sized_intent_replay import _replay as intent_replay
 from tests.determinism.test_v03_sensor_replay import _replay as v03_sensor_replay
 from tests.fixtures.replay import (
@@ -41,6 +46,22 @@ def _replay_horizon_tick() -> tuple[str, int]:
 def _replay_regime_state() -> tuple[str, int]:
     states = _drive_regime_states()
     return _hash_regime_stream(states), len(states)
+
+
+def _replay_symbol_halted() -> tuple[str, int]:
+    return symbol_halted_replay()["symbol_halted"]
+
+
+def _replay_halt_order() -> tuple[str, int]:
+    return symbol_halted_replay()["order"]
+
+
+def _replay_halt_ack() -> tuple[str, int]:
+    return symbol_halted_replay()["ack"]
+
+
+def _replay_halt_position_update() -> tuple[str, int]:
+    return symbol_halted_replay()["position_update"]
 
 
 _REPLAY_BY_NAME = {
@@ -61,6 +82,12 @@ _REPLAY_BY_NAME = {
     "cross_sectional_context": xsect_context_replay,
     "signal_fires": signal_fires_replay,
     "multi_symbol_sensor_reading": multi_symbol_sensor_replay,
+    "reference_alpha_signal_fires": reference_alpha_signal_fires_replay,
+    "symbol_halted": _replay_symbol_halted,
+    "halt_order": _replay_halt_order,
+    "halt_ack": _replay_halt_ack,
+    "halt_position_update": _replay_halt_position_update,
+    "risk_verdict": risk_verdict_replay,
 }
 
 
@@ -94,6 +121,26 @@ _UNREGISTERED_HASH_EXEMPTIONS: dict[str, str] = {
     # self-test must run without cvxpy).  Locked + guarded locally in
     # tests/determinism/test_sized_intent_solver_replay.py.
     "EXPECTED_LEVEL3_SOLVER_HASH": "cvxpy-conditional baseline (test_sized_intent_solver_replay.py)",
+    # Audit-2026-07-02 P1 #2: orchestrator-level replay baselines (flat +
+    # smoke scenarios) are intentionally kept out of LOCKED_PARITY_BASELINES
+    # so the manifest cross-check stays decoupled from the regime engine's
+    # transcendental sensitivity until a canonical host fingerprint is
+    # recorded for full-orchestrator replay (see the module docstring in
+    # test_orchestrator_replay.py).  Each is still individually locked and
+    # re-baselined the same way as any other parity hash — only the central
+    # registry cross-check is deliberately skipped.
+    "EXPECTED_ORCHESTRATOR_SIGNAL_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
+    "EXPECTED_ORCHESTRATOR_INTENT_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
+    "EXPECTED_ORCHESTRATOR_ORDER_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
+    "EXPECTED_ORCHESTRATOR_POSITION_UPDATE_HASH": (
+        "orchestrator-level baseline (test_orchestrator_replay.py)"
+    ),
+    "EXPECTED_ORCHESTRATOR_SMOKE_SIGNAL_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
+    "EXPECTED_ORCHESTRATOR_SMOKE_INTENT_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
+    "EXPECTED_ORCHESTRATOR_SMOKE_ORDER_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
+    "EXPECTED_ORCHESTRATOR_SMOKE_POSITION_UPDATE_HASH": (
+        "orchestrator-level baseline (test_orchestrator_replay.py)"
+    ),
 }
 
 
@@ -139,4 +186,26 @@ def test_every_locked_hash_is_registered_or_exempt() -> None:
         "locked parity hashes neither registered in parity_manifest.py nor "
         f"exempted: {unregistered}.  Add them to LOCKED_PARITY_BASELINES + "
         "_REPLAY_BY_NAME, or to _UNREGISTERED_HASH_EXEMPTIONS with a reason."
+    )
+
+
+# ── Manifest fingerprint (audit-2026-07-02 P2 #15) ──────────────────────
+
+# A single SHA-256 over the sorted manifest.  Any re-pin — one baseline or
+# several at once — changes this one line, so a coordinated re-pin is a
+# one-line diff in review instead of several hash literals that each look
+# individually plausible. Re-baseline alongside whatever baseline change
+# caused it to move, in the same commit, with the same justification.
+EXPECTED_MANIFEST_FINGERPRINT = "b181f9790b6f1046f68753e4df8d4621ec746f4ca3dc08415feea86358aa76d9"
+
+
+def test_manifest_fingerprint_matches_locked_value() -> None:
+    actual = parity_manifest.manifest_fingerprint()
+    assert actual == EXPECTED_MANIFEST_FINGERPRINT, (
+        "Manifest fingerprint drift — one or more locked baselines changed!\n"
+        f"  Expected: {EXPECTED_MANIFEST_FINGERPRINT}\n"
+        f"  Actual:   {actual}\n"
+        "If intentional, update EXPECTED_MANIFEST_FINGERPRINT here in the same "
+        "commit as the baseline change(s) that moved it, with the same "
+        "re-baseline justification."
     )

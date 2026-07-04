@@ -28,6 +28,7 @@ the data-ingestion / determinism harness).
 
 from __future__ import annotations
 
+import hashlib
 from typing import Final
 
 from tests.determinism.test_cross_sectional_context_replay import (
@@ -62,9 +63,17 @@ from tests.determinism.test_position_pnl_replay import (
     EXPECTED_POSITION_PNL_COUNT,
     EXPECTED_POSITION_PNL_HASH,
 )
+from tests.determinism.test_reference_alpha_signal_fires_replay import (
+    EXPECTED_REFERENCE_ALPHA_SIGNAL_FIRES_COUNT,
+    EXPECTED_REFERENCE_ALPHA_SIGNAL_FIRES_HASH,
+)
 from tests.determinism.test_regime_hazard_replay import (
     EXPECTED_LEVEL5_HAZARD_COUNT,
     EXPECTED_LEVEL5_HAZARD_HASH,
+)
+from tests.determinism.test_risk_verdict_replay import (
+    EXPECTED_RISK_VERDICT_COUNT,
+    EXPECTED_RISK_VERDICT_HASH,
 )
 from tests.determinism.test_regime_state_replay import (
     EXPECTED_LEVEL6_REGIME_STATE_COUNT,
@@ -85,6 +94,16 @@ from tests.determinism.test_signal_replay import (
 from tests.determinism.test_state_transition_replay import (
     EXPECTED_STATE_TRANSITION_COUNT,
     EXPECTED_STATE_TRANSITION_HASH,
+)
+from tests.determinism.test_symbol_halted_replay import (
+    EXPECTED_HALT_ACK_COUNT,
+    EXPECTED_HALT_ACK_HASH,
+    EXPECTED_HALT_ORDER_COUNT,
+    EXPECTED_HALT_ORDER_HASH,
+    EXPECTED_HALT_POSITION_UPDATE_COUNT,
+    EXPECTED_HALT_POSITION_UPDATE_HASH,
+    EXPECTED_SYMBOL_HALTED_COUNT,
+    EXPECTED_SYMBOL_HALTED_HASH,
 )
 from tests.determinism.test_sized_intent_replay import (
     EXPECTED_LEVEL3_INTENT_DECAY_OFF_COUNT,
@@ -169,4 +188,46 @@ LOCKED_PARITY_BASELINES: Final[dict[str, ParityEntry]] = {
         EXPECTED_MULTI_SYMBOL_READING_HASH,
         EXPECTED_MULTI_SYMBOL_READING_COUNT,
     ),
+    # Audit-2026-07-02 P1 #6: non-empty Signal emission from the *real*
+    # reference alpha sig_benign_midcap_v1 (signal_fires above uses a
+    # hand-written probe signal + trivial gate; level2_signal pins only the
+    # empty stream for every actual reference alpha).
+    "reference_alpha_signal_fires": (
+        EXPECTED_REFERENCE_ALPHA_SIGNAL_FIRES_HASH,
+        EXPECTED_REFERENCE_ALPHA_SIGNAL_FIRES_COUNT,
+    ),
+    # Audit-2026-07-02 P1 #3: the forensic SymbolHalted stream and the
+    # halt-gate / post-resume-blackout fill suppression it documents were
+    # previously unpinned.
+    "symbol_halted": (EXPECTED_SYMBOL_HALTED_HASH, EXPECTED_SYMBOL_HALTED_COUNT),
+    "halt_order": (EXPECTED_HALT_ORDER_HASH, EXPECTED_HALT_ORDER_COUNT),
+    "halt_ack": (EXPECTED_HALT_ACK_HASH, EXPECTED_HALT_ACK_COUNT),
+    "halt_position_update": (
+        EXPECTED_HALT_POSITION_UPDATE_HASH,
+        EXPECTED_HALT_POSITION_UPDATE_COUNT,
+    ),
+    # Audit-2026-07-02 P1 #4: the risk engine's own decision event
+    # (action/reason/scaling_factor) was previously unpinned — only the
+    # order legs a verdict produces were hashed elsewhere.
+    "risk_verdict": (EXPECTED_RISK_VERDICT_HASH, EXPECTED_RISK_VERDICT_COUNT),
 }
+
+
+def manifest_fingerprint() -> str:
+    """SHA-256 over the whole sorted manifest (audit-2026-07-02 P2 #15).
+
+    A re-pin of any single baseline changes this one value, so a coordinated
+    (intentional or not) multi-baseline re-pin surfaces in code review as a
+    one-line diff on the locked constant in
+    :mod:`tests.determinism.test_parity_manifest`, instead of requiring a
+    reviewer to notice several unrelated-looking hash-literal changes spread
+    across the manifest. This is a review-visibility aid, not a new
+    correctness check — ``test_manifest_entry_matches_replay`` already
+    catches any individual drift; this just makes *how many* baselines moved
+    in one commit legible at a glance.
+    """
+    canonical = "\n".join(
+        f"{name}|{hash_hex}|{count}"
+        for name, (hash_hex, count) in sorted(LOCKED_PARITY_BASELINES.items())
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
