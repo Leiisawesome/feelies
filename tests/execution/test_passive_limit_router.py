@@ -760,6 +760,45 @@ class TestVolumeBasedQueueDrain:
         router.on_quote(_quote("AAPL", "150.00", "150.02", ts=6001))
         assert router.poll_acks() == []
 
+    def test_pre_eligibility_trade_does_not_count_toward_queue_drain(self):
+        """Trades printed before the order is live at the exchange (order-
+        entry ``latency_ns`` not yet elapsed) must not count toward
+        ``shares_traded_at_level`` — mirrors the quote-side gate in
+        ``_check_resting_orders`` (audit execution_fills_audit_2026-07-02
+        finding #14; fixed for ``on_trade`` in commit bca1efd, previously
+        untested)."""
+        clock = SimulatedClock(start_ns=5000)
+        router = PassiveLimitOrderRouter(
+            clock,
+            cost_model=ZeroCostModel(),
+            latency_ns=2000,
+            queue_position_shares=100,
+            fill_delay_ticks=9999,
+            fill_hazard_max=Decimal("1.0"),
+        )
+
+        router.on_quote(_quote("AAPL", "150.00", "150.02"))
+        router.submit(_limit_buy("AAPL", qty=100))
+        router.poll_acks()
+        # ack_timestamp_ns = max(clock.now_ns()=5000, post-quote exchange_ts=1000)
+        #                  + latency_ns=2000 = 7000 — order not live until then.
+
+        # Pre-eligibility trade: prints at ts=6000 < ack_timestamp_ns=7000 and
+        # alone would satisfy the 100-share queue threshold, but must not
+        # count because the order wasn't resting at the exchange yet.
+        router.on_trade(self._trade("AAPL", "150.00", 100, ts=6000))
+        clock.set_time(7000)
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=7000))
+        assert router.poll_acks() == []
+
+        # A trade of the same size *after* eligibility does count and fills.
+        router.on_trade(self._trade("AAPL", "150.00", 100, ts=7001))
+        clock.set_time(7002)
+        router.on_quote(_quote("AAPL", "150.00", "150.02", ts=7002))
+        acks = router.poll_acks()
+        assert len(acks) == 1
+        assert acks[0].status == OrderAckStatus.FILLED
+
     def test_volume_below_level_ignored_for_buy(self):
         """BUY: trades above our limit price don't count toward queue drain."""
         clock = SimulatedClock(start_ns=5000)
@@ -1018,7 +1057,10 @@ class TestLatency:
         clock.set_time(7000)
         router.on_quote(_quote("AAPL", "150.00", "150.02", ts=7000))
         acks = router.poll_acks()
-        assert acks[0].timestamp_ns == 9000  # 7000 + 2000
+        # The order is already live at the exchange (gated above), so the
+        # drain fill pays no *second* latency_ns leg on top of ack_timestamp_ns
+        # (audit execution_fills_audit_2026-07-02 finding #3: fixed 2026-07-02).
+        assert acks[0].timestamp_ns == 7000
 
     def test_market_fill_latency(self):
         """Audit F-H-07: under non-zero latency the market fill is
