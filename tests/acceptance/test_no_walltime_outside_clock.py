@@ -48,10 +48,6 @@ _BANNED_ROOTS = frozenset({"time", "datetime", "date"})
 # Each entry was confirmed replay-neutral during the determinism audit.
 _WALL_CLOCK_ALLOWLIST: dict[str, str] = {
     "core/clock.py": "canonical clock adapter — the only sanctioned wall-clock source (Inv-10)",
-    "core/platform_config.py": (
-        "ConfigSnapshot provenance timestamp; excluded from the deterministic "
-        "config checksum (snapshot() hashes data only) so it never perturbs replay"
-    ),
     "kernel/orchestrator.py": (
         "perf_counter_ns latency telemetry into _tick_timings (MetricEvent "
         "side-channel); all event timestamps use the injected clock, not this"
