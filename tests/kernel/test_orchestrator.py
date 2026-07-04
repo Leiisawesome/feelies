@@ -1704,6 +1704,88 @@ class TestOrchestratorMacroLifecycleRemediation:
         assert orch.macro_state == MacroState.DEGRADED
 
 
+class TestRealizedCostEscalation:
+    """Backtest-level coverage for the realized-cost-overrun kill-switch
+    escalation (P2.10). Previously only exercised by a ``paper_rth``-gated
+    integration test requiring a live IB Gateway connection (audit
+    execution_fills_audit_2026-07-02 finding #11 / backlog)."""
+
+    def _order(self, order_id: str, *, strategy_id: str = "alpha_1") -> OrderRequest:
+        return OrderRequest(
+            timestamp_ns=1000,
+            correlation_id=f"c-{order_id}",
+            sequence=1,
+            order_id=order_id,
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=10,
+            strategy_id=strategy_id,
+            g12_disclosed_cost_total_bps=1.0,
+        )
+
+    def _ack(self, order: OrderRequest, *, ts: int, cost_bps: str) -> OrderAck:
+        return OrderAck(
+            timestamp_ns=ts,
+            correlation_id=order.correlation_id,
+            sequence=2,
+            order_id=order.order_id,
+            symbol="AAPL",
+            status=OrderAckStatus.FILLED,
+            filled_quantity=10,
+            fill_price=Decimal("150.00"),
+            fees=Decimal("1.00"),
+            cost_bps=Decimal(cost_bps),
+        )
+
+    def _fill(self, orch: Orchestrator, order: OrderRequest, *, ts: int, cost_bps: str) -> None:
+        orch._track_order(order.order_id, order.side, order)
+        orch._reconcile_fills(
+            [self._ack(order, ts=ts, cost_bps=cost_bps)],
+            correlation_id=order.correlation_id,
+        )
+
+    def test_escalation_disabled_by_default_never_activates_kill_switch(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        kill = InMemoryKillSwitch()
+        orch = _build_orchestrator(clock, kill_switch=kill)
+        assert orch._realized_cost_escalation_enabled is False  # code default
+
+        # disclosed=1.0, default alert_ratio=1.5 -> 1.5 bps threshold;
+        # 10.0 bps breaches it on every one of these fills.
+        for i in range(10):
+            self._fill(orch, self._order(f"ord-{i}"), ts=1000 + i, cost_bps="10.0")
+
+        assert not kill.is_active
+
+    def test_escalation_enabled_activates_kill_switch_after_streak(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        kill = InMemoryKillSwitch()
+        orch = _build_orchestrator(clock, kill_switch=kill)
+        orch._realized_cost_escalation_enabled = True
+        orch._realized_cost_escalation_streak = 2
+
+        self._fill(orch, self._order("ord-1"), ts=1000, cost_bps="10.0")
+        assert not kill.is_active  # streak=1, below the configured threshold
+
+        self._fill(orch, self._order("ord-2"), ts=1001, cost_bps="10.0")
+        assert kill.is_active  # streak=2 meets the threshold -> fail-safe halt
+
+    def test_non_breaching_fill_resets_the_streak(self) -> None:
+        clock = SimulatedClock(start_ns=1000)
+        kill = InMemoryKillSwitch()
+        orch = _build_orchestrator(clock, kill_switch=kill)
+        orch._realized_cost_escalation_enabled = True
+        orch._realized_cost_escalation_streak = 2
+
+        self._fill(orch, self._order("ord-1"), ts=1000, cost_bps="10.0")
+        # Within the disclosed band (0.5 <= 1.5 bps threshold) -> streak resets.
+        self._fill(orch, self._order("ord-2"), ts=1001, cost_bps="0.5")
+        self._fill(orch, self._order("ord-3"), ts=1002, cost_bps="10.0")
+
+        assert not kill.is_active  # streak restarted at 1, still below 2
+
+
 # ── Tests: Multiple ticks ────────────────────────────────────────────
 
 
