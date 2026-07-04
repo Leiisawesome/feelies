@@ -41,6 +41,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, Mapping
 
 logger = logging.getLogger(__name__)
@@ -315,9 +316,11 @@ _FORCED_MARKET_EXIT_STRATEGIES: frozenset[str] = frozenset(
 # ``OrderRequest.reason``, not ``strategy_id``).  ``__session_flat__`` is
 # intentionally absent: a scheduled EOD flatten is not a panic exit and fills
 # at ordinary liquidity (``SESSION_FLAT`` is not in the panic set).
-_FORCED_EXIT_PANIC_REASON: dict[str, str] = {
-    "__stop_exit__": "STOP_EXIT",
-}
+_FORCED_EXIT_PANIC_REASON: Mapping[str, str] = MappingProxyType(
+    {
+        "__stop_exit__": "STOP_EXIT",
+    }
+)
 
 
 def _int_to_direction(sign: int) -> SignalDirection:
@@ -4799,6 +4802,7 @@ class Orchestrator:
                 # ``__stop_exit__`` → ``STOP_EXIT``) so the fill model prices
                 # the stop with slippage / depleted depth; "" for ordinary
                 # entries and discretionary exits leaves the fill unchanged.
+                reason=_FORCED_EXIT_PANIC_REASON.get(intent.signal.strategy_id, ""),
                 g12_disclosed_cost_total_bps=(intent.signal.disclosed_cost_total_bps),
             ),
             None,
