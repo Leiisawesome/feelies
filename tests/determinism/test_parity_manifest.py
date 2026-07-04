@@ -19,6 +19,7 @@ from tests.determinism.test_reference_alpha_signal_fires_replay import (
     _replay as reference_alpha_signal_fires_replay,
 )
 from tests.determinism.test_regime_hazard_replay import _replay as regime_hazard_replay
+from tests.determinism.test_risk_verdict_replay import _replay as risk_verdict_replay
 from tests.determinism.test_regime_state_replay import (
     EXPECTED_LEVEL6_REGIME_STATE_COUNT,
     _drive_regime_states,
@@ -86,6 +87,7 @@ _REPLAY_BY_NAME = {
     "halt_order": _replay_halt_order,
     "halt_ack": _replay_halt_ack,
     "halt_position_update": _replay_halt_position_update,
+    "risk_verdict": risk_verdict_replay,
 }
 
 

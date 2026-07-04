@@ -70,6 +70,10 @@ from tests.determinism.test_regime_hazard_replay import (
     EXPECTED_LEVEL5_HAZARD_COUNT,
     EXPECTED_LEVEL5_HAZARD_HASH,
 )
+from tests.determinism.test_risk_verdict_replay import (
+    EXPECTED_RISK_VERDICT_COUNT,
+    EXPECTED_RISK_VERDICT_HASH,
+)
 from tests.determinism.test_regime_state_replay import (
     EXPECTED_LEVEL6_REGIME_STATE_COUNT,
     EXPECTED_LEVEL6_REGIME_STATE_HASH,
@@ -201,4 +205,8 @@ LOCKED_PARITY_BASELINES: Final[dict[str, ParityEntry]] = {
         EXPECTED_HALT_POSITION_UPDATE_HASH,
         EXPECTED_HALT_POSITION_UPDATE_COUNT,
     ),
+    # Audit-2026-07-02 P1 #4: the risk engine's own decision event
+    # (action/reason/scaling_factor) was previously unpinned — only the
+    # order legs a verdict produces were hashed elsewhere.
+    "risk_verdict": (EXPECTED_RISK_VERDICT_HASH, EXPECTED_RISK_VERDICT_COUNT),
 }
