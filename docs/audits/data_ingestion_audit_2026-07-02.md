@@ -43,12 +43,28 @@ subscription.
 
 ## 0. Remediation Status
 
-Read-only audit. No remediation changes were made in this pass (no
-production code, configs, baselines, or docs were edited).
+Sections 1–9 below preserve the original read-only pass as written. A
+follow-up remediation pass (same day) implemented the P1/P2 backlog from
+§9; current status:
 
 | ID | Status | Notes |
 |----|--------|-------|
-| *(none — read-only pass)* | | |
+| DI-01 (WS queue overflow → DataHealth) | **Fixed** | `MassiveLiveFeed._consume()` now calls `normalizer.notify_feed_interrupted((event.symbol,))` on every `queue.Full` drop (`ingestion/massive_ws.py`). Test: `tests/ingestion/test_massive_normalizer.py::TestMassiveLiveFeedBackpressure::test_consume_drop_marks_symbol_gap_detected`. |
+| DI-02 (partial WS subscription → DataHealth) | **Fixed** | `_subscribe()` calls `normalizer.notify_feed_interrupted(self._symbols)` when `successes < n_expected` (symbol-granularity, not per-channel — channel identity isn't reliably attributable from Massive's response frames). Tests: `TestMassiveLiveFeedSubscriptionHealth` in the same file. |
+| DI-03 (rejected-event provenance) | **Fixed** | New `Orchestrator._publish_rejected_event_alert()` publishes a typed `Alert` (reusing the existing bus/Inv-7 provenance path rather than a bespoke sink) whenever a quote/trade is blocked by the data-health gate; HALTED trades are unaffected (already logged via the existing carve-out). Tests: `TestRejectedEventAlert` in `tests/kernel/test_data_integrity_runtime.py`. |
+| DI-04 (ingest-health defaults fail-open) | **Revised, not flipped** | Flipping the `PlatformConfig` dataclass defaults would break every PAPER config (`configs/paper_run.yaml`/`paper_smoke_rth.yaml`, standalone, no `extends:`) and ~95 direct `PlatformConfig(...)` test constructions — `backtest_enforce_ingest_terminal_health=True` raises outside BACKTEST mode; `require_healthy_disk_cache_manifests=True` raises whenever `disk_cache_ingestion_health_rows` is empty. Instead pinned the already-safe shipped-config state with a test (`test_backtest_configs_are_fail_closed_on_ingest_health` in `tests/acceptance/test_backtest_app_config_keys.py`) and locked the intentional dataclass defaults (`test_ingest_health_gates_default_fail_open_by_design` in `tests/core/test_platform_config.py`). |
+| DI-05 (anonymous malformed-frame counter) | **Fixed** | New `MassiveNormalizer.anonymous_malformed_frames` counter, incremented on JSON-decode failure and on `_mark_corrupted`'s empty/UNKNOWN-symbol early return. Threshold/escalation policy deliberately left to the monitoring layer (not invented here). Tests in `TestMassiveNormalizerDefensiveHardening`. |
+| DI-06 (normalizer_version cache enforcement) | **Fixed** | `DiskEventCache.load()` now compares manifest `normalizer_version` and logs a WARNING on mismatch; does not invalidate the cache (that stays `event_schema_hash`'s job — a version bump doesn't always mean cached values are wrong). Tests in `TestDiskEventCacheManifest`. |
+| DI-07 (wall-clock cache provenance) | **Partially fixed** | `harness/backtest_runner.py`'s `ingest_data()` — the only call site that actually calls `DiskEventCache.save()` — now injects `WallClock()`. The other 3 cited call sites (`cache_replay.py`, 2 scripts) only call `load()`/`exists()`, never `save()`, so `created_at` is never written there — threading a clock through them would have been a no-op; skipped. The factor-loadings-freshness half of this finding was already fixed by an unrelated, concurrently-landed kernel-audit remediation (commit `12ffafa`) before this pass started. |
+| DI-08 (factor/sector loader ownership) | **Deferred** | Composition-layer territory with its own active audit series (`composition_audit_2026-07-02.md`) already covering this exact code in more depth; both loaders are no-ops in the shipped `platform.yaml`. Refactoring across the ingestion/composition boundary here risked duplicating or conflicting with that audit's remediation. |
+| DI-09 (trade-condition eligibility policy) | **Fixed (documented)** | Documented as intentional design in the data-engineering skill rather than inventing a cross-layer eligibility classifier that would belong to the sensor layer's own audit territory. |
+| DI-10 (SKILL.md doc drift) | **Fixed** | Corrected the `EventSerializer` section of `.cursor/skills/data-engineering/SKILL.md`. |
+| *(collateral)* | **Fixed** | `tests/acceptance/test_no_walltime_outside_clock.py` had a pre-existing failure on `main` (unrelated kernel-audit remediation removed `bootstrap.py`'s wall-clock fallback but left it on the allowlist) — dropped the stale entry so the full suite is green. |
+
+Verification: `ruff check` clean, `ruff format --check` clean on all touched
+files (2 pre-existing-unformatted files touched had no new violations in the
+changed lines), `mypy --strict src/feelies` clean (192 files), full fast
+suite (`pytest -m "not functional and not slow"`) **3870 passed, 5 skipped**.
 
 ---
 

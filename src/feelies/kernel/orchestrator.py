@@ -1856,7 +1856,10 @@ class Orchestrator:
         # BT-6: detect an intraday SSR trigger from the same tape.
         self._update_ssr_state(trade)
 
-        if self._data_health_blocks_trading(trade.symbol, trade.correlation_id):
+        trade_block_reason = self._data_health_blocks_trading(
+            trade.symbol, trade.correlation_id
+        )
+        if trade_block_reason is not None:
             # CORRUPTED / GAP_DETECTED drop the trade entirely (bad data
             # must not pollute sensors or the EventLog).  HALTED is a
             # real market event: the print that triggered the halt (and
@@ -1871,6 +1874,15 @@ class Orchestrator:
                 if not self._events_prelogged:
                     self._event_log.append(trade)
                 self._bus.publish(trade)
+            elif self._normalizer is not None:
+                # Audit DI-03: this trade never reaches EventLog, so publish
+                # enough of it to reconstruct forensically what the
+                # normalizer saw at the moment trading was blocked.
+                self._publish_rejected_event_alert(
+                    trade,
+                    trade.correlation_id,
+                    trade_block_reason,
+                )
             return
 
         if not self._events_prelogged:
@@ -2314,7 +2326,14 @@ class Orchestrator:
             return
 
         # ── Runtime data integrity check (W-6) ─────────────────
-        if self._data_health_blocks_trading(quote.symbol, cid):
+        quote_block_reason = self._data_health_blocks_trading(quote.symbol, cid)
+        if quote_block_reason is not None:
+            # Audit DI-03: unlike the trade path, quotes have no HALTED
+            # carve-out — every block reason drops the quote before M1/
+            # EventLog.append, so publish enough of it to reconstruct
+            # forensically what the normalizer saw.
+            if self._normalizer is not None:
+                self._publish_rejected_event_alert(quote, cid, quote_block_reason)
             return
 
         # ── BT-5: LULD halt gate ───────────────────────────────
@@ -6588,8 +6607,61 @@ class Orchestrator:
             )
         )
 
-    def _data_health_blocks_trading(self, symbol: str, correlation_id: str) -> bool:
-        """Return True when the Massive normalizer forbids consuming this symbol.
+    def _publish_rejected_event_alert(
+        self,
+        event: NBBOQuote | Trade,
+        correlation_id: str,
+        data_health_reason: str,
+    ) -> None:
+        """Audit DI-03: publish a rejected market event's fields as an Alert.
+
+        A quote or trade blocked by :meth:`_data_health_blocks_trading` never
+        reaches ``EventLog.append`` (fail-safe for trading), so without this
+        the exact event that triggered the block is unrecoverable for
+        post-incident replay.  Publishing it as a typed ``Alert`` keeps the
+        provenance on the same bus every other layer already observes
+        (Inv-7/Inv-13) instead of adding a bespoke sink.
+        """
+        if isinstance(event, NBBOQuote):
+            context: dict[str, Any] = {
+                "event_type": "NBBOQuote",
+                "bid": str(event.bid),
+                "ask": str(event.ask),
+                "bid_size": event.bid_size,
+                "ask_size": event.ask_size,
+            }
+        else:
+            context = {
+                "event_type": "Trade",
+                "price": str(event.price),
+                "size": event.size,
+            }
+        context["symbol"] = event.symbol
+        context["exchange_timestamp_ns"] = event.exchange_timestamp_ns
+        context["sequence_number"] = event.sequence_number
+        context["data_health_reason"] = data_health_reason
+        self._bus.publish(
+            Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="market_event_rejected_by_data_health",
+                message=(
+                    f"{context['event_type']} for {event.symbol!r} rejected by "
+                    f"data-health gate ({data_health_reason})"
+                ),
+                context=context,
+            )
+        )
+
+    def _data_health_blocks_trading(self, symbol: str, correlation_id: str) -> str | None:
+        """Return the block reason when the normalizer forbids this symbol, else None.
+
+        The returned string is the gate reason suitable for DI-03 rejection
+        alerts (``SYMBOL_UNTRACKED`` for the strict-coverage path, otherwise
+        the ``DataHealth`` name).  ``None`` means the symbol may be consumed.
 
         CORRUPTED always halts trading for the symbol when a normalizer is wired.
         GAP_DETECTED does the same only when ``PlatformConfig.degrade_on_data_gap``
@@ -6603,7 +6675,7 @@ class Orchestrator:
         if the two ever drift, the more conservative gate wins (audit M1).
         """
         if self._normalizer is None:
-            return False
+            return None
         health = self._normalizer.health(symbol)
         cfg_syms = (
             {s.upper() for s in self._config.symbols} if self._config is not None else frozenset()
@@ -6615,10 +6687,10 @@ class Orchestrator:
                     if self._macro.can_transition(MacroState.DEGRADED):
                         self._macro.transition(
                             MacroState.DEGRADED,
-                            trigger=f"DATA_SYMBOL_UNTRACKED:{symbol}",
-                            correlation_id=correlation_id,
+                        trigger=f"DATA_SYMBOL_UNTRACKED:{symbol}",
+                        correlation_id=correlation_id,
                         )
-                    return True
+                    return "SYMBOL_UNTRACKED"
         if health == DataHealth.CORRUPTED:
             # Force-flatten the affected symbol before transitioning macro.
             # CORRUPTED is terminal — leaving an open position to mark at
@@ -6634,7 +6706,7 @@ class Orchestrator:
                     trigger=f"DATA_CORRUPTED:{symbol}",
                     correlation_id=correlation_id,
                 )
-            return True
+            return health.name
         if health == DataHealth.HALTED:
             # Recoverable halt — block fills for this symbol but do NOT
             # escalate macro (a real LULD pause is expected to resume).
@@ -6642,7 +6714,7 @@ class Orchestrator:
             # orchestrator's ``_update_halt_state`` edge detector; this
             # gate provides defense-in-depth in case that detector and
             # the normalizer ever disagree.
-            return True
+            return health.name
         degrade_gap = getattr(self._config, "degrade_on_data_gap", False)
         if degrade_gap and health == DataHealth.GAP_DETECTED:
             # GAP_DETECTED can recover to HEALTHY, but the macro DEGRADED
@@ -6660,8 +6732,8 @@ class Orchestrator:
                     trigger=f"DATA_GAP_DETECTED:{symbol}",
                     correlation_id=correlation_id,
                 )
-            return True
-        return False
+            return health.name
+        return None
 
     def _force_flatten_symbol_on_degrade(
         self,

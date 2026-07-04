@@ -37,6 +37,23 @@ class TestDefaults:
         cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
         assert cfg.account_equity == 50_000.0
 
+    def test_ingest_health_gates_default_fail_open_by_design(self) -> None:
+        """DI-04 (data ingestion audit 2026-07-02): these two dataclass
+        defaults must stay False.  ``backtest_enforce_ingest_terminal_health``
+        raises in validate() for any non-BACKTEST mode, and
+        ``require_healthy_disk_cache_manifests`` raises whenever
+        ``disk_cache_ingestion_health_rows`` is empty — flipping either
+        default would break every PAPER config (``configs/paper_run.yaml``
+        does not set them) and the ~95 direct ``PlatformConfig(...)``
+        constructions across the test suite.  The fail-closed behavior is
+        pinned instead at the shipped-config layer — see
+        ``test_backtest_configs_are_fail_closed_on_ingest_health`` in
+        ``tests/acceptance/test_backtest_app_config_keys.py``.
+        """
+        cfg = PlatformConfig(symbols=frozenset({"AAPL"}), alpha_specs=[Path("x.yaml")])
+        assert cfg.backtest_enforce_ingest_terminal_health is False
+        assert cfg.require_healthy_disk_cache_manifests is False
+
 
 # ── Validation ──────────────────────────────────────────────────────
 
