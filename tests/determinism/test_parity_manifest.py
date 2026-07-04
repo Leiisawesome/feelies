@@ -15,6 +15,9 @@ from tests.determinism.test_market_fill_replay import _replay as market_fill_rep
 from tests.determinism.test_multi_symbol_sensor_replay import _replay as multi_symbol_sensor_replay
 from tests.determinism.test_portfolio_order_replay import _replay as portfolio_order_replay
 from tests.determinism.test_position_pnl_replay import _replay as position_pnl_replay
+from tests.determinism.test_reference_alpha_signal_fires_replay import (
+    _replay as reference_alpha_signal_fires_replay,
+)
 from tests.determinism.test_regime_hazard_replay import _replay as regime_hazard_replay
 from tests.determinism.test_regime_state_replay import (
     EXPECTED_LEVEL6_REGIME_STATE_COUNT,
@@ -61,6 +64,7 @@ _REPLAY_BY_NAME = {
     "cross_sectional_context": xsect_context_replay,
     "signal_fires": signal_fires_replay,
     "multi_symbol_sensor_reading": multi_symbol_sensor_replay,
+    "reference_alpha_signal_fires": reference_alpha_signal_fires_replay,
 }
 
 
@@ -94,6 +98,26 @@ _UNREGISTERED_HASH_EXEMPTIONS: dict[str, str] = {
     # self-test must run without cvxpy).  Locked + guarded locally in
     # tests/determinism/test_sized_intent_solver_replay.py.
     "EXPECTED_LEVEL3_SOLVER_HASH": "cvxpy-conditional baseline (test_sized_intent_solver_replay.py)",
+    # Audit-2026-07-02 P1 #2: orchestrator-level replay baselines (flat +
+    # smoke scenarios) are intentionally kept out of LOCKED_PARITY_BASELINES
+    # so the manifest cross-check stays decoupled from the regime engine's
+    # transcendental sensitivity until a canonical host fingerprint is
+    # recorded for full-orchestrator replay (see the module docstring in
+    # test_orchestrator_replay.py).  Each is still individually locked and
+    # re-baselined the same way as any other parity hash — only the central
+    # registry cross-check is deliberately skipped.
+    "EXPECTED_ORCHESTRATOR_SIGNAL_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
+    "EXPECTED_ORCHESTRATOR_INTENT_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
+    "EXPECTED_ORCHESTRATOR_ORDER_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
+    "EXPECTED_ORCHESTRATOR_POSITION_UPDATE_HASH": (
+        "orchestrator-level baseline (test_orchestrator_replay.py)"
+    ),
+    "EXPECTED_ORCHESTRATOR_SMOKE_SIGNAL_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
+    "EXPECTED_ORCHESTRATOR_SMOKE_INTENT_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
+    "EXPECTED_ORCHESTRATOR_SMOKE_ORDER_HASH": "orchestrator-level baseline (test_orchestrator_replay.py)",
+    "EXPECTED_ORCHESTRATOR_SMOKE_POSITION_UPDATE_HASH": (
+        "orchestrator-level baseline (test_orchestrator_replay.py)"
+    ),
 }
 
 

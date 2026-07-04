@@ -62,6 +62,10 @@ from tests.determinism.test_position_pnl_replay import (
     EXPECTED_POSITION_PNL_COUNT,
     EXPECTED_POSITION_PNL_HASH,
 )
+from tests.determinism.test_reference_alpha_signal_fires_replay import (
+    EXPECTED_REFERENCE_ALPHA_SIGNAL_FIRES_COUNT,
+    EXPECTED_REFERENCE_ALPHA_SIGNAL_FIRES_HASH,
+)
 from tests.determinism.test_regime_hazard_replay import (
     EXPECTED_LEVEL5_HAZARD_COUNT,
     EXPECTED_LEVEL5_HAZARD_HASH,
@@ -168,5 +172,13 @@ LOCKED_PARITY_BASELINES: Final[dict[str, ParityEntry]] = {
     "multi_symbol_sensor_reading": (
         EXPECTED_MULTI_SYMBOL_READING_HASH,
         EXPECTED_MULTI_SYMBOL_READING_COUNT,
+    ),
+    # Audit-2026-07-02 P1 #6: non-empty Signal emission from the *real*
+    # reference alpha sig_benign_midcap_v1 (signal_fires above uses a
+    # hand-written probe signal + trivial gate; level2_signal pins only the
+    # empty stream for every actual reference alpha).
+    "reference_alpha_signal_fires": (
+        EXPECTED_REFERENCE_ALPHA_SIGNAL_FIRES_HASH,
+        EXPECTED_REFERENCE_ALPHA_SIGNAL_FIRES_COUNT,
     ),
 }
