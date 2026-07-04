@@ -1871,6 +1871,15 @@ class Orchestrator:
                 if not self._events_prelogged:
                     self._event_log.append(trade)
                 self._bus.publish(trade)
+            elif self._normalizer is not None:
+                # Audit DI-03: this trade never reaches EventLog, so publish
+                # enough of it to reconstruct forensically what the
+                # normalizer saw at the moment trading was blocked.
+                self._publish_rejected_event_alert(
+                    trade,
+                    trade.correlation_id,
+                    self._normalizer.health(trade.symbol).name,
+                )
             return
 
         if not self._events_prelogged:
@@ -2315,6 +2324,14 @@ class Orchestrator:
 
         # ── Runtime data integrity check (W-6) ─────────────────
         if self._data_health_blocks_trading(quote.symbol, cid):
+            # Audit DI-03: unlike the trade path, quotes have no HALTED
+            # carve-out — every block reason drops the quote before M1/
+            # EventLog.append, so publish enough of it to reconstruct
+            # forensically what the normalizer saw.
+            if self._normalizer is not None:
+                self._publish_rejected_event_alert(
+                    quote, cid, self._normalizer.health(quote.symbol).name
+                )
             return
 
         # ── BT-5: LULD halt gate ───────────────────────────────
@@ -6585,6 +6602,55 @@ class Orchestrator:
                     f"({intent.intent.name}); retries next boundary (Reg-SHO 201)."
                 ),
                 context={"symbol": intent.symbol, "intent": intent.intent.name},
+            )
+        )
+
+    def _publish_rejected_event_alert(
+        self,
+        event: NBBOQuote | Trade,
+        correlation_id: str,
+        data_health_reason: str,
+    ) -> None:
+        """Audit DI-03: publish a rejected market event's fields as an Alert.
+
+        A quote or trade blocked by :meth:`_data_health_blocks_trading` never
+        reaches ``EventLog.append`` (fail-safe for trading), so without this
+        the exact event that triggered the block is unrecoverable for
+        post-incident replay.  Publishing it as a typed ``Alert`` keeps the
+        provenance on the same bus every other layer already observes
+        (Inv-7/Inv-13) instead of adding a bespoke sink.
+        """
+        if isinstance(event, NBBOQuote):
+            context: dict[str, Any] = {
+                "event_type": "NBBOQuote",
+                "bid": str(event.bid),
+                "ask": str(event.ask),
+                "bid_size": event.bid_size,
+                "ask_size": event.ask_size,
+            }
+        else:
+            context = {
+                "event_type": "Trade",
+                "price": str(event.price),
+                "size": event.size,
+            }
+        context["symbol"] = event.symbol
+        context["exchange_timestamp_ns"] = event.exchange_timestamp_ns
+        context["sequence_number"] = event.sequence_number
+        context["data_health_reason"] = data_health_reason
+        self._bus.publish(
+            Alert(
+                timestamp_ns=self._clock.now_ns(),
+                correlation_id=correlation_id,
+                sequence=self._seq.next(),
+                severity=AlertSeverity.WARNING,
+                layer="kernel",
+                alert_name="market_event_rejected_by_data_health",
+                message=(
+                    f"{context['event_type']} for {event.symbol!r} rejected by "
+                    f"data-health gate ({data_health_reason})"
+                ),
+                context=context,
             )
         )
 

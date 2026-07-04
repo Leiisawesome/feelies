@@ -51,6 +51,22 @@ The ingestion layer produces two canonical event types from `core/events.py`:
 Both inherit from `Event`, carrying `timestamp_ns` (from injectable clock),
 `correlation_id`, and `sequence` for provenance.
 
+**Trade-condition eligibility (audit DI-09, data ingestion audit 2026-07-02):
+intentional, by design.** `conditions` is parsed and preserved verbatim from
+both REST and WS (`MassiveNormalizer._ws_trade` / `_rest_trade`) — every
+trade print, including odd-lot, average-price, and other irregular-print
+condition codes, crosses the ingestion boundary unfiltered. The normalizer's
+job is typed normalization, not semantic trade classification; deciding
+which prints are "regular sale" eligible for a given consumer (a sensor's
+volume/intensity calculation, a passive-fill queue-volume model) is that
+consumer's responsibility, made with that consumer's own `conditions`
+tuple. The one exception is BT-5/BT-6: halt and SSR condition codes are
+interpreted at the boundary (`classify_halt_status`,
+`ingestion/data_integrity.py`) because they gate `DataHealth` itself, not
+consumer-level trade eligibility. There is no shared regular-sale/eligibility
+classifier today — if one becomes necessary, it belongs to the consuming
+layer (e.g. feature-engine's sensors), not this one.
+
 ## Normalizer Protocol
 
 This skill owns the `MarketDataNormalizer` protocol (`ingestion/normalizer.py`) —
@@ -266,12 +282,15 @@ The live-execution skill produces `TradeRecord` entries from fill events.
 
 ### EventSerializer (`src/feelies/core/serialization.py`)
 
-Round-trip serialization protocol for event persistence. The
-`EventSerializer` Protocol exists (round-trip correctness,
-bit-determinism, type preservation, Decimal fidelity), but the disk
-cache currently uses ad-hoc `_event_to_dict` / `_dict_to_event`
-helpers; a concrete bit-deterministic serializer unifying the disk
-cache behind the protocol is still TODO.
+Round-trip serialization protocol for event persistence. **Implemented**
+(corrected here per audit DI-10, data ingestion audit 2026-07-02 — this
+section previously and incorrectly called it "still TODO" for at least two
+prior audit cycles): `JsonLineEventSerializer` is the concrete
+`EventSerializer` — bit-deterministic (`__dataclass_fields__` iteration
+order + `json.dumps` dict-order preservation + total Decimal/tuple
+coercion), and it is the single source of truth `DiskEventCache` routes
+through for both `save()` and `load()`. Round-trip correctness and
+bit-equality are locked by `tests/core/test_serialization.py`.
 
 ## Storage Design
 

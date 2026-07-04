@@ -52,10 +52,6 @@ _WALL_CLOCK_ALLOWLIST: dict[str, str] = {
         "perf_counter_ns latency telemetry into _tick_timings (MetricEvent "
         "side-channel); all event timestamps use the injected clock, not this"
     ),
-    "bootstrap.py": (
-        "session-gated factor-loadings freshness escape, logged at WARNING as "
-        "breaking bit-identical replay when session_open_ns is unset"
-    ),
     "harness/backtest_runner.py": "backtest run wall-time / progress reporting (not in the event stream)",
     "harness/backtest_prep.py": "backtest-prep progress timing (not in the event stream)",
     "broker/ib/connection.py": "live IB Gateway connection-ready timeout (live-only path)",

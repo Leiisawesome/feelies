@@ -78,7 +78,7 @@ from feelies.kernel.signal_order_trace import (
     SignalOrderTraceRow,
     print_signal_order_trace,
 )
-from feelies.core.clock import SimulatedClock
+from feelies.core.clock import SimulatedClock, WallClock
 from feelies.core.events import (
     CrossSectionalContext,
     Event,
@@ -323,7 +323,13 @@ def ingest_data(
     cache: DiskEventCache | None = None
     if not no_cache:
         resolved_dir = cache_dir or Path.home() / ".feelies" / "cache"
-        cache = DiskEventCache(resolved_dir)
+        # Audit DI-07: DiskEventCache's manifest created_at is genuinely
+        # wall-clock provenance (when this cache file was written) — route
+        # it through the sanctioned WallClock abstraction instead of the
+        # bare time.gmtime() fallback (Inv-10).  Distinct from the
+        # per-(symbol, day) SimulatedClock below, which stamps the
+        # normalizer's received_ns and must stay fixed/non-advancing.
+        cache = DiskEventCache(resolved_dir, clock=WallClock())
 
     dates = iter_calendar_dates(start_date, end_date)
     multi_day_or_symbol = len(symbols) * len(dates) > 1
