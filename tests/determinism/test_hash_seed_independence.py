@@ -18,6 +18,14 @@ The probe runs the replays whose hash functions iterate dicts — regime
 posteriors, the sorted ``target_positions`` / ``factor_exposures`` /
 ``mechanism_breakdown`` maps, and the sorted snapshot ``values`` / ``warm`` /
 ``stale`` maps — i.e. the paths where a salted ``hash()`` could bite.
+
+Audit kernel-P1 (2026-07-02) extended the probe to the three newest
+dict/set-heavy replays added since this test was written:
+``cross_sectional_context`` (symbol-sorted ``signals_by_symbol`` /
+``snapshots_by_symbol`` maps), ``signal_fires`` (a real engine's gate-state
+dict), and ``multi_symbol_sensor_reading`` (cross-symbol dict fan-out) —
+each explicitly ``sorted(...)``-canonicalizes a dict or set per its own
+docstring, i.e. the exact class of risk this probe exists to catch.
 """
 
 from __future__ import annotations
@@ -35,17 +43,27 @@ def _probe() -> None:
     """Print ``name=hash`` for the dict-iterating replays (subprocess entry)."""
     sys.path.insert(0, str(_REPO_ROOT))
     os.chdir(_REPO_ROOT)
+    from tests.determinism.test_cross_sectional_context_replay import (
+        _replay as xsect_context_replay,
+    )
     from tests.determinism.test_horizon_feature_snapshot_replay import _replay as snapshot_replay
+    from tests.determinism.test_multi_symbol_sensor_replay import (
+        _replay as multi_symbol_sensor_replay,
+    )
     from tests.determinism.test_regime_state_replay import (
         _drive_regime_states,
         _hash_regime_stream,
     )
+    from tests.determinism.test_signal_fires_replay import _replay as signal_fires_replay
     from tests.determinism.test_sized_intent_replay import _replay as intent_replay
 
     print("regime=" + _hash_regime_stream(_drive_regime_states()))
     print("intent_off=" + intent_replay(decay=False)[0])
     print("intent_on=" + intent_replay(decay=True)[0])
     print("snapshot=" + snapshot_replay()[0])
+    print("cross_sectional_context=" + xsect_context_replay()[0])
+    print("signal_fires=" + signal_fires_replay()[0])
+    print("multi_symbol_sensor_reading=" + multi_symbol_sensor_replay()[0])
 
 
 def _run_under_seed(seed: str) -> str:

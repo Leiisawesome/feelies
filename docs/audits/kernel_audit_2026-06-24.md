@@ -177,7 +177,7 @@ relevant layer is wired.
 | M3 `FEATURE_COMPUTE` | orchestrator (empty body) (`:2413`) | — | — | bookkeeping only (legacy hook) |
 | M4 `SIGNAL_EVALUATE` | `_select_bus_signal` (`:2447,6096`) | `_signal_buffer` (list) | `bus.publish(signal)` (`:2484`) | arbitrator over ordered list; ties = buffer order |
 | M5 `RISK_CHECK` | `risk_engine.check_signal` (`:2590`) | signal+positions | `RiskVerdict` | engine-owned sequence |
-| M6 `ORDER_DECISION` | `_try_build_order_from_intent` + `check_order` (`:2762,2789`) | intent+verdict | `OrderRequest`,`RiskVerdict` | single order/tick on this path |
+| M6 `ORDER_DECISION` | `_try_build_order_from_intent` + `check_order` (`:2762,2789`) | intent+verdict | `OrderRequest`,`RiskVerdict` | single order/tick on this path (**annotation 2026-07-02:** REVERSE is the exception — it submits two, exit-then-entry, both from the same monotonic `_seq`; see `kernel_audit_2026-07-02.md` §3/§4.1) |
 | M7 `ORDER_SUBMIT` | `order_router.submit` + `bus.publish(order)` (`:2979,3011`) | order | `OrderRequest` | `_seq`/`derive_order_id` |
 | M8 `ORDER_ACK` | `_poll_order_router_acks({order_id})` (`:3030`) | router | `OrderAck` | set used for membership only; list order preserved (`:5071`) |
 | M9 `POSITION_UPDATE` | `_reconcile_fills(acks)` (**sole writer**) (`:3041,5504`) | acks | `PositionUpdate` | iterates `acks` list in order; `_seq` |

@@ -12,7 +12,7 @@ deterministic, reproducible validation pipeline. The default posture
 is **deny deployment** — evidence of correctness must be affirmatively
 produced, not assumed.
 
-This skill owns the eleven locked parity hashes (the canonical registry
+This skill owns the locked parity hashes (the canonical registry
 is `tests/determinism/parity_manifest.py`), the gate-matrix **acceptance
 criteria**, the promotion-ledger schema references, and the strict-typing
 / DTZ-rule scope locks. Promotion wiring detail lives in the
@@ -41,8 +41,9 @@ auditable configuration). Additionally:
 Each is a SHA-256 over the ordered event stream at one layer, asserted
 by an in-process pytest replay test under `tests/determinism/`. The canonical
 registry is `tests/determinism/parity_manifest.py:LOCKED_PARITY_BASELINES`
-(eleven entries across six levels). Drift between modules is caught in
-CI by `tests/determinism/test_parity_manifest.py`.
+(17 entries as of the 2026-07-02 kernel audit; the original eleven span six
+levels L1–L6, plus six additional non-leveled baselines added since).
+Drift between modules is caught in CI by `tests/determinism/test_parity_manifest.py`.
 
 | Level | Stream | Test |
 |-------|--------|------|
@@ -57,6 +58,27 @@ CI by `tests/determinism/test_parity_manifest.py`.
 | L4 | hazard-exit `OrderRequest` | `test_hazard_exit_replay.py` |
 | L5 | `RegimeHazardSpike` | `test_regime_hazard_replay.py` |
 | L6 | `RegimeState` | `test_regime_state_replay.py` |
+| — | Aggressive-fill economics (`market_fill_acks`) | `test_market_fill_replay.py` |
+| — | `PositionUpdate` / PnL reconciliation (`position_pnl`) | `test_position_pnl_replay.py` |
+| — | `StateTransition` multi-SM shared-sequence stream (`state_transition`) | `test_state_transition_replay.py` |
+| — | `CrossSectionalContext` from a real `UniverseSynchronizer` (`cross_sectional_context`) | `test_cross_sectional_context_replay.py` |
+| — | Non-empty SIGNAL `Signal` from a real `HorizonSignalEngine` (`signal_fires`) | `test_signal_fires_replay.py` |
+| — | Cross-symbol `SensorReading` interleave (`multi_symbol_sensor_reading`) | `test_multi_symbol_sensor_replay.py` |
+
+Two further determinism modules exist deliberately **outside** the manifest
+(see each module's own docstring for why):
+
+- `test_orchestrator_replay.py` — the only replay that instantiates the full
+  `Orchestrator` (`build_platform` + `run_backtest`), locking the kernel's own
+  `_seq` interleaving, micro-state walk, and bus-subscriber registration order
+  that every leaf-driven baseline above is blind to. Its canonical fixture's
+  Signal/Order/PositionUpdate streams are empty (no threshold crossed); a
+  second, threshold-crossing fixture (seeded position + armed stop-loss)
+  locks a non-empty variant of the same three streams.
+- `test_hash_seed_independence.py` — re-runs the dict/set-iterating replays
+  in subprocesses under several `PYTHONHASHSEED` values and asserts identical
+  hashes, proving seed-independence directly rather than only pinning one
+  seed value.
 
 Determinism is structurally supported by:
 
@@ -125,7 +147,7 @@ and construction-time enum-completeness check.
 | Invariant | Generator | Property |
 |-----------|-----------|----------|
 | Causal ordering | Random event streams with shuffled timestamps | Sensors / signals never depend on future events |
-| Deterministic replay | Same event log + config, two runs | All eleven parity hashes bit-identical |
+| Deterministic replay | Same event log + config, two runs | All locked parity hashes bit-identical |
 | Position conservation | Random fill sequences | Σ fills = final position; no phantoms |
 | Risk monotonic safety | Random `RiskLevel` transitions | Safety never decreases without explicit re-auth |
 | PnL decomposition | Random trade sequences | alpha + beta + costs = total (FP tolerance) |
@@ -148,7 +170,7 @@ or hazard-exit logic.
 
 | Test | Method | Pass criteria |
 |------|--------|---------------|
-| Same-machine determinism | Run identical config twice on same machine | Bit-identical event stream + all eleven parity hashes |
+| Same-machine determinism | Run identical config twice on same machine | Bit-identical event stream + all locked parity hashes |
 | Cross-machine determinism | Run identical config on two different machines | Bit-identical (requires fixed seeds, no hardware-dependent floats) |
 | Version-upgrade determinism | Run same config on old + new code | Identical, or documented + justified divergence |
 | Checkpoint resume | Interrupt replay; resume from checkpoint (design target — no sensor-state checkpoint store exists yet; only `RegimeEngine.checkpoint()`/`restore()` is implemented) | Final output identical to uninterrupted run |
@@ -261,7 +283,7 @@ align with post-trade-forensics skill defaults.
 |----------|----------|------------|
 | Strategy bundle | `*.alpha.yaml`, signal logic, sensor declarations, risk params | semver + git SHA |
 | Configuration | All tunable parameters | versioned alongside; diff-auditable |
-| Backtest results | All eleven parity hashes; trade logs; integrity checks | keyed to `(strategy_version, data_version, engine_version)` |
+| Backtest results | All locked parity hashes; trade logs; integrity checks | keyed to `(strategy_version, data_version, engine_version)` |
 | Reference factor loadings | Parquet / built artifacts | content-addressed hash; max-age guard |
 | Dependency manifest | Library versions | lockfile committed |
 
@@ -273,11 +295,11 @@ artifact_id = hash(strategy_version, config_version, data_version, engine_versio
 
 Every run produces a record with `run_id` (deterministic hash),
 `strategy_version`, `engine_version`, `data_version`,
-`config_snapshot` (JSON), environment, random seeds, **all eleven
+`config_snapshot` (JSON), environment, random seeds, **all locked
 parity hashes**, integrity-check pass/fail, timestamp.
 
 To reproduce: check out `strategy_version` + `engine_version`, load
-`data_version`, apply `config_snapshot`, set seeds, run. All eleven
+`data_version`, apply `config_snapshot`, set seeds, run. All locked
 parity hashes must match.
 
 ### Configuration Audit Trail
