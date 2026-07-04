@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 
-from feelies.core.identifiers import SequenceGenerator, make_correlation_id
+from feelies.core.identifiers import SequenceGenerator, derive_order_id, make_correlation_id
 
 
 class TestMakeCorrelationId:
@@ -23,6 +24,29 @@ class TestMakeCorrelationId:
         assert parts[0] == "MSFT"
         assert parts[1] == "1234567890"
         assert parts[2] == "1"
+
+
+class TestDeriveOrderId:
+    """Tests for derive_order_id (Inv-5 order-ID determinism primitive)."""
+
+    def test_matches_sha256_contract_directly(self) -> None:
+        seed = "AAPL:1700000000000000000:3:entry"
+        expected = hashlib.sha256(seed.encode()).hexdigest()[:16]
+        assert derive_order_id(seed) == expected
+
+    def test_deterministic_for_same_seed(self) -> None:
+        seed = "cid-1:5:AAPL:HAZARD_SPIKE"
+        assert derive_order_id(seed) == derive_order_id(seed)
+
+    def test_distinct_seeds_produce_distinct_ids(self) -> None:
+        ids = {derive_order_id(f"cid-1:{seq}:AAPL:entry") for seq in range(50)}
+        assert len(ids) == 50
+
+    def test_output_is_16_lowercase_hex_chars(self) -> None:
+        order_id = derive_order_id("cid-1:0:AAPL:exit")
+        assert len(order_id) == 16
+        assert order_id == order_id.lower()
+        assert all(c in "0123456789abcdef" for c in order_id)
 
 
 class TestSequenceGenerator:

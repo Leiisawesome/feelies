@@ -624,6 +624,7 @@ def build_platform(
         bus=bus,
         registry=registry,
         position_store=position_store,
+        clock=clock,
     )
 
     # Audit P0 H-1: hazard wiring scans ALL active alphas so SIGNAL-layer
@@ -1906,6 +1907,7 @@ def _create_composition_layer(
     bus: EventBus,
     registry: AlphaRegistry,
     position_store: MemoryPositionStore,
+    clock: Clock,
 ) -> tuple[
     CompositionEngine | None,
     CrossSectionalTracker | None,
@@ -1975,7 +1977,7 @@ def _create_composition_layer(
             f"alpha universe(s) or raise the cap explicitly."
         )
 
-    _enforce_factor_loadings_freshness(config, sorted(universe))
+    _enforce_factor_loadings_freshness(config, sorted(universe), clock=clock)
 
     intent_seq = SequenceGenerator()
     ctx_seq = SequenceGenerator()
@@ -2241,6 +2243,8 @@ def _enforce_ex_date_replay_guard(
 def _enforce_factor_loadings_freshness(
     config: PlatformConfig,
     universe_sorted: list[str],
+    *,
+    clock: Clock,
 ) -> None:
     """Fail-stop on missing or stale loadings rows.
 
@@ -2259,14 +2263,21 @@ def _enforce_factor_loadings_freshness(
     was checked out.  Only when that block is absent do we fall back to
     the filesystem mtime, whose drift forced downstream suites to pin a
     ~century-long ``factor_loadings_max_age_seconds``.  The comparison
-    clock is ``session_open_ns`` when available (deterministic);
-    wall-clock ``time.time()`` is a last resort that breaks bit-identical
-    replay and is logged as such.
+    reference is ``session_open_ns`` when available (deterministic); when
+    absent, PAPER/LIVE fall back to the injected ``clock`` (``WallClock``
+    there, so this is genuinely "now" for a live deployment — routed
+    through Inv-10's sanctioned abstraction rather than a raw
+    ``time.time()`` call).  BACKTEST has no sensible wall-clock reference
+    for historical data, and ``SimulatedClock`` reads 0 at this
+    (pre-replay) point in boot, so silently comparing against either
+    would produce a meaningless verdict (audit kernel-P1: the previous
+    ``time.time()`` fallback either false-failed fresh backtest data or,
+    swapped naively for the boot-time clock, would have false-passed
+    stale data) — BACKTEST therefore refuses to boot rather than guess.
     """
     if config.factor_loadings_dir is None:
         return
     import json
-    import time
 
     path = config.factor_loadings_dir / "loadings.json"
     if not path.is_file():
@@ -2294,13 +2305,21 @@ def _enforce_factor_loadings_freshness(
 
     if config.session_open_ns is not None:
         reference_time = config.session_open_ns / 1_000_000_000
-    else:
-        reference_time = time.time()
+    elif config.mode is not OperatingMode.BACKTEST:
+        reference_time = clock.now_ns() / 1_000_000_000
         logger.warning(
-            "factor loadings freshness: no session_open_ns configured; using wall-clock "
-            "time.time() as the reference, which breaks bit-identical replay (Inv-5) — "
-            "configure session_open_ns or embed _meta.as_of_ns in %s",
+            "factor loadings freshness: no session_open_ns configured; using the "
+            "injected wall clock as the reference — configure session_open_ns or "
+            "embed _meta.as_of_ns in %s for a reproducible verdict",
             path,
+        )
+    else:
+        raise StaleFactorLoadingsError(
+            f"factor_loadings_dir is configured ({config.factor_loadings_dir}) but "
+            "session_open_ns is unset in BACKTEST mode, so there is no causal "
+            "reference time to evaluate freshness against (Inv-5/Inv-11: refuse "
+            "rather than guess). Set session_open_ns, or embed _meta.as_of_ns in "
+            f"{path} and compare it via session_open_ns once set."
         )
     age_seconds = reference_time - file_as_of_seconds
     if age_seconds > config.factor_loadings_max_age_seconds:

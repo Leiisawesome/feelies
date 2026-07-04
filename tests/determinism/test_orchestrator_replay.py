@@ -10,51 +10,27 @@ walk, the ``_pending_sized_intents`` drain order, and the bus-subscriber
 registration order — were not coupled to any hash.  A kernel-introduced ordering
 regression could pass the whole determinism suite.
 
-This module closes that gap with **two** scenarios:
+This module closes that gap: it runs the **full platform** (``build_platform`` +
+``run_backtest`` with a ``SimulatedClock``) over the canonical Phase-4 synthetic
+event log and hashes the orchestrator-produced ``Signal`` / ``SizedPositionIntent``
+/ ``OrderRequest`` / ``PositionUpdate`` streams (``sequence`` included, so the
+kernel sequence allocation is part of the lock).
 
-* ``_run()`` — the canonical Phase-4 synthetic fixture (``build_platform`` +
-  ``run_backtest`` over :func:`tests.integration.test_phase4_e2e._synth_multi_symbol_events`).
-  Its random walk never crosses a reference alpha's entry gate (see that
-  module's own docstring), so the ``signal`` / ``order`` / ``position_update``
-  streams are the well-known empty-input SHA-256 and only ``intent`` (a single
-  flat, order-less ``SizedPositionIntent``) is non-trivial.  Kept as a
-  regression baseline for the flat-book case — it still pins that the kernel
-  produces *exactly* that shape on quiet data, and the M2 fan-out survives
-  mixed SIGNAL+PORTFOLIO boot.
-* ``_run_smoke()`` — a dedicated single-symbol scenario using the platform's
-  own ``paper_smoke_v1`` smoke alpha (``alphas/_paper_smoke_v1/``, already used
-  by the paper-RTH harness for exactly this "guarantee occasional entries"
-  purpose — its gate is unconditionally ``True``, so it needs no regime
-  calibration).  A plain random-walk quote stream is enough to cross its
-  permissive ``realized_vol_30s_zscore`` threshold, so this scenario produces
-  **genuinely non-empty** ``Signal``, ``OrderRequest``, and ``PositionUpdate``
-  streams — the first orchestrator-level baseline to actually exercise the
-  M4-M10 order-submission / ack / position-reconciliation interleaving it was
-  built to protect (audit-2026-07-02 P1 #1).
-
-``test_two_full_orchestrator_replays_are_identical`` /
-``test_two_full_orchestrator_smoke_replays_are_identical`` are the portable
-core (they catch any in-process nondeterminism — wall-clock / RNG /
-dict-reordering — that leaks into a parity event).  The locked-baseline tests
-additionally pin drift; as with every other parity hash each is bound to a
-fixed (platform, libm) pair (see ``parity_manifest`` cross-libm caveat) and is
-re-baselined the same way.
-
-Naming (audit-2026-07-02 P1 #2): every locked constant here ends in ``_HASH``
-so :func:`tests.determinism.test_parity_manifest.test_every_locked_hash_is_registered_or_exempt`'s
-scanner actually sees it.  All eight are intentionally kept **out** of
-``LOCKED_PARITY_BASELINES`` (registered instead in
-``_UNREGISTERED_HASH_EXEMPTIONS``) so the manifest cross-check stays decoupled
-from the regime engine's transcendental sensitivity until a canonical host
-fingerprint is recorded for orchestrator-level replay.
+``test_two_full_orchestrator_replays_are_identical`` is the portable core (it
+catches any in-process nondeterminism — wall-clock / RNG / dict-reordering — that
+leaks into a parity event).  The locked-baseline test additionally pins drift; as
+with every other parity hash it is bound to a fixed (platform, libm) pair (see
+``parity_manifest`` cross-libm caveat) and is re-baselined the same way.  It is
+intentionally **not** registered in ``LOCKED_PARITY_BASELINES`` so the manifest
+cross-check stays decoupled from the regime engine's transcendental sensitivity
+until a canonical host fingerprint is recorded for it.
 """
 
 from __future__ import annotations
 
 import hashlib
-import random
+from dataclasses import replace
 from decimal import Decimal
-from pathlib import Path
 
 from feelies.bootstrap import build_platform
 from feelies.core.events import (
@@ -65,11 +41,9 @@ from feelies.core.events import (
     SizedPositionIntent,
 )
 from feelies.core.platform_config import PlatformConfig
-from feelies.sensors.impl.micro_price import MicroPriceSensor
-from feelies.sensors.impl.realized_vol_30s import RealizedVol30sSensor
-from feelies.sensors.spec import SensorSpec
 from feelies.storage.memory_event_log import InMemoryEventLog
 
+from tests.fixtures.event_logs._generate import SESSION_OPEN_NS
 from tests.integration.test_phase4_e2e import (
     _make_phase4_config,
     _synth_multi_symbol_events,
@@ -122,7 +96,10 @@ def _hash_intents(intents: list[SizedPositionIntent]) -> str:
         [
             f"{i.sequence}|{i.correlation_id}|{i.timestamp_ns}|"
             f"{getattr(i, 'decision_basis_hash', '')}|"
-            + ",".join(f"{sym}:{tgt}" for sym, tgt in sorted(i.target_positions.items()))
+            + ",".join(
+                f"{sym}:{tgt}"
+                for sym, tgt in sorted(i.target_positions.items())
+            )
             for i in intents
         ]
     )
@@ -164,29 +141,16 @@ def test_two_full_orchestrator_replays_are_identical() -> None:
 # PORTFOLIO barrier emits exactly one flat ``SizedPositionIntent`` that produces
 # no orders.  This mirrors the empty Level-2/3 leaf baselines.  The empty hashes
 # and the counts are host-independent; only the single intent hash is bound to a
-# fixed (platform, libm) pair.  See ``_run_smoke()`` below for the non-empty
-# companion scenario that exercises order/ack/position-reconciliation ordering.
+# fixed (platform, libm) pair.  FOLLOW-UP: a threshold-crossing fixture would lock
+# a non-empty order/fill stream and exercise the M5–M10 ``_seq`` interleaving more
+# richly — the two-replays test above already guards that path for determinism.
 _EMPTY_SHA = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
-EXPECTED_ORCHESTRATOR_SIGNAL_HASH = _EMPTY_SHA
-EXPECTED_ORCHESTRATOR_SIGNAL_COUNT = 0
-EXPECTED_ORCHESTRATOR_INTENT_HASH = (
-    "fa9a02d84aea823f4cf4bce6d572e87102c0021985ddb03b9c3ec67dd06cc080"
-)
-EXPECTED_ORCHESTRATOR_INTENT_COUNT = 1
-EXPECTED_ORCHESTRATOR_ORDER_HASH = _EMPTY_SHA
-EXPECTED_ORCHESTRATOR_ORDER_COUNT = 0
-EXPECTED_ORCHESTRATOR_POSITION_UPDATE_HASH = _EMPTY_SHA
-EXPECTED_ORCHESTRATOR_POSITION_UPDATE_COUNT = 0
-
 EXPECTED_ORCHESTRATOR_STREAMS: dict[str, tuple[str, int]] = {
-    "signal": (EXPECTED_ORCHESTRATOR_SIGNAL_HASH, EXPECTED_ORCHESTRATOR_SIGNAL_COUNT),
-    "intent": (EXPECTED_ORCHESTRATOR_INTENT_HASH, EXPECTED_ORCHESTRATOR_INTENT_COUNT),
-    "order": (EXPECTED_ORCHESTRATOR_ORDER_HASH, EXPECTED_ORCHESTRATOR_ORDER_COUNT),
-    "position_update": (
-        EXPECTED_ORCHESTRATOR_POSITION_UPDATE_HASH,
-        EXPECTED_ORCHESTRATOR_POSITION_UPDATE_COUNT,
-    ),
+    "signal": (_EMPTY_SHA, 0),
+    "intent": ("fa9a02d84aea823f4cf4bce6d572e87102c0021985ddb03b9c3ec67dd06cc080", 1),
+    "order": (_EMPTY_SHA, 0),
+    "position_update": (_EMPTY_SHA, 0),
 }
 
 
@@ -209,92 +173,72 @@ def test_wiring_actually_dispatches_an_intent() -> None:
     assert _run()["intent"][1] == 1
 
 
-# ── Smoke scenario: a real, non-empty Signal → Order → Ack → PositionUpdate ──
-# ── walk through the full orchestrator (audit-2026-07-02 P1 #1)             ──
+# ── Threshold-crossing variant (audit kernel-P1 2026-07-02, gap-test #2) ──
+#
+# The baseline above never exercises the M5-M10 order/fill walk (its
+# canonical fixture never crosses an entry threshold, so Signal/Order/
+# PositionUpdate all hash to the empty stream).  That blind spot is exactly
+# what let a merge silently drop ``OrderRequest.reason`` from the
+# stop-exit order-construction path without any parity hash catching it —
+# only targeted unit tests in ``tests/kernel/test_orchestrator.py`` noticed,
+# and only when someone happened to run them.
+#
+# ``_check_stop_exit`` depends only on an open position, an armed
+# threshold, and an adverse quote — not on sensors, regime warm-up, or any
+# alpha's gate — so seeding a position directly and feeding a short,
+# deterministic adverse quote walk reliably drives a real Signal -> Order
+# -> fill sequence through the full ``build_platform`` + ``run_backtest``
+# path without depending on tuning a random walk to cross an alpha's entry
+# gate (that gate's internals are sensor/signal-layer territory, out of
+# this audit's scope).
 
-_SMOKE_SYMBOL = "AAPL"
-_SMOKE_BASE_TS = 1_700_000_000_000_000_000
-_SMOKE_QUOTE_DT_NS = 200_000_000  # 200ms cadence
-_SMOKE_N_QUOTES = 600  # 120s of quotes — several horizon boundaries at 30s
-
-# The platform's own smoke-test alpha (used by the paper-RTH harness for
-# exactly this purpose): unconditional ``on_condition: "True"`` gate (no
-# regime dependency, so no HMM calibration is needed) and a permissive
-# |realized_vol_30s_zscore| >= 0.3 entry threshold ("guarantees occasional
-# entries for pipeline smoke testing" per its own YAML docstring).
-_SMOKE_ALPHA = (
-    Path(__file__).resolve().parents[2]
-    / "alphas"
-    / "_paper_smoke_v1"
-    / "paper_smoke_v1.alpha.yaml"
-)
-
-_SMOKE_SENSOR_SPECS: tuple[SensorSpec, ...] = (
-    SensorSpec(
-        sensor_id="micro_price",
-        sensor_version="1.1.0",
-        cls=MicroPriceSensor,
-        params={},
-        subscribes_to=(NBBOQuote,),
-    ),
-    SensorSpec(
-        sensor_id="realized_vol_30s",
-        sensor_version="1.3.0",
-        cls=RealizedVol30sSensor,
-        params={},
-        subscribes_to=(NBBOQuote,),
-    ),
-)
+_STOP_EXIT_SYMBOL = "AAPL"
+_STOP_EXIT_ENTRY_PRICE = Decimal("100.00")
+_STOP_EXIT_ENTRY_QTY = 100
 
 
-def _smoke_quotes() -> list[NBBOQuote]:
-    """Deterministic single-symbol random walk (same shape as the Phase-4
-    fixture's per-symbol walk) — no deliberate volatility burst is needed;
-    ``paper_smoke_v1``'s 0.3 z-score floor is permissive enough that an
-    ordinary random walk crosses it within the first few horizon boundaries.
-    """
-    rng = random.Random(11)
-    mid_cents = 18000
-    events: list[NBBOQuote] = []
-    ts = _SMOKE_BASE_TS
-    for i in range(_SMOKE_N_QUOTES):
-        mid_cents += rng.choice((-1, 0, 0, 0, 1))
-        events.append(
+def _synth_stop_exit_events() -> list[NBBOQuote]:
+    """A minimal, single-symbol quote walk that breaches a seeded stop-loss."""
+    quote_cadence_ns = 100_000_000
+    # Steps down through the armed $0.50/share stop over a few ticks so the
+    # router has more than one chance to reconcile the MARKET order's fill.
+    mids_cents = (9990, 9970, 9940, 9900, 9850)
+    quotes: list[NBBOQuote] = []
+    for i, mid_cents in enumerate(mids_cents):
+        ts_ns = SESSION_OPEN_NS + i * quote_cadence_ns
+        quotes.append(
             NBBOQuote(
-                timestamp_ns=ts,
-                correlation_id=f"smoke-q-{i}",
+                timestamp_ns=ts_ns,
                 sequence=i,
-                symbol=_SMOKE_SYMBOL,
+                correlation_id=f"stop-exit-q-{i}",
+                source_layer="INGESTION",
+                symbol=_STOP_EXIT_SYMBOL,
                 bid=Decimal(mid_cents) / Decimal(100),
                 ask=Decimal(mid_cents + 1) / Decimal(100),
                 bid_size=200,
                 ask_size=200,
-                exchange_timestamp_ns=ts,
+                exchange_timestamp_ns=ts_ns,
+                bid_exchange=11,
+                ask_exchange=11,
+                tape=3,
             )
         )
-        ts += _SMOKE_QUOTE_DT_NS
-    return events
+    return quotes
 
 
-def _make_smoke_config() -> PlatformConfig:
-    return PlatformConfig(
-        symbols=frozenset({_SMOKE_SYMBOL}),
-        alpha_specs=[_SMOKE_ALPHA],
-        regime_engine="hmm_3state_fractional",
-        sensor_specs=_SMOKE_SENSOR_SPECS,
-        horizons_seconds=frozenset({30}),
-        session_open_ns=_SMOKE_BASE_TS,
-        account_equity=1_000_000.0,
-        # paper_smoke_v1's gate is unconditional, so strict trend-mechanism
-        # enforcement is irrelevant here — off to match the other fixtures.
-        enforce_trend_mechanism=False,
+def _make_stop_exit_config() -> PlatformConfig:
+    """The Phase-4 base config, restricted to one symbol, with a stop armed."""
+    return replace(
+        _make_phase4_config(),
+        symbols=frozenset({_STOP_EXIT_SYMBOL}),
+        stop_loss_per_share=0.50,
     )
 
 
-def _run_smoke() -> dict[str, tuple[str, int]]:
-    config = _make_smoke_config()
+def _run_stop_exit() -> dict[str, tuple[str, int]]:
+    config = _make_stop_exit_config()
     event_log = InMemoryEventLog()
-    event_log.append_batch(_smoke_quotes())
+    event_log.append_batch(_synth_stop_exit_events())
     orchestrator, _ = build_platform(config, event_log=event_log)
 
     signals: list[Signal] = []
@@ -307,6 +251,15 @@ def _run_smoke() -> dict[str, tuple[str, int]]:
     orchestrator._bus.subscribe(PositionUpdate, updates.append)  # type: ignore[arg-type]
 
     orchestrator.boot(config)
+    # Seed a pre-existing long position (as if inherited from a prior
+    # session) so the very first adverse quote breaches the armed stop —
+    # deterministic, and independent of whether any alpha's regime gate
+    # happens to fire.
+    orchestrator._positions.update(
+        _STOP_EXIT_SYMBOL,
+        _STOP_EXIT_ENTRY_QTY,
+        _STOP_EXIT_ENTRY_PRICE,
+    )
     orchestrator.run_backtest()
 
     return {
@@ -317,69 +270,71 @@ def _run_smoke() -> dict[str, tuple[str, int]]:
     }
 
 
-def test_two_full_orchestrator_smoke_replays_are_identical() -> None:
-    assert _run_smoke() == _run_smoke()
+def test_two_full_orchestrator_stop_exit_replays_are_identical() -> None:
+    assert _run_stop_exit() == _run_stop_exit()
 
 
-# Locked smoke baseline.  No PORTFOLIO alpha is registered in this scenario,
-# so ``intent`` legitimately stays empty (there is no cross-sectional barrier
-# to fire) — the point of this scenario is the SIGNAL/order/position_update
-# path, which the flat scenario above cannot exercise.
-EXPECTED_ORCHESTRATOR_SMOKE_SIGNAL_HASH = (
-    "5e7986c7f85061d758eea6275376f225ede75c63a8649546900c4235085b966f"
-)
-EXPECTED_ORCHESTRATOR_SMOKE_SIGNAL_COUNT = 2
-EXPECTED_ORCHESTRATOR_SMOKE_INTENT_HASH = _EMPTY_SHA
-EXPECTED_ORCHESTRATOR_SMOKE_INTENT_COUNT = 0
-EXPECTED_ORCHESTRATOR_SMOKE_ORDER_HASH = (
-    "a48f0e19968627ae2c98701b0e9a8e26b67d3fdb93772e8ebbde597b99f3f175"
-)
-EXPECTED_ORCHESTRATOR_SMOKE_ORDER_COUNT = 1
-EXPECTED_ORCHESTRATOR_SMOKE_POSITION_UPDATE_HASH = (
-    "d686a148bed0398d6633750d87689d4810157e3884d023ccc7a9750f3eb4a034"
-)
-EXPECTED_ORCHESTRATOR_SMOKE_POSITION_UPDATE_COUNT = 1
+def test_stop_exit_replay_produces_a_non_empty_order_and_fill_stream() -> None:
+    # No-false-empty guard: the whole point of this fixture (unlike the
+    # baseline above) is to actually exercise the M5-M10 order/fill walk.
+    result = _run_stop_exit()
+    assert result["signal"][1] >= 1
+    assert result["order"][1] >= 1
+    assert result["position_update"][1] >= 1
 
-EXPECTED_ORCHESTRATOR_SMOKE_STREAMS: dict[str, tuple[str, int]] = {
-    "signal": (
-        EXPECTED_ORCHESTRATOR_SMOKE_SIGNAL_HASH,
-        EXPECTED_ORCHESTRATOR_SMOKE_SIGNAL_COUNT,
-    ),
-    "intent": (
-        EXPECTED_ORCHESTRATOR_SMOKE_INTENT_HASH,
-        EXPECTED_ORCHESTRATOR_SMOKE_INTENT_COUNT,
-    ),
-    "order": (
-        EXPECTED_ORCHESTRATOR_SMOKE_ORDER_HASH,
-        EXPECTED_ORCHESTRATOR_SMOKE_ORDER_COUNT,
-    ),
-    "position_update": (
-        EXPECTED_ORCHESTRATOR_SMOKE_POSITION_UPDATE_HASH,
-        EXPECTED_ORCHESTRATOR_SMOKE_POSITION_UPDATE_COUNT,
-    ),
+
+def test_stop_exit_order_carries_stop_exit_reason() -> None:
+    # Direct regression guard for the audit kernel-P1 P0 finding: a merge
+    # silently dropped ``reason=`` from the OrderRequest(...) construction in
+    # ``_try_build_order_from_intent`` after the 2026-06-24 audit landed.
+    # ``_hash_orders`` already serializes ``o.reason``, so the locked-baseline
+    # test below would also have caught this — this test pins the exact
+    # field so a future regression fails with an unambiguous message rather
+    # than a changed hash.
+    result = _run_stop_exit_orders()
+    assert result, "expected at least one stop-exit OrderRequest"
+    assert result[0].reason == "STOP_EXIT"
+
+
+def _run_stop_exit_orders() -> list[OrderRequest]:
+    config = _make_stop_exit_config()
+    event_log = InMemoryEventLog()
+    event_log.append_batch(_synth_stop_exit_events())
+    orchestrator, _ = build_platform(config, event_log=event_log)
+    orders: list[OrderRequest] = []
+    orchestrator._bus.subscribe(OrderRequest, orders.append)  # type: ignore[arg-type]
+    orchestrator.boot(config)
+    orchestrator._positions.update(
+        _STOP_EXIT_SYMBOL,
+        _STOP_EXIT_ENTRY_QTY,
+        _STOP_EXIT_ENTRY_PRICE,
+    )
+    orchestrator.run_backtest()
+    return orders
+
+
+# Host-pinned baseline (re-baseline like any parity hash — see the module
+# docstring's re-baseline workflow note). Unlike EXPECTED_ORCHESTRATOR_STREAMS,
+# every stream here is non-empty: "signal" and "order" pin the synthetic
+# __stop_exit__ Signal and its MARKET OrderRequest (reason="STOP_EXIT"),
+# "position_update" pins the resulting fill, and "intent" pins the same
+# single flat SizedPositionIntent as the baseline above (the UNIVERSE-scope
+# HorizonTick fires trivially on the first quote of any session, at
+# boundary_index 0, for every registered horizon simultaneously).
+EXPECTED_STOP_EXIT_STREAMS: dict[str, tuple[str, int]] = {
+    "signal": ("02e33e3049b03c503e8ea9256374635406f71a117b6b0800e9f7787bd5967012", 1),
+    "intent": ("fa9a02d84aea823f4cf4bce6d572e87102c0021985ddb03b9c3ec67dd06cc080", 1),
+    "order": ("7f39fea08b3026fcfae96f93b30ad54aa8dc3a7a843aeea119a3328538a5a724", 1),
+    "position_update": ("2c5b505a3c50083f72b3d6d67c30b68f9a710a7fd20680e87034f5b9b0db6e16", 1),
 }
 
 
-def test_orchestrator_smoke_streams_match_locked_baseline() -> None:
-    actual = _run_smoke()
-    assert actual == EXPECTED_ORCHESTRATOR_SMOKE_STREAMS, (
-        "Orchestrator smoke-replay stream drift!\n"
-        f"  Expected: {EXPECTED_ORCHESTRATOR_SMOKE_STREAMS}\n"
+def test_stop_exit_streams_match_locked_baseline() -> None:
+    actual = _run_stop_exit()
+    assert actual == EXPECTED_STOP_EXIT_STREAMS, (
+        "Stop-exit orchestrator replay stream drift!\n"
+        f"  Expected: {EXPECTED_STOP_EXIT_STREAMS}\n"
         f"  Actual:   {actual}\n"
-        "If intentional, update EXPECTED_ORCHESTRATOR_SMOKE_STREAMS in the same "
-        "commit and justify in the commit message (re-baseline workflow)."
-    )
-
-
-def test_smoke_scenario_actually_produces_a_fill() -> None:
-    """No-false-empty guard: this scenario exists specifically to exercise a
-    real order/ack/position-reconciliation walk.  If a future change silently
-    detached the smoke alpha (or the fixture stopped crossing its gate), this
-    fails loudly instead of quietly reverting to the flat-book baseline shape.
-    """
-    actual = _run_smoke()
-    assert actual["signal"][1] > 0, "smoke scenario emitted no Signal — gate never opened"
-    assert actual["order"][1] > 0, "smoke scenario emitted no OrderRequest — order path detached"
-    assert actual["position_update"][1] > 0, (
-        "smoke scenario produced no PositionUpdate — fill/reconciliation path detached"
+        "If intentional, update EXPECTED_STOP_EXIT_STREAMS in the same commit "
+        "and justify in the commit message (re-baseline workflow)."
     )

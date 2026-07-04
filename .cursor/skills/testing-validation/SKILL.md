@@ -62,6 +62,27 @@ CI by `tests/determinism/test_parity_manifest.py`.
 | L4 | hazard-exit `OrderRequest` | `test_hazard_exit_replay.py` |
 | L5 | `RegimeHazardSpike` | `test_regime_hazard_replay.py` |
 | L6 | `RegimeState` | `test_regime_state_replay.py` |
+| — | Aggressive-fill economics (`market_fill_acks`) | `test_market_fill_replay.py` |
+| — | `PositionUpdate` / PnL reconciliation (`position_pnl`) | `test_position_pnl_replay.py` |
+| — | `StateTransition` multi-SM shared-sequence stream (`state_transition`) | `test_state_transition_replay.py` |
+| — | `CrossSectionalContext` from a real `UniverseSynchronizer` (`cross_sectional_context`) | `test_cross_sectional_context_replay.py` |
+| — | Non-empty SIGNAL `Signal` from a real `HorizonSignalEngine` (`signal_fires`) | `test_signal_fires_replay.py` |
+| — | Cross-symbol `SensorReading` interleave (`multi_symbol_sensor_reading`) | `test_multi_symbol_sensor_replay.py` |
+
+Two further determinism modules exist deliberately **outside** the manifest
+(see each module's own docstring for why):
+
+- `test_orchestrator_replay.py` — the only replay that instantiates the full
+  `Orchestrator` (`build_platform` + `run_backtest`), locking the kernel's own
+  `_seq` interleaving, micro-state walk, and bus-subscriber registration order
+  that every leaf-driven baseline above is blind to. Its canonical fixture's
+  Signal/Order/PositionUpdate streams are empty (no threshold crossed); a
+  second, threshold-crossing fixture (seeded position + armed stop-loss)
+  locks a non-empty variant of the same three streams.
+- `test_hash_seed_independence.py` — re-runs the dict/set-iterating replays
+  in subprocesses under several `PYTHONHASHSEED` values and asserts identical
+  hashes, proving seed-independence directly rather than only pinning one
+  seed value.
 
 Added since the original eleven (level numbering doesn't map as cleanly for
 these — see `parity_manifest.py` for the authoritative list):

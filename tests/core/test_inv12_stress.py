@@ -32,10 +32,12 @@ class TestInv12StressTransforms:
         base = PlatformConfig(
             cost_stress_multiplier=1.0,
             backtest_fill_latency_ns=30_000_000,
+            market_data_latency_ns=10_000_000,
         )
         stressed = apply_inv12_stress(base)
         assert stressed.cost_stress_multiplier == INV12_COST_STRESS_MULTIPLIER
         assert stressed.backtest_fill_latency_ns == 60_000_000
+        assert stressed.market_data_latency_ns == 20_000_000
         assert stressed is not base
 
     def test_apply_inv12_stress_preserves_other_fields(self) -> None:

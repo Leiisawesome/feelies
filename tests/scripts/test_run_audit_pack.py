@@ -32,6 +32,7 @@ def _fake_repo(tmp_path: Path, monkeypatch) -> ModuleType:
     monkeypatch.setattr(mod, "_AUDITS_DIR", tmp_path / "docs" / "audits")
 
     _write(tmp_path / "AGENTS.md", "# AGENTS\n\nUse `uv run`.\n")
+    _write(tmp_path / "CLAUDE.md", "# Claude Code Context\n\nUse the audit bundle.\n")
     _write(
         tmp_path / ".cursor/rules/platform-invariants.mdc", "# Platform Invariants\n\nInv-11.\n"
     )
@@ -67,7 +68,7 @@ Write the audit report to `docs/audits/risk_engine_audit_YYYY-MM-DD.md`.
     return mod
 
 
-def test_prepare_run_writes_manifest_and_cursor_bundle(tmp_path: Path, monkeypatch) -> None:
+def test_prepare_run_writes_manifest_and_claude_code_bundle(tmp_path: Path, monkeypatch) -> None:
     mod = _fake_repo(tmp_path, monkeypatch)
     run_dir = tmp_path / "docs" / "audits" / "_runs" / "2026-07-01"
 
@@ -77,8 +78,12 @@ def test_prepare_run_writes_manifest_and_cursor_bundle(tmp_path: Path, monkeypat
     manifest = (run_dir / "manifest.json").read_text(encoding="utf-8")
     assert '"bundle_count": 1' in manifest
     bundle = (run_dir / "audit_risk_engine.bundle.md").read_text(encoding="utf-8")
+    assert "# Claude Code audit bundle: audit_risk_engine" in bundle
+    assert "## Claude Code execution contract" in bundle
+    assert "Start a fresh Claude Code session" in bundle
     assert "Target report: `docs/audits/risk_engine_audit_2026-07-01.md`" in bundle
     assert "--- BEGIN CONTEXT: AGENTS.md ---" in bundle
+    assert "--- BEGIN CONTEXT: CLAUDE.md ---" in bundle
     assert "--- BEGIN CONTEXT: .cursor/skills/risk-engine/SKILL.md ---" in bundle
     assert "--- BEGIN AUDIT PROMPT: docs/prompts/audit_risk_engine.md ---" in bundle
 

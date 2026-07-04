@@ -23,6 +23,11 @@ i.e. the paths where a salted ``hash()`` could bite.  Audit-2026-07-02 P2 #9:
 the original probe covered 4 of these 6 paths; ``state_transition`` and
 ``cross_sectional_context`` were added after independently re-auditing every
 hash function in this package for a ``sorted(...)`` over a dict/set.
+
+Audit kernel-P1 (2026-07-02) further extended the probe to ``signal_fires``
+(a real engine's gate-state dict) and ``multi_symbol_sensor_reading``
+(cross-symbol dict fan-out) — each explicitly ``sorted(...)``-canonicalizes
+a dict or set per its own docstring.
 """
 
 from __future__ import annotations
@@ -44,10 +49,14 @@ def _probe() -> None:
         _replay as xsect_context_replay,
     )
     from tests.determinism.test_horizon_feature_snapshot_replay import _replay as snapshot_replay
+    from tests.determinism.test_multi_symbol_sensor_replay import (
+        _replay as multi_symbol_sensor_replay,
+    )
     from tests.determinism.test_regime_state_replay import (
         _drive_regime_states,
         _hash_regime_stream,
     )
+    from tests.determinism.test_signal_fires_replay import _replay as signal_fires_replay
     from tests.determinism.test_sized_intent_replay import _replay as intent_replay
     from tests.determinism.test_state_transition_replay import _replay as transition_replay
 
@@ -56,7 +65,9 @@ def _probe() -> None:
     print("intent_on=" + intent_replay(decay=True)[0])
     print("snapshot=" + snapshot_replay()[0])
     print("transition=" + transition_replay()[0])
-    print("xsect_context=" + xsect_context_replay()[0])
+    print("cross_sectional_context=" + xsect_context_replay()[0])
+    print("signal_fires=" + signal_fires_replay()[0])
+    print("multi_symbol_sensor_reading=" + multi_symbol_sensor_replay()[0])
 
 
 def _run_under_seed(seed: str) -> str:

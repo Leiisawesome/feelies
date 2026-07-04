@@ -61,7 +61,12 @@ def et_clock_to_ns(session_date: date, clock_str: str) -> int:
     """Resolve an ET clock-time on ``session_date`` to UTC nanoseconds."""
     t = _parse_clock_time(clock_str)
     local = datetime.combine(session_date, t, tzinfo=_NY_TZ)
-    return int(local.timestamp() * _NS_PER_SECOND)
+    # int() of the whole-second timestamp first, then multiply by
+    # _NS_PER_SECOND in pure integer arithmetic — float64 can't exactly
+    # represent seconds-since-epoch * 1e9 at nanosecond magnitude, so
+    # multiplying before truncating risked losing precision (mirrors
+    # core/session_clock.py:rth_open_ns's integer-safe pattern).
+    return int(local.timestamp()) * _NS_PER_SECOND
 
 
 def resolve_moc_session_bounds(

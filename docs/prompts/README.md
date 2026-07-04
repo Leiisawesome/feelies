@@ -7,6 +7,8 @@ code changes in the audit pass**.
 
 ## How to use
 
+For the full Claude Code workflow, see [`USAGE.md`](USAGE.md).
+
 1. Open a Claude Code session with full repo access.
 2. Paste the contents of one `audit_<area>.md` as the prompt.
 3. The agent writes its report to `docs/audits/<area>_audit_YYYY-MM-DD.md`.
@@ -20,7 +22,7 @@ execution.
 
 ## Automation
 
-Use `scripts/run_audit_pack.py` to make the manual Cursor workflow repeatable:
+Use `scripts/run_audit_pack.py` to make the manual Claude Code workflow repeatable:
 
 ```powershell
 $env:PYTHONHASHSEED='0'
@@ -28,8 +30,10 @@ uv run python scripts/run_audit_pack.py prepare --date YYYY-MM-DD --force
 ```
 
 This writes one self-contained bundle per audit prompt under
-`docs/audits/_runs/YYYY-MM-DD/`. Paste each `*.bundle.md` into a fresh Cursor agent
+`docs/audits/_runs/YYYY-MM-DD/`. Paste each `*.bundle.md` into a fresh Claude Code
 session and require the agent to write only the named report under `docs/audits/`.
+The bundles include `AGENTS.md`, `CLAUDE.md`, and the prompt-specific `.cursor/rules/`
+and `.cursor/skills/` files as plain repository context.
 
 After the reports are written:
 
