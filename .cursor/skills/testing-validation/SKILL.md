@@ -12,11 +12,12 @@ deterministic, reproducible validation pipeline. The default posture
 is **deny deployment** — evidence of correctness must be affirmatively
 produced, not assumed.
 
-This skill owns the eleven locked parity hashes (the canonical registry
-is `tests/determinism/parity_manifest.py`), the gate-matrix **acceptance
-criteria**, the promotion-ledger schema references, and the strict-typing
-/ DTZ-rule scope locks. Promotion wiring detail lives in the
-[alpha-lifecycle skill](../alpha-lifecycle/SKILL.md).
+This skill owns the locked parity hashes (the canonical registry — and
+source of truth for the current count, which grows over time — is
+`tests/determinism/parity_manifest.py:LOCKED_PARITY_BASELINES`), the
+gate-matrix **acceptance criteria**, the promotion-ledger schema
+references, and the strict-typing / DTZ-rule scope locks. Promotion
+wiring detail lives in the [alpha-lifecycle skill](../alpha-lifecycle/SKILL.md).
 
 ## Core Invariants
 
@@ -41,7 +42,11 @@ auditable configuration). Additionally:
 Each is a SHA-256 over the ordered event stream at one layer, asserted
 by an in-process pytest replay test under `tests/determinism/`. The canonical
 registry is `tests/determinism/parity_manifest.py:LOCKED_PARITY_BASELINES`
-(eleven entries across six levels). Drift between modules is caught in
+— check `len(LOCKED_PARITY_BASELINES)` for the current count rather than
+trusting a number here, since new baselines are added over time (plus a
+handful of intentionally-unregistered ones — cvxpy-conditional and
+orchestrator-level — tracked in `test_parity_manifest.py`'s
+`_UNREGISTERED_HASH_EXEMPTIONS`). Drift between modules is caught in
 CI by `tests/determinism/test_parity_manifest.py`.
 
 | Level | Stream | Test |
@@ -57,6 +62,21 @@ CI by `tests/determinism/test_parity_manifest.py`.
 | L4 | hazard-exit `OrderRequest` | `test_hazard_exit_replay.py` |
 | L5 | `RegimeHazardSpike` | `test_regime_hazard_replay.py` |
 | L6 | `RegimeState` | `test_regime_state_replay.py` |
+
+Added since the original eleven (level numbering doesn't map as cleanly for
+these — see `parity_manifest.py` for the authoritative list):
+
+| Baseline (manifest key) | Stream | Test |
+|-------|--------|------|
+| `market_fill_acks` | `OrderAck` fill economics | `test_market_fill_replay.py` |
+| `position_pnl` | `PositionUpdate` (PnL reconciliation) | `test_position_pnl_replay.py` |
+| `state_transition` | `StateTransition` (all five SMs) | `test_state_transition_replay.py` |
+| `cross_sectional_context` | `CrossSectionalContext` | `test_cross_sectional_context_replay.py` |
+| `signal_fires` | non-empty `Signal` (synthetic probe alpha) | `test_signal_fires_replay.py` |
+| `reference_alpha_signal_fires` | non-empty `Signal` (real reference alpha) | `test_reference_alpha_signal_fires_replay.py` |
+| `multi_symbol_sensor_reading` | cross-symbol `SensorReading` interleave | `test_multi_symbol_sensor_replay.py` |
+| `symbol_halted` / `halt_order` / `halt_ack` / `halt_position_update` | halt-gate fill suppression | `test_symbol_halted_replay.py` |
+| `risk_verdict` | `RiskVerdict` | `test_risk_verdict_replay.py` |
 
 Determinism is structurally supported by:
 
@@ -125,7 +145,7 @@ and construction-time enum-completeness check.
 | Invariant | Generator | Property |
 |-----------|-----------|----------|
 | Causal ordering | Random event streams with shuffled timestamps | Sensors / signals never depend on future events |
-| Deterministic replay | Same event log + config, two runs | All eleven parity hashes bit-identical |
+| Deterministic replay | Same event log + config, two runs | All locked parity hashes bit-identical |
 | Position conservation | Random fill sequences | Σ fills = final position; no phantoms |
 | Risk monotonic safety | Random `RiskLevel` transitions | Safety never decreases without explicit re-auth |
 | PnL decomposition | Random trade sequences | alpha + beta + costs = total (FP tolerance) |
@@ -148,7 +168,7 @@ or hazard-exit logic.
 
 | Test | Method | Pass criteria |
 |------|--------|---------------|
-| Same-machine determinism | Run identical config twice on same machine | Bit-identical event stream + all eleven parity hashes |
+| Same-machine determinism | Run identical config twice on same machine | Bit-identical event stream + all locked parity hashes |
 | Cross-machine determinism | Run identical config on two different machines | Bit-identical (requires fixed seeds, no hardware-dependent floats) |
 | Version-upgrade determinism | Run same config on old + new code | Identical, or documented + justified divergence |
 | Checkpoint resume | Interrupt replay; resume from checkpoint (design target — no sensor-state checkpoint store exists yet; only `RegimeEngine.checkpoint()`/`restore()` is implemented) | Final output identical to uninterrupted run |
@@ -261,7 +281,7 @@ align with post-trade-forensics skill defaults.
 |----------|----------|------------|
 | Strategy bundle | `*.alpha.yaml`, signal logic, sensor declarations, risk params | semver + git SHA |
 | Configuration | All tunable parameters | versioned alongside; diff-auditable |
-| Backtest results | All eleven parity hashes; trade logs; integrity checks | keyed to `(strategy_version, data_version, engine_version)` |
+| Backtest results | All locked parity hashes; trade logs; integrity checks | keyed to `(strategy_version, data_version, engine_version)` |
 | Reference factor loadings | Parquet / built artifacts | content-addressed hash; max-age guard |
 | Dependency manifest | Library versions | lockfile committed |
 
@@ -273,11 +293,11 @@ artifact_id = hash(strategy_version, config_version, data_version, engine_versio
 
 Every run produces a record with `run_id` (deterministic hash),
 `strategy_version`, `engine_version`, `data_version`,
-`config_snapshot` (JSON), environment, random seeds, **all eleven
+`config_snapshot` (JSON), environment, random seeds, **all locked
 parity hashes**, integrity-check pass/fail, timestamp.
 
 To reproduce: check out `strategy_version` + `engine_version`, load
-`data_version`, apply `config_snapshot`, set seeds, run. All eleven
+`data_version`, apply `config_snapshot`, set seeds, run. All locked
 parity hashes must match.
 
 ### Configuration Audit Trail

@@ -389,7 +389,7 @@ always wins when in tension.
 
 - **Auditability** — every decision traceable to a typed event with
   correlation ID
-- **Determinism** — eleven locked parity hashes across six levels (L1–L6); bit-identical replay
+- **Determinism** — locked parity hashes spanning the L1–L6 layers and beyond (see `tests/determinism/parity_manifest.py` for the current count); bit-identical replay
 - **Testability** — every layer testable in isolation with mock events
 - **Strictness** — mypy strict on every module under `src/feelies/`;
   ruff DTZ on every `datetime` call; no `ignore_errors` overrides
