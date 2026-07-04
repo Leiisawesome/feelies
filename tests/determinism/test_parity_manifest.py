@@ -28,6 +28,7 @@ from tests.determinism.test_sensor_reading_replay import _replay as sensor_repla
 from tests.determinism.test_signal_fires_replay import _replay as signal_fires_replay
 from tests.determinism.test_signal_replay import _replay as signal_replay
 from tests.determinism.test_state_transition_replay import _replay as state_transition_replay
+from tests.determinism.test_symbol_halted_replay import _replay as symbol_halted_replay
 from tests.determinism.test_sized_intent_replay import _replay as intent_replay
 from tests.determinism.test_v03_sensor_replay import _replay as v03_sensor_replay
 from tests.fixtures.replay import (
@@ -44,6 +45,22 @@ def _replay_horizon_tick() -> tuple[str, int]:
 def _replay_regime_state() -> tuple[str, int]:
     states = _drive_regime_states()
     return _hash_regime_stream(states), len(states)
+
+
+def _replay_symbol_halted() -> tuple[str, int]:
+    return symbol_halted_replay()["symbol_halted"]
+
+
+def _replay_halt_order() -> tuple[str, int]:
+    return symbol_halted_replay()["order"]
+
+
+def _replay_halt_ack() -> tuple[str, int]:
+    return symbol_halted_replay()["ack"]
+
+
+def _replay_halt_position_update() -> tuple[str, int]:
+    return symbol_halted_replay()["position_update"]
 
 
 _REPLAY_BY_NAME = {
@@ -65,6 +82,10 @@ _REPLAY_BY_NAME = {
     "signal_fires": signal_fires_replay,
     "multi_symbol_sensor_reading": multi_symbol_sensor_replay,
     "reference_alpha_signal_fires": reference_alpha_signal_fires_replay,
+    "symbol_halted": _replay_symbol_halted,
+    "halt_order": _replay_halt_order,
+    "halt_ack": _replay_halt_ack,
+    "halt_position_update": _replay_halt_position_update,
 }
 
 

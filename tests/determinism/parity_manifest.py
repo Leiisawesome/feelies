@@ -90,6 +90,16 @@ from tests.determinism.test_state_transition_replay import (
     EXPECTED_STATE_TRANSITION_COUNT,
     EXPECTED_STATE_TRANSITION_HASH,
 )
+from tests.determinism.test_symbol_halted_replay import (
+    EXPECTED_HALT_ACK_COUNT,
+    EXPECTED_HALT_ACK_HASH,
+    EXPECTED_HALT_ORDER_COUNT,
+    EXPECTED_HALT_ORDER_HASH,
+    EXPECTED_HALT_POSITION_UPDATE_COUNT,
+    EXPECTED_HALT_POSITION_UPDATE_HASH,
+    EXPECTED_SYMBOL_HALTED_COUNT,
+    EXPECTED_SYMBOL_HALTED_HASH,
+)
 from tests.determinism.test_sized_intent_replay import (
     EXPECTED_LEVEL3_INTENT_DECAY_OFF_COUNT,
     EXPECTED_LEVEL3_INTENT_DECAY_OFF_HASH,
@@ -180,5 +190,15 @@ LOCKED_PARITY_BASELINES: Final[dict[str, ParityEntry]] = {
     "reference_alpha_signal_fires": (
         EXPECTED_REFERENCE_ALPHA_SIGNAL_FIRES_HASH,
         EXPECTED_REFERENCE_ALPHA_SIGNAL_FIRES_COUNT,
+    ),
+    # Audit-2026-07-02 P1 #3: the forensic SymbolHalted stream and the
+    # halt-gate / post-resume-blackout fill suppression it documents were
+    # previously unpinned.
+    "symbol_halted": (EXPECTED_SYMBOL_HALTED_HASH, EXPECTED_SYMBOL_HALTED_COUNT),
+    "halt_order": (EXPECTED_HALT_ORDER_HASH, EXPECTED_HALT_ORDER_COUNT),
+    "halt_ack": (EXPECTED_HALT_ACK_HASH, EXPECTED_HALT_ACK_COUNT),
+    "halt_position_update": (
+        EXPECTED_HALT_POSITION_UPDATE_HASH,
+        EXPECTED_HALT_POSITION_UPDATE_COUNT,
     ),
 }
