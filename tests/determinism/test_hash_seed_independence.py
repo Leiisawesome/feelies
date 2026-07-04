@@ -16,8 +16,13 @@ green.
 
 The probe runs the replays whose hash functions iterate dicts — regime
 posteriors, the sorted ``target_positions`` / ``factor_exposures`` /
-``mechanism_breakdown`` maps, and the sorted snapshot ``values`` / ``warm`` /
-``stale`` maps — i.e. the paths where a salted ``hash()`` could bite.
+``mechanism_breakdown`` maps, the sorted snapshot ``values`` / ``warm`` /
+``stale`` maps, the sorted ``StateTransition.metadata`` map, and the sorted
+``CrossSectionalContext.signals_by_symbol`` / ``snapshots_by_symbol`` maps —
+i.e. the paths where a salted ``hash()`` could bite.  Audit-2026-07-02 P2 #9:
+the original probe covered 4 of these 6 paths; ``state_transition`` and
+``cross_sectional_context`` were added after independently re-auditing every
+hash function in this package for a ``sorted(...)`` over a dict/set.
 """
 
 from __future__ import annotations
@@ -35,17 +40,23 @@ def _probe() -> None:
     """Print ``name=hash`` for the dict-iterating replays (subprocess entry)."""
     sys.path.insert(0, str(_REPO_ROOT))
     os.chdir(_REPO_ROOT)
+    from tests.determinism.test_cross_sectional_context_replay import (
+        _replay as xsect_context_replay,
+    )
     from tests.determinism.test_horizon_feature_snapshot_replay import _replay as snapshot_replay
     from tests.determinism.test_regime_state_replay import (
         _drive_regime_states,
         _hash_regime_stream,
     )
     from tests.determinism.test_sized_intent_replay import _replay as intent_replay
+    from tests.determinism.test_state_transition_replay import _replay as transition_replay
 
     print("regime=" + _hash_regime_stream(_drive_regime_states()))
     print("intent_off=" + intent_replay(decay=False)[0])
     print("intent_on=" + intent_replay(decay=True)[0])
     print("snapshot=" + snapshot_replay()[0])
+    print("transition=" + transition_replay()[0])
+    print("xsect_context=" + xsect_context_replay()[0])
 
 
 def _run_under_seed(seed: str) -> str:
