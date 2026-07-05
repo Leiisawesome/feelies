@@ -8,17 +8,25 @@ import json
 import sys
 from pathlib import Path
 
+# Audit P2-3: kept in sync with every prefix `backtest_jsonl._emit_jsonl_line`
+# actually writes (see `tests/scripts/test_split_backtest_emit.py::
+# test_prefix_map_covers_every_backtest_jsonl_prefix`).  `ORDER_ACK_JSONL` /
+# `TIMING_JSONL` are intentionally absent: `run_paper.py`'s
+# `PaperSessionRecorder` writes `order_acks.jsonl` / `timing.jsonl` directly
+# to disk and never goes through `_emit_jsonl_line`/stdout, so no real code
+# path emits those two prefixes for this splitter to consume.
 _PREFIX_MAP = {
     "SIGNAL_JSONL": "signals.jsonl",
-    "ORDER_ACK_JSONL": "order_acks.jsonl",
     "FILL_JSONL": "fills.jsonl",
-    "TIMING_JSONL": "timing.jsonl",
     "SNAP_JSONL": "snapshots.jsonl",
     "SENSOR_JSONL": "sensor_readings.jsonl",
     "HTICK_JSONL": "horizon_ticks.jsonl",
     "HAZARD_JSONL": "hazard_spikes.jsonl",
     "XSECT_JSONL": "cross_sectional.jsonl",
     "INTENT_JSONL": "sized_intents.jsonl",
+    "SIZEDIV_JSONL": "size_divergence.jsonl",
+    "NETDIV_JSONL": "net_divergence.jsonl",
+    "HAZARD_EXIT_JSONL": "hazard_exits.jsonl",
 }
 
 

@@ -48,6 +48,7 @@ sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 
 from feelies.bootstrap import build_platform
 from feelies.cli.env import MASSIVE_API_KEY_ERROR, load_dotenv_optional, massive_api_key_from_env
+from feelies.core.errors import ConfigurationError
 from feelies.core.events import OrderAck, Signal
 from feelies.core.platform_config import OperatingMode, PlatformConfig
 from feelies.harness.backtest_cli import ConfigNotFoundError, load_platform_config
@@ -116,6 +117,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Write timing.jsonl to --run-dir",
     )
+    p.add_argument(
+        "--strict-config",
+        action="store_true",
+        help=(
+            "Fail closed on unrecognized config keys (a misspelled override "
+            "aborts the run instead of silently keeping the default)."
+        ),
+    )
     return p.parse_args(argv)
 
 
@@ -137,7 +146,7 @@ def _wire_session_recorder(
     metadata = {
         "mode": config.mode.name,
         "symbols": sorted(config.symbols),
-        "session_start_ns": datetime.now(UTC).timestamp() * 1_000_000_000,
+        "session_start_ns": int(datetime.now(UTC).timestamp() * 1_000_000_000),
         "config_path": str(args.config),
         "session_open_ns": config.session_open_ns,
     }
@@ -170,7 +179,7 @@ def _flush_session_recorder(
     metadata_path = args.run_dir / "metadata.json"  # type: ignore[union-attr]
     if metadata_path.is_file():
         data = json.loads(metadata_path.read_text(encoding="utf-8"))
-        data["session_end_ns"] = datetime.now(UTC).timestamp() * 1_000_000_000
+        data["session_end_ns"] = int(datetime.now(UTC).timestamp() * 1_000_000_000)
         metadata_path.write_text(
             json.dumps(data, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
@@ -189,9 +198,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
-        config = load_platform_config(args.config)
+        config = load_platform_config(args.config, strict=args.strict_config)
     except ConfigNotFoundError as exc:
         print(f"ERROR: Config file not found: {exc.path}", file=sys.stderr)
+        return 1
+    except ConfigurationError as exc:
+        print(f"ERROR: Invalid config: {exc}", file=sys.stderr)
         return 1
     if config.mode != OperatingMode.PAPER:
         print(
