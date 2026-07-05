@@ -27,6 +27,7 @@ import logging
 import os
 import sys
 import time
+import traceback
 from collections import defaultdict
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
@@ -516,6 +517,39 @@ def print_verification(results: list[tuple[str, bool, str]]) -> bool:
     return all_passed
 
 
+def _print_degraded_diagnostics(
+    *,
+    recorder: BusRecorder,
+    orchestrator: Orchestrator,
+    n_quotes: int,
+) -> None:
+    """Minimal, non-Parity triage counts for a run that ended DEGRADED (audit P2-8).
+
+    Phase 6 (``generate_report``) is never reached on this path, so an operator
+    otherwise gets only the one-line macro-state error.  P&L/position numbers
+    are deliberately omitted here — a DEGRADED run's account state may be
+    inconsistent — these are raw bus-event counts only, safe to print
+    regardless of what caused the integrity failure.
+    """
+    signals = len(recorder.of_type(Signal))
+    orders = len(recorder.of_type(OrderRequest))
+    fills = sum(1 for a in recorder.of_type(OrderAck) if a.status == OrderAckStatus.FILLED)
+    kill_switch = orchestrator.kill_switch
+    ks_status = (
+        "ACTIVATED" if kill_switch is not None and kill_switch.is_active else "NOT ACTIVATED"
+    )
+    print(
+        "\n  [PARTIAL/UNTRUSTED DIAGNOSTICS] macro != READY — P&L and positions "
+        "are not shown; counts below are raw bus-event totals only, for triage.",
+        file=sys.stderr,
+    )
+    print(f"    Quotes processed      {n_quotes:,}", file=sys.stderr)
+    print(f"    Signals emitted       {signals:,}", file=sys.stderr)
+    print(f"    Orders submitted      {orders:,}", file=sys.stderr)
+    print(f"    Fills                 {fills:,}", file=sys.stderr)
+    print(f"    Kill switch           {ks_status}", file=sys.stderr)
+
+
 # ── Main ─────────────────────────────────────────────────────────────
 
 
@@ -775,6 +809,21 @@ def _run_backtest_phases_2_7(
         pass
     try:
         orchestrator.run_backtest()
+    except Exception as exc:
+        # A pipeline integrity failure transitions the orchestrator to
+        # DEGRADED and re-raises (see the backtest-engine skill's Backtest
+        # Lifecycle).  Previously this propagated as a bare traceback with no
+        # summary line; print one up front (the full traceback still follows,
+        # for diagnosis) and return a controlled nonzero exit code rather than
+        # relying on the interpreter's default uncaught-exception behavior.
+        print(
+            f"\n  ERROR: Backtest integrity failure: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        traceback.print_exc()
+        return BacktestRunOutcome(
+            exit_code=1, orchestrator=orchestrator, config=config_out, recorder=recorder
+        )
     finally:
         if _prev_nice is not None:
             try:
@@ -796,6 +845,7 @@ def _run_backtest_phases_2_7(
             f"  ERROR: Backtest ended in macro state {macro.name}, expected READY",
             file=sys.stderr,
         )
+        _print_degraded_diagnostics(recorder=recorder, orchestrator=orchestrator, n_quotes=n_quotes)
         return BacktestRunOutcome(
             exit_code=1, orchestrator=orchestrator, config=config_out, recorder=recorder
         )
@@ -821,6 +871,7 @@ def _run_backtest_phases_2_7(
         ),
         quote_trace=quote_observer.trace,
         n_quotes=n_quotes,
+        edge_calibration_factors=_edge_factors,
     )
     dt = time.monotonic() - step_t
     print(f"  OK [{dt:.1f}s]", flush=True)

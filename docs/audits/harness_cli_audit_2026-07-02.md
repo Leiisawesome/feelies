@@ -43,6 +43,36 @@ targets, not bugs — confirmed absent from the code, not filed as P0.
 
 ---
 
+## 0. Resolution (follow-up commit)
+
+The backlog in §9 was addressed in a same-session follow-up, at the user's request.
+Status per item:
+
+| Item | Status | Change |
+|---|---|---|
+| R-1 edge-calibration provenance | **Fixed** | New `edge_calibration_version()` helper (sorted-factor hash, `"none"` when unused); threaded through `generate_report(edge_calibration_factors=...)` → `compute_artifact_id` as a sixth axis; new `edge_calibration` line in the Parity block; `backtest_runner.py` passes `_edge_factors` through. Tests: `tests/harness/test_backtest_report.py` (5 new). |
+| R-2 `run_paper.py` config strictness | **Fixed** | Added `--strict-config` (mirrors the backtest CLI flag) and threaded `strict=args.strict_config` into `load_platform_config`; also added the missing `except ConfigurationError` branch (previously an uncaught exception even for the pre-existing scalar-type checks). Tests: `tests/scripts/test_run_paper.py` (2 new). |
+| P2-3 JSONL prefix-map drift | **Fixed** | `_PREFIX_MAP` gained `SIZEDIV_JSONL`/`NETDIV_JSONL`/`HAZARD_EXIT_JSONL`; dropped the never-emitted `ORDER_ACK_JSONL`/`TIMING_JSONL` with an explanatory comment. New completeness test derives the emitted-prefix set from `backtest_jsonl.py`'s source and asserts it matches the map exactly (drift in either direction now fails CI). |
+| P2-4 paper perf baseline guard | **Fixed** | `_parse_timing` now returns `{}` (the existing "refuse" path) when `timing.jsonl` has zero `tick_process` samples, not just when the file is missing; error message updated to match `record_perf_baseline.py`'s "refusing to record" wording. New test file `tests/scripts/test_record_paper_perf_baseline.py` (3 tests; monkeypatches `_BASELINE` to a tmp path so the real committed baseline is never touched). |
+| P2-5 session timestamp precision | **Fixed** | `session_start_ns` / `session_end_ns` cast to `int(...)`. New test asserts both fields are `int` in the written metadata. |
+| P2-6 code-provenance dirty-tree | **Fixed** | New `_working_tree_dirty()` (cached `git diff --quiet HEAD` subprocess, `None` on any failure/absence — never raises) appends `+dirty` in `code_version()`. Confirmed live against this checkout's own uncommitted state: `code_version() == "0.1.0+<sha>+dirty"` while dirty. 5 new tests (monkeypatched, deterministic; plus one smoke test of the real function). |
+| P2-7 integrity-failure UX | **Fixed** | `orchestrator.run_backtest()` is now wrapped in `except Exception` inside `_run_backtest_phases_2_7`: prints a clean `ERROR: Backtest integrity failure: <Type>: <msg>` line, still prints the full traceback for diagnosis, and returns a controlled `exit_code=1` instead of relying on an uncaught exception. New `tests/harness/test_backtest_runner.py` drives this through the real phase machinery (smoke-pipeline synthetic alphas/events) with `Orchestrator.run_backtest` monkeypatched to raise. |
+| P2-8 DEGRADED-run diagnostics | **Fixed** | New `_print_degraded_diagnostics()` prints a clearly-labeled `[PARTIAL/UNTRUSTED DIAGNOSTICS]` block (quotes/signals/orders/fills counts + kill-switch status — no P&L) on the post-pipeline `macro != READY` gate. Second test in `test_backtest_runner.py` runs the real pipeline then forces `MacroState.DEGRADED` afterward to verify the block appears with real counts. |
+| P2-9 real-dataset CI parity | **Not attempted — assessed and deferred.** | Closing this properly means a fixture that actually triggers `sig_benign_midcap_v1`'s real entry logic: 5 sensors (`ofi_ewma`, `micro_price`, `book_imbalance`, `spread_z_30d`, `realized_vol_30s`) must warm up, the `hmm_3state_fractional` regime engine must be causally *calibrated* (not the placeholder-parameter path the smoke alphas deliberately avoid via `on_condition: "1 > 0"`) and reach `P(normal) > 0.5`, and synthetic OFI/imbalance must cross `entry_threshold_z` with aligned sign — a materially bigger, research-style task than the S-effort items above, not a mechanical fix. A rushed version risks exactly the "test exists but doesn't test the real mechanism" trap this same audit flagged elsewhere. Left open; two lower-risk paths forward: (a) populate the real disk cache once (`scripts/run_backtest.py --config configs/bt_app.yaml --symbol APP --date 2026-03-26`) so the existing functional test stops skipping in CI, or (b) follow the `tests/fixtures/bt12/` precedent (statistical surrogate rather than literal ticks) for a determinism guard. |
+| §6.2 `--strict-config` default (P2, backlog item 10) | **Not changed — left as a recommendation.** | Flipping the default is a behavior change for every existing caller, explicitly called out in the original report as a policy decision rather than a fix; not made unilaterally. |
+
+**Verification:** `pytest tests/harness/ tests/cli/test_backtest_cli.py tests/scripts/
+tests/core/test_platform_config.py -q` → **145 passed**; `pytest tests/acceptance/
+test_backtest_app_baseline.py test_backtest_app_config_keys.py
+test_bt12_reference_alpha_validation.py test_bt13_portfolio_research_only.py -q` →
+**44 passed, 1 skipped** (same pre-existing cache-miss skip, unrelated to these changes);
+`pytest tests/determinism/ -q` → **108 passed** (trade-path hashing is untouched by these
+changes — confirmed, not assumed); `python scripts/smoke_pipeline.py` → **exit 0**;
+`ruff check src/ tests/` → clean; `mypy src/feelies` → **0 errors, 192 source files**
+(the project's actual acceptance-gate command, run in full — not just the touched files).
+
+---
+
 ## 1. Executive summary
 
 1. **[P1, bug, NEW] `--edge-calibration` is a trade-path-altering input with zero

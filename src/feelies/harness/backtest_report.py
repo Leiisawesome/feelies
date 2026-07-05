@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import os
+import subprocess
+from collections.abc import Mapping
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -52,6 +55,7 @@ __all__ = [
     "compute_config_hash",
     "compute_parity_hash",
     "dedupe_republished_signal_events",
+    "edge_calibration_version",
     "format_section",
     "generate_report",
     "live_data_version",
@@ -149,6 +153,7 @@ def generate_report(
     data_version: str | None = None,
     quote_trace: QuoteTraceIndex | None = None,
     n_quotes: int | None = None,
+    edge_calibration_factors: Mapping[str, float] | None = None,
 ) -> str:
     """Build the full backtest report string."""
     from feelies.storage.trade_journal import TradeRecord
@@ -599,10 +604,12 @@ def generate_report(
     config_hash = compute_config_hash(config)
     parity_hash = compute_combined_parity_hash(pnl_hash, config_hash)
     resolved_data_version = data_version if data_version is not None else "unknown"
+    resolved_edge_cal_version = edge_calibration_version(edge_calibration_factors)
     artifact_id = compute_artifact_id(
         orchestrator,
         config,
         data_version=resolved_data_version,
+        edge_calibration_version=resolved_edge_cal_version,
     )
     lines.append(_divider())
     lines.append(format_section("Parity"))
@@ -613,6 +620,7 @@ def generate_report(
     lines.append(_kv("engine_version", ENGINE_VERSION))
     lines.append(_kv("code_version", code_version()))
     lines.append(_kv("data_version", resolved_data_version))
+    lines.append(_kv("edge_calibration", resolved_edge_cal_version))
     lines.append(_kv("artifact_id (B-PROMO-04)", artifact_id))
     # Determinism depends on PYTHONHASHSEED=0 (set/frozenset iteration order);
     # echo it so a non-reproducible run is self-documenting (Inv-5 backstop).
@@ -665,6 +673,25 @@ def cache_data_version(day_sources: list[IngestDayMeta]) -> str:
     return "cache:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
+def edge_calibration_version(factors: Mapping[str, float] | None) -> str:
+    """Stable identifier for the close-the-loop edge-calibration factors applied to a run.
+
+    ``--edge-calibration`` (``harness.backtest_runner``) loads a per-alpha realization
+    factor that the B4 cost gate multiplies into the disclosed edge
+    (``Orchestrator._edge_calibration_factors``), which can change which signals clear
+    the gate and therefore the fills a run produces.  That made it possible for two runs
+    with identical config + data but different (or later-regenerated) calibration factors
+    to collide on ``artifact_id`` with no trace of which factors were applied.  Returns
+    ``"none"`` when no calibration was supplied (the common, parity-preserving case, so
+    ``artifact_id`` is unchanged for runs that never use this flag) or a short hash of the
+    sorted factor mapping otherwise.
+    """
+    if not factors:
+        return "none"
+    payload = json.dumps(dict(sorted(factors.items())), sort_keys=True, separators=(",", ":"))
+    return "cal:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
 def _git_sha() -> str | None:
     """Best-effort short git SHA of the HEAD commit, or ``None``.
 
@@ -693,6 +720,33 @@ def _git_sha() -> str | None:
     return None
 
 
+@functools.lru_cache(maxsize=1)
+def _working_tree_dirty() -> bool | None:
+    """Best-effort "does the working tree differ from HEAD" (audit P2-6).
+
+    ``_git_sha()`` deliberately avoids a subprocess for the common case (just
+    reads ``.git/HEAD`` / ref files), but there is no dependency-free way to
+    diff the working tree against HEAD, so this runs ``git diff --quiet
+    HEAD`` once (cached for the process lifetime — ``code_version()`` is
+    called more than once per report).  Returns ``None`` (unknown) rather
+    than raising when ``git`` is missing, the call times out, or this isn't a
+    git checkout at all — callers should treat ``None`` the same as "clean"
+    so a missing ``git`` binary never breaks report generation.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--quiet", "HEAD"],
+            cwd=Path(__file__).resolve().parent,
+            timeout=5,
+            capture_output=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode not in (0, 1):
+        return None  # not a git repo, detached weirdness, etc. — unknown
+    return result.returncode == 1
+
+
 def code_version() -> str:
     """``ENGINE_VERSION`` bound to the working-tree git SHA when available.
 
@@ -700,10 +754,15 @@ def code_version() -> str:
     detect a code change that altered fill semantics without a bump.  Pairing
     it with the git SHA gives ``artifact_id`` a real code anchor.  Renders as
     ``"<ENGINE_VERSION>+<sha>"`` in a git checkout, or just ``ENGINE_VERSION``
-    when no ``.git`` is present.
+    when no ``.git`` is present.  A working tree with uncommitted changes vs
+    HEAD appends a ``+dirty`` marker so a locally modified engine cannot
+    silently masquerade as the last-committed SHA.
     """
     sha = _git_sha()
-    return f"{ENGINE_VERSION}+{sha}" if sha else ENGINE_VERSION
+    if not sha:
+        return ENGINE_VERSION
+    dirty_suffix = "+dirty" if _working_tree_dirty() else ""
+    return f"{ENGINE_VERSION}+{sha}{dirty_suffix}"
 
 
 def compute_parity_hash(orchestrator: Orchestrator) -> str:
@@ -761,10 +820,11 @@ def compute_artifact_id(
     config: PlatformConfig,
     *,
     data_version: str,
+    edge_calibration_version: str = "none",
 ) -> str:
     """Deterministic artifact id for the run (audit B-PROMO-04).
 
-    Combines five orthogonal axes that together identify a backtest run:
+    Combines six orthogonal axes that together identify a backtest run:
 
       - ``strategy_version``: ``alpha_id@manifest.version`` for every
         active alpha, sorted. Picks up code-level alpha changes.
@@ -777,6 +837,12 @@ def compute_artifact_id(
       - ``code_version``: ``ENGINE_VERSION`` paired with the HEAD git SHA
         when a ``.git`` is present, so a fill-semantics change that forgot
         to bump ``ENGINE_VERSION`` still shifts the id.
+      - ``edge_calibration_version``: :func:`edge_calibration_version` of the
+        close-the-loop ``--edge-calibration`` factors applied (``"none"`` when
+        the flag was not used) — this is a live trade-path input (it can
+        change which signals clear the B4 cost gate), so two runs that differ
+        only in which calibration factors were applied must not silently
+        collide on ``artifact_id``.
 
     Same inputs produce the same id; any drift across consecutive
     audits flags an unintentional change in the artifact contract.
@@ -795,6 +861,7 @@ def compute_artifact_id(
             "data_version": data_version,
             "engine_version": ENGINE_VERSION,
             "code_version": code_version(),
+            "edge_calibration_version": edge_calibration_version,
         },
         sort_keys=True,
         separators=(",", ":"),
