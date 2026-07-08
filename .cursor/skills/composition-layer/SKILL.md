@@ -293,7 +293,7 @@ of any single family) drives the post-trade crowding diagnostic.
 |------|-------|
 | G10 | `universe:` is a non-empty list of non-empty strings (the universe-size cap is bootstrap's `composition_max_universe_size`, not G10) |
 | G11 | `factor_neutralization:` declared as a boolean (`true` opts into the platform factor model; `false` is an explicit opt-out) |
-| G12 | `cost_arithmetic:` declared (margin_ratio ≥ 1.5; reconciles ±5%) |
+| G12 | `cost_arithmetic:` declared (margin_ratio ≥ 1.5; reconciles ±0.05 absolute — `alpha/cost_arithmetic.py`) |
 | G14 | `depends_on_signals:` references registered SIGNAL alpha IDs |
 | G16 (PORTFOLIO rule 8) | Every consumed mechanism family declares `max_share_of_gross`; sum ≤ 1.0; family whitelist matches upstream `Signal.trend_mechanism` values |
 

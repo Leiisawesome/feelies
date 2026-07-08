@@ -27,7 +27,7 @@ Schema-1.1 SIGNAL alphas additionally declare:
 - `horizon_seconds:` (single-horizon binding)
 - `trend_mechanism:` (G16 — required since Workstream E)
 - `regime_gate:` (AST-DSL purity boundary)
-- `cost_arithmetic:` (G12 — margin_ratio ≥ 1.5, reconciles ±5%)
+- `cost_arithmetic:` (G12 — margin_ratio ≥ 1.5, reconciles ±0.05 absolute; `alpha/cost_arithmetic.py`)
 
 ---
 

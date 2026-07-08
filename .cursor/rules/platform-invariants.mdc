@@ -51,7 +51,7 @@ Canonical term meanings — no local redefinition in skills. Operational detail:
 | **feature** | Canonical type: `HorizonFeatureSnapshot` on `HorizonTick` boundaries. D.2 retired per-tick `FeatureVector`. See feature-engine skill. |
 | **horizon signal** | `HorizonSignal.evaluate` after `regime_gate` is ON; one `Signal` per (alpha, symbol, boundary). See microstructure-alpha skill. |
 | **regime gate** | AST-safe boolean DSL (`on_condition` / `off_condition`) on SIGNAL alphas. See microstructure-alpha skill. |
-| **cost arithmetic** | Required SIGNAL YAML block; `margin_ratio ≥ 1.5` and ±5% reconciliation (Inv-12). Metadata only — does not size at runtime. |
+| **cost arithmetic** | Required SIGNAL YAML block; `margin_ratio ≥ 1.5` and ±0.05-absolute reconciliation (`alpha/cost_arithmetic.py`; Inv-12). Metadata only — does not size at runtime. |
 | **layer gate (G2–G16)** | Alpha YAML checks in `LayerValidator` before load. G1/G3 toggleable via `enforce_layer_gates`; G12/G16 always block. See `alphas/SCHEMA.md`. |
 | **trend mechanism** | Closed enum declaring the causal force (Inv-1); validated by G16. Propagated on `Signal` and intent breakdown. |
 | **hazard spike** | `RegimeHazardSpike` when dominant regime posterior drops across consecutive ticks. Exit-direction hint only (Inv-11). See regime-detection skill. |

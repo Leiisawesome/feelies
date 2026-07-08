@@ -192,7 +192,7 @@ re-implemented as a proper module before backtesting:
 | Signal logic (threshold + condition) | `HorizonSignal.evaluate(snapshot, regime, params) -> Signal | None` declared inline in a schema-1.1 SIGNAL alpha YAML | `alphas/<alpha_id>/<alpha_id>.alpha.yaml` |
 | Entry/exit rules | `Signal.direction`, `Signal.strength`, `Signal.edge_estimate_bps`, `Signal.trend_mechanism`, `Signal.expected_half_life_seconds` | Schema-1.1 SIGNAL alpha (G16) |
 | Cross-sectional weights | `PortfolioAlpha.construct(ctx, params) -> SizedPositionIntent` declared inline in a `layer: PORTFOLIO` alpha YAML | `alphas/<alpha_id>/<alpha_id>.alpha.yaml` |
-| Cost arithmetic | `cost_arithmetic:` block (G12 — `margin_ratio ≥ 1.5`, reconciles ±5%) | Alpha YAML |
+| Cost arithmetic | `cost_arithmetic:` block (G12 — `margin_ratio ≥ 1.5`, reconciles ±0.05 absolute; `alpha/cost_arithmetic.py`) | Alpha YAML |
 | Trend mechanism declaration (G16) | `trend_mechanism:` block with family + `expected_half_life_seconds` + `l1_signature_sensors` + `failure_signature` | Alpha YAML (default-required since Workstream E) |
 | Regime gate | `regime_gate:` AST-DSL block | Alpha YAML |
 | Parameter values | `parameters:` block with valid ranges; per-alpha `promotion: { gate_thresholds: ... }` overrides via F-5 | Alpha YAML |

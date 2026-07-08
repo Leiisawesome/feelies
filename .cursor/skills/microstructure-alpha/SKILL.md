@@ -150,7 +150,7 @@ cost_arithmetic:                        # G12 — Inv-12 enforcement
   half_spread_bps: 2.5
   impact_bps: 3.0
   fee_bps: 1.0
-  margin_ratio: 1.8                    # must be ≥ 1.5 and reconcile with components ±5%
+  margin_ratio: 1.8                    # ≥ 1.5; reconciles ±0.05 absolute (alpha/cost_arithmetic.py)
 
 signal: |
   def evaluate(snapshot, regime, params):
@@ -242,8 +242,9 @@ The `cost_arithmetic:` block discloses `edge_estimate_bps`,
 
 - `margin_ratio ≥ 1.5` enforces Inv-12 (transaction cost realism)
 - The disclosed `margin_ratio` must reconcile with the components
-  within ±5%; otherwise the alpha author has lied about costs and the
-  load is rejected
+  within ±0.05 **absolute on the ratio** — not ±5% relative
+  (`alpha/cost_arithmetic.py`); otherwise the alpha author has lied
+  about costs and the load is rejected
 
 The block is structural metadata — it does not alter runtime sizing —
 but it is recorded in the alpha manifest for promotion gating,
