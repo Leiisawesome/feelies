@@ -33,6 +33,32 @@ Schema-1.1 SIGNAL alphas additionally declare:
 
 ## Hypothesis-Driven Research Framework
 
+Every proposal instantiates the deliverable template
+([proposal-template.md](proposal-template.md)) — its sections map onto
+the phases below and the alpha YAML fields they feed.
+
+### Phase 0: Reformalization Gate (folk language → state variable)
+
+Folk/TA pattern language ("support", "resistance", "the level holds",
+"breakout") is **inadmissible as a hypothesis input** until restated
+as all three of:
+
+- (a) an exact sensor-expressible L1 state variable **with units**;
+- (b) a conditional-distribution claim over forward returns (or a
+  named intermediate observable);
+- (c) a falsifying forward test.
+
+A folk claim that cannot complete (a)–(c) is not rejected — it is not
+yet a hypothesis. Do not proceed to Phase 1 without the restatement.
+
+Worked example:
+
+| Folk claim | Restatement |
+|-----------|-------------|
+| "Price is approaching a prior extreme" | (a) Distance, in **ticks** (`execution/tick_size.py` grid), from the current best bid/ask to the prior N-bar local extremum of mid |
+| "The level holds" | (b) Conditional on distance ≤ k ticks, quote-replenishment intensity (`quote_replenish_asymmetry`, `sensors/impl/quote_replenish_asymmetry.py`) rises vs its unconditional baseline |
+| Falsifier | (c) The stated conditional forward-return test via `research/forward_ic.py` (`spearman_ic`, `bucketed_forward_return`) at the declared horizon; no significant conditional shift ⇒ the claim dies |
+
 ### Phase 1: Hypothesis Formation
 
 Every research initiative begins with a structural hypothesis:
@@ -51,6 +77,33 @@ Reject hypotheses that:
 - Have no testable counterfactual
 - Require data you don't have (L2, direct feed timestamps)
 - Assume stable parameters across regimes
+
+#### Archetype & structural counterparty (rider on the mechanism taxonomy)
+
+The closed `TrendMechanism` families (`core/events.py`; table in
+[SKILL.md](SKILL.md)) encode **mechanisms, not archetypes**. In
+addition to the family declaration, every candidate must state:
+
+- **Archetype** — one of: liquidity provision,
+  informed-flow-following, or an explicitly argued third case. Naming
+  the family does not answer this; state it separately.
+- **Structural counterparty** — who is on the other side, and **why
+  they trade against THIS signal rather than the market at large**
+  (constraint, mandate, information deficit, or urgency that makes
+  their flow systematically exploitable). "The market" is not a
+  counterparty.
+
+Record both in the alpha YAML's `structural_actor` field
+(`alphas/SCHEMA.md`, optional Phase-3 field) and in the proposal's
+ARCHETYPE & COUNTERPARTY section
+([proposal-template.md](proposal-template.md)). This is authoring
+discipline enforced at review, **not** a loader gate — the field
+remains schema-optional today (schema-requiring it is a backlogged
+`LayerValidator` change, `docs/research/prompt_pack_backlog.md`). The
+hypothesis line's `[actor]` names the actor whose behavior *generates*
+the L1 signature; the counterparty is whoever *funds* the edge — do
+not conflate them, and the conservation check (Phase 3, test 6) must
+be argued against the counterparty.
 
 ### Phase 2: Feature Engineering from L1
 
@@ -111,6 +164,33 @@ Reject hypotheses that:
    - Test separately in tight-spread vs wide-spread regimes
    - Report if alpha concentrates in one regime (fragility signal)
 
+   Manual procedure (**Not shipped as a harness** — no stratified
+   runner exists; execute by hand, cross-linked from the
+   testing-validation skill):
+
+   1. Partition horizon boundaries by HMM dominant state
+      (`RegimeState.dominant_name` from `HMM3StateFractional`,
+      `services/regime_engine.py`; 3 states) × `spread_z_30d` strata
+      (implemented sensor; e.g. terciles of the boundary-time value).
+   2. Repeat the IC test per stratum
+      (`scripts/sensor_feature_ic.py` output paired with the stratum
+      labels; `research/forward_ic.py` for the statistics).
+   3. Repeat CPCV per stratum (`research/cpcv.py`) where the stratum
+      has enough boundaries to form the configured groups.
+   4. Minimum per-stratum sample rule: a stratum with fewer than
+      ~100 boundary observations is reported as INSUFFICIENT, not
+      pooled away silently (`spearman_ic`'s internal ≥ 3-pair floor
+      is a computability bound, not adequacy). State the per-stratum
+      n alongside every per-stratum statistic.
+   5. Pass rule: the ≥ 2 vol × ≥ 2 spread regime requirement
+      (research-workflow skill, Mandatory Controls) is evaluated on
+      the per-stratum results; single-stratum concentration is a
+      fragility flag, not an automatic kill — but it must be stated
+      in the proposal's STATISTICAL RESULT section.
+
+   Beware the tick-grid artifact (Phase 4 below) when defining
+   spread strata for low-priced midcaps.
+
 4. **Transaction cost hurdle**
    - Compute realistic round-trip cost: spread + slippage + market impact
    - Alpha must exceed cost by a margin (minimum Sharpe contribution > 0.5 after costs)
@@ -120,6 +200,27 @@ Reject hypotheses that:
    - Track number of features tested
    - Apply Bonferroni or Benjamini-Hochberg correction
    - Report both raw and adjusted significance
+   - Every variant tried anywhere in the workflow increments the
+     living trial ledger N (research-workflow skill, Multiple
+     Testing & Overfitting Controls) — features are one kind of
+     trial, not the whole count
+
+6. **Zero-integrated-edge conservation check (mandatory, one per signal)**
+   - Over a long regime-balanced sample, the integrated edge must be
+     consistent with the stated mechanism's economics: the declared
+     structural counterparty (Phase 1 archetype rider) must plausibly
+     supply it. A mechanism whose counterparty cannot fund the
+     integrated PnL is a free lunch and therefore a misattribution —
+     the edge, if real, comes from something you have not named.
+   - Procedure: integrate the per-fill edge estimate (or the
+     conditional forward-return edge pre-cost) over the full sample;
+     compare its sign, magnitude, and regime distribution against
+     what the counterparty's stated constraint can pay. State the
+     argument in the proposal's PROCESS MODEL section; a hand
+     estimate is acceptable, hand-waving is not.
+   - This is an economics-consistency test, distinct from the PnL
+     decomposition accounting identity in the testing-validation
+     skill (alpha + beta + costs = total).
 
 #### Backtest Standards
 
@@ -145,6 +246,26 @@ BACKTEST REQUIREMENTS:
 | Calendar effects | Test across days-of-week, month-end, FOMC | Alpha clusters on events only |
 | Regime conditioning | Stratify by VIX level | Works only in one regime |
 | Data vintage | Test on different data periods | Recent-only alpha (overfitting) |
+| Tick-grid artifact | See below | Spread-state "regimes" are grid states |
+
+#### Tick-constraint artifact test (required for spread-state claims)
+
+When the minimum tick (`execution/tick_size.py`: $0.01 above $1.00,
+$0.0001 below — Reg NMS sub-penny grid) is a large fraction of the
+quoted midcap spread, spread-state dynamics compress into a few
+discrete states (spread = 1, 2, 3 ticks) and apparent regime
+persistence — or spread-regime structure, or the spread strata of
+Phase 3 test 3 — can be a grid artifact rather than a liquidity
+phenomenon.
+
+- Required test: report the sample's spread-in-ticks distribution;
+  if a claimed spread state coincides with a single grid value,
+  re-derive the claim on a sub-universe where spread ≥ ~4 ticks (or
+  demonstrate the effect survives conditioning on spread-in-ticks).
+- Any scheduled tick-regime change (e.g. a tick-size pilot touching
+  the universe) is a **pre-registered structural sample boundary**:
+  never pool across it; treat pre/post as separate samples with the
+  boundary declared before looking at the data.
 
 ### Phase 5: Alpha Decay Modeling
 
@@ -171,6 +292,29 @@ Explicitly acknowledge these blind spots:
 
 Every model must include a section: "What breaks if the L2 reality diverges
 from our L1 inference?" — and specify monitoring for this divergence.
+
+### Mirage risk by observable family
+
+L1 observables differ in how easily the latent state they proxy can
+be revoked, hidden, or adversarially manufactured. Rank every
+candidate's inputs (sensor catalog: feature-engine skill):
+
+| Observable family | Mirage risk | Why |
+|-------------------|-------------|-----|
+| Spread state, trade prints | **LOW** | Trades are irrevocable; the quoted spread is executable at the instant observed |
+| Micro-price / size imbalance | **MEDIUM** | Displayed size is strategic (icebergs, hidden liquidity); imbalance can misstate true depth |
+| Quote-flow / cancellation (`quote_flicker_rate`, `quote_hazard_rate`) | **HIGH** | Revocable quotes, hidden-book dependence, adversarially manufacturable (spoof-shaped flow) |
+
+Rules:
+
+- High-mirage families demand **stricter L2-loss accounting** in the
+  proposal's L2 LOSS ACCOUNTING section (what latent state is
+  assumed, how an adversary or hidden book breaks it, what monitors
+  detect the divergence) — **not disqualification**.
+- The mirage rank **never settles the archetype question** (Phase 1
+  rider): a high-mirage signal can still be genuine
+  informed-flow-following, and a low-mirage one can still lack a
+  counterparty. Argue archetype and mirage independently.
 
 ---
 

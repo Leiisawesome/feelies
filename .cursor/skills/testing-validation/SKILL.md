@@ -196,6 +196,18 @@ or hazard-exit logic.
 | Hazard-spike parity | Replay `RegimeHazardSpike` stream (`test_regime_hazard_replay.py`) | L5 hash bit-identical |
 | Decay-on / decay-off cross-check | Same alpha with `decay_weighting_enabled` toggled (`test_sized_intent_replay.py` vs `test_sized_intent_with_decay_replay.py`) | The locked L3 intent-stream parity hashes differ between the two modes; structural ranking unchanged |
 
+### Regime-Stratified Research Validation
+
+Research-stage regime stratification (partition horizon boundaries by
+HMM dominant state × `spread_z_30d` strata; repeat IC/CPCV per
+stratum; minimum per-stratum sample rule) is a **manual procedure, not
+a shipped harness** — the canonical procedure lives in the
+microstructure-alpha skill's
+[research-protocol.md](../microstructure-alpha/research-protocol.md)
+(Phase 3, test 3). This skill owns only the acceptance posture: the
+≥ 2 vol × ≥ 2 spread stability requirement (research-workflow skill)
+is evaluated on those per-stratum results.
+
 ### Sim-vs-Live Divergence
 
 Detect structural drift between backtest assumptions and live behavior.

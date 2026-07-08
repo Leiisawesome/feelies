@@ -44,7 +44,8 @@ deep from `SKILL.md`.
 
 | Parent skill | File | Contents |
 |--------------|------|----------|
-| microstructure-alpha | [research-protocol.md](microstructure-alpha/research-protocol.md) | Hypothesis framework, feature taxonomy |
+| microstructure-alpha | [research-protocol.md](microstructure-alpha/research-protocol.md) | Hypothesis framework, feature taxonomy, reformalization gate, validation procedures |
+| microstructure-alpha | [proposal-template.md](microstructure-alpha/proposal-template.md) | Deliverable template every SIGNAL proposal instantiates |
 | microstructure-alpha | [system-architecture.md](microstructure-alpha/system-architecture.md) | Layer-2 deltas only (links to system-architect for pipeline) |
 | backtest-engine | [fill-model.md](backtest-engine/fill-model.md) | Fill tiers, slippage calibration (partially implemented) |
 | backtest-engine | [stress-testing.md](backtest-engine/stress-testing.md) | Perturbation protocols (mostly design targets) |

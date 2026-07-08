@@ -147,7 +147,11 @@ today (one per `sensor_id`); keep this list in sync with
 > `inventory_pressure`, `liquidity_stress_score`, and
 > `quote_flicker_rate` were specified-but-missing in earlier drafts and
 > shipped in the audit P2-3 pass; every G16 family now has a dedicated
-> implemented fingerprint. Sensor ids that were **never** implemented
+> implemented fingerprint. Research use of these sensors carries a
+> mirage-risk rank per observable family (quote-flow/cancellation is
+> HIGH) — see the microstructure-alpha skill's
+> [research-protocol.md](../microstructure-alpha/research-protocol.md),
+> "Mirage risk by observable family". Sensor ids that were **never** implemented
 > (`kyle_lambda_300s`, `trade_clustering`, `micro_price_drift`,
 > `effective_spread`) must not appear in `l1_signature_sensors` /
 > `depends_on_sensors`, or G6 resolution fails at load.

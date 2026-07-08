@@ -283,7 +283,14 @@ class SizedPositionIntent(Event):
 The `mechanism_breakdown` is the audit trail for G16 caps and the
 input axis to `MultiHorizonAttributor` for per-mechanism PnL
 decomposition. **Mechanism concentration** (the realised gross-share
-of any single family) drives the post-trade crowding diagnostic.
+of any single family) drives the post-trade crowding diagnostic. The
+pre-trade counterpart — the capacity & crowding envelope every
+candidate declares at proposal time (ADV ceiling, Sharpe-max vs
+profit-max target, correlated-unwind reasoning) — lives in the
+microstructure-alpha skill
+([SKILL.md](../microstructure-alpha/SKILL.md), "Pre-Trade Capacity &
+Crowding Envelope"); it carries the OQ-3 caveat that runtime
+mechanism-share enforcement is disabled (the ranker gap above).
 
 ---
 

@@ -32,6 +32,28 @@ Strategies deployed only if profitable under Tier 3.
 
 ---
 
+## Through-Fill Size Cap (shipped; D6 doc fix)
+
+When a **resting** passive order's through-fill triggers (opposite
+BBO crosses the limit: BUY `ask <= limit`, SELL `bid >= limit`) and
+`through_fill_size_cap_enabled: true` — which the reference
+`platform.yaml` sets, code default `false`
+(`core/platform_config.py`) — the fill quantity is capped at the
+crossing quote's displayed size:
+`fill_qty = min(remaining, crossing_size)` (crossing size ≤ 0 falls
+back to full remainder). A capped fill acks `PARTIALLY_FILLED` with
+reason `FILLED_BY_THROUGH`; the **remainder rests in place under the
+same order id** (`filled_quantity` accumulates) until a later
+through/drain fill or the `passive_max_resting_ticks` timeout
+(`execution/passive_limit_router.py`, resting through-fill path).
+
+This partial-split applies only to resting orders. Orders that are
+marketable **at submission** still reroute whole to
+`_submit_aggressive_market()` — no split at that point (see the
+spread-crossing note in [SKILL.md](SKILL.md)).
+
+---
+
 ## Market Order Fill Model
 
 ### Slippage Function

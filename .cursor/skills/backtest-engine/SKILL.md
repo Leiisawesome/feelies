@@ -275,6 +275,11 @@ When a limit order price crosses the opposite side of NBBO at submission:
 - The entire order routes to `_submit_aggressive_market()`
   (`passive_limit_router.py`) and fills with market-order economics —
   there is no split where remaining size rests as a passive limit
+- Caveat (D6): this no-split rule covers **submission-time**
+  marketability only. A *resting* order's later through-fill CAN
+  partial-split when `through_fill_size_cap_enabled: true` (the
+  reference `platform.yaml` setting) — see
+  [fill-model.md](fill-model.md), "Through-Fill Size Cap"
 
 ---
 

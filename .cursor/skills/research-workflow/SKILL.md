@@ -99,6 +99,30 @@ ExperimentRecord (target spec):
   promoted_to: str | null (strategy artifact ID if promoted)
 ```
 
+### Research-Stage Status Vocabulary (pre-`alpha_id` documents)
+
+Before an `alpha_id` exists in the lifecycle SM, every research doc
+(proposal, analysis note, plausibility card) carries exactly one
+`Status:` value from this closed set:
+
+| Status | Meaning |
+|--------|---------|
+| `hypothesis` | Reformalized claim (microstructure-alpha `research-protocol.md` Phase 0/1); no evidence yet |
+| `candidate` | Some supporting evidence; validation incomplete |
+| `trap-quadrant` | **Statistically valid but execution-invalid** — the edge exists pre-cost/pre-latency and dies under the realistic execution model. Kept, not deleted: it documents a real phenomenon that cannot be harvested |
+| `accepted` | Ready to seek RESEARCH→PAPER via `validate_gate(GateId.RESEARCH_TO_PAPER, ...)` with `ResearchAcceptanceEvidence` (alpha-lifecycle skill) |
+| `rejected` | Falsified, or noise-ceiling / cost-floor failure; kept for the trial ledger |
+
+Rules:
+
+- **"working" is banned as a status value** — it conflates the two
+  validity axes (statistical vs execution) that `trap-quadrant`
+  exists to separate.
+- This vocabulary is disjoint from `ExperimentRecord.status`
+  (per-experiment granularity, target spec above) and from the
+  `AlphaLifecycle` states (post-`alpha_id`; alpha-lifecycle skill).
+  Do not mix the three.
+
 ### Hypothesis Registry
 
 Hypotheses are tracked independently from experiments. Multiple experiments
@@ -184,7 +208,11 @@ managed explicitly.
 ### What Gets Formalized
 
 When exploration produces a promising signal or feature, it must be
-re-implemented as a proper module before backtesting:
+re-implemented as a proper module before backtesting. The proposal
+document that accompanies the handoff instantiates the deliverable
+template
+([microstructure-alpha/proposal-template.md](../microstructure-alpha/proposal-template.md)),
+whose sections map onto the YAML fields below:
 
 | Notebook Artifact | Formalized As | Destination |
 |------------------|--------------|-------------|
@@ -266,9 +294,35 @@ Research environments are overfitting factories. Guard against it.
 | Out-of-sample holdout | Minimum 30% of data reserved; never touched during exploration |
 | Walk-forward validation | No single in-sample/out-of-sample split; rolling windows |
 | Bonferroni / BH correction | Applied when testing multiple features or signals from the same dataset |
-| Stability requirement | Signal must work across ≥ 2 volatility regimes and ≥ 2 spread regimes |
+| Living trial-count ledger | See "Living Trial-Count Ledger" below — every variant tried anywhere increments N |
+| Stability requirement | Signal must work across ≥ 2 volatility regimes and ≥ 2 spread regimes (manual stratification procedure: microstructure-alpha `research-protocol.md`, Phase 3 test 3) |
 | Transaction cost stress | Must survive at 1.5x realistic transaction costs |
 | Lottery ticket detection | If signal works only for a narrow parameter range, classify as fragile |
+
+### Living Trial-Count Ledger
+
+The DSR machinery ships (`research/dsr.py`: `expected_max_sharpe`,
+`deflated_sharpe`, `build_dsr_evidence`); what it cannot do is count
+your trials for you. Discipline (**Not shipped** as tooling — a
+per-workflow markdown/JSONL ledger maintained by hand):
+
+- **Every construction, parameter, or filter variant evaluated
+  anywhere in the workflow is one trial** and increments the
+  workflow's ledger N — including variants that were discarded,
+  looked at once, or "didn't count". Features tested (control above)
+  are a subset of N, not all of it.
+- N is carried into `build_dsr_evidence(trials_count=N)` — the same
+  N, not a per-report subset. `validate_dsr` refuses
+  `trials_count == 0` (alpha-lifecycle skill), but only the ledger
+  makes the count honest.
+- Any Sharpe quoted anywhere is stated **alongside its noise
+  ceiling** `E[max Sharpe | null, N]`
+  (`expected_max_sharpe(n_trials=N, ...)`; asymptotically
+  σ·√(2 ln N)). A Sharpe below the ceiling is indistinguishable from
+  selection noise regardless of its p-value.
+- The ledger is append-only per workflow; resetting N for a "fresh
+  look" at the same data is the exact failure mode this exists to
+  prevent.
 
 ### Red Flags
 
