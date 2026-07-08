@@ -22,7 +22,7 @@ accepted, rejected}. "working" is banned.
 | 7 | STATISTICAL RESULT | IC / CPCV per regime stratum (research-protocol.md Phase 3 test 3, with per-stratum n), trial-ledger N and noise ceiling `E[max Sharpe \| null, N]` alongside every Sharpe (research-workflow skill, Living Trial-Count Ledger) | promotion evidence (CPCV / DSR) |
 | 8 | EXECUTION RESULT | Post-cost, post-latency result under the canonical realism profile; Inv-12 stress (`--inv12-stress`) survival. Tier-1 naive-fill numbers are never presented as results (backtest-engine `fill-model.md`) | `cost_arithmetic` reconciliation vs realized |
 | 9 | CAPACITY & CROWDING | ADV-based ceiling, Sharpe-max vs profit-max target, correlated-unwind reasoning (SKILL.md, Pre-Trade Capacity & Crowding Envelope). Caveat (OQ-3): runtime mechanism-share enforcement is not active — no deployment claim may rely on it (composition-layer skill) | — (review artifact) |
-| 10 | FALSIFICATION CONDITION | Mechanism-tied forward test that kills the claim (Inv-2); the G16 failure signature | `falsification_criteria`, `trend_mechanism.failure_signature` |
+| 10 | FALSIFICATION CONDITION | **At least three distinct mechanism-tied criteria** that kill the claim (Inv-2) — the forward test is one of them, and the G16 `failure_signature` clauses count toward the three only when they are mechanism-tied, not P&L-tied | `falsification_criteria`, `trend_mechanism.failure_signature` |
 | 11 | STATUS | One value from {hypothesis, candidate, trap-quadrant, accepted, rejected}; `accepted` = ready to seek RESEARCH→PAPER via `validate_gate` with `ResearchAcceptanceEvidence` (alpha-lifecycle skill) | lifecycle entry |
 | 12 | NEXT ACTION | The single next falsifying or gate-clearing step; `none` only for rejected | — |
 
