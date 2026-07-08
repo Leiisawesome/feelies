@@ -40,6 +40,7 @@ _DOC_FILES: tuple[Path, ...] = (
     Path("README.md"),
     Path("alphas/SCHEMA.md"),
     *tuple(sorted(Path("docs/prompts").glob("*.md"))),
+    *tuple(sorted(Path(".cursor/skills").rglob("*.md"))),
 )
 
 

@@ -189,8 +189,9 @@ not a bus event — it is consumed in-process by `CompositionEngine`.
 
 ## `FactorNeutralizer`
 
-`composition/factor_neutralizer.py` reads a loadings artifact from
-`loadings_dir/loadings.json` (schema `{symbol: {factor_name: float}}`;
+`composition/factor_neutralizer.py` reads a loadings artifact —
+`loadings.json` under the configured `loadings_dir` — (schema
+`{symbol: {factor_name: float}}`;
 `factor_loadings_max_age_seconds` guard at bootstrap) and projects
 the ranked weights onto the factor-neutral subspace. Factors
 typically include: market beta, size, value, momentum, sector

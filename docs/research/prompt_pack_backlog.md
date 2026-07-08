@@ -58,20 +58,16 @@ byte-identical before/after) plus two caveat-list corrections (add
 anchor `tests/determinism/parity_manifest.py` (FOLLOW-UP note in its
 module docstring).
 
-## 4. Extend internal-link checking to `.cursor/skills/**/*.md`
+## 4. Extend internal-link checking to `.cursor/skills/**/*.md` — DONE
 
-Attempted as a pure `_DOC_FILES` data addition
-(`tests/docs/test_internal_links.py`) during Task 3 (2026-07-08) and
-reverted: two pre-existing citations fail under the extended scope —
-composition-layer `SKILL.md` cites `loadings_dir/loadings.json` (a
-config-dir-relative illustration, needs a `_PLACEHOLDER_PATH_TOKENS`
-entry or rewording) and testing-validation `SKILL.md` links
-`docs/acceptance/v02_v03_matrix.md`, which is deleted in the current
-working tree (uncommitted deletion — intent unresolved). The thread
-resolves both citations, then adds the one-line glob to `_DOC_FILES`.
-Spec pointer: this entry; code anchor
-`tests/docs/test_internal_links.py` (`_DOC_FILES`,
-`_PLACEHOLDER_PATH_TOKENS`).
+Landed in Task 3a (2026-07-08) as a pure `_DOC_FILES` data addition
+(`tests/docs/test_internal_links.py`): one `rglob` line covering
+`.cursor/skills/**/*.md`. The two blockers from the first attempt
+(Task 3) were resolved first: the composition-layer `SKILL.md`
+`loadings_dir/loadings.json` illustration was reworded so it no
+longer parses as a checkable path, and the uncommitted deletion of
+`docs/acceptance/v02_v03_matrix.md` was restored from HEAD (worktree
+drift, disposition: restore). No checker-logic changes were needed.
 
 ## 5. C3 — Schema-require `structural_actor` (loader change)
 
