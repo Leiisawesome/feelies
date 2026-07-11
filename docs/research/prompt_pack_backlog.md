@@ -128,6 +128,9 @@ evidence pointers:
 `docs/research/artifacts/inventory_fade_census_2026-07-11.json`,
 `docs/research/sig_inventory_fade_v1_result.md` (NEXT ACTION).
 
+prompt_pack_05 §6 is now the operative slate pre-filter gate (first
+applied: Task 6-B).
+
 ## 9. `spread_z_30d` warm starvation on midcap quote rates
 
 The H2 census (2026-07-11) measured the declared late-warm watch item
@@ -179,3 +182,9 @@ Spec pointers: H4 card in
 unedited); parked disposition in that file's DISPOSITIONS 5;
 adjudication basis in
 `docs/research/artifacts/h2_h4_adjudication_package.md`.
+
+2026-07-11 update: feasibility map (7a08c95) shows taker execution
+closed at H=900 median (APP in p90 tail only; sole taker-open cell
+APP/1800) — H4's mechanism is intrinsically taker, so the program is
+deprioritized; revisit only if a passive-compatible close-mechanism
+variant is designed or the cost structure changes.

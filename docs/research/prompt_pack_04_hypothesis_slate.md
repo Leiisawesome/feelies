@@ -1107,3 +1107,6 @@ confirmation or override of the H1 recommendation before Task 7.**
    the execution of the pre-registered primary trial (N-row 3) under
    its own frozen protocol; no outcome statistic exists — **N
    unchanged at 10.**
+7. **H4 park entry updated per feasibility map — see backlog; parked
+   status unchanged** (2026-07-11, approved by Lei; recorded here for
+   the append-only trail — the H4 card above stays as pre-registered).
