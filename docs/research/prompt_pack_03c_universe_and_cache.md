@@ -1,9 +1,9 @@
 <!--
   File:   docs/research/prompt_pack_03c_universe_and_cache.md
   Status: NORMATIVE — FROZEN WITH TASK 8 (Task FQ-5B, 2026-07-10).
-          FQ-6A-R remediation 2026-07-11: L1–L4 verbatim, ADV table,
-          provenance correction; draw-evidence artifact still pending
-          Lei paste (blocker 1).
+          FQ-6A-R remediation 2026-07-11 complete: L1–L4 verbatim, ADV
+          table, provenance correction, draw-evidence artifact landed.
+          Task 8 grid inputs CLEARED.
   Owner:  data-engineering (cache) / research-workflow (evidence grid);
           prompt-pack Task FQ-5B, Phase A.
 
@@ -510,9 +510,10 @@ normalizer_version: "1"
 env_check: "MASSIVE_API_KEY absent from ambient shell, present in repo
   .env; loaded via feelies.cli.env.load_dotenv_optional in every one-off;
   key never echoed or persisted"
-draw_evidence_gap: "RESOLVED pending Lei paste — FQ-6A-R blocker 1:
-  universe_draw_evidence_2026-07-10.md not yet written (task prompt
-  carried placeholder only; STOP until Steps 1–7 report supplied)"
+draw_evidence_gap: "RESOLVED 2026-07-11 — Lei supplied the full
+  Steps 1–7 draw report (one-paste package); landed verbatim at
+  docs/research/artifacts/universe_draw_evidence_2026-07-10.md;
+  grid dates cross-checked against §2 (exact match)"
 oq1_artifact: "docs/research/artifacts/oq1_ws_quote_frames_APP_2026-07-10.jsonl
   (100 raw Q.APP events, 36 frames, captured 2026-07-10
   13:50:56–13:51:37Z = 09:50:56–09:51:37 ET)"
@@ -687,8 +688,9 @@ this section.
 | 6 | Provenance closure | **FAIL** | `git_sha` **23813ed5de1e7cbef27b32b0e5e6f65f4ece3c2f** exists at HEAD (`git log -1` → docs-only commit; ingest code path unchanged). `host_fingerprint`, `ingest_command`, `conditions_table_artifact`, `event_schema_hash`, `normalizer_version` filled in §9. **`worktree_clean` recorded as NO**, not **yes** as FQ-6A requires; draw-evidence artifact still missing (item 1). |
 | 7 | Docs guards | **PASS** | `uv run pytest tests/docs/ -q` → **101 passed**, 0 failed, 1 warning (`PYTHONHASHSEED` unset in pytest env). |
 
-**Task 8 grid inputs: NOT CLEARED — draw-evidence artifact pending Lei
-paste of Steps 1–7 report (FQ-6A-R blocker 1).**
+**Task 8 grid inputs: NOT CLEARED at FQ-6A close — draw-evidence
+artifact was pending (FQ-6A-R blocker 1; resolved 2026-07-11, see
+RE-CHECK below).**
 
 ---
 
@@ -696,7 +698,7 @@ paste of Steps 1–7 report (FQ-6A-R blocker 1).**
 
 | # | Item | FQ-6A | FQ-6A-R | Evidence |
 |---|---|---|---|---|
-| 1 | Frozen-grid integrity | FAIL | **FAIL** | L1–L4 verbatim, `closed_list_declaration`, `substitution_rule` now in §2. **`universe_draw_evidence_2026-07-10.md` still absent** — task prompt carried `<LEI: PASTE…>` placeholder only; cannot write verbatim without STOP. |
+| 1 | Frozen-grid integrity | FAIL | **PASS** | L1–L4 verbatim, `closed_list_declaration`, `substitution_rule` now in §2. `universe_draw_evidence_2026-07-10.md` landed verbatim 2026-07-11 (Lei one-paste package: Part A Steps 1–2 + STOP, Part B approved amendment, Part C Steps 3–7). Internal consistency confirmed: artifact `sessions_drawn` — calm `[2025-12-22, 2026-01-05, 2026-01-15, 2026-01-26, 2026-01-27]`, elevated A `[2025-11-25, 2025-12-04]`, elevated B `[2026-04-01, 2026-04-10, 2026-04-22]` — match the frozen UNIVERSE_DECISION and §2 grid exactly; redraw log and screen table account for every excluded/hop candidate; tags all empty with stratum floor PASS, matching the frozen block's `tags` fragment. |
 | 2 | Inventory completeness | PASS | **PASS** | Unchanged (80/80, counts match §5.1). |
 | 3 | Tick-bucket recompute | PASS | **PASS** | Unchanged (3 buckets, no STOP). |
 | 4 | ADV basis | FAIL | **PASS** | §2 ADV table recomputed; grid-session median (n=10) amendment recorded; APP exclusion 26.9% ≈ 03b ~25% sanity. |
@@ -704,4 +706,4 @@ paste of Steps 1–7 report (FQ-6A-R blocker 1).**
 | 6 | Provenance closure | FAIL | **PASS** | `git_sha` valid; host/ingest fields filled; PROVENANCE CORRECTION + 00d §3 start-clean rule; FQ-5B outputs committed at close. |
 | 7 | Docs guards | PASS | **PASS** | `PYTHONHASHSEED=0 uv run pytest tests/docs/ -q` → **101 passed**, 0 failed. |
 
-**Task 8 grid inputs: NOT CLEARED — draw-evidence artifact pending Lei paste (item 1).**
+**Task 8 grid inputs: CLEARED**
