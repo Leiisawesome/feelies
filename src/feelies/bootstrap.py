@@ -1240,12 +1240,16 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
     ],
     # Audit P1-F: INVENTORY is a fast, mean-reverting mechanism (half-life
     # 5–60 s).  A z over a long horizon window (300–1800 s) smears that
-    # reversion, and the G16 horizon/half-life binding only admits the 30 s
-    # horizon for this family.  So we expose ONLY the last-of-horizon signed
-    # pressure, and ONLY at h=30 — the already-normalised [-1,1] value is the
-    # right aggregation; longer horizons would dilute the signal.
+    # reversion, so we expose ONLY the last-of-horizon signed pressure — the
+    # already-normalised [-1,1] value is the right aggregation.  Task 7
+    # (sig_inventory_fade_v1 formal spec §1.2/§14.3) corrected the earlier
+    # claim that G16 admits only h=30 for this family: the horizon/half-life
+    # ratio envelope [0.5, 4.0] also admits h=120 across the G16 half-life
+    # envelope 5–60 s (e.g. hl=40 s → ratio 3.0), so the passthrough is wired
+    # at h ∈ {30, 120}.  Longer horizons (300–1800 s) stay unwired — they
+    # would dilute the signal.
     "inventory_pressure": lambda h: (
-        [SensorPassthroughFeature("inventory_pressure", h)] if h == 30 else []
+        [SensorPassthroughFeature("inventory_pressure", h)] if h in (30, 120) else []
     ),
     # P2-3 LIQUIDITY_STRESS fingerprints.  Both are already normalised
     # ([0,1] alarm / [0,1] fraction), so passthrough (last-of-horizon) is the
