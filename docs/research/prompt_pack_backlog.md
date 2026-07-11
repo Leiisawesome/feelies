@@ -69,7 +69,25 @@ longer parses as a checkable path, and the uncommitted deletion of
 `docs/acceptance/v02_v03_matrix.md` was restored from HEAD (worktree
 drift, disposition: restore). No checker-logic changes were needed.
 
-## 5. C3 — Schema-require `structural_actor` (loader change)
+## 5. Platform-wide session-admissibility guard (unknown ids + units sanity)
+
+Task FQ-5A (2026-07-09) found the vendor's quote condition/indicator
+population changed between the 2026-06-03 and 2026-06-29 cached
+sessions (new indicator set 501–604; quote condition 34 absent from
+`/v3/reference/conditions`), demonstrating that id vocabularies drift
+under DI-09's ingest-everything design with no detection anywhere.
+The pack scopes the defense to the new candidate's evidence pipeline
+(unknown-id guard + units-sanity check,
+`docs/research/prompt_pack_03b_print_eligibility.md` §6, joining the
+Task-9 test plan). Extending it platform-wide — a per-session
+ingest-health annotation or manifest field consumed by
+`backtest_enforce_ingest_terminal_health`-style gating — touches
+data-integrity behavior shared by every shipped alpha and needs its
+own thread with parity-impact assessment. Spec pointer: 03b §6 and
+§7.3 (open vendor questions on id 34, live-WS correction
+dissemination, and the June-2026 population change).
+
+## 6. C3 — Schema-require `structural_actor` (loader change)
 
 Task 3 landed the archetype & structural-counterparty requirement as
 authoring discipline in skill text only

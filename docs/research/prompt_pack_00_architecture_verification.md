@@ -225,11 +225,38 @@ table rows referenced by each ID.
 
 Task 2 is cleared to run after FQ-1 completes.
 
+Namespace (FQ-5B amendment D, 2026-07-10): the OQ ids in the table above
+are the **Task-1** questions — task-prefixed **T1-OQ-1 … T1-OQ-6** from
+now on (no retroactive renumbering of the table text). The unrelated
+data-contract questions labelled OQ-1…OQ-6 in
+`docs/research/prompt_pack_03_data_contract.md` §8 are the **Task-5**
+namespace (**T5-OQ-n**); see that table for those.
+
 REPRODUCIBILITY POLICY (OQ-5): resolved by Task FQ-3 — see
 `docs/research/prompt_pack_00d_reproducibility_policy.md` (NORMATIVE;
 same-host self-parity acceptance, ENVIRONMENT-LIBM triage table,
 host-fingerprint provenance template, and the separate manifest-FOLLOW-UP
 thread proposal).
+
+### PARITY-GAP REGISTER (added by Task FQ-5B, 2026-07-10)
+
+Backtest/live parity has **two open axes**, tracked here so no downstream
+task can describe one of them as "the last parity gap":
+
+| Axis | Gap | Owner | Status 2026-07-10 |
+|---|---|---|---|
+| AXIS-1 | Router fill-timing parity (T12-SC1–SC5, zero-latency prohibition precondition; 00c decisions) | Task 12 | OPEN — Task 12 not yet run |
+| AXIS-2 | WS size units (T5-OQ-1) + live-WS dissemination parity residuals: cancel/correction records on the `T` channel (03b §7.3 row 2) and the June-2026 quote condition/indicator population change incl. uninterpreted quote condition 34 (03b §7.3 rows 1/3, T5-OQ-3) | Lei / vendor | size-units axis **RESOLVED — SHARES** (FQ-5B live capture, `prompt_pack_03c_universe_and_cache.md` §8; stale WS doc flagged to vendor); dissemination residuals OPEN pending vendor answers |
+
+Downstream amendments (binding):
+
+- **Task 12:** its output must report AXIS-2 status alongside its own
+  AXIS-1 result, and may not describe itself as closing the last parity
+  gap while any AXIS-2 residual is open.
+- **Task 13:** a STATUS of "accepted" is **backtest-scoped** unless
+  AXIS-2 is fully resolved; the RESEARCH→PAPER recommendation must list
+  the open AXIS-2 residuals as a promotion blocker while they remain
+  open.
 
 ---
 
