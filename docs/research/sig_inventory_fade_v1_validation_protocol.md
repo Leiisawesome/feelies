@@ -2,6 +2,11 @@
   File:   docs/research/sig_inventory_fade_v1_validation_protocol.md
   Status: PRE-REGISTERED — FROZEN (Task 8-F, 2026-07-11). Written
           BEFORE any implementation and BEFORE any data contact.
+          STEP 1 CENSUS EXECUTED 2026-07-11 (Task 8-C) — verdict PARK
+          on BOTH pre-registered §1.4 conditions; sequence halted per
+          §0; awaiting Lei review before any further step. See the
+          appended CENSUS RESULTS section (execution record; the
+          frozen §1–§12 text above it is untouched).
           Pre-freeze reconciliation and Lei's rulings recorded in §11:
           census σ₁₂₀ thresholds corrected to the strict §4.2 anchor
           (29–39 bps; the §15(ii) 4.0-AS substitution NOT approved for
@@ -819,3 +824,271 @@ section appended below this line, each entry carrying a timestamp and
 justification.
 
 *Protocol frozen — Task 9 (implementation) may begin.*
+
+---
+
+# CENSUS RESULTS — STEP 1 EXECUTED (Task 8-C, 2026-07-11)
+
+Execution record of the frozen §1 census. **Not an amendment** — no
+test definition, threshold, or parameter above this line changed; the
+only header edit is the Status line recording this execution. **No
+forward return, IC, or signal evaluation was computed** — the only
+return-like quantity touched is the unconditional session σ₁₂₀, per
+the frozen §1 authorization.
+
+## C.1 Preconditions at execution (§0 re-verified)
+
+| # | check | result |
+|---|---|---|
+| P0-1 | wiring pre-step `6a3ac12` present | on `main` (ancestor of HEAD `f2055d5`); additionally asserted at runtime — the census aborts if the production `_HORIZON_FEATURE_FACTORIES` does not wire the `inventory_pressure` passthrough at h=120 (assertion passed on all 80 cells) |
+| P0-4 | determinism discipline | `PYTHONHASHSEED=0`; direct `DiskEventCache` read (`~/.feelies/cache`); replay through the real `SensorRegistry → HorizonScheduler → HorizonAggregator` stack; full-grid re-run produced a **bit-identical** artifact (SHA-256 match) |
+| P0-5 | protocol committed before census | freeze commit `f2055d5` is HEAD; worktree clean at task start |
+
+## C.2 Method (implementation of the frozen definitions; no new choices beyond those recorded here)
+
+`scripts/research/inventory_fade_census.py` (committed with this
+record). Per (symbol, session) cell: cached events RTH-filtered
+(09:30 ≤ t < 16:00 ET on `exchange_timestamp_ns`, mirroring
+`prepare_backtest_event_log`), sorted by `(timestamp_ns, sequence)`,
+replayed through the real pipeline with the reference `platform.yaml`
+sensor params (§1.1 table verbatim); h=120 features taken from the
+production bootstrap factory (regression-locking the `6a3ac12`
+wiring); scheduler anchored at the 09:30 ET open (`rth_open_ns`,
+audit-P1-8 parity); fresh sensor/regime state per session. Regime
+posterior: `hmm_3state_fractional` at reference defaults, calibrated
+per session on the causal prefix of the first ≤ 100,000 RTH quotes
+(`platform.yaml regime_calibration_max_quotes`, mirroring
+`orchestrator._calibrate_regime_engine`), advanced once per quote
+before the tick pipeline; the boundary reads the latched posterior
+(production `HorizonSignalEngine` semantics). Estimator details
+(recorded, not tuned): σ₁₂₀ = Bessel-corrected sample std of
+non-overlapping 120 s mid log-returns on the 09:30-anchored grid
+(last-mid-at-or-before sampling, ~194 returns/session), in bps;
+session-discipline window evaluated on the nominal boundary
+timestamp (`boundary_ts_ns`); contamination window = trailing 60 s
+(asof−60 s, asof] against Class-B condition ids {2, 7, 8, 9, 10, 13,
+15, 16, 17, 22, 29, 32, 35, 52, 53} and `correction ∈ {10, 11, 12}`.
+
+## C.3 Per-symbol roll-up (frozen §1.1 arithmetic, κ = 0.16)
+
+"prim" = contamination-excluded primary count; "incl" = including
+flagged. Elev-A/B and calm columns are the Amendment-H
+benign-on-elevated report (all cells of that stratum, per symbol).
+
+| symbol | fee (bps) | floor (bps) | σ₁₂₀ min (bps) | viable cells | viable-region elig (prim / incl) | all-cells elig prim | elev-A prim | elev-B prim | calm prim | ≥ 100? |
+|---|---|---|---|---|---|---|---|---|---|---|
+| APP | 0.07 | 4.66 | 29.13 | 1 (2026-04-10) | 0 / 1 | 2 | 0 | 1 | 1 | NO (0) |
+| RMBS | 0.42 | 5.43 | 33.96 | 0 | 0 / 0 | 35 | 1 | 13 | 21 | NO (0) |
+| ENSG | 0.24 | 5.04 | 31.49 | 0 | 0 / 0 | 1 | 0 | 1 | 0 | NO (0) |
+| DIOD | 0.76 | 6.21 | 38.82 | 0 | 0 / 0 | 5 | 0 | 5 | 0 | NO (0) |
+| PCTY | 0.31 | 5.20 | 32.49 | 0 | 0 / 0 | 23 | 0 | 23 | 0 | NO (0) |
+| MLI | 0.33 | 5.25 | 32.84 | 0 | 0 / 0 | 15 | 0 | 15 | 0 | NO (0) |
+| CROX | 0.53 | 5.68 | 35.51 | 0 | 0 / 0 | 27 | 4 | 3 | 20 | NO (0) |
+| OLN | — | — | excluded (Amendment G) | — | — | 17 | 1 | 5 | 11 | never in D |
+
+## C.4 Park-condition scoring (§1.4, numeric)
+
+- **Condition 1 — edge-region emptiness: TRUE (parks).** Realized
+  σ₁₂₀ spans 7.7–32.3 bps across the 80 cells against per-symbol
+  thresholds of 29.1–38.8 bps. Exactly **1 of 70** floored cells is
+  viable (APP/2026-04-10, σ₁₂₀ = 32.3 ≥ 29.13); that cell contains
+  **1** eligible boundary, which is contamination-flagged →
+  viable-region contamination-excluded eligible episodes = **0 for
+  every grid symbol**. The pre-registered σ-conditional deployable
+  region (spec §4.3: benign windows on elevated days / higher-σ
+  symbols) is empty as realized on this grid.
+- **Condition 2 — power floor (spec §15(iii), ≥ 100 per deployable
+  symbol): FAILS FOR EVERY SYMBOL (parks).** Maximum viable-region
+  count = 0. The floor also fails **unconditionally**: ignoring the
+  σ-viability restriction entirely, the grid-wide per-symbol maximum
+  is RMBS at 35 primary eligible episodes (pooled 125 across all 8
+  symbols × 10 sessions) — a ~3× shortfall against 100 even before
+  any σ conditioning. The park is therefore robust to the census
+  floor arithmetic (it does not hinge on the §11.1 ruling's 2.0 vs
+  4.0 bps adverse-selection choice: thresholds at the rejected
+  §15(ii) vertex, ≈ 57–67 bps, would only make the region emptier,
+  and dropping the floor to zero still fails on power).
+
+**Deployable candidate set D = ∅.**
+
+**VERDICT: PARK per pre-registered conditions — viable-region
+emptiness (0 contamination-excluded eligible episodes in σ-viable
+cells; 1/70 floored cells viable at all) AND power floor (no symbol
+reaches ≥ 100 viable-region episodes; maximum = 0, and ≤ 35 even
+ungated by σ-viability).**
+
+The §0 order lock halts the sequence here: steps 2–8 do not execute;
+no IC, forward-return, CPCV, DSR, or execution number exists for this
+candidate. This is the H1-style park path anticipated by §9 row 1.
+Per §1.4/spec §15(i), the κ-arithmetic is now superseded for any
+future variant only by measured evidence; the one-way ratchet stands.
+
+## C.5 Supporting census outputs (§1.3)
+
+**Warm coverage (fraction of emitted RTH h=120 boundaries; per-symbol
+mean over 10 sessions, [min–max]):** `inventory_pressure` ≥ 0.985
+mean on every symbol (the ENSG/DIOD marginality watch item did NOT
+materialize at h=120 — the 20-trades/60 s gate is nearly always warm).
+`realized_vol_30s_zscore` 0.94–0.995 mean everywhere. The
+`spread_z_30d` **late-warm watch item DID materialize, severely**, on
+the thin names: ENSG 0.03 [0.00–0.33], DIOD 0.05 [0.00–0.30], MLI
+0.08 [0.00–0.63], PCTY 0.16 [0.00–0.83] vs APP 0.94, OLN 0.72, RMBS
+0.59, CROX 0.51. On most thin-name sessions the 6000-quote window
+never fills, entries are (correctly, fail-safe) suppressed, and those
+symbols' eligible counts are warm-starved. Honest reading: their
+counts are lower bounds — but this cannot rescue the verdict, since
+σ-viability fails on 69/70 floored cells regardless of warmth, and
+the best-covered symbols (APP 0.94 warm) still produce ≤ 2 primary
+episodes. The §13 `window=2000` variant remains
+drafted-not-evaluated (N-impact 0; evaluating it is +1 N).
+
+**Contamination (§1.5):** pooled over eligible boundaries, 496 of 621
+(80 %) are flagged (per-symbol: OLN 94 %, APP 94 %, CROX 76 %, RMBS
+71 %, PCTY 39 %, MLI 35 %, DIOD 29 %, ENSG 0 %). Composition check
+(APP/2025-12-22, OLN/2026-01-15): flags are dominated by condition id
+10 (Derivatively Priced, ~2.6 % of prints) and id 2 (Average Price);
+zero `correction ∈ {10,11,12}` records on the checked sessions.
+High-|pressure| windows co-occur with derived/average prints far more
+than the tape-wide base rate — consistent with the θ₄ concern; both
+counts are reported per cell in the table below and the artifact.
+
+**Gate-state × daily-stratum boundary counts (§1.3 / spec §9(i);
+boundaries in the 09:35–15:50 session window; gate ON =
+`P(normal) > 0.6 ∧ spread_z_30d ≤ 1.0` on a warm, non-stale
+`spread_z_30d`):**
+
+| symbol | ON elev-A | ON elev-B | ON calm | OFF elev-A | OFF elev-B | OFF calm |
+|---|---|---|---|---|---|---|
+| APP | 140 | 220 | 421 | 236 | 344 | 519 |
+| RMBS | 51 | 229 | 319 | 325 | 335 | 621 |
+| OLN | 153 | 205 | 386 | 223 | 359 | 554 |
+| ENSG | 0 | 34 | 0 | 376 | 530 | 940 |
+| DIOD | 1 | 19 | 5 | 375 | 545 | 935 |
+| PCTY | 0 | 156 | 0 | 376 | 408 | 940 |
+| MLI | 0 | 68 | 0 | 376 | 496 | 940 |
+| CROX | 109 | 209 | 192 | 267 | 355 | 748 |
+
+(Thin-name zeros are the `spread_z_30d` warm starvation above, not a
+regime finding. L1 carries verbatim: calm columns are evidence about
+calm-as-realized Dec-2025/Feb-2026 only.)
+
+**Per-cell census table** (bnd = emitted RTH h=120 boundaries; win =
+boundaries in the 09:35–15:50 window; warm fractions per entry-warm
+id; σ₁₂₀ in bps; elig = primary after contamination exclusion; full
+per-cell detail incl. long/short splits and both counts in
+`docs/research/artifacts/inventory_fade_census_2026-07-11.json`):
+
+| sym | date | stratum | σ₁₂₀ | viable | elig prim | long | short | flagged | incl | gate ON/OFF |
+|---|---|---|---|---|---|---|---|---|---|---|
+| APP | 2025-11-25 | elev-A | 18.4 | no | 0 | 0 | 0 | 4 | 4 | 59/129 |
+| APP | 2025-12-04 | elev-A | 19.8 | no | 0 | 0 | 0 | 2 | 2 | 81/107 |
+| APP | 2025-12-22 | calm | 16.8 | no | 0 | 0 | 0 | 8 | 8 | 91/97 |
+| APP | 2026-01-05 | calm | 21.0 | no | 0 | 0 | 0 | 3 | 3 | 80/108 |
+| APP | 2026-01-15 | calm | 18.5 | no | 1 | 1 | 0 | 3 | 4 | 95/93 |
+| APP | 2026-01-26 | calm | 21.1 | no | 0 | 0 | 0 | 0 | 0 | 83/105 |
+| APP | 2026-01-27 | calm | 21.2 | no | 0 | 0 | 0 | 3 | 3 | 72/116 |
+| APP | 2026-04-01 | elev-B | 22.9 | no | 0 | 0 | 0 | 4 | 4 | 72/116 |
+| APP | 2026-04-10 | elev-B | 32.3 | **YES** | 0 | 0 | 0 | 1 | 1 | 78/110 |
+| APP | 2026-04-22 | elev-B | 26.2 | no | 1 | 0 | 1 | 2 | 3 | 70/118 |
+| RMBS | 2025-11-25 | elev-A | 23.7 | no | 1 | 1 | 0 | 3 | 4 | 44/144 |
+| RMBS | 2025-12-04 | elev-A | 17.4 | no | 0 | 0 | 0 | 0 | 0 | 7/181 |
+| RMBS | 2025-12-22 | calm | 13.4 | no | 2 | 2 | 0 | 3 | 5 | 36/152 |
+| RMBS | 2026-01-05 | calm | 26.8 | no | 3 | 1 | 2 | 13 | 16 | 80/108 |
+| RMBS | 2026-01-15 | calm | 27.0 | no | 3 | 0 | 3 | 12 | 15 | 66/122 |
+| RMBS | 2026-01-26 | calm | 21.7 | no | 9 | 6 | 3 | 14 | 23 | 73/115 |
+| RMBS | 2026-01-27 | calm | 21.6 | no | 4 | 1 | 3 | 12 | 16 | 64/124 |
+| RMBS | 2026-04-01 | elev-B | 21.8 | no | 8 | 4 | 4 | 11 | 19 | 83/105 |
+| RMBS | 2026-04-10 | elev-B | 25.4 | no | 4 | 3 | 1 | 12 | 16 | 76/112 |
+| RMBS | 2026-04-22 | elev-B | 24.4 | no | 1 | 1 | 0 | 6 | 7 | 70/118 |
+| OLN | 2025-11-25 | elev-A | 14.3 | — | 1 | 1 | 0 | 32 | 33 | 71/117 |
+| OLN | 2025-12-04 | elev-A | 13.9 | — | 0 | 0 | 0 | 30 | 30 | 82/106 |
+| OLN | 2025-12-22 | calm | 14.3 | — | 5 | 3 | 2 | 17 | 22 | 63/125 |
+| OLN | 2026-01-05 | calm | 22.4 | — | 0 | 0 | 0 | 30 | 30 | 58/130 |
+| OLN | 2026-01-15 | calm | 19.7 | — | 0 | 0 | 0 | 38 | 38 | 96/92 |
+| OLN | 2026-01-26 | calm | 19.7 | — | 6 | 2 | 4 | 34 | 40 | 88/100 |
+| OLN | 2026-01-27 | calm | 18.0 | — | 0 | 0 | 0 | 27 | 27 | 81/107 |
+| OLN | 2026-04-01 | elev-B | 22.3 | — | 0 | 0 | 0 | 15 | 15 | 59/129 |
+| OLN | 2026-04-10 | elev-B | 19.5 | — | 2 | 2 | 0 | 23 | 25 | 75/113 |
+| OLN | 2026-04-22 | elev-B | 19.9 | — | 3 | 2 | 1 | 24 | 27 | 71/117 |
+| ENSG | 2025-11-25 | elev-A | 12.9 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| ENSG | 2025-12-04 | elev-A | 8.9 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| ENSG | 2025-12-22 | calm | 11.1 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| ENSG | 2026-01-05 | calm | 9.6 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| ENSG | 2026-01-15 | calm | 13.8 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| ENSG | 2026-01-26 | calm | 9.3 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| ENSG | 2026-01-27 | calm | 11.5 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| ENSG | 2026-04-01 | elev-B | 12.0 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| ENSG | 2026-04-10 | elev-B | 20.0 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| ENSG | 2026-04-22 | elev-B | 11.4 | no | 1 | 0 | 1 | 0 | 1 | 34/154 |
+| DIOD | 2025-11-25 | elev-A | 16.9 | no | 0 | 0 | 0 | 1 | 1 | 1/187 |
+| DIOD | 2025-12-04 | elev-A | 15.1 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| DIOD | 2025-12-22 | calm | 13.8 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| DIOD | 2026-01-05 | calm | 19.8 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| DIOD | 2026-01-15 | calm | 15.0 | no | 0 | 0 | 0 | 1 | 1 | 5/183 |
+| DIOD | 2026-01-26 | calm | 10.3 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| DIOD | 2026-01-27 | calm | 12.5 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| DIOD | 2026-04-01 | elev-B | 20.2 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| DIOD | 2026-04-10 | elev-B | 18.1 | no | 4 | 3 | 1 | 0 | 4 | 12/176 |
+| DIOD | 2026-04-22 | elev-B | 19.8 | no | 1 | 1 | 0 | 0 | 1 | 7/181 |
+| PCTY | 2025-11-25 | elev-A | 10.5 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| PCTY | 2025-12-04 | elev-A | 10.9 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| PCTY | 2025-12-22 | calm | 10.1 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| PCTY | 2026-01-05 | calm | 16.1 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| PCTY | 2026-01-15 | calm | 15.0 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| PCTY | 2026-01-26 | calm | 12.0 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| PCTY | 2026-01-27 | calm | 17.4 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| PCTY | 2026-04-01 | elev-B | 18.2 | no | 5 | 5 | 0 | 4 | 9 | 40/148 |
+| PCTY | 2026-04-10 | elev-B | 18.8 | no | 2 | 1 | 1 | 7 | 9 | 40/148 |
+| PCTY | 2026-04-22 | elev-B | 17.3 | no | 16 | 7 | 9 | 4 | 20 | 76/112 |
+| MLI | 2025-11-25 | elev-A | 8.2 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| MLI | 2025-12-04 | elev-A | 9.1 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| MLI | 2025-12-22 | calm | 8.0 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| MLI | 2026-01-05 | calm | 9.5 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| MLI | 2026-01-15 | calm | 8.2 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| MLI | 2026-01-26 | calm | 9.7 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| MLI | 2026-01-27 | calm | 8.8 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| MLI | 2026-04-01 | elev-B | 11.1 | no | 15 | 6 | 9 | 7 | 22 | 57/131 |
+| MLI | 2026-04-10 | elev-B | 7.7 | no | 0 | 0 | 0 | 0 | 0 | 0/188 |
+| MLI | 2026-04-22 | elev-B | 16.5 | no | 0 | 0 | 0 | 1 | 1 | 11/177 |
+| CROX | 2025-11-25 | elev-A | 13.6 | no | 2 | 1 | 1 | 12 | 14 | 55/133 |
+| CROX | 2025-12-04 | elev-A | 12.0 | no | 2 | 1 | 1 | 7 | 9 | 54/134 |
+| CROX | 2025-12-22 | calm | 15.6 | no | 11 | 7 | 4 | 9 | 20 | 80/108 |
+| CROX | 2026-01-05 | calm | 16.1 | no | 0 | 0 | 0 | 6 | 6 | 30/158 |
+| CROX | 2026-01-15 | calm | 10.8 | no | 8 | 5 | 3 | 3 | 11 | 27/161 |
+| CROX | 2026-01-26 | calm | 16.0 | no | 1 | 1 | 0 | 1 | 2 | 26/162 |
+| CROX | 2026-01-27 | calm | 10.6 | no | 0 | 0 | 0 | 3 | 3 | 29/159 |
+| CROX | 2026-04-01 | elev-B | 17.1 | no | 0 | 0 | 0 | 17 | 17 | 53/135 |
+| CROX | 2026-04-10 | elev-B | 15.4 | no | 0 | 0 | 0 | 14 | 14 | 77/111 |
+| CROX | 2026-04-22 | elev-B | 18.1 | no | 3 | 2 | 1 | 13 | 16 | 79/109 |
+
+Every cell emitted 195 RTH boundaries, 188 in the session window;
+warm fractions per cell are in the JSON artifact.
+
+## C.6 Trial ledger
+
+**N = 10, unchanged.** This census is the execution of the
+pre-registered primary trial (slate N-row 3) under its own frozen
+protocol — not a new variant, and no outcome statistic (forward
+return, IC, Sharpe) was computed. All REGISTERED-UNEVALUATED rows
+remain unevaluated (N-impact 0 each).
+
+## C.7 Provenance (FQ-3)
+
+    git_sha: "f2055d59ac4cc22b03128f2e2a728259fe25cecb" (freeze commit
+      = HEAD at execution; wiring pre-step 6a3ac12 an ancestor)
+    worktree_clean: "yes at task start (git status --porcelain empty of
+      tracked changes; only this task's outputs added)"
+    pythonhashseed: "0 (set in session for every scripted run)"
+    command: "PYTHONHASHSEED=0 uv run python
+      scripts/research/inventory_fade_census.py --json
+      docs/research/artifacts/inventory_fade_census_2026-07-11.json"
+    artifact: "docs/research/artifacts/inventory_fade_census_2026-07-11.json
+      sha256=3ab881f5974b20554558f3d097c6d4e92486df7cf726ecd547ae8ce95a4c2cb0"
+    determinism: "full-grid re-run bit-identical (SHA-256 equal);
+      post-ruff-format re-run also bit-identical"
+    script: "scripts/research/inventory_fade_census.py (committed with
+      this record; ruff check/format clean; no src/feelies or tests/
+      file touched — parity baselines untouched by construction)"
+
+*Step 1 stops here. Lei reviews the PARK verdict before any Task 9
+action.*
