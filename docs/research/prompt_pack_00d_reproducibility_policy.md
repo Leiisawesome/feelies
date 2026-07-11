@@ -142,8 +142,15 @@ host_fingerprint:
   worktree_clean: "yes/no (git status --porcelain empty)"
 ```
 
-Rule: evidence-producing runs require `worktree_clean: yes`. (Approved
-Task 3a step 4, 2026-07-08.)
+Rule: evidence-producing runs require `worktree_clean: yes` at **run
+START** (`git status --porcelain` empty before any task output is
+written). The run's own research outputs (docs, artifacts produced by
+that task) are committed at completion; they do not retroactively
+invalidate a start-clean provenance record. A dirty tree at start means
+unclassified changes may have influenced the code path — record the
+deviation and classify each dirty path (docs/artifacts vs
+src/tests/configs). (Approved Task 3a step 4, 2026-07-08; clarified
+Task FQ-6A-R, 2026-07-11.)
 
 Generation snippet (uses only stdlib + the loaded config; no wall-clock
 dependency — the block is provenance, not a timestamp):
