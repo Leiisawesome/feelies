@@ -1,6 +1,11 @@
 <!--
   File:   docs/research/prompt_pack_04a_slate_review.md
-  Status: AWAITING-LEI-DECISION
+  Status: DECIDED-PENDING-FINAL-SELECTION — Lei dispositions landed
+          2026-07-11 (Task FQ-6B-R): Q1 H1 overridden/parked on the
+          realized cost floor, selection narrowed to {H2, H4}; Q2 ledger
+          rule (data contact increments N; drafting does not);
+          Q3 L1–L4 citations routed forward (Task 7 amendment B +
+          Task 8 strata), no retro-edits to the slate cards.
   Owner:  independent slate reviewer (Task FQ-6B); no candidate selected.
 -->
 
@@ -231,3 +236,24 @@ regardless of RankIC.
 ---
 
 *Reviewer stops here — no candidate selected or advanced.*
+
+---
+
+## DISPOSITIONS RECORD (Task FQ-6B-R, 2026-07-11 — Lei-approved)
+
+- **Q1:** H1 **overridden**, not confirmed — parked at design on the
+  realized cost floor (3–6 bps stated vs ≥9.12 bps best-case floor);
+  parked ≠ trap-quadrant; no outcome data touched, N unchanged.
+  Selection narrowed to **{H2, H4}**; final adjudication pending
+  (`docs/research/artifacts/h2_h4_adjudication_package.md`).
+- **Q2:** the six deferred conditionals are registered in the slate
+  ledger as `REGISTERED-UNEVALUATED (N-impact: 0)`. Binding rule: any
+  data contact — including exploratory — increments N; drafting a
+  variant in the Task 7 spec does not increment; evaluating it does;
+  nothing may be evaluated off-ledger.
+- **Q3 (routing, recorded here per disposition):** the L1–L4 citation
+  requirement for calm-regime-dependent designs is **routed forward, no
+  retro-edits**: Task 7 amendment B carries verbatim L1–L4 citations
+  wherever the selected design touches them, and Task 8's stratum
+  definitions carry L1 (single calm episode) unconditionally. The slate
+  cards stay as pre-registered.

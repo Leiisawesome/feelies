@@ -1030,6 +1030,12 @@ pre-declared here so its later appearance is not a silent reset).
 | 8 | H4 alt: direction proxy = inventory_pressure sign instead of ofi_integrated | H4 | design-considered |
 | 9 | H5 primary: flicker × replenish-asymmetry fade, H = 120 s, hl = 40 s | H5 | pre-registered |
 | 10 | H5 alt: trade-print confirmation as entry requirement (not just monitor) | H5 | design-considered |
+| — | H1 conditional: minimum aggregate sweep-volume floor (anti-ignition) | H1 | REGISTERED-UNEVALUATED (N-impact: 0) — FQ-6B-R |
+| — | H1 conditional: SFI normalization choice (depth-/volume-normalized) | H1 | REGISTERED-UNEVALUATED (N-impact: 0) — FQ-6B-R |
+| — | Conditional: 03b id-12 (Form T) DW weight, any trade-fed sensor | 03b §3.3 | REGISTERED-UNEVALUATED (N-impact: 0) — FQ-6B-R |
+| — | H2 conditional: condition-filtered `inventory_pressure` NEW variant | H2 | REGISTERED-UNEVALUATED (N-impact: 0) — FQ-6B-R |
+| — | H4 conditional: MOC-conversion election | H4 | REGISTERED-UNEVALUATED (N-impact: 0) — FQ-6B-R |
+| — | H4 conditional: entry cutoff before 15:50 imbalance dissemination | H4 | REGISTERED-UNEVALUATED (N-impact: 0) — FQ-6B-R |
 
 **N = 10** as of this task. Pre-declared conditional rows (0-count today,
 each becomes +1 when actually varied/built): H1 sweep-volume floor; H1
@@ -1044,3 +1050,29 @@ trials_count=N)`), and every quoted Sharpe carries its noise ceiling
 
 **Task 6 complete. Stopping here per instruction — awaiting Lei's
 confirmation or override of the H1 recommendation before Task 7.**
+
+---
+
+## DISPOSITIONS (Task FQ-6B-R, 2026-07-11 — approved by Lei; append-only, cards above unedited)
+
+1. **Q1 — H1 OVERRIDDEN, not confirmed.** H1 (`sig_sweep_kyle_drift_v1`)
+   status = "hypothesis — parked (fails the realized cost floor at design:
+   stated 3–6 bps one-way vs a ≥9.12 bps best-case floor on the frozen
+   universe; the G12 load-time gate is unreachable as specified)".
+   Explicitly: **parked ≠ trap-quadrant** — that status is reserved for
+   post-validation execution failure (statistically valid, execution-invalid
+   on evidence); H1 was parked on design-time arithmetic. **No outcome data
+   was touched in reaching this decision — trial count N unchanged (N = 10).**
+   Selection is narrowed to **{H2, H4}**; final adjudication by Lei pending
+   (package: `docs/research/artifacts/h2_h4_adjudication_package.md`).
+2. **Q2 — Ledger registration rule (binding).** The six deferred
+   conditionals are entered in the ledger table above as
+   `REGISTERED-UNEVALUATED (N-impact: 0)`. Binding rule from here on:
+   **ANY data contact — including exploratory — increments N; drafting a
+   variant in the Task 7 spec does not increment; evaluating it does;
+   nothing may be evaluated off-ledger.**
+3. **Q3 — No retro-edits.** The L1–L4 citation requirement for
+   calm-regime-dependent designs is routed forward (Task 7 amendment B;
+   Task 8 stratum definitions) — recorded in the dossier
+   (`prompt_pack_04a_slate_review.md`); the slate cards stay as
+   pre-registered.

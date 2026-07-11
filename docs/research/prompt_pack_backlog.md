@@ -100,3 +100,15 @@ pointer: `docs/research/prompt_pack_01_skill_gap_report.md` §3 C3;
 field definition `alphas/SCHEMA.md` (`structural_actor`, optional
 Phase-3 field); validator anchor
 `src/feelies/alpha/layer_validator.py`.
+
+## 7. Cost-floor pre-filter for hypothesis-slate ranking (skill edit candidate)
+
+Hypothesis-slate ranking must apply the realized cost-floor check
+(dossier check d) as a hard pre-filter BEFORE ranking — the current
+formula measures explanation quality but not economic viability (H1
+lesson, 2026-07-10). Candidate skill edit for
+`.cursor/skills/microstructure-alpha/research-protocol.md`; batch with
+the next skill maintenance pass. Spec pointers:
+`docs/research/prompt_pack_04a_slate_review.md` (check d method +
+per-symbol floor table);
+`docs/research/prompt_pack_04_hypothesis_slate.md` DISPOSITIONS Q1.
