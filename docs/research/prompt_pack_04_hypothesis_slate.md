@@ -1092,3 +1092,18 @@ confirmation or override of the H1 recommendation before Task 7.**
    dedicated calendar-event grid program." That program is registered
    in `docs/research/prompt_pack_backlog.md` (entry 8). Adjudication
    touched no outcome data: N unchanged at 10.
+6. **H2 PARKED (park close-out, 2026-07-11 — Lei upholds the census
+   verdict).** H2 (`sig_inventory_fade_v1`) status = "hypothesis —
+   parked (park-rule census 642d12d: viable σ-region empty as
+   realized — 1/70 floored cells, contamination-flagged; power floor
+   ≥100 unreachable, max 35; verdict robust to the §11.1 correction).
+   PARK ≠ refutation: F1–F5 never ran; the economic-viability
+   precondition failed on this universe/grid/cost structure."
+   Both pre-registered park conditions of the frozen protocol §1.4
+   fired (census record:
+   `docs/research/sig_inventory_fade_v1_validation_protocol.md`
+   C.3–C.4); closure record:
+   `docs/research/sig_inventory_fade_v1_result.md`. The census was
+   the execution of the pre-registered primary trial (N-row 3) under
+   its own frozen protocol; no outcome statistic exists — **N
+   unchanged at 10.**

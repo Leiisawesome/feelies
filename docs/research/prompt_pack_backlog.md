@@ -113,6 +113,56 @@ the next skill maintenance pass. Spec pointers:
 per-symbol floor table);
 `docs/research/prompt_pack_04_hypothesis_slate.md` DISPOSITIONS Q1.
 
+**Extension (H2 park close-out, 2026-07-11):** per-card cost floors
+are not enough — H2 cleared the design-time floor arithmetic in a
+pre-registered σ-conditional region and still parked because that
+region was **empty as realized** (census 642d12d: 1/70 floored cells
+σ-viable, contamination-flagged; max 35 episodes/symbol vs the ≥ 100
+power floor). Slate pre-filtering must therefore use the **measured
+horizon-feasibility map** — the census-measured σ₁₂₀-vs-floor and
+eligible-episode-density surfaces on the frozen grid — as the hard
+pre-filter, not just per-card disclosure arithmetic. Successor task;
+evidence pointers:
+`docs/research/sig_inventory_fade_v1_validation_protocol.md`
+(CENSUS RESULTS C.3–C.5),
+`docs/research/artifacts/inventory_fade_census_2026-07-11.json`,
+`docs/research/sig_inventory_fade_v1_result.md` (NEXT ACTION).
+
+## 9. `spread_z_30d` warm starvation on midcap quote rates
+
+The H2 census (2026-07-11) measured the declared late-warm watch item
+as **severe** on thin names: mean warm fraction of RTH h=120
+boundaries ENSG 0.03, DIOD 0.05, MLI 0.08, PCTY 0.16 (vs APP 0.94) —
+the 6000-quote count window often never fills a session, so entries
+are (correctly, fail-safe) suppressed and any `spread_z_30d`-gated
+design is warm-starved on 4/8 grid symbols. Candidate fixes: window
+recalibration (`window=2000` — REGISTERED-UNEVALUATED, N-impact 0;
+evaluating it is +1 N on the owning card's ledger) or a time-based
+window variant. **Platform change, own thread, parity assessment
+required** (the sensor feeds shipped alphas and locked baselines).
+Evidence: `docs/research/sig_inventory_fade_v1_validation_protocol.md`
+C.5 warm-coverage table; sensor anchor
+`src/feelies/sensors/impl/spread_z_30d.py`
+(`platform.yaml` `window: 6000`).
+
+## 10. DI-09 contamination-at-extremes — 03b Class-A filtering for trade-fed extreme-conditioning designs
+
+Lesson from the H2 census (§1.5 flags): pooled over eligible
+boundaries, **80 % (496/621)** carried a Class-B print or correction
+record in the trailing 60 s window — dominated by condition id 10
+(Derivatively Priced) and id 2 (Average Price) at rates far above the
+tape-wide base rate. High-|pressure| windows co-occur with
+derived/average prints: under DI-09 ingest-everything, a trade-fed
+sensor conditioned on its own extremes selects exactly the windows
+where ineligible prints distort it. Consequence: **03b Class-A
+print-eligibility filtering is near-mandatory for any future trade-fed
+extreme-conditioning design** (as a NEW-sensor variant with explicit
+constructor params, per the 03b convention — never a mutation of a
+shipped sensor). Evidence:
+`docs/research/sig_inventory_fade_v1_validation_protocol.md` C.5
+contamination section; convention:
+`docs/research/prompt_pack_03b_print_eligibility.md` §3.3.
+
 ## 8. Dedicated calendar-event grid program (H4 revival path)
 
 H4 (`sig_close_rebalance_drift_v1`) was parked at final selection
