@@ -1076,3 +1076,19 @@ confirmation or override of the H1 recommendation before Task 7.**
    Task 8 stratum definitions) — recorded in the dossier
    (`prompt_pack_04a_slate_review.md`); the slate cards stay as
    pre-registered.
+4. **FINAL SELECTION (Lei's adjudication, 2026-07-11) — H2 CONFIRMED.**
+   H2 (`sig_inventory_fade_v1`) is the selected candidate for Task 7,
+   subject to six binding spec conditions recorded in the Task 7
+   amendment block. Adjudication basis: passive floor clearable
+   upper-band on ~7/8 symbols vs H4's 1–3 at top-of-band; episode
+   density on the frozen grid; H4's F3 falsifier untestable on an
+   event-screened grid; simulator dependence measurable via Task 12 +
+   sensitivity grid, information asymmetry not curable.
+5. **H4 parked.** H4 (`sig_close_rebalance_drift_v1`) status =
+   "hypothesis — parked (evidence-infrastructure mismatch: ~10
+   episodes/symbol on the frozen grid; F3 calendar-loading falsifier
+   untestable on a grid screened away from event days; economics
+   top-of-band on <=3 symbols). Not refuted — candidate for a future
+   dedicated calendar-event grid program." That program is registered
+   in `docs/research/prompt_pack_backlog.md` (entry 8). Adjudication
+   touched no outcome data: N unchanged at 10.

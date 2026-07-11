@@ -112,3 +112,20 @@ the next skill maintenance pass. Spec pointers:
 `docs/research/prompt_pack_04a_slate_review.md` (check d method +
 per-symbol floor table);
 `docs/research/prompt_pack_04_hypothesis_slate.md` DISPOSITIONS Q1.
+
+## 8. Dedicated calendar-event grid program (H4 revival path)
+
+H4 (`sig_close_rebalance_drift_v1`) was parked at final selection
+(2026-07-11) on an evidence-infrastructure mismatch, not a refutation:
+the frozen 03c grid yields only ~10 closing episodes/symbol, and its
+F3 calendar-loading falsifier (effect concentration on month-end/
+quarter-end/index-event sessions) is untestable on a grid screened
+away from event days. A future program would build a dedicated
+calendar-event session grid (month-end, quarter-end, index
+reconstitution dates) with enough closing windows to power F1–F3,
+plus the per-session closing-window calendar YAML the card requires.
+Spec pointers: H4 card in
+`docs/research/prompt_pack_04_hypothesis_slate.md` (pre-registered,
+unedited); parked disposition in that file's DISPOSITIONS 5;
+adjudication basis in
+`docs/research/artifacts/h2_h4_adjudication_package.md`.

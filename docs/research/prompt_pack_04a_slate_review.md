@@ -1,11 +1,16 @@
 <!--
   File:   docs/research/prompt_pack_04a_slate_review.md
-  Status: DECIDED-PENDING-FINAL-SELECTION — Lei dispositions landed
-          2026-07-11 (Task FQ-6B-R): Q1 H1 overridden/parked on the
+  Status: DECIDED — final selection adjudicated by Lei 2026-07-11:
+          H2 (`sig_inventory_fade_v1`) CONFIRMED for Task 7 (six binding
+          spec conditions in the Task 7 amendment block); H4 parked
+          (evidence-infrastructure mismatch; not refuted — future
+          calendar-event grid program, backlog entry 8). Earlier
+          dispositions (Task FQ-6B-R): Q1 H1 overridden/parked on the
           realized cost floor, selection narrowed to {H2, H4}; Q2 ledger
           rule (data contact increments N; drafting does not);
           Q3 L1–L4 citations routed forward (Task 7 amendment B +
-          Task 8 strata), no retro-edits to the slate cards.
+          Task 8 strata), no retro-edits to the slate cards. Final
+          record: `prompt_pack_04_hypothesis_slate.md` DISPOSITIONS 4–5.
   Owner:  independent slate reviewer (Task FQ-6B); no candidate selected.
 -->
 
