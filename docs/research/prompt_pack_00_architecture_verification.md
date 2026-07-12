@@ -243,9 +243,9 @@ thread proposal).
 Backtest/live parity has **two open axes**, tracked here so no downstream
 task can describe one of them as "the last parity gap":
 
-| Axis | Gap | Owner | Status 2026-07-10 |
+| Axis | Gap | Owner | Status 2026-07-10 (AXIS-1 updated 2026-07-12) |
 |---|---|---|---|
-| AXIS-1 | Router fill-timing parity (T12-SC1–SC5, zero-latency prohibition precondition; 00c decisions) | Task 12 | OPEN — Task 12 not yet run |
+| AXIS-1 | Router fill-timing parity (T12-SC1–SC5, zero-latency prohibition precondition; 00c decisions) | Task 12 | **VERIFIED — Task 12-P, 2026-07-12** (`prompt_pack_12p_router_fill_timing_parity.md`): no violation; battery committed as regression guards (`tests/execution/test_router_fill_timing_parity.py` + kernel halt case). AXIS-2 = SHARES noted alongside per the amendment below |
 | AXIS-2 | WS size units (T5-OQ-1) + live-WS dissemination parity residuals: cancel/correction records on the `T` channel (03b §7.3 row 2) and the June-2026 quote condition/indicator population change incl. uninterpreted quote condition 34 (03b §7.3 rows 1/3, T5-OQ-3) | Lei / vendor | size-units axis **RESOLVED — SHARES** (FQ-5B live capture, `prompt_pack_03c_universe_and_cache.md` §8; stale WS doc flagged to vendor); dissemination residuals OPEN pending vendor answers |
 
 Downstream amendments (binding):

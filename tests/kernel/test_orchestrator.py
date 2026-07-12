@@ -3820,6 +3820,114 @@ class TestHaltModeling:
         orch._process_tick(q_exit)
         assert position_store.get("AAPL").quantity == 0
 
+    def test_halt_suppresses_passive_router_fill_paths(self) -> None:
+        """Task 12-P (AXIS-1): halt suppression covers BOTH passive-router
+        fill paths.  At halt-on the resting passive order is cancelled
+        (Inv-11) and, while halted, quotes never reach the router — so
+        neither a through-fill of the resting order nor a deferred-
+        aggressive fill can occur, even though the in-halt quote is past
+        both orders' latency-eligibility deadlines.  After resume, the
+        surviving deferred MARKET order fills off the post-resume quote
+        at that quote's own price (no lookahead into the halt window)."""
+        from feelies.execution.passive_limit_router import PassiveLimitOrderRouter
+
+        clock = SimulatedClock(start_ns=1000)
+        bus = EventBus()
+        position_store = MemoryPositionStore()
+        router = PassiveLimitOrderRouter(
+            clock=clock,
+            cost_model=ZeroCostModel(),
+            latency_ns=100,
+            fill_hazard_max=Decimal("0"),
+        )
+        orch = Orchestrator(
+            clock=clock,
+            bus=bus,
+            backend=ExecutionBackend(
+                market_data=_StubMarketData(),
+                order_router=router,
+                mode="BACKTEST",
+            ),
+            risk_engine=_StubRiskEngine(action=RiskAction.ALLOW),
+            position_store=position_store,
+            event_log=InMemoryEventLog(),
+            metric_collector=_NoOpMetricCollector(),
+        )
+        _boot_to_backtest(orch)
+        orch._halt_on_codes = frozenset({5})
+        orch._halt_off_codes = frozenset({6})
+        orch._halt_blackout_ns = 100
+        # Production wiring (bootstrap.py): the router sees quotes ONLY via
+        # the bus subscription behind the orchestrator's M1 publish — i.e.
+        # behind the halt gate.
+        bus.subscribe(NBBOQuote, router.on_quote)  # type: ignore[arg-type]
+
+        acks_on_bus: list[OrderAck] = []
+        bus.subscribe(OrderAck, acks_on_bus.append)  # type: ignore[arg-type]
+
+        q0 = _make_quote(ts=1000, seq=1)  # bid 149.50 / ask 150.50, exch 900
+        orch._process_tick(q0)
+
+        # Path 1: resting passive BUY below the bid (eligible_at = 1100).
+        resting = OrderRequest(
+            timestamp_ns=1000,
+            correlation_id="halt-passive",
+            sequence=101,
+            order_id="halt-rest-1",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=50,
+            limit_price=Decimal("149.00"),
+        )
+        # Path 2: deferred aggressive MARKET (latency 100 → deadline 1100).
+        deferred = OrderRequest(
+            timestamp_ns=1000,
+            correlation_id="halt-market",
+            sequence=102,
+            order_id="halt-mkt-1",
+            symbol="AAPL",
+            side=Side.BUY,
+            order_type=OrderType.MARKET,
+            quantity=40,
+        )
+        for req in (resting, deferred):
+            router.submit(req)
+            orch._track_order(req.order_id, req.side, req)
+            orch._transition_order(req.order_id, OrderState.SUBMITTED, "submitted")
+            orch._transition_order(req.order_id, OrderState.ACKNOWLEDGED, "acknowledged")
+        router.poll_acks()  # drain the two ACKNOWLEDGED acks
+        assert router.resting_order_count == 1
+
+        orch._process_trade(self._trade(ts=1500, seq=2, conditions=self._HALT_ON))
+        assert "AAPL" in orch._halted_symbols
+        # Inv-11: the resting passive order was cancelled at halt-on.
+        assert router.resting_order_count == 0
+
+        # In-halt crossing quote (exch 1600 ≥ both deadlines): would through-
+        # fill the resting order AND fill the deferred MARKET were it
+        # delivered — the halt gate must keep it from the router entirely.
+        clock.set_time(1700)
+        q_halt = _make_quote(ts=1700, bid="148.00", ask="148.90", seq=3)
+        orch._process_tick(q_halt)
+        assert router.poll_acks() == []
+        assert position_store.get("AAPL").quantity == 0
+
+        # Resume, then a post-blackout quote reaches the router: the
+        # surviving deferred MARKET fills at THIS quote's cross (150.90),
+        # not at any price from inside the halt window.
+        orch._process_trade(self._trade(ts=2000, seq=4, conditions=self._HALT_OFF))
+        clock.set_time(2500)
+        q_after = _make_quote(ts=2500, bid="150.00", ask="150.90", seq=5)
+        orch._process_tick(q_after)
+        clock.set_time(2600)
+        orch._process_tick(_make_quote(ts=2600, bid="150.00", ask="150.90", seq=6))
+
+        fills = [a for a in acks_on_bus if a.status == OrderAckStatus.FILLED]
+        assert [a.order_id for a in fills] == ["halt-mkt-1"]
+        assert fills[0].fill_price == Decimal("150.90")
+        assert position_store.get("AAPL").quantity == 40
+
 
 def _ssr_intent(
     intent: TradingIntent,
