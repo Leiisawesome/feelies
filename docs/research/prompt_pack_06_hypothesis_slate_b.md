@@ -1,6 +1,8 @@
 <!--
   File:   docs/research/prompt_pack_06_hypothesis_slate_b.md
-  Status: hypothesis — AWAITING-LEI-REVIEW. Second, feasibility-
+  Status: hypothesis — DECIDED (2026-07-12): H8 CONFIRMED for Task 7,
+          H6/H7 NOT SELECTED — see DISPOSITIONS at end of file.
+          Second, feasibility-
           constrained hypothesis slate (Task 6-B, 2026-07-11). Three
           pre-registered SIGNAL-layer candidates. Pre-registration
           class: NO forward returns, NO IC, NO signal evaluation was
@@ -14,7 +16,7 @@
 
   Provenance (FQ-3 template):
     git_sha: "7a08c95135fbb1dff0762bf5747eb135e28a7d09" (HEAD at task
-      start; this task's outputs — this file plus the two approved
+      start; this task's outputs — this file plus the three approved
       ride-along backlog/DISPOSITIONS amendments — are the first
       changes after it)
     worktree_clean: "yes at task start (git status --porcelain empty)"
@@ -970,3 +972,34 @@ confirmation. Housekeeping ride-alongs landed this task:
 `prompt_pack_backlog.md` entry 8 (H4 feasibility-map update) and
 entry 7 (§6 operative-gate line); `prompt_pack_04_hypothesis_slate.md`
 DISPOSITIONS 7 (H4 pointer, append-only).**
+
+---
+
+## DISPOSITIONS (Slate B final selection, 2026-07-12 — Lei; append-only, cards above unedited)
+
+1. **H8 CONFIRMED.** `sig_dislocation_lambda_drift_v1` is the
+   selected candidate for Task 7. Basis: the only card internally
+   consistent at its central priors — κ_frozen 0.190; episode density
+   147 (APP) / 111 (RMBS) ≥ the ≥ 100 power floor; the short side
+   clears the rider-inclusive floor at the median (APP κ_req 0.172 ≤
+   0.19 — unique on the slate). The slate formula's H7-first ranking
+   (§1b) is **overridden** per the dossier's short-side/power finding
+   (`prompt_pack_06a_slate_b_review.md` §3/§5): S×F÷M does not encode
+   the short-side/power interaction that degrades H6/H7's headline
+   104 to ≈ 52 at the cards' own frozen central κ.
+2. **H6, H7 NOT SELECTED** — not parked; no census ran for either.
+   Grounds: their central arithmetic is a pre-registered power park
+   (design-central ≈ 52 < 100, short side closed at the median at
+   the cards' own frozen central κ); H7 additionally rests its
+   conditioning set on the legacy 7-session ISO scan (03b), not the
+   frozen grid. Revival of either requires re-derivation with an
+   explicit short-side posture, entered as a NEW drafted variant
+   (FQ-6B-R rule: drafting is N-impact 0; the cards above stay as
+   pre-registered).
+3. **Concentration ACCEPTED for this cycle** (dossier §1 structural
+   note / Q2): one family (KYLE_INFO), ~2 deployable symbols = the
+   measured frontier of the frozen grid. Diversification path
+   registered in `docs/research/prompt_pack_backlog.md` entry 11:
+   universe tranche 2 (higher-σ midcaps) — future program.
+4. **N unchanged at 10** — no data contact in this adjudication; no
+   outcome statistic exists for any slate-B candidate.

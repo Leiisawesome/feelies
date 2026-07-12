@@ -188,3 +188,19 @@ closed at H=900 median (APP in p90 tail only; sole taker-open cell
 APP/1800) — H4's mechanism is intrinsically taker, so the program is
 deprioritized; revisit only if a passive-compatible close-mechanism
 variant is designed or the cost structure changes.
+
+## 11. Universe tranche 2 (higher-σ midcaps) — diversification path
+
+Registered at slate-B final selection (2026-07-12): the feasibility
+map confines the current cycle to one family (KYLE_INFO) with ~2
+deployable symbols (APP primary, RMBS marginal) — the measured
+frontier of the frozen 03c grid, accepted for this cycle. The
+structural fix is not more mechanisms on the same grid but a second
+universe tranche of higher-σ midcaps, where the passive κ_req
+surfaces open more (family × horizon × symbol) regions. Future
+program: candidate screen, cache build, and a fresh feasibility map
+for the new tranche — never pooled with the frozen grid. Spec
+pointers: `docs/research/prompt_pack_06_hypothesis_slate_b.md`
+DISPOSITIONS 3; concentration analysis in
+`docs/research/prompt_pack_06a_slate_b_review.md` §1 (structural
+consequence note) and §6 Q2.
