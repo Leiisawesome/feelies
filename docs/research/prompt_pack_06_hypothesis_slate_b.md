@@ -953,6 +953,7 @@ contact; any future DSR uses the then-current living N.
 | — | H8 alt: mid-based (non-depth-weighted) drift NEW sensor replacing micro_price_drift | H8 | drafted-not-evaluated (N-impact: 0) |
 | — | Shared conditional: Class-A-filtered NEW kyle_lambda variant (H6/H8 fallback) | H6/H8 | drafted-not-evaluated (N-impact: 0) |
 | — | Design-killed (recorded, never cardable without redesign): micro-price-divergence level drift — honest κ ≈ 0.11 needs the p90 tail (map §6 death rule) | §0.1 | drafted-not-evaluated (N-impact: 0); dead at design |
+| — | H8 §1.7 occupancy re-threshold variant (registered 2026-07-12, Task 8-C-H8, pre-authorized post-park): dislocation(≥ 0.571795 σ) × λ(≥ p50) continuation, H=300, hl=150, passive, {APP, RMBS}; κ_variant = 0.170730 via the pinned JC-10 mechanical rule; derivation disclosed in the protocol VARIANT RE-CENSUS §V.1 | H8 protocol §1.7 | census-class evaluated only (re-census PARKED on power, 2026-07-12); N-neutral — no outcome contact (N-impact: 0; first IC/forward-return contact would be +1 N) |
 
 Carried over unchanged from the pack-04 ledger (NOT duplicated
 here): H1 sweep-volume floor and H1 SFI-normalization rows

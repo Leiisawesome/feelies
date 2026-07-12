@@ -11,6 +11,13 @@
           changes go ONLY in an appended AMENDMENTS section with
           timestamp and justification. No forward return, IC, or
           outcome statistic was computed in producing this file.
+          + appended CENSUS RESULTS + VARIANT RE-CENSUS sections
+          (Task 8-C-H8 execution record, 2026-07-12 — step 1 executed
+          under the frozen definitions; primary PARKS on power; the
+          single pre-authorized §1.7 variant re-censused and ALSO
+          PARKS on power; awaiting Lei review before Task 9). This
+          Status line is the only header edit; no definition,
+          threshold, or parameter above the freeze line changed.
   Owner:  research-workflow (protocol + ledger) / microstructure-alpha
           (candidate); prompt-pack Task 8, Phase B.
 
@@ -1133,3 +1140,380 @@ From this commit, all changes go in an `AMENDMENTS` section appended
 below this line, each entry carrying a timestamp and justification.
 
 *Protocol frozen — Task 9 (implementation) may begin.*
+
+---
+
+# CENSUS RESULTS — STEP 1 EXECUTED (Task 8-C-H8, 2026-07-12)
+
+Execution record of the frozen §1 census. **Not an amendment** — no
+test definition, threshold, or parameter above the freeze line
+changed; the only header edit is the Status line recording this
+execution. **No forward return, IC, or signal evaluation was
+computed** — the only return-like quantity touched is the
+unconditional session σ₃₀₀, per the frozen §1 authorization.
+
+## C.1 Preconditions at execution (§0 re-verified)
+
+| # | check | result |
+|---|---|---|
+| P0-1 | feature wiring | asserted at runtime on every cell: all four consumed ids (`kyle_lambda_60s_percentile`, `micro_price_drift`, `micro_price`, `realized_vol_30s_zscore`) present in the production `_HORIZON_FEATURE_FACTORIES` output at h=300 (assertion passed on all 30 cells, both runs) |
+| P0-4 | determinism discipline | `PYTHONHASHSEED=0`; direct `DiskEventCache` read (`~/.feelies/cache`); replay through the real `SensorRegistry → HorizonScheduler → HorizonAggregator` stack; full-grid re-run produced a **bit-identical** artifact (SHA-256 match, both censuses) |
+| P0-5 | protocol committed before census | freeze commit `2079f50` and the Amendment-B instrument commit `d9e4c69` (the three Task-7 artifacts, committed for the clean-worktree precondition) both precede execution; worktree clean at census start |
+
+## C.2 Method (implementation of the frozen definitions; every recorded choice listed)
+
+`scripts/research/dislocation_lambda_census.py` (committed with this
+record). The episode predicate, pipeline pins, sensor specs, regime
+machinery, RTH filter, session anchor, and warm handling are
+**transplanted verbatim** from the Appendix-A instrument
+(`scripts/research/h8_contamination_read.py` @ 8c69d49) per §1.1 /
+task Amendment B; a runtime assertion pins the primary
+`disloc_min` constants to the Appendix-A values (25.3563e-4 /
+23.7165e-4). σ₃₀₀ estimator exactly as frozen in §1.2
+(Bessel-corrected sample std of non-overlapping 300 s mid log-returns
+on the 09:30-anchored grid, last-mid-at-or-before sampling, bps;
+77–78 returns/cell realized). Boundary-time prevailing spread =
+last valid quote at-or-before `boundary_ts_ns`, in ticks ($0.01).
+OLN replayed evidence-only (no `disloc_min` gate; boundary / warm /
+spread reporting only; zero episode counts by construction — §1.1
+deviation row 4).
+
+Implementation notes, disclosed (none permissive at the §1.5 park
+axes):
+
+1. **Intensity exclusion (§1.3(b)) degenerate-window guard:** a
+   boundary whose trailing-60 s window contains **zero flagged
+   prints** is never excluded (share 0 carries no intensity
+   evidence). On this grid it is arithmetically a no-op — every
+   session's tape base rate is > 0, so a zero-flag window's share
+   (0) is below 2.0 × base anyway. Count-direction: neutral (no-op
+   here; guards only the base-rate-0 session that does not occur).
+2. **Gate ON (§1.4 2×2 table)** = the full §1.1 predicate arms 3–6
+   satisfied on a warm in-window boundary — i.e. gate ON count ≡ the
+   including-flagged eligible count; warm-failing and value-missing
+   in-window boundaries count OFF (fail-safe).
+
+## C.3 Instrument integrity pin (§1.1 / Amendment B): Appendix-A counts reproduced EXACTLY
+
+Per-cell including-flagged counts (count (a)) match the Appendix-A
+read on **all 20 cells with zero deviation**: pooled **APP 81, RMBS
+77**. The disclosed boundary-handling deviation allowance was not
+needed. Warm-eligible per cell also reproduced (760/760 APP, 729/760
+RMBS pooled; RMBS worst cell 2025-12-04 = 58/76).
+
+## C.4 Per-cell census table (primary run, m = 0.75, κ = 0.190)
+
+Columns: σ₃₀₀ (bps); viaL/viaS = session ≥ long / rider-inclusive
+short σ₃₀₀ min (§1.2: APP 24.64/30.63, RMBS 28.76/34.74); incl /
+prim / bin = the §1.3 counts (a)/(b)/(c); pL/pS = primary
+continuation-long/short; gON/gOFF = §1.4 2×2 inputs. Full detail
+(incl. tape base rates, volume-basis exclusions, spread and
+occupancy vectors) in the JSON artifact.
+
+| sym | date | stratum | σ₃₀₀ | viaL | viaS | incl | prim | pL | pS | bin | gON | gOFF |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| APP | 2025-11-25 | elev-A | 32.8 | YES | YES | 11 | 8 | 4 | 4 | 0 | 11 | 65 |
+| APP | 2025-12-04 | elev-A | 32.8 | YES | YES | 11 | 9 | 4 | 5 | 0 | 11 | 65 |
+| APP | 2025-12-22 | calm | 21.1 | no | no | 5 | 5 | 3 | 2 | 0 | 5 | 71 |
+| APP | 2026-01-05 | calm | 34.9 | YES | YES | 7 | 6 | 5 | 1 | 0 | 7 | 69 |
+| APP | 2026-01-15 | calm | 26.7 | YES | no | 13 | 13 | 5 | 8 | 0 | 13 | 63 |
+| APP | 2026-01-26 | calm | 31.5 | YES | YES | 6 | 4 | 2 | 2 | 1 | 6 | 70 |
+| APP | 2026-01-27 | calm | 34.8 | YES | YES | 6 | 6 | 5 | 1 | 0 | 6 | 70 |
+| APP | 2026-04-01 | elev-B | 37.4 | YES | YES | 11 | 11 | 5 | 6 | 0 | 11 | 65 |
+| APP | 2026-04-10 | elev-B | 35.5 | YES | YES | 4 | 4 | 2 | 2 | 0 | 4 | 72 |
+| APP | 2026-04-22 | elev-B | 36.8 | YES | YES | 7 | 7 | 4 | 3 | 0 | 7 | 69 |
+| RMBS | 2025-11-25 | elev-A | 43.8 | YES | YES | 6 | 6 | 3 | 3 | 2 | 6 | 70 |
+| RMBS | 2025-12-04 | elev-A | 25.2 | no | no | 4 | 3 | 0 | 3 | 1 | 4 | 72 |
+| RMBS | 2025-12-22 | calm | 19.7 | no | no | 3 | 2 | 1 | 1 | 1 | 3 | 73 |
+| RMBS | 2026-01-05 | calm | 31.6 | YES | no | 7 | 4 | 1 | 3 | 0 | 7 | 69 |
+| RMBS | 2026-01-15 | calm | 39.4 | YES | YES | 13 | 9 | 5 | 4 | 3 | 13 | 63 |
+| RMBS | 2026-01-26 | calm | 38.4 | YES | YES | 6 | 6 | 4 | 2 | 3 | 6 | 70 |
+| RMBS | 2026-01-27 | calm | 30.7 | YES | no | 6 | 5 | 3 | 2 | 0 | 6 | 70 |
+| RMBS | 2026-04-01 | elev-B | 29.6 | YES | no | 15 | 10 | 6 | 4 | 4 | 15 | 61 |
+| RMBS | 2026-04-10 | elev-B | 31.6 | YES | no | 7 | 5 | 1 | 4 | 1 | 7 | 69 |
+| RMBS | 2026-04-22 | elev-B | 38.0 | YES | YES | 10 | 8 | 7 | 1 | 1 | 10 | 66 |
+| OLN | ×10 dates | — | 22.5–37.0 | — | — | 0 | 0 | 0 | 0 | 0 | — | — |
+
+Every cell emitted 78 RTH h=300 boundaries, 76 in the 09:35–15:50
+session window.
+
+## C.5 Park-condition scoring (§1.5, numeric)
+
+- **Condition 1 — edge-region emptiness: FALSE (does not park).**
+  The viable region is broad: 9/10 APP and 8/10 RMBS cells clear the
+  long-side σ₃₀₀ min, and it is populated — viable-region primary
+  episodes **APP 68** (36 long / 32 short), **RMBS 53** (30/23).
+  The edge axis is viable per the frozen floors.
+- **Condition 2 — power floor (≥ 100 viable-region primary episodes):
+  FAILS FOR EVERY SYMBOL (parks).** APP 68 < 100 — the primary
+  symbol fails, which parks the card by itself (§1.6). RMBS
+  additionally fails the SELL-leg axis (4 of its 8 long-viable
+  sessions — 2026-01-05, 2026-01-27, 2026-04-01, 2026-04-10 — sit
+  below the rider-inclusive short σ₃₀₀ min 34.74) → **restates
+  long-only** per §1.6 → power re-checks on the continuation-long
+  count = **30 < 100** (spec projection ≈ 55; realized lower). The
+  three counts cannot rescue it: even including-flagged (a) gives
+  APP 76 / RMBS 70 in the viable region — both < 100.
+
+**Deployable candidate set D = ∅.**
+
+**VERDICT (primary): PARK on power ONLY — exactly the §1.5
+pre-determined outcome** (realized joint conditioning fraction
+81/760 ≈ 0.107 and 77/760 ≈ 0.101 vs the card block-2 assumed
+0.226). The edge axis (σ₃₀₀ viability) is healthy; the conditioning
+density is the failure. The §0 order lock halts steps 2–8 for the
+primary; the sole pre-authorized continuation is the §1.7
+occupancy-based re-threshold, executed below under Lei's
+pre-authorization (Task 8-C-H8 conditional: power-park only ∧
+Appendix-A counts reproduced — both conditions met).
+
+## C.6 Supporting census outputs (§1.4)
+
+**Contamination three counts (pooled, all cells; §1.3):** APP —
+(a) 81, **(b) 73 primary**, (c) 1; volume-basis exclusions 4
+(reported, never binding). RMBS — (a) 77, **(b) 58**, (c) 16;
+volume-basis 7. The (c) binary convention saturates exactly as the
+§1.3 disclosure predicted (APP 80/81 boundaries carry ≥ 1 flag —
+the count basis it would leave is unusable), vindicating the JC-1
+instrument ruling.
+
+**Warm coverage (per entry-warm id, mean fraction of emitted RTH
+boundaries; §1.1 coverage rule):** APP 0.987–0.991 on all four ids.
+RMBS: λ-percentile mean 0.969, per-session min 0.910 (2025-12-04);
+`micro_price_drift` 0.977, `micro_price` 0.990, `realized_vol_30s_zscore`
+0.985. **Coverage rule clear:** zero RMBS sessions below 0.5 (rule
+arms at < 0.5 on > 2 sessions). OLN 0.985–0.995.
+
+**Gate-state × daily-stratum 2×2 (§1.4; gate ON = §1.1 arms 3–6 on
+warm in-window boundaries):**
+
+| symbol | ON elev-A | ON calm | ON elev-B | OFF elev-A | OFF calm | OFF elev-B |
+|---|---|---|---|---|---|---|
+| APP | 22 | 37 | 22 | 130 | 343 | 206 |
+| RMBS | 10 | 35 | 32 | 142 | 345 | 196 |
+
+**Per-stratum primary episodes (L4 — A and B never pooled):** APP
+elev-A 17 / calm 34 / elev-B 22; RMBS 9 / 26 / 23. All strata are
+below the ~100-obs rule — **INSUFFICIENT** at stratum granularity,
+reported, never pooled away. L1 attaches verbatim to the calm
+columns: calm evidence is calm-as-realized Dec-2025/Feb-2026 only;
+L3 flags every RMBS figure.
+
+**Spread-in-ticks (§1.4 / §8 test 1 input; boundary-time prevailing
+spread):** unconditional warm distribution quartiles — APP
+[44, 61, 80], RMBS [17, 25, 37], OLN [2, 3, 5]; at eligible
+boundaries — APP [39, 51, 66] (n = 81), RMBS [18, 22, 25] (n = 77).
+Eligible-boundary spreads sit at or below the unconditional medians
+on both deployable-grid symbols (no thin-book selection signature at
+this granularity). **§4.1 tercile cutpoints, frozen now from the
+unconditional distributions (JC-4):** APP {50, 72}, RMBS {20, 32}
+(OLN {2, 4}, evidence-only). Computed before any forward return
+exists; fixed for all of step 4 under any continuation.
+
+**Occupancy curve (§1.7 input; census-legal, return-free).** Share
+of warm in-window boundaries with `|micro_price_drift| /
+micro_price ≥ m × σ₃₀₀,med(symbol)` (pack-05 medians), pooled
+n = 1,489:
+
+| m | pooled | APP | RMBS |
+|---|---|---|---|
+| 0.50 | 0.496 | 0.479 | 0.514 |
+| 0.55 | 0.471 | 0.457 | 0.487 |
+| 0.60 | 0.433 | 0.408 | 0.458 |
+| 0.65 | 0.401 | 0.372 | 0.431 |
+| 0.70 | 0.365 | 0.341 | 0.391 |
+| **0.75 (frozen)** | **0.343** | **0.314** | **0.373** |
+| 0.80 | 0.320 | 0.287 | 0.355 |
+
+The realized dislocation-arm occupancy at the frozen m = 0.75 is
+0.343 vs the card's near-Gaussian design 0.453 — the tails are
+thinner than assumed at the pack-05 median scale; combined with the
+realized (not independence-floor) λ-arm joint, this is the entire
+power shortfall. Full 0.05-grid curve in the artifact.
+
+## C.7 Trial ledger
+
+**N = 10, unchanged.** This census is the execution of the
+pre-registered primary trial under its own frozen protocol — not a
+new variant; no outcome statistic (forward return, IC, Sharpe) was
+computed. The §1.7 variant registered below is **one ledger row,
+census-class, N-neutral until first outcome contact** (8-F C.6
+rule); its re-census below touched no outcome statistic either.
+
+## C.8 Provenance (FQ-3)
+
+    git_sha: "d9e4c6910aa93ceafb76aaae96c2fc1f70b6b5b6" (HEAD at
+      execution; freeze commit 2079f50 and instrument commit 8c69d49
+      are ancestors)
+    worktree_clean: "yes at census start (the prior task's three
+      untracked artifacts committed first as d9e4c69; git status
+      clean of tracked changes)"
+    pythonhashseed: "0 (set in session for every scripted run)"
+    command: "PYTHONHASHSEED=0 uv run python
+      scripts/research/dislocation_lambda_census.py --json
+      docs/research/artifacts/dislocation_lambda_census_2026-07-12.json"
+    artifact: "docs/research/artifacts/
+      dislocation_lambda_census_2026-07-12.json
+      sha256=3f571a00e4d12c4669f1dea1772c5138982a778a9d5367a4bcc46c1aff3f8983"
+    determinism: "full-grid re-run bit-identical (SHA-256 equal)"
+    script: "scripts/research/dislocation_lambda_census.py (committed
+      with this record; ruff check + format clean; no src/feelies or
+      tests/ file touched — parity baselines untouched by
+      construction)"
+
+---
+
+# VARIANT RE-CENSUS — §1.7 OCCUPANCY RE-THRESHOLD (Task 8-C-H8, 2026-07-12; pre-authorized)
+
+Executed in-session under Lei's Task 8-C-H8 conditional
+pre-authorization, both trigger conditions having been met (C.5:
+power-park only, edge axis viable; C.3: Appendix-A counts reproduced
+exactly). This is the **single** §1.7 variant; a second re-threshold
+requires Lei's explicit approval (iterative occupancy fishing
+prohibited).
+
+## V.1 Derivation (JC-10 template, mechanical; disclosed verbatim)
+
+Inputs: the C.6 occupancy read (census-legal, return-free) + the
+card's own near-Gaussian identity (Φ). No other quantity entered.
+
+1. **Target.** Card block-2 design occupancy = joint conditioning
+   fraction ≈ 0.226 = P(|z| ≥ 0.75) × λ-arm 0.5. With the λ split
+   pinned at the median (p₀ = 0.5, the mechanism claim — not
+   re-derived), the dislocation-arm target is
+   **p\* = 2 × (1 − Φ(0.75)) = 0.453255**, recovering joint
+   p\* × 0.5 ≈ 0.2266 ≈ the card's 0.226.
+2. **m_v.** On the pooled two-symbol distribution of
+   z = (|micro_price_drift| / micro_price) / σ₃₀₀,med(symbol) over
+   the 1,489 warm in-window boundaries (per-symbol σ-normalization
+   because the frozen structure has ONE multiple applied to
+   per-symbol median constants), m_v = the smallest realized
+   multiple whose occupancy ≥ p\*: the k-th largest z with
+   k = ⌈p\* × 1489⌉ = 675 ⇒ **m_v = 0.571795** (realized occupancy
+   0.453324; at the frozen 0.75 it was 0.343183).
+3. **Mechanical κ adjustment (pinned rule, §1.7):**
+   c_D(m) = φ(m)/(1 − Φ(m)); c_D(0.571795) = 1.194010,
+   c_D(0.75) = 1.328778 ⇒
+   **κ_variant = min(0.190, 0.190 × 1.194010 / 1.328778) =
+   0.170730** — the one-way ratchet tightens (occupancy-raising
+   m_v < 0.75 lowers κ, structurally).
+4. **Variant constants.** disloc_min: APP 0.571795 × 33.8084 bps =
+   **19.33 bps** (1.93315e-3), RMBS × 31.622 = **18.08 bps**
+   (1.80813e-3). σ₃₀₀ min = §1.2 floors (unchanged) / κ_variant:
+   long APP **27.42** / RMBS **32.01** bps; rider-inclusive short
+   APP **34.09** / RMBS **38.66** bps.
+
+**Ledger row (registered before the re-census ran):** "H8 §1.7
+occupancy re-threshold variant: dislocation(≥ 0.571795 σ) × λ(≥ p50)
+continuation, H = 300, hl = 150, passive, {APP, RMBS};
+κ_variant = 0.170730 (JC-10 mechanical rule); derivation = this V.1
+record" — appended to the living ledger
+(`prompt_pack_06_hypothesis_slate_b.md` §(3)); census-class,
+N-neutral until first outcome contact.
+
+## V.2 Re-census (identical instrument and park conditions at the variant constants)
+
+`PYTHONHASHSEED=0 uv run python
+scripts/research/dislocation_lambda_census.py --disloc-multiple
+0.571795 --kappa 0.170730 --json docs/research/artifacts/
+dislocation_lambda_census_variant_2026-07-12.json` — same script,
+same pipeline, same §1.3 intensity instrument (2.0×, count-basis
+binding), same §1.5/§1.6 park arithmetic. Re-run **bit-identical**
+(SHA-256 equal). Artifact sha256 =
+`626472e1e32e396de0ed7dcbdd54d2e114519e6a2a7d6a07ac95975544c9df6c`.
+
+Per-cell variant table (same columns as C.4; viability at the
+κ_variant floors):
+
+| sym | date | stratum | σ₃₀₀ | viaL | viaS | incl | prim | pL | pS | bin | gON | gOFF |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| APP | 2025-11-25 | elev-A | 32.8 | YES | no | 14 | 11 | 6 | 5 | 0 | 14 | 62 |
+| APP | 2025-12-04 | elev-A | 32.8 | YES | no | 13 | 10 | 5 | 5 | 0 | 13 | 63 |
+| APP | 2025-12-22 | calm | 21.1 | no | no | 9 | 8 | 4 | 4 | 0 | 9 | 67 |
+| APP | 2026-01-05 | calm | 34.9 | YES | YES | 10 | 9 | 7 | 2 | 0 | 10 | 66 |
+| APP | 2026-01-15 | calm | 26.7 | no | no | 17 | 15 | 6 | 9 | 0 | 17 | 59 |
+| APP | 2026-01-26 | calm | 31.5 | YES | no | 10 | 8 | 4 | 4 | 1 | 10 | 66 |
+| APP | 2026-01-27 | calm | 34.8 | YES | YES | 10 | 9 | 7 | 2 | 1 | 10 | 66 |
+| APP | 2026-04-01 | elev-B | 37.4 | YES | YES | 12 | 12 | 6 | 6 | 0 | 12 | 64 |
+| APP | 2026-04-10 | elev-B | 35.5 | YES | YES | 9 | 8 | 4 | 4 | 0 | 9 | 67 |
+| APP | 2026-04-22 | elev-B | 36.8 | YES | YES | 9 | 9 | 6 | 3 | 0 | 9 | 67 |
+| RMBS | 2025-11-25 | elev-A | 43.8 | YES | YES | 8 | 8 | 3 | 5 | 4 | 8 | 68 |
+| RMBS | 2025-12-04 | elev-A | 25.2 | no | no | 6 | 4 | 0 | 4 | 1 | 6 | 70 |
+| RMBS | 2025-12-22 | calm | 19.7 | no | no | 6 | 4 | 2 | 2 | 3 | 6 | 70 |
+| RMBS | 2026-01-05 | calm | 31.6 | no | no | 12 | 8 | 5 | 3 | 0 | 12 | 64 |
+| RMBS | 2026-01-15 | calm | 39.4 | YES | YES | 16 | 12 | 7 | 5 | 5 | 16 | 60 |
+| RMBS | 2026-01-26 | calm | 38.4 | YES | no | 8 | 8 | 4 | 4 | 3 | 8 | 68 |
+| RMBS | 2026-01-27 | calm | 30.7 | no | no | 12 | 9 | 6 | 3 | 3 | 12 | 64 |
+| RMBS | 2026-04-01 | elev-B | 29.6 | no | no | 15 | 10 | 6 | 4 | 4 | 15 | 61 |
+| RMBS | 2026-04-10 | elev-B | 31.6 | no | no | 8 | 6 | 1 | 5 | 1 | 8 | 68 |
+| RMBS | 2026-04-22 | elev-B | 38.0 | YES | no | 12 | 10 | 8 | 2 | 1 | 12 | 64 |
+| OLN | ×10 dates | — | 22.5–37.0 | — | — | 0 | 0 | 0 | 0 | 0 | — | — |
+
+## V.3 Variant park scoring (§1.5, same conditions) — side by side with the primary
+
+| quantity | PRIMARY (m 0.75, κ 0.190) | VARIANT (m 0.571795, κ 0.170730) |
+|---|---|---|
+| σ₃₀₀ min long APP / RMBS (bps) | 24.64 / 28.76 | 27.42 / 32.01 |
+| σ₃₀₀ min short (rider-incl.) APP / RMBS | 30.63 / 34.74 | 34.09 / 38.66 |
+| long-viable cells APP / RMBS | 9 / 8 | 8 / 4 |
+| pooled counts (a) incl APP / RMBS | 81 / 77 | 113 / 103 |
+| pooled counts (b) primary APP / RMBS | 73 / 58 | 99 / 79 |
+| pooled counts (c) binary APP / RMBS | 1 / 16 | 2 / 25 |
+| viable-region primary APP | **68** | **76** |
+| RMBS SELL-leg axis | fails (4 of 8 long-viable cells) → long-only | fails (2 of 4 long-viable cells) → long-only |
+| RMBS power count (long-only restatement) | **30** | **22** |
+| edge-region emptiness | FALSE | FALSE |
+| power floor ≥ 100 | FAILS (APP 68, RMBS 30) | FAILS (APP 76, RMBS 22) |
+| deployable set D | ∅ | ∅ |
+| **verdict** | **PARK (power)** | **PARK (power)** |
+
+The mechanics behaved exactly as the pinned rule intended: lowering
+m raised raw occupancy (APP all-cells primary 73 → 99, +36 %), but
+the κ ratchet raised the viability floors, shrinking the viable
+region (APP loses 2026-01-15 — its densest cell, 15 primary
+episodes; RMBS drops from 8 to 4 long-viable cells). Net
+viable-region power moved APP 68 → 76 and RMBS (long-only) 30 → 22.
+**The variant PARKS on the identical power condition.** No further
+re-threshold is authorized (§1.7); any subsequent variant requires
+Lei's explicit approval with reasons.
+
+## V.4 Final status
+
+**`sig_dislocation_lambda_drift_v1` is PARKED (power) under both the
+frozen primary thresholds and the single pre-authorized §1.7
+occupancy variant.** The §0 order lock stands: steps 2–8 never
+executed; no IC, forward-return, CPCV, DSR, or execution number
+exists for this candidate in either configuration. N = 10 unchanged
+(both censuses census-class; the variant ledger row is
+drafted/census-only, N-neutral until outcome contact — which is now
+not scheduled). The one-way κ ratchet stands at 0.190 frozen for the
+primary row; the variant row carries its own κ_variant = 0.170730.
+
+Structural power reading for Lei (census-legal observation, not an
+adjudication): the binding constraint is not threshold placement —
+the occupancy identity shows m must fall to ≈ 0.57 to recover the
+design dislocation-arm density, and even then the 10-session ×
+2-symbol grid supplies at most ≈ 76 viable-region primary episodes
+for APP. On this frozen grid the ≥ 100 floor is unreachable at any
+m the κ ratchet permits, because the ratchet (correctly) trades
+threshold relaxation against viable-region shrinkage. Restoring
+power requires more sessions or more symbols (a grid amendment —
+Lei decision), not thresholds.
+
+## V.5 Provenance (FQ-3)
+
+    git_sha: "d9e4c6910aa93ceafb76aaae96c2fc1f70b6b5b6" (same HEAD as
+      C.8; both runs executed from the identical tree)
+    pythonhashseed: "0"
+    command: "PYTHONHASHSEED=0 uv run python
+      scripts/research/dislocation_lambda_census.py
+      --disloc-multiple 0.571795 --kappa 0.170730 --json
+      docs/research/artifacts/
+      dislocation_lambda_census_variant_2026-07-12.json"
+    artifact: "docs/research/artifacts/
+      dislocation_lambda_census_variant_2026-07-12.json
+      sha256=626472e1e32e396de0ed7dcbdd54d2e114519e6a2a7d6a07ac95975544c9df6c"
+    determinism: "full-grid re-run bit-identical (SHA-256 equal)"
+
+*Step 1 (primary + pre-authorized §1.7 variant) stops here. Lei
+reviews both PARK verdicts before any Task 9 action.*
