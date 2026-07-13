@@ -4,6 +4,9 @@
           FQ-6A-R remediation 2026-07-11 complete: L1–L4 verbatim, ADV
           table, provenance correction, draw-evidence artifact landed.
           Task 8 grid inputs CLEARED.
+          AMENDED 2026-07-13 (append-only AMENDMENTS section): grid
+          expansion — +20 ingested cells ({APP,RMBS} × 10 Lei-ratified
+          dates), 60 cells DRAWN-NOT-INGESTED, L5 added, C1–C3 ratified.
   Owner:  data-engineering (cache) / research-workflow (evidence grid);
           prompt-pack Task FQ-5B, Phase A.
 
@@ -707,3 +710,436 @@ RE-CHECK below).**
 | 7 | Docs guards | PASS | **PASS** | `PYTHONHASHSEED=0 uv run pytest tests/docs/ -q` → **101 passed**, 0 failed. |
 
 **Task 8 grid inputs: CLEARED**
+
+---
+
+## AMENDMENTS (append-only; never edit sections above)
+
+### AMENDMENT 1 — Grid expansion ingestion (2026-07-13, Lei-ratified)
+
+Protocol amendment under §1(f): the closed list is extended by the +10
+shared dates drawn 2026-07-13 and ratified by Lei the same day. Evidence
+package:
+`docs/research/artifacts/universe_draw_expansion_evidence_2026-07-13.md`
+("the expansion artifact") — pre-registration (Part A), execution record
+(Part B), outputs incl. redraw log and screen table (Part C), provenance
+(Part D). The original 80-cell grid and all sections above are unchanged.
+
+**A1.1 Ratifications (Lei, 2026-07-13).** The three Lei-vetoable
+conventions pre-registered in the expansion artifact §A.3 are RATIFIED
+as recorded, no veto:
+
+- **C1 (floor-midpoint arithmetic)** — `midpoint(a,b) = floor((a+b)/2)`,
+  matching the task's own calm enumeration {5,13,20,28}; the noted
+  discrepancy with the original Step-4 round_half_up stands as recorded.
+- **C2 (earliest-gap tie-break)** — lowest-index gap wins among
+  equal-size untouched gaps.
+- **C3 (anchor-slot reading of the elevated clause)** — anchors are the
+  original Step-4 draw POSITIONS (shorter {1,9}, longer {1,11,21});
+  the alternative all-touched-dates reading recorded in §A.3 was NOT
+  exercised and is closed with this ratification.
+
+The 10 ratified expansion dates (by stratum):
+
+- regime_calm (5): `2025-12-26, 2025-12-30, 2026-01-12, 2026-01-20, 2026-01-22`
+- regime_elevated A (2): `2025-12-01, 2025-12-02`
+- regime_elevated B (3): `2026-04-02, 2026-04-07, 2026-04-16`
+
+**A1.2 Step-1 checks (this task, 2026-07-13).**
+
+- *Admissibility (mechanical):* 10/10 dates are pre-2026-04-27 full
+  weekdays (latest = 2026-04-16; amendment A holds). Verified in the
+  ingest driver before any pull.
+- *Ex-dividend recheck (APP/RMBS):* `/v3/reference/dividends`, span
+  [2025-11-01, 2026-05-01], re-pulled 2026-07-13 for the two ingested
+  symbols: **zero ex-dates for APP, zero for RMBS** — both remain
+  non-paying in span; intersection with the 10 expansion dates EMPTY.
+  (§3.2 reference for the other six symbols unchanged; their ex-dates
+  do not coincide with the expansion dates either — expansion artifact
+  §C.5.)
+
+**A1.3 Inventory addition — 20 ingested cells ({APP, RMBS} × 10).**
+Ingested 2026-07-13 (~02:07–02:13:43 UTC, single run) through the
+platform path (`feelies.harness.backtest_runner.ingest_data` →
+`MassiveHistoricalIngestor` → `MassiveNormalizer` → `DiskEventCache.save`),
+same health bar as §4 (policy 1(d): terminal `DataHealth == HEALTHY`,
+`event_count > 0`, one retry): **20/20 OK on first attempt, zero
+retries, zero failures.** Manifests carry the same `event_schema_hash`
+(`sha256:8ff53428a52107dc…`) and `normalizer_version "1"` as the
+original grid. Per-cell guards (policy 1(e)): 03b §6(b) units-sanity
+and, defensively, 03b §6(a) unknown-id — **20/20 units PASS, zero
+UNKNOWN-ID flags** (id table as amended by §6.2, indicator 2 included).
+
+| symbol | date | quotes | trades | ingest health | pre-2026-04-27 | guards | tag |
+|---|---|---|---|---|---|---|---|
+| APP | 2025-12-01 | 66,580 | 136,211 | HEALTHY | yes | clean | |
+| APP | 2025-12-02 | 56,261 | 154,717 | HEALTHY | yes | clean | |
+| APP | 2025-12-26 | 26,525 | 63,560 | HEALTHY | yes | clean | HOLIDAY-THIN |
+| APP | 2025-12-30 | 36,609 | 86,226 | HEALTHY | yes | clean | HOLIDAY-THIN |
+| APP | 2026-01-12 | 44,535 | 116,013 | HEALTHY | yes | clean | |
+| APP | 2026-01-20 | 101,756 | 256,221 | HEALTHY | yes | clean | |
+| APP | 2026-01-22 | 52,123 | 154,828 | HEALTHY | yes | clean | |
+| APP | 2026-04-02 | 43,771 | 80,196 | HEALTHY | yes | clean | |
+| APP | 2026-04-07 | 46,944 | 78,303 | HEALTHY | yes | clean | |
+| APP | 2026-04-16 | 81,765 | 125,617 | HEALTHY | yes | clean | |
+| RMBS | 2025-12-01 | 12,724 | 19,656 | HEALTHY | yes | clean | |
+| RMBS | 2025-12-02 | 10,714 | 19,212 | HEALTHY | yes | clean | |
+| RMBS | 2025-12-26 | 5,667 | 12,047 | HEALTHY | yes | clean | HOLIDAY-THIN |
+| RMBS | 2025-12-30 | 8,253 | 16,022 | HEALTHY | yes | clean | HOLIDAY-THIN |
+| RMBS | 2026-01-12 | 10,416 | 18,386 | HEALTHY | yes | clean | |
+| RMBS | 2026-01-20 | 23,068 | 47,245 | HEALTHY | yes | clean | |
+| RMBS | 2026-01-22 | 25,812 | 63,576 | HEALTHY | yes | clean | |
+| RMBS | 2026-04-02 | 36,642 | 35,259 | HEALTHY | yes | clean | |
+| RMBS | 2026-04-07 | 28,094 | 31,404 | HEALTHY | yes | clean | |
+| RMBS | 2026-04-16 | 19,189 | 23,791 | HEALTHY | yes | clean | |
+
+Totals: 20/20 HEALTHY; 737,448 quotes; 1,538,490 trades (APP
+556,869 / 1,251,892; RMBS 180,579 / 286,598).
+
+Units-sanity detail (03b §6(b), per cell, both sides): APP `L = 40`
+(median RTH bid $387.91–$718.26 across the 10 sessions — all in the
+$250.01–1,000 MDI tier), per-side median sizes 40–80, min frac
+divisible by L = 1.0, max frac < L = 0.0; RMBS `L = 100` (median RTH
+bid $90.58–$124.58), medians 100–200, 1.0 / 0.0. Share-denominated
+NBBO sizes throughout — consistent with the §6.1 grid baseline and the
+§8 SHARES verdict.
+
+**A1.4 HOLIDAY-THIN tags carried.** 2025-12-26 and 2025-12-30 sit in
+the 2025-12-24 → 2026-01-02 holiday-thin belt (expansion artifact
+§A.7/§C.5) and are tagged HOLIDAY-THIN in the inventory above. Tags
+never exclude. Observed volumes are consistent with the tag (e.g. APP
+26,525 quotes on 12-26 vs a 37k–102k range on untagged calm expansion
+sessions). Combined-grid untagged-cell floor check (expansion artifact
+§C.5): calm stratum 10 sessions / 2 tagged → 8 untagged per symbol;
+elevated 10 / 0 tagged → 10; floor ≥ 4 PASSES for all symbols.
+
+**A1.5 The 60 non-ingested expansion cells — DRAWN-NOT-INGESTED.**
+The cells `{OLN, ENSG, DIOD, PCTY, MLI, CROX} × the 10 expansion dates`
+(60 cells) are part of the ratified expansion draw but are NOT in
+cache and are NOT evidence. Registered status: **DRAWN-NOT-INGESTED**
+— dates ratified (no new draw needed), ingestion deferred; any future
+ingestion of these cells goes through the identical bar (platform
+path, policy 1(d) health, policy 1(e) guards, §3.2-style ex-date check
+against the expansion dates — note ENSG/OLN/MLI ex-dates in span do
+not coincide with any expansion date) and is recorded by a further
+append-only amendment here. Until then the expanded evidence
+inventory is 80 original cells + 20 expansion cells = **100 ingested
+admissible cells**, with per-symbol session counts: APP 20, RMBS 20,
+others 10.
+
+**A1.6 Known-limitations update.**
+
+- **L5 (new, L2-class): elevated-A single-week concentration.** The
+  combined elevated-A stratum is `2025-11-25, 2025-12-01, 2025-12-02,
+  2025-12-04` — three of four dates in one calendar week (Dec 1–5),
+  and 12-01/12-02 adjacent (deterministic artifact of the half-day
+  drop at shorter idx 5 walking +1 while the top-up sat at idx 7 —
+  expansion artifact §C.6-1). Same class as L2: benign for intraday
+  horizons, but elevated-A conclusions are evidence about
+  early-December-2025-as-realized; per-window reporting under L4
+  should treat elevated-A as effectively one episode-week.
+- **L3 carries, reinforced:** RMBS dominated the expansion screen
+  exclusions (3 of 6 new exclusions carry an RMBS trip — expansion
+  artifact §C.2/§C.6-3). The combined 20-date grid remains conditioned
+  on RMBS-quiet days; per-symbol diagnostics must continue to flag
+  RMBS.
+- L1, L2, L4 carry unchanged (expansion adds within-episode dispersion
+  only; see the expansion artifact's limitation notes).
+
+**A1.7 Census-instrument disposition — variant superseded.** For all
+census work on the expanded grid, the **expanded census runs the
+primary instrument only** (the Appendix-A read, primary run
+parameters, `is_primary_run: true` — as in
+`docs/research/artifacts/dislocation_lambda_census_2026-07-12.json`).
+The s1.7 sensitivity variant
+(`docs/research/artifacts/dislocation_lambda_census_variant_2026-07-12.json`,
+`is_primary_run: false`) is **superseded** and is not re-run on
+expansion cells; its original-grid results stand as recorded and its
+trial remains counted in the multiple-testing ledger N. No new
+hypothesis or parameter variant is evaluated by this amendment —
+ingestion is data augmentation; **N is unchanged by this task**
+(expansion artifact §A.8).
+
+**A1.8 Provenance (FQ-3 template).**
+
+```yaml
+git_sha: "fb225ae219a1ef74f8a8dea173b83756cf7ced93"
+worktree_clean: "yes at run START for all code paths — porcelain shows
+  exactly one entry: the untracked expansion artifact
+  docs/research/artifacts/universe_draw_expansion_evidence_2026-07-13.md
+  (prior task's benign doc output, committed with this amendment per
+  00d §3); src/, tests/, configs/, alphas/, platform.yaml clean"
+host_fingerprint:
+  os: "Windows-11-10.0.26200-SP0"
+  cpu_arch: "AMD64"
+  python_build: "3.14.2 (tags/v3.14.2:df79316, Dec 5 2025, 17:18:21) [MSC v.1944 64 bit (AMD64)]"
+  libm: "Microsoft UCRT (linked by MSC v.1944)"
+  config_checksum: "n/a — no PlatformConfig loaded (ingest + offline guard path only)"
+  pythonhashseed: "0"
+env_check: "MASSIVE_API_KEY absent from ambient shell, present in repo
+  .env; loaded via feelies.cli.env.load_dotenv_optional in the one-off;
+  key never echoed or persisted; shell + python preflight both reported
+  set before the run"
+expansion_artifact: "docs/research/artifacts/universe_draw_expansion_evidence_2026-07-13.md
+  (draw pre-registration + execution + Lei ratification basis;
+  committed with this amendment)"
+ingest_command: "uv run python %TEMP%\\grid_expansion_ingest\\ingest_expansion.py
+  %TEMP%\\grid_expansion_ingest\\ingest_summary.json   # driver verbatim
+  in A1.9; per cell it calls
+  feelies.harness.backtest_runner.ingest_data(api_key, [symbol], date,
+  date) — the platform path"
+ingest_window_utc: "2026-07-13T02:07Z .. 2026-07-13T02:13:43Z (single
+  run, 394 s; Step-1 admissibility + dividends recheck ran first inside
+  the same driver)"
+cache_dir: "~/.feelies/cache (DiskEventCache default)"
+event_schema_hash: "sha256:8ff53428a52107dcaa808fec2be1a4377df8562ec5f2c6d79052bdf1909909a7"
+normalizer_version: "1"
+multiple_testing_ledger: "N unchanged — data augmentation only (A1.7)"
+```
+
+**A1.9 Appendix — expansion ingest driver (verbatim, uncommitted
+one-off per the governance carve-out).**
+
+```python
+"""Grid-expansion ingestion (+20 cells), 2026-07-13. Uncommitted one-off.
+
+Executes Steps 1-2 of the grid-expansion ingestion task against the
+Lei-ratified +10 dates recorded in
+docs/research/artifacts/universe_draw_expansion_evidence_2026-07-13.md:
+
+  Step 1: mechanical admissibility check (all 10 dates pre-2026-04-27,
+          full weekday sessions) + APP/RMBS ex-dividend recheck via
+          /v3/reference/dividends over [2025-11-01, 2026-05-01].
+  Step 2: ingest {APP, RMBS} x 10 dates through the platform path
+          (feelies.harness.backtest_runner.ingest_data ->
+          MassiveHistoricalIngestor -> MassiveNormalizer ->
+          DiskEventCache.save), health bar per 03c policy 1(d)
+          (terminal DataHealth == HEALTHY and event_count > 0, one
+          retry after cache eviction), then per-cell guards per 03c
+          policy 1(e): 03b 6(b) units-sanity + 03b 6(a) unknown-id
+          (per-field typing refinement of 03c 6).
+
+No forward returns computed anywhere. Writes a JSON summary for the
+03c AMENDMENTS inventory.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+import traceback
+from datetime import date, datetime, timezone
+from pathlib import Path
+from statistics import median
+from zoneinfo import ZoneInfo
+
+from feelies.cli.env import load_dotenv_optional, massive_api_key_from_env
+from feelies.core.events import NBBOQuote, Trade
+from feelies.harness.backtest_runner import ingest_data
+from feelies.storage.disk_event_cache import DiskEventCache
+
+SYMBOLS = ["APP", "RMBS"]
+EXPANSION_DATES = [
+    "2025-12-01", "2025-12-02",              # elevated A
+    "2025-12-26", "2025-12-30", "2026-01-12",
+    "2026-01-20", "2026-01-22",              # calm
+    "2026-04-02", "2026-04-07", "2026-04-16",  # elevated B
+]
+ADMISSIBILITY_CUTOFF = "2026-04-27"
+DIV_SPAN = ("2025-11-01", "2026-05-01")
+CACHE_DIR = Path.home() / ".feelies" / "cache"
+CONDITIONS_ARTIFACT = Path("docs/research/artifacts/massive_conditions_2026-07-09.json")
+ET = ZoneInfo("America/New_York")
+
+# Interpreted table (03b 6(a) as amended by 03c 6.2: indicator id 2 added).
+KNOWN_INDICATORS = {1, 2, *range(501, 510), *range(601, 606), *range(901, 909)}
+KNOWN_CORRECTIONS = {None, 0, 1, 7, 8, 10, 11, 12}
+
+OUT = Path(sys.argv[1])
+
+load_dotenv_optional()
+api_key = massive_api_key_from_env()
+assert api_key, "MASSIVE_API_KEY missing"
+
+# ---- Step 1a: mechanical admissibility ----
+admissibility = []
+for d in EXPANSION_DATES:
+    dt = date.fromisoformat(d)
+    admissibility.append({
+        "date": d,
+        "pre_cutoff": d < ADMISSIBILITY_CUTOFF,
+        "weekday": dt.weekday() < 5,
+    })
+adm_fail = [a for a in admissibility if not (a["pre_cutoff"] and a["weekday"])]
+print(f"ADMISSIBILITY: {len(EXPANSION_DATES) - len(adm_fail)}/{len(EXPANSION_DATES)} "
+      f"pre-{ADMISSIBILITY_CUTOFF} weekdays", flush=True)
+if adm_fail:
+    print(f"STOP: admissibility failures: {adm_fail}")
+    sys.exit(2)
+
+# ---- Step 1b: APP/RMBS dividends recheck ----
+from massive import RESTClient  # noqa: E402
+
+client = RESTClient(api_key=api_key)
+div_report: dict[str, list[str]] = {}
+for sym in SYMBOLS:
+    ex_dates = []
+    for div in client.list_dividends(
+        ticker=sym,
+        ex_dividend_date_gte=DIV_SPAN[0],
+        ex_dividend_date_lte=DIV_SPAN[1],
+        limit=1000,
+    ):
+        ex_dates.append(str(div.ex_dividend_date))
+    div_report[sym] = sorted(ex_dates)
+    hits = sorted(set(ex_dates) & set(EXPANSION_DATES))
+    print(f"DIVIDENDS {sym}: {len(ex_dates)} ex-dates in span {DIV_SPAN}; "
+          f"intersection with expansion dates: {hits or 'EMPTY'}", flush=True)
+    if hits:
+        print(f"STOP: ex-date collision for {sym}: {hits}")
+        sys.exit(2)
+
+# ---- interpreted table for the unknown-id guard (per-field typing) ----
+cond_rows = json.loads(CONDITIONS_ARTIFACT.read_text(encoding="utf-8"))["results"]
+TRADE_COND_IDS = {r["id"] for r in cond_rows if "trade" in r.get("data_types", [])}
+QUOTE_COND_IDS = {
+    r["id"] for r in cond_rows
+    if {"bbo", "nbbo"} & set(r.get("data_types", []))
+}
+
+
+def evict(symbol: str, day: str) -> None:
+    for suffix in (".jsonl.gz", ".manifest.json"):
+        p = CACHE_DIR / symbol / f"{day}{suffix}"
+        if p.exists():
+            p.unlink()
+
+
+def run_cell(symbol: str, day: str) -> dict[str, object]:
+    attempts = 0
+    last_error = ""
+    while attempts < 2:
+        attempts += 1
+        try:
+            _, _, day_sources = ingest_data(api_key, [symbol], day, day)
+            ds = day_sources[0]
+            health = ds.ingestion_health or "UNKNOWN"
+            if health == "HEALTHY" and ds.event_count > 0:
+                cache = DiskEventCache(CACHE_DIR)
+                manifest = cache.read_manifest(symbol, day) or {}
+                return {
+                    "symbol": symbol,
+                    "date": day,
+                    "events": ds.event_count,
+                    "quotes": manifest.get("quotes_count"),
+                    "trades": manifest.get("trades_count"),
+                    "health": health,
+                    "source": ds.source,
+                    "attempts": attempts,
+                    "status": "OK",
+                }
+            last_error = f"health={health} events={ds.event_count}"
+        except Exception:
+            last_error = traceback.format_exc(limit=3)
+        print(f"  RETRY {symbol} {day} after: {last_error}", flush=True)
+        evict(symbol, day)
+    return {
+        "symbol": symbol, "date": day, "events": 0, "quotes": None,
+        "trades": None, "health": "FAILED", "source": "api",
+        "attempts": attempts, "status": f"FAILED: {last_error}",
+    }
+
+
+def et_time_of_day(ts_ns: int) -> tuple[int, int]:
+    dt = datetime.fromtimestamp(ts_ns / 1e9, tz=timezone.utc).astimezone(ET)
+    return dt.hour, dt.minute
+
+
+def guards(symbol: str, day: str) -> dict[str, object]:
+    """03b 6(b) units-sanity + 6(a) unknown-id, direct cache read."""
+    cache = DiskEventCache(CACHE_DIR)
+    events = cache.load(symbol, day)
+    assert events is not None, f"cache load failed {symbol}/{day}"
+    quotes = [e for e in events if isinstance(e, NBBOQuote)]
+    trades = [e for e in events if isinstance(e, Trade)]
+
+    # RTH median bid -> MDI round lot tier
+    rth_bids = []
+    for q in quotes:
+        h, m = et_time_of_day(q.exchange_timestamp_ns)
+        if (h, m) >= (9, 30) and h < 16 and q.bid > 0:
+            rth_bids.append(float(q.bid))
+    med_bid = median(rth_bids)
+    lot = 40 if 250.0 < med_bid <= 1000.0 else 100
+    assert med_bid <= 1000.0, f"{symbol}/{day}: median bid {med_bid} above 1000-tier"
+
+    sides: dict[str, list[int]] = {
+        "bid": [q.bid_size for q in quotes if q.bid_size > 0],
+        "ask": [q.ask_size for q in quotes if q.ask_size > 0],
+    }
+    units: dict[str, object] = {"L": lot, "median_rth_bid": round(med_bid, 2)}
+    suspect = False
+    for side, sizes in sides.items():
+        med = median(sizes)
+        frac_div = sum(1 for s in sizes if s % lot == 0) / len(sizes)
+        frac_lt = sum(1 for s in sizes if s < lot) / len(sizes)
+        units[side] = {
+            "n": len(sizes),
+            "median": med,
+            "frac_div_L": round(frac_div, 6),
+            "frac_lt_L": round(frac_lt, 6),
+        }
+        if med < lot or frac_div < 1.0:
+            suspect = True
+    units["verdict"] = "UNITS-SUSPECT" if suspect else "PASS"
+
+    # unknown-id guard (per-field typing refinement)
+    flags: list[str] = []
+    tc = {c for t in trades for c in t.conditions}
+    qc = {c for q in quotes for c in q.conditions}
+    qi = {i for q in quotes for i in q.indicators}
+    corr = {t.correction for t in trades}
+    for i in sorted(tc - TRADE_COND_IDS):
+        flags.append(f"UNKNOWN-ID(trade_condition, {i})")
+    for i in sorted(qc - QUOTE_COND_IDS):
+        flags.append(f"UNKNOWN-ID(quote_condition, {i})")
+    for i in sorted(qi - KNOWN_INDICATORS):
+        flags.append(f"UNKNOWN-ID(quote_indicator, {i})")
+    for v in sorted((corr - KNOWN_CORRECTIONS), key=str):
+        flags.append(f"UNKNOWN-ID(correction, {v})")
+
+    return {"units_sanity": units, "unknown_id_flags": flags}
+
+
+rows: list[dict[str, object]] = []
+for sym in SYMBOLS:
+    for d in EXPANSION_DATES:
+        row = run_cell(sym, d)
+        if row["status"] == "OK":
+            row.update(guards(sym, d))
+        rows.append(row)
+        u = row.get("units_sanity", {})
+        print(f"CELL {row['symbol']} {row['date']} -> {row['status']} "
+              f"q={row['quotes']} t={row['trades']} "
+              f"units={u.get('verdict', 'n/a')} L={u.get('L', '?')} "
+              f"flags={row.get('unknown_id_flags', 'n/a')}", flush=True)
+        OUT.write_text(json.dumps({
+            "admissibility": admissibility,
+            "dividends_recheck": div_report,
+            "cells": rows,
+        }, indent=1), encoding="utf-8")
+
+n_ok = sum(1 for r in rows if r["status"] == "OK")
+n_clean = sum(
+    1 for r in rows
+    if r["status"] == "OK"
+    and r["units_sanity"]["verdict"] == "PASS"  # type: ignore[index]
+    and not r["unknown_id_flags"]
+)
+print(f"DONE ok={n_ok}/{len(rows)} clean_guards={n_clean}/{len(rows)}", flush=True)
+```
+
+**AMENDMENT 1 complete. The closed list now comprises 100 ingested
+admissible cells (§5.1 + A1.3) plus 60 DRAWN-NOT-INGESTED cells
+(A1.5); limitations L1–L5 are in force (A1.6); expanded-census work
+uses the primary instrument only (A1.7).**
