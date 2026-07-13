@@ -35,7 +35,17 @@ the frozen constants for the single pre-authorized occupancy-based
 re-threshold re-census; instruments and park conditions identical.
 The occupancy block (curve + the pinned JC-10 derivation arithmetic)
 is emitted on every run; it is CONSUMED only under the §1.7 post-park
-path.
+path (superseded for expanded-grid work per 03c AMENDMENT 1 A1.7).
+
+Expanded-grid mode (protocol AMENDMENT A-1, Task 8-C2-H8):
+``--expanded-grid`` adds the 10 Lei-ratified 03c AMENDMENT 1 expansion
+dates to the {APP, RMBS} grid (20 sessions/symbol); OLN stays on its
+10 ORIGINAL cells (expansion OLN cells are DRAWN-NOT-INGESTED).  The
+episode predicate, instruments, floors, and park arithmetic are
+IDENTICAL; the additive outputs are the per-cell lambda-elevated warm
+in-window boundary count (the JC-3 n >= 1,000 input) and the
+origin split in reporting.  Without the flag, the emitted JSON is
+byte-identical in structure to the original runs (new keys stripped).
 
 Determinism: run under PYTHONHASHSEED=0; no RNG, no wall-clock reads;
 events sorted by (timestamp_ns, sequence); fresh sensor/regime state
@@ -98,10 +108,17 @@ DATES_CALM = ("2025-12-22", "2026-01-05", "2026-01-15", "2026-01-26", "2026-01-2
 DATES_ELEVATED_B = ("2026-04-01", "2026-04-10", "2026-04-22")
 DATES = DATES_ELEVATED_A + DATES_CALM + DATES_ELEVATED_B
 
+# 03c AMENDMENT 1 expansion dates (Lei-ratified 2026-07-13); grid
+# symbols only — OLN expansion cells are DRAWN-NOT-INGESTED.
+DATES_ELEVATED_A_EXP = ("2025-12-01", "2025-12-02")
+DATES_CALM_EXP = ("2025-12-26", "2025-12-30", "2026-01-12", "2026-01-20", "2026-01-22")
+DATES_ELEVATED_B_EXP = ("2026-04-02", "2026-04-07", "2026-04-16")
+DATES_EXPANSION = DATES_ELEVATED_A_EXP + DATES_CALM_EXP + DATES_ELEVATED_B_EXP
+
 STRATUM = (
-    {d: "elevated_A" for d in DATES_ELEVATED_A}
-    | {d: "calm" for d in DATES_CALM}
-    | {d: "elevated_B" for d in DATES_ELEVATED_B}
+    {d: "elevated_A" for d in DATES_ELEVATED_A + DATES_ELEVATED_A_EXP}
+    | {d: "calm" for d in DATES_CALM + DATES_CALM_EXP}
+    | {d: "elevated_B" for d in DATES_ELEVATED_B + DATES_ELEVATED_B_EXP}
 )
 
 # ── Frozen H8 entry constants (Appendix-A instrument, pinned) ────────────
@@ -240,6 +257,11 @@ class CellResult:
     # §1.7 occupancy input: |micro_price_drift| / micro_price at warm
     # in-window boundaries (grid symbols only; return-free):
     disloc_fracs_warm: list[float] = field(default_factory=list)
+    # AMENDMENT A-1 additive output (predicate untouched): warm
+    # in-window boundaries with kyle_lambda_60s_percentile >= 0.5 —
+    # the JC-3 n >= 1,000 pooled-sample input.  Stripped from the JSON
+    # on non-expanded runs (byte-identity with the original artifacts).
+    n_lambda_elevated_warm: int = 0
 
 
 def run_cell(
@@ -419,6 +441,8 @@ def run_cell(
         drift = values.get("micro_price_drift")
         mp = values.get("micro_price")
         rvz = values.get("realized_vol_30s_zscore")
+        if pctl is not None and pctl >= LAMBDA_PCTL_MIN:
+            res.n_lambda_elevated_warm += 1
         if is_grid and drift is not None and mp is not None and mp > 0.0:
             res.disloc_fracs_warm.append(abs(drift) / mp)
         if not is_grid:
@@ -512,6 +536,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=KAPPA_FROZEN,
         help="kappa for viability floors (0.190 frozen primary; §1.7 variant only)",
     )
+    ap.add_argument(
+        "--expanded-grid",
+        action="store_true",
+        help=(
+            "AMENDMENT A-1: add the 10 Lei-ratified 03c expansion dates to the "
+            "{APP, RMBS} grid (OLN stays on its 10 original cells)"
+        ),
+    )
     args = ap.parse_args(argv)
 
     m = args.disloc_multiple
@@ -531,7 +563,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     cache = DiskEventCache(args.cache_dir)
     cells: list[CellResult] = []
     for symbol in SYMBOLS:
-        for date in DATES:
+        dates = DATES
+        if args.expanded_grid and symbol in GRID_SYMBOLS:
+            dates = tuple(sorted(DATES + DATES_EXPANSION))
+        for date in dates:
             print(f"# {symbol} {date} ...", file=sys.stderr, flush=True)
             cell = run_cell(cache, symbol, date, disloc_frac_min, kappa)
             if cell is None:
@@ -560,6 +595,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "spread_ticks_eligible_n": len(spread_elig_all),
             "spread_ticks_eligible_quartiles": _quantiles_or_none(spread_elig_all, 4),
         }
+        if args.expanded_grid:
+            entry["lambda_elevated_warm_all"] = sum(c.n_lambda_elevated_warm for c in sc)
         if is_grid:
             viable_long = [c for c in sc if c.viable_long]
             viable_short = [c for c in sc if c.viable_short]
@@ -602,6 +639,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "primary_calm": sum(c.cond_primary for c in sc if c.stratum == "calm"),
                 }
             )
+            if args.expanded_grid:
+                entry["lambda_elevated_warm_viable_region"] = sum(
+                    c.n_lambda_elevated_warm for c in sc if in_viable(c)
+                )
             # §1.5/§1.6 deployability: >= 100 viable-region primary
             # episodes.  The long-only restatement rule is pre-registered
             # for RMBS ONLY: if any long-viable RMBS cell fails the
@@ -687,18 +728,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             }
         )
 
+    run_parameters = {
+        "disloc_multiple": m,
+        "kappa": kappa,
+        "disloc_frac_min": disloc_frac_min,
+        "intensity_ratio": INTENSITY_RATIO,
+        "power_floor": POWER_FLOOR,
+        "is_primary_run": m == DISLOC_MULTIPLE_FROZEN and kappa == KAPPA_FROZEN,
+    }
+    if args.expanded_grid:
+        run_parameters["expanded_grid"] = True
+    cell_dicts = [asdict(c) for c in cells]
+    if not args.expanded_grid:
+        # Byte-identity with the original artifacts (A-1.4(iii)): the
+        # additive field only exists on expanded-grid runs.
+        for d in cell_dicts:
+            del d["n_lambda_elevated_warm"]
     out = {
         "protocol": "sig_dislocation_lambda_drift_v1_validation_protocol.md step 1 (frozen)",
         "instrument": "Appendix-A read (h8_contamination_read.py @ 8c69d49), verbatim predicate",
-        "run_parameters": {
-            "disloc_multiple": m,
-            "kappa": kappa,
-            "disloc_frac_min": disloc_frac_min,
-            "intensity_ratio": INTENSITY_RATIO,
-            "power_floor": POWER_FLOOR,
-            "is_primary_run": m == DISLOC_MULTIPLE_FROZEN and kappa == KAPPA_FROZEN,
-        },
-        "cells": [asdict(c) for c in cells],
+        "run_parameters": run_parameters,
+        "cells": cell_dicts,
         "per_symbol": per_symbol,
         "park_conditions": {
             "edge_region_emptiness": emptiness,
@@ -710,6 +760,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         "occupancy_curve": occupancy_curve,
         "occupancy_derivation_jc10": derivation,
     }
+    if args.expanded_grid:
+        # AMENDMENT A-1.4(i): the JC-3 pooled-sample inputs vs the §2.2
+        # n >= 1,000 bar (report only — the bar adjudicates at step 2b).
+        out["jc3_lambda_elevated_pooled"] = {
+            "bar": 1000,
+            "all_cells_by_symbol": {
+                s: per_symbol[s]["lambda_elevated_warm_all"] for s in GRID_SYMBOLS
+            },
+            "viable_region_by_symbol": {
+                s: per_symbol[s]["lambda_elevated_warm_viable_region"] for s in GRID_SYMBOLS
+            },
+            "pooled_all_cells": sum(
+                per_symbol[s]["lambda_elevated_warm_all"] for s in GRID_SYMBOLS
+            ),
+            "pooled_viable_region": sum(
+                per_symbol[s]["lambda_elevated_warm_viable_region"] for s in GRID_SYMBOLS
+            ),
+        }
     if args.json is not None:
         args.json.parent.mkdir(parents=True, exist_ok=True)
         args.json.write_text(json.dumps(out, indent=2), encoding="utf-8")
@@ -745,6 +813,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     print(f"VERDICT: {verdict}")
     print(f"Occupancy derivation (JC-10, consumed only under §1.7): {json.dumps(derivation)}")
+    if args.expanded_grid:
+        print(f"JC-3 lambda-elevated pooled: {json.dumps(out['jc3_lambda_elevated_pooled'])}")
     return 0
 
 
