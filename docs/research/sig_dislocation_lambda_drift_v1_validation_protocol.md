@@ -15,9 +15,13 @@
           (Task 8-C-H8 execution record, 2026-07-12 — step 1 executed
           under the frozen definitions; primary PARKS on power; the
           single pre-authorized §1.7 variant re-censused and ALSO
-          PARKS on power; awaiting Lei review before Task 9). This
-          Status line is the only header edit; no definition,
-          threshold, or parameter above the freeze line changed.
+          PARKS on power; awaiting Lei review before Task 9).
+          + AMENDMENT A-1 (2026-07-13, Task 8-C2-H8): expanded-grid
+          census pre-registered on the Lei-ratified 20-session grid
+          (03c AMENDMENT 1); §1.7 variant superseded; EXPANDED CENSUS
+          RESULTS appended after execution. This Status line is the
+          only header edit; no definition, threshold, or parameter
+          above the freeze line changed.
   Owner:  research-workflow (protocol + ledger) / microstructure-alpha
           (candidate); prompt-pack Task 8, Phase B.
 
@@ -1517,3 +1521,82 @@ Lei decision), not thresholds.
 
 *Step 1 (primary + pre-authorized §1.7 variant) stops here. Lei
 reviews both PARK verdicts before any Task 9 action.*
+
+---
+
+# AMENDMENTS
+
+## AMENDMENT A-1 — Expanded-grid census pre-registration (Task 8-C2-H8, 2026-07-13; committed BEFORE execution)
+
+**Justification.** The C.5/V.3 power parks identified the binding
+constraint as session count, not threshold placement (V.4: "restoring
+power requires more sessions or more symbols — a grid amendment, Lei
+decision"). Lei authorized the one-shot grid expansion; the +10 shared
+dates were drawn under pre-registration
+(`docs/research/artifacts/universe_draw_expansion_evidence_2026-07-13.md`),
+ratified by Lei 2026-07-13 (C1–C3 upheld), and the {APP, RMBS} × 10
+cells ingested through the platform path — 03c AMENDMENT 1
+(`prompt_pack_03c_universe_and_cache.md`, commit 696c618). This entry
+pre-registers the expanded-grid re-execution of the frozen step-1
+census before any expanded-cell statistic exists.
+
+**A-1.1 Evidence set (amended).** The step-1 grid becomes **{APP,
+RMBS} × 20 sessions** — the 10 preamble dates plus the 10 Lei-ratified
+expansion dates:
+
+- elevated A (+2): `2025-12-01, 2025-12-02`
+- calm (+5): `2025-12-26, 2025-12-30, 2026-01-12, 2026-01-20,
+  2026-01-22` (2025-12-26 and 2025-12-30 tagged HOLIDAY-THIN; tags
+  never exclude)
+- elevated B (+3): `2026-04-02, 2026-04-07, 2026-04-16`
+
+OLN remains evidence-only on its 10 ORIGINAL cells; the OLN expansion
+cells are DRAWN-NOT-INGESTED (03c A1.5) and are not replayed. The 03c
+limitations carry as amended: **L1, L2, L4 unchanged; L3 reinforced
+(RMBS dominated the expansion screen exclusions); L5 new — the
+combined elevated-A stratum is three-of-four dates in one calendar
+week (early-Dec-2025-weighted; treat elevated-A as effectively one
+episode-week under L4 per-window reporting).**
+
+**A-1.2 Instrument (IDENTICAL, pinned).** The census re-executes with
+the frozen primary instrument and nothing else: m = 0.75 (Appendix-A
+`disloc_min` constants 25.3563e-4 / 23.7165e-4), κ = 0.190, the JC-1
+intensity exclusion at 2.0× count-basis-binding (volume reported),
+same §1.1 gate arms and warm handling, same §1.2 floors (APP 4.6809 /
+RMBS 5.4645 single-stress one-way; rider-inclusive short 5.82 / 6.60),
+same σ₃₀₀ estimator, same §1.5 park conditions, same §1.6 long-only
+restatement rule. **The §1.7 occupancy variant is SUPERSEDED (03c
+A1.7) and is NOT re-censused**; its original-grid results stand as
+recorded and its ledger row remains counted. Per-symbol power counts
+bind on the 20-session viable-region primary (count (b)) totals.
+
+**A-1.3 Pre-registered verdict mapping (no discretion).**
+
+- APP clears BOTH axes (edge viability held AND ≥ 100
+  contamination-excluded viable-region episodes) → **"PROCEED —
+  D = {APP}"**, plus RMBS in D iff RMBS clears both axes including
+  the SELL rider (the §1.6 restatement applying verbatim: rider
+  failure restates long-only and power re-checks on the
+  continuation-long count); RMBS failing → evidence-only, never in D.
+- APP fails either axis → **"PARK — PERMANENT CLOSE (one-shot
+  expansion exhausted)"**.
+
+**A-1.4 Additive outputs (reporting extensions; the episode predicate
+is untouched — count-direction neutral, §1.1 deviation-table
+convention).** (i) Per-cell count of λ-elevated warm in-window
+boundaries (`kyle_lambda_60s_percentile ≥ 0.5` on fully-warm
+boundaries) — the JC-3 pooled-sample input; reported per symbol, all
+cells and viable-region-restricted, against the §2.2 n ≥ 1,000 bar.
+(ii) Per-session episode counts on the 10 expansion cells reported
+side-by-side with the original 10 (HOLIDAY-THIN cells flagged).
+(iii) The census script gains an `--expanded-grid` flag adding the
+expansion dates; the default invocation still reproduces the original
+20-cell run bit-identically.
+
+**A-1.5 Accounting.** Census-legal only: no forward return, IC, or
+outcome statistic is computed. Grid expansion is data augmentation;
+**N unchanged** (expansion artifact §A.8, 03c A1.7). Determinism per
+P0-4: `PYTHONHASHSEED=0`, direct `DiskEventCache` read, bit-identical
+re-run required. Execution results follow in an appended EXPANDED
+CENSUS RESULTS section; Lei rules on the verdict before any Task 9
+action.
