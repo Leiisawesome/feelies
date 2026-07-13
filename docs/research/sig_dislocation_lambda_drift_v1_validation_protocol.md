@@ -18,10 +18,14 @@
           PARKS on power; awaiting Lei review before Task 9).
           + AMENDMENT A-1 (2026-07-13, Task 8-C2-H8): expanded-grid
           census pre-registered on the Lei-ratified 20-session grid
-          (03c AMENDMENT 1); §1.7 variant superseded; EXPANDED CENSUS
-          RESULTS appended after execution. This Status line is the
-          only header edit; no definition, threshold, or parameter
-          above the freeze line changed.
+          (03c AMENDMENT 1); §1.7 variant superseded. EXPANDED CENSUS
+          RESULTS appended after execution: **PROCEED — D = {APP}**
+          (APP 135 viable-region primary episodes ≥ 100; RMBS fails
+          the SELL rider → long-only 54 < 100 → evidence-only);
+          JC-3 n-bar tension (657 < 1,000 on D = {APP}) reported for
+          Lei's ruling. AWAITING LEI RULING before any Task 9 action.
+          This Status line is the only header edit; no definition,
+          threshold, or parameter above the freeze line changed.
   Owner:  research-workflow (protocol + ledger) / microstructure-alpha
           (candidate); prompt-pack Task 8, Phase B.
 
@@ -1600,3 +1604,238 @@ P0-4: `PYTHONHASHSEED=0`, direct `DiskEventCache` read, bit-identical
 re-run required. Execution results follow in an appended EXPANDED
 CENSUS RESULTS section; Lei rules on the verdict before any Task 9
 action.
+
+---
+
+# EXPANDED CENSUS RESULTS — STEP 1 RE-EXECUTED ON THE 20-SESSION GRID (Task 8-C2-H8, 2026-07-13)
+
+Execution record of the A-1 pre-registered census. **No forward
+return, IC, or signal evaluation was computed** — the only
+return-like quantity touched is the unconditional session σ₃₀₀, per
+the frozen §1 authorization. The §1.7 variant was NOT re-censused
+(superseded, 03c A1.7).
+
+## E.1 Preconditions at execution
+
+| # | check | result |
+|---|---|---|
+| P0-1 | feature wiring | runtime assertion passed on all 50 cells (both expanded runs): all four consumed ids present at h=300 |
+| P0-4 | determinism | `PYTHONHASHSEED=0`; direct `DiskEventCache` read; real `SensorRegistry → HorizonScheduler → HorizonAggregator` stack; **three runs bit-identical** (SHA-256 equal; sequencing note in E.8) |
+| P0-5 analog | pre-registration committed before execution | AMENDMENT A-1 committed as `07bbb4b` BEFORE the expanded census ran; expansion ingestion ratified and committed at `696c618` |
+| cache | 20 expansion cells present | verified pre-run: `{APP, RMBS} × 10` expansion `jsonl.gz` + manifests in `~/.feelies/cache` |
+
+## E.2 Instrument integrity pin
+
+The census script gained only the A-1.4 additive outputs
+(`--expanded-grid` date set + λ-elevated warm counter; episode
+predicate untouched). Two integrity checks passed:
+
+1. **Default invocation reproduces the original primary artifact
+   byte-identically** — re-run without the flag produced SHA-256
+   `3f571a00…f8983`, equal to the committed
+   `dislocation_lambda_census_2026-07-12.json` (A-1.4(iii) honored).
+2. **The 20 original cells inside the expanded run reproduce the C.4
+   table exactly** — every σ₃₀₀, viability label, and all three
+   counts match per cell, zero deviation (pooled original-cell
+   including-flagged APP 81 / RMBS 77; primary APP 73 / RMBS 58).
+
+## E.3 Per-cell census table (primary instrument: m = 0.75, κ = 0.190, JC-1 2.0× count-basis)
+
+Columns as C.4 plus: org = ORIG/EXP (original vs expansion cell);
+λw = λ-elevated warm in-window boundaries (A-1.4 additive output).
+Viability floors unchanged (σ₃₀₀ min long APP 24.64 / RMBS 28.76;
+rider-inclusive short 30.63 / 34.74). HT = HOLIDAY-THIN tag.
+
+| sym | date | org | stratum | σ₃₀₀ | viaL | viaS | incl | prim | pL | pS | bin | gON | gOFF | λw |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| APP | 2025-11-25 | ORIG | elev-A | 32.8 | YES | YES | 11 | 8 | 4 | 4 | 0 | 11 | 65 | 40 |
+| APP | 2025-12-01 | EXP | elev-A | 28.5 | YES | no | 12 | 11 | 7 | 4 | 0 | 12 | 64 | 38 |
+| APP | 2025-12-02 | EXP | elev-A | 33.2 | YES | YES | 13 | 10 | 2 | 8 | 0 | 13 | 63 | 46 |
+| APP | 2025-12-04 | ORIG | elev-A | 32.8 | YES | YES | 11 | 9 | 4 | 5 | 0 | 11 | 65 | 43 |
+| APP | 2025-12-22 | ORIG | calm | 21.1 | no | no | 5 | 5 | 3 | 2 | 0 | 5 | 71 | 39 |
+| APP | 2025-12-26 | EXP·HT | calm | 18.2 | no | no | 1 | 1 | 0 | 1 | 1 | 1 | 75 | 39 |
+| APP | 2025-12-30 | EXP·HT | calm | 19.2 | no | no | 3 | 3 | 2 | 1 | 0 | 3 | 73 | 40 |
+| APP | 2026-01-05 | ORIG | calm | 34.9 | YES | YES | 7 | 6 | 5 | 1 | 0 | 7 | 69 | 43 |
+| APP | 2026-01-12 | EXP | calm | 38.5 | YES | YES | 8 | 7 | 4 | 3 | 0 | 8 | 68 | 40 |
+| APP | 2026-01-15 | ORIG | calm | 26.7 | YES | no | 13 | 13 | 5 | 8 | 0 | 13 | 63 | 43 |
+| APP | 2026-01-20 | EXP | calm | 52.5 | YES | YES | 11 | 10 | 8 | 2 | 0 | 11 | 65 | 37 |
+| APP | 2026-01-22 | EXP | calm | 36.3 | YES | YES | 7 | 6 | 4 | 2 | 0 | 7 | 69 | 33 |
+| APP | 2026-01-26 | ORIG | calm | 31.5 | YES | YES | 6 | 4 | 2 | 2 | 1 | 6 | 70 | 38 |
+| APP | 2026-01-27 | ORIG | calm | 34.8 | YES | YES | 6 | 6 | 5 | 1 | 0 | 6 | 70 | 39 |
+| APP | 2026-04-01 | ORIG | elev-B | 37.4 | YES | YES | 11 | 11 | 5 | 6 | 0 | 11 | 65 | 34 |
+| APP | 2026-04-02 | EXP | elev-B | 39.0 | YES | YES | 6 | 5 | 2 | 3 | 0 | 6 | 70 | 38 |
+| APP | 2026-04-07 | EXP | elev-B | 31.3 | YES | YES | 12 | 10 | 5 | 5 | 1 | 12 | 64 | 43 |
+| APP | 2026-04-10 | ORIG | elev-B | 35.5 | YES | YES | 4 | 4 | 2 | 2 | 0 | 4 | 72 | 34 |
+| APP | 2026-04-16 | EXP | elev-B | 38.5 | YES | YES | 8 | 8 | 3 | 5 | 0 | 8 | 68 | 32 |
+| APP | 2026-04-22 | ORIG | elev-B | 36.8 | YES | YES | 7 | 7 | 4 | 3 | 0 | 7 | 69 | 36 |
+| RMBS | 2025-11-25 | ORIG | elev-A | 43.8 | YES | YES | 6 | 6 | 3 | 3 | 2 | 6 | 70 | 34 |
+| RMBS | 2025-12-01 | EXP | elev-A | 26.2 | no | no | 3 | 3 | 1 | 2 | 2 | 3 | 73 | 38 |
+| RMBS | 2025-12-02 | EXP | elev-A | 35.1 | YES | YES | 11 | 10 | 7 | 3 | 7 | 11 | 65 | 34 |
+| RMBS | 2025-12-04 | ORIG | elev-A | 25.2 | no | no | 4 | 3 | 0 | 3 | 1 | 4 | 72 | 31 |
+| RMBS | 2025-12-22 | ORIG | calm | 19.7 | no | no | 3 | 2 | 1 | 1 | 1 | 3 | 73 | 29 |
+| RMBS | 2025-12-26 | EXP·HT | calm | 13.8 | no | no | 0 | 0 | 0 | 0 | 0 | 0 | 76 | 26 |
+| RMBS | 2025-12-30 | EXP·HT | calm | 21.6 | no | no | 2 | 2 | 0 | 2 | 0 | 2 | 74 | 23 |
+| RMBS | 2026-01-05 | ORIG | calm | 31.6 | YES | no | 7 | 4 | 1 | 3 | 0 | 7 | 69 | 35 |
+| RMBS | 2026-01-12 | EXP | calm | 28.8 | YES | no | 1 | 0 | 0 | 0 | 0 | 1 | 75 | 32 |
+| RMBS | 2026-01-15 | ORIG | calm | 39.4 | YES | YES | 13 | 9 | 5 | 4 | 3 | 13 | 63 | 45 |
+| RMBS | 2026-01-20 | EXP | calm | 42.3 | YES | YES | 6 | 3 | 2 | 1 | 0 | 6 | 70 | 37 |
+| RMBS | 2026-01-22 | EXP | calm | 65.4 | YES | YES | 11 | 8 | 1 | 7 | 0 | 11 | 65 | 39 |
+| RMBS | 2026-01-26 | ORIG | calm | 38.4 | YES | YES | 6 | 6 | 4 | 2 | 3 | 6 | 70 | 43 |
+| RMBS | 2026-01-27 | ORIG | calm | 30.7 | YES | no | 6 | 5 | 3 | 2 | 0 | 6 | 70 | 41 |
+| RMBS | 2026-04-01 | ORIG | elev-B | 29.6 | YES | no | 15 | 10 | 6 | 4 | 4 | 15 | 61 | 42 |
+| RMBS | 2026-04-02 | EXP | elev-B | 46.3 | YES | YES | 10 | 8 | 8 | 0 | 2 | 10 | 66 | 45 |
+| RMBS | 2026-04-07 | EXP | elev-B | 35.0 | YES | YES | 8 | 8 | 4 | 4 | 1 | 8 | 68 | 37 |
+| RMBS | 2026-04-10 | ORIG | elev-B | 31.6 | YES | no | 7 | 5 | 1 | 4 | 1 | 7 | 69 | 36 |
+| RMBS | 2026-04-16 | EXP | elev-B | 31.8 | YES | no | 8 | 7 | 2 | 5 | 4 | 8 | 68 | 36 |
+| RMBS | 2026-04-22 | ORIG | elev-B | 38.0 | YES | YES | 10 | 8 | 7 | 1 | 1 | 10 | 66 | 38 |
+| OLN | ×10 orig dates | ORIG | — | 22.5–37.0 | — | — | 0 | 0 | 0 | 0 | 0 | — | — | — |
+
+Every cell emitted 78 RTH h=300 boundaries, 76 in the 09:35–15:50
+window; OLN unchanged from C.4 (evidence-only, original 10 cells).
+
+**New-vs-original per-session episode density (task-required
+report):** APP — expansion cells contribute 71 primary episodes vs 73
+on the original 10 (81 including-flagged on BOTH halves; per-session
+means 7.1 vs 7.3 primary). RMBS — 49 vs 58 primary (60 vs 77
+including-flagged). The two HOLIDAY-THIN cells are the thinnest cells
+on the grid, as the tag predicted: APP 1 + 3, RMBS 0 + 2 primary
+episodes (RMBS 2025-12-26: σ₃₀₀ 13.8 bps — the grid minimum — and
+zero gate-ON boundaries); both are non-viable cells, so they add
+nothing to the power counts. Expansion density is otherwise
+consistent with the original draw — no regime-shift artifact in
+conditioning density.
+
+## E.4 Park-condition scoring (§1.5/§1.6, A-1.3 mapping — no discretion)
+
+- **Edge-region emptiness: FALSE.** APP 17/20 and RMBS 15/20 cells
+  clear the long σ₃₀₀ min; the viable region is populated for both.
+- **Power floor (≥ 100 viable-region primary episodes):**
+  - **APP: PASSES — 135** (71 long / 64 short; including-flagged 153,
+    binary 2). Both axes clear.
+  - **RMBS: fails the SELL-leg axis** (6 of its 15 long-viable cells
+    sit below the rider-inclusive short σ₃₀₀ min 34.74: 2026-01-05,
+    2026-01-12, 2026-01-27, 2026-04-01, 2026-04-10, 2026-04-16) →
+    **restates long-only** per §1.6 → power re-checks on the
+    continuation-long count = **54 < 100 → fails power → RMBS =
+    evidence-only, never in D.** (No count rescues it: full
+    viable-region primary 97, all-cells primary 107 — the long-only
+    restatement binds regardless.)
+- APP full-count disclosure: APP is NOT restated long-only (the §1.6
+  rule is RMBS-specific); its per-cell SELL-leg labels are disclosed
+  in E.3 (2025-12-01 and 2026-01-15 are long-viable-only). SELL-leg
+  economics are adjudicated on measured evidence at §2.3 per the
+  frozen protocol.
+
+**VERDICT (A-1.3 pre-registered mapping): `PROCEED — D = {APP}`;
+RMBS = evidence-only.**
+
+The step-1 park is lifted on the expanded grid: the card proceeds to
+step 2 (sign-golden + IC gate) on D = {APP} under the frozen §0 order
+lock, subject to Lei's post-census ruling (this task stops here).
+
+## E.5 Supporting census outputs (§1.4)
+
+**Contamination three counts (pooled, all 20 cells; §1.3):** APP —
+(a) 162, **(b) 144 primary**, (c) 3; volume-basis exclusions 7
+(reported, never binding). RMBS — (a) 137, **(b) 107**, (c) 32;
+volume-basis 12. The binary convention still saturates (APP 159/162
+eligible boundaries carry ≥ 1 flag), re-vindicating JC-1.
+
+**Warm coverage (mean fraction of emitted RTH boundaries):** APP
+0.987–0.990 on all four ids. RMBS: λ-percentile mean 0.945,
+per-session min 0.679 (2025-12-26, HOLIDAY-THIN); `micro_price_drift`
+0.967, `micro_price` 0.994, `realized_vol_30s_zscore` 0.983.
+**Coverage rule clear:** zero RMBS sessions below 0.5.
+
+**Gate-state × daily-stratum 2×2 (gate ON = §1.1 arms 3–6 on warm
+in-window boundaries):**
+
+| symbol | ON elev-A | ON calm | ON elev-B | OFF elev-A | OFF calm | OFF elev-B |
+|---|---|---|---|---|---|---|
+| APP | 47 | 67 | 48 | 257 | 693 | 408 |
+| RMBS | 24 | 55 | 58 | 280 | 705 | 398 |
+
+**Per-stratum primary episodes (L4/L5 — strata never pooled):** APP
+elev-A 38 / calm 61 / elev-B 45; RMBS 22 / 39 / 46. All strata remain
+below the ~100-obs rule — **INSUFFICIENT at stratum granularity**,
+reported, never pooled away. L1 attaches to every calm figure; L5
+attaches to every elev-A figure (three of four elev-A dates in one
+early-Dec-2025 week); L3 flags every RMBS figure.
+
+**Spread-in-ticks: frozen terciles vs expanded-grid recompute
+(flagged for the post-census ruling).** The §4.1/JC-4 cutpoints were
+frozen at ORIGINAL census time: APP {50, 72}, RMBS {20, 32}. The
+expanded-grid unconditional warm distributions give APP {50, 72}
+(identical) and RMBS {21, 34} (shifted by the new sessions).
+**Which cutpoints govern step 4 on the expanded grid is a Lei ruling**
+— the frozen values are the pre-registered ones; the recompute is
+disclosed here return-free before any step-4 statistic exists. RMBS
+is evidence-only under this verdict, so the discrepancy is moot for
+the binding step-4 acceptance unless Lei rules RMBS evidence back in.
+Eligible-boundary quartiles: APP [43, 53.5, 66] (n = 162), RMBS
+[18, 22, 28] (n = 137) — again at/below the unconditional medians.
+
+**Occupancy block:** emitted per the script contract (pooled n =
+2,930 warm boundaries; occupancy at m = 0.75 is 0.344, matching the
+original 0.343) but **NOT consumed — the §1.7 path is superseded
+(03c A1.7); no re-threshold variant exists or is registered on the
+expanded grid.**
+
+## E.6 JC-3 pooled-boundary count vs the n ≥ 1,000 requirement (task-required report for the post-census ruling)
+
+λ-elevated warm in-window boundaries (`kyle_lambda_60s_percentile ≥
+0.5` on fully-warm boundaries; the §2.2 IC-gate sample unit):
+
+| population | APP | RMBS | pooled |
+|---|---|---|---|
+| all 20 cells | 775 | 721 | 1,496 |
+| viable-region sessions only | 657 | 574 | 1,231 |
+
+The §2.2 binding definition — pooled over **D restricted to
+viable-region sessions** — with D = {APP} gives **n = 657 < 1,000**.
+The JC-3 ruled consequence as frozen ("D = {APP} with no legal path
+to n ≥ 1,000 ⇒ PARK — evidence-infrastructure class") would therefore
+bind at step 2b even though step 1 now clears. The two-symbol pooled
+count (1,231 viable-region / 1,496 all-cells) crosses the bar only if
+RMBS boundaries were poolable as IC-gate evidence, which the frozen
+protocol does not authorize with RMBS out of D. **This tension is
+reported, not adjudicated — Lei rules on it before any Task 9
+action.** No IC or forward-return statistic was computed in producing
+these counts (boundary counting only).
+
+## E.7 Trial ledger
+
+**N = 10, unchanged.** The expanded census is the pre-registered
+primary trial re-executed on the augmented evidence grid (data
+augmentation, 03c A1.7 / expansion artifact §A.8); no outcome
+statistic was computed. The superseded §1.7 variant row stands as
+recorded (drafted/census-only, N-neutral, no outcome contact
+scheduled).
+
+## E.8 Provenance (FQ-3)
+
+    git_sha: "a17e118 (script commit; the artifact-producing run and
+      its first bit-identity re-run executed from the same tree with
+      the script edit present but not yet committed; the third run,
+      from the committed a17e118 tree, reproduced the identical
+      SHA-256 — disclosed for exactness. Pre-registration commit
+      07bbb4b and expansion-ingestion commit 696c618 precede all
+      runs.)"
+    pythonhashseed: "0 (set in session for every run)"
+    command: "PYTHONHASHSEED=0 uv run python
+      scripts/research/dislocation_lambda_census.py --expanded-grid
+      --json docs/research/artifacts/
+      dislocation_lambda_census_expanded_2026-07-13.json"
+    artifact: "docs/research/artifacts/
+      dislocation_lambda_census_expanded_2026-07-13.json
+      sha256=4fc18351118be36b0dbad95cac8c35f2e1fc7ab2042116da09f4ae5bfe1e5d4e"
+    determinism: "three runs bit-identical (SHA-256 equal), incl. one
+      from the committed script tree; default (non-expanded)
+      invocation separately verified to reproduce the 2026-07-12
+      primary artifact SHA-256 exactly (3f571a00...)"
+    census_legality: "no forward return, IC, or outcome statistic
+      computed; sigma_300 and boundary counts only"
+
+*Expanded census stops here. Lei rules on the PROCEED — D = {APP}
+verdict, the E.6 JC-3 consequence, and the E.5 tercile question
+before any Task 9 action.*
