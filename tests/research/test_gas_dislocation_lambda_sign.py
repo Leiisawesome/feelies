@@ -25,8 +25,12 @@ the liquidity-shock look-alike) — the card-defining contrast.
 
 from __future__ import annotations
 
+import importlib.util
+import sys
 from decimal import Decimal
 from functools import lru_cache
+from pathlib import Path
+from typing import Any
 
 from feelies.alpha.loader import AlphaLoader
 from feelies.alpha.signal_layer_module import LoadedSignalLayerModule
@@ -101,12 +105,12 @@ def _load() -> LoadedSignalLayerModule:
 # ── Tape construction ─────────────────────────────────────────────────────
 
 
-def _quote(ts_ns: int, mid: float) -> NBBOQuote:
+def _quote(ts_ns: int, mid: float, *, sym: str = _SYM) -> NBBOQuote:
     return NBBOQuote(
         timestamp_ns=ts_ns,
         correlation_id=f"q-{ts_ns}",
         sequence=ts_ns,
-        symbol=_SYM,
+        symbol=sym,
         bid=Decimal(str(round(mid - 0.05, 6))),
         ask=Decimal(str(round(mid + 0.05, 6))),
         bid_size=100,
@@ -115,15 +119,23 @@ def _quote(ts_ns: int, mid: float) -> NBBOQuote:
     )
 
 
-def _trade(ts_ns: int, price: float, size: int) -> Trade:
+def _trade(
+    ts_ns: int,
+    price: float,
+    size: int,
+    *,
+    sym: str = _SYM,
+    conditions: tuple[int, ...] = (),
+) -> Trade:
     return Trade(
         timestamp_ns=ts_ns,
         correlation_id=f"t-{ts_ns}",
         sequence=ts_ns,
-        symbol=_SYM,
+        symbol=sym,
         price=Decimal(str(round(price, 6))),
         size=size,
         exchange_timestamp_ns=ts_ns,
+        conditions=conditions,
     )
 
 
@@ -377,3 +389,95 @@ def test_snapshot_carries_all_four_consumed_ids() -> None:
         assert fid in snap.values, f"h=300 snapshot missing consumed id {fid}"
         assert snap.warm.get(fid) is True
         assert snap.stale.get(fid) is False
+
+
+# ── sensor_feature_ic H8-row smoke (impl plan §1.3; Task 9 commit 5) ──────
+# The gas-01 ``_ofi_integrated_ab`` pattern: prove the protocol §2.2
+# harness extension runs end-to-end on a synthetic tape and reports a row
+# per (stratum, contamination way) plus the λ-contrast — no cached-data IC
+# run executes here (first outcome contact belongs to Task 8 step 2).
+
+
+def _load_ic_script() -> Any:
+    spec = importlib.util.spec_from_file_location(
+        "_sensor_feature_ic_h8", Path("scripts/sensor_feature_ic.py").resolve()
+    )
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _h8_smoke_tape(sym: str) -> list[NBBOQuote | Trade]:
+    """1,205 s tape: λ ramps UP into the 600 s boundary (elevated stratum)
+    and DOWN into the 900 s boundary (baseline stratum); a single Class-B
+    flagged print at 895 s puts the baseline boundary's trailing-60 s
+    window far above 2.0× the tape base rate, so the intensity and binary
+    exclusions both fire on exactly that boundary.  Trailing drift keeps
+    the mid moving so both boundaries have realised forward windows."""
+    events: list[NBBOQuote | Trade] = []
+    mid = 544.0
+    for t in range(0, 300):
+        events.append(_quote(t * _NS, mid, sym=sym))
+    trade_price = mid
+    prev_size = 100
+    for t_s in range(300, 1205):
+        if t_s < 600:
+            c = 0.4e-4 + 1.2e-4 * (t_s - 300) / 299
+        elif t_s < 900:
+            c = 1.6e-4 - 1.2e-4 * (t_s - 600) / 299
+        else:
+            c = 0.5e-4
+        mid += c * prev_size
+        events.append(_quote(t_s * _NS, mid, sym=sym))
+        trade_price += 0.0001
+        events.append(
+            _trade(
+                t_s * _NS + 400_000_000,
+                trade_price,
+                50 if t_s % 2 == 0 else 150,
+                sym=sym,
+                conditions=(2,) if t_s == 895 else (),
+            )
+        )
+        prev_size = 50 if t_s % 2 == 0 else 150
+    return events
+
+
+def test_harness_h8_row_reports_both_strata_and_all_three_contamination_ways() -> None:
+    ic = _load_ic_script()
+    tape = _h8_smoke_tape(_SYM)
+    mids = ic._MidSeries.from_events(tape)
+    rows = ic._h8_dislocation_lambda(tape, mids, _SYM, "2026-01-01", 0)
+
+    by = {r.variant: r for r in rows}
+    assert set(by) == {
+        "lambda_elevated|incl",
+        "lambda_elevated|primary",
+        "lambda_elevated|binary",
+        "lambda_baseline|incl",
+        "lambda_baseline|primary",
+        "lambda_baseline|binary",
+        "lambda_contrast|primary",
+    }
+    assert all(r.feature == "h8_disloc_lambda" and r.horizon == 300 for r in rows)
+
+    # 600 s boundary: λ-elevated, clean window ⇒ counted all three ways.
+    assert by["lambda_elevated|primary"].n == 1
+    assert by["lambda_elevated|incl"].n == 1
+    assert by["lambda_elevated|binary"].n == 1
+    # 900 s boundary: λ-baseline, flagged window ⇒ in (a) but excluded by
+    # the intensity-primary (b) AND the binary (c) hooks.
+    assert by["lambda_baseline|incl"].n == 1
+    assert by["lambda_baseline|primary"].n == 0
+    assert by["lambda_baseline|binary"].n == 0
+
+
+def test_harness_h8_oln_is_evidence_only_and_contributes_no_ic_row() -> None:
+    """OLN cells feed the §2.4 tick-artifact reporting hooks only — the
+    protocol preamble bars OLN from every pooled IC statistic."""
+    ic = _load_ic_script()
+    tape = _h8_smoke_tape("OLN")
+    mids = ic._MidSeries.from_events(tape)
+    assert ic._h8_dislocation_lambda(tape, mids, "OLN", "2026-01-01", 0) == []

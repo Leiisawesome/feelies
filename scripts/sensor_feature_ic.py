@@ -52,6 +52,7 @@ if __name__ == "__main__":
         sys.path.insert(0, str(_REPO_ROOT))
     os.chdir(_REPO_ROOT)
 
+from feelies.bootstrap import _horizon_features_for  # noqa: E402
 from feelies.bus.event_bus import EventBus  # noqa: E402
 from feelies.core.events import (  # noqa: E402
     HorizonFeatureSnapshot,
@@ -65,7 +66,11 @@ from feelies.features.impl.horizon_windowed import HorizonWindowedFeature  # noq
 from feelies.features.impl.rolling_stats import RollingZscoreFeature  # noqa: E402
 from feelies.features.impl.sensor_passthrough import SensorPassthroughFeature  # noqa: E402
 from feelies.features.protocol import HorizonFeature  # noqa: E402
-from feelies.research.forward_ic import long_short_edge_bps  # noqa: E402
+from feelies.research.forward_ic import (  # noqa: E402
+    bucketed_forward_return,
+    long_short_edge_bps,
+    spearman_ic,
+)
 from feelies.sensors.horizon_scheduler import HorizonScheduler  # noqa: E402
 from feelies.sensors.impl.kyle_lambda_60s import KyleLambda60sSensor  # noqa: E402
 from feelies.sensors.impl.micro_price import MicroPriceSensor  # noqa: E402
@@ -346,6 +351,10 @@ class _Row:
     # so multi-day pooling can re-run the cost-gate primitive on globally
     # concatenated pairs rather than averaging per-day spreads.
     pairs: _Pairs | None = None
+    # Fisher-z two-sided p of ``rank_ic`` (``research/forward_ic.spearman_ic``)
+    # — populated for the H8 rows, whose protocol gate binds on p, not the
+    # naive t-stat.
+    p_value: float | None = None
 
     @property
     def tstat(self) -> float | None:
@@ -440,6 +449,10 @@ def _run_one(
             session_open_ns,
         )
     )
+    # Protocol §2.2 H8 row (sig_dislocation_lambda_drift_v1) — pinned to
+    # h=300; skipped when the invocation does not request that horizon.
+    if _H8_HORIZON in horizons:
+        rows.extend(_h8_dislocation_lambda(events, mids, symbol, date, session_open_ns))
     return rows
 
 
@@ -586,14 +599,235 @@ def _kyle_alignment_ab(
     return rows
 
 
+# ── H8 row — sig_dislocation_lambda_drift_v1 (protocol §2.2; Task 9) ──────
+#
+# Measurement plumbing for the pre-registered H8 primary trial, not a new
+# trial: x = micro_price_drift / micro_price (signed dislocation fraction)
+# at h=300 warm boundaries vs y = signed forward 300 s mid log-return,
+# stratified by the λ median split (kyle_lambda_60s_percentile ≥ 0.5).
+# Contamination per protocol §1.3 (JC-1 RULED): three counts per stratum —
+# (a) including-flagged, (b) intensity-excluded PRIMARY (window flagged-print
+# share ≥ 2.0× the session tape base rate, COUNT basis; zero-flag windows
+# never excluded), (c) binary any-flag (the H2 convention; saturates on H8).
+# Flag-set logic transplanted from scripts/research/dislocation_lambda_census.py
+# (itself verbatim from the Appendix-A read @ 8c69d49).  Pooled gate
+# statistics (protocol §2.2 numeric gate) are computed at Task-8 execution
+# from per-cell pairs; the pooled table below keeps the harness's existing
+# sample-weighted convention (pairs are retained on rows carrying edge_bps).
+# OLN cells are evidence-only §2.4 tick-artifact inputs — reported to stderr,
+# never contributing an IC row (protocol preamble: OLN never in D).
+
+_H8_HORIZON = 300  # pinned by the card; independent of --horizons selection
+_H8_SENSOR_IDS = ("kyle_lambda_60s", "micro_price", "realized_vol_30s")
+_H8_CONSUMED_IDS = (
+    "micro_price",
+    "micro_price_drift",
+    "kyle_lambda_60s_percentile",
+    "realized_vol_30s_zscore",
+)
+_H8_LAMBDA_SPLIT = 0.5
+_H8_EVIDENCE_ONLY_SYMBOLS = frozenset({"OLN"})
+# §1.3 contamination sets (03b §3.3 Class B / §4.4 corrections; frozen):
+_H8_CLASS_B_CONDITIONS = frozenset({2, 7, 8, 9, 10, 13, 15, 16, 17, 22, 29, 32, 35, 52, 53})
+_H8_CORRECTION_RECORDS = frozenset({10, 11, 12})
+_H8_CONTAM_WINDOW_NS = 60 * _NS_PER_SECOND  # the kyle_lambda_60s trailing window
+_H8_INTENSITY_RATIO = 2.0  # frozen §2 materiality bar at boundary granularity
+
+
+def _h8_flag_tape(events: Sequence[NBBOQuote | Trade]) -> tuple[list[int], list[bool]]:
+    """(timestamp, Class-B-or-correction flagged) for every trade print."""
+    ts: list[int] = []
+    flagged: list[bool] = []
+    for t in events:
+        if not isinstance(t, Trade):
+            continue
+        ts.append(t.timestamp_ns)
+        flagged.append(
+            bool(_H8_CLASS_B_CONDITIONS.intersection(t.conditions))
+            or (t.correction is not None and t.correction in _H8_CORRECTION_RECORDS)
+        )
+    return ts, flagged
+
+
+def _h8_rank_row(symbol: str, date: str, variant: str, p: _Pairs, *, with_edge: bool) -> _Row:
+    n = len(p.values)
+    rank_ic = ic = p_value = None
+    if n >= 3:
+        res = spearman_ic(p.values, p.fwd)
+        rank_ic, p_value = res.rho, res.p_value
+        ic = _pearson(p.values, p.fwd)
+    edge = long_short_edge_bps(p.values, p.fwd) if with_edge and n >= 5 else None
+    return _Row(
+        symbol=symbol,
+        date=date,
+        feature="h8_disloc_lambda",
+        horizon=_H8_HORIZON,
+        variant=variant,
+        n=n,
+        rank_ic=rank_ic,
+        ic=ic,
+        edge_bps=edge,
+        pairs=p if edge is not None else None,
+        p_value=p_value,
+    )
+
+
+def _h8_oln_tick_artifact_report(
+    events: Sequence[NBBOQuote | Trade],
+    mids: "_MidSeries",
+    symbol: str,
+    date: str,
+    boundaries: list[tuple[int, float]],
+) -> None:
+    """§2.4 evidence-only hooks for OLN: spread-in-ticks at warm boundaries
+    and the ±1 half-tick quantum mass of the 300 s forward move."""
+    quote_ts = [e.timestamp_ns for e in events if isinstance(e, NBBOQuote)]
+    quote_spread = [float(e.ask) - float(e.bid) for e in events if isinstance(e, NBBOQuote)]
+    tick = 0.01
+    spreads: list[int] = []
+    within_quantum = 0
+    n_moves = 0
+    for asof_ns, _x in boundaries:
+        qi = bisect.bisect_right(quote_ts, asof_ns) - 1
+        if qi >= 0:
+            spreads.append(round(quote_spread[qi] / tick))
+        m0 = mids.at(asof_ns)
+        m1 = mids.at(asof_ns + _H8_HORIZON * _NS_PER_SECOND)
+        if (
+            m0 is not None
+            and m1 is not None
+            and asof_ns + _H8_HORIZON * _NS_PER_SECOND <= mids.last_ts
+        ):
+            n_moves += 1
+            if abs(m1 - m0) <= tick / 2.0:
+                within_quantum += 1
+    med = sorted(spreads)[len(spreads) // 2] if spreads else None
+    mass = within_quantum / n_moves if n_moves else None
+    print(
+        f"  # H8 §2.4 OLN tick-artifact {symbol}/{date}: warm boundaries={len(boundaries)}, "
+        f"median spread_ticks={med}, half-tick quantum mass="
+        f"{'n/a' if mass is None else f'{mass:.3f}'} (n={n_moves})",
+        file=sys.stderr,
+    )
+
+
+def _h8_dislocation_lambda(
+    events: Sequence[NBBOQuote | Trade],
+    mids: "_MidSeries",
+    symbol: str,
+    date: str,
+    session_open_ns: int,
+) -> list[_Row]:
+    """Protocol §2.2 H8 rows for one (symbol, date) cell — see the section
+    comment above for the design pins."""
+    specs = tuple(s for s in _SENSOR_SPECS if s.sensor_id in _H8_SENSOR_IDS)
+    feats = [f for sid in _H8_SENSOR_IDS for f in _horizon_features_for(sid, _H8_HORIZON)]
+    snaps = _replay_snapshots(
+        events,
+        symbol=symbol,
+        horizon_features=feats,
+        horizons=frozenset({_H8_HORIZON}),
+        session_open_ns=session_open_ns,
+        sensor_specs=specs,
+    )
+    trade_ts, trade_flagged = _h8_flag_tape(events)
+    n_flagged = sum(trade_flagged)
+    count_base = n_flagged / len(trade_ts) if trade_ts else 0.0
+
+    # (stratum, way) → pairs.  "incl" = (a); "primary" = (b); "binary" = (c).
+    strata = ("lambda_elevated", "lambda_baseline")
+    ways = ("incl", "primary", "binary")
+    pairs = {(s, w): _Pairs(values=[], fwd=[]) for s in strata for w in ways}
+    oln_boundaries: list[tuple[int, float]] = []
+    for s in snaps:
+        if s.horizon_seconds != _H8_HORIZON:
+            continue
+        if not all(
+            s.warm.get(fid, False) and not s.stale.get(fid, True) for fid in _H8_CONSUMED_IDS
+        ):
+            continue
+        mp = s.values["micro_price"]
+        if mp <= 0.0:
+            continue
+        x = s.values["micro_price_drift"] / mp
+        asof_ns = s.boundary_ts_ns
+        if symbol in _H8_EVIDENCE_ONLY_SYMBOLS:
+            oln_boundaries.append((asof_ns, x))
+            continue
+        y = _forward_return(mids, asof_ns, _H8_HORIZON)
+        if y is None:
+            continue
+        stratum = (
+            "lambda_elevated"
+            if s.values["kyle_lambda_60s_percentile"] >= _H8_LAMBDA_SPLIT
+            else "lambda_baseline"
+        )
+        lo = bisect.bisect_left(trade_ts, asof_ns - _H8_CONTAM_WINDOW_NS + 1)
+        hi = bisect.bisect_right(trade_ts, asof_ns)
+        window_flagged = sum(trade_flagged[lo:hi])
+        share = window_flagged / (hi - lo) if hi > lo else 0.0
+        # Zero-flag windows carry no intensity evidence and are never excluded.
+        excluded_primary = window_flagged > 0 and share >= _H8_INTENSITY_RATIO * count_base
+        keep = {"incl": True, "primary": not excluded_primary, "binary": window_flagged == 0}
+        for way in ways:
+            if keep[way]:
+                pairs[(stratum, way)].values.append(x)
+                pairs[(stratum, way)].fwd.append(y)
+
+    if symbol in _H8_EVIDENCE_ONLY_SYMBOLS:
+        _h8_oln_tick_artifact_report(events, mids, symbol, date, oln_boundaries)
+        return []
+
+    rows: list[_Row] = []
+    for way in ways:
+        for stratum in strata:
+            rows.append(
+                _h8_rank_row(
+                    symbol,
+                    date,
+                    f"{stratum}|{way}",
+                    pairs[(stratum, way)],
+                    with_edge=stratum == "lambda_elevated",
+                )
+            )
+    # λ-contrast (F2 anchor): elevated-stratum RankIC minus baseline-stratum
+    # RankIC on the PRIMARY contamination basis.
+    by_variant = {r.variant: r for r in rows}
+    e = by_variant["lambda_elevated|primary"]
+    b = by_variant["lambda_baseline|primary"]
+    contrast = e.rank_ic - b.rank_ic if e.rank_ic is not None and b.rank_ic is not None else None
+    rows.append(
+        _Row(
+            symbol=symbol,
+            date=date,
+            feature="h8_disloc_lambda",
+            horizon=_H8_HORIZON,
+            variant="lambda_contrast|primary",
+            n=min(e.n, b.n),
+            rank_ic=contrast,
+            ic=None,
+        )
+    )
+    # §2.2 bucket monotonicity input (5 equal-count buckets, elevated/primary).
+    ep = pairs[("lambda_elevated", "primary")]
+    if len(ep.values) >= 5:
+        buckets = bucketed_forward_return(ep.values, ep.fwd, n_buckets=5)
+        means = ", ".join(f"{b_.mean_forward_return * 1e4:+.2f}" for b_ in buckets)
+        print(
+            f"  # H8 buckets(elevated|primary) {symbol}/{date}: [{means}] bps",
+            file=sys.stderr,
+        )
+    return rows
+
+
 def _fmt(x: float | None) -> str:
     return "   n/a" if x is None else f"{x:+.4f}"
 
 
 def _print_table(rows: list[_Row]) -> None:
     hdr = (
-        f"{'feature':<24}{'horizon':>8}{'variant':>16}{'n':>7}"
-        f"{'RankIC':>9}{'IC':>9}{'t':>8}{'edgeBps':>9}"
+        f"{'feature':<24}{'horizon':>8}{'variant':>26}{'n':>7}"
+        f"{'RankIC':>9}{'IC':>9}{'t':>8}{'edgeBps':>9}{'p':>10}"
     )
     print(hdr)
     print("-" * len(hdr))
@@ -602,9 +836,10 @@ def _print_table(rows: list[_Row]) -> None:
         t = r.tstat
         t_s = "   n/a" if t is None else f"{t:+.2f}"
         e_s = "   n/a" if r.edge_bps is None else f"{r.edge_bps:+.2f}"
+        p_s = "       n/a" if r.p_value is None else f"{r.p_value:>10.2e}"
         print(
-            f"{r.feature:<24}{r.horizon:>8}{r.variant:>16}{r.n:>7}"
-            f"{_fmt(r.rank_ic):>9}{_fmt(r.ic):>9}{t_s:>8}{e_s:>9}"
+            f"{r.feature:<24}{r.horizon:>8}{r.variant:>26}{r.n:>7}"
+            f"{_fmt(r.rank_ic):>9}{_fmt(r.ic):>9}{t_s:>8}{e_s:>9}{p_s:>10}"
         )
 
 
@@ -717,8 +952,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             w = csv.writer(fh)
             w.writerow(
                 [
-                    "symbol", "date", "feature", "horizon", "variant",
-                    "n", "rank_ic", "ic", "tstat", "edge_bps",
+                    "symbol",
+                    "date",
+                    "feature",
+                    "horizon",
+                    "variant",
+                    "n",
+                    "rank_ic",
+                    "ic",
+                    "tstat",
+                    "edge_bps",
+                    "p_value",
                 ]
             )
             for r in all_rows:
@@ -734,6 +978,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         r.ic,
                         r.tstat,
                         r.edge_bps,
+                        r.p_value,
                     ]
                 )
         print(f"\nWrote {args.csv}", file=sys.stderr)
