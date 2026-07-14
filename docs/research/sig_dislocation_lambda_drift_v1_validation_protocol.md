@@ -24,6 +24,17 @@
           the SELL rider → long-only 54 < 100 → evidence-only);
           JC-3 n-bar tension (657 < 1,000 on D = {APP}) reported for
           Lei's ruling. AWAITING LEI RULING before any Task 9 action.
+          + AMENDMENT A-2 (2026-07-13, Task 8-A2-H8, Lei): POST-CENSUS
+          RULINGS, recorded PRE-OUTCOME (no IC or forward return
+          exists) — E.6/JC-3 ruled: step-2 IC evidence = pooled
+          {APP ∪ RMBS evidence-only} viable-region λ-elevated
+          boundaries (n = 1,231), frozen thresholds unchanged, APP
+          per-symbol safeguard added; E.5 ruled: spread terciles
+          refrozen on the 20-session grid (APP {50, 72} unchanged,
+          RMBS {21, 34}); CPCV ruled: n_groups = 20, k = 2, 190
+          combinations, 19 paths, APP-scoped, embargo 3 and 140.20
+          carried; N = 10 unchanged. Step 3 does not execute until
+          the A-2.3 residual-freedom items clear Lei veto.
           This Status line is the only header edit; no definition,
           threshold, or parameter above the freeze line changed.
   Owner:  research-workflow (protocol + ledger) / microstructure-alpha
@@ -1839,3 +1850,190 @@ scheduled).
 *Expanded census stops here. Lei rules on the PROCEED — D = {APP}
 verdict, the E.6 JC-3 consequence, and the E.5 tercile question
 before any Task 9 action.*
+
+---
+
+# AMENDMENTS (continued)
+
+## AMENDMENT A-2 — Post-census rulings (Task 8-A2-H8, 2026-07-13, Lei; recorded PRE-OUTCOME)
+
+**Standing at ruling time (integrity pin, stated first):** **no IC,
+forward return, or outcome statistic exists for this candidate.**
+Steps 2–8 have never executed; everything computed to date is
+census-class (boundary counts, σ₃₀₀, spread/occupancy distributions).
+These rulings therefore adjudicate evidence-set definitions and test
+configuration **before** any number they could be accused of chasing
+exists. The E.4 verdict **PROCEED — D = {APP}** is confirmed; the §0
+order lock resumes at step 2.
+
+### A-2.1 E.6 / JC-3 RULED — step-2 IC evidence set (Lei, 2026-07-13)
+
+**Ruling.** The §2.2 IC-gate evidence set is the **pooled
+{APP ∪ RMBS-evidence-only} λ-elevated warm in-window boundaries over
+viable-region sessions** on the 20-session grid — **n = 1,231**
+(E.6: APP 657 + RMBS 574), admissible against the frozen n ≥ 1,000
+bar. **ALL frozen §2.2 thresholds are unchanged** (RankIC sign > 0,
+|RankIC| ≥ 0.03, Fisher-z p ≤ 0.01, n ≥ 1,000, λ-contrast conjunct,
+bucket monotonicity, conditional tail t ≥ 2): this is an evidence-set
+ruling, **not threshold rescaling** — the rescaling the frozen JC-3
+consequence prohibited (1,000 × 78/195 = 400) remains prohibited and
+was not applied. The §2.2 pooled statistics (RankIC, λ-contrast,
+bucket spread, conditional tail) evaluate on this pooled set;
+contamination handling per §1.3 carries (intensity-primary, all three
+ways reported); per-symbol figures are reported for both symbols.
+
+**ADDED per-symbol safeguard (binding conjunct, replaces the frozen
+per-symbol row for this card):** **APP alone** — at its own
+viable-region λ-elevated n (657 per E.6) — must show
+**sign-consistent (continuation-positive) RankIC ≥ 0.03 with Fisher-z
+two-sided p ≤ 0.05**. If APP alone fails magnitude or significance at
+its own n, the gate verdict is **INSUFFICIENT** (not a pooled pass)
+and **the frozen JC-3 park consequence fires unchanged: PARK —
+evidence-infrastructure class (H4 precedent), never threshold
+rescaling** (§9 row "2b sample floor"). The pooled evidence can
+therefore never carry APP: a deployable claim requires the deployable
+symbol to clear the magnitude bar on its own boundaries at the
+relaxed-but-honest p ≤ 0.05 appropriate to n = 657.
+
+**Scope limit (binding):** RMBS participates in **step 2 ONLY** (§2.2
+pooled statistics and the §2.4 tick tests it was already in).
+**Steps 3–8 are D-scoped: APP only.** §2.3 (measured-edge anchor) is
+already D-scoped by its own frozen wording ("per symbol in D") —
+RMBS never enters it; RMBS never enters CPCV, DSR, drift, the
+execution overlay, or the sensitivity grid. RMBS remains
+evidence-only, never in D, per E.4.
+
+**Rejected strict alternative (recorded per the ruling).** Enforce
+the frozen JC-3 consequence literally: D = {APP} ⇒ the binding §2.2
+definition ("pooled over D restricted to viable-region sessions")
+gives n = 657 < 1,000 ⇒ **PARK (evidence-infrastructure class)** at
+step 2b despite step 1 clearing. Rejected on two grounds:
+
+- **Orthogonality.** The two validity axes are separate by protocol
+  design (preamble; session constraint 5). The n ≥ 1,000 bar guards
+  *estimator stability of the mechanism IC* — a statistical-axis
+  quantity — while D-membership guards *deployable economics*. RMBS
+  failed D on the SELL-rider/power axis (economics), not on any
+  mechanism-evidence defect: its boundaries were produced by the
+  identical census-cleared instrument on the identical grid with warm
+  coverage clear (E.5). Excluding them from the mechanism test
+  because the symbol's economics fail conflates the axes the protocol
+  forbids conflating; pooling them raises mechanism power while the
+  economics axis stays strictly APP-scoped (steps 3–8, §2.3).
+- **OLN precedent.** The category "never-deployable symbol
+  contributing evidence-only boundaries to a step-2 statistic" has
+  existed since the original freeze: OLN × 10 is in the §2.4 tick
+  tests while excluded from D, CPCV, DSR, and the execution overlay
+  (preamble evidence set). RMBS-evidence-only in §2.2 is the same
+  category with the same firewall.
+
+The added APP-alone safeguard preserves what the strict reading was
+actually protecting — that a pooled number cannot mask a dead primary
+symbol — at the honest per-symbol n. This ruling supersedes the §2.2
+"pooled over D" evidence-set wording and the per-symbol row for this
+card; the §9 "2b sample floor" park consequence remains armed through
+the safeguard.
+
+### A-2.2 E.5 RULED — spread-tercile cutpoints refrozen (Lei, 2026-07-13)
+
+**Ruling.** The §4.1/JC-4 tercile cutpoints are **recomputed once on
+the combined 20-session unconditional warm spread distributions**
+(census-legal, return-free — disclosed in E.5 before any forward
+return exists) and **frozen in this amendment** for all of step 4.
+Both sets, per symbol:
+
+| symbol | OLD (10-session freeze, C.6) | NEW (20-session, GOVERNING) |
+|---|---|---|
+| APP  | {50, 72} | **{50, 72}** (identical) |
+| RMBS | {20, 32} | **{21, 34}** |
+| OLN  | {2, 4} (evidence-only) | not recomputed — expansion cells DRAWN-NOT-INGESTED (03c A1.5); {2, 4} stands |
+
+The recompute is a one-shot census-legal refreeze, not a tuning
+event: it uses the same pre-registered procedure (per-symbol terciles
+of the unconditional warm distribution) on the ruled evidence grid.
+RMBS cutpoints matter only for step-2-adjacent reporting and §2.4
+strata (RMBS is out of D; step 4's binding acceptance runs D-scoped
+on APP, whose cutpoints are unchanged either way).
+
+### A-2.3 CPCV RULED — step-3 configuration on the 20-session grid (Lei, 2026-07-13)
+
+**Ruling.** Step 3 runs **APP-scoped** (D = {APP}, per A-2.1 scope
+limit) on APP's **20 grid sessions**:
+
+| quantity | frozen §3.1 (10-session) | RULED (20-session) |
+|---|---|---|
+| bar | one h=300 boundary | unchanged |
+| n_bars | ≈ 780 | ≈ **1,560** (78/session × 20; every cell emitted exactly 78, E.3) |
+| n_groups | 10 (one per session) | **20 — one contiguous group per session, calendar order** |
+| k_test_groups | 2 | **2** |
+| combinations | C(10,2) = 45 | **C(20,2) = 190** |
+| paths | C(9,1) = 9 | **C(19,1) = 19 ≥ 8** (`cpcv_min_folds` ✓) |
+| purge | label_horizon_bars = 1 | carried (label span 300 s = 1 bar — horizon unchanged) |
+| embargo | 3 bars | **carried** (the §3.1 derivation is per-session-lookback arithmetic; session count does not enter it) |
+| annualization | sqrt(78 × 252) ≈ 140.20 | **carried** (bars/session unchanged; sessions/year is not a grid quantity) |
+| bootstrap | n = 10,000, seed = 0, block length max(1, embargo) = 3 | carried |
+| per-split training | `edge_scale_bps` OLS-through-origin on `excess`, clip [6.0, 16.0], retrained per split | carried, now over 190 splits (computational load only — no numeric choice) |
+| thresholds | `GateThresholds` defaults, no override | carried |
+| return series | §3.2 cost-adjusted continuation-signed series, APP deduction 6.2412 bps; pre-cost reported alongside | carried |
+
+**Residual numeric freedom — flagged for Lei veto BEFORE step 3
+executes (per the ruling's own requirement; step 3 is blocked until
+these are vetoed or confirmed):**
+
+- **RF-1 (group construction contingency).** The frozen wording "one
+  contiguous group per grid session" is implemented as **explicit
+  per-session group assignment**, not a blind equal partition of
+  `[0, n_bars)` into 20. The two are numerically identical while
+  every session emits exactly 78 boundaries (verified on all cells in
+  both censuses); the explicit form is proposed as binding so that a
+  divergent emission count at step-3 execution time cannot silently
+  misalign group boundaries with session boundaries. If any APP
+  session emits ≠ 78 bars at execution, step 3 halts for review
+  rather than proceeding on either construction.
+- **RF-2 (session universe).** n_groups = 20 fixes the CPCV series to
+  **ALL 20 APP sessions** — including the 3 non-viable cells
+  (2025-12-22, 2025-12-26·HT, 2025-12-30·HT) — consistent with the
+  frozen §3.2 series definition, which is viability-blind (a
+  non-viable-session boundary can be entry-eligible; ineligible bars
+  contribute 0.0). Disclosed implication: this differs from step 2's
+  viable-region evidence restriction. The alternative (viable-only,
+  n_groups = 17) is NOT adopted; adopting it would be a different
+  ruling.
+
+No other residual numeric freedom was identified: every other step-3
+constant carries verbatim from the frozen §3, and the realized n_bars
+is a measured emission count, not a choice. DSR (step 5) arithmetic
+follows mechanically at computation time (n_obs = the realized APP
+bar count; N = the then-current ledger count) — nothing to rule now.
+
+### A-2.4 Trial ledger and accounting
+
+**N = 10, unchanged.** This amendment is a pre-outcome ruling record
+with **zero data contact**: no IC, forward return, or outcome
+statistic was computed in producing it (the only numbers cited are
+E.3–E.6 census outputs and combinatorial arithmetic). The A-2.1
+evidence-set ruling redefines which census-cleared boundaries feed
+the single pre-registered primary trial — it does not create a
+variant; the added APP safeguard is a conjunctive tightening (it can
+only convert a pass to INSUFFICIENT, never the reverse); the A-2.2
+refreeze is census-legal and return-free; the A-2.3 configuration is
+combinatorial re-derivation on the ruled grid. First outcome contact
+remains the step-2 execution, inside the primary trial's N.
+
+### A-2.5 Provenance (FQ-3)
+
+    git_sha: "288cea7e6101cecd9ba8c3dd0a387251df834a15" (HEAD at
+      amendment authoring; expanded-census record commit — E.8
+      provenance chain intact beneath it)
+    worktree_clean: "yes at task start (amendment is the only edit)"
+    pythonhashseed: "n/a — no scripted analysis run in this task
+      (ruling record only; zero data contact)"
+    normative_inputs: "EXPANDED CENSUS RESULTS E.3–E.6 (this file),
+      AMENDMENT A-1, frozen §§2–5, §9, §11 (JC-3/JC-4 entries),
+      prompt_pack_03c_universe_and_cache.md AMENDMENT 1,
+      src/feelies/research/cpcv.py (CPCVConfig combinatorics
+      re-verified this session)"
+
+*A-2 recorded. Step 2 (sign-golden + IC gate) may begin under the §0
+order lock with the A-2.1 evidence set; step 3 remains blocked until
+the A-2.3 RF-1/RF-2 flags clear Lei veto.*
