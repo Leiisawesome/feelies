@@ -35,8 +35,35 @@
           combinations, 19 paths, APP-scoped, embargo 3 and 140.20
           carried; N = 10 unchanged. Step 3 does not execute until
           the A-2.3 residual-freedom items clear Lei veto.
+          + STATISTICAL RESULTS (Task 11, 2026-07-14): steps 2a + 2b
+          executed under the A-2.1 evidence set. Step 2a (sign-golden)
+          PASSES (7/7). **Step 2b (IC gate) FAILS**: pooled λ-elevated
+          primary RankIC +0.0186 (< 0.03), Fisher-z p 0.548 (> 0.01),
+          conditional tail t 1.41 (< 2), A-2.1 APP safeguard p 0.433
+          (> 0.05) — sign, n ≥ 1,000 (1,231), λ-contrast (+0.106,
+          baseline reverts at p 0.006), and bucket spread (+6.9 bps)
+          all PASS. §9 row 2b (REJECTED, F1/F2) and the A-2.1
+          safeguard consequence (INSUFFICIENT → PARK,
+          evidence-infrastructure) BOTH fire — the status class is
+          reported for Lei adjudication, not resolved here. Steps
+          2.3–6 NOT COMPUTED (first-FAIL stop rule; §0 order lock).
+          N = 11 (step-2 execution = the primary trial's first
+          outcome contact, FQ-6B-R). STOPPED FOR LEI REVIEW.
           This Status line is the only header edit; no definition,
           threshold, or parameter above the freeze line changed.
+          + ADJUDICATION (Lei, 2026-07-14, close-out): **REJECTED
+          governs** (§9 row "2b IC gate"); the A-2.1 safeguard park
+          is recorded fired-but-subordinate (S.8: safeguard
+          construction — tightens a pass, cannot loosen a primary
+          fail; §9 freeze seniority; magnitude bar n-invariant at
+          pooled 0.0186; APP p-path ≈ 3,600 boundaries ≈ 110
+          sessions, beyond authorized programs). F1/F2 shorthand
+          corrected: F1 fired; the λ-contrast mechanism tie PASSED —
+          the rejection is of the elevated-λ continuation claim at
+          H=300 passive on this universe, not of the λ-separation
+          phenomenon. Steps 3–8 never executed; N = 11 confirmed.
+          Close-out record: sig_dislocation_lambda_drift_v1_result.md;
+          slate-B DISPOSITIONS 5–7 appended.
   Owner:  research-workflow (protocol + ledger) / microstructure-alpha
           (candidate); prompt-pack Task 8, Phase B.
 
@@ -2037,3 +2064,305 @@ remains the step-2 execution, inside the primary trial's N.
 *A-2 recorded. Step 2 (sign-golden + IC gate) may begin under the §0
 order lock with the A-2.1 evidence set; step 3 remains blocked until
 the A-2.3 RF-1/RF-2 flags clear Lei veto.*
+
+---
+
+# STATISTICAL RESULTS — STEPS 2a/2b EXECUTED, FIRST FAIL AT 2b (Task 11, 2026-07-14)
+
+Execution record of protocol steps 2–6 under the Task 11 amendments
+(Lei): locked order, each criterion scored against its pre-registered
+number, STOP at the first FAIL with the §9 consequence. **The run
+stopped inside step 2b.** Steps 2.3, 2.4, 3, 4, 4.4, 5, and 6 were
+**NOT COMPUTED** — no statistic beyond the 2b stage exists (the stop
+rule forbids producing them; the boundary-level extraction below
+captured the raw inputs those stages would have consumed, but no
+statistic was scored from them). The A-2.3 RF-1/RF-2 veto items were
+confirmed by the Task 11 amendment C wording (`n_groups=20, k=2, 190
+combinations, 19 paths, embargo 3 bars, annualization 140.20`); step
+3 was unblocked but never reached.
+
+## S.1 Preconditions and machinery correctness (Task 11 items 1, D)
+
+| # | check | result |
+|---|---|---|
+| worktree | clean at task start | yes — porcelain empty at `edb4a3b` (Task 10 record commit) |
+| seed | `PYTHONHASHSEED=0` | set in-session for every scripted run (pytest env included) |
+| cache | 50 cells present | verified pre-run ({APP, RMBS} × 20 + OLN × 10) |
+| CPCV machinery | purge/embargo suite green; A-2.3 configuration covered | `uv run pytest tests/research/test_cpcv_unit.py tests/research/test_cpcv_dsr_functional.py` → **121 passed**. The existing suite did NOT exercise the 20-group / k=2 / 1-bar-purge / 3-bar-embargo / 1,560-bar combination ⇒ ONE targeted fixture added per the task rule (`TestH8ProtocolConfiguration`, `tests/research/test_cpcv_unit.py`): asserts 190 combinations, 19 paths, session-aligned 78-bar groups, exact backward-purge-1 / forward-exclusion-4 windows on interior regions, the no-overlap structural invariant on all 190 splits, and 19 × 20 path reconstruction. Committed **`8e6f94d`** BEFORE any evidence run. |
+| P0-1 | h=300 wiring | runtime assertion passed on all 50 cells (all four consumed ids present) |
+| P0-4 | determinism | extraction run twice → **bit-identical** (SHA-256 equal); statistics run twice → **bit-identical** (SHA-256 equal); hashes in S.7 |
+
+## S.2 Instrument (measurement plumbing; census pins verified before any statistic)
+
+**Extraction:** `scripts/research/dislocation_lambda_validation_extract.py`
+— ONE deterministic replay per cell over the frozen grid, importing
+`dislocation_lambda_census.py` (the pinned Appendix-A instrument) for
+every constant, sensor spec, the RTH filter, session anchor, warm
+handling, σ₃₀₀ estimator, episode predicate, and the JC-1
+contamination instrument. Additive outputs only (forward returns at
+t ∈ {60, 120, 300, 600} s, regime dominant state + P(vol_breakout),
+boundary spread-in-ticks, episode side-volumes, L5/L6 inputs,
+`ofi_ewma` diagnostic sensor alongside — independent state, cannot
+perturb the census sensors).
+
+**Statistics:** `scripts/research/dislocation_lambda_validation_stats.py`
+— stage 0 asserts, before ANY statistic, that the extraction
+reproduces the committed EXPANDED CENSUS artifact per cell EXACTLY
+(boundaries / in-window / warm / λw / incl / primary / binary /
+volume-basis / long-short splits / σ₃₀₀ / viability): **50/50 cells,
+zero mismatches**, and the A-2.1 ruled evidence-set counts reproduce
+exactly (**APP 657 / RMBS 574 / pooled 1,231**).
+
+**Disclosed conventions (binding statistic):**
+
+- IC pair per JC-3: x = `micro_price_drift / micro_price`, y = signed
+  forward 300 s mid log-return (last-mid-at-or-before endpoints,
+  causal). Zero-move boundaries keep y = 0.0 — a valid pair; the
+  `sensor_feature_ic._forward_return` `m1 == m0 → None` convention
+  would silently deflate the ruled n = 1,231 and is therefore NOT
+  used for the binding statistic (deviation from the commit-5 row
+  disclosed; the harness row is reported as corroboration in S.5).
+- Contamination per JC-1: the intensity-excluded **primary** basis
+  binds; including-flagged and binary reported alongside. The A-2.1
+  n-floor is scored on the ruled evidence-set count (1,231 — the E.6
+  population, which carries no contamination qualifier); the verdict
+  below is **basis-independent** (every basis fails the same bars).
+- Evidence set per A-2.1: λ-elevated warm in-window boundaries over
+  viable-region (`viable_long`) sessions, {APP ∪ RMBS-evidence-only};
+  APP safeguard at APP's own boundaries.
+
+## S.3 Step 2a — sign-golden through the real pipeline
+
+`PYTHONHASHSEED=0 uv run pytest tests/research/test_gas_dislocation_lambda_sign.py`
+→ **7 passed** (LONG golden, SHORT mirror, λ-contrast None, warm-gate
+suppression, h=300 key-presence, plus the two committed rider
+goldens). **Step 2a: PASS.**
+
+## S.4 Step 2b — RankIC gate (A-2.1 evidence set) — **FAIL**
+
+Full three-way table (pooled {APP ∪ RMBS-evidence-only}, viable-region
+sessions, h = 300; RankIC = Spearman ρ, p = Fisher-z two-sided via
+`research/forward_ic.spearman_ic`):
+
+| basis | λ-elevated n | RankIC | p | λ-baseline n | RankIC | p | contrast |
+|---|---|---|---|---|---|---|---|
+| including-flagged | 1,231 | +0.0164 | 0.567 | 1,173 | −0.0645 | 0.027 | +0.0808 |
+| **primary (binding)** | **1,042** | **+0.0186** | **0.548** | **975** | **−0.0871** | **0.0065** | **+0.1057** |
+| binary (H2, saturates) | 193 | −0.0340 | 0.640 | 171 | −0.1144 | 0.137 | +0.0804 |
+
+APP-only (per-symbol + A-2.1 safeguard): including-flagged n = 657,
+RankIC +0.0464, p 0.235; **primary n = 579, RankIC +0.0327,
+p 0.433**.
+
+Supporting rows (primary basis): baseline matched-dislocation
+continuation-signed mean **−5.43 bps** (n = 373, SE 2.17, t = −2.50
+— the baseline-λ stratum REVERTS, significantly); elevated-stratum
+5-bucket means [−2.40, −0.59, +1.77, −0.80, +4.48] bps
+(n ≈ 208 each), top-minus-bottom `long_short_edge_bps` **+6.89 bps**;
+conditional tail on the 135 APP viable-region primary episodes:
+mean **+5.38 bps**, SE 3.80, **t = 1.41**.
+
+**Per-criterion scoring (§2.2 numeric gate + A-2.1, primary basis):**
+
+| criterion | pre-registered bar | observed | verdict |
+|---|---|---|---|
+| λ-elevated pooled RankIC sign | > 0 | +0.0186 | **PASS** |
+| λ-elevated pooled \|RankIC\| | ≥ 0.03 | 0.0186 | **FAIL** |
+| λ-elevated pooled significance | Fisher-z p ≤ 0.01 | 0.548 | **FAIL** |
+| pooled sample minimum | ≥ 1,000 (A-2.1 evidence set) | 1,231 | **PASS** |
+| λ-contrast (F2 anchor) | elevated − baseline > 0 AND baseline not significantly positive | +0.1057; baseline −5.43 bps (t −2.50, reverts) | **PASS** |
+| per-symbol APP | RankIC > 0, n ≥ 100 viable region | +0.0327, n 657 | **PASS** |
+| **A-2.1 APP safeguard** | RankIC ≥ 0.03 AND p ≤ 0.05 at APP's own n | +0.0327 (≥ 0.03) but **p 0.433** | **FAIL** |
+| bucket monotonicity | top-minus-bottom spread > 0 (continuation) | +6.89 bps | **PASS** |
+| conditional tail (F1 anchor) | mean > 0 with t ≥ 2 | +5.38 bps, **t 1.41** | **FAIL** |
+
+**Verdict: step 2b FAILS** — the failure is basis-independent
+(including-flagged: \|RankIC\| 0.0164 < 0.03, p 0.567; APP safeguard
+p 0.235 > 0.05).
+
+**Honest characterization (no re-litigation of the bars):** the
+card-defining λ-contrast is real in this sample — the baseline-λ
+stratum reverts significantly (−0.087, p 0.0065) while the elevated
+stratum does not revert — but the F1 claim ("the λ-elevated stratum
+CONTINUES") is statistically indistinguishable from zero at every
+pre-registered bar (RankIC magnitude, Fisher-z significance, tail
+t-stat, and the APP safeguard). The conjunctive design (8-F ruling,
+carried verbatim) rejects exactly this configuration by construction.
+
+## S.5 Status consequence (§9) — TWO rows fire; class reported for Lei, not adjudicated
+
+1. **§9 row "2b IC gate"** (\|RankIC\| < 0.03, p > 0.01, tail t < 2)
+   → **REJECTED (F1/F2 dead — no conditional continuation edge at
+   the pre-registered bars)**.
+2. **A-2.1 APP safeguard failure** ("If APP alone fails magnitude or
+   significance at its own n, the gate verdict is INSUFFICIENT (not a
+   pooled pass) and the frozen JC-3 consequence applies") → **PARK
+   (evidence-infrastructure class, H4 precedent)**. The Task 11
+   amendment B wording ("safeguard failure fires the frozen JC-3 park
+   consequence") points the same way.
+
+The two consequences conflict (terminal rejection vs revivable
+evidence-park). The A-2.1 INSUFFICIENT semantics ("the gate cannot
+pass or fail") would suppress the REJECTED reading for the
+safeguard's failure mode; the pooled gate, however, failed outright
+at n = 1,042 ≥ 1,000 — its own pre-registered adjudication sample.
+**Per the tuning prohibition neither reading is resolved here; both
+are recorded and the status class is Lei's ruling.** No tuning, no
+recomputation under varied parameters, no exploratory variant was
+run (N accounting in S.6).
+
+Doc Status set to: **FAILED STEP 2b — REJECTED (§9 row 2b) / PARK
+(A-2.1 safeguard, evidence-infrastructure) — AWAITING LEI
+ADJUDICATION of the status class.**
+
+**Corroboration (commit-5 harness row, task amendment B):**
+`scripts/sensor_feature_ic.py --horizons 300` over all 50 cells
+(artifact S.7). Its conventions differ from the binding statistic
+(no RTH/in-window filter, no viability restriction, zero-move pairs
+dropped, per-day sample-weighted pooling) — disclosed; directionally
+identical: pooled sample-weighted `lambda_elevated|primary` RankIC
+**+0.0008** (n 1,318), `lambda_elevated|incl` −0.0004 (n 1,572),
+`lambda_baseline|primary` −0.0662, `lambda_contrast|primary` +0.0714
+(n 1,171). The OLN §2.4 evidence-only artifacts emitted (per-cell
+median spread 2–6 ticks, half-tick quantum mass 0.038–0.205) — not
+consumed (step 2.4 not reached).
+
+## S.6 Trial ledger
+
+**N = 11.** N = 10 at freeze (§10); the step-2b execution above is
+the H8 primary row's **first outcome contact** (FQ-6B-R: any data
+contact increments; A-2.4 "first outcome contact remains the step-2
+execution") → +1 on the primary row. Zero exploratory variants were
+evaluated: the extraction is measurement plumbing for the single
+pre-registered primary trial (one replay, one scoring pass, frozen
+thresholds); the harness corroboration row measures the same trial
+under the commit-5 conventions, not a variant. The spec §14
+drafted-not-evaluated rows remain N-impact 0. Any future DSR uses
+the then-current living N (≥ 11).
+
+## S.7 Provenance (FQ-3)
+
+    git_sha: "8e6f94dd5d97018a04bfec587c382a2e673cc06a" (HEAD for all
+      evidence runs; = edb4a3b + the CPCV fixture commit, which
+      preceded every evidence run. The two instrument scripts
+      (dislocation_lambda_validation_extract.py / _stats.py) and the
+      artifact directory were untracked at run time — disclosed;
+      committing awaits Lei review of this record.)
+    worktree_clean: "yes at task start (edb4a3b); at report time the
+      only changes are the two untracked instrument scripts, the
+      untracked artifact directory, and this appended section"
+    pythonhashseed: "0 (set in-session for every scripted run and
+      pytest invocation)"
+    host_fingerprint:
+      os: "Windows-11-10.0.26200-SP0"
+      cpu_arch: "AMD64"
+      python_build: "3.14.2 (tags/v3.14.2:df79316, Dec  5 2025,
+        17:18:21) [MSC v.1944 64 bit (AMD64)]"
+      libm: "Microsoft UCRT (linked by MSC v.1944)"
+    commands:
+      extract: "PYTHONHASHSEED=0 uv run python scripts/research/
+        dislocation_lambda_validation_extract.py --json docs/research/
+        artifacts/sig_dislocation_lambda_drift_v1/
+        boundaries_extract_2026-07-14.json"
+      stats: "PYTHONHASHSEED=0 uv run python scripts/research/
+        dislocation_lambda_validation_stats.py --extract <above>
+        --json docs/research/artifacts/sig_dislocation_lambda_drift_v1/
+        validation_stats_2026-07-14.json"
+      harness: "PYTHONHASHSEED=0 uv run python scripts/
+        sensor_feature_ic.py --cache-dir ~/.feelies/cache --symbol
+        <50-cell grid> --date <paired dates> --horizons 300 --csv
+        <artifact>"
+    artifacts (docs/research/artifacts/sig_dislocation_lambda_drift_v1/):
+      boundaries_extract_2026-07-14.json
+        sha256=80fdc56c2a3f88bc603195e9142e0c8c6fd460dc1cc8e07e6e97eef15885bf25
+        (run twice — bit-identical)
+      validation_stats_2026-07-14.json
+        sha256=21014b34fd62ab836063129ff286c229741453b93c2446daa6faf85be64dc418
+        (run twice — bit-identical)
+      sensor_feature_ic_h8_2026-07-14.csv
+        sha256=52fae36f8fb2370f22b33019b12e294fd55cae19c37355a56e9d319fd04e0130
+      sensor_feature_ic_h8_stdout_2026-07-14.txt
+        sha256=158263279681752f582290ede48bd770634d746c2be768468bb4d6984e2f7e03
+      sensor_feature_ic_h8_stderr_2026-07-14.txt
+        sha256=1ae80b38dd681cef8e00c79f2ab9e5b3da79925a9975f918bc06d6b24de1190c
+    census_pins: "stage 0 reproduced dislocation_lambda_census_expanded_
+      2026-07-13.json (sha256=4fc18351…5d4e, E.8) per-cell EXACTLY —
+      50/50 cells, zero mismatches; A-2.1 counts 657/574/1,231 exact"
+    tests: "tests/research/test_gas_dislocation_lambda_sign.py 7 passed;
+      tests/research/test_cpcv_unit.py + test_cpcv_dsr_functional.py
+      121 passed (incl. the new TestH8ProtocolConfiguration fixture)"
+
+*Task 11 stops here per the first-FAIL rule and amendment E. Steps
+2.3–8 were not executed and no statistic exists for them. Lei rules
+on the status class (REJECTED vs PARK) and on whether the Amendment-D
+post-park path or any spec §14 variant (each +1 N) is authorized
+before anything else runs.*
+
+## S.8 ADJUDICATION (Lei, 2026-07-14) — REJECTED governs; the safeguard park is subordinate
+
+**Ruling: the S.5 conflict resolves to REJECTED (§9 row "2b IC
+gate").** The A-2.1 APP-safeguard consequence (PARK,
+evidence-infrastructure class) is recorded as **fired but
+subordinate** — it does not convert the terminal rejection into a
+revivable park. Construction rationale, on the record:
+
+1. **A safeguard tightens a pass; it cannot loosen a primary fail.**
+   The A-2.1 safeguard was added for exactly one failure mode: "a
+   pooled number cannot mask a dead primary symbol" — i.e. to make a
+   pooled PASS insufficient unless APP clears its own bar. Reading
+   its INSUFFICIENT semantics as suppressing the REJECTED verdict
+   would let a conjunct added to *strengthen* the gate *weaken* the
+   frozen consequence of the gate it guards. The pooled gate failed
+   outright at n = 1,042 ≥ 1,000 — its own pre-registered
+   adjudication sample; nothing about the sample was insufficient.
+2. **§9 freeze seniority.** The REJECTED consequence sits on the
+   frozen §9 row "2b IC gate" (pre-registered 2026-07-12, before any
+   census number). The park consequence attaches to the separate §9
+   row "2b sample floor," whose class (evidence-infrastructure, H4
+   precedent) was designed for *inability to assemble the evidence*,
+   not for a gate that assembled its evidence and failed it. A
+   post-census amendment (A-2.1, 2026-07-13) cannot outrank the
+   frozen matrix where the two collide on a case the amendment was
+   not constructed to govern.
+3. **The magnitude bar is n-invariant.** The binding |RankIC| ≥ 0.03
+   floor failed at the pooled point estimate 0.0186 — a magnitude
+   failure, not a power failure. More boundaries move p, not the
+   pre-registered magnitude criterion, which the 8-F conjunctive
+   ruling froze precisely to reject trivial-in-magnitude effects at
+   any n. An evidence-infrastructure park is for verdicts fixable by
+   more evidence; this one is not.
+4. **The APP p-path is beyond authorized programs.** Even granting
+   the safeguard reading, reviving through it would require APP alone
+   at RankIC ≈ 0.0327 to reach Fisher-z p ≤ 0.05:
+   n ≈ (1.96 / 0.0327)² ≈ **3,600 λ-elevated viable-region
+   boundaries**, vs 657 realized on the 20-session grid ≈ 33/session
+   ⇒ **≈ 110 sessions** — no authorized data program (03c grid or its
+   ratified expansion) approaches that, and it presumes the point
+   estimate holds while n quintuples. The park would be a dead letter
+   pretending to be a path.
+
+**F1/F2 shorthand corrected (binding for all downstream citations).**
+The §9 row-2b consequence text "REJECTED (F1/F2 dead)" is shorthand
+that overstates what failed. On the record: **F1 fired** (the
+conditional continuation edge is indistinguishable from zero at every
+frozen bar: |RankIC| 0.0186 < 0.03, p 0.548, tail t 1.41 < 2, APP
+safeguard p 0.433). **The F2 λ-contrast mechanism tie PASSED**: the
+baseline-λ stratum reverts significantly (−5.4 bps, t −2.5; stratum
+RankIC −0.0871, p 0.0065) while the elevated stratum does not revert
+(contrast +0.1057) — the λ arm demonstrably does work. **What is
+rejected is the elevated-λ continuation claim at H = 300 passive on
+this universe — not the λ-separation phenomenon.** No claim of F2
+death may cite this record.
+
+**Consequences.** Doc Status: **REJECTED** (close-out record:
+`sig_dislocation_lambda_drift_v1_result.md`; slate-B DISPOSITIONS
+appended). Steps 3–8 were never executed — no CPCV, stratification,
+DSR, drift, execution, or sensitivity statistic exists for this
+candidate, and none may be quoted. Trial ledger **N = 11 confirmed**
+(S.6 accounting adopted). The Amendment-D post-park path is **not
+in play** (it attached to a step-1 park, which did not occur); no
+spec §14 variant is authorized by this ruling — any future evaluation
+of one is a new trial (+1 N) requiring its own protocol from step 1.
+The baseline-reversion observation is recorded as a post-hoc,
+outcome-contaminated hypothesis seed in the result doc only — it
+carries no evidential weight for any future card.

@@ -2,6 +2,9 @@
   File:   docs/research/prompt_pack_06_hypothesis_slate_b.md
   Status: hypothesis — DECIDED (2026-07-12): H8 CONFIRMED for Task 7,
           H6/H7 NOT SELECTED — see DISPOSITIONS at end of file.
+          + SLATE FULLY ADJUDICATED (2026-07-14): H8 REJECTED at
+          protocol step 2b (Lei adjudication S.8; DISPOSITIONS 5–7).
+          Zero slate-B candidates survive. Trial ledger N = 11.
           Second, feasibility-
           constrained hypothesis slate (Task 6-B, 2026-07-11). Three
           pre-registered SIGNAL-layer candidates. Pre-registration
@@ -1004,3 +1007,36 @@ DISPOSITIONS 7 (H4 pointer, append-only).**
    universe tranche 2 (higher-σ midcaps) — future program.
 4. **N unchanged at 10** — no data contact in this adjudication; no
    outcome statistic exists for any slate-B candidate.
+
+## DISPOSITIONS (continued — H8 close-out, 2026-07-14, Lei; append-only, entries 1–4 unedited)
+
+5. **H8 REJECTED** at protocol step 2b (first outcome contact,
+   Task 11, 2026-07-14; Lei adjudication S.8 in
+   `sig_dislocation_lambda_drift_v1_validation_protocol.md`).
+   Binding failure: pooled λ-elevated primary RankIC +0.0186 <
+   0.03, Fisher-z p 0.548 > 0.01, conditional tail t 1.41 < 2,
+   A-2.1 APP safeguard p 0.433 > 0.05 — basis-independent across
+   all three contamination bases. **REJECTED governs**; the A-2.1
+   safeguard park fired but is subordinate (a safeguard tightens a
+   pass, cannot loosen a primary fail; §9 freeze seniority; the
+   magnitude bar is n-invariant; the APP p-path ≈ 3,600 boundaries
+   ≈ 110 sessions is beyond authorized programs). Scope precision
+   (S.8): F1 fired; the λ-contrast mechanism tie PASSED (baseline
+   reverts −5.4 bps, t −2.5) — rejected is the elevated-λ
+   continuation claim at H = 300 passive on this universe, not the
+   λ-separation phenomenon. Closure record:
+   `sig_dislocation_lambda_drift_v1_result.md`. Steps 3–8 never
+   executed; no statistic exists for them.
+6. **Slate B is fully adjudicated: zero survivors.** H6/H7
+   NOT SELECTED (entry 2, 2026-07-12 — never censused, revival
+   requires a NEW drafted variant); H8 REJECTED (entry 5). No
+   slate-B card proceeds; the mandated next task is the slate-B
+   program retrospective (result doc §12) before any slate C.
+7. **N = 11 confirmed** (was 10 through entry 4): the H8 step-2
+   execution was the primary row's first outcome contact
+   (FQ-6B-R: +1 on the H8 primary ledger row above). Zero
+   exploratory variants evaluated; every other ledger row remains
+   drafted-not-evaluated (N-impact 0), and none is authorized by
+   the close-out — any future evaluation is a new trial (+1 N)
+   under its own protocol from step 1. Any future DSR uses the
+   then-current living N (≥ 11).
