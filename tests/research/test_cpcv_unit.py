@@ -846,6 +846,69 @@ class TestLabelHorizonPurge:
 
 
 # ─────────────────────────────────────────────────────────────────────
+#   H8 protocol configuration (sig_dislocation_lambda_drift_v1 A-2.3)
+# ─────────────────────────────────────────────────────────────────────
+
+
+class TestH8ProtocolConfiguration:
+    """Targeted fixture for the exact A-2.3 ruled configuration
+    (`sig_dislocation_lambda_drift_v1` validation protocol, step 3):
+    n_groups=20 (one per session), k=2, label_horizon_bars=1,
+    embargo_bars=3, n_bars=1560 (78 h=300 boundaries/session x 20).
+    Existing tests cover the purge/embargo mechanics at other
+    parameterizations; none exercises this combination."""
+
+    def test_20_group_3_bar_embargo_protocol_config(self) -> None:
+        cfg = CPCVConfig(
+            n_groups=20,
+            k_test_groups=2,
+            label_horizon_bars=1,
+            embargo_bars=3,
+        )
+        n_bars = 1560
+        assert cfg.n_combinations == 190  # C(20, 2)
+        assert cfg.n_paths == 19  # C(19, 1)
+
+        # Group boundaries must coincide with session boundaries
+        # (RF-1: 78 bars per session, exactly).
+        groups = assign_groups(n_bars=n_bars, n_groups=20)
+        assert all(len(g) == 78 for g in groups)
+        assert groups[0][0] == 0 and groups[19][-1] == 1559
+
+        splits = generate_cpcv_splits(n_bars=n_bars, config=cfg)
+        assert len(splits) == 190
+
+        # Interior test regions: backward purge = 1 bar (label horizon),
+        # forward exclusion = 1 + 3 = 4 bars (purge + embargo) per the
+        # protocol §3.1 derivation.  Pick non-adjacent groups {5, 10}.
+        target = next(s for s in splits if s.test_group_ids == (5, 10))
+        test_set = set(target.test_indices)
+        train_set = set(target.train_indices)
+        assert test_set == set(range(390, 468)) | set(range(780, 858))
+        for region_start, region_end in ((390, 467), (780, 857)):
+            assert region_start - 1 not in train_set  # backward purge
+            for j in range(region_end + 1, region_end + 5):
+                assert j not in train_set  # forward purge + embargo
+            assert region_start - 2 in train_set  # purge is exactly 1 back
+            assert region_end + 5 in train_set  # exclusion is exactly 4 fwd
+        assert train_set.isdisjoint(test_set)
+
+        # Structural invariant: no surviving train bar within the label
+        # horizon of any test bar, on every one of the 190 splits.
+        for s in splits:
+            ts = set(s.test_indices)
+            assert all(
+                (j - 1 not in ts) and (j + 1 not in ts) and (j not in ts) for j in s.train_indices
+            )
+
+        # Path reconstruction at this config: 19 paths, each covering
+        # all 1560 bars exactly once.
+        paths = reconstruct_paths(cfg.n_groups, cfg.k_test_groups, splits)
+        assert len(paths) == 19
+        assert all(len(p) == 20 for p in paths)
+
+
+# ─────────────────────────────────────────────────────────────────────
 #   P0-2: functional leakage probe (purge collapses spurious Sharpe)
 # ─────────────────────────────────────────────────────────────────────
 
