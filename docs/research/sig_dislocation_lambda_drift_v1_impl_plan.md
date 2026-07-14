@@ -558,3 +558,93 @@ the alpha with that form.
 price read is boundary/price metadata (census-class); no outcome
 statistic was computed; no parameter or construction variant was
 evaluated against returns.
+
+---
+
+## 8. IMPLEMENTATION RECORD (appended on completion, 2026-07-14)
+
+Execution of this plan under Task 10 (amendments A–C) is **complete**.
+Eight commits, in the §5 order, each independently green; one pause
+(after commit 1) as mandated, discharged by the §7.1 rulings record.
+
+### 8.1 Commit ledger
+
+| # | sha | delivered |
+|---|---|---|
+| 1 | `8cf091b` | alpha YAML at the frozen spec numbers + load/gate/G12/G16/strength tests + discovery-pin update. **PAUSED** for risk_budget sign-off; D-1 disclosed at the pause. |
+| 1.5 | `8dfe366` | commit-1 rulings discharge: risk_budget re-show (§7.1a — 80/80 at the $100k base, 80-share anchor binding), spec §16 row 8 (D-1), four deterministic NaN goldens. |
+| 2 | `9ed87ee` | `configs/bt_sig_dislocation_lambda_drift_v1.yaml` (00c pinned profile, `account_equity: 100000.0` per ruling a) + `tests/acceptance/test_bt_dislocation_lambda_config_guard.py` (zero-latency ban, per-knob pin, checksum, session constants, capital base, config-scope guard `symbols == ["APP"]`). |
+| 3 | `ddc9be1` | `tests/research/test_gas_dislocation_lambda_sign.py` — the five protocol §2.1 assertions through the real pipeline (LONG golden, SHORT mirror, λ-contrast, warm-gate, key-presence). |
+| 4 | `41c9f0e` | `tests/causality/test_dislocation_lambda_no_lookahead.py` — Hypothesis truncation property (h=300 snapshots at ≤ T bit-identical between truncated and full tapes, all four consumed ids) + out-of-order future-reading perturbation on the real reducers. |
+| 5 | `477ce55` | `scripts/sensor_feature_ic.py` H8 row (§1.3): λ-stratified RankIC/Fisher-z p via `forward_ic` primitives, contamination three ways (intensity-primary, census flag-set transplanted), λ-contrast row, elevated-stratum buckets + `long_short_edge_bps`, OLN §2.4 evidence-only hooks; smoke tests in the §2.3 module. |
+| 6 | `3cd8974` | `tests/research/test_dislocation_lambda_census_consistency.py` (functional) — APP 2026-01-15 predicate count == census incl **13** reproduced through the alpha's own gate machinery; engine emissions ⊆ predicate set; ruling-4 docstring. |
+| 7 | `2a2458c` | `tests/harness/test_dislocation_lambda_parity.py` — run-twice `compute_parity_hash` equality over the extended golden tape with the run **actually trading** (2 journal records/run; the pre-registered Signal-fingerprint fallback was NOT needed). No locked baseline added. |
+| 8 | `8d1d85c` | `docs/alphas/sig_dislocation_lambda_drift_v1_architecture.md` + `docs/prompts/README.md` scripts-row edit (amendment E). |
+
+### 8.2 Final gate battery (at commit `8d1d85c`, PYTHONHASHSEED=0)
+
+- full suite: **4064 passed, 33 skipped** (the skips are the gated
+  `functional`/`paper_rth`/per-host perf tests; the two functional
+  items exercised by this task — the census-consistency smoke and the
+  APP baseline — ran **green** against the local disk cache);
+- `uv run mypy src/feelies`: clean (193 files, strict);
+- `uv run ruff check src/ tests/ scripts/`: clean; new files
+  format-clean (the only `ruff format` diffs in touched files are
+  pre-existing hunks in `scripts/sensor_feature_ic.py`, untouched);
+- docs guards (`tests/docs/`): 101 passed (coverage map + internal
+  links, including the new note's citations);
+- `tests/determinism/`: 126 passed, no locked baseline added or
+  re-pinned; `parity_manifest.py` untouched (do-not-touch list §4
+  verified against the final diff).
+
+### 8.3 Implementation-time disclosures (none change a frozen number)
+
+1. **Commit 4, perturbation placement:** the out-of-order
+   future-reading test stamps the injected readings at 305 s (not
+   310 s): `HorizonWindowedFeature.observe` evicts at
+   ``reading.ts − window``, so a future reading deeper than
+   ``oldest_in_window_ts + window`` narrows the window and shifts the
+   percentile denominator — that class is undefendable at the
+   aggregator (the pre-existing model-level test says exactly this)
+   and is covered upstream by `CausalityViolation` on non-monotonic
+   feeds. The docstring discloses the defense boundary instead of
+   hiding it by construction; the in-envelope perturbation exercises
+   `finalize`'s live-subset defense on the real reducers.
+2. **Commit 5, reporting plumbing:** `_Row` gains a `p_value` field
+   (Fisher-z, from `spearman_ic`) with table/CSV columns — additive;
+   existing rows carry `None`. The pooled table keeps the harness's
+   existing sample-weighted convention; the protocol §2.2 pooled gate
+   statistics are computed at Task-8 execution from per-cell pairs
+   (pairs retained on rows carrying `edge_bps`), not from the pooled
+   display row.
+3. **Commit 7, config notes (documented in the test docstring):**
+   `regime_calibration_max_quotes=300` is required (uncalibrated
+   posteriors fail the `P(vol_breakout)` gate safe to OFF — audit
+   P0-1), and `risk_max_gross_exposure_pct=200.0` (the reference
+   `platform.yaml` value the evidence config inherits) is required —
+   the 20 % class default vetoes the 80-share entry at APP notional
+   ($43.8k vs $20k) and would leave the parity hash trivially empty.
+4. **Commit 6, empirical outcome of the smoke:** predicate count
+   reproduced the census **13/13** and the emission set was a strict
+   subset on the cell — the EV-gate/census conflation risk (§6 row)
+   did not materialise.
+
+### 8.4 Trial-ledger record (amendment B discipline)
+
+**Task 9/10 evaluations: ZERO. N = 10 stands.**
+
+- No forward return, IC, Sharpe, or any outcome statistic was computed
+  against cached data at any commit. The census-consistency smoke is
+  census-class boundary counting (8-F C.6, N-neutral); the §7.1
+  grid-max price read is boundary/price metadata (census-class,
+  N-neutral); all other tests run on synthetic tapes (not data
+  contact).
+- No parameter or construction variant was evaluated against returns;
+  every frozen constant ships verbatim from the spec. Draft
+  alternatives considered during implementation (tape shapes, test
+  scaffolding) are engineering choices, N-neutral by amendment B.
+- First outcome contact remains Task 8 step 2 (the pre-registered
+  primary trial's own contact).
+
+*(Record appended 2026-07-14. Implementation stops here for Lei's
+review before Task 11.)*
