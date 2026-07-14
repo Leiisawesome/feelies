@@ -110,18 +110,31 @@ horizon_seconds: 300
 # ── Risk Budget ────────────────────────────────────────────
 # Top-of-book scale per spec §6.5: APP p50 displayed depth is 80
 # shares and the card declares Sharpe-max — sizing beyond
-# displayed-depth scale forfeits the passive economics
-# (platform_min_order_shares: 50 respected).  Gross / drawdown /
-# allocation follow the most conservative shipped sig_* convention
-# (sig_hawkes_burst_v1).  Inert to protocol steps 2–8 evidence
-# statistics: steps 1–6 are boundary/return statistics that never
-# read risk_budget; steps 7–8 fills are sized at the 80-share
-# reference scale, which max_position_per_symbol merely caps.
+# displayed-depth scale forfeits the passive economics.  The
+# 80-share cap is the mechanism anchor and the intended binding
+# constraint (Lei ruling a, 2026-07-14).
+#
+# Binding arithmetic (recorded in impl plan §7.1): 80 sh × grid-max
+# APP session-median RTH bid $729.51 (2025-12-22, pack-05 artifact)
+# = $58,360.80.  Against the evidence-config capital base
+# account_equity = $100,000 (BT-15 bracket top; run-config override,
+# see configs/bt_sig_dislocation_lambda_drift_v1.yaml):
+#   allocation  100k × 80%        = $80,000 ≥ $58,360.80  (109 sh)
+#   gross       100k × 80% × 80%  = $64,000 ≥ $58,360.80  ( 87 sh)
+# (risk_wrapper compounds gross onto allocated capital) — neither
+# percentage limit binds at ≤ 80 shares; the share cap binds first.
+# platform_min_order_shares = 50 ≤ 80: the H1 min-order clamp keeps
+# orders in [50, 80] and never exceeds the anchor.  Drawdown follows
+# the conservative shipped convention (sig_hawkes_burst_v1).  Inert
+# to protocol steps 2–8 evidence statistics: steps 1–6 are
+# boundary/return statistics that never read risk_budget; steps 7–8
+# fills are sized at the 80-share reference scale, which
+# max_position_per_symbol merely caps.
 risk_budget:
   max_position_per_symbol: 80
-  max_gross_exposure_pct: 3.0
+  max_gross_exposure_pct: 80.0
   max_drawdown_pct: 0.75
-  capital_allocation_pct: 5.0
+  capital_allocation_pct: 80.0
 
 # ── Regime Gate (spec §6.3, verbatim) ──────────────────────
 # The dislocation arm uses the WEAKER (RMBS) per-symbol constant

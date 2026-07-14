@@ -140,13 +140,22 @@ def test_hazard_exit_block_normalized(loaded: LoadedSignalLayerModule) -> None:
 
 
 def test_risk_budget_frozen_numbers(loaded: LoadedSignalLayerModule) -> None:
-    # Lei ruling 3 (2026-07-14): top-of-book scale — APP p50 displayed
-    # depth 80 sh, Sharpe-max declaration; inert to protocol steps 2–8.
+    # Lei ruling a (commit-1 pause, 2026-07-14): the 80-share anchor is
+    # the intended binding constraint.  80 sh × grid-max APP median bid
+    # $729.51 = $58,360.80; at the $100k evidence-config base, alloc
+    # $80,000 and compounded gross $64,000 both clear it — neither
+    # percentage limit binds at ≤ 80 shares (impl plan §7.1 record).
     rb = loaded.manifest.risk_budget
     assert rb.max_position_per_symbol == 80
-    assert rb.max_gross_exposure_pct == pytest.approx(3.0)
+    assert rb.max_gross_exposure_pct == pytest.approx(80.0)
     assert rb.max_drawdown_pct == pytest.approx(0.75)
-    assert rb.capital_allocation_pct == pytest.approx(5.0)
+    assert rb.capital_allocation_pct == pytest.approx(80.0)
+    base = 100_000.0
+    anchor_notional = 80 * 729.51
+    assert base * rb.capital_allocation_pct / 100 >= anchor_notional
+    assert (
+        base * rb.capital_allocation_pct / 100 * rb.max_gross_exposure_pct / 100 >= anchor_notional
+    )
 
 
 def test_parameters_frozen_defaults_and_ranges(loaded: LoadedSignalLayerModule) -> None:
@@ -402,6 +411,41 @@ def test_edge_capped_at_declared_maximum() -> None:
     assert len(captured) == 1
     assert captured[0].edge_estimate_bps == pytest.approx(8.0)
     assert captured[0].strength == pytest.approx(1.0)
+
+
+# ── D-1 deterministic NaN goldens (Lei ruling b.ii, 2026-07-14) ──────────
+# One golden per D-1-guarded evaluate() input pins the None return on
+# NaN; the fourth pins the gate arm where the realized-vol input lives
+# (evaluate() never reads realized_vol_30s_zscore — spec §6.3 consumes
+# it in the regime gate, whose conjunctive on_condition is all-False on
+# NaN, matching the census predicate's normative form).
+
+
+def test_nan_micro_price_drift_returns_none(loaded: LoadedSignalLayerModule) -> None:
+    snap = _snapshot(drift=float("nan"), pctl=0.9)
+    assert loaded.signal.evaluate(snap, None, loaded.params) is None
+
+
+def test_nan_micro_price_returns_none(loaded: LoadedSignalLayerModule) -> None:
+    snap = _snapshot(drift=2.0, level=float("nan"), pctl=0.9)
+    assert loaded.signal.evaluate(snap, None, loaded.params) is None
+
+
+def test_nan_kyle_lambda_percentile_returns_none(loaded: LoadedSignalLayerModule) -> None:
+    snap = _snapshot(drift=2.0, pctl=float("nan"))
+    assert loaded.signal.evaluate(snap, None, loaded.params) is None
+
+
+def test_nan_realized_vol_zscore_never_arms_gate(loaded: LoadedSignalLayerModule) -> None:
+    """NaN realized_vol_30s_zscore: ``rv_z <= 3.0`` is False, so the
+    conjunctive on_condition never arms and nothing is emitted — the
+    otherwise-golden boundary proves the NaN arm is what suppressed it."""
+    _, bus, captured = _engine_with_alpha(loaded)
+    bus.publish(_regime(0.10))
+    bus.publish(_snapshot(drift=2.0, pctl=0.9, rv_z=float("nan"), boundary_index=1))
+    assert captured == []
+    bus.publish(_snapshot(drift=2.0, pctl=0.9, rv_z=0.5, boundary_index=2))
+    assert len(captured) == 1
 
 
 # ── 00e Track-A strength rider (spec §6.2, pre-registered tests) ─────────

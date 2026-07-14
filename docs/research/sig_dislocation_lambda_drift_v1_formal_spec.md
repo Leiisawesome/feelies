@@ -982,11 +982,19 @@ census-legal §2 read).
 | 5 | observable-state list includes `ofi_ewma` (diagnostic, not an entry arm) | `ofi_ewma` NOT in `depends_on_sensors`; offline Task-8 diagnostic only | §1.1 — nothing on the runtime path consumes it; keeping it out of the YAML keeps the required-warm set and dependency surface minimal; the entry-arm version is the drafted power-reducing variant (§14). |
 | 6 | off_condition: `P(vol_breakout) > 0.7 or realized_vol_30s_zscore > 3.0` | adds the λ mechanism-lapse release (row 3) | §6.3/§6.4 — a continuation position whose λ conditioning has baseline-reverted has lost its stated mechanism; gate-off routes to the conservative FLAT path. |
 | 7 | contamination posture: justification argued (median split dilutes; flags concentrate at flow extremes), residual "bounded and disclosed, not resolved" | **measured**: region flagged-print share at the entry point 0.95× (APP count) / 0.47× (APP volume) of tape base rate vs the pre-registered 2.0 bar — resolved, unfiltered λ stays primary | §2 — Amendment C condition of confirmation; the filtered NEW λ variant stays as drafted fallback. |
+| 8 | **D-1 (spec→implementation; Task 9, appended per Lei ruling b, commit-1 pause 2026-07-14):** §6.2 normative draft has no finiteness guard on the three consumed inputs — NaN leaks through the EV gate (`nan < floor_bps` is False) and emits `edge_estimate_bps = NaN`, violating the spec's own pre-registered 00e rider test (ii) (returned Signal must carry non-negative **finite** edge) | Task-9 YAML adds a minimal fail-safe finiteness guard: non-finite `micro_price_drift` / `micro_price` / `kyle_lambda_60s_percentile` → `return None`; behavior on every finite input is bit-identical to the draft (Inv-11: garbage inputs suppress the entry, never create exposure) | YAML `signal:` block comment + this row (the spec is the record). **Census alignment:** the §1.1 entry predicate in its normative conjunctive form is all-False on any NaN input (IEEE-754: every comparison with NaN is False), so NaN boundaries were never census-countable — D-1 aligns `evaluate()` with census behavior, whereas the unguarded draft would have emitted on a NaN boundary outside the predicate set and violated the emissions ⊆ predicate consistency smoke (impl plan §2.5). Precision note: the census instrument codes the predicate in negated-exclusion form (`if pctl < … or …: continue`), which is not the De Morgan dual of the conjunctive form on NaN; the two coincide on every finite input, and the alpha sides with the normative conjunctive form. Pinned by one deterministic NaN golden per guarded input (micro_price_drift, micro_price, kyle_lambda_60s_percentile) plus a gate-level NaN golden for the realized-vol input (consumed by the §6.3 gate, not by `evaluate()`), alongside the Hypothesis property — `tests/alpha/test_sig_dislocation_lambda_drift_v1.py`. |
 
 No other substantive deviation exists; hypothesis text, family,
 half-life, horizon, archetype, counterparty, κ decomposition and
 freeze, park arithmetic, symbol set, F1–F5, and the failure-mode set
 are carried unchanged from the card.
+
+*(§16 amendment, append-only, Task 9 / 2026-07-14: row 8 added per the
+commit-1-pause ruling. Rows 1–7 and the paragraph above are the Task-7
+card→spec record and are unchanged; row 8 is a spec→implementation
+deviation disclosed at the Task-9 commit-1 pause and APPROVED AS
+DISCLOSED by Lei with the census-alignment condition recorded in the
+row.)*
 
 ---
 

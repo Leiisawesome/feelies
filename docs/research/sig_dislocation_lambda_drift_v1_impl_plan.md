@@ -477,3 +477,84 @@ follows; rulings 1 and 4 amended the test plan in place (§2.5, §2.6).
    rather than equality is asserted. Requirement recorded in §2.5.
 
 *Plan approved 2026-07-14; implementation proceeds per §5 sequencing.*
+
+### 7.1 Commit-1 pause rulings record (Lei, 2026-07-14)
+
+**(a) risk_budget APPROVED CONDITIONAL — binding arithmetic re-show.**
+
+Grid-maximum APP price: $729.51 = the maximum per-session median RTH
+bid over the 20-session evidence grid, taken on 2025-12-22. Source:
+pack-05 artifact (`docs/research/artifacts/horizon_feasibility_map_2026-07-11.json`,
+APP cells); confirmed as the 20-session maximum by recomputing the
+per-session median RTH bid for the 10 AMENDMENT-1 expansion sessions
+with the identical pack-05 method (RTH two-sided quotes, median of
+bids — price metadata only, no outcome statistic touched; N-neutral;
+max over the expansion sessions is $718.26 on 2025-12-26 < $729.51).
+Anchor notional: **80 sh × $729.51 = $58,360.80**.
+
+As-submitted numbers FAILED the ruling's test at the inherited
+capital base (`platform.yaml` `account_equity: 50000.0`):
+
+| limit | USD | binds at (grid-max price) |
+|---|---|---|
+| gross 3.0% (Lei form: base × pct) | $1,500 | 2 sh ≤ 80 — BINDS |
+| allocation 5.0% (base × pct; also the `BudgetBasedSizer` allocated capital) | $2,500 | 3 sh ≤ 80 — BINDS |
+| compounded per-alpha exposure cap (`risk_wrapper.py`: base × alloc% × gross%) | $75 | 0 sh — BINDS |
+
+Raising percentages alone cannot satisfy the bound at the $50k base:
+the loader validates both percentages into (0, 100]
+(`alpha/loader.py::_validate_risk_budget`), so the maximum reachable
+USD limit is $50,000 < $58,360.80 — still binding at 68 sh on
+2025-12-22 (and below 80 sh on 7 of 20 grid sessions). **Resolution
+(the only lever that is not the 80-share anchor):** the evidence run
+config overrides the capital base to `account_equity: 100000.0` — the
+top of the BT-15 deployed-capital bracket ($25k–$100k,
+`core/platform_config.py:173-174`), using the placeholder's own
+documented override point ("locked placeholder $50k; override for
+your book", `platform.yaml:94`); `account_equity` is not a 00c
+realism knob (not in the 00c §1 table), so the §2.6 checksum guard is
+unaffected. Re-shown at base $100,000 with the raised percentages
+(gross 3.0 → 80.0, allocation 5.0 → 80.0; the 80-share anchor
+untouched):
+
+| limit | USD | binds at (grid-max price) |
+|---|---|---|
+| allocation 80.0% (Lei form; = sizer allocated capital) | $80,000 | 109 sh > 80 ✓ |
+| gross 80.0% (Lei form: base × pct) | $80,000 | 109 sh > 80 ✓ |
+| compounded per-alpha exposure cap (base × 80% × 80%) | $64,000 | 87 sh > 80 ✓ |
+
+Neither percentage limit binds at ≤ 80 shares under either the
+ruling's simple form or the shipped compounding semantics; the
+80-share mechanism anchor is the binding constraint on every grid
+session. `platform_min_order_shares ≥ 50` note: the platform floor
+(50) is below the anchor (80), so the H1 min-order clamp
+(`orchestrator.py:3977-3983`) keeps order sizes in [50, 80] and never
+inflates past the anchor; at the old numbers the sizer's 3-share
+targets would have been clamped to 50-share orders whose economics
+sit off the 80-share fee anchor — the raised numbers remove that
+distortion too. `max_drawdown_pct: 0.75` is unchanged (not a
+share-binding limit; conservative shipped convention). The
+inertness argument is unchanged: steps 1–6 never read risk_budget;
+steps 7–8 fills are sized at the 80-share reference scale, which
+`max_position_per_symbol` merely caps.
+
+**(b) D-1 APPROVED AS DISCLOSED — conditions discharged:**
+(i) spec §16 row 8 appended (append-only amendment, dated; the YAML
+comment stays, the spec is the record); (ii) one deterministic NaN
+golden per guarded input (micro_price_drift, micro_price,
+kyle_lambda_60s_percentile — Lei's list named micro_price and the λ
+percentile; drift is the third D-1-guarded input) plus a gate-level
+NaN golden for the realized-vol input (consumed by the §6.3 gate,
+never by `evaluate()`), alongside the Hypothesis property —
+`tests/alpha/test_sig_dislocation_lambda_drift_v1.py`; (iii) the
+census-alignment statement is recorded in the §16 row 8 entry, with
+a precision note that the census instrument codes the predicate in
+negated-exclusion form (not the De Morgan dual of the conjunctive
+form on NaN) — the normative conjunctive predicate is all-False on
+NaN, so NaN boundaries were never census-countable, and D-1 sides
+the alpha with that form.
+
+**N-ledger impact of this record: zero evaluations.** The grid-max
+price read is boundary/price metadata (census-class); no outcome
+statistic was computed; no parameter or construction variant was
+evaluated against returns.
