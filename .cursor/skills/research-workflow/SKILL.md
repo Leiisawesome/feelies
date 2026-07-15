@@ -60,6 +60,34 @@ No phase may be skipped. Exploration without a prior hypothesis is
 undirected data mining — flag it as such and apply stricter multiple-testing
 corrections.
 
+### Step-2 ordering — harness-level IC gate option (backlog 14)
+
+**Not mandated** — operator decision deferred (Lei). Documented
+tradeoff from cycle-1 retrospective
+(`docs/research/prompt_pack_07_program_retrospective.md` §3).
+
+After census PROCEED, an implementation-independent step 2b
+(census-pinned predicate + forward-return extraction via standalone
+instruments, before YAML/test investment) is technically possible.
+The binding H8 step-2b statistic never executed the alpha YAML
+(`scripts/research/dislocation_lambda_validation_extract.py` /
+`_stats.py` pattern).
+
+| Ordering | Integrity properties | Cost |
+|----------|---------------------|------|
+| **A (current):** implement, then step 2 | 2a sign-goldens precede 2b (attribution cleanliness); census-consistency smoke proves tested object = deployable object; implementation scrutiny catches spec defects pre-outcome (H8 D-1 NaN leak at commit 1) | ~8 sunk commits per step-2 death (H8 Tasks 9–10) |
+| **B (proposed):** harness-level IC gate before YAML | Same statistic; dies earlier on magnitude/power failures | Attribution cleanliness deferred: harness sign-golden + post-implementation census-consistency smoke become proof obligations; defects like D-1 found post-IC; two-object drift risk until equivalence proved |
+
+Under either ordering, the census-consistency smoke / stage-0
+predicate reproduction is the required equivalence proof. Mitigation
+under B: freeze the predicate as a shared artifact (census script
+already pinned); require harness sign-golden before 2b; require
+census-consistency smoke post-implementation with a pre-registered
+mismatch consequence (implementation-correction re-run, N unchanged).
+
+Incident: H8 consumed Tasks 9–10 (8 implementation commits) before
+dying at step 2b.
+
 ---
 
 ## Experiment Tracking

@@ -205,85 +205,46 @@ DISPOSITIONS 3; concentration analysis in
 `docs/research/prompt_pack_06a_slate_b_review.md` §1 (structural
 consequence note) and §6 Q2.
 
-## 12. Magnitude-vs-power labeling in gate design (skill edit candidate)
+## 12. Magnitude-vs-power labeling in gate design — LANDED
 
-Registered by the cycle-1 retrospective (Task 7-R, 2026-07-15).
-Every pre-registered bar in a validation protocol must be labeled at
-freeze as **n-invariant** (magnitude/κ-class — "more data cannot cure
-this") or **power-class** (curable by evidence volume), and the
-consequence class attached to its failure (REJECTED-terminal vs
-PARK-evidence-infrastructure) must be consistent with that label.
-Incident: H8's binding step-2b failure was the n-invariant
-|RankIC| ≥ 0.03 magnitude bar (pooled +0.0186); the S.8 adjudication
-had to derive the distinction post-outcome (item 3) plus the
-≈ 110-session p-path arithmetic (item 4) to show the simultaneous
-safeguard park was a dead letter. Candidate edits:
-`.cursor/skills/microstructure-alpha/research-protocol.md` (protocol
-template), `.cursor/skills/testing-validation/SKILL.md` (acceptance
-bars). Evidence:
-`docs/research/sig_dislocation_lambda_drift_v1_validation_protocol.md`
-S.5/S.8; `docs/research/sig_dislocation_lambda_drift_v1_result.md`.
+**Landed** Task 3-M (2026-07-15) in
+`.cursor/skills/microstructure-alpha/research-protocol.md`
+(Validation Protocol & Slate Design Discipline — Magnitude-vs-power
+labeling) with cross-link in
+`.cursor/skills/testing-validation/SKILL.md`. Incident retained:
+H8 step-2b |RankIC| ≥ 0.03 at +0.0186; S.5/S.8;
+`sig_dislocation_lambda_drift_v1_result.md`.
 
-## 13. Consequence-precedence defined at freeze (skill edit candidate)
+## 13. Consequence-precedence defined at freeze — LANDED
 
-Registered by Task 7-R (2026-07-15). Whenever two pre-registered
-instruments can fire on the same execution (gate row + safeguard,
-park condition + reject condition, amendment + frozen constant), the
-freeze must state which governs at every intersection — precedence
-may never be adjudicated post-outcome. Incidents: (a) H8 §9 "2b IC
-gate" REJECTED and A-2.1 APP-safeguard PARK fired simultaneously
-(protocol S.5) with precedence undefined until the post-outcome S.8
-ruling; (b) same class: the frozen §2.2 "pooled over D" wording
-needed the mid-flight A-2.1 ruling when D shrank to {APP}. Candidate
-edit: `.cursor/skills/microstructure-alpha/research-protocol.md`
-(protocol freeze checklist). Evidence:
-`docs/research/sig_dislocation_lambda_drift_v1_validation_protocol.md`
-S.5, S.8, AMENDMENT A-2.
+**Landed** Task 3-M (2026-07-15) in
+`.cursor/skills/microstructure-alpha/research-protocol.md`
+(Consequence-precedence at freeze). Incident retained: H8 §9 REJECTED
+vs A-2.1 safeguard PARK (S.5/S.8); frozen "pooled over D" vs D={APP}
+(AMENDMENT A-2).
 
-## 14. Step-2 ordering — harness-level IC gate option (process edit candidate; analysis recorded, decision deferred)
+## 14. Step-2 ordering — harness-level IC gate option — LANDED
 
-Registered by Task 7-R (2026-07-15). H8 consumed Tasks 9–10
-(8 implementation commits) before dying at step 2b, and the binding
-2b statistic was produced by census-pinned standalone instruments —
-the implemented YAML never executed in the gate. An
-implementation-independent step 2 (harness-level IC gate before any
-YAML/test investment) is technically possible; the recorded tradeoff
-is attribution cleanliness + pre-outcome defect discovery (current
-ordering: 2a sign-goldens before 2b; D-1 NaN leak caught at commit 1)
-vs ~8 sunk commits per step-2 death (proposed ordering), with the
-census-consistency smoke / stage-0 predicate reproduction as the
-required equivalence proof under either ordering. Full analysis:
-`docs/research/prompt_pack_07_program_retrospective.md` §3. Decision
-is Lei's; no protocol edit until ruled.
+**Landed** Task 3-M (2026-07-15) in
+`.cursor/skills/research-workflow/SKILL.md` (Step-2 ordering —
+documented tradeoff, **not mandated**; operator decision deferred).
+Full analysis pointer:
+`docs/research/prompt_pack_07_program_retrospective.md` §3. Incident
+retained: H8 Tasks 9–10 (8 commits before step-2b death).
 
-## 15. Census-legal occupancy pre-read before power projections (skill edit candidate)
+## 15. Census-legal occupancy pre-read before power projections — LANDED
 
-Registered by Task 7-R (2026-07-15). Distribution-theoretic occupancy
-priors (near-Gaussian tail mass, assumed joint conditioning fractions)
-must be verified against a census-legal occupancy read on the
-operative grid before any selection decision headlines an episode
-count; percentile-tail fractions are exempt (true by construction).
-Incidents: H8 design occupancy 0.453 marginal / 0.226 joint vs
-realized 0.343 / 0.107 — "the entire power shortfall" (protocol C.5
-occupancy curve and verdict); H6/H7's 104-episode headline vs ≈ 52
-design-central (06a §3). Candidate edit:
-`.cursor/skills/microstructure-alpha/research-protocol.md` (slate
-card requirements). Evidence:
-`docs/research/sig_dislocation_lambda_drift_v1_validation_protocol.md`
-C.5; `docs/research/prompt_pack_06a_slate_b_review.md` §3.
+**Landed** Task 3-M (2026-07-15) in
+`.cursor/skills/microstructure-alpha/research-protocol.md`
+(Census-legal occupancy pre-read). Incident retained: H8 design
+0.453/0.226 vs realized 0.343/0.107 (protocol C.5); H6/H7 headline
+vs design-central (`prompt_pack_06a_slate_b_review.md` §3).
 
-## 16. Grid-amendment constant governance (skill edit candidate)
+## 16. Grid-amendment constant governance — LANDED
 
-Registered by Task 7-R (2026-07-15). Any grid amendment must
-pre-register which frozen census-derived constants (spread-tercile
-cutpoints, per-symbol thresholds, viability floors) carry over,
-recompute, or refreeze — before the amended census executes, not by
-mid-flight ruling. Incident: the A-1 expansion pre-registration was
-silent on the §4.1/JC-4 spread-tercile cutpoints; the expanded census
-had to disclose both candidate sets return-free and stop for the
-A-2.2 ruling (original terciles refrozen). Candidate edits:
-`.cursor/skills/data-engineering/SKILL.md` (grid governance),
-`.cursor/skills/microstructure-alpha/research-protocol.md`. Evidence:
-`docs/research/sig_dislocation_lambda_drift_v1_validation_protocol.md`
-E.5, AMENDMENT A-2.2;
-`docs/research/prompt_pack_03c_universe_and_cache.md` AMENDMENT 1.
+**Landed** Task 3-M (2026-07-15) in
+`.cursor/skills/data-engineering/SKILL.md` (Grid-Amendment Constant
+Governance) with cross-link in
+`.cursor/skills/microstructure-alpha/research-protocol.md`. Incident
+retained: H8 A-1 silence on §4.1/JC-4 terciles → A-2.2 ruling;
+`prompt_pack_03c_universe_and_cache.md` AMENDMENT 1.

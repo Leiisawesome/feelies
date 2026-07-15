@@ -208,6 +208,14 @@ microstructure-alpha skill's
 ≥ 2 vol × ≥ 2 spread stability requirement (research-workflow skill)
 is evaluated on those per-stratum results.
 
+Research-stage validation-protocol bars (per-candidate freeze
+documents) must carry the magnitude-vs-power label and matching
+consequence class at freeze — see research-protocol.md, Validation
+Protocol & Slate Design Discipline (backlog 12; incident: H8 step-2b
+|RankIC| magnitude bar REJECTED vs safeguard PARK). Promotion
+acceptance bars inherit the same pairing when translated from a
+frozen protocol.
+
 ### Sim-vs-Live Divergence
 
 Detect structural drift between backtest assumptions and live behavior.

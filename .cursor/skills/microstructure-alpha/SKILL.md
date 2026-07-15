@@ -59,8 +59,10 @@ an emergent phenomenon of liquidity competition, not a chart line.
 For detailed methodology see [`research-protocol.md`](research-protocol.md)
 — including the Reformalization Gate (Phase 0), the archetype &
 structural-counterparty rider, mirage-risk ranking, the
-zero-integrated-edge conservation check, regime-stratified validation,
-and the tick-grid artifact test. Proposals instantiate
+zero-integrated-edge conservation check, validation-protocol freeze
+discipline (magnitude-vs-power labeling, consequence-precedence,
+occupancy pre-read, grid-amendment constants), and the tick-grid
+artifact test. Proposals instantiate
 [`proposal-template.md`](proposal-template.md).
 
 ---

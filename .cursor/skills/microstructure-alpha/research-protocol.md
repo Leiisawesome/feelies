@@ -277,6 +277,97 @@ Model the half-life of the signal:
 
 ---
 
+## Validation Protocol & Slate Design Discipline
+
+Per-candidate validation protocols (e.g.
+`docs/research/sig_dislocation_lambda_drift_v1_validation_protocol.md`)
+freeze before implementation and before outcome contact. Three
+freeze-blocking items below; incident citations from cycle-1
+retrospective Task 7-R (H8 census arc).
+
+### Magnitude-vs-power labeling (backlog 12)
+
+Every pre-registered bar in a validation protocol must declare at
+freeze:
+
+| Field | Requirement |
+|-------|-------------|
+| **Label** | `n-invariant` (magnitude/κ-class — more evidence volume cannot cure the failure) or `power-class` (curable by census volume, occupancy, or session count) |
+| **Consequence** | Must match the label: `n-invariant` magnitude failures → REJECTED-terminal; `power-class` failures may PARK as evidence-infrastructure only when the freeze says so |
+
+An unlabeled bar, or a magnitude bar paired with a PARK-only
+consequence, is a **freeze-blocking defect**.
+
+Incident: H8 step-2b |RankIC| ≥ 0.03 (`n-invariant` at pooled
++0.0186); the A-2.1 safeguard PARK and the post-outcome S.8 ruling
+were needed only because the label was absent at freeze
+(`sig_dislocation_lambda_drift_v1_validation_protocol.md` S.5/S.8;
+`sig_dislocation_lambda_drift_v1_result.md`). Acceptance bars in the
+testing-validation skill inherit the same label/consequence pairing.
+
+### Consequence-precedence at freeze (backlog 13)
+
+Whenever two pre-registered instruments can fire on the same execution
+(primary gate row + safeguard, park condition + reject condition,
+amendment + frozen census constant), the freeze must state which
+governs at **every** intersection. Undefined precedence is a
+**freeze-blocking defect** — post-outcome adjudication is forbidden.
+
+Default precedence classes (state explicitly even when adopting these):
+
+1. **Primary gate rows** (§9 consequence table) outrank safeguard/park
+   instruments on the same statistic — a safeguard may tighten a pass,
+   never loosen a primary fail.
+2. **Amendments** may not silently override frozen census-derived
+   constants — grid-amendment constant governance (data-engineering
+   skill; backlog 16).
+3. **Evidence-set axis definitions** (e.g. per-symbol vs pooled counting
+   basis) must name the governing instrument when census outcome shrinks
+   D.
+
+Incidents: (a) H8 §9 "2b IC gate" REJECTED and A-2.1 APP-safeguard PARK
+fired together with precedence undefined until S.8; (b) frozen "pooled
+over D" needed the mid-flight A-2.1 ruling when D shrank to {APP}
+(AMENDMENT A-2).
+
+### Census-legal occupancy pre-read (backlog 15)
+
+Distribution-theoretic occupancy priors (near-Gaussian tail mass,
+assumed joint conditioning fractions) must be verified against a
+**census-legal occupancy read** on the operative grid before any
+slate-selection or power headline cites an episode count.
+**Percentile-tail fractions are exempt** (true by construction).
+
+Procedure (manual — **Not shipped** as a harness):
+
+1. Run the census-pinned predicate on the operative `(symbol, session)`
+   grid (or a return-free occupancy-only pass with the same constructor
+   params).
+2. Record marginal and joint occupancy at the declared conditioning
+   threshold.
+3. Design-central episode arithmetic in slate ranking or selection prose
+   must use the measured occupancy, not the distributional prior.
+
+A power projection in the frozen census section that relies on an
+unverified occupancy prior is a **freeze-blocking defect**.
+
+Incidents: H8 design 0.453 marginal / 0.226 joint vs realized 0.343 /
+0.107 (protocol C.5); H6/H7 104-episode headline vs ≈ 52
+design-central (`prompt_pack_06a_slate_b_review.md` §3).
+
+### Grid amendments and frozen constants (backlog 16)
+
+Any grid amendment must pre-register, before the amended census
+executes, the disposition of every frozen census-derived constant
+(spread-tercile cutpoints, per-symbol thresholds, viability floors):
+**carry**, **recompute**, or **refreeze** with explicit new values.
+Mid-flight ruling is forbidden. Operational detail: data-engineering
+skill, Grid-Amendment Constant Governance. Incident: H8 A-1 silence on
+§4.1/JC-4 spread-tercile cutpoints → A-2.2 ruling
+(`prompt_pack_03c_universe_and_cache.md` AMENDMENT 1).
+
+---
+
 ## L1 Data Limitations — What You Cannot See
 
 Explicitly acknowledge these blind spots:

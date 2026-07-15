@@ -344,6 +344,37 @@ symbol (backtesting primary access pattern).
 
 ---
 
+## Grid-Amendment Constant Governance (backlog 16)
+
+When a research or census grid is amended (new symbols, new sessions,
+expanded date span), every **frozen census-derived constant** must be
+pre-registered **before** the amended census executes — not by
+mid-flight ruling. Constants include spread-tercile cutpoints,
+per-symbol conditioning thresholds, viability floors, and any
+predicate parameter derived from a prior census pass.
+
+Each constant declares one disposition in the amendment pre-registration:
+
+| Disposition | Meaning |
+|-------------|---------|
+| **carry** | Unchanged — valid on the amended grid without recomputation |
+| **recompute** | Re-derived from the amended grid's census-legal inputs before any verdict |
+| **refreeze** | Explicit new values pinned in the amendment; old values retired |
+
+If the amended census would surface two candidate constant sets, the
+census **stops return-free** and awaits operator ruling — it does not
+pick a set post-outcome. Cross-link: microstructure-alpha
+`research-protocol.md` (Validation Protocol & Slate Design Discipline).
+
+Incident: H8 A-1 expansion was silent on §4.1/JC-4 spread-tercile
+cutpoints; the expanded census disclosed both candidate sets and
+stopped for the A-2.2 ruling (original terciles refrozen). Spec:
+`docs/research/sig_dislocation_lambda_drift_v1_validation_protocol.md`
+E.5, AMENDMENT A-2.2;
+`docs/research/prompt_pack_03c_universe_and_cache.md` AMENDMENT 1.
+
+---
+
 ## Integration Points
 
 See [skill index](../README.md). **Non-obvious edges:** `EventLog` + `DataHealth` upstream of sensors; storage owned here.
