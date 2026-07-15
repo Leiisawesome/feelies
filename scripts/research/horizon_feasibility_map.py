@@ -343,7 +343,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     }
     if args.json is not None:
         args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(json.dumps(out, indent=2, sort_keys=True), encoding="utf-8")
+        # newline="\n" — platform-stable artifact bytes (Windows text-mode
+        # write_text would otherwise emit CRLF and diverge from eol=lf blobs).
+        args.json.write_text(
+            json.dumps(out, indent=2, sort_keys=True),
+            encoding="utf-8",
+            newline="\n",
+        )
         print(f"wrote {args.json}", file=sys.stderr)
 
     # Human-readable tables.

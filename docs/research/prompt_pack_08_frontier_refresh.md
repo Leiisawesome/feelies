@@ -269,7 +269,7 @@ command: "PYTHONHASHSEED=0 uv run python
   scripts/research/horizon_feasibility_map.py --json
   docs/research/artifacts/horizon_feasibility_map_operative_2026-07-15.json"
 artifact: "docs/research/artifacts/horizon_feasibility_map_operative_2026-07-15.json
-  sha256=981cf7e3dd2c4d5e812080605cb7c696403536b7fe8918e81dfef8d602874b08"
+  sha256=d549a92aa0eb7ac7f34cc17f7bf0a4470e2fb9cf82d3eeaa96a1a6dfbecbf88a"
 determinism: "full-grid rerun bit-identical (SHA-256 equal on both runs)"
 script: "scripts/research/horizon_feasibility_map.py (operative session
   set: 20 for APP/RMBS, 10 for others; already registered in
