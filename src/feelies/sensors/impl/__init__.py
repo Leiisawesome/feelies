@@ -48,4 +48,10 @@ LIQUIDITY_STRESS coverage gap):
   spread-widening + depth-thinning stress alarm (LIQUIDITY_STRESS family).
 - :mod:`feelies.sensors.impl.quote_flicker_rate` — best-price reversal
   fraction (LIQUIDITY_STRESS family).
+
+H10 Phase-A research catalog (1 sensor; dormant in reference
+``platform.yaml`` until Phase-B alpha wiring):
+
+- :mod:`feelies.sensors.impl.sweep_flow_imbalance` — Class-A ∩ id-14
+  ISO sweep-flow imbalance (KYLE_INFO entry conditioner; v1.0.0).
 """
