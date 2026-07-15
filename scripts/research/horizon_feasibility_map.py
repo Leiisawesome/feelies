@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Task FQ-8 — horizon-feasibility map over the frozen 80-cell grid.
+"""Task FQ-9 / FQ-8 — horizon-feasibility map over the OPERATIVE grid.
 
 Reuses the census machinery of
 ``scripts/research/inventory_fade_census.py`` (Task 8-C, commit
@@ -9,6 +9,12 @@ unconditional session sigma_H (Bessel-corrected sample std of
 non-overlapping H-second mid log returns on the 09:30-ET-anchored
 horizon-boundary grid, in bps), computed at every registered horizon
 H in {30, 120, 300, 900, 1800} (``platform.yaml horizons_seconds``).
+
+OPERATIVE grid (03c AMENDMENT 1): 20 sessions for {APP, RMBS}
+(original 10 + 10 Lei-ratified expansion dates); 10 original sessions
+for the other six (their expansion cells remain DRAWN-NOT-INGESTED).
+FQ-8 ran the frozen 80-cell (10×8) subset; FQ-9 refreshes on this
+map.
 
 Scope note (recorded, not hidden): unconditional sigma_H reads only
 the RTH mid series — no sensor output enters any number below, so the
@@ -21,16 +27,16 @@ sort, ``rth_open_ns`` session anchor (audit P1-8 parity — the
 identical nominal boundary grid the HorizonScheduler emits), positive
 two-sided mid extraction, last-mid-at-or-before boundary sampling,
 Bessel std.  The sigma_120 column reproduces the census values by
-construction.
+construction on the shared original dates.
 
 Per (symbol, horizon) this script reports:
 
-- the unconditional session sigma_H distribution over the 10 grid
-  sessions: median / p75 / p90 (Hyndman-Fan type 7 linear
+- the unconditional session sigma_H distribution over that symbol's
+  operative sessions: median / p75 / p90 (Hyndman-Fan type 7 linear
   interpolation, the numpy default);
 - the spec-4.2-style stressed cost floors, fee-in-bps RECOMPUTED per
-  symbol from the full grid cache (grid-session median RTH bid,
-  median-of-per-session-medians), in two side-by-side variants:
+  symbol from the full operative-grid cache (grid-session median RTH
+  bid, median-of-per-session-medians), in two side-by-side variants:
     passive (maker):  C_ow = 2.0 + fee_passive          (00c pins)
     taker:            C_ow = half_spread + impact + fee_taker
                       (adjudication D.1 method; impact 1.0 bps when
@@ -93,19 +99,37 @@ _RTH_SECONDS = 6 * 3600 + 30 * 60  # 09:30-16:00 ET
 # Registered horizons (platform.yaml horizons_seconds; G7 set).
 HORIZONS = (30, 120, 300, 900, 1800)
 
-# ── Frozen evidence set (census / protocol Amendment B / 03c §5.1) ───────
+# ── Operative evidence set (03c §5.1 + AMENDMENT 1) ───────────────────────
+# Original 10 shared dates for all 8 symbols; +10 expansion dates ingested
+# only for {APP, RMBS}. The six others' expansion cells are
+# DRAWN-NOT-INGESTED (03c A1.5).
 
 SYMBOLS = ("APP", "RMBS", "OLN", "ENSG", "DIOD", "PCTY", "MLI", "CROX")
+EXPANDED_SYMBOLS = frozenset({"APP", "RMBS"})
+
 DATES_ELEVATED_A = ("2025-11-25", "2025-12-04")
 DATES_CALM = ("2025-12-22", "2026-01-05", "2026-01-15", "2026-01-26", "2026-01-27")
 DATES_ELEVATED_B = ("2026-04-01", "2026-04-10", "2026-04-22")
 DATES = DATES_ELEVATED_A + DATES_CALM + DATES_ELEVATED_B
 
+# 03c AMENDMENT 1 expansion dates (Lei-ratified 2026-07-13).
+DATES_ELEVATED_A_EXP = ("2025-12-01", "2025-12-02")
+DATES_CALM_EXP = ("2025-12-26", "2025-12-30", "2026-01-12", "2026-01-20", "2026-01-22")
+DATES_ELEVATED_B_EXP = ("2026-04-02", "2026-04-07", "2026-04-16")
+DATES_EXPANSION = DATES_ELEVATED_A_EXP + DATES_CALM_EXP + DATES_ELEVATED_B_EXP
+
 STRATUM = (
-    {d: "elevated_A" for d in DATES_ELEVATED_A}
-    | {d: "calm" for d in DATES_CALM}
-    | {d: "elevated_B" for d in DATES_ELEVATED_B}
+    {d: "elevated_A" for d in DATES_ELEVATED_A + DATES_ELEVATED_A_EXP}
+    | {d: "calm" for d in DATES_CALM + DATES_CALM_EXP}
+    | {d: "elevated_B" for d in DATES_ELEVATED_B + DATES_ELEVATED_B_EXP}
 )
+
+
+def dates_for(symbol: str) -> tuple[str, ...]:
+    """Operative sessions for ``symbol`` (20 for APP/RMBS, else 10)."""
+    if symbol in EXPANDED_SYMBOLS:
+        return tuple(sorted(DATES + DATES_EXPANSION))
+    return DATES
 
 # ── Cost constants (00c pinned profile; spec §4.2 / adjudication D.1-D.2)
 
@@ -256,7 +280,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     cache = DiskEventCache(args.cache_dir)
     cells: list[dict] = []
     for symbol in SYMBOLS:
-        for date in DATES:
+        for date in dates_for(symbol):
             print(f"# {symbol} {date} ...", file=sys.stderr, flush=True)
             cell = run_cell(cache, symbol, date)
             if cell is None:
@@ -289,10 +313,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                 entry[f"feasible_{variant}"] = {k: v <= KAPPA_CEILING for k, v in kreq.items()}
             horizons_out[str(h)] = entry
 
-        per_symbol[symbol] = {"costs": costs, "horizons": horizons_out}
+        per_symbol[symbol] = {
+            "n_sessions": len(sym_cells),
+            "dates": [c["date"] for c in sorted(sym_cells, key=lambda c: c["date"])],
+            "costs": costs,
+            "horizons": horizons_out,
+        }
 
     out = {
-        "task": "FQ-8 horizon-feasibility map (census legality; no forward returns/IC)",
+        "task": (
+            "FQ-9 OPERATIVE-grid horizon-feasibility map "
+            "(census legality; no forward returns/IC)"
+        ),
+        "grid": {
+            "name": "operative",
+            "n_cells": len(cells),
+            "expanded_symbols": sorted(EXPANDED_SYMBOLS),
+            "dates_original": list(DATES),
+            "dates_expansion": list(DATES_EXPANSION),
+            "sessions_per_symbol": {s: len(dates_for(s)) for s in SYMBOLS},
+        },
         "kappa_ceiling": KAPPA_CEILING,
         "floor_formula": "2.25 x C_ow (= 1.5 Inv-12 margin x 1.5 stress x C_ow)",
         "quantile_method": "Hyndman-Fan type 7 (linear interpolation)",
