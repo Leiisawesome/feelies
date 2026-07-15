@@ -1089,4 +1089,60 @@ P0-1.*
 
 # AMENDMENTS
 
-*(none yet — section reserved for post-freeze entries only)*
+## A-1 — Phase-A IMPLEMENTATION RECORD (Task 9-A-H10, 2026-07-15)
+
+**Scope.** Phase A only (Ordering B): sensor + census instrument +
+harness IC row. **No census execution, no IC numbers, no outcome
+contact.** Phase B explicitly out of scope. **N = 11 survives
+unchanged** (living ledger; first outcome contact still reserved for
+step-2 IC on the H10 primary → N ≥ 12).
+
+### Commit ledger
+
+| # | sha | delivered |
+|---|---|---|
+| 1 | `faeafaa` | `sweep_flow_imbalance` sensor v1.0.0 (`src/feelies/sensors/impl/sweep_flow_imbalance.py`) + unit tests (hand goldens, warm/gap, filter-boundary per excluded class, incremental-vs-recompute, Hypothesis truncation causality, no retroactive-stamp conditioning) + `__init__.py` catalog row. Coverage map: `sensors/` wholly owned by `audit_sensor` — no `_FILE_OWNERS` edit required. |
+| 2 | `19adcfd` | Census instrument `scripts/research/sweep_kyle_drift_census.py` (frozen §1.1 predicate exact; JC-10 ISO-warm; warm-drop; JC-1 REPORTS incl. >1% residual flag; integrity pin vs prior census `n_events`/`n_quotes`/`n_trades`) + helper unit tests (no cache) + `docs/prompts/README.md` research_validation scripts-row ownership. |
+| 3 | `8b8932f` | Harness IC row in `scripts/sensor_feature_ic.py` — H10 SFI-stratified extreme / interior / `sfi_contrast` at h=900; OLN §2.4 evidence-only hooks; additive only; synthetic smoke tests in `tests/scripts/test_sensor_feature_ic.py`. |
+
+### Gate battery (each commit independently green; PYTHONHASHSEED=0)
+
+| gate | commit 1 | commit 2 | commit 3 |
+|---|---|---|---|
+| `pytest -m "not functional and not slow"` | 4076 passed, 9 skipped | 4081 passed, 9 skipped | 4083 passed, 9 skipped |
+| `mypy src/feelies` (strict) | clean (194 files) | clean (194 files) | clean (194 files) |
+| `ruff check src/ tests/` (+ scripts touched) | clean | clean | clean |
+| coverage on new sensor module | **98%** (≥ 80% bar) | n/a (script) | n/a (script) |
+| `tests/docs/test_prompt_coverage_map.py` | green | green (scripts row) | green |
+
+### Coverage-map ownership rows
+
+| artifact | owner |
+|---|---|
+| `src/feelies/sensors/impl/sweep_flow_imbalance.py` | `audit_sensor` (package-wholly-owned; no `_FILE_OWNERS` entry required) |
+| `scripts/research/sweep_kyle_drift_census.py` | `research_validation` (`docs/prompts/README.md` scripts row) |
+| `scripts/sensor_feature_ic.py` (H10 row additive) | `sensor` (pre-existing scripts-row owner; unchanged) |
+
+### Explicit non-actions (binding)
+
+- Census **not executed** against the 40-cell grid (instrument pinned only).
+- No forward return / RankIC / CPCV / DSR / outcome statistic computed
+  on cached L1.
+- No Phase-B alpha YAML, bootstrap SFI factory wiring, or platform.yaml
+  registration.
+- Locked parity baselines / promotion ledger / core event schemas
+  untouched.
+- **N = 11** at close of Phase A (unchanged).
+
+### P0-1 status after this amendment
+
+| deliverable | status |
+|---|---|
+| (i) `sweep_flow_imbalance` v1.0.0 | **landed** (`faeafaa`) |
+| (ii) census instrument | **committed** (`19adcfd`) — not run |
+| (iii) harness IC row | **landed** (`8b8932f`) — not run on cache |
+
+**Stop for Lei review before any census execution (step 1).**
+
+*(Record appended 2026-07-15. Justification: Task 9-A-H10 Phase-A
+close-out; instruments built and pinned; no freeze-body edit.)*
