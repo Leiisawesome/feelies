@@ -7,6 +7,9 @@
           AMENDED 2026-07-13 (append-only AMENDMENTS section): grid
           expansion — +20 ingested cells ({APP,RMBS} × 10 Lei-ratified
           dates), 60 cells DRAWN-NOT-INGESTED, L5 added, C1–C3 ratified.
+          AMENDED 2026-07-15 (append-only): TRANCHE-1B — +40 ingested
+          cells ({OLN,DIOD,PCTY,CROX} × 10 expansion dates); ENSG/MLI × 10
+          remain DRAWN-NOT-INGESTED with deferral rationale (A2.4).
   Owner:  data-engineering (cache) / research-workflow (evidence grid);
           prompt-pack Task FQ-5B, Phase A.
 
@@ -1143,3 +1146,435 @@ print(f"DONE ok={n_ok}/{len(rows)} clean_guards={n_clean}/{len(rows)}", flush=Tr
 admissible cells (§5.1 + A1.3) plus 60 DRAWN-NOT-INGESTED cells
 (A1.5); limitations L1–L5 are in force (A1.6); expanded-census work
 uses the primary instrument only (A1.7).**
+
+### AMENDMENT 2 — TRANCHE-1B ingestion (2026-07-15, Lei-ratified scope)
+
+Protocol amendment under §1(f) / A1.5: of the 60 DRAWN-NOT-INGESTED
+expansion cells, Lei ratified ingestion of **40 cells** —
+`{OLN, DIOD, PCTY, CROX} × the 10 expansion dates` (A1.1). The
+remaining **20 cells** (`{ENSG, MLI} × 10`) stay DRAWN-NOT-INGESTED
+with the deferral rationale in A2.4. Census-legal only: no forward
+returns, no IC, no signal evaluation. **N unchanged** (data
+augmentation; same A1.7 posture).
+
+Authoritative scope inputs: pack-08 §5 ingestion decision table
+(`prompt_pack_08_frontier_refresh.md`) — OLN/DIOD/PCTY/CROX open at
+honest-κ median H=1800; ENSG/MLI median-closed at honest κ with
+pooling-only value — plus the H8 lesson that magnitude bars are
+n-invariant (pack-07 §4 / entry 12). Dates and HOLIDAY-THIN tags
+unchanged from A1.1 / A1.4.
+
+**A2.1 Step-1 checks (this task, 2026-07-15).**
+
+- *Admissibility (mechanical):* 10/10 expansion dates remain
+  pre-2026-04-27 full weekdays (amendment A holds). Verified in the
+  ingest driver before any pull.
+- *Ex-dividend recheck (OLN/DIOD/PCTY/CROX):* `/v3/reference/dividends`,
+  span [2025-11-01, 2026-05-01], re-pulled 2026-07-15: OLN 2 ex-dates
+  in span (2025-11-28, 2026-03-03 — matches §3.2); DIOD/PCTY/CROX
+  zero. **Intersection with the 10 expansion dates: EMPTY** for all
+  four. (ENSG/MLI not rechecked for ingestion — deferred; their §3.2
+  ex-dates still do not coincide with expansion dates.)
+
+**A2.2 Inventory addition — 40 ingested cells
+({OLN, DIOD, PCTY, CROX} × 10).**
+Ingested 2026-07-15 (01:47:16–01:51:58 UTC, single run) through the
+platform path (`feelies.harness.backtest_runner.ingest_data` →
+`MassiveHistoricalIngestor` → `MassiveNormalizer` →
+`DiskEventCache.save`), same health bar as §4 / A1.3 (policy 1(d):
+terminal `DataHealth == HEALTHY`, `event_count > 0`, one retry):
+**40/40 OK on first attempt, zero retries, zero failures.** Manifests
+carry the same `event_schema_hash` (`sha256:8ff53428a52107dc…`) and
+`normalizer_version "1"` as the original grid and A1.3. Per-cell
+guards (policy 1(e)): 03b §6(b) units-sanity and, defensively, 03b
+§6(a) unknown-id — **40/40 units PASS, zero UNKNOWN-ID flags** (id
+table as amended by §6.2, indicator 2 included).
+
+| symbol | date | quotes | trades | ingest health | pre-2026-04-27 | guards | tag |
+|---|---|---|---|---|---|---|---|
+| OLN | 2025-12-01 | 28,319 | 40,361 | HEALTHY | yes | clean | |
+| OLN | 2025-12-02 | 22,885 | 27,939 | HEALTHY | yes | clean | |
+| OLN | 2025-12-26 | 17,085 | 15,105 | HEALTHY | yes | clean | HOLIDAY-THIN |
+| OLN | 2025-12-30 | 22,473 | 17,042 | HEALTHY | yes | clean | HOLIDAY-THIN |
+| OLN | 2026-01-12 | 27,302 | 37,430 | HEALTHY | yes | clean | |
+| OLN | 2026-01-20 | 29,302 | 34,479 | HEALTHY | yes | clean | |
+| OLN | 2026-01-22 | 38,750 | 44,443 | HEALTHY | yes | clean | |
+| OLN | 2026-04-02 | 23,533 | 34,640 | HEALTHY | yes | clean | |
+| OLN | 2026-04-07 | 23,194 | 37,945 | HEALTHY | yes | clean | |
+| OLN | 2026-04-16 | 30,931 | 28,302 | HEALTHY | yes | clean | |
+| DIOD | 2025-12-01 | 4,883 | 9,187 | HEALTHY | yes | clean | |
+| DIOD | 2025-12-02 | 7,516 | 13,240 | HEALTHY | yes | clean | |
+| DIOD | 2025-12-26 | 3,027 | 4,707 | HEALTHY | yes | clean | HOLIDAY-THIN |
+| DIOD | 2025-12-30 | 2,919 | 4,908 | HEALTHY | yes | clean | HOLIDAY-THIN |
+| DIOD | 2026-01-12 | 3,161 | 7,834 | HEALTHY | yes | clean | |
+| DIOD | 2026-01-20 | 3,992 | 7,330 | HEALTHY | yes | clean | |
+| DIOD | 2026-01-22 | 3,666 | 7,203 | HEALTHY | yes | clean | |
+| DIOD | 2026-04-02 | 6,529 | 10,318 | HEALTHY | yes | clean | |
+| DIOD | 2026-04-07 | 7,887 | 11,093 | HEALTHY | yes | clean | |
+| DIOD | 2026-04-16 | 8,985 | 13,348 | HEALTHY | yes | clean | |
+| PCTY | 2025-12-01 | 5,091 | 13,713 | HEALTHY | yes | clean | |
+| PCTY | 2025-12-02 | 4,082 | 10,703 | HEALTHY | yes | clean | |
+| PCTY | 2025-12-26 | 5,696 | 9,420 | HEALTHY | yes | clean | HOLIDAY-THIN |
+| PCTY | 2025-12-30 | 4,683 | 9,491 | HEALTHY | yes | clean | HOLIDAY-THIN |
+| PCTY | 2026-01-12 | 5,324 | 13,964 | HEALTHY | yes | clean | |
+| PCTY | 2026-01-20 | 5,239 | 11,711 | HEALTHY | yes | clean | |
+| PCTY | 2026-01-22 | 11,394 | 20,936 | HEALTHY | yes | clean | |
+| PCTY | 2026-04-02 | 20,843 | 24,764 | HEALTHY | yes | clean | |
+| PCTY | 2026-04-07 | 16,798 | 16,761 | HEALTHY | yes | clean | |
+| PCTY | 2026-04-16 | 8,934 | 16,847 | HEALTHY | yes | clean | |
+| CROX | 2025-12-01 | 16,118 | 27,386 | HEALTHY | yes | clean | |
+| CROX | 2025-12-02 | 15,611 | 25,208 | HEALTHY | yes | clean | |
+| CROX | 2025-12-26 | 11,750 | 19,246 | HEALTHY | yes | clean | HOLIDAY-THIN |
+| CROX | 2025-12-30 | 15,732 | 24,836 | HEALTHY | yes | clean | HOLIDAY-THIN |
+| CROX | 2026-01-12 | 8,851 | 18,441 | HEALTHY | yes | clean | |
+| CROX | 2026-01-20 | 11,413 | 17,981 | HEALTHY | yes | clean | |
+| CROX | 2026-01-22 | 11,063 | 19,324 | HEALTHY | yes | clean | |
+| CROX | 2026-04-02 | 20,862 | 24,466 | HEALTHY | yes | clean | |
+| CROX | 2026-04-07 | 19,662 | 34,436 | HEALTHY | yes | clean | |
+| CROX | 2026-04-16 | 14,397 | 21,708 | HEALTHY | yes | clean | |
+
+Totals: 40/40 HEALTHY; 549,882 quotes; 788,196 trades (OLN 263,774 /
+317,686; DIOD 52,565 / 89,168; PCTY 88,084 / 148,310; CROX 145,459 /
+233,032).
+
+Units-sanity detail (03b §6(b), per cell, both sides): all four
+symbols `L = 100` (median RTH bid ranges — OLN $20.67–$29.70, DIOD
+$46.02–$91.59, PCTY $100.38–$153.02, CROX $82.00–$102.85 — all in the
+$0–250 MDI tier). Per-side medians ≥ L; min frac divisible by L = 1.0;
+max frac < L = 0.0 on every cell. Share-denominated NBBO sizes
+throughout — consistent with §6.1 / A1.3 and the §8 SHARES verdict.
+
+**A2.3 HOLIDAY-THIN tags carried.** 2025-12-26 and 2025-12-30 retain
+the A1.4 HOLIDAY-THIN tag on every newly ingested cell for those
+dates (8 cells: 4 symbols × 2 dates). Tags never exclude. Observed
+volumes remain consistent with the tag (e.g. DIOD 3,027 quotes on
+12-26 vs 4.8k–9.0k on untagged DIOD expansion sessions). Combined-grid
+untagged-cell floor check (expansion artifact §C.5 / A1.4): for each
+of OLN/DIOD/PCTY/CROX, calm 10/2 tagged → 8 untagged; elevated 10/0 →
+10; floor ≥ 4 PASSES.
+
+**A2.4 ENSG/MLI × 10 remain DRAWN-NOT-INGESTED — deferral rationale.**
+The cells `{ENSG, MLI} × the 10 expansion dates` (20 cells) stay
+**DRAWN-NOT-INGESTED** (dates ratified; ingestion deferred). Rationale
+(pack-08 §5 arithmetic + H8 magnitude lesson; not a new evaluation):
+
+1. **Median-closed at honest κ.** At central κ ≈ 0.16, ENSG H=1800
+   median κP = 0.169 (opens only at p75); MLI H=1800 median/p75 closed
+   (opens only at p90). Neither clears the honest-κ median screen that
+   justified Tranche-1B for OLN/DIOD/PCTY/CROX (all open at H=1800
+   median). H=900 is closed at median for both.
+2. **Pooling-only value.** Per-symbol honest-κ deployability on these
+   two names requires a session-tail park rule or multi-symbol pooling;
+   expansion ingestion would buy density for pools, not a per-symbol
+   median-open region. Pack-08 §5: MLI is the least honest-κ deployable
+   of the six; ENSG is the weakest central-κ median at 1800 among the
+   six.
+3. **Magnitude bars are n-invariant (H8 lesson).** Pack-07 entry 12 /
+   §4: n-invariant magnitude criteria (κ_req vs κ, |RankIC| floors) do
+   not move with session count — only their estimates do. Doubling
+   ENSG/MLI sessions cannot open a median-closed κ cell; it only
+   improves power for designs that were already κ-viable. Deferral
+   therefore does not forfeit a magnitude-class opportunity that more
+   data would create.
+
+Any future ingestion of these 20 cells goes through the identical bar
+(platform path, policy 1(d)/(1e), §3.2-style ex-date check) and is
+recorded by a further append-only amendment here.
+
+**A2.5 Closed-list roll-up after TRANCHE-1B.**
+
+| set | cells | status |
+|---|---|---|
+| Original FQ-5B grid (§5.1) | 80 | ingested, admissible |
+| AMENDMENT 1 ({APP, RMBS} × 10) | 20 | ingested, admissible |
+| AMENDMENT 2 ({OLN, DIOD, PCTY, CROX} × 10) | 40 | ingested, admissible |
+| Remaining DRAWN-NOT-INGESTED ({ENSG, MLI} × 10) | 20 | dates ratified; not evidence |
+
+**140 ingested admissible cells**; per-symbol session counts: APP 20,
+RMBS 20, OLN 20, DIOD 20, PCTY 20, CROX 20, ENSG 10, MLI 10.
+Limitations L1–L5 carry (L5 elevated-A week concentration now applies
+to the four newly expanded symbols as well as APP/RMBS). Primary
+instrument only for expanded-census work (A1.7) carries. N unchanged.
+
+**A2.6 Provenance (FQ-3 template).**
+
+```yaml
+git_sha: "1375decd8e26d7971ab50964fbd9f6944c669426"
+worktree_clean: "yes at run START for all code paths — porcelain shows
+  one untracked benign doc (docs/research/prompt_pack_09_hypothesis_slate_c.md,
+  unrelated prior-task draft, not imported by ingest); src/, tests/,
+  configs/, alphas/, platform.yaml clean"
+host_fingerprint:
+  os: "Windows-11-10.0.26200-SP0"
+  cpu_arch: "AMD64"
+  python_build: "3.14.2 (tags/v3.14.2:df79316, Dec 5 2025, 17:18:21) [MSC v.1944 64 bit (AMD64)]"
+  libm: "Microsoft UCRT (linked by MSC v.1944)"
+  config_checksum: "n/a — no PlatformConfig loaded (ingest + offline guard path only)"
+  pythonhashseed: "0"
+env_check: "MASSIVE_API_KEY absent from ambient shell, present in repo
+  .env; loaded via feelies.cli.env.load_dotenv_optional in the one-off;
+  key never echoed or persisted; shell + python preflight both reported
+  set before the run"
+scope_inputs: "prompt_pack_08_frontier_refresh.md §5 (ingestion decision
+  table); prompt_pack_07_program_retrospective.md (H8 n-invariant
+  magnitude lesson); A1.1 expansion dates; A1.5 DRAWN-NOT-INGESTED
+  register"
+ingest_command: "uv run python %TEMP%\\tranche1b_ingest\\ingest_tranche1b.py
+  %TEMP%\\tranche1b_ingest\\ingest_summary.json   # driver verbatim in
+  A2.7; per cell it calls
+  feelies.harness.backtest_runner.ingest_data(api_key, [symbol], date,
+  date) — the platform path"
+ingest_window_utc: "2026-07-15T01:47:16Z .. 2026-07-15T01:51:58Z (single
+  run; Step-1 admissibility + dividends recheck ran first inside the
+  same driver)"
+cache_dir: "~/.feelies/cache (DiskEventCache default)"
+event_schema_hash: "sha256:8ff53428a52107dcaa808fec2be1a4377df8562ec5f2c6d79052bdf1909909a7"
+normalizer_version: "1"
+multiple_testing_ledger: "N unchanged — data augmentation only (A1.7 /
+  A2 posture)"
+```
+
+**A2.7 Appendix — TRANCHE-1B ingest driver (verbatim, uncommitted
+one-off per the governance carve-out).**
+
+```python
+"""TRANCHE-1B ingestion (+40 cells), 2026-07-15. Uncommitted one-off.
+
+Lei-ratified scope: ingest {OLN, DIOD, PCTY, CROX} x 10 expansion dates
+recorded in docs/research/artifacts/universe_draw_expansion_evidence_2026-07-13.md
+and deferred under 03c A1.5. ENSG/MLI remain DRAWN-NOT-INGESTED (not in
+this driver).
+
+  Step 1: mechanical admissibility (all 10 dates pre-2026-04-27, full
+          weekdays) + ex-dividend recheck for the four symbols via
+          /v3/reference/dividends over [2025-11-01, 2026-05-01].
+  Step 2: ingest through the platform path
+          (feelies.harness.backtest_runner.ingest_data ->
+          MassiveHistoricalIngestor -> MassiveNormalizer ->
+          DiskEventCache.save), health bar per 03c policy 1(d)
+          (terminal DataHealth == HEALTHY and event_count > 0, one
+          retry after cache eviction), then per-cell guards per 03c
+          policy 1(e): 03b 6(b) units-sanity + 03b 6(a) unknown-id
+          (per-field typing refinement of 03c 6).
+
+No forward returns computed anywhere. Writes a JSON summary for the
+03c AMENDMENTS inventory.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+import traceback
+from datetime import date, datetime, timezone
+from pathlib import Path
+from statistics import median
+from zoneinfo import ZoneInfo
+
+from feelies.cli.env import load_dotenv_optional, massive_api_key_from_env
+from feelies.core.events import NBBOQuote, Trade
+from feelies.harness.backtest_runner import ingest_data
+from feelies.storage.disk_event_cache import DiskEventCache
+
+SYMBOLS = ["OLN", "DIOD", "PCTY", "CROX"]
+EXPANSION_DATES = [
+    "2025-12-01", "2025-12-02",              # elevated A
+    "2025-12-26", "2025-12-30", "2026-01-12",
+    "2026-01-20", "2026-01-22",              # calm
+    "2026-04-02", "2026-04-07", "2026-04-16",  # elevated B
+]
+HOLIDAY_THIN = {"2025-12-26", "2025-12-30"}
+ADMISSIBILITY_CUTOFF = "2026-04-27"
+DIV_SPAN = ("2025-11-01", "2026-05-01")
+CACHE_DIR = Path.home() / ".feelies" / "cache"
+CONDITIONS_ARTIFACT = Path("docs/research/artifacts/massive_conditions_2026-07-09.json")
+ET = ZoneInfo("America/New_York")
+
+KNOWN_INDICATORS = {1, 2, *range(501, 510), *range(601, 606), *range(901, 909)}
+KNOWN_CORRECTIONS = {None, 0, 1, 7, 8, 10, 11, 12}
+
+OUT = Path(sys.argv[1])
+
+load_dotenv_optional()
+api_key = massive_api_key_from_env()
+assert api_key, "MASSIVE_API_KEY missing"
+
+admissibility = []
+for d in EXPANSION_DATES:
+    dt = date.fromisoformat(d)
+    admissibility.append({
+        "date": d,
+        "pre_cutoff": d < ADMISSIBILITY_CUTOFF,
+        "weekday": dt.weekday() < 5,
+    })
+adm_fail = [a for a in admissibility if not (a["pre_cutoff"] and a["weekday"])]
+print(f"ADMISSIBILITY: {len(EXPANSION_DATES) - len(adm_fail)}/{len(EXPANSION_DATES)} "
+      f"pre-{ADMISSIBILITY_CUTOFF} weekdays", flush=True)
+if adm_fail:
+    print(f"STOP: admissibility failures: {adm_fail}")
+    sys.exit(2)
+
+from massive import RESTClient  # noqa: E402
+
+client = RESTClient(api_key=api_key)
+div_report: dict[str, list[str]] = {}
+for sym in SYMBOLS:
+    ex_dates = []
+    for div in client.list_dividends(
+        ticker=sym,
+        ex_dividend_date_gte=DIV_SPAN[0],
+        ex_dividend_date_lte=DIV_SPAN[1],
+        limit=1000,
+    ):
+        ex_dates.append(str(div.ex_dividend_date))
+    div_report[sym] = sorted(ex_dates)
+    hits = sorted(set(ex_dates) & set(EXPANSION_DATES))
+    print(f"DIVIDENDS {sym}: {len(ex_dates)} ex-dates in span {DIV_SPAN}; "
+          f"intersection with expansion dates: {hits or 'EMPTY'}", flush=True)
+    if hits:
+        print(f"STOP: ex-date collision for {sym}: {hits}")
+        sys.exit(2)
+
+cond_rows = json.loads(CONDITIONS_ARTIFACT.read_text(encoding="utf-8"))["results"]
+TRADE_COND_IDS = {r["id"] for r in cond_rows if "trade" in r.get("data_types", [])}
+QUOTE_COND_IDS = {
+    r["id"] for r in cond_rows
+    if {"bbo", "nbbo"} & set(r.get("data_types", []))
+}
+
+
+def evict(symbol: str, day: str) -> None:
+    for suffix in (".jsonl.gz", ".manifest.json"):
+        p = CACHE_DIR / symbol / f"{day}{suffix}"
+        if p.exists():
+            p.unlink()
+
+
+def run_cell(symbol: str, day: str) -> dict[str, object]:
+    attempts = 0
+    last_error = ""
+    while attempts < 2:
+        attempts += 1
+        try:
+            _, _, day_sources = ingest_data(api_key, [symbol], day, day)
+            ds = day_sources[0]
+            health = ds.ingestion_health or "UNKNOWN"
+            if health == "HEALTHY" and ds.event_count > 0:
+                cache = DiskEventCache(CACHE_DIR)
+                manifest = cache.read_manifest(symbol, day) or {}
+                return {
+                    "symbol": symbol,
+                    "date": day,
+                    "events": ds.event_count,
+                    "quotes": manifest.get("quotes_count"),
+                    "trades": manifest.get("trades_count"),
+                    "health": health,
+                    "source": ds.source,
+                    "attempts": attempts,
+                    "status": "OK",
+                    "holiday_thin": day in HOLIDAY_THIN,
+                }
+            last_error = f"health={health} events={ds.event_count}"
+        except Exception:
+            last_error = traceback.format_exc(limit=3)
+        print(f"  RETRY {symbol} {day} after: {last_error}", flush=True)
+        evict(symbol, day)
+    return {
+        "symbol": symbol, "date": day, "events": 0, "quotes": None,
+        "trades": None, "health": "FAILED", "source": "api",
+        "attempts": attempts, "status": f"FAILED: {last_error}",
+        "holiday_thin": day in HOLIDAY_THIN,
+    }
+
+
+def et_time_of_day(ts_ns: int) -> tuple[int, int]:
+    dt = datetime.fromtimestamp(ts_ns / 1e9, tz=timezone.utc).astimezone(ET)
+    return dt.hour, dt.minute
+
+
+def guards(symbol: str, day: str) -> dict[str, object]:
+    """03b 6(b) units-sanity + 6(a) unknown-id, direct cache read."""
+    cache = DiskEventCache(CACHE_DIR)
+    events = cache.load(symbol, day)
+    assert events is not None, f"cache load failed {symbol}/{day}"
+    quotes = [e for e in events if isinstance(e, NBBOQuote)]
+    trades = [e for e in events if isinstance(e, Trade)]
+
+    rth_bids = []
+    for q in quotes:
+        h, m = et_time_of_day(q.exchange_timestamp_ns)
+        if (h, m) >= (9, 30) and h < 16 and q.bid > 0:
+            rth_bids.append(float(q.bid))
+    med_bid = median(rth_bids)
+    lot = 40 if 250.0 < med_bid <= 1000.0 else 100
+    assert med_bid <= 1000.0, f"{symbol}/{day}: median bid {med_bid} above 1000-tier"
+
+    sides: dict[str, list[int]] = {
+        "bid": [q.bid_size for q in quotes if q.bid_size > 0],
+        "ask": [q.ask_size for q in quotes if q.ask_size > 0],
+    }
+    units: dict[str, object] = {"L": lot, "median_rth_bid": round(med_bid, 2)}
+    suspect = False
+    for side, sizes in sides.items():
+        med = median(sizes)
+        frac_div = sum(1 for s in sizes if s % lot == 0) / len(sizes)
+        frac_lt = sum(1 for s in sizes if s < lot) / len(sizes)
+        units[side] = {
+            "n": len(sizes),
+            "median": med,
+            "frac_div_L": round(frac_div, 6),
+            "frac_lt_L": round(frac_lt, 6),
+        }
+        if med < lot or frac_div < 1.0:
+            suspect = True
+    units["verdict"] = "UNITS-SUSPECT" if suspect else "PASS"
+
+    flags: list[str] = []
+    tc = {c for t in trades for c in t.conditions}
+    qc = {c for q in quotes for c in q.conditions}
+    qi = {i for q in quotes for i in q.indicators}
+    corr = {t.correction for t in trades}
+    for i in sorted(tc - TRADE_COND_IDS):
+        flags.append(f"UNKNOWN-ID(trade_condition, {i})")
+    for i in sorted(qc - QUOTE_COND_IDS):
+        flags.append(f"UNKNOWN-ID(quote_condition, {i})")
+    for i in sorted(qi - KNOWN_INDICATORS):
+        flags.append(f"UNKNOWN-ID(quote_indicator, {i})")
+    for v in sorted((corr - KNOWN_CORRECTIONS), key=str):
+        flags.append(f"UNKNOWN-ID(correction, {v})")
+
+    return {"units_sanity": units, "unknown_id_flags": flags}
+
+
+rows: list[dict[str, object]] = []
+for sym in SYMBOLS:
+    for d in EXPANSION_DATES:
+        row = run_cell(sym, d)
+        if row["status"] == "OK":
+            row.update(guards(sym, d))
+        rows.append(row)
+        u = row.get("units_sanity", {})
+        print(f"CELL {row['symbol']} {row['date']} -> {row['status']} "
+              f"q={row['quotes']} t={row['trades']} "
+              f"units={u.get('verdict', 'n/a')} L={u.get('L', '?')} "
+              f"flags={row.get('unknown_id_flags', 'n/a')} "
+              f"holiday_thin={row.get('holiday_thin')}", flush=True)
+        OUT.write_text(json.dumps({
+            "admissibility": admissibility,
+            "dividends_recheck": div_report,
+            "cells": rows,
+        }, indent=1), encoding="utf-8")
+
+n_ok = sum(1 for r in rows if r["status"] == "OK")
+n_clean = sum(
+    1 for r in rows
+    if r["status"] == "OK"
+    and r["units_sanity"]["verdict"] == "PASS"  # type: ignore[index]
+    and not r["unknown_id_flags"]
+)
+print(f"DONE ok={n_ok}/{len(rows)} clean_guards={n_clean}/{len(rows)}", flush=True)
+```
+
+**AMENDMENT 2 complete. The closed list now comprises 140 ingested
+admissible cells (§5.1 + A1.3 + A2.2) plus 20 DRAWN-NOT-INGESTED cells
+(A2.4); HOLIDAY-THIN and L1–L5 carry; N unchanged.**
