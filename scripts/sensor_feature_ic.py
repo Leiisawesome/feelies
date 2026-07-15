@@ -77,6 +77,7 @@ from feelies.sensors.impl.micro_price import MicroPriceSensor  # noqa: E402
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor  # noqa: E402
 from feelies.sensors.impl.ofi_raw import OFIRawSensor  # noqa: E402
 from feelies.sensors.impl.realized_vol_30s import RealizedVol30sSensor  # noqa: E402
+from feelies.sensors.impl.sweep_flow_imbalance import SweepFlowImbalanceSensor  # noqa: E402
 from feelies.sensors.registry import SensorRegistry  # noqa: E402
 from feelies.sensors.spec import SensorSpec  # noqa: E402
 from feelies.storage.disk_event_cache import DiskEventCache  # noqa: E402
@@ -453,6 +454,11 @@ def _run_one(
     # h=300; skipped when the invocation does not request that horizon.
     if _H8_HORIZON in horizons:
         rows.extend(_h8_dislocation_lambda(events, mids, symbol, date, session_open_ns))
+    # Protocol §2.2 H10 row (sig_sweep_kyle_drift_h900_v1) — pinned to
+    # h=900; SFI-stratified contrast; additive only; no outcome contact in
+    # Phase A (instrument land only).
+    if _H10_HORIZON in horizons:
+        rows.extend(_h10_sweep_kyle(events, mids, symbol, date, session_open_ns))
     return rows
 
 
@@ -815,6 +821,220 @@ def _h8_dislocation_lambda(
         means = ", ".join(f"{b_.mean_forward_return * 1e4:+.2f}" for b_ in buckets)
         print(
             f"  # H8 buckets(elevated|primary) {symbol}/{date}: [{means}] bps",
+            file=sys.stderr,
+        )
+    return rows
+
+
+# ── H10 row — sig_sweep_kyle_drift_h900_v1 (protocol §2.2; Task 9-A Phase A)
+#
+# Measurement plumbing for the pre-registered H10 primary trial, not a new
+# trial: x = sweep_flow_imbalance (signed) vs y = signed forward 900 s mid
+# log-return, stratified by the extreme-SFI decile
+# (percentile ≥ 0.90 OR ≤ 0.10 with sign agreement) vs the interior
+# (0.10, 0.90).  Primary contamination posture = filter-clean by SFI
+# construction (JC-1); no intensity exclusion on the IC row.  OLN cells are
+# evidence-only §2.4 tick-artifact inputs — reported to stderr, never
+# contributing an IC row.  Phase A lands the instrument only — no cached-
+# data IC run executes here (N = 11 unchanged).
+
+_H10_HORIZON = 900
+_H10_SFI_PCTL_HI = 0.90
+_H10_SFI_PCTL_LO = 0.10
+_H10_EVIDENCE_ONLY_SYMBOLS = frozenset({"OLN"})
+_H10_CONSUMED_IDS = (
+    "sweep_flow_imbalance",
+    "sweep_flow_imbalance_percentile",
+    "realized_vol_30s_zscore",
+)
+_H10_SENSOR_SPECS: tuple[SensorSpec, ...] = (
+    SensorSpec(
+        sensor_id="sweep_flow_imbalance",
+        sensor_version="1.0.0",
+        cls=SweepFlowImbalanceSensor,
+        params={
+            "window_seconds": 900,
+            "min_eligible_prints": 20,
+            "max_gap_seconds": 60,
+            "drop_correction_records": (10, 11, 12),
+        },
+        subscribes_to=(Trade,),
+    ),
+    SensorSpec(
+        sensor_id="kyle_lambda_60s",
+        sensor_version="2.0.0",
+        cls=KyleLambda60sSensor,
+        params={
+            "min_samples": 30,
+            "alignment": "causal",
+            "sensor_version": "2.0.0",
+        },
+        subscribes_to=(NBBOQuote, Trade),
+    ),
+    SensorSpec(
+        sensor_id="realized_vol_30s",
+        sensor_version="1.3.0",
+        cls=RealizedVol30sSensor,
+        params={"window_seconds": 30, "warm_after": 16},
+        subscribes_to=(NBBOQuote,),
+    ),
+)
+
+
+def _h10_features() -> list[HorizonFeature]:
+    h = _H10_HORIZON
+    return [
+        SensorPassthroughFeature("sweep_flow_imbalance", h),
+        HorizonWindowedFeature(
+            "sweep_flow_imbalance",
+            h,
+            reducer="percentile",
+            feature_id="sweep_flow_imbalance_percentile",
+        ),
+        *_horizon_features_for("kyle_lambda_60s", h),
+        *_horizon_features_for("realized_vol_30s", h),
+    ]
+
+
+def _h10_rank_row(symbol: str, date: str, variant: str, p: _Pairs, *, with_edge: bool) -> _Row:
+    n = len(p.values)
+    rank_ic = ic = p_value = None
+    if n >= 3:
+        res = spearman_ic(p.values, p.fwd)
+        rank_ic, p_value = res.rho, res.p_value
+        ic = _pearson(p.values, p.fwd)
+    edge = long_short_edge_bps(p.values, p.fwd) if with_edge and n >= 5 else None
+    return _Row(
+        symbol=symbol,
+        date=date,
+        feature="h10_sweep_kyle",
+        horizon=_H10_HORIZON,
+        variant=variant,
+        n=n,
+        rank_ic=rank_ic,
+        ic=ic,
+        edge_bps=edge,
+        pairs=p if edge is not None else None,
+        p_value=p_value,
+    )
+
+
+def _h10_oln_tick_artifact_report(
+    events: Sequence[NBBOQuote | Trade],
+    mids: "_MidSeries",
+    symbol: str,
+    date: str,
+    boundaries: list[tuple[int, float]],
+) -> None:
+    """§2.4 evidence-only hooks for OLN: spread-in-ticks + half-tick quantum."""
+    quote_ts = [e.timestamp_ns for e in events if isinstance(e, NBBOQuote)]
+    quote_spread = [float(e.ask) - float(e.bid) for e in events if isinstance(e, NBBOQuote)]
+    tick = 0.01
+    spreads: list[int] = []
+    within_quantum = 0
+    n_moves = 0
+    for asof_ns, _x in boundaries:
+        qi = bisect.bisect_right(quote_ts, asof_ns) - 1
+        if qi >= 0:
+            spreads.append(round(quote_spread[qi] / tick))
+        m0 = mids.at(asof_ns)
+        m1 = mids.at(asof_ns + _H10_HORIZON * _NS_PER_SECOND)
+        if (
+            m0 is not None
+            and m1 is not None
+            and asof_ns + _H10_HORIZON * _NS_PER_SECOND <= mids.last_ts
+        ):
+            n_moves += 1
+            if abs(m1 - m0) <= tick / 2.0:
+                within_quantum += 1
+    med = sorted(spreads)[len(spreads) // 2] if spreads else None
+    mass = within_quantum / n_moves if n_moves else None
+    print(
+        f"  # H10 §2.4 OLN tick-artifact {symbol}/{date}: warm boundaries={len(boundaries)}, "
+        f"median spread_ticks={med}, half-tick quantum mass="
+        f"{'n/a' if mass is None else f'{mass:.3f}'} (n={n_moves})",
+        file=sys.stderr,
+    )
+
+
+def _h10_sweep_kyle(
+    events: Sequence[NBBOQuote | Trade],
+    mids: "_MidSeries",
+    symbol: str,
+    date: str,
+    session_open_ns: int,
+) -> list[_Row]:
+    """Protocol §2.2 H10 rows for one (symbol, date) — SFI extreme vs interior."""
+    snaps = _replay_snapshots(
+        events,
+        symbol=symbol,
+        horizon_features=_h10_features(),
+        horizons=frozenset({_H10_HORIZON}),
+        session_open_ns=session_open_ns,
+        sensor_specs=_H10_SENSOR_SPECS,
+    )
+    strata = ("extreme", "interior")
+    pairs = {s: _Pairs(values=[], fwd=[]) for s in strata}
+    oln_boundaries: list[tuple[int, float]] = []
+    for s in snaps:
+        if s.horizon_seconds != _H10_HORIZON:
+            continue
+        if not all(
+            s.warm.get(fid, False) and not s.stale.get(fid, True) for fid in _H10_CONSUMED_IDS
+        ):
+            continue
+        sfi = s.values.get("sweep_flow_imbalance")
+        pctl = s.values.get("sweep_flow_imbalance_percentile")
+        if sfi is None or pctl is None:
+            continue
+        asof_ns = s.boundary_ts_ns
+        if symbol in _H10_EVIDENCE_ONLY_SYMBOLS:
+            oln_boundaries.append((asof_ns, sfi))
+            continue
+        y = _forward_return(mids, asof_ns, _H10_HORIZON)
+        if y is None:
+            continue
+        # Extreme stratum requires sign agreement with the decile arm.
+        if pctl >= _H10_SFI_PCTL_HI and sfi > 0.0:
+            stratum = "extreme"
+        elif pctl <= _H10_SFI_PCTL_LO and sfi < 0.0:
+            stratum = "extreme"
+        elif _H10_SFI_PCTL_LO < pctl < _H10_SFI_PCTL_HI:
+            stratum = "interior"
+        else:
+            continue  # sign-disagreement at extreme — not in either IC stratum
+        pairs[stratum].values.append(sfi)
+        pairs[stratum].fwd.append(y)
+
+    if symbol in _H10_EVIDENCE_ONLY_SYMBOLS:
+        _h10_oln_tick_artifact_report(events, mids, symbol, date, oln_boundaries)
+        return []
+
+    rows: list[_Row] = [
+        _h10_rank_row(symbol, date, "extreme", pairs["extreme"], with_edge=True),
+        _h10_rank_row(symbol, date, "interior", pairs["interior"], with_edge=False),
+    ]
+    e = rows[0]
+    b = rows[1]
+    contrast = e.rank_ic - b.rank_ic if e.rank_ic is not None and b.rank_ic is not None else None
+    rows.append(
+        _Row(
+            symbol=symbol,
+            date=date,
+            feature="h10_sweep_kyle",
+            horizon=_H10_HORIZON,
+            variant="sfi_contrast",
+            n=min(e.n, b.n),
+            rank_ic=contrast,
+            ic=None,
+        )
+    )
+    ep = pairs["extreme"]
+    if len(ep.values) >= 5:
+        buckets = bucketed_forward_return(ep.values, ep.fwd, n_buckets=5)
+        means = ", ".join(f"{b_.mean_forward_return * 1e4:+.2f}" for b_ in buckets)
+        print(
+            f"  # H10 buckets(extreme) {symbol}/{date}: [{means}] bps",
             file=sys.stderr,
         )
     return rows
