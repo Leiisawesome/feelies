@@ -272,7 +272,8 @@ artifact: "docs/research/artifacts/horizon_feasibility_map_operative_2026-07-15.
   sha256=d549a92aa0eb7ac7f34cc17f7bf0a4470e2fb9cf82d3eeaa96a1a6dfbecbf88a"
 determinism: "full-grid rerun bit-identical (SHA-256 equal on both runs)"
 script: "scripts/research/horizon_feasibility_map.py (operative session
-  set: 20 for APP/RMBS, 10 for others; already registered in
+  set: 20 for APP/RMBS, 10 for others; JSON written with newline='\\n'
+  for platform-stable artifact bytes; already registered in
   docs/prompts/README.md coverage map, research_validation)"
 n_cells: 100
 normative_inputs: "prompt_pack_05_horizon_feasibility_map.md (+ FQ-8
