@@ -1,58 +1,29 @@
 <!--
   File:   docs/research/sig_sweep_kyle_drift_h900_v1_validation_protocol.md
   Status: PRE-REGISTERED — FROZEN (Task 8-F-H10 rulings, Lei,
-          2026-07-15: JC-1/2/3/4/6/7/8/9/10 APPROVED as proposed or
-          amended; JC-5 RULED modified — no step-2 magnitude
-          safeguard PLUS per-symbol SIGN-CONSISTENCY D-membership
-          condition; Amendment-C pre-ruling stands). Written BEFORE
-          any implementation exists and BEFORE any outcome statistic
-          was computed for this candidate. From this freeze commit,
-          changes go ONLY in an appended AMENDMENTS section with
-          timestamp and justification. No forward return, IC, or
-          outcome statistic was computed in producing this file.
-          N = 11 (unchanged; no outcome contact).
+          2026-07-15). STEP 1 CENSUS EXECUTED 2026-07-16
+          (Task 8-C-H10) — verdict PROCEED — D = {APP, RMBS};
+          pooled viable-region episodes 152 ≥ 100; sequence halted
+          for Lei review before Phase B / step 2. See appended
+          CENSUS RESULTS (execution record; frozen §1–§12 text
+          untouched). N = 11 (census N-neutral; no outcome contact).
   Owner:  research-workflow (protocol + ledger) / microstructure-alpha
           (candidate); prompt-pack Task 8, Phase B (H10).
 
-  Provenance (FQ-3 template):
-    git_sha: "decd9170b82e9832800583b97517808a125add31" (HEAD at
-      Task-8 authoring; freeze commit supersedes)
-    worktree_clean: "research outputs: formal_spec may remain
-      untracked sibling; this file is the freeze write"
-    pythonhashseed: "n/a — no scripted analysis run in this task
-      (protocol authoring / freeze only; zero data contact)"
-    normative_inputs (Amendment A — structural template):
-      sig_inventory_fade_v1_validation_protocol.md (H2 frozen —
-        STRUCTURAL TEMPLATE; §11 8-F rulings carried),
-      sig_dislocation_lambda_drift_v1_validation_protocol.md (H8
-        frozen incl. all 8-F and A-1/A-2 rulings — STRUCTURAL
-        TEMPLATE; locked order, single-stress anchor, conjunctive-IC
-        rationale, CPCV dual reporting, 27-vertex+stress sensitivity
-        pass set, ±5% numericization, latency axis),
-      sig_sweep_kyle_drift_h900_v1_formal_spec.md (H10 Task-7 spec
-        §1–§16; consequence-precedence sketch §4.3; Phase-A map §15;
-        Amendments A–F on the spec),
-      prompt_pack_09_hypothesis_slate_c.md (H10 card VERBATIM +
-        DISPOSITIONS; trial ledger N = 11),
-      prompt_pack_09a_slate_c_review.md (DECISION RECORD),
-      prompt_pack_03c_universe_and_cache.md (through AMENDMENT 2;
-        20-session {APP,RMBS} grid; L1–L5; HOLIDAY-THIN),
-      prompt_pack_03b_print_eligibility.md (§3.3 Class-A, §4.3/§4.4),
-      prompt_pack_00b_edge_units_convention.md,
-      prompt_pack_00c_eval_canon.md (pinned realism profile at commit
-        825a7bc3bda48d3a819fed0a498dbf9d65e711c4),
-      prompt_pack_12p_router_fill_timing_parity.md (Task 12-P AXIS-1
-        VERIFIED — hard gate cited, not re-run),
-      docs/research/gas_01_integrated_ofi.md / gas_02 (ENG-3
-        sign-golden + IC-gate precedent),
-      .cursor/skills/microstructure-alpha/research-protocol.md
-        (Phase 3 stratification, ~100-obs rule, Phase 5 IC(t) fit),
-      src/feelies/research/{cpcv.py, dsr.py, forward_ic.py},
-      src/feelies/alpha/promotion_evidence.py (GateThresholds),
-      src/feelies/forensics/cost_survival.py (verdict vocabulary),
-      scripts/{sensor_feature_ic.py, regime_diagnostics.py},
-      src/feelies/harness/backtest_cli.py (--inv12-stress)
-      (all read this session; citations inline).
+  Provenance (FQ-3 — Task 8-C-H10 census execution):
+    git_sha: "1e2cf24bfe566c223088fd3d914d3639be4bfe0c"
+      (instrument-pin golden commit; HEAD at census start)
+    worktree_clean: "yes for tracked tree; formal_spec.md remains
+      untracked sibling (freeze-provenance allowance)"
+    pythonhashseed: "0"
+    host: "CHENGLEI-L-3 / Windows-11-10.0.26200-SP0 /
+      Python 3.14.2 (MSC v.1944 64 bit AMD64)"
+    artifact_sha256:
+      "a2f49e6bb7e32e68c5b776a106b4b27d9aa1218a9e1ed5af5f8a3dffe5eb7829"
+      (docs/research/artifacts/sweep_kyle_drift_census_2026-07-16.json;
+       bit-identical re-run matched)
+    normative_inputs: frozen protocol §1 (this file) + Phase-A
+      instruments (faeafaa / 19adcfd / 8b8932f / 1e2cf24) + 03c grid.
 -->
 
 # `sig_sweep_kyle_drift_h900_v1` — pre-registered validation protocol (Task 8)
@@ -1146,3 +1117,186 @@ step-2 IC on the H10 primary → N ≥ 12).
 
 *(Record appended 2026-07-15. Justification: Task 9-A-H10 Phase-A
 close-out; instruments built and pinned; no freeze-body edit.)*
+
+---
+
+# CENSUS RESULTS — STEP 1 EXECUTED (Task 8-C-H10, 2026-07-16)
+
+Execution record of the frozen §1 census. **Not an amendment** — no
+test definition, threshold, or parameter above the freeze line
+changed; the only header edit is the Status / FQ-3 provenance block
+recording this execution. **No forward return, IC, or signal
+evaluation was computed** — the only return-like quantity touched is
+the unconditional session σ₉₀₀, per the frozen §1 authorization.
+**N = 11** (census N-neutral).
+
+## C.0 Instrument pin (task step 0; before grid contact)
+
+Synthetic-fixture golden absent from Phase-A helper tests → added and
+committed as `1e2cf24` **before** any cache contact:
+`tests/scripts/test_sweep_kyle_drift_census.py` exercises
+`run_cell_from_events` on a hand-computable RTH tape (n_in_window = 1
+by session-window construction; n_iso = 45 ⇒ ≥ 20 warm SFI readings
+after the sensor's own warm gate ⇒ exactly **1 LONG** episode;
+n_iso = 5 / Class-B `(8,)` / `correction=10` ⇒ **0** episodes). Pin
+green before grid.
+
+## C.1 Preconditions at execution (§0 re-verified)
+
+| # | check | result |
+|---|---|---|
+| P0-1 | Phase-A deliverables | green: sensor `faeafaa`, instrument `19adcfd`+pin `1e2cf24`, harness IC row `8b8932f` |
+| P0-4 | determinism | `PYTHONHASHSEED=0`; direct `DiskEventCache` (`~/.feelies/cache`); real `SensorRegistry → HorizonScheduler → HorizonAggregator` stack; full-grid re-run **bit-identical** (SHA-256 match below) |
+| P0-5 | protocol frozen before census | freeze `ec7eb5c` + A-1 `4e0db1a` + pin `1e2cf24` precede execution |
+| integrity pin | vs H8 expanded census | overlapping (symbol, date) `n_events` / `n_quotes` / `n_trades` **match** (`integrity_pin.ok = true`) |
+
+**FQ-3 provenance:** host `CHENGLEI-L-3` / `Windows-11-10.0.26200-SP0` /
+Python 3.14.2; git SHA `1e2cf24`; worktree clean for tracked files
+(`formal_spec.md` untracked sibling, freeze-allowed); artifact
+`docs/research/artifacts/sweep_kyle_drift_census_2026-07-16.json`
+SHA-256 `a2f49e6bb7e32e68c5b776a106b4b27d9aa1218a9e1ed5af5f8a3dffe5eb7829`
+(primary run = re-run).
+
+## C.2 Method
+
+`scripts/research/sweep_kyle_drift_census.py` — frozen §1.1 predicate
+exact (arms 1–6); JC-10 ISO-warm = SFI-warm share of in-window
+boundaries; warm-drop < 0.5 on > 2 sessions; primary count =
+filter-clean §1.1 (JC-1 no-double-exclusion, multiplier 1.0); σ₉₀₀ =
+Bessel-corrected std of non-overlapping 900 s mid log-returns on the
+09:30-anchored grid (bps); floors APP 4.68 / 29.62 and RMBS 5.51 /
+34.87 (κ = 0.158); short rider APP 5.82 / 36.84, RMBS 6.60 / 41.77.
+OLN × 10 preamble evidence-only (zero episodes by construction).
+
+## C.3 JC-1 REPORTS — residual flag investigation (BEFORE verdict)
+
+**Trigger fired:** `any_residual_bug_flag = true` on **40/40**
+{APP, RMBS} cells with episodes (residual mean share ≈ **0.62–0.80**).
+
+**Investigation (closed — not a sensor bug):** the instrument's
+`residual_non_a_share` is the share of *all* trailing-900 s tape prints
+that fail Class-A ∩ id-14 + correction drop — i.e. ≈ 1 − ISO-eligible
+share on a mixed tape. That quantity is large by construction on real
+L1 (ISO is a minority). The sensor **does not ingest** those prints
+(filter goldens + pin confirm exclusion); co-travel on the tape is
+expected hygiene context, not ingestion leakage. The protocol's
+"near-zero by construction" reading matches *state* leakage, which
+this estimand does not measure. Per §1.3 / JC-1: diagnostic only —
+**never a park, never a power deflator**. No sensor-code change;
+estimand clarification deferred to Lei if a tighter leakage probe is
+wanted later (would be a new diagnostic, not a freeze edit).
+
+**Class-B intensity (2.0× count-basis, non-binding):** APP **4** /
+RMBS **4** eligible boundaries flagged; reported for mixture
+θ₂/θ₃ adjudication only.
+
+## C.4 ISO-warm (JC-10) — ASSERTED 0.95 vs measured
+
+| symbol | ASSERTED prior | measured mean [min–max] | sessions with warm < 0.5 | warm-drop fired? |
+|---|---|---|---|---|
+| APP | 0.95 | **1.000** [1.000–1.000] | 0 / 20 | no |
+| RMBS | 0.95 | **1.000** [1.000–1.000] | 0 / 20 | no |
+
+Measured warm **replaces** the ASSERTED 0.95 for power scoring; both
+recorded. Coverage drop rule did not fire.
+
+## C.5 Per-symbol roll-up (κ = 0.158; primary = §1.1)
+
+| symbol | σ₉₀₀ min L/S (bps) | viable_long cells | viable_short cells | episodes (all) | viable-region episodes (L/S split of all) | elev-A / elev-B / calm (all cells) | ≥ 100 viable? |
+|---|---|---|---|---|---|---|---|
+| APP | 29.62 / 36.84 | **18 / 20** | 17 / 20 | 107 (58 L / 49 S) | **94** | 24 / 29 / 54 | YES (94) alone under pool rule |
+| RMBS | 34.87 / 41.77 | **16 / 20** | 15 / 20 | 72 (39 L / 33 S) | **58** | 11 / 23 / 38 | no alone; pool carries |
+| OLN | — | — | — | 0 (evidence-only) | — | — | never in D |
+
+Pooled viable-region primary episodes across D: **152 ≥ 100**.
+
+**HOLIDAY-THIN (2025-12-26, 2025-12-30; never excluded):** APP HT
+episodes = 13 (both HT cells are the only APP non-viable-σ sessions:
+σ = 21.50 / 26.42); RMBS HT = 8 (2025-12-26 non-viable; 2025-12-30
+viable). Tags reported; counts include them.
+
+**Benign / gate occupancy (predicate = gate ON):** in-window
+boundaries = 25 × 20 = 500 per symbol. APP gate_on = 107 (occupancy
+0.214), gate_off = 393; RMBS gate_on = 72 (0.144), gate_off = 428.
+Elevated strata denser than calm on a per-cell basis; A and B reported
+separately (L4), never pooled for conclusions.
+
+**SELL-leg / long-only:** RMBS clears short σ min on 15/20 sessions;
+short episodes remain in the two-sided claim at census — **no** §1.6
+long-only restatement forced by σ arithmetic alone (measured short
+edge awaits step 2).
+
+## C.6 Park-condition scoring (§1.5 / §1.6 / §9; no discretion)
+
+1. **Edge-region emptiness: FALSE.** Both APP and RMBS have
+   non-empty viable-region primary episodes (94 / 58).
+2. **Power floor (pooled ≥ 100 contamination-excluded): PASS.**
+   Pooled = **152**. Axis-split not required (neither symbol failed
+   deployability).
+3. **Warm-drop: FALSE** for both symbols.
+4. **D = {APP, RMBS}.** OLN never in D.
+
+**VERDICT: PROCEED — D = {APP, RMBS}.**
+
+(Census instrument string `PROCEED_CENSUS`; mapped to the frozen §9
+verdict line above.)
+
+## C.7 Per-cell table (grid symbols; full JSON in artifact)
+
+Columns: σ₉₀₀ (bps); viaL/viaS; eps / L / S; SFI warm; residual mean;
+Class-B intensity excl.; gate ON/OFF; in-window (always 25).
+
+| sym | date | stratum | σ₉₀₀ | viaL | viaS | eps | L | S | warm | resid | B-int | gON | gOFF |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| APP | 2025-11-25 | elev-A | 41.30 | Y | Y | 5 | 4 | 1 | 1.00 | 0.756 | 1 | 5 | 20 |
+| APP | 2025-12-04 | elev-A | 63.10 | Y | Y | 5 | 4 | 1 | 1.00 | 0.702 | 1 | 5 | 20 |
+| APP | 2025-12-01 | elev-A | 58.87 | Y | Y | 9 | 5 | 4 | 1.00 | 0.735 | 0 | 9 | 16 |
+| APP | 2025-12-02 | elev-A | 58.33 | Y | Y | 5 | 3 | 2 | 1.00 | 0.696 | 0 | 5 | 20 |
+| APP | 2025-12-22 | calm | 32.87 | Y | n | 5 | 1 | 4 | 1.00 | 0.763 | 0 | 5 | 20 |
+| APP | 2026-01-05 | calm | 40.70 | Y | Y | 8 | 3 | 5 | 1.00 | 0.726 | 0 | 8 | 17 |
+| APP | 2026-01-15 | calm | 46.45 | Y | Y | 2 | 1 | 1 | 1.00 | 0.701 | 2 | 2 | 23 |
+| APP | 2026-01-26 | calm | 50.57 | Y | Y | 6 | 2 | 4 | 1.00 | 0.726 | 0 | 6 | 19 |
+| APP | 2026-01-27 | calm | 59.03 | Y | Y | 2 | 1 | 1 | 1.00 | 0.786 | 0 | 2 | 23 |
+| APP | 2025-12-26 | calm HT | 21.50 | n | n | 6 | 4 | 2 | 1.00 | 0.708 | 0 | 6 | 19 |
+| APP | 2025-12-30 | calm HT | 26.42 | n | n | 7 | 6 | 1 | 1.00 | 0.682 | 0 | 7 | 18 |
+| APP | 2026-01-12 | calm | 69.76 | Y | Y | 7 | 4 | 3 | 1.00 | 0.700 | 0 | 7 | 18 |
+| APP | 2026-01-20 | calm | 73.04 | Y | Y | 5 | 3 | 2 | 1.00 | 0.728 | 0 | 5 | 20 |
+| APP | 2026-01-22 | calm | 45.61 | Y | Y | 6 | 2 | 4 | 1.00 | 0.755 | 0 | 6 | 19 |
+| APP | 2026-04-01 | elev-B | 40.72 | Y | Y | 6 | 4 | 2 | 1.00 | 0.721 | 0 | 6 | 19 |
+| APP | 2026-04-10 | elev-B | 43.67 | Y | Y | 6 | 3 | 3 | 1.00 | 0.724 | 0 | 6 | 19 |
+| APP | 2026-04-22 | elev-B | 41.01 | Y | Y | 4 | 2 | 2 | 1.00 | 0.803 | 0 | 4 | 21 |
+| APP | 2026-04-02 | elev-B | 77.53 | Y | Y | 4 | 2 | 2 | 1.00 | 0.777 | 0 | 4 | 21 |
+| APP | 2026-04-07 | elev-B | 55.54 | Y | Y | 6 | 3 | 3 | 1.00 | 0.753 | 0 | 6 | 19 |
+| APP | 2026-04-16 | elev-B | 49.00 | Y | Y | 3 | 1 | 2 | 1.00 | 0.724 | 0 | 3 | 22 |
+| RMBS | 2025-11-25 | elev-A | 51.11 | Y | Y | 4 | 2 | 2 | 1.00 | 0.746 | 0 | 4 | 21 |
+| RMBS | 2025-12-04 | elev-A | 49.71 | Y | Y | 2 | 2 | 0 | 1.00 | 0.722 | 0 | 2 | 23 |
+| RMBS | 2025-12-01 | elev-A | 41.01 | Y | n | 2 | 2 | 0 | 1.00 | 0.699 | 0 | 2 | 23 |
+| RMBS | 2025-12-02 | elev-A | 43.76 | Y | Y | 3 | 3 | 0 | 1.00 | 0.713 | 0 | 3 | 22 |
+| RMBS | 2025-12-22 | calm | 31.05 | n | n | 4 | 0 | 4 | 1.00 | 0.801 | 0 | 4 | 21 |
+| RMBS | 2026-01-05 | calm | 53.36 | Y | Y | 4 | 3 | 1 | 1.00 | 0.675 | 0 | 4 | 21 |
+| RMBS | 2026-01-15 | calm | 67.33 | Y | Y | 5 | 2 | 3 | 1.00 | 0.704 | 0 | 5 | 20 |
+| RMBS | 2026-01-26 | calm | 43.96 | Y | Y | 2 | 1 | 1 | 1.00 | 0.726 | 0 | 2 | 23 |
+| RMBS | 2026-01-27 | calm | 43.74 | Y | Y | 3 | 0 | 3 | 1.00 | 0.735 | 0 | 3 | 22 |
+| RMBS | 2025-12-26 | calm HT | 19.58 | n | n | 2 | 0 | 2 | 1.00 | 0.736 | 1 | 2 | 23 |
+| RMBS | 2025-12-30 | calm HT | 46.13 | Y | Y | 6 | 5 | 1 | 1.00 | 0.722 | 0 | 6 | 19 |
+| RMBS | 2026-01-12 | calm | 32.87 | n | n | 6 | 3 | 3 | 1.00 | 0.788 | 0 | 6 | 19 |
+| RMBS | 2026-01-20 | calm | 75.90 | Y | Y | 3 | 1 | 2 | 1.00 | 0.666 | 0 | 3 | 22 |
+| RMBS | 2026-01-22 | calm | 49.45 | Y | Y | 3 | 3 | 0 | 1.00 | 0.723 | 1 | 3 | 22 |
+| RMBS | 2026-04-01 | elev-B | 46.93 | Y | Y | 6 | 2 | 4 | 1.00 | 0.750 | 0 | 6 | 19 |
+| RMBS | 2026-04-10 | elev-B | 47.65 | Y | Y | 1 | 1 | 0 | 1.00 | 0.711 | 0 | 1 | 24 |
+| RMBS | 2026-04-22 | elev-B | 61.29 | Y | Y | 5 | 3 | 2 | 1.00 | 0.651 | 1 | 5 | 20 |
+| RMBS | 2026-04-02 | elev-B | 81.94 | Y | Y | 3 | 1 | 2 | 1.00 | 0.729 | 0 | 3 | 22 |
+| RMBS | 2026-04-07 | elev-B | 56.04 | Y | Y | 6 | 4 | 2 | 1.00 | 0.728 | 1 | 6 | 19 |
+| RMBS | 2026-04-16 | elev-B | 33.82 | n | n | 2 | 1 | 1 | 1.00 | 0.623 | 0 | 2 | 23 |
+
+Every grid cell emitted 26 RTH h=900 boundaries, **25** in the
+09:35–15:50 window. OLN × 10 preamble: episodes = 0 by construction.
+
+## C.8 Stop
+
+§0 order lock: **stop for Lei review** before Phase B or any step-2
+action. No IC / forward return / YAML / bootstrap factory work in this
+task. **N = 11** unchanged.
+
+*(Record appended 2026-07-16. Justification: Task 8-C-H10 step-1
+execution; frozen bars scored without discretion.)*
