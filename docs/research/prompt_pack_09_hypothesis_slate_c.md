@@ -3,8 +3,9 @@
   Status: hypothesis — DECIDED (2026-07-15): H10 CONFIRMED for Task 7
           path (phased per SEQUENCING RULING); H9 NOT SELECTED
           (CONTINGENT SECOND CARD); H11 NOT SELECTED — see DISPOSITIONS
-          at end of file. Trial ledger: N = 11, unchanged (no outcome
-          contact). Cards above unedited (append-only).
+          at end of file. Trial ledger: N = 12 (Task 11-A-H10 H10
+          primary step-2 REJECTED at 2b; append-only ledger update).
+          Cards above unedited (append-only).
   Owner:  microstructure-alpha (cards) / research-workflow (trial
           ledger); prompt-pack Task 6-C, Phase B.
 
@@ -698,6 +699,16 @@ None authorized for evaluation by this slate.
 
 **N = 11 as of this task** — three cards drafted, seed design-excluded,
 zero outcome statistics for any slate-C candidate.
+
+### Ledger update — H10 step-2 outcome contact (Task 11-A-H10, 2026-07-16)
+
+| N | trial | source | status |
+|---|---|---|---|
+| **12** | H10 primary: sweep_flow_imbalance(900 s) decile continuation, H=900, hl=450, passive, pooled {APP,RMBS} | H10 protocol step 2 | **EVALUATED — REJECTED at step 2b** (§9 row "2b IC gate"; Fisher-z p 0.288 > 0.01; F2 co-travel absent; conditional-tail t 0.82 < 2). RankIC +0.089 ≥ 0.03 sign-correct but conjunctive gate fails. Steps 2.3–8 not run. Phase B not authorized. |
+
+**Living N = 12.** Zero additional evaluations in Task 11-A-H10 (one
+primary scoring pass). Spec §13 drafted rows remain N-impact 0 until
+Lei authorizes (+1 N each).
 
 ---
 

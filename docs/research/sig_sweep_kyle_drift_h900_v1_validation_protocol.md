@@ -1,16 +1,18 @@
 <!--
   File:   docs/research/sig_sweep_kyle_drift_h900_v1_validation_protocol.md
   Status: PRE-REGISTERED — FROZEN (Task 8-F-H10 rulings, Lei,
-          2026-07-15). STEP 1 CENSUS EXECUTED 2026-07-16
-          (Task 8-C-H10) — verdict PROCEED — D = {APP, RMBS};
-          pooled viable-region episodes 152 ≥ 100; sequence halted
-          for Lei review before Phase B / step 2. See appended
-          CENSUS RESULTS (execution record; frozen §1–§12 text
-          untouched). N = 11 (census N-neutral; no outcome contact).
+          2026-07-15). STEP 1 PROCEED (n=152, D={APP,RMBS}).
+          A-2 JC-1 REPORTS estimand clarification (Task 11-A-H10).
+          STEP 2 EXECUTED 2026-07-16 (Task 11-A-H10): 2a PASS 7/7;
+          2b FAIL → REJECTED (§9 row "2b IC gate"; F2 + Fisher-z p
+          + conditional-tail t). Steps 2.3 / JC-5 / 3–8 NOT computed.
+          N = 12 (first outcome contact). Stop for Lei review —
+          Phase B gated on this verdict (slate-C sequencing).
   Owner:  research-workflow (protocol + ledger) / microstructure-alpha
-          (candidate); prompt-pack Task 8, Phase B (H10).
+          (candidate); prompt-pack Task 8 / Task 11-A (H10).
 
-  Provenance (FQ-3 — Task 8-C-H10 census execution):
+  Provenance (FQ-3 — Task 8-C-H10 census execution; step-2 block
+  appended under STATISTICAL RESULTS):
     git_sha: "1e2cf24bfe566c223088fd3d914d3639be4bfe0c"
       (instrument-pin golden commit; HEAD at census start)
     worktree_clean: "yes for tracked tree; formal_spec.md remains
@@ -1300,3 +1302,212 @@ task. **N = 11** unchanged.
 
 *(Record appended 2026-07-16. Justification: Task 8-C-H10 step-1
 execution; frozen bars scored without discretion.)*
+
+---
+
+## A-2 — JC-1 REPORTS estimand clarification (Task 11-A-H10 housekeeping, 2026-07-16)
+
+**Scope.** Append-only clarification of the §1.3 / JC-1 REPORTS
+definition. **No threshold, park bar, predicate, or freeze-body text
+changed.** Recorded **before any step-2 statistic** (task step 0).
+
+**Census finding that forced the clarification (C.3):** the instrument
+flagged `residual_non_a_share > 1 %` on 40/40 {APP, RMBS} cells with
+episodes (mean share ≈ 0.62–0.80). Investigation closed: not a sensor
+bug — the measured quantity is tape co-travel, not state leakage.
+
+**Two estimands (distinguished; never conflated):**
+
+| estimand | definition | expected on real L1 | JC-1 >1 % investigation trigger |
+|---|---|---|---|
+| **Sensor-state leakage** | share of prints that *enter* SFI sensor state despite failing Class-A ∩ id-14 + correction drop | **0 by construction** (filter goldens + census synthetic pin); golden-pinned | **YES — attaches here only** |
+| **Tape co-travel share** | share of *all* trailing-900 s tape prints that fail the same filter (ISO is a minority on mixed L1) | **natural, large** (census observed ≈ 62–80 %) | **NO** — composition diagnostic only; never a park, never a power deflator |
+
+**Resolution recorded:** the census investigation resolved the
+conflation correctly. The Phase-A instrument's `residual_non_a_share`
+field measures the **tape co-travel** estimand; the protocol's
+"near-zero by construction" / >1 % investigation wording in §1.3 /
+JC-1 attaches to the **leakage** estimand only. No sensor-code
+change; no freeze-body edit; no new diagnostic required for step 2.
+
+*(Amendment appended 2026-07-16 before step-2 outcome contact.
+Justification: Task 11-A-H10 housekeeping item 0.)*
+
+---
+
+# STATISTICAL RESULTS — STEPS 2a/2b EXECUTED, FIRST FAIL AT 2b (Task 11-A-H10, 2026-07-16)
+
+Execution record of protocol step 2 under Ordering B (slate-C
+SEQUENCING RULING: harness extraction path; Phase B YAML gated on
+PASS). Locked order; each criterion scored against its pre-registered
+number; STOP at first failing stage with the §9 consequence. **The
+run stopped inside step 2b.** Steps 2.3, JC-5, 2.4, and 3–8 were
+**NOT COMPUTED**. A-2 (JC-1 REPORTS estimand clarification) was
+recorded before any statistic.
+
+**N = 12** — first outcome contact on the H10 primary (11 → 12).
+
+## S.1 Preconditions
+
+| # | check | result |
+|---|---|---|
+| worktree | clean tracked tree at start | yes at `2c45b6f` (census PROCEED); `formal_spec.md` untracked sibling (freeze-allowed) |
+| seed | `PYTHONHASHSEED=0` | set for every scripted run and pytest |
+| A-2 housekeeping | JC-1 REPORTS estimand split | appended before any statistic |
+| P0-1 | Phase-A instruments | green (sensor / census / harness IC row) |
+| P0-4 | determinism | extract re-run bit-identical; stats re-run bit-identical |
+| stage 0 | census pin | **50/50 cells exact**; viable-region episodes APP 94 / RMBS 58 / pooled **152** |
+
+## S.2 Instruments (Ordering B)
+
+| artifact | role |
+|---|---|
+| `tests/research/test_gas_sweep_kyle_drift_sign.py` | §2.1 harness sign-goldens (extraction / census-pinned predicate; no YAML `evaluate`) |
+| `scripts/research/sweep_kyle_drift_validation_extract.py` | boundary extract; imports census for all constants / predicate; +`kyle_lambda_60s` F2 diagnostic |
+| `scripts/research/sweep_kyle_drift_validation_stats.py` | stage 0 → 2b → (2.3 / JC-5 on PASS only); first-FAIL stop |
+
+Binding conventions: IC pair x = `sweep_flow_imbalance`, y = signed
+forward 900 s mid log-return; evidence set = census §1.1 eligible
+episodes on `viable_long` sessions, pooled {APP ∪ RMBS}; zero-move
+fwd = 0.0 (valid pair); end-of-session pairs without a realised 900 s
+endpoint dropped from the IC sample (disclosed: episode n = 152,
+IC-pair n = 144 — both ≥ 100).
+
+## S.3 Step 2a — harness sign-golden — **PASS**
+
+```
+PYTHONHASHSEED=0 uv run pytest tests/research/test_gas_sweep_kyle_drift_sign.py
+→ 7 passed
+```
+
+| # | assertion (Ordering-B harness equivalent of §2.1) | result |
+|---|---|---|
+| 1 | Informed-continuation LONG (buy ISO ⇒ SFI>0, pctl≥0.90 ⇒ LONG arm) | PASS |
+| 2 | Mirror SHORT | PASS |
+| 3 | Interior-null (alternating ISO ⇒ interior pctl ⇒ no entry) | PASS |
+| 4 | Filter-exclusion (Class-B / non-id-14 ⇒ no SFI warm / no entry) | PASS |
+| 5 | Warm-gate (<20 eligible ISO ⇒ suppressed) | PASS |
+| 6 | Sign-disagreement predicate reject | PASS |
+| 7 | h=900 key-presence (ENTRY_WARM_IDS) | PASS |
+
+**Step 2a: PASS.** (Full loader-compiled `evaluate` goldens remain a
+Phase-B proof obligation — not reached; Phase B gated on step-2 PASS.)
+
+## S.4 Step 2b — RankIC gate (census boundary set n = 152) — **FAIL**
+
+Pooled {APP ∪ RMBS}, viable-region primary eligible episodes, h = 900:
+
+| quantity | value |
+|---|---|
+| episode n (census pin) | **152** (APP 94 / RMBS 58) |
+| IC-pair n (fwd realised) | **144** (8 end-session drops) |
+| extreme-SFI RankIC | **+0.0893** |
+| Fisher-z two-sided p | **0.288** |
+| interior RankIC (n=517) | +0.0306 (p 0.487) |
+| extreme − interior contrast | **+0.0586** |
+| interior continuation-signed mean | +0.53 bps (SE 2.43, t 0.22 — not sig positive) |
+| F2 kyle_lambda_60s_pctl contrast (elev − base) | **−0.014** (not material) |
+| F2 print-volume contrast | **−19,407** (not material; both F2 arms absent) |
+| bucket top−bottom edge | **+10.52 bps** |
+| conditional tail mean / t | **+2.86 bps / t = 0.82** |
+
+**Per-criterion scoring (§2.2; each vs pre-registered bar):**
+
+| criterion | bar | observed | n-class | verdict |
+|---|---|---|---|---|
+| extreme-SFI pooled RankIC sign | > 0 | +0.0893 | n-invariant | **PASS** |
+| extreme-SFI pooled \|RankIC\| | ≥ 0.03 | 0.0893 | n-invariant | **PASS** |
+| extreme-SFI pooled Fisher-z p | ≤ 0.01 | 0.288 | n-variant | **FAIL** |
+| pooled sample minimum | n ≥ 100 | 152 (IC-pair 144) | n-variant | **PASS** |
+| interior contrast | contrast > 0 AND interior not sig-positive | +0.0586; interior t 0.22 | n-invariant | **PASS** |
+| F2 λ / volume co-travel | ≥ 1 material positive contrast | both absent / negative | mechanism | **FAIL** |
+| per-symbol diagnostics | reported (non-governing) | APP +0.083 (n=89, p=0.44); RMBS +0.226 (n=55, p=0.097) | diagnostic | **PASS** (reported) |
+| bucket monotonicity | top−bottom > 0 | +10.52 bps | n-invariant | **PASS** |
+| conditional tail | mean > 0 with t ≥ 2 | +2.86 bps, **t 0.82** | sign n-inv; t n-var | **FAIL** |
+
+**Verdict: step 2b FAILS.** Three conjuncts fire: Fisher-z p, F2
+co-travel, conditional-tail t. Magnitude and sign of RankIC clear
+their bars; the claimed strength / attribution / tail do not.
+
+**Honest characterization (no re-litigation):** a weak positive
+continuation RankIC exists in-sample (+0.089) with a favourable
+interior contrast and bucket spread, but it is indistinguishable from
+zero at the pre-registered p ≤ 0.01 bar, the F2 informed-flow
+fingerprint (λ / volume elevation at extremes) is **absent**
+(contrasts negative), and the conditional-tail t-stat (0.82) misses
+t ≥ 2. The conjunctive gate rejects exactly this configuration.
+
+## S.5 Status consequence (§9) — STOP
+
+**§9 row "2b IC gate" → REJECTED (F1/F2 dead).** Precedence:
+
+- F2 fail ∩ RankIC magnitude/sign PASS → **REJECTED (F2)** (§9.1) —
+  mechanism attribution dead despite pooled drift sign.
+- Fisher-z p FAIL and tail-t FAIL reinforce the same §9 row 2b
+  REJECTED (conjunctive). Magnitude-class bars themselves PASSED;
+  the rejection is not a \|RankIC\| < 0.03 kill.
+- JC-5 **not applied** (acts only on a primary 2b PASS). Per-symbol
+  signs were both continuation-positive (diagnostic only here).
+- Steps 2.3 / 2.4 / 3–8 **not executed** (first-FAIL stop).
+
+No tuning. No variant evaluation. Phase B remains gated — **not
+authorized**.
+
+Doc Status: **FAILED STEP 2b — REJECTED (§9 row "2b IC gate") —
+AWAITING LEI REVIEW** (slate-C sequencing: Phase B does not open).
+
+## S.6 Trial ledger
+
+**N = 12.** N = 11 at census close; this step-2 execution is the H10
+primary's **first outcome contact** → +1. Zero exploratory variants
+evaluated (one extract, one scoring pass, frozen thresholds). Spec
+§13 drafted-not-evaluated rows remain N-impact 0 unless Lei
+authorizes (+1 N each). Living ledger updated in
+`prompt_pack_09_hypothesis_slate_c.md` §(3) appendix below.
+
+## S.7 Provenance (FQ-3)
+
+    git_sha: "2c45b6ff0fdbc02639ac74af093270f739ee56bd"
+      (HEAD at evidence start = census PROCEED commit; instruments
+      and this record committed with the Task 11-A-H10 close-out)
+    worktree_clean: "tracked tree clean at start; formal_spec.md
+      untracked sibling (freeze-allowed)"
+    pythonhashseed: "0"
+    host_fingerprint:
+      os: "Windows-11-10.0.26200-SP0"
+      host: "CHENGLEI-L-3"
+      python_build: "3.14.2 (MSC v.1944 64 bit AMD64)"
+    commands:
+      2a: "PYTHONHASHSEED=0 uv run pytest
+        tests/research/test_gas_sweep_kyle_drift_sign.py → 7 passed"
+      extract: "PYTHONHASHSEED=0 uv run python
+        scripts/research/sweep_kyle_drift_validation_extract.py
+        --json docs/research/artifacts/sig_sweep_kyle_drift_h900_v1/
+        boundaries_extract_2026-07-16.json"
+      stats: "PYTHONHASHSEED=0 uv run python
+        scripts/research/sweep_kyle_drift_validation_stats.py
+        --extract <above>
+        --census docs/research/artifacts/sweep_kyle_drift_census_2026-07-16.json
+        --json docs/research/artifacts/sig_sweep_kyle_drift_h900_v1/
+        validation_stats_2026-07-16.json"
+    artifacts (docs/research/artifacts/sig_sweep_kyle_drift_h900_v1/):
+      boundaries_extract_2026-07-16.json
+        sha256=522e0ff14c1986a6099ba7a9523f9a4b488b9730ab3d1ba09d4458da6d8f0c25
+        (re-run bit-identical)
+      validation_stats_2026-07-16.json
+        sha256=4735b20a937ba7382f4108b29138d365892616f10824ce856bce18e7ff9cd9ea
+        (re-run bit-identical)
+    census_pin: "sweep_kyle_drift_census_2026-07-16.json
+      sha256=a2f49e6bb7e32e68c5b776a106b4b27d9aa1218a9e1ed5af5f8a3dffe5eb7829
+      — stage 0 50/50 exact; pooled viable episodes 152"
+    ownership:
+      scripts/research/sweep_kyle_drift_validation_extract.py
+        → research_validation (docs/prompts/README.md scripts row)
+      scripts/research/sweep_kyle_drift_validation_stats.py
+        → research_validation (same)
+      tests/research/test_gas_sweep_kyle_drift_sign.py
+        → research_validation / microstructure-alpha (gas convention)
+
+*Task 11-A-H10 stops here per the first-FAIL rule. Phase B is not
+authorized. Lei reviews the REJECTED verdict and whether any
+spec §13 variant (+1 N each) is authorized before anything else runs.*
