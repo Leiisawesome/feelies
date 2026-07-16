@@ -2,9 +2,11 @@
   File:   docs/research/prompt_pack_09_hypothesis_slate_c.md
   Status: hypothesis — DECIDED (2026-07-15): H10 CONFIRMED for Task 7
           path (phased per SEQUENCING RULING); H9 NOT SELECTED
-          (CONTINGENT SECOND CARD); H11 NOT SELECTED — see DISPOSITIONS
-          at end of file. Trial ledger: N = 12 (Task 11-A-H10 H10
-          primary step-2 REJECTED at 2b; append-only ledger update).
+          (CONTINGENT SECOND CARD); H11 NOT SELECTED.
+          + SLATE FULLY ADJUDICATED (2026-07-16): H10 REJECTED at
+          protocol step 2b (Lei adjudication S.8; DISPOSITIONS 6–9);
+          H9 contingent ADJUDICATED (presumptive death). Zero slate-C
+          candidates survive. Trial ledger N = 12 confirmed.
           Cards above unedited (append-only).
   Owner:  microstructure-alpha (cards) / research-workflow (trial
           ledger); prompt-pack Task 6-C, Phase B.
@@ -782,3 +784,70 @@ instrument surface needed to run census + harness 2b under B;
 Phase B restores the deployable-object proof chain only after a
 PASS. This ruling does **not** globally mandate ordering B for future
 cards — operator decision remains per-card.
+
+---
+
+## DISPOSITIONS (continued — H10 close-out, 2026-07-16, Lei; append-only, entries 1–5 unedited)
+
+6. **H10 REJECTED** at protocol step 2b (first outcome contact,
+   Task 11-A-H10, 2026-07-16; Lei adjudication S.8 in
+   `sig_sweep_kyle_drift_h900_v1_validation_protocol.md`). Failure
+   decomposition (binding): **magnitude PASSED** (pooled extreme-SFI
+   RankIC **+0.089 ≥ 0.03**, ~5× H8's H=300 realization 0.0186);
+   **significance FAILED** n-variantly (Fisher-z **p 0.288 > 0.01**;
+   at this RankIC, p ≤ 0.01 needs **n ≈ 680** vs **144** realized —
+   no legal rescue: evidence pool frozen pre-outcome, post-outcome
+   widening prohibited); **F2 mechanism tie FAILED** (λ pctl contrast
+   −0.014; volume contrast −19,407 — no elevation, no same-direction
+   co-travel) — the KYLE attribution is refuted in-sample and is the
+   **governing substance** of the rejection. §9 row "2b IC gate"
+   REJECTED ratified. Closure record:
+   `sig_sweep_kyle_drift_h900_v1_result.md`. Steps 2.3–8 never
+   executed; Phase B never built; no statistic exists for steps
+   2.3–8. Spec §13 variants remain unauthorized (+1 N each if ever
+   evaluated).
+
+7. **H9 CONTINGENT SECOND CARD — ADJUDICATED.** Entry 2's
+   pre-registered trigger was: H9 revivable iff H10 passes step 2;
+   **presumptively dead if H10 fails step 2b on magnitude**, with
+   extraordinary justification required to revive. **Trigger gap
+   disclosed:** H10's step-2b failure was **p + F2**, not magnitude
+   (magnitude cleared). The literal magnitude-trigger for
+   presumptive death therefore did **not** fire. **Presumptive death
+   ruled anyway** on two independent grounds that do not require the
+   magnitude trigger: (i) **sibling arithmetic** — H9 was held
+   contingent on H10's certified-print conditioner adjudicating the
+   shared KYLE × H=900 × {APP,RMBS} continuation claim; H10's
+   rejection closes that claim for the slate without a surviving
+   sibling path; (ii) **shared-archetype F2 refutation** — H9's F2
+   arm is the same `kyle_lambda_60s` / volume co-travel fingerprint
+   at extreme flow; H10's in-sample F2 miss refutes that attribution
+   for the archetype on this evidence set. H9 is **not authorized**
+   for census or protocol. Cards above stay as drafted text
+   (FQ-6B-R: drafting remains N-impact 0; no H9 outcome contact
+   occurred).
+
+8. **Extraordinary-justification bar (restated with content).**
+   Reviving H9 (or any H9 alt) after this close-out requires an
+   explicit Lei authorization that states, before any census: (a) a
+   **mechanism distinguisher** explaining why quote-OFI extreme
+   continuation would carry KYLE attribution when certified-ISO
+   extreme continuation did not (F2 absent) — not a re-label of the
+   same λ / volume fingerprint; (b) a **fresh evidence set** (no
+   reuse of the H10 20-session outcome-contacted grid for
+   confirmation); (c) **honest-N** entry as a **new** trial (+1 N;
+   living N ≥ 13 at first outcome contact) with its own frozen
+   protocol from step 1. Absent that package, H9 remains dead for
+   program purposes. H11 remains NOT SELECTED per entry 3
+   (re-derivation as a new card if ever revived).
+
+9. **Slate C is fully adjudicated: zero survivors.** H10 REJECTED
+   (entry 6); H9 contingent ADJUDICATED to presumptive death (entry
+   7); H11 NOT SELECTED (entry 3). No slate-C card proceeds to
+   Phase B or step 3. **N = 12 confirmed** (was 11 through entry 5;
+   H10 step-2 was the primary's first outcome contact — ledger
+   update under §(3)). Zero exploratory variants evaluated; every
+   other ledger row remains drafted-not-evaluated (N-impact 0), and
+   none is authorized by this close-out — any future evaluation is a
+   new trial (+1 N) under its own protocol from step 1. Any future
+   DSR uses the then-current living N (≥ 12).

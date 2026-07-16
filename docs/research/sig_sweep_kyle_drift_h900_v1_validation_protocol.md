@@ -1,15 +1,13 @@
 <!--
   File:   docs/research/sig_sweep_kyle_drift_h900_v1_validation_protocol.md
-  Status: PRE-REGISTERED — FROZEN (Task 8-F-H10 rulings, Lei,
-          2026-07-15). STEP 1 PROCEED (n=152, D={APP,RMBS}).
-          A-2 JC-1 REPORTS estimand clarification (Task 11-A-H10).
-          STEP 2 EXECUTED 2026-07-16 (Task 11-A-H10): 2a PASS 7/7;
-          2b FAIL → REJECTED (§9 row "2b IC gate"; F2 + Fisher-z p
-          + conditional-tail t). Steps 2.3 / JC-5 / 3–8 NOT computed.
-          N = 12 (first outcome contact). Stop for Lei review —
-          Phase B gated on this verdict (slate-C sequencing).
+  Status: REJECTED (H10 rejection close-out, Lei, 2026-07-16).
+          PRE-REGISTERED — FROZEN (Task 8-F-H10). STEP 1 PROCEED
+          (n=152, D={APP,RMBS}). STEP 2: 2a PASS 7/7; 2b FAIL →
+          REJECTED per frozen §9 row "2b IC gate", ratified (S.8).
+          Steps 2.3 / JC-5 / 3–8 NOT computed. N = 12 confirmed.
+          Closure: sig_sweep_kyle_drift_h900_v1_result.md.
   Owner:  research-workflow (protocol + ledger) / microstructure-alpha
-          (candidate); prompt-pack Task 8 / Task 11-A (H10).
+          (candidate); prompt-pack Task 8 / Task 11-A / H10 close-out.
 
   Provenance (FQ-3 — Task 8-C-H10 census execution; step-2 block
   appended under STATISTICAL RESULTS):
@@ -1511,3 +1509,60 @@ authorizes (+1 N each). Living ledger updated in
 *Task 11-A-H10 stops here per the first-FAIL rule. Phase B is not
 authorized. Lei reviews the REJECTED verdict and whether any
 spec §13 variant (+1 N each) is authorized before anything else runs.*
+
+## S.8 ADJUDICATION (Lei, 2026-07-16) — REJECTED per frozen §9 row 2b, ratified
+
+**Ruling: REJECTED** under frozen §9 row **"2b IC gate"**. The
+Task 11-A-H10 S.5 first-FAIL stop stands; this adjudication ratifies
+it and records the failure decomposition precisely. Phase B remains
+**not authorized**. No post-outcome threshold, pool, or parameter
+change is permitted within this trial.
+
+### Failure decomposition (binding for all downstream citations)
+
+| axis | frozen bar | observed | class | verdict |
+|---|---|---|---|---|
+| **Magnitude** | \|RankIC\| ≥ 0.03 (sign > 0) | **+0.0893** (≥ 0.03; ~**5×** H8's H=300 primary realization 0.0186) | n-invariant | **PASSED** |
+| **Significance** | Fisher-z two-sided p ≤ 0.01 | **p = 0.288** (IC-pair n = 144) | n-variant | **FAILED** |
+| **F2 mechanism tie** | λ-percentile elevation OR same-direction print-volume elevation among primary eligible episodes (at least one material positive contrast) | λ pctl contrast **−0.014**; volume contrast **−19,407** — both absent / wrong-signed | mechanism | **FAILED** |
+
+**Significance — no legal rescue.** At the realized RankIC ≈ +0.089,
+Fisher-z p ≤ 0.01 requires **n ≈ 680** IC pairs versus the **144**
+realized on the frozen evidence pool. The evidence set was closed
+pre-outcome ({APP, RMBS} × 20-session 03c grid; DISPOSITIONS 4 /
+protocol §0). **Post-outcome widening of the pool is prohibited.**
+An n-variant miss that cannot be cured inside the frozen program is
+not convertible into a park by acquiring unauthorized sessions.
+
+**F2 — governing substance of the rejection.** Sweep-conditioned
+windows show **no** `kyle_lambda_60s` elevation and **no**
+same-direction volume co-travel versus baseline. The KYLE
+attribution (informed-flow via the impact / aggression fingerprint
+at the extreme-SFI stratum) is **refuted in-sample**. Magnitude
+clearing its floor without the mechanism tie is exactly the
+configuration §9.1 F2∩RankIC-PASS maps to **REJECTED (F2)** —
+mechanism attribution dead despite pooled drift sign. Conditional-
+tail t = 0.82 < 2 (also failed in S.4) reinforces the same §9 row
+2b REJECTED and does not alter the decomposition above.
+
+**What is rejected (scope precision).** The extreme-SFI
+continuation claim at **H = 900, passive, pooled {APP, RMBS}**,
+under the certified-ISO conditioner, with KYLE attribution via F2
+— on this frozen evidence set. The RankIC magnitude bar itself did
+**not** kill the card; significance and F2 did. No claim that
+"|RankIC| failed" may cite this record. No claim that more grid
+sessions inside an unfrozen expansion would have rescued the trial
+is admissible without a **new** trial (+1 N) and its own protocol
+from step 1.
+
+**Consequences.** Doc Status: **REJECTED** (close-out record:
+`sig_sweep_kyle_drift_h900_v1_result.md`; slate-C DISPOSITIONS
+appended). Steps 2.3, JC-5, 2.4, and 3–8 were never executed — no
+measured-edge, CPCV, stratification, DSR, drift, execution, or
+sensitivity statistic exists for this candidate, and none may be
+quoted. Trial ledger **N = 12 confirmed** (S.6 accounting adopted).
+No spec §13 variant is authorized by this ruling — any future
+evaluation of one is a new trial (+1 N) requiring its own protocol
+from step 1. Per-symbol RMBS RankIC +0.226 and the H=300→H=900
+magnitude comparison are recorded as post-hoc, outcome-contaminated
+observations in the result doc only — zero evidential weight.
