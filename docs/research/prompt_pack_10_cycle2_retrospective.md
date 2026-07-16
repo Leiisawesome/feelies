@@ -1,13 +1,11 @@
 <!--
   File:   docs/research/prompt_pack_10_cycle2_retrospective.md
-  Status: AWAITING-LEI-REVIEW — program retrospective for alpha program
-          cycle 2 (slate C: H9/H10/H11 + S-1 seed). Task 7-R2, 2026-07-16.
-          Synthesis of committed record ONLY: no code, no data contact,
-          no outcome statistic computed or quoted beyond what the cited
-          closure records already carry. Every claim cites its
-          document/commit; where the record is silent the entry says
-          UNKNOWN. Append-only backlog skill-edit candidates only
-          (no skill text edited in this task).
+  Status: DECIDED (2026-07-16, Lei) — cycle-2 retrospective accepted;
+          §5 Interpretation B adjudicated as overstated by one region;
+          CYCLE 3 AUTHORIZED (SCHEDULED_FLOW H∈{900,1800} only) with
+          PROGRAM STOP-RULE pre-registered (see DISPOSITION below).
+          N = 12 unchanged (authorization / stop-rule only; no outcome
+          contact). Body §§1–6 unedited (append-only).
   Owner:  research-workflow (program bookkeeping); prompt-pack Task 7-R2,
           Phase B.
 
@@ -455,4 +453,63 @@ forks; carry honest N (≥ 12; first contact +1). Cost-to-information
 `9026be2`: `git status --porcelain` empty. This retrospective plus
 the backlog 17–18 appends are the only outputs of Task 7-R2.
 
-*Task 7-R2 stops here. Status: AWAITING-LEI-REVIEW.*
+*Task 7-R2 body (§§1–6) stopped at AWAITING-LEI-REVIEW. Disposition
+appended below (Lei, 2026-07-16).*
+
+---
+
+## DISPOSITION (Cycle 3 authorization + program stop-rule — Lei, 2026-07-16; pre-outcome; §§1–6 unedited)
+
+1. **§5 ADJUDICATED.** Of the three honest readings in §5,
+   **Interpretation B** ("the universe–cost cell is closed for
+   tradable KYLE continuation") is accepted as the governing posture
+   for KYLE_INFO continuation on this grid, but is **overstated by
+   one region**. **SCHEDULED_FLOW at H ∈ {900, 1800}** remains
+   **map-open at honest κ** (`prompt_pack_08_frontier_refresh.md`
+   §2.4 / §6) and has **zero evidence contact** in cycles 1–2:
+   drafted H11 died on **form** (G16 rule-5; DISPOSITIONS 3 / §4.1),
+   not economics; H4's park was **infrastructure + taker economics**
+   and **close-window-specific** (pack-07 §1; backlog 8) — it does
+   not adjudicate clock-aligned scheduled-flow claims at H ∈
+   {900, 1800}. **Cycle 3 is AUTHORIZED, scoped to that region
+   only** (H11′-class reformalization / distinct SCHEDULED_FLOW
+   cards at H ∈ {900, 1800} on the existing universe/grid). No
+   KYLE_INFO continuation card, no H = 1800 KYLE retry, and no
+   other §4.2 fork is authorized by this disposition.
+
+2. **PROGRAM STOP-RULE (pre-registered now; no cycle-3 outcome
+   exists).** Cycle 3 is the **FINAL cycle** on this universe/grid.
+   **Absent a step-2b PASS by any cycle-3 card, the program
+   closes.** The residual fork named in §4.2 / pack-07 (universe
+   **tranche 2** vs stop) is a **new capital decision** requiring
+   its own Lei authorization — it is **not** a continuation of
+   cycle 3 and is not pre-authorized here. **Kill-gate class does
+   not matter for closure:** census parks, design exclusions, and
+   step-2b rejections **all count** toward program closure under
+   this stop-rule. Pre-registration timestamp: this disposition
+   (2026-07-16), before any cycle-3 slate, census, or outcome
+   statistic.
+
+3. **OUTCOME-INFORMED PRIOR DISCLOSURE.** The H = 300 → H = 900
+   magnitude comparison (H8 RankIC +0.0186 → H10 RankIC +0.0893;
+   §3.1 / §4.3 POST-HOC shelf) is recorded as a **post-hoc,
+   in-sample design prior** usable only for **horizon selection**
+   discussion inside cycle-3 drafting. Wherever it is used it must
+   be **disclosed as such**. It is **never evidence**, never a
+   magnitude bar substitute, and never a KYLE or SCHEDULED_FLOW
+   proof claim.
+
+4. **Backlog / vendor sequencing.** Backlog entries **17–18**
+   (contingent-trigger failure-mode enumeration; contamination
+   REPORTS estimand labeling — §2.4) land via the next
+   **3-M-style maintenance pass**; that pass **may ride with
+   cycle-3 doc commits**. **Vendor tickets (V-1 / V-2 / V-3)
+   remain decoupled:** neither gates cycle 3 (operative grid is
+   pre-April; no RESEARCH→PAPER promotion is imminent).
+
+5. **N = 12 confirmed.** This disposition is authorization +
+   stop-rule pre-registration only — **no data contact, no
+   outcome statistic, no N increment.** Living ledger remains
+   **N = 12** (§6). Any cycle-3 card's first outcome contact is
+   **+1 → N ≥ 13** under its own frozen protocol from step 1.
+   Any future DSR uses the then-current living N (≥ 12).
