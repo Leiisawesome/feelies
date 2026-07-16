@@ -241,9 +241,7 @@ def integrity_pin_check(
         p = prior[key]
         for f in fields:
             if c.get(f) != p.get(f):
-                mismatches.append(
-                    f"{key[0]}/{key[1]} {f}: census={c.get(f)} prior={p.get(f)}"
-                )
+                mismatches.append(f"{key[0]}/{key[1]} {f}: census={c.get(f)} prior={p.get(f)}")
     return mismatches
 
 
@@ -280,10 +278,18 @@ class CellResult:
     spread_ticks_warm: list[int] = field(default_factory=list)
 
 
-def run_cell(cache: DiskEventCache, symbol: str, date: str) -> CellResult | None:
-    events = cache.load(symbol, date)
-    if not events:
-        return None
+def run_cell_from_events(
+    events: Sequence[NBBOQuote | Trade],
+    symbol: str,
+    date: str,
+) -> CellResult | None:
+    """Replay a pre-loaded RTH event list through the §1.1 census path.
+
+    Used by the cache-backed ``run_cell`` and by the synthetic-fixture
+    golden (hand-computable episode / warm / filter pin).  Callers must
+    supply events already sorted and RTH-filtered, or pass raw lists —
+    this function re-sorts and re-filters defensively.
+    """
     events = [
         ev
         for ev in sorted(events, key=lambda e: (e.timestamp_ns, e.sequence))
@@ -404,9 +410,7 @@ def run_cell(cache: DiskEventCache, symbol: str, date: str) -> CellResult | None
         res.viable_long = sigma900 >= FLOOR_LONG_BPS[symbol] / KAPPA_FROZEN
         res.viable_short = sigma900 >= FLOOR_SHORT_BPS[symbol] / KAPPA_FROZEN
 
-    tape_b_base = (
-        res.tape_flagged_class_b / res.tape_prints if res.tape_prints else 0.0
-    )
+    tape_b_base = res.tape_flagged_class_b / res.tape_prints if res.tape_prints else 0.0
     warm_counts = {fid: 0 for fid in ENTRY_WARM_IDS}
     sfi_warm_in_window = 0
     residual_shares: list[float] = []
@@ -428,9 +432,7 @@ def run_cell(cache: DiskEventCache, symbol: str, date: str) -> CellResult | None
         qi = bisect_right(quote_ts, asof_ns) - 1
         spread_ticks = round(quote_spread[qi] / _TICK) if qi >= 0 else None
 
-        all_warm = all(
-            warm.get(fid, False) and not stale.get(fid, True) for fid in ENTRY_WARM_IDS
-        )
+        all_warm = all(warm.get(fid, False) and not stale.get(fid, True) for fid in ENTRY_WARM_IDS)
         if not all_warm:
             if is_grid:
                 res.gate_off += 1
@@ -445,9 +447,7 @@ def run_cell(cache: DiskEventCache, symbol: str, date: str) -> CellResult | None
         sfi = values.get("sweep_flow_imbalance")
         pctl = values.get("sweep_flow_imbalance_percentile")
         rvz = values.get("realized_vol_30s_zscore")
-        ok, side = is_entry_eligible(
-            sfi=sfi, pctl=pctl, rvz=rvz, p_breakout=p_breakout
-        )
+        ok, side = is_entry_eligible(sfi=sfi, pctl=pctl, rvz=rvz, p_breakout=p_breakout)
         if not ok:
             res.gate_off += 1
             continue
@@ -482,6 +482,13 @@ def run_cell(cache: DiskEventCache, symbol: str, date: str) -> CellResult | None
         res.residual_non_a_share_mean = sum(residual_shares) / len(residual_shares)
         res.residual_bug_flag = any(s > RESIDUAL_BUG_SHARE for s in residual_shares)
     return res
+
+
+def run_cell(cache: DiskEventCache, symbol: str, date: str) -> CellResult | None:
+    events = cache.load(symbol, date)
+    if not events:
+        return None
+    return run_cell_from_events(events, symbol, date)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -522,12 +529,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     for sym in GRID_SYMBOLS:
         sym_cells = [c for c in cells if c.symbol == sym]
         eps_all = sum(c.episodes for c in sym_cells)
-        eps_viable = sum(
-            c.episodes for c in sym_cells if c.viable_long
-        )
-        eps_viable_long = sum(
-            c.episodes_long for c in sym_cells if c.viable_long
-        )
+        eps_viable = sum(c.episodes for c in sym_cells if c.viable_long)
+        eps_viable_long = sum(c.episodes_long for c in sym_cells if c.viable_long)
         edge_empty = all((c.episodes if c.viable_long else 0) == 0 for c in sym_cells)
         per_symbol[sym] = {
             "episodes_all": eps_all,
