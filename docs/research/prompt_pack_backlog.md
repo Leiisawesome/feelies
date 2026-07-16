@@ -248,3 +248,36 @@ Governance) with cross-link in
 `.cursor/skills/microstructure-alpha/research-protocol.md`. Incident
 retained: H8 A-1 silence on §4.1/JC-4 terciles → A-2.2 ruling;
 `prompt_pack_03c_universe_and_cache.md` AMENDMENT 1.
+
+## 17. Contingent-card triggers must enumerate failure modes — CANDIDATE
+
+When a slate holds a card contingent on another card's step-2
+outcome, the freeze must enumerate failure **modes** (magnitude /
+significance / mechanism-tie / form / power), not a single "fails"
+path. A mixed outcome (e.g. magnitude PASS + significance/F2 FAIL)
+otherwise creates a literal trigger gap and forces post-outcome
+substance adjudication. Candidate skill edit for
+`.cursor/skills/microstructure-alpha/research-protocol.md` (Slate
+Design Discipline / consequence-precedence neighbor) and/or
+`.cursor/skills/research-workflow/SKILL.md`. Incident: slate-C
+DISPOSITIONS 2 vs 6–7 — H9 presumptive-death trigger keyed only to
+H10 "fails step 2b on magnitude"; H10 failed on p + F2 with magnitude
+cleared; death ruled on sibling arithmetic + shared F2 anyway
+(`prompt_pack_09_hypothesis_slate_c.md` DISPOSITIONS 2, 7–8;
+`prompt_pack_10_cycle2_retrospective.md` §2.3).
+
+## 18. Contamination REPORTS estimands labeled at freeze — CANDIDATE
+
+JC-style REPORTS diagnostics that carry a "near-zero by construction"
+expectation must name the estimand at freeze (sensor-state leakage vs
+tape co-travel / composition share). Unlabeled fields invite false
+bug investigations when a large-by-construction tape quantity trips a
+leakage-shaped threshold. Candidate skill edit for
+`.cursor/skills/microstructure-alpha/research-protocol.md`
+(contamination / census hygiene) and cross-link in
+`.cursor/skills/data-engineering/SKILL.md` if print-eligibility
+conventions are touched. Incident: H10 JC-1 / census C.3 / amendment
+A-2 — `residual_non_a_share` ≈ 0.62–0.80 on 40/40 cells measured tape
+co-travel, not state leakage
+(`sig_sweep_kyle_drift_h900_v1_validation_protocol.md` C.3, A-2;
+`prompt_pack_10_cycle2_retrospective.md` §2.2).
