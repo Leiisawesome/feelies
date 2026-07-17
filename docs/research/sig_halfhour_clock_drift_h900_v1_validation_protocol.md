@@ -1230,7 +1230,7 @@ first outcome contact still reserved for step-2 IC on the H12 primary
 | 1 | `2f3d930` | `WindowKind.ALGO_CLOCK` + deterministic authoring script (`scripts/research/author_algo_clock_calendars.py`) + per-session half-hour calendars for the 20-grid dates (`[M, M+1s)`); `scheduled_flow_window` warms for {APP, RMBS}; window-authoring bit-identity guard in `tests/sensors/test_algo_clock_calendars.py`. Fixture `2026-03-24` hash baseline untouched. Coverage map: `author_algo_clock_calendars.py` → `research_validation`. |
 | 2 | `aea0578` | `ofi_integrated_percentile` factory sibling on `ofi_raw` at all canonical horizons (H8 `kyle_lambda_60s` percentile precedent) + bootstrap factory tests. Determinism suite green — **no locked parity baseline moved**. |
 | 3 | `ec78718` | Census instrument `scripts/research/halfhour_clock_drift_census.py` (frozen §1.1 predicate **both arms**; JC-10 calendar-warm; JC-1 leakage / co-travel REPORTS; σ₉₀₀ vs floors) + synthetic-fixture golden pinning both arms at build time (`tests/scripts/test_halfhour_clock_drift_census.py` — 8-C-H10 lesson). Coverage map: census → `research_validation`. |
-| 4 | *(this commit)* | Harness IC row in `scripts/sensor_feature_ic.py` — H12 clock-stratified `in_window_extreme` / `out_window_extreme` / `clock_contrast` at h=900; OLN evidence-only empty; additive only; synthetic smoke tests in `tests/scripts/test_sensor_feature_ic.py`. |
+| 4 | `3cf4413` | Harness IC row in `scripts/sensor_feature_ic.py` — H12 clock-stratified `in_window_extreme` / `out_window_extreme` / `clock_contrast` at h=900; OLN evidence-only empty; additive only; synthetic smoke tests in `tests/scripts/test_sensor_feature_ic.py`. |
 
 ### Gate battery (each commit independently green; PYTHONHASHSEED=0)
 
