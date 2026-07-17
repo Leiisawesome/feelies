@@ -43,6 +43,7 @@ import math
 import os
 import sys
 from dataclasses import dataclass
+from datetime import date as _date
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
@@ -77,10 +78,16 @@ from feelies.sensors.impl.micro_price import MicroPriceSensor  # noqa: E402
 from feelies.sensors.impl.ofi_ewma import OFIEwmaSensor  # noqa: E402
 from feelies.sensors.impl.ofi_raw import OFIRawSensor  # noqa: E402
 from feelies.sensors.impl.realized_vol_30s import RealizedVol30sSensor  # noqa: E402
+from feelies.sensors.impl.scheduled_flow_window import ScheduledFlowWindowSensor  # noqa: E402
 from feelies.sensors.impl.sweep_flow_imbalance import SweepFlowImbalanceSensor  # noqa: E402
 from feelies.sensors.registry import SensorRegistry  # noqa: E402
 from feelies.sensors.spec import SensorSpec  # noqa: E402
 from feelies.storage.disk_event_cache import DiskEventCache  # noqa: E402
+from feelies.storage.reference.event_calendar import (  # noqa: E402
+    EventCalendar,
+    load_event_calendar,
+)
+from feelies.storage.reference.paths import EVENT_CALENDAR_DIR  # noqa: E402
 
 _NS_PER_SECOND = 1_000_000_000
 
@@ -459,6 +466,11 @@ def _run_one(
     # Phase A (instrument land only).
     if _H10_HORIZON in horizons:
         rows.extend(_h10_sweep_kyle(events, mids, symbol, date, session_open_ns))
+    # Protocol §2.2 H12 row (sig_halfhour_clock_drift_h900_v1) — pinned to
+    # h=900; clock-stratified in-window / out-window extreme-OFI contrast;
+    # additive only; no outcome contact in Phase A (instrument land only).
+    if _H12_HORIZON in horizons:
+        rows.extend(_h12_halfhour_clock(events, mids, symbol, date, session_open_ns))
     return rows
 
 
@@ -1037,6 +1049,175 @@ def _h10_sweep_kyle(
             f"  # H10 buckets(extreme) {symbol}/{date}: [{means}] bps",
             file=sys.stderr,
         )
+    return rows
+
+
+# ── H12 row — sig_halfhour_clock_drift_h900_v1 (protocol §2.2; Task 9-A)
+#
+# Measurement plumbing for the pre-registered H12 primary trial, not a new
+# trial: x = ofi_integrated (signed) vs y = signed forward 900 s mid
+# log-return, stratified by the census-pinned extreme-OFI quintile
+# (percentile ≥ 0.80 OR ≤ 0.20 with sign agreement) into:
+#   * in_window_extreme  (W_hh = 1 — ALGO_CLOCK membership)
+#   * out_window_extreme (W_hh = 0 — matched OFI, F2 arm)
+#   * clock_contrast     (in RankIC − out RankIC)
+# OLN cells are evidence-only §2.4 tick-artifact inputs — empty IC rows.
+# Phase A lands the instrument only — no cached-data IC run (N = 12).
+
+_H12_HORIZON = 900
+_H12_OFI_PCTL_HI = 0.80
+_H12_OFI_PCTL_LO = 0.20
+_H12_EVIDENCE_ONLY_SYMBOLS = frozenset({"OLN"})
+_H12_CONSUMED_IDS = (
+    "scheduled_flow_window_active",
+    "ofi_integrated",
+    "ofi_integrated_percentile",
+    "realized_vol_30s_zscore",
+)
+
+
+def _h12_load_calendar(date_str: str) -> EventCalendar | None:
+    path = EVENT_CALENDAR_DIR / f"{date_str}.yaml"
+    if not path.is_file():
+        return None
+    return load_event_calendar(path, expected_session_date=_date.fromisoformat(date_str))
+
+
+def _h12_sensor_specs(calendar: EventCalendar) -> tuple[SensorSpec, ...]:
+    return (
+        SensorSpec(
+            sensor_id="scheduled_flow_window",
+            sensor_version="1.2.0",
+            cls=ScheduledFlowWindowSensor,
+            params={"calendar": calendar},
+            subscribes_to=(NBBOQuote, Trade),
+        ),
+        SensorSpec(
+            sensor_id="ofi_raw",
+            sensor_version="1.0.0",
+            cls=OFIRawSensor,
+            params={"warm_after": 50, "warm_window_seconds": 300},
+            subscribes_to=(NBBOQuote,),
+        ),
+        SensorSpec(
+            sensor_id="realized_vol_30s",
+            sensor_version="1.3.0",
+            cls=RealizedVol30sSensor,
+            params={"window_seconds": 30, "warm_after": 16},
+            subscribes_to=(NBBOQuote,),
+        ),
+    )
+
+
+def _h12_features() -> list[HorizonFeature]:
+    h = _H12_HORIZON
+    feats: list[HorizonFeature] = []
+    for sid in ("scheduled_flow_window", "ofi_raw", "realized_vol_30s"):
+        feats.extend(_horizon_features_for(sid, h))
+    return feats
+
+
+def _h12_rank_row(symbol: str, date: str, variant: str, p: _Pairs, *, with_edge: bool) -> _Row:
+    n = len(p.values)
+    rank_ic = ic = p_value = None
+    if n >= 3:
+        res = spearman_ic(p.values, p.fwd)
+        rank_ic, p_value = res.rho, res.p_value
+        ic = _pearson(p.values, p.fwd)
+    edge = long_short_edge_bps(p.values, p.fwd) if with_edge and n >= 5 else None
+    return _Row(
+        symbol=symbol,
+        date=date,
+        feature="h12_halfhour_clock",
+        horizon=_H12_HORIZON,
+        variant=variant,
+        n=n,
+        rank_ic=rank_ic,
+        ic=ic,
+        edge_bps=edge,
+        pairs=p if edge is not None else None,
+        p_value=p_value,
+    )
+
+
+def _h12_halfhour_clock(
+    events: Sequence[NBBOQuote | Trade],
+    mids: "_MidSeries",
+    symbol: str,
+    date: str,
+    session_open_ns: int,
+    *,
+    calendar: EventCalendar | None = None,
+) -> list[_Row]:
+    """Protocol §2.2 H12 rows — clock-stratified extreme-OFI contrast (both arms)."""
+    if symbol in _H12_EVIDENCE_ONLY_SYMBOLS:
+        return []
+    cal = calendar if calendar is not None else _h12_load_calendar(date)
+    if cal is None:
+        print(
+            f"  # H12 skip {symbol}/{date}: no event calendar YAML",
+            file=sys.stderr,
+        )
+        return []
+
+    snaps = _replay_snapshots(
+        events,
+        symbol=symbol,
+        horizon_features=_h12_features(),
+        horizons=frozenset({_H12_HORIZON}),
+        session_open_ns=session_open_ns,
+        sensor_specs=_h12_sensor_specs(cal),
+    )
+    strata = ("in_window_extreme", "out_window_extreme")
+    pairs = {s: _Pairs(values=[], fwd=[]) for s in strata}
+    for s in snaps:
+        if s.horizon_seconds != _H12_HORIZON:
+            continue
+        if not all(
+            s.warm.get(fid, False) and not s.stale.get(fid, True) for fid in _H12_CONSUMED_IDS
+        ):
+            continue
+        ofi = s.values.get("ofi_integrated")
+        pctl = s.values.get("ofi_integrated_percentile")
+        w_hh = s.values.get("scheduled_flow_window_active")
+        if ofi is None or pctl is None or w_hh is None:
+            continue
+        asof_ns = s.boundary_ts_ns
+        y = _forward_return(mids, asof_ns, _H12_HORIZON)
+        if y is None:
+            continue
+        # Extreme stratum + sign agreement (census §1.1 arms 4/7).
+        if pctl >= _H12_OFI_PCTL_HI and ofi > 0.0:
+            pass
+        elif pctl <= _H12_OFI_PCTL_LO and ofi < 0.0:
+            pass
+        else:
+            continue
+        stratum = "in_window_extreme" if w_hh >= 0.5 else "out_window_extreme"
+        pairs[stratum].values.append(ofi)
+        pairs[stratum].fwd.append(y)
+
+    rows: list[_Row] = [
+        _h12_rank_row(symbol, date, "in_window_extreme", pairs["in_window_extreme"], with_edge=True),
+        _h12_rank_row(
+            symbol, date, "out_window_extreme", pairs["out_window_extreme"], with_edge=True
+        ),
+    ]
+    e = rows[0]
+    b = rows[1]
+    contrast = e.rank_ic - b.rank_ic if e.rank_ic is not None and b.rank_ic is not None else None
+    rows.append(
+        _Row(
+            symbol=symbol,
+            date=date,
+            feature="h12_halfhour_clock",
+            horizon=_H12_HORIZON,
+            variant="clock_contrast",
+            n=min(e.n, b.n),
+            rank_ic=contrast,
+            ic=None,
+        )
+    )
     return rows
 
 

@@ -220,3 +220,69 @@ def test_harness_h10_oln_is_evidence_only_and_contributes_no_ic_row() -> None:
     tape = _h10_smoke_tape("OLN")
     mids = ic._MidSeries.from_events(tape)
     assert ic._h10_sweep_kyle(tape, mids, "OLN", "2026-01-01", 0) == []
+
+
+# ── H12 row smoke (protocol §2.2; Task 9-A Phase A) — synthetic only ─────
+
+
+def _h12_smoke_tape_and_calendar(sym: str = "APP"):
+    """Flat-mid buy-pressure tape + synthetic ALGO_CLOCK at t=1800 s.
+
+    session_open_ns=0 ⇒ boundaries at 0, 900, 1800, 2700, …  Tape to 3600 s
+    so the 2700 s boundary has a realised forward window.  Calendar admits
+    only [1800 s, 1801 s) ⇒ in-window extreme at 1800; out-window at 900/2700.
+    """
+    from datetime import date
+
+    from feelies.storage.reference.event_calendar import (
+        CalendarWindow,
+        EventCalendar,
+        WindowKind,
+    )
+
+    NS = ic._NS_PER_SECOND
+    events = []
+    for t in range(0, 3600):
+        events.append(
+            type(_quote(0, "100", "100.02", 100, 100))(
+                timestamp_ns=t * NS,
+                correlation_id=f"q-{t}",
+                sequence=t,
+                symbol=sym,
+                bid=Decimal("100.00"),
+                ask=Decimal("100.02"),
+                bid_size=100 + t,
+                ask_size=100,
+                exchange_timestamp_ns=t * NS,
+            )
+        )
+    cal = EventCalendar(
+        session_date=date(2026, 1, 15),
+        windows=(
+            CalendarWindow(
+                window_id="algo_clock_smoke_1800",
+                kind=WindowKind.ALGO_CLOCK,
+                symbol=None,
+                start_ns=1800 * NS,
+                end_ns=1800 * NS + NS,
+                flow_direction_prior=0.0,
+                meta={"mark_class": "half_hour"},
+            ),
+        ),
+    )
+    return events, cal
+
+
+def test_harness_h12_row_reports_both_arms_and_clock_contrast() -> None:
+    tape, cal = _h12_smoke_tape_and_calendar("APP")
+    mids = ic._MidSeries.from_events(tape)
+    rows = ic._h12_halfhour_clock(tape, mids, "APP", "2026-01-15", 0, calendar=cal)
+    by = {r.variant: r for r in rows}
+    assert set(by) == {"in_window_extreme", "out_window_extreme", "clock_contrast"}
+    assert all(r.feature == "h12_halfhour_clock" and r.horizon == 900 for r in rows)
+
+
+def test_harness_h12_oln_is_evidence_only_and_contributes_no_ic_row() -> None:
+    tape, cal = _h12_smoke_tape_and_calendar("OLN")
+    mids = ic._MidSeries.from_events(tape)
+    assert ic._h12_halfhour_clock(tape, mids, "OLN", "2026-01-15", 0, calendar=cal) == []

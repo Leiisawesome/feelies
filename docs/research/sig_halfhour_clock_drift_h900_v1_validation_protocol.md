@@ -1214,4 +1214,64 @@ P0-1.*
 
 # AMENDMENTS
 
-*(none at freeze)*
+## A-1 — Phase-A IMPLEMENTATION RECORD (Task 9-A-H12, 2026-07-17)
+
+**Scope.** Phase A only (Ordering B): calendar artifacts +
+`ofi_integrated_percentile` factory + census instrument + harness IC
+row. **No census execution, no IC numbers, no outcome contact.** Phase B
+explicitly out of scope. **N = 12 survives unchanged** (living ledger;
+first outcome contact still reserved for step-2 IC on the H12 primary
+→ N ≥ 13).
+
+### Commit ledger
+
+| # | sha | delivered |
+|---|---|---|
+| 1 | `2f3d930` | `WindowKind.ALGO_CLOCK` + deterministic authoring script (`scripts/research/author_algo_clock_calendars.py`) + per-session half-hour calendars for the 20-grid dates (`[M, M+1s)`); `scheduled_flow_window` warms for {APP, RMBS}; window-authoring bit-identity guard in `tests/sensors/test_algo_clock_calendars.py`. Fixture `2026-03-24` hash baseline untouched. Coverage map: `author_algo_clock_calendars.py` → `research_validation`. |
+| 2 | `aea0578` | `ofi_integrated_percentile` factory sibling on `ofi_raw` at all canonical horizons (H8 `kyle_lambda_60s` percentile precedent) + bootstrap factory tests. Determinism suite green — **no locked parity baseline moved**. |
+| 3 | `ec78718` | Census instrument `scripts/research/halfhour_clock_drift_census.py` (frozen §1.1 predicate **both arms**; JC-10 calendar-warm; JC-1 leakage / co-travel REPORTS; σ₉₀₀ vs floors) + synthetic-fixture golden pinning both arms at build time (`tests/scripts/test_halfhour_clock_drift_census.py` — 8-C-H10 lesson). Coverage map: census → `research_validation`. |
+| 4 | *(this commit)* | Harness IC row in `scripts/sensor_feature_ic.py` — H12 clock-stratified `in_window_extreme` / `out_window_extreme` / `clock_contrast` at h=900; OLN evidence-only empty; additive only; synthetic smoke tests in `tests/scripts/test_sensor_feature_ic.py`. |
+
+### Gate battery (each commit independently green; PYTHONHASHSEED=0)
+
+| gate | commit 1 | commit 2 | commit 3 | commit 4 |
+|---|---|---|---|---|
+| `pytest -m "not functional and not slow"` | 4110 passed, 9 skipped | 4112 passed, 9 skipped | 4119 passed, 9 skipped | 4121 passed, 9 skipped |
+| `mypy src/feelies` (strict) | clean (194 files) | clean | clean | clean |
+| `ruff check src/ tests/` (+ scripts touched) | clean | clean | clean | clean |
+| `tests/docs/test_prompt_coverage_map.py` | green (scripts row) | green | green (scripts row) | green |
+| determinism / locked baselines | fixture hash held | **no baseline moved** | n/a | n/a |
+
+### Coverage-map ownership rows
+
+| artifact | owner |
+|---|---|
+| `src/feelies/storage/reference/event_calendar/` (ALGO_CLOCK + YAMLs) | `audit_data_ingestion` (package-wholly-owned; no `_FILE_OWNERS` entry required) |
+| `scripts/research/author_algo_clock_calendars.py` | `research_validation` (`docs/prompts/README.md` scripts row) |
+| `src/feelies/bootstrap.py` (`ofi_integrated_percentile` additive) | `audit_kernel` (pre-existing root-module owner; unchanged) |
+| `scripts/research/halfhour_clock_drift_census.py` | `research_validation` |
+| `scripts/sensor_feature_ic.py` (H12 row additive) | `sensor` (pre-existing scripts-row owner; unchanged) |
+
+### Explicit non-actions (binding)
+
+- Census **not executed** against the 40-cell grid (instrument + golden pin only).
+- No forward return / RankIC / CPCV / DSR / outcome statistic computed on cached L1.
+- No Phase-B alpha YAML, `configs/bt_sig_halfhour_clock_drift_h900_v1.yaml`, or sign-golden evaluate module.
+- Locked parity baselines / promotion ledger / core event schemas untouched.
+- **N = 12** at close of Phase A (unchanged).
+
+### P0-1 status after this amendment
+
+| deliverable | status |
+|---|---|
+| (i) `WindowKind.ALGO_CLOCK` + per-session calendars | **landed** (`2f3d930`) |
+| (ii) `ofi_integrated_percentile` at h=900 | **landed** (`aea0578`) |
+| (iii) census instrument (both arms) | **committed** (`ec78718`) — not run on cache |
+| (iv) harness IC row (both F2 arms) | **landed** (this commit) — not run on cache |
+
+**Stop for Lei review before any census execution (step 1).**
+
+*(Record appended 2026-07-17. Justification: Task 9-A-H12 Phase-A
+close-out; instruments built and pinned; no freeze-body edit.)*
+
+---
