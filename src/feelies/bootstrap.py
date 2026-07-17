@@ -1173,6 +1173,16 @@ _HORIZON_FEATURE_FACTORIES: dict[str, Callable[[int], list[HorizonFeature]]] = {
             feature_id="ofi_integrated",
             min_samples=1,
         ),
+        # H12 Phase A: Hazen percentile of the latest ofi_raw sample within
+        # the trailing-h event-time window (kyle_lambda_60s wiring precedent).
+        # Named ofi_integrated_percentile per formal-spec §1.2 — quintile
+        # tails at h=900 are the H12 entry conditioner.
+        HorizonWindowedFeature(
+            "ofi_raw",
+            h,
+            reducer="percentile",
+            feature_id="ofi_integrated_percentile",
+        ),
     ],
     # Audit P1-B / P1-C: signed top-of-book size imbalance, the level-invariant
     # L1 fingerprint that ``micro_price_zscore`` (a z of the ~$100 price level)
