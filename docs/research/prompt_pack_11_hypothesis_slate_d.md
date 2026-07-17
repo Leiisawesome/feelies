@@ -7,6 +7,11 @@
           H ∈ {900, 1800}. Pre-registration class; N = 12 unchanged
           (selection does not increment; first outcome contact on
           any primary remains +1 → N ≥ 13).
+          + H12 PARKED (power) / H13 ACTIVATED (2026-07-17; Lei;
+          DISPOSITIONS 6–8): trigger (a) FIRED on H12 census death
+          (n=59); H13 is the final card — death at any gate closes
+          the program. N = 12 (zero outcome contact). Cards above
+          unedited (append-only).
   Owner:  microstructure-alpha (cards) / research-workflow (trial
           ledger); prompt-pack Task 6-D, Phase B.
 
@@ -759,3 +764,51 @@ below.**
    outcome statistic exists for any slate-D candidate. First outcome
    contact on the H12 primary remains **+1 → N ≥ 13** per §(3).
    Any future DSR uses the then-current living N (≥ 12).
+
+---
+
+## DISPOSITIONS (continued — H12 park close-out + H13 activation, 2026-07-17, Lei; append-only, entries 1–5 unedited)
+
+6. **H12 PARKED (power)** — park close-out, 2026-07-17. Lei ratifies
+   the census verdict per frozen §1.5 / protocol C.8
+   (`sig_halfhour_clock_drift_h900_v1_validation_protocol.md`).
+   Pooled viable-region in-window episodes **59 < 100**; F2 arm
+   independently **F2-INSUFFICIENT** (out-window viable-region
+   **89 < 100**); edge axis non-empty on both symbols (APP 40 /
+   RMBS 19); infrastructure perfect (warm 1.000, missing-rate 0,
+   determinism green). Shortfall attribution: design-central
+   **147.7 / 160.1** → measured all-cell **68 / 105** → viable
+   **59 / 89**. **PARK ≠ refutation:** F1–F5 never ran; zero
+   outcome contact. Closure record:
+   `sig_halfhour_clock_drift_h900_v1_result.md`. Occupancy lesson
+   registered as backlog **19** (percentile-exemption is
+   arm-scoped; H8 0.55× / H12 0.46× vs H10 percentile-exempt
+   1.04×). Census commit `3ed79a6`.
+
+7. **H13 ACTIVATED** — pack-11 DISPOSITIONS 2 trigger **(a)** FIRED
+   (H12 design/census death). `sig_hour_checkpoint_drift_h1800_v1`
+   is authorized for its own Task-7/8 path under the
+   pre-registered conditions:
+   - **κ remains frozen at 0.172** (minimum rule vs factor product
+     **0.189** — arithmetic bug logged in 11a §2 H13 check d / Q1 /
+     DECISION RECORD 1; factors are not restated to erase the
+     freeze).
+   - **Pool-collapse floor behavior must be frozen into the H13
+     protocol before any H13 census** (11a §2e axis-split:
+     6→221.6; 5→184.7; 4→147.7; 3→110.8 clears census ≥100 / fails
+     design ≥130; 2→73.9 fails both — completeness debt from the
+     contingent hold, now a freeze precondition).
+   - H13 enters as its own trial at first outcome contact
+     (**+1 → N ≥ 13**); drafting remains N-impact 0 until then.
+   Cards above stay as pre-registered text (FQ-6B-R).
+
+8. **Stop-rule accounting (binding).** H12's park **counts toward
+   program closure** (pack-10 DISPOSITION 2 / pack-11 DISPOSITIONS
+   4). H13 is the **final card** on this universe/grid: death at
+   **any** gate (census power, form/calendar, step-2b magnitude /
+   significance / F2, or later) **closes the program**. A step-2b
+   PASS on H13 is the sole remaining path that satisfies the
+   cycle-3 stop-rule. **N = 12 confirmed** at this close-out
+   (census N-neutral; no outcome statistic for any slate-D
+   candidate). Any future DSR uses the then-current living N
+   (≥ 12).

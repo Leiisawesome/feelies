@@ -3,8 +3,12 @@
   Status: PRE-REGISTERED — FROZEN (Task 8-F-H12, Lei, 2026-07-17).
           STEP 1 PARK — power (pooled viable-region in-window
           episodes = 59 < 100); F2-arm F2-INSUFFICIENT (out-window
-          viable-region n = 89 < 100) reported per JC-9. N = 12
-          (census N-neutral; no outcome contact).
+          viable-region n = 89 < 100) reported per JC-9.
+          + ADJUDICATION (Lei, 2026-07-17, park close-out): PARK
+          (power) ratified per frozen §1.5. PARK ≠ refutation; zero
+          outcome contact; N = 12. H13 trigger (a) FIRED — see
+          pack-11 DISPOSITIONS continued. Closure record:
+          sig_halfhour_clock_drift_h900_v1_result.md.
   Owner:  research-workflow (protocol + ledger) / microstructure-alpha
           (candidate); prompt-pack Task 8 / Task 8-C-H12 (H12).
 
@@ -1457,5 +1461,58 @@ outcome statistic in this task. **N = 12** unchanged.
 
 *(Record appended 2026-07-17. Justification: Task 8-C-H12 step-1
 execution; frozen bars scored without discretion.)*
+
+---
+
+## C.8 ADJUDICATION (Lei, 2026-07-17) — PARK (power) ratified per frozen §1.5
+
+**Ruling: PARK (power)** under frozen §1.5 / §9.1 census row. The
+Task 8-C-H12 C.5 first-FAIL stop stands; this adjudication ratifies
+it. Steps 2–8 remain **not authorized**. No post-census threshold,
+prior, or pool change is permitted within this trial.
+
+### Park decomposition (binding for all downstream citations)
+
+| axis | frozen bar | observed | class | verdict |
+|---|---|---|---|---|
+| **Edge-region emptiness** | viable-region primary in-window episodes = 0 on every D symbol → PARK | APP **40** / RMBS **19** (non-empty on both) | n-variant | **FALSE** (does not park) |
+| **Power floor (in-window)** | pooled viable-region contamination-excluded in-window episodes ≥ **100** | pooled **59** | n-variant | **FAIL → PARK** |
+| **F2-arm adjudicability** | out-window viable-region n ≥ **100** (else F2-INSUFFICIENT / JC-9) | pooled **89** | n-variant | **F2-INSUFFICIENT** (reported; sequence already halted by in-window power) |
+| **Infrastructure** | `calendar_missing_rate = 0`; calendar-warm authoring green; determinism bit-identical | warm **1.000** both symbols; missing-rate **0**; SHA match | infra | **PASS** |
+
+**PARK ≠ refutation.** F1–F5 never ran; no forward return, IC,
+RankIC, CPCV, DSR, or execution number exists for this candidate.
+The economic-viability / power precondition failed on the frozen
+{APP, RMBS} × 20-session grid under the frozen quintile × half-hour
+× gate arms. No claim that the scheduled-flow half-hour mechanism
+does not exist may cite this record — only that the pre-registered
+pooled in-window episode count is below the census floor as
+realized.
+
+**Shortfall attribution (design → all-cell → viable; C.4 / C.5):**
+
+| arm | design-central | measured all-cell | measured viable-region |
+|---|---|---|---|
+| in-window (primary) | **147.7** | **68** | **59** |
+| out-window (F2 counts) | **160.1** | **105** | **89** |
+
+Per-arm attrition as the census reported it (C.4): APP in-window
+43 → 40 viable / out-window 38 → 36; RMBS in-window 25 → 19 /
+out-window 67 → 53. Pooled all-cell → viable: 68 → 59 (in),
+105 → 89 (out). Realized/design all-cell in-window ratio
+68/147.7 ≈ **0.46×**.
+
+**Consequences.** Doc Status: **hypothesis — parked (power)**
+(close-out record: `sig_halfhour_clock_drift_h900_v1_result.md`;
+slate-D DISPOSITIONS appended). Trial ledger **N = 12 unchanged**
+(census N-neutral; zero outcome contact). Pack-11 DISPOSITIONS 2
+trigger **(a)** (H12 design/census death) **FIRED** — H13
+`sig_hour_checkpoint_drift_h1800_v1` ACTIVATED under its
+pre-registered conditions (κ frozen 0.172; pool-collapse floors to
+be frozen into the H13 protocol before any H13 census). H12 park
+counts toward program closure; H13 is the final card.
+
+*(Record appended 2026-07-17. Justification: Lei park close-out;
+frozen §1.5 bars ratified without discretion; no freeze-body edit.)*
 
 ---

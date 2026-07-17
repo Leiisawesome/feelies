@@ -4,6 +4,8 @@
           spun out of the prompt pack (Tasks FQ-0…FQ-4, 2, 3). Entries
           are pointers to their authoritative specs, not re-specs.
           Created 2026-07-08 (Task 3 prefix, addition (b)).
+          + entry 19 (2026-07-17): occupancy pre-reads MANDATORY for
+          every non-percentile conditioning arm (H12 census lesson).
   Owner:  cross-cutting; prompt-pack Phase A bookkeeping.
 -->
 
@@ -281,3 +283,24 @@ A-2 — `residual_non_a_share` ≈ 0.62–0.80 on 40/40 cells measured tape
 co-travel, not state leakage
 (`sig_sweep_kyle_drift_h900_v1_validation_protocol.md` C.3, A-2;
 `prompt_pack_10_cycle2_retrospective.md` §2.2).
+
+## 19. Occupancy pre-reads MANDATORY for every non-percentile conditioning arm; percentile-exemption is arm-scoped, not card-scoped — CANDIDATE
+
+Backlog 15 landed a census-legal occupancy pre-read obligation, but
+H12 showed the remaining gap: **percentile-tail exemption does not
+exempt sibling non-percentile arms** on the same card. Design priors
+on window fraction, sign-agreement, gate×warm, or any other
+non-percentile conditioner must be **measured** (or geometry-
+identity-verified) before power projections are treated as
+load-bearing — otherwise design-central clears ≥ 130 while realized
+all-cell / viable counts miss the census floor. Contrast retained:
+H8 ≈ **0.55×** realized/design (non-percentile joint occupancy);
+H12 ≈ **0.46×** (window × gate arms; quintile exempt but insufficient);
+H10 ≈ **1.04×** (percentile-exempt decile × ISO-warm — exemption
+held because the binding arm *was* the percentile). Candidate skill
+edit for `.cursor/skills/microstructure-alpha/research-protocol.md`
+(Census-legal occupancy pre-read / Slate Design Discipline —
+arm-scoped exemption language). Incident: H12 census
+`3ed79a6` / protocol C.4–C.5 / C.8 —
+`sig_halfhour_clock_drift_h900_v1_validation_protocol.md`;
+closure `sig_halfhour_clock_drift_h900_v1_result.md` §7.
