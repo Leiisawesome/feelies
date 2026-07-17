@@ -1291,8 +1291,8 @@ out-window (`W_hh = 0`) arm was **COUNTED, never scored**. **N = 12**
 Python 3.14.2; git SHA `8708c3c`; worktree clean for tracked files
 (`formal_spec.md` untracked sibling, freeze-allowed); artifact
 `docs/research/artifacts/halfhour_clock_drift_census_2026-07-17.json`
-SHA-256 `51913fe947745f9ea99c165d7b44232f4ac9d36678f451e0f1a772b7eb349ec1`
-(primary run = re-run).
+SHA-256 `3d0783bf60afb4ca94c857690c0237dc7c742daba8494af89938714722bbf5a3`
+(LF-canonical; primary run = re-run).
 
 ## C.1 Method
 
