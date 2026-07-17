@@ -1,4 +1,4 @@
-# Reference scheduled-flow window calendar for 2026-01-15 (regular RTH).
+# Reference scheduled-flow window calendar for 2026-01-05 (regular RTH).
 #
 # Consumed by feelies.sensors.impl.scheduled_flow_window via
 # feelies.storage.reference.event_calendar.load_event_calendar().
@@ -7,18 +7,9 @@
 # ALGO_CLOCK rows authored by scripts/research/author_algo_clock_calendars.py
 # (H12 formal-spec §1.5.2 — exchange schedule only; [M, M+1s) half-open).
 #
-session_date: 2026-01-15
+session_date: 2026-01-05
 windows:
-  - window_id: nyse_open_2026_01_15
-    kind: OPENING_AUCTION
-    symbol: null
-    start_et: "09:30"
-    end_et: "09:35"
-    flow_direction_prior: 0.0
-    meta:
-      description: First 5 min of RTH; opening-auction tape printing.
-
-  - window_id: algo_clock_hh_1000_2026_01_15
+  - window_id: algo_clock_hh_1000_2026_01_05
     kind: ALGO_CLOCK
     symbol: null
     start_et: "10:00"
@@ -28,7 +19,7 @@ windows:
       card: sig_halfhour_clock_drift_h900_v1
       mark_class: half_hour
 
-  - window_id: algo_clock_hh_1030_2026_01_15
+  - window_id: algo_clock_hh_1030_2026_01_05
     kind: ALGO_CLOCK
     symbol: null
     start_et: "10:30"
@@ -38,7 +29,7 @@ windows:
       card: sig_halfhour_clock_drift_h900_v1
       mark_class: half_hour
 
-  - window_id: algo_clock_hh_1100_2026_01_15
+  - window_id: algo_clock_hh_1100_2026_01_05
     kind: ALGO_CLOCK
     symbol: null
     start_et: "11:00"
@@ -48,7 +39,7 @@ windows:
       card: sig_halfhour_clock_drift_h900_v1
       mark_class: half_hour
 
-  - window_id: algo_clock_hh_1130_2026_01_15
+  - window_id: algo_clock_hh_1130_2026_01_05
     kind: ALGO_CLOCK
     symbol: null
     start_et: "11:30"
@@ -58,7 +49,7 @@ windows:
       card: sig_halfhour_clock_drift_h900_v1
       mark_class: half_hour
 
-  - window_id: algo_clock_hh_1200_2026_01_15
+  - window_id: algo_clock_hh_1200_2026_01_05
     kind: ALGO_CLOCK
     symbol: null
     start_et: "12:00"
@@ -68,7 +59,7 @@ windows:
       card: sig_halfhour_clock_drift_h900_v1
       mark_class: half_hour
 
-  - window_id: algo_clock_hh_1230_2026_01_15
+  - window_id: algo_clock_hh_1230_2026_01_05
     kind: ALGO_CLOCK
     symbol: null
     start_et: "12:30"
@@ -78,7 +69,7 @@ windows:
       card: sig_halfhour_clock_drift_h900_v1
       mark_class: half_hour
 
-  - window_id: algo_clock_hh_1300_2026_01_15
+  - window_id: algo_clock_hh_1300_2026_01_05
     kind: ALGO_CLOCK
     symbol: null
     start_et: "13:00"
@@ -88,7 +79,7 @@ windows:
       card: sig_halfhour_clock_drift_h900_v1
       mark_class: half_hour
 
-  - window_id: algo_clock_hh_1330_2026_01_15
+  - window_id: algo_clock_hh_1330_2026_01_05
     kind: ALGO_CLOCK
     symbol: null
     start_et: "13:30"
@@ -98,7 +89,7 @@ windows:
       card: sig_halfhour_clock_drift_h900_v1
       mark_class: half_hour
 
-  - window_id: algo_clock_hh_1400_2026_01_15
+  - window_id: algo_clock_hh_1400_2026_01_05
     kind: ALGO_CLOCK
     symbol: null
     start_et: "14:00"
@@ -108,7 +99,7 @@ windows:
       card: sig_halfhour_clock_drift_h900_v1
       mark_class: half_hour
 
-  - window_id: algo_clock_hh_1430_2026_01_15
+  - window_id: algo_clock_hh_1430_2026_01_05
     kind: ALGO_CLOCK
     symbol: null
     start_et: "14:30"
@@ -118,7 +109,7 @@ windows:
       card: sig_halfhour_clock_drift_h900_v1
       mark_class: half_hour
 
-  - window_id: algo_clock_hh_1500_2026_01_15
+  - window_id: algo_clock_hh_1500_2026_01_05
     kind: ALGO_CLOCK
     symbol: null
     start_et: "15:00"
@@ -128,7 +119,7 @@ windows:
       card: sig_halfhour_clock_drift_h900_v1
       mark_class: half_hour
 
-  - window_id: algo_clock_hh_1530_2026_01_15
+  - window_id: algo_clock_hh_1530_2026_01_05
     kind: ALGO_CLOCK
     symbol: null
     start_et: "15:30"
@@ -137,12 +128,3 @@ windows:
     meta:
       card: sig_halfhour_clock_drift_h900_v1
       mark_class: half_hour
-
-  - window_id: moc_imbalance_2026_01_15
-    kind: MOC_IMBALANCE
-    symbol: null
-    start_et: "15:50"
-    end_et: "16:00"
-    flow_direction_prior: 1.0
-    meta:
-      description: Standard 10-minute MOC imbalance publication window. flow_direction_prior=1.0 indicates expected net buy-side pressure based on historical January MOC flow patterns; overridden to 0.0 when exchange imbalance feed is unavailable.
